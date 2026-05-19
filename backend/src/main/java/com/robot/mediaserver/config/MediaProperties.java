@@ -1,0 +1,257 @@
+package com.robot.mediaserver.config;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+/**
+ * 媒体服务配置属性。
+ *
+ * <p>所有外部中间件地址、账号和运行策略都从 application.yml 或环境变量注入，
+ * 避免在业务代码中硬编码部署信息。</p>
+ *
+ * @author leelay
+ * @date 2026/05/19
+ */
+@ConfigurationProperties(prefix = "media")
+public class MediaProperties {
+
+    private Auth auth = new Auth();
+    private Livekit livekit = new Livekit();
+    private Mqtt mqtt = new Mqtt();
+    private Minio minio = new Minio();
+    private Session session = new Session();
+
+    public Auth getAuth() {
+        return auth;
+    }
+
+    public void setAuth(Auth auth) {
+        this.auth = auth;
+    }
+
+    public Livekit getLivekit() {
+        return livekit;
+    }
+
+    public void setLivekit(Livekit livekit) {
+        this.livekit = livekit;
+    }
+
+    public Mqtt getMqtt() {
+        return mqtt;
+    }
+
+    public void setMqtt(Mqtt mqtt) {
+        this.mqtt = mqtt;
+    }
+
+    public Minio getMinio() {
+        return minio;
+    }
+
+    public void setMinio(Minio minio) {
+        this.minio = minio;
+    }
+
+    public Session getSession() {
+        return session;
+    }
+
+    public void setSession(Session session) {
+        this.session = session;
+    }
+
+    public static class Auth {
+        private boolean mockEnabled = true;
+
+        public boolean isMockEnabled() {
+            return mockEnabled;
+        }
+
+        public void setMockEnabled(boolean mockEnabled) {
+            this.mockEnabled = mockEnabled;
+        }
+    }
+
+    public static class Livekit {
+        private String url;
+        private String apiKey;
+        private String apiSecret;
+        private long tokenTtlSeconds = 600;
+
+        public String getUrl() {
+            return url;
+        }
+
+        public void setUrl(String url) {
+            this.url = url;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        public String getApiSecret() {
+            return apiSecret;
+        }
+
+        public void setApiSecret(String apiSecret) {
+            this.apiSecret = apiSecret;
+        }
+
+        public long getTokenTtlSeconds() {
+            return tokenTtlSeconds;
+        }
+
+        public void setTokenTtlSeconds(long tokenTtlSeconds) {
+            this.tokenTtlSeconds = tokenTtlSeconds;
+        }
+    }
+
+    public static class Mqtt {
+        private String brokerUrl;
+        private String username;
+        private String password;
+        private String clientId;
+        private boolean enabled;
+
+        public String getBrokerUrl() {
+            return brokerUrl;
+        }
+
+        public void setBrokerUrl(String brokerUrl) {
+            this.brokerUrl = brokerUrl;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public String getPassword() {
+            return password;
+        }
+
+        public void setPassword(String password) {
+            this.password = password;
+        }
+
+        public String getClientId() {
+            return clientId;
+        }
+
+        public void setClientId(String clientId) {
+            this.clientId = clientId;
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    public static class Minio {
+        private String endpoint;
+        private String accessKey;
+        private String secretKey;
+        private String bucket;
+
+        public String getEndpoint() {
+            return endpoint;
+        }
+
+        public void setEndpoint(String endpoint) {
+            this.endpoint = endpoint;
+        }
+
+        public String getAccessKey() {
+            return accessKey;
+        }
+
+        public void setAccessKey(String accessKey) {
+            this.accessKey = accessKey;
+        }
+
+        public String getSecretKey() {
+            return secretKey;
+        }
+
+        public void setSecretKey(String secretKey) {
+            this.secretKey = secretKey;
+        }
+
+        public String getBucket() {
+            return bucket;
+        }
+
+        public void setBucket(String bucket) {
+            this.bucket = bucket;
+        }
+    }
+
+    public static class Session {
+        private long clientAckTimeoutSeconds = 10;
+        private long trackPublishTimeoutSeconds = 20;
+        private long interruptedGraceSeconds = 15;
+        private long idleReleaseDelaySeconds = 60;
+        private int maxVideoWallStreams = 16;
+        private String maxDetailResolution = "2K";
+
+        public long getClientAckTimeoutSeconds() {
+            return clientAckTimeoutSeconds;
+        }
+
+        public void setClientAckTimeoutSeconds(long clientAckTimeoutSeconds) {
+            this.clientAckTimeoutSeconds = clientAckTimeoutSeconds;
+        }
+
+        public long getTrackPublishTimeoutSeconds() {
+            return trackPublishTimeoutSeconds;
+        }
+
+        public void setTrackPublishTimeoutSeconds(long trackPublishTimeoutSeconds) {
+            this.trackPublishTimeoutSeconds = trackPublishTimeoutSeconds;
+        }
+
+        public long getInterruptedGraceSeconds() {
+            return interruptedGraceSeconds;
+        }
+
+        public void setInterruptedGraceSeconds(long interruptedGraceSeconds) {
+            this.interruptedGraceSeconds = interruptedGraceSeconds;
+        }
+
+        public long getIdleReleaseDelaySeconds() {
+            return idleReleaseDelaySeconds;
+        }
+
+        public void setIdleReleaseDelaySeconds(long idleReleaseDelaySeconds) {
+            this.idleReleaseDelaySeconds = idleReleaseDelaySeconds;
+        }
+
+        public int getMaxVideoWallStreams() {
+            return maxVideoWallStreams;
+        }
+
+        public void setMaxVideoWallStreams(int maxVideoWallStreams) {
+            this.maxVideoWallStreams = maxVideoWallStreams;
+        }
+
+        public String getMaxDetailResolution() {
+            return maxDetailResolution;
+        }
+
+        public void setMaxDetailResolution(String maxDetailResolution) {
+            this.maxDetailResolution = maxDetailResolution;
+        }
+    }
+}
