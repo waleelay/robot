@@ -30,6 +30,10 @@ export function createSnapshot(sessionId, data) {
   return client.post(`/api/media/video-sessions/${sessionId}/snapshots`, data).then(res => res.data)
 }
 
+export function getSessionSnapshots(sessionId) {
+  return client.get(`/api/media/video-sessions/${sessionId}/snapshots`).then(res => res.data)
+}
+
 export function getSessionEvents(sessionId) {
   return client.get(`/api/media/video-sessions/${sessionId}/events`).then(res => res.data)
 }

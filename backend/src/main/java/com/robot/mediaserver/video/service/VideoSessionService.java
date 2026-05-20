@@ -58,6 +58,7 @@ public class VideoSessionService {
     private final LiveKitTokenService liveKitTokenService;
     private final RobotMediaCommandService commandService;
     private final MediaEventLogService eventLogService;
+    private final SnapshotService snapshotService;
     private final MediaProperties properties;
 
     public VideoSessionService(
@@ -66,12 +67,14 @@ public class VideoSessionService {
             LiveKitTokenService liveKitTokenService,
             RobotMediaCommandService commandService,
             MediaEventLogService eventLogService,
+            SnapshotService snapshotService,
             MediaProperties properties) {
         this.repository = repository;
         this.liveKitRoomService = liveKitRoomService;
         this.liveKitTokenService = liveKitTokenService;
         this.commandService = commandService;
         this.eventLogService = eventLogService;
+        this.snapshotService = snapshotService;
         this.properties = properties;
     }
 
@@ -226,14 +229,7 @@ public class VideoSessionService {
         if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
             throw new IllegalStateException("Current session is not streaming");
         }
-        String snapshotId = "snap_" + compactUuid();
-        SnapshotResponse response = new SnapshotResponse(snapshotId, "PROCESSING", "livekit_track", request.getClientPreviewObjectKey() != null, now());
-        eventLogService.recordAndPublish(sessionId, "snapshot.requested", Map.of(
-                "snapshotId", snapshotId,
-                "sessionId", sessionId,
-                "trackSid", request.getTrackSid(),
-                "createdBy", user.userId()));
-        return response;
+        return snapshotService.create(session, request, user);
     }
 
     /**

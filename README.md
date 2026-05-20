@@ -52,6 +52,7 @@ POST /api/media/video-sessions/{sessionId}/token
 POST /api/media/video-sessions/{sessionId}/stop
 POST /api/media/video-sessions/{sessionId}/switch-channel
 POST /api/media/video-sessions/{sessionId}/snapshots
+GET  /api/media/video-sessions/{sessionId}/snapshots
 GET  /api/media/video-sessions/{sessionId}/events
 WS   /ws/media
 ```

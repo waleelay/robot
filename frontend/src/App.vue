@@ -41,6 +41,7 @@
               <el-button :disabled="!session" @click="switchToVisible">切可见光</el-button>
               <el-button :disabled="!session" @click="switchToThermal">切热成像</el-button>
               <el-button :disabled="!session" @click="snapshot">抓拍</el-button>
+              <el-button :disabled="!session" @click="loadSnapshots">查询抓拍</el-button>
               <el-button :disabled="!session" @click="loadSessionEvents">查询事件</el-button>
               <el-button :disabled="!session" @click="mockStreaming">模拟推流成功</el-button>
             </div>
@@ -84,6 +85,7 @@ import {
   createSnapshot,
   createVideoSession,
   getSessionEvents,
+  getSessionSnapshots,
   mockClientAcked,
   mockTrackPublished,
   stopVideoSession,
@@ -187,6 +189,11 @@ export default {
       if (!this.session) return
       const eventLogs = await getSessionEvents(this.session.sessionId)
       this.log('API sessionEvents', eventLogs)
+    },
+    async loadSnapshots() {
+      if (!this.session) return
+      const snapshots = await getSessionSnapshots(this.session.sessionId)
+      this.log('API snapshots', snapshots)
     },
     async connectLiveKit(session) {
       if (!session.viewerToken || !session.livekitUrl) {

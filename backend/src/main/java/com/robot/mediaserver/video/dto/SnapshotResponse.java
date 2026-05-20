@@ -13,5 +13,9 @@ public record SnapshotResponse(
         String status,
         String mode,
         boolean previewAccepted,
+        String officialObjectKey,
+        String previewObjectKey,
+        String errorCode,
+        String errorMessage,
         OffsetDateTime createdAt) {
 }

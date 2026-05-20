@@ -10,6 +10,7 @@ import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
 import com.robot.mediaserver.video.event.MediaEventLogService;
+import com.robot.mediaserver.video.service.SnapshotService;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -37,14 +38,17 @@ public class VideoSessionController {
     private final VideoSessionService service;
     private final CurrentUserResolver currentUserResolver;
     private final MediaEventLogService eventLogService;
+    private final SnapshotService snapshotService;
 
     public VideoSessionController(
             VideoSessionService service,
             CurrentUserResolver currentUserResolver,
-            MediaEventLogService eventLogService) {
+            MediaEventLogService eventLogService,
+            SnapshotService snapshotService) {
         this.service = service;
         this.currentUserResolver = currentUserResolver;
         this.eventLogService = eventLogService;
+        this.snapshotService = snapshotService;
     }
 
     /**
@@ -116,6 +120,17 @@ public class VideoSessionController {
             @Valid @RequestBody CreateSnapshotRequest request,
             HttpServletRequest servletRequest) {
         return service.createSnapshot(sessionId, request, currentUserResolver.resolve(servletRequest));
+    }
+
+    /**
+     * 查询指定会话最近抓拍记录。
+     *
+     * @param sessionId 会话 ID
+     * @return 抓拍记录列表
+     */
+    @GetMapping("/{sessionId}/snapshots")
+    public List<SnapshotResponse> snapshots(@PathVariable String sessionId) {
+        return snapshotService.recentBySession(sessionId);
     }
 
     /**
