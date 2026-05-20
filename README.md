@@ -58,6 +58,7 @@ GET  /api/media/video-sessions/{sessionId}/events
 POST /api/internal/media/snapshots/{snapshotId}/complete
 POST /api/internal/media/snapshots/{snapshotId}/complete-file
 POST /api/internal/media/snapshots/{snapshotId}/fail
+POST /api/internal/livekit/webhook
 WS   /ws/media
 ```
 
@@ -70,6 +71,30 @@ export LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS='20'
 ```
 
 开启后，创建实时视频会话时会调用 LiveKit RoomService 创建 Room；最后观看者停止后会尝试删除 Room。
+
+LiveKit webhook 配置到：
+
+```text
+POST /api/internal/livekit/webhook
+```
+
+当前已处理事件：
+
+```text
+track_published      -> STREAMING
+track_unpublished    -> INTERRUPTED
+participant_left     -> robot participant 离开时 INTERRUPTED
+room_finished        -> CLOSED
+```
+
+实时视频会话会定时扫描并自动处理：
+
+```text
+CLIENT_ACK_TIMEOUT
+LK_PUBLISH_TIMEOUT
+TRACK_INTERRUPTED_TIMEOUT
+IDLE_WAIT 延迟释放
+```
 
 抓拍图片上传默认关闭，便于没有 MinIO 环境时先联调抓拍状态。真实联调时可开启：
 

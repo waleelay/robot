@@ -72,6 +72,9 @@ public class VideoSession {
 
     private OffsetDateTime startedAt;
     private OffsetDateTime endedAt;
+    private OffsetDateTime commandRequestedAt;
+    private OffsetDateTime lastStatusAt;
+    private OffsetDateTime idleSince;
 
     @Column(length = 64)
     private String lastErrorCode;
@@ -200,6 +203,30 @@ public class VideoSession {
 
     public void setEndedAt(OffsetDateTime endedAt) {
         this.endedAt = endedAt;
+    }
+
+    public OffsetDateTime getCommandRequestedAt() {
+        return commandRequestedAt;
+    }
+
+    public void setCommandRequestedAt(OffsetDateTime commandRequestedAt) {
+        this.commandRequestedAt = commandRequestedAt;
+    }
+
+    public OffsetDateTime getLastStatusAt() {
+        return lastStatusAt;
+    }
+
+    public void setLastStatusAt(OffsetDateTime lastStatusAt) {
+        this.lastStatusAt = lastStatusAt;
+    }
+
+    public OffsetDateTime getIdleSince() {
+        return idleSince;
+    }
+
+    public void setIdleSince(OffsetDateTime idleSince) {
+        this.idleSince = idleSince;
     }
 
     public String getLastErrorCode() {

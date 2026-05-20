@@ -53,6 +53,14 @@ public class VideoSessionService {
             VideoSessionStatus.INTERRUPTED,
             VideoSessionStatus.IDLE_WAIT);
 
+    private static final Set<VideoSessionStatus> LIVEKIT_EVENT_STATUSES = Set.of(
+            VideoSessionStatus.REQUESTING_CLIENT,
+            VideoSessionStatus.CLIENT_ACKED,
+            VideoSessionStatus.ROOM_READY,
+            VideoSessionStatus.STREAMING,
+            VideoSessionStatus.INTERRUPTED,
+            VideoSessionStatus.IDLE_WAIT);
+
     private final VideoSessionRepository repository;
     private final LiveKitRoomService liveKitRoomService;
     private final LiveKitTokenService liveKitTokenService;
@@ -96,6 +104,10 @@ public class VideoSessionService {
             if (existing.isPresent()) {
                 VideoSession session = existing.get();
                 session.setViewerCount(session.getViewerCount() + 1);
+                session.setIdleSince(null);
+                if (session.getStatus() == VideoSessionStatus.IDLE_WAIT) {
+                    session.setStatus(VideoSessionStatus.STREAMING);
+                }
                 session.setUpdatedAt(now());
                 repository.save(session);
                 TokenResult viewerToken = liveKitTokenService.createViewerToken(session.getRoomName(), user.userId());
@@ -129,6 +141,7 @@ public class VideoSessionService {
                 session.getRoomName(), session.getRobotId(), session.getDeviceId());
         String commandId = "cmd_" + compactUuid();
         session.setCommandId(commandId);
+        session.setCommandRequestedAt(now());
         transition(session, VideoSessionStatus.REQUESTING_CLIENT, "video.client.requested", Map.of(
                 "sessionId", session.getSessionId(),
                 "commandId", commandId,
@@ -176,14 +189,10 @@ public class VideoSessionService {
         VideoSession session = requireSession(sessionId);
         session.setViewerCount(Math.max(0, session.getViewerCount() - 1));
         if (session.getViewerCount() == 0) {
-            transition(session, VideoSessionStatus.STOPPING, "video.session.stopping", session);
-            session.setEndedAt(now());
-            commandService.sendStop(session.getRobotId(), Map.of(
+            session.setIdleSince(now());
+            transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
                     "sessionId", session.getSessionId(),
-                    "commandId", "cmd_" + compactUuid(),
-                    "roomName", session.getRoomName()));
-            liveKitRoomService.deleteRoom(session.getRoomName());
-            transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
+                    "idleReleaseDelaySeconds", properties.getSession().getIdleReleaseDelaySeconds()));
         } else {
             emit("video.viewer.changed", session);
         }
@@ -206,6 +215,7 @@ public class VideoSessionService {
             session.setQuality(request.getQuality());
         }
         session.setRoomName("media." + session.getRobotId() + "." + session.getDeviceId() + "." + session.getChannel());
+        session.setCommandRequestedAt(now());
         transition(session, VideoSessionStatus.REQUESTING_CLIENT, "video.track.switching", session);
         session.setUpdatedAt(now());
         repository.save(session);
@@ -273,6 +283,7 @@ public class VideoSessionService {
     public void handleClientAck(String sessionId, boolean success, String message) {
         VideoSession session = requireSession(sessionId);
         if (success) {
+            session.setLastStatusAt(now());
             transition(session, VideoSessionStatus.CLIENT_ACKED, "video.client.acked", Map.of(
                     "sessionId", sessionId,
                     "message", safeMessage(message)));
@@ -302,6 +313,7 @@ public class VideoSessionService {
             String errorCode,
             String message) {
         VideoSession session = requireSession(sessionId);
+        session.setLastStatusAt(now());
         String normalized = status == null ? "" : status.trim().toLowerCase();
         switch (normalized) {
             case "ack", "acked" -> transition(session, VideoSessionStatus.CLIENT_ACKED, "video.client.acked", session);
@@ -333,6 +345,95 @@ public class VideoSessionService {
         repository.save(session);
     }
 
+    /**
+     * 处理 LiveKit Track 发布事件。
+     *
+     * @param roomName 房间名
+     * @param trackSid Track SID
+     * @param trackName Track 名称
+     */
+    @Transactional
+    public void handleLiveKitTrackPublished(String roomName, String trackSid, String trackName) {
+        VideoSession session = requireSessionByRoomName(roomName);
+        session.setTrackSid(trackSid);
+        session.setTrackName(trackName == null || trackName.isBlank()
+                ? "video." + session.getChannel() + "." + session.getQuality()
+                : trackName);
+        session.setStartedAt(session.getStartedAt() == null ? now() : session.getStartedAt());
+        session.setLastStatusAt(now());
+        transition(session, VideoSessionStatus.STREAMING, "video.track.published", session);
+        emit("video.session.streaming", session);
+        repository.save(session);
+    }
+
+    /**
+     * 处理 LiveKit Track 取消发布或发布者离开事件。
+     *
+     * @param roomName 房间名
+     * @param message 事件说明
+     */
+    @Transactional
+    public void handleLiveKitTrackInterrupted(String roomName, String message) {
+        VideoSession session = requireSessionByRoomName(roomName);
+        session.setLastStatusAt(now());
+        transition(session, VideoSessionStatus.INTERRUPTED, "video.session.interrupted", Map.of(
+                "sessionId", session.getSessionId(),
+                "roomName", roomName,
+                "message", safeMessage(message)));
+        repository.save(session);
+    }
+
+    /**
+     * 处理 LiveKit 房间结束事件。
+     *
+     * @param roomName 房间名
+     */
+    @Transactional
+    public void handleLiveKitRoomFinished(String roomName) {
+        VideoSession session = requireSessionByRoomName(roomName);
+        session.setEndedAt(now());
+        transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
+        repository.save(session);
+    }
+
+    /**
+     * 标记会话超时。
+     *
+     * @param sessionId 会话 ID
+     * @param errorCode 错误码
+     * @param message 错误说明
+     */
+    @Transactional
+    public void markTimeout(String sessionId, String errorCode, String message) {
+        VideoSession session = requireSession(sessionId);
+        session.setEndedAt(now());
+        markFailed(session, errorCode, message, "video.session.failed");
+        session.setUpdatedAt(now());
+        repository.save(session);
+    }
+
+    /**
+     * 释放空闲会话。
+     *
+     * @param sessionId 会话 ID
+     */
+    @Transactional
+    public void releaseIdleSession(String sessionId) {
+        VideoSession session = requireSession(sessionId);
+        if (session.getStatus() != VideoSessionStatus.IDLE_WAIT || session.getViewerCount() > 0) {
+            return;
+        }
+        transition(session, VideoSessionStatus.STOPPING, "video.session.stopping", session);
+        commandService.sendStop(session.getRobotId(), Map.of(
+                "sessionId", session.getSessionId(),
+                "commandId", "cmd_" + compactUuid(),
+                "roomName", session.getRoomName()));
+        liveKitRoomService.deleteRoom(session.getRoomName());
+        session.setEndedAt(now());
+        transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
+        repository.save(session);
+    }
+
     public List<VideoSessionResponse> recent(CurrentUser user) {
         return repository.findTop20ByCreatedByOrderByCreatedAtDesc(user.userId()).stream()
                 .map(session -> VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null))
@@ -342,6 +443,11 @@ public class VideoSessionService {
     private VideoSession requireSession(String sessionId) {
         return repository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Video session not found: " + sessionId));
+    }
+
+    private VideoSession requireSessionByRoomName(String roomName) {
+        return repository.findFirstByRoomNameAndStatusInOrderByCreatedAtDesc(roomName, LIVEKIT_EVENT_STATUSES)
+                .orElseThrow(() -> new IllegalArgumentException("Video session not found by roomName: " + roomName));
     }
 
     private String roomName(CreateVideoSessionRequest request) {

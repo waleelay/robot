@@ -4,6 +4,7 @@ import com.robot.mediaserver.video.model.VideoChannel;
 import com.robot.mediaserver.video.model.VideoQuality;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -33,6 +34,35 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
             VideoChannel channel,
             VideoQuality quality,
             Collection<VideoSessionStatus> statuses);
+
+    /**
+     * 按房间名查询可处理的最近会话。
+     *
+     * @param roomName LiveKit 房间名
+     * @param statuses 状态集合
+     * @return 最近会话
+     */
+    Optional<VideoSession> findFirstByRoomNameAndStatusInOrderByCreatedAtDesc(
+            String roomName,
+            Collection<VideoSessionStatus> statuses);
+
+    /**
+     * 查询指定状态且更新时间早于阈值的会话。
+     *
+     * @param status 会话状态
+     * @param updatedAt 更新时间阈值
+     * @return 会话列表
+     */
+    List<VideoSession> findByStatusAndUpdatedAtBefore(VideoSessionStatus status, OffsetDateTime updatedAt);
+
+    /**
+     * 查询空闲等待超时的会话。
+     *
+     * @param status 会话状态
+     * @param idleSince 空闲起始时间阈值
+     * @return 会话列表
+     */
+    List<VideoSession> findByStatusAndIdleSinceBefore(VideoSessionStatus status, OffsetDateTime idleSince);
 
     /**
      * 查询用户最近创建的实时视频会话。
