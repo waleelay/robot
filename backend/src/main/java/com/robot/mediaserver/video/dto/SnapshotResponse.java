@@ -17,5 +17,6 @@ public record SnapshotResponse(
         String previewObjectKey,
         String errorCode,
         String errorMessage,
+        OffsetDateTime officialCapturedAt,
         OffsetDateTime createdAt) {
 }

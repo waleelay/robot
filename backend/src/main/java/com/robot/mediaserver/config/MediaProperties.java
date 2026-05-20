@@ -191,6 +191,7 @@ public class MediaProperties {
         private String accessKey;
         private String secretKey;
         private String bucket;
+        private boolean enabled;
 
         public String getEndpoint() {
             return endpoint;
@@ -222,6 +223,14 @@ public class MediaProperties {
 
         public void setBucket(String bucket) {
             this.bucket = bucket;
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
         }
     }
 

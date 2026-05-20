@@ -32,6 +32,7 @@ export LIVEKIT_URL='ws://localhost:7880'
 export LIVEKIT_API_KEY='devkey'
 export LIVEKIT_API_SECRET='dev-secret-dev-secret-dev-secret-32'
 export LIVEKIT_ROOM_API_ENABLED='false'
+export MINIO_ENABLED='false'
 export MQTT_BROKER_URL='tcp://localhost:1883'
 export MQTT_ENABLED='false'
 ```
@@ -54,6 +55,9 @@ POST /api/media/video-sessions/{sessionId}/switch-channel
 POST /api/media/video-sessions/{sessionId}/snapshots
 GET  /api/media/video-sessions/{sessionId}/snapshots
 GET  /api/media/video-sessions/{sessionId}/events
+POST /api/internal/media/snapshots/{snapshotId}/complete
+POST /api/internal/media/snapshots/{snapshotId}/complete-file
+POST /api/internal/media/snapshots/{snapshotId}/fail
 WS   /ws/media
 ```
 
@@ -66,6 +70,42 @@ export LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS='20'
 ```
 
 开启后，创建实时视频会话时会调用 LiveKit RoomService 创建 Room；最后观看者停止后会尝试删除 Room。
+
+抓拍图片上传默认关闭，便于没有 MinIO 环境时先联调抓拍状态。真实联调时可开启：
+
+```bash
+export MINIO_ENABLED='true'
+export MINIO_ENDPOINT='http://localhost:9000'
+export MINIO_ACCESS_KEY='minioadmin'
+export MINIO_SECRET_KEY='minioadmin'
+export MINIO_BUCKET='robot-media'
+```
+
+Snapshot Worker 截帧完成后可通过 JSON 回写已存在的对象 Key：
+
+```http
+POST /api/internal/media/snapshots/{snapshotId}/complete
+```
+
+```json
+{
+  "officialObjectKey": "snapshots/2026/05/20/snap_xxx.jpg",
+  "officialCapturedAt": "2026-05-20T10:30:00+08:00",
+  "timeDeltaMs": 12
+}
+```
+
+也可以通过 multipart 上传图片：
+
+```http
+POST /api/internal/media/snapshots/{snapshotId}/complete-file
+```
+
+失败时回写：
+
+```http
+POST /api/internal/media/snapshots/{snapshotId}/fail
+```
 
 开发阶段提供两个 mock 接口，用于在云接入客户端未接入时推进状态：
 

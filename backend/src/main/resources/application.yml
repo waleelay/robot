@@ -29,6 +29,7 @@ media:
     access-key: ${MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:robot-media}
+    enabled: ${MINIO_ENABLED:false}
   session:
     client-ack-timeout-seconds: ${CLIENT_ACK_TIMEOUT_SECONDS:10}
     track-publish-timeout-seconds: ${TRACK_PUBLISH_TIMEOUT_SECONDS:20}

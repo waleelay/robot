@@ -1,7 +1,10 @@
 package com.robot.mediaserver.video.service;
 
 import com.robot.mediaserver.auth.CurrentUser;
+import com.robot.mediaserver.storage.MinioStorageService;
+import com.robot.mediaserver.video.dto.CompleteSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
+import com.robot.mediaserver.video.dto.FailSnapshotRequest;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.event.MediaEventLogService;
 import com.robot.mediaserver.video.model.MediaSnapshot;
@@ -15,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 抓拍任务服务。
@@ -30,10 +34,15 @@ public class SnapshotService {
 
     private final MediaSnapshotRepository repository;
     private final MediaEventLogService eventLogService;
+    private final MinioStorageService minioStorageService;
 
-    public SnapshotService(MediaSnapshotRepository repository, MediaEventLogService eventLogService) {
+    public SnapshotService(
+            MediaSnapshotRepository repository,
+            MediaEventLogService eventLogService,
+            MinioStorageService minioStorageService) {
         this.repository = repository;
         this.eventLogService = eventLogService;
+        this.minioStorageService = minioStorageService;
     }
 
     /**
@@ -87,6 +96,63 @@ public class SnapshotService {
                 .toList();
     }
 
+    /**
+     * 完成抓拍任务。
+     *
+     * <p>Snapshot Worker 可直接传 objectKey，也可上传文件由本服务写入 MinIO。</p>
+     *
+     * @param snapshotId 抓拍任务 ID
+     * @param request 完成请求
+     * @param file 抓拍图片文件
+     * @return 抓拍响应
+     */
+    @Transactional
+    public SnapshotResponse complete(String snapshotId, CompleteSnapshotRequest request, MultipartFile file) {
+        MediaSnapshot snapshot = requireSnapshot(snapshotId);
+        String objectKey = request.getOfficialObjectKey();
+        if ((objectKey == null || objectKey.isBlank()) && file != null && !file.isEmpty()) {
+            objectKey = objectKey(snapshot, file.getOriginalFilename());
+            uploadSnapshotFile(objectKey, file);
+        }
+        if (objectKey == null || objectKey.isBlank()) {
+            throw new IllegalArgumentException("officialObjectKey or file is required");
+        }
+        snapshot.setStatus(SnapshotStatus.COMPLETED);
+        snapshot.setOfficialObjectKey(objectKey);
+        snapshot.setOfficialCapturedAt(request.getOfficialCapturedAt() == null ? now() : request.getOfficialCapturedAt());
+        snapshot.setTimeDeltaMs(request.getTimeDeltaMs());
+        snapshot.setUpdatedAt(now());
+        repository.save(snapshot);
+        eventLogService.recordAndPublish(snapshot.getSessionId(), "snapshot.completed", Map.of(
+                "snapshotId", snapshot.getSnapshotId(),
+                "officialObjectKey", snapshot.getOfficialObjectKey(),
+                "capturedAt", snapshot.getOfficialCapturedAt().toString(),
+                "source", snapshot.getSource()));
+        return toResponse(snapshot);
+    }
+
+    /**
+     * 标记抓拍任务失败。
+     *
+     * @param snapshotId 抓拍任务 ID
+     * @param request 失败请求
+     * @return 抓拍响应
+     */
+    @Transactional
+    public SnapshotResponse fail(String snapshotId, FailSnapshotRequest request) {
+        MediaSnapshot snapshot = requireSnapshot(snapshotId);
+        snapshot.setStatus(SnapshotStatus.FAILED);
+        snapshot.setErrorCode(request.getErrorCode());
+        snapshot.setErrorMessage(request.getErrorMessage());
+        snapshot.setUpdatedAt(now());
+        repository.save(snapshot);
+        eventLogService.recordAndPublish(snapshot.getSessionId(), "snapshot.failed", Map.of(
+                "snapshotId", snapshot.getSnapshotId(),
+                "errorCode", safeValue(snapshot.getErrorCode()),
+                "message", safeValue(snapshot.getErrorMessage())));
+        return toResponse(snapshot);
+    }
+
     private SnapshotResponse toResponse(MediaSnapshot snapshot) {
         return new SnapshotResponse(
                 snapshot.getSnapshotId(),
@@ -97,7 +163,48 @@ public class SnapshotService {
                 snapshot.getPreviewObjectKey(),
                 snapshot.getErrorCode(),
                 snapshot.getErrorMessage(),
+                snapshot.getOfficialCapturedAt(),
                 snapshot.getCreatedAt());
+    }
+
+    private MediaSnapshot requireSnapshot(String snapshotId) {
+        return repository.findById(snapshotId)
+                .orElseThrow(() -> new IllegalArgumentException("Snapshot not found: " + snapshotId));
+    }
+
+    private void uploadSnapshotFile(String objectKey, MultipartFile file) {
+        try {
+            minioStorageService.upload(objectKey, file.getInputStream(), file.getSize(), contentType(file));
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to upload snapshot file", ex);
+        }
+    }
+
+    private String objectKey(MediaSnapshot snapshot, String originalFilename) {
+        String suffix = extension(originalFilename);
+        OffsetDateTime now = now();
+        return "snapshots/%04d/%02d/%02d/%s%s".formatted(
+                now.getYear(),
+                now.getMonthValue(),
+                now.getDayOfMonth(),
+                snapshot.getSnapshotId(),
+                suffix);
+    }
+
+    private String extension(String filename) {
+        if (filename == null || !filename.contains(".")) {
+            return ".jpg";
+        }
+        String suffix = filename.substring(filename.lastIndexOf('.'));
+        return suffix.length() > 10 ? ".jpg" : suffix;
+    }
+
+    private String contentType(MultipartFile file) {
+        return file.getContentType() == null ? "image/jpeg" : file.getContentType();
+    }
+
+    private String safeValue(String value) {
+        return value == null ? "" : value;
     }
 
     private OffsetDateTime now() {
