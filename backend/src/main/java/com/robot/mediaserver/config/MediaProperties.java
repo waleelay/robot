@@ -77,6 +77,9 @@ public class MediaProperties {
         private String apiKey;
         private String apiSecret;
         private long tokenTtlSeconds = 600;
+        private boolean roomApiEnabled;
+        private int roomEmptyTimeoutSeconds = 60;
+        private int roomDepartureTimeoutSeconds = 20;
 
         public String getUrl() {
             return url;
@@ -108,6 +111,30 @@ public class MediaProperties {
 
         public void setTokenTtlSeconds(long tokenTtlSeconds) {
             this.tokenTtlSeconds = tokenTtlSeconds;
+        }
+
+        public boolean isRoomApiEnabled() {
+            return roomApiEnabled;
+        }
+
+        public void setRoomApiEnabled(boolean roomApiEnabled) {
+            this.roomApiEnabled = roomApiEnabled;
+        }
+
+        public int getRoomEmptyTimeoutSeconds() {
+            return roomEmptyTimeoutSeconds;
+        }
+
+        public void setRoomEmptyTimeoutSeconds(int roomEmptyTimeoutSeconds) {
+            this.roomEmptyTimeoutSeconds = roomEmptyTimeoutSeconds;
+        }
+
+        public int getRoomDepartureTimeoutSeconds() {
+            return roomDepartureTimeoutSeconds;
+        }
+
+        public void setRoomDepartureTimeoutSeconds(int roomDepartureTimeoutSeconds) {
+            this.roomDepartureTimeoutSeconds = roomDepartureTimeoutSeconds;
         }
     }
 

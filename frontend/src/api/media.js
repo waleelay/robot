@@ -30,6 +30,10 @@ export function createSnapshot(sessionId, data) {
   return client.post(`/api/media/video-sessions/${sessionId}/snapshots`, data).then(res => res.data)
 }
 
+export function getSessionEvents(sessionId) {
+  return client.get(`/api/media/video-sessions/${sessionId}/events`).then(res => res.data)
+}
+
 export function mockClientAcked(sessionId) {
   return client.post(`/api/media/video-sessions/${sessionId}/_mock/client-acked`).then(res => res.data)
 }

@@ -41,6 +41,7 @@
               <el-button :disabled="!session" @click="switchToVisible">切可见光</el-button>
               <el-button :disabled="!session" @click="switchToThermal">切热成像</el-button>
               <el-button :disabled="!session" @click="snapshot">抓拍</el-button>
+              <el-button :disabled="!session" @click="loadSessionEvents">查询事件</el-button>
               <el-button :disabled="!session" @click="mockStreaming">模拟推流成功</el-button>
             </div>
           </el-form>
@@ -82,6 +83,7 @@ import { Room, RoomEvent } from 'livekit-client'
 import {
   createSnapshot,
   createVideoSession,
+  getSessionEvents,
   mockClientAcked,
   mockTrackPublished,
   stopVideoSession,
@@ -180,6 +182,11 @@ export default {
       const updated = await mockTrackPublished(this.session.sessionId, 'TR_debug_' + Date.now())
       this.session = updated
       this.log('API mockTrackPublished', updated)
+    },
+    async loadSessionEvents() {
+      if (!this.session) return
+      const eventLogs = await getSessionEvents(this.session.sessionId)
+      this.log('API sessionEvents', eventLogs)
     },
     async connectLiveKit(session) {
       if (!session.viewerToken || !session.livekitUrl) {

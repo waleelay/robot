@@ -15,6 +15,9 @@ media:
     api-key: ${LIVEKIT_API_KEY:devkey}
     api-secret: ${LIVEKIT_API_SECRET:dev-secret-dev-secret-dev-secret-32}
     token-ttl-seconds: ${LIVEKIT_TOKEN_TTL_SECONDS:600}
+    room-api-enabled: ${LIVEKIT_ROOM_API_ENABLED:false}
+    room-empty-timeout-seconds: ${LIVEKIT_ROOM_EMPTY_TIMEOUT_SECONDS:60}
+    room-departure-timeout-seconds: ${LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS:20}
   mqtt:
     broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
     username: ${MQTT_USERNAME:}

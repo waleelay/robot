@@ -53,6 +53,30 @@ public class LiveKitTokenService {
         return createToken(roomName, "robot:" + robotId + ":" + deviceId, true, false);
     }
 
+    /**
+     * 生成 LiveKit 管理接口 Token。
+     *
+     * @return Token 和过期时间
+     */
+    public TokenResult createAdminToken() {
+        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
+                .plusSeconds(properties.getLivekit().getTokenTtlSeconds());
+        Map<String, Object> videoGrant = new HashMap<>();
+        videoGrant.put("roomCreate", true);
+        videoGrant.put("roomList", true);
+        videoGrant.put("roomAdmin", true);
+
+        SecretKey key = Keys.hmacShaKeyFor(normalizedSecret().getBytes(StandardCharsets.UTF_8));
+        String token = Jwts.builder()
+                .issuer(properties.getLivekit().getApiKey())
+                .subject("media-service")
+                .expiration(Date.from(expiresAt.toInstant()))
+                .claim("video", videoGrant)
+                .signWith(key)
+                .compact();
+        return new TokenResult(token, expiresAt);
+    }
+
     private TokenResult createToken(String roomName, String identity, boolean canPublish, boolean canSubscribe) {
         OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
                 .plusSeconds(properties.getLivekit().getTokenTtlSeconds());

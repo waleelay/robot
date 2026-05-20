@@ -2,6 +2,7 @@ package com.robot.mediaserver.video.service;
 
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.livekit.LiveKitRoomService;
 import com.robot.mediaserver.livekit.LiveKitTokenService;
 import com.robot.mediaserver.livekit.LiveKitTokenService.TokenResult;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
@@ -53,6 +54,7 @@ public class VideoSessionService {
             VideoSessionStatus.IDLE_WAIT);
 
     private final VideoSessionRepository repository;
+    private final LiveKitRoomService liveKitRoomService;
     private final LiveKitTokenService liveKitTokenService;
     private final RobotMediaCommandService commandService;
     private final MediaEventLogService eventLogService;
@@ -60,11 +62,13 @@ public class VideoSessionService {
 
     public VideoSessionService(
             VideoSessionRepository repository,
+            LiveKitRoomService liveKitRoomService,
             LiveKitTokenService liveKitTokenService,
             RobotMediaCommandService commandService,
             MediaEventLogService eventLogService,
             MediaProperties properties) {
         this.repository = repository;
+        this.liveKitRoomService = liveKitRoomService;
         this.liveKitTokenService = liveKitTokenService;
         this.commandService = commandService;
         this.eventLogService = eventLogService;
@@ -112,6 +116,10 @@ public class VideoSessionService {
         session.setUpdatedAt(now());
         repository.save(session);
         emit("video.session.created", session);
+        liveKitRoomService.createRoom(session.getRoomName());
+        emit("video.room.ready", Map.of(
+                "sessionId", session.getSessionId(),
+                "roomName", session.getRoomName()));
 
         // 发布 Token 只允许云接入客户端发布本机器人对应 Track，不允许订阅其他视频。
         TokenResult publisherToken = liveKitTokenService.createPublisherToken(
@@ -171,6 +179,7 @@ public class VideoSessionService {
                     "sessionId", session.getSessionId(),
                     "commandId", "cmd_" + compactUuid(),
                     "roomName", session.getRoomName()));
+            liveKitRoomService.deleteRoom(session.getRoomName());
             transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
         } else {
             emit("video.viewer.changed", session);
@@ -364,7 +373,13 @@ public class VideoSessionService {
     }
 
     private String resolveSessionId(Object data) {
-        return data instanceof VideoSession session ? session.getSessionId() : null;
+        if (data instanceof VideoSession session) {
+            return session.getSessionId();
+        }
+        if (data instanceof Map<?, ?> map && map.get("sessionId") != null) {
+            return String.valueOf(map.get("sessionId"));
+        }
+        return null;
     }
 
     private String safeMessage(String message) {

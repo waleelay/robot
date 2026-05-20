@@ -31,6 +31,7 @@ export REDIS_PORT='6379'
 export LIVEKIT_URL='ws://localhost:7880'
 export LIVEKIT_API_KEY='devkey'
 export LIVEKIT_API_SECRET='dev-secret-dev-secret-dev-secret-32'
+export LIVEKIT_ROOM_API_ENABLED='false'
 export MQTT_BROKER_URL='tcp://localhost:1883'
 export MQTT_ENABLED='false'
 ```
@@ -54,6 +55,16 @@ POST /api/media/video-sessions/{sessionId}/snapshots
 GET  /api/media/video-sessions/{sessionId}/events
 WS   /ws/media
 ```
+
+LiveKit Room 管理默认关闭，便于没有 LiveKit 环境时先开发 API 和 MQTT。真实联调时可开启：
+
+```bash
+export LIVEKIT_ROOM_API_ENABLED='true'
+export LIVEKIT_ROOM_EMPTY_TIMEOUT_SECONDS='60'
+export LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS='20'
+```
+
+开启后，创建实时视频会话时会调用 LiveKit RoomService 创建 Room；最后观看者停止后会尝试删除 Room。
 
 开发阶段提供两个 mock 接口，用于在云接入客户端未接入时推进状态：
 
