@@ -85,7 +85,7 @@ public class RobotMediaCommandService {
         if (client != null && client.isConnected()) {
             return client;
         }
-        client = new MqttClient(properties.getMqtt().getBrokerUrl(), properties.getMqtt().getClientId());
+        client = new MqttClient(properties.getMqtt().getBrokerUrl(), properties.getMqtt().getClientId() + "-publisher");
         MqttConnectOptions options = new MqttConnectOptions();
         options.setAutomaticReconnect(true);
         options.setCleanSession(true);

@@ -51,6 +51,7 @@ POST /api/media/video-sessions/{sessionId}/token
 POST /api/media/video-sessions/{sessionId}/stop
 POST /api/media/video-sessions/{sessionId}/switch-channel
 POST /api/media/video-sessions/{sessionId}/snapshots
+GET  /api/media/video-sessions/{sessionId}/events
 WS   /ws/media
 ```
 
@@ -59,6 +60,70 @@ WS   /ws/media
 ```text
 POST /api/media/video-sessions/{sessionId}/_mock/client-acked
 POST /api/media/video-sessions/{sessionId}/_mock/track-published/{trackSid}
+```
+
+## MQTT 回执与状态上报
+
+启用真实 EMQX 时设置：
+
+```bash
+export MQTT_ENABLED='true'
+```
+
+媒体服务会下发：
+
+```text
+robot/{robotId}/media/video/start
+robot/{robotId}/media/video/stop
+robot/{robotId}/media/video/switch-channel
+```
+
+云接入客户端需要上报 ACK：
+
+```text
+robot/{robotId}/media/video/ack
+```
+
+```json
+{
+  "commandId": "cmd_xxx",
+  "sessionId": "vs_xxx",
+  "success": true,
+  "message": "accepted",
+  "timestamp": "2026-05-20T09:30:00+08:00"
+}
+```
+
+云接入客户端需要上报状态：
+
+```text
+robot/{robotId}/media/video/status
+```
+
+```json
+{
+  "sessionId": "vs_xxx",
+  "status": "streaming",
+  "trackSid": "TR_xxx",
+  "trackName": "video.visible.sub",
+  "message": "track published",
+  "timestamp": "2026-05-20T09:30:05+08:00"
+}
+```
+
+支持的 `status` 值：
+
+```text
+acked
+room_ready
+publishing
+streaming
+track_published
+interrupted
+stopped
+closed
+failed
+error
 ```
 
 ## 前端调试台

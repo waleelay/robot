@@ -10,12 +10,12 @@ import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
+import com.robot.mediaserver.video.event.MediaEventLogService;
 import com.robot.mediaserver.video.messaging.RobotMediaCommandService;
 import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
-import com.robot.mediaserver.ws.MediaWebSocketPublisher;
 import jakarta.transaction.Transactional;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -55,19 +55,19 @@ public class VideoSessionService {
     private final VideoSessionRepository repository;
     private final LiveKitTokenService liveKitTokenService;
     private final RobotMediaCommandService commandService;
-    private final MediaWebSocketPublisher webSocketPublisher;
+    private final MediaEventLogService eventLogService;
     private final MediaProperties properties;
 
     public VideoSessionService(
             VideoSessionRepository repository,
             LiveKitTokenService liveKitTokenService,
             RobotMediaCommandService commandService,
-            MediaWebSocketPublisher webSocketPublisher,
+            MediaEventLogService eventLogService,
             MediaProperties properties) {
         this.repository = repository;
         this.liveKitTokenService = liveKitTokenService;
         this.commandService = commandService;
-        this.webSocketPublisher = webSocketPublisher;
+        this.eventLogService = eventLogService;
         this.properties = properties;
     }
 
@@ -92,7 +92,7 @@ public class VideoSessionService {
                 session.setUpdatedAt(now());
                 repository.save(session);
                 TokenResult viewerToken = liveKitTokenService.createViewerToken(session.getRoomName(), user.userId());
-                publish("video.session.reused", session);
+                emit("video.session.reused", session);
                 return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
             }
         }
@@ -111,14 +111,17 @@ public class VideoSessionService {
         session.setCreatedAt(now());
         session.setUpdatedAt(now());
         repository.save(session);
-        publish("video.session.created", session);
+        emit("video.session.created", session);
 
         // 发布 Token 只允许云接入客户端发布本机器人对应 Track，不允许订阅其他视频。
         TokenResult publisherToken = liveKitTokenService.createPublisherToken(
                 session.getRoomName(), session.getRobotId(), session.getDeviceId());
         String commandId = "cmd_" + compactUuid();
         session.setCommandId(commandId);
-        session.setStatus(VideoSessionStatus.REQUESTING_CLIENT);
+        transition(session, VideoSessionStatus.REQUESTING_CLIENT, "video.client.requested", Map.of(
+                "sessionId", session.getSessionId(),
+                "commandId", commandId,
+                "timeoutSeconds", properties.getSession().getClientAckTimeoutSeconds()));
         session.setUpdatedAt(now());
         repository.save(session);
 
@@ -134,10 +137,6 @@ public class VideoSessionService {
                 publisherToken.token(),
                 "robot:" + session.getRobotId() + ":" + session.getDeviceId(),
                 publisherToken.expiresAt()));
-        publish("video.client.requested", Map.of(
-                "sessionId", session.getSessionId(),
-                "commandId", commandId,
-                "timeoutSeconds", properties.getSession().getClientAckTimeoutSeconds()));
 
         TokenResult viewerToken = liveKitTokenService.createViewerToken(session.getRoomName(), user.userId());
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
@@ -166,17 +165,15 @@ public class VideoSessionService {
         VideoSession session = requireSession(sessionId);
         session.setViewerCount(Math.max(0, session.getViewerCount() - 1));
         if (session.getViewerCount() == 0) {
-            session.setStatus(VideoSessionStatus.STOPPING);
+            transition(session, VideoSessionStatus.STOPPING, "video.session.stopping", session);
             session.setEndedAt(now());
             commandService.sendStop(session.getRobotId(), Map.of(
                     "sessionId", session.getSessionId(),
                     "commandId", "cmd_" + compactUuid(),
                     "roomName", session.getRoomName()));
-            publish("video.session.stopping", session);
-            session.setStatus(VideoSessionStatus.CLOSED);
-            publish("video.session.closed", session);
+            transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
         } else {
-            publish("video.viewer.changed", session);
+            emit("video.viewer.changed", session);
         }
         session.setUpdatedAt(now());
         repository.save(session);
@@ -197,7 +194,7 @@ public class VideoSessionService {
             session.setQuality(request.getQuality());
         }
         session.setRoomName("media." + session.getRobotId() + "." + session.getDeviceId() + "." + session.getChannel());
-        session.setStatus(VideoSessionStatus.REQUESTING_CLIENT);
+        transition(session, VideoSessionStatus.REQUESTING_CLIENT, "video.track.switching", session);
         session.setUpdatedAt(now());
         repository.save(session);
         commandService.sendSwitchChannel(session.getRobotId(), Map.of(
@@ -206,7 +203,6 @@ public class VideoSessionService {
                 "channel", session.getChannel(),
                 "quality", session.getQuality(),
                 "roomName", session.getRoomName()));
-        publish("video.track.switching", session);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
 
@@ -223,7 +219,7 @@ public class VideoSessionService {
         }
         String snapshotId = "snap_" + compactUuid();
         SnapshotResponse response = new SnapshotResponse(snapshotId, "PROCESSING", "livekit_track", request.getClientPreviewObjectKey() != null, now());
-        webSocketPublisher.publish("snapshot.requested", Map.of(
+        eventLogService.recordAndPublish(sessionId, "snapshot.requested", Map.of(
                 "snapshotId", snapshotId,
                 "sessionId", sessionId,
                 "trackSid", request.getTrackSid(),
@@ -237,10 +233,9 @@ public class VideoSessionService {
     @Transactional
     public VideoSessionResponse markClientAcked(String sessionId) {
         VideoSession session = requireSession(sessionId);
-        session.setStatus(VideoSessionStatus.CLIENT_ACKED);
+        transition(session, VideoSessionStatus.CLIENT_ACKED, "video.client.acked", session);
         session.setUpdatedAt(now());
         repository.save(session);
-        publish("video.client.acked", session);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
 
@@ -254,13 +249,83 @@ public class VideoSessionService {
         VideoSession session = requireSession(sessionId);
         session.setTrackSid(trackSid);
         session.setTrackName("video." + session.getChannel() + "." + session.getQuality());
-        session.setStatus(VideoSessionStatus.STREAMING);
         session.setStartedAt(now());
+        transition(session, VideoSessionStatus.STREAMING, "video.track.published", session);
         session.setUpdatedAt(now());
         repository.save(session);
-        publish("video.track.published", session);
-        publish("video.session.streaming", session);
+        emit("video.session.streaming", session);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
+    }
+
+    /**
+     * 处理云接入客户端 ACK。
+     *
+     * @param sessionId 会话 ID
+     * @param success 是否成功
+     * @param message 回执消息
+     */
+    @Transactional
+    public void handleClientAck(String sessionId, boolean success, String message) {
+        VideoSession session = requireSession(sessionId);
+        if (success) {
+            transition(session, VideoSessionStatus.CLIENT_ACKED, "video.client.acked", Map.of(
+                    "sessionId", sessionId,
+                    "message", safeMessage(message)));
+        } else {
+            markFailed(session, "CLIENT_ACK_FAILED", safeMessage(message), "video.session.failed");
+        }
+        session.setUpdatedAt(now());
+        repository.save(session);
+    }
+
+    /**
+     * 处理云接入客户端媒体状态上报。
+     *
+     * @param sessionId 会话 ID
+     * @param status 客户端状态
+     * @param trackSid Track SID
+     * @param trackName Track 名称
+     * @param errorCode 错误码
+     * @param message 状态消息
+     */
+    @Transactional
+    public void handleClientStatus(
+            String sessionId,
+            String status,
+            String trackSid,
+            String trackName,
+            String errorCode,
+            String message) {
+        VideoSession session = requireSession(sessionId);
+        String normalized = status == null ? "" : status.trim().toLowerCase();
+        switch (normalized) {
+            case "ack", "acked" -> transition(session, VideoSessionStatus.CLIENT_ACKED, "video.client.acked", session);
+            case "room_ready", "publishing" -> transition(session, VideoSessionStatus.ROOM_READY, "video.room.ready", session);
+            case "streaming", "track_published" -> {
+                if (trackSid != null && !trackSid.isBlank()) {
+                    session.setTrackSid(trackSid);
+                }
+                session.setTrackName(trackName == null || trackName.isBlank()
+                        ? "video." + session.getChannel() + "." + session.getQuality()
+                        : trackName);
+                session.setStartedAt(session.getStartedAt() == null ? now() : session.getStartedAt());
+                transition(session, VideoSessionStatus.STREAMING, "video.session.streaming", session);
+            }
+            case "interrupted" -> transition(session, VideoSessionStatus.INTERRUPTED, "video.session.interrupted", Map.of(
+                    "sessionId", sessionId,
+                    "message", safeMessage(message)));
+            case "stopped", "closed" -> {
+                session.setEndedAt(now());
+                transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
+            }
+            case "failed", "error" -> markFailed(session, errorCode == null ? "CLIENT_STATUS_FAILED" : errorCode, safeMessage(message), "video.session.failed");
+            default -> eventLogService.recordAndPublish(sessionId, "video.client.status", Map.of(
+                    "sessionId", sessionId,
+                    "status", safeMessage(status),
+                    "message", safeMessage(message)));
+        }
+        session.setUpdatedAt(now());
+        repository.save(session);
     }
 
     public List<VideoSessionResponse> recent(CurrentUser user) {
@@ -278,8 +343,32 @@ public class VideoSessionService {
         return "media." + request.getRobotId() + "." + request.getDeviceId() + "." + request.getChannel();
     }
 
-    private void publish(String event, Object data) {
-        webSocketPublisher.publish(event, data);
+    private void emit(String event, Object data) {
+        eventLogService.recordAndPublish(resolveSessionId(data), event, data);
+    }
+
+    private void transition(VideoSession session, VideoSessionStatus targetStatus, String event, Object payload) {
+        session.setStatus(targetStatus);
+        session.setUpdatedAt(now());
+        eventLogService.recordAndPublish(session.getSessionId(), event, payload);
+    }
+
+    private void markFailed(VideoSession session, String errorCode, String message, String event) {
+        session.setStatus(VideoSessionStatus.FAILED);
+        session.setLastErrorCode(errorCode);
+        session.setLastErrorMessage(message);
+        eventLogService.recordAndPublish(session.getSessionId(), event, Map.of(
+                "sessionId", session.getSessionId(),
+                "errorCode", errorCode,
+                "message", message));
+    }
+
+    private String resolveSessionId(Object data) {
+        return data instanceof VideoSession session ? session.getSessionId() : null;
+    }
+
+    private String safeMessage(String message) {
+        return message == null ? "" : message;
     }
 
     private OffsetDateTime now() {

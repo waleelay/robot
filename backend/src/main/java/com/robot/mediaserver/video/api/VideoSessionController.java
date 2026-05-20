@@ -4,10 +4,12 @@ import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.auth.CurrentUserResolver;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
+import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
+import com.robot.mediaserver.video.event.MediaEventLogService;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -34,10 +36,15 @@ public class VideoSessionController {
 
     private final VideoSessionService service;
     private final CurrentUserResolver currentUserResolver;
+    private final MediaEventLogService eventLogService;
 
-    public VideoSessionController(VideoSessionService service, CurrentUserResolver currentUserResolver) {
+    public VideoSessionController(
+            VideoSessionService service,
+            CurrentUserResolver currentUserResolver,
+            MediaEventLogService eventLogService) {
         this.service = service;
         this.currentUserResolver = currentUserResolver;
+        this.eventLogService = eventLogService;
     }
 
     /**
@@ -58,6 +65,17 @@ public class VideoSessionController {
     @GetMapping("/{sessionId}")
     public VideoSessionResponse get(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         return service.get(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    /**
+     * 查询指定会话最近事件日志。
+     *
+     * @param sessionId 会话 ID
+     * @return 事件日志列表
+     */
+    @GetMapping("/{sessionId}/events")
+    public List<MediaEventLogResponse> events(@PathVariable String sessionId) {
+        return eventLogService.recentEvents(sessionId);
     }
 
     /**
