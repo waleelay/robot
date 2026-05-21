@@ -13,14 +13,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/**
- * 实时视频会话超时扫描器。
- *
- * <p>负责处理客户端 ACK 超时、Track 发布超时、断流恢复超时和无人观看延迟释放。</p>
- *
- * @author leelay
- * @date 2026/05/20
- */
 @Component
 public class VideoSessionTimeoutScheduler {
 
@@ -39,9 +31,6 @@ public class VideoSessionTimeoutScheduler {
         this.properties = properties;
     }
 
-    /**
-     * 扫描需要自动推进的实时视频会话。
-     */
     @Scheduled(fixedDelayString = "${media.session.sweep-delay-ms:5000}")
     public void sweep() {
         handleClientAckTimeout();
@@ -70,7 +59,11 @@ public class VideoSessionTimeoutScheduler {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getInterruptedGraceSeconds());
         List<VideoSession> sessions = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.INTERRUPTED, threshold);
         for (VideoSession session : sessions) {
-            markTimeout(session, "TRACK_INTERRUPTED_TIMEOUT", "Track 中断后恢复超时");
+            if (session.getViewerCount() > 0) {
+                videoSessionService.restartSession(session.getSessionId());
+            } else {
+                markTimeout(session, "TRACK_INTERRUPTED_TIMEOUT", "Track 中断后恢复超时");
+            }
         }
     }
 

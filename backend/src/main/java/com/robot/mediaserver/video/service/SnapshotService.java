@@ -12,6 +12,7 @@ import com.robot.mediaserver.video.model.SnapshotStatus;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.repository.MediaSnapshotRepository;
 import jakarta.transaction.Transactional;
+import java.io.ByteArrayInputStream;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -63,6 +64,7 @@ public class SnapshotService {
         snapshot.setRobotId(session.getRobotId());
         snapshot.setDeviceId(session.getDeviceId());
         snapshot.setChannel(session.getChannel());
+        snapshot.setQuality(session.getQuality());
         snapshot.setStatus(SnapshotStatus.PROCESSING);
         snapshot.setPreviewObjectKey(request.getClientPreviewObjectKey());
         snapshot.setPreviewImageHash(request.getPreviewImageHash());
@@ -131,13 +133,28 @@ public class SnapshotService {
         return toResponse(snapshot);
     }
 
-    /**
-     * 标记抓拍任务失败。
-     *
-     * @param snapshotId 抓拍任务 ID
-     * @param request 失败请求
-     * @return 抓拍响应
-     */
+    @Transactional
+    public SnapshotResponse completeBytes(String snapshotId, byte[] bytes, OffsetDateTime capturedAt) {
+        MediaSnapshot snapshot = requireSnapshot(snapshotId);
+        String objectKey = objectKey(snapshot, "snapshot.jpg");
+        minioStorageService.upload(objectKey, new ByteArrayInputStream(bytes), bytes.length, "image/jpeg");
+        snapshot.setStatus(SnapshotStatus.COMPLETED);
+        snapshot.setOfficialObjectKey(objectKey);
+        snapshot.setOfficialCapturedAt(capturedAt == null ? now() : capturedAt);
+        if (snapshot.getClientCapturedAt() != null) {
+            snapshot.setTimeDeltaMs(snapshot.getOfficialCapturedAt().toInstant().toEpochMilli()
+                    - snapshot.getClientCapturedAt().toInstant().toEpochMilli());
+        }
+        snapshot.setUpdatedAt(now());
+        repository.save(snapshot);
+        eventLogService.recordAndPublish(snapshot.getSessionId(), "snapshot.completed", Map.of(
+                "snapshotId", snapshot.getSnapshotId(),
+                "officialObjectKey", snapshot.getOfficialObjectKey(),
+                "capturedAt", snapshot.getOfficialCapturedAt().toString(),
+                "source", snapshot.getSource()));
+        return toResponse(snapshot);
+    }
+
     @Transactional
     public SnapshotResponse fail(String snapshotId, FailSnapshotRequest request) {
         MediaSnapshot snapshot = requireSnapshot(snapshotId);

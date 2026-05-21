@@ -13,14 +13,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
-/**
- * 媒体业务状态 WebSocket 广播器。
- *
- * <p>WebSocket 只承载会话状态、抓拍状态等业务事件，不承载实时音视频流。</p>
- *
- * @author leelay
- * @date 2026/05/19
- */
 @Component
 public class MediaWebSocketPublisher {
 
@@ -33,30 +25,14 @@ public class MediaWebSocketPublisher {
         this.objectMapper = objectMapper;
     }
 
-    /**
-     * 加入 WebSocket 会话。
-     *
-     * @param session WebSocket 会话
-     */
     public void addSession(WebSocketSession session) {
         sessions.add(session);
     }
 
-    /**
-     * 移除 WebSocket 会话。
-     *
-     * @param session WebSocket 会话
-     */
     public void removeSession(WebSocketSession session) {
         sessions.remove(session);
     }
 
-    /**
-     * 广播媒体业务事件。
-     *
-     * @param event 事件名称
-     * @param data 事件数据
-     */
     public void publish(String event, Object data) {
         Map<String, Object> payload = Map.of(
                 "event", event,

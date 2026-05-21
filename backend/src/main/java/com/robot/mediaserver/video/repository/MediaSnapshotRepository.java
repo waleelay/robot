@@ -1,6 +1,7 @@
 package com.robot.mediaserver.video.repository;
 
 import com.robot.mediaserver.video.model.MediaSnapshot;
+import com.robot.mediaserver.video.model.SnapshotStatus;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -19,4 +20,6 @@ public interface MediaSnapshotRepository extends JpaRepository<MediaSnapshot, St
      * @return 抓拍记录列表
      */
     List<MediaSnapshot> findTop20BySessionIdOrderByCreatedAtDesc(String sessionId);
+
+    List<MediaSnapshot> findTop10ByStatusOrderByCreatedAtAsc(SnapshotStatus status);
 }

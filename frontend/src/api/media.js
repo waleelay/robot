@@ -14,12 +14,28 @@ export function createVideoSession(data) {
   return client.post('/api/media/video-sessions', data).then(res => res.data)
 }
 
+export function saveMediaSource(data) {
+  return client.post('/api/media/sources', data).then(res => res.data)
+}
+
+export function getMediaSources() {
+  return client.get('/api/media/sources').then(res => res.data)
+}
+
+export function getActiveVideoSessions() {
+  return client.get('/api/media/video-sessions/active').then(res => res.data)
+}
+
 export function getViewerToken(sessionId) {
   return client.post(`/api/media/video-sessions/${sessionId}/token`).then(res => res.data)
 }
 
 export function stopVideoSession(sessionId) {
   return client.post(`/api/media/video-sessions/${sessionId}/stop`).then(res => res.data)
+}
+
+export function restartVideoSession(sessionId) {
+  return client.post(`/api/media/video-sessions/${sessionId}/restart`).then(res => res.data)
 }
 
 export function switchChannel(sessionId, data) {

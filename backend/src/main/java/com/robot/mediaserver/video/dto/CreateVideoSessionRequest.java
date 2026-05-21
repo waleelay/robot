@@ -25,7 +25,7 @@ public class CreateVideoSessionRequest {
     @NotNull
     private VideoQuality quality = VideoQuality.sub;
 
-    private boolean reuse = true;
+    private boolean reuse = false;
     private String clientRequestId;
 
     public String getRobotId() {

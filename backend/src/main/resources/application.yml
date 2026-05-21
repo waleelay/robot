@@ -15,7 +15,7 @@ media:
     api-key: ${LIVEKIT_API_KEY:devkey}
     api-secret: ${LIVEKIT_API_SECRET:dev-secret-dev-secret-dev-secret-32}
     token-ttl-seconds: ${LIVEKIT_TOKEN_TTL_SECONDS:600}
-    room-api-enabled: ${LIVEKIT_ROOM_API_ENABLED:false}
+    room-api-enabled: ${LIVEKIT_ROOM_API_ENABLED:true}
     room-empty-timeout-seconds: ${LIVEKIT_ROOM_EMPTY_TIMEOUT_SECONDS:60}
     room-departure-timeout-seconds: ${LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS:20}
   mqtt:
@@ -23,17 +23,28 @@ media:
     username: ${MQTT_USERNAME:}
     password: ${MQTT_PASSWORD:}
     client-id: ${MQTT_CLIENT_ID:robot-mediaserver}
-    enabled: ${MQTT_ENABLED:false}
+    enabled: ${MQTT_ENABLED:true}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:robot-media}
-    enabled: ${MINIO_ENABLED:false}
+    enabled: ${MINIO_ENABLED:true}
+  rtsp:
+    ffprobe-path: ${FFPROBE_PATH:ffprobe}
+    default-url: ${RTSP_DEFAULT_URL:rtsp://192.168.124.204:8554/camera01}
+    timeout-ms: ${RTSP_PROBE_TIMEOUT_MS:8000}
+  snapshot-worker:
+    enabled: ${SNAPSHOT_WORKER_ENABLED:true}
+    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
+    fixed-delay-ms: ${SNAPSHOT_WORKER_FIXED_DELAY_MS:3000}
+    timeout-ms: ${SNAPSHOT_WORKER_TIMEOUT_MS:10000}
+  webhook:
+    livekit-token: ${LIVEKIT_WEBHOOK_TOKEN:}
   session:
     client-ack-timeout-seconds: ${CLIENT_ACK_TIMEOUT_SECONDS:10}
     track-publish-timeout-seconds: ${TRACK_PUBLISH_TIMEOUT_SECONDS:20}
     interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}
-    idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:60}
+    idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:600}
     max-video-wall-streams: ${MAX_VIDEO_WALL_STREAMS:16}
     max-detail-resolution: ${MAX_DETAIL_RESOLUTION:2K}

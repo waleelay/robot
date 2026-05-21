@@ -6,7 +6,7 @@ module.exports = {
         changeOrigin: true
       },
       '/ws/media': {
-        target: process.env.VUE_APP_WS_BASE || 'ws://localhost:8088',
+        target: process.env.VUE_APP_WS_BASE || 'http://localhost:8088',
         ws: true,
         changeOrigin: true
       }

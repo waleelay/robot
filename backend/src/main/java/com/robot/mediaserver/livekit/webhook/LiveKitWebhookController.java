@@ -1,6 +1,8 @@
 package com.robot.mediaserver.livekit.webhook;
 
+import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.video.service.VideoSessionService;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,9 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class LiveKitWebhookController {
 
     private final VideoSessionService videoSessionService;
+    private final MediaProperties properties;
 
-    public LiveKitWebhookController(VideoSessionService videoSessionService) {
+    public LiveKitWebhookController(VideoSessionService videoSessionService, MediaProperties properties) {
         this.videoSessionService = videoSessionService;
+        this.properties = properties;
     }
 
     /**
@@ -32,7 +36,8 @@ public class LiveKitWebhookController {
      * @param payload webhook 原始 JSON
      */
     @PostMapping("/webhook")
-    public void webhook(@RequestBody Map<String, Object> payload) {
+    public void webhook(@RequestBody Map<String, Object> payload, HttpServletRequest request) {
+        verify(request);
         String event = stringValue(payload.get("event"));
         String roomName = roomName(payload);
         if (roomName == null || roomName.isBlank()) {
@@ -83,5 +88,16 @@ public class LiveKitWebhookController {
 
     private String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private void verify(HttpServletRequest request) {
+        String token = properties.getWebhook().getLivekitToken();
+        if (token == null || token.isBlank()) {
+            return;
+        }
+        String header = request.getHeader("X-LiveKit-Webhook-Token");
+        if (!token.equals(header)) {
+            throw new IllegalArgumentException("Invalid LiveKit webhook token");
+        }
     }
 }

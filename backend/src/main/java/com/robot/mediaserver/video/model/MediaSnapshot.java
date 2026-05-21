@@ -48,6 +48,10 @@ public class MediaSnapshot {
     private VideoChannel channel;
 
     @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private VideoQuality quality;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)
     private SnapshotStatus status;
 
@@ -131,6 +135,14 @@ public class MediaSnapshot {
 
     public void setChannel(VideoChannel channel) {
         this.channel = channel;
+    }
+
+    public VideoQuality getQuality() {
+        return quality;
+    }
+
+    public void setQuality(VideoQuality quality) {
+        this.quality = quality;
     }
 
     public SnapshotStatus getStatus() {

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import org.eclipse.paho.client.mqttv3.IMqttMessageListener;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
@@ -28,6 +29,7 @@ public class RobotMediaStatusSubscriber {
     private static final Logger log = LoggerFactory.getLogger(RobotMediaStatusSubscriber.class);
     private static final String ACK_TOPIC = "robot/+/media/video/ack";
     private static final String STATUS_TOPIC = "robot/+/media/video/status";
+    private static final String CLIENT_STATUS_TOPIC = "robot/+/media/client/status";
 
     private final MediaProperties properties;
     private final ObjectMapper objectMapper;
@@ -56,6 +58,7 @@ public class RobotMediaStatusSubscriber {
             MqttClient mqttClient = mqttClient();
             mqttClient.subscribe(ACK_TOPIC, 1, ackListener());
             mqttClient.subscribe(STATUS_TOPIC, 1, statusListener());
+            mqttClient.subscribe(CLIENT_STATUS_TOPIC, 1, clientStatusListener());
             log.info("Subscribed media MQTT topics: {}, {}", ACK_TOPIC, STATUS_TOPIC);
         } catch (MqttException ex) {
             throw new IllegalStateException("Failed to subscribe media MQTT topics", ex);
@@ -88,6 +91,20 @@ public class RobotMediaStatusSubscriber {
                         status.getMessage());
             } catch (Exception ex) {
                 log.warn("Failed to handle media status topic={}, payload={}", topic, payload, ex);
+            }
+        };
+    }
+
+    private IMqttMessageListener clientStatusListener() {
+        return (topic, message) -> {
+            String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+            try {
+                Map<String, Object> data = objectMapper.readValue(payload, Map.class);
+                String robotId = String.valueOf(data.get("robotId"));
+                String status = String.valueOf(data.get("status"));
+                videoSessionService.handleClientOnline(robotId, status);
+            } catch (Exception ex) {
+                log.warn("Failed to handle media client status topic={}, payload={}", topic, payload, ex);
             }
         };
     }

@@ -6,3 +6,4 @@ dist/
 .idea/
 .vscode/
 tmp_docx_render_*/
+robot-mediaserver-*-tcp*/

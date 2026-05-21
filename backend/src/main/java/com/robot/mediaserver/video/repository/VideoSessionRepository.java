@@ -18,57 +18,27 @@ import org.springframework.data.jpa.repository.JpaRepository;
  */
 public interface VideoSessionRepository extends JpaRepository<VideoSession, String> {
 
-    /**
-     * 查询同一路视频是否存在可复用会话。
-     *
-     * @param robotId 机器人 ID
-     * @param deviceId 设备 ID
-     * @param channel 媒体通道
-     * @param quality 清晰度
-     * @param statuses 可复用状态集合
-     * @return 最近一条可复用会话
-     */
-    Optional<VideoSession> findFirstByRobotIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
+        Optional<VideoSession> findFirstByRobotIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
             String robotId,
             String deviceId,
             VideoChannel channel,
             VideoQuality quality,
             Collection<VideoSessionStatus> statuses);
 
-    /**
-     * 按房间名查询可处理的最近会话。
-     *
-     * @param roomName LiveKit 房间名
-     * @param statuses 状态集合
-     * @return 最近会话
-     */
-    Optional<VideoSession> findFirstByRoomNameAndStatusInOrderByCreatedAtDesc(
+        Optional<VideoSession> findFirstByRoomNameAndStatusInOrderByCreatedAtDesc(
             String roomName,
             Collection<VideoSessionStatus> statuses);
 
-    /**
-     * 查询指定状态且更新时间早于阈值的会话。
-     *
-     * @param status 会话状态
-     * @param updatedAt 更新时间阈值
-     * @return 会话列表
-     */
-    List<VideoSession> findByStatusAndUpdatedAtBefore(VideoSessionStatus status, OffsetDateTime updatedAt);
+        List<VideoSession> findByStatusAndUpdatedAtBefore(VideoSessionStatus status, OffsetDateTime updatedAt);
 
-    /**
-     * 查询空闲等待超时的会话。
-     *
-     * @param status 会话状态
-     * @param idleSince 空闲起始时间阈值
-     * @return 会话列表
-     */
-    List<VideoSession> findByStatusAndIdleSinceBefore(VideoSessionStatus status, OffsetDateTime idleSince);
+        List<VideoSession> findByStatusAndIdleSinceBefore(VideoSessionStatus status, OffsetDateTime idleSince);
 
-    /**
-     * 查询用户最近创建的实时视频会话。
-     *
-     * @param createdBy 创建人
-     * @return 最近会话列表
-     */
-    List<VideoSession> findTop20ByCreatedByOrderByCreatedAtDesc(String createdBy);
+    List<VideoSession> findTop16ByStatusInOrderByUpdatedAtDesc(Collection<VideoSessionStatus> statuses);
+
+    List<VideoSession> findByRobotIdAndViewerCountGreaterThanAndStatusInOrderByUpdatedAtDesc(
+            String robotId,
+            int viewerCount,
+            Collection<VideoSessionStatus> statuses);
+
+        List<VideoSession> findTop20ByCreatedByOrderByCreatedAtDesc(String createdBy);
 }

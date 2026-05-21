@@ -30,14 +30,6 @@ public record VideoSessionResponse(
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt) {
 
-    /**
-     * 从会话实体构建响应对象。
-     *
-     * @param session 会话实体
-     * @param livekitUrl LiveKit 访问地址
-     * @param viewerToken 前端观看 Token
-     * @return 会话响应
-     */
     public static VideoSessionResponse from(VideoSession session, String livekitUrl, String viewerToken) {
         return new VideoSessionResponse(
                 session.getSessionId(),

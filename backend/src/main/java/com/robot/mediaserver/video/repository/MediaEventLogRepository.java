@@ -12,11 +12,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
  */
 public interface MediaEventLogRepository extends JpaRepository<MediaEventLog, String> {
 
-    /**
-     * 查询指定会话最近事件。
-     *
-     * @param sessionId 会话 ID
-     * @return 事件日志列表
-     */
-    List<MediaEventLog> findTop50BySessionIdOrderByCreatedAtDesc(String sessionId);
+        List<MediaEventLog> findTop50BySessionIdOrderByCreatedAtDesc(String sessionId);
 }
