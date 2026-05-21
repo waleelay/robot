@@ -120,11 +120,6 @@ public class VideoSessionController {
         return snapshotService.recentBySession(sessionId);
     }
 
-    @PostMapping("/{sessionId}/_mock/client-acked")
-    public VideoSessionResponse mockClientAcked(@PathVariable String sessionId) {
-        return service.markClientAcked(sessionId);
-    }
-
     @PostMapping("/{sessionId}/_mock/track-published/{trackSid}")
     public VideoSessionResponse mockTrackPublished(@PathVariable String sessionId, @PathVariable String trackSid) {
         return service.markTrackPublished(sessionId, trackSid);

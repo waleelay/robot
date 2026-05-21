@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface MediaSessionViewerRepository extends JpaRepository<MediaSessionViewer, String> {
 
-    Optional<MediaSessionViewer> findFirstBySessionIdAndUserIdAndLeftAtIsNull(String sessionId, String userId);
+    Optional<MediaSessionViewer> findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(String sessionId, String participantIdentity);
 
     long countBySessionIdAndLeftAtIsNull(String sessionId);
 }

@@ -1,25 +1,21 @@
 import axios from 'axios'
 
+const clientId = sessionStorage.getItem('robot-media-client-id') || `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
+sessionStorage.setItem('robot-media-client-id', clientId)
+
 const client = axios.create({
   baseURL: process.env.VUE_APP_API_BASE || '',
   timeout: 15000,
   headers: {
     'X-User-Id': 'u1001',
     'X-Org-Id': 'org001',
-    'X-Roles': 'MEDIA_VIEWER,MEDIA_OPERATOR'
+    'X-Roles': 'MEDIA_VIEWER,MEDIA_OPERATOR',
+    'X-Client-Id': clientId
   }
 })
 
 export function createVideoSession(data) {
   return client.post('/api/media/video-sessions', data).then(res => res.data)
-}
-
-export function saveMediaSource(data) {
-  return client.post('/api/media/sources', data).then(res => res.data)
-}
-
-export function getMediaSources() {
-  return client.get('/api/media/sources').then(res => res.data)
 }
 
 export function getActiveVideoSessions() {
@@ -52,10 +48,6 @@ export function getSessionSnapshots(sessionId) {
 
 export function getSessionEvents(sessionId) {
   return client.get(`/api/media/video-sessions/${sessionId}/events`).then(res => res.data)
-}
-
-export function mockClientAcked(sessionId) {
-  return client.post(`/api/media/video-sessions/${sessionId}/_mock/client-acked`).then(res => res.data)
 }
 
 export function mockTrackPublished(sessionId, trackSid) {

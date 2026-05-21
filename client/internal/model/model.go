@@ -23,14 +23,6 @@ type StopCommand struct {
 	RoomName  string `json:"roomName"`
 }
 
-type AckMessage struct {
-	CommandID string    `json:"commandId"`
-	SessionID string    `json:"sessionId"`
-	Success   bool      `json:"success"`
-	Message   string    `json:"message"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
 type StatusMessage struct {
 	SessionID string    `json:"sessionId"`
 	Status    string    `json:"status"`

@@ -9,7 +9,6 @@ package com.robot.mediaserver.video.model;
 public enum VideoSessionStatus {
     INIT,
     REQUESTING_CLIENT,
-    CLIENT_ACKED,
     ROOM_READY,
     STREAMING,
     INTERRUPTED,

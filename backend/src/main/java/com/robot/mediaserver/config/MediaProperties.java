@@ -21,7 +21,6 @@ public class MediaProperties {
     private Rtsp rtsp = new Rtsp();
     private Session session = new Session();
     private SnapshotWorker snapshotWorker = new SnapshotWorker();
-    private Webhook webhook = new Webhook();
 
     public Auth getAuth() {
         return auth;
@@ -77,14 +76,6 @@ public class MediaProperties {
 
     public void setSnapshotWorker(SnapshotWorker snapshotWorker) {
         this.snapshotWorker = snapshotWorker;
-    }
-
-    public Webhook getWebhook() {
-        return webhook;
-    }
-
-    public void setWebhook(Webhook webhook) {
-        this.webhook = webhook;
     }
 
     public static class Auth {
@@ -262,20 +253,11 @@ public class MediaProperties {
     }
 
     public static class Session {
-    private long clientAckTimeoutSeconds = 10;
     private long trackPublishTimeoutSeconds = 20;
     private long interruptedGraceSeconds = 15;
     private long idleReleaseDelaySeconds = 60;
     private int maxVideoWallStreams = 16;
     private String maxDetailResolution = "2K";
-
-    public long getClientAckTimeoutSeconds() {
-            return clientAckTimeoutSeconds;
-        }
-
-    public void setClientAckTimeoutSeconds(long clientAckTimeoutSeconds) {
-            this.clientAckTimeoutSeconds = clientAckTimeoutSeconds;
-        }
 
     public long getTrackPublishTimeoutSeconds() {
             return trackPublishTimeoutSeconds;
@@ -384,18 +366,6 @@ public class MediaProperties {
 
     public void setTimeoutMs(long timeoutMs) {
             this.timeoutMs = timeoutMs;
-        }
-    }
-
-    public static class Webhook {
-    private String livekitToken;
-
-    public String getLivekitToken() {
-            return livekitToken;
-        }
-
-    public void setLivekitToken(String livekitToken) {
-            this.livekitToken = livekitToken;
         }
     }
 }

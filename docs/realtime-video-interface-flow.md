@@ -43,7 +43,7 @@ rtsp://192.168.124.204:8554/camera01
 |---|---|
 | `sub` | 视频墙低码流 |
 | `main` | 单路详情高清码流 |
-| `auto` | 自动，当前后端媒体源解析时按 `sub` 兜底 |
+| `auto` | 自动，当前按 `sub` 兜底 |
 
 ### 3.3 会话状态 `VideoSessionStatus`
 
@@ -51,7 +51,6 @@ rtsp://192.168.124.204:8554/camera01
 |---|---|
 | `INIT` | 会话已创建 |
 | `REQUESTING_CLIENT` | 已向机器人客户端下发 start |
-| `CLIENT_ACKED` | 客户端已 ACK |
 | `ROOM_READY` | RTSP 探测通过或 Room 已准备 |
 | `STREAMING` | 客户端上报正在推流 |
 | `INTERRUPTED` | Track 或发布者中断 |
@@ -102,121 +101,7 @@ Content-Type: application/json
 
 ## 5. REST 接口
 
-### 5.1 保存媒体源
-
-前端在开始播放前，可先保存 robot/device/channel/quality 对应 RTSP。
-
-| 项 | 内容 |
-|---|---|
-| 请求方法 | `POST` |
-| 请求路径 | `/api/media/sources` |
-| 请求类型 | `application/json` |
-| 调用方 | 前端 -> 后端 |
-
-请求参数：
-
-```json
-{
-  "robotId": "robot-001",
-  "deviceId": "gimbal-001",
-  "channel": "visible",
-  "quality": "sub",
-  "rtspUrl": "rtsp://192.168.124.204:8554/camera01",
-  "enabled": true,
-  "name": "robot-001-gimbal-001-visible-sub"
-}
-```
-
-响应参数：
-
-```json
-{
-  "sourceId": "src_xxx",
-  "robotId": "robot-001",
-  "deviceId": "gimbal-001",
-  "channel": "visible",
-  "quality": "sub",
-  "rtspUrl": "rtsp://192.168.124.204:8554/camera01",
-  "enabled": true,
-  "name": "robot-001-gimbal-001-visible-sub",
-  "createdAt": "2026-05-21T00:00:00Z",
-  "updatedAt": "2026-05-21T00:00:00Z"
-}
-```
-
-### 5.2 查询媒体源列表
-
-| 项 | 内容 |
-|---|---|
-| 请求方法 | `GET` |
-| 请求路径 | `/api/media/sources` |
-| 请求类型 | Query |
-| 调用方 | 前端 -> 后端 |
-
-响应参数：
-
-```json
-[
-  {
-    "sourceId": "src_xxx",
-    "robotId": "robot-001",
-    "deviceId": "gimbal-001",
-    "channel": "visible",
-    "quality": "sub",
-    "rtspUrl": "rtsp://192.168.124.204:8554/camera01",
-    "enabled": true,
-    "name": "robot-001-gimbal-001-visible-sub",
-    "createdAt": "2026-05-21T00:00:00Z",
-    "updatedAt": "2026-05-21T00:00:00Z"
-  }
-]
-```
-
-### 5.3 更新媒体源
-
-| 项 | 内容 |
-|---|---|
-| 请求方法 | `PUT` |
-| 请求路径 | `/api/media/sources/{sourceId}` |
-| 请求类型 | `application/json` |
-| 调用方 | 前端 -> 后端 |
-
-请求体同 `POST /api/media/sources`。
-
-### 5.4 删除媒体源
-
-| 项 | 内容 |
-|---|---|
-| 请求方法 | `DELETE` |
-| 请求路径 | `/api/media/sources/{sourceId}` |
-| 请求类型 | Path |
-| 调用方 | 前端 -> 后端 |
-
-响应为空。
-
-### 5.5 RTSP 探测
-
-| 项 | 内容 |
-|---|---|
-| 请求方法 | `GET` |
-| 请求路径 | `/api/media/rtsp/probe?url={rtspUrl}` |
-| 请求类型 | Query |
-| 调用方 | 前端/调试工具 -> 后端 |
-
-响应参数：
-
-```json
-{
-  "success": true,
-  "url": "rtsp://192.168.124.204:8554/camera01",
-  "codec": "h264",
-  "width": 1920,
-  "height": 1080,
-  "message": "ok"
-}
-```
-
-### 5.6 创建实时视频会话
+### 5.1 创建实时视频会话
 
 | 项 | 内容 |
 |---|---|
@@ -279,7 +164,7 @@ Content-Type: application/json
 3. 等待 `TrackSubscribed`。
 4. 监听 `/ws/media` 推送的状态变化。
 
-### 5.7 查询当前用户最近会话
+### 5.2 查询当前用户最近会话
 
 | 项 | 内容 |
 |---|---|
@@ -290,7 +175,7 @@ Content-Type: application/json
 
 响应为 `VideoSessionResponse[]`。
 
-### 5.8 查询活跃视频墙会话
+### 5.3 查询活跃视频墙会话
 
 | 项 | 内容 |
 |---|---|
@@ -301,7 +186,7 @@ Content-Type: application/json
 
 响应为最多 16 条 `VideoSessionResponse[]`。
 
-### 5.9 查询单个会话
+### 5.4 查询单个会话
 
 | 项 | 内容 |
 |---|---|
@@ -312,7 +197,7 @@ Content-Type: application/json
 
 响应为 `VideoSessionResponse`，并会重新签发 viewer token。
 
-### 5.10 重新签发观看 Token
+### 5.5 重新签发观看 Token
 
 | 项 | 内容 |
 |---|---|
@@ -340,7 +225,7 @@ LiveKit token 过期
 断线恢复后重新加入 Room
 ```
 
-### 5.11 停止观看
+### 5.6 停止观看
 
 | 项 | 内容 |
 |---|---|
@@ -377,7 +262,7 @@ IDLE_WAIT 超过 idle-release-delay-seconds -> 后端下发 MQTT stop
 LiveKit Disconnected 回调由主动停止触发时，不允许调用 restart。
 ```
 
-### 5.12 断线恢复/重启推流
+### 5.7 断线恢复/重启推流
 
 | 项 | 内容 |
 |---|---|
@@ -445,7 +330,7 @@ async function restartCurrentSession() {
 }
 ```
 
-### 5.13 切换通道
+### 5.8 切换通道
 
 | 项 | 内容 |
 |---|---|
@@ -485,7 +370,7 @@ async function restartCurrentSession() {
 客户端按新通道重新拉 RTSP 并发布 Track
 ```
 
-### 5.14 抓拍
+### 5.9 抓拍
 
 | 项 | 内容 |
 |---|---|
@@ -526,7 +411,7 @@ async function restartCurrentSession() {
 
 后续由 `SnapshotWorkerScheduler` 使用 ffmpeg 从 RTSP 截帧并写入 MinIO。
 
-### 5.15 查询抓拍列表
+### 5.10 查询抓拍列表
 
 | 项 | 内容 |
 |---|---|
@@ -537,7 +422,7 @@ async function restartCurrentSession() {
 
 响应为 `SnapshotResponse[]`。
 
-### 5.16 查询事件日志
+### 5.11 查询事件日志
 
 | 项 | 内容 |
 |---|---|
@@ -561,7 +446,7 @@ async function restartCurrentSession() {
 ]
 ```
 
-### 5.17 查询 Track 列表
+### 5.12 查询 Track 列表
 
 | 项 | 内容 |
 |---|---|
@@ -620,10 +505,9 @@ async function restartCurrentSession() {
 | `video.session.created` | 后端创建业务会话 |
 | `video.room.ready` | LiveKit Room 创建或客户端上报 publishing |
 | `video.client.requested` | 后端下发 MQTT start |
-| `video.client.acked` | 客户端 ACK |
 | `video.session.streaming` | 客户端上报 streaming |
-| `video.track.published` | LiveKit webhook 上报 Track published |
-| `video.session.interrupted` | Track 中断、发布者离开 |
+| `video.track.published` | 调试接口模拟 Track published |
+| `video.session.interrupted` | 客户端上报中断 |
 | `video.session.failed` | RTSP、发布、超时等失败 |
 | `video.session.stopping` | 后端准备释放空闲会话 |
 | `video.session.closed` | 会话关闭 |
@@ -668,7 +552,6 @@ Go 客户端行为：
 
 ```text
 解析 command
-上报 ACK
 ffprobe 探测 rtspUrl
 启动 gstreamer-publisher 连接 LiveKit
 上报 publishing / streaming / failed
@@ -737,35 +620,7 @@ Go 客户端行为：
 上报 streaming
 ```
 
-### 7.4 客户端 ACK
-
-| 项 | 内容 |
-|---|---|
-| Topic | `robot/{robotId}/media/video/ack` |
-| QoS | 1 |
-| 方向 | Go 客户端 -> 后端 |
-| Payload | JSON |
-
-Payload：
-
-```json
-{
-  "commandId": "cmd_xxx",
-  "sessionId": "vs_xxx",
-  "success": true,
-  "message": "accepted",
-  "timestamp": "2026-05-21T00:00:00+08:00"
-}
-```
-
-后端状态变化：
-
-```text
-success=true  -> CLIENT_ACKED
-success=false -> FAILED
-```
-
-### 7.5 客户端媒体状态
+### 7.4 客户端媒体状态
 
 | 项 | 内容 |
 |---|---|
@@ -792,7 +647,6 @@ Payload：
 
 | status | 后端状态 |
 |---|---|
-| `ack` / `acked` | `CLIENT_ACKED` |
 | `room_ready` / `publishing` | `ROOM_READY` |
 | `streaming` / `track_published` | `STREAMING` |
 | `interrupted` | `INTERRUPTED` |
@@ -805,12 +659,11 @@ Payload：
 |---|---|
 | `RTSP_PROBE_FAILED` | ffprobe 探测失败 |
 | `PUBLISH_FAILED` | gstreamer-publisher 启动或推流失败 |
-| `CLIENT_ACK_FAILED` | 客户端拒绝指令 |
-| `CLIENT_ACK_TIMEOUT` | 后端等待 ACK 超时 |
+| `CLIENT_PUBLISH_TIMEOUT` | 后端等待客户端发布超时 |
 | `LK_PUBLISH_TIMEOUT` | 等待 Track 发布超时 |
 | `TRACK_INTERRUPTED_TIMEOUT` | Track 中断恢复超时 |
 
-### 7.6 客户端在线状态
+### 7.5 客户端在线状态
 
 | 项 | 内容 |
 |---|---|
@@ -840,7 +693,7 @@ Payload：
 后端收到 `online` 后：
 
 ```text
-查询该 robotId 下 viewerCount > 0 且状态为 INTERRUPTED / FAILED / TIMEOUT 的会话
+查询该 robotId 下 viewerCount > 0 且状态为 REQUESTING_CLIENT / ROOM_READY / STREAMING / INTERRUPTED / FAILED / TIMEOUT 的会话
 对这些会话重新下发 start
 事件为 video.client.online_restart
 ```
@@ -885,30 +738,6 @@ gstreamer-publisher --url {livekitUrl} --token {publisherToken} -- {pipeline}
 rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1
 ```
 
-### 8.3 LiveKit Webhook
-
-| 项 | 内容 |
-|---|---|
-| 请求方法 | `POST` |
-| 请求路径 | `/api/internal/livekit/webhook` |
-| 请求类型 | `application/json` |
-| 调用方 | LiveKit -> 后端 |
-
-可选请求头：
-
-```http
-X-LiveKit-Webhook-Token: configured-token
-```
-
-当前处理事件：
-
-| event | 后端行为 |
-|---|---|
-| `track_published` | `STREAMING` |
-| `track_unpublished` | `INTERRUPTED` |
-| `participant_left` | robot participant 离开时 `INTERRUPTED` |
-| `room_finished` | `CLOSED` |
-
 ## 9. 正常播放完整流程
 
 ```mermaid
@@ -919,8 +748,6 @@ sequenceDiagram
     participant GO as Go Client
     participant LK as LiveKit
 
-    FE->>BE: POST /api/media/sources
-    BE-->>FE: MediaSourceResponse
     FE->>BE: POST /api/media/video-sessions
     BE->>LK: Create Room
     BE->>BE: Create viewer/publisher token
@@ -929,12 +756,11 @@ sequenceDiagram
     FE->>LK: connect(livekitUrl, viewerToken)
     GO-->>MQ: subscribe start/stop/switch
     MQ-->>GO: start command
-    GO->>MQ: ack(success=true)
     GO->>GO: ffprobe RTSP
     GO->>MQ: status=publishing
     GO->>LK: publish video Track
     GO->>MQ: status=streaming
-    MQ-->>BE: ack/status
+    MQ-->>BE: status
     BE-->>FE: WS video.session.streaming
     LK-->>FE: TrackSubscribed
     FE->>FE: video.attach()
@@ -943,7 +769,7 @@ sequenceDiagram
 状态变化：
 
 ```text
-INIT -> REQUESTING_CLIENT -> CLIENT_ACKED -> ROOM_READY -> STREAMING
+INIT -> REQUESTING_CLIENT -> ROOM_READY -> STREAMING
 ```
 
 ## 10. 主动停止流程
@@ -1014,7 +840,7 @@ hasVideo=false
 
 ```text
 MQTT start 不会被消费
-后端等待 ACK 超时后可能进入 FAILED/TIMEOUT
+后端等待客户端发布超时后可能进入 FAILED/TIMEOUT
 ```
 
 ### 11.2 Go 客户端重新启动
@@ -1030,7 +856,7 @@ Go 客户端启动后：
 后端收到 online：
 
 ```text
-查询该 robotId 有观看者且状态为 INTERRUPTED/FAILED/TIMEOUT 的会话
+查询该 robotId 有观看者且状态为 REQUESTING_CLIENT/ROOM_READY/STREAMING/INTERRUPTED/FAILED/TIMEOUT 的会话
 重新调用 restartSession
 重新下发 start
 ```
@@ -1112,12 +938,12 @@ publisher token 过期
 RTSP 编码不是当前 pipeline 支持的 H264
 ```
 
-### 12.3 客户端 ACK 超时
+### 12.3 客户端发布超时
 
 后端条件：
 
 ```text
-状态 REQUESTING_CLIENT 超过 client-ack-timeout-seconds
+状态 REQUESTING_CLIENT 超过 track-publish-timeout-seconds
 ```
 
 后端行为：
@@ -1125,7 +951,7 @@ RTSP 编码不是当前 pipeline 支持的 H264
 ```text
 状态置为 FAILED/TIMEOUT
 事件 video.session.failed
-errorCode=CLIENT_ACK_TIMEOUT
+errorCode=CLIENT_PUBLISH_TIMEOUT
 ```
 
 ### 12.4 Track 发布超时
@@ -1133,7 +959,7 @@ errorCode=CLIENT_ACK_TIMEOUT
 后端条件：
 
 ```text
-状态 CLIENT_ACKED 或 ROOM_READY 超过 track-publish-timeout-seconds
+状态 ROOM_READY 超过 track-publish-timeout-seconds
 ```
 
 后端行为：
@@ -1147,8 +973,6 @@ errorCode=LK_PUBLISH_TIMEOUT
 触发来源：
 
 ```text
-LiveKit webhook track_unpublished
-LiveKit webhook participant_left 且 identity 以 robot: 开头
 客户端主动上报 interrupted
 ```
 
@@ -1231,7 +1055,6 @@ Wait
 
 ```text
 Unmarshal StartCommand
-ACK success
 Resolve RTSP URL
 ffprobe
 status=publishing
@@ -1268,7 +1091,6 @@ Disconnect MQTT
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `POST` | `/api/media/video-sessions/{sessionId}/_mock/client-acked` | 模拟客户端 ACK |
 | `POST` | `/api/media/video-sessions/{sessionId}/_mock/track-published/{trackSid}` | 模拟 Track 已发布 |
 
 生产环境应关闭或通过权限限制。
@@ -1287,7 +1109,6 @@ media:
   rtsp:
     default-url: rtsp://192.168.124.204:8554/camera01
   session:
-    client-ack-timeout-seconds: 10
     track-publish-timeout-seconds: 20
     interrupted-grace-seconds: 15
     idle-release-delay-seconds: 600
@@ -1345,6 +1166,6 @@ Go 客户端 video start
 ```text
 RTSP 不通 -> RTSP_PROBE_FAILED
 发布器异常 -> PUBLISH_FAILED
-客户端未启动 -> CLIENT_ACK_TIMEOUT
+客户端未启动 -> CLIENT_PUBLISH_TIMEOUT
 LiveKit 未发布 -> LK_PUBLISH_TIMEOUT
 ```

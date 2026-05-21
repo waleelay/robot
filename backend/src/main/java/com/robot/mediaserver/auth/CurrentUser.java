@@ -8,7 +8,7 @@ import java.util.Set;
  * @author leelay
  * @date 2026/05/19
  */
-public record CurrentUser(String userId, String orgId, Set<String> roles) {
+public record CurrentUser(String userId, String orgId, Set<String> roles, String clientId) {
 
     /**
      * 判断当前用户是否具备指定角色。

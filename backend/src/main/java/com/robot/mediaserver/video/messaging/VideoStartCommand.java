@@ -24,6 +24,5 @@ public record VideoStartCommand(
         String roomName,
         String publisherToken,
         String publishIdentity,
-        String rtspUrl,
         OffsetDateTime expiresAt) {
 }

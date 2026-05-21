@@ -25,10 +25,6 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
             VideoQuality quality,
             Collection<VideoSessionStatus> statuses);
 
-        Optional<VideoSession> findFirstByRoomNameAndStatusInOrderByCreatedAtDesc(
-            String roomName,
-            Collection<VideoSessionStatus> statuses);
-
         List<VideoSession> findByStatusAndUpdatedAtBefore(VideoSessionStatus status, OffsetDateTime updatedAt);
 
         List<VideoSession> findByStatusAndIdleSinceBefore(VideoSessionStatus status, OffsetDateTime idleSince);

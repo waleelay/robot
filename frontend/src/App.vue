@@ -35,12 +35,7 @@
             <el-form-item label="当前会话">
               <el-input :value="session && session.sessionId" readonly placeholder="尚未创建" />
             </el-form-item>
-            <el-form-item label="RTSP 地址">
-              <el-input v-model="source.rtspUrl" />
-            </el-form-item>
             <div class="actions">
-              <el-button @click="saveSource">保存媒体源</el-button>
-              <el-button @click="loadSources">媒体源列表</el-button>
               <el-button type="primary" :loading="loading" @click="startSession">开始观看</el-button>
               <el-button :disabled="!session" @click="stopSession">停止观看</el-button>
               <el-button :disabled="!session" @click="switchToVisible">切可见光</el-button>
@@ -91,13 +86,11 @@ import {
   createSnapshot,
   createVideoSession,
   getActiveVideoSessions,
-  getMediaSources,
   getSessionEvents,
   getSessionSnapshots,
-  mockClientAcked,
+  getViewerToken,
   mockTrackPublished,
   restartVideoSession,
-  saveMediaSource,
   stopVideoSession,
   switchChannel
 } from './api/media'
@@ -110,7 +103,10 @@ export default {
       wsConnected: false,
       hasVideo: false,
       stopping: false,
+      stopped: false,
       restarting: false,
+      connecting: false,
+      disconnecting: false,
       room: null,
       socket: null,
       session: null,
@@ -120,9 +116,6 @@ export default {
         channel: 'visible',
         quality: 'sub',
         reuse: false
-      },
-      source: {
-        rtspUrl: 'rtsp://192.168.124.204:8554/camera01'
       },
       events: []
     }
@@ -137,6 +130,9 @@ export default {
   methods: {
     async startSession() {
       this.loading = true
+      this.stopping = false
+      this.stopped = false
+      this.restarting = false
       this.log('CLICK startSession', this.form)
       try {
         const session = await createVideoSession(this.form)
@@ -150,37 +146,30 @@ export default {
         this.loading = false
       }
     },
-    async saveSource() {
-      const source = await saveMediaSource({
-        robotId: this.form.robotId,
-        deviceId: this.form.deviceId,
-        channel: this.form.channel,
-        quality: this.form.quality === 'auto' ? 'sub' : this.form.quality,
-        rtspUrl: this.source.rtspUrl,
-        enabled: true,
-        name: `${this.form.robotId}-${this.form.deviceId}-${this.form.channel}-${this.form.quality}`
-      })
-      this.log('API saveMediaSource', source)
-    },
-    async loadSources() {
-      const sources = await getMediaSources()
-      this.log('API mediaSources', sources)
-    },
     async stopSession() {
       if (!this.session) return
       try {
         this.stopping = true
+        this.stopped = true
         this.restarting = false
+        this.disconnecting = true
+        const stoppedSessionId = this.session.sessionId
         const stopped = await stopVideoSession(this.session.sessionId)
         this.log('API stopVideoSession', stopped)
         if (this.room) {
-          await this.room.disconnect()
+          const oldRoom = this.room
+          this.room = null
+          await oldRoom.disconnect()
           this.room = null
           this.hasVideo = false
         }
-        this.session = stopped
+        if (this.session && this.session.sessionId === stoppedSessionId) {
+          this.session = stopped
+        }
+        this.disconnecting = false
         this.stopping = false
       } catch (error) {
+        this.disconnecting = false
         this.stopping = false
         this.$message.error(this.errorMessage(error))
       }
@@ -197,7 +186,7 @@ export default {
         channel,
         quality: this.form.quality
       })
-      this.session = updated
+      this.session = this.mergeSession(updated)
       this.form.channel = channel
       this.log('API switchChannel', updated)
     },
@@ -216,9 +205,8 @@ export default {
     },
     async mockStreaming() {
       if (!this.session) return
-      await mockClientAcked(this.session.sessionId)
       const updated = await mockTrackPublished(this.session.sessionId, 'TR_debug_' + Date.now())
-      this.session = updated
+      this.session = this.mergeSession(updated)
       this.log('API mockTrackPublished', updated)
     },
     async loadSessionEvents() {
@@ -236,36 +224,66 @@ export default {
       this.log('API activeSessions', sessions)
     },
     async connectLiveKit(session) {
-      if (!session.viewerToken || !session.livekitUrl) {
-        this.log('LiveKit skipped', '缺少 viewerToken 或 livekitUrl')
-        return
-      }
-      if (this.room) {
-        await this.room.disconnect()
-      }
-      const room = new Room()
-      room.on(RoomEvent.TrackSubscribed, (track) => {
-        if (track.kind !== 'video') return
-        track.attach(this.$refs.video)
-        this.hasVideo = true
-        this.log('LiveKit TrackSubscribed', track.sid || track.name)
-      })
-      room.on(RoomEvent.TrackUnsubscribed, (track) => {
-        track.detach()
-        this.hasVideo = false
-        this.log('LiveKit TrackUnsubscribed', track.sid || track.name)
-        this.restartCurrentSession()
-      })
-      room.on(RoomEvent.Disconnected, () => {
-        this.hasVideo = false
-        this.log('LiveKit Disconnected', session.roomName)
-        if (!this.stopping) {
-          this.restartCurrentSession()
+      if (this.connecting) return
+      this.connecting = true
+      try {
+        if (session && session.sessionId) {
+          const token = await getViewerToken(session.sessionId)
+          session = this.mergeSession({
+            livekitUrl: token.livekitUrl,
+            roomName: token.roomName,
+            viewerToken: token.token
+          })
+          this.session = session
         }
-      })
-      await room.connect(session.livekitUrl, session.viewerToken)
-      this.room = room
-      this.log('LiveKit connected', session.roomName)
+        if (!session.viewerToken || !session.livekitUrl) {
+          this.log('LiveKit skipped', '缺少 viewerToken 或 livekitUrl')
+          return
+        }
+        if (this.room) {
+          this.disconnecting = true
+          const oldRoom = this.room
+          this.room = null
+          await oldRoom.disconnect()
+          this.disconnecting = false
+        }
+        const room = new Room()
+        const sessionId = session.sessionId
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (this.room !== room || !this.session || this.session.sessionId !== sessionId) return
+          if (track.kind !== 'video') return
+          track.attach(this.$refs.video)
+          this.hasVideo = true
+          this.log('LiveKit TrackSubscribed', track.sid || track.name)
+        })
+        room.on(RoomEvent.TrackUnsubscribed, (track) => {
+          if (this.room !== room || !this.session || this.session.sessionId !== sessionId) return
+          track.detach()
+          this.hasVideo = false
+          this.log('LiveKit TrackUnsubscribed', track.sid || track.name)
+          if (!this.stopping && !this.stopped) {
+            this.restartCurrentSession()
+          }
+        })
+        room.on(RoomEvent.Disconnected, () => {
+          if (this.room !== room || this.disconnecting) return
+          this.hasVideo = false
+          this.log('LiveKit Disconnected', session.roomName)
+          if (!this.stopping && !this.stopped) {
+            this.restartCurrentSession()
+          }
+        })
+        this.room = room
+        await room.connect(session.livekitUrl, session.viewerToken)
+        this.log('LiveKit connected', session.roomName)
+      } catch (error) {
+        this.room = null
+        this.hasVideo = false
+        this.log('ERROR LiveKit connect', this.errorMessage(error))
+      } finally {
+        this.disconnecting = false
+        this.connecting = false
+      }
     },
     connectWebSocket() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -289,22 +307,24 @@ export default {
     syncSessionEvent(event) {
       if (!event || !event.data || !event.data.sessionId || !this.session) return
       if (event.data.sessionId !== this.session.sessionId) return
+      if (this.stopped) return
       if (event.data.robotId && event.data.status) {
-        this.session = Object.assign({}, this.session, event.data)
-        if (event.data.status === 'STREAMING' && this.room && this.room.state === 'disconnected') {
+        this.session = this.mergeSession(event.data)
+        if (event.data.status === 'STREAMING' && (!this.room || this.room.state === 'disconnected')) {
           this.connectLiveKit(this.session)
         }
       }
     },
     async restartCurrentSession() {
       if (this.stopping) return
+      if (this.stopped) return
       if (!this.session || this.session.status === 'CLOSED') return
       if (!['STREAMING', 'INTERRUPTED'].includes(this.session.status)) return
       if (this.restarting) return
       try {
         this.restarting = true
         const updated = await restartVideoSession(this.session.sessionId)
-        this.session = Object.assign({}, this.session, updated)
+        this.session = this.mergeSession(updated)
         this.log('API restartVideoSession', updated)
       } catch (error) {
         this.log('ERROR restartVideoSession', this.errorMessage(error))
@@ -326,6 +346,13 @@ export default {
     log(title, payload) {
       const line = `[${new Date().toLocaleTimeString()}] ${title}\n${typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2)}`
       this.events.unshift(line)
+    },
+    mergeSession(update) {
+      const next = Object.assign({}, this.session || {}, update || {})
+      if (!update || !update.viewerToken) next.viewerToken = this.session && this.session.viewerToken
+      if (!update || !update.livekitUrl) next.livekitUrl = this.session && this.session.livekitUrl
+      if (!update || !update.roomName) next.roomName = this.session && this.session.roomName
+      return next
     },
     errorMessage(error) {
       return error && error.response && error.response.data

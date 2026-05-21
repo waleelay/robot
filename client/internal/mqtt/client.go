@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
@@ -19,6 +20,8 @@ type Client struct {
 	probe     *rtsp.Probe
 	publisher publisher.Publisher
 	mqtt      paho.Client
+	mu        sync.Mutex
+	lastCmd   string
 }
 
 func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publisher) *Client {
@@ -26,6 +29,9 @@ func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publish
 }
 
 func (c *Client) Run(ctx context.Context) error {
+	startTopic := "robot/" + c.cfg.RobotID + "/media/video/start"
+	stopTopic := "robot/" + c.cfg.RobotID + "/media/video/stop"
+	switchTopic := "robot/" + c.cfg.RobotID + "/media/video/switch-channel"
 	opts := paho.NewClientOptions().
 		AddBroker(c.cfg.MQTTBroker).
 		SetClientID(c.cfg.ClientID).
@@ -34,26 +40,22 @@ func (c *Client) Run(ctx context.Context) error {
 		opts.SetUsername(c.cfg.MQTTUsername)
 		opts.SetPassword(c.cfg.MQTTPassword)
 	}
-	c.mqtt = paho.NewClient(opts)
-	if token := c.mqtt.Connect(); token.Wait() && token.Error() != nil {
-		return token.Error()
-	}
 	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
 		log.Println("mqtt lost", err)
 		c.publisher.Stop()
 	})
 	opts.SetOnConnectHandler(func(_ paho.Client) {
+		c.subscribe(startTopic, c.handleStart(ctx))
+		c.subscribe(stopTopic, c.handleStop())
+		c.subscribe(switchTopic, c.handleStart(ctx))
+		log.Println("mqtt subscribed", startTopic, stopTopic, switchTopic)
 		c.online("online")
 	})
+	c.mqtt = paho.NewClient(opts)
+	if token := c.mqtt.Connect(); token.Wait() && token.Error() != nil {
+		return token.Error()
+	}
 	log.Println("mqtt connected", c.cfg.MQTTBroker, c.cfg.RobotID)
-	startTopic := "robot/" + c.cfg.RobotID + "/media/video/start"
-	stopTopic := "robot/" + c.cfg.RobotID + "/media/video/stop"
-	switchTopic := "robot/" + c.cfg.RobotID + "/media/video/switch-channel"
-	c.subscribe(startTopic, c.handleStart(ctx))
-	c.subscribe(stopTopic, c.handleStop())
-	c.subscribe(switchTopic, c.handleStart(ctx))
-	log.Println("mqtt subscribed", startTopic, stopTopic, switchTopic)
-	c.online("online")
 	<-ctx.Done()
 	c.publisher.Stop()
 	c.online("offline")
@@ -74,8 +76,10 @@ func (c *Client) handleStart(ctx context.Context) paho.MessageHandler {
 			log.Println(err)
 			return
 		}
+		if c.isDuplicate(command.CommandID) {
+			return
+		}
 		log.Println("video start", command.SessionID, command.Channel, command.Quality)
-		c.ack(command, true, "accepted")
 		rtspURL := command.RTSPURL
 		if rtspURL == "" {
 			rtspURL = c.rtspURL(command.Channel, command.Quality)
@@ -94,6 +98,16 @@ func (c *Client) handleStart(ctx context.Context) paho.MessageHandler {
 	}
 }
 
+func (c *Client) isDuplicate(commandID string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if commandID != "" && commandID == c.lastCmd {
+		return true
+	}
+	c.lastCmd = commandID
+	return false
+}
+
 func (c *Client) handleStop() paho.MessageHandler {
 	return func(_ paho.Client, msg paho.Message) {
 		var payload model.StopCommand
@@ -105,16 +119,6 @@ func (c *Client) handleStop() paho.MessageHandler {
 		c.publisher.Stop()
 		c.status(payload.SessionID, "stopped", "", "", "", "stopped")
 	}
-}
-
-func (c *Client) ack(command model.StartCommand, success bool, message string) {
-	c.publish("robot/"+c.cfg.RobotID+"/media/video/ack", model.AckMessage{
-		CommandID: command.CommandID,
-		SessionID: command.SessionID,
-		Success:   success,
-		Message:   message,
-		Timestamp: time.Now(),
-	})
 }
 
 func (c *Client) status(sessionID, status, trackSid, trackName, errorCode, message string) {

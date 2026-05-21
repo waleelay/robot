@@ -33,25 +33,16 @@ public class VideoSessionTimeoutScheduler {
 
     @Scheduled(fixedDelayString = "${media.session.sweep-delay-ms:5000}")
     public void sweep() {
-        handleClientAckTimeout();
         handleTrackPublishTimeout();
         handleInterruptedTimeout();
         handleIdleRelease();
     }
 
-    private void handleClientAckTimeout() {
-        OffsetDateTime threshold = now().minusSeconds(properties.getSession().getClientAckTimeoutSeconds());
-        List<VideoSession> sessions = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.REQUESTING_CLIENT, threshold);
-        for (VideoSession session : sessions) {
-            markTimeout(session, "CLIENT_ACK_TIMEOUT", "云接入客户端 ACK 超时");
-        }
-    }
-
     private void handleTrackPublishTimeout() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getTrackPublishTimeoutSeconds());
-        List<VideoSession> clientAcked = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.CLIENT_ACKED, threshold);
+        List<VideoSession> requesting = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.REQUESTING_CLIENT, threshold);
         List<VideoSession> roomReady = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.ROOM_READY, threshold);
-        clientAcked.forEach(session -> markTimeout(session, "LK_PUBLISH_TIMEOUT", "客户端 ACK 后 Track 发布超时"));
+        requesting.forEach(session -> markTimeout(session, "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时"));
         roomReady.forEach(session -> markTimeout(session, "LK_PUBLISH_TIMEOUT", "Room ready 后 Track 发布超时"));
     }
 

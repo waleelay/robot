@@ -39,10 +39,7 @@ media:
     ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
     fixed-delay-ms: ${SNAPSHOT_WORKER_FIXED_DELAY_MS:3000}
     timeout-ms: ${SNAPSHOT_WORKER_TIMEOUT_MS:10000}
-  webhook:
-    livekit-token: ${LIVEKIT_WEBHOOK_TOKEN:}
   session:
-    client-ack-timeout-seconds: ${CLIENT_ACK_TIMEOUT_SECONDS:10}
     track-publish-timeout-seconds: ${TRACK_PUBLISH_TIMEOUT_SECONDS:20}
     interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}
     idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:600}

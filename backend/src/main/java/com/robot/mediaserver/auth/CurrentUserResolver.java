@@ -27,12 +27,13 @@ public class CurrentUserResolver {
     public CurrentUser resolve(HttpServletRequest request) {
         String userId = headerOrDefault(request, "X-User-Id", "dev-user");
         String orgId = headerOrDefault(request, "X-Org-Id", "dev-org");
+        String clientId = headerOrDefault(request, "X-Client-Id", "web");
         String rolesHeader = headerOrDefault(request, "X-Roles", "MEDIA_VIEWER,MEDIA_OPERATOR");
         Set<String> roles = Arrays.stream(rolesHeader.split(","))
                 .map(String::trim)
                 .filter(role -> !role.isBlank())
                 .collect(Collectors.toSet());
-        return new CurrentUser(userId, orgId, roles);
+        return new CurrentUser(userId, orgId, roles, clientId);
     }
 
     private String headerOrDefault(HttpServletRequest request, String name, String defaultValue) {

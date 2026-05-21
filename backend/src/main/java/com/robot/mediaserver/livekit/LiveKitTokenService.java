@@ -41,6 +41,10 @@ public class LiveKitTokenService {
         return createToken(roomName, "user:" + userId + ":web", false, true);
     }
 
+    public TokenResult createViewerToken(String roomName, String userId, String clientId) {
+        return createToken(roomName, "user:" + userId + ":" + clientId, false, true);
+    }
+
     /**
      * 生成机器人端发布 Token。
      *

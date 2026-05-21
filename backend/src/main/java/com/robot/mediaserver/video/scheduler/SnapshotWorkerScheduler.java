@@ -1,7 +1,6 @@
 package com.robot.mediaserver.video.scheduler;
 
 import com.robot.mediaserver.config.MediaProperties;
-import com.robot.mediaserver.source.service.MediaSourceService;
 import com.robot.mediaserver.video.dto.FailSnapshotRequest;
 import com.robot.mediaserver.video.model.MediaSnapshot;
 import com.robot.mediaserver.video.model.SnapshotStatus;
@@ -20,17 +19,14 @@ public class SnapshotWorkerScheduler {
 
     private final MediaProperties properties;
     private final MediaSnapshotRepository repository;
-    private final MediaSourceService mediaSourceService;
     private final SnapshotService snapshotService;
 
     public SnapshotWorkerScheduler(
             MediaProperties properties,
             MediaSnapshotRepository repository,
-            MediaSourceService mediaSourceService,
             SnapshotService snapshotService) {
         this.properties = properties;
         this.repository = repository;
-        this.mediaSourceService = mediaSourceService;
         this.snapshotService = snapshotService;
     }
 
@@ -45,12 +41,7 @@ public class SnapshotWorkerScheduler {
 
     private void capture(MediaSnapshot snapshot) {
         try {
-            String rtspUrl = mediaSourceService.rtspUrl(
-                    snapshot.getRobotId(),
-                    snapshot.getDeviceId(),
-                    snapshot.getChannel(),
-                    snapshot.getQuality());
-            byte[] image = ffmpeg(rtspUrl);
+            byte[] image = ffmpeg(properties.getRtsp().getDefaultUrl());
             snapshotService.completeBytes(snapshot.getSnapshotId(), image, OffsetDateTime.now(ZoneOffset.UTC));
         } catch (Exception ex) {
             FailSnapshotRequest request = new FailSnapshotRequest();
