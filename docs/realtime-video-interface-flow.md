@@ -2,20 +2,23 @@
 
 ## 1. 文档范围
 
-本文档按当前代码实现描述实时视频模块的前端、后端 Media Service、Go 云接入客户端、EMQX、LiveKit 之间的接口、事件、状态机和异常恢复流程。
+本文档按当前代码实现描述实时视频模块的前端、Control Server、Media Service、Go 云接入客户端、EMQX、LiveKit 之间的接口、事件、状态机和异常恢复流程。
 
-当前方案仍为方案 A：机器人侧 Go 云接入客户端直接接入 LiveKit，作为 publisher 发布视频 Track；浏览器只通过后端获取观看 Token，然后直接订阅 LiveKit Track。
+当前方案仍为方案 A：机器人侧 Go 云接入客户端直接接入 LiveKit，作为 publisher 发布视频 Track；浏览器通过 Control Server 获取观看 Token 后，直接订阅 LiveKit Track。
 
 ## 2. 当前核心边界
 
 | 模块 | 当前职责 |
 |---|---|
-| 前端 Vue2 调试台 | 展示机器人列表、1/4/9 宫格视频墙、创建观看会话、连接 LiveKit、单路停止、单路抓拍、观看者心跳 |
-| Java Media Service | 机器人在线注册、会话编排、LiveKit Token 签发、MQTT 指令下发、会话状态维护、viewerCount 维护、WebSocket 推送 |
+| 前端 Vue2 调试台 | 展示机器人列表、1/4/9 宫格视频墙、调用 Control API、连接 LiveKit、单路停止、单路抓拍、观看者心跳 |
+| Control Server | 面向前端提供统一业务入口，负责设备上下文、权限入口、视频操作编排和 WebSocket 入口 |
+| Java Media Service | 面向 Control Server 提供媒体内部接口，负责机器人在线注册、会话编排、LiveKit Token 签发、MQTT 指令下发、状态维护、viewerCount 维护 |
 | Go 云接入客户端 | 机器人侧统一客户端，启动后上报设备与摄像头列表，订阅 MQTT start/stop/switch，按 sessionId 管理多个 publisher 进程 |
 | EMQX | 后端与 Go 客户端之间的控制消息、状态消息和客户端心跳消息通道 |
 | LiveKit | 按摄像头维度承载 Room/Track，负责实时媒体转发 |
 | MinIO | 抓拍图片对象存储 |
+
+当前代码中 Control Server 与 Media Service 仍在同一个 Spring Boot 进程内，通过服务类直接调用完成；接口路径已按独立微服务边界拆分，后续可平滑改为 Control Server 通过 HTTP 调用 Media Service 的 `/internal/media/**`。
 
 当前不包含：媒体源 CRUD、RTSP 探测 REST 接口、MQTT ACK、LiveKit webhook。
 
@@ -106,9 +109,10 @@ map[sessionId]*exec.Cmd
 
 ```text
 前端: http://{serverIp}:8090
-后端: http://{serverIp}:8088
+Control API: http://{serverIp}:8088/api/control
+Media Internal API: http://{serverIp}:8088/internal/media
 LiveKit: ws://{serverIp}:7880
-业务 WebSocket: ws://{serverIp}:8090/ws/media 或 ws://{serverIp}:8088/ws/media
+业务 WebSocket: ws://{serverIp}:8090/ws/control 或 ws://{serverIp}:8088/ws/control
 ```
 
 Mock 鉴权请求头：
@@ -266,15 +270,17 @@ REST 接口异常统一返回 JSON：
 | `404` | `NOT_FOUND` | 会话、机器人或资源不存在 |
 | `409` | `INVALID_STATE` | 当前会话状态不允许执行该操作，例如非 streaming 时抓拍 |
 
-## 6. REST 接口
+## 6. Control API 接口
+
+Control API 是前端唯一直接调用的业务接口。当前实现位于同一个 Spring Boot 应用内，路径为 `/api/control/**`；后续独立成控制服务时，接口契约保持不变，内部再调用 Media Service 的 `/internal/media/**`。
 
 ### 6.1 查询机器人设备列表
 
 | 项 | 内容 |
 |---|---|
 | 方法 | `GET` |
-| 路径 | `/api/media/robots` |
-| 调用方 | 前端 -> 后端 |
+| 路径 | `/api/control/robots` |
+| 调用方 | 前端 -> Control Server |
 
 请求参数：无。
 
@@ -312,8 +318,15 @@ REST 接口异常统一返回 JSON：
 | 项 | 内容 |
 |---|---|
 | 方法 | `POST` |
-| 路径 | `/api/media/video-sessions` |
-| 调用方 | 前端 -> 后端 |
+| 路径 | `/api/control/robots/{robotId}/cameras/{deviceId}/video/start` |
+| 调用方 | 前端 -> Control Server |
+
+路径参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `robotId` | string | 是 | 要观看的机器人 ID，来自 `/api/control/robots` |
+| `deviceId` | string | 是 | 要观看的摄像头 ID，来自机器人摄像头列表 |
 
 请求 Header：见 5.1。
 
@@ -321,8 +334,6 @@ REST 接口异常统一返回 JSON：
 
 ```json
 {
-  "robotId": "robot-001",
-  "deviceId": "camera01",
   "channel": "visible",
   "quality": "sub",
   "reuse": true,
@@ -334,8 +345,6 @@ REST 接口异常统一返回 JSON：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| `robotId` | string | 是 | 要观看的机器人 ID，来自 `/api/media/robots` |
-| `deviceId` | string | 是 | 要观看的摄像头 ID，来自机器人摄像头列表 |
 | `channel` | string | 是 | 视频通道，当前通常传 `visible` |
 | `quality` | string | 是 | 清晰度，视频墙通常传 `sub`，单路详情可传 `main` |
 | `reuse` | boolean | 否 | 是否复用同一路已有会话；前端观看应传 `true` |
@@ -379,8 +388,8 @@ REST 接口异常统一返回 JSON：
 | 项 | 内容 |
 |---|---|
 | 方法 | `POST` |
-| 路径 | `/api/media/video-sessions/{sessionId}/token` |
-| 调用方 | 前端 -> 后端 |
+| 路径 | `/api/control/video-sessions/{sessionId}/token` |
+| 调用方 | 前端 -> Control Server |
 
 路径参数：
 
@@ -412,8 +421,8 @@ REST 接口异常统一返回 JSON：
 | 项 | 内容 |
 |---|---|
 | 方法 | `POST` |
-| 路径 | `/api/media/video-sessions/{sessionId}/heartbeat` |
-| 调用方 | 前端 -> 后端 |
+| 路径 | `/api/control/video-sessions/{sessionId}/heartbeat` |
+| 调用方 | 前端 -> Control Server |
 
 路径参数：
 
@@ -442,8 +451,8 @@ REST 接口异常统一返回 JSON：
 | 项 | 内容 |
 |---|---|
 | 方法 | `POST` |
-| 路径 | `/api/media/video-sessions/{sessionId}/stop` |
-| 调用方 | 前端 -> 后端 |
+| 路径 | `/api/control/video-sessions/{sessionId}/stop` |
+| 调用方 | 前端 -> Control Server |
 
 路径参数：
 
@@ -481,8 +490,8 @@ REST 接口异常统一返回 JSON：
 | 项 | 内容 |
 |---|---|
 | 方法 | `POST` |
-| 路径 | `/api/media/video-sessions/{sessionId}/restart` |
-| 调用方 | 前端/后端恢复逻辑 -> 后端 |
+| 路径 | `/api/control/video-sessions/{sessionId}/restart` |
+| 调用方 | 前端/Control Server 恢复逻辑 -> Control Server |
 
 路径参数：
 
@@ -505,8 +514,8 @@ REST 接口异常统一返回 JSON：
 | 项 | 内容 |
 |---|---|
 | 方法 | `POST` |
-| 路径 | `/api/media/video-sessions/{sessionId}/snapshots` |
-| 调用方 | 前端 -> 后端 |
+| 路径 | `/api/control/video-sessions/{sessionId}/snapshots` |
+| 调用方 | 前端 -> Control Server |
 
 路径参数：
 
@@ -547,28 +556,26 @@ REST 接口异常统一返回 JSON：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `GET` | `/api/media/video-sessions` | 查询当前用户最近会话 |
-| `GET` | `/api/media/video-sessions/active` | 查询活跃视频墙会话 |
-| `GET` | `/api/media/video-sessions/{sessionId}` | 查询单个会话，并重新签发 viewerToken |
-| `GET` | `/api/media/video-sessions/{sessionId}/events` | 查询会话事件日志 |
-| `GET` | `/api/media/video-sessions/{sessionId}/tracks` | 查询会话 Track |
-| `GET` | `/api/media/video-sessions/{sessionId}/snapshots` | 查询抓拍列表 |
-| `POST` | `/api/media/video-sessions/{sessionId}/switch-channel` | 切换通道 |
-| `POST` | `/api/media/video-sessions/{sessionId}/_mock/track-published/{trackSid}` | 调试用模拟 Track 发布 |
+| `GET` | `/api/control/video-sessions` | 查询当前用户最近会话 |
+| `GET` | `/api/control/video-sessions/active` | 查询活跃视频墙会话 |
+| `GET` | `/api/control/video-sessions/{sessionId}` | 查询单个会话，并重新签发 viewerToken |
+| `GET` | `/api/control/video-sessions/{sessionId}/events` | 查询会话事件日志 |
+| `GET` | `/api/control/video-sessions/{sessionId}/tracks` | 查询会话 Track |
+| `GET` | `/api/control/video-sessions/{sessionId}/snapshots` | 查询抓拍列表 |
+| `POST` | `/api/control/video-sessions/{sessionId}/switch-channel` | 切换通道 |
 
 辅助接口参数与响应：
 
 | 接口 | 请求参数 | 响应类型 | 说明 |
 |---|---|---|---|
-| `GET /api/media/video-sessions` | Header 见 5.1 | `VideoSessionResponse[]` | 返回当前用户最近创建或观看的会话 |
-| `GET /api/media/video-sessions/active` | 无 | `VideoSessionResponse[]` | 返回最多 16 条活跃视频墙会话 |
-| `GET /api/media/video-sessions/{sessionId}` | Path: `sessionId` | `VideoSessionResponse` | 会重新签发 `viewerToken` |
-| `GET /api/media/video-sessions/{sessionId}/events` | Path: `sessionId` | `MediaEventLogResponse[]` | 返回该会话最近事件 |
-| `GET /api/media/video-sessions/{sessionId}/tracks` | Path: `sessionId` | `MediaTrackResponse[]` | 返回该会话最近 Track |
-| `GET /api/media/video-sessions/{sessionId}/snapshots` | Path: `sessionId` | `SnapshotResponse[]` | 返回该会话抓拍记录 |
-| `POST /api/media/video-sessions/{sessionId}/_mock/track-published/{trackSid}` | Path: `sessionId`、`trackSid` | `VideoSessionResponse` | 仅调试用，生产应禁用或加权限 |
+| `GET /api/control/video-sessions` | Header 见 5.1 | `VideoSessionResponse[]` | 返回当前用户最近创建或观看的会话 |
+| `GET /api/control/video-sessions/active` | 无 | `VideoSessionResponse[]` | 返回最多 16 条活跃视频墙会话 |
+| `GET /api/control/video-sessions/{sessionId}` | Path: `sessionId` | `VideoSessionResponse` | 会重新签发 `viewerToken` |
+| `GET /api/control/video-sessions/{sessionId}/events` | Path: `sessionId` | `MediaEventLogResponse[]` | 返回该会话最近事件 |
+| `GET /api/control/video-sessions/{sessionId}/tracks` | Path: `sessionId` | `MediaTrackResponse[]` | 返回该会话最近 Track |
+| `GET /api/control/video-sessions/{sessionId}/snapshots` | Path: `sessionId` | `SnapshotResponse[]` | 返回该会话抓拍记录 |
 
-`POST /api/media/video-sessions/{sessionId}/switch-channel` 请求体：
+`POST /api/control/video-sessions/{sessionId}/switch-channel` 请求体：
 
 ```json
 {
@@ -591,8 +598,10 @@ REST 接口异常统一返回 JSON：
 业务 WebSocket 地址：
 
 ```text
-/ws/media
+/ws/control
 ```
+
+当前后端仍兼容 `/ws/media`，前端默认使用 `/ws/control`。
 
 消息格式：
 
@@ -695,15 +704,39 @@ REST 接口异常统一返回 JSON：
 
 前端只根据 `sessionId` 找到对应画面更新，不会把其他画面的事件应用到当前画面。
 
-## 8. MQTT Topic 与 Payload
+## 8. Media Internal API 接口
 
-### 8.1 后端下发 start
+Media Internal API 是 Media Service 暴露给 Control Server 的内部能力接口，当前路径为 `/internal/media/**`。当前代码同时保留 `/api/media/**` 兼容旧调试入口，但前端不再直接调用。
+
+| Control Server 调用 | Media Service 内部接口 | 说明 |
+|---|---|---|
+| `GET /api/control/robots` | `GET /internal/media/robots` | 获取媒体侧机器人在线状态和摄像头列表 |
+| `POST /api/control/robots/{robotId}/cameras/{deviceId}/video/start` | `POST /internal/media/video-sessions` | 创建或复用视频会话 |
+| `POST /api/control/video-sessions/{sessionId}/token` | `POST /internal/media/video-sessions/{sessionId}/token` | 签发观看 Token |
+| `POST /api/control/video-sessions/{sessionId}/heartbeat` | `POST /internal/media/video-sessions/{sessionId}/heartbeat` | 刷新观看者心跳 |
+| `POST /api/control/video-sessions/{sessionId}/stop` | `POST /internal/media/video-sessions/{sessionId}/stop` | 停止当前 viewer |
+| `POST /api/control/video-sessions/{sessionId}/restart` | `POST /internal/media/video-sessions/{sessionId}/restart` | 非主动停止场景恢复推流 |
+| `POST /api/control/video-sessions/{sessionId}/snapshots` | `POST /internal/media/video-sessions/{sessionId}/snapshots` | 创建抓拍任务 |
+| `GET /api/control/video-sessions/{sessionId}/events` | `GET /internal/media/video-sessions/{sessionId}/events` | 查询媒体事件 |
+| `GET /api/control/video-sessions/{sessionId}/tracks` | `GET /internal/media/video-sessions/{sessionId}/tracks` | 查询 Track |
+
+拆分原则：
+
+```text
+Control Server 可以校验用户、组织、设备、任务上下文。
+Media Service 不关心前端页面布局，不承接业务任务编排。
+LiveKit Token、Room 命名、Track 状态、viewerCount 仍由 Media Service 统一维护。
+```
+
+## 9. MQTT Topic 与 Payload
+
+### 9.1 Media Service 下发 start
 
 | 项 | 内容 |
 |---|---|
 | Topic | `robot/{robotId}/media/video/start` |
 | QoS | 1 |
-| 方向 | 后端 -> Go 客户端 |
+| 方向 | Media Service -> Go 客户端 |
 
 Payload：
 
@@ -752,13 +785,13 @@ Go 客户端行为：
 7. 上报 status=streaming。
 ```
 
-### 8.2 后端下发 stop
+### 9.2 Media Service 下发 stop
 
 | 项 | 内容 |
 |---|---|
 | Topic | `robot/{robotId}/media/video/stop` |
 | QoS | 1 |
-| 方向 | 后端 -> Go 客户端 |
+| 方向 | Media Service -> Go 客户端 |
 
 Payload：
 
@@ -780,23 +813,23 @@ Payload 字段说明：
 
 Go 客户端只停止 `publishers[sessionId]`，不会影响其他路视频。
 
-### 8.3 后端下发 switch-channel
+### 9.3 Media Service 下发 switch-channel
 
 | 项 | 内容 |
 |---|---|
 | Topic | `robot/{robotId}/media/video/switch-channel` |
 | QoS | 1 |
-| 方向 | 后端 -> Go 客户端 |
+| 方向 | Media Service -> Go 客户端 |
 
-Payload 当前与 start 一致。字段说明见 8.1。Go 客户端复用 start 处理逻辑。
+Payload 当前与 start 一致。字段说明见 9.1。Go 客户端复用 start 处理逻辑。
 
-### 8.4 Go 客户端上报视频状态
+### 9.4 Go 客户端上报视频状态
 
 | 项 | 内容 |
 |---|---|
 | Topic | `robot/{robotId}/media/video/status` |
 | QoS | 1 |
-| 方向 | Go 客户端 -> 后端 |
+| 方向 | Go 客户端 -> Media Service |
 
 Payload：
 
@@ -844,13 +877,13 @@ Payload 字段说明：
 | `LK_PUBLISH_TIMEOUT` | Room ready 后 Track 发布超时 |
 | `TRACK_INTERRUPTED_TIMEOUT` | Track 中断恢复超时 |
 
-### 8.5 Go 客户端上报在线状态和摄像头列表
+### 9.5 Go 客户端上报在线状态和摄像头列表
 
 | 项 | 内容 |
 |---|---|
 | Topic | `robot/{robotId}/media/client/status` |
 | QoS | 1 |
-| 方向 | Go 客户端 -> 后端 |
+| 方向 | Go 客户端 -> Media Service |
 
 Payload：
 
@@ -902,11 +935,11 @@ Go 客户端启动、MQTT 重连和每 5 秒心跳都会上报 `online`。正常
 
 后端只在状态从 offline 变为 online 时触发 `video.client.online_restart`，普通心跳不会重复 restart。
 
-## 9. 前端视频墙交互逻辑
+## 10. 前端视频墙交互逻辑
 
 当前前端是 Vue2 + Element UI 调试台。
 
-### 9.1 页面布局
+### 10.1 页面布局
 
 ```text
 左侧：机器人设备列表
@@ -934,20 +967,20 @@ viewerCount
 观看 / 停止 / 抓拍
 ```
 
-### 9.2 开始观看
+### 10.2 开始观看
 
 ```text
 1. 点击某一路画面的“观看”。
-2. POST /api/media/video-sessions，reuse=true。
+2. POST /api/control/robots/{robotId}/cameras/{deviceId}/video/start，reuse=true。
 3. 保存 session。
-4. POST /api/media/video-sessions/{sessionId}/token 重新拿 viewerToken。
+4. POST /api/control/video-sessions/{sessionId}/token 重新拿 viewerToken。
 5. new Room()。
 6. room.connect(livekitUrl, viewerToken)。
 7. TrackSubscribed 后 attach 到该画面的 video 元素。
 8. 该画面开始每 5 秒上报 viewer heartbeat。
 ```
 
-### 9.3 停止观看
+### 10.3 停止观看
 
 ```text
 1. 点击某一路画面的“停止”。
@@ -959,7 +992,7 @@ viewerCount
 7. 后续 WS streaming 不会再把该画面自动拉起。
 ```
 
-### 9.4 非主动异常恢复
+### 10.4 非主动异常恢复
 
 ```text
 TrackUnsubscribed 或 Disconnected
@@ -970,9 +1003,9 @@ TrackUnsubscribed 或 Disconnected
 
 主动停止不会触发 restart。
 
-## 10. Go 客户端多路推流逻辑
+## 11. Go 客户端多路推流逻辑
 
-### 10.1 默认摄像头配置
+### 11.1 默认摄像头配置
 
 `robot-001` 默认：
 
@@ -999,7 +1032,7 @@ ROBOT_ID=robot-002
 ROBOT_CLIENT_ID=robot-media-client-robot-002
 ```
 
-### 10.2 Publisher 进程管理
+### 11.2 Publisher 进程管理
 
 Go 客户端当前使用 `gstreamer-publisher` 进程：
 
@@ -1021,7 +1054,7 @@ Stop(sessionId): 只杀掉 cmds[sessionId]
 StopAll(): MQTT 断开或客户端退出时停止全部进程
 ```
 
-## 11. 后端定时任务
+## 12. 后端定时任务
 
 | 任务 | 默认频率 | 说明 |
 |---|---|---|
@@ -1029,7 +1062,7 @@ StopAll(): MQTT 断开或客户端退出时停止全部进程
 | 机器人心跳扫描 | 5 秒 | Go 客户端心跳超时则标记 offline |
 | 抓拍 worker | 3 秒 | 处理待抓拍任务 |
 
-### 11.1 viewer 清理
+### 12.1 viewer 清理
 
 观看者存储在 `media_session_viewer` 表中：
 
@@ -1051,7 +1084,7 @@ lastHeartbeatAt 超过 viewer-heartbeat-timeout-seconds
 
 后端启动时也会执行一次历史 viewer 清理，避免 Java 重启后旧观看人数残留。
 
-### 11.2 空闲释放
+### 12.2 空闲释放
 
 当最后一个观看者停止后：
 
@@ -1065,30 +1098,39 @@ session -> CLOSED
 
 如果 deleteRoom 时 LiveKit 返回 404，按 Room 已不存在处理，不影响调度。
 
-## 12. 正常播放流程
+## 13. 正常播放流程
 
 ```mermaid
 sequenceDiagram
     participant FE as Frontend
-    participant BE as Media Service
+    participant CS as Control Server
+    participant MS as Media Service
     participant MQ as EMQX
     participant GO as Go Client
     participant LK as LiveKit
 
     GO->>MQ: client/status online + cameras
-    MQ->>BE: online + cameras
-    BE-->>FE: WS robot.client.online
-    FE->>BE: GET /api/media/robots
-    BE-->>FE: robot list
+    MQ->>MS: online + cameras
+    MS-->>CS: media event / internal query result
+    CS-->>FE: WS /ws/control robot.client.online
+    FE->>CS: GET /api/control/robots
+    CS->>MS: GET /internal/media/robots
+    MS-->>CS: robot list
+    CS-->>FE: robot list
 
-    FE->>BE: POST /api/media/video-sessions
-    BE->>LK: CreateRoom
-    BE->>BE: create publisherToken/viewerToken
-    BE->>MQ: video/start
-    BE-->>FE: VideoSessionResponse
+    FE->>CS: POST /api/control/robots/{robotId}/cameras/{deviceId}/video/start
+    CS->>CS: permission / device context check
+    CS->>MS: POST /internal/media/video-sessions
+    MS->>LK: CreateRoom
+    MS->>MS: create publisherToken/viewerToken
+    MS->>MQ: video/start
+    MS-->>CS: VideoSessionResponse
+    CS-->>FE: VideoSessionResponse
 
-    FE->>BE: POST /token
-    BE-->>FE: ViewerTokenResponse
+    FE->>CS: POST /api/control/video-sessions/{sessionId}/token
+    CS->>MS: POST /internal/media/video-sessions/{sessionId}/token
+    MS-->>CS: ViewerTokenResponse
+    CS-->>FE: ViewerTokenResponse
     FE->>LK: room.connect(livekitUrl, viewerToken)
 
     MQ->>GO: video/start
@@ -1096,8 +1138,9 @@ sequenceDiagram
     GO->>MQ: status=publishing
     GO->>LK: publish Track
     GO->>MQ: status=streaming
-    MQ->>BE: status=streaming
-    BE-->>FE: WS video.session.streaming
+    MQ->>MS: status=streaming
+    MS-->>CS: media event video.session.streaming
+    CS-->>FE: WS /ws/control video.session.streaming
     LK-->>FE: TrackSubscribed
     FE->>FE: attach video element
 ```
@@ -1108,7 +1151,16 @@ sequenceDiagram
 INIT -> REQUESTING_CLIENT -> ROOM_READY -> STREAMING
 ```
 
-## 13. 多浏览器观看流程
+说明：
+
+```text
+Control Server 只做业务入口和编排，不代理 WebRTC 媒体流。
+前端拿到 livekitUrl 和 viewerToken 后，仍然直接连接 LiveKit。
+Media Service 继续统一维护 Room、Track、Token、viewerCount 和 MQTT 指令。
+当前代码中 Control Server 与 Media Service 同进程部署，后续拆成独立微服务时将服务类调用替换成 /internal/media/** HTTP 调用即可。
+```
+
+## 14. 多浏览器观看流程
 
 A 浏览器观看 camera01：
 
@@ -1143,7 +1195,7 @@ A 的 room 和 video 不应该断开
 viewerCount 自动下降
 ```
 
-## 14. Go 客户端断网/离线流程
+## 15. Go 客户端断网/离线流程
 
 主动退出：
 
@@ -1172,7 +1224,7 @@ GO: 重新推流
 FE: 收到 streaming 后重新 connect/attach
 ```
 
-## 15. 局域网部署注意事项
+## 16. 局域网部署注意事项
 
 前端、后端、Go 客户端、LiveKit 都必须使用局域网可访问地址，不能返回 `localhost` 或 `127.0.0.1`。
 
@@ -1202,7 +1254,7 @@ localCandidate host 127.0.0.1:500xx
 
 局域网其他电脑会连不上媒体，页面会表现为“等待 LiveKit Track”或连接成功但无画面。
 
-## 16. 当前关键配置
+## 17. 当前关键配置
 
 后端：
 
@@ -1226,7 +1278,8 @@ media:
 
 ```text
 /api -> 后端 HTTP
-/ws/media -> 后端 WebSocket
+/ws/control -> Control WebSocket
+兼容路径 /ws/media -> Media WebSocket
 LiveKit 连接地址来自后端 VideoSessionResponse.livekitUrl 或 ViewerTokenResponse.livekitUrl
 ```
 
@@ -1241,9 +1294,9 @@ export RTSP_CAMERA01=rtsp://192.168.124.204:8554/camera01
 export HEARTBEAT_INTERVAL_MS=5000
 ```
 
-## 17. 联调验收清单
+## 18. 联调验收清单
 
-### 17.1 单路正常播放
+### 18.1 单路正常播放
 
 ```text
 Go 客户端 online
@@ -1258,7 +1311,7 @@ Go 客户端 status=streaming
 画面出现
 ```
 
-### 17.2 单路停止不影响其他路
+### 18.2 单路停止不影响其他路
 
 ```text
 同时观看 camera01/camera02
@@ -1268,7 +1321,7 @@ camera02 继续播放
 Go 客户端只停止 camera01 对应 sessionId publisher
 ```
 
-### 17.3 多浏览器观看同一路
+### 18.3 多浏览器观看同一路
 
 ```text
 A 观看 camera01 -> viewerCount=1
@@ -1278,7 +1331,7 @@ A 不应中断、不应重连、不应重新播放
 A 停止 -> viewerCount=0 -> IDLE_WAIT
 ```
 
-### 17.4 浏览器异常关闭
+### 18.4 浏览器异常关闭
 
 ```text
 A 观看 camera01
@@ -1288,7 +1341,7 @@ A 观看 camera01
 viewerCount 自动下降
 ```
 
-### 17.5 Go 客户端异常断网
+### 18.5 Go 客户端异常断网
 
 ```text
 Go 客户端停止或断网
@@ -1300,11 +1353,11 @@ robot.client.online
 画面恢复
 ```
 
-### 17.6 局域网非本机访问
+### 18.6 局域网非本机访问
 
 ```text
 浏览器能访问 http://192.168.124.77:8090
-浏览器能建立 ws://192.168.124.77:8088/ws/media 或代理 /ws/media
+浏览器能建立 ws://192.168.124.77:8088/ws/control 或代理 /ws/control
 浏览器能访问 ws://192.168.124.77:7880
 LiveKit UDP 50000-50100 可达
 LiveKit ICE candidate 不是 127.0.0.1

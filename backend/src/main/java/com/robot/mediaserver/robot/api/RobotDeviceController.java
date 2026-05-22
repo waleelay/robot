@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/media/robots")
+@RequestMapping({"/api/media/robots", "/internal/media/robots"})
 public class RobotDeviceController {
 
     private final RobotRegistryService registryService;

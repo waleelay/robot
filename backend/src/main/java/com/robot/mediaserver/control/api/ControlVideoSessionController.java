@@ -1,9 +1,8 @@
-package com.robot.mediaserver.video.api;
+package com.robot.mediaserver.control.api;
 
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.auth.CurrentUserResolver;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
-import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.MediaTrackResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
@@ -11,14 +10,12 @@ import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
 import com.robot.mediaserver.video.event.MediaEventLogService;
-import com.robot.mediaserver.video.service.SnapshotService;
 import com.robot.mediaserver.video.service.MediaTrackService;
+import com.robot.mediaserver.video.service.SnapshotService;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,10 +24,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping({"/api/media/video-sessions", "/internal/media/video-sessions"})
-public class VideoSessionController {
-
-    private static final Logger log = LoggerFactory.getLogger(VideoSessionController.class);
+@RequestMapping("/api/control/video-sessions")
+public class ControlVideoSessionController {
 
     private final VideoSessionService service;
     private final CurrentUserResolver currentUserResolver;
@@ -38,7 +33,7 @@ public class VideoSessionController {
     private final SnapshotService snapshotService;
     private final MediaTrackService mediaTrackService;
 
-    public VideoSessionController(
+    public ControlVideoSessionController(
             VideoSessionService service,
             CurrentUserResolver currentUserResolver,
             MediaEventLogService eventLogService,
@@ -49,16 +44,6 @@ public class VideoSessionController {
         this.eventLogService = eventLogService;
         this.snapshotService = snapshotService;
         this.mediaTrackService = mediaTrackService;
-    }
-
-    @PostMapping
-    public VideoSessionResponse create(@Valid @RequestBody CreateVideoSessionRequest request, HttpServletRequest servletRequest) {
-        log.info("create video session robotId={}, deviceId={}, channel={}, quality={}",
-                request.getRobotId(),
-                request.getDeviceId(),
-                request.getChannel(),
-                request.getQuality());
-        return service.create(request, currentUserResolver.resolve(servletRequest));
     }
 
     @GetMapping
@@ -123,10 +108,5 @@ public class VideoSessionController {
     @GetMapping("/{sessionId}/snapshots")
     public List<SnapshotResponse> snapshots(@PathVariable String sessionId) {
         return snapshotService.recentBySession(sessionId);
-    }
-
-    @PostMapping("/{sessionId}/_mock/track-published/{trackSid}")
-    public VideoSessionResponse mockTrackPublished(@PathVariable String sessionId, @PathVariable String trackSid) {
-        return service.markTrackPublished(sessionId, trackSid);
     }
 }

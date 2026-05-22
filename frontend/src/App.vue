@@ -345,7 +345,7 @@ export default {
     },
     connectWebSocket() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/media`
+      const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/control`
       const socket = new WebSocket(url)
       socket.onopen = () => {
         this.wsConnected = true
