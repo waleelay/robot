@@ -92,6 +92,11 @@ public class VideoSessionController {
         return service.createViewerToken(sessionId, user);
     }
 
+    @PostMapping("/{sessionId}/heartbeat")
+    public VideoSessionResponse heartbeat(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return service.heartbeat(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
     @PostMapping("/{sessionId}/stop")
     public VideoSessionResponse stop(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         return service.stop(sessionId, currentUserResolver.resolve(servletRequest));

@@ -36,6 +36,7 @@ public class MediaSessionViewer {
     private String clientType;
 
     private OffsetDateTime joinedAt;
+    private OffsetDateTime lastHeartbeatAt;
     private OffsetDateTime leftAt;
 
     public String getId() {
@@ -92,6 +93,14 @@ public class MediaSessionViewer {
 
     public void setJoinedAt(OffsetDateTime joinedAt) {
         this.joinedAt = joinedAt;
+    }
+
+    public OffsetDateTime getLastHeartbeatAt() {
+        return lastHeartbeatAt;
+    }
+
+    public void setLastHeartbeatAt(OffsetDateTime lastHeartbeatAt) {
+        this.lastHeartbeatAt = lastHeartbeatAt;
     }
 
     public OffsetDateTime getLeftAt() {

@@ -36,6 +36,7 @@ public class VideoSessionTimeoutScheduler {
         handleTrackPublishTimeout();
         handleInterruptedTimeout();
         handleIdleRelease();
+        videoSessionService.sweepStaleViewers();
     }
 
     private void handleTrackPublishTimeout() {

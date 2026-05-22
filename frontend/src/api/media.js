@@ -18,6 +18,10 @@ export function createVideoSession(data) {
   return client.post('/api/media/video-sessions', data).then(res => res.data)
 }
 
+export function getRobots() {
+  return client.get('/api/media/robots').then(res => res.data)
+}
+
 export function getActiveVideoSessions() {
   return client.get('/api/media/video-sessions/active').then(res => res.data)
 }
@@ -28,6 +32,10 @@ export function getViewerToken(sessionId) {
 
 export function stopVideoSession(sessionId) {
   return client.post(`/api/media/video-sessions/${sessionId}/stop`).then(res => res.data)
+}
+
+export function heartbeatVideoSession(sessionId) {
+  return client.post(`/api/media/video-sessions/${sessionId}/heartbeat`).then(res => res.data)
 }
 
 export function restartVideoSession(sessionId) {

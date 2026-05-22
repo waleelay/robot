@@ -179,6 +179,16 @@ public class VideoSessionService {
     }
 
     @Transactional
+    public VideoSessionResponse heartbeat(String sessionId, CurrentUser user) {
+        VideoSession session = requireSession(sessionId);
+        addViewer(session, user);
+        session.setViewerCount(activeViewerCount(sessionId));
+        session.setUpdatedAt(now());
+        repository.save(session);
+        return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
+    }
+
+    @Transactional
     public VideoSessionResponse stop(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         removeViewer(sessionId, user);
@@ -400,6 +410,37 @@ public class VideoSessionService {
                 .toList();
     }
 
+    @Transactional
+    public void sweepStaleViewers() {
+        OffsetDateTime threshold = now().minusSeconds(properties.getSession().getViewerHeartbeatTimeoutSeconds());
+        viewerRepository.findByLeftAtIsNullAndLastHeartbeatAtBefore(threshold).forEach(viewer -> {
+            closeViewer(viewer);
+        });
+    }
+
+    @Transactional
+    public void closeAllActiveViewers() {
+        viewerRepository.findByLeftAtIsNull().forEach(this::closeViewer);
+    }
+
+    private void closeViewer(MediaSessionViewer viewer) {
+        viewer.setLeftAt(now());
+        viewerRepository.save(viewer);
+        repository.findById(viewer.getSessionId()).ifPresent(session -> {
+            session.setViewerCount(activeViewerCount(session.getSessionId()));
+            if (session.getViewerCount() == 0 && session.getStatus() == VideoSessionStatus.STREAMING) {
+                session.setIdleSince(now());
+                transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
+                        "sessionId", session.getSessionId(),
+                        "idleReleaseDelaySeconds", properties.getSession().getIdleReleaseDelaySeconds()));
+            } else {
+                emit("video.viewer.changed", session);
+            }
+            session.setUpdatedAt(now());
+            repository.save(session);
+        });
+    }
+
     private VideoSession requireSession(String sessionId) {
         return repository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Video session not found: " + sessionId));
@@ -446,6 +487,10 @@ public class VideoSessionService {
     private void addViewer(VideoSession session, CurrentUser user) {
         String identity = viewerIdentity(user);
         viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(session.getSessionId(), identity)
+                .map(viewer -> {
+                    viewer.setLastHeartbeatAt(now());
+                    return viewerRepository.save(viewer);
+                })
                 .orElseGet(() -> {
                     MediaSessionViewer viewer = new MediaSessionViewer();
                     viewer.setId("viewer_" + compactUuid());
@@ -455,6 +500,7 @@ public class VideoSessionService {
                     viewer.setParticipantIdentity(identity);
                     viewer.setClientType("web");
                     viewer.setJoinedAt(now());
+                    viewer.setLastHeartbeatAt(now());
                     return viewerRepository.save(viewer);
                 });
     }

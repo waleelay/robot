@@ -36,6 +36,18 @@ type StatusMessage struct {
 type OnlineMessage struct {
 	RobotID   string    `json:"robotId"`
 	ClientID  string    `json:"clientId"`
+	Name      string    `json:"name"`
+	Type      string    `json:"type"`
 	Status    string    `json:"status"`
+	Cameras   []Camera  `json:"cameras,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
+}
+
+type Camera struct {
+	CameraID string `json:"cameraId"`
+	DeviceID string `json:"deviceId"`
+	Name     string `json:"name"`
+	Channel  string `json:"channel"`
+	Quality  string `json:"quality"`
+	Status   string `json:"status"`
 }

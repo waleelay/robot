@@ -16,23 +16,24 @@ import (
 
 type Publisher interface {
 	Start(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error)
-	Stop() error
+	Stop(sessionID string) error
+	StopAll() error
 }
 
 type ProcessPublisher struct {
-	cfg *config.Config
-	cmd *exec.Cmd
-	mu  sync.Mutex
+	cfg  *config.Config
+	cmds map[string]*exec.Cmd
+	mu   sync.Mutex
 }
 
 func NewProcessPublisher(cfg config.Config) *ProcessPublisher {
-	return &ProcessPublisher{cfg: &cfg}
+	return &ProcessPublisher{cfg: &cfg, cmds: make(map[string]*exec.Cmd)}
 }
 
 func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_ = p.stopLocked()
+	_ = p.stopLocked(command.SessionID)
 	trackName := "video." + command.Channel + "." + command.Quality
 	if p.cfg.PublisherCmd == "" {
 		return p.startGStreamer(ctx, command, rtspURL, trackName)
@@ -47,14 +48,15 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 			"{track}", trackName,
 		).Replace(args[i])
 	}
-	p.cmd = exec.CommandContext(ctx, args[0], args[1:]...)
-	p.cmd.Stdout = os.Stdout
-	p.cmd.Stderr = os.Stderr
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	log.Println("publisher command", strings.Join(args, " "))
-	if err := p.cmd.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
-	if err := p.ensureRunning(); err != nil {
+	p.cmds[command.SessionID] = cmd
+	if err := p.ensureRunning(command.SessionID, cmd); err != nil {
 		return "", "", err
 	}
 	return "TR_" + command.SessionID, trackName, nil
@@ -70,42 +72,53 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 	).Replace(p.cfg.GStreamerPipeline)
 	args := []string{"--url", command.LiveKitURL, "--token", command.PublisherToken, "--"}
 	args = append(args, strings.Fields(pipeline)...)
-	p.cmd = exec.CommandContext(ctx, p.cfg.GStreamerPublisherPath, args...)
-	p.cmd.Stdout = os.Stdout
-	p.cmd.Stderr = os.Stderr
+	cmd := exec.CommandContext(ctx, p.cfg.GStreamerPublisherPath, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	log.Println("publisher command", p.cfg.GStreamerPublisherPath, strings.Join(args, " "))
-	if err := p.cmd.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
-	if err := p.ensureRunning(); err != nil {
+	p.cmds[command.SessionID] = cmd
+	if err := p.ensureRunning(command.SessionID, cmd); err != nil {
 		return "", "", err
 	}
 	return "TR_" + command.SessionID, trackName, nil
 }
 
-func (p *ProcessPublisher) Stop() error {
+func (p *ProcessPublisher) Stop(sessionID string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.stopLocked()
+	return p.stopLocked(sessionID)
 }
 
-func (p *ProcessPublisher) stopLocked() error {
-	if p.cmd == nil || p.cmd.Process == nil {
+func (p *ProcessPublisher) StopAll() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for sessionID := range p.cmds {
+		_ = p.stopLocked(sessionID)
+	}
+	return nil
+}
+
+func (p *ProcessPublisher) stopLocked(sessionID string) error {
+	cmd := p.cmds[sessionID]
+	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
-	err := p.cmd.Process.Kill()
-	p.cmd = nil
+	err := cmd.Process.Kill()
+	delete(p.cmds, sessionID)
 	return err
 }
 
-func (p *ProcessPublisher) ensureRunning() error {
+func (p *ProcessPublisher) ensureRunning(sessionID string, cmd *exec.Cmd) error {
 	done := make(chan error, 1)
 	go func(cmd *exec.Cmd) {
 		done <- cmd.Wait()
-	}(p.cmd)
+	}(cmd)
 	select {
 	case err := <-done:
-		p.cmd = nil
+		delete(p.cmds, sessionID)
 		if err == nil {
 			return errors.New("publisher exited")
 		}

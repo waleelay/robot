@@ -2,8 +2,11 @@ package com.robot.mediaserver.video.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.robot.dto.RobotCameraResponse;
+import com.robot.mediaserver.robot.service.RobotRegistryService;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import org.eclipse.paho.client.mqttv3.IMqttMessageListener;
 import org.eclipse.paho.client.mqttv3.MqttClient;
@@ -33,15 +36,18 @@ public class RobotMediaStatusSubscriber {
     private final MediaProperties properties;
     private final ObjectMapper objectMapper;
     private final VideoSessionService videoSessionService;
+    private final RobotRegistryService robotRegistryService;
     private MqttClient client;
 
     public RobotMediaStatusSubscriber(
             MediaProperties properties,
             ObjectMapper objectMapper,
-            VideoSessionService videoSessionService) {
+            VideoSessionService videoSessionService,
+            RobotRegistryService robotRegistryService) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.videoSessionService = videoSessionService;
+        this.robotRegistryService = robotRegistryService;
     }
 
     /**
@@ -87,8 +93,17 @@ public class RobotMediaStatusSubscriber {
             try {
                 Map<String, Object> data = objectMapper.readValue(payload, Map.class);
                 String robotId = String.valueOf(data.get("robotId"));
+                String clientId = String.valueOf(data.get("clientId"));
                 String status = String.valueOf(data.get("status"));
-                videoSessionService.handleClientOnline(robotId, status);
+                String name = data.get("name") == null ? robotId : String.valueOf(data.get("name"));
+                String type = data.get("type") == null ? "机器人" : String.valueOf(data.get("type"));
+                List<RobotCameraResponse> cameras = objectMapper.convertValue(
+                        data.getOrDefault("cameras", List.of()),
+                        objectMapper.getTypeFactory().constructCollectionType(List.class, RobotCameraResponse.class));
+                boolean becameOnline = robotRegistryService.update(robotId, clientId, status, name, type, cameras);
+                if (becameOnline) {
+                    videoSessionService.handleClientOnline(robotId, status);
+                }
             } catch (Exception ex) {
                 log.warn("Failed to handle media client status topic={}, payload={}", topic, payload, ex);
             }

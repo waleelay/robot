@@ -5,7 +5,9 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -63,7 +65,15 @@ public class LiveKitRoomService {
             log.info("LiveKit room api disabled, skip delete room={}", roomName);
             return;
         }
-        post("/twirp/livekit.RoomService/DeleteRoom", Map.of("room", roomName));
+        try {
+            post("/twirp/livekit.RoomService/DeleteRoom", Map.of("room", roomName));
+        } catch (HttpClientErrorException ex) {
+            if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
+                log.info("LiveKit room already absent room={}", roomName);
+                return;
+            }
+            throw ex;
+        }
         log.info("LiveKit room delete requested room={}", roomName);
     }
 

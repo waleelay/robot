@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,11 +20,11 @@ type Client struct {
 	publisher publisher.Publisher
 	mqtt      paho.Client
 	mu        sync.Mutex
-	lastCmd   string
+	lastCmds  map[string]string
 }
 
 func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publisher) *Client {
-	return &Client{cfg: cfg, probe: probe, publisher: publisher}
+	return &Client{cfg: cfg, probe: probe, publisher: publisher, lastCmds: make(map[string]string)}
 }
 
 func (c *Client) Run(ctx context.Context) error {
@@ -42,7 +41,7 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
 		log.Println("mqtt lost", err)
-		c.publisher.Stop()
+		c.publisher.StopAll()
 	})
 	opts.SetOnConnectHandler(func(_ paho.Client) {
 		c.subscribe(startTopic, c.handleStart(ctx))
@@ -56,8 +55,20 @@ func (c *Client) Run(ctx context.Context) error {
 		return token.Error()
 	}
 	log.Println("mqtt connected", c.cfg.MQTTBroker, c.cfg.RobotID)
+	heartbeat := time.NewTicker(c.cfg.HeartbeatInterval)
+	defer heartbeat.Stop()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-heartbeat.C:
+				c.online("online")
+			}
+		}
+	}()
 	<-ctx.Done()
-	c.publisher.Stop()
+	c.publisher.StopAll()
 	c.online("offline")
 	c.mqtt.Disconnect(250)
 	return nil
@@ -76,13 +87,13 @@ func (c *Client) handleStart(ctx context.Context) paho.MessageHandler {
 			log.Println(err)
 			return
 		}
-		if c.isDuplicate(command.CommandID) {
+		if c.isDuplicate(command.SessionID, command.CommandID) {
 			return
 		}
 		log.Println("video start", command.SessionID, command.Channel, command.Quality)
 		rtspURL := command.RTSPURL
 		if rtspURL == "" {
-			rtspURL = c.rtspURL(command.Channel, command.Quality)
+			rtspURL = c.rtspURL(command.DeviceID)
 		}
 		if err := c.probe.Check(ctx, rtspURL); err != nil {
 			c.status(command.SessionID, "failed", "", "", "RTSP_PROBE_FAILED", err.Error())
@@ -98,13 +109,13 @@ func (c *Client) handleStart(ctx context.Context) paho.MessageHandler {
 	}
 }
 
-func (c *Client) isDuplicate(commandID string) bool {
+func (c *Client) isDuplicate(sessionID, commandID string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if commandID != "" && commandID == c.lastCmd {
+	if commandID != "" && commandID == c.lastCmds[sessionID] {
 		return true
 	}
-	c.lastCmd = commandID
+	c.lastCmds[sessionID] = commandID
 	return false
 }
 
@@ -116,7 +127,7 @@ func (c *Client) handleStop() paho.MessageHandler {
 			return
 		}
 		log.Println("video stop", payload.SessionID)
-		c.publisher.Stop()
+		c.publisher.Stop(payload.SessionID)
 		c.status(payload.SessionID, "stopped", "", "", "", "stopped")
 	}
 }
@@ -142,21 +153,34 @@ func (c *Client) online(status string) {
 	c.publish("robot/"+c.cfg.RobotID+"/media/client/status", model.OnlineMessage{
 		RobotID:   c.cfg.RobotID,
 		ClientID:  c.cfg.ClientID,
+		Name:      c.cfg.RobotName,
+		Type:      c.cfg.RobotType,
 		Status:    status,
+		Cameras:   c.cameras(status),
 		Timestamp: time.Now(),
 	})
 }
 
-func (c *Client) rtspURL(channel, quality string) string {
-	key := strings.ToLower(channel) + "." + strings.ToLower(quality)
-	switch key {
-	case "visible.main":
-		return c.cfg.RTSPVisibleMain
-	case "thermal.sub":
-		return c.cfg.RTSPThermalSub
-	case "thermal.main":
-		return c.cfg.RTSPThermalMain
-	default:
-		return c.cfg.RTSPVisibleSub
+func (c *Client) cameras(status string) []model.Camera {
+	items := make([]model.Camera, 0, len(c.cfg.Cameras))
+	for _, camera := range c.cfg.Cameras {
+		items = append(items, model.Camera{
+			CameraID: camera.CameraID,
+			DeviceID: camera.DeviceID,
+			Name:     camera.Name,
+			Channel:  camera.Channel,
+			Quality:  camera.Quality,
+			Status:   status,
+		})
 	}
+	return items
+}
+
+func (c *Client) rtspURL(deviceID string) string {
+	for _, camera := range c.cfg.Cameras {
+		if camera.DeviceID == deviceID || camera.CameraID == deviceID {
+			return camera.RTSPURL
+		}
+	}
+	return c.cfg.RTSPVisibleSub
 }

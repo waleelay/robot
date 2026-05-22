@@ -19,6 +19,7 @@ public class MediaProperties {
     private Mqtt mqtt = new Mqtt();
     private Minio minio = new Minio();
     private Rtsp rtsp = new Rtsp();
+    private Robot robot = new Robot();
     private Session session = new Session();
     private SnapshotWorker snapshotWorker = new SnapshotWorker();
 
@@ -60,6 +61,14 @@ public class MediaProperties {
 
     public void setRtsp(Rtsp rtsp) {
         this.rtsp = rtsp;
+    }
+
+    public Robot getRobot() {
+        return robot;
+    }
+
+    public void setRobot(Robot robot) {
+        this.robot = robot;
     }
 
     public Session getSession() {
@@ -256,6 +265,7 @@ public class MediaProperties {
     private long trackPublishTimeoutSeconds = 20;
     private long interruptedGraceSeconds = 15;
     private long idleReleaseDelaySeconds = 60;
+    private long viewerHeartbeatTimeoutSeconds = 15;
     private int maxVideoWallStreams = 16;
     private String maxDetailResolution = "2K";
 
@@ -283,6 +293,14 @@ public class MediaProperties {
             this.idleReleaseDelaySeconds = idleReleaseDelaySeconds;
         }
 
+    public long getViewerHeartbeatTimeoutSeconds() {
+            return viewerHeartbeatTimeoutSeconds;
+        }
+
+    public void setViewerHeartbeatTimeoutSeconds(long viewerHeartbeatTimeoutSeconds) {
+            this.viewerHeartbeatTimeoutSeconds = viewerHeartbeatTimeoutSeconds;
+        }
+
     public int getMaxVideoWallStreams() {
             return maxVideoWallStreams;
         }
@@ -297,6 +315,18 @@ public class MediaProperties {
 
     public void setMaxDetailResolution(String maxDetailResolution) {
             this.maxDetailResolution = maxDetailResolution;
+        }
+    }
+
+    public static class Robot {
+    private long heartbeatTimeoutSeconds = 15;
+
+    public long getHeartbeatTimeoutSeconds() {
+            return heartbeatTimeoutSeconds;
+        }
+
+    public void setHeartbeatTimeoutSeconds(long heartbeatTimeoutSeconds) {
+            this.heartbeatTimeoutSeconds = heartbeatTimeoutSeconds;
         }
     }
 
