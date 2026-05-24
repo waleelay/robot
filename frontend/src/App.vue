@@ -144,6 +144,7 @@ export default {
       socket: null,
       gridMode: 4,
       heartbeatTimer: null,
+      stoppedSessionIds: new Set(),
       selectedRobotId: 'robot-001',
       robots: [
         {
@@ -240,6 +241,7 @@ export default {
         camera.session = this.mergeSession(camera, session)
         camera.status = camera.session.status
         camera.viewerCount = camera.session.viewerCount
+        this.stoppedSessionIds.delete(camera.session.sessionId)
         this.log('API createVideoSession', camera.session)
         await this.connectLiveKit(camera)
       } catch (error) {
@@ -258,6 +260,7 @@ export default {
       camera.disconnecting = true
       try {
         const sessionId = camera.session.sessionId
+        this.stoppedSessionIds.add(sessionId)
         const stopped = await stopVideoSession(sessionId)
         this.log('API stopVideoSession', stopped)
         if (camera.room) {
@@ -325,13 +328,13 @@ export default {
           track.detach()
           camera.hasVideo = false
           this.log('LiveKit TrackUnsubscribed', `${camera.name} ${track.sid || track.name}`)
-          if (!camera.stopping && !camera.stopped) this.restartCamera(camera)
+          if (!this.isStoppedSession(camera, sessionId)) this.restartCamera(camera)
         })
         room.on(RoomEvent.Disconnected, () => {
           if (camera.room !== room || camera.disconnecting) return
           camera.hasVideo = false
           this.log('LiveKit Disconnected', camera.name)
-          if (!camera.stopping && !camera.stopped) this.restartCamera(camera)
+          if (!this.isStoppedSession(camera, sessionId)) this.restartCamera(camera)
         })
         camera.room = room
         await room.connect(camera.session.livekitUrl, camera.session.viewerToken)
@@ -410,11 +413,12 @@ export default {
       if (!event || !event.data || !event.data.sessionId) return
       const camera = this.allCameras().find(item => item.session && item.session.sessionId === event.data.sessionId)
       if (!camera || camera.stopped) return
+      if (this.stoppedSessionIds.has(event.data.sessionId)) return
       if (event.data.robotId && event.data.status) {
         camera.session = this.mergeSession(camera, event.data)
         camera.status = camera.session.status
         camera.viewerCount = camera.session.viewerCount
-        if (event.data.status === 'STREAMING' && (!camera.room || camera.room.state === 'disconnected')) {
+        if (this.shouldAttachFromEvent(event, camera)) {
           this.connectLiveKit(camera, true)
         }
       }
@@ -422,6 +426,7 @@ export default {
     async restartCamera(camera) {
       if (camera.stopping || camera.stopped || camera.restarting) return
       if (!camera.session || camera.session.status === 'CLOSED') return
+      if (this.stoppedSessionIds.has(camera.session.sessionId)) return
       if (!['STREAMING', 'INTERRUPTED'].includes(camera.session.status)) return
       try {
         camera.restarting = true
@@ -437,6 +442,15 @@ export default {
           camera.restarting = false
         }, 5000)
       }
+    },
+    isStoppedSession(camera, sessionId) {
+      return camera.stopping || camera.stopped || this.stoppedSessionIds.has(sessionId)
+    },
+    shouldAttachFromEvent(event, camera) {
+      if (!['video.session.streaming', 'video.track.published'].includes(event.event)) return false
+      if (!event.data || event.data.status !== 'STREAMING') return false
+      if (camera.hasVideo) return false
+      return !camera.room || camera.room.state === 'disconnected'
     },
     videoElement(camera) {
       const ref = this.$refs[camera.key]

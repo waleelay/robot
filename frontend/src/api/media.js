@@ -1,7 +1,6 @@
 import axios from 'axios'
 
-const clientId = sessionStorage.getItem('robot-media-client-id') || `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
-sessionStorage.setItem('robot-media-client-id', clientId)
+const clientId = `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
 
 const client = axios.create({
   baseURL: process.env.VUE_APP_API_BASE || '',
