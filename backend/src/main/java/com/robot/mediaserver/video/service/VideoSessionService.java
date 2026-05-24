@@ -12,7 +12,6 @@ import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
 import com.robot.mediaserver.video.event.MediaEventLogService;
-import com.robot.mediaserver.video.messaging.RobotMediaCommandService;
 import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import com.robot.mediaserver.video.model.MediaSessionViewer;
 import com.robot.mediaserver.video.model.VideoSession;
@@ -25,6 +24,7 @@ import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -32,9 +32,8 @@ import org.springframework.stereotype.Service;
 /**
  * 实时视频会话编排服务。
  *
- * <p>该服务负责把平台侧一次“开始观看”请求编排为：会话落库、LiveKit Token 生成、
- * MQTT 启动指令下发、WebSocket 状态推送。真实媒体流不经过本服务传输，而是由
- * 云接入客户端发布到 LiveKit，再由前端订阅。</p>
+ * <p>该服务负责媒体会话落库、LiveKit Room/Token、Track 状态和 viewerCount。
+ * MQTT 指令由控制服务根据本服务返回的命令数据统一下发。</p>
  *
  * @author leelay
  * @date 2026/05/19
@@ -57,7 +56,6 @@ public class VideoSessionService {
     private final MediaSessionViewerRepository viewerRepository;
     private final LiveKitRoomService liveKitRoomService;
     private final LiveKitTokenService liveKitTokenService;
-    private final RobotMediaCommandService commandService;
     private final MediaEventLogService eventLogService;
     private final SnapshotService snapshotService;
     private final MediaTrackService mediaTrackService;
@@ -68,7 +66,6 @@ public class VideoSessionService {
             MediaSessionViewerRepository viewerRepository,
             LiveKitRoomService liveKitRoomService,
             LiveKitTokenService liveKitTokenService,
-            RobotMediaCommandService commandService,
             MediaEventLogService eventLogService,
             SnapshotService snapshotService,
             MediaTrackService mediaTrackService,
@@ -77,7 +74,6 @@ public class VideoSessionService {
         this.viewerRepository = viewerRepository;
         this.liveKitRoomService = liveKitRoomService;
         this.liveKitTokenService = liveKitTokenService;
-        this.commandService = commandService;
         this.eventLogService = eventLogService;
         this.snapshotService = snapshotService;
         this.mediaTrackService = mediaTrackService;
@@ -87,8 +83,8 @@ public class VideoSessionService {
     /**
      * 创建或复用实时视频会话。
      *
-     * <p>主流程：先检查可复用会话；若不存在则创建业务会话、生成机器人端发布 Token、
-     * 下发 MQTT start 指令，并返回前端观看 Token。</p>
+     * <p>主流程：先检查可复用会话；若不存在则创建业务会话，并返回前端观看 Token。
+     * 新会话的机器人端 start 指令由 Control Server 调用 requestClientStart 后下发。</p>
      */
     @Transactional
     public VideoSessionResponse create(CreateVideoSessionRequest request, CurrentUser user) {
@@ -131,36 +127,6 @@ public class VideoSessionService {
         session.setViewerCount(activeViewerCount(session.getSessionId()));
         repository.save(session);
         emit("video.session.created", session);
-        liveKitRoomService.createRoom(session.getRoomName());
-        emit("video.room.ready", Map.of(
-                "sessionId", session.getSessionId(),
-                "roomName", session.getRoomName()));
-
-        // 发布 Token 只允许云接入客户端发布本机器人对应 Track，不允许订阅其他视频。
-        TokenResult publisherToken = liveKitTokenService.createPublisherToken(
-                session.getRoomName(), session.getRobotId(), session.getDeviceId());
-        String commandId = "cmd_" + compactUuid();
-        session.setCommandId(commandId);
-        session.setCommandRequestedAt(now());
-        transition(session, VideoSessionStatus.REQUESTING_CLIENT, "video.client.requested", Map.of(
-                "sessionId", session.getSessionId(),
-                "commandId", commandId,
-                "timeoutSeconds", properties.getSession().getTrackPublishTimeoutSeconds()));
-        session.setUpdatedAt(now());
-        repository.save(session);
-
-        commandService.sendStart(new VideoStartCommand(
-                commandId,
-                session.getSessionId(),
-                session.getRobotId(),
-                session.getDeviceId(),
-                session.getChannel(),
-                session.getQuality(),
-                properties.getLivekit().getUrl(),
-                session.getRoomName(),
-                publisherToken.token(),
-                "robot:" + session.getRobotId() + ":" + session.getDeviceId(),
-                publisherToken.expiresAt()));
 
         TokenResult viewerToken = liveKitTokenService.createViewerToken(session.getRoomName(), user.userId(), user.clientId());
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
@@ -214,27 +180,9 @@ public class VideoSessionService {
             session.setQuality(request.getQuality());
         }
         session.setRoomName("media." + session.getRobotId() + "." + session.getDeviceId() + "." + session.getChannel());
-        liveKitRoomService.createRoom(session.getRoomName());
-        TokenResult publisherToken = liveKitTokenService.createPublisherToken(
-                session.getRoomName(), session.getRobotId(), session.getDeviceId());
-        String commandId = "cmd_" + compactUuid();
-        session.setCommandId(commandId);
-        session.setCommandRequestedAt(now());
-        transition(session, VideoSessionStatus.REQUESTING_CLIENT, "video.track.switching", session);
+        requestClientStart(session, "video.track.switching", false);
         session.setUpdatedAt(now());
         repository.save(session);
-        commandService.sendSwitchChannel(session.getRobotId(), new VideoStartCommand(
-                commandId,
-                session.getSessionId(),
-                session.getRobotId(),
-                session.getDeviceId(),
-                session.getChannel(),
-                session.getQuality(),
-                properties.getLivekit().getUrl(),
-                session.getRoomName(),
-                publisherToken.token(),
-                "robot:" + session.getRobotId() + ":" + session.getDeviceId(),
-                publisherToken.expiresAt()));
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
 
@@ -303,12 +251,12 @@ public class VideoSessionService {
     }
 
     @Transactional
-    public void handleClientOnline(String robotId, String status) {
+    public List<VideoStartCommand> handleClientOnline(String robotId, String status) {
         if (!"online".equalsIgnoreCase(status)) {
-            return;
+            return List.of();
         }
         Set<String> restartedKeys = new HashSet<>();
-        repository.findByRobotIdAndViewerCountGreaterThanAndStatusInOrderByUpdatedAtDesc(
+        return repository.findByRobotIdAndViewerCountGreaterThanAndStatusInOrderByUpdatedAtDesc(
                         robotId,
                         0,
                         Set.of(
@@ -318,12 +266,16 @@ public class VideoSessionService {
                                 VideoSessionStatus.INTERRUPTED,
                                 VideoSessionStatus.FAILED,
                                 VideoSessionStatus.TIMEOUT))
-                .forEach(session -> {
+                .stream()
+                .map(session -> {
                     String key = session.getRobotId() + ":" + session.getDeviceId() + ":" + session.getChannel() + ":" + session.getQuality();
                     if (restartedKeys.add(key)) {
-                        restartSession(session, "video.client.online_restart");
+                        return requestClientStart(session, "video.client.online_restart", false);
                     }
-                });
+                    return null;
+                })
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     @Transactional
@@ -331,20 +283,46 @@ public class VideoSessionService {
         VideoSession session = requireSession(sessionId);
         addViewer(session, user);
         session.setViewerCount(activeViewerCount(sessionId));
-        restartSession(session, "video.session.restart");
+        requestClientStart(session, "video.session.restart", false);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
 
     @Transactional
     public void restartSession(String sessionId) {
-        restartSession(requireSession(sessionId), "video.session.auto_restart");
+        requestClientStart(requireSession(sessionId), "video.session.auto_restart", false);
     }
 
-    private void restartSession(VideoSession session, String event) {
+    @Transactional
+    public VideoStartCommand restartSessionCommand(String sessionId, CurrentUser user) {
+        VideoSession session = requireSession(sessionId);
+        addViewer(session, user);
+        session.setViewerCount(activeViewerCount(sessionId));
+        return requestClientStart(session, "video.session.restart", false);
+    }
+
+    @Transactional
+    public VideoStartCommand restartSessionCommand(String sessionId) {
+        return requestClientStart(requireSession(sessionId), "video.session.auto_restart", false);
+    }
+
+    @Transactional
+    public VideoStartCommand requestClientStart(String sessionId, String event) {
+        return requestClientStart(requireSession(sessionId), event, true);
+    }
+
+    @Transactional
+    public VideoStartCommand createStartCommand(String sessionId) {
+        return createStartCommand(requireSession(sessionId));
+    }
+
+    private VideoStartCommand requestClientStart(VideoSession session, String event, boolean includeTimeout) {
         if (session.getViewerCount() <= 0) {
-            return;
+            return null;
         }
         liveKitRoomService.createRoom(session.getRoomName());
+        emit("video.room.ready", Map.of(
+                "sessionId", session.getSessionId(),
+                "roomName", session.getRoomName()));
         TokenResult publisherToken = liveKitTokenService.createPublisherToken(
                 session.getRoomName(), session.getRobotId(), session.getDeviceId());
         String commandId = "cmd_" + compactUuid();
@@ -353,11 +331,17 @@ public class VideoSessionService {
         session.setEndedAt(null);
         session.setLastErrorCode(null);
         session.setLastErrorMessage(null);
-        transition(session, VideoSessionStatus.REQUESTING_CLIENT, event, Map.of(
-                "sessionId", session.getSessionId(),
-                "commandId", commandId));
+        Map<String, Object> payload = includeTimeout
+                ? Map.of(
+                        "sessionId", session.getSessionId(),
+                        "commandId", commandId,
+                        "timeoutSeconds", properties.getSession().getTrackPublishTimeoutSeconds())
+                : Map.of(
+                        "sessionId", session.getSessionId(),
+                        "commandId", commandId);
+        transition(session, VideoSessionStatus.REQUESTING_CLIENT, event, payload);
         repository.save(session);
-        commandService.sendStart(new VideoStartCommand(
+        return new VideoStartCommand(
                 commandId,
                 session.getSessionId(),
                 session.getRobotId(),
@@ -368,7 +352,24 @@ public class VideoSessionService {
                 session.getRoomName(),
                 publisherToken.token(),
                 "robot:" + session.getRobotId() + ":" + session.getDeviceId(),
-                publisherToken.expiresAt()));
+                publisherToken.expiresAt());
+    }
+
+    private VideoStartCommand createStartCommand(VideoSession session) {
+        TokenResult publisherToken = liveKitTokenService.createPublisherToken(
+                session.getRoomName(), session.getRobotId(), session.getDeviceId());
+        return new VideoStartCommand(
+                session.getCommandId(),
+                session.getSessionId(),
+                session.getRobotId(),
+                session.getDeviceId(),
+                session.getChannel(),
+                session.getQuality(),
+                properties.getLivekit().getUrl(),
+                session.getRoomName(),
+                publisherToken.token(),
+                "robot:" + session.getRobotId() + ":" + session.getDeviceId(),
+                publisherToken.expiresAt());
     }
 
     @Transactional
@@ -381,21 +382,23 @@ public class VideoSessionService {
     }
 
     @Transactional
-    public void releaseIdleSession(String sessionId) {
+    public Map<String, Object> releaseIdleSession(String sessionId) {
         VideoSession session = requireSession(sessionId);
         if (session.getStatus() != VideoSessionStatus.IDLE_WAIT || session.getViewerCount() > 0) {
-            return;
+            return Map.of();
         }
         transition(session, VideoSessionStatus.STOPPING, "video.session.stopping", session);
         mediaTrackService.unpublish(session);
-        commandService.sendStop(session.getRobotId(), Map.of(
+        Map<String, Object> stopPayload = Map.of(
+                "robotId", session.getRobotId(),
                 "sessionId", session.getSessionId(),
                 "commandId", "cmd_" + compactUuid(),
-                "roomName", session.getRoomName()));
+                "roomName", session.getRoomName());
         liveKitRoomService.deleteRoom(session.getRoomName());
         session.setEndedAt(now());
         transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
         repository.save(session);
+        return stopPayload;
     }
 
     public List<VideoSessionResponse> recent(CurrentUser user) {

@@ -2,6 +2,7 @@ package com.robot.mediaserver.video.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.control.service.ControlVideoCommandService;
 import com.robot.mediaserver.robot.dto.RobotCameraResponse;
 import com.robot.mediaserver.robot.service.RobotRegistryService;
 import com.robot.mediaserver.video.service.VideoSessionService;
@@ -36,6 +37,7 @@ public class RobotMediaStatusSubscriber {
     private final MediaProperties properties;
     private final ObjectMapper objectMapper;
     private final VideoSessionService videoSessionService;
+    private final ControlVideoCommandService controlVideoCommandService;
     private final RobotRegistryService robotRegistryService;
     private MqttClient client;
 
@@ -43,10 +45,12 @@ public class RobotMediaStatusSubscriber {
             MediaProperties properties,
             ObjectMapper objectMapper,
             VideoSessionService videoSessionService,
+            ControlVideoCommandService controlVideoCommandService,
             RobotRegistryService robotRegistryService) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.videoSessionService = videoSessionService;
+        this.controlVideoCommandService = controlVideoCommandService;
         this.robotRegistryService = robotRegistryService;
     }
 
@@ -102,7 +106,7 @@ public class RobotMediaStatusSubscriber {
                         objectMapper.getTypeFactory().constructCollectionType(List.class, RobotCameraResponse.class));
                 boolean becameOnline = robotRegistryService.update(robotId, clientId, status, name, type, cameras);
                 if (becameOnline) {
-                    videoSessionService.handleClientOnline(robotId, status);
+                    controlVideoCommandService.handleClientOnline(robotId, status);
                 }
             } catch (Exception ex) {
                 log.warn("Failed to handle media client status topic={}, payload={}", topic, payload, ex);

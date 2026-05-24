@@ -291,16 +291,18 @@ export default {
       this.log('API snapshot', response)
       this.$message.success('已提交抓拍任务')
     },
-    async connectLiveKit(camera) {
+    async connectLiveKit(camera, refreshToken) {
       if (camera.connecting || !camera.session) return
       camera.connecting = true
       try {
-        const token = await getViewerToken(camera.session.sessionId)
-        camera.session = this.mergeSession(camera, {
-          livekitUrl: token.livekitUrl,
-          roomName: token.roomName,
-          viewerToken: token.token
-        })
+        if (refreshToken || !camera.session.viewerToken || !camera.session.livekitUrl) {
+          const token = await getViewerToken(camera.session.sessionId)
+          camera.session = this.mergeSession(camera, {
+            livekitUrl: token.livekitUrl,
+            roomName: token.roomName,
+            viewerToken: token.token
+          })
+        }
         if (!camera.session.viewerToken || !camera.session.livekitUrl) return
         if (camera.room) {
           camera.disconnecting = true
@@ -413,7 +415,7 @@ export default {
         camera.status = camera.session.status
         camera.viewerCount = camera.session.viewerCount
         if (event.data.status === 'STREAMING' && (!camera.room || camera.room.state === 'disconnected')) {
-          this.connectLiveKit(camera)
+          this.connectLiveKit(camera, true)
         }
       }
     },

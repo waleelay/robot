@@ -1,8 +1,9 @@
-package com.robot.mediaserver.video.messaging;
+package com.robot.mediaserver.control.messaging;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
@@ -11,15 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-/**
- * 机器人媒体控制指令发送服务。
- *
- * <p>该服务只负责把平台媒体会话指令发布到 EMQX/MQTT。RTSP 地址等设备敏感配置
- * 固定在机器人侧云接入客户端，本服务不会在 MQTT payload 中下发明文 RTSP URL。</p>
- *
- * @author leelay
- * @date 2026/05/19
- */
 @Service
 public class RobotMediaCommandService {
 
@@ -34,31 +26,14 @@ public class RobotMediaCommandService {
         this.objectMapper = objectMapper;
     }
 
-    /**
-     * 下发开始发布实时视频指令。
-     *
-     * @param command 开始发布指令
-     */
     public void sendStart(VideoStartCommand command) {
         publish("robot/" + command.robotId() + "/media/video/start", command);
     }
 
-    /**
-     * 下发停止发布实时视频指令。
-     *
-     * @param robotId 机器人 ID
-     * @param payload 指令内容
-     */
     public void sendStop(String robotId, Object payload) {
         publish("robot/" + robotId + "/media/video/stop", payload);
     }
 
-    /**
-     * 下发切换媒体通道指令。
-     *
-     * @param robotId 机器人 ID
-     * @param payload 指令内容
-     */
     public void sendSwitchChannel(String robotId, Object payload) {
         publish("robot/" + robotId + "/media/video/switch-channel", payload);
     }
@@ -67,7 +42,6 @@ public class RobotMediaCommandService {
         try {
             String json = objectMapper.writeValueAsString(payload);
             if (!properties.getMqtt().isEnabled()) {
-                // 默认关闭真实 MQTT 连接，便于在没有 EMQX 时先完成后端和前端闭环。
                 log.info("MQTT disabled, skip publish topic={}, payload={}", topic, json);
                 return;
             }

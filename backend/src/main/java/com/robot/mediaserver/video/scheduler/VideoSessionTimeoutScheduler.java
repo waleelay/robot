@@ -1,6 +1,7 @@
 package com.robot.mediaserver.video.scheduler;
 
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.control.service.ControlVideoCommandService;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
@@ -20,14 +21,17 @@ public class VideoSessionTimeoutScheduler {
 
     private final VideoSessionRepository repository;
     private final VideoSessionService videoSessionService;
+    private final ControlVideoCommandService controlVideoCommandService;
     private final MediaProperties properties;
 
     public VideoSessionTimeoutScheduler(
             VideoSessionRepository repository,
             VideoSessionService videoSessionService,
+            ControlVideoCommandService controlVideoCommandService,
             MediaProperties properties) {
         this.repository = repository;
         this.videoSessionService = videoSessionService;
+        this.controlVideoCommandService = controlVideoCommandService;
         this.properties = properties;
     }
 
@@ -52,7 +56,7 @@ public class VideoSessionTimeoutScheduler {
         List<VideoSession> sessions = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.INTERRUPTED, threshold);
         for (VideoSession session : sessions) {
             if (session.getViewerCount() > 0) {
-                videoSessionService.restartSession(session.getSessionId());
+                controlVideoCommandService.restartSession(session.getSessionId());
             } else {
                 markTimeout(session, "TRACK_INTERRUPTED_TIMEOUT", "Track 中断后恢复超时");
             }
@@ -64,7 +68,7 @@ public class VideoSessionTimeoutScheduler {
         List<VideoSession> sessions = repository.findByStatusAndIdleSinceBefore(VideoSessionStatus.IDLE_WAIT, threshold);
         for (VideoSession session : sessions) {
             try {
-                videoSessionService.releaseIdleSession(session.getSessionId());
+                controlVideoCommandService.releaseIdleSession(session.getSessionId());
             } catch (Exception ex) {
                 log.warn("Failed to release idle session={}", session.getSessionId(), ex);
             }

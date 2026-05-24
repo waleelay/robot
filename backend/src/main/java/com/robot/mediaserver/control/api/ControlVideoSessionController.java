@@ -2,6 +2,7 @@ package com.robot.mediaserver.control.api;
 
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.auth.CurrentUserResolver;
+import com.robot.mediaserver.control.service.ControlVideoCommandService;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.MediaTrackResponse;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ControlVideoSessionController {
 
     private final VideoSessionService service;
+    private final ControlVideoCommandService controlVideoCommandService;
     private final CurrentUserResolver currentUserResolver;
     private final MediaEventLogService eventLogService;
     private final SnapshotService snapshotService;
@@ -35,11 +37,13 @@ public class ControlVideoSessionController {
 
     public ControlVideoSessionController(
             VideoSessionService service,
+            ControlVideoCommandService controlVideoCommandService,
             CurrentUserResolver currentUserResolver,
             MediaEventLogService eventLogService,
             SnapshotService snapshotService,
             MediaTrackService mediaTrackService) {
         this.service = service;
+        this.controlVideoCommandService = controlVideoCommandService;
         this.currentUserResolver = currentUserResolver;
         this.eventLogService = eventLogService;
         this.snapshotService = snapshotService;
@@ -89,12 +93,12 @@ public class ControlVideoSessionController {
 
     @PostMapping("/{sessionId}/restart")
     public VideoSessionResponse restart(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return service.restartSession(sessionId, currentUserResolver.resolve(servletRequest));
+        return controlVideoCommandService.restartVideo(sessionId, currentUserResolver.resolve(servletRequest));
     }
 
     @PostMapping("/{sessionId}/switch-channel")
     public VideoSessionResponse switchChannel(@PathVariable String sessionId, @Valid @RequestBody SwitchChannelRequest request) {
-        return service.switchChannel(sessionId, request);
+        return controlVideoCommandService.switchChannel(sessionId, request);
     }
 
     @PostMapping("/{sessionId}/snapshots")
