@@ -5,9 +5,11 @@ import com.robot.mediaserver.control.client.ControlMediaServiceClient;
 import com.robot.mediaserver.control.dto.ControlStartVideoRequest;
 import com.robot.mediaserver.control.messaging.RobotMediaCommandService;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
+import com.robot.mediaserver.video.dto.IntercomResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.messaging.VideoStartCommand;
+import com.robot.mediaserver.video.messaging.IntercomStartCommand;
 import com.robot.mediaserver.video.model.VideoChannel;
 import com.robot.mediaserver.video.model.VideoQuality;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
@@ -42,7 +44,51 @@ public class ControlVideoCommandService {
             sendStart(command);
             return mediaServiceClient.get(response.sessionId(), user);
         }
+        if (response.intercomAudioOnly() && response.trackSid() == null) {
+            VideoStartCommand command = mediaServiceClient.requestClientStart(response.sessionId(), "video.client.requested");
+            sendStart(command);
+            return mediaServiceClient.get(response.sessionId(), user);
+        }
         return response;
+    }
+
+    public IntercomResponse startIntercom(
+            String robotId,
+            String deviceId,
+            ControlStartVideoRequest request,
+            CurrentUser user) {
+        ControlStartVideoRequest startRequest = request == null ? new ControlStartVideoRequest() : request;
+        CreateVideoSessionRequest mediaRequest = new CreateVideoSessionRequest();
+        mediaRequest.setRobotId(robotId);
+        mediaRequest.setDeviceId(deviceId);
+        mediaRequest.setChannel(startRequest.getChannel() == null ? VideoChannel.visible : startRequest.getChannel());
+        mediaRequest.setQuality(startRequest.getQuality() == null ? VideoQuality.sub : startRequest.getQuality());
+        mediaRequest.setReuse(true);
+        IntercomResponse response = mediaServiceClient.createIntercom(mediaRequest, user);
+        sendIntercomStart(mediaServiceClient.intercomStartCommand(response.sessionId()));
+        return response;
+    }
+
+    public IntercomResponse startIntercom(String sessionId, CurrentUser user) {
+        IntercomResponse response = mediaServiceClient.startIntercom(sessionId, user);
+        sendIntercomStart(mediaServiceClient.intercomStartCommand(sessionId));
+        return response;
+    }
+
+    public VideoSessionResponse stopIntercom(String sessionId, CurrentUser user) {
+        VideoSessionResponse response = mediaServiceClient.stopIntercom(sessionId, user);
+        commandService.sendIntercomStop(response.robotId(), Map.of(
+                "sessionId", response.sessionId(),
+                "roomName", response.roomName(),
+                "commandId", "cmd_intercom_stop_" + response.sessionId()));
+        return response;
+    }
+
+    public void expireIntercom(String sessionId) {
+        Map<String, Object> payload = mediaServiceClient.expireIntercom(sessionId);
+        if (!payload.isEmpty() && payload.get("robotId") != null) {
+            commandService.sendIntercomStop(String.valueOf(payload.get("robotId")), payload);
+        }
     }
 
     public VideoSessionResponse restartVideo(String sessionId, CurrentUser user) {
@@ -80,6 +126,12 @@ public class ControlVideoCommandService {
     private void sendStart(VideoStartCommand command) {
         if (command != null) {
             commandService.sendStart(command);
+        }
+    }
+
+    private void sendIntercomStart(IntercomStartCommand command) {
+        if (command != null) {
+            commandService.sendIntercomStart(command);
         }
     }
 }

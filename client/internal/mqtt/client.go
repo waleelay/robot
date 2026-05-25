@@ -9,6 +9,7 @@ import (
 
 	paho "github.com/eclipse/paho.mqtt.golang"
 	"robot-media-client/internal/config"
+	"robot-media-client/internal/intercom"
 	"robot-media-client/internal/model"
 	"robot-media-client/internal/publisher"
 	"robot-media-client/internal/rtsp"
@@ -18,19 +19,22 @@ type Client struct {
 	cfg       config.Config
 	probe     *rtsp.Probe
 	publisher publisher.Publisher
+	intercom  intercom.Manager
 	mqtt      paho.Client
 	mu        sync.Mutex
 	lastCmds  map[string]string
 }
 
-func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publisher) *Client {
-	return &Client{cfg: cfg, probe: probe, publisher: publisher, lastCmds: make(map[string]string)}
+func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publisher, intercomManager intercom.Manager) *Client {
+	return &Client{cfg: cfg, probe: probe, publisher: publisher, intercom: intercomManager, lastCmds: make(map[string]string)}
 }
 
 func (c *Client) Run(ctx context.Context) error {
 	startTopic := "robot/" + c.cfg.RobotID + "/media/video/start"
 	stopTopic := "robot/" + c.cfg.RobotID + "/media/video/stop"
 	switchTopic := "robot/" + c.cfg.RobotID + "/media/video/switch-channel"
+	intercomStartTopic := "robot/" + c.cfg.RobotID + "/media/video/intercom/start"
+	intercomStopTopic := "robot/" + c.cfg.RobotID + "/media/video/intercom/stop"
 	opts := paho.NewClientOptions().
 		AddBroker(c.cfg.MQTTBroker).
 		SetClientID(c.cfg.ClientID).
@@ -42,12 +46,15 @@ func (c *Client) Run(ctx context.Context) error {
 	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
 		log.Println("mqtt lost", err)
 		c.publisher.StopAll()
+		c.intercom.StopAll()
 	})
 	opts.SetOnConnectHandler(func(_ paho.Client) {
 		c.subscribe(startTopic, c.handleStart(ctx))
 		c.subscribe(stopTopic, c.handleStop())
 		c.subscribe(switchTopic, c.handleStart(ctx))
-		log.Println("mqtt subscribed", startTopic, stopTopic, switchTopic)
+		c.subscribe(intercomStartTopic, c.handleIntercomStart(ctx))
+		c.subscribe(intercomStopTopic, c.handleIntercomStop())
+		log.Println("mqtt subscribed", startTopic, stopTopic, switchTopic, intercomStartTopic, intercomStopTopic)
 		c.online("online")
 	})
 	c.mqtt = paho.NewClient(opts)
@@ -69,6 +76,7 @@ func (c *Client) Run(ctx context.Context) error {
 	}()
 	<-ctx.Done()
 	c.publisher.StopAll()
+	c.intercom.StopAll()
 	c.online("offline")
 	c.mqtt.Disconnect(250)
 	return nil
@@ -132,6 +140,40 @@ func (c *Client) handleStop() paho.MessageHandler {
 	}
 }
 
+func (c *Client) handleIntercomStart(ctx context.Context) paho.MessageHandler {
+	return func(_ paho.Client, msg paho.Message) {
+		var command model.IntercomStartCommand
+		if err := json.Unmarshal(msg.Payload(), &command); err != nil {
+			log.Println(err)
+			return
+		}
+		if c.isDuplicate("intercom:"+command.SessionID, command.CommandID) {
+			return
+		}
+		log.Println("intercom start", command.SessionID, command.RoomName)
+		c.intercomStatus(command.SessionID, "starting", "", "", "", "starting audio bridge")
+		trackSid, trackName, err := c.intercom.Start(ctx, command)
+		if err != nil {
+			c.intercomStatus(command.SessionID, "failed", "", "", "INTERCOM_START_FAILED", err.Error())
+			return
+		}
+		c.intercomStatus(command.SessionID, "active", trackSid, trackName, "", "intercom audio active")
+	}
+}
+
+func (c *Client) handleIntercomStop() paho.MessageHandler {
+	return func(_ paho.Client, msg paho.Message) {
+		var payload model.StopCommand
+		if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
+			log.Println(err)
+			return
+		}
+		log.Println("intercom stop", payload.SessionID)
+		_ = c.intercom.Stop(payload.SessionID)
+		c.intercomStatus(payload.SessionID, "stopped", "", "", "", "intercom stopped")
+	}
+}
+
 func (c *Client) status(sessionID, status, trackSid, trackName, errorCode, message string) {
 	c.publish("robot/"+c.cfg.RobotID+"/media/video/status", model.StatusMessage{
 		SessionID: sessionID,
@@ -141,6 +183,18 @@ func (c *Client) status(sessionID, status, trackSid, trackName, errorCode, messa
 		ErrorCode: errorCode,
 		Message:   message,
 		Timestamp: time.Now(),
+	})
+}
+
+func (c *Client) intercomStatus(sessionID, status, trackSid, trackName, errorCode, message string) {
+	c.publish("robot/"+c.cfg.RobotID+"/media/video/intercom/status", model.IntercomStatusMessage{
+		SessionID:           sessionID,
+		Status:              status,
+		RobotAudioTrackSid:  trackSid,
+		RobotAudioTrackName: trackName,
+		ErrorCode:           errorCode,
+		Message:             message,
+		Timestamp:           time.Now(),
 	})
 }
 

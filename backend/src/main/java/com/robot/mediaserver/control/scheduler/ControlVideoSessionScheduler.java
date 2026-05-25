@@ -31,7 +31,19 @@ public class ControlVideoSessionScheduler {
     @Scheduled(fixedDelayString = "${media.session.sweep-delay-ms:5000}")
     public void sweep() {
         restartInterruptedSessions();
+        expireStaleIntercoms();
         releaseIdleSessions();
+    }
+
+    private void expireStaleIntercoms() {
+        OffsetDateTime threshold = now().minusSeconds(properties.getSession().getViewerHeartbeatTimeoutSeconds());
+        mediaServiceClient.intercomTimeoutCandidates(threshold).forEach(sessionId -> {
+            try {
+                commandService.expireIntercom(sessionId);
+            } catch (Exception ex) {
+                log.warn("Failed to expire intercom session={}", sessionId, ex);
+            }
+        });
     }
 
     private void restartInterruptedSessions() {

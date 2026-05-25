@@ -7,12 +7,15 @@ import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.MediaTrackResponse;
+import com.robot.mediaserver.video.dto.IntercomResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
 import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import com.robot.mediaserver.video.messaging.VideoStatusMessage;
+import com.robot.mediaserver.video.messaging.IntercomStartCommand;
+import com.robot.mediaserver.video.messaging.IntercomStatusMessage;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,10 @@ public class ControlMediaServiceClient {
         return post("/internal/media/video-sessions", request, user, VideoSessionResponse.class);
     }
 
+    public IntercomResponse createIntercom(CreateVideoSessionRequest request, CurrentUser user) {
+        return post("/internal/media/video-sessions/intercom", request, user, IntercomResponse.class);
+    }
+
     public List<VideoSessionResponse> recent(CurrentUser user) {
         return getList("/internal/media/video-sessions", user, new ParameterizedTypeReference<>() {});
     }
@@ -59,6 +66,13 @@ public class ControlMediaServiceClient {
                 before);
     }
 
+    public List<String> intercomTimeoutCandidates(OffsetDateTime before) {
+        return getList(
+                "/internal/media/video-sessions/intercom-timeout-candidates?before={before}",
+                new ParameterizedTypeReference<>() {},
+                before);
+    }
+
     public VideoSessionResponse get(String sessionId, CurrentUser user) {
         return get("/internal/media/video-sessions/{sessionId}", user, VideoSessionResponse.class, sessionId);
     }
@@ -73,6 +87,30 @@ public class ControlMediaServiceClient {
 
     public ViewerTokenResponse token(String sessionId, CurrentUser user) {
         return post("/internal/media/video-sessions/{sessionId}/token", null, user, ViewerTokenResponse.class, sessionId);
+    }
+
+    public IntercomResponse startIntercom(String sessionId, CurrentUser user) {
+        return post("/internal/media/video-sessions/{sessionId}/intercom/start", null, user, IntercomResponse.class, sessionId);
+    }
+
+    public IntercomResponse intercomToken(String sessionId, CurrentUser user) {
+        return post("/internal/media/video-sessions/{sessionId}/intercom/token", null, user, IntercomResponse.class, sessionId);
+    }
+
+    public IntercomResponse intercomHeartbeat(String sessionId, CurrentUser user) {
+        return post("/internal/media/video-sessions/{sessionId}/intercom/heartbeat", null, user, IntercomResponse.class, sessionId);
+    }
+
+    public VideoSessionResponse stopIntercom(String sessionId, CurrentUser user) {
+        return post("/internal/media/video-sessions/{sessionId}/intercom/stop", null, user, VideoSessionResponse.class, sessionId);
+    }
+
+    public Map<String, Object> expireIntercom(String sessionId) {
+        return post("/internal/media/video-sessions/{sessionId}/intercom/expire", null, null, new ParameterizedTypeReference<>() {}, sessionId);
+    }
+
+    public IntercomStartCommand intercomStartCommand(String sessionId) {
+        return post("/internal/media/video-sessions/{sessionId}/intercom/start-command", null, null, IntercomStartCommand.class, sessionId);
     }
 
     public VideoSessionResponse heartbeat(String sessionId, CurrentUser user) {
@@ -119,6 +157,10 @@ public class ControlMediaServiceClient {
 
     public void updateVideoStatus(VideoStatusMessage status) {
         post("/internal/media/video-sessions/status", status, null, Void.class);
+    }
+
+    public void updateIntercomStatus(IntercomStatusMessage status) {
+        post("/internal/media/video-sessions/intercom/status", status, null, Void.class);
     }
 
     public boolean updateRobotClientStatus(Map<String, Object> status) {

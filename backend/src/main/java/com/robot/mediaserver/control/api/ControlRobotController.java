@@ -6,6 +6,7 @@ import com.robot.mediaserver.control.dto.ControlStartVideoRequest;
 import com.robot.mediaserver.control.service.ControlVideoCommandService;
 import com.robot.mediaserver.robot.dto.RobotDeviceResponse;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
+import com.robot.mediaserver.video.dto.IntercomResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,5 +45,14 @@ public class ControlRobotController {
             @RequestBody(required = false) ControlStartVideoRequest request,
             HttpServletRequest servletRequest) {
         return controlVideoCommandService.startVideo(robotId, deviceId, request, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{robotId}/cameras/{deviceId}/video/intercom/start")
+    public IntercomResponse startIntercom(
+            @PathVariable String robotId,
+            @PathVariable String deviceId,
+            @RequestBody(required = false) ControlStartVideoRequest request,
+            HttpServletRequest servletRequest) {
+        return controlVideoCommandService.startIntercom(robotId, deviceId, request, currentUserResolver.resolve(servletRequest));
     }
 }

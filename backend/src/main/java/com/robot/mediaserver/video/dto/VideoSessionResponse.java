@@ -1,6 +1,7 @@
 package com.robot.mediaserver.video.dto;
 
 import com.robot.mediaserver.video.model.VideoChannel;
+import com.robot.mediaserver.video.model.IntercomStatus;
 import com.robot.mediaserver.video.model.VideoQuality;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
@@ -25,6 +26,11 @@ public record VideoSessionResponse(
         String trackSid,
         String trackName,
         int viewerCount,
+        IntercomStatus intercomStatus,
+        boolean intercomAudioOnly,
+        String intercomOperatorId,
+        String robotAudioTrackSid,
+        String robotAudioTrackName,
         String lastErrorCode,
         String lastErrorMessage,
         OffsetDateTime createdAt,
@@ -44,6 +50,11 @@ public record VideoSessionResponse(
                 session.getTrackSid(),
                 session.getTrackName(),
                 session.getViewerCount(),
+                session.getIntercomStatus(),
+                session.isIntercomAudioOnly(),
+                session.getIntercomOperatorId(),
+                session.getRobotAudioTrackSid(),
+                session.getRobotAudioTrackName(),
                 session.getLastErrorCode(),
                 session.getLastErrorMessage(),
                 session.getCreatedAt(),

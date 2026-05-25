@@ -23,6 +23,30 @@ type StopCommand struct {
 	RoomName  string `json:"roomName"`
 }
 
+type IntercomStartCommand struct {
+	CommandID              string    `json:"commandId"`
+	SessionID              string    `json:"sessionId"`
+	RobotID                string    `json:"robotId"`
+	DeviceID               string    `json:"deviceId"`
+	RoomName               string    `json:"roomName"`
+	LiveKitURL             string    `json:"livekitUrl"`
+	RobotToken             string    `json:"robotToken"`
+	PublishAudio           bool      `json:"publishAudio"`
+	SubscribeOperatorAudio bool      `json:"subscribeOperatorAudio"`
+	PublishVideo           bool      `json:"publishVideo"`
+	ExpiresAt              time.Time `json:"expiresAt"`
+}
+
+type IntercomStatusMessage struct {
+	SessionID           string    `json:"sessionId"`
+	Status              string    `json:"status"`
+	RobotAudioTrackSid  string    `json:"robotAudioTrackSid,omitempty"`
+	RobotAudioTrackName string    `json:"robotAudioTrackName,omitempty"`
+	ErrorCode           string    `json:"errorCode,omitempty"`
+	Message             string    `json:"message,omitempty"`
+	Timestamp           time.Time `json:"timestamp"`
+}
+
 type StatusMessage struct {
 	SessionID string    `json:"sessionId"`
 	Status    string    `json:"status"`

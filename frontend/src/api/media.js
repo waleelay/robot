@@ -35,6 +35,26 @@ export function getViewerToken(sessionId) {
   return client.post(`/api/control/video-sessions/${sessionId}/token`).then(res => res.data)
 }
 
+export function startCameraIntercom(data) {
+  return client.post(`/api/control/robots/${data.robotId}/cameras/${data.deviceId}/video/intercom/start`, {
+    channel: data.channel,
+    quality: data.quality,
+    reuse: true
+  }).then(res => res.data)
+}
+
+export function startSessionIntercom(sessionId) {
+  return client.post(`/api/control/video-sessions/${sessionId}/intercom/start`).then(res => res.data)
+}
+
+export function heartbeatIntercom(sessionId) {
+  return client.post(`/api/control/video-sessions/${sessionId}/intercom/heartbeat`).then(res => res.data)
+}
+
+export function stopIntercom(sessionId) {
+  return client.post(`/api/control/video-sessions/${sessionId}/intercom/stop`).then(res => res.data)
+}
+
 export function stopVideoSession(sessionId) {
   return client.post(`/api/control/video-sessions/${sessionId}/stop`).then(res => res.data)
 }

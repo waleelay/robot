@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.control.client.ControlMediaServiceClient;
 import com.robot.mediaserver.video.messaging.VideoStatusMessage;
+import com.robot.mediaserver.video.messaging.IntercomStatusMessage;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.eclipse.paho.client.mqttv3.IMqttMessageListener;
@@ -21,6 +22,7 @@ public class RobotMediaStatusSubscriber {
 
     private static final Logger log = LoggerFactory.getLogger(RobotMediaStatusSubscriber.class);
     private static final String STATUS_TOPIC = "robot/+/media/video/status";
+    private static final String INTERCOM_STATUS_TOPIC = "robot/+/media/video/intercom/status";
     private static final String CLIENT_STATUS_TOPIC = "robot/+/media/client/status";
 
     private final MediaProperties properties;
@@ -49,11 +51,24 @@ public class RobotMediaStatusSubscriber {
         try {
             MqttClient mqttClient = mqttClient();
             mqttClient.subscribe(STATUS_TOPIC, 1, statusListener());
+            mqttClient.subscribe(INTERCOM_STATUS_TOPIC, 1, intercomStatusListener());
             mqttClient.subscribe(CLIENT_STATUS_TOPIC, 1, clientStatusListener());
-            log.info("Subscribed media MQTT topics: {}, {}", STATUS_TOPIC, CLIENT_STATUS_TOPIC);
+            log.info("Subscribed media MQTT topics: {}, {}, {}", STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC);
         } catch (MqttException ex) {
             throw new IllegalStateException("Failed to subscribe media MQTT topics", ex);
         }
+    }
+
+    private IMqttMessageListener intercomStatusListener() {
+        return (topic, message) -> {
+            String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+            try {
+                IntercomStatusMessage status = objectMapper.readValue(payload, IntercomStatusMessage.class);
+                mediaServiceClient.updateIntercomStatus(status);
+            } catch (Exception ex) {
+                log.warn("Failed to handle intercom status topic={}, payload={}", topic, payload, ex);
+            }
+        };
     }
 
     private IMqttMessageListener statusListener() {

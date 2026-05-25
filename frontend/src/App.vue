@@ -43,6 +43,7 @@
           <div v-for="camera in displayedCameras" :key="camera.key" class="camera-card">
             <div class="video-stage">
               <video :ref="camera.key" autoplay playsinline muted />
+              <audio :ref="camera.key + '-audio'" autoplay />
               <div class="video-topbar">
                 <div>
                   <strong>{{ camera.name }}</strong>
@@ -77,10 +78,17 @@
                   :disabled="!camera.session || !camera.hasVideo"
                   @click="snapshotCamera(camera)"
                 >抓拍</el-button>
+                <el-button
+                  size="mini"
+                  :icon="camera.intercomActive ? 'el-icon-turn-off-microphone' : 'el-icon-microphone'"
+                  :loading="camera.intercomBusy"
+                  :disabled="selectedRobot.status !== 'online'"
+                  @click="toggleIntercom(selectedRobot, camera)"
+                >{{ camera.intercomActive ? '挂断' : '通话' }}</el-button>
               </div>
               <div class="video-bottombar">
                 <span>{{ camera.session ? camera.session.sessionId : '无会话' }}</span>
-                <span>{{ camera.viewerCount || 0 }} 人观看</span>
+                <span>{{ camera.intercomActive ? '通话中' : (camera.viewerCount || 0) + ' 人观看' }}</span>
               </div>
             </div>
           </div>
@@ -110,7 +118,11 @@ import {
   getRobots,
   getViewerToken,
   heartbeatVideoSession,
+  heartbeatIntercom,
   restartVideoSession,
+  startCameraIntercom,
+  startSessionIntercom,
+  stopIntercom,
   stopVideoSession
 } from './api/media'
 
@@ -124,6 +136,12 @@ function cameraState(robotId, deviceId, name, channel) {
     quality: 'sub',
     loading: false,
     hasVideo: false,
+    hasAudio: false,
+    watching: false,
+    intercomActive: false,
+    intercomBusy: false,
+    intercomStatus: 'IDLE',
+    intercomToken: null,
     stopping: false,
     stopped: false,
     restarting: false,
@@ -208,11 +226,21 @@ export default {
     heartbeatViewers() {
       this.allCameras().forEach(camera => {
         if (camera.session && !camera.stopped && !camera.stopping) {
-          heartbeatVideoSession(camera.session.sessionId)
+          const heartbeat = camera.watching
+            ? heartbeatVideoSession(camera.session.sessionId)
+            : Promise.resolve(camera.session)
+          heartbeat
             .then(session => {
               if (camera.session && camera.session.sessionId === session.sessionId) {
                 camera.viewerCount = session.viewerCount
               }
+            })
+            .catch(() => {})
+        }
+        if (camera.session && camera.intercomActive) {
+          heartbeatIntercom(camera.session.sessionId)
+            .then(response => {
+              camera.intercomStatus = response.intercomStatus
             })
             .catch(() => {})
         }
@@ -224,6 +252,7 @@ export default {
       camera.stopped = false
       camera.stopping = false
       camera.restarting = false
+      camera.watching = true
       this.log('CLICK startCamera', {
         robotId: robot.robotId,
         deviceId: camera.deviceId,
@@ -243,7 +272,9 @@ export default {
         camera.viewerCount = camera.session.viewerCount
         this.stoppedSessionIds.delete(camera.session.sessionId)
         this.log('API createVideoSession', camera.session)
-        await this.connectLiveKit(camera)
+        if (!camera.room || !camera.intercomActive) {
+          await this.connectLiveKit(camera)
+        }
       } catch (error) {
         this.$message.error(this.errorMessage(error))
         this.log('ERROR createVideoSession', this.errorMessage(error))
@@ -260,9 +291,18 @@ export default {
       camera.disconnecting = true
       try {
         const sessionId = camera.session.sessionId
-        this.stoppedSessionIds.add(sessionId)
+        if (!camera.intercomActive) this.stoppedSessionIds.add(sessionId)
         const stopped = await stopVideoSession(sessionId)
         this.log('API stopVideoSession', stopped)
+        camera.watching = false
+        camera.hasVideo = false
+        const video = this.videoElement(camera)
+        if (video) video.srcObject = null
+        if (camera.intercomActive) {
+          camera.status = stopped.status
+          camera.viewerCount = stopped.viewerCount || 0
+          return
+        }
         if (camera.room) {
           const oldRoom = camera.room
           camera.room = null
@@ -282,6 +322,91 @@ export default {
         camera.loading = false
       }
     },
+    async toggleIntercom(robot, camera) {
+      if (camera.intercomActive) {
+        await this.hangupIntercom(camera)
+      } else {
+        await this.startIntercom(robot, camera)
+      }
+    },
+    async startIntercom(robot, camera) {
+      camera.intercomBusy = true
+      try {
+        const response = camera.session
+          ? await startSessionIntercom(camera.session.sessionId)
+          : await startCameraIntercom({
+            robotId: robot.robotId,
+            deviceId: camera.deviceId,
+            channel: camera.channel,
+            quality: camera.quality
+          })
+        camera.session = this.mergeSession(camera, {
+          sessionId: response.sessionId,
+          robotId: response.robotId,
+          deviceId: response.deviceId,
+          roomName: response.roomName,
+          status: response.videoStatus,
+          intercomStatus: response.intercomStatus,
+          intercomAudioOnly: response.intercomAudioOnly,
+          livekitUrl: response.livekitUrl
+        })
+        camera.intercomToken = response.operatorToken
+        camera.intercomActive = true
+        camera.intercomStatus = response.intercomStatus
+        camera.stopped = false
+        await this.connectLiveKit(camera, false, response.operatorToken)
+        if (camera.room) {
+          await camera.room.localParticipant.setMicrophoneEnabled(true, {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }, {
+            name: 'audio.operator.mic'
+          })
+        }
+        this.log('API startIntercom', response)
+      } catch (error) {
+        camera.intercomActive = false
+        this.$message.error(this.errorMessage(error))
+        this.log('ERROR startIntercom', this.errorMessage(error))
+      } finally {
+        camera.intercomBusy = false
+      }
+    },
+    async hangupIntercom(camera) {
+      if (!camera.session) return
+      camera.intercomBusy = true
+      try {
+        if (camera.room) {
+          await camera.room.localParticipant.setMicrophoneEnabled(false)
+        }
+        const response = await stopIntercom(camera.session.sessionId)
+        camera.intercomActive = false
+        camera.intercomStatus = 'IDLE'
+        camera.intercomToken = null
+        camera.hasAudio = false
+        if (camera.watching) {
+          camera.session = this.mergeSession(camera, response)
+        } else {
+          if (camera.room) {
+            camera.disconnecting = true
+            try {
+              await camera.room.disconnect()
+            } finally {
+              camera.disconnecting = false
+            }
+          }
+          camera.room = null
+          camera.session = null
+          camera.status = ''
+        }
+        this.log('API stopIntercom', response)
+      } catch (error) {
+        this.$message.error(this.errorMessage(error))
+      } finally {
+        camera.intercomBusy = false
+      }
+    },
     async snapshotCamera(camera) {
       if (!camera.session) return
       const response = await createSnapshot(camera.session.sessionId, {
@@ -294,11 +419,11 @@ export default {
       this.log('API snapshot', response)
       this.$message.success('已提交抓拍任务')
     },
-    async connectLiveKit(camera, refreshToken) {
+    async connectLiveKit(camera, refreshToken, connectionToken) {
       if (camera.connecting || !camera.session) return
       camera.connecting = true
       try {
-        if (refreshToken || !camera.session.viewerToken || !camera.session.livekitUrl) {
+        if (!camera.intercomActive && (refreshToken || !camera.session.viewerToken || !camera.session.livekitUrl)) {
           const token = await getViewerToken(camera.session.sessionId)
           camera.session = this.mergeSession(camera, {
             livekitUrl: token.livekitUrl,
@@ -306,7 +431,8 @@ export default {
             viewerToken: token.token
           })
         }
-        if (!camera.session.viewerToken || !camera.session.livekitUrl) return
+        const token = connectionToken || (camera.intercomActive ? camera.intercomToken : camera.session.viewerToken)
+        if (!token || !camera.session.livekitUrl) return
         if (camera.room) {
           camera.disconnecting = true
           const oldRoom = camera.room
@@ -318,26 +444,33 @@ export default {
         const sessionId = camera.session.sessionId
         room.on(RoomEvent.TrackSubscribed, (track) => {
           if (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId) return
-          if (track.kind !== 'video') return
-          track.attach(this.videoElement(camera))
-          camera.hasVideo = true
+          if (track.kind === 'audio') {
+            track.attach(this.audioElement(camera))
+            camera.hasAudio = true
+          } else if (track.kind === 'video' && camera.watching) {
+            track.attach(this.videoElement(camera))
+            camera.hasVideo = true
+          }
           this.log('LiveKit TrackSubscribed', `${camera.name} ${track.sid || track.name}`)
         })
         room.on(RoomEvent.TrackUnsubscribed, (track) => {
           if (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId) return
           track.detach()
-          camera.hasVideo = false
+          if (track.kind === 'audio') camera.hasAudio = false
+          if (track.kind === 'video') camera.hasVideo = false
           this.log('LiveKit TrackUnsubscribed', `${camera.name} ${track.sid || track.name}`)
-          if (!this.isStoppedSession(camera, sessionId)) this.restartCamera(camera)
+          if (track.kind === 'video' && camera.watching && !this.isStoppedSession(camera, sessionId)) {
+            this.restartCamera(camera)
+          }
         })
         room.on(RoomEvent.Disconnected, () => {
           if (camera.room !== room || camera.disconnecting) return
           camera.hasVideo = false
           this.log('LiveKit Disconnected', camera.name)
-          if (!this.isStoppedSession(camera, sessionId)) this.restartCamera(camera)
+          if (camera.watching && !this.isStoppedSession(camera, sessionId)) this.restartCamera(camera)
         })
         camera.room = room
-        await room.connect(camera.session.livekitUrl, camera.session.viewerToken)
+        await room.connect(camera.session.livekitUrl, token)
         this.log('LiveKit connected', `${camera.name} ${camera.session.roomName}`)
       } catch (error) {
         camera.room = null
@@ -397,6 +530,12 @@ export default {
             hasVideo: incoming.status === 'online' ? old.hasVideo : false,
             status: incoming.status === 'online' ? old.status : 'offline',
             viewerCount: old.viewerCount,
+            watching: old.watching,
+            hasAudio: old.hasAudio,
+            intercomActive: old.intercomActive,
+            intercomBusy: old.intercomBusy,
+            intercomStatus: old.intercomStatus,
+            intercomToken: old.intercomToken,
             stopped: old.stopped,
             stopping: old.stopping,
             restarting: old.restarting,
@@ -421,6 +560,10 @@ export default {
         if (this.shouldAttachFromEvent(event, camera)) {
           this.connectLiveKit(camera, true)
         }
+      }
+      if (event.event.indexOf('video.intercom.') === 0) {
+        camera.intercomStatus = event.data.intercomStatus || camera.intercomStatus
+        camera.intercomActive = !['IDLE', 'FAILED'].includes(camera.intercomStatus)
       }
     },
     async restartCamera(camera) {
@@ -454,6 +597,10 @@ export default {
     },
     videoElement(camera) {
       const ref = this.$refs[camera.key]
+      return Array.isArray(ref) ? ref[0] : ref
+    },
+    audioElement(camera) {
+      const ref = this.$refs[camera.key + '-audio']
       return Array.isArray(ref) ? ref[0] : ref
     },
     previewHash(camera) {
@@ -667,6 +814,10 @@ export default {
   height: 100%;
   object-fit: contain;
   display: block;
+}
+
+.video-stage audio {
+  display: none;
 }
 
 .video-topbar {

@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import javax.crypto.SecretKey;
 import org.springframework.stereotype.Service;
@@ -46,6 +47,13 @@ public class LiveKitTokenService {
     }
 
     /**
+     * 生成获得讲话权的操作员 Token，可在指定视频 Room 内发布麦克风音频。
+     */
+    public TokenResult createOperatorToken(String roomName, String userId, String clientId) {
+        return createToken(roomName, "operator:" + userId + ":" + clientId, true, true, List.of("microphone"));
+    }
+
+    /**
      * 生成机器人端发布 Token。
      *
      * @param roomName LiveKit 房间名
@@ -55,6 +63,13 @@ public class LiveKitTokenService {
      */
     public TokenResult createPublisherToken(String roomName, String robotId, String deviceId) {
         return createToken(roomName, "robot:" + robotId + ":" + deviceId, true, false);
+    }
+
+    /**
+     * 生成机器人对讲 Token：发布现场拾音并订阅操作员语音。
+     */
+    public TokenResult createRobotIntercomToken(String roomName, String robotId, String deviceId) {
+        return createToken(roomName, "robot:" + robotId + ":" + deviceId + ":intercom", true, true, List.of("microphone"));
     }
 
     /**
@@ -82,6 +97,15 @@ public class LiveKitTokenService {
     }
 
     private TokenResult createToken(String roomName, String identity, boolean canPublish, boolean canSubscribe) {
+        return createToken(roomName, identity, canPublish, canSubscribe, null);
+    }
+
+    private TokenResult createToken(
+            String roomName,
+            String identity,
+            boolean canPublish,
+            boolean canSubscribe,
+            List<String> publishSources) {
         OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
                 .plusSeconds(properties.getLivekit().getTokenTtlSeconds());
         Map<String, Object> videoGrant = new HashMap<>();
@@ -90,6 +114,9 @@ public class LiveKitTokenService {
         videoGrant.put("roomJoin", true);
         videoGrant.put("canPublish", canPublish);
         videoGrant.put("canSubscribe", canSubscribe);
+        if (publishSources != null) {
+            videoGrant.put("canPublishSources", publishSources);
+        }
 
         SecretKey key = Keys.hmacShaKeyFor(normalizedSecret().getBytes(StandardCharsets.UTF_8));
         String token = Jwts.builder()

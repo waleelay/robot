@@ -43,7 +43,7 @@ JDK 17
 Maven 3.9+
 Node.js 18+
 npm 9+
-Go 1.22+
+Go 1.24.4+
 FFmpeg/ffprobe
 Docker Desktop
 MySQL 8
@@ -116,6 +116,9 @@ export PROBE_TIMEOUT_MS='8000'
 export PUBLISHER_CMD=''
 export GSTREAMER_PUBLISHER_PATH='gstreamer-publisher'
 export GSTREAMER_PIPELINE='rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1'
+export GST_LAUNCH_PATH='gst-launch-1.0'
+export AUDIO_CAPTURE_PIPELINE='autoaudiosrc ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! fdsink fd=1'
+export AUDIO_PLAYBACK_PIPELINE='fdsrc fd=0 ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! audioconvert ! audioresample ! autoaudiosink'
 ```
 
 `PUBLISHER_CMD` 支持占位符：
@@ -298,12 +301,14 @@ http://localhost:8090
 
 ## 机器人侧客户端
 
+音频对讲使用实时 PCM 管线，不需要 `opusfile` 文件解码库。本地执行和构建必须携带 `-tags nolibopusfile`。
+
 本地运行：
 
 ```bash
 cd client
 go mod download
-go run ./cmd/robot-media-client
+go run -tags nolibopusfile ./cmd/robot-media-client
 ```
 
 安装 LiveKit GStreamer Publisher：
@@ -318,7 +323,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ```bash
 cd client
-go build -o robot-media-client ./cmd/robot-media-client
+go build -tags nolibopusfile -o robot-media-client ./cmd/robot-media-client
 ```
 
 Docker 构建：
@@ -332,11 +337,14 @@ docker build -t robot-media-client:dev .
 
 ```text
 订阅 start/stop/switch-channel 指令
+订阅视频房间内的 intercom start/stop 指令
 解析通道和清晰度
 使用 ffprobe 探测 RTSP
 发布 ACK/status
 默认通过 gstreamer-publisher 作为 LiveKit Publisher 发布 Track
 可通过 PUBLISHER_CMD 覆盖发布命令
+通过内置 LiveKit 音频模块发布/订阅对讲 Track
+通过 GStreamer 设备管线采集麦克风与播放扬声器 PCM
 ```
 
 ## LiveKit Webhook
@@ -412,7 +420,7 @@ ffprobe -v error -rtsp_transport tcp -select_streams v:0 -show_entries stream=co
 
 ```bash
 cd client
-go build -o robot-media-client ./cmd/robot-media-client
+go build -tags nolibopusfile -o robot-media-client ./cmd/robot-media-client
 ```
 
 ## 当前开发状态

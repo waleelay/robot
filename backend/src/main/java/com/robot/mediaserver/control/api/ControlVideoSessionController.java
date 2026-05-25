@@ -11,6 +11,7 @@ import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
+import com.robot.mediaserver.video.dto.IntercomResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -67,6 +68,26 @@ public class ControlVideoSessionController {
     public ViewerTokenResponse token(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         CurrentUser user = currentUserResolver.resolve(servletRequest);
         return mediaServiceClient.token(sessionId, user);
+    }
+
+    @PostMapping("/{sessionId}/intercom/start")
+    public IntercomResponse startIntercom(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return controlVideoCommandService.startIntercom(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{sessionId}/intercom/token")
+    public IntercomResponse intercomToken(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return mediaServiceClient.intercomToken(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{sessionId}/intercom/heartbeat")
+    public IntercomResponse intercomHeartbeat(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return mediaServiceClient.intercomHeartbeat(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{sessionId}/intercom/stop")
+    public VideoSessionResponse stopIntercom(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return controlVideoCommandService.stopIntercom(sessionId, currentUserResolver.resolve(servletRequest));
     }
 
     @PostMapping("/{sessionId}/heartbeat")

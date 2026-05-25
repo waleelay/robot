@@ -116,7 +116,7 @@ npm run build
 
 ```bash
 cd client
-go build -o robot-media-client ./cmd/robot-media-client
+go build -tags nolibopusfile -o robot-media-client ./cmd/robot-media-client
 ```
 
 ## 联调命令
@@ -136,7 +136,7 @@ mvn spring-boot:run
 
 ```bash
 cd client
-go run ./cmd/robot-media-client
+go run -tags nolibopusfile ./cmd/robot-media-client
 ```
 
 ```bash

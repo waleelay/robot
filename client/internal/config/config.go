@@ -24,6 +24,9 @@ type Config struct {
 	PublisherCmd           string
 	GStreamerPublisherPath string
 	GStreamerPipeline      string
+	GSTLaunchPath          string
+	AudioCapturePipeline   string
+	AudioPlaybackPipeline  string
 	ProbeTimeout           time.Duration
 	HeartbeatInterval      time.Duration
 }
@@ -56,6 +59,9 @@ func Load() Config {
 		PublisherCmd:           env("PUBLISHER_CMD", ""),
 		GStreamerPublisherPath: env("GSTREAMER_PUBLISHER_PATH", "gstreamer-publisher"),
 		GStreamerPipeline:      env("GSTREAMER_PIPELINE", "rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1"),
+		GSTLaunchPath:          env("GST_LAUNCH_PATH", "gst-launch-1.0"),
+		AudioCapturePipeline:   env("AUDIO_CAPTURE_PIPELINE", "autoaudiosrc ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! fdsink fd=1"),
+		AudioPlaybackPipeline:  env("AUDIO_PLAYBACK_PIPELINE", "fdsrc fd=0 ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! audioconvert ! audioresample ! autoaudiosink"),
 		ProbeTimeout:           time.Duration(envInt("PROBE_TIMEOUT_MS", 8000)) * time.Millisecond,
 		HeartbeatInterval:      time.Duration(envInt("HEARTBEAT_INTERVAL_MS", 5000)) * time.Millisecond,
 	}

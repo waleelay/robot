@@ -6,6 +6,7 @@ import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.MediaTrackResponse;
+import com.robot.mediaserver.video.dto.IntercomResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
@@ -13,6 +14,8 @@ import com.robot.mediaserver.video.dto.ViewerTokenResponse;
 import com.robot.mediaserver.video.event.MediaEventLogService;
 import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import com.robot.mediaserver.video.messaging.VideoStatusMessage;
+import com.robot.mediaserver.video.messaging.IntercomStartCommand;
+import com.robot.mediaserver.video.messaging.IntercomStatusMessage;
 import com.robot.mediaserver.video.service.SnapshotService;
 import com.robot.mediaserver.video.service.MediaTrackService;
 import com.robot.mediaserver.video.service.VideoSessionService;
@@ -65,6 +68,13 @@ public class VideoSessionController {
         return service.create(request, currentUserResolver.resolve(servletRequest));
     }
 
+    @PostMapping("/intercom")
+    public IntercomResponse createIntercom(
+            @Valid @RequestBody CreateVideoSessionRequest request,
+            HttpServletRequest servletRequest) {
+        return service.createForIntercom(request, currentUserResolver.resolve(servletRequest));
+    }
+
     @GetMapping
     public List<VideoSessionResponse> recent(HttpServletRequest servletRequest) {
         return service.recent(currentUserResolver.resolve(servletRequest));
@@ -83,6 +93,11 @@ public class VideoSessionController {
     @GetMapping("/idle-release-candidates")
     public List<String> idleReleaseCandidates(@RequestParam OffsetDateTime before) {
         return service.idleReleaseCandidates(before);
+    }
+
+    @GetMapping("/intercom-timeout-candidates")
+    public List<String> intercomTimeoutCandidates(@RequestParam OffsetDateTime before) {
+        return service.intercomTimeoutCandidates(before);
     }
 
     @GetMapping("/{sessionId}")
@@ -111,10 +126,51 @@ public class VideoSessionController {
                 status.getMessage());
     }
 
+    @PostMapping("/intercom/status")
+    public void intercomStatus(@RequestBody IntercomStatusMessage status) {
+        service.handleIntercomStatus(
+                status.getSessionId(),
+                status.getStatus(),
+                status.getRobotAudioTrackSid(),
+                status.getRobotAudioTrackName(),
+                status.getErrorCode(),
+                status.getMessage());
+    }
+
     @PostMapping("/{sessionId}/token")
     public ViewerTokenResponse token(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         CurrentUser user = currentUserResolver.resolve(servletRequest);
         return service.createViewerToken(sessionId, user);
+    }
+
+    @PostMapping("/{sessionId}/intercom/start")
+    public IntercomResponse startIntercom(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return service.startIntercom(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{sessionId}/intercom/token")
+    public IntercomResponse intercomToken(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return service.createIntercomToken(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{sessionId}/intercom/heartbeat")
+    public IntercomResponse intercomHeartbeat(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return service.heartbeatIntercom(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{sessionId}/intercom/stop")
+    public VideoSessionResponse stopIntercom(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return service.stopIntercom(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{sessionId}/intercom/expire")
+    public java.util.Map<String, Object> expireIntercom(@PathVariable String sessionId) {
+        return service.expireIntercom(sessionId);
+    }
+
+    @PostMapping("/{sessionId}/intercom/start-command")
+    public IntercomStartCommand intercomStartCommand(@PathVariable String sessionId) {
+        return service.createIntercomStartCommand(sessionId);
     }
 
     @PostMapping("/{sessionId}/heartbeat")

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.video.messaging.VideoStartCommand;
+import com.robot.mediaserver.video.messaging.IntercomStartCommand;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
@@ -36,6 +37,14 @@ public class RobotMediaCommandService {
 
     public void sendSwitchChannel(String robotId, Object payload) {
         publish("robot/" + robotId + "/media/video/switch-channel", payload);
+    }
+
+    public void sendIntercomStart(IntercomStartCommand command) {
+        publish("robot/" + command.robotId() + "/media/video/intercom/start", command);
+    }
+
+    public void sendIntercomStop(String robotId, Object payload) {
+        publish("robot/" + robotId + "/media/video/intercom/stop", payload);
     }
 
     private void publish(String topic, Object payload) {

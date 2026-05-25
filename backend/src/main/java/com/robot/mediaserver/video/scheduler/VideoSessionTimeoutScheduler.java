@@ -41,8 +41,14 @@ public class VideoSessionTimeoutScheduler {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getTrackPublishTimeoutSeconds());
         List<VideoSession> requesting = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.REQUESTING_CLIENT, threshold);
         List<VideoSession> roomReady = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.ROOM_READY, threshold);
-        requesting.forEach(session -> markTimeout(session, "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时"));
-        roomReady.forEach(session -> markTimeout(session, "LK_PUBLISH_TIMEOUT", "Room ready 后 Track 发布超时"));
+        requesting.stream().filter(this::expectsVideoTrack)
+                .forEach(session -> markTimeout(session, "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时"));
+        roomReady.stream().filter(this::expectsVideoTrack)
+                .forEach(session -> markTimeout(session, "LK_PUBLISH_TIMEOUT", "Room ready 后 Track 发布超时"));
+    }
+
+    private boolean expectsVideoTrack(VideoSession session) {
+        return !session.isIntercomAudioOnly();
     }
 
     private void markTimeout(VideoSession session, String errorCode, String message) {

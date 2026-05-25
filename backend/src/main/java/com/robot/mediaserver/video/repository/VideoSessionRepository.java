@@ -4,6 +4,7 @@ import com.robot.mediaserver.video.model.VideoChannel;
 import com.robot.mediaserver.video.model.VideoQuality;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
+import com.robot.mediaserver.video.model.IntercomStatus;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -28,6 +29,10 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
         List<VideoSession> findByStatusAndUpdatedAtBefore(VideoSessionStatus status, OffsetDateTime updatedAt);
 
         List<VideoSession> findByStatusAndIdleSinceBefore(VideoSessionStatus status, OffsetDateTime idleSince);
+
+        List<VideoSession> findByIntercomStatusInAndIntercomHeartbeatAtBefore(
+            Collection<IntercomStatus> statuses,
+            OffsetDateTime heartbeatAt);
 
     List<VideoSession> findTop16ByStatusInOrderByUpdatedAtDesc(Collection<VideoSessionStatus> statuses);
 

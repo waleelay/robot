@@ -7,13 +7,16 @@ import com.robot.mediaserver.livekit.LiveKitTokenService;
 import com.robot.mediaserver.livekit.LiveKitTokenService.TokenResult;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
+import com.robot.mediaserver.video.dto.IntercomResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
 import com.robot.mediaserver.video.event.MediaEventLogService;
 import com.robot.mediaserver.video.messaging.VideoStartCommand;
+import com.robot.mediaserver.video.messaging.IntercomStartCommand;
 import com.robot.mediaserver.video.model.MediaSessionViewer;
+import com.robot.mediaserver.video.model.IntercomStatus;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
 import com.robot.mediaserver.video.repository.MediaSessionViewerRepository;
@@ -118,6 +121,7 @@ public class VideoSessionService {
         session.setRoomName(roomName(request));
         session.setStatus(VideoSessionStatus.INIT);
         session.setViewerCount(1);
+        session.setIntercomStatus(IntercomStatus.IDLE);
         session.setOrgId(user.orgId());
         session.setCreatedBy(user.userId());
         session.setCreatedAt(now());
@@ -132,6 +136,39 @@ public class VideoSessionService {
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
     }
 
+    /**
+     * 创建或复用承载对讲的 VideoSession，不计入视频观看人数，也不触发视频发布。
+     */
+    @Transactional
+    public IntercomResponse createForIntercom(CreateVideoSessionRequest request, CurrentUser user) {
+        VideoSession session = repository.findFirstByRobotIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
+                        request.getRobotId(),
+                        request.getDeviceId(),
+                        request.getChannel(),
+                        request.getQuality(),
+                        REUSABLE_STATUSES)
+                .orElseGet(() -> {
+                    VideoSession created = new VideoSession();
+                    created.setSessionId("vs_" + compactUuid());
+                    created.setRobotId(request.getRobotId());
+                    created.setDeviceId(request.getDeviceId());
+                    created.setChannel(request.getChannel());
+                    created.setQuality(request.getQuality());
+                    created.setRoomName(roomName(request));
+                    created.setStatus(VideoSessionStatus.INIT);
+                    created.setViewerCount(0);
+                    created.setIntercomStatus(IntercomStatus.IDLE);
+                    created.setOrgId(user.orgId());
+                    created.setCreatedBy(user.userId());
+                    created.setCreatedAt(now());
+                    created.setUpdatedAt(now());
+                    repository.save(created);
+                    emit("video.session.created", created);
+                    return created;
+                });
+        return startIntercom(session.getSessionId(), user);
+    }
+
     public VideoSessionResponse get(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         TokenResult viewerToken = liveKitTokenService.createViewerToken(session.getRoomName(), user.userId(), user.clientId());
@@ -142,6 +179,12 @@ public class VideoSessionService {
         VideoSession session = requireSession(sessionId);
         TokenResult token = liveKitTokenService.createViewerToken(session.getRoomName(), user.userId(), user.clientId());
         return new ViewerTokenResponse(properties.getLivekit().getUrl(), session.getRoomName(), token.token(), token.expiresAt());
+    }
+
+    public IntercomResponse createIntercomToken(String sessionId, CurrentUser user) {
+        VideoSession session = requireIntercomOperator(sessionId, user);
+        TokenResult token = liveKitTokenService.createOperatorToken(session.getRoomName(), user.userId(), user.clientId());
+        return IntercomResponse.from(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
     }
 
     @Transactional
@@ -159,7 +202,7 @@ public class VideoSessionService {
         VideoSession session = requireSession(sessionId);
         removeViewer(sessionId, user);
         session.setViewerCount(activeViewerCount(sessionId));
-        if (session.getViewerCount() == 0) {
+        if (session.getViewerCount() == 0 && !holdsRoomForIntercom(session)) {
             session.setIdleSince(now());
             transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
                     "sessionId", session.getSessionId(),
@@ -170,6 +213,84 @@ public class VideoSessionService {
         session.setUpdatedAt(now());
         repository.save(session);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
+    }
+
+    @Transactional
+    public IntercomResponse startIntercom(String sessionId, CurrentUser user) {
+        VideoSession session = requireSession(sessionId);
+        if (holdsRoomForIntercom(session)
+                && (!Objects.equals(session.getIntercomOperatorId(), user.userId())
+                || !Objects.equals(session.getIntercomClientId(), user.clientId()))) {
+            throw new IllegalStateException("Intercom is occupied by another operator");
+        }
+        liveKitRoomService.createRoom(session.getRoomName());
+        if (session.getStatus() == VideoSessionStatus.INIT || session.getStatus() == VideoSessionStatus.IDLE_WAIT) {
+            session.setStatus(VideoSessionStatus.ROOM_READY);
+        }
+        session.setIdleSince(null);
+        session.setIntercomStatus(IntercomStatus.STARTING);
+        session.setIntercomAudioOnly(session.getTrackSid() == null || session.getTrackSid().isBlank());
+        session.setIntercomOperatorId(user.userId());
+        session.setIntercomClientId(user.clientId());
+        session.setIntercomStartedAt(session.getIntercomStartedAt() == null ? now() : session.getIntercomStartedAt());
+        session.setIntercomHeartbeatAt(now());
+        session.setUpdatedAt(now());
+        repository.save(session);
+        emit("video.intercom.starting", session);
+        TokenResult token = liveKitTokenService.createOperatorToken(session.getRoomName(), user.userId(), user.clientId());
+        return IntercomResponse.from(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
+    }
+
+    @Transactional
+    public IntercomResponse heartbeatIntercom(String sessionId, CurrentUser user) {
+        VideoSession session = requireIntercomOperator(sessionId, user);
+        session.setIntercomHeartbeatAt(now());
+        session.setUpdatedAt(now());
+        repository.save(session);
+        TokenResult token = liveKitTokenService.createOperatorToken(session.getRoomName(), user.userId(), user.clientId());
+        return IntercomResponse.from(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
+    }
+
+    @Transactional
+    public VideoSessionResponse stopIntercom(String sessionId, CurrentUser user) {
+        VideoSession session = requireIntercomOperator(sessionId, user);
+        session.setIntercomStatus(IntercomStatus.STOPPING);
+        emit("video.intercom.stopping", session);
+        session.setIntercomStatus(IntercomStatus.IDLE);
+        session.setIntercomAudioOnly(false);
+        session.setIntercomOperatorId(null);
+        session.setIntercomClientId(null);
+        session.setRobotAudioTrackSid(null);
+        session.setRobotAudioTrackName(null);
+        session.setIntercomHeartbeatAt(null);
+        if (session.getViewerCount() == 0) {
+            session.setIdleSince(now());
+            transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
+                    "sessionId", session.getSessionId(),
+                    "idleReleaseDelaySeconds", properties.getSession().getIdleReleaseDelaySeconds()));
+        }
+        session.setUpdatedAt(now());
+        repository.save(session);
+        emit("video.intercom.closed", session);
+        return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
+    }
+
+    public IntercomStartCommand createIntercomStartCommand(String sessionId) {
+        VideoSession session = requireSession(sessionId);
+        TokenResult robotToken = liveKitTokenService.createRobotIntercomToken(
+                session.getRoomName(), session.getRobotId(), session.getDeviceId());
+        return new IntercomStartCommand(
+                "cmd_" + compactUuid(),
+                session.getSessionId(),
+                session.getRobotId(),
+                session.getDeviceId(),
+                session.getRoomName(),
+                properties.getLivekit().getUrl(),
+                robotToken.token(),
+                true,
+                true,
+                false,
+                robotToken.expiresAt());
     }
 
     @Transactional
@@ -251,6 +372,58 @@ public class VideoSessionService {
     }
 
     @Transactional
+    public void handleIntercomStatus(
+            String sessionId,
+            String status,
+            String robotAudioTrackSid,
+            String robotAudioTrackName,
+            String errorCode,
+            String message) {
+        VideoSession session = requireSession(sessionId);
+        String normalized = status == null ? "" : status.trim().toLowerCase();
+        switch (normalized) {
+            case "starting" -> session.setIntercomStatus(IntercomStatus.STARTING);
+            case "active" -> {
+                session.setIntercomStatus(IntercomStatus.ACTIVE);
+                session.setRobotAudioTrackSid(robotAudioTrackSid);
+                session.setRobotAudioTrackName(robotAudioTrackName == null || robotAudioTrackName.isBlank()
+                        ? "audio.robot.mic" : robotAudioTrackName);
+                emit("video.intercom.active", session);
+            }
+            case "interrupted" -> {
+                session.setIntercomStatus(IntercomStatus.INTERRUPTED);
+                eventLogService.recordAndPublish(sessionId, "video.intercom.interrupted", Map.of(
+                        "sessionId", sessionId, "message", safeMessage(message)));
+            }
+            case "stopped", "closed" -> {
+                session.setIntercomStatus(IntercomStatus.IDLE);
+                session.setRobotAudioTrackSid(null);
+                session.setRobotAudioTrackName(null);
+                emit("video.intercom.closed", session);
+            }
+            case "failed", "error" -> {
+                session.setIntercomStatus(IntercomStatus.FAILED);
+                eventLogService.recordAndPublish(sessionId, "video.intercom.failed", Map.of(
+                        "sessionId", sessionId,
+                        "errorCode", errorCode == null ? "INTERCOM_FAILED" : errorCode,
+                        "message", safeMessage(message)));
+            }
+            default -> eventLogService.recordAndPublish(sessionId, "video.intercom.status", Map.of(
+                    "sessionId", sessionId, "status", safeMessage(status), "message", safeMessage(message)));
+        }
+        if (!holdsRoomForIntercom(session)
+                && session.getViewerCount() == 0
+                && session.getStatus() != VideoSessionStatus.IDLE_WAIT) {
+            session.setIdleSince(now());
+            transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
+                    "sessionId", session.getSessionId(),
+                    "idleReleaseDelaySeconds", properties.getSession().getIdleReleaseDelaySeconds()));
+        }
+        session.setUpdatedAt(now());
+        repository.save(session);
+    }
+
+    @Transactional
     public List<VideoStartCommand> handleClientOnline(String robotId, String status) {
         if (!"online".equalsIgnoreCase(status)) {
             return List.of();
@@ -320,6 +493,9 @@ public class VideoSessionService {
             return null;
         }
         liveKitRoomService.createRoom(session.getRoomName());
+        if (holdsRoomForIntercom(session)) {
+            session.setIntercomAudioOnly(false);
+        }
         emit("video.room.ready", Map.of(
                 "sessionId", session.getSessionId(),
                 "roomName", session.getRoomName()));
@@ -384,7 +560,9 @@ public class VideoSessionService {
     @Transactional
     public Map<String, Object> releaseIdleSession(String sessionId) {
         VideoSession session = requireSession(sessionId);
-        if (session.getStatus() != VideoSessionStatus.IDLE_WAIT || session.getViewerCount() > 0) {
+        if (session.getStatus() != VideoSessionStatus.IDLE_WAIT
+                || session.getViewerCount() > 0
+                || holdsRoomForIntercom(session)) {
             return Map.of();
         }
         transition(session, VideoSessionStatus.STOPPING, "video.session.stopping", session);
@@ -422,9 +600,47 @@ public class VideoSessionService {
 
     public List<String> idleReleaseCandidates(OffsetDateTime idleSinceBefore) {
         return repository.findByStatusAndIdleSinceBefore(VideoSessionStatus.IDLE_WAIT, idleSinceBefore).stream()
-                .filter(session -> session.getViewerCount() == 0)
+                .filter(session -> session.getViewerCount() == 0 && !holdsRoomForIntercom(session))
                 .map(VideoSession::getSessionId)
                 .toList();
+    }
+
+    public List<String> intercomTimeoutCandidates(OffsetDateTime heartbeatBefore) {
+        return repository.findByIntercomStatusInAndIntercomHeartbeatAtBefore(
+                        Set.of(IntercomStatus.STARTING, IntercomStatus.ACTIVE),
+                        heartbeatBefore).stream()
+                .map(VideoSession::getSessionId)
+                .toList();
+    }
+
+    @Transactional
+    public Map<String, Object> expireIntercom(String sessionId) {
+        VideoSession session = requireSession(sessionId);
+        if (!holdsRoomForIntercom(session)) {
+            return Map.of();
+        }
+        session.setIntercomStatus(IntercomStatus.INTERRUPTED);
+        session.setIntercomAudioOnly(false);
+        session.setIntercomOperatorId(null);
+        session.setIntercomClientId(null);
+        session.setRobotAudioTrackSid(null);
+        session.setRobotAudioTrackName(null);
+        eventLogService.recordAndPublish(sessionId, "video.intercom.interrupted", Map.of(
+                "sessionId", sessionId,
+                "message", "intercom heartbeat timeout"));
+        if (session.getViewerCount() == 0) {
+            session.setIdleSince(now());
+            transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
+                    "sessionId", sessionId,
+                    "idleReleaseDelaySeconds", properties.getSession().getIdleReleaseDelaySeconds()));
+        }
+        session.setUpdatedAt(now());
+        repository.save(session);
+        return Map.of(
+                "robotId", session.getRobotId(),
+                "sessionId", sessionId,
+                "commandId", "cmd_" + compactUuid(),
+                "roomName", session.getRoomName());
     }
 
     @Transactional
@@ -445,7 +661,9 @@ public class VideoSessionService {
         viewerRepository.save(viewer);
         repository.findById(viewer.getSessionId()).ifPresent(session -> {
             session.setViewerCount(activeViewerCount(session.getSessionId()));
-            if (session.getViewerCount() == 0 && session.getStatus() == VideoSessionStatus.STREAMING) {
+            if (session.getViewerCount() == 0
+                    && session.getStatus() == VideoSessionStatus.STREAMING
+                    && !holdsRoomForIntercom(session)) {
                 session.setIdleSince(now());
                 transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
                         "sessionId", session.getSessionId(),
@@ -461,6 +679,20 @@ public class VideoSessionService {
     private VideoSession requireSession(String sessionId) {
         return repository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Video session not found: " + sessionId));
+    }
+
+    private VideoSession requireIntercomOperator(String sessionId, CurrentUser user) {
+        VideoSession session = requireSession(sessionId);
+        if (!Objects.equals(session.getIntercomOperatorId(), user.userId())
+                || !Objects.equals(session.getIntercomClientId(), user.clientId())) {
+            throw new IllegalStateException("Current user does not own the intercom");
+        }
+        return session;
+    }
+
+    private boolean holdsRoomForIntercom(VideoSession session) {
+        return session.getIntercomStatus() == IntercomStatus.STARTING
+                || session.getIntercomStatus() == IntercomStatus.ACTIVE;
     }
 
     private String roomName(CreateVideoSessionRequest request) {

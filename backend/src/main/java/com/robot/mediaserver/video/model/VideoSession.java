@@ -55,6 +55,28 @@ public class VideoSession {
     @Column(nullable = false)
     private int viewerCount;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 24)
+    private IntercomStatus intercomStatus = IntercomStatus.IDLE;
+
+    @Column(nullable = false)
+    private boolean intercomAudioOnly;
+
+    @Column(length = 64)
+    private String intercomOperatorId;
+
+    @Column(length = 128)
+    private String intercomClientId;
+
+    @Column(length = 128)
+    private String robotAudioTrackSid;
+
+    @Column(length = 128)
+    private String robotAudioTrackName;
+
+    private OffsetDateTime intercomStartedAt;
+    private OffsetDateTime intercomHeartbeatAt;
+
     @Column(length = 128)
     private String trackSid;
 
@@ -147,6 +169,70 @@ public class VideoSession {
 
     public void setViewerCount(int viewerCount) {
         this.viewerCount = viewerCount;
+    }
+
+    public IntercomStatus getIntercomStatus() {
+        return intercomStatus == null ? IntercomStatus.IDLE : intercomStatus;
+    }
+
+    public void setIntercomStatus(IntercomStatus intercomStatus) {
+        this.intercomStatus = intercomStatus;
+    }
+
+    public boolean isIntercomAudioOnly() {
+        return intercomAudioOnly;
+    }
+
+    public void setIntercomAudioOnly(boolean intercomAudioOnly) {
+        this.intercomAudioOnly = intercomAudioOnly;
+    }
+
+    public String getIntercomOperatorId() {
+        return intercomOperatorId;
+    }
+
+    public void setIntercomOperatorId(String intercomOperatorId) {
+        this.intercomOperatorId = intercomOperatorId;
+    }
+
+    public String getIntercomClientId() {
+        return intercomClientId;
+    }
+
+    public void setIntercomClientId(String intercomClientId) {
+        this.intercomClientId = intercomClientId;
+    }
+
+    public String getRobotAudioTrackSid() {
+        return robotAudioTrackSid;
+    }
+
+    public void setRobotAudioTrackSid(String robotAudioTrackSid) {
+        this.robotAudioTrackSid = robotAudioTrackSid;
+    }
+
+    public String getRobotAudioTrackName() {
+        return robotAudioTrackName;
+    }
+
+    public void setRobotAudioTrackName(String robotAudioTrackName) {
+        this.robotAudioTrackName = robotAudioTrackName;
+    }
+
+    public OffsetDateTime getIntercomStartedAt() {
+        return intercomStartedAt;
+    }
+
+    public void setIntercomStartedAt(OffsetDateTime intercomStartedAt) {
+        this.intercomStartedAt = intercomStartedAt;
+    }
+
+    public OffsetDateTime getIntercomHeartbeatAt() {
+        return intercomHeartbeatAt;
+    }
+
+    public void setIntercomHeartbeatAt(OffsetDateTime intercomHeartbeatAt) {
+        this.intercomHeartbeatAt = intercomHeartbeatAt;
     }
 
     public String getTrackSid() {
