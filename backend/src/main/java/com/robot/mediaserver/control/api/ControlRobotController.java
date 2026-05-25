@@ -1,10 +1,10 @@
 package com.robot.mediaserver.control.api;
 
 import com.robot.mediaserver.auth.CurrentUserResolver;
+import com.robot.mediaserver.control.client.ControlMediaServiceClient;
 import com.robot.mediaserver.control.dto.ControlStartVideoRequest;
 import com.robot.mediaserver.control.service.ControlVideoCommandService;
 import com.robot.mediaserver.robot.dto.RobotDeviceResponse;
-import com.robot.mediaserver.robot.service.RobotRegistryService;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -19,22 +19,22 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/control/robots")
 public class ControlRobotController {
 
-    private final RobotRegistryService registryService;
+    private final ControlMediaServiceClient mediaServiceClient;
     private final ControlVideoCommandService controlVideoCommandService;
     private final CurrentUserResolver currentUserResolver;
 
     public ControlRobotController(
-            RobotRegistryService registryService,
+            ControlMediaServiceClient mediaServiceClient,
             ControlVideoCommandService controlVideoCommandService,
             CurrentUserResolver currentUserResolver) {
-        this.registryService = registryService;
+        this.mediaServiceClient = mediaServiceClient;
         this.controlVideoCommandService = controlVideoCommandService;
         this.currentUserResolver = currentUserResolver;
     }
 
     @GetMapping
     public List<RobotDeviceResponse> list() {
-        return registryService.list();
+        return mediaServiceClient.robots();
     }
 
     @PostMapping("/{robotId}/cameras/{deviceId}/video/start")

@@ -1,13 +1,10 @@
-package com.robot.mediaserver.video.messaging;
+package com.robot.mediaserver.control.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.config.MediaProperties;
-import com.robot.mediaserver.control.service.ControlVideoCommandService;
-import com.robot.mediaserver.robot.dto.RobotCameraResponse;
-import com.robot.mediaserver.robot.service.RobotRegistryService;
-import com.robot.mediaserver.video.service.VideoSessionService;
+import com.robot.mediaserver.control.client.ControlMediaServiceClient;
+import com.robot.mediaserver.video.messaging.VideoStatusMessage;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
 import org.eclipse.paho.client.mqttv3.IMqttMessageListener;
 import org.eclipse.paho.client.mqttv3.MqttClient;
@@ -19,14 +16,6 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
-/**
- * 机器人媒体状态 MQTT 订阅器。
- *
- * <p>订阅云接入客户端上报的 status 消息，并推进实时视频会话状态机。</p>
- *
- * @author leelay
- * @date 2026/05/20
- */
 @Component
 public class RobotMediaStatusSubscriber {
 
@@ -36,27 +25,21 @@ public class RobotMediaStatusSubscriber {
 
     private final MediaProperties properties;
     private final ObjectMapper objectMapper;
-    private final VideoSessionService videoSessionService;
-    private final ControlVideoCommandService controlVideoCommandService;
-    private final RobotRegistryService robotRegistryService;
+    private final ControlMediaServiceClient mediaServiceClient;
+    private final RobotMediaCommandService commandService;
     private MqttClient client;
 
     public RobotMediaStatusSubscriber(
             MediaProperties properties,
             ObjectMapper objectMapper,
-            VideoSessionService videoSessionService,
-            ControlVideoCommandService controlVideoCommandService,
-            RobotRegistryService robotRegistryService) {
+            ControlMediaServiceClient mediaServiceClient,
+            RobotMediaCommandService commandService) {
         this.properties = properties;
         this.objectMapper = objectMapper;
-        this.videoSessionService = videoSessionService;
-        this.controlVideoCommandService = controlVideoCommandService;
-        this.robotRegistryService = robotRegistryService;
+        this.mediaServiceClient = mediaServiceClient;
+        this.commandService = commandService;
     }
 
-    /**
-     * 应用启动后订阅媒体状态 Topic。
-     */
     @EventListener(ApplicationReadyEvent.class)
     public void subscribeOnReady() {
         if (!properties.getMqtt().isEnabled()) {
@@ -78,13 +61,7 @@ public class RobotMediaStatusSubscriber {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
             try {
                 VideoStatusMessage status = objectMapper.readValue(payload, VideoStatusMessage.class);
-                videoSessionService.handleClientStatus(
-                        status.getSessionId(),
-                        status.getStatus(),
-                        status.getTrackSid(),
-                        status.getTrackName(),
-                        status.getErrorCode(),
-                        status.getMessage());
+                mediaServiceClient.updateVideoStatus(status);
             } catch (Exception ex) {
                 log.warn("Failed to handle media status topic={}, payload={}", topic, payload, ex);
             }
@@ -96,17 +73,11 @@ public class RobotMediaStatusSubscriber {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
             try {
                 Map<String, Object> data = objectMapper.readValue(payload, Map.class);
-                String robotId = String.valueOf(data.get("robotId"));
-                String clientId = String.valueOf(data.get("clientId"));
-                String status = String.valueOf(data.get("status"));
-                String name = data.get("name") == null ? robotId : String.valueOf(data.get("name"));
-                String type = data.get("type") == null ? "机器人" : String.valueOf(data.get("type"));
-                List<RobotCameraResponse> cameras = objectMapper.convertValue(
-                        data.getOrDefault("cameras", List.of()),
-                        objectMapper.getTypeFactory().constructCollectionType(List.class, RobotCameraResponse.class));
-                boolean becameOnline = robotRegistryService.update(robotId, clientId, status, name, type, cameras);
+                boolean becameOnline = mediaServiceClient.updateRobotClientStatus(data);
                 if (becameOnline) {
-                    controlVideoCommandService.handleClientOnline(robotId, status);
+                    String robotId = String.valueOf(data.get("robotId"));
+                    String status = String.valueOf(data.get("status"));
+                    mediaServiceClient.onlineRestartCommands(robotId, status).forEach(commandService::sendStart);
                 }
             } catch (Exception ex) {
                 log.warn("Failed to handle media client status topic={}, payload={}", topic, payload, ex);

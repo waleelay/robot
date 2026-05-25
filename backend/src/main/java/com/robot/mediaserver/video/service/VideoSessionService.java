@@ -413,6 +413,20 @@ public class VideoSessionService {
                 .toList();
     }
 
+    public List<String> interruptedRestartCandidates(OffsetDateTime updatedBefore) {
+        return repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.INTERRUPTED, updatedBefore).stream()
+                .filter(session -> session.getViewerCount() > 0)
+                .map(VideoSession::getSessionId)
+                .toList();
+    }
+
+    public List<String> idleReleaseCandidates(OffsetDateTime idleSinceBefore) {
+        return repository.findByStatusAndIdleSinceBefore(VideoSessionStatus.IDLE_WAIT, idleSinceBefore).stream()
+                .filter(session -> session.getViewerCount() == 0)
+                .map(VideoSession::getSessionId)
+                .toList();
+    }
+
     @Transactional
     public void sweepStaleViewers() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getViewerHeartbeatTimeoutSeconds());

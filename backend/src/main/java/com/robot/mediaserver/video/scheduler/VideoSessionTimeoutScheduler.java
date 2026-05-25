@@ -1,7 +1,6 @@
 package com.robot.mediaserver.video.scheduler;
 
 import com.robot.mediaserver.config.MediaProperties;
-import com.robot.mediaserver.control.service.ControlVideoCommandService;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
@@ -21,25 +20,20 @@ public class VideoSessionTimeoutScheduler {
 
     private final VideoSessionRepository repository;
     private final VideoSessionService videoSessionService;
-    private final ControlVideoCommandService controlVideoCommandService;
     private final MediaProperties properties;
 
     public VideoSessionTimeoutScheduler(
             VideoSessionRepository repository,
             VideoSessionService videoSessionService,
-            ControlVideoCommandService controlVideoCommandService,
             MediaProperties properties) {
         this.repository = repository;
         this.videoSessionService = videoSessionService;
-        this.controlVideoCommandService = controlVideoCommandService;
         this.properties = properties;
     }
 
     @Scheduled(fixedDelayString = "${media.session.sweep-delay-ms:5000}")
     public void sweep() {
         handleTrackPublishTimeout();
-        handleInterruptedTimeout();
-        handleIdleRelease();
         videoSessionService.sweepStaleViewers();
     }
 
@@ -49,30 +43,6 @@ public class VideoSessionTimeoutScheduler {
         List<VideoSession> roomReady = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.ROOM_READY, threshold);
         requesting.forEach(session -> markTimeout(session, "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时"));
         roomReady.forEach(session -> markTimeout(session, "LK_PUBLISH_TIMEOUT", "Room ready 后 Track 发布超时"));
-    }
-
-    private void handleInterruptedTimeout() {
-        OffsetDateTime threshold = now().minusSeconds(properties.getSession().getInterruptedGraceSeconds());
-        List<VideoSession> sessions = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.INTERRUPTED, threshold);
-        for (VideoSession session : sessions) {
-            if (session.getViewerCount() > 0) {
-                controlVideoCommandService.restartSession(session.getSessionId());
-            } else {
-                markTimeout(session, "TRACK_INTERRUPTED_TIMEOUT", "Track 中断后恢复超时");
-            }
-        }
-    }
-
-    private void handleIdleRelease() {
-        OffsetDateTime threshold = now().minusSeconds(properties.getSession().getIdleReleaseDelaySeconds());
-        List<VideoSession> sessions = repository.findByStatusAndIdleSinceBefore(VideoSessionStatus.IDLE_WAIT, threshold);
-        for (VideoSession session : sessions) {
-            try {
-                controlVideoCommandService.releaseIdleSession(session.getSessionId());
-            } catch (Exception ex) {
-                log.warn("Failed to release idle session={}", session.getSessionId(), ex);
-            }
-        }
     }
 
     private void markTimeout(VideoSession session, String errorCode, String message) {

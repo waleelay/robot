@@ -7,6 +7,9 @@ spring:
 server:
   port: ${SERVER_PORT:8088}
 
+control:
+  media-service-base-url: ${MEDIA_SERVICE_BASE_URL:http://localhost:8088}
+
 media:
   auth:
     mock-enabled: true

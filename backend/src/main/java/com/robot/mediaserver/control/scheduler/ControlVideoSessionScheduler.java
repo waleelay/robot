@@ -1,0 +1,62 @@
+package com.robot.mediaserver.control.scheduler;
+
+import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.control.client.ControlMediaServiceClient;
+import com.robot.mediaserver.control.service.ControlVideoCommandService;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+@Component
+public class ControlVideoSessionScheduler {
+
+    private static final Logger log = LoggerFactory.getLogger(ControlVideoSessionScheduler.class);
+
+    private final ControlMediaServiceClient mediaServiceClient;
+    private final ControlVideoCommandService commandService;
+    private final MediaProperties properties;
+
+    public ControlVideoSessionScheduler(
+            ControlMediaServiceClient mediaServiceClient,
+            ControlVideoCommandService commandService,
+            MediaProperties properties) {
+        this.mediaServiceClient = mediaServiceClient;
+        this.commandService = commandService;
+        this.properties = properties;
+    }
+
+    @Scheduled(fixedDelayString = "${media.session.sweep-delay-ms:5000}")
+    public void sweep() {
+        restartInterruptedSessions();
+        releaseIdleSessions();
+    }
+
+    private void restartInterruptedSessions() {
+        OffsetDateTime threshold = now().minusSeconds(properties.getSession().getInterruptedGraceSeconds());
+        mediaServiceClient.interruptedRestartCandidates(threshold).forEach(sessionId -> {
+            try {
+                commandService.restartSession(sessionId);
+            } catch (Exception ex) {
+                log.warn("Failed to restart interrupted session={}", sessionId, ex);
+            }
+        });
+    }
+
+    private void releaseIdleSessions() {
+        OffsetDateTime threshold = now().minusSeconds(properties.getSession().getIdleReleaseDelaySeconds());
+        mediaServiceClient.idleReleaseCandidates(threshold).forEach(sessionId -> {
+            try {
+                commandService.releaseIdleSession(sessionId);
+            } catch (Exception ex) {
+                log.warn("Failed to release idle session={}", sessionId, ex);
+            }
+        });
+    }
+
+    private OffsetDateTime now() {
+        return OffsetDateTime.now(ZoneOffset.UTC);
+    }
+}

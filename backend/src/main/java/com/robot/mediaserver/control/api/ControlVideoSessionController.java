@@ -2,6 +2,7 @@ package com.robot.mediaserver.control.api;
 
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.auth.CurrentUserResolver;
+import com.robot.mediaserver.control.client.ControlMediaServiceClient;
 import com.robot.mediaserver.control.service.ControlVideoCommandService;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
@@ -10,10 +11,6 @@ import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
-import com.robot.mediaserver.video.event.MediaEventLogService;
-import com.robot.mediaserver.video.service.MediaTrackService;
-import com.robot.mediaserver.video.service.SnapshotService;
-import com.robot.mediaserver.video.service.VideoSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -28,67 +25,58 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/control/video-sessions")
 public class ControlVideoSessionController {
 
-    private final VideoSessionService service;
+    private final ControlMediaServiceClient mediaServiceClient;
     private final ControlVideoCommandService controlVideoCommandService;
     private final CurrentUserResolver currentUserResolver;
-    private final MediaEventLogService eventLogService;
-    private final SnapshotService snapshotService;
-    private final MediaTrackService mediaTrackService;
 
     public ControlVideoSessionController(
-            VideoSessionService service,
+            ControlMediaServiceClient mediaServiceClient,
             ControlVideoCommandService controlVideoCommandService,
-            CurrentUserResolver currentUserResolver,
-            MediaEventLogService eventLogService,
-            SnapshotService snapshotService,
-            MediaTrackService mediaTrackService) {
-        this.service = service;
+            CurrentUserResolver currentUserResolver) {
+        this.mediaServiceClient = mediaServiceClient;
         this.controlVideoCommandService = controlVideoCommandService;
         this.currentUserResolver = currentUserResolver;
-        this.eventLogService = eventLogService;
-        this.snapshotService = snapshotService;
-        this.mediaTrackService = mediaTrackService;
     }
 
     @GetMapping
     public List<VideoSessionResponse> recent(HttpServletRequest servletRequest) {
-        return service.recent(currentUserResolver.resolve(servletRequest));
+        return mediaServiceClient.recent(currentUserResolver.resolve(servletRequest));
     }
 
     @GetMapping("/active")
     public List<VideoSessionResponse> active() {
-        return service.active();
+        return mediaServiceClient.active();
     }
 
     @GetMapping("/{sessionId}")
     public VideoSessionResponse get(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return service.get(sessionId, currentUserResolver.resolve(servletRequest));
+        return mediaServiceClient.get(sessionId, currentUserResolver.resolve(servletRequest));
     }
 
     @GetMapping("/{sessionId}/events")
     public List<MediaEventLogResponse> events(@PathVariable String sessionId) {
-        return eventLogService.recentEvents(sessionId);
+        return mediaServiceClient.events(sessionId);
     }
 
     @GetMapping("/{sessionId}/tracks")
     public List<MediaTrackResponse> tracks(@PathVariable String sessionId) {
-        return mediaTrackService.recentBySession(sessionId);
+        return mediaServiceClient.tracks(sessionId);
     }
 
     @PostMapping("/{sessionId}/token")
     public ViewerTokenResponse token(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         CurrentUser user = currentUserResolver.resolve(servletRequest);
-        return service.createViewerToken(sessionId, user);
+        return mediaServiceClient.token(sessionId, user);
     }
 
     @PostMapping("/{sessionId}/heartbeat")
     public VideoSessionResponse heartbeat(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return service.heartbeat(sessionId, currentUserResolver.resolve(servletRequest));
+        return mediaServiceClient.heartbeat(sessionId, currentUserResolver.resolve(servletRequest));
     }
 
     @PostMapping("/{sessionId}/stop")
     public VideoSessionResponse stop(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return service.stop(sessionId, currentUserResolver.resolve(servletRequest));
+        return mediaServiceClient.stop(sessionId, currentUserResolver.resolve(servletRequest));
     }
 
     @PostMapping("/{sessionId}/restart")
@@ -106,11 +94,11 @@ public class ControlVideoSessionController {
             @PathVariable String sessionId,
             @Valid @RequestBody CreateSnapshotRequest request,
             HttpServletRequest servletRequest) {
-        return service.createSnapshot(sessionId, request, currentUserResolver.resolve(servletRequest));
+        return mediaServiceClient.snapshot(sessionId, request, currentUserResolver.resolve(servletRequest));
     }
 
     @GetMapping("/{sessionId}/snapshots")
     public List<SnapshotResponse> snapshots(@PathVariable String sessionId) {
-        return snapshotService.recentBySession(sessionId);
+        return mediaServiceClient.snapshots(sessionId);
     }
 }

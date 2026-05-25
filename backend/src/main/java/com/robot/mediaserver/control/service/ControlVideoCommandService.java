@@ -1,6 +1,7 @@
 package com.robot.mediaserver.control.service;
 
 import com.robot.mediaserver.auth.CurrentUser;
+import com.robot.mediaserver.control.client.ControlMediaServiceClient;
 import com.robot.mediaserver.control.dto.ControlStartVideoRequest;
 import com.robot.mediaserver.control.messaging.RobotMediaCommandService;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
@@ -10,20 +11,19 @@ import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import com.robot.mediaserver.video.model.VideoChannel;
 import com.robot.mediaserver.video.model.VideoQuality;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
-import com.robot.mediaserver.video.service.VideoSessionService;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 
 @Service
 public class ControlVideoCommandService {
 
-    private final VideoSessionService videoSessionService;
+    private final ControlMediaServiceClient mediaServiceClient;
     private final RobotMediaCommandService commandService;
 
     public ControlVideoCommandService(
-            VideoSessionService videoSessionService,
+            ControlMediaServiceClient mediaServiceClient,
             RobotMediaCommandService commandService) {
-        this.videoSessionService = videoSessionService;
+        this.mediaServiceClient = mediaServiceClient;
         this.commandService = commandService;
     }
 
@@ -36,34 +36,34 @@ public class ControlVideoCommandService {
         mediaRequest.setQuality(startRequest.getQuality() == null ? VideoQuality.sub : startRequest.getQuality());
         mediaRequest.setReuse(startRequest.isReuse());
         mediaRequest.setClientRequestId(startRequest.getClientRequestId());
-        VideoSessionResponse response = videoSessionService.create(mediaRequest, user);
+        VideoSessionResponse response = mediaServiceClient.createVideoSession(mediaRequest, user);
         if (response.status() == VideoSessionStatus.INIT) {
-            VideoStartCommand command = videoSessionService.requestClientStart(response.sessionId(), "video.client.requested");
+            VideoStartCommand command = mediaServiceClient.requestClientStart(response.sessionId(), "video.client.requested");
             sendStart(command);
-            return videoSessionService.get(response.sessionId(), user);
+            return mediaServiceClient.get(response.sessionId(), user);
         }
         return response;
     }
 
     public VideoSessionResponse restartVideo(String sessionId, CurrentUser user) {
-        VideoStartCommand command = videoSessionService.restartSessionCommand(sessionId, user);
+        VideoStartCommand command = mediaServiceClient.restartCommand(sessionId, user);
         sendStart(command);
-        return videoSessionService.get(sessionId, user);
+        return mediaServiceClient.get(sessionId, user);
     }
 
     public VideoSessionResponse switchChannel(String sessionId, SwitchChannelRequest request) {
-        VideoSessionResponse response = videoSessionService.switchChannel(sessionId, request);
-        VideoStartCommand command = videoSessionService.createStartCommand(sessionId);
+        VideoSessionResponse response = mediaServiceClient.switchChannel(sessionId, request);
+        VideoStartCommand command = mediaServiceClient.currentStartCommand(sessionId);
         commandService.sendSwitchChannel(command.robotId(), command);
         return response;
     }
 
     public void restartSession(String sessionId) {
-        sendStart(videoSessionService.restartSessionCommand(sessionId));
+        sendStart(mediaServiceClient.restartCommand(sessionId, null));
     }
 
     public void releaseIdleSession(String sessionId) {
-        Map<String, Object> payload = videoSessionService.releaseIdleSession(sessionId);
+        Map<String, Object> payload = mediaServiceClient.releaseIdle(sessionId);
         if (payload.isEmpty()) {
             return;
         }
@@ -74,7 +74,7 @@ public class ControlVideoCommandService {
     }
 
     public void handleClientOnline(String robotId, String status) {
-        videoSessionService.handleClientOnline(robotId, status).forEach(this::sendStart);
+        mediaServiceClient.onlineRestartCommands(robotId, status).forEach(this::sendStart);
     }
 
     private void sendStart(VideoStartCommand command) {

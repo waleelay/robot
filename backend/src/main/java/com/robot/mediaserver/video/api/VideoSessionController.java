@@ -11,11 +11,14 @@ import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
 import com.robot.mediaserver.video.event.MediaEventLogService;
+import com.robot.mediaserver.video.messaging.VideoStartCommand;
+import com.robot.mediaserver.video.messaging.VideoStatusMessage;
 import com.robot.mediaserver.video.service.SnapshotService;
 import com.robot.mediaserver.video.service.MediaTrackService;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.time.OffsetDateTime;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +27,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -71,6 +75,16 @@ public class VideoSessionController {
         return service.active();
     }
 
+    @GetMapping("/interrupted-restart-candidates")
+    public List<String> interruptedRestartCandidates(@RequestParam OffsetDateTime before) {
+        return service.interruptedRestartCandidates(before);
+    }
+
+    @GetMapping("/idle-release-candidates")
+    public List<String> idleReleaseCandidates(@RequestParam OffsetDateTime before) {
+        return service.idleReleaseCandidates(before);
+    }
+
     @GetMapping("/{sessionId}")
     public VideoSessionResponse get(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         return service.get(sessionId, currentUserResolver.resolve(servletRequest));
@@ -84,6 +98,17 @@ public class VideoSessionController {
     @GetMapping("/{sessionId}/tracks")
     public List<MediaTrackResponse> tracks(@PathVariable String sessionId) {
         return mediaTrackService.recentBySession(sessionId);
+    }
+
+    @PostMapping("/status")
+    public void status(@RequestBody VideoStatusMessage status) {
+        service.handleClientStatus(
+                status.getSessionId(),
+                status.getStatus(),
+                status.getTrackSid(),
+                status.getTrackName(),
+                status.getErrorCode(),
+                status.getMessage());
     }
 
     @PostMapping("/{sessionId}/token")
@@ -105,6 +130,31 @@ public class VideoSessionController {
     @PostMapping("/{sessionId}/restart")
     public VideoSessionResponse restart(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         return service.restartSession(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{sessionId}/restart-command")
+    public VideoStartCommand restartCommand(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return service.restartSessionCommand(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{sessionId}/client-start")
+    public VideoStartCommand clientStart(@PathVariable String sessionId, @RequestParam(defaultValue = "video.client.requested") String event) {
+        return service.requestClientStart(sessionId, event);
+    }
+
+    @PostMapping("/{sessionId}/start-command")
+    public VideoStartCommand startCommand(@PathVariable String sessionId) {
+        return service.createStartCommand(sessionId);
+    }
+
+    @PostMapping("/online-restart-commands")
+    public List<VideoStartCommand> onlineRestartCommands(@RequestParam String robotId, @RequestParam String status) {
+        return service.handleClientOnline(robotId, status);
+    }
+
+    @PostMapping("/{sessionId}/release-idle")
+    public java.util.Map<String, Object> releaseIdle(@PathVariable String sessionId) {
+        return service.releaseIdleSession(sessionId);
     }
 
     @PostMapping("/{sessionId}/switch-channel")
