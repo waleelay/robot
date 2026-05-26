@@ -1126,16 +1126,6 @@ sequenceDiagram
     participant MQ as EMQX
     participant GO as Go Client
 
-    GO->>MQ: client/status online + cameras
-    MQ->>CS: client/status online + cameras
-    CS->>ML: POST /internal/media/robots/client-status
-    ML-->>CS: robot online result
-    CS-->>FE: WS /ws/control robot.client.online
-    FE->>CS: GET /api/control/robots
-    CS->>ML: GET /internal/media/robots
-    ML-->>CS: robot list
-    CS-->>FE: robot list
-
     FE->>CS: POST /api/control/robots/{robotId}/cameras/{deviceId}/video/start
     CS->>CS: permission / device context check
     CS->>ML: POST /internal/media/video-sessions
@@ -1166,6 +1156,28 @@ sequenceDiagram
 ```text
 INIT -> REQUESTING_CLIENT -> ROOM_READY -> STREAMING
 ```
+
+步骤说明：
+
+| 步骤 | 交互 | 处理说明 |
+|---:|---|---|
+| 1 | `Frontend -> Control Server: POST /api/control/robots/{robotId}/cameras/{deviceId}/video/start` | 用户点击某一路画面的观看按钮。前端提交机器人、摄像头、通道、清晰度及 `reuse=true`。 |
+| 2 | `Control Server: permission / device context check` | Control Server 校验当前用户是否有观看权限、目标机器人和摄像头是否属于可操作范围。 |
+| 3 | `Control Server -> Media Service + LiveKit: POST /internal/media/video-sessions` | Control Server 请求媒体能力创建或复用会话。Media 判断同一路是否已有可复用 session，并维护当前浏览器 viewer。 |
+| 4 | `Media Service + LiveKit: CreateRoom + create publisherToken/viewerToken` | 新会话时创建 LiveKit Room，并签发机器人发布 Token 与浏览器观看 Token；复用会话时仅为当前观看者签发观看 Token。 |
+| 5 | `Media Service + LiveKit -> Control Server: VideoSessionResponse` | 返回 `sessionId`、`roomName`、`livekitUrl`、`viewerToken`、`status`、`viewerCount` 等会话信息。 |
+| 6 | `Control Server -> Media Service + LiveKit: POST /internal/media/video-sessions/{sessionId}/client-start` | 仅新建且需要机器人开始推流时调用。Media 准备 publisherToken、`commandId` 和 start 指令 payload，并将会话置为 `REQUESTING_CLIENT`。 |
+| 7 | `Control Server -> EMQX: video/start` | Control Server 将媒体返回的 start payload 发布到 `robot/{robotId}/media/video/start`。若是复用已在推流的会话，此步不执行。 |
+| 8 | `Control Server -> Frontend: VideoSessionResponse` | Control Server 将包含 `livekitUrl` 与 `viewerToken` 的响应返回前端。首次观看直接使用该 Token，不额外请求 `/token`。 |
+| 9 | `Frontend -> Media Service + LiveKit: room.connect(livekitUrl, viewerToken)` | 浏览器直连 LiveKit 并加入该摄像头 Room，等待机器人发布 Track。Control Server 不转发媒体流。 |
+| 10 | `EMQX -> Go Client: video/start` | 机器人侧 Go 客户端接收启动指令，确定对应摄像头本地 RTSP 地址。 |
+| 11 | `Go Client: ffprobe RTSP` | 客户端验证 RTSP 可拉流；失败则通过状态消息上报失败，前端不会出现画面。 |
+| 12 | `Go Client -> EMQX: status=publishing` | RTSP 校验成功后，上报正在开始发布，Media 会话可推进到 `ROOM_READY`。 |
+| 13 | `Go Client -> Media Service + LiveKit: publish Track` | Go 客户端通过 GStreamer/LiveKit publisher 将本路视频 Track 发布进 Room。 |
+| 14 | `Go Client -> EMQX: status=streaming` | 客户端上报推流成功状态。 |
+| 15 | `EMQX -> Control Server -> Media Service + LiveKit: POST /internal/media/video-sessions/status` | Control Server 消费状态消息后调用 Media Internal API；Media 记录 Track 信息并将 session 更新为 `STREAMING`。 |
+| 16 | `Control Server -> Frontend: WS /ws/control video.session.streaming` | Control Server 向前端推送媒体状态事件，用于更新画面状态与事件面板。 |
+| 17 | `Media Service + LiveKit -> Frontend: TrackSubscribed` | 浏览器收到 LiveKit Track 订阅事件，将 Track attach 到对应 `<video>` 元素，画面展示完成。 |
 
 说明：
 

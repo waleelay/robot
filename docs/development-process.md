@@ -84,10 +84,22 @@ MinIO 存在正式图片
 
 ```text
 /ws/media 可连接
+/ws/control 可通过 Nginx 的 wss://<lan-ip>:4443/ws/control 连接
 不会与 Vue dev-server websocket 冲突
 会话状态事件可收到
 抓拍事件可收到
 断开后前端状态可恢复
+```
+
+## 局域网通话验收
+
+```text
+浏览器通过 https://<lan-ip>:4443 打开页面且证书受信任
+后端配置 MEDIA_SERVICE_BASE_URL=http://localhost:8088 供 Control 内部调用 Media
+后端配置 LIVEKIT_URL=ws://<lan-ip>:7880 供后端和机器人使用
+前端在 HTTPS 页面自动使用 wss://<lan-ip>:4443/livekit
+浏览器可授权麦克风并经 4443 建立通话
+观看视频时开始和挂断对讲不重启共享视频 Track
 ```
 
 ## LiveKit 验收

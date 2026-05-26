@@ -7,3 +7,4 @@ dist/
 .vscode/
 tmp_docx_render_*/
 robot-mediaserver-*-tcp*/
+deploy/nginx/certs/

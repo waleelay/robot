@@ -11,11 +11,11 @@
       <aside class="robot-list">
         <div class="list-title">机器人设备</div>
         <button
-          v-for="robot in robots"
-          :key="robot.robotId"
-          class="robot-item"
-          :class="{ active: selectedRobotId === robot.robotId }"
-          @click="selectedRobotId = robot.robotId"
+            v-for="robot in robots"
+            :key="robot.robotId"
+            class="robot-item"
+            :class="{ active: selectedRobotId === robot.robotId }"
+            @click="selectedRobotId = robot.robotId"
         >
           <span>{{ robot.name }}</span>
           <small>{{ robot.robotId }} · {{ robot.status || 'offline' }}</small>
@@ -58,32 +58,32 @@
               </div>
               <div class="video-tools">
                 <el-button
-                  v-if="!camera.session || camera.stopped"
-                  size="mini"
-                  icon="el-icon-video-play"
-                  :loading="camera.loading"
-                  :disabled="selectedRobot.status !== 'online'"
-                  @click="startCamera(selectedRobot, camera)"
+                    v-if="!camera.session || camera.stopped"
+                    size="mini"
+                    icon="el-icon-video-play"
+                    :loading="camera.loading"
+                    :disabled="selectedRobot.status !== 'online'"
+                    @click="startCamera(selectedRobot, camera)"
                 >观看</el-button>
                 <el-button
-                  v-else
-                  size="mini"
-                  icon="el-icon-video-pause"
-                  :loading="camera.loading"
-                  @click="stopCamera(camera)"
+                    v-else
+                    size="mini"
+                    icon="el-icon-video-pause"
+                    :loading="camera.loading"
+                    @click="stopCamera(camera)"
                 >停止</el-button>
                 <el-button
-                  size="mini"
-                  icon="el-icon-camera"
-                  :disabled="!camera.session || !camera.hasVideo"
-                  @click="snapshotCamera(camera)"
+                    size="mini"
+                    icon="el-icon-camera"
+                    :disabled="!camera.session || !camera.hasVideo"
+                    @click="snapshotCamera(camera)"
                 >抓拍</el-button>
                 <el-button
-                  size="mini"
-                  :icon="camera.intercomActive ? 'el-icon-turn-off-microphone' : 'el-icon-microphone'"
-                  :loading="camera.intercomBusy"
-                  :disabled="selectedRobot.status !== 'online'"
-                  @click="toggleIntercom(selectedRobot, camera)"
+                    size="mini"
+                    :icon="camera.intercomActive ? 'el-icon-turn-off-microphone' : 'el-icon-microphone'"
+                    :loading="camera.intercomBusy"
+                    :disabled="selectedRobot.status !== 'online'"
+                    @click="toggleIntercom(selectedRobot, camera)"
                 >{{ camera.intercomActive ? '挂断' : '通话' }}</el-button>
               </div>
               <div class="video-bottombar">
@@ -227,22 +227,22 @@ export default {
       this.allCameras().forEach(camera => {
         if (camera.session && !camera.stopped && !camera.stopping) {
           const heartbeat = camera.watching
-            ? heartbeatVideoSession(camera.session.sessionId)
-            : Promise.resolve(camera.session)
+              ? heartbeatVideoSession(camera.session.sessionId)
+              : Promise.resolve(camera.session)
           heartbeat
-            .then(session => {
-              if (camera.session && camera.session.sessionId === session.sessionId) {
-                camera.viewerCount = session.viewerCount
-              }
-            })
-            .catch(() => {})
+              .then(session => {
+                if (camera.session && camera.session.sessionId === session.sessionId) {
+                  camera.viewerCount = session.viewerCount
+                }
+              })
+              .catch(() => {})
         }
         if (camera.session && camera.intercomActive) {
           heartbeatIntercom(camera.session.sessionId)
-            .then(response => {
-              camera.intercomStatus = response.intercomStatus
-            })
-            .catch(() => {})
+              .then(response => {
+                camera.intercomStatus = response.intercomStatus
+              })
+              .catch(() => {})
         }
       })
     },
@@ -333,13 +333,13 @@ export default {
       camera.intercomBusy = true
       try {
         const response = camera.session
-          ? await startSessionIntercom(camera.session.sessionId)
-          : await startCameraIntercom({
-            robotId: robot.robotId,
-            deviceId: camera.deviceId,
-            channel: camera.channel,
-            quality: camera.quality
-          })
+            ? await startSessionIntercom(camera.session.sessionId)
+            : await startCameraIntercom({
+              robotId: robot.robotId,
+              deviceId: camera.deviceId,
+              channel: camera.channel,
+              quality: camera.quality
+            })
         camera.session = this.mergeSession(camera, {
           sessionId: response.sessionId,
           robotId: response.robotId,
@@ -432,7 +432,8 @@ export default {
           })
         }
         const token = connectionToken || (camera.intercomActive ? camera.intercomToken : camera.session.viewerToken)
-        if (!token || !camera.session.livekitUrl) return
+        const livekitUrl = this.liveKitConnectionUrl(camera.session.livekitUrl)
+        if (!token || !livekitUrl) return
         if (camera.room) {
           camera.disconnecting = true
           const oldRoom = camera.room
@@ -470,7 +471,7 @@ export default {
           if (camera.watching && !this.isStoppedSession(camera, sessionId)) this.restartCamera(camera)
         })
         camera.room = room
-        await room.connect(camera.session.livekitUrl, token)
+        await room.connect(livekitUrl, token)
         this.log('LiveKit connected', `${camera.name} ${camera.session.roomName}`)
       } catch (error) {
         camera.room = null
@@ -603,6 +604,12 @@ export default {
       const ref = this.$refs[camera.key + '-audio']
       return Array.isArray(ref) ? ref[0] : ref
     },
+    liveKitConnectionUrl(serverUrl) {
+      if (window.location.protocol === 'https:') {
+        return `wss://${window.location.host}/livekit`
+      }
+      return serverUrl
+    },
     previewHash(camera) {
       const video = this.videoElement(camera)
       if (!video || !video.videoWidth) return null
@@ -630,12 +637,12 @@ export default {
         type: robot.type || '机器人',
         status: robot.status || 'offline',
         cameras: (robot.cameras || []).map(camera => Object.assign(
-          cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible'),
-          {
-            cameraId: camera.cameraId || camera.deviceId,
-            quality: camera.quality || 'sub',
-            status: robot.status === 'online' ? camera.status || '' : 'offline'
-          }))
+            cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible'),
+            {
+              cameraId: camera.cameraId || camera.deviceId,
+              quality: camera.quality || 'sub',
+              status: robot.status === 'online' ? camera.status || '' : 'offline'
+            }))
       }
     },
     statusType(status) {
@@ -650,8 +657,8 @@ export default {
     },
     errorMessage(error) {
       return error && error.response && error.response.data
-        ? error.response.data.message || error.response.data.code
-        : error.message || '请求失败'
+          ? error.response.data.message || error.response.data.code
+          : error.message || '请求失败'
     }
   }
 }

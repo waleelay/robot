@@ -75,6 +75,7 @@ export MYSQL_USERNAME='root'
 export MYSQL_PASSWORD='root'
 export REDIS_HOST='localhost'
 export REDIS_PORT='6379'
+export MEDIA_SERVICE_BASE_URL='http://localhost:8088'
 export LIVEKIT_URL='ws://localhost:7880'
 export LIVEKIT_API_KEY='devkey'
 export LIVEKIT_API_SECRET='dev-secret-dev-secret-dev-secret-32'
@@ -121,6 +122,8 @@ export AUDIO_CAPTURE_PIPELINE='autoaudiosrc ! audioconvert ! audioresample ! aud
 export AUDIO_PLAYBACK_PIPELINE='fdsrc fd=0 ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! audioconvert ! audioresample ! autoaudiosink'
 ```
 
+`LIVEKIT_URL` 用于后端和机器人客户端连接 LiveKit。前端在 HTTPS 入口下会自动改用同源 `wss://<当前主机>/livekit`；本机 HTTP 调试仍使用接口返回的 `LIVEKIT_URL`。
+
 `PUBLISHER_CMD` 支持占位符：
 
 ```text
@@ -140,6 +143,54 @@ export AUDIO_PLAYBACK_PIPELINE='fdsrc fd=0 ! audio/x-raw,format=S16LE,rate=48000
 5. 启动前端调试台。
 6. 在前端创建实时视频会话。
 7. 检查 MQTT ACK/status、WebSocket 事件、LiveKit Track、抓拍任务。
+
+## 局域网 HTTPS 通话
+
+浏览器在非本机地址使用麦克风必须处于安全上下文。通过局域网 IP 访问时，使用 Nginx 提供 HTTPS、业务 WebSocket 的 WSS 代理，以及 LiveKit 的 WSS 信令入口。
+
+示例以服务主机地址 `192.168.124.77` 为例：
+
+```bash
+cd frontend
+npm run build
+
+cd ..
+sh deploy/nginx/generate-lan-cert.sh 192.168.124.77
+```
+
+将 [deploy/nginx/certs/server.crt](deploy/nginx/certs/server.crt) 安装为每台访问终端的受信任证书。证书必须包含实际使用的局域网 IP，否则浏览器不会允许麦克风权限。
+
+后端启动前配置 LiveKit 内部地址：
+
+```bash
+export MEDIA_SERVICE_BASE_URL='http://localhost:8088'
+export LIVEKIT_URL='ws://192.168.124.77:7880'
+```
+
+当前 Control 与 Media 模块运行在同一个后端进程中，`MEDIA_SERVICE_BASE_URL` 必须指向后端内部 HTTP 地址，不要配置为 Nginx 的 `https://<lan-ip>:4443` 浏览器入口。
+
+在 macOS Docker Desktop 上启动 Nginx：
+
+```bash
+docker run --rm --name robot-mediaserver-nginx \
+  -p 80:80 -p 4443:4443 \
+  -v "$PWD/deploy/nginx/robot-mediaserver.conf:/etc/nginx/conf.d/default.conf:ro" \
+  -v "$PWD/deploy/nginx/certs:/etc/nginx/certs:ro" \
+  -v "$PWD/frontend/dist:/usr/share/nginx/html/robot-mediaserver:ro" \
+  nginx:alpine
+```
+
+访问入口：
+
+```text
+页面/API:        https://192.168.124.77:4443
+业务 WebSocket:  wss://192.168.124.77:4443/ws/control
+LiveKit 信令:    wss://192.168.124.77:4443/livekit
+```
+
+Nginx 配置默认通过 `host.docker.internal` 转发到主机上的 `8088` 后端和 `7880` LiveKit。若 Nginx、后端和 LiveKit 位于同一 Docker 网络，可将 [deploy/nginx/robot-mediaserver.conf](deploy/nginx/robot-mediaserver.conf) 中的两个 upstream 改为对应容器服务名。
+
+前端在 HTTPS 页面中自动使用当前页面主机和端口下的 `/livekit` 公开前缀，因此通过 `:4443` 打开页面时会连接 `wss://<lan-ip>:4443/livekit`。LiveKit Web SDK 会在该地址后请求 `/rtc` 或 `/rtc/v1`，Nginx 会去除前缀后转发到 LiveKit。LiveKit 的 WebRTC 媒体端口仍需在局域网中可达；Nginx 只终止 HTTPS/WSS，不替代 LiveKit 的 UDP/TCP 媒体传输配置。
 
 ## 后端开发
 

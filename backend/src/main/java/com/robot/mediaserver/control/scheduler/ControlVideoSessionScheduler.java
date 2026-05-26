@@ -37,35 +37,47 @@ public class ControlVideoSessionScheduler {
 
     private void expireStaleIntercoms() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getViewerHeartbeatTimeoutSeconds());
-        mediaServiceClient.intercomTimeoutCandidates(threshold).forEach(sessionId -> {
-            try {
-                commandService.expireIntercom(sessionId);
-            } catch (Exception ex) {
-                log.warn("Failed to expire intercom session={}", sessionId, ex);
-            }
-        });
+        try {
+            mediaServiceClient.intercomTimeoutCandidates(threshold).forEach(sessionId -> {
+                try {
+                    commandService.expireIntercom(sessionId);
+                } catch (Exception ex) {
+                    log.warn("Failed to expire intercom session={}", sessionId, ex);
+                }
+            });
+        } catch (Exception ex) {
+            log.warn("Failed to query stale intercom sessions", ex);
+        }
     }
 
     private void restartInterruptedSessions() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getInterruptedGraceSeconds());
-        mediaServiceClient.interruptedRestartCandidates(threshold).forEach(sessionId -> {
-            try {
-                commandService.restartSession(sessionId);
-            } catch (Exception ex) {
-                log.warn("Failed to restart interrupted session={}", sessionId, ex);
-            }
-        });
+        try {
+            mediaServiceClient.interruptedRestartCandidates(threshold).forEach(sessionId -> {
+                try {
+                    commandService.restartSession(sessionId);
+                } catch (Exception ex) {
+                    log.warn("Failed to restart interrupted session={}", sessionId, ex);
+                }
+            });
+        } catch (Exception ex) {
+            log.warn("Failed to query interrupted sessions", ex);
+        }
     }
 
     private void releaseIdleSessions() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getIdleReleaseDelaySeconds());
-        mediaServiceClient.idleReleaseCandidates(threshold).forEach(sessionId -> {
-            try {
-                commandService.releaseIdleSession(sessionId);
-            } catch (Exception ex) {
-                log.warn("Failed to release idle session={}", sessionId, ex);
-            }
-        });
+        try {
+            mediaServiceClient.idleReleaseCandidates(threshold).forEach(sessionId -> {
+                try {
+                    commandService.releaseIdleSession(sessionId);
+                } catch (Exception ex) {
+                    log.warn("Failed to release idle session={}", sessionId, ex);
+                }
+            });
+        } catch (Exception ex) {
+            log.warn("Failed to query idle sessions", ex);
+        }
     }
 
     private OffsetDateTime now() {
