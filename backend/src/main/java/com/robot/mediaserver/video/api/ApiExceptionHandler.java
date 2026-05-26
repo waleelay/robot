@@ -3,10 +3,12 @@ package com.robot.mediaserver.video.api;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * API 全局异常处理器。
@@ -30,6 +32,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Request validation failed");
+    }
+
+    /**
+     * Control API 调用 Media Internal API 时，保留下游业务错误状态和响应体。
+     */
+    @ExceptionHandler(RestClientResponseException.class)
+    public ResponseEntity<String> handleUpstreamResponse(RestClientResponseException ex) {
+        return ResponseEntity.status(ex.getStatusCode())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(ex.getResponseBodyAsString());
     }
 
     private ResponseEntity<Map<String, Object>> error(HttpStatus status, String code, String message) {

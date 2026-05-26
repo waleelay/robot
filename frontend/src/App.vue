@@ -672,9 +672,20 @@ export default {
       this.events.unshift(line)
     },
     errorMessage(error) {
-      return error && error.response && error.response.data
-          ? error.response.data.message || error.response.data.code
-          : error.message || '请求失败'
+      let data = error && error.response && error.response.data
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data)
+        } catch (ignored) {
+          return data || '请求失败'
+        }
+      }
+      if (data && data.code === 'INVALID_STATE' && data.message === 'Intercom is occupied by another operator') {
+        return '该视频画面正在通话中，请结束当前通话后重试'
+      }
+      return data && (data.message || data.code || data.error)
+          ? data.message || data.code || data.error
+          : (error && error.message) || '请求失败'
     }
   }
 }

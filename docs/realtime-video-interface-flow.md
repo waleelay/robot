@@ -270,7 +270,7 @@ REST 接口异常统一返回 JSON：
 |---|---|---|
 | `400` | `VALIDATION_ERROR` | 请求体字段缺失、枚举非法、格式校验失败 |
 | `404` | `NOT_FOUND` | 会话、机器人或资源不存在 |
-| `409` | `INVALID_STATE` | 当前会话状态不允许执行该操作，例如非 streaming 时抓拍 |
+| `409` | `INVALID_STATE` | 当前会话状态不允许执行该操作，例如非 streaming 时抓拍，或当前画面对讲已被其他操作员占用 |
 
 ## 6. Control API 接口
 
