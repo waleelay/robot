@@ -126,11 +126,11 @@ sequenceDiagram
     Note over FE,ML: 已存在 STREAMING 的 VideoSession 和视频 Track
     FE->>CS: POST /video-sessions/{sessionId}/intercom/start
     CS->>ML: 校验 session、权限和讲话权
-    ML-->>CS: operatorToken
+    ML-->>CS: 对讲占用成功
     CS->>MQ: video/intercom/start(sessionId, robotToken)
     MQ->>GO: 启动音频收发
     GO->>ML: 发布 audio.robot.mic，订阅 audio.operator.mic
-    FE->>ML: 使用 operatorToken 发布/订阅音频
+    FE->>ML: 在现有交互观看连接上开启麦克风发布
     GO->>MQ: intercom status=active
     CS-->>FE: WS video.intercom.active
 ```
@@ -204,6 +204,8 @@ Intercom:     IDLE -> STARTING -> ACTIVE -> STOPPING -> IDLE
 | `POST` | `/api/control/video-sessions/{sessionId}/intercom/token` | 重连或 Token 过期时重新签发 |
 | `POST` | `/api/control/video-sessions/{sessionId}/intercom/stop` | 关闭当前视频会话中的对讲能力 |
 
+已在观看视频的操作员发起对讲后，该浏览器实例的观看 heartbeat 同时刷新其对讲占用有效期，避免视频持续在线时因独立对讲 heartbeat 短暂丢失而误释放讲话权。未观看视频直接通话时，仍依赖 `/intercom/heartbeat` 保活。
+
 `video/intercom/start` 响应示例：
 
 ```json
@@ -236,16 +238,17 @@ Intercom:     IDLE -> STARTING -> ACTIVE -> STOPPING -> IDLE
 
 | Token | Room | 权限 |
 |---|---|---|
-| `viewerToken` | 当前视频 Room | 订阅视频和机器人音频，不允许发布 |
-| `operatorToken` | 当前视频 Room | 订阅视频/机器人音频，允许发布操作员麦克风音频 |
+| `viewerToken` | 当前视频 Room | 普通观看者仅订阅视频和机器人音频；具备 `MEDIA_OPERATOR` 角色时允许额外发布麦克风音频，用于观看中无缝开启对讲 |
+| `operatorToken` | 当前视频 Room | 未建立观看连接时开始通话使用；订阅视频/机器人音频，允许发布操作员麦克风音频 |
 | `robotToken` | 当前视频 Room | 发布机器人音频及按需发布视频，订阅操作员音频 |
 
 安全要求：
 
 1. 所有 Token 仅绑定当前 `roomName`，不可跨 Room 使用。
-2. `operatorToken` 只向拥有对讲权限且成功占用讲话权的用户签发。
-3. 同一 `VideoSession` 默认仅允许一个操作员发布上行语音。
-4. Token 过期通过心跳或重连接口刷新，不创建新的语音会话。
+2. 交互观看 Token 仅向具备 `MEDIA_OPERATOR` 角色的用户签发，并将发布源限制为麦克风；前端仅在成功占用讲话权后开启发布。
+3. `operatorToken` 只向拥有对讲权限且成功占用讲话权的用户签发。
+4. 同一 `VideoSession` 默认仅允许一个操作员发布上行语音。
+5. Token 过期通过心跳或重连接口刷新，不创建新的语音会话。
 
 ## 10. MQTT 协议
 

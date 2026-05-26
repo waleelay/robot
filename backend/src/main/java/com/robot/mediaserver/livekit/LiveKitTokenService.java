@@ -16,8 +16,8 @@ import org.springframework.stereotype.Service;
 /**
  * LiveKit Token 签发服务。
  *
- * <p>平台侧区分发布 Token 和观看 Token：机器人端云接入客户端只允许发布，
- * 前端用户只允许订阅，避免越权发布或订阅其他机器人视频。</p>
+ * <p>平台侧按参与方限制媒体权限：机器人端云接入客户端只允许发布，
+ * 前端观看用户仅订阅，交互观看用户额外只允许发布麦克风音频。</p>
  *
  * @author leelay
  * @date 2026/05/19
@@ -44,6 +44,13 @@ public class LiveKitTokenService {
 
     public TokenResult createViewerToken(String roomName, String userId, String clientId) {
         return createToken(roomName, "user:" + userId + ":" + clientId, false, true);
+    }
+
+    /**
+     * 生成支持对讲的前端观看 Token，以便观看过程中在现有 Room 直接开启麦克风。
+     */
+    public TokenResult createInteractiveViewerToken(String roomName, String userId, String clientId) {
+        return createToken(roomName, "user:" + userId + ":" + clientId, true, true, List.of("microphone"));
     }
 
     /**

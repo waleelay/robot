@@ -107,7 +107,7 @@ public class VideoSessionService {
             session.setViewerCount(activeViewerCount(session.getSessionId()));
             session.setUpdatedAt(now());
             repository.save(session);
-            TokenResult viewerToken = liveKitTokenService.createViewerToken(session.getRoomName(), user.userId(), user.clientId());
+            TokenResult viewerToken = createBrowserToken(session, user);
             emit("video.session.reused", session);
             return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
         }
@@ -132,7 +132,7 @@ public class VideoSessionService {
         repository.save(session);
         emit("video.session.created", session);
 
-        TokenResult viewerToken = liveKitTokenService.createViewerToken(session.getRoomName(), user.userId(), user.clientId());
+        TokenResult viewerToken = createBrowserToken(session, user);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
     }
 
@@ -171,13 +171,13 @@ public class VideoSessionService {
 
     public VideoSessionResponse get(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
-        TokenResult viewerToken = liveKitTokenService.createViewerToken(session.getRoomName(), user.userId(), user.clientId());
+        TokenResult viewerToken = createBrowserToken(session, user);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
     }
 
     public ViewerTokenResponse createViewerToken(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
-        TokenResult token = liveKitTokenService.createViewerToken(session.getRoomName(), user.userId(), user.clientId());
+        TokenResult token = createBrowserToken(session, user);
         return new ViewerTokenResponse(properties.getLivekit().getUrl(), session.getRoomName(), token.token(), token.expiresAt());
     }
 
@@ -191,8 +191,14 @@ public class VideoSessionService {
     public VideoSessionResponse heartbeat(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         addViewer(session, user);
+        OffsetDateTime heartbeatAt = now();
+        if (holdsRoomForIntercom(session)
+                && Objects.equals(session.getIntercomOperatorId(), user.userId())
+                && Objects.equals(session.getIntercomClientId(), user.clientId())) {
+            session.setIntercomHeartbeatAt(heartbeatAt);
+        }
         session.setViewerCount(activeViewerCount(sessionId));
-        session.setUpdatedAt(now());
+        session.setUpdatedAt(heartbeatAt);
         repository.save(session);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
@@ -768,6 +774,14 @@ public class VideoSessionService {
 
     private String viewerIdentity(CurrentUser user) {
         return "user:" + user.userId() + ":" + user.clientId();
+    }
+
+    private TokenResult createBrowserToken(VideoSession session, CurrentUser user) {
+        if (user.hasRole("MEDIA_OPERATOR")) {
+            return liveKitTokenService.createInteractiveViewerToken(
+                    session.getRoomName(), user.userId(), user.clientId());
+        }
+        return liveKitTokenService.createViewerToken(session.getRoomName(), user.userId(), user.clientId());
     }
 
     private OffsetDateTime now() {

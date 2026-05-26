@@ -8,6 +8,7 @@ public record RobotDeviceResponse(
         String clientId,
         String name,
         String type,
+        Integer battery,
         String status,
         OffsetDateTime lastHeartbeatAt,
         List<RobotCameraResponse> cameras) {

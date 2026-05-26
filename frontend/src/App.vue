@@ -18,7 +18,7 @@
             @click="selectedRobotId = robot.robotId"
         >
           <span>{{ robot.name }}</span>
-          <small>{{ robot.robotId }} · {{ robot.status || 'offline' }}</small>
+          <small>{{ robot.robotId }} · {{ robot.status || 'offline' }} · 电量 {{ batteryText(robot.battery) }}</small>
         </button>
       </aside>
 
@@ -26,7 +26,7 @@
         <div class="area-header">
           <div>
             <h2>{{ selectedRobot.name }}</h2>
-            <span>{{ selectedRobot.type }} · {{ selectedRobot.status || 'offline' }} · {{ selectedRobot.cameras.length }} 路摄像头</span>
+            <span>{{ selectedRobot.type }} · {{ selectedRobot.status || 'offline' }} · 电量 {{ batteryText(selectedRobot.battery) }} · {{ selectedRobot.cameras.length }} 路摄像头</span>
           </div>
           <div class="area-actions">
             <el-radio-group v-model="gridMode" size="small">
@@ -47,7 +47,7 @@
               <div class="video-topbar">
                 <div>
                   <strong>{{ camera.name }}</strong>
-                  <span>{{ camera.deviceId }} · {{ camera.channel }}</span>
+                  <span>{{ camera.deviceId }} · {{ groupTypeText(camera.groupType) }} · {{ camera.channel }}</span>
                 </div>
                 <el-tag size="mini" :type="statusType(camera.status)">
                   {{ camera.status || '未观看' }}
@@ -126,12 +126,13 @@ import {
   stopVideoSession
 } from './api/media'
 
-function cameraState(robotId, deviceId, name, channel) {
+function cameraState(robotId, deviceId, name, channel, groupType) {
   return {
     key: `${robotId}-${deviceId}-${channel}`,
     robotId,
     deviceId,
     name,
+    groupType: groupType || 'body',
     channel,
     quality: 'sub',
     loading: false,
@@ -169,22 +170,24 @@ export default {
           robotId: 'robot-001',
           name: '松灵四轮机器人',
           type: '轮式机器人',
+          battery: null,
           status: 'offline',
           cameras: [
-            cameraState('robot-001', 'gimbal-001', '前向双光云台', 'visible'),
-            cameraState('robot-001', 'gimbal-002', '后向广角相机', 'visible'),
-            cameraState('robot-001', 'gimbal-003', '机械臂腕部相机', 'visible')
+            cameraState('robot-001', 'gimbal-001', '前向双光云台', 'visible', 'dual_gimbal'),
+            cameraState('robot-001', 'gimbal-002', '后向广角相机', 'visible', 'body'),
+            cameraState('robot-001', 'gimbal-003', '机械臂腕部相机', 'visible', 'arm')
           ]
         },
         {
           robotId: 'robot-002',
           name: '云深处四足机器狗',
           type: '四足机器人',
+          battery: null,
           status: 'offline',
           cameras: [
-            cameraState('robot-002', 'gimbal-001', '头部双光云台', 'visible'),
-            cameraState('robot-002', 'gimbal-002', '腹部导航相机', 'visible'),
-            cameraState('robot-002', 'gimbal-003', '尾部避障相机', 'visible')
+            cameraState('robot-002', 'gimbal-001', '头部双光云台', 'visible', 'dual_gimbal'),
+            cameraState('robot-002', 'gimbal-002', '腹部导航相机', 'visible', 'body'),
+            cameraState('robot-002', 'gimbal-003', '尾部避障相机', 'visible', 'body')
           ]
         }
       ],
@@ -354,7 +357,9 @@ export default {
         camera.intercomActive = true
         camera.intercomStatus = response.intercomStatus
         camera.stopped = false
-        await this.connectLiveKit(camera, false, response.operatorToken)
+        if (!camera.room) {
+          await this.connectLiveKit(camera, false, response.operatorToken)
+        }
         if (camera.room) {
           await camera.room.localParticipant.setMicrophoneEnabled(true, {
             echoCancellation: true,
@@ -635,15 +640,26 @@ export default {
         clientId: robot.clientId,
         name: robot.name || robot.robotId,
         type: robot.type || '机器人',
+        battery: robot.battery,
         status: robot.status || 'offline',
         cameras: (robot.cameras || []).map(camera => Object.assign(
-            cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible'),
+            cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible', camera.groupType),
             {
               cameraId: camera.cameraId || camera.deviceId,
               quality: camera.quality || 'sub',
               status: robot.status === 'online' ? camera.status || '' : 'offline'
             }))
       }
+    },
+    batteryText(battery) {
+      return battery === null || battery === undefined ? '--' : `${battery}%`
+    },
+    groupTypeText(groupType) {
+      return {
+        body: '本体',
+        dual_gimbal: '双光云台',
+        arm: '机械臂'
+      }[groupType] || groupType || '未分组'
     },
     statusType(status) {
       if (status === 'STREAMING') return 'success'

@@ -11,6 +11,7 @@ type Config struct {
 	RobotID                string
 	RobotName              string
 	RobotType              string
+	Battery                int
 	MQTTBroker             string
 	MQTTUsername           string
 	MQTTPassword           string
@@ -32,12 +33,13 @@ type Config struct {
 }
 
 type Camera struct {
-	CameraID string
-	DeviceID string
-	Name     string
-	Channel  string
-	Quality  string
-	RTSPURL  string
+	CameraID  string
+	DeviceID  string
+	Name      string
+	GroupType string
+	Channel   string
+	Quality   string
+	RTSPURL   string
 }
 
 func Load() Config {
@@ -46,6 +48,7 @@ func Load() Config {
 		RobotID:                robotID,
 		RobotName:              env("ROBOT_NAME", defaultRobotName(robotID)),
 		RobotType:              env("ROBOT_TYPE", defaultRobotType(robotID)),
+		Battery:                boundedPercentage(envInt("ROBOT_BATTERY", 100)),
 		MQTTBroker:             env("MQTT_BROKER_URL", "tcp://192.168.124.77:1883"),
 		MQTTUsername:           env("MQTT_USERNAME", ""),
 		MQTTPassword:           env("MQTT_PASSWORD", ""),
@@ -70,19 +73,22 @@ func Load() Config {
 func cameras(robotID string) []Camera {
 	ids := []string{"camera01", "camera02", "camera03"}
 	names := []string{"前向双光云台", "后向广角相机", "机械臂腕部相机"}
+	groupTypes := []string{"dual_gimbal", "body", "arm"}
 	if robotID == "robot-002" {
 		ids = []string{"camera04", "camera05", "camera06"}
 		names = []string{"头部双光云台", "腹部导航相机", "尾部避障相机"}
+		groupTypes = []string{"dual_gimbal", "body", "body"}
 	}
 	result := make([]Camera, 0, len(ids))
 	for i, id := range ids {
 		result = append(result, Camera{
-			CameraID: id,
-			DeviceID: id,
-			Name:     env("CAMERA_"+strings.ToUpper(id)+"_NAME", names[i]),
-			Channel:  "visible",
-			Quality:  "sub",
-			RTSPURL:  env("RTSP_"+strings.ToUpper(id), "rtsp://192.168.124.204:8554/"+id),
+			CameraID:  id,
+			DeviceID:  id,
+			Name:      env("CAMERA_"+strings.ToUpper(id)+"_NAME", names[i]),
+			GroupType: env("CAMERA_"+strings.ToUpper(id)+"_GROUP_TYPE", groupTypes[i]),
+			Channel:   "visible",
+			Quality:   "sub",
+			RTSPURL:   env("RTSP_"+strings.ToUpper(id), "rtsp://192.168.124.204:8554/"+id),
 		})
 	}
 	return result
@@ -120,4 +126,14 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func boundedPercentage(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }

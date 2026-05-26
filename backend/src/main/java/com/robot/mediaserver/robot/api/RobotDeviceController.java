@@ -36,9 +36,10 @@ public class RobotDeviceController {
         String status = String.valueOf(data.get("status"));
         String name = data.get("name") == null ? robotId : String.valueOf(data.get("name"));
         String type = data.get("type") == null ? "机器人" : String.valueOf(data.get("type"));
+        Integer battery = data.get("battery") instanceof Number value ? value.intValue() : null;
         List<RobotCameraResponse> cameras = objectMapper.convertValue(
                 data.getOrDefault("cameras", List.of()),
                 objectMapper.getTypeFactory().constructCollectionType(List.class, RobotCameraResponse.class));
-        return registryService.update(robotId, clientId, status, name, type, cameras);
+        return registryService.update(robotId, clientId, status, name, type, battery, cameras);
     }
 }

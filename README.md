@@ -105,6 +105,7 @@ export VUE_APP_WS_URL=''
 ```bash
 export ROBOT_ID='robot-001'
 export ROBOT_CLIENT_ID='robot-media-client-robot-001'
+export ROBOT_BATTERY='82'
 export MQTT_BROKER_URL='tcp://localhost:1883'
 export MQTT_USERNAME=''
 export MQTT_PASSWORD=''
@@ -120,7 +121,12 @@ export GSTREAMER_PIPELINE='rtspsrc location={rtsp} protocols=tcp latency=100 ! q
 export GST_LAUNCH_PATH='gst-launch-1.0'
 export AUDIO_CAPTURE_PIPELINE='autoaudiosrc ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! fdsink fd=1'
 export AUDIO_PLAYBACK_PIPELINE='fdsrc fd=0 ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! audioconvert ! audioresample ! autoaudiosink'
+export CAMERA_CAMERA01_GROUP_TYPE='dual_gimbal'
+export CAMERA_CAMERA02_GROUP_TYPE='body'
+export CAMERA_CAMERA03_GROUP_TYPE='arm'
 ```
+
+`ROBOT_BATTERY` 为 `0-100` 的电量百分比。`CAMERA_<CAMERA_ID>_GROUP_TYPE` 支持 `body`（本体）、`dual_gimbal`（双光云台）和 `arm`（机械臂）。
 
 `LIVEKIT_URL` 用于后端和机器人客户端连接 LiveKit。前端在 HTTPS 入口下会自动改用同源 `wss://<当前主机>/livekit`；本机 HTTP 调试仍使用接口返回的 `LIVEKIT_URL`。
 

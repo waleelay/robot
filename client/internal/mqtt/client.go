@@ -209,6 +209,7 @@ func (c *Client) online(status string) {
 		ClientID:  c.cfg.ClientID,
 		Name:      c.cfg.RobotName,
 		Type:      c.cfg.RobotType,
+		Battery:   c.cfg.Battery,
 		Status:    status,
 		Cameras:   c.cameras(status),
 		Timestamp: time.Now(),
@@ -219,12 +220,13 @@ func (c *Client) cameras(status string) []model.Camera {
 	items := make([]model.Camera, 0, len(c.cfg.Cameras))
 	for _, camera := range c.cfg.Cameras {
 		items = append(items, model.Camera{
-			CameraID: camera.CameraID,
-			DeviceID: camera.DeviceID,
-			Name:     camera.Name,
-			Channel:  camera.Channel,
-			Quality:  camera.Quality,
-			Status:   status,
+			CameraID:  camera.CameraID,
+			DeviceID:  camera.DeviceID,
+			Name:      camera.Name,
+			GroupType: camera.GroupType,
+			Channel:   camera.Channel,
+			Quality:   camera.Quality,
+			Status:    status,
 		})
 	}
 	return items

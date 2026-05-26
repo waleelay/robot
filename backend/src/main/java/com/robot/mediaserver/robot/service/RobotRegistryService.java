@@ -25,7 +25,14 @@ public class RobotRegistryService {
         this.webSocketPublisher = webSocketPublisher;
     }
 
-    public boolean update(String robotId, String clientId, String status, String name, String type, List<RobotCameraResponse> cameras) {
+    public boolean update(
+            String robotId,
+            String clientId,
+            String status,
+            String name,
+            String type,
+            Integer battery,
+            List<RobotCameraResponse> cameras) {
         if (robotId == null || robotId.isBlank()) {
             return false;
         }
@@ -34,6 +41,9 @@ public class RobotRegistryService {
         device.clientId = clientId;
         device.name = blank(name) ? robotId : name;
         device.type = blank(type) ? "机器人" : type;
+        if (battery != null) {
+            device.battery = Math.max(0, Math.min(100, battery));
+        }
         device.status = "offline".equalsIgnoreCase(status) ? "offline" : "online";
         device.lastHeartbeatAt = now();
         if (cameras != null && !cameras.isEmpty()) {
@@ -66,6 +76,7 @@ public class RobotRegistryService {
                 device.clientId,
                 device.name,
                 device.type,
+                device.battery,
                 device.status,
                 device.lastHeartbeatAt,
                 device.cameras);
@@ -84,6 +95,7 @@ public class RobotRegistryService {
         private String clientId;
         private String name;
         private String type;
+        private Integer battery;
         private String status = "offline";
         private OffsetDateTime lastHeartbeatAt;
         private List<RobotCameraResponse> cameras = List.of();
