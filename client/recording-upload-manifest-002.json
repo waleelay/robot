@@ -1,0 +1,24 @@
+{
+  "tasks": {
+    "camera01/video_20260528_115323.mp4/9072554/1779940466": {
+      "sourceFileId": "camera01/video_20260528_115323.mp4/9072554/1779940466",
+      "filePath": "recordings/video_20260528_115323.mp4",
+      "fileSize": 9072554,
+      "createdAt": "2026-05-28T11:54:26.520215687+08:00",
+      "recordingId": "rec_2287912d2bbc4c34af66506a5949b944",
+      "uploadId": "upl_15e372b87e7949ef9d302dff6231e040",
+      "status": "READY",
+      "updatedAt": "2026-05-28T16:16:24.488047+08:00"
+    },
+    "camera01/video_20260528_115733.mp4/389849604/1779943054": {
+      "sourceFileId": "camera01/video_20260528_115733.mp4/389849604/1779943054",
+      "filePath": "recordings/video_20260528_115733.mp4",
+      "fileSize": 389849604,
+      "createdAt": "2026-05-28T12:37:34.715543252+08:00",
+      "recordingId": "rec_9e91d607c9c145009f607141e8b3d303",
+      "uploadId": "upl_4a2bfb33d9a0430bac14c73943969179",
+      "status": "READY",
+      "updatedAt": "2026-05-28T22:08:06.658587+08:00"
+    }
+  }
+}

@@ -86,3 +86,11 @@ export function getSessionEvents(sessionId) {
 export function mockTrackPublished(sessionId, trackSid) {
   return client.post(`/internal/media/video-sessions/${sessionId}/_mock/track-published/${trackSid}`).then(res => res.data)
 }
+
+export function getRecordings(params) {
+  return client.get('/api/control/recordings', { params }).then(res => res.data)
+}
+
+export function getRecordingPlayUrl(recordingId) {
+  return client.post(`/api/control/recordings/${recordingId}/play-url`).then(res => res.data)
+}

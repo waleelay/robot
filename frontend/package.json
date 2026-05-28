@@ -10,6 +10,7 @@
     "axios": "^1.7.9",
     "core-js": "^3.39.0",
     "element-ui": "^2.15.14",
+    "hls.js": "^1.5.20",
     "livekit-client": "^2.7.5",
     "vue": "^2.7.16",
     "vue-template-compiler": "^2.7.16"

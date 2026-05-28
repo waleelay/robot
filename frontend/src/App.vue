@@ -36,10 +36,37 @@
             </el-radio-group>
             <el-button size="small" :disabled="selectedRobot.status !== 'online'" @click="startRobot(selectedRobot)">全部观看</el-button>
             <el-button size="small" @click="stopRobot(selectedRobot)">全部停止</el-button>
+            <el-button size="small" :type="recordingMode ? 'primary' : ''" @click="toggleRecordings">
+              {{ recordingMode ? '返回实时' : '录像回放' }}
+            </el-button>
           </div>
         </div>
 
-        <div class="camera-grid" :class="'grid-' + gridMode">
+        <div v-if="recordingMode" class="recording-workspace">
+          <div class="recording-list">
+            <div class="recording-head">
+              <strong>巡逻录像</strong>
+              <el-button size="mini" :loading="recordingsLoading" @click="loadRecordings">刷新</el-button>
+            </div>
+            <button
+                v-for="recording in recordings"
+                :key="recording.recordingId"
+                class="recording-item"
+                :class="{ active: selectedRecording && selectedRecording.recordingId === recording.recordingId }"
+                @click="playRecording(recording)"
+            >
+              <span>{{ recording.fileName }}</span>
+              <small>{{ recording.deviceId }} · {{ durationText(recording.durationSeconds) }} · {{ recording.status }}</small>
+            </button>
+            <div v-if="!recordings.length && !recordingsLoading" class="recording-empty">暂无录像记录</div>
+          </div>
+          <div class="recording-player">
+            <video ref="recordedPlayer" controls playsinline />
+            <div v-if="!selectedRecording" class="empty-video">选择 READY 录像开始回放</div>
+          </div>
+        </div>
+
+        <div v-else class="camera-grid" :class="'grid-' + gridMode">
           <div v-for="camera in displayedCameras" :key="camera.key" class="camera-card">
             <div class="video-stage">
               <video :ref="camera.key" autoplay playsinline muted />
@@ -112,10 +139,13 @@
 
 <script>
 import { Room, RoomEvent } from 'livekit-client'
+import Hls from 'hls.js'
 import {
   createSnapshot,
   createVideoSession,
   getRobots,
+  getRecordings,
+  getRecordingPlayUrl,
   getViewerToken,
   heartbeatVideoSession,
   heartbeatIntercom,
@@ -191,7 +221,12 @@ export default {
           ]
         }
       ],
-      events: []
+      events: [],
+      recordingMode: false,
+      recordingsLoading: false,
+      recordings: [],
+      selectedRecording: null,
+      recordedHls: null
     }
   },
   computed: {
@@ -202,6 +237,15 @@ export default {
       return this.selectedRobot.cameras.slice(0, this.gridMode)
     }
   },
+  watch: {
+    selectedRobotId() {
+      if (this.recordingMode) {
+        this.selectedRecording = null
+        this.destroyRecordedHls()
+        this.loadRecordings()
+      }
+    }
+  },
   mounted() {
     this.loadRobots()
     this.connectWebSocket()
@@ -210,11 +254,73 @@ export default {
   beforeDestroy() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
     if (this.socket) this.socket.close()
+    this.destroyRecordedHls()
     this.allCameras().forEach(camera => {
       if (camera.room) camera.room.disconnect()
     })
   },
   methods: {
+    async toggleRecordings() {
+      this.recordingMode = !this.recordingMode
+      if (this.recordingMode) {
+        await this.loadRecordings()
+      } else {
+        this.destroyRecordedHls()
+        this.selectedRecording = null
+      }
+    },
+    async loadRecordings() {
+      this.recordingsLoading = true
+      try {
+        const response = await getRecordings({ robotId: this.selectedRobotId, status: 'READY', page: 0, size: 20 })
+        this.recordings = response.items || []
+      } catch (error) {
+        this.$message.error(this.errorMessage(error))
+      } finally {
+        this.recordingsLoading = false
+      }
+    },
+    async playRecording(recording) {
+      if (recording.status !== 'READY') return
+      try {
+        const playback = await getRecordingPlayUrl(recording.recordingId)
+        const player = this.$refs.recordedPlayer
+        this.destroyRecordedHls()
+        this.selectedRecording = recording
+        if (player.canPlayType('application/vnd.apple.mpegurl')) {
+          player.src = playback.playUrl
+        } else if (Hls.isSupported()) {
+          this.recordedHls = new Hls()
+          this.recordedHls.loadSource(playback.playUrl)
+          this.recordedHls.attachMedia(player)
+        } else {
+          throw new Error('当前浏览器不支持 HLS 播放')
+        }
+        await player.play().catch(() => {})
+      } catch (error) {
+        this.$message.error(this.errorMessage(error))
+      }
+    },
+    destroyRecordedHls() {
+      if (this.recordedHls) {
+        this.recordedHls.destroy()
+        this.recordedHls = null
+      }
+      const player = this.$refs.recordedPlayer
+      if (player) {
+        player.pause()
+        player.removeAttribute('src')
+        player.load()
+      }
+    },
+    durationText(seconds) {
+      if (!seconds) return '--:--'
+      const hours = Math.floor(seconds / 3600)
+      const minutes = Math.floor((seconds % 3600) / 60)
+      const remainder = seconds % 60
+      const text = `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+      return hours > 0 ? `${hours}:${text}` : text
+    },
     async startRobot(robot) {
       if (robot.status !== 'online') return
       for (const camera of robot.cameras) {
@@ -835,6 +941,70 @@ export default {
   min-height: 0;
 }
 
+.recording-workspace {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 10px;
+  height: calc(100vh - 132px);
+  min-height: 0;
+}
+
+.recording-list {
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.recording-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.recording-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 8px;
+  padding: 10px;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.recording-item.active {
+  border-color: #409eff;
+  background: #eef6ff;
+}
+
+.recording-item span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recording-item small,
+.recording-empty {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.recording-player {
+  position: relative;
+  min-height: 0;
+  background: #111827;
+}
+
+.recording-player video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .video-stage {
   position: relative;
   width: 100%;
@@ -1005,6 +1175,12 @@ export default {
   .camera-card {
     aspect-ratio: 16 / 9;
   }
+
+  .recording-workspace {
+    grid-column: 1 / -1;
+    grid-template-columns: 260px minmax(0, 1fr);
+    height: 420px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1023,6 +1199,20 @@ export default {
 
   .camera-card {
     aspect-ratio: 16 / 9;
+  }
+
+  .recording-workspace {
+    display: block;
+    height: auto;
+  }
+
+  .recording-list {
+    max-height: 260px;
+    margin-bottom: 8px;
+  }
+
+  .recording-player {
+    height: 300px;
   }
 }
 </style>

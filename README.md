@@ -36,6 +36,13 @@ docs/      开发流程与联调说明
 tools/     设计文档生成脚本
 ```
 
+## 设计文档
+
+```text
+docs/realtime-video-interface-flow.md     实时视频三端交互与接口
+docs/recorded-video-upload-design.md      巡逻视频上传与播放方案
+```
+
 ## 环境依赖
 
 ```text

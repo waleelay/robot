@@ -44,6 +44,26 @@ media:
     ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
     fixed-delay-ms: ${SNAPSHOT_WORKER_FIXED_DELAY_MS:3000}
     timeout-ms: ${SNAPSHOT_WORKER_TIMEOUT_MS:10000}
+  recording:
+    enabled: ${RECORDING_ENABLED:true}
+    max-file-size-bytes: ${RECORDING_MAX_FILE_SIZE_BYTES:21474836480}
+    part-size-bytes: ${RECORDING_PART_SIZE_BYTES:16777216}
+    upload-url-ttl-seconds: ${RECORDING_UPLOAD_URL_TTL_SECONDS:900}
+    upload-expire-hours: ${RECORDING_UPLOAD_EXPIRE_HOURS:72}
+    upload-session-refresh-enabled: ${RECORDING_UPLOAD_SESSION_REFRESH_ENABLED:true}
+    play-url-ttl-seconds: ${RECORDING_PLAY_URL_TTL_SECONDS:3600}
+    play-token-secret: ${RECORDING_PLAY_TOKEN_SECRET:recording-playback-development-secret-change-me}
+    hls-ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
+    ffprobe-path: ${FFPROBE_PATH:ffprobe}
+    hls-segment-duration-seconds: ${RECORDING_HLS_SEGMENT_DURATION_SECONDS:6}
+    hls-worker-concurrency: ${RECORDING_HLS_WORKER_CONCURRENCY:2}
+    hls-processing-lease-seconds: ${RECORDING_HLS_PROCESSING_LEASE_SECONDS:300}
+    max-active-uploads-per-robot: ${RECORDING_MAX_ACTIVE_UPLOADS_PER_ROBOT:2}
+    max-active-uploads-global: ${RECORDING_MAX_ACTIVE_UPLOADS_GLOBAL:50}
+    retention-days: ${RECORDING_RETENTION_DAYS:30}
+    trusted-robot-network-enabled: ${RECORDING_TRUSTED_ROBOT_NETWORK_ENABLED:false}
+    trusted-robot-cidrs: ${RECORDING_TRUSTED_ROBOT_CIDRS:127.0.0.1/32,::1/128}
+    default-org-id: ${RECORDING_DEFAULT_ORG_ID:org001}
   session:
     track-publish-timeout-seconds: ${TRACK_PUBLISH_TIMEOUT_SECONDS:20}
     interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}

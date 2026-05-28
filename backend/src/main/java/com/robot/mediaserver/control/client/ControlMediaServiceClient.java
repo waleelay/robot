@@ -16,12 +16,17 @@ import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import com.robot.mediaserver.video.messaging.VideoStatusMessage;
 import com.robot.mediaserver.video.messaging.IntercomStartCommand;
 import com.robot.mediaserver.video.messaging.IntercomStatusMessage;
+import com.robot.mediaserver.recording.dto.PlaybackUrlResponse;
+import com.robot.mediaserver.recording.dto.RecordingListResponse;
+import com.robot.mediaserver.recording.model.RecordingStatus;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
 public class ControlMediaServiceClient {
@@ -172,6 +177,39 @@ public class ControlMediaServiceClient {
         return post("/internal/media/video-sessions/{sessionId}/release-idle", null, null, new ParameterizedTypeReference<>() {}, sessionId);
     }
 
+    public RecordingListResponse recordings(
+            String robotId,
+            String deviceId,
+            RecordingStatus status,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            int page,
+            int size,
+            CurrentUser user) {
+        String uri = UriComponentsBuilder.fromPath("/internal/media/recordings")
+                .queryParamIfPresent("robotId", optional(robotId))
+                .queryParamIfPresent("deviceId", optional(deviceId))
+                .queryParamIfPresent("status", Optional.ofNullable(status).map(Enum::name))
+                .queryParamIfPresent("from", Optional.ofNullable(from))
+                .queryParamIfPresent("to", Optional.ofNullable(to))
+                .queryParam("page", page)
+                .queryParam("size", size)
+                .build()
+                .toUriString();
+        return get(uri, user, RecordingListResponse.class);
+    }
+
+    public PlaybackUrlResponse recordingPlayUrl(String recordingId, CurrentUser user) {
+        return post("/internal/media/recordings/{recordingId}/play-url", null, user, PlaybackUrlResponse.class, recordingId);
+    }
+
+    public byte[] recordingHlsAsset(String recordingId, String objectName, String token) {
+        return restClient.get()
+                .uri("/internal/media/recordings/{recordingId}/hls/{objectName}?token={token}", recordingId, objectName, token)
+                .retrieve()
+                .body(byte[].class);
+    }
+
     private <T> T get(String uri, CurrentUser user, Class<T> responseType, Object... uriVariables) {
         return withHeaders(restClient.get().uri(uri, uriVariables), user)
                 .retrieve()
@@ -218,5 +256,9 @@ public class ControlMediaServiceClient {
                 .header("X-Org-Id", user.orgId())
                 .header("X-Roles", String.join(",", user.roles()))
                 .header("X-Client-Id", user.clientId());
+    }
+
+    private Optional<String> optional(String value) {
+        return value == null || value.isBlank() ? Optional.empty() : Optional.of(value);
     }
 }
