@@ -62,9 +62,20 @@ public class ControlRecordingController {
             @PathVariable String objectName,
             @RequestParam String token) {
         byte[] body = mediaServiceClient.recordingHlsAsset(recordingId, objectName, token);
-        MediaType contentType = objectName.endsWith(".m3u8")
-                ? MediaType.parseMediaType("application/vnd.apple.mpegurl")
-                : MediaType.parseMediaType("video/mp2t");
+        MediaType contentType = MediaType.parseMediaType(hlsContentType(objectName));
         return ResponseEntity.ok().contentType(contentType).body(body);
+    }
+
+    private String hlsContentType(String objectName) {
+        if (objectName.endsWith(".m3u8")) {
+            return "application/vnd.apple.mpegurl";
+        }
+        if (objectName.endsWith(".m4s") || objectName.endsWith(".mp4")) {
+            return "video/mp4";
+        }
+        if (objectName.endsWith(".ts")) {
+            return "video/mp2t";
+        }
+        return "application/octet-stream";
     }
 }

@@ -295,13 +295,11 @@ public class RecordingService {
             String playlist = new String(bytes, StandardCharsets.UTF_8);
             String encodedToken = URLEncoder.encode(token, StandardCharsets.UTF_8);
             String rewritten = playlist.lines()
-                    .map(line -> line.isBlank() || line.startsWith("#") || line.contains("://")
-                            ? line
-                            : line + (line.contains("?") ? "&" : "?") + "token=" + encodedToken)
+                    .map(line -> rewriteHlsLine(line, encodedToken))
                     .reduce("", (left, line) -> left + line + "\n");
             return new PlaybackAsset(rewritten.getBytes(StandardCharsets.UTF_8), "application/vnd.apple.mpegurl");
         }
-        return new PlaybackAsset(bytes, objectName.endsWith(".ts") ? "video/mp2t" : "application/octet-stream");
+        return new PlaybackAsset(bytes, hlsContentType(objectName));
     }
 
     /**
@@ -568,6 +566,51 @@ public class RecordingService {
             throw error(HttpStatus.BAD_REQUEST, "INVALID_ASSET_NAME", "Invalid asset name");
         }
         return normalized;
+    }
+
+    private String rewriteHlsLine(String line, String encodedToken) {
+        if (line.startsWith("#EXT-X-MAP:")) {
+            return rewriteQuotedUri(line, encodedToken);
+        }
+        if (line.isBlank() || line.startsWith("#") || line.contains("://")) {
+            return line;
+        }
+        return appendToken(line, encodedToken);
+    }
+
+    private String rewriteQuotedUri(String line, String encodedToken) {
+        String marker = "URI=\"";
+        int start = line.indexOf(marker);
+        if (start < 0) {
+            return line;
+        }
+        int uriStart = start + marker.length();
+        int uriEnd = line.indexOf('"', uriStart);
+        if (uriEnd < 0) {
+            return line;
+        }
+        String uri = line.substring(uriStart, uriEnd);
+        if (uri.isBlank() || uri.contains("://")) {
+            return line;
+        }
+        return line.substring(0, uriStart) + appendToken(uri, encodedToken) + line.substring(uriEnd);
+    }
+
+    private String appendToken(String uri, String encodedToken) {
+        return uri + (uri.contains("?") ? "&" : "?") + "token=" + encodedToken;
+    }
+
+    private String hlsContentType(String objectName) {
+        if (objectName.endsWith(".m3u8")) {
+            return "application/vnd.apple.mpegurl";
+        }
+        if (objectName.endsWith(".m4s") || objectName.endsWith(".mp4")) {
+            return "video/mp4";
+        }
+        if (objectName.endsWith(".ts")) {
+            return "video/mp2t";
+        }
+        return "application/octet-stream";
     }
 
     private String rewritePreviewCue(String line, String basePath, String encodedToken) {
