@@ -37,14 +37,46 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+/**
+ * 录像上传、查询和回放服务。
+ *
+ * <p>负责机器人侧录像断点续传、控制端录像检索、HLS 回放签名、
+ * 预览缩略图资源代理，以及录像对象存储生命周期处理。</p>
+ *
+ * @author leelay
+ * @date 2026/05/31
+ */
 @Service
 public class RecordingService {
 
+    /**
+     * 媒体服务配置属性。
+     */
     private final MediaProperties properties;
+
+    /**
+     * 录像元数据仓储。
+     */
     private final MediaRecordingRepository recordingRepository;
+
+    /**
+     * 录像上传会话仓储。
+     */
     private final MediaRecordingUploadRepository uploadRepository;
+
+    /**
+     * 录像对象存储服务。
+     */
     private final RecordingObjectStorageService storage;
 
+    /**
+     * 构造录像服务。
+     *
+     * @param properties 媒体服务配置属性
+     * @param recordingRepository 录像元数据仓储
+     * @param uploadRepository 录像上传会话仓储
+     * @param storage 录像对象存储服务
+     */
     public RecordingService(
             MediaProperties properties,
             MediaRecordingRepository recordingRepository,
@@ -56,6 +88,17 @@ public class RecordingService {
         this.storage = storage;
     }
 
+    /**
+     * 创建或恢复机器人侧录像上传任务。
+     *
+     * <p>机器人客户端会周期扫描本地 mp4，并用 sourceFileId 做幂等键。
+     * 如果同一个文件已经上传完成或正在转码，直接返回 completedResponse；
+     * 如果仍有 ACTIVE multipart upload，则刷新过期时间并让客户端续传缺失分片。</p>
+     *
+     * @param robotId 机器人编号
+     * @param request 创建或恢复上传请求
+     * @return 上传任务响应
+     */
     @Transactional
     public RecordingUploadResponse createOrResume(String robotId, CreateRecordingUploadRequest request) {
         requireRobotId(robotId);
@@ -89,6 +132,17 @@ public class RecordingService {
         return uploadResponse(recording, upload, true);
     }
 
+    /**
+     * 给客户端签发一小批分片上传 URL。
+     *
+     * <p>一次最多两个 URL 是为了限制机器人端并发和预签名 URL 泄露面；
+     * 客户端需要边传边取，服务端据此刷新上传会话活跃时间。</p>
+     *
+     * @param robotId 机器人编号
+     * @param uploadId 上传会话编号
+     * @param partNumbers 需要签名的分片序号集合
+     * @return 分片上传地址响应
+     */
     @Transactional
     public PartUrlsResponse partUrls(String robotId, String uploadId, List<Integer> partNumbers) {
         MediaRecordingUpload upload = requireActiveUpload(robotId, uploadId);
@@ -111,6 +165,16 @@ public class RecordingService {
         return new PartUrlsResponse(now().plusSeconds(properties.getRecording().getUploadUrlTtlSeconds()), urls);
     }
 
+    /**
+     * 完成 multipart upload，并把录像状态推进到 VERIFYING。
+     *
+     * <p>这里会检查分片数量、序号连续性和总大小，
+     * 避免客户端漏传或源文件变化后仍被合并。</p>
+     *
+     * @param robotId 机器人编号
+     * @param uploadId 上传会话编号
+     * @return 录像状态响应
+     */
     @Transactional
     public RecordingStatusResponse complete(String robotId, String uploadId) {
         MediaRecordingUpload upload = requireUpload(robotId, uploadId);
@@ -137,11 +201,31 @@ public class RecordingService {
         return status(recording);
     }
 
+    /**
+     * 查询机器人侧可见的录像状态。
+     *
+     * @param robotId 机器人编号
+     * @param recordingId 录像编号
+     * @return 录像状态响应
+     */
     public RecordingStatusResponse robotStatus(String robotId, String recordingId) {
         MediaRecording recording = requireRobotRecording(robotId, recordingId);
         return status(recording);
     }
 
+    /**
+     * 查询控制端录像列表。
+     *
+     * @param user 当前操作用户
+     * @param robotId 机器人编号，可为空
+     * @param deviceId 摄像头设备编号，可为空
+     * @param status 录像状态，可为空
+     * @param from 录像开始时间下界，可为空
+     * @param to 录像开始时间上界，可为空
+     * @param page 页码
+     * @param size 每页条数
+     * @return 录像列表响应
+     */
     public RecordingListResponse list(
             CurrentUser user,
             String robotId,
@@ -151,6 +235,7 @@ public class RecordingService {
             OffsetDateTime to,
             int page,
             int size) {
+        // 控制端查询始终限定在当前 orgId 内，其他过滤条件按需叠加。
         Specification<MediaRecording> spec = (root, query, cb) -> cb.equal(root.get("orgId"), user.orgId());
         if (robotId != null && !robotId.isBlank()) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("robotId"), robotId));
@@ -173,6 +258,13 @@ public class RecordingService {
         return new RecordingListResponse(result.stream().map(this::item).toList(), result.getNumber(), result.getSize(), result.getTotalElements());
     }
 
+    /**
+     * 生成控制端 HLS 回放入口地址。
+     *
+     * @param user 当前操作用户
+     * @param recordingId 录像编号
+     * @return HLS 回放地址响应
+     */
     public PlaybackUrlResponse playUrl(CurrentUser user, String recordingId) {
         MediaRecording recording = requireRecording(recordingId);
         if (!Objects.equals(recording.getOrgId(), user.orgId()) || recording.getStatus() != RecordingStatus.READY) {
@@ -180,7 +272,9 @@ public class RecordingService {
         }
         OffsetDateTime expiresAt = now().plusSeconds(properties.getRecording().getPlayUrlTtlSeconds());
         String token = signPlayback(recordingId, expiresAt.toEpochSecond());
-        String path = "/api/control/recordings/" + recordingId + "/hls/index.m3u8?token="
+        // 这里返回的是后端代理路径，不直接暴露对象存储地址。
+        // 后续每个 HLS 资源都会校验 token。
+        String path = "/api/control/recordings/" + recordingId + "/hls/" + playlistAssetName(recording) + "?token="
                 + URLEncoder.encode(token, StandardCharsets.UTF_8);
         return new PlaybackUrlResponse(recordingId, "hls", "application/vnd.apple.mpegurl", path, expiresAt);
     }
@@ -197,6 +291,7 @@ public class RecordingService {
         String objectKey = hlsPrefix(recording) + objectName;
         byte[] bytes = storage.readObject(objectKey);
         if (objectName.endsWith(".m3u8")) {
+            // m3u8 中的相对分片路径也要补 token，否则播放器后续请求 ts 时会被拒绝。
             String playlist = new String(bytes, StandardCharsets.UTF_8);
             String encodedToken = URLEncoder.encode(token, StandardCharsets.UTF_8);
             String rewritten = playlist.lines()
@@ -209,11 +304,17 @@ public class RecordingService {
         return new PlaybackAsset(bytes, objectName.endsWith(".ts") ? "video/mp2t" : "application/octet-stream");
     }
 
+    /**
+     * 使上传会话过期，并回收未完成的对象存储 multipart upload。
+     *
+     * @param upload 上传会话实体
+     */
     @Transactional
     public void expireUpload(MediaRecordingUpload upload) {
         if (upload.getStatus() != UploadStatus.ACTIVE) {
             return;
         }
+        // 上传会话过期后必须 abort 对象存储 multipart，否则服务端会残留未完成分片。
         MediaRecording recording = requireRecording(upload.getRecordingId());
         storage.abortMultipart(recording.getSourceObjectKey(), upload.getStorageUploadId());
         upload.setStatus(UploadStatus.EXPIRED);
@@ -225,6 +326,11 @@ public class RecordingService {
         recordingRepository.save(recording);
     }
 
+    /**
+     * 删除录像相关的源文件、HLS 和预览资源。
+     *
+     * @param recording 录像实体
+     */
     @Transactional
     public void deleteRecordingAssets(MediaRecording recording) {
         if (recording.getStatus() != RecordingStatus.READY && recording.getStatus() != RecordingStatus.DELETING) {
@@ -233,6 +339,7 @@ public class RecordingService {
         recording.setStatus(RecordingStatus.DELETING);
         recording.setUpdatedAt(now());
         recordingRepository.save(recording);
+        // 当前对象布局以 recordingId 为目录隔离，删除 source/hls/preview 统一删父目录。
         String prefix = recording.getSourceObjectKey().substring(
                 0,
                 recording.getSourceObjectKey().indexOf("/original/source.mp4") + 1);
@@ -270,6 +377,7 @@ public class RecordingService {
         upload.setUploadId("upl_" + id());
         upload.setRecordingId(recording.getRecordingId());
         upload.setStorageUploadId(storage.initiateMultipart());
+        // partCount 按文件大小和配置分片大小计算，客户端必须上传 1..partCount 的连续分片。
         upload.setPartSize(properties.getRecording().getPartSizeBytes());
         upload.setPartCount((int) Math.ceil((double) recording.getFileSize() / upload.getPartSize()));
         upload.setStatus(UploadStatus.ACTIVE);
@@ -310,6 +418,7 @@ public class RecordingService {
         if (parts.size() != upload.getPartCount()) {
             throw error(HttpStatus.CONFLICT, "UPLOAD_INCOMPLETE", "Not all parts have been uploaded");
         }
+        // 对象存储返回的 part 列表按 partNumber 校验，防止乱序/缺号被误认为完成。
         long total = 0;
         for (int index = 0; index < parts.size(); index++) {
             StoredPart part = parts.get(index);
@@ -410,6 +519,7 @@ public class RecordingService {
     }
 
     private String objectKey(MediaRecording recording, OffsetDateTime time) {
+        // 对象键包含 org/robot/device/date/recordingId，便于按机器人和日期做生命周期清理。
         return "recordings/%s/%s/%s/%04d/%02d/%02d/%s/original/source.mp4".formatted(
                 recording.getOrgId(),
                 recording.getRobotId(),
@@ -420,8 +530,54 @@ public class RecordingService {
                 recording.getRecordingId());
     }
 
+    /**
+     * 获取录像 HLS 资源对象前缀。
+     *
+     * @param recording 录像实体
+     * @return HLS 资源对象前缀
+     */
     public String hlsPrefix(MediaRecording recording) {
         return recording.getSourceObjectKey().replace("/original/source.mp4", "/hls/");
+    }
+
+    /**
+     * 获取录像预览资源对象前缀。
+     *
+     * @param recording 录像实体
+     * @return 预览资源对象前缀
+     */
+    public String previewPrefix(MediaRecording recording) {
+        return recording.getSourceObjectKey().replace("/original/source.mp4", "/preview/");
+    }
+
+    private String playlistAssetName(MediaRecording recording) {
+        String playlistKey = recording.getHlsPlaylistObjectKey();
+        String prefix = hlsPrefix(recording);
+        if (playlistKey != null && playlistKey.startsWith(prefix)) {
+            return playlistKey.substring(prefix.length());
+        }
+        return "master.m3u8";
+    }
+
+    private String normalizeAssetName(String objectName) {
+        String normalized = objectName == null ? "" : objectName;
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.isBlank() || normalized.contains("..") || normalized.contains("//")) {
+            throw error(HttpStatus.BAD_REQUEST, "INVALID_ASSET_NAME", "Invalid asset name");
+        }
+        return normalized;
+    }
+
+    private String rewritePreviewCue(String line, String basePath, String encodedToken) {
+        if (line.isBlank() || line.startsWith("WEBVTT") || line.contains("-->") || line.startsWith("#") || line.contains("://")) {
+            return line;
+        }
+        int fragmentIndex = line.indexOf("#");
+        String path = fragmentIndex >= 0 ? line.substring(0, fragmentIndex) : line;
+        String fragment = fragmentIndex >= 0 ? line.substring(fragmentIndex) : "";
+        return basePath + path + "?token=" + encodedToken + fragment;
     }
 
     private String signPlayback(String recordingId, long expiresAt) {
@@ -444,6 +600,7 @@ public class RecordingService {
             throw error(HttpStatus.FORBIDDEN, "INVALID_PLAY_TOKEN", "Playback token is invalid");
         }
         String payload = values[0] + "." + values[1];
+        // 使用常量时间比较签名，避免通过响应时间推测 HMAC 字符。
         if (expiry < now().toEpochSecond() || !constantEquals(values[2], signature(payload))) {
             throw error(HttpStatus.FORBIDDEN, "PLAY_TOKEN_EXPIRED", "Playback token expired or invalid");
         }
@@ -486,6 +643,12 @@ public class RecordingService {
         return UUID.randomUUID().toString().replace("-", "");
     }
 
+    /**
+     * 播放或预览资源响应体。
+     *
+     * @param bytes 资源内容
+     * @param contentType 资源媒体类型
+     */
     public record PlaybackAsset(byte[] bytes, String contentType) {
     }
 }

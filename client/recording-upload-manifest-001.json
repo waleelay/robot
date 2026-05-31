@@ -1,24 +1,24 @@
 {
   "tasks": {
-    "camera01/video_20260528_115323.mp4/9072554/1779940466": {
-      "sourceFileId": "camera01/video_20260528_115323.mp4/9072554/1779940466",
-      "filePath": "recordings/video_20260528_115323.mp4",
-      "fileSize": 9072554,
-      "createdAt": "2026-05-28T11:54:26.520215687+08:00",
-      "recordingId": "rec_32ce62ae71ef40d4ab97b019bf054055",
-      "uploadId": "upl_95270d3f2dcf49aab77abbb30a38df0d",
+    "camera01/bd3cfa29e400553f9e3987d057c42e78.mp4/8557004/1763634222": {
+      "sourceFileId": "camera01/bd3cfa29e400553f9e3987d057c42e78.mp4/8557004/1763634222",
+      "filePath": "recordings/bd3cfa29e400553f9e3987d057c42e78.mp4",
+      "fileSize": 8557004,
+      "createdAt": "2025-11-20T18:23:42+08:00",
+      "recordingId": "rec_b1b7d442628746a19df8ebb581c72e12",
+      "uploadId": "upl_077032008f5047278a49a9beaaf08bbc",
       "status": "READY",
-      "updatedAt": "2026-05-28T16:16:10.334577+08:00"
+      "updatedAt": "2026-05-31T17:27:31.011297+08:00"
     },
-    "camera01/video_20260528_115733.mp4/389849604/1779943054": {
-      "sourceFileId": "camera01/video_20260528_115733.mp4/389849604/1779943054",
-      "filePath": "recordings/video_20260528_115733.mp4",
-      "fileSize": 389849604,
-      "createdAt": "2026-05-28T12:37:34.715543252+08:00",
-      "recordingId": "rec_49483c7817704f209073e7945d994a7b",
-      "uploadId": "upl_29e1b63b9f274798909d47c3a399811a",
+    "camera01/菜单功能配置.mp4/1329181852/1752824452": {
+      "sourceFileId": "camera01/菜单功能配置.mp4/1329181852/1752824452",
+      "filePath": "recordings/菜单功能配置.mp4",
+      "fileSize": 1329181852,
+      "createdAt": "2025-07-18T15:40:52+08:00",
+      "recordingId": "rec_86d17a8e692e40e4a299989067100231",
+      "uploadId": "upl_1433fc1ac9074454b28e0fc1629e520f",
       "status": "READY",
-      "updatedAt": "2026-05-28T22:04:50.114684+08:00"
+      "updatedAt": "2026-05-31T17:33:01.010723+08:00"
     }
   }
 }

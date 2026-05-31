@@ -36,6 +36,7 @@ func (r *Runner) Run(ctx context.Context) {
 	ticker := time.NewTicker(r.cfg.UploadScanInterval)
 	defer ticker.Stop()
 	for {
+		// 启动后立即扫一次，之后按配置间隔轮询，避免进程启动后还要等待一个周期。
 		r.runOnce(ctx)
 		select {
 		case <-ctx.Done():
@@ -46,6 +47,8 @@ func (r *Runner) Run(ctx context.Context) {
 }
 
 func (r *Runner) runOnce(ctx context.Context) {
+	// discover 只负责把本地新文件登记进 manifest；process 才真正访问媒体服务。
+	// manifest 是本地断点续传索引，进程重启后不会重复创建已知文件任务。
 	r.discover()
 	r.enforceRetention()
 	tasks := make([]*Task, 0, len(r.manifest.Tasks))
@@ -60,6 +63,7 @@ func (r *Runner) runOnce(ctx context.Context) {
 		if task.Status == "READY" || task.Status == "LOCAL_DELETED" {
 			continue
 		}
+		// 单个文件失败不影响后续文件；错误写回 manifest，下次扫描会继续尝试。
 		if err := r.process(ctx, task); err != nil {
 			task.Error = err.Error()
 			task.UpdatedAt = time.Now()
@@ -79,6 +83,8 @@ func (r *Runner) discover() {
 		if err != nil || info.Size() == 0 {
 			continue
 		}
+		// sourceID 由设备、文件名、大小、修改时间组成，用作服务端幂等键。
+		// 同名文件被覆盖后 size/modTime 会变化，因此会被当作新源文件处理。
 		sourceID := fmt.Sprintf("%s/%s/%d/%d", r.cfg.RecordingDeviceID, info.Name(), info.Size(), info.ModTime().Unix())
 		if _, exists := r.manifest.Tasks[sourceID]; exists {
 			continue
@@ -102,6 +108,7 @@ func (r *Runner) process(ctx context.Context, task *Task) error {
 		task.RecordingID,
 		task.UploadID)
 	if task.RecordingID != "" && waitingForPlayback(task.Status) {
+		// 上传完成后服务端还要做校验、HLS 转码和缩略图生成；客户端只轮询状态。
 		response, err := r.client.status(ctx, task.RecordingID)
 		if err != nil {
 			return err
@@ -134,6 +141,7 @@ func (r *Runner) process(ctx context.Context, task *Task) error {
 	task.RecordingID = upload.RecordingID
 	task.UploadID = upload.UploadID
 	if !upload.UploadRequired {
+		// 服务端识别到该源文件已完成或正在后处理时，客户端无需再上传原文件。
 		log.Printf("recording upload server says upload not required recordingId=%s status=%s",
 			upload.RecordingID,
 			upload.RecordingStatus)
@@ -151,6 +159,7 @@ func (r *Runner) process(ctx context.Context, task *Task) error {
 	if err := uploadMissingParts(ctx, r.client, file, upload, r.cfg.UploadPartConcurrency); err != nil {
 		return err
 	}
+	// 所有缺失分片上传完成后由服务端 complete 合并对象，并进入 VERIFYING。
 	if _, err := r.client.complete(ctx, upload.UploadID); err != nil {
 		return err
 	}

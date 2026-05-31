@@ -156,6 +156,9 @@ import {
   stopVideoSession
 } from './api/media'
 
+// 前端内部摄像头状态模型。
+// 后端返回的是业务会话/设备字段，页面还需要额外保存 LiveKit Room、加载状态、
+// 本地停止意图、对讲 token 等 UI/连接态，所以统一在这里初始化。
 function cameraState(robotId, deviceId, name, channel, groupType) {
   return {
     key: `${robotId}-${deviceId}-${channel}`,
@@ -230,14 +233,17 @@ export default {
     }
   },
   computed: {
+    // 当前选中的机器人对象。设备列表从 MQTT 心跳刷新，找不到时兜底到第一台。
     selectedRobot() {
       return this.robots.find(item => item.robotId === this.selectedRobotId) || this.robots[0]
     },
+    // 宫格数量只影响展示摄像头数量，不会改变机器人真实摄像头列表。
     displayedCameras() {
       return this.selectedRobot.cameras.slice(0, this.gridMode)
     }
   },
   watch: {
+    // 回放列表按机器人过滤；切换机器人时清掉旧播放器，避免旧 HLS 继续占用网络。
     selectedRobotId() {
       if (this.recordingMode) {
         this.selectedRecording = null
@@ -247,11 +253,13 @@ export default {
     }
   },
   mounted() {
+    // 页面启动时同时拉一次静态列表、订阅事件流，并开启 viewer/intercom 心跳。
     this.loadRobots()
     this.connectWebSocket()
     this.heartbeatTimer = setInterval(this.heartbeatViewers, 5000)
   },
   beforeDestroy() {
+    // Vue 组件销毁时主动关闭所有长连接，避免 LiveKit/MQTT 状态仍以为浏览器在线。
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
     if (this.socket) this.socket.close()
     this.destroyRecordedHls()
@@ -260,6 +268,8 @@ export default {
     })
   },
   methods: {
+    // 在“实时观看”和“录像回放”两套工作区之间切换。
+    // 回放使用独立 HLS 实例，离开回放页必须销毁，否则会继续拉取分片。
     async toggleRecordings() {
       this.recordingMode = !this.recordingMode
       if (this.recordingMode) {
@@ -269,6 +279,7 @@ export default {
         this.selectedRecording = null
       }
     },
+    // 录像列表只拉 READY 状态，确保用户点开后一定能拿到可播放的 HLS 地址。
     async loadRecordings() {
       this.recordingsLoading = true
       try {
@@ -280,6 +291,8 @@ export default {
         this.recordingsLoading = false
       }
     },
+    // 播放录像时先向后端换取签名 URL，再根据浏览器能力选择原生 HLS 或 hls.js。
+    // Safari 可原生播放 m3u8；Chrome/Edge 走 hls.js。
     async playRecording(recording) {
       if (recording.status !== 'READY') return
       try {
@@ -301,6 +314,7 @@ export default {
         this.$message.error(this.errorMessage(error))
       }
     },
+    // 销毁当前录像播放器，包括 hls.js 实例、video src 和缩略图 hover 状态。
     destroyRecordedHls() {
       if (this.recordedHls) {
         this.recordedHls.destroy()
@@ -332,6 +346,9 @@ export default {
         await this.stopCamera(camera)
       }
     },
+    // 周期性心跳同时承担两个职责：
+    // 1. 让后端知道当前浏览器仍在观看，从而维持 viewerCount；
+    // 2. 让后端知道对讲操作员仍在线，避免对讲被超时释放。
     heartbeatViewers() {
       this.allCameras().forEach(camera => {
         if (camera.session && !camera.stopped && !camera.stopping) {
@@ -355,6 +372,7 @@ export default {
         }
       })
     },
+    // 开始观看单路摄像头：先通过控制 API 创建/复用会话，再用返回的 token 连 LiveKit。
     async startCamera(robot, camera) {
       if (robot.status !== 'online') return
       camera.loading = true
@@ -391,6 +409,7 @@ export default {
         camera.loading = false
       }
     },
+    // 停止观看只表示当前浏览器离开。若还有其他 viewer 或对讲占用，后端会保留 Room。
     async stopCamera(camera) {
       if (!camera.session) return
       camera.loading = true
@@ -484,6 +503,9 @@ export default {
         camera.intercomBusy = false
       }
     },
+    // 结束对讲时要分两种场景：
+    // - 仍在观看视频：保留 LiveKit Room 和视频 track；
+    // - 只是对讲：断开 Room 并清掉会话状态。
     async hangupIntercom(camera) {
       if (!camera.session) return
       camera.intercomBusy = true
@@ -518,6 +540,7 @@ export default {
         camera.intercomBusy = false
       }
     },
+    // 手动抓拍只提交任务；真正抓图/保存由后端 SnapshotService 和机器人/媒体侧完成。
     async snapshotCamera(camera) {
       if (!camera.session) return
       const response = await createSnapshot(camera.session.sessionId, {
@@ -530,6 +553,9 @@ export default {
       this.log('API snapshot', response)
       this.$message.success('已提交抓拍任务')
     },
+    // 连接 LiveKit 的核心逻辑。
+    // 普通观看使用 viewerToken；对讲使用 operatorToken，并在同一个 Room 中发布浏览器麦克风。
+    // 事件回调里会把远端 audio/video track 挂到对应 DOM 元素上。
     async connectLiveKit(camera, refreshToken, connectionToken) {
       if (camera.connecting || !camera.session) return
       camera.connecting = true
@@ -593,6 +619,8 @@ export default {
         camera.connecting = false
       }
     },
+    // 控制 WebSocket 接收后端发布的机器人上下线、视频状态、对讲状态等事件。
+    // 这些事件用于修正本地 UI 状态，而不是替代 REST API 的命令结果。
     connectWebSocket() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/control`
@@ -613,6 +641,7 @@ export default {
       }
       this.socket = socket
     },
+    // 拉取机器人注册表，并转换成页面内部 cameraState，保证后续 UI 字段完整。
     async loadRobots() {
       const robots = await getRobots()
       if (!robots.length) return
@@ -621,6 +650,8 @@ export default {
         this.selectedRobotId = this.robots[0].robotId
       }
     },
+    // 机器人上下线事件会刷新设备基础信息，但保留已有会话和 LiveKit 连接态。
+    // 如果机器人离线，则主动断开对应 Room，避免页面误显示还在播放。
     syncRobotEvent(event) {
       if (!event || !event.data || !event.data.robotId) return
       if (event.event !== 'robot.client.online' && event.event !== 'robot.client.offline') return
@@ -660,6 +691,8 @@ export default {
         this.robots.push(incoming)
       }
     },
+    // 会话事件来自后端状态机。当前页面只同步自己正在关注的 session，
+    // 并忽略用户已经明确停止的 session，防止自动重连覆盖本地意图。
     syncSessionEvent(event) {
       if (!event || !event.data || !event.data.sessionId) return
       const camera = this.allCameras().find(item => item.session && item.session.sessionId === event.data.sessionId)
@@ -678,6 +711,8 @@ export default {
         camera.intercomActive = !['IDLE', 'FAILED'].includes(camera.intercomStatus)
       }
     },
+    // LiveKit 断开、track 取消订阅或后端标记 INTERRUPTED 后触发重启。
+    // 用 restarting 做短时间节流，避免多个事件同时到达造成重复下发命令。
     async restartCamera(camera) {
       if (camera.stopping || camera.stopped || camera.restarting) return
       if (!camera.session || camera.session.status === 'CLOSED') return
@@ -716,12 +751,14 @@ export default {
       return Array.isArray(ref) ? ref[0] : ref
     },
     liveKitConnectionUrl(serverUrl) {
+      // HTTPS 页面不能直接连 ws:// LiveKit；生产环境通过同域 /livekit 反代升级到 wss。
       if (window.location.protocol === 'https:') {
         return `wss://${window.location.host}/livekit`
       }
       return serverUrl
     },
     previewHash(camera) {
+      // 只返回截图 dataURL 长度作为轻量 hash，避免把大图直接塞进抓拍请求。
       const video = this.videoElement(camera)
       if (!video || !video.videoWidth) return null
       const canvas = document.createElement('canvas')
@@ -731,6 +768,7 @@ export default {
       return String(canvas.toDataURL('image/jpeg', 0.7).length)
     },
     mergeSession(camera, update) {
+      // 部分 API/事件只返回增量字段，保留已有 token/url/roomName，避免重连时丢上下文。
       const next = Object.assign({}, camera.session || {}, update || {})
       if (!update || !update.viewerToken) next.viewerToken = camera.session && camera.session.viewerToken
       if (!update || !update.livekitUrl) next.livekitUrl = camera.session && camera.session.livekitUrl
@@ -741,6 +779,7 @@ export default {
       return this.robots.reduce((items, robot) => items.concat(robot.cameras), [])
     },
     toRobotState(robot) {
+      // 将后端机器人 DTO 转为页面状态，同时给缺失字段补默认值。
       return {
         robotId: robot.robotId,
         clientId: robot.clientId,

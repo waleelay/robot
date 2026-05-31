@@ -55,15 +55,58 @@ public class VideoSessionService {
             VideoSessionStatus.STREAMING,
             VideoSessionStatus.IDLE_WAIT);
 
+    /**
+     * 实时视频会话仓储。
+     */
     private final VideoSessionRepository repository;
+
+    /**
+     * 观看者会话仓储。
+     */
     private final MediaSessionViewerRepository viewerRepository;
+
+    /**
+     * LiveKit 房间服务。
+     */
     private final LiveKitRoomService liveKitRoomService;
+
+    /**
+     * LiveKit token 服务。
+     */
     private final LiveKitTokenService liveKitTokenService;
+
+    /**
+     * 媒体事件日志服务。
+     */
     private final MediaEventLogService eventLogService;
+
+    /**
+     * 抓拍服务。
+     */
     private final SnapshotService snapshotService;
+
+    /**
+     * 媒体轨道服务。
+     */
     private final MediaTrackService mediaTrackService;
+
+    /**
+     * 媒体服务配置属性。
+     */
     private final MediaProperties properties;
 
+    /**
+     * 构造实时视频会话编排服务。
+     *
+     * @param repository 实时视频会话仓储
+     * @param viewerRepository 观看者会话仓储
+     * @param liveKitRoomService LiveKit 房间服务
+     * @param liveKitTokenService LiveKit token 服务
+     * @param eventLogService 媒体事件日志服务
+     * @param snapshotService 抓拍服务
+     * @param mediaTrackService 媒体轨道服务
+     * @param properties 媒体服务配置属性
+     */
     public VideoSessionService(
             VideoSessionRepository repository,
             MediaSessionViewerRepository viewerRepository,
@@ -88,6 +131,10 @@ public class VideoSessionService {
      *
      * <p>主流程：先检查可复用会话；若不存在则创建业务会话，并返回前端观看 Token。
      * 新会话的机器人端 start 指令由 Control Server 调用 requestClientStart 后下发。</p>
+     *
+     * @param request 创建实时视频会话请求
+     * @param user 当前操作用户
+     * @return 实时视频会话响应
      */
     @Transactional
     public VideoSessionResponse create(CreateVideoSessionRequest request, CurrentUser user) {
@@ -138,6 +185,10 @@ public class VideoSessionService {
 
     /**
      * 创建或复用承载对讲的 VideoSession，不计入视频观看人数，也不触发视频发布。
+     *
+     * @param request 创建实时视频会话请求
+     * @param user 当前操作用户
+     * @return 对讲启动响应
      */
     @Transactional
     public IntercomResponse createForIntercom(CreateVideoSessionRequest request, CurrentUser user) {
@@ -169,24 +220,52 @@ public class VideoSessionService {
         return startIntercom(session.getSessionId(), user);
     }
 
+    /**
+     * 查询实时视频会话，并生成当前浏览器可用的观看 token。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param user 当前操作用户
+     * @return 实时视频会话响应
+     */
     public VideoSessionResponse get(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         TokenResult viewerToken = createBrowserToken(session, user);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
     }
 
+    /**
+     * 为浏览器观看端创建 LiveKit viewer token。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param user 当前操作用户
+     * @return 观看 token 响应
+     */
     public ViewerTokenResponse createViewerToken(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         TokenResult token = createBrowserToken(session, user);
         return new ViewerTokenResponse(properties.getLivekit().getUrl(), session.getRoomName(), token.token(), token.expiresAt());
     }
 
+    /**
+     * 为对讲操作员创建 LiveKit operator token。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param user 当前操作用户
+     * @return 对讲 token 响应
+     */
     public IntercomResponse createIntercomToken(String sessionId, CurrentUser user) {
         VideoSession session = requireIntercomOperator(sessionId, user);
         TokenResult token = liveKitTokenService.createOperatorToken(session.getRoomName(), user.userId(), user.clientId());
         return IntercomResponse.from(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
     }
 
+    /**
+     * 刷新观看者心跳，并同步 viewerCount。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param user 当前操作用户
+     * @return 实时视频会话响应
+     */
     @Transactional
     public VideoSessionResponse heartbeat(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
@@ -203,6 +282,13 @@ public class VideoSessionService {
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
 
+    /**
+     * 当前观看者停止观看实时视频。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param user 当前操作用户
+     * @return 实时视频会话响应
+     */
     @Transactional
     public VideoSessionResponse stop(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
@@ -221,15 +307,26 @@ public class VideoSessionService {
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
 
+    /**
+     * 在实时视频会话中启动对讲。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param user 当前操作用户
+     * @return 对讲启动响应
+     */
     @Transactional
     public IntercomResponse startIntercom(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
+        // 对讲同一时间只能由一个浏览器 client 占用。判断 clientId 可以避免同一用户
+        // 开多个页面时互相抢占，心跳超时后 expireIntercom 会释放这些字段。
         if (holdsRoomForIntercom(session)
                 && (!Objects.equals(session.getIntercomOperatorId(), user.userId())
                 || !Objects.equals(session.getIntercomClientId(), user.clientId()))) {
             throw new IllegalStateException("Intercom is occupied by another operator");
         }
         liveKitRoomService.createRoom(session.getRoomName());
+        // 如果这个会话原本只是空壳或空闲等待，对讲需要先确保 Room 可用。
+        // 但是否发布视频取决于前端是否也发起观看请求。
         if (session.getStatus() == VideoSessionStatus.INIT || session.getStatus() == VideoSessionStatus.IDLE_WAIT) {
             session.setStatus(VideoSessionStatus.ROOM_READY);
         }
@@ -247,6 +344,13 @@ public class VideoSessionService {
         return IntercomResponse.from(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
     }
 
+    /**
+     * 刷新对讲操作员心跳。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param user 当前操作用户
+     * @return 对讲状态响应
+     */
     @Transactional
     public IntercomResponse heartbeatIntercom(String sessionId, CurrentUser user) {
         VideoSession session = requireIntercomOperator(sessionId, user);
@@ -257,11 +361,20 @@ public class VideoSessionService {
         return IntercomResponse.from(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
     }
 
+    /**
+     * 停止实时视频会话中的对讲。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param user 当前操作用户
+     * @return 实时视频会话响应
+     */
     @Transactional
     public VideoSessionResponse stopIntercom(String sessionId, CurrentUser user) {
         VideoSession session = requireIntercomOperator(sessionId, user);
         session.setIntercomStatus(IntercomStatus.STOPPING);
         emit("video.intercom.stopping", session);
+        // 先发布 stopping 事件，再清空占用信息。这样前端能看到明确的“正在挂断”
+        // 过渡，同时后续 startIntercom 不会被旧 operator 锁住。
         session.setIntercomStatus(IntercomStatus.IDLE);
         session.setIntercomAudioOnly(false);
         session.setIntercomOperatorId(null);
@@ -281,8 +394,16 @@ public class VideoSessionService {
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
 
+    /**
+     * 创建下发给机器人客户端的对讲启动命令。
+     *
+     * @param sessionId 实时视频会话编号
+     * @return 对讲启动命令
+     */
     public IntercomStartCommand createIntercomStartCommand(String sessionId) {
         VideoSession session = requireSession(sessionId);
+        // 机器人端只拿到 intercom 专用 token，用来发布机器人麦克风并订阅操作员麦克风。
+        // 浏览器 operator token 不会下发到机器人。
         TokenResult robotToken = liveKitTokenService.createRobotIntercomToken(
                 session.getRoomName(), session.getRobotId(), session.getDeviceId());
         return new IntercomStartCommand(
@@ -299,9 +420,18 @@ public class VideoSessionService {
                 robotToken.expiresAt());
     }
 
+    /**
+     * 切换实时视频通道或码流质量。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param request 通道切换请求
+     * @return 实时视频会话响应
+     */
     @Transactional
     public VideoSessionResponse switchChannel(String sessionId, SwitchChannelRequest request) {
         VideoSession session = requireSession(sessionId);
+        // 通道切换本质上是让同一个业务会话指向新的 RTSP/track。
+        // requestClientStart 会更新 commandId 并把状态切到 REQUESTING_CLIENT。
         session.setChannel(request.getChannel());
         if (request.getQuality() != null) {
             session.setQuality(request.getQuality());
@@ -313,6 +443,14 @@ public class VideoSessionService {
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
 
+    /**
+     * 创建实时视频抓拍任务。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param request 抓拍请求
+     * @param user 当前操作用户
+     * @return 抓拍响应
+     */
     public SnapshotResponse createSnapshot(String sessionId, CreateSnapshotRequest request, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
@@ -321,6 +459,13 @@ public class VideoSessionService {
         return snapshotService.create(session, request, user);
     }
 
+    /**
+     * 标记 LiveKit 视频轨道已经发布。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param trackSid LiveKit track sid
+     * @return 实时视频会话响应
+     */
     @Transactional
     public VideoSessionResponse markTrackPublished(String sessionId, String trackSid) {
         VideoSession session = requireSession(sessionId);
@@ -336,6 +481,16 @@ public class VideoSessionService {
     }
 
 
+    /**
+     * 处理机器人客户端上报的视频推流状态。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param status 机器人客户端状态
+     * @param trackSid LiveKit track sid
+     * @param trackName LiveKit track 名称
+     * @param errorCode 错误码
+     * @param message 状态说明
+     */
     @Transactional
     public void handleClientStatus(
             String sessionId,
@@ -347,6 +502,8 @@ public class VideoSessionService {
         VideoSession session = requireSession(sessionId);
         session.setLastStatusAt(now());
         String normalized = status == null ? "" : status.trim().toLowerCase();
+        // Go 客户端通过 MQTT 回报的是轻量字符串状态，这里统一映射为后端状态机枚举，
+        // 并在关键节点发布 WebSocket 事件，驱动前端刷新。
         switch (normalized) {
             case "room_ready", "publishing" -> transition(session, VideoSessionStatus.ROOM_READY, "video.room.ready", session);
             case "streaming", "track_published" -> {
@@ -377,6 +534,16 @@ public class VideoSessionService {
         repository.save(session);
     }
 
+    /**
+     * 处理机器人客户端上报的对讲状态。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param status 对讲状态
+     * @param robotAudioTrackSid 机器人麦克风 track sid
+     * @param robotAudioTrackName 机器人麦克风 track 名称
+     * @param errorCode 错误码
+     * @param message 状态说明
+     */
     @Transactional
     public void handleIntercomStatus(
             String sessionId,
@@ -387,6 +554,8 @@ public class VideoSessionService {
             String message) {
         VideoSession session = requireSession(sessionId);
         String normalized = status == null ? "" : status.trim().toLowerCase();
+        // 对讲状态独立于视频状态：视频可能仍在 STREAMING，而对讲已经 IDLE/FAILED。
+        // 因此这里只更新 intercom 字段，必要时才把无人观看的会话切到 IDLE_WAIT。
         switch (normalized) {
             case "starting" -> session.setIntercomStatus(IntercomStatus.STARTING);
             case "active" -> {
@@ -429,11 +598,20 @@ public class VideoSessionService {
         repository.save(session);
     }
 
+    /**
+     * 机器人客户端上线后，生成需要自动恢复的视频启动命令。
+     *
+     * @param robotId 机器人编号
+     * @param status 机器人客户端状态
+     * @return 待下发的视频启动命令列表
+     */
     @Transactional
     public List<VideoStartCommand> handleClientOnline(String robotId, String status) {
         if (!"online".equalsIgnoreCase(status)) {
             return List.of();
         }
+        // 机器人重连后只对每个 robot/device/channel/quality 组合重启最新一个会话，
+        // 避免历史失败会话批量下发造成同一路摄像头重复推流。
         Set<String> restartedKeys = new HashSet<>();
         return repository.findByRobotIdAndViewerCountGreaterThanAndStatusInOrderByUpdatedAtDesc(
                         robotId,
@@ -457,6 +635,13 @@ public class VideoSessionService {
                 .toList();
     }
 
+    /**
+     * 当前用户手动重启实时视频会话。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param user 当前操作用户
+     * @return 实时视频会话响应
+     */
     @Transactional
     public VideoSessionResponse restartSession(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
@@ -466,11 +651,23 @@ public class VideoSessionService {
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
 
+    /**
+     * 后台任务自动重启实时视频会话。
+     *
+     * @param sessionId 实时视频会话编号
+     */
     @Transactional
     public void restartSession(String sessionId) {
         requestClientStart(requireSession(sessionId), "video.session.auto_restart", false);
     }
 
+    /**
+     * 当前用户手动重启实时视频会话，并返回待下发的视频启动命令。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param user 当前操作用户
+     * @return 视频启动命令
+     */
     @Transactional
     public VideoStartCommand restartSessionCommand(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
@@ -479,16 +676,35 @@ public class VideoSessionService {
         return requestClientStart(session, "video.session.restart", false);
     }
 
+    /**
+     * 后台任务自动重启实时视频会话，并返回待下发的视频启动命令。
+     *
+     * @param sessionId 实时视频会话编号
+     * @return 视频启动命令
+     */
     @Transactional
     public VideoStartCommand restartSessionCommand(String sessionId) {
         return requestClientStart(requireSession(sessionId), "video.session.auto_restart", false);
     }
 
+    /**
+     * 为会话请求机器人客户端开始推流。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param event 事件名称
+     * @return 视频启动命令
+     */
     @Transactional
     public VideoStartCommand requestClientStart(String sessionId, String event) {
         return requestClientStart(requireSession(sessionId), event, true);
     }
 
+    /**
+     * 根据当前会话状态创建视频启动命令。
+     *
+     * @param sessionId 实时视频会话编号
+     * @return 视频启动命令
+     */
     @Transactional
     public VideoStartCommand createStartCommand(String sessionId) {
         return createStartCommand(requireSession(sessionId));
@@ -498,6 +714,8 @@ public class VideoSessionService {
         if (session.getViewerCount() <= 0) {
             return null;
         }
+        // 生成机器人推流命令前先确保 LiveKit Room 存在，再签发 publisher token。
+        // 命令发送本身不在本服务做，调用方可决定通过 MQTT 或其他控制通道下发。
         liveKitRoomService.createRoom(session.getRoomName());
         if (holdsRoomForIntercom(session)) {
             session.setIntercomAudioOnly(false);
@@ -554,6 +772,13 @@ public class VideoSessionService {
                 publisherToken.expiresAt());
     }
 
+    /**
+     * 标记实时视频会话推流超时。
+     *
+     * @param sessionId 实时视频会话编号
+     * @param errorCode 错误码
+     * @param message 错误说明
+     */
     @Transactional
     public void markTimeout(String sessionId, String errorCode, String message) {
         VideoSession session = requireSession(sessionId);
@@ -563,6 +788,12 @@ public class VideoSessionService {
         repository.save(session);
     }
 
+    /**
+     * 释放已经进入空闲等待状态的实时视频会话。
+     *
+     * @param sessionId 实时视频会话编号
+     * @return 需要下发给机器人客户端的停止命令载荷；不需要释放时返回空 Map
+     */
     @Transactional
     public Map<String, Object> releaseIdleSession(String sessionId) {
         VideoSession session = requireSession(sessionId);
@@ -571,6 +802,8 @@ public class VideoSessionService {
                 || holdsRoomForIntercom(session)) {
             return Map.of();
         }
+        // 空闲释放是两阶段的：先把会话状态关掉并删除 LiveKit Room，
+        // 再把 stop payload 返回给控制服务，由控制服务通知机器人停止本地推流进程。
         transition(session, VideoSessionStatus.STOPPING, "video.session.stopping", session);
         mediaTrackService.unpublish(session);
         Map<String, Object> stopPayload = Map.of(
@@ -585,18 +818,35 @@ public class VideoSessionService {
         return stopPayload;
     }
 
+    /**
+     * 查询当前用户最近创建的实时视频会话。
+     *
+     * @param user 当前操作用户
+     * @return 最近实时视频会话列表
+     */
     public List<VideoSessionResponse> recent(CurrentUser user) {
         return repository.findTop20ByCreatedByOrderByCreatedAtDesc(user.userId()).stream()
                 .map(session -> VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null))
                 .toList();
     }
 
+    /**
+     * 查询当前可复用的实时视频会话。
+     *
+     * @return 活跃实时视频会话列表
+     */
     public List<VideoSessionResponse> active() {
         return repository.findTop16ByStatusInOrderByUpdatedAtDesc(REUSABLE_STATUSES).stream()
                 .map(session -> VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null))
                 .toList();
     }
 
+    /**
+     * 查询需要自动重启的中断会话。
+     *
+     * @param updatedBefore 更新时间阈值
+     * @return 会话编号列表
+     */
     public List<String> interruptedRestartCandidates(OffsetDateTime updatedBefore) {
         return repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.INTERRUPTED, updatedBefore).stream()
                 .filter(session -> session.getViewerCount() > 0)
@@ -604,6 +854,12 @@ public class VideoSessionService {
                 .toList();
     }
 
+    /**
+     * 查询需要释放的空闲会话。
+     *
+     * @param idleSinceBefore 空闲开始时间阈值
+     * @return 会话编号列表
+     */
     public List<String> idleReleaseCandidates(OffsetDateTime idleSinceBefore) {
         return repository.findByStatusAndIdleSinceBefore(VideoSessionStatus.IDLE_WAIT, idleSinceBefore).stream()
                 .filter(session -> session.getViewerCount() == 0 && !holdsRoomForIntercom(session))
@@ -611,6 +867,12 @@ public class VideoSessionService {
                 .toList();
     }
 
+    /**
+     * 查询对讲心跳超时的会话。
+     *
+     * @param heartbeatBefore 心跳时间阈值
+     * @return 会话编号列表
+     */
     public List<String> intercomTimeoutCandidates(OffsetDateTime heartbeatBefore) {
         return repository.findByIntercomStatusInAndIntercomHeartbeatAtBefore(
                         Set.of(IntercomStatus.STARTING, IntercomStatus.ACTIVE),
@@ -619,6 +881,12 @@ public class VideoSessionService {
                 .toList();
     }
 
+    /**
+     * 使对讲会话超时失效，并返回机器人端停止对讲命令载荷。
+     *
+     * @param sessionId 实时视频会话编号
+     * @return 需要下发给机器人客户端的对讲停止命令载荷；不需要停止时返回空 Map
+     */
     @Transactional
     public Map<String, Object> expireIntercom(String sessionId) {
         VideoSession session = requireSession(sessionId);
@@ -649,6 +917,9 @@ public class VideoSessionService {
                 "roomName", session.getRoomName());
     }
 
+    /**
+     * 清理心跳过期的观看者。
+     */
     @Transactional
     public void sweepStaleViewers() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getViewerHeartbeatTimeoutSeconds());
@@ -657,6 +928,9 @@ public class VideoSessionService {
         });
     }
 
+    /**
+     * 关闭全部仍处于活跃状态的观看者。
+     */
     @Transactional
     public void closeAllActiveViewers() {
         viewerRepository.findByLeftAtIsNull().forEach(this::closeViewer);
@@ -667,6 +941,8 @@ public class VideoSessionService {
         viewerRepository.save(viewer);
         repository.findById(viewer.getSessionId()).ifPresent(session -> {
             session.setViewerCount(activeViewerCount(session.getSessionId()));
+            // 最后一个 viewer 离开后不立刻停止机器人推流，而是进入 IDLE_WAIT。
+            // 这样短时间内重新打开页面可以复用 Room/Track，减少推流启动延迟。
             if (session.getViewerCount() == 0
                     && session.getStatus() == VideoSessionStatus.STREAMING
                     && !holdsRoomForIntercom(session)) {
@@ -741,6 +1017,8 @@ public class VideoSessionService {
 
     private void addViewer(VideoSession session, CurrentUser user) {
         String identity = viewerIdentity(user);
+        // 同一浏览器 client 重复心跳时只刷新 lastHeartbeatAt；新的标签页会得到不同 clientId，
+        // 因而会被计为独立 viewer。
         viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(session.getSessionId(), identity)
                 .map(viewer -> {
                     viewer.setLastHeartbeatAt(now());
@@ -777,6 +1055,7 @@ public class VideoSessionService {
     }
 
     private TokenResult createBrowserToken(VideoSession session, CurrentUser user) {
+        // 操作员 token 允许发布麦克风，用于对讲；普通 viewer token 只允许订阅媒体。
         if (user.hasRole("MEDIA_OPERATOR")) {
             return liveKitTokenService.createInteractiveViewerToken(
                     session.getRoomName(), user.userId(), user.clientId());

@@ -41,6 +41,8 @@ type SDKManager struct {
 	mu       sync.Mutex
 }
 
+// session 保存一次对讲所需的所有资源。
+// close 必须同时停止 LiveKit Room、GStreamer 采集/播放进程和远端 PCM track。
 type session struct {
 	cancel        context.CancelFunc
 	room          *lksdk.Room
@@ -59,10 +61,12 @@ func NewSDKManager(cfg config.Config) *SDKManager {
 func (m *SDKManager) Start(parent context.Context, command model.IntercomStartCommand) (string, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// 同一 session 重复 start 时先清理旧音频桥，避免麦克风/扬声器设备被重复打开。
 	_ = m.stopLocked(command.SessionID)
 
 	ctx, cancel := context.WithCancel(parent)
 	active := &session{cancel: cancel}
+	// 先启动播放管道，是因为 LiveKit 回调订阅到操作员音频后会立即向 stdin 写 PCM。
 	if err := m.startPlayback(ctx, active); err != nil {
 		cancel()
 		return "", "", err
@@ -73,6 +77,7 @@ func (m *SDKManager) Start(parent context.Context, command model.IntercomStartCo
 			if track.Kind() != webrtc.RTPCodecTypeAudio || publication.Name() != "audio.operator.mic" {
 				return
 			}
+			// 操作员麦克风 track 会被转成 48k 单声道 PCM，写入 GStreamer playback stdin。
 			remoteTrack, err := lkmedia.NewPCMRemoteTrack(
 				track,
 				active.playbackInput,
@@ -95,6 +100,7 @@ func (m *SDKManager) Start(parent context.Context, command model.IntercomStartCo
 	}
 	active.room = room
 
+	// 机器人麦克风发布为固定名称 audio.robot.mic，后端会把 publication SID 回写到会话。
 	publishTrack, err := lkmedia.NewPCMLocalTrack(audioSampleRate, audioChannels, logger.GetLogger())
 	if err != nil {
 		active.close()
@@ -148,6 +154,7 @@ func (m *SDKManager) startCapture(ctx context.Context, active *session) error {
 	if len(args) == 0 {
 		return errors.New("AUDIO_CAPTURE_PIPELINE is empty")
 	}
+	// capture pipeline 输出 raw PCM 到 stdout，copyCapturePCM 再写入 LiveKit PCMLocalTrack。
 	cmd := exec.CommandContext(ctx, m.cfg.GSTLaunchPath, append([]string{"-q"}, args...)...)
 	output, err := cmd.StdoutPipe()
 	if err != nil {
@@ -168,6 +175,7 @@ func (m *SDKManager) startPlayback(ctx context.Context, active *session) error {
 	if len(args) == 0 {
 		return errors.New("AUDIO_PLAYBACK_PIPELINE is empty")
 	}
+	// playback pipeline 从 stdin 读取 raw PCM，并播放到机器人扬声器。
 	cmd := exec.CommandContext(ctx, m.cfg.GSTLaunchPath, append([]string{"-q"}, args...)...)
 	input, err := cmd.StdinPipe()
 	if err != nil {
@@ -191,6 +199,7 @@ func waitForPipeline(ctx context.Context, direction string, cmd *exec.Cmd) {
 }
 
 func copyCapturePCM(input io.Reader, track *lkmedia.PCMLocalTrack) {
+	// LiveKit media SDK 以 20ms PCM frame 写入：48000Hz * 20ms = 960 samples。
 	frame := make([]byte, pcmFrameSamples*audioChannels*2)
 	for {
 		if _, err := io.ReadFull(input, frame); err != nil {
@@ -210,6 +219,7 @@ func copyCapturePCM(input io.Reader, track *lkmedia.PCMLocalTrack) {
 }
 
 func (s *session) close() {
+	// 取消 context 会终止 exec.CommandContext 启动的 GStreamer 进程。
 	s.cancel()
 	s.mu.Lock()
 	for _, track := range s.remoteTracks {
@@ -241,6 +251,7 @@ func (w *pcmPlaybackWriter) WriteSample(sample media.PCM16Sample) error {
 	if w.closed {
 		return errors.New("playback writer is closed")
 	}
+	// GStreamer playback pipeline 期望 little-endian 16-bit PCM。
 	buffer := make([]byte, len(sample)*2)
 	for i, value := range sample {
 		binary.LittleEndian.PutUint16(buffer[i*2:], uint16(value))
