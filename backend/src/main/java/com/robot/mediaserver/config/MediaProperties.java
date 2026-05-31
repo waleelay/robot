@@ -412,6 +412,7 @@ public class MediaProperties {
     private boolean enabled = true;
     private long maxFileSizeBytes = 21474836480L;
     private long partSizeBytes = 16777216L;
+    private int maxPartUrlsPerRequest = 16;
     private int uploadUrlTtlSeconds = 900;
     private int uploadExpireHours = 72;
     private boolean uploadSessionRefreshEnabled = true;
@@ -451,6 +452,14 @@ public class MediaProperties {
 
     public void setPartSizeBytes(long partSizeBytes) {
             this.partSizeBytes = partSizeBytes;
+        }
+
+    public int getMaxPartUrlsPerRequest() {
+            return maxPartUrlsPerRequest;
+        }
+
+    public void setMaxPartUrlsPerRequest(int maxPartUrlsPerRequest) {
+            this.maxPartUrlsPerRequest = maxPartUrlsPerRequest;
         }
 
     public int getUploadUrlTtlSeconds() {

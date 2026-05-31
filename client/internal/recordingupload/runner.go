@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"robot-media-client/internal/config"
@@ -56,21 +57,34 @@ func (r *Runner) runOnce(ctx context.Context) {
 		tasks = append(tasks, task)
 	}
 	sort.Slice(tasks, func(i, j int) bool { return tasks[i].CreatedAt.Before(tasks[j].CreatedAt) })
+	workerCount := r.cfg.UploadFileConcurrency
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	sem := make(chan struct{}, workerCount)
+	var wait sync.WaitGroup
 	for _, task := range tasks {
 		if ctx.Err() != nil {
-			return
+			break
 		}
 		if task.Status == "READY" || task.Status == "LOCAL_DELETED" {
 			continue
 		}
-		// 单个文件失败不影响后续文件；错误写回 manifest，下次扫描会继续尝试。
-		if err := r.process(ctx, task); err != nil {
-			task.Error = err.Error()
-			task.UpdatedAt = time.Now()
-			_ = r.manifest.update(task)
-			log.Println("recording upload", task.FilePath, err)
-		}
+		sem <- struct{}{}
+		wait.Add(1)
+		go func(task *Task) {
+			defer wait.Done()
+			defer func() { <-sem }()
+			// 单个文件失败不影响后续文件；错误写回 manifest，下次扫描会继续尝试。
+			if err := r.process(ctx, task); err != nil {
+				task.Error = err.Error()
+				task.UpdatedAt = time.Now()
+				_ = r.manifest.update(task)
+				log.Println("recording upload", task.FilePath, err)
+			}
+		}(task)
 	}
+	wait.Wait()
 }
 
 func (r *Runner) discover() {
@@ -156,7 +170,7 @@ func (r *Runner) process(ctx context.Context, task *Task) error {
 		upload.UploadID,
 		upload.PartCount,
 		upload.PartSize)
-	if err := uploadMissingParts(ctx, r.client, file, upload, r.cfg.UploadPartConcurrency); err != nil {
+	if err := uploadMissingParts(ctx, r.client, file, upload, r.cfg.UploadPartConcurrency, r.cfg.UploadPartURLBatchSize); err != nil {
 		return err
 	}
 	// 所有缺失分片上传完成后由服务端 complete 合并对象，并进入 VERIFYING。

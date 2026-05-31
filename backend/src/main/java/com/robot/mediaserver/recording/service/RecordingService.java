@@ -135,7 +135,7 @@ public class RecordingService {
     /**
      * 给客户端签发一小批分片上传 URL。
      *
-     * <p>一次最多两个 URL 是为了限制机器人端并发和预签名 URL 泄露面；
+     * <p>一次最多返回配置上限内的一批 URL，用于降低大文件上传时的控制面请求次数；
      * 客户端需要边传边取，服务端据此刷新上传会话活跃时间。</p>
      *
      * @param robotId 机器人编号
@@ -147,8 +147,9 @@ public class RecordingService {
     public PartUrlsResponse partUrls(String robotId, String uploadId, List<Integer> partNumbers) {
         MediaRecordingUpload upload = requireActiveUpload(robotId, uploadId);
         MediaRecording recording = requireRecording(upload.getRecordingId());
-        if (partNumbers.size() > 2) {
-            throw error(HttpStatus.BAD_REQUEST, "TOO_MANY_PART_URLS", "At most two part URLs may be requested at once");
+        int maxPartUrls = Math.max(1, properties.getRecording().getMaxPartUrlsPerRequest());
+        if (partNumbers.size() > maxPartUrls) {
+            throw error(HttpStatus.BAD_REQUEST, "TOO_MANY_PART_URLS", "Too many part URLs requested at once");
         }
         for (Integer part : partNumbers) {
             if (part == null || part < 1 || part > upload.getPartCount()) {

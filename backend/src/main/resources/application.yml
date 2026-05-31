@@ -48,6 +48,7 @@ media:
     enabled: ${RECORDING_ENABLED:true}
     max-file-size-bytes: ${RECORDING_MAX_FILE_SIZE_BYTES:21474836480}
     part-size-bytes: ${RECORDING_PART_SIZE_BYTES:16777216}
+    max-part-urls-per-request: ${RECORDING_MAX_PART_URLS_PER_REQUEST:16}
     upload-url-ttl-seconds: ${RECORDING_UPLOAD_URL_TTL_SECONDS:900}
     upload-expire-hours: ${RECORDING_UPLOAD_EXPIRE_HOURS:72}
     upload-session-refresh-enabled: ${RECORDING_UPLOAD_SESSION_REFRESH_ENABLED:true}

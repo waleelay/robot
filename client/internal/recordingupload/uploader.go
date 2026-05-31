@@ -8,12 +8,15 @@ import (
 	"sync"
 )
 
-func uploadMissingParts(ctx context.Context, client *Client, file *os.File, upload uploadResponse, concurrency int) error {
+func uploadMissingParts(ctx context.Context, client *Client, file *os.File, upload uploadResponse, concurrency, urlBatchSize int) error {
 	uploaded := make(map[int]bool, len(upload.UploadedParts))
 	for _, part := range upload.UploadedParts {
 		uploaded[part.PartNumber] = true
 	}
-	jobs := make(chan int)
+	if urlBatchSize < 1 {
+		urlBatchSize = 1
+	}
+	jobs := make(chan uploadPartJob)
 	errors := make(chan error, 1)
 	workerCount := concurrency
 	if workerCount < 1 {
@@ -24,19 +27,16 @@ func uploadMissingParts(ctx context.Context, client *Client, file *os.File, uplo
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			for partNumber := range jobs {
-				url, err := client.partURL(ctx, upload.UploadID, partNumber)
-				if err == nil {
-					offset := int64(partNumber-1) * upload.PartSize
-					size := upload.PartSize
-					if remaining := fileSize(file) - offset; remaining < size {
-						size = remaining
-					}
-					err = client.putPart(ctx, url, ioSection(file, offset, size), size)
+			for job := range jobs {
+				offset := int64(job.partNumber-1) * upload.PartSize
+				size := upload.PartSize
+				if remaining := fileSize(file) - offset; remaining < size {
+					size = remaining
 				}
+				err := client.putPart(ctx, job.url, ioSection(file, offset, size), size)
 				if err != nil {
 					select {
-					case errors <- fmt.Errorf("part %d: %w", partNumber, err):
+					case errors <- fmt.Errorf("part %d: %w", job.partNumber, err):
 					default:
 					}
 					return
@@ -44,21 +44,45 @@ func uploadMissingParts(ctx context.Context, client *Client, file *os.File, uplo
 			}
 		}()
 	}
+	partNumbers := make([]int, 0, urlBatchSize)
+	flush := func() error {
+		if len(partNumbers) == 0 {
+			return nil
+		}
+		urls, err := client.partURLs(ctx, upload.UploadID, partNumbers)
+		if err != nil {
+			return err
+		}
+		for _, partNumber := range partNumbers {
+			select {
+			case jobs <- uploadPartJob{partNumber: partNumber, url: urls[partNumber]}:
+			case err := <-errors:
+				return err
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		partNumbers = partNumbers[:0]
+		return nil
+	}
 	for partNumber := 1; partNumber <= upload.PartCount; partNumber++ {
 		if uploaded[partNumber] {
 			continue
 		}
-		select {
-		case jobs <- partNumber:
-		case err := <-errors:
+		partNumbers = append(partNumbers, partNumber)
+		if len(partNumbers) < urlBatchSize {
+			continue
+		}
+		if err := flush(); err != nil {
 			close(jobs)
 			wait.Wait()
 			return err
-		case <-ctx.Done():
-			close(jobs)
-			wait.Wait()
-			return ctx.Err()
 		}
+	}
+	if err := flush(); err != nil {
+		close(jobs)
+		wait.Wait()
+		return err
 	}
 	close(jobs)
 	wait.Wait()
@@ -68,6 +92,11 @@ func uploadMissingParts(ctx context.Context, client *Client, file *os.File, uplo
 	default:
 		return nil
 	}
+}
+
+type uploadPartJob struct {
+	partNumber int
+	url        string
 }
 
 func fileSize(file *os.File) int64 {

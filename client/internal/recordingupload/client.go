@@ -66,17 +66,23 @@ func (c *Client) createOrResume(ctx context.Context, request createRequest) (upl
 	return response, err
 }
 
-func (c *Client) partURL(ctx context.Context, uploadID string, partNumber int) (string, error) {
+func (c *Client) partURLs(ctx context.Context, uploadID string, partNumbers []int) (map[int]string, error) {
 	var response partURLsResponse
 	err := c.json(ctx, http.MethodPost, "/api/media/recording-uploads/"+uploadID+"/part-urls",
-		map[string]any{"partNumbers": []int{partNumber}}, &response)
+		map[string]any{"partNumbers": partNumbers}, &response)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if len(response.Parts) != 1 {
-		return "", fmt.Errorf("part URL missing for part %d", partNumber)
+	urls := make(map[int]string, len(response.Parts))
+	for _, part := range response.Parts {
+		urls[part.PartNumber] = part.UploadURL
 	}
-	return response.Parts[0].UploadURL, nil
+	for _, partNumber := range partNumbers {
+		if urls[partNumber] == "" {
+			return nil, fmt.Errorf("part URL missing for part %d", partNumber)
+		}
+	}
+	return urls, nil
 }
 
 func (c *Client) putPart(ctx context.Context, url string, reader io.Reader, size int64) error {

@@ -37,6 +37,8 @@ type Config struct {
 	RecordingDeviceID        string
 	UploadScanInterval       time.Duration
 	UploadPartConcurrency    int
+	UploadPartURLBatchSize   int
+	UploadFileConcurrency    int
 	LocalCacheMaxBytes       int64
 	LocalMinFreeBytes        int64
 	LocalRetentionAfterReady time.Duration
@@ -83,7 +85,9 @@ func Load() Config {
 		RecordingManifestPath:    env("RECORDING_MANIFEST_PATH", "./recording-upload-manifest.json"),
 		RecordingDeviceID:        env("RECORDING_DEVICE_ID", "camera01"),
 		UploadScanInterval:       time.Duration(envInt("RECORDING_UPLOAD_SCAN_INTERVAL_MS", 30000)) * time.Millisecond,
-		UploadPartConcurrency:    envInt("RECORDING_UPLOAD_PART_CONCURRENCY", 2),
+		UploadPartConcurrency:    envInt("RECORDING_UPLOAD_PART_CONCURRENCY", 4),
+		UploadPartURLBatchSize:   envInt("RECORDING_UPLOAD_PART_URL_BATCH_SIZE", 16),
+		UploadFileConcurrency:    envInt("RECORDING_UPLOAD_FILE_CONCURRENCY", 2),
 		LocalCacheMaxBytes:       envInt64("RECORDING_LOCAL_CACHE_MAX_BYTES", 107374182400),
 		LocalMinFreeBytes:        envInt64("RECORDING_LOCAL_MIN_FREE_BYTES", 10737418240),
 		LocalRetentionAfterReady: time.Duration(envInt("RECORDING_LOCAL_RETENTION_AFTER_READY_HOURS", 24)) * time.Hour,
