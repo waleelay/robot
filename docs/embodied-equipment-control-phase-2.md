@@ -14,8 +14,10 @@
 二期不改变一期核心协议外壳，继续使用：
 
 ```text
-robotId + target.deviceId + action + params + policy + seq + commandId + traceId
+robotId + target.deviceId + target.deviceType + action + params + seq + commandId + issuedAt
 ```
+
+二期可以在后端审计、链路追踪、回放系统中增强 `policy`、`traceId`、操作者上下文等治理信息，但默认不把这些字段作为 Go 客户端执行指令的必需参数。
 
 ## 2. 二期范围
 
@@ -306,7 +308,7 @@ client/internal/control/drivers/
 
 - 能看出某个时刻谁控制了哪台机器人。
 - 能关联当时的视频画面。
-- 能看到命令 ACK、执行中、完成或失败。
+- 能看到命令发布、设备状态变化、完成或失败。
 - 能看到高风险动作确认记录。
 
 ## 10. 二期验收标准

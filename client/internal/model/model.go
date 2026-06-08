@@ -58,14 +58,23 @@ type StatusMessage struct {
 }
 
 type OnlineMessage struct {
-	RobotID   string    `json:"robotId"`
-	ClientID  string    `json:"clientId"`
-	Name      string    `json:"name"`
-	Type      string    `json:"type"`
-	Battery   int       `json:"battery"`
-	Status    string    `json:"status"`
-	Cameras   []Camera  `json:"cameras,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
+	RobotID          string                 `json:"robotId"`
+	ClientID         string                 `json:"clientId"`
+	ClientVersion    string                 `json:"clientVersion,omitempty"`
+	Name             string                 `json:"name"`
+	Type             string                 `json:"type"`
+	Battery          int                    `json:"battery"`
+	Status           string                 `json:"status"`
+	OnlineStatus     string                 `json:"onlineStatus"`
+	ControlMode      string                 `json:"controlMode"`
+	StateSeq         int64                  `json:"stateSeq"`
+	MissionStatus    string                 `json:"missionStatus"`
+	NavigationStatus string                 `json:"navigationStatus"`
+	ControlOwner     any                    `json:"controlOwner"`
+	EstopActive      bool                   `json:"estopActive"`
+	Cameras          []Camera               `json:"cameras,omitempty"`
+	Devices          []RegistryDeviceStatus `json:"devices,omitempty"`
+	Timestamp        time.Time              `json:"timestamp"`
 }
 
 type Camera struct {
@@ -76,4 +85,39 @@ type Camera struct {
 	Channel   string `json:"channel"`
 	Quality   string `json:"quality"`
 	Status    string `json:"status"`
+}
+
+type ControlCommand struct {
+	Protocol         string         `json:"protocol"`
+	Version          string         `json:"version"`
+	MessageType      string         `json:"messageType"`
+	CommandID        string         `json:"commandId"`
+	TraceID          string         `json:"traceId,omitempty"`
+	RobotID          string         `json:"robotId"`
+	ControlSessionID string         `json:"controlSessionId,omitempty"`
+	ControlMode      string         `json:"controlMode,omitempty"`
+	Target           ControlTarget  `json:"target"`
+	Action           string         `json:"action"`
+	Params           map[string]any `json:"params"`
+	Policy           map[string]any `json:"policy,omitempty"`
+	Seq              int64          `json:"seq,omitempty"`
+	IssuedAt         string         `json:"issuedAt,omitempty"`
+}
+
+type ControlTarget struct {
+	Scope      string `json:"scope"`
+	DeviceID   string `json:"deviceId"`
+	DeviceType string `json:"deviceType"`
+	Vendor     string `json:"vendor,omitempty"`
+	Model      string `json:"model,omitempty"`
+}
+
+type RegistryDeviceStatus struct {
+	DeviceID         string   `json:"deviceId"`
+	Scope            string   `json:"scope"`
+	DeviceType       string   `json:"deviceType"`
+	OnlineStatus     string   `json:"onlineStatus"`
+	HealthStatus     string   `json:"healthStatus"`
+	ControlStatus    string   `json:"controlStatus"`
+	SupportedActions []string `json:"supportedActions,omitempty"`
 }

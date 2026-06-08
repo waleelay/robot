@@ -1104,67 +1104,31 @@ POST /api/control/robots/{robotId}/commands
 }
 ```
 
-#### 6.6.3 后端推送 ACK、状态和错误
+#### 6.6.3 后端推送机器人状态
 
-ACK 推送：
+一期不单独推送控制确认、控制状态或控制错误事件。后端消费 `robot/{robotId}/media/client/status` 后，统一向前端推送 `robot.state`。
 
 ```json
 {
-  "type": "control.ack",
+  "type": "robot.state",
   "payload": {
-    "commandId": "cmd_20260603_0001",
     "robotId": "robot-deep-001",
-    "target": {
-      "scope": "BODY",
-      "deviceId": "base"
-    },
-    "status": "ACCEPTED",
-    "seq": 1024,
+    "onlineStatus": "online",
+    "controlMode": "MANUAL",
+    "stateSeq": 1024,
+    "missionStatus": "IDLE",
+    "navigationStatus": "IDLE",
+    "estopActive": false,
+    "devices": [
+      {
+        "deviceId": "base",
+        "deviceType": "QUADRUPED_BASE",
+        "onlineStatus": "online",
+        "healthStatus": "normal",
+        "controlStatus": "idle"
+      }
+    ],
     "timestamp": "2026-06-03T10:30:00+08:00"
-  }
-}
-```
-
-状态推送：
-
-```json
-{
-  "type": "control.status",
-  "payload": {
-    "robotId": "robot-deep-001",
-    "target": {
-      "scope": "BODY",
-      "deviceId": "base"
-    },
-    "status": "ACTIVE",
-    "state": {
-      "linearX": 0.3,
-      "linearY": 0.1,
-      "angularZ": -0.2,
-      "battery": 78,
-      "latencyMs": 86
-    },
-    "timestamp": "2026-06-03T10:30:01+08:00"
-  }
-}
-```
-
-错误推送：
-
-```json
-{
-  "type": "control.error",
-  "payload": {
-    "commandId": "cmd_20260603_0001",
-    "robotId": "robot-deep-001",
-    "target": {
-      "scope": "PAYLOAD",
-      "deviceId": "net-launcher-001"
-    },
-    "errorCode": "SAFETY_SWITCH_OFF",
-    "message": "net launcher safety switch is off",
-    "retryable": false,
-    "timestamp": "2026-06-03T10:30:01+08:00"
   }
 }
 ```
@@ -1328,7 +1292,7 @@ ACK 推送：
 1. 顶层必须按 `robotId` 分区，确保一台机器人只消费自己的命令。
 2. 统一控制命令 topic，靠 payload 中的 `target` 和 `action` 路由到设备 driver。
 3. 高风险安全指令保留独立 topic，避免被普通命令队列阻塞。
-4. 状态、ACK、错误按机器人维度统一回传，再由后端按 `target.deviceId` 聚合。
+4. 第一版不单独设计控制接收确认、执行状态、错误或注册状态 topic，客户端状态统一通过 `media/client/status` 上报。
 5. 不按前端页面区域设计 topic，例如不要出现 `right-panel/ptz` 或 `bottom-control`。
 
 ### 7.2 推荐 Topic
@@ -1337,24 +1301,20 @@ ACK 推送：
 
 | Topic | 方向 | 说明 |
 |---|---|---|
-| `robot/{robotId}/control/command` | 后端 -> 机器人 | 普通控制命令 |
-| `robot/{robotId}/control/heartbeat` | 后端 -> 机器人 | 控制心跳或控制会话保活 |
-| `robot/{robotId}/control/estop` | 后端 -> 机器人 | 急停，高优先级 |
-| `robot/{robotId}/control/cancel` | 后端 -> 机器人 | 取消命令或任务 |
-| `robot/{robotId}/control/ack` | 机器人 -> 后端 | 命令接收确认 |
-| `robot/{robotId}/control/status` | 机器人 -> 后端 | 本体/设备状态 |
-| `robot/{robotId}/control/error` | 机器人 -> 后端 | 执行错误 |
-| `robot/{robotId}/registry/status` | 机器人 -> 后端 | 设备目录、能力和在线状态 |
+| `robot/{robotId}/control/body/command` | 后端 -> 机器人 | 机器人本体控制，前后、转向、左移右移 |
+| `robot/{robotId}/control/ptz/{deviceId}/command` | 后端 -> 机器人 | 双光云台控制 |
+| `robot/{robotId}/control/audio/{deviceId}/command` | 后端 -> 机器人 | 客户端音量控制 |
+| `robot/{robotId}/control/launcher/{deviceId}/command` | 后端 -> 机器人 | 发射器控制 |
+| `robot/{robotId}/control/net-gun/{deviceId}/command` | 后端 -> 机器人 | 捕网枪控制 |
+| `robot/{robotId}/control/warning-light/{deviceId}/command` | 后端 -> 机器人 | 警示灯控制 |
+| `robot/{robotId}/control/vehicle-light/{deviceId}/command` | 后端 -> 机器人 | 车灯光控制 |
+| `robot/{robotId}/control/lidar/{deviceId}/command` | 后端 -> 机器人 | 雷达控制 |
+| `robot/{robotId}/control/safety/estop` | 后端 -> 机器人 | 急停，高优先级 |
+| `robot/{robotId}/media/client/status` | 机器人 -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和设备状态 |
 
-如果后续单台机器人上装很多、消息量很大，可增加二级 topic，但仍保留统一 payload：
+第一版不再拆分控制保活、接收确认、执行状态、错误或注册状态 topic。
 
-```text
-robot/{robotId}/control/body/command
-robot/{robotId}/control/payload/{deviceId}/command
-robot/{robotId}/control/sensor/{deviceId}/command
-```
-
-二级 topic 只用于 broker 侧路由优化，不改变消息结构。
+Go 客户端可订阅 `robot/{robotId}/control/#`，再按 topic 和 payload 中的 `target.deviceId/action` 分发。
 
 ### 7.3 QoS 建议
 
@@ -1372,11 +1332,26 @@ robot/{robotId}/control/sensor/{deviceId}/command
 
 ### 7.4 后端与 Go 客户端 MQTT 消息明细
 
-#### 7.4.1 控制命令 `robot/{robotId}/control/command`
+#### 7.4.1 设备域控制命令
 
 方向：后端 -> Go 客户端。
 
-用途：下发普通控制命令，包括本体运动、云台、变焦、返航、退出充电桩、机械臂普通动作等。急停使用独立 topic。
+用途：下发普通控制命令，包括本体运动、云台、音量、发射器、捕网枪、警示灯、车灯、雷达等。不同设备域使用不同 topic，但 payload 结构保持一致。
+
+示例 topic：
+
+```text
+robot/{robotId}/control/body/command
+robot/{robotId}/control/ptz/{deviceId}/command
+robot/{robotId}/control/audio/{deviceId}/command
+robot/{robotId}/control/launcher/{deviceId}/command
+robot/{robotId}/control/net-gun/{deviceId}/command
+robot/{robotId}/control/warning-light/{deviceId}/command
+robot/{robotId}/control/vehicle-light/{deviceId}/command
+robot/{robotId}/control/lidar/{deviceId}/command
+```
+
+第一版 MQTT 下发的是客户端执行指令。控制权、操作者、确认令牌、控制模式、风险策略等平台治理信息由后端完成校验和审计，不作为客户端执行协议字段。
 
 Payload 示例：
 
@@ -1386,37 +1361,18 @@ Payload 示例：
   "version": "1.0",
   "messageType": "command",
   "commandId": "cmd_20260603_0001",
-  "traceId": "tr_20260603_0001",
   "robotId": "robot-deep-001",
-  "controlSessionId": "tc_20260603_0001",
-  "operator": {
-    "userId": "u1001",
-    "orgId": "org001",
-    "terminalId": "web-client-001"
-  },
+  "seq": 1024,
   "target": {
-    "scope": "BODY",
     "deviceId": "base",
-    "deviceType": "QUADRUPED_BASE",
-    "vendor": "DEEPNROBOTICS",
-    "model": "X30"
+    "deviceType": "QUADRUPED_BASE"
   },
   "action": "drive.velocity",
   "params": {
     "linearX": 0.3,
     "linearY": 0.1,
-    "angularZ": -0.2,
-    "controlMode": "hold_update"
+    "angularZ": -0.2
   },
-  "policy": {
-    "qosClass": "INTERACTIVE",
-    "requiresExclusiveControl": true,
-    "requiresConfirm": false,
-    "deadmanTimeoutMs": 500,
-    "expireAt": "2026-06-03T10:30:01+08:00",
-    "riskLevel": "MEDIUM"
-  },
-  "seq": 1024,
   "issuedAt": "2026-06-03T10:30:00+08:00"
 }
 ```
@@ -1428,40 +1384,25 @@ Payload 示例：
 | `protocol` | string | 是 | 固定 `embodied-control` |
 | `version` | string | 是 | 协议版本，第一版 `1.0` |
 | `messageType` | string | 是 | 固定 `command` |
-| `commandId` | string | 是 | 命令 ID，用于幂等 |
-| `traceId` | string | 是 | 链路追踪 ID |
+| `commandId` | string | 是 | 命令 ID，用于 ACK、日志和排查问题 |
 | `robotId` | string | 是 | 机器人 ID，必须与客户端自身 `ROBOT_ID` 一致 |
-| `controlSessionId` | string | 否 | 控制权会话 ID；无需控制权的动作可为空 |
-| `operator.userId` | string | 是 | 操作者 |
-| `operator.orgId` | string | 是 | 组织 |
-| `operator.terminalId` | string | 是 | 终端实例 |
-| `target.scope` | string | 是 | 控制目标范围 |
 | `target.deviceId` | string | 是 | 目标设备 |
 | `target.deviceType` | string | 是 | 设备类型 |
-| `target.vendor` | string | 否 | 设备或机器人厂商 |
-| `target.model` | string | 否 | 设备或机器人型号 |
 | `action` | string | 是 | 平台动作名 |
-| `params` | object | 是 | 动作参数 |
-| `policy.qosClass` | string | 是 | `INTERACTIVE` / `RELIABLE_ACTION` / `SAFETY` |
-| `policy.requiresExclusiveControl` | boolean | 是 | 是否要求独占控制 |
-| `policy.requiresConfirm` | boolean | 是 | 是否要求二次确认 |
-| `policy.deadmanTimeoutMs` | number | 否 | 连续动作超时停止时间 |
-| `policy.expireAt` | datetime | 是 | 命令过期时间，客户端过期不执行 |
-| `policy.riskLevel` | string | 是 | `LOW` / `MEDIUM` / `HIGH` |
-| `seq` | number | 高频动作必填 | 同一终端同一目标递增序号 |
+| `params` | object | 是 | 后端校验、限幅后的动作参数 |
+| `seq` | number | 建议 | 前端递增序号，客户端可用于日志和观察丢帧/乱序 |
 | `issuedAt` | datetime | 是 | 后端下发时间 |
 
 Go 客户端处理要求：
 
 1. `robotId` 不匹配时丢弃并记录日志。
 2. `version` 不支持时回 `UNSUPPORTED_PROTOCOL_VERSION`。
-3. `commandId` 重复时回 `DUPLICATE`，不重复执行。
-4. `expireAt` 已过期时回 `STALE`，不执行。
-5. 高频动作按 `target.deviceId + action + terminalId` 比较 `seq`，旧序号丢弃。
-6. 找不到 driver 或 action 不支持时回 `UNSUPPORTED`。
-7. 连续动作必须启动 deadman 计时器。
+3. `commandId` 可用于 ACK、日志和幂等观察。
+4. 按 `target.deviceType + action` 分发给对应设备处理逻辑。
+5. 找不到 driver 或 action 不支持时回 `UNSUPPORTED`。
+6. `operator`、`controlSessionId`、`policy`、`confirmToken` 等字段不应作为客户端执行依赖。
 
-#### 7.4.2 急停命令 `robot/{robotId}/control/estop`
+#### 7.4.2 急停命令 `robot/{robotId}/control/safety/estop`
 
 方向：后端 -> Go 客户端。
 
@@ -1475,26 +1416,14 @@ Payload 示例：
   "version": "1.0",
   "messageType": "command",
   "commandId": "cmd_estop_20260603_0001",
-  "traceId": "tr_estop_20260603_0001",
   "robotId": "robot-deep-001",
-  "operator": {
-    "userId": "u1001",
-    "orgId": "org001",
-    "terminalId": "web-client-001"
-  },
   "target": {
-    "scope": "SAFETY",
     "deviceId": "safety",
     "deviceType": "ESTOP"
   },
   "action": "safety.estop",
   "params": {
     "reason": "manual_estop"
-  },
-  "policy": {
-    "qosClass": "SAFETY",
-    "riskLevel": "HIGH",
-    "expireAt": "2026-06-03T10:30:02+08:00"
   },
   "issuedAt": "2026-06-03T10:30:00+08:00"
 }
@@ -1504,148 +1433,43 @@ Payload 示例：
 
 - 不等待普通命令队列。
 - 幂等执行，多次收到同一 `commandId` 不重复触发副作用。
-- 执行后发布 `ack` 和 `status`，状态中应体现 `estopActive=true`。
+- 急停生效状态通过下一次 `media/client/status` 上报体现，例如 `estopActive=true`。
 
-#### 7.4.3 ACK `robot/{robotId}/control/ack`
+#### 7.4.3 统一客户端状态 `robot/{robotId}/media/client/status`
 
 方向：Go 客户端 -> 后端。
 
-用途：确认命令是否被接收。ACK 不代表动作执行完成。
+用途：统一上报客户端在线状态、控制模式、任务状态、摄像头状态和装备设备状态。前端实时状态由后端消费该 topic 后通过 WebSocket 推送 `robot.state`。
 
 Payload 示例：
 
 ```json
 {
-  "protocol": "embodied-control",
-  "version": "1.0",
-  "messageType": "ack",
-  "commandId": "cmd_20260603_0001",
-  "traceId": "tr_20260603_0001",
-  "robotId": "robot-deep-001",
-  "target": {
-    "scope": "BODY",
-    "deviceId": "base",
-    "deviceType": "QUADRUPED_BASE"
-  },
-  "status": "ACCEPTED",
-  "seq": 1024,
-  "timestamp": "2026-06-03T10:30:00+08:00"
-}
-```
-
-字段说明：
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| `messageType` | string | 是 | 固定 `ack` |
-| `commandId` | string | 是 | 对应命令 ID |
-| `traceId` | string | 是 | 对应 traceId |
-| `robotId` | string | 是 | 机器人 ID |
-| `target` | object | 是 | 对应控制目标 |
-| `status` | string | 是 | `ACCEPTED` / `REJECTED` / `DUPLICATE` / `STALE` / `UNSUPPORTED` |
-| `seq` | number | 否 | 高频命令对应序号 |
-| `timestamp` | datetime | 是 | 客户端产生时间 |
-
-#### 7.4.4 状态 `robot/{robotId}/control/status`
-
-方向：Go 客户端 -> 后端。
-
-用途：上报本体或设备的当前状态。连续控制可周期上报快照，低频动作可上报执行阶段。
-
-Payload 示例：
-
-```json
-{
-  "protocol": "embodied-control",
-  "version": "1.0",
-  "messageType": "status",
-  "commandId": "cmd_20260603_0001",
-  "robotId": "robot-deep-001",
-  "target": {
-    "scope": "BODY",
-    "deviceId": "base",
-    "deviceType": "QUADRUPED_BASE"
-  },
-  "status": "EXECUTING",
-  "state": {
-    "linearX": 0.3,
-    "linearY": 0.1,
-    "angularZ": -0.2,
-    "battery": 78,
-    "estopActive": false,
-    "latencyMs": 86
-  },
-  "timestamp": "2026-06-03T10:30:01+08:00"
-}
-```
-
-状态枚举：
-
-| `status` | 说明 |
-|---|---|
-| `IDLE` | 空闲 |
-| `ACTIVE` | 活跃控制中 |
-| `EXECUTING` | 正在执行命令 |
-| `COMPLETED` | 命令已完成 |
-| `FAILED` | 命令执行失败 |
-| `STOPPED` | 已停止 |
-| `ESTOP_ACTIVE` | 急停生效 |
-| `FAULT` | 设备故障 |
-
-#### 7.4.5 错误 `robot/{robotId}/control/error`
-
-方向：Go 客户端 -> 后端。
-
-Payload 示例：
-
-```json
-{
-  "protocol": "embodied-control",
-  "version": "1.0",
-  "messageType": "error",
-  "commandId": "cmd_20260603_0001",
-  "traceId": "tr_20260603_0001",
-  "robotId": "robot-deep-001",
-  "target": {
-    "scope": "PAYLOAD",
-    "deviceId": "net-launcher-001",
-    "deviceType": "NET_LAUNCHER"
-  },
-  "errorCode": "SAFETY_SWITCH_OFF",
-  "message": "net launcher safety switch is off",
-  "retryable": false,
-  "timestamp": "2026-06-03T10:30:01+08:00"
-}
-```
-
-字段说明：
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| `errorCode` | string | 是 | 错误码 |
-| `message` | string | 是 | 错误说明 |
-| `retryable` | boolean | 是 | 前端或后端是否可重试 |
-| `commandId` | string | 否 | 如果是命令相关错误则必填 |
-| `target` | object | 是 | 错误发生设备 |
-
-#### 7.4.6 设备注册状态 `robot/{robotId}/registry/status`
-
-方向：Go 客户端 -> 后端。
-
-用途：周期性上报机器人侧看到的设备在线、健康和运行状态。平台已有注册档案，客户端上报用于刷新状态，不直接创建未审核设备。
-
-Payload 示例：
-
-```json
-{
-  "protocol": "embodied-control",
-  "version": "1.0",
-  "messageType": "registry.status",
   "robotId": "robot-deep-001",
   "clientId": "robot-client-deep-001",
-  "clientVersion": "1.0.0",
+  "clientVersion": "sim-1.0.0",
+  "name": "云深处四足机器狗",
+  "type": "四足机器人",
+  "status": "online",
   "onlineStatus": "online",
   "battery": 78,
+  "controlMode": "MANUAL",
+  "stateSeq": 1024,
+  "missionStatus": "IDLE",
+  "navigationStatus": "IDLE",
+  "controlOwner": null,
+  "estopActive": false,
+  "cameras": [
+    {
+      "cameraId": "camera01",
+      "deviceId": "ptz-dual-001",
+      "name": "前向双光云台",
+      "groupType": "dual_gimbal",
+      "channel": "visible",
+      "quality": "hd",
+      "status": "online"
+    }
+  ],
   "devices": [
     {
       "deviceId": "base",
@@ -1654,7 +1478,7 @@ Payload 示例：
       "onlineStatus": "online",
       "healthStatus": "normal",
       "controlStatus": "idle",
-      "supportedActions": ["drive.velocity", "drive.stop"]
+      "supportedActions": ["drive.velocity"]
     },
     {
       "deviceId": "ptz-dual-001",
@@ -1663,7 +1487,7 @@ Payload 示例：
       "onlineStatus": "online",
       "healthStatus": "normal",
       "controlStatus": "idle",
-      "supportedActions": ["ptz.move", "ptz.stop", "camera.zoom"]
+      "supportedActions": ["ptz.move", "camera.zoom"]
     }
   ],
   "timestamp": "2026-06-03T10:30:00+08:00"
@@ -1676,8 +1500,16 @@ Payload 示例：
 |---|---|---:|---|
 | `clientId` | string | 是 | Go 客户端实例 ID |
 | `clientVersion` | string | 是 | 客户端版本 |
+| `status` | string | 是 | 媒体模块已有在线状态字段 |
 | `onlineStatus` | string | 是 | 机器人在线状态 |
+| `controlMode` | string | 是 | `MANUAL` / `ASSISTED` / `NAVIGATION` |
+| `stateSeq` | number | 是 | 客户端状态递增序号，前端接管时携带 |
+| `missionStatus` | string | 否 | 任务状态 |
+| `navigationStatus` | string | 否 | 导航状态 |
+| `controlOwner` | object/null | 否 | 当前控制占用者 |
+| `estopActive` | boolean | 是 | 急停是否生效 |
 | `battery` | number | 否 | 电量 |
+| `cameras` | array | 否 | 媒体摄像头状态，沿用已有媒体状态结构 |
 | `devices` | array | 是 | 客户端发现的设备状态 |
 | `devices[].deviceId` | string | 是 | 设备 ID，必须能与平台绑定设备匹配 |
 | `devices[].onlineStatus` | string | 是 | `online` / `offline` |
@@ -1747,8 +1579,8 @@ Payload 示例：
   -> 安全策略检查
   -> 生成标准命令
   -> MQTT 下发
-  -> 接收 ack/status/error
-  -> WebSocket 推送前端
+  -> 客户端通过 media/client/status 上报状态
+  -> 后端通过 WebSocket 推送 robot.state 给前端
 ```
 
 ### 9.2 松灵四轮机器人本体
@@ -2109,7 +1941,7 @@ ACK 状态：
 
 急停设计原则：
 
-- 使用独立 topic：`robot/{robotId}/control/estop`。
+- 使用独立 topic：`robot/{robotId}/control/safety/estop`。
 - 不要求持有普通控制权，但要求用户具备急停权限。
 - 机器人侧收到后必须优先处理，并尽可能绕过普通 driver 队列。
 - 急停解除必须是独立动作，例如 `safety.estop_release`，并可要求更高权限。
@@ -2133,7 +1965,7 @@ ACK 状态：
 
 ```text
 client/internal/control/
-├── mqtt.go          订阅 control topic，发布 ack/status/error
+├── mqtt.go          订阅 control topic，发布 media/client/status
 ├── dispatcher.go    按 target/action 路由
 ├── session.go       控制会话、seq、deadman 管理
 ├── driver.go        driver 接口
@@ -2167,7 +1999,7 @@ type Driver interface {
 5. 按 `target.deviceId + action` 路由 driver。
 6. 对连续运动动作做 deadman 超时停止。
 7. MQTT 断连时停止本体和高风险设备。
-8. 周期性上报设备目录和设备状态。
+8. 通过 `robot/{robotId}/media/client/status` 周期性上报在线状态、控制模式和设备状态。
 
 ## 13. 后端模块落地建议
 
@@ -2181,8 +2013,7 @@ backend/src/main/java/com/robot/mediaserver/teleop/
 │   └── ControlCommandController.java
 ├── dto/
 ├── messaging/
-│   ├── EquipmentCommandPublisher.java
-│   └── EquipmentStatusSubscriber.java
+│   └── EquipmentCommandPublisher.java
 ├── model/
 │   ├── ControlSession.java
 │   ├── EquipmentCommandLog.java
@@ -2206,7 +2037,7 @@ backend/src/main/java/com/robot/mediaserver/teleop/
 | `CommandPolicyService` | 风险等级、二次确认、限速、冷却、互斥策略 |
 | `CommandSchemaService` | action 参数 schema 校验和默认值补齐 |
 | `EquipmentCommandPublisher` | MQTT 下发 |
-| `EquipmentStatusSubscriber` | 订阅 ACK/status/error 并推送 WebSocket |
+| `RobotMediaStatusSubscriber` | 订阅 `media/client/status`，刷新机器人状态并推送 WebSocket |
 
 ### 13.1 数据表建议
 
@@ -2444,19 +2275,16 @@ CREATED
 第一版 MQTT topic：
 
 ```text
-robot/{robotId}/control/command
-robot/{robotId}/control/heartbeat
-robot/{robotId}/control/estop
-robot/{robotId}/control/ack
-robot/{robotId}/control/status
-robot/{robotId}/control/error
-robot/{robotId}/registry/status
+robot/{robotId}/control/{device-domain}/command
+robot/{robotId}/control/{device-domain}/{deviceId}/command
+robot/{robotId}/control/safety/estop
+robot/{robotId}/media/client/status
 ```
 
 第一版验收口径：
 
-- 后端能通过 `commandId` 查到命令是否已发布、是否 ACK、是否失败。
-- 捕网器和机械臂动作能看到完整执行流水。
+- 后端能通过 `commandId` 查到命令是否已发布。
+- 后端能通过 `media/client/status` 刷新在线状态、控制模式和设备状态。
 - 本体和云台高频动作不会造成日志爆炸。
 
 ### 15.5 高风险动作安全策略
@@ -2511,10 +2339,10 @@ POST /api/control/robots/{robotId}/commands
 - 建立控制权 session。
 - 支持统一命令外壳。
 - 支持本体 `drive.velocity`、`drive.stop`、云台 `ptz.move`、`ptz.stop`。
-- MQTT topic 使用 `robot/{robotId}/control/command/status/ack/error`。
+- MQTT topic 按设备域拆分，Go 客户端订阅 `robot/{robotId}/control/#`，状态统一上报 `robot/{robotId}/media/client/status`。
 - 前端按 `devices[].actions` 渲染本体和上装控制。
 - 支持点触、长按、频率限制和机器人侧 deadman。
-- 支持命令 ACK、错误回传和高风险动作审计模型。
+- 支持统一客户端状态上报和高风险动作审计模型。
 
 ### 阶段二：高风险上装与安全策略
 
@@ -2546,28 +2374,22 @@ POST /api/control/robots/{robotId}/commands
 
 ```text
 robotId
-controlSessionId
-target.scope
 target.deviceId
 target.deviceType
 action
 params
-policy
 seq
 commandId
-traceId
+issuedAt
 ```
 
 推荐 MQTT topic 第一版保持简洁：
 
 ```text
-robot/{robotId}/control/command
-robot/{robotId}/control/heartbeat
-robot/{robotId}/control/estop
-robot/{robotId}/control/ack
-robot/{robotId}/control/status
-robot/{robotId}/control/error
-robot/{robotId}/registry/status
+robot/{robotId}/control/{device-domain}/command
+robot/{robotId}/control/{device-domain}/{deviceId}/command
+robot/{robotId}/control/safety/estop
+robot/{robotId}/media/client/status
 ```
 
 这样设计后，同一套前端和后端接口可以同时覆盖松灵四轮机器人、云深处四足机器狗、双光云台、捕网器、机械臂、激光雷达以及未来更多厂商设备。平台负责统一治理，机器人侧负责厂商协议适配，二者边界清晰，后续扩展成本最低。

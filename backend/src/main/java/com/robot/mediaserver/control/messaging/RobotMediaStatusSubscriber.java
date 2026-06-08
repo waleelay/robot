@@ -3,6 +3,7 @@ package com.robot.mediaserver.control.messaging;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.control.client.ControlMediaServiceClient;
+import com.robot.mediaserver.control.service.EquipmentControlService;
 import com.robot.mediaserver.video.messaging.VideoStatusMessage;
 import com.robot.mediaserver.video.messaging.IntercomStatusMessage;
 import java.nio.charset.StandardCharsets;
@@ -29,17 +30,20 @@ public class RobotMediaStatusSubscriber {
     private final ObjectMapper objectMapper;
     private final ControlMediaServiceClient mediaServiceClient;
     private final RobotMediaCommandService commandService;
+    private final EquipmentControlService equipmentControlService;
     private MqttClient client;
 
     public RobotMediaStatusSubscriber(
             MediaProperties properties,
             ObjectMapper objectMapper,
             ControlMediaServiceClient mediaServiceClient,
-            RobotMediaCommandService commandService) {
+            RobotMediaCommandService commandService,
+            EquipmentControlService equipmentControlService) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.mediaServiceClient = mediaServiceClient;
         this.commandService = commandService;
+        this.equipmentControlService = equipmentControlService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -89,6 +93,7 @@ public class RobotMediaStatusSubscriber {
             try {
                 Map<String, Object> data = objectMapper.readValue(payload, Map.class);
                 boolean becameOnline = mediaServiceClient.updateRobotClientStatus(data);
+                equipmentControlService.handleClientState(data);
                 if (becameOnline) {
                     String robotId = String.valueOf(data.get("robotId"));
                     String status = String.valueOf(data.get("status"));

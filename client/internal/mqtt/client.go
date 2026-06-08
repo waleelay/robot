@@ -25,6 +25,7 @@ type Client struct {
 	// lastCmds 用于按 session 去重 MQTT 指令。服务端重试或 broker 重投时，
 	// 同一个 commandId 不应再次启动推流/对讲进程。
 	lastCmds map[string]string
+	stateSeq int64
 }
 
 func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publisher, intercomManager intercom.Manager) *Client {
@@ -38,6 +39,7 @@ func (c *Client) Run(ctx context.Context) error {
 	switchTopic := "robot/" + c.cfg.RobotID + "/media/video/switch-channel"
 	intercomStartTopic := "robot/" + c.cfg.RobotID + "/media/video/intercom/start"
 	intercomStopTopic := "robot/" + c.cfg.RobotID + "/media/video/intercom/stop"
+	controlTopic := "robot/" + c.cfg.RobotID + "/control/#"
 	opts := paho.NewClientOptions().
 		AddBroker(c.cfg.MQTTBroker).
 		SetClientID(c.cfg.ClientID).
@@ -60,7 +62,8 @@ func (c *Client) Run(ctx context.Context) error {
 		c.subscribe(switchTopic, c.handleStart(ctx))
 		c.subscribe(intercomStartTopic, c.handleIntercomStart(ctx))
 		c.subscribe(intercomStopTopic, c.handleIntercomStop())
-		log.Println("mqtt subscribed", startTopic, stopTopic, switchTopic, intercomStartTopic, intercomStopTopic)
+		c.subscribe(controlTopic, c.handleControlCommand())
+		log.Println("mqtt subscribed", startTopic, stopTopic, switchTopic, intercomStartTopic, intercomStopTopic, controlTopic)
 		c.online("online")
 	})
 	c.mqtt = paho.NewClient(opts)
@@ -188,6 +191,18 @@ func (c *Client) handleIntercomStop() paho.MessageHandler {
 	}
 }
 
+func (c *Client) handleControlCommand() paho.MessageHandler {
+	return func(_ paho.Client, msg paho.Message) {
+		var command model.ControlCommand
+		if err := json.Unmarshal(msg.Payload(), &command); err != nil {
+			log.Println("control command unmarshal failed", err)
+			return
+		}
+		pretty, _ := json.MarshalIndent(command, "", "  ")
+		log.Println("equipment control command received topic=", msg.Topic(), "payload=", string(pretty))
+	}
+}
+
 func (c *Client) status(sessionID, status, trackSid, trackName, errorCode, message string) {
 	c.publish("robot/"+c.cfg.RobotID+"/media/video/status", model.StatusMessage{
 		SessionID: sessionID,
@@ -219,16 +234,29 @@ func (c *Client) publish(topic string, payload any) {
 }
 
 func (c *Client) online(status string) {
+	c.mu.Lock()
+	c.stateSeq++
+	stateSeq := c.stateSeq
+	c.mu.Unlock()
 	// online/offline 消息既是心跳，也是机器人设备注册信息的来源。
 	c.publish("robot/"+c.cfg.RobotID+"/media/client/status", model.OnlineMessage{
-		RobotID:   c.cfg.RobotID,
-		ClientID:  c.cfg.ClientID,
-		Name:      c.cfg.RobotName,
-		Type:      c.cfg.RobotType,
-		Battery:   c.cfg.Battery,
-		Status:    status,
-		Cameras:   c.cameras(status),
-		Timestamp: time.Now(),
+		RobotID:          c.cfg.RobotID,
+		ClientID:         c.cfg.ClientID,
+		ClientVersion:    "sim-1.0.0",
+		Name:             c.cfg.RobotName,
+		Type:             c.cfg.RobotType,
+		Battery:          c.cfg.Battery,
+		Status:           status,
+		OnlineStatus:     status,
+		ControlMode:      "MANUAL",
+		StateSeq:         stateSeq,
+		MissionStatus:    "IDLE",
+		NavigationStatus: "IDLE",
+		ControlOwner:     nil,
+		EstopActive:      false,
+		Cameras:          c.cameras(status),
+		Devices:          c.statusDevices(status),
+		Timestamp:        time.Now(),
 	})
 }
 
@@ -246,6 +274,117 @@ func (c *Client) cameras(status string) []model.Camera {
 		})
 	}
 	return items
+}
+
+func (c *Client) statusDevices(status string) []model.RegistryDeviceStatus {
+	onlineStatus := status
+	if status == "offline" {
+		onlineStatus = "offline"
+	}
+	devices := []model.RegistryDeviceStatus{
+		{
+			DeviceID:         "base",
+			Scope:            "BODY",
+			DeviceType:       c.baseDeviceType(),
+			OnlineStatus:     onlineStatus,
+			HealthStatus:     "normal",
+			ControlStatus:    "idle",
+			SupportedActions: []string{"drive.velocity"},
+		},
+		{
+			DeviceID:         "ptz-dual-001",
+			Scope:            "PAYLOAD",
+			DeviceType:       "DUAL_LIGHT_PTZ",
+			OnlineStatus:     onlineStatus,
+			HealthStatus:     "normal",
+			ControlStatus:    "idle",
+			SupportedActions: []string{"ptz.move", "camera.zoom"},
+		},
+		{
+			DeviceID:         "audio-control-001",
+			Scope:            "AUDIO",
+			DeviceType:       "CLIENT_AUDIO",
+			OnlineStatus:     onlineStatus,
+			HealthStatus:     "normal",
+			ControlStatus:    "idle",
+			SupportedActions: []string{"volume.up", "volume.down", "volume.mute"},
+		},
+		{
+			DeviceID:         "warning-light-left",
+			Scope:            "PAYLOAD",
+			DeviceType:       "WARNING_LIGHT",
+			OnlineStatus:     onlineStatus,
+			HealthStatus:     "normal",
+			ControlStatus:    "idle",
+			SupportedActions: []string{"light.warning.set"},
+		},
+		{
+			DeviceID:         "warning-light-right",
+			Scope:            "PAYLOAD",
+			DeviceType:       "WARNING_LIGHT",
+			OnlineStatus:     onlineStatus,
+			HealthStatus:     "normal",
+			ControlStatus:    "idle",
+			SupportedActions: []string{"light.warning.set"},
+		},
+		{
+			DeviceID:         "vehicle-light-front",
+			Scope:            "PAYLOAD",
+			DeviceType:       "VEHICLE_LIGHT",
+			OnlineStatus:     onlineStatus,
+			HealthStatus:     "normal",
+			ControlStatus:    "idle",
+			SupportedActions: []string{"light.vehicle.set"},
+		},
+		{
+			DeviceID:         "vehicle-light-rear",
+			Scope:            "PAYLOAD",
+			DeviceType:       "VEHICLE_LIGHT",
+			OnlineStatus:     onlineStatus,
+			HealthStatus:     "normal",
+			ControlStatus:    "idle",
+			SupportedActions: []string{"light.vehicle.set"},
+		},
+	}
+	if c.cfg.RobotID == "robot-unitree-001" {
+		devices = append(devices, model.RegistryDeviceStatus{
+			DeviceID:         "searchlight-001",
+			Scope:            "PAYLOAD",
+			DeviceType:       "SEARCHLIGHT",
+			OnlineStatus:     onlineStatus,
+			HealthStatus:     "normal",
+			ControlStatus:    "idle",
+			SupportedActions: []string{"light.set"},
+		})
+	} else {
+		devices = append(devices,
+			model.RegistryDeviceStatus{
+				DeviceID:         "launcher-001",
+				Scope:            "PAYLOAD",
+				DeviceType:       "LAUNCHER",
+				OnlineStatus:     onlineStatus,
+				HealthStatus:     "normal",
+				ControlStatus:    "idle",
+				SupportedActions: []string{"payload.fire"},
+			},
+			model.RegistryDeviceStatus{
+				DeviceID:         "net-gun-001",
+				Scope:            "PAYLOAD",
+				DeviceType:       "NET_GUN",
+				OnlineStatus:     onlineStatus,
+				HealthStatus:     "normal",
+				ControlStatus:    "idle",
+				SupportedActions: []string{"payload.safety_switch", "payload.fire"},
+			})
+	}
+	return devices
+}
+
+func (c *Client) baseDeviceType() string {
+	if c.cfg.RobotID == "robot-songling-001" || c.cfg.RobotID == "robot-001" {
+		return "WHEELED_BASE"
+	}
+	return "QUADRUPED_BASE"
 }
 
 func (c *Client) rtspURL(deviceID string) string {

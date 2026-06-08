@@ -8,18 +8,31 @@
     </header>
 
     <main class="workspace">
-      <aside class="robot-list">
-        <div class="list-title">机器人设备</div>
-        <button
-            v-for="robot in robots"
-            :key="robot.robotId"
-            class="robot-item"
-            :class="{ active: selectedRobotId === robot.robotId }"
-            @click="selectedRobotId = robot.robotId"
-        >
-          <span>{{ robot.name }}</span>
-          <small>{{ robot.robotId }} · {{ robot.status || 'offline' }} · 电量 {{ batteryText(robot.battery) }}</small>
-        </button>
+      <aside class="left-panel">
+        <section class="robot-list">
+          <div class="list-title">机器人设备</div>
+          <button
+              v-for="robot in robots"
+              :key="robot.robotId"
+              class="robot-item"
+              :class="{ active: selectedRobotId === robot.robotId }"
+              @click="selectedRobotId = robot.robotId"
+          >
+            <span>{{ robot.name }}</span>
+            <small>{{ robot.robotId }} · {{ robot.status || 'offline' }} · 电量 {{ batteryText(robot.battery) }}</small>
+          </button>
+        </section>
+        <section class="left-log">
+          <div class="event-head">
+            <span>事件日志</span>
+            <el-button size="mini" @click="events = []">清空</el-button>
+          </div>
+          <div class="event-log">
+            <div v-for="(item, index) in events" :key="index" class="event-item">
+              {{ item }}
+            </div>
+          </div>
+        </section>
       </aside>
 
       <section class="video-area">
@@ -122,14 +135,98 @@
         </div>
       </section>
 
-      <aside class="event-panel">
-        <div class="event-head">
-          <span>事件日志</span>
-          <el-button size="mini" @click="events = []">清空</el-button>
-        </div>
-        <div class="event-log">
-          <div v-for="(item, index) in events" :key="index" class="event-item">
-            {{ item }}
+      <aside class="equipment-panel">
+        <div class="equipment-control">
+          <div class="event-head">
+            <span>装备控制</span>
+            <el-tag size="mini">{{ selectedRobot.controlMode || 'MANUAL' }}</el-tag>
+          </div>
+          <div class="control-block">
+            <strong>本体</strong>
+            <small>{{ baseDevice ? baseDevice.deviceType : '无本体能力' }}</small>
+            <div class="control-grid">
+              <el-button size="mini" @mousedown.native="startFrameControl('base-forward')" @mouseup.native="stopFrameControl('base-forward')" @mouseleave.native="stopFrameControl('base-forward')" @touchstart.native.prevent="startFrameControl('base-forward')" @touchend.native.prevent="stopFrameControl('base-forward')">前进</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('base-backward')" @mouseup.native="stopFrameControl('base-backward')" @mouseleave.native="stopFrameControl('base-backward')" @touchstart.native.prevent="startFrameControl('base-backward')" @touchend.native.prevent="stopFrameControl('base-backward')">后退</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('base-left')" @mouseup.native="stopFrameControl('base-left')" @mouseleave.native="stopFrameControl('base-left')" @touchstart.native.prevent="startFrameControl('base-left')" @touchend.native.prevent="stopFrameControl('base-left')">左转</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('base-right')" @mouseup.native="stopFrameControl('base-right')" @mouseleave.native="stopFrameControl('base-right')" @touchstart.native.prevent="startFrameControl('base-right')" @touchend.native.prevent="stopFrameControl('base-right')">右转</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('base-strafe-left')" @mouseup.native="stopFrameControl('base-strafe-left')" @mouseleave.native="stopFrameControl('base-strafe-left')" @touchstart.native.prevent="startFrameControl('base-strafe-left')" @touchend.native.prevent="stopFrameControl('base-strafe-left')">左移</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('base-strafe-right')" @mouseup.native="stopFrameControl('base-strafe-right')" @mouseleave.native="stopFrameControl('base-strafe-right')" @touchstart.native.prevent="startFrameControl('base-strafe-right')" @touchend.native.prevent="stopFrameControl('base-strafe-right')">右移</el-button>
+            </div>
+          </div>
+          <div class="control-block">
+            <strong>双光云台</strong>
+            <small>{{ ptzDevice ? ptzDevice.deviceId : '未绑定' }}</small>
+            <div class="control-grid control-grid-3">
+              <el-button size="mini" @mousedown.native="startFrameControl('ptz-up-left')" @mouseup.native="stopFrameControl('ptz-up-left')" @mouseleave.native="stopFrameControl('ptz-up-left')" @touchstart.native.prevent="startFrameControl('ptz-up-left')" @touchend.native.prevent="stopFrameControl('ptz-up-left')">左上</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('ptz-up')" @mouseup.native="stopFrameControl('ptz-up')" @mouseleave.native="stopFrameControl('ptz-up')" @touchstart.native.prevent="startFrameControl('ptz-up')" @touchend.native.prevent="stopFrameControl('ptz-up')">上</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('ptz-up-right')" @mouseup.native="stopFrameControl('ptz-up-right')" @mouseleave.native="stopFrameControl('ptz-up-right')" @touchstart.native.prevent="startFrameControl('ptz-up-right')" @touchend.native.prevent="stopFrameControl('ptz-up-right')">右上</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('ptz-left')" @mouseup.native="stopFrameControl('ptz-left')" @mouseleave.native="stopFrameControl('ptz-left')" @touchstart.native.prevent="startFrameControl('ptz-left')" @touchend.native.prevent="stopFrameControl('ptz-left')">左</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('ptz-right')" @mouseup.native="stopFrameControl('ptz-right')" @mouseleave.native="stopFrameControl('ptz-right')" @touchstart.native.prevent="startFrameControl('ptz-right')" @touchend.native.prevent="stopFrameControl('ptz-right')">右</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('ptz-down-left')" @mouseup.native="stopFrameControl('ptz-down-left')" @mouseleave.native="stopFrameControl('ptz-down-left')" @touchstart.native.prevent="startFrameControl('ptz-down-left')" @touchend.native.prevent="stopFrameControl('ptz-down-left')">左下</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('ptz-down')" @mouseup.native="stopFrameControl('ptz-down')" @mouseleave.native="stopFrameControl('ptz-down')" @touchstart.native.prevent="startFrameControl('ptz-down')" @touchend.native.prevent="stopFrameControl('ptz-down')">下</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('ptz-down-right')" @mouseup.native="stopFrameControl('ptz-down-right')" @mouseleave.native="stopFrameControl('ptz-down-right')" @touchstart.native.prevent="startFrameControl('ptz-down-right')" @touchend.native.prevent="stopFrameControl('ptz-down-right')">右下</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('zoom-in')" @mouseup.native="stopFrameControl('zoom-in')" @mouseleave.native="stopFrameControl('zoom-in')" @touchstart.native.prevent="startFrameControl('zoom-in')" @touchend.native.prevent="stopFrameControl('zoom-in')">变焦+</el-button>
+              <el-button size="mini" @mousedown.native="startFrameControl('zoom-out')" @mouseup.native="stopFrameControl('zoom-out')" @mouseleave.native="stopFrameControl('zoom-out')" @touchstart.native.prevent="startFrameControl('zoom-out')" @touchend.native.prevent="stopFrameControl('zoom-out')">变焦-</el-button>
+            </div>
+          </div>
+          <div class="control-block" v-if="audioDevice">
+            <strong>客户端音量</strong>
+            <small>{{ audioDevice.deviceId }}</small>
+            <div class="control-grid control-grid-3">
+              <el-button size="mini" @click="sendDeviceCommand(audioDevice, 'volume.down', { step: 5 }, 'volume_down')">音量-</el-button>
+              <el-button size="mini" @click="sendDeviceCommand(audioDevice, 'volume.up', { step: 5 }, 'volume_up')">音量+</el-button>
+              <el-button size="mini" @click="sendDeviceCommand(audioDevice, 'volume.mute', { muted: true }, 'volume_mute')">静音</el-button>
+            </div>
+          </div>
+          <div class="control-block" v-if="launcherDevice">
+            <strong>发射器</strong>
+            <small>{{ launcherDevice.deviceId }}</small>
+            <div class="control-grid control-grid-3">
+              <el-button v-for="channel in 6" :key="channel" size="mini" type="danger" @click="firePayload(launcherDevice, channel, `launcher_${channel}`)">发射{{ channel }}</el-button>
+            </div>
+          </div>
+          <div class="control-block" v-if="netGunDevice">
+            <strong>捕网枪</strong>
+            <small>{{ netGunDevice.deviceId }}</small>
+            <div class="control-grid">
+              <el-button size="mini" @click="sendDeviceCommand(netGunDevice, 'payload.safety_switch', { enabled: true }, 'net_safety')">安全开关</el-button>
+              <el-button size="mini" type="danger" @click="firePayload(netGunDevice, 1, 'net_gun_fire')">发射</el-button>
+            </div>
+          </div>
+          <div class="control-block" v-if="warningLightDevices.length">
+            <strong>警示灯</strong>
+            <div v-for="device in warningLightDevices" :key="device.deviceId" class="device-row">
+              <small>{{ device.displayName || device.deviceId }}</small>
+              <div class="control-grid">
+                <el-button size="mini" @click="sendDeviceCommand(device, 'light.warning.set', { enabled: true }, `${device.deviceId}_on`)">开</el-button>
+                <el-button size="mini" @click="sendDeviceCommand(device, 'light.warning.set', { enabled: false }, `${device.deviceId}_off`)">关</el-button>
+              </div>
+            </div>
+          </div>
+          <div class="control-block" v-if="vehicleLightDevices.length">
+            <strong>车灯光</strong>
+            <div v-for="device in vehicleLightDevices" :key="device.deviceId" class="device-row">
+              <small>{{ device.displayName || device.deviceId }}</small>
+              <div class="control-grid control-grid-4">
+                <el-button size="mini" @click="setVehicleLight(device, 'ON', 100)">常开</el-button>
+                <el-button size="mini" @click="setVehicleLight(device, 'OFF', 0)">常关</el-button>
+                <el-button size="mini" @click="setVehicleLight(device, 'BREATH', 70)">呼吸</el-button>
+                <el-button size="mini" @click="setVehicleLight(device, 'CUSTOM', 50)">亮度50</el-button>
+              </div>
+            </div>
+          </div>
+          <div class="control-block" v-if="searchlightDevice">
+            <strong>探照灯</strong>
+            <el-button size="mini" @click="sendDeviceCommand(searchlightDevice, 'light.set', { enabled: true, brightness: 80, mode: 'STEADY' }, 'searchlight_on')">开关</el-button>
+          </div>
+          <div class="control-block" v-if="lidarDevice">
+            <strong>雷达</strong>
+            <small>{{ lidarDevice.deviceId }}</small>
+            <div class="control-grid">
+              <el-button size="mini" @click="sendDeviceCommand(lidarDevice, 'lidar.mode.set', { mode: 'LOCALIZATION', scanRateHz: 10, publishPointCloud: false }, 'lidar_localization')">定位</el-button>
+              <el-button size="mini" @click="sendDeviceCommand(lidarDevice, 'lidar.mode.set', { mode: 'MAPPING', scanRateHz: 10, publishPointCloud: false }, 'lidar_mapping')">建图</el-button>
+              <el-button size="mini" @click="sendDeviceCommand(lidarDevice, 'lidar.mode.set', { mode: 'IDLE', scanRateHz: 0, publishPointCloud: false }, 'lidar_idle')">关闭</el-button>
+            </div>
           </div>
         </div>
       </aside>
@@ -141,18 +238,24 @@
 import { Room, RoomEvent } from 'livekit-client'
 import Hls from 'hls.js'
 import {
+  acquireControl,
+  createConfirmToken,
   createSnapshot,
   createVideoSession,
+  getControlProfile,
   getRobots,
   getRecordings,
   getRecordingPlayUrl,
   getViewerToken,
   heartbeatVideoSession,
   heartbeatIntercom,
+  mediaClientId,
   restartVideoSession,
+  sendEquipmentCommand,
   startCameraIntercom,
   startSessionIntercom,
   stopIntercom,
+  takeoverControl,
   stopVideoSession
 } from './api/media'
 
@@ -206,9 +309,9 @@ export default {
           battery: null,
           status: 'offline',
           cameras: [
-            cameraState('robot-001', 'gimbal-001', '前向双光云台', 'visible', 'dual_gimbal'),
-            cameraState('robot-001', 'gimbal-002', '后向广角相机', 'visible', 'body'),
-            cameraState('robot-001', 'gimbal-003', '机械臂腕部相机', 'visible', 'arm')
+            cameraState('robot-001', 'camera01', '云台-可见光', 'visible', 'dual_gimbal'),
+            cameraState('robot-001', 'camera02', '云台-热成像', 'visible', 'dual_gimbal'),
+            cameraState('robot-001', 'camera03', '本体相机', 'visible', 'body')
           ]
         },
         {
@@ -229,7 +332,11 @@ export default {
       recordingsLoading: false,
       recordings: [],
       selectedRecording: null,
-      recordedHls: null
+      recordedHls: null,
+      controlProfiles: {},
+      controlSessions: {},
+      controlSeq: 1,
+      controlTimers: {}
     }
   },
   computed: {
@@ -240,6 +347,39 @@ export default {
     // 宫格数量只影响展示摄像头数量，不会改变机器人真实摄像头列表。
     displayedCameras() {
       return this.selectedRobot.cameras.slice(0, this.gridMode)
+    },
+    selectedControlProfile() {
+      return this.controlProfiles[this.selectedRobotId] || { devices: [] }
+    },
+    baseDevice() {
+      return this.controlDevice('base')
+    },
+    ptzDevice() {
+      return this.controlDevices().find(device => device.deviceType === 'DUAL_LIGHT_PTZ')
+    },
+    netDevice() {
+      return this.controlDevices().find(device => device.deviceType === 'NET_LAUNCHER')
+    },
+    netGunDevice() {
+      return this.controlDevices().find(device => device.deviceType === 'NET_GUN' || device.deviceType === 'NET_LAUNCHER')
+    },
+    launcherDevice() {
+      return this.controlDevices().find(device => device.deviceType === 'LAUNCHER')
+    },
+    audioDevice() {
+      return this.controlDevices().find(device => ['CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
+    },
+    warningLightDevices() {
+      return this.controlDevices().filter(device => device.deviceType === 'WARNING_LIGHT')
+    },
+    vehicleLightDevices() {
+      return this.controlDevices().filter(device => device.deviceType === 'VEHICLE_LIGHT')
+    },
+    searchlightDevice() {
+      return this.controlDevices().find(device => device.deviceType === 'SEARCHLIGHT')
+    },
+    lidarDevice() {
+      return this.controlDevices().find(device => device.deviceType === 'LIDAR')
     }
   },
   watch: {
@@ -250,6 +390,7 @@ export default {
         this.destroyRecordedHls()
         this.loadRecordings()
       }
+      this.loadControlProfile(this.selectedRobotId)
     }
   },
   mounted() {
@@ -261,6 +402,7 @@ export default {
   beforeDestroy() {
     // Vue 组件销毁时主动关闭所有长连接，避免 LiveKit/MQTT 状态仍以为浏览器在线。
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
+    Object.values(this.controlTimers).forEach(timer => clearInterval(timer))
     if (this.socket) this.socket.close()
     this.destroyRecordedHls()
     this.allCameras().forEach(camera => {
@@ -399,9 +541,7 @@ export default {
         camera.viewerCount = camera.session.viewerCount
         this.stoppedSessionIds.delete(camera.session.sessionId)
         this.log('API createVideoSession', camera.session)
-        if (!camera.room || !camera.intercomActive) {
-          await this.connectLiveKit(camera)
-        }
+        await this.connectLiveKit(camera, false, null, true)
       } catch (error) {
         this.$message.error(this.errorMessage(error))
         this.log('ERROR createVideoSession', this.errorMessage(error))
@@ -556,8 +696,10 @@ export default {
     // 连接 LiveKit 的核心逻辑。
     // 普通观看使用 viewerToken；对讲使用 operatorToken，并在同一个 Room 中发布浏览器麦克风。
     // 事件回调里会把远端 audio/video track 挂到对应 DOM 元素上。
-    async connectLiveKit(camera, refreshToken, connectionToken) {
-      if (camera.connecting || !camera.session) return
+    async connectLiveKit(camera, refreshToken, connectionToken, forceReconnect) {
+      if (camera.connecting && !forceReconnect) return
+      if (!camera.session) return
+      if (forceReconnect) camera.connecting = false
       camera.connecting = true
       try {
         if (!camera.intercomActive && (refreshToken || !camera.session.viewerToken || !camera.session.livekitUrl)) {
@@ -570,7 +712,10 @@ export default {
         }
         const token = connectionToken || (camera.intercomActive ? camera.intercomToken : camera.session.viewerToken)
         const livekitUrl = this.liveKitConnectionUrl(camera.session.livekitUrl)
-        if (!token || !livekitUrl) return
+        if (!token || !livekitUrl) {
+          this.log('LiveKit skipped', { camera: camera.deviceId, hasToken: !!token, livekitUrl })
+          return
+        }
         if (camera.room) {
           camera.disconnecting = true
           const oldRoom = camera.room
@@ -635,6 +780,7 @@ export default {
       }
       socket.onmessage = (message) => {
         const event = JSON.parse(message.data)
+        this.syncControlEvent(event)
         this.syncRobotEvent(event)
         this.syncSessionEvent(event)
         this.log('WS event', event)
@@ -648,6 +794,244 @@ export default {
       this.robots = robots.map(this.toRobotState)
       if (!this.robots.find(robot => robot.robotId === this.selectedRobotId)) {
         this.selectedRobotId = this.robots[0].robotId
+      }
+      await this.loadControlProfile(this.selectedRobotId)
+    },
+    async loadControlProfile(robotId) {
+      if (!robotId) return
+      try {
+        const profile = await getControlProfile(robotId)
+        this.$set(this.controlProfiles, robotId, profile)
+        const index = this.robots.findIndex(robot => robot.robotId === robotId)
+        if (index >= 0) {
+          this.$set(this.robots, index, Object.assign({}, this.robots[index], {
+            controlMode: profile.controlMode,
+            stateSeq: profile.stateSeq
+          }))
+        }
+      } catch (error) {
+        this.log('ERROR getControlProfile', this.errorMessage(error))
+      }
+    },
+    controlDevices() {
+      return this.selectedControlProfile.devices || []
+    },
+    controlDevice(deviceId) {
+      return this.controlDevices().find(device => device.deviceId === deviceId)
+    },
+    async ensureControlSession(device, action) {
+      if (!device) throw new Error('未找到控制设备')
+      const key = `${this.selectedRobotId}:${device.deviceId}:${action}`
+      if (this.controlSessions[key] && this.controlSessions[key].status === 'ACTIVE') {
+        return this.controlSessions[key]
+      }
+      let session
+      if (device.deviceId === 'base' && ['NAVIGATION', 'ASSISTED'].includes(this.selectedRobot.controlMode)) {
+        session = await takeoverControl(this.selectedRobotId, {
+          fromMode: this.selectedRobot.controlMode,
+          toMode: 'MANUAL',
+          scope: 'ROBOT',
+          deviceIds: ['base'],
+          actions: ['drive.velocity'],
+          observedStateSeq: this.selectedRobot.stateSeq || 0,
+          reason: 'manual_takeover'
+        })
+      } else {
+        session = await acquireControl(this.selectedRobotId, {
+          scope: device.deviceId === 'base' ? 'ROBOT' : 'DEVICE',
+          deviceIds: [device.deviceId],
+          actions: [action],
+          mode: 'EXCLUSIVE',
+          reason: 'manual_teleop',
+          ttlSeconds: 30
+        })
+      }
+      if (session.code) {
+        const error = new Error(session.message || session.code)
+        error.code = session.code
+        throw error
+      }
+      this.$set(this.controlSessions, key, session)
+      return session
+    },
+    startFrameControl(kind) {
+      if (this.controlTimers[kind]) return
+      this.sendFrameControl(kind)
+      this.$set(this.controlTimers, kind, setInterval(() => this.sendFrameControl(kind), 100))
+    },
+    stopFrameControl(kind) {
+      if (!this.controlTimers[kind]) return
+      clearInterval(this.controlTimers[kind])
+      this.$delete(this.controlTimers, kind)
+    },
+    async sendFrameControl(kind) {
+      try {
+        const frame = await this.controlFrame(kind)
+        if (!frame || !this.socket || this.socket.readyState !== WebSocket.OPEN) return
+        this.socket.send(JSON.stringify({
+          type: 'control.command',
+          requestId: `req_${Date.now()}_${this.controlSeq}`,
+          payload: frame
+        }))
+      } catch (error) {
+        this.log('ERROR control frame', this.errorMessage(error))
+        this.$message.error(this.errorMessage(error))
+        this.stopFrameControl(kind)
+      }
+    },
+    async controlFrame(kind) {
+      const robotId = this.selectedRobotId
+      if (kind.indexOf('base-') === 0) {
+        const device = this.baseDevice
+        const session = await this.ensureControlSession(device, 'drive.velocity')
+        const params = {
+          'base-forward': { linearX: 0.3, linearY: 0, angularZ: 0 },
+          'base-backward': { linearX: -0.3, linearY: 0, angularZ: 0 },
+          'base-left': { linearX: 0, linearY: 0, angularZ: 0.3 },
+          'base-right': { linearX: 0, linearY: 0, angularZ: -0.3 },
+          'base-strafe-left': { linearX: 0, linearY: 0.2, angularZ: 0 },
+          'base-strafe-right': { linearX: 0, linearY: -0.2, angularZ: 0 }
+        }[kind]
+        return this.commandPayload(robotId, session.controlSessionId, 'MANUAL', device, 'drive.velocity', params, kind)
+      }
+      if (kind.indexOf('ptz-') === 0) {
+        const device = this.ptzDevice
+        const session = await this.ensureControlSession(device, 'ptz.move')
+        const params = {
+          'ptz-up': { panSpeed: 0, tiltSpeed: 0.4 },
+          'ptz-down': { panSpeed: 0, tiltSpeed: -0.4 },
+          'ptz-left': { panSpeed: -0.4, tiltSpeed: 0 },
+          'ptz-right': { panSpeed: 0.4, tiltSpeed: 0 },
+          'ptz-up-left': { panSpeed: -0.3, tiltSpeed: 0.3 },
+          'ptz-up-right': { panSpeed: 0.3, tiltSpeed: 0.3 },
+          'ptz-down-left': { panSpeed: -0.3, tiltSpeed: -0.3 },
+          'ptz-down-right': { panSpeed: 0.3, tiltSpeed: -0.3 }
+        }[kind]
+        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'ptz.move', params, kind)
+      }
+      if (kind.indexOf('zoom-') === 0) {
+        const device = this.ptzDevice
+        const session = await this.ensureControlSession(device, 'camera.zoom')
+        const params = { zoomSpeed: kind === 'zoom-in' ? 0.5 : -0.5 }
+        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'camera.zoom', params, kind)
+      }
+      return null
+    },
+    commandPayload(robotId, controlSessionId, controlMode, device, action, params, source) {
+      return {
+        robotId,
+        controlSessionId,
+        controlMode,
+        target: {
+          scope: device.scope,
+          deviceId: device.deviceId,
+          deviceType: device.deviceType
+        },
+        action,
+        params,
+        client: {
+          terminalId: mediaClientId,
+          source,
+          seq: this.controlSeq++,
+          timestamp: new Date().toISOString()
+        }
+      }
+    },
+    async sendDiscreteCommand(action) {
+      const device = action === 'light.set'
+          ? this.searchlightDevice
+          : action === 'lidar.mode.set'
+            ? this.lidarDevice
+            : this.netDevice
+      const session = await this.ensureControlSession(device, action)
+      const params = {
+        'payload.safety_switch': { enabled: true },
+        'light.set': { enabled: true, brightness: 80, mode: 'STEADY' },
+        'lidar.mode.set': { mode: 'MAPPING', scanRateHz: 10, publishPointCloud: false }
+      }[action]
+      const response = await sendEquipmentCommand(this.selectedRobotId,
+          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, action))
+      this.log('API sendEquipmentCommand', response)
+    },
+    async sendDeviceCommand(device, action, params, source) {
+      try {
+        const session = await this.ensureControlSession(device, action)
+        const response = await sendEquipmentCommand(this.selectedRobotId,
+            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, source || action))
+        this.log('API sendDeviceCommand', response)
+      } catch (error) {
+        this.$message.error(this.errorMessage(error))
+        this.log('ERROR sendDeviceCommand', this.errorMessage(error))
+      }
+    },
+    async firePayload(device, channel, source) {
+      try {
+        const session = await this.ensureControlSession(device, 'payload.fire')
+        const token = await createConfirmToken(this.selectedRobotId, {
+          controlSessionId: session.controlSessionId,
+          target: {
+            scope: device.scope,
+            deviceId: device.deviceId,
+            deviceType: device.deviceType
+          },
+          action: 'payload.fire',
+          reason: 'manual_confirm'
+        })
+        const response = await sendEquipmentCommand(this.selectedRobotId,
+            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'payload.fire', {
+              channel,
+              confirmToken: token.confirmToken
+            }, source || `payload_fire_${channel}`))
+        this.log('API firePayload', response)
+      } catch (error) {
+        this.$message.error(this.errorMessage(error))
+        this.log('ERROR firePayload', this.errorMessage(error))
+      }
+    },
+    setVehicleLight(device, mode, brightness) {
+      this.sendDeviceCommand(device, 'light.vehicle.set', {
+        enabled: mode !== 'OFF',
+        mode,
+        brightness
+      }, `${device.deviceId}_${mode.toLowerCase()}`)
+    },
+    async fireNetLauncher() {
+      const device = this.netDevice
+      const session = await this.ensureControlSession(device, 'payload.fire')
+      const token = await createConfirmToken(this.selectedRobotId, {
+        controlSessionId: session.controlSessionId,
+        target: {
+          scope: device.scope,
+          deviceId: device.deviceId,
+          deviceType: device.deviceType
+        },
+        action: 'payload.fire',
+        reason: 'manual_confirm'
+      })
+      const response = await sendEquipmentCommand(this.selectedRobotId,
+          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'payload.fire', {
+            channel: 1,
+            confirmToken: token.confirmToken
+          }, 'net_fire_button'))
+      this.log('API fireNetLauncher', response)
+    },
+    syncControlEvent(event) {
+      if (!event) return
+      if (event.event === 'robot.state' || event.type === 'robot.state') {
+        const data = event.data || event.payload
+        if (!data || !data.robotId) return
+        const index = this.robots.findIndex(robot => robot.robotId === data.robotId)
+        if (index >= 0) {
+          this.$set(this.robots, index, Object.assign({}, this.robots[index], {
+            controlMode: data.controlMode,
+            stateSeq: data.stateSeq,
+            status: data.onlineStatus || this.robots[index].status,
+            devices: data.devices || this.robots[index].devices
+          }))
+        }
+      }
+      if (event.type === 'control.command.rejected') {
+        this.$message.error((event.payload && event.payload.message) || '控制命令被拒绝')
       }
     },
     // 机器人上下线事件会刷新设备基础信息，但保留已有会话和 LiveKit 连接态。
@@ -785,8 +1169,13 @@ export default {
         clientId: robot.clientId,
         name: robot.name || robot.robotId,
         type: robot.type || '机器人',
+        robotType: robot.robotType,
+        vendor: robot.vendor,
+        model: robot.model,
+        controlMode: robot.controlMode || 'MANUAL',
+        stateSeq: robot.stateSeq || 0,
         battery: robot.battery,
-        status: robot.status || 'offline',
+        status: robot.status || robot.onlineStatus || 'offline',
         cameras: (robot.cameras || []).map(camera => Object.assign(
             cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible', camera.groupType),
             {
@@ -861,25 +1250,82 @@ export default {
 
 .workspace {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 300px;
+  grid-template-columns: 300px minmax(0, 1fr) 340px;
   gap: 12px;
   padding: 12px;
   height: calc(100vh - 56px);
   overflow: hidden;
 }
 
+.left-panel,
 .robot-list,
 .video-area,
-.event-panel {
+.equipment-panel,
+.left-log {
   background: #ffffff;
   border: 1px solid #dfe5ef;
   border-radius: 4px;
   min-height: 0;
 }
 
+.left-panel {
+  display: grid;
+  grid-template-rows: minmax(180px, 34%) minmax(0, 1fr);
+  gap: 12px;
+  background: transparent;
+  border: 0;
+}
+
+.equipment-control {
+  min-height: 0;
+}
+
+.control-block {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.control-block strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.control-block small {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.control-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.control-grid-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.device-row {
+  margin-top: 8px;
+}
+
 .robot-list {
   padding: 12px;
   overflow: auto;
+}
+
+.left-log {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .list-title {
@@ -1154,11 +1600,11 @@ export default {
   white-space: nowrap;
 }
 
-.event-panel {
+.equipment-panel {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .event-head {
@@ -1200,9 +1646,14 @@ export default {
     overflow: visible;
   }
 
-  .event-panel {
+  .equipment-panel,
+  .left-panel {
     grid-column: 1 / -1;
     min-height: 260px;
+  }
+
+  .left-panel {
+    grid-template-rows: auto minmax(220px, auto);
   }
 
   .camera-grid,

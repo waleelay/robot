@@ -3,6 +3,7 @@ import axios from 'axios'
 // 每个浏览器标签页生成独立 clientId，后端用它区分同一用户打开的多个观看端。
 // 这对 viewer 心跳、对讲占用判断很重要：同一用户的两个页面不能互相覆盖。
 const clientId = `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
+export const mediaClientId = clientId
 
 // 调试台暂时用请求头模拟网关/登录态注入的用户上下文。
 // 后端 CurrentUserResolver 会从这些头里解析 user/org/role/clientId。
@@ -32,6 +33,30 @@ export function createVideoSession(data) {
 // 拉取机器人在线状态和摄像头清单；真实状态来自机器人 Go 客户端的 MQTT 心跳。
 export function getRobots() {
   return client.get('/api/control/robots').then(res => res.data)
+}
+
+export function getControlProfile(robotId) {
+  return client.get(`/api/control/robots/${robotId}/control-profile`).then(res => res.data)
+}
+
+export function acquireControl(robotId, data) {
+  return client.post(`/api/control/robots/${robotId}/control-sessions/acquire`, data).then(res => res.data)
+}
+
+export function takeoverControl(robotId, data) {
+  return client.post(`/api/control/robots/${robotId}/control-sessions/takeover`, data).then(res => res.data)
+}
+
+export function releaseControl(robotId, controlSessionId, data) {
+  return client.post(`/api/control/robots/${robotId}/control-sessions/${controlSessionId}/release`, data || {}).then(res => res.data)
+}
+
+export function createConfirmToken(robotId, data) {
+  return client.post(`/api/control/robots/${robotId}/commands/confirm-token`, data).then(res => res.data)
+}
+
+export function sendEquipmentCommand(robotId, data) {
+  return client.post(`/api/control/robots/${robotId}/commands`, data).then(res => res.data)
 }
 
 // 拉取当前仍可观看/复用的实时视频会话，用于调试台恢复页面时展示活跃会话。

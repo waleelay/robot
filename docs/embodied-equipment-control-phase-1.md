@@ -27,7 +27,7 @@
 | 急停 | 独立 topic，最高优先级 |
 | WebSocket 高频控制 | 本体和云台连续控制走 WebSocket |
 | MQTT 控制链路 | 后端按设备类型组装参数并通过 MQTT 下发给 Go 客户端 |
-| ACK/status/error | Go 客户端回 ACK、状态和错误；客户端如何调用 ROS2 由客户端同事抽象 |
+| 客户端状态上报 | Go 客户端通过 `robot/{robotId}/media/client/status` 统一上报在线状态、控制模式和设备状态 |
 
 ### 2.2 暂不实现
 
@@ -84,7 +84,7 @@ robotId + target.deviceId + action
 | 客户端状态 | 后端缓存 Go 客户端最新上报状态，并通过 WebSocket 推给前端 |
 | 控制权 session | 可先用内存 Map 管理 |
 | 命令状态 | 可先用内存 Map 和日志记录 |
-| ACK/status/error | 通过 WebSocket 实时推送，必要时只保存最新状态 |
+| 客户端状态 | 统一从 `robot/{robotId}/media/client/status` 获取，不单独设计控制确认、执行状态或错误 topic |
 
 后续二期或正式资产管理阶段再落库实现 `robot`、`equipment_device`、`robot_device_binding`、`control_profile` 等表。
 
@@ -374,7 +374,6 @@ POST /api/control/robots/{robotId}/commands
 ```json
 {
   "commandId": "cmd_20260603_0001",
-  "traceId": "tr_20260603_0001",
   "status": "PUBLISHED",
   "robotId": "robot-songling-001",
   "target": {
@@ -400,7 +399,7 @@ POST /api/control/robots/{robotId}/commands
 - 本体方向键长按。
 - 双光云台方向键长按。
 - 变焦长按。
-- 控制 ACK/status/error 推送。
+- 客户端状态变化推送。
 
 前端发送：
 
@@ -420,8 +419,7 @@ POST /api/control/robots/{robotId}/commands
     "params": {
       "linearX": 0.3,
       "linearY": 0,
-      "angularZ": -0.2,
-      "frameRateHz": 10
+      "angularZ": -0.2
     },
     "client": {
       "terminalId": "web-client-001",
@@ -441,7 +439,6 @@ POST /api/control/robots/{robotId}/commands
   "requestId": "req_20260603_0001",
   "payload": {
     "commandId": "cmd_20260603_0001",
-    "traceId": "tr_20260603_0001",
     "status": "PUBLISHED",
     "seq": 1024
   }
@@ -492,15 +489,84 @@ POST /api/control/robots/{robotId}/commands
 
 | Topic | 方向 | 一期用途 |
 |---|---|---|
-| `robot/{robotId}/control/command` | 后端 -> Go | 普通控制命令 |
-| `robot/{robotId}/control/heartbeat` | 后端 -> Go | 控制会话保活 |
-| `robot/{robotId}/control/estop` | 后端 -> Go | 急停 |
-| `robot/{robotId}/control/ack` | Go -> 后端 | 命令接收确认 |
-| `robot/{robotId}/control/status` | Go -> 后端 | 设备状态 |
-| `robot/{robotId}/control/error` | Go -> 后端 | 执行错误 |
-| `robot/{robotId}/registry/status` | Go -> 后端 | 客户端与设备状态心跳 |
+| `robot/{robotId}/control/body/command` | 后端 -> Go | 机器人本体控制，前后、转向、左移右移 |
+| `robot/{robotId}/control/ptz/{deviceId}/command` | 后端 -> Go | 双光云台控制，8 方向、变焦等 |
+| `robot/{robotId}/control/audio/{deviceId}/command` | 后端 -> Go | 客户端音量控制，音量加减、静音 |
+| `robot/{robotId}/control/launcher/{deviceId}/command` | 后端 -> Go | 发射器控制，6 发类设备 |
+| `robot/{robotId}/control/net-gun/{deviceId}/command` | 后端 -> Go | 捕网枪控制，1 发类设备 |
+| `robot/{robotId}/control/warning-light/{deviceId}/command` | 后端 -> Go | 左右警示灯开关控制 |
+| `robot/{robotId}/control/vehicle-light/{deviceId}/command` | 后端 -> Go | 前后车灯控制，常开、常关、呼吸灯、自定义亮度 |
+| `robot/{robotId}/control/lidar/{deviceId}/command` | 后端 -> Go | 雷达模式、频率、启停等控制 |
+| `robot/{robotId}/control/safety/estop` | 后端 -> Go | 急停 |
+| `robot/{robotId}/media/client/status` | Go -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和设备状态 |
+
+说明：
+
+- Go 模拟客户端订阅 `robot/{robotId}/control/#`，按 topic 和 payload 中的 `target.deviceId/action` 打印或分发。
+- 前端实时状态由后端消费 `media/client/status` 后通过 WebSocket 推送 `robot.state`。
+- `controlMode`、`stateSeq`、`devices` 随 `media/client/status` 上报。
+- 后端发布控制命令成功后即可向前端返回 `PUBLISHED`；一期不等待客户端接收确认。
+
+后端 topic 构造规则：
+
+| `deviceType` / action | 下发 topic |
+|---|---|
+| `WHEELED_BASE`、`QUADRUPED_BASE`、`BIPED_BASE` | `robot/{robotId}/control/body/command` |
+| `DUAL_LIGHT_PTZ` | `robot/{robotId}/control/ptz/{deviceId}/command` |
+| `CLIENT_AUDIO`、`INTERCOM`、`VOLUME_CONTROL` 或 `volume.*` | `robot/{robotId}/control/audio/{deviceId}/command` |
+| `LAUNCHER` | `robot/{robotId}/control/launcher/{deviceId}/command` |
+| `NET_GUN`、`NET_LAUNCHER` | `robot/{robotId}/control/net-gun/{deviceId}/command` |
+| `WARNING_LIGHT` 或 `light.warning.*` | `robot/{robotId}/control/warning-light/{deviceId}/command` |
+| `VEHICLE_LIGHT`、`SEARCHLIGHT` 或 `light.vehicle.*` | `robot/{robotId}/control/vehicle-light/{deviceId}/command` |
+| `LIDAR` 或 `lidar.*` | `robot/{robotId}/control/lidar/{deviceId}/command` |
+
+`media/client/status` 示例：
+
+```jsonc
+{
+  "robotId": "robot-songling-001",              // 机器人 ID
+  "clientId": "robot-client-songling-001",      // Go 客户端实例 ID
+  "clientVersion": "sim-1.0.0",                 // 客户端版本
+  "name": "松灵四轮机器人",                       // 机器人名称
+  "type": "轮式机器人",                          // 机器人类型展示值
+  "status": "online",                           // 媒体模块已有在线状态字段：online/offline
+  "onlineStatus": "online",                     // 装备控制使用的在线状态：online/offline
+  "battery": 86,                                // 电量百分比
+  "controlMode": "MANUAL",                      // 控制模式：MANUAL/ASSISTED/NAVIGATION
+  "stateSeq": 1024,                             // 客户端状态递增序号，前端接管时携带 observedStateSeq
+  "missionStatus": "IDLE",                      // 任务状态
+  "navigationStatus": "IDLE",                   // 导航状态
+  "controlOwner": null,                         // 当前控制占用者；无占用为 null
+  "estopActive": false,                         // 急停是否生效
+  "cameras": [
+    {
+      "cameraId": "camera01",                   // 摄像头 ID
+      "deviceId": "ptz-dual-001",               // 关联设备 ID
+      "name": "前向双光云台",                     // 摄像头名称
+      "groupType": "dual_gimbal",               // 分组类型
+      "channel": "visible",                     // 默认通道
+      "quality": "hd",                          // 默认清晰度
+      "status": "online"                        // 摄像头在线状态
+    }
+  ],
+  "devices": [
+    {
+      "deviceId": "base",                       // 设备 ID
+      "scope": "BODY",                          // BODY/PAYLOAD/SENSOR
+      "deviceType": "WHEELED_BASE",             // 设备类型
+      "onlineStatus": "online",                 // 设备在线状态
+      "healthStatus": "normal",                 // normal/warning/error
+      "controlStatus": "idle",                  // idle/busy/locked/disabled/fault
+      "supportedActions": ["drive.velocity"]    // 当前客户端支持的动作
+    }
+  ],
+  "timestamp": "2026-06-03T10:30:00+08:00"      // 客户端上报时间
+}
+```
 
 ## 7. 一期 MQTT 命令格式
+
+一期 MQTT 下发给 Go 客户端的是“执行指令”，不是完整业务上下文。接管权、操作者、确认令牌、控制模式、风险策略等字段由后端在下发前完成校验，并记录在后端日志或审计数据中，不作为客户端执行的必需字段。
 
 ```json
 {
@@ -508,41 +574,49 @@ POST /api/control/robots/{robotId}/commands
   "version": "1.0",
   "messageType": "command",
   "commandId": "cmd_20260603_0001",
-  "traceId": "tr_20260603_0001",
   "robotId": "robot-songling-001",
-  "controlSessionId": "tc_20260603_0001",
-  "controlMode": "MANUAL",
-  "operator": {
-    "userId": "u1001",
-    "orgId": "org001",
-    "terminalId": "web-client-001"
-  },
+  "seq": 1024,
   "target": {
-    "scope": "BODY",
     "deviceId": "base",
-    "deviceType": "WHEELED_BASE",
-    "vendor": "SONGLING",
-    "model": "SCOUT"
+    "deviceType": "WHEELED_BASE"
   },
   "action": "drive.velocity",
   "params": {
     "linearX": 0.3,
     "linearY": 0,
-    "angularZ": -0.2,
-    "frameRateHz": 10
+    "angularZ": -0.2
   },
-  "policy": {
-    "qosClass": "INTERACTIVE",
-    "requiresExclusiveControl": true,
-    "requiresConfirm": false,
-    "controlFrameRateHz": 10,
-    "expireAt": "2026-06-03T10:30:01+08:00",
-    "riskLevel": "MEDIUM"
-  },
-  "seq": 1024,
   "issuedAt": "2026-06-03T10:30:00+08:00"
 }
 ```
+
+字段说明：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `protocol` | string | 是 | 固定 `embodied-control`，用于客户端识别协议 |
+| `version` | string | 是 | 一期固定 `1.0` |
+| `messageType` | string | 是 | 普通控制命令固定 `command` |
+| `commandId` | string | 是 | 后端生成的命令 ID，用于日志和排查问题 |
+| `robotId` | string | 是 | 控制哪台机器人，也与 MQTT topic 中的 `{robotId}` 一致 |
+| `seq` | number | 建议 | 前端递增序号，客户端可用于日志和观察丢帧/乱序 |
+| `target.deviceId` | string | 是 | 控制哪个设备，例如 `base`、`ptz-dual-001`、`net-launcher-001` |
+| `target.deviceType` | string | 是 | 设备类型，客户端按类型分发处理 |
+| `action` | string | 是 | 平台动作名，例如 `drive.velocity`、`ptz.move`、`payload.fire` |
+| `params` | object | 是 | 后端校验、限幅后的动作参数 |
+| `issuedAt` | datetime | 是 | 后端下发时间 |
+
+以下字段不进入一期 MQTT 执行指令：
+
+| 字段 | 不下发原因 |
+|---|---|
+| `operator` | 操作者信息用于后端鉴权、审计，不参与客户端执行 |
+| `controlSessionId` | 控制权由后端校验，客户端不再二次判断 |
+| `controlMode` | 控制模式由后端结合客户端状态判断，客户端只执行已放行的指令 |
+| `traceId` | 链路追踪保留在后端日志即可，一期客户端不依赖 |
+| `target.vendor` / `target.model` | 设备归属由客户端配置或后端 profile 管理，执行指令只要求设备 ID 和类型 |
+| `policy` | 风险等级、二次确认、独占控制、过期策略由后端处理 |
+| `params.frameRateHz` | 10Hz 是前端发送频率，不是动作参数；速度由 `params` 中的速度值决定 |
 
 ## 8. 一期 Action 参数
 
@@ -630,12 +704,19 @@ POST /api/control/robots/{robotId}/commands
 | `version` | 固定值 | 一期固定 `1.0` |
 | `messageType` | 固定值 | 普通命令固定 `command` |
 | `commandId` | 后端生成 | 命令 ID |
-| `traceId` | 后端生成 | 链路追踪 ID |
-| `operator` | 请求头/登录态 | `userId`、`orgId`、`terminalId` |
-| `target.vendor` | 固定测试 profile | 设备或机器人厂商 |
-| `target.model` | 固定测试 profile | 设备或机器人型号 |
-| `policy` | action + profile + 安全策略 | 风险等级、控制类型、过期时间等 |
+| `seq` | 前端 `client.seq` | 终端递增序号 |
 | `issuedAt` | 后端时间 | 后端下发时间 |
+
+后端内部处理但不下发 MQTT：
+
+| 内部字段 | 用途 |
+|---|---|
+| `controlSessionId` | 校验控制权、接管关系 |
+| `controlMode` | 校验当前模式下是否允许该动作 |
+| `operator` | 鉴权、审计、日志 |
+| `confirmToken` | 捕网器等高风险动作的二次确认校验 |
+| `policy` | 后端内部风险策略、确认策略、冷却策略 |
+| `traceId` | 后端链路日志追踪 |
 
 前端必须传：
 
@@ -667,10 +748,10 @@ POST /api/control/robots/{robotId}/commands
 8. 校验 controlSessionId 是否有效，或判断该 action 是否无需控制权
 9. 按 action 校验 params
 10. 按 controlProfile 裁剪速度、角速度、亮度等参数
-11. 按 action 和 deviceType 生成 policy
-12. 生成 commandId、traceId、issuedAt、expireAt
-13. 组装 MQTT payload
-14. 发布到 robot/{robotId}/control/command 或 estop topic
+11. 对高风险 action 校验 confirmToken、安全开关、冷却时间等后端策略
+12. 生成 commandId、issuedAt
+13. 组装简化 MQTT 执行 payload
+14. 按设备类型发布到对应设备域 topic，急停发布到 safety/estop topic
 15. 通过 WebSocket 给前端回 accepted/rejected
 ```
 
@@ -692,23 +773,23 @@ intent = parse(frontendPayload)
 profile = fixedProfile.find(robotId, intent.target.deviceId)
 builder = commandBuilderFactory.get(intent.target.deviceType)
 params = builder.validateAndBuildParams(intent.action, intent.params, profile.controlProfile)
-policy = builder.buildPolicy(intent.action, profile)
+checkControlSession(intent.controlSessionId, intent.target, intent.action)
+checkControlMode(intent.controlMode, latestRobotState, intent.action)
+checkInternalPolicy(intent.action, intent.params, currentUser)
 
 mqttPayload = {
   protocol: "embodied-control",
   version: "1.0",
   messageType: "command",
   commandId: newCommandId(),
-  traceId: newTraceId(),
   robotId: intent.robotId,
-  controlSessionId: intent.controlSessionId,
-  controlMode: intent.controlMode,
-  operator: currentUser,
-  target: enrichTarget(intent.target, profile),
+  seq: intent.client.seq,
+  target: {
+    deviceId: intent.target.deviceId,
+    deviceType: intent.target.deviceType
+  },
   action: intent.action,
   params: params,
-  policy: policy,
-  seq: intent.client.seq,
   issuedAt: now()
 }
 ```
@@ -762,21 +843,11 @@ mqttPayload = {
   "version": "1.0",                              // 一期协议版本
   "messageType": "command",                      // MQTT 消息类型
   "commandId": "cmd_20260603_1001",              // 后端生成
-  "traceId": "tr_20260603_1001",                 // 后端生成
   "robotId": "robot-songling-001",               // MQTT topic 按 robotId 分区
-  "controlSessionId": "tc_20260603_0001",        // 控制权 ID
-  "controlMode": "MANUAL",                       // 后端校验通过后透传给客户端
-  "operator": {
-    "userId": "u1001",                           // 操作者
-    "orgId": "org001",                           // 组织
-    "terminalId": "web-client-001"               // 终端
-  },
+  "seq": 1024,                                   // 前端序号
   "target": {
-    "scope": "BODY",                             // 本体
     "deviceId": "base",                          // 本体设备
-    "deviceType": "WHEELED_BASE",                // 设备类型
-    "vendor": "SONGLING",                        // 后端根据固定 profile 补齐
-    "model": "SCOUT"                             // 后端根据固定 profile 补齐
+    "deviceType": "WHEELED_BASE"                 // 设备类型，客户端据此分发
   },
   "action": "drive.velocity",                    // 客户端消费该 action 并调用 ROS2/driver
   "params": {
@@ -784,15 +855,6 @@ mqttPayload = {
     "linearY": 0.0,                               // 后端按 WHEELED_BASE 裁剪为 0
     "angularZ": -0.2                              // 后端限幅后的转向角速度
   },
-  "policy": {
-    "controlType": "FRAME",                      // 控制帧，一条消息对应一次控制输入
-    "frameRateHz": 10,                           // 前端预期发送频率
-    "requiresExclusiveControl": true,            // 本体控制要求独占
-    "requiresConfirm": false,                    // 不要求二次确认
-    "riskLevel": "MEDIUM",                       // 中风险
-    "expireAt": "2026-06-03T10:30:01+08:00"      // 后端给客户端的过期时间
-  },
-  "seq": 1024,                                   // 前端序号
   "issuedAt": "2026-06-03T10:30:00+08:00"        // 后端下发时间
 }
 ```
@@ -845,36 +907,17 @@ mqttPayload = {
   "version": "1.0",                              // 协议版本
   "messageType": "command",                      // 控制命令
   "commandId": "cmd_20260603_2101",              // 后端生成
-  "traceId": "tr_20260603_2101",                 // 后端生成
   "robotId": "robot-songling-001",               // 机器人 ID
-  "controlSessionId": "tc_20260603_0002",        // 控制权 ID
-  "controlMode": "NAVIGATION",                   // 云台控制不一定打断导航
-  "operator": {
-    "userId": "u1001",                           // 操作者
-    "orgId": "org001",                           // 组织
-    "terminalId": "web-client-001"               // 终端
-  },
+  "seq": 2101,                                   // 前端序号
   "target": {
-    "scope": "PAYLOAD",                          // 上装
     "deviceId": "ptz-dual-001",                  // 云台设备 ID
-    "deviceType": "DUAL_LIGHT_PTZ",              // 设备类型
-    "vendor": "CUSTOM",                          // 固定 profile 补齐
-    "model": "DL-PTZ-01"                         // 固定 profile 补齐
+    "deviceType": "DUAL_LIGHT_PTZ"               // 设备类型，客户端据此分发
   },
   "action": "ptz.move",                          // 客户端消费该 action 并调用云台 ROS2/driver
   "params": {
     "panSpeed": -0.4,                             // 后端限幅后的水平速度
     "tiltSpeed": 0.0                              // 后端限幅后的垂直速度
   },
-  "policy": {
-    "controlType": "FRAME",                      // 控制帧
-    "frameRateHz": 10,                           // 前端预期发送频率
-    "requiresExclusiveControl": true,            // 云台设备级独占
-    "requiresConfirm": false,                    // 不要求二次确认
-    "riskLevel": "LOW",                          // 低风险
-    "expireAt": "2026-06-03T10:30:04+08:00"      // 过期时间
-  },
-  "seq": 2101,                                   // 前端序号
   "issuedAt": "2026-06-03T10:30:03+08:00"        // 后端时间
 }
 ```
@@ -932,34 +975,16 @@ mqttPayload = {
   "version": "1.0",                              // 协议版本
   "messageType": "command",                      // 控制命令
   "commandId": "cmd_20260603_3001",              // 命令 ID
-  "traceId": "tr_20260603_3001",                 // 追踪 ID
   "robotId": "robot-songling-001",               // 机器人 ID
-  "controlSessionId": "tc_20260603_0003",        // 控制权
-  "operator": {
-    "userId": "u1001",                           // 操作者
-    "orgId": "org001",                           // 组织
-    "terminalId": "web-client-001"               // 终端
-  },
+  "seq": 3001,                                   // 序号
   "target": {
-    "scope": "PAYLOAD",                          // 上装
     "deviceId": "net-launcher-001",              // 捕网器 ID
-    "deviceType": "NET_LAUNCHER",                // 捕网器类型
-    "vendor": "CUSTOM",                          // 固定 profile
-    "model": "NL-01"                             // 固定 profile
+    "deviceType": "NET_LAUNCHER"                 // 捕网器类型
   },
   "action": "payload.safety_switch",             // 安全开关
   "params": {
     "enabled": true                              // 打开安全开关
   },
-  "policy": {
-    "qosClass": "RELIABLE_ACTION",               // 可靠动作
-    "requiresExclusiveControl": true,            // 需要独占
-    "requiresConfirm": false,                    // 打开安全开关本身不要求 confirmToken
-    "expireAt": "2026-06-03T10:30:25+08:00",     // 过期时间
-    "riskLevel": "HIGH",                         // 高风险设备
-    "auditLevel": "HIGH"                         // 高级别审计
-  },
-  "seq": 3001,                                   // 序号
   "issuedAt": "2026-06-03T10:30:20+08:00"        // 后端时间
 }
 ```
@@ -1013,37 +1038,16 @@ mqttPayload = {
   "version": "1.0",                              // 协议版本
   "messageType": "command",                      // 控制命令
   "commandId": "cmd_20260603_3101",              // 命令 ID
-  "traceId": "tr_20260603_3101",                 // 追踪 ID
   "robotId": "robot-songling-001",               // 机器人 ID
-  "controlSessionId": "tc_20260603_0003",        // 控制权
-  "operator": {
-    "userId": "u1001",                           // 操作者
-    "orgId": "org001",                           // 组织
-    "terminalId": "web-client-001"               // 终端
-  },
+  "seq": 3101,                                   // 序号
   "target": {
-    "scope": "PAYLOAD",                          // 上装
     "deviceId": "net-launcher-001",              // 捕网器
-    "deviceType": "NET_LAUNCHER",                // 捕网器类型
-    "vendor": "CUSTOM",                          // 固定 profile
-    "model": "NL-01"                             // 固定 profile
+    "deviceType": "NET_LAUNCHER"                 // 捕网器类型
   },
   "action": "payload.fire",                      // 发射动作
   "params": {
-    "channel": 1,                                // 发射通道
-    "confirmToken": "confirm_20260603_abc001"    // 透传给 Go，Go 可按需二次校验
+    "channel": 1                                 // 发射通道；confirmToken 已由后端校验，不下发客户端
   },
-  "policy": {
-    "qosClass": "RELIABLE_ACTION",               // 可靠动作
-    "requiresExclusiveControl": true,            // 强独占
-    "requiresConfirm": true,                     // 要求 confirmToken
-    "requiresSafetySwitch": true,                // 要求安全开关打开
-    "cooldownMs": 3000,                          // 发射冷却
-    "expireAt": "2026-06-03T10:30:35+08:00",     // 命令过期
-    "riskLevel": "HIGH",                         // 高风险
-    "auditLevel": "HIGH"                         // 高审计级别
-  },
-  "seq": 3101,                                   // 序号
   "issuedAt": "2026-06-03T10:30:30+08:00"        // 后端时间
 }
 ```
@@ -1090,20 +1094,11 @@ mqttPayload = {
   "version": "1.0",                              // 协议版本
   "messageType": "command",                      // 控制命令
   "commandId": "cmd_20260603_4001",              // 命令 ID
-  "traceId": "tr_20260603_4001",                 // 追踪 ID
   "robotId": "robot-unitree-001",                // 宇树机器狗 ID
-  "controlSessionId": "tc_20260603_0004",        // 控制权
-  "operator": {
-    "userId": "u1001",                           // 操作者
-    "orgId": "org001",                           // 组织
-    "terminalId": "web-client-001"               // 终端
-  },
+  "seq": 4001,                                   // 序号
   "target": {
-    "scope": "PAYLOAD",                          // 上装
     "deviceId": "searchlight-001",               // 探照灯
-    "deviceType": "SEARCHLIGHT",                 // 探照灯类型
-    "vendor": "CUSTOM",                          // 固定 profile
-    "model": "SL-01"                             // 固定 profile
+    "deviceType": "SEARCHLIGHT"                  // 探照灯类型
   },
   "action": "light.set",                         // 设置探照灯
   "params": {
@@ -1111,14 +1106,6 @@ mqttPayload = {
     "brightness": 80,                            // 亮度
     "mode": "STEADY"                             // 常亮
   },
-  "policy": {
-    "qosClass": "RELIABLE_ACTION",               // 可靠动作
-    "requiresExclusiveControl": true,            // 设备级独占
-    "requiresConfirm": false,                    // 不要求二次确认
-    "expireAt": "2026-06-03T10:30:45+08:00",     // 过期
-    "riskLevel": "LOW"                           // 低风险
-  },
-  "seq": 4001,                                   // 序号
   "issuedAt": "2026-06-03T10:30:40+08:00"        // 后端时间
 }
 ```
@@ -1163,20 +1150,11 @@ mqttPayload = {
   "version": "1.0",                              // 协议版本
   "messageType": "command",                      // 控制命令
   "commandId": "cmd_20260603_5001",              // 命令 ID
-  "traceId": "tr_20260603_5001",                 // 追踪 ID
   "robotId": "robot-songling-001",               // 松灵机器人
-  "controlSessionId": "tc_20260603_0005",        // 控制权
-  "operator": {
-    "userId": "u1001",                           // 操作者
-    "orgId": "org001",                           // 组织
-    "terminalId": "web-client-001"               // 终端
-  },
+  "seq": 5001,                                   // 序号
   "target": {
-    "scope": "SENSOR",                           // 传感器
     "deviceId": "lidar-001",                     // 雷达设备
-    "deviceType": "LIDAR",                       // 雷达类型
-    "vendor": "CUSTOM",                          // 固定 profile
-    "model": "LIDAR-01"                          // 固定 profile
+    "deviceType": "LIDAR"                        // 雷达类型
   },
   "action": "lidar.mode.set",                    // 模式切换
   "params": {
@@ -1184,14 +1162,6 @@ mqttPayload = {
     "scanRateHz": 10,                            // 频率
     "publishPointCloud": false                   // 一期不通过控制 MQTT 发点云
   },
-  "policy": {
-    "qosClass": "RELIABLE_ACTION",               // 可靠动作
-    "requiresExclusiveControl": true,            // 设备级独占
-    "requiresConfirm": false,                    // 一期不要求二次确认
-    "expireAt": "2026-06-03T10:30:55+08:00",     // 过期
-    "riskLevel": "LOW"                           // 低风险
-  },
-  "seq": 5001,                                   // 序号
   "issuedAt": "2026-06-03T10:30:50+08:00"        // 后端时间
 }
 ```
@@ -1279,7 +1249,7 @@ Go 客户端上报 robot.state
 - 后端不区分点触、长按、松手，只处理收到的每一帧控制数据。
 - 本体手动控制必须处于 `MANUAL`，`NAVIGATION` 或 `ASSISTED` 下需先接管。
 - `payload.fire` 必须有控制权、confirmToken、安全开关和冷却校验。
-- 急停使用 `robot/{robotId}/control/estop`，不进入普通命令队列。
+- 急停使用 `robot/{robotId}/control/safety/estop`，不进入普通命令队列。
 - 客户端如何消费控制帧并调用 ROS2，由客户端同事单独抽象实现。
 
 ## 12. 一期验收标准
@@ -1292,4 +1262,4 @@ Go 客户端上报 robot.state
 6. 捕网器没有 confirmToken 或安全开关时不能发射。
 7. `NAVIGATION` 或 `ASSISTED` 下手动控制本体时，前端必须先接管成功再发送控制帧。
 8. 前端接管请求携带旧 `observedStateSeq` 时，后端返回 `ROBOT_STATE_CHANGED`。
-9. 后端能记录命令发布、ACK、状态和错误。
+9. 后端能记录命令发布，并通过 `media/client/status` 刷新机器人在线状态、控制模式和设备状态。

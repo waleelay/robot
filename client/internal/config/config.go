@@ -65,10 +65,10 @@ func Load() Config {
 		MQTTUsername:             env("MQTT_USERNAME", ""),
 		MQTTPassword:             env("MQTT_PASSWORD", ""),
 		ClientID:                 env("ROBOT_CLIENT_ID", "robot-media-client"),
-		RTSPVisibleSub:           env("RTSP_VISIBLE_SUB", "rtsp://192.168.124.204:8554/camera01"),
-		RTSPVisibleMain:          env("RTSP_VISIBLE_MAIN", "rtsp://192.168.124.204:8554/camera01"),
-		RTSPThermalSub:           env("RTSP_THERMAL_SUB", "rtsp://192.168.124.204:8554/camera01"),
-		RTSPThermalMain:          env("RTSP_THERMAL_MAIN", "rtsp://192.168.124.204:8554/camera01"),
+		RTSPVisibleSub:           env("RTSP_VISIBLE_SUB", "rtsp://admin:okwy1688@192.168.1.64:554/Streaming/Channels/102"),
+		RTSPVisibleMain:          env("RTSP_VISIBLE_MAIN", "rtsp://admin:okwy1688@192.168.1.64:554/Streaming/Channels/101"),
+		RTSPThermalSub:           env("RTSP_THERMAL_SUB", "rtsp://admin:okwy1688@192.168.1.65:554/Streaming/Channels/102"),
+		RTSPThermalMain:          env("RTSP_THERMAL_MAIN", "rtsp://admin:okwy1688@192.168.1.65:554/Streaming/Channels/102"),
 		Cameras:                  cameras(robotID),
 		FFprobePath:              env("FFPROBE_PATH", "ffprobe"),
 		PublisherCmd:             env("PUBLISHER_CMD", ""),
@@ -96,7 +96,7 @@ func Load() Config {
 
 func cameras(robotID string) []Camera {
 	ids := []string{"camera01", "camera02", "camera03"}
-	names := []string{"前向双光云台", "后向广角相机", "机械臂腕部相机"}
+	names := []string{"云台-可见光", "云台-热成像", "本体相机"}
 	groupTypes := []string{"dual_gimbal", "body", "arm"}
 	if robotID == "robot-002" {
 		ids = []string{"camera04", "camera05", "camera06"}

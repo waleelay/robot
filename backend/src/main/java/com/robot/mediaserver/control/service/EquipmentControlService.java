@@ -1,0 +1,634 @@
+package com.robot.mediaserver.control.service;
+
+import com.robot.mediaserver.auth.CurrentUser;
+import com.robot.mediaserver.control.messaging.EquipmentControlCommandPublisher;
+import com.robot.mediaserver.ws.MediaWebSocketPublisher;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.stereotype.Service;
+
+@Service
+public class EquipmentControlService {
+
+    private final EquipmentControlCommandPublisher commandPublisher;
+    private final MediaWebSocketPublisher webSocketPublisher;
+    private final Map<String, Map<String, Object>> sessions = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Object>> robotStates = new ConcurrentHashMap<>();
+
+    public EquipmentControlService(
+            EquipmentControlCommandPublisher commandPublisher,
+            MediaWebSocketPublisher webSocketPublisher) {
+        this.commandPublisher = commandPublisher;
+        this.webSocketPublisher = webSocketPublisher;
+        fixedRobots().forEach(robot -> robotStates.put(String.valueOf(robot.get("robotId")), defaultRobotState(robot)));
+    }
+
+    public List<Map<String, Object>> robots() {
+        return fixedRobots().stream()
+                .map(robot -> {
+                    Map<String, Object> state = robotStates.get(String.valueOf(robot.get("robotId")));
+                    Map<String, Object> item = copy(robot);
+                    item.put("onlineStatus", valueOrDefault(state, "onlineStatus", "online"));
+                    item.put("controlMode", valueOrDefault(state, "controlMode", "MANUAL"));
+                    item.put("stateSeq", valueOrDefault(state, "stateSeq", 1));
+                    item.put("clientId", valueOrDefault(state, "clientId", item.get("clientId")));
+                    item.put("battery", valueOrDefault(state, "battery", item.get("battery")));
+                    item.put("lastHeartbeatAt", valueOrDefault(state, "timestamp", item.get("lastHeartbeatAt")));
+                    item.put("cameras", valueOrDefault(state, "cameras", item.get("cameras")));
+                    item.put("status", item.get("onlineStatus"));
+                    return item;
+                })
+                .toList();
+    }
+
+    public Map<String, Object> controlProfile(String robotId) {
+        Map<String, Object> robot = requireRobot(robotId);
+        Map<String, Object> state = robotStates.getOrDefault(robotId, defaultRobotState(robot));
+        return object(
+                "robotId", robotId,
+                "robotType", robot.get("robotType"),
+                "vendor", robot.get("vendor"),
+                "model", robot.get("model"),
+                "onlineStatus", valueOrDefault(state, "onlineStatus", "online"),
+                "controlMode", valueOrDefault(state, "controlMode", "MANUAL"),
+                "stateSeq", valueOrDefault(state, "stateSeq", 1),
+                "devices", devices(robotId));
+    }
+
+    public Map<String, Object> acquire(String robotId, Map<String, Object> request, CurrentUser user) {
+        requireRobot(robotId);
+        List<String> deviceIds = stringList(request.get("deviceIds"));
+        String scope = stringValue(request.get("scope"), "DEVICE");
+        for (Map<String, Object> session : sessions.values()) {
+            if (!robotId.equals(session.get("robotId")) || !"ACTIVE".equals(session.get("status"))) {
+                continue;
+            }
+            if (!conflicts(deviceIds, stringList(session.get("deviceIds")))) {
+                continue;
+            }
+            if (user.clientId().equals(session.get("ownerClientId"))) {
+                session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30).toString());
+                return copy(session);
+            }
+            if (!user.clientId().equals(session.get("ownerClientId"))) {
+                return object(
+                        "code", "CONTROL_LOCKED",
+                        "message", "target is controlled by another terminal",
+                        "holder", session);
+            }
+        }
+        return createSession(robotId, scope, deviceIds, stringList(request.get("actions")), user);
+    }
+
+    public Map<String, Object> takeover(String robotId, Map<String, Object> request, CurrentUser user) {
+        requireRobot(robotId);
+        Map<String, Object> state = robotStates.getOrDefault(robotId, defaultRobotState(requireRobot(robotId)));
+        long latestSeq = numberValue(state.get("stateSeq"), 0).longValue();
+        long observedSeq = numberValue(request.get("observedStateSeq"), -1).longValue();
+        if (observedSeq >= 0 && observedSeq < latestSeq) {
+            return object(
+                    "code", "ROBOT_STATE_CHANGED",
+                    "message", "robot state changed, refresh status before takeover",
+                    "latestStateSeq", latestSeq,
+                    "latestControlMode", valueOrDefault(state, "controlMode", "MANUAL"));
+        }
+        List<String> deviceIds = stringList(request.get("deviceIds"));
+        Map<String, Object> session = createSession(
+                robotId,
+                stringValue(request.get("scope"), "ROBOT"),
+                deviceIds.isEmpty() ? List.of("base") : deviceIds,
+                stringList(request.get("actions")),
+                user);
+        state.put("controlMode", "MANUAL");
+        state.put("missionStatus", "PAUSED");
+        state.put("controlOwner", object("userId", user.userId(), "clientId", user.clientId()));
+        state.put("stateSeq", latestSeq + 1);
+        robotStates.put(robotId, state);
+        webSocketPublisher.publish("robot.state", state);
+        session.put("previousMode", stringValue(request.get("fromMode"), "NAVIGATION"));
+        session.put("controlMode", "MANUAL");
+        session.put("missionStatus", "PAUSED");
+        return session;
+    }
+
+    public Map<String, Object> heartbeat(String robotId, String controlSessionId) {
+        Map<String, Object> session = requireSession(robotId, controlSessionId);
+        session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30).toString());
+        return object(
+                "controlSessionId", controlSessionId,
+                "status", session.get("status"),
+                "leaseExpireAt", session.get("leaseExpireAt"));
+    }
+
+    public Map<String, Object> release(String robotId, String controlSessionId, Map<String, Object> request) {
+        Map<String, Object> session = requireSession(robotId, controlSessionId);
+        session.put("status", "RELEASED");
+        session.put("releasedAt", OffsetDateTime.now().toString());
+        session.put("reason", request == null ? "user_release" : stringValue(request.get("reason"), "user_release"));
+        return object(
+                "controlSessionId", controlSessionId,
+                "status", "RELEASED",
+                "releasedAt", session.get("releasedAt"));
+    }
+
+    public List<Map<String, Object>> activeSessions(String robotId) {
+        return sessions.values().stream()
+                .filter(session -> robotId.equals(session.get("robotId")))
+                .filter(session -> "ACTIVE".equals(session.get("status")))
+                .map(EquipmentControlService::copy)
+                .toList();
+    }
+
+    public Map<String, Object> confirmToken(String robotId, Map<String, Object> request, CurrentUser user) {
+        requireRobot(robotId);
+        Map<String, Object> target = mapValue(request.get("target"));
+        String action = stringValue(request.get("action"), "");
+        return object(
+                "confirmToken", "confirm_" + compactUuid(),
+                "expiresAt", OffsetDateTime.now().plusSeconds(30).toString(),
+                "robotId", robotId,
+                "target", object(
+                        "scope", target.get("scope"),
+                        "deviceId", target.get("deviceId")),
+                "action", action);
+    }
+
+    public Map<String, Object> publishCommand(String robotId, Map<String, Object> request, CurrentUser user) {
+        requireRobot(robotId);
+        Map<String, Object> mqttPayload = buildMqttPayload(robotId, request, user);
+        commandPublisher.publishCommand(robotId, mqttPayload);
+        Map<String, Object> response = object(
+                "commandId", mqttPayload.get("commandId"),
+                "status", "PUBLISHED",
+                "robotId", robotId,
+                "target", mqttPayload.get("target"),
+                "action", mqttPayload.get("action"),
+                "issuedAt", mqttPayload.get("issuedAt"));
+        webSocketPublisher.publish("control.command.published", response);
+        return response;
+    }
+
+    public Map<String, Object> handleClientState(Map<String, Object> payload) {
+        String robotId = stringValue(payload.get("robotId"), "");
+        if (robotId.isBlank()) {
+            return payload;
+        }
+        Map<String, Object> state = copy(payload);
+        state.putIfAbsent("stateSeq", numberValue(state.get("stateSeq"), 1).longValue());
+        state.putIfAbsent("onlineStatus", stringValue(state.get("status"), "online"));
+        state.putIfAbsent("controlMode", "MANUAL");
+        state.putIfAbsent("timestamp", OffsetDateTime.now().toString());
+        robotStates.put(robotId, state);
+        webSocketPublisher.publish("robot.state", state);
+        return state;
+    }
+
+    private Map<String, Object> buildMqttPayload(String robotId, Map<String, Object> request, CurrentUser user) {
+        Map<String, Object> target = mapValue(request.get("target"));
+        Map<String, Object> params = mapValue(request.get("params"));
+        Map<String, Object> client = mapValue(request.get("client"));
+        Map<String, Object> device = requireDevice(robotId, stringValue(target.get("deviceId"), ""));
+        String action = stringValue(request.get("action"), "");
+        Map<String, Object> builtParams = buildParams(action, stringValue(target.get("deviceType"), ""), params, device);
+        OffsetDateTime now = OffsetDateTime.now();
+        return object(
+                "protocol", "embodied-control",
+                "version", "1.0",
+                "messageType", "command",
+                "commandId", "cmd_" + compactUuid(),
+                "robotId", robotId,
+                "seq", numberValue(client.get("seq"), 0).longValue(),
+                "target", object(
+                        "deviceId", target.get("deviceId"),
+                        "deviceType", target.get("deviceType")),
+                "action", action,
+                "params", builtParams,
+                "issuedAt", now.toString());
+    }
+
+    private Map<String, Object> buildParams(
+            String action,
+            String deviceType,
+            Map<String, Object> params,
+            Map<String, Object> device) {
+        Map<String, Object> profile = mapValue(device.get("controlProfile"));
+        if ("drive.velocity".equals(action)) {
+            double maxLinearX = doubleValue(profile.get("maxLinearX"), 1.0);
+            double maxLinearY = doubleValue(profile.get("maxLinearY"), 0.0);
+            double maxAngularZ = doubleValue(profile.get("maxAngularZ"), 0.8);
+            double linearY = clamp(doubleValue(params.get("linearY"), 0.0), -maxLinearY, maxLinearY);
+            if ("WHEELED_BASE".equals(deviceType)) {
+                linearY = 0.0;
+            }
+            return object(
+                    "linearX", clamp(doubleValue(params.get("linearX"), 0.0), -maxLinearX, maxLinearX),
+                    "linearY", linearY,
+                    "angularZ", clamp(doubleValue(params.get("angularZ"), 0.0), -maxAngularZ, maxAngularZ));
+        }
+        if ("ptz.move".equals(action)) {
+            double maxPanSpeed = doubleValue(profile.get("maxPanSpeed"), 1.0);
+            double maxTiltSpeed = doubleValue(profile.get("maxTiltSpeed"), 1.0);
+            return object(
+                    "panSpeed", clamp(doubleValue(params.get("panSpeed"), 0.0), -maxPanSpeed, maxPanSpeed),
+                    "tiltSpeed", clamp(doubleValue(params.get("tiltSpeed"), 0.0), -maxTiltSpeed, maxTiltSpeed));
+        }
+        if ("camera.zoom".equals(action)) {
+            return object("zoomSpeed", clamp(doubleValue(params.get("zoomSpeed"), 0.0), -1.0, 1.0));
+        }
+        if ("light.set".equals(action)) {
+            return object(
+                    "enabled", booleanValue(params.get("enabled"), false),
+                    "brightness", clamp(doubleValue(params.get("brightness"), 100.0), 0.0, 100.0),
+                    "mode", stringValue(params.get("mode"), "STEADY"));
+        }
+        if ("payload.fire".equals(action)) {
+            return object("channel", numberValue(params.get("channel"), 1).intValue());
+        }
+        return copy(params);
+    }
+
+    private Map<String, Object> createSession(
+            String robotId,
+            String scope,
+            List<String> deviceIds,
+            List<String> actions,
+            CurrentUser user) {
+        String sessionId = "tc_" + compactUuid();
+        Map<String, Object> session = object(
+                "controlSessionId", sessionId,
+                "robotId", robotId,
+                "ownerUserId", user.userId(),
+                "ownerClientId", user.clientId(),
+                "scope", scope,
+                "deviceIds", deviceIds,
+                "actions", actions,
+                "mode", "EXCLUSIVE",
+                "status", "ACTIVE",
+                "leaseExpireAt", OffsetDateTime.now().plusSeconds(30).toString());
+        sessions.put(sessionId, session);
+        return session;
+    }
+
+    private Map<String, Object> requireSession(String robotId, String controlSessionId) {
+        Map<String, Object> session = sessions.get(controlSessionId);
+        if (session == null || !robotId.equals(session.get("robotId"))) {
+            throw new IllegalArgumentException("Control session not found: " + controlSessionId);
+        }
+        return session;
+    }
+
+    private Map<String, Object> requireRobot(String robotId) {
+        return fixedRobots().stream()
+                .filter(robot -> robotId.equals(robot.get("robotId")))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Robot not found: " + robotId));
+    }
+
+    private Map<String, Object> requireDevice(String robotId, String deviceId) {
+        return devices(robotId).stream()
+                .filter(device -> deviceId.equals(device.get("deviceId")))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Device not bound: " + deviceId));
+    }
+
+    private static boolean conflicts(List<String> requested, List<String> existing) {
+        if (requested.isEmpty() || existing.isEmpty()) {
+            return true;
+        }
+        return requested.stream().anyMatch(existing::contains);
+    }
+
+    private static Map<String, Object> defaultRobotState(Map<String, Object> robot) {
+        return object(
+                "robotId", robot.get("robotId"),
+                "controlMode", "MANUAL",
+                "stateSeq", 1,
+                "missionStatus", "IDLE",
+                "navigationStatus", "IDLE",
+                "controlOwner", null,
+                "estopActive", false,
+                "onlineStatus", "online",
+                "timestamp", OffsetDateTime.now().toString());
+    }
+
+    private static List<Map<String, Object>> fixedRobots() {
+        return List.of(
+                object(
+                        "robotId", "robot-001",
+                        "clientId", "robot-client-songling-001",
+                        "name", "松灵四轮机器人",
+                        "type", "轮式机器人",
+                        "robotType", "WHEELED_AGV",
+                        "vendor", "SONGLING",
+                        "model", "SCOUT",
+                        "status", "online",
+                        "battery", 86,
+                        "lastHeartbeatAt", OffsetDateTime.now().toString(),
+                        "cameras", List.of(
+                                camera("camera01", "云台-可见光", "dual_gimbal"),
+                                camera("camera02", "云台-热成像", "dual_gimbal"),
+                                camera("camera03", "本体相机", "body"))),
+                object(
+                        "robotId", "robot-002",
+                        "clientId", "robot-client-deep-001",
+                        "name", "云深处四足机器狗",
+                        "type", "四足机器人",
+                        "robotType", "QUADRUPED_DOG",
+                        "vendor", "DEEPNROBOTICS",
+                        "model", "X30",
+                        "status", "online",
+                        "battery", 78,
+                        "lastHeartbeatAt", OffsetDateTime.now().toString(),
+                        "cameras", List.of(camera("camera04", "头部双光云台", "dual_gimbal"))),
+                object(
+                        "robotId", "robot-unitree-001",
+                        "clientId", "robot-client-unitree-001",
+                        "name", "宇树机器狗",
+                        "type", "四足机器人",
+                        "robotType", "QUADRUPED_DOG",
+                        "vendor", "UNITREE",
+                        "model", "B2",
+                        "status", "online",
+                        "battery", 92,
+                        "lastHeartbeatAt", OffsetDateTime.now().toString(),
+                        "cameras", List.of(camera("camera07", "双光云台", "dual_gimbal"))));
+    }
+
+    private static Map<String, Object> camera(String deviceId, String name, String groupType) {
+        return object(
+                "cameraId", deviceId,
+                "deviceId", deviceId,
+                "name", name,
+                "groupType", groupType,
+                "channel", "visible",
+                "quality", "sub",
+                "status", "online");
+    }
+
+    private static List<Map<String, Object>> devices(String robotId) {
+        if ("robot-002".equals(robotId)) {
+            return List.of(
+                    base("QUADRUPED_BASE", "DEEPNROBOTICS", "X30", 0.8, 0.4, 0.6),
+                    ptz(),
+                    audioControl(),
+                    launcher(),
+                    netGun(),
+                    warningLight("warning-light-left", "左警示灯"),
+                    warningLight("warning-light-right", "右警示灯"),
+                    vehicleLight("vehicle-light-front", "前车灯"),
+                    vehicleLight("vehicle-light-rear", "后车灯"),
+                    intercom());
+        }
+        if ("robot-unitree-001".equals(robotId)) {
+            return List.of(
+                    base("QUADRUPED_BASE", "UNITREE", "B2", 0.8, 0.4, 0.6),
+                    ptz(),
+                    audioControl(),
+                    warningLight("warning-light-left", "左警示灯"),
+                    warningLight("warning-light-right", "右警示灯"),
+                    vehicleLight("vehicle-light-front", "前车灯"),
+                    vehicleLight("vehicle-light-rear", "后车灯"),
+                    object(
+                            "deviceId", "searchlight-001",
+                            "bindingId", "bind-robot-unitree-001-searchlight-001",
+                            "scope", "PAYLOAD",
+                            "deviceType", "SEARCHLIGHT",
+                            "displayName", "探照灯",
+                            "vendor", "CUSTOM",
+                            "model", "SL-01",
+                            "onlineStatus", "online",
+                            "controlStatus", "idle",
+                            "enabled", true,
+                            "actions", List.of("light.set"),
+                            "controlProfile", object("maxBrightness", 100)));
+        }
+        return List.of(
+                base("WHEELED_BASE", "SONGLING", "SCOUT", 1.0, 0.4, 0.8),
+                ptz(),
+                audioControl(),
+                launcher(),
+                netGun(),
+                warningLight("warning-light-left", "左警示灯"),
+                warningLight("warning-light-right", "右警示灯"),
+                vehicleLight("vehicle-light-front", "前车灯"),
+                vehicleLight("vehicle-light-rear", "后车灯"),
+                object(
+                        "deviceId", "lidar-001",
+                        "bindingId", "bind-robot-001-lidar-001",
+                        "scope", "SENSOR",
+                        "deviceType", "LIDAR",
+                        "displayName", "激光雷达",
+                        "vendor", "CUSTOM",
+                        "model", "LIDAR-01",
+                        "onlineStatus", "online",
+                        "controlStatus", "idle",
+                        "enabled", true,
+                        "actions", List.of("lidar.mode.set"),
+                        "controlProfile", object("scanRates", List.of(5, 10, 20))),
+                intercom());
+    }
+
+    private static Map<String, Object> base(
+            String deviceType,
+            String vendor,
+            String model,
+            double maxLinearX,
+            double maxLinearY,
+            double maxAngularZ) {
+        return object(
+                "deviceId", "base",
+                "bindingId", "bind-base",
+                "scope", "BODY",
+                "deviceType", deviceType,
+                "displayName", "机器人本体",
+                "vendor", vendor,
+                "model", model,
+                "onlineStatus", "online",
+                "controlStatus", "idle",
+                "enabled", true,
+                "actions", List.of("drive.velocity", "navigation.return_home", "docking.leave"),
+                "controlProfile", object(
+                        "maxLinearX", maxLinearX,
+                        "maxLinearY", maxLinearY,
+                        "maxAngularZ", maxAngularZ,
+                        "controlFrameRateHz", 10));
+    }
+
+    private static Map<String, Object> ptz() {
+        return object(
+                "deviceId", "ptz-dual-001",
+                "bindingId", "bind-ptz-dual-001",
+                "scope", "PAYLOAD",
+                "deviceType", "DUAL_LIGHT_PTZ",
+                "displayName", "双光云台",
+                "vendor", "CUSTOM",
+                "model", "DL-PTZ-01",
+                "onlineStatus", "online",
+                "controlStatus", "idle",
+                "enabled", true,
+                "actions", List.of("ptz.move", "ptz.home", "camera.zoom"),
+                "controlProfile", object(
+                        "maxPanSpeed", 1.0,
+                        "maxTiltSpeed", 1.0,
+                        "controlFrameRateHz", 10));
+    }
+
+    private static Map<String, Object> netLauncher() {
+        return object(
+                "deviceId", "net-gun-001",
+                "bindingId", "bind-net-gun-001",
+                "scope", "PAYLOAD",
+                "deviceType", "NET_GUN",
+                "displayName", "捕网枪",
+                "vendor", "CUSTOM",
+                "model", "NL-01",
+                "onlineStatus", "online",
+                "controlStatus", "idle",
+                "enabled", true,
+                "riskLevel", "HIGH",
+                "actions", List.of("payload.safety_switch", "payload.fire"),
+                "controlProfile", object(
+                        "requiresConfirm", true,
+                        "requiresSafetySwitch", true,
+                        "cooldownMs", 3000));
+    }
+
+    private static Map<String, Object> netGun() {
+        return netLauncher();
+    }
+
+    private static Map<String, Object> launcher() {
+        return object(
+                "deviceId", "launcher-001",
+                "bindingId", "bind-launcher-001",
+                "scope", "PAYLOAD",
+                "deviceType", "LAUNCHER",
+                "displayName", "六联发射器",
+                "vendor", "CUSTOM",
+                "model", "LCH-06",
+                "onlineStatus", "online",
+                "controlStatus", "idle",
+                "enabled", true,
+                "riskLevel", "HIGH",
+                "actions", List.of("payload.fire"),
+                "controlProfile", object("channels", List.of(1, 2, 3, 4, 5, 6), "requiresConfirm", true));
+    }
+
+    private static Map<String, Object> warningLight(String deviceId, String displayName) {
+        return object(
+                "deviceId", deviceId,
+                "bindingId", "bind-" + deviceId,
+                "scope", "PAYLOAD",
+                "deviceType", "WARNING_LIGHT",
+                "displayName", displayName,
+                "vendor", "CUSTOM",
+                "model", "WL-01",
+                "onlineStatus", "online",
+                "controlStatus", "idle",
+                "enabled", true,
+                "actions", List.of("light.warning.set"),
+                "controlProfile", object("modes", List.of("ON", "OFF")));
+    }
+
+    private static Map<String, Object> vehicleLight(String deviceId, String displayName) {
+        return object(
+                "deviceId", deviceId,
+                "bindingId", "bind-" + deviceId,
+                "scope", "PAYLOAD",
+                "deviceType", "VEHICLE_LIGHT",
+                "displayName", displayName,
+                "vendor", "CUSTOM",
+                "model", "VL-01",
+                "onlineStatus", "online",
+                "controlStatus", "idle",
+                "enabled", true,
+                "actions", List.of("light.vehicle.set"),
+                "controlProfile", object("modes", List.of("ON", "OFF", "BREATH", "CUSTOM"), "maxBrightness", 100));
+    }
+
+    private static Map<String, Object> audioControl() {
+        return object(
+                "deviceId", "audio-control-001",
+                "bindingId", "bind-audio-control-001",
+                "scope", "AUDIO",
+                "deviceType", "CLIENT_AUDIO",
+                "displayName", "客户端音量",
+                "onlineStatus", "online",
+                "controlStatus", "idle",
+                "enabled", true,
+                "actions", List.of("volume.up", "volume.down", "volume.mute"),
+                "controlProfile", object("step", 5, "minVolume", 0, "maxVolume", 100));
+    }
+
+    private static Map<String, Object> intercom() {
+        return object(
+                "deviceId", "intercom-001",
+                "bindingId", "bind-intercom-001",
+                "scope", "AUDIO",
+                "deviceType", "INTERCOM",
+                "displayName", "语音对讲",
+                "onlineStatus", "online",
+                "controlStatus", "idle",
+                "enabled", true,
+                "actions", List.of("volume.up", "volume.down", "volume.mute"));
+    }
+
+    private static String compactUuid() {
+        return UUID.randomUUID().toString().replace("-", "");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> mapValue(Object value) {
+        return value instanceof Map<?, ?> map ? new LinkedHashMap<>((Map<String, Object>) map) : new LinkedHashMap<>();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> stringList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return new ArrayList<>();
+        }
+        return list.stream().map(String::valueOf).toList();
+    }
+
+    private static String stringValue(Object value, String defaultValue) {
+        return value == null || String.valueOf(value).isBlank() ? defaultValue : String.valueOf(value);
+    }
+
+    private static Number numberValue(Object value, Number defaultValue) {
+        return value instanceof Number number ? number : defaultValue;
+    }
+
+    private static double doubleValue(Object value, double defaultValue) {
+        return value instanceof Number number ? number.doubleValue() : defaultValue;
+    }
+
+    private static boolean booleanValue(Object value, boolean defaultValue) {
+        return value instanceof Boolean bool ? bool : defaultValue;
+    }
+
+    private static Object valueOrDefault(Map<String, Object> map, String key, Object defaultValue) {
+        Object value = map.get(key);
+        return value == null ? defaultValue : value;
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static Map<String, Object> copy(Map<String, Object> source) {
+        return new LinkedHashMap<>(source);
+    }
+
+    private static Map<String, Object> object(Object... values) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        for (int i = 0; i < values.length - 1; i += 2) {
+            map.put(String.valueOf(values[i]), values[i + 1]);
+        }
+        return map;
+    }
+}
