@@ -417,19 +417,6 @@ public class EquipmentControlService {
                 warningLight("warning-light-right", "右警示灯"),
                 vehicleLight("vehicle-light-front", "前车灯"),
                 vehicleLight("vehicle-light-rear", "后车灯"),
-                object(
-                        "deviceId", "lidar-001",
-                        "bindingId", "bind-robot-001-lidar-001",
-                        "scope", "SENSOR",
-                        "deviceType", "LIDAR",
-                        "displayName", "激光雷达",
-                        "vendor", "CUSTOM",
-                        "model", "LIDAR-01",
-                        "onlineStatus", "online",
-                        "controlStatus", "idle",
-                        "enabled", true,
-                        "actions", List.of("lidar.mode.set"),
-                        "controlProfile", object("scanRates", List.of(5, 10, 20))),
                 intercom());
     }
 

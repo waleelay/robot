@@ -188,18 +188,40 @@
           <div class="control-block" v-if="netGunDevice">
             <strong>捕网枪</strong>
             <small>{{ netGunDevice.deviceId }}</small>
+            <div class="control-inline">
+              <span>安全开关</span>
+              <el-switch
+                  :value="isNetGunSafetyOn(netGunDevice)"
+                  active-text="开"
+                  inactive-text="关"
+                  @change="setNetGunSafety(netGunDevice, $event)"
+              />
+            </div>
             <div class="control-grid">
-              <el-button size="mini" @click="sendDeviceCommand(netGunDevice, 'payload.safety_switch', { enabled: true }, 'net_safety')">安全开关</el-button>
-              <el-button size="mini" type="danger" @click="firePayload(netGunDevice, 1, 'net_gun_fire')">发射</el-button>
+              <el-popconfirm
+                  title="确认发射捕网枪？"
+                  confirm-button-text="确认发射"
+                  cancel-button-text="取消"
+                  @confirm="firePayload(netGunDevice, 1, 'net_gun_fire')"
+              >
+                <el-button slot="reference" size="mini" type="danger" :disabled="!isNetGunSafetyOn(netGunDevice)">发射</el-button>
+              </el-popconfirm>
             </div>
           </div>
           <div class="control-block" v-if="warningLightDevices.length">
             <strong>警示灯</strong>
             <div v-for="device in warningLightDevices" :key="device.deviceId" class="device-row">
-              <small>{{ device.displayName || device.deviceId }}</small>
-              <div class="control-grid">
-                <el-button size="mini" @click="sendDeviceCommand(device, 'light.warning.set', { enabled: true }, `${device.deviceId}_on`)">开</el-button>
-                <el-button size="mini" @click="sendDeviceCommand(device, 'light.warning.set', { enabled: false }, `${device.deviceId}_off`)">关</el-button>
+              <div class="control-inline warning-light-row">
+                <small>{{ device.displayName || device.deviceId }}</small>
+                <el-switch
+                    class="warning-switch"
+                    :value="isWarningLightOn(device)"
+                    active-text="开启"
+                    inactive-text="关闭"
+                    active-color="#31c56f"
+                    inactive-color="#59606b"
+                    @change="setWarningLight(device, $event)"
+                />
               </div>
             </div>
           </div>
@@ -218,15 +240,6 @@
           <div class="control-block" v-if="searchlightDevice">
             <strong>探照灯</strong>
             <el-button size="mini" @click="sendDeviceCommand(searchlightDevice, 'light.set', { enabled: true, brightness: 80, mode: 'STEADY' }, 'searchlight_on')">开关</el-button>
-          </div>
-          <div class="control-block" v-if="lidarDevice">
-            <strong>雷达</strong>
-            <small>{{ lidarDevice.deviceId }}</small>
-            <div class="control-grid">
-              <el-button size="mini" @click="sendDeviceCommand(lidarDevice, 'lidar.mode.set', { mode: 'LOCALIZATION', scanRateHz: 10, publishPointCloud: false }, 'lidar_localization')">定位</el-button>
-              <el-button size="mini" @click="sendDeviceCommand(lidarDevice, 'lidar.mode.set', { mode: 'MAPPING', scanRateHz: 10, publishPointCloud: false }, 'lidar_mapping')">建图</el-button>
-              <el-button size="mini" @click="sendDeviceCommand(lidarDevice, 'lidar.mode.set', { mode: 'IDLE', scanRateHz: 0, publishPointCloud: false }, 'lidar_idle')">关闭</el-button>
-            </div>
           </div>
         </div>
       </aside>
@@ -336,7 +349,9 @@ export default {
       controlProfiles: {},
       controlSessions: {},
       controlSeq: 1,
-      controlTimers: {}
+      controlTimers: {},
+      netGunSafety: {},
+      warningLightState: {}
     }
   },
   computed: {
@@ -377,9 +392,6 @@ export default {
     },
     searchlightDevice() {
       return this.controlDevices().find(device => device.deviceType === 'SEARCHLIGHT')
-    },
-    lidarDevice() {
-      return this.controlDevices().find(device => device.deviceType === 'LIDAR')
     }
   },
   watch: {
@@ -940,18 +952,35 @@ export default {
     async sendDiscreteCommand(action) {
       const device = action === 'light.set'
           ? this.searchlightDevice
-          : action === 'lidar.mode.set'
-            ? this.lidarDevice
-            : this.netDevice
+          : this.netDevice
       const session = await this.ensureControlSession(device, action)
       const params = {
         'payload.safety_switch': { enabled: true },
-        'light.set': { enabled: true, brightness: 80, mode: 'STEADY' },
-        'lidar.mode.set': { mode: 'MAPPING', scanRateHz: 10, publishPointCloud: false }
+        'light.set': { enabled: true, brightness: 80, mode: 'STEADY' }
       }[action]
       const response = await sendEquipmentCommand(this.selectedRobotId,
           this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, action))
       this.log('API sendEquipmentCommand', response)
+    },
+    isNetGunSafetyOn(device) {
+      return !!(device && this.netGunSafety[device.deviceId])
+    },
+    async setNetGunSafety(device, enabled) {
+      this.$set(this.netGunSafety, device.deviceId, enabled)
+      const ok = await this.sendDeviceCommand(device, 'payload.safety_switch', { enabled }, `net_safety_${enabled ? 'on' : 'off'}`)
+      if (!ok) {
+        this.$set(this.netGunSafety, device.deviceId, !enabled)
+      }
+    },
+    isWarningLightOn(device) {
+      return !!(device && this.warningLightState[device.deviceId])
+    },
+    async setWarningLight(device, enabled) {
+      this.$set(this.warningLightState, device.deviceId, enabled)
+      const ok = await this.sendDeviceCommand(device, 'light.warning.set', { enabled }, `${device.deviceId}_${enabled ? 'on' : 'off'}`)
+      if (!ok) {
+        this.$set(this.warningLightState, device.deviceId, !enabled)
+      }
     },
     async sendDeviceCommand(device, action, params, source) {
       try {
@@ -959,9 +988,11 @@ export default {
         const response = await sendEquipmentCommand(this.selectedRobotId,
             this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, source || action))
         this.log('API sendDeviceCommand', response)
+        return true
       } catch (error) {
         this.$message.error(this.errorMessage(error))
         this.log('ERROR sendDeviceCommand', this.errorMessage(error))
+        return false
       }
     },
     async firePayload(device, channel, source) {
@@ -1310,6 +1341,32 @@ export default {
 
 .control-grid-4 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.control-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 8px;
+  font-size: 12px;
+  color: #334155;
+}
+
+.warning-light-row {
+  margin-bottom: 6px;
+}
+
+.warning-light-row small {
+  margin-bottom: 0;
+}
+
+.warning-switch .el-switch__label {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.warning-switch .el-switch__label.is-active {
+  color: #ffffff;
 }
 
 .device-row {

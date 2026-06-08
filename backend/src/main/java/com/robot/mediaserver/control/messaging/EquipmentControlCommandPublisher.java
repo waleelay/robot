@@ -48,7 +48,6 @@ public class EquipmentControlCommandPublisher {
             case "NET_GUN", "NET_LAUNCHER" -> "net-gun/" + topicPart(deviceId);
             case "WARNING_LIGHT" -> "warning-light/" + topicPart(deviceId);
             case "VEHICLE_LIGHT", "SEARCHLIGHT" -> "vehicle-light/" + topicPart(deviceId);
-            case "LIDAR" -> "lidar/" + topicPart(deviceId);
             default -> fallbackDomain(action, deviceId);
         };
         return "robot/" + robotId + "/control/" + domain + "/command";
@@ -63,9 +62,6 @@ public class EquipmentControlCommandPublisher {
         }
         if (action.startsWith("light.vehicle.")) {
             return "vehicle-light/" + topicPart(deviceId);
-        }
-        if (action.startsWith("lidar.")) {
-            return "lidar/" + topicPart(deviceId);
         }
         if (action.startsWith("payload.fire")) {
             return "launcher/" + topicPart(deviceId);
