@@ -1,8 +1,13 @@
 import axios from 'axios'
 
-// 每个浏览器标签页生成独立 clientId，后端用它区分同一用户打开的多个观看端。
-// 这对 viewer 心跳、对讲占用判断很重要：同一用户的两个页面不能互相覆盖。
-const clientId = `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
+// 每个浏览器标签页拥有独立 clientId，但同一标签页刷新后保持不变。
+// 这对控制权续用很重要：刷新页面不能被后端误判成另一个终端。
+const clientIdKey = 'robot-media-client-id'
+const existingClientId = window.sessionStorage.getItem(clientIdKey)
+const clientId = existingClientId || `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
+if (!existingClientId) {
+  window.sessionStorage.setItem(clientIdKey, clientId)
+}
 export const mediaClientId = clientId
 
 // 调试台暂时用请求头模拟网关/登录态注入的用户上下文。

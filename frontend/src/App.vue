@@ -225,15 +225,36 @@
               </div>
             </div>
           </div>
-          <div class="control-block" v-if="vehicleLightDevices.length">
+          <div class="control-block" v-if="vehicleLightDevice">
             <strong>车灯光</strong>
-            <div v-for="device in vehicleLightDevices" :key="device.deviceId" class="device-row">
-              <small>{{ device.displayName || device.deviceId }}</small>
-              <div class="control-grid control-grid-4">
-                <el-button size="mini" @click="setVehicleLight(device, 'ON', 100)">常开</el-button>
-                <el-button size="mini" @click="setVehicleLight(device, 'OFF', 0)">常关</el-button>
-                <el-button size="mini" @click="setVehicleLight(device, 'BREATH', 70)">呼吸</el-button>
-                <el-button size="mini" @click="setVehicleLight(device, 'CUSTOM', 50)">亮度50</el-button>
+            <small>{{ vehicleLightDevice.deviceId }}</small>
+            <div v-for="part in vehicleLightParts" :key="part.key" class="vehicle-light-row">
+              <div class="vehicle-light-title">
+                <span>{{ part.label }}</span>
+                <small>{{ vehicleLightModeLabel(vehicleLightState[part.key].mode) }}</small>
+              </div>
+              <el-radio-group
+                  class="vehicle-light-mode-group"
+                  v-model="vehicleLightState[part.key].mode"
+                  size="mini"
+                  @change="mode => setVehicleLightMode(part.key, mode)"
+              >
+                <el-radio-button
+                    v-for="option in vehicleLightModeOptions"
+                    :key="option.value"
+                    :label="option.value"
+                >{{ option.label }}</el-radio-button>
+              </el-radio-group>
+              <div v-if="vehicleLightState[part.key].mode === 'CUSTOM'" class="vehicle-light-brightness">
+                <span>自定义亮度</span>
+                <el-slider
+                    :value="vehicleLightState[part.key].customValue"
+                    :min="0"
+                    :max="100"
+                    @input="value => updateVehicleLightBrightness(part.key, value)"
+                    @change="value => setVehicleLightBrightness(part.key, value)"
+                />
+                <em>{{ vehicleLightState[part.key].customValue }}</em>
               </div>
             </div>
           </div>
@@ -351,7 +372,25 @@ export default {
       controlSeq: 1,
       controlTimers: {},
       netGunSafety: {},
-      warningLightState: {}
+      warningLightState: {},
+      vehicleLightState: {
+        front: { mode: 'OFF', customValue: 50 },
+        rear: { mode: 'OFF', customValue: 50 }
+      },
+      confirmedVehicleLightState: {
+        front: { mode: 'OFF', customValue: 50 },
+        rear: { mode: 'OFF', customValue: 50 }
+      },
+      vehicleLightParts: [
+        { key: 'front', label: '前灯' },
+        { key: 'rear', label: '后灯' }
+      ],
+      vehicleLightModeOptions: [
+        { value: 'OFF', label: '常关', code: 0 },
+        { value: 'ON', label: '常开', code: 1 },
+        { value: 'BREATH', label: '呼吸', code: 2 },
+        { value: 'CUSTOM', label: '自定义', code: 3 }
+      ]
     }
   },
   computed: {
@@ -387,8 +426,8 @@ export default {
     warningLightDevices() {
       return this.controlDevices().filter(device => device.deviceType === 'WARNING_LIGHT')
     },
-    vehicleLightDevices() {
-      return this.controlDevices().filter(device => device.deviceType === 'VEHICLE_LIGHT')
+    vehicleLightDevice() {
+      return this.controlDevices().find(device => device.deviceType === 'VEHICLE_LIGHT')
     },
     searchlightDevice() {
       return this.controlDevices().find(device => device.deviceType === 'SEARCHLIGHT')
@@ -1019,12 +1058,65 @@ export default {
         this.log('ERROR firePayload', this.errorMessage(error))
       }
     },
-    setVehicleLight(device, mode, brightness) {
-      this.sendDeviceCommand(device, 'light.vehicle.set', {
-        enabled: mode !== 'OFF',
+    vehicleLightModeLabel(mode) {
+      return {
+        OFF: '常关',
+        ON: '常开',
+        BREATH: '呼吸灯',
+        CUSTOM: '自定义亮度'
+      }[mode] || '常关'
+    },
+    cloneVehicleLightState(state) {
+      const source = state || this.vehicleLightState
+      return {
+        front: Object.assign({}, source.front),
+        rear: Object.assign({}, source.rear)
+      }
+    },
+    async setVehicleLightMode(part, mode) {
+      const next = this.cloneVehicleLightState()
+      next[part].mode = mode
+      if (mode === 'CUSTOM' && next[part].customValue <= 0) {
+        next[part].customValue = 50
+      }
+      this.vehicleLightState = next
+      const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_${String(mode).toLowerCase()}`)
+      if (ok) {
+        this.confirmedVehicleLightState = this.cloneVehicleLightState()
+      } else {
+        this.vehicleLightState = this.cloneVehicleLightState(this.confirmedVehicleLightState)
+      }
+    },
+    updateVehicleLightBrightness(part, value) {
+      this.vehicleLightState[part].customValue = value
+    },
+    async setVehicleLightBrightness(part, value) {
+      this.vehicleLightState[part].mode = 'CUSTOM'
+      this.vehicleLightState[part].customValue = value
+      const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_custom`)
+      if (ok) {
+        this.confirmedVehicleLightState = this.cloneVehicleLightState()
+      } else {
+        this.vehicleLightState = this.cloneVehicleLightState(this.confirmedVehicleLightState)
+      }
+    },
+    sendVehicleLightCommand(source) {
+      const device = this.vehicleLightDevice
+      if (!device) return false
+      const state = this.cloneVehicleLightState()
+      return this.sendDeviceCommand(device, 'light.vehicle.set', {
+        front: this.vehicleLightPayloadPart(state.front),
+        rear: this.vehicleLightPayloadPart(state.rear)
+      }, source)
+    },
+    vehicleLightPayloadPart(part) {
+      const mode = part.mode || 'OFF'
+      const option = this.vehicleLightModeOptions.find(item => item.value === mode)
+      return {
         mode,
-        brightness
-      }, `${device.deviceId}_${mode.toLowerCase()}`)
+        modeCode: option ? option.code : 0,
+        customValue: mode === 'CUSTOM' ? part.customValue : 0
+      }
     },
     async fireNetLauncher() {
       const device = this.netDevice
@@ -1367,6 +1459,72 @@ export default {
 
 .warning-switch .el-switch__label.is-active {
   color: #ffffff;
+}
+
+.vehicle-light-row {
+  padding: 8px 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.vehicle-light-row:first-of-type {
+  border-top: 0;
+}
+
+.vehicle-light-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.vehicle-light-title span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.vehicle-light-title small {
+  margin-bottom: 0;
+}
+
+.vehicle-light-mode-group {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+}
+
+.vehicle-light-mode-group .el-radio-button {
+  min-width: 0;
+}
+
+.vehicle-light-mode-group .el-radio-button__inner {
+  width: 100%;
+  border-left: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 7px 4px;
+  font-size: 12px;
+}
+
+.vehicle-light-mode-group .el-radio-button__orig-radio:checked + .el-radio-button__inner {
+  box-shadow: none;
+}
+
+.vehicle-light-brightness {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #334155;
+}
+
+.vehicle-light-brightness em {
+  font-style: normal;
+  text-align: right;
+  color: #64748b;
 }
 
 .device-row {

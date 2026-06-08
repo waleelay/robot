@@ -328,16 +328,7 @@ func (c *Client) statusDevices(status string) []model.RegistryDeviceStatus {
 			SupportedActions: []string{"light.warning.set"},
 		},
 		{
-			DeviceID:         "vehicle-light-front",
-			Scope:            "PAYLOAD",
-			DeviceType:       "VEHICLE_LIGHT",
-			OnlineStatus:     onlineStatus,
-			HealthStatus:     "normal",
-			ControlStatus:    "idle",
-			SupportedActions: []string{"light.vehicle.set"},
-		},
-		{
-			DeviceID:         "vehicle-light-rear",
+			DeviceID:         "vehicle-light",
 			Scope:            "PAYLOAD",
 			DeviceType:       "VEHICLE_LIGHT",
 			OnlineStatus:     onlineStatus,

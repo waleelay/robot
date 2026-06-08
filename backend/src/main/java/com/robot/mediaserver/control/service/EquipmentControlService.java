@@ -4,6 +4,7 @@ import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.control.messaging.EquipmentControlCommandPublisher;
 import com.robot.mediaserver.ws.MediaWebSocketPublisher;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -62,6 +63,7 @@ public class EquipmentControlService {
 
     public Map<String, Object> acquire(String robotId, Map<String, Object> request, CurrentUser user) {
         requireRobot(robotId);
+        pruneExpiredSessions(robotId);
         List<String> deviceIds = stringList(request.get("deviceIds"));
         String scope = stringValue(request.get("scope"), "DEVICE");
         for (Map<String, Object> session : sessions.values()) {
@@ -137,6 +139,7 @@ public class EquipmentControlService {
     }
 
     public List<Map<String, Object>> activeSessions(String robotId) {
+        pruneExpiredSessions(robotId);
         return sessions.values().stream()
                 .filter(session -> robotId.equals(session.get("robotId")))
                 .filter(session -> "ACTIVE".equals(session.get("status")))
@@ -246,6 +249,21 @@ public class EquipmentControlService {
                     "brightness", clamp(doubleValue(params.get("brightness"), 100.0), 0.0, 100.0),
                     "mode", stringValue(params.get("mode"), "STEADY"));
         }
+        if ("light.vehicle.set".equals(action)) {
+            Map<String, Object> front = mapValue(params.get("front"));
+            Map<String, Object> rear = mapValue(params.get("rear"));
+            int frontMode = vehicleLightMode(front);
+            int rearMode = vehicleLightMode(rear);
+            return object(
+                    "op", "publish",
+                    "topic", "/robot_light_ctl",
+                    "type", "robot_status_core/RobotLightCmd",
+                    "msg", object(
+                            "front_mode", frontMode,
+                            "front_custom_value", frontMode == 3 ? clampedInt(front.get("customValue"), 0, 0, 100) : 0,
+                            "rear_mode", rearMode,
+                            "rear_custom_value", rearMode == 3 ? clampedInt(rear.get("customValue"), 0, 0, 100) : 0));
+        }
         if ("payload.fire".equals(action)) {
             return object("channel", numberValue(params.get("channel"), 1).intValue());
         }
@@ -280,6 +298,28 @@ public class EquipmentControlService {
             throw new IllegalArgumentException("Control session not found: " + controlSessionId);
         }
         return session;
+    }
+
+    private void pruneExpiredSessions(String robotId) {
+        OffsetDateTime now = OffsetDateTime.now();
+        sessions.entrySet().removeIf(entry -> {
+            Map<String, Object> session = entry.getValue();
+            return robotId.equals(session.get("robotId"))
+                    && "ACTIVE".equals(session.get("status"))
+                    && isExpired(session, now);
+        });
+    }
+
+    private boolean isExpired(Map<String, Object> session, OffsetDateTime now) {
+        String leaseExpireAt = stringValue(session.get("leaseExpireAt"), "");
+        if (leaseExpireAt.isBlank()) {
+            return false;
+        }
+        try {
+            return !OffsetDateTime.parse(leaseExpireAt).isAfter(now);
+        } catch (DateTimeParseException ex) {
+            return false;
+        }
     }
 
     private Map<String, Object> requireRobot(String robotId) {
@@ -380,8 +420,7 @@ public class EquipmentControlService {
                     netGun(),
                     warningLight("warning-light-left", "左警示灯"),
                     warningLight("warning-light-right", "右警示灯"),
-                    vehicleLight("vehicle-light-front", "前车灯"),
-                    vehicleLight("vehicle-light-rear", "后车灯"),
+                    vehicleLight(),
                     intercom());
         }
         if ("robot-unitree-001".equals(robotId)) {
@@ -391,8 +430,7 @@ public class EquipmentControlService {
                     audioControl(),
                     warningLight("warning-light-left", "左警示灯"),
                     warningLight("warning-light-right", "右警示灯"),
-                    vehicleLight("vehicle-light-front", "前车灯"),
-                    vehicleLight("vehicle-light-rear", "后车灯"),
+                    vehicleLight(),
                     object(
                             "deviceId", "searchlight-001",
                             "bindingId", "bind-robot-unitree-001-searchlight-001",
@@ -415,8 +453,7 @@ public class EquipmentControlService {
                 netGun(),
                 warningLight("warning-light-left", "左警示灯"),
                 warningLight("warning-light-right", "右警示灯"),
-                vehicleLight("vehicle-light-front", "前车灯"),
-                vehicleLight("vehicle-light-rear", "后车灯"),
+                vehicleLight(),
                 intercom());
     }
 
@@ -522,20 +559,26 @@ public class EquipmentControlService {
                 "controlProfile", object("modes", List.of("ON", "OFF")));
     }
 
-    private static Map<String, Object> vehicleLight(String deviceId, String displayName) {
+    private static Map<String, Object> vehicleLight() {
         return object(
-                "deviceId", deviceId,
-                "bindingId", "bind-" + deviceId,
+                "deviceId", "vehicle-light",
+                "bindingId", "bind-vehicle-light",
                 "scope", "PAYLOAD",
                 "deviceType", "VEHICLE_LIGHT",
-                "displayName", displayName,
+                "displayName", "车灯光",
                 "vendor", "CUSTOM",
                 "model", "VL-01",
                 "onlineStatus", "online",
                 "controlStatus", "idle",
                 "enabled", true,
                 "actions", List.of("light.vehicle.set"),
-                "controlProfile", object("modes", List.of("ON", "OFF", "BREATH", "CUSTOM"), "maxBrightness", 100));
+                "controlProfile", object(
+                        "parts", List.of("front", "rear"),
+                        "modes", List.of("OFF", "ON", "BREATH", "CUSTOM"),
+                        "modeMapping", object("OFF", 0, "ON", 1, "BREATH", 2, "CUSTOM", 3),
+                        "maxBrightness", 100,
+                        "rosTopic", "/robot_light_ctl",
+                        "rosType", "robot_status_core/RobotLightCmd"));
     }
 
     private static Map<String, Object> audioControl() {
@@ -596,6 +639,24 @@ public class EquipmentControlService {
 
     private static boolean booleanValue(Object value, boolean defaultValue) {
         return value instanceof Boolean bool ? bool : defaultValue;
+    }
+
+    private static int vehicleLightMode(Map<String, Object> part) {
+        Object modeCode = part.get("modeCode");
+        if (modeCode instanceof Number number) {
+            return Math.max(0, Math.min(3, number.intValue()));
+        }
+        return switch (stringValue(part.get("mode"), "OFF").toUpperCase()) {
+            case "ON" -> 1;
+            case "BREATH" -> 2;
+            case "CUSTOM" -> 3;
+            default -> 0;
+        };
+    }
+
+    private static int clampedInt(Object value, int defaultValue, int min, int max) {
+        int number = value instanceof Number item ? item.intValue() : defaultValue;
+        return Math.max(min, Math.min(max, number));
     }
 
     private static Object valueOrDefault(Map<String, Object> map, String key, Object defaultValue) {
