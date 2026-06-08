@@ -23,6 +23,7 @@ type Config struct {
 	Cameras                  []Camera
 	FFprobePath              string
 	PublisherCmd             string
+	FFmpegPublisherCmd       string
 	GStreamerPublisherPath   string
 	GStreamerPipeline        string
 	GSTLaunchPath            string
@@ -72,6 +73,7 @@ func Load() Config {
 		Cameras:                  cameras(robotID),
 		FFprobePath:              env("FFPROBE_PATH", "ffprobe"),
 		PublisherCmd:             env("PUBLISHER_CMD", ""),
+		FFmpegPublisherCmd:       env("FFMPEG_PUBLISHER_CMD", "./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}"),
 		GStreamerPublisherPath:   env("GSTREAMER_PUBLISHER_PATH", "gstreamer-publisher"),
 		GStreamerPipeline:        env("GSTREAMER_PIPELINE", "rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1"),
 		GSTLaunchPath:            env("GST_LAUNCH_PATH", "gst-launch-1.0"),

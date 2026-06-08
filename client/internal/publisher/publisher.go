@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"robot-media-client/internal/config"
@@ -35,14 +36,24 @@ func NewProcessPublisher(cfg config.Config) *ProcessPublisher {
 func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	// 同一个 session 重新 start 时先停旧进程，避免摄像头和 LiveKit track 被重复占用。
 	_ = p.stopLocked(command.SessionID)
 	trackName := "video." + command.Channel + "." + command.Quality
-	if p.cfg.PublisherCmd == "" {
-		return p.startGStreamer(ctx, command, rtspURL, trackName)
+	if p.cfg.PublisherCmd != "" {
+		return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.PublisherCmd, "custom")
 	}
-	// 自定义命令支持占位符，方便在不同机器人镜像里替换 ffmpeg/gstreamer 脚本。
-	args := strings.Fields(p.cfg.PublisherCmd)
+	trackSid, publishedTrackName, err := p.startGStreamer(ctx, command, rtspURL, trackName)
+	if err == nil || p.cfg.FFmpegPublisherCmd == "" {
+		return trackSid, publishedTrackName, err
+	}
+	log.Println("publisher fallback ffmpeg", command.SessionID, err)
+	return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg")
+}
+
+func (p *ProcessPublisher) startCommand(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, template string, mode string) (string, string, error) {
+	args := strings.Fields(template)
+	if len(args) == 0 {
+		return "", "", errors.New("publisher command is empty")
+	}
 	for i := range args {
 		args[i] = strings.NewReplacer(
 			"{rtsp}", rtspURL,
@@ -55,7 +66,8 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	log.Println("publisher command", strings.Join(args, " "))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	log.Println("publisher command", mode, strings.Join(args, " "))
 	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
@@ -80,6 +92,7 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 	cmd := exec.CommandContext(ctx, p.cfg.GStreamerPublisherPath, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	log.Println("publisher command", p.cfg.GStreamerPublisherPath, strings.Join(args, " "))
 	if err := cmd.Start(); err != nil {
 		return "", "", err
@@ -112,7 +125,10 @@ func (p *ProcessPublisher) stopLocked(sessionID string) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
-	err := cmd.Process.Kill()
+	err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if err != nil {
+		err = cmd.Process.Kill()
+	}
 	delete(p.cmds, sessionID)
 	return err
 }
