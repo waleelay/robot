@@ -4,7 +4,9 @@ import com.robot.mediaserver.video.dto.CompleteSnapshotRequest;
 import com.robot.mediaserver.video.dto.FailSnapshotRequest;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.service.SnapshotService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@RequestMapping("/api/internal/media/snapshots")
+@RequestMapping({"/api/internal/media/snapshots", "/internal/media/snapshots"})
 public class SnapshotWorkerController {
 
     private final SnapshotService snapshotService;
@@ -44,5 +46,12 @@ public class SnapshotWorkerController {
             @PathVariable String snapshotId,
             @RequestBody FailSnapshotRequest request) {
         return snapshotService.fail(snapshotId, request);
+    }
+
+    @GetMapping(value = "/{snapshotId}/image", produces = MediaType.IMAGE_JPEG_VALUE)
+    public ResponseEntity<byte[]> image(@PathVariable String snapshotId) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .body(snapshotService.image(snapshotId));
     }
 }

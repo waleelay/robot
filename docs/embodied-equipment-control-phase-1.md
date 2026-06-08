@@ -4,7 +4,7 @@
 
 一期目标是完成远程控制最小闭环，支撑以下设备组合：
 
-- 松灵四轮机器人：本体、双光云台、捕网器、激光雷达、语音对讲。
+- 松灵四轮机器人：本体、双光云台、捕网器、警示灯、车灯光、语音对讲。
 - 云深处四足机器狗：本体、双光云台、捕网器、语音对讲。
 - 宇树机器狗：本体、双光云台、探照灯。
 
@@ -34,7 +34,7 @@
 | 能力 | 放到二期原因 |
 |---|---|
 | 机械臂复杂控制 | 需要软限位、碰撞、轨迹和姿态策略 |
-| 激光雷达点云流 | 控制协议只负责配置，数据流需另建链路 |
+| 激光雷达点云流和模式控制 | 一期暂不接入雷达控制代码，后续如需接入放到二期 |
 | 完整任务调度系统 | 一期只做接管仲裁，不实现任务编排、路线规划和恢复策略 |
 | 多厂商 driver 插件化 | 一期可先内置 driver |
 | 协议灰度和版本协商 | 一期固定 `embodied-control 1.0` |
@@ -496,7 +496,6 @@ POST /api/control/robots/{robotId}/commands
 | `robot/{robotId}/control/net-gun/{deviceId}/command` | 后端 -> Go | 捕网枪控制，1 发类设备 |
 | `robot/{robotId}/control/warning-light/{deviceId}/command` | 后端 -> Go | 左右警示灯开关控制 |
 | `robot/{robotId}/control/vehicle-light/{deviceId}/command` | 后端 -> Go | 前后车灯控制，常开、常关、呼吸灯、自定义亮度 |
-| `robot/{robotId}/control/lidar/{deviceId}/command` | 后端 -> Go | 雷达模式、频率、启停等控制 |
 | `robot/{robotId}/control/safety/estop` | 后端 -> Go | 急停 |
 | `robot/{robotId}/media/client/status` | Go -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和设备状态 |
 
@@ -518,7 +517,6 @@ POST /api/control/robots/{robotId}/commands
 | `NET_GUN`、`NET_LAUNCHER` | `robot/{robotId}/control/net-gun/{deviceId}/command` |
 | `WARNING_LIGHT` 或 `light.warning.*` | `robot/{robotId}/control/warning-light/{deviceId}/command` |
 | `VEHICLE_LIGHT`、`SEARCHLIGHT` 或 `light.vehicle.*` | `robot/{robotId}/control/vehicle-light/{deviceId}/command` |
-| `LIDAR` 或 `lidar.*` | `robot/{robotId}/control/lidar/{deviceId}/command` |
 
 `media/client/status` 示例：
 
@@ -668,13 +666,18 @@ POST /api/control/robots/{robotId}/commands
 | `brightness` | number | 否 | 亮度 0-100 |
 | `mode` | string | 否 | `STEADY` 常亮，`FLASH` 闪烁 |
 
-#### `lidar.mode.set`
+#### `light.vehicle.set`
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| `mode` | string | 是 | `IDLE` / `LOCALIZATION` / `MAPPING` |
-| `scanRateHz` | number | 否 | 扫描频率 |
-| `publishPointCloud` | boolean | 否 | 一期默认 false，不通过控制 MQTT 传点云 |
+| `front` | object | 是 | 前灯完整状态 |
+| `front.mode` | string | 是 | `OFF` 常关、`ON` 常开、`BREATH` 呼吸灯、`CUSTOM` 自定义亮度 |
+| `front.modeCode` | number | 是 | 前灯底层模式码：0 常关、1 常开、2 呼吸灯、3 自定义亮度 |
+| `front.customValue` | number | 是 | 前灯自定义亮度，范围 0-100；仅 `mode=CUSTOM` 时有效，其余模式传 0 |
+| `rear` | object | 是 | 后灯完整状态 |
+| `rear.mode` | string | 是 | `OFF` 常关、`ON` 常开、`BREATH` 呼吸灯、`CUSTOM` 自定义亮度 |
+| `rear.modeCode` | number | 是 | 后灯底层模式码：0 常关、1 常开、2 呼吸灯、3 自定义亮度 |
+| `rear.customValue` | number | 是 | 后灯自定义亮度，范围 0-100；仅 `mode=CUSTOM` 时有效，其余模式传 0 |
 
 ## 9. 前端到 MQTT 参数构造
 
@@ -764,7 +767,8 @@ POST /api/control/robots/{robotId}/commands
 | `DUAL_LIGHT_PTZ` | `ptz.move`、`camera.zoom` | 裁剪云台速度、变焦速度 |
 | `NET_LAUNCHER` | `payload.safety_switch`、`payload.fire` | 校验 confirmToken、安全开关、冷却 |
 | `SEARCHLIGHT` | `light.set` | 裁剪亮度，校验模式 |
-| `LIDAR` | `lidar.mode.set` | 校验雷达模式和频率 |
+| `WARNING_LIGHT` | `light.warning.set` | 按左右警示灯设备分别构造开关参数 |
+| `VEHICLE_LIGHT` | `light.vehicle.set` | 前后灯作为一个整体设备，转换为 `/robot_light_ctl` 的 `RobotLightCmd` |
 
 后端组装伪代码：
 
@@ -1110,32 +1114,41 @@ mqttPayload = {
 }
 ```
 
-### 9.6 激光雷达：`lidar.mode.set`
+### 9.6 车灯光：`light.vehicle.set`
 
 使用场景：
 
-- 松灵机器人绑定激光雷达时，切换定位/建图/空闲模式。
-- 一期只做模式控制，不承载点云数据流。
+- 松灵四轮机器人绑定车灯光时，控制前灯和后灯。
+- 前灯、后灯在页面上各显示一组单选按钮：`常关 | 常开 | 呼吸 | 自定义`。
+- 每组只能选中一个模式；只有选择 `自定义` 时才显示亮度滑块。
+- 底层车灯接口一次接收前后灯完整状态，所以前端每次都提交 `front + rear`。
 
 前端 REST 请求：
 
 ```jsonc
 {
-  "controlSessionId": "tc_20260603_0005",        // 激光雷达设备级控制权
+  "controlSessionId": "tc_20260603_0005",        // 车灯设备级控制权
   "target": {
-    "scope": "SENSOR",                           // 传感器
-    "deviceId": "lidar-001",                     // 激光雷达设备 ID
-    "deviceType": "LIDAR"                        // 激光雷达类型
+    "scope": "PAYLOAD",                          // 上装
+    "deviceId": "vehicle-light",                 // 车灯作为一个整体设备
+    "deviceType": "VEHICLE_LIGHT"                // 车灯类型
   },
-  "action": "lidar.mode.set",                    // 设置雷达模式
+  "action": "light.vehicle.set",                 // 设置前后车灯
   "params": {
-    "mode": "MAPPING",                           // IDLE 空闲，LOCALIZATION 定位，MAPPING 建图
-    "scanRateHz": 10,                            // 扫描频率
-    "publishPointCloud": false                   // 一期默认 false，不走控制 MQTT 传点云
+    "front": {
+      "mode": "CUSTOM",                          // OFF 常关，ON 常开，BREATH 呼吸灯，CUSTOM 自定义亮度
+      "modeCode": 3,                             // 0 常关，1 常开，2 呼吸灯，3 自定义亮度
+      "customValue": 70                          // 仅 CUSTOM 时有效，范围 0-100
+    },
+    "rear": {
+      "mode": "BREATH",                          // 后灯当前模式
+      "modeCode": 2,                             // 后灯底层模式码
+      "customValue": 0                           // 非 CUSTOM 模式固定传 0
+    }
   },
   "client": {
     "terminalId": "web-client-001",              // 终端
-    "source": "lidar_mode_select",               // 模式选择控件
+    "source": "vehicle_light_front_custom",      // 控件来源
     "seq": 5001,                                 // 序号
     "timestamp": "2026-06-03T10:30:50+08:00"     // 前端时间
   }
@@ -1153,14 +1166,20 @@ mqttPayload = {
   "robotId": "robot-songling-001",               // 松灵机器人
   "seq": 5001,                                   // 序号
   "target": {
-    "deviceId": "lidar-001",                     // 雷达设备
-    "deviceType": "LIDAR"                        // 雷达类型
+    "deviceId": "vehicle-light",                 // 车灯整体设备
+    "deviceType": "VEHICLE_LIGHT"                // 车灯类型
   },
-  "action": "lidar.mode.set",                    // 模式切换
+  "action": "light.vehicle.set",                 // 车灯设置
   "params": {
-    "mode": "MAPPING",                           // 建图模式
-    "scanRateHz": 10,                            // 频率
-    "publishPointCloud": false                   // 一期不通过控制 MQTT 发点云
+    "op": "publish",                             // Go 客户端底层发布动作
+    "topic": "/robot_light_ctl",                 // 机器人侧灯光控制 topic
+    "type": "robot_status_core/RobotLightCmd",   // 机器人侧消息类型
+    "msg": {
+      "front_mode": 3,                           // 前灯自定义亮度
+      "front_custom_value": 70,                  // 前灯亮度
+      "rear_mode": 2,                            // 后灯呼吸灯
+      "rear_custom_value": 0                     // 后灯非 CUSTOM 固定 0
+    }
   },
   "issuedAt": "2026-06-03T10:30:50+08:00"        // 后端时间
 }

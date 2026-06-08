@@ -2,6 +2,7 @@ package com.robot.mediaserver.storage;
 
 import com.robot.mediaserver.config.MediaProperties;
 import io.minio.BucketExistsArgs;
+import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -56,6 +57,20 @@ public class MinioStorageService {
             return objectKey;
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to upload object to MinIO: " + objectKey, ex);
+        }
+    }
+
+    public byte[] readObject(String objectKey) {
+        if (!properties.getMinio().isEnabled()) {
+            throw new IllegalStateException("MinIO disabled");
+        }
+        try (InputStream inputStream = client().getObject(GetObjectArgs.builder()
+                .bucket(properties.getMinio().getBucket())
+                .object(objectKey)
+                .build())) {
+            return inputStream.readAllBytes();
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Object not found: " + objectKey, ex);
         }
     }
 

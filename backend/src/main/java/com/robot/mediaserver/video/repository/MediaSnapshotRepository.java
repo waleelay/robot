@@ -21,5 +21,7 @@ public interface MediaSnapshotRepository extends JpaRepository<MediaSnapshot, St
      */
     List<MediaSnapshot> findTop20BySessionIdOrderByCreatedAtDesc(String sessionId);
 
+    List<MediaSnapshot> findTop50ByRobotIdAndDeviceIdOrderByCreatedAtDesc(String robotId, String deviceId);
+
     List<MediaSnapshot> findTop10ByStatusOrderByCreatedAtAsc(SnapshotStatus status);
 }

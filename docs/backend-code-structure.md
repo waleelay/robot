@@ -131,8 +131,8 @@ video/
   - 同一个 Controller 同时暴露外部 media API 和内部 media API，便于 Control 层复用。
 
 - `SnapshotWorkerController`
-  - 路径：`/api/internal/media/snapshots`。
-  - 供内部抓拍 Worker 回调抓拍完成、上传文件或标记失败。
+  - 路径：`/api/internal/media/snapshots` 和 `/internal/media/snapshots`。
+  - 供内部抓拍 Worker 回调抓拍完成、上传文件、标记失败，或供 Control 层代理读取抓拍图片。
 
 - `ApiExceptionHandler`
   - 全局 REST 异常处理，统一返回错误响应。
@@ -148,7 +148,7 @@ video/
   - 提供按会话查询最近 Track 的能力。
 
 - `SnapshotService`
-  - 创建抓拍任务、保存抓拍结果、上传图片到 MinIO、标记抓拍失败。
+  - 创建抓拍记录、保存前端当前画面抓拍结果、上传图片到 MinIO、查询抓拍列表、读取图片、标记抓拍失败。
 
 - `MediaEventLogService`
   - 记录媒体事件日志，并配合 WebSocket 推送关键事件。
@@ -376,6 +376,9 @@ recording/
 - `/api/control/video-sessions/{sessionId}/restart`
 - `/api/control/video-sessions/{sessionId}/switch-channel`
 - `/api/control/video-sessions/{sessionId}/snapshots`
+- `/api/control/video-sessions/{sessionId}/snapshots/file`
+- `/api/control/robots/{robotId}/cameras/{deviceId}/snapshots`
+- `/api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/image`
 - `/api/control/recordings`
 
 ### 面向媒体能力/机器人端：`/api/media/*`
@@ -395,6 +398,9 @@ recording/
 用于 Control 层、内部 Worker 或服务间调用：
 
 - `/internal/media/video-sessions`
+- `/internal/media/video-sessions/{sessionId}/snapshots/file`
+- `/internal/media/video-sessions/snapshots`
+- `/internal/media/snapshots/{snapshotId}/image`
 - `/internal/media/robots`
 - `/internal/media/recordings`
 - `/api/internal/media/snapshots`

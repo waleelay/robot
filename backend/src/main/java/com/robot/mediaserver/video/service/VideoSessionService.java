@@ -6,6 +6,7 @@ import com.robot.mediaserver.livekit.LiveKitRoomService;
 import com.robot.mediaserver.livekit.LiveKitTokenService;
 import com.robot.mediaserver.livekit.LiveKitTokenService.TokenResult;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
+import com.robot.mediaserver.video.dto.CompleteSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.IntercomResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
@@ -31,6 +32,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 实时视频会话编排服务。
@@ -457,6 +459,17 @@ public class VideoSessionService {
             throw new IllegalStateException("Current session is not streaming");
         }
         return snapshotService.create(session, request, user);
+    }
+
+    public SnapshotResponse createSnapshotFile(
+            String sessionId,
+            CreateSnapshotRequest request,
+            MultipartFile file,
+            CurrentUser user) {
+        SnapshotResponse snapshot = createSnapshot(sessionId, request, user);
+        CompleteSnapshotRequest completeRequest = new CompleteSnapshotRequest();
+        completeRequest.setOfficialCapturedAt(request.getClientCapturedAt());
+        return snapshotService.complete(snapshot.snapshotId(), completeRequest, file);
     }
 
     /**

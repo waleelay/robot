@@ -23,9 +23,14 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.MultiValueMap;
+import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
@@ -134,8 +139,47 @@ public class ControlMediaServiceClient {
         return post("/internal/media/video-sessions/{sessionId}/snapshots", request, user, SnapshotResponse.class, sessionId);
     }
 
+    public SnapshotResponse snapshotFile(String sessionId, CreateSnapshotRequest request, MultipartFile file, CurrentUser user) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("trackSid", request.getTrackSid());
+        addPart(body, "reason", request.getReason());
+        addPart(body, "remark", request.getRemark());
+        addPart(body, "clientCapturedAt", request.getClientCapturedAt() == null ? null : request.getClientCapturedAt().toString());
+        addPart(body, "previewImageHash", request.getPreviewImageHash());
+        try {
+            body.add("file", new ByteArrayResource(file.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return file.getOriginalFilename() == null ? "snapshot.jpg" : file.getOriginalFilename();
+                }
+            });
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to read snapshot file", ex);
+        }
+        return withHeaders(restClient.post()
+                        .uri("/internal/media/video-sessions/{sessionId}/snapshots/file", sessionId)
+                        .contentType(MediaType.MULTIPART_FORM_DATA), user)
+                .body(body)
+                .retrieve()
+                .body(SnapshotResponse.class);
+    }
+
     public List<SnapshotResponse> snapshots(String sessionId) {
         return getList("/internal/media/video-sessions/{sessionId}/snapshots", new ParameterizedTypeReference<>() {}, sessionId);
+    }
+
+    public List<SnapshotResponse> snapshots(String robotId, String deviceId) {
+        return getList("/internal/media/video-sessions/snapshots?robotId={robotId}&deviceId={deviceId}",
+                new ParameterizedTypeReference<>() {},
+                robotId,
+                deviceId);
+    }
+
+    public byte[] snapshotImage(String snapshotId) {
+        return restClient.get()
+                .uri("/internal/media/snapshots/{snapshotId}/image", snapshotId)
+                .retrieve()
+                .body(byte[].class);
     }
 
     public VideoStartCommand requestClientStart(String sessionId, String event) {
@@ -256,6 +300,12 @@ public class ControlMediaServiceClient {
                 .header("X-Org-Id", user.orgId())
                 .header("X-Roles", String.join(",", user.roles()))
                 .header("X-Client-Id", user.clientId());
+    }
+
+    private void addPart(MultiValueMap<String, Object> body, String key, Object value) {
+        if (value != null) {
+            body.add(key, value);
+        }
     }
 
     private Optional<String> optional(String value) {

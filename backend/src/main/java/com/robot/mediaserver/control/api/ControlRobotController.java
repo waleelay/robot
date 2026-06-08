@@ -7,9 +7,12 @@ import com.robot.mediaserver.control.service.EquipmentControlService;
 import com.robot.mediaserver.control.service.ControlVideoCommandService;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.IntercomResponse;
+import com.robot.mediaserver.video.dto.SnapshotResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -115,5 +118,20 @@ public class ControlRobotController {
             @RequestBody(required = false) ControlStartVideoRequest request,
             HttpServletRequest servletRequest) {
         return controlVideoCommandService.startIntercom(robotId, deviceId, request, currentUserResolver.resolve(servletRequest));
+    }
+
+    @GetMapping("/{robotId}/cameras/{deviceId}/snapshots")
+    public List<SnapshotResponse> snapshots(@PathVariable String robotId, @PathVariable String deviceId) {
+        return mediaServiceClient.snapshots(robotId, deviceId);
+    }
+
+    @GetMapping(value = "/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/image", produces = MediaType.IMAGE_JPEG_VALUE)
+    public ResponseEntity<byte[]> snapshotImage(
+            @PathVariable String robotId,
+            @PathVariable String deviceId,
+            @PathVariable String snapshotId) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .body(mediaServiceClient.snapshotImage(snapshotId));
     }
 }

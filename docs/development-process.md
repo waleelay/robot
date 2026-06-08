@@ -71,13 +71,17 @@ RTSP 失败时会话进入 FAILED
 ## 抓拍验收
 
 ```text
-前端必须在正在观看视频时提交抓拍
-请求包含 trackSid
-服务端创建 PROCESSING 记录
+未观看时抓拍按钮不可用
+观看中抓拍按钮可用
+前端从当前 video 画面截取 JPEG
+请求为 multipart/form-data，包含 trackSid 和 file
+服务端创建抓拍记录并直接写入 MinIO
 WebSocket 推送 snapshot.requested
-Worker 完成后回写 COMPLETED
+服务端更新 COMPLETED
+抓拍成功提示包含“查看”链接
+图片预览接口返回 image/jpeg
 MinIO 存在正式图片
-失败时回写 FAILED
+兜底抓拍失败时回写 FAILED
 ```
 
 ## WebSocket 验收

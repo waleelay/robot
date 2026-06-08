@@ -98,6 +98,12 @@ public class SnapshotService {
                 .toList();
     }
 
+    public List<SnapshotResponse> recentByRobotDevice(String robotId, String deviceId) {
+        return repository.findTop50ByRobotIdAndDeviceIdOrderByCreatedAtDesc(robotId, deviceId).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
     /**
      * 完成抓拍任务。
      *
@@ -170,6 +176,14 @@ public class SnapshotService {
         return toResponse(snapshot);
     }
 
+    public byte[] image(String snapshotId) {
+        MediaSnapshot snapshot = requireSnapshot(snapshotId);
+        if (snapshot.getOfficialObjectKey() == null || snapshot.getOfficialObjectKey().isBlank()) {
+            throw new IllegalStateException("Snapshot image is not ready");
+        }
+        return minioStorageService.readObject(snapshot.getOfficialObjectKey());
+    }
+
     private SnapshotResponse toResponse(MediaSnapshot snapshot) {
         return new SnapshotResponse(
                 snapshot.getSnapshotId(),
@@ -200,7 +214,9 @@ public class SnapshotService {
     private String objectKey(MediaSnapshot snapshot, String originalFilename) {
         String suffix = extension(originalFilename);
         OffsetDateTime now = now();
-        return "snapshots/%04d/%02d/%02d/%s%s".formatted(
+        return "snapshots/%s/%s/%04d/%02d/%02d/%s%s".formatted(
+                safePath(snapshot.getRobotId()),
+                safePath(snapshot.getDeviceId()),
                 now.getYear(),
                 now.getMonthValue(),
                 now.getDayOfMonth(),
@@ -222,6 +238,13 @@ public class SnapshotService {
 
     private String safeValue(String value) {
         return value == null ? "" : value;
+    }
+
+    private String safePath(String value) {
+        if (value == null || value.isBlank()) {
+            return "unknown";
+        }
+        return value.replaceAll("[^A-Za-z0-9._-]", "_");
     }
 
     private OffsetDateTime now() {

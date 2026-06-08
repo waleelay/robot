@@ -120,8 +120,26 @@ export function createSnapshot(sessionId, data) {
   return client.post(`/api/control/video-sessions/${sessionId}/snapshots`, data).then(res => res.data)
 }
 
+export function createSnapshotFile(sessionId, data) {
+  return client.post(`/api/control/video-sessions/${sessionId}/snapshots/file`, data, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    timeout: 30000
+  }).then(res => res.data)
+}
+
 export function getSessionSnapshots(sessionId) {
   return client.get(`/api/control/video-sessions/${sessionId}/snapshots`).then(res => res.data)
+}
+
+export function getCameraSnapshots(robotId, deviceId) {
+  return client.get(`/api/control/robots/${robotId}/cameras/${deviceId}/snapshots`).then(res => res.data)
+}
+
+export function snapshotImageUrl(robotId, deviceId, snapshotId) {
+  const base = process.env.VUE_APP_API_BASE || ''
+  return `${base}/api/control/robots/${robotId}/cameras/${deviceId}/snapshots/${snapshotId}/image`
 }
 
 export function getSessionEvents(sessionId) {

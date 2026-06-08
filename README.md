@@ -357,8 +357,9 @@ http://localhost:8090
 可见光/热成像切换
 停止观看
 查询活跃视频墙列表
-提交抓拍任务
+当前画面截帧抓拍并上传
 查询抓拍记录
+预览抓拍图片
 查询事件日志
 模拟 ACK 和 Track published
 ```
@@ -432,37 +433,48 @@ room_finished        -> CLOSED
 
 ```text
 前端从正在播放的 LiveKit Track 截当前帧
-前端提交抓拍任务
-服务端创建 PROCESSING 抓拍记录
-Snapshot Worker 订阅对应 Track 并生成正式图片
-Snapshot Worker 上传 MinIO 或回写 objectKey
-服务端更新 COMPLETED/FAILED
-WebSocket 推送 snapshot.completed/snapshot.failed
+前端以 multipart/form-data 上传 JPEG
+Control Server 转发到 Media Service
+服务端创建抓拍记录并直接写入 MinIO
+服务端更新 COMPLETED
+WebSocket 推送 snapshot.requested/snapshot.completed
+前端提示“抓拍已保存 查看”，点击查看图片
 ```
 
-JSON 回写：
+主路径接口：
 
 ```http
+POST /api/control/video-sessions/{sessionId}/snapshots/file
+```
+
+```text
+trackSid=TR_xxx
+reason=manual_abnormal
+remark=云台-可见光 手动抓拍
+clientCapturedAt=2026-06-08T15:00:00.000Z
+previewImageHash=123456
+file=@snapshot.jpg
+```
+
+图片归档路径：
+
+```text
+snapshots/{robotId}/{deviceId}/{yyyy}/{mm}/{dd}/{snapshotId}.jpg
+```
+
+查询和预览：
+
+```http
+GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots
+GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/image
+```
+
+兜底/内部接口仍保留：
+
+```http
+POST /api/control/video-sessions/{sessionId}/snapshots
 POST /api/internal/media/snapshots/{snapshotId}/complete
-```
-
-```json
-{
-  "officialObjectKey": "snapshots/2026/05/20/snap_xxx.jpg",
-  "officialCapturedAt": "2026-05-20T10:30:00+08:00",
-  "timeDeltaMs": 12
-}
-```
-
-multipart 回写：
-
-```http
 POST /api/internal/media/snapshots/{snapshotId}/complete-file
-```
-
-失败回写：
-
-```http
 POST /api/internal/media/snapshots/{snapshotId}/fail
 ```
 

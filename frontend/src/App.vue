@@ -115,7 +115,7 @@
                 <el-button
                     size="mini"
                     icon="el-icon-camera"
-                    :disabled="!camera.session || !camera.hasVideo"
+                    :disabled="!canSnapshot(camera)"
                     @click="snapshotCamera(camera)"
                 >抓拍</el-button>
                 <el-button
@@ -274,7 +274,7 @@ import Hls from 'hls.js'
 import {
   acquireControl,
   createConfirmToken,
-  createSnapshot,
+  createSnapshotFile,
   createVideoSession,
   getControlProfile,
   getRobots,
@@ -286,6 +286,7 @@ import {
   mediaClientId,
   restartVideoSession,
   sendEquipmentCommand,
+  snapshotImageUrl,
   startCameraIntercom,
   startSessionIntercom,
   stopIntercom,
@@ -731,18 +732,24 @@ export default {
         camera.intercomBusy = false
       }
     },
-    // 手动抓拍只提交任务；真正抓图/保存由后端 SnapshotService 和机器人/媒体侧完成。
     async snapshotCamera(camera) {
       if (!camera.session) return
-      const response = await createSnapshot(camera.session.sessionId, {
-        trackSid: camera.session.trackSid || 'TR_pending',
-        reason: 'manual_abnormal',
-        remark: `${camera.name} 手动抓拍`,
-        clientCapturedAt: new Date().toISOString(),
-        previewImageHash: this.previewHash(camera)
-      })
+      const capturedAt = new Date().toISOString()
+      const blob = await this.captureFrameBlob(camera)
+      if (!blob) {
+        this.$message.warning('当前画面不可抓拍')
+        return
+      }
+      const form = new FormData()
+      form.append('trackSid', camera.session.trackSid || 'TR_pending')
+      form.append('reason', 'manual_abnormal')
+      form.append('remark', `${camera.name} 手动抓拍`)
+      form.append('clientCapturedAt', capturedAt)
+      form.append('previewImageHash', `${blob.size}`)
+      form.append('file', blob, `${camera.robotId}-${camera.deviceId}-${Date.now()}.jpg`)
+      const response = await createSnapshotFile(camera.session.sessionId, form)
       this.log('API snapshot', response)
-      this.$message.success('已提交抓拍任务')
+      this.showSnapshotSuccess(camera, response)
     },
     // 连接 LiveKit 的核心逻辑。
     // 普通观看使用 viewerToken；对讲使用 operatorToken，并在同一个 Room 中发布浏览器麦克风。
@@ -805,6 +812,7 @@ export default {
         })
         camera.room = room
         await room.connect(livekitUrl, token)
+        this.attachExistingVideoTracks(camera, room, sessionId)
         this.log('LiveKit connected', `${camera.name} ${camera.session.roomName}`)
       } catch (error) {
         camera.room = null
@@ -1257,6 +1265,21 @@ export default {
       const ref = this.$refs[camera.key + '-audio']
       return Array.isArray(ref) ? ref[0] : ref
     },
+    canSnapshot(camera) {
+      return !!camera.session && camera.watching && !camera.stopping && !camera.stopped
+    },
+    attachExistingVideoTracks(camera, room, sessionId) {
+      room.remoteParticipants.forEach(participant => {
+        participant.trackPublications.forEach(publication => {
+          const track = publication.track
+          if (!track || track.kind !== 'video') return
+          if (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId) return
+          track.attach(this.videoElement(camera))
+          camera.hasVideo = true
+          this.log('LiveKit TrackAttached', `${camera.name} ${track.sid || track.name}`)
+        })
+      })
+    },
     liveKitConnectionUrl(serverUrl) {
       // HTTPS 页面不能直接连 ws:// LiveKit；生产环境通过同域 /livekit 反代升级到 wss。
       if (window.location.protocol === 'https:') {
@@ -1264,15 +1287,38 @@ export default {
       }
       return serverUrl
     },
-    previewHash(camera) {
-      // 只返回截图 dataURL 长度作为轻量 hash，避免把大图直接塞进抓拍请求。
+    captureFrameBlob(camera) {
       const video = this.videoElement(camera)
-      if (!video || !video.videoWidth) return null
+      if (!video || !video.videoWidth || !video.videoHeight) return Promise.resolve(null)
       const canvas = document.createElement('canvas')
       canvas.width = video.videoWidth
       canvas.height = video.videoHeight
       canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
-      return String(canvas.toDataURL('image/jpeg', 0.7).length)
+      return new Promise(resolve => {
+        canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.88)
+      })
+    },
+    showSnapshotSuccess(camera, snapshot) {
+      if (!snapshot || !snapshot.snapshotId) {
+        this.$message.success('抓拍已保存')
+        return
+      }
+      const url = snapshotImageUrl(camera.robotId, camera.deviceId, snapshot.snapshotId)
+      this.$message({
+        type: 'success',
+        customClass: 'snapshot-message',
+        dangerouslyUseHTMLString: true,
+        message: `抓拍已保存 <a class="message-link" href="${this.escapeHtml(url)}" target="_blank" rel="noopener noreferrer">查看</a>`
+      })
+    },
+    escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]))
     },
     mergeSession(camera, update) {
       // 部分 API/事件只返回增量字段，保留已有 token/url/roomName，避免重连时丢上下文。
@@ -1848,6 +1894,23 @@ export default {
   border-radius: 4px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
+}
+
+/deep/ .message-link {
+  color: #1677ff;
+  font-weight: 600;
+  margin-left: 8px;
+  text-decoration: none;
+}
+
+/deep/ .snapshot-message {
+  min-width: 0;
+  width: auto;
+  padding-right: 18px;
+}
+
+/deep/ .message-link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 1200px) {
