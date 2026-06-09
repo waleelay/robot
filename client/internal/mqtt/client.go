@@ -24,12 +24,22 @@ type Client struct {
 	mu        sync.Mutex
 	// lastCmds 用于按 session 去重 MQTT 指令。服务端重试或 broker 重投时，
 	// 同一个 commandId 不应再次启动推流/对讲进程。
-	lastCmds map[string]string
-	stateSeq int64
+	lastCmds    map[string]string
+	stateSeq    int64
+	audioVolume int
+	audioMuted  bool
 }
 
 func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publisher, intercomManager intercom.Manager) *Client {
-	return &Client{cfg: cfg, probe: probe, publisher: publisher, intercom: intercomManager, lastCmds: make(map[string]string)}
+	return &Client{
+		cfg:         cfg,
+		probe:       probe,
+		publisher:   publisher,
+		intercom:    intercomManager,
+		lastCmds:    make(map[string]string),
+		audioVolume: 50,
+		audioMuted:  false,
+	}
 }
 
 func (c *Client) Run(ctx context.Context) error {
@@ -200,7 +210,37 @@ func (c *Client) handleControlCommand() paho.MessageHandler {
 		}
 		pretty, _ := json.MarshalIndent(command, "", "  ")
 		log.Println("equipment control command received topic=", msg.Topic(), "payload=", string(pretty))
+		if c.applyAudioCommand(command) {
+			c.online("online")
+		}
 	}
+}
+
+func (c *Client) applyAudioCommand(command model.ControlCommand) bool {
+	if command.Target.DeviceType != "CLIENT_AUDIO" && command.Target.DeviceType != "VOLUME_CONTROL" && command.Target.DeviceType != "INTERCOM" {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch command.Action {
+	case "volume.set":
+		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume), 0, 100)
+		c.audioMuted = anyBool(command.Params["muted"], false)
+	case "volume.up":
+		step := clampInt(anyInt(command.Params["step"], 5), 1, 100)
+		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume+step), 0, 100)
+		c.audioMuted = anyBool(command.Params["muted"], false)
+	case "volume.down":
+		step := clampInt(anyInt(command.Params["step"], 5), 1, 100)
+		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume-step), 0, 100)
+		c.audioMuted = anyBool(command.Params["muted"], false)
+	case "volume.mute":
+		c.audioMuted = anyBool(command.Params["muted"], true)
+		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume), 0, 100)
+	default:
+		return false
+	}
+	return true
 }
 
 func (c *Client) status(sessionID, status, trackSid, trackName, errorCode, message string) {
@@ -281,6 +321,10 @@ func (c *Client) statusDevices(status string) []model.RegistryDeviceStatus {
 	if status == "offline" {
 		onlineStatus = "offline"
 	}
+	c.mu.Lock()
+	audioVolume := c.audioVolume
+	audioMuted := c.audioMuted
+	c.mu.Unlock()
 	devices := []model.RegistryDeviceStatus{
 		{
 			DeviceID:         "base",
@@ -298,7 +342,7 @@ func (c *Client) statusDevices(status string) []model.RegistryDeviceStatus {
 			OnlineStatus:     onlineStatus,
 			HealthStatus:     "normal",
 			ControlStatus:    "idle",
-			SupportedActions: []string{"ptz.move", "camera.zoom"},
+			SupportedActions: []string{"ptz.move", "ptz.auto_rotate", "camera.zoom"},
 		},
 		{
 			DeviceID:         "audio-control-001",
@@ -307,7 +351,8 @@ func (c *Client) statusDevices(status string) []model.RegistryDeviceStatus {
 			OnlineStatus:     onlineStatus,
 			HealthStatus:     "normal",
 			ControlStatus:    "idle",
-			SupportedActions: []string{"volume.up", "volume.down", "volume.mute"},
+			SupportedActions: []string{"volume.set", "volume.up", "volume.down", "volume.mute"},
+			Status:           map[string]any{"volume": audioVolume, "muted": audioMuted},
 		},
 		{
 			DeviceID:         "warning-light-left",
@@ -386,4 +431,38 @@ func (c *Client) rtspURL(deviceID string) string {
 		}
 	}
 	return c.cfg.RTSPVisibleSub
+}
+
+func anyInt(value any, fallback int) int {
+	switch item := value.(type) {
+	case float64:
+		return int(item)
+	case float32:
+		return int(item)
+	case int:
+		return item
+	case int64:
+		return int(item)
+	case int32:
+		return int(item)
+	default:
+		return fallback
+	}
+}
+
+func anyBool(value any, fallback bool) bool {
+	if item, ok := value.(bool); ok {
+		return item
+	}
+	return fallback
+}
+
+func clampInt(value, min, max int) int {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }

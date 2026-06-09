@@ -165,8 +165,9 @@ public class EquipmentControlService {
         requireRobot(robotId);
         Map<String, Object> mqttPayload = buildMqttPayload(robotId, request, user);
         commandPublisher.publishCommand(robotId, mqttPayload);
+        String commandId = "cmd_" + compactUuid();
         Map<String, Object> response = object(
-                "commandId", mqttPayload.get("commandId"),
+                "commandId", commandId,
                 "status", "PUBLISHED",
                 "robotId", robotId,
                 "target", mqttPayload.get("target"),
@@ -200,10 +201,6 @@ public class EquipmentControlService {
         Map<String, Object> builtParams = buildParams(action, stringValue(target.get("deviceType"), ""), params, device);
         OffsetDateTime now = OffsetDateTime.now();
         return object(
-                "protocol", "embodied-control",
-                "version", "1.0",
-                "messageType", "command",
-                "commandId", "cmd_" + compactUuid(),
                 "robotId", robotId,
                 "seq", numberValue(client.get("seq"), 0).longValue(),
                 "target", object(
@@ -242,6 +239,18 @@ public class EquipmentControlService {
         }
         if ("camera.zoom".equals(action)) {
             return object("zoomSpeed", clamp(doubleValue(params.get("zoomSpeed"), 0.0), -1.0, 1.0));
+        }
+        if ("ptz.auto_rotate".equals(action)) {
+            double maxPanSpeed = doubleValue(profile.get("maxPanSpeed"), 1.0);
+            return object(
+                    "enabled", booleanValue(params.get("enabled"), false),
+                    "panSpeed", clamp(doubleValue(params.get("panSpeed"), 0.3), 0.0, maxPanSpeed));
+        }
+        if (action.startsWith("volume.")) {
+            return object(
+                    "volume", clampedInt(params.get("volume"), 50, 0, 100),
+                    "step", clampedInt(params.get("step"), 5, 1, 100),
+                    "muted", booleanValue(params.get("muted"), false));
         }
         if ("light.set".equals(action)) {
             return object(
@@ -495,7 +504,7 @@ public class EquipmentControlService {
                 "onlineStatus", "online",
                 "controlStatus", "idle",
                 "enabled", true,
-                "actions", List.of("ptz.move", "ptz.home", "camera.zoom"),
+                "actions", List.of("ptz.move", "ptz.auto_rotate", "ptz.home", "camera.zoom"),
                 "controlProfile", object(
                         "maxPanSpeed", 1.0,
                         "maxTiltSpeed", 1.0,
@@ -591,7 +600,8 @@ public class EquipmentControlService {
                 "onlineStatus", "online",
                 "controlStatus", "idle",
                 "enabled", true,
-                "actions", List.of("volume.up", "volume.down", "volume.mute"),
+                "actions", List.of("volume.set", "volume.up", "volume.down", "volume.mute"),
+                "status", object("volume", 50, "muted", false),
                 "controlProfile", object("step", 5, "minVolume", 0, "maxVolume", 100));
     }
 
@@ -605,7 +615,8 @@ public class EquipmentControlService {
                 "onlineStatus", "online",
                 "controlStatus", "idle",
                 "enabled", true,
-                "actions", List.of("volume.up", "volume.down", "volume.mute"));
+                "actions", List.of("volume.set", "volume.up", "volume.down", "volume.mute"),
+                "status", object("volume", 50, "muted", false));
     }
 
     private static String compactUuid() {

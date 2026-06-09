@@ -162,7 +162,7 @@ GET /api/control/robots/{robotId}/control-profile
       "onlineStatus": "online",
       "controlStatus": "idle",
       "enabled": true,
-      "actions": ["ptz.move", "ptz.home", "camera.zoom"],
+      "actions": ["ptz.move", "ptz.auto_rotate", "ptz.home", "camera.zoom"],
       "controlProfile": {
         "maxPanSpeed": 1.0,
         "maxTiltSpeed": 1.0,
@@ -185,7 +185,7 @@ POST /api/control/robots/{robotId}/control-sessions/acquire
 {
   "scope": "DEVICE",
   "deviceIds": ["ptz-dual-001"],
-  "actions": ["ptz.move"],
+  "actions": ["ptz.move", "ptz.auto_rotate"],
   "mode": "EXCLUSIVE",
   "reason": "manual_teleop",
   "ttlSeconds": 30
@@ -202,7 +202,7 @@ POST /api/control/robots/{robotId}/control-sessions/acquire
   "ownerClientId": "web-client-001",
   "scope": "DEVICE",
   "deviceIds": ["ptz-dual-001"],
-  "actions": ["ptz.move"],
+  "actions": ["ptz.move", "ptz.auto_rotate"],
   "status": "ACTIVE",
   "leaseExpireAt": "2026-06-03T10:30:30+08:00"
 }
@@ -491,7 +491,7 @@ POST /api/control/robots/{robotId}/commands
 |---|---|---|
 | `robot/{robotId}/control/body/command` | 后端 -> Go | 机器人本体控制，前后、转向、左移右移 |
 | `robot/{robotId}/control/ptz/{deviceId}/command` | 后端 -> Go | 双光云台控制，8 方向、变焦等 |
-| `robot/{robotId}/control/audio/{deviceId}/command` | 后端 -> Go | 客户端音量控制，音量加减、静音 |
+| `robot/{robotId}/control/audio/{deviceId}/command` | 后端 -> Go | 客户端音量控制，滑块调节、音量加减、静音 |
 | `robot/{robotId}/control/launcher/{deviceId}/command` | 后端 -> Go | 发射器控制，6 发类设备 |
 | `robot/{robotId}/control/net-gun/{deviceId}/command` | 后端 -> Go | 捕网枪控制，1 发类设备 |
 | `robot/{robotId}/control/warning-light/{deviceId}/command` | 后端 -> Go | 左右警示灯开关控制 |
@@ -566,12 +566,10 @@ POST /api/control/robots/{robotId}/commands
 
 一期 MQTT 下发给 Go 客户端的是“执行指令”，不是完整业务上下文。接管权、操作者、确认令牌、控制模式、风险策略等字段由后端在下发前完成校验，并记录在后端日志或审计数据中，不作为客户端执行的必需字段。
 
+一期建议使用精简执行 payload。MQTT topic 已经表达了机器人和设备域，payload 中只保留客户端执行需要的字段。
+
 ```json
 {
-  "protocol": "embodied-control",
-  "version": "1.0",
-  "messageType": "command",
-  "commandId": "cmd_20260603_0001",
   "robotId": "robot-songling-001",
   "seq": 1024,
   "target": {
@@ -592,10 +590,6 @@ POST /api/control/robots/{robotId}/commands
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| `protocol` | string | 是 | 固定 `embodied-control`，用于客户端识别协议 |
-| `version` | string | 是 | 一期固定 `1.0` |
-| `messageType` | string | 是 | 普通控制命令固定 `command` |
-| `commandId` | string | 是 | 后端生成的命令 ID，用于日志和排查问题 |
 | `robotId` | string | 是 | 控制哪台机器人，也与 MQTT topic 中的 `{robotId}` 一致 |
 | `seq` | number | 建议 | 前端递增序号，客户端可用于日志和观察丢帧/乱序 |
 | `target.deviceId` | string | 是 | 控制哪个设备，例如 `base`、`ptz-dual-001`、`net-launcher-001` |
@@ -608,6 +602,10 @@ POST /api/control/robots/{robotId}/commands
 
 | 字段 | 不下发原因 |
 |---|---|
+| `protocol` | topic 已按控制域隔离，一期客户端只消费控制 topic，可不再用 payload 字段识别协议 |
+| `version` | 一期协议固定，暂不做版本协商；后续多版本兼容时再恢复或放到 topic/header |
+| `messageType` | 当前 topic 只承载命令，不混传事件或 ack |
+| `commandId` | 无客户端 ack 和去重要求时可不下发；后端可在日志、接口响应中内部保留 |
 | `operator` | 操作者信息用于后端鉴权、审计，不参与客户端执行 |
 | `controlSessionId` | 控制权由后端校验，客户端不再二次判断 |
 | `controlMode` | 控制模式由后端结合客户端状态判断，客户端只执行已放行的指令 |
@@ -643,6 +641,13 @@ POST /api/control/robots/{robotId}/commands
 |---|---|---:|---|
 | `zoomSpeed` | number | 是 | 变焦速度，正数放大，负数缩小 |
 
+#### `ptz.auto_rotate`
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `enabled` | boolean | 是 | true 开启云台自动旋转，false 停止自动旋转 |
+| `panSpeed` | number | 否 | 自动旋转水平速度，默认 0.3，由后端按云台能力限幅 |
+
 ### 8.2 离散动作类
 
 #### `payload.fire`
@@ -657,6 +662,28 @@ POST /api/control/robots/{robotId}/commands
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | `enabled` | boolean | 是 | true 打开安全开关，false 关闭 |
+
+#### `volume.set`
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `volume` | number | 是 | 绝对音量，范围 0-100；前端滑块拖动结束后下发 |
+| `muted` | boolean | 否 | 是否静音；滑块调节时通常传 false |
+
+#### `volume.up` / `volume.down`
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `step` | number | 是 | 单次按钮调节步长，一期默认 5 |
+| `volume` | number | 建议 | 前端计算后的目标音量，范围 0-100 |
+| `muted` | boolean | 否 | 按钮调节音量时通常传 false |
+
+#### `volume.mute`
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `muted` | boolean | 是 | true 静音，false 取消静音 |
+| `volume` | number | 建议 | 当前音量值，用于取消静音后恢复显示 |
 
 #### `light.set`
 
@@ -703,12 +730,10 @@ POST /api/control/robots/{robotId}/commands
 
 | 后端补齐字段 | 来源 | 说明 |
 |---|---|---|
-| `protocol` | 固定值 | 固定 `embodied-control` |
-| `version` | 固定值 | 一期固定 `1.0` |
-| `messageType` | 固定值 | 普通命令固定 `command` |
-| `commandId` | 后端生成 | 命令 ID |
 | `seq` | 前端 `client.seq` | 终端递增序号 |
 | `issuedAt` | 后端时间 | 后端下发时间 |
+
+说明：`protocol`、`version`、`messageType`、`commandId` 不进入一期 MQTT 执行 payload；其中 `commandId` 如需排查问题，可由后端保留在接口响应和日志中。
 
 后端内部处理但不下发 MQTT：
 
@@ -764,7 +789,7 @@ POST /api/control/robots/{robotId}/commands
 |---|---|---|
 | `WHEELED_BASE` | `drive.velocity` | 不支持横移时 `linearY=0`，按轮式底盘限速 |
 | `QUADRUPED_BASE` | `drive.velocity` | 允许横移时保留 `linearY`，按四足限速 |
-| `DUAL_LIGHT_PTZ` | `ptz.move`、`camera.zoom` | 裁剪云台速度、变焦速度 |
+| `DUAL_LIGHT_PTZ` | `ptz.move`、`ptz.auto_rotate`、`camera.zoom` | 裁剪云台速度、自动旋转速度、变焦速度 |
 | `NET_LAUNCHER` | `payload.safety_switch`、`payload.fire` | 校验 confirmToken、安全开关、冷却 |
 | `SEARCHLIGHT` | `light.set` | 裁剪亮度，校验模式 |
 | `WARNING_LIGHT` | `light.warning.set` | 按左右警示灯设备分别构造开关参数 |
@@ -782,10 +807,6 @@ checkControlMode(intent.controlMode, latestRobotState, intent.action)
 checkInternalPolicy(intent.action, intent.params, currentUser)
 
 mqttPayload = {
-  protocol: "embodied-control",
-  version: "1.0",
-  messageType: "command",
-  commandId: newCommandId(),
   robotId: intent.robotId,
   seq: intent.client.seq,
   target: {
@@ -843,10 +864,6 @@ mqttPayload = {
 
 ```jsonc
 {
-  "protocol": "embodied-control",                // 平台统一控制协议
-  "version": "1.0",                              // 一期协议版本
-  "messageType": "command",                      // MQTT 消息类型
-  "commandId": "cmd_20260603_1001",              // 后端生成
   "robotId": "robot-songling-001",               // MQTT topic 按 robotId 分区
   "seq": 1024,                                   // 前端序号
   "target": {
@@ -863,7 +880,7 @@ mqttPayload = {
 }
 ```
 
-### 9.3 双光云台：`ptz.move`、`camera.zoom`
+### 9.3 双光云台：`ptz.move`、`ptz.auto_rotate`、`camera.zoom`
 
 前端发送频率：
 
@@ -871,6 +888,7 @@ mqttPayload = {
 |---|---|
 | 方向键点触 | 按 10Hz 发送少量 `ptz.move` 控制帧 |
 | 方向键长按 | 按住期间持续按 10Hz 发送 `ptz.move` 控制帧 |
+| 自动旋转按钮 | 点击一次发送 `ptz.auto_rotate enabled=true`，再次点击发送 `enabled=false` |
 | 变焦长按 | 按住期间持续按 10Hz 发送 `camera.zoom` 控制帧 |
 
 前端 WebSocket 参数：
@@ -907,10 +925,6 @@ mqttPayload = {
 
 ```jsonc
 {
-  "protocol": "embodied-control",                // 统一协议
-  "version": "1.0",                              // 协议版本
-  "messageType": "command",                      // 控制命令
-  "commandId": "cmd_20260603_2101",              // 后端生成
   "robotId": "robot-songling-001",               // 机器人 ID
   "seq": 2101,                                   // 前端序号
   "target": {
@@ -934,6 +948,51 @@ mqttPayload = {
   "params": {
     "zoomSpeed": 0.5                             // 正数放大，负数缩小
   }
+}
+```
+
+自动旋转走 REST `/commands`，不是 10Hz 连续帧。页面在“左”和“右”按钮之间显示 `自动旋转` 按钮；开启后按钮高亮并显示 `停止旋转`。
+
+前端 REST 请求：
+
+```jsonc
+{
+  "controlSessionId": "tc_20260603_0002",        // 云台设备控制权
+  "target": {
+    "scope": "PAYLOAD",                          // 上装设备
+    "deviceId": "ptz-dual-001",                  // 双光云台设备 ID
+    "deviceType": "DUAL_LIGHT_PTZ"               // 云台类型
+  },
+  "action": "ptz.auto_rotate",                   // 自动旋转开关
+  "params": {
+    "enabled": true,                             // true 开启，false 停止
+    "panSpeed": 0.3                              // 自动旋转速度，由后端限幅
+  },
+  "client": {
+    "terminalId": "web-client-001",              // 当前终端
+    "source": "ptz_auto_rotate_on",              // 控件来源
+    "seq": 2102,                                 // 递增序号
+    "timestamp": "2026-06-03T10:30:04+08:00"     // 前端发送时间
+  }
+}
+```
+
+后端组装 MQTT：
+
+```jsonc
+{
+  "robotId": "robot-songling-001",               // 机器人 ID
+  "seq": 2102,                                   // 前端序号
+  "target": {
+    "deviceId": "ptz-dual-001",                  // 云台设备 ID
+    "deviceType": "DUAL_LIGHT_PTZ"               // 设备类型
+  },
+  "action": "ptz.auto_rotate",                   // 客户端消费该 action 并调用云台自动旋转
+  "params": {
+    "enabled": true,                             // 开启自动旋转
+    "panSpeed": 0.3                              // 后端限幅后的旋转速度
+  },
+  "issuedAt": "2026-06-03T10:30:04+08:00"        // 后端时间
 }
 ```
 
@@ -975,10 +1034,6 @@ mqttPayload = {
 
 ```jsonc
 {
-  "protocol": "embodied-control",                // 统一协议
-  "version": "1.0",                              // 协议版本
-  "messageType": "command",                      // 控制命令
-  "commandId": "cmd_20260603_3001",              // 命令 ID
   "robotId": "robot-songling-001",               // 机器人 ID
   "seq": 3001,                                   // 序号
   "target": {
@@ -1038,10 +1093,6 @@ mqttPayload = {
 
 ```jsonc
 {
-  "protocol": "embodied-control",                // 统一协议
-  "version": "1.0",                              // 协议版本
-  "messageType": "command",                      // 控制命令
-  "commandId": "cmd_20260603_3101",              // 命令 ID
   "robotId": "robot-songling-001",               // 机器人 ID
   "seq": 3101,                                   // 序号
   "target": {
@@ -1094,10 +1145,6 @@ mqttPayload = {
 
 ```jsonc
 {
-  "protocol": "embodied-control",                // 统一协议
-  "version": "1.0",                              // 协议版本
-  "messageType": "command",                      // 控制命令
-  "commandId": "cmd_20260603_4001",              // 命令 ID
   "robotId": "robot-unitree-001",                // 宇树机器狗 ID
   "seq": 4001,                                   // 序号
   "target": {
@@ -1159,10 +1206,6 @@ mqttPayload = {
 
 ```jsonc
 {
-  "protocol": "embodied-control",                // 统一协议
-  "version": "1.0",                              // 协议版本
-  "messageType": "command",                      // 控制命令
-  "commandId": "cmd_20260603_5001",              // 命令 ID
   "robotId": "robot-songling-001",               // 松灵机器人
   "seq": 5001,                                   // 序号
   "target": {

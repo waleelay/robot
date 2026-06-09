@@ -161,6 +161,7 @@
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-up')" @mouseup.native="stopFrameControl('ptz-up')" @mouseleave.native="stopFrameControl('ptz-up')" @touchstart.native.prevent="startFrameControl('ptz-up')" @touchend.native.prevent="stopFrameControl('ptz-up')">上</el-button>
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-up-right')" @mouseup.native="stopFrameControl('ptz-up-right')" @mouseleave.native="stopFrameControl('ptz-up-right')" @touchstart.native.prevent="startFrameControl('ptz-up-right')" @touchend.native.prevent="stopFrameControl('ptz-up-right')">右上</el-button>
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-left')" @mouseup.native="stopFrameControl('ptz-left')" @mouseleave.native="stopFrameControl('ptz-left')" @touchstart.native.prevent="startFrameControl('ptz-left')" @touchend.native.prevent="stopFrameControl('ptz-left')">左</el-button>
+              <el-button size="mini" :type="isPtzAutoRotateOn(ptzDevice) ? 'primary' : ''" @click="togglePtzAutoRotate">{{ isPtzAutoRotateOn(ptzDevice) ? '停止旋转' : '自动旋转' }}</el-button>
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-right')" @mouseup.native="stopFrameControl('ptz-right')" @mouseleave.native="stopFrameControl('ptz-right')" @touchstart.native.prevent="startFrameControl('ptz-right')" @touchend.native.prevent="stopFrameControl('ptz-right')">右</el-button>
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-down-left')" @mouseup.native="stopFrameControl('ptz-down-left')" @mouseleave.native="stopFrameControl('ptz-down-left')" @touchstart.native.prevent="startFrameControl('ptz-down-left')" @touchend.native.prevent="stopFrameControl('ptz-down-left')">左下</el-button>
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-down')" @mouseup.native="stopFrameControl('ptz-down')" @mouseleave.native="stopFrameControl('ptz-down')" @touchstart.native.prevent="startFrameControl('ptz-down')" @touchend.native.prevent="stopFrameControl('ptz-down')">下</el-button>
@@ -171,11 +172,26 @@
           </div>
           <div class="control-block" v-if="audioDevice">
             <strong>客户端音量</strong>
-            <small>{{ audioDevice.deviceId }}</small>
-            <div class="control-grid control-grid-3">
-              <el-button size="mini" @click="sendDeviceCommand(audioDevice, 'volume.down', { step: 5 }, 'volume_down')">音量-</el-button>
-              <el-button size="mini" @click="sendDeviceCommand(audioDevice, 'volume.up', { step: 5 }, 'volume_up')">音量+</el-button>
-              <el-button size="mini" @click="sendDeviceCommand(audioDevice, 'volume.mute', { muted: true }, 'volume_mute')">静音</el-button>
+            <small>{{ audioDevice.deviceId }} · {{ audioMuted(audioDevice) ? '已静音' : `音量 ${audioVolume(audioDevice)}` }}</small>
+            <div class="audio-control">
+              <el-slider
+                  :value="audioVolume(audioDevice)"
+                  :min="0"
+                  :max="100"
+                  :disabled="audioMuted(audioDevice)"
+                  @input="value => updateAudioVolume(audioDevice, value)"
+                  @change="value => setAudioVolume(audioDevice, value)"
+              />
+              <div class="audio-actions">
+                <el-button size="mini" :type="audioMuted(audioDevice) ? 'primary' : ''" @click="toggleAudioMute(audioDevice)">
+                  {{ audioMuted(audioDevice) ? '取消静音' : '静音' }}
+                </el-button>
+                <div class="audio-stepper">
+                  <el-button size="mini" @click="adjustAudioVolume(audioDevice, 5)">+</el-button>
+                  <span>音量</span>
+                  <el-button size="mini" @click="adjustAudioVolume(audioDevice, -5)">-</el-button>
+                </div>
+              </div>
             </div>
           </div>
           <div class="control-block" v-if="launcherDevice">
@@ -372,6 +388,8 @@ export default {
       controlSessions: {},
       controlSeq: 1,
       controlTimers: {},
+      ptzAutoRotateState: {},
+      audioState: {},
       netGunSafety: {},
       warningLightState: {},
       vehicleLightState: {
@@ -867,6 +885,7 @@ export default {
             controlMode: profile.controlMode,
             stateSeq: profile.stateSeq
           }))
+          this.syncAudioStatesFromDevices(this.selectedRobotId, profile.devices)
         }
       } catch (error) {
         this.log('ERROR getControlProfile', this.errorMessage(error))
@@ -1029,6 +1048,84 @@ export default {
         this.$set(this.warningLightState, device.deviceId, !enabled)
       }
     },
+    ptzAutoRotateKey(device) {
+      return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
+    },
+    isPtzAutoRotateOn(device) {
+      return !!(device && this.ptzAutoRotateState[this.ptzAutoRotateKey(device)])
+    },
+    async togglePtzAutoRotate() {
+      const device = this.ptzDevice
+      if (!device) return
+      const key = this.ptzAutoRotateKey(device)
+      const enabled = !this.ptzAutoRotateState[key]
+      const ok = await this.sendDeviceCommand(device, 'ptz.auto_rotate', {
+        enabled,
+        panSpeed: 0.3
+      }, `ptz_auto_rotate_${enabled ? 'on' : 'off'}`)
+      if (ok) {
+        this.$set(this.ptzAutoRotateState, key, enabled)
+      }
+    },
+    audioKey(device) {
+      return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
+    },
+    audioStatus(device) {
+      const key = this.audioKey(device)
+      return this.audioState[key] || { volume: 50, muted: false }
+    },
+    audioVolume(device) {
+      return this.audioStatus(device).volume
+    },
+    audioMuted(device) {
+      return this.audioStatus(device).muted
+    },
+    setAudioState(device, patch) {
+      if (!device) return
+      const key = this.audioKey(device)
+      this.$set(this.audioState, key, Object.assign({}, this.audioStatus(device), patch))
+    },
+    updateAudioVolume(device, volume) {
+      this.setAudioState(device, { volume })
+    },
+    async setAudioVolume(device, volume) {
+      const previous = this.audioStatus(device)
+      const nextVolume = Math.max(0, Math.min(100, Number(volume) || 0))
+      this.setAudioState(device, { volume: nextVolume, muted: false })
+      const ok = await this.sendDeviceCommand(device, 'volume.set', {
+        volume: nextVolume,
+        muted: false
+      }, 'volume_slider')
+      if (!ok) {
+        this.setAudioState(device, previous)
+      }
+    },
+    async adjustAudioVolume(device, delta) {
+      const previous = this.audioStatus(device)
+      const nextVolume = Math.max(0, Math.min(100, previous.volume + delta))
+      const action = delta > 0 ? 'volume.up' : 'volume.down'
+      this.setAudioState(device, { volume: nextVolume, muted: false })
+      const ok = await this.sendDeviceCommand(device, action, {
+        step: Math.abs(delta),
+        volume: nextVolume,
+        muted: false
+      }, delta > 0 ? 'volume_up' : 'volume_down')
+      if (!ok) {
+        this.setAudioState(device, previous)
+      }
+    },
+    async toggleAudioMute(device) {
+      const previous = this.audioStatus(device)
+      const muted = !previous.muted
+      this.setAudioState(device, { muted })
+      const ok = await this.sendDeviceCommand(device, 'volume.mute', {
+        muted,
+        volume: previous.volume
+      }, muted ? 'volume_mute' : 'volume_unmute')
+      if (!ok) {
+        this.setAudioState(device, previous)
+      }
+    },
     async sendDeviceCommand(device, action, params, source) {
       try {
         const session = await this.ensureControlSession(device, action)
@@ -1159,6 +1256,7 @@ export default {
             status: data.onlineStatus || this.robots[index].status,
             devices: data.devices || this.robots[index].devices
           }))
+          this.syncAudioStatesFromDevices(data.robotId, data.devices)
         }
       }
       if (event.type === 'control.command.rejected') {
@@ -1247,6 +1345,20 @@ export default {
           camera.restarting = false
         }, 5000)
       }
+    },
+    syncAudioStatesFromDevices(robotId, devices) {
+      if (!robotId || !Array.isArray(devices)) return
+      devices
+          .filter(device => ['CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
+          .forEach(device => {
+            const status = device.status || device.runtimeStatus || {}
+            if (status.volume === undefined && status.muted === undefined) return
+            const key = `${robotId}:${device.deviceId}`
+            this.$set(this.audioState, key, Object.assign({}, this.audioState[key] || { volume: 50, muted: false }, {
+              volume: status.volume === undefined ? (this.audioState[key] && this.audioState[key].volume) || 50 : status.volume,
+              muted: status.muted === undefined ? !!(this.audioState[key] && this.audioState[key].muted) : status.muted
+            }))
+          })
     },
     isStoppedSession(camera, sessionId) {
       return camera.stopping || camera.stopped || this.stoppedSessionIds.has(sessionId)
@@ -1479,6 +1591,45 @@ export default {
 
 .control-grid-4 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.audio-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audio-control .el-slider {
+  padding: 0 4px;
+}
+
+.audio-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.audio-actions > .el-button {
+  width: 100%;
+}
+
+.audio-stepper {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 30px;
+  gap: 4px;
+  align-items: center;
+}
+
+.audio-stepper span {
+  text-align: center;
+  font-size: 12px;
+  color: #334155;
+}
+
+.audio-stepper .el-button {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .control-inline {

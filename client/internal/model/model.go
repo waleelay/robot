@@ -113,11 +113,12 @@ type ControlTarget struct {
 }
 
 type RegistryDeviceStatus struct {
-	DeviceID         string   `json:"deviceId"`
-	Scope            string   `json:"scope"`
-	DeviceType       string   `json:"deviceType"`
-	OnlineStatus     string   `json:"onlineStatus"`
-	HealthStatus     string   `json:"healthStatus"`
-	ControlStatus    string   `json:"controlStatus"`
-	SupportedActions []string `json:"supportedActions,omitempty"`
+	DeviceID         string         `json:"deviceId"`
+	Scope            string         `json:"scope"`
+	DeviceType       string         `json:"deviceType"`
+	OnlineStatus     string         `json:"onlineStatus"`
+	HealthStatus     string         `json:"healthStatus"`
+	ControlStatus    string         `json:"controlStatus"`
+	SupportedActions []string       `json:"supportedActions,omitempty"`
+	Status           map[string]any `json:"status,omitempty"`
 }
