@@ -7,6 +7,7 @@ import com.robot.mediaserver.control.service.ControlVideoCommandService;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.MediaTrackResponse;
+import com.robot.mediaserver.recording.dto.RecordingListItemResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
@@ -134,5 +135,23 @@ public class ControlVideoSessionController {
     @GetMapping("/{sessionId}/snapshots")
     public List<SnapshotResponse> snapshots(@PathVariable String sessionId) {
         return mediaServiceClient.snapshots(sessionId);
+    }
+
+    @PostMapping("/{sessionId}/recordings/start")
+    public RecordingListItemResponse startRecording(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return mediaServiceClient.startLiveRecording(sessionId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @PostMapping("/{sessionId}/recordings/{recordingId}/stop")
+    public RecordingListItemResponse stopRecording(
+            @PathVariable String sessionId,
+            @PathVariable String recordingId,
+            HttpServletRequest servletRequest) {
+        return mediaServiceClient.stopLiveRecording(sessionId, recordingId, currentUserResolver.resolve(servletRequest));
+    }
+
+    @GetMapping("/{sessionId}/recordings/active")
+    public RecordingListItemResponse activeRecording(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        return mediaServiceClient.activeLiveRecording(sessionId, currentUserResolver.resolve(servletRequest));
     }
 }

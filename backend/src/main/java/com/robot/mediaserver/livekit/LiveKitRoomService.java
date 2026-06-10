@@ -7,8 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * LiveKit 房间管理服务。
@@ -67,8 +67,8 @@ public class LiveKitRoomService {
         }
         try {
             post("/twirp/livekit.RoomService/DeleteRoom", Map.of("room", roomName));
-        } catch (HttpClientErrorException ex) {
-            if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
+        } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode() == HttpStatus.NOT_FOUND || roomAlreadyAbsent(ex)) {
                 log.info("LiveKit room already absent room={}", roomName);
                 return;
             }
@@ -85,6 +85,11 @@ public class LiveKitRoomService {
                 .body(payload)
                 .retrieve()
                 .toBodilessEntity();
+    }
+
+    private boolean roomAlreadyAbsent(RestClientResponseException ex) {
+        String body = ex.getResponseBodyAsString();
+        return body != null && body.contains("could not find object");
     }
 
     private String serverHttpUrl() {

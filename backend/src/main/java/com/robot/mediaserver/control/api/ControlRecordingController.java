@@ -34,6 +34,7 @@ public class ControlRecordingController {
     public RecordingListResponse list(
             @RequestParam(required = false) String robotId,
             @RequestParam(required = false) String deviceId,
+            @RequestParam(required = false) String sourceType,
             @RequestParam(required = false) RecordingStatus status,
             @RequestParam(required = false) OffsetDateTime from,
             @RequestParam(required = false) OffsetDateTime to,
@@ -43,6 +44,7 @@ public class ControlRecordingController {
         return mediaServiceClient.recordings(
                 robotId,
                 deviceId,
+                sourceType,
                 status,
                 from,
                 to,

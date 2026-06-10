@@ -58,7 +58,10 @@
         <div v-if="recordingMode" class="recording-workspace">
           <div class="recording-list">
             <div class="recording-head">
-              <strong>巡逻录像</strong>
+              <el-tabs v-model="recordingTab" class="recording-tabs" @tab-click="loadRecordings">
+                <el-tab-pane label="手动录像" name="manual" />
+                <el-tab-pane label="巡逻录像" name="patrol" />
+              </el-tabs>
               <el-button size="mini" :loading="recordingsLoading" @click="loadRecordings">刷新</el-button>
             </div>
             <button
@@ -69,7 +72,7 @@
                 @click="playRecording(recording)"
             >
               <span>{{ recording.fileName }}</span>
-              <small>{{ recording.deviceId }} · {{ durationText(recording.durationSeconds) }} · {{ recording.status }}</small>
+              <small>{{ recording.deviceId }} · {{ durationText(recording.durationSeconds) }} · {{ recording.status }} · {{ recording.sourceType }}</small>
             </button>
             <div v-if="!recordings.length && !recordingsLoading" class="recording-empty">暂无录像记录</div>
           </div>
@@ -118,6 +121,13 @@
                     :disabled="!canSnapshot(camera)"
                     @click="snapshotCamera(camera)"
                 >抓拍</el-button>
+                <el-button
+                    size="mini"
+                    :icon="camera.recordingActive ? 'el-icon-video-pause' : 'el-icon-video-camera'"
+                    :loading="camera.recordingBusy"
+                    :disabled="!canRecord(camera)"
+                    @click="toggleLiveRecording(camera)"
+                >{{ camera.recordingActive ? '停录' : '录像' }}</el-button>
                 <el-button
                     size="mini"
                     :icon="camera.intercomActive ? 'el-icon-turn-off-microphone' : 'el-icon-microphone'"
@@ -296,6 +306,7 @@ import {
   getRobots,
   getRecordings,
   getRecordingPlayUrl,
+  getActiveLiveRecording,
   getViewerToken,
   heartbeatVideoSession,
   heartbeatIntercom,
@@ -303,9 +314,11 @@ import {
   restartVideoSession,
   sendEquipmentCommand,
   snapshotImageUrl,
+  startLiveRecording,
   startCameraIntercom,
   startSessionIntercom,
   stopIntercom,
+  stopLiveRecording,
   takeoverControl,
   stopVideoSession
 } from './api/media'
@@ -330,6 +343,9 @@ function cameraState(robotId, deviceId, name, channel, groupType) {
     intercomBusy: false,
     intercomStatus: 'IDLE',
     intercomToken: null,
+    recordingActive: false,
+    recordingBusy: false,
+    activeRecording: null,
     stopping: false,
     stopped: false,
     restarting: false,
@@ -380,6 +396,7 @@ export default {
       ],
       events: [],
       recordingMode: false,
+      recordingTab: 'manual',
       recordingsLoading: false,
       recordings: [],
       selectedRecording: null,
@@ -495,8 +512,20 @@ export default {
     async loadRecordings() {
       this.recordingsLoading = true
       try {
-        const response = await getRecordings({ robotId: this.selectedRobotId, status: 'READY', page: 0, size: 20 })
-        this.recordings = response.items || []
+        const params = {
+          robotId: this.selectedRobotId,
+          status: 'READY',
+          page: 0,
+          size: 20
+        }
+        if (this.recordingTab === 'manual') {
+          params.sourceType = 'LIVEKIT_EGRESS'
+        }
+        const response = await getRecordings(params)
+        const items = response.items || []
+        this.recordings = this.recordingTab === 'patrol'
+          ? items.filter(item => item.sourceType !== 'LIVEKIT_EGRESS')
+          : items
       } catch (error) {
         this.$message.error(this.errorMessage(error))
       } finally {
@@ -558,9 +587,10 @@ export default {
         await this.stopCamera(camera)
       }
     },
-    // 周期性心跳同时承担两个职责：
+    // 周期性心跳同时承担三个职责：
     // 1. 让后端知道当前浏览器仍在观看，从而维持 viewerCount；
     // 2. 让后端知道对讲操作员仍在线，避免对讲被超时释放。
+    // 3. 同步 session 级录像状态，录制结束后复位本浏览器的停录按钮。
     heartbeatViewers() {
       this.allCameras().forEach(camera => {
         if (camera.session && !camera.stopped && !camera.stopping) {
@@ -574,6 +604,9 @@ export default {
                 }
               })
               .catch(() => {})
+          if (camera.watching && !camera.recordingBusy) {
+            this.syncActiveRecording(camera)
+          }
         }
         if (camera.session && camera.intercomActive) {
           heartbeatIntercom(camera.session.sessionId)
@@ -612,6 +645,7 @@ export default {
         this.stoppedSessionIds.delete(camera.session.sessionId)
         this.log('API createVideoSession', camera.session)
         await this.connectLiveKit(camera, false, null, true)
+        await this.syncActiveRecording(camera)
       } catch (error) {
         this.$message.error(this.errorMessage(error))
         this.log('ERROR createVideoSession', this.errorMessage(error))
@@ -629,11 +663,16 @@ export default {
       camera.disconnecting = true
       try {
         const sessionId = camera.session.sessionId
+        if (camera.recordingActive) {
+          await this.stopCameraRecording(camera)
+        }
         if (!camera.intercomActive) this.stoppedSessionIds.add(sessionId)
         const stopped = await stopVideoSession(sessionId)
         this.log('API stopVideoSession', stopped)
         camera.watching = false
         camera.hasVideo = false
+        camera.recordingActive = false
+        camera.activeRecording = null
         const video = this.videoElement(camera)
         if (video) video.srcObject = null
         if (camera.intercomActive) {
@@ -1288,6 +1327,9 @@ export default {
             viewerCount: old.viewerCount,
             watching: old.watching,
             hasAudio: old.hasAudio,
+            activeRecording: old.activeRecording,
+            recordingActive: old.recordingActive,
+            recordingBusy: old.recordingBusy,
             intercomActive: old.intercomActive,
             intercomBusy: old.intercomBusy,
             intercomStatus: old.intercomStatus,
@@ -1379,6 +1421,72 @@ export default {
     },
     canSnapshot(camera) {
       return !!camera.session && camera.watching && !camera.stopping && !camera.stopped
+    },
+    canRecord(camera) {
+      return !!camera.session && camera.watching && !camera.stopping && !camera.stopped
+    },
+    async toggleLiveRecording(camera) {
+      if (camera.recordingActive) {
+        await this.stopCameraRecording(camera)
+      } else {
+        await this.startCameraRecording(camera)
+      }
+    },
+    async startCameraRecording(camera) {
+      if (!camera.session || camera.recordingBusy) return
+      camera.recordingBusy = true
+      try {
+        const active = await getActiveLiveRecording(camera.session.sessionId)
+        if (active) {
+          camera.activeRecording = active
+          camera.recordingActive = false
+          this.$message.info('当前视频正在录制中')
+          return
+        }
+        const recording = await startLiveRecording(camera.session.sessionId)
+        camera.activeRecording = recording
+        camera.recordingActive = recording && recording.status === 'RECORDING'
+        this.log('API startLiveRecording', recording)
+        this.$message.success('已开始录像')
+      } catch (error) {
+        const data = error && error.response && error.response.data
+        if (data && data.code === 'RECORDING_ALREADY_ACTIVE') {
+          this.$message.info('当前视频正在录制中')
+        } else {
+          this.$message.error(this.errorMessage(error))
+        }
+      } finally {
+        camera.recordingBusy = false
+      }
+    },
+    async syncActiveRecording(camera) {
+      if (!camera.session) return
+      try {
+        const recording = await getActiveLiveRecording(camera.session.sessionId)
+        camera.activeRecording = recording
+        if (!recording || recording.status !== 'RECORDING') {
+          camera.recordingActive = false
+        }
+      } catch (_) {
+        camera.activeRecording = null
+        camera.recordingActive = false
+      }
+    },
+    async stopCameraRecording(camera) {
+      if (!camera.session || !camera.activeRecording || camera.recordingBusy) return
+      camera.recordingBusy = true
+      try {
+        const recording = await stopLiveRecording(camera.session.sessionId, camera.activeRecording.recordingId)
+        camera.activeRecording = recording
+        camera.recordingActive = false
+        this.log('API stopLiveRecording', recording)
+        this.$message.success('录像已停止')
+        if (this.recordingMode) await this.loadRecordings()
+      } catch (error) {
+        this.$message.error(this.errorMessage(error))
+      } finally {
+        camera.recordingBusy = false
+      }
     },
     attachExistingVideoTracks(camera, room, sessionId) {
       room.remoteParticipants.forEach(participant => {
@@ -1858,6 +1966,22 @@ export default {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
+  gap: 8px;
+}
+
+.recording-tabs {
+  flex: 1;
+  min-width: 0;
+}
+
+.recording-tabs /deep/ .el-tabs__header {
+  margin: 0;
+}
+
+.recording-tabs /deep/ .el-tabs__item {
+  height: 28px;
+  line-height: 28px;
+  font-size: 13px;
 }
 
 .recording-item {

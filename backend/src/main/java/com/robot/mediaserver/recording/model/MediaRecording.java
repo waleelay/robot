@@ -36,6 +36,27 @@ public class MediaRecording {
     @Column(nullable = false, length = 128)
     private String sourceFileId;
 
+    @Column(nullable = false, length = 32)
+    private String sourceType = "ROBOT_UPLOAD";
+
+    @Column(length = 64)
+    private String sessionId;
+
+    @Column(length = 128)
+    private String roomName;
+
+    @Column(length = 128)
+    private String trackSid;
+
+    @Column(length = 128)
+    private String egressId;
+
+    @Column(length = 32)
+    private String egressStatus;
+
+    @Column(length = 128)
+    private String startedClientId;
+
     @Column(nullable = false, length = 256)
     private String fileName;
 
@@ -55,6 +76,7 @@ public class MediaRecording {
     private String sha256;
 
     private OffsetDateTime recordedStartedAt;
+    private OffsetDateTime recordedEndedAt;
     private Integer reportedDurationSeconds;
     private Integer durationSeconds;
 
@@ -97,6 +119,20 @@ public class MediaRecording {
     public void setDeviceId(String deviceId) { this.deviceId = deviceId; }
     public String getSourceFileId() { return sourceFileId; }
     public void setSourceFileId(String sourceFileId) { this.sourceFileId = sourceFileId; }
+    public String getSourceType() { return sourceType; }
+    public void setSourceType(String sourceType) { this.sourceType = sourceType; }
+    public String getSessionId() { return sessionId; }
+    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+    public String getRoomName() { return roomName; }
+    public void setRoomName(String roomName) { this.roomName = roomName; }
+    public String getTrackSid() { return trackSid; }
+    public void setTrackSid(String trackSid) { this.trackSid = trackSid; }
+    public String getEgressId() { return egressId; }
+    public void setEgressId(String egressId) { this.egressId = egressId; }
+    public String getEgressStatus() { return egressStatus; }
+    public void setEgressStatus(String egressStatus) { this.egressStatus = egressStatus; }
+    public String getStartedClientId() { return startedClientId; }
+    public void setStartedClientId(String startedClientId) { this.startedClientId = startedClientId; }
     public String getFileName() { return fileName; }
     public void setFileName(String fileName) { this.fileName = fileName; }
     public String getSourceContentType() { return sourceContentType; }
@@ -111,6 +147,8 @@ public class MediaRecording {
     public void setSha256(String sha256) { this.sha256 = sha256; }
     public OffsetDateTime getRecordedStartedAt() { return recordedStartedAt; }
     public void setRecordedStartedAt(OffsetDateTime recordedStartedAt) { this.recordedStartedAt = recordedStartedAt; }
+    public OffsetDateTime getRecordedEndedAt() { return recordedEndedAt; }
+    public void setRecordedEndedAt(OffsetDateTime recordedEndedAt) { this.recordedEndedAt = recordedEndedAt; }
     public Integer getReportedDurationSeconds() { return reportedDurationSeconds; }
     public void setReportedDurationSeconds(Integer reportedDurationSeconds) { this.reportedDurationSeconds = reportedDurationSeconds; }
     public Integer getDurationSeconds() { return durationSeconds; }

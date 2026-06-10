@@ -5,6 +5,8 @@ import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.livekit.LiveKitRoomService;
 import com.robot.mediaserver.livekit.LiveKitTokenService;
 import com.robot.mediaserver.livekit.LiveKitTokenService.TokenResult;
+import com.robot.mediaserver.recording.dto.RecordingListItemResponse;
+import com.robot.mediaserver.recording.service.RecordingService;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.CompleteSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
@@ -31,6 +33,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -45,6 +49,8 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @Service
 public class VideoSessionService {
+
+    private static final Logger log = LoggerFactory.getLogger(VideoSessionService.class);
 
     /**
      * 可复用状态集合。
@@ -87,6 +93,8 @@ public class VideoSessionService {
      */
     private final SnapshotService snapshotService;
 
+    private final RecordingService recordingService;
+
     /**
      * 媒体轨道服务。
      */
@@ -106,6 +114,7 @@ public class VideoSessionService {
      * @param liveKitTokenService LiveKit token 服务
      * @param eventLogService 媒体事件日志服务
      * @param snapshotService 抓拍服务
+     * @param recordingService 录像服务
      * @param mediaTrackService 媒体轨道服务
      * @param properties 媒体服务配置属性
      */
@@ -116,6 +125,7 @@ public class VideoSessionService {
             LiveKitTokenService liveKitTokenService,
             MediaEventLogService eventLogService,
             SnapshotService snapshotService,
+            RecordingService recordingService,
             MediaTrackService mediaTrackService,
             MediaProperties properties) {
         this.repository = repository;
@@ -124,6 +134,7 @@ public class VideoSessionService {
         this.liveKitTokenService = liveKitTokenService;
         this.eventLogService = eventLogService;
         this.snapshotService = snapshotService;
+        this.recordingService = recordingService;
         this.mediaTrackService = mediaTrackService;
         this.properties = properties;
     }
@@ -294,6 +305,7 @@ public class VideoSessionService {
     @Transactional
     public VideoSessionResponse stop(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
+        stopClientRecordingQuietly(sessionId, user.clientId());
         removeViewer(sessionId, user);
         session.setViewerCount(activeViewerCount(sessionId));
         if (session.getViewerCount() == 0 && !holdsRoomForIntercom(session)) {
@@ -470,6 +482,22 @@ public class VideoSessionService {
         CompleteSnapshotRequest completeRequest = new CompleteSnapshotRequest();
         completeRequest.setOfficialCapturedAt(request.getClientCapturedAt());
         return snapshotService.complete(snapshot.snapshotId(), completeRequest, file);
+    }
+
+    public RecordingListItemResponse startRecording(String sessionId, CurrentUser user) {
+        VideoSession session = requireSession(sessionId);
+        if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
+            throw new IllegalStateException("Current session is not streaming");
+        }
+        return recordingService.startLiveRecording(session, user);
+    }
+
+    public RecordingListItemResponse stopRecording(String sessionId, String recordingId, CurrentUser user) {
+        return recordingService.stopLiveRecording(sessionId, recordingId, user);
+    }
+
+    public RecordingListItemResponse activeRecording(String sessionId, CurrentUser user) {
+        return recordingService.activeLiveRecording(sessionId, user);
     }
 
     /**
@@ -950,8 +978,10 @@ public class VideoSessionService {
     }
 
     private void closeViewer(MediaSessionViewer viewer) {
+        String clientId = viewerClientId(viewer);
         viewer.setLeftAt(now());
         viewerRepository.save(viewer);
+        stopClientRecordingQuietly(viewer.getSessionId(), clientId);
         repository.findById(viewer.getSessionId()).ifPresent(session -> {
             session.setViewerCount(activeViewerCount(session.getSessionId()));
             // 最后一个 viewer 离开后不立刻停止机器人推流，而是进入 IDLE_WAIT。
@@ -1034,6 +1064,7 @@ public class VideoSessionService {
         // 因而会被计为独立 viewer。
         viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(session.getSessionId(), identity)
                 .map(viewer -> {
+                    viewer.setClientId(user.clientId());
                     viewer.setLastHeartbeatAt(now());
                     return viewerRepository.save(viewer);
                 })
@@ -1044,6 +1075,7 @@ public class VideoSessionService {
                     viewer.setUserId(user.userId());
                     viewer.setOrgId(user.orgId());
                     viewer.setParticipantIdentity(identity);
+                    viewer.setClientId(user.clientId());
                     viewer.setClientType("web");
                     viewer.setJoinedAt(now());
                     viewer.setLastHeartbeatAt(now());
@@ -1065,6 +1097,26 @@ public class VideoSessionService {
 
     private String viewerIdentity(CurrentUser user) {
         return "user:" + user.userId() + ":" + user.clientId();
+    }
+
+    private String viewerClientId(MediaSessionViewer viewer) {
+        if (viewer.getClientId() != null && !viewer.getClientId().isBlank()) {
+            return viewer.getClientId();
+        }
+        String identity = viewer.getParticipantIdentity();
+        if (identity == null) {
+            return null;
+        }
+        int marker = identity.lastIndexOf(":");
+        return marker < 0 || marker == identity.length() - 1 ? null : identity.substring(marker + 1);
+    }
+
+    private void stopClientRecordingQuietly(String sessionId, String clientId) {
+        try {
+            recordingService.stopLiveRecordingForClient(sessionId, clientId);
+        } catch (Exception ex) {
+            log.warn("Failed to stop recording for viewer sessionId={}, clientId={}", sessionId, clientId, ex);
+        }
     }
 
     private TokenResult createBrowserToken(VideoSession session, CurrentUser user) {

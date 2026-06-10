@@ -17,6 +17,7 @@ import com.robot.mediaserver.video.messaging.VideoStatusMessage;
 import com.robot.mediaserver.video.messaging.IntercomStartCommand;
 import com.robot.mediaserver.video.messaging.IntercomStatusMessage;
 import com.robot.mediaserver.recording.dto.PlaybackUrlResponse;
+import com.robot.mediaserver.recording.dto.RecordingListItemResponse;
 import com.robot.mediaserver.recording.dto.RecordingListResponse;
 import com.robot.mediaserver.recording.model.RecordingStatus;
 import java.time.OffsetDateTime;
@@ -168,6 +169,23 @@ public class ControlMediaServiceClient {
         return getList("/internal/media/video-sessions/{sessionId}/snapshots", new ParameterizedTypeReference<>() {}, sessionId);
     }
 
+    public RecordingListItemResponse startLiveRecording(String sessionId, CurrentUser user) {
+        return post("/internal/media/video-sessions/{sessionId}/recordings/start", null, user, RecordingListItemResponse.class, sessionId);
+    }
+
+    public RecordingListItemResponse stopLiveRecording(String sessionId, String recordingId, CurrentUser user) {
+        return post("/internal/media/video-sessions/{sessionId}/recordings/{recordingId}/stop",
+                null,
+                user,
+                RecordingListItemResponse.class,
+                sessionId,
+                recordingId);
+    }
+
+    public RecordingListItemResponse activeLiveRecording(String sessionId, CurrentUser user) {
+        return get("/internal/media/video-sessions/{sessionId}/recordings/active", user, RecordingListItemResponse.class, sessionId);
+    }
+
     public List<SnapshotResponse> snapshots(String robotId, String deviceId) {
         return getList("/internal/media/video-sessions/snapshots?robotId={robotId}&deviceId={deviceId}",
                 new ParameterizedTypeReference<>() {},
@@ -224,6 +242,7 @@ public class ControlMediaServiceClient {
     public RecordingListResponse recordings(
             String robotId,
             String deviceId,
+            String sourceType,
             RecordingStatus status,
             OffsetDateTime from,
             OffsetDateTime to,
@@ -233,6 +252,7 @@ public class ControlMediaServiceClient {
         String uri = UriComponentsBuilder.fromPath("/internal/media/recordings")
                 .queryParamIfPresent("robotId", optional(robotId))
                 .queryParamIfPresent("deviceId", optional(deviceId))
+                .queryParamIfPresent("sourceType", optional(sourceType))
                 .queryParamIfPresent("status", Optional.ofNullable(status).map(Enum::name))
                 .queryParamIfPresent("from", Optional.ofNullable(from))
                 .queryParamIfPresent("to", Optional.ofNullable(to))

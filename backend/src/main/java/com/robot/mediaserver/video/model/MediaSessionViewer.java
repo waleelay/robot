@@ -32,6 +32,9 @@ public class MediaSessionViewer {
     @Column(length = 128)
     private String participantIdentity;
 
+    @Column(length = 128)
+    private String clientId;
+
     @Column(length = 32)
     private String clientType;
 
@@ -77,6 +80,14 @@ public class MediaSessionViewer {
 
     public void setParticipantIdentity(String participantIdentity) {
         this.participantIdentity = participantIdentity;
+    }
+
+    public String getClientId() {
+        return clientId;
+    }
+
+    public void setClientId(String clientId) {
+        this.clientId = clientId;
     }
 
     public String getClientType() {

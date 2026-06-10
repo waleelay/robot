@@ -12,6 +12,11 @@ public interface MediaRecordingRepository extends JpaRepository<MediaRecording, 
 
     Optional<MediaRecording> findByRobotIdAndSourceFileId(String robotId, String sourceFileId);
 
+    Optional<MediaRecording> findFirstBySessionIdAndSourceTypeAndStatusOrderByCreatedAtDesc(
+            String sessionId,
+            String sourceType,
+            RecordingStatus status);
+
     List<MediaRecording> findTop20ByOrgIdAndStatusOrderByRecordedStartedAtDesc(
             String orgId,
             RecordingStatus status);

@@ -19,6 +19,10 @@ media:
     api-secret: ${LIVEKIT_API_SECRET:dev-secret-dev-secret-dev-secret-32}
     token-ttl-seconds: ${LIVEKIT_TOKEN_TTL_SECONDS:600}
     room-api-enabled: ${LIVEKIT_ROOM_API_ENABLED:true}
+    egress-enabled: ${LIVEKIT_EGRESS_ENABLED:true}
+    egress-segment-duration-seconds: ${LIVEKIT_EGRESS_SEGMENT_DURATION_SECONDS:6}
+    egress-s3-region: ${LIVEKIT_EGRESS_S3_REGION:us-east-1}
+    egress-s3-force-path-style: ${LIVEKIT_EGRESS_S3_FORCE_PATH_STYLE:true}
     room-empty-timeout-seconds: ${LIVEKIT_ROOM_EMPTY_TIMEOUT_SECONDS:60}
     room-departure-timeout-seconds: ${LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS:20}
   mqtt:

@@ -159,3 +159,15 @@ export function getRecordings(params) {
 export function getRecordingPlayUrl(recordingId) {
   return client.post(`/api/control/recordings/${recordingId}/play-url`).then(res => res.data)
 }
+
+export function startLiveRecording(sessionId) {
+  return client.post(`/api/control/video-sessions/${sessionId}/recordings/start`).then(res => res.data)
+}
+
+export function stopLiveRecording(sessionId, recordingId) {
+  return client.post(`/api/control/video-sessions/${sessionId}/recordings/${recordingId}/stop`).then(res => res.data)
+}
+
+export function getActiveLiveRecording(sessionId) {
+  return client.get(`/api/control/video-sessions/${sessionId}/recordings/active`).then(res => res.data)
+}

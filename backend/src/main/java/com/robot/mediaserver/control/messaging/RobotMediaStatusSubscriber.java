@@ -68,6 +68,10 @@ public class RobotMediaStatusSubscriber {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
             try {
                 IntercomStatusMessage status = objectMapper.readValue(payload, IntercomStatusMessage.class);
+                if (status.getSessionId() == null || status.getSessionId().isBlank()) {
+                    log.debug("Ignore intercom status without sessionId topic={}, payload={}", topic, payload);
+                    return;
+                }
                 mediaServiceClient.updateIntercomStatus(status);
             } catch (Exception ex) {
                 log.warn("Failed to handle intercom status topic={}, payload={}", topic, payload, ex);

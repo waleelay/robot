@@ -32,13 +32,14 @@ public class RecordingInternalController {
     public RecordingListResponse list(
             @RequestParam(required = false) String robotId,
             @RequestParam(required = false) String deviceId,
+            @RequestParam(required = false) String sourceType,
             @RequestParam(required = false) RecordingStatus status,
             @RequestParam(required = false) OffsetDateTime from,
             @RequestParam(required = false) OffsetDateTime to,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             HttpServletRequest request) {
-        return service.list(currentUserResolver.resolve(request), robotId, deviceId, status, from, to, page, size);
+        return service.list(currentUserResolver.resolve(request), robotId, deviceId, sourceType, status, from, to, page, size);
     }
 
     @PostMapping("/{recordingId}/play-url")

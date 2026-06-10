@@ -91,6 +91,7 @@ public class LiveKitTokenService {
         videoGrant.put("roomCreate", true);
         videoGrant.put("roomList", true);
         videoGrant.put("roomAdmin", true);
+        videoGrant.put("roomRecord", true);
 
         SecretKey key = Keys.hmacShaKeyFor(normalizedSecret().getBytes(StandardCharsets.UTF_8));
         String token = Jwts.builder()

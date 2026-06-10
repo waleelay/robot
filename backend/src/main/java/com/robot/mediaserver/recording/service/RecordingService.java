@@ -2,6 +2,7 @@ package com.robot.mediaserver.recording.service;
 
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.livekit.LiveKitEgressService;
 import com.robot.mediaserver.recording.api.RecordingApiException;
 import com.robot.mediaserver.recording.dto.CreateRecordingUploadRequest;
 import com.robot.mediaserver.recording.dto.PartInfoResponse;
@@ -20,6 +21,7 @@ import com.robot.mediaserver.recording.repository.MediaRecordingRepository;
 import com.robot.mediaserver.recording.repository.MediaRecordingUploadRepository;
 import com.robot.mediaserver.storage.RecordingObjectStorageService;
 import com.robot.mediaserver.storage.RecordingObjectStorageService.StoredPart;
+import com.robot.mediaserver.video.model.VideoSession;
 import jakarta.transaction.Transactional;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -68,6 +70,7 @@ public class RecordingService {
      * 录像对象存储服务。
      */
     private final RecordingObjectStorageService storage;
+    private final LiveKitEgressService egressService;
 
     /**
      * 构造录像服务。
@@ -81,11 +84,129 @@ public class RecordingService {
             MediaProperties properties,
             MediaRecordingRepository recordingRepository,
             MediaRecordingUploadRepository uploadRepository,
-            RecordingObjectStorageService storage) {
+            RecordingObjectStorageService storage,
+            LiveKitEgressService egressService) {
         this.properties = properties;
         this.recordingRepository = recordingRepository;
         this.uploadRepository = uploadRepository;
         this.storage = storage;
+        this.egressService = egressService;
+    }
+
+    @Transactional
+    public RecordingListItemResponse startLiveRecording(VideoSession session, CurrentUser user) {
+        MediaRecording active = activeLiveRecording(session.getSessionId()).orElse(null);
+        if (active != null) {
+            throw error(HttpStatus.CONFLICT, "RECORDING_ALREADY_ACTIVE", "当前视频正在录制中");
+        }
+        OffsetDateTime timestamp = now();
+        MediaRecording recording = new MediaRecording();
+        recording.setRecordingId("rec_" + id());
+        recording.setOrgId(user.orgId());
+        recording.setRobotId(session.getRobotId());
+        recording.setDeviceId(session.getDeviceId());
+        recording.setSourceType("LIVEKIT_EGRESS");
+        recording.setSessionId(session.getSessionId());
+        recording.setRoomName(session.getRoomName());
+        recording.setTrackSid(session.getTrackSid());
+        recording.setStartedClientId(user.clientId());
+        recording.setSourceFileId("livekit-egress:" + session.getSessionId() + ":" + timestamp.toEpochSecond());
+        recording.setFileName("%s-%s-%s.mp4".formatted(session.getRobotId(), session.getDeviceId(), timestamp.toEpochSecond()));
+        recording.setSourceContentType("video/mp4");
+        recording.setFileSize(0);
+        recording.setRecordedStartedAt(timestamp);
+        recording.setSourceObjectKey(objectKey(recording, timestamp));
+        recording.setStatus(RecordingStatus.RECORDING);
+        recording.setCreatedAt(timestamp);
+        recording.setUpdatedAt(timestamp);
+        recordingRepository.save(recording);
+        try {
+            LiveKitEgressService.EgressStartResult result = egressService.startRoomMp4(session.getRoomName(), recording.getSourceObjectKey());
+            if (result.egressId() == null || result.egressId().isBlank()) {
+                throw new IllegalStateException("LiveKit Egress start response missing egressId, status=" + result.status());
+            }
+            recording.setEgressId(result.egressId());
+            recording.setEgressStatus(result.status());
+            recording.setUpdatedAt(now());
+            recordingRepository.save(recording);
+            return item(recording);
+        } catch (Exception ex) {
+            recording.setStatus(RecordingStatus.FAILED);
+            String code = ex.getMessage() != null && ex.getMessage().contains("Egress API timeout")
+                    ? "EGRESS_API_TIMEOUT"
+                    : "EGRESS_START_FAILED";
+            recording.setErrorCode(code);
+            recording.setErrorMessage(ex.getMessage());
+            recording.setUpdatedAt(now());
+            recordingRepository.save(recording);
+            throw error(HttpStatus.CONFLICT, code, ex.getMessage());
+        }
+    }
+
+    @Transactional
+    public RecordingListItemResponse stopLiveRecording(String sessionId, String recordingId, CurrentUser user) {
+        MediaRecording recording = requireRecording(recordingId);
+        if (!Objects.equals(recording.getOrgId(), user.orgId())
+                || !Objects.equals(recording.getSessionId(), sessionId)
+                || !"LIVEKIT_EGRESS".equals(recording.getSourceType())) {
+            throw error(HttpStatus.NOT_FOUND, "RECORDING_NOT_ACTIVE", "Recording is not active");
+        }
+        if (recording.getStatus() != RecordingStatus.RECORDING) {
+            return item(recording);
+        }
+        if (recording.getStartedClientId() != null
+                && !recording.getStartedClientId().isBlank()
+                && !Objects.equals(recording.getStartedClientId(), user.clientId())) {
+            throw error(HttpStatus.CONFLICT, "RECORDING_STARTED_BY_OTHER_CLIENT", "当前录像由其他浏览器发起");
+        }
+        finishLiveRecording(recording);
+        return item(recording);
+    }
+
+    @Transactional
+    public boolean stopLiveRecordingForClient(String sessionId, String clientId) {
+        if (clientId == null || clientId.isBlank()) {
+            return false;
+        }
+        MediaRecording recording = activeLiveRecording(sessionId)
+                .filter(active -> Objects.equals(active.getStartedClientId(), clientId))
+                .orElse(null);
+        if (recording == null) {
+            return false;
+        }
+        finishLiveRecording(recording);
+        return true;
+    }
+
+    private void finishLiveRecording(MediaRecording recording) {
+        try {
+            if (recording.getEgressId() != null && !recording.getEgressId().isBlank()) {
+                LiveKitEgressService.EgressStopResult result = egressService.stop(recording.getEgressId());
+                recording.setEgressStatus(result.status());
+            }
+        } catch (Exception ex) {
+            recording.setStatus(RecordingStatus.FAILED);
+            recording.setErrorCode("EGRESS_STOP_FAILED");
+            recording.setErrorMessage(ex.getMessage());
+            recording.setUpdatedAt(now());
+            recordingRepository.save(recording);
+            throw error(HttpStatus.CONFLICT, "EGRESS_STOP_FAILED", ex.getMessage());
+        }
+        OffsetDateTime timestamp = now();
+        recording.setRecordedEndedAt(timestamp);
+        recording.setDurationSeconds((int) Math.max(1, timestamp.toEpochSecond() - recording.getRecordedStartedAt().toEpochSecond()));
+        recording.setUploadedAt(timestamp);
+        tryUpdateSourceSize(recording);
+        recording.setStatus(RecordingStatus.VERIFYING);
+        recording.setUpdatedAt(timestamp);
+        recordingRepository.save(recording);
+    }
+
+    public RecordingListItemResponse activeLiveRecording(String sessionId, CurrentUser user) {
+        return activeLiveRecording(sessionId)
+                .filter(recording -> Objects.equals(recording.getOrgId(), user.orgId()))
+                .map(this::item)
+                .orElse(null);
     }
 
     /**
@@ -231,6 +352,7 @@ public class RecordingService {
             CurrentUser user,
             String robotId,
             String deviceId,
+            String sourceType,
             RecordingStatus status,
             OffsetDateTime from,
             OffsetDateTime to,
@@ -243,6 +365,9 @@ public class RecordingService {
         }
         if (deviceId != null && !deviceId.isBlank()) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("deviceId"), deviceId));
+        }
+        if (sourceType != null && !sourceType.isBlank()) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("sourceType"), sourceType));
         }
         if (status != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
@@ -483,6 +608,13 @@ public class RecordingService {
                 .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "Recording not found"));
     }
 
+    private java.util.Optional<MediaRecording> activeLiveRecording(String sessionId) {
+        return recordingRepository.findFirstBySessionIdAndSourceTypeAndStatusOrderByCreatedAtDesc(
+                sessionId,
+                "LIVEKIT_EGRESS",
+                RecordingStatus.RECORDING);
+    }
+
     private void refresh(MediaRecordingUpload upload) {
         if (properties.getRecording().isUploadSessionRefreshEnabled()) {
             upload.setExpiresAt(now().plusHours(properties.getRecording().getUploadExpireHours()));
@@ -508,13 +640,27 @@ public class RecordingService {
                 recording.getRecordingId(),
                 recording.getRobotId(),
                 recording.getDeviceId(),
+                recording.getSourceType(),
                 recording.getFileName(),
                 recording.getFileSize(),
                 recording.getDurationSeconds(),
                 recording.getRecordedStartedAt(),
+                recording.getRecordedEndedAt(),
                 recording.getStatus().name(),
                 recording.getErrorCode(),
                 recording.getUploadedAt());
+    }
+
+    private void tryUpdateSourceSize(MediaRecording recording) {
+        try {
+            long size = storage.statSize(recording.getSourceObjectKey());
+            if (size > 0) {
+                recording.setFileSize(size);
+            }
+        } catch (Exception ignored) {
+            // LiveKit Egress can return before object storage exposes the final MP4.
+            // HLS processing will retry while the recording remains VERIFYING.
+        }
     }
 
     private String objectKey(MediaRecording recording, OffsetDateTime time) {

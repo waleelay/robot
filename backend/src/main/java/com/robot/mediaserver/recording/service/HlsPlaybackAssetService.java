@@ -72,6 +72,10 @@ public class HlsPlaybackAssetService {
                 .orElseThrow(() -> new IllegalArgumentException("Recording not found: " + recordingId));
         Path directory = null;
         try {
+            Long sourceSize = sourceSizeOrDefer(recording);
+            if (sourceSize == null) {
+                return;
+            }
             directory = Files.createTempDirectory("recording-hls-");
             Path source = directory.resolve("source.mp4");
             storage.download(recording.getSourceObjectKey(), source);
@@ -94,8 +98,12 @@ public class HlsPlaybackAssetService {
                     segmentCount++;
                 }
             }
-            ready(recordingId, probe, prefix + "index.m3u8", segmentCount, totalSize);
+            ready(recordingId, probe, prefix + "index.m3u8", segmentCount, totalSize, sourceSize);
         } catch (Exception ex) {
+            if (shouldRetryEgressSource(recording, ex)) {
+                defer(recordingId, "Waiting for readable LiveKit Egress source MP4");
+                return;
+            }
             fail(recordingId, "HLS_PROCESSING_FAILED", ex.getMessage());
         } finally {
             deleteDirectory(directory);
@@ -103,10 +111,11 @@ public class HlsPlaybackAssetService {
     }
 
     @Transactional
-    public void ready(String recordingId, ProbeResult probe, String playlistKey, int segmentCount, long totalSize) {
+    public void ready(String recordingId, ProbeResult probe, String playlistKey, int segmentCount, long totalSize, long sourceSize) {
         MediaRecording recording = repository.findById(recordingId).orElseThrow();
         recording.setVideoCodec(probe.videoCodec());
         recording.setAudioCodec(probe.audioCodec());
+        recording.setFileSize(sourceSize);
         recording.setDurationSeconds((int) Math.ceil(probe.durationSeconds()));
         recording.setHlsPlaylistObjectKey(playlistKey);
         recording.setHlsSegmentCount(segmentCount);
@@ -116,6 +125,17 @@ public class HlsPlaybackAssetService {
         recording.setProcessingLeaseUntil(null);
         recording.setErrorCode(null);
         recording.setErrorMessage(null);
+        recording.setUpdatedAt(now());
+        repository.save(recording);
+    }
+
+    @Transactional
+    public void defer(String recordingId, String message) {
+        MediaRecording recording = repository.findById(recordingId).orElseThrow();
+        recording.setStatus(RecordingStatus.VERIFYING);
+        recording.setProcessingLeaseUntil(null);
+        recording.setErrorCode("EGRESS_SOURCE_PENDING");
+        recording.setErrorMessage(message);
         recording.setUpdatedAt(now());
         repository.save(recording);
     }
@@ -168,6 +188,35 @@ public class HlsPlaybackAssetService {
             throw new IllegalStateException("Uploaded MP4 has no readable video duration");
         }
         return new ProbeResult(videoCodec, audioCodec, pixelFormat, width, height, level, duration);
+    }
+
+    private Long sourceSizeOrDefer(MediaRecording recording) {
+        try {
+            long sourceSize = storage.statSize(recording.getSourceObjectKey());
+            if (sourceSize > 0) {
+                return sourceSize;
+            }
+        } catch (Exception ex) {
+            if (!"LIVEKIT_EGRESS".equals(recording.getSourceType())) {
+                throw ex;
+            }
+        }
+        if ("LIVEKIT_EGRESS".equals(recording.getSourceType())) {
+            defer(recording.getRecordingId(), "Waiting for LiveKit Egress source MP4");
+            return null;
+        }
+        throw new IllegalStateException("Recording source object is empty: " + recording.getSourceObjectKey());
+    }
+
+    private boolean shouldRetryEgressSource(MediaRecording recording, Exception ex) {
+        if (!"LIVEKIT_EGRESS".equals(recording.getSourceType())) {
+            return false;
+        }
+        OffsetDateTime startedAt = recording.getProcessingStartedAt();
+        if (startedAt == null) {
+            return true;
+        }
+        return startedAt.plusSeconds(properties.getRecording().getHlsProcessingLeaseSeconds()).isAfter(now());
     }
 
     private boolean canCopyToHls(ProbeResult probe) {

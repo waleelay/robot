@@ -2,14 +2,15 @@
 
 ## 1. 范围
 
-机器人端已经生成巡逻视频文件，单文件时长可能从几分钟到数小时不等。本方案只解决：
+机器人端已经生成巡逻视频文件，单文件时长可能从几分钟到数小时不等。平台也支持在实时视频观看过程中由控制端发起 LiveKit Egress 录像。两类来源最终都落到统一的录像元数据、对象存储和 HLS VOD 回放资产模型。本方案解决：
 
 1. 机器人可靠上传已有大视频文件。
 2. 上传中断后续传，避免从头重传。
 3. 多机器人、单机器人多个文件同时上传时的资源控制。
-4. 原始视频存储、HLS 播放资产生成、元数据检索和多端播放。
+4. 实时视频会话中的手动录像控制、Egress 资源收尾和发起端归属。
+5. 原始视频存储、HLS 播放资产生成、元数据检索和多端播放。
 
-本期不负责机器人录制、远程录制控制、缩略图和 AI 分析，也不将录像绑定到实时 `VideoSession`。后续其他视频来源可复用本文定义的 HLS 播放资产模型，但本文不展开其采集或录制流程。
+本期不负责机器人本地录制策略、缩略图和 AI 分析。实时手动录像绑定到 `VideoSession`，但正式回放不直接使用 live HLS，而是先生成源 MP4，再复用本文定义的 HLS VOD 播放资产模型。
 
 ## 2. 方案结论
 
@@ -25,6 +26,16 @@
   -> 浏览器/移动端播放 HLS
 ```
 
+```text
+浏览器在实时 VideoSession 上点击录像
+  -> Media Service 创建 LIVEKIT_EGRESS 录像记录并保存 startedClientId
+  -> LiveKit Egress 将当前 Room 录制为 original/source.mp4
+  -> 同一路视频已有 RECORDING 时拒绝重复开始并提示“当前视频正在录制中”
+  -> 发起浏览器点击停录/停止观看，或其 viewer 心跳超时后，Media Service 停止该 Egress
+  -> 录像进入 VERIFYING / PROCESSING_PLAYBACK
+  -> HLS 准备完成后将录像置为 READY
+```
+
 核心决策：
 
 | 项目 | 方案 |
@@ -37,10 +48,11 @@
 | 视频存储 | MinIO 同时保存 `original/` 原始 MP4 与 `hls/` 播放资产 |
 | 播放 | 统一采用 HLS VOD：`m3u8 + ts` |
 | 并发控制 | 限制每机器人活跃文件数和单文件并行 part 数 |
+| 实时录像并发 | 同一 `VideoSession` 同时只允许一条 `LIVEKIT_EGRESS` 录像 |
 | 机器人接入安全 | 首期采用机器人专网可信接入，不依赖设备 token；接口不得暴露至公网 |
 | Control 边界 | 上传入口属于 Media Service；管理端查询/播放经 Control 转发 |
 
-这个范围比“整文件经后端上传”多出 multipart 上传会话和 HLS 播放资产生成，但这是变长大文件可靠回传、未来多端统一播放与复用同一播放技术所需的主链路。它不引入机器人录制工作流或录像组。
+这个范围比“整文件经后端上传”多出 multipart 上传会话、实时 Egress 源文件生成和 HLS 播放资产生成，但这是变长大文件可靠回传、未来多端统一播放与复用同一播放技术所需的主链路。
 
 ## 3. 与当前工程的衔接
 
@@ -119,13 +131,20 @@ recordings/org001/robot-001/camera01/2026/05/27/rec_9f8e/hls/index.m3u8
 | `org_id` | varchar(64) | 组织隔离 |
 | `robot_id` | varchar(64) | 上传机器人 |
 | `device_id` | varchar(64) | 摄像头/设备 |
-| `source_file_id` | varchar(128) | 机器人生成的文件唯一标识，用于防重复上传 |
+| `source_file_id` | varchar(128) | 源文件唯一标识。机器人上传使用本地文件标识；实时录像使用 `livekit-egress:{sessionId}:{epochSecond}` |
+| `source_type` | varchar(32) | 来源类型：`ROBOT_UPLOAD` / `LIVEKIT_EGRESS` |
+| `session_id` | varchar(64) nullable | 实时录像关联的 `VideoSession` |
+| `room_name` | varchar(128) nullable | 实时录像关联的 LiveKit Room |
+| `track_sid` | varchar(128) nullable | 实时录像开始时关联的视频 Track |
+| `egress_id` / `egress_status` | varchar nullable | LiveKit Egress 任务 ID 与最后状态 |
+| `started_client_id` | varchar(128) nullable | 发起实时录像的浏览器 `X-Client-Id`，用于手动停录和心跳超时自动收尾 |
 | `file_name` | varchar(256) | 展示文件名 |
 | `source_content_type` | varchar(64) | 机器人源文件类型，首期 `video/mp4` |
 | `video_codec` / `audio_codec` | varchar(32) nullable | 源媒体检查结果，目标为 `h264` / `aac` 或无音频 |
 | `file_size` | bigint | 文件总字节数 |
 | `sha256` | char(64) nullable | 客户端可选上报，完成后用于完整性校验扩展 |
 | `recorded_started_at` | datetime nullable | 录制开始时间，由机器人上报 |
+| `recorded_ended_at` | datetime nullable | 录制结束时间，实时录像停录时写入 |
 | `reported_duration_seconds` | int nullable | 机器人上报时长，仅作上传前参考 |
 | `duration_seconds` | int nullable | 服务端媒体检查确认后的时长，用于检索和播放展示 |
 | `source_object_key` | varchar(512) | MinIO 原始 MP4 对象键 |
@@ -181,6 +200,9 @@ stateDiagram-v2
     [*] --> CREATED: register file
     CREATED --> UPLOADING: initiate multipart
     UPLOADING --> VERIFYING: original MP4 uploaded
+    [*] --> RECORDING: start LiveKit Egress
+    RECORDING --> VERIFYING: stop Egress and source MP4 ready or pending
+    RECORDING --> FAILED: Egress start or stop failed
     VERIFYING --> PROCESSING_PLAYBACK: valid source media
     VERIFYING --> FAILED: unsupported source media
     PROCESSING_PLAYBACK --> READY: HLS available
@@ -203,6 +225,20 @@ stateDiagram-v2
 | `EXPIRED` | 超时清理后不可继续使用 |
 
 只有录像 `READY` 状态可以出现在普通播放结果中。
+
+### 6.3 实时录像状态与资源收尾
+
+实时录像不把 LiveKit live HLS 直接作为回放入口。开始录像时，Media Service 调用 LiveKit RoomComposite Egress 输出 MP4 到 `original/source.mp4`；停录后进入 `VERIFYING`，由同一套 HLS worker 生成 VOD HLS，完成后才进入 `READY`。
+
+实时录像收尾规则：
+
+1. 同一 `VideoSession` 同一时间只允许一条 `LIVEKIT_EGRESS` 且 `RECORDING` 的录像。
+2. 开始录像时必须保存 `startedClientId = X-Client-Id`。
+3. 同一路视频已有录像时，新的开始请求返回 `RECORDING_ALREADY_ACTIVE`，前端提示“当前视频正在录制中”。
+4. 发起浏览器点击“停录”或“停止观看”时，后端只允许同一 `startedClientId` 停止该录像。
+5. 发起浏览器关闭、刷新、崩溃或断网时，viewer 心跳超时后，后端用 viewer `clientId` 匹配 `startedClientId`，自动停止对应 Egress。
+6. 停止 Egress 后记录进入 `VERIFYING`；若源 MP4 尚未在 MinIO 可读，worker 以 `EGRESS_SOURCE_PENDING` 暂缓并重试。
+7. 其他浏览器仍可继续观看同一路视频；录像结束后其他浏览器可重新发起新的录像。
 
 ## 7. 上传接口
 

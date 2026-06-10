@@ -268,9 +268,18 @@ func (c *Client) intercomStatus(sessionID, status, trackSid, trackName, errorCod
 }
 
 func (c *Client) publish(topic string, payload any) {
-	body, _ := json.Marshal(payload)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		log.Println("mqtt publish marshal failed topic=", topic, "error=", err)
+		return
+	}
+	log.Println("mqtt publish topic=", topic, "payload=", string(body))
 	// QoS 1 保证状态消息至少送达一次；服务端状态处理需要具备幂等性。
-	c.mqtt.Publish(topic, 1, false, body)
+	token := c.mqtt.Publish(topic, 1, false, body)
+	token.Wait()
+	if err := token.Error(); err != nil {
+		log.Println("mqtt publish failed topic=", topic, "error=", err)
+	}
 }
 
 func (c *Client) online(status string) {

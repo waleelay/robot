@@ -114,6 +114,10 @@ public class MediaProperties {
     private String apiSecret;
     private long tokenTtlSeconds = 600;
     private boolean roomApiEnabled;
+    private boolean egressEnabled;
+    private int egressSegmentDurationSeconds = 6;
+    private String egressS3Region = "us-east-1";
+    private boolean egressS3ForcePathStyle = true;
     private int roomEmptyTimeoutSeconds = 60;
     private int roomDepartureTimeoutSeconds = 20;
 
@@ -155,6 +159,38 @@ public class MediaProperties {
 
     public void setRoomApiEnabled(boolean roomApiEnabled) {
             this.roomApiEnabled = roomApiEnabled;
+        }
+
+    public boolean isEgressEnabled() {
+            return egressEnabled;
+        }
+
+    public void setEgressEnabled(boolean egressEnabled) {
+            this.egressEnabled = egressEnabled;
+        }
+
+    public int getEgressSegmentDurationSeconds() {
+            return egressSegmentDurationSeconds;
+        }
+
+    public void setEgressSegmentDurationSeconds(int egressSegmentDurationSeconds) {
+            this.egressSegmentDurationSeconds = egressSegmentDurationSeconds;
+        }
+
+    public String getEgressS3Region() {
+            return egressS3Region;
+        }
+
+    public void setEgressS3Region(String egressS3Region) {
+            this.egressS3Region = egressS3Region;
+        }
+
+    public boolean isEgressS3ForcePathStyle() {
+            return egressS3ForcePathStyle;
+        }
+
+    public void setEgressS3ForcePathStyle(boolean egressS3ForcePathStyle) {
+            this.egressS3ForcePathStyle = egressS3ForcePathStyle;
         }
 
     public int getRoomEmptyTimeoutSeconds() {
