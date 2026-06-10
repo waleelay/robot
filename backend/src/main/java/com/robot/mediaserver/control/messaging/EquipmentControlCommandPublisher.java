@@ -37,43 +37,35 @@ public class EquipmentControlCommandPublisher {
     private String commandTopic(String robotId, Object payload) {
         Map<?, ?> command = objectMapper.convertValue(payload, Map.class);
         Map<?, ?> target = command.get("target") instanceof Map<?, ?> value ? value : Map.of();
-        String deviceId = String.valueOf(target.get("deviceId"));
         String deviceType = String.valueOf(target.get("deviceType"));
         String action = String.valueOf(command.get("action"));
         String domain = switch (deviceType) {
             case "WHEELED_BASE", "QUADRUPED_BASE", "BIPED_BASE" -> "body";
-            case "DUAL_LIGHT_PTZ" -> "ptz/" + topicPart(deviceId);
-            case "CLIENT_AUDIO", "INTERCOM", "VOLUME_CONTROL" -> "audio/" + topicPart(deviceId);
-            case "LAUNCHER" -> "launcher/" + topicPart(deviceId);
-            case "NET_GUN", "NET_LAUNCHER" -> "net-gun/" + topicPart(deviceId);
-            case "WARNING_LIGHT" -> "warning-light/" + topicPart(deviceId);
-            case "VEHICLE_LIGHT", "SEARCHLIGHT" -> "vehicle-light/" + topicPart(deviceId);
-            default -> fallbackDomain(action, deviceId);
+            case "DUAL_LIGHT_PTZ" -> "ptz";
+            case "CLIENT_AUDIO", "INTERCOM", "VOLUME_CONTROL" -> "audio";
+            case "LAUNCHER" -> "launcher";
+            case "NET_GUN", "NET_LAUNCHER" -> "net-gun";
+            case "WARNING_LIGHT" -> "warning-light";
+            case "VEHICLE_LIGHT", "SEARCHLIGHT" -> "vehicle-light";
+            default -> fallbackDomain(action);
         };
         return "robot/" + robotId + "/control/" + domain + "/command";
     }
 
-    private String fallbackDomain(String action, String deviceId) {
+    private String fallbackDomain(String action) {
         if (action.startsWith("volume.")) {
-            return "audio/" + topicPart(deviceId);
+            return "audio";
         }
         if (action.startsWith("light.warning.")) {
-            return "warning-light/" + topicPart(deviceId);
+            return "warning-light";
         }
         if (action.startsWith("light.vehicle.")) {
-            return "vehicle-light/" + topicPart(deviceId);
+            return "vehicle-light";
         }
         if (action.startsWith("payload.fire")) {
-            return "launcher/" + topicPart(deviceId);
+            return "launcher";
         }
-        return "payload/" + topicPart(deviceId);
-    }
-
-    private String topicPart(String value) {
-        if (value == null || value.isBlank() || "null".equals(value)) {
-            return "default";
-        }
-        return value.replaceAll("[^A-Za-z0-9_-]", "_");
+        return "payload";
     }
 
     private void publish(String topic, Object payload) {

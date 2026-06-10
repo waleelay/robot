@@ -490,18 +490,19 @@ POST /api/control/robots/{robotId}/commands
 | Topic | 方向 | 一期用途 |
 |---|---|---|
 | `robot/{robotId}/control/body/command` | 后端 -> Go | 机器人本体控制，前后、转向、左移右移 |
-| `robot/{robotId}/control/ptz/{deviceId}/command` | 后端 -> Go | 双光云台控制，8 方向、变焦等 |
-| `robot/{robotId}/control/audio/{deviceId}/command` | 后端 -> Go | 客户端音量控制，滑块调节、音量加减、静音 |
-| `robot/{robotId}/control/launcher/{deviceId}/command` | 后端 -> Go | 发射器控制，6 发类设备 |
-| `robot/{robotId}/control/net-gun/{deviceId}/command` | 后端 -> Go | 捕网枪控制，1 发类设备 |
-| `robot/{robotId}/control/warning-light/{deviceId}/command` | 后端 -> Go | 左右警示灯开关控制 |
-| `robot/{robotId}/control/vehicle-light/{deviceId}/command` | 后端 -> Go | 前后车灯控制，常开、常关、呼吸灯、自定义亮度 |
+| `robot/{robotId}/control/ptz/command` | 后端 -> Go | 双光云台控制，8 方向、自动旋转、变焦等 |
+| `robot/{robotId}/control/audio/command` | 后端 -> Go | 客户端音量控制，滑块调节、音量加减、静音 |
+| `robot/{robotId}/control/launcher/command` | 后端 -> Go | 发射器控制，6 发类设备 |
+| `robot/{robotId}/control/net-gun/command` | 后端 -> Go | 捕网枪控制，1 发类设备 |
+| `robot/{robotId}/control/warning-light/command` | 后端 -> Go | 左右警示灯开关控制 |
+| `robot/{robotId}/control/vehicle-light/command` | 后端 -> Go | 前后车灯控制，常开、常关、呼吸灯、自定义亮度 |
 | `robot/{robotId}/control/safety/estop` | 后端 -> Go | 急停 |
 | `robot/{robotId}/media/client/status` | Go -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和设备状态 |
 
 说明：
 
 - Go 模拟客户端订阅 `robot/{robotId}/control/#`，按 topic 和 payload 中的 `target.deviceId/action` 打印或分发。
+- 控制 topic 只保留设备大类，不再携带 `{deviceId}`；具体设备由 payload 中的 `target.deviceId` 标识。
 - 前端实时状态由后端消费 `media/client/status` 后通过 WebSocket 推送 `robot.state`。
 - `controlMode`、`stateSeq`、`devices` 随 `media/client/status` 上报。
 - 后端发布控制命令成功后即可向前端返回 `PUBLISHED`；一期不等待客户端接收确认。
@@ -511,12 +512,12 @@ POST /api/control/robots/{robotId}/commands
 | `deviceType` / action | 下发 topic |
 |---|---|
 | `WHEELED_BASE`、`QUADRUPED_BASE`、`BIPED_BASE` | `robot/{robotId}/control/body/command` |
-| `DUAL_LIGHT_PTZ` | `robot/{robotId}/control/ptz/{deviceId}/command` |
-| `CLIENT_AUDIO`、`INTERCOM`、`VOLUME_CONTROL` 或 `volume.*` | `robot/{robotId}/control/audio/{deviceId}/command` |
-| `LAUNCHER` | `robot/{robotId}/control/launcher/{deviceId}/command` |
-| `NET_GUN`、`NET_LAUNCHER` | `robot/{robotId}/control/net-gun/{deviceId}/command` |
-| `WARNING_LIGHT` 或 `light.warning.*` | `robot/{robotId}/control/warning-light/{deviceId}/command` |
-| `VEHICLE_LIGHT`、`SEARCHLIGHT` 或 `light.vehicle.*` | `robot/{robotId}/control/vehicle-light/{deviceId}/command` |
+| `DUAL_LIGHT_PTZ` | `robot/{robotId}/control/ptz/command` |
+| `CLIENT_AUDIO`、`INTERCOM`、`VOLUME_CONTROL` 或 `volume.*` | `robot/{robotId}/control/audio/command` |
+| `LAUNCHER` | `robot/{robotId}/control/launcher/command` |
+| `NET_GUN`、`NET_LAUNCHER` | `robot/{robotId}/control/net-gun/command` |
+| `WARNING_LIGHT` 或 `light.warning.*` | `robot/{robotId}/control/warning-light/command` |
+| `VEHICLE_LIGHT`、`SEARCHLIGHT` 或 `light.vehicle.*` | `robot/{robotId}/control/vehicle-light/command` |
 
 `media/client/status` 示例：
 

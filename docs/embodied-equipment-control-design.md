@@ -1302,19 +1302,19 @@ POST /api/control/robots/{robotId}/commands
 | Topic | 方向 | 说明 |
 |---|---|---|
 | `robot/{robotId}/control/body/command` | 后端 -> 机器人 | 机器人本体控制，前后、转向、左移右移 |
-| `robot/{robotId}/control/ptz/{deviceId}/command` | 后端 -> 机器人 | 双光云台控制 |
-| `robot/{robotId}/control/audio/{deviceId}/command` | 后端 -> 机器人 | 客户端音量控制 |
-| `robot/{robotId}/control/launcher/{deviceId}/command` | 后端 -> 机器人 | 发射器控制 |
-| `robot/{robotId}/control/net-gun/{deviceId}/command` | 后端 -> 机器人 | 捕网枪控制 |
-| `robot/{robotId}/control/warning-light/{deviceId}/command` | 后端 -> 机器人 | 警示灯控制 |
-| `robot/{robotId}/control/vehicle-light/{deviceId}/command` | 后端 -> 机器人 | 车灯光控制 |
-| `robot/{robotId}/control/lidar/{deviceId}/command` | 后端 -> 机器人 | 雷达控制 |
+| `robot/{robotId}/control/ptz/command` | 后端 -> 机器人 | 双光云台控制 |
+| `robot/{robotId}/control/audio/command` | 后端 -> 机器人 | 客户端音量控制 |
+| `robot/{robotId}/control/launcher/command` | 后端 -> 机器人 | 发射器控制 |
+| `robot/{robotId}/control/net-gun/command` | 后端 -> 机器人 | 捕网枪控制 |
+| `robot/{robotId}/control/warning-light/command` | 后端 -> 机器人 | 警示灯控制 |
+| `robot/{robotId}/control/vehicle-light/command` | 后端 -> 机器人 | 车灯光控制 |
+| `robot/{robotId}/control/lidar/command` | 后端 -> 机器人 | 雷达控制 |
 | `robot/{robotId}/control/safety/estop` | 后端 -> 机器人 | 急停，高优先级 |
 | `robot/{robotId}/media/client/status` | 机器人 -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和设备状态 |
 
 第一版不再拆分控制保活、接收确认、执行状态、错误或注册状态 topic。
 
-Go 客户端可订阅 `robot/{robotId}/control/#`，再按 topic 和 payload 中的 `target.deviceId/action` 分发。
+Go 客户端可订阅 `robot/{robotId}/control/#`，topic 只区分设备大类，具体设备按 payload 中的 `target.deviceId/action` 分发。
 
 ### 7.3 QoS 建议
 
@@ -1342,13 +1342,13 @@ Go 客户端可订阅 `robot/{robotId}/control/#`，再按 topic 和 payload 中
 
 ```text
 robot/{robotId}/control/body/command
-robot/{robotId}/control/ptz/{deviceId}/command
-robot/{robotId}/control/audio/{deviceId}/command
-robot/{robotId}/control/launcher/{deviceId}/command
-robot/{robotId}/control/net-gun/{deviceId}/command
-robot/{robotId}/control/warning-light/{deviceId}/command
-robot/{robotId}/control/vehicle-light/{deviceId}/command
-robot/{robotId}/control/lidar/{deviceId}/command
+robot/{robotId}/control/ptz/command
+robot/{robotId}/control/audio/command
+robot/{robotId}/control/launcher/command
+robot/{robotId}/control/net-gun/command
+robot/{robotId}/control/warning-light/command
+robot/{robotId}/control/vehicle-light/command
+robot/{robotId}/control/lidar/command
 ```
 
 第一版 MQTT 下发的是客户端执行指令。控制权、操作者、确认令牌、控制模式、风险策略等平台治理信息由后端完成校验和审计，不作为客户端执行协议字段。
