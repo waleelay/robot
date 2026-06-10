@@ -410,7 +410,7 @@ func (c *Client) statusDevices(status string) []model.RegistryDeviceStatus {
 				OnlineStatus:     onlineStatus,
 				HealthStatus:     "normal",
 				ControlStatus:    "idle",
-				SupportedActions: []string{"payload.fire"},
+				SupportedActions: []string{"payload.safety_switch", "payload.fire"},
 			},
 			model.RegistryDeviceStatus{
 				DeviceID:         "net-gun-001",
@@ -419,7 +419,7 @@ func (c *Client) statusDevices(status string) []model.RegistryDeviceStatus {
 				OnlineStatus:     onlineStatus,
 				HealthStatus:     "normal",
 				ControlStatus:    "idle",
-				SupportedActions: []string{"payload.safety_switch", "payload.fire"},
+				SupportedActions: []string{"payload.fire"},
 			})
 	}
 	return devices

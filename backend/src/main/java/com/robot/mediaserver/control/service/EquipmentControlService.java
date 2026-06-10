@@ -276,6 +276,9 @@ public class EquipmentControlService {
         if ("payload.fire".equals(action)) {
             return object("channel", numberValue(params.get("channel"), 1).intValue());
         }
+        if ("payload.safety_switch".equals(action)) {
+            return object("enabled", booleanValue(params.get("enabled"), false));
+        }
         return copy(params);
     }
 
@@ -511,7 +514,7 @@ public class EquipmentControlService {
                         "controlFrameRateHz", 10));
     }
 
-    private static Map<String, Object> netLauncher() {
+    private static Map<String, Object> buildNetGun() {
         return object(
                 "deviceId", "net-gun-001",
                 "bindingId", "bind-net-gun-001",
@@ -524,15 +527,14 @@ public class EquipmentControlService {
                 "controlStatus", "idle",
                 "enabled", true,
                 "riskLevel", "HIGH",
-                "actions", List.of("payload.safety_switch", "payload.fire"),
+                "actions", List.of("payload.fire"),
                 "controlProfile", object(
                         "requiresConfirm", true,
-                        "requiresSafetySwitch", true,
                         "cooldownMs", 3000));
     }
 
     private static Map<String, Object> netGun() {
-        return netLauncher();
+        return buildNetGun();
     }
 
     private static Map<String, Object> launcher() {
@@ -548,8 +550,11 @@ public class EquipmentControlService {
                 "controlStatus", "idle",
                 "enabled", true,
                 "riskLevel", "HIGH",
-                "actions", List.of("payload.fire"),
-                "controlProfile", object("channels", List.of(1, 2, 3, 4, 5, 6), "requiresConfirm", true));
+                "actions", List.of("payload.safety_switch", "payload.fire"),
+                "controlProfile", object(
+                        "channels", List.of(1, 2, 3, 4, 5, 6),
+                        "requiresConfirm", true,
+                        "requiresSafetySwitch", true));
     }
 
     private static Map<String, Object> warningLight(String deviceId, String displayName) {

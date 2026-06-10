@@ -23,7 +23,8 @@
 | 人工接管 | `NAVIGATION` 或 `ASSISTED` 下，本体手动控制前先走接管接口 |
 | 本体遥控 | 前端按 10Hz 发送运动控制帧；点触发少量帧，长按持续发帧 |
 | 双光云台 | 前端按 10Hz 发送云台控制帧；点触发少量帧，长按持续发帧 |
-| 捕网器 | 支持安全开关、二次确认、发射、冷却、审计 |
+| 发射器 | 支持真实安全开关、二次确认、6 发通道发射、审计 |
+| 捕网枪 | 前端本地安全开关解锁、二次确认、1 发发射、审计 |
 | 急停 | 独立 topic，最高优先级 |
 | WebSocket 高频控制 | 本体和云台连续控制走 WebSocket |
 | MQTT 控制链路 | 后端按设备类型组装参数并通过 MQTT 下发给 Go 客户端 |
@@ -314,8 +315,8 @@ POST /api/control/robots/{robotId}/commands/confirm-token
   "controlSessionId": "tc_20260603_0001",
   "target": {
     "scope": "PAYLOAD",
-    "deviceId": "net-launcher-001",
-    "deviceType": "NET_LAUNCHER"
+    "deviceId": "net-gun-001",
+    "deviceType": "NET_GUN"
   },
   "action": "payload.fire",
   "reason": "manual_confirm"
@@ -331,7 +332,7 @@ POST /api/control/robots/{robotId}/commands/confirm-token
   "robotId": "robot-songling-001",
   "target": {
     "scope": "PAYLOAD",
-    "deviceId": "net-launcher-001"
+    "deviceId": "net-gun-001"
   },
   "action": "payload.fire"
 }
@@ -352,8 +353,8 @@ POST /api/control/robots/{robotId}/commands
   "controlSessionId": "tc_20260603_0001",
   "target": {
     "scope": "PAYLOAD",
-    "deviceId": "net-launcher-001",
-    "deviceType": "NET_LAUNCHER"
+    "deviceId": "net-gun-001",
+    "deviceType": "NET_GUN"
   },
   "action": "payload.fire",
   "params": {
@@ -378,7 +379,7 @@ POST /api/control/robots/{robotId}/commands
   "robotId": "robot-songling-001",
   "target": {
     "scope": "PAYLOAD",
-    "deviceId": "net-launcher-001"
+    "deviceId": "net-gun-001"
   },
   "action": "payload.fire",
   "issuedAt": "2026-06-03T10:30:30+08:00"
@@ -593,7 +594,7 @@ POST /api/control/robots/{robotId}/commands
 |---|---|---:|---|
 | `robotId` | string | 是 | 控制哪台机器人，也与 MQTT topic 中的 `{robotId}` 一致 |
 | `seq` | number | 建议 | 前端递增序号，客户端可用于日志和观察丢帧/乱序 |
-| `target.deviceId` | string | 是 | 控制哪个设备，例如 `base`、`ptz-dual-001`、`net-launcher-001` |
+| `target.deviceId` | string | 是 | 控制哪个设备，例如 `base`、`ptz-dual-001`、`net-gun-001` |
 | `target.deviceType` | string | 是 | 设备类型，客户端按类型分发处理 |
 | `action` | string | 是 | 平台动作名，例如 `drive.velocity`、`ptz.move`、`payload.fire` |
 | `params` | object | 是 | 后端校验、限幅后的动作参数 |
@@ -663,6 +664,8 @@ POST /api/control/robots/{robotId}/commands
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | `enabled` | boolean | 是 | true 打开安全开关，false 关闭 |
+
+一期约束：`payload.safety_switch` 只用于发射器 `LAUNCHER` 的真实设备安全开关；捕网枪 `NET_GUN` 页面上的安全开关只作为前端本地解锁按钮，不调用后端接口，不下发 MQTT。
 
 #### `volume.set`
 
@@ -791,7 +794,8 @@ POST /api/control/robots/{robotId}/commands
 | `WHEELED_BASE` | `drive.velocity` | 不支持横移时 `linearY=0`，按轮式底盘限速 |
 | `QUADRUPED_BASE` | `drive.velocity` | 允许横移时保留 `linearY`，按四足限速 |
 | `DUAL_LIGHT_PTZ` | `ptz.move`、`ptz.auto_rotate`、`camera.zoom` | 裁剪云台速度、自动旋转速度、变焦速度 |
-| `NET_LAUNCHER` | `payload.safety_switch`、`payload.fire` | 校验 confirmToken、安全开关、冷却 |
+| `LAUNCHER` | `payload.safety_switch`、`payload.fire` | 安全开关真实下发，发射按 1 到 6 通道构造 |
+| `NET_GUN` | `payload.fire` | 前端本地安全开关解锁后才能点击；后端校验 confirmToken |
 | `SEARCHLIGHT` | `light.set` | 裁剪亮度，校验模式 |
 | `WARNING_LIGHT` | `light.warning.set` | 按左右警示灯设备分别构造开关参数 |
 | `VEHICLE_LIGHT` | `light.vehicle.set` | 前后灯作为一个整体设备，转换为 `/robot_light_ctl` 的 `RobotLightCmd` |
@@ -997,26 +1001,28 @@ mqttPayload = {
 }
 ```
 
-### 9.4 捕网器：`payload.safety_switch`、`payload.fire`
+### 9.4 发射器与捕网枪：`payload.safety_switch`、`payload.fire`
 
 使用场景：
 
-- 打开/关闭捕网器安全开关。
-- 二次确认后发射捕网器。
+- 发射器打开/关闭真实安全开关，并通过接口下发给客户端。
+- 发射器二次确认后按 1 到 6 通道发射。
+- 捕网枪页面保留本地安全开关按钮，只用于解锁前端发射按钮，不调用后端接口。
+- 捕网枪二次确认后按 1 发通道发射。
 
-捕网器动作建议走 REST `/commands`，不走高频 WebSocket。
+发射器和捕网枪动作建议走 REST `/commands`，不走高频 WebSocket。
 
-#### 9.4.1 安全开关
+#### 9.4.1 发射器安全开关
 
 前端 REST 请求：
 
 ```jsonc
 {
-  "controlSessionId": "tc_20260603_0003",        // 捕网器设备级或整机控制权
+  "controlSessionId": "tc_20260603_0003",        // 发射器设备级或整机控制权
   "target": {
     "scope": "PAYLOAD",                          // 上装
-    "deviceId": "net-launcher-001",              // 捕网器设备 ID
-    "deviceType": "NET_LAUNCHER"                 // 捕网器类型
+    "deviceId": "launcher-001",                  // 发射器设备 ID
+    "deviceType": "LAUNCHER"                     // 发射器类型
   },
   "action": "payload.safety_switch",             // 设置安全开关
   "params": {
@@ -1038,8 +1044,8 @@ mqttPayload = {
   "robotId": "robot-songling-001",               // 机器人 ID
   "seq": 3001,                                   // 序号
   "target": {
-    "deviceId": "net-launcher-001",              // 捕网器 ID
-    "deviceType": "NET_LAUNCHER"                 // 捕网器类型
+    "deviceId": "launcher-001",                  // 发射器 ID
+    "deviceType": "LAUNCHER"                     // 发射器类型
   },
   "action": "payload.safety_switch",             // 安全开关
   "params": {
@@ -1049,7 +1055,17 @@ mqttPayload = {
 }
 ```
 
-#### 9.4.2 发射
+#### 9.4.2 捕网枪本地安全开关
+
+捕网枪页面上的安全开关不产生后端请求。前端只维护本地状态：
+
+```js
+netGunSafety[deviceId] = true
+```
+
+当本地安全开关为 `false` 时，捕网枪发射按钮置灰；切换为 `true` 后才允许用户点击发射并进入二次确认。
+
+#### 9.4.3 捕网枪发射
 
 发射前先请求 confirmToken：
 
@@ -1058,8 +1074,8 @@ mqttPayload = {
   "controlSessionId": "tc_20260603_0003",        // 控制权 ID
   "target": {
     "scope": "PAYLOAD",                          // 上装
-    "deviceId": "net-launcher-001",              // 捕网器
-    "deviceType": "NET_LAUNCHER"                 // 捕网器类型
+    "deviceId": "net-gun-001",                   // 捕网枪
+    "deviceType": "NET_GUN"                      // 捕网枪类型
   },
   "action": "payload.fire",                      // 准备发射
   "reason": "manual_confirm"                     // 人工二次确认
@@ -1073,8 +1089,8 @@ mqttPayload = {
   "controlSessionId": "tc_20260603_0003",        // 控制权 ID
   "target": {
     "scope": "PAYLOAD",                          // 上装
-    "deviceId": "net-launcher-001",              // 捕网器 ID
-    "deviceType": "NET_LAUNCHER"                 // 捕网器类型
+    "deviceId": "net-gun-001",                   // 捕网枪 ID
+    "deviceType": "NET_GUN"                      // 捕网枪类型
   },
   "action": "payload.fire",                      // 捕网器发射
   "params": {
@@ -1083,7 +1099,7 @@ mqttPayload = {
   },
   "client": {
     "terminalId": "web-client-001",              // 终端
-    "source": "net_fire_button",                 // 发射按钮
+    "source": "net_gun_fire",                    // 捕网枪发射按钮
     "seq": 3101,                                 // 序号
     "timestamp": "2026-06-03T10:30:30+08:00"     // 前端时间
   }
@@ -1097,8 +1113,8 @@ mqttPayload = {
   "robotId": "robot-songling-001",               // 机器人 ID
   "seq": 3101,                                   // 序号
   "target": {
-    "deviceId": "net-launcher-001",              // 捕网器
-    "deviceType": "NET_LAUNCHER"                 // 捕网器类型
+    "deviceId": "net-gun-001",                   // 捕网枪
+    "deviceType": "NET_GUN"                      // 捕网枪类型
   },
   "action": "payload.fire",                      // 发射动作
   "params": {
@@ -1311,7 +1327,8 @@ Go 客户端上报 robot.state
 - 连续控制类不要求前端发送结束帧。
 - 后端不区分点触、长按、松手，只处理收到的每一帧控制数据。
 - 本体手动控制必须处于 `MANUAL`，`NAVIGATION` 或 `ASSISTED` 下需先接管。
-- `payload.fire` 必须有控制权、confirmToken、安全开关和冷却校验。
+- 发射器 `payload.fire` 必须有控制权、confirmToken、真实安全开关和冷却校验。
+- 捕网枪 `payload.fire` 必须有控制权和 confirmToken；安全开关只在前端本地解锁按钮，不作为后端校验项。
 - 急停使用 `robot/{robotId}/control/safety/estop`，不进入普通命令队列。
 - 客户端如何消费控制帧并调用 ROS2，由客户端同事单独抽象实现。
 
@@ -1322,7 +1339,7 @@ Go 客户端上报 robot.state
 3. 一个终端控制本体时，另一个终端可按配置控制云台。
 4. 本体和云台点触时，前端能按 10Hz 发送少量控制帧，后端逐帧组装 MQTT。
 5. 本体和云台长按时，前端能按 10Hz 持续发送控制帧，后端逐帧组装 MQTT。
-6. 捕网器没有 confirmToken 或安全开关时不能发射。
+6. 发射器没有 confirmToken 或真实安全开关时不能发射；捕网枪没有 confirmToken 或前端本地安全开关未打开时不能点击发射。
 7. `NAVIGATION` 或 `ASSISTED` 下手动控制本体时，前端必须先接管成功再发送控制帧。
 8. 前端接管请求携带旧 `observedStateSeq` 时，后端返回 `ROBOT_STATE_CHANGED`。
 9. 后端能记录命令发布，并通过 `media/client/status` 刷新机器人在线状态、控制模式和设备状态。

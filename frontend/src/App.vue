@@ -207,8 +207,24 @@
           <div class="control-block" v-if="launcherDevice">
             <strong>发射器</strong>
             <small>{{ launcherDevice.deviceId }}</small>
+            <div class="control-inline">
+              <span>安全开关</span>
+              <el-switch
+                  :value="isLauncherSafetyOn(launcherDevice)"
+                  active-text="开"
+                  inactive-text="关"
+                  @change="setLauncherSafety(launcherDevice, $event)"
+              />
+            </div>
             <div class="control-grid control-grid-3">
-              <el-button v-for="channel in 6" :key="channel" size="mini" type="danger" @click="firePayload(launcherDevice, channel, `launcher_${channel}`)">发射{{ channel }}</el-button>
+              <el-button
+                  v-for="channel in 6"
+                  :key="channel"
+                  size="mini"
+                  type="danger"
+                  :disabled="!isLauncherSafetyOn(launcherDevice)"
+                  @click="firePayload(launcherDevice, channel, `launcher_${channel}`)"
+              >发射{{ channel }}</el-button>
             </div>
           </div>
           <div class="control-block" v-if="netGunDevice">
@@ -220,7 +236,7 @@
                   :value="isNetGunSafetyOn(netGunDevice)"
                   active-text="开"
                   inactive-text="关"
-                  @change="setNetGunSafety(netGunDevice, $event)"
+                  @change="setFakeNetGunSafety(netGunDevice, $event)"
               />
             </div>
             <div class="control-grid">
@@ -407,6 +423,7 @@ export default {
       controlTimers: {},
       ptzAutoRotateState: {},
       audioState: {},
+      launcherSafety: {},
       netGunSafety: {},
       warningLightState: {},
       vehicleLightState: {
@@ -446,9 +463,6 @@ export default {
     },
     ptzDevice() {
       return this.controlDevices().find(device => device.deviceType === 'DUAL_LIGHT_PTZ')
-    },
-    netDevice() {
-      return this.controlDevices().find(device => device.deviceType === 'NET_LAUNCHER')
     },
     netGunDevice() {
       return this.controlDevices().find(device => device.deviceType === 'NET_GUN' || device.deviceType === 'NET_LAUNCHER')
@@ -1057,7 +1071,7 @@ export default {
     async sendDiscreteCommand(action) {
       const device = action === 'light.set'
           ? this.searchlightDevice
-          : this.netDevice
+          : this.launcherDevice
       const session = await this.ensureControlSession(device, action)
       const params = {
         'payload.safety_switch': { enabled: true },
@@ -1070,11 +1084,17 @@ export default {
     isNetGunSafetyOn(device) {
       return !!(device && this.netGunSafety[device.deviceId])
     },
-    async setNetGunSafety(device, enabled) {
+    setFakeNetGunSafety(device, enabled) {
       this.$set(this.netGunSafety, device.deviceId, enabled)
-      const ok = await this.sendDeviceCommand(device, 'payload.safety_switch', { enabled }, `net_safety_${enabled ? 'on' : 'off'}`)
+    },
+    isLauncherSafetyOn(device) {
+      return !!(device && this.launcherSafety[device.deviceId])
+    },
+    async setLauncherSafety(device, enabled) {
+      this.$set(this.launcherSafety, device.deviceId, enabled)
+      const ok = await this.sendDeviceCommand(device, 'payload.safety_switch', { enabled }, `launcher_safety_${enabled ? 'on' : 'off'}`)
       if (!ok) {
-        this.$set(this.netGunSafety, device.deviceId, !enabled)
+        this.$set(this.launcherSafety, device.deviceId, !enabled)
       }
     },
     isWarningLightOn(device) {
@@ -1261,26 +1281,6 @@ export default {
         modeCode: option ? option.code : 0,
         customValue: mode === 'CUSTOM' ? part.customValue : 0
       }
-    },
-    async fireNetLauncher() {
-      const device = this.netDevice
-      const session = await this.ensureControlSession(device, 'payload.fire')
-      const token = await createConfirmToken(this.selectedRobotId, {
-        controlSessionId: session.controlSessionId,
-        target: {
-          scope: device.scope,
-          deviceId: device.deviceId,
-          deviceType: device.deviceType
-        },
-        action: 'payload.fire',
-        reason: 'manual_confirm'
-      })
-      const response = await sendEquipmentCommand(this.selectedRobotId,
-          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'payload.fire', {
-            channel: 1,
-            confirmToken: token.confirmToken
-          }, 'net_fire_button'))
-      this.log('API fireNetLauncher', response)
     },
     syncControlEvent(event) {
       if (!event) return
