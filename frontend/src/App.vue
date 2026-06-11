@@ -110,6 +110,11 @@
                   <el-tag size="mini" :type="statusType(camera.status)">
                     {{ camera.status || '未观看' }}
                   </el-tag>
+                  <span
+                      v-if="camera.watching"
+                      class="latency-pill"
+                      :class="'latency-' + latencyLevel(camera)"
+                  >{{ latencyText(camera) }}</span>
                 </div>
               </div>
               <div v-if="!camera.hasVideo" class="empty-video">
@@ -378,6 +383,11 @@ function cameraState(robotId, deviceId, name, channel, groupType) {
     recordingActive: false,
     recordingBusy: false,
     activeRecording: null,
+    latencyMs: null,
+    latencyLevel: 'unknown',
+    statsTimer: null,
+    statsTrack: null,
+    statsRoom: null,
     stopping: false,
     stopped: false,
     restarting: false,
@@ -529,6 +539,7 @@ export default {
     if (this.socket) this.socket.close()
     this.destroyRecordedHls()
     this.allCameras().forEach(camera => {
+      this.stopLatencyStats(camera)
       if (camera.room) camera.room.disconnect()
     })
   },
@@ -709,6 +720,7 @@ export default {
         this.log('API stopVideoSession', stopped)
         camera.watching = false
         camera.hasVideo = false
+        this.stopLatencyStats(camera)
         camera.recordingActive = false
         camera.activeRecording = null
         const video = this.videoElement(camera)
@@ -721,6 +733,7 @@ export default {
         if (camera.room) {
           const oldRoom = camera.room
           camera.room = null
+          this.stopLatencyStats(camera)
           await oldRoom.disconnect()
         }
         camera.hasVideo = false
@@ -799,6 +812,8 @@ export default {
         camera.status = nextSession.status
         camera.viewerCount = nextSession.viewerCount
         camera.hasVideo = true
+        const publication = this.firstVideoPublication(nextRoom)
+        if (publication && publication.track) this.startLatencyStats(camera, publication.track, nextRoom)
         camera.stopped = false
         camera.stopping = false
         this.stoppedSessionIds.delete(nextSession.sessionId)
@@ -968,6 +983,7 @@ export default {
           camera.disconnecting = true
           const oldRoom = camera.room
           camera.room = null
+          this.stopLatencyStats(camera)
           await oldRoom.disconnect()
           camera.disconnecting = false
         }
@@ -979,7 +995,7 @@ export default {
             track.attach(this.audioElement(camera))
             camera.hasAudio = true
           } else if (track.kind === 'video' && camera.watching) {
-            this.attachVideoTrack(camera, track, publication)
+            this.attachVideoTrack(camera, track, publication, room)
             camera.hasVideo = true
           }
           this.log('LiveKit TrackSubscribed', `${camera.name} ${track.sid || track.name}`)
@@ -988,7 +1004,10 @@ export default {
           if (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId) return
           track.detach()
           if (track.kind === 'audio') camera.hasAudio = false
-          if (track.kind === 'video') camera.hasVideo = false
+          if (track.kind === 'video') {
+            camera.hasVideo = false
+            this.stopLatencyStats(camera)
+          }
           this.log('LiveKit TrackUnsubscribed', `${camera.name} ${track.sid || track.name}`)
           if (track.kind === 'video' && camera.watching && !this.isStoppedSession(camera, sessionId)) {
             this.restartCamera(camera)
@@ -997,6 +1016,7 @@ export default {
         room.on(RoomEvent.Disconnected, () => {
           if (camera.room !== room || camera.disconnecting) return
           camera.hasVideo = false
+          this.stopLatencyStats(camera)
           this.log('LiveKit Disconnected', camera.name)
           if (camera.watching && !this.isStoppedSession(camera, sessionId)) this.restartCamera(camera)
         })
@@ -1488,12 +1508,18 @@ export default {
           if (!old) return camera
           if (incoming.status === 'offline' && old.room) {
             old.disconnecting = true
+            this.stopLatencyStats(old)
             old.room.disconnect()
           }
           return Object.assign(old, camera, {
             session: old.session,
             room: incoming.status === 'online' ? old.room : null,
             hasVideo: incoming.status === 'online' ? old.hasVideo : false,
+            latencyMs: incoming.status === 'online' ? old.latencyMs : null,
+            latencyLevel: incoming.status === 'online' ? old.latencyLevel : 'unknown',
+            statsTimer: incoming.status === 'online' ? old.statsTimer : null,
+            statsTrack: incoming.status === 'online' ? old.statsTrack : null,
+            statsRoom: incoming.status === 'online' ? old.statsRoom : null,
             status: incoming.status === 'online' ? old.status : 'offline',
             viewerCount: old.viewerCount,
             watching: old.watching,
@@ -1600,12 +1626,13 @@ export default {
       }
       return null
     },
-    attachVideoTrack(camera, track, publication) {
+    attachVideoTrack(camera, track, publication, room = camera.room) {
       if (publication && typeof publication.setVideoQuality === 'function') {
         publication.setVideoQuality(VideoQuality.HIGH)
       }
       const video = this.videoElement(camera)
       if (video) track.attach(video)
+      this.startLatencyStats(camera, track, room)
     },
     detachRoomFromVideo(room, video) {
       if (!room || !video) return
@@ -1736,21 +1763,129 @@ export default {
         camera.recordingBusy = false
       }
     },
-	    attachExistingVideoTracks(camera, room, sessionId, strict = true) {
-	      let attached = false
-	      room.remoteParticipants.forEach(participant => {
-	        participant.trackPublications.forEach(publication => {
-	          const track = publication.track
-	          if (!track || track.kind !== 'video') return
-	          if (strict && (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId)) return
-	          this.attachVideoTrack(camera, track, publication)
-	          camera.hasVideo = true
-	          attached = true
-	          this.log('LiveKit TrackAttached', `${camera.name} ${track.sid || track.name}`)
-	        })
-	      })
-	      return attached
-	    },
+    attachExistingVideoTracks(camera, room, sessionId, strict = true) {
+      let attached = false
+      room.remoteParticipants.forEach(participant => {
+        participant.trackPublications.forEach(publication => {
+          const track = publication.track
+          if (!track || track.kind !== 'video') return
+          if (strict && (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId)) return
+          this.attachVideoTrack(camera, track, publication, room)
+          camera.hasVideo = true
+          attached = true
+          this.log('LiveKit TrackAttached', `${camera.name} ${track.sid || track.name}`)
+        })
+      })
+      return attached
+    },
+    startLatencyStats(camera, track, room = camera.room) {
+      this.stopLatencyStats(camera)
+      camera.statsTrack = track
+      camera.statsRoom = room
+      camera.latencyMs = null
+      camera.latencyLevel = 'unknown'
+      const sample = async () => {
+        if (camera.statsTrack !== track || camera.statsRoom !== room || (room && camera.room !== room)) return
+        try {
+          const stats = await this.videoStatsReport(track, room)
+          const latencyMs = this.estimateLatencyMs(stats)
+          if (camera.statsTrack !== track || camera.statsRoom !== room || (room && camera.room !== room)) return
+          camera.latencyMs = latencyMs
+          camera.latencyLevel = this.latencyLevel(camera)
+        } catch (error) {
+          if (camera.statsTrack === track && camera.statsRoom === room) {
+            camera.latencyMs = null
+            camera.latencyLevel = 'unknown'
+          }
+        }
+      }
+      sample()
+      camera.statsTimer = setInterval(sample, 1000)
+    },
+    stopLatencyStats(camera) {
+      if (camera.statsTimer) clearInterval(camera.statsTimer)
+      camera.statsTimer = null
+      camera.statsTrack = null
+      camera.statsRoom = null
+      camera.latencyMs = null
+      camera.latencyLevel = 'unknown'
+    },
+    async videoStatsReport(track, room) {
+      const peerStats = await this.peerConnectionStats(room)
+      if (peerStats) return peerStats
+      if (track && typeof track.getRTCStatsReport === 'function') {
+        return track.getRTCStatsReport()
+      }
+      if (track && track.receiver && typeof track.receiver.getStats === 'function') {
+        return track.receiver.getStats()
+      }
+      return null
+    },
+    async peerConnectionStats(room) {
+      const manager = room && room.engine && room.engine.pcManager
+      const transports = [
+        manager && manager.subscriber,
+        manager && manager.publisher
+      ]
+      for (const transport of transports) {
+        if (transport && typeof transport.getStats === 'function') {
+          const stats = await transport.getStats()
+          if (stats) return stats
+        }
+      }
+      return null
+    },
+    estimateLatencyMs(stats) {
+      if (!stats || typeof stats.forEach !== 'function') return null
+      const pairRtt = this.selectedCandidatePairRtt(stats)
+      if (Number.isFinite(pairRtt)) return Math.round(pairRtt * 1000)
+      let receiverRtt = null
+      let jitterDelay = null
+      stats.forEach(report => {
+        if (receiverRtt === null
+            && (report.type === 'remote-inbound-rtp' || report.type === 'remote-outbound-rtp')
+            && Number.isFinite(report.roundTripTime)) {
+          receiverRtt = report.roundTripTime
+        }
+        if (jitterDelay === null
+            && report.type === 'inbound-rtp'
+            && report.kind === 'video'
+            && report.jitterBufferEmittedCount > 0
+            && Number.isFinite(report.jitterBufferDelay)) {
+          jitterDelay = report.jitterBufferDelay / report.jitterBufferEmittedCount
+        }
+      })
+      const seconds = receiverRtt !== null ? receiverRtt : jitterDelay
+      return Number.isFinite(seconds) ? Math.round(seconds * 1000) : null
+    },
+    selectedCandidatePairRtt(stats) {
+      let selectedPairId = null
+      stats.forEach(report => {
+        if (report.type === 'transport' && report.selectedCandidatePairId) {
+          selectedPairId = report.selectedCandidatePairId
+        }
+      })
+      if (selectedPairId && stats.get) {
+        const selected = stats.get(selectedPairId)
+        if (selected && Number.isFinite(selected.currentRoundTripTime)) return selected.currentRoundTripTime
+      }
+      let fallback = null
+      stats.forEach(report => {
+        if (fallback !== null || report.type !== 'candidate-pair') return
+        const selected = report.selected || report.nominated || report.state === 'succeeded'
+        if (selected && Number.isFinite(report.currentRoundTripTime)) fallback = report.currentRoundTripTime
+      })
+      return fallback
+    },
+    latencyText(camera) {
+      return Number.isFinite(camera.latencyMs) ? `${camera.latencyMs} ms` : '-- ms'
+    },
+    latencyLevel(camera) {
+      if (!Number.isFinite(camera.latencyMs)) return 'unknown'
+      if (camera.latencyMs < 80) return 'good'
+      if (camera.latencyMs < 200) return 'warn'
+      return 'bad'
+    },
     liveKitConnectionUrl(serverUrl) {
       // HTTPS 页面不能直接连 ws:// LiveKit；生产环境通过同域 /livekit 反代升级到 wss。
       if (window.location.protocol === 'https:') {
@@ -2351,6 +2486,29 @@ export default {
 
 .quality-select /deep/ .el-input__icon {
   line-height: 24px;
+}
+
+.latency-pill {
+  min-width: 38px;
+  display: inline-block;
+  color: #e2e8f0;
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.latency-pill.latency-good {
+  color: #86efac;
+}
+
+.latency-pill.latency-warn {
+  color: #fde68a;
+}
+
+.latency-pill.latency-bad {
+  color: #fecaca;
 }
 
 .empty-video {
