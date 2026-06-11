@@ -232,20 +232,20 @@ X-Roles: MEDIA_VIEWER,MEDIA_OPERATOR
 主要接口：
 
 ```text
-POST /api/media/video-sessions
-GET  /api/media/video-sessions
-GET  /api/media/video-sessions/active
-GET  /api/media/video-sessions/{sessionId}
-POST /api/media/video-sessions/{sessionId}/token
-POST /api/media/video-sessions/{sessionId}/stop
-POST /api/media/video-sessions/{sessionId}/switch-channel
-GET  /api/media/video-sessions/{sessionId}/tracks
-POST /api/media/video-sessions/{sessionId}/snapshots
-GET  /api/media/video-sessions/{sessionId}/snapshots
-GET  /api/media/video-sessions/{sessionId}/events
-POST /api/internal/media/snapshots/{snapshotId}/complete
-POST /api/internal/media/snapshots/{snapshotId}/complete-file
-POST /api/internal/media/snapshots/{snapshotId}/fail
+POST /internal/media/video-sessions
+GET  /internal/media/video-sessions
+GET  /internal/media/video-sessions/active
+GET  /internal/media/video-sessions/{sessionId}
+POST /internal/media/video-sessions/{sessionId}/token
+POST /internal/media/video-sessions/{sessionId}/stop
+POST /internal/media/video-sessions/{sessionId}/switch-channel
+GET  /internal/media/video-sessions/{sessionId}/tracks
+POST /internal/media/video-sessions/{sessionId}/snapshots
+GET  /internal/media/video-sessions/{sessionId}/snapshots
+GET  /internal/media/video-sessions/{sessionId}/events
+POST /internal/media/snapshots/{snapshotId}/complete
+POST /internal/media/snapshots/{snapshotId}/complete-file
+POST /internal/media/snapshots/{snapshotId}/fail
 POST /api/internal/livekit/webhook
 WS   /ws/media
 ```
@@ -253,8 +253,8 @@ WS   /ws/media
 联调 Mock 接口：
 
 ```text
-POST /api/media/video-sessions/{sessionId}/_mock/client-acked
-POST /api/media/video-sessions/{sessionId}/_mock/track-published/{trackSid}
+POST /internal/media/video-sessions/{sessionId}/_mock/client-acked
+POST /internal/media/video-sessions/{sessionId}/_mock/track-published/{trackSid}
 ```
 
 媒体源接口：
@@ -473,9 +473,9 @@ GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/imag
 
 ```http
 POST /api/control/video-sessions/{sessionId}/snapshots
-POST /api/internal/media/snapshots/{snapshotId}/complete
-POST /api/internal/media/snapshots/{snapshotId}/complete-file
-POST /api/internal/media/snapshots/{snapshotId}/fail
+POST /internal/media/snapshots/{snapshotId}/complete
+POST /internal/media/snapshots/{snapshotId}/complete-file
+POST /internal/media/snapshots/{snapshotId}/fail
 ```
 
 ## 验证命令

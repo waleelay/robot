@@ -10,7 +10,7 @@ import (
 type Config struct {
 	RobotID                  string
 	RobotName                string
-	RobotType                string
+	Type                     string
 	Battery                  int
 	MQTTBroker               string
 	MQTTUsername             string
@@ -62,7 +62,7 @@ func Load() Config {
 	return Config{
 		RobotID:                  robotID,
 		RobotName:                env("ROBOT_NAME", defaultRobotName(robotID)),
-		RobotType:                env("ROBOT_TYPE", defaultRobotType(robotID)),
+		Type:                     env("ROBOT_TYPE", defaultType(robotID)),
 		Battery:                  boundedPercentage(envInt("ROBOT_BATTERY", 100)),
 		MQTTBroker:               env("MQTT_BROKER_URL", "tcp://192.168.124.77:1883"),
 		MQTTUsername:             env("MQTT_USERNAME", ""),
@@ -135,7 +135,7 @@ func defaultRobotName(robotID string) string {
 	return "松灵四轮机器人"
 }
 
-func defaultRobotType(robotID string) string {
+func defaultType(robotID string) string {
 	if robotID == "robot-002" {
 		return "四足机器人"
 	}

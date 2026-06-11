@@ -154,12 +154,22 @@ Content-Type: application/json
 |---|---|---:|---|
 | `robotId` | string | 是 | 机器人唯一 ID，需要与 Go 客户端 `ROBOT_ID` 一致 |
 | `clientId` | string | 是 | Go 客户端实例 ID，需要与 `ROBOT_CLIENT_ID` 一致 |
+| `clientVersion` | string | 可选 | Go 客户端版本 |
 | `name` | string | 是 | 机器人展示名称，例如 `松灵四轮机器人` |
 | `type` | string | 是 | 机器人类型，例如 `轮式机器人`、`四足机器人` |
 | `battery` | number | 可选 | 机器人电量百分比，整数 `0-100`；旧客户端未上报时为 `null` |
 | `status` | string | 是 | `online` / `offline` |
+| `onlineStatus` | string | 是 | 前端实时状态使用的在线状态；通常与 `status` 一致 |
+| `controlMode` | string | 是 | 控制模式，如 `MANUAL`、`ASSISTED`、`NAVIGATION` |
+| `stateSeq` | number | 是 | 客户端状态递增序号 |
+| `missionStatus` | string | 可选 | 任务状态 |
+| `navigationStatus` | string | 可选 | 导航状态 |
+| `controlOwner` | object/null | 可选 | 当前控制占用者 |
+| `estopActive` | boolean | 是 | 急停是否生效 |
 | `lastHeartbeatAt` | datetime | 可选 | 后端最近收到客户端状态或心跳的时间 |
 | `cameras` | array[`RobotCameraResponse`] | 是 | 机器人下挂摄像头列表 |
+| `devices` | array | 可选 | 装备状态列表，结构与 `robot.state.data.devices` 一致 |
+| `timestamp` | datetime | 可选 | 最近一次机器人状态产生或后端更新时间 |
 
 ### 5.3 `RobotCameraResponse`
 
@@ -674,8 +684,7 @@ GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/imag
 
 | 事件 | 触发时机 | 前端行为 |
 |---|---|---|
-| `robot.client.online` | Go 客户端启动或心跳 online | 更新设备列表、显示在线、保留已有播放状态 |
-| `robot.client.offline` | Go 客户端主动 offline 或后端心跳超时 | 机器人和摄像头显示离线，断开该机器人下正在播放的本地 Room |
+| `robot.state` | Go 客户端启动、心跳、offline 上报、后端心跳超时扫离线，或控制状态变化 | 更新机器人基础状态、在线状态、控制状态、设备列表；离线时断开对应机器人下正在播放的本地 Room |
 
 机器人事件 `data`：
 
@@ -702,38 +711,65 @@ GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/imag
 }
 ```
 
-字段说明同 `RobotDeviceResponse`。
+`robot.state` 中 `type` 是唯一机器人类型字段，用于机器人分类、布局和能力模板选择；在线状态统一由 `status` / `onlineStatus` 表达。
 
 ### 7.2 视频会话事件
 
-| 事件 | 触发时机 |
-|---|---|
-| `video.session.created` | 后端创建新会话 |
-| `video.room.ready` | Room 创建或客户端上报 publishing |
-| `video.client.requested` | Control Server 下发 start 指令 |
-| `video.session.reused` | 后端复用已有会话 |
-| `video.viewer.changed` | 观看人数变化 |
-| `video.session.streaming` | Go 客户端上报 streaming |
-| `video.session.interrupted` | Go 客户端上报 interrupted |
-| `video.session.failed` | RTSP、publisher、超时等失败 |
-| `video.session.idle_wait` | 最后一个观看者停止，等待延迟释放 |
-| `video.session.stopping` | 后端准备释放空闲会话 |
-| `video.session.closed` | 会话关闭 |
-| `video.session.restart` | 前端主动 restart |
-| `video.session.auto_restart` | 后端自动 restart |
-| `video.client.online_restart` | 客户端从离线变在线后触发恢复 |
-| `snapshot.requested` | 创建抓拍任务 |
-| `snapshot.completed` | 抓拍完成 |
-| `snapshot.failed` | 抓拍失败 |
+| 事件 | 触发时机 | data 参数 |
+|---|---|---|
+| `video.session.created` | 后端创建新会话 | `VideoSessionResponse` |
+| `video.session.reused` | 后端复用已有会话 | `VideoSessionResponse`，其中 `viewerToken` 为空 |
+| `video.room.ready` | Room 创建完成，或 Go 客户端上报 `publishing`/`room_ready` | Room 创建阶段只包含 `sessionId`、`roomName`；客户端上报阶段为 `VideoSessionResponse` |
+| `video.client.requested` | Control Server 请求 Media 准备 Room、publisherToken 并下发 start 指令 | `sessionId`、`commandId`、`timeoutSeconds` |
+| `video.track.switching` | 前端切换通道或清晰度，后端重新请求客户端推流 | `sessionId`、`commandId` |
+| `video.track.published` | 调试接口或 LiveKit Track 发布回写 | `VideoSessionResponse`，包含 `trackSid`、`trackName` |
+| `video.session.streaming` | Go 客户端上报 `streaming`/`track_published`，或 Track 发布回写后进入可观看状态 | `VideoSessionResponse` |
+| `video.session.interrupted` | Go 客户端上报 `interrupted` | `sessionId`、`message` |
+| `video.session.failed` | RTSP、publisher、客户端状态或超时失败 | `sessionId`、`errorCode`、`message` |
+| `video.session.idle_wait` | 最后一个观看者离开，等待延迟释放 | `sessionId`、`idleReleaseDelaySeconds` |
+| `video.session.stopping` | 后端准备释放空闲会话 | `VideoSessionResponse` |
+| `video.session.closed` | Go 客户端上报 stopped/closed，或空闲释放完成 | `VideoSessionResponse` |
+| `video.session.restart` | 前端主动 restart | `sessionId`、`commandId` |
+| `video.session.auto_restart` | 后端定时自动 restart | `sessionId`、`commandId` |
+| `video.client.online_restart` | 客户端从离线变在线后触发恢复 | `sessionId`、`commandId` |
+| `video.client.status` | Go 客户端上报未显式映射的视频状态 | `sessionId`、`status`、`message` |
+| `video.viewer.changed` | 观看人数变化，但会话仍有观看者或对讲占用 | `VideoSessionResponse` |
+| `video.intercom.starting` | 已请求机器人建立对讲音频链路 | `VideoSessionResponse` |
+| `video.intercom.stopping` | 操作员主动停止对讲 | `VideoSessionResponse`，其中 `intercomStatus=STOPPING` |
+| `video.intercom.active` | Go 客户端上报机器人麦克风 Track 可用 | `VideoSessionResponse`，包含 `robotAudioTrackSid`、`robotAudioTrackName` |
+| `video.intercom.interrupted` | Go 客户端上报对讲中断，或对讲心跳超时 | `sessionId`、`message` |
+| `video.intercom.failed` | Go 客户端上报对讲失败 | `sessionId`、`errorCode`、`message` |
+| `video.intercom.closed` | 对讲关闭 | `VideoSessionResponse` |
+| `video.intercom.status` | Go 客户端上报未显式映射的对讲状态 | `sessionId`、`status`、`message` |
+| `snapshot.requested` | 创建抓拍任务 | `snapshotId`、`sessionId`、`trackSid`、`source`、`createdBy` |
+| `snapshot.completed` | 抓拍完成 | `snapshotId`、`officialObjectKey`、`capturedAt`、`source` |
+| `snapshot.failed` | 抓拍失败 | `snapshotId`、`errorCode`、`message` |
 
-视频会话事件 `data` 分两类：
+`VideoSessionResponse` 事件 `data` 字段：
 
-| 事件类型 | data 结构 |
-|---|---|
-| `video.session.created` / `video.session.reused` / `video.room.ready` / `video.session.streaming` / `video.session.interrupted` / `video.session.failed` / `video.session.idle_wait` / `video.session.stopping` / `video.session.closed` / `video.session.restart` / `video.session.auto_restart` / `video.viewer.changed` | 通常为 `VideoSessionResponse` 对应字段，部分早期事件只包含核心字段 |
-| `video.client.requested` | 下发 MQTT start 后的指令信息 |
-| `video.client.online_restart` | 客户端重新上线后触发恢复的会话信息 |
-| `snapshot.requested` / `snapshot.completed` / `snapshot.failed` | `SnapshotResponse` 对应字段或包含 `snapshotId`、`sessionId`、`status`、`errorCode`、`errorMessage` |
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `sessionId` | string | 会话 ID |
+| `robotId` | string | 机器人 ID |
+| `deviceId` | string | 摄像头或云台设备 ID |
+| `channel` | string | 视频通道，当前常用 `visible` / `thermal` |
+| `quality` | string | 码流质量，当前常用 `main` / `sub` |
+| `status` | string | 会话状态，如 `INIT`、`REQUESTING_CLIENT`、`ROOM_READY`、`STREAMING`、`INTERRUPTED`、`IDLE_WAIT`、`STOPPING`、`CLOSED`、`FAILED` |
+| `roomName` | string | LiveKit Room 名称 |
+| `livekitUrl` | string | LiveKit 信令地址；事件广播中通常为空，接口响应中返回 |
+| `viewerToken` | string/null | 前端观看 Token；WebSocket 事件中通常为空 |
+| `trackSid` | string/null | LiveKit 视频 Track SID |
+| `trackName` | string/null | LiveKit 视频 Track 名称 |
+| `viewerCount` | number | 当前活跃观看者数量 |
+| `intercomStatus` | string | 对讲状态，如 `IDLE`、`STARTING`、`ACTIVE`、`INTERRUPTED`、`STOPPING`、`FAILED` |
+| `intercomAudioOnly` | boolean | 当前会话是否仅用于对讲音频 |
+| `intercomOperatorId` | string/null | 当前对讲操作员用户 ID |
+| `robotAudioTrackSid` | string/null | 机器人麦克风 Track SID |
+| `robotAudioTrackName` | string/null | 机器人麦克风 Track 名称 |
+| `lastErrorCode` | string/null | 最近一次失败错误码 |
+| `lastErrorMessage` | string/null | 最近一次失败说明 |
+| `createdAt` | datetime | 会话创建时间 |
+| `updatedAt` | datetime | 会话更新时间 |
 
 `video.client.requested` data 示例：
 
@@ -757,7 +793,7 @@ GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/imag
 
 ## 8. Media Internal API 接口
 
-Media Internal API 是 Media Service 暴露给 Control Server 的内部能力接口，当前路径为 `/internal/media/**`。当前代码同时保留 `/api/media/**` 兼容旧调试入口，但前端不再直接调用。Control Server 当前通过 HTTP client 调这些接口，即使同进程部署也不再直接调用 Media 内部类。
+Media Internal API 是 Media Service 暴露给 Control Server 的内部能力接口，当前路径为 `/internal/media/**`。Control Server 当前通过 HTTP client 调这些接口，即使同进程部署也不再直接调用 Media 内部类。
 
 | Control Server 调用 | Media Service 内部接口 | 说明 |
 |---|---|---|
@@ -1290,7 +1326,7 @@ viewerCount 自动下降
 
 ```text
 GO: publish client/status offline
-BE: robot.client.offline
+BE: robot.state(status=offline)
 FE: 设备和摄像头显示离线，断开本地 Room
 ```
 
@@ -1299,7 +1335,7 @@ FE: 设备和摄像头显示离线，断开本地 Room
 ```text
 GO 无法发送 offline
 BE robot heartbeat scheduler 超时
-BE: robot.client.offline
+BE: robot.state(status=offline)
 FE: 设备和摄像头显示离线
 ```
 
@@ -1437,10 +1473,10 @@ viewerCount 自动下降
 
 ```text
 Go 客户端停止或断网
-15 秒左右后 robot.client.offline
+15 秒左右后 robot.state(status=offline)
 前端设备显示 offline
 重新启动 Go 客户端
-robot.client.online
+robot.state(status=online)
 有观看者的会话自动 restart
 画面恢复
 ```

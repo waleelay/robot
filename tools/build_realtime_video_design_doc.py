@@ -358,11 +358,11 @@ def build():
     add_kv_table(
         doc,
         [
-            ("POST /api/media/video-sessions", "创建实时视频会话，参数包括 robotId、deviceId、channel、quality、reuse。"),
-            ("GET /api/media/video-sessions/{sessionId}", "查询会话状态、Room、Track、观看人数、错误原因等。"),
-            ("POST /api/media/video-sessions/{sessionId}/token", "获取观看 Token，前端凭 Token 加入 LiveKit Room。"),
-            ("POST /api/media/video-sessions/{sessionId}/switch-channel", "切换双光云台通道，如 visible、thermal、fusion。"),
-            ("POST /api/media/video-sessions/{sessionId}/stop", "停止实时视频会话，释放观看会话和客户端媒体资源。"),
+            ("POST /internal/media/video-sessions", "创建实时视频会话，参数包括 robotId、deviceId、channel、quality、reuse。"),
+            ("GET /internal/media/video-sessions/{sessionId}", "查询会话状态、Room、Track、观看人数、错误原因等。"),
+            ("POST /internal/media/video-sessions/{sessionId}/token", "获取观看 Token，前端凭 Token 加入 LiveKit Room。"),
+            ("POST /internal/media/video-sessions/{sessionId}/switch-channel", "切换双光云台通道，如 visible、thermal、fusion。"),
+            ("POST /internal/media/video-sessions/{sessionId}/stop", "停止实时视频会话，释放观看会话和客户端媒体资源。"),
         ],
     )
 

@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,25 +32,46 @@ public class RobotRegistryService {
             String status,
             String name,
             String type,
+            String clientVersion,
             Integer battery,
-            List<RobotCameraResponse> cameras) {
+            String onlineStatus,
+            String controlMode,
+            Long stateSeq,
+            String missionStatus,
+            String navigationStatus,
+            Object controlOwner,
+            Boolean estopActive,
+            List<RobotCameraResponse> cameras,
+            List<Map<String, Object>> deviceStatuses) {
         if (robotId == null || robotId.isBlank()) {
             return false;
         }
         RobotDevice device = devices.computeIfAbsent(robotId, RobotDevice::new);
         boolean becameOnline = !"online".equals(device.status) && !"offline".equalsIgnoreCase(status);
         device.clientId = clientId;
+        device.clientVersion = clientVersion;
         device.name = blank(name) ? robotId : name;
         device.type = blank(type) ? "机器人" : type;
         if (battery != null) {
             device.battery = Math.max(0, Math.min(100, battery));
         }
         device.status = "offline".equalsIgnoreCase(status) ? "offline" : "online";
+        device.onlineStatus = blank(onlineStatus) ? device.status : onlineStatus;
+        device.controlMode = blank(controlMode) ? "MANUAL" : controlMode;
+        if (stateSeq != null) {
+            device.stateSeq = stateSeq;
+        }
+        device.missionStatus = blank(missionStatus) ? "IDLE" : missionStatus;
+        device.navigationStatus = blank(navigationStatus) ? "IDLE" : navigationStatus;
+        device.controlOwner = controlOwner;
+        device.estopActive = estopActive == null ? false : estopActive;
         device.lastHeartbeatAt = now();
         if (cameras != null && !cameras.isEmpty()) {
             device.cameras = new ArrayList<>(cameras);
         }
-        webSocketPublisher.publish("robot.client." + device.status, toResponse(device));
+        if (deviceStatuses != null && !deviceStatuses.isEmpty()) {
+            device.devices = new ArrayList<>(deviceStatuses);
+        }
         return becameOnline;
     }
 
@@ -65,21 +87,53 @@ public class RobotRegistryService {
         devices.values().forEach(device -> {
             if ("online".equals(device.status) && device.lastHeartbeatAt != null && device.lastHeartbeatAt.isBefore(threshold)) {
                 device.status = "offline";
-                webSocketPublisher.publish("robot.client.offline", toResponse(device));
+                webSocketPublisher.publish("robot.state", toState(device));
             }
         });
+    }
+
+    private Map<String, Object> toState(RobotDevice device) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("robotId", device.robotId);
+        state.put("clientId", device.clientId == null ? "" : device.clientId);
+        state.put("clientVersion", device.clientVersion == null ? "" : device.clientVersion);
+        state.put("name", device.name);
+        state.put("type", device.type);
+        state.put("battery", device.battery == null ? 0 : device.battery);
+        state.put("status", device.status);
+        state.put("onlineStatus", device.status);
+        state.put("controlMode", device.controlMode);
+        state.put("stateSeq", device.stateSeq);
+        state.put("missionStatus", device.missionStatus);
+        state.put("navigationStatus", device.navigationStatus);
+        state.put("controlOwner", device.controlOwner);
+        state.put("estopActive", device.estopActive);
+        state.put("cameras", device.cameras);
+        state.put("devices", device.devices);
+        state.put("timestamp", now().toString());
+        return state;
     }
 
     private RobotDeviceResponse toResponse(RobotDevice device) {
         return new RobotDeviceResponse(
                 device.robotId,
                 device.clientId,
+                device.clientVersion,
                 device.name,
                 device.type,
                 device.battery,
                 device.status,
+                device.onlineStatus,
+                device.controlMode,
+                device.stateSeq,
+                device.missionStatus,
+                device.navigationStatus,
+                device.controlOwner,
+                device.estopActive,
                 device.lastHeartbeatAt,
-                device.cameras);
+                device.cameras,
+                device.devices,
+                device.lastHeartbeatAt == null ? null : device.lastHeartbeatAt.toString());
     }
 
     private boolean blank(String value) {
@@ -93,12 +147,21 @@ public class RobotRegistryService {
     private static class RobotDevice {
         private final String robotId;
         private String clientId;
+        private String clientVersion;
         private String name;
         private String type;
         private Integer battery;
         private String status = "offline";
+        private String onlineStatus = "offline";
+        private String controlMode = "MANUAL";
+        private Long stateSeq = 1L;
+        private String missionStatus = "IDLE";
+        private String navigationStatus = "IDLE";
+        private Object controlOwner;
+        private Boolean estopActive = false;
         private OffsetDateTime lastHeartbeatAt;
         private List<RobotCameraResponse> cameras = List.of();
+        private List<Map<String, Object>> devices = List.of();
 
         private RobotDevice(String robotId) {
             this.robotId = robotId;

@@ -104,7 +104,6 @@ GET /api/control/robots
   {
     "robotId": "robot-songling-001",
     "name": "松灵四轮机器人",
-    "robotType": "WHEELED_AGV",
     "vendor": "SONGLING",
     "model": "SCOUT",
     "onlineStatus": "online",
@@ -128,7 +127,6 @@ GET /api/control/robots/{robotId}/control-profile
 ```json
 {
   "robotId": "robot-songling-001",
-  "robotType": "WHEELED_AGV",
   "vendor": "SONGLING",
   "model": "SCOUT",
   "onlineStatus": "online",
@@ -446,13 +444,20 @@ POST /api/control/robots/{robotId}/commands
 }
 ```
 
-客户端状态推送：
+客户端状态广播：
 
 ```json
 {
-  "type": "robot.state",
-  "payload": {
+  "event": "robot.state",
+  "timestamp": "2026-06-03T10:30:00+08:00",
+  "data": {
     "robotId": "robot-songling-001",
+    "clientId": "robot-media-client-robot-songling-001",
+    "clientVersion": "sim-1.0.0",
+    "name": "松灵四轮机器人",
+    "type": "轮式机器人",
+    "battery": 82,
+    "status": "online",
     "controlMode": "NAVIGATION",
     "stateSeq": 1288,
     "currentTaskId": "task_20260603_001",
@@ -461,15 +466,36 @@ POST /api/control/robots/{robotId}/commands
     "controlOwner": null,
     "estopActive": false,
     "onlineStatus": "online",
+    "devices": [
+      {
+        "deviceId": "base",
+        "scope": "BODY",
+        "deviceType": "WHEELED_BASE",
+        "onlineStatus": "online",
+        "healthStatus": "normal",
+        "controlStatus": "idle",
+        "supportedActions": ["drive.velocity", "drive.stop"]
+      }
+    ],
     "timestamp": "2026-06-03T10:30:00+08:00"
   }
 }
 ```
 
+说明：前端通过 `/ws/control` 发送控制命令时，后端即时响应仍使用 `{type, requestId, payload}`；后端面向所有连接广播的业务事件使用统一 `{event, timestamp, data}`。`control.command.published` 广播的 `data` 包含 `commandId`、`status`、`robotId`、`target`、`action`、`issuedAt`。
+
 字段说明：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
+| `robotId` | string | 是 | 机器人 ID |
+| `clientId` | string | 否 | 机器人侧客户端 ID |
+| `clientVersion` | string | 否 | 客户端版本 |
+| `name` | string | 否 | 机器人展示名称 |
+| `type` | string | 否 | 机器人类型 |
+| `battery` | number | 否 | 电量百分比 |
+| `status` | string | 否 | 客户端原始在线状态 |
+| `onlineStatus` | string | 是 | 前端使用的在线状态；缺省时后端由 `status` 补齐 |
 | `controlMode` | string | 是 | `MANUAL` / `ASSISTED` / `NAVIGATION` |
 | `stateSeq` | number | 是 | 客户端状态递增序号，用于接管防旧状态 |
 | `currentTaskId` | string | 否 | 当前任务 ID |
@@ -477,6 +503,8 @@ POST /api/control/robots/{robotId}/commands
 | `navigationStatus` | string | 否 | 导航状态 |
 | `controlOwner` | object | 否 | 当前控制者；为空表示无人持有 |
 | `estopActive` | boolean | 是 | 急停是否生效 |
+| `devices` | array | 否 | 装备状态列表，包含 `deviceId`、`scope`、`deviceType`、`onlineStatus`、`healthStatus`、`controlStatus`、`supportedActions`、`status` |
+| `timestamp` | datetime | 是 | 机器人端状态产生时间；缺省时后端补当前时间 |
 
 前端使用规则：
 

@@ -39,7 +39,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@RequestMapping({"/api/media/video-sessions", "/internal/media/video-sessions"})
+@RequestMapping("/internal/media/video-sessions")
 public class VideoSessionController {
 
     private static final Logger log = LoggerFactory.getLogger(VideoSessionController.class);

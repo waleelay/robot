@@ -1475,30 +1475,17 @@ export default {
     },
     syncControlEvent(event) {
       if (!event) return
-      if (event.event === 'robot.state' || event.type === 'robot.state') {
-        const data = event.data || event.payload
-        if (!data || !data.robotId) return
-        const index = this.robots.findIndex(robot => robot.robotId === data.robotId)
-        if (index >= 0) {
-          this.$set(this.robots, index, Object.assign({}, this.robots[index], {
-            controlMode: data.controlMode,
-            stateSeq: data.stateSeq,
-            status: data.onlineStatus || this.robots[index].status,
-            devices: data.devices || this.robots[index].devices
-          }))
-          this.syncAudioStatesFromDevices(data.robotId, data.devices)
-        }
-      }
       if (event.type === 'control.command.rejected') {
         this.$message.error((event.payload && event.payload.message) || '控制命令被拒绝')
       }
     },
-    // 机器人上下线事件会刷新设备基础信息，但保留已有会话和 LiveKit 连接态。
+    // 机器人状态事件会刷新设备基础信息，但保留已有会话和 LiveKit 连接态。
     // 如果机器人离线，则主动断开对应 Room，避免页面误显示还在播放。
     syncRobotEvent(event) {
-      if (!event || !event.data || !event.data.robotId) return
-      if (event.event !== 'robot.client.online' && event.event !== 'robot.client.offline') return
-      const incoming = this.toRobotState(event.data)
+      const data = event && (event.data || event.payload)
+      if (!data || !data.robotId) return
+      if (event.event !== 'robot.state' && event.type !== 'robot.state') return
+      const incoming = this.toRobotState(data)
       const index = this.robots.findIndex(robot => robot.robotId === incoming.robotId)
       if (index >= 0) {
         const existing = this.robots[index]
@@ -1544,6 +1531,7 @@ export default {
       } else {
         this.robots.push(incoming)
       }
+      this.syncAudioStatesFromDevices(incoming.robotId, data.devices)
     },
     // 会话事件来自后端状态机。当前页面只同步自己正在关注的 session，
     // 并忽略用户已经明确停止的 session，防止自动重连覆盖本地意图。
@@ -1939,24 +1927,25 @@ export default {
     },
     toRobotState(robot) {
       // 将后端机器人 DTO 转为页面状态，同时给缺失字段补默认值。
+      const status = robot.status || robot.onlineStatus || 'offline'
       return {
         robotId: robot.robotId,
         clientId: robot.clientId,
         name: robot.name || robot.robotId,
         type: robot.type || '机器人',
-        robotType: robot.robotType,
         vendor: robot.vendor,
         model: robot.model,
         controlMode: robot.controlMode || 'MANUAL',
         stateSeq: robot.stateSeq || 0,
         battery: robot.battery,
-        status: robot.status || robot.onlineStatus || 'offline',
+        status,
+        devices: robot.devices,
         cameras: (robot.cameras || []).map(camera => Object.assign(
             cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible', camera.groupType),
 	            {
 	              cameraId: camera.cameraId || camera.deviceId,
 	              quality: camera.quality || 'auto',
-	              status: robot.status === 'online' ? camera.status || '' : 'offline'
+	              status: status === 'online' ? camera.status || '' : 'offline'
 	            }))
       }
     },

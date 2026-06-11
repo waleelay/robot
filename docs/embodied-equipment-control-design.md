@@ -90,7 +90,6 @@ Web/移动端/调度系统
 {
   "robotId": "robot-deep-001",
   "name": "云深处四足机器狗",
-  "robotType": "QUADRUPED_DOG",
   "vendor": "DEEPNROBOTICS",
   "model": "X30",
   "orgId": "org001",
@@ -100,7 +99,7 @@ Web/移动端/调度系统
 }
 ```
 
-`robotType` 用于展示、分类、默认能力模板和 UI 布局，但不能作为唯一控制依据。真正决定能否执行动作的是 `devices[].actions`、`capabilities` 和 `controlProfile`。
+`type` 用于展示、分类、默认能力模板和 UI 布局，但不能作为唯一控制依据。真正决定能否执行动作的是 `devices[].actions`、`capabilities` 和 `controlProfile`。
 
 ### 4.2 Device
 
@@ -379,7 +378,6 @@ GET /api/control/robots/{robotId}/control-profile
 ```json
 {
   "robotId": "robot-deep-001",
-  "robotType": "QUADRUPED_DOG",
   "vendor": "DEEPNROBOTICS",
   "model": "X30",
   "devices": [
@@ -655,7 +653,6 @@ GET /api/control/robots
   {
     "robotId": "robot-songling-001",
     "name": "松灵四轮机器人",
-    "robotType": "WHEELED_AGV",
     "vendor": "SONGLING",
     "model": "SCOUT",
     "onlineStatus": "online",
@@ -672,7 +669,6 @@ GET /api/control/robots
 |---|---|---:|---|
 | `robotId` | string | 是 | 机器人唯一 ID |
 | `name` | string | 是 | 展示名称 |
-| `robotType` | string | 是 | 机器人类型，如 `WHEELED_AGV`、`QUADRUPED_DOG` |
 | `vendor` | string | 是 | 厂商，如 `SONGLING`、`DEEPNROBOTICS`、`UNITREE` |
 | `model` | string | 是 | 型号 |
 | `onlineStatus` | string | 是 | `online` / `offline` |
@@ -699,7 +695,6 @@ GET /api/control/robots/{robotId}/control-profile
 ```json
 {
   "robotId": "robot-deep-001",
-  "robotType": "QUADRUPED_DOG",
   "vendor": "DEEPNROBOTICS",
   "model": "X30",
   "onlineStatus": "online",
@@ -732,7 +727,6 @@ GET /api/control/robots/{robotId}/control-profile
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | `robotId` | string | 是 | 机器人唯一 ID |
-| `robotType` | string | 是 | 机器人类型 |
 | `vendor` | string | 是 | 机器人厂商 |
 | `model` | string | 是 | 机器人型号 |
 | `onlineStatus` | string | 是 | 机器人在线状态 |
@@ -1105,13 +1099,55 @@ POST /api/control/robots/{robotId}/commands
 
 #### 6.6.3 后端推送机器人状态
 
-一期不单独推送控制确认、控制状态或控制错误事件。后端消费 `robot/{robotId}/media/client/status` 后，统一向前端推送 `robot.state`。
+前端通过 `/ws/control` 发送控制帧时，后端会向当前 WebSocket 连接返回 `control.command.accepted` / `control.command.rejected` 即时响应，格式为 `{type, requestId, timestamp, payload}`。
+
+面向所有 WebSocket 连接的业务广播使用统一外层格式 `{event, timestamp, data}`。当前控制模块广播 `control.command.published` 和 `robot.state`。
+
+控制命令已发布广播：
 
 ```json
 {
-  "type": "robot.state",
-  "payload": {
+  "event": "control.command.published",
+  "timestamp": "2026-06-03T10:30:00+08:00",
+  "data": {
+    "commandId": "cmd_20260603_0001",
+    "status": "PUBLISHED",
     "robotId": "robot-deep-001",
+    "target": {
+      "deviceId": "base",
+      "deviceType": "QUADRUPED_BASE"
+    },
+    "action": "drive.velocity",
+    "issuedAt": "2026-06-03T10:30:00+08:00"
+  }
+}
+```
+
+`control.command.published` 字段说明：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `commandId` | string | 是 | 后端生成的命令 ID |
+| `status` | string | 是 | 固定 `PUBLISHED` |
+| `robotId` | string | 是 | 目标机器人 ID |
+| `target` | object | 是 | 目标设备，包含 `deviceId`、`deviceType` |
+| `action` | string | 是 | 控制动作，如 `drive.velocity`、`ptz.move` |
+| `issuedAt` | datetime | 是 | 命令发布时间 |
+
+后端消费 `robot/{robotId}/media/client/status` 后，统一向前端广播 `robot.state`。
+
+```json
+{
+  "event": "robot.state",
+  "timestamp": "2026-06-03T10:30:00+08:00",
+  "data": {
+    "robotId": "robot-deep-001",
+    "clientId": "robot-media-client-robot-deep-001",
+    "clientVersion": "sim-1.0.0",
+    "name": "深度四足机器人",
+    "type": "四足机器人",
+    "battery": 82,
+    "status": "online",
     "onlineStatus": "online",
     "controlMode": "MANUAL",
     "stateSeq": 1024,
@@ -1121,16 +1157,48 @@ POST /api/control/robots/{robotId}/commands
     "devices": [
       {
         "deviceId": "base",
+        "scope": "BODY",
         "deviceType": "QUADRUPED_BASE",
         "onlineStatus": "online",
         "healthStatus": "normal",
-        "controlStatus": "idle"
+        "controlStatus": "idle",
+        "supportedActions": ["drive.velocity", "drive.stop"]
       }
     ],
     "timestamp": "2026-06-03T10:30:00+08:00"
   }
 }
 ```
+
+`robot.state` 字段说明：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `robotId` | string | 是 | 机器人 ID |
+| `clientId` | string | 否 | 机器人侧客户端 ID |
+| `clientVersion` | string | 否 | 客户端版本 |
+| `name` | string | 否 | 机器人展示名称 |
+| `type` | string | 否 | 机器人类型 |
+| `battery` | number | 否 | 电量百分比 |
+| `status` | string | 否 | 客户端原始在线状态，常见 `online` / `offline` |
+| `onlineStatus` | string | 是 | 前端使用的在线状态；缺省时后端由 `status` 补齐 |
+| `controlMode` | string | 是 | 控制模式；缺省为 `MANUAL` |
+| `stateSeq` | number | 是 | 状态序号；缺省为 `1` |
+| `missionStatus` | string | 否 | 任务状态 |
+| `navigationStatus` | string | 否 | 导航状态 |
+| `controlOwner` | object/null | 否 | 当前控制占用者，如 `{userId, clientId}` |
+| `estopActive` | boolean | 否 | 急停是否生效 |
+| `cameras` | array | 否 | 摄像头状态列表，字段同媒体模块 `RobotCameraResponse` |
+| `devices` | array | 否 | 装备状态列表 |
+| `devices[].deviceId` | string | 是 | 设备 ID |
+| `devices[].scope` | string | 否 | 设备作用域，如 `BODY`、`PTZ` |
+| `devices[].deviceType` | string | 是 | 设备类型 |
+| `devices[].onlineStatus` | string | 是 | 设备在线状态 |
+| `devices[].healthStatus` | string | 是 | 设备健康状态 |
+| `devices[].controlStatus` | string | 是 | 设备控制状态 |
+| `devices[].supportedActions` | array | 否 | 支持的动作列表 |
+| `devices[].status` | object | 否 | 设备扩展状态 |
+| `timestamp` | datetime | 是 | 机器人端状态产生时间；缺省时后端补当前时间 |
 
 ### 6.7 第一版 Action 参数明细
 

@@ -91,7 +91,7 @@ main
 |---|---|---|
 | `RobotID` | `ROBOT_ID` | 机器人 ID，默认 `robot-001` |
 | `RobotName` | `ROBOT_NAME` | 机器人名称 |
-| `RobotType` | `ROBOT_TYPE` | 机器人类型 |
+| `Type` | `ROBOT_TYPE` | 机器人类型 |
 | `Battery` | `ROBOT_BATTERY` | 电量百分比，会限制在 0 到 100 |
 | `MQTTBroker` | `MQTT_BROKER_URL` | MQTT broker 地址 |
 | `MQTTUsername` | `MQTT_USERNAME` | MQTT 用户名 |

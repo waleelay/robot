@@ -293,16 +293,45 @@ Intercom:     IDLE -> STARTING -> ACTIVE -> STOPPING -> IDLE
 
 ## 11. WebSocket 事件
 
-| 事件 | 说明 |
-|---|---|
-| `video.intercom.starting` | 已请求机器人建立音频链路 |
-| `video.intercom.active` | 机器人与操作员音频 Track 可用 |
-| `video.intercom.interrupted` | 音频链路中断，等待恢复或关闭 |
-| `video.intercom.failed` | 对讲启动或恢复失败 |
-| `video.intercom.closed` | 当前视频会话的对讲已关闭 |
-| `video.intercom.operator.changed` | 讲话权发生变更 |
+WebSocket 外层格式与实时视频一致：
 
-事件 `data` 中必须包含 `sessionId`、`roomName`、`intercomStatus` 和当前操作员信息。
+```json
+{
+  "event": "video.intercom.active",
+  "timestamp": "2026-06-11T10:30:00+08:00",
+  "data": {}
+}
+```
+
+当前实现的对讲事件：
+
+| 事件 | 说明 | data 参数 |
+|---|---|---|
+| `video.intercom.starting` | 已请求机器人建立音频链路 | `VideoSessionResponse` |
+| `video.intercom.stopping` | 操作员主动停止对讲，进入挂断中 | `VideoSessionResponse`，其中 `intercomStatus=STOPPING` |
+| `video.intercom.active` | 机器人与操作员音频 Track 可用 | `VideoSessionResponse`，包含 `robotAudioTrackSid`、`robotAudioTrackName` |
+| `video.intercom.interrupted` | 音频链路中断，等待恢复或关闭 | `sessionId`、`message` |
+| `video.intercom.failed` | 对讲启动或恢复失败 | `sessionId`、`errorCode`、`message` |
+| `video.intercom.closed` | 当前视频会话的对讲已关闭 | `VideoSessionResponse` |
+| `video.intercom.status` | 机器人端上报未显式映射的对讲状态 | `sessionId`、`status`、`message` |
+| `video.session.idle_wait` | 对讲关闭后如果无人观看，会话进入空闲等待 | `sessionId`、`idleReleaseDelaySeconds` |
+
+`VideoSessionResponse` 中与对讲相关的字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `sessionId` | string | 会话 ID |
+| `robotId` | string | 机器人 ID |
+| `deviceId` | string | 绑定摄像头或云台设备 ID |
+| `roomName` | string | 复用的视频 LiveKit Room 名称 |
+| `viewerCount` | number | 当前视频观看人数 |
+| `intercomStatus` | string | `IDLE`、`STARTING`、`ACTIVE`、`INTERRUPTED`、`STOPPING`、`FAILED` |
+| `intercomAudioOnly` | boolean | 当前会话是否仅保留对讲音频 |
+| `intercomOperatorId` | string/null | 当前占用对讲的操作员用户 ID |
+| `robotAudioTrackSid` | string/null | 机器人麦克风 Track SID |
+| `robotAudioTrackName` | string/null | 机器人麦克风 Track 名称 |
+| `lastErrorCode` | string/null | 最近一次失败错误码 |
+| `lastErrorMessage` | string/null | 最近一次失败说明 |
 
 ## 12. 资源释放与异常策略
 

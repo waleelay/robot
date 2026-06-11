@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping({"/api/media/robots", "/internal/media/robots"})
+@RequestMapping("/internal/media/robots")
 public class RobotDeviceController {
 
     private final RobotRegistryService registryService;
@@ -36,10 +36,37 @@ public class RobotDeviceController {
         String status = String.valueOf(data.get("status"));
         String name = data.get("name") == null ? robotId : String.valueOf(data.get("name"));
         String type = data.get("type") == null ? "机器人" : String.valueOf(data.get("type"));
-        Integer battery = data.get("battery") instanceof Number value ? value.intValue() : null;
+        String clientVersion = data.get("clientVersion") == null ? null : String.valueOf(data.get("clientVersion"));
+        String onlineStatus = data.get("onlineStatus") == null ? status : String.valueOf(data.get("onlineStatus"));
+        String controlMode = data.get("controlMode") == null ? "MANUAL" : String.valueOf(data.get("controlMode"));
+        Long stateSeq = data.get("stateSeq") instanceof Number seqValue ? seqValue.longValue() : null;
+        String missionStatus = data.get("missionStatus") == null ? "IDLE" : String.valueOf(data.get("missionStatus"));
+        String navigationStatus = data.get("navigationStatus") == null ? "IDLE" : String.valueOf(data.get("navigationStatus"));
+        Object controlOwner = data.get("controlOwner");
+        Boolean estopActive = data.get("estopActive") instanceof Boolean estopValue ? estopValue : null;
+        Integer battery = data.get("battery") instanceof Number batteryValue ? batteryValue.intValue() : null;
         List<RobotCameraResponse> cameras = objectMapper.convertValue(
                 data.getOrDefault("cameras", List.of()),
                 objectMapper.getTypeFactory().constructCollectionType(List.class, RobotCameraResponse.class));
-        return registryService.update(robotId, clientId, status, name, type, battery, cameras);
+        List<Map<String, Object>> devices = objectMapper.convertValue(
+                data.getOrDefault("devices", List.of()),
+                objectMapper.getTypeFactory().constructCollectionType(List.class, Map.class));
+        return registryService.update(
+                robotId,
+                clientId,
+                status,
+                name,
+                type,
+                clientVersion,
+                battery,
+                onlineStatus,
+                controlMode,
+                stateSeq,
+                missionStatus,
+                navigationStatus,
+                controlOwner,
+                estopActive,
+                cameras,
+                devices);
     }
 }

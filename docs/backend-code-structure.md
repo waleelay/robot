@@ -126,12 +126,12 @@ video/
 ### API 入口
 
 - `VideoSessionController`
-  - 路径：`/api/media/video-sessions` 和 `/internal/media/video-sessions`。
+  - 路径：`/internal/media/video-sessions`。
   - 负责创建/查询/停止/重启视频会话、签发 viewer token、处理机器人状态、对讲状态、切换通道、创建抓拍。
-  - 同一个 Controller 同时暴露外部 media API 和内部 media API，便于 Control 层复用。
+  - 作为 Media Service 内部 API 供 Control 层调用；前端统一通过 `/api/control/**` 访问。
 
 - `SnapshotWorkerController`
-  - 路径：`/api/internal/media/snapshots` 和 `/internal/media/snapshots`。
+  - 路径：`/internal/media/snapshots`。
   - 供内部抓拍 Worker 回调抓拍完成、上传文件、标记失败，或供 Control 层代理读取抓拍图片。
 
 - `ApiExceptionHandler`
@@ -250,7 +250,7 @@ control/
 ### API 入口
 
 - `RobotDeviceController`
-  - 路径：`/api/media/robots` 和 `/internal/media/robots`。
+  - 路径：`/internal/media/robots`。
   - `GET` 查询机器人设备列表。
   - `POST /client-status` 接收机器人客户端状态和摄像头列表上报。
 
@@ -381,19 +381,16 @@ recording/
 - `/api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/image`
 - `/api/control/recordings`
 
-### 面向媒体能力/机器人端：`/api/media/*`
+### 面向机器人端：`/api/media/*`
 
-由 `video/api`、`robot/api`、`recording/api` 提供：
+由 `recording/api` 提供机器人录像上传接口：
 
-- `/api/media/video-sessions`
-- `/api/media/robots`
-- `/api/media/robots/client-status`
 - `/api/media/recording-uploads`
 - `/api/media/recording-uploads/{uploadId}/part-urls`
 - `/api/media/recording-uploads/{uploadId}/complete`
 - `/api/media/recordings/{recordingId}/status`
 
-### 内部调用：`/internal/media/*` 和 `/api/internal/media/*`
+### 内部调用：`/internal/media/*`
 
 用于 Control 层、内部 Worker 或服务间调用：
 
@@ -403,7 +400,7 @@ recording/
 - `/internal/media/snapshots/{snapshotId}/image`
 - `/internal/media/robots`
 - `/internal/media/recordings`
-- `/api/internal/media/snapshots`
+- `/internal/media/snapshots`
 
 ## 12. 典型调用链路
 

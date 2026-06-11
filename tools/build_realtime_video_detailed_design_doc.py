@@ -236,7 +236,7 @@ def build():
     code(
         doc,
         [
-            "1. 前端调用 POST /api/media/video-sessions，提交 robotId、deviceId、channel、quality。",
+            "1. 前端调用 POST /internal/media/video-sessions，提交 robotId、deviceId、channel、quality。",
             "2. Media Service 校验用户权限、机器人在线状态、设备媒体能力和并发资源配额。",
             "3. Media Service 创建或复用 LiveKit Room，生成机器人端发布 Token。",
             "4. Media Service 通过 MQTT 下发 media.video.start 指令给云接入客户端。",
@@ -251,7 +251,7 @@ def build():
     code(
         doc,
         [
-            "1. 前端调用 POST /api/media/video-sessions/{sessionId}/stop。",
+            "1. 前端调用 POST /internal/media/video-sessions/{sessionId}/stop。",
             "2. Media Service 将当前用户从观看者列表移除，更新 viewerCount。",
             "3. 若 viewerCount > 0，仅推送 viewer.changed，不停止客户端发布。",
             "4. 若 viewerCount = 0，进入 IDLE_WAIT，默认等待 60 秒。",
@@ -265,12 +265,12 @@ def build():
     code(
         doc,
         [
-            "1. 前端调用 POST /api/media/video-sessions/{sessionId}/switch-channel。",
+            "1. 前端调用 POST /internal/media/video-sessions/{sessionId}/switch-channel。",
             "2. Media Service 校验目标通道 visible/thermal/fusion 是否被设备支持。",
             "3. Media Service 下发 media.video.switchChannel 指令。",
             "4. 云接入客户端切换 RTSP 源或设备采集通道。",
             "5. 若 Track 可平滑替换，则保持 Room 不变并发布新 Track；否则先中断旧 Track 再发布新 Track。",
-            "6. Media Service 更新 channel、trackSid、status，并推送 video.track.switched。",
+            "6. Media Service 先推送 video.track.switching；新 Track 可用后推送 video.session.streaming 或 video.track.published。",
         ],
     )
     doc.add_heading("5.4 异常恢复", level=2)
@@ -322,12 +322,12 @@ def build():
         doc,
         ["接口", "方法", "说明", "主要状态码"],
         [
-            ["/api/media/video-sessions", "POST", "创建实时视频会话。", "200/201、400、403、409、423、503"],
-            ["/api/media/video-sessions/{sessionId}", "GET", "查询会话详情。", "200、403、404"],
-            ["/api/media/video-sessions/{sessionId}/token", "POST", "获取前端观看 Token。", "200、403、404、409"],
-            ["/api/media/video-sessions/{sessionId}/switch-channel", "POST", "切换 visible/thermal/fusion。", "200、400、403、404、409"],
-            ["/api/media/video-sessions/{sessionId}/stop", "POST", "停止当前用户观看或释放会话。", "200、403、404"],
-            ["/api/media/video-sessions/{sessionId}/snapshots", "POST", "从当前 LiveKit Track 截帧，生成抓拍图片。", "202、403、404、409、503"],
+            ["/internal/media/video-sessions", "POST", "创建实时视频会话。", "200/201、400、403、409、423、503"],
+            ["/internal/media/video-sessions/{sessionId}", "GET", "查询会话详情。", "200、403、404"],
+            ["/internal/media/video-sessions/{sessionId}/token", "POST", "获取前端观看 Token。", "200、403、404、409"],
+            ["/internal/media/video-sessions/{sessionId}/switch-channel", "POST", "切换 visible/thermal/fusion。", "200、400、403、404、409"],
+            ["/internal/media/video-sessions/{sessionId}/stop", "POST", "停止当前用户观看或释放会话。", "200、403、404"],
+            ["/internal/media/video-sessions/{sessionId}/snapshots", "POST", "从当前 LiveKit Track 截帧，生成抓拍图片。", "202、403、404、409、503"],
         ],
         [6, 2, 11, 4],
     )
@@ -335,7 +335,7 @@ def build():
     code(
         doc,
         [
-            "POST /api/media/video-sessions",
+            "POST /internal/media/video-sessions",
             "Request:",
             "{",
             '  "robotId": "robot-001",',
@@ -361,7 +361,7 @@ def build():
     code(
         doc,
         [
-            "POST /api/media/video-sessions/{sessionId}/snapshots",
+            "POST /internal/media/video-sessions/{sessionId}/snapshots",
             "Request:",
             "{",
             '  "trackSid": "TR_xxx",',
@@ -419,17 +419,23 @@ def build():
         doc,
         ["事件", "触发时机", "关键字段"],
         [
-            ["video.session.created", "会话创建。", "sessionId、robotId、deviceId、channel、status"],
-            ["video.client.requested", "已下发客户端启动指令。", "sessionId、commandId、timeoutAt"],
-            ["video.client.acked", "客户端 ACK。", "sessionId、clientId、ackAt"],
-            ["video.room.ready", "Room/Token 就绪。", "sessionId、roomName"],
-            ["video.track.published", "LiveKit Track 发布成功。", "sessionId、trackSid、trackName、channel"],
-            ["video.session.streaming", "进入可观看状态。", "sessionId、status、viewerCount"],
-            ["video.track.switched", "通道切换成功。", "sessionId、oldChannel、newChannel、trackSid"],
-            ["video.session.interrupted", "Track 中断或客户端重连。", "sessionId、reason、recoverBefore"],
+            ["robot.state", "机器人客户端在线状态、离线状态或控制状态变化。", "robotId、clientId、name、type、battery、status、onlineStatus、controlMode、stateSeq、cameras、devices、timestamp"],
+            ["video.session.created / video.session.reused", "会话创建或复用。", "VideoSessionResponse"],
+            ["video.room.ready", "Room 创建完成或客户端上报 publishing。", "sessionId、roomName，或 VideoSessionResponse"],
+            ["video.client.requested", "已请求客户端启动推流。", "sessionId、commandId、timeoutSeconds"],
+            ["video.track.switching", "切换通道或清晰度。", "sessionId、commandId"],
+            ["video.track.published", "LiveKit Track 发布成功。", "VideoSessionResponse，包含 trackSid、trackName"],
+            ["video.session.streaming", "进入可观看状态。", "VideoSessionResponse"],
+            ["video.viewer.changed", "观看人数变化。", "VideoSessionResponse"],
+            ["video.session.interrupted", "Track 中断或客户端重连。", "sessionId、message"],
             ["video.session.failed", "会话失败。", "sessionId、errorCode、message"],
-            ["video.session.closed", "会话关闭。", "sessionId、closedReason、endedAt"],
-            ["snapshot.completed", "抓拍正式图片生成成功。", "snapshotId、officialObjectKey、capturedAt、source、timeDeltaMs"],
+            ["video.session.idle_wait", "最后一个观看者离开，等待释放。", "sessionId、idleReleaseDelaySeconds"],
+            ["video.session.stopping / video.session.closed", "会话释放或关闭。", "VideoSessionResponse"],
+            ["video.session.restart / video.session.auto_restart / video.client.online_restart", "手动、自动或上线恢复重启。", "sessionId、commandId"],
+            ["video.intercom.starting / active / stopping / closed", "对讲状态变化。", "VideoSessionResponse，active 时包含 robotAudioTrackSid、robotAudioTrackName"],
+            ["video.intercom.interrupted / failed / status", "对讲异常或未显式映射状态。", "sessionId、message；失败时包含 errorCode"],
+            ["snapshot.requested", "创建抓拍任务。", "snapshotId、sessionId、trackSid、source、createdBy"],
+            ["snapshot.completed", "抓拍正式图片生成成功。", "snapshotId、officialObjectKey、capturedAt、source"],
             ["snapshot.failed", "抓拍失败。", "snapshotId、errorCode、message"],
         ],
         [5, 8, 10],
@@ -440,12 +446,12 @@ def build():
             "WebSocket Payload 示例：",
             "{",
             '  "event": "video.track.published",',
-            '  "traceId": "trace_xxx",',
             '  "timestamp": "2026-05-18T10:20:11+08:00",',
             '  "data": {',
             '    "sessionId": "vs_20260518_000001",',
             '    "roomName": "media.robot-001.gimbal-001.visible",',
             '    "trackSid": "TR_xxx",',
+            '    "trackName": "video.visible.sub",',
             '    "channel": "visible"',
             "  }",
             "}",

@@ -294,7 +294,7 @@ func (c *Client) online(status string) {
 		ClientID:         c.cfg.ClientID,
 		ClientVersion:    "sim-1.0.0",
 		Name:             c.cfg.RobotName,
-		Type:             c.cfg.RobotType,
+		Type:             c.cfg.Type,
 		Battery:          c.cfg.Battery,
 		Status:           status,
 		OnlineStatus:     status,

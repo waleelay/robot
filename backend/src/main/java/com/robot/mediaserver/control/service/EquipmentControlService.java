@@ -34,7 +34,7 @@ public class EquipmentControlService {
                 .map(robot -> {
                     Map<String, Object> state = robotStates.get(String.valueOf(robot.get("robotId")));
                     Map<String, Object> item = copy(robot);
-                    item.put("onlineStatus", valueOrDefault(state, "onlineStatus", "online"));
+                    item.put("onlineStatus", valueOrDefault(state, "onlineStatus", "offline"));
                     item.put("controlMode", valueOrDefault(state, "controlMode", "MANUAL"));
                     item.put("stateSeq", valueOrDefault(state, "stateSeq", 1));
                     item.put("clientId", valueOrDefault(state, "clientId", item.get("clientId")));
@@ -52,10 +52,10 @@ public class EquipmentControlService {
         Map<String, Object> state = robotStates.getOrDefault(robotId, defaultRobotState(robot));
         return object(
                 "robotId", robotId,
-                "robotType", robot.get("robotType"),
+                "type", robot.get("type"),
                 "vendor", robot.get("vendor"),
                 "model", robot.get("model"),
-                "onlineStatus", valueOrDefault(state, "onlineStatus", "online"),
+                "onlineStatus", valueOrDefault(state, "onlineStatus", "offline"),
                 "controlMode", valueOrDefault(state, "controlMode", "MANUAL"),
                 "stateSeq", valueOrDefault(state, "stateSeq", 1),
                 "devices", devices(robotId));
@@ -110,6 +110,7 @@ public class EquipmentControlService {
         state.put("missionStatus", "PAUSED");
         state.put("controlOwner", object("userId", user.userId(), "clientId", user.clientId()));
         state.put("stateSeq", latestSeq + 1);
+        enrichRobotState(robotId, state);
         robotStates.put(robotId, state);
         webSocketPublisher.publish("robot.state", state);
         session.put("previousMode", stringValue(request.get("fromMode"), "NAVIGATION"));
@@ -184,9 +185,10 @@ public class EquipmentControlService {
         }
         Map<String, Object> state = copy(payload);
         state.putIfAbsent("stateSeq", numberValue(state.get("stateSeq"), 1).longValue());
-        state.putIfAbsent("onlineStatus", stringValue(state.get("status"), "online"));
+        state.putIfAbsent("onlineStatus", stringValue(state.get("status"), "offline"));
         state.putIfAbsent("controlMode", "MANUAL");
         state.putIfAbsent("timestamp", OffsetDateTime.now().toString());
+        enrichRobotState(robotId, state);
         robotStates.put(robotId, state);
         webSocketPublisher.publish("robot.state", state);
         return state;
@@ -364,8 +366,19 @@ public class EquipmentControlService {
                 "navigationStatus", "IDLE",
                 "controlOwner", null,
                 "estopActive", false,
-                "onlineStatus", "online",
+                "onlineStatus", "offline",
                 "timestamp", OffsetDateTime.now().toString());
+    }
+
+    private static void enrichRobotState(String robotId, Map<String, Object> state) {
+        if (!stringValue(state.get("type"), "").isBlank()) {
+            return;
+        }
+        fixedRobots().stream()
+                .filter(robot -> robotId.equals(robot.get("robotId")))
+                .findFirst()
+                .map(robot -> robot.get("type"))
+                .ifPresent(type -> state.put("type", type));
     }
 
     private static List<Map<String, Object>> fixedRobots() {
@@ -375,10 +388,9 @@ public class EquipmentControlService {
                         "clientId", "robot-client-songling-001",
                         "name", "松灵四轮机器人",
                         "type", "轮式机器人",
-                        "robotType", "WHEELED_AGV",
                         "vendor", "SONGLING",
                         "model", "SCOUT",
-                        "status", "online",
+                        "status", "offline",
                         "battery", 86,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
                         "cameras", List.of(
@@ -389,11 +401,10 @@ public class EquipmentControlService {
                         "robotId", "robot-002",
                         "clientId", "robot-client-deep-001",
                         "name", "云深处四足机器狗",
-                        "type", "四足机器人",
-                        "robotType", "QUADRUPED_DOG",
+                        "type", "四足机器狗",
                         "vendor", "DEEPNROBOTICS",
                         "model", "X30",
-                        "status", "online",
+                        "status", "offline",
                         "battery", 78,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
                         "cameras", List.of(camera("camera04", "头部双光云台", "dual_gimbal"))),
@@ -401,11 +412,10 @@ public class EquipmentControlService {
                         "robotId", "robot-unitree-001",
                         "clientId", "robot-client-unitree-001",
                         "name", "宇树机器狗",
-                        "type", "四足机器人",
-                        "robotType", "QUADRUPED_DOG",
+                        "type", "四足机器狗",
                         "vendor", "UNITREE",
                         "model", "B2",
-                        "status", "online",
+                        "status", "offline",
                         "battery", 92,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
                         "cameras", List.of(camera("camera07", "双光云台", "dual_gimbal"))));
@@ -419,7 +429,7 @@ public class EquipmentControlService {
                 "groupType", groupType,
                 "channel", "visible",
                 "quality", "sub",
-                "status", "online");
+                "status", "offline");
     }
 
     private static List<Map<String, Object>> devices(String robotId) {
@@ -451,7 +461,7 @@ public class EquipmentControlService {
                             "displayName", "探照灯",
                             "vendor", "CUSTOM",
                             "model", "SL-01",
-                            "onlineStatus", "online",
+                            "onlineStatus", "offline",
                             "controlStatus", "idle",
                             "enabled", true,
                             "actions", List.of("light.set"),
@@ -484,7 +494,7 @@ public class EquipmentControlService {
                 "displayName", "机器人本体",
                 "vendor", vendor,
                 "model", model,
-                "onlineStatus", "online",
+                "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
                 "actions", List.of("drive.velocity", "navigation.return_home", "docking.leave"),
@@ -504,7 +514,7 @@ public class EquipmentControlService {
                 "displayName", "双光云台",
                 "vendor", "CUSTOM",
                 "model", "DL-PTZ-01",
-                "onlineStatus", "online",
+                "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
                 "actions", List.of("ptz.move", "ptz.auto_rotate", "ptz.home", "camera.zoom"),
@@ -523,7 +533,7 @@ public class EquipmentControlService {
                 "displayName", "捕网枪",
                 "vendor", "CUSTOM",
                 "model", "NL-01",
-                "onlineStatus", "online",
+                "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
                 "riskLevel", "HIGH",
@@ -546,7 +556,7 @@ public class EquipmentControlService {
                 "displayName", "六联发射器",
                 "vendor", "CUSTOM",
                 "model", "LCH-06",
-                "onlineStatus", "online",
+                "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
                 "riskLevel", "HIGH",
@@ -566,7 +576,7 @@ public class EquipmentControlService {
                 "displayName", displayName,
                 "vendor", "CUSTOM",
                 "model", "WL-01",
-                "onlineStatus", "online",
+                "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
                 "actions", List.of("light.warning.set"),
@@ -582,7 +592,7 @@ public class EquipmentControlService {
                 "displayName", "车灯光",
                 "vendor", "CUSTOM",
                 "model", "VL-01",
-                "onlineStatus", "online",
+                "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
                 "actions", List.of("light.vehicle.set"),
@@ -602,7 +612,7 @@ public class EquipmentControlService {
                 "scope", "AUDIO",
                 "deviceType", "CLIENT_AUDIO",
                 "displayName", "客户端音量",
-                "onlineStatus", "online",
+                "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
                 "actions", List.of("volume.set", "volume.up", "volume.down", "volume.mute"),
@@ -617,7 +627,7 @@ public class EquipmentControlService {
                 "scope", "AUDIO",
                 "deviceType", "INTERCOM",
                 "displayName", "语音对讲",
-                "onlineStatus", "online",
+                "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
                 "actions", List.of("volume.set", "volume.up", "volume.down", "volume.mute"),

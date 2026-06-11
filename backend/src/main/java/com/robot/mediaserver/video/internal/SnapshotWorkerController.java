@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@RequestMapping({"/api/internal/media/snapshots", "/internal/media/snapshots"})
+@RequestMapping("/internal/media/snapshots")
 public class SnapshotWorkerController {
 
     private final SnapshotService snapshotService;
