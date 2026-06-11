@@ -78,7 +78,7 @@ public class EquipmentControlCommandPublisher {
             MqttMessage message = new MqttMessage(json.getBytes());
             message.setQos(1);
             mqttClient().publish(topic, message);
-            log.info("Equipment control MQTT published topic={}", topic);
+            log.info("Equipment control MQTT published topic={}, payload={}", topic, json);
         } catch (JsonProcessingException | MqttException ex) {
             throw new IllegalStateException("Failed to publish equipment control MQTT command: " + topic, ex);
         }

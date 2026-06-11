@@ -58,7 +58,7 @@ public class RobotMediaCommandService {
             MqttMessage message = new MqttMessage(json.getBytes());
             message.setQos(1);
             mqtt.publish(topic, message);
-            log.info("MQTT published topic={}", topic);
+            log.info("MQTT published topic={}, payload={}", topic, json);
         } catch (JsonProcessingException | MqttException ex) {
             throw new IllegalStateException("Failed to publish MQTT command: " + topic, ex);
         }
