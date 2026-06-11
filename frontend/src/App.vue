@@ -92,9 +92,25 @@
                   <strong>{{ camera.name }}</strong>
                   <span>{{ camera.deviceId }} · {{ groupTypeText(camera.groupType) }} · {{ camera.channel }}</span>
                 </div>
-                <el-tag size="mini" :type="statusType(camera.status)">
-                  {{ camera.status || '未观看' }}
-                </el-tag>
+                <div class="video-topbar-actions">
+                  <el-select
+                      v-model="camera.quality"
+                      class="quality-select"
+                      size="mini"
+                      :disabled="qualitySelectDisabled(camera)"
+                      @change="changeCameraQuality(camera)"
+                  >
+                    <el-option
+                        v-for="option in qualityOptions"
+                        :key="option.value"
+                        :label="option.label"
+                        :value="option.value"
+                    />
+                  </el-select>
+                  <el-tag size="mini" :type="statusType(camera.status)">
+                    {{ camera.status || '未观看' }}
+                  </el-tag>
+                </div>
               </div>
               <div v-if="!camera.hasVideo" class="empty-video">
                 {{ camera.session ? '等待 LiveKit Track' : '点击播放开始观看' }}
@@ -311,7 +327,7 @@
 </template>
 
 <script>
-import { Room, RoomEvent } from 'livekit-client'
+import { Room, RoomEvent, VideoQuality } from 'livekit-client'
 import Hls from 'hls.js'
 import {
   acquireControl,
@@ -350,7 +366,7 @@ function cameraState(robotId, deviceId, name, channel, groupType) {
     name,
     groupType: groupType || 'body',
     channel,
-    quality: 'sub',
+    quality: 'auto',
     loading: false,
     hasVideo: false,
     hasAudio: false,
@@ -367,6 +383,7 @@ function cameraState(robotId, deviceId, name, channel, groupType) {
     restarting: false,
     connecting: false,
     disconnecting: false,
+    qualityChanging: false,
     room: null,
     session: null,
     status: 'offline',
@@ -417,6 +434,11 @@ export default {
       recordings: [],
       selectedRecording: null,
       recordedHls: null,
+      qualityOptions: [
+        { value: 'auto', label: '自动' },
+        { value: 'main', label: '高清' },
+        { value: 'sub', label: '流畅' }
+      ],
       controlProfiles: {},
       controlSessions: {},
       controlSeq: 1,
@@ -639,18 +661,20 @@ export default {
       camera.stopping = false
       camera.restarting = false
       camera.watching = true
+      const requestQuality = this.effectiveCameraQuality(camera)
       this.log('CLICK startCamera', {
         robotId: robot.robotId,
         deviceId: camera.deviceId,
         channel: camera.channel,
-        quality: camera.quality
+        quality: requestQuality,
+        qualityPreference: camera.quality
       })
       try {
         const session = await createVideoSession({
           robotId: robot.robotId,
           deviceId: camera.deviceId,
           channel: camera.channel,
-          quality: camera.quality,
+          quality: requestQuality,
           reuse: true
         })
         camera.session = this.mergeSession(camera, session)
@@ -713,6 +737,101 @@ export default {
         camera.loading = false
       }
     },
+    effectiveCameraQuality(camera, value) {
+      const quality = value || camera.quality || 'auto'
+      if (quality === 'main' || quality === 'sub') return quality
+      return this.gridMode === 1 ? 'main' : 'sub'
+    },
+    activeRecordingInProgress(camera) {
+      return camera.recordingActive || (camera.activeRecording && camera.activeRecording.status === 'RECORDING')
+    },
+    intercomInProgress(camera) {
+      return camera.intercomActive || (camera.intercomStatus && !['IDLE', 'FAILED'].includes(camera.intercomStatus))
+    },
+    qualitySelectDisabled(camera) {
+      return camera.qualityChanging
+          || this.activeRecordingInProgress(camera)
+          || this.intercomInProgress(camera)
+    },
+    currentCameraState(camera) {
+      return this.allCameras().find(item => item.key === camera.key) || camera
+    },
+    resetQualityChanging(camera) {
+      camera.disconnecting = false
+      camera.qualityChanging = false
+      const current = this.currentCameraState(camera)
+      current.disconnecting = false
+      current.qualityChanging = false
+    },
+    async changeCameraQuality(camera) {
+      if (!camera.session || !camera.watching || camera.stopped) return
+      if (this.activeRecordingInProgress(camera)) {
+        this.$message.warning('请先停止录像后再切换清晰度')
+        return
+      }
+      if (this.intercomInProgress(camera)) {
+        this.$message.warning('请先关闭对讲后再切换清晰度')
+        return
+      }
+      const nextQuality = this.effectiveCameraQuality(camera)
+      const currentQuality = camera.session.quality || this.effectiveCameraQuality(camera)
+      if (nextQuality === currentQuality) return
+      await this.switchCameraQuality(camera, nextQuality)
+    },
+    async switchCameraQuality(camera, nextQuality) {
+      const oldSession = camera.session
+      const oldRoom = camera.room
+      if (!oldSession || camera.qualityChanging) return
+      camera.qualityChanging = true
+      let nextSession = null
+      let nextRoom = null
+      try {
+        nextSession = await createVideoSession({
+          robotId: camera.robotId,
+          deviceId: camera.deviceId,
+          channel: camera.channel,
+          quality: nextQuality,
+          reuse: true
+        })
+        nextRoom = await this.connectReplacementLiveKit(camera, nextSession, oldRoom)
+        camera.room = nextRoom
+        camera.session = Object.assign({}, nextSession)
+        camera.status = nextSession.status
+        camera.viewerCount = nextSession.viewerCount
+        camera.hasVideo = true
+        camera.stopped = false
+        camera.stopping = false
+        this.stoppedSessionIds.delete(nextSession.sessionId)
+        if (oldRoom) {
+          camera.disconnecting = true
+          Promise.resolve(oldRoom.disconnect()).catch(error => {
+            this.log('ERROR disconnect old quality room', this.errorMessage(error))
+          })
+          camera.disconnecting = false
+        }
+        this.stoppedSessionIds.add(oldSession.sessionId)
+        stopVideoSession(oldSession.sessionId).catch(error => {
+          this.log('ERROR stop old quality session', this.errorMessage(error))
+        })
+        this.log('API switchCameraQuality', {
+          from: oldSession.quality,
+          to: nextQuality,
+          oldSessionId: oldSession.sessionId,
+          newSessionId: nextSession.sessionId
+        })
+      } catch (error) {
+        if (nextRoom) {
+          await Promise.resolve(nextRoom.disconnect()).catch(() => {})
+        }
+        if (nextSession && nextSession.sessionId) {
+          stopVideoSession(nextSession.sessionId).catch(() => {})
+        }
+        this.$message.error(`清晰度切换失败：${this.errorMessage(error)}`)
+        this.log('ERROR switchCameraQuality', this.errorMessage(error))
+      } finally {
+        this.resetQualityChanging(camera)
+      }
+    },
     async toggleIntercom(robot, camera) {
       if (camera.intercomActive) {
         await this.hangupIntercom(camera)
@@ -729,7 +848,7 @@ export default {
               robotId: robot.robotId,
               deviceId: camera.deviceId,
               channel: camera.channel,
-              quality: camera.quality
+              quality: this.effectiveCameraQuality(camera)
             })
         camera.session = this.mergeSession(camera, {
           sessionId: response.sessionId,
@@ -854,13 +973,13 @@ export default {
         }
         const room = new Room()
         const sessionId = camera.session.sessionId
-        room.on(RoomEvent.TrackSubscribed, (track) => {
+        room.on(RoomEvent.TrackSubscribed, (track, publication) => {
           if (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId) return
           if (track.kind === 'audio') {
             track.attach(this.audioElement(camera))
             camera.hasAudio = true
           } else if (track.kind === 'video' && camera.watching) {
-            track.attach(this.videoElement(camera))
+            this.attachVideoTrack(camera, track, publication)
             camera.hasVideo = true
           }
           this.log('LiveKit TrackSubscribed', `${camera.name} ${track.sid || track.name}`)
@@ -893,6 +1012,58 @@ export default {
         camera.disconnecting = false
         camera.connecting = false
       }
+    },
+    connectReplacementLiveKit(camera, session, oldRoom) {
+      const livekitUrl = this.liveKitConnectionUrl(session.livekitUrl)
+      const token = session.viewerToken
+      if (!token || !livekitUrl) {
+        return Promise.reject(new Error('缺少新清晰度 LiveKit 连接信息'))
+      }
+      const room = new Room()
+      const sessionId = session.sessionId
+      return new Promise((resolve, reject) => {
+        let settled = false
+        const timeout = setTimeout(() => fail(new Error('等待新清晰度视频流超时')), 15000)
+        const done = () => {
+          if (settled) return
+          settled = true
+          clearTimeout(timeout)
+          resolve(room)
+        }
+        const fail = (error) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timeout)
+          Promise.resolve(room.disconnect()).catch(() => {})
+          reject(error)
+        }
+        room.on(RoomEvent.TrackSubscribed, (track, publication) => {
+          if (track.kind !== 'video') return
+          this.prepareReplacementVideo(camera, track, publication, oldRoom)
+              .then(() => {
+                camera.hasVideo = true
+                this.log('LiveKit TrackSubscribed', `${camera.name} ${track.sid || track.name}`)
+                done()
+              })
+              .catch(fail)
+        })
+        room.on(RoomEvent.Disconnected, () => {
+          fail(new Error('新清晰度 LiveKit 连接已断开'))
+        })
+        room.connect(livekitUrl, token)
+            .then(() => {
+              const publication = this.firstVideoPublication(room)
+              if (!publication || !publication.track) return
+              this.prepareReplacementVideo(camera, publication.track, publication, oldRoom)
+                  .then(() => {
+                    camera.hasVideo = true
+                    this.log('LiveKit TrackAttached', `${camera.name} ${publication.track.sid || publication.track.name}`)
+                    done()
+                  })
+                  .catch(fail)
+            })
+            .catch(fail)
+      })
     },
     // 控制 WebSocket 接收后端发布的机器人上下线、视频状态、对讲状态等事件。
     // 这些事件用于修正本地 UI 状态，而不是替代 REST API 的命令结果。
@@ -1319,7 +1490,7 @@ export default {
             old.disconnecting = true
             old.room.disconnect()
           }
-          return Object.assign(camera, {
+          return Object.assign(old, camera, {
             session: old.session,
             room: incoming.status === 'online' ? old.room : null,
             hasVideo: incoming.status === 'online' ? old.hasVideo : false,
@@ -1327,6 +1498,8 @@ export default {
             viewerCount: old.viewerCount,
             watching: old.watching,
             hasAudio: old.hasAudio,
+            quality: old.quality,
+            qualityChanging: old.qualityChanging,
             activeRecording: old.activeRecording,
             recordingActive: old.recordingActive,
             recordingBusy: old.recordingBusy,
@@ -1341,7 +1514,7 @@ export default {
             disconnecting: old.disconnecting
           })
         })
-        this.$set(this.robots, index, incoming)
+        this.$set(this.robots, index, Object.assign(existing, incoming))
       } else {
         this.robots.push(incoming)
       }
@@ -1419,7 +1592,82 @@ export default {
       const ref = this.$refs[camera.key + '-audio']
       return Array.isArray(ref) ? ref[0] : ref
     },
-    canSnapshot(camera) {
+    firstVideoPublication(room) {
+      for (const participant of room.remoteParticipants.values()) {
+        for (const publication of participant.trackPublications.values()) {
+          if (publication.track && publication.track.kind === 'video') return publication
+        }
+      }
+      return null
+    },
+    attachVideoTrack(camera, track, publication) {
+      if (publication && typeof publication.setVideoQuality === 'function') {
+        publication.setVideoQuality(VideoQuality.HIGH)
+      }
+      const video = this.videoElement(camera)
+      if (video) track.attach(video)
+    },
+    detachRoomFromVideo(room, video) {
+      if (!room || !video) return
+      room.remoteParticipants.forEach(participant => {
+        participant.trackPublications.forEach(publication => {
+          if (publication.track && typeof publication.track.detach === 'function') {
+            publication.track.detach(video)
+          }
+        })
+      })
+    },
+    prepareReplacementVideo(camera, track, publication, oldRoom) {
+      if (publication && typeof publication.setVideoQuality === 'function') {
+        publication.setVideoQuality(VideoQuality.HIGH)
+      }
+      const warmup = document.createElement('video')
+      warmup.autoplay = true
+      warmup.muted = true
+      warmup.playsInline = true
+      Object.assign(warmup.style, {
+        position: 'fixed',
+        left: '-2px',
+        top: '-2px',
+        width: '1px',
+        height: '1px',
+        opacity: '0',
+        pointerEvents: 'none'
+      })
+      document.body.appendChild(warmup)
+      track.attach(warmup)
+      return this.waitForVideoReady(warmup)
+          .then(() => {
+            const video = this.videoElement(camera)
+            if (video) {
+              this.detachRoomFromVideo(oldRoom, video)
+              track.attach(video)
+            }
+          })
+          .finally(() => {
+            if (typeof track.detach === 'function') track.detach(warmup)
+            warmup.remove()
+          })
+    },
+    waitForVideoReady(video) {
+      if (video.readyState >= 2 && video.videoWidth > 0) return Promise.resolve()
+      video.play().catch(() => {})
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => cleanup(() => reject(new Error('等待新清晰度首帧超时'))), 5000)
+        const onReady = () => {
+          if (video.videoWidth > 0 || video.readyState >= 2) cleanup(resolve)
+        }
+        const cleanup = (done) => {
+          clearTimeout(timeout)
+          video.removeEventListener('loadeddata', onReady)
+          video.removeEventListener('canplay', onReady)
+          done()
+        }
+        video.addEventListener('loadeddata', onReady)
+        video.addEventListener('canplay', onReady)
+      })
+    },
+	    canSnapshot(camera) {
       return !!camera.session && camera.watching && !camera.stopping && !camera.stopped
     },
     canRecord(camera) {
@@ -1488,18 +1736,21 @@ export default {
         camera.recordingBusy = false
       }
     },
-    attachExistingVideoTracks(camera, room, sessionId) {
-      room.remoteParticipants.forEach(participant => {
-        participant.trackPublications.forEach(publication => {
-          const track = publication.track
-          if (!track || track.kind !== 'video') return
-          if (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId) return
-          track.attach(this.videoElement(camera))
-          camera.hasVideo = true
-          this.log('LiveKit TrackAttached', `${camera.name} ${track.sid || track.name}`)
-        })
-      })
-    },
+	    attachExistingVideoTracks(camera, room, sessionId, strict = true) {
+	      let attached = false
+	      room.remoteParticipants.forEach(participant => {
+	        participant.trackPublications.forEach(publication => {
+	          const track = publication.track
+	          if (!track || track.kind !== 'video') return
+	          if (strict && (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId)) return
+	          this.attachVideoTrack(camera, track, publication)
+	          camera.hasVideo = true
+	          attached = true
+	          this.log('LiveKit TrackAttached', `${camera.name} ${track.sid || track.name}`)
+	        })
+	      })
+	      return attached
+	    },
     liveKitConnectionUrl(serverUrl) {
       // HTTPS 页面不能直接连 ws:// LiveKit；生产环境通过同域 /livekit 反代升级到 wss。
       if (window.location.protocol === 'https:') {
@@ -1567,11 +1818,11 @@ export default {
         status: robot.status || robot.onlineStatus || 'offline',
         cameras: (robot.cameras || []).map(camera => Object.assign(
             cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible', camera.groupType),
-            {
-              cameraId: camera.cameraId || camera.deviceId,
-              quality: camera.quality || 'sub',
-              status: robot.status === 'online' ? camera.status || '' : 'offline'
-            }))
+	            {
+	              cameraId: camera.cameraId || camera.deviceId,
+	              quality: camera.quality || 'auto',
+	              status: robot.status === 'online' ? camera.status || '' : 'offline'
+	            }))
       }
     },
     batteryText(battery) {
@@ -2075,6 +2326,31 @@ export default {
 .video-topbar span {
   font-size: 11px;
   color: #cbd5e1;
+}
+
+.video-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.quality-select {
+  width: 76px;
+}
+
+.quality-select /deep/ .el-input__inner {
+  height: 24px;
+  line-height: 24px;
+  padding-left: 8px;
+  padding-right: 24px;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(15, 23, 42, 0.76);
+}
+
+.quality-select /deep/ .el-input__icon {
+  line-height: 24px;
 }
 
 .empty-video {

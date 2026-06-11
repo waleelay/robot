@@ -450,7 +450,7 @@ public class VideoSessionService {
         if (request.getQuality() != null) {
             session.setQuality(request.getQuality());
         }
-        session.setRoomName("media." + session.getRobotId() + "." + session.getDeviceId() + "." + session.getChannel());
+        session.setRoomName("media." + session.getRobotId() + "." + session.getDeviceId() + "." + session.getChannel() + "." + session.getQuality());
         requestClientStart(session, "video.track.switching", false);
         session.setUpdatedAt(now());
         repository.save(session);
@@ -1021,7 +1021,7 @@ public class VideoSessionService {
     }
 
     private String roomName(CreateVideoSessionRequest request) {
-        return "media." + request.getRobotId() + "." + request.getDeviceId() + "." + request.getChannel();
+        return "media." + request.getRobotId() + "." + request.getDeviceId() + "." + request.getChannel() + "." + request.getQuality();
     }
 
     private void emit(String event, Object data) {

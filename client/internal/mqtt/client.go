@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -123,7 +124,7 @@ func (c *Client) handleStart(ctx context.Context) paho.MessageHandler {
 		rtspURL := command.RTSPURL
 		if rtspURL == "" {
 			// 服务端通常只传 deviceId/channel/quality；本地配置负责把 deviceId 映射到 RTSP URL。
-			rtspURL = c.rtspURL(command.DeviceID)
+			rtspURL = c.rtspURL(command.DeviceID, command.Quality)
 		}
 		// 先探测 RTSP，失败时马上回报 failed，避免后端一直等 track published 超时。
 		if err := c.probe.Check(ctx, rtspURL); err != nil {
@@ -432,12 +433,22 @@ func (c *Client) baseDeviceType() string {
 	return "QUADRUPED_BASE"
 }
 
-func (c *Client) rtspURL(deviceID string) string {
-	// 优先按摄像头配置查找，找不到时回退到兼容旧配置的 RTSP_VISIBLE_SUB。
+func (c *Client) rtspURL(deviceID string, quality string) string {
+	// 优先按摄像头配置和清晰度查找，找不到时回退到兼容旧配置的 RTSP_VISIBLE_SUB。
+	quality = strings.ToLower(strings.TrimSpace(quality))
 	for _, camera := range c.cfg.Cameras {
 		if camera.DeviceID == deviceID || camera.CameraID == deviceID {
+			if quality == "main" && camera.RTSPMainURL != "" {
+				return camera.RTSPMainURL
+			}
+			if (quality == "sub" || quality == "auto" || quality == "") && camera.RTSPSubURL != "" {
+				return camera.RTSPSubURL
+			}
 			return camera.RTSPURL
 		}
+	}
+	if quality == "main" && c.cfg.RTSPVisibleMain != "" {
+		return c.cfg.RTSPVisibleMain
 	}
 	return c.cfg.RTSPVisibleSub
 }

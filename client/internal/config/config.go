@@ -46,13 +46,15 @@ type Config struct {
 }
 
 type Camera struct {
-	CameraID  string
-	DeviceID  string
-	Name      string
-	GroupType string
-	Channel   string
-	Quality   string
-	RTSPURL   string
+	CameraID    string
+	DeviceID    string
+	Name        string
+	GroupType   string
+	Channel     string
+	Quality     string
+	RTSPURL     string
+	RTSPMainURL string
+	RTSPSubURL  string
 }
 
 func Load() Config {
@@ -107,14 +109,20 @@ func cameras(robotID string) []Camera {
 	}
 	result := make([]Camera, 0, len(ids))
 	for i, id := range ids {
+		envPrefix := "RTSP_" + strings.ToUpper(id)
+		legacyRTSP := env(envPrefix, "rtsp://192.168.124.204:8554/"+id)
+		subRTSP := env(envPrefix+"_SUB", legacyRTSP)
+		mainRTSP := env(envPrefix+"_MAIN", subRTSP)
 		result = append(result, Camera{
-			CameraID:  id,
-			DeviceID:  id,
-			Name:      env("CAMERA_"+strings.ToUpper(id)+"_NAME", names[i]),
-			GroupType: env("CAMERA_"+strings.ToUpper(id)+"_GROUP_TYPE", groupTypes[i]),
-			Channel:   "visible",
-			Quality:   "sub",
-			RTSPURL:   env("RTSP_"+strings.ToUpper(id), "rtsp://192.168.124.204:8554/"+id),
+			CameraID:    id,
+			DeviceID:    id,
+			Name:        env("CAMERA_"+strings.ToUpper(id)+"_NAME", names[i]),
+			GroupType:   env("CAMERA_"+strings.ToUpper(id)+"_GROUP_TYPE", groupTypes[i]),
+			Channel:     "visible",
+			Quality:     env("CAMERA_"+strings.ToUpper(id)+"_QUALITY", "auto"),
+			RTSPURL:     legacyRTSP,
+			RTSPMainURL: mainRTSP,
+			RTSPSubURL:  subRTSP,
 		})
 	}
 	return result
