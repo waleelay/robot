@@ -35,9 +35,9 @@ export function createVideoSession(data) {
   return client.post(`/api/control/robots/${data.robotId}/cameras/${data.deviceId}/video/start`, payload).then(res => res.data)
 }
 
-// 拉取机器人在线状态和摄像头清单；真实状态来自机器人 Go 客户端的 MQTT 心跳。
+// 大屏统一从全景地图聚合接口获取机器人列表；BFF 内部会合并控制侧机器人数据。
 export function getRobots() {
-  return client.get('/api/control/robots').then(res => res.data)
+  return client.get('/api/bigscreen/panorama/overview').then(res => (res.data && res.data.devices) || [])
 }
 
 export function getControlProfile(robotId) {

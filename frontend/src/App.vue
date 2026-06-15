@@ -1108,7 +1108,7 @@ export default {
       }
       this.socket = socket
     },
-    // 拉取机器人注册表，并转换成页面内部 cameraState，保证后续 UI 字段完整。
+    // 拉取大屏全景聚合中的机器人列表，并转换成页面内部 cameraState，保证后续 UI 字段完整。
     async loadRobots() {
       const robots = await getRobots()
       if (!robots.length) return

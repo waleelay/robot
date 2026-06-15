@@ -45,6 +45,7 @@ tools/     设计文档生成脚本
 ```text
 docs/realtime-video-interface-flow.md     实时视频三端交互与接口
 docs/recorded-video-upload-design.md      巡逻视频上传与播放方案
+docs/bigscreen-bff-panorama-design.md     大屏 BFF 抽层与全景地图接口方案
 ```
 
 ## 环境依赖
