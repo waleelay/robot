@@ -320,6 +320,8 @@ GET /api/bigscreen/panorama/overview
           "location": "A区仓库",
           "deviceId": "robot-003",
           "deviceName": "巡检机器人一号",
+          "taskId": "task-002",
+          "taskName": "A区-仓库复核",
           "status": "unhandled",
           "snapshotUrl": null
         }
@@ -515,7 +517,24 @@ GET /api/bigscreen/panorama/alarms
       "level": "HIGH",
       "levelName": "高风险",
       "count": 5,
-      "items": []
+      "items": [
+        {
+          "alarmId": "alarm-001",
+          "title": "发生火灾",
+          "category": "BUSINESS",
+          "categoryName": "业务告警",
+          "level": "HIGH",
+          "levelName": "高风险",
+          "eventTime": "2023-08-01 10:00:00",
+          "location": "A区仓库",
+          "deviceId": "robot-003",
+          "deviceName": "巡检机器人一号",
+          "taskId": "task-002",
+          "taskName": "A区-仓库复核",
+          "status": "unhandled",
+          "snapshotUrl": null
+        }
+      ]
     },
     "medium": {
       "level": "MEDIUM",
@@ -658,6 +677,8 @@ WS /ws/bigscreen
       "location": "A区仓库",
       "robotId": "robot-003",
       "deviceName": "巡检机器人一号",
+      "taskId": "task-002",
+      "taskName": "A区-仓库复核",
       "status": "unhandled",
       "snapshotUrl": null
     }

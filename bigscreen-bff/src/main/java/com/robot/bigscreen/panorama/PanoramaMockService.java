@@ -221,12 +221,12 @@ public class PanoramaMockService {
 
     private Map<String, Object> alarmGroups() {
         List<Map<String, Object>> high = List.of(
-                alarm("alarm-001", "发生火灾", "BUSINESS", "业务告警", "HIGH", "高风险", "2023-08-01 10:00:00", "A区仓库", "robot-003", "巡检机器人一号", "unhandled"),
-                alarm("alarm-002", "设备故障", "DEVICE", "设备告警", "HIGH", "高风险", "2026-06-12 10:28:00", "A区仓库", "robot-003", "巡检机器人一号", "handling"));
+                alarm("alarm-001", "发生火灾", "BUSINESS", "业务告警", "HIGH", "高风险", "2023-08-01 10:00:00", "A区仓库", "robot-003", "巡检机器人一号", "task-002", "A区-仓库复核", "unhandled"),
+                alarm("alarm-002", "设备故障", "DEVICE", "设备告警", "HIGH", "高风险", "2026-06-12 10:28:00", "A区仓库", "robot-003", "巡检机器人一号", "task-002", "A区-仓库复核", "handling"));
         List<Map<String, Object>> medium = List.of(
-                alarm("alarm-003", "电量偏低", "DEVICE", "设备告警", "MEDIUM", "中风险", "2026-06-12 10:15:00", "A区东侧通道", "robot-002", "云深处四足机器狗", "unhandled"));
+                alarm("alarm-003", "电量偏低", "DEVICE", "设备告警", "MEDIUM", "中风险", "2026-06-12 10:15:00", "A区东侧通道", "robot-002", "云深处四足机器狗", null, null, "unhandled"));
         List<Map<String, Object>> low = List.of(
-                alarm("alarm-004", "任务超时预警", "TASK", "任务告警", "LOW", "低风险", "2026-06-12 09:48:00", "A区主干道", "robot-001", "松灵四轮机器人", "handled"));
+                alarm("alarm-004", "任务超时预警", "TASK", "任务告警", "LOW", "低风险", "2026-06-12 09:48:00", "A区主干道", "robot-001", "松灵四轮机器人", "task-001", "A区-夜间巡逻", "handled"));
         return Map.of(
                 "total", 15,
                 "high", alarmGroup("HIGH", "高风险", 5, high),
@@ -434,6 +434,8 @@ public class PanoramaMockService {
             String location,
             String deviceId,
             String deviceName,
+            String taskId,
+            String taskName,
             String status) {
         return object(
                 "alarmId", alarmId,
@@ -446,6 +448,8 @@ public class PanoramaMockService {
                 "location", location,
                 "deviceId", deviceId,
                 "deviceName", deviceName,
+                "taskId", taskId,
+                "taskName", taskName,
                 "status", status,
                 "snapshotUrl", null);
     }
