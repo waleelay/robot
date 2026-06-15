@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>人脸底库管理</title>
+  <link rel="stylesheet" href="https://unpkg.com/layui@2.8.18/dist/css/layui.css">
+  <link rel="stylesheet" href="public/style.css">
+  <style>
+    #addGroup {
+      position: absolute;
+      top: 10px;
+      left: 100px;
+    }
+
+    #group-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    #group-container li {
+      padding: 5px 10px;
+      border: 1px solid #d2d2d2;
+      border-radius: 4px;
+      
+    }
+
+    #group-container li.active {
+      background-color: #00e4ff;
+      border-color: #00e4ff;
+    }
+    .layui-table-cell{
+      height: fit-content;
+    }
+  </style>
+  <script>
+    let ZQLGLOBAL = {
+      serverIp: '192.168.124.94',// 修改成您的盒子aiboxd的IP地址
+      face: `:9091/ks/face`, // 人脸增删改查
+      image: `:9091/ks/face/image`, // 图片
+      group: `:9091/ks/group`, // 底库分组
+    };
+  </script>
+</head>
+
+<body>
+  <div class="layui-container" style="padding: 20px;">
+    <div class="layui-card">
+      <div class="layui-card-header">
+        <h2>人脸底库管理</h2>
+      </div>
+      <div style="padding: 10px; position:relative;">
+        <h3 style="margin-bottom: 10px;">人脸分组</h3>
+        <ul id="group-container">
+        </ul>
+        <button class="layui-btn layui-btn-normal layui-btn-sm " id="addGroup">
+          <i class="layui-icon layui-icon-add-1"></i> 添加分组
+        </button>
+      </div>
+
+
+      <div class="layui-card-body">
+        <!-- 搜索和操作区域 -->
+        <div style="margin-bottom: 20px; display: flex;justify-content: space-between;">
+          <button class="layui-btn layui-btn-primary" id="searchBtn">
+            <i class="layui-icon layui-icon-search"></i> 查询
+          </button>
+          <button class="layui-btn layui-btn-normal" id="addBtn">
+            <i class="layui-icon layui-icon-add-1"></i> 添加数据
+          </button>
+        </div>
+
+        <!-- 表格区域 -->
+        <table id="dataTable" lay-filter="dataTable"></table>
+        <script type="text/html" id="image">
+          <img style="width:100px" src="{{= d.image }}"/>
+        </script>
+      </div>
+    </div>
+  </div>
+
+  <!-- 表格操作按钮模板 -->
+  <script type="text/html" id="operationBar">
+    <a class="layui-btn layui-btn-xs" lay-event="edit">
+      <i class="layui-icon layui-icon-edit"></i> 编辑
+    </a>
+    <a class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del">
+      <i class="layui-icon layui-icon-delete"></i> 删除
+    </a>
+  </script>
+
+  <!-- 引入Layui JS -->
+  <script src="https://unpkg.com/layui@2.8.18/dist/layui.js"></script>
+  <script src="public/jquery-1.10.2.min.js"></script>
+  <script src="facelib.js"></script>
+</body>
+
+</html>

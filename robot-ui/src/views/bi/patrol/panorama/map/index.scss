@@ -1,0 +1,18 @@
+.map-div {
+  position: relative;
+  width: calc(100% + 72px);
+  margin-left: -72px;
+  // background-image: url("../../../../../assets/images/new-bi/map-bg.png");
+  .map-operation {
+    top: 20px;
+    right: 420px;
+  }
+  &.full {
+    .map-operation {
+      right: 20px;
+    }
+    .oper {
+      left: 300px;
+    }
+  }
+}

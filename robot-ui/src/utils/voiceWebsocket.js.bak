@@ -1,0 +1,322 @@
+import Cookies from 'js-cookie'
+export class VoiceWebSocket {
+  constructor(clientId = 'A1', config = {}) {
+    const defaultConfig = {
+      serverUrl: 'ws://192.168.1.133:9000/voice',
+      targetId: 'C',
+      audioChunkInterval: 20,
+      reconnectInterval: 3000,
+      maxReconnectAttempts: 5
+    };
+    this.config = { ...defaultConfig, ...config };
+    this.clientId = clientId;
+    this.websocket = null;
+    this.reconnectAttempts = 0;
+    this.isConnected = false;
+    this.isRecording = false;
+    this.audioContext = null;
+    this.audioStream = null;
+    this.sampleRate = 16000;
+    this.channels = 1;
+    this.bitsPerSample = 16;
+    this.audioProcessor = null; // 新增：存储 ScriptProcessorNode
+    this.retryCount = 0;
+    this.maxRetries = 5;
+    this.retryInterval = 2000;
+    this.audioBufferQueue = []; // 音频缓冲队列
+    this.isPlaying = false; // 播放状态
+    this.handleOpen = this.handleOpen.bind(this);
+    this.handleMessage = this.handleMessage.bind(this);
+    this.handleClose = this.handleClose.bind(this);
+    this.handleError = this.handleError.bind(this);
+  }
+
+  init() {
+    try {
+      console.log('连接', this.websocket);
+      if (this.websocket) {
+        this.close();
+      }
+      this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      this.websocket = new WebSocket(this.config.serverUrl);
+      this.websocket.onopen = this.handleOpen;
+      this.websocket.onmessage = this.handleMessage;
+      this.websocket.onclose = this.handleClose;
+      this.websocket.onerror = this.handleError;
+      this.websocket.binaryType = 'arraybuffer';
+    } catch (error) {
+      console.error('WebSocket初始化失败:', error);
+      this.handleError(error);
+    }
+  }
+
+  handleOpen() {
+    console.log('WebSocket连接已建立');
+    this.isConnected = true;
+    this.reconnectAttempts = 0;
+    this.retryCount = 0;
+    this.sendMessage({
+      type: 'register',
+      clientId: this.clientId,
+      targetId: 'none'
+    });
+    if (this.config.onOpen) this.config.onOpen();
+  }
+
+  async handleMessage(event) {
+    try {
+      // console.log('Raw message:', event.data);
+      if (event.data instanceof ArrayBuffer) {
+        await this.playAudio(event.data, 'pcm');
+      } else if (typeof event.data === 'string') {
+        // console.log('收到文本消息:', event.data);
+        let message;
+        try {
+          message = JSON.parse(event.data);
+        } catch (e) {
+          console.error('解析消息失败:', event.data, e);
+          return;
+        }
+        console.log('接收消息', message);
+        if (message.sampleRate) {
+          this.sampleRate = message.sampleRate
+        }
+        if (message.channels) {
+          this.channels = message.channels
+        }
+        if (message.bitsPerSample) {
+          this.bitsPerSample = message.bitsPerSample
+        }
+        // console.log('解析后的消息:', message);
+        if (message.type === 'register' && message.status === 'success') {
+          console.log('注册成功，发送 connect 消息');
+          // this.connect();
+        } else if (message.type === 'connect' && message.status === 'success') {
+          console.log(`与 ${message.targetId} 连接成功`);
+          this.retryCount = 0;
+          if (this.config.onConnect) this.config.onConnect(message.targetId);
+          // this.startRecording();
+        } else if (message.type === 'connect' && message.status === 'error') {
+          console.error('连接失败:', message.message);
+          if (this.retryCount < this.maxRetries) {
+            this.retryCount++;
+            console.log(`连接失败，重试 ${this.retryCount}/${this.maxRetries}`);
+            setTimeout(() => this.connect(), this.retryInterval);
+          } else {
+            console.error('达到最大重试次数，停止重试');
+            if (this.config.onError) this.config.onError(new Error(message.message));
+          }
+        } else {
+          console.warn('未知消息类型:', message);
+        }
+      }
+    } catch (error) {
+      console.error('消息处理错误:', error);
+    }
+  }
+
+  handleClose() {
+    console.log('WebSocket连接已关闭');
+    this.isConnected = false;
+    this.stopRecording();
+    if (this.reconnectAttempts < this.config.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      console.log(`尝试重新连接 (${this.reconnectAttempts}/${this.config.maxReconnectAttempts})`);
+      setTimeout(() => this.init(), this.config.reconnectInterval);
+    }
+    if (this.config.onClose) this.config.onClose();
+  }
+
+  handleError(error) {
+    console.error('WebSocket错误:', error);
+    this.isConnected = false;
+    if (this.config.onError) this.config.onError(error);
+  }
+
+  sendMessage(message) {
+    // console.log(this.websocket,this.isConnected)
+    if (this.websocket && this.isConnected) {
+      try {
+        // console.log(message instanceof ArrayBuffer)
+        if (message instanceof ArrayBuffer) {
+          // console.log(message)
+          this.websocket.send(message);
+        } else {
+          // console.log('发送消息:', message);
+          this.websocket.send(JSON.stringify(message));
+        }
+      } catch (error) {
+        console.error('发送消息失败:', error);
+      }
+    } else {
+      console.warn('WebSocket未连接，无法发送消息:', message);
+    }
+  }
+
+  connect(targetId) {
+    console.log("发送连接信息");
+    this.sendMessage({
+      type: 'connect',
+      clientId: this.clientId,
+      targetId: targetId || Cookies.get('targetId')
+    });
+  }
+
+  disconnect(targetId) {
+    this.sendMessage({
+      type: 'disconnect',
+      clientId: this.clientId,
+      targetId// this.config.targetId
+    });
+  }
+
+  async startRecording(targetId) {
+    if (this.isRecording) return;
+    this.audioBufferQueue = [];
+    try {
+      // 在开始录音前发送 connect 消息
+      this.connect(targetId);
+
+      // this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: {
+      //   sampleRate: 16000,
+      //   channelCount: 1,
+      //   echoCancellation: true,
+      //   noiseSuppression: true
+      // } });
+      this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = this.audioContext.createMediaStreamSource(this.audioStream);
+      this.audioProcessor = this.audioContext.createScriptProcessor(1024, 1, 1);
+      this.audioProcessor.onaudioprocess = (event) => {
+        const inputData = event.inputBuffer.getChannelData(0);
+        const pcmData = new Int16Array(inputData.length);
+        let isNonZero = false;
+        for (let i = 0; i < inputData.length; i++) {
+          pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768)); // 16-bit PCM
+          if (pcmData[i] !== 0) isNonZero = true;
+        }
+        const buffer = pcmData.buffer;
+
+        if (buffer.byteLength % 2 === 0 && isNonZero) {
+          this.sendMessage(buffer);
+          // console.log('Sent PCM data:', buffer.byteLength, 'bytes, hex:', this.arrayBufferToHex(buffer, 16));
+        } else {
+          console.warn('Skipped PCM data: size=' + buffer.byteLength + ', isNonZero=' + isNonZero);
+        }
+      };
+      source.connect(this.audioProcessor);
+      this.audioProcessor.connect(this.audioContext.destination);
+      this.isRecording = true;
+      console.log('录音已开始');
+    } catch (error) {
+      console.error('启动录音失败:', error);
+      this.isRecording = false;
+      if (this.config.onError) this.config.onError(error);
+      throw error;
+    }
+  }
+
+  stopRecording(targetId) {
+    if (this.isRecording) {
+      if (this.audioStream) {
+        this.audioStream.getTracks().forEach(track => track.stop());
+        this.audioStream = null;
+      }
+      if (this.audioProcessor) {
+        this.audioProcessor.disconnect();
+        this.audioProcessor = null;
+      }
+      this.isRecording = false;
+      this.audioBufferQueue = []; // 清空播放队列
+      this.isPlaying = false; // 停止播放
+      this.disconnect(targetId);
+      // console.log('录音已停止，播放队列已清空');
+    }
+  }
+
+  async playAudio(arrayBuffer, format = 'pcm') {
+    if (!this.audioContext) return;
+
+    try {
+      if (format === 'pcm') {
+        const sampleRate = 16000;
+        const channels = 1;
+        if (arrayBuffer.byteLength % 2 !== 0) {
+          console.warn('Invalid PCM data: size=' + arrayBuffer.byteLength + ' bytes, skipping');
+          return;
+        }
+
+        this.audioBufferQueue.push(arrayBuffer);
+        // console.log('Added PCM to queue, size:', this.isPlaying, this.audioBufferQueue.length);
+        // if (!this.isPlaying && this.isRecording) {
+        if (!this.isPlaying) {
+          // 仅在录音（通话）状态下播放
+          this.isPlaying = true;
+          this.playFromQueue();
+        }
+      }
+    } catch (error) {
+      console.error('播放音频失败:', error);
+    }
+  }
+
+  playFromQueue() {
+    // if (this.audioBufferQueue.length === 0 || !this.isRecording) {
+    if (this.audioBufferQueue.length === 0) {
+      this.isPlaying = false;
+      return;
+    }
+
+    const arrayBuffer = this.audioBufferQueue.shift();
+    // 计算音频帧长度：字节数 / (位深/8 * 声道数)
+    const frameLength = arrayBuffer.byteLength / (this.bitsPerSample / 8);
+    const audioBuffer = this.audioContext.createBuffer(this.channels || 1, frameLength, this.sampleRate || 16000);
+    const channelData = audioBuffer.getChannelData(0);
+    // 根据位深解析数据（通用处理16bit/8bit）
+    if (this.bitsPerSample === 16) {
+      const view = new Int16Array(arrayBuffer);
+      for (let i = 0; i < view.length; i++) {
+        channelData[i] = view[i] / 32768; // 16bit范围归一化到[-1,1]
+      }
+    } else if (this.bitsPerSample === 8) {
+      const view = new Uint8Array(arrayBuffer);
+      for (let i = 0; i < view.length; i++) {
+        channelData[i] = (view[i] - 128) / 128; // 8bit范围归一化到[-1,1]
+      }
+    }
+    const source = this.audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(this.audioContext.destination);
+    source.start(this.audioContext.currentTime);
+    source.onended = () => {
+      setTimeout(() => this.playFromQueue(), 0);
+    };
+    // console.log('Playing PCM:', arrayBuffer.byteLength, 'bytes, queue size:', this.audioBufferQueue.length);
+  }
+
+  close() {
+    this.stopRecording();
+    if (this.websocket) {
+      this.websocket.onclose = null;
+      this.websocket.close();
+      this.websocket = null;
+    }
+    if (this.audioContext) {
+      this.audioContext.close().catch(console.error);
+      this.audioContext = null;
+    }
+    this.isConnected = false;
+    console.log('连接已完全关闭');
+  }
+
+  // Helper function for hex logging
+  arrayBufferToHex(buffer, length) {
+    const view = new Uint8Array(buffer);
+    let result = '';
+    for (let i = 0; i < Math.min(length, view.length); i++) {
+      result += view[i].toString(16).padStart(2, '0') + ' ';
+    }
+    if (view.length > length) result += '...';
+    return result;
+  }
+}

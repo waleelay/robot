@@ -1,0 +1,27 @@
+{
+    "code": "0",
+    "message": "success",
+    "data": {
+        "id": 7,
+        "mapCode": "MAP-0002",
+        "mapName": "test3",
+        "mapType": "INDOOR",
+        "regionId": null,
+        "fileId": 19,
+        "fileUri": "minio://eiop-local/files/20260527090937-5b806034-1fd0-4d3e-9e4b-17394a388eb6-projectname-locationname-20250718-144929.zip",
+        "fileName": "20260527090937-5b806034-1fd0-4d3e-9e4b-17394a388eb6-projectname-locationname-20250718-144929.zip",
+        "fileChecksum": "sha256:d3666b1cc4d55bc790e1ccd95f5eb2401bd9a128ffbc397bc3209876bfed851d",
+        "previewFileId": 20,
+        "previewImageUri": "minio://eiop-local/maps/7/previews/20260527090951-237326e3-e74e-487f-8aa7-c1fb7ebfcd3f-projectname-locationname-20250718-144929-preview.png",
+        "previewWidth": 247,
+        "previewHeight": 169,
+        "resolution": 0.1,
+        "originX": -3.1,
+        "originY": -15,
+        "originYaw": 0,
+        "previewGeneratedAt": "2026-05-27T09:09:51",
+        "enabled": true,
+        "remark": null
+    },
+    "traceId": ""
+}

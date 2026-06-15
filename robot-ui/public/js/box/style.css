@@ -1,0 +1,126 @@
+/* Layui表格管理系统自定义样式 */
+
+body {
+    background-color: #f2f2f2;
+}
+
+.layui-card-header h2 {
+    margin: 0;
+    color: #333;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+/* 搜索区域样式优化 */
+.layui-input-group {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.layui-input-group .layui-input {
+    border-right: none;
+}
+
+.layui-input-suffix {
+    background: #fff;
+    border: 1px solid #e6e6e6;
+    border-left: none;
+    border-radius: 0 2px 2px 0;
+}
+
+/* 表格样式优化 */
+.layui-table {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.layui-table thead tr {
+    background-color: #f8f8f8;
+}
+
+.layui-table thead th {
+    font-weight: 600;
+    color: #333;
+    background-color: #f8f8f8;
+}
+
+/* 操作按钮样式 */
+.layui-btn-xs {
+    margin-right: 5px;
+}
+
+/* 响应式优化 */
+@media (max-width: 768px) {
+    .layui-container {
+        padding: 10px;
+    }
+    
+    .layui-col-md8,
+    .layui-col-md4 {
+        margin-bottom: 10px;
+    }
+    
+    .layui-input-group {
+        flex-direction: column;
+    }
+    
+    .layui-input-suffix {
+        border: 1px solid #e6e6e6;
+        border-top: none;
+        border-radius: 0 0 2px 2px;
+    }
+}
+
+/* 空状态样式 */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #999;
+}
+
+.empty-state h3 {
+    margin-bottom: 10px;
+    color: #666;
+}
+
+/* 通知样式 */
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 20px;
+    border-radius: 4px;
+    color: white;
+    font-weight: 500;
+    z-index: 10000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slideIn 0.3s ease;
+}
+
+.notification.success {
+    background: #5FB878;
+}
+
+.notification.error {
+    background: #FF5722;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}

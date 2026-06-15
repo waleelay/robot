@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leaflet离线瓦片地图优化</title>
+
+    <!-- Leaflet CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+      }
+
+      #map {
+        height: 100vh;
+        width: 100%;
+      }
+
+      .loading-indicator {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: white;
+        padding: 8px 12px;
+        border-radius: 4px;
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+        z-index: 1000;
+        display: none;
+      }
+
+      .loading-indicator.active {
+        display: block;
+      }
+
+      .controls {
+        position: absolute;
+        top: 10px;
+        left: 50px;
+        background: white;
+        padding: 10px;
+        border-radius: 4px;
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+        z-index: 1000;
+      }
+
+      .info-panel {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        background: white;
+        padding: 10px;
+        border-radius: 4px;
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+        z-index: 1000;
+        max-width: 300px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+
+    <div class="loading-indicator" id="loadingIndicator">
+      加载瓦片中...
+    </div>
+
+    <div class="controls">
+      <button id="resetView">重置视图</button>
+      <button id="togglePreload">预加载: 开启</button>
+    </div>
+
+    <div class="info-panel">
+      <h3>离线瓦片地图优化</h3>
+      <p>此示例展示如何优化离线瓦片地图的加载性能。</p>
+      <p>当前缩放级别: <span id="zoomLevel">-</span></p>
+      <p>已加载瓦片: <span id="loadedTiles">0</span></p>
+      <p>预加载状态: <span id="preloadStatus">开启</span></p>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+      // 初始化地图
+      const map = L.map("map", {
+        // 禁用惯性移动，提高性能
+        inertia: false,
+        // 预加载相邻瓦片
+        preferCanvas: true
+      }).setView([30.745482638228058, 106.03737831115724], 15); // 默认北京中心
+
+      // 创建自定义瓦片图层
+      const tileLayer = L.tileLayer("./black/{z}/{x}/{y}.png", {
+        minZoom: 1,
+        maxZoom: 18,
+        // 设置瓦片大小
+        tileSize: 256,
+        // 禁用子域名
+        subdomains: "",
+        // 设置错误瓦片图片
+        errorTileUrl:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        // 设置瓦片边界透明度
+        opacity: 0.9,
+        // 设置瓦片重试次数
+        maxNativeZoom: 18,
+        // 启用跨域
+        crossOrigin: true
+      }).addTo(map);
+
+      // 预加载状态
+      let preloadEnabled = true;
+      let loadedTilesCount = 0;
+
+      // DOM元素
+      const loadingIndicator = document.getElementById("loadingIndicator");
+      const resetViewBtn = document.getElementById("resetView");
+      const togglePreloadBtn = document.getElementById("togglePreload");
+      const zoomLevelSpan = document.getElementById("zoomLevel");
+      const loadedTilesSpan = document.getElementById("loadedTiles");
+      const preloadStatusSpan = document.getElementById("preloadStatus");
+
+      // 显示加载状态
+      function showLoading() {
+        loadingIndicator.classList.add("active");
+      }
+
+      // 隐藏加载状态
+      function hideLoading() {
+        loadingIndicator.classList.remove("active");
+      }
+
+      // 更新信息面板
+      function updateInfoPanel() {
+        zoomLevelSpan.textContent = map.getZoom();
+        loadedTilesSpan.textContent = loadedTilesCount;
+        preloadStatusSpan.textContent = preloadEnabled ? "开启" : "关闭";
+      }
+
+      // 瓦片加载事件处理
+      tileLayer.on("loading", function() {
+        showLoading();
+      });
+
+      tileLayer.on("load", function() {
+        loadedTilesCount++;
+        updateInfoPanel();
+
+        // 延迟隐藏加载指示器，确保所有瓦片加载完成
+        setTimeout(hideLoading, 300);
+      });
+
+      // 瓦片错误处理
+      tileLayer.on("tileerror", function(e) {
+        console.error("瓦片加载失败:", e.tile.src);
+
+        // 可以在这里添加重试逻辑
+        // 例如：setTimeout(() => e.tile.src = e.tile.src, 1000);
+      });
+
+      // 地图移动结束事件 - 用于预加载相邻瓦片
+      map.on("moveend", function() {
+        if (!preloadEnabled) return;
+
+        const bounds = map.getBounds();
+        const zoom = map.getZoom();
+        const tileBounds = tileLayer.getTileBounds(bounds, zoom);
+
+        // 预加载当前视图周围的瓦片
+        preloadTiles(tileBounds, zoom);
+      });
+
+      // 预加载瓦片函数
+      function preloadTiles(tileBounds, zoom) {
+        const margin = 1; // 预加载范围（瓦片数）
+
+        for (
+          let x = tileBounds.min.x - margin;
+          x <= tileBounds.max.x + margin;
+          x++
+        ) {
+          for (
+            let y = tileBounds.min.y - margin;
+            y <= tileBounds.max.y + margin;
+            y++
+          ) {
+            // 跳过当前视图内的瓦片（它们已经被加载）
+            if (
+              x >= tileBounds.min.x &&
+              x <= tileBounds.max.x &&
+              y >= tileBounds.min.y &&
+              y <= tileBounds.max.y
+            ) {
+              continue;
+            }
+
+            // 创建预加载的瓦片URL
+            const tileUrl = tileLayer.getTileUrl({ x, y, z: zoom });
+
+            // 创建Image对象预加载
+            const img = new Image();
+            img.src = tileUrl;
+          }
+        }
+      }
+
+      // 重置视图按钮事件
+      resetViewBtn.addEventListener("click", function() {
+        map.setView([30.745482638228058, 106.03737831115724], 15);
+        loadedTilesCount = 0;
+        updateInfoPanel();
+      });
+
+      // 切换预加载按钮事件
+      togglePreloadBtn.addEventListener("click", function() {
+        preloadEnabled = !preloadEnabled;
+        togglePreloadBtn.textContent = `预加载: ${
+          preloadEnabled ? "开启" : "关闭"
+        }`;
+        updateInfoPanel();
+      });
+
+      // 初始化信息面板
+      updateInfoPanel();
+
+      // 添加一些示例标记
+      const markers = [
+        { lat: 30.745482638228058, lng: 106.03737831115724, title: "南充" }
+        // { lat: 39.904, lng: 116.407, title: "故宫" },
+        // { lat: 39.998, lng: 116.316, title: "颐和园" },
+        // { lat: 39.941, lng: 116.459, title: "798艺术区" }
+      ];
+
+      markers.forEach(marker => {
+        L.marker([marker.lat, marker.lng])
+          .addTo(map)
+          .bindPopup(marker.title);
+      });
+
+      // 添加缩放控制
+      L.control
+        .zoom({
+          position: "topright"
+        })
+        .addTo(map);
+
+      // 添加比例尺
+      L.control
+        .scale({
+          imperial: false,
+          position: "bottomright"
+        })
+        .addTo(map);
+    </script>
+  </body>
+</html>

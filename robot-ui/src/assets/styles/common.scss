@@ -1,0 +1,92 @@
+/*
+ * @Author: dengxumei
+ * @Date: 2026-02-12 09:52:45
+ * @LastEditors: dengxumei
+ * @LastEditTime: 2026-05-11 10:29:52
+ * @Description: 
+ * @FilePath: \qihang-eiop-ui\src\assets\styles\common.scss
+ * @Version: 
+ */
+/* flex */
+.d-flex {
+  display: flex;
+}
+.flex-wrap {
+  flex-wrap: wrap;
+}
+.flex {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.flex-column {
+  display: flex;
+  flex-direction: column;
+}
+.flx-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.flx-justify-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.flx-align-center {
+  display: flex;
+  align-items: center;
+}
+.flx-align-end {
+  display: flex;
+  align-items: flex-end;
+}
+.flx-justify-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex1 {
+  flex: 1;
+}
+
+.flex1-h100 {
+  flex: 1;
+  height: 100%;
+}
+
+.top_unset {
+  top: unset !important;
+}
+
+.left_unset {
+  left: unset !important;
+}
+
+.text-warning {
+  color: #ffba00 !important;
+}
+.text-error {
+  color: #D9001B !important;
+}
+.text-success {
+  color: #70B603 !important;
+}
+
+::-webkit-scrollbar {
+  // width: 0 !important;
+  // height: 0 !important;
+}
+
+.no-w-scroll::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+}
+.ovya {
+  overflow-y: auto;
+}
+.ovyh {
+  overflow-y: hidden;
+}

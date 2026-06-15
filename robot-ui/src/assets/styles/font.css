@@ -1,0 +1,12 @@
+@font-face {
+    font-family: 'YouSheBiaoTiHei';
+    src: url('~@/assets/fonts/YouSheBiaoTiHei.ttf') format('truetype');
+}
+@font-face {
+    font-family: 'Alibaba PuHuiTi';
+    src: url('~@/assets/fonts/Alibaba PuHuiTi.ttf') format('truetype');
+}
+@font-face {
+    font-family: 'TeX Gyre Adventor';
+    src: url('~@/assets/fonts/texgyreadventor/texgyreadventor-bolditalic-3.otf') format('truetype');
+}

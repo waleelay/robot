@@ -1,0 +1,41 @@
+{
+  "pathName": "业务路径1",
+  "pathState": 0,
+  "equipmentId": 4,
+  "qhPointList": [
+    {
+      "angleYaw": 1.0,
+      "mapID": 1,
+      "posX": 1,
+      "posY": 2,
+      "posZ": 3,
+      "qhAudioEquipmentConfig": {
+        "algorithmUsed": 0,
+        "isActive": 1,
+        "remark": "音频备注"
+      },
+      "qhMotionEquipmentConfig": {
+        "gait": 1,
+        "manner": 1,
+        "navMode": 1,
+        "obsMode": 1,
+        "pointInfo": 1,
+        "remark": "运动备注",
+        "speed": 1,
+        "terrain": 1,
+        "waitTime": 60
+      },
+      "qhVideoEquipmentConfig": {
+        "algorithmUsed": 0,
+        "id": 0,
+        "isActive": 0,
+        "remark": "视频备注",
+        "rotationSpeed": 0,
+        "scanMode": 1
+      },
+      "value": 1
+    }
+  ],
+  "remark": "业务路径1",
+  "sceneId": 7
+}

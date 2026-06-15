@@ -1,0 +1,198 @@
+.bi-form-dialog-wrapper {
+  ::v-deep .el-dialog {
+    margin-top: unset !important;
+    background: linear-gradient(180deg, rgba(4, 60, 149, 0.40) 0.01%, rgba(4, 33, 68, 0.30) 5.51%, rgba(4, 23, 62, 0.32) 51.52%, rgba(7, 45, 94, 0.31) 92.62%, rgba(4, 62, 151, 0.40) 100.03%);
+    border: 1px solid #2CADFF;
+    backdrop-filter: blur(26.048158645629883px);
+    &__header {
+      padding: 0;
+    }
+    .el-dialog__headerbtn {
+      top: 24px;
+      i {
+        font-size: 20px;
+        color: rgba(74, 184, 255, .5);
+      }
+    }
+    .bi-dialog-header {
+      position: relative;
+      padding: 10px;
+      color: #FFF;
+      font-family: "Alibaba PuHuiTi";
+      font-size: 16px;
+      font-style: normal;
+      font-weight: 400;
+      line-height: 43px;
+      .title {
+        width: 402px;
+        padding-left: 17px;
+        background: linear-gradient(90deg, #2CADFF 0.92%, rgba(0, 13, 59, 0.19) 104.71%);
+      }
+      &::before {
+        position: absolute;
+        top: -8px;
+        left: 0;
+        width: 290px;
+        height: 8px;
+        background: url("../../../assets/images/bi/new/zst.png") 290px 8px;
+        content: '';
+      }
+    }
+    &__body {
+      padding: 20px;
+      height: auto;
+    }
+
+    .el-dialog__footer {
+      padding: 0 10px 18px;
+      text-align: right;
+      .el-button[tt="modal"] {
+        padding: 10px;
+        color: #1C9DFF;
+        text-align: center;
+        font-family: "Alibaba PuHuiTi";
+        font-size: 12px;
+        font-style: normal;
+        font-weight: 400;
+        line-height: 12px; /* 100% */
+        letter-spacing: 0.857px;
+        border-radius: 2px;
+        background: rgba(9, 45, 72, 0.50);
+        box-shadow: 0 0 4px 0 #2575AA inset;
+        border: none;
+      }
+    }
+  }
+}
+::v-deep .el-form {
+  &.custom-form {
+    .title1 {
+      position: relative;
+      padding-left: 7px;
+      color: #0BF9FE;
+      text-align: left;
+      font-family: "Alibaba PuHuiTi";
+      font-size: 16px;
+      font-style: normal;
+      font-weight: 400;
+      line-height: 21px; /* 130.241% */
+      letter-spacing: 1.488px;
+      &::before {
+        position: absolute;
+        top: 3.5px;
+        left: 0;
+        width: 4px;
+        height: 14px;
+        background: #0BF9FE;
+        content: '';
+      }
+    }
+    .el-form-item__error {
+      right: 0;
+      bottom: -19px;
+      text-align: right;
+    }
+    .el-form-item__content {
+      line-height: 40px;
+    }
+    .el-input__inner {
+      height: auto;
+      padding: 10px;
+      color: #159AFF;
+      font-family: "Microsoft YaHei";
+      font-size: 14px;
+      font-style: normal;
+      font-weight: 400;
+      line-height: 18px;
+      border-radius: 4px;
+      border: 1px solid #159AFF;
+      background: transparent;
+    }
+    .el-form-item__label {
+      padding-right: 10px;
+      color: rgba(255, 255, 255, 0.80);
+      font-family: "Alibaba PuHuiTi";
+      font-size: 14px;
+      font-style: normal;
+      font-weight: 400;
+      line-height: 40px;
+      letter-spacing: 1.488px;
+    }
+    .el-form-item {
+      &.is-required {
+        .el-form-item__label::before {
+          color: #F00;
+          font-family: "Alibaba PuHuiTi";
+          font-size: 14px;
+          font-style: normal;
+          font-weight: 400;
+          line-height: 20.839px; /* 148.847% */
+          letter-spacing: 1.488px;
+        }
+      }
+    }
+    .el-checkbox {
+      & + & {
+        margin-left: 10px;
+      }
+      &__inner {
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+        border: 0.5px solid #159AFF;
+        background: rgba(35, 104, 212, 0.20);
+      }
+      &__label {
+        padding-left: 4px;
+        color: var(---, #FFF);
+        font-family: "Microsoft YaHei";
+        font-size: 12px;
+        font-style: normal;
+        font-weight: 400;
+        line-height: 16px;
+      }
+      &.is-checked {
+        .el-checkbox__inner {
+          border-radius: 2px;
+          background: rgba(35, 104, 212, 0.20);
+          box-shadow: 0 0 4px 2px #0BF9FE inset;
+          border: 1px solid #0BF9FE;
+          &::after {
+            border-color: #0BF9FE
+          }
+        }
+        .el-checkbox__label {
+          color: var(---, #FFF);
+        }
+      }
+    }
+
+    .el-select {
+      .el-select__caret {
+        line-height: 40px;
+        color: #159AFF;
+      }
+      .el-tag.el-tag--info {
+        color: #159AFF;
+        background: #002542;
+        border: none;
+      }
+    }
+
+    &.vertical-form .el-form-item__label {
+      margin-bottom: 10px;
+      line-height: 21px;
+    }
+  }
+}
+
+::v-deep .el-date-editor {
+  .el-input__inner {
+    padding-right: 28px !important;
+    padding-left: 28px !important;
+  }
+  .el-input__prefix, .el-input__suffix {
+    color: #159AFF;
+  }
+}
+

@@ -1,0 +1,329 @@
+#map {
+  /* filter: invert(100%) hue-rotate(200deg); background: transparent;
+  filter: grayscale(100%) invert(100%) sepia(15%) hue-rotate(180deg) saturate(1040%) brightness(70%) contrast(90%); */
+}
+.my-custom-icon {
+  width: 66px !important;
+  height: 93px !important;
+  background: rgba(255, 0, 0, 0.5);
+}
+.custom-tooltip.leaflet-tooltip {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  pointer-events: auto
+}
+.custom-tooltip::before {
+  /* display: none !important; */
+}
+.div-custom-tooltip, .div-custom-popup {
+  width: 354px;
+  height: 309px;
+  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat center center;
+}
+.custom-popup .leaflet-popup-content {
+  width: 354px !important;
+  height: 309px !important;
+  margin: 0 !important;
+  margin-top: 20px !important;
+  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat center center;
+}
+.leaflet-popup-tip-container {
+  display: none;
+}
+
+::v-deep .custom-modal1 {
+  position: relative;
+  width: 396px;
+  height: 400px;
+  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat top left;
+  // border: 1px solid #f00;
+  // position: absolute;
+  // top: 400px;
+  // left: 600px;
+  // z-index: 500;
+  &::after {
+    content: "";
+    width: 50px;
+    height: 76px;
+    position: absolute;
+    background: url(~@/assets/images/bi/new/tooltip-line.png) no-repeat bottom right;
+    background-size: 100% 100%;
+    right: 0;
+    bottom: 0;
+  }
+  .title {
+    width: 330px;
+    margin: 18px 9px 0 14px;
+    .text {
+      color: #FFF;
+      font-family: "Alibaba PuHuiTi";
+      font-size: 18px;
+      font-style: normal;
+      font-weight: 400;
+      line-height: normal;
+    }
+    .status {
+      padding: 6px 12px;
+      border-radius: 2px;
+      border: 1px solid #4AB8FF;
+      background: rgba(17, 69, 108, 0.50);
+      color: #6AC5FF;
+      text-align: center;
+      font-family: "Alibaba PuHuiTi";
+      font-size: 12px;
+      font-style: normal;
+      font-weight: 400;
+      line-height: 12px; /* 100% */
+      letter-spacing: 0.857px;
+    }
+  }
+  .list {
+    margin-top: 18px;
+    margin-left: 17px;
+    .item {
+      color: #FFF;
+      font-family: Inter;
+      font-size: 14px;
+      font-style: normal;
+      font-weight: 400;
+      line-height: normal;
+      & + .item {
+        margin-top: 11px;
+      }
+    }
+  }
+  .operation {
+    .span {
+      &[tt1="primary"] {
+        padding: 10px !important;
+        border-radius: 2px;
+        border: 1px solid #74EEFF;
+        color: #159AFF;
+        text-align: center;
+        font-family: "Alibaba PuHuiTi";
+        font-size: 12px;
+        font-style: normal;
+        font-weight: 400;
+        line-height: 12px; /* 100% */
+        letter-spacing: 0.857px;
+        * {
+          color: #159AFF;
+          font-size: 12px;
+        }
+        &.is-disabled {
+          color: #326e9c;
+          background: rgba(9, 45, 72, 0.50);
+          box-shadow: 0 0 4px 0 #224D69 inset;
+        }
+      }
+    }
+  }
+}
+
+::v-deep .leaflet-map-pane {
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+    background: transparent;
+    box-shadow: none;
+  }
+  .leaflet-popup {
+    right: 30px;
+    bottom: 2px !important;
+    left: unset !important;
+  }
+  .leaflet-popup-content-wrapper, .leaflet-popup-content {
+    margin: 0;
+  }
+  .leaflet-marker-pane {
+    .custom-point {
+      position: relative;
+      background: transparent;
+      border: none;
+      .custom-point-img {
+        width: 100%;
+        height: 100%;
+        background: url(~@/assets/images/bi/new/icon.png) no-repeat center center;
+      }
+      &::before {
+        position: absolute;
+        opacity: 0;
+        top: -67px;
+        left: -80.5px;
+        width: 227px;
+        height: 227px;
+        background: url(~@/assets/images/bi/new/icon_bg.png) no-repeat center center;
+        transition: all linear 0.3s;
+        content: '';
+        z-index: -1;
+      }
+      &:hover {
+        &::before {
+          opacity: 1;
+        }
+      }
+    }
+  }
+
+  .leaflet-popup-pane {
+    .custom-modal {
+      position: relative;
+      width: 396px;
+      height: 400px;
+      background: url(~@/assets/images/bi/new/tooltip.png) no-repeat top left;
+      // border: 1px solid #f00;
+      // position: absolute;
+      // top: 400px;
+      // left: 600px;
+      // z-index: 500;
+      &::after {
+        content: "";
+        width: 50px;
+        height: 76px;
+        position: absolute;
+        background: url(~@/assets/images/bi/new/tooltip-line.png) no-repeat bottom right;
+        background-size: 100% 100%;
+        right: 0;
+        bottom: 0;
+      }
+      .title {
+        width: 354px;
+        padding: 18px 9px 0 14px;
+        .text {
+          color: #FFF;
+          font-family: "Alibaba PuHuiTi";
+          font-size: 18px;
+          font-style: normal;
+          font-weight: 400;
+          line-height: normal;
+        }
+        .status {
+          padding: 0 6px;
+          border-radius: 2px;
+          border: 1px solid #4AB8FF;
+          background: rgba(17, 69, 108, 0.50);
+          color: #6AC5FF;
+          text-align: center;
+          font-family: "Alibaba PuHuiTi";
+          font-size: 12px;
+          font-style: normal;
+          font-weight: 400;
+          line-height: 18px; /* 100% */
+          letter-spacing: 0.857px;
+        }
+        .close {
+          font-size: 14px;
+          line-height: 14px;
+          color: rgba(74, 184, 255, 0.8);
+          cursor: pointer;
+          &:hover {
+            color: rgb(90, 185, 248);
+          }
+        }
+      }
+      .list {
+        margin-top: 18px;
+        margin-left: 17px;
+        .item {
+          color: #FFF;
+          font-family: Inter;
+          font-size: 14px;
+          font-style: normal;
+          font-weight: 400;
+          line-height: 17px;
+          & + .item {
+            margin-top: 11px;
+          }
+        }
+      }
+      .operation {
+        button {
+          &[tt1="primary"] {
+            padding: 10px;
+            color: #FFF;
+            text-align: center;
+            font-family: "Alibaba PuHuiTi";
+            font-size: 12px;
+            font-style: normal;
+            font-weight: 400;
+            line-height: 12px; /* 100% */
+            letter-spacing: 0.857px;
+            border-radius: 2px;
+            border: 1px solid #74EEFF;
+            background: rgba(9, 45, 72, 0.50);
+            box-shadow: 0 0 20px 0 #69C4FF inset;
+            cursor: pointer;
+            & + button {
+              margin-left: 10px;
+            }
+          }
+        }
+      }
+    }
+    .leaflet-popup-close-button {
+      display: none;
+    }
+  }
+
+}
+
+// 界面
+::v-deep .oper {
+  position: absolute;
+  top: 50px;
+  left: 460px;
+  z-index: 401;
+  .el-select {
+    &.custom-select {
+    }
+    .el-input__inner {
+      padding: 4px !important;
+      padding-right: 18px !important;
+      height: 26px !important;
+      border-radius: 2px;
+      text-align: center;
+      font-family: "Alibaba PuHuiTi";
+      font-size: 12px;
+      font-style: normal;
+      font-weight: 400;
+      line-height: 16px; /* 100% */
+      letter-spacing: 0.857px;
+      border: none;
+      *, &::placeholder {
+        font-size: 12px;
+      }
+    }
+    &[tt="primary"] {
+      .el-input__inner {
+        color: #fff;
+        font-family: "OPPOSans";
+        border: 1px solid #5d8cdd;
+        text-shadow: 0 1px 0 rgba(0, 22, 35, .2);
+        // background: linear-gradient(0deg rgba(7, 42, 99, .8) 0%, rgba(41, 113, 216, .8) 100%);
+        background: rgba(9, 45, 72, 0.50);
+        &::placeholder {
+          color: #326e9c;
+        }
+      }
+      .el-select__caret {
+        color: #5d8cdd;
+        line-height: 26px !important;
+      }
+    }
+    &[tt="danger"] {
+      .el-input__inner {
+        background: rgba(72, 9, 9, 0.50);
+        box-shadow: 0 0 4px 0 #FF4534 inset;
+        color: #FF4534;
+        * {
+          color: #159AFF;
+        }
+        &::placeholder {
+          color: #bc453a;
+        }
+      }
+      .el-select__caret {
+        color: #FF4534;
+      }
+    }
+  }
+}

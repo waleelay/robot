@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leaflet离线地图 - 16:9宽高比</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+        color: #fff;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .container {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      header {
+        text-align: center;
+        margin-bottom: 30px;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        backdrop-filter: blur(5px);
+      }
+
+      h1 {
+        font-size: 2.5rem;
+        margin-bottom: 10px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+      }
+
+      .description {
+        font-size: 1.1rem;
+        max-width: 800px;
+        margin: 0 auto;
+        line-height: 1.6;
+      }
+
+      .map-container {
+        position: relative;
+        width: 100%;
+        padding-bottom: 56.25%; /* 16:9 宽高比 (9/16 = 0.5625) */
+        background-color: #2c3e50;
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        margin-bottom: 30px;
+      }
+
+      #map {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border-radius: 15px;
+      }
+
+      .controls {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        margin-top: 20px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        padding: 12px 25px;
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(5px);
+      }
+
+      button:hover {
+        background: rgba(255, 255, 255, 0.3);
+        transform: translateY(-2px);
+      }
+
+      .info-panel {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 20px;
+        border-radius: 10px;
+        margin-top: 20px;
+        backdrop-filter: blur(5px);
+      }
+
+      .info-panel h2 {
+        margin-bottom: 15px;
+        text-align: center;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 15px;
+      }
+
+      .feature {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 8px;
+      }
+
+      .feature h3 {
+        margin-bottom: 10px;
+        color: #fdbb2d;
+      }
+
+      footer {
+        margin-top: 30px;
+        text-align: center;
+        padding: 20px;
+        font-size: 0.9rem;
+        opacity: 0.8;
+      }
+
+      @media (max-width: 768px) {
+        h1 {
+          font-size: 2rem;
+        }
+
+        .description {
+          font-size: 1rem;
+        }
+
+        .controls {
+          flex-direction: column;
+          align-items: center;
+        }
+
+        button {
+          width: 100%;
+          max-width: 300px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Leaflet离线地图展示</h1>
+        <p class="description">
+          此页面展示了一个使用Leaflet加载的离线地图，地图容器始终保持16:9的宽高比，并占据整个div区域。您可以缩放、平移地图进行交互。
+        </p>
+      </header>
+
+      <div class="map-container">
+        <div id="map"></div>
+      </div>
+
+      <div class="controls">
+        <button id="zoom-in">放大</button>
+        <button id="zoom-out">缩小</button>
+        <button id="reset-view">重置视图</button>
+        <button id="toggle-satellite">切换地图样式</button>
+      </div>
+
+      <div class="info-panel">
+        <h2>功能特性</h2>
+        <div class="features">
+          <div class="feature">
+            <h3>16:9宽高比</h3>
+            <p>地图容器始终保持16:9的宽高比，适应不同屏幕尺寸。</p>
+          </div>
+          <div class="feature">
+            <h3>离线地图</h3>
+            <p>使用离线地图瓦片，无需网络连接即可查看地图。</p>
+          </div>
+          <div class="feature">
+            <h3>响应式设计</h3>
+            <p>页面布局自适应各种设备屏幕尺寸。</p>
+          </div>
+          <div class="feature">
+            <h3>交互控制</h3>
+            <p>提供缩放、平移和地图样式切换功能。</p>
+          </div>
+        </div>
+      </div>
+
+      <footer>
+        <p>© 2023 Leaflet离线地图演示 | 使用Leaflet.js库</p>
+      </footer>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      // 创建一个单色瓦片图层作为底色
+      const backgroundLayer = L.tileLayer("", {
+        minZoom: 0,
+        maxZoom: 18,
+        tileSize: 256,
+        opacity: 1.0
+      });
+
+      backgroundLayer.createTile = function(coords) {
+        const tile = document.createElement("canvas");
+        tile.width = tile.height = 256;
+        const ctx = tile.getContext("2d");
+
+        // 设置底色
+        ctx.fillStyle = "#050A16"; // 深绿色
+        ctx.fillRect(0, 0, 256, 256);
+
+        return tile;
+      };
+
+      // 初始化地图
+      const map = L.map("map", {
+        center: [30.745482638228058, 106.03737831115724], // 北京坐标
+        zoom: 15,
+        zoomControl: false, // 隐藏默认的缩放控件
+
+        tileSize: 256,
+        opacity: 1.0
+        // 注意：Leaflet本身没有直接的backgroundColor选项
+        // 需要通过其他方式设置
+      });
+      // 设置地图容器背景色（瓦片加载前的底色）
+      // const mapElement = document.getElementById("map");
+      // mapElement.style.backgroundColor = "#050A16";
+
+      // 添加到地图（在其他图层下面）
+      // backgroundLayer.addTo(map);
+      // 添加离线地图图层（使用OpenStreetMap作为示例）
+      // 注意：实际离线地图需要使用本地瓦片或离线瓦片服务
+      const osmLayer = L.tileLayer(
+        // "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "./black/{z}/{x}/{y}.png",
+        {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 18
+        }
+      ).addTo(map);
+      // 使用CSS滤镜调整颜色
+      // osmLayer.getContainer().style.filter =
+      //   "hue-rotate(180deg) saturate(1.5) brightness(0.9)";
+
+      // 添加卫星图层选项
+      const satelliteLayer = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution:
+            "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
+          maxZoom: 18
+        }
+      );
+
+      // 当前图层状态
+      let isSatellite = false;
+
+      // 添加控制按钮功能
+      document.getElementById("zoom-in").addEventListener("click", () => {
+        map.zoomIn();
+      });
+
+      document.getElementById("zoom-out").addEventListener("click", () => {
+        map.zoomOut();
+      });
+
+      document.getElementById("reset-view").addEventListener("click", () => {
+        map.setView([30.745482638228058, 106.03737831115724], 10);
+      });
+
+      document
+        .getElementById("toggle-satellite")
+        .addEventListener("click", () => {
+          if (isSatellite) {
+            map.removeLayer(satelliteLayer);
+            map.addLayer(osmLayer);
+            isSatellite = false;
+          } else {
+            map.removeLayer(osmLayer);
+            map.addLayer(satelliteLayer);
+            isSatellite = true;
+          }
+        });
+
+      // 添加自定义缩放控件
+      L.control
+        .zoom({
+          position: "topright"
+        })
+        .addTo(map);
+
+      // 添加比例尺
+      L.control
+        .scale({
+          imperial: false,
+          position: "bottomleft"
+        })
+        .addTo(map);
+
+      // 添加标记示例
+      const marker = L.marker([30.745482638228058, 106.03737831115724]).addTo(
+        map
+      );
+      marker.bindPopup("<b>南充</b><br>中国西部").openPopup();
+
+      // 响应窗口大小变化，保持地图正确显示
+      window.addEventListener("resize", () => {
+        map.invalidateSize();
+      });
+    </script>
+  </body>
+</html>

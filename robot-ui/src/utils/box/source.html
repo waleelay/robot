@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>视频流管理</title>
+  <link rel="stylesheet" href="https://unpkg.com/layui@2.8.18/dist/css/layui.css">
+  <link rel="stylesheet" href="public/style.css">
+  <script>
+    let ZQLGLOBAL = {
+      serverIp: '192.168.124.94',// 修改成您的盒子aiboxd的IP地址
+      source: `:9091/ks/source`, // 视频源增删改查
+      alg: `:9091/ks/alg`, // 算法列表
+      attr: `:9089/ks/stream/attr`, // 检测视频是否在线
+      group: `:9091/ks/group`, // 底库分组
+    };
+  </script>
+</head>
+
+<body>
+  <div class="layui-container" style="padding: 20px;">
+    <div class="layui-card">
+      <div class="layui-card-header">
+        <h2>视频流管理</h2>
+      </div>
+      <div class="layui-card-body">
+        <!-- 搜索和操作区域 -->
+        <div style="margin-bottom: 20px; display: flex;justify-content: space-between;">
+          <button class="layui-btn layui-btn-primary" id="searchBtn">
+            <i class="layui-icon layui-icon-search"></i> 查询
+          </button>
+          <button class="layui-btn layui-btn-normal" id="addBtn">
+            <i class="layui-icon layui-icon-add-1"></i> 添加数据
+          </button>
+        </div>
+
+        <!-- 表格区域 -->
+        <table id="dataTable" lay-filter="dataTable"></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 表格操作按钮模板 -->
+  <script type="text/html" id="operationBar" lay-filter="dataTable">
+    <a class="layui-btn layui-btn-xs" lay-event="edit">
+        <i class="layui-icon layui-icon-edit"></i> 编辑
+    </a>
+    <a class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del">
+        <i class="layui-icon layui-icon-delete"></i> 删除
+    </a>
+    <input type="checkbox" name="open" lay-skin="switch" lay-filter="switchTest" title="启用|停用" value="{{= d.id }}" {{= d.status == 1 ? "checked" : "" }}>
+  </script>
+
+  <!-- 引入Layui JS -->
+  <script src="https://unpkg.com/layui@2.8.18/dist/layui.js"></script>
+  <script src="public/jquery-1.10.2.min.js"></script>
+  <script src="source.js"></script>
+</body>
+
+</html>

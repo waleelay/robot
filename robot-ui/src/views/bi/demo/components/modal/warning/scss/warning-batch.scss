@@ -1,0 +1,271 @@
+// ::v-deep {
+//   .el-dialog {
+//     margin-top: unset !important;
+//     &__body {
+//       padding: 0;
+//       height: auto;
+//     }
+//   }
+// }
+
+::v-deep .el-select {
+  &.custom-select.warning-modal-select {
+    .el-input__inner {
+      width: 104px;
+      height: 25px;
+      padding: 3px 20px 3px 10px;
+      color: #FFF;
+      text-shadow: 0 1px 0 rgba(0, 22, 35, 0.20);
+      border: none;
+      font-family: OPPOSans;
+      font-size: 12px;
+      font-style: normal;
+      font-weight: 400;
+      line-height: 20px; /* 166.667% */
+      background: url(~@/assets/images/bi/new/select-bg.png) no-repeat top left;
+      background-size: 100% 25px;
+      border-radius: 0;
+    }
+    .el-select__caret {
+      line-height: 25px;
+      color: #7CAFDE;
+    }
+  }
+}
+
+// 手风琴图片
+::v-deep .el-carousel {
+  width: 100%;
+  height: 100%;
+  .el-carousel__item {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    img {
+      max-width: 100%;
+      max-width: 100%;
+      width: auto;
+      height: auto;
+    }
+  }
+  .el-carousel__indicators {
+    display: none;
+  }
+  .el-carousel__arrow {
+    width: 18px;
+    height: 18px;
+    background: #000;
+    border: 0.5px solid #fff;
+    font-size: 9px;
+    &--left {
+      left: 8px;
+    }
+    &--right {
+      right: 8px;
+    }
+  }
+}
+
+.custom-search-div {
+  ::v-deep .el-input {
+    .el-input__prefix {
+      left: 10px;
+      line-height: 30px;
+    }
+    .el-input__inner {
+      height: 30px;
+      height: 30px;
+      padding: 0 10px 0 36px;
+      border-radius: 4px;
+      border: 1px solid #374E69;
+      background: #111B2A;
+      font-weight: 600;
+      &::placeholder {
+        color: #8897AB;
+        font-size: 14px;
+      }
+    }
+  }
+}
+.warning-tab-button {
+  border-radius: 4px ;
+  .tab-button-item {
+    padding: 9px 7px;
+    font-size: 12px;
+    &:first-child {
+      border-radius: 4px 0 0 4px;
+    }
+    &:last-child {
+      border-radius: 0 4px 4px 0;
+    }
+  }
+}
+
+::v-deep .el-button {
+  height: 32px;
+  padding: 9px;
+  border-radius: 4px;
+  border: 1px solid #3C4656;
+  color: #92A0B6;
+  font-family: "Alibaba PuHuiTi";
+  font-size: 12px;
+  line-height: 12px; /* 100% */
+  letter-spacing: 0.857px;
+  background: transparent;
+
+  &.selected-symbol {
+    .svg-icon {
+      color: transparent;
+      border: 1px solid #92A0B6;
+      border-radius: 50%;
+    }
+  }
+  &.selected {
+    border-color: #159AFF !important;
+    .svg-icon {
+      // color: #1389E3;
+      color: #159AFF;
+      border-color: #159AFF;
+    }
+  }
+  &:focus, &.selected, &:not(.is-disabled):hover {
+    border: 1px solid #3C4656;
+    color: #92A0B6;
+    background: transparent;
+  }
+}
+
+.img-b, .img {
+  position: relative;
+  &::before {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    // background: linear-gradient(180deg, rgba(0,0,0,.5) 0%,  rgba(102,102,102,0) 11.75%), url('../images/new-bi/video-bg.png') lightgray 50% / cover no-repeat;
+    background: linear-gradient(180deg, rgba(0,0,0,.5) 0%,  rgba(102,102,102,0) 11.75%);
+    content: '';
+  }
+}
+
+.list-box {
+  position: relative;
+  overflow: hidden auto;
+  &::-webkit-scrollbar {
+    width: 4px;               /* 垂直滚动条宽度 */
+    height: 4px;              /* 水平滚动条高度 */
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #13243A;       /* 轨道颜色 */
+    border-radius: 0px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #223C5F;          /* 滑块颜色 */
+    border-radius: 100px;
+    border: 2px solid #223C5F; /* 创建内边距效果,会覆盖背景值 */
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: #223C5F;          /* 鼠标悬停颜色 */
+  }
+  .item {
+    border-radius: 4px;
+    background: #102036;
+    cursor: pointer;
+    border: 1px solid #102036;
+    & + .item {
+      margin-top: 10px;
+    }
+    .img {
+      width: 112px;
+      height: 63px;
+      border-radius: 4px;
+      background: #3C4656;
+    }
+    .date, .info, .address {
+      font-size: 12px;
+      line-height: 16px;
+    }
+    .date {
+      color: #D0DEEE;
+    }
+    .info {
+      color: #fff;
+    }
+    .address {
+      color: #92A0B6;
+    }
+    .status {
+      padding: 4px;
+      border-radius: 2px;
+      color: #FFF;
+      font-family: "Alibaba PuHuiTi";
+      font-size: 10px;
+      line-height: 12px; /* 120% */
+      letter-spacing: 0.857px;
+      &.error {
+        background: rgba(170, 43, 43, 0.80);
+      }
+      &.success {
+        background: rgba(79, 170, 43, 0.80);
+      }
+      &.primary {
+        background: rgba(43, 102, 170, 0.80);
+      }
+      &.primary-light {
+        background: rgba(26, 141, 164, 0.80);
+      }
+    }
+    .selected-symbol {
+      .svg-icon {
+        color: transparent;
+        border: 1px solid #3C4656;
+        border-radius: 50%;
+      }
+    }
+    &:hover {
+      border: 1px solid #159AFF;
+      background: #0B2951;
+    }
+    &.selected {
+      border: 1px solid #159AFF;
+      background: #0B2951;
+      .svg-icon {
+        // color: #1389E3;
+        color: #159AFF;
+      }
+    }
+  }
+  .page, .download {
+    position: absolute;
+    bottom: 10px;
+    display: none;
+    padding-right: 20px;
+    padding-left: 20px;
+    color: #fff;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 2;
+  }
+  .page {
+    right: 0;
+    left: 0;
+    width: fit-content;
+    margin: auto;
+    line-height: 26px;
+    border-radius: 100px
+  }
+  .download {
+    right: 10px;
+    line-height: 28px;
+    border-radius: 4px;
+  }
+  &:hover {
+    .page, .download {
+      display: block;
+    }
+  }
+}

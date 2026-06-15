@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>四川省地图 - 点击打点连线</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #1a6c2a, #1f7ab2, #2dfdc9);
+        color: #fff;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .container {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      header {
+        text-align: center;
+        margin-bottom: 20px;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        backdrop-filter: blur(5px);
+      }
+
+      h1 {
+        font-size: 2.2rem;
+        margin-bottom: 10px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+      }
+
+      .description {
+        font-size: 1.1rem;
+        max-width: 800px;
+        margin: 0 auto;
+        line-height: 1.6;
+      }
+
+      .map-container {
+        position: relative;
+        width: 100%;
+        padding-bottom: 56.25%; /* 16:9 宽高比 */
+        background-color: #1e3c2c;
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        margin-bottom: 20px;
+      }
+
+      #map {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border-radius: 15px;
+      }
+
+      .controls {
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+        margin: 15px 0;
+        flex-wrap: wrap;
+      }
+
+      button {
+        padding: 10px 20px;
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(5px);
+      }
+
+      button:hover {
+        background: rgba(255, 255, 255, 0.3);
+        transform: translateY(-2px);
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .info-panel {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 20px;
+        border-radius: 10px;
+        margin-top: 20px;
+        backdrop-filter: blur(5px);
+      }
+
+      .info-panel h2 {
+        margin-bottom: 15px;
+        text-align: center;
+      }
+
+      .points-list {
+        max-height: 200px;
+        overflow-y: auto;
+        margin-top: 15px;
+      }
+
+      .point-item {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 10px;
+        margin-bottom: 8px;
+        border-radius: 5px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .point-number {
+        background: #2dfdc9;
+        color: #000;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        margin-right: 10px;
+      }
+
+      .point-coords {
+        font-family: monospace;
+        font-size: 0.9rem;
+      }
+
+      .point-actions {
+        display: flex;
+        gap: 5px;
+      }
+
+      .delete-btn {
+        background: #e74c3c;
+        padding: 5px 10px;
+        font-size: 0.8rem;
+      }
+
+      .stats {
+        display: flex;
+        justify-content: space-around;
+        margin-top: 15px;
+        text-align: center;
+      }
+
+      .stat-item {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 10px;
+        border-radius: 8px;
+        flex: 1;
+        margin: 0 5px;
+      }
+
+      .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #2dfdc9;
+      }
+
+      footer {
+        margin-top: 20px;
+        text-align: center;
+        padding: 15px;
+        font-size: 0.9rem;
+        opacity: 0.8;
+      }
+
+      /* 自定义Leaflet控件样式 */
+      .leaflet-control-zoom a {
+        background: rgba(0, 0, 0, 0.6) !important;
+        color: white !important;
+        border: none !important;
+      }
+
+      .leaflet-control-zoom a:hover {
+        background: rgba(0, 0, 0, 0.8) !important;
+      }
+
+      .leaflet-control-scale-line {
+        background: rgba(0, 0, 0, 0.6) !important;
+        color: white !important;
+        border: none !important;
+      }
+
+      .map-loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1000;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 20px 30px;
+        border-radius: 10px;
+        color: white;
+        font-size: 1.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>四川省地图 - 点击打点连线</h1>
+        <p class="description">
+          点击地图上的任意位置添加标记点，系统会自动按顺序连接所有点形成路径
+        </p>
+      </header>
+
+      <div class="controls">
+        <button id="start-drawing">开始绘制</button>
+        <button id="clear-all" disabled>清除所有</button>
+        <button id="toggle-satellite">切换卫星图</button>
+        <button id="calculate-distance" disabled>计算距离</button>
+      </div>
+
+      <div class="map-container">
+        <div id="map"></div>
+        <div class="map-loading" id="loading">地图加载中...</div>
+      </div>
+
+      <div class="info-panel">
+        <h2>标记点信息</h2>
+        <div class="points-list" id="points-list">
+          <div style="text-align: center; padding: 20px; opacity: 0.7;">
+            暂无标记点，点击"开始绘制"后在地图上点击添加点
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat-item">
+            <div class="stat-value" id="points-count">0</div>
+            <div>标记点数量</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="total-distance">0</div>
+            <div>总距离(km)</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="avg-distance">0</div>
+            <div>平均距离(km)</div>
+          </div>
+        </div>
+      </div>
+
+      <footer>
+        <p>© 2023 四川省地图演示 | 使用Leaflet.js库</p>
+      </footer>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      // 初始化地图
+      const map = L.map("map", {
+        center: [30.745482638228058, 106.03737831115724], // 四川省南充市
+        zoom: 8,
+        zoomControl: false
+      });
+
+      // 设置地图容器背景色
+      const mapElement = document.getElementById("map");
+      mapElement.style.backgroundColor = "#1e3c2c";
+
+      // 创建自定义离线瓦片图层
+      const offlineTiles = L.tileLayer("", {
+        minZoom: 0,
+        maxZoom: 18,
+        tileSize: 256,
+        opacity: 0.8
+      });
+
+      offlineTiles.createTile = function(coords) {
+        const tile = document.createElement("canvas");
+        tile.width = tile.height = 256;
+        const ctx = tile.getContext("2d");
+
+        // 计算当前瓦片对应的经纬度范围
+        const n = 180 - (coords.y / Math.pow(2, coords.z)) * 360;
+        const lng = n - 180;
+        const lat = (coords.x / Math.pow(2, coords.z)) * 360 - 90;
+
+        // 判断是否在四川省范围内
+        const isInSichuan =
+          lng >= 97.0 && lng <= 110.0 && lat >= 26.0 && lat <= 34.5;
+
+        if (isInSichuan) {
+          // 四川省区域 - 绿色主题
+          ctx.fillStyle = "#2e8b57";
+          ctx.fillRect(0, 0, 256, 256);
+
+          // 添加纹理
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+          ctx.lineWidth = 1;
+          for (let i = 0; i < 256; i += 16) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i, 256);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, i);
+            ctx.lineTo(256, i);
+            ctx.stroke();
+          }
+
+          // 添加四川省标识
+          ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+          ctx.font = "bold 16px Arial";
+          ctx.fillText("四川", 100, 130);
+        } else {
+          // 其他区域
+          const colors = ["#4682b4", "#5f9ea0", "#6495ed"];
+          const color = colors[(coords.x + coords.y) % colors.length];
+          ctx.fillStyle = color;
+          ctx.fillRect(0, 0, 256, 256);
+
+          // 网格线
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(0, 0, 256, 256);
+        }
+
+        // 绘制坐标信息
+        ctx.fillStyle = "white";
+        ctx.font = "10px Arial";
+        ctx.fillText(`x:${coords.x} y:${coords.y} z:${coords.z}`, 5, 15);
+        ctx.fillText(`经度: ${lng.toFixed(2)}`, 5, 30);
+        ctx.fillText(`纬度: ${lat.toFixed(2)}`, 5, 45);
+
+        return tile;
+      };
+
+      offlineTiles.addTo(map);
+
+      // 添加卫星图层选项
+      const satelliteLayer = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution: "Tiles &copy; Esri",
+          maxZoom: 18
+        }
+      );
+
+      // 当前图层状态
+      let isSatellite = false;
+
+      // 绘制状态和数据结构
+      let isDrawing = false;
+      let points = [];
+      let markers = [];
+      let polyline = null;
+
+      // DOM元素
+      const startDrawingBtn = document.getElementById("start-drawing");
+      const clearAllBtn = document.getElementById("clear-all");
+      const toggleSatelliteBtn = document.getElementById("toggle-satellite");
+      const calculateDistanceBtn = document.getElementById(
+        "calculate-distance"
+      );
+      const pointsList = document.getElementById("points-list");
+      const pointsCount = document.getElementById("points-count");
+      const totalDistance = document.getElementById("total-distance");
+      const avgDistance = document.getElementById("avg-distance");
+
+      // 添加自定义缩放控件
+      L.control
+        .zoom({
+          position: "topright"
+        })
+        .addTo(map);
+
+      // 添加比例尺
+      L.control
+        .scale({
+          imperial: false,
+          position: "bottomleft"
+        })
+        .addTo(map);
+
+      // 地图点击事件
+      map.on("click", function(e) {
+        if (!isDrawing) return;
+
+        addPoint(e.latlng);
+      });
+
+      // 添加点函数
+      function addPoint(latlng) {
+        const pointNumber = points.length + 1;
+
+        // 创建标记
+        const marker = L.marker(latlng)
+          .addTo(map)
+          .bindPopup(
+            `<b>点 ${pointNumber}</b><br>纬度: ${latlng.lat.toFixed(
+              6
+            )}<br>经度: ${latlng.lng.toFixed(6)}`
+          )
+          .openPopup();
+
+        // 添加编号到标记
+        const numberIcon = L.divIcon({
+          html: `<div style="background-color: #e74c3c; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white;">${pointNumber}</div>`,
+          className: "number-icon",
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+
+        L.marker(latlng, { icon: numberIcon, zIndexOffset: 1000 }).addTo(map);
+
+        // 保存点数据
+        points.push(latlng);
+        markers.push(marker);
+
+        // 更新连线
+        updatePolyline();
+
+        // 更新UI
+        updatePointsList();
+        updateStats();
+
+        // 启用清除按钮
+        clearAllBtn.disabled = false;
+        calculateDistanceBtn.disabled = points.length < 2;
+      }
+
+      // 更新连线
+      function updatePolyline() {
+        // 移除旧的连线
+        if (polyline) {
+          map.removeLayer(polyline);
+        }
+
+        // 如果有两个或以上点，创建连线
+        if (points.length >= 2) {
+          polyline = L.polyline(points, {
+            color: "#e74c3c",
+            weight: 4,
+            opacity: 0.7,
+            smoothFactor: 1
+          }).addTo(map);
+        }
+      }
+
+      // 更新点列表
+      function updatePointsList() {
+        if (points.length === 0) {
+          pointsList.innerHTML =
+            '<div style="text-align: center; padding: 20px; opacity: 0.7;">暂无标记点，点击"开始绘制"后在地图上点击添加点</div>';
+          return;
+        }
+
+        pointsList.innerHTML = "";
+        points.forEach((point, index) => {
+          const pointItem = document.createElement("div");
+          pointItem.className = "point-item";
+          pointItem.innerHTML = `
+                    <div style="display: flex; align-items: center;">
+                        <div class="point-number">${index + 1}</div>
+                        <div class="point-coords">纬度: ${point.lat.toFixed(
+                          6
+                        )}<br>经度: ${point.lng.toFixed(6)}</div>
+                    </div>
+                    <div class="point-actions">
+                        <button class="delete-btn" data-index="${index}">删除</button>
+                    </div>
+                `;
+          pointsList.appendChild(pointItem);
+        });
+
+        // 添加删除事件
+        document.querySelectorAll(".delete-btn").forEach(btn => {
+          btn.addEventListener("click", function() {
+            const index = parseInt(this.getAttribute("data-index"));
+            deletePoint(index);
+          });
+        });
+      }
+
+      // 删除点
+      function deletePoint(index) {
+        // 移除标记
+        map.removeLayer(markers[index]);
+
+        // 从数组中移除
+        points.splice(index, 1);
+        markers.splice(index, 1);
+
+        // 重新编号剩余的点
+        markers.forEach((marker, i) => {
+          marker.setPopupContent(
+            `<b>点 ${i + 1}</b><br>纬度: ${points[i].lat.toFixed(
+              6
+            )}<br>经度: ${points[i].lng.toFixed(6)}`
+          );
+        });
+
+        // 更新连线
+        updatePolyline();
+
+        // 更新UI
+        updatePointsList();
+        updateStats();
+
+        // 如果没有点了，禁用按钮
+        if (points.length === 0) {
+          clearAllBtn.disabled = true;
+          calculateDistanceBtn.disabled = true;
+        } else {
+          calculateDistanceBtn.disabled = points.length < 2;
+        }
+      }
+
+      // 更新统计信息
+      function updateStats() {
+        pointsCount.textContent = points.length;
+
+        if (points.length < 2) {
+          totalDistance.textContent = "0";
+          avgDistance.textContent = "0";
+          return;
+        }
+
+        // 计算总距离
+        let dist = 0;
+        for (let i = 1; i < points.length; i++) {
+          dist += map.distance(points[i - 1], points[i]);
+        }
+
+        const totalKm = (dist / 1000).toFixed(2);
+        const avgKm = (dist / 1000 / (points.length - 1)).toFixed(2);
+
+        totalDistance.textContent = totalKm;
+        avgDistance.textContent = avgKm;
+      }
+
+      // 清除所有点
+      function clearAllPoints() {
+        // 移除所有标记
+        markers.forEach(marker => {
+          map.removeLayer(marker);
+        });
+
+        // 移除连线
+        if (polyline) {
+          map.removeLayer(polyline);
+          polyline = null;
+        }
+
+        // 清空数组
+        points = [];
+        markers = [];
+
+        // 更新UI
+        updatePointsList();
+        updateStats();
+
+        // 禁用按钮
+        clearAllBtn.disabled = true;
+        calculateDistanceBtn.disabled = true;
+      }
+
+      // 事件监听
+      startDrawingBtn.addEventListener("click", function() {
+        isDrawing = !isDrawing;
+        if (isDrawing) {
+          this.textContent = "停止绘制";
+          this.style.background = "#e74c3c";
+          map.getElement().style.cursor = "crosshair";
+        } else {
+          this.textContent = "开始绘制";
+          this.style.background = "";
+          map.getElement().style.cursor = "";
+        }
+      });
+
+      clearAllBtn.addEventListener("click", clearAllPoints);
+
+      toggleSatelliteBtn.addEventListener("click", function() {
+        if (isSatellite) {
+          map.removeLayer(satelliteLayer);
+          map.addLayer(offlineTiles);
+          isSatellite = false;
+          this.textContent = "切换卫星图";
+        } else {
+          map.removeLayer(offlineTiles);
+          map.addLayer(satelliteLayer);
+          isSatellite = true;
+          this.textContent = "切换离线图";
+        }
+      });
+
+      calculateDistanceBtn.addEventListener("click", function() {
+        if (points.length < 2) return;
+
+        updateStats();
+        alert(
+          `总距离: ${totalDistance.textContent} km\n平均段距离: ${avgDistance.textContent} km`
+        );
+      });
+
+      // 响应窗口大小变化
+      window.addEventListener("resize", () => {
+        map.invalidateSize();
+      });
+
+      // 模拟地图加载完成
+      setTimeout(() => {
+        document.getElementById("loading").style.display = "none";
+      }, 1000);
+    </script>
+  </body>
+</html>

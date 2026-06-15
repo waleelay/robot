@@ -1,0 +1,53 @@
+{
+    "code": "0",
+    "message": "success",
+    "data": {
+        "path": {
+            "id": 8,
+            "pathCode": "PATH-0005",
+            "pathName": "testB",
+            "mapId": 7,
+            "enabled": true,
+            "remark": null
+        },
+        "points": [
+            {
+                "id": 39,
+                "pathId": 8,
+                "mapPointId": 25,
+                "pointOrder": 1
+            },
+            {
+                "id": 40,
+                "pathId": 8,
+                "mapPointId": 30,
+                "pointOrder": 2
+            },
+            {
+                "id": 41,
+                "pathId": 8,
+                "mapPointId": 26,
+                "pointOrder": 3
+            },
+            {
+                "id": 42,
+                "pathId": 8,
+                "mapPointId": 27,
+                "pointOrder": 4
+            },
+            {
+                "id": 43,
+                "pathId": 8,
+                "mapPointId": 28,
+                "pointOrder": 5
+            },
+            {
+                "id": 44,
+                "pathId": 8,
+                "mapPointId": 29,
+                "pointOrder": 6
+            }
+        ]
+    },
+    "traceId": ""
+}

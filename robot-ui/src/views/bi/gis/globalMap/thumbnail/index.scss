@@ -1,0 +1,54 @@
+/* 缩略图（鹰眼图）容器 - 悬浮在右下角 */
+.overview-container {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 260px;
+  height: 200px;
+  background: white;
+  border: 2px solid #2196F3;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  z-index: 1000;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  &:hover {
+    width: 300px;
+    height: 230px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+  }
+  .overview-header {
+    background: #2196F3;
+    color: white;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: move;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  
+    span:first-child {
+      font-size: 13px;
+    }
+    .toggle-btn {
+      background: rgba(255,255,255,0.3);
+      border: none;
+      color: white;
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      transition: background 0.2s;
+      &:hover {
+        background: rgba(255,255,255,0.5);
+      }
+    }
+  }
+  #overviewMap {
+    width: 100%;
+    height: calc(100% - 32px);
+    background: #f0f0f0;
+  }
+}
+

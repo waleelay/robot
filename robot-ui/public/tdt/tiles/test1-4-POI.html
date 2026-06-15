@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leaflet离线地图 - 16:9宽高比</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+        color: #fff;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .container {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      header {
+        text-align: center;
+        margin-bottom: 30px;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        backdrop-filter: blur(5px);
+      }
+
+      h1 {
+        font-size: 2.5rem;
+        margin-bottom: 10px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+      }
+
+      .description {
+        font-size: 1.1rem;
+        max-width: 800px;
+        margin: 0 auto;
+        line-height: 1.6;
+      }
+
+      .map-container {
+        position: relative;
+        width: 100%;
+        padding-bottom: 56.25%; /* 16:9 宽高比 (9/16 = 0.5625) */
+        background-color: #2c3e50;
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        margin-bottom: 30px;
+      }
+
+      #map {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border-radius: 15px;
+      }
+
+      .controls {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        margin-top: 20px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        padding: 12px 25px;
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(5px);
+      }
+
+      button:hover {
+        background: rgba(255, 255, 255, 0.3);
+        transform: translateY(-2px);
+      }
+
+      button.active {
+        background: rgba(255, 255, 255, 0.4);
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+      }
+
+      .info-panel {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 20px;
+        border-radius: 10px;
+        margin-top: 20px;
+        backdrop-filter: blur(5px);
+      }
+
+      .info-panel h2 {
+        margin-bottom: 15px;
+        text-align: center;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 15px;
+      }
+
+      .feature {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 8px;
+      }
+
+      .feature h3 {
+        margin-bottom: 10px;
+        color: #fdbb2d;
+      }
+
+      footer {
+        margin-top: 30px;
+        text-align: center;
+        padding: 20px;
+        font-size: 0.9rem;
+        opacity: 0.8;
+      }
+
+      @media (max-width: 768px) {
+        h1 {
+          font-size: 2rem;
+        }
+
+        .description {
+          font-size: 1rem;
+        }
+
+        .controls {
+          flex-direction: column;
+          align-items: center;
+        }
+
+        button {
+          width: 100%;
+          max-width: 300px;
+        }
+      }
+
+      /* 绘制状态指示器 */
+      .drawing-status {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 10px 15px;
+        border-radius: 5px;
+        z-index: 1000;
+        font-size: 14px;
+      }
+
+      .drawing-status.active {
+        background: rgba(46, 204, 113, 0.7);
+      }
+
+      /* 点信息面板 */
+      .points-panel {
+        position: absolute;
+        top: 50px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 15px;
+        border-radius: 5px;
+        z-index: 1000;
+        max-width: 300px;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      .point-item {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 8px;
+        margin-bottom: 5px;
+        border-radius: 3px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+
+      .point-item:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+
+      .point-number {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        background: #e74c3c;
+        border-radius: 50%;
+        text-align: center;
+        line-height: 20px;
+        margin-right: 8px;
+        font-weight: bold;
+      }
+
+      .poi-info {
+        margin-top: 5px;
+        padding: 5px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        font-size: 11px;
+      }
+
+      .poi-loading {
+        color: #fdbb2d;
+        font-style: italic;
+      }
+
+      .poi-error {
+        color: #e74c3c;
+        font-style: italic;
+      }
+
+      /* POI详情弹窗 */
+      .poi-detail {
+        max-width: 250px;
+      }
+
+      .poi-detail h4 {
+        margin: 0 0 8px 0;
+        color: #2c3e50;
+      }
+
+      .poi-detail p {
+        margin: 4px 0;
+        font-size: 13px;
+      }
+
+      .poi-category {
+        display: inline-block;
+        background: #3498db;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        margin-right: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Leaflet离线地图展示</h1>
+        <p class="description">
+          此页面展示了一个使用Leaflet加载的离线地图，地图容器始终保持16:9的宽高比，并占据整个div区域。您可以缩放、平移地图进行交互。
+        </p>
+      </header>
+
+      <div class="map-container">
+        <div id="map"></div>
+        <div class="drawing-status" id="drawingStatus">绘制模式: 关闭</div>
+        <div class="points-panel" id="pointsPanel" style="display: none;">
+          <h4 style="margin-bottom: 10px; text-align: center;">标记点列表</h4>
+          <div id="pointsList"></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="toggle-drawing">开始绘制</button>
+        <button id="zoom-in">放大</button>
+        <button id="zoom-out">缩小</button>
+        <button id="reset-view">重置视图</button>
+        <button id="clear-points">清除标记</button>
+        <button id="toggle-satellite">切换地图样式</button>
+        <button id="get-poi">获取POI信息</button>
+      </div>
+
+      <div class="info-panel">
+        <h2>功能特性</h2>
+        <div class="features">
+          <div class="feature">
+            <h3>16:9宽高比</h3>
+            <p>地图容器始终保持16:9的宽高比，适应不同屏幕尺寸。</p>
+          </div>
+          <div class="feature">
+            <h3>离线地图</h3>
+            <p>使用离线地图瓦片，无需网络连接即可查看地图。</p>
+          </div>
+          <div class="feature">
+            <h3>点击绘制</h3>
+            <p>点击地图添加标记点，自动连线形成路径。</p>
+          </div>
+          <div class="feature">
+            <h3>POI信息</h3>
+            <p>点击标记点获取周边兴趣点信息。</p>
+          </div>
+        </div>
+      </div>
+
+      <footer>
+        <p>© 2023 Leaflet离线地图演示 | 使用Leaflet.js库</p>
+      </footer>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      // 初始化地图
+      const map = L.map("map", {
+        center: [30.745482638228058, 106.03737831115724],
+        zoom: 15,
+        zoomControl: false
+      });
+
+      // 添加离线地图图层
+      const osmLayer = L.tileLayer("./black/{z}/{x}/{y}.png", {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 18
+      }).addTo(map);
+
+      // 添加卫星图层选项
+      const satelliteLayer = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution:
+            "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
+          maxZoom: 18
+        }
+      );
+
+      // 当前图层状态
+      let isSatellite = false;
+
+      // 绘制相关变量
+      let isDrawing = false;
+      let markers = [];
+      let polylines = [];
+      let points = [];
+
+      // DOM元素
+      const toggleDrawingBtn = document.getElementById("toggle-drawing");
+      const drawingStatus = document.getElementById("drawingStatus");
+      const pointsPanel = document.getElementById("pointsPanel");
+      const pointsList = document.getElementById("pointsList");
+      const clearPointsBtn = document.getElementById("clear-points");
+      const getPoiBtn = document.getElementById("get-poi");
+
+      // 添加标记示例
+      const marker = L.marker([30.745482638228058, 106.03737831115724]).addTo(
+        map
+      );
+      marker.bindPopup("<b>南充</b><br>中国西部").openPopup();
+
+      // 地图点击事件
+      map.on("click", function(e) {
+        if (!isDrawing) return;
+
+        addPoint(e.latlng);
+      });
+
+      // 添加点函数
+      function addPoint(latlng) {
+        const pointNumber = points.length + 1;
+
+        // 创建主标记
+        const marker = L.marker(latlng).addTo(map);
+
+        // 创建编号标记
+        const numberIcon = L.divIcon({
+          html: `<div style="background-color: #e74c3c; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white;">${pointNumber}</div>`,
+          className: "number-icon",
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+
+        const numberMarker = L.marker(latlng, {
+          icon: numberIcon,
+          zIndexOffset: 1000
+        }).addTo(map);
+
+        // 绑定弹出窗口
+        marker.bindPopup(`
+          <div class="poi-detail">
+            <h4>标记点 ${pointNumber}</h4>
+            <p><strong>坐标:</strong> ${latlng.lat.toFixed(
+              6
+            )}, ${latlng.lng.toFixed(6)}</p>
+            <p><strong>状态:</strong> <span class="poi-loading">点击获取POI信息</span></p>
+            <div style="margin-top: 10px;">
+              <button onclick="getPoiInfo(${
+                points.length
+              })" style="padding: 5px 10px; background: #3498db; color: white; border: none; border-radius: 3px; cursor: pointer; margin-right: 5px;">获取POI</button>
+              <button onclick="removePoint(${
+                points.length
+              })" style="padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer;">删除</button>
+            </div>
+          </div>
+        `);
+
+        // 保存点数据
+        points.push(latlng);
+        markers.push({
+          main: marker,
+          number: numberMarker,
+          poiData: null,
+          poiLoading: false
+        });
+
+        // 更新连线
+        updatePolylines();
+
+        // 更新点列表
+        updatePointsList();
+      }
+
+      // 获取POI信息
+      async function getPoiInfo(index) {
+        if (index >= points.length) return;
+
+        const point = points[index];
+        const markerData = markers[index];
+
+        if (markerData.poiLoading) return;
+
+        markerData.poiLoading = true;
+
+        // 更新弹出窗口显示加载状态
+        markers[index].main.setPopupContent(`
+          <div class="poi-detail">
+            <h4>标记点 ${index + 1}</h4>
+            <p><strong>坐标:</strong> ${point.lat.toFixed(
+              6
+            )}, ${point.lng.toFixed(6)}</p>
+            <p><strong>状态:</strong> <span class="poi-loading">正在获取POI信息...</span></p>
+          </div>
+        `);
+
+        try {
+          // 使用Nominatim API获取反向地理编码信息
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${point.lat}&lon=${point.lng}&zoom=18&addressdetails=1`
+          );
+
+          if (!response.ok) {
+            throw new Error("网络请求失败");
+          }
+
+          const data = await response.json();
+
+          // 模拟一些周边POI数据（实际应用中可以根据需要扩展）
+          const poiData = {
+            address: data.address || {},
+            displayName: data.display_name || "未知地点",
+            category: getPoiCategory(data),
+            nearbyPlaces: generateNearbyPlaces(data)
+          };
+
+          markerData.poiData = poiData;
+          markerData.poiLoading = false;
+
+          // 更新弹出窗口显示POI信息
+          updatePoiPopup(index);
+
+          // 更新点列表
+          updatePointsList();
+        } catch (error) {
+          console.error("获取POI信息失败:", error);
+          markerData.poiLoading = false;
+
+          markers[index].main.setPopupContent(`
+            <div class="poi-detail">
+              <h4>标记点 ${index + 1}</h4>
+              <p><strong>坐标:</strong> ${point.lat.toFixed(
+                6
+              )}, ${point.lng.toFixed(6)}</p>
+              <p><strong>状态:</strong> <span class="poi-error">获取POI信息失败</span></p>
+              <div style="margin-top: 10px;">
+                <button onclick="getPoiInfo(${index})" style="padding: 5px 10px; background: #3498db; color: white; border: none; border-radius: 3px; cursor: pointer; margin-right: 5px;">重试</button>
+                <button onclick="removePoint(${index})" style="padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer;">删除</button>
+              </div>
+            </div>
+          `);
+        }
+      }
+
+      // 获取POI类别
+      function getPoiCategory(data) {
+        if (!data.address) return "其他";
+
+        if (data.address.road) return "道路";
+        if (data.address.building) return "建筑";
+        if (data.address.shop) return "商店";
+        if (data.address.amenity) return "设施";
+        if (data.address.leisure) return "休闲";
+        if (data.address.tourism) return "旅游";
+        if (data.address.natural) return "自然";
+        return "其他";
+      }
+
+      // 生成周边地点信息（模拟数据）
+      function generateNearbyPlaces(data) {
+        const places = [];
+        const types = ["餐厅", "商店", "银行", "学校", "医院", "公园", "酒店"];
+
+        // 随机生成2-4个周边地点
+        const count = Math.floor(Math.random() * 3) + 2;
+        for (let i = 0; i < count; i++) {
+          places.push({
+            name: `${types[Math.floor(Math.random() * types.length)]}${i + 1}`,
+            distance: (Math.random() * 500 + 50).toFixed(0),
+            type: types[Math.floor(Math.random() * types.length)]
+          });
+        }
+
+        return places;
+      }
+
+      // 更新POI弹出窗口
+      function updatePoiPopup(index) {
+        const point = points[index];
+        const markerData = markers[index];
+        const poiData = markerData.poiData;
+
+        if (!poiData) return;
+
+        let popupContent = `
+          <div class="poi-detail">
+            <h4>标记点 ${index + 1}</h4>
+            <p><strong>位置:</strong> ${poiData.displayName.split(",")[0]}</p>
+            <p><span class="poi-category">${poiData.category}</span></p>
+        `;
+
+        // 添加地址信息
+        if (poiData.address.road) {
+          popupContent += `<p><strong>道路:</strong> ${poiData.address.road}</p>`;
+        }
+        if (poiData.address.neighbourhood) {
+          popupContent += `<p><strong>区域:</strong> ${poiData.address.neighbourhood}</p>`;
+        }
+
+        // 添加周边地点
+        if (poiData.nearbyPlaces && poiData.nearbyPlaces.length > 0) {
+          popupContent += `<p><strong>周边地点:</strong></p><ul style="margin: 5px 0; padding-left: 15px; font-size: 12px;">`;
+          poiData.nearbyPlaces.forEach(place => {
+            popupContent += `<li>${place.name} (${place.distance}米)</li>`;
+          });
+          popupContent += `</ul>`;
+        }
+
+        popupContent += `
+          <div style="margin-top: 10px;">
+            <button onclick="getPoiInfo(${index})" style="padding: 5px 10px; background: #3498db; color: white; border: none; border-radius: 3px; cursor: pointer; margin-right: 5px;">刷新</button>
+            <button onclick="removePoint(${index})" style="padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer;">删除</button>
+          </div>
+        </div>`;
+
+        markers[index].main.setPopupContent(popupContent);
+        markers[index].main.openPopup();
+      }
+
+      // 更新连线
+      function updatePolylines() {
+        // 清除所有连线
+        polylines.forEach(polyline => {
+          map.removeLayer(polyline);
+        });
+        polylines = [];
+
+        // 如果有两个或以上点，创建连线
+        if (points.length >= 2) {
+          const polyline = L.polyline(points, {
+            color: "#e74c3c",
+            weight: 4,
+            opacity: 0.7,
+            smoothFactor: 1
+          }).addTo(map);
+          polylines.push(polyline);
+        }
+      }
+
+      // 更新点列表
+      function updatePointsList() {
+        if (points.length === 0) {
+          pointsList.innerHTML =
+            '<div style="text-align: center; opacity: 0.7;">暂无标记点</div>';
+          pointsPanel.style.display = "none";
+          return;
+        }
+
+        pointsPanel.style.display = "block";
+        pointsList.innerHTML = "";
+
+        points.forEach((point, index) => {
+          const markerData = markers[index];
+          const pointItem = document.createElement("div");
+          pointItem.className = "point-item";
+          pointItem.onclick = () => {
+            markers[index].main.openPopup();
+            map.setView(point, 16);
+          };
+
+          let poiInfo = "";
+          if (markerData.poiData) {
+            const mainName = markerData.poiData.displayName.split(",")[0];
+            poiInfo = `<div class="poi-info">📍 ${mainName}</div>`;
+          } else if (markerData.poiLoading) {
+            poiInfo = `<div class="poi-info poi-loading">正在获取POI信息...</div>`;
+          } else {
+            poiInfo = `<div class="poi-info">点击获取POI信息</div>`;
+          }
+
+          pointItem.innerHTML = `
+            <div>
+              <div class="point-number">${index + 1}</div>
+              纬度: ${point.lat.toFixed(6)}<br>
+              经度: ${point.lng.toFixed(6)}
+              ${poiInfo}
+            </div>
+          `;
+          pointsList.appendChild(pointItem);
+        });
+      }
+
+      // 删除点
+      function removePoint(index) {
+        // 移除标记
+        map.removeLayer(markers[index].main);
+        map.removeLayer(markers[index].number);
+
+        // 从数组中移除
+        points.splice(index, 1);
+        markers.splice(index, 1);
+
+        // 重新编号剩余的点
+        markers.forEach((marker, i) => {
+          const newNumber = i + 1;
+          marker.number.setIcon(
+            L.divIcon({
+              html: `<div style="background-color: #e74c3c; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white;">${newNumber}</div>`,
+              className: "number-icon",
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
+            })
+          );
+        });
+
+        // 更新连线
+        updatePolylines();
+
+        // 更新点列表
+        updatePointsList();
+      }
+
+      // 清除所有点
+      function clearAllPoints() {
+        // 移除所有标记
+        markers.forEach(marker => {
+          map.removeLayer(marker.main);
+          map.removeLayer(marker.number);
+        });
+
+        // 移除所有连线
+        polylines.forEach(polyline => {
+          map.removeLayer(polyline);
+        });
+
+        // 清空数组
+        points = [];
+        markers = [];
+        polylines = [];
+
+        // 更新点列表
+        updatePointsList();
+      }
+
+      // 为所有点获取POI信息
+      function getAllPoiInfo() {
+        points.forEach((point, index) => {
+          if (!markers[index].poiData && !markers[index].poiLoading) {
+            setTimeout(() => {
+              getPoiInfo(index);
+            }, index * 1000); // 间隔1秒依次获取，避免请求过于频繁
+          }
+        });
+      }
+
+      // 切换绘制模式
+      toggleDrawingBtn.addEventListener("click", function() {
+        isDrawing = !isDrawing;
+
+        if (isDrawing) {
+          this.textContent = "停止绘制";
+          this.classList.add("active");
+          drawingStatus.textContent = "绘制模式: 开启 - 点击地图添加标记点";
+          drawingStatus.classList.add("active");
+          map.getContainer().style.cursor = "crosshair";
+        } else {
+          this.textContent = "开始绘制";
+          this.classList.remove("active");
+          drawingStatus.textContent = "绘制模式: 关闭";
+          drawingStatus.classList.remove("active");
+          map.getContainer().style.cursor = "";
+        }
+      });
+
+      // 清除标记点
+      clearPointsBtn.addEventListener("click", clearAllPoints);
+
+      // 获取所有POI信息
+      getPoiBtn.addEventListener("click", getAllPoiInfo);
+
+      // 添加控制按钮功能
+      document.getElementById("zoom-in").addEventListener("click", () => {
+        map.zoomIn();
+      });
+
+      document.getElementById("zoom-out").addEventListener("click", () => {
+        map.zoomOut();
+      });
+
+      document.getElementById("reset-view").addEventListener("click", () => {
+        map.setView([30.745482638228058, 106.03737831115724], 15);
+      });
+
+      document
+        .getElementById("toggle-satellite")
+        .addEventListener("click", () => {
+          if (isSatellite) {
+            map.removeLayer(satelliteLayer);
+            map.addLayer(osmLayer);
+            isSatellite = false;
+          } else {
+            map.removeLayer(osmLayer);
+            map.addLayer(satelliteLayer);
+            isSatellite = true;
+          }
+        });
+
+      // 添加自定义缩放控件
+      L.control
+        .zoom({
+          position: "topright"
+        })
+        .addTo(map);
+
+      // 添加比例尺
+      L.control
+        .scale({
+          imperial: false,
+          position: "bottomleft"
+        })
+        .addTo(map);
+
+      // 响应窗口大小变化，保持地图正确显示
+      window.addEventListener("resize", () => {
+        map.invalidateSize();
+      });
+
+      // 使函数在全局可访问
+      window.removePoint = removePoint;
+      window.getPoiInfo = getPoiInfo;
+    </script>
+  </body>
+</html>
