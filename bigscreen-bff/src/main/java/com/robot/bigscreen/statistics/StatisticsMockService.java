@@ -69,10 +69,10 @@ public class StatisticsMockService {
 
     private Map<String, Object> kpis(StatsScenario scenario) {
         Map<String, Object> kpis = new LinkedHashMap<>();
-        putKpi(kpis, kpi("taskTotal", "任务执行总数", scaleInt(288, scenario), "个", scenario.compareLabel(), scenario.taskCompare(), scenario.trend(scenario.taskCompare())));
-        putKpi(kpis, kpi("patrolMileage", "总巡逻里程", scaleDouble(356.8, scenario), "KM", scenario.compareLabel(), scenario.mileageCompare(), scenario.trend(scenario.mileageCompare())));
-        putKpi(kpis, kpi("aiAlarmTotal", "AI自动识别异常数", scaleInt(286, scenario), "个", scenario.compareLabel(), scenario.alarmCompare(), scenario.trend(scenario.alarmCompare())));
-        putKpi(kpis, kpi("autoHandleSuccessRate", "自动处置成功率", scenario.successRate(), "%", scenario.compareLabel(), scenario.successCompare(), scenario.trend(scenario.successCompare())));
+        kpis.put("taskTotal", kpi(scaleInt(288, scenario), scenario.taskCompare()));
+        kpis.put("patrolMileage", kpi(scaleDouble(356.8, scenario), scenario.mileageCompare()));
+        kpis.put("aiAlarmTotal", kpi(scaleInt(286, scenario), scenario.alarmCompare()));
+        kpis.put("autoHandleSuccessRate", kpi(scenario.successRate(), scenario.successCompare()));
         return kpis;
     }
 
@@ -199,20 +199,10 @@ public class StatisticsMockService {
         return pdf.toString().getBytes(StandardCharsets.US_ASCII);
     }
 
-    private Map<String, Object> kpi(String code, String name, Object value, String unit,
-            String compareLabel, Number compareRate, String trend) {
+    private Map<String, Object> kpi(Object value, Number compareRate) {
         return object(
-                "code", code,
-                "name", name,
                 "value", value,
-                "unit", unit,
-                "compareLabel", compareLabel,
-                "compareRate", compareRate,
-                "trend", trend);
-    }
-
-    private void putKpi(Map<String, Object> kpis, Map<String, Object> kpi) {
-        kpis.put((String) kpi.get("code"), kpi);
+                "compareRate", compareRate);
     }
 
     private Map<String, Object> runtime(String deviceType, String deviceTypeName, StatsScenario scenario,

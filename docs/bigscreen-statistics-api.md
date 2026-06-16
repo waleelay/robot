@@ -72,13 +72,8 @@ GET /api/bigscreen/statistics/overview
   },
   "kpis": {
     "taskTotal": {
-      "code": "taskTotal",
-      "name": "任务执行总数",
       "value": 288,
-      "unit": "个",
-      "compareLabel": "较上月",
-      "compareRate": -5,
-      "trend": "down"
+      "compareRate": -5
     }
   },
   "equipmentRuntime": {

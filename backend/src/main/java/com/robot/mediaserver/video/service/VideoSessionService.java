@@ -478,7 +478,13 @@ public class VideoSessionService {
             CreateSnapshotRequest request,
             MultipartFile file,
             CurrentUser user) {
-        SnapshotResponse snapshot = createSnapshot(sessionId, request, user);
+        VideoSession session = requireSession(sessionId);
+        if (session.getStatus() == VideoSessionStatus.CLOSED
+                || session.getStatus() == VideoSessionStatus.FAILED
+                || session.getStatus() == VideoSessionStatus.TIMEOUT) {
+            throw new IllegalStateException("Current session is not available");
+        }
+        SnapshotResponse snapshot = snapshotService.create(session, request, user);
         CompleteSnapshotRequest completeRequest = new CompleteSnapshotRequest();
         completeRequest.setOfficialCapturedAt(request.getClientCapturedAt());
         return snapshotService.complete(snapshot.snapshotId(), completeRequest, file);
