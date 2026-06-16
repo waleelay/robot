@@ -1,6 +1,5 @@
 package com.robot.mediaserver.video.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import java.time.OffsetDateTime;
 
 /**
@@ -11,7 +10,6 @@ import java.time.OffsetDateTime;
  */
 public class CreateSnapshotRequest {
 
-    @NotBlank
     private String trackSid;
 
     private String reason = "manual_abnormal";

@@ -8,6 +8,7 @@ import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.MediaTrackResponse;
 import com.robot.mediaserver.video.dto.IntercomResponse;
+import com.robot.mediaserver.video.dto.SnapshotListResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
@@ -264,10 +265,12 @@ public class VideoSessionController {
     }
 
     @GetMapping("/snapshots")
-    public List<SnapshotResponse> snapshotsByRobotDevice(
-            @RequestParam String robotId,
-            @RequestParam String deviceId) {
-        return snapshotService.recentByRobotDevice(robotId, deviceId);
+    public SnapshotListResponse snapshots(
+            @RequestParam(required = false) String robotId,
+            @RequestParam(required = false) String deviceId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        return snapshotService.list(robotId, deviceId, page, pageSize);
     }
 
     @PostMapping("/{sessionId}/_mock/track-published/{trackSid}")

@@ -115,14 +115,6 @@ public class ControlVideoSessionController {
         return controlVideoCommandService.switchChannel(sessionId, request);
     }
 
-    @PostMapping("/{sessionId}/snapshots")
-    public SnapshotResponse snapshot(
-            @PathVariable String sessionId,
-            @Valid @RequestBody CreateSnapshotRequest request,
-            HttpServletRequest servletRequest) {
-        return mediaServiceClient.snapshot(sessionId, request, currentUserResolver.resolve(servletRequest));
-    }
-
     @PostMapping(value = "/{sessionId}/snapshots/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public SnapshotResponse snapshotFile(
             @PathVariable String sessionId,
@@ -130,11 +122,6 @@ public class ControlVideoSessionController {
             @RequestPart("file") MultipartFile file,
             HttpServletRequest servletRequest) {
         return mediaServiceClient.snapshotFile(sessionId, request, file, currentUserResolver.resolve(servletRequest));
-    }
-
-    @GetMapping("/{sessionId}/snapshots")
-    public List<SnapshotResponse> snapshots(@PathVariable String sessionId) {
-        return mediaServiceClient.snapshots(sessionId);
     }
 
     @PostMapping("/{sessionId}/recordings/start")

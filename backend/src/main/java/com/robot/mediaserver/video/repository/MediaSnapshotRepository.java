@@ -4,6 +4,7 @@ import com.robot.mediaserver.video.model.MediaSnapshot;
 import com.robot.mediaserver.video.model.SnapshotStatus;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 /**
  * 媒体抓拍仓储。
@@ -11,7 +12,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
  * @author leelay
  * @date 2026/05/20
  */
-public interface MediaSnapshotRepository extends JpaRepository<MediaSnapshot, String> {
+public interface MediaSnapshotRepository extends JpaRepository<MediaSnapshot, String>, JpaSpecificationExecutor<MediaSnapshot> {
 
     /**
      * 查询指定会话最近抓拍记录。

@@ -375,10 +375,9 @@ recording/
 - `/api/control/video-sessions/{sessionId}/stop`
 - `/api/control/video-sessions/{sessionId}/restart`
 - `/api/control/video-sessions/{sessionId}/switch-channel`
-- `/api/control/video-sessions/{sessionId}/snapshots`
 - `/api/control/video-sessions/{sessionId}/snapshots/file`
-- `/api/control/robots/{robotId}/cameras/{deviceId}/snapshots`
-- `/api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/image`
+- `/api/control/snapshots`
+- `/api/control/snapshots/{snapshotId}/image`
 - `/api/control/recordings`
 
 ### 面向机器人端：`/api/media/*`

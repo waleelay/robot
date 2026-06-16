@@ -1,14 +1,21 @@
 package com.robot.bigscreen.client;
 
 import com.robot.bigscreen.config.CenterServiceProperties;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.Part;
+import java.io.IOException;
 import java.net.URI;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.Set;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -37,6 +44,9 @@ public class CenterProxyClient {
     }
 
     public ResponseEntity<byte[]> forward(HttpServletRequest request, byte[] body) {
+        if (isMultipart(request)) {
+            return forwardMultipart(request);
+        }
         String target = targetBaseUrl(request) + targetPath(request);
         String query = request.getQueryString();
         URI uri = UriComponentsBuilder.fromUriString(target)
@@ -48,6 +58,25 @@ public class CenterProxyClient {
                 .uri(uri)
                 .headers(headers -> copyRequestHeaders(request, headers))
                 .body(body == null ? new byte[0] : body)
+                .retrieve()
+                .toEntity(byte[].class);
+        return ResponseEntity.status(response.getStatusCode())
+                .headers(sanitizeResponseHeaders(response.getHeaders()))
+                .body(response.getBody());
+    }
+
+    private ResponseEntity<byte[]> forwardMultipart(HttpServletRequest request) {
+        String target = targetBaseUrl(request) + targetPath(request);
+        String query = request.getQueryString();
+        URI uri = UriComponentsBuilder.fromUriString(target)
+                .query(query)
+                .build(true)
+                .toUri();
+        ResponseEntity<byte[]> response = restClient.method(HttpMethod.valueOf(request.getMethod()))
+                .uri(uri)
+                .headers(headers -> copyRequestHeaders(request, headers, false))
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(multipartBody(request))
                 .retrieve()
                 .toEntity(byte[].class);
         return ResponseEntity.status(response.getStatusCode())
@@ -75,6 +104,10 @@ public class CenterProxyClient {
     }
 
     private void copyRequestHeaders(HttpServletRequest request, HttpHeaders headers) {
+        copyRequestHeaders(request, headers, true);
+    }
+
+    private void copyRequestHeaders(HttpServletRequest request, HttpHeaders headers, boolean includeContentType) {
         Enumeration<String> names = request.getHeaderNames();
         if (names == null) {
             return;
@@ -83,8 +116,39 @@ public class CenterProxyClient {
             if (HOP_BY_HOP_HEADERS.contains(name.toLowerCase())) {
                 continue;
             }
+            if (!includeContentType && HttpHeaders.CONTENT_TYPE.equalsIgnoreCase(name)) {
+                continue;
+            }
             headers.put(name, Collections.list(request.getHeaders(name)));
         }
+    }
+
+    private boolean isMultipart(HttpServletRequest request) {
+        String contentType = request.getContentType();
+        return contentType != null && contentType.toLowerCase().startsWith(MediaType.MULTIPART_FORM_DATA_VALUE);
+    }
+
+    private MultiValueMap<String, Object> multipartBody(HttpServletRequest request) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        try {
+            for (Part part : request.getParts()) {
+                String filename = part.getSubmittedFileName();
+                byte[] bytes = part.getInputStream().readAllBytes();
+                if (filename == null) {
+                    body.add(part.getName(), new String(bytes, request.getCharacterEncoding() == null ? "UTF-8" : request.getCharacterEncoding()));
+                } else {
+                    body.add(part.getName(), new ByteArrayResource(bytes) {
+                        @Override
+                        public String getFilename() {
+                            return filename;
+                        }
+                    });
+                }
+            }
+        } catch (IOException | ServletException ex) {
+            throw new IllegalStateException("Failed to forward multipart request", ex);
+        }
+        return body;
     }
 
     private HttpHeaders sanitizeResponseHeaders(HttpHeaders source) {

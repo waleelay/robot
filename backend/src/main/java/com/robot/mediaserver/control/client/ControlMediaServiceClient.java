@@ -8,6 +8,7 @@ import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.MediaTrackResponse;
 import com.robot.mediaserver.video.dto.IntercomResponse;
+import com.robot.mediaserver.video.dto.SnapshotListResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
@@ -136,13 +137,9 @@ public class ControlMediaServiceClient {
         return post("/internal/media/video-sessions/{sessionId}/switch-channel", request, null, VideoSessionResponse.class, sessionId);
     }
 
-    public SnapshotResponse snapshot(String sessionId, CreateSnapshotRequest request, CurrentUser user) {
-        return post("/internal/media/video-sessions/{sessionId}/snapshots", request, user, SnapshotResponse.class, sessionId);
-    }
-
     public SnapshotResponse snapshotFile(String sessionId, CreateSnapshotRequest request, MultipartFile file, CurrentUser user) {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("trackSid", request.getTrackSid());
+        addPart(body, "trackSid", request.getTrackSid());
         addPart(body, "reason", request.getReason());
         addPart(body, "remark", request.getRemark());
         addPart(body, "clientCapturedAt", request.getClientCapturedAt() == null ? null : request.getClientCapturedAt().toString());
@@ -165,10 +162,6 @@ public class ControlMediaServiceClient {
                 .body(SnapshotResponse.class);
     }
 
-    public List<SnapshotResponse> snapshots(String sessionId) {
-        return getList("/internal/media/video-sessions/{sessionId}/snapshots", new ParameterizedTypeReference<>() {}, sessionId);
-    }
-
     public RecordingListItemResponse startLiveRecording(String sessionId, CurrentUser user) {
         return post("/internal/media/video-sessions/{sessionId}/recordings/start", null, user, RecordingListItemResponse.class, sessionId);
     }
@@ -186,11 +179,15 @@ public class ControlMediaServiceClient {
         return get("/internal/media/video-sessions/{sessionId}/recordings/active", user, RecordingListItemResponse.class, sessionId);
     }
 
-    public List<SnapshotResponse> snapshots(String robotId, String deviceId) {
-        return getList("/internal/media/video-sessions/snapshots?robotId={robotId}&deviceId={deviceId}",
-                new ParameterizedTypeReference<>() {},
-                robotId,
-                deviceId);
+    public SnapshotListResponse snapshots(String robotId, String deviceId, int page, int pageSize) {
+        String uri = UriComponentsBuilder.fromPath("/internal/media/video-sessions/snapshots")
+                .queryParamIfPresent("robotId", optional(robotId))
+                .queryParamIfPresent("deviceId", optional(deviceId))
+                .queryParam("page", page)
+                .queryParam("pageSize", pageSize)
+                .build()
+                .toUriString();
+        return get(uri, null, SnapshotListResponse.class);
     }
 
     public byte[] snapshotImage(String snapshotId) {

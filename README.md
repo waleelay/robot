@@ -484,14 +484,13 @@ snapshots/{robotId}/{deviceId}/{yyyy}/{mm}/{dd}/{snapshotId}.jpg
 查询和预览：
 
 ```http
-GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots
-GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/image
+GET /api/control/snapshots?robotId=robot-001&deviceId=camera01&page=0&pageSize=20
+GET /api/control/snapshots/{snapshotId}/image
 ```
 
-兜底/内部接口仍保留：
+内部抓拍完成接口仍保留：
 
 ```http
-POST /api/control/video-sessions/{sessionId}/snapshots
 POST /internal/media/snapshots/{snapshotId}/complete
 POST /internal/media/snapshots/{snapshotId}/complete-file
 POST /internal/media/snapshots/{snapshotId}/fail

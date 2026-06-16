@@ -203,7 +203,7 @@ export default {
         this.$message.success('抓拍已保存')
         return
       }
-      const url = snapshotImageUrl(camera.robotId, camera.deviceId, snapshot.snapshotId)
+      const url = snapshotImageUrl(snapshot.snapshotId)
       this.$message({
         type: 'success',
         customClass: 'snapshot-message',

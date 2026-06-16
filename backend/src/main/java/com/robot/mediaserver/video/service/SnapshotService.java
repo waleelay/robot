@@ -5,6 +5,7 @@ import com.robot.mediaserver.storage.MinioStorageService;
 import com.robot.mediaserver.video.dto.CompleteSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.FailSnapshotRequest;
+import com.robot.mediaserver.video.dto.SnapshotListResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.event.MediaEventLogService;
 import com.robot.mediaserver.video.model.MediaSnapshot;
@@ -18,6 +19,10 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -60,7 +65,7 @@ public class SnapshotService {
         MediaSnapshot snapshot = new MediaSnapshot();
         snapshot.setSnapshotId("snap_" + compactUuid());
         snapshot.setSessionId(session.getSessionId());
-        snapshot.setTrackSid(request.getTrackSid());
+        snapshot.setTrackSid(resolveTrackSid(session, request));
         snapshot.setRobotId(session.getRobotId());
         snapshot.setDeviceId(session.getDeviceId());
         snapshot.setChannel(session.getChannel());
@@ -102,6 +107,29 @@ public class SnapshotService {
         return repository.findTop50ByRobotIdAndDeviceIdOrderByCreatedAtDesc(robotId, deviceId).stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public SnapshotListResponse list(String robotId, String deviceId, int page, int pageSize) {
+        int safePage = Math.max(page, 0);
+        int safePageSize = Math.min(Math.max(pageSize, 1), 100);
+        Specification<MediaSnapshot> specification = (root, query, builder) -> {
+            var predicate = builder.conjunction();
+            if (robotId != null && !robotId.isBlank()) {
+                predicate = builder.and(predicate, builder.equal(root.get("robotId"), robotId));
+            }
+            if (deviceId != null && !deviceId.isBlank()) {
+                predicate = builder.and(predicate, builder.equal(root.get("deviceId"), deviceId));
+            }
+            return predicate;
+        };
+        Page<MediaSnapshot> result = repository.findAll(
+                specification,
+                PageRequest.of(safePage, safePageSize, Sort.by(Sort.Direction.DESC, "createdAt")));
+        return new SnapshotListResponse(
+                result.getContent().stream().map(this::toResponse).toList(),
+                safePage,
+                safePageSize,
+                result.getTotalElements());
     }
 
     /**
@@ -187,6 +215,11 @@ public class SnapshotService {
     private SnapshotResponse toResponse(MediaSnapshot snapshot) {
         return new SnapshotResponse(
                 snapshot.getSnapshotId(),
+                snapshot.getSessionId(),
+                snapshot.getRobotId(),
+                snapshot.getDeviceId(),
+                snapshot.getChannel() == null ? null : snapshot.getChannel().name(),
+                snapshot.getQuality() == null ? null : snapshot.getQuality().name(),
                 snapshot.getStatus().name(),
                 snapshot.getSource(),
                 snapshot.getPreviewObjectKey() != null,
@@ -201,6 +234,13 @@ public class SnapshotService {
     private MediaSnapshot requireSnapshot(String snapshotId) {
         return repository.findById(snapshotId)
                 .orElseThrow(() -> new IllegalArgumentException("Snapshot not found: " + snapshotId));
+    }
+
+    private String resolveTrackSid(VideoSession session, CreateSnapshotRequest request) {
+        if (request.getTrackSid() != null && !request.getTrackSid().isBlank()) {
+            return request.getTrackSid();
+        }
+        return session.getTrackSid();
     }
 
     private void uploadSnapshotFile(String objectKey, MultipartFile file) {

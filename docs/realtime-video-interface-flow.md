@@ -598,14 +598,8 @@ snapshots/{robotId}/{deviceId}/{yyyy}/{mm}/{dd}/{snapshotId}.jpg
 抓拍成功提示中带 `查看` 链接，点击后打开：
 
 ```http
-GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/image
+GET /api/control/snapshots/{snapshotId}/image
 ```
-
-兼容接口仍保留：
-
-| 方法 | 路径 | 用途 |
-|---|---|---|
-| `POST` | `/api/control/video-sessions/{sessionId}/snapshots` | 创建任务式抓拍记录，供后端/机器人端兜底抓拍使用 |
 
 ### 6.9 查询辅助接口
 
@@ -616,9 +610,8 @@ GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/imag
 | `GET` | `/api/control/video-sessions/{sessionId}` | 查询单个会话，并重新签发 viewerToken |
 | `GET` | `/api/control/video-sessions/{sessionId}/events` | 查询会话事件日志 |
 | `GET` | `/api/control/video-sessions/{sessionId}/tracks` | 查询会话 Track |
-| `GET` | `/api/control/video-sessions/{sessionId}/snapshots` | 查询抓拍列表 |
-| `GET` | `/api/control/robots/{robotId}/cameras/{deviceId}/snapshots` | 查询指定机器人摄像头最近抓拍列表 |
-| `GET` | `/api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/image` | 预览抓拍图片 |
+| `GET` | `/api/control/snapshots` | 多条件分页查询抓拍列表 |
+| `GET` | `/api/control/snapshots/{snapshotId}/image` | 预览抓拍图片 |
 | `POST` | `/api/control/video-sessions/{sessionId}/switch-channel` | 切换通道 |
 
 辅助接口参数与响应：
@@ -630,9 +623,8 @@ GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/imag
 | `GET /api/control/video-sessions/{sessionId}` | Path: `sessionId` | `VideoSessionResponse` | 会重新签发 `viewerToken` |
 | `GET /api/control/video-sessions/{sessionId}/events` | Path: `sessionId` | `MediaEventLogResponse[]` | 返回该会话最近事件 |
 | `GET /api/control/video-sessions/{sessionId}/tracks` | Path: `sessionId` | `MediaTrackResponse[]` | 返回该会话最近 Track |
-| `GET /api/control/video-sessions/{sessionId}/snapshots` | Path: `sessionId` | `SnapshotResponse[]` | 返回该会话抓拍记录 |
-| `GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots` | Path: `robotId`、`deviceId` | `SnapshotResponse[]` | 返回该摄像头最近 50 条抓拍记录 |
-| `GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/image` | Path: `robotId`、`deviceId`、`snapshotId` | `image/jpeg` | 通过 Control Server 代理读取 MinIO 图片 |
+| `GET /api/control/snapshots` | Query: `robotId` 可选、`deviceId` 可选、`page` 默认 0、`pageSize` 默认 20 | `SnapshotListResponse` | 不传条件查全部，只传 `robotId` 查某机器人，同时传 `robotId` 和 `deviceId` 查某摄像头 |
+| `GET /api/control/snapshots/{snapshotId}/image` | Path: `snapshotId` | `image/jpeg` | 通过 Control Server 代理读取 MinIO 图片 |
 
 `POST /api/control/video-sessions/{sessionId}/switch-channel` 请求体：
 
@@ -804,9 +796,8 @@ Media Internal API 是 Media Service 暴露给 Control Server 的内部能力接
 | `POST /api/control/video-sessions/{sessionId}/stop` | `POST /internal/media/video-sessions/{sessionId}/stop` | 停止当前 viewer |
 | `POST /api/control/video-sessions/{sessionId}/restart` | `POST /internal/media/video-sessions/{sessionId}/restart` | 非主动停止场景恢复推流 |
 | `POST /api/control/video-sessions/{sessionId}/snapshots/file` | `POST /internal/media/video-sessions/{sessionId}/snapshots/file` | 前端当前画面截帧上传并完成抓拍 |
-| `POST /api/control/video-sessions/{sessionId}/snapshots` | `POST /internal/media/video-sessions/{sessionId}/snapshots` | 创建任务式抓拍记录，作为兜底能力 |
-| `GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots` | `GET /internal/media/video-sessions/snapshots?robotId={robotId}&deviceId={deviceId}` | 查询摄像头抓拍记录 |
-| `GET /api/control/robots/{robotId}/cameras/{deviceId}/snapshots/{snapshotId}/image` | `GET /internal/media/snapshots/{snapshotId}/image` | 预览抓拍图片 |
+| `GET /api/control/snapshots` | `GET /internal/media/video-sessions/snapshots` | 多条件分页查询抓拍记录 |
+| `GET /api/control/snapshots/{snapshotId}/image` | `GET /internal/media/snapshots/{snapshotId}/image` | 预览抓拍图片 |
 | `GET /api/control/video-sessions/{sessionId}/events` | `GET /internal/media/video-sessions/{sessionId}/events` | 查询媒体事件 |
 | `GET /api/control/video-sessions/{sessionId}/tracks` | `GET /internal/media/video-sessions/{sessionId}/tracks` | 查询 Track |
 | Control 下发 start 前 | `POST /internal/media/video-sessions/{sessionId}/client-start?event=video.client.requested` | Media 准备 Room、publisherToken、commandId 并返回 MQTT start payload |
