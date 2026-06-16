@@ -60,60 +60,22 @@
         </el-dropdown>
       </div>
     </div>
-    <div class="overview d-flex flex-wrap mt20">
-      <div class="item hp140 flex1 flx-align-center pl36 ">
+    <div class="overview d-flex flex-wrap mt20" v-loading="loading">
+      <div
+        v-for="(item, index) in kpiCards"
+        :key="item.code"
+        class="item hp140 flex1 flx-align-center pl36"
+        :class="{ 'ml20': index !== 0 }">
         <div class="img wp74 hp86">
-          <img src="@/assets/images/new-bi/data-task.png" alt="" srcset="">
+          <img :src="item.icon" alt="" srcset="">
         </div>
         <div class="ml30 flex-column">
-          <div class="title mt4">任务执行总数</div>
-          <div class="value mt4"><span class="mr8">288</span>个</div>
+          <div class="title mt4">{{ item.name }}</div>
+          <div class="value mt4"><span class="mr8">{{ item.value }}</span>{{ item.unit }}</div>
           <div class="desc mt4 d-flex" style="align-items: end">
-            <span class="mr10">较上月</span>
-            <svg-icon icon-class="increase" class="increase" :class="{ 't': true }" />
-            <span class="ml2">+20<span style="font-size: 14px;">%</span></span>
-          </div>
-        </div>
-      </div>
-      <div class="item hp140 ml20 flex1 flx-align-center pl36 ">
-        <div class="img wp74 hp86">
-          <img src="@/assets/images/new-bi/data-licheng.png" alt="" srcset="">
-        </div>
-        <div class="ml30 flex-column">
-          <div class="title mt4">总巡逻里程</div>
-          <div class="value mt4"><span class="mr8">356.8</span>KM</div>
-          <div class="desc mt4 d-flex" style="align-items: end">
-            <span class="mr10">较上月</span>
-            <svg-icon icon-class="increase" class="increase" :class="{ 't': true }" />
-            <span class="ml2">+20<span style="font-size: 14px;">%</span></span>
-          </div>
-        </div>
-      </div>
-      <div class="item hp140 ml20 flex1 flx-align-center pl36 ">
-        <div class="img wp74 hp86">
-          <img src="@/assets/images/new-bi/data-ai.png" alt="" srcset="">
-        </div>
-        <div class="ml30 flex-column">
-          <div class="title mt4">AI自动识别异常数</div>
-          <div class="value mt4"><span class="mr8">288</span>个</div>
-          <div class="desc mt4 d-flex" style="align-items: end">
-            <span class="mr10">较上月</span>
-            <svg-icon icon-class="increase" class="increase" :class="{ 't': true }" />
-            <span class="ml2">+20<span style="font-size: 14px;">%</span></span>
-          </div>
-        </div>
-      </div>
-      <div class="item hp140 ml20 flex1 flx-align-center pl36 ">
-        <div class="img wp74 hp86">
-          <img src="@/assets/images/new-bi/data-execute.png" alt="" srcset="">
-        </div>
-        <div class="ml30 flex-column">
-          <div class="title mt4">自动处置成功率</div>
-          <div class="value mt4"><span class="mr8">288</span>%</div>
-          <div class="desc mt4 d-flex" style="align-items: end">
-            <span class="mr10">较上月</span>
-            <svg-icon icon-class="increase" class="increase" :class="{ 't': true }" />
-            <span class="ml2">-5<span style="font-size: 14px;">%</span></span>
+            <span class="mr10">{{ item.compareLabel }}</span>
+            <svg-icon icon-class="increase" class="increase" :class="{ 't': item.trend === 'down' }" />
+            <span class="ml2">{{ item.compareRate > 0 ? '+' : '' }}{{ item.compareRate }}<span style="font-size: 14px;">%</span></span>
           </div>
         </div>
       </div>
@@ -130,14 +92,14 @@
             <div class="desc flx-center mt4">
               <div>
                 <span>总在线率</span>
-                <span class="ml10 value">98%</span>
+                <span class="ml10 value">{{ equipmentRuntime.onlineRate || 0 }}%</span>
               </div>
               <div class="ml40">
                 <span>任务完成率率</span>
-                <span class="ml10 value">100%</span>
+                <span class="ml10 value">{{ equipmentRuntime.taskCompletionRate || 0 }}%</span>
               </div>
             </div>
-            <BarChart class="mt5" />
+            <BarChart class="mt5" :items="equipmentRuntime.items || []" />
           </div>
         </div>
       </div>
@@ -151,13 +113,13 @@
           <div class="flex1 flex-column">
             <div class="title">告警类型分布排行</div>
             <div class="mt30 w100 h100">
-              <PieChart />
+              <PieChart :items="aiAlarmAnalysis.alarmTypeRanking || []" />
             </div>
           </div>
           <div class="flex1 flex-column pl34 with-border">
             <div class="title">处理方式分布排行</div>
             <div class="mt30 w100 h100">
-              <BarChart1 />
+              <BarChart1 :items="aiAlarmAnalysis.handleMethodRanking || []" />
             </div>
           </div>
         </div>
@@ -171,7 +133,7 @@
           </div>
         </div>
         <div class="ranking-list p20 d-flex flex-column hp279">
-          <div v-for="(item, index) in rankList" :key="item.name" :class="{'mt16': index !== 0, light: index > 2}" class="ranking-list-item d-flex flex-column flx-justify-between">
+          <div v-for="(item, index) in alarmAreaRanking" :key="item.name" :class="{'mt16': index !== 0, light: index > 2}" class="ranking-list-item d-flex flex-column flx-justify-between">
             <div class="d-flex flex1 flx-justify-between w100">
               <div class="level wp60 hp23">TOP.{{ index + 1 }}</div>
               <div class="name ml20 flex1" :title="item.name">{{ item.name }}</div>
@@ -190,7 +152,7 @@
             </div>
           </div>
           <div class="hp279 p20">
-            <LineChart />
+            <LineChart :points="alarmTrendPoints" />
           </div>
         </div>
         <div class="flex1 flex-column ml20 task">
@@ -201,31 +163,21 @@
           </div>
           <div class="p20 hp279 flex-column flx-justify-between">
             <div class="task-list w100 mt10 d-flex flex-column">
-              <div class="task-item flex-column">
+              <div
+                v-for="(item, index) in taskCompletionItems"
+                :key="item.status"
+                class="task-item flex-column"
+                :class="{ 'mt16': index !== 0 }">
                 <div class="d-flex flex1 flx-justify-between w100">
-                  <div class="type">已完成</div>
-                  <div class="number">98%</div>
+                  <div class="type">{{ item.name }}</div>
+                  <div class="number">{{ item.percent }}%</div>
                 </div>
-                <div class="progress hp6 mt7" :style="{ '--percent': '98%' }"></div>
-              </div>
-              <div class="task-item flex-column mt16">
-                <div class="d-flex flex1 flx-justify-between w100">
-                  <div class="type">执行中</div>
-                  <div class="number">60%</div>
-                </div>
-                <div class="progress hp6 mt7" :style="{ '--percent': '60%' }"></div>
-              </div>
-              <div class="task-item flex-column mt16">
-                <div class="d-flex flex1 flx-justify-between w100">
-                  <div class="type">异常中断</div>
-                  <div class="number">10%</div>
-                </div>
-                <div class="progress hp6 mt7" :style="{ '--percent': '10%' }"></div>
+                <div class="progress hp6 mt7" :style="{ '--percent': item.percent + '%' }"></div>
               </div>
             </div>
             <div class="desc hp73 flx-align-center pr20 pl20">
               <img src="@/assets/images/new-bi/data-task.png" class="wp44 hp52 ml20" alt="" srcset="">
-              <div class="ml30">本月对比上月任务处置时长缩短10%，系统响应速度提升</div>
+              <div class="ml30">{{ taskInsight }}</div>
             </div>
           </div>
         </div>
@@ -241,13 +193,37 @@ import BarChart1 from './BarChart1.vue';
 import LineChart from './LineChart.vue';
 import PieChart from './PieChart.vue';
 import HistoryReportList from './History.vue';
+import { getPatrolStatisticsOverview, exportPatrolStatisticsReport } from '@/api/new-bi';
+import { saveAs } from 'file-saver';
 const cityOptions = ['装备运行时长', 'AI告警分析', '告警高发区域', '告警趋势图'];
+const moduleMap = {
+  装备运行时长: 'equipmentRuntime',
+  AI告警分析: 'aiAlarmAnalysis',
+  告警高发区域: 'alarmAreaRanking',
+  告警趋势图: 'alarmTrend'
+};
+const rangeMap = {
+  all: 'all',
+  0: 'today',
+  1: 'week',
+  2: 'month',
+  3: 'custom'
+};
+const deviceTypeMap = {
+  all: 'all',
+  0: 'UAV',
+  1: 'ROBOT_DOG',
+  2: 'UGV',
+  3: 'HUMANOID_ROBOT'
+};
 
 export default {
   name: 'BiPatrolStatistics',
   components: { BarChart, BarChart1, LineChart, PieChart, HistoryReportList },
   data() {
     return {
+      loading: false,
+      statistics: null,
       checkAll: false,
       checkedCities: ['装备运行时长', 'AI告警分析'],
       cities: cityOptions,
@@ -309,18 +285,79 @@ export default {
       ]
     }
   },
+  computed: {
+    kpiCards() {
+      const icons = {
+        taskTotal: require('@/assets/images/new-bi/data-task.png'),
+        patrolMileage: require('@/assets/images/new-bi/data-licheng.png'),
+        aiAlarmTotal: require('@/assets/images/new-bi/data-ai.png'),
+        autoHandleSuccessRate: require('@/assets/images/new-bi/data-execute.png')
+      };
+      const fallback = [
+        { code: 'taskTotal', name: '任务执行总数', value: 288, unit: '个', compareLabel: '较上月', compareRate: 20, trend: 'up' },
+        { code: 'patrolMileage', name: '总巡逻里程', value: 356.8, unit: 'KM', compareLabel: '较上月', compareRate: 20, trend: 'up' },
+        { code: 'aiAlarmTotal', name: 'AI自动识别异常数', value: 288, unit: '个', compareLabel: '较上月', compareRate: 20, trend: 'up' },
+        { code: 'autoHandleSuccessRate', name: '自动处置成功率', value: 288, unit: '%', compareLabel: '较上月', compareRate: -5, trend: 'down' }
+      ];
+      const source = this.statistics && this.statistics.kpis && this.statistics.kpis.length ? this.statistics.kpis : fallback;
+      return source.map(item => ({ ...item, icon: icons[item.code] || icons.taskTotal }));
+    },
+    equipmentRuntime() {
+      return (this.statistics && this.statistics.equipmentRuntime) || {};
+    },
+    aiAlarmAnalysis() {
+      return (this.statistics && this.statistics.aiAlarmAnalysis) || {};
+    },
+    alarmTrendPoints() {
+      return (this.statistics && this.statistics.alarmTrend && this.statistics.alarmTrend.points) || [];
+    },
+    alarmAreaRanking() {
+      const source = (this.statistics && this.statistics.alarmAreaRanking && this.statistics.alarmAreaRanking.length)
+        ? this.statistics.alarmAreaRanking.map(item => ({
+          name: item.areaName,
+          nums: item.count,
+          percent: item.percent
+        }))
+        : this.rankList;
+      const max = source[0] && source[0].nums ? source[0].nums : 1;
+      return source.map(item => ({
+        ...item,
+        percent: item.percent || item.nums / max * 100
+      }));
+    },
+    taskCompletionItems() {
+      return (this.statistics && this.statistics.taskCompletion && this.statistics.taskCompletion.items) || [
+        { status: 'COMPLETED', name: '已完成', percent: 98 },
+        { status: 'RUNNING', name: '执行中', percent: 60 },
+        { status: 'INTERRUPTED', name: '异常中断', percent: 10 }
+      ];
+    },
+    taskInsight() {
+      return (this.statistics && this.statistics.taskCompletion && this.statistics.taskCompletion.insight)
+        || '本月对比上月任务处置时长缩短10%，系统响应速度提升';
+    },
+    statisticsParams() {
+      return {
+        range: rangeMap[this.tabDateIndex],
+        deviceType: deviceTypeMap[this.tabRobotIndex]
+      };
+    }
+  },
   mounted() {
     this.rankList.map(item => {
       item.percent = item.nums / this.rankList[0].nums * 100
       return item
     })
+    this.loadStatistics()
   },
   methods: {
     handleClickTabDate(e) {
       this.tabDateIndex = e
+      this.loadStatistics()
     },
     handleClickTabRobot(e) {
       this.tabRobotIndex = e
+      this.loadStatistics()
     },
     // 历史报告列表
     viewHistoryReport() {
@@ -329,28 +366,33 @@ export default {
     // 生成报告
     async generateReport() {
       try {
-        // 准备要保存的数据（例如从 ECharts 导出的图片 Blob）
-        const blob = await fetch('your-image-url.png').then(res => res.blob());
-        // 或者将文本/JSON 转成 Blob
-        // const blob = new Blob(['文件内容'], { type: 'text/plain' });
-
-        // 弹出保存对话框，让用户选择文件路径和名称
-        const fileHandle = await window.showSaveFilePicker({
-          suggestedName: 'chart.png',      // 默认文件名
-          types: [{
-            description: 'PNG图片',
-            accept: { 'image/png': ['.png'] }
-          }]
-        });
-        // 写入文件内容
-        const writable = await fileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        alert('文件保存成功！');
+        const modules = this.checkedCities.map(item => moduleMap[item]).filter(Boolean);
+        const data = {
+          modules,
+          timeRange: {
+            type: rangeMap[this.radioValue],
+            startTime: null,
+            endTime: null
+          },
+          deviceType: deviceTypeMap[this.tabRobotIndex],
+          areaIds: [],
+          alarmTypes: [],
+          handleMethods: [],
+          taskStatuses: [],
+          format: 'PDF'
+        };
+        const blob = await exportPatrolStatisticsReport(data);
+        saveAs(new Blob([blob], { type: 'application/pdf' }), `数据统计报告-${Date.now()}.pdf`);
       } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('保存失败', err);
-        }
+        console.error('报告下载失败', err);
+      }
+    },
+    async loadStatistics() {
+      this.loading = true;
+      try {
+        this.statistics = await getPatrolStatisticsOverview(this.statisticsParams);
+      } finally {
+        this.loading = false;
       }
     },
     handleCheckAllChange(val) {

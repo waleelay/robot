@@ -4,6 +4,12 @@
 
 <script>
 export default({
+  props: {
+    items: {
+      type: Array,
+      default: () => []
+    }
+  },
   data() {
     return {
       // 设备基础数据 (从题目获取)
@@ -25,13 +31,20 @@ export default({
   computed: {
     // 计算每个设备的三个精确数值（确保整数，总和等于总量）
     deviceStatusData() {
-      return this.devices.map(device => {
+      const source = this.items && this.items.length ? this.items : this.devices;
+      return source.map(device => {
+        if (Object.prototype.hasOwnProperty.call(device, 'runningHours')) {
+          return {
+            name: device.deviceTypeName || device.name,
+            running: device.runningHours || 0,
+            fault: device.faultHours || 0,
+            offline: device.offlineHours || 0
+          };
+        }
         const total = device.total;
         let running = Math.floor(total * this.runningRatio);
         let fault = Math.floor(total * this.faultRatio);
-        // 剩余全部分配给离线，避免精度丢失
         let offline = total - running - fault;
-        // 极小数矫正（防止负值）
         if (offline < 0) offline = 0;
         return {
           name: device.name,
@@ -65,6 +78,12 @@ export default({
           handler() {
               this.renderGroupBarChart();
           }
+      },
+      items: {
+        deep: true,
+        handler() {
+          this.renderGroupBarChart();
+        }
       }
   },
   mounted() {

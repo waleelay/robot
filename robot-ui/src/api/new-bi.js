@@ -9,3 +9,22 @@ export function getPatrolPanoramaOverview() {
     method: 'get'
   })
 }
+
+// 数据统计
+export function getPatrolStatisticsOverview(params) {
+  return request({
+    url: pre + '/bigscreen/statistics/overview',
+    method: 'get',
+    params
+  })
+}
+
+export function exportPatrolStatisticsReport(data) {
+  return request({
+    url: pre + '/bigscreen/statistics/reports/export',
+    method: 'post',
+    data,
+    responseType: 'blob',
+    timeout: 300000
+  })
+}

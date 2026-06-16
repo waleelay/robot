@@ -4,12 +4,34 @@
 
 <script>
 export default({
+  props: {
+    points: {
+      type: Array,
+      default: () => []
+    }
+  },
   data() {
     return {
       list: [4, 5, 4, 7, 4, 3, 3],
       xTimeData: [6.13, 6.12, 6.11, 6.10, 6.09, 6.08, 6.07],
       barChart: null,
       resizeHandler: null
+    }
+  },
+  computed: {
+    chartLabels() {
+      return this.points && this.points.length ? this.points.map(item => item.label || item.date) : this.xTimeData;
+    },
+    chartValues() {
+      return this.points && this.points.length ? this.points.map(item => item.count || 0) : this.list;
+    }
+  },
+  watch: {
+    points: {
+      deep: true,
+      handler() {
+        this.renderGroupBarChart();
+      }
     }
   },
   mounted() {
@@ -88,7 +110,7 @@ export default({
           },
           // boundaryGap: false,
           axisTick: { show: false },
-          data: this.xTimeData
+          data: this.chartLabels
         },
         yAxis: {
           name: '单位（次）',
@@ -134,7 +156,7 @@ export default({
         },
         series: [
           {
-            data: this.list,
+            data: this.chartValues,
             type: 'line',
             smooth: true,
             symbol: 'none',

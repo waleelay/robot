@@ -4,6 +4,12 @@
 
 <script>
 export default({
+  props: {
+    items: {
+      type: Array,
+      default: () => []
+    }
+  },
   data() {
     return {
       // echarts 实例
@@ -14,6 +20,12 @@ export default({
   watch: {
       // 数据变化重新渲染柱状图（确保分组柱状图更新）
       deviceStatusData: {
+          deep: true,
+          handler() {
+              this.renderGroupBarChart();
+          }
+      },
+      items: {
           deep: true,
           handler() {
               this.renderGroupBarChart();
@@ -46,8 +58,16 @@ export default({
       }
     },
     renderGroupBarChart() {
-      const names = ['语音播报', '自动调度', '远程控制', '人工处理']
-      const nums = [100, 200, 300, 400]
+      const source = this.items && this.items.length
+        ? this.items
+        : [
+          { name: '语音播报', count: 100 },
+          { name: '自动调度', count: 200 },
+          { name: '远程控制', count: 300 },
+          { name: '人工处理', count: 400 }
+        ]
+      const names = source.map(item => item.name)
+      const nums = source.map(item => item.count || item.value || 0)
       if (!this.barChart) return;
       // 分组柱状图配置：三个系列，分别代表运行中、故障、离线，通过barCategoryGap和barGap控制并排不重叠
       const option = {

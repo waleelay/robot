@@ -4,6 +4,12 @@
 
 <script>
 export default({
+  props: {
+    items: {
+      type: Array,
+      default: () => []
+    }
+  },
   data() {
     return {
       projects: [
@@ -18,9 +24,18 @@ export default({
     }
   },
   computed: {
+    chartProjects() {
+      const colors = ['#26FFCB', '#24CBFF', '#968DFF', '#5375FF', '#83D3FF'];
+      const source = this.items && this.items.length ? this.items : this.projects;
+      return source.map((item, index) => ({
+        name: item.name,
+        value: item.percent || item.count || item.value || 0,
+        color: item.color || colors[index % colors.length]
+      }));
+    },
     // 为第一层环形图准备数据 (每个项目原始value=25，总值125，但角度均分)
     firstLayerData() {
-      return this.projects.map(item => ({
+      return this.chartProjects.map(item => ({
         name: item.name,
         value: item.value,
         itemStyle: { color: item.color }
@@ -33,11 +48,17 @@ export default({
     },
     // 图例名称列表（仅用于第一层，手动控制展示）
     legendNames() {
-      return this.projects.map(p => p.name);
+      return this.chartProjects.map(p => p.name);
     }
   },
   watch: {
     projects: {
+      deep: true,
+      handler() {
+        this.updateChart();
+      }
+    },
+    items: {
       deep: true,
       handler() {
         this.updateChart();
@@ -68,6 +89,9 @@ export default({
         this.barChart = this.$echarts.init(dom);
         this.renderGroupBarChart();
       }
+    },
+    updateChart() {
+      this.renderGroupBarChart();
     },
     renderGroupBarChart() {
       if (!this.barChart) return;
