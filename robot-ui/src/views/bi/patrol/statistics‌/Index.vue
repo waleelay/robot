@@ -86,9 +86,9 @@
           <div class="title mt4">{{ item.name }}</div>
           <div class="value mt4"><span class="mr8">{{ item.value }}</span>{{ item.unit }}</div>
           <div class="desc mt4 d-flex" style="align-items: end">
-            <span class="mr10">{{ tabDate === 'today' ? '较昨日' : tabDate === 'week' ? '较上周' : tabDate === 'week' ? '较上月' : '较同期' }}</span>
-            <svg-icon icon-class="increase" class="increase" :class="{ 't': item.compareRate > 0 }" />
-            <span class="ml2">{{ item.compareRate > 0 ? '+' : '' }}{{ item.compareRate || '-' }}<span style="font-size: 14px;">%</span></span>
+            <span class="mr10">{{ item.compareLabel || '-' }}</span>
+            <svg-icon icon-class="increase" class="increase" :class="{ 't': item.trend === 'down' }" />
+            <span class="ml2">{{ item.compareRate > 0 ? '+' : '' }}{{ item.compareRate === null || item.compareRate === undefined ? '-' : item.compareRate }}<span style="font-size: 14px;">%</span></span>
           </div>
         </div>
       </div>
@@ -304,10 +304,10 @@ export default {
       };
       const { taskTotal, patrolMileage, aiAlarmTotal, autoHandleSuccessRate } = this.statistics?.kpis || {};
       const fallback = [
-        { code: 'taskTotal', icon: icons.taskTotal, name: '任务执行总数', value: taskTotal?.value || 0, unit: '个', compareRate: taskTotal?.compareRate },
-        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: patrolMileage?.value || 0, unit: 'KM', compareRate: patrolMileage?.compareRate },
-        { code: 'aiAlarmTotal', icon: icons.aiAlarmTotal, name: 'AI自动识别异常数', value: aiAlarmTotal?.value || 0, unit: '个', compareRate: aiAlarmTotal?.compareRate },
-        { code: 'autoHandleSuccessRate', icon: icons.autoHandleSuccessRate, name: '自动处置成功率', value: autoHandleSuccessRate?.value || 0, unit: '%', compareRate: autoHandleSuccessRate?.compareRate }
+        { code: 'taskTotal', icon: icons.taskTotal, name: '任务执行总数', value: 0, unit: '个', compareRate: null, compareLabel: '-', trend: null, ...taskTotal },
+        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: 0, unit: 'KM', compareRate: null, compareLabel: '-', trend: null, ...patrolMileage },
+        { code: 'aiAlarmTotal', icon: icons.aiAlarmTotal, name: 'AI自动识别异常数', value: 0, unit: '个', compareRate: null, compareLabel: '-', trend: null, ...aiAlarmTotal },
+        { code: 'autoHandleSuccessRate', icon: icons.autoHandleSuccessRate, name: '自动处置成功率', value: 0, unit: '%', compareRate: null, compareLabel: '-', trend: null, ...autoHandleSuccessRate }
       ];
       return fallback;
     },
@@ -346,11 +346,15 @@ export default {
         || '本月对比上月任务处置时长缩短10%，系统响应速度提升';
     },
     statisticsParams() {
-      // 自定义时取值{ startTime: this.dateValue[0], endTime: this.dateValue[1] }
-      return {
+      const params = {
         range: this.tabDate,
         deviceType: this.tabRobot
       };
+      if (this.tabDate === 'custom' && this.dateValue && this.dateValue.length === 2) {
+        params.startTime = `${this.dateValue[0]} 00:00:00`;
+        params.endTime = `${this.dateValue[1]} 23:59:59`;
+      }
+      return params;
     }
   },
   mounted() {
