@@ -32,11 +32,11 @@ public class PanoramaMockService {
 
     public Map<String, Object> deviceDetail(String deviceId) {
         return devices().stream()
-                .filter(device -> deviceId.equals(device.get("robotId")) || deviceId.equals(device.get("deviceId")))
+                .filter(device -> deviceId.equals(device.get("robotId")))
                 .findFirst()
                 .map(this::toDeviceDetail)
                 .orElseGet(() -> object(
-                        "deviceId", deviceId,
+                        "robotId", deviceId,
                         "name", "未知设备",
                         "status", "offline",
                         "type", "-",
@@ -116,8 +116,8 @@ public class PanoramaMockService {
                         null,
                         "MANUAL",
                         null,
-                        113.923456,
-                        22.512345,
+                        106.03655278081857,
+                        30.7478613352993,
                         "A区主干道",
                         "wheeled_robot",
                         "空闲中",
@@ -137,8 +137,8 @@ public class PanoramaMockService {
                         null,
                         "MANUAL",
                         null,
-                        113.926240,
-                        22.511930,
+                        106.03824884204943,
+                        30.746587087515316,
                         "A区东侧通道",
                         "robot_dog",
                         "离线",
@@ -158,8 +158,8 @@ public class PanoramaMockService {
                         null,
                         "MANUAL",
                         null,
-                        113.922110,
-                        22.508910,
+                        106.0344109,
+                        30.7469491,
                         "A区南侧仓库",
                         "robot_dog",
                         "离线",
@@ -179,8 +179,8 @@ public class PanoramaMockService {
                         "HIGH",
                         "AUTO",
                         0.4,
-                        113.920820,
-                        22.513420,
+                        106.039428,
+                        30.745330,
                         "A区仓库",
                         "humanoid_robot",
                         "告警中",
@@ -239,7 +239,6 @@ public class PanoramaMockService {
         Object alarmLevel = device.get("alarmLevel");
         return object(
                 "robotId", device.get("robotId"),
-                "deviceId", device.get("deviceId"),
                 "clientId", device.get("clientId"),
                 "name", device.get("name"),
                 "type", device.get("type"),
@@ -250,7 +249,6 @@ public class PanoramaMockService {
                 "battery", device.get("battery"),
                 "lastHeartbeatAt", device.get("lastHeartbeatAt"),
                 "cameras", device.get("cameras"),
-                "onlineStatus", device.get("onlineStatus"),
                 "stateSeq", device.get("stateSeq"),
                 "alarmStatus", alarmLevel == null ? "none" : alarmLevel,
                 "alarmText", alarmLevel == null ? "-" : "存在未处理告警",
@@ -271,7 +269,6 @@ public class PanoramaMockService {
         Map<String, Object> task = (Map<String, Object>) device.get("task");
         return object(
                 "robotId", device.get("robotId"),
-                "deviceId", device.get("deviceId"),
                 "clientId", device.get("clientId"),
                 "name", device.get("name"),
                 "type", device.get("type"),
@@ -298,7 +295,7 @@ public class PanoramaMockService {
 
     private Map<String, Object> mapConfig() {
         return Map.of(
-                "center", Map.of("lng", 113.923456, "lat", 22.512345),
+                "center", Map.of("lng", 106.03655278081857, "lat", 30.7478613352993),
                 "zoom", 17,
                 "defaultLayer", "dark-vector",
                 "updatedAt", now());
@@ -347,7 +344,6 @@ public class PanoramaMockService {
             Map<String, Object> task) {
         return object(
                 "robotId", robotId,
-                "deviceId", robotId,
                 "clientId", clientId,
                 "name", name,
                 "type", type,
@@ -358,11 +354,11 @@ public class PanoramaMockService {
                 "battery", battery,
                 "lastHeartbeatAt", now(),
                 "cameras", cameras(typeCode),
-                "onlineStatus", status,
                 "stateSeq", 1,
                 "fault", fault,
                 "alarmLevel", alarmLevel,
                 "controlMode", controlMode,
+                "mountedDeviceCount", mountedDevices().size(),
                 "speed", speed,
                 "location", object(
                         "lng", lng,
@@ -407,9 +403,9 @@ public class PanoramaMockService {
                 "timeRange", timeRange);
     }
 
-    private Map<String, Object> equipment(String deviceId, String name, String type, String status) {
+    private Map<String, Object> equipment(String robotId, String name, String type, String status) {
         return Map.of(
-                "deviceId", deviceId,
+                "robotId", robotId,
                 "name", name,
                 "type", type,
                 "status", status);
@@ -432,7 +428,7 @@ public class PanoramaMockService {
             String levelName,
             String eventTime,
             String location,
-            String deviceId,
+            String robotId,
             String deviceName,
             String taskId,
             String taskName,
@@ -446,7 +442,7 @@ public class PanoramaMockService {
                 "levelName", levelName,
                 "eventTime", eventTime,
                 "location", location,
-                "deviceId", deviceId,
+                "robotId", robotId,
                 "deviceName", deviceName,
                 "taskId", taskId,
                 "taskName", taskName,

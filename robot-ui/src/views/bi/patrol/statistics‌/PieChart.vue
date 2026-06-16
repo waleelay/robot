@@ -12,13 +12,13 @@ export default({
   },
   data() {
     return {
-      projects: [
-        { name: '打架斗殴', value: 25, color: '#26FFCB' },   // 柔和珊瑚红
-        { name: '攀爬围栏', value: 25, color: '#24CBFF' },   // 琥珀色
-        { name: '人员落单', value: 25, color: '#968DFF' },   // 翠绿
-        { name: '人员聚集', value: 25, color: '#5375FF' },   // 天蓝
-        { name: '外协陪同', value: 25, color: '#83D3FF' }    // 淡紫色
-      ],
+      // projects: [
+      //   { name: '打架斗殴', value: 25, color: '#26FFCB' },   // 柔和珊瑚红
+      //   { name: '攀爬围栏', value: 25, color: '#24CBFF' },   // 琥珀色
+      //   { name: '人员落单', value: 25, color: '#968DFF' },   // 翠绿
+      //   { name: '人员聚集', value: 25, color: '#5375FF' },   // 天蓝
+      //   { name: '外协陪同', value: 25, color: '#83D3FF' }    // 淡紫色
+      // ],
       barChart: null,
       resizeHandler: null
     }
@@ -26,7 +26,7 @@ export default({
   computed: {
     chartProjects() {
       const colors = ['#26FFCB', '#24CBFF', '#968DFF', '#5375FF', '#83D3FF'];
-      const source = this.items && this.items.length ? this.items : this.projects;
+      const source = this.items && this.items.length ? this.items : [];
       return source.map((item, index) => ({
         name: item.name,
         value: item.percent || item.count || item.value || 0,
@@ -52,12 +52,12 @@ export default({
     }
   },
   watch: {
-    projects: {
-      deep: true,
-      handler() {
-        this.updateChart();
-      }
-    },
+    // projects: {
+    //   deep: true,
+    //   handler() {
+    //     this.updateChart();
+    //   }
+    // },
     items: {
       deep: true,
       handler() {
@@ -241,7 +241,7 @@ export default({
           formatter: (params) => {
             // 仅当系列名称为'项目占比'时展示详情，阴影层不展示
             if (params.seriesName === '项目占比') {
-              return `<strong>${params.name}</strong><br/>占比: ${params.value}% (原始数据)`;
+              return `<strong>${params.name}</strong><br/>占比: ${params.value}% (${this.items[params.dataIndex]})`;
             }
             return '';
           },

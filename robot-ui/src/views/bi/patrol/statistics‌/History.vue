@@ -1,12 +1,13 @@
 <template>
   <el-dialog
-    class="custom-dialog__wrapper robot-dialog flx-align-center flx-align-end"
+    class="custom-dialog__wrapper robot-dialog flx-align-center"
     :visible.sync="dialogVisible"
     :modal-append-to-body="false"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
     :modal="false"
     append-to-body
+    center
     title=""
   >
     <template slot="footer"></template>
@@ -20,7 +21,7 @@
             </div>
           </div>
           <div class="info-content p10">
-            <el-table :data="tableData.data" ref="dataTableRef1" style="height: calc(100% - 34px)">
+            <el-table :data="tableData.data" ref="dataTableRef" :height="500">
               <el-table-column type="index" key="index" width="50" label="序号" align="center">
                 <template slot-scope="scope">
                   <span class="td-index1">
@@ -40,7 +41,7 @@
               </el-table-column>
               <el-table-column label="操作" width="250">
                 <template slot-scope="scope">
-                  <el-button type="text">瞎子啊</el-button>
+                  <el-button type="text">下载</el-button>
                   <el-button type="text" class="ml24">删除</el-button>
                 </template>
               </el-table-column>

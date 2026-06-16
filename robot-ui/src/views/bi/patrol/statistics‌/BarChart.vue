@@ -59,7 +59,7 @@ export default({
       return this.deviceStatusData.map(item => item.name);
     },
     // 运行中数据数组
-    runningValues() {
+    runningValues() {      
       return this.deviceStatusData.map(item => item.running);
     },
     // 故障数据数组
@@ -122,7 +122,7 @@ export default({
             // params 是每个系列对应的数据项
             let result = `<strong>${params[0].axisValue}</strong><br/>`;
             params.forEach(p => {
-              result += `${p.marker} ${p.seriesName}: ${p.value.toLocaleString()} 台<br/>`;
+              result += `${p.marker} ${p.seriesName}: ${p.value.toLocaleString()} 小时<br/>`;
             });
             return result;
           }
@@ -166,7 +166,7 @@ export default({
         yAxis: {
           type: 'value',
           name: '装备运行时长：小时',
-          nameTextStyle: { padding: [0, 0, 0, 60], fontSize: 14, lineHeight: 18, color: 'rgba(255, 255, 255, 0.70)', fontFamily: 'Microsoft YaHei', textAlign: 'left' },
+          nameTextStyle: { padding: [0, 0, 0, 70], fontSize: 14, lineHeight: 18, color: 'rgba(255, 255, 255, 0.70)', fontFamily: 'Microsoft YaHei', textAlign: 'left' },
           axisLabel: {
             color: 'rgba(255, 255, 255, 0.7)',
             fontFamily: 'Microsoft YaHei',
@@ -186,7 +186,7 @@ export default({
             type: 'bar',
             data: this.runningValues,
             color: '#0C96FF',
-            barWidth: '20%',           // 每组柱子总宽度的20% (相对宽度)
+            barWidth: this.runningValues.length > 1 ? '20%' : 30,           // 每组柱子总宽度的20% (相对宽度)
             barGap: '30%',              // 不同系列之间的间隙百分比，由于三个系列，控制并排且无重叠
             // 为了让三个柱子并排完全分开: 每个系列独立柱子，间隙合适即可
             itemStyle: {
@@ -212,7 +212,7 @@ export default({
             type: 'bar',
             data: this.faultValues,
             color: '#FF9000',
-            barWidth: '20%',
+            barWidth: this.faultValues.length > 1 ? '20%' : 30,
             barGap: '30%',
             itemStyle: {
               borderRadius: [2, 2, 0, 0],
@@ -235,7 +235,7 @@ export default({
             type: 'bar',
             data: this.offlineValues,
             color: '#B6B6B6',
-            barWidth: '20%',
+            barWidth: this.offlineValues.length > 1 ? '20%' : 30,
             barGap: '30%',
             itemStyle: {
               borderRadius: [2, 2, 0, 0],

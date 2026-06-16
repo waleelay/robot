@@ -234,7 +234,6 @@ GET /api/bigscreen/panorama/overview
   "devices": [
     {
       "robotId": "robot-001",
-      "deviceId": "robot-001",
       "clientId": "robot-media-client",
       "name": "松灵四轮机器人",
       "type": "轮式机器人",
@@ -255,15 +254,15 @@ GET /api/bigscreen/panorama/overview
           "status": "online"
         }
       ],
-      "onlineStatus": "online",
       "stateSeq": 1,
       "fault": false,
       "alarmLevel": null,
       "controlMode": "MANUAL",
+      "mountedDeviceCount": 3,
       "speed": null,
       "location": {
-        "lng": 113.923456,
-        "lat": 22.512345,
+        "lng": 106.03655278081857,
+        "lat": 30.7478613352993,
         "altitude": null,
         "address": "A区主干道",
         "updatedAt": "2026-06-12 11:30:58"
@@ -294,7 +293,7 @@ GET /api/bigscreen/panorama/overview
       "currentLocation": "A区主干道",
       "equipmentList": [
         {
-          "deviceId": "robot-001",
+          "robotId": "robot-001",
           "name": "松灵四轮机器人",
           "type": "WHEELED_ROBOT",
           "status": "online"
@@ -318,7 +317,7 @@ GET /api/bigscreen/panorama/overview
           "levelName": "高风险",
           "eventTime": "2023-08-01 10:00:00",
           "location": "A区仓库",
-          "deviceId": "robot-003",
+          "robotId": "robot-003",
           "deviceName": "巡检机器人一号",
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
@@ -342,8 +341,8 @@ GET /api/bigscreen/panorama/overview
   },
   "map": {
     "center": {
-      "lng": 113.923456,
-      "lat": 22.512345
+      "lng": 106.03655278081857,
+      "lat": 30.7478613352993
     },
     "zoom": 17,
     "defaultLayer": "dark-vector",
@@ -351,6 +350,15 @@ GET /api/bigscreen/panorama/overview
   }
 }
 ```
+
+当前 mock 的 4 台机器人定位：
+
+| robotId | lat | lng |
+|---|---:|---:|
+| `robot-001` | 30.7478613352993 | 106.03655278081857 |
+| `robot-002` | 30.746587087515316 | 106.03824884204943 |
+| `robot-unitree-001` | 30.7469491 | 106.0344109 |
+| `robot-003` | 30.745330 | 106.039428 |
 
 ### 5.3 设备详情接口
 
@@ -365,7 +373,6 @@ GET /api/bigscreen/panorama/devices/{deviceId}
 ```json
 {
   "robotId": "robot-001",
-  "deviceId": "robot-001",
   "clientId": "robot-media-client",
   "name": "松灵四轮机器人",
   "type": "轮式机器人",
@@ -376,15 +383,14 @@ GET /api/bigscreen/panorama/devices/{deviceId}
   "battery": 100,
   "lastHeartbeatAt": "2026-06-12 11:30:58",
   "cameras": [],
-  "onlineStatus": "online",
   "stateSeq": 1,
   "alarmStatus": "none",
   "alarmText": "-",
   "controlMode": "MANUAL",
   "speed": null,
   "location": {
-    "lng": 113.923456,
-    "lat": 22.512345,
+    "lng": 106.03655278081857,
+    "lat": 30.7478613352993,
     "altitude": null,
     "address": "A区主干道",
     "updatedAt": "2026-06-12 11:30:58"
@@ -443,7 +449,6 @@ GET /api/bigscreen/panorama/device-groups
       "count": 2,
       "items": [
         {
-          "deviceId": "robot-001",
           "robotId": "robot-001",
           "clientId": "robot-media-client",
           "name": "松灵四轮机器人",
@@ -527,7 +532,7 @@ GET /api/bigscreen/panorama/alarms
           "levelName": "高风险",
           "eventTime": "2023-08-01 10:00:00",
           "location": "A区仓库",
-          "deviceId": "robot-003",
+          "robotId": "robot-003",
           "deviceName": "巡检机器人一号",
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
@@ -599,7 +604,7 @@ WS /ws/bigscreen
   "eventId": "evt-001",
   "timestamp": "2026-06-12 11:31:10",
   "payload": {
-    "deviceId": "robot-001",
+    "robotId": "robot-001",
     "status": "online",
     "battery": 96,
     "fault": false,
@@ -616,7 +621,7 @@ WS /ws/bigscreen
   "eventId": "evt-002",
   "timestamp": "2026-06-12 11:31:11",
   "payload": {
-    "deviceId": "robot-001",
+    "robotId": "robot-001",
     "location": {
       "lng": 113.923556,
       "lat": 22.512385,

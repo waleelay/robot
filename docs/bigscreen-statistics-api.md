@@ -70,8 +70,8 @@ GET /api/bigscreen/statistics/overview
     "deviceType": "all",
     "areaId": null
   },
-  "kpis": [
-    {
+  "kpis": {
+    "taskTotal": {
       "code": "taskTotal",
       "name": "任务执行总数",
       "value": 288,
@@ -80,7 +80,7 @@ GET /api/bigscreen/statistics/overview
       "compareRate": -5,
       "trend": "down"
     }
-  ],
+  },
   "equipmentRuntime": {
     "onlineRate": 98,
     "taskCompletionRate": 100,

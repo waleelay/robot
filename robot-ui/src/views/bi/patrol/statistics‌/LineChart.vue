@@ -115,7 +115,7 @@ export default({
         yAxis: {
           name: '单位（次）',
           nameTextStyle: {
-            padding: [0, 0, 0, 45],
+            padding: [0, 0, 0, 20],
             fontSize: 14,
             fontFamily: 'Microsoft YaHei',
             color: 'rgba(122, 155, 189, 0.80)',

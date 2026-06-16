@@ -4,22 +4,35 @@
       <div class="tabs flx-align-center">
         <div class="custom-tab-button flex">
           <div
-            v-for="item in tabDates"
+            v-for="item of rangeMap"
             :key="item.value"
             class="tab-button-item pt5 pb5"
             style="font-size: 14px; line-height: 19px;"
-            :class="{ 'is-active': tabDateIndex === item.value }"
+            :class="{ 'is-active': tabDate === item.value }"
             @click="handleClickTabDate(item.value)">
             {{ item.label }}
+            <el-date-picker
+              v-if="item.value === 'custom'"
+              v-model="dateValue"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              format="yyyy-M-d"
+              value-format="yyyy-M-d"
+              :picker-options="pickerOptions"
+              @change="loadStatistics"
+            >
+            </el-date-picker>
           </div>
         </div>
         <div class="custom-tab-button flex ml27">
           <div
-            v-for="item  in tabRobots"
+            v-for="item of deviceTypeMap"
             :key="item.value"
             class="tab-button-item pt5 pb5"
             style="font-size: 14px; line-height: 19px;"
-            :class="{ 'is-active': tabRobotIndex === item.value }"
+            :class="{ 'is-active': tabRobot === item.value }"
             @click="handleClickTabRobot(item.value)">
             {{ item.label }}
           </div>
@@ -46,7 +59,7 @@
               <div class="mt2 date">
                 <div class="desc">时间选择</div>
                 <el-radio-group v-model="radioValue" class="custom-radio-group1 flex flex-column with-border vertical">
-                  <el-radio v-for="item in radioList" :key="item.value" :label="item.value">{{ item.label }}</el-radio>
+                  <el-radio v-for="item in Object.values(rangeMap).filter(k => k.value !== 'all' && k.value !== 'custom')" :key="item.value" :label="item.value">{{ item.label }}</el-radio>
                 </el-radio-group>
               </div>
               <el-dropdown-item>
@@ -60,7 +73,7 @@
         </el-dropdown>
       </div>
     </div>
-    <div class="overview d-flex flex-wrap mt20" v-loading="loading">
+    <div class="overview d-flex flex-wrap mt20">
       <div
         v-for="(item, index) in kpiCards"
         :key="item.code"
@@ -73,9 +86,9 @@
           <div class="title mt4">{{ item.name }}</div>
           <div class="value mt4"><span class="mr8">{{ item.value }}</span>{{ item.unit }}</div>
           <div class="desc mt4 d-flex" style="align-items: end">
-            <span class="mr10">{{ item.compareLabel }}</span>
-            <svg-icon icon-class="increase" class="increase" :class="{ 't': item.trend === 'down' }" />
-            <span class="ml2">{{ item.compareRate > 0 ? '+' : '' }}{{ item.compareRate }}<span style="font-size: 14px;">%</span></span>
+            <span class="mr10">{{ tabDate === 'today' ? '较昨日' : tabDate === 'week' ? '较上周' : tabDate === 'week' ? '较上月' : '较同期' }}</span>
+            <svg-icon icon-class="increase" class="increase" :class="{ 't': item.compareRate > 0 }" />
+            <span class="ml2">{{ item.compareRate > 0 ? '+' : '' }}{{ item.compareRate || '-' }}<span style="font-size: 14px;">%</span></span>
           </div>
         </div>
       </div>
@@ -202,20 +215,6 @@ const moduleMap = {
   告警高发区域: 'alarmAreaRanking',
   告警趋势图: 'alarmTrend'
 };
-const rangeMap = {
-  all: 'all',
-  0: 'today',
-  1: 'week',
-  2: 'month',
-  3: 'custom'
-};
-const deviceTypeMap = {
-  all: 'all',
-  0: 'UAV',
-  1: 'ROBOT_DOG',
-  2: 'UGV',
-  3: 'HUMANOID_ROBOT'
-};
 
 export default {
   name: 'BiPatrolStatistics',
@@ -228,54 +227,64 @@ export default {
       checkedCities: ['装备运行时长', 'AI告警分析'],
       cities: cityOptions,
       isIndeterminate: true,
-      radioValue: 1,
-      radioList: [{ label: '今日', value: 0 }, { label: '本周', value: 1 }, { label: '本月', value: 2 }],
-      tabDates: [
-        {
+      radioValue: 'today',
+      rangeMap: {
+        all: {
           value: 'all',
           label: '全部',
         },
-        {
-          value: 0,
+        today: {
+          value: 'today',
           label: '今日',
         },
-        {
-          value: 1,
+        week: {
+          value: 'week',
           label: '本周',
         },
-        {
-          value: 2,
+        month: {
+          value: 'month',
           label: '本月',
         },
-        {
-          value: 3,
+        custom: {
+          value: 'custom',
           label: '自定义',
         },
-      ],
-      tabDateIndex: 2,
-      tabRobots: [
-        {
+      },
+      deviceTypeMap: {
+        'all': {
           value: 'all',
-          label: '全部',
+          label: '全部'
         },
-        {
-          value: 0,
-          label: '无人机',
+        'UAV': {
+          value: 'UAV',
+          label: '无人机'
         },
-        {
-          value: 1,
-          label: '机器狗',
+        'ROBOT_DOG': {
+          value: 'ROBOT_DOG',
+          label: '机器狗'
         },
-        {
-          value: 2,
-          label: '无人车',
+        'UGV': {
+          value: 'UGV',
+          label: '无人车'
         },
-        {
-          value: 3,
-          label: '机器人',
-        },
-      ],
-      tabRobotIndex: 'all',
+        'HUMANOID_ROBOT': {
+          value: 'HUMANOID_ROBOT',
+          label: '机器人'
+        }
+      },
+      dateValue: [],
+      pickerOptions: {
+        disabledDate: (date) => {
+          const before = `${new Date().getFullYear() - 9}-1-1 00:00:00`;
+          // 生效日期至当前日期
+          return (
+            new Date(date).getTime() < new Date(before).getTime() ||
+                  new Date(date).getTime() > new Date().getTime()
+          );
+        }
+      },
+      tabDate: 'all',
+      tabRobot: 'all',
       rankList: [
         { name: '2监区8号楼', nums: 52 },
         { name: '训练场西门', nums: 20 },
@@ -293,14 +302,14 @@ export default {
         aiAlarmTotal: require('@/assets/images/new-bi/data-ai.png'),
         autoHandleSuccessRate: require('@/assets/images/new-bi/data-execute.png')
       };
+      const { taskTotal, patrolMileage, aiAlarmTotal, autoHandleSuccessRate } = this.statistics?.kpis || {};
       const fallback = [
-        { code: 'taskTotal', name: '任务执行总数', value: 288, unit: '个', compareLabel: '较上月', compareRate: 20, trend: 'up' },
-        { code: 'patrolMileage', name: '总巡逻里程', value: 356.8, unit: 'KM', compareLabel: '较上月', compareRate: 20, trend: 'up' },
-        { code: 'aiAlarmTotal', name: 'AI自动识别异常数', value: 288, unit: '个', compareLabel: '较上月', compareRate: 20, trend: 'up' },
-        { code: 'autoHandleSuccessRate', name: '自动处置成功率', value: 288, unit: '%', compareLabel: '较上月', compareRate: -5, trend: 'down' }
+        { code: 'taskTotal', icon: icons.taskTotal, name: '任务执行总数', value: taskTotal?.value || 0, unit: '个', compareRate: taskTotal?.compareRate },
+        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: patrolMileage?.value || 0, unit: 'KM', compareRate: patrolMileage?.compareRate },
+        { code: 'aiAlarmTotal', icon: icons.aiAlarmTotal, name: 'AI自动识别异常数', value: aiAlarmTotal?.value || 0, unit: '个', compareRate: aiAlarmTotal?.compareRate },
+        { code: 'autoHandleSuccessRate', icon: icons.autoHandleSuccessRate, name: '自动处置成功率', value: autoHandleSuccessRate?.value || 0, unit: '%', compareRate: autoHandleSuccessRate?.compareRate }
       ];
-      const source = this.statistics && this.statistics.kpis && this.statistics.kpis.length ? this.statistics.kpis : fallback;
-      return source.map(item => ({ ...item, icon: icons[item.code] || icons.taskTotal }));
+      return fallback;
     },
     equipmentRuntime() {
       return (this.statistics && this.statistics.equipmentRuntime) || {};
@@ -318,7 +327,7 @@ export default {
           nums: item.count,
           percent: item.percent
         }))
-        : this.rankList;
+        : [];
       const max = source[0] && source[0].nums ? source[0].nums : 1;
       return source.map(item => ({
         ...item,
@@ -337,9 +346,10 @@ export default {
         || '本月对比上月任务处置时长缩短10%，系统响应速度提升';
     },
     statisticsParams() {
+      // 自定义时取值{ startTime: this.dateValue[0], endTime: this.dateValue[1] }
       return {
-        range: rangeMap[this.tabDateIndex],
-        deviceType: deviceTypeMap[this.tabRobotIndex]
+        range: this.tabDate,
+        deviceType: this.tabRobot
       };
     }
   },
@@ -352,11 +362,13 @@ export default {
   },
   methods: {
     handleClickTabDate(e) {
-      this.tabDateIndex = e
-      this.loadStatistics()
+      this.tabDate = e
+      if (e !== 'custom') {
+        this.loadStatistics()
+      }
     },
     handleClickTabRobot(e) {
-      this.tabRobotIndex = e
+      this.tabRobot = e
       this.loadStatistics()
     },
     // 历史报告列表
@@ -365,16 +377,23 @@ export default {
     },
     // 生成报告
     async generateReport() {
+      if (!this.checkedCities.length) {
+        this.$message({
+          message: '请选择要下载的模块',
+          type: 'warning'
+        });
+        return;
+      }
       try {
         const modules = this.checkedCities.map(item => moduleMap[item]).filter(Boolean);
         const data = {
           modules,
           timeRange: {
-            type: rangeMap[this.radioValue],
+            type: this.radioValue,
             startTime: null,
             endTime: null
           },
-          deviceType: deviceTypeMap[this.tabRobotIndex],
+          deviceType: this.tabRobot,
           areaIds: [],
           alarmTypes: [],
           handleMethods: [],
@@ -388,11 +407,16 @@ export default {
       }
     },
     async loadStatistics() {
-      this.loading = true;
+      const loading = this.$loading({
+        lock: true,
+        text: '',
+        spinner: 'el-icon-loading',
+        background: 'rgba(0, 0, 0, 0.1)'
+      });
       try {
         this.statistics = await getPatrolStatisticsOverview(this.statisticsParams);
       } finally {
-        this.loading = false;
+        loading.close()
       }
     },
     handleCheckAllChange(val) {
@@ -757,6 +781,18 @@ export default {
     border-radius: 3px;
     border: none;
     background: linear-gradient(0deg, #0263C4 0%, #0263C4 100%);
+  }
+}
+.tab-button-item {
+  position: relative;
+  .el-date-editor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    opacity: 0;
   }
 }
 </style>

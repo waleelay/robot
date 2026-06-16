@@ -19,12 +19,6 @@ export default({
   },
   watch: {
       // 数据变化重新渲染柱状图（确保分组柱状图更新）
-      deviceStatusData: {
-          deep: true,
-          handler() {
-              this.renderGroupBarChart();
-          }
-      },
       items: {
           deep: true,
           handler() {
@@ -61,10 +55,10 @@ export default({
       const source = this.items && this.items.length
         ? this.items
         : [
-          { name: '语音播报', count: 100 },
-          { name: '自动调度', count: 200 },
-          { name: '远程控制', count: 300 },
-          { name: '人工处理', count: 400 }
+          // { name: '语音播报', count: 100 },
+          // { name: '自动调度', count: 200 },
+          // { name: '远程控制', count: 300 },
+          // { name: '人工处理', count: 400 }
         ]
       const names = source.map(item => item.name)
       const nums = source.map(item => item.count || item.value || 0)
