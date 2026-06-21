@@ -28,16 +28,23 @@ export default {
             this.ZQL_playingSource = { }
             this.ZQL_videosInfos = { }
           }
-          const existIndex = Object.values(this.ZQL_playingSource).findIndex(item => item === camera.key)
-          // console.log('existIndex============', cameraIndex, existIndex);
-          const newKey = existIndex !== -1 ? `${this.robot.robotId}_${existIndex}` : key
-          this.$set(this.ZQL_videosInfos, newKey, { robot: this.robot, ...this.ZQL_videosInfos[newKey], ...camera});
-          // console.log('newKey============', this.ZQL_videosInfos[newKey]);
-          this.$set(this.ZQL_playingSource, newKey, camera.key);
+          this.$set(this.ZQL_videosInfos, key, { ...this.ZQL_videosInfos[key], robot: this.robot, ...camera});
+          this.$set(this.ZQL_playingSource, key, camera.key);
         }
       if (!this.started) return
       this.started = false
       await this.startAll()
+    },
+    rebindCameraTracks(cameras) {
+      this.$nextTick(() => {
+        (cameras || []).forEach(camera => {
+          if (!camera) return
+          const video = document.getElementById(this.prefixId + camera.key)
+          const audio = document.getElementById(this.prefixId + camera.key + '-audio')
+          if (camera.remoteVideoTrack && video) camera.remoteVideoTrack.attach(video)
+          if (camera.remoteAudioTrack && audio) camera.remoteAudioTrack.attach(audio)
+        })
+      })
     },
     async startAll() {
       console.log('startAll=============', 123)

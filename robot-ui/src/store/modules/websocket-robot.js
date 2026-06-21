@@ -46,7 +46,7 @@ const state = {
   statistics: {},
   videoUrl: '',
   vehicle: {}, //车辆管控信息
-  
+
   // ============ Media 相关状态 ============
   wsConnected: false, // 媒体服务 WebSocket 连接状态
   mediaSocket: null, // 媒体服务 WebSocket 实例
@@ -57,7 +57,7 @@ const state = {
   stoppedSessionIds: new Set(), // 已停止的会话ID集合
   selectedRobotId: '', // 当前选中的机器人ID
   activeCameras: {}, // 存储当前激活的摄像头 { [key]: { robot, camera } }
-  
+
   ptzAutoRotateState: {},
   audioState: {},
   controlProfiles: {},
@@ -154,7 +154,7 @@ const mutations = {
   // 设置控制配置文件
   setControlProfiles(state, { robotId, profile }) {
     console.log('setControlProfiles', robotId, profile);
-    
+
     state.controlProfiles = { ...state.controlProfiles, [robotId]: profile }
   },
   setPrefixId(state, prefixId) {
@@ -220,8 +220,8 @@ function toRobotState(robot) {
     status: robot.status || robot.onlineStatus || 'offline',
     cameras: (robot.cameras || []).map(camera => Object.assign(
       {},
-      cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible', camera.groupType),
       camera,
+      cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible', camera.groupType),
       {
         cameraId: camera.cameraId || camera.deviceId,
         quality: camera.quality || 'sub',
@@ -355,7 +355,7 @@ function selectedCandidatePairRtt(stats) {
 
 // ============ 导出 actions ============
 // 定义 actions 以便于进行异步操作
-const actions = {  
+const actions = {
   // ============ Media 相关 actions ============
   // 加载机器人列表
   async loadRobots({ commit, state, dispatch }, payload) {
@@ -371,8 +371,8 @@ const actions = {
     // }
     // await dispatch('loadControlProfile', robots[0].robotId)
   },
-  
-  
+
+
   // 连接媒体服务 WebSocket
   connectMediaWebSocket({ commit, state, dispatch }) {
     // const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -453,7 +453,7 @@ const actions = {
       commit('setRobots', [...state.robots, toBasicRobot(incoming)])
     }
   },
-  
+
   // 处理会话状态更新事件
   syncSessionEvent({ commit, state, dispatch }, event) {
     if (!event || !event.data || !event.data.sessionId) return
@@ -502,7 +502,7 @@ const actions = {
   async ensureControlSession({ commit, state }, {device, action}) {
     if (!device) throw new Error('未找到控制设备')
       console.log(device, action);
-      
+
     const key = `${state.selectedRobotId}:${device.deviceId}:${action}`
     if (state.controlSessions[key] && state.controlSessions[key].status === 'ACTIVE') {
       return state.controlSessions[key]
@@ -594,7 +594,7 @@ const actions = {
     }
     // console.log('4')
   },
-  
+
   // 停止摄像头
   async stopCamera({ commit, state }, camera) {
     // console.log('stopCamera', camera.session)
@@ -731,7 +731,7 @@ const actions = {
       commit('setCamera', camera)
     }
   },
-  
+
   // 连接 LiveKit 会话
   async connectLiveKit({ commit, dispatch }, { camera, refreshToken, connectionToken }) {
     if (camera.connecting || !camera.session) return
@@ -802,7 +802,7 @@ const actions = {
       commit('setCamera', camera)
     }
   },
-  
+
   // 重启摄像头
   async restartCamera({ commit, state }, camera) {
     if (camera.stopping || camera.stopped || camera.restarting) return
@@ -836,7 +836,7 @@ const actions = {
   // 切换激活摄像头
   async toggleCamera({ commit, state, dispatch }, { robot, camera }) {
     const key = camera.key;
-    
+
     if (state.activeCameras[key]) {
       // 已激活，停止视频
       await dispatch('stopCamera', camera);

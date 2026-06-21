@@ -31,9 +31,10 @@
                 className="six-1" />
             </div>
             <div v-if="robot?.cameras?.length > 1" class="ml10 p5 side-list common-scroll ovya">
-              <div v-for="(camera, cameraIndex) in robot.cameras.slice(1)" @click="handleClickVideo(`${robot.robotId}_${cameraIndex + 1}`, camera)" class="wp160 hp90 main" :class="{ 'mt10': cameraIndex !== 0 }">
+              <div v-for="(camera, cameraIndex) in robot.cameras.slice(1)" :key="cameraIdentity(robot.robotId, camera)" class="wp160 hp90 main curp" :class="{ 'mt10': cameraIndex !== 0 }">
                 <VideoBox
                   @toggleFullscreen="toggleFullscreen"
+                  @select="swapWithMain(cameraIndex + 1)"
                   :videoIndex="`${robot.robotId}_${cameraIndex + 1}`"
                   :prefixId="prefixId"
                   :ZQL_videosInfos="ZQL_videosInfos"
@@ -196,7 +197,8 @@ export default {
       ],
       selectMode: 1,
       prefixId: 'robot-car-video-div',
-      robot: {}
+      robot: {},
+      cameraOrderByRobot: {}
     }
   },
   computed: {
@@ -205,6 +207,21 @@ export default {
     },
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot']
+    },
+    cameras() {
+      return this.$store.getters['websocketRobot/getCameras']
+    },
+    camerasRevision() {
+      return this.$store.getters['websocketRobot/getCamerasRevision']
+    },
+    cameraKeys() {
+      if (!this.selectedRobot?.robotId) return []
+      return (this.selectedRobot.cameras || []).map(camera => this.cameraIdentity(this.selectedRobot.robotId, camera))
+    },
+    cameraStateSignature() {
+      return [this.camerasRevision]
+        .concat(this.cameraKeys.map(key => `${key}:${this.cameras[key]?._revision || 0}`))
+        .join('|')
     },
     showTalk() {
       return Boolean(this.audioDevice)
@@ -216,7 +233,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketRobot', ['setPrefixId', 'setSelectedRobotId', 'restartCamera']),
+    ...mapActions('websocketRobot', ['setPrefixId', 'setSelectedRobotId']),
     show(visible) {
       this.visible = visible;
     },
@@ -232,52 +249,46 @@ export default {
       if (e.target.className.includes('el-slider')) return
       this.setVehicleLightMode(this.tabIndex === 0 ? 'front' : 'rear', index === 0 ? 'OFF' : item.key)
     },
-    async handleClickVideo(sourceKey, camera) {
-      const { stopping, stopped, restarting, session } = camera
-      console.log(stopping, stopped, restarting, session, session.status, this.$store.state.websocketRobot.stoppedSessionIds);
-      if (camera.stopping || camera.stopped || camera.restarting) return
-      if (!camera.session || camera.session.status === 'CLOSED') return
-      if (this.$store.state.websocketRobot.stoppedSessionIds.has(camera.session.sessionId)) return
-      if (!['STREAMING', 'INTERRUPTED'].includes(camera.session.status)) return
-      this.disabled = true
-      // console.log(22222222222222);
-      // this.setSelectedRobotId(this.selectedRobotId)
-      // this.$router.push({ path: '/bi/patrol/monitor', query: { cameraId: camera.cameraId } })
-      const targetKey = `${this.robot.robotId}_0`
-      const existObj = Object.assign({}, this.ZQL_videosInfos[targetKey])
-      const sourceObj = Object.assign({}, this.ZQL_videosInfos[sourceKey])
-      // console.log(existObj.name, sourceObj.name, targetKey, sourceKey);
-      
-      if (this.ZQL_playingSource[targetKey]) {
-        this.$set(this.ZQL_videosInfos, sourceKey, existObj)
-        this.$set(this.ZQL_playingSource, sourceKey, existObj.key)
-        // const existCamera = existObj.robot ? existObj.robot : robot.robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
-        await this.restartCamera(this.ZQL_videosInfos[targetKey])
-      } else {
-        this.$set(this.ZQL_videosInfos, sourceKey, null)
-        this.$set(this.ZQL_playingSource, sourceKey, null)
-      }
-      console.log(12345, targetKey, sourceObj);
-      
-      this.$set(this.ZQL_videosInfos, targetKey, sourceObj)
-      this.$set(this.ZQL_playingSource, targetKey, sourceObj.key)
-      // console.log(123, this.ZQL_videosInfos);
-      
-      await this.restartCamera(camera)
-      // console.log(33333333);
-      this.disabled = false
+    cameraIdentity(robotId, camera) {
+      return camera.key || `${robotId}-${camera.deviceId || camera.cameraId}-${camera.channel || 'visible'}`
+    },
+    orderedCameras(robot) {
+      const cameras = (robot.cameras || [])
+        .map(camera => this.cameras[this.cameraIdentity(robot.robotId, camera)] || camera)
+        .sort((a, b) => a.groupType === 'body' ? -1 : b.groupType === 'body' ? 1 : 0)
+      const availableKeys = cameras.map(camera => this.cameraIdentity(robot.robotId, camera))
+      const previousOrder = this.cameraOrderByRobot[robot.robotId] || []
+      const order = previousOrder
+        .filter(key => availableKeys.includes(key))
+        .concat(availableKeys.filter(key => !previousOrder.includes(key)))
+      this.$set(this.cameraOrderByRobot, robot.robotId, order)
+      return order.map(key => this.cameras[key] || cameras.find(camera => this.cameraIdentity(robot.robotId, camera) === key))
+    },
+    async syncRobot() {
+      if (!this.selectedRobot?.robotId || !this.visible) return
+      this.setPrefixId(this.prefixId)
+      this.robot = { ...this.selectedRobot, cameras: this.orderedCameras(this.selectedRobot) }
+      await this.updateInfo()
+    },
+    async swapWithMain(cameraIndex) {
+      if (cameraIndex <= 0 || cameraIndex >= (this.robot.cameras || []).length) return
+      const cameras = [...this.robot.cameras]
+      const mainCamera = cameras[0]
+      cameras[0] = cameras[cameraIndex]
+      cameras[cameraIndex] = mainCamera
+      this.robot = { ...this.robot, cameras }
+      this.$set(this.cameraOrderByRobot, this.robot.robotId, cameras.map(camera => this.cameraIdentity(this.robot.robotId, camera)))
+      await this.updateInfo()
+      this.rebindCameraTracks([cameras[0], cameras[cameraIndex]])
     }
   },
   watch: {
-    selectedRobot: {
-      handler(newVal, oldVal) {
-        // console.log('aaa========', this.selectedRobotId, this.selectedRobot);
-        if (!newVal || !this.selectedRobotId || !this.visible) return
-        this.setPrefixId(this.prefixId)
-        this.robot = Object.assign({}, newVal);
-        this.updateInfo()
+    cameraStateSignature: {
+      async handler() {
+        await this.syncRobot()
       },
-      deep: true
+      deep: false,
+      immediate: true
     },
     visible: {
       async handler(newVal) {
@@ -288,6 +299,7 @@ export default {
           return
         }
         this.started = true
+        await this.syncRobot()
       },
       immediate: true
     }
