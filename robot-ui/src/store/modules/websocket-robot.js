@@ -52,6 +52,7 @@ const state = {
   mediaSocket: null, // 媒体服务 WebSocket 实例
   robots: [], // 机器人列表
   cameras: {}, // 全局摄像头索引 { [cameraKey]: camera }
+  camerasRevision: 0,
   heartbeatTimer: null, // 心跳定时器
   stoppedSessionIds: new Set(), // 已停止的会话ID集合
   selectedRobotId: '', // 当前选中的机器人ID
@@ -69,10 +70,32 @@ const state = {
   controlSessions: {}
 };
 
+function cameraKey(robotId, camera) {
+  return camera.key || `${robotId}-${camera.deviceId || camera.cameraId}-${camera.channel || 'visible'}`
+}
+
+function toBasicCamera(camera) {
+  return {
+    cameraId: camera.cameraId || camera.deviceId,
+    channel: camera.channel || 'visible',
+    deviceId: camera.deviceId || camera.cameraId,
+    groupType: camera.groupType,
+    name: camera.name,
+    quality: camera.quality || 'sub',
+    status: camera.status || 'offline'
+  }
+}
+
+function toBasicRobot(robot) {
+  return Object.assign({}, robot, {
+    cameras: (robot.cameras || []).map(toBasicCamera)
+  })
+}
+
 function indexCameras(robots) {
   return (robots || []).reduce((result, robot) => {
     (robot.cameras || []).forEach(camera => {
-      result[camera.key] = camera
+      result[cameraKey(robot.robotId, camera)] = camera
     })
     return result
   }, {})
@@ -92,9 +115,7 @@ const mutations = {
   },
   // 设置机器人列表
   setRobots(state, robots) {
-    // console.log('setRobots', robots)
     state.robots = robots
-    state.cameras = indexCameras(robots)
   },
   // 更新单个机器人状态
   updateRobot(state, robot) {
@@ -104,7 +125,27 @@ const mutations = {
     } else {
       state.robots.push(robot)
     }
-    state.cameras = indexCameras(state.robots)
+  },
+  setCameras(state, cameras) {
+    state.cameras = cameras
+    state.camerasRevision += 1
+  },
+  setCamera(state, camera) {
+    if (!camera || !camera.key) return
+    camera._revision = (camera._revision || 0) + 1
+    state.cameras = { ...state.cameras, [camera.key]: camera }
+
+    const robotIndex = state.robots.findIndex(item => item.robotId === camera.robotId)
+    if (robotIndex < 0) return
+    const robot = state.robots[robotIndex]
+    const cameraIndex = (robot.cameras || []).findIndex(item =>
+      (item.deviceId || item.cameraId) === (camera.deviceId || camera.cameraId) &&
+      (item.channel || 'visible') === (camera.channel || 'visible')
+    )
+    if (cameraIndex < 0 || robot.cameras[cameraIndex].status === camera.status) return
+    const cameras = robot.cameras.slice()
+    cameras[cameraIndex] = { ...cameras[cameraIndex], status: camera.status }
+    state.robots.splice(robotIndex, 1, { ...robot, cameras })
   },
   // 设置选中的机器人ID
   setSelectedRobotId(state, robotId) {
@@ -178,8 +219,9 @@ function toRobotState(robot) {
     stateSeq: robot.stateSeq || 0,
     status: robot.status || robot.onlineStatus || 'offline',
     cameras: (robot.cameras || []).map(camera => Object.assign(
-      camera,
+      {},
       cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible', camera.groupType),
+      camera,
       {
         cameraId: camera.cameraId || camera.deviceId,
         quality: camera.quality || 'sub',
@@ -250,7 +292,7 @@ function mergeSession(camera, update) {
 
 // 获取所有相机
 function allCameras() {
-  return state.robots.reduce((items, robot) => items.concat(robot.cameras), [])
+  return Object.values(state.cameras)
 }
 
 // 判断是否已停止会话
@@ -265,20 +307,6 @@ function shouldAttachFromEvent(event, camera) {
   if (camera.hasVideo) return false
   return !camera.room || camera.room.state === 'disconnected'
 }
-
-function getUpdatedRobots(camera) {
-  const updatedRobots = state.robots.map(robot => {
-    const cameraIndex = robot.cameras.findIndex(c => c.key === camera.key);
-    if (cameraIndex >= 0) {
-      const updatedCameras = [...robot.cameras];
-      updatedCameras[cameraIndex] = camera;
-      return { ...robot, cameras: updatedCameras };
-    }
-    return robot;
-  });
-  return updatedRobots
-}
-
 
 function activeRecordingInProgress(camera) {
   return camera.recordingActive || (camera.activeRecording && camera.activeRecording.status === 'RECORDING')
@@ -334,7 +362,9 @@ const actions = {
     // const robots = await getRobots()
     const robots = payload
     if (robots && robots.length) {
-      commit('setRobots', robots.map(robot => toRobotState(robot)))
+      const fullRobots = robots.map(robot => toRobotState(robot))
+      commit('setCameras', indexCameras(fullRobots))
+      commit('setRobots', fullRobots.map(toBasicRobot))
     }
     // if (!state.robots.find(robot => robot.robotId === state.selectedRobotId)) {
     //   commit('setSelectedRobotId', state.robots[0]?.robotId || '')
@@ -372,14 +402,13 @@ const actions = {
     const data = event && (event.data || event.payload)
     if (!data || !data.robotId) return
     if (event.event !== 'robot.state' && event.type !== 'robot.state') return
-    const incoming = toRobotState(event.data)
+    const incoming = toRobotState(data)
     // console.log('12', existing)
     const index = state.robots.findIndex(robot => robot.robotId === incoming.robotId)
     if (index >= 0) {
       const existing = state.robots[index]
-      const previous = new Map(existing.cameras.map(camera => [camera.deviceId, camera]))
       incoming.cameras = incoming.cameras.map(camera => {
-        const old = previous.get(camera.deviceId)
+        const old = state.cameras[camera.key]
         if (!old) return camera
         if (incoming.status === 'offline' && old.room) {
           old.disconnecting = true
@@ -417,12 +446,11 @@ const actions = {
           remoteVideoTrack: old.remoteVideoTrack || null,
         })
       })
-      // console.log('1', incoming)
-      // console.log('12', existing)
-      commit('updateRobot', { ...existing, ...incoming })
+      incoming.cameras.forEach(camera => commit('setCamera', camera))
+      commit('updateRobot', toBasicRobot({ ...existing, ...incoming }))
     } else {
-    // console.log('2')
-      commit('setRobots', [...state.robots, incoming])
+      incoming.cameras.forEach(camera => commit('setCamera', camera))
+      commit('setRobots', [...state.robots, toBasicRobot(incoming)])
     }
   },
   
@@ -444,7 +472,7 @@ const actions = {
       camera.intercomStatus = event.data.intercomStatus || camera.intercomStatus
       camera.intercomActive = !['IDLE', 'FAILED'].includes(camera.intercomStatus)
     }
-    commit('setRobots', getUpdatedRobots(camera));
+    commit('setCamera', camera)
   },
 
   syncControlEvent({ commit, state, dispatch }, event) {
@@ -510,28 +538,28 @@ const actions = {
   },
   // 视频会话心跳
   async heartbeatViewers({ state, commit }) {
-    allCameras().forEach(async camera => {
+    for (const camera of allCameras()) {
+      let changed = false
       if (camera.session && !camera.stopped && !camera.stopping) {
-        const heartbeat = camera.watching
-          ? heartbeatVideoSession(camera.session.sessionId)
-          : Promise.resolve(camera.session)
-        heartbeat
-          .then(session => {
-            if (camera.session && camera.session.sessionId === session.sessionId) {
-              camera.viewerCount = session.viewerCount
-            }
-          })
-          .catch(() => {})
+        try {
+          const session = camera.watching
+            ? await heartbeatVideoSession(camera.session.sessionId)
+            : camera.session
+          if (camera.session && camera.session.sessionId === session.sessionId) {
+            changed = camera.viewerCount !== session.viewerCount || changed
+            camera.viewerCount = session.viewerCount
+          }
+        } catch (_) {}
       }
       if (camera.session && camera.intercomActive) {
-        await heartbeatIntercom(camera.session.sessionId)
-          .then(response => {
-            camera.intercomStatus = response.intercomStatus
-          })
-          .catch(() => {})
+        try {
+          const response = await heartbeatIntercom(camera.session.sessionId)
+          changed = camera.intercomStatus !== response.intercomStatus || changed
+          camera.intercomStatus = response.intercomStatus
+        } catch (_) {}
       }
-      commit('setRobots', getUpdatedRobots(camera));
-    })
+      if (changed) commit('setCamera', camera)
+    }
   },
   // 启动摄像头
   async startCamera({ commit, state, dispatch }, { robot, camera }) {
@@ -561,11 +589,10 @@ const actions = {
       console.log('ERROR createVideoSession', error.message || '请求失败')
     } finally {
       camera.loading = false
-      commit('setRobots', getUpdatedRobots(camera));
+      commit('setCamera', camera)
       commit('setActiveCamera', { key: camera.key, robot, camera });
     }
     // console.log('4')
-    // console.log('getUpdatedRobots', getUpdatedRobots(camera))
   },
   
   // 停止摄像头
@@ -609,7 +636,7 @@ const actions = {
       camera.disconnecting = false
       camera.stopping = false
       camera.loading = false
-      commit('setRobots', getUpdatedRobots(camera));
+      commit('setCamera', camera)
       commit('removeActiveCamera', camera.key);
     }
   },
@@ -648,7 +675,7 @@ const actions = {
       camera.intercomStatus = response.intercomStatus
       camera.stopped = false
       if (!camera.room) {
-        await dispatch('connectLiveKit', { camera, refreshToken: false, token: response.operatorToken })
+        await dispatch('connectLiveKit', { camera, refreshToken: false, connectionToken: response.operatorToken })
       }
       if (camera.room) {
         await camera.room.localParticipant.setMicrophoneEnabled(true, {
@@ -666,7 +693,7 @@ const actions = {
       // console.log('ERROR startIntercom', this.errorMessage(error))
     } finally {
       camera.intercomBusy = false
-      commit('setRobots', getUpdatedRobots(camera));
+      commit('setCamera', camera)
     }
   },
   async hangupIntercom({ commit, state, dispatch }, camera) {
@@ -701,18 +728,18 @@ const actions = {
       // Message.error(this.errorMessage(error))
     } finally {
       camera.intercomBusy = false
-      commit('setRobots', getUpdatedRobots(camera));
+      commit('setCamera', camera)
     }
   },
   
   // 连接 LiveKit 会话
-  async connectLiveKit({ dispatch }, { camera, refreshToken, connectionToken }) {
+  async connectLiveKit({ commit, dispatch }, { camera, refreshToken, connectionToken }) {
     if (camera.connecting || !camera.session) return
     camera.connecting = true
     try {
       if (!camera.intercomActive && (refreshToken || !camera.session.viewerToken || !camera.session.livekitUrl)) {
         const token = await getViewerToken(camera.session.sessionId)
-        camera.session = this.mergeSession(camera, {
+        camera.session = mergeSession(camera, {
           livekitUrl: token.livekitUrl,
           roomName: token.roomName,
           viewerToken: token.token
@@ -736,17 +763,20 @@ const actions = {
           console.log('TrackSubscribed', camera.key)
           track.attach(document.getElementById(state.prefixId + camera.key))
           camera.remoteVideoTrack = track
+          camera.hasVideo = true
         } else if (track.kind === 'audio') {
           camera.remoteAudioTrack = track
           track.attach(document.getElementById(state.prefixId + camera.key + '-audio'))
           camera.hasAudio = true
         }
+        commit('setCamera', camera)
       })
       room.on(RoomEvent.TrackUnsubscribed, (track) => {
         if (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId) return
         track.detach()
         if (track.kind === 'audio') camera.hasAudio = false
         if (track.kind === 'video') camera.hasVideo = false
+        commit('setCamera', camera)
         console.log('LiveKit TrackUnsubscribed', `${camera.name} ${track.sid || track.name}`)
         if (track.kind === 'video' && camera.watching && !isStoppedSession(camera, sessionId)) {
           dispatch('restartCamera', camera)
@@ -755,6 +785,7 @@ const actions = {
       room.on(RoomEvent.Disconnected, () => {
         if (camera.room !== room || camera.disconnecting) return
         camera.hasVideo = false
+        commit('setCamera', camera)
         console.log('LiveKit Disconnected', camera.name)
         if (camera.watching && !isStoppedSession(camera, sessionId)) dispatch('restartCamera', camera)
       })
@@ -768,6 +799,7 @@ const actions = {
     } finally {
       camera.disconnecting = false
       camera.connecting = false
+      commit('setCamera', camera)
     }
   },
   
@@ -790,7 +822,7 @@ const actions = {
     } finally {
       setTimeout(() => {
         camera.restarting = false
-        commit('setRobots', getUpdatedRobots(camera));
+        commit('setCamera', camera)
       }, 5000)
     }
   },
@@ -1153,11 +1185,16 @@ const getters = {
   // ============ Media 相关 getters ============
   getRobots: (state) => state.robots,
   getCameras: (state) => state.cameras,
+  getCamerasRevision: (state) => state.camerasRevision,
   getSelectedRobotId: (state) => state.selectedRobotId,
   getSelectedRobot: (state) => state.robots.find(item => item.robotId === state.selectedRobotId) || {},
   getDisplayedCameras: (state, getters) => {
     const selectedRobot = getters.getSelectedRobot
-    return selectedRobot ? selectedRobot.cameras.slice(0, 4) : []
+    return selectedRobot
+      ? selectedRobot.cameras.slice(0, 4).map(camera =>
+        state.cameras[cameraKey(selectedRobot.robotId, camera)] || camera
+      )
+      : []
   },
   getMediaSocket: (state) => state.mediaSocket,
   getWsConnected: (state) => state.wsConnected,
