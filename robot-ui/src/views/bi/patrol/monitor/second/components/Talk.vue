@@ -8,39 +8,40 @@
  * @Version: 
 -->
 <template>
-  <div class="box p20 mt10 flx-center flex-column">
-    <div class="circle wp126 hp126 flx-center flex-column" :class="{ 'talking': selectCamera.intercomActive }" @click="handleTalk">
+  <div class="flx-justify-between flex-column" :class="{ 'is-inner': isMapInner }">
+    <div class="circle flx-center flex-column" :class="{ 'talking': selectCamera.intercomActive }" @click="handleTalk">
       <span>
         <!-- <svg-icon :icon-class="isTalk ? 'mic-fill' : 'mic-off-fill'" /> -->
         <svg-icon :icon-class="selectCamera.intercomActive ? 'mic-fill' : 'mic-off-fill'" />
       </span>
       <span class="mt8">{{ selectCamera.intercomActive ? '挂断' : '点击通话' }}</span>
     </div>
-    <div class="wp269 hp16 mt22 progress flx-align-center">
+    <div v-if="!isMapInner" class="wp269 hp16 mt22 progress flx-align-center">
       <!-- 底层未划过轨道 背景色 #093974 -->
       <div class="track-bg"></div>
       <!-- 动态划过层：展示颜色 #0C132A 以及 box-shadow: inset 0 0 6px 2px #09F -->
-      <div class="filled-glow" :style="{'--value-percent': Math.ceil(currentVolume / 255 * 100)}"></div>
-      <!-- <span class="value">{{ currentVolume }}</span> -->
+      <div class="filled-glow" :style="{'--value-percent': Math.ceil(audioVolume(audioDevice) / 255 * 100)}"></div>
+      <!-- <span class="value">{{ audioVolume(audioDevice) }}</span> -->
       <input 
         type="range" 
         min="0" 
         max="255" 
-        v-model="currentVolume"
+        :value="audioVolume(audioDevice)"
         class="custom-slider" 
         @input="updateVolume"
         id="volumeSlider"
-        :style="{'--value-percent': Math.ceil(currentVolume / 255 * 100)}"
+        :style="{'--value-percent': Math.ceil(audioVolume(audioDevice) / 255 * 100)}"
+        :disabled="audioMuted(audioDevice)"
       />
     </div>
-    <div class="btns mt20">
-      <el-button type="primary" class="wp124 hp30" @click="handleControlVoice('MUTE')">{{ isMuted ? '取消' : '静音' }}</el-button>
-      <el-button type="primary" class="wp124 hp30 ml20" style="cursor: default;">
-        <span @click="handleControlVoice('VOLUME_DOWN')">
+    <div class="btns" :class="{'mt20': !isMapInner, 'mt30': isMapInner}">
+      <el-button v-if="!isMapInner" type="primary" class="wp124 hp30" @click="toggleAudioMute(audioDevice)">{{ audioMuted(audioDevice) ? '取消静音' : '静音' }}</el-button>
+      <el-button type="primary" class="wp124 hp30" :class="{ 'ml20': !isMapInner }" style="cursor: default;">
+        <span @click="adjustAudioVolume(audioDevice, -5)">
           <svg-icon icon-class="minus" />
         </span>
         <span class="ml10 mr10">音量</span>
-        <span @click="handleControlVoice('VOLUME_UP')">
+        <span @click="adjustAudioVolume(audioDevice, 5)">
           <svg-icon icon-class="plus" />
         </span>
       </el-button>
@@ -49,13 +50,17 @@
 </template>
 
 <script>
-import voiceUtil from '../../../../js/mixins/voiceUtil';
-import { mapActions } from 'vuex';
+// import voiceUtil from '../../../../js/mixins/voiceUtil';
+import { sendEquipmentCommand } from '../../../../../../api/media';
+import { errorMessage } from '../../../../../../utils';
+import yuntai from './yuntai';
+import { mapActions, mapState } from 'vuex';
 
 export default {
   name: 'Talk',
-  mixins: [voiceUtil],
+  mixins: [yuntai],
   computed: {
+    ...mapState('websocketRobot', ['audioState']),
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
@@ -64,20 +69,97 @@ export default {
     },
     selectCamera() {
       return this.selectedRobot?.cameras?.[0] || {}
+    },
+    currentVolume() {
+      return this.audioVolume(this.audioDevice)
     }
+  },
+  props: {
+    isMapInner: {
+      type: Boolean,
+      default: false
+    },
   },
   data() {
     return { }
   },
-  mounted() {
-    setTimeout(() => {
-      console.log('this.getSelectedRobot', this.getSelectedRobot)
-    }, 2000);
-  },
   methods: {
-    ...mapActions('websocketRobot', ['toggleIntercom']),
+    ...mapActions('websocketRobot', ['toggleIntercom', 'updateAudioState', 'ensureControlSession']),
+    updateVolume(e) {
+      this.setAudioVolume(this.audioDevice, e.target.value)
+    },
+    async toggleAudioMute(device) {
+      const previous = this.audioStatus(device)
+      const muted = !previous.muted
+      this.setAudioState(device, { muted })
+      const ok = await this.sendDeviceCommand(device, 'volume.mute', {
+        muted,
+        volume: previous.volume
+      }, muted ? 'volume_mute' : 'volume_unmute')
+      if (!ok) {
+        this.setAudioState(device, previous)
+      }
+    },
+    async setAudioVolume(device, volume) {
+      const previous = this.audioStatus(device)
+      const nextVolume = Math.max(0, Math.min(255, Number(volume) || 0))      
+      this.setAudioState(device, { volume: nextVolume, muted: false })
+      const ok = await this.sendDeviceCommand(device, 'volume.set', {
+        volume: nextVolume,
+        muted: false
+      }, 'volume_slider')
+      if (!ok) {
+        console.log('setAudioVolume failed', previous)
+        this.setAudioState(device, previous)
+      }
+    },
+    async adjustAudioVolume(device, delta) {
+      const previous = this.audioStatus(device)
+      const nextVolume = Math.max(0, Math.min(100, previous.volume + delta))
+      const action = delta > 0 ? 'volume.up' : 'volume.down'
+      this.setAudioState(device, { volume: nextVolume, muted: false })
+      const ok = await this.sendDeviceCommand(device, action, {
+        step: Math.abs(delta),
+        volume: nextVolume,
+        muted: false
+      }, delta > 0 ? 'volume_up' : 'volume_down')
+      if (!ok) {
+        this.setAudioState(device, previous)
+      }
+    },
+    async sendDeviceCommand(device, action, params, source) {
+      try {
+        const session = await this.ensureControlSession({ device, action })
+        const response = await sendEquipmentCommand(this.selectedRobotId,
+            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, source || action))
+        console.log('API sendDeviceCommand', response)
+        return true
+      } catch (error) {
+        this.$message.error(errorMessage(error))
+        console.log('ERROR sendDeviceCommand', errorMessage(error))
+        return false
+      }
+    },
+    setAudioState(device, patch) {
+      if (!device) return
+      const key = this.audioKey(device)
+      this.updateAudioState({ key, ...Object.assign({}, this.audioStatus(device), patch) })
+    },
     async handleTalk() {
       await this.toggleIntercom({ robotId: this.selectedRobotId, camera: this.selectCamera })
+    },
+    audioKey(device) {
+      return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
+    },
+    audioStatus(device) {
+      const key = this.audioKey(device)
+      return this.audioState[key] || { volume: 50, muted: false }
+    },
+    audioVolume(device) {
+      return this.audioStatus(device).volume
+    },
+    audioMuted(device) {
+      return this.audioStatus(device).muted
     },
 
   }
@@ -88,6 +170,8 @@ export default {
   background: linear-gradient(180deg, rgba(18, 20, 43, 0) 0%, #12142B 100%);
   box-shadow: 0 0 20px 0 rgba(33, 108, 149, 0.3) inset;
   .circle {
+    width: 126px;
+    height: 126px;
     color: #fff;
     background: #021328;
     box-shadow: 0 0 17px 0 #159Aff inset;
@@ -114,10 +198,10 @@ export default {
     color: #FFF;
     font-size: 12px;
     letter-spacing: 0.24px;
-    background: #021328;
+    background: #021328 !important;
     border-radius: 4px;
-    border: none;
-    box-shadow: 0 0 14px 2px #09F inset;
+    border: none !important;
+    box-shadow: 0 0 14px 2px #09F inset !important;
     text-align: center;
     .svg-icon {
       font-size: 16px;
@@ -221,6 +305,20 @@ export default {
     /* 兼容 Edge 以及确保滑块高度正常 */
     &:focus {
       outline: none;
+    }
+  }
+}
+
+.is-inner {
+  .circle {
+    width: 90px;
+    height: 90px;
+    font-family: "Alibaba PuHuiTi";
+    font-size: 7.297px;
+    line-height: 10px;
+    letter-spacing: 0.146px;
+    .svg-icon {
+      font-size: 36px;
     }
   }
 }

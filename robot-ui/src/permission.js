@@ -21,6 +21,7 @@ const whiteList = [
   '/bigScreen/rygk', 
   '/bigScreen/cljg',
   '/bi/home',
+  '/bi/index',
   '/bi/patrol/panorama',
   '/bi/patrol/monitor',
   '/bi/patrol/business',

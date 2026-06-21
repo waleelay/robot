@@ -1,0 +1,73 @@
+{
+    "code": "0",
+    "message": "success",
+    "data": [
+        {
+            "id": 25,
+            "mapId": 7,
+            "pointCode": "MP-7-0001",
+            "pointName": "Point-1",
+            "pointType": "NORMAL",
+            "coordinateX": -0.294077,
+            "coordinateY": -0.22317,
+            "coordinateZ": -0.005411,
+            "remark": "sourceValue=1; sourceMapId=0; sourcePointInfo=0"
+        },
+        {
+            "id": 26,
+            "mapId": 7,
+            "pointCode": "MP-7-0002",
+            "pointName": "Point-2",
+            "pointType": "NORMAL",
+            "coordinateX": -1.481845,
+            "coordinateY": -1.893522,
+            "coordinateZ": -0.02789,
+            "remark": "sourceValue=2; sourceMapId=0; sourcePointInfo=0"
+        },
+        {
+            "id": 27,
+            "mapId": 7,
+            "pointCode": "MP-7-0003",
+            "pointName": "Point-3",
+            "pointType": "NORMAL",
+            "coordinateX": -1.621149,
+            "coordinateY": -8.08522,
+            "coordinateZ": -0.025462,
+            "remark": "sourceValue=3; sourceMapId=0; sourcePointInfo=0"
+        },
+        {
+            "id": 28,
+            "mapId": 7,
+            "pointCode": "MP-7-0004",
+            "pointName": "Point-4",
+            "pointType": "NORMAL",
+            "coordinateX": 1.4151,
+            "coordinateY": -7.861758,
+            "coordinateZ": -0.044444,
+            "remark": "sourceValue=4; sourceMapId=0; sourcePointInfo=0"
+        },
+        {
+            "id": 29,
+            "mapId": 7,
+            "pointCode": "MP-7-0005",
+            "pointName": "Point-5",
+            "pointType": "NORMAL",
+            "coordinateX": 1.521946,
+            "coordinateY": -1.620473,
+            "coordinateZ": -0.052638,
+            "remark": "sourceValue=5; sourceMapId=0; sourcePointInfo=0"
+        },
+        {
+            "id": 30,
+            "mapId": 7,
+            "pointCode": "MP-7-0006",
+            "pointName": "Point-6",
+            "pointType": "NORMAL",
+            "coordinateX": 0.032214,
+            "coordinateY": -0.271276,
+            "coordinateZ": -0.029718,
+            "remark": "sourceValue=6; sourceMapId=0; sourcePointInfo=3"
+        }
+    ],
+    "traceId": ""
+}

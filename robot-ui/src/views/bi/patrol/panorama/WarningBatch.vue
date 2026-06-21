@@ -295,7 +295,6 @@ export default {
           }
         ],
         count: 3,
-        selectedTaskRows: [],
         selectedRobotRows: [],
       },
       alarms: {}
@@ -313,6 +312,7 @@ export default {
         ...(alarms.low?.items || [])
       ]
       this.details = this.warningInfo.listData[0] || {}
+      this.selectedRobotRows = this.warningInfo.listData?.[0] ? [this.warningInfo.listData?.[0]] : []
       // 图片
       this.selectedValue = this.options[0].key
     },

@@ -4,7 +4,8 @@
     :class="className"
     :id="`${prefixId}slot_${index}`"
     style="position: relative; box-shadow: 0 0 1px 1px rgba(29,149,255,.36) inset"
-  >    
+  >
+    <!-- {{ ZQL_videosInfos?.[index]?.key }} -->
     <video autoplay muted preload="auto" :id="prefixId + ZQL_videosInfos?.[index]?.key" :style="{ display: ZQL_videosInfos?.[index] ? 'block' : 'none' }" class="w100 h100"></video>
     <audio :id="prefixId + ZQL_videosInfos?.[index]?.key + '-audio'" autoplay />
     <!-- <video autoplay muted preload="auto" :id="prefixId + ZQL_videosInfos?.[index]?.key" :style="{ display: ZQL_videosInfos?.[index] ? 'block' : 'none' }" class="w100 h100"></video>
@@ -43,8 +44,10 @@
         style="position: absolute; top: 0; left: 0; color: #1A5683">
         <svg-icon :icon-class="statusType(ZQL_videosInfos?.[index]?.status) === 'warning' ? 'loading' : 'unlink1' " style="font-size: 16px;" />
         <span class="mt2" style="font-family: YouSheBiaoTiHei; font-size: 12px; line-height: 16px; letter-spacing: 0.34px;">
-          {{ statusType(ZQL_videosInfos?.[index]?.status) === 'warning' ? '正在连接' : '未连接' }}  
+          <!-- {{ statusType(ZQL_videosInfos?.[index]?.status) === 'danger' ? '连接失败' : '' }} -->
+          {{ ZQL_videosInfos?.[index]?.hasVideo ? '' : ZQL_videosInfos?.[index]?.session ? '连接中' : statusType(ZQL_videosInfos?.[index]?.status) === 'danger' ? '连接失败' : '' }}
         </span>
+
       </div>
     </template>
     <!-- 空设备占位 -->

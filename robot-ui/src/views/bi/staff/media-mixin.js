@@ -1,5 +1,5 @@
 import { Room, RoomEvent, Track } from "livekit-client"
-import { createSnapshotFile, createVideoSession, getRobots, getViewerToken, heartbeatVideoSession, restartVideoSession, stopVideoSession } from "../../../api/media"
+import { createVideoSession, getRobots, getViewerToken, heartbeatVideoSession, restartVideoSession, stopVideoSession } from "../../../api/media"
 // import { robots } from "./constants"
 
 export default {
@@ -136,22 +136,15 @@ export default {
     },
     async snapshotCamera(camera) {
       if (!camera.session) return
-      const capturedAt = new Date().toISOString()
-      const blob = await this.captureFrameBlob(camera)
-      if (!blob) {
-        this.$message.warning('当前画面不可抓拍')
-        return
-      }
-      const form = new FormData()
-      form.append('trackSid', camera.session.trackSid || 'TR_pending')
-      form.append('reason', 'manual_abnormal')
-      form.append('remark', `${camera.name} 手动抓拍`)
-      form.append('clientCapturedAt', capturedAt)
-      form.append('previewImageHash', `${blob.size}`)
-      form.append('file', blob, `${camera.robotId}-${camera.deviceId}-${Date.now()}.jpg`)
-      const response = await createSnapshotFile(camera.session.sessionId, form)
+      const response = await createSnapshot(camera.session.sessionId, {
+        trackSid: camera.session.trackSid || 'TR_pending',
+        reason: 'manual_abnormal',
+        remark: `${camera.name} 手动抓拍`,
+        clientCapturedAt: new Date().toISOString(),
+        previewImageHash: this.previewHash(camera)
+      })
       console.log('API snapshot', response)
-      this.$message.success('抓拍已保存')
+      this.$message.success('已提交抓拍任务')
     },
     // 用于连接LiveKit会话
     async connectLiveKit(camera, refreshToken) {
@@ -395,15 +388,6 @@ export default {
       canvas.height = video.videoHeight
       canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
       return String(canvas.toDataURL('image/jpeg', 0.7).length)
-    },
-    captureFrameBlob(camera) {
-      const video = this.videoElement(camera)
-      if (!video || !video.videoWidth || !video.videoHeight) return Promise.resolve(null)
-      const canvas = document.createElement('canvas')
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
-      return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.86))
     },
     // 用于获取所有相机状态
     allCameras() {

@@ -19,7 +19,7 @@
       <span class="ml4">106ms</span>
     </div> -->
     <div class="info-item flx-center">
-      <span class="status p4">任务中</span>
+      <span class="status p4">{{ cameraInfo.robot.status }}</span>
     </div>
   </div>
 </template>
@@ -31,7 +31,11 @@ export default {
     className: {
       type: Object,
       default: () => ({ one: true }),
-    }
-  }
+    },
+    cameraInfo: {
+      type: Object,
+      default: () => ({}),
+    },
+  },
 }
 </script>

@@ -10,13 +10,19 @@
           <div class="title ml10">监区巡逻机器狗-01</div>
           <div class="status success ml10">空闲中</div>
         </div>
-        <div class="close mr10" @click="visible = false">
-          <svg-icon icon-class="close"></svg-icon>
+        <div class="flx-center">
+          <div class="setting flx-center curp" @click="goControl">
+            <svg-icon icon-class="setting"></svg-icon>
+            <span class="ml4">深度控制</span>
+          </div>
+          <div class="close mr10 ml10" @click="visible = false">
+            <svg-icon icon-class="close"></svg-icon>
+          </div>
         </div>
       </div>
-      <div class="info-content pt10 pb20 pl10 flex" style="align-items: flex-start">
+      <div class="info-content pt10 pb10 pl10 flex" style="align-items: flex-start">
         <div style="border: 1px solid #2AA6F6">
-          <div class="d-flex hp202">
+          <div class="d-flex hp222 p10">
             <div class="wp360 h100 main">
               <VideoBox
                 @toggleFullscreen="toggleFullscreen"
@@ -26,23 +32,38 @@
                 className="six-1" />
             </div>
             <div v-if="robot?.cameras?.length > 1" class="ml10 p5 side-list common-scroll ovya">
-              <div v-for="(camera, cameraIndex) in robot.cameras.slice(1)" class="wp160 hp90 main" :class="{ 'mt10': cameraIndex !== 0 }">
+              <div v-for="(camera, cameraIndex) in robot.cameras.slice(1)" :key="camera.cameraId" @click="handleClickVideo(camera)" class="wp160 hp90 main" :class="{ 'mt10': cameraIndex !== 0 }">
                 <VideoBox
                   @toggleFullscreen="toggleFullscreen"
                   :videoIndex="`${robot.robotId}_${cameraIndex + 1}`"
                   :prefixId="prefixId"
                   :ZQL_videosInfos="ZQL_videosInfos"
-                  className="six-1" />
+                  className="six-1"  @click="handleClickVideo(camera)" />
               </div>
             </div>
           </div>
         </div>
         <div class="flex1 pl28 pr15" style="position: unset;">
-          <div class="custom-tab-button flex">
-            <div v-for="item in tabList" :key="item.value" class="tab-button-item pr10 pl10" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value" style="font-size: 14px; line-height: 19px">{{ item.label }}</div>
+          <div class="d-flex hp29">
+            <div class="custom-tab-button flex" style="height: fit-content">
+              <div v-for="item in tabList" :key="item.value" class="tab-button-item pr10 pl10" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value" style="font-size: 14px; line-height: 19px">{{ item.label }}</div>
+            </div>
+            <div class="ml30 mode" :class="{'flex-column': !showTalk, 'flx-align-center': showTalk }">
+              <span>控制模式：</span>
+              <el-dropdown :class="{ 'mt10': !showTalk, 'ml10': showTalk }" trigger="click">
+                <div class="mode-status success flex-column">
+                  <span>{{ selectedRobot?.mode || 'MANUAL'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
+                </div>
+                <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
+                  <el-dropdown-item>自动巡航模式</el-dropdown-item>
+                  <el-dropdown-item>手动控制模式</el-dropdown-item>
+                </el-dropdown-menu>
+              </el-dropdown>
+            </div>
           </div>
-          <div class="mt24 flx-center">
-            <ControlPart :tabIndex="tabIndex" />
+          <div class="mt24 d-flex">
+            <Talk v-if="showTalk" :isMapInner="showTalk" />
+            <ControlPart :tabIndex="tabIndex" :showSmall="showTalk" :class="{'ml68': showTalk }" />
           </div>
         </div>
       </div>
@@ -56,13 +77,16 @@ import VideoBox from '../../../components/modal/VideoBox.vue';
 import common from './common.js';
 import { toggleFullscreen } from '../../../../../utils/fullscreen.js';
 import { mapActions } from 'vuex';
+import Talk from '../../../patrol/monitor/second/components/Talk.vue'
+import yuntai from '../../../patrol/monitor/second/components/yuntai.js'
 export default {
   name: 'RobotControlPart',
   components: {
     ControlPart,
-    VideoBox
+    VideoBox,
+    Talk
   },
-  mixins: [common],
+  mixins: [common, yuntai],
   data() {
     return {
       visible: false,
@@ -78,7 +102,8 @@ export default {
       ],
       tabIndex: 0,
       prefixId: 'robot-video-div',
-      robot: {}
+      robot: {},
+      selectModelValue: this.selectedRobot?.controlMode || 0,
     }
   },
   computed: {
@@ -88,14 +113,29 @@ export default {
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot']
     },
+    showTalk() {
+      return Boolean(this.audioDevice)
+    }
   },
   methods: {
-    ...mapActions('websocketRobot', ['setPrefixId']),
+    ...mapActions('websocketRobot', ['setPrefixId', 'setSelectedRobotId']),
     show(visible) {
       this.visible = visible;
+    },
+    goControl() {
+      this.setSelectedRobotId(this.selectedRobotId)
+      this.$router.push({ path: '/bi/patrol/monitor' })
+    },
+    handleClickVideo(camera) {
+      console.log(222, this.ZQL_videosInfos);
+      
+      // this.setSelectedRobotId(this.selectedRobotId)
+      // this.$router.push({ path: '/bi/patrol/monitor', query: { cameraId: camera.cameraId } })
     }
   },
   watch: {
+    // 切换机器人控制模式
+    handleChangeMode(e) {},
     selectedRobot: {
       handler(newVal, oldVal) {
         // console.log('aaa========', this.selectedRobotId, this.selectedRobot);
@@ -153,5 +193,34 @@ export default {
   border-radius: 2px;
   border: 1px solid #00AC3A;
   background: rgba(17, 108, 31, 0.50);
+}
+.mode {
+  color: #FFF;
+  font-family: "Microsoft YaHei";
+  font-size: 12px;
+  line-height: 16px;
+  .mode-status {
+    cursor: default;
+    span {
+      padding: 3px 4px;
+      color: #00AC3A;
+      font-family: "Alibaba PuHuiTi";
+      font-size: 12px;
+      line-height: 12px; /* 100% */
+      letter-spacing: 0.857px;
+      border-radius: 2px;
+      border: 1px solid var(---, #00AC3A);
+      background: rgba(17, 108, 31, 0.50);
+    }
+  }
+}
+.setting {
+  padding: 4px 6px;
+  color: #FFF;
+  font-family: "Microsoft YaHei";
+  font-size: 10px;
+  line-height: 13px;
+  border-radius: 2px;
+  background: rgba(38, 84, 152, 0.50);
 }
 </style>

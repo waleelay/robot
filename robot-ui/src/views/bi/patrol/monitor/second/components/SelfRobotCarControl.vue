@@ -10,7 +10,7 @@
 <template>
   <div class="flx-align-center h100 pt20 pb20">
     <div class="flex flex-column h100 pl30" style="border-left: 1px solid #123F8C;">
-      <div class="d-flex flex-column" style="align-items: start" v-if="!vehicleLightDevice">
+      <div class="d-flex flex-column" style="align-items: start; display: none;" v-if="vehicleLightDevice">
         <div class="custom-tab-button flex">
           <div v-for="item in tabList" :key="item.value" class="tab-button-item pr10 pl10" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value" style="font-size: 14px; line-height: 19px">{{ item.label }}</div>
         </div>
@@ -63,8 +63,20 @@
         </div>
       </div>
     </div>
-    <div class="ml54">
-      <div class="mt16 d-flex">
+    <div class="ml54" :class="{ 'flx-align-center': !vehicleLightDevice && !warningLightDevices?.length }">
+      <div class="mode d-flex" :class="{ 'flex-column': !vehicleLightDevice && !warningLightDevices?.length, 'flx-align-center': vehicleLightDevice || warningLightDevices?.length }">
+        <span>控制模式：</span>
+        <el-dropdown trigger="click" :class="{ 'mt10': !vehicleLightDevice && !warningLightDevices?.length, 'ml10': vehicleLightDevice || warningLightDevices?.length }">
+          <div class="mode-status success flex-column">
+            <span>{{ selectedRobot?.mode || 'MANUAL'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
+          </div>
+          <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
+            <el-dropdown-item>自动巡航模式</el-dropdown-item>
+            <el-dropdown-item>手动控制模式</el-dropdown-item>
+          </el-dropdown-menu>
+        </el-dropdown>
+      </div>
+      <div class="mt16 d-flex" :class="{ 'ml30': !vehicleLightDevice && !warningLightDevices?.length }">
         <div class="outer flx-center">
           <div class="inner flx-center">
             <div class="circle flx-center">移动</div>
@@ -84,30 +96,56 @@
             <svg-icon icon-class="control-arrow" />
           </div>
         </div>
-        <div class="lights flex-column flx-justify-center ml38">
-          <div class="flx-align-center" v-if="!getLightDevice('左警示灯').deviceId">
-            <span>左警示灯：</span>
-            <el-switch
-              class="ml10"
-              :value="isWarningLightOn(getLightDevice('左警示灯'))"
-              active-text="开启"
-              inactive-text="关闭"
-              active-color="#3DB56A"
-              inactive-color="#5E5E5E"
-              @change="setWarningLight(getLightDevice('左警示灯'), $event)">
-            </el-switch>
+        <div class="lights flx-center ml38">
+          <div v-if="vehicleLightDevice" class="flx-center flex-column">
+            <div class="flx-align-center">
+              <span class="wp60 tal">前车灯：</span>
+              <el-switch
+                :value="vehicleLightState?.front?.mode === 'ON'"
+                active-text="开启"
+                inactive-text="关闭"
+                active-color="#3DB56A"
+                inactive-color="#5E5E5E"
+                @change="e => setVehicleLightMode('front', e ? 'ON' : 'OFF')"
+              >
+              </el-switch>
+            </div>
+            <div class="flx-align-center">
+              <span class="wp60 tal">后车灯：</span>
+              <el-switch
+                :value="vehicleLightState?.near?.mode === 'ON'"
+                active-text="开启"
+                inactive-text="关闭"
+                active-color="#3DB56A"
+                inactive-color="#5E5E5E"
+                @change="e => setVehicleLightMode('near', e ? 'ON' : 'OFF')"
+              >
+              </el-switch>
+            </div>
           </div>
-          <div class="flx-align-center mt20" v-if="!getLightDevice('右警示灯').deviceId">
-            <span>右警示灯：</span>
-            <el-switch
-              class="ml10"
-              :value="isWarningLightOn(getLightDevice('右警示灯'))"
-              active-text="开启"
-              inactive-text="关闭"
-              active-color="#3DB56A"
-              inactive-color="#5E5E5E"
-              @change="setWarningLight(getLightDevice('右警示灯'), $event)">
-            </el-switch>
+          <div v-if="warningLightDevices?.length" class="flx-center flex-column">
+            <div class="flx-align-center" v-if="getLightDevice('左警示灯').deviceId">
+              <span class="wp76 tal">左警示灯：</span>
+              <el-switch
+                :value="isWarningLightOn(getLightDevice('左警示灯'))"
+                active-text="开启"
+                inactive-text="关闭"
+                active-color="#3DB56A"
+                inactive-color="#5E5E5E"
+                @change="setWarningLight(getLightDevice('左警示灯'), $event)">
+              </el-switch>
+            </div>
+            <div class="flx-align-center" v-if="getLightDevice('右警示灯').deviceId">
+              <span class="wp76 tal">右警示灯：</span>
+              <el-switch
+                :value="isWarningLightOn(getLightDevice('右警示灯'))"
+                active-text="开启"
+                inactive-text="关闭"
+                active-color="#3DB56A"
+                inactive-color="#5E5E5E"
+                @change="setWarningLight(getLightDevice('右警示灯'), $event)">
+              </el-switch>
+            </div>
           </div>
         </div>
       </div>
@@ -213,6 +251,27 @@ export default {
   }
 }
 
+.mode {
+  color: #FFF;
+  font-family: "Microsoft YaHei";
+  font-size: 12px;
+  line-height: 16px;
+  .mode-status {
+    cursor: default;
+    span {
+      padding: 3px 4px;
+      color: #00AC3A;
+      font-family: "Alibaba PuHuiTi";
+      font-size: 12px;
+      line-height: 12px; /* 100% */
+      letter-spacing: 0.857px;
+      border-radius: 2px;
+      border: 1px solid var(---, #00AC3A);
+      background: rgba(17, 108, 31, 0.50);
+    }
+  }
+}
+
 .btns {
   margin-top: -10px;
   margin-left: -10px;
@@ -259,6 +318,14 @@ export default {
     font-family: Alibaba PuHuiTi;
     letter-spacing: 0.86px;
     line-height: 20px;
+  }
+  & > div {
+    & + div {
+      margin-left: 30px;
+    }
+    & > div + div {
+      margin-top: 15px;
+    }
   }
 }
 ::v-deep {

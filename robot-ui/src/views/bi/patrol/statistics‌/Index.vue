@@ -86,9 +86,9 @@
           <div class="title mt4">{{ item.name }}</div>
           <div class="value mt4"><span class="mr8">{{ item.value }}</span>{{ item.unit }}</div>
           <div class="desc mt4 d-flex" style="align-items: end">
-            <span class="mr10">{{ item.compareLabel || '-' }}</span>
-            <svg-icon icon-class="increase" class="increase" :class="{ 't': item.trend === 'down' }" />
-            <span class="ml2">{{ item.compareRate > 0 ? '+' : '' }}{{ item.compareRate === null || item.compareRate === undefined ? '-' : item.compareRate }}<span style="font-size: 14px;">%</span></span>
+            <span class="mr10">{{ tabDate === 'today' ? '较昨日' : tabDate === 'week' ? '较上周' : tabDate === 'month' ? '较上月' : '较同期' }}</span>
+            <svg-icon icon-class="increase" class="increase" :class="{ 't': item.compareRate > 0 }" />
+            <span class="ml2">{{ item.compareRate > 0 ? '+' : '' }}{{ item.compareRate || '-' }}<span style="font-size: 14px;">%</span></span>
           </div>
         </div>
       </div>
@@ -304,10 +304,10 @@ export default {
       };
       const { taskTotal, patrolMileage, aiAlarmTotal, autoHandleSuccessRate } = this.statistics?.kpis || {};
       const fallback = [
-        { code: 'taskTotal', icon: icons.taskTotal, name: '任务执行总数', value: 0, unit: '个', compareRate: null, compareLabel: '-', trend: null, ...taskTotal },
-        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: 0, unit: 'KM', compareRate: null, compareLabel: '-', trend: null, ...patrolMileage },
-        { code: 'aiAlarmTotal', icon: icons.aiAlarmTotal, name: 'AI自动识别异常数', value: 0, unit: '个', compareRate: null, compareLabel: '-', trend: null, ...aiAlarmTotal },
-        { code: 'autoHandleSuccessRate', icon: icons.autoHandleSuccessRate, name: '自动处置成功率', value: 0, unit: '%', compareRate: null, compareLabel: '-', trend: null, ...autoHandleSuccessRate }
+        { code: 'taskTotal', icon: icons.taskTotal, name: '任务执行总数', value: taskTotal?.value || 0, unit: '个', compareRate: taskTotal?.compareRate },
+        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: patrolMileage?.value || 0, unit: 'KM', compareRate: patrolMileage?.compareRate },
+        { code: 'aiAlarmTotal', icon: icons.aiAlarmTotal, name: 'AI自动识别异常数', value: aiAlarmTotal?.value || 0, unit: '个', compareRate: aiAlarmTotal?.compareRate },
+        { code: 'autoHandleSuccessRate', icon: icons.autoHandleSuccessRate, name: '自动处置成功率', value: autoHandleSuccessRate?.value || 0, unit: '%', compareRate: autoHandleSuccessRate?.compareRate }
       ];
       return fallback;
     },

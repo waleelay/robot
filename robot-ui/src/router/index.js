@@ -109,14 +109,24 @@ export const constantRoutes = [
     path: '/bi',
     name: 'bi',
     hidden: true,
-    redirect: '/bi/home',
-    component: () => import('@/views/bi/Index.vue'),
+    redirect: '/bi/index',
+    component: () => import('@/views/bi/Bi.vue'),
     meta: {
       title: '大屏',
       icon: 'el-icon-data-board',
       requiresAuth: true
     },
     children: [
+      {
+        path: '/bi/index',
+        name: 'biIndex',
+        component: () => import('@/views/bi/home/Index.vue'),
+        meta: {
+          title: '首页',
+          icon: 'el-icon-data-board',
+          requiresAuth: true
+        }
+      },
       {
         path: '/bi/home',
         name: 'biHome',

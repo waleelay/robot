@@ -7,7 +7,8 @@ export default {
       ZQL_videosInfos: {}, // 键名为'slot_1', 'slot_2'...，值为对应格子的视频信息
       ZQL_playingSource: {},
       isFullscreen: false,
-      started: false
+      started: false,
+      disabled: false
     }
   },
   mounted() {
@@ -18,6 +19,7 @@ export default {
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera']),
     toggleFullscreen,
     async updateInfo() {
+      if (this.disabled) return
       // console.log('%c更新+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 'color: #00f');
       for (const cameraIndex of this.robot?.cameras?.keys() || []) {
           const camera = this.robot.cameras[cameraIndex]
@@ -26,8 +28,12 @@ export default {
             this.ZQL_playingSource = { }
             this.ZQL_videosInfos = { }
           }
-          this.$set(this.ZQL_videosInfos, key, { robot: this.robot, ...this.ZQL_videosInfos[key], ...camera});            
-          this.$set(this.ZQL_playingSource, key, camera.key);
+          const existIndex = Object.values(this.ZQL_playingSource).findIndex(item => item === camera.key)
+          // console.log('existIndex============', cameraIndex, existIndex);
+          const newKey = existIndex !== -1 ? `${this.robot.robotId}_${existIndex}` : key
+          this.$set(this.ZQL_videosInfos, newKey, { robot: this.robot, ...this.ZQL_videosInfos[newKey], ...camera});
+          // console.log('newKey============', this.ZQL_videosInfos[newKey]);
+          this.$set(this.ZQL_playingSource, newKey, camera.key);
         }
       if (!this.started) return
       this.started = false

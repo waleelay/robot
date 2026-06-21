@@ -1,0 +1,200 @@
+<template>
+  <div id="lineChart" class="chart-container w100 h100"></div>
+</template>
+
+<script>
+export default({
+  data() {
+    return {
+      list: [4, 5, 4, 7, 4, 3, 3],
+      xTimeData: [6.13, 6.12, 6.11, 6.10, 6.09, 6.08, 6.07],
+      barChart: null,
+      resizeHandler: null
+    }
+  },
+  mounted() {
+    this.initChart();
+    // 窗口自适应
+    this.resizeHandler = () => {
+      if (this.barChart) this.barChart.resize();
+    };
+    window.addEventListener('resize', this.resizeHandler);
+  },
+  beforeDestroy() {
+    if (this.barChart) {
+      this.barChart.dispose();
+      this.barChart = null;
+    }
+    if (this.resizeHandler) {
+      window.removeEventListener('resize', this.resizeHandler);
+    }
+  },
+  methods: {
+    initChart() {
+      const dom = document.getElementById('lineChart');
+      if (dom) {
+        this.barChart = this.$echarts.init(dom);
+        this.renderGroupBarChart();
+      }
+    },
+    renderGroupBarChart() {
+      if (!this.barChart) return;
+      // 分组柱状图配置：三个系列，分别代表运行中、故障、离线，通过barCategoryGap和barGap控制并排不重叠
+      const option = {
+        color: '#678FE6',
+        grid: {
+          top: 60,
+          left: 0,
+          bottom: 0,
+          right: 0,
+          containLabel: true
+        },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: {
+            type: 'line',
+            lineStyle: {
+              type: 'dashed',
+              color: '#6CB9FF'
+            }
+          },
+          transitionDuration: 0,
+          backgroundColor: '#072A4F',
+          padding: [10, 20],
+          borderWidth: 2,
+          borderColor: '#072A4F',
+          borderRadius: 4,
+          textStyle: {
+            fontSize: 14,
+            color: '#FFF',
+            fontFamily: 'Source Han Sans CN'
+          },
+          formatter: `{b}：{c}次`
+        },
+        xAxis: {
+          axisLine: {
+            //坐标轴轴线相关设置。数学上的x轴
+            show: true,
+            lineStyle: {
+              color: ' rgba(187, 199, 208, 0.50)'
+            }
+          },
+          axisLabel: {
+            fontSize: 12,
+            fontFamily: 'Bahnschrift, sans-serif',
+            color: '#BED0DB',
+            lineHeight: 16,
+            padding: [10, 0, 0, 0]
+          },
+          // boundaryGap: false,
+          axisTick: { show: false },
+          data: this.xTimeData
+        },
+        yAxis: {
+          name: '单位（次）',
+          nameTextStyle: {
+            padding: [0, 0, 0, 45],
+            fontSize: 14,
+            fontFamily: 'Microsoft YaHei',
+            color: 'rgba(122, 155, 189, 0.80)',
+            lineHeight: 20
+          },
+          // min: 0,
+          // max: 200,
+
+          // min: 0,
+          // max: 200,
+          minInterval: 1,
+          // interval: 1,
+          // splitNumber: 5,
+          type: 'value',
+          splitLine: {
+            show: true,
+            lineStyle: {
+              color: '#7B8893',
+              type: 'dashed',
+              opacity: 0.25
+            }
+          },
+          axisLine: {
+            show: false
+          },
+          axisTick: {
+            show: false
+          },
+          axisLabel: {
+            fontSize: 14,
+            fontFamily: 'Bahnschrift',
+            color: '8AB6E3',
+            lineHeight: 14,
+            color: '#8AB6E3',
+            fontWeight: 350,
+            lineHeight: 20 /* 142.857% */
+          }
+        },
+        series: [
+          {
+            data: this.list,
+            type: 'line',
+            smooth: true,
+            symbol: 'none',
+            // symbol: 'emptyCircle', //空心小圆点。线条小圆点形状
+            // symbolSize: 0.01,
+            emphasis: {
+              scale: 999
+            },
+            lineStyle: {
+              color: '#3DC5FF', // 线条颜色
+              width: 2
+            },
+            areaStyle: {
+              color: new this.$echarts.graphic.LinearGradient(
+                0,
+                0,
+                0,
+                1,
+                [
+                  {
+                    offset: 0,
+                    color: 'rgba(14, 101, 255, 0.5)'
+                  },
+                  {
+                    offset: 0.8,
+                    color: 'rgba(14, 101, 255, 0)'
+                  }
+                ],
+                false
+              ),
+              shadowColor: 'rgba(0, 0, 0, 0.1)',
+              shadowBlur: 10
+            }
+          }
+        ]
+      };
+      this.barChart.setOption(option, true);
+    },
+    setData(num) {
+      if (this.xTimeData.length === 7) {
+        this.xTimeData.shift();
+        this.list.shift();
+      }
+      const time = new Date().toLocaleTimeString();
+      this.xTimeData.push(time);
+      this.list.push(num);
+
+      this.renderGroupBarChart();
+    },
+    renderChart(el) {
+      if (this.barChart) {
+        const option = this.barChart.getOption();
+        option.xAxis[0].data = this.xTimeData;
+        option.series[0].data = this.list;
+        this.barChart.setOption(option);
+        return;
+      } else {
+        this.renderGroupBarChart();
+      }
+    }
+  }
+});
+</script>

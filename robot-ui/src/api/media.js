@@ -89,25 +89,40 @@ export function switchChannel(sessionId, data) {
   })
 }
 
+// 创建快照
+export function createSnapshot(sessionId, data) {
+  return request({
+    url: `/api/control/video-sessions/${sessionId}/snapshots`,
+    method: 'post',
+    data
+  })
+}
+
 export function createSnapshotFile(sessionId, data) {
   return request({
     url: `/api/control/video-sessions/${sessionId}/snapshots/file`,
     method: 'post',
     data,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
     timeout: 30000
   })
 }
-export function getSnapshots(params = {}) {
+export function snapshotImageUrl(snapshotId) {
+  const base = process.env.VUE_APP_API_BASE || ''
   return request({
-    url: '/api/control/snapshots',
-    method: 'get',
-    params
+    url: `${base}/api/control/snapshots/${snapshotId}/image`,
+    method: 'get'
   })
 }
 
-export function snapshotImageUrl(snapshotId) {
-  const base = process.env.VUE_APP_API_BASE || ''
-  return `${base}/api/control/snapshots/${snapshotId}/image`
+// 获取会话快照列表
+export function getSessionSnapshots(sessionId) {
+  return request({
+    url: `/api/control/video-sessions/${sessionId}/snapshots`,
+    method: 'get'
+  })
 }
 
 // 获取会话事件
@@ -173,7 +188,10 @@ export function getControlProfile(robotId) {
     method: 'get'
   })
 }
+
 export function acquireControl(robotId, data) {
+  console.log(robotId, data);
+  
   return request({
     url: `/api/control/robots/${robotId}/control-sessions/acquire`,
     method: 'post',
@@ -182,6 +200,8 @@ export function acquireControl(robotId, data) {
 }
 
 export function takeoverControl(robotId, data) {
+  console.log(robotId, data);
+  
   return request({
     url: `/api/control/robots/${robotId}/control-sessions/takeover`,
     method: 'post',
@@ -210,5 +230,25 @@ export function sendEquipmentCommand(robotId, data) {
     url: `/api/control/robots/${robotId}/commands`,
     method: 'post',
     data
+  })
+}
+
+export function startLiveRecording(sessionId) {
+  return request({
+    url: `/api/control/video-sessions/${sessionId}/recordings/start`,
+    method: 'post'
+  })
+}
+
+export function stopLiveRecording(sessionId, recordingId) {
+  return request({
+    url: `/api/control/video-sessions/${sessionId}/recordings/${recordingId}/stop`,
+    method: 'post'
+  })
+}
+export function getActiveLiveRecording(sessionId) {
+  return request({
+    url: `/api/control/video-sessions/${sessionId}/recordings/active`,
+    method: 'get'
   })
 }

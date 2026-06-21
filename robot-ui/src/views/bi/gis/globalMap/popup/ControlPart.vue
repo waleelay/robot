@@ -1,5 +1,5 @@
 <template>
-  <div class="flx-center robot-control3">
+  <div class="flx-center robot-control3" :class="{ 'is-small flex-column': showSmall }">
     <div class="outer">
       <div class="inner w100 h100 flx-center m0">
         <div class="circle flx-center">移动</div>
@@ -18,15 +18,16 @@
         <svg-icon icon-class="control-arrow" />
       </div>
     </div>
-    <div class="control-btns ml20">
-      <div class="btn-box flx-justify-between flex-column wp166">
-        <div class="flx-justify-between w100 flex-wrap" style="margin-top: -10px; margin-left: -10px;">
+    <div class="control-btns" :class="{ 'ml20': !showSmall, 'mt15': showSmall }">
+      <div class="btn-box flx-center flex-column" :class="{ 'wp166': !showSmall, 'wp249': showSmall }">
+        <div class="flx-justify-between flex-wrap" :class="{ 'w100': tabIndex === 1, 'wp166': tabIndex === 0 }" style="margin-top: -10px; margin-left: -10px;">
           <template v-for="(item, index) in operList.slice(tabIndex === 0 ? 0 : 4, tabIndex === 0 ? 4 : 20)">
             <el-button
               v-if="item.key !== 'step'"
               :key="item.key"
               type="primary"
-              class="wp73 hp36 mt10 ml10"
+              class="mt10 ml10 wp73"
+              :class="{ 'hp36': !showSmall, 'hp26': showSmall }"
               @mousedown="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
               @mouseup="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
               @mouseleave="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
@@ -42,7 +43,7 @@
               v-model="butaiValue"
               placeholder="切换步态"
               @change="changeStep"
-              class="wp73 ml10 mt10 hp36 butai-select"
+              class="wp73 ml10 mt10 butai-select"
               :class="{ 'tac': butaiValue === 0 }"
               title="切换步态"
               popper-class="custom-select control-select-popper p10"
@@ -67,6 +68,10 @@ export default {
     tabIndex: {
       type: Number,
       default: 0
+    },
+    showSmall: {
+      type: Boolean,
+      default: false
     }
   },
   mixins: [yuntai], // robotControlByKeyboard
@@ -125,6 +130,52 @@ export default {
   }
 }
 .robot-control3 {
+  &.is-small {
+    .outer {
+      width: 90px;
+      height: 90px;
+      .inner {
+        .circle {
+          width: 46px;
+          height: 46px;
+          font-size: 10px;
+          line-height: 46px;
+        }
+      }
+      .arrow {
+        font-size: 12px;
+        &.up {
+          top: 5px;
+          left: 39px;
+        }
+        &.right {
+          top: 39px;
+          right: 5px;
+        }
+        &.down {
+          bottom: 5px;
+          left: 39px;
+        }
+        &.left {
+          top: 39px;
+          left: 5px;
+        }
+      }
+    }
+    ::v-deep .el-select {
+      &.butai-select {
+        height: 26px;
+        .el-input__inner {
+          height: 26px;
+        }
+        .el-input__suffix {
+          .el-input__icon {
+            line-height: 26px;
+          }
+        }
+      }
+    }
+  }
   .outer {
     position: relative;
     width: 150px;
@@ -183,7 +234,8 @@ export default {
 
   .control-btns {
     .el-button, .el-select .el-input__inner {
-      padding: 7px 10px;
+      // padding: 7px 10px;
+      padding: 0;
       color: #fff;
       text-align: center;
       font-family: "Alibaba PuHuiTi";
@@ -220,6 +272,7 @@ export default {
 }
 ::v-deep .el-select {
   &.butai-select {
+    height: 36px;
     &.tac {
       .el-input__inner {
         padding-right: 20px;
@@ -250,6 +303,14 @@ export default {
         color: #FFF;
       }
     }
+  }
+}
+.custom-tab-button .tab-button-item {
+  color: #4AB8FF;
+  &.is-active {
+    border: 1px solid #4AB8FF;
+    background: #0A3560;
+    box-shadow: 0 0 6px 0 #69C4FF inset;
   }
 }
 </style>

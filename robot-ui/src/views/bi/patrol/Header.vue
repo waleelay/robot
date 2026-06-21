@@ -160,8 +160,13 @@ export default {
     
     // 菜单选择
     handleSelect(key) {
-      this.activeIndex = key
-      this.$router.push(`/bi/patrol/${key}`)
+      if (this.activeIndex !== key) {
+        this.setSelectedRobotId('')
+        if (key !== 'monitor') {
+        }
+        this.activeIndex = key
+        this.$router.push(`/bi/patrol/${key}`)
+      }
     },
     
     // 通知点击

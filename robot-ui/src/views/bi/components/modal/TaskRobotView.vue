@@ -123,15 +123,14 @@ export default {
       this.dialogVisible = true;
       this.robotIds = data.robotIds
       this.taskInfo = { ...data.taskInfo }
-      this.taskIndex = data.taskIndex
       this.started = true
     },
     closeModal() {
       this.dialogVisible = false;
-      this.$emit('handleClickTask', this.taskIndex)
+      this.$emit('handleClickTask', this.taskInfo.taskId)
     },
     goTask() {
-      this.$router.push({ path: '/bi/patrol/monitor', query: { tabIndex: this.taskIndex || 0 } })
+      this.$router.push({ path: '/bi/patrol/monitor', query: { taskId: this.taskInfo.taskId || 0 } })
     },
   },
   watch: {

@@ -279,6 +279,17 @@ export default {
       return !!(device && this.netGunSafety[device.deviceId])
     },
     
+    isLauncherSafetyOn(device) {
+      return false
+      // return !!(device && this.launcherSafety[device.deviceId])
+    },
+    async setLauncherSafety(device, enabled) {
+      // this.$set(this.launcherSafety, device.deviceId, enabled)
+      // const ok = await this.sendDeviceCommand(device, 'payload.safety_switch', { enabled }, `launcher_safety_${enabled ? 'on' : 'off'}`)
+      // if (!ok) {
+      //   this.$set(this.launcherSafety, device.deviceId, !enabled)
+      // }
+    },
     isWarningLightOn(device) {
       return !!(device && this.warningLightState[device.deviceId])
     },

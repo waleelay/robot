@@ -87,6 +87,7 @@ import Battery from './popup/Battery.vue';
 import Slam from './popup/Slam.vue'
 import Thumbnail from './thumbnail/Index.vue'
 import SlamMap from './slam/Index.vue'
+import { mapActions, mapState } from 'vuex';
 
 export default {
   name: 'GisGlobalMap',
@@ -165,7 +166,10 @@ export default {
       selectedEndPoint: '',
       isSlam: false,
       // 显示缩略图
-      showThumbnail: false
+      showThumbnail: false,
+      testA: { lat: 30.7472254, lng: 106.03737831115724 },
+      testB: { lat: 30.7472254, lng: 106.040000 },
+      distance1: 0
     }
   },
   computed: {
@@ -182,6 +186,7 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
+    ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList', 'robotAlarmObj'])
   },
   watch: {
     // 监听距离变化
@@ -199,12 +204,70 @@ export default {
         this.map.getContainer().style.cursor = '';
       }
     },
-    robots: {
+    robotList: {
       handler(newVal, oldVal) {
-        this.initPoints()
+        // if (this.pointMarkers.length) return
+        setTimeout(() => {
+          this.initPoints()
+        }, 1000);
       },
       immediate: true
     },
+    robotLocation: {
+      handler(newVal, oldVal) {
+        if (Object.keys(newVal || {}).length) {
+          this.pointMarkers.map(marker => {
+            const { lat, lng } = marker.getLatLng()
+            // console.log(123, newVal)
+            if (lat !== newVal[marker.meta?.robot?.robotId]?.lat || lng !== newVal[marker.meta?.robot?.robotId]?.lng) {
+              // console.log('===========更新了==========');
+              marker.setLatLng({
+                lat: newVal[marker.meta?.robot?.robotId]?.lat,
+                lng: newVal[marker.meta?.robot?.robotId]?.lng
+              })
+            }
+          })
+        }
+      },
+      deep: true,
+      immediate: true
+    },
+    robotBaseInfo: {
+      handler(newVal, oldVal) {
+        if (Object.keys(newVal || {}).length) {
+          this.pointMarkers.map(marker => {
+            if (marker.meta?.robot?.robotId === newVal.robotId) {
+              this.updateIconBaseInfo(newVal)
+            }
+          })
+        }
+      },
+      deep: true,
+      immediate: true
+    },
+    robotAlarmObj: {
+      handler(newVal, oldVal) {
+        this.pointMarkers.map((marker, index) => {
+          const { robot, alarmId } = marker?.meta || {}
+          // 如果存在，新值没返，删除meta.alarmId
+          // if (alarmId) {
+          //   if (newVal[robot.robotId])
+          // } else {
+
+          // }
+          this.pointMarkers[index].setIcon(this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
+          // if (marker.meta?.robot?.robotId) {
+          //   this.updateIconAlarm(newVal[marker.meta?.robot?.robotId])
+          // }
+        })
+        // if (Object.keys(newVal || {}).length) {
+        //   console.log('robotAlarmObj', newVal);
+          
+        // }
+      },
+      deep: true,
+      immediate: true
+    }
   },
   async created() {
     window.openModal = this.openModal;
@@ -225,8 +288,18 @@ export default {
     // setTimeout(() => {
     //   this.stopMovement()
     // }, 30000);
+
+    // setTimeout(() => {
+    //   console.log('变化了');
+    //   const randomLat = (Math.random() - 0.5) * 0.001;
+    //   const randomLng = (Math.random() - 0.5) * 0.001;
+    //   const lat = 30.7478613352993 + randomLat
+    //   const lng = 106.03655278081857 + randomLng
+    //   this.setRobotLocation({ robotId: this.robots?.[0].robotId, location: { lat, lng } })
+    // }, 3000);
   },
   methods: {
+    ...mapActions('websocketExtraData', ['setRobotLocation']),
     changeMapType() {
       this.isSlam = !this.isSlam
     },
@@ -271,7 +344,7 @@ export default {
       }).addTo(this.map);
       // 绑定地图点击事件
       
-      // this.map.on('click', this.handleMapClick);
+      this.map.on('click', this.handleMapClick);
 
       // 处理瓦片加载错误
       // L.offlineTiles.on('tileerror', function (error) {
@@ -316,6 +389,7 @@ export default {
       this.map.on('zoomend', () => {
         console.log('zoomend');
         this.pointMarkers.map((marker, index) => {
+          // console.log(111111111, marker.getIcon().options, this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
           this.pointMarkers[index].setIcon(this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
         })
       });
@@ -359,7 +433,12 @@ export default {
           height: 28,
           img: 'robot_car'
         },
-        ROBOT: {
+        机器人: {
+          width: 24,
+          height: 39,
+          img: 'robot1'
+        },
+        default: {
           width: 24,
           height: 39,
           img: 'robot1'
@@ -371,16 +450,27 @@ export default {
         },
       }
       
-      const { typeName, name, type, status } = item
+      const { typeName, name, type, status, robotId } = item
+      const { width, height, img } = sizeObj[type] || sizeObj.default  
       const zoom = this.map.getZoom();
       const scale = 66 / 93
       const scaleAnchor = 33.5 / 85
       const iconSize = [(zoom * 5 + 3) * scale, zoom * 5 + 3]
       const iconAnchor = [(zoom * 4 + 13) * scaleAnchor, zoom * 4 + 13]
+      
+      // console.log('+++++++++', robotId, this.robotAlarmObj?.[robotId]);
       return L.divIcon(
-        options.html ? { ...options, iconSize, iconAnchor } : {
-          html: `<div class="custom-point-img flx-center flex-column">
-            <img class="wp${sizeObj[type]?.width} hp${sizeObj[type]?.height}" src="${require(`@/assets/images/new-bi/${sizeObj[type]?.img}.png`)}" />
+        // options.html ? { ...options } : {
+        {
+          html: `<div class="custom-point-img flx-center flex-column" style="flex-wrap: nowrap;">
+            ${this.robotAlarmObj?.[robotId] ? `
+              <div class="robot-warning flx-center" style="height: fit-content;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M15.6585 13.1145L9.38682 2.25252C8.6197 0.924516 7.36601 0.924516 6.59909 2.25252L0.327353 13.1145C-0.439564 14.4438 0.187856 15.5282 1.72062 15.5282H14.2652C15.798 15.5282 16.4248 14.4437 15.6585 13.1145ZM7.13152 5.33448C7.35689 5.09081 7.64342 4.96896 7.99287 4.96896C8.3425 4.96896 8.62877 5.08953 8.85438 5.32961C9.07852 5.57023 9.19055 5.87115 9.19055 6.233C9.19055 6.54434 8.7227 8.8337 8.56664 10.4992H7.43975C7.30289 8.83368 6.79524 6.54434 6.79524 6.233C6.79527 5.87664 6.90748 5.57696 7.13152 5.33448ZM8.8386 13.254C8.60154 13.4849 8.31945 13.6 7.99295 13.6C7.66653 13.6 7.38436 13.4849 7.14735 13.254C6.91098 13.0237 6.7935 12.7447 6.7935 12.4171C6.7935 12.0911 6.91098 11.8091 7.14735 11.5727C7.38436 11.3363 7.66653 11.2181 7.99295 11.2181C8.31945 11.2181 8.60154 11.3363 8.8386 11.5727C9.0748 11.8091 9.19256 12.0911 9.19256 12.4171C9.19256 12.7447 9.0748 13.0237 8.8386 13.254Z" fill="#FFDD00"/>
+                </svg>
+                <span class="ml5">告警信息：设备故障</span>
+              </div>` : ''}
+            <img class="wp${width} hp${height}" src="${require(`@/assets/images/new-bi/${img}.png`)}" />
             <img src="${require(`@/assets/images/new-bi/robot_foot.png`)}" style="margin-top: -5px;" />
             <div class="custom-point-name mt2" style="">${name}</div>
             <div class="custom-point-status mt4 pr10 pl10">${status === 'online' ? '空闲中' : status === 1 ? '任务中' : status === 2 ? '故障' : '离线'}</div>
@@ -388,7 +478,8 @@ export default {
           className: `custom-point ${type} ${status === 'online' ? 'green' : status === 1 ? 'blue' : status === 2 ? 'orange' : 'gray'}` ,
           iconSize: null,
           // 偏移量
-          iconAnchor: [name.length * 7 > 24 ? name.length * 7 : 24, sizeObj[type].height]
+          // iconAnchor: [name.length * 7 > 24 ? name.length * 7 : 24, height],
+          iconAnchor: [0, height]
       });
     },
     initPoints() {
@@ -408,8 +499,9 @@ export default {
         { lat: 30.7469491, lng: 106.0344109, status1: 0 },
         { lat: 30.745330, lng: 106.039428, status1: 3 },
       ]
-      this.robots.map((item, index) => {
-        item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
+      this.robotList.map((item, index) => {
+        // item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
+        item.points = L.latLng(this.robotLocation[item.robotId].lat || 39.54, this.robotLocation[item.robotId].lng || 116.23)
         const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === item.robotId);
         if (existingIndex >= 0) {
           // console.log(1);
@@ -427,23 +519,23 @@ export default {
         } else {
           // console.log(2);
           // 创建点标记
+          // const defaultIcon = L.icon({
+          //   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+          //   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+          //   iconSize: [25, 41],
+          //   iconAnchor: [12, 41],
+          //   // popupAnchor: [1, -34]
+          // })
+          // L.marker(item.points, { icon: defaultIcon }).addTo(this.markersLayer)
           const marker = L.marker(item.points, { 
             icon: this.getIcon(item),
             zIndexOffset: 1000,
             // riseOnHover: true
           }).addTo(this.markersLayer)
           // 存储扩展数据，方便后续使用
-          marker.meta = { index, robot: { ...item }};
+          marker.meta = { index, robot: { ...item }, alarmId: this.robotAlarmObj?.[item.robotId] };
           // 不存在则添加新标记
           this.pointMarkers.push(marker);
-          // L.marker(item.points, { icon: L.icon({
-          //       iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-          //       shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-          //       iconSize: [25, 41],
-          //       iconAnchor: [12, 41],
-          //       popupAnchor: [1, -34],
-          //       shadowSize: [41, 41]
-          //   }) }).addTo(this.markersLayer)
         }
         
         // 初始化移动轨迹
@@ -459,7 +551,18 @@ export default {
         return item
       })
     },
-
+    updateIconBaseInfo(info) {
+      const robotId = info.robotId
+      const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === robotId);
+      if (existingIndex < 0) return
+      // const { lat, lng } = this.pointMarkers[existingIndex].getLatLng()
+      this.pointMarkers[existingIndex].setLatLng(L.latLng(robotLocation?.[robotId]?.lat, robotLocation?.[robotId]?.lng))
+      this.pointMarkers[existingIndex].meta = { index, robot: { ...info, points: L.latLng(robotLocation?.[robotId]?.lat, robotLocation?.[robotId]?.lng) }};
+      // 存在则更新 icon
+      this.pointMarkers[existingIndex].setIcon(this.getIcon(info));
+      // 更新 meta 数据
+      this.pointMarkers[existingIndex].meta = { index, robot: { ...info }};
+    },
     updatePopups(index) {
       this.setupHoverWithDebounce(this.pointMarkers[index], 300)
       return
@@ -646,6 +749,17 @@ export default {
 
     // TODO:点击地图打点-未使用
     handleMapClick(e) {
+      
+      // if (!this.distance1) {
+      //   this.testA = { lat: e.latlng.lat, lng: e.latlng.lng };
+      //   this.distance1 = 1
+      // } else {
+      //   this.testB = { lat: e.latlng.lat, lng: e.latlng.lng };
+      //   const latLngA = L.latLng(this.testA.lat, this.testA.lng);
+      //   const latLngB = L.latLng(this.testB.lat, this.testB.lng);
+      //   const distance = this.map.distance(latLngA, latLngB).toFixed(2);
+      //   console.log('点击了B点位置', distance);
+      // }
       // if (this.settingPointB) {
       //   this.pointB = {
       //     lat: e.latlng.lat,
@@ -1159,7 +1273,8 @@ export default {
     showControlPart(visible) {
       if (this.selectedRobot.type === '四足机器狗') {
         this.$refs.robotControlPartRef.show(visible)
-      } else if (this.selectedRobot.type === '轮式机器人') {
+      // } else if (this.selectedRobot.type === '轮式机器人') {
+      } else {
         this.$refs.robotCarControlPartRef.show(visible)
       }
     },

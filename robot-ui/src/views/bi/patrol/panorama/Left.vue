@@ -1,18 +1,7 @@
 <template>
   <div class="left-div ml20 pr20 h100" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto' }">
     <div class="container flex-column w100 h100 flx-center" style="flex-wrap: nowrap;">
-      <!-- <div c 
-        <div class="text">
-          巡逻巡查任务概览
-        </div>
-        <div class="custom-tab-button flex">
-          <div v-for="item in tabList" :key="item.value" class="tab-button-item" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value">{{ item.label }}</div>
-        </div>
-      </div>
-      <div class="with-bg box flex1 common-scroll" style="overflow-y: auto; overflow-x: hidden;">
-        <TaskList1 @changeSide="$emit('changeSide')" />
-      </div> -->
-      <div class="box hp268">
+      <div class="box" :class="{'hp268': deviceTypeStats?.length, 'hp155': !deviceTypeStats?.length}">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">装备类型</span>
           <span class="flx-center more curp" @click="getMoreRobotInfo">
@@ -24,37 +13,37 @@
           <div class="count flx-justify-between">
             <div class="item wp66 flex1 pt9 pr5 pb5 pl9">
               <div class="desc">总数</div>
-              <div class="value mt4">{{ overviewInfo?.deviceStats?.total ? String(overviewInfo?.deviceStats?.total).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.total ? String(deviceStats?.total).padStart(2, '0') : '-' }}</div>
               <div class="tar hp16" style="margin-top: -4px;">
                 <svg-icon icon-class="robot"></svg-icon>
               </div>
             </div>
             <div class="item wp66 flex1 ml10 pt9 pr5 pb5 pl9">
               <div class="desc">在线</div>
-              <div class="value mt4">{{ overviewInfo?.deviceStats?.online ? String(overviewInfo?.deviceStats?.online).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.online ? String(deviceStats?.online).padStart(2, '0') : '-' }}</div>
               <div class="tar hp16" style="margin-top: -4px;">
                 <svg-icon icon-class="robot"></svg-icon>
               </div>
             </div>
             <div class="item wp66 flex1 ml10 pt9 pr5 pb5 pl9">
               <div class="desc">故障</div>
-              <div class="value mt4">{{ overviewInfo?.deviceStats?.fault ? String(overviewInfo?.deviceStats?.fault).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.fault ? String(deviceStats?.fault).padStart(2, '0') : '-' }}</div>
               <div class="tar hp16" style="margin-top: -4px;">
                 <svg-icon icon-class="robot"></svg-icon>
               </div>
             </div>
             <div class="item wp66 flex1 ml10 pt9 pr5 pb5 pl9">
               <div class="desc">离线</div>
-              <div class="value mt4">{{ overviewInfo?.deviceStats?.offline ? String(overviewInfo?.deviceStats?.offline).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.offline ? String(deviceStats?.offline).padStart(2, '0') : '-' }}</div>
               <div class="tar hp16" style="margin-top: -4px">
                 <svg-icon icon-class="robot"></svg-icon>
               </div>
             </div>
           </div>
           <div class="mt20">
-            <div v-if="overviewInfo?.deviceTypeStats" class="t2">设备类型</div>
+            <div v-if="deviceTypeStats?.length" class="t2">设备类型</div>
             <div class="device_types mt10 flx-justify-between">
-              <div v-for="(item, index) in overviewInfo?.deviceTypeStats || []" :key="item.type" class="item flex1 p9" :class="{'ml10': index !== 0}">
+              <div v-for="(item, index) in deviceTypeStats || []" :key="item.type" class="item flex1 p9" :class="{'ml10': index !== 0}">
                 <div class="desc">{{ item.name }}</div>
                 <div class="value mt4">{{ item.count ? String(item.count).padStart(2, '0') : '-' }}</div>
               </div>
@@ -66,7 +55,7 @@
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <div class="flx-center">
             <span class="desc">任务列表</span>
-            <div v-if="overviewInfo?.tasks?.length" class="ml4 notice pr10 pl10">{{ overviewInfo?.tasks?.length ? overviewInfo?.tasks?.length > 99 ? '99+' : overviewInfo?.tasks?.length : '-'  }}</div>
+            <div v-if="Object.keys(taskData || [])?.length" class="ml4 notice pr10 pl10">{{ Object.keys(taskData || []).length ? Object.keys(taskData || []).length > 99 ? '99+' : Object.keys(taskData || []).length : '-'  }}</div>
           </div>
           <span class="flx-center more curp" @click="toggleCollapse('collapseArr', 1)">
             <span>更多</span>
@@ -74,7 +63,7 @@
           </span>
         </div>
         <div class="list pt10 pr20 pl20 mb20 common-scroll ovya" :style="{ maxHeight: collapseArr[2] ? '300px' : '262px' }">
-           <div v-for="(item, index) in overviewInfo?.tasks" class="item wp288 pb10" :class="{ 'is-active': activeTaskIndex === index, 'mb10': index !== overviewInfo?.tasks.length - 1 }" @click="handleClickTask(index)">
+           <div v-for="(item, key, index) of taskData || []" class="item wp288 pb10" :class="{ 'is-active': activeTaskId === item.id, 'mb10': index !== Object.keys(taskData || {}).length - 1 }" @click="handleClickTask(key)">
             <div class="header flx-justify-between p10">
               <div class="flx-center">
                 <svg-icon icon-class="d-right"></svg-icon>
@@ -91,7 +80,7 @@
               <div class="mt10">执行装备：{{ item.equipmentList?.length }}台</div>
             </div>
             <div class="symbol wp36 hp28">
-              <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskIndex === index ? 'active' : 'off'}.png`)" class="w100 h100" alt="" srcset="">
+              <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId === item.taskId ? 'active' : 'off'}.png`)" class="w100 h100" alt="" srcset="">
             </div>
            </div>
         </div>
@@ -104,21 +93,21 @@
             <svg-icon :icon-class="collapseArr[2] ? 'right' : 'down'" class="ml4" />
           </span>
         </div>
-        <div class="mt10 ml20 common-scroll ovya mb10" :style="{ maxHeight: collapseArr[1] ? '360px' : '262px', minHeight: '146px' }">
+        <div v-if="alarmsData" class="mt10 ml20 common-scroll ovya mb10" :style="{ maxHeight: collapseArr[1] ? '360px' : '262px', minHeight: '146px' }">
           <div v-for="(alarm, key, alarmIndex) in alarms" :key="key" class="type wp288 pt10 pr20 pb10 pl20" :class="[alarm.class, { 'hp42 ovyh': alertCollapseArr[alarmIndex], 'mt10': alarmIndex !== 0 }]">
             <div class="type_name flx-justify-between">
               <div class="flx-center">
                 <span class="symbol">
                   <svg-icon icon-class="notice1"></svg-icon>
                 </span>
-                <span class="ml10">{{ alarm.name || '-' }}（{{ overviewInfo?.alarms?.[key]?.items?.length || 0 }}）</span>
+                <span class="ml10">{{ alarm.name || '-' }}（{{ alarmsData?.[key]?.items?.length || 0 }}）</span>
               </div>
               <span class="flx-center curp" @click="toggleCollapse('alertCollapseArr', alarmIndex)">
                 <svg-icon :icon-class="alertCollapseArr[alarmIndex] ? 'down' : 'up'" style="font-size: 14px;"></svg-icon>
               </span>
             </div>
             <div class="mt20 list">
-              <div v-for="(item, index) in overviewInfo?.alarms?.[key]?.items || []" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert">
+              <div v-for="(item, index) in alarmsData?.[key]?.items || []" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert">
                 <!-- {{ item.snapshotUrl }} -->
                 <div class="img wp120 hp72 flex">
                   <span class="alert_type">{{ item.categoryName }}</span>
@@ -151,10 +140,11 @@
 </template>
 
 <script>
+import { mapState } from 'vuex';
 import { getPatrolPanoramaOverview } from '../../../../api/new-bi.js';
 import TaskRobotView from '../../components/modal/TaskRobotView.vue';
-import { taskList } from '../monitor/first/taskList.js';
 import WarningBatch from './WarningBatch.vue'
+import { mapActions } from 'vuex/dist/vuex.common.js';
 export default {
   name: 'BiPatrolPanoramaLeft',
   components: { TaskRobotView, WarningBatch },
@@ -171,6 +161,7 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
+    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats']),
   },
   data() {
     return {
@@ -191,9 +182,8 @@ export default {
       tabIndex: 0,
       collapseArr: [false, false, true],
       alertCollapseArr: [true, true, true],
-      taskList,
       alertList: [1],
-      activeTaskIndex: null,
+      activeTaskId: null,
       overviewInfo: {},
       alarms: {
         high: {
@@ -213,34 +203,40 @@ export default {
   },
   async mounted() {
     // this.handleClickTask(0)
-    this.overviewInfo = await getPatrolPanoramaOverview()
-    if (this.overviewInfo?.alarms?.high?.items?.length) {
+    // this.overviewInfo = await getPatrolPanoramaOverview()
+    if (this.alarmsData?.high?.items?.length) {
       this.collapseArr[2] = false
     }
+
+    
+    // 更新告警信息
+    // setTimeout(() => {
+    //   this.setRobotAlarmInfo({ robotId: this.alarmsData?.high?.items?.[1]?.robotId, alarmInfo: this.alarmsData?.high?.items?.[1], close: true });
+    // }, 5000);
   },
   methods: {
+    ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
     getMoreRobotInfo() {
   
     },
     toggleCollapse(type, typeIndex) {
       this.$set(this[type], typeIndex, !this[type][typeIndex])
     },
-    handleClickTask(index) {      
-      if (this.activeTaskIndex === index) {
+    handleClickTask(taskId) {      
+      if (this.activeTaskId === taskId) {
         this.$refs.taskRobotViewRef.dialogVisible = false
         // 清空录像
-        this.activeTaskIndex = null
+        this.activeTaskId = null
         return
       }
-      this.activeTaskIndex = index
+      this.activeTaskId = taskId
       this.$refs.taskRobotViewRef.showModal({
-        taskInfo: { ...this.taskList[index]},
-        robotIds: this.taskList[index].equipmentList.map(robot => robot.robotId),
-        taskIndex: index
+        taskInfo: { ...this.taskData[taskId]},
+        robotIds: this.taskData[taskId].equipmentList.map(robot => robot.robotId)
       })
     },
     handleClickAlert() {
-      this.$refs.warningBatchRef.open(this.overviewInfo?.alarms || {})
+      this.$refs.warningBatchRef.open(this.alarmsData || {})
     }
   },
   watch: {

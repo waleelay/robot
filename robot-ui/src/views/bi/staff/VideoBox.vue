@@ -26,7 +26,7 @@
       <div class="top flx-justify-between w100 pr10 pl10">
         <div class="title">数据源：{{ ZQL_videosInfos[`slot_${index}`].name }}---{{ ZQL_videosInfos[`slot_${index}`].status }}</div>
         <div class="flx-center">
-          <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" />
+          <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" :cameraInfo="ZQL_videosInfos[`slot_${index}`]" />
         </div>
       </div>
       <div class="bottom flx-justify-between w100 pr10 pl10" style="z-index: 2;">

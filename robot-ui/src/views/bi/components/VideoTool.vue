@@ -7,7 +7,7 @@
         </div>
         <span>{{ pixel.currentPixelLabel }}</span>
       </div> -->
-      <div :ref="`dropdownRef${slotKey}_pixel`" v-if="qualitySelectDisabled(cameraInfo)">
+      <div :ref="`dropdownRef${slotKey}_pixel`" v-if="!qualitySelectDisabled">
         <el-dropdown class="custom-dropdown pixel-dropdown" trigger="hover" placement="top">
           <span class="el-dropdown-link">
             {{ pixel.pixelTypes.find(item => item.value === cameraInfo.quality)?.label || '自动' }}
@@ -16,7 +16,7 @@
             <el-dropdown-item v-for="item in pixel.pixelTypes"
               :key="item.value"
               class="item"
-              :disabled="qualitySelectDisabled(cameraInfo)"
+              :disabled="qualitySelectDisabled"
               @change="changeCameraQuality(cameraInfo)"
               :class="{'is-active': cameraInfo.quality === item.value}">{{ item.label }}
             </el-dropdown-item>
@@ -68,11 +68,11 @@
           <svg-icon :icon-class="volumeIconClass" />
         </span>
       </div> -->
-      <div @click="openSnapModal()" title="抓拍"><svg-icon icon-class="camera" /></div>
+      <div @click="openSnapModal()" title="抓拍" :style="{ 'pointer-events': canSnapshot ? 'auto' : 'none' }"><svg-icon icon-class="camera" /></div>
       <div
         @click="toggleLiveRecording(cameraInfo)"
         title="录像"
-        :style="{ color: cameraInfo.recordingActive ? '#21C8FF' : '#CAD4E0', 'pointer-events': canRecord(cameraInfo) ? 'auto' : 'none' }"
+        :style="{ color: cameraInfo.recordingActive ? '#21C8FF' : '#CAD4E0', 'pointer-events': canRecord ? 'auto' : 'none' }"
       >
         <svg-icon icon-class="record" />
       </div>
@@ -105,6 +105,7 @@
 import videoUtils from './../../..//utils/videoUtils.js'
 import ControlInner from './ControlInner.vue';
 import { createSnapshotFile, snapshotImageUrl } from '../../../api/media.js';
+import { mapActions } from 'vuex';
 export default {
   name: 'VideoTool',
   components: {
@@ -134,21 +135,27 @@ export default {
     },
   },
   mixins: [videoUtils],
+  computed: {
+    canSnapshot() {
+      return !!this.cameraInfo.session && this.cameraInfo.watching && !this.cameraInfo.stopping && !this.cameraInfo.stopped
+    },
+    canRecord() {
+      return !!this.cameraInfo.session && this.cameraInfo.watching && !this.cameraInfo.stopping && !this.cameraInfo.stopped
+    },
+    qualitySelectDisabled() {
+      return this.cameraInfo.qualityChanging
+          || this.activeRecordingInProgress
+          || this.intercomInProgress
+    },
+    activeRecordingInProgress() {
+      return this.cameraInfo.recordingActive || (this.cameraInfo.activeRecording && this.cameraInfo.activeRecording.status === 'RECORDING')
+    },
+    intercomInProgress() {
+      return this.cameraInfo.intercomActive || (this.cameraInfo.intercomStatus && !['IDLE', 'FAILED'].includes(this.cameraInfo.intercomStatus))
+    },
+  },
   methods: {
-    canRecord(camera) {
-      return !!camera.session && camera.watching && !camera.stopping && !camera.stopped
-    },
-    qualitySelectDisabled(camera) {
-      return camera.qualityChanging
-          || this.activeRecordingInProgress(camera)
-          || this.intercomInProgress(camera)
-    },
-    activeRecordingInProgress(camera) {
-      return camera.recordingActive || (camera.activeRecording && camera.activeRecording.status === 'RECORDING')
-    },
-    intercomInProgress(camera) {
-      return camera.intercomActive || (camera.intercomStatus && !['IDLE', 'FAILED'].includes(camera.intercomStatus))
-    },
+    ...mapActions('websocketRobot', ['toggleLiveRecording']),
     // 播放暂停
     playPauseVideo() {
       // 切换状态
@@ -166,8 +173,6 @@ export default {
       this.$refs.snapModalRef.showModal();
     },
     async openSnapModal() {
-      console.log(this.cameraInfo);
-      
       const camera = this.cameraInfo
       if (!camera.session) return
       const capturedAt = new Date().toISOString()
@@ -219,7 +224,7 @@ export default {
         '"': '&quot;',
         "'": '&#39;'
       }[char]))
-    },
+    }
   }
 }
 </script>

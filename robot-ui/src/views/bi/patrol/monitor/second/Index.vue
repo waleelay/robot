@@ -57,7 +57,7 @@
         </div>
         <div class="common-scroll mt10 pr14" style="height: calc(100% - 47px); min-height: 923px; overflow-y: auto; margin-right: -14px;">
           <Yuntai />
-          <div class="mt20">
+          <div class="mt20" v-if="launcherDevice">
             <div class="card-title title-344-37">
               <div class="text">
                 发射器
@@ -65,7 +65,7 @@
             </div>
             <Launcher />
           </div>
-          <div class="mt20">
+          <div class="mt20" v-if="netGunDevice">
             <div class="card-title title-344-37">
               <div class="text">
                 捕网器
@@ -73,13 +73,15 @@
             </div>
             <Catcher />
           </div>
-          <div class="mt20">
+          <div class="mt20" v-if="audioDevice">
             <div class="card-title title-344-37">
               <div class="text">
                 双向对讲机
               </div>
             </div>
-            <Talk />
+            <div class="box p20 mt10 flx-center flex-column">
+              <Talk />
+            </div>
           </div>
         </div>
       </div>
@@ -98,6 +100,7 @@ import Catcher from './components/Catcher.vue'
 import Launcher from './components/Launcher.vue'
 import { motionControl } from '@/api/login'
 import SmallMap from '../../../gis/globalMap/SmallMap..vue'
+import yuntai from './components/yuntai'
 export default {
   name: 'BiPatrolMonitorSecondScreen',
   components: {EquipmentListTree, LeftVideo, SelfRobotDogControl, SelfRobotCarControl, Yuntai, Talk, Catcher, Launcher, SmallMap},
@@ -116,6 +119,7 @@ export default {
     return {
     }
   },
+  mixins: [yuntai],
   methods: {
     async updateVideo(data) {
       if (data.key) {

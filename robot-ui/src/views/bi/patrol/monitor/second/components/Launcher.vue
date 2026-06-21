@@ -7,11 +7,12 @@
       <div>连接状态：{{ launcherInfo.connectStatus === 0 ? '已连接' : '未连接' }}</div>
       <div class="ml35">
         安全开关：<el-switch
-          v-model="launcherInfo.safeSwitch"
+          :value="isLauncherSafetyOn(launcherDevice)"
           active-text="开启"
           inactive-text="关闭"
           active-color="#159AFF"
-          inactive-color="#5E5E5E">
+          inactive-color="#5E5E5E"
+          @change="setLauncherSafety(launcherDevice, $event)">
         </el-switch>
       </div>
     </div>
@@ -20,7 +21,7 @@
         <div class="text">{{ index + 1 }}号位</div>
         <div class="status pl11 mt4">{{ item.count ? '有' : '无' }}发射物</div>
         <div class="btns mt4">
-          <el-button type="primary" class="wp58 hp30" @click="firePayload(launcherDevice, index + 1, `launcher_${index + 1}`)">发射</el-button>
+          <el-button type="primary" class="wp58 hp30" :disabled="!isLauncherSafetyOn(launcherDevice)" @click="firePayload(launcherDevice, index + 1, `launcher_${index + 1}`)">发射</el-button>
         </div>
       </div>
     </div>

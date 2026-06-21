@@ -6,8 +6,8 @@
     <div class="box">
       <div class="top m4 flx-justify-between">
         <div class="flx-align-center">
-          <div class="title ml10">{{selectedRobot.name  || '监区点名机器人'}}</div>
-          <div class="status ml10">{{ selectedRobot.status || '空闲中' }}</div>
+          <div class="title ml10">{{currenRobot?.name  || '监区点名机器人'}}</div>
+          <div class="status ml10">{{ currenRobot?.status || '空闲中' }}</div>
         </div>
         <div class="close mr10" @click="onClose()">
           <svg-icon icon-class="close"></svg-icon>
@@ -15,32 +15,32 @@
       </div>
       <div class="info-content pr10 pl10 flex flex-wrap mt15">
         <div class="item wp156">
-          装备类型：<span class="value">{{ selectedRobot.type || '-' }}</span>
+          装备类型：<span class="value">{{ currenRobot?.type || '-' }}</span>
         </div>
         <div class="item wp149 ml26">
-          当前电量：<span class="value">{{ selectedRobot.battery || '-' }}%</span>
+          当前电量：<span class="value">{{ currenRobot?.battery || '-' }}%</span>
         </div>
         <div class="item wp156 mt10">
-          装备型号：<span class="value">{{ selectedRobot.model || '-' }}</span>
+          装备型号：<span class="value">{{ currenRobot?.model || '-' }}</span>
         </div>
         <div class="item wp149 ml26 mt10">
-          是否告警：<span class="value">{{ selectedRobot.isWarning || '-' }}</span>
+          是否告警：<span class="value">{{ currenRobot?.alarmLevel === 'none' ? '否' : '是' }}</span>
         </div>
         <div class="item wp156 mt10">
-          控制模型：<span class="value">{{ selectedRobot.controlMode || '-' }}</span>
+          控制模型：<span class="value">{{ currenRobot?.controlMode || '-' }}</span>
         </div>
         <div class="item wp149 ml26 mt10">
-          上装设备：<span class="value">{{ '3' }}台</span>
+          上装设备：<span class="value">{{ currenRobot?.mountedDeviceCount || 0 }}台</span>
         </div>
         <div class="item wp156 mt10">
-          当前速度：<span class="value">{{ selectedRobot.speed || '-' }}m/s</span>
+          当前速度：<span class="value">{{ currenRobot?.speed || 0 }}m/s</span>
         </div>
         <div class="mt10 with-divider w100"></div>
         <div class="item wp156 mt10">
-          任务名称：<span class="value">A区-夜间巡逻</span>
+          任务名称：<span class="value">{{ currenRobot?.task?.name || '-' }}</span>
         </div>
         <div class="item wp149 ml26 mt10">
-          任务时段：<span class="value">20:00-22:00</span>
+          任务时段：<span class="value">{{ currenRobot?.task?.timeRange || '-' }}</span>
         </div>
       </div>
       <div class="btns m10 mb20 flx-align-center">
@@ -59,7 +59,7 @@
 </template>
 
 <script>
-import { mapActions } from 'vuex';
+import { mapActions, mapState } from 'vuex';
 import gsap from './gsap.js';
 export default {
   name: 'Modal',
@@ -76,6 +76,10 @@ export default {
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
+    ...mapState('websocketExtraData', ['robotBaseInfo']),
+    currenRobot() {
+      return this.robotBaseInfo?.[this.selectedRobotId] || {}
+    }
   },
   methods: {
     ...mapActions('websocketRobot', ['setSelectedRobotId']),
@@ -86,8 +90,8 @@ export default {
       this.$emit('clear')
     },
     show(e, robot) {
-      
       console.log('show=========', this.selectedRobotId, 22, robot.robotId);
+      this.$emit('showControlPart', false)
       if (this.selectedRobotId === robot.robotId) {
         this.setSelectedRobotId('')
         this.handleGlobalClick(e, false)
@@ -96,7 +100,6 @@ export default {
         this.setSelectedRobotId(robot.robotId)
         this.handleGlobalClick(e, true)
       }
-      this.$emit('showControlPart', false)
     }
   },
 }

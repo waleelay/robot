@@ -6,7 +6,7 @@
       </div>
     </div>
     <!-- common-scroll -->
-    <div class="tab-content mt10 pr10 pb10 pl10" style="height: calc(100% - 47px);">
+    <div class="tab-content mt10 pr10 pb10 pl10" style="height: calc(100% - 47px); min-height: 452px;">
       <div class="task-div-tab mt20 mb20 flx-center">
         <div
           class="tab-item flex1"
@@ -60,11 +60,11 @@
                 <div class="flx-center">
                   <svg-icon
                     class="battery-svg"
-                    :icon-class="item.battery >= 90 ? 'battery-4' : item.battery >= 80 ? 'battery-3' : item.battery >= 50 ? 'battery-2' : item.battery >= 40 ? 'battery-1' : 'battery-0'"
-                    :style="{ color: item.battery < 50 ? '#D33333' : '#3DB56A' }"
+                    :icon-class="robotBaseInfo[item.robotId].battery >= 90 ? 'battery-4' : item.battery >= 80 ? 'battery-3' : robotBaseInfo[item.robotId].battery >= 50 ? 'battery-2' : robotBaseInfo[item.robotId].battery >= 40 ? 'battery-1' : 'battery-0'"
+                    :style="{ color: robotBaseInfo[item.robotId].battery < 50 ? '#D33333' : '#3DB56A' }"
                   >
                   </svg-icon>
-                  <span class="ml10 wp36 tar">{{ item.battery }}%</span>
+                  <span class="ml10 wp36 tar">{{ robotBaseInfo[item.robotId].battery }}%</span>
                 </div>
               </div>
             </div>
@@ -74,7 +74,7 @@
       <div v-else class="task-div1 mt10 common-scroll pr10" style="height: calc(100% - 119px); margin-right: -10px;">
         <div class="task-list">
           <div
-            v-for="(item, index) in taskList"
+            v-for="(item, key, index) of taskData || {}"
             :key="index"
             class="task-item p10"
             :class="{ 'is-active': item.taskId === selectedTaskId }"
@@ -97,19 +97,19 @@
                 <span class="ml10">{{ item.currentLocation }}</span>
               </div>
               <div class="flx-align-center mt6">
-                <span>执行装备（{{ item.robots.length }}）</span>
+                <span>执行装备（{{ item.equipmentList?.length }}）</span>
               </div>
             </div>
-            <div class="device mt10" v-if="item.robots.length">
+            <div class="device mt10" v-if="item.equipmentList?.length">
               <div
-                v-for="equipment in item.robots"
+                v-for="equipment in item.equipmentList"
                 :key="equipment.name"
                 class="item flx-justify-between"
                 :class="{ 'is-active': checkedRobotIds.includes(equipment.robotId) }"
                 :draggable="!checkedRobotIds.includes(equipment.robotId)"
-                @dragstart="onDragStart($event, equipment, 'equipmentListComponent')"
+                @dragstart="onDragStart($event, robotBaseInfo[equipment.robotId], 'equipmentListComponent')"
                 @dragend="onDragEnd"
-                @click="handleClickRobot(equipment)"
+                @click="handleClickRobot(robotBaseInfo[equipment.robotId])"
                 :style="{ cursor: !checkedRobotIds.includes(equipment.robotId) ? 'grab' : 'default' }"
               >
                 <!-- @click="handleSelectEquipment(equipment)" -->
@@ -119,12 +119,12 @@
                 </div>
                 <div class="flx-center">
                   <svg-icon
-                    :icon-class="equipment.battery >= 90 ? 'battery-4' : equipment.battery >= 80 ? 'battery-3' : equipment.battery >= 50 ? 'battery-2' : equipment.battery >= 40 ? 'battery-1' : 'battery-0'"
-                    :style="{ color: equipment.battery < 50 ? '#D33333' : '#3DB56A' }"
+                    :icon-class="robotBaseInfo[equipment.robotId].battery >= 90 ? 'battery-4' : robotBaseInfo[equipment.robotId].battery >= 80 ? 'battery-3' : robotBaseInfo[equipment.robotId].battery >= 50 ? 'battery-2' : robotBaseInfo[equipment.robotId].battery >= 40 ? 'battery-1' : 'battery-0'"
+                    :style="{ color: robotBaseInfo[equipment.robotId] < 50 ? '#D33333' : '#3DB56A' }"
                   >
                   </svg-icon>
-                  <span class="ml4 battery">{{ equipment.battery }}%</span>  
-                  <span class="status ml10 p4" :class="{ error: equipment.status === 1 }">{{ equipment.status === 1 ? '异常' : '执行中' }}</span>
+                  <span class="ml4 battery">{{ robotBaseInfo[equipment.robotId].battery }}%</span>  
+                  <span class="status ml10 p4" :class="{ error: robotBaseInfo[equipment.robotId].status === 1 }">{{ robotBaseInfo[equipment.robotId].status === 1 ? '异常' : '执行中' }}</span>
                 </div>
               </div>
             </div>
@@ -132,27 +132,20 @@
         </div>
       </div>
     </div>
-    <!-- <div class="task-item" v-for="(item, index) in taskList" :key="index">
-      {{ item }}
-    </div> -->
   </div>
 </template>
 
 <script>
 import { mapState, mapActions, mapGetters } from 'vuex'
 import { onDragStart, onDragEnd } from '../../../../../store/modules/dragVideo';
-import { taskList } from './taskList'
 export default {
   name: 'TaskListTree',
-  computed: {
-    ...mapState('dragVideo', ['dropResult', 'splitType'])
-  },
   data() {
     return {
       tabList: ['装备列表', '任务列表'],
-      tabIndex: this.$route.query.tabIndex !== undefined ? 1 : 0,
+      // tabIndex: this.$route.query.taskId !== undefined ? 1 : 0,
+      tabIndex: 1,
       searchValue: '',
-      taskList,
       selectedTaskId: '',
       equipmentInfo: {
         online: {
@@ -177,6 +170,8 @@ export default {
     }
   },
   computed: {
+    ...mapState('dragVideo', ['dropResult', 'splitType']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData']),
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
     },
@@ -190,8 +185,8 @@ export default {
   },
   mounted() {
     setTimeout(() => {
-      if (this.$route.query.tabIndex !== undefined) {
-        this.handleSelectTask(this.taskList[this.$route.query.tabIndex])
+      if (this.$route.query.taskId !== undefined) {
+        this.handleSelectTask(this.taskData[this.$route.query.taskId])
       } else {
         this.handleClickRobot(this.robots[0])
       }
@@ -199,7 +194,7 @@ export default {
   },
   methods: {
     ...mapActions('dragVideo', ['dragStart']),
-    tabChange(index) {  
+    tabChange(index) {
       this.tabIndex = index
       // if (index && this.taskList.length) {
       //   let task = this.taskList.filter(item => item.id === this.selectedTaskId)[0]
@@ -226,6 +221,7 @@ export default {
       
       this.selectedTaskId = task.taskId
       // 获取新旧设备列表的 robotId 集合
+      console.log(111, task.robots);
       const newIds = new Set(task.robots.slice(0, this.splitType).map(item => item.robotId));
       
       // 找出需要关闭的设备（旧有但新列表中没有的）
@@ -258,7 +254,7 @@ export default {
       deep: true
     },
     robots: {
-      handler(newRobots) {
+      handler(newRobots) {        
         if (!newRobots.length) {
           this.equipmentInfo.online.list = []
           this.equipmentInfo.offline.list = []
@@ -277,28 +273,28 @@ export default {
         this.equipmentInfo.offline.list = offlineList
 
         // ========== 新增逻辑：同步更新 taskList ==========
-        this.taskList = this.taskList.map(task => {
-          let updatedEquipmentList = []
-          if (task.robots?.length) {
-            updatedEquipmentList = task.robots.map(equipment => {
-              const robot = newRobots.find(r => r.robotId === equipment.robotId);
-              if (robot) {
-                return {
-                  ...equipment,
-                  ...robot
-                };
-              }
+        // this.taskList = this.taskList.map(task => {
+        //   let updatedEquipmentList = []
+        //   if (task.robots?.length) {
+        //     updatedEquipmentList = task.robots.map(equipment => {
+        //       const robot = newRobots.find(r => r.robotId === equipment.robotId);
+        //       if (robot) {
+        //         return {
+        //           ...equipment,
+        //           ...robot
+        //         };
+        //       }
               
-              return equipment;
-            });
-          } else {
-            updatedEquipmentList = newRobots
-          }
-          return {
-            ...task,
-            robots: updatedEquipmentList
-          };
-        });
+        //       return equipment;
+        //     });
+        //   } else {
+        //     updatedEquipmentList = newRobots
+        //   }
+        //   return {
+        //     ...task,
+        //     robots: updatedEquipmentList
+        //   };
+        // });
       },
       deep: true,
       immediate: true

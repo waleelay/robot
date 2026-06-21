@@ -1,0 +1,76 @@
+{
+    "code": "0",
+    "message": "success",
+    "data": {
+        "records": [
+            {
+                "id": 8,
+                "pathCode": "PATH-0005",
+                "pathName": "testB",
+                "mapId": 7,
+                "enabled": true,
+                "remark": null
+            },
+            {
+                "id": 7,
+                "pathCode": "PATH-0004",
+                "pathName": "testA",
+                "mapId": 6,
+                "enabled": true,
+                "remark": null
+            },
+            {
+                "id": 6,
+                "pathCode": "PATH-0003",
+                "pathName": "test3",
+                "mapId": 5,
+                "enabled": true,
+                "remark": null
+            },
+            {
+                "id": 5,
+                "pathCode": "PATH-0002",
+                "pathName": "test2",
+                "mapId": 5,
+                "enabled": true,
+                "remark": null
+            },
+            {
+                "id": 4,
+                "pathCode": "PATH-0001",
+                "pathName": "test",
+                "mapId": 5,
+                "enabled": true,
+                "remark": null
+            },
+            {
+                "id": 3,
+                "pathCode": "PATH-EMERGENCY-CHECK-001",
+                "pathName": "应急复核路径",
+                "mapId": 4,
+                "enabled": true,
+                "remark": "从应急起点出发，前往火情复核点、安全出口和回充点"
+            },
+            {
+                "id": 2,
+                "pathCode": "PATH-SECURITY-PATROL-001",
+                "pathName": "园区安防巡逻路径",
+                "mapId": 3,
+                "enabled": true,
+                "remark": "从园区大门出发，经过主干道、仓库门口和停车场的巡逻路径"
+            },
+            {
+                "id": 1,
+                "pathCode": "PATH-LAB-INSPECTION-001",
+                "pathName": "实验室巡检路径",
+                "mapId": 1,
+                "enabled": true,
+                "remark": "从起点经过门口和设备工作台的基础巡检路径"
+            }
+        ],
+        "total": 8,
+        "pageNum": 1,
+        "pageSize": 10
+    },
+    "traceId": ""
+}

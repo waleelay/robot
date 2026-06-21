@@ -6,16 +6,22 @@
     <div class="box">
       <div class="top m4 flx-justify-between">
         <div class="flx-align-center">
-          <div class="title ml10">监区巡逻机器狗-01</div>
-          <div class="status success ml10">空闲中</div>
+          <div class="title ml10">{{ baseInfo?.name || '-' }}</div>
+          <div class="status success ml10">{{ baseInfo?.status || '-' }}</div>
         </div>
-        <div class="close mr10" @click="visible = false">
-          <svg-icon icon-class="close"></svg-icon>
+        <div class="flx-center">
+          <div class="setting flx-center curp" @click="goControl">
+            <svg-icon icon-class="setting"></svg-icon>
+            <span class="ml4">深度控制</span>
+          </div>
+          <div class="close mr10 ml10" @click="visible = false">
+            <svg-icon icon-class="close"></svg-icon>
+          </div>
         </div>
       </div>
-      <div class="info-content pt10 pb20 pl10 flex" style="align-items: flex-start">
+      <div class="info-content pt10 pb10 pl10 flex" style="align-items: flex-start">
         <div style="border: 1px solid #2AA6F6">
-          <div class="d-flex hp202">
+          <div class="d-flex hp222 p10">
             <div class="wp360 h100 main">
               <VideoBox
                 @toggleFullscreen="toggleFullscreen"
@@ -25,7 +31,7 @@
                 className="six-1" />
             </div>
             <div v-if="robot?.cameras?.length > 1" class="ml10 p5 side-list common-scroll ovya">
-              <div v-for="(camera, cameraIndex) in robot.cameras.slice(1)" class="wp160 hp90 main" :class="{ 'mt10': cameraIndex !== 0 }">
+              <div v-for="(camera, cameraIndex) in robot.cameras.slice(1)" @click="handleClickVideo(`${robot.robotId}_${cameraIndex + 1}`, camera)" class="wp160 hp90 main" :class="{ 'mt10': cameraIndex !== 0 }">
                 <VideoBox
                   @toggleFullscreen="toggleFullscreen"
                   :videoIndex="`${robot.robotId}_${cameraIndex + 1}`"
@@ -36,94 +42,97 @@
             </div>
           </div>
         </div>
-        <div class="flex1 pl28 pr15" style="position: unset;">
-          <div class="lights d-flex">
-            <div class="flx-align-center" v-if="getLightDevice('左警示灯').deviceId">
-              <span>左警示灯：</span>
-              <el-switch
-                class="ml10"
-                :value="isWarningLightOn(getLightDevice('左警示灯'))"
-                active-text="开启"
-                inactive-text="关闭"
-                active-color="#3DB56A"
-                inactive-color="#5E5E5E"
-                @change="setWarningLight(getLightDevice('左警示灯'), $event)">
-              </el-switch>
-            </div>
-            <div class="flx-align-center ml42" v-if="getLightDevice('右警示灯').deviceId">
-              <span>右警示灯：</span>
-              <el-switch
-                class="ml10"
-                :value="isWarningLightOn(getLightDevice('右警示灯'))"
-                active-text="开启"
-                inactive-text="关闭"
-                active-color="#3DB56A"
-                inactive-color="#5E5E5E"
-                @change="setWarningLight(getLightDevice('右警示灯'), $event)">
-              </el-switch>
-            </div>
+        <div class="flex1 flex-column pl28 pr15" style="position: unset;">
+          <div class="mode d-flex flx-align-center">
+            <span>控制模式：</span>
+            <el-dropdown trigger="click" class="ml10">
+              <div class="mode-status success flex-column">
+                <span>{{ selectedRobot?.mode || 'MANUAL'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
+              </div>
+              <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
+                <el-dropdown-item>自动巡航模式</el-dropdown-item>
+                <el-dropdown-item>手动控制模式</el-dropdown-item>
+              </el-dropdown-menu>
+            </el-dropdown>
           </div>
-          <div class="mt16 d-flex">
-            <div class="flex" style="align-items: end;">
-              <div class="outer">
-                <div class="inner w100 h100 flx-center m0">
-                  <div class="circle flx-center">移动</div>
-                </div>
-                <!-- is-disabled -->
-                <div
-                  v-for="key in ['advance', 'back', 'turn-left' , 'turn-right']"
-                  :key="key"
-                  :class="['arrow', robotControlObj[key].class]"
-                  :title="robotControlObj[key].label"
-                  @mousedown="handleControl(robotControlObj[key])"
-                >
-                  <svg-icon icon-class="control-arrow" />
+
+          <div class="d-flex mt16">
+            <Talk v-if="showTalk" :isMapInner="showTalk" class="mr30" />
+            <div class="flx-justify-between" :class="{ 'flex-column': showTalk }">
+              <div class="d-flex">
+                <div class="flex" :class="{ 'is-small': showTalk }">
+                  <div class="outer">
+                    <div class="inner w100 h100 flx-center m0">
+                      <div class="circle flx-center">移动</div>
+                    </div>
+                    <!-- is-disabled -->
+                    <div
+                      v-for="key in ['advance', 'back', 'turn-left' , 'turn-right']"
+                      :key="key"
+                      :class="['arrow', robotControlObj[key].class]"
+                      :title="robotControlObj[key].label"
+                      @mousedown="handleControl(robotControlObj[key])"
+                    >
+                      <svg-icon icon-class="control-arrow" />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div class="ml24" v-if="vehicleLightDevice">
-              <div class="custom-tab-button flex">
-                <div v-for="item in tabList" :key="item.value" class="tab-button-item pr10 pl10" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value" style="font-size: 14px; line-height: 19px">{{ item.label }}</div>
-              </div>
-              <div class="mt15 mode d-flex">
-                <div
-                  class="option wp100 hp122 p10"
-                  v-for="(item, index) in modes"
-                  :key="item.key"
-                  :class="{ ml11 : index !== 0, 'is-active': (vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].mode === item.key) || index === 0 && ['ON', 'OFF'].includes(vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].mode) }"
-                  @click="e => handleClickMode(e, index, item)"
-                >
-                  <div class="order pl15">模式{{ index === 0 ? '一' : index === 1 ? '二' : '三' }}</div>
-                  <div class="mt10 tac name">{{ item.name }}</div>
-                  <div class="mt2 tac desc">{{ item.desc }}</div>
-                  <div class="mt6 tac flex-column flx-center" :class="{ 'mb6': index > 0 }" :style="{ marginTop: index > 0 ? '1px' : '6px' }">
+              <div class="lights flx-align-center" :class="{ 'mt15': showTalk, 'ml30 flex-column': !showTalk }">
+                <div v-if="vehicleLightDevice">
+                  <div class="flx-align-center">
+                    <span class="wp76 tal">前车灯：</span>
                     <el-switch
-                      :value="vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].mode === item.key"
-                      v-if="index === 0"
+                      :value="vehicleLightState?.front?.mode === 'ON'"
                       active-text="开启"
                       inactive-text="关闭"
                       active-color="#3DB56A"
                       inactive-color="#5E5E5E"
-                      @change="e => setVehicleLightMode(tabIndex === 0 ? 'front' : 'rear', e ? 'ON' : 'OFF')"
+                      @change="e => setVehicleLightMode('front', e ? 'ON' : 'OFF')"
                     >
                     </el-switch>
-                    <template v-else-if="index === 2">
-                      <div class="percent mt1 mb5">{{ vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].customValue }}%</div>
-                      <el-slider
-                        :value="vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].customValue"
-                        :min="0"
-                        :max="100"
-                        @input="value => updateVehicleLightBrightness(tabIndex === 0 ? 'front' : 'rear', value)"
-                        @change="value => setVehicleLightBrightness(tabIndex === 0 ? 'front' : 'rear', value)"
-                        :show-tooltip="false"
-                      ></el-slider>
-                    </template>
-                    <svg-icon :icon-class="item.icon" class="mt4"></svg-icon>
+                  </div>
+                  <div class="flx-align-center">
+                    <span class="wp76 tal">后车灯：</span>
+                    <el-switch
+                      :value="vehicleLightState?.near?.mode === 'ON'"
+                      active-text="开启"
+                      inactive-text="关闭"
+                      active-color="#3DB56A"
+                      inactive-color="#5E5E5E"
+                      @change="e => setVehicleLightMode('near', e ? 'ON' : 'OFF')"
+                    >
+                    </el-switch>
+                  </div>
+                </div>
+                <div v-if="warningLightDevices?.length">
+                  <div class="flx-align-center" v-if="getLightDevice('左警示灯').deviceId">
+                    <span class="wp76 tal">左警示灯：</span>
+                    <el-switch
+                      :value="isWarningLightOn(getLightDevice('左警示灯'))"
+                      active-text="开启"
+                      inactive-text="关闭"
+                      active-color="#3DB56A"
+                      inactive-color="#5E5E5E"
+                      @change="setWarningLight(getLightDevice('左警示灯'), $event)">
+                    </el-switch>
+                  </div>
+                  <div class="flx-align-center" v-if="getLightDevice('右警示灯').deviceId">
+                    <span class="wp76 tal">右警示灯：</span>
+                    <el-switch
+                      :value="isWarningLightOn(getLightDevice('右警示灯'))"
+                      active-text="开启"
+                      inactive-text="关闭"
+                      active-color="#3DB56A"
+                      inactive-color="#5E5E5E"
+                      @change="setWarningLight(getLightDevice('右警示灯'), $event)">
+                    </el-switch>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+          
         </div>
       </div>
     </div>
@@ -136,11 +145,13 @@ import common from './common.js';
 import { toggleFullscreen } from '../../../../../utils/fullscreen.js';
 import { robotControlObj } from '../../../js/constants/robot-control.js';
 import yuntai from '../../../patrol/monitor/second/components/yuntai.js';
-import { mapActions } from 'vuex';
+import { mapActions, mapState } from 'vuex';
+import Talk from './../../../patrol/monitor/second/components/Talk.vue'
 export default {
   name: 'RobotCarControlPart',
   components: {
-    VideoBox
+    VideoBox,
+    Talk
   },
   mixins: [common, yuntai],
   data() {
@@ -195,11 +206,23 @@ export default {
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot']
     },
+    showTalk() {
+      return Boolean(this.audioDevice)
+    },
+    ...mapState('websocketExtraData', ['robotBaseInfo']),
+    ...mapState('websocketRobot', ['robots']),
+    baseInfo() {
+      return this.robotBaseInfo?.[this.selectedRobotId] || {}
+    }
   },
   methods: {
-    ...mapActions('websocketRobot', ['setPrefixId']),
+    ...mapActions('websocketRobot', ['setPrefixId', 'setSelectedRobotId', 'restartCamera']),
     show(visible) {
       this.visible = visible;
+    },
+    goControl() {
+      this.setSelectedRobotId(this.selectedRobotId)
+      this.$router.push({ path: '/bi/patrol/monitor' })
     },
     handleControl(key) {},
     getLightDevice(displayName) {
@@ -208,6 +231,41 @@ export default {
     handleClickMode(e, index, item) {
       if (e.target.className.includes('el-slider')) return
       this.setVehicleLightMode(this.tabIndex === 0 ? 'front' : 'rear', index === 0 ? 'OFF' : item.key)
+    },
+    async handleClickVideo(sourceKey, camera) {
+      const { stopping, stopped, restarting, session } = camera
+      console.log(stopping, stopped, restarting, session, session.status, this.$store.state.websocketRobot.stoppedSessionIds);
+      if (camera.stopping || camera.stopped || camera.restarting) return
+      if (!camera.session || camera.session.status === 'CLOSED') return
+      if (this.$store.state.websocketRobot.stoppedSessionIds.has(camera.session.sessionId)) return
+      if (!['STREAMING', 'INTERRUPTED'].includes(camera.session.status)) return
+      this.disabled = true
+      // console.log(22222222222222);
+      // this.setSelectedRobotId(this.selectedRobotId)
+      // this.$router.push({ path: '/bi/patrol/monitor', query: { cameraId: camera.cameraId } })
+      const targetKey = `${this.robot.robotId}_0`
+      const existObj = Object.assign({}, this.ZQL_videosInfos[targetKey])
+      const sourceObj = Object.assign({}, this.ZQL_videosInfos[sourceKey])
+      // console.log(existObj.name, sourceObj.name, targetKey, sourceKey);
+      
+      if (this.ZQL_playingSource[targetKey]) {
+        this.$set(this.ZQL_videosInfos, sourceKey, existObj)
+        this.$set(this.ZQL_playingSource, sourceKey, existObj.key)
+        // const existCamera = existObj.robot ? existObj.robot : robot.robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
+        await this.restartCamera(this.ZQL_videosInfos[targetKey])
+      } else {
+        this.$set(this.ZQL_videosInfos, sourceKey, null)
+        this.$set(this.ZQL_playingSource, sourceKey, null)
+      }
+      console.log(12345, targetKey, sourceObj);
+      
+      this.$set(this.ZQL_videosInfos, targetKey, sourceObj)
+      this.$set(this.ZQL_playingSource, targetKey, sourceObj.key)
+      // console.log(123, this.ZQL_videosInfos);
+      
+      await this.restartCamera(camera)
+      // console.log(33333333);
+      this.disabled = false
     }
   },
   watch: {
@@ -266,6 +324,22 @@ export default {
     font-family: Alibaba PuHuiTi;
     letter-spacing: 0.86px;
     line-height: 20px;
+  }
+  & > div + div {
+    margin-left: 20px;
+  }
+  & > div {
+    div + div {
+      margin-top: 10px;
+    }
+  }
+  &.flex-column {
+    & > div + div {
+      margin-top: 10px;
+      margin-left: 0;
+    }
+    & > div > div + div {
+    }
   }
 }
 ::v-deep {
@@ -485,5 +559,81 @@ export default {
       }
     }
   }
+}
+
+.mode {
+  color: #FFF;
+  font-family: "Microsoft YaHei";
+  font-size: 12px;
+  line-height: 16px;
+  .mode-status {
+    cursor: default;
+    span {
+      padding: 3px 4px;
+      color: #00AC3A;
+      font-family: "Alibaba PuHuiTi";
+      font-size: 12px;
+      line-height: 12px; /* 100% */
+      letter-spacing: 0.857px;
+      border-radius: 2px;
+      border: 1px solid var(---, #00AC3A);
+      background: rgba(17, 108, 31, 0.50);
+    }
+  }
+}
+.is-small {
+  .outer {
+    width: 90px;
+    height: 90px;
+    .inner {
+      .circle {
+        width: 46px;
+        height: 46px;
+        font-size: 10px;
+        line-height: 46px;
+      }
+    }
+    .arrow {
+      font-size: 12px;
+      &.up {
+        top: 5px;
+        left: 39px;
+      }
+      &.right {
+        top: 39px;
+        right: 5px;
+      }
+      &.down {
+        bottom: 5px;
+        left: 39px;
+      }
+      &.left {
+        top: 39px;
+        left: 5px;
+      }
+    }
+  }
+  ::v-deep .el-select {
+    &.butai-select {
+      height: 26px;
+      .el-input__inner {
+        height: 26px;
+      }
+      .el-input__suffix {
+        .el-input__icon {
+          line-height: 26px;
+        }
+      }
+    }
+  }
+}
+.setting {
+  padding: 4px 6px;
+  color: #FFF;
+  font-family: "Microsoft YaHei";
+  font-size: 10px;
+  line-height: 13px;
+  border-radius: 2px;
+  background: rgba(38, 84, 152, 0.50);
 }
 </style>
