@@ -305,20 +305,30 @@ public class PanoramaMockService {
         return Map.of("type", type, "name", name, "count", count);
     }
 
-    private List<Map<String, Object>> cameras(String typeCode) {
+    private List<Map<String, Object>> cameras(String robotId, String typeCode) {
+        if ("robot-001".equals(robotId)) {
+            return List.of(
+                    camera("camera01", "云台-可见光", "dual_gimbal"),
+                    camera("camera02", "云台-热成像", "dual_gimbal"),
+                    camera("camera03", "本体相机", "body"));
+        }
         String cameraId = switch (typeCode) {
             case "ROBOT_DOG" -> "camera04";
             case "HUMANOID_ROBOT" -> "camera08";
             default -> "camera01";
         };
-        return List.of(Map.of(
+        return List.of(camera(cameraId, "前向双光云台", "dual_gimbal"));
+    }
+
+    private Map<String, Object> camera(String cameraId, String name, String groupType) {
+        return Map.of(
                 "cameraId", cameraId,
                 "deviceId", cameraId,
-                "name", "前向双光云台",
-                "groupType", "dual_gimbal",
+                "name", name,
+                "groupType", groupType,
                 "channel", "visible",
                 "quality", "sub",
-                "status", "online"));
+                "status", "online");
     }
 
     private Map<String, Object> device(
@@ -353,7 +363,7 @@ public class PanoramaMockService {
                 "status", status,
                 "battery", battery,
                 "lastHeartbeatAt", now(),
-                "cameras", cameras(typeCode),
+                "cameras", cameras(robotId, typeCode),
                 "stateSeq", 1,
                 "fault", fault,
                 "alarmLevel", alarmLevel,

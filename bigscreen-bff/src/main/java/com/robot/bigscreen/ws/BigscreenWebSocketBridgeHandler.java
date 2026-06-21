@@ -32,6 +32,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private final CenterServiceProperties properties;
     private final StandardWebSocketClient webSocketClient = new StandardWebSocketClient();
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
+    private final Set<WebSocketSession> browserSessions = ConcurrentHashMap.newKeySet();
 
     public BigscreenWebSocketBridgeHandler(CenterServiceProperties properties) {
         this.properties = properties;
@@ -39,13 +40,19 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession browserSession) throws Exception {
-        WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
-        copyHandshakeHeaders(browserSession, headers);
-        WebSocketHandler centerHandler = new CenterToBrowserHandler(browserSession);
-        WebSocketSession centerSession = webSocketClient
-                .execute(centerHandler, headers, URI.create(properties.getWebsocketControlUrl()))
-                .get();
-        centerSessions.put(browserSession.getId(), centerSession);
+        browserSessions.add(browserSession);
+        try {
+            WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
+            copyHandshakeHeaders(browserSession, headers);
+            WebSocketHandler centerHandler = new CenterToBrowserHandler(browserSession);
+            WebSocketSession centerSession = webSocketClient
+                    .execute(centerHandler, headers, URI.create(properties.getWebsocketControlUrl()))
+                    .get();
+            centerSessions.put(browserSession.getId(), centerSession);
+        } catch (Exception exception) {
+            log.warn("Center websocket unavailable, browser session will receive local mock events only session={}",
+                    browserSession.getId(), exception);
+        }
     }
 
     @Override
@@ -53,11 +60,15 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         WebSocketSession centerSession = centerSessions.get(browserSession.getId());
         if (centerSession != null && centerSession.isOpen()) {
             centerSession.sendMessage(message);
+        } else {
+            log.debug("Drop browser websocket message because center websocket is unavailable session={}",
+                    browserSession.getId());
         }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession browserSession, CloseStatus status) throws Exception {
+        browserSessions.remove(browserSession);
         WebSocketSession centerSession = centerSessions.remove(browserSession.getId());
         if (centerSession != null && centerSession.isOpen()) {
             centerSession.close(status);
@@ -68,6 +79,23 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     public void handleTransportError(WebSocketSession browserSession, Throwable exception) throws Exception {
         log.warn("Browser websocket transport error session={}", browserSession.getId(), exception);
         afterConnectionClosed(browserSession, CloseStatus.SERVER_ERROR);
+    }
+
+    public void broadcastToBrowserSessions(String payload) {
+        TextMessage message = new TextMessage(payload);
+        for (WebSocketSession browserSession : browserSessions) {
+            if (!browserSession.isOpen()) {
+                browserSessions.remove(browserSession);
+                continue;
+            }
+            try {
+                synchronized (browserSession) {
+                    browserSession.sendMessage(message);
+                }
+            } catch (Exception exception) {
+                log.warn("Failed to broadcast local mock event session={}", browserSession.getId(), exception);
+            }
+        }
     }
 
     private void copyHandshakeHeaders(WebSocketSession browserSession, WebSocketHttpHeaders headers) {

@@ -161,7 +161,11 @@ public class VideoSessionService {
             VideoSession session = existing.get();
             addViewer(session, user);
             session.setIdleSince(null);
-            if (session.getStatus() == VideoSessionStatus.IDLE_WAIT) {
+            if (!hasPublishedTrack(session)) {
+                session.setStatus(VideoSessionStatus.INIT);
+                session.setTrackSid(null);
+                session.setTrackName(null);
+            } else if (session.getStatus() == VideoSessionStatus.IDLE_WAIT) {
                 session.setStatus(VideoSessionStatus.STREAMING);
             }
             session.setViewerCount(activeViewerCount(session.getSessionId()));
@@ -194,6 +198,13 @@ public class VideoSessionService {
 
         TokenResult viewerToken = createBrowserToken(session, user);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
+    }
+
+    private boolean hasPublishedTrack(VideoSession session) {
+        return session.getTrackSid() != null
+                && !session.getTrackSid().isBlank()
+                && session.getTrackName() != null
+                && !session.getTrackName().isBlank();
     }
 
     /**

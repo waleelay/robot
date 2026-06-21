@@ -101,7 +101,7 @@ func Load() Config {
 func cameras(robotID string) []Camera {
 	ids := []string{"camera01", "camera02", "camera03"}
 	names := []string{"云台-可见光", "云台-热成像", "本体相机"}
-	groupTypes := []string{"dual_gimbal", "body", "arm"}
+	groupTypes := []string{"dual_gimbal", "dual_gimbal", "body"}
 	if robotID == "robot-002" {
 		ids = []string{"camera04", "camera05", "camera06"}
 		names = []string{"头部双光云台", "腹部导航相机", "尾部避障相机"}

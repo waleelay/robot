@@ -572,17 +572,19 @@ WebSocket 增量事件
 WebSocket：
 
 ```text
-WS /ws/bigscreen
+当前 mock 联调阶段：WS /ws/control
+后续路径收口阶段：WS /ws/bigscreen
 ```
+
+当前边界：BFF 先模拟推送所有全景地图动态事件数据，并推送到前端已连接的 `/ws/control`。前端暂不做任何改动，只会收到并打印 `panorama.*` 事件；后续再将消费逻辑接到全景地图页面状态。
 
 统一事件结构：
 
 ```json
 {
-  "type": "panorama.device.status.changed",
-  "eventId": "evt-001",
+  "event": "panorama.device.status.changed",
   "timestamp": "2026-06-12 11:31:10",
-  "payload": {}
+  "data": {}
 }
 ```
 
@@ -590,25 +592,24 @@ WS /ws/bigscreen
 
 | 事件类型 | 用途 |
 |---|---|
-| `panorama.device.status.changed` | 设备在线、离线、故障、电量变化 |
-| `panorama.device.location.changed` | 地图位置、速度、朝向变化 |
-| `panorama.task.changed` | 任务创建、更新、删除、状态变化、设备任务关联变化 |
-| `panorama.alarm.changed` | 告警创建、更新、处置状态变化 |
+| `panorama.device.status.changed` | 设备状态、电量、控制模式、速度变化 |
+| `panorama.device.location.changed` | 地图定位变化 |
+| `panorama.task.changed` | 任务数据或任务状态变化 |
+| `panorama.alarm.changed` | 告警数据或处置状态变化 |
 | `panorama.stats.changed` | 左侧统计卡片变化 |
 
 设备状态事件示例：
 
 ```json
 {
-  "type": "panorama.device.status.changed",
-  "eventId": "evt-001",
+  "event": "panorama.device.status.changed",
   "timestamp": "2026-06-12 11:31:10",
-  "payload": {
+  "data": {
     "robotId": "robot-001",
     "status": "online",
     "battery": 96,
-    "fault": false,
-    "alarmLevel": null
+    "controlMode": "MANUAL",
+    "speed": 0.6
   }
 }
 ```
@@ -617,10 +618,9 @@ WS /ws/bigscreen
 
 ```json
 {
-  "type": "panorama.device.location.changed",
-  "eventId": "evt-002",
+  "event": "panorama.device.location.changed",
   "timestamp": "2026-06-12 11:31:11",
-  "payload": {
+  "data": {
     "robotId": "robot-001",
     "location": {
       "lng": 113.923556,
@@ -628,9 +628,7 @@ WS /ws/bigscreen
       "altitude": null,
       "address": "A区主干道",
       "updatedAt": "2026-06-12 11:31:11"
-    },
-    "speed": 0.6,
-    "heading": 92
+    }
   }
 }
 ```
@@ -639,14 +637,10 @@ WS /ws/bigscreen
 
 ```json
 {
-  "type": "panorama.task.changed",
-  "eventId": "evt-003",
+  "event": "panorama.task.changed",
   "timestamp": "2026-06-12 11:31:15",
-  "payload": {
-    "changeType": "status_changed",
-    "scope": "both",
+  "data": {
     "taskId": "task-001",
-    "robotIds": ["robot-001"],
     "task": {
       "taskId": "task-001",
       "name": "A区-夜间巡逻",
@@ -663,14 +657,10 @@ WS /ws/bigscreen
 
 ```json
 {
-  "type": "panorama.alarm.changed",
-  "eventId": "evt-004",
+  "event": "panorama.alarm.changed",
   "timestamp": "2026-06-12 11:31:18",
-  "payload": {
-    "changeType": "created",
-    "scope": "device",
+  "data": {
     "alarmId": "alarm-001",
-    "robotIds": ["robot-003"],
     "alarm": {
       "alarmId": "alarm-001",
       "title": "发生火灾",
@@ -685,7 +675,11 @@ WS /ws/bigscreen
       "taskId": "task-002",
       "taskName": "A区-仓库复核",
       "status": "unhandled",
-      "snapshotUrl": null
+      "snapshotUrl": {
+        "visible": "",
+        "thermal": "",
+        "front": ""
+      }
     }
   }
 }
@@ -695,10 +689,9 @@ WS /ws/bigscreen
 
 ```json
 {
-  "type": "panorama.stats.changed",
-  "eventId": "evt-005",
+  "event": "panorama.stats.changed",
   "timestamp": "2026-06-12 11:31:20",
-  "payload": {
+  "data": {
     "deviceStats": {
       "total": 22,
       "online": 19,
@@ -730,6 +723,7 @@ WS /ws/bigscreen
 ```text
 bigscreen-bff/src/main/java/com/robot/bigscreen/panorama/PanoramaController.java
 bigscreen-bff/src/main/java/com/robot/bigscreen/panorama/PanoramaMockService.java
+bigscreen-bff/src/main/java/com/robot/bigscreen/panorama/PanoramaMockWebSocketEventPublisher.java
 ```
 
 启动 BFF：
@@ -786,9 +780,16 @@ Upgrade
 
 第三阶段：
 
+- BFF 继续使用 mock 数据，模拟推送所有 `panorama.*` 动态事件。
+- mock 事件先推送到 `/ws/control`，复用前端现有 WebSocket 连接，前端暂不改。
+- `/ws/control` 同时保留到中心端控制 WebSocket 的桥接能力；中心端 WebSocket 暂不可用时，BFF 降级为仅推送本地 mock 事件。
+- 后续前端再从只打印事件演进为消费 `panorama.*`，形成 REST 快照 + WebSocket 增量。
+
+第三阶段后半段：
+
 - 中心端任务、告警、位置服务接入。
 - BFF WebSocket 将中心端事件转换为 `panorama.*` 页面事件。
-- 前端从轮询切到 REST 快照 + WebSocket 增量。
+- 前端从 `/ws/control` 收口到 `/ws/bigscreen`。
 
 第四阶段：
 
