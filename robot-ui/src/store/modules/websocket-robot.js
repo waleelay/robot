@@ -51,6 +51,7 @@ const state = {
   wsConnected: false, // 媒体服务 WebSocket 连接状态
   mediaSocket: null, // 媒体服务 WebSocket 实例
   robots: [], // 机器人列表
+  cameras: {}, // 全局摄像头索引 { [cameraKey]: camera }
   heartbeatTimer: null, // 心跳定时器
   stoppedSessionIds: new Set(), // 已停止的会话ID集合
   selectedRobotId: '', // 当前选中的机器人ID
@@ -68,6 +69,15 @@ const state = {
   controlSessions: {}
 };
 
+function indexCameras(robots) {
+  return (robots || []).reduce((result, robot) => {
+    (robot.cameras || []).forEach(camera => {
+      result[camera.key] = camera
+    })
+    return result
+  }, {})
+}
+
 // 定义用于修改状态的 mutations，通过这个地方判断是什么类型的信息，然后页面调用不同的信息
 const mutations = {
   // 设置 WebSocket 实例
@@ -84,6 +94,7 @@ const mutations = {
   setRobots(state, robots) {
     // console.log('setRobots', robots)
     state.robots = robots
+    state.cameras = indexCameras(robots)
   },
   // 更新单个机器人状态
   updateRobot(state, robot) {
@@ -93,6 +104,7 @@ const mutations = {
     } else {
       state.robots.push(robot)
     }
+    state.cameras = indexCameras(state.robots)
   },
   // 设置选中的机器人ID
   setSelectedRobotId(state, robotId) {
@@ -1140,6 +1152,7 @@ const actions = {
 const getters = {
   // ============ Media 相关 getters ============
   getRobots: (state) => state.robots,
+  getCameras: (state) => state.cameras,
   getSelectedRobotId: (state) => state.selectedRobotId,
   getSelectedRobot: (state) => state.robots.find(item => item.robotId === state.selectedRobotId) || {},
   getDisplayedCameras: (state, getters) => {

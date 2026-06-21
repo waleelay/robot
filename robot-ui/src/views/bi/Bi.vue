@@ -12,12 +12,12 @@ export default {
   name: 'Bi',
   data() {
     return {
-      
+
     }
   },
   async mounted() {
-    // mqttClient.connect()
-    // await this.loadRobots();
+    mqttClient.connect()
+    await this.loadRobots();
     const res = await getPatrolPanoramaOverview()
     this.setAll(res)
     this.connectMediaWebSocket()

@@ -3,6 +3,7 @@
     class="item w100 h100"
     :class="className"
     :id="`${prefixId}slot_${index}`"
+    @click="$emit('select', index)"
     style="position: relative; box-shadow: 0 0 1px 1px rgba(29,149,255,.36) inset"
   >
     <!-- {{ ZQL_videosInfos?.[index]?.key }} -->

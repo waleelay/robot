@@ -36,6 +36,18 @@ export default {
       this.started = false
       await this.startAll()
     },
+    rebindCameraTracks(cameras) {
+      this.$nextTick(() => {
+        const cameraList = cameras || []
+        cameraList.forEach(camera => {
+          if (!camera) return
+          const video = document.getElementById(this.prefixId + camera.key)
+          const audio = document.getElementById(this.prefixId + camera.key + '-audio')
+          if (camera.remoteVideoTrack && video) camera.remoteVideoTrack.attach(video)
+          if (camera.remoteAudioTrack && audio) camera.remoteAudioTrack.attach(audio)
+        })
+      })
+    },
     async startAll() {
       // console.log(123)
       for (const cameraKey in this.ZQL_playingSource) {
