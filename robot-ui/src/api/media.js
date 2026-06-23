@@ -20,7 +20,6 @@ const headers = {
 // 创建视频会话
 export function createVideoSession(data) {
   const payload = {
-    channel: data.channel,
     quality: data.quality,
     reuse: data.reuse,
     clientRequestId: data.clientRequestId
@@ -151,7 +150,6 @@ export function startCameraIntercom(data) {
     url: `/api/control/robots/${data.robotId}/cameras/${data.deviceId}/video/intercom/start`,
     method: 'post',
     data: {
-      channel: data.channel,
       quality: data.quality,
       reuse: true
     }

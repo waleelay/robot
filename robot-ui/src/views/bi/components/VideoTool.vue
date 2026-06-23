@@ -79,7 +79,7 @@
       <div :title="openMic ? '关闭麦克风' : '打开麦克风'" @click="toggleMic()">
         <svg-icon :icon-class="openMic ? 'mic' : 'mic-off'" />
       </div>
-      <div v-if="['dual_gimbal', 'body'].includes(cameraInfo.groupType)" @click="$refs.controlInnerRef.visible = !$refs.controlInnerRef.visible">
+      <div @click="$refs.controlInnerRef.visible = !$refs.controlInnerRef.visible">
         <svg-icon title="控制器" icon-class="control" />
       </div>
       <div v-if="!videoStatus || videoStatus === 'stopped'" title="刷新" @click="refreshVideo()">
@@ -96,7 +96,7 @@
       </div>
     </div>
     <!-- <Snap ref="snapModalRef" :idName="idName" /> -->
-    <ControlInner v-if="['dual_gimbal', 'body'].includes(cameraInfo.groupType)" ref="controlInnerRef" :cameraInfo="cameraInfo" />
+    <ControlInner ref="controlInnerRef" :cameraInfo="cameraInfo" />
   </div>
 </template>
 

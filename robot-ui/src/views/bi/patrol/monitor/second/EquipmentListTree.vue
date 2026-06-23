@@ -128,11 +128,7 @@ export default {
     //   await this.stopCamera(this.activeCameras[key].camera);
     // }
     if (this.splitType === 1 || this.splitType !== this.checkedIds.length) {
-      const cameras = (this.robots?.[0]?.cameras || []).sort((a, b) => {
-        if (a.groupType === 'body') return -1; // 最前面
-        if (b.groupType === 'body') return 1;
-        return 0;
-      })
+      const cameras = (this.robots?.[0]?.cameras || [])
       await this.$emit('updateVideo', cameras)
     }
   },
@@ -143,23 +139,17 @@ export default {
     onDragEnd,
     async updateRobot() {
       const robot = Object.assign({}, this.selectedRobot)
-      const cameras = [...(robot?.cameras || [])].sort((a, b) => {
-        if (a.groupType === 'body') return -1; // 最前面
-        if (b.groupType === 'body') return 1;
-        return 0;
-      })
+      const cameras = [...(robot?.cameras || [])]
       if (robot.robotId) {
+        const groupKey = 'camera'
+        this.$set(this.equipmentCameraObj, groupKey, {
+          type: groupKey,
+          name: '摄像头',
+          svg: 'infrared',
+          cameras: {},
+        })
         for (const item of cameras) {
-          const typeObj = Object.assign({}, this.equipmentCameraObj[item.groupType] || {})
-          if (!this.equipmentCameraObj[item.groupType]) {
-            this.$set(this.equipmentCameraObj, item.groupType, {
-              type: item.groupType,
-              name: item.groupTypeName,
-              svg: item.groupType === 'dual_gimbal' ? 'infrared' : item.groupType === 'body' ? 'robot-dog' : 'lidar',
-              cameras: {},
-            })
-          }
-          this.$set(this.equipmentCameraObj[item.groupType].cameras, item.name, { robot, ...item })
+          this.$set(this.equipmentCameraObj[groupKey].cameras, item.name, { robot, ...item })
         }
       }
     },

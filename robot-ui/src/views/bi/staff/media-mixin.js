@@ -68,14 +68,12 @@ export default {
       console.log('CLICK startCamera', {
         robotId: robot.robotId,
         deviceId: camera.deviceId,
-        channel: camera.channel,
         quality: camera.quality
       })
       try {
         const session = await createVideoSession({
           robotId: robot.robotId,
           deviceId: camera.deviceId,
-          channel: camera.channel,
           quality: camera.quality,
           reuse: true
         })
@@ -329,24 +327,25 @@ export default {
         name: robot.name || robot.robotId,
         type: robot.type || '机器人',
         status: robot.status || 'offline',
-        cameras: (robot.cameras || []).map(camera => Object(
-          this.cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible'),
+        cameras: (robot.cameras || []).map(camera => Object.assign(
+          {},
+          camera,
+          this.cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId),
           {
             cameraId: camera.cameraId || camera.deviceId,
             quality: camera.quality || 'sub',
-            status: robot.status === 'online' ? camera.status : 'offline'
+            status: robot.status === 'online' ? (camera.status || '') : 'offline'
           }
         )),
       })
     },
     // 用于将相机数据转换为状态对象
-    cameraState(robotId, deviceId, name, channel) {
+    cameraState(robotId, deviceId, name) {
       return {
-        key: `${robotId}-${deviceId}-${channel}`,
+        key: `${robotId}-${deviceId}`,
         robotId,
         deviceId,
         name,
-        channel,
         quality: 'sub',
         loading: false,
         hasVideo: false,

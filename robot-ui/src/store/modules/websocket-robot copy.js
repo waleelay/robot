@@ -160,37 +160,26 @@ function toRobotState(robot) {
     type: robot.type || '机器人',
     controlMode: robot.controlMode || 'MANUAL',
     stateSeq: robot.stateSeq || 0,
-    status: robot.status || robot.onlineStatus || 'offline',
+    status: robot.status || 'offline',
     cameras: (robot.cameras || []).map(camera => Object.assign(
         camera,
-      cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible', camera.groupType),
+      cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId),
       {
         cameraId: camera.cameraId || camera.deviceId,
         quality: camera.quality || 'sub',
-        status: robot.status === 'online' ? camera.status : 'offline'
+        status: robot.status === 'online' ? (camera.status || '') : 'offline'
       }
     )),
   })
 }
 
-function groupTypeText(groupType) {
-  return {
-    body: '本体',
-    dual_gimbal: '双光云台',
-    arm: '机械臂'
-  }[groupType] || groupType || '未分组'
-}
-
 // 用于将相机数据转换为状态对象
-function cameraState(robotId, deviceId, name, channel, groupType) {
+function cameraState(robotId, deviceId, name) {
   return {
-    key: `${robotId}-${deviceId}-${channel}`,
+    key: `${robotId}-${deviceId}`,
     robotId,
     deviceId,
     name,
-    groupType: groupType || 'body',
-    groupTypeName: groupTypeText(groupType),
-    channel,
     quality: 'sub',
     loading: false,
     hasVideo: false,
@@ -374,10 +363,8 @@ const actions = {
         state.robots.splice(index, 1, Object.assign({}, state.robots[index], {
           controlMode: data.controlMode,
           stateSeq: data.stateSeq,
-          status: data.onlineStatus || state.robots[index].status,
-          devices: data.devices || state.robots[index].devices
+          status: data.status || state.robots[index].status
         }))
-        dispatch('syncAudioStatesFromDevices', {robotId: data.robotId, devices: data.devices})
       }
     }
     if (event.type === 'control.command.rejected') {
@@ -435,7 +422,6 @@ const actions = {
       const session = await createVideoSession({
         robotId: robot.robotId,
         deviceId: camera.deviceId,
-        channel: camera.channel,
         quality: camera.quality,
         reuse: true
       })
@@ -520,7 +506,6 @@ const actions = {
         : await startCameraIntercom({
           robotId,
           deviceId: camera.deviceId,
-          channel: camera.channel,
           quality: camera.quality
         })
       camera.session = mergeSession(camera, {

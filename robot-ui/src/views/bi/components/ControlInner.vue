@@ -9,8 +9,6 @@
       <div class="inner flx-center">
         <div class="circle flx-center">移动</div>
       </div>
-      <template v-if="cameraInfo.groupType === 'body'">
-      </template>
       <div
         v-for="key in ['advance', 'back', 'turn-left' , 'turn-right']"
         :key="key"
@@ -29,7 +27,6 @@
 </template>
 
 <script>
-import { robotControlObj } from '../js/constants/robot-control.js';
 import ptzMixin from '../patrol/monitor/second/components/yuntai.js'
 import { mapActions } from 'vuex';
 export default {
@@ -44,7 +41,7 @@ export default {
   data() {
     return {
       visible: false,
-      robotControlObj: this.cameraInfo.groupType === 'body' ? robotControlObj : {
+      robotControlObj: {
         advance: { label: '上', class: 'up', key: 'ptz-up' },
         back: { label: '下', class: 'down', key: 'ptz-down' },
         'turn-left': { label: '左转', class: 'left', key: 'ptz-left' },
