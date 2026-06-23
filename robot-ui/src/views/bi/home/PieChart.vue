@@ -125,9 +125,11 @@ export default({
           },
           // 自定义图例格式：显示 “项目名 25%”
           formatter: (name) => {
-            const target = this.items.find(p => p.name === name);
-            if (target) {
-              return `${name}  ${target.value}%`;
+            const total = this.items.reduce(function(sum, cur) { return sum + cur.value; }, 0);
+            const item = this.items.find(item => item.name === name);
+            if (item) {
+              var percent = (item.value / total * 100).toFixed(0);
+              return `${name}  ${percent }%`;
             }
             return name;
           },
@@ -239,7 +241,7 @@ export default({
           formatter: (params) => {
             // 仅当系列名称为'项目占比'时展示详情，阴影层不展示
             if (params.seriesName === '项目占比') {
-              return `<strong>${params.name}</strong><br/>占比: ${params.value}% (${this.items[params.dataIndex]})`;
+              return `<strong>${params.name}</strong><br/>占比: ${params.value}% (${this.items[params.dataIndex].value})`;
             }
             return '';
           },

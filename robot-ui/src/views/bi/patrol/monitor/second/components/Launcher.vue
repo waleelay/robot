@@ -16,12 +16,19 @@
         </el-switch>
       </div>
     </div>
-    <div class="mt20 flx-center flex-wrap" style="margin-top: -10px; margin-left: -10px;">
+    <div class="mt20 flx-center flex-wrap" style="position: relative; margin-top: -10px; margin-left: -10px;">
       <div class="item p10 flx-center flex-column mt10 ml10" :class="{ 'is-active': item.count > 0, 'pointer-events': (!item.count || !launcherInfo.safeSwitch || !launcherInfo.connectStatus) ? 'none' : 'auto' }" v-for="(item, index) in launcherInfo.bullets" :key="item.id">
         <div class="text">{{ index + 1 }}号位</div>
         <div class="status pl11 mt4">{{ item.count ? '有' : '无' }}发射物</div>
         <div class="btns mt4">
-          <el-button type="primary" class="wp58 hp30" :disabled="!isLauncherSafetyOn(launcherDevice)" @click="firePayload(launcherDevice, index + 1, `launcher_${index + 1}`)">发射</el-button>
+          <el-button type="primary" class="wp58 hp30" :disabled="!isLauncherSafetyOn(launcherDevice)" @click="handleChangeConfirm(true, index)">发射</el-button>
+        </div>
+      </div>
+      <div class="confirm-div w100 h100 flx-center flex-column wp266 hp206 mt10 ml23" v-if="showConfirm">
+        <div class="desc">是否确认发射</div>
+        <div class="btns mt14">
+          <el-button type="primary" class="wp58 hp30" @click="execute">是</el-button>
+          <el-button type="primary" class="wp58 hp30" @click="handleChangeConfirm(false)">否</el-button>
         </div>
       </div>
     </div>
@@ -47,10 +54,21 @@ export default {
           { id: 'launcher5', count: 4 },
           { id: 'launcher6', count: 4 },
         ]
-      }
+      },
+      showConfirm: false,
+      index: null
     }
   },
-
+  methods: {
+    handleChangeConfirm(val, index) {
+      this.showConfirm = val
+      this.index = index
+    },
+    async execute(index) {
+      await this.firePayload(this.launcherDevice, index + 1, `launcher_${index + 1}`)
+      this.showConfirm = false
+    }
+  }
 }
 </script>
 <style scoped lang="scss">
@@ -113,6 +131,37 @@ export default {
     }
   }
 }
+
+.confirm-div {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 4px;
+  border: 2px solid #0BF9FE;
+  background: rgba(4, 24, 65, 0.60);
+  backdrop-filter: blur(8px);
+  transition: all linear .3s;
+  z-index: 2001;
+  .desc {
+    color: #0BF9FE;
+    font-family: "Microsoft YaHei";
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 27px;
+  }
+  ::v-deep {
+    .el-button {
+      color: #FFF;
+      font-family: "Alibaba PuHuiTi";
+      border-radius: 4px;
+      background: #021328;
+      box-shadow: 0 0 14px 2px #09F inset;
+      font-size: 12px;
+      letter-spacing: 0.24px;
+    }
+  }
+}
+
 ::v-deep {
   .el-switch {
     line-height: 18px !important;

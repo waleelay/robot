@@ -19,8 +19,6 @@ export default {
       return this.$store.getters['websocketRobot/getControlProfiles']
     },
     selectedControlProfile() {
-      // console.log('++++++++++');
-      
       return this.controlProfiles[this.selectedRobotId || this.cameraInfo?.robotId || ''] || { devices: [] }
     },
     // 本体
@@ -29,7 +27,6 @@ export default {
     },
     // 云台
     ptzDevice() {
-      // console.log('-----------------------------------------');
       return this.controlDevices().find(device => device.deviceType === 'DUAL_LIGHT_PTZ')
     },
     // 捕网器
@@ -85,8 +82,6 @@ export default {
   },
   methods: {
     controlDevices() {
-      // console.log('%c##########', 'color: red;');
-      
       return this.selectedControlProfile.devices || []
     },
     controlDevice(deviceId) {
@@ -99,7 +94,6 @@ export default {
       return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
     },
     async togglePtzAutoRotate() {
-      // console.log('%c##########', 'color: red;', this.controlProfiles);
       const device = this.ptzDevice
       if (!device) return
       const key = this.ptzAutoRotateKey(device)
@@ -151,8 +145,6 @@ export default {
     },
     // 云台开始控制
     startFrameControl(kind) {
-      // console.log(11111, this.controlProfiles);
-      
       if (this.controlTimers[kind]) return
       this.sendFrameControl(kind)
       this.$set(this.controlTimers, kind, setInterval(() => this.sendFrameControl(kind), 100))
@@ -161,7 +153,7 @@ export default {
     stopFrameControl(kind) {
       if (!this.controlTimers[kind]) return
       clearInterval(this.controlTimers[kind])
-      this.$delete(this.controlTimers, kind)
+      this.$delete(this.controlTimers, kind)      
     },
     async sendFrameControl(kind) {
       try {
@@ -180,7 +172,6 @@ export default {
     },
     async controlFrame(kind) {
       const robotId = this.selectedRobotId
-      // console.log('controlFrame', kind, robotId, this.baseDevice);
       if (kind.indexOf('base-') === 0) {
         const device = this.baseDevice
         const session = await this.ensureControlSession(device, 'drive.velocity')
@@ -219,7 +210,7 @@ export default {
     },
     async ensureControlSession(device, action) {
       if (!device) throw new Error('未找到控制设备')
-      const key = `${this.selectedRobotId}:${device.deviceId}:${action}`    
+      const key = `${this.selectedRobotId}:${device.deviceId}:${action}`
       if (this.controlSessions[key] && this.controlSessions[key].status === 'ACTIVE') {
         return this.controlSessions[key]
       }

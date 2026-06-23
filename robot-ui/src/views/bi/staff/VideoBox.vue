@@ -21,12 +21,12 @@
       <!-- <source src="https://mv6.music.tc.qq.com/C2FD55D4D97F547644795652173F9C0B8DD20B57BBF1ACC9CD0841D3ECA6F9A80BFCEDBD225832C0D87DE7BAFC9C39ADZZqqmusic_default__v21501a351/qmmv_0b53puaj6aaaquagbodg4zuvi7iat56qbh2a.f9934.m3u8" type="video/mp4"> -->
     </video>
     <audio :id="prefixId + ZQL_videosInfos[`slot_${index}`]?.key + '-audio'" autoplay />
-    <canvas class="canvas-shuju" :id="`${prefixId}canvasslot_${index}`" style="z-index: 1; position: absolute;cursor: pointer;"></canvas>
+    <!-- <canvas class="canvas-shuju" :id="`${prefixId}canvasslot_${index}`" style="z-index: 1; position: absolute;cursor: pointer;"></canvas> -->
     <template v-if="ZQL_videosInfos[`slot_${index}`]">
       <div class="top flx-justify-between w100 pr10 pl10">
         <div class="title">数据源：{{ ZQL_videosInfos[`slot_${index}`].name }}---{{ ZQL_videosInfos[`slot_${index}`].status }}</div>
         <div class="flx-center">
-          <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" :cameraInfo="ZQL_videosInfos[`slot_${index}`]" />
+          <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key" />
         </div>
       </div>
       <div class="bottom flx-justify-between w100 pr10 pl10" style="z-index: 2;">
@@ -40,7 +40,7 @@
             :idName="`${prefixId}slot_${index}`"
             :slotKey="`slot_${index}`"
             :videoStatus="videoStatus(`slot_${index}`)"
-            :cameraInfo="ZQL_videosInfos[`slot_${index}`]"
+            :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key"
             @updateDropdownStyle="updateDropdownStyle"
             @playPauseVideo="$emit('playPauseVideo')"
             @toggleFullscreen="$emit('toggleFullscreen', `slot_${index}`)"
@@ -73,8 +73,8 @@
 </template>
 
 <script>
-import VideoInfo from '../components/VideoInfo.vue';
-import VideoTool from '../components/VideoTool.vue';
+import VideoInfo from './../components/VideoInfo.vue';
+import VideoTool from './../components/VideoTool.vue';
 import { mapActions } from 'vuex';
 import mixin from './drag-mixin';
 export default {
@@ -125,6 +125,7 @@ export default {
     ...mapActions('dragVideo', ['setSplitType']),
     ...mapActions('websocketRobot', ['setSelectedRobotId']),
     goControlCenter(robotId) {
+      console.log(111, this.ZQL_videosInfos);
       // 清空当前页面camera视频
       console.log('控制中心', robotId);
       
@@ -169,10 +170,9 @@ export default {
     // 判断视频是否正在播放
     videoStatus(slotKey) {
       const videoInfo = this.ZQL_videosInfos[slotKey];
-      const videoEle = document.getElementById(videoInfo.key)
-      if (!videoInfo || !videoEle) return false;
+      if (!videoInfo) return false;
       if (videoInfo.status === 'STREAMING') {
-        return videoEle.paused ? 'paused' : 'playing'
+        return videoInfo.isPaused ? 'paused' : 'playing'
       } else return 'stopped'
     },
   },

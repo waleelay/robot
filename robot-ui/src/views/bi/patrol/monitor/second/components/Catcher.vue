@@ -44,8 +44,9 @@ export default {
     handleChangeConfirm(val) {
       this.showConfirm = val
     },
-    execute() {
-      this.firePayload(this.netGunDevice, 1, 'net_gun_fire')
+    async execute() {
+      await this.firePayload(this.netGunDevice, 1, 'net_gun_fire')
+      this.showConfirm = false
     }
   }
 }

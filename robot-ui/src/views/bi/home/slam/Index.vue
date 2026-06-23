@@ -169,7 +169,7 @@ export default {
   watch: {
     previewSource: {
       immediate: true,
-      async handler(newVal) {
+      async handler(newVal) { 
         this.imageObjectUrl = require('./preview-image1.png');
         this.imageUrl = require('./preview-image1.png');
         

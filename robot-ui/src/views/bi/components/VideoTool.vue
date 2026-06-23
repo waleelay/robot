@@ -105,7 +105,7 @@
 import videoUtils from './../../..//utils/videoUtils.js'
 import ControlInner from './ControlInner.vue';
 import { createSnapshotFile, snapshotImageUrl } from '../../../api/media.js';
-import { mapActions } from 'vuex';
+import { mapActions, mapState } from 'vuex';
 export default {
   name: 'VideoTool',
   components: {
@@ -129,13 +129,17 @@ export default {
       type: [String, Boolean],
       default: false
     },
-    cameraInfo: {
-      type: Object,
-      default: () => ({}),
+    cameraKey: {
+      type: String,
+      default: '',
     },
   },
   mixins: [videoUtils],
   computed: {
+    ...mapState('websocketRobot', ['cameras']),
+    cameraInfo() {
+      return this.cameras?.[this.cameraKey] || {}
+    },
     canSnapshot() {
       return !!this.cameraInfo.session && this.cameraInfo.watching && !this.cameraInfo.stopping && !this.cameraInfo.stopped
     },

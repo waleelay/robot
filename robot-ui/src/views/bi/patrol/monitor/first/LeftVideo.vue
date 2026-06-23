@@ -66,13 +66,41 @@
               className="six-2"
             />
           </div>
-          <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="mt16 six-3" />
+          <div
+            :draggable="ZQL_videosInfos['slot_3']"
+            @dragstart="onDragStart($event, ZQL_videosInfos['slot_3'].robot, 'smallVideo', 'slot_3')"
+            @dragend="onDragEnd"
+            :style="{ cursor: 'grab' }"
+          >
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="mt16 six-3" />
+          </div>
         </div>
       </div>
       <div class="d-flex mt20">
-        <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-4" />
-        <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml28 six-5" />
-        <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml26 six-6" />
+        <div
+          :draggable="ZQL_videosInfos['slot_4']"
+          @dragstart="onDragStart($event, ZQL_videosInfos['slot_4'].robot, 'smallVideo', 'slot_4')"
+          @dragend="onDragEnd"
+          :style="{ cursor: 'grab' }"
+        >
+          <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-4" />
+        </div>
+        <div
+          :draggable="ZQL_videosInfos['slot_5']"
+          @dragstart="onDragStart($event, ZQL_videosInfos['slot_5'].robot, 'smallVideo', 'slot_5')"
+          @dragend="onDragEnd"
+          :style="{ cursor: 'grab' }"
+        >
+          <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml28 six-5" />
+        </div>
+        <div
+          :draggable="ZQL_videosInfos['slot_6']"
+          @dragstart="onDragStart($event, ZQL_videosInfos['slot_6'].robot, 'smallVideo', 'slot_6')"
+          @dragend="onDragEnd"
+          :style="{ cursor: 'grab' }"
+          >
+          <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml26 six-6" />
+        </div>
       </div>
     </div>
     <template v-else>
@@ -163,16 +191,10 @@ export default {
   },
   computed: {
     ...mapState('dragVideo', ['dropResult', 'splitType']),
-    ...mapState('websocketRobot', ['robots']),
-    // ...mapState('websocketRobot', ['activeCameras']),
+    ...mapState('websocketRobot', ['robots', 'cameras']),
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
     },
-    // 获取第一个激活的摄像头
-    currentCamera() {
-      const keys = Object.keys(this.activeCameras);
-      return keys.length > 0 ? this.activeCameras[keys[0]] : null;
-    }
   },
   async mounted() {
     // 初始化：不默认填充任何设备
@@ -204,25 +226,55 @@ export default {
       // console.log('ZQL_playingSource', this.ZQL_playingSource);
       await this.startCamera({ robot, camera })
     },
+    rebindCameraTracks(cameras) {
+      this.$nextTick(() => {
+        const cameraList = cameras || []
+        cameraList.forEach(camera => {
+          if (!camera) return
+          const video = document.getElementById(this.prefixId + camera.key)
+          const audio = document.getElementById(this.prefixId + camera.key + '-audio')
+          if (video) {
+            if (!camera.remoteVideoTrack) {
+              video.srcObject = null
+              video.load()
+            } else {
+              camera.remoteVideoTrack.attach(video)
+            }
+          }
+          if (audio) {
+            if (!camera.remoteAudioTrack) {
+              audio.srcObject = null
+            } else {
+              camera.remoteAudioTrack.attach(audio)
+            }
+          }
+        })
+      })
+    },
     async test(data) {
       // console.log('-----------------------', data);
       let emptyKey = data.index
       // 填充 放入设备
       const robot = this.robots.find(d => d.robotId === data.data.robotId);
       // 拖拽默认第一个摄像头或者主体摄像头
-      const camera = data?.data?.key ? data.data : robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
+      const cameraObj = data?.data?.key ? data.data : robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
+      const camera = this.cameras?.[cameraObj.key] || cameraObj
       if (this.splitType === 6 && data.componentId === 'smallVideo') {
         const existObj = Object.assign({}, this.ZQL_videosInfos[emptyKey])
         const sourceObj = Object.assign({}, this.ZQL_videosInfos[data.slotKey])
+        // console.log('11111111', this.ZQL_playingSource[emptyKey], this.ZQL_playingSource[data.slotKey]);
         if (this.ZQL_playingSource[emptyKey]) {
           this.$set(this.ZQL_videosInfos, data.slotKey, existObj)
           const existCamera = existObj.robot ? existObj.robot : robot.robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
-          this.restartCamera(this.ZQL_videosInfos[emptyKey])
+          // this.restartCamera(this.cameras?.[this.ZQL_playingSource[emptyKey]] || this.ZQL_videosInfos[emptyKey])
         } else {
           this.$set(this.ZQL_videosInfos, data.slotKey, null)
         }
         this.$set(this.ZQL_videosInfos, emptyKey, sourceObj)
-        this.restartCamera(camera)
+        // this.restartCamera(camera)
+        const key1 = this.ZQL_playingSource[emptyKey]
+        const key2 = this.ZQL_playingSource[data.slotKey]        
+        this.rebindCameraTracks([this.cameras?.[key1], this.cameras?.[key2]])
         return
       }
       if (this.splitType === 1) {
@@ -270,10 +322,12 @@ export default {
       const camera = this.ZQL_videosInfos[key];
       if (!camera) return;
       // 获取视频元素
-      const videoElement = document.getElementById(camera.key);
-      console.log(111, videoElement.paused);
+      const videoElement = document.getElementById(`${this.prefixId}${camera.key}`);
       
-      videoElement.paused ? this.resumeVideo(videoElement, this.ZQL_videosInfos[key]) : this.pauseVideo(videoElement)
+      // 更新响应式播放状态
+      const isPaused = videoElement.paused;
+      this.$set(this.ZQL_videosInfos[key], 'isPaused', !isPaused);
+      isPaused ? this.resumeVideo(videoElement, this.ZQL_videosInfos[key]) : this.pauseVideo(videoElement)
       // this.ZQL_videosInfos[key].status ? this.stopVideo(key) : this.startCamera(this.ZQL_videosInfos[key].robot, this.ZQL_videosInfos[key])
     },
     pauseVideo(videoElement) {
@@ -289,44 +343,46 @@ export default {
           console.error('播放视频失败:', err);
           // 如果直接播放失败，尝试重新建立连接
           if (camera.robot) {
-            this.startCamera({ robot: camera.robot, camera });
+            this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera });
           }
         });
       } else {
         // 如果视频元素不存在，重新启动摄像头
         if (camera.robot) {
-          this.startCamera({ robot: camera.robot, camera });
+          this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera });
         }
       }
     },
     // 刷新视频
     refreshVideo(key) {
+      console.log('刷新视频===============', key, this.ZQL_videosInfos[key]);
+      
       const videoInfo = this.ZQL_videosInfos[key];
       if (!videoInfo || !videoInfo.robot) return;
       
       // 获取摄像头信息
-      const camera = this.ZQL_videosInfos[key];
+      const camera = this.cameras?.[camera.key] || this.ZQL_videosInfos[key];
       
       // 标记为重新加载中
-      this.$set(this.ZQL_videosInfos, key, { ...videoInfo, loading: true });
+      this.$set(this.ZQL_videosInfos, key, { ...camera, loading: true });
       
       // 如果有正在运行的会话，先停止它
       if (camera.session) {
         this.stopCamera(camera).then(() => {
           // 停止成功后重新启动
-          this.startCamera({ robot: videoInfo.robot, cameras: videoInfo });
+          this.startCamera({ robot: videoInfo.robot, camera });
         }).catch(() => {
           // 即使停止失败也尝试重新启动
-          this.startCamera({ robot: videoInfo.robot, cameras: videoInfo });
+          this.startCamera({ robot: videoInfo.robot, camera });
         });
       } else {
         // 如果没有会话，直接启动
-        this.startCamera({ robot: videoInfo.robot, cameras: videoInfo });
+        this.startCamera({ robot: videoInfo.robot, camera });
       }
     },
     // 处理视频删除
     async handleRemoveVideo(key) {
-      const camera = this.ZQL_videosInfos[key];
+      const camera = this.cameras?.[this.ZQL_playingSource[key]] || {};
       if (camera) {
         // 从选中设备中移除
         this.checkedIds.splice(this.checkedIds.indexOf(camera.key), 1);

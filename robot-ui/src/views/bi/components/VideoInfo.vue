@@ -18,13 +18,15 @@
       <svg-icon icon-class="data" style="color: #159AFF" />
       <span class="ml4">106ms</span>
     </div> -->
-    <div class="info-item flx-center">
-      <span class="status p4">{{ cameraInfo.robot.status }}</span>
-    </div>
+    <!-- <div class="info-item flx-center">
+      <span class="status p4">{{ cameraInfo?.robot?.status }}</span>
+    </div> -->
   </div>
 </template>
 
 <script>
+import { mapState } from 'vuex';
+
 export default {
   name: 'VideoInfo',
   props: {
@@ -32,10 +34,16 @@ export default {
       type: Object,
       default: () => ({ one: true }),
     },
-    cameraInfo: {
-      type: Object,
-      default: () => ({}),
+    cameraKey: {
+      type: String,
+      default: '',
     },
   },
+  computed: {
+    ...mapState('websocketRobot', ['cameras']),
+    cameraInfo() {
+      return this.cameras?.[this.cameraKey] || {}
+    },
+  }
 }
 </script>

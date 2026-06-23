@@ -1,44 +1,6 @@
 <template>
   <div class="middle_center p0 pr20 pl20">
-   <!-- <el-select v-model="selectedMapId" placeholder="选择地图" class="item-select" @change="changeMap">
-     <el-option
-       v-for="(image, index) in MapIdOptions"
-       :key="index"
-       :label="image.label"
-       :value="image.value">
-     </el-option>
-   </el-select> -->
-   <!-- <ItemSelect v-model="selectedMapId" :dataList="MapIdOptions" @change="changeMap" class="item-select"/> -->
-   <!-- <div class="state">
-     <div class="state_title">
-       <img src="../../assets/bigScreen/icon/robot-dog.png" alt="机器狗"/>
-       <pre> 设备状态：</pre>
-     </div>
-     <div class="state_item">
-       <div class="info">
-         <div class="green_cricle"></div>
-         <pre> 在线</pre>
-       </div>
-       <div>{{state.onLineNum}}</div>
-     </div>
-     <div class="state_item">
-       <div class="info">
-         <div class="red_cricle"></div>
-         <pre> 离线</pre>
-       </div>
-       <div>{{state.outLineNum}}</div>
-     </div>
-     <div class="state_item">
-       <div class="info">
-         <div class="blue_cricle"></div>
-         <pre> 充电</pre>
-       </div>
-       <div>{{state.chargeNum}}</div>
-     </div>
-   </div> -->
-
     <img :src="currentImage" alt="地图" class="image" @load="getMapSize" ref="mapImage">
-
     <div class="robot"
       slot="reference"
       style="cursor: pointer;"

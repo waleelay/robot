@@ -27,7 +27,7 @@
         <div class="box">
           <div class="top m4 flx-justify-between">
             <div class="flx-align-center">
-              <div class="title ml10">{{ taskInfo.taskName }}</div>
+              <div class="title ml10">{{ taskInfo.name }}</div>
               <!-- <span class="status flx-center ml10 pt2 pr6 pb2 pl6">
                 <svg-icon icon-class="security"></svg-icon>
                 <span class="ml4">{{ taskInfo.status }}</span>
@@ -59,6 +59,7 @@
                   </div>
                   <div class="d-flex hp122 mt10">
                     <div class="wp216 h100 main">
+                      <!-- <span style="color: #fff">{{ robot?.cameras?.[0]?.name }}</span> -->
                       <VideoBox
                         @toggleFullscreen="toggleFullscreen"
                         :videoIndex="`${robot.robotId}_${index}_0`"
@@ -71,9 +72,10 @@
                 <div v-if="robot?.cameras?.length > 1" class="mt4 ml10 p5 side-list common-scroll ovya">
                   <div
                     v-for="(camera, cameraIndex) in robot.cameras.slice(1)"
-                    :key="cameraIdentity(robot.robotId, camera)"
+                    :key="camera.key"
                     class="wp108 hp62 main curp"
                     :class="{ 'mt4': cameraIndex !== 0 }">
+                    <!-- <span style="color: #fff">{{ camera.name }}</span> -->
                     <VideoBox
                       @toggleFullscreen="toggleFullscreen"
                       @select="swapWithMain(robot.robotId, index, cameraIndex + 1)"
@@ -125,22 +127,6 @@ export default {
     cameras() {
       return this.$store.getters['websocketRobot/getCameras'];
     },
-    camerasRevision() {
-      return this.$store.getters['websocketRobot/getCamerasRevision'];
-    },
-    cameraKeys() {
-      if (!this.robotIds?.length) return []
-      return this.robots
-        .filter(robot => this.robotIds.includes(robot.robotId))
-        .reduce((keys, robot) => keys.concat(
-          (robot.cameras || []).map(camera => this.cameraIdentity(robot.robotId, camera))
-        ), [])
-    },
-    cameraStateSignature() {
-      return [this.camerasRevision]
-        .concat(this.cameraKeys.map(key => `${key}:${this.cameras[key]?._revision || 0}`))
-        .join('|')
-    },
   },
   methods: {
     ...mapActions('websocketRobot', ['setPrefixId']),
@@ -159,24 +145,23 @@ export default {
     goTask() {
       this.$router.push({ path: '/bi/patrol/monitor', query: { taskId: this.taskInfo.taskId || 0 } })
     },
-    cameraIdentity(robotId, camera) {
-      return camera.key || `${robotId}-${camera.deviceId || camera.cameraId}-${camera.channel || 'visible'}`
-    },
     orderedCameras(robot) {
       const cameras = (robot.cameras || [])
-        .map(camera => this.cameras[this.cameraIdentity(robot.robotId, camera)] || camera)
+        .map(camera => {
+          return this.cameras[camera.key] || camera
+        })
         .sort((a, b) => {
           if (a.groupType === 'body') return -1
           if (b.groupType === 'body') return 1
           return 0
         })
-      const availableKeys = cameras.map(camera => this.cameraIdentity(robot.robotId, camera))
+      const availableKeys = cameras.map(camera => camera.key)
       const previousOrder = this.cameraOrderByRobot[robot.robotId] || []
       const order = previousOrder
         .filter(key => availableKeys.includes(key))
         .concat(availableKeys.filter(key => !previousOrder.includes(key)))
       this.$set(this.cameraOrderByRobot, robot.robotId, order)
-      return order.map(key => this.cameras[key] || cameras.find(camera => this.cameraIdentity(robot.robotId, camera) === key))
+      return order.map(key => this.cameras[key] || cameras.find(camera => camera.key === key))
     },
     async syncRobotList() {
       if (!this.robots?.length || !this.robotIds?.length || !this.dialogVisible) return
@@ -185,6 +170,7 @@ export default {
         .filter(robot => this.robotIds.includes(robot.robotId))
         .map(robot => ({ ...robot, cameras: this.orderedCameras(robot) }))
       this.$set(this, 'robotList', robotList)
+      
       await this.updateInfo()
     },
     async swapWithMain(robotId, robotIndex, cameraIndex) {
@@ -195,13 +181,13 @@ export default {
       cameras[0] = cameras[cameraIndex]
       cameras[cameraIndex] = mainCamera
       this.$set(this.robotList, robotIndex, { ...robot, cameras })
-      this.$set(this.cameraOrderByRobot, robotId, cameras.map(camera => this.cameraIdentity(robotId, camera)))
+      this.$set(this.cameraOrderByRobot, robotId, cameras.map(camera => camera.key))
       await this.updateInfo()
       this.rebindCameraTracks([cameras[0], cameras[cameraIndex]])
     },
   },
   watch: {
-    cameraStateSignature: {
+    cameras: {
       async handler() {
         await this.syncRobotList()
       },

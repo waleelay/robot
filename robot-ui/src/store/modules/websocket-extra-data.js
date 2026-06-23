@@ -26,7 +26,7 @@ const mutations = {
     state.deviceObj = value;
   },
   SET_TASK_INFO(state, value) {
-    state.taskData = Object.assign({}, state.taskData, { [value.taskId]: {...state.taskData[value.taskId] || {}, value} });
+    state.taskData = Object.assign({}, state.taskData, { [value.taskId]: {...state.taskData[value.taskId] || {}, ...value} });
   },
   SET_ALARMS_DATA(state, value) {
     if (value.high && value.medium && value.low) {
@@ -94,9 +94,9 @@ const actions = {
       online: '-'
     });
     data?.tasks?.map(item => {
-      state.taskData[item.taskId] = Object.assign({}, item);
+      commit('SET_TASK_INFO', item);
     })
-    state.robotList = data?.devices || [];
+    commit('SET_ROBOT_LIST', data?.devices || []);
     data?.devices?.map(item => {
       state.robotBaseInfo[item.robotId] = Object.assign({}, item);
       state.robotLocation[item.robotId] = Object.assign({}, item.location);

@@ -131,7 +131,7 @@ export default {
             <img class="wp${width} hp${height}" src="${require(`@/assets/images/new-bi/${img}.png`)}" />
             ${this.selectedRobot.robotId ? `<img src="${require(`@/assets/images/new-bi/robot_foot1.png`)}" style="margin-top: -5px;" />` : ''}
           </div>`,
-          className: `custom-point ${this.selectedRobot.robotId ? 'show-icon' : ''} ${type} ${status === 0 ? 'green' : status === 1 ? 'blue' : status === 2 ? 'orange' : 'gray'}` ,
+          className: `custom-point ${this.selectedRobot.robotId ? `show-icon  show-icon-${width}` : ''} ${type} ${status === 0 ? 'green' : status === 1 ? 'blue' : status === 2 ? 'orange' : 'gray'}` ,
           iconSize: null,
           // 偏移量
           iconAnchor: [width / 2, height]
@@ -248,7 +248,6 @@ export default {
     
     robotList: {
       handler(newVal, oldVal) {
-        console.log(123, this.robotList)
         // if (this.pointMarkers.length) return
         setTimeout(() => {
           this.initPoints()

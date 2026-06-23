@@ -95,15 +95,34 @@ export default {
   top: 0;
   left: 0;
   height: 93px;
-  // background-image: url("../../../assets/images/new-bi/header1.png");
+  // background-image: url("../../../assets/images/new-bi/header2.png");
   // background-size: 100% 100%;
   padding: 0 20px;
   z-index: 100;
 
+  &::before, &::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 100px;
+    z-index: 0;
+  }
+  &::before {
+    top: 0;
+    background: linear-gradient(90deg, rgba(20, 31, 51, 0.90) 50.08%, rgba(19, 30, 50, 0.00) 100%);
+  }
+  & > div {
+    position: absolute;
+    background-image: url("../../../assets/images/new-bi/header2.png");
+    background-size: 100% 100%;
+    z-index: 1;
+  }
+
   // Logo 区域
   .header-title {
     text-align: center;
-    text-shadow: 0 2px 10px #205DC5, 0 4px 6px #1973D6, 0 1px 2px #165EAE;
+    // text-shadow: 0 2px 10px #205DC5, 0 4px 6px #1973D6, 0 1px 2px #165EAE;
     font-family: YouSheBiaoTiHei;
     font-size: 38px;
     font-style: normal;

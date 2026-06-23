@@ -112,17 +112,17 @@ public class PanoramaMockService {
                         "SCOUT",
                         "online",
                         100,
-                        false,
-                        null,
-                        "MANUAL",
-                        null,
-                        106.03655278081857,
-                        30.7478613352993,
-                        "A区主干道",
+                        true,
+                        "HIGH",
+                        "AUTO",
+                        0.4,
+                        106.039428,
+                        30.745330,
+                        "A区仓库",
                         "wheeled_robot",
-                        "空闲中",
-                        "idle",
-                        taskSummary("task-001", "A区-夜间巡逻", "running", "20:00-22:00")),
+                        "告警中",
+                        "alarm",
+                        taskSummary("task-002", "A区-仓库复核", "paused", "10:00-11:30")),
                 device(
                         "robot-002",
                         "robot-client-deep-001",
@@ -164,28 +164,7 @@ public class PanoramaMockService {
                         "robot_dog",
                         "离线",
                         "offline",
-                        null),
-                device(
-                        "robot-003",
-                        "robot-client-xr-001",
-                        "巡检机器人一号",
-                        "机器人",
-                        "HUMANOID_ROBOT",
-                        "ROBOT",
-                        "XR-1",
-                        "online",
-                        43,
-                        true,
-                        "HIGH",
-                        "AUTO",
-                        0.4,
-                        106.039428,
-                        30.745330,
-                        "A区仓库",
-                        "humanoid_robot",
-                        "告警中",
-                        "alarm",
-                        taskSummary("task-002", "A区-仓库复核", "paused", "10:00-11:30")));
+                        null));
     }
 
     private List<Map<String, Object>> taskItems() {
@@ -207,7 +186,7 @@ public class PanoramaMockService {
                         "2026-06-12 10:00:00",
                         "2026-06-12 11:30:00",
                         "A区仓库",
-                        List.of(equipment("robot-003", "巡检机器人一号", "HUMANOID_ROBOT", "fault"))),
+                        List.of(equipment("robot-001", "松灵四轮机器人", "WHEELED_ROBOT", "fault"))),
                 task(
                         "task-003",
                         "南侧围栏巡查",
@@ -221,8 +200,8 @@ public class PanoramaMockService {
 
     private Map<String, Object> alarmGroups() {
         List<Map<String, Object>> high = List.of(
-                alarm("alarm-001", "发生火灾", "BUSINESS", "业务告警", "HIGH", "高风险", "2023-08-01 10:00:00", "A区仓库", "robot-003", "巡检机器人一号", "task-002", "A区-仓库复核", "unhandled"),
-                alarm("alarm-002", "设备故障", "DEVICE", "设备告警", "HIGH", "高风险", "2026-06-12 10:28:00", "A区仓库", "robot-003", "巡检机器人一号", "task-002", "A区-仓库复核", "handling"));
+                alarm("alarm-001", "发生火灾", "BUSINESS", "业务告警", "HIGH", "高风险", "2023-08-01 10:00:00", "A区仓库", "robot-001", "松灵四轮机器人", "task-002", "A区-仓库复核", "unhandled"),
+                alarm("alarm-002", "设备故障", "DEVICE", "设备告警", "HIGH", "高风险", "2026-06-12 10:28:00", "A区仓库", "robot-001", "松灵四轮机器人", "task-002", "A区-仓库复核", "handling"));
         List<Map<String, Object>> medium = List.of(
                 alarm("alarm-003", "电量偏低", "DEVICE", "设备告警", "MEDIUM", "中风险", "2026-06-12 10:15:00", "A区东侧通道", "robot-002", "云深处四足机器狗", null, null, "unhandled"));
         List<Map<String, Object>> low = List.of(

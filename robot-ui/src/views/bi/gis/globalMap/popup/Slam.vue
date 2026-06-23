@@ -1,4 +1,4 @@
-
+<!-- 全景地图界面-小窗口slam -->
 <template>
   <div class="machine-container slam" :class="{ visible }">
     <div class="decoration wp167 hp5">

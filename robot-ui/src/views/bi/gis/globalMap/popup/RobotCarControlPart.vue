@@ -23,6 +23,7 @@
         <div style="border: 1px solid #2AA6F6">
           <div class="d-flex hp222 p10">
             <div class="wp360 h100 main">
+              <!-- <span style="color: #fff">{{ robot?.cameras?.[0]?.name }}</span> -->
               <VideoBox
                 @toggleFullscreen="toggleFullscreen"
                 :videoIndex="`${robot.robotId}_0`"
@@ -32,6 +33,7 @@
             </div>
             <div v-if="robot?.cameras?.length > 1" class="ml10 p5 side-list common-scroll ovya">
               <div v-for="(camera, cameraIndex) in robot.cameras.slice(1)" :key="cameraIdentity(robot.robotId, camera)" class="wp160 hp90 main curp" :class="{ 'mt10': cameraIndex !== 0 }">
+                <!-- <span style="color: #fff">{{ camera.name }}</span> -->
                 <VideoBox
                   @toggleFullscreen="toggleFullscreen"
                   @select="swapWithMain(cameraIndex + 1)"

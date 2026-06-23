@@ -74,28 +74,31 @@ function cameraKey(robotId, camera) {
   return camera.key || `${robotId}-${camera.deviceId || camera.cameraId}-${camera.channel || 'visible'}`
 }
 
-function toBasicCamera(camera) {
+function toBasicCamera(camera, robotId, key) {
   return {
     cameraId: camera.cameraId || camera.deviceId,
     channel: camera.channel || 'visible',
     deviceId: camera.deviceId || camera.cameraId,
     groupType: camera.groupType,
+    groupTypeName: groupTypeText(camera.groupType),
     name: camera.name,
     quality: camera.quality || 'sub',
-    status: camera.status || 'offline'
+    status: camera.status || 'offline',
+    key,
+    robotId,
   }
 }
 
 function toBasicRobot(robot) {
   return Object.assign({}, robot, {
-    cameras: (robot.cameras || []).map(toBasicCamera)
+    cameras: (robot.cameras || []).map(camera => toBasicCamera(camera, robot.robotId, cameraKey(robot.robotId, camera)))
   })
 }
 
 function indexCameras(robots) {
   return (robots || []).reduce((result, robot) => {
     (robot.cameras || []).forEach(camera => {
-      result[cameraKey(robot.robotId, camera)] = camera
+      result[cameraKey(robot.robotId, camera)] = { ...camera, robotId: robot.robotId }
     })
     return result
   }, {})
@@ -185,7 +188,6 @@ const mutations = {
   },
   setActiveCamera(state, { key, robot, camera }) {
     Vue.set(state.activeCameras, key, { robot, camera });
-    // state.activeCameras = { ...state.activeCameras, [key]: { robot, camera } };
   },
   removeActiveCamera(state, key) {
     Vue.delete(state.activeCameras, key);
@@ -563,13 +565,15 @@ const actions = {
   },
   // 启动摄像头
   async startCamera({ commit, state, dispatch }, { robot, camera }) {
+    let camera1 = { ...camera }
     if (robot.status !== 'online') return
-    camera.loading = true
-    camera.stopped = false
-    camera.stopping = false
-    camera.restarting = false
-    camera.watching = true
+    camera1.loading = true
+    camera1.stopped = false
+    camera1.stopping = false
+    camera1.restarting = false
+    camera1.watching = true
     try {
+      console.log('startCamera', robot, camera)
       const session = await createVideoSession({
         robotId: robot.robotId,
         deviceId: camera.deviceId,
@@ -577,20 +581,20 @@ const actions = {
         quality: camera.quality,
         reuse: true
       })
-      camera.session = mergeSession(camera, session)
-      camera.status = camera.session.status
-      camera.viewerCount = camera.session.viewerCount
-      state.stoppedSessionIds.delete(camera.session.sessionId)
-      console.log('API createVideoSession', camera.session)
-      if (!camera.room || !camera.intercomActive) {
-        await dispatch('connectLiveKit', { camera })
+      camera1.session = mergeSession(camera1, session)
+      camera1.status = camera1.session.status
+      camera1.viewerCount = camera1.session.viewerCount
+      state.stoppedSessionIds.delete(camera1.session.sessionId)
+      console.log('API createVideoSession', camera1.session)
+      if (!camera1.room || !camera1.intercomActive) {
+        await dispatch('connectLiveKit', { camera: camera1 })
       }
     } catch (error) {
       console.log('ERROR createVideoSession', error.message || '请求失败')
     } finally {
-      camera.loading = false
-      commit('setCamera', camera)
-      commit('setActiveCamera', { key: camera.key, robot, camera });
+      camera1.loading = false
+      commit('setCamera', camera1)
+      commit('setActiveCamera', { key: camera1.key, robot, camera: camera1 });
     }
     // console.log('4')
   },

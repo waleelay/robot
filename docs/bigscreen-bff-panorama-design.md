@@ -314,8 +314,8 @@ GET /api/bigscreen/panorama/overview
           "levelName": "高风险",
           "eventTime": "2023-08-01 10:00:00",
           "location": "A区仓库",
-          "robotId": "robot-003",
-          "deviceName": "巡检机器人一号",
+          "robotId": "robot-001",
+          "deviceName": "松灵四轮机器人",
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
           "status": "unhandled",
@@ -348,14 +348,13 @@ GET /api/bigscreen/panorama/overview
 }
 ```
 
-当前 mock 的 4 台机器人定位：
+当前 mock 的 3 台机器人定位：
 
 | robotId | lat | lng |
 |---|---:|---:|
-| `robot-001` | 30.7478613352993 | 106.03655278081857 |
+| `robot-001` | 30.745330 | 106.039428 |
 | `robot-002` | 30.746587087515316 | 106.03824884204943 |
 | `robot-unitree-001` | 30.7469491 | 106.0344109 |
-| `robot-003` | 30.745330 | 106.039428 |
 
 ### 5.3 设备详情接口
 
@@ -529,8 +528,8 @@ GET /api/bigscreen/panorama/alarms
           "levelName": "高风险",
           "eventTime": "2023-08-01 10:00:00",
           "location": "A区仓库",
-          "robotId": "robot-003",
-          "deviceName": "巡检机器人一号",
+          "robotId": "robot-001",
+          "deviceName": "松灵四轮机器人",
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
           "status": "unhandled",
@@ -667,8 +666,8 @@ WebSocket：
       "levelName": "高风险",
       "eventTime": "2023-08-01 10:00:00",
       "location": "A区仓库",
-      "robotId": "robot-003",
-      "deviceName": "巡检机器人一号",
+      "robotId": "robot-001",
+      "deviceName": "松灵四轮机器人",
       "taskId": "task-002",
       "taskName": "A区-仓库复核",
       "status": "unhandled",

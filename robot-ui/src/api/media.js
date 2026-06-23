@@ -190,8 +190,6 @@ export function getControlProfile(robotId) {
 }
 
 export function acquireControl(robotId, data) {
-  console.log(robotId, data);
-  
   return request({
     url: `/api/control/robots/${robotId}/control-sessions/acquire`,
     method: 'post',

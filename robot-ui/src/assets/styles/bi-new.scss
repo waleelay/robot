@@ -863,6 +863,42 @@
     display: none;
   }
 }
+// 看板中心
+.custom-select.el-popper.page-select-popper {
+  margin: 3px 0;  
+  border: none;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(4, 60, 149, 0.20) 0%, rgba(4, 33, 68, 0.15) 5%, rgba(4, 23, 62, 0.16) 51%, rgba(7, 45, 94, 0.15) 93%, rgba(4, 62, 151, 0.20) 100%);
+  border: 1px rgba(44, 173, 255, 0.50) solid;
+  backdrop-filter: blur(15px);
+  .popper__arrow {
+    display: none;
+  }
+  .el-select-dropdown__list {
+    padding: 10px 5px;
+    .el-select-dropdown__item {
+      height: auto;
+      padding: 0 !important;
+      color: #FFF;
+      background: rgba(35, 104, 212, 0.20);
+      border-radius: 2px;
+      font-family: "Microsoft YaHei";
+      font-size: 16px;
+      line-height: 38px;
+      text-align: center;
+      cursor: pointer;
+      & + .el-select-dropdown__item {
+        margin-top: 5px;
+      }
+      &:focus, &.selected, &:not(.is-disabled):hover {
+        border-radius: 2px;
+        border-color: #10DCF5;
+        background: rgba(35, 104, 212, 0.20);
+        box-shadow: 0 0 4px 2px #0BF9FE inset;
+      }
+    }
+  }
+}
 // 下拉菜单
 .el-dropdown-menu.custom-dropdown-menu {
   padding: 0;

@@ -128,7 +128,8 @@ export default {
     // 判断视频是否正在播放
     videoStatus(slotKey) {
       const videoInfo = this.ZQL_videosInfos[slotKey];
-      const videoEle = document.getElementById(videoInfo.key)
+      const idName = `${this.prefixId}${videoInfo.key}`
+      const videoEle = document.getElementById(idName)
       if (!videoInfo || !videoEle) return false;
       if (videoInfo.status === 'STREAMING') {
         return videoEle.paused ? 'paused' : 'playing'

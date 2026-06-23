@@ -46,7 +46,7 @@
                 :key="item.name"
                 class="item flx-justify-between"
                 :class="{ 'is-active': checkedRobotIds.includes(item.robotId) }"
-                :draggable="!checkedRobotIds.includes(item.robotId)"
+                :draggable="!checkedRobotIds.includes(item.robotId) && item.status === 'online'"
                 @dragstart="onDragStart($event, item, 'equipmentListComponent')"
                 @dragend="onDragEnd"
                 @click="handleClickRobot(item)"
@@ -106,7 +106,7 @@
                 :key="equipment.name"
                 class="item flx-justify-between"
                 :class="{ 'is-active': checkedRobotIds.includes(equipment.robotId) }"
-                :draggable="!checkedRobotIds.includes(equipment.robotId)"
+                :draggable="!checkedRobotIds.includes(equipment.robotId) && equipment.status === 'online'"
                 @dragstart="onDragStart($event, robotBaseInfo[equipment.robotId], 'equipmentListComponent')"
                 @dragend="onDragEnd"
                 @click="handleClickRobot(robotBaseInfo[equipment.robotId])"
@@ -143,8 +143,8 @@ export default {
   data() {
     return {
       tabList: ['装备列表', '任务列表'],
-      // tabIndex: this.$route.query.taskId !== undefined ? 1 : 0,
-      tabIndex: 1,
+      tabIndex: this.$route.query.taskId !== undefined ? 1 : 0,
+      // tabIndex: 1,
       searchValue: '',
       selectedTaskId: '',
       equipmentInfo: {
@@ -185,6 +185,8 @@ export default {
   },
   mounted() {
     setTimeout(() => {
+      console.log(333, this.taskData);
+      
       if (this.$route.query.taskId !== undefined) {
         this.handleSelectTask(this.taskData[this.$route.query.taskId])
       } else {
@@ -217,12 +219,9 @@ export default {
     },
     
     async handleSelectTask(task) {
-      // console.log(123, task);
-      
       this.selectedTaskId = task.taskId
       // 获取新旧设备列表的 robotId 集合
-      console.log(111, task.robots);
-      const newIds = new Set(task.robots.slice(0, this.splitType).map(item => item.robotId));
+      const newIds = new Set(task.equipmentList.slice(0, this.splitType).map(item => item.robotId));
       
       // 找出需要关闭的设备（旧有但新列表中没有的）
       const closeIds = [...this.checkedRobotIds].filter(id => !newIds.has(id));
@@ -236,7 +235,7 @@ export default {
         };
       }
       // 更新选中设备列表
-      this.selectedEquipmentList = task.robots.slice(0, this.splitType);
+      this.selectedEquipmentList = task.equipmentList.slice(0, this.splitType);
     },
   },
   watch: {
@@ -263,7 +262,7 @@ export default {
         const onlineList = []
         const offlineList = []
         newRobots.map(item => {
-          if (item.online) {
+          if (item.status === 'online') {
             onlineList.push(item)
           } else {
             offlineList.push(item)  

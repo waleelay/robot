@@ -11,6 +11,7 @@
   <div class="map-div h100" :class="{ full: collapse }">
     <GlobalMap @getDogList="getDogList"  @changeWebrtcServer="changeWebrtcServer" style="z-index: 0;" ref="globalMapRef" />
     <MapTool @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter " />
+    <!-- <img src="../../../../../assets/images/new-bi/robot_dog.png" alt="地图" :style="getStyle()" class="image1" ref="mapImage"> -->
   </div>
 </template>
 
@@ -31,7 +32,17 @@ export default {
   },
   data() {
     return {
+      count: 0,
+      intervalId: null
     }
+  },
+  mounted() {
+    // this.intervalId = setInterval(() => {
+    //   this.count++
+    // }, 1000)
+  },
+  beforeDestroy() {
+    clearInterval(this.intervalId)
   },
   methods: {
     getDogList(data) {
@@ -48,6 +59,14 @@ export default {
     },
     setCenter() {
       this.$refs.globalMapRef.setCenter()
+    },
+    getStyle() {
+      return {
+        width: '38px',
+        height: '28px',
+        top: '200px',
+        left: 500 + this.count + 'px'
+      }
     }
   },
 }
@@ -55,4 +74,7 @@ export default {
 
 <style lang="scss">
 @import './index.scss';
+.image1 {
+  position: absolute;
+}
 </style>

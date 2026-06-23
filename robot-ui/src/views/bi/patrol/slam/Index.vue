@@ -1,15 +1,6 @@
 <template>
   <div class="map-preview-box w100 h100">
     <template v-if="hasPreview">
-      <!-- <div class="map-preview-toolbar">
-        <el-button-group>
-          <el-button @click="zoomOut">缩小</el-button>
-          <el-button @click="resetView">重置视图</el-button>
-          <el-button @click="zoomIn">放大</el-button>
-          <el-button @click="backCenter">居中point4</el-button>
-        </el-button-group>
-        <span class="map-preview-zoom">{{ Math.round(zoom * 100) }}%</span>
-      </div> -->
       <div class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #CDCDCD;">
         <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
           <img v-if="imageUrl" class="map-preview-image" :src="imageUrl" alt="地图预览" style="width: 100%; height: 100%;" />

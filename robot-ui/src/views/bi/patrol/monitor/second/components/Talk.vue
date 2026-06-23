@@ -8,7 +8,7 @@
  * @Version: 
 -->
 <template>
-  <div class="flx-justify-between flex-column" :class="{ 'is-inner': isMapInner }">
+  <div class="flx-justify-between flex-column" :class="{ 'is-inner': isMapInner }" :style="{ pointerEvents: selectedRobot.status !== 'online' ? 'none' : 'auto' }">
     <div class="circle flx-center flex-column" :class="{ 'talking': selectCamera.intercomActive }" @click="handleTalk">
       <span>
         <!-- <svg-icon :icon-class="isTalk ? 'mic-fill' : 'mic-off-fill'" /> -->
@@ -60,7 +60,7 @@ export default {
   name: 'Talk',
   mixins: [yuntai],
   computed: {
-    ...mapState('websocketRobot', ['audioState']),
+    ...mapState('websocketRobot', ['audioState', 'cameras']),
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
@@ -68,7 +68,7 @@ export default {
       return this.$store.getters['websocketRobot/getSelectedRobot']
     },
     selectCamera() {
-      return this.selectedRobot?.cameras?.[0] || {}
+      return this.cameras?.[this.selectedRobot?.cameras?.[0].key] || {}
     },
     currentVolume() {
       return this.audioVolume(this.audioDevice)

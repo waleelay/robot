@@ -29,13 +29,9 @@
             </div>
           </div>
           <div class="mt20">
-            <div class="t2">告警分布</div>
+            <div class="t2">告警分布1</div>
             <div class="mt20 hp150">
-              <PieChart :items="[
-                { name: '高风险', value: 2, color: '#FF2424' },
-                { name: '中风险', value: 2, color: '#FFA024' },
-                { name: '低风险', value: 50, color: '#24CBFF' },
-              ]" />
+              <PieChart :items="alarmPieChart" />
             </div>
           </div>
         </div>
@@ -98,6 +94,13 @@ export default {
       return this.$store.getters['websocketRobot/getRobots'];
     },
     ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats']),
+    alarmPieChart() {
+      return [
+        { name: '高风险', value: this.alarmsData?.high?.items?.length || 0, color: '#FF2424' },
+        { name: '中风险', value: this.alarmsData?.medium?.items?.length || 0, color: '#FFA024' },
+        { name: '低风险', value: this.alarmsData?.low?.items?.length || 0, color: '#24CBFF' },
+      ]
+    }
   },
   data() {
     return {

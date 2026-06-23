@@ -317,6 +317,7 @@ export default {
   border-radius: 2px;
   background: rgba(40, 118, 210, 0.20);
   box-shadow: 0 0 4px 0 #69C4FF inset;
+  overflow: hidden;
   &.error {
     color: #FF3434;
     background: rgba(210, 40, 40, 0.20);

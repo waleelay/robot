@@ -13,35 +13,40 @@
           <div class="count flx-justify-between">
             <div class="item wp66 hp70 flx-center flex-column">
               <div class="desc">总数</div>
-              <div class="value mt4">{{ deviceStats?.total || 0 }}</div>
+              <div class="value mt4">{{ deviceStats?.total ? String(deviceStats?.total).padStart(2, '0') : '-' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 green">
               <div class="desc">在线</div>
-              <div class="value mt4">{{ deviceStats?.online || 0 }}</div>
+              <div class="value mt4">{{ deviceStats?.online ? String(deviceStats?.online).padStart(2, '0') : '-' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 orange">
               <div class="desc">故障</div>
-              <div class="value mt4">{{ deviceStats?.fault || 0 }}</div>
+              <div class="value mt4">{{ deviceStats?.fault ? String(deviceStats?.fault).padStart(2, '0') : '-' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 gray">
               <div class="desc">离线</div>
-              <div class="value mt4">{{ deviceStats?.offline || 0  }}</div>
+              <div class="value mt4">{{ deviceStats?.offline ? String(deviceStats?.offline).padStart(2, '0') : '-' }}</div>
             </div>
           </div>
           <div class="mt20">
             <div class="t2">装备类型</div>
-            <div class="mt20"> 
+            <div class="mt12"> 
               <div class="flx-center top pr10 pl10">
                 <div class="tal" style="width: 40%;">装备类型</div>
                 <div class="flex1 tac ml10">总数</div>
                 <div class="flex1 tac ml10">故障</div>
                 <div class="flex1 tac ml10">离线</div>
               </div>
-              <div v-for="item in devices" class="devices flx-center pr10 pl10">
-                <div class="tal" style="width: 40%;">{{ item.name }}</div>
-                <div class="flex1 tac ml10">{{ item.total || 0 }}</div>
-                <div class="flex1 tac ml10">{{ item.fault || 0 }}</div>
-                <div class="flex1 tac ml10">{{ item.offline || 0  }}</div>
+              <div class="common-scroll ovya" style="min-height: 144px; max-height: 144px;">
+                <template v-if="deviceTypeStats.length">
+                  <div v-for="item in deviceTypeStats" class="devices flx-center pr10 pl10">
+                    <div class="tal" style="width: 40%;">{{ item.name }}</div>
+                    <div class="flex1 tac ml10">{{ item.total || 0 }}</div>
+                    <div class="flex1 tac ml10">{{ item.fault || 0 }}</div>
+                    <div class="flex1 tac ml10">{{ item.offline || 0  }}</div>
+                  </div>
+                </template>
+                <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div>
               </div>
             </div>
           </div>
@@ -76,16 +81,21 @@
           </div>
           <div class="mt20">
             <div class="t2">任务详情</div>
-            <div class="mt20">
+            <div class="mt12">
               <div class="flx-justify-between top pr10 pl10">
                 <div style="width: 43%;">任务名称</div>
-                <div class="ml15 mr15 wp50">状态</div>
-                <div class="ml10" style="width: 25%;">执行时间</div>
+                <div class="ml10 mr10 wp50">状态</div>
+                <div class="ml10" style="width: 35%;">执行时间</div>
               </div>
-              <div v-for="item in tasks" class="tasks flx-justify-between pr10 pl10">
-                <div style="width: 43%;">{{ item.name }}</div>
-                <div class="ml15 mr15 status wp50" :class="item.status === '执行中' ? 'green' : item.status === '待执行' ? 'orange' : 'gray'">{{ item.status }}</div>
-                <div class="ml10" style="width: 25%;">{{ item.period }}</div>
+              <div class="common-scroll ovya" style="min-height: 144px; max-height: 144px;">
+                <template v-if="tasks.length">
+                  <div v-for="item in tasks" class="tasks flx-justify-between pr10 pl10">
+                    <div style="width: 43%;">{{ item.name }}</div>
+                    <div class="ml10 mr10 status wp50" :class="item.statusName === '执行中' ? 'green' : item.status === '待执行' ? 'orange' : 'gray'">{{ item.statusName }}</div>
+                    <div class="ml10" style="width: 35%;">{{ item.timeRange }}</div>
+                  </div>
+                </template>
+                <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div>
               </div>
             </div>
           </div>
@@ -107,10 +117,8 @@ import { mapState } from 'vuex';
 // import TaskRobotView from '../components/modal/TaskRobotView.vue';
 // import WarningBatch from './WarningBatch.vue'
 import { mapActions } from 'vuex/dist/vuex.common.js';
-import PieChart from './PieChart.vue';
 export default {
   name: 'BiIndexLeft',
-  components: { PieChart },
   props: {
     collapse: {
       type: Boolean,
@@ -125,24 +133,12 @@ export default {
       return this.$store.getters['websocketRobot/getRobots'];
     },
     ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats']),
+    tasks() {
+      return Object.keys(this.taskData || {}).map(key => this.taskData[key])
+    },
   },
   data() {
     return {
-      tabList: [
-        {
-          label: '今日',
-          value: 0
-        },
-        {
-          label: '本月',
-          value: 1
-        },
-        {
-          label: '当年',
-          value: 2
-        }
-      ],
-      tabIndex: 0,
       collapseArr: [false, false, true],
       alertCollapseArr: [true, true, true],
       alertList: [1],
@@ -154,12 +150,12 @@ export default {
         { name: '无人机', total: 0, fault: 0, offline: 0 },
         { name: '无人车', total: 0, fault: 0, offline: 0 },
       ],
-      tasks: [
-        { name: '任务1', status: '执行中', period: '2-4小时' },
-        { name: '任务2', status: '待执行', period: '2-4小时' },
-        { name: '任务3', status: '执行中', period: '2-4小时' },
-        { name: '任务4', status: '执行中', period: '2-4小时' },
-      ]
+      // tasks: [
+      //   { name: '任务1', status: '执行中', period: '2-4小时' },
+      //   { name: '任务2', status: '待执行', period: '2-4小时' },
+      //   { name: '任务3', status: '执行中', period: '2-4小时' },
+      //   { name: '任务4', status: '执行中', period: '2-4小时' },
+      // ]
     }
   },
   async mounted() {
@@ -211,7 +207,7 @@ export default {
 }
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
 .right-div {
   backdrop-filter: unset !important;
   background: transparent !important;

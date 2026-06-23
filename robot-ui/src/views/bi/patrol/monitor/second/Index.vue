@@ -26,10 +26,10 @@
             <img v-if="selectedRobot.type === '四足机器狗'"src="@/assets/images/new-bi/dog.png" alt="" srcset="" width="161" height="104">
             <img v-else src="@/assets/images/new-bi/car.png" alt="" srcset="" width="143" height="143">
             <div class="basic ml20">
-              <div class="desc">当前速度：1.5m/s</div>
-              <div class="desc">当前电量：98%</div>
-              <div class="desc">当前任务：周期性训练</div>
-              <div class="desc">控制模型：自动控制</div>
+              <div class="desc">当前速度：{{ currenRobot.speed }}m/s</div>
+              <div class="desc">当前电量：{{ currenRobot.battery }}%</div>
+              <div class="desc">当前任务：{{ currenRobot?.task?.name || '-' }}</div>
+              <div class="desc">控制模型：{{ currenRobot?.controlMode}}</div>
             </div>
           </div>
           <div class="flex1 flx-align-center">
@@ -101,6 +101,7 @@ import Launcher from './components/Launcher.vue'
 import { motionControl } from '@/api/login'
 import SmallMap from '../../../gis/globalMap/SmallMap..vue'
 import yuntai from './components/yuntai'
+import { mapState } from 'vuex'
 export default {
   name: 'BiPatrolMonitorSecondScreen',
   components: {EquipmentListTree, LeftVideo, SelfRobotDogControl, SelfRobotCarControl, Yuntai, Talk, Catcher, Launcher, SmallMap},
@@ -111,9 +112,16 @@ export default {
     }
   },
   computed: {
+    selectedRobotId() {
+      return this.$store.getters['websocketRobot/getSelectedRobotId']
+    },
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
+    ...mapState('websocketExtraData', ['robotBaseInfo']),
+    currenRobot() {
+      return this.robotBaseInfo?.[this.selectedRobotId] || {}
+    }
   },
   data() {
     return {

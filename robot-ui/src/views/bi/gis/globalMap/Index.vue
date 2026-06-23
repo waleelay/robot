@@ -69,10 +69,10 @@ import { fromLonLat } from "ol/proj";
 // import { Icon, Style, Stroke, Fill } from 'ol/style'
 // import { ScaleLine, Zoom } from 'ol/control'
 // import { fromLonLat, toLonLat } from 'ol/proj'
-import { chargeStateObj, controlModeObj, locationObj, motionStateObj, motorStateObj } from './../../js/constants/robot-dog-constants';
-import { controlDevice } from '../../../../api/bi';
-import { listMapInfo } from '../../../../api/rsp/map';
-import { listMotion } from '../../../../api/rsp/equipment';
+import { chargeStateObj, controlModeObj, locationObj, motionStateObj, motorStateObj } from '../../js/constants/robot-dog-constants.js';
+import { controlDevice } from '../../../../api/bi.js';
+import { listMapInfo } from '../../../../api/rsp/map.js';
+import { listMotion } from '../../../../api/rsp/equipment.js';
 import { getBasicMessage } from "@/api/menu"
 import Robot from './popup/Robot.vue';
 import Robot1 from './popup/Robot1.vue';
