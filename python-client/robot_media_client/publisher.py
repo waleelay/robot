@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+import os
+import shlex
+import signal
+import subprocess
+import threading
+import time
+
+from .config import Config
+from .model import StartCommand
+
+
+class ProcessPublisher:
+    """用外部进程把 RTSP 视频发布到 LiveKit。"""
+
+    def __init__(self, cfg: Config) -> None:
+        """保存配置，并按 sessionId 管理 publisher 子进程。"""
+        self.cfg = cfg
+        self.processes: dict[str, subprocess.Popen[bytes]] = {}
+        self.lock = threading.RLock()
+
+    def start(self, command: StartCommand, rtsp_url: str) -> tuple[str, str]:
+        """启动指定 session 的推流；同 session 重复 start 会先清理旧进程。"""
+        with self.lock:
+            self._stop_locked(command.session_id)
+            track_name = "video." + command.channel + "." + command.quality
+            if self.cfg.publisher_cmd:
+                return self._start_command(command, rtsp_url, track_name, self.cfg.publisher_cmd, "custom")
+            try:
+                return self._start_gstreamer(command, rtsp_url, track_name)
+            except Exception:
+                if not self.cfg.ffmpeg_publisher_cmd:
+                    raise
+                print("publisher fallback ffmpeg", command.session_id, flush=True)
+                return self._start_command(command, rtsp_url, track_name, self.cfg.ffmpeg_publisher_cmd, "ffmpeg")
+
+    def _start_command(
+        self,
+        command: StartCommand,
+        rtsp_url: str,
+        track_name: str,
+        template: str,
+        mode: str,
+    ) -> tuple[str, str]:
+        """按模板渲染自定义 publisher 命令并启动进程。"""
+        args = self._render_args(template, command, rtsp_url, track_name)
+        if not args:
+            raise RuntimeError("publisher command is empty")
+        process = subprocess.Popen(args, stdout=None, stderr=None, start_new_session=True)
+        print("publisher command", mode, " ".join(shlex.quote(arg) for arg in args), flush=True)
+        self.processes[command.session_id] = process
+        self._ensure_running(command.session_id, process)
+        return "TR_" + command.session_id, track_name
+
+    def _start_gstreamer(self, command: StartCommand, rtsp_url: str, track_name: str) -> tuple[str, str]:
+        """使用 gstreamer-publisher 默认路径发布 RTSP 到 LiveKit。"""
+        pipeline = self._render_text(self.cfg.gstreamer_pipeline, command, rtsp_url, track_name)
+        args = [
+            self.cfg.gstreamer_publisher_path,
+            "--url",
+            command.livekit_url,
+            "--token",
+            command.publisher_token,
+            "--",
+        ]
+        args.extend(shlex.split(pipeline))
+        process = subprocess.Popen(args, stdout=None, stderr=None, start_new_session=True)
+        print("publisher command", " ".join(shlex.quote(arg) for arg in args), flush=True)
+        self.processes[command.session_id] = process
+        self._ensure_running(command.session_id, process)
+        return "TR_" + command.session_id, track_name
+
+    def stop(self, session_id: str) -> None:
+        """停止指定 session 的 publisher 进程。"""
+        with self.lock:
+            self._stop_locked(session_id)
+
+    def stop_all(self) -> None:
+        """停止当前客户端管理的所有 publisher 进程。"""
+        with self.lock:
+            for session_id in list(self.processes.keys()):
+                self._stop_locked(session_id)
+
+    def _stop_locked(self, session_id: str) -> None:
+        """在已持锁的情况下停止并移除一个 publisher 进程。"""
+        process = self.processes.pop(session_id, None)
+        if process is None:
+            return
+        if process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            process.kill()
+
+    def _ensure_running(self, session_id: str, process: subprocess.Popen[bytes]) -> None:
+        """短暂观察子进程是否立即退出，尽早暴露 pipeline 参数错误。"""
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            code = process.poll()
+            if code is not None:
+                self.processes.pop(session_id, None)
+                raise RuntimeError(f"publisher exited with code {code}")
+            time.sleep(0.05)
+
+    def _render_args(self, template: str, command: StartCommand, rtsp_url: str, track_name: str) -> list[str]:
+        """把命令模板拆分为 argv，并替换会话、RTSP 和 LiveKit 占位符。"""
+        return [
+            self._render_text(part, command, rtsp_url, track_name)
+            for part in shlex.split(template)
+        ]
+
+    @staticmethod
+    def _render_text(template: str, command: StartCommand, rtsp_url: str, track_name: str) -> str:
+        """替换单个模板片段中的占位符。"""
+        return (
+            template
+            .replace("{rtsp}", rtsp_url)
+            .replace("{livekitUrl}", command.livekit_url)
+            .replace("{token}", command.publisher_token)
+            .replace("{room}", command.room_name)
+            .replace("{track}", track_name)
+        )
