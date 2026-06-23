@@ -1156,6 +1156,7 @@ POST /api/control/robots/{robotId}/commands
       {
         "cameraId": "camera01",
         "deviceId": "camera01",
+        "groupType": "dual_gimbal",
         "name": "前向双光云台",
         "quality": "hd"
       }
@@ -1181,7 +1182,7 @@ POST /api/control/robots/{robotId}/commands
 | `navigationStatus` | string | 否 | 导航状态 |
 | `controlOwner` | object/null | 否 | 当前控制占用者，如 `{userId, clientId}` |
 | `estopActive` | boolean | 否 | 急停是否生效 |
-| `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`name`、`quality` |
+| `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`groupType`、`name`、`quality` |
 | `timestamp` | datetime | 是 | 机器人端状态产生时间；缺省时后端补当前时间 |
 
 ### 6.7 第一版 Action 参数明细
@@ -1511,10 +1512,11 @@ Payload 示例：
   "estopActive": false,
   "cameras": [
     {
-      "cameraId": "camera01",
-      "deviceId": "camera01",
-      "name": "前向双光云台",
-      "quality": "hd"
+        "cameraId": "camera01",
+        "deviceId": "camera01",
+        "groupType": "dual_gimbal",
+        "name": "前向双光云台",
+        "quality": "hd"
     }
   ],
   "timestamp": "2026-06-03T10:30:00+08:00"
@@ -1535,7 +1537,7 @@ Payload 示例：
 | `controlOwner` | object/null | 否 | 当前控制占用者 |
 | `estopActive` | boolean | 是 | 急停是否生效 |
 | `battery` | number | 否 | 电量 |
-| `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`name`、`quality` |
+| `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`groupType`、`name`、`quality` |
 
 ## 8. 控制权与多终端协同
 

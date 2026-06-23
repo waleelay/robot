@@ -363,12 +363,22 @@ import {
 // 前端内部摄像头状态模型。
 // 后端返回的是业务会话/设备字段，页面还需要额外保存 LiveKit Room、加载状态、
 // 本地停止意图、对讲 token 等 UI/连接态，所以统一在这里初始化。
-function cameraState(robotId, deviceId, name) {
+function groupTypeText(groupType) {
+  return {
+    body: '本体',
+    dual_gimbal: '双光云台',
+    arm: '机械臂'
+  }[groupType] || groupType || '未分组'
+}
+
+function cameraState(robotId, deviceId, name, groupType) {
   return {
     key: `${robotId}-${deviceId}`,
     robotId,
     deviceId,
     name,
+    groupType: groupType || 'body',
+    groupTypeName: groupTypeText(groupType),
     quality: 'auto',
     loading: false,
     hasVideo: false,
@@ -417,9 +427,9 @@ export default {
           battery: null,
           status: 'offline',
           cameras: [
-            cameraState('robot-001', 'camera01', '云台-可见光'),
-            cameraState('robot-001', 'camera02', '云台-热成像'),
-            cameraState('robot-001', 'camera03', '本体相机')
+            cameraState('robot-001', 'camera01', '云台-可见光', 'dual_gimbal'),
+            cameraState('robot-001', 'camera02', '云台-热成像', 'dual_gimbal'),
+            cameraState('robot-001', 'camera03', '本体相机', 'body')
           ]
         },
         {
@@ -429,9 +439,9 @@ export default {
           battery: null,
           status: 'offline',
           cameras: [
-            cameraState('robot-002', 'gimbal-001', '头部双光云台'),
-            cameraState('robot-002', 'gimbal-002', '腹部导航相机'),
-            cameraState('robot-002', 'gimbal-003', '尾部避障相机')
+            cameraState('robot-002', 'gimbal-001', '头部双光云台', 'dual_gimbal'),
+            cameraState('robot-002', 'gimbal-002', '腹部导航相机', 'body'),
+            cameraState('robot-002', 'gimbal-003', '尾部避障相机', 'body')
           ]
         }
       ],
@@ -1933,9 +1943,11 @@ export default {
         battery: robot.battery,
         status,
         cameras: (robot.cameras || []).map(camera => Object.assign(
-            cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId),
+            cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.groupType),
 	            {
 	              cameraId: camera.cameraId || camera.deviceId,
+	              groupType: camera.groupType || 'body',
+	              groupTypeName: groupTypeText(camera.groupType),
 	              quality: camera.quality || 'auto',
 	              status: status === 'online' ? '' : 'offline'
 	            }))

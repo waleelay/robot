@@ -247,6 +247,7 @@ GET /api/bigscreen/panorama/overview
         {
           "cameraId": "camera01",
           "deviceId": "camera01",
+          "groupType": "dual_gimbal",
           "name": "前向双光云台",
           "quality": "sub"
         }

@@ -75,10 +75,11 @@ type OnlineMessage struct {
 }
 
 type Camera struct {
-	CameraID string `json:"cameraId"`
-	DeviceID string `json:"deviceId"`
-	Name     string `json:"name"`
-	Quality  string `json:"quality"`
+	CameraID  string `json:"cameraId"`
+	DeviceID  string `json:"deviceId"`
+	GroupType string `json:"groupType"`
+	Name      string `json:"name"`
+	Quality   string `json:"quality"`
 }
 
 type ControlCommand struct {

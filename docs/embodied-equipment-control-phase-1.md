@@ -468,6 +468,7 @@ POST /api/control/robots/{robotId}/commands
       {
         "cameraId": "camera01",
         "deviceId": "camera01",
+        "groupType": "dual_gimbal",
         "name": "前向双光云台",
         "quality": "hd"
       }
@@ -496,7 +497,7 @@ POST /api/control/robots/{robotId}/commands
 | `navigationStatus` | string | 否 | 导航状态 |
 | `controlOwner` | object | 否 | 当前控制者；为空表示无人持有 |
 | `estopActive` | boolean | 是 | 急停是否生效 |
-| `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`name`、`quality` |
+| `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`groupType`、`name`、`quality` |
 | `timestamp` | datetime | 是 | 机器人端状态产生时间；缺省时后端补当前时间 |
 
 前端使用规则：
@@ -561,6 +562,7 @@ POST /api/control/robots/{robotId}/commands
     {
       "cameraId": "camera01",                   // 摄像头 ID
       "deviceId": "camera01",                   // 视频源路由 ID
+      "groupType": "dual_gimbal",               // 相机/上装分组类型
       "name": "前向双光云台",                     // 摄像头名称
       "quality": "hd"                           // 默认清晰度
     }

@@ -393,9 +393,9 @@ public class EquipmentControlService {
                         "battery", 86,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
                         "cameras", List.of(
-                                camera("camera01", "云台-可见光"),
-                                camera("camera02", "云台-热成像"),
-                                camera("camera03", "本体相机"))),
+                                camera("camera01", "dual_gimbal", "云台-可见光"),
+                                camera("camera02", "dual_gimbal", "云台-热成像"),
+                                camera("camera03", "body", "本体相机"))),
                 object(
                         "robotId", "robot-002",
                         "clientId", "robot-client-deep-001",
@@ -406,7 +406,7 @@ public class EquipmentControlService {
                         "status", "offline",
                         "battery", 78,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
-                        "cameras", List.of(camera("camera04", "头部双光云台"))),
+                        "cameras", List.of(camera("camera04", "dual_gimbal", "头部双光云台"))),
                 object(
                         "robotId", "robot-unitree-001",
                         "clientId", "robot-client-unitree-001",
@@ -417,13 +417,14 @@ public class EquipmentControlService {
                         "status", "offline",
                         "battery", 92,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
-                        "cameras", List.of(camera("camera07", "双光云台"))));
+                        "cameras", List.of(camera("camera07", "dual_gimbal", "双光云台"))));
     }
 
-    private static Map<String, Object> camera(String deviceId, String name) {
+    private static Map<String, Object> camera(String deviceId, String groupType, String name) {
         return object(
                 "cameraId", deviceId,
                 "deviceId", deviceId,
+                "groupType", groupType,
                 "name", name,
                 "quality", "sub");
     }

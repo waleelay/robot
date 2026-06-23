@@ -321,10 +321,11 @@ func (c *Client) cameras() []model.Camera {
 	items := make([]model.Camera, 0, len(c.cfg.Cameras))
 	for _, camera := range c.cfg.Cameras {
 		items = append(items, model.Camera{
-			CameraID: camera.CameraID,
-			DeviceID: camera.DeviceID,
-			Name:     camera.Name,
-			Quality:  camera.Quality,
+			CameraID:  camera.CameraID,
+			DeviceID:  camera.DeviceID,
+			GroupType: camera.GroupType,
+			Name:      camera.Name,
+			Quality:   camera.Quality,
 		})
 	}
 	return items
