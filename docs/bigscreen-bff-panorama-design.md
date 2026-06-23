@@ -248,10 +248,7 @@ GET /api/bigscreen/panorama/overview
           "cameraId": "camera01",
           "deviceId": "camera01",
           "name": "前向双光云台",
-          "groupType": "dual_gimbal",
-          "channel": "visible",
-          "quality": "sub",
-          "status": "online"
+          "quality": "sub"
         }
       ],
       "stateSeq": 1,
@@ -397,9 +394,9 @@ GET /api/bigscreen/panorama/devices/{deviceId}
   },
   "mountedDeviceCount": 3,
   "mountedDevices": [
-    {
-      "deviceId": "camera01",
-      "name": "前向双光云台",
+      {
+        "deviceId": "camera01",
+        "name": "前向双光云台",
       "type": "DUAL_GIMBAL",
       "status": "online"
     }

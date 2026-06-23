@@ -90,7 +90,7 @@
               <div class="video-topbar">
                 <div>
                   <strong>{{ camera.name }}</strong>
-                  <span>{{ camera.deviceId }} · {{ groupTypeText(camera.groupType) }} · {{ camera.channel }}</span>
+                  <span>{{ camera.deviceId }}</span>
                 </div>
                 <div class="video-topbar-actions">
                   <el-select
@@ -363,14 +363,12 @@ import {
 // 前端内部摄像头状态模型。
 // 后端返回的是业务会话/设备字段，页面还需要额外保存 LiveKit Room、加载状态、
 // 本地停止意图、对讲 token 等 UI/连接态，所以统一在这里初始化。
-function cameraState(robotId, deviceId, name, channel, groupType) {
+function cameraState(robotId, deviceId, name) {
   return {
-    key: `${robotId}-${deviceId}-${channel}`,
+    key: `${robotId}-${deviceId}`,
     robotId,
     deviceId,
     name,
-    groupType: groupType || 'body',
-    channel,
     quality: 'auto',
     loading: false,
     hasVideo: false,
@@ -419,9 +417,9 @@ export default {
           battery: null,
           status: 'offline',
           cameras: [
-            cameraState('robot-001', 'camera01', '云台-可见光', 'visible', 'dual_gimbal'),
-            cameraState('robot-001', 'camera02', '云台-热成像', 'visible', 'dual_gimbal'),
-            cameraState('robot-001', 'camera03', '本体相机', 'visible', 'body')
+            cameraState('robot-001', 'camera01', '云台-可见光'),
+            cameraState('robot-001', 'camera02', '云台-热成像'),
+            cameraState('robot-001', 'camera03', '本体相机')
           ]
         },
         {
@@ -431,9 +429,9 @@ export default {
           battery: null,
           status: 'offline',
           cameras: [
-            cameraState('robot-002', 'gimbal-001', '头部双光云台', 'visible', 'dual_gimbal'),
-            cameraState('robot-002', 'gimbal-002', '腹部导航相机', 'visible', 'body'),
-            cameraState('robot-002', 'gimbal-003', '尾部避障相机', 'visible', 'body')
+            cameraState('robot-002', 'gimbal-001', '头部双光云台'),
+            cameraState('robot-002', 'gimbal-002', '腹部导航相机'),
+            cameraState('robot-002', 'gimbal-003', '尾部避障相机')
           ]
         }
       ],
@@ -676,7 +674,6 @@ export default {
       this.log('CLICK startCamera', {
         robotId: robot.robotId,
         deviceId: camera.deviceId,
-        channel: camera.channel,
         quality: requestQuality,
         qualityPreference: camera.quality
       })
@@ -684,7 +681,6 @@ export default {
         const session = await createVideoSession({
           robotId: robot.robotId,
           deviceId: camera.deviceId,
-          channel: camera.channel,
           quality: requestQuality,
           reuse: true
         })
@@ -802,7 +798,6 @@ export default {
         nextSession = await createVideoSession({
           robotId: camera.robotId,
           deviceId: camera.deviceId,
-          channel: camera.channel,
           quality: nextQuality,
           reuse: true
         })
@@ -862,7 +857,6 @@ export default {
             : await startCameraIntercom({
               robotId: robot.robotId,
               deviceId: camera.deviceId,
-              channel: camera.channel,
               quality: this.effectiveCameraQuality(camera)
             })
         camera.session = this.mergeSession(camera, {
@@ -1531,7 +1525,6 @@ export default {
       } else {
         this.robots.push(incoming)
       }
-      this.syncAudioStatesFromDevices(incoming.robotId, data.devices)
     },
     // 会话事件来自后端状态机。当前页面只同步自己正在关注的 session，
     // 并忽略用户已经明确停止的 session，防止自动重连覆盖本地意图。
@@ -1927,7 +1920,7 @@ export default {
     },
     toRobotState(robot) {
       // 将后端机器人 DTO 转为页面状态，同时给缺失字段补默认值。
-      const status = robot.status || robot.onlineStatus || 'offline'
+      const status = robot.status || 'offline'
       return {
         robotId: robot.robotId,
         clientId: robot.clientId,
@@ -1939,25 +1932,17 @@ export default {
         stateSeq: robot.stateSeq || 0,
         battery: robot.battery,
         status,
-        devices: robot.devices,
         cameras: (robot.cameras || []).map(camera => Object.assign(
-            cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.channel || 'visible', camera.groupType),
+            cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId),
 	            {
 	              cameraId: camera.cameraId || camera.deviceId,
 	              quality: camera.quality || 'auto',
-	              status: status === 'online' ? camera.status || '' : 'offline'
+	              status: status === 'online' ? '' : 'offline'
 	            }))
       }
     },
     batteryText(battery) {
       return battery === null || battery === undefined ? '--' : `${battery}%`
-    },
-    groupTypeText(groupType) {
-      return {
-        body: '本体',
-        dual_gimbal: '双光云台',
-        arm: '机械臂'
-      }[groupType] || groupType || '未分组'
     },
     statusType(status) {
       if (status === 'STREAMING') return 'success'

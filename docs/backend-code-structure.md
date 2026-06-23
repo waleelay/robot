@@ -77,7 +77,7 @@ com.robot.mediaserver
 ├── control    面向前端/管理端的控制入口和媒体服务客户端
 ├── livekit    LiveKit Room 与 Token 能力
 ├── recording  录像上传、转码、回放、清理
-├── robot      机器人设备注册、心跳、设备列表
+├── robot      机器人注册、心跳、摄像头列表
 ├── storage    MinIO/对象存储封装
 ├── video      实时视频会话、Track、抓拍、事件、状态机
 └── ws         WebSocket 连接管理和事件广播
@@ -245,13 +245,13 @@ control/
 
 ## 7. 机器人模块 `robot/`
 
-`robot` 模块维护机器人和摄像头的在线状态、设备列表和心跳。
+`robot` 模块维护机器人在线状态、摄像头列表和心跳。
 
 ### API 入口
 
 - `RobotDeviceController`
   - 路径：`/internal/media/robots`。
-  - `GET` 查询机器人设备列表。
+  - `GET` 查询机器人列表及摄像头清单。
   - `POST /client-status` 接收机器人客户端状态和摄像头列表上报。
 
 ### 核心类

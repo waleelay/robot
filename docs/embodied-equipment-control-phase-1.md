@@ -28,7 +28,7 @@
 | 急停 | 独立 topic，最高优先级 |
 | WebSocket 高频控制 | 本体和云台连续控制走 WebSocket |
 | MQTT 控制链路 | 后端按设备类型组装参数并通过 MQTT 下发给 Go 客户端 |
-| 客户端状态上报 | Go 客户端通过 `robot/{robotId}/media/client/status` 统一上报在线状态、控制模式和设备状态 |
+| 客户端状态上报 | Go 客户端通过 `robot/{robotId}/media/client/status` 统一上报在线状态、控制模式、任务状态和摄像头清单 |
 
 ### 2.2 暂不实现
 
@@ -453,7 +453,6 @@ POST /api/control/robots/{robotId}/commands
   "data": {
     "robotId": "robot-songling-001",
     "clientId": "robot-media-client-robot-songling-001",
-    "clientVersion": "sim-1.0.0",
     "name": "松灵四轮机器人",
     "type": "轮式机器人",
     "battery": 82,
@@ -465,16 +464,12 @@ POST /api/control/robots/{robotId}/commands
     "navigationStatus": "RUNNING",
     "controlOwner": null,
     "estopActive": false,
-    "onlineStatus": "online",
-    "devices": [
+    "cameras": [
       {
-        "deviceId": "base",
-        "scope": "BODY",
-        "deviceType": "WHEELED_BASE",
-        "onlineStatus": "online",
-        "healthStatus": "normal",
-        "controlStatus": "idle",
-        "supportedActions": ["drive.velocity", "drive.stop"]
+        "cameraId": "camera01",
+        "deviceId": "camera01",
+        "name": "前向双光云台",
+        "quality": "hd"
       }
     ],
     "timestamp": "2026-06-03T10:30:00+08:00"
@@ -490,12 +485,10 @@ POST /api/control/robots/{robotId}/commands
 |---|---|---:|---|
 | `robotId` | string | 是 | 机器人 ID |
 | `clientId` | string | 否 | 机器人侧客户端 ID |
-| `clientVersion` | string | 否 | 客户端版本 |
 | `name` | string | 否 | 机器人展示名称 |
 | `type` | string | 否 | 机器人类型 |
 | `battery` | number | 否 | 电量百分比 |
 | `status` | string | 否 | 客户端原始在线状态 |
-| `onlineStatus` | string | 是 | 前端使用的在线状态；缺省时后端由 `status` 补齐 |
 | `controlMode` | string | 是 | `MANUAL` / `ASSISTED` / `NAVIGATION` |
 | `stateSeq` | number | 是 | 客户端状态递增序号，用于接管防旧状态 |
 | `currentTaskId` | string | 否 | 当前任务 ID |
@@ -503,7 +496,7 @@ POST /api/control/robots/{robotId}/commands
 | `navigationStatus` | string | 否 | 导航状态 |
 | `controlOwner` | object | 否 | 当前控制者；为空表示无人持有 |
 | `estopActive` | boolean | 是 | 急停是否生效 |
-| `devices` | array | 否 | 装备状态列表，包含 `deviceId`、`scope`、`deviceType`、`onlineStatus`、`healthStatus`、`controlStatus`、`supportedActions`、`status` |
+| `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`name`、`quality` |
 | `timestamp` | datetime | 是 | 机器人端状态产生时间；缺省时后端补当前时间 |
 
 前端使用规则：
@@ -526,14 +519,14 @@ POST /api/control/robots/{robotId}/commands
 | `robot/{robotId}/control/warning-light/command` | 后端 -> Go | 左右警示灯开关控制 |
 | `robot/{robotId}/control/vehicle-light/command` | 后端 -> Go | 前后车灯控制，常开、常关、呼吸灯、自定义亮度 |
 | `robot/{robotId}/control/safety/estop` | 后端 -> Go | 急停 |
-| `robot/{robotId}/media/client/status` | Go -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和设备状态 |
+| `robot/{robotId}/media/client/status` | Go -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和摄像头清单 |
 
 说明：
 
 - Go 模拟客户端订阅 `robot/{robotId}/control/#`，按 topic 和 payload 中的 `target.deviceId/action` 打印或分发。
 - 控制 topic 只保留设备大类，不再携带 `{deviceId}`；具体设备由 payload 中的 `target.deviceId` 标识。
 - 前端实时状态由后端消费 `media/client/status` 后通过 WebSocket 推送 `robot.state`。
-- `controlMode`、`stateSeq`、`devices` 随 `media/client/status` 上报。
+- `controlMode`、`stateSeq`、`cameras` 随 `media/client/status` 上报。
 - 后端发布控制命令成功后即可向前端返回 `PUBLISHED`；一期不等待客户端接收确认。
 
 后端 topic 构造规则：
@@ -554,11 +547,9 @@ POST /api/control/robots/{robotId}/commands
 {
   "robotId": "robot-songling-001",              // 机器人 ID
   "clientId": "robot-client-songling-001",      // Go 客户端实例 ID
-  "clientVersion": "sim-1.0.0",                 // 客户端版本
   "name": "松灵四轮机器人",                       // 机器人名称
   "type": "轮式机器人",                          // 机器人类型展示值
   "status": "online",                           // 媒体模块已有在线状态字段：online/offline
-  "onlineStatus": "online",                     // 装备控制使用的在线状态：online/offline
   "battery": 86,                                // 电量百分比
   "controlMode": "MANUAL",                      // 控制模式：MANUAL/ASSISTED/NAVIGATION
   "stateSeq": 1024,                             // 客户端状态递增序号，前端接管时携带 observedStateSeq
@@ -569,23 +560,9 @@ POST /api/control/robots/{robotId}/commands
   "cameras": [
     {
       "cameraId": "camera01",                   // 摄像头 ID
-      "deviceId": "ptz-dual-001",               // 关联设备 ID
+      "deviceId": "camera01",                   // 视频源路由 ID
       "name": "前向双光云台",                     // 摄像头名称
-      "groupType": "dual_gimbal",               // 分组类型
-      "channel": "visible",                     // 默认通道
-      "quality": "hd",                          // 默认清晰度
-      "status": "online"                        // 摄像头在线状态
-    }
-  ],
-  "devices": [
-    {
-      "deviceId": "base",                       // 设备 ID
-      "scope": "BODY",                          // BODY/PAYLOAD/SENSOR
-      "deviceType": "WHEELED_BASE",             // 设备类型
-      "onlineStatus": "online",                 // 设备在线状态
-      "healthStatus": "normal",                 // normal/warning/error
-      "controlStatus": "idle",                  // idle/busy/locked/disabled/fault
-      "supportedActions": ["drive.velocity"]    // 当前客户端支持的动作
+      "quality": "hd"                           // 默认清晰度
     }
   ],
   "timestamp": "2026-06-03T10:30:00+08:00"      // 客户端上报时间
@@ -1370,4 +1347,4 @@ Go 客户端上报 robot.state
 6. 发射器没有 confirmToken 或真实安全开关时不能发射；捕网枪没有 confirmToken 或前端本地安全开关未打开时不能点击发射。
 7. `NAVIGATION` 或 `ASSISTED` 下手动控制本体时，前端必须先接管成功再发送控制帧。
 8. 前端接管请求携带旧 `observedStateSeq` 时，后端返回 `ROBOT_STATE_CHANGED`。
-9. 后端能记录命令发布，并通过 `media/client/status` 刷新机器人在线状态、控制模式和设备状态。
+9. 后端能记录命令发布，并通过 `media/client/status` 刷新机器人在线状态、控制模式、任务状态和摄像头清单。

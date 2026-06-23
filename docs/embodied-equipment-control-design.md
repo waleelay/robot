@@ -1143,26 +1143,21 @@ POST /api/control/robots/{robotId}/commands
   "data": {
     "robotId": "robot-deep-001",
     "clientId": "robot-media-client-robot-deep-001",
-    "clientVersion": "sim-1.0.0",
     "name": "深度四足机器人",
     "type": "四足机器人",
     "battery": 82,
     "status": "online",
-    "onlineStatus": "online",
     "controlMode": "MANUAL",
     "stateSeq": 1024,
     "missionStatus": "IDLE",
     "navigationStatus": "IDLE",
     "estopActive": false,
-    "devices": [
+    "cameras": [
       {
-        "deviceId": "base",
-        "scope": "BODY",
-        "deviceType": "QUADRUPED_BASE",
-        "onlineStatus": "online",
-        "healthStatus": "normal",
-        "controlStatus": "idle",
-        "supportedActions": ["drive.velocity", "drive.stop"]
+        "cameraId": "camera01",
+        "deviceId": "camera01",
+        "name": "前向双光云台",
+        "quality": "hd"
       }
     ],
     "timestamp": "2026-06-03T10:30:00+08:00"
@@ -1176,28 +1171,17 @@ POST /api/control/robots/{robotId}/commands
 |---|---|---:|---|
 | `robotId` | string | 是 | 机器人 ID |
 | `clientId` | string | 否 | 机器人侧客户端 ID |
-| `clientVersion` | string | 否 | 客户端版本 |
 | `name` | string | 否 | 机器人展示名称 |
 | `type` | string | 否 | 机器人类型 |
 | `battery` | number | 否 | 电量百分比 |
 | `status` | string | 否 | 客户端原始在线状态，常见 `online` / `offline` |
-| `onlineStatus` | string | 是 | 前端使用的在线状态；缺省时后端由 `status` 补齐 |
 | `controlMode` | string | 是 | 控制模式；缺省为 `MANUAL` |
 | `stateSeq` | number | 是 | 状态序号；缺省为 `1` |
 | `missionStatus` | string | 否 | 任务状态 |
 | `navigationStatus` | string | 否 | 导航状态 |
 | `controlOwner` | object/null | 否 | 当前控制占用者，如 `{userId, clientId}` |
 | `estopActive` | boolean | 否 | 急停是否生效 |
-| `cameras` | array | 否 | 摄像头状态列表，字段同媒体模块 `RobotCameraResponse` |
-| `devices` | array | 否 | 装备状态列表 |
-| `devices[].deviceId` | string | 是 | 设备 ID |
-| `devices[].scope` | string | 否 | 设备作用域，如 `BODY`、`PTZ` |
-| `devices[].deviceType` | string | 是 | 设备类型 |
-| `devices[].onlineStatus` | string | 是 | 设备在线状态 |
-| `devices[].healthStatus` | string | 是 | 设备健康状态 |
-| `devices[].controlStatus` | string | 是 | 设备控制状态 |
-| `devices[].supportedActions` | array | 否 | 支持的动作列表 |
-| `devices[].status` | object | 否 | 设备扩展状态 |
+| `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`name`、`quality` |
 | `timestamp` | datetime | 是 | 机器人端状态产生时间；缺省时后端补当前时间 |
 
 ### 6.7 第一版 Action 参数明细
@@ -1378,7 +1362,7 @@ POST /api/control/robots/{robotId}/commands
 | `robot/{robotId}/control/vehicle-light/command` | 后端 -> 机器人 | 车灯光控制 |
 | `robot/{robotId}/control/lidar/command` | 后端 -> 机器人 | 雷达控制 |
 | `robot/{robotId}/control/safety/estop` | 后端 -> 机器人 | 急停，高优先级 |
-| `robot/{robotId}/media/client/status` | 机器人 -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和设备状态 |
+| `robot/{robotId}/media/client/status` | 机器人 -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和摄像头清单 |
 
 第一版不再拆分控制保活、接收确认、执行状态、错误或注册状态 topic。
 
@@ -1507,7 +1491,7 @@ Payload 示例：
 
 方向：Go 客户端 -> 后端。
 
-用途：统一上报客户端在线状态、控制模式、任务状态、摄像头状态和装备设备状态。前端实时状态由后端消费该 topic 后通过 WebSocket 推送 `robot.state`。
+用途：统一上报客户端在线状态、控制模式、任务状态和摄像头清单。前端实时状态由后端消费该 topic 后通过 WebSocket 推送 `robot.state`。
 
 Payload 示例：
 
@@ -1515,11 +1499,9 @@ Payload 示例：
 {
   "robotId": "robot-deep-001",
   "clientId": "robot-client-deep-001",
-  "clientVersion": "sim-1.0.0",
   "name": "云深处四足机器狗",
   "type": "四足机器人",
   "status": "online",
-  "onlineStatus": "online",
   "battery": 78,
   "controlMode": "MANUAL",
   "stateSeq": 1024,
@@ -1530,32 +1512,9 @@ Payload 示例：
   "cameras": [
     {
       "cameraId": "camera01",
-      "deviceId": "ptz-dual-001",
+      "deviceId": "camera01",
       "name": "前向双光云台",
-      "groupType": "dual_gimbal",
-      "channel": "visible",
-      "quality": "hd",
-      "status": "online"
-    }
-  ],
-  "devices": [
-    {
-      "deviceId": "base",
-      "scope": "BODY",
-      "deviceType": "QUADRUPED_BASE",
-      "onlineStatus": "online",
-      "healthStatus": "normal",
-      "controlStatus": "idle",
-      "supportedActions": ["drive.velocity"]
-    },
-    {
-      "deviceId": "ptz-dual-001",
-      "scope": "PAYLOAD",
-      "deviceType": "DUAL_LIGHT_PTZ",
-      "onlineStatus": "online",
-      "healthStatus": "normal",
-      "controlStatus": "idle",
-      "supportedActions": ["ptz.move", "camera.zoom"]
+      "quality": "hd"
     }
   ],
   "timestamp": "2026-06-03T10:30:00+08:00"
@@ -1566,10 +1525,9 @@ Payload 示例：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
+| `robotId` | string | 是 | 机器人 ID |
 | `clientId` | string | 是 | Go 客户端实例 ID |
-| `clientVersion` | string | 是 | 客户端版本 |
 | `status` | string | 是 | 媒体模块已有在线状态字段 |
-| `onlineStatus` | string | 是 | 机器人在线状态 |
 | `controlMode` | string | 是 | `MANUAL` / `ASSISTED` / `NAVIGATION` |
 | `stateSeq` | number | 是 | 客户端状态递增序号，前端接管时携带 |
 | `missionStatus` | string | 否 | 任务状态 |
@@ -1577,13 +1535,7 @@ Payload 示例：
 | `controlOwner` | object/null | 否 | 当前控制占用者 |
 | `estopActive` | boolean | 是 | 急停是否生效 |
 | `battery` | number | 否 | 电量 |
-| `cameras` | array | 否 | 媒体摄像头状态，沿用已有媒体状态结构 |
-| `devices` | array | 是 | 客户端发现的设备状态 |
-| `devices[].deviceId` | string | 是 | 设备 ID，必须能与平台绑定设备匹配 |
-| `devices[].onlineStatus` | string | 是 | `online` / `offline` |
-| `devices[].healthStatus` | string | 是 | `normal` / `warning` / `error` |
-| `devices[].controlStatus` | string | 是 | `idle` / `busy` / `locked` / `disabled` / `fault` |
-| `devices[].supportedActions` | array[string] | 否 | 客户端当前支持动作，用于与平台档案比对 |
+| `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`name`、`quality` |
 
 ## 8. 控制权与多终端协同
 
@@ -2067,7 +2019,7 @@ type Driver interface {
 5. 按 `target.deviceId + action` 路由 driver。
 6. 对连续运动动作做 deadman 超时停止。
 7. MQTT 断连时停止本体和高风险设备。
-8. 通过 `robot/{robotId}/media/client/status` 周期性上报在线状态、控制模式和设备状态。
+8. 通过 `robot/{robotId}/media/client/status` 周期性上报在线状态、控制模式、任务状态和摄像头清单。
 
 ## 13. 后端模块落地建议
 
@@ -2352,7 +2304,7 @@ robot/{robotId}/media/client/status
 第一版验收口径：
 
 - 后端能通过 `commandId` 查到命令是否已发布。
-- 后端能通过 `media/client/status` 刷新在线状态、控制模式和设备状态。
+- 后端能通过 `media/client/status` 刷新在线状态、控制模式、任务状态和摄像头清单。
 - 本体和云台高频动作不会造成日志爆炸。
 
 ### 15.5 高风险动作安全策略

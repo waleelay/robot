@@ -32,31 +32,26 @@ public class RobotRegistryService {
             String status,
             String name,
             String type,
-            String clientVersion,
             Integer battery,
-            String onlineStatus,
             String controlMode,
             Long stateSeq,
             String missionStatus,
             String navigationStatus,
             Object controlOwner,
             Boolean estopActive,
-            List<RobotCameraResponse> cameras,
-            List<Map<String, Object>> deviceStatuses) {
+            List<RobotCameraResponse> cameras) {
         if (robotId == null || robotId.isBlank()) {
             return false;
         }
         RobotDevice device = devices.computeIfAbsent(robotId, RobotDevice::new);
         boolean becameOnline = !"online".equals(device.status) && !"offline".equalsIgnoreCase(status);
         device.clientId = clientId;
-        device.clientVersion = clientVersion;
         device.name = blank(name) ? robotId : name;
         device.type = blank(type) ? "机器人" : type;
         if (battery != null) {
             device.battery = Math.max(0, Math.min(100, battery));
         }
         device.status = "offline".equalsIgnoreCase(status) ? "offline" : "online";
-        device.onlineStatus = blank(onlineStatus) ? device.status : onlineStatus;
         device.controlMode = blank(controlMode) ? "MANUAL" : controlMode;
         if (stateSeq != null) {
             device.stateSeq = stateSeq;
@@ -68,9 +63,6 @@ public class RobotRegistryService {
         device.lastHeartbeatAt = now();
         if (cameras != null && !cameras.isEmpty()) {
             device.cameras = new ArrayList<>(cameras);
-        }
-        if (deviceStatuses != null && !deviceStatuses.isEmpty()) {
-            device.devices = new ArrayList<>(deviceStatuses);
         }
         return becameOnline;
     }
@@ -96,12 +88,10 @@ public class RobotRegistryService {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("robotId", device.robotId);
         state.put("clientId", device.clientId == null ? "" : device.clientId);
-        state.put("clientVersion", device.clientVersion == null ? "" : device.clientVersion);
         state.put("name", device.name);
         state.put("type", device.type);
         state.put("battery", device.battery == null ? 0 : device.battery);
         state.put("status", device.status);
-        state.put("onlineStatus", device.status);
         state.put("controlMode", device.controlMode);
         state.put("stateSeq", device.stateSeq);
         state.put("missionStatus", device.missionStatus);
@@ -109,7 +99,6 @@ public class RobotRegistryService {
         state.put("controlOwner", device.controlOwner);
         state.put("estopActive", device.estopActive);
         state.put("cameras", device.cameras);
-        state.put("devices", device.devices);
         state.put("timestamp", now().toString());
         return state;
     }
@@ -118,12 +107,10 @@ public class RobotRegistryService {
         return new RobotDeviceResponse(
                 device.robotId,
                 device.clientId,
-                device.clientVersion,
                 device.name,
                 device.type,
                 device.battery,
                 device.status,
-                device.onlineStatus,
                 device.controlMode,
                 device.stateSeq,
                 device.missionStatus,
@@ -132,7 +119,6 @@ public class RobotRegistryService {
                 device.estopActive,
                 device.lastHeartbeatAt,
                 device.cameras,
-                device.devices,
                 device.lastHeartbeatAt == null ? null : device.lastHeartbeatAt.toString());
     }
 
@@ -147,12 +133,10 @@ public class RobotRegistryService {
     private static class RobotDevice {
         private final String robotId;
         private String clientId;
-        private String clientVersion;
         private String name;
         private String type;
         private Integer battery;
         private String status = "offline";
-        private String onlineStatus = "offline";
         private String controlMode = "MANUAL";
         private Long stateSeq = 1L;
         private String missionStatus = "IDLE";
@@ -161,7 +145,6 @@ public class RobotRegistryService {
         private Boolean estopActive = false;
         private OffsetDateTime lastHeartbeatAt;
         private List<RobotCameraResponse> cameras = List.of();
-        private List<Map<String, Object>> devices = List.of();
 
         private RobotDevice(String robotId) {
             this.robotId = robotId;

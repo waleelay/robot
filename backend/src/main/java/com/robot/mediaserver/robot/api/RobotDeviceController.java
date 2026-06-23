@@ -36,8 +36,6 @@ public class RobotDeviceController {
         String status = String.valueOf(data.get("status"));
         String name = data.get("name") == null ? robotId : String.valueOf(data.get("name"));
         String type = data.get("type") == null ? "机器人" : String.valueOf(data.get("type"));
-        String clientVersion = data.get("clientVersion") == null ? null : String.valueOf(data.get("clientVersion"));
-        String onlineStatus = data.get("onlineStatus") == null ? status : String.valueOf(data.get("onlineStatus"));
         String controlMode = data.get("controlMode") == null ? "MANUAL" : String.valueOf(data.get("controlMode"));
         Long stateSeq = data.get("stateSeq") instanceof Number seqValue ? seqValue.longValue() : null;
         String missionStatus = data.get("missionStatus") == null ? "IDLE" : String.valueOf(data.get("missionStatus"));
@@ -48,25 +46,19 @@ public class RobotDeviceController {
         List<RobotCameraResponse> cameras = objectMapper.convertValue(
                 data.getOrDefault("cameras", List.of()),
                 objectMapper.getTypeFactory().constructCollectionType(List.class, RobotCameraResponse.class));
-        List<Map<String, Object>> devices = objectMapper.convertValue(
-                data.getOrDefault("devices", List.of()),
-                objectMapper.getTypeFactory().constructCollectionType(List.class, Map.class));
         return registryService.update(
                 robotId,
                 clientId,
                 status,
                 name,
                 type,
-                clientVersion,
                 battery,
-                onlineStatus,
                 controlMode,
                 stateSeq,
                 missionStatus,
                 navigationStatus,
                 controlOwner,
                 estopActive,
-                cameras,
-                devices);
+                cameras);
     }
 }

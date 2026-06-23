@@ -8,8 +8,8 @@ sequenceDiagram
     participant GO as Go Client
 
     U->>FE: 点击目标摄像头的观看按钮
-    FE->>CS: 1. POST /api/control/robots/{robotId}/cameras/{deviceId}/video/start<br/>{channel, quality, reuse=true}
-    Note over FE,CS: 请求观看指定机器人摄像头，携带通道、清晰度与会话复用意图
+    FE->>CS: 1. POST /api/control/robots/{robotId}/cameras/{deviceId}/video/start<br/>{quality, reuse=true}
+    Note over FE,CS: 请求观看指定机器人摄像头，携带清晰度与会话复用意图；通道由后端默认 visible
 
     CS->>CS: 2. permission / device context check
     Note right of CS: 校验当前用户观看权限<br/>并确认机器人和摄像头属于可操作范围

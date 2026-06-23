@@ -34,14 +34,13 @@ public class EquipmentControlService {
                 .map(robot -> {
                     Map<String, Object> state = robotStates.get(String.valueOf(robot.get("robotId")));
                     Map<String, Object> item = copy(robot);
-                    item.put("onlineStatus", valueOrDefault(state, "onlineStatus", "offline"));
                     item.put("controlMode", valueOrDefault(state, "controlMode", "MANUAL"));
                     item.put("stateSeq", valueOrDefault(state, "stateSeq", 1));
                     item.put("clientId", valueOrDefault(state, "clientId", item.get("clientId")));
                     item.put("battery", valueOrDefault(state, "battery", item.get("battery")));
                     item.put("lastHeartbeatAt", valueOrDefault(state, "timestamp", item.get("lastHeartbeatAt")));
                     item.put("cameras", valueOrDefault(state, "cameras", item.get("cameras")));
-                    item.put("status", item.get("onlineStatus"));
+                    item.put("status", valueOrDefault(state, "status", "offline"));
                     return item;
                 })
                 .toList();
@@ -55,7 +54,7 @@ public class EquipmentControlService {
                 "type", robot.get("type"),
                 "vendor", robot.get("vendor"),
                 "model", robot.get("model"),
-                "onlineStatus", valueOrDefault(state, "onlineStatus", "offline"),
+                "onlineStatus", valueOrDefault(state, "status", "offline"),
                 "controlMode", valueOrDefault(state, "controlMode", "MANUAL"),
                 "stateSeq", valueOrDefault(state, "stateSeq", 1),
                 "devices", devices(robotId));
@@ -185,7 +184,7 @@ public class EquipmentControlService {
         }
         Map<String, Object> state = copy(payload);
         state.putIfAbsent("stateSeq", numberValue(state.get("stateSeq"), 1).longValue());
-        state.putIfAbsent("onlineStatus", stringValue(state.get("status"), "offline"));
+        state.putIfAbsent("status", "offline");
         state.putIfAbsent("controlMode", "MANUAL");
         state.putIfAbsent("timestamp", OffsetDateTime.now().toString());
         enrichRobotState(robotId, state);
@@ -366,7 +365,7 @@ public class EquipmentControlService {
                 "navigationStatus", "IDLE",
                 "controlOwner", null,
                 "estopActive", false,
-                "onlineStatus", "offline",
+                "status", "offline",
                 "timestamp", OffsetDateTime.now().toString());
     }
 
@@ -394,9 +393,9 @@ public class EquipmentControlService {
                         "battery", 86,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
                         "cameras", List.of(
-                                camera("camera01", "云台-可见光", "dual_gimbal"),
-                                camera("camera02", "云台-热成像", "dual_gimbal"),
-                                camera("camera03", "本体相机", "body"))),
+                                camera("camera01", "云台-可见光"),
+                                camera("camera02", "云台-热成像"),
+                                camera("camera03", "本体相机"))),
                 object(
                         "robotId", "robot-002",
                         "clientId", "robot-client-deep-001",
@@ -407,7 +406,7 @@ public class EquipmentControlService {
                         "status", "offline",
                         "battery", 78,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
-                        "cameras", List.of(camera("camera04", "头部双光云台", "dual_gimbal"))),
+                        "cameras", List.of(camera("camera04", "头部双光云台"))),
                 object(
                         "robotId", "robot-unitree-001",
                         "clientId", "robot-client-unitree-001",
@@ -418,18 +417,15 @@ public class EquipmentControlService {
                         "status", "offline",
                         "battery", 92,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
-                        "cameras", List.of(camera("camera07", "双光云台", "dual_gimbal"))));
+                        "cameras", List.of(camera("camera07", "双光云台"))));
     }
 
-    private static Map<String, Object> camera(String deviceId, String name, String groupType) {
+    private static Map<String, Object> camera(String deviceId, String name) {
         return object(
                 "cameraId", deviceId,
                 "deviceId", deviceId,
                 "name", name,
-                "groupType", groupType,
-                "channel", "visible",
-                "quality", "sub",
-                "status", "offline");
+                "quality", "sub");
     }
 
     private static List<Map<String, Object>> devices(String robotId) {

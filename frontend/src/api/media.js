@@ -27,7 +27,6 @@ const client = axios.create({
 // 返回值是媒体服务中的 VideoSessionResponse，可能是新建会话，也可能复用已有会话。
 export function createVideoSession(data) {
   const payload = {
-    channel: data.channel,
     quality: data.quality,
     reuse: data.reuse,
     clientRequestId: data.clientRequestId
@@ -78,7 +77,6 @@ export function getViewerToken(sessionId) {
 // 从摄像头入口发起对讲。若尚无视频会话，后端会创建一个仅承载对讲的房间。
 export function startCameraIntercom(data) {
   return client.post(`/api/control/robots/${data.robotId}/cameras/${data.deviceId}/video/intercom/start`, {
-    channel: data.channel,
     quality: data.quality,
     reuse: true
   }).then(res => res.data)

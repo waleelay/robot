@@ -58,33 +58,27 @@ type StatusMessage struct {
 }
 
 type OnlineMessage struct {
-	RobotID          string                 `json:"robotId"`
-	ClientID         string                 `json:"clientId"`
-	ClientVersion    string                 `json:"clientVersion,omitempty"`
-	Name             string                 `json:"name"`
-	Type             string                 `json:"type"`
-	Battery          int                    `json:"battery"`
-	Status           string                 `json:"status"`
-	OnlineStatus     string                 `json:"onlineStatus"`
-	ControlMode      string                 `json:"controlMode"`
-	StateSeq         int64                  `json:"stateSeq"`
-	MissionStatus    string                 `json:"missionStatus"`
-	NavigationStatus string                 `json:"navigationStatus"`
-	ControlOwner     any                    `json:"controlOwner"`
-	EstopActive      bool                   `json:"estopActive"`
-	Cameras          []Camera               `json:"cameras,omitempty"`
-	Devices          []RegistryDeviceStatus `json:"devices,omitempty"`
-	Timestamp        time.Time              `json:"timestamp"`
+	RobotID          string    `json:"robotId"`
+	ClientID         string    `json:"clientId"`
+	Name             string    `json:"name"`
+	Type             string    `json:"type"`
+	Battery          int       `json:"battery"`
+	Status           string    `json:"status"`
+	ControlMode      string    `json:"controlMode"`
+	StateSeq         int64     `json:"stateSeq"`
+	MissionStatus    string    `json:"missionStatus"`
+	NavigationStatus string    `json:"navigationStatus"`
+	ControlOwner     any       `json:"controlOwner"`
+	EstopActive      bool      `json:"estopActive"`
+	Cameras          []Camera  `json:"cameras,omitempty"`
+	Timestamp        time.Time `json:"timestamp"`
 }
 
 type Camera struct {
-	CameraID  string `json:"cameraId"`
-	DeviceID  string `json:"deviceId"`
-	Name      string `json:"name"`
-	GroupType string `json:"groupType"`
-	Channel   string `json:"channel"`
-	Quality   string `json:"quality"`
-	Status    string `json:"status"`
+	CameraID string `json:"cameraId"`
+	DeviceID string `json:"deviceId"`
+	Name     string `json:"name"`
+	Quality  string `json:"quality"`
 }
 
 type ControlCommand struct {
@@ -110,15 +104,4 @@ type ControlTarget struct {
 	DeviceType string `json:"deviceType"`
 	Vendor     string `json:"vendor,omitempty"`
 	Model      string `json:"model,omitempty"`
-}
-
-type RegistryDeviceStatus struct {
-	DeviceID         string         `json:"deviceId"`
-	Scope            string         `json:"scope"`
-	DeviceType       string         `json:"deviceType"`
-	OnlineStatus     string         `json:"onlineStatus"`
-	HealthStatus     string         `json:"healthStatus"`
-	ControlStatus    string         `json:"controlStatus"`
-	SupportedActions []string       `json:"supportedActions,omitempty"`
-	Status           map[string]any `json:"status,omitempty"`
 }

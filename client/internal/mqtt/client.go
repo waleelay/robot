@@ -302,145 +302,32 @@ func (c *Client) online(status string) {
 	c.publish("robot/"+c.cfg.RobotID+"/media/client/status", model.OnlineMessage{
 		RobotID:          c.cfg.RobotID,
 		ClientID:         c.cfg.ClientID,
-		ClientVersion:    "sim-1.0.0",
 		Name:             c.cfg.RobotName,
 		Type:             c.cfg.Type,
 		Battery:          c.cfg.Battery,
 		Status:           status,
-		OnlineStatus:     status,
 		ControlMode:      "MANUAL",
 		StateSeq:         stateSeq,
 		MissionStatus:    "IDLE",
 		NavigationStatus: "IDLE",
 		ControlOwner:     nil,
 		EstopActive:      false,
-		Cameras:          c.cameras(status),
-		Devices:          c.statusDevices(status),
+		Cameras:          c.cameras(),
 		Timestamp:        time.Now(),
 	})
 }
 
-func (c *Client) cameras(status string) []model.Camera {
+func (c *Client) cameras() []model.Camera {
 	items := make([]model.Camera, 0, len(c.cfg.Cameras))
 	for _, camera := range c.cfg.Cameras {
 		items = append(items, model.Camera{
-			CameraID:  camera.CameraID,
-			DeviceID:  camera.DeviceID,
-			Name:      camera.Name,
-			GroupType: camera.GroupType,
-			Channel:   camera.Channel,
-			Quality:   camera.Quality,
-			Status:    status,
+			CameraID: camera.CameraID,
+			DeviceID: camera.DeviceID,
+			Name:     camera.Name,
+			Quality:  camera.Quality,
 		})
 	}
 	return items
-}
-
-func (c *Client) statusDevices(status string) []model.RegistryDeviceStatus {
-	onlineStatus := status
-	if status == "offline" {
-		onlineStatus = "offline"
-	}
-	c.mu.Lock()
-	audioVolume := c.audioVolume
-	audioMuted := c.audioMuted
-	c.mu.Unlock()
-	devices := []model.RegistryDeviceStatus{
-		{
-			DeviceID:         "base",
-			Scope:            "BODY",
-			DeviceType:       c.baseDeviceType(),
-			OnlineStatus:     onlineStatus,
-			HealthStatus:     "normal",
-			ControlStatus:    "idle",
-			SupportedActions: []string{"drive.velocity"},
-		},
-		{
-			DeviceID:         "ptz-dual-001",
-			Scope:            "PAYLOAD",
-			DeviceType:       "DUAL_LIGHT_PTZ",
-			OnlineStatus:     onlineStatus,
-			HealthStatus:     "normal",
-			ControlStatus:    "idle",
-			SupportedActions: []string{"ptz.move", "ptz.auto_rotate", "camera.zoom"},
-		},
-		{
-			DeviceID:         "audio-control-001",
-			Scope:            "AUDIO",
-			DeviceType:       "CLIENT_AUDIO",
-			OnlineStatus:     onlineStatus,
-			HealthStatus:     "normal",
-			ControlStatus:    "idle",
-			SupportedActions: []string{"volume.set", "volume.up", "volume.down", "volume.mute"},
-			Status:           map[string]any{"volume": audioVolume, "muted": audioMuted},
-		},
-		{
-			DeviceID:         "warning-light-left",
-			Scope:            "PAYLOAD",
-			DeviceType:       "WARNING_LIGHT",
-			OnlineStatus:     onlineStatus,
-			HealthStatus:     "normal",
-			ControlStatus:    "idle",
-			SupportedActions: []string{"light.warning.set"},
-		},
-		{
-			DeviceID:         "warning-light-right",
-			Scope:            "PAYLOAD",
-			DeviceType:       "WARNING_LIGHT",
-			OnlineStatus:     onlineStatus,
-			HealthStatus:     "normal",
-			ControlStatus:    "idle",
-			SupportedActions: []string{"light.warning.set"},
-		},
-		{
-			DeviceID:         "vehicle-light",
-			Scope:            "PAYLOAD",
-			DeviceType:       "VEHICLE_LIGHT",
-			OnlineStatus:     onlineStatus,
-			HealthStatus:     "normal",
-			ControlStatus:    "idle",
-			SupportedActions: []string{"light.vehicle.set"},
-		},
-	}
-	if c.cfg.RobotID == "robot-unitree-001" {
-		devices = append(devices, model.RegistryDeviceStatus{
-			DeviceID:         "searchlight-001",
-			Scope:            "PAYLOAD",
-			DeviceType:       "SEARCHLIGHT",
-			OnlineStatus:     onlineStatus,
-			HealthStatus:     "normal",
-			ControlStatus:    "idle",
-			SupportedActions: []string{"light.set"},
-		})
-	} else {
-		devices = append(devices,
-			model.RegistryDeviceStatus{
-				DeviceID:         "launcher-001",
-				Scope:            "PAYLOAD",
-				DeviceType:       "LAUNCHER",
-				OnlineStatus:     onlineStatus,
-				HealthStatus:     "normal",
-				ControlStatus:    "idle",
-				SupportedActions: []string{"payload.safety_switch", "payload.fire"},
-			},
-			model.RegistryDeviceStatus{
-				DeviceID:         "net-gun-001",
-				Scope:            "PAYLOAD",
-				DeviceType:       "NET_GUN",
-				OnlineStatus:     onlineStatus,
-				HealthStatus:     "normal",
-				ControlStatus:    "idle",
-				SupportedActions: []string{"payload.fire"},
-			})
-	}
-	return devices
-}
-
-func (c *Client) baseDeviceType() string {
-	if c.cfg.RobotID == "robot-songling-001" || c.cfg.RobotID == "robot-001" {
-		return "WHEELED_BASE"
-	}
-	return "QUADRUPED_BASE"
 }
 
 func (c *Client) rtspURL(deviceID string, quality string) string {
