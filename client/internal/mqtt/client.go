@@ -54,7 +54,13 @@ func (c *Client) Run(ctx context.Context) error {
 	opts := paho.NewClientOptions().
 		AddBroker(c.cfg.MQTTBroker).
 		SetClientID(c.cfg.ClientID).
-		SetAutoReconnect(true)
+		SetAutoReconnect(true).
+		SetConnectRetry(true).
+		SetConnectRetryInterval(5 * time.Second).
+		SetConnectTimeout(10 * time.Second).
+		SetKeepAlive(20 * time.Second).
+		SetPingTimeout(5 * time.Second).
+		SetMaxReconnectInterval(30 * time.Second)
 	if c.cfg.MQTTUsername != "" {
 		opts.SetUsername(c.cfg.MQTTUsername)
 		opts.SetPassword(c.cfg.MQTTPassword)
@@ -274,10 +280,14 @@ func (c *Client) publish(topic string, payload any) {
 		log.Println("mqtt publish marshal failed topic=", topic, "error=", err)
 		return
 	}
-	log.Println("mqtt publish topic=", topic, "payload=", string(body))
-	// QoS 1 保证状态消息至少送达一次；服务端状态处理需要具备幂等性。
+	if c.mqtt == nil || !c.mqtt.IsConnectionOpen() {
+		return
+	}
 	token := c.mqtt.Publish(topic, 1, false, body)
-	token.Wait()
+	if !token.WaitTimeout(5 * time.Second) {
+		log.Println("mqtt publish timeout topic=", topic)
+		return
+	}
 	if err := token.Error(); err != nil {
 		log.Println("mqtt publish failed topic=", topic, "error=", err)
 	}
