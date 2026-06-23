@@ -1,5 +1,5 @@
 <template>
-<div class="custom-video-div" :class="'custom-video-div ' + prefixId">
+<div class="custom-video-div" :class="[prefixId, { 'is-page-fullscreen': isPageFullscreen }]">
   <div class="flx-justify-between">
     <div class="card-title hp36 flx-justify-between pr26" :class="cardTitleClass" style="line-height: 36px;">
       <div class="text"> 
@@ -18,9 +18,8 @@
         <span @click="onSplitChange(9)" class="ml10" :class="{ 'is-active': splitType === 9 }">
           <svg-icon icon-class="screen-split-9" />
         </span>
-        <!-- <span @click="$refs.videoToolRef.toggleFullscreen()" class="ml10"> -->
-        <span class="ml10">
-          <svg-icon icon-class="fullscreen1" />
+        <span class="ml10" @click="toggleFullscreen1">
+          <svg-icon :icon-class="isPageFullscreen ? 'close-fullscreen' : 'fullscreen1'" />
         </span>
       </div>
     </div>
@@ -179,6 +178,7 @@ export default {
       slotDevices: [],                // 长度等于splitType，存储每个格子的设备信息或null
       lastCheckedIds: [],            // 记录上一次的多选值，用于对比变化
       fullscreenIndex: null,            // 当前全屏的格子索引，null表示无全屏
+      isPageFullscreen: false,
 
       // ===================================================================================
       // 修改为动态键值对形式，不再限制为4个
@@ -205,6 +205,16 @@ export default {
     // 从 store 加载机器人列表
 
     this.setPrefixId(this.prefixId)
+    document.addEventListener('fullscreenchange', this.updatePageFullscreenState)
+    document.addEventListener('webkitfullscreenchange', this.updatePageFullscreenState)
+    document.addEventListener('mozfullscreenchange', this.updatePageFullscreenState)
+    document.addEventListener('MSFullscreenChange', this.updatePageFullscreenState)
+  },
+  beforeDestroy() {
+    document.removeEventListener('fullscreenchange', this.updatePageFullscreenState)
+    document.removeEventListener('webkitfullscreenchange', this.updatePageFullscreenState)
+    document.removeEventListener('mozfullscreenchange', this.updatePageFullscreenState)
+    document.removeEventListener('MSFullscreenChange', this.updatePageFullscreenState)
   },
   methods: {
     ...mapActions('dragVideo', ['resetDrag', 'setSplitType']),
@@ -417,9 +427,16 @@ export default {
     },
     // 分屏切换时（已经在watch中清空，但需要额外处理一些边界）
     onSplitChange(val) {
+      if (this.splitType === val) {
+        this.rebindCameraTracks(this.currentVisibleCameras())
+        return
+      }
+      const playingBeforeChange = this.orderedPlayingVideoInfos()
       this.setSplitType(val);
-      // watch已经处理，但需要额外处理全屏状态
       this.fullscreenIndex = null;
+      this.$nextTick(() => {
+        this.applySplitVideoChannels(playingBeforeChange, val)
+      })
     },
     onSingleDeviceChange1(e) {
       if (this.splitType !== 1) return;
@@ -520,6 +537,87 @@ export default {
       // console.log(`设备 ${deviceItem.desc} 算法 -> ${alg?.type || '未选择'}`);
     },
     toggleFullscreen(data) {},
+    fullscreenElement() {
+      return document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement
+    },
+    requestFullscreen(element) {
+      const request = element.requestFullscreen || element.webkitRequestFullscreen || element.mozRequestFullScreen || element.msRequestFullscreen
+      if (request) return request.call(element)
+      return Promise.resolve()
+    },
+    exitFullscreen() {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen
+      if (exit) return exit.call(document)
+      return Promise.resolve()
+    },
+    async toggleFullscreen1() {
+      const target = this.$el && this.$el.classList && this.$el.classList.contains('custom-video-div')
+        ? this.$el
+        : this.$el && this.$el.querySelector('.custom-video-div')
+      if (!target) return
+      const current = this.fullscreenElement()
+      if (current === target) {
+        await this.exitFullscreen()
+      } else {
+        if (current) await this.exitFullscreen()
+        await this.requestFullscreen(target)
+      }
+      this.updatePageFullscreenState()
+    },
+    updatePageFullscreenState() {
+      const target = this.$el && this.$el.classList && this.$el.classList.contains('custom-video-div')
+        ? this.$el
+        : this.$el && this.$el.querySelector('.custom-video-div')
+      this.isPageFullscreen = !!target && this.fullscreenElement() === target
+      if (!this.isPageFullscreen) this.fullscreenIndex = null
+    },
+    orderedPlayingVideoInfos() {
+      return Object.keys(this.ZQL_videosInfos)
+        .sort((a, b) => Number(a.replace('slot_', '')) - Number(b.replace('slot_', '')))
+        .map(key => this.ZQL_videosInfos[key])
+        .filter(Boolean)
+    },
+    currentVisibleCameras() {
+      return Object.values(this.ZQL_videosInfos)
+        .filter(Boolean)
+        .map(camera => this.cameras?.[camera.key] || camera)
+    },
+    async applySplitVideoChannels(playingItems, splitType) {
+      const nextVideosInfos = {}
+      const nextPlayingSource = {}
+      const retainedKeys = new Set()
+      const items = playingItems || []
+
+      for (let i = 1; i <= splitType; i++) {
+        const key = `slot_${i}`
+        const item = items[i - 1]
+        if (!item) {
+          nextVideosInfos[key] = null
+          nextPlayingSource[key] = null
+          continue
+        }
+        const camera = this.cameras?.[item.key] || item
+        const robot = item.robot || this.robots.find(robotItem => robotItem.robotId === item.robotId)
+        nextVideosInfos[key] = { robot, ...item, ...camera }
+        nextPlayingSource[key] = camera.key
+        retainedKeys.add(camera.key)
+      }
+
+      const removedItems = items.slice(splitType)
+      for (const item of removedItems) {
+        const camera = this.cameras?.[item.key] || item
+        if (camera && camera.key && !retainedKeys.has(camera.key)) {
+          await this.stopCamera(camera)
+        }
+      }
+
+      this.ZQL_videosInfos = nextVideosInfos
+      this.ZQL_playingSource = nextPlayingSource
+      this.checkedIds = Object.values(nextPlayingSource).filter(Boolean)
+      this.lastCheckedIds = this.checkedIds.slice()
+      this.slotDevices = new Array(splitType).fill(null)
+      this.rebindCameraTracks(this.currentVisibleCameras())
+    },
     initSlots(splitType) {
       const newVideosInfos = {};
       const newPlayingSource = {};
@@ -568,7 +666,7 @@ export default {
         // // this.fullscreenKey = null;
         // // this.isFullscreen = false;
         // document.body.style.overflow = '';
-        this.initSlots(newVal);
+        if (oldVal === undefined) this.initSlots(newVal);
         this.slotDevices = new Array(this.splitType).fill(null);
         // this.resetDrag({ splitType: this.splitType });
         const playingKeys = Object.values(this.ZQL_playingSource)
@@ -625,5 +723,22 @@ export default {
 <style lang="scss" scoped>
 .card-title {
   width: 1364px;
+}
+
+.custom-video-div.is-page-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #061a33;
+  padding: 12px;
+
+  .card-title,
+  .list {
+    width: 100% !important;
+  }
+
+  .list {
+    height: calc(100vh - 57px) !important;
+  }
 }
 </style>
