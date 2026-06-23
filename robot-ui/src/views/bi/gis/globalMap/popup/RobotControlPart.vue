@@ -151,6 +151,7 @@ export default {
     orderedCameras(robot) {
       const cameras = (robot.cameras || [])
         .map(camera => this.cameras[this.cameraIdentity(robot.robotId, camera)] || camera)
+        .sort((a, b) => a.groupType === 'body' ? -1 : b.groupType === 'body' ? 1 : 0)
       const availableKeys = cameras.map(camera => this.cameraIdentity(robot.robotId, camera))
       const previousOrder = this.cameraOrderByRobot[robot.robotId] || []
       const order = previousOrder

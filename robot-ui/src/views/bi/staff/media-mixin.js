@@ -330,22 +330,33 @@ export default {
         cameras: (robot.cameras || []).map(camera => Object.assign(
           {},
           camera,
-          this.cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId),
+          this.cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.groupType),
           {
             cameraId: camera.cameraId || camera.deviceId,
+            groupType: camera.groupType || 'body',
+            groupTypeName: this.groupTypeText(camera.groupType),
             quality: camera.quality || 'sub',
             status: robot.status === 'online' ? (camera.status || '') : 'offline'
           }
         )),
       })
     },
+    groupTypeText(groupType) {
+      return {
+        body: '本体',
+        dual_gimbal: '双光云台',
+        arm: '机械臂'
+      }[groupType] || groupType || '未分组'
+    },
     // 用于将相机数据转换为状态对象
-    cameraState(robotId, deviceId, name) {
+    cameraState(robotId, deviceId, name, groupType) {
       return {
         key: `${robotId}-${deviceId}`,
         robotId,
         deviceId,
         name,
+        groupType: groupType || 'body',
+        groupTypeName: this.groupTypeText(groupType),
         quality: 'sub',
         loading: false,
         hasVideo: false,

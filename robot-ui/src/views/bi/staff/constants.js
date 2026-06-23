@@ -11,18 +11,21 @@ export const robots = [
                 "cameraId": "camera01",
                 "deviceId": "camera01",
                 "name": "前向双光云台",
+                "groupType": "dual_gimbal",
                 "quality": "sub"
             },
             {
                 "cameraId": "camera02",
                 "deviceId": "camera02",
                 "name": "后向广角相机",
+                "groupType": "body",
                 "quality": "sub"
             },
             {
                 "cameraId": "camera03",
                 "deviceId": "camera03",
                 "name": "机械臂腕部相机",
+                "groupType": "arm",
                 "quality": "sub"
             }
         ]
@@ -39,18 +42,21 @@ export const robots = [
                 "cameraId": "camera04",
                 "deviceId": "camera04",
                 "name": "头部双光云台",
+                "groupType": "dual_gimbal",
                 "quality": "sub"
             },
             {
                 "cameraId": "camera05",
                 "deviceId": "camera05",
                 "name": "腹部导航相机",
+                "groupType": "body",
                 "quality": "sub"
             },
             {
                 "cameraId": "camera06",
                 "deviceId": "camera06",
                 "name": "尾部避障相机",
+                "groupType": "body",
                 "quality": "sub"
             }
         ]

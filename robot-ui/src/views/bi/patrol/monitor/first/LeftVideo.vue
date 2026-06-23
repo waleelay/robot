@@ -256,8 +256,8 @@ export default {
       let emptyKey = data.index
       // 填充 放入设备
       const robot = this.robots.find(d => d.robotId === data.data.robotId);
-      // 拖拽默认第一个摄像头
-      const cameraObj = data?.data?.key ? data.data : robot.cameras[0]
+      // 拖拽默认第一个摄像头或者主体摄像头
+      const cameraObj = data?.data?.key ? data.data : robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
       const camera = this.cameras?.[cameraObj.key] || cameraObj
       if (this.splitType === 6 && data.componentId === 'smallVideo') {
         const existObj = Object.assign({}, this.ZQL_videosInfos[emptyKey])
@@ -265,7 +265,7 @@ export default {
         // console.log('11111111', this.ZQL_playingSource[emptyKey], this.ZQL_playingSource[data.slotKey]);
         if (this.ZQL_playingSource[emptyKey]) {
           this.$set(this.ZQL_videosInfos, data.slotKey, existObj)
-          const existCamera = existObj.robot ? existObj.robot : robot.cameras[0]
+          const existCamera = existObj.robot ? existObj.robot : robot.robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
           // this.restartCamera(this.cameras?.[this.ZQL_playingSource[emptyKey]] || this.ZQL_videosInfos[emptyKey])
         } else {
           this.$set(this.ZQL_videosInfos, data.slotKey, null)

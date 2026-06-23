@@ -78,6 +78,8 @@ function toBasicCamera(camera, robotId, key) {
   return {
     cameraId: camera.cameraId || camera.deviceId,
     deviceId: camera.deviceId || camera.cameraId,
+    groupType: camera.groupType,
+    groupTypeName: groupTypeText(camera.groupType),
     name: camera.name,
     quality: camera.quality || 'sub',
     status: camera.status || 'offline',
@@ -219,9 +221,11 @@ function toRobotState(robot) {
     cameras: (robot.cameras || []).map(camera => Object.assign(
       {},
       camera,
-      cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId),
+      cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.groupType),
       {
         cameraId: camera.cameraId || camera.deviceId,
+        groupType: camera.groupType || 'body',
+        groupTypeName: groupTypeText(camera.groupType),
         quality: camera.quality || 'sub',
         status: robot.status === 'online' ? (camera.status || '') : 'offline'
       }
@@ -229,13 +233,23 @@ function toRobotState(robot) {
   })
 }
 
+function groupTypeText(groupType) {
+  return {
+    body: '本体',
+    dual_gimbal: '双光云台',
+    arm: '机械臂'
+  }[groupType] || groupType || '未分组'
+}
+
 // 用于将相机数据转换为状态对象
-function cameraState(robotId, deviceId, name) {
+function cameraState(robotId, deviceId, name, groupType) {
   return {
     key: `${robotId}-${deviceId}`,
     robotId,
     deviceId,
     name,
+    groupType: groupType || 'body',
+    groupTypeName: groupTypeText(groupType),
     quality: 'sub',
     loading: false,
     hasVideo: false,

@@ -176,8 +176,8 @@ import { mapActions, mapState } from 'vuex';
         // 填充 放入设备
         const robot = this.robots.find(d => d.robotId === data.data.robotId);
         if (!robot) return;
-        // 拖拽默认第一个摄像头
-        const camera = data.data.key ? data.data : robot.cameras[0]
+        // 拖拽默认第一个摄像头或者主体摄像头
+        const camera = data.data.key ? data.data : robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
         this.$set(this.ZQL_playingSource, emptyKey, camera.key);
         this.$set(this.ZQL_videosInfos, emptyKey, { robot, ...camera });
         if (!this.checkedIds.includes(camera.key)) {
