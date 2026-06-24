@@ -46,6 +46,9 @@ public class RobotDeviceController {
         List<RobotCameraResponse> cameras = objectMapper.convertValue(
                 data.getOrDefault("cameras", List.of()),
                 objectMapper.getTypeFactory().constructCollectionType(List.class, RobotCameraResponse.class));
+        List<Map<String, Object>> devices = objectMapper.convertValue(
+                data.getOrDefault("devices", List.of()),
+                objectMapper.getTypeFactory().constructCollectionType(List.class, Map.class));
         return registryService.update(
                 robotId,
                 clientId,
@@ -59,6 +62,7 @@ public class RobotDeviceController {
                 navigationStatus,
                 controlOwner,
                 estopActive,
-                cameras);
+                cameras,
+                devices);
     }
 }

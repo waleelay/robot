@@ -740,7 +740,20 @@ GET /api/control/robots/{robotId}/control-profile
 | `devices[].controlStatus` | string | 是 | `idle` / `locked` / `busy` / `disabled` / `fault` |
 | `devices[].enabled` | boolean | 是 | 平台是否启用该设备 |
 | `devices[].actions` | array[string] | 是 | 支持动作列表 |
+| `devices[].status` | object | 否 | 设备运行状态；前端用它刷新音量、静音和开关类按钮 |
 | `devices[].controlProfile` | object | 是 | 参数上限、控制模式、安全策略等有效配置 |
+
+`devices[].status` 当前约定：
+
+| 设备/动作 | 状态字段 | 说明 |
+|---|---|---|
+| `CLIENT_AUDIO` / `VOLUME_CONTROL` / `INTERCOM` | `volume`、`muted` | 当前音量与静音状态。 |
+| `LAUNCHER` / `payload.safety_switch` | `safetySwitchEnabled` | 发射器真实安全开关状态。 |
+| `WARNING_LIGHT` / `light.warning.set` | `enabled` | 警示灯开关状态。 |
+| `DUAL_LIGHT_PTZ` / `ptz.auto_rotate` | `autoRotateEnabled`、`panSpeed` | 云台自动旋转状态和速度。 |
+| `VEHICLE_LIGHT` / `light.vehicle.set` | `front`、`rear` | 前后车灯状态，包含 `mode`、`modeCode`、`customValue`。 |
+
+当前实现中，Go/Python 客户端和后端默认控制设备会给音量、云台自转和警示灯提供初始 `status`：音量/对讲 `volume=50`、`muted=false`，双光云台 `autoRotateEnabled=false`、`panSpeed=0`，左右警示灯 `enabled=false`。车灯不提供默认 `front/rear`，只有真实上报或 `light.vehicle.set` 生效后才刷新，避免把前端初始化占位误认为真实车灯状态。
 
 #### 6.5.4 申请控制权
 
@@ -1161,6 +1174,26 @@ POST /api/control/robots/{robotId}/commands
         "quality": "hd"
       }
     ],
+    "devices": [
+      {
+        "deviceId": "base",
+        "bindingId": "bind-base",
+        "scope": "BODY",
+        "deviceType": "WHEELED_BASE",
+        "displayName": "机器人本体",
+        "vendor": "SONGLING",
+        "model": "SCOUT",
+        "onlineStatus": "online",
+        "controlStatus": "idle",
+        "enabled": true,
+        "actions": ["drive.velocity", "navigation.return_home", "docking.leave"],
+        "controlProfile": {
+          "maxLinearX": 1.0,
+          "maxLinearY": 0.4,
+          "maxAngularZ": 0.8
+        }
+      }
+    ],
     "timestamp": "2026-06-03T10:30:00+08:00"
   }
 }
@@ -1183,6 +1216,7 @@ POST /api/control/robots/{robotId}/commands
 | `controlOwner` | object/null | 否 | 当前控制占用者，如 `{userId, clientId}` |
 | `estopActive` | boolean | 否 | 急停是否生效 |
 | `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`groupType`、`name`、`quality` |
+| `devices` | array | 否 | 本体和上装设备能力列表，结构同 `RobotControlProfile.devices` |
 | `timestamp` | datetime | 是 | 机器人端状态产生时间；缺省时后端补当前时间 |
 
 ### 6.7 第一版 Action 参数明细
@@ -1363,7 +1397,7 @@ POST /api/control/robots/{robotId}/commands
 | `robot/{robotId}/control/vehicle-light/command` | 后端 -> 机器人 | 车灯光控制 |
 | `robot/{robotId}/control/lidar/command` | 后端 -> 机器人 | 雷达控制 |
 | `robot/{robotId}/control/safety/estop` | 后端 -> 机器人 | 急停，高优先级 |
-| `robot/{robotId}/media/client/status` | 机器人 -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和摄像头清单 |
+| `robot/{robotId}/media/client/status` | 机器人 -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态、摄像头清单和设备状态 |
 
 第一版不再拆分控制保活、接收确认、执行状态、错误或注册状态 topic。
 
@@ -1492,7 +1526,7 @@ Payload 示例：
 
 方向：Go 客户端 -> 后端。
 
-用途：统一上报客户端在线状态、控制模式、任务状态和摄像头清单。前端实时状态由后端消费该 topic 后通过 WebSocket 推送 `robot.state`。
+用途：统一上报客户端在线状态、控制模式、任务状态、摄像头清单和设备状态。前端实时状态由后端消费该 topic 后通过 WebSocket 推送 `robot.state`。
 
 Payload 示例：
 
@@ -1519,6 +1553,26 @@ Payload 示例：
         "quality": "hd"
     }
   ],
+  "devices": [
+    {
+      "deviceId": "base",
+      "bindingId": "bind-base",
+      "scope": "BODY",
+      "deviceType": "WHEELED_BASE",
+      "displayName": "机器人本体",
+      "vendor": "SONGLING",
+      "model": "SCOUT",
+      "onlineStatus": "online",
+      "controlStatus": "idle",
+      "enabled": true,
+      "actions": ["drive.velocity", "navigation.return_home", "docking.leave"],
+      "controlProfile": {
+        "maxLinearX": 1.0,
+        "maxLinearY": 0.4,
+        "maxAngularZ": 0.8
+      }
+    }
+  ],
   "timestamp": "2026-06-03T10:30:00+08:00"
 }
 ```
@@ -1538,6 +1592,7 @@ Payload 示例：
 | `estopActive` | boolean | 是 | 急停是否生效 |
 | `battery` | number | 否 | 电量 |
 | `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`groupType`、`name`、`quality` |
+| `devices` | array | 否 | 本体和上装设备能力列表，结构同 `RobotControlProfile.devices` |
 
 ## 8. 控制权与多终端协同
 
@@ -2021,7 +2076,7 @@ type Driver interface {
 5. 按 `target.deviceId + action` 路由 driver。
 6. 对连续运动动作做 deadman 超时停止。
 7. MQTT 断连时停止本体和高风险设备。
-8. 通过 `robot/{robotId}/media/client/status` 周期性上报在线状态、控制模式、任务状态和摄像头清单。
+8. 通过 `robot/{robotId}/media/client/status` 周期性上报在线状态、控制模式、任务状态、摄像头清单和设备状态。
 
 ## 13. 后端模块落地建议
 
@@ -2306,7 +2361,7 @@ robot/{robotId}/media/client/status
 第一版验收口径：
 
 - 后端能通过 `commandId` 查到命令是否已发布。
-- 后端能通过 `media/client/status` 刷新在线状态、控制模式、任务状态和摄像头清单。
+- 后端能通过 `media/client/status` 刷新在线状态、控制模式、任务状态、摄像头清单和设备状态。
 - 本体和云台高频动作不会造成日志爆炸。
 
 ### 15.5 高风险动作安全策略

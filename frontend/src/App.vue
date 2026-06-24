@@ -1,14 +1,23 @@
 <template>
   <div class="page">
     <header class="topbar">
-      <h1>实时视频调试台</h1>
+      <div class="topbar-title">
+        <el-button
+            class="panel-toggle"
+            size="mini"
+            :icon="leftPanelCollapsed ? 'el-icon-s-unfold' : 'el-icon-s-fold'"
+            :title="leftPanelCollapsed ? '展开左侧栏' : '收起左侧栏'"
+            @click="leftPanelCollapsed = !leftPanelCollapsed"
+        />
+        <h1>实时视频调试台</h1>
+      </div>
       <el-tag :type="wsConnected ? 'success' : 'info'">
         WebSocket {{ wsConnected ? '已连接' : '未连接' }}
       </el-tag>
     </header>
 
-    <main class="workspace">
-      <aside class="left-panel">
+    <main class="workspace" :class="{ 'left-collapsed': leftPanelCollapsed }">
+      <aside class="left-panel" :class="{ collapsed: leftPanelCollapsed }">
         <section class="robot-list">
           <div class="list-title">机器人设备</div>
           <button
@@ -61,10 +70,12 @@
               <el-tabs v-model="recordingTab" class="recording-tabs" @tab-click="loadRecordings">
                 <el-tab-pane label="手动录像" name="manual" />
                 <el-tab-pane label="巡逻录像" name="patrol" />
+                <el-tab-pane label="抓拍列表" name="snapshot" />
               </el-tabs>
               <el-button size="mini" :loading="recordingsLoading" @click="loadRecordings">刷新</el-button>
             </div>
             <button
+                v-if="recordingTab !== 'snapshot'"
                 v-for="recording in recordings"
                 :key="recording.recordingId"
                 class="recording-item"
@@ -74,11 +85,30 @@
               <span>{{ recording.fileName }}</span>
               <small>{{ recording.deviceId }} · {{ durationText(recording.durationSeconds) }} · {{ recording.status }} · {{ recording.sourceType }}</small>
             </button>
-            <div v-if="!recordings.length && !recordingsLoading" class="recording-empty">暂无录像记录</div>
+            <button
+                v-if="recordingTab === 'snapshot'"
+                v-for="snapshot in snapshots"
+                :key="snapshot.snapshotId"
+                class="recording-item"
+                :class="{ active: selectedSnapshot && selectedSnapshot.snapshotId === snapshot.snapshotId }"
+                @click="previewSnapshot(snapshot)"
+            >
+              <span>{{ snapshot.remark || snapshot.fileName || snapshot.snapshotId }}</span>
+              <small>{{ snapshot.deviceId || '--' }} · {{ snapshot.reason || '抓拍' }} · {{ dateTimeText(snapshot.clientCapturedAt || snapshot.createdAt) }}</small>
+            </button>
+            <div v-if="recordingTab !== 'snapshot' && !recordings.length && !recordingsLoading" class="recording-empty">暂无录像记录</div>
+            <div v-if="recordingTab === 'snapshot' && !snapshots.length && !recordingsLoading" class="recording-empty">暂无抓拍记录</div>
           </div>
           <div class="recording-player">
-            <video ref="recordedPlayer" controls playsinline />
-            <div v-if="!selectedRecording" class="empty-video">选择 READY 录像开始回放</div>
+            <video v-show="recordingTab !== 'snapshot'" ref="recordedPlayer" controls playsinline />
+            <img
+                v-if="recordingTab === 'snapshot' && selectedSnapshot"
+                class="snapshot-preview"
+                :src="snapshotImage(selectedSnapshot)"
+                :alt="selectedSnapshot.remark || selectedSnapshot.snapshotId"
+            />
+            <div v-if="recordingTab !== 'snapshot' && !selectedRecording" class="empty-video">选择 READY 录像开始回放</div>
+            <div v-if="recordingTab === 'snapshot' && !selectedSnapshot" class="empty-video">选择抓拍查看图片</div>
           </div>
         </div>
 
@@ -192,7 +222,12 @@
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-up')" @mouseup.native="stopFrameControl('ptz-up')" @mouseleave.native="stopFrameControl('ptz-up')" @touchstart.native.prevent="startFrameControl('ptz-up')" @touchend.native.prevent="stopFrameControl('ptz-up')">上</el-button>
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-up-right')" @mouseup.native="stopFrameControl('ptz-up-right')" @mouseleave.native="stopFrameControl('ptz-up-right')" @touchstart.native.prevent="startFrameControl('ptz-up-right')" @touchend.native.prevent="stopFrameControl('ptz-up-right')">右上</el-button>
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-left')" @mouseup.native="stopFrameControl('ptz-left')" @mouseleave.native="stopFrameControl('ptz-left')" @touchstart.native.prevent="startFrameControl('ptz-left')" @touchend.native.prevent="stopFrameControl('ptz-left')">左</el-button>
-              <el-button size="mini" :type="isPtzAutoRotateOn(ptzDevice) ? 'primary' : ''" @click="togglePtzAutoRotate">{{ isPtzAutoRotateOn(ptzDevice) ? '停止旋转' : '自动旋转' }}</el-button>
+              <el-button
+                  size="mini"
+                  :type="isPtzAutoRotateOn(ptzDevice) ? 'primary' : ''"
+                  :disabled="!hasPtzAutoRotateStatus(ptzDevice)"
+                  @click="togglePtzAutoRotate"
+              >{{ hasPtzAutoRotateStatus(ptzDevice) ? (isPtzAutoRotateOn(ptzDevice) ? '停止旋转' : '自动旋转') : '同步中' }}</el-button>
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-right')" @mouseup.native="stopFrameControl('ptz-right')" @mouseleave.native="stopFrameControl('ptz-right')" @touchstart.native.prevent="startFrameControl('ptz-right')" @touchend.native.prevent="stopFrameControl('ptz-right')">右</el-button>
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-down-left')" @mouseup.native="stopFrameControl('ptz-down-left')" @mouseleave.native="stopFrameControl('ptz-down-left')" @touchstart.native.prevent="startFrameControl('ptz-down-left')" @touchend.native.prevent="stopFrameControl('ptz-down-left')">左下</el-button>
               <el-button size="mini" @mousedown.native="startFrameControl('ptz-down')" @mouseup.native="stopFrameControl('ptz-down')" @mouseleave.native="stopFrameControl('ptz-down')" @touchstart.native.prevent="startFrameControl('ptz-down')" @touchend.native.prevent="stopFrameControl('ptz-down')">下</el-button>
@@ -203,8 +238,8 @@
           </div>
           <div class="control-block" v-if="audioDevice">
             <strong>客户端音量</strong>
-            <small>{{ audioDevice.deviceId }} · {{ audioMuted(audioDevice) ? '已静音' : `音量 ${audioVolume(audioDevice)}` }}</small>
-            <div class="audio-control">
+            <small>{{ audioDevice.deviceId }} · {{ hasAudioStatus(audioDevice) ? (audioMuted(audioDevice) ? '已静音' : `音量 ${audioVolume(audioDevice)}`) : '状态同步中' }}</small>
+            <div v-if="hasAudioStatus(audioDevice)" class="audio-control">
               <el-slider
                   :value="audioVolume(audioDevice)"
                   :min="0"
@@ -224,6 +259,7 @@
                 </div>
               </div>
             </div>
+            <div v-else class="control-pending">等待客户端上报音量状态</div>
           </div>
           <div class="control-block" v-if="launcherDevice">
             <strong>发射器</strong>
@@ -231,11 +267,13 @@
             <div class="control-inline">
               <span>安全开关</span>
               <el-switch
+                  v-if="hasLauncherSafetyStatus(launcherDevice)"
                   :value="isLauncherSafetyOn(launcherDevice)"
                   active-text="开"
                   inactive-text="关"
                   @change="setLauncherSafety(launcherDevice, $event)"
               />
+              <small v-else class="inline-pending">同步中</small>
             </div>
             <div class="control-grid control-grid-3">
               <el-button
@@ -277,6 +315,7 @@
               <div class="control-inline warning-light-row">
                 <small>{{ device.displayName || device.deviceId }}</small>
                 <el-switch
+                    v-if="hasWarningLightStatus(device)"
                     class="warning-switch"
                     :value="isWarningLightOn(device)"
                     active-text="开启"
@@ -285,12 +324,13 @@
                     inactive-color="#59606b"
                     @change="setWarningLight(device, $event)"
                 />
+                <small v-else class="inline-pending">同步中</small>
               </div>
             </div>
           </div>
           <div class="control-block" v-if="vehicleLightDevice">
             <strong>车灯光</strong>
-            <small>{{ vehicleLightDevice.deviceId }}</small>
+            <small>{{ vehicleLightDevice.deviceId }}{{ hasVehicleLightStatus(vehicleLightDevice) ? '' : ' · 状态同步中' }}</small>
             <div v-for="part in vehicleLightParts" :key="part.key" class="vehicle-light-row">
               <div class="vehicle-light-title">
                 <span>{{ part.label }}</span>
@@ -343,6 +383,7 @@ import {
   getRobots,
   getRecordings,
   getRecordingPlayUrl,
+  getSnapshots,
   getActiveLiveRecording,
   getViewerToken,
   heartbeatVideoSession,
@@ -359,6 +400,24 @@ import {
   takeoverControl,
   stopVideoSession
 } from './api/media'
+
+const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
+
+function defaultVehicleLightState() {
+  return {
+    front: { mode: 'OFF', customValue: 50 },
+    rear: { mode: 'OFF', customValue: 50 }
+  }
+}
+
+function readDeviceStateCache() {
+  try {
+    const raw = window.localStorage.getItem(DEVICE_STATE_CACHE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch (error) {
+    return {}
+  }
+}
 
 // 前端内部摄像头状态模型。
 // 后端返回的是业务会话/设备字段，页面还需要额外保存 LiveKit Room、加载状态、
@@ -412,10 +471,12 @@ function cameraState(robotId, deviceId, name, groupType) {
 export default {
   name: 'App',
   data() {
+    const deviceStateCache = readDeviceStateCache()
     return {
       wsConnected: false,
       socket: null,
       gridMode: 4,
+      leftPanelCollapsed: false,
       heartbeatTimer: null,
       stoppedSessionIds: new Set(),
       selectedRobotId: 'robot-001',
@@ -451,6 +512,8 @@ export default {
       recordingsLoading: false,
       recordings: [],
       selectedRecording: null,
+      snapshots: [],
+      selectedSnapshot: null,
       recordedHls: null,
       qualityOptions: [
         { value: 'auto', label: '自动' },
@@ -458,22 +521,19 @@ export default {
         { value: 'sub', label: '流畅' }
       ],
       controlProfiles: {},
+      controlProfileLoading: {},
       controlSessions: {},
       controlSeq: 1,
       controlTimers: {},
-      ptzAutoRotateState: {},
-      audioState: {},
-      launcherSafety: {},
-      netGunSafety: {},
-      warningLightState: {},
-      vehicleLightState: {
-        front: { mode: 'OFF', customValue: 50 },
-        rear: { mode: 'OFF', customValue: 50 }
-      },
-      confirmedVehicleLightState: {
-        front: { mode: 'OFF', customValue: 50 },
-        rear: { mode: 'OFF', customValue: 50 }
-      },
+      deviceStateCache,
+      ptzAutoRotateState: Object.assign({}, deviceStateCache.ptzAutoRotateState || {}),
+      audioState: Object.assign({}, deviceStateCache.audioState || {}),
+      launcherSafety: Object.assign({}, deviceStateCache.launcherSafety || {}),
+      netGunSafety: Object.assign({}, deviceStateCache.netGunSafety || {}),
+      warningLightState: Object.assign({}, deviceStateCache.warningLightState || {}),
+      vehicleLightState: Object.assign(defaultVehicleLightState(), deviceStateCache.vehicleLightState || {}),
+      confirmedVehicleLightState: Object.assign(defaultVehicleLightState(), deviceStateCache.vehicleLightState || {}),
+      vehicleLightStateReady: !!deviceStateCache.vehicleLightState,
       vehicleLightParts: [
         { key: 'front', label: '前灯' },
         { key: 'rear', label: '后灯' }
@@ -497,6 +557,9 @@ export default {
     },
     selectedControlProfile() {
       return this.controlProfiles[this.selectedRobotId] || { devices: [] }
+    },
+    selectedControlLoading() {
+      return !!this.controlProfileLoading[this.selectedRobotId]
     },
     baseDevice() {
       return this.controlDevice('base')
@@ -528,6 +591,7 @@ export default {
     selectedRobotId() {
       if (this.recordingMode) {
         this.selectedRecording = null
+        this.selectedSnapshot = null
         this.destroyRecordedHls()
         this.loadRecordings()
       }
@@ -561,12 +625,27 @@ export default {
       } else {
         this.destroyRecordedHls()
         this.selectedRecording = null
+        this.selectedSnapshot = null
       }
     },
-    // 录像列表只拉 READY 状态，确保用户点开后一定能拿到可播放的 HLS 地址。
+    // 资源列表按 tab 拉取：录像只拉 READY 状态，抓拍直接拉图片记录。
     async loadRecordings() {
       this.recordingsLoading = true
       try {
+        this.selectedRecording = null
+        this.selectedSnapshot = null
+        if (this.recordingTab === 'snapshot') {
+          this.destroyRecordedHls()
+          const response = await getSnapshots({
+            robotId: this.selectedRobotId,
+            page: 0,
+            pageSize: 20
+          })
+          this.snapshots = response.items || []
+          this.recordings = []
+          return
+        }
+        this.snapshots = []
         const params = {
           robotId: this.selectedRobotId,
           status: 'READY',
@@ -592,6 +671,7 @@ export default {
     async playRecording(recording) {
       if (recording.status !== 'READY') return
       try {
+        this.selectedSnapshot = null
         const playback = await getRecordingPlayUrl(recording.recordingId)
         const player = this.$refs.recordedPlayer
         this.destroyRecordedHls()
@@ -609,6 +689,14 @@ export default {
       } catch (error) {
         this.$message.error(this.errorMessage(error))
       }
+    },
+    previewSnapshot(snapshot) {
+      this.destroyRecordedHls()
+      this.selectedRecording = null
+      this.selectedSnapshot = snapshot
+    },
+    snapshotImage(snapshot) {
+      return snapshot && snapshot.snapshotId ? snapshotImageUrl(snapshot.snapshotId) : ''
     },
     // 销毁当前录像播放器，包括 hls.js 实例、video src 和缩略图 hover 状态。
     destroyRecordedHls() {
@@ -630,6 +718,12 @@ export default {
       const remainder = seconds % 60
       const text = `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
       return hours > 0 ? `${hours}:${text}` : text
+    },
+    dateTimeText(value) {
+      if (!value) return '--'
+      const date = new Date(value)
+      if (Number.isNaN(date.getTime())) return value
+      return date.toLocaleString()
     },
     async startRobot(robot) {
       if (robot.status !== 'online') return
@@ -1124,6 +1218,7 @@ export default {
     },
     async loadControlProfile(robotId) {
       if (!robotId) return
+      this.$set(this.controlProfileLoading, robotId, true)
       try {
         const profile = await getControlProfile(robotId)
         this.$set(this.controlProfiles, robotId, profile)
@@ -1133,14 +1228,18 @@ export default {
             controlMode: profile.controlMode,
             stateSeq: profile.stateSeq
           }))
-          this.syncAudioStatesFromDevices(this.selectedRobotId, profile.devices)
+          this.syncDeviceStatesFromDevices(this.selectedRobotId, profile.devices, { preserveExisting: true })
         }
       } catch (error) {
         this.log('ERROR getControlProfile', this.errorMessage(error))
+      } finally {
+        this.$set(this.controlProfileLoading, robotId, false)
       }
     },
     controlDevices() {
-      return this.selectedControlProfile.devices || []
+      return (this.selectedControlProfile.devices && this.selectedControlProfile.devices.length)
+        ? this.selectedControlProfile.devices
+        : ((this.selectedRobot && this.selectedRobot.devices) || [])
     },
     controlDevice(deviceId) {
       return this.controlDevices().find(device => device.deviceId === deviceId)
@@ -1283,30 +1382,63 @@ export default {
       this.$set(this.netGunSafety, device.deviceId, enabled)
     },
     isLauncherSafetyOn(device) {
-      return !!(device && this.launcherSafety[device.deviceId])
+      if (!device) return false
+      if (this.launcherSafety[device.deviceId] !== undefined) return !!this.launcherSafety[device.deviceId]
+      const status = device.status || device.runtimeStatus || {}
+      return !!status.safetySwitchEnabled
+    },
+    hasLauncherSafetyStatus(device) {
+      if (!device) return false
+      if (this.launcherSafety[device.deviceId] !== undefined) return true
+      const status = device.status || device.runtimeStatus || {}
+      return status.safetySwitchEnabled !== undefined
     },
     async setLauncherSafety(device, enabled) {
       this.$set(this.launcherSafety, device.deviceId, enabled)
+      this.persistDeviceStateCache()
       const ok = await this.sendDeviceCommand(device, 'payload.safety_switch', { enabled }, `launcher_safety_${enabled ? 'on' : 'off'}`)
       if (!ok) {
         this.$set(this.launcherSafety, device.deviceId, !enabled)
+        this.persistDeviceStateCache()
       }
     },
     isWarningLightOn(device) {
-      return !!(device && this.warningLightState[device.deviceId])
+      if (!device) return false
+      if (this.warningLightState[device.deviceId] !== undefined) return !!this.warningLightState[device.deviceId]
+      const status = device.status || device.runtimeStatus || {}
+      return !!status.enabled
+    },
+    hasWarningLightStatus(device) {
+      if (!device) return false
+      if (this.warningLightState[device.deviceId] !== undefined) return true
+      const status = device.status || device.runtimeStatus || {}
+      return status.enabled !== undefined
     },
     async setWarningLight(device, enabled) {
       this.$set(this.warningLightState, device.deviceId, enabled)
+      this.persistDeviceStateCache()
       const ok = await this.sendDeviceCommand(device, 'light.warning.set', { enabled }, `${device.deviceId}_${enabled ? 'on' : 'off'}`)
       if (!ok) {
         this.$set(this.warningLightState, device.deviceId, !enabled)
+        this.persistDeviceStateCache()
       }
     },
     ptzAutoRotateKey(device) {
       return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
     },
     isPtzAutoRotateOn(device) {
-      return !!(device && this.ptzAutoRotateState[this.ptzAutoRotateKey(device)])
+      if (!device) return false
+      const key = this.ptzAutoRotateKey(device)
+      if (this.ptzAutoRotateState[key] !== undefined) return !!this.ptzAutoRotateState[key]
+      const status = device.status || device.runtimeStatus || {}
+      return !!status.autoRotateEnabled
+    },
+    hasPtzAutoRotateStatus(device) {
+      if (!device) return false
+      const key = this.ptzAutoRotateKey(device)
+      if (this.ptzAutoRotateState[key] !== undefined) return true
+      const status = device.status || device.runtimeStatus || {}
+      return status.autoRotateEnabled !== undefined
     },
     async togglePtzAutoRotate() {
       const device = this.ptzDevice
@@ -1319,6 +1451,7 @@ export default {
       }, `ptz_auto_rotate_${enabled ? 'on' : 'off'}`)
       if (ok) {
         this.$set(this.ptzAutoRotateState, key, enabled)
+        this.persistDeviceStateCache()
       }
     },
     audioKey(device) {
@@ -1326,7 +1459,20 @@ export default {
     },
     audioStatus(device) {
       const key = this.audioKey(device)
-      return this.audioState[key] || { volume: 50, muted: false }
+      if (this.audioState[key]) return this.audioState[key]
+      const status = (device && (device.status || device.runtimeStatus)) || {}
+      return {
+        volume: status.volume === undefined ? 50 : status.volume,
+        muted: status.muted === undefined ? false : status.muted
+      }
+    },
+    hasAudioStatus(device) {
+      const key = this.audioKey(device)
+      if (this.audioState[key]) {
+        return this.audioState[key].volume !== undefined && this.audioState[key].muted !== undefined
+      }
+      const status = (device && (device.status || device.runtimeStatus)) || {}
+      return status.volume !== undefined && status.muted !== undefined
     },
     audioVolume(device) {
       return this.audioStatus(device).volume
@@ -1338,6 +1484,7 @@ export default {
       if (!device) return
       const key = this.audioKey(device)
       this.$set(this.audioState, key, Object.assign({}, this.audioStatus(device), patch))
+      this.persistDeviceStateCache()
     },
     updateAudioVolume(device, volume) {
       this.setAudioState(device, { volume })
@@ -1439,10 +1586,12 @@ export default {
         next[part].customValue = 50
       }
       this.vehicleLightState = next
-      const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_${String(mode).toLowerCase()}`)
+      const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_${String(mode).toLowerCase()}`, next)
       if (ok) {
-        this.confirmedVehicleLightState = this.cloneVehicleLightState()
-      } else {
+        this.confirmedVehicleLightState = this.cloneVehicleLightState(next)
+        this.vehicleLightStateReady = true
+        this.persistDeviceStateCache()
+      } else if (this.vehicleLightStateReady) {
         this.vehicleLightState = this.cloneVehicleLightState(this.confirmedVehicleLightState)
       }
     },
@@ -1452,17 +1601,20 @@ export default {
     async setVehicleLightBrightness(part, value) {
       this.vehicleLightState[part].mode = 'CUSTOM'
       this.vehicleLightState[part].customValue = value
-      const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_custom`)
+      const next = this.cloneVehicleLightState()
+      const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_custom`, next)
       if (ok) {
-        this.confirmedVehicleLightState = this.cloneVehicleLightState()
-      } else {
+        this.confirmedVehicleLightState = this.cloneVehicleLightState(next)
+        this.vehicleLightStateReady = true
+        this.persistDeviceStateCache()
+      } else if (this.vehicleLightStateReady) {
         this.vehicleLightState = this.cloneVehicleLightState(this.confirmedVehicleLightState)
       }
     },
-    sendVehicleLightCommand(source) {
+    sendVehicleLightCommand(source, nextState) {
       const device = this.vehicleLightDevice
       if (!device) return false
-      const state = this.cloneVehicleLightState()
+      const state = this.cloneVehicleLightState(nextState)
       return this.sendDeviceCommand(device, 'light.vehicle.set', {
         front: this.vehicleLightPayloadPart(state.front),
         rear: this.vehicleLightPayloadPart(state.rear)
@@ -1477,6 +1629,12 @@ export default {
         customValue: mode === 'CUSTOM' ? part.customValue : 0
       }
     },
+    hasVehicleLightStatus(device) {
+      if (!device) return false
+      if (this.vehicleLightStateReady) return true
+      const status = device.status || device.runtimeStatus || {}
+      return !!status.front || !!status.rear
+    },
     syncControlEvent(event) {
       if (!event) return
       if (event.type === 'control.command.rejected') {
@@ -1490,6 +1648,7 @@ export default {
       if (!data || !data.robotId) return
       if (event.event !== 'robot.state' && event.type !== 'robot.state') return
       const incoming = this.toRobotState(data)
+      this.syncDeviceStatesFromDevices(incoming.robotId, incoming.devices)
       const index = this.robots.findIndex(robot => robot.robotId === incoming.robotId)
       if (index >= 0) {
         const existing = this.robots[index]
@@ -1578,7 +1737,7 @@ export default {
         }, 5000)
       }
     },
-    syncAudioStatesFromDevices(robotId, devices) {
+    syncAudioStatesFromDevices(robotId, devices, options = {}) {
       if (!robotId || !Array.isArray(devices)) return
       devices
           .filter(device => ['CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
@@ -1586,11 +1745,76 @@ export default {
             const status = device.status || device.runtimeStatus || {}
             if (status.volume === undefined && status.muted === undefined) return
             const key = `${robotId}:${device.deviceId}`
-            this.$set(this.audioState, key, Object.assign({}, this.audioState[key] || { volume: 50, muted: false }, {
-              volume: status.volume === undefined ? (this.audioState[key] && this.audioState[key].volume) || 50 : status.volume,
-              muted: status.muted === undefined ? !!(this.audioState[key] && this.audioState[key].muted) : status.muted
-            }))
+            const next = Object.assign({}, this.audioState[key] || {})
+            if (status.volume !== undefined && !(options.preserveExisting && next.volume !== undefined)) {
+              next.volume = status.volume
+            }
+            if (status.muted !== undefined && !(options.preserveExisting && next.muted !== undefined)) {
+              next.muted = status.muted
+            }
+            this.$set(this.audioState, key, next)
           })
+    },
+    syncDeviceStatesFromDevices(robotId, devices, options = {}) {
+      if (!robotId || !Array.isArray(devices)) return
+      this.syncAudioStatesFromDevices(robotId, devices, options)
+      if (robotId !== this.selectedRobotId) return
+      devices.forEach(device => {
+        const status = device.status || device.runtimeStatus || {}
+        if (device.deviceType === 'LAUNCHER' && status.safetySwitchEnabled !== undefined &&
+            !(options.preserveExisting && this.launcherSafety[device.deviceId] !== undefined)) {
+          this.$set(this.launcherSafety, device.deviceId, !!status.safetySwitchEnabled)
+        }
+        if (device.deviceType === 'WARNING_LIGHT' && status.enabled !== undefined &&
+            !(options.preserveExisting && this.warningLightState[device.deviceId] !== undefined)) {
+          this.$set(this.warningLightState, device.deviceId, !!status.enabled)
+        }
+        const ptzKey = `${robotId}:${device.deviceId}`
+        if (device.deviceType === 'DUAL_LIGHT_PTZ' && status.autoRotateEnabled !== undefined &&
+            !(options.preserveExisting && this.ptzAutoRotateState[ptzKey] !== undefined)) {
+          this.$set(this.ptzAutoRotateState, ptzKey, !!status.autoRotateEnabled)
+        }
+        if (device.deviceType === 'VEHICLE_LIGHT' && !(options.preserveExisting && this.vehicleLightStateReady)) {
+          const next = this.cloneVehicleLightState()
+          const front = this.vehicleLightStatusPart(status.front)
+          const rear = this.vehicleLightStatusPart(status.rear)
+          if (front) next.front = front
+          if (rear) next.rear = rear
+          if (front || rear) {
+            this.vehicleLightState = next
+            this.confirmedVehicleLightState = this.cloneVehicleLightState(next)
+            this.vehicleLightStateReady = true
+          }
+        }
+      })
+      this.persistDeviceStateCache()
+    },
+    vehicleLightStatusPart(part) {
+      if (!part || typeof part !== 'object') return null
+      if (part.mode === undefined && part.modeCode === undefined) return null
+      const mode = part.mode || this.vehicleLightModeOptions.find(item => item.code === part.modeCode)?.value || 'OFF'
+      return {
+        mode,
+        customValue: mode === 'CUSTOM' ? Math.max(0, Math.min(100, Number(part.customValue) || 0)) : 0
+      }
+    },
+    persistDeviceStateCache() {
+      const cache = {
+        audioState: this.audioState,
+        launcherSafety: this.launcherSafety,
+        netGunSafety: this.netGunSafety,
+        warningLightState: this.warningLightState,
+        ptzAutoRotateState: this.ptzAutoRotateState
+      }
+      if (this.vehicleLightStateReady) {
+        cache.vehicleLightState = this.vehicleLightState
+      }
+      this.deviceStateCache = cache
+      try {
+        window.localStorage.setItem(DEVICE_STATE_CACHE_KEY, JSON.stringify(cache))
+      } catch (error) {
+        this.log('WARN persistDeviceStateCache', this.errorMessage(error))
+      }
     },
     isStoppedSession(camera, sessionId) {
       return camera.stopping || camera.stopped || this.stoppedSessionIds.has(sessionId)
@@ -1942,6 +2166,7 @@ export default {
         stateSeq: robot.stateSeq || 0,
         battery: robot.battery,
         status,
+        devices: robot.devices || [],
         cameras: (robot.cameras || []).map(camera => Object.assign(
             cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.groupType),
 	            {
@@ -2003,6 +2228,17 @@ export default {
   border-bottom: 1px solid #dfe5ef;
 }
 
+.topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.panel-toggle {
+  padding: 7px;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: 18px;
@@ -2016,6 +2252,10 @@ export default {
   padding: 12px;
   height: calc(100vh - 56px);
   overflow: hidden;
+}
+
+.workspace.left-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr) 340px;
 }
 
 .left-panel,
@@ -2035,6 +2275,15 @@ export default {
   gap: 12px;
   background: transparent;
   border: 0;
+}
+
+.left-panel.collapsed {
+  overflow: hidden;
+}
+
+.left-panel.collapsed .robot-list,
+.left-panel.collapsed .left-log {
+  display: none;
 }
 
 .equipment-control {
@@ -2120,6 +2369,20 @@ export default {
   margin: 6px 0 8px;
   font-size: 12px;
   color: #334155;
+}
+
+.control-pending,
+.inline-pending {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.control-pending {
+  padding: 6px 0;
+}
+
+.inline-pending {
+  margin-bottom: 0;
 }
 
 .warning-light-row {
@@ -2398,6 +2661,13 @@ export default {
   object-fit: contain;
 }
 
+.snapshot-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
 .video-stage {
   position: relative;
   width: 100%;
@@ -2615,17 +2885,21 @@ export default {
     overflow: visible;
   }
 
+  .workspace.left-collapsed {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
   .video-area {
     overflow: visible;
   }
 
   .equipment-panel,
-  .left-panel {
+  .left-panel:not(.collapsed) {
     grid-column: 1 / -1;
     min-height: 260px;
   }
 
-  .left-panel {
+  .left-panel:not(.collapsed) {
     grid-template-rows: auto minmax(220px, auto);
   }
 

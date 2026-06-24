@@ -33,6 +33,7 @@ class RobotMQTTClient:
         self.state_seq = 0
         self.audio_volume = 50
         self.audio_muted = False
+        self.device_state: dict[str, dict[str, object]] = {}
         self.stop_event = threading.Event()
 
     def run(self) -> None:
@@ -170,7 +171,7 @@ class RobotMQTTClient:
         try:
             command = ControlCommand.from_json(json.loads(payload.decode()))
             print("equipment control command received topic=", topic, "payload=", payload.decode(), flush=True)
-            if self.apply_audio_command(command):
+            if self.apply_control_command(command):
                 self.online("online")
         except Exception as exc:
             print("control command unmarshal failed", exc, flush=True)
@@ -183,28 +184,59 @@ class RobotMQTTClient:
             self.last_cmds[session_id] = command_id
             return False
 
-    def apply_audio_command(self, command: ControlCommand) -> bool:
-        """应用音量、静音等客户端本地音频控制指令。"""
-        if command.target.device_type not in {"CLIENT_AUDIO", "VOLUME_CONTROL", "INTERCOM"}:
-            return False
+    def apply_control_command(self, command: ControlCommand) -> bool:
+        """应用可本地确认的设备控制状态，并触发下一次 client/status 上报。"""
         with self.lock:
+            changed = False
             if command.action == "volume.set":
                 self.audio_volume = clamp_int(any_int(command.params.get("volume"), self.audio_volume), 0, 100)
                 self.audio_muted = any_bool(command.params.get("muted"), False)
+                self.set_device_state_locked(command.target.device_id, "volume", self.audio_volume)
+                self.set_device_state_locked(command.target.device_id, "muted", self.audio_muted)
+                changed = True
             elif command.action == "volume.up":
                 step = clamp_int(any_int(command.params.get("step"), 5), 1, 100)
                 self.audio_volume = clamp_int(any_int(command.params.get("volume"), self.audio_volume + step), 0, 100)
                 self.audio_muted = any_bool(command.params.get("muted"), False)
+                self.set_device_state_locked(command.target.device_id, "volume", self.audio_volume)
+                self.set_device_state_locked(command.target.device_id, "muted", self.audio_muted)
+                changed = True
             elif command.action == "volume.down":
                 step = clamp_int(any_int(command.params.get("step"), 5), 1, 100)
                 self.audio_volume = clamp_int(any_int(command.params.get("volume"), self.audio_volume - step), 0, 100)
                 self.audio_muted = any_bool(command.params.get("muted"), False)
+                self.set_device_state_locked(command.target.device_id, "volume", self.audio_volume)
+                self.set_device_state_locked(command.target.device_id, "muted", self.audio_muted)
+                changed = True
             elif command.action == "volume.mute":
                 self.audio_muted = any_bool(command.params.get("muted"), True)
                 self.audio_volume = clamp_int(any_int(command.params.get("volume"), self.audio_volume), 0, 100)
-            else:
-                return False
-            return True
+                self.set_device_state_locked(command.target.device_id, "volume", self.audio_volume)
+                self.set_device_state_locked(command.target.device_id, "muted", self.audio_muted)
+                changed = True
+            elif command.action == "payload.safety_switch":
+                self.set_device_state_locked(command.target.device_id, "safetySwitchEnabled", any_bool(command.params.get("enabled"), False))
+                changed = True
+            elif command.action == "light.warning.set":
+                self.set_device_state_locked(command.target.device_id, "enabled", any_bool(command.params.get("enabled"), False))
+                changed = True
+            elif command.action == "ptz.auto_rotate":
+                self.set_device_state_locked(command.target.device_id, "autoRotateEnabled", any_bool(command.params.get("enabled"), False))
+                self.set_device_state_locked(command.target.device_id, "panSpeed", any_float(command.params.get("panSpeed"), 0.0))
+                changed = True
+            elif command.action == "light.vehicle.set":
+                front, rear = vehicle_light_state(command.params)
+                self.set_device_state_locked(command.target.device_id, "front", front)
+                self.set_device_state_locked(command.target.device_id, "rear", rear)
+                changed = True
+            return changed
+
+    def set_device_state_locked(self, device_id: str, key: str, value: object) -> None:
+        """在已持锁状态下更新设备运行状态。"""
+        if not device_id:
+            return
+        status = self.device_state.setdefault(device_id, {})
+        status[key] = value
 
     def status(self, session_id: str, status: str, track_sid: str, track_name: str, error_code: str, message: str) -> None:
         """上报实时视频 session 状态给后端状态订阅器。"""
@@ -266,8 +298,46 @@ class RobotMQTTClient:
                 }
                 for camera in self.cfg.cameras
             ],
+            "devices": self.devices(),
             "timestamp": isoformat(),
         })
+
+    def devices(self) -> list[dict[str, object]]:
+        """把设备配置和当前运行状态转换为 client/status 的 devices[]。"""
+        result: list[dict[str, object]] = []
+        with self.lock:
+            state_snapshot = {key: dict(value) for key, value in self.device_state.items()}
+            audio_volume = self.audio_volume
+            audio_muted = self.audio_muted
+        for device in self.cfg.devices:
+            status = dict(device.status or {})
+            status.update(state_snapshot.get(device.device_id, {}))
+            if device.device_id == "audio-control-001" or device.device_type in {"CLIENT_AUDIO", "VOLUME_CONTROL", "INTERCOM"}:
+                status["volume"] = audio_volume
+                status["muted"] = audio_muted
+            item: dict[str, object] = {
+                "deviceId": device.device_id,
+                "bindingId": device.binding_id,
+                "scope": device.scope,
+                "deviceType": device.device_type,
+                "displayName": device.display_name,
+                "onlineStatus": device.online_status,
+                "controlStatus": device.control_status,
+                "enabled": device.enabled,
+                "actions": list(device.actions),
+            }
+            if device.vendor:
+                item["vendor"] = device.vendor
+            if device.model:
+                item["model"] = device.model
+            if device.risk_level:
+                item["riskLevel"] = device.risk_level
+            if status:
+                item["status"] = status
+            if device.control_profile:
+                item["controlProfile"] = dict(device.control_profile)
+            result.append(item)
+        return result
 
     def rtsp_url(self, device_id: str, quality: str) -> str:
         """按 deviceId 和清晰度选择 RTSP 地址，兼容全局可见光默认地址。"""
@@ -330,6 +400,47 @@ def any_bool(value: object, fallback: bool) -> bool:
     if isinstance(value, bool):
         return value
     return fallback
+
+
+def any_float(value: object, fallback: float) -> float:
+    """把数值型参数转换成 float，无法转换时返回默认值。"""
+    if isinstance(value, bool):
+        return fallback
+    if isinstance(value, (int, float)):
+        return float(value)
+    return fallback
+
+
+def copy_dict(value: object) -> dict[str, object]:
+    """复制字典参数，非字典时返回空字典。"""
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def vehicle_light_state(params: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
+    """兼容 front/rear 和 ROS msg 两种车灯命令参数。"""
+    front = copy_dict(params.get("front"))
+    rear = copy_dict(params.get("rear"))
+    if front or rear:
+        return front, rear
+    msg = copy_dict(params.get("msg"))
+    return (
+        vehicle_light_part(any_int(msg.get("front_mode"), 0), any_int(msg.get("front_custom_value"), 0)),
+        vehicle_light_part(any_int(msg.get("rear_mode"), 0), any_int(msg.get("rear_custom_value"), 0)),
+    )
+
+
+def vehicle_light_part(mode_code: int, custom_value: int) -> dict[str, object]:
+    """把 ROS mode code 转成前端使用的车灯状态。"""
+    if mode_code < 0 or mode_code > 3:
+        mode_code = 0
+    mode = {0: "OFF", 1: "ON", 2: "BREATH", 3: "CUSTOM"}.get(mode_code, "OFF")
+    return {
+        "mode": mode,
+        "modeCode": mode_code,
+        "customValue": clamp_int(custom_value, 0, 100) if mode_code == 3 else 0,
+    }
 
 
 def clamp_int(value: int, minimum: int, maximum: int) -> int:

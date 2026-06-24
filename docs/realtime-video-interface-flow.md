@@ -10,7 +10,7 @@
 
 | 模块 | 当前职责 |
 |---|---|
-| 前端 Vue2 调试台 | 展示机器人列表、1/4/9 宫格视频墙、调用 Control API、连接 LiveKit、单路停止、单路抓拍、观看者心跳 |
+| 前端 Vue2 调试台 | 展示可折叠机器人/事件侧栏、1/4/9 宫格视频墙、调用 Control API、连接 LiveKit、单路停止、单路抓拍、手动/巡逻录像和抓拍列表查看、观看者心跳 |
 | Control Server | 面向前端提供统一业务入口，负责设备上下文、权限入口、视频操作编排、MQTT 指令下发和 WebSocket 入口 |
 | Java Media Service + LiveKit | 作为媒体能力整体，面向 Control Server 提供媒体内部接口，负责会话编排、LiveKit Room/Token、Track 状态、viewerCount 维护 |
 | Go 云接入客户端 | 机器人侧统一客户端，启动后上报设备与摄像头列表，订阅 MQTT start/stop/switch，按 sessionId 管理多个 publisher 进程 |
@@ -166,6 +166,7 @@ Content-Type: application/json
 | `estopActive` | boolean | 是 | 急停是否生效 |
 | `lastHeartbeatAt` | datetime | 可选 | 后端最近收到客户端状态或心跳的时间 |
 | `cameras` | array[`RobotCameraResponse`] | 是 | 机器人下挂摄像头列表 |
+| `devices` | array | 可选 | 本体和上装设备能力列表，结构同控制能力 `devices` |
 | `timestamp` | datetime | 可选 | 最近一次机器人状态产生或后端更新时间 |
 
 ### 5.3 `RobotCameraResponse`
@@ -591,6 +592,16 @@ snapshots/{robotId}/{deviceId}/{yyyy}/{mm}/{dd}/{snapshotId}.jpg
 GET /api/control/snapshots/{snapshotId}/image
 ```
 
+当前前端“录像回放”工作区包含三个 tab：
+
+| Tab | 数据来源 | 展示/操作 |
+|---|---|---|
+| 手动录像 | `GET /api/control/recordings?robotId=...&status=READY&sourceType=LIVEKIT_EGRESS&page=0&size=20` | 左侧展示 READY 录像，点击后签发播放 URL 并在右侧 HLS 播放 |
+| 巡逻录像 | `GET /api/control/recordings?robotId=...&status=READY&page=0&size=20` 后过滤非 `LIVEKIT_EGRESS` | 左侧展示巡逻/上传录像，点击后签发播放 URL 并在右侧 HLS 播放 |
+| 抓拍列表 | `GET /api/control/snapshots?robotId=...&page=0&pageSize=20` | 左侧展示抓拍记录，点击后在右侧通过 `/api/control/snapshots/{snapshotId}/image` 预览图片 |
+
+切换到抓拍列表时，前端会销毁录像 HLS 播放器；切回录像 tab 时会清理当前抓拍选择，避免视频和图片预览状态串台。
+
 ### 6.9 查询辅助接口
 
 | 方法 | 路径 | 说明 |
@@ -988,6 +999,26 @@ Payload：
       "quality": "sub"
     }
   ],
+  "devices": [
+    {
+      "deviceId": "base",
+      "bindingId": "bind-base",
+      "scope": "BODY",
+      "deviceType": "WHEELED_BASE",
+      "displayName": "机器人本体",
+      "vendor": "SONGLING",
+      "model": "SCOUT",
+      "onlineStatus": "online",
+      "controlStatus": "idle",
+      "enabled": true,
+      "actions": ["drive.velocity", "navigation.return_home", "docking.leave"],
+      "controlProfile": {
+        "maxLinearX": 1.0,
+        "maxLinearY": 0.4,
+        "maxAngularZ": 0.8
+      }
+    }
+  ],
   "timestamp": "2026-05-22T02:00:00+08:00"
 }
 ```
@@ -1009,7 +1040,10 @@ Payload 字段说明：
 | `controlOwner` | object/null | 否 | 当前控制占用者 |
 | `estopActive` | boolean | 是 | 急停是否生效 |
 | `cameras` | array | 否 | 摄像头列表；`online` 时应传，`offline` 时也建议传 |
+| `devices` | array | 否 | 本体和上装设备能力列表；用于前端设备面板、控制入口、能力判断和按钮状态刷新 |
 | `timestamp` | datetime | 是 | 客户端上报时间 |
+
+`devices[].status` 用于刷新前端装备控制按钮，当前包括 `volume/muted`、`safetySwitchEnabled`、`enabled`、`autoRotateEnabled/panSpeed`、`front/rear` 等状态字段。
 
 `cameras[]` 字段说明：
 

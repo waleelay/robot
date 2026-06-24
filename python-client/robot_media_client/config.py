@@ -20,6 +20,26 @@ class Camera:
 
 
 @dataclass
+class Device:
+    """机器人本体或上装设备能力与运行状态配置。"""
+
+    device_id: str
+    binding_id: str
+    scope: str
+    device_type: str
+    display_name: str
+    online_status: str
+    control_status: str
+    enabled: bool
+    actions: list[str]
+    vendor: str = ""
+    model: str = ""
+    risk_level: str = ""
+    status: dict[str, object] | None = None
+    control_profile: dict[str, object] | None = None
+
+
+@dataclass
 class Config:
     """Python 客户端运行配置，主要从环境变量加载。"""
 
@@ -36,6 +56,7 @@ class Config:
     rtsp_thermal_sub: str
     rtsp_thermal_main: str
     cameras: list[Camera]
+    devices: list[Device]
     ffprobe_path: str
     publisher_cmd: str
     ffmpeg_publisher_cmd: str
@@ -78,6 +99,7 @@ def load() -> Config:
         rtsp_thermal_sub=env("RTSP_THERMAL_SUB", "rtsp://admin:okwy1688@192.168.1.65:554/Streaming/Channels/102"),
         rtsp_thermal_main=env("RTSP_THERMAL_MAIN", "rtsp://admin:okwy1688@192.168.1.65:554/Streaming/Channels/102"),
         cameras=cameras(robot_id),
+        devices=devices(robot_id),
         ffprobe_path=env("FFPROBE_PATH", "ffprobe"),
         publisher_cmd=env("PUBLISHER_CMD", ""),
         ffmpeg_publisher_cmd=env("FFMPEG_PUBLISHER_CMD", "./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}"),
@@ -131,6 +153,171 @@ def cameras(robot_id: str) -> list[Camera]:
             rtsp_main_url=main_rtsp,
             rtsp_sub_url=sub_rtsp,
         ))
+    return result
+
+
+def devices(robot_id: str) -> list[Device]:
+    """生成默认设备能力列表，随 client/status 上报给后端和前端。"""
+    base_type = "WHEELED_BASE"
+    base_vendor = "SONGLING"
+    base_model = "SCOUT"
+    max_linear_x = 1.0
+    max_linear_y = 0.4
+    max_angular_z = 0.8
+    if robot_id == "robot-002":
+        base_type = "QUADRUPED_BASE"
+        base_vendor = "DEEPNROBOTICS"
+        base_model = "X30"
+        max_linear_x = 0.8
+        max_angular_z = 0.6
+
+    result = [
+        Device(
+            device_id="base",
+            binding_id="bind-base",
+            scope="BODY",
+            device_type=base_type,
+            display_name="机器人本体",
+            vendor=base_vendor,
+            model=base_model,
+            online_status="online",
+            control_status="idle",
+            enabled=True,
+            actions=["drive.velocity", "navigation.return_home", "docking.leave"],
+            control_profile={
+                "maxLinearX": max_linear_x,
+                "maxLinearY": max_linear_y,
+                "maxAngularZ": max_angular_z,
+                "controlFrameRateHz": 10,
+            },
+        ),
+        Device(
+            device_id="ptz-dual-001",
+            binding_id="bind-ptz-dual-001",
+            scope="PAYLOAD",
+            device_type="DUAL_LIGHT_PTZ",
+            display_name="双光云台",
+            vendor="CUSTOM",
+            model="DL-PTZ-01",
+            online_status="online",
+            control_status="idle",
+            enabled=True,
+            actions=["ptz.move", "ptz.auto_rotate", "ptz.home", "camera.zoom"],
+            status={"autoRotateEnabled": False, "panSpeed": 0},
+            control_profile={"maxPanSpeed": 1.0, "maxTiltSpeed": 1.0, "controlFrameRateHz": 10},
+        ),
+        Device(
+            device_id="audio-control-001",
+            binding_id="bind-audio-control-001",
+            scope="AUDIO",
+            device_type="CLIENT_AUDIO",
+            display_name="客户端音量",
+            online_status="online",
+            control_status="idle",
+            enabled=True,
+            actions=["volume.set", "volume.up", "volume.down", "volume.mute"],
+            status={"volume": 50, "muted": False},
+            control_profile={"step": 5, "minVolume": 0, "maxVolume": 100},
+        ),
+    ]
+    if robot_id != "robot-unitree-001":
+        result.extend([
+            Device(
+                device_id="launcher-001",
+                binding_id="bind-launcher-001",
+                scope="PAYLOAD",
+                device_type="LAUNCHER",
+                display_name="六联发射器",
+                vendor="CUSTOM",
+                model="LCH-06",
+                online_status="online",
+                control_status="idle",
+                enabled=True,
+                risk_level="HIGH",
+                actions=["payload.safety_switch", "payload.fire"],
+                control_profile={"channels": [1, 2, 3, 4, 5, 6], "requiresConfirm": True, "requiresSafetySwitch": True},
+            ),
+            Device(
+                device_id="net-gun-001",
+                binding_id="bind-net-gun-001",
+                scope="PAYLOAD",
+                device_type="NET_GUN",
+                display_name="捕网枪",
+                vendor="CUSTOM",
+                model="NL-01",
+                online_status="online",
+                control_status="idle",
+                enabled=True,
+                risk_level="HIGH",
+                actions=["payload.fire"],
+                control_profile={"requiresConfirm": True, "cooldownMs": 3000},
+            ),
+        ])
+    result.extend([
+        Device(
+            device_id="warning-light-left",
+            binding_id="bind-warning-light-left",
+            scope="PAYLOAD",
+            device_type="WARNING_LIGHT",
+            display_name="左警示灯",
+            vendor="CUSTOM",
+            model="WL-01",
+            online_status="online",
+            control_status="idle",
+            enabled=True,
+            actions=["light.warning.set"],
+            status={"enabled": False},
+            control_profile={"modes": ["ON", "OFF"]},
+        ),
+        Device(
+            device_id="warning-light-right",
+            binding_id="bind-warning-light-right",
+            scope="PAYLOAD",
+            device_type="WARNING_LIGHT",
+            display_name="右警示灯",
+            vendor="CUSTOM",
+            model="WL-01",
+            online_status="online",
+            control_status="idle",
+            enabled=True,
+            actions=["light.warning.set"],
+            status={"enabled": False},
+            control_profile={"modes": ["ON", "OFF"]},
+        ),
+        Device(
+            device_id="vehicle-light",
+            binding_id="bind-vehicle-light",
+            scope="PAYLOAD",
+            device_type="VEHICLE_LIGHT",
+            display_name="车灯光",
+            vendor="CUSTOM",
+            model="VL-01",
+            online_status="online",
+            control_status="idle",
+            enabled=True,
+            actions=["light.vehicle.set"],
+            control_profile={
+                "parts": ["front", "rear"],
+                "modes": ["OFF", "ON", "BREATH", "CUSTOM"],
+                "modeMapping": {"OFF": 0, "ON": 1, "BREATH": 2, "CUSTOM": 3},
+                "maxBrightness": 100,
+                "rosTopic": "/robot_light_ctl",
+                "rosType": "robot_status_core/RobotLightCmd",
+            },
+        ),
+        Device(
+            device_id="intercom-001",
+            binding_id="bind-intercom-001",
+            scope="AUDIO",
+            device_type="INTERCOM",
+            display_name="语音对讲",
+            online_status="online",
+            control_status="idle",
+            enabled=True,
+            actions=["volume.set", "volume.up", "volume.down", "volume.mute"],
+            status={"volume": 50, "muted": False},
+        ),
+    ])
     return result
 
 

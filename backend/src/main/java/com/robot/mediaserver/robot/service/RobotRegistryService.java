@@ -39,7 +39,8 @@ public class RobotRegistryService {
             String navigationStatus,
             Object controlOwner,
             Boolean estopActive,
-            List<RobotCameraResponse> cameras) {
+            List<RobotCameraResponse> cameras,
+            List<Map<String, Object>> mountedDevices) {
         if (robotId == null || robotId.isBlank()) {
             return false;
         }
@@ -63,6 +64,9 @@ public class RobotRegistryService {
         device.lastHeartbeatAt = now();
         if (cameras != null && !cameras.isEmpty()) {
             device.cameras = new ArrayList<>(cameras);
+        }
+        if (mountedDevices != null && !mountedDevices.isEmpty()) {
+            device.mountedDevices = new ArrayList<>(mountedDevices);
         }
         return becameOnline;
     }
@@ -99,6 +103,7 @@ public class RobotRegistryService {
         state.put("controlOwner", device.controlOwner);
         state.put("estopActive", device.estopActive);
         state.put("cameras", device.cameras);
+        state.put("devices", device.mountedDevices);
         state.put("timestamp", now().toString());
         return state;
     }
@@ -119,6 +124,7 @@ public class RobotRegistryService {
                 device.estopActive,
                 device.lastHeartbeatAt,
                 device.cameras,
+                device.mountedDevices,
                 device.lastHeartbeatAt == null ? null : device.lastHeartbeatAt.toString());
     }
 
@@ -145,6 +151,7 @@ public class RobotRegistryService {
         private Boolean estopActive = false;
         private OffsetDateTime lastHeartbeatAt;
         private List<RobotCameraResponse> cameras = List.of();
+        private List<Map<String, Object>> mountedDevices = List.of();
 
         private RobotDevice(String robotId) {
             this.robotId = robotId;

@@ -1,0 +1,860 @@
+# 客户端上报与后端前端事件数据结构汇总
+
+本文档汇总当前各设计文档和代码中由机器人侧 Go 客户端主动上报给后端的事件、HTTP 请求和数据结构，同时补充后端、BFF 通过 WebSocket 发给前端的事件和载荷结构。
+
+来源包括：
+
+- `docs/realtime-video-interface-flow.md`
+- `docs/realtime-video-bound-intercom-design.md`
+- `docs/embodied-equipment-control-design.md`
+- `docs/embodied-equipment-control-phase-1.md`
+- `docs/embodied-equipment-control-phase-2.md`
+- `docs/recorded-video-upload-design.md`
+- `docs/client-code-structure.md`
+- `client/internal/model/model.go`
+- `client/internal/mqtt/client.go`
+- `client/internal/recordingupload/client.go`
+- `backend/src/main/java/com/robot/mediaserver/video/messaging/*StatusMessage.java`
+- `backend/src/main/java/com/robot/mediaserver/recording/dto/*.java`
+- `backend/src/main/java/com/robot/mediaserver/ws/*.java`
+- `backend/src/main/java/com/robot/mediaserver/video/service/VideoSessionService.java`
+- `backend/src/main/java/com/robot/mediaserver/control/service/EquipmentControlService.java`
+- `backend/src/main/java/com/robot/mediaserver/robot/service/RobotRegistryService.java`
+- `bigscreen-bff/src/main/java/com/robot/bigscreen/panorama/PanoramaMockWebSocketEventPublisher.java`
+- `bigscreen-bff/src/main/java/com/robot/bigscreen/ws/BigscreenWebSocketBridgeHandler.java`
+
+## 1. 上报通道总览
+
+| 上报类型 | 通道 | Topic / API | 触发时机 | 后端入口 |
+|---|---|---|---|---|
+| 客户端在线状态、心跳、摄像头清单和设备状态 | MQTT QoS 1 | `robot/{robotId}/media/client/status` | MQTT 连接成功、重连成功、周期心跳、正常退出、部分状态变化后刷新 | `RobotMediaStatusSubscriber.clientStatusListener` |
+| 实时视频会话状态 | MQTT QoS 1 | `robot/{robotId}/media/video/status` | start/switch 后 RTSP 探测、开始发布、发布成功、停止、失败、中断 | `RobotMediaStatusSubscriber.statusListener` |
+| 视频会话内对讲状态 | MQTT QoS 1 | `robot/{robotId}/media/video/intercom/status` | 对讲启动中、音频链路可用、停止、失败、中断 | `RobotMediaStatusSubscriber.intercomStatusListener` |
+| 录像上传创建或恢复 | HTTP JSON | `POST /api/media/recording-uploads` | 客户端发现本地待上传 MP4，或网络恢复后续传 | `RobotRecordingController.create` |
+| 录像分片地址申请 | HTTP JSON | `POST /api/media/recording-uploads/{uploadId}/part-urls` | 上传缺失 part 前批量申请预签名 URL | `RobotRecordingController.partUrls` |
+| 录像分片直传 | HTTP PUT | `PUT uploadUrl` | 上传单个 MP4 分片到对象存储 | 对象存储预签名地址 |
+| 录像上传完成通知 | HTTP | `POST /api/media/recording-uploads/{uploadId}/complete` | 本地判断所有 part 已上传后 | `RobotRecordingController.complete` |
+| 录像处理状态查询 | HTTP | `GET /api/media/recordings/{recordingId}/status` | 完成上传后轮询服务端转码/校验状态 | `RobotRecordingController.status` |
+
+说明：
+
+1. MQTT topic 中的 `{robotId}` 必须与 payload 中的 `robotId` 一致，后端当前主要从 payload 取值处理。
+2. HTTP 录像上传接口使用请求头 `X-Robot-Id` 声明机器人身份，不在 body 中重复传 `robotId`。
+3. “必填”以协议设计、客户端模型和后端当前校验综合判断。若后端 DTO 暂未加 Bean Validation，但业务缺失后无法正确处理，本文仍标为“是”，并在说明中注明。
+
+## 2. MQTT 上报事件
+
+### 2.1 客户端状态与心跳
+
+| 项 | 内容 |
+|---|---|
+| Topic | `robot/{robotId}/media/client/status` |
+| 方向 | Go 客户端 -> 后端 |
+| QoS | 1 |
+| 事件语义 | `client.status` / `client.heartbeat` |
+| 当前客户端消息类型 | `OnlineMessage` |
+
+示例：
+
+```json
+{
+  "robotId": "robot-songling-001",
+  "clientId": "robot-client-songling-001",
+  "name": "松灵四轮机器人",
+  "type": "轮式机器人",
+  "status": "online",
+  "battery": 86,
+  "controlMode": "MANUAL",
+  "stateSeq": 1024,
+  "missionStatus": "IDLE",
+  "navigationStatus": "IDLE",
+  "controlOwner": null,
+  "estopActive": false,
+  "cameras": [
+    {
+      "cameraId": "camera01",
+      "deviceId": "camera01",
+      "groupType": "dual_gimbal",
+      "name": "前向双光云台",
+      "quality": "hd"
+    }
+  ],
+  "devices": [
+    {
+      "deviceId": "base",
+      "bindingId": "bind-base",
+      "scope": "BODY",
+      "deviceType": "WHEELED_BASE",
+      "displayName": "机器人本体",
+      "vendor": "SONGLING",
+      "model": "SCOUT",
+      "onlineStatus": "online",
+      "controlStatus": "idle",
+      "enabled": true,
+      "actions": ["drive.velocity", "navigation.return_home", "docking.leave"],
+      "controlProfile": {
+        "maxLinearX": 1.0,
+        "maxLinearY": 0.4,
+        "maxAngularZ": 0.8
+      }
+    }
+  ],
+  "timestamp": "2026-06-03T10:30:00+08:00"
+}
+```
+
+#### 顶层字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `robotId` | string | 是 | 机器人 ID；应与 MQTT topic 中的 `{robotId}` 一致。 |
+| `clientId` | string | 是 | Go 客户端实例 ID，也是 MQTT clientId 的业务标识。 |
+| `name` | string | 是 | 机器人展示名称。 |
+| `type` | string | 是 | 机器人类型展示值，如 `轮式机器人`、`四足机器人`。 |
+| `battery` | number | 是 | 电量百分比，建议整数 `0-100`。 |
+| `status` | string | 是 | 客户端原始在线状态，常见 `online` / `offline`。 |
+| `controlMode` | string | 是 | 控制模式，建议值：`MANUAL`、`ASSISTED`、`NAVIGATION`。 |
+| `stateSeq` | number | 是 | 客户端状态递增序号；前端接管时会携带观测到的状态序号。 |
+| `missionStatus` | string | 否 | 任务状态，如 `IDLE`、`RUNNING`、`PAUSED`。 |
+| `navigationStatus` | string | 否 | 导航状态，如 `IDLE`、`NAVIGATING`、`PAUSED`、`ARRIVED`。 |
+| `controlOwner` | object/null | 否 | 当前控制占用者；无占用时为 `null`。 |
+| `estopActive` | boolean | 是 | 急停是否生效。 |
+| `cameras` | array | 否 | 摄像头状态列表；`online` 心跳建议携带，`offline` 也建议携带最后一次清单。 |
+| `devices` | array | 否 | 机器人本体和上装设备能力列表；用于前端展示设备面板、控制入口和能力判断。 |
+| `timestamp` | datetime | 是 | 客户端产生状态的时间，建议 ISO-8601，带时区。 |
+
+#### `cameras[]` 字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `cameraId` | string | 是 | 摄像头 ID。 |
+| `deviceId` | string | 是 | 视频源路由 ID；当前可见光和热成像按不同画面独立上报时，应分别使用不同 `deviceId`。 |
+| `groupType` | string | 是 | 相机/上装分组类型，用于前端分组、排序和控制入口判断；常见 `body`、`dual_gimbal`、`arm`。 |
+| `name` | string | 是 | 摄像头展示名称。 |
+| `quality` | string | 是 | 默认清晰度，常见：`sub`、`hd`、`main`。 |
+
+#### `devices[]` 字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `deviceId` | string | 是 | 设备 ID；本体固定为 `base`，上装设备按实际设备编号。 |
+| `bindingId` | string | 是 | 机器人与设备绑定关系 ID。 |
+| `scope` | string | 是 | 设备范围，常见 `BODY`、`PAYLOAD`、`SENSOR`、`AUDIO`、`SAFETY`。 |
+| `deviceType` | string | 是 | 设备类型，如 `WHEELED_BASE`、`QUADRUPED_BASE`、`DUAL_LIGHT_PTZ`、`AUDIO_MODULE`。 |
+| `displayName` | string | 是 | 设备展示名称。 |
+| `vendor` | string | 否 | 设备厂商。 |
+| `model` | string | 否 | 设备型号。 |
+| `onlineStatus` | string | 是 | 设备在线状态，常见 `online` / `offline`。 |
+| `controlStatus` | string | 是 | 控制状态，常见 `idle`、`locked`、`busy`、`disabled`、`fault`。 |
+| `enabled` | boolean | 是 | 平台是否启用该设备。 |
+| `actions` | array[string] | 是 | 支持的控制动作列表。 |
+| `status` | object | 否 | 设备运行状态；前端用它刷新音量、静音和开关类按钮。 |
+| `controlProfile` | object | 否 | 控制参数上限、安全策略和设备能力配置。 |
+
+`devices[].status` 当前约定：
+
+| 设备/动作 | 状态字段 | 类型 | 说明 |
+|---|---|---|---|
+| `CLIENT_AUDIO` / `VOLUME_CONTROL` / `INTERCOM` | `volume` | number | 当前音量 `0-100`。 |
+| `CLIENT_AUDIO` / `VOLUME_CONTROL` / `INTERCOM` | `muted` | boolean | 是否静音。 |
+| `LAUNCHER` / `payload.safety_switch` | `safetySwitchEnabled` | boolean | 发射器真实安全开关状态。 |
+| `WARNING_LIGHT` / `light.warning.set` | `enabled` | boolean | 警示灯是否打开。 |
+| `DUAL_LIGHT_PTZ` / `ptz.auto_rotate` | `autoRotateEnabled` | boolean | 云台自动旋转是否开启。 |
+| `DUAL_LIGHT_PTZ` / `ptz.auto_rotate` | `panSpeed` | number | 自动旋转速度。 |
+| `VEHICLE_LIGHT` / `light.vehicle.set` | `front` | object | 前灯状态，包含 `mode`、`modeCode`、`customValue`。 |
+| `VEHICLE_LIGHT` / `light.vehicle.set` | `rear` | object | 后灯状态，包含 `mode`、`modeCode`、`customValue`。 |
+
+当前 Go/Python 客户端默认会随 `devices[]` 上报以下初始状态，避免前端控制按钮长期处于“同步中”：音量/对讲 `volume=50`、`muted=false`；双光云台 `autoRotateEnabled=false`、`panSpeed=0`；左右警示灯 `enabled=false`。车灯 `front/rear` 不写入默认状态，只有收到 `light.vehicle.set` 或真实设备状态后才上报，避免把初始化占位 `OFF` 误当作真实车灯状态。
+
+车灯状态对象格式：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `mode` | string | 是 | `OFF` / `ON` / `BREATH` / `CUSTOM`。 |
+| `modeCode` | number | 是 | `0` 常关、`1` 常开、`2` 呼吸、`3` 自定义。 |
+| `customValue` | number | 是 | 自定义亮度 `0-100`；非 `CUSTOM` 时为 `0`。 |
+
+#### 触发规则
+
+| 触发时机 | `status` | 说明 |
+|---|---|---|
+| MQTT 连接成功 | `online` | 客户端订阅控制 topic 后立即上报。 |
+| MQTT 自动重连成功 | `online` | 用于后端恢复在线状态，并可能触发未关闭视频会话重启指令。 |
+| 周期心跳 | `online` | 当前客户端按配置周期上报，文档示例为 5 秒。 |
+| 客户端正常退出 | `offline` | 退出前先停本地推流/对讲，再上报离线。 |
+| 设备状态变化 | `online` | 音量/静音、云台自转、警示灯、车灯、发射器安全开关等控制生效后会刷新一次状态。 |
+
+### 2.2 实时视频状态
+
+| 项 | 内容 |
+|---|---|
+| Topic | `robot/{robotId}/media/video/status` |
+| 方向 | Go 客户端 -> 后端 |
+| QoS | 1 |
+| 事件语义 | `video.status` |
+| 当前客户端消息类型 | `StatusMessage` |
+
+示例：
+
+```json
+{
+  "sessionId": "vs_xxx",
+  "status": "streaming",
+  "trackSid": "TR_vs_xxx",
+  "trackName": "video.visible.sub",
+  "errorCode": null,
+  "message": "track published",
+  "timestamp": "2026-05-22T02:00:00+08:00"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `sessionId` | string | 是 | 视频会话 ID。当前后端 DTO 未加 `@NotBlank`，但业务处理依赖该字段。 |
+| `status` | string | 是 | 客户端视频状态，见下方状态映射。 |
+| `trackSid` | string | 否 | LiveKit Track SID；`streaming` / `track_published` 时应传。 |
+| `trackName` | string | 否 | LiveKit Track 名称；`streaming` / `track_published` 时应传。 |
+| `errorCode` | string | 否 | 失败或异常时错误码。 |
+| `message` | string | 否 | 状态说明或错误详情。 |
+| `timestamp` | datetime | 是 | 客户端产生状态的时间。当前后端未使用该字段做强校验，但协议要求上报。 |
+
+#### 视频状态映射
+
+| `status` | 触发时机 | 后端会话状态 / 前端事件 |
+|---|---|---|
+| `room_ready` | 客户端确认 Room 或发布准备就绪 | `ROOM_READY` / `video.room.ready` |
+| `publishing` | RTSP 探测成功，开始启动 publisher | `ROOM_READY` / `video.room.ready` |
+| `streaming` | Track 已发布成功 | `STREAMING` / `video.session.streaming` |
+| `track_published` | Track 已发布成功的兼容状态 | `STREAMING` / `video.session.streaming` |
+| `interrupted` | 视频链路中断 | `INTERRUPTED` / `video.session.interrupted` |
+| `stopped` | 客户端按 stop 指令停止该 session | `CLOSED` / `video.session.closed` |
+| `closed` | 客户端关闭该 session 的兼容状态 | `CLOSED` / `video.session.closed` |
+| `failed` | RTSP 探测、publisher 启动或推流失败 | `FAILED` / `video.session.failed` |
+| `error` | 失败兼容状态 | `FAILED` / `video.session.failed` |
+| 其他值 | 未显式映射状态 | 不一定改变会话主状态，广播 `video.client.status` |
+
+#### 常见 `errorCode`
+
+| `errorCode` | 说明 |
+|---|---|
+| `RTSP_PROBE_FAILED` | 客户端启动推流前 ffprobe/RTSP 探测失败。 |
+| `PUBLISH_FAILED` | publisher 进程或 LiveKit 推流失败。 |
+| `CLIENT_PUBLISH_TIMEOUT` | 后端等待客户端发布超时。 |
+| `LK_PUBLISH_TIMEOUT` | Room ready 后 LiveKit Track 发布超时。 |
+| `TRACK_INTERRUPTED_TIMEOUT` | Track 中断后恢复超时。 |
+
+### 2.3 视频会话内对讲状态
+
+| 项 | 内容 |
+|---|---|
+| Topic | `robot/{robotId}/media/video/intercom/status` |
+| 方向 | Go 客户端 -> 后端 |
+| QoS | 1 |
+| 事件语义 | `intercom.status` |
+| 当前客户端消息类型 | `IntercomStatusMessage` |
+
+示例：
+
+```json
+{
+  "sessionId": "vs_xxx",
+  "status": "active",
+  "robotAudioTrackSid": "TR_audio_robot_xxx",
+  "robotAudioTrackName": "audio.robot.mic",
+  "message": "intercom audio active",
+  "timestamp": "2026-05-25T10:00:05+08:00"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `sessionId` | string | 是 | 视频会话 ID。后端收到空值会直接忽略该消息。 |
+| `status` | string | 是 | 客户端对讲状态，见下方状态映射。 |
+| `robotAudioTrackSid` | string | 否 | 机器人麦克风发布到 LiveKit 后的 Track SID；`active` 时应传。 |
+| `robotAudioTrackName` | string | 否 | 机器人麦克风 Track 名称；`active` 时应传。 |
+| `errorCode` | string | 否 | 失败或异常时错误码。 |
+| `message` | string | 否 | 状态说明或错误详情。 |
+| `timestamp` | datetime | 是 | 客户端产生状态的时间。当前后端未强校验，但协议要求上报。 |
+
+#### 对讲状态映射
+
+| `status` | 触发时机 | 后端 / 前端事件 |
+|---|---|---|
+| `starting` | 客户端收到 intercom start，开始建立音频桥 | `video.intercom.status` 或内部过渡状态 |
+| `active` | 机器人麦克风 Track 可用，操作员音频订阅链路建立 | `video.intercom.active` |
+| `interrupted` | 对讲音频链路中断 | `video.intercom.interrupted` |
+| `failed` | 对讲启动或恢复失败 | `video.intercom.failed` |
+| `error` | 失败兼容状态 | `video.intercom.failed` |
+| `stopped` | 客户端按 stop 指令停止对讲 | `video.intercom.closed` |
+| `closed` | 对讲关闭兼容状态 | `video.intercom.closed` |
+| 其他值 | 未显式映射状态 | `video.intercom.status` |
+
+#### 常见 `errorCode`
+
+| `errorCode` | 说明 |
+|---|---|
+| `INTERCOM_START_FAILED` | 客户端启动音频桥失败。 |
+| `INTERCOM_SUBSCRIBE_FAILED` | 客户端订阅操作员音频失败。 |
+| `INTERCOM_PUBLISH_FAILED` | 客户端发布机器人麦克风 Track 失败。 |
+| `INTERCOM_TIMEOUT` | 后端或客户端判定对讲心跳/链路超时。 |
+
+## 3. HTTP 录像上传上报
+
+### 3.1 通用约束
+
+| 项 | 说明 |
+|---|---|
+| 认证/身份 | 首期通过受控机器人专网/VPN 保护，并使用请求头 `X-Robot-Id` 声明机器人身份。 |
+| Body 格式 | JSON API 使用 `Content-Type: application/json`。 |
+| 幂等 | 创建或恢复上传建议使用 `Idempotency-Key: <sourceFileId>`；完成上传建议使用 `Idempotency-Key: complete-<uploadId>`。 |
+| 文件类型 | 首期只接受 MP4，设计文档要求 `contentType=video/mp4`。 |
+
+### 3.2 创建或恢复上传
+
+| 项 | 内容 |
+|---|---|
+| API | `POST /api/media/recording-uploads` |
+| 方向 | Go 客户端 -> Media Service |
+| 当前客户端请求类型 | `createRequest` |
+| 后端 DTO | `CreateRecordingUploadRequest` |
+
+请求示例：
+
+```http
+POST /api/media/recording-uploads
+X-Robot-Id: robot-001
+Idempotency-Key: patrol-task-991/camera01/20260527T020000.mp4
+Content-Type: application/json
+```
+
+```json
+{
+  "sourceFileId": "patrol-task-991/camera01/20260527T020000.mp4",
+  "deviceId": "camera01",
+  "fileName": "patrol_20260527_100000.mp4",
+  "contentType": "video/mp4",
+  "fileSize": 734003200,
+  "sha256": "optional-sha256",
+  "recordedStartedAt": "2026-05-27T02:00:00Z",
+  "durationSeconds": 1800
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| Header `X-Robot-Id` | string | 是 | 机器人 ID，后端用它关联录像来源。 |
+| Header `Idempotency-Key` | string | 否 | 幂等键，建议使用 `sourceFileId`。设计文档建议携带，当前控制器不直接声明该参数。 |
+| `sourceFileId` | string | 是 | 客户端侧源文件唯一 ID；后端用于去重和断点续传。`@NotBlank`。 |
+| `deviceId` | string | 是 | 录像来源设备 ID，如摄像头 ID。`@NotBlank`。 |
+| `fileName` | string | 是 | 原始文件名。`@NotBlank`。 |
+| `contentType` | string | 是 | 文件类型；首期应为 `video/mp4`。`@NotBlank`。 |
+| `fileSize` | number | 是 | 文件大小，单位字节，必须大于 0。`@Positive`。 |
+| `sha256` | string | 否 | 客户端可选上报的完整文件 SHA-256，用于后续完整性校验扩展和相同源文件内容比对。当前 Go 客户端请求结构尚未填该字段。 |
+| `recordedStartedAt` | datetime | 否 | 录像开始时间。当前 Go 客户端会按文件时间推导并上报。 |
+| `durationSeconds` | number | 否 | 客户端报告的录像时长，仅作上传前参考；最终以服务端媒体检查结果为准。当前 Go 客户端请求结构尚未填该字段。 |
+
+### 3.3 获取分片上传地址
+
+| 项 | 内容 |
+|---|---|
+| API | `POST /api/media/recording-uploads/{uploadId}/part-urls` |
+| 方向 | Go 客户端 -> Media Service |
+| 后端 DTO | `PartUrlsRequest` |
+
+请求示例：
+
+```http
+POST /api/media/recording-uploads/upl_b752/part-urls
+X-Robot-Id: robot-001
+Content-Type: application/json
+```
+
+```json
+{
+  "partNumbers": [1, 2, 3, 4]
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| Path `uploadId` | string | 是 | 上传会话 ID，由创建或恢复上传接口返回。 |
+| Header `X-Robot-Id` | string | 是 | 机器人 ID。 |
+| `partNumbers` | number[] | 是 | 需要申请上传 URL 的分片序号列表。`@NotEmpty`，序号从 1 开始。 |
+
+约束：
+
+1. 一次最多申请当前可并行上传数的 URL，设计默认 2 个。
+2. URL 有效期建议 15 分钟，过期后重新申请缺失 part 即可。
+
+### 3.4 上传单个分片
+
+| 项 | 内容 |
+|---|---|
+| API | `PUT uploadUrl` |
+| 方向 | Go 客户端 -> 对象存储 |
+| Body | 当前 part 的二进制内容 |
+
+| 字段/属性 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `uploadUrl` | URL | 是 | 由 `part-urls` 接口返回的预签名地址。 |
+| Request body | binary | 是 | 对应 part 的二进制内容。 |
+| `Content-Length` | number | 是 | 当前 part 大小；Go 客户端通过 `request.ContentLength` 设置。 |
+| Response `ETag` | string | 否 | 对象存储返回的 part ETag；设计文档建议客户端本地记录，当前 Go 客户端主要依赖服务端 `ListParts` 恢复事实进度。 |
+
+### 3.5 完成 multipart 上传
+
+| 项 | 内容 |
+|---|---|
+| API | `POST /api/media/recording-uploads/{uploadId}/complete` |
+| 方向 | Go 客户端 -> Media Service |
+| Body | 无 |
+
+请求示例：
+
+```http
+POST /api/media/recording-uploads/upl_b752/complete
+X-Robot-Id: robot-001
+Idempotency-Key: complete-upl_b752
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| Path `uploadId` | string | 是 | 上传会话 ID。 |
+| Header `X-Robot-Id` | string | 是 | 机器人 ID。 |
+| Header `Idempotency-Key` | string | 否 | 幂等键，建议 `complete-<uploadId>`。当前控制器不直接声明该参数。 |
+
+服务端从对象存储查询已上传 part 并完成 multipart，不要求客户端在 body 中重新提交全部 ETag。
+
+### 3.6 查询录像处理状态
+
+| 项 | 内容 |
+|---|---|
+| API | `GET /api/media/recordings/{recordingId}/status` |
+| 方向 | Go 客户端 -> Media Service |
+| Body | 无 |
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| Path `recordingId` | string | 是 | 录像 ID，由创建或恢复上传接口返回。 |
+| Header `X-Robot-Id` | string | 是 | 机器人 ID。 |
+
+常见响应字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `recordingId` | string | 录像 ID。 |
+| `status` | string | 录像处理状态，常见 `UPLOADING`、`VERIFYING`、`PROCESSING_PLAYBACK`、`READY`、`FAILED`。 |
+| `errorCode` | string | 失败时错误码。 |
+| `message` | string | 状态说明或失败详情。 |
+| `uploadedAt` | datetime | 上传完成时间。 |
+
+## 4. 后端发给前端的 WebSocket 事件
+
+### 4.1 通道与外层结构
+
+| 通道 | 方向 | 说明 |
+|---|---|---|
+| `/ws/media` | Media Service -> 前端 | 机器人状态、视频会话、对讲、媒体错误等业务广播。 |
+| `/ws/control` | Media Service -> 前端 | 当前实现同一个 `MediaWebSocketHandler` 既接收前端控制命令，也加入媒体广播集合，因此会收到业务广播和控制命令即时回执。 |
+| `/ws/control`、`/ws/media`、`/ws/bigscreen` | Bigscreen BFF -> robot-ui | 大屏 BFF 会把中心端 WebSocket 消息原样转发给浏览器，同时在 mock 模式下本地产生 `panorama.*` 事件。 |
+
+普通业务广播外层结构：
+
+```json
+{
+  "event": "video.session.streaming",
+  "timestamp": "2026-06-03T10:30:00+08:00",
+  "data": {}
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `event` | string | 是 | 事件名。 |
+| `timestamp` | datetime/string | 是 | 后端发出事件的时间。Media Service 使用 ISO-8601 字符串；BFF mock 当前使用 `yyyy-MM-dd HH:mm:ss`。 |
+| `data` | object | 是 | 事件业务数据，结构见后续小节。 |
+
+控制命令即时回执外层结构：
+
+```json
+{
+  "type": "control.command.accepted",
+  "requestId": "req_001",
+  "timestamp": "2026-06-03T10:30:00+08:00",
+  "payload": {}
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `type` | string | 是 | 回执类型，当前为 `control.command.accepted` 或 `control.command.rejected`。 |
+| `requestId` | string | 否 | 前端控制命令携带的请求 ID；前端未传时为空字符串。 |
+| `timestamp` | datetime/string | 是 | 后端生成回执的时间。 |
+| `payload` | object | 是 | 回执业务数据。 |
+
+### 4.2 `robot.state`
+
+`robot.state` 表示机器人基础状态变化。来源包括客户端 `media/client/status` 上报、后端心跳超时离线扫描、控制服务状态更新。
+
+示例：
+
+```json
+{
+  "event": "robot.state",
+  "timestamp": "2026-06-03T10:30:00+08:00",
+  "data": {
+    "robotId": "robot-songling-001",
+    "clientId": "robot-client-songling-001",
+    "name": "松灵四轮机器人",
+    "type": "轮式机器人",
+    "status": "online",
+    "battery": 86,
+    "controlMode": "MANUAL",
+    "stateSeq": 1024,
+    "missionStatus": "IDLE",
+    "navigationStatus": "IDLE",
+    "controlOwner": null,
+    "estopActive": false,
+    "cameras": [
+      {
+        "cameraId": "camera01",
+        "deviceId": "camera01",
+        "groupType": "dual_gimbal",
+        "name": "前向双光云台",
+        "quality": "hd"
+      }
+    ],
+    "devices": [
+      {
+        "deviceId": "base",
+        "bindingId": "bind-base",
+        "scope": "BODY",
+        "deviceType": "WHEELED_BASE",
+        "displayName": "机器人本体",
+        "vendor": "SONGLING",
+        "model": "SCOUT",
+        "onlineStatus": "online",
+        "controlStatus": "idle",
+        "enabled": true,
+        "actions": ["drive.velocity", "navigation.return_home", "docking.leave"],
+        "controlProfile": {
+          "maxLinearX": 1.0,
+          "maxLinearY": 0.4,
+          "maxAngularZ": 0.8
+        }
+      },
+      {
+        "deviceId": "ptz-dual-001",
+        "bindingId": "bind-ptz-dual-001",
+        "scope": "PAYLOAD",
+        "deviceType": "DUAL_LIGHT_PTZ",
+        "displayName": "双光云台",
+        "onlineStatus": "online",
+        "controlStatus": "idle",
+        "enabled": true,
+        "actions": ["ptz.move", "ptz.auto_rotate", "ptz.home", "camera.zoom"],
+        "status": {
+          "autoRotateEnabled": false,
+          "panSpeed": 0
+        }
+      },
+      {
+        "deviceId": "warning-light-left",
+        "bindingId": "bind-warning-light-left",
+        "scope": "PAYLOAD",
+        "deviceType": "WARNING_LIGHT",
+        "displayName": "左警示灯",
+        "onlineStatus": "online",
+        "controlStatus": "idle",
+        "enabled": true,
+        "actions": ["light.warning.set"],
+        "status": {
+          "enabled": false
+        }
+      }
+    ],
+    "timestamp": "2026-06-03T10:30:00+08:00"
+  }
+}
+```
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `robotId` | string | 是 | 机器人 ID。 |
+| `clientId` | string | 是 | 客户端实例 ID。来自客户端上报；后端离线扫描兜底时可能为空字符串。 |
+| `name` | string | 是 | 机器人展示名称。 |
+| `type` | string | 是 | 机器人类型展示值。 |
+| `status` | string | 是 | 机器人在线状态，常见 `online` / `offline`。 |
+| `battery` | number | 是 | 电量百分比。 |
+| `controlMode` | string | 是 | 控制模式，常见 `MANUAL`、`ASSISTED`、`NAVIGATION`。 |
+| `stateSeq` | number | 是 | 客户端状态递增序号；后端兜底默认从 `1` 开始。 |
+| `missionStatus` | string | 否 | 任务状态，常见 `IDLE`、`RUNNING`、`PAUSED`。 |
+| `navigationStatus` | string | 否 | 导航状态，常见 `IDLE`、`NAVIGATING`、`PAUSED`、`ARRIVED`。 |
+| `controlOwner` | object/null | 否 | 当前控制占用者；无占用时为 `null`。 |
+| `estopActive` | boolean | 是 | 急停是否生效。 |
+| `cameras` | array | 否 | 摄像头清单。 |
+| `devices` | array | 否 | 机器人本体和上装设备能力列表，结构同客户端上报的 `devices[]`。 |
+| `timestamp` | datetime/string | 是 | 机器人状态时间。客户端上报时取客户端时间；后端离线扫描时取服务端时间。 |
+
+`data.cameras[]` 字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `cameraId` | string | 是 | 摄像头 ID，用于 UI 展示和摄像头选择。 |
+| `deviceId` | string | 是 | 视频源路由 ID，用于创建视频会话、控制命令 target 等。 |
+| `groupType` | string | 是 | 相机/上装分组类型，用于分组、排序和控制入口判断。 |
+| `name` | string | 是 | 摄像头展示名称。 |
+| `quality` | string | 是 | 默认清晰度，常见 `sub`、`hd`、`main`。 |
+
+### 4.3 控制命令事件
+
+#### `control.command.accepted`
+
+前端通过 WebSocket 发送 `type=control.command` 后，后端成功发布 MQTT 控制命令时，会给当前连接返回即时回执。
+
+| `payload` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `commandId` | string | 是 | 后端生成的控制命令 ID。 |
+| `status` | string | 是 | 当前固定为 `PUBLISHED`。 |
+| `robotId` | string | 是 | 目标机器人 ID。 |
+| `target` | object | 是 | 控制目标。 |
+| `target.deviceId` | string | 是 | 目标设备 ID。 |
+| `target.deviceType` | string | 是 | 目标设备类型，如 `WHEELED_BASE`、`PTZ`。 |
+| `action` | string | 是 | 控制动作，如 `drive.velocity`、`ptz.move`、`camera.zoom`。 |
+| `issuedAt` | datetime/string | 是 | 命令签发时间。 |
+
+#### `control.command.rejected`
+
+命令参数非法、目标设备不存在或发布异常时，后端会给当前连接返回拒绝回执。
+
+| `payload` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `code` | string | 是 | 当前固定使用 `CONTROL_COMMAND_REJECTED`。 |
+| `message` | string | 是 | 拒绝原因。 |
+
+#### `control.command.published`
+
+命令成功发布后，后端同时向已连接 WebSocket 客户端广播业务事件。
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `commandId` | string | 是 | 后端生成的控制命令 ID。 |
+| `status` | string | 是 | 当前固定为 `PUBLISHED`。 |
+| `robotId` | string | 是 | 目标机器人 ID。 |
+| `target` | object | 是 | 控制目标，结构同 `control.command.accepted.payload.target`。 |
+| `action` | string | 是 | 控制动作。 |
+| `issuedAt` | datetime/string | 是 | 命令签发时间。 |
+
+### 4.4 视频会话通用结构 `VideoSessionResponse`
+
+下列事件的 `data` 为完整视频会话结构：
+
+| 事件 | 触发语义 |
+|---|---|
+| `video.session.created` | 创建视频会话或创建对讲承载会话。 |
+| `video.session.reused` | 复用已有 Room/Track。 |
+| `video.track.published` | 后端确认 LiveKit Track 已发布。 |
+| `video.session.streaming` | 会话进入 `STREAMING`。 |
+| `video.session.stopping` | 空闲释放时进入停止中。 |
+| `video.session.closed` | 会话关闭。 |
+| `video.viewer.changed` | 观看人数变化。 |
+| `video.intercom.starting` | 对讲启动中。 |
+| `video.intercom.stopping` | 对讲停止中。 |
+| `video.intercom.active` | 机器人麦克风 Track 可用。 |
+| `video.intercom.closed` | 对讲关闭。 |
+
+`VideoSessionResponse` 字段：
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `sessionId` | string | 是 | 视频会话 ID。 |
+| `robotId` | string | 是 | 机器人 ID。 |
+| `deviceId` | string | 是 | 视频源设备 ID。 |
+| `channel` | string | 是 | 视频通道枚举，如 `visible`、`thermal`。 |
+| `quality` | string | 是 | 视频会话清晰度枚举，当前为 `sub`、`main`、`auto`。 |
+| `status` | string | 是 | 会话状态，如 `INIT`、`ROOM_READY`、`REQUESTING_CLIENT`、`STREAMING`、`IDLE_WAIT`、`STOPPING`、`CLOSED`、`FAILED`。 |
+| `roomName` | string | 是 | LiveKit Room 名称。 |
+| `livekitUrl` | string | 是 | LiveKit 连接地址。 |
+| `viewerToken` | string/null | 否 | 浏览器观看 token。REST 创建/查询时常有值，WebSocket 广播中通常为 `null`。 |
+| `trackSid` | string/null | 否 | 视频 Track SID。发布前为空。 |
+| `trackName` | string/null | 否 | 视频 Track 名称。发布前为空。 |
+| `viewerCount` | number | 是 | 当前观看人数。 |
+| `intercomStatus` | string | 是 | 对讲状态，如 `IDLE`、`STARTING`、`ACTIVE`、`STOPPING`、`INTERRUPTED`、`FAILED`。 |
+| `intercomAudioOnly` | boolean | 是 | 对讲是否处于纯音频承载模式。 |
+| `intercomOperatorId` | string/null | 否 | 当前对讲占用操作员 ID。 |
+| `robotAudioTrackSid` | string/null | 否 | 机器人麦克风 Track SID。 |
+| `robotAudioTrackName` | string/null | 否 | 机器人麦克风 Track 名称。 |
+| `lastErrorCode` | string/null | 否 | 最近一次错误码。 |
+| `lastErrorMessage` | string/null | 否 | 最近一次错误说明。 |
+| `createdAt` | datetime/string | 是 | 会话创建时间。 |
+| `updatedAt` | datetime/string | 是 | 会话更新时间。 |
+
+### 4.5 视频会话轻量事件
+
+| 事件 | `data` 字段 | 必填 | 说明 |
+|---|---|---:|---|
+| `video.room.ready` | `sessionId` string, `roomName` string | 是 | 后端已创建 LiveKit Room，准备下发客户端推流命令。客户端上报 `publishing` / `room_ready` 时，该事件也可能携带完整 `VideoSessionResponse`。 |
+| `video.client.requested` | `sessionId` string, `commandId` string, `timeoutSeconds` number | 是 | 首次请求机器人客户端开始推流。 |
+| `video.track.switching` | `sessionId` string, `commandId` string | 是 | 请求机器人客户端切换视频源或清晰度。 |
+| `video.session.restart` | `sessionId` string, `commandId` string | 是 | 手动重启视频会话推流。 |
+| `video.session.auto_restart` | `sessionId` string, `commandId` string | 是 | 后端定时任务自动恢复中断会话。 |
+| `video.client.online_restart` | `sessionId` string, `commandId` string | 是 | 机器人客户端离线后重新上线，后端恢复未关闭会话。 |
+| `video.session.idle_wait` | `sessionId` string, `idleReleaseDelaySeconds` number | 是 | 观看人数为 0 且无需保持对讲，进入空闲等待。 |
+| `video.session.interrupted` | `sessionId` string, `message` string | 是 | 客户端上报视频链路中断。 |
+| `video.session.failed` | `sessionId` string, `errorCode` string, `message` string | 是 | 推流失败、超时或其他会话失败。 |
+| `video.client.status` | `sessionId` string, `status` string, `message` string | 是 | 客户端上报未显式映射的视频状态。 |
+| `video.intercom.interrupted` | `sessionId` string, `message` string | 是 | 对讲链路中断或心跳超时。 |
+| `video.intercom.failed` | `sessionId` string, `errorCode` string, `message` string | 是 | 对讲启动、发布或订阅失败。 |
+| `video.intercom.status` | `sessionId` string, `status` string, `message` string | 是 | 客户端上报未显式映射的对讲状态。 |
+
+`video.room.ready` 两种载荷说明：
+
+1. 后端主动创建 Room 并准备下发客户端推流命令时，`data` 为 `{ "sessionId": "...", "roomName": "..." }`。
+2. 客户端通过 MQTT 上报 `status=room_ready` 或 `status=publishing` 时，后端将会话切为 `ROOM_READY`，此时 `data` 为完整 `VideoSessionResponse`。
+
+### 4.6 抓拍事件
+
+抓拍事件同样通过普通业务广播外层结构发送，`event` 为 `snapshot.*`。
+
+#### `snapshot.requested`
+
+后端创建抓拍任务后广播。
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `snapshotId` | string | 是 | 抓拍任务 ID。 |
+| `sessionId` | string | 是 | 视频会话 ID。 |
+| `trackSid` | string | 是 | 当前用于抓拍的视频 Track SID。 |
+| `source` | string | 是 | 抓拍来源，当前为 `livekit_track`。 |
+| `createdBy` | string | 是 | 发起抓拍的用户 ID。 |
+
+#### `snapshot.completed`
+
+抓拍图片上传或生成完成后广播。
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `snapshotId` | string | 是 | 抓拍任务 ID。 |
+| `officialObjectKey` | string | 是 | 正式图片对象存储 key。 |
+| `capturedAt` | datetime/string | 是 | 服务端确认的抓拍时间。 |
+| `source` | string | 是 | 抓拍来源。 |
+
+#### `snapshot.failed`
+
+抓拍任务失败后广播。
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `snapshotId` | string | 是 | 抓拍任务 ID。 |
+| `errorCode` | string | 是 | 失败错误码。 |
+| `message` | string | 是 | 失败说明。 |
+
+### 4.7 大屏 BFF `panorama.*` 事件
+
+BFF WebSocket 会把中心端消息原样桥接给 robot-ui。mock 模式下，本地定时广播以下结构：
+
+#### `panorama.device.status.changed`
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `robotId` | string | 是 | 机器人 ID。 |
+| `status` | string | 是 | 在线状态，mock 当前固定 `online`。 |
+| `battery` | number | 是 | 电量百分比。 |
+| `controlMode` | string | 是 | 控制模式，mock 当前为 `MANUAL`。 |
+| `speed` | number | 是 | 当前速度。 |
+
+#### `panorama.device.location.changed`
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `robotId` | string | 是 | 机器人 ID。 |
+| `location` | object | 是 | 位置信息。 |
+| `location.lng` | number | 是 | 经度。 |
+| `location.lat` | number | 是 | 纬度。 |
+| `location.altitude` | number/null | 否 | 海拔。 |
+| `location.address` | string | 否 | 位置名称。 |
+| `location.updatedAt` | datetime/string | 是 | 位置更新时间。 |
+
+#### `panorama.task.changed`
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `taskId` | string | 是 | 任务 ID。 |
+| `task` | object | 是 | 任务详情。 |
+| `task.taskId` | string | 是 | 任务 ID。 |
+| `task.name` | string | 是 | 任务名称。 |
+| `task.status` | string | 是 | 任务状态，如 `running`、`paused`。 |
+| `task.statusName` | string | 是 | 任务状态展示名。 |
+| `task.timeRange` | string | 否 | 任务时间范围。 |
+| `task.currentLocation` | string | 否 | 当前任务位置。 |
+
+#### `panorama.alarm.changed`
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `alarmId` | string | 是 | 告警 ID。 |
+| `alarm` | object | 是 | 告警详情。 |
+| `alarm.alarmId` | string | 是 | 告警 ID。 |
+| `alarm.title` | string | 是 | 告警标题。 |
+| `alarm.category` | string | 是 | 告警分类编码。 |
+| `alarm.categoryName` | string | 是 | 告警分类展示名。 |
+| `alarm.level` | string | 是 | 告警等级编码。 |
+| `alarm.levelName` | string | 是 | 告警等级展示名。 |
+| `alarm.eventTime` | datetime/string | 是 | 告警发生时间。 |
+| `alarm.location` | string | 否 | 告警位置。 |
+| `alarm.robotId` | string | 否 | 关联机器人 ID。 |
+| `alarm.deviceName` | string | 否 | 关联设备展示名。 |
+| `alarm.taskId` | string | 否 | 关联任务 ID。 |
+| `alarm.taskName` | string | 否 | 关联任务名称。 |
+| `alarm.status` | string | 是 | 告警处理状态，如 `unhandled`、`handling`。 |
+| `alarm.snapshotUrl` | object | 否 | 告警图片地址集合。 |
+| `alarm.snapshotUrl.visible` | string | 否 | 可见光图片地址。 |
+| `alarm.snapshotUrl.thermal` | string | 否 | 热成像图片地址。 |
+| `alarm.snapshotUrl.front` | string | 否 | 前向图片地址。 |
+
+#### `panorama.stats.changed`
+
+| `data` 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `deviceStats` | object | 是 | 设备数量统计。 |
+| `deviceStats.total` | number | 是 | 总设备数。 |
+| `deviceStats.online` | number | 是 | 在线设备数。 |
+| `deviceStats.fault` | number | 是 | 故障设备数。 |
+| `deviceStats.offline` | number | 是 | 离线设备数。 |
+| `deviceTypeStats` | array | 是 | 设备类型统计数组。 |
+| `deviceTypeStats[].type` | string | 是 | 设备类型编码。 |
+| `deviceTypeStats[].name` | string | 是 | 设备类型展示名。 |
+| `deviceTypeStats[].count` | number | 是 | 数量。 |
+| `alarmStats` | object | 是 | 告警数量统计。 |
+| `alarmStats.high` | number | 是 | 高风险数量。 |
+| `alarmStats.medium` | number | 是 | 中风险数量。 |
+| `alarmStats.low` | number | 是 | 低风险数量。 |
+
+### 4.8 客户端上报与后端广播关系
+
+客户端上报消息被后端消费后，会转换为面向前端的 WebSocket 业务事件。客户端不直接上报这些 WebSocket 事件名，但需要理解状态映射。
+
+| 客户端上报 | 关键字段 | 后端广播事件 |
+|---|---|---|
+| `media/client/status` | `status=online/offline`，机器人状态、摄像头清单和设备状态 | `robot.state` |
+| `media/client/status` | 离线转在线且存在待恢复视频会话 | `video.client.online_restart` |
+| `media/video/status` | `status=publishing` / `room_ready` | `video.room.ready` |
+| `media/video/status` | `status=streaming` / `track_published` | `video.session.streaming` |
+| `media/video/status` | `status=interrupted` | `video.session.interrupted` |
+| `media/video/status` | `status=failed` / `error` | `video.session.failed` |
+| `media/video/status` | `status=stopped` / `closed` | `video.session.closed` |
+| `media/video/status` | 未显式映射状态 | `video.client.status` |
+| `media/video/intercom/status` | `status=active` | `video.intercom.active` |
+| `media/video/intercom/status` | `status=interrupted` | `video.intercom.interrupted` |
+| `media/video/intercom/status` | `status=failed` / `error` | `video.intercom.failed` |
+| `media/video/intercom/status` | `status=stopped` / `closed` | `video.intercom.closed` |
+| `media/video/intercom/status` | 未显式映射状态 | `video.intercom.status` |
+
+## 5. 实现注意事项
+
+1. `media/client/status` 是机器人基础状态、视频源清单和设备能力清单的统一入口；当前重新承载 `devices[]`。
+2. `stateSeq` 必须单调递增。前端接管控制时会用它判断状态是否过旧。
+3. 视频 `streaming` 和对讲 `active` 状态应尽量携带 Track SID/Track Name，否则前端可能只能看到状态变化，无法精确绑定媒体 Track。
+4. `timestamp` 建议统一使用 ISO-8601 带时区格式，例如 `2026-06-03T10:30:00+08:00`。
+5. 录像上传首期不走 MQTT，不占用实时视频或控制 topic；所有上传 JSON API 都应带 `X-Robot-Id`。
+6. 当前后端对 MQTT 状态 DTO 的字段强校验较少，客户端仍应按本文“必填”列发送完整字段，避免消息被忽略或落入异常分支。

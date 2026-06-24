@@ -252,6 +252,20 @@ GET /api/bigscreen/panorama/overview
           "quality": "sub"
         }
       ],
+      "devices": [
+        {
+          "deviceId": "camera01",
+          "name": "前向双光云台",
+          "type": "DUAL_GIMBAL",
+          "status": "online"
+        },
+        {
+          "deviceId": "audio-control-001",
+          "name": "客户端音频",
+          "type": "CLIENT_AUDIO",
+          "status": "online"
+        }
+      ],
       "stateSeq": 1,
       "fault": false,
       "alarmLevel": null,
@@ -380,6 +394,7 @@ GET /api/bigscreen/panorama/devices/{deviceId}
   "battery": 100,
   "lastHeartbeatAt": "2026-06-12 11:30:58",
   "cameras": [],
+  "devices": [],
   "stateSeq": 1,
   "alarmStatus": "none",
   "alarmText": "-",

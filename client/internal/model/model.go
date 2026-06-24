@@ -71,6 +71,7 @@ type OnlineMessage struct {
 	ControlOwner     any       `json:"controlOwner"`
 	EstopActive      bool      `json:"estopActive"`
 	Cameras          []Camera  `json:"cameras,omitempty"`
+	Devices          []Device  `json:"devices,omitempty"`
 	Timestamp        time.Time `json:"timestamp"`
 }
 
@@ -80,6 +81,23 @@ type Camera struct {
 	GroupType string `json:"groupType"`
 	Name      string `json:"name"`
 	Quality   string `json:"quality"`
+}
+
+type Device struct {
+	DeviceID       string         `json:"deviceId"`
+	BindingID      string         `json:"bindingId"`
+	Scope          string         `json:"scope"`
+	DeviceType     string         `json:"deviceType"`
+	DisplayName    string         `json:"displayName"`
+	Vendor         string         `json:"vendor,omitempty"`
+	Model          string         `json:"model,omitempty"`
+	OnlineStatus   string         `json:"onlineStatus"`
+	ControlStatus  string         `json:"controlStatus"`
+	Enabled        bool           `json:"enabled"`
+	RiskLevel      string         `json:"riskLevel,omitempty"`
+	Actions        []string       `json:"actions"`
+	Status         map[string]any `json:"status,omitempty"`
+	ControlProfile map[string]any `json:"controlProfile,omitempty"`
 }
 
 type ControlCommand struct {

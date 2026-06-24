@@ -40,6 +40,7 @@ public class EquipmentControlService {
                     item.put("battery", valueOrDefault(state, "battery", item.get("battery")));
                     item.put("lastHeartbeatAt", valueOrDefault(state, "timestamp", item.get("lastHeartbeatAt")));
                     item.put("cameras", valueOrDefault(state, "cameras", item.get("cameras")));
+                    item.put("devices", valueOrDefault(state, "devices", item.get("devices")));
                     item.put("status", valueOrDefault(state, "status", "offline"));
                     return item;
                 })
@@ -264,15 +265,19 @@ public class EquipmentControlService {
             Map<String, Object> rear = mapValue(params.get("rear"));
             int frontMode = vehicleLightMode(front);
             int rearMode = vehicleLightMode(rear);
+            Map<String, Object> frontStatus = vehicleLightPart(front, frontMode);
+            Map<String, Object> rearStatus = vehicleLightPart(rear, rearMode);
             return object(
+                    "front", frontStatus,
+                    "rear", rearStatus,
                     "op", "publish",
                     "topic", "/robot_light_ctl",
                     "type", "robot_status_core/RobotLightCmd",
                     "msg", object(
                             "front_mode", frontMode,
-                            "front_custom_value", frontMode == 3 ? clampedInt(front.get("customValue"), 0, 0, 100) : 0,
+                            "front_custom_value", frontMode == 3 ? frontStatus.get("customValue") : 0,
                             "rear_mode", rearMode,
-                            "rear_custom_value", rearMode == 3 ? clampedInt(rear.get("customValue"), 0, 0, 100) : 0));
+                            "rear_custom_value", rearMode == 3 ? rearStatus.get("customValue") : 0));
         }
         if ("payload.fire".equals(action)) {
             return object("channel", numberValue(params.get("channel"), 1).intValue());
@@ -365,6 +370,7 @@ public class EquipmentControlService {
                 "navigationStatus", "IDLE",
                 "controlOwner", null,
                 "estopActive", false,
+                "devices", devices(String.valueOf(robot.get("robotId"))),
                 "status", "offline",
                 "timestamp", OffsetDateTime.now().toString());
     }
@@ -392,6 +398,7 @@ public class EquipmentControlService {
                         "status", "offline",
                         "battery", 86,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
+                        "devices", devices("robot-001"),
                         "cameras", List.of(
                                 camera("camera01", "dual_gimbal", "云台-可见光"),
                                 camera("camera02", "dual_gimbal", "云台-热成像"),
@@ -406,6 +413,7 @@ public class EquipmentControlService {
                         "status", "offline",
                         "battery", 78,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
+                        "devices", devices("robot-002"),
                         "cameras", List.of(camera("camera04", "dual_gimbal", "头部双光云台"))),
                 object(
                         "robotId", "robot-unitree-001",
@@ -417,6 +425,7 @@ public class EquipmentControlService {
                         "status", "offline",
                         "battery", 92,
                         "lastHeartbeatAt", OffsetDateTime.now().toString(),
+                        "devices", devices("robot-unitree-001"),
                         "cameras", List.of(camera("camera07", "dual_gimbal", "双光云台"))));
     }
 
@@ -515,6 +524,9 @@ public class EquipmentControlService {
                 "controlStatus", "idle",
                 "enabled", true,
                 "actions", List.of("ptz.move", "ptz.auto_rotate", "ptz.home", "camera.zoom"),
+                "status", object(
+                        "autoRotateEnabled", false,
+                        "panSpeed", 0),
                 "controlProfile", object(
                         "maxPanSpeed", 1.0,
                         "maxTiltSpeed", 1.0,
@@ -577,6 +589,7 @@ public class EquipmentControlService {
                 "controlStatus", "idle",
                 "enabled", true,
                 "actions", List.of("light.warning.set"),
+                "status", object("enabled", false),
                 "controlProfile", object("modes", List.of("ON", "OFF")));
     }
 
@@ -674,6 +687,23 @@ public class EquipmentControlService {
             case "BREATH" -> 2;
             case "CUSTOM" -> 3;
             default -> 0;
+        };
+    }
+
+    private static Map<String, Object> vehicleLightPart(Map<String, Object> part, int modeCode) {
+        int customValue = modeCode == 3 ? clampedInt(part.get("customValue"), 0, 0, 100) : 0;
+        return object(
+                "mode", vehicleLightModeName(modeCode),
+                "modeCode", modeCode,
+                "customValue", customValue);
+    }
+
+    private static String vehicleLightModeName(int modeCode) {
+        return switch (modeCode) {
+            case 1 -> "ON";
+            case 2 -> "BREATH";
+            case 3 -> "CUSTOM";
+            default -> "OFF";
         };
     }
 

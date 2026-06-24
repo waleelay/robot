@@ -29,6 +29,7 @@ type Client struct {
 	stateSeq    int64
 	audioVolume int
 	audioMuted  bool
+	deviceState map[string]map[string]any
 }
 
 func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publisher, intercomManager intercom.Manager) *Client {
@@ -40,6 +41,7 @@ func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publish
 		lastCmds:    make(map[string]string),
 		audioVolume: 50,
 		audioMuted:  false,
+		deviceState: make(map[string]map[string]any),
 	}
 }
 
@@ -217,37 +219,72 @@ func (c *Client) handleControlCommand() paho.MessageHandler {
 		}
 		pretty, _ := json.MarshalIndent(command, "", "  ")
 		log.Println("equipment control command received topic=", msg.Topic(), "payload=", string(pretty))
-		if c.applyAudioCommand(command) {
+		if c.applyControlCommand(command) {
 			c.online("online")
 		}
 	}
 }
 
-func (c *Client) applyAudioCommand(command model.ControlCommand) bool {
-	if command.Target.DeviceType != "CLIENT_AUDIO" && command.Target.DeviceType != "VOLUME_CONTROL" && command.Target.DeviceType != "INTERCOM" {
-		return false
-	}
+func (c *Client) applyControlCommand(command model.ControlCommand) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	changed := false
 	switch command.Action {
 	case "volume.set":
 		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume), 0, 100)
 		c.audioMuted = anyBool(command.Params["muted"], false)
+		c.setDeviceStateLocked(command.Target.DeviceID, "volume", c.audioVolume)
+		c.setDeviceStateLocked(command.Target.DeviceID, "muted", c.audioMuted)
+		changed = true
 	case "volume.up":
 		step := clampInt(anyInt(command.Params["step"], 5), 1, 100)
 		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume+step), 0, 100)
 		c.audioMuted = anyBool(command.Params["muted"], false)
+		c.setDeviceStateLocked(command.Target.DeviceID, "volume", c.audioVolume)
+		c.setDeviceStateLocked(command.Target.DeviceID, "muted", c.audioMuted)
+		changed = true
 	case "volume.down":
 		step := clampInt(anyInt(command.Params["step"], 5), 1, 100)
 		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume-step), 0, 100)
 		c.audioMuted = anyBool(command.Params["muted"], false)
+		c.setDeviceStateLocked(command.Target.DeviceID, "volume", c.audioVolume)
+		c.setDeviceStateLocked(command.Target.DeviceID, "muted", c.audioMuted)
+		changed = true
 	case "volume.mute":
 		c.audioMuted = anyBool(command.Params["muted"], true)
 		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume), 0, 100)
-	default:
-		return false
+		c.setDeviceStateLocked(command.Target.DeviceID, "volume", c.audioVolume)
+		c.setDeviceStateLocked(command.Target.DeviceID, "muted", c.audioMuted)
+		changed = true
+	case "payload.safety_switch":
+		c.setDeviceStateLocked(command.Target.DeviceID, "safetySwitchEnabled", anyBool(command.Params["enabled"], false))
+		changed = true
+	case "light.warning.set":
+		c.setDeviceStateLocked(command.Target.DeviceID, "enabled", anyBool(command.Params["enabled"], false))
+		changed = true
+	case "ptz.auto_rotate":
+		c.setDeviceStateLocked(command.Target.DeviceID, "autoRotateEnabled", anyBool(command.Params["enabled"], false))
+		c.setDeviceStateLocked(command.Target.DeviceID, "panSpeed", anyFloat(command.Params["panSpeed"], 0))
+		changed = true
+	case "light.vehicle.set":
+		front, rear := vehicleLightState(command.Params)
+		c.setDeviceStateLocked(command.Target.DeviceID, "front", front)
+		c.setDeviceStateLocked(command.Target.DeviceID, "rear", rear)
+		changed = true
 	}
-	return true
+	return changed
+}
+
+func (c *Client) setDeviceStateLocked(deviceID string, key string, value any) {
+	if deviceID == "" {
+		return
+	}
+	status := c.deviceState[deviceID]
+	if status == nil {
+		status = make(map[string]any)
+		c.deviceState[deviceID] = status
+	}
+	status[key] = value
 }
 
 func (c *Client) status(sessionID, status, trackSid, trackName, errorCode, message string) {
@@ -313,6 +350,7 @@ func (c *Client) online(status string) {
 		ControlOwner:     nil,
 		EstopActive:      false,
 		Cameras:          c.cameras(),
+		Devices:          c.devices(),
 		Timestamp:        time.Now(),
 	})
 }
@@ -329,6 +367,46 @@ func (c *Client) cameras() []model.Camera {
 		})
 	}
 	return items
+}
+
+func (c *Client) devices() []model.Device {
+	items := make([]model.Device, 0, len(c.cfg.Devices))
+	for _, device := range c.cfg.Devices {
+		items = append(items, model.Device{
+			DeviceID:       device.DeviceID,
+			BindingID:      device.BindingID,
+			Scope:          device.Scope,
+			DeviceType:     device.DeviceType,
+			DisplayName:    device.DisplayName,
+			Vendor:         device.Vendor,
+			Model:          device.Model,
+			OnlineStatus:   device.OnlineStatus,
+			ControlStatus:  device.ControlStatus,
+			Enabled:        device.Enabled,
+			RiskLevel:      device.RiskLevel,
+			Actions:        append([]string(nil), device.Actions...),
+			Status:         c.deviceStatus(device),
+			ControlProfile: device.ControlProfile,
+		})
+	}
+	return items
+}
+
+func (c *Client) deviceStatus(device config.Device) map[string]any {
+	status := copyStringAnyMap(device.Status)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key, value := range c.deviceState[device.DeviceID] {
+		status[key] = value
+	}
+	if device.DeviceID == "audio-control-001" || device.DeviceType == "CLIENT_AUDIO" || device.DeviceType == "VOLUME_CONTROL" || device.DeviceType == "INTERCOM" {
+		status["volume"] = c.audioVolume
+		status["muted"] = c.audioMuted
+	}
+	if len(status) == 0 {
+		return nil
+	}
+	return status
 }
 
 func (c *Client) rtspURL(deviceID string, quality string) string {
@@ -373,6 +451,68 @@ func anyBool(value any, fallback bool) bool {
 		return item
 	}
 	return fallback
+}
+
+func anyFloat(value any, fallback float64) float64 {
+	switch item := value.(type) {
+	case float64:
+		return item
+	case float32:
+		return float64(item)
+	case int:
+		return float64(item)
+	case int64:
+		return float64(item)
+	case int32:
+		return float64(item)
+	default:
+		return fallback
+	}
+}
+
+func copyAnyMap(value any) map[string]any {
+	source, ok := value.(map[string]any)
+	if !ok {
+		return map[string]any{}
+	}
+	return copyStringAnyMap(source)
+}
+
+func vehicleLightState(params map[string]any) (map[string]any, map[string]any) {
+	front := copyAnyMap(params["front"])
+	rear := copyAnyMap(params["rear"])
+	if len(front) > 0 || len(rear) > 0 {
+		return front, rear
+	}
+	msg := copyAnyMap(params["msg"])
+	return vehicleLightPart(anyInt(msg["front_mode"], 0), anyInt(msg["front_custom_value"], 0)),
+		vehicleLightPart(anyInt(msg["rear_mode"], 0), anyInt(msg["rear_custom_value"], 0))
+}
+
+func vehicleLightPart(modeCode int, customValue int) map[string]any {
+	if modeCode < 0 || modeCode > 3 {
+		modeCode = 0
+	}
+	mode := map[int]string{0: "OFF", 1: "ON", 2: "BREATH", 3: "CUSTOM"}[modeCode]
+	if modeCode != 3 {
+		customValue = 0
+	}
+	return map[string]any{
+		"mode":        mode,
+		"modeCode":    modeCode,
+		"customValue": clampInt(customValue, 0, 100),
+	}
+}
+
+func copyStringAnyMap(source map[string]any) map[string]any {
+	if len(source) == 0 {
+		return map[string]any{}
+	}
+	result := make(map[string]any, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 func clampInt(value, min, max int) int {

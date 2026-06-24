@@ -21,6 +21,7 @@ type Config struct {
 	RTSPThermalSub           string
 	RTSPThermalMain          string
 	Cameras                  []Camera
+	Devices                  []Device
 	FFprobePath              string
 	PublisherCmd             string
 	FFmpegPublisherCmd       string
@@ -57,6 +58,23 @@ type Camera struct {
 	RTSPSubURL  string
 }
 
+type Device struct {
+	DeviceID       string
+	BindingID      string
+	Scope          string
+	DeviceType     string
+	DisplayName    string
+	Vendor         string
+	Model          string
+	OnlineStatus   string
+	ControlStatus  string
+	Enabled        bool
+	RiskLevel      string
+	Actions        []string
+	Status         map[string]any
+	ControlProfile map[string]any
+}
+
 func Load() Config {
 	robotID := env("ROBOT_ID", "robot-001")
 	return Config{
@@ -73,6 +91,7 @@ func Load() Config {
 		RTSPThermalSub:           env("RTSP_THERMAL_SUB", "rtsp://admin:okwy1688@192.168.1.65:554/Streaming/Channels/102"),
 		RTSPThermalMain:          env("RTSP_THERMAL_MAIN", "rtsp://admin:okwy1688@192.168.1.65:554/Streaming/Channels/102"),
 		Cameras:                  cameras(robotID),
+		Devices:                  devices(robotID),
 		FFprobePath:              env("FFPROBE_PATH", "ffprobe"),
 		PublisherCmd:             env("PUBLISHER_CMD", ""),
 		FFmpegPublisherCmd:       env("FFMPEG_PUBLISHER_CMD", "./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}"),
@@ -96,6 +115,201 @@ func Load() Config {
 		LocalMinFreeBytes:        envInt64("RECORDING_LOCAL_MIN_FREE_BYTES", 10737418240),
 		LocalRetentionAfterReady: time.Duration(envInt("RECORDING_LOCAL_RETENTION_AFTER_READY_HOURS", 24)) * time.Hour,
 	}
+}
+
+func devices(robotID string) []Device {
+	baseType := "WHEELED_BASE"
+	baseVendor := "SONGLING"
+	baseModel := "SCOUT"
+	maxLinearX := 1.0
+	maxLinearY := 0.4
+	maxAngularZ := 0.8
+	if robotID == "robot-002" {
+		baseType = "QUADRUPED_BASE"
+		baseVendor = "DEEPNROBOTICS"
+		baseModel = "X30"
+		maxLinearX = 0.8
+		maxAngularZ = 0.6
+	}
+	items := []Device{
+		{
+			DeviceID:      "base",
+			BindingID:     "bind-base",
+			Scope:         "BODY",
+			DeviceType:    baseType,
+			DisplayName:   "机器人本体",
+			Vendor:        baseVendor,
+			Model:         baseModel,
+			OnlineStatus:  "online",
+			ControlStatus: "idle",
+			Enabled:       true,
+			Actions:       []string{"drive.velocity", "navigation.return_home", "docking.leave"},
+			ControlProfile: map[string]any{
+				"maxLinearX":         maxLinearX,
+				"maxLinearY":         maxLinearY,
+				"maxAngularZ":        maxAngularZ,
+				"controlFrameRateHz": 10,
+			},
+		},
+		{
+			DeviceID:      "ptz-dual-001",
+			BindingID:     "bind-ptz-dual-001",
+			Scope:         "PAYLOAD",
+			DeviceType:    "DUAL_LIGHT_PTZ",
+			DisplayName:   "双光云台",
+			Vendor:        "CUSTOM",
+			Model:         "DL-PTZ-01",
+			OnlineStatus:  "online",
+			ControlStatus: "idle",
+			Enabled:       true,
+			Actions:       []string{"ptz.move", "ptz.auto_rotate", "ptz.home", "camera.zoom"},
+			Status: map[string]any{
+				"autoRotateEnabled": false,
+				"panSpeed":          0,
+			},
+			ControlProfile: map[string]any{
+				"maxPanSpeed":        1.0,
+				"maxTiltSpeed":       1.0,
+				"controlFrameRateHz": 10,
+			},
+		},
+		{
+			DeviceID:      "audio-control-001",
+			BindingID:     "bind-audio-control-001",
+			Scope:         "AUDIO",
+			DeviceType:    "CLIENT_AUDIO",
+			DisplayName:   "客户端音量",
+			OnlineStatus:  "online",
+			ControlStatus: "idle",
+			Enabled:       true,
+			Actions:       []string{"volume.set", "volume.up", "volume.down", "volume.mute"},
+			Status: map[string]any{
+				"volume": 50,
+				"muted":  false,
+			},
+			ControlProfile: map[string]any{
+				"step":      5,
+				"minVolume": 0,
+				"maxVolume": 100,
+			},
+		},
+	}
+	if robotID != "robot-unitree-001" {
+		items = append(items,
+			Device{
+				DeviceID:      "launcher-001",
+				BindingID:     "bind-launcher-001",
+				Scope:         "PAYLOAD",
+				DeviceType:    "LAUNCHER",
+				DisplayName:   "六联发射器",
+				Vendor:        "CUSTOM",
+				Model:         "LCH-06",
+				OnlineStatus:  "online",
+				ControlStatus: "idle",
+				Enabled:       true,
+				RiskLevel:     "HIGH",
+				Actions:       []string{"payload.safety_switch", "payload.fire"},
+				ControlProfile: map[string]any{
+					"channels":             []int{1, 2, 3, 4, 5, 6},
+					"requiresConfirm":      true,
+					"requiresSafetySwitch": true,
+				},
+			},
+			Device{
+				DeviceID:      "net-gun-001",
+				BindingID:     "bind-net-gun-001",
+				Scope:         "PAYLOAD",
+				DeviceType:    "NET_GUN",
+				DisplayName:   "捕网枪",
+				Vendor:        "CUSTOM",
+				Model:         "NL-01",
+				OnlineStatus:  "online",
+				ControlStatus: "idle",
+				Enabled:       true,
+				RiskLevel:     "HIGH",
+				Actions:       []string{"payload.fire"},
+				ControlProfile: map[string]any{
+					"requiresConfirm": true,
+					"cooldownMs":      3000,
+				},
+			})
+	}
+	items = append(items,
+		Device{
+			DeviceID:      "warning-light-left",
+			BindingID:     "bind-warning-light-left",
+			Scope:         "PAYLOAD",
+			DeviceType:    "WARNING_LIGHT",
+			DisplayName:   "左警示灯",
+			Vendor:        "CUSTOM",
+			Model:         "WL-01",
+			OnlineStatus:  "online",
+			ControlStatus: "idle",
+			Enabled:       true,
+			Actions:       []string{"light.warning.set"},
+			Status: map[string]any{
+				"enabled": false,
+			},
+			ControlProfile: map[string]any{
+				"modes": []string{"ON", "OFF"},
+			},
+		},
+		Device{
+			DeviceID:      "warning-light-right",
+			BindingID:     "bind-warning-light-right",
+			Scope:         "PAYLOAD",
+			DeviceType:    "WARNING_LIGHT",
+			DisplayName:   "右警示灯",
+			Vendor:        "CUSTOM",
+			Model:         "WL-01",
+			OnlineStatus:  "online",
+			ControlStatus: "idle",
+			Enabled:       true,
+			Actions:       []string{"light.warning.set"},
+			Status: map[string]any{
+				"enabled": false,
+			},
+			ControlProfile: map[string]any{
+				"modes": []string{"ON", "OFF"},
+			},
+		},
+		Device{
+			DeviceID:      "vehicle-light",
+			BindingID:     "bind-vehicle-light",
+			Scope:         "PAYLOAD",
+			DeviceType:    "VEHICLE_LIGHT",
+			DisplayName:   "车灯光",
+			Vendor:        "CUSTOM",
+			Model:         "VL-01",
+			OnlineStatus:  "online",
+			ControlStatus: "idle",
+			Enabled:       true,
+			Actions:       []string{"light.vehicle.set"},
+			ControlProfile: map[string]any{
+				"parts":         []string{"front", "rear"},
+				"modes":         []string{"OFF", "ON", "BREATH", "CUSTOM"},
+				"modeMapping":   map[string]int{"OFF": 0, "ON": 1, "BREATH": 2, "CUSTOM": 3},
+				"maxBrightness": 100,
+				"rosTopic":      "/robot_light_ctl",
+				"rosType":       "robot_status_core/RobotLightCmd",
+			},
+		},
+		Device{
+			DeviceID:      "intercom-001",
+			BindingID:     "bind-intercom-001",
+			Scope:         "AUDIO",
+			DeviceType:    "INTERCOM",
+			DisplayName:   "语音对讲",
+			OnlineStatus:  "online",
+			ControlStatus: "idle",
+			Enabled:       true,
+			Actions:       []string{"volume.set", "volume.up", "volume.down", "volume.mute"},
+			Status: map[string]any{
+				"volume": 50,
+				"muted":  false,
+			},
+		})
+	return items
 }
 
 func cameras(robotID string) []Camera {

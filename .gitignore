@@ -3,6 +3,9 @@ target/
 node_modules/
 dist/
 *.log
+__pycache__/
+*.py[cod]
+.venv/
 .idea/
 .vscode/
 tmp_docx_render_*/

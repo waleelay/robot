@@ -152,8 +152,9 @@ main
 | `IntercomStartCommand` | 对讲启动指令，包含 LiveKit room、机器人 token、音频发布/订阅开关 |
 | `StatusMessage` | 实时视频状态上报，包含状态、Track SID、Track 名称、错误码 |
 | `IntercomStatusMessage` | 对讲状态上报，包含机器人麦克风 Track 信息 |
-| `OnlineMessage` | 客户端在线/离线和摄像头清单心跳 |
+| `OnlineMessage` | 客户端在线/离线和周期心跳，携带摄像头清单与 `devices[]` 能力/状态 |
 | `Camera` | 上报给后端的摄像头信息 |
+| `Device` | 上报给后端的本体和上装设备信息，包含 `actions`、`status`、`controlProfile` |
 
 ## 6. MQTT 模块
 
@@ -170,12 +171,13 @@ main
 | `robot/{robotId}/media/video/switch-channel` | `handleStart` | 切换通道，本地按重新 start 处理 |
 | `robot/{robotId}/media/video/intercom/start` | `handleIntercomStart` | 启动对讲 |
 | `robot/{robotId}/media/video/intercom/stop` | `handleIntercomStop` | 停止对讲 |
+| `robot/{robotId}/control/#` | `handleControlCommand` | 接收本体、云台、音量、发射器、警示灯、车灯等装备控制命令 |
 
 ### 6.2 发布 Topic
 
 | Topic | 消息类型 | 说明 |
 |---|---|---|
-| `robot/{robotId}/media/client/status` | `OnlineMessage` | 上线、下线和周期心跳，携带摄像头清单 |
+| `robot/{robotId}/media/client/status` | `OnlineMessage` | 上线、下线和周期心跳，携带摄像头清单与 `devices[]` 能力/状态 |
 | `robot/{robotId}/media/video/status` | `StatusMessage` | 实时视频状态 |
 | `robot/{robotId}/media/video/intercom/status` | `IntercomStatusMessage` | 对讲状态 |
 
@@ -201,6 +203,17 @@ main
   -> publisher.Stop(sessionId)
   -> 上报 stopped
 ```
+
+装备控制命令：
+
+```text
+收到 robot/{robotId}/control/# 指令
+  -> 反序列化 ControlCommand
+  -> 按 action 更新本地 deviceState
+  -> 立即通过 media/client/status 上报 devices[].status
+```
+
+当前客户端会回写的设备状态包括：音量/静音 `volume`、`muted`，发射器安全开关 `safetySwitchEnabled`，警示灯 `enabled`，云台自转 `autoRotateEnabled`、`panSpeed`，车灯 `front`、`rear`。车灯命令兼容前端状态结构 `params.front/rear` 和 ROS 结构 `params.msg.front_mode/rear_mode`，最终统一回写为 `devices[].status.front/rear`。
 
 连接丢失时：
 
@@ -552,4 +565,3 @@ Control/Media Service 创建 LiveKit Room 和 publisher token
   -> 服务端处理完成后变为 READY
   -> 满足本地保留策略后删除本地文件，状态 LOCAL_DELETED
 ```
-

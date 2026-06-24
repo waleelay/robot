@@ -28,7 +28,7 @@
 | 急停 | 独立 topic，最高优先级 |
 | WebSocket 高频控制 | 本体和云台连续控制走 WebSocket |
 | MQTT 控制链路 | 后端按设备类型组装参数并通过 MQTT 下发给 Go 客户端 |
-| 客户端状态上报 | Go 客户端通过 `robot/{robotId}/media/client/status` 统一上报在线状态、控制模式、任务状态和摄像头清单 |
+| 客户端状态上报 | Go 客户端通过 `robot/{robotId}/media/client/status` 统一上报在线状态、控制模式、任务状态、摄像头清单和设备状态 |
 
 ### 2.2 暂不实现
 
@@ -473,6 +473,26 @@ POST /api/control/robots/{robotId}/commands
         "quality": "hd"
       }
     ],
+    "devices": [
+      {
+        "deviceId": "base",
+        "bindingId": "bind-base",
+        "scope": "BODY",
+        "deviceType": "WHEELED_BASE",
+        "displayName": "机器人本体",
+        "vendor": "SONGLING",
+        "model": "SCOUT",
+        "onlineStatus": "online",
+        "controlStatus": "idle",
+        "enabled": true,
+        "actions": ["drive.velocity", "navigation.return_home", "docking.leave"],
+        "controlProfile": {
+          "maxLinearX": 1.0,
+          "maxLinearY": 0.4,
+          "maxAngularZ": 0.8
+        }
+      }
+    ],
     "timestamp": "2026-06-03T10:30:00+08:00"
   }
 }
@@ -498,6 +518,7 @@ POST /api/control/robots/{robotId}/commands
 | `controlOwner` | object | 否 | 当前控制者；为空表示无人持有 |
 | `estopActive` | boolean | 是 | 急停是否生效 |
 | `cameras` | array | 否 | 摄像头列表，包含 `cameraId`、`deviceId`、`groupType`、`name`、`quality` |
+| `devices` | array | 否 | 本体和上装设备能力列表，结构同控制能力 `devices`；`devices[].status` 用于刷新音量、静音和开关类按钮 |
 | `timestamp` | datetime | 是 | 机器人端状态产生时间；缺省时后端补当前时间 |
 
 前端使用规则：
@@ -520,7 +541,7 @@ POST /api/control/robots/{robotId}/commands
 | `robot/{robotId}/control/warning-light/command` | 后端 -> Go | 左右警示灯开关控制 |
 | `robot/{robotId}/control/vehicle-light/command` | 后端 -> Go | 前后车灯控制，常开、常关、呼吸灯、自定义亮度 |
 | `robot/{robotId}/control/safety/estop` | 后端 -> Go | 急停 |
-| `robot/{robotId}/media/client/status` | Go -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态和摄像头清单 |
+| `robot/{robotId}/media/client/status` | Go -> 后端 | 统一客户端状态上报，包含在线状态、控制模式、任务状态、摄像头清单和设备状态 |
 
 说明：
 
@@ -567,9 +588,31 @@ POST /api/control/robots/{robotId}/commands
       "quality": "hd"                           // 默认清晰度
     }
   ],
+  "devices": [
+    {
+      "deviceId": "base",                       // 设备 ID
+      "bindingId": "bind-base",                 // 绑定关系 ID
+      "scope": "BODY",                          // 设备范围
+      "deviceType": "WHEELED_BASE",             // 设备类型
+      "displayName": "机器人本体",                // 展示名称
+      "vendor": "SONGLING",                     // 厂商
+      "model": "SCOUT",                         // 型号
+      "onlineStatus": "online",                 // 在线状态
+      "controlStatus": "idle",                  // 控制状态
+      "enabled": true,                           // 是否启用
+      "actions": ["drive.velocity"],             // 支持动作
+      "controlProfile": {                        // 控制参数
+        "maxLinearX": 1.0,
+        "maxLinearY": 0.4,
+        "maxAngularZ": 0.8
+      }
+    }
+  ],
   "timestamp": "2026-06-03T10:30:00+08:00"      // 客户端上报时间
 }
 ```
+
+`devices[].status` 用于刷新前端有状态控件。当前实现默认随客户端/后端设备定义提供：音量/对讲 `volume=50`、`muted=false`，双光云台 `autoRotateEnabled=false`、`panSpeed=0`，左右警示灯 `enabled=false`。车灯 `front/rear` 不写默认值，仅在收到 `light.vehicle.set` 或真实设备状态后上报；前端在状态未知时允许下发车灯命令，但不会把初始化占位写入缓存。
 
 ## 7. 一期 MQTT 命令格式
 
@@ -1238,6 +1281,16 @@ netGunSafety[deviceId] = true
   },
   "action": "light.vehicle.set",                 // 车灯设置
   "params": {
+    "front": {
+      "mode": "CUSTOM",                          // 保留前端状态，客户端据此回写 devices[].status.front
+      "modeCode": 3,
+      "customValue": 70
+    },
+    "rear": {
+      "mode": "BREATH",                          // 保留前端状态，客户端据此回写 devices[].status.rear
+      "modeCode": 2,
+      "customValue": 0
+    },
     "op": "publish",                             // Go 客户端底层发布动作
     "topic": "/robot_light_ctl",                 // 机器人侧灯光控制 topic
     "type": "robot_status_core/RobotLightCmd",   // 机器人侧消息类型
@@ -1349,4 +1402,4 @@ Go 客户端上报 robot.state
 6. 发射器没有 confirmToken 或真实安全开关时不能发射；捕网枪没有 confirmToken 或前端本地安全开关未打开时不能点击发射。
 7. `NAVIGATION` 或 `ASSISTED` 下手动控制本体时，前端必须先接管成功再发送控制帧。
 8. 前端接管请求携带旧 `observedStateSeq` 时，后端返回 `ROBOT_STATE_CHANGED`。
-9. 后端能记录命令发布，并通过 `media/client/status` 刷新机器人在线状态、控制模式、任务状态和摄像头清单。
+9. 后端能记录命令发布，并通过 `media/client/status` 刷新机器人在线状态、控制模式、任务状态、摄像头清单和设备状态。

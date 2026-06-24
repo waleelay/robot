@@ -540,6 +540,16 @@ GET /internal/media/recordings?robotId=robot-001&deviceId=camera01&status=READY&
 
 查询维度首期包括 `robotId`、`deviceId`、`status` 和录像时间范围，满足巡逻录像定位与处理状态展示需要。播放入口仅对 `READY` 录像签发；管理视图可查询 `PROCESSING_PLAYBACK`、`FAILED` 或 `DELETED` 状态。全文检索或 Elasticsearch 不在本期范围。
 
+当前前端回放区按 tab 区分资源：
+
+| Tab | 查询方式 | 说明 |
+|---|---|---|
+| 手动录像 | `GET /api/control/recordings`，参数包含 `robotId`、`status=READY`、`sourceType=LIVEKIT_EGRESS`、`page`、`size` | 展示由实时视频页面手动发起的 LiveKit Egress 录像 |
+| 巡逻录像 | `GET /api/control/recordings`，参数包含 `robotId`、`status=READY`、`page`、`size`，前端过滤非 `LIVEKIT_EGRESS` | 展示机器人巡逻/上传类录像 |
+| 抓拍列表 | `GET /api/control/snapshots`，参数包含 `robotId`、`page`、`pageSize` | 抓拍图片不属于录像资产，不走 `recordings` 列表；点击后通过图片预览接口展示 |
+
+因此，“抓拍列表”只复用回放区的左侧列表和右侧预览布局，不复用录像播放授权和 HLS 播放链路。
+
 ### 10.2 播放授权
 
 ```http

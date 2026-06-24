@@ -14,6 +14,12 @@ It follows the same responsibilities as the Go implementation:
 
 The Go client remains under `client/cmd` and `client/internal`.
 
+## Reported Device State
+
+The Python client reports the same `devices[]` structure as the Go client in `robot/{robotId}/media/client/status`.
+
+`devices[].status` is refreshed after local equipment-control commands so the frontend can update stateful controls, including `volume/muted`, launcher `safetySwitchEnabled`, warning-light `enabled`, PTZ `autoRotateEnabled`, and vehicle-light `front/rear`.
+
 ## Install
 
 ```bash
