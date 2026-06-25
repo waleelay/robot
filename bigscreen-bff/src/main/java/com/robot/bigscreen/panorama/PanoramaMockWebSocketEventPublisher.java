@@ -127,11 +127,22 @@ public class PanoramaMockWebSocketEventPublisher {
                         object("type", "ROBOT_DOG", "name", "机器狗", "count", 8),
                         object("type", "HUMANOID_ROBOT", "name", "机器人", "count", 6),
                         object("type", "WHEELED_ROBOT", "name", "轮式车", "count", 8)),
+                "patrolOverview", patrolOverview(currentTick),
                 "alarmStats", object(
                         "high", 5,
                         "medium", 5,
                         "low", 5),
                 "alarmSummary", alarmSummary(currentTick)));
+    }
+
+    private Map<String, Object> patrolOverview(long currentTick) {
+        double durationToday = Math.round((32.6 + (currentTick % 5) * 0.1) * 10.0) / 10.0;
+        double mileageToday = Math.round((262.6 + (currentTick % 5) * 0.8) * 10.0) / 10.0;
+        return object(
+                "durationToday", durationToday,
+                "durationUnit", "小时",
+                "mileageToday", mileageToday,
+                "mileageUnit", "KM");
     }
 
     private Map<String, Object> alarmSummary(long currentTick) {

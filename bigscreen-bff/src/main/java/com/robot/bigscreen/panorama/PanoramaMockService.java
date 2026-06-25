@@ -23,6 +23,7 @@ public class PanoramaMockService {
                 "serverTime", now(),
                 "deviceStats", deviceStats(),
                 "deviceTypeStats", deviceTypeStats(),
+                "patrolOverview", patrolOverview(),
                 "deviceGroups", deviceGroupsPayload(),
                 "devices", devices,
                 "tasks", taskItems,
@@ -98,6 +99,14 @@ public class PanoramaMockService {
                 deviceType("ROBOT_DOG", "机器狗", 8),
                 deviceType("HUMANOID_ROBOT", "机器人", 6),
                 deviceType("WHEELED_ROBOT", "轮式车", 8));
+    }
+
+    private Map<String, Object> patrolOverview() {
+        return Map.of(
+                "durationToday", 32.6,
+                "durationUnit", "小时",
+                "mileageToday", 262.6,
+                "mileageUnit", "KM");
     }
 
     private List<Map<String, Object>> devices() {

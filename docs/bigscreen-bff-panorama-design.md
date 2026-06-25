@@ -198,6 +198,12 @@ GET /api/bigscreen/panorama/overview
       "count": 8
     }
   ],
+  "patrolOverview": {
+    "durationToday": 32.6,
+    "durationUnit": "小时",
+    "mileageToday": 262.6,
+    "mileageUnit": "KM"
+  },
   "deviceGroups": {
     "total": 4,
     "online": {
@@ -369,6 +375,15 @@ GET /api/bigscreen/panorama/overview
   }
 }
 ```
+
+`patrolOverview` 字段说明：
+
+| 字段 | 含义 | 页面显示 |
+|---|---|---|
+| `patrolOverview.durationToday` | 今日巡逻总时长数值 | 今日巡逻时长 |
+| `patrolOverview.durationUnit` | 巡逻时长单位 | 小时 |
+| `patrolOverview.mileageToday` | 今日巡逻总里程数值 | 今日巡逻里程 |
+| `patrolOverview.mileageUnit` | 巡逻里程单位 | KM |
 
 当前 mock 的 3 台机器人定位：
 
@@ -756,6 +771,12 @@ WebSocket：
         "count": 8
       }
     ],
+    "patrolOverview": {
+      "durationToday": 32.6,
+      "durationUnit": "小时",
+      "mileageToday": 262.6,
+      "mileageUnit": "KM"
+    },
     "alarmStats": {
       "high": 5,
       "medium": 5,
