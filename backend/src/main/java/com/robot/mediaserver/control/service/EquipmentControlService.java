@@ -1,6 +1,7 @@
 package com.robot.mediaserver.control.service;
 
 import com.robot.mediaserver.auth.CurrentUser;
+import com.robot.mediaserver.config.DateTimeConfig;
 import com.robot.mediaserver.control.messaging.EquipmentControlCommandPublisher;
 import com.robot.mediaserver.ws.MediaWebSocketPublisher;
 import java.time.OffsetDateTime;
@@ -74,7 +75,7 @@ public class EquipmentControlService {
                 continue;
             }
             if (user.clientId().equals(session.get("ownerClientId"))) {
-                session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30).toString());
+                session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
                 return copy(session);
             }
             if (!user.clientId().equals(session.get("ownerClientId"))) {
@@ -121,7 +122,7 @@ public class EquipmentControlService {
 
     public Map<String, Object> heartbeat(String robotId, String controlSessionId) {
         Map<String, Object> session = requireSession(robotId, controlSessionId);
-        session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30).toString());
+        session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
         return object(
                 "controlSessionId", controlSessionId,
                 "status", session.get("status"),
@@ -131,7 +132,7 @@ public class EquipmentControlService {
     public Map<String, Object> release(String robotId, String controlSessionId, Map<String, Object> request) {
         Map<String, Object> session = requireSession(robotId, controlSessionId);
         session.put("status", "RELEASED");
-        session.put("releasedAt", OffsetDateTime.now().toString());
+        session.put("releasedAt", OffsetDateTime.now());
         session.put("reason", request == null ? "user_release" : stringValue(request.get("reason"), "user_release"));
         return object(
                 "controlSessionId", controlSessionId,
@@ -154,7 +155,7 @@ public class EquipmentControlService {
         String action = stringValue(request.get("action"), "");
         return object(
                 "confirmToken", "confirm_" + compactUuid(),
-                "expiresAt", OffsetDateTime.now().plusSeconds(30).toString(),
+                "expiresAt", OffsetDateTime.now().plusSeconds(30),
                 "robotId", robotId,
                 "target", object(
                         "scope", target.get("scope"),
@@ -187,7 +188,7 @@ public class EquipmentControlService {
         state.putIfAbsent("stateSeq", numberValue(state.get("stateSeq"), 1).longValue());
         state.putIfAbsent("status", "offline");
         state.putIfAbsent("controlMode", "MANUAL");
-        state.putIfAbsent("timestamp", OffsetDateTime.now().toString());
+        state.put("timestamp", DateTimeConfig.normalize(state.getOrDefault("timestamp", OffsetDateTime.now())));
         enrichRobotState(robotId, state);
         robotStates.put(robotId, state);
         webSocketPublisher.publish("robot.state", state);
@@ -210,7 +211,7 @@ public class EquipmentControlService {
                         "deviceType", target.get("deviceType")),
                 "action", action,
                 "params", builtParams,
-                "issuedAt", now.toString());
+                "issuedAt", now);
     }
 
     private Map<String, Object> buildParams(
@@ -305,7 +306,7 @@ public class EquipmentControlService {
                 "actions", actions,
                 "mode", "EXCLUSIVE",
                 "status", "ACTIVE",
-                "leaseExpireAt", OffsetDateTime.now().plusSeconds(30).toString());
+                "leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
         sessions.put(sessionId, session);
         return session;
     }
@@ -329,15 +330,11 @@ public class EquipmentControlService {
     }
 
     private boolean isExpired(Map<String, Object> session, OffsetDateTime now) {
-        String leaseExpireAt = stringValue(session.get("leaseExpireAt"), "");
-        if (leaseExpireAt.isBlank()) {
+        OffsetDateTime leaseExpireAt = offsetDateTimeValue(session.get("leaseExpireAt"));
+        if (leaseExpireAt == null) {
             return false;
         }
-        try {
-            return !OffsetDateTime.parse(leaseExpireAt).isAfter(now);
-        } catch (DateTimeParseException ex) {
-            return false;
-        }
+        return !leaseExpireAt.isAfter(now);
     }
 
     private Map<String, Object> requireRobot(String robotId) {
@@ -372,7 +369,7 @@ public class EquipmentControlService {
                 "estopActive", false,
                 "devices", devices(String.valueOf(robot.get("robotId"))),
                 "status", "offline",
-                "timestamp", OffsetDateTime.now().toString());
+                "timestamp", OffsetDateTime.now());
     }
 
     private static void enrichRobotState(String robotId, Map<String, Object> state) {
@@ -397,7 +394,7 @@ public class EquipmentControlService {
                         "model", "SCOUT",
                         "status", "offline",
                         "battery", 86,
-                        "lastHeartbeatAt", OffsetDateTime.now().toString(),
+                        "lastHeartbeatAt", OffsetDateTime.now(),
                         "devices", devices("robot-001"),
                         "cameras", List.of(
                                 camera("camera01", "dual_gimbal", "云台-可见光"),
@@ -412,7 +409,7 @@ public class EquipmentControlService {
                         "model", "X30",
                         "status", "offline",
                         "battery", 78,
-                        "lastHeartbeatAt", OffsetDateTime.now().toString(),
+                        "lastHeartbeatAt", OffsetDateTime.now(),
                         "devices", devices("robot-002"),
                         "cameras", List.of(camera("camera04", "dual_gimbal", "头部双光云台"))),
                 object(
@@ -424,7 +421,7 @@ public class EquipmentControlService {
                         "model", "B2",
                         "status", "offline",
                         "battery", 92,
-                        "lastHeartbeatAt", OffsetDateTime.now().toString(),
+                        "lastHeartbeatAt", OffsetDateTime.now(),
                         "devices", devices("robot-unitree-001"),
                         "cameras", List.of(camera("camera07", "dual_gimbal", "双光云台"))));
     }
@@ -675,6 +672,20 @@ public class EquipmentControlService {
 
     private static boolean booleanValue(Object value, boolean defaultValue) {
         return value instanceof Boolean bool ? bool : defaultValue;
+    }
+
+    private static OffsetDateTime offsetDateTimeValue(Object value) {
+        if (value instanceof OffsetDateTime time) {
+            return time;
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return DateTimeConfig.parseOffsetDateTime(text);
+            } catch (DateTimeParseException ex) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private static int vehicleLightMode(Map<String, Object> part) {

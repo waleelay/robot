@@ -3,6 +3,7 @@ package com.robot.mediaserver.ws;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.auth.CurrentUser;
+import com.robot.mediaserver.config.DateTimeConfig;
 import com.robot.mediaserver.control.service.EquipmentControlService;
 import java.io.IOException;
 import java.time.OffsetDateTime;
@@ -98,7 +99,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
         Map<String, Object> body = object(
                 "type", type,
                 "requestId", requestId,
-                "timestamp", OffsetDateTime.now().toString(),
+                "timestamp", DateTimeConfig.format(OffsetDateTime.now()),
                 "payload", payload);
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(body)));
     }

@@ -1,6 +1,7 @@
 package com.robot.mediaserver.video.service;
 
 import com.robot.mediaserver.auth.CurrentUser;
+import com.robot.mediaserver.config.DateTimeConfig;
 import com.robot.mediaserver.storage.MinioStorageService;
 import com.robot.mediaserver.video.dto.CompleteSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
@@ -162,7 +163,7 @@ public class SnapshotService {
         eventLogService.recordAndPublish(snapshot.getSessionId(), "snapshot.completed", Map.of(
                 "snapshotId", snapshot.getSnapshotId(),
                 "officialObjectKey", snapshot.getOfficialObjectKey(),
-                "capturedAt", snapshot.getOfficialCapturedAt().toString(),
+                "capturedAt", DateTimeConfig.format(snapshot.getOfficialCapturedAt()),
                 "source", snapshot.getSource()));
         return toResponse(snapshot);
     }
@@ -184,7 +185,7 @@ public class SnapshotService {
         eventLogService.recordAndPublish(snapshot.getSessionId(), "snapshot.completed", Map.of(
                 "snapshotId", snapshot.getSnapshotId(),
                 "officialObjectKey", snapshot.getOfficialObjectKey(),
-                "capturedAt", snapshot.getOfficialCapturedAt().toString(),
+                "capturedAt", DateTimeConfig.format(snapshot.getOfficialCapturedAt()),
                 "source", snapshot.getSource()));
         return toResponse(snapshot);
     }

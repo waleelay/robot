@@ -1,8 +1,9 @@
 package com.robot.mediaserver.video.api;
 
+import com.robot.mediaserver.config.DateTimeConfig;
+import com.robot.mediaserver.recording.api.RecordingApiException;
 import java.time.OffsetDateTime;
 import java.util.Map;
-import com.robot.mediaserver.recording.api.RecordingApiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -52,7 +53,7 @@ public class ApiExceptionHandler {
 
     private ResponseEntity<Map<String, Object>> error(HttpStatus status, String code, String message) {
         return ResponseEntity.status(status).body(Map.of(
-                "timestamp", OffsetDateTime.now().toString(),
+                "timestamp", DateTimeConfig.format(OffsetDateTime.now()),
                 "code", code,
                 "message", message));
     }

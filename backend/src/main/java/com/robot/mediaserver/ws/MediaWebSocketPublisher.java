@@ -2,6 +2,7 @@ package com.robot.mediaserver.ws;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.robot.mediaserver.config.DateTimeConfig;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -36,7 +37,7 @@ public class MediaWebSocketPublisher {
     public void publish(String event, Object data) {
         Map<String, Object> payload = Map.of(
                 "event", event,
-                "timestamp", OffsetDateTime.now().toString(),
+                "timestamp", DateTimeConfig.format(OffsetDateTime.now()),
                 "data", data);
         String json;
         try {

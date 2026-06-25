@@ -1,6 +1,7 @@
 package com.robot.mediaserver.robot.service;
 
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.config.DateTimeConfig;
 import com.robot.mediaserver.robot.dto.RobotCameraResponse;
 import com.robot.mediaserver.robot.dto.RobotDeviceResponse;
 import com.robot.mediaserver.ws.MediaWebSocketPublisher;
@@ -104,7 +105,7 @@ public class RobotRegistryService {
         state.put("estopActive", device.estopActive);
         state.put("cameras", device.cameras);
         state.put("devices", device.mountedDevices);
-        state.put("timestamp", now().toString());
+        state.put("timestamp", DateTimeConfig.format(now()));
         return state;
     }
 
@@ -125,7 +126,7 @@ public class RobotRegistryService {
                 device.lastHeartbeatAt,
                 device.cameras,
                 device.mountedDevices,
-                device.lastHeartbeatAt == null ? null : device.lastHeartbeatAt.toString());
+                DateTimeConfig.format(device.lastHeartbeatAt));
     }
 
     private boolean blank(String value) {
