@@ -483,7 +483,7 @@ export default {
       robots: [
         {
           robotId: 'robot-001',
-          name: '松灵四轮机器人',
+          name: 'R1轮式机器人',
           type: '轮式机器人',
           battery: null,
           status: 'offline',
@@ -495,7 +495,7 @@ export default {
         },
         {
           robotId: 'robot-002',
-          name: '云深处四足机器狗',
+          name: 'G1四足机器人',
           type: '四足机器人',
           battery: null,
           status: 'offline',

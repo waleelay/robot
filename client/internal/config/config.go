@@ -344,9 +344,9 @@ func cameras(robotID string) []Camera {
 
 func defaultRobotName(robotID string) string {
 	if robotID == "robot-002" {
-		return "云深处四足机器狗"
+		return "G1四足机器人"
 	}
-	return "松灵四轮机器人"
+	return "R1轮式机器人"
 }
 
 func defaultType(robotID string) string {

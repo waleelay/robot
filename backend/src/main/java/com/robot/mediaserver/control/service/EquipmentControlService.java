@@ -391,7 +391,7 @@ public class EquipmentControlService {
                 object(
                         "robotId", "robot-001",
                         "clientId", "robot-client-songling-001",
-                        "name", "松灵四轮机器人",
+                        "name", "R1轮式机器人",
                         "type", "轮式机器人",
                         "vendor", "SONGLING",
                         "model", "SCOUT",
@@ -406,7 +406,7 @@ public class EquipmentControlService {
                 object(
                         "robotId", "robot-002",
                         "clientId", "robot-client-deep-001",
-                        "name", "云深处四足机器狗",
+                        "name", "G1四足机器人",
                         "type", "四足机器狗",
                         "vendor", "DEEPNROBOTICS",
                         "model", "X30",
@@ -418,7 +418,7 @@ public class EquipmentControlService {
                 object(
                         "robotId", "robot-unitree-001",
                         "clientId", "robot-client-unitree-001",
-                        "name", "宇树机器狗",
+                        "name", "G2四足机器人",
                         "type", "四足机器狗",
                         "vendor", "UNITREE",
                         "model", "B2",

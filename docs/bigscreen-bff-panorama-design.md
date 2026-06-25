@@ -208,7 +208,7 @@ GET /api/bigscreen/panorama/overview
         {
           "robotId": "robot-001",
           "clientId": "robot-media-client",
-          "name": "松灵四轮机器人",
+          "name": "R1轮式机器人",
           "type": "轮式机器人",
           "typeCode": "WHEELED_ROBOT",
           "vendor": "SONGLING",
@@ -235,7 +235,7 @@ GET /api/bigscreen/panorama/overview
     {
       "robotId": "robot-001",
       "clientId": "robot-media-client",
-      "name": "松灵四轮机器人",
+      "name": "R1轮式机器人",
       "type": "轮式机器人",
       "typeCode": "WHEELED_ROBOT",
       "vendor": "SONGLING",
@@ -281,7 +281,7 @@ GET /api/bigscreen/panorama/overview
       },
       "mapDisplay": {
         "icon": "wheeled_robot",
-        "label": "松灵四轮机器人",
+        "label": "R1轮式机器人",
         "badgeText": "空闲中",
         "badgeStatus": "idle"
       },
@@ -306,7 +306,7 @@ GET /api/bigscreen/panorama/overview
       "equipmentList": [
         {
           "robotId": "robot-001",
-          "name": "松灵四轮机器人",
+          "name": "R1轮式机器人",
           "type": "WHEELED_ROBOT",
           "status": "online"
         }
@@ -330,7 +330,7 @@ GET /api/bigscreen/panorama/overview
           "eventTime": "2023-08-01 10:00:00",
           "location": "A区仓库",
           "robotId": "robot-001",
-          "deviceName": "松灵四轮机器人",
+          "deviceName": "R1轮式机器人",
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
           "status": "unhandled",
@@ -385,7 +385,7 @@ GET /api/bigscreen/panorama/devices/{deviceId}
 {
   "robotId": "robot-001",
   "clientId": "robot-media-client",
-  "name": "松灵四轮机器人",
+  "name": "R1轮式机器人",
   "type": "轮式机器人",
   "typeCode": "WHEELED_ROBOT",
   "vendor": "SONGLING",
@@ -463,7 +463,7 @@ GET /api/bigscreen/panorama/device-groups
         {
           "robotId": "robot-001",
           "clientId": "robot-media-client",
-          "name": "松灵四轮机器人",
+          "name": "R1轮式机器人",
           "type": "轮式机器人",
           "typeCode": "WHEELED_ROBOT",
           "vendor": "SONGLING",
@@ -545,7 +545,7 @@ GET /api/bigscreen/panorama/alarms
           "eventTime": "2023-08-01 10:00:00",
           "location": "A区仓库",
           "robotId": "robot-001",
-          "deviceName": "松灵四轮机器人",
+          "deviceName": "R1轮式机器人",
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
           "status": "unhandled",
@@ -683,7 +683,7 @@ WebSocket：
       "eventTime": "2023-08-01 10:00:00",
       "location": "A区仓库",
       "robotId": "robot-001",
-      "deviceName": "松灵四轮机器人",
+      "deviceName": "R1轮式机器人",
       "taskId": "task-002",
       "taskName": "A区-仓库复核",
       "status": "unhandled",

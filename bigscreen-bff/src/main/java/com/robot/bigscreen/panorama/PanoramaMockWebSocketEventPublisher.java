@@ -104,7 +104,7 @@ public class PanoramaMockWebSocketEventPublisher {
                         "eventTime", "2023-08-01 10:00:00",
                         "location", "A区仓库",
                         "robotId", "robot-001",
-                        "deviceName", "松灵四轮机器人",
+                        "deviceName", "R1轮式机器人",
                         "taskId", "task-002",
                         "taskName", "A区-仓库复核",
                         "status", created ? "unhandled" : "handling",

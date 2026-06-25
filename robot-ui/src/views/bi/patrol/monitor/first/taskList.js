@@ -8,7 +8,7 @@ export const taskList = [
       robots: [],
       equipmentList: [
         {
-          name: '松灵四轮机器人',
+          name: 'R1轮式机器人',
           robotId: 'robot-001'
         },
         {
@@ -16,7 +16,7 @@ export const taskList = [
           robotId: 'robot-002'
         },
         {
-          name: '宇树机器狗',
+          name: 'G2四足机器人',
           robotId: 'robot-unitree-001'
         }
       ]
@@ -30,7 +30,7 @@ export const taskList = [
       robots: [],
       equipmentList: [
         {
-          name: '松灵四轮机器人',
+          name: 'R1轮式机器人',
           robotId: 'robot-001'
         },
         {

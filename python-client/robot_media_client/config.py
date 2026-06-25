@@ -324,8 +324,8 @@ def devices(robot_id: str) -> list[Device]:
 def default_robot_name(robot_id: str) -> str:
     """返回已知 robotId 的默认展示名称。"""
     if robot_id == "robot-002":
-        return "云深处四足机器狗"
-    return "松灵四轮机器人"
+        return "G1四足机器人"
+    return "R1轮式机器人"
 
 
 def default_type(robot_id: str) -> str:

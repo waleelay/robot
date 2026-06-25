@@ -60,7 +60,7 @@
 {
   "robotId": "robot-songling-001",
   "clientId": "robot-client-songling-001",
-  "name": "松灵四轮机器人",
+  "name": "R1轮式机器人",
   "type": "轮式机器人",
   "status": "online",
   "battery": 86,
@@ -505,7 +505,7 @@ Idempotency-Key: complete-upl_b752
   "data": {
     "robotId": "robot-songling-001",
     "clientId": "robot-client-songling-001",
-    "name": "松灵四轮机器人",
+    "name": "R1轮式机器人",
     "type": "轮式机器人",
     "status": "online",
     "battery": 86,

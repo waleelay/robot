@@ -4,9 +4,9 @@
 
 一期目标是完成远程控制最小闭环，支撑以下设备组合：
 
-- 松灵四轮机器人：本体、双光云台、捕网器、警示灯、车灯光、语音对讲。
-- 云深处四足机器狗：本体、双光云台、捕网器、语音对讲。
-- 宇树机器狗：本体、双光云台、探照灯。
+- R1轮式机器人：本体、双光云台、捕网器、警示灯、车灯光、语音对讲。
+- G1四足机器人：本体、双光云台、捕网器、语音对讲。
+- G2四足机器人：本体、双光云台、探照灯。
 
 一期只做平台统一控制骨架和轻量人工接管仲裁，不做复杂机械臂轨迹规划、激光雷达点云流、完整任务调度系统和多厂商插件市场。
 
@@ -103,7 +103,7 @@ GET /api/control/robots
 [
   {
     "robotId": "robot-songling-001",
-    "name": "松灵四轮机器人",
+    "name": "R1轮式机器人",
     "vendor": "SONGLING",
     "model": "SCOUT",
     "onlineStatus": "online",
@@ -453,7 +453,7 @@ POST /api/control/robots/{robotId}/commands
   "data": {
     "robotId": "robot-songling-001",
     "clientId": "robot-media-client-robot-songling-001",
-    "name": "松灵四轮机器人",
+    "name": "R1轮式机器人",
     "type": "轮式机器人",
     "battery": 82,
     "status": "online",
@@ -569,7 +569,7 @@ POST /api/control/robots/{robotId}/commands
 {
   "robotId": "robot-songling-001",              // 机器人 ID
   "clientId": "robot-client-songling-001",      // Go 客户端实例 ID
-  "name": "松灵四轮机器人",                       // 机器人名称
+  "name": "R1轮式机器人",                       // 机器人名称
   "type": "轮式机器人",                          // 机器人类型展示值
   "status": "online",                           // 媒体模块已有在线状态字段：online/offline
   "battery": 86,                                // 电量百分比
@@ -1178,7 +1178,7 @@ netGunSafety[deviceId] = true
 
 使用场景：
 
-- 宇树机器狗绑定探照灯时，打开/关闭探照灯。
+- G2四足机器人绑定探照灯时，打开/关闭探照灯。
 - 调整亮度或模式。
 
 一期如果接入探照灯，建议作为低频 REST 命令。
@@ -1212,7 +1212,7 @@ netGunSafety[deviceId] = true
 
 ```jsonc
 {
-  "robotId": "robot-unitree-001",                // 宇树机器狗 ID
+  "robotId": "robot-unitree-001",                // G2四足机器人 ID
   "seq": 4001,                                   // 序号
   "target": {
     "deviceId": "searchlight-001",               // 探照灯
@@ -1232,7 +1232,7 @@ netGunSafety[deviceId] = true
 
 使用场景：
 
-- 松灵四轮机器人绑定车灯光时，控制前灯和后灯。
+- R1轮式机器人绑定车灯光时，控制前灯和后灯。
 - 前灯、后灯在页面上各显示一组单选按钮：`常关 | 常开 | 呼吸 | 自定义`。
 - 每组只能选中一个模式；只有选择 `自定义` 时才显示亮度滑块。
 - 底层车灯接口一次接收前后灯完整状态，所以前端每次都提交 `front + rear`。
