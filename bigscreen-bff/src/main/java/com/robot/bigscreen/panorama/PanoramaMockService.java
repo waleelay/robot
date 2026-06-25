@@ -208,9 +208,19 @@ public class PanoramaMockService {
                 alarm("alarm-004", "任务超时预警", "TASK", "任务告警", "LOW", "低风险", "2026-06-12 09:48:00", "A区主干道", "robot-001", "R1轮式机器人", "task-001", "A区-夜间巡逻", "handled"));
         return Map.of(
                 "total", 15,
+                "summary", alarmSummary(),
                 "high", alarmGroup("HIGH", "高风险", 5, high),
                 "medium", alarmGroup("MEDIUM", "中风险", 5, medium),
                 "low", alarmGroup("LOW", "低风险", 5, low));
+    }
+
+    private Map<String, Object> alarmSummary() {
+        return Map.of(
+                "totalToday", 50,
+                "handled", 18,
+                "unhandled", 0,
+                "handleRate", 100,
+                "handleRateText", "100%");
     }
 
     private Map<String, Object> toDeviceDetail(Map<String, Object> device) {

@@ -94,6 +94,7 @@ public class PanoramaMockWebSocketEventPublisher {
         boolean created = currentTick % 3 == 0;
         return event("panorama.alarm.changed", object(
                 "alarmId", "alarm-001",
+                "summary", alarmSummary(currentTick),
                 "alarm", object(
                         "alarmId", "alarm-001",
                         "title", "发生火灾",
@@ -129,7 +130,21 @@ public class PanoramaMockWebSocketEventPublisher {
                 "alarmStats", object(
                         "high", 5,
                         "medium", 5,
-                        "low", 5)));
+                        "low", 5),
+                "alarmSummary", alarmSummary(currentTick)));
+    }
+
+    private Map<String, Object> alarmSummary(long currentTick) {
+        int handled = 18 + (int) (currentTick % 3);
+        int unhandled = (int) (currentTick % 2);
+        int totalToday = 50 + (int) (currentTick % 5);
+        int handleRate = totalToday == 0 ? 100 : (int) Math.round(handled * 100.0 / totalToday);
+        return object(
+                "totalToday", totalToday,
+                "handled", handled,
+                "unhandled", unhandled,
+                "handleRate", handleRate,
+                "handleRateText", handleRate + "%");
     }
 
     private Map<String, Object> event(String event, Map<String, Object> data) {

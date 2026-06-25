@@ -315,6 +315,13 @@ GET /api/bigscreen/panorama/overview
   ],
   "alarms": {
     "total": 15,
+    "summary": {
+      "totalToday": 50,
+      "handled": 18,
+      "unhandled": 0,
+      "handleRate": 100,
+      "handleRateText": "100%"
+    },
     "high": {
       "level": "HIGH",
       "levelName": "高风险",
@@ -530,6 +537,13 @@ GET /api/bigscreen/panorama/alarms
   "serverTime": "2026-06-12 11:31:02",
   "alarms": {
     "total": 15,
+    "summary": {
+      "totalToday": 50,
+      "handled": 18,
+      "unhandled": 0,
+      "handleRate": 100,
+      "handleRateText": "100%"
+    },
     "high": {
       "level": "HIGH",
       "levelName": "高风险",
@@ -568,6 +582,24 @@ GET /api/bigscreen/panorama/alarms
   }
 }
 ```
+
+字段说明：
+
+| 字段 | 含义 | 页面显示 |
+|---|---|---|
+| `alarms.summary.totalToday` | 今日告警总数 | 今日告警 |
+| `alarms.summary.handled` | 已处理告警数 | 已处理 |
+| `alarms.summary.unhandled` | 未处理告警数 | 未处理 |
+| `alarms.summary.handleRate` | 处理率数值，范围 `0-100` | 处理率计算、排序或判断 |
+| `alarms.summary.handleRateText` | 处理率展示文本 | 处理率 |
+
+处理率建议由 BFF 计算，计算口径为：
+
+```text
+handled / max(totalToday, 1) * 100
+```
+
+当 `totalToday = 0` 时，`handleRate` 返回 `100`，表示当前没有待处理告警；如果业务希望显示 `0%`，可在 BFF 中按产品口径调整。
 
 ## 6. 动态数据回显
 
@@ -673,6 +705,13 @@ WebSocket：
   "timestamp": "2026-06-12 11:31:18",
   "data": {
     "alarmId": "alarm-001",
+    "summary": {
+      "totalToday": 50,
+      "handled": 18,
+      "unhandled": 0,
+      "handleRate": 100,
+      "handleRateText": "100%"
+    },
     "alarm": {
       "alarmId": "alarm-001",
       "title": "发生火灾",
@@ -721,6 +760,13 @@ WebSocket：
       "high": 5,
       "medium": 5,
       "low": 5
+    },
+    "alarmSummary": {
+      "totalToday": 50,
+      "handled": 18,
+      "unhandled": 0,
+      "handleRate": 100,
+      "handleRateText": "100%"
     }
   }
 }
