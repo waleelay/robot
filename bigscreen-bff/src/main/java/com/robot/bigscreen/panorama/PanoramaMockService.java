@@ -24,6 +24,7 @@ public class PanoramaMockService {
                 "deviceStats", deviceStats(),
                 "deviceTypeStats", deviceTypeStats(),
                 "patrolOverview", patrolOverview(),
+                "taskOverview", taskOverview(),
                 "deviceGroups", deviceGroupsPayload(),
                 "devices", devices,
                 "tasks", taskItems,
@@ -107,6 +108,15 @@ public class PanoramaMockService {
                 "durationUnit", "小时",
                 "mileageToday", 262.6,
                 "mileageUnit", "KM");
+    }
+
+    private Map<String, Object> taskOverview() {
+        return Map.of(
+                "totalToday", 50,
+                "completedRate", 100,
+                "completedRateText", "100%",
+                "running", 48,
+                "pending", 2);
     }
 
     private List<Map<String, Object>> devices() {

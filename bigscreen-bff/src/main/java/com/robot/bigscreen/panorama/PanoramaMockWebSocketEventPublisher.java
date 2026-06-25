@@ -128,6 +128,7 @@ public class PanoramaMockWebSocketEventPublisher {
                         object("type", "HUMANOID_ROBOT", "name", "机器人", "count", 6),
                         object("type", "WHEELED_ROBOT", "name", "轮式车", "count", 8)),
                 "patrolOverview", patrolOverview(currentTick),
+                "taskOverview", taskOverview(currentTick),
                 "alarmStats", object(
                         "high", 5,
                         "medium", 5,
@@ -143,6 +144,17 @@ public class PanoramaMockWebSocketEventPublisher {
                 "durationUnit", "小时",
                 "mileageToday", mileageToday,
                 "mileageUnit", "KM");
+    }
+
+    private Map<String, Object> taskOverview(long currentTick) {
+        int running = 48 - (int) (currentTick % 2);
+        int pending = 2 + (int) (currentTick % 2);
+        return object(
+                "totalToday", 50,
+                "completedRate", 100,
+                "completedRateText", "100%",
+                "running", running,
+                "pending", pending);
     }
 
     private Map<String, Object> alarmSummary(long currentTick) {

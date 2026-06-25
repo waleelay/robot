@@ -204,6 +204,13 @@ GET /api/bigscreen/panorama/overview
     "mileageToday": 262.6,
     "mileageUnit": "KM"
   },
+  "taskOverview": {
+    "totalToday": 50,
+    "completedRate": 100,
+    "completedRateText": "100%",
+    "running": 48,
+    "pending": 2
+  },
   "deviceGroups": {
     "total": 4,
     "online": {
@@ -384,6 +391,16 @@ GET /api/bigscreen/panorama/overview
 | `patrolOverview.durationUnit` | 巡逻时长单位 | 小时 |
 | `patrolOverview.mileageToday` | 今日巡逻总里程数值 | 今日巡逻里程 |
 | `patrolOverview.mileageUnit` | 巡逻里程单位 | KM |
+
+`taskOverview` 字段说明：
+
+| 字段 | 含义 | 页面显示 |
+|---|---|---|
+| `taskOverview.totalToday` | 今日任务总数 | 今日任务 |
+| `taskOverview.completedRate` | 完成率数值，范围 `0-100` | 完成率计算、排序或判断 |
+| `taskOverview.completedRateText` | 完成率展示文本 | 完成率 |
+| `taskOverview.running` | 执行中的任务数 | 执行中 |
+| `taskOverview.pending` | 待执行的任务数 | 待执行 |
 
 当前 mock 的 3 台机器人定位：
 
@@ -776,6 +793,13 @@ WebSocket：
       "durationUnit": "小时",
       "mileageToday": 262.6,
       "mileageUnit": "KM"
+    },
+    "taskOverview": {
+      "totalToday": 50,
+      "completedRate": 100,
+      "completedRateText": "100%",
+      "running": 48,
+      "pending": 2
     },
     "alarmStats": {
       "high": 5,
