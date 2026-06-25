@@ -193,8 +193,8 @@ public class RecordingService {
             throw error(HttpStatus.CONFLICT, "EGRESS_STOP_FAILED", ex.getMessage());
         }
         OffsetDateTime timestamp = now();
-        recording.setRecordedEndedAt(timestamp);
         recording.setDurationSeconds((int) Math.max(1, timestamp.toEpochSecond() - recording.getRecordedStartedAt().toEpochSecond()));
+        alignRecordedEndedAtWithDuration(recording);
         recording.setUploadedAt(timestamp);
         tryUpdateSourceSize(recording);
         recording.setStatus(RecordingStatus.VERIFYING);
@@ -621,6 +621,20 @@ public class RecordingService {
         }
         upload.setLastActiveAt(now());
         uploadRepository.save(upload);
+    }
+
+    void alignRecordedEndedAtWithDuration(MediaRecording recording) {
+        OffsetDateTime expected = recordedEndedAtFromDuration(recording);
+        if (expected != null) {
+            recording.setRecordedEndedAt(expected);
+        }
+    }
+
+    private OffsetDateTime recordedEndedAtFromDuration(MediaRecording recording) {
+        if (recording.getRecordedStartedAt() == null || recording.getDurationSeconds() == null) {
+            return null;
+        }
+        return recording.getRecordedStartedAt().plusSeconds(Math.max(0, recording.getDurationSeconds()));
     }
 
     private RecordingStatusResponse status(MediaRecording recording) {

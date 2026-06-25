@@ -117,6 +117,7 @@ public class HlsPlaybackAssetService {
         recording.setAudioCodec(probe.audioCodec());
         recording.setFileSize(sourceSize);
         recording.setDurationSeconds((int) Math.ceil(probe.durationSeconds()));
+        recordingService.alignRecordedEndedAtWithDuration(recording);
         recording.setHlsPlaylistObjectKey(playlistKey);
         recording.setHlsSegmentCount(segmentCount);
         recording.setHlsTotalSize(totalSize);
