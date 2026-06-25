@@ -289,6 +289,9 @@ GET /api/bigscreen/panorama/overview
         "lng": 106.03655278081857,
         "lat": 30.7478613352993,
         "altitude": null,
+        "x": 118.4,
+        "y": 42.8,
+        "z": 0.0,
         "address": "A区主干道",
         "updatedAt": "2026-06-12 11:30:58"
       },
@@ -354,7 +357,11 @@ GET /api/bigscreen/panorama/overview
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
           "status": "unhandled",
-          "snapshotUrl": null
+          "snapshotUrl": {
+            "visible": "",
+            "thermal": "",
+            "front": ""
+          }
         }
       ]
     },
@@ -404,11 +411,13 @@ GET /api/bigscreen/panorama/overview
 
 当前 mock 的 3 台机器人定位：
 
-| robotId | lat | lng |
-|---|---:|---:|
-| `robot-001` | 30.745330 | 106.039428 |
-| `robot-002` | 30.746587087515316 | 106.03824884204943 |
-| `robot-unitree-001` | 30.7469491 | 106.0344109 |
+| robotId | lat | lng | x | y | z |
+|---|---:|---:|---:|---:|---:|
+| `robot-001` | 30.745330 | 106.039428 | 118.4 | 42.8 | 0.0 |
+| `robot-002` | 30.746587087515316 | 106.03824884204943 | 82.6 | 156.2 | 0.0 |
+| `robot-unitree-001` | 30.7469491 | 106.0344109 | -64.3 | 198.5 | 0.0 |
+
+`location.lng/lat/altitude` 用于地图经纬度定位；`location.x/y/z` 用于室内图、三维场景或局部坐标系定位。
 
 ### 5.3 设备详情接口
 
@@ -443,6 +452,9 @@ GET /api/bigscreen/panorama/devices/{deviceId}
     "lng": 106.03655278081857,
     "lat": 30.7478613352993,
     "altitude": null,
+    "x": 118.4,
+    "y": 42.8,
+    "z": 0.0,
     "address": "A区主干道",
     "updatedAt": "2026-06-12 11:30:58"
   },
@@ -595,7 +607,11 @@ GET /api/bigscreen/panorama/alarms
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
           "status": "unhandled",
-          "snapshotUrl": null
+          "snapshotUrl": {
+            "visible": "",
+            "thermal": "",
+            "front": ""
+          }
         }
       ]
     },
@@ -702,6 +718,9 @@ WebSocket：
       "lng": 113.923556,
       "lat": 22.512385,
       "altitude": null,
+      "x": 118.4,
+      "y": 42.8,
+      "z": 0.0,
       "address": "A区主干道",
       "updatedAt": "2026-06-12 11:31:11"
     }

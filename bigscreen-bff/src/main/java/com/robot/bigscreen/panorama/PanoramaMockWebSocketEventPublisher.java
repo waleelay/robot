@@ -73,6 +73,9 @@ public class PanoramaMockWebSocketEventPublisher {
                         "lng", 106.03655278081857 + offset,
                         "lat", 30.7478613352993 + offset,
                         "altitude", null,
+                        "x", 118.4 + (currentTick % 6) * 0.6,
+                        "y", 42.8 + (currentTick % 6) * 0.4,
+                        "z", 0.0,
                         "address", "A区主干道",
                         "updatedAt", now())));
     }

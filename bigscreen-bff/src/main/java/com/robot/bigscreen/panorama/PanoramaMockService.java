@@ -137,6 +137,9 @@ public class PanoramaMockService {
                         0.4,
                         106.039428,
                         30.745330,
+                        118.4,
+                        42.8,
+                        0.0,
                         "A区仓库",
                         "wheeled_robot",
                         "告警中",
@@ -158,6 +161,9 @@ public class PanoramaMockService {
                         null,
                         106.03824884204943,
                         30.746587087515316,
+                        82.6,
+                        156.2,
+                        0.0,
                         "A区东侧通道",
                         "robot_dog",
                         "离线",
@@ -179,6 +185,9 @@ public class PanoramaMockService {
                         null,
                         106.0344109,
                         30.7469491,
+                        -64.3,
+                        198.5,
+                        0.0,
                         "A区南侧仓库",
                         "robot_dog",
                         "离线",
@@ -354,6 +363,9 @@ public class PanoramaMockService {
             Double speed,
             double lng,
             double lat,
+            double x,
+            double y,
+            double z,
             String address,
             String icon,
             String badgeText,
@@ -382,6 +394,9 @@ public class PanoramaMockService {
                         "lng", lng,
                         "lat", lat,
                         "altitude", null,
+                        "x", x,
+                        "y", y,
+                        "z", z,
                         "address", address,
                         "updatedAt", now()),
                 "mapDisplay", Map.of(
@@ -465,7 +480,10 @@ public class PanoramaMockService {
                 "taskId", taskId,
                 "taskName", taskName,
                 "status", status,
-                "snapshotUrl", null);
+                "snapshotUrl", object(
+                        "visible", "",
+                        "thermal", "",
+                        "front", ""));
     }
 
     private List<Map<String, Object>> mountedDevices() {
