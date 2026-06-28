@@ -146,7 +146,7 @@ public class CenterProxyClient {
                 }
             }
         } catch (IOException | ServletException ex) {
-            throw new IllegalStateException("Failed to forward multipart request", ex);
+            throw new IllegalStateException("转发 multipart 请求失败", ex);
         }
         return body;
     }

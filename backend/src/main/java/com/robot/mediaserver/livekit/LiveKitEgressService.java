@@ -26,7 +26,7 @@ public class LiveKitEgressService {
 
     public EgressStartResult startRoomHls(String roomName, String hlsPrefix) {
         if (!properties.getLivekit().isEgressEnabled()) {
-            throw new IllegalStateException("LiveKit egress is disabled");
+            throw new IllegalStateException("LiveKit egress 未启用");
         }
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("protocol", "HLS_PROTOCOL");
@@ -46,7 +46,7 @@ public class LiveKitEgressService {
 
     public EgressStartResult startRoomMp4(String roomName, String objectKey) {
         if (!properties.getLivekit().isEgressEnabled()) {
-            throw new IllegalStateException("LiveKit egress is disabled");
+            throw new IllegalStateException("LiveKit egress 未启用");
         }
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("fileType", "MP4");
@@ -64,7 +64,7 @@ public class LiveKitEgressService {
 
     public EgressStopResult stop(String egressId) {
         if (!properties.getLivekit().isEgressEnabled()) {
-            throw new IllegalStateException("LiveKit egress is disabled");
+            throw new IllegalStateException("LiveKit egress 未启用");
         }
         Map<?, ?> response = post("/twirp/livekit.Egress/StopEgress", Map.of("egressId", egressId));
         return new EgressStopResult(responseValue(response, "egressId", "egress_id"), responseValue(response, "status"));
@@ -80,7 +80,7 @@ public class LiveKitEgressService {
                     .retrieve()
                     .body(Map.class);
         } catch (ResourceAccessException ex) {
-            throw new IllegalStateException("LiveKit Egress API timeout or unreachable, check LIVEKIT_URL and livekit/egress worker", ex);
+            throw new IllegalStateException("LiveKit Egress API 超时或不可达，请检查 LIVEKIT_URL 和 livekit/egress worker", ex);
         }
     }
 

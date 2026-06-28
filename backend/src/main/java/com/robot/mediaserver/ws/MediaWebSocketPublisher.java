@@ -44,7 +44,7 @@ public class MediaWebSocketPublisher {
         try {
             json = objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Failed to serialize websocket payload", ex);
+            throw new IllegalStateException("序列化 WebSocket 消息失败", ex);
         }
         for (WebSocketSession session : sessions) {
             if (!session.isOpen()) {

@@ -60,7 +60,7 @@ public class RobotMediaCommandService {
             mqtt.publish(topic, message);
             log.info("MQTT published topic={}, payload={}", topic, json);
         } catch (JsonProcessingException | MqttException ex) {
-            throw new IllegalStateException("Failed to publish MQTT command: " + topic, ex);
+            throw new IllegalStateException("发布 MQTT 指令失败：" + topic, ex);
         }
     }
 

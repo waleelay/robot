@@ -152,7 +152,7 @@ public class SnapshotService {
             uploadSnapshotFile(objectKey, file);
         }
         if (objectKey == null || objectKey.isBlank()) {
-            throw new IllegalArgumentException("officialObjectKey or file is required");
+            throw new IllegalArgumentException("officialObjectKey 或文件不能为空");
         }
         snapshot.setStatus(SnapshotStatus.COMPLETED);
         snapshot.setOfficialObjectKey(objectKey);
@@ -208,7 +208,7 @@ public class SnapshotService {
     public byte[] image(String snapshotId) {
         MediaSnapshot snapshot = requireSnapshot(snapshotId);
         if (snapshot.getOfficialObjectKey() == null || snapshot.getOfficialObjectKey().isBlank()) {
-            throw new IllegalStateException("Snapshot image is not ready");
+            throw new IllegalStateException("抓拍图片尚未就绪");
         }
         return minioStorageService.readObject(snapshot.getOfficialObjectKey());
     }
@@ -234,7 +234,7 @@ public class SnapshotService {
 
     private MediaSnapshot requireSnapshot(String snapshotId) {
         return repository.findById(snapshotId)
-                .orElseThrow(() -> new IllegalArgumentException("Snapshot not found: " + snapshotId));
+                .orElseThrow(() -> new IllegalArgumentException("未找到抓拍任务：" + snapshotId));
     }
 
     private String resolveTrackSid(VideoSession session, CreateSnapshotRequest request) {
@@ -248,7 +248,7 @@ public class SnapshotService {
         try {
             minioStorageService.upload(objectKey, file.getInputStream(), file.getSize(), contentType(file));
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to upload snapshot file", ex);
+            throw new IllegalStateException("上传抓拍文件失败", ex);
         }
     }
 

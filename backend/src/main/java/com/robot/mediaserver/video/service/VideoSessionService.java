@@ -347,7 +347,7 @@ public class VideoSessionService {
         if (holdsRoomForIntercom(session)
                 && (!Objects.equals(session.getIntercomOperatorId(), user.userId())
                 || !Objects.equals(session.getIntercomClientId(), user.clientId()))) {
-            throw new IllegalStateException("Intercom is occupied by another operator");
+            throw new IllegalStateException("对讲已被其他操作员占用");
         }
         liveKitRoomService.createRoom(session.getRoomName());
         // 如果这个会话原本只是空壳或空闲等待，对讲需要先确保 Room 可用。
@@ -479,7 +479,7 @@ public class VideoSessionService {
     public SnapshotResponse createSnapshot(String sessionId, CreateSnapshotRequest request, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
-            throw new IllegalStateException("Current session is not streaming");
+            throw new IllegalStateException("当前会话未在推流");
         }
         return snapshotService.create(session, request, user);
     }
@@ -493,7 +493,7 @@ public class VideoSessionService {
         if (session.getStatus() == VideoSessionStatus.CLOSED
                 || session.getStatus() == VideoSessionStatus.FAILED
                 || session.getStatus() == VideoSessionStatus.TIMEOUT) {
-            throw new IllegalStateException("Current session is not available");
+            throw new IllegalStateException("当前会话不可用");
         }
         SnapshotResponse snapshot = snapshotService.create(session, request, user);
         CompleteSnapshotRequest completeRequest = new CompleteSnapshotRequest();
@@ -504,7 +504,7 @@ public class VideoSessionService {
     public RecordingListItemResponse startRecording(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
-            throw new IllegalStateException("Current session is not streaming");
+            throw new IllegalStateException("当前会话未在推流");
         }
         return recordingService.startLiveRecording(session, user);
     }
@@ -1020,14 +1020,14 @@ public class VideoSessionService {
 
     private VideoSession requireSession(String sessionId) {
         return repository.findById(sessionId)
-                .orElseThrow(() -> new IllegalArgumentException("Video session not found: " + sessionId));
+                .orElseThrow(() -> new IllegalArgumentException("未找到视频会话：" + sessionId));
     }
 
     private VideoSession requireIntercomOperator(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         if (!Objects.equals(session.getIntercomOperatorId(), user.userId())
                 || !Objects.equals(session.getIntercomClientId(), user.clientId())) {
-            throw new IllegalStateException("Current user does not own the intercom");
+            throw new IllegalStateException("当前用户未持有对讲权限");
         }
         return session;
     }

@@ -69,12 +69,12 @@ public class SnapshotWorkerScheduler {
         if (!finished) {
             process.destroyForcibly();
             Files.deleteIfExists(file);
-            throw new IllegalStateException("ffmpeg timeout");
+            throw new IllegalStateException("ffmpeg 执行超时");
         }
         byte[] bytes = Files.readAllBytes(file);
         Files.deleteIfExists(file);
         if (process.exitValue() != 0 || bytes.length == 0) {
-            throw new IllegalStateException("ffmpeg capture failed");
+            throw new IllegalStateException("ffmpeg 抓拍失败");
         }
         return bytes;
     }

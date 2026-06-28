@@ -123,7 +123,7 @@ public class RecordingService {
         try {
             LiveKitEgressService.EgressStartResult result = egressService.startRoomMp4(session.getRoomName(), recording.getSourceObjectKey());
             if (result.egressId() == null || result.egressId().isBlank()) {
-                throw new IllegalStateException("LiveKit Egress start response missing egressId, status=" + result.status());
+                throw new IllegalStateException("LiveKit Egress 启动响应缺少 egressId，状态=" + result.status());
             }
             recording.setEgressId(result.egressId());
             recording.setEgressStatus(result.status());
@@ -132,7 +132,8 @@ public class RecordingService {
             return item(recording);
         } catch (Exception ex) {
             recording.setStatus(RecordingStatus.FAILED);
-            String code = ex.getMessage() != null && ex.getMessage().contains("Egress API timeout")
+            String code = ex.getMessage() != null
+                    && (ex.getMessage().contains("Egress API timeout") || ex.getMessage().contains("Egress API 超时"))
                     ? "EGRESS_API_TIMEOUT"
                     : "EGRESS_START_FAILED";
             recording.setErrorCode(code);
@@ -149,7 +150,7 @@ public class RecordingService {
         if (!Objects.equals(recording.getOrgId(), user.orgId())
                 || !Objects.equals(recording.getSessionId(), sessionId)
                 || !"LIVEKIT_EGRESS".equals(recording.getSourceType())) {
-            throw error(HttpStatus.NOT_FOUND, "RECORDING_NOT_ACTIVE", "Recording is not active");
+            throw error(HttpStatus.NOT_FOUND, "RECORDING_NOT_ACTIVE", "录像未在进行中");
         }
         if (recording.getStatus() != RecordingStatus.RECORDING) {
             return item(recording);
@@ -270,11 +271,11 @@ public class RecordingService {
         MediaRecording recording = requireRecording(upload.getRecordingId());
         int maxPartUrls = Math.max(1, properties.getRecording().getMaxPartUrlsPerRequest());
         if (partNumbers.size() > maxPartUrls) {
-            throw error(HttpStatus.BAD_REQUEST, "TOO_MANY_PART_URLS", "Too many part URLs requested at once");
+            throw error(HttpStatus.BAD_REQUEST, "TOO_MANY_PART_URLS", "一次请求的分片地址过多");
         }
         for (Integer part : partNumbers) {
             if (part == null || part < 1 || part > upload.getPartCount()) {
-                throw error(HttpStatus.BAD_REQUEST, "INVALID_PART_NUMBER", "Invalid part number");
+                throw error(HttpStatus.BAD_REQUEST, "INVALID_PART_NUMBER", "无效的分片编号");
             }
         }
         refresh(upload);
@@ -309,7 +310,7 @@ public class RecordingService {
         storage.completeMultipart(recording.getSourceObjectKey(), upload.getStorageUploadId(), parts);
         long storedSize = storage.statSize(recording.getSourceObjectKey());
         if (storedSize != recording.getFileSize()) {
-            throw error(HttpStatus.CONFLICT, "SOURCE_SIZE_MISMATCH", "Completed object size does not match registered file");
+            throw error(HttpStatus.CONFLICT, "SOURCE_SIZE_MISMATCH", "合成后的对象大小与登记文件不一致");
         }
         OffsetDateTime timestamp = now();
         upload.setStatus(UploadStatus.COMPLETED);
@@ -394,7 +395,7 @@ public class RecordingService {
     public PlaybackUrlResponse playUrl(CurrentUser user, String recordingId) {
         MediaRecording recording = requireRecording(recordingId);
         if (!Objects.equals(recording.getOrgId(), user.orgId()) || recording.getStatus() != RecordingStatus.READY) {
-            throw error(HttpStatus.NOT_FOUND, "RECORDING_NOT_PLAYABLE", "Recording is not playable");
+            throw error(HttpStatus.NOT_FOUND, "RECORDING_NOT_PLAYABLE", "录像不可播放");
         }
         OffsetDateTime expiresAt = now().plusSeconds(properties.getRecording().getPlayUrlTtlSeconds());
         String token = signPlayback(recordingId, expiresAt.toEpochSecond());
@@ -408,11 +409,11 @@ public class RecordingService {
     public PlaybackAsset playbackAsset(String recordingId, String objectName, String token) {
         verifyPlayback(recordingId, token);
         if (!objectName.matches("[A-Za-z0-9_.-]+")) {
-            throw error(HttpStatus.BAD_REQUEST, "INVALID_ASSET_NAME", "Invalid HLS asset name");
+            throw error(HttpStatus.BAD_REQUEST, "INVALID_ASSET_NAME", "无效的 HLS 资源名称");
         }
         MediaRecording recording = requireRecording(recordingId);
         if (recording.getStatus() != RecordingStatus.READY) {
-            throw error(HttpStatus.NOT_FOUND, "RECORDING_NOT_PLAYABLE", "Recording is not playable");
+            throw error(HttpStatus.NOT_FOUND, "RECORDING_NOT_PLAYABLE", "录像不可播放");
         }
         String objectKey = hlsPrefix(recording) + objectName;
         byte[] bytes = storage.readObject(objectKey);
@@ -540,35 +541,35 @@ public class RecordingService {
 
     private void validateUploadedParts(MediaRecording recording, MediaRecordingUpload upload, List<StoredPart> parts) {
         if (parts.size() != upload.getPartCount()) {
-            throw error(HttpStatus.CONFLICT, "UPLOAD_INCOMPLETE", "Not all parts have been uploaded");
+            throw error(HttpStatus.CONFLICT, "UPLOAD_INCOMPLETE", "仍有分片尚未上传");
         }
         // 对象存储返回的 part 列表按 partNumber 校验，防止乱序/缺号被误认为完成。
         long total = 0;
         for (int index = 0; index < parts.size(); index++) {
             StoredPart part = parts.get(index);
             if (part.partNumber() != index + 1) {
-                throw error(HttpStatus.CONFLICT, "UPLOAD_INCOMPLETE", "Uploaded parts are not contiguous");
+                throw error(HttpStatus.CONFLICT, "UPLOAD_INCOMPLETE", "已上传分片不连续");
             }
             total += part.size();
         }
         if (total != recording.getFileSize()) {
-            throw error(HttpStatus.CONFLICT, "UPLOAD_SIZE_MISMATCH", "Uploaded part sizes do not match registered file");
+            throw error(HttpStatus.CONFLICT, "UPLOAD_SIZE_MISMATCH", "已上传分片大小与登记文件不一致");
         }
     }
 
     private void validateSource(CreateRecordingUploadRequest request) {
         if (!"video/mp4".equalsIgnoreCase(request.getContentType())) {
-            throw error(HttpStatus.BAD_REQUEST, "INVALID_VIDEO_FILE", "Only video/mp4 is accepted");
+            throw error(HttpStatus.BAD_REQUEST, "INVALID_VIDEO_FILE", "仅支持 video/mp4");
         }
         if (request.getFileSize() > properties.getRecording().getMaxFileSizeBytes()) {
-            throw error(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "Recording exceeds configured size limit");
+            throw error(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "录像文件超过配置的大小限制");
         }
     }
 
     private void ensureSameSource(MediaRecording recording, CreateRecordingUploadRequest request) {
         if (recording.getFileSize() != request.getFileSize()
                 || !Objects.equals(recording.getSha256(), request.getSha256())) {
-            throw error(HttpStatus.CONFLICT, "SOURCE_FILE_CHANGED", "Source file changed since upload was created");
+            throw error(HttpStatus.CONFLICT, "SOURCE_FILE_CHANGED", "源文件在创建上传任务后发生变化");
         }
     }
 
@@ -576,21 +577,21 @@ public class RecordingService {
         if (uploadRepository.countByStatus(UploadStatus.ACTIVE) >= properties.getRecording().getMaxActiveUploadsGlobal()
                 || uploadRepository.countActiveByRobotId(robotId, UploadStatus.ACTIVE)
                         >= properties.getRecording().getMaxActiveUploadsPerRobot()) {
-            throw error(HttpStatus.TOO_MANY_REQUESTS, "UPLOAD_CONCURRENCY_LIMIT", "Upload concurrency limit exceeded");
+            throw error(HttpStatus.TOO_MANY_REQUESTS, "UPLOAD_CONCURRENCY_LIMIT", "上传并发数超过限制");
         }
     }
 
     private MediaRecordingUpload requireActiveUpload(String robotId, String uploadId) {
         MediaRecordingUpload upload = requireUpload(robotId, uploadId);
         if (upload.getStatus() != UploadStatus.ACTIVE || upload.getExpiresAt().isBefore(now())) {
-            throw error(HttpStatus.CONFLICT, "UPLOAD_NOT_ACTIVE", "Upload session is no longer active");
+            throw error(HttpStatus.CONFLICT, "UPLOAD_NOT_ACTIVE", "上传会话已不再有效");
         }
         return upload;
     }
 
     private MediaRecordingUpload requireUpload(String robotId, String uploadId) {
         MediaRecordingUpload upload = uploadRepository.findById(uploadId)
-                .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "UPLOAD_NOT_FOUND", "Upload not found"));
+                .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "UPLOAD_NOT_FOUND", "未找到上传任务"));
         requireRobotRecording(robotId, upload.getRecordingId());
         return upload;
     }
@@ -598,14 +599,14 @@ public class RecordingService {
     private MediaRecording requireRobotRecording(String robotId, String recordingId) {
         MediaRecording recording = requireRecording(recordingId);
         if (!recording.getRobotId().equals(robotId)) {
-            throw error(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "Recording not found");
+            throw error(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "未找到录像");
         }
         return recording;
     }
 
     private MediaRecording requireRecording(String recordingId) {
         return recordingRepository.findById(recordingId)
-                .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "Recording not found"));
+                .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "未找到录像"));
     }
 
     private java.util.Optional<MediaRecording> activeLiveRecording(String sessionId) {
@@ -724,7 +725,7 @@ public class RecordingService {
             normalized = normalized.substring(1);
         }
         if (normalized.isBlank() || normalized.contains("..") || normalized.contains("//")) {
-            throw error(HttpStatus.BAD_REQUEST, "INVALID_ASSET_NAME", "Invalid asset name");
+            throw error(HttpStatus.BAD_REQUEST, "INVALID_ASSET_NAME", "无效的资源名称");
         }
         return normalized;
     }
@@ -791,22 +792,22 @@ public class RecordingService {
 
     private void verifyPlayback(String recordingId, String token) {
         if (token == null) {
-            throw error(HttpStatus.FORBIDDEN, "PLAY_TOKEN_REQUIRED", "Playback token is required");
+            throw error(HttpStatus.FORBIDDEN, "PLAY_TOKEN_REQUIRED", "播放令牌不能为空");
         }
         String[] values = token.split("\\.");
         if (values.length != 3 || !recordingId.equals(values[0])) {
-            throw error(HttpStatus.FORBIDDEN, "INVALID_PLAY_TOKEN", "Playback token is invalid");
+            throw error(HttpStatus.FORBIDDEN, "INVALID_PLAY_TOKEN", "播放令牌无效");
         }
         long expiry;
         try {
             expiry = Long.parseLong(values[1]);
         } catch (NumberFormatException ex) {
-            throw error(HttpStatus.FORBIDDEN, "INVALID_PLAY_TOKEN", "Playback token is invalid");
+            throw error(HttpStatus.FORBIDDEN, "INVALID_PLAY_TOKEN", "播放令牌无效");
         }
         String payload = values[0] + "." + values[1];
         // 使用常量时间比较签名，避免通过响应时间推测 HMAC 字符。
         if (expiry < now().toEpochSecond() || !constantEquals(values[2], signature(payload))) {
-            throw error(HttpStatus.FORBIDDEN, "PLAY_TOKEN_EXPIRED", "Playback token expired or invalid");
+            throw error(HttpStatus.FORBIDDEN, "PLAY_TOKEN_EXPIRED", "播放令牌已过期或无效");
         }
     }
 
@@ -819,7 +820,7 @@ public class RecordingService {
             return Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(hmac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to create playback token", ex);
+            throw new IllegalStateException("创建播放令牌失败", ex);
         }
     }
 
@@ -831,7 +832,7 @@ public class RecordingService {
 
     private void requireRobotId(String robotId) {
         if (robotId == null || robotId.isBlank()) {
-            throw error(HttpStatus.BAD_REQUEST, "ROBOT_ID_REQUIRED", "X-Robot-Id is required");
+            throw error(HttpStatus.BAD_REQUEST, "ROBOT_ID_REQUIRED", "X-Robot-Id 不能为空");
         }
     }
 

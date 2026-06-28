@@ -152,7 +152,7 @@ public class ControlMediaServiceClient {
                 }
             });
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to read snapshot file", ex);
+            throw new IllegalStateException("读取抓拍文件失败", ex);
         }
         return withHeaders(restClient.post()
                         .uri("/internal/media/video-sessions/{sessionId}/snapshots/file", sessionId)

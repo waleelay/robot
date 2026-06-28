@@ -61,7 +61,7 @@ public class RecordingObjectStorageService {
                     .expiry(properties.getRecording().getUploadUrlTtlSeconds(), TimeUnit.SECONDS)
                     .build());
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to presign recording part upload", ex);
+            throw new IllegalStateException("生成录像分片上传预签名地址失败", ex);
         }
     }
 
@@ -84,7 +84,7 @@ public class RecordingObjectStorageService {
             parts.sort(Comparator.comparingInt(StoredPart::partNumber));
             return parts;
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to list recording parts", ex);
+            throw new IllegalStateException("列出录像分片失败", ex);
         }
     }
 
@@ -104,7 +104,7 @@ public class RecordingObjectStorageService {
                     .build());
             abortMultipart(objectKey, storageUploadId);
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to compose original recording object", ex);
+            throw new IllegalStateException("合成原始录像对象失败", ex);
         }
     }
 
@@ -118,7 +118,7 @@ public class RecordingObjectStorageService {
                         .build());
             }
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to remove staged recording parts", ex);
+            throw new IllegalStateException("删除暂存录像分片失败", ex);
         }
     }
 
@@ -131,7 +131,7 @@ public class RecordingObjectStorageService {
                     .build());
             return response.size();
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to stat recording object: " + objectKey, ex);
+            throw new IllegalStateException("获取录像对象信息失败：" + objectKey, ex);
         }
     }
 
@@ -145,7 +145,7 @@ public class RecordingObjectStorageService {
                     .overwrite(true)
                     .build());
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to download recording object: " + objectKey, ex);
+            throw new IllegalStateException("下载录像对象失败：" + objectKey, ex);
         }
     }
 
@@ -159,7 +159,7 @@ public class RecordingObjectStorageService {
                     .contentType(contentType)
                     .build());
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to upload generated recording asset: " + objectKey, ex);
+            throw new IllegalStateException("上传生成的录像资源失败：" + objectKey, ex);
         }
     }
 
@@ -173,7 +173,7 @@ public class RecordingObjectStorageService {
             input.transferTo(output);
             return output.toByteArray();
         } catch (Exception ex) {
-            throw new IllegalArgumentException("Recording asset not found: " + objectKey, ex);
+            throw new IllegalArgumentException("未找到录像资源：" + objectKey, ex);
         }
     }
 
@@ -191,7 +191,7 @@ public class RecordingObjectStorageService {
                         .build());
             }
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to delete recording assets: " + prefix, ex);
+            throw new IllegalStateException("删除录像资源失败：" + prefix, ex);
         }
     }
 
@@ -217,7 +217,7 @@ public class RecordingObjectStorageService {
 
     private void requireEnabled() {
         if (!properties.getMinio().isEnabled()) {
-            throw new IllegalStateException("MinIO must be enabled for recording upload");
+            throw new IllegalStateException("录像上传需要启用 MinIO");
         }
     }
 
@@ -227,7 +227,7 @@ public class RecordingObjectStorageService {
                 client().makeBucket(MakeBucketArgs.builder().bucket(bucket()).build());
             }
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to prepare recording bucket", ex);
+            throw new IllegalStateException("准备录像存储桶失败", ex);
         }
     }
 

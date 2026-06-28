@@ -59,7 +59,7 @@ public class RobotMediaStatusSubscriber {
             mqttClient.subscribe(CLIENT_STATUS_TOPIC, 1, clientStatusListener());
             log.info("Subscribed media MQTT topics: {}, {}, {}", STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC);
         } catch (MqttException ex) {
-            throw new IllegalStateException("Failed to subscribe media MQTT topics", ex);
+            throw new IllegalStateException("订阅媒体 MQTT 主题失败", ex);
         }
     }
 

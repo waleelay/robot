@@ -38,7 +38,7 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
-        return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Request validation failed");
+        return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "请求参数校验失败");
     }
 
     /**

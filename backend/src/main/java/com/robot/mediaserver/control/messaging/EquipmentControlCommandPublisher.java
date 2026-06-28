@@ -80,7 +80,7 @@ public class EquipmentControlCommandPublisher {
             mqttClient().publish(topic, message);
             log.info("Equipment control MQTT published topic={}, payload={}", topic, json);
         } catch (JsonProcessingException | MqttException ex) {
-            throw new IllegalStateException("Failed to publish equipment control MQTT command: " + topic, ex);
+            throw new IllegalStateException("发布设备控制 MQTT 指令失败：" + topic, ex);
         }
     }
 

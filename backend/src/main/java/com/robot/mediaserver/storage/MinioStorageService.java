@@ -56,13 +56,13 @@ public class MinioStorageService {
                     .build());
             return objectKey;
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to upload object to MinIO: " + objectKey, ex);
+            throw new IllegalStateException("上传对象到 MinIO 失败：" + objectKey, ex);
         }
     }
 
     public byte[] readObject(String objectKey) {
         if (!properties.getMinio().isEnabled()) {
-            throw new IllegalStateException("MinIO disabled");
+            throw new IllegalStateException("MinIO 未启用");
         }
         try (InputStream inputStream = client().getObject(GetObjectArgs.builder()
                 .bucket(properties.getMinio().getBucket())
@@ -70,7 +70,7 @@ public class MinioStorageService {
                 .build())) {
             return inputStream.readAllBytes();
         } catch (Exception ex) {
-            throw new IllegalArgumentException("Object not found: " + objectKey, ex);
+            throw new IllegalArgumentException("未找到对象：" + objectKey, ex);
         }
     }
 

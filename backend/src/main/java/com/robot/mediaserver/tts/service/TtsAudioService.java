@@ -64,7 +64,7 @@ public class TtsAudioService {
             headers.add("X-TTS-Cache-Hit", String.valueOf(generated.cacheHit()));
             return new ResponseEntity<>(new FileSystemResource(generated.file()), headers, HttpStatus.OK);
         } catch (IOException ex) {
-            throw new IllegalStateException("Failed to read TTS file", ex);
+            throw new IllegalStateException("读取 TTS 文件失败", ex);
         } finally {
             readLock.unlock();
         }
@@ -78,11 +78,11 @@ public class TtsAudioService {
         try {
             locked = readLock.tryLock(1, TimeUnit.SECONDS);
             if (!locked) {
-                throw new IllegalStateException("TTS read lock timeout");
+                throw new IllegalStateException("获取 TTS 读取锁超时");
             }
             File file = generated.file().toFile();
             if (!file.exists()) {
-                throw new IllegalStateException("TTS file does not exist");
+                throw new IllegalStateException("TTS 文件不存在");
             }
             audioInputStream = AudioSystem.getAudioInputStream(file);
             AudioFormat audioFormat = audioInputStream.getFormat();
@@ -103,7 +103,7 @@ public class TtsAudioService {
             }
             webSocketPublisher.publishBinary(raw);
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to publish TTS audio to frontend", ex);
+            throw new IllegalStateException("发布 TTS 音频到前端失败", ex);
         } finally {
             if (audioInputStream != null) {
                 try {
@@ -119,14 +119,14 @@ public class TtsAudioService {
 
     private GeneratedTts generate(String robotId, String inputText) {
         if (!properties.getTts().isEnabled()) {
-            throw new IllegalStateException("TTS is disabled");
+            throw new IllegalStateException("TTS 未启用");
         }
         String text = normalizeText(inputText);
         if (text.isBlank()) {
-            throw new IllegalArgumentException("text is required");
+            throw new IllegalArgumentException("文本不能为空");
         }
         if (text.length() > properties.getTts().getMaxTextLength()) {
-            throw new IllegalArgumentException("text length must be <= " + properties.getTts().getMaxTextLength());
+            throw new IllegalArgumentException("文本长度不能超过 " + properties.getTts().getMaxTextLength());
         }
 
         String voice = properties.getTts().getVoice();
@@ -139,7 +139,7 @@ public class TtsAudioService {
         try {
             locked = writeLock.tryLock(properties.getTts().getGenerateLockTimeoutSeconds(), TimeUnit.SECONDS);
             if (!locked) {
-                throw new IllegalStateException("TTS file lock timeout");
+                throw new IllegalStateException("获取 TTS 文件写入锁超时");
             }
             Files.createDirectories(Objects.requireNonNull(file.getParent()));
             boolean cacheHit = Files.exists(file) && Files.size(file) > 0;
@@ -150,7 +150,7 @@ public class TtsAudioService {
                         requestOpenTts(text, voice, format, tmp);
                     }
                     if (!Files.exists(tmp) || Files.size(tmp) == 0) {
-                        throw new IllegalStateException("OpenTTS generated empty file");
+                        throw new IllegalStateException("OpenTTS 生成了空文件");
                     }
                     Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 } finally {
@@ -160,9 +160,9 @@ public class TtsAudioService {
             return new GeneratedTts(file, format, cacheHit);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("TTS generation interrupted", ex);
+            throw new IllegalStateException("TTS 生成被中断", ex);
         } catch (IOException ex) {
-            throw new IllegalStateException("Failed to write TTS file", ex);
+            throw new IllegalStateException("写入 TTS 文件失败", ex);
         } finally {
             if (locked) {
                 writeLock.unlock();
@@ -180,12 +180,12 @@ public class TtsAudioService {
                 .toUriString();
         ResponseEntity<byte[]> response = ttsHttp.exchange(URI.create(url), HttpMethod.GET, HttpEntity.EMPTY, byte[].class);
         if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null || response.getBody().length == 0) {
-            throw new IllegalStateException("OpenTTS failed, status=" + response.getStatusCode());
+            throw new IllegalStateException("OpenTTS 调用失败，状态码=" + response.getStatusCode());
         }
         try {
             Files.write(outputFile, response.getBody());
         } catch (IOException ex) {
-            throw new IllegalStateException("Failed to write OpenTTS response", ex);
+            throw new IllegalStateException("写入 OpenTTS 响应失败", ex);
         }
     }
 
@@ -194,7 +194,7 @@ public class TtsAudioService {
         Path dir = outputRoot.resolve(safeSegment(valueOrDefault(robotId, "unknown"))).normalize();
         Path file = dir.resolve(filename).normalize();
         if (!file.startsWith(outputRoot)) {
-            throw new IllegalArgumentException("output path must be under TTS output root");
+            throw new IllegalArgumentException("输出路径必须位于 TTS 输出根目录下");
         }
         return file;
     }
@@ -210,7 +210,7 @@ public class TtsAudioService {
     private static String normalizeFormat(String format) {
         String value = valueOrDefault(format, "wav").toLowerCase();
         if (!value.matches("[a-z0-9]{1,8}")) {
-            throw new IllegalArgumentException("invalid TTS format");
+            throw new IllegalArgumentException("无效的 TTS 格式");
         }
         return value;
     }
@@ -229,7 +229,7 @@ public class TtsAudioService {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is not available", ex);
+            throw new IllegalStateException("SHA-256 不可用", ex);
         }
     }
 

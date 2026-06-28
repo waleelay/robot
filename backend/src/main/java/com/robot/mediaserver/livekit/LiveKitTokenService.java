@@ -140,7 +140,7 @@ public class LiveKitTokenService {
     private String normalizedSecret() {
         String secret = properties.getLivekit().getApiSecret();
         if (secret == null || secret.length() < 32) {
-            throw new IllegalStateException("LIVEKIT_API_SECRET must be at least 32 characters for HS256 signing");
+            throw new IllegalStateException("LIVEKIT_API_SECRET 至少需要 32 个字符才能用于 HS256 签名");
         }
         return secret;
     }

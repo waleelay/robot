@@ -314,7 +314,7 @@ public class EquipmentControlService {
     private Map<String, Object> requireSession(String robotId, String controlSessionId) {
         Map<String, Object> session = sessions.get(controlSessionId);
         if (session == null || !robotId.equals(session.get("robotId"))) {
-            throw new IllegalArgumentException("Control session not found: " + controlSessionId);
+            throw new IllegalArgumentException("未找到控制会话：" + controlSessionId);
         }
         return session;
     }
@@ -341,14 +341,14 @@ public class EquipmentControlService {
         return fixedRobots().stream()
                 .filter(robot -> robotId.equals(robot.get("robotId")))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Robot not found: " + robotId));
+                .orElseThrow(() -> new IllegalArgumentException("未找到机器人：" + robotId));
     }
 
     private Map<String, Object> requireDevice(String robotId, String deviceId) {
         return devices(robotId).stream()
                 .filter(device -> deviceId.equals(device.get("deviceId")))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Device not bound: " + deviceId));
+                .orElseThrow(() -> new IllegalArgumentException("设备未绑定：" + deviceId));
     }
 
     private static boolean conflicts(List<String> requested, List<String> existing) {

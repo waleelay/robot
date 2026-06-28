@@ -69,7 +69,7 @@ public class HlsPlaybackAssetService {
 
     public void process(String recordingId) {
         MediaRecording recording = repository.findById(recordingId)
-                .orElseThrow(() -> new IllegalArgumentException("Recording not found: " + recordingId));
+                .orElseThrow(() -> new IllegalArgumentException("未找到录像：" + recordingId));
         Path directory = null;
         try {
             Long sourceSize = sourceSizeOrDefer(recording);
@@ -101,7 +101,7 @@ public class HlsPlaybackAssetService {
             ready(recordingId, probe, prefix + "index.m3u8", segmentCount, totalSize, sourceSize);
         } catch (Exception ex) {
             if (shouldRetryEgressSource(recording, ex)) {
-                defer(recordingId, "Waiting for readable LiveKit Egress source MP4");
+                defer(recordingId, "等待可读取的 LiveKit Egress 源 MP4");
                 return;
             }
             fail(recordingId, "HLS_PROCESSING_FAILED", ex.getMessage());
@@ -164,7 +164,7 @@ public class HlsPlaybackAssetService {
                 .start();
         String output = new String(process.getInputStream().readAllBytes());
         if (!process.waitFor(60, TimeUnit.SECONDS) || process.exitValue() != 0) {
-            throw new IllegalStateException("ffprobe could not read uploaded MP4");
+            throw new IllegalStateException("ffprobe 无法读取已上传的 MP4");
         }
         JsonNode root = objectMapper.readTree(output);
         String videoCodec = null;
@@ -186,7 +186,7 @@ public class HlsPlaybackAssetService {
         }
         double duration = root.path("format").path("duration").asDouble(0);
         if (videoCodec == null || duration <= 0) {
-            throw new IllegalStateException("Uploaded MP4 has no readable video duration");
+            throw new IllegalStateException("已上传的 MP4 没有可读取的视频时长");
         }
         return new ProbeResult(videoCodec, audioCodec, pixelFormat, width, height, level, duration);
     }
@@ -203,10 +203,10 @@ public class HlsPlaybackAssetService {
             }
         }
         if ("LIVEKIT_EGRESS".equals(recording.getSourceType())) {
-            defer(recording.getRecordingId(), "Waiting for LiveKit Egress source MP4");
+            defer(recording.getRecordingId(), "等待 LiveKit Egress 源 MP4");
             return null;
         }
-        throw new IllegalStateException("Recording source object is empty: " + recording.getSourceObjectKey());
+        throw new IllegalStateException("录像源对象为空：" + recording.getSourceObjectKey());
     }
 
     private boolean shouldRetryEgressSource(MediaRecording recording, Exception ex) {
@@ -292,7 +292,7 @@ public class HlsPlaybackAssetService {
                 .start();
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         if (process.waitFor() != 0 || !Files.exists(outputDirectory.resolve("index.m3u8"))) {
-            throw new IllegalStateException("ffmpeg failed to generate HLS playback asset: " + truncate(output));
+            throw new IllegalStateException("ffmpeg 生成 HLS 回放资源失败：" + truncate(output));
         }
     }
 
