@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.socket.BinaryMessage;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -54,6 +55,22 @@ public class MediaWebSocketPublisher {
                 session.sendMessage(new TextMessage(json));
             } catch (IOException ex) {
                 log.warn("Failed to send websocket event={}", event, ex);
+                sessions.remove(session);
+            }
+        }
+    }
+
+    public void publishBinary(byte[] bytes) {
+        BinaryMessage message = new BinaryMessage(bytes);
+        for (WebSocketSession session : sessions) {
+            if (!session.isOpen()) {
+                sessions.remove(session);
+                continue;
+            }
+            try {
+                session.sendMessage(message);
+            } catch (IOException ex) {
+                log.warn("Failed to send websocket binary message", ex);
                 sessions.remove(session);
             }
         }

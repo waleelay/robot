@@ -69,6 +69,17 @@ media:
     trusted-robot-network-enabled: ${RECORDING_TRUSTED_ROBOT_NETWORK_ENABLED:false}
     trusted-robot-cidrs: ${RECORDING_TRUSTED_ROBOT_CIDRS:127.0.0.1/32,::1/128}
     default-org-id: ${RECORDING_DEFAULT_ORG_ID:org001}
+  tts:
+    enabled: ${TTS_ENABLED:true}
+    engine-url: ${TTS_ENGINE_URL:http://192.168.124.204:5500/api/tts}
+    voice: ${TTS_VOICE:coqui-tts:zh_baker}
+    format: ${TTS_FORMAT:wav}
+    output-root: ${TTS_OUTPUT_ROOT:/tmp/robot-media/tts}
+    connect-timeout-ms: ${TTS_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${TTS_READ_TIMEOUT_MS:30000}
+    max-text-length: ${TTS_MAX_TEXT_LENGTH:1000}
+    generate-lock-timeout-seconds: ${TTS_GENERATE_LOCK_TIMEOUT_SECONDS:30}
+    wav-header-offset: ${TTS_WAV_HEADER_OFFSET:44}
   session:
     track-publish-timeout-seconds: ${TRACK_PUBLISH_TIMEOUT_SECONDS:20}
     interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}

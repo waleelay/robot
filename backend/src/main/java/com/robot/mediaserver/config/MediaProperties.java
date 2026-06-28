@@ -23,6 +23,7 @@ public class MediaProperties {
     private Session session = new Session();
     private SnapshotWorker snapshotWorker = new SnapshotWorker();
     private Recording recording = new Recording();
+    private Tts tts = new Tts();
 
     public Auth getAuth() {
         return auth;
@@ -94,6 +95,14 @@ public class MediaProperties {
 
     public void setRecording(Recording recording) {
         this.recording = recording;
+    }
+
+    public Tts getTts() {
+        return tts;
+    }
+
+    public void setTts(Tts tts) {
+        this.tts = tts;
     }
 
     public static class Auth {
@@ -624,6 +633,99 @@ public class MediaProperties {
 
     public void setDefaultOrgId(String defaultOrgId) {
             this.defaultOrgId = defaultOrgId;
+        }
+    }
+
+    public static class Tts {
+    private boolean enabled = true;
+    private String engineUrl = "http://127.0.0.1:5500/api/tts";
+    private String voice = "coqui-tts:zh_baker";
+    private String format = "wav";
+    private String outputRoot = "/tmp/robot-media/tts";
+    private int connectTimeoutMs = 5000;
+    private int readTimeoutMs = 30000;
+    private int maxTextLength = 1000;
+    private int generateLockTimeoutSeconds = 30;
+    private int wavHeaderOffset = 44;
+
+    public boolean isEnabled() {
+            return enabled;
+        }
+
+    public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+    public String getEngineUrl() {
+            return engineUrl;
+        }
+
+    public void setEngineUrl(String engineUrl) {
+            this.engineUrl = engineUrl;
+        }
+
+    public String getVoice() {
+            return voice;
+        }
+
+    public void setVoice(String voice) {
+            this.voice = voice;
+        }
+
+    public String getFormat() {
+            return format;
+        }
+
+    public void setFormat(String format) {
+            this.format = format;
+        }
+
+    public String getOutputRoot() {
+            return outputRoot;
+        }
+
+    public void setOutputRoot(String outputRoot) {
+            this.outputRoot = outputRoot;
+        }
+
+    public int getConnectTimeoutMs() {
+            return connectTimeoutMs;
+        }
+
+    public void setConnectTimeoutMs(int connectTimeoutMs) {
+            this.connectTimeoutMs = connectTimeoutMs;
+        }
+
+    public int getReadTimeoutMs() {
+            return readTimeoutMs;
+        }
+
+    public void setReadTimeoutMs(int readTimeoutMs) {
+            this.readTimeoutMs = readTimeoutMs;
+        }
+
+    public int getMaxTextLength() {
+            return maxTextLength;
+        }
+
+    public void setMaxTextLength(int maxTextLength) {
+            this.maxTextLength = maxTextLength;
+        }
+
+    public int getGenerateLockTimeoutSeconds() {
+            return generateLockTimeoutSeconds;
+        }
+
+    public void setGenerateLockTimeoutSeconds(int generateLockTimeoutSeconds) {
+            this.generateLockTimeoutSeconds = generateLockTimeoutSeconds;
+        }
+
+    public int getWavHeaderOffset() {
+            return wavHeaderOffset;
+        }
+
+    public void setWavHeaderOffset(int wavHeaderOffset) {
+            this.wavHeaderOffset = wavHeaderOffset;
         }
     }
 }
