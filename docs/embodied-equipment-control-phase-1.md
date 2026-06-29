@@ -300,6 +300,63 @@ POST /api/control/robots/{robotId}/control-sessions/takeover
 7. 云台控制默认不要求打断 `NAVIGATION`，可走普通设备级控制权。
 8. 急停不走接管流程，仍然最高优先级。
 
+#### 4.5.1 控制模式下拉切换
+
+```text
+POST /api/control/robots/{robotId}/control-mode
+```
+
+使用场景：
+
+- 前端在“装备控制”标题右侧展示控制模式下拉框。
+- 下拉框当前值来自机器人端通过 `robot/{robotId}/media/client/status` 实时上报的 `controlMode`。
+- 用户手动选择 `MANUAL`、`ASSISTED`、`NAVIGATION` 时调用该接口。
+- 机器人端后续再次上报 `controlMode` 后，前端以下发后的实时状态为准重新渲染下拉框。
+
+前端请求：
+
+```json
+{
+  "controlMode": "NAVIGATION"
+}
+```
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `controlMode` | string | 是 | 目标模式：`MANUAL` / `ASSISTED` / `NAVIGATION` |
+
+后端 MQTT 下发：
+
+```json
+{
+  "robotId": "robot-songling-001",
+  "seq": 1289,
+  "target": {
+    "deviceId": "base",
+    "deviceType": "WHEELED_BASE"
+  },
+  "action": "control.mode.set",
+  "params": {
+    "controlMode": "NAVIGATION"
+  },
+  "issuedAt": "2026-06-03T10:30:30+08:00"
+}
+```
+
+成功响应：
+
+```json
+{
+  "status": "PUBLISHED",
+  "robotId": "robot-songling-001",
+  "controlMode": "NAVIGATION",
+  "stateSeq": 1289,
+  "issuedAt": "2026-06-03T10:30:30+08:00"
+}
+```
+
 ### 4.6 高风险确认 Token
 
 ```text

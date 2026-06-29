@@ -87,6 +87,22 @@ public class PanoramaMockService {
                 "alarms", alarmGroups());
     }
 
+    public Map<String, Object> disposeAlarm(String alarmId, Map<String, Object> request) {
+        if (alarmId == null || alarmId.isBlank()) {
+            throw new IllegalArgumentException("alarmId is required");
+        }
+        String rawStatus = request == null ? null : String.valueOf(request.getOrDefault("disposalStatus", ""));
+        AlarmDisposalStatus disposalStatus = AlarmDisposalStatus.from(rawStatus);
+        return object(
+                "success", true,
+                "serverTime", now(),
+                "alarmId", alarmId,
+                "disposalStatus", disposalStatus.code,
+                "disposalStatusName", disposalStatus.name,
+                "status", disposalStatus.alarmStatus,
+                "message", "告警处置状态已模拟更新");
+    }
+
     private Map<String, Object> deviceStats() {
         return Map.of(
                 "total", 22,
@@ -513,5 +529,34 @@ public class PanoramaMockService {
             map.put(String.valueOf(values[i]), values[i + 1]);
         }
         return map;
+    }
+
+    private enum AlarmDisposalStatus {
+        PLAN_DISPOSAL("PLAN_DISPOSAL", "预案处置", "handling"),
+        CONFIRMED("CONFIRMED", "确认", "handled"),
+        FALSE_ALARM("FALSE_ALARM", "误报", "false_alarm");
+
+        private final String code;
+        private final String name;
+        private final String alarmStatus;
+
+        AlarmDisposalStatus(String code, String name, String alarmStatus) {
+            this.code = code;
+            this.name = name;
+            this.alarmStatus = alarmStatus;
+        }
+
+        private static AlarmDisposalStatus from(String rawStatus) {
+            if (rawStatus == null || rawStatus.isBlank()) {
+                throw new IllegalArgumentException("disposalStatus is required");
+            }
+            String normalized = rawStatus.trim();
+            for (AlarmDisposalStatus status : values()) {
+                if (status.code.equalsIgnoreCase(normalized) || status.name.equals(normalized)) {
+                    return status;
+                }
+            }
+            throw new IllegalArgumentException("disposalStatus must be one of PLAN_DISPOSAL, CONFIRMED, FALSE_ALARM");
+        }
     }
 }

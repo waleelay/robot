@@ -29,6 +29,7 @@ type Client struct {
 	stateSeq    int64
 	audioVolume int
 	audioMuted  bool
+	controlMode string
 	deviceState map[string]map[string]any
 }
 
@@ -41,6 +42,7 @@ func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publish
 		lastCmds:    make(map[string]string),
 		audioVolume: 50,
 		audioMuted:  false,
+		controlMode: "MANUAL",
 		deviceState: make(map[string]map[string]any),
 	}
 }
@@ -259,6 +261,10 @@ func (c *Client) applyControlCommand(command model.ControlCommand) bool {
 	case "payload.safety_switch":
 		c.setDeviceStateLocked(command.Target.DeviceID, "safetySwitchEnabled", anyBool(command.Params["enabled"], false))
 		changed = true
+	case "control.mode.set":
+		controlMode := normalizeControlMode(anyString(command.Params["controlMode"], command.ControlMode))
+		c.controlMode = controlMode
+		changed = true
 	case "light.warning.set":
 		c.setDeviceStateLocked(command.Target.DeviceID, "enabled", anyBool(command.Params["enabled"], false))
 		changed = true
@@ -334,6 +340,7 @@ func (c *Client) online(status string) {
 	c.mu.Lock()
 	c.stateSeq++
 	stateSeq := c.stateSeq
+	controlMode := c.controlMode
 	c.mu.Unlock()
 	// online/offline 消息既是心跳，也是机器人设备注册信息的来源。
 	c.publish("robot/"+c.cfg.RobotID+"/media/client/status", model.OnlineMessage{
@@ -343,7 +350,7 @@ func (c *Client) online(status string) {
 		Type:             c.cfg.Type,
 		Battery:          c.cfg.Battery,
 		Status:           status,
-		ControlMode:      "MANUAL",
+		ControlMode:      controlMode,
 		StateSeq:         stateSeq,
 		MissionStatus:    "IDLE",
 		NavigationStatus: "IDLE",
@@ -451,6 +458,22 @@ func anyBool(value any, fallback bool) bool {
 		return item
 	}
 	return fallback
+}
+
+func anyString(value any, fallback string) string {
+	if item, ok := value.(string); ok && strings.TrimSpace(item) != "" {
+		return item
+	}
+	return fallback
+}
+
+func normalizeControlMode(value string) string {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "MANUAL", "ASSISTED", "NAVIGATION":
+		return strings.ToUpper(strings.TrimSpace(value))
+	default:
+		return "MANUAL"
+	}
 }
 
 func anyFloat(value any, fallback float64) float64 {

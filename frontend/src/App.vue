@@ -72,7 +72,7 @@
                 @click="playRecording(recording)"
             >
               <span>{{ recording.fileName }}</span>
-              <small>{{ recording.deviceId }} · {{ durationText(recording.durationSeconds) }} · {{ recording.status }} · {{ recording.sourceType }}</small>
+              <small>{{ recording.deviceId }} · {{ recordingTimeRangeText(recording) }} · {{ durationText(recording.durationSeconds) }}</small>
             </button>
             <button
                 v-if="recordingTab === 'snapshot'"
@@ -96,7 +96,7 @@
                 :src="snapshotImage(selectedSnapshot)"
                 :alt="selectedSnapshot.remark || selectedSnapshot.snapshotId"
             />
-            <div v-if="recordingTab !== 'snapshot' && !selectedRecording" class="empty-video">选择 READY 录像开始回放</div>
+            <div v-if="recordingTab !== 'snapshot' && !selectedRecording" class="empty-video">选择录像开始回放</div>
             <div v-if="recordingTab === 'snapshot' && !selectedSnapshot" class="empty-video">选择抓拍查看图片</div>
           </div>
         </div>
@@ -189,7 +189,20 @@
         <div class="equipment-control">
           <div class="event-head">
             <span>装备控制</span>
-            <el-tag size="mini">{{ selectedRobot.controlMode || 'MANUAL' }}</el-tag>
+            <el-select
+                class="control-mode-select"
+                size="mini"
+                :value="selectedRobot.controlMode || 'MANUAL'"
+                :disabled="selectedRobot.status !== 'online' || controlModeChanging"
+                @change="changeControlMode"
+            >
+              <el-option
+                  v-for="item in controlModeOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+              />
+            </el-select>
           </div>
           <div class="control-block">
             <strong>本体</strong>
@@ -379,6 +392,7 @@ import {
   heartbeatIntercom,
   mediaClientId,
   restartVideoSession,
+  setControlMode,
   sendEquipmentCommand,
   snapshotImageUrl,
   startLiveRecording,
@@ -513,6 +527,12 @@ export default {
       controlSessions: {},
       controlSeq: 1,
       controlTimers: {},
+      controlModeChanging: false,
+      controlModeOptions: [
+        { value: 'MANUAL', label: '手动模式' },
+        { value: 'ASSISTED', label: '辅助模式' },
+        { value: 'NAVIGATION', label: '导航模式' }
+      ],
       deviceStateCache,
       ptzAutoRotateState: Object.assign({}, deviceStateCache.ptzAutoRotateState || {}),
       audioState: Object.assign({}, deviceStateCache.audioState || {}),
@@ -712,6 +732,10 @@ export default {
       const date = new Date(value)
       if (Number.isNaN(date.getTime())) return value
       return date.toLocaleString()
+    },
+    recordingTimeRangeText(recording) {
+      if (!recording) return '--'
+      return `${this.dateTimeText(recording.recordedStartedAt)} - ${this.dateTimeText(recording.recordedEndedAt)}`
     },
     async startRobot(robot) {
       if (robot.status !== 'online') return
@@ -1222,6 +1246,49 @@ export default {
         this.log('ERROR getControlProfile', this.errorMessage(error))
       } finally {
         this.$set(this.controlProfileLoading, robotId, false)
+      }
+    },
+    async changeControlMode(controlMode) {
+      const robot = this.selectedRobot
+      if (!robot || !controlMode || controlMode === (robot.controlMode || 'MANUAL')) return
+      const previousMode = robot.controlMode || 'MANUAL'
+      const index = this.robots.findIndex(item => item.robotId === robot.robotId)
+      if (index < 0) return
+      this.controlModeChanging = true
+      this.$set(this.robots, index, Object.assign({}, this.robots[index], { controlMode }))
+      try {
+        const response = await setControlMode(robot.robotId, {
+          controlMode
+        })
+        if (response.code) {
+          const error = new Error(response.message || response.code)
+          error.code = response.code
+          error.latestControlMode = response.latestControlMode
+          error.latestStateSeq = response.latestStateSeq
+          throw error
+        }
+        const currentIndex = this.robots.findIndex(item => item.robotId === robot.robotId)
+        if (currentIndex >= 0) {
+          this.$set(this.robots, currentIndex, Object.assign({}, this.robots[currentIndex], {
+            controlMode: response.controlMode || controlMode,
+            stateSeq: response.stateSeq || this.robots[currentIndex].stateSeq
+          }))
+        }
+        this.log('API setControlMode', response)
+      } catch (error) {
+        const latestMode = error.latestControlMode || previousMode
+        const latestSeq = error.latestStateSeq || robot.stateSeq
+        const currentIndex = this.robots.findIndex(item => item.robotId === robot.robotId)
+        if (currentIndex >= 0) {
+          this.$set(this.robots, currentIndex, Object.assign({}, this.robots[currentIndex], {
+            controlMode: latestMode,
+            stateSeq: latestSeq
+          }))
+        }
+        this.$message.error(this.errorMessage(error))
+        this.log('ERROR setControlMode', this.errorMessage(error))
+      } finally {
+        this.controlModeChanging = false
       }
     },
     controlDevices() {
@@ -2275,6 +2342,23 @@ export default {
 
 .equipment-control {
   min-height: 0;
+}
+
+.event-head {
+  min-height: 42px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.control-mode-select {
+  width: 104px;
+  flex: 0 0 auto;
 }
 
 .control-block {

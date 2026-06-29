@@ -120,6 +120,40 @@ public class EquipmentControlService {
         return session;
     }
 
+    public Map<String, Object> setControlMode(String robotId, Map<String, Object> request, CurrentUser user) {
+        requireRobot(robotId);
+        String controlMode = normalizeControlMode(stringValue(request.get("controlMode"), ""));
+        Map<String, Object> state = robotStates.getOrDefault(robotId, defaultRobotState(requireRobot(robotId)));
+        long latestSeq = numberValue(state.get("stateSeq"), 0).longValue();
+        OffsetDateTime now = OffsetDateTime.now();
+        Map<String, Object> base = requireDevice(robotId, "base");
+        Map<String, Object> mqttPayload = object(
+                "robotId", robotId,
+                "seq", latestSeq + 1,
+                "target", object(
+                        "deviceId", "base",
+                        "deviceType", base.get("deviceType")),
+                "action", "control.mode.set",
+                "params", object("controlMode", controlMode),
+                "issuedAt", now.toString());
+        commandPublisher.publishCommand(robotId, mqttPayload);
+        state.put("controlMode", controlMode);
+        state.put("missionStatus", missionStatusForMode(controlMode));
+        state.put("navigationStatus", navigationStatusForMode(controlMode));
+        state.put("controlOwner", object("userId", user.userId(), "clientId", user.clientId()));
+        state.put("stateSeq", latestSeq + 1);
+        state.put("timestamp", now.toString());
+        enrichRobotState(robotId, state);
+        robotStates.put(robotId, state);
+        webSocketPublisher.publish("robot.state", state);
+        return object(
+                "status", "PUBLISHED",
+                "robotId", robotId,
+                "controlMode", controlMode,
+                "stateSeq", state.get("stateSeq"),
+                "issuedAt", now.toString());
+    }
+
     public Map<String, Object> heartbeat(String robotId, String controlSessionId) {
         Map<String, Object> session = requireSession(robotId, controlSessionId);
         session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
@@ -248,6 +282,9 @@ public class EquipmentControlService {
             return object(
                     "enabled", booleanValue(params.get("enabled"), false),
                     "panSpeed", clamp(doubleValue(params.get("panSpeed"), 0.3), 0.0, maxPanSpeed));
+        }
+        if ("control.mode.set".equals(action)) {
+            return object("controlMode", normalizeControlMode(stringValue(params.get("controlMode"), "MANUAL")));
         }
         if (action.startsWith("volume.")) {
             return object(
@@ -660,6 +697,26 @@ public class EquipmentControlService {
 
     private static String stringValue(Object value, String defaultValue) {
         return value == null || String.valueOf(value).isBlank() ? defaultValue : String.valueOf(value);
+    }
+
+    private static String normalizeControlMode(String value) {
+        String mode = stringValue(value, "MANUAL").toUpperCase();
+        if (List.of("MANUAL", "ASSISTED", "NAVIGATION").contains(mode)) {
+            return mode;
+        }
+        throw new IllegalArgumentException("不支持的控制模式：" + value);
+    }
+
+    private static String missionStatusForMode(String controlMode) {
+        return switch (controlMode) {
+            case "NAVIGATION" -> "RUNNING";
+            case "ASSISTED" -> "ASSISTED";
+            default -> "IDLE";
+        };
+    }
+
+    private static String navigationStatusForMode(String controlMode) {
+        return "NAVIGATION".equals(controlMode) ? "RUNNING" : "IDLE";
     }
 
     private static Number numberValue(Object value, Number defaultValue) {

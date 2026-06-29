@@ -649,6 +649,56 @@ handled / max(totalToday, 1) * 100
 
 当 `totalToday = 0` 时，`handleRate` 返回 `100`，表示当前没有待处理告警；如果业务希望显示 `0%`，可在 BFF 中按产品口径调整。
 
+### 5.7 告警处置接口
+
+```http
+POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
+```
+
+用途：大屏侧对指定告警进行处置。当前 BFF 返回 mock 成功结果；待中心端告警处置接口完成后，由 BFF 内部转调中心端接口并保持大屏接口路径和参数稳定。
+
+请求参数：
+
+```json
+{
+  "disposalStatus": "PLAN_DISPOSAL"
+}
+```
+
+`disposalStatus` 可选值：
+
+| 值 | 含义 | 告警状态建议映射 |
+|---|---|---|
+| `PLAN_DISPOSAL` | 预案处置 | `handling` |
+| `CONFIRMED` | 确认 | `handled` |
+| `FALSE_ALARM` | 误报 | `false_alarm` |
+
+当前 mock 也兼容中文值：`预案处置`、`确认`、`误报`。
+
+返回结构：
+
+```json
+{
+  "success": true,
+  "serverTime": "2026-06-12 11:31:02",
+  "alarmId": "alarm-001",
+  "disposalStatus": "PLAN_DISPOSAL",
+  "disposalStatusName": "预案处置",
+  "status": "handling",
+  "message": "告警处置状态已模拟更新"
+}
+```
+
+参数错误返回：
+
+```json
+{
+  "success": false,
+  "code": "BAD_REQUEST",
+  "message": "disposalStatus must be one of PLAN_DISPOSAL, CONFIRMED, FALSE_ALARM"
+}
+```
+
 ## 6. 动态数据回显
 
 推荐采用：
@@ -863,6 +913,9 @@ curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/devices/robot-001 | jq
 curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/device-groups | jq
 curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/tasks | jq
 curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/alarms | jq
+curl -sS -X POST http://127.0.0.1:8090/api/bigscreen/panorama/alarms/alarm-001/disposal \
+  -H 'Content-Type: application/json' \
+  -d '{"disposalStatus":"PLAN_DISPOSAL"}' | jq
 ```
 
 通过 Nginx 测试：

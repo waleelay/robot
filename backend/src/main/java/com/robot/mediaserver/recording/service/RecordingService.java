@@ -35,6 +35,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -381,7 +382,12 @@ public class RecordingService {
         }
         Page<MediaRecording> result = recordingRepository.findAll(
                 spec,
-                PageRequest.of(Math.max(0, page), Math.min(100, Math.max(1, size))));
+                PageRequest.of(
+                        Math.max(0, page),
+                        Math.min(100, Math.max(1, size)),
+                        Sort.by(
+                                Sort.Order.desc("recordedStartedAt").nullsLast(),
+                                Sort.Order.desc("createdAt").nullsLast())));
         return new RecordingListResponse(result.stream().map(this::item).toList(), result.getNumber(), result.getSize(), result.getTotalElements());
     }
 

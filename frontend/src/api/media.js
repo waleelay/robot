@@ -51,6 +51,10 @@ export function takeoverControl(robotId, data) {
   return client.post(`/api/control/robots/${robotId}/control-sessions/takeover`, data).then(res => res.data)
 }
 
+export function setControlMode(robotId, data) {
+  return client.post(`/api/control/robots/${robotId}/control-mode`, data).then(res => res.data)
+}
+
 export function releaseControl(robotId, controlSessionId, data) {
   return client.post(`/api/control/robots/${robotId}/control-sessions/${controlSessionId}/release`, data || {}).then(res => res.data)
 }

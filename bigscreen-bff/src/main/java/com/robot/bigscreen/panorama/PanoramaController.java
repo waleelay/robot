@@ -1,8 +1,13 @@
 package com.robot.bigscreen.panorama;
 
 import java.util.Map;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -39,5 +44,20 @@ public class PanoramaController {
     @GetMapping("/alarms")
     public Map<String, Object> alarms() {
         return panoramaMockService.alarms();
+    }
+
+    @PostMapping("/alarms/{alarmId}/disposal")
+    public Map<String, Object> disposeAlarm(
+            @PathVariable String alarmId,
+            @RequestBody Map<String, Object> request) {
+        return panoramaMockService.disposeAlarm(alarmId, request);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException exception) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "success", false,
+                "code", "BAD_REQUEST",
+                "message", exception.getMessage()));
     }
 }

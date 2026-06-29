@@ -60,6 +60,14 @@ public class ControlRobotController {
         return equipmentControlService.takeover(robotId, request, currentUserResolver.resolve(servletRequest));
     }
 
+    @PostMapping("/{robotId}/control-mode")
+    public Map<String, Object> setControlMode(
+            @PathVariable String robotId,
+            @RequestBody Map<String, Object> request,
+            HttpServletRequest servletRequest) {
+        return equipmentControlService.setControlMode(robotId, request, currentUserResolver.resolve(servletRequest));
+    }
+
     @PostMapping("/{robotId}/control-sessions/{controlSessionId}/heartbeat")
     public Map<String, Object> heartbeatControl(
             @PathVariable String robotId,

@@ -34,6 +34,7 @@ class RobotMQTTClient:
         self.state_seq = 0
         self.audio_volume = 50
         self.audio_muted = False
+        self.control_mode = "MANUAL"
         self.device_state: dict[str, dict[str, object]] = {}
         self.stop_event = threading.Event()
 
@@ -254,6 +255,9 @@ class RobotMQTTClient:
             elif command.action == "payload.safety_switch":
                 self.set_device_state_locked(command.target.device_id, "safetySwitchEnabled", any_bool(command.params.get("enabled"), False))
                 changed = True
+            elif command.action == "control.mode.set":
+                self.control_mode = normalize_control_mode(any_str(command.params.get("controlMode"), command.control_mode))
+                changed = True
             elif command.action == "light.warning.set":
                 self.set_device_state_locked(command.target.device_id, "enabled", any_bool(command.params.get("enabled"), False))
                 changed = True
@@ -321,6 +325,7 @@ class RobotMQTTClient:
         with self.lock:
             self.state_seq += 1
             state_seq = self.state_seq
+            control_mode = self.control_mode
         self.publish(f"robot/{self.cfg.robot_id}/media/client/status", {
             "robotId": self.cfg.robot_id,
             "clientId": self.cfg.client_id,
@@ -328,10 +333,10 @@ class RobotMQTTClient:
             "type": self.cfg.type,
             "battery": self.cfg.battery,
             "status": status,
-            "controlMode": "MANUAL",
+            "controlMode": control_mode,
             "stateSeq": state_seq,
-            "missionStatus": "IDLE",
-            "navigationStatus": "IDLE",
+            "missionStatus": mission_status_for_mode(control_mode),
+            "navigationStatus": navigation_status_for_mode(control_mode),
             "controlOwner": None,
             "estopActive": False,
             "cameras": [
@@ -446,6 +451,35 @@ def any_bool(value: object, fallback: bool) -> bool:
     if isinstance(value, bool):
         return value
     return fallback
+
+
+def any_str(value: object, fallback: str) -> str:
+    """把字符串参数转换成 str，空值时返回默认值。"""
+    if isinstance(value, str) and value.strip():
+        return value
+    return fallback
+
+
+def normalize_control_mode(value: str) -> str:
+    """规范化控制模式，只接受平台一期定义的三种模式。"""
+    mode = (value or "MANUAL").strip().upper()
+    if mode in {"MANUAL", "ASSISTED", "NAVIGATION"}:
+        return mode
+    return "MANUAL"
+
+
+def mission_status_for_mode(control_mode: str) -> str:
+    """根据控制模式模拟任务状态。"""
+    if control_mode == "NAVIGATION":
+        return "RUNNING"
+    if control_mode == "ASSISTED":
+        return "ASSISTED"
+    return "IDLE"
+
+
+def navigation_status_for_mode(control_mode: str) -> str:
+    """根据控制模式模拟导航状态。"""
+    return "RUNNING" if control_mode == "NAVIGATION" else "IDLE"
 
 
 def any_float(value: object, fallback: float) -> float:
