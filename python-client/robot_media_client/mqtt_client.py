@@ -29,6 +29,7 @@ class RobotMQTTClient:
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=cfg.client_id)
         self.executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="mqtt-command")
         self.lock = threading.RLock()
+        self.subscriptions: dict[str, Callable[[bytes, str], None]] = {}
         self.last_cmds: dict[str, str] = {}
         self.state_seq = 0
         self.audio_volume = 50
@@ -43,6 +44,8 @@ class RobotMQTTClient:
             self.client.username_pw_set(self.cfg.mqtt_username, self.cfg.mqtt_password)
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
+        self.client.on_message = self._on_message
+        self.client.on_subscribe = self._on_subscribe
         self.client.connect(broker.host, broker.port, keepalive=20)
         self.client.loop_start()
         heartbeat = threading.Thread(target=self._heartbeat_loop, daemon=True)
@@ -68,19 +71,23 @@ class RobotMQTTClient:
             print("mqtt connect failed", rc, flush=True)
             return
         robot = self.cfg.robot_id
-        subscriptions: list[tuple[str, Callable[[bytes, str], None]]] = [
-            (f"robot/{robot}/media/video/start", self._handle_start),
-            (f"robot/{robot}/media/video/stop", self._handle_stop),
-            (f"robot/{robot}/media/video/switch-channel", self._handle_start),
-            (f"robot/{robot}/media/video/intercom/start", self._handle_intercom_start),
-            (f"robot/{robot}/media/video/intercom/stop", self._handle_intercom_stop),
-            (f"robot/{robot}/control/#", self._handle_control_command),
-        ]
-        for topic, handler in subscriptions:
-            client.message_callback_add(topic, self._callback(handler))
-            client.subscribe(topic, qos=1)
-        print("mqtt subscribed", " ".join(topic for topic, _ in subscriptions), flush=True)
+        self.subscriptions = {
+            f"robot/{robot}/media/video/start": self._handle_start,
+            f"robot/{robot}/media/video/stop": self._handle_stop,
+            f"robot/{robot}/media/video/switch-channel": self._handle_start,
+            f"robot/{robot}/media/video/intercom/start": self._handle_intercom_start,
+            f"robot/{robot}/media/video/intercom/stop": self._handle_intercom_stop,
+            f"robot/{robot}/control/#": self._handle_control_command,
+        }
+        for topic in self.subscriptions:
+            result, mid = client.subscribe(topic, qos=1)
+            print("mqtt subscribe requested", f"topic={topic}", f"mid={mid}", f"result={result}", flush=True)
+        print("mqtt subscriptions registered", " ".join(self.subscriptions.keys()), flush=True)
         self.executor.submit(self.online, "online")
+
+    def _on_subscribe(self, _client: mqtt.Client, _userdata: object, mid: int, reason_codes: Any, _properties: mqtt.Properties | None = None) -> None:
+        """打印 broker 对订阅请求的确认，便于排查 topic 未订阅成功的问题。"""
+        print("mqtt subscribe ack", f"mid={mid}", f"reason={reason_codes}", flush=True)
 
     def _on_disconnect(self, _client: mqtt.Client, _userdata: object, _flags: mqtt.DisconnectFlags, rc: mqtt.ReasonCode, _properties: mqtt.Properties | None) -> None:
         """MQTT 断开时立即停止本地视频和对讲资源，避免无人控制的推流残留。"""
@@ -88,18 +95,18 @@ class RobotMQTTClient:
         self.publisher.stop_all()
         self.intercom.stop_all()
 
-    def _callback(self, handler: Callable[[bytes, str], None]) -> Callable[[mqtt.Client, object, mqtt.MQTTMessage], None]:
-        """把 MQTT 消息交给后台线程处理，保持 paho 网络线程畅通。"""
-        def wrapped(_client: mqtt.Client, _userdata: object, message: mqtt.MQTTMessage) -> None:
-            """复制消息内容并提交后台执行，避免回调线程被耗时任务阻塞。"""
-            payload = bytes(message.payload)
-            topic = message.topic
-
-            # RTSP 探测和 GStreamer 启动都可能耗时；如果直接在 paho 回调线程里做，
-            # publish ACK、stop 指令和其它摄像头的 start 指令都会被拖住。
-            self.executor.submit(self._run_handler, handler, payload, topic)
-
-        return wrapped
+    def _on_message(self, _client: mqtt.Client, _userdata: object, message: mqtt.MQTTMessage) -> None:
+        """统一接收 MQTT 消息，按订阅过滤器匹配后交给后台线程处理。"""
+        payload = bytes(message.payload)
+        topic = message.topic
+        for topic_filter, handler in list(self.subscriptions.items()):
+            if mqtt.topic_matches_sub(topic_filter, topic):
+                print("mqtt message matched", f"topic={topic}", f"filter={topic_filter}", flush=True)
+                # RTSP 探测和 GStreamer 启动都可能耗时；如果直接在 paho 回调线程里做，
+                # publish ACK、stop 指令和其它摄像头的 start 指令都会被拖住。
+                self.executor.submit(self._run_handler, handler, payload, topic)
+                return
+        print("mqtt message ignored", f"topic={topic}", "reason=no-handler", flush=True)
 
     def _run_handler(self, handler: Callable[[bytes, str], None], payload: bytes, topic: str) -> None:
         """执行一个 MQTT 命令处理器，并兜底记录未捕获异常。"""
@@ -167,14 +174,44 @@ class RobotMQTTClient:
             print("intercom stop failed", exc, flush=True)
 
     def _handle_control_command(self, payload: bytes, topic: str) -> None:
-        """处理普通设备控制指令，目前 Python 客户端只落地音量/静音类状态。"""
+        """处理普通设备控制指令，并把可模拟的设备状态回报给后端。"""
         try:
-            command = ControlCommand.from_json(json.loads(payload.decode()))
-            print("equipment control command received topic=", topic, "payload=", payload.decode(), flush=True)
-            if self.apply_control_command(command):
-                self.online("online")
+            raw_payload = payload.decode()
+            command = ControlCommand.from_json(json.loads(raw_payload))
         except Exception as exc:
             print("control command unmarshal failed", exc, flush=True)
+            return
+        print(
+            "equipment control command received",
+            f"topic={topic}",
+            f"robotId={command.robot_id}",
+            f"deviceId={command.target.device_id}",
+            f"deviceType={command.target.device_type}",
+            f"action={command.action}",
+            f"seq={command.seq}",
+            f"payload={raw_payload}",
+            flush=True,
+        )
+        if self.apply_control_command(command):
+            print(
+                "equipment control command applied",
+                f"deviceId={command.target.device_id}",
+                f"action={command.action}",
+                flush=True,
+            )
+            try:
+                self.online("online")
+            except Exception as exc:
+                print("equipment control state publish failed", exc, flush=True)
+        else:
+            print(
+                "equipment control command ignored",
+                f"deviceId={command.target.device_id}",
+                f"deviceType={command.target.device_type}",
+                f"action={command.action}",
+                "reason=unsupported-or-no-state-change",
+                flush=True,
+            )
 
     def _is_duplicate(self, session_id: str, command_id: str) -> bool:
         """按 sessionId + commandId 去重，避免 broker 重投导致重复启动进程。"""
@@ -236,7 +273,16 @@ class RobotMQTTClient:
         if not device_id:
             return
         status = self.device_state.setdefault(device_id, {})
+        old_value = status.get(key)
         status[key] = value
+        if old_value != value:
+            print(
+                "equipment device state updated",
+                f"deviceId={device_id}",
+                f"{key}={value}",
+                f"old={old_value}",
+                flush=True,
+            )
 
     def status(self, session_id: str, status: str, track_sid: str, track_name: str, error_code: str, message: str) -> None:
         """上报实时视频 session 状态给后端状态订阅器。"""
