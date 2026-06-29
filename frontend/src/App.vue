@@ -31,17 +31,6 @@
             <small>{{ robot.robotId }} · {{ robot.status || 'offline' }} · 电量 {{ batteryText(robot.battery) }}</small>
           </button>
         </section>
-        <section class="left-log">
-          <div class="event-head">
-            <span>事件日志</span>
-            <el-button size="mini" @click="events = []">清空</el-button>
-          </div>
-          <div class="event-log">
-            <div v-for="(item, index) in events" :key="index" class="event-item">
-              {{ item }}
-            </div>
-          </div>
-        </section>
       </aside>
 
       <section class="video-area">
@@ -506,7 +495,6 @@ export default {
           ]
         }
       ],
-      events: [],
       recordingMode: false,
       recordingTab: 'manual',
       recordingsLoading: false,
@@ -2188,8 +2176,9 @@ export default {
       return 'info'
     },
     log(title, payload) {
-      const line = `[${new Date().toLocaleTimeString()}] ${title}\n${typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2)}`
-      this.events.unshift(line)
+      if (process.env.NODE_ENV === 'development') {
+        console.debug(`[robot-media] ${title}`, payload)
+      }
     },
     errorMessage(error) {
       let data = error && error.response && error.response.data
@@ -2261,8 +2250,7 @@ export default {
 .left-panel,
 .robot-list,
 .video-area,
-.equipment-panel,
-.left-log {
+.equipment-panel {
   background: #ffffff;
   border: 1px solid #dfe5ef;
   border-radius: 4px;
@@ -2271,7 +2259,7 @@ export default {
 
 .left-panel {
   display: grid;
-  grid-template-rows: minmax(180px, 34%) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 12px;
   background: transparent;
   border: 0;
@@ -2281,8 +2269,7 @@ export default {
   overflow: hidden;
 }
 
-.left-panel.collapsed .robot-list,
-.left-panel.collapsed .left-log {
+.left-panel.collapsed .robot-list {
   display: none;
 }
 
@@ -2474,13 +2461,6 @@ export default {
 .robot-list {
   padding: 12px;
   overflow: auto;
-}
-
-.left-log {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
 .list-title {
@@ -2833,34 +2813,6 @@ export default {
   overflow: auto;
 }
 
-.event-head {
-  height: 42px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #e5eaf2;
-}
-
-.event-log {
-  padding: 8px;
-  overflow: auto;
-  max-height: none;
-  flex: 1;
-}
-
-.event-item {
-  white-space: pre-wrap;
-  font-family: Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.45;
-  padding: 8px;
-  margin-bottom: 8px;
-  border-radius: 4px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-}
-
 /deep/ .message-link {
   color: #1677ff;
   font-weight: 600;
@@ -2897,10 +2849,6 @@ export default {
   .left-panel:not(.collapsed) {
     grid-column: 1 / -1;
     min-height: 260px;
-  }
-
-  .left-panel:not(.collapsed) {
-    grid-template-rows: auto minmax(220px, auto);
   }
 
   .camera-grid,
