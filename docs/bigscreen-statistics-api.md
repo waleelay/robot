@@ -141,7 +141,7 @@ GET /api/bigscreen/statistics/overview
 
 ## 3. 一键生成报告
 
-当前版本同步生成并返回文件流。
+当前版本同步生成并返回一个 PDF 文件流。报告内容使用同一套统计聚合数据，支持按时间范围、设备类型和内容模块组合筛选。
 
 ```http
 POST /api/bigscreen/statistics/reports/export
@@ -157,10 +157,11 @@ Accept: application/pdf
     "equipmentRuntime",
     "aiAlarmAnalysis",
     "alarmAreaRanking",
-    "alarmTrend"
+    "alarmTrend",
+    "taskCompletion"
   ],
   "timeRange": {
-    "type": "today",
+    "type": "all",
     "startTime": null,
     "endTime": null
   },
@@ -183,6 +184,26 @@ Accept: application/pdf
 | `alarmTrend` | 告警趋势图 |
 | `taskCompletion` | 任务完成率 |
 
+### 时间范围枚举
+
+| 值 | 含义 |
+|---|---|
+| `all` | 全部 |
+| `today` | 今日 |
+| `week` | 本周 |
+| `month` | 本月 |
+| `custom` | 自定义时间，需传 `startTime` 和 `endTime` |
+
+### 设备类型枚举
+
+| 值 | 含义 |
+|---|---|
+| `all` | 全部 |
+| `UAV` | 无人机 |
+| `ROBOT_DOG` | 机器狗 |
+| `UGV` | 无人车 |
+| `HUMANOID_ROBOT` | 机器人 |
+
 ### 成功响应
 
 ```http
@@ -193,7 +214,87 @@ Content-Disposition: attachment; filename*=UTF-8''statistics-report-20260615.pdf
 
 响应体为 PDF 二进制文件流。
 
-## 4. 后续真实数据来源建议
+导出成功后，后端会同步生成一条历史报告记录。当前第一版使用本地文件持久化，服务重启后历史记录仍可查询和下载。
+
+默认存储目录：
+
+```text
+data/statistics-reports/
+├── index.json
+├── 1.pdf
+├── 2.pdf
+└── 3.pdf
+```
+
+可通过环境变量调整：
+
+```bash
+STATISTICS_REPORT_STORAGE_DIR=/data/bigscreen/statistics-reports
+```
+
+## 4. 历史报告
+
+### 4.1 历史报告列表
+
+```http
+GET /api/bigscreen/statistics/reports?page=1&size=10
+```
+
+响应：
+
+```json
+{
+  "data": [
+    {
+      "id": "1",
+      "reportName": "巡逻巡查数据统计报告-全部-全部",
+      "downloadTime": "2026-06-29 11:59:30",
+      "format": "PDF",
+      "status": "COMPLETED",
+      "filename": "巡逻巡查数据统计报告-全部-全部-20260629115930.pdf",
+      "filePath": "1.pdf"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "size": 10
+}
+```
+
+### 4.2 下载历史报告
+
+历史报告下载的是指定 `id` 对应的本地原始报告文件，不会重新生成报告，也不会新增历史记录。
+
+```http
+GET /api/bigscreen/statistics/reports/{id}/download
+Accept: application/pdf
+```
+
+响应体为 PDF 二进制文件流。
+
+### 4.3 删除历史报告
+
+```http
+DELETE /api/bigscreen/statistics/reports/{id}
+```
+
+删除成功返回：
+
+```http
+HTTP/1.1 204 No Content
+```
+
+### PDF 内容结构
+
+1. 报告基础信息：生成时间、统计时间、设备类型、包含模块
+2. 核心指标：任务执行总数、总巡逻里程、AI 自动识别异常数、自动处置成功率
+3. 装备运行时长：在线率、任务完成率、各设备运行/故障/离线时长
+4. AI 告警分析：告警类型分布、处理方式分布
+5. 告警高发区域：区域 TOP 排行、告警次数、占比
+6. 告警异常趋势：按日期聚合的异常次数
+7. 任务完成情况：已完成、执行中、异常中断与统计结论
+
+## 5. 后续真实数据来源建议
 
 | 页面板块 | 建议权威来源 |
 |---|---|

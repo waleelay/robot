@@ -351,7 +351,16 @@ GET /api/bigscreen/panorama/overview
           "level": "HIGH",
           "levelName": "高风险",
           "eventTime": "2023-08-01 10:00:00",
-          "location": "A区仓库",
+          "location": {
+            "lng": 106.03655278081857,
+            "lat": 30.7478613352993,
+            "altitude": null,
+            "x": 118.4,
+            "y": 42.8,
+            "z": 0.0,
+            "address": "A区主干道",
+            "updatedAt": "2026-06-12 11:30:58"
+          },
           "robotId": "robot-001",
           "deviceName": "R1轮式机器人",
           "taskId": "task-002",
@@ -551,7 +560,7 @@ GET /api/bigscreen/panorama/tasks
 ```json
 {
   "serverTime": "2026-06-12 11:31:02",
-  "total": 3,
+  "total": 4,
   "items": [
     {
       "taskId": "task-001",
@@ -563,6 +572,24 @@ GET /api/bigscreen/panorama/tasks
       "timeRange": "20:00-22:00",
       "currentLocation": "A区主干道",
       "equipmentList": []
+    },
+    {
+      "taskId": "task-004",
+      "name": "北侧消防通道巡检",
+      "status": "running",
+      "statusName": "执行中",
+      "startTime": "2026-06-12 16:00:00",
+      "endTime": "2026-06-12 17:30:00",
+      "timeRange": "16:00-17:30",
+      "currentLocation": "A区北侧消防通道",
+      "equipmentList": [
+        {
+          "robotId": "robot-002",
+          "name": "G1四足机器人",
+          "type": "ROBOT_DOG",
+          "status": "offline"
+        }
+      ]
     }
   ]
 }
@@ -601,7 +628,16 @@ GET /api/bigscreen/panorama/alarms
           "level": "HIGH",
           "levelName": "高风险",
           "eventTime": "2023-08-01 10:00:00",
-          "location": "A区仓库",
+          "location": {
+            "lng": 106.03655278081857,
+            "lat": 30.7478613352993,
+            "altitude": null,
+            "x": 118.4,
+            "y": 42.8,
+            "z": 0.0,
+            "address": "A区主干道",
+            "updatedAt": "2026-06-12 11:30:58"
+          },
           "robotId": "robot-001",
           "deviceName": "R1轮式机器人",
           "taskId": "task-002",
@@ -661,7 +697,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 
 ```json
 {
-  "disposalStatus": "PLAN_DISPOSAL"
+  "disposalStatus": "IMMEDIATE_DISPOSAL"
 }
 ```
 
@@ -669,11 +705,10 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 
 | 值 | 含义 | 告警状态建议映射 |
 |---|---|---|
-| `PLAN_DISPOSAL` | 预案处置 | `handling` |
-| `CONFIRMED` | 确认 | `handled` |
+| `IMMEDIATE_DISPOSAL` | 立即处置 | `handled` |
 | `FALSE_ALARM` | 误报 | `false_alarm` |
 
-当前 mock 也兼容中文值：`预案处置`、`确认`、`误报`。
+当前 mock 也兼容中文值：`立即处置`、`误报`。
 
 返回结构：
 
@@ -682,9 +717,9 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
   "success": true,
   "serverTime": "2026-06-12 11:31:02",
   "alarmId": "alarm-001",
-  "disposalStatus": "PLAN_DISPOSAL",
-  "disposalStatusName": "预案处置",
-  "status": "handling",
+  "disposalStatus": "IMMEDIATE_DISPOSAL",
+  "disposalStatusName": "立即处置",
+  "status": "handled",
   "message": "告警处置状态已模拟更新"
 }
 ```
@@ -695,7 +730,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 {
   "success": false,
   "code": "BAD_REQUEST",
-  "message": "disposalStatus must be one of PLAN_DISPOSAL, CONFIRMED, FALSE_ALARM"
+  "message": "disposalStatus must be one of IMMEDIATE_DISPOSAL, FALSE_ALARM"
 }
 ```
 
@@ -821,7 +856,16 @@ WebSocket：
       "level": "HIGH",
       "levelName": "高风险",
       "eventTime": "2023-08-01 10:00:00",
-      "location": "A区仓库",
+      "location": {
+        "lng": 106.03655278081857,
+        "lat": 30.7478613352993,
+        "altitude": null,
+        "x": 118.4,
+        "y": 42.8,
+        "z": 0.0,
+        "address": "A区主干道",
+        "updatedAt": "2026-06-12 11:30:58"
+      },
       "robotId": "robot-001",
       "deviceName": "R1轮式机器人",
       "taskId": "task-002",
@@ -915,7 +959,7 @@ curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/tasks | jq
 curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/alarms | jq
 curl -sS -X POST http://127.0.0.1:8090/api/bigscreen/panorama/alarms/alarm-001/disposal \
   -H 'Content-Type: application/json' \
-  -d '{"disposalStatus":"PLAN_DISPOSAL"}' | jq
+  -d '{"disposalStatus":"IMMEDIATE_DISPOSAL"}' | jq
 ```
 
 通过 Nginx 测试：

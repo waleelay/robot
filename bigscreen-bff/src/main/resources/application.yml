@@ -7,6 +7,10 @@ center:
   media-base-url: ${CENTER_MEDIA_BASE_URL:http://localhost:8088}
   websocket-control-url: ${CENTER_CONTROL_WS_URL:ws://localhost:8088/ws/control}
 
+statistics:
+  report:
+    storage-dir: ${STATISTICS_REPORT_STORAGE_DIR:data/statistics-reports}
+
 spring:
   application:
     name: bigscreen-bff

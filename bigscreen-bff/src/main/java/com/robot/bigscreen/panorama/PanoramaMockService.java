@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
 import org.springframework.stereotype.Service;
 
 @Service
@@ -105,17 +106,18 @@ public class PanoramaMockService {
 
     private Map<String, Object> deviceStats() {
         return Map.of(
-                "total", 22,
-                "online", 18,
-                "fault", 2,
-                "offline", 2);
+                "total", 12,
+                "online", 10,
+                "fault", 1,
+                "offline", 1);
     }
 
     private List<Map<String, Object>> deviceTypeStats() {
         return List.of(
-                deviceType("ROBOT_DOG", "机器狗", 8),
-                deviceType("HUMANOID_ROBOT", "机器人", 6),
-                deviceType("WHEELED_ROBOT", "轮式车", 8));
+                deviceType("ROBOT_DOG", "机器狗", 4, 1, 0),
+                deviceType("HUMANOID_ROBOT", "机器人", 3, 0, 0),
+                deviceType("WHEELED_ROBOT", "轮式车", 3, 0, 1),
+                deviceType("UAV_ROBOT", "无人机", 2, 0, 0));
     }
 
     private Map<String, Object> patrolOverview() {
@@ -239,7 +241,16 @@ public class PanoramaMockService {
                         "2026-06-12 14:00:00",
                         "2026-06-12 15:00:00",
                         "A区南侧仓库",
-                        List.of(equipment("robot-unitree-001", "G2四足机器人", "ROBOT_DOG", "offline"))));
+                        List.of(equipment("robot-unitree-001", "G2四足机器人", "ROBOT_DOG", "offline"))),
+                task(
+                        "task-004",
+                        "北侧消防通道巡检",
+                        "running",
+                        "执行中",
+                        "2026-06-12 16:00:00",
+                        "2026-06-12 17:30:00",
+                        "A区北侧消防通道",
+                        List.of(equipment("robot-002", "G1四足机器人", "ROBOT_DOG", "offline"))));
     }
 
     private Map<String, Object> alarmGroups() {
@@ -253,15 +264,15 @@ public class PanoramaMockService {
         return Map.of(
                 "total", 15,
                 "summary", alarmSummary(),
-                "high", alarmGroup("HIGH", "高风险", 5, high),
-                "medium", alarmGroup("MEDIUM", "中风险", 5, medium),
+                "high", alarmGroup("HIGH", "高风险", 3, high),
+                "medium", alarmGroup("MEDIUM", "中风险", 7, medium),
                 "low", alarmGroup("LOW", "低风险", 5, low));
     }
 
     private Map<String, Object> alarmSummary() {
         return Map.of(
-                "totalToday", 50,
-                "handled", 18,
+                "totalToday", 15,
+                "handled", 15,
                 "unhandled", 0,
                 "handleRate", 100,
                 "handleRateText", "100%");
@@ -335,8 +346,8 @@ public class PanoramaMockService {
                 "updatedAt", now());
     }
 
-    private Map<String, Object> deviceType(String type, String name, int count) {
-        return Map.of("type", type, "name", name, "count", count);
+    private Map<String, Object> deviceType(String type, String name, int count, int fault, int offline) {
+        return Map.of("type", type, "name", name, "count", count, "fault", fault, "offline", offline);
     }
 
     private List<Map<String, Object>> cameras(String robotId, String typeCode) {
@@ -490,7 +501,7 @@ public class PanoramaMockService {
                 "level", level,
                 "levelName", levelName,
                 "eventTime", eventTime,
-                "location", location,
+                "location", location(location),
                 "robotId", robotId,
                 "deviceName", deviceName,
                 "taskId", taskId,
@@ -500,6 +511,18 @@ public class PanoramaMockService {
                         "visible", "",
                         "thermal", "",
                         "front", ""));
+    }
+
+    private Map<String, Object> location(String address) {
+        return object(
+                "lng", 106.03655278081857,
+                "lat", 30.7478613352993,
+                "altitude", null,
+                "x", 118.4,
+                "y", 42.8,
+                "z", 0.0,
+                "address", address,
+                "updatedAt", now());
     }
 
     private List<Map<String, Object>> mountedDevices() {
@@ -532,8 +555,7 @@ public class PanoramaMockService {
     }
 
     private enum AlarmDisposalStatus {
-        PLAN_DISPOSAL("PLAN_DISPOSAL", "预案处置", "handling"),
-        CONFIRMED("CONFIRMED", "确认", "handled"),
+        IMMEDIATE_DISPOSAL("IMMEDIATE_DISPOSAL", "立即处置", "handled"),
         FALSE_ALARM("FALSE_ALARM", "误报", "false_alarm");
 
         private final String code;
@@ -556,7 +578,7 @@ public class PanoramaMockService {
                     return status;
                 }
             }
-            throw new IllegalArgumentException("disposalStatus must be one of PLAN_DISPOSAL, CONFIRMED, FALSE_ALARM");
+            throw new IllegalArgumentException("disposalStatus must be one of IMMEDIATE_DISPOSAL, FALSE_ALARM");
         }
     }
 }
