@@ -2,7 +2,7 @@ package com.robot.mediaserver.video.api;
 
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.auth.CurrentUserResolver;
-import com.robot.mediaserver.recording.dto.RecordingListItemResponse;
+import com.robot.mediaserver.file.dto.FileListItemResponse;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
@@ -34,10 +34,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/internal/media/video-sessions")
@@ -232,35 +228,26 @@ public class VideoSessionController {
         return service.createSnapshot(sessionId, request, currentUserResolver.resolve(servletRequest));
     }
 
-    @PostMapping(value = "/{sessionId}/snapshots/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public SnapshotResponse snapshotFile(
-            @PathVariable String sessionId,
-            @Valid @ModelAttribute CreateSnapshotRequest request,
-            @RequestPart("file") MultipartFile file,
-            HttpServletRequest servletRequest) {
-        return service.createSnapshotFile(sessionId, request, file, currentUserResolver.resolve(servletRequest));
-    }
-
     @GetMapping("/{sessionId}/snapshots")
     public List<SnapshotResponse> snapshots(@PathVariable String sessionId) {
         return snapshotService.recentBySession(sessionId);
     }
 
     @PostMapping("/{sessionId}/recordings/start")
-    public RecordingListItemResponse startRecording(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+    public FileListItemResponse startRecording(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         return service.startRecording(sessionId, currentUserResolver.resolve(servletRequest));
     }
 
-    @PostMapping("/{sessionId}/recordings/{recordingId}/stop")
-    public RecordingListItemResponse stopRecording(
+    @PostMapping("/{sessionId}/recordings/{fileId}/stop")
+    public FileListItemResponse stopRecording(
             @PathVariable String sessionId,
-            @PathVariable String recordingId,
+            @PathVariable String fileId,
             HttpServletRequest servletRequest) {
-        return service.stopRecording(sessionId, recordingId, currentUserResolver.resolve(servletRequest));
+        return service.stopRecording(sessionId, fileId, currentUserResolver.resolve(servletRequest));
     }
 
     @GetMapping("/{sessionId}/recordings/active")
-    public RecordingListItemResponse activeRecording(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+    public FileListItemResponse activeRecording(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         return service.activeRecording(sessionId, currentUserResolver.resolve(servletRequest));
     }
 

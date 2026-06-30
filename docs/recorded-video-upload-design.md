@@ -1,5 +1,9 @@
 # 巡逻视频上传与播放方案
 
+> 状态：已废弃，仅作为历史设计参考。
+>
+> 当前实现已统一为通用文件上传、存储与播放方案，录像、抓拍、任务产物、日志、配置和其他附件均使用 `media_file` / `media_file_upload` / `media_video_file` 以及 `/api/media/files`、`/api/control/files` 接口。请以 [通用文件上传、存储与播放方案](./file-upload-design.md) 为准。旧的 `/api/media/recording-uploads`、`/api/media/recordings`、`/api/control/recordings`、`media.recording.*` 配置和 `recording/` 后端模块已移除。
+
 ## 1. 范围
 
 机器人端已经生成巡逻视频文件，单文件时长可能从几分钟到数小时不等。平台也支持在实时视频观看过程中由控制端发起 LiveKit Egress 录像。两类来源最终都落到统一的录像元数据、对象存储和 HLS VOD 回放资产模型。本方案解决：

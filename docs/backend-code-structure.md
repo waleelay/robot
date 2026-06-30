@@ -1,6 +1,6 @@
 # Backend 代码结构说明
 
-本文档说明 `backend/` 目录下 Java 后端的代码组织、模块职责和主要调用关系。当前后端是一个 Java 17 + Spring Boot 3.3.x 服务，负责机器人实时视频会话编排、LiveKit Token/Room 管理、MQTT 指令桥接、WebSocket 事件推送、抓拍、录像上传与 HLS 回放等媒体能力。
+本文档说明 `backend/` 目录下 Java 后端的代码组织、模块职责和主要调用关系。当前后端是一个 Java 17 + Spring Boot 3.3.x 服务，负责机器人实时视频会话编排、LiveKit Token/Room 管理、MQTT 指令桥接、WebSocket 事件推送、抓拍、通用文件上传与 HLS 回放等媒体能力。
 
 ## 1. 工程概览
 
@@ -15,7 +15,7 @@ backend/
     │   │   ├── config/
     │   │   ├── control/
     │   │   ├── livekit/
-    │   │   ├── recording/
+    │   │   ├── file/
     │   │   ├── robot/
     │   │   ├── storage/
     │   │   ├── video/
@@ -38,8 +38,8 @@ backend/
 - Spring Data Elasticsearch：当前配置中关闭 repository，但保留依赖。
 - MySQL Driver：运行时数据库驱动。
 - Eclipse Paho MQTT：机器人媒体指令和状态通信。
-- MinIO SDK：抓拍和录像对象存储。
-- JJWT：LiveKit Token 和录像播放 Token 相关签名能力。
+- MinIO SDK：抓拍、通用文件、视频源文件和 HLS 对象存储。
+- JJWT：LiveKit Token 和文件播放 Token 相关签名能力。
 
 ## 2. 配置文件
 
@@ -56,7 +56,7 @@ backend/
 - `media.rtsp`：RTSP 探测工具和默认地址。
 - `media.robot`：机器人心跳超时。
 - `media.snapshot-worker`：抓拍 Worker 的 ffmpeg、调度间隔、超时。
-- `media.recording`：录像上传、分片、回放、HLS 转码、保留策略、机器人可信网段。
+- `media.file`：通用文件上传、分片、回放、HLS 转码、保留策略、机器人可信网段。
 - `media.session`：视频会话 Track 发布超时、空闲释放、viewer 心跳、视频墙数量和清晰度限制。
 
 ### `application-dev.yml`
@@ -76,7 +76,7 @@ com.robot.mediaserver
 ├── config     Spring Bean、配置属性、WebSocket 配置
 ├── control    面向前端/管理端的控制入口和媒体服务客户端
 ├── livekit    LiveKit Room 与 Token 能力
-├── recording  录像上传、转码、回放、清理
+├── file       通用文件上传、转码、回放、清理
 ├── robot      机器人注册、心跳、摄像头列表
 ├── storage    MinIO/对象存储封装
 ├── video      实时视频会话、Track、抓拍、事件、状态机
@@ -96,7 +96,7 @@ com.robot.mediaserver
 
 - `AppConfig`：注册 MVC 相关配置，例如参数解析器。
 - `WebSocketConfig`：注册业务 WebSocket endpoint。
-- `MediaProperties`：绑定 `media.*` 配置，是 LiveKit、MQTT、MinIO、录像、会话等配置的统一入口。
+- `MediaProperties`：绑定 `media.*` 配置，是 LiveKit、MQTT、MinIO、文件、会话等配置的统一入口。
 - `ControlProperties`：绑定 `control.*` 配置。
 
 ### `ws/`
@@ -218,9 +218,9 @@ control/
   - 路径：`/api/control/video-sessions`。
   - 查询会话、查询活跃会话、获取事件和 Track、签发 token、对讲心跳/停止、viewer 心跳、停止/重启视频、切换通道、创建/查询抓拍。
 
-- `ControlRecordingController`
-  - 路径：`/api/control/recordings`。
-  - 查询录像、生成播放 URL、读取 HLS 对象。
+- `ControlFileController`
+  - 路径：`/api/control/files`。
+  - 提供前端侧文件上传、列表、详情、下载 URL、播放 URL、正文读取和 HLS 对象读取。
 
 ### 核心类
 
@@ -264,77 +264,81 @@ control/
 - `RobotHeartbeatScheduler`
   - 定时扫描超时未上报的机器人，并标记离线。
 
-## 8. 录像模块 `recording/`
+## 8. 通用文件模块 `file/`
 
-`recording` 模块负责机器人巡逻录像上传、分片上传 URL 生成、上传完成确认、HLS 转码、播放 URL、录像列表和保留清理。
+`file` 模块负责通用文件上传、分片上传 URL 生成、上传完成确认、视频 HLS 转码、播放 URL、文件列表和保留清理。手动录像、任务录像、抓拍图片、日志、配置、地图和普通附件统一落到该模块。
 
 ### 目录结构
 
 ```text
-recording/
-├── api/          机器人上传 API、内部/控制端录像 API、过滤器
-├── dto/          录像上传、分片、列表、播放 URL DTO
-├── model/        录像和上传会话 JPA 实体/状态枚举
+file/
+├── api/          通用文件 API、机器人上传可信网段过滤器
+├── dto/          文件上传、分片、列表、播放 URL DTO
+├── model/        文件、上传会话、视频扩展 JPA 实体/状态枚举
 ├── repository/   JPA Repository
 ├── scheduler/    上传过期清理、HLS 处理、保留期清理
-└── service/      录像上传、存储、播放和 HLS 处理服务
+└── service/      文件上传、存储、播放和 HLS 处理服务
 ```
 
 ### API 入口
 
-- `RobotRecordingController`
-  - 路径：`/api/media`。
-  - 提供机器人侧录像上传接口：
-    - `POST /recording-uploads` 创建或恢复上传。
-    - `POST /recording-uploads/{uploadId}/part-urls` 获取分片上传 URL。
-    - `POST /recording-uploads/{uploadId}/complete` 完成上传。
-    - `GET /recordings/{recordingId}/status` 查询上传/处理状态。
-
-- `RecordingInternalController`
-  - 路径：`/internal/media/recordings`。
-  - 提供内部录像列表、播放 URL、HLS 对象读取。
+- `FileController`
+  - 路径：`/api/media/files` 与 `/internal/media/files`。
+  - 提供通用文件接口：
+    - `POST /` 小文件单接口上传。
+    - `POST /multipart-uploads` 创建或恢复 multipart 上传。
+    - `POST /multipart-uploads/{uploadId}/part-urls` 获取分片上传 URL。
+    - `POST /multipart-uploads/{uploadId}/complete` 完成上传。
+    - `GET /{fileId}/status` 查询上传/处理状态。
+    - `GET /` / `GET /{fileId}` 查询列表和详情。
+    - `POST /{fileId}/download-url` 生成下载 URL。
+    - `POST /{fileId}/play-url` 生成 HLS 播放 URL。
+    - `GET /{fileId}/content` 读取文件正文。
+    - `GET /{fileId}/hls/{objectName}` 读取 HLS 资源。
 
 - `TrustedRobotNetworkFilter`
   - 可选的机器人可信网段过滤，用于限制机器人上传接口来源。
 
-- `RecordingApiException`
-  - 录像模块业务异常。
-
 ### 核心 Service
 
-- `RecordingService`
-  - 录像上传和回放主服务。
-  - 负责创建/恢复上传会话、签发分片上传 URL、完成 multipart 上传、查询状态、分页查询录像、生成播放 URL、读取播放资产、过期上传处理、删除录像资产。
+- `FileService`
+  - 通用文件上传和回放主服务。
+  - 负责小文件上传、创建/恢复 multipart 上传会话、签发分片上传 URL、完成 multipart 上传、查询状态、分页查询文件、生成下载/播放 URL、读取播放资产、LiveKit Egress 手动录像接入、过期上传处理、删除文件资产。
 
-- `HlsPlaybackAssetService`
-  - 领取待处理录像，使用 ffprobe/ffmpeg 转 HLS，上传 HLS playlist 和 segment，回写处理结果。
+- `FileHlsProcessingService`
+  - 领取待处理视频文件，使用 ffprobe/ffmpeg 转 fMP4 HLS，上传 HLS playlist/init/segment，回写处理结果。
+
+- `FileObjectStorageService`
+  - 通用对象存储封装。
+  - 支持 multipart 初始化、分片预签名 URL、列出分片、完成/中止 multipart、读取对象、上传文件、下载文件、按前缀删除。
 
 ### 数据模型
 
-- `MediaRecording`
-  - 录像主表。
-  - 关键字段：`recordingId`、`orgId`、`robotId`、`deviceId`、源文件信息、对象存储 key、HLS playlist key、时长、状态、错误信息、处理时间等。
+- `MediaFile`
+  - 文件主表。
+  - 关键字段：`fileId`、`orgId`、`robotId`、`deviceId`、`taskExecutionId`、`sourceFileId`、`fileType`、`fileName`、`contentType`、`fileSize`、`objectKey`、`uploadMode`、`status`、错误信息、上传时间等。
 
-- `MediaRecordingUpload`
-  - 录像上传会话表。
-  - 关键字段：`uploadId`、`recordingId`、`storageUploadId`、`partSize`、`partCount`、`status`、`expiresAt`、`lastActiveAt`。
+- `MediaFileUpload`
+  - 文件 multipart 上传会话表。
+  - 关键字段：`uploadId`、`fileId`、`storageUploadId`、`partSize`、`partCount`、`status`、`expiresAt`、`lastActiveAt`。
 
-- `RecordingStatus`
-  - 录像处理状态。
+- `MediaVideoFile`
+  - 视频扩展表。
+  - 关键字段：`fileId`、编码、时长、分辨率、HLS playlist key、HLS segment 数、处理状态和错误信息。
 
-- `UploadStatus`
-  - 上传会话状态。
+- `FileStatus` / `FileUploadStatus` / `VideoFileStatus`
+  - 文件、上传会话和视频处理状态。
 
 ### 定时任务
 
-- `ExpiredUploadCleanupScheduler`
+- `FileUploadCleanupScheduler`
   - 清理过期上传会话并中止对象存储 multipart 上传。
 
-- `HlsPlaybackProcessingScheduler`
-  - 定时领取待处理录像并生成 HLS 播放资产。
+- `FileHlsProcessingScheduler`
+  - 定时领取待处理视频文件并生成 HLS 播放资产。
 
-- `RecordingRetentionCleanupScheduler`
-  - 按保留天数删除过期录像及对象存储资产。
+- `FileRetentionCleanupScheduler`
+  - 按保留天数删除过期文件及对象存储资产。
 
 ## 9. LiveKit 模块 `livekit/`
 
@@ -353,11 +357,7 @@ recording/
 - `MinioStorageService`
   - 抓拍图片上传封装。
 
-- `RecordingObjectStorageService`
-  - 录像对象存储封装。
-  - 支持 multipart 初始化、分片预签名 URL、列出分片、完成/中止 multipart、读取对象、上传文件、下载文件、按前缀删除。
-
-存储模块屏蔽 MinIO SDK 细节，业务层只处理 object key 和业务状态。
+通用文件对象存储封装已迁入 `file/service/FileObjectStorageService.java`，业务层只处理 object key 和业务状态。
 
 ## 11. 接口路径分层
 
@@ -375,30 +375,33 @@ recording/
 - `/api/control/video-sessions/{sessionId}/stop`
 - `/api/control/video-sessions/{sessionId}/restart`
 - `/api/control/video-sessions/{sessionId}/switch-channel`
-- `/api/control/video-sessions/{sessionId}/snapshots/file`
-- `/api/control/snapshots`
-- `/api/control/snapshots/{snapshotId}/image`
-- `/api/control/recordings`
+- `/api/control/video-sessions/{sessionId}/recordings/start`
+- `/api/control/video-sessions/{sessionId}/recordings/{fileId}/stop`
+- `/api/control/video-sessions/{sessionId}/recordings/active`
+- `/api/control/files`
+- `/api/control/files/{fileId}/play-url`
+- `/api/control/files/{fileId}/download-url`
+- `/api/control/files/{fileId}/content`
+- `/api/control/files/{fileId}/hls/{objectName}`
 
 ### 面向机器人端：`/api/media/*`
 
-由 `recording/api` 提供机器人录像上传接口：
+由 `file/api` 提供机器人文件上传接口：
 
-- `/api/media/recording-uploads`
-- `/api/media/recording-uploads/{uploadId}/part-urls`
-- `/api/media/recording-uploads/{uploadId}/complete`
-- `/api/media/recordings/{recordingId}/status`
+- `/api/media/files/multipart-uploads`
+- `/api/media/files/multipart-uploads/{uploadId}/part-urls`
+- `/api/media/files/multipart-uploads/{uploadId}/complete`
+- `/api/media/files/{fileId}/status`
 
 ### 内部调用：`/internal/media/*`
 
 用于 Control 层、内部 Worker 或服务间调用：
 
 - `/internal/media/video-sessions`
-- `/internal/media/video-sessions/{sessionId}/snapshots/file`
 - `/internal/media/video-sessions/snapshots`
 - `/internal/media/snapshots/{snapshotId}/image`
 - `/internal/media/robots`
-- `/internal/media/recordings`
+- `/internal/media/files`
 - `/internal/media/snapshots`
 
 ## 12. 典型调用链路
@@ -435,19 +438,19 @@ recording/
   -> LiveKitRoomService 删除 Room
 ```
 
-### 机器人录像上传
+### 机器人文件上传
 
 ```text
 机器人 Go 客户端
-  -> RobotRecordingController 创建/恢复上传
-  -> RecordingService 创建 MediaRecording / MediaRecordingUpload
-  -> RecordingObjectStorageService 初始化 multipart
-  -> RobotRecordingController 获取 part upload URLs
+  -> FileController 创建/恢复上传
+  -> FileService 创建 MediaFile / MediaFileUpload
+  -> FileObjectStorageService 初始化 multipart
+  -> FileController 获取 part upload URLs
   -> 客户端直传 MinIO 分片
-  -> RobotRecordingController complete
-  -> RecordingService 完成 multipart 并标记待处理
-  -> HlsPlaybackProcessingScheduler / HlsPlaybackAssetService 转 HLS
-  -> 前端通过 ControlRecordingController 获取播放 URL 和 HLS 资源
+  -> FileController complete
+  -> FileService 完成 multipart 并标记 READY 或 PROCESSING
+  -> 视频由 FileHlsProcessingScheduler / FileHlsProcessingService 转 HLS
+  -> 前端通过 ControlFileController 获取播放 URL 和 HLS 资源
 ```
 
 ## 13. 数据持久化
@@ -459,8 +462,9 @@ recording/
 - `MediaTrackRepository`
 - `MediaSnapshotRepository`
 - `MediaEventLogRepository`
-- `MediaRecordingRepository`
-- `MediaRecordingUploadRepository`
+- `MediaFileRepository`
+- `MediaFileUploadRepository`
+- `MediaVideoFileRepository`
 
 机器人设备注册当前由 `RobotRegistryService` 以内存方式维护，不是 JPA 实体。
 
@@ -468,10 +472,10 @@ recording/
 
 - LiveKit：实时媒体 Room、Track、Token。
 - MQTT/EMQX：机器人媒体指令下发和状态上报。
-- MinIO：抓拍图片、录像源文件、HLS 播放资产。
-- MySQL：视频会话、Track、抓拍、事件、录像等持久化。
+- MinIO：抓拍图片、文件源对象、HLS 播放资产。
+- MySQL：视频会话、Track、抓拍、事件、文件等持久化。
 - Redis：已引入并配置，当前代码结构中不是核心业务主路径。
-- ffmpeg/ffprobe：抓拍和录像 HLS 处理。
+- ffmpeg/ffprobe：抓拍和视频文件 HLS 处理。
 
 ## 15. 开发时定位建议
 
@@ -480,7 +484,7 @@ recording/
 - 查机器人 MQTT 指令：看 `control/messaging/RobotMediaCommandService.java`。
 - 查机器人状态上报：看 `control/messaging/RobotMediaStatusSubscriber.java` 和 `video/service/VideoSessionService.java`。
 - 查抓拍：看 `video/service/SnapshotService.java` 和 `video/scheduler/SnapshotWorkerScheduler.java`。
-- 查录像上传/回放：看 `recording/service/RecordingService.java` 和 `recording/service/HlsPlaybackAssetService.java`。
+- 查文件上传/回放：看 `file/service/FileService.java` 和 `file/service/FileHlsProcessingService.java`。
 - 查配置项含义：看 `config/MediaProperties.java` 和 `src/main/resources/application.yml`。
 
 ## 16. 扩展规则建议

@@ -147,7 +147,7 @@ public class PanoramaMockService {
                         "WHEELED_ROBOT",
                         "SONGLING",
                         "SCOUT",
-                        "online",
+                        "offline",
                         100,
                         true,
                         "HIGH",

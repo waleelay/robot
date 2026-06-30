@@ -5,10 +5,9 @@ import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.livekit.LiveKitRoomService;
 import com.robot.mediaserver.livekit.LiveKitTokenService;
 import com.robot.mediaserver.livekit.LiveKitTokenService.TokenResult;
-import com.robot.mediaserver.recording.dto.RecordingListItemResponse;
-import com.robot.mediaserver.recording.service.RecordingService;
+import com.robot.mediaserver.file.dto.FileListItemResponse;
+import com.robot.mediaserver.file.service.FileService;
 import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
-import com.robot.mediaserver.video.dto.CompleteSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.IntercomResponse;
 import com.robot.mediaserver.video.dto.SnapshotResponse;
@@ -36,7 +35,6 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 实时视频会话编排服务。
@@ -93,7 +91,7 @@ public class VideoSessionService {
      */
     private final SnapshotService snapshotService;
 
-    private final RecordingService recordingService;
+    private final FileService fileService;
 
     /**
      * 媒体轨道服务。
@@ -114,7 +112,6 @@ public class VideoSessionService {
      * @param liveKitTokenService LiveKit token 服务
      * @param eventLogService 媒体事件日志服务
      * @param snapshotService 抓拍服务
-     * @param recordingService 录像服务
      * @param mediaTrackService 媒体轨道服务
      * @param properties 媒体服务配置属性
      */
@@ -125,7 +122,7 @@ public class VideoSessionService {
             LiveKitTokenService liveKitTokenService,
             MediaEventLogService eventLogService,
             SnapshotService snapshotService,
-            RecordingService recordingService,
+            FileService fileService,
             MediaTrackService mediaTrackService,
             MediaProperties properties) {
         this.repository = repository;
@@ -134,7 +131,7 @@ public class VideoSessionService {
         this.liveKitTokenService = liveKitTokenService;
         this.eventLogService = eventLogService;
         this.snapshotService = snapshotService;
-        this.recordingService = recordingService;
+        this.fileService = fileService;
         this.mediaTrackService = mediaTrackService;
         this.properties = properties;
     }
@@ -484,37 +481,20 @@ public class VideoSessionService {
         return snapshotService.create(session, request, user);
     }
 
-    public SnapshotResponse createSnapshotFile(
-            String sessionId,
-            CreateSnapshotRequest request,
-            MultipartFile file,
-            CurrentUser user) {
-        VideoSession session = requireSession(sessionId);
-        if (session.getStatus() == VideoSessionStatus.CLOSED
-                || session.getStatus() == VideoSessionStatus.FAILED
-                || session.getStatus() == VideoSessionStatus.TIMEOUT) {
-            throw new IllegalStateException("当前会话不可用");
-        }
-        SnapshotResponse snapshot = snapshotService.create(session, request, user);
-        CompleteSnapshotRequest completeRequest = new CompleteSnapshotRequest();
-        completeRequest.setOfficialCapturedAt(request.getClientCapturedAt());
-        return snapshotService.complete(snapshot.snapshotId(), completeRequest, file);
-    }
-
-    public RecordingListItemResponse startRecording(String sessionId, CurrentUser user) {
+    public FileListItemResponse startRecording(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
             throw new IllegalStateException("当前会话未在推流");
         }
-        return recordingService.startLiveRecording(session, user);
+        return fileService.startLiveRecording(session, user);
     }
 
-    public RecordingListItemResponse stopRecording(String sessionId, String recordingId, CurrentUser user) {
-        return recordingService.stopLiveRecording(sessionId, recordingId, user);
+    public FileListItemResponse stopRecording(String sessionId, String fileId, CurrentUser user) {
+        return fileService.stopLiveRecording(sessionId, fileId, user);
     }
 
-    public RecordingListItemResponse activeRecording(String sessionId, CurrentUser user) {
-        return recordingService.activeLiveRecording(sessionId, user);
+    public FileListItemResponse activeRecording(String sessionId, CurrentUser user) {
+        return fileService.activeLiveRecording(sessionId, user);
     }
 
     /**
@@ -1130,7 +1110,7 @@ public class VideoSessionService {
 
     private void stopClientRecordingQuietly(String sessionId, String clientId) {
         try {
-            recordingService.stopLiveRecordingForClient(sessionId, clientId);
+            fileService.stopLiveRecordingForClient(sessionId, clientId);
         } catch (Exception ex) {
             log.warn("Failed to stop recording for viewer sessionId={}, clientId={}", sessionId, clientId, ex);
         }

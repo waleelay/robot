@@ -1,0 +1,776 @@
+# 通用文件上传、存储与播放方案
+
+## 1. 范围
+
+平台需要统一承载机器人端、前端和后端模块产生的文件，包括：
+
+1. 手动录像、任务录像、LiveKit Egress 录制文件。
+2. 前端抓拍图片、机器人本地抓拍图片。
+3. 巡逻任务执行后产生的日志、配置、地图、图片、压缩包等产物。
+4. 后端其他模块生成的诊断包、日志包或业务附件。
+
+本方案提供统一 `file` 模型，支持上传、断点续传、下载、查询和视频 HLS 播放。任务执行记录只按一对多文件关系处理，不设计多对多关系表。
+
+## 2. 方案结论
+
+上传入口分两类：
+
+| 类型 | 接口 | 适用场景 | 特点 |
+|---|---|---|---|
+| 小文件单接口上传 | `POST /api/media/files` | 抓拍、小配置、小日志、小 JSON、小图片、小附件 | 调用端一次请求完成上传；服务端限制大小并直接写 MinIO |
+| 大文件分片上传 | `POST /api/media/files/multipart-uploads` | 视频、大日志包、地图包、压缩包、其他大文件 | MinIO multipart，支持断点续传、并发分片和失败恢复 |
+
+不再保留普通文件的两步上传方式：
+
+```text
+POST /api/media/files/upload-url
+PUT MinIO uploadUrl
+```
+
+视频处理规则：
+
+```text
+只要 file_type = VIDEO，上传完成后都进入 HLS 处理。
+视频大小只决定上传方式，不决定播放方式。
+```
+
+任务关联规则：
+
+```text
+media_file.task_execution_id 可为空。
+任务执行完成后产生的文件可先上传，后续由任务模块更新 task_execution_id。
+手动录像、独立抓拍、普通附件无需关联任务执行记录。
+```
+
+## 3. 核心流程
+
+### 3.1 小文件单接口上传
+
+```text
+调用端
+  -> POST /api/media/files multipart/form-data
+  -> Media Service 校验大小、类型、权限
+  -> Media Service 创建 media_file
+  -> Media Service 写入 MinIO
+  -> 非视频置 READY
+  -> 视频置 PROCESSING，并异步生成 HLS
+```
+
+适用文件：
+
+```text
+IMAGE / LOG / CONFIG / MAP / DOCUMENT / OTHER
+```
+
+小视频也可以走单接口上传，但上传成功后仍进入 HLS 处理：
+
+```text
+VIDEO: UPLOADING -> PROCESSING -> READY
+```
+
+### 3.2 大文件分片上传
+
+```text
+调用端
+  -> POST /api/media/files/multipart-uploads
+  <- uploadId、partSize、partCount、首批 partUrls
+  -> PUT parts 到 MinIO
+  -> 必要时 POST /part-urls 获取后续或重签 URL
+  -> POST /complete
+  -> Media Service 校验 parts、complete multipart、stat object
+  -> 非视频置 READY
+  -> 视频置 PROCESSING，并异步生成 HLS
+```
+
+创建 multipart 上传时返回首批 `partUrls`，减少一次必然发生的接口调用；但仍保留 `part-urls` 接口，用于后续批次、断点续传、URL 过期重签和失败重试。
+
+### 3.3 视频播放
+
+```text
+原始视频上传完成
+  -> ffprobe 解析编码、时长、分辨率
+  -> 必要时转码为浏览器兼容 H.264/AAC
+  -> 生成 fMP4 HLS：index.m3u8 + init.mp4 + segment_xxx.m4s
+  -> 上传 HLS 资产到 MinIO
+  -> media_file.status = READY
+  -> media_video_file.status = READY
+```
+
+浏览器和移动端统一播放 HLS，不再按视频大小区分 MP4 直播或 HLS。
+
+## 4. 数据模型
+
+### 4.1 `media_file`
+
+一行代表一个业务可见文件。
+
+| 字段 | 说明 |
+|---|---|
+| `file_id` | 文件统一 ID，建议 `file_<uuid>` |
+| `org_id` | 组织隔离 |
+| `robot_id` | 机器人 ID，可为空 |
+| `device_id` | 设备/摄像头 ID，可为空 |
+| `task_execution_id` | 任务执行记录 ID，可为空，可后补 |
+| `source_file_id` | 调用端本地文件幂等键，可为空 |
+| `file_type` | `VIDEO` / `IMAGE` / `LOG` / `CONFIG` / `MAP` / `DOCUMENT` / `OTHER` |
+| `file_name` | 原始文件名 |
+| `content_type` | MIME 类型 |
+| `file_size` | 文件字节数 |
+| `object_key` | MinIO 原始文件对象 key |
+| `upload_mode` | `SIMPLE` / `MULTIPART` |
+| `status` | `UPLOADING` / `PROCESSING` / `READY` / `FAILED` / `DELETED` |
+| `metadata_json` | 少量类型扩展信息，可为空 |
+| `error_code` / `error_message` | 失败信息 |
+| `uploaded_at` | 原始文件上传确认时间 |
+| `created_at` / `updated_at` | 创建与更新时间 |
+
+索引建议：
+
+```text
+index(org_id, robot_id, created_at)
+index(org_id, task_execution_id)
+index(file_type, status)
+unique(robot_id, source_file_id) where source_file_id is not null
+```
+
+`source_file_id` 用于客户端重复扫描、断点续传和幂等恢复。任务执行记录 ID 不参与 MinIO 路径，因为它可能后补。
+
+### 4.2 `media_file_upload`
+
+只记录 multipart 上传会话。小文件单接口上传不写该表，避免无意义会话记录。
+
+| 字段 | 说明 |
+|---|---|
+| `upload_id` | 上传会话 ID，建议 `upl_<uuid>` |
+| `file_id` | 对应 `media_file.file_id` |
+| `upload_mode` | 固定 `MULTIPART` |
+| `storage_upload_id` | MinIO multipart upload ID |
+| `part_size` | 分片大小 |
+| `part_count` | 分片总数 |
+| `status` | `ACTIVE` / `COMPLETED` / `EXPIRED` / `ABORTED` / `FAILED` |
+| `expires_at` | 上传会话过期时间 |
+| `last_active_at` | 最近获取 URL、续传或 complete 时间 |
+| `created_at` / `completed_at` | 创建与完成时间 |
+
+不保存 part 明细表。恢复上传时以 MinIO `ListParts` 为已上传分片事实来源。
+
+### 4.3 `media_video_file`
+
+只在 `file_type = VIDEO` 时创建。
+
+| 字段 | 说明 |
+|---|---|
+| `file_id` | 主键，同时引用 `media_file.file_id` |
+| `video_codec` / `audio_codec` | 源视频编码信息 |
+| `duration_seconds` | 服务端确认的时长 |
+| `width` / `height` | 源视频分辨率 |
+| `hls_playlist_object_key` | HLS 播放入口对象 key |
+| `hls_segment_count` | HLS 分片数量 |
+| `hls_total_size` | HLS 资产总大小 |
+| `status` | `PROCESSING` / `READY` / `FAILED` |
+| `error_code` / `error_message` | 视频处理失败信息 |
+| `processing_started_at` / `processing_completed_at` | 处理时间 |
+
+## 5. 对象存储
+
+继续使用 MinIO 存储文件内容，MySQL 存储元数据。
+
+有机器人来源的原始文件：
+
+```text
+files/{orgId}/{robotId}/{yyyy}/{MM}/{dd}/{fileId}/original/{fileName}
+```
+
+无机器人来源的原始文件：
+
+```text
+files/{orgId}/system/{yyyy}/{MM}/{dd}/{fileId}/original/{fileName}
+```
+
+视频 HLS：
+
+```text
+files/{orgId}/{robotId}/{yyyy}/{MM}/{dd}/{fileId}/hls/index.m3u8
+files/{orgId}/{robotId}/{yyyy}/{MM}/{dd}/{fileId}/hls/init.mp4
+files/{orgId}/{robotId}/{yyyy}/{MM}/{dd}/{fileId}/hls/segment_000001.m4s
+```
+
+存储规则：
+
+1. `object_key` 由 Media Service 生成。
+2. `task_execution_id` 不进入对象路径。
+3. 原始文件始终保留，用于归档、重新处理和排障。
+4. 视频正式播放只使用 HLS 资产。
+
+## 6. API 设计
+
+### 6.1 小文件单接口上传
+
+```http
+POST /api/media/files
+Content-Type: multipart/form-data
+```
+
+表单字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `file` | 是 | 文件内容 |
+| `fileType` | 是 | 文件类型 |
+| `robotId` | 否 | 机器人 ID |
+| `deviceId` | 否 | 设备 ID |
+| `taskExecutionId` | 否 | 任务执行记录 ID，可为空 |
+| `sourceFileId` | 否 | 本地文件幂等键 |
+| `metadata` | 否 | JSON 字符串 |
+
+响应示例：
+
+```json
+{
+  "fileId": "file_xxx",
+  "fileType": "IMAGE",
+  "fileName": "snapshot.jpg",
+  "contentType": "image/jpeg",
+  "fileSize": 345678,
+  "uploadMode": "SIMPLE",
+  "status": "READY",
+  "uploadedAt": "2026-06-30T10:00:00Z"
+}
+```
+
+小视频响应示例：
+
+```json
+{
+  "fileId": "file_xxx",
+  "fileType": "VIDEO",
+  "uploadMode": "SIMPLE",
+  "status": "PROCESSING"
+}
+```
+
+大小限制：
+
+```text
+MEDIA_FILE_SIMPLE_UPLOAD_MAX_BYTES=20971520
+```
+
+超过限制返回：
+
+```json
+{
+  "code": "FILE_TOO_LARGE_USE_MULTIPART",
+  "message": "File is too large for simple upload"
+}
+```
+
+### 6.2 创建或恢复 multipart 上传
+
+```http
+POST /api/media/files/multipart-uploads
+```
+
+请求：
+
+```json
+{
+  "robotId": "robot-001",
+  "deviceId": "camera01",
+  "taskExecutionId": null,
+  "sourceFileId": "camera01/video.mp4/1073741824/1710000000",
+  "fileType": "VIDEO",
+  "fileName": "video.mp4",
+  "contentType": "video/mp4",
+  "fileSize": 1073741824,
+  "metadata": {}
+}
+```
+
+响应：
+
+```json
+{
+  "fileId": "file_xxx",
+  "uploadId": "upl_xxx",
+  "uploadMode": "MULTIPART",
+  "status": "UPLOADING",
+  "partSize": 16777216,
+  "partCount": 64,
+  "uploadedParts": [
+    { "partNumber": 1 }
+  ],
+  "partUrls": [
+    {
+      "partNumber": 2,
+      "uploadUrl": "http://minio-presigned-part-url"
+    }
+  ],
+  "expiresAt": "2026-06-30T10:00:00Z"
+}
+```
+
+说明：
+
+1. 创建接口直接返回首批 `partUrls`。
+2. 首批数量由配置控制，建议默认 16。
+3. 已上传分片通过 `uploadedParts` 返回，客户端跳过这些 part。
+
+### 6.3 获取后续分片 URL
+
+```http
+POST /api/media/files/multipart-uploads/{uploadId}/part-urls
+```
+
+请求：
+
+```json
+{
+  "partNumbers": [17, 18, 19, 20]
+}
+```
+
+响应：
+
+```json
+{
+  "parts": [
+    {
+      "partNumber": 17,
+      "uploadUrl": "http://minio-presigned-part-url"
+    }
+  ],
+  "expiresAt": "2026-06-30T10:00:00Z"
+}
+```
+
+该接口用于：
+
+```text
+获取后续批次
+断点续传
+URL 过期重签
+失败分片重试
+```
+
+### 6.4 完成 multipart 上传
+
+```http
+POST /api/media/files/multipart-uploads/{uploadId}/complete
+```
+
+服务端处理：
+
+```text
+ListParts
+校验分片数量、序号、大小
+CompleteMultipart
+StatObject
+更新 media_file_upload.status = COMPLETED
+非视频：media_file.status = READY
+视频：media_file.status = PROCESSING，并触发 HLS
+```
+
+非视频响应：
+
+```json
+{
+  "fileId": "file_xxx",
+  "status": "READY"
+}
+```
+
+视频响应：
+
+```json
+{
+  "fileId": "file_xxx",
+  "status": "PROCESSING"
+}
+```
+
+### 6.5 查询文件
+
+文件详情：
+
+```http
+GET /api/media/files/{fileId}
+```
+
+文件列表：
+
+```http
+GET /api/media/files?robotId=robot-001
+GET /api/media/files?fileType=VIDEO
+GET /api/media/files?taskExecutionId=task_exec_001
+GET /api/media/files?status=READY
+```
+
+### 6.6 下载文件
+
+```http
+POST /api/media/files/{fileId}/download-url
+```
+
+规则：
+
+```text
+media_file.status = READY 才允许下载。
+返回 MinIO 预签名 GET URL 或后端代理下载 URL。
+```
+
+响应：
+
+```json
+{
+  "fileId": "file_xxx",
+  "downloadUrl": "http://minio-presigned-get-url",
+  "expiresAt": "2026-06-30T10:00:00Z"
+}
+```
+
+### 6.7 视频播放
+
+```http
+POST /api/media/files/{fileId}/play-url
+```
+
+规则：
+
+```text
+file_type = VIDEO
+media_file.status = READY
+media_video_file.status = READY
+```
+
+响应：
+
+```json
+{
+  "fileId": "file_xxx",
+  "format": "hls",
+  "contentType": "application/vnd.apple.mpegurl",
+  "playUrl": "/api/media/files/file_xxx/hls/index.m3u8?token=xxx",
+  "expiresAt": "2026-06-30T10:00:00Z"
+}
+```
+
+HLS 资源：
+
+```http
+GET /api/media/files/{fileId}/hls/{objectName}?token=xxx
+```
+
+支持：
+
+```text
+index.m3u8
+init.mp4
+segment_xxx.m4s
+```
+
+## 7. 状态流转
+
+### 7.1 `media_file.status`
+
+小文件非视频：
+
+```text
+UPLOADING -> READY
+```
+
+小文件视频：
+
+```text
+UPLOADING -> PROCESSING -> READY
+```
+
+大文件非视频：
+
+```text
+UPLOADING -> READY
+```
+
+大文件视频：
+
+```text
+UPLOADING -> PROCESSING -> READY
+```
+
+失败：
+
+```text
+FAILED
+```
+
+删除：
+
+```text
+DELETED
+```
+
+### 7.2 `media_file_upload.status`
+
+```text
+ACTIVE -> COMPLETED
+ACTIVE -> EXPIRED
+ACTIVE -> ABORTED
+ACTIVE -> FAILED
+```
+
+### 7.3 `media_video_file.status`
+
+```text
+PROCESSING -> READY
+PROCESSING -> FAILED
+```
+
+## 8. 典型场景
+
+### 8.1 前端抓拍
+
+前端抓拍并入单接口上传：
+
+```text
+POST /api/media/files
+fileType=IMAGE
+metadata.source=WEB_SNAPSHOT
+metadata.sessionId=vs_xxx
+metadata.channel=visible
+```
+
+旧的抓拍文件上传入口已移除：
+
+```text
+/api/control/video-sessions/{sessionId}/snapshots/file
+/internal/media/video-sessions/{sessionId}/snapshots/file
+```
+
+前端抓拍文件直接上传为 `media_file`，列表和预览也通过统一文件接口读取：
+
+```text
+GET /api/control/files?fileType=IMAGE&status=READY
+GET /api/control/files/{fileId}/content
+```
+
+### 8.2 手动录像
+
+手动录像使用统一文件模型：
+
+```text
+file_type = VIDEO
+task_execution_id = null
+upload_mode = MULTIPART 或 SIMPLE
+```
+
+流程：
+
+```text
+上传原始 MP4
+进入 PROCESSING
+生成 HLS
+READY 后播放
+```
+
+手动录像和任务录像的区别：
+
+```text
+任务录像：后续补充 task_execution_id
+手动录像：task_execution_id 为空
+```
+
+### 8.3 任务产物文件
+
+一次任务执行可能产生：
+
+```text
+多个视频
+多个日志
+多个配置文件
+多个图片
+多个地图或压缩包
+```
+
+上传时允许：
+
+```text
+task_execution_id = null
+```
+
+任务模块后续更新：
+
+```text
+media_file.task_execution_id
+```
+
+按任务查询：
+
+```http
+GET /api/media/files?taskExecutionId=task_exec_001
+```
+
+### 8.4 非视频大文件
+
+非视频大文件使用 multipart，不需要独立接口：
+
+```text
+file_type = LOG / CONFIG / MAP / DOCUMENT / OTHER
+upload_mode = MULTIPART
+complete 后 status = READY
+不创建 media_video_file
+不生成 HLS
+```
+
+## 9. 客户端与后端接入
+
+### 9.1 机器人客户端
+
+当前 Go 客户端与 Python 客户端均已接入通用文件上传协议。模块名称仍保留 `recordingupload`，但职责已从“仅录像上传”扩展为“扫描目录内通用文件并上传”。
+
+Go 客户端：
+
+```text
+client/internal/recordingupload
+```
+
+Python 客户端：
+
+```text
+python-client/robot_media_client/recordingupload
+```
+
+职责：
+
+```text
+扫描本地文件
+按后缀识别 VIDEO / IMAGE / LOG / CONFIG / MAP / DOCUMENT / OTHER
+维护本地 manifest
+执行 multipart 断点续传
+自动 complete
+上传完成后记录 fileId
+```
+
+机器人客户端大文件统一调用：
+
+```text
+POST /api/media/files/multipart-uploads
+POST /api/media/files/multipart-uploads/{uploadId}/part-urls
+PUT uploadUrl
+POST /api/media/files/multipart-uploads/{uploadId}/complete
+GET  /api/media/files/{fileId}/status
+```
+
+Manifest 写入 `fileId`。Python 客户端兼容读取旧 manifest 中的 `recordingId`，但后续写回统一使用 `fileId`。
+
+业务模块不直接处理：
+
+```text
+partNumbers
+partUrls
+uploadedParts
+completeMultipart
+```
+
+### 9.2 前端
+
+前端提供统一工具方法：
+
+```text
+uploadFile(formData)
+getFiles(params)
+getFile(fileId)
+getDownloadUrl(fileId)
+getPlayUrl(fileId)
+```
+
+抓拍、附件、小配置上传均使用 Control 转发接口：
+
+```text
+POST /api/control/files
+GET  /api/control/files
+POST /api/control/files/{fileId}/play-url
+POST /api/control/files/{fileId}/download-url
+GET  /api/control/files/{fileId}/content
+GET  /api/control/files/{fileId}/hls/{objectName}
+```
+
+### 9.3 后端模块
+
+后端模块不建议 HTTP 调自己。提供内部服务：
+
+```text
+FileService.uploadSimple(...)
+FileService.createMultipart(...)
+FileService.completeMultipart(...)
+FileService.registerExistingObject(...)
+```
+
+后端模块使用同一套表、对象路径和状态机。
+
+## 10. 配置建议
+
+```text
+MEDIA_FILE_SIMPLE_UPLOAD_MAX_BYTES=20971520
+MEDIA_FILE_PART_SIZE_BYTES=16777216
+MEDIA_FILE_MAX_PART_URLS_PER_REQUEST=16
+MEDIA_FILE_INITIAL_PART_URL_COUNT=16
+MEDIA_FILE_UPLOAD_URL_TTL_SECONDS=900
+MEDIA_FILE_MULTIPART_EXPIRE_HOURS=72
+MEDIA_FILE_PLAY_URL_TTL_SECONDS=3600
+MEDIA_FILE_PLAY_TOKEN_SECRET=file-playback-development-secret-change-me
+MEDIA_FILE_HLS_FFMPEG_PATH=ffmpeg
+MEDIA_FILE_FFPROBE_PATH=ffprobe
+MEDIA_FILE_HLS_SEGMENT_DURATION_SECONDS=6
+MEDIA_FILE_HLS_WORKER_CONCURRENCY=2
+MEDIA_FILE_HLS_PROCESSING_LEASE_SECONDS=300
+MEDIA_FILE_RETENTION_DAYS=30
+MEDIA_FILE_TRUSTED_ROBOT_NETWORK_ENABLED=false
+MEDIA_FILE_TRUSTED_ROBOT_CIDRS=127.0.0.1/32,::1/128
+MEDIA_FILE_DEFAULT_ORG_ID=org001
+```
+
+说明：
+
+1. `MEDIA_FILE_SIMPLE_UPLOAD_MAX_BYTES` 控制单接口上传最大文件大小。
+2. `MEDIA_FILE_MAX_PART_URLS_PER_REQUEST` 控制每批最多签发多少分片 URL。
+3. `MEDIA_FILE_INITIAL_PART_URL_COUNT` 控制创建 multipart 时返回的首批 URL 数量。
+4. `MEDIA_FILE_UPLOAD_URL_TTL_SECONDS` 控制预签名 URL 有效期。
+5. `MEDIA_FILE_PLAY_*` 控制下载/播放签名有效期和 HLS token 签名密钥。
+6. `MEDIA_FILE_HLS_*` 控制 ffmpeg/ffprobe 路径、HLS 分片时长和后台处理并发。
+7. `MEDIA_FILE_TRUSTED_ROBOT_*` 控制机器人侧 multipart 上传与状态查询接口的内网可信访问。
+
+`media.recording.*` 已移除。录像、上传、播放、HLS、清理和可信网段配置统一归入 `media.file.*`。
+
+## 11. 取舍
+
+保留：
+
+```text
+小文件单接口上传
+大文件 multipart 断点续传
+创建 multipart 时返回首批 partUrls
+part-urls 接口用于续签和恢复
+视频统一 HLS
+手动录像
+前端抓拍
+任务执行 ID 后补
+metadata_json 轻量扩展
+```
+
+不做：
+
+```text
+普通文件 upload-url + PUT MinIO 两步上传
+多对多文件关系表
+biz_domain / biz_id / biz_role
+task_execution_id 进入对象路径
+所有文件都强制 multipart
+所有文件都强制 complete
+```
+
+最终边界：
+
+```text
+小文件：调用简单，由 Media Service 承载上传正文。
+大文件：走 MinIO multipart，保证可靠性和可恢复。
+视频：不论大小，上传完成后统一生成 HLS 再播放。
+```

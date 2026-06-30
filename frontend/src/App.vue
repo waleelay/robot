@@ -66,9 +66,9 @@
             <button
                 v-if="recordingTab !== 'snapshot'"
                 v-for="recording in recordings"
-                :key="recording.recordingId"
+                :key="recording.fileId"
                 class="recording-item"
-                :class="{ active: selectedRecording && selectedRecording.recordingId === recording.recordingId }"
+                :class="{ active: selectedRecording && selectedRecording.fileId === recording.fileId }"
                 @click="playRecording(recording)"
             >
               <span>{{ recording.fileName }}</span>
@@ -77,13 +77,13 @@
             <button
                 v-if="recordingTab === 'snapshot'"
                 v-for="snapshot in snapshots"
-                :key="snapshot.snapshotId"
+                :key="snapshot.fileId"
                 class="recording-item"
-                :class="{ active: selectedSnapshot && selectedSnapshot.snapshotId === snapshot.snapshotId }"
+                :class="{ active: selectedSnapshot && selectedSnapshot.fileId === snapshot.fileId }"
                 @click="previewSnapshot(snapshot)"
-            >
-              <span>{{ snapshot.remark || snapshot.fileName || snapshot.snapshotId }}</span>
-              <small>{{ snapshot.deviceId || '--' }} · {{ snapshot.reason || '抓拍' }} · {{ dateTimeText(snapshot.clientCapturedAt || snapshot.createdAt) }}</small>
+              >
+              <span>{{ snapshot.fileName || snapshot.fileId }}</span>
+              <small>{{ snapshot.deviceId || '--' }} · 抓拍 · {{ dateTimeText(snapshot.createdAt) }}</small>
             </button>
             <div v-if="recordingTab !== 'snapshot' && !recordings.length && !recordingsLoading" class="recording-empty">暂无录像记录</div>
             <div v-if="recordingTab === 'snapshot' && !snapshots.length && !recordingsLoading" class="recording-empty">暂无抓拍记录</div>
@@ -94,7 +94,7 @@
                 v-if="recordingTab === 'snapshot' && selectedSnapshot"
                 class="snapshot-preview"
                 :src="snapshotImage(selectedSnapshot)"
-                :alt="selectedSnapshot.remark || selectedSnapshot.snapshotId"
+                :alt="selectedSnapshot.fileName || selectedSnapshot.fileId"
             />
             <div v-if="recordingTab !== 'snapshot' && !selectedRecording" class="empty-video">选择录像开始回放</div>
             <div v-if="recordingTab === 'snapshot' && !selectedSnapshot" class="empty-video">选择抓拍查看图片</div>
@@ -379,13 +379,11 @@ import Hls from 'hls.js'
 import {
   acquireControl,
   createConfirmToken,
-  createSnapshotFile,
   createVideoSession,
+  getFilePlayUrl,
+  getFiles,
   getControlProfile,
   getRobots,
-  getRecordings,
-  getRecordingPlayUrl,
-  getSnapshots,
   getActiveLiveRecording,
   getViewerToken,
   heartbeatVideoSession,
@@ -401,6 +399,7 @@ import {
   stopIntercom,
   stopLiveRecording,
   takeoverControl,
+  uploadFile,
   stopVideoSession
 } from './api/media'
 
@@ -644,10 +643,12 @@ export default {
         this.selectedSnapshot = null
         if (this.recordingTab === 'snapshot') {
           this.destroyRecordedHls()
-          const response = await getSnapshots({
+          const response = await getFiles({
             robotId: this.selectedRobotId,
+            fileType: 'IMAGE',
+            status: 'READY',
             page: 0,
-            pageSize: 20
+            size: 20
           })
           this.snapshots = response.items || []
           this.recordings = []
@@ -656,18 +657,16 @@ export default {
         this.snapshots = []
         const params = {
           robotId: this.selectedRobotId,
+          fileType: 'VIDEO',
           status: 'READY',
           page: 0,
           size: 20
         }
-        if (this.recordingTab === 'manual') {
-          params.sourceType = 'LIVEKIT_EGRESS'
-        }
-        const response = await getRecordings(params)
+        const response = await getFiles(params)
         const items = response.items || []
         this.recordings = this.recordingTab === 'patrol'
-          ? items.filter(item => item.sourceType !== 'LIVEKIT_EGRESS')
-          : items
+          ? items.filter(item => item.taskExecutionId)
+          : items.filter(item => !item.taskExecutionId)
       } catch (error) {
         this.$message.error(this.errorMessage(error))
       } finally {
@@ -680,7 +679,7 @@ export default {
       if (recording.status !== 'READY') return
       try {
         this.selectedSnapshot = null
-        const playback = await getRecordingPlayUrl(recording.recordingId)
+        const playback = await getFilePlayUrl(recording.fileId)
         const player = this.$refs.recordedPlayer
         this.destroyRecordedHls()
         this.selectedRecording = recording
@@ -704,7 +703,7 @@ export default {
       this.selectedSnapshot = snapshot
     },
     snapshotImage(snapshot) {
-      return snapshot && snapshot.snapshotId ? snapshotImageUrl(snapshot.snapshotId) : ''
+      return snapshot && snapshot.fileId ? snapshotImageUrl(snapshot.fileId) : ''
     },
     // 销毁当前录像播放器，包括 hls.js 实例、video src 和缩略图 hover 状态。
     destroyRecordedHls() {
@@ -1057,12 +1056,20 @@ export default {
       }
       const form = new FormData()
       form.append('trackSid', camera.session.trackSid || 'TR_pending')
-      form.append('reason', 'manual_abnormal')
-      form.append('remark', `${camera.name} 手动抓拍`)
-      form.append('clientCapturedAt', capturedAt)
-      form.append('previewImageHash', `${blob.size}`)
+      form.append('fileType', 'IMAGE')
+      form.append('robotId', camera.robotId)
+      form.append('deviceId', camera.deviceId)
+      form.append('sourceFileId', `web-snapshot/${camera.robotId}/${camera.deviceId}/${Date.now()}/${blob.size}`)
+      form.append('metadata', JSON.stringify({
+        source: 'WEB_SNAPSHOT',
+        sessionId: camera.session.sessionId,
+        trackSid: camera.session.trackSid || 'TR_pending',
+        channel: camera.channel,
+        capturedAt,
+        remark: `${camera.name} 手动抓拍`
+      }))
       form.append('file', blob, `${camera.robotId}-${camera.deviceId}-${Date.now()}.jpg`)
-      const response = await createSnapshotFile(camera.session.sessionId, form)
+      const response = await uploadFile(form)
       this.log('API snapshot', response)
       this.showSnapshotSuccess(camera, response)
     },
@@ -1990,7 +1997,7 @@ export default {
         }
         const recording = await startLiveRecording(camera.session.sessionId)
         camera.activeRecording = recording
-        camera.recordingActive = recording && recording.status === 'RECORDING'
+        camera.recordingActive = recording && recording.status === 'UPLOADING'
         this.log('API startLiveRecording', recording)
         this.$message.success('已开始录像')
       } catch (error) {
@@ -2009,7 +2016,7 @@ export default {
       try {
         const recording = await getActiveLiveRecording(camera.session.sessionId)
         camera.activeRecording = recording
-        if (!recording || recording.status !== 'RECORDING') {
+        if (!recording || recording.status !== 'UPLOADING') {
           camera.recordingActive = false
         }
       } catch (_) {
@@ -2021,7 +2028,7 @@ export default {
       if (!camera.session || !camera.activeRecording || camera.recordingBusy) return
       camera.recordingBusy = true
       try {
-        const recording = await stopLiveRecording(camera.session.sessionId, camera.activeRecording.recordingId)
+        const recording = await stopLiveRecording(camera.session.sessionId, camera.activeRecording.fileId)
         camera.activeRecording = recording
         camera.recordingActive = false
         this.log('API stopLiveRecording', recording)
@@ -2175,11 +2182,11 @@ export default {
       })
     },
     showSnapshotSuccess(camera, snapshot) {
-      if (!snapshot || !snapshot.snapshotId) {
+      if (!snapshot || !snapshot.fileId) {
         this.$message.success('抓拍已保存')
         return
       }
-      const url = snapshotImageUrl(snapshot.snapshotId)
+      const url = snapshotImageUrl(snapshot.fileId)
       this.$message({
         type: 'success',
         customClass: 'snapshot-message',

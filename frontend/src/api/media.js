@@ -118,19 +118,23 @@ export function switchChannel(sessionId, data) {
   return client.post(`/api/control/video-sessions/${sessionId}/switch-channel`, data).then(res => res.data)
 }
 
-export function createSnapshotFile(sessionId, data) {
-  return client.post(`/api/control/video-sessions/${sessionId}/snapshots/file`, data, {
+export function uploadFile(data) {
+  return client.post('/api/control/files', data, {
     timeout: 30000
   }).then(res => res.data)
 }
 
-export function getSnapshots(params = {}) {
-  return client.get('/api/control/snapshots', { params }).then(res => res.data)
+export function getFiles(params = {}) {
+  return client.get('/api/control/files', { params }).then(res => res.data)
 }
 
-export function snapshotImageUrl(snapshotId) {
+export function fileDownloadUrl(fileId) {
+  return client.post(`/api/control/files/${fileId}/download-url`).then(res => res.data)
+}
+
+export function snapshotImageUrl(fileId) {
   const base = process.env.VUE_APP_API_BASE || ''
-  return `${base}/api/control/snapshots/${snapshotId}/image`
+  return `${base}/api/control/files/${fileId}/content`
 }
 
 export function getSessionEvents(sessionId) {
@@ -141,22 +145,16 @@ export function mockTrackPublished(sessionId, trackSid) {
   return client.post(`/internal/media/video-sessions/${sessionId}/_mock/track-published/${trackSid}`).then(res => res.data)
 }
 
-// 录像列表只展示 READY 项给回放页；上传中、转码中等状态通常由机器人侧或后台任务处理。
-export function getRecordings(params) {
-  return client.get('/api/control/recordings', { params }).then(res => res.data)
-}
-
-// 回放 URL 是后端签名后的 HLS 入口，m3u8/ts 子资源会在后端继续校验 token。
-export function getRecordingPlayUrl(recordingId) {
-  return client.post(`/api/control/recordings/${recordingId}/play-url`).then(res => res.data)
+export function getFilePlayUrl(fileId) {
+  return client.post(`/api/control/files/${fileId}/play-url`).then(res => res.data)
 }
 
 export function startLiveRecording(sessionId) {
   return client.post(`/api/control/video-sessions/${sessionId}/recordings/start`).then(res => res.data)
 }
 
-export function stopLiveRecording(sessionId, recordingId) {
-  return client.post(`/api/control/video-sessions/${sessionId}/recordings/${recordingId}/stop`).then(res => res.data)
+export function stopLiveRecording(sessionId, fileId) {
+  return client.post(`/api/control/video-sessions/${sessionId}/recordings/${fileId}/stop`).then(res => res.data)
 }
 
 export function getActiveLiveRecording(sessionId) {

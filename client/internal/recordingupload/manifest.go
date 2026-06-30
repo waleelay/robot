@@ -13,7 +13,7 @@ type Task struct {
 	FilePath     string    `json:"filePath"`
 	FileSize     int64     `json:"fileSize"`
 	CreatedAt    time.Time `json:"createdAt"`
-	RecordingID  string    `json:"recordingId,omitempty"`
+	FileID       string    `json:"fileId,omitempty"`
 	UploadID     string    `json:"uploadId,omitempty"`
 	Status       string    `json:"status"`
 	Error        string    `json:"error,omitempty"`

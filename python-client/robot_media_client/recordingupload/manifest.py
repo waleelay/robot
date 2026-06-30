@@ -18,7 +18,7 @@ class Task:
     file_path: str
     file_size: int
     created_at: datetime
-    recording_id: str = ""
+    file_id: str = ""
     upload_id: str = ""
     status: str = "PENDING"
     error: str = ""
@@ -32,7 +32,7 @@ class Task:
             file_path=str(data.get("filePath") or ""),
             file_size=int(data.get("fileSize") or 0),
             created_at=parse_time(data.get("createdAt")) or now_utc(),
-            recording_id=str(data.get("recordingId") or ""),
+            file_id=str(data.get("fileId") or data.get("recordingId") or ""),
             upload_id=str(data.get("uploadId") or ""),
             status=str(data.get("status") or "PENDING"),
             error=str(data.get("error") or ""),
@@ -49,8 +49,8 @@ class Task:
             "status": self.status,
             "updatedAt": isoformat(self.updated_at or now_utc()),
         }
-        if self.recording_id:
-            data["recordingId"] = self.recording_id
+        if self.file_id:
+            data["fileId"] = self.file_id
         if self.upload_id:
             data["uploadId"] = self.upload_id
         if self.error:

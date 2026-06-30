@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 import os
 import threading
 import time
@@ -15,7 +16,7 @@ from .uploader import upload_missing_parts
 
 
 class Runner:
-    """录像上传后台轮询器，扫描本地 mp4 并上传到媒体服务。"""
+    """文件上传后台轮询器，扫描本地文件并上传到媒体服务。"""
 
     def __init__(self, cfg: Config) -> None:
         """初始化 HTTP 客户端、manifest 和停止事件。"""
@@ -69,17 +70,17 @@ class Runner:
             print("recording upload", task.file_path, exc, flush=True)
 
     def discover(self) -> None:
-        """扫描录像目录，把新的非空 mp4 文件登记到 manifest。"""
+        """扫描目录，把新的非空普通文件登记到 manifest。"""
         root = Path(self.cfg.recording_directory)
-        files = sorted(root.glob("*.mp4"))
+        files = sorted(path for path in root.glob("*") if path.is_file())
         if not files:
-            print(f"recording upload scan found no mp4 files dir={self.cfg.recording_directory}", flush=True)
+            print(f"recording upload scan found no files dir={self.cfg.recording_directory}", flush=True)
         for path in files:
             try:
                 stat = path.stat()
             except FileNotFoundError:
                 continue
-            if stat.st_size == 0:
+            if stat.st_size == 0 or path.name.startswith("."):
                 continue
             source_id = f"{self.cfg.recording_device_id}/{path.name}/{stat.st_size}/{int(stat.st_mtime)}"
             if source_id in self.manifest.tasks:
@@ -95,17 +96,17 @@ class Runner:
             ))
 
     def process(self, task: Task) -> None:
-        """推进单个录像上传任务的状态机。"""
+        """推进单个文件上传任务的状态机。"""
         print(
-            "recording upload processing",
+            "file upload processing",
             f"file={task.file_path}",
             f"status={task.status}",
-            f"recordingId={task.recording_id}",
+            f"fileId={task.file_id}",
             f"uploadId={task.upload_id}",
             flush=True,
         )
-        if task.recording_id and waiting_for_playback(task.status):
-            response = self.client.status(task.recording_id)
+        if task.file_id and waiting_for_playback(task.status):
+            response = self.client.status(task.file_id)
             task.status = response.status
             task.error = response.error_code
             task.updated_at = now_utc()
@@ -113,33 +114,32 @@ class Runner:
             return
         path = Path(task.file_path)
         stat = path.stat()
-        recorded_started_at = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
         upload = self.client.create_or_resume(
             source_file_id=task.source_file_id,
             device_id=self.cfg.recording_device_id,
+            file_type=file_type(path.name),
             file_name=path.name,
-            content_type="video/mp4",
+            content_type=content_type(path.name),
             file_size=stat.st_size,
-            recorded_started_at=recorded_started_at,
         )
-        task.recording_id = upload.recording_id
+        task.file_id = upload.file_id
         task.upload_id = upload.upload_id
-        if not upload.upload_required:
+        if not upload.upload_id:
             print(
-                "recording upload server says upload not required",
-                f"recordingId={upload.recording_id}",
-                f"status={upload.recording_status}",
+                "file upload server says upload not required",
+                f"fileId={upload.file_id}",
+                f"status={upload.status}",
                 flush=True,
             )
-            task.status = upload.recording_status
+            task.status = upload.status
             task.updated_at = now_utc()
             self.manifest.update(task)
             return
         task.status = "UPLOADING"
         self.manifest.update(task)
         print(
-            "recording upload started",
-            f"recordingId={upload.recording_id}",
+            "file upload started",
+            f"fileId={upload.file_id}",
             f"uploadId={upload.upload_id}",
             f"parts={upload.part_count}",
             f"partSize={upload.part_size}",
@@ -154,9 +154,10 @@ class Runner:
                 self.cfg.upload_part_concurrency,
                 self.cfg.upload_part_url_batch_size,
             )
-        self.client.complete(upload.upload_id)
-        print(f"recording upload original file completed recordingId={upload.recording_id}", flush=True)
-        task.status = "VERIFYING"
+        response = self.client.complete(upload.upload_id)
+        print(f"file upload original file completed fileId={upload.file_id}", flush=True)
+        task.status = response.status
+        task.error = response.error_code
         task.updated_at = now_utc()
         self.manifest.update(task)
 
@@ -198,7 +199,31 @@ class Runner:
 
 def waiting_for_playback(status: str) -> bool:
     """判断任务是否处于等待后端转码/回放就绪的状态。"""
-    return status in {"VERIFYING", "PROCESSING_PLAYBACK"}
+    return status == "PROCESSING"
+
+
+def file_type(name: str) -> str:
+    """根据文件后缀映射后端通用文件类型。"""
+    suffix = Path(name).suffix.lower()
+    if suffix in {".mp4", ".mov", ".m4v"}:
+        return "VIDEO"
+    if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
+        return "IMAGE"
+    if suffix in {".log", ".txt"}:
+        return "LOG"
+    if suffix in {".json", ".yaml", ".yml", ".toml", ".ini", ".conf"}:
+        return "CONFIG"
+    if suffix == ".map":
+        return "MAP"
+    if suffix in {".pdf", ".doc", ".docx", ".xls", ".xlsx"}:
+        return "DOCUMENT"
+    return "OTHER"
+
+
+def content_type(name: str) -> str:
+    """根据文件名推断 Content-Type，未知时按二进制处理。"""
+    guessed, _ = mimetypes.guess_type(name)
+    return guessed or "application/octet-stream"
 
 
 def free_bytes(path: str) -> int:

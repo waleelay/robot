@@ -30,16 +30,16 @@
 | 客户端在线状态、心跳、摄像头清单和设备状态 | MQTT QoS 1 | `robot/{robotId}/media/client/status` | MQTT 连接成功、重连成功、周期心跳、正常退出、部分状态变化后刷新 | `RobotMediaStatusSubscriber.clientStatusListener` |
 | 实时视频会话状态 | MQTT QoS 1 | `robot/{robotId}/media/video/status` | start/switch 后 RTSP 探测、开始发布、发布成功、停止、失败、中断 | `RobotMediaStatusSubscriber.statusListener` |
 | 视频会话内对讲状态 | MQTT QoS 1 | `robot/{robotId}/media/video/intercom/status` | 对讲启动中、音频链路可用、停止、失败、中断 | `RobotMediaStatusSubscriber.intercomStatusListener` |
-| 录像上传创建或恢复 | HTTP JSON | `POST /api/media/recording-uploads` | 客户端发现本地待上传 MP4，或网络恢复后续传 | `RobotRecordingController.create` |
-| 录像分片地址申请 | HTTP JSON | `POST /api/media/recording-uploads/{uploadId}/part-urls` | 上传缺失 part 前批量申请预签名 URL | `RobotRecordingController.partUrls` |
-| 录像分片直传 | HTTP PUT | `PUT uploadUrl` | 上传单个 MP4 分片到对象存储 | 对象存储预签名地址 |
-| 录像上传完成通知 | HTTP | `POST /api/media/recording-uploads/{uploadId}/complete` | 本地判断所有 part 已上传后 | `RobotRecordingController.complete` |
-| 录像处理状态查询 | HTTP | `GET /api/media/recordings/{recordingId}/status` | 完成上传后轮询服务端转码/校验状态 | `RobotRecordingController.status` |
+| 文件上传创建或恢复 | HTTP JSON | `POST /api/media/files/multipart-uploads` | 客户端发现本地待上传文件，或网络恢复后续传 | `FileController.createMultipart` |
+| 文件分片地址申请 | HTTP JSON | `POST /api/media/files/multipart-uploads/{uploadId}/part-urls` | 上传缺失 part 前批量申请预签名 URL | `FileController.partUrls` |
+| 文件分片直传 | HTTP PUT | `PUT uploadUrl` | 上传单个文件分片到对象存储 | 对象存储预签名地址 |
+| 文件上传完成通知 | HTTP | `POST /api/media/files/multipart-uploads/{uploadId}/complete` | 本地判断所有 part 已上传后 | `FileController.complete` |
+| 文件处理状态查询 | HTTP | `GET /api/media/files/{fileId}/status` | 完成上传后轮询服务端处理状态 | `FileController.status` |
 
 说明：
 
 1. MQTT topic 中的 `{robotId}` 必须与 payload 中的 `robotId` 一致，后端当前主要从 payload 取值处理。
-2. HTTP 录像上传接口使用请求头 `X-Robot-Id` 声明机器人身份，不在 body 中重复传 `robotId`。
+2. HTTP 文件上传接口使用请求头 `X-Robot-Id` 声明机器人身份，body 可选传 `robotId`，服务端优先使用 body 值再回退到请求头。
 3. “必填”以协议设计、客户端模型和后端当前校验综合判断。若后端 DTO 暂未加 Bean Validation，但业务缺失后无法正确处理，本文仍标为“是”，并在说明中注明。
 
 ## 2. MQTT 上报事件
@@ -298,7 +298,7 @@
 | `INTERCOM_PUBLISH_FAILED` | 客户端发布机器人麦克风 Track 失败。 |
 | `INTERCOM_TIMEOUT` | 后端或客户端判定对讲心跳/链路超时。 |
 
-## 3. HTTP 录像上传上报
+## 3. HTTP 通用文件上传上报
 
 ### 3.1 通用约束
 
@@ -307,21 +307,21 @@
 | 认证/身份 | 首期通过受控机器人专网/VPN 保护，并使用请求头 `X-Robot-Id` 声明机器人身份。 |
 | Body 格式 | JSON API 使用 `Content-Type: application/json`。 |
 | 幂等 | 创建或恢复上传建议使用 `Idempotency-Key: <sourceFileId>`；完成上传建议使用 `Idempotency-Key: complete-<uploadId>`。 |
-| 文件类型 | 首期只接受 MP4，设计文档要求 `contentType=video/mp4`。 |
+| 文件类型 | 当前 Go/Python 客户端会按后缀识别 `VIDEO`、`IMAGE`、`LOG`、`CONFIG`、`MAP`、`DOCUMENT`、`OTHER`。 |
 
 ### 3.2 创建或恢复上传
 
 | 项 | 内容 |
 |---|---|
-| API | `POST /api/media/recording-uploads` |
-| 方向 | Go 客户端 -> Media Service |
+| API | `POST /api/media/files/multipart-uploads` |
+| 方向 | Go/Python 客户端 -> Media Service |
 | 当前客户端请求类型 | `createRequest` |
-| 后端 DTO | `CreateRecordingUploadRequest` |
+| 后端 DTO | `CreateMultipartFileUploadRequest` |
 
 请求示例：
 
 ```http
-POST /api/media/recording-uploads
+POST /api/media/files/multipart-uploads
 X-Robot-Id: robot-001
 Idempotency-Key: patrol-task-991/camera01/20260527T020000.mp4
 Content-Type: application/json
@@ -331,40 +331,38 @@ Content-Type: application/json
 {
   "sourceFileId": "patrol-task-991/camera01/20260527T020000.mp4",
   "deviceId": "camera01",
+  "fileType": "VIDEO",
   "fileName": "patrol_20260527_100000.mp4",
   "contentType": "video/mp4",
-  "fileSize": 734003200,
-  "sha256": "optional-sha256",
-  "recordedStartedAt": "2026-05-27T02:00:00Z",
-  "durationSeconds": 1800
+  "fileSize": 734003200
 }
 ```
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| Header `X-Robot-Id` | string | 是 | 机器人 ID，后端用它关联录像来源。 |
+| Header `X-Robot-Id` | string | 是 | 机器人 ID，后端用它关联文件来源。 |
 | Header `Idempotency-Key` | string | 否 | 幂等键，建议使用 `sourceFileId`。设计文档建议携带，当前控制器不直接声明该参数。 |
 | `sourceFileId` | string | 是 | 客户端侧源文件唯一 ID；后端用于去重和断点续传。`@NotBlank`。 |
-| `deviceId` | string | 是 | 录像来源设备 ID，如摄像头 ID。`@NotBlank`。 |
+| `deviceId` | string | 否 | 文件来源设备 ID，如摄像头 ID。 |
+| `taskExecutionId` | string | 否 | 任务执行记录 ID，可为空。 |
+| `fileType` | string | 是 | 文件类型，取值见 3.1。 |
 | `fileName` | string | 是 | 原始文件名。`@NotBlank`。 |
-| `contentType` | string | 是 | 文件类型；首期应为 `video/mp4`。`@NotBlank`。 |
+| `contentType` | string | 是 | MIME 类型。`@NotBlank`。 |
 | `fileSize` | number | 是 | 文件大小，单位字节，必须大于 0。`@Positive`。 |
-| `sha256` | string | 否 | 客户端可选上报的完整文件 SHA-256，用于后续完整性校验扩展和相同源文件内容比对。当前 Go 客户端请求结构尚未填该字段。 |
-| `recordedStartedAt` | datetime | 否 | 录像开始时间。当前 Go 客户端会按文件时间推导并上报。 |
-| `durationSeconds` | number | 否 | 客户端报告的录像时长，仅作上传前参考；最终以服务端媒体检查结果为准。当前 Go 客户端请求结构尚未填该字段。 |
+| `metadata` | string | 否 | JSON 字符串，保存少量来源扩展信息。 |
 
 ### 3.3 获取分片上传地址
 
 | 项 | 内容 |
 |---|---|
-| API | `POST /api/media/recording-uploads/{uploadId}/part-urls` |
-| 方向 | Go 客户端 -> Media Service |
-| 后端 DTO | `PartUrlsRequest` |
+| API | `POST /api/media/files/multipart-uploads/{uploadId}/part-urls` |
+| 方向 | Go/Python 客户端 -> Media Service |
+| 后端 DTO | `FilePartUrlsRequest` |
 
 请求示例：
 
 ```http
-POST /api/media/recording-uploads/upl_b752/part-urls
+POST /api/media/files/multipart-uploads/upl_b752/part-urls
 X-Robot-Id: robot-001
 Content-Type: application/json
 ```
@@ -383,15 +381,15 @@ Content-Type: application/json
 
 约束：
 
-1. 一次最多申请当前可并行上传数的 URL，设计默认 2 个。
-2. URL 有效期建议 15 分钟，过期后重新申请缺失 part 即可。
+1. 一次最多申请 `MEDIA_FILE_MAX_PART_URLS_PER_REQUEST` 个 URL，默认 16 个。
+2. URL 有效期由 `MEDIA_FILE_UPLOAD_URL_TTL_SECONDS` 控制，默认 15 分钟，过期后重新申请缺失 part 即可。
 
 ### 3.4 上传单个分片
 
 | 项 | 内容 |
 |---|---|
 | API | `PUT uploadUrl` |
-| 方向 | Go 客户端 -> 对象存储 |
+| 方向 | Go/Python 客户端 -> 对象存储 |
 | Body | 当前 part 的二进制内容 |
 
 | 字段/属性 | 类型 | 必填 | 说明 |
@@ -405,14 +403,14 @@ Content-Type: application/json
 
 | 项 | 内容 |
 |---|---|
-| API | `POST /api/media/recording-uploads/{uploadId}/complete` |
-| 方向 | Go 客户端 -> Media Service |
+| API | `POST /api/media/files/multipart-uploads/{uploadId}/complete` |
+| 方向 | Go/Python 客户端 -> Media Service |
 | Body | 无 |
 
 请求示例：
 
 ```http
-POST /api/media/recording-uploads/upl_b752/complete
+POST /api/media/files/multipart-uploads/upl_b752/complete
 X-Robot-Id: robot-001
 Idempotency-Key: complete-upl_b752
 ```
@@ -425,25 +423,25 @@ Idempotency-Key: complete-upl_b752
 
 服务端从对象存储查询已上传 part 并完成 multipart，不要求客户端在 body 中重新提交全部 ETag。
 
-### 3.6 查询录像处理状态
+### 3.6 查询文件处理状态
 
 | 项 | 内容 |
 |---|---|
-| API | `GET /api/media/recordings/{recordingId}/status` |
-| 方向 | Go 客户端 -> Media Service |
+| API | `GET /api/media/files/{fileId}/status` |
+| 方向 | Go/Python 客户端 -> Media Service |
 | Body | 无 |
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| Path `recordingId` | string | 是 | 录像 ID，由创建或恢复上传接口返回。 |
+| Path `fileId` | string | 是 | 文件 ID，由创建或恢复上传接口返回。 |
 | Header `X-Robot-Id` | string | 是 | 机器人 ID。 |
 
 常见响应字段：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `recordingId` | string | 录像 ID。 |
-| `status` | string | 录像处理状态，常见 `UPLOADING`、`VERIFYING`、`PROCESSING_PLAYBACK`、`READY`、`FAILED`。 |
+| `fileId` | string | 文件 ID。 |
+| `status` | string | 文件处理状态，常见 `UPLOADING`、`PROCESSING`、`READY`、`FAILED`。 |
 | `errorCode` | string | 失败时错误码。 |
 | `message` | string | 状态说明或失败详情。 |
 | `uploadedAt` | datetime | 上传完成时间。 |

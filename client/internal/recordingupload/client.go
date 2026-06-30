@@ -18,22 +18,21 @@ type Client struct {
 }
 
 type createRequest struct {
-	SourceFileID      string    `json:"sourceFileId"`
-	DeviceID          string    `json:"deviceId"`
-	FileName          string    `json:"fileName"`
-	ContentType       string    `json:"contentType"`
-	FileSize          int64     `json:"fileSize"`
-	RecordedStartedAt time.Time `json:"recordedStartedAt"`
+	SourceFileID string `json:"sourceFileId"`
+	DeviceID     string `json:"deviceId"`
+	FileType     string `json:"fileType"`
+	FileName     string `json:"fileName"`
+	ContentType  string `json:"contentType"`
+	FileSize     int64  `json:"fileSize"`
 }
 
 type uploadResponse struct {
-	RecordingID     string     `json:"recordingId"`
-	UploadID        string     `json:"uploadId"`
-	RecordingStatus string     `json:"recordingStatus"`
-	UploadRequired  bool       `json:"uploadRequired"`
-	PartSize        int64      `json:"partSize"`
-	PartCount       int        `json:"partCount"`
-	UploadedParts   []partInfo `json:"uploadedParts"`
+	FileID        string     `json:"fileId"`
+	UploadID      string     `json:"uploadId"`
+	Status        string     `json:"status"`
+	PartSize      int64      `json:"partSize"`
+	PartCount     int        `json:"partCount"`
+	UploadedParts []partInfo `json:"uploadedParts"`
 }
 
 type partInfo struct {
@@ -62,13 +61,13 @@ func NewClient(baseURL, robotID string) *Client {
 
 func (c *Client) createOrResume(ctx context.Context, request createRequest) (uploadResponse, error) {
 	var response uploadResponse
-	err := c.json(ctx, http.MethodPost, "/api/media/recording-uploads", request, &response)
+	err := c.json(ctx, http.MethodPost, "/api/media/files/multipart-uploads", request, &response)
 	return response, err
 }
 
 func (c *Client) partURLs(ctx context.Context, uploadID string, partNumbers []int) (map[int]string, error) {
 	var response partURLsResponse
-	err := c.json(ctx, http.MethodPost, "/api/media/recording-uploads/"+uploadID+"/part-urls",
+	err := c.json(ctx, http.MethodPost, "/api/media/files/multipart-uploads/"+uploadID+"/part-urls",
 		map[string]any{"partNumbers": partNumbers}, &response)
 	if err != nil {
 		return nil, err
@@ -104,13 +103,13 @@ func (c *Client) putPart(ctx context.Context, url string, reader io.Reader, size
 
 func (c *Client) complete(ctx context.Context, uploadID string) (statusResponse, error) {
 	var response statusResponse
-	err := c.json(ctx, http.MethodPost, "/api/media/recording-uploads/"+uploadID+"/complete", nil, &response)
+	err := c.json(ctx, http.MethodPost, "/api/media/files/multipart-uploads/"+uploadID+"/complete", nil, &response)
 	return response, err
 }
 
-func (c *Client) status(ctx context.Context, recordingID string) (statusResponse, error) {
+func (c *Client) status(ctx context.Context, fileID string) (statusResponse, error) {
 	var response statusResponse
-	err := c.json(ctx, http.MethodGet, "/api/media/recordings/"+recordingID+"/status", nil, &response)
+	err := c.json(ctx, http.MethodGet, "/api/media/files/"+fileID+"/status", nil, &response)
 	return response, err
 }
 

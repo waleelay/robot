@@ -3,13 +3,16 @@ package com.robot.mediaserver.control.client;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.ControlProperties;
 import com.robot.mediaserver.robot.dto.RobotDeviceResponse;
-import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
+import com.robot.mediaserver.file.dto.FileDownloadUrlResponse;
+import com.robot.mediaserver.file.dto.FileListItemResponse;
+import com.robot.mediaserver.file.dto.FileListResponse;
+import com.robot.mediaserver.file.dto.FilePlayUrlResponse;
+import com.robot.mediaserver.file.model.FileStatus;
+import com.robot.mediaserver.file.model.FileType;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.MediaTrackResponse;
 import com.robot.mediaserver.video.dto.IntercomResponse;
-import com.robot.mediaserver.video.dto.SnapshotListResponse;
-import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
@@ -17,10 +20,6 @@ import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import com.robot.mediaserver.video.messaging.VideoStatusMessage;
 import com.robot.mediaserver.video.messaging.IntercomStartCommand;
 import com.robot.mediaserver.video.messaging.IntercomStatusMessage;
-import com.robot.mediaserver.recording.dto.PlaybackUrlResponse;
-import com.robot.mediaserver.recording.dto.RecordingListItemResponse;
-import com.robot.mediaserver.recording.dto.RecordingListResponse;
-import com.robot.mediaserver.recording.model.RecordingStatus;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -137,62 +136,100 @@ public class ControlMediaServiceClient {
         return post("/internal/media/video-sessions/{sessionId}/switch-channel", request, null, VideoSessionResponse.class, sessionId);
     }
 
-    public SnapshotResponse snapshotFile(String sessionId, CreateSnapshotRequest request, MultipartFile file, CurrentUser user) {
+    public FileListItemResponse uploadSimpleFile(
+            MultipartFile file,
+            FileType fileType,
+            String robotId,
+            String deviceId,
+            String taskExecutionId,
+            String sourceFileId,
+            String metadata,
+            CurrentUser user) {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        addPart(body, "trackSid", request.getTrackSid());
-        addPart(body, "reason", request.getReason());
-        addPart(body, "remark", request.getRemark());
-        addPart(body, "clientCapturedAt", request.getClientCapturedAt() == null ? null : request.getClientCapturedAt().toString());
-        addPart(body, "previewImageHash", request.getPreviewImageHash());
+        addPart(body, "fileType", fileType.name());
+        addPart(body, "robotId", robotId);
+        addPart(body, "deviceId", deviceId);
+        addPart(body, "taskExecutionId", taskExecutionId);
+        addPart(body, "sourceFileId", sourceFileId);
+        addPart(body, "metadata", metadata);
         try {
             body.add("file", new ByteArrayResource(file.getBytes()) {
                 @Override
                 public String getFilename() {
-                    return file.getOriginalFilename() == null ? "snapshot.jpg" : file.getOriginalFilename();
+                    return file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
                 }
             });
         } catch (Exception ex) {
-            throw new IllegalStateException("读取抓拍文件失败", ex);
+            throw new IllegalStateException("读取上传文件失败", ex);
         }
         return withHeaders(restClient.post()
-                        .uri("/internal/media/video-sessions/{sessionId}/snapshots/file", sessionId)
+                        .uri("/internal/media/files")
                         .contentType(MediaType.MULTIPART_FORM_DATA), user)
                 .body(body)
                 .retrieve()
-                .body(SnapshotResponse.class);
+                .body(FileListItemResponse.class);
     }
 
-    public RecordingListItemResponse startLiveRecording(String sessionId, CurrentUser user) {
-        return post("/internal/media/video-sessions/{sessionId}/recordings/start", null, user, RecordingListItemResponse.class, sessionId);
+    public FileListItemResponse startLiveRecording(String sessionId, CurrentUser user) {
+        return post("/internal/media/video-sessions/{sessionId}/recordings/start", null, user, FileListItemResponse.class, sessionId);
     }
 
-    public RecordingListItemResponse stopLiveRecording(String sessionId, String recordingId, CurrentUser user) {
-        return post("/internal/media/video-sessions/{sessionId}/recordings/{recordingId}/stop",
+    public FileListItemResponse stopLiveRecording(String sessionId, String fileId, CurrentUser user) {
+        return post("/internal/media/video-sessions/{sessionId}/recordings/{fileId}/stop",
                 null,
                 user,
-                RecordingListItemResponse.class,
+                FileListItemResponse.class,
                 sessionId,
-                recordingId);
+                fileId);
     }
 
-    public RecordingListItemResponse activeLiveRecording(String sessionId, CurrentUser user) {
-        return get("/internal/media/video-sessions/{sessionId}/recordings/active", user, RecordingListItemResponse.class, sessionId);
+    public FileListItemResponse activeLiveRecording(String sessionId, CurrentUser user) {
+        return get("/internal/media/video-sessions/{sessionId}/recordings/active", user, FileListItemResponse.class, sessionId);
     }
 
-    public SnapshotListResponse snapshots(String robotId, String deviceId, int page, int pageSize) {
-        String uri = UriComponentsBuilder.fromPath("/internal/media/video-sessions/snapshots")
+    public FileListResponse files(
+            String robotId,
+            String deviceId,
+            String taskExecutionId,
+            FileType fileType,
+            FileStatus status,
+            int page,
+            int size,
+            CurrentUser user) {
+        String uri = UriComponentsBuilder.fromPath("/internal/media/files")
                 .queryParamIfPresent("robotId", optional(robotId))
                 .queryParamIfPresent("deviceId", optional(deviceId))
+                .queryParamIfPresent("taskExecutionId", optional(taskExecutionId))
+                .queryParamIfPresent("fileType", Optional.ofNullable(fileType).map(Enum::name))
+                .queryParamIfPresent("status", Optional.ofNullable(status).map(Enum::name))
                 .queryParam("page", page)
-                .queryParam("pageSize", pageSize)
+                .queryParam("size", size)
                 .build()
                 .toUriString();
-        return get(uri, null, SnapshotListResponse.class);
+        return get(uri, user, FileListResponse.class);
     }
 
-    public byte[] snapshotImage(String snapshotId) {
+    public FileListItemResponse file(String fileId, CurrentUser user) {
+        return get("/internal/media/files/{fileId}", user, FileListItemResponse.class, fileId);
+    }
+
+    public FileDownloadUrlResponse fileDownloadUrl(String fileId, CurrentUser user) {
+        return post("/internal/media/files/{fileId}/download-url", null, user, FileDownloadUrlResponse.class, fileId);
+    }
+
+    public byte[] fileContent(String fileId, CurrentUser user) {
+        return withHeaders(restClient.get().uri("/internal/media/files/{fileId}/content", fileId), user)
+                .retrieve()
+                .body(byte[].class);
+    }
+
+    public FilePlayUrlResponse filePlayUrl(String fileId, CurrentUser user) {
+        return post("/internal/media/files/{fileId}/play-url", null, user, FilePlayUrlResponse.class, fileId);
+    }
+
+    public byte[] fileHlsAsset(String fileId, String objectName, String token) {
         return restClient.get()
-                .uri("/internal/media/snapshots/{snapshotId}/image", snapshotId)
+                .uri("/internal/media/files/{fileId}/hls/{objectName}?token={token}", fileId, objectName, token)
                 .retrieve()
                 .body(byte[].class);
     }
@@ -234,41 +271,6 @@ public class ControlMediaServiceClient {
 
     public Map<String, Object> releaseIdle(String sessionId) {
         return post("/internal/media/video-sessions/{sessionId}/release-idle", null, null, new ParameterizedTypeReference<>() {}, sessionId);
-    }
-
-    public RecordingListResponse recordings(
-            String robotId,
-            String deviceId,
-            String sourceType,
-            RecordingStatus status,
-            OffsetDateTime from,
-            OffsetDateTime to,
-            int page,
-            int size,
-            CurrentUser user) {
-        String uri = UriComponentsBuilder.fromPath("/internal/media/recordings")
-                .queryParamIfPresent("robotId", optional(robotId))
-                .queryParamIfPresent("deviceId", optional(deviceId))
-                .queryParamIfPresent("sourceType", optional(sourceType))
-                .queryParamIfPresent("status", Optional.ofNullable(status).map(Enum::name))
-                .queryParamIfPresent("from", Optional.ofNullable(from))
-                .queryParamIfPresent("to", Optional.ofNullable(to))
-                .queryParam("page", page)
-                .queryParam("size", size)
-                .build()
-                .toUriString();
-        return get(uri, user, RecordingListResponse.class);
-    }
-
-    public PlaybackUrlResponse recordingPlayUrl(String recordingId, CurrentUser user) {
-        return post("/internal/media/recordings/{recordingId}/play-url", null, user, PlaybackUrlResponse.class, recordingId);
-    }
-
-    public byte[] recordingHlsAsset(String recordingId, String objectName, String token) {
-        return restClient.get()
-                .uri("/internal/media/recordings/{recordingId}/hls/{objectName}?token={token}", recordingId, objectName, token)
-                .retrieve()
-                .body(byte[].class);
     }
 
     private <T> T get(String uri, CurrentUser user, Class<T> responseType, Object... uriVariables) {

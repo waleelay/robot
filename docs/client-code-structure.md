@@ -9,7 +9,7 @@
 1. 启动后连接 MQTT，并周期性上报机器人与摄像头在线状态。
 2. 接收实时视频 start/stop/switch 指令，探测 RTSP 后启动本地推流进程，将视频发布到 LiveKit。
 3. 接收对讲 start/stop 指令，通过 LiveKit SDK 和本地 GStreamer 音频管线建立双向音频桥。
-4. 后台扫描本地 MP4 录像文件，按 multipart 方式续传到 Media Service/MinIO，并维护本地上传清单。
+4. 后台扫描本地文件，按通用文件 multipart 协议续传到 Media Service/MinIO，并维护本地上传清单。
 
 ## 2. 顶层目录结构
 
@@ -50,14 +50,14 @@ client/
 | 路径 | 职责 |
 |---|---|
 | `cmd/robot-media-client/main.go` | 程序入口，加载配置，初始化 RTSP 探测、视频 publisher、对讲 manager、录像上传 runner 和 MQTT client |
-| `internal/config/config.go` | 从环境变量加载机器人、MQTT、RTSP、GStreamer、录像上传和本地缓存配置 |
+| `internal/config/config.go` | 从环境变量加载机器人、MQTT、RTSP、GStreamer、文件上传和本地缓存配置 |
 | `internal/model/model.go` | MQTT 指令、状态消息、机器人在线消息、摄像头信息等 JSON 数据模型 |
 | `internal/mqtt/client.go` | MQTT 连接、订阅、心跳、指令分发、状态发布 |
 | `internal/rtsp/probe.go` | 使用 `ffprobe` 检查 RTSP 视频流是否可达 |
 | `internal/publisher/publisher.go` | 按 `sessionId` 管理外部视频推流进程，支持默认 GStreamer publisher 或自定义命令 |
 | `internal/intercom/intercom.go` | 使用 LiveKit SDK 管理对讲会话，桥接本地麦克风、扬声器与 LiveKit 音频 Track |
-| `internal/recordingupload/` | 本地录像发现、上传清单、断点续传、分片上传、完成上传和本地缓存清理 |
-| `recordings/` | 默认本地录像扫描目录 |
+| `internal/recordingupload/` | 本地文件发现、上传清单、断点续传、分片上传、完成上传和本地缓存清理 |
+| `recordings/` | 默认本地文件扫描目录 |
 | `scripts/` | 客户端部署或依赖安装脚本 |
 | `Dockerfile` | 构建机器人侧客户端镜像 |
 
@@ -124,22 +124,22 @@ main
 | `AudioCapturePipeline` | `AUDIO_CAPTURE_PIPELINE` | 本地麦克风采集 pipeline |
 | `AudioPlaybackPipeline` | `AUDIO_PLAYBACK_PIPELINE` | 本地扬声器播放 pipeline |
 
-### 4.4 录像上传
+### 4.4 文件上传
 
 | 字段 | 环境变量 | 说明 |
 |---|---|---|
-| `RecordingUploadEnabled` | `RECORDING_UPLOAD_ENABLED` | 是否启用录像上传 |
+| `RecordingUploadEnabled` | `RECORDING_UPLOAD_ENABLED` | 是否启用文件上传能力 |
 | `MediaServiceURL` | `MEDIA_SERVICE_URL` | Media Service 地址 |
-| `RecordingDirectory` | `RECORDING_DIRECTORY` | 本地 MP4 扫描目录 |
+| `RecordingDirectory` | `RECORDING_DIRECTORY` | 本地文件扫描目录 |
 | `RecordingManifestPath` | `RECORDING_MANIFEST_PATH` | 本地上传 manifest 路径 |
-| `RecordingDeviceID` | `RECORDING_DEVICE_ID` | 录像所属设备 ID |
+| `RecordingDeviceID` | `RECORDING_DEVICE_ID` | 文件所属设备 ID |
 | `UploadScanInterval` | `RECORDING_UPLOAD_SCAN_INTERVAL_MS` | 扫描间隔 |
 | `UploadPartConcurrency` | `RECORDING_UPLOAD_PART_CONCURRENCY` | 单文件分片上传并发 |
 | `UploadPartURLBatchSize` | `RECORDING_UPLOAD_PART_URL_BATCH_SIZE` | 单批获取上传 URL 数量 |
 | `UploadFileConcurrency` | `RECORDING_UPLOAD_FILE_CONCURRENCY` | 多文件上传并发 |
-| `LocalCacheMaxBytes` | `RECORDING_LOCAL_CACHE_MAX_BYTES` | 本地录像缓存上限 |
+| `LocalCacheMaxBytes` | `RECORDING_LOCAL_CACHE_MAX_BYTES` | 本地文件缓存上限 |
 | `LocalMinFreeBytes` | `RECORDING_LOCAL_MIN_FREE_BYTES` | 本地磁盘最小剩余空间 |
-| `LocalRetentionAfterReady` | `RECORDING_LOCAL_RETENTION_AFTER_READY_HOURS` | 录像 READY 后本地保留时长 |
+| `LocalRetentionAfterReady` | `RECORDING_LOCAL_RETENTION_AFTER_READY_HOURS` | 文件 READY 后本地保留时长 |
 
 ## 5. 数据模型
 
@@ -367,7 +367,7 @@ LiveKit remote Track: audio.operator.mic
 4. 关闭 playback stdin。
 5. 断开 LiveKit Room。
 
-## 10. 录像上传模块
+## 10. 文件上传模块
 
 `internal/recordingupload/` 是独立于 MQTT 的后台轮询任务。
 
@@ -383,7 +383,7 @@ LiveKit remote Track: audio.operator.mic
 
 ### 10.2 任务发现
 
-`Runner.discover()` 扫描 `RecordingDirectory` 下的 `*.mp4` 文件，跳过不存在、读取失败或大小为 0 的文件。
+`Runner.discover()` 扫描 `RecordingDirectory` 下的普通文件，跳过目录、隐藏文件、读取失败或大小为 0 的文件。客户端按文件后缀映射 `VIDEO`、`IMAGE`、`LOG`、`CONFIG`、`MAP`、`DOCUMENT`、`OTHER`。
 
 本地幂等键 `sourceFileId` 由以下信息组成：
 
@@ -401,9 +401,8 @@ PENDING
   -> UPLOADING
   -> uploadMissingParts
   -> complete
-  -> VERIFYING
-  -> status polling
-  -> PROCESSING_PLAYBACK
+  -> PROCESSING 或 READY
+  -> 视频 status polling
   -> READY
   -> LOCAL_DELETED
 ```
@@ -414,7 +413,7 @@ PENDING
 2. 服务端返回已上传 part 后，客户端只上传缺失部分。
 3. 分片 URL 由 `/part-urls` 批量获取。
 4. 所有缺失 part 上传完成后调用 `/complete`。
-5. `complete` 后客户端进入 `VERIFYING`，后续只轮询录像状态，等待服务端校验、HLS 转码和缩略图等处理。
+5. `complete` 后非视频通常直接进入 `READY`；视频进入 `PROCESSING`，客户端轮询文件状态，等待服务端生成 HLS。
 
 ### 10.4 HTTP API
 
@@ -422,11 +421,11 @@ PENDING
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `POST` | `/api/media/recording-uploads` | 创建或恢复上传 |
-| `POST` | `/api/media/recording-uploads/{uploadId}/part-urls` | 批量获取 part 上传 URL |
+| `POST` | `/api/media/files/multipart-uploads` | 创建或恢复上传 |
+| `POST` | `/api/media/files/multipart-uploads/{uploadId}/part-urls` | 批量获取 part 上传 URL |
 | `PUT` | `uploadUrl` | 将单个 part 直传到对象存储签名 URL |
-| `POST` | `/api/media/recording-uploads/{uploadId}/complete` | 通知服务端完成 multipart |
-| `GET` | `/api/media/recordings/{recordingId}/status` | 查询录像处理状态 |
+| `POST` | `/api/media/files/multipart-uploads/{uploadId}/complete` | 通知服务端完成 multipart |
+| `GET` | `/api/media/files/{fileId}/status` | 查询文件处理状态 |
 
 所有 JSON API 请求都会带：
 
@@ -454,7 +453,7 @@ Task
   filePath
   fileSize
   createdAt
-  recordingId
+  fileId
   uploadId
   status
   error
@@ -477,6 +476,34 @@ Task
 
 ## 11. Docker 构建
 
+## 11. Python 客户端上传模块
+
+Python 客户端位于仓库根目录 `python-client/`，上传模块与 Go 客户端使用同一套通用文件接口：
+
+```text
+python-client/robot_media_client/recordingupload/
+  client.py
+  manifest.py
+  runner.py
+  uploader.py
+```
+
+职责与 Go 客户端一致：
+
+```text
+扫描 RECORDING_DIRECTORY 下的普通文件
+按后缀识别 fileType
+使用 sourceFileId 幂等恢复上传
+批量申请 part URL
+并发 PUT 分片到对象存储
+complete 后记录 fileId
+视频 PROCESSING 时轮询 /api/media/files/{fileId}/status
+```
+
+Python manifest 已统一写入 `fileId`，同时兼容读取旧 manifest 中的 `recordingId`，避免升级后丢失本地续传状态。
+
+## 12. Docker 构建
+
 `client/Dockerfile` 分两阶段构建：
 
 1. `golang:1.24-alpine` 编译 Go 二进制，安装 `build-base`、`pkgconf`、`opus-dev`。
@@ -494,7 +521,7 @@ go build -tags nolibopusfile -o /out/robot-media-client ./cmd/robot-media-client
 robot-media-client
 ```
 
-## 12. 主要依赖
+## 13. 主要依赖
 
 | 依赖 | 用途 |
 |---|---|
@@ -506,7 +533,7 @@ robot-media-client
 | `gstreamer-publisher` | 默认 RTSP 到 LiveKit 视频发布 |
 | `gst-launch-1.0` | 本地音频采集与播放 |
 
-## 13. 模块关系总览
+## 14. 模块关系总览
 
 ```mermaid
 flowchart TD
@@ -550,18 +577,18 @@ Control/Media Service 创建 LiveKit Room 和 publisher token
   -> 前端使用 viewer token 订阅 LiveKit Track
 ```
 
-## 15. 一次完整录像上传链路
+## 15. 一次完整文件上传链路
 
 ```text
-机器人本地生成 MP4
+机器人本地生成文件
   -> recordingupload.Runner 扫描到文件
   -> 写入 manifest，状态 PENDING
   -> 调 Media Service createOrResume
   -> 获取缺失 part 和上传 URL
   -> 并发 PUT part 到签名 URL
   -> 调 complete
-  -> 状态进入 VERIFYING
-  -> 轮询服务端状态
-  -> 服务端处理完成后变为 READY
+  -> 非视频进入 READY，视频进入 PROCESSING
+  -> 视频轮询服务端状态
+  -> 服务端 HLS 处理完成后变为 READY
   -> 满足本地保留策略后删除本地文件，状态 LOCAL_DELETED
 ```

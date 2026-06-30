@@ -1,22 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import BinaryIO
 
 import requests
-
-from ..timeutil import isoformat
 
 
 @dataclass
 class UploadResponse:
     """后端创建/恢复上传任务后的响应。"""
 
-    recording_id: str
+    file_id: str
     upload_id: str
-    recording_status: str
-    upload_required: bool
+    status: str
     part_size: int
     part_count: int
     uploaded_parts: set[int]
@@ -25,10 +21,9 @@ class UploadResponse:
     def from_json(cls, data: dict[str, object]) -> "UploadResponse":
         """从后端 JSON 响应解析上传任务状态。"""
         return cls(
-            recording_id=str(data.get("recordingId") or ""),
+            file_id=str(data.get("fileId") or ""),
             upload_id=str(data.get("uploadId") or ""),
-            recording_status=str(data.get("recordingStatus") or ""),
-            upload_required=bool(data.get("uploadRequired")),
+            status=str(data.get("status") or ""),
             part_size=int(data.get("partSize") or 0),
             part_count=int(data.get("partCount") or 0),
             uploaded_parts={
@@ -53,7 +48,7 @@ class StatusResponse:
 
 
 class Client:
-    """录像上传 HTTP 客户端，封装机器人侧上传 API。"""
+    """文件上传 HTTP 客户端，封装机器人侧上传 API。"""
 
     def __init__(self, base_url: str, robot_id: str) -> None:
         """保存后端地址，并在请求头中带上机器人身份。"""
@@ -66,19 +61,19 @@ class Client:
         self,
         source_file_id: str,
         device_id: str,
+        file_type: str,
         file_name: str,
         content_type: str,
         file_size: int,
-        recorded_started_at: datetime,
     ) -> UploadResponse:
-        """向后端创建或恢复一个本地录像文件的上传任务。"""
-        response = self._json("POST", "/api/media/recording-uploads", {
+        """向后端创建或恢复一个本地文件的上传任务。"""
+        response = self._json("POST", "/api/media/files/multipart-uploads", {
             "sourceFileId": source_file_id,
             "deviceId": device_id,
+            "fileType": file_type,
             "fileName": file_name,
             "contentType": content_type,
             "fileSize": file_size,
-            "recordedStartedAt": isoformat(recorded_started_at),
         })
         return UploadResponse.from_json(response)
 
@@ -86,7 +81,7 @@ class Client:
         """批量申请分片上传 URL。"""
         response = self._json(
             "POST",
-            f"/api/media/recording-uploads/{upload_id}/part-urls",
+            f"/api/media/files/multipart-uploads/{upload_id}/part-urls",
             {"partNumbers": part_numbers},
         )
         urls = {
@@ -107,12 +102,12 @@ class Client:
 
     def complete(self, upload_id: str) -> StatusResponse:
         """通知后端所有分片已上传完成。"""
-        response = self._json("POST", f"/api/media/recording-uploads/{upload_id}/complete", None)
+        response = self._json("POST", f"/api/media/files/multipart-uploads/{upload_id}/complete", None)
         return StatusResponse.from_json(response)
 
-    def status(self, recording_id: str) -> StatusResponse:
-        """查询录像是否已经完成 HLS 转码并可播放。"""
-        response = self._json("GET", f"/api/media/recordings/{recording_id}/status", None)
+    def status(self, file_id: str) -> StatusResponse:
+        """查询文件是否已经完成后处理并可使用。"""
+        response = self._json("GET", f"/api/media/files/{file_id}/status", None)
         return StatusResponse.from_json(response)
 
     def _json(self, method: str, path: str, body: dict[str, object] | None) -> dict[str, object]:

@@ -48,27 +48,28 @@ media:
     ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
     fixed-delay-ms: ${SNAPSHOT_WORKER_FIXED_DELAY_MS:3000}
     timeout-ms: ${SNAPSHOT_WORKER_TIMEOUT_MS:10000}
-  recording:
-    enabled: ${RECORDING_ENABLED:true}
-    max-file-size-bytes: ${RECORDING_MAX_FILE_SIZE_BYTES:21474836480}
-    part-size-bytes: ${RECORDING_PART_SIZE_BYTES:16777216}
-    max-part-urls-per-request: ${RECORDING_MAX_PART_URLS_PER_REQUEST:16}
-    upload-url-ttl-seconds: ${RECORDING_UPLOAD_URL_TTL_SECONDS:900}
-    upload-expire-hours: ${RECORDING_UPLOAD_EXPIRE_HOURS:72}
-    upload-session-refresh-enabled: ${RECORDING_UPLOAD_SESSION_REFRESH_ENABLED:true}
-    play-url-ttl-seconds: ${RECORDING_PLAY_URL_TTL_SECONDS:3600}
-    play-token-secret: ${RECORDING_PLAY_TOKEN_SECRET:recording-playback-development-secret-change-me}
-    hls-ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
-    ffprobe-path: ${FFPROBE_PATH:ffprobe}
-    hls-segment-duration-seconds: ${RECORDING_HLS_SEGMENT_DURATION_SECONDS:6}
-    hls-worker-concurrency: ${RECORDING_HLS_WORKER_CONCURRENCY:2}
-    hls-processing-lease-seconds: ${RECORDING_HLS_PROCESSING_LEASE_SECONDS:300}
-    max-active-uploads-per-robot: ${RECORDING_MAX_ACTIVE_UPLOADS_PER_ROBOT:2}
-    max-active-uploads-global: ${RECORDING_MAX_ACTIVE_UPLOADS_GLOBAL:50}
-    retention-days: ${RECORDING_RETENTION_DAYS:30}
-    trusted-robot-network-enabled: ${RECORDING_TRUSTED_ROBOT_NETWORK_ENABLED:false}
-    trusted-robot-cidrs: ${RECORDING_TRUSTED_ROBOT_CIDRS:127.0.0.1/32,::1/128}
-    default-org-id: ${RECORDING_DEFAULT_ORG_ID:org001}
+  file:
+    enabled: ${MEDIA_FILE_ENABLED:true}
+    simple-upload-max-bytes: ${MEDIA_FILE_SIMPLE_UPLOAD_MAX_BYTES:20971520}
+    max-file-size-bytes: ${MEDIA_FILE_MAX_FILE_SIZE_BYTES:21474836480}
+    part-size-bytes: ${MEDIA_FILE_PART_SIZE_BYTES:16777216}
+    max-part-urls-per-request: ${MEDIA_FILE_MAX_PART_URLS_PER_REQUEST:16}
+    initial-part-url-count: ${MEDIA_FILE_INITIAL_PART_URL_COUNT:16}
+    upload-url-ttl-seconds: ${MEDIA_FILE_UPLOAD_URL_TTL_SECONDS:900}
+    multipart-expire-hours: ${MEDIA_FILE_MULTIPART_EXPIRE_HOURS:72}
+    play-url-ttl-seconds: ${MEDIA_FILE_PLAY_URL_TTL_SECONDS:3600}
+    play-token-secret: ${MEDIA_FILE_PLAY_TOKEN_SECRET:file-playback-development-secret-change-me}
+    hls-ffmpeg-path: ${MEDIA_FILE_HLS_FFMPEG_PATH:${FFMPEG_PATH:ffmpeg}}
+    ffprobe-path: ${MEDIA_FILE_FFPROBE_PATH:${FFPROBE_PATH:ffprobe}}
+    hls-segment-duration-seconds: ${MEDIA_FILE_HLS_SEGMENT_DURATION_SECONDS:6}
+    max-active-uploads-per-robot: ${MEDIA_FILE_MAX_ACTIVE_UPLOADS_PER_ROBOT:2}
+    max-active-uploads-global: ${MEDIA_FILE_MAX_ACTIVE_UPLOADS_GLOBAL:50}
+    hls-worker-concurrency: ${MEDIA_FILE_HLS_WORKER_CONCURRENCY:2}
+    hls-processing-lease-seconds: ${MEDIA_FILE_HLS_PROCESSING_LEASE_SECONDS:300}
+    retention-days: ${MEDIA_FILE_RETENTION_DAYS:30}
+    trusted-robot-network-enabled: ${MEDIA_FILE_TRUSTED_ROBOT_NETWORK_ENABLED:false}
+    trusted-robot-cidrs: ${MEDIA_FILE_TRUSTED_ROBOT_CIDRS:127.0.0.1/32,::1/128}
+    default-org-id: ${MEDIA_FILE_DEFAULT_ORG_ID:org001}
   tts:
     enabled: ${TTS_ENABLED:true}
     engine-url: ${TTS_ENGINE_URL:http://192.168.124.204:5500/api/tts}
