@@ -20,12 +20,12 @@
 
 ```text
 Bigscreen BFF: 面向大屏前端的 REST/WebSocket 入口，代理/聚合中心端接口，不承载媒体流
-Center Control/Media Service: 会话编排、Token 签发、MQTT 指令、WebSocket 事件、抓拍任务、状态入库
-Robot Client: RTSP 探测、可见光/热成像源选择、LiveKit 发布、MQTT ACK/状态上报
+Center Control/Media Service: 会话编排、Token 签发、MQTT 指令、WebSocket 事件、通用文件上传/播放、状态入库
+Robot Client: RTSP 探测、可见光/热成像源选择、LiveKit 发布、MQTT ACK/状态上报、本地文件上传
 LiveKit: 实时媒体转发、多人订阅、Room/Track 生命周期事件
-Frontend: 创建会话、订阅 Track、即时抓拍预览、调试事件查看
-MinIO: 抓拍图片对象存储
-MySQL: 会话、观看者、Track、抓拍、事件日志
+Frontend: 创建会话、订阅 Track、即时抓拍上传、录像/图片/文件展示、调试事件查看
+MinIO: 视频、图片、日志、配置和任务产物对象存储
+MySQL: 会话、观看者、Track、媒体文件、视频转码信息、事件日志
 Redis/Elasticsearch: 预留缓存、检索和统计扩展
 ```
 
@@ -44,7 +44,8 @@ tools/     设计文档生成脚本
 
 ```text
 docs/realtime-video-interface-flow.md     实时视频三端交互与接口
-docs/recorded-video-upload-design.md      巡逻视频上传与播放方案
+docs/file-upload-design.md                通用文件上传、存储与播放方案
+docs/recorded-video-upload-design.md      巡逻视频上传旧方案归档，当前以通用文件方案为准
 docs/bigscreen-bff-panorama-design.md     大屏 BFF 抽层与全景地图接口方案
 ```
 
@@ -103,6 +104,15 @@ export MINIO_ENDPOINT='http://localhost:9000'
 export MINIO_ACCESS_KEY='minioadmin'
 export MINIO_SECRET_KEY='minioadmin'
 export MINIO_BUCKET='robot-media'
+export MEDIA_FILE_ENABLED='true'
+export MEDIA_FILE_SIMPLE_UPLOAD_MAX_BYTES='20971520'
+export MEDIA_FILE_MAX_FILE_SIZE_BYTES='21474836480'
+export MEDIA_FILE_PART_SIZE_BYTES='16777216'
+export MEDIA_FILE_MAX_PART_URLS_PER_REQUEST='16'
+export MEDIA_FILE_INITIAL_PART_URL_COUNT='16'
+export MEDIA_FILE_UPLOAD_URL_TTL_SECONDS='900'
+export MEDIA_FILE_HLS_WORKER_CONCURRENCY='2'
+export MEDIA_FILE_RETENTION_DAYS='30'
 ```
 
 前端：
@@ -161,7 +171,7 @@ export CAMERA_CAMERA03_GROUP_TYPE='arm'
 5. 启动机器人侧客户端。
 6. 启动前端调试台或通过 Nginx 访问构建产物。
 7. 在前端创建实时视频会话。
-8. 检查 MQTT ACK/status、WebSocket 事件、LiveKit Track、抓拍任务。
+8. 检查 MQTT ACK/status、WebSocket 事件、LiveKit Track、文件上传与抓拍结果。
 
 ## 局域网 HTTPS 通话
 
@@ -259,12 +269,15 @@ POST /internal/media/video-sessions/{sessionId}/token
 POST /internal/media/video-sessions/{sessionId}/stop
 POST /internal/media/video-sessions/{sessionId}/switch-channel
 GET  /internal/media/video-sessions/{sessionId}/tracks
-POST /internal/media/video-sessions/{sessionId}/snapshots
-GET  /internal/media/video-sessions/{sessionId}/snapshots
 GET  /internal/media/video-sessions/{sessionId}/events
-POST /internal/media/snapshots/{snapshotId}/complete
-POST /internal/media/snapshots/{snapshotId}/complete-file
-POST /internal/media/snapshots/{snapshotId}/fail
+POST /api/media/files
+POST /api/media/files/multipart-uploads
+POST /api/media/files/multipart-uploads/{uploadId}/part-urls
+POST /api/media/files/multipart-uploads/{uploadId}/complete
+GET  /api/media/files
+GET  /api/media/files/{fileId}
+POST /api/media/files/{fileId}/play-url
+POST /api/media/files/{fileId}/download-url
 POST /api/internal/livekit/webhook
 WS   /ws/media
 ```
@@ -377,8 +390,8 @@ http://localhost:8090
 停止观看
 查询活跃视频墙列表
 当前画面截帧抓拍并上传
-查询抓拍记录
-预览抓拍图片
+查询录像、抓拍图片和任务产物文件
+预览抓拍图片与播放 HLS 视频
 查询事件日志
 模拟 ACK 和 Track published
 ```
@@ -448,52 +461,47 @@ participant_left     -> robot participant 离开时 INTERRUPTED
 room_finished        -> CLOSED
 ```
 
-## 抓拍流程
+## 通用文件与抓拍流程
 
 ```text
 前端从正在播放的 LiveKit Track 截当前帧
-前端以 multipart/form-data 上传 JPEG
-Control Server 转发到 Media Service
-服务端创建抓拍记录并直接写入 MinIO
-服务端更新 COMPLETED
-WebSocket 推送 snapshot.requested/snapshot.completed
-前端提示“抓拍已保存 查看”，点击查看图片
+前端以 multipart/form-data 调用通用文件单接口上传 JPEG
+BFF/Control Server 转发到 Media Service
+服务端创建 IMAGE 文件记录并直接写入 MinIO
+服务端写入 READY 状态
+前端提示“抓拍已保存”，点击后按 fileId 查看图片
 ```
 
-主路径接口：
+小文件上传接口：
 
 ```http
-POST /api/control/video-sessions/{sessionId}/snapshots/file
+POST /api/control/files
 ```
 
 ```text
+fileType=IMAGE
+sourceType=SNAPSHOT
+robotId=robot-001
+deviceId=camera01
+sessionId=vs_xxx
 trackSid=TR_xxx
-reason=manual_abnormal
 remark=云台-可见光 手动抓拍
-clientCapturedAt=2026-06-08T15:00:00.000Z
-previewImageHash=123456
 file=@snapshot.jpg
 ```
 
-图片归档路径：
+对象归档路径由服务端统一生成：
 
 ```text
-snapshots/{robotId}/{deviceId}/{yyyy}/{mm}/{dd}/{snapshotId}.jpg
+files/{orgId}/{fileType}/{yyyy}/{MM}/{dd}/{fileId}/original/{filename}
 ```
 
-查询和预览：
+查询、预览和播放：
 
 ```http
-GET /api/control/snapshots?robotId=robot-001&deviceId=camera01&page=0&pageSize=20
-GET /api/control/snapshots/{snapshotId}/image
-```
-
-内部抓拍完成接口仍保留：
-
-```http
-POST /internal/media/snapshots/{snapshotId}/complete
-POST /internal/media/snapshots/{snapshotId}/complete-file
-POST /internal/media/snapshots/{snapshotId}/fail
+GET  /api/control/files?fileType=IMAGE&status=READY&page=0&size=20
+GET  /api/control/files/{fileId}/content
+POST /api/control/files/{fileId}/play-url
+GET  /api/control/files/{fileId}/hls/{objectName}
 ```
 
 ## 验证命令

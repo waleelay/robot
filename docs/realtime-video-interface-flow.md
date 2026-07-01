@@ -208,22 +208,7 @@ Content-Type: application/json
 | `token` | string | 是 | 当前用户当前 `X-Client-Id` 的观看 Token |
 | `expiresAt` | datetime | 是 | Token 过期时间，前端不要复用过期 Token |
 
-### 5.6 `SnapshotResponse`
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| `snapshotId` | string | 是 | 抓拍任务 ID |
-| `status` | string | 是 | `PROCESSING` / `COMPLETED` / `FAILED` |
-| `mode` | string | 是 | 当前为 `livekit_track` 或服务端内部实际模式 |
-| `previewAccepted` | boolean | 是 | 是否接受前端预览对象 |
-| `officialObjectKey` | string | 可选 | 正式抓拍图片在 MinIO 中的 object key |
-| `previewObjectKey` | string | 可选 | 前端预览图 object key，当前一般为空 |
-| `errorCode` | string | 可选 | 抓拍失败错误码 |
-| `errorMessage` | string | 可选 | 抓拍失败错误信息 |
-| `officialCapturedAt` | datetime | 可选 | 服务端实际截帧时间 |
-| `createdAt` | datetime | 是 | 抓拍任务创建时间 |
-
-### 5.7 `MediaTrackResponse`
+### 5.6 `MediaTrackResponse`
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
@@ -726,10 +711,6 @@ GET /api/control/files/{fileId}/content
 | `video.intercom.failed` | Go 客户端上报对讲失败 | `sessionId`、`errorCode`、`message` |
 | `video.intercom.closed` | 对讲关闭 | `VideoSessionResponse` |
 | `video.intercom.status` | Go 客户端上报未显式映射的对讲状态 | `sessionId`、`status`、`message` |
-| `snapshot.requested` | 创建抓拍任务 | `snapshotId`、`sessionId`、`trackSid`、`source`、`createdBy` |
-| `snapshot.completed` | 抓拍完成 | `snapshotId`、`officialObjectKey`、`capturedAt`、`source` |
-| `snapshot.failed` | 抓拍失败 | `snapshotId`、`errorCode`、`message` |
-
 `VideoSessionResponse` 事件 `data` 字段：
 
 | 字段 | 类型 | 说明 |
@@ -1187,7 +1168,6 @@ StopAll(): MQTT 断开或客户端退出时停止全部进程
 |---|---|---|
 | 视频会话扫描 | 5 秒 | 发布超时、Track 中断恢复、空闲释放、viewer 心跳清理 |
 | 机器人心跳扫描 | 5 秒 | Go 客户端心跳超时则标记 offline |
-| 抓拍 worker | 3 秒 | 处理待抓拍任务 |
 
 ### 12.1 viewer 清理
 

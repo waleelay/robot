@@ -21,7 +21,6 @@ public class MediaProperties {
     private Rtsp rtsp = new Rtsp();
     private Robot robot = new Robot();
     private Session session = new Session();
-    private SnapshotWorker snapshotWorker = new SnapshotWorker();
     private File file = new File();
     private Tts tts = new Tts();
 
@@ -79,14 +78,6 @@ public class MediaProperties {
 
     public void setSession(Session session) {
         this.session = session;
-    }
-
-    public SnapshotWorker getSnapshotWorker() {
-        return snapshotWorker;
-    }
-
-    public void setSnapshotWorker(SnapshotWorker snapshotWorker) {
-        this.snapshotWorker = snapshotWorker;
     }
 
     public File getFile() {
@@ -403,45 +394,6 @@ public class MediaProperties {
 
     public void setDefaultUrl(String defaultUrl) {
             this.defaultUrl = defaultUrl;
-        }
-
-    public long getTimeoutMs() {
-            return timeoutMs;
-        }
-
-    public void setTimeoutMs(long timeoutMs) {
-            this.timeoutMs = timeoutMs;
-        }
-    }
-
-    public static class SnapshotWorker {
-    private boolean enabled = true;
-    private String ffmpegPath = "ffmpeg";
-    private long fixedDelayMs = 3000;
-    private long timeoutMs = 10000;
-
-    public boolean isEnabled() {
-            return enabled;
-        }
-
-    public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
-
-    public String getFfmpegPath() {
-            return ffmpegPath;
-        }
-
-    public void setFfmpegPath(String ffmpegPath) {
-            this.ffmpegPath = ffmpegPath;
-        }
-
-    public long getFixedDelayMs() {
-            return fixedDelayMs;
-        }
-
-    public void setFixedDelayMs(long fixedDelayMs) {
-            this.fixedDelayMs = fixedDelayMs;
         }
 
     public long getTimeoutMs() {

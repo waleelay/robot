@@ -55,7 +55,6 @@ backend/
 - `media.minio`：MinIO endpoint、bucket、启用开关。
 - `media.rtsp`：RTSP 探测工具和默认地址。
 - `media.robot`：机器人心跳超时。
-- `media.snapshot-worker`：抓拍 Worker 的 ffmpeg、调度间隔、超时。
 - `media.file`：通用文件上传、分片、回放、HLS 转码、保留策略、机器人可信网段。
 - `media.session`：视频会话 Track 发布超时、空闲释放、viewer 心跳、视频墙数量和清晰度限制。
 
@@ -102,11 +101,11 @@ com.robot.mediaserver
 ### `ws/`
 
 - `MediaWebSocketHandler`：维护 WebSocket 连接，接收客户端连接/断开。
-- `MediaWebSocketPublisher`：封装事件广播能力，业务模块通过它向前端推送设备、视频会话、抓拍等事件。
+- `MediaWebSocketPublisher`：封装事件广播能力，业务模块通过它向前端推送设备、视频会话等事件。
 
 ## 5. 实时视频模块 `video/`
 
-`video` 是后端最核心的媒体会话模块，负责视频会话生命周期、LiveKit 房间和 Token、机器人状态回写、Track 记录、抓拍任务、事件日志。
+`video` 是后端最核心的媒体会话模块，负责视频会话生命周期、LiveKit 房间和 Token、机器人状态回写、Track 记录和事件日志。
 
 ### 目录结构
 
@@ -115,11 +114,10 @@ video/
 ├── api/          REST API 和异常处理
 ├── dto/          请求/响应 DTO
 ├── event/        媒体事件日志服务
-├── internal/     内部 Worker 回调接口
 ├── messaging/    MQTT/内部指令和状态消息模型
 ├── model/        JPA 实体和枚举
 ├── repository/   JPA Repository
-├── scheduler/    会话超时、viewer 清理、抓拍 Worker
+├── scheduler/    会话超时、viewer 清理
 └── service/      核心业务服务
 ```
 
@@ -129,10 +127,6 @@ video/
   - 路径：`/internal/media/video-sessions`。
   - 负责创建/查询/停止/重启视频会话、签发 viewer token、处理机器人状态、对讲状态、切换通道、创建抓拍。
   - 作为 Media Service 内部 API 供 Control 层调用；前端统一通过 `/api/control/**` 访问。
-
-- `SnapshotWorkerController`
-  - 路径：`/internal/media/snapshots`。
-  - 供内部抓拍 Worker 回调抓拍完成、上传文件、标记失败，或供 Control 层代理读取抓拍图片。
 
 - `ApiExceptionHandler`
   - 全局 REST 异常处理，统一返回错误响应。
@@ -146,9 +140,6 @@ video/
 - `MediaTrackService`
   - 记录 LiveKit Track 发布和取消发布。
   - 提供按会话查询最近 Track 的能力。
-
-- `SnapshotService`
-  - 创建抓拍记录、保存前端当前画面抓拍结果、上传图片到 MinIO、查询抓拍列表、读取图片、标记抓拍失败。
 
 - `MediaEventLogService`
   - 记录媒体事件日志，并配合 WebSocket 推送关键事件。
@@ -166,9 +157,6 @@ video/
 - `MediaTrack`
   - 记录 LiveKit Track 发布信息。
 
-- `MediaSnapshot`
-  - 记录抓拍任务、图片对象 key、抓拍状态、失败原因等。
-
 - `MediaEventLog`
   - 记录会话事件和 payload，用于前端查询事件流水。
 
@@ -178,7 +166,6 @@ video/
 - `VideoChannel`：视频通道，如可见光/热成像等。
 - `VideoQuality`：视频质量。
 - `IntercomStatus`：对讲状态。
-- `SnapshotStatus`：抓拍状态。
 
 ### 定时任务
 
@@ -188,9 +175,6 @@ video/
 
 - `ViewerStartupCleaner`
   - 应用启动后关闭遗留活跃 viewer，避免服务重启后 viewer 计数不一致。
-
-- `SnapshotWorkerScheduler`
-  - 定时领取待处理抓拍任务，通过 ffmpeg 截帧并回写结果。
 
 ## 6. Control 模块 `control/`
 
@@ -354,10 +338,7 @@ file/
 
 ## 10. 存储模块 `storage/`
 
-- `MinioStorageService`
-  - 抓拍图片上传封装。
-
-通用文件对象存储封装已迁入 `file/service/FileObjectStorageService.java`，业务层只处理 object key 和业务状态。
+通用文件对象存储封装位于 `file/service/FileObjectStorageService.java`，业务层只处理 object key 和业务状态。
 
 ## 11. 接口路径分层
 
@@ -398,11 +379,8 @@ file/
 用于 Control 层、内部 Worker 或服务间调用：
 
 - `/internal/media/video-sessions`
-- `/internal/media/video-sessions/snapshots`
-- `/internal/media/snapshots/{snapshotId}/image`
 - `/internal/media/robots`
 - `/internal/media/files`
-- `/internal/media/snapshots`
 
 ## 12. 典型调用链路
 
@@ -460,7 +438,6 @@ file/
 - `VideoSessionRepository`
 - `MediaSessionViewerRepository`
 - `MediaTrackRepository`
-- `MediaSnapshotRepository`
 - `MediaEventLogRepository`
 - `MediaFileRepository`
 - `MediaFileUploadRepository`
@@ -475,7 +452,7 @@ file/
 - MinIO：抓拍图片、文件源对象、HLS 播放资产。
 - MySQL：视频会话、Track、抓拍、事件、文件等持久化。
 - Redis：已引入并配置，当前代码结构中不是核心业务主路径。
-- ffmpeg/ffprobe：抓拍和视频文件 HLS 处理。
+- ffmpeg/ffprobe：视频文件 HLS 处理。
 
 ## 15. 开发时定位建议
 
@@ -483,7 +460,7 @@ file/
 - 查媒体会话状态机：看 `video/service/VideoSessionService.java`。
 - 查机器人 MQTT 指令：看 `control/messaging/RobotMediaCommandService.java`。
 - 查机器人状态上报：看 `control/messaging/RobotMediaStatusSubscriber.java` 和 `video/service/VideoSessionService.java`。
-- 查抓拍：看 `video/service/SnapshotService.java` 和 `video/scheduler/SnapshotWorkerScheduler.java`。
+- 查抓拍图片上传/展示：看 `file/service/FileService.java` 和 `control/api/ControlFileController.java`。
 - 查文件上传/回放：看 `file/service/FileService.java` 和 `file/service/FileHlsProcessingService.java`。
 - 查配置项含义：看 `config/MediaProperties.java` 和 `src/main/resources/application.yml`。
 

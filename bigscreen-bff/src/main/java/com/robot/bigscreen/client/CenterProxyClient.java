@@ -43,7 +43,7 @@ public class CenterProxyClient {
         this.properties = properties;
     }
 
-    public ResponseEntity<byte[]> forward(HttpServletRequest request, byte[] body) {
+    public ResponseEntity<byte[]> forward(HttpServletRequest request) {
         if (isMultipart(request)) {
             return forwardMultipart(request);
         }
@@ -57,7 +57,7 @@ public class CenterProxyClient {
         ResponseEntity<byte[]> response = restClient.method(method)
                 .uri(uri)
                 .headers(headers -> copyRequestHeaders(request, headers))
-                .body(body == null ? new byte[0] : body)
+                .body(requestBody(request))
                 .retrieve()
                 .toEntity(byte[].class);
         return ResponseEntity.status(response.getStatusCode())
@@ -149,6 +149,14 @@ public class CenterProxyClient {
             throw new IllegalStateException("转发 multipart 请求失败", ex);
         }
         return body;
+    }
+
+    private byte[] requestBody(HttpServletRequest request) {
+        try {
+            return request.getInputStream().readAllBytes();
+        } catch (IOException ex) {
+            throw new IllegalStateException("读取转发请求体失败", ex);
+        }
     }
 
     private HttpHeaders sanitizeResponseHeaders(HttpHeaders source) {

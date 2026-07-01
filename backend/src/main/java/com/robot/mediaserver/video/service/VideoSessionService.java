@@ -7,10 +7,8 @@ import com.robot.mediaserver.livekit.LiveKitTokenService;
 import com.robot.mediaserver.livekit.LiveKitTokenService.TokenResult;
 import com.robot.mediaserver.file.dto.FileListItemResponse;
 import com.robot.mediaserver.file.service.FileService;
-import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.IntercomResponse;
-import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
@@ -86,11 +84,6 @@ public class VideoSessionService {
      */
     private final MediaEventLogService eventLogService;
 
-    /**
-     * 抓拍服务。
-     */
-    private final SnapshotService snapshotService;
-
     private final FileService fileService;
 
     /**
@@ -111,7 +104,6 @@ public class VideoSessionService {
      * @param liveKitRoomService LiveKit 房间服务
      * @param liveKitTokenService LiveKit token 服务
      * @param eventLogService 媒体事件日志服务
-     * @param snapshotService 抓拍服务
      * @param mediaTrackService 媒体轨道服务
      * @param properties 媒体服务配置属性
      */
@@ -121,7 +113,6 @@ public class VideoSessionService {
             LiveKitRoomService liveKitRoomService,
             LiveKitTokenService liveKitTokenService,
             MediaEventLogService eventLogService,
-            SnapshotService snapshotService,
             FileService fileService,
             MediaTrackService mediaTrackService,
             MediaProperties properties) {
@@ -130,7 +121,6 @@ public class VideoSessionService {
         this.liveKitRoomService = liveKitRoomService;
         this.liveKitTokenService = liveKitTokenService;
         this.eventLogService = eventLogService;
-        this.snapshotService = snapshotService;
         this.fileService = fileService;
         this.mediaTrackService = mediaTrackService;
         this.properties = properties;
@@ -463,22 +453,6 @@ public class VideoSessionService {
         session.setUpdatedAt(now());
         repository.save(session);
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
-    }
-
-    /**
-     * 创建实时视频抓拍任务。
-     *
-     * @param sessionId 实时视频会话编号
-     * @param request 抓拍请求
-     * @param user 当前操作用户
-     * @return 抓拍响应
-     */
-    public SnapshotResponse createSnapshot(String sessionId, CreateSnapshotRequest request, CurrentUser user) {
-        VideoSession session = requireSession(sessionId);
-        if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
-            throw new IllegalStateException("当前会话未在推流");
-        }
-        return snapshotService.create(session, request, user);
     }
 
     public FileListItemResponse startRecording(String sessionId, CurrentUser user) {

@@ -43,11 +43,6 @@ media:
     timeout-ms: ${RTSP_PROBE_TIMEOUT_MS:8000}
   robot:
     heartbeat-timeout-seconds: ${ROBOT_HEARTBEAT_TIMEOUT_SECONDS:15}
-  snapshot-worker:
-    enabled: ${SNAPSHOT_WORKER_ENABLED:true}
-    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
-    fixed-delay-ms: ${SNAPSHOT_WORKER_FIXED_DELAY_MS:3000}
-    timeout-ms: ${SNAPSHOT_WORKER_TIMEOUT_MS:10000}
   file:
     enabled: ${MEDIA_FILE_ENABLED:true}
     simple-upload-max-bytes: ${MEDIA_FILE_SIMPLE_UPLOAD_MAX_BYTES:20971520}

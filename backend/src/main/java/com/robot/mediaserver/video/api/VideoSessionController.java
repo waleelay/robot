@@ -3,13 +3,10 @@ package com.robot.mediaserver.video.api;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.auth.CurrentUserResolver;
 import com.robot.mediaserver.file.dto.FileListItemResponse;
-import com.robot.mediaserver.video.dto.CreateSnapshotRequest;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
 import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.MediaTrackResponse;
 import com.robot.mediaserver.video.dto.IntercomResponse;
-import com.robot.mediaserver.video.dto.SnapshotListResponse;
-import com.robot.mediaserver.video.dto.SnapshotResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
@@ -18,7 +15,6 @@ import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import com.robot.mediaserver.video.messaging.VideoStatusMessage;
 import com.robot.mediaserver.video.messaging.IntercomStartCommand;
 import com.robot.mediaserver.video.messaging.IntercomStatusMessage;
-import com.robot.mediaserver.video.service.SnapshotService;
 import com.robot.mediaserver.video.service.MediaTrackService;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -44,19 +40,16 @@ public class VideoSessionController {
     private final VideoSessionService service;
     private final CurrentUserResolver currentUserResolver;
     private final MediaEventLogService eventLogService;
-    private final SnapshotService snapshotService;
     private final MediaTrackService mediaTrackService;
 
     public VideoSessionController(
             VideoSessionService service,
             CurrentUserResolver currentUserResolver,
             MediaEventLogService eventLogService,
-            SnapshotService snapshotService,
             MediaTrackService mediaTrackService) {
         this.service = service;
         this.currentUserResolver = currentUserResolver;
         this.eventLogService = eventLogService;
-        this.snapshotService = snapshotService;
         this.mediaTrackService = mediaTrackService;
     }
 
@@ -220,19 +213,6 @@ public class VideoSessionController {
         return service.switchChannel(sessionId, request);
     }
 
-    @PostMapping("/{sessionId}/snapshots")
-    public SnapshotResponse snapshot(
-            @PathVariable String sessionId,
-            @Valid @RequestBody CreateSnapshotRequest request,
-            HttpServletRequest servletRequest) {
-        return service.createSnapshot(sessionId, request, currentUserResolver.resolve(servletRequest));
-    }
-
-    @GetMapping("/{sessionId}/snapshots")
-    public List<SnapshotResponse> snapshots(@PathVariable String sessionId) {
-        return snapshotService.recentBySession(sessionId);
-    }
-
     @PostMapping("/{sessionId}/recordings/start")
     public FileListItemResponse startRecording(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         return service.startRecording(sessionId, currentUserResolver.resolve(servletRequest));
@@ -249,15 +229,6 @@ public class VideoSessionController {
     @GetMapping("/{sessionId}/recordings/active")
     public FileListItemResponse activeRecording(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         return service.activeRecording(sessionId, currentUserResolver.resolve(servletRequest));
-    }
-
-    @GetMapping("/snapshots")
-    public SnapshotListResponse snapshots(
-            @RequestParam(required = false) String robotId,
-            @RequestParam(required = false) String deviceId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int pageSize) {
-        return snapshotService.list(robotId, deviceId, page, pageSize);
     }
 
     @PostMapping("/{sessionId}/_mock/track-published/{trackSid}")
