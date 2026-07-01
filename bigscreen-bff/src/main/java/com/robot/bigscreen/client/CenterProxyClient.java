@@ -14,6 +14,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.stereotype.Component;
@@ -39,7 +40,9 @@ public class CenterProxyClient {
     private final CenterServiceProperties properties;
 
     public CenterProxyClient(RestClient.Builder builder, CenterServiceProperties properties) {
-        this.restClient = builder.build();
+        this.restClient = builder
+                .requestFactory(new JdkClientHttpRequestFactory())
+                .build();
         this.properties = properties;
     }
 
@@ -54,15 +57,13 @@ public class CenterProxyClient {
                 .build(true)
                 .toUri();
         HttpMethod method = HttpMethod.valueOf(request.getMethod());
-        ResponseEntity<byte[]> response = restClient.method(method)
+        return restClient.method(method)
                 .uri(uri)
                 .headers(headers -> copyRequestHeaders(request, headers))
                 .body(requestBody(request))
-                .retrieve()
-                .toEntity(byte[].class);
-        return ResponseEntity.status(response.getStatusCode())
-                .headers(sanitizeResponseHeaders(response.getHeaders()))
-                .body(response.getBody());
+                .exchange((clientRequest, clientResponse) -> ResponseEntity.status(clientResponse.getStatusCode())
+                        .headers(sanitizeResponseHeaders(clientResponse.getHeaders()))
+                        .body(clientResponse.getBody().readAllBytes()));
     }
 
     private ResponseEntity<byte[]> forwardMultipart(HttpServletRequest request) {
@@ -72,21 +73,19 @@ public class CenterProxyClient {
                 .query(query)
                 .build(true)
                 .toUri();
-        ResponseEntity<byte[]> response = restClient.method(HttpMethod.valueOf(request.getMethod()))
+        return restClient.method(HttpMethod.valueOf(request.getMethod()))
                 .uri(uri)
                 .headers(headers -> copyRequestHeaders(request, headers, false))
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(multipartBody(request))
-                .retrieve()
-                .toEntity(byte[].class);
-        return ResponseEntity.status(response.getStatusCode())
-                .headers(sanitizeResponseHeaders(response.getHeaders()))
-                .body(response.getBody());
+                .exchange((clientRequest, clientResponse) -> ResponseEntity.status(clientResponse.getStatusCode())
+                        .headers(sanitizeResponseHeaders(clientResponse.getHeaders()))
+                        .body(clientResponse.getBody().readAllBytes()));
     }
 
     private String targetBaseUrl(HttpServletRequest request) {
         String path = request.getRequestURI();
-        if (path.startsWith("/api/manage")) {
+        if (path.startsWith("/api/manage") || path.startsWith("/api/v1/management")) {
             return properties.getManageBaseUrl();
         }
         if (path.startsWith("/api/media") || path.startsWith("/internal/media")) {

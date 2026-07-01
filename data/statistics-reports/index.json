@@ -6,4 +6,12 @@
   "format" : "PDF",
   "status" : "COMPLETED",
   "filePath" : "1.pdf"
+}, {
+  "id" : "2",
+  "reportName" : "巡逻巡查数据统计报告-今日-全部",
+  "filename" : "巡逻巡查数据统计报告-今日-全部-20260701190311.pdf",
+  "downloadTime" : "2026-07-01 19:03:11",
+  "format" : "PDF",
+  "status" : "COMPLETED",
+  "filePath" : "2.pdf"
 } ]

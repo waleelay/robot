@@ -48,6 +48,7 @@
     "fuse.js": "6.4.3",
     "gsap": "^3.15.0",
     "highlight.js": "9.18.5",
+    "hls.js": "^1.6.16",
     "install": "^0.13.0",
     "jquery": "^3.7.1",
     "js-beautify": "1.13.0",

@@ -86,10 +86,7 @@ public class ControlFileController {
 
     @GetMapping("/{fileId}/content")
     public ResponseEntity<byte[]> content(@PathVariable String fileId, HttpServletRequest request) {
-        FileListItemResponse file = mediaServiceClient.file(fileId, currentUserResolver.resolve(request));
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(file.contentType()))
-                .body(mediaServiceClient.fileContent(fileId, currentUserResolver.resolve(request)));
+        return mediaServiceClient.fileContent(fileId, currentUserResolver.resolve(request));
     }
 
     @PostMapping("/{fileId}/play-url")
