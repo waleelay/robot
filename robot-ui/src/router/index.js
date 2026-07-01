@@ -176,7 +176,19 @@ export const constantRoutes = [
               title: '业务管理',
               icon: 'el-icon-data-board',
               requiresAuth: true
-            }
+            },
+            // children: [
+            //   {
+            //     path: '/bi/patrol/panorama',
+            //     name: 'biPatrolPanorama',
+            //     component: () => import('@/views/bi/patrol/panorama/Index.vue'),
+            //     meta: {
+            //       title: '全景地图',
+            //       icon: 'el-icon-data-board',
+            //       requiresAuth: true
+            //     }
+            //   },
+            // ]
           },
           {
             path: '/bi/patrol/statistics',

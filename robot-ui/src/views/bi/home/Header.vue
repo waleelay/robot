@@ -18,7 +18,7 @@
         <div class="user ml40 flx-align-center h100">
           <div class="avatar">Z</div>
           <div class="ml10 flex-column">
-            <span class="text">南充嘉陵监狱</span>
+            <span class="text">成都启航信息</span>
             <span class="role pt0 pr10 pb0 pl10">运维管理</span>
           </div>
         </div>
@@ -110,7 +110,7 @@ export default {
   }
   &::before {
     top: 0;
-    background: linear-gradient(90deg, rgba(20, 31, 51, 0.90) 50.08%, rgba(19, 30, 50, 0.00) 100%);
+    background: linear-gradient(90deg, rgba(20, 31, 51, 0.20) 50.08%, rgba(19, 30, 50, 0.00) 100%);
   }
   & > div {
     position: absolute;
@@ -225,7 +225,7 @@ export default {
         font-size: 16px;
         font-style: normal;
         font-weight: 700;
-        line-height: normal;
+        line-height: 28px;
       }
       .text {
         color: #BFDFFF;

@@ -1,7 +1,9 @@
 import { takeoverControl, acquireControl, mediaClientId, sendEquipmentCommand, createConfirmToken } from "../../../../../../api/media";
 import { errorMessage } from "../../../../../../utils";
+import ControlModeWarning from "./ControlModeWarning.vue";
 
 export default {
+  components: { ControlModeWarning },
   computed: {
     mediaSocket() {
       return this.$store.getters['websocketRobot/getMediaSocket'];
@@ -145,12 +147,22 @@ export default {
     },
     // 云台开始控制
     startFrameControl(kind) {
+      if (this.selectedRobot?.controlMode !== 'MANUAL') {
+        // this.$message.warning('请先切换到手动模式')        
+        if (this.$refs.controlModeWarningRef) {
+          this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode: 'MANUAL' })
+        } else {
+          this.$emit('handleModeChange', 'MANUAL')
+        }
+        return
+      }
       if (this.controlTimers[kind]) return
       this.sendFrameControl(kind)
       this.$set(this.controlTimers, kind, setInterval(() => this.sendFrameControl(kind), 100))
     },
     // 云台停止控制
     stopFrameControl(kind) {
+      if (this.selectedRobot?.controlMode !== 'MANUAL') return
       if (!this.controlTimers[kind]) return
       clearInterval(this.controlTimers[kind])
       this.$delete(this.controlTimers, kind)      

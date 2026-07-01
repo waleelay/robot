@@ -13,23 +13,26 @@
           <div class="count flx-justify-between">
             <div class="item wp66 hp70 flx-center flex-column red">
               <div class="desc">今日告警</div>
-              <div class="value mt4">{{ deviceStats?.total || 0 }}</div>
+              <div class="value mt4">{{ alarmSummary.totalToday || 0 }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 green">
               <div class="desc">已处理</div>
-              <div class="value mt4">{{ deviceStats?.online || 0 }}</div>
+              <div class="value mt4">{{ alarmSummary.handled || 0 }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 gray">
               <div class="desc">未处理</div>
-              <div class="value mt4">{{ deviceStats?.fault || 0 }}</div>
+              <div class="value mt4">{{ alarmSummary.unhandled || 0 }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 ">
               <div class="desc">处置率</div>
-              <div class="value mt4">{{ deviceStats?.offline || 0  }}%</div>
+              <div class="value mt4">{{ alarmSummary.handleRateText || 0 }}</div>
             </div>
           </div>
           <div class="mt20">
-            <div class="t2">告警分布1</div>
+            <div class="t2">告警分布</div>
+            <!-- <div class="wp142 hp80">
+              <video class="w100 h100" src="./111.mp4" controls></video>
+            </div> -->
             <div class="mt20 hp150">
               <PieChart :items="alarmPieChart" />
             </div>
@@ -42,21 +45,26 @@
         </div>
         <div class="xlgl mt20 d-flex pr20 pl20">
           <div class="item hp62 flex1 flx-center flex-column">
-            <div class="desc">今日巡逻时长</div>
-            <div class="value mt4"><span class="mr4">100</span>小时</div>
+            <div class="desc1">今日巡逻时长</div>
+            <div class="value mt4"><span class="mr4">{{ patrolOverview.durationToday || 0 }}</span>{{ patrolOverview.durationUnit || '-' }}</div>
           </div>
           <div class="item hp62 flex1 flx-center flex-column ml10">
-            <div class="desc">今日巡逻里程</div>
-            <div class="value mt4"><span class="mr4">36.2</span>KM</div>
+            <div class="desc1">今日巡逻里程</div>
+            <div class="value mt4"><span class="mr4">{{ patrolOverview.mileageToday || 0 }}</span>{{ patrolOverview.mileageUnit || '-' }}</div>
           </div>
         </div>
         <div class="mt20">
           <div class="t2 ml10">巡逻画面</div>
           <div class="flex flex-wrap pl10">
-            <div class="wp142 hp80 mt20 ml10" style="border: 1px solid #eef;"></div>
-            <div class="wp142 hp80 mt20 ml10" style="border: 1px solid #eef;"></div>
-            <div class="wp142 hp80 mt20 ml10" style="border: 1px solid #eef;"></div>
-            <div class="wp142 hp80 mt20 ml10" style="border: 1px solid #eef;"></div>
+            <!-- wp142 hp80  -->
+            <!-- 随机显示一个摄像头画面 -->
+            <div v-for="(robot, index) in robotMainCameras.slice(0, 1)" class="wp296 hp166 mt20 ml10" style="position: relative;">
+              <VideoBox
+                :videoIndex="`${robot.robotId}_${index}_${robot.camera.key}`"
+                :prefixId="prefixId"
+                :ZQL_videosInfos="{ [`${robot.robotId}_${index}_${robot.camera.key}`]: { robot, ...robot.camera } }" />
+              <div class="video-name">{{ robot.name }}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -66,20 +74,16 @@
         <svg-icon :icon-class="collapse ? 'right-s' : 'left-s'" />
       </div>
     </div>
-    <!-- <TaskRobotView ref="taskRobotViewRef" @handleClickTask="handleClickTask" /> -->
-    <!-- <WarningBatch ref="warningBatchRef" /> -->
   </div>
 </template>
 
 <script>
-import { mapState } from 'vuex';
-// import TaskRobotView from '../components/modal/TaskRobotView.vue';
-// import WarningBatch from './WarningBatch.vue'
-import { mapActions } from 'vuex/dist/vuex.common.js';
+import { mapActions, mapState } from 'vuex';
 import PieChart from './PieChart.vue';
+import VideoBox from '../components/modal/VideoBox.vue';
 export default {
   name: 'BiIndexLeft',
-  components: { PieChart },
+  components: { PieChart, VideoBox },
   props: {
     collapse: {
       type: Boolean,
@@ -90,16 +94,27 @@ export default {
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
-    robots() {
-      return this.$store.getters['websocketRobot/getRobots'];
-    },
-    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats']),
+    ...mapState('websocketRobot', ['robots', 'cameras']),
+    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'robotBaseInfo', 'alarmSummary', 'patrolOverview']),
     alarmPieChart() {
       return [
-        { name: '高风险', value: this.alarmsData?.high?.items?.length || 0, color: '#FF2424' },
-        { name: '中风险', value: this.alarmsData?.medium?.items?.length || 0, color: '#FFA024' },
-        { name: '低风险', value: this.alarmsData?.low?.items?.length || 0, color: '#24CBFF' },
+        // { name: '高风险', value: this.alarmsData?.high?.items?.length || 0, color: '#FF2424' },
+        // { name: '中风险', value: this.alarmsData?.medium?.items?.length || 0, color: '#FFA024' },
+        // { name: '低风险', value: this.alarmsData?.low?.items?.length || 0, color: '#24CBFF' },
+        { name: '高风险', value: 1, color: '#FF2424' },
+        { name: '中风险', value: 2, color: '#FFA024' },
+        { name: '低风险', value: 20, color: '#00D8A4' },
       ]
+    },
+    robotMainCameras() {
+      const result = this.robots
+        .map(robot => {
+          const bodyCam = robot.cameras.find(camera => camera.groupType === 'body');
+          return bodyCam ? { robotId: robot.robotId, name: robot.name, camera: this.cameras[bodyCam.key] } : null;
+        })
+        .filter(item => item !== null); // 去除没有 body 摄像头的机器人
+      this.startAll()
+      return result
     }
   },
   data() {
@@ -137,24 +152,36 @@ export default {
           name: '低风险',
           class: 'green'
         },
-      }
+      },
+      prefixId: 'home-video',
+      loaded: false
     }
   },
   async mounted() {
     if (this.alarmsData?.high?.items?.length) {
       this.collapseArr[2] = false
     }
-
-    
-    // 更新告警信息
-    // setTimeout(() => {
-    //   this.setRobotAlarmInfo({ robotId: this.alarmsData?.high?.items?.[1]?.robotId, alarmInfo: this.alarmsData?.high?.items?.[1], close: true });
-    // }, 5000);
   },
   methods: {
-    ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
+    ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'setPrefixId']),
     getMoreRobotInfo() {
   
+    },
+    async startAll() {
+      this.setPrefixId(this.prefixId)
+      if (this.loaded) return
+      this.$nextTick(async () => {
+        if (!this.robotMainCameras.length) return
+        this.loaded = true
+        const robot = this.robotMainCameras[0]
+        // for (const robot of [...this.robotMainCameras]) {
+          if (!this.robotBaseInfo?.[robot.robotId]) return          
+          const camera = Object.assign({}, robot.camera)
+          console.log(123);
+          
+          await this.startCamera({ robot: Object.assign({}, this.robotBaseInfo[robot.robotId] || {}), camera })
+        // }
+      })
     },
     toggleCollapse(type, typeIndex) {
       this.$set(this[type], typeIndex, !this[type][typeIndex])
@@ -186,10 +213,27 @@ export default {
     //   immediate: true
     // },
   },
+  beforeDestroy() {
+    if (this.robotMainCameras?.[0]?.camera) {
+      this.stopCamera(this.robotMainCameras?.[0]?.camera)
+    }
+  }
 }
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
+.video-name {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 1px 2px;
+  color: #FFF;
+  background: rgba(0, 0, 0, 0.50);
+  font-family: "Microsoft YaHei";
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 13px;
+}
 .left-div {
   backdrop-filter: unset !important;
   background: transparent !important;
@@ -355,7 +399,7 @@ export default {
         .item {
           border-radius: 4px;
           background: #012851;
-          .desc {
+          .desc1 {
             color: #BEE1FF;
             font-family: "Microsoft YaHei";
             font-size: 12px;

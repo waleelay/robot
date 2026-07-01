@@ -28,3 +28,76 @@ export function exportPatrolStatisticsReport(data) {
     timeout: 300000
   })
 }
+
+
+
+// 任务相关
+const taskPre = ''
+// 获取任务列表 { pageNum, pageSize, status }
+export function getTaskList(params) {
+  return request({
+    url: taskPre + '/api/v1/management/task-workflow-plans',
+    method: 'get',
+    params
+  })
+}
+export function startTask(id, data) {
+  return request({
+    url: taskPre + `/api/v1/management/task-workflow-plans/${id}/starts`,
+    method: 'post',
+    data
+  })
+}
+
+export function deleteTask(id) {
+  return request({
+    url: taskPre + `/api/v1/management/task-workflow-plans/${id}`,
+    method: 'delete'
+  })
+}
+
+
+// 执行记录
+  // detail: (id) => getData(`/api/v1/management/task-workflow-instances/${id}`),
+  // replay: (id) => getData(`/api/v1/management/task-workflow-instances/${id}/replay`),
+  // trackSamples: (id, params) => getData(`/api/v1/management/task-workflow-instances/${id}/track-samples`, params),
+  // humanTasks: (id) => getData(`/api/v1/management/task-workflow-instances/${id}/human-tasks`),
+  // completeHumanTask: (id, taskId, variables = {}) =>
+  //   postData(`/api/v1/management/task-workflow-instances/${id}/human-tasks/${taskId}/complete`, { variables }),
+  // applyComponentSelections: (id, payload) =>
+  //   postData(`/api/v1/management/task-workflow-instances/${id}/component-selections`, payload)
+export function getTaskRecordList(params) {
+  return request({
+    url: taskPre + '/api/v1/management/task-workflow-instances',
+    method: 'get',
+    params
+  })
+}
+export function getTaskRecordDetail(id) {
+  return request({
+    url: taskPre + `/api/v1/management/task-workflow-instances/${id}`,
+    method: 'get'
+  })
+}
+export function getTaskRecordReplay(id) {
+  return request({
+    url: taskPre + `/api/v1/management/task-workflow-instances/${id}/replay`,
+    method: 'get'
+  })
+}
+export function getTrackRecordSamples(id, params) {
+  return request({
+    url: taskPre + `/api/v1/management/task-workflow-instances/${id}/track-samples`,
+    method: 'get',
+    params
+  })
+}
+
+export function previewImageBlob(id, cacheKey) {
+  return request({
+    url: taskPre + `/api/v1/management/maps/${id}/preview-image`,
+    method: 'get',
+    params: cacheKey ? { t: cacheKey } : undefined,
+    responseType: "blob"
+  })
+}

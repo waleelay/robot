@@ -18,6 +18,9 @@ import {
   getRecordings,
   takeoverControl,
   acquireControl,
+  getActiveLiveRecording,
+  startLiveRecording,
+  stopLiveRecording,
 } from "../../api/media"
 import Vue from 'vue';
 
@@ -67,7 +70,9 @@ const state = {
   selectedRecording: null,
   prefixId: '',
   recordingTab: 'manual',
-  controlSessions: {}
+  controlSessions: {},
+  snapshotTime: 0,
+  recordTime: 0,
 };
 
 function cameraKey(robotId, camera) {
@@ -154,7 +159,7 @@ const mutations = {
   },
   // 设置控制配置文件
   setControlProfiles(state, { robotId, profile }) {
-    console.log('setControlProfiles', robotId, profile);
+    // console.log('setControlProfiles', robotId, profile);
 
     state.controlProfiles = { ...state.controlProfiles, [robotId]: profile }
   },
@@ -205,6 +210,12 @@ const mutations = {
     //   player.removeAttribute('src')
     //   player.load()
     // }
+  },
+  SET_SNAPSHOT_TIME(state, time) {
+    state.snapshotTime = time
+  },
+  SET_RECORD_TIME(state, time) {
+    state.recordTime = time
   },
 }
 
@@ -393,6 +404,7 @@ const actions = {
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data)
       dispatch('syncRobotEvent', event)
+      dispatch('websocketExtraData/syncRobot', event, { root: true })
       dispatch('syncSessionEvent', event)
       dispatch('syncControlEvent', event)
     }
@@ -564,8 +576,11 @@ const actions = {
   },
   // 启动摄像头
   async startCamera({ commit, state, dispatch }, { robot, camera }) {
+    if (camera.recordingActive) {
+      await dispatch('stopCameraRecording', camera)
+    }
     let camera1 = { ...camera }
-    if (robot.status !== 'online') return
+    // if (robot.status !== 'online') return
     camera1.loading = true
     camera1.stopped = false
     camera1.stopping = false
@@ -599,6 +614,9 @@ const actions = {
 
   // 停止摄像头
   async stopCamera({ commit, state }, camera) {
+    if (camera.recordingActive) {
+      await dispatch('stopCameraRecording', camera)
+    }
     // console.log('stopCamera', camera.session)
     if (!camera.session) return
     camera.loading = true
@@ -762,6 +780,7 @@ const actions = {
         if (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId) return
         if (track.kind === 'video' && camera.watching) {
           console.log('TrackSubscribed', camera.key)
+          console.log('++++++++++++++++++++++++++++++++++++++++++++', state.prefixId + camera.key)
           track.attach(document.getElementById(state.prefixId + camera.key))
           camera.remoteVideoTrack = track
           camera.hasVideo = true
@@ -806,6 +825,9 @@ const actions = {
 
   // 重启摄像头
   async restartCamera({ commit, state }, camera) {
+    if (camera.recordingActive) {
+      await dispatch('stopCameraRecording', camera)
+    }
     if (camera.stopping || camera.stopped || camera.restarting) return
     if (!camera.session || camera.session.status === 'CLOSED') return
     if (state.stoppedSessionIds.has(camera.session.sessionId)) return
@@ -1133,7 +1155,7 @@ const actions = {
         Message.info('当前视频正在录制中')
         return
       }
-      const recording = await dispatch('startLiveRecording', camera.session.sessionId)
+      const recording = await startLiveRecording(camera.session.sessionId)
       camera.activeRecording = recording
       camera.recordingActive = recording && recording.status === 'RECORDING'
       console.log('API startLiveRecording', recording)
@@ -1149,7 +1171,7 @@ const actions = {
       camera.recordingBusy = false
     }
   },
-  async syncActiveRecording(camera) {
+  async syncActiveRecording({ commit, state, dispatch }, camera) {
     if (!camera.session) return
     try {
       const recording = await getActiveLiveRecording(camera.session.sessionId)
@@ -1162,7 +1184,8 @@ const actions = {
       camera.recordingActive = false
     }
   },
-  async stopCameraRecording(camera) {
+  async stopCameraRecording({ commit, state, dispatch }, camera) {
+    console.log('停止录制', camera)
     if (!camera.session || !camera.activeRecording || camera.recordingBusy) return
     camera.recordingBusy = true
     try {
@@ -1171,12 +1194,20 @@ const actions = {
       camera.recordingActive = false
       console.log('API stopLiveRecording', recording)
       Message.success('录像已停止')
+      dispatch('setRecordTime', new Date().toISOString())
+      // TODO 获取新数据
       if (this.recordingMode) await dispatch('loadRecordings')
     } catch (error) {
       Message.error(error)
     } finally {
       camera.recordingBusy = false
     }
+  },
+  setSnapshotTime({ commit }, time) {
+    commit('SET_SNAPSHOT_TIME', time)
+  },
+  setRecordTime({ commit }, time) {
+    commit('SET_RECORD_TIME', time)
   },
 };
 

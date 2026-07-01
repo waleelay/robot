@@ -185,8 +185,6 @@ export default {
   },
   mounted() {
     setTimeout(() => {
-      console.log(333, this.taskData);
-      
       if (this.$route.query.taskId !== undefined) {
         this.handleSelectTask(this.taskData[this.$route.query.taskId])
       } else {

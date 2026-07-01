@@ -194,6 +194,8 @@ export default {
         // console.log(`%c++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++${item.name} ${item.type} ${this.robots.length}`, 'color: #00f');
         return item
       })
+
+      this.setCenter1()
       // 每5秒更新中心点
       // this.timer = setInterval(() => {
       //   this.setCenter1()

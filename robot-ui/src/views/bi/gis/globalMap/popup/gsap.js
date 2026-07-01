@@ -47,15 +47,17 @@ export default {
     },
     // 获取右上角目标位置（距离边缘110px）
     getTargetPosition() {
+      const left = Math.max(0, window.innerWidth - this.cubeWidth - 110);
+      const top = 110
       return {
-        left: Math.max(0, window.innerWidth - this.cubeWidth - 110),
+        left,
         top: 110
       };
     },
     // 将隐藏状态下的方块放到右上角（无动画）
     setHiddenPositionToTarget() {
         if (!this.currentEl) return;
-        const target = this.getTargetPosition();
+        const target = this.getTargetPosition();        
         gsap.set(this.currentEl, {
           left: target.left,
           top: target.top,
@@ -68,7 +70,7 @@ export default {
     },
     
     // 核心：从鼠标点击处开始，平滑移动到右上角
-    flyFromPoint(clientX, clientY) {
+    flyFromPoint(clientX, clientY, location) {
       // 边界保护
       if (clientX === undefined || clientY === undefined) return;
       
@@ -86,12 +88,15 @@ export default {
       // 边界修正：确保起始位置完全在视口内（避免方块部分超出边缘）
       const maxLeft = window.innerWidth - this.cubeWidth;
       const maxTop = window.innerHeight - this.cubeHeight;
-      startLeft = Math.min(Math.max(0, startLeft), maxLeft);
-      startTop = Math.min(Math.max(0, startTop), maxTop);
+      
+      startLeft = this.$route.name === 'biIndex' ? location.x : Math.min(Math.max(0, startLeft), maxLeft);
+      startTop = this.$route.name === 'biIndex' ? location.y : Math.min(Math.max(0, startTop), maxTop);
       
       // 3. 获取目标位置
-      const targetPos = this.getTargetPosition();
-      
+      const targetPos = this.$route.name === 'biIndex' ? {
+        left: location.translateX,
+        top: location.translateY
+      } : this.getTargetPosition();      
       // 4. 让方块可见（GSAP会控制透明度，但需要让元素显示出来）
       if (!this.visible) {
         this.visible = true;
@@ -135,7 +140,10 @@ export default {
         },
         onComplete: () => {
           // 动画完成，精确归位到右上角（防止浮点误差）
-          const finalPos = this.getTargetPosition();
+          const finalPos = this.$route.name === 'biIndex' ? {
+              left: location.translateX,
+              top: location.translateY
+            } : this.getTargetPosition();            
           gsap.set(this.currentEl, {
             left: finalPos.left,
             top: finalPos.top,
@@ -164,7 +172,20 @@ export default {
       // 边界限幅
       clientX = Math.min(Math.max(0, clientX), window.innerWidth);
       clientY = Math.min(Math.max(0, clientY), window.innerHeight);
-      this.flyFromPoint(clientX, clientY);
+      const eleParent = event.target.closest('.custom-point');
+      const transform = window.getComputedStyle(eleParent).transform;
+      let location = {}
+      const rect = eleParent.getBoundingClientRect();
+      const width = eleParent.offsetWidth
+      const height = eleParent.offsetHeight
+      
+      location = {
+        x: clientX,
+        y: clientY + height / 2 - this.cubeHeight,
+        translateX: rect.left + width / 2,
+        translateY: rect.top - height / 2 - this.cubeHeight + 37,
+      }
+      this.flyFromPoint(clientX, clientY, location);
     },
     // 窗口大小改变时，如果方块可见则重新定位（无动画）
     onResize() {

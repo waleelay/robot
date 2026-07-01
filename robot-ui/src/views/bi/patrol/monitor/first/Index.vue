@@ -9,25 +9,7 @@
 -->
 <template>
   <div class="flex h100 pr20 pl20 pb10 pt20">
-    <div class="left h100 no-w-scroll" style="overflow-y: auto;">
-      <!-- 1364px -->
-      <LeftVideo :prefixId="prefixId" ref="leftVideoRef" style="width: 1432px;" />
-      <!-- <el-radio-group @change="onSingleDeviceChange" v-if="splitType === 1" v-model="singleId" class="custom-radio-group flex with-border vertical ml20">
-        <el-radio v-for="dev in deviceList" :key="dev.id" :label="dev.id" class="flx-align-center">{{ dev.desc }}</el-radio>
-      </el-radio-group>
-      <el-checkbox-group @change="onMultiDeviceChange" v-else v-model="checkedIds" class="custom-check-group flex vertical ml20">
-        <el-checkbox v-for="dev in deviceList" :key="dev.id" :label="dev.id" class="flx-align-center">{{ dev.desc }}</el-checkbox>
-      </el-checkbox-group> -->
-      <div class="mt9">
-        <div class="card-title title-1364-30 mb9 w100 hp30 pl30" style="line-height: 30px;">
-          <div class="text">
-            抓拍记录
-          </div>
-        </div>
-        <Snapshot />
-      </div>
-    </div>
-    <div class="right flex1 flex-column ml30 h100">
+    <div class="right flex1 flex-column h100">
       <TaskListTree ref="taskListRef" @select-task="selectTask" @updateVideo="updateVideo" />
       <div class="mt20 flex1 flex-column">
         <div class="card-title">
@@ -38,6 +20,27 @@
         <div class="flex1 mt10 h100" style="min-height: 403px; background: #1c121c;">
           <SmallMap />
         </div>
+      </div>
+    </div>
+    <div class="left h100 no-w-scroll ml30" style="overflow-y: auto;">
+      <!-- 1364px -->
+      <LeftVideo :prefixId="prefixId" ref="leftVideoRef" style="width: 1432px;" />
+      <!-- <el-radio-group @change="onSingleDeviceChange" v-if="splitType === 1" v-model="singleId" class="custom-radio-group flex with-border vertical ml20">
+        <el-radio v-for="dev in deviceList" :key="dev.id" :label="dev.id" class="flx-align-center">{{ dev.desc }}</el-radio>
+      </el-radio-group>
+      <el-checkbox-group @change="onMultiDeviceChange" v-else v-model="checkedIds" class="custom-check-group flex vertical ml20">
+        <el-checkbox v-for="dev in deviceList" :key="dev.id" :label="dev.id" class="flx-align-center">{{ dev.desc }}</el-checkbox>
+      </el-checkbox-group> -->
+      <div class="mt9" style="width: 1432px">
+        <div class="card-title flx-justify-between title-1364-30 mb9 w100 hp30 pl30" style="line-height: 30px;">
+          <div class="text">
+            多媒体记录
+          </div>
+          <div class="custom-tab-button1 flex mr10 mb5">
+            <div v-for="item in tabList" :key="item.value" class="tab-button-item" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value">{{ item.label }}</div>
+          </div>
+        </div>
+        <Snapshot :tabIndex="tabIndex" />
       </div>
     </div>
   </div>
@@ -59,7 +62,19 @@ export default {
     }
   },
   data() {
-    return {}
+    return {
+      tabList: [
+        {
+          label: '图片',
+          value: 0
+        },
+        {
+          label: '视频',
+          value: 1
+        }
+      ],
+      tabIndex: 0
+    }
   },
   computed: {
     activeCameras() {
@@ -98,3 +113,30 @@ export default {
   }
 }
 </script>
+
+<style lang="scss" scoped>
+.custom-tab-button1 {
+  width: fit-content;
+  border: 1px solid #334465;
+  .tab-button-item {
+    padding: 2px 20px;
+    color: #ADBDD1;
+    text-align: center;
+    font-family: "Alibaba PuHuiTi";
+    font-size: 14px;
+    line-height: 19px;
+    letter-spacing: 0.857px;
+    background: transparent;
+    border-radius: 0 !important;
+    cursor: pointer;
+    & + .tab-button-item {
+      border-left: 1px solid #334465;
+    }
+    &.is-active {
+      border: 1px solid #2E85C4;
+      background: #003264;
+      color: #4AB8FF;
+    }
+  }
+}
+</style>

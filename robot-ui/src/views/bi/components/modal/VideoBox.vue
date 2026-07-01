@@ -89,10 +89,6 @@ export default {
       type: String,
       default: ''
     },
-    showControlCenter: {
-      type: Boolean,
-      default: true
-    }
   },
   computed: {
     index() {

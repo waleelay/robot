@@ -12,6 +12,12 @@ const state = {
   deviceTypeStats: [], // [{  type: '', count:0, name: '' }]
   // 设备状态统计
   deviceStats: {}, // { fault: '-', offline: '-', total: '-', online: '-' }
+  // 巡航统计
+  patrolOverview: {}, // { durationToday: 32.6, durationUnit: "小时", mileageToday: 262.6, mileageUnit: "KM" }
+  // 任务统计
+  taskOverview: {}, //{ totalToday: 50, completedRate: 100, completedRateText: "100%", running: 48, pending: 2 }
+  // 告警统计
+  alarmSummary: {}, // { totalToday: 50, handled: 18, unhandled: 0, handleRate: 100, handleRateText: "100%" }
    // 实时定位
   robotLocation: {}, // { robotId: { lat, lng, altitude, address, updatedAt } }
   // 设备基本信息
@@ -39,7 +45,7 @@ const mutations = {
       const index = items.findIndex(item => item.alarmId === value.alarmId);
       if (index !== -1) {
         // items[index] = value;
-        items.splice(index, 1);
+        // items.splice(index, 1);
       } else {
         items.push(value);
       }
@@ -70,6 +76,15 @@ const mutations = {
   SET_DEVICE_STATS(state, value) {
     state.deviceStats = value;
   },
+  SET_ALARM_SUMMARY(state, value) {
+    state.alarmSummary = value;
+  },
+  SET_TASK_OVERVIEW(state, value) {
+    state.taskOverview = value;
+  },
+  SET_PATROL_OVERVIEW(state, value) {
+    state.patrolOverview = value;
+  },
   SET_ROBOT_LOCATION(state, data) {
     state.robotLocation = { ...state.robotLocation, [data.robotId]: data.location };
   },
@@ -93,6 +108,9 @@ const actions = {
       total: '-',
       online: '-'
     });
+    commit('SET_PATROL_OVERVIEW', data?.patrolOverview || { durationToday: '-', durationUnit: '小时', mileageToday: '-', mileageUnit: 'KM' });
+    commit('SET_TASK_OVERVIEW', data?.taskOverview || { totalToday: '-', completedRate: '-', completedRateText: '-%', running: '-', pending: '-' });
+    commit('SET_ALARM_SUMMARY', data?.alarms?.summary || { totalToday: '-', handled: '-', unhandled: '-', handleRate: '-', handleRateText: '-%' });
     data?.tasks?.map(item => {
       commit('SET_TASK_INFO', item);
     })
@@ -140,7 +158,7 @@ const actions = {
   setRobotLocation({ commit }, { robotId, location }) {
     commit('SET_ROBOT_LOCATION', { robotId, location });
   },
-  syncRobot({ commit }, data) {
+  syncRobot({ commit }, event) {
     // | `panorama.device.status.changed`   | 设备在线、离线、故障、电量变化                   |
     // | ---------------------------------- | ------------------------------------------------ |
     // | `panorama.device.location.changed` | 地图位置、速度、朝向变化                         |
@@ -155,13 +173,16 @@ const actions = {
     } else if (event.event === 'panorama.task.changed') {
       commit('SET_TASK_INFO', event.data.task);
     } else if (event.event === 'panorama.alarm.changed') {
-      commit('SET_ALARMS_DATA', event.data);
-      if (event.data.level === 'HIGH') {
-        commit('SET_ROBOT_ALARM_INFO', { robotId: event.data.robotId, alarmInfo: event.data });
-      }
+      // commit('SET_ALARMS_DATA', event.data.alarm);
+      // if (event.data.alarm.level.toLowerCase() === 'high') {
+      //   commit('SET_ROBOT_ALARM_INFO', { robotId: event.data.alarm.robotId, alarmInfo: event.data.alarm });
+      // }
     } else if (event.event === 'panorama.stats.changed') {
       commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || []);
-      commit('SET_DEVICE_STATS', event.data.deviceStats);
+      commit('SET_DEVICE_STATS', event.data.deviceStats || {});
+      commit('SET_ALARM_SUMMARY', event.data.alarmSummary || {});
+      commit('SET_TASK_OVERVIEW', event.data.taskOverview || {});
+      commit('SET_PATROL_OVERVIEW', event.data.patrolOverview || {});
       // alarmStats: { high: 0, medium: 0, low: 0 }
     }
   },

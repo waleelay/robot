@@ -2,7 +2,7 @@ export const robots = [
     {
         "robotId": "robot-001",
         "clientId": "robot-media-client",
-        "name": "R1轮式机器人",
+        "name": "松灵四轮机器人",
         "type": "轮式机器人",
         "status": "online",
         "lastHeartbeatAt": "2026-05-25T03:39:24.879371Z",
@@ -33,7 +33,7 @@ export const robots = [
     {
         "robotId": "robot-002",
         "clientId": "robot-media-client-robot-002",
-        "name": "G1四足机器人",
+        "name": "云深处四足机器狗",
         "type": "四足机器人",
         "status": "online",
         "lastHeartbeatAt": "2026-05-25T03:39:29.404898Z",

@@ -2,9 +2,9 @@
   <div class="left-div ml20 pr20 h100" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto' }">
     <div class="container flex-column w100 h100 flx-center" style="flex-wrap: nowrap;">
       <div class="box" :class="{'hp268': deviceTypeStats?.length, 'hp155': !deviceTypeStats?.length}">
-        <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
+        <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="getMoreRobotInfo">
           <span class="desc">装备类型</span>
-          <span class="flx-center more curp" @click="getMoreRobotInfo">
+          <span class="flx-center more curp">
             <span>更多</span>
             <svg-icon :icon-class="collapseArr[0] ? 'right' : 'down'" class="ml4" />
           </span>
@@ -52,12 +52,12 @@
         </div>
       </div>
       <div class="box mt20 task" :class="{ 'no_data hp41': collapseArr[1] }">
-        <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
+        <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="toggleCollapse('collapseArr', 1)">
           <div class="flx-center">
             <span class="desc">任务列表</span>
             <div v-if="Object.keys(taskData || [])?.length" class="ml4 notice pr10 pl10">{{ Object.keys(taskData || []).length ? Object.keys(taskData || []).length > 99 ? '99+' : Object.keys(taskData || []).length : '-'  }}</div>
           </div>
-          <span class="flx-center more curp" @click="toggleCollapse('collapseArr', 1)">
+          <span class="flx-center more curp">
             <span>更多</span>
             <svg-icon :icon-class="collapseArr[1] ? 'right' : 'down'" class="ml4" />
           </span>
@@ -86,28 +86,28 @@
         </div>
       </div>
       <div class="box mt20 alert" :class="{ 'no_data hp41': collapseArr[2] }" style="max-height: 446px;">
-        <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
+        <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="toggleCollapse('collapseArr', 2)">
           <span class="desc">告警中心</span>
-          <span class="flx-center more curp" @click="toggleCollapse('collapseArr', 2)">
+          <span class="flx-center more curp">
             <span>更多</span>
             <svg-icon :icon-class="collapseArr[2] ? 'right' : 'down'" class="ml4" />
           </span>
         </div>
         <div v-if="alarmsData" class="mt10 ml20 common-scroll ovya mb10" :style="{ maxHeight: collapseArr[1] ? '360px' : '262px', minHeight: '146px' }">
           <div v-for="(alarm, key, alarmIndex) in alarms" :key="key" class="type wp288 pt10 pr20 pb10 pl20" :class="[alarm.class, { 'hp42 ovyh': alertCollapseArr[alarmIndex], 'mt10': alarmIndex !== 0 }]">
-            <div class="type_name flx-justify-between">
+            <div class="type_name flx-justify-between" @click="toggleCollapse('alertCollapseArr', alarmIndex)">
               <div class="flx-center">
-                <span class="symbol">
+                <span class="symbol flx-center">
                   <svg-icon icon-class="notice1"></svg-icon>
                 </span>
                 <span class="ml10">{{ alarm.name || '-' }}（{{ alarmsData?.[key]?.items?.length || 0 }}）</span>
               </div>
-              <span class="flx-center curp" @click="toggleCollapse('alertCollapseArr', alarmIndex)">
+              <span class="flx-center curp">
                 <svg-icon :icon-class="alertCollapseArr[alarmIndex] ? 'down' : 'up'" style="font-size: 14px;"></svg-icon>
               </span>
             </div>
             <div class="mt20 list">
-              <div v-for="(item, index) in alarmsData?.[key]?.items || []" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert">
+              <div v-for="(item, index) in alarmsData?.[key]?.items || []" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert(item)">
                 <!-- {{ item.snapshotUrl }} -->
                 <div class="img wp120 hp72 flex">
                   <span class="alert_type">{{ item.categoryName }}</span>
@@ -121,7 +121,7 @@
                       <span>{{ item.eventTime.split(' ')[1] }}</span>
                     </div>
                   </div>
-                  <div class="area mt5">位置：{{ item.location }}</div>
+                  <div class="area mt5">位置：{{ item?.location?.address || '-' }}</div>
                 </div>
               </div>
             </div>
@@ -136,18 +136,19 @@
     </div>
     <TaskRobotView ref="taskRobotViewRef" @handleClickTask="handleClickTask" />
     <WarningBatch ref="warningBatchRef" />
+    <WarnInfo ref="WarnInfoRef" />
   </div>
 </template>
 
 <script>
-import { mapState } from 'vuex';
+import { mapState, mapActions } from 'vuex';
 import { getPatrolPanoramaOverview } from '../../../../api/new-bi.js';
 import TaskRobotView from '../../components/modal/TaskRobotView.vue';
-import WarningBatch from './WarningBatch.vue'
-import { mapActions } from 'vuex/dist/vuex.common.js';
+import WarningBatch from './warning/WarningBatch.vue'
+import WarnInfo from './warning/WarnInfo.vue'
 export default {
   name: 'BiPatrolPanoramaLeft',
-  components: { TaskRobotView, WarningBatch },
+  components: { TaskRobotView, WarningBatch, WarnInfo },
   props: {
     collapse: {
       type: Boolean,
@@ -207,12 +208,6 @@ export default {
     if (this.alarmsData?.high?.items?.length) {
       this.collapseArr[2] = false
     }
-
-    
-    // 更新告警信息
-    // setTimeout(() => {
-    //   this.setRobotAlarmInfo({ robotId: this.alarmsData?.high?.items?.[1]?.robotId, alarmInfo: this.alarmsData?.high?.items?.[1], close: true });
-    // }, 5000);
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
@@ -235,8 +230,9 @@ export default {
         robotIds: this.taskData[taskId].equipmentList.map(robot => robot.robotId)
       })
     },
-    handleClickAlert() {
-      this.$refs.warningBatchRef.open(this.alarmsData || {})
+    handleClickAlert(item) {
+      // this.$refs.warningBatchRef.open(this.alarmsData || {})
+      this.$refs.WarnInfoRef.open(item)
     }
   },
   watch: {

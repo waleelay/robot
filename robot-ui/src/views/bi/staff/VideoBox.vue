@@ -23,6 +23,10 @@
     <audio :id="prefixId + ZQL_videosInfos[`slot_${index}`]?.key + '-audio'" autoplay />
     <!-- <canvas class="canvas-shuju" :id="`${prefixId}canvasslot_${index}`" style="z-index: 1; position: absolute;cursor: pointer;"></canvas> -->
     <template v-if="ZQL_videosInfos[`slot_${index}`]">
+      <div v-if="recordingActive" class="recording flx-align-center">
+        <span class="symbol"></span>
+        <span class="ml4">{{ recordingTime }}</span>
+      </div>
       <div class="top flx-justify-between w100 pr10 pl10">
         <div class="title">数据源：{{ ZQL_videosInfos[`slot_${index}`].name }}---{{ ZQL_videosInfos[`slot_${index}`].status }}</div>
         <div class="flx-center">
@@ -31,7 +35,7 @@
       </div>
       <div class="bottom flx-justify-between w100 pr10 pl10" style="z-index: 2;">
         <div :ref="`dropdownRefslot_${index}`">
-          <el-button v-if="showControlCenter" type="primary" class="video-btn ml10" @click="goControlCenter(ZQL_videosInfos[`slot_${index}`].robotId)">
+          <el-button v-if="!selectedRobotId" type="primary" class="video-btn ml10" @click="goControlCenter(ZQL_videosInfos[`slot_${index}`].robotId)">
             <svg-icon icon-class="system" class="mr4"></svg-icon>控制中心
           </el-button>
         </div>
@@ -47,7 +51,8 @@
             @removeVideo="$emit('removeVideo', $event)"
             @refreshVideo="$emit('refreshVideo', $event)"
             :ref="`videoToolRefslot_${index}`"
-            :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" />
+            :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }"
+            :showControl="showControl" />
         </div>
       </div>
       <div
@@ -75,8 +80,9 @@
 <script>
 import VideoInfo from './../components/VideoInfo.vue';
 import VideoTool from './../components/VideoTool.vue';
-import { mapActions } from 'vuex';
+import { mapActions, mapState } from 'vuex';
 import mixin from './drag-mixin';
+import { formatTiming } from '../../../utils/index.js';
 export default {
   name: 'VideoBox',
   components: { VideoTool, VideoInfo },
@@ -102,19 +108,29 @@ export default {
       type: String,
       default: ''
     },
-    showControlCenter: {
-      type: Boolean,
-      default: true
-    }
   },
   computed: {
+    ...mapState('websocketRobot', ['cameras', 'selectedRobotId']),
     index() {
       return this.videoIndex
+    },
+    cameraInfo() {
+      return this.cameras?.[this.ZQL_videosInfos[`slot_${this.index}`]?.key] || {}
+    },
+    recordingActive() {
+      return this.cameraInfo.recordingActive
+    },
+    showControl() {
+      return !this.selectedRobotId || (this.selectedRobotId && (this.className.includes('six-') || this.className.includes('nine')) && this.className.includes('six-1'))
     }
   },
   data() {
     return {
-      isFullscreen: false
+      isFullscreen: false,
+      seconds: 0,
+      recordTimer: null,
+      resetTimer: null,
+      recordingTime: formatTiming(0)
     }
   },
   mounted() {
@@ -176,9 +192,31 @@ export default {
       } else return 'stopped'
     },
   },
+  watch: {
+    recordingActive(newVal) {
+      if (newVal) {
+        if (this.resetTimer) clearTimeout(this.resetTimer)
+        this.recordTimer = setInterval(() => {
+          this.seconds = this.seconds + 1
+          this.recordingTime = formatTiming(this.seconds)
+        }, 1000)
+      } else {
+        if (this.seconds) {
+          if (this.recordTimer) clearInterval(this.recordTimer)
+          this.resetTimer = setTimeout(() => {
+            this.seconds = 0
+            this.recordingTime = formatTiming(0)
+          }, 2000);
+        }
+      }
+     
+    }
+  },
   beforeDestroy() {
     document.removeEventListener('fullscreenchange', this.handleFullScreenChange)
     document.removeEventListener('webkitfullscreenchange', this.handleFullScreenChange)
+    if (this.recordTimer) clearInterval(this.recordTimer)
+    if (this.resetTimer) clearTimeout(this.resetTimer)
   }
 }
 </script>

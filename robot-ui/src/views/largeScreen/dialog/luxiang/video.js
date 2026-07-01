@@ -202,6 +202,7 @@ export default {
   methods: {
     // 根据时间获取视频
     getVideo(videoList, startTime) {
+      // recordedEndedAt
       const obj = videoList.filter((item) => {
         return item.startTime <= startTime && item.endTime >= startTime;
       });

@@ -42,7 +42,11 @@ export default({
     // 第二层阴影环形数据: 只需要一个数据占满整个圆环，实现全覆盖阴影效果
     secondLayerData() {
       // 单个数据占比100% 使圆环完整
-      return [{ name: '阴影层', value: 100, itemStyle: { color: 'rgba(0, 19, 66, 0.6982)' } }];
+      return [{ name: '阴影层', value: 100, itemStyle: { color: 'rgba(0, 19, 66, 0.50)' } }];
+    },
+    secondLayerData1() {
+      // 单个数据占比100% 使圆环完整
+      return [{ name: '阴影层', value: 100, itemStyle: { color: '#04132F' } }];
     },
     // 图例名称列表（仅用于第一层，手动控制展示）
     legendNames() {
@@ -221,8 +225,7 @@ export default({
             tooltip: { show: false },
             // 扇区间隙为0，构成完整圆环
             itemStyle: {
-              // 阴影颜色 #001342 + 透明度0.6982 (rgba表示)
-              color: 'rgba(0, 19, 66, 0.6982)',
+              color: 'rgba(0, 19, 66, 0.50)',
               borderWidth: 0,
               borderRadius: 0,
               shadowBlur: 0
@@ -233,7 +236,40 @@ export default({
             legendHoverLink: false,
             // 不参与图例计算
             seriesLayoutBy: 'column'
-          }
+          },
+          {
+            // ========= 第二层：阴影覆盖层 =========
+            name: '阴影层',
+            type: 'pie',
+            // 圆心必须与第一层完全一致 (左侧28%, 垂直居中)
+            center: ['25%', '50%'],
+            // 半径按照要求: [内径37.5%, 外径57.5%]  完全覆盖第一层的内环区域
+            radius: ['0%', '31.5%'],
+            // 数据: 单个数据占满整圆，实现均匀阴影环
+            data: this.secondLayerData1,
+            // 关闭标签、引导线、不显示任何文本
+            label: { show: false },
+            labelLine: { show: false },
+            // 关闭鼠标悬浮高亮效果，避免干扰第一层的交互
+            emphasis: { scale: false, label: { show: false } },
+            // 静默模式，不触发tooltip
+            silent: true,
+            // 工具提示关闭
+            tooltip: { show: false },
+            // 扇区间隙为0，构成完整圆环
+            itemStyle: {
+              color: '#04132F',
+              borderWidth: 0,
+              borderRadius: 0,
+              shadowBlur: 0
+            },
+            // 起始角度与第一层一致保证对齐（实际上透明覆盖无影响）
+            startAngle: 30,
+            // 避免图例显示该系列
+            legendHoverLink: false,
+            // 不参与图例计算
+            seriesLayoutBy: 'column'
+          },
         ],
         // 全局tooltip配置, 仅第一层有有效tooltip
         tooltip: {

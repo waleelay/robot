@@ -47,7 +47,7 @@ export default {
       })
     },
     async startAll() {
-      console.log('startAll=============', 123)
+      // console.log('startAll=============', 123)
       for (const cameraKey in this.ZQL_playingSource) {
         cameraKey === 'robot-001_0_0'
         const robot = Object.assign({}, this.ZQL_videosInfos[cameraKey].robot)

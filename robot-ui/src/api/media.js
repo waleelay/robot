@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { data } from 'jquery'
 
 // 每个浏览器标签页拥有独立 clientId，但同一标签页刷新后保持不变。
 // 这对控制权续用很重要：刷新页面不能被后端误判成另一个终端。
@@ -173,7 +174,15 @@ export function getRecordings(params) {
   return request({
     url: '/api/control/recordings',
     method: 'get',
+    headers,
     params
+  })
+}
+export function getRecordingPlayUrl(recordingId) {
+  return request({
+    url: `/api/control/recordings/${recordingId}/play-url`,
+    headers,
+    method: 'post'
   })
 }
 
@@ -232,14 +241,16 @@ export function sendEquipmentCommand(robotId, data) {
 export function startLiveRecording(sessionId) {
   return request({
     url: `/api/control/video-sessions/${sessionId}/recordings/start`,
-    method: 'post'
+    method: 'post',
+    headers
   })
 }
 
 export function stopLiveRecording(sessionId, recordingId) {
   return request({
     url: `/api/control/video-sessions/${sessionId}/recordings/${recordingId}/stop`,
-    method: 'post'
+    method: 'post',
+    headers
   })
 }
 export function getActiveLiveRecording(sessionId) {
@@ -248,3 +259,34 @@ export function getActiveLiveRecording(sessionId) {
     method: 'get'
   })
 }
+
+// 抓拍
+export function getSnapshotList(params) {
+  return request({
+    url: `api/control/snapshots`,
+    method: 'get',
+    params
+  })
+}
+
+// 控制模式 导航模式 NAVIGATION 手动模式 MANUAL
+export function setControlMode(data) {
+  return request({
+    url: `/api/control/robots/${data.robotId}/control-mode`,
+    method: 'post',
+    data: {
+      controlMode: data.controlMode
+    }
+  })
+}
+// 告警处置 立即处置：IMMEDIATE_DISPOSAL 误报：FALSE_ALARM
+export function executeAlarm(data) {
+  return request({
+    url: `/api/bigscreen/panorama/alarms/${data.alarmId}/disposal`,
+    method: 'post',
+    data: {
+      disposalStatus: data.disposalStatus
+    }
+  })
+}
+

@@ -28,8 +28,8 @@
 </template>
 
 <script>
-import TaskTableList from './TaskTableList.vue'
-import ExecuteLogTableList from './ExecuteLogTableList.vue';
+import TaskTableList from './plan/Index.vue'
+import ExecuteLogTableList from './record/Index.vue';
 export default {
   name: 'BiPatrolBusiness',
   components: { TaskTableList, ExecuteLogTableList },
@@ -45,7 +45,7 @@ export default {
           svg: 'detail',
         },
       ],
-      activeSideIndex: 0
+      activeSideIndex: 1
     }
   },
   methods: {}

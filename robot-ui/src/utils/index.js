@@ -406,6 +406,17 @@ export function changeDate(date) {
   return newdate
 }
 
+export function formatTiming(totalSeconds) {
+  const hrs = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = Math.floor(totalSeconds % 60);
+  return [
+      String(hrs).padStart(2, '0'),
+      String(mins).padStart(2, '0'),
+      String(secs).padStart(2, '0')
+  ].join(':');
+}
+
 export function errorMessage(error) {
   let data = error && error.response && error.response.data
   if (typeof data === 'string') {

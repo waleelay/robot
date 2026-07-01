@@ -16,8 +16,6 @@ export default {
     }
   },
   async mounted() {
-    // mqttClient.connect()
-    // await this.loadRobots();
     const res = await getPatrolPanoramaOverview()
     this.setAll(res)
     this.connectMediaWebSocket()

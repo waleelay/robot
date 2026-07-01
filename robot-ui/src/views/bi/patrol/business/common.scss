@@ -272,6 +272,10 @@
       }
     }
   }
+
+  .el-table__body tr.hover-row > td.el-table__cell, .el-table__body tr.hover-row.current-row > td.el-table__cell, .el-table__body tr.hover-row.selection-row > td.el-table__cell, .el-table__body tr.hover-row.el-table__row--striped > td.el-table__cell, .el-table__body tr.hover-row.el-table__row--striped.current-row > td.el-table__cell, .el-table__body tr.hover-row.el-table__row--striped.selection-row > td.el-table__cell {
+    background: transparent !important;
+  }
 }
 
 
@@ -297,5 +301,9 @@
   &.green {
     color: #49DC7F;
     border-color: #49DC7F;
+  }
+  &.red {
+    color: #FF0404;
+    border-color: #FF0404;
   }
 }

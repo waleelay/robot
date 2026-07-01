@@ -14,7 +14,7 @@
       <div class="info-content pt10 pb20 pl10 flex" style="align-items: flex-start">
         <div ref="slamContainerRef" class="mt7 p10 slam-container">
           <div class="header flx-justify-between">
-            <span>机器狗001</span>
+            <span>{{ currenRobot?.name || '-' }}</span>
             <!-- <span @click="zoomChange" class="curp"> -->
             <span @click="toggleFullscreen(fullscreen, 'slamImg')" class="curp">
               <svg-icon :icon-class="fullscreen ? 'close-fullscreen' : 'fullscreen1'" style="font-size: 12px"></svg-icon>
@@ -35,6 +35,7 @@ import mapInfo from './../../../patrol/slam/mapInfo.json'
 import pathInfo from './../../../patrol/slam/pathInfo.json'
 import mapPoints from './../../../patrol/slam/map-points.json'
 import { toggleFullscreen, getFullscreenStatus } from '../../../../../utils/fullscreen.js';
+import { mapState } from 'vuex';
 export default {
   name: 'Slam',
   components: {SlamM},
@@ -49,6 +50,13 @@ export default {
         pathPointIds: this.detailPointId(),
         showLabels: true
       }
+    }
+  },
+  computed: {
+    ...mapState('websocketRobot', ['selectedRobotId']),
+    ...mapState('websocketExtraData', ['robotBaseInfo']),
+    currenRobot() {
+      return this.robotBaseInfo?.[this.selectedRobotId] || {}
     }
   },
   methods: {

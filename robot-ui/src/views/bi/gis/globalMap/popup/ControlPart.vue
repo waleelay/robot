@@ -28,9 +28,9 @@
               type="primary"
               class="mt10 ml10 wp73"
               :class="{ 'hp36': !showSmall, 'hp26': showSmall }"
-              @mousedown="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
-              @mouseup="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
-              @mouseleave="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
+              @mousedown.native="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
+              @mouseup.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
+              @mouseleave.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
               @touchstart.prevent="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
               @touchend.prevent="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
               @click="controlRobot(item.key)"
@@ -97,6 +97,7 @@ export default {
   mounted() {},
   methods: {
     controlRobot(key) {
+      if (['zuoyi', 'youyi'].includes(key)) return
       switch (key) {
         case 'step':
           break;

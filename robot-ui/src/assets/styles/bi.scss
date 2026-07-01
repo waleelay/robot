@@ -1419,3 +1419,7 @@ body:has(.xlxc .jc-div .video .largevideo)  {
     }
   }
 }
+
+.leaflet-control-rotate {
+  display: none !important;
+}

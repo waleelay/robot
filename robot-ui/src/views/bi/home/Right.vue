@@ -41,7 +41,7 @@
                 <template v-if="deviceTypeStats.length">
                   <div v-for="item in deviceTypeStats" class="devices flx-center pr10 pl10">
                     <div class="tal" style="width: 40%;">{{ item.name }}</div>
-                    <div class="flex1 tac ml10">{{ item.total || 0 }}</div>
+                    <div class="flex1 tac ml10">{{ item.count || 0 }}</div>
                     <div class="flex1 tac ml10">{{ item.fault || 0 }}</div>
                     <div class="flex1 tac ml10">{{ item.offline || 0  }}</div>
                   </div>
@@ -64,19 +64,19 @@
           <div class="count flx-justify-between">
             <div class="item wp66 hp70 flx-center flex-column">
               <div class="desc">今日任务</div>
-              <div class="value mt4">{{ deviceStats?.total || 0 }}</div>
+              <div class="value mt4">{{ taskOverview?.totalToday || '-' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10">
               <div class="desc">完成率</div>
-              <div class="value mt4">{{ deviceStats?.online || 0 }}%</div>
+              <div class="value mt4">{{ taskOverview?.completedRateText || '-' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 green">
               <div class="desc">执行中</div>
-              <div class="value mt4">{{ deviceStats?.fault || 0 }}</div>
+              <div class="value mt4">{{ taskOverview?.running || '-' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 orange">
               <div class="desc">待执行</div>
-              <div class="value mt4">{{ deviceStats?.offline || 0  }}</div>
+              <div class="value mt4">{{ taskOverview?.pending || '-' }}</div>
             </div>
           </div>
           <div class="mt20">
@@ -90,7 +90,7 @@
               <div class="common-scroll ovya" style="min-height: 144px; max-height: 144px;">
                 <template v-if="tasks.length">
                   <div v-for="item in tasks" class="tasks flx-justify-between pr10 pl10">
-                    <div style="width: 43%;">{{ item.name }}</div>
+                    <div style="width: 43%;" class="text-ellipsis" :title="item.name">{{ item.name }}</div>
                     <div class="ml10 mr10 status wp50" :class="item.statusName === '执行中' ? 'green' : item.status === '待执行' ? 'orange' : 'gray'">{{ item.statusName }}</div>
                     <div class="ml10" style="width: 35%;">{{ item.timeRange }}</div>
                   </div>
@@ -132,7 +132,7 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
-    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats']),
+    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'taskOverview']),
     tasks() {
       return Object.keys(this.taskData || {}).map(key => this.taskData[key])
     },
@@ -162,15 +162,8 @@ export default {
     if (this.alarmsData?.high?.items?.length) {
       this.collapseArr[2] = false
     }
-
-    
-    // 更新告警信息
-    // setTimeout(() => {
-    //   this.setRobotAlarmInfo({ robotId: this.alarmsData?.high?.items?.[1]?.robotId, alarmInfo: this.alarmsData?.high?.items?.[1], close: true });
-    // }, 5000);
   },
   methods: {
-    ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
     getMoreRobotInfo() {
   
     },

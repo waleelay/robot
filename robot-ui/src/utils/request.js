@@ -66,7 +66,7 @@ service.interceptors.request.use(config => {
         console.log(requestObj, s_url, s_data, s_time)
         const message = '数据正在处理，请勿重复提交';
         console.warn(`[${s_url}]: ` + message)
-        return Promise.reject(new Error(message))
+        // return Promise.reject(new Error(message))
       } else {
         cache.session.setJSON('sessionObj', requestObj)
       }
@@ -81,7 +81,8 @@ service.interceptors.request.use(config => {
 // 响应拦截器
 service.interceptors.response.use(res => {
     // 未设置状态码则默认成功状态
-    const code = res.data.code || 200;
+    // const code = res.data.code || 200;
+    const code = res.data.code === '0' ? 200 : res.data.code || 200;
     // 获取错误信息
     
     const msg = errorCode[code] || res.data.msg || errorCode['default']

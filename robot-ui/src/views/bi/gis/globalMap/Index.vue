@@ -169,7 +169,8 @@ export default {
       showThumbnail: false,
       testA: { lat: 30.7472254, lng: 106.03737831115724 },
       testB: { lat: 30.7472254, lng: 106.040000 },
-      distance1: 0
+      distance1: 0,
+      maxLayer: null
     }
   },
   computed: {
@@ -236,8 +237,8 @@ export default {
       handler(newVal, oldVal) {
         if (Object.keys(newVal || {}).length) {
           this.pointMarkers.map(marker => {
-            if (marker.meta?.robot?.robotId === newVal.robotId) {
-              this.updateIconBaseInfo(newVal)
+            if (newVal?.[marker.meta?.robot?.robotId]) {
+              this.updateIconBaseInfo(newVal[marker.meta.robot.robotId])
             }
           })
         }
@@ -307,27 +308,36 @@ export default {
       // 只能看到18层
       this.map = L.map('map', {
         center: [this.centerPoint.lat, this.centerPoint.lng],
-        zoom: 18,
+        zoom: 12,
         maxZoom: 18,
-        minZoom: 17,
+        minZoom: 12,
         rotate: true,
-        rotateControl: true, // 显示旋转控制按钮
+        rotateControl: false, // 显示旋转控制按钮
         // 提高渲染能力
         // preferCanvas: true,
         // attributionControl: '版权',
         zoomControl: false,
         // markerZoomAnimation: false,
         zoomSnap: 0.1,   // 允许更精细的粒度
-        zoomDelta: 0.25  // 设置每次zoomIn/Out的步长为0.25
+        // zoomDelta: 0.25  // 设置每次zoomIn/Out的步长为0.25
+        zoomDelta: 6  // 设置每次zoomIn/Out的步长为0.25
       });
       // 关键：手动添加旋转控件到地图
       L.control.rotate().addTo(this.map);
       // 地图底图
-      L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
+      // L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
+      L.tileLayer('/tdt/tiles/12/{z}/{x}/{y}.png', {
       // L.tileLayer('/tdt/tiles/light/{z}/{x}/{y}.jpg', {
         maxZoom: 18,
-        minZoom: 17,
+        minZoom: 12,
       }).addTo(this.map);
+
+      this.maxLayer = L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        minZoom: 17,
+      });
+
+      
 
       // 设置地图初始背景色
       // const mapElement = document.getElementById('map');
@@ -352,7 +362,7 @@ export default {
       // });
 
       // 手动设置旋转角度（单位：度）
-      this.map.setBearing(-45);  // 顺时针旋转45度
+      // this.map.setBearing(-45);  // 顺时针旋转45度
 
       // 获取当前旋转角度
       const bearing = this.map.getBearing();
@@ -388,6 +398,10 @@ export default {
       // 缩放到停止
       this.map.on('zoomend', () => {
         console.log('zoomend');
+        this.maxLayer.addTo(this.map);
+        this.map.setBearing(-45)
+        this.map.setZoom(18)
+        this.map.setView([30.7478613352993, 106.03655278081857], 18)
         this.pointMarkers.map((marker, index) => {
           // console.log(111111111, marker.getIcon().options, this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
           this.pointMarkers[index].setIcon(this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
@@ -464,18 +478,18 @@ export default {
         {
           html: `<div class="custom-point-img flx-center flex-column" style="flex-wrap: nowrap;">
             ${this.robotAlarmObj?.[robotId] ? `
-              <div class="robot-warning flx-center" style="height: fit-content;">
+              <div class="robot-warning flx-center" style="height: fit-content; display: none !important;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <path d="M15.6585 13.1145L9.38682 2.25252C8.6197 0.924516 7.36601 0.924516 6.59909 2.25252L0.327353 13.1145C-0.439564 14.4438 0.187856 15.5282 1.72062 15.5282H14.2652C15.798 15.5282 16.4248 14.4437 15.6585 13.1145ZM7.13152 5.33448C7.35689 5.09081 7.64342 4.96896 7.99287 4.96896C8.3425 4.96896 8.62877 5.08953 8.85438 5.32961C9.07852 5.57023 9.19055 5.87115 9.19055 6.233C9.19055 6.54434 8.7227 8.8337 8.56664 10.4992H7.43975C7.30289 8.83368 6.79524 6.54434 6.79524 6.233C6.79527 5.87664 6.90748 5.57696 7.13152 5.33448ZM8.8386 13.254C8.60154 13.4849 8.31945 13.6 7.99295 13.6C7.66653 13.6 7.38436 13.4849 7.14735 13.254C6.91098 13.0237 6.7935 12.7447 6.7935 12.4171C6.7935 12.0911 6.91098 11.8091 7.14735 11.5727C7.38436 11.3363 7.66653 11.2181 7.99295 11.2181C8.31945 11.2181 8.60154 11.3363 8.8386 11.5727C9.0748 11.8091 9.19256 12.0911 9.19256 12.4171C9.19256 12.7447 9.0748 13.0237 8.8386 13.254Z" fill="#FFDD00"/>
                 </svg>
-                <span class="ml5">告警信息：设备故障</span>
+                <span class="ml5">告警信息：${this.robotAlarmObj[robotId].categoryName}：${this.robotAlarmObj[robotId].title}</span>
               </div>` : ''}
             <img class="wp${width} hp${height}" src="${require(`@/assets/images/new-bi/${img}.png`)}" />
             <img src="${require(`@/assets/images/new-bi/robot_foot.png`)}" style="margin-top: -5px;" />
             <div class="custom-point-name mt2" style="">${name}</div>
-            <div class="custom-point-status mt4 pr10 pl10">${status === 'online' ? '空闲中' : status === 1 ? '任务中' : status === 2 ? '故障' : '离线'}</div>
+            <div class="custom-point-status mt4 pr10 pl10">${status === 'online' ? '任务中' : status === 1 ? '任务中' : status === 2 ? '故障' : '离线'}</div>
           </div>`,
-          className: `custom-point ${type} ${status === 'online' ? 'green' : status === 1 ? 'blue' : status === 2 ? 'orange' : 'gray'}` ,
+          className: `custom-point ${type} ${status === 'online' ? 'blue' : status === 1 ? 'blue' : status === 2 ? 'orange' : 'gray'}` ,
           iconSize: null,
           // 偏移量
           // iconAnchor: [name.length * 7 > 24 ? name.length * 7 : 24, height],
@@ -500,8 +514,10 @@ export default {
         { lat: 30.745330, lng: 106.039428, status1: 3 },
       ]
       this.robotList.map((item, index) => {
-        // item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
-        item.points = L.latLng(this.robotLocation[item.robotId].lat || 39.54, this.robotLocation[item.robotId].lng || 116.23)
+        item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
+        // const lat = (index === 0 || index === 1) ? latLngs[index === 0 ? 1 : 0].lat : (this.robotLocation[item.robotId].lat || 39.54)
+        // const lng = (index === 0 || index === 1) ? latLngs[index === 0 ? 1 : 0].lng : (this.robotLocation[item.robotId].lng || 116.23)
+        // item.points = L.latLng(lat, lng)
         const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === item.robotId);
         if (existingIndex >= 0) {
           // console.log(1);
@@ -556,12 +572,12 @@ export default {
       const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === robotId);
       if (existingIndex < 0) return
       // const { lat, lng } = this.pointMarkers[existingIndex].getLatLng()
-      this.pointMarkers[existingIndex].setLatLng(L.latLng(robotLocation?.[robotId]?.lat, robotLocation?.[robotId]?.lng))
-      this.pointMarkers[existingIndex].meta = { index, robot: { ...info, points: L.latLng(robotLocation?.[robotId]?.lat, robotLocation?.[robotId]?.lng) }};
+      this.pointMarkers[existingIndex].setLatLng(L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng))
+      this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng) }};
       // 存在则更新 icon
       this.pointMarkers[existingIndex].setIcon(this.getIcon(info));
       // 更新 meta 数据
-      this.pointMarkers[existingIndex].meta = { index, robot: { ...info }};
+      this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info }};
     },
     updatePopups(index) {
       this.setupHoverWithDebounce(this.pointMarkers[index], 300)

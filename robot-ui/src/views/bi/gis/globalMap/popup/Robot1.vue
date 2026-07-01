@@ -43,18 +43,20 @@
           任务时段：<span class="value">{{ currenRobot?.task?.timeRange || '-' }}</span>
         </div>
       </div>
-      <div class="btns m10 mb20 flx-align-center">
-        <el-button type="primary" @click="$emit('showControlPart', true)">远程控制</el-button>
-        <el-button type="primary" @click="$emit('showSlam', true)">SLAM地图</el-button>
-        <el-button type="primary" @click="onShutdown()">一键返航</el-button>
-        <el-button type="primary" @click="onStartup()">退出充电桩</el-button>
+      <div class="btns mt10 mb20 ml0 flx-align-center flex-wrap wp360" style="margin-top: -10px !important">
+        <el-button v-if="showOper && showControl" type="primary" class="mt20" @click="$emit('showControlPart', true)">远程控制</el-button>
+        <el-button v-if="showOper && showControl" type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button>
+        <el-button v-if="showOper && showControl" type="primary" class="mt20" @click="onShutdown()">一键返航</el-button>
+        <el-button v-if="showOper && showControl" type="primary" class="mt20" @click="onStartup()">退出充电桩</el-button>
         <!-- <el-button type="primary" @click="onAddTask()">添加任务</el-button> -->
-      </div>
-      <div class="btns m10 mb20 flx-align-center">
-        <el-button type="primary" @click="$emit('showPath', true)">显示路径</el-button>
-        <el-button type="primary" @click="$emit('showArea', true)">显示区域</el-button>
+        <el-button type="primary" class="mt20" @click="$emit('showPath', true)">显示路径</el-button>
+        <el-button type="primary" class="mt20" @click="$emit('showArea', true)">显示区域</el-button>
       </div>
     </div>
+    <!-- <div class="guideline wp157 hp29 mt9 ml161">
+      <svg-icon icon-class="guideline" class="w100 h100" style="vertical-align: top;"></svg-icon>
+    </div> -->
+    <img v-if="!showOper" width="197" height="47" style="position: absolute; bottom: -47px; left: 0" src="@/assets/images/new-bi/guideline.png" alt="">
   </div>
 </template>
 
@@ -66,10 +68,16 @@ export default {
   mixins: [gsap],
   data() {
     return {
-      className: ''
+      className: '',
     }
   },
   computed: {
+    showOper() {
+      return this.$route.name !== 'biIndex'
+    },
+    showControl() {
+      return this.selectedRobot?.status === 'online'
+    },
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
@@ -90,7 +98,6 @@ export default {
       this.$emit('clear')
     },
     show(e, robot) {
-      console.log('show=========', this.selectedRobotId, 22, robot.robotId);
       this.$emit('showControlPart', false)
       if (this.selectedRobotId === robot.robotId) {
         this.setSelectedRobotId('')
@@ -106,6 +113,11 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.btns {
+  .el-button:first-child {
+    margin-left: 10px;
+  }
+}
 .machine-container.robot-container.new {
   position: fixed;
   opacity: 0;

@@ -48,13 +48,13 @@
         <div class="flex1 flex-column pl28 pr15" style="position: unset;">
           <div class="mode d-flex flx-align-center">
             <span>控制模式：</span>
-            <el-dropdown trigger="click" class="ml10">
+            <el-dropdown trigger="click" class="ml10" @command="handleModeChange">
               <div class="mode-status success flex-column">
-                <span>{{ selectedRobot?.mode || 'MANUAL'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
+                <span>{{ selectedRobot?.controlMode || 'MANUAL'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
               </div>
               <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
-                <el-dropdown-item>自动巡航模式</el-dropdown-item>
-                <el-dropdown-item>手动控制模式</el-dropdown-item>
+                <el-dropdown-item command="NAVIGATION" :class="{ 'is-active': selectedRobot?.controlMode === 'NAVIGATION' }">导航模式</el-dropdown-item>
+                <el-dropdown-item command="MANUAL" :class="{ 'is-active': selectedRobot?.controlMode === 'MANUAL' }">手动模式</el-dropdown-item>
               </el-dropdown-menu>
             </el-dropdown>
           </div>
@@ -74,7 +74,11 @@
                       :key="key"
                       :class="['arrow', robotControlObj[key].class]"
                       :title="robotControlObj[key].label"
-                      @mousedown="handleControl(robotControlObj[key])"
+                      @mousedown="startFrameControl(robotControlObj[key].key)"
+                      @mouseup="stopFrameControl(robotControlObj[key].key)"
+                      @mouseleave="stopFrameControl(robotControlObj[key].key)"
+                      @touchstart.prevent="startFrameControl(robotControlObj[key].key)"
+                      @touchend.prevent="stopFrameControl(robotControlObj[key].key)"
                     >
                       <svg-icon icon-class="control-arrow" />
                     </div>
@@ -139,6 +143,7 @@
         </div>
       </div>
     </div>
+    <ControlModeWarning ref="controlModeWarningRef" />
   </div>
 </template>
 
@@ -150,6 +155,7 @@ import { robotControlObj } from '../../../js/constants/robot-control.js';
 import yuntai from '../../../patrol/monitor/second/components/yuntai.js';
 import { mapActions, mapState } from 'vuex';
 import Talk from './../../../patrol/monitor/second/components/Talk.vue'
+import { setControlMode } from '../../../../../api/media.js';
 export default {
   name: 'RobotCarControlPart',
   components: {
@@ -232,6 +238,9 @@ export default {
     ...mapState('websocketRobot', ['robots']),
     baseInfo() {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
+    },
+    canControl() {
+      return this.selectedRobot?.controlMode === 'MANUAL'
     }
   },
   methods: {
@@ -282,6 +291,9 @@ export default {
       this.$set(this.cameraOrderByRobot, this.robot.robotId, cameras.map(camera => this.cameraIdentity(this.robot.robotId, camera)))
       await this.updateInfo()
       this.rebindCameraTracks([cameras[0], cameras[cameraIndex]])
+    },
+    async handleModeChange(controlMode) {
+      this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode })
     }
   },
   watch: {

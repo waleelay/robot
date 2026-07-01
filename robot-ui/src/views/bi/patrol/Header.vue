@@ -64,7 +64,7 @@
         </div>
         <div class="org ml20 pl20 flx-align-center h100">
           <svg-icon icon-class="gov" style="font-size: 26px;"></svg-icon>
-          <span class="text ml4">南充嘉陵监狱</span>
+          <span class="text ml4">成都启航信息</span>
         </div>
       </div>
       <div class="toolbar flx-align-center h100 new wp576" style="justify-content: end;">
@@ -73,7 +73,7 @@
           <span class="ml10">{{ currentTime }}</span>
         </div>
         <div class="flx-center icons h100 ml20">
-          <div class="icon">
+          <div class="icon" @click="goHome">
             <svg-icon icon-class="home" style="color: #8BAEDC;"></svg-icon>
           </div>
           <div class="icon ml20" @click="toggleFullscreen">
@@ -89,7 +89,7 @@
         <div class="user ml40 flx-align-center h100">
           <div class="avatar">Z</div>
           <div class="ml10 flex-column">
-            <span class="text">南充嘉陵监狱</span>
+            <span class="text">成都启航信息</span>
             <span class="role pt2 pr10 pb2 pl10">运维管理</span>
           </div>
         </div>
@@ -145,6 +145,10 @@ export default {
     back() {
       this.setSelectedRobotId('')
     },
+    goHome() {
+      this.$router.push({ name: 'biIndex' })
+      this.setSelectedRobotId('')
+    },
     // 更新时间
     updateTime() {
       const now = new Date()
@@ -157,7 +161,6 @@ export default {
       this.currentDate = `${year}-${month}-${day}`
       this.currentTime = `${hours}:${minutes}:${seconds}`
     },
-    
     // 菜单选择
     handleSelect(key) {
       if (this.activeIndex !== key) {
@@ -168,7 +171,6 @@ export default {
         this.$router.push(`/bi/patrol/${key}`)
       }
     },
-    
     // 通知点击
     handleNotification() {
       this.$message.info('您有 ' + this.notificationCount + ' 条新通知')

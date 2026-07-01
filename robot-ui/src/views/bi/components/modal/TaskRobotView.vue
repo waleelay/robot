@@ -264,7 +264,7 @@ export default {
   .page {
     position: absolute;
     top: 10px;
-    width: 118;
+    width: 18px;
     height: calc(100% - 20px);
     border-radius: 4px;
     background: #002859;

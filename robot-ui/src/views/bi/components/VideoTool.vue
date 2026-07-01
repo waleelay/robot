@@ -23,69 +23,73 @@
           </el-dropdown-menu>
         </el-dropdown>
       </div>
-      <div :ref="`dropdownRef${slotKey}_volume`">
-        <el-dropdown class="custom-dropdown volume-dropdown" trigger="hover" placement="top" @visible-change="handleVolumeVisibleChange">
-          <!-- <span class="el-dropdown-link">
-            {{ pixel.currentPixelLabel }}
-          </span> -->
+      <template v-if="canSnapshot">
+        <div :ref="`dropdownRef${slotKey}_volume`">
+          <el-dropdown class="custom-dropdown volume-dropdown" trigger="hover" placement="top" @visible-change="handleVolumeVisibleChange">
+            <!-- <span class="el-dropdown-link">
+              {{ pixel.currentPixelLabel }}
+            </span> -->
+            <span @click="toggleMute" :title="volumeValue">
+              <svg-icon :icon-class="volumeIconClass" />
+            </span>
+            <el-dropdown-menu :ref="`dropdownMenuRef${slotKey}_volume`" slot="dropdown" :append-to-body="false" class="custom-dropdown-menu volume-dropdown-menu">
+              <el-dropdown-item>
+                <div class="info flx-center">
+                  <span class="value">{{ volumeInfo.currentVolume }}</span>
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    v-model="volumeInfo.currentVolume"
+                    class="mt10 mb10 vertical-slider" 
+                    @input="updateVolume"
+                    id="volumeSlider"
+                    :style="{'--value-percent': `${volumeInfo.currentVolume}%`}"
+                  />
+                </div>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </el-dropdown>
+        </div>
+        <!-- <div class="volume ml20">
+          <div class="info flx-center">
+            <span class="value">{{ volumeInfo.currentVolume }}</span>
+            <input 
+              type="range" 
+              min="0" 
+              max="100" 
+              v-model="volumeInfo.currentVolume"
+              class="mt10 mb10 vertical-slider" 
+              @input="updateVolume"
+              id="volumeSlider"
+              :style="{'--value-percent': `${volumeInfo.currentVolume}%`}"
+            />
+          </div>
           <span @click="toggleMute" :title="volumeValue">
             <svg-icon :icon-class="volumeIconClass" />
           </span>
-          <el-dropdown-menu :ref="`dropdownMenuRef${slotKey}_volume`" slot="dropdown" :append-to-body="false" class="custom-dropdown-menu volume-dropdown-menu">
-            <el-dropdown-item>
-              <div class="info flx-center">
-                <span class="value">{{ volumeInfo.currentVolume }}</span>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  v-model="volumeInfo.currentVolume"
-                  class="mt10 mb10 vertical-slider" 
-                  @input="updateVolume"
-                  id="volumeSlider"
-                  :style="{'--value-percent': `${volumeInfo.currentVolume}%`}"
-                />
-              </div>
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </el-dropdown>
-      </div>
-      <!-- <div class="volume ml20">
-        <div class="info flx-center">
-          <span class="value">{{ volumeInfo.currentVolume }}</span>
-          <input 
-            type="range" 
-            min="0" 
-            max="100" 
-            v-model="volumeInfo.currentVolume"
-            class="mt10 mb10 vertical-slider" 
-            @input="updateVolume"
-            id="volumeSlider"
-            :style="{'--value-percent': `${volumeInfo.currentVolume}%`}"
-          />
+        </div> -->
+        
+        <div @click="openSnapModal()" title="抓拍" :style="{ 'pointer-events': canSnapshot ? 'auto' : 'none' }"><svg-icon icon-class="camera" /></div>
+        <div
+          v-if="canRecord"
+          @click="toggleLiveRecording(cameraInfo)"
+          :title="cameraInfo.recordingActive ? '停止录制' : '录制'"
+          :style="{ 'pointer-events': canRecord ? 'auto' : 'none' }"
+        >
+          <svg-icon icon-class="record" :style="{ color: cameraInfo.recordingActive ? '#21C8FF' : '#CAD4E0' }" />
         </div>
-        <span @click="toggleMute" :title="volumeValue">
-          <svg-icon :icon-class="volumeIconClass" />
-        </span>
-      </div> -->
-      <div @click="openSnapModal()" title="抓拍" :style="{ 'pointer-events': canSnapshot ? 'auto' : 'none' }"><svg-icon icon-class="camera" /></div>
-      <div
-        @click="toggleLiveRecording(cameraInfo)"
-        title="录像"
-        :style="{ color: cameraInfo.recordingActive ? '#21C8FF' : '#CAD4E0', 'pointer-events': canRecord ? 'auto' : 'none' }"
-      >
-        <svg-icon icon-class="record" />
-      </div>
-      <div :title="openMic ? '关闭麦克风' : '打开麦克风'" @click="toggleMic()">
-        <svg-icon :icon-class="openMic ? 'mic' : 'mic-off'" />
-      </div>
-      <div v-if="['dual_gimbal', 'body'].includes(cameraInfo.groupType)" @click="$refs.controlInnerRef.visible = !$refs.controlInnerRef.visible">
-        <svg-icon title="控制器" icon-class="control" />
-      </div>
+        <div :title="openMic ? '关闭麦克风' : '打开麦克风'" @click="toggleMic()">
+          <svg-icon :icon-class="openMic ? 'mic' : 'mic-off'" />
+        </div>
+        <div v-if="showControl && ['dual_gimbal', 'body'].includes(cameraInfo.groupType)" @click="$refs.controlInnerRef.visible = !$refs.controlInnerRef.visible">
+          <svg-icon title="控制器" icon-class="control" />
+        </div>
+      </template>
       <div v-if="!videoStatus || videoStatus === 'stopped'" title="刷新" @click="refreshVideo()">
         <svg-icon icon-class="refresh" />
       </div>
-      <div v-if="['paused', 'playing'].includes(videoStatus)" :title="videoStatus === 'paused' ? `播放-${videoStatus}` : `暂停-${videoStatus}`" @click="playPauseVideo()">
+      <div v-if="canSnapshot && ['paused', 'playing'].includes(videoStatus)" :title="videoStatus === 'paused' ? `播放-${videoStatus}` : `暂停-${videoStatus}`" @click="playPauseVideo()">
         <svg-icon :icon-class="videoStatus === 'paused' ? 'play' : 'pause'" />
       </div>
       <div :title="isFullscreen ? '退出全屏' : '全屏'" @click="toggleFullscreen()">
@@ -133,6 +137,10 @@ export default {
       type: String,
       default: '',
     },
+    showControl: {
+      type: Boolean,
+      default: false
+    }
   },
   mixins: [videoUtils],
   computed: {
@@ -141,7 +149,8 @@ export default {
       return this.cameras?.[this.cameraKey] || {}
     },
     canSnapshot() {
-      return !!this.cameraInfo.session && this.cameraInfo.watching && !this.cameraInfo.stopping && !this.cameraInfo.stopped
+      return this.cameraInfo.remoteVideoTrack
+      // return !!this.cameraInfo.session && this.cameraInfo.watching && !this.cameraInfo.stopping && !this.cameraInfo.stopped
     },
     canRecord() {
       return !!this.cameraInfo.session && this.cameraInfo.watching && !this.cameraInfo.stopping && !this.cameraInfo.stopped
@@ -156,10 +165,10 @@ export default {
     },
     intercomInProgress() {
       return this.cameraInfo.intercomActive || (this.cameraInfo.intercomStatus && !['IDLE', 'FAILED'].includes(this.cameraInfo.intercomStatus))
-    },
+    }
   },
   methods: {
-    ...mapActions('websocketRobot', ['toggleLiveRecording']),
+    ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSnapshotTime']),
     // 播放暂停
     playPauseVideo() {
       // 切换状态
@@ -195,6 +204,7 @@ export default {
       const response = await createSnapshotFile(camera.session.sessionId, form)
       console.log('API snapshot', response)
       this.showSnapshotSuccess(camera, response)
+      this.setSnapshotTime(capturedAt)
     },
     captureFrameBlob() {
       const video = document.getElementById(this.idName).querySelector('video')
