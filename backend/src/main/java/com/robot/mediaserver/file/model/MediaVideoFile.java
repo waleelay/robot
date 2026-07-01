@@ -23,6 +23,8 @@ public class MediaVideoFile {
     private String audioCodec;
 
     private Integer durationSeconds;
+    private OffsetDateTime startedAt;
+    private OffsetDateTime endedAt;
     private Integer width;
     private Integer height;
 
@@ -53,6 +55,10 @@ public class MediaVideoFile {
     public void setAudioCodec(String audioCodec) { this.audioCodec = audioCodec; }
     public Integer getDurationSeconds() { return durationSeconds; }
     public void setDurationSeconds(Integer durationSeconds) { this.durationSeconds = durationSeconds; }
+    public OffsetDateTime getStartedAt() { return startedAt; }
+    public void setStartedAt(OffsetDateTime startedAt) { this.startedAt = startedAt; }
+    public OffsetDateTime getEndedAt() { return endedAt; }
+    public void setEndedAt(OffsetDateTime endedAt) { this.endedAt = endedAt; }
     public Integer getWidth() { return width; }
     public void setWidth(Integer width) { this.width = width; }
     public Integer getHeight() { return height; }

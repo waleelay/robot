@@ -45,6 +45,7 @@ tools/     设计文档生成脚本
 ```text
 docs/realtime-video-interface-flow.md     实时视频三端交互与接口
 docs/file-upload-design.md                通用文件上传、存储与播放方案
+docs/media-service-integration-guide.md   边缘端/管理服务对接媒体服务实操文档
 docs/recorded-video-upload-design.md      巡逻视频上传旧方案归档，当前以通用文件方案为准
 docs/bigscreen-bff-panorama-design.md     大屏 BFF 抽层与全景地图接口方案
 ```
@@ -276,6 +277,7 @@ POST /api/media/files/multipart-uploads/{uploadId}/part-urls
 POST /api/media/files/multipart-uploads/{uploadId}/complete
 GET  /api/media/files
 GET  /api/media/files/{fileId}
+POST /api/media/files/task-execution-binding
 POST /api/media/files/{fileId}/play-url
 POST /api/media/files/{fileId}/download-url
 POST /api/internal/livekit/webhook

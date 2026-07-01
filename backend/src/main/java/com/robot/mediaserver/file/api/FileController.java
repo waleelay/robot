@@ -2,6 +2,8 @@ package com.robot.mediaserver.file.api;
 
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.auth.CurrentUserResolver;
+import com.robot.mediaserver.file.dto.BindTaskExecutionRequest;
+import com.robot.mediaserver.file.dto.BindTaskExecutionResponse;
 import com.robot.mediaserver.file.dto.CreateMultipartFileUploadRequest;
 import com.robot.mediaserver.file.dto.FileDownloadUrlResponse;
 import com.robot.mediaserver.file.dto.FileListItemResponse;
@@ -103,6 +105,13 @@ public class FileController {
             @RequestParam(defaultValue = "20") int size,
             HttpServletRequest request) {
         return service.list(currentUserResolver.resolve(request), robotId, deviceId, taskExecutionId, fileType, status, page, size);
+    }
+
+    @PostMapping("/task-execution-binding")
+    public BindTaskExecutionResponse bindTaskExecution(
+            @Valid @RequestBody BindTaskExecutionRequest body,
+            HttpServletRequest request) {
+        return service.bindTaskExecution(currentUserResolver.resolve(request), body);
     }
 
     @GetMapping("/{fileId}")

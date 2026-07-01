@@ -12,6 +12,8 @@ public record FileListItemResponse(
         String contentType,
         long fileSize,
         Integer durationSeconds,
+        OffsetDateTime startedAt,
+        OffsetDateTime endedAt,
         Integer width,
         Integer height,
         String status,

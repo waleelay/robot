@@ -665,13 +665,25 @@ export default {
         const response = await getFiles(params)
         const items = response.items || []
         this.recordings = this.recordingTab === 'patrol'
-          ? items.filter(item => item.taskExecutionId)
-          : items.filter(item => !item.taskExecutionId)
+          ? items.filter(item => !this.isManualRecording(item))
+          : items.filter(item => this.isManualRecording(item))
       } catch (error) {
         this.$message.error(this.errorMessage(error))
       } finally {
         this.recordingsLoading = false
       }
+    },
+    fileMetadata(file) {
+      if (!file || !file.metadata) return {}
+      if (typeof file.metadata === 'object') return file.metadata
+      try {
+        return JSON.parse(file.metadata)
+      } catch (_error) {
+        return {}
+      }
+    },
+    isManualRecording(recording) {
+      return this.fileMetadata(recording).source === 'LIVEKIT_EGRESS'
     },
     // 播放录像时先向后端换取签名 URL，再根据浏览器能力选择原生 HLS 或 hls.js。
     // Safari 可原生播放 m3u8；Chrome/Edge 走 hls.js。
@@ -734,7 +746,7 @@ export default {
     },
     recordingTimeRangeText(recording) {
       if (!recording) return '--'
-      return `${this.dateTimeText(recording.recordedStartedAt)} - ${this.dateTimeText(recording.recordedEndedAt)}`
+      return `${this.dateTimeText(recording.startedAt)} - ${this.dateTimeText(recording.endedAt)}`
     },
     async startRobot(robot) {
       if (robot.status !== 'online') return

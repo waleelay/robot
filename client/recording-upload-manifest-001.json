@@ -5,60 +5,70 @@
       "filePath": "recordings/bd3cfa29e400553f9e3987d057c42e78.mp4",
       "fileSize": 8557004,
       "createdAt": "2025-11-20T18:23:42+08:00",
-      "recordingId": "rec_252abf77261740ee9a9f0902efc9cd73",
-      "uploadId": "upl_efb81c4eee9b4383b2176d20ffe315cf",
       "status": "LOCAL_DELETED",
-      "updatedAt": "2026-06-02T10:24:33.181687+08:00"
+      "updatedAt": "2026-06-02T10:24:33.181687+08:00",
+      "fileId": "rec_252abf77261740ee9a9f0902efc9cd73",
+      "uploadId": "upl_efb81c4eee9b4383b2176d20ffe315cf"
     },
     "camera01/bd3cfa29e400553f9e3987d057c42e78_副本.mp4/8557004/1763634222": {
       "sourceFileId": "camera01/bd3cfa29e400553f9e3987d057c42e78_副本.mp4/8557004/1763634222",
       "filePath": "recordings/bd3cfa29e400553f9e3987d057c42e78_副本.mp4",
       "fileSize": 8557004,
       "createdAt": "2025-11-20T18:23:42+08:00",
-      "recordingId": "rec_ff777f4535ef49bc9afabe0d81390457",
-      "uploadId": "upl_635445ef28f945efa543e299cd4ee5d4",
       "status": "LOCAL_DELETED",
-      "updatedAt": "2026-06-02T10:25:03.178539+08:00"
+      "updatedAt": "2026-06-02T10:25:03.178539+08:00",
+      "fileId": "rec_ff777f4535ef49bc9afabe0d81390457",
+      "uploadId": "upl_635445ef28f945efa543e299cd4ee5d4"
     },
     "camera01/建图.mp4/873552566/1752821824": {
       "sourceFileId": "camera01/建图.mp4/873552566/1752821824",
       "filePath": "recordings/建图.mp4",
       "fileSize": 873552566,
       "createdAt": "2025-07-18T14:57:04+08:00",
-      "recordingId": "rec_405457170f2245fa8f6179079b89bf13",
-      "uploadId": "upl_ca70e0376f3641898c1bc02993f397bd",
       "status": "LOCAL_DELETED",
-      "updatedAt": "2026-06-02T10:22:33.17698+08:00"
+      "updatedAt": "2026-06-02T10:22:33.176980+08:00",
+      "fileId": "rec_405457170f2245fa8f6179079b89bf13",
+      "uploadId": "upl_ca70e0376f3641898c1bc02993f397bd"
     },
     "camera01/建图_副本.mp4/873552566/1752821824": {
       "sourceFileId": "camera01/建图_副本.mp4/873552566/1752821824",
       "filePath": "recordings/建图_副本.mp4",
       "fileSize": 873552566,
       "createdAt": "2025-07-18T14:57:04+08:00",
-      "recordingId": "rec_d4bb9a02ef364e7e9d1d7c15d5797852",
-      "uploadId": "upl_a1da71c6033048b48b715d0a6b185a93",
       "status": "LOCAL_DELETED",
-      "updatedAt": "2026-06-02T10:23:03.178149+08:00"
+      "updatedAt": "2026-06-02T10:23:03.178149+08:00",
+      "fileId": "rec_d4bb9a02ef364e7e9d1d7c15d5797852",
+      "uploadId": "upl_a1da71c6033048b48b715d0a6b185a93"
     },
     "camera01/菜单功能配置.mp4/1329181852/1752824452": {
       "sourceFileId": "camera01/菜单功能配置.mp4/1329181852/1752824452",
       "filePath": "recordings/菜单功能配置.mp4",
       "fileSize": 1329181852,
       "createdAt": "2025-07-18T15:40:52+08:00",
-      "recordingId": "rec_08f30e2d88464bea8e12fd49d8bc68df",
-      "uploadId": "upl_0671321f383847b2a5b18d06a4a87d21",
       "status": "LOCAL_DELETED",
-      "updatedAt": "2026-06-02T10:23:33.181734+08:00"
+      "updatedAt": "2026-06-02T10:23:33.181734+08:00",
+      "fileId": "rec_08f30e2d88464bea8e12fd49d8bc68df",
+      "uploadId": "upl_0671321f383847b2a5b18d06a4a87d21"
     },
     "camera01/菜单功能配置_副本.mp4/1329181852/1752824452": {
       "sourceFileId": "camera01/菜单功能配置_副本.mp4/1329181852/1752824452",
       "filePath": "recordings/菜单功能配置_副本.mp4",
       "fileSize": 1329181852,
       "createdAt": "2025-07-18T15:40:52+08:00",
-      "recordingId": "rec_58b2e76203574b988829f05e1b000976",
-      "uploadId": "upl_2e9d24f577824c76a0ee94f5b724e114",
       "status": "LOCAL_DELETED",
-      "updatedAt": "2026-06-02T10:24:03.178847+08:00"
+      "updatedAt": "2026-06-02T10:24:03.178847+08:00",
+      "fileId": "rec_58b2e76203574b988829f05e1b000976",
+      "uploadId": "upl_2e9d24f577824c76a0ee94f5b724e114"
+    },
+    "camera01/test.mp4/8557004/1763634222": {
+      "sourceFileId": "camera01/test.mp4/8557004/1763634222",
+      "filePath": "/Users/leelay/Documents/robot-mediaserver/client/recordings/test.mp4",
+      "fileSize": 8557004,
+      "createdAt": "2025-11-20T10:23:42Z",
+      "status": "READY",
+      "updatedAt": "2026-07-01T12:50:19.376079Z",
+      "fileId": "file_8a7bb110a2cb47e9b5d6f26fafe29ff7",
+      "uploadId": "upl_cb0f9b41ded14d2b993eca5e309d3bb0"
     }
   }
 }

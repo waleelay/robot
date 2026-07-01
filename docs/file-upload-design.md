@@ -163,6 +163,7 @@ unique(robot_id, source_file_id) where source_file_id is not null
 | `file_id` | 主键，同时引用 `media_file.file_id` |
 | `video_codec` / `audio_codec` | 源视频编码信息 |
 | `duration_seconds` | 服务端确认的时长 |
+| `started_at` / `ended_at` | 视频开始与结束时间，接口字段与表字段一致 |
 | `width` / `height` | 源视频分辨率 |
 | `hls_playlist_object_key` | HLS 播放入口对象 key |
 | `hls_segment_count` | HLS 分片数量 |
@@ -352,7 +353,120 @@ URL 过期重签
 失败分片重试
 ```
 
-### 6.4 完成 multipart 上传
+### 6.4 上传分片到 `uploadUrl`
+
+`uploadUrl` 是对象存储的预签名 PUT 地址。调用端拿到后，不再请求 Media Service，而是直接把对应分片的二进制内容 PUT 到该地址。
+
+单个分片上传规则：
+
+```text
+partNumber = 1 时，读取文件 [0, partSize)
+partNumber = 2 时，读取文件 [partSize, partSize * 2)
+最后一个 part 读取到文件末尾
+PUT uploadUrl 的 body 只放该 part 的原始二进制
+PUT 成功以 HTTP 2xx 为准
+失败或 URL 过期时，重新调用 part-urls 获取新的 uploadUrl 后重试
+```
+
+curl 示例：
+
+```bash
+# 例：partSize = 16777216，上传第 1 个分片。
+# bs/count/skip 只用于演示如何截取分片；实际代码应使用文件随机读取或流式读取。
+dd if=video.mp4 bs=16777216 skip=0 count=1 2>/dev/null \
+  | curl -X PUT \
+      -H "Content-Type: application/octet-stream" \
+      --data-binary @- \
+      "http://minio-presigned-part-url"
+```
+
+JavaScript/TypeScript 浏览器或 Node 伪代码：
+
+```js
+async function uploadPart(file, part, partSize) {
+  const start = (part.partNumber - 1) * partSize
+  const end = Math.min(start + partSize, file.size)
+  const blob = file.slice(start, end)
+  const response = await fetch(part.uploadUrl, {
+    method: 'PUT',
+    body: blob
+  })
+  if (!response.ok) {
+    throw new Error(`part ${part.partNumber} upload failed: ${response.status}`)
+  }
+}
+```
+
+Go 伪代码：
+
+```go
+func uploadPart(path string, partNumber int, partSize int64, uploadURL string) error {
+    file, err := os.Open(path)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    start := int64(partNumber-1) * partSize
+    stat, err := file.Stat()
+    if err != nil {
+        return err
+    }
+    size := min(partSize, stat.Size()-start)
+    reader := io.NewSectionReader(file, start, size)
+
+    req, err := http.NewRequest(http.MethodPut, uploadURL, reader)
+    if err != nil {
+        return err
+    }
+    req.ContentLength = size
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        return fmt.Errorf("part %d upload failed: %s", partNumber, resp.Status)
+    }
+    return nil
+}
+```
+
+完整视频上传调用顺序示例：
+
+```text
+1. POST /api/media/files/multipart-uploads
+   -> 得到 fileId、uploadId、partSize、partCount、uploadedParts、首批 partUrls
+
+2. 客户端计算待上传 partNumbers
+   -> 跳过 uploadedParts 中已存在的 part
+
+3. 对 partUrls 中每个 part 执行 PUT uploadUrl
+   -> PUT 的 body 是该 part 的文件二进制
+   -> 可并发 PUT，但并发数由客户端控制，例如 2 或 4
+
+4. 首批 partUrls 用完但还有未上传 part
+   -> POST /api/media/files/multipart-uploads/{uploadId}/part-urls
+   -> 获取下一批或重新签发失败 part 的 uploadUrl
+
+5. 所有 part PUT 成功
+   -> POST /api/media/files/multipart-uploads/{uploadId}/complete
+
+6. 若 fileType = VIDEO
+   -> GET /api/media/files/{fileId}/status 轮询 PROCESSING / READY / FAILED
+   -> READY 后调用 POST /api/media/files/{fileId}/play-url 获取 HLS 播放地址
+```
+
+注意事项：
+
+```text
+一次返回 16 个 partUrls 不代表必须 16 并发上传；partUrls 是可用地址池，并发数由客户端按网络和设备性能控制。
+uploadUrl 有有效期，长时间未使用或 PUT 返回签名过期时，重新调用 part-urls 获取新的地址。
+Media Service 不接收分片正文，只负责创建上传、签发 URL、校验完成和维护元数据。
+MinIO 在 complete 前只记录已完整 PUT 成功的 part；未完成的 PUT 不应被客户端视为已上传。
+```
+
+### 6.5 完成 multipart 上传
 
 ```http
 POST /api/media/files/multipart-uploads/{uploadId}/complete
@@ -388,7 +502,48 @@ StatObject
 }
 ```
 
-### 6.5 查询文件
+### 6.6 绑定任务执行记录
+
+管理服务在拿到边缘端上传返回的多个视频 `fileId` 和点位文件 `fileId` 后，调用该接口后补 `task_execution_id`。
+
+```http
+POST /api/media/files/task-execution-binding
+```
+
+请求：
+
+```json
+{
+  "taskExecutionId": "task_exec_001",
+  "videoFileIds": ["file_video_001", "file_video_002"],
+  "pointFileId": "file_point_001"
+}
+```
+
+处理规则：
+
+```text
+只更新 media_file.task_execution_id
+不移动对象存储文件
+不重新上传
+不重新生成 HLS
+videoFileIds 必须对应 VIDEO 文件
+pointFileId 不能是 VIDEO 文件
+```
+
+响应：
+
+```json
+{
+  "taskExecutionId": "task_exec_001",
+  "files": [
+    { "fileId": "file_video_001", "fileType": "VIDEO", "taskExecutionId": "task_exec_001" },
+    { "fileId": "file_point_001", "fileType": "MAP", "taskExecutionId": "task_exec_001" }
+  ]
+}
+```
+
+### 6.7 查询文件
 
 文件详情：
 
@@ -405,7 +560,28 @@ GET /api/media/files?taskExecutionId=task_exec_001
 GET /api/media/files?status=READY
 ```
 
-### 6.6 下载文件
+视频列表项时间字段：
+
+`startedAt` / `endedAt` 来源于 `media_video_file.started_at` / `media_video_file.ended_at`。视频处理完成拿到真实 `durationSeconds` 后会统一校正：
+
+```text
+1. 若已存在 started_at，则 ended_at = started_at + durationSeconds
+2. 若不存在 started_at，但可从 sourceFileId 解析本地文件修改时间，则该时间作为 ended_at，started_at = ended_at - durationSeconds
+3. 若 sourceFileId 无法解析，则用 uploaded_at / created_at 兜底，再反推 started_at
+```
+
+```json
+{
+  "fileId": "file_xxx",
+  "fileType": "VIDEO",
+  "status": "READY",
+  "durationSeconds": 120,
+  "startedAt": "2026-06-30T09:58:00Z",
+  "endedAt": "2026-06-30T10:00:00Z"
+}
+```
+
+### 6.8 下载文件
 
 ```http
 POST /api/media/files/{fileId}/download-url
@@ -428,7 +604,7 @@ media_file.status = READY 才允许下载。
 }
 ```
 
-### 6.7 视频播放
+### 6.9 视频播放
 
 ```http
 POST /api/media/files/{fileId}/play-url

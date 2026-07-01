@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.file.dto.BindTaskExecutionRequest;
+import com.robot.mediaserver.file.dto.BindTaskExecutionResponse;
 import com.robot.mediaserver.file.dto.CreateMultipartFileUploadRequest;
 import com.robot.mediaserver.file.dto.FileDownloadUrlResponse;
 import com.robot.mediaserver.file.dto.FileListItemResponse;
@@ -31,10 +33,12 @@ import jakarta.transaction.Transactional;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -255,6 +259,62 @@ public class FileService {
         return new FileListResponse(result.stream().map(this::item).toList(), result.getNumber(), result.getSize(), result.getTotalElements());
     }
 
+    @Transactional
+    public BindTaskExecutionResponse bindTaskExecution(CurrentUser user, BindTaskExecutionRequest request) {
+        LinkedHashSet<String> fileIds = new LinkedHashSet<>();
+        if (request.getVideoFileIds() != null) {
+            request.getVideoFileIds().stream()
+                    .filter(id -> id != null && !id.isBlank())
+                    .forEach(fileIds::add);
+        }
+        if (request.getPointFileId() != null && !request.getPointFileId().isBlank()) {
+            fileIds.add(request.getPointFileId());
+        }
+        if (fileIds.isEmpty()) {
+            throw error(HttpStatus.BAD_REQUEST, "FILE_IDS_EMPTY", "文件 ID 不能为空");
+        }
+
+        List<MediaFile> files = new ArrayList<>();
+        for (String fileId : fileIds) {
+            MediaFile file = requireFile(fileId);
+            if (!Objects.equals(file.getOrgId(), user.orgId())) {
+                throw error(HttpStatus.NOT_FOUND, "FILE_NOT_FOUND", "未找到文件");
+            }
+            files.add(file);
+        }
+
+        for (String videoFileId : request.getVideoFileIds()) {
+            if (videoFileId == null || videoFileId.isBlank()) {
+                continue;
+            }
+            MediaFile video = files.stream()
+                    .filter(file -> Objects.equals(file.getFileId(), videoFileId))
+                    .findFirst()
+                    .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "FILE_NOT_FOUND", "未找到文件"));
+            if (video.getFileType() != FileType.VIDEO) {
+                throw error(HttpStatus.BAD_REQUEST, "FILE_TYPE_MISMATCH", "视频文件 ID 对应的文件类型不是 VIDEO");
+            }
+        }
+
+        if (request.getPointFileId() != null && !request.getPointFileId().isBlank()) {
+            MediaFile pointFile = files.stream()
+                    .filter(file -> Objects.equals(file.getFileId(), request.getPointFileId()))
+                    .findFirst()
+                    .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "FILE_NOT_FOUND", "未找到文件"));
+            if (pointFile.getFileType() == FileType.VIDEO) {
+                throw error(HttpStatus.BAD_REQUEST, "FILE_TYPE_MISMATCH", "点位文件不能是 VIDEO");
+            }
+        }
+
+        OffsetDateTime timestamp = now();
+        for (MediaFile file : files) {
+            file.setTaskExecutionId(request.getTaskExecutionId());
+            file.setUpdatedAt(timestamp);
+        }
+        fileRepository.saveAll(files);
+        return new BindTaskExecutionResponse(request.getTaskExecutionId(), files.stream().map(this::item).toList());
+    }
+
     public FileListItemResponse detail(CurrentUser user, String fileId) {
         MediaFile file = requireFile(fileId);
         if (!Objects.equals(file.getOrgId(), user.orgId())) {
@@ -344,7 +404,9 @@ public class FileService {
                 timestamp);
         file.setStatus(FileStatus.UPLOADING);
         fileRepository.save(file);
-        ensureVideo(file, VideoFileStatus.PROCESSING);
+        MediaVideoFile video = ensureVideo(file, VideoFileStatus.PROCESSING);
+        video.setStartedAt(timestamp);
+        videoRepository.save(video);
         try {
             LiveKitEgressService.EgressStartResult result = egressService.startRoomMp4(session.getRoomName(), file.getObjectKey());
             metadata.put("egressId", result.egressId());
@@ -437,6 +499,7 @@ public class FileService {
         video.setWidth(probe.width());
         video.setHeight(probe.height());
         video.setDurationSeconds((int) Math.ceil(probe.durationSeconds()));
+        alignVideoTimeRange(file, video);
         video.setHlsPlaylistObjectKey(playlistKey);
         video.setHlsSegmentCount(segmentCount);
         video.setHlsTotalSize(totalSize);
@@ -486,7 +549,11 @@ public class FileService {
         file.setUploadedAt(now());
         file.setStatus(FileStatus.PROCESSING);
         file.setUpdatedAt(now());
-        ensureVideo(file, VideoFileStatus.PROCESSING);
+        MediaVideoFile video = ensureVideo(file, VideoFileStatus.PROCESSING);
+        if (video.getEndedAt() == null) {
+            video.setEndedAt(file.getUploadedAt());
+            videoRepository.save(video);
+        }
         fileRepository.save(file);
     }
 
@@ -679,11 +746,11 @@ public class FileService {
         uploadRepository.save(upload);
     }
 
-    private void ensureVideo(MediaFile file, VideoFileStatus status) {
+    private MediaVideoFile ensureVideo(MediaFile file, VideoFileStatus status) {
         MediaVideoFile video = videoRepository.findById(file.getFileId()).orElseGet(() -> newVideo(file, status));
         video.setStatus(status);
         video.setProcessingStartedAt(video.getProcessingStartedAt() == null ? now() : video.getProcessingStartedAt());
-        videoRepository.save(video);
+        return videoRepository.save(video);
     }
 
     private MediaVideoFile newVideo(MediaFile file, VideoFileStatus status) {
@@ -719,6 +786,8 @@ public class FileService {
                 file.getContentType(),
                 file.getFileSize(),
                 video == null ? null : video.getDurationSeconds(),
+                video == null ? null : video.getStartedAt(),
+                video == null ? null : video.getEndedAt(),
                 video == null ? null : video.getWidth(),
                 video == null ? null : video.getHeight(),
                 file.getStatus().name(),
@@ -727,6 +796,48 @@ public class FileService {
                 file.getUploadedAt(),
                 file.getCreatedAt(),
                 file.getMetadataJson());
+    }
+
+    private void alignVideoTimeRange(MediaFile file, MediaVideoFile video) {
+        Integer durationSeconds = video.getDurationSeconds();
+        if (durationSeconds == null || durationSeconds <= 0) {
+            return;
+        }
+        OffsetDateTime startAt = video.getStartedAt();
+        OffsetDateTime endAt = video.getEndedAt();
+        if (startAt == null) {
+            endAt = firstNonNull(sourceFileEndAt(file.getSourceFileId()), endAt, file.getUploadedAt(), file.getCreatedAt());
+            startAt = endAt == null ? null : endAt.minusSeconds(durationSeconds);
+        } else {
+            endAt = startAt.plusSeconds(durationSeconds);
+        }
+        video.setStartedAt(startAt);
+        video.setEndedAt(endAt);
+    }
+
+    private OffsetDateTime firstNonNull(OffsetDateTime... values) {
+        for (OffsetDateTime value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private OffsetDateTime sourceFileEndAt(String sourceFileId) {
+        if (sourceFileId == null || sourceFileId.isBlank()) {
+            return null;
+        }
+        String[] parts = sourceFileId.split("/");
+        if (parts.length < 2) {
+            return null;
+        }
+        try {
+            long epochSeconds = Long.parseLong(parts[parts.length - 1]);
+            return OffsetDateTime.ofInstant(Instant.ofEpochSecond(epochSeconds), ZoneOffset.UTC);
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private String playlistAssetName(MediaFile file, MediaVideoFile video) {
@@ -859,11 +970,22 @@ public class FileService {
 
     private String liveMetadata(MediaFile file, String key) {
         try {
-            Map<String, Object> map = objectMapper.readValue(file.getMetadataJson(), new TypeReference<>() {});
+            Map<String, Object> map = metadataMap(file);
             Object value = map.get(key);
             return value == null ? "" : String.valueOf(value);
         } catch (Exception ex) {
             return "";
+        }
+    }
+
+    private Map<String, Object> metadataMap(MediaFile file) {
+        try {
+            if (file.getMetadataJson() == null || file.getMetadataJson().isBlank()) {
+                return new LinkedHashMap<>();
+            }
+            return objectMapper.readValue(file.getMetadataJson(), new TypeReference<>() {});
+        } catch (Exception ex) {
+            return new LinkedHashMap<>();
         }
     }
 
