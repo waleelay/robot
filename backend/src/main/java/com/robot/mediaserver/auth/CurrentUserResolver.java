@@ -1,5 +1,6 @@
 package com.robot.mediaserver.auth;
 
+import com.robot.mediaserver.config.MediaProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.Set;
@@ -18,6 +19,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class CurrentUserResolver {
 
+    private final MediaProperties properties;
+
+    public CurrentUserResolver(MediaProperties properties) {
+        this.properties = properties;
+    }
+
     /**
      * 从 HTTP 请求头解析当前用户。
      *
@@ -26,7 +33,7 @@ public class CurrentUserResolver {
      */
     public CurrentUser resolve(HttpServletRequest request) {
         String userId = headerOrDefault(request, "X-User-Id", "dev-user");
-        String orgId = headerOrDefault(request, "X-Org-Id", "dev-org");
+        String orgId = headerOrDefault(request, "X-Org-Id", properties.getFile().getDefaultOrgId());
         String clientId = headerOrDefault(request, "X-Client-Id", "web");
         String rolesHeader = headerOrDefault(request, "X-Roles", "MEDIA_VIEWER,MEDIA_OPERATOR");
         Set<String> roles = Arrays.stream(rolesHeader.split(","))

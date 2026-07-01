@@ -191,6 +191,16 @@ export const constantRoutes = [
             // ]
           },
           {
+            path: '/bi/patrol/business2',
+            name: 'biPatrolBusiness2',
+            component: () => import('@/views/bi/patrol/business2/Index.vue'),
+            meta: {
+              title: '业务管理2',
+              icon: 'el-icon-data-board',
+              requiresAuth: true
+            }
+          },
+          {
             path: '/bi/patrol/statistics',
             name: 'biPatrolStatistics',
             component: () => import('./../views/bi/patrol/statistics‌/Index.vue'),

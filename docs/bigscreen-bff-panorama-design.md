@@ -560,7 +560,7 @@ GET /api/bigscreen/panorama/tasks
 ```json
 {
   "serverTime": "2026-06-12 11:31:02",
-  "total": 4,
+  "total": 5,
   "items": [
     {
       "taskId": "task-001",
@@ -588,6 +588,24 @@ GET /api/bigscreen/panorama/tasks
           "name": "G1四足机器人",
           "type": "ROBOT_DOG",
           "status": "offline"
+        }
+      ]
+    },
+    {
+      "taskId": "task-005",
+      "name": "东侧出入口值守巡检",
+      "status": "pending",
+      "statusName": "待执行",
+      "startTime": "2026-06-12 18:00:00",
+      "endTime": "2026-06-12 19:00:00",
+      "timeRange": "18:00-19:00",
+      "currentLocation": "A区东侧出入口",
+      "equipmentList": [
+        {
+          "robotId": "robot-001",
+          "name": "R1轮式机器人",
+          "type": "WHEELED_ROBOT",
+          "status": "online"
         }
       ]
     }

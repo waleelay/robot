@@ -250,7 +250,16 @@ public class PanoramaMockService {
                         "2026-06-12 16:00:00",
                         "2026-06-12 17:30:00",
                         "A区北侧消防通道",
-                        List.of(equipment("robot-002", "G1四足机器人", "ROBOT_DOG", "offline"))));
+                        List.of(equipment("robot-002", "G1四足机器人", "ROBOT_DOG", "offline"))),
+                task(
+                        "task-005",
+                        "东侧出入口值守巡检",
+                        "pending",
+                        "待执行",
+                        "2026-06-12 18:00:00",
+                        "2026-06-12 19:00:00",
+                        "A区东侧出入口",
+                        List.of(equipment("robot-001", "R1轮式机器人", "WHEELED_ROBOT", "online"))));
     }
 
     private Map<String, Object> alarmGroups() {

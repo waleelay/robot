@@ -27,6 +27,7 @@ import java.util.Optional;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.LinkedMultiValueMap;
@@ -217,10 +218,10 @@ public class ControlMediaServiceClient {
         return post("/internal/media/files/{fileId}/download-url", null, user, FileDownloadUrlResponse.class, fileId);
     }
 
-    public byte[] fileContent(String fileId, CurrentUser user) {
+    public ResponseEntity<byte[]> fileContent(String fileId, CurrentUser user) {
         return withHeaders(restClient.get().uri("/internal/media/files/{fileId}/content", fileId), user)
                 .retrieve()
-                .body(byte[].class);
+                .toEntity(byte[].class);
     }
 
     public FilePlayUrlResponse filePlayUrl(String fileId, CurrentUser user) {
