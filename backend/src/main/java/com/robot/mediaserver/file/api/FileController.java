@@ -2,8 +2,6 @@ package com.robot.mediaserver.file.api;
 
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.auth.CurrentUserResolver;
-import com.robot.mediaserver.file.dto.BindTaskExecutionRequest;
-import com.robot.mediaserver.file.dto.BindTaskExecutionResponse;
 import com.robot.mediaserver.file.dto.CreateMultipartFileUploadRequest;
 import com.robot.mediaserver.file.dto.FileDownloadUrlResponse;
 import com.robot.mediaserver.file.dto.FileListItemResponse;
@@ -18,6 +16,7 @@ import com.robot.mediaserver.file.model.FileType;
 import com.robot.mediaserver.file.service.FileService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -108,10 +107,11 @@ public class FileController {
     }
 
     @PostMapping("/task-execution-binding")
-    public BindTaskExecutionResponse bindTaskExecution(
-            @Valid @RequestBody BindTaskExecutionRequest body,
+    public ResponseEntity<Void> bindTaskExecution(
+            @RequestBody Map<String, Object> body,
             HttpServletRequest request) {
-        return service.bindTaskExecution(currentUserResolver.resolve(request), body);
+        service.bindTaskExecution(currentUserResolver.resolve(request), body);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{fileId}")

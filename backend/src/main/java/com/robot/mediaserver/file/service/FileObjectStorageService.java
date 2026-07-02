@@ -19,11 +19,14 @@ import io.minio.http.Method;
 import io.minio.messages.Item;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.net.URLEncoder;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Service;
@@ -186,7 +189,7 @@ public class FileObjectStorageService {
         }
     }
 
-    public String presignDownload(String objectKey, int ttlSeconds) {
+    public String presignDownload(String objectKey, int ttlSeconds, String fileName, String contentType) {
         requireEnabled();
         try {
             return client().getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
@@ -194,10 +197,23 @@ public class FileObjectStorageService {
                     .object(objectKey)
                     .method(Method.GET)
                     .expiry(ttlSeconds, TimeUnit.SECONDS)
+                    .extraQueryParams(Map.of(
+                            "response-content-disposition", contentDisposition(fileName),
+                            "response-content-type", contentType == null || contentType.isBlank()
+                                    ? "application/octet-stream"
+                                    : contentType))
                     .build());
         } catch (Exception ex) {
             throw new IllegalStateException("生成文件下载地址失败：" + objectKey, ex);
         }
+    }
+
+    private String contentDisposition(String fileName) {
+        String fallback = safeFileName(fileName == null || fileName.isBlank() ? "download" : fileName)
+                .replace("\"", "");
+        String encoded = URLEncoder.encode(fileName == null || fileName.isBlank() ? fallback : fileName, StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        return "attachment; filename=\"" + fallback + "\"; filename*=UTF-8''" + encoded;
     }
 
     public void deletePrefix(String prefix) {

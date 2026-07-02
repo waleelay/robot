@@ -4,8 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.MediaProperties;
-import com.robot.mediaserver.file.dto.BindTaskExecutionRequest;
-import com.robot.mediaserver.file.dto.BindTaskExecutionResponse;
 import com.robot.mediaserver.file.dto.CreateMultipartFileUploadRequest;
 import com.robot.mediaserver.file.dto.FileDownloadUrlResponse;
 import com.robot.mediaserver.file.dto.FileListItemResponse;
@@ -260,15 +258,20 @@ public class FileService {
     }
 
     @Transactional
-    public BindTaskExecutionResponse bindTaskExecution(CurrentUser user, BindTaskExecutionRequest request) {
-        LinkedHashSet<String> fileIds = new LinkedHashSet<>();
-        if (request.getVideoFileIds() != null) {
-            request.getVideoFileIds().stream()
-                    .filter(id -> id != null && !id.isBlank())
-                    .forEach(fileIds::add);
+    public void bindTaskExecution(CurrentUser user, Map<String, Object> request) {
+        String taskExecutionId = stringValue(request.get("taskExecutionId"));
+        if (taskExecutionId == null || taskExecutionId.isBlank()) {
+            throw error(HttpStatus.BAD_REQUEST, "TASK_EXECUTION_ID_REQUIRED", "任务执行记录 ID 不能为空");
         }
-        if (request.getPointFileId() != null && !request.getPointFileId().isBlank()) {
-            fileIds.add(request.getPointFileId());
+        List<String> videoFileIds = stringList(request.get("videoFileIds"));
+        String pointFileId = stringValue(request.get("pointFileId"));
+
+        LinkedHashSet<String> fileIds = new LinkedHashSet<>();
+        videoFileIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .forEach(fileIds::add);
+        if (pointFileId != null && !pointFileId.isBlank()) {
+            fileIds.add(pointFileId);
         }
         if (fileIds.isEmpty()) {
             throw error(HttpStatus.BAD_REQUEST, "FILE_IDS_EMPTY", "文件 ID 不能为空");
@@ -283,7 +286,7 @@ public class FileService {
             files.add(file);
         }
 
-        for (String videoFileId : request.getVideoFileIds()) {
+        for (String videoFileId : videoFileIds) {
             if (videoFileId == null || videoFileId.isBlank()) {
                 continue;
             }
@@ -296,9 +299,9 @@ public class FileService {
             }
         }
 
-        if (request.getPointFileId() != null && !request.getPointFileId().isBlank()) {
+        if (pointFileId != null && !pointFileId.isBlank()) {
             MediaFile pointFile = files.stream()
-                    .filter(file -> Objects.equals(file.getFileId(), request.getPointFileId()))
+                    .filter(file -> Objects.equals(file.getFileId(), pointFileId))
                     .findFirst()
                     .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "FILE_NOT_FOUND", "未找到文件"));
             if (pointFile.getFileType() == FileType.VIDEO) {
@@ -308,11 +311,10 @@ public class FileService {
 
         OffsetDateTime timestamp = now();
         for (MediaFile file : files) {
-            file.setTaskExecutionId(request.getTaskExecutionId());
+            file.setTaskExecutionId(taskExecutionId);
             file.setUpdatedAt(timestamp);
         }
         fileRepository.saveAll(files);
-        return new BindTaskExecutionResponse(request.getTaskExecutionId(), files.stream().map(this::item).toList());
     }
 
     public FileListItemResponse detail(CurrentUser user, String fileId) {
@@ -328,7 +330,11 @@ public class FileService {
         OffsetDateTime expiresAt = now().plusSeconds(properties.getFile().getPlayUrlTtlSeconds());
         return new FileDownloadUrlResponse(
                 fileId,
-                storage.presignDownload(file.getObjectKey(), properties.getFile().getPlayUrlTtlSeconds()),
+                storage.presignDownload(
+                        file.getObjectKey(),
+                        properties.getFile().getPlayUrlTtlSeconds(),
+                        file.getFileName(),
+                        file.getContentType()),
                 expiresAt);
     }
 
@@ -938,6 +944,24 @@ public class FileService {
 
     private String firstNonBlank(String first, String second) {
         return first != null && !first.isBlank() ? first : blankToNull(second);
+    }
+
+    private String stringValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value);
+        return text.isBlank() ? null : text;
+    }
+
+    private List<String> stringList(Object value) {
+        if (!(value instanceof List<?> values)) {
+            return List.of();
+        }
+        return values.stream()
+                .map(this::stringValue)
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     private String blankToNull(String value) {

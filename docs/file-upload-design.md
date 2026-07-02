@@ -527,20 +527,12 @@ POST /api/media/files/task-execution-binding
 不移动对象存储文件
 不重新上传
 不重新生成 HLS
-videoFileIds 必须对应 VIDEO 文件
-pointFileId 不能是 VIDEO 文件
 ```
 
-响应：
+成功响应：
 
-```json
-{
-  "taskExecutionId": "task_exec_001",
-  "files": [
-    { "fileId": "file_video_001", "fileType": "VIDEO", "taskExecutionId": "task_exec_001" },
-    { "fileId": "file_point_001", "fileType": "MAP", "taskExecutionId": "task_exec_001" }
-  ]
-}
+```http
+204 No Content
 ```
 
 ### 6.7 查询文件

@@ -74,6 +74,96 @@ dd if=video-001.mp4 bs=16777216 skip=0 count=1 2>/dev/null \
   | curl -X PUT --data-binary @- "http://minio-presigned-url"
 ```
 
+Java 示例：
+
+```java
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+public class MultipartPartUploader {
+    public void uploadPart(Path file, int partNumber, long partSize, String uploadUrl)
+            throws IOException {
+        long start = (partNumber - 1L) * partSize;
+        long fileSize = Files.size(file);
+        long size = Math.min(partSize, fileSize - start);
+
+        HttpURLConnection conn = (HttpURLConnection) new URL(uploadUrl).openConnection();
+        conn.setRequestMethod("PUT");
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/octet-stream");
+        conn.setFixedLengthStreamingMode(size);
+
+        try (InputStream input = partInputStream(file, start, size);
+             OutputStream output = conn.getOutputStream()) {
+            input.transferTo(output);
+        }
+
+        int status = conn.getResponseCode();
+        if (status < 200 || status >= 300) {
+            throw new IllegalStateException("part upload failed, partNumber="
+                    + partNumber + ", status=" + status);
+        }
+        // MinIO/S3 multipart PUT 通常无 JSON 响应体，可按需记录 ETag。
+        String etag = conn.getHeaderField("ETag");
+        conn.disconnect();
+    }
+
+    private static InputStream partInputStream(Path file, long start, long size) {
+        try {
+            InputStream input = Files.newInputStream(file);
+            input.skipNBytes(start);
+            return new BoundedInputStream(input, size);
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    private static class BoundedInputStream extends InputStream {
+        private final InputStream delegate;
+        private long remaining;
+
+        BoundedInputStream(InputStream delegate, long remaining) {
+            this.delegate = delegate;
+            this.remaining = remaining;
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (remaining <= 0) return -1;
+            int value = delegate.read();
+            if (value != -1) remaining--;
+            return value;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (remaining <= 0) return -1;
+            int read = delegate.read(b, off, (int) Math.min(len, remaining));
+            if (read > 0) remaining -= read;
+            return read;
+        }
+
+        @Override
+        public void close() throws IOException {
+            delegate.close();
+        }
+    }
+}
+```
+
+PUT 上传响应判断：
+
+```text
+成功：HTTP 200 / 204，通常没有 JSON 响应体，可读取响应头 ETag 作为日志。
+失败：HTTP 4xx / 5xx，当前 part 视为失败；重新调用 part-urls 获取新的 uploadUrl 后重试。
+注意：不要把 uploadUrl 当成媒体服务接口，它是对象存储地址。
+```
+
 没有可用 URL 或 URL 过期时重新取：
 
 ```http
@@ -152,6 +242,8 @@ POST /api/media/files/task-execution-binding
 Content-Type: application/json
 ```
 
+请求示例：
+
 ```json
 {
   "taskExecutionId": "task_exec_001",
@@ -160,17 +252,29 @@ Content-Type: application/json
 }
 ```
 
+字段说明：
+
+```text
+taskExecutionId：必填，管理服务的任务执行记录 ID。
+videoFileIds：视频文件 ID 数组，可传多个。
+pointFileId：点位文件 ID，通常是 MAP / CONFIG / OTHER。
+```
+
 媒体服务只更新这些文件的 `media_file.task_execution_id`，不移动 MinIO 文件，不重新上传，不重新切片。
 
-返回：
+成功响应：
+
+```http
+204 No Content
+```
+
+异常响应示例：
 
 ```json
 {
-  "taskExecutionId": "task_exec_001",
-  "files": [
-    { "fileId": "file_video_001", "fileType": "VIDEO", "taskExecutionId": "task_exec_001" },
-    { "fileId": "file_point_001", "fileType": "MAP", "taskExecutionId": "task_exec_001" }
-  ]
+  "timestamp": "2026-07-02 10:10:00",
+  "code": "FILE_NOT_FOUND",
+  "message": "未找到文件"
 }
 ```
 
@@ -180,7 +284,80 @@ Content-Type: application/json
 GET /api/media/files?taskExecutionId=task_exec_001&status=READY&page=0&size=100
 ```
 
-返回中按 `fileType` 区分：
+请求参数：
+
+```text
+taskExecutionId：必填，任务执行记录 ID。
+status：建议传 READY，只取可展示/可下载/可播放文件。
+fileType：可选。VIDEO 只查视频，MAP/CONFIG/OTHER 可查点位或其他任务产物。
+page：页码，从 0 开始。
+size：每页数量，最大 100。
+```
+
+响应示例：
+
+```json
+{
+  "items": [
+    {
+      "fileId": "file_video_001",
+      "robotId": "robot-001",
+      "deviceId": "camera01",
+      "taskExecutionId": "task_exec_001",
+      "fileType": "VIDEO",
+      "fileName": "video-001.mp4",
+      "contentType": "video/mp4",
+      "fileSize": 1073741824,
+      "durationSeconds": 1800,
+      "width": 1920,
+      "height": 1080,
+      "status": "READY",
+      "videoStatus": "READY",
+      "errorCode": null,
+      "uploadedAt": "2026-07-02T10:00:00Z",
+      "createdAt": "2026-07-02T09:30:00Z",
+      "metadata": "{\"name\":\"巡逻视频1\"}"
+    },
+    {
+      "fileId": "file_point_001",
+      "robotId": "robot-001",
+      "deviceId": "camera01",
+      "taskExecutionId": "task_exec_001",
+      "fileType": "MAP",
+      "fileName": "points.json",
+      "contentType": "application/json",
+      "fileSize": 4096,
+      "durationSeconds": null,
+      "width": null,
+      "height": null,
+      "status": "READY",
+      "videoStatus": null,
+      "errorCode": null,
+      "uploadedAt": "2026-07-02T10:01:00Z",
+      "createdAt": "2026-07-02T10:01:00Z",
+      "metadata": "{\"name\":\"点位文件\"}"
+    }
+  ],
+  "page": 0,
+  "size": 100,
+  "total": 2
+}
+```
+
+响应字段：
+
+```text
+items：文件列表。
+fileId：媒体文件 ID，后续播放、下载、读取内容都用它。
+fileType：VIDEO 表示视频；MAP / CONFIG / OTHER 可作为点位文件或其他任务产物。
+status：READY 才能展示；PROCESSING 表示视频仍在 HLS 处理中；FAILED 表示处理失败。
+videoStatus：仅视频有值，READY 后可调用 play-url。
+durationSeconds / width / height：视频元数据，非视频为空。
+metadata：上传时透传的业务 JSON 字符串。
+page / size / total：分页信息。
+```
+
+管理服务返回给前端时按 `fileType` 区分：
 
 ```text
 VIDEO：视频文件
