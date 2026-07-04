@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: robot-control-service
+
+server:
+  port: ${CONTROL_SERVER_PORT:${SERVER_PORT:8082}}
+
+control:
+  media-service-base-url: ${MEDIA_SERVICE_BASE_URL:http://localhost:8088}
+  auth:
+    default-org-id: ${CONTROL_DEFAULT_ORG_ID:org001}
+  mqtt:
+    broker-url: ${MQTT_BROKER_URL:tcp://192.168.124.44:1883}
+    username: ${MQTT_USERNAME:}
+    password: ${MQTT_PASSWORD:}
+    client-id: ${MQTT_CLIENT_ID:robot-control-service}
+    enabled: ${MQTT_ENABLED:true}
+  session:
+    interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}
+    idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:600}
+    viewer-heartbeat-timeout-seconds: ${VIEWER_HEARTBEAT_TIMEOUT_SECONDS:15}
