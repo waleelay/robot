@@ -9,7 +9,11 @@
         </div>
         <div class="flx-center icons h100">
           <div class="icon ml20" @click="toggleFullscreen">
-            <svg-icon :icon-class="isFullscreen ? 'fullscreen1' : 'fullscreen'" style="color: #AED1FF;"></svg-icon>
+            <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen'" style="color: #AED1FF;"></svg-icon>
+          </div>
+          <div class="icon ml20">
+            <!-- <svg-icon icon-class="home" style="color: #8BAEDC;"></svg-icon> -->
+             <PageChangeDropdown />
           </div>
           <div class="icon ml20" @click="logout">
             <svg-icon icon-class="clock" style="color: #AED1FF;"></svg-icon>
@@ -28,8 +32,12 @@
 </template>
 
 <script>
+import PageChangeDropdown from './PageChangeDropdown.vue'
 export default {
   name: 'Header',
+  components: {
+    PageChangeDropdown
+  },
   data() {
     return {
       currentDate: '',

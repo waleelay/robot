@@ -66,13 +66,13 @@
     <div class="ml54" :class="{ 'flx-align-center': !vehicleLightDevice && !warningLightDevices?.length }">
       <div class="mode d-flex" :class="{ 'flex-column': !vehicleLightDevice && !warningLightDevices?.length, 'flx-align-center': vehicleLightDevice || warningLightDevices?.length }">
         <span>控制模式：</span>
-        <el-dropdown trigger="click" :class="{ 'mt10': !vehicleLightDevice && !warningLightDevices?.length, 'ml10': vehicleLightDevice || warningLightDevices?.length }">
+        <el-dropdown trigger="click" :class="{ 'mt10': !vehicleLightDevice && !warningLightDevices?.length, 'ml10': vehicleLightDevice || warningLightDevices?.length }" @command="handleModeChange">
           <div class="mode-status success flex-column">
             <span>{{ selectedRobot?.mode || 'MANUAL'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
           </div>
           <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
-            <el-dropdown-item>自动巡航模式</el-dropdown-item>
-            <el-dropdown-item>手动控制模式</el-dropdown-item>
+            <el-dropdown-item command="NAVIGATION">自动巡航模式</el-dropdown-item>
+            <el-dropdown-item command="MANUAL">手动控制模式</el-dropdown-item>
           </el-dropdown-menu>
         </el-dropdown>
       </div>
@@ -150,6 +150,7 @@
         </div>
       </div>
     </div>
+    <ControlModeWarning ref="controlModeWarningRef" />
   </div>
 </template>
 
@@ -161,7 +162,7 @@ export default {
   name: 'CarSelfControl',
   mixins: [yuntai],
   components: {
-    Speed,
+    Speed
   },
   data() {
     return {
@@ -223,6 +224,9 @@ export default {
     handleClickMode(e, index, item) {
       if (e.target.className.includes('el-slider')) return
       this.setVehicleLightMode(this.tabIndex === 0 ? 'front' : 'rear', index === 0 ? 'OFF' : item.key)
+    },
+    async handleModeChange(controlMode) {
+      this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode })
     }
   }
 }

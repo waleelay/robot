@@ -21,7 +21,7 @@
             </span>
           </div> 
           <div class="img wp412 hp232 mt10" id="slamImg" style="background: #ff0;">
-            <SlamM :map="slamInfo.map" :points="slamInfo.points" :pathPointIds="slamInfo.pathPointIds" :show-labels="true" />
+            <SlamM mapId="7" :taskId="currenRobot?.runningTaskId || ''" :show-labels="true" />
           </div>
         </div>
       </div>
@@ -35,7 +35,7 @@ import mapInfo from './../../../patrol/slam/mapInfo.json'
 import pathInfo from './../../../patrol/slam/pathInfo.json'
 import mapPoints from './../../../patrol/slam/map-points.json'
 import { toggleFullscreen, getFullscreenStatus } from '../../../../../utils/fullscreen.js';
-import { mapState } from 'vuex';
+import { mapActions, mapState } from 'vuex';
 export default {
   name: 'Slam',
   components: {SlamM},
@@ -44,32 +44,59 @@ export default {
       visible: false,
       fullscreen: getFullscreenStatus(),
       clonedContainer: null,
-      slamInfo: {
-        map: mapInfo.data,
-        points: mapPoints.data,
-        pathPointIds: this.detailPointId(),
-        showLabels: true
-      }
+      slamInfo: {}
     }
   },
   computed: {
     ...mapState('websocketRobot', ['selectedRobotId']),
-    ...mapState('websocketExtraData', ['robotBaseInfo']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'slamMapData', 'taskPathPoints']),
     currenRobot() {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
     }
   },
+  mounted() { 
+    this.getSlamMapPointsInfo()
+  },
   methods: {
+    ...mapActions('websocketExtraData', ['setSlamMapData', 'setTaskPathPoints']),
     toggleFullscreen,
-    detailPointId() {
+    getSlamMapPointsInfo() {
+      const obj = {}
+      const arr1 = mapInfo.data ? [mapInfo.data] : []
+      arr1.map((item) => {
+        // 获取地图点位信息
+        const points = mapPoints.data || []
+        obj[item.id] = { ...item, mapPoints: points }
+      })
+
+      const mapId = pathInfo.data?.path?.mapId || ''
       const record = pathInfo.data
-      return [...(record?.points || [])].sort((a, b) => a.pointOrder - b.pointOrder).map((item) => item.mapPointId)
+      const pathPointIds = [...(record?.points || [])].map((item) => item.mapPointId).sort((a, b) => a.pointOrder - b.pointOrder)
+      const pathPonitsInfo = (obj?.[mapId]?.mapPoints || []).filter((item) => pathPointIds.includes(item.id)).sort((a, b) => a.pointOrder - b.pointOrder)
+
+      this.setSlamMapData(obj)
+      const taskId = 'task-001'
+      this.setTaskPathPoints({ taskId, data: { taskId, pathPointIds, pathPonitsInfo } })
+      
     },
     show(visible) {
       this.fullscreen = false;
       this.visible = visible;
       // 清理克隆元素
       this.removeClonedContainer();
+      // const taskId = this.currenRobot?.runningTaskId || ''
+      // if (visible && taskId) {
+      //   const mapId = '7'
+      //   this.slamInfo = {
+      //     map: this.slamMapData?.[mapId] || {},
+      //     points: this.slamMapData?.[mapId]?.mapPoints || [],
+      //     // pathPointIds: this.detailPointId(),
+      //     pathPointIdsInfo: this.taskPathPoints?.[taskId]?.pathPoints || [],
+      //     showLabels: true
+      //   }
+      // } else {
+      //   this.slamInfo = {}
+      // }
     },
     // zoomChange() {
     //   this.fullscreen = !this.fullscreen

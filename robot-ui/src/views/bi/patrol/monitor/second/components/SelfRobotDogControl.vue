@@ -13,9 +13,18 @@
       <div class="custom-tab-button flex">
         <div v-for="item in tabList" :key="item.value" class="tab-button-item" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value">{{ item.label }}</div>
       </div>
-      <div class="status success flex-column mt12" style="color: #fff;">
+      <div class="status success flex-column mt12 mode" style="color: #fff;">
         <span>当前状态：</span>
-        <span class="mt10">{{ selectedRobot?.mode || 'MANUAL'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
+        <el-dropdown class="mt10" trigger="click" @command="handleModeChange">
+          <div class="mode-status success flex-column">
+            <span>{{ selectedRobot?.controlMode || 'MANUAL'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
+          </div>
+          <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
+            <el-dropdown-item command="NAVIGATION">导航模式</el-dropdown-item>
+            <el-dropdown-item command="MANUAL">手动模式</el-dropdown-item>
+          </el-dropdown-menu>
+        </el-dropdown>
+        
       </div>
     </div>
     <div class="flx-center ml54">
@@ -46,9 +55,9 @@
             :key="item.key"
             type="primary"
             class="wp80 hp30 mt10 ml10"
-            @mousedown="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
-            @mouseup="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
-            @mouseleave="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
+            @mousedown.native="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
+            @mouseup.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
+            @mouseleave.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
             @touchstart.prevent="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
             @touchend.prevent="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
             @click="controlRobot(item.key)"
@@ -71,6 +80,7 @@
         </template>
       </div>
     </div>
+    <ControlModeWarning ref="controlModeWarningRef" />
     <Speed @changeSpeed="changeSpeed" ref="speedRef" />
   </div>
 </template>
@@ -130,7 +140,10 @@ export default {
     changeSpeed() {
       this.$refs.speedRef.show();
     },
-    changeStep(e) {}
+    changeStep(e) {},
+    async handleModeChange(controlMode) {
+      this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode })
+    }
   }
 }
 </script>
@@ -155,6 +168,26 @@ export default {
     border-radius: 2px;
     border: 1px solid var(---, #00AC3A);
     background: rgba(17, 108, 31, 0.50);
+  }
+}
+.mode {
+  color: #FFF;
+  font-family: "Microsoft YaHei";
+  font-size: 12px;
+  line-height: 16px;
+  .mode-status {
+    cursor: default;
+    span {
+      padding: 3px 4px;
+      color: #00AC3A;
+      font-family: "Alibaba PuHuiTi";
+      font-size: 12px;
+      line-height: 12px; /* 100% */
+      letter-spacing: 0.857px;
+      border-radius: 2px;
+      border: 1px solid var(---, #00AC3A);
+      background: rgba(17, 108, 31, 0.50);
+    }
   }
 }
 

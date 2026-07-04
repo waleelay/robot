@@ -7,8 +7,8 @@
     <div class="box">
       <div class="top m4 flx-justify-between">
         <div class="flx-align-center">
-          <div class="title ml10">监区巡逻机器狗-01</div>
-          <div class="status success ml10">空闲中</div>
+          <div class="title ml10">{{ baseInfo?.name || '-' }}</div>
+          <div class="status ml10" :class="baseInfo?.statusClass || ''">{{ baseInfo?.customStatusName || baseInfo?.status || '-' }}</div>
         </div>
         <div class="flx-center">
           <div class="setting flx-center curp" @click="goControl">
@@ -116,6 +116,9 @@ export default {
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
+    baseInfo() {
+      return this.robotBaseInfo?.[this.selectedRobotId] || {}
+    },
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot']
     },
@@ -213,7 +216,7 @@ export default {
 <style lang="scss" scoped>
 .machine-container.robot-control-container {
   position: fixed;
-  bottom: 30px;
+  bottom: 50px;
   margin: auto;
   opacity: 0;
   visibility: hidden;

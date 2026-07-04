@@ -37,7 +37,7 @@
                 <span class="dot" :class="{ error: item.status !== 0 }"></span>
                 <span class="ml10">{{ item.name }}</span>
               </div>
-              <span class="status p4 wp41" :class="{ error: item.status !== 'online' }">{{ item.status }}</span>
+              <!-- <span class="status p4 wp41" :class="{ error: item.status !== 'online' }">{{ item.status }}</span> -->
             </div>
           </div>
         </div>
@@ -133,6 +133,8 @@ export default {
         if (b.groupType === 'body') return 1;
         return 0;
       })
+      console.log(333, this.robots, cameras);
+      
       await this.$emit('updateVideo', cameras)
     }
   },

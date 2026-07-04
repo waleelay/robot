@@ -19,7 +19,7 @@
     title="异常报告"
   >
     <template slot="footer"></template>
-    <div class="flex mb20">
+    <div class="flex mb50">
       <div class="custom-modal-container">
         <div class="decoration wp167 hp5">
           <svg-icon icon-class="decoration" class="w100 h100"></svg-icon>

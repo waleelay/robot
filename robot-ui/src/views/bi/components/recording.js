@@ -1,4 +1,4 @@
-import { getRecordingPlayUrl, getRecordings } from "../../../api/media"
+import { getFilePlayUrl, getFiles } from "../../../api/media"
 import { errorMessage } from "../../../utils"
 
 export default {
@@ -17,24 +17,21 @@ export default {
       this.recordingsLoading = true
       try {
         const params = {
-          // robotId: 'robot-001',
+          robotId: 'robot-001',
           status: 'READY',
+          fileType: 'VIDEO',
           page: this.recordInfo.page,
-          size: this.recordInfo.pageSize
+          size: this.recordInfo.size,
         }
-        // 手动录像只拉 LIVEKIT_EGRESS 类型的录像
-        if (this.recordingTab === 'manual') {
-          params.sourceType = 'LIVEKIT_EGRESS'
-        }
-        const response = await getRecordings(params)
+        const response = await getFiles(params)
         const items = response.items || []
         this.recordInfo.total = response.total || 0
         if (isUpdate) {
           this.updateRecordings(items)
         } else {
           this.recordings = this.recordingTab === 'patrol'
-            ? items.filter(item => item.sourceType !== 'LIVEKIT_EGRESS')
-            : items
+            ? items.filter(item => item.taskExecutionId)
+            : items.filter(item => !item.taskExecutionId)
         }
       } catch (error) {
         this.$message.error(errorMessage(error))
@@ -45,7 +42,7 @@ export default {
     async getPlayers() {
       await this.loadRecordings()
       for (const recording of this.recordings) {
-        this.recordingData[recording.recordingId] = {
+        this.recordingData[recording.fileId] = {
           ...recording,
           recordedHls: null,
           player: null,
@@ -57,15 +54,15 @@ export default {
     async playRecording(recording) {
       if (recording.status !== 'READY') return
       try {
-        const playback = await getRecordingPlayUrl(recording.recordingId)
-        const ref = this.$refs[`${this.refPrefix}_${recording.recordingId}`]
+        const playback = await getFilePlayUrl(recording.fileId)
+        const ref = this.$refs[`${this.refPrefix}_${recording.fileId}`]
         let player = Array.isArray(ref) ? ref[0] : ref
         player.loop = false
         let recordedHls = null
-        this.destroyRecordedHls(recording.recordingId)
+        this.destroyRecordedHls(recording.fileId)
         this.selectedRecording = recording
         if (player.canPlayType('application/vnd.apple.mpegurl')) {
-          player.src = 'https://192.168.124.77:4443' + playback.playUrl
+          player.src = 'https://192.168.124.77:24443' + playback.playUrl
         } else if (Hls.isSupported()) {
           recordedHls = new Hls()
           recordedHls.loadSource(playback.playUrl)
@@ -73,15 +70,15 @@ export default {
         } else {
           throw new Error('当前浏览器不支持 HLS 播放')
         }
-        this.recordingData[recording.recordingId].player = player
-        this.recordingData[recording.recordingId].recordedHls = recordedHls
+        this.recordingData[recording.fileId].player = player
+        this.recordingData[recording.fileId].recordedHls = recordedHls
         // await player.play().catch(() => {})
       } catch (error) {
         this.$message.error(errorMessage(error))
       }
     },
-    destroyRecordedHls(recordingId) {
-      const { recordedHls, player } = this.recordingData[recordingId]
+    destroyRecordedHls(fileId) {
+      const { recordedHls, player } = this.recordingData[fileId]
       if (recordedHls) {
         recordedHls.destroy()
         recordedHls = null
@@ -91,6 +88,20 @@ export default {
         player.removeAttribute('src')
         player.load()
       }
+    },
+    playPause(fileId) {
+      console.log(11);
+      const { player } = this.recordingData[fileId]
+      console.log(22);
+      
+      if (player.paused) {
+        player.play()
+      } else {
+        player.pause()
+      }
+      console.log(333, player.paused);
+      this.recordingData = Object.assign({}, this.recordingData, {[fileId]: { ...this.recordingData[fileId], player}})
+      
     },
     getTotalTime(startTime, endTime) {
       // return this.timeToSeconds(endTime) - this.timeToSeconds(startTime)

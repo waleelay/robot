@@ -1,9 +1,29 @@
 <template>
   <el-dialog
+    v-if="warningVisible"
+    class="execute-dialog execute-dialog1 flx-align-center"
+    :width="warningVisible ? '276px' : '0'"
+    :height="warningVisible ? '136px' : '0'"
+    :visible.sync="warningVisible"
+    :modal-append-to-body="false"
+    :close-on-click-modal="false"
+    :close-on-press-escape="false"
+    append-to-body
+    :show-close="false"
+    title=""
+  >
+    <template slot="title"></template>
+    <div class="flx-center wp274 hp136 custom-warning">
+      <svg-icon icon-class="warning" style="font-size: 76px; color: #FFDD00"></svg-icon>
+    </div>
+    <template slot="footer"></template>
+  </el-dialog>
+  <el-dialog
+    v-else
     class="custom-dialog__wrapper robot-dialog flx-align-center"
     v-dialogDrag
-    width="1094px"
-    height="632px"
+    :width="dialogVisible ? '1094px' : '0'"
+    :height="dialogVisible ? '632px' : '0'"
     :visible.sync="dialogVisible"
     :modal-append-to-body="false"
     :close-on-click-modal="false"
@@ -12,18 +32,22 @@
     title="异常报告"
   >
     <template slot="footer"></template>
-    <div class="custom-modal-container warning-batch-container error">
+    <div class="custom-modal-container warning-batch-container error" :class="{ 'error-light': show }">
       <div class="decoration wp167 hp5">
         <svg-icon icon-class="decoration" class="w100 h100"></svg-icon>
       </div>
       <div class="box" style="width: 1096px">
-        <div class="top m4 flx-justify-between">
+        <!-- <div class="line-up"></div>
+        <div class="line-right"></div>
+        <div class="line-down"></div>
+        <div class="line-left"></div> -->
+        <div class="top m4 flx-justify-between" style="position: relative; z-index: 2">
           <div class="title ml10">告警信息</div>
           <div class="close mr10" @click="details = {}">
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>
-        <div class="info-content p20 flex">
+        <div class="info-content p20 flex" style="position: relative; z-index: 2">
           <div class="flex1">
             <div class="tuxiang">
               <div class="image-box">
@@ -53,8 +77,9 @@
                 </div>
                 <div class="list-box mt10">
                   <!--  border: 0.5px solid #1665A2; background: #001D46; -->
-                  <div class="mt10" style="width: 640px; height: 355px;">
-                    <img src="../../../../../assets/images/new-bi/test.png" class="w100 h100" alt="">
+                  <div class="mt10 flx-center" style="width: 640px; height: 355px;">
+                    <img v-if="details?.title?.includes('火灾')" src="../../../../../assets/images/new-bi/test.png" class="w100" style="height: auto; max-height: 100%;" alt="">
+                    <img v-else src="../../../../../assets/images/new-bi/warning1.png" class="w100" style="height: auto; max-height: 100%;" alt="">
                     <!-- <el-carousel trigger="click" :autoplay="false" height="100%" ref="carouselRef" @change="handleChangeCarousel">
                       <el-carousel-item v-for="item in options" :key="item.key" :name="item.key">
                         <div v-if="item.url" class="img">
@@ -118,26 +143,26 @@
                 <div class="operation mt20">
                   <div class="flx-justify-between" @click="execute(0)">
                     <div class="flx-justify-center">
-                      <img src="@/assets/images/bi/new/file.svg" alt="">
+                      <img src="@/assets/images/new-bi/file.svg" alt="">
                       <!-- <div class="text ml10">预案处置</div> -->
                       <div class="text ml10">立即处置</div>
                     </div>
-                    <img src="@/assets/images/bi/new/right.svg" alt="" style="font-size: 14px;">
+                    <img src="@/assets/images/new-bi/right.svg" alt="" style="font-size: 14px;">
                   </div>
                   <div class="flx-justify-between success mt15" @click="execute(1)">
                     <div class="flx-justify-center">
-                      <img src="@/assets/images/bi/new/file.svg" alt="">
+                      <img src="@/assets/images/new-bi/file.svg" alt="">
                       <!-- <div class="text ml10">确认处置</div> -->
                       <div class="text ml10">稍后处置</div>
                     </div>
-                    <img src="@/assets/images/bi/new/right.svg" alt="" style="font-size: 14px;">
+                    <img src="@/assets/images/new-bi/right.svg" alt="" style="font-size: 14px;">
                   </div>
                   <div class="flx-justify-between danger mt15" @click="execute(2)">
                     <div class="flx-justify-center">
-                      <img src="@/assets/images/bi/new/file.svg" alt="">
+                      <img src="@/assets/images/new-bi/file.svg" alt="">
                       <div class="text ml10">误报</div>
                     </div>
-                    <img src="@/assets/images/bi/new/right.svg" alt="" style="font-size: 14px;">
+                    <img src="@/assets/images/new-bi/right.svg" alt="" style="font-size: 14px;">
                   </div>
                 </div>
               </div>
@@ -180,6 +205,7 @@ export default {
   data() {
     return {
       dialogVisible: false,
+      warningVisible: false,
       details: {
         location: {
           lat: 30.7453550,
@@ -198,7 +224,9 @@ export default {
       ],
       dialogImageUrl: '',
       dialogIRUrl: '',
-      loading: false
+      loading: false,
+      timer: null,
+      show: false
     }
   },
   methods: {
@@ -207,7 +235,7 @@ export default {
       this.details = {}
     },
     open(data) {
-      if (this.dialogVisible) return
+      if (this.dialogVisible || this.warningVisible) return
       this.loading = false
       this.details = {
         ...data
@@ -217,7 +245,11 @@ export default {
       this.options[2].url = data.beforeUrl || ''
       this.options[3].url = data.afterUrl || ''
       this.selectedValue = this.options[0].key
-      this.dialogVisible = true
+      this.warningVisible = true
+      this.timer = setTimeout(() => {
+        this.warningVisible = false
+        this.dialogVisible = true
+      }, 2000)
     },
     async execute(type) {
       // 0 立即处置 1 稍后处置 2 误报
@@ -264,8 +296,18 @@ export default {
     },
     details: {
       handler(newVal) {
+        if (!newVal.alarmId && this.dialogVisible) this.dialogVisible = false
         // 先屏蔽
         // this.dialogVisible = newVal.alarmId !== undefined
+        // if (newVal.alarmId && !this.timer) {
+        //   this.timer = setInterval(() => {
+        //     this.show = !this.show
+        //   }, 100)
+        // } else {
+        //   if (this.timer) {
+        //     clearInterval(this.timer)
+        //   }
+        // }
       },
       deep: true
     },
@@ -275,6 +317,27 @@ export default {
         this.selectedRobot = newVal
       },
       deep: true
+    },
+    dialogVisible: {
+      handler(newVal) {
+        if (newVal) {
+          this.show = true
+          // this.timer = setInterval(() => {
+            //   this.show = !this.show
+            // }, 300)
+          } else {
+            this.show = false
+          // if (this.timer) {
+          //   clearInterval(this.timer)
+          // }
+        }
+      }
+    }
+  },
+  beforeDestroy() {
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
     }
   }
 }
@@ -282,4 +345,60 @@ export default {
 
 <style lang="scss" scoped>
 @import "./scss/warning-info.scss";
+::v-deep .el-dialog {
+
+  position: unset !important;
+}
+.execute-dialog1 {
+  ::v-deep .el-dialog {
+    position: unset !important;
+    margin-top: 0 !important;
+    background: transparent;
+    border: none;
+    .el-dialog__header {
+      display: none;
+    }
+    .el-dialog__body {
+      height: 136px;
+      padding: 0 !important;
+    }
+  }
+}
+.custom-warning {
+  border-radius: 2px;
+  border: 1px solid #FF0202;
+  background: rgba(72, 9, 9, 0.5);
+  -webkit-box-shadow: 0 0 20px 0 #B30000 inset;
+  box-shadow: 0 0 20px 0 #B30000 inset;
+  backdrop-filter: blur(5px);
+  animation: pulseZoom 2s ease-in-out 1;
+  /* 保持最后状态（默认 forwards，也可以不加，但明确语义） */
+  animation-fill-mode: forwards;
+  /* 让动画在播放完毕后保留最后一帧（scale(0.5)） 但示例中是来回两次，最终回到0.5，符合需求 */
+}
+
+/* 关键帧定义：scale 从 0.5 → 1 → 0.5 → 1 → 0.5 */
+@keyframes pulseZoom {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  67% {
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
+  84% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.6;
+    transform: scale(0.8);  /* 最终回到 1 */
+  }
+}
+
 </style>

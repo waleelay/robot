@@ -1,5 +1,4 @@
 import request from '@/utils/request'
-import data from "../views/system/dict/data";
 
 // 登录方法
 export function login(username, password, code, uuid) {
@@ -16,7 +15,7 @@ export function login(username, password, code, uuid) {
       repeatSubmit: false
     },
     method: 'post',
-    data: data
+    // data: data
   })
 }
 

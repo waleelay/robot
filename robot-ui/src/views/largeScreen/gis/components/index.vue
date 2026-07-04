@@ -3,76 +3,14 @@
     <!-- <div id="map" style="width: 100%; height: 100vh;"></div> -->
     <div style="position: relative; width: 100%; height: 100%;">
       <div id="map" class="w100 h100"></div>
-      <div class="oper">
-        <el-select tt="primary" v-model="selectedMapId" placeholder="选择地图" style="width: 124px;" class="custom-select" @change="changeMap">
-          <el-option
-            v-for="(image, index) in MapIdOptions"
-            :key="index"
-            :label="image.label"
-            :value="image.value">
-          </el-option>
-        </el-select>
-        <!-- <el-checkbox v-model="showPath" class="custom-checkbox ml20" size="large">显示路径</el-checkbox>
-        <button tt="primary" @click="startMovement">开始移动</button>
-        <button tt="primary ml20" @click="stopMovement">停止移动</button> -->
-      </div>
-      <!-- 远程控制 -->
-      <el-dialog
-        v-dialogDrag
-        ref="dialogRef"
-        width="1630px"
-        :visible.sync="dialogVisible"
-        :modal-append-to-body="false"
-        :close-on-click-modal="false"
-        :modal="false"
-        :show-close="true"
-        destroy-on-close
-        @open="handleOpen"
-        @close="handleClose"
-        align-center
-        class="no-header map-dialog"
-      >
-        <NewDialog v-if="dialogVisible" ref="newDialogRef" @handleClose="handleClose" />
-      </el-dialog>
-      <!-- <div class="custom-modal">
-        <div class="title flx-justify-between">
-          <div class="text">监狱点名机器人</div>
-          <span class="status">运行中</span>
-        </div>
-        <div class="list">
-          <div class="item">装备类型：四足机器人</div>
-          <div class="item">装备型号：绝影X30PRO</div>
-          <div class="item">控制模型：自动控制</div>
-          <div class="item">当前速度：1.5m/s</div>
-          <div class="item">当前电量：98%</div>
-          <div class="item">调度任务：一监区监舍人员清点</div>
-          <div class="item">是否告警：否</div>
-        </div>
-        <div class="operation pl17 mt10">
-          <el-button tt1="primary">远程控制</el-button>
-          <el-button tt1="primary" class="pl10">一键开机</el-button>
-          <el-button tt1="primary" class="pl10">一键关机</el-button>
-        </div>
-      </div> -->
-      
     </div>
 </template>
 
 <script>
 import L from 'leaflet'
 require('leaflet/dist/leaflet.css')
-// import geoJson from '@/components/geojson/nanchong'
-import NewDialog from './../../dialog/index'
-import { getRecentTaskInfo } from '@/api/bigScreen.js'
-import { chargeStateObj, controlModeObj, locationObj, motionStateObj, motorStateObj, onDockStateObj } from './../../dog';
-import { controlDevice } from '../../../../api/bi';
-import { listMapInfo } from '../../../../api/rsp/map';
-import { listMotion } from '../../../../api/rsp/equipment';
-import { getBasicMessage } from "@/api/menu"
 export default {
   name: 'GisMap',
-  components: { NewDialog },
-  dicts: ['qh_motion_equipment_type', 'qh_motion_equipment_model_number'],
   data () {
     return {
       map: null,
@@ -164,10 +102,6 @@ export default {
       const latLngB = L.latLng(this.pointB.lat, this.pointB.lng);
       return this.map.distance(latLngA, latLngB).toFixed(2);
     },
-    //获取基础信息
-    basicMessage() {
-      return this.$store.getters['websocket/getBasic'];
-    },
   },
   watch: {
     // 监听距离变化
@@ -185,82 +119,6 @@ export default {
         this.map.getContainer().style.cursor = '';
       }
     },
-    // 获取基础信息
-    basicMessage: {
-      handler(newMessage) {
-        if (newMessage && newMessage.length > 0) {
-          // TODO:增加经纬度定位
-          // const message = newMessage[newMessage.length - 1];
-          // if (message) {
-          //   this.handlebasicMessage(message)
-          // }
-          this.allRobotInfo = newMessage.map(item => {
-            if (item.items && item.items.posX != null) {
-              const { posX, posY, res } = item.items
-              this.Res = res
-              let PixelX = (posX - (this.X0))/(0.1);
-              let PixelY = this.mapHeight - (posY - (this.Y0))/(0.1)
-              this.robot[item.endpoint] = {
-                x: PixelX/this.mapWidth*100,
-                y: PixelY/this.mapHeight*100,
-                lat: item.wgs84Result.latitude,
-                lng: item.wgs84Result.longitude
-                // status: items.electricity !== null ? '在线' : '离线',
-                // imagePath: require(`../../assets/bigScreen/icon/robot_${items.electricity === null ? 'error' : 'normal'}.png`)
-              }
-            }
-            if (item.items && item.items.electricity != null) {
-              const { motionState, sumOdom, curOdom, location, motorState, chargeState, controlMode, speed, electricity, onDockState } = item.items
-              const { type, modelNumber, name } = item.equipment
-              const { latitude, longitude } = item.wgs84Result || {}
-              this.dogList.filter((dog, index) => {
-                if (item.endpoint === dog.endpoint) {
-                  // item.lat = latitude || '30.748000';
-                  // item.lng = longitude || '106.040000'
-                  item.lat = latitude;
-                  item.lng = longitude
-                }
-                this.pointMarkers[index].setLatLng([latitude, longitude])
-                this.updatePopups(index)
-                return item.endpoint === dog.endpoint
-              })
-              return {
-                ...item,
-                customDevInfo: {
-                  ...JSON.parse(JSON.stringify(this.deviceObj)),
-                  status: '在线',
-                  sumOdom: sumOdom,
-                  curOdom: curOdom,
-                  motionState: motionStateObj[motionState],
-                  location: locationObj[location],
-                  motorState: motorStateObj[motorState],
-                  chargeState: chargeStateObj[chargeState],
-                  controlMode: controlModeObj[controlMode],
-                  onDockState: onDockState,
-                  speed: speed,
-                  battery: electricity,
-                  dogType: this.selectDictLabel(this.dict.type.qh_motion_equipment_type, type),
-                  model: this.selectDictLabel(this.dict.type.qh_motion_equipment_model_number, modelNumber),
-                  deviceName: name,
-                  dogState: '正常'
-                },
-                lat: latitude || '30.748000',
-                lng: longitude || '106.040000'
-              }
-            }
-          })
-          if (!this.loadMap && isSlam) return
-        }
-      },
-      immediate: true
-    },
-    selectedMapId: {
-      handler(newMessage) {
-        if (this.selectedMapId !== undefined) {
-          getBasicMessage(this.selectedMapId)
-        }
-      }
-    }
   },
   async created() {
     window.openModal = this.openModal;
@@ -268,9 +126,6 @@ export default {
     window.controlDevice = this.controlDevice;
   },
   async mounted(){
-    await this.getMapIdOptions()
-    // await this.getMapSize()
-    await this.changeMap()
     this.initMap();
     // this.initPoints();
     // setTimeout(() => {
@@ -491,129 +346,6 @@ export default {
     },
     toggleSetPointB() {
       this.settingPointB = !this.settingPointB;
-    },
-    async getMapIdOptions() {
-      const res = await listMapInfo({ status: '1' })
-      this.MapIdOptions = res.rows.map(item=>({
-        ...item,
-        value: item.id,
-        label: item.name,
-        X0: item.startXCoordinate,
-        Y0: item.startYCoordinate,
-        mapFileUrl: item.mapFileUrl
-      }))
-      if (this.MapIdOptions.length) {
-        this.selectedMapId = this.MapIdOptions[0].value
-      }
-    },
-    // TODO:获取地图的像素长宽-未使用
-    async getMapSize() {
-      this.loadMap = false
-      const img = this.$refs.mapImage;
-      await img.onload;
-      this.mapWidth = img.naturalWidth;
-      this.mapHeight = img.naturalHeight;
-      // 获取图片在页面上的实际显示大小
-      this.displayWidth = img.clientWidth;
-      this.displayHeight = img.clientHeight;
-      this.loadMap = true
-      // console.log('计算地图的长宽')
-
-      // setTimeout(() => {
-      //   // this.$refs.lineRef.init()
-      //   this.renderPath()
-      // }, 100);
-    },
-    //地图变了！！！
-    async changeMap() {
-      let selectedMapInfo = this.MapIdOptions.find(m => m.value === this.selectedMapId)
-      if (selectedMapInfo) {        
-        // this.currentImage = `${process.env.VUE_APP_BASE_API}/maps/${selectedMapInfo.label}.jpg`
-        // this.currentImage = require('D:/resources/robot/maps/地图1.jpg')
-        this.currentImage = `${process.env.NODE_ENV === 'development' ? process.env.VUE_APP_BASE_IP.replaceAll("'", '') : location.origin}/file/${selectedMapInfo.mapFileUrl}`
-        this.X0 = selectedMapInfo.X0
-        this.Y0 = selectedMapInfo.Y0
-        this.getDogList(this.selectedMapId)
-      }
-
-      // 测试
-      // setTimeout(() => {
-      //   this.PosX = 30;
-      //   this.PosY = 30;
-      //   let PixelX = (this.PosX - (this.X0))/(0.1);
-      //   let PixelY = this.mapHeight - (this.PosY - (this.Y0))/(0.1)
-      //   this.robot.x = PixelX/this.mapWidth*100
-      //   this.robot.y = PixelY/this.mapHeight*100
-      // }, 5000);
-    },
-    // 选择机器狗
-    changeDog(e) {
-      // setTimeout(() => {
-      //   this.$refs.lineRef.init()
-      //   this.renderPath()
-      // }, 100);      
-      this.$emit('getDogList', { dogList: this.dogList })
-    },
-    //获取到基础信息后处理步骤
-    handlebasicMessage(message) {
-      //拿里面的电池信息
-      if (message && message.items) {
-        if (message.items.electricity != null) {
-          const { motionState, sumOdom, curOdom, location, motorState, chargeState, controlMode, speed, electricity, onDockState } = message.items
-          this.deviceData.status = '在线'
-          this.deviceData.sumOdom = sumOdom
-          this.deviceData.curOdom = curOdom
-          this.deviceData.motionState = motionStateObj[motionState]
-          this.deviceData.location = locationObj[location]
-          this.deviceData.motorState = motorStateObj[motorState]
-          this.deviceData.chargeState = chargeStateObj[chargeState]
-          this.deviceData.controlMode = controlModeObj[controlMode]
-          // this.deviceData.onDockState = onDockStateObj[onDockState]
-          this.deviceData.onDockState = onDockState
-          this.deviceData.speed = speed
-          this.deviceData.battery = electricity
-        } else {
-          console.error("电量信息格式不正确", message);
-        }
-        // if (message.items.posX != null) {
-        //   const PosX = message.items.posX;
-        //   const PosY = message.items.posY;
-        //   this.Res = message.items.res;
-    
-        //   let PixelX = (PosX - (this.X0))/(0.1);
-        //   let PixelY = this.mapHeight - (PosY - (this.Y0))/(0.1)
-        //   this.robot.x = PixelX/this.mapWidth*100
-        //   this.robot.y = PixelY/this.mapHeight*100
-        // }
-      }
-    },
-    //控制机器人样式（正常or异常，以及位置）
-    getRobotStyle(endpoint) {
-      const isExist = Boolean(this.robot[endpoint])
-      return isExist ? {
-        left: this.robot[endpoint].x+'%',
-        top: this.robot[endpoint].y+'%',
-        backgroundImage:`url(${this.robot[endpoint].imagePath})`,
-      } : {
-        left: '50%',
-        top: '50%',
-        // backgroundImage: require('../../assets/bigScreen/icon/robot_normal.png')
-      }
-    },
-    getDogList(mapInfoId) {
-      let queryParams = {dogState: 1, pageNum: 1, pageSize: 50,}
-      listMotion({ mapInfoId, stateIn: '1,2,3' }).then(res => {
-        this.dogList = res.rows
-        console.log('根据mapId查机器狗列表', res);
-        if (this.dogList.length > 0) {
-          this.dogList[0] = { ...this.dogList[0], lat: 30.745482638228058, lng: 106.03737831115724, pathPoints: [], movementPath: null, points: null }
-          // this.dogList.push({ ...this.dogList[0], id: 38, name: 'XXXXXXXX', lat: 30.745482638228058, lng: 106.040000, pathPoints: [], movementPath: null, points: null })
-          // this.dogList.push({ ...this.dogList[0], qhMountedEquipmentList: [], id: 38, lat: '', lng: '', name: 'XXXXXXXX', pathPoints: [], movementPath: null, points: null })
-          this.changeDog(this.dogList[0].id)
-          // 拿到路径点位信息
-        }
-        this.initPoints()
-      })
     },
     onPopoverShow(dog) {
       this.selectedEndPoint = dog.endpoint

@@ -281,6 +281,7 @@ export default {
     open(alarms) {
       if (this.dialogVisible) return
       this.dialogVisible = true
+      this.handleChangeTab(0)
     },
     handleChangeTab(tabIndex) {
       this.tabIndex = tabIndex

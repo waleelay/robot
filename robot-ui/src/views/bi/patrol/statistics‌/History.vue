@@ -29,20 +29,20 @@
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column prop="mapName" key="pathName" label="报告名称" show-overflow-tooltip></el-table-column>
-              <el-table-column prop="equipmentName" key="equipmentName" label="下载时间" />
-              <el-table-column prop="jobName" key="jobName" label="格式" show-overflow-tooltip></el-table-column>
-              <el-table-column key="alertTimes" width="100" label="状态" align="center">
+              <el-table-column prop="reportName" key="reportName" label="报告名称" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="downloadTime" key="downloadTime" width="170" label="下载时间" />
+              <el-table-column prop="format" key="format" label="格式" width="80" show-overflow-tooltip></el-table-column>
+              <el-table-column key="status" width="120" label="状态" align="center">
                 <template slot-scope="scope">
-                  <span class="status" :class="{ green: scope.row.alertTimes === 0, orange: scope.row.alertTimes !== 0 }">
-                    {{ scope.row.alertTimes || 0 }}
+                  <span class="status" :class="{ green: scope.row.status.toLowerCase() === 'completed', error: scope.row.status.toLowerCase() === 'interrupted' }">
+                    {{ scope.row.statusName }}
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="250">
+              <el-table-column label="操作" width="160">
                 <template slot-scope="scope">
-                  <el-button type="text">下载</el-button>
-                  <el-button type="text" class="ml24">删除</el-button>
+                  <el-button type="text" @click="downloadFile(scope.row)">下载</el-button>
+                  <el-button type="text" class="ml24" @click="deleteFile(scope.row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -53,7 +53,7 @@
               :page-size="tableData.size"
               :total="tableData.total"
               layout="prev, pager, next"
-              @current-change="getDdrwzxqkDataList"
+              @current-change="getHistoryData"
               class="mt10"
             />
           </div>
@@ -64,6 +64,7 @@
 </template>
 
 <script>
+import { deleteReport, downloadReport, getHistoryList } from '../../../../api/new-bi';
 export default {
   name: 'HistoryReportList',
   data() {
@@ -71,23 +72,83 @@ export default {
       dialogVisible: false,
       tableData: {
         data: [
-          { jobName: '周界定时巡逻任务', pathName: '周界定时巡逻任务', jobDescription: '每隔1h执行1次', createTime: '2026-03-31', executeStatus: 0, loading: false, nextValidTime: '2026-04-01 06:00:00'},
-          { jobName: '一监区监舍人员清点', pathName: '一监区监舍人员清点', jobDescription: '每日20:30执行', createTime: '2026-03-31', executeStatus: 0, loading: false, nextValidTime: '2026-04-01 20:30:00'},
-          { jobName: '成衣车间人员清点', pathName: '成衣车间人员清点', jobDescription: '每1h执行1次', createTime: '2026-03-31', executeStatus: 1, loading: false, nextValidTime: '2026-04-01 06:00:00'},
-          { jobName: '公共区域定时巡逻', pathName: '公共区域定时巡逻', jobDescription: '每1h执行1次', createTime: '2026-03-31', executeStatus: 1, loading: false, nextValidTime: '2026-04-01 06:00:00'},
-          { jobName: '多功能厅定时巡逻', pathName: '多功能厅定时巡逻', jobDescription: '每日06:30执行', createTime: '2026-03-31', executeStatus: 2, loading: false, nextValidTime: '2026-04-01 06:30:00'},
-          { jobName: '会见大厅公共法律服', pathName: '会见大厅公共法律服', jobDescription: '每日08:00执行', createTime: '2026-03-31', executeStatus: 2, loading: false, nextValidTime: '2026-04-01 08:00:00'},
+          // { jobName: '周界定时巡逻任务', reportName: '周界定时巡逻任务', jobDescription: '每隔1h执行1次', createTime: '2026-03-31', executeStatus: 0, loading: false, nextValidTime: '2026-04-01 06:00:00'},
+          // { jobName: '一监区监舍人员清点', reportName: '一监区监舍人员清点', jobDescription: '每日20:30执行', createTime: '2026-03-31', executeStatus: 0, loading: false, nextValidTime: '2026-04-01 20:30:00'},
+          // { jobName: '成衣车间人员清点', reportName: '成衣车间人员清点', jobDescription: '每1h执行1次', createTime: '2026-03-31', executeStatus: 1, loading: false, nextValidTime: '2026-04-01 06:00:00'},
+          // { jobName: '公共区域定时巡逻', reportName: '公共区域定时巡逻', jobDescription: '每1h执行1次', createTime: '2026-03-31', executeStatus: 1, loading: false, nextValidTime: '2026-04-01 06:00:00'},
+          // { jobName: '多功能厅定时巡逻', reportName: '多功能厅定时巡逻', jobDescription: '每日06:30执行', createTime: '2026-03-31', executeStatus: 2, loading: false, nextValidTime: '2026-04-01 06:30:00'},
+          // { jobName: '会见大厅公共法律服', reportName: '会见大厅公共法律服', jobDescription: '每日08:00执行', createTime: '2026-03-31', executeStatus: 2, loading: false, nextValidTime: '2026-04-01 08:00:00'},
         ],
-        total: 10,
-        size: 6,
+        total: 0,
+        size: 10,
         page: 1
       },
     }
   },
   methods: {
-    getDdrwzxqkDataList(page) {},
+    async getHistoryData(page) {
+      if (page) this.tableData.page = page
+      const res = await getHistoryList({ page: this.tableData.page, size: this.tableData.size })
+      this.tableData.data = res.data || []
+      this.tableData.total = res.total || 0
+    },
     showModal() {
       this.dialogVisible = true;
+      this.getHistoryData()
+    },
+    async downloadFile(row) {
+      try {
+        const res = await downloadReport(row.id)
+        const blob = new Blob([res], {type: this.getMimeType(row.format.toLowerCase())});
+        // 创建 Blob URL
+        const blobUrl = window.URL.createObjectURL(blob);
+
+        // 创建下载链接
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        // 设置文件名
+        link.download = row.reportName;
+        document.body.appendChild(link);
+
+        // 触发下载
+        link.click();
+
+        // 移除链接并释放 Blob URL
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+      } catch (error) {
+        this.$message.error('下载失败')
+      }
+    },
+    async deleteFile(row) {
+      try {
+        const res = await deleteReport(row.id)
+        this.$message.success('删除成功')     
+        this.getHistoryData()  
+      } catch (error) {
+        this.$message.error('删除失败')
+      }
+    },
+    getMimeType(extension) {
+      const mimeTypes = {
+          pdf: 'application/pdf',
+          txt: 'text/plain',
+          doc: 'application/msword',
+          docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          xls: 'application/vnd.ms-excel',
+          xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          png: 'image/png',
+          jpg: 'image/jpeg',
+          jpeg: 'image/jpeg',
+          gif: 'image/gif',
+          csv: 'text/csv',
+          json: 'application/json',
+          zip: 'application/zip',
+          rar: 'application/x-rar-compressed'
+          // 更多 MIME 类型可以根据需求添加
+      };
+      // 默认类型
+      return mimeTypes[extension] || 'application/octet-stream';
     }
   }
 }

@@ -63,13 +63,14 @@
 </template>
 
 <script>
+import { mapState } from 'vuex';
+import { previewImageBlob } from '../../../../api/new-bi';
+
 export default {
   name: 'BiPatrolSlam',
   props: {
-    map: { type: Object, default: null },
-    points: { type: Array, default: () => [] },
-    selectedPointId: { type: Number, default: null },
-    pathPointIds: { type: Array, default: () => [] },
+    mapId: { type: String, default: '7' },
+    taskId: { type: String, default: '' },
     showLabels: { type: Boolean, default: false }
   },
   data() {
@@ -114,10 +115,26 @@ export default {
           action: 'zoomOut'
         },
       ],
-      showPath: false
+      showPath: false,
+      selectedPointId: ''
     }
   },
   computed: {
+    ...mapState('websocketExtraData', ['slamMapData', 'taskPathPoints']),
+    map() {
+      return this.slamMapData?.[this.mapId] || {}
+    },
+    points() {
+      return this.slamMapData?.[this.mapId]?.mapPoints || []
+    },
+    pathPointIds() {
+      console.log('2222222222', this.taskId, this.taskPathPoints?.[this.taskId]);
+      
+      return this.taskPathPoints?.[this.taskId]?.pathPointIds || []
+    },
+    // pathPointIdsInfo() {
+    //   return this.taskPathPoints?.[this.taskId]?.pathPointIdsInfo || []
+    // },
     hasPreview() {  
       return !!this.map?.previewFileId &&
         !!this.map?.previewWidth &&
@@ -140,6 +157,8 @@ export default {
         .filter((point) => point.pixel)
     },
     polylinePoints() {
+      console.log(123, this.pathPointIds);
+      
       return this.pathPointIds
         .map((id) => this.drawablePoints.find((point) => point.id === id)?.pixel)
         .filter(Boolean)
@@ -156,11 +175,17 @@ export default {
         hasPreview: this.hasPreview,
       };
     },
+    viewportWidth() {
+      return this.map?.previewWidth;
+    },
+    viewportHeight() {
+      return this.map?.previewHeight;
+    },
   },
   watch: {
     previewSource: {
       immediate: true,
-      async handler(newVal) {
+      async handler(newVal) {       
         this.imageObjectUrl = require('./preview-image.png');
         this.imageUrl = require('./preview-image.png');
         
@@ -170,7 +195,7 @@ export default {
         // this.previewImageStatus = '地图预览加载中';
         // if (!hasPreview || !id) return;
         // try {
-        //   const blob = await mapApi.previewImageBlob(id, cacheKey);
+        //   const blob = await previewImageBlob(id, cacheKey);
         //   const nextUrl = URL.createObjectURL(blob);
         //   if (seq !== this.imageLoadSeq) {
         //     URL.revokeObjectURL(nextUrl);
@@ -192,43 +217,34 @@ export default {
     },
     renderPath() {
       this.showPath = !this.showPath;
-      console.log(11, this.pathPointIds
-        .map((id) => this.drawablePoints.find((point) => point.id === id)?.pixel).filter(Boolean)
-        .map((pixel) => `${pixel.x},${pixel.y}`)
-        .join(" "))
-
         console.log(2, this.polylinePoints);
         
       // 渲染路径及点
     },
     // 最小缩放比例：确保stage不会小于viewport的宽高
     minZoom() {
-      const viewportWidth = 247; // viewport固定宽度
-      const viewportHeight = 169; // viewport固定高度
       const stageWidth = Number(this.map?.previewWidth || 0);
       const stageHeight = Number(this.map?.previewHeight || 0);
       
       if (!stageWidth || !stageHeight) return 0.5;
       
       // 计算最小缩放比例，确保stage宽高不小于viewport
-      const minZoomByWidth = viewportWidth / stageWidth;
-      const minZoomByHeight = viewportHeight / stageHeight;
+      const minZoomByWidth = this.viewportWidth / stageWidth;
+      const minZoomByHeight = this.viewportHeight / stageHeight;
       
       return Math.max(minZoomByWidth, minZoomByHeight, 0.5);
     },
     zoomIn() {
-      this.zoom = Math.min(3, Number((this.zoom + 0.25).toFixed(2)));
+      this.zoom = Math.min(5, Number((this.zoom + 0.25).toFixed(2)));
     },
     zoomOut() {
       this.zoom = Math.max(this.minZoom(), Number((this.zoom - 0.25).toFixed(2)));
       
       // 缩小后检查边界，确保top, left, right, bottom >= 0
-      const viewportWidth = 247;
-      const viewportHeight = 169;
       const stageWidth = Number(this.map?.previewWidth || 0) * this.zoom;
       const stageHeight = Number(this.map?.previewHeight || 0) * this.zoom;
-      const diffX = stageWidth - viewportWidth;
-      const diffY = stageHeight - viewportHeight;
+      const diffX = stageWidth - this.viewportWidth;
+      const diffY = stageHeight - this.viewportHeight;
       
       if (diffX > 0) {
         const maxOffsetX = diffX / 2;
@@ -254,8 +270,6 @@ export default {
       const point4 = this.drawablePoints[3];
       if (!point4 || !point4.pixel) return;
       
-      const viewportWidth = 247;
-      const viewportHeight = 169;
       const stageWidth = Number(this.map?.previewWidth || 0) * this.zoom;
       const stageHeight = Number(this.map?.previewHeight || 0) * this.zoom;
       
@@ -265,16 +279,16 @@ export default {
       
       // 计算使该点居中所需的偏移
       // viewport中心位置
-      const viewportCenterX = viewportWidth / 2;
-      const viewportCenterY = viewportHeight / 2;
+      const viewportCenterX = this.viewportWidth / 2;
+      const viewportCenterY = this.viewportHeight / 2;
       
       // 目标偏移 = viewport中心 - 点在stage上的位置
       let targetOffsetX = viewportCenterX - pointX;
       let targetOffsetY = viewportCenterY - pointY;
       
       // 应用边界限制：确保top, left, right, bottom >= 0
-      const diffX = stageWidth - viewportWidth;
-      const diffY = stageHeight - viewportHeight;
+      const diffX = stageWidth - this.viewportWidth;
+      const diffY = stageHeight - this.viewportHeight;
       
       if (diffX > 0) {
         const maxOffsetX = diffX / 2;
@@ -305,9 +319,6 @@ export default {
     },
     handleMouseMove(e) {
       if (!this.isDragging) return
-      
-      const viewportWidth = 247;
-      const viewportHeight = 169;
       const stageWidth = Number(this.map?.previewWidth || 0) * this.zoom;
       const stageHeight = Number(this.map?.previewHeight || 0) * this.zoom;
       
@@ -316,8 +327,8 @@ export default {
       let newOffsetY = this.startOffsetY + e.clientY - this.startY
       
       // 边界限制：确保stage始终完全覆盖viewport，边界距离不为正数
-      const diffX = stageWidth - viewportWidth;
-      const diffY = stageHeight - viewportHeight;
+      const diffX = stageWidth - this.viewportWidth;
+      const diffY = stageHeight - this.viewportHeight;
       
       if (diffX > 0) {
         // stage比viewport宽，可拖动范围: [-(diffX), 0]
@@ -366,7 +377,7 @@ export default {
       
       // 计算缩放因子
       const delta = e.deltaY > 0 ? -0.1 : 0.1
-      const newZoom = Math.max(this.minZoom(), Math.min(3, this.zoom + delta))
+      const newZoom = Math.max(this.minZoom(), Math.min(5, this.zoom + delta))
       
       // 计算新的偏移，使鼠标位置保持在原地
       const scale = newZoom / this.zoom
@@ -377,8 +388,8 @@ export default {
       // 缩放后检查边界，确保stage始终覆盖viewport
       const newStageWidth = Number(this.map?.previewWidth || 0) * this.zoom;
       const newStageHeight = Number(this.map?.previewHeight || 0) * this.zoom;
-      const diffX = newStageWidth - viewportWidth;
-      const diffY = newStageHeight - viewportHeight;
+      const diffX = newStageWidth - this.viewportWidth;
+      const diffY = newStageHeight - this.viewportHeight;
       
       if (diffX > 0) {
         const maxOffsetX = diffX;
@@ -475,7 +486,10 @@ export default {
 }
 </script>
 
-<style lang="scss">
+<style lang="scss" scoped>
+::v-deep .el-empty {
+  padding: 0 !important;
+}
 .map-preview-viewport {
   position: relative;
   width: 247px;

@@ -28,7 +28,7 @@
             <div class="basic ml20">
               <div class="desc">当前速度：{{ currenRobot.speed }}m/s</div>
               <div class="desc">当前电量：{{ currenRobot.battery }}%</div>
-              <div class="desc">当前任务：{{ currenRobot?.task?.name || '-' }}</div>
+              <div class="desc">当前任务：{{ currenRobot?.runningTask?.name || '-' }}</div>
               <div class="desc">控制模型：{{ currenRobot?.controlMode}}</div>
             </div>
           </div>
@@ -99,7 +99,7 @@ import Yuntai from './components/Yuntai.vue'
 import Catcher from './components/Catcher.vue'
 import Launcher from './components/Launcher.vue'
 import { motionControl } from '@/api/login'
-import SmallMap from '../../../gis/globalMap/SmallMap..vue'
+import SmallMap from '../../../gis/globalMap/SmallMap.vue'
 import yuntai from './components/yuntai'
 import { mapState } from 'vuex'
 export default {

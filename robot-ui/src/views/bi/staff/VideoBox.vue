@@ -121,7 +121,7 @@ export default {
       return this.cameraInfo.recordingActive
     },
     showControl() {
-      return !this.selectedRobotId || (this.selectedRobotId && (this.className.includes('six-') || this.className.includes('nine')) && this.className.includes('six-1'))
+      return !this.selectedRobotId || (this.selectedRobotId && (this.className.includes('six-1') || this.className.includes('one') || this.className.includes('four')))
     }
   },
   data() {
@@ -209,7 +209,6 @@ export default {
           }, 2000);
         }
       }
-     
     }
   },
   beforeDestroy() {

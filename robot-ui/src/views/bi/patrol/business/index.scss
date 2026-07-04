@@ -1,6 +1,16 @@
+.business2-page {
+  color: #d0dae7;
+}
+
+.business2-body {
+  min-height: 0;
+}
+
 .side-menu {
+  flex-shrink: 0;
   background: linear-gradient(180deg, rgba(18, 20, 43, 0.00) 0%, #12142B 100%);
   box-shadow: 0 0 20px 0 rgba(33, 108, 149, 0.30) inset;
+
   .item {
     color: #8897AB;
     background: #111B2A;
@@ -10,6 +20,7 @@
     border-radius: 4px;
     border: 1px solid #111B2A;
     cursor: pointer;
+
     &.is-active {
       color: #0BF9FE;
       border-color: #0BF9FE;

@@ -6,8 +6,8 @@
 <script>
 import L from 'leaflet'
 require('leaflet/dist/leaflet.css')
-import iconError from '../../../assets/images/bi/new/icon_error.png'
-import iconBgError from './../../../assets/images/bi/new/icon_bg_error.png'
+import iconError from '../../../assets/images/new-bi/icon_error.png'
+import iconBgError from './../../../assets/images/new-bi/icon_bg_error.png'
 export default {
   name: 'warningMap',
   data () {

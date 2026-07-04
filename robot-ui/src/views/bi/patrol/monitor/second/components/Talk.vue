@@ -20,9 +20,9 @@
       <!-- 底层未划过轨道 背景色 #093974 -->
       <div class="track-bg"></div>
       <!-- 动态划过层：展示颜色 #0C132A 以及 box-shadow: inset 0 0 6px 2px #09F -->
-      <div class="filled-glow" :style="{'--value-percent': Math.ceil(audioVolume(audioDevice) / 255 * 100)}"></div>
+      <div class="filled-glow" :style="{'--value-percent': Math.ceil(audioVolume(audioDevice)) + '%'}"></div>
       <!-- <span class="value">{{ audioVolume(audioDevice) }}</span> -->
-      <input 
+      <!-- <input 
         type="range" 
         min="0" 
         max="255" 
@@ -32,6 +32,14 @@
         id="volumeSlider"
         :style="{'--value-percent': Math.ceil(audioVolume(audioDevice) / 255 * 100)}"
         :disabled="audioMuted(audioDevice)"
+      /> -->
+      <el-slider
+        :value="audioVolume(audioDevice)"
+        :min="0"
+        :max="100"
+        :disabled="audioMuted(audioDevice)"
+        @input="value => updateVolume"
+        @change="value => updateVolume"
       />
     </div>
     <div class="btns" :class="{'mt20': !isMapInner, 'mt30': isMapInner}">
@@ -102,7 +110,7 @@ export default {
     },
     async setAudioVolume(device, volume) {
       const previous = this.audioStatus(device)
-      const nextVolume = Math.max(0, Math.min(255, Number(volume) || 0))      
+      const nextVolume = Math.max(0, Math.min(100, Number(volume) || 0))      
       this.setAudioState(device, { volume: nextVolume, muted: false })
       const ok = await this.sendDeviceCommand(device, 'volume.set', {
         volume: nextVolume,

@@ -7,7 +7,7 @@
         </div>
         <span>{{ pixel.currentPixelLabel }}</span>
       </div> -->
-      <div :ref="`dropdownRef${slotKey}_pixel`" v-if="!qualitySelectDisabled">
+      <div :ref="`dropdownRef${slotKey}_pixel`" :style="{ display: !qualitySelectDisabled ? 'block' : 'none' }">
         <el-dropdown class="custom-dropdown pixel-dropdown" trigger="hover" placement="top">
           <span class="el-dropdown-link">
             {{ pixel.pixelTypes.find(item => item.value === cameraInfo.quality)?.label || '自动' }}
@@ -23,9 +23,9 @@
           </el-dropdown-menu>
         </el-dropdown>
       </div>
-      <template v-if="canSnapshot">
+      <template :style="{ display: canSnapshot ? 'block' : 'none' }">
         <div :ref="`dropdownRef${slotKey}_volume`">
-          <el-dropdown class="custom-dropdown volume-dropdown" trigger="hover" placement="top" @visible-change="handleVolumeVisibleChange">
+          <el-dropdown class="custom-dropdown volume-dropdown" trigger="hover" :hide-on-click="false" placement="top" @visible-change="handleVolumeVisibleChange">
             <!-- <span class="el-dropdown-link">
               {{ pixel.currentPixelLabel }}
             </span> -->
@@ -35,8 +35,8 @@
             <el-dropdown-menu :ref="`dropdownMenuRef${slotKey}_volume`" slot="dropdown" :append-to-body="false" class="custom-dropdown-menu volume-dropdown-menu">
               <el-dropdown-item>
                 <div class="info flx-center">
-                  <span class="value">{{ volumeInfo.currentVolume }}</span>
-                  <input 
+                  <span class="value mt10">{{ volumeInfo.currentVolume }}</span>
+                  <!-- <input 
                     type="range" 
                     min="0" 
                     max="100" 
@@ -45,7 +45,19 @@
                     @input="updateVolume"
                     id="volumeSlider"
                     :style="{'--value-percent': `${volumeInfo.currentVolume}%`}"
-                  />
+                  /> -->
+                  <el-slider
+                    :min="0" 
+                    :max="100" 
+                    v-model="volumeInfo.currentVolume"
+                    class="mt10 mb5 vertical-slider" 
+                    vertical
+                    @input="updateVolume"
+                    @change="updateVolume"
+                    height="83px"
+                    :show-tooltip="false"
+                    :style="{'--value-percent': `${volumeInfo.currentVolume}%`}"
+                    id="volumeSlider" />
                 </div>
               </el-dropdown-item>
             </el-dropdown-menu>
@@ -108,8 +120,9 @@
 // import Snap from './modal/Snap.vue';
 import videoUtils from './../../..//utils/videoUtils.js'
 import ControlInner from './ControlInner.vue';
-import { createSnapshotFile, snapshotImageUrl } from '../../../api/media.js';
+import { snapshotImageUrl, uploadFile } from '../../../api/media.js';
 import { mapActions, mapState } from 'vuex';
+import { none } from 'ol/centerconstraint';
 export default {
   name: 'VideoTool',
   components: {
@@ -194,14 +207,22 @@ export default {
         this.$message.warning('当前画面不可抓拍')
         return
       }
-      const form = new FormData()
+      const form = new FormData()      
       form.append('trackSid', camera.session.trackSid || 'TR_pending')
-      form.append('reason', 'manual_abnormal')
-      form.append('remark', `${camera.name} 手动抓拍`)
-      form.append('clientCapturedAt', capturedAt)
-      form.append('previewImageHash', `${blob.size}`)
+      form.append('fileType', 'IMAGE')
+      form.append('robotId', camera.robotId)
+      form.append('deviceId', camera.deviceId)
+      form.append('sourceFileId', `web-snapshot/${camera.robotId}/${camera.deviceId}/${Date.now()}/${blob.size}`)
+      form.append('metadata', JSON.stringify({
+        source: 'WEB_SNAPSHOT',
+        sessionId: camera.session.sessionId,
+        trackSid: camera.session.trackSid || 'TR_pending',
+        channel: camera.channel,
+        capturedAt,
+        remark: `${camera.name} 手动抓拍`
+      }))
       form.append('file', blob, `${camera.robotId}-${camera.deviceId}-${Date.now()}.jpg`)
-      const response = await createSnapshotFile(camera.session.sessionId, form)
+      const response = await uploadFile(form)
       console.log('API snapshot', response)
       this.showSnapshotSuccess(camera, response)
       this.setSnapshotTime(capturedAt)
@@ -218,11 +239,11 @@ export default {
       })
     },
     showSnapshotSuccess(camera, snapshot) {
-      if (!snapshot || !snapshot.snapshotId) {
+      if (!snapshot || !snapshot.fileId) {
         this.$message.success('抓拍已保存')
         return
       }
-      const url = snapshotImageUrl(snapshot.snapshotId)
+      const url = snapshotImageUrl(snapshot.fileId)
       this.$message({
         type: 'success',
         customClass: 'snapshot-message',
@@ -238,6 +259,24 @@ export default {
         '"': '&quot;',
         "'": '&#39;'
       }[char]))
+    }
+  },
+  watch: {
+    canSnapshot: {
+      handler(newVal, oldVal) {
+        if (newVal) {
+          // this.updateDropdownStyle('volume', true);
+        }
+      },
+      immediate: true
+    },
+    qualitySelectDisabled: {
+      handler(newVal, oldVal) {
+        if (!newVal) {
+          // this.updateDropdownStyle('pixel', true);
+        }
+      },
+      immediate: true
     }
   }
 }

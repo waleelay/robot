@@ -19,14 +19,14 @@
 .div-custom-tooltip, .div-custom-popup {
   width: 354px;
   height: 309px;
-  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat center center;
+  // background: url(~@/assets/images/new-bi/tooltip.png) no-repeat center center;
 }
 .custom-popup .leaflet-popup-content {
   width: 354px !important;
   height: 309px !important;
   margin: 0 !important;
   margin-top: 20px !important;
-  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat center center;
+  // background: url(~@/assets/images/new-bi/tooltip.png) no-repeat center center;
 }
 .leaflet-popup-tip-container {
   display: none;
@@ -36,7 +36,7 @@
   position: relative;
   width: 396px;
   height: 400px;
-  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat top left;
+  // background: url(~@/assets/images/new-bi/tooltip.png) no-repeat top left;
   // border: 1px solid #f00;
   // position: absolute;
   // top: 400px;
@@ -47,7 +47,7 @@
     width: 50px;
     height: 76px;
     position: absolute;
-    background: url(~@/assets/images/bi/new/tooltip-line.png) no-repeat bottom right;
+    // background: url(~@/assets/images/new-bi/tooltip-line.png) no-repeat bottom right;
     background-size: 100% 100%;
     right: 0;
     bottom: 0;
@@ -202,10 +202,14 @@
           // width: 227px;
           // height: 227px;
           // background: url(~@/assets/images/new-bi/icon_bg.png) no-repeat center center;
-          top: -31.5px;
-          left: -9px;
-          width: 100px;
-          height: 100px;
+          // top: -31.5px;
+          // left: -9px;
+          // width: 100px;
+          // height: 100px;
+          // top: -31.5px;
+          // left: -9px;
+          width: 60px;
+          height: 60px;
           border-radius: 50%;
           border: 1px solid #159AFF;
           background: radial-gradient(50% 50% at 50% 50%, rgba(21, 154, 255, 0.50) 0%, rgba(6, 78, 133, 0.25) 100%);
@@ -214,17 +218,17 @@
           content: '';
           z-index: -1;
         }
-        &.show-icon-38::before {
-          transform: translate(calc(-50% + 15px));
+        &.show-icon-38-28::before {
+          transform: translate(-50%, calc(-50% + 14px));
         }
-        &.show-icon-30::before {
-          transform: translate(calc(-50% + 11px));
+        &.show-icon-30-28::before {
+          transform: translate(-50%, calc(-50% + 14px));
         }
-        &.show-icon-24::before {
-          transform: translate(calc(-50% + 8px));
+        &.show-icon-24-39::before {
+          transform: translate(-50%, calc(-50% + 19.5px));
         }
-        &.show-icon-43::before {
-          transform: translate(calc(-50% + 17.5px));
+        &.show-icon-43-20::before {
+          transform: translate(-50%, calc(-50% + 10px));
         }
       }
       &.open, &:hover {
@@ -308,7 +312,7 @@
       position: relative;
       width: 396px;
       height: 400px;
-      background: url(~@/assets/images/bi/new/tooltip.png) no-repeat top left;
+      // background: url(~@/assets/images/new-bi/tooltip.png) no-repeat top left;
       // border: 1px solid #f00;
       // position: absolute;
       // top: 400px;
@@ -319,7 +323,7 @@
         width: 50px;
         height: 76px;
         position: absolute;
-        background: url(~@/assets/images/bi/new/tooltip-line.png) no-repeat bottom right;
+        // background: url(~@/assets/images/new-bi/tooltip-line.png) no-repeat bottom right;
         background-size: 100% 100%;
         right: 0;
         bottom: 0;
@@ -500,15 +504,15 @@
       .status {
         position: relative;
         padding: 4px 20px;
-        color: #25FF6E;
+        color: #FFF;
         text-align: center;
         font-family: "Alibaba PuHuiTi";
         font-size: 12px;
         line-height: 12px; /* 100% */
         letter-spacing: 0.857px;
         border-radius: 2px;
-        border: 1px solid #25FF6E;
-        background: rgba(0, 117, 57, 0.50);
+        border: 1px solid #0061B1;
+        background: #272727;
         &::before {
           position: absolute;
           top: 7px;
@@ -516,8 +520,24 @@
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: #25FF6E;
+          background: #FFF;
           content: '';
+        }
+        &.green {
+          color: #25FF6E;
+          border-color: #25FF6E;
+          background: rgba(0, 117, 57, 0.50);
+          &::before {
+            background: #25FF6E;
+          }
+        }
+        &.blue {
+          border-color: #2A86F3;
+          background: #0070c680;
+        }
+        &.orange {
+          border-color: #D85A00;
+          background: #D85A0080;
         }
       }
       .close {

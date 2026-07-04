@@ -29,6 +29,30 @@ export function exportPatrolStatisticsReport(data) {
   })
 }
 
+export function getHistoryList(params) {
+  return request({
+    url: pre + '/bigscreen/statistics/reports',
+    method: 'get',
+    params
+  })
+}
+export function downloadReport(id) {
+  return request({
+    url: pre + `/bigscreen/statistics/reports/${id}/download`,
+    method: 'get',
+    responseType: 'blob',
+    timeout: 300000
+  })
+}
+export function deleteReport(id) {
+  return request({
+    url: pre + `/bigscreen/statistics/reports/${id}`,
+    method: 'delete'
+  })
+}
+
+
+
 // 任务相关
 const taskPre = ''
 // 获取任务列表 { pageNum, pageSize, status }
@@ -111,15 +135,16 @@ export function getManagementDevices(params) {
   })
 }
 
+
 // 执行记录
-// detail: (id) => getData(`/api/v1/management/task-workflow-instances/${id}`),
-// replay: (id) => getData(`/api/v1/management/task-workflow-instances/${id}/replay`),
-// trackSamples: (id, params) => getData(`/api/v1/management/task-workflow-instances/${id}/track-samples`, params),
-// humanTasks: (id) => getData(`/api/v1/management/task-workflow-instances/${id}/human-tasks`),
-// completeHumanTask: (id, taskId, variables = {}) =>
-//   postData(`/api/v1/management/task-workflow-instances/${id}/human-tasks/${taskId}/complete`, { variables }),
-// applyComponentSelections: (id, payload) =>
-//   postData(`/api/v1/management/task-workflow-instances/${id}/component-selections`, payload)
+  // detail: (id) => getData(`/api/v1/management/task-workflow-instances/${id}`),
+  // replay: (id) => getData(`/api/v1/management/task-workflow-instances/${id}/replay`),
+  // trackSamples: (id, params) => getData(`/api/v1/management/task-workflow-instances/${id}/track-samples`, params),
+  // humanTasks: (id) => getData(`/api/v1/management/task-workflow-instances/${id}/human-tasks`),
+  // completeHumanTask: (id, taskId, variables = {}) =>
+  //   postData(`/api/v1/management/task-workflow-instances/${id}/human-tasks/${taskId}/complete`, { variables }),
+  // applyComponentSelections: (id, payload) =>
+  //   postData(`/api/v1/management/task-workflow-instances/${id}/component-selections`, payload)
 export function getTaskRecordList(params) {
   return request({
     url: taskPre + '/api/v1/management/task-workflow-instances',
@@ -152,6 +177,15 @@ export function previewImageBlob(id, cacheKey) {
     url: taskPre + `/api/v1/management/maps/${id}/preview-image`,
     method: 'get',
     params: cacheKey ? { t: cacheKey } : undefined,
-    responseType: 'blob'
+    responseType: "blob"
+  })
+}
+
+// 防止报错==================================
+export function setErrorisDeal (){
+  return request({
+    url: taskPre + `/api/v1/management/maps/${id}/preview-image`,
+    method: 'post',
+    data: { errorisDeal: true }
   })
 }

@@ -82,7 +82,7 @@ export default {
         height: 100%;
         top: 0;
         left: 0;
-        background: url(~@/assets/images/bi/new/header-center.png) center center no-repeat;
+        background: url(~@/assets/images/new-bi/header-center.png) center center no-repeat;
         content: '';
       }
     }

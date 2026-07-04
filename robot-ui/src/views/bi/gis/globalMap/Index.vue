@@ -8,26 +8,6 @@
       <div id="map" class="w100 h100" style="z-index: 0;" :style="{ display: !isSlam ? 'block' : 'none' }"></div>
       <Thumbnail v-if="showThumbnail" :centerPoint="centerPoint" :markers="pointMarkers" :mainMap="map" ref="thumbnailRef" />
     </template>
-    <div class="oper" style="display: none">
-      <el-select
-        tt="primary"
-        v-model="selectedMapId"
-        placeholder="选择地图"
-        style="min-width: 124px;"
-        popper-class="custom-select control-select-popper p10"
-        @change="changeMap"
-      >
-        <el-option
-          v-for="(image, index) in MapIdOptions"
-          :key="index"
-          :label="image.label"
-          :value="image.value">
-        </el-option>
-      </el-select>
-      <!-- <el-checkbox v-model="showPath" class="custom-checkbox ml20" size="large">显示路径</el-checkbox>
-      <button tt="primary" @click="startMovement">开始移动</button>
-      <button tt="primary ml20" @click="stopMovement">停止移动</button> -->
-    </div>
     <!-- 远程控制 -->
     <!-- <el-dialog
       v-dialogDrag
@@ -65,21 +45,11 @@ import XYZ from "ol/source/XYZ";
 import VectorLayer from 'ol/source/Vector';
 import { defaults as defaultControls } from "ol/control";
 import { fromLonLat } from "ol/proj";
-// import { Point, LineString } from 'ol/geom';
-// import { Icon, Style, Stroke, Fill } from 'ol/style'
-// import { ScaleLine, Zoom } from 'ol/control'
-// import { fromLonLat, toLonLat } from 'ol/proj'
-import { chargeStateObj, controlModeObj, locationObj, motionStateObj, motorStateObj } from '../../js/constants/robot-dog-constants.js';
-import { controlDevice } from '../../../../api/bi.js';
-import { listMapInfo } from '../../../../api/rsp/map.js';
-import { listMotion } from '../../../../api/rsp/equipment.js';
-import { getBasicMessage } from "@/api/menu"
 import Robot from './popup/Robot.vue';
 import Robot1 from './popup/Robot1.vue';
 import RobotControlPart from './popup/RobotControlPart.vue';
 import RobotCarControlPart from './popup/RobotCarControlPart.vue';
 import Vue from 'vue';
-// import MapTool from './MapTool.vue';
 import TaskAdd from './../../components/modal/TaskAdd.vue'
 import Uav from './popup/Uav.vue';
 import UavPort from './popup/UavPort.vue';
@@ -88,6 +58,7 @@ import Slam from './popup/Slam.vue'
 import Thumbnail from './thumbnail/Index.vue'
 import SlamMap from './slam/Index.vue'
 import { mapActions, mapState } from 'vuex';
+import { ROBOT_TYPE_INFO } from '../../../../constants/robot.js';
 
 export default {
   name: 'GisGlobalMap',
@@ -137,16 +108,11 @@ export default {
       ],
       dialogVisible: false,
       taskName: undefined,
-      dogList: [],
       endpoint: '',
       //以右上角为坐标中心的
       robot: {},
       loadMap: false,
       currentImage: ``,
-      MapIdOptions:[],
-      mapPoints: [],
-      selectedMapId: undefined,
-      selectedMap:{},
       //地图的长宽
       mapHeight: 0,
       mapWidth: 0,
@@ -155,22 +121,15 @@ export default {
       X0: 0.0,
       Y0: 0.0,
       Res: 0.1,
-      queryParams: {
-        dogState: 1,
-        dogName: "",
-        pageNum: 1,
-        pageSize: 50,
-      },
-      // type, command, time, items, equipment, endpoint
-      allRobotInfo: [],
-      selectedEndPoint: '',
       isSlam: false,
       // 显示缩略图
       showThumbnail: false,
       testA: { lat: 30.7472254, lng: 106.03737831115724 },
       testB: { lat: 30.7472254, lng: 106.040000 },
       distance1: 0,
-      maxLayer: null
+      layerB: null,
+      layerA: null,
+      dogList: []
     }
   },
   computed: {
@@ -187,7 +146,7 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
-    ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList', 'robotAlarmObj'])
+    ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList', 'robotAlarmObj', 'taskData', 'mapSearchValue'])
   },
   watch: {
     // 监听距离变化
@@ -209,7 +168,9 @@ export default {
       handler(newVal, oldVal) {
         // if (this.pointMarkers.length) return
         setTimeout(() => {
-          this.initPoints()
+          if (this.map) {
+            this.initPoints()
+          }
         }, 1000);
       },
       immediate: true
@@ -268,6 +229,20 @@ export default {
       },
       deep: true,
       immediate: true
+    },
+    mapSearchValue: {
+      handler(newVal, oldVal) {
+        if (newVal && this.map) {
+          const keywords = newVal.split('_timestamp_')[0]
+          const robot = this.robotList.find(item => item.name.includes(keywords) || item.type.includes(keywords) || item.typeCode.includes(keywords))
+          if (robot) {
+            this.map.setView([this.robotLocation[robot.robotId].lat, this.robotLocation[robot.robotId].lng])
+          } else {
+            this.$message.error('未找到相关装备')
+          }
+        }
+      },
+      immediate: true
     }
   },
   async created() {
@@ -301,6 +276,13 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotLocation']),
+    // getRobotStatus(robotId) {
+    //   const { status, task = [] } = this.robotBaseInfo?.[robotId] || {}      
+    //   const runningTask = Array.isArray(task) ? task : [task].map(item => this.taskData?.[item.taskId] || item)?.find(item => item.status === 'running') || null
+    //   const customStatusName = status === 'online' ? runningTask ? '任务中' : '空闲中' : status === 'offline' ? '离线' : '故障'
+    //   const statusClass = status === 'online' ? runningTask ? 'blue' : 'green' : status === 'offline' ? 'gray' : 'orange'
+    //   return { customStatusName, statusClass }
+    // },
     changeMapType() {
       this.isSlam = !this.isSlam
     },
@@ -325,17 +307,22 @@ export default {
       // 关键：手动添加旋转控件到地图
       L.control.rotate().addTo(this.map);
       // 地图底图
-      // L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
-      L.tileLayer('/tdt/tiles/12/{z}/{x}/{y}.png', {
-      // L.tileLayer('/tdt/tiles/light/{z}/{x}/{y}.jpg', {
-        maxZoom: 18,
+      this.layerA = L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
+      // this.layerA = L.tileLayer('/tdt/tiles/12/{z}/{x}/{y}.png', {
+        maxZoom: 12,
         minZoom: 12,
-      }).addTo(this.map);
+      });
 
-      this.maxLayer = L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
+      this.layerB = L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
         maxZoom: 18,
         minZoom: 17,
       });
+
+      if (!this.map.hasLayer(this.layerB) && !this.map.hasLayer(this.layerA)) {
+        this.map.setBearing(this.$route.name === 'biIndex' ? 0 : -45)
+        this.map.setView([30.7478613352993, 106.03655278081857], this.$route.name === 'biIndex' ? 12 : 18)
+        this.map.addLayer(this[this.$route.name === 'biIndex' ? 'layerA' : 'layerB'])
+      }
 
       
 
@@ -382,8 +369,8 @@ export default {
         }
       })
 
-      this.map.on('move zoom', () => {
-        console.log('move zoom');
+      this.map.on('move zoom', (e) => {
+        console.log('move zoom', e);
         
         const { lat, lng } = this.map.getCenter()
         if (this.$refs.thumbnailRef) {
@@ -398,10 +385,34 @@ export default {
       // 缩放到停止
       this.map.on('zoomend', () => {
         console.log('zoomend');
-        this.maxLayer.addTo(this.map);
-        this.map.setBearing(-45)
-        this.map.setZoom(18)
-        this.map.setView([30.7478613352993, 106.03655278081857], 18)
+        
+
+        // 监听 zoomend 事件
+        var currentZoom = this.map.getZoom();
+        // console.log('当前缩放级别:', currentZoom); // 使用 map.getZoom() 获取当前级别 [citation:1]
+
+        // 根据缩放级别显示/隐藏图层
+        if (currentZoom > 17 && currentZoom < 18) {
+          this.map.setBearing(0)
+          this.map.setView([30.7478613352993, 106.03655278081857], 12)
+          if (!this.map.hasLayer(this.layerA)) {
+            this.layerA.addTo(this.map);
+          }
+          if (this.map.hasLayer(this.layerB)) {
+            this.map.removeLayer(this.layerB);
+          }
+          // 缩小时，显示 layerB，隐藏 layerA
+        } else if(currentZoom > 12) {
+          this.map.setBearing(-45)
+          this.map.setView([30.7478613352993, 106.03655278081857], 18)
+          
+          if (!this.map.hasLayer(this.layerB)) {
+            this.layerB.addTo(this.map);
+          }
+          if (this.map.hasLayer(this.layerA)) {
+            this.map.removeLayer(this.layerA);
+          }
+        }
         this.pointMarkers.map((marker, index) => {
           // console.log(111111111, marker.getIcon().options, this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
           this.pointMarkers[index].setIcon(this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
@@ -436,35 +447,8 @@ export default {
     },
     // 创建自定义图标
     getIcon(item, options = {}) {
-      const sizeObj = {
-        四足机器狗: {
-          width: 38,
-          height: 28,
-          img: 'robot_dog'
-        },
-        轮式机器人: {
-          width: 30,
-          height: 28,
-          img: 'robot_car'
-        },
-        机器人: {
-          width: 24,
-          height: 39,
-          img: 'robot1'
-        },
-        default: {
-          width: 24,
-          height: 39,
-          img: 'robot1'
-        },
-        UAV: {
-          width: 43,
-          height: 20,
-          img: 'robot_uav'
-        },
-      }
-      
-      const { typeName, name, type, status, robotId } = item
+      const sizeObj = ROBOT_TYPE_INFO
+      const { typeName, name, type, status, robotId, customStatusName, statusClass } = item
       const { width, height, img } = sizeObj[type] || sizeObj.default  
       const zoom = this.map.getZoom();
       const scale = 66 / 93
@@ -478,18 +462,19 @@ export default {
         {
           html: `<div class="custom-point-img flx-center flex-column" style="flex-wrap: nowrap;">
             ${this.robotAlarmObj?.[robotId] ? `
-              <div class="robot-warning flx-center" style="height: fit-content; display: none !important;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <div class="robot-warning flx-center" style="height: fit-content;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" h eight="16" viewBox="0 0 16 16" fill="none">
                   <path d="M15.6585 13.1145L9.38682 2.25252C8.6197 0.924516 7.36601 0.924516 6.59909 2.25252L0.327353 13.1145C-0.439564 14.4438 0.187856 15.5282 1.72062 15.5282H14.2652C15.798 15.5282 16.4248 14.4437 15.6585 13.1145ZM7.13152 5.33448C7.35689 5.09081 7.64342 4.96896 7.99287 4.96896C8.3425 4.96896 8.62877 5.08953 8.85438 5.32961C9.07852 5.57023 9.19055 5.87115 9.19055 6.233C9.19055 6.54434 8.7227 8.8337 8.56664 10.4992H7.43975C7.30289 8.83368 6.79524 6.54434 6.79524 6.233C6.79527 5.87664 6.90748 5.57696 7.13152 5.33448ZM8.8386 13.254C8.60154 13.4849 8.31945 13.6 7.99295 13.6C7.66653 13.6 7.38436 13.4849 7.14735 13.254C6.91098 13.0237 6.7935 12.7447 6.7935 12.4171C6.7935 12.0911 6.91098 11.8091 7.14735 11.5727C7.38436 11.3363 7.66653 11.2181 7.99295 11.2181C8.31945 11.2181 8.60154 11.3363 8.8386 11.5727C9.0748 11.8091 9.19256 12.0911 9.19256 12.4171C9.19256 12.7447 9.0748 13.0237 8.8386 13.254Z" fill="#FFDD00"/>
                 </svg>
-                <span class="ml5">告警信息：${this.robotAlarmObj[robotId].categoryName}：${this.robotAlarmObj[robotId].title}</span>
+                <span class="ml5">告警事件：${this.robotAlarmObj[robotId].categoryName}：${this.robotAlarmObj[robotId].title}</span>
               </div>` : ''}
             <img class="wp${width} hp${height}" src="${require(`@/assets/images/new-bi/${img}.png`)}" />
             <img src="${require(`@/assets/images/new-bi/robot_foot.png`)}" style="margin-top: -5px;" />
             <div class="custom-point-name mt2" style="">${name}</div>
-            <div class="custom-point-status mt4 pr10 pl10">${status === 'online' ? '任务中' : status === 1 ? '任务中' : status === 2 ? '故障' : '离线'}</div>
+            <div class="custom-point-status mt4 pr10 pl10">${customStatusName}</div>
           </div>`,
-          className: `custom-point ${type} ${status === 'online' ? 'blue' : status === 1 ? 'blue' : status === 2 ? 'orange' : 'gray'}` ,
+          className: `custom-point ${this.selectedRobot.robotId === robotId ? `show-icon show-icon-${width}-${height}` : ''} ${type} ${statusClass}` ,
+          // className: `custom-point ${type} ${statusClass}` ,
           iconSize: null,
           // 偏移量
           // iconAnchor: [name.length * 7 > 24 ? name.length * 7 : 24, height],
@@ -513,11 +498,12 @@ export default {
         { lat: 30.7469491, lng: 106.0344109, status1: 0 },
         { lat: 30.745330, lng: 106.039428, status1: 3 },
       ]
-      this.robotList.map((item, index) => {
-        item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
-        // const lat = (index === 0 || index === 1) ? latLngs[index === 0 ? 1 : 0].lat : (this.robotLocation[item.robotId].lat || 39.54)
-        // const lng = (index === 0 || index === 1) ? latLngs[index === 0 ? 1 : 0].lng : (this.robotLocation[item.robotId].lng || 116.23)
-        // item.points = L.latLng(lat, lng)
+      this.robotList.map((r, index) => {
+        const item = Object.assign({}, this.robotBaseInfo?.[r.robotId] || r)
+        // item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
+        const lat = this.robotLocation[item.robotId].lat || 39.54
+        const lng = this.robotLocation[item.robotId].lng || 116.23
+        item.points = L.latLng(lat, lng)
         const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === item.robotId);
         if (existingIndex >= 0) {
           // console.log(1);
@@ -727,10 +713,14 @@ export default {
         return
       }
       const polygonPoints = [
-        [30.747402094262892, 106.03720949762425],  // 点1 (上偏左)
-        [30.746587087515316,106.03824884204943],  // 点2 (右上)
-        [30.745824237436622,106.03739157519864],  // 点3 (下偏右)
-        [30.746639250628817,106.03635981721821]   // 点4 (左侧)
+        // [30.747402094262892, 106.03720949762425],  // 点1 (上偏左)
+        // [30.746587087515316,106.03824884204943],  // 点2 (右上)
+        // [30.745824237436622,106.03739157519864],  // 点3 (下偏右)
+        // [30.746639250628817,106.03635981721821]   // 点4 (左侧)
+        [ 30.748881699556307, 106.03529721123913 ],
+        [ 30.7478613352993, 106.03655278081857 ],
+        [ 30.747140651711415, 106.03579008416635 ],
+        [ 30.74812517003875, 106.03462176616857 ],
       ];
       // 如果已有虚线多边形，移除
       if (this.dashedPolygonLayer.getLayers().length) {
@@ -1058,101 +1048,6 @@ export default {
     toggleSetPointB() {
       this.settingPointB = !this.settingPointB;
     },
-    async getMapIdOptions() {
-      const res = await listMapInfo({ status: '1' })
-      this.MapIdOptions = res.rows.map(item=>({
-        ...item,
-        value: item.id,
-        label: item.name,
-        X0: item.startXCoordinate,
-        Y0: item.startYCoordinate,
-        mapFileUrl: item.mapFileUrl
-      }))
-      if (this.MapIdOptions.length) {
-        this.selectedMapId = this.MapIdOptions[0].value
-      }
-    },
-    // TODO:获取地图的像素长宽-未使用
-    async getMapSize() {
-      this.loadMap = false
-      const img = this.$refs.mapImage;
-      await img.onload;
-      this.mapWidth = img.naturalWidth;
-      this.mapHeight = img.naturalHeight;
-      // 获取图片在页面上的实际显示大小
-      this.displayWidth = img.clientWidth;
-      this.displayHeight = img.clientHeight;
-      this.loadMap = true
-      // console.log('计算地图的长宽')
-
-      // setTimeout(() => {
-      //   // this.$refs.lineRef.init()
-      //   this.renderPath()
-      // }, 100);
-    },
-    //地图变了！！！
-    async changeMap() {
-      let selectedMapInfo = this.MapIdOptions.find(m => m.value === this.selectedMapId)
-      if (selectedMapInfo) {        
-        // this.currentImage = `${process.env.VUE_APP_BASE_API}/maps/${selectedMapInfo.label}.jpg`
-        // this.currentImage = require('D:/resources/robot/maps/地图1.jpg')
-        this.currentImage = `${process.env.NODE_ENV === 'development' ? process.env.VUE_APP_BASE_IP.replaceAll("'", '') : location.origin}/file/${selectedMapInfo.mapFileUrl}`
-        this.X0 = selectedMapInfo.X0
-        this.Y0 = selectedMapInfo.Y0
-        this.getDogList(this.selectedMapId)
-      }
-
-      // 测试
-      // setTimeout(() => {
-      //   this.PosX = 30;
-      //   this.PosY = 30;
-      //   let PixelX = (this.PosX - (this.X0))/(0.1);
-      //   let PixelY = this.mapHeight - (this.PosY - (this.Y0))/(0.1)
-      //   this.robot.x = PixelX/this.mapWidth*100
-      //   this.robot.y = PixelY/this.mapHeight*100
-      // }, 5000);
-    },
-    // 选择机器狗
-    changeDog(e) {
-      // setTimeout(() => {
-      //   this.$refs.lineRef.init()
-      //   this.renderPath()
-      // }, 100);      
-      this.$emit('getDogList', { dogList: this.dogList })
-    },
-    //获取到基础信息后处理步骤
-    handlebasicMessage(message) {
-      //拿里面的电池信息
-      if (message && message.items) {
-        if (message.items.electricity != null) {
-          const { motionState, sumOdom, curOdom, location, motorState, chargeState, controlMode, speed, electricity, onDockState } = message.items
-          this.deviceData.status = '在线'
-          this.deviceData.sumOdom = sumOdom
-          this.deviceData.curOdom = curOdom
-          this.deviceData.motionState = motionStateObj[motionState]
-          this.deviceData.location = locationObj[location]
-          this.deviceData.motorState = motorStateObj[motorState]
-          this.deviceData.chargeState = chargeStateObj[chargeState]
-          this.deviceData.controlMode = controlModeObj[controlMode]
-          // this.deviceData.onDockState = onDockStateObj[onDockState]
-          this.deviceData.onDockState = onDockState
-          this.deviceData.speed = speed
-          this.deviceData.battery = electricity
-        } else {
-          console.error("电量信息格式不正确", message);
-        }
-        // if (message.items.posX != null) {
-        //   const PosX = message.items.posX;
-        //   const PosY = message.items.posY;
-        //   this.Res = message.items.res;
-    
-        //   let PixelX = (PosX - (this.X0))/(0.1);
-        //   let PixelY = this.mapHeight - (PosY - (this.Y0))/(0.1)
-        //   this.robot.x = PixelX/this.mapWidth*100
-        //   this.robot.y = PixelY/this.mapHeight*100
-        // }
-      }
-    },
     //控制机器人样式（正常or异常，以及位置）
     getRobotStyle(endpoint) {
       const isExist = Boolean(this.robot[endpoint])
@@ -1164,32 +1059,6 @@ export default {
         left: '50%',
         top: '50%',
         // backgroundImage: require('../../assets/bigScreen/icon/robot_normal.png')
-      }
-    },
-    getDogList(mapInfoId) {
-      let queryParams = {dogState: 1, pageNum: 1, pageSize: 50,}
-      listMotion({ mapInfoId, stateIn: '1,2,3' }).then(res => {
-        this.dogList = res.rows
-        console.log('根据mapId查机器狗列表', res);
-        if (this.dogList.length > 0) {
-          this.dogList[0] = { ...this.dogList[0], lat: 30.7472254, lng: 106.03737831115724, pathPoints: [], movementPath: null, points: null }
-          // this.dogList.push({ ...this.dogList[0], id: 38, name: 'XXXXXXXX', lat: 30.7472254, lng: 106.040000, pathPoints: [], movementPath: null, points: null })
-          // this.dogList.push({ ...this.dogList[0], qhMountedEquipmentList: [], id: 38, lat: '', lng: '', name: 'XXXXXXXX', pathPoints: [], movementPath: null, points: null })
-          this.changeDog(this.dogList[0].id)
-          // 拿到路径点位信息
-        }
-        this.initPoints()
-      })
-    },
-    onPopoverShow(dog) {
-      this.selectedEndPoint = dog.endpoint
-      const info = this.allRobotInfo.filter(item => item.endpoint === dog.endpoint)
-      if (info && info.length) {
-        // getRecentTaskInfo(info[0].id).then(res =>{
-        //   // console.log(res)
-        //   this.taskName = res.data ? res.data.TaskName : ''
-        // }).catch(error => {
-        // })
       }
     },
     // 一键开关机
@@ -1227,13 +1096,11 @@ export default {
         //   endpoint: info.endPoint || ''
         // })
       })
-      this.$emit('changeWebrtcServer', 'close')
     },
     // 关闭模态框
     handleClose() {
       // 打开一级页面的视频监控连接
       this.dialogVisible = false;
-      this.$emit('changeWebrtcServer', 'open')
     },
     //获取每个点的位置样式
     getPointStyle(point) {

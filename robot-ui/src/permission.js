@@ -25,7 +25,6 @@ const whiteList = [
   '/bi/patrol/panorama',
   '/bi/patrol/monitor',
   '/bi/patrol/business',
-  '/bi/patrol/business2',
   '/bi/patrol/statistics',
   '/bi/patrol/app',
   '/bi/staff',

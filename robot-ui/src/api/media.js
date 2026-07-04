@@ -90,29 +90,33 @@ export function switchChannel(sessionId, data) {
 }
 
 // 创建快照
-export function createSnapshot(sessionId, data) {
+export function uploadFile(data) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/snapshots`,
-    method: 'post',
-    data
-  })
-}
-
-export function createSnapshotFile(sessionId, data) {
-  return request({
-    url: `/api/control/video-sessions/${sessionId}/snapshots/file`,
+    url: '/api/control/files',
     method: 'post',
     data,
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    },
     timeout: 30000
   })
 }
-export function snapshotImageUrl(snapshotId) {
+
+export function getFiles(params = {}) {
+  return request({
+    url: '/api/control/files',
+    method: 'get',
+    params
+  })
+}
+
+export function fileDownloadUrl(fileId) {
+  return request({
+    url: `/api/control/files/${fileId}/download-url`,
+    method: 'post'
+  })
+}
+export function snapshotImageUrl(fileId) {
   const base = process.env.VUE_APP_API_BASE || ''
   return request({
-    url: `${base}/api/control/snapshots/${snapshotId}/image`,
+    url: `${base}/api/control/files/${fileId}/content`,
     method: 'get'
   })
 }
@@ -170,18 +174,9 @@ export function heartbeatIntercom(sessionId) {
   })
 }
 
-export function getRecordings(params) {
+export function getFilePlayUrl(fileId) {
   return request({
-    url: '/api/control/recordings',
-    method: 'get',
-    headers,
-    params
-  })
-}
-export function getRecordingPlayUrl(recordingId) {
-  return request({
-    url: `/api/control/recordings/${recordingId}/play-url`,
-    headers,
+    url: `/api/control/files/${fileId}/play-url`,
     method: 'post'
   })
 }
@@ -246,26 +241,16 @@ export function startLiveRecording(sessionId) {
   })
 }
 
-export function stopLiveRecording(sessionId, recordingId) {
+export function stopLiveRecording(sessionId, fileId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/recordings/${recordingId}/stop`,
-    method: 'post',
-    headers
+    url: `/api/control/video-sessions/${sessionId}/recordings/${fileId}/stop`,
+    method: 'post'
   })
 }
 export function getActiveLiveRecording(sessionId) {
   return request({
     url: `/api/control/video-sessions/${sessionId}/recordings/active`,
     method: 'get'
-  })
-}
-
-// 抓拍
-export function getSnapshotList(params) {
-  return request({
-    url: `api/control/snapshots`,
-    method: 'get',
-    params
   })
 }
 

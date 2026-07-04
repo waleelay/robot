@@ -9,8 +9,8 @@
 -->
 <template>
   <div class="map-div h100" :class="{ full: collapse }">
-    <GlobalMap @getDogList="getDogList"  @changeWebrtcServer="changeWebrtcServer" style="z-index: 0;" ref="globalMapRef" />
-    <MapTool @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter " />
+    <GlobalMap style="z-index: 0;" ref="globalMapRef" />
+    <MapTool @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter" @changeMapAngle="changeMapAngle" />
     <!-- <img src="../../../../../assets/images/new-bi/robot_dog.png" alt="地图" :style="getStyle()" class="image1" ref="mapImage"> -->
   </div>
 </template>
@@ -33,7 +33,8 @@ export default {
   data() {
     return {
       count: 0,
-      intervalId: null
+      intervalId: null,
+      angle: '2D'
     }
   },
   mounted() {
@@ -45,11 +46,11 @@ export default {
     clearInterval(this.intervalId)
   },
   methods: {
+    changeMapAngle(angle) {
+      this.angle = angle
+    },
     getDogList(data) {
       this.$emit('getDogList', { dogList: data.dogList })
-    },
-    changeWebrtcServer(type) {
-      this.$emit('changeWebrtcServer', type)
     },
     changeMapZoom(data) {
       this.$refs.globalMapRef.map[data.method](data.value || 1)

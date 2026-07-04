@@ -10,21 +10,16 @@
 <template>
 <!--  <div id="app">-->
   <div id="app" :class="{'big-screen-background' :isBigScreen, 'default-background': !isBigScreen}">
-    <GlobalAlert />
     <router-view />
-    <theme-picker />
   </div>
 </template>
 
 <script>
-import ThemePicker from "@/components/ThemePicker";
-import GlobalAlert from '@/components/GlobalAlert';
 import { getBasicMessage } from "@/api/menu"
 import axios from "axios";
 
 export default {
   name: "App",
-  components: { ThemePicker,GlobalAlert },
   data() {
     return {
       isBigScreen: false

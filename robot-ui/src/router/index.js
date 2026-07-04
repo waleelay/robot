@@ -68,44 +68,6 @@ export const constantRoutes = [
   //   hidden: true,
   // },
   {
-    path: '/bigScreen',
-    component: () => import('@/views/largeScreen/home.vue'),
-    hidden: true,
-    redirect: '/bigScreen/shouye',
-    children: [
-      {
-        path: 'default',
-        component: () => import('@/views/largeScreen/index'),
-        name: 'default',
-        meta: { title: '首页' }
-      },
-      {
-        path: 'shouye',
-        component: () => import('@/views/largeScreen/1_shouye'),
-        name: 'shouye',
-        meta: { title: '首页' }
-      },
-      {
-        path: 'xlxc',
-        component: () => import('@/views/largeScreen/2_xlxc'),
-        name: 'xlxc',
-        meta: { title: '巡逻巡查' }
-      },
-      {
-        path: 'rygk',
-        component: () => import('@/views/largeScreen/3_rygk'),
-        name: 'rygk',
-        meta: { title: '人员管控' }
-      },
-      {
-        path: 'cljg',
-        component: () => import('@/views/largeScreen/4_cljg'),
-        name: 'cljg',
-        meta: { title: '车辆监管' }
-      },
-    ]
-  },
-  {
     path: '/bi',
     name: 'bi',
     hidden: true,
@@ -191,16 +153,6 @@ export const constantRoutes = [
             // ]
           },
           {
-            path: '/bi/patrol/business2',
-            name: 'biPatrolBusiness2',
-            component: () => import('@/views/bi/patrol/business2/Index.vue'),
-            meta: {
-              title: '业务管理2',
-              icon: 'el-icon-data-board',
-              requiresAuth: true
-            }
-          },
-          {
             path: '/bi/patrol/statistics',
             name: 'biPatrolStatistics',
             component: () => import('./../views/bi/patrol/statistics‌/Index.vue'),
@@ -232,176 +184,22 @@ export const constantRoutes = [
           requiresAuth: true
         }
       },
-      {
-        path: '/bi/demo',
-        name: 'biDemo',
-        component: () => import('@/views/bi/demo/Index.vue'),
-        meta: {
-          title: 'DEMO组件',
-          icon: 'el-icon-data-board',
-          requiresAuth: true
-        }
-      }
+      // {
+      //   path: '/bi/demo',
+      //   name: 'biDemo',
+      //   component: () => import('@/views/bi/demo/Index.vue'),
+      //   meta: {
+      //     title: 'DEMO组件',
+      //     icon: 'el-icon-data-board',
+      //     requiresAuth: true
+      //   }
+      // }
     ]
   },
-  {
-    path: '/user',
-    component: Layout,
-    hidden: true,
-    redirect: 'noredirect',
-    children: [
-      {
-        path: 'profile',
-        component: () => import('@/views/system/user/profile/index'),
-        name: 'Profile',
-        meta: { title: '个人中心', icon: 'user' }
-      }
-    ]
-  },
-  {
-    path: '/taskRoute',
-    component: Layout,
-    hidden: true,
-    redirect: 'noredirect',
-    children: [
-      {
-        path: 'addRoute',
-        component: ()=> import('@/views/task/taskRoute/addRoute'),
-        name: 'addRoute',
-        meta: {title: '添加路径',icon: 'user'}
-      }
-    ]
-  },
-  {
-    path: '/updateRoute',
-    component: Layout,
-    hidden: true,
-    redirect: 'noredirect',
-    children: [
-      {
-        path: 'updateRoute/:id',
-        component: () => import('@/views/task/taskRoute/updateRoute'),
-        name: 'updateRoute',
-        meta: {title: '修改路径'}
-      }
-    ]
-  }
 ]
 
 // 动态路由，基于用户权限动态去加载
 export const dynamicRoutes = [
-  {
-    path: '/',
-    component: Layout,
-    hidden: true,
-    permissions: ['rsp:map-info:add'],
-    children: [
-      {
-        path: 'map/add',
-        component: () => import('@/views/map/add'),
-        name: 'mapAdd',
-        meta: { title: '新建地图', activeMenu: '/map', noCache: true }
-      }
-    ]
-  },
-  {
-    path: '/',
-    component: Layout,
-    hidden: true,
-    permissions: ['rsp:motion:add'],
-    children: [
-      {
-        path: 'equipment/add',
-        component: () => import('@/views/equipment/add'),
-        name: 'equipemtAdd',
-        meta: { title: '接入装备', activeMenu: '/equipment', noCache: true }
-      }
-    ]
-  },
-  {
-    path: '/',
-    component: Layout,
-    hidden: true,
-    permissions: ['rsp:path:add'],
-    children: [
-      {
-        path: 'path/add',
-        component: () => import('@/views/path/add'),
-        name: 'pathAdd',
-        meta: { title: '新建路径', activeMenu: '/path', noCache: true }
-      }
-    ]
-  },
-  {
-    path: '/system/user-auth',
-    component: Layout,
-    hidden: true,
-    permissions: ['system:user:edit'],
-    children: [
-      {
-        path: 'role/:userId(\\d+)',
-        component: () => import('@/views/system/user/authRole'),
-        name: 'AuthRole',
-        meta: { title: '分配角色', activeMenu: '/system/user' }
-      }
-    ]
-  },
-  {
-    path: '/system/role-auth',
-    component: Layout,
-    hidden: true,
-    permissions: ['system:role:edit'],
-    children: [
-      {
-        path: 'user/:roleId(\\d+)',
-        component: () => import('@/views/system/role/authUser'),
-        name: 'AuthUser',
-        meta: { title: '分配用户', activeMenu: '/system/role' }
-      }
-    ]
-  },
-  {
-    path: '/system/dict-data',
-    component: Layout,
-    hidden: true,
-    permissions: ['system:dict:list'],
-    children: [
-      {
-        path: 'index/:dictId(\\d+)',
-        component: () => import('@/views/system/dict/data'),
-        name: 'Data',
-        meta: { title: '字典数据', activeMenu: '/system/dict' }
-      }
-    ]
-  },
-  {
-    path: '/monitor/job-log',
-    component: Layout,
-    hidden: true,
-    permissions: ['monitor:job:list'],
-    children: [
-      {
-        path: 'index/:jobId(\\d+)',
-        component: () => import('@/views/rollCall/setTask/log'),
-        name: 'JobLog',
-        meta: { title: '调度日志', activeMenu: '/rollCall/setTask' }
-      }
-    ]
-  },
-  {
-    path: '/tool/gen-edit',
-    component: Layout,
-    hidden: true,
-    permissions: ['tool:gen:edit'],
-    children: [
-      {
-        path: 'index/:tableId(\\d+)',
-        component: () => import('@/views/tool/gen/editTable'),
-        name: 'GenEdit',
-        meta: { title: '修改生成配置', activeMenu: '/tool/gen' }
-      }
-    ]
-  }
 ]
 
 // 防止连续点击多次路由报错

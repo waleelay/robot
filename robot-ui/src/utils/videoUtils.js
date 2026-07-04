@@ -95,7 +95,9 @@ export default {
       } else {
         this.volumeInfo.isMuted = false;
       }
-      this.videoEl.volume = cur / 100;
+      if (this.videoEl?.volume !== undefined) {
+        this.videoEl.volume = cur / 100;
+      }
     },
     // 切换静音
     toggleMute() {
@@ -262,7 +264,7 @@ export default {
         const container1 = this.$refs[`dropdownRef${this.slotKey}_${key}`];
         const menu = this.$refs[`dropdownMenuRef${this.slotKey}_${key}`];
         if (container1 && menu && menu.popperElm) {
-          if (this.isFullscreen) {
+          if (this.isFullscreen) {            
             menu.popperElm.classList.add('top_unset', 'left_unset0')
             menu.popperElm.style.bottom = '35px'
             menu.popperElm.style.position = 'absolute'
@@ -270,7 +272,7 @@ export default {
             if (menu.popperElm.parentElement !== container1) {
               container1.appendChild(menu.popperElm)
             }
-          } else {
+          } else {            
             menu.popperElm.classList.remove('top_unset', 'left_unset')
             menu.popperElm.style.bottom = 'unset'
             menu.popperElm.style.position = 'unset'
@@ -319,8 +321,8 @@ export default {
     // 初始音量设置
     // console.log(this.videoEl);
     
-    this.volumeInfo.isMuted = this.videoEl.muted;
-    this.volumeInfo.currentVolume = this.videoEl.volume * 100;
+    this.volumeInfo.isMuted = this.videoEl?.muted;
+    this.volumeInfo.currentVolume = (this.videoEl?.volume || 0) * 100;
     this.updateVolume();
     // 初始化时强制重置样式，确保与非全屏样式保持一致
     this.$nextTick(() => {

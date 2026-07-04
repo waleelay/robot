@@ -17,7 +17,7 @@
 </template>
 
 <script>
-import Gis from '../components/Gis.vue'
+// import Gis from '../components/Gis.vue'
 import GisSimulateMove from '../gis/gis模拟移动/Index.vue'
 import Slam from './slam/Index.vue'
 import mapInfo from './slam/mapInfo.json'
@@ -25,7 +25,7 @@ import pathInfo from './slam/pathInfo.json'
 import mapPoints from './slam/map-points.json'
 export default {
   name: 'BiPatrolApp',
-  components: {Gis, GisSimulateMove, Slam},
+  components: {GisSimulateMove, Slam},
   data() {
     return {
       slamInfo: {

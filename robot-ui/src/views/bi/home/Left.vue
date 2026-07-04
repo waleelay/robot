@@ -1,6 +1,6 @@
 <template>
-  <div class="left-div ml20 pr20 h100" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto' }">
-    <div class="container flex-column w100 h100 flx-center" style="flex-wrap: nowrap;">
+  <div class="left-div ml20 pr20 mb20 no-w-scroll" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', height: 'calc(100% - 20px)', overflowY: 'auto' }">
+    <div class="container flex-column w100 mt105" style="flex-wrap: nowrap;">
       <div class="box hp386">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">告警概览</span> 
@@ -39,7 +39,7 @@
           </div>
         </div>
       </div>
-      <div class="box mt20 task pb20" :class="{ 'no_data hp41': collapseArr[1] }">
+      <div class="box hp508 mt20 task pb18" :class="{ 'no_data hp41': collapseArr[1] }">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">巡逻概览</span>
         </div>
@@ -53,13 +53,14 @@
             <div class="value mt4"><span class="mr4">{{ patrolOverview.mileageToday || 0 }}</span>{{ patrolOverview.mileageUnit || '-' }}</div>
           </div>
         </div>
-        <div class="mt20">
+        <div class="mt18">
           <div class="t2 ml10">巡逻画面</div>
           <div class="flex flex-wrap pl10">
             <!-- wp142 hp80  -->
             <!-- 随机显示一个摄像头画面 -->
-            <div v-for="(robot, index) in robotMainCameras.slice(0, 1)" class="wp296 hp166 mt20 ml10" style="position: relative;">
+            <div v-for="(robot, index) in robotMainCameras.slice(0, 2)" class="wp296 hp159 mt10 ml10" style="position: relative;">
               <VideoBox
+                class=""
                 :videoIndex="`${robot.robotId}_${index}_${robot.camera.key}`"
                 :prefixId="prefixId"
                 :ZQL_videosInfos="{ [`${robot.robotId}_${index}_${robot.camera.key}`]: { robot, ...robot.camera } }" />
@@ -113,7 +114,7 @@ export default {
           return bodyCam ? { robotId: robot.robotId, name: robot.name, camera: this.cameras[bodyCam.key] } : null;
         })
         .filter(item => item !== null); // 去除没有 body 摄像头的机器人
-      this.startAll()
+      this.startAll(result)
       return result
     }
   },
@@ -154,7 +155,7 @@ export default {
         },
       },
       prefixId: 'home-video',
-      loaded: false
+      loadedCameraKeys: []
     }
   },
   async mounted() {
@@ -167,20 +168,28 @@ export default {
     getMoreRobotInfo() {
   
     },
-    async startAll() {
+    async startAll(robotMainCameras) {
       this.setPrefixId(this.prefixId)
-      if (this.loaded) return
       this.$nextTick(async () => {
-        if (!this.robotMainCameras.length) return
-        this.loaded = true
-        const robot = this.robotMainCameras[0]
-        // for (const robot of [...this.robotMainCameras]) {
-          if (!this.robotBaseInfo?.[robot.robotId]) return          
-          const camera = Object.assign({}, robot.camera)
-          console.log(123);
+        if (!robotMainCameras.length) return
+        if (this.loadedCameraKeys.length === robotMainCameras.length || this.loadedCameraKeys.length === 2) return
+        // const robot = robotMainCameras[0]
+        // console.log(222, robotMainCameras.length);
+        
+        for (const robot of [...robotMainCameras.slice(0, 2)]) {
+          // console.log(111, robot.robotId, this.robotBaseInfo?.[robot.robotId]?.status);
           
-          await this.startCamera({ robot: Object.assign({}, this.robotBaseInfo[robot.robotId] || {}), camera })
-        // }
+          if (!this.robotBaseInfo?.[robot.robotId]) return
+          // console.log(111, robotMainCameras.length, robotMainCameras.slice(0, 2).length, this.loadedCameraKeys, this.robotBaseInfo[robot.robotId].status);
+          const camera = Object.assign({}, robot.camera)
+          console.log(robot.robotId, this.robotBaseInfo[robot.robotId].status);
+          // if (this.robotBaseInfo[robot.robotId].status === 'online' && !this.loadedCameraKeys.includes(camera.key)) {
+          if (this.robotBaseInfo['robot-001'].status === 'online' && !this.loadedCameraKeys.includes(camera.key)) {
+            this.loadedCameraKeys.push(camera.key)
+            // console.log(123, this.loadedCameraKeys);
+            await this.startCamera({ robot: Object.assign({}, this.robotBaseInfo[robot.robotId] || {}), camera })
+          }
+        }
       })
     },
     toggleCollapse(type, typeIndex) {

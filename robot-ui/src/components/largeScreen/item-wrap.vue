@@ -52,7 +52,7 @@ $item_title_content-height: calc(100% - 50px);
     color: #ffffff;
     position: relative;
     // font-family: "YouSheBiaoTiHei";
-    background-image: url("../../assets/images/largescreen/item-title-bg.png");
+    // background-image: url("../../assets/images/largescreen/item-title-bg.png");
     background-size: 100% 100%;
     padding-left:60px;
     &::before {
@@ -67,27 +67,27 @@ $item_title_content-height: calc(100% - 50px);
     }
     &.icon0 {
       &::before {
-        background-image: url("../../assets/images/largescreen/item-title-icon0.png");
+        // background-image: url("../../assets/images/largescreen/item-title-icon0.png");
       }
     }
     &.icon1 {
       &::before {
-        background-image: url("../../assets/images/largescreen/item-title-icon1.png");
+        // background-image: url("../../assets/images/largescreen/item-title-icon1.png");
       }
     }
     &.icon2 {
       &::before {
-        background-image: url("../../assets/images/largescreen/item-title-icon2.png");
+        // background-image: url("../../assets/images/largescreen/item-title-icon2.png");
       }
     }
     &.icon3 {
       &::before {
-        background-image: url("../../assets/images/largescreen/item-title-icon3.png");
+        // background-image: url("../../assets/images/largescreen/item-title-icon3.png");
       }
     }
     &.icon4 {
       &::before {
-        background-image: url("../../assets/images/largescreen/item-title-icon4.png");
+        // background-image: url("../../assets/images/largescreen/item-title-icon4.png");
       }
     }
   }

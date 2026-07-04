@@ -7,17 +7,27 @@
       <div class="page page-next flx-center" @click="handleChangePage('next')" :class="{ 'show-next': showNext }">
         <svg-icon icon-class="d-right"></svg-icon>
       </div>
-      <div v-for="(item, index) in snapShotInfo.snapshotList" :key="item.snapshotId" :style="{ display: tabIndex === 0 ? 'inline-flex' : 'none', marginLeft: index !== 0 ? '15.4px' : 0 }" class="item flx-center wp160 hp90">
-        <!-- <img :src="`https://192.168.124.77:4443/api/control/snapshots/${item.snapshotId}/image`" alt="" class="w100" style="height: auto; max-height: 100%;"> -->
+      <div v-for="(item, index) in snapShotInfo.snapshotList" :key="item.fileId" :style="{ display: tabIndex === 0 ? 'inline-flex' : 'none', marginLeft: index !== 0 ? '15.4px' : 0 }" class="item flx-center wp160 hp90">
+        <!-- <img :src="`https://192.168.124.77:4443/api/control/snapshots/${item.fileId}/image`" alt="" class="w100" style="height: auto; max-height: 100%;"> -->
         <el-image
           class="w100"
-          style="height: auto; max-height: 100%;"
-          :src="`https://192.168.124.77:4443/api/control/snapshots/${item.snapshotId}/image`" 
+          style="height: auto; max-height: 100%;" 
+          :alt="item.fileName || item.fileId"
+          :src="item.customUrl"
           :preview-src-list="srcList">
         </el-image>
       </div>
-      <div v-for="(recording, index) in recordings" :style="{ display: tabIndex === 1 ? 'inline-flex' : 'none', marginLeft: index !== 0 ? '15.4px' : 0 }" :key="recording.recordingId" class="item flx-center wp160 hp90">
-        <video :ref="`${refPrefix}_${recording.recordingId}`" controls playsinline class="w100 h100" muted />
+      <div v-for="(recording, index) in recordings" :style="{ display: tabIndex === 1 ? 'inline-flex' : 'none', marginLeft: index !== 0 ? '15.4px' : 0 }" :key="recording.fileId" class="item flx-center wp160 hp90" :id="'recording' + recording.fileId">
+        <video :ref="`${refPrefix}_${recording.fileId}`" playsinline class="w100 h100" muted />
+        <div class="bottom flx-align-center" style="justify-content: end;">
+          <div :title="recordingData?.[recording.fileId]?.player?.paused ? '播放' : '暂停'" @click="playPause(recording.fileId)" class="snapshot-icon">
+            <!-- <svg-icon :icon-class="recordingData?.[recording.fileId]?.player?.paused ? 'play' : 'pause'" /> -->
+            <svg-icon :icon-class="recordingData?.[recording.fileId]?.player?.paused ? 'play' : 'pause'" />
+          </div>
+          <div :title="isFullscreen ? '退出全屏' : '全屏'" @click="toggle('recording' + recording.fileId)" class="snapshot-icon ml10">
+            <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen1'" />
+          </div>
+        </div>
       </div>
       
     </div>
@@ -25,9 +35,11 @@
 </template>
 
 <script>
-import { getSnapshotList } from '@/api/media'
 import { mapState } from 'vuex';
 import recordMixin from './recording.js'
+import { getFiles, snapshotImageUrl } from '../../../api/media.js';
+import { previewImageBlob } from '../../../api/new-bi.js';
+import videoUtils from '../../../utils/videoUtils.js'
 export default {
   name: 'Snapshot',
   props: {
@@ -36,18 +48,18 @@ export default {
       default: 0
     }
   },
-  mixins: [recordMixin],
+  mixins: [recordMixin, videoUtils],
   data() {
     return {
       snapShotInfo: {
         page: 0,
-        pageSize: 8,
+        size: 8,
         total: 0,
         snapshotList: []
       },
       recordInfo: {
         page: 0,
-        pageSize: 8,
+        size: 8,
         total: 0,
       },
       refPrefix: 'recordedPlayer1'
@@ -57,40 +69,50 @@ export default {
     ...mapState('websocketRobot', ['snapshotTime', 'recordTime']),
     srcList() {
       return (this.snapShotInfo.snapshotList || []).map(item => {
-        return `https://192.168.124.77:4443/api/control/snapshots/${item.snapshotId}/image`
+        return item.customUrl
       })
     },
     showPage() {
-      return (this.tabIndex === 0 && this.snapShotInfo.total > this.snapShotInfo.pageSize) || (this.tabIndex === 1 && this.recordInfo.total > this.recordInfo.pageSize)
+      return (this.tabIndex === 0 && this.snapShotInfo.total > this.snapShotInfo.size) || (this.tabIndex === 1 && this.recordInfo.total > this.recordInfo.size)
     },
     showPre() {
       return (this.tabIndex === 0 && this.snapShotInfo.page > 0) || (this.tabIndex === 1 && this.recordInfo.page > 0)
     },
     showNext() {
-      return (this.tabIndex === 0 && (this.snapShotInfo.page + 1) * this.snapShotInfo.pageSize < this.snapShotInfo.total) || (this.tabIndex === 1 && (this.recordInfo.page + 1) * this.recordInfo.pageSize < this.recordInfo.total)
-    }
+      return (this.tabIndex === 0 && (this.snapShotInfo.page + 1) * this.snapShotInfo.size < this.snapShotInfo.total) || (this.tabIndex === 1 && (this.recordInfo.page + 1) * this.recordInfo.size < this.recordInfo.total)
+    },
   },
   methods: {
+    getVideoPaused(id) {
+      const ele = document.getElementById(id)
+      return ele? ele.paused : true
+    },
+    toggle(id) {
+      this.idName = id
+      this.toggleFullscreen()
+    },
     async handleChangePage(type) {
       const key = this.tabIndex === 0 ? 'snapShotInfo' : 'recordInfo'
       this[key].page = type === 'pre' ? this[key].page - 1 : this[key].page + 1
       this.tabIndex === 0 ? this.getSnapData() : await this.getPlayers()
     },
     async getSnapData() {
-      const res = await getSnapshotList({ page: this.snapShotInfo.page, pageSize: this.snapShotInfo.pageSize }) || {}
-      this.snapShotInfo.snapshotList = res.items || []
+      const res = await getFiles({ robotId: 'robot-001', page: this.snapShotInfo.page, size: this.snapShotInfo.size, fileType: 'IMAGE', status: 'READY' }) || {}
+      this.snapShotInfo.snapshotList = (res.items || []).map(item => {
+        return { ...item, customUrl: `https://192.168.124.77:24443/api/control/files/${item.fileId}/content` }
+      })      
       this.snapShotInfo.total = res.total || 0
     },
     async updateRecordings(items) {
       const recordings = this.recordingTab === 'patrol'
-            ? items.filter(item => item.sourceType !== 'LIVEKIT_EGRESS' && !this.recordingData[item.recordingId])
-            : items.filter(item => !this.recordingData[item.recordingId])
+            ? items.filter(item => item.sourceType !== 'LIVEKIT_EGRESS' && !this.recordingData[item.fileId])
+            : items.filter(item => !this.recordingData[item.fileId])
       this.recordings = [...recordings, ...this.recordings]
       await this.updatePlayers(recordings)
     },
     async updatePlayers(recordings) {
       for (const recording of recordings) {
-        this.recordingData[recording.recordingId] = {
+        this.recordingData[recording.fileId] = {
           ...recording,
           recordedHls: null,
           player: null,
@@ -171,6 +193,23 @@ export default {
     // opacity: 1;
     &.show-pre, &.show-next {
       opacity: 1;
+    }
+  }
+}
+
+.item {
+  position: relative;
+  .bottom {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    .snapshot-icon {
+      font-size: 16px;
+      color: #CAD4E0;
+      cursor: pointer;
+      &:hover {
+        color: #21c8ff;
+      }
     }
   }
 }

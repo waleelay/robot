@@ -1,6 +1,6 @@
 <template>
-  <div class="right-div ml20 pr20 h100" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto' }">
-    <div class="container flex-column w100 h100 flx-center" style="flex-wrap: nowrap;">
+  <div class="right-div ml20 pr20 no-w-scroll mb20" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', height: 'calc(100% - 20px)', overflowY: 'auto' }">
+    <div class="container flex-column w100 mt105" style="flex-wrap: nowrap;">
       <div class="box zbgl">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">装备概览</span> 
@@ -9,7 +9,7 @@
             <svg-icon icon-class="right" class="ml4" />
           </span>
         </div>
-        <div class="pt20 pr18 pb20 pl18">
+        <div class="pt20 pr18 pb10 pl18">
           <div class="count flx-justify-between">
             <div class="item wp66 hp70 flx-center flex-column">
               <div class="desc">总数</div>
@@ -37,13 +37,19 @@
                 <div class="flex1 tac ml10">故障</div>
                 <div class="flex1 tac ml10">离线</div>
               </div>
-              <div class="common-scroll ovya" style="min-height: 144px; max-height: 144px;">
+              <div class="common-scroll ovya" style="min-height: 144px; max-height: 216px;">
                 <template v-if="deviceTypeStats.length">
                   <div v-for="item in deviceTypeStats" class="devices flx-center pr10 pl10">
                     <div class="tal" style="width: 40%;">{{ item.name }}</div>
                     <div class="flex1 tac ml10">{{ item.count || 0 }}</div>
                     <div class="flex1 tac ml10">{{ item.fault || 0 }}</div>
                     <div class="flex1 tac ml10">{{ item.offline || 0  }}</div>
+                  </div>
+                  <div class="devices flx-center pr10 pl10">
+                    <div class="tal" style="width: 40%;">摄像头</div>
+                    <div class="flex1 tac ml10">6</div>
+                    <div class="flex1 tac ml10">0</div>
+                    <div class="flex1 tac ml10">0</div>
                   </div>
                 </template>
                 <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div>
@@ -87,7 +93,7 @@
                 <div class="ml10 mr10 wp50">状态</div>
                 <div class="ml10" style="width: 35%;">执行时间</div>
               </div>
-              <div class="common-scroll ovya" style="min-height: 144px; max-height: 144px;">
+              <div class="common-scroll ovya" style="min-height: 144px; max-height: 252px;">
                 <template v-if="tasks.length">
                   <div v-for="item in tasks" class="tasks flx-justify-between pr10 pl10">
                     <div style="width: 43%;" class="text-ellipsis" :title="item.name">{{ item.name }}</div>

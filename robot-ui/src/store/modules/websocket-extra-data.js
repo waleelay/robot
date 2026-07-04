@@ -24,7 +24,10 @@ const state = {
   robotBaseInfo: {}, // { robotId: { ...robotInfo } }
   // 装备列表
   robotList: [],
-  robotAlarmObj: {} // { robotId: { ...alarmInfo } }
+  robotAlarmObj: {}, // { robotId: { ...alarmInfo } }
+  slamMapData: [],
+  taskPathPoints: {}, // { taskId: [pathPoints] } taskId: 任务id，pathId: 路径id，mapId: 地图id，pathPoints: 任务路径点
+  mapSearchValue: '',
 }
 
 const mutations = {
@@ -89,11 +92,20 @@ const mutations = {
     state.robotLocation = { ...state.robotLocation, [data.robotId]: data.location };
   },
   SET_ROBOT_BASE_INFO(state, { robotId, robotInfo }) {
-    state.robotBaseInfo = { ...state.robotBaseInfo, [robotId]: robotInfo };
+    state.robotBaseInfo = { ...state.robotBaseInfo, [robotId]: { ...state.robotBaseInfo?.[robotId] || {}, ...robotInfo, ...getRobotStatus({ ...state.robotBaseInfo?.[robotId], ...robotInfo }, state.taskData) } };
   },
   SET_ROBOT_LIST(state, value) {
     state.robotList = value;
-  }
+  },
+  SET_SLAM_MAP_DATA(state, value) {
+    state.slamMapData = value;
+  },
+  SET_TASK_PATH_POINTS(state, { taskId, data }) {
+    state.taskPathPoints = { ...state.taskPathPoints, [taskId]: data };    
+  },
+  SET_MAP_SEARCH_VALUE(state, value) {
+    state.mapSearchValue = value ? `${value}_timestamp_${new Date().getTime()}` : '';
+  },
 }
 
 const actions = {
@@ -111,18 +123,80 @@ const actions = {
     commit('SET_PATROL_OVERVIEW', data?.patrolOverview || { durationToday: '-', durationUnit: '小时', mileageToday: '-', mileageUnit: 'KM' });
     commit('SET_TASK_OVERVIEW', data?.taskOverview || { totalToday: '-', completedRate: '-', completedRateText: '-%', running: '-', pending: '-' });
     commit('SET_ALARM_SUMMARY', data?.alarms?.summary || { totalToday: '-', handled: '-', unhandled: '-', handleRate: '-', handleRateText: '-%' });
-    data?.tasks?.map(item => {
+    [...(data?.tasks || [])].concat([
+      {
+        "statusName": "暂停中",
+        "endTime": "2026-06-12 22:00:00",
+        "startTime": "2026-06-12 20:00:00",
+        "taskId": "task-011",
+        "name": "B区-夜间巡逻",
+        "timeRange": "18:00-19:00",
+        "equipmentList": [
+            {
+                "status": "online",
+                "name": "R1轮式机器人",
+                "type": "WHEELED_ROBOT",
+                "robotId": "robot-001"
+            }
+        ],
+        "currentLocation": "B区主干道",
+        "status": "paused"
+    },
+      {
+        "statusName": "暂停中",
+        "endTime": "2026-06-12 22:00:00",
+        "startTime": "2026-06-12 20:00:00",
+        "taskId": "task-012",
+        "name": "B区-仓库复核",
+        "timeRange": "09:00-10:00",
+        "equipmentList": [
+            {
+                "status": "online",
+                "name": "R1轮式机器人",
+                "type": "WHEELED_ROBOT",
+                "robotId": "robot-001"
+            }
+        ],
+        "currentLocation": "B区主干道",
+        "status": "paused"
+    },
+    //   {
+    //     "statusName": "暂停中",
+    //     "endTime": "2026-06-12 22:00:00",
+    //     "startTime": "2026-06-12 20:00:00",
+    //     "taskId": "task-013",
+    //     "name": "训练场东门巡检",
+    //     "timeRange": "12:00-13:00",
+    //     "equipmentList": [
+    //         {
+    //             "status": "online",
+    //             "name": "R1轮式机器人",
+    //             "type": "WHEELED_ROBOT",
+    //             "robotId": "robot-001"
+    //         }
+    //     ],
+    //     "currentLocation": "训练场东门",
+    //     "status": "paused"
+    // }
+    ]).map(item => {
       commit('SET_TASK_INFO', item);
     })
     commit('SET_ROBOT_LIST', data?.devices || []);
     data?.devices?.map(item => {
       state.robotBaseInfo[item.robotId] = Object.assign({}, item);
-      state.robotLocation[item.robotId] = Object.assign({}, item.location);
+      commit('SET_ROBOT_BASE_INFO', { robotId: item.robotId, robotInfo: { ...item } });
+      commit('SET_ROBOT_LOCATION', { robotId: item.robotId, location: item.location });
       
     })
     data?.alarms?.high?.items.map((item, index) => {
       commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
     })
+  },
+  setSlamMapData({ commit }, value) {
+    commit('SET_SLAM_MAP_DATA', value);
+  },
+  setTaskPathPoints({ commit }, { taskId, data }) {    
+    commit('SET_TASK_PATH_POINTS', { taskId, data });
   },
   // 设置设备对象
   setDeviceObj({ commit }, value) {
@@ -169,20 +243,20 @@ const actions = {
     if (event.event === 'panorama.device.status.changed') {
       commit('SET_ROBOT_BASE_INFO', { robotId: event.data.robotId, robotInfo: { ...state.robotBaseInfo[event.data.robotId], ...event.data } });
     } else if (event.event === 'panorama.device.location.changed') {
-      commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
+      // commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
     } else if (event.event === 'panorama.task.changed') {
-      commit('SET_TASK_INFO', event.data.task);
+      // commit('SET_TASK_INFO', event.data.task);
     } else if (event.event === 'panorama.alarm.changed') {
       // commit('SET_ALARMS_DATA', event.data.alarm);
       // if (event.data.alarm.level.toLowerCase() === 'high') {
       //   commit('SET_ROBOT_ALARM_INFO', { robotId: event.data.alarm.robotId, alarmInfo: event.data.alarm });
       // }
     } else if (event.event === 'panorama.stats.changed') {
-      commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || []);
-      commit('SET_DEVICE_STATS', event.data.deviceStats || {});
-      commit('SET_ALARM_SUMMARY', event.data.alarmSummary || {});
-      commit('SET_TASK_OVERVIEW', event.data.taskOverview || {});
-      commit('SET_PATROL_OVERVIEW', event.data.patrolOverview || {});
+      // commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || []);
+      // commit('SET_DEVICE_STATS', event.data.deviceStats || {});
+      // commit('SET_ALARM_SUMMARY', event.data.alarmSummary || {});
+      // commit('SET_TASK_OVERVIEW', event.data.taskOverview || {});
+      // commit('SET_PATROL_OVERVIEW', event.data.patrolOverview || {});
       // alarmStats: { high: 0, medium: 0, low: 0 }
     }
   },
@@ -194,7 +268,18 @@ const actions = {
       commit('SET_ALARMS_DATA', alarmInfo);
     }
     commit('SET_ROBOT_ALARM_INFO', { robotId, alarmInfo, close });
-  }
+  },
+  setMapSearchValue({ commit }, value) {
+    commit('SET_MAP_SEARCH_VALUE', value);
+  },
+}
+
+function getRobotStatus(robot, taskData) {  
+  const { status, task = [] } = robot || {}      
+  const runningTask = task?.map(item => taskData?.[item.taskId] || item)?.find(item => item.status === 'running') || null
+  const customStatusName = status === 'online' ? runningTask ? '任务中' : '空闲中' : status === 'offline' ? '离线' : '故障'
+  const statusClass = status === 'online' ? runningTask ? 'blue' : 'green' : status === 'offline' ? 'gray' : 'orange'
+  return { customStatusName, statusClass, runningTaskId: runningTask?.taskId, runningTask }
 }
 
 const getters = {

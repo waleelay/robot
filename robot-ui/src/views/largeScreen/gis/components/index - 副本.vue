@@ -109,7 +109,7 @@ export default {
       mapElement.style.backgroundColor = '#001529';
       // const marker1 = L.marker([this.centerPoint.lat, this.centerPoint.lng]).addTo(this.map);
       // marker1.setIcon(L.icon({   // 标记配置-详见leaflet官网
-      //   iconUrl: require('@/assets/images/bi/new/icon.png'), // 使用require加载标记图
+      //   iconUrl: require('@/assets/images/new-bi/icon.png'), // 使用require加载标记图
       //   iconSize: [66,93],
       //   iconAnchor: [33.5, 85] //设置偏移量会将图片左上角当作零点
       // }))
@@ -145,7 +145,7 @@ export default {
     initPoints() {
       // 创建自定义图标
       const pointAIcon = L.divIcon({
-        // <img src="@/assets/images/bi/new/icon_bg.png" alt="" width="227px" height="227px" class="icon-bg">  
+        // <img src="@/assets/images/new-bi/icon_bg.png" alt="" width="227px" height="227px" class="icon-bg">  
         // html: `<div><div class="icon-bg"></div></div>`,
         html: `<div class="custom-point-img"></div>`,
         className: 'custom-point',
@@ -353,14 +353,14 @@ export default {
 .div-custom-tooltip, .div-custom-popup {
   width: 354px;
   height: 309px;
-  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat center center;
+  background: url(~@/assets/images/new-bi/tooltip.png) no-repeat center center;
 }
 .custom-popup .leaflet-popup-content {
   width: 354px !important;
   height: 309px !important;
   margin: 0 !important;
   margin-top: 20px !important;
-  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat center center;
+  background: url(~@/assets/images/new-bi/tooltip.png) no-repeat center center;
 }
 .leaflet-popup-tip-container {
   display: none;
@@ -370,7 +370,7 @@ export default {
   position: relative;
   width: 396px;
   height: 400px;
-  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat top left;
+  background: url(~@/assets/images/new-bi/tooltip.png) no-repeat top left;
   // border: 1px solid #f00;
   // position: absolute;
   // top: 400px;
@@ -381,7 +381,7 @@ export default {
     width: 50px;
     height: 76px;
     position: absolute;
-    background: url(~@/assets/images/bi/new/tooltip-line.png) no-repeat bottom right;
+    background: url(~@/assets/images/new-bi/tooltip-line.png) no-repeat bottom right;
     background-size: 100% 100%;
     right: 0;
     bottom: 0;
@@ -476,7 +476,7 @@ export default {
       .custom-point-img {
         width: 100%;
         height: 100%;
-        background: url(~@/assets/images/bi/new/icon.png) no-repeat center center;
+        background: url(~@/assets/images/new-bi/icon.png) no-repeat center center;
       }
       &::before {
         position: absolute;
@@ -485,7 +485,7 @@ export default {
         left: -80.5px;
         width: 227px;
         height: 227px;
-        background: url(~@/assets/images/bi/new/icon_bg.png) no-repeat center center;
+        background: url(~@/assets/images/new-bi/icon_bg.png) no-repeat center center;
         transition: all linear 0.3s;
         content: '';
         z-index: -1;
@@ -503,7 +503,7 @@ export default {
       position: relative;
       width: 396px;
       height: 400px;
-      background: url(~@/assets/images/bi/new/tooltip.png) no-repeat top left;
+      background: url(~@/assets/images/new-bi/tooltip.png) no-repeat top left;
       // border: 1px solid #f00;
       // position: absolute;
       // top: 400px;
@@ -514,7 +514,7 @@ export default {
         width: 50px;
         height: 76px;
         position: absolute;
-        background: url(~@/assets/images/bi/new/tooltip-line.png) no-repeat bottom right;
+        background: url(~@/assets/images/new-bi/tooltip-line.png) no-repeat bottom right;
         background-size: 100% 100%;
         right: 0;
         bottom: 0;

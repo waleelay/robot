@@ -22,7 +22,7 @@
         </div>
       </div>
     </div>
-    <div class="left h100 no-w-scroll ml30" style="overflow-y: auto;">
+    <div class="left h100 no-w-scroll ml30">
       <!-- 1364px -->
       <LeftVideo :prefixId="prefixId" ref="leftVideoRef" style="width: 1432px;" />
       <!-- <el-radio-group @change="onSingleDeviceChange" v-if="splitType === 1" v-model="singleId" class="custom-radio-group flex with-border vertical ml20">
@@ -51,7 +51,7 @@ import LeftVideo from './LeftVideo.vue'
 import Snapshot from '../../../components/Snapshot.vue'
 import TaskListTree from './TaskListTree.vue';
 import { mapActions } from 'vuex'
-import SmallMap from '../../../gis/globalMap/SmallMap..vue';
+import SmallMap from '../../../gis/globalMap/SmallMap.vue';
 export default {
   name: 'BiPatrolMonitor',
   components: { TaskListTree, LeftVideo, Snapshot, SmallMap },
@@ -98,7 +98,10 @@ export default {
       
     },
     updateVideo(data) {
-      this.$refs.leftVideoRef.test({ data })
+      this.$nextTick(() => {
+        this.$refs?.leftVideoRef?.test({ data })
+      });
+      
     },
     // async updateVideo(data) {
     //   if (data.key) {

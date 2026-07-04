@@ -133,7 +133,6 @@
 </template>
 
 <script>
-import VideoInfo from './../../../components/VideoInfo.vue';
 // import video from '../../../js/mixins/video.js'
 import canvasUtil from '../../../js/mixins/box-canvas.js'
 import VideoBox from './../../../staff/VideoBox.vue';
@@ -142,7 +141,7 @@ import { onDragStart, onDragEnd } from '@/store/modules/dragVideo.js';
 export default {
   name: 'LeftVideo',
   mixins: [canvasUtil],
-  components: { VideoInfo, VideoBox },
+  components: { VideoBox },
   props: {
     prefixId: {
       type: String,
@@ -717,6 +716,14 @@ export default {
     //   deep: true
     // }
   },
+  async beforeDestroy() {
+    console.info('leafVideo-destroy')
+    for (const [index, key] of Object.keys(this.activeCameras).entries()) {
+      if (this.activeCameras[key]?.camera) {
+        await this.stopCamera(this.activeCameras[key].camera);
+      }
+    }
+  }
 }
 </script>
 

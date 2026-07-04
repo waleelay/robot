@@ -26,9 +26,6 @@
           <el-menu-item index="business">
             <span>业务管理</span>
           </el-menu-item>
-          <el-menu-item index="business2">
-            <span>业务管理2</span>
-          </el-menu-item>
           <el-menu-item index="statistics">
             <span>数据统计</span>
           </el-menu-item>
@@ -49,7 +46,7 @@
   
         <div class="flx-center flex-column zhzx h100">
           <div class="icon">
-            <svg-icon icon-class="home" style="color: #8BAEDC;"></svg-icon>
+            <svg-icon icon-class="change" style="color: #8BAEDC;"></svg-icon>
           </div>
           <div class="text mt4">指挥中心</div>
         </div>
@@ -76,11 +73,12 @@
           <span class="ml10">{{ currentTime }}</span>
         </div>
         <div class="flx-center icons h100 ml20">
-          <div class="icon" @click="goHome">
-            <svg-icon icon-class="home" style="color: #8BAEDC;"></svg-icon>
+          <div class="icon">
+            <!-- <svg-icon icon-class="home" style="color: #8BAEDC;"></svg-icon> -->
+             <PageChangeDropdown />
           </div>
           <div class="icon ml20" @click="toggleFullscreen">
-            <svg-icon :icon-class="isFullscreen ? 'fullscreen1' : 'fullscreen'" style="color: #AED1FF;"></svg-icon>
+            <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen'" style="color: #AED1FF;"></svg-icon>
           </div>
           <div class="icon ml20" v-if="showBack" @click="back">
             <svg-icon icon-class="back1" style="color: #AED1FF;"></svg-icon>
@@ -103,6 +101,7 @@
 
 <script>
 import { mapActions } from 'vuex/dist/vuex.common.js';
+import PageChangeDropdown from './../home/PageChangeDropdown.vue'
 
 export default {
   name: 'Header',
@@ -111,6 +110,9 @@ export default {
       type: String,
       default: 'home'
     },
+  },
+  components: {
+    PageChangeDropdown
   },
   computed: {
     showBack() {

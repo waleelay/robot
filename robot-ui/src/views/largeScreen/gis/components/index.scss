@@ -19,14 +19,14 @@
 .div-custom-tooltip, .div-custom-popup {
   width: 354px;
   height: 309px;
-  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat center center;
+  background: url(~@/assets/images/new-bi/tooltip.png) no-repeat center center;
 }
 .custom-popup .leaflet-popup-content {
   width: 354px !important;
   height: 309px !important;
   margin: 0 !important;
   margin-top: 20px !important;
-  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat center center;
+  background: url(~@/assets/images/new-bi/tooltip.png) no-repeat center center;
 }
 .leaflet-popup-tip-container {
   display: none;
@@ -36,7 +36,7 @@
   position: relative;
   width: 396px;
   height: 400px;
-  background: url(~@/assets/images/bi/new/tooltip.png) no-repeat top left;
+  background: url(~@/assets/images/new-bi/tooltip.png) no-repeat top left;
   // border: 1px solid #f00;
   // position: absolute;
   // top: 400px;
@@ -47,7 +47,7 @@
     width: 50px;
     height: 76px;
     position: absolute;
-    background: url(~@/assets/images/bi/new/tooltip-line.png) no-repeat bottom right;
+    background: url(~@/assets/images/new-bi/tooltip-line.png) no-repeat bottom right;
     background-size: 100% 100%;
     right: 0;
     bottom: 0;
@@ -142,7 +142,7 @@
       .custom-point-img {
         width: 100%;
         height: 100%;
-        background: url(~@/assets/images/bi/new/icon.png) no-repeat center center;
+        background: url(~@/assets/images/new-bi/icon.png) no-repeat center center;
       }
       &::before {
         position: absolute;
@@ -151,7 +151,7 @@
         left: -80.5px;
         width: 227px;
         height: 227px;
-        background: url(~@/assets/images/bi/new/icon_bg.png) no-repeat center center;
+        background: url(~@/assets/images/new-bi/icon_bg.png) no-repeat center center;
         transition: all linear 0.3s;
         content: '';
         z-index: -1;
@@ -169,7 +169,7 @@
       position: relative;
       width: 396px;
       height: 400px;
-      background: url(~@/assets/images/bi/new/tooltip.png) no-repeat top left;
+      background: url(~@/assets/images/new-bi/tooltip.png) no-repeat top left;
       // border: 1px solid #f00;
       // position: absolute;
       // top: 400px;
@@ -180,7 +180,7 @@
         width: 50px;
         height: 76px;
         position: absolute;
-        background: url(~@/assets/images/bi/new/tooltip-line.png) no-repeat bottom right;
+        background: url(~@/assets/images/new-bi/tooltip-line.png) no-repeat bottom right;
         background-size: 100% 100%;
         right: 0;
         bottom: 0;

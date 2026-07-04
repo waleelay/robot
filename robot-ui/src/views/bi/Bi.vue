@@ -1,15 +1,21 @@
 <template>
-  <div class="bi">
-    <router-view :key="$route.path" />
-  </div>
+  <!-- <ScaleScreen> -->
+    <div class="bi">
+      <router-view :key="$route.path" />
+    </div>
+  <!-- </ScaleScreen> -->
 </template>
 
 <script>
 import mqttClient from '@/plugins/mqtt-client'
 import { mapActions } from 'vuex';
 import { getPatrolPanoramaOverview } from '../../api/new-bi';
+import ScaleScreen from './../../components/largeScreen/scale-screen.vue'
 export default {
   name: 'Bi',
+  components: {
+    ScaleScreen
+  },
   data() {
     return {
 

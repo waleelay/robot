@@ -1,7 +1,7 @@
 .map-div {
   position: relative;
-  width: calc(100% + 72px);
-  margin-left: -72px;
+  // width: calc(100% + 72px);
+  // margin-left: -72px;
   // background-image: url("../../../../../assets/images/new-bi/map-bg.png");
   &::before, &::after {
     content: '';

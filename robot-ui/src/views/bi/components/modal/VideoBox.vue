@@ -65,7 +65,6 @@
 </template>
 
 <script>
-// import VideoInfo from '../components/VideoInfo.vue';
 // import VideoTool from '../components/VideoTool.vue';
 // import mixin from './drag-mixin';
 export default {

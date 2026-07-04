@@ -46,15 +46,15 @@
                 :key="item.name"
                 class="item flx-justify-between"
                 :class="{ 'is-active': checkedRobotIds.includes(item.robotId) }"
-                :draggable="!checkedRobotIds.includes(item.robotId) && item.status === 'online'"
+                :draggable="!checkedRobotIds.includes(item.robotId) && item.status !== 'offline'"
                 @dragstart="onDragStart($event, item, 'equipmentListComponent')"
                 @dragend="onDragEnd"
-                @click="handleClickRobot(item)"
-                :style="{ cursor: !checkedRobotIds.includes(item.robotId) ? 'grab' : 'default' }"
+                @click="item.status !== 'offline' ? handleClickRobot(item) : ''"
+                :style="{ cursor: (item.status !== 'offline' && !checkedRobotIds.includes(item.robotId)) ? 'grab' : item.status === 'offline' ? 'no-allowed' : 'default' }"
               >
                 <!-- @click="handleSelectEquipment(item)" -->
                 <div class="flx-center">
-                  <svg-icon :icon-class="item.type === 0 ? 'robot' : item.type === 1 ? 'robot-uav' : 'robot-dog'" />
+                  <svg-icon :icon-class="ROBOT_TYPE_INFO[item.type]?.icon" />
                   <span class="ml10">{{ item.name }}</span>
                 </div>
                 <div class="flx-center">
@@ -85,7 +85,12 @@
                 <span class="location" style="font-size: 16px;">{{ item.currentLocation }}</span>-
                 <span>{{ item.name }}</span>
               </div>
-              <span class="status p4 wp50">进行中</span>
+              <span
+                class="status p4 wp50"
+                :class="{
+                  green: item.status === 'running',
+                  orange: item.status === 'paused'
+                }">{{ item.statusName }}</span>
             </div>
             <div class="info mt10">
               <div class="flx-align-center">
@@ -114,7 +119,7 @@
               >
                 <!-- @click="handleSelectEquipment(equipment)" -->
                 <div class="flx-center">
-                  <svg-icon :icon-class="equipment.type === 0 ? 'robot' : equipment.type === 1 ? 'robot-uav' : 'robot-dog'" />
+                  <svg-icon :icon-class="ROBOT_TYPE_INFO[equipment.type]?.icon" />
                   <span class="ml10">{{ equipment.name }}</span>
                 </div>
                 <div class="flx-center">
@@ -123,8 +128,8 @@
                     :style="{ color: robotBaseInfo[equipment.robotId] < 50 ? '#D33333' : '#3DB56A' }"
                   >
                   </svg-icon>
-                  <span class="ml4 battery">{{ robotBaseInfo[equipment.robotId].battery }}%</span>  
-                  <span class="status ml10 p4" :class="{ error: robotBaseInfo[equipment.robotId].status === 1 }">{{ robotBaseInfo[equipment.robotId].status === 1 ? '异常' : '执行中' }}</span>
+                  <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId].battery }}%</span>  
+                  <span class="status ml10 p4" :class="robotBaseInfo[equipment.robotId].statusClass">{{ robotBaseInfo[equipment.robotId].customStatusName || robotBaseInfo[equipment.robotId].status || '-' }}</span>
                 </div>
               </div>
             </div>
@@ -138,6 +143,7 @@
 <script>
 import { mapState, mapActions, mapGetters } from 'vuex'
 import { onDragStart, onDragEnd } from '../../../../../store/modules/dragVideo';
+import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
 export default {
   name: 'TaskListTree',
   data() {
@@ -166,7 +172,9 @@ export default {
         }
       },
       collapseArr: [],
-      selectedEquipmentList2: []
+      selectedEquipmentList2: [],
+      hasLoad: false,
+      ROBOT_TYPE_INFO,
     }
   },
   computed: {
@@ -183,17 +191,9 @@ export default {
       return [...new Set(Object.values(this.activeCameras).map(item => item.robot.robotId))];
     }
   },
-  mounted() {
-    setTimeout(() => {
-      if (this.$route.query.taskId !== undefined) {
-        this.handleSelectTask(this.taskData[this.$route.query.taskId])
-      } else {
-        this.handleClickRobot(this.robots[0])
-      }
-    }, 1000)
-  },
+  mounted() {},
   methods: {
-    ...mapActions('dragVideo', ['dragStart']),
+    ...mapActions('dragVideo', ['dragStart','setSplitType']),
     tabChange(index) {
       this.tabIndex = index
       // if (index && this.taskList.length) {
@@ -210,6 +210,19 @@ export default {
     // 拖拽开始: 将任务数据存入 dataTransfer
     onDragStart,
     onDragEnd,
+    async executePlay() {
+      const onlineList = this.equipmentInfo.online.list || []
+      if (this.hasLoad || !onlineList.length) return
+      this.hasLoad = true
+      this.setSplitType(Math.min(onlineList.length, onlineList.length))
+      if (this.$route.query.taskId !== undefined) {
+        this.handleSelectTask(this.taskData[this.$route.query.taskId])
+      } else {
+        for (const item of onlineList) {
+          await this.handleClickRobot(item)
+        }
+      }
+    },
     async handleClickRobot(item) {
       if (this.splitType === 1 || this.splitType !== this.checkedRobotIds.length) {
         this.$emit('updateVideo', item)
@@ -268,30 +281,7 @@ export default {
         })
         this.equipmentInfo.online.list = onlineList
         this.equipmentInfo.offline.list = offlineList
-
-        // ========== 新增逻辑：同步更新 taskList ==========
-        // this.taskList = this.taskList.map(task => {
-        //   let updatedEquipmentList = []
-        //   if (task.robots?.length) {
-        //     updatedEquipmentList = task.robots.map(equipment => {
-        //       const robot = newRobots.find(r => r.robotId === equipment.robotId);
-        //       if (robot) {
-        //         return {
-        //           ...equipment,
-        //           ...robot
-        //         };
-        //       }
-              
-        //       return equipment;
-        //     });
-        //   } else {
-        //     updatedEquipmentList = newRobots
-        //   }
-        //   return {
-        //     ...task,
-        //     robots: updatedEquipmentList
-        //   };
-        // });
+        this.executePlay()
       },
       deep: true,
       immediate: true

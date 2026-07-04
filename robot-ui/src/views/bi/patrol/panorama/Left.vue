@@ -1,5 +1,5 @@
 <template>
-  <div class="left-div ml20 pr20 h100" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto' }">
+  <div class="left-div ml20 pr20 mt25 no-w-scroll" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', maxHeight: 'calc(100% - 25px)', overflowY: 'auto' }">
     <div class="container flex-column w100 h100 flx-center" style="flex-wrap: nowrap;">
       <div class="box" :class="{'hp268': deviceTypeStats?.length, 'hp155': !deviceTypeStats?.length}">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="getMoreRobotInfo">
@@ -109,7 +109,9 @@
             <div class="mt20 list">
               <div v-for="(item, index) in alarmsData?.[key]?.items || []" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert(item)">
                 <!-- {{ item.snapshotUrl }} -->
-                <div class="img wp120 hp72 flex">
+                <div class="img wp120 hp72 flex"
+                  :style="{ background: `url(${item.title.includes('火灾') ? img1 : img2}) lightgray -4.267px -11.862px / 104% 118.678% no-repeat` }"
+                >
                   <span class="alert_type">{{ item.categoryName }}</span>
                 </div>
                 <div class="ml6 flex1">
@@ -181,7 +183,7 @@ export default {
         }
       ],
       tabIndex: 0,
-      collapseArr: [false, false, true],
+      collapseArr: [false, false, false],
       alertCollapseArr: [true, true, true],
       alertList: [1],
       activeTaskId: null,
@@ -199,15 +201,15 @@ export default {
           name: '低风险',
           class: 'green'
         },
-      }
+      },
+      updated: false,
+      img1: require('@/assets/images/new-bi/test.png'),
+      img2: require('@/assets/images/new-bi/warning1.png'),
     }
   },
   async mounted() {
     // this.handleClickTask(0)
     // this.overviewInfo = await getPatrolPanoramaOverview()
-    if (this.alarmsData?.high?.items?.length) {
-      this.collapseArr[2] = false
-    }
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
@@ -231,8 +233,8 @@ export default {
       })
     },
     handleClickAlert(item) {
-      // this.$refs.warningBatchRef.open(this.alarmsData || {})
-      this.$refs.WarnInfoRef.open(item)
+      this.$refs.warningBatchRef.open(this.alarmsData || {})
+      // this.$refs.WarnInfoRef.open(item)
     }
   },
   watch: {
@@ -244,6 +246,15 @@ export default {
     //   },
     //   immediate: true
     // },
+    alarmsData: {
+      handler(newVal, oldVal) {
+        if (newVal?.high?.items?.length && !this.updated) {
+          this.alertCollapseArr[0] = false
+          this.updated = true
+        }
+      },
+      immediate: true
+    }
   },
 }
 </script>
@@ -461,9 +472,13 @@ export default {
                 font-family: "Microsoft YaHei";
               }
               .img {
+                position: relative;
                 /* background: #ccc; */
-                background: url(<path-to-image>) lightgray -4.267px -11.862px / 104% 118.678% no-repeat;
+                /* background: var(--img) lightgray -4.267px -11.862px / 104% 118.678% no-repeat; */
                 .alert_type {
+                  position: absolute;
+                  top: 0;
+                  left: 0;
                   padding: 4px 6px;
                   color: #FFF;
                   font-size: 12px;

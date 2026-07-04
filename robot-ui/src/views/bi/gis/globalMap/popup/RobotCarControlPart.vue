@@ -7,7 +7,7 @@
       <div class="top m4 flx-justify-between">
         <div class="flx-align-center">
           <div class="title ml10">{{ baseInfo?.name || '-' }}</div>
-          <div class="status success ml10">{{ baseInfo?.status || '-' }}</div>
+          <div class="status ml10" :class="baseInfo?.statusClass || ''">{{ baseInfo?.customStatusName || baseInfo?.status || '-' }}</div>
         </div>
         <div class="flx-center">
           <div class="setting flx-center curp" @click="goControl">
@@ -324,7 +324,7 @@ export default {
 <style lang="scss" scoped>
 .machine-container.robot-control-container {
   position: fixed;
-  bottom: 30px;
+  bottom: 50px;
   margin: auto;
   opacity: 0;
   visibility: hidden;

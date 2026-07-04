@@ -14,7 +14,7 @@
   >
     <template slot="title">
       <div class="flx-align-center custom-header">
-        <img src="@/assets/images/bi/new/warning-icon.png" alt="" width="24px" height="24px">
+        <img src="@/assets/images/new-bi/warning-icon.png" alt="" width="24px" height="24px">
         <span class="ml10">切换模式</span>
       </div>
     </template>

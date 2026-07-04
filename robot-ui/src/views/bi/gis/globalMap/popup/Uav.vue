@@ -24,7 +24,7 @@
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>
-        <img src="@/assets/images/bi/bg.png" alt="" class="p10 w100" height="190" style="padding-bottom: 0 !important;">
+        <!-- <img src="@/assets/images/bi/bg.png" alt="" class="p10 w100" height="190" style="padding-bottom: 0 !important;"> -->
         <div class="info-content pr10 pl10 flex flex-wrap">
           <div class="item wp154 mt10">装备类型：{{ currentInfo.dogType || '-' }}</div>
           <div class="item wp151 ml26 mt10">当前电量：{{ currentInfo.battery || '-' }}%</div>

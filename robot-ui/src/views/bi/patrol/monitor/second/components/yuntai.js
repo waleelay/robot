@@ -146,7 +146,7 @@ export default {
       }
     },
     // 云台开始控制
-    startFrameControl(kind) {
+    startFrameControl(kind, back) {
       if (this.selectedRobot?.controlMode !== 'MANUAL') {
         // this.$message.warning('请先切换到手动模式')        
         if (this.$refs.controlModeWarningRef) {

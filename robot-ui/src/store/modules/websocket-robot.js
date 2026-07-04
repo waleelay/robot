@@ -389,7 +389,7 @@ const actions = {
   connectMediaWebSocket({ commit, state, dispatch }) {
     // const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     // const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/control`
-    const url = 'wss://192.168.124.77:4443/ws/control'
+    const url = 'wss://192.168.124.77:24443/ws/control'
     const socket = new WebSocket(url)
     socket.onopen = () => {
       commit('setWsConnected', true)
@@ -882,41 +882,6 @@ const actions = {
   setPrefixId({ commit }, payload) {
     commit('setPrefixId', payload)
   },
-  // 在“实时观看”和“录像回放”两套工作区之间切换。
-  // 回放使用独立 HLS 实例，离开回放页必须销毁，否则会继续拉取分片。
-  async toggleRecordings({ commit, state, dispatch }) {
-    state.recordingMode = !state.recordingMode
-    if (state.recordingMode) {
-      await dispatch('loadRecordings')
-    } else {
-      commit('destroyRecordedHls')
-      state.selectedRecording = null
-    }
-  },
-  // 录像列表只拉 READY 状态，确保用户点开后一定能拿到可播放的 HLS 地址。
-  async loadRecordings({ commit, state }) {
-    state.recordingsLoading = true
-    try {
-      const params = {
-        robotId: state.selectedRobotId,
-        status: 'READY',
-        page: 0,
-        size: 20
-      }
-      if (state.recordingTab === 'manual') {
-        params.sourceType = 'LIVEKIT_EGRESS'
-      }
-      const response = await getRecordings(params)
-      const items = response.items || []
-      state.recordings = state.recordingTab === 'patrol'
-        ? items.filter(item => item.sourceType !== 'LIVEKIT_EGRESS')
-        : items
-    } catch (error) {
-      // Message.error(messageError(error))
-    } finally {
-      state.recordingsLoading = false
-    }
-  },
   async loadControlProfile({ commit, state, dispatch }, robotId) {
     if (!robotId) return
     try {
@@ -1157,7 +1122,7 @@ const actions = {
       }
       const recording = await startLiveRecording(camera.session.sessionId)
       camera.activeRecording = recording
-      camera.recordingActive = recording && recording.status === 'RECORDING'
+      camera.recordingActive = recording && recording.status === 'UPLOADING'
       console.log('API startLiveRecording', recording)
       Message.success('已开始录像')
     } catch (error) {
@@ -1176,7 +1141,7 @@ const actions = {
     try {
       const recording = await getActiveLiveRecording(camera.session.sessionId)
       camera.activeRecording = recording
-      if (!recording || recording.status !== 'RECORDING') {
+      if (!recording || recording.status !== 'UPLOADING') {
         camera.recordingActive = false
       }
     } catch (_) {
@@ -1189,14 +1154,14 @@ const actions = {
     if (!camera.session || !camera.activeRecording || camera.recordingBusy) return
     camera.recordingBusy = true
     try {
-      const recording = await stopLiveRecording(camera.session.sessionId, camera.activeRecording.recordingId)
+      const recording = await stopLiveRecording(camera.session.sessionId, camera.activeRecording.fileId)
       camera.activeRecording = recording
       camera.recordingActive = false
       console.log('API stopLiveRecording', recording)
       Message.success('录像已停止')
       dispatch('setRecordTime', new Date().toISOString())
       // TODO 获取新数据
-      if (this.recordingMode) await dispatch('loadRecordings')
+      // if (this.recordingMode) await dispatch('loadRecordings')
     } catch (error) {
       Message.error(error)
     } finally {
