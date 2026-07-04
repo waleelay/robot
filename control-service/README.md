@@ -2,6 +2,13 @@
 
 Standalone control service split from `backend`.
 
+Responsibilities:
+
+- Expose `/api/control/**` and `/ws/control`.
+- Subscribe robot MQTT status topics.
+- Maintain robot online/device state in `com.robot.control.robot`.
+- Call media backend `/internal/media/**` for video sessions and files.
+
 ## Run
 
 ```bash

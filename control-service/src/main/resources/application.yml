@@ -15,6 +15,9 @@ control:
     password: ${MQTT_PASSWORD:}
     client-id: ${MQTT_CLIENT_ID:robot-control-service}
     enabled: ${MQTT_ENABLED:true}
+  robot:
+    heartbeat-timeout-seconds: ${ROBOT_HEARTBEAT_TIMEOUT_SECONDS:15}
+    heartbeat-sweep-delay-ms: ${ROBOT_HEARTBEAT_SWEEP_DELAY_MS:5000}
   session:
     interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}
     idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:600}

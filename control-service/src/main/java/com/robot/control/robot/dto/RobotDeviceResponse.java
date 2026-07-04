@@ -1,4 +1,4 @@
-package com.robot.mediaserver.robot.dto;
+package com.robot.control.robot.dto;
 
 import java.time.OffsetDateTime;
 import java.util.List;

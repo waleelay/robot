@@ -1,4 +1,4 @@
-package com.robot.mediaserver.robot.dto;
+package com.robot.control.robot.dto;
 
 public record RobotCameraResponse(
         String cameraId,

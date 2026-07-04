@@ -260,11 +260,6 @@ public class ControlMediaServiceClient {
         post("/internal/media/video-sessions/intercom/status", status, null, Void.class);
     }
 
-    public boolean updateRobotClientStatus(Map<String, Object> status) {
-        Boolean result = post("/internal/media/robots/client-status", status, null, Boolean.class);
-        return Boolean.TRUE.equals(result);
-    }
-
     public Map<String, Object> releaseIdle(String sessionId) {
         return post("/internal/media/video-sessions/{sessionId}/release-idle", null, null, new ParameterizedTypeReference<>() {}, sessionId);
     }

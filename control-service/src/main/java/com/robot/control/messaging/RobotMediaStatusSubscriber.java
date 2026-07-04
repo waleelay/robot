@@ -3,6 +3,7 @@ package com.robot.control.messaging;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.config.ControlServiceProperties;
 import com.robot.control.client.ControlMediaServiceClient;
+import com.robot.control.robot.service.RobotRegistryService;
 import com.robot.control.service.EquipmentControlService;
 import com.robot.control.dto.VideoStatusMessage;
 import com.robot.control.dto.IntercomStatusMessage;
@@ -31,6 +32,7 @@ public class RobotMediaStatusSubscriber {
     private final ControlMediaServiceClient mediaServiceClient;
     private final RobotMediaCommandService commandService;
     private final EquipmentControlService equipmentControlService;
+    private final RobotRegistryService robotRegistryService;
     private MqttClient client;
 
     public RobotMediaStatusSubscriber(
@@ -38,12 +40,14 @@ public class RobotMediaStatusSubscriber {
             ObjectMapper objectMapper,
             ControlMediaServiceClient mediaServiceClient,
             RobotMediaCommandService commandService,
-            EquipmentControlService equipmentControlService) {
+            EquipmentControlService equipmentControlService,
+            RobotRegistryService robotRegistryService) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.mediaServiceClient = mediaServiceClient;
         this.commandService = commandService;
         this.equipmentControlService = equipmentControlService;
+        this.robotRegistryService = robotRegistryService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -96,7 +100,7 @@ public class RobotMediaStatusSubscriber {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
             try {
                 Map<String, Object> data = objectMapper.readValue(payload, Map.class);
-                boolean becameOnline = mediaServiceClient.updateRobotClientStatus(data);
+                boolean becameOnline = robotRegistryService.update(data);
                 equipmentControlService.handleClientState(data);
                 if (becameOnline) {
                     String robotId = String.valueOf(data.get("robotId"));

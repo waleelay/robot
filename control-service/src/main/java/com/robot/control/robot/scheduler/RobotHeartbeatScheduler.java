@@ -1,6 +1,6 @@
-package com.robot.mediaserver.robot.scheduler;
+package com.robot.control.robot.scheduler;
 
-import com.robot.mediaserver.robot.service.RobotRegistryService;
+import com.robot.control.robot.service.RobotRegistryService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +13,7 @@ public class RobotHeartbeatScheduler {
         this.registryService = registryService;
     }
 
-    @Scheduled(fixedDelayString = "${media.robot.heartbeat-sweep-delay-ms:5000}")
+    @Scheduled(fixedDelayString = "${control.robot.heartbeat-sweep-delay-ms:5000}")
     public void sweep() {
         registryService.sweepOffline();
     }

@@ -38,18 +38,19 @@ Nginx /ws/bigscreen     -> bigscreen-bff:8090
 Nginx /livekit/*        -> LiveKit:7880
 
 bigscreen-bff:8090
-  -> center/backend:8088
+  -> control-service:8082
+  -> backend/media-service:8088
 ```
 
 前端到 BFF 建议继续走 Nginx，因为浏览器需要 HTTPS/WSS 安全上下文，尤其是麦克风、对讲和 WebRTC 场景。
 
-BFF 到中心端不建议走 Nginx，应直接使用内部 HTTP 地址：
+BFF 到 Control Service 与 Media Service 不建议走 Nginx，应直接使用内部 HTTP 地址：
 
 ```text
 CENTER_MANAGE_BASE_URL=http://localhost:8088
-CENTER_CONTROL_BASE_URL=http://localhost:8088
+CENTER_CONTROL_BASE_URL=http://localhost:8082
 CENTER_MEDIA_BASE_URL=http://localhost:8088
-CENTER_CONTROL_WS_URL=ws://localhost:8088/ws/control
+CENTER_CONTROL_WS_URL=ws://localhost:8082/ws/control
 ```
 
 不要让 BFF 再调用：
@@ -159,7 +160,7 @@ GET /api/bigscreen/panorama/tasks
 GET /api/bigscreen/panorama/alarms
 ```
 
-`/api/control/robots` 的机器人基础字段合并到 `/api/bigscreen/panorama/overview.devices` 中；冲突字段以 `/api/control/robots` 的字段名和语义为准，地图展示、任务、告警等非冲突字段作为大屏扩展字段合并。
+机器人基础字段统一聚合到 `/api/bigscreen/panorama/overview.devices` 中；数据来源为平台管理设备、实时状态和本地兜底数据。历史 `/api/control/robots` 列表接口已移除，不再作为字段语义来源。
 
 ### 5.2 首屏聚合接口
 
@@ -909,7 +910,7 @@ Upgrade
 
 - BFF 继续使用 mock 数据，模拟推送所有 `panorama.*` 动态事件。
 - mock 事件先推送到 `/ws/control`，复用前端现有 WebSocket 连接，前端暂不改。
-- `/ws/control` 同时保留到中心端控制 WebSocket 的桥接能力；中心端 WebSocket 暂不可用时，BFF 降级为仅推送本地 mock 事件。
+- `/ws/control` 同时保留到 Control Service WebSocket 的桥接能力；Control Service WebSocket 暂不可用时，BFF 降级为仅推送本地 mock 事件。
 - 后续前端再从只打印事件演进为消费 `panorama.*`，形成 REST 快照 + WebSocket 增量。
 
 第三阶段后半段：

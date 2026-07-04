@@ -1,10 +1,11 @@
-package com.robot.mediaserver.robot.service;
+package com.robot.control.robot.service;
 
-import com.robot.mediaserver.config.MediaProperties;
-import com.robot.mediaserver.config.DateTimeConfig;
-import com.robot.mediaserver.robot.dto.RobotCameraResponse;
-import com.robot.mediaserver.robot.dto.RobotDeviceResponse;
-import com.robot.mediaserver.ws.MediaWebSocketPublisher;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.robot.control.config.ControlServiceProperties;
+import com.robot.control.config.DateTimeConfig;
+import com.robot.control.robot.dto.RobotCameraResponse;
+import com.robot.control.robot.dto.RobotDeviceResponse;
+import com.robot.control.ws.MediaWebSocketPublisher;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -18,13 +19,54 @@ import org.springframework.stereotype.Service;
 @Service
 public class RobotRegistryService {
 
-    private final MediaProperties properties;
+    private final ControlServiceProperties properties;
     private final MediaWebSocketPublisher webSocketPublisher;
+    private final ObjectMapper objectMapper;
     private final Map<String, RobotDevice> devices = new ConcurrentHashMap<>();
 
-    public RobotRegistryService(MediaProperties properties, MediaWebSocketPublisher webSocketPublisher) {
+    public RobotRegistryService(
+            ControlServiceProperties properties,
+            MediaWebSocketPublisher webSocketPublisher,
+            ObjectMapper objectMapper) {
         this.properties = properties;
         this.webSocketPublisher = webSocketPublisher;
+        this.objectMapper = objectMapper;
+    }
+
+    public boolean update(Map<String, Object> data) {
+        String robotId = string(data.get("robotId"), "");
+        String clientId = string(data.get("clientId"), "");
+        String status = string(data.get("status"), "");
+        String name = string(data.get("name"), robotId);
+        String type = string(data.get("type"), "机器人");
+        String controlMode = string(data.get("controlMode"), "MANUAL");
+        Long stateSeq = data.get("stateSeq") instanceof Number seqValue ? seqValue.longValue() : null;
+        String missionStatus = string(data.get("missionStatus"), "IDLE");
+        String navigationStatus = string(data.get("navigationStatus"), "IDLE");
+        Object controlOwner = data.get("controlOwner");
+        Boolean estopActive = data.get("estopActive") instanceof Boolean estopValue ? estopValue : null;
+        Integer battery = data.get("battery") instanceof Number batteryValue ? batteryValue.intValue() : null;
+        List<RobotCameraResponse> cameras = objectMapper.convertValue(
+                data.getOrDefault("cameras", List.of()),
+                objectMapper.getTypeFactory().constructCollectionType(List.class, RobotCameraResponse.class));
+        List<Map<String, Object>> mountedDevices = objectMapper.convertValue(
+                data.getOrDefault("devices", List.of()),
+                objectMapper.getTypeFactory().constructCollectionType(List.class, Map.class));
+        return update(
+                robotId,
+                clientId,
+                status,
+                name,
+                type,
+                battery,
+                controlMode,
+                stateSeq,
+                missionStatus,
+                navigationStatus,
+                controlOwner,
+                estopActive,
+                cameras,
+                mountedDevices);
     }
 
     public boolean update(
@@ -69,6 +111,7 @@ public class RobotRegistryService {
         if (mountedDevices != null && !mountedDevices.isEmpty()) {
             device.mountedDevices = new ArrayList<>(mountedDevices);
         }
+        webSocketPublisher.publish("robot.state", toState(device));
         return becameOnline;
     }
 
@@ -127,6 +170,10 @@ public class RobotRegistryService {
                 device.cameras,
                 device.mountedDevices,
                 DateTimeConfig.format(device.lastHeartbeatAt));
+    }
+
+    private String string(Object value, String defaultValue) {
+        return value == null || String.valueOf(value).isBlank() ? defaultValue : String.valueOf(value);
     }
 
     private boolean blank(String value) {

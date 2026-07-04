@@ -7,6 +7,7 @@ public class ControlServiceProperties {
 
     private Auth auth = new Auth();
     private Mqtt mqtt = new Mqtt();
+    private Robot robot = new Robot();
     private Session session = new Session();
 
     public Auth getAuth() {
@@ -23,6 +24,14 @@ public class ControlServiceProperties {
 
     public void setMqtt(Mqtt mqtt) {
         this.mqtt = mqtt;
+    }
+
+    public Robot getRobot() {
+        return robot;
+    }
+
+    public void setRobot(Robot robot) {
+        this.robot = robot;
     }
 
     public Session getSession() {
@@ -90,6 +99,18 @@ public class ControlServiceProperties {
 
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
+        }
+    }
+
+    public static class Robot {
+        private long heartbeatTimeoutSeconds = 15;
+
+        public long getHeartbeatTimeoutSeconds() {
+            return heartbeatTimeoutSeconds;
+        }
+
+        public void setHeartbeatTimeoutSeconds(long heartbeatTimeoutSeconds) {
+            this.heartbeatTimeoutSeconds = heartbeatTimeoutSeconds;
         }
     }
 

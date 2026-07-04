@@ -7,8 +7,8 @@
 `frontend` 和 `robot-ui` 是 Vue 前端工程，本身不包含 Java Controller。本文中的“Frontend 接口”指前端当前访问的 Java BFF/API：
 
 - `bigscreen-bff`：大屏前端 BFF，包含 `/api/bigscreen/**` 聚合接口和代理接口。
-- `control-service`：控制侧服务，包含 `/api/control/**` 设备控制、实时视频、文件接口。
-- `backend`：媒体后端服务，包含 `/internal/media/**`、`/api/media/files/**`、`/api/media/tts/**`。
+- `control-service`：控制侧服务，包含 `/api/control/**` 设备控制、实时视频、文件接口，以及机器人在线状态/设备状态内存注册表。
+- `backend`：媒体后端服务，包含 `/internal/media/video-sessions/**`、`/internal/media/files/**`、`/api/media/files/**`、`/api/media/tts/**`。
 
 本文按当前 Controller 代码整理接口；设计文档中存在但当前 Java Controller 未暴露的路径不作为可调用接口列入正文。
 
@@ -58,7 +58,7 @@ Content-Type: application/json
 
 ### 2.3 通用错误响应
 
-本仓库 `backend` 的 media-service 有全局错误响应，格式如下。`control-service` 当前独立模块没有本地 `RestControllerAdvice`；调用 media-service 的下游错误在同进程旧形态可被统一处理，独立部署时错误响应可能退回 Spring Boot 默认格式，建议后续补齐同款异常处理。`bigscreen-bff` 的告警处置参数错误返回 `success=false`。
+本仓库 `backend` 的 media-service 有全局错误响应，格式如下。`control-service` 当前独立模块没有本地 `RestControllerAdvice`；独立部署时下游错误响应可能退回 Spring Boot 默认格式，建议后续补齐同款异常处理。`bigscreen-bff` 的告警处置参数错误返回 `success=false`。
 
 ```json
 {
@@ -296,7 +296,7 @@ GET /api/bigscreen/panorama/overview
 
 用途：查询单台设备详情。
 
-请求参数：
+Payload 字段：
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
 |---|---|---|---:|---|
@@ -747,7 +747,7 @@ GET /api/media/files?fileType=IMAGE&page=0&size=20
 | `POST /api/control/video-sessions/{sessionId}/intercom/stop` | Control -> Go 客户端 | `robot/{robotId}/media/video/intercom/stop` | 停止对讲后发布 |
 | `POST /internal/media/video-sessions/status` | Go 客户端 -> Control -> Media | `robot/+/media/video/status` | `RobotMediaStatusSubscriber` 消费后转调 media-service |
 | `POST /internal/media/video-sessions/intercom/status` | Go 客户端 -> Control -> Media | `robot/+/media/video/intercom/status` | `RobotMediaStatusSubscriber` 消费后转调 media-service |
-| `POST /internal/media/robots/client-status` | Go 客户端 -> Control -> Media | `robot/+/media/client/status` | 客户端上线、下线、心跳和设备状态上报；上线时可能触发恢复推流 |
+| Control 本地 `RobotRegistryService.update(...)` | Go 客户端 -> Control | `robot/+/media/client/status` | 客户端上线、下线、心跳和设备状态上报；Control 本地更新机器人状态，上线时再向 Media 查询恢复推流命令 |
 
 调度器也会间接发布 MQTT：
 
@@ -1733,9 +1733,10 @@ Content-Type: application/vnd.apple.mpegurl
 
 ## 5. Backend Media Service Java 接口
 
-本章覆盖 `backend/src/main/java` 下的 Java Controller。`backend` 的主要职责是媒体能力和机器人状态内部服务，其中：
+本章覆盖 `backend/src/main/java` 下的 Java Controller。`backend` 的主要职责是媒体能力，其中：
 
-- `/internal/media/**` 主要供 `control-service`、调度器、MQTT 状态消费链路调用。
+- `/internal/media/video-sessions/**` 主要供 `control-service`、调度器、MQTT 视频/对讲状态消费链路调用。
+- `/internal/media/files/**` 主要供 `control-service` 文件代理调用。
 - `/api/media/files/**` 主要供机器人客户端或管理端直接调用，和 `/internal/media/files/**` 共用同一个 `FileController`。
 - `/api/media/tts/**` 当前是媒体后端直接暴露的 TTS 调试/集成接口。
 
@@ -1745,7 +1746,6 @@ Backend MQTT 关联说明：
 |---|---|---|---|
 | `POST /internal/media/video-sessions/status` | Go 客户端 -> Control -> Media | `robot/+/media/video/status` | Control 订阅该 topic 后转调本接口写回视频会话状态 |
 | `POST /internal/media/video-sessions/intercom/status` | Go 客户端 -> Control -> Media | `robot/+/media/video/intercom/status` | Control 订阅该 topic 后转调本接口写回对讲状态 |
-| `POST /internal/media/robots/client-status` | Go 客户端 -> Control -> Media | `robot/+/media/client/status` | Control 订阅该 topic 后转调本接口更新机器人、摄像头和设备状态 |
 | `POST /internal/media/video-sessions/{sessionId}/client-start` | Media -> Control -> Go 客户端 | `robot/{robotId}/media/video/start` | 本接口只生成 `VideoStartCommand`，实际发布由 Control 完成 |
 | `POST /internal/media/video-sessions/{sessionId}/restart-command` | Media -> Control -> Go 客户端 | `robot/{robotId}/media/video/start` | 本接口只生成重启用 `VideoStartCommand` |
 | `POST /internal/media/video-sessions/{sessionId}/start-command` | Media -> Control -> Go 客户端 | `robot/{robotId}/media/video/switch-channel` | 切换通道时 Control 用该接口返回的 `VideoStartCommand` 作为 payload 发布 |
@@ -1816,13 +1816,6 @@ Backend MQTT 关联说明：
 | GET | `{base}/{fileId}/content` | 获取文件正文 |
 | POST | `{base}/{fileId}/play-url` | 获取播放 URL |
 | GET | `{base}/{fileId}/hls/{objectName}` | 获取 HLS 索引/切片 |
-
-#### 机器人状态：`RobotDeviceController`
-
-| 方法 | 路径 | 调用方 | 说明 |
-|---|---|---|---|
-| GET | `/internal/media/robots` | Control/BFF | 查询机器人在线状态和摄像头/设备列表 |
-| POST | `/internal/media/robots/client-status` | MQTT 消费链路/客户端状态订阅 | 更新机器人客户端状态 |
 
 #### TTS：`RobotTtsController`
 
@@ -2863,19 +2856,11 @@ Content-Type: application/json
 HTTP/1.1 204 No Content
 ```
 
-### 5.20 Backend 机器人状态接口
+### 5.20 Control Service 机器人状态内部模块
 
-#### GET `/internal/media/robots`
+机器人在线状态、摄像头和设备能力已从 `backend` 迁移到 `control-service/src/main/java/com/robot/control/robot`。当前没有 `GET /internal/media/robots` 或 `POST /internal/media/robots/client-status` 这类 media-service 接口；客户端状态由 MQTT 订阅回调直接写入 Control 本地内存注册表。
 
-用途：查询 media-service 记录的机器人客户端状态、摄像头和设备能力。
-
-请求示例：
-
-```http
-GET /internal/media/robots
-```
-
-响应参数：
+内部响应模型：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -2896,7 +2881,7 @@ GET /internal/media/robots
 | `devices` | array | 设备能力列表 |
 | `timestamp` | string/null | 机器人状态时间 |
 
-响应示例：
+`RobotDeviceResponse` 示例：
 
 ```json
 [
@@ -2923,15 +2908,15 @@ GET /internal/media/robots
 ]
 ```
 
-#### POST `/internal/media/robots/client-status`
+#### MQTT `robot/+/media/client/status`
 
-用途：更新机器人客户端状态；返回是否从离线变为在线等服务内部判断结果。
+用途：更新 Control Service 本地机器人客户端状态；返回是否从离线变为在线等判断结果仅在进程内使用。
 
 关联 MQTT：
 
 | 方向 | Topic | 消费方 / 后续动作 |
 |---|---|---|
-| Go 客户端 -> Control -> Media | `robot/+/media/client/status` | `RobotMediaStatusSubscriber.clientStatusListener` 反序列化为 `Map` 后调用本接口，同时更新 Control 内存态；若客户端从离线变在线，会再查询 `/internal/media/video-sessions/online-restart-commands` 并发布 `robot/{robotId}/media/video/start` |
+| Go 客户端 -> Control | `robot/+/media/client/status` | `RobotMediaStatusSubscriber.clientStatusListener` 反序列化为 `Map` 后调用 `RobotRegistryService.update(...)`；若客户端从离线变在线，会再查询 `/internal/media/video-sessions/online-restart-commands` 并发布 `robot/{robotId}/media/video/start` |
 
 请求参数：
 
@@ -2952,12 +2937,9 @@ GET /internal/media/robots
 | `cameras` | array | 否 | `[]` | 摄像头列表 |
 | `devices` | array | 否 | `[]` | 设备能力列表 |
 
-请求示例：
+Payload 示例：
 
-```http
-POST /internal/media/robots/client-status
-Content-Type: application/json
-
+```json
 {
   "robotId": "test001",
   "clientId": "robot-client-test001",
@@ -2979,9 +2961,7 @@ Content-Type: application/json
 
 响应示例：
 
-```json
-true
-```
+无 HTTP 响应；`becameOnline` 结果仅用于 Control 进程内判断是否触发恢复推流。
 
 ### 5.21 Backend TTS 接口
 

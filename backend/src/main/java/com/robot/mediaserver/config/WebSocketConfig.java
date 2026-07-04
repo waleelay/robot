@@ -29,7 +29,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
      */
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(mediaWebSocketHandler, "/ws/media", "/ws/control")
+        registry.addHandler(mediaWebSocketHandler, "/ws/media")
                 .setAllowedOriginPatterns("*");
     }
 }
