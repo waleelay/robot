@@ -217,7 +217,6 @@
 | `serverTime` | BFF 当前时间 |
 | `deviceStats.total/online/fault/offline` | `devices.status`、`devices.fault` |
 | `deviceTypeStats.*` | `devices.typeCode`、`devices.type`、`devices.status`、`devices.fault` |
-| `deviceGroups.*` | 设备基础字段、`devices.status`、`devices.location.address`、`devices.task` |
 | `mountedDeviceCount` | `devices.devices` 上装设备列表长度 |
 | `mountedDevices` | `devices.devices` |
 | `alarmStatus` | `devices.alarmLevel` |
@@ -231,4 +230,4 @@
 | `tasks.total` | `tasks` 列表长度 |
 | `alarms.total` | `alarms` 列表数量 |
 | `alarms.summary.*` | `alarms.status`、`alarms.eventTime` |
-| `alarms.high/medium/low.*` | `alarms.level` |
+| `alarms.high/medium/low.items` | `alarms.level` |

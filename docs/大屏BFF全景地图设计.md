@@ -155,7 +155,6 @@ BFF 不负责：
 ```text
 GET /api/bigscreen/panorama/overview
 GET /api/bigscreen/panorama/devices/{deviceId}
-GET /api/bigscreen/panorama/device-groups
 GET /api/bigscreen/panorama/tasks
 GET /api/bigscreen/panorama/alarms
 ```
@@ -211,42 +210,9 @@ GET /api/bigscreen/panorama/overview
     "running": 48,
     "pending": 2
   },
-  "deviceGroups": {
-    "total": 4,
-    "online": {
-      "status": "online",
-      "statusName": "在线",
-      "count": 2,
-      "items": [
-        {
-          "robotId": "robot-001",
-          "clientId": "robot-media-client",
-          "name": "R1轮式机器人",
-          "type": "轮式机器人",
-          "typeCode": "WHEELED_ROBOT",
-          "vendor": "SONGLING",
-          "model": "SCOUT",
-          "status": "online",
-          "battery": 100,
-          "fault": false,
-          "alarmLevel": null,
-          "alarmText": "-",
-          "locationText": "A区主干道",
-          "currentTaskId": "task-001",
-          "currentTaskName": "A区-夜间巡逻"
-        }
-      ]
-    },
-    "offline": {
-      "status": "offline",
-      "statusName": "离线",
-      "count": 2,
-      "items": []
-    }
-  },
   "devices": [
     {
-      "robotId": "robot-001",
+      "robotId": "test001",
       "clientId": "robot-media-client",
       "name": "R1轮式机器人",
       "type": "轮式机器人",
@@ -321,7 +287,7 @@ GET /api/bigscreen/panorama/overview
       "currentLocation": "A区主干道",
       "equipmentList": [
         {
-          "robotId": "robot-001",
+          "robotId": "test001",
           "name": "R1轮式机器人",
           "type": "WHEELED_ROBOT",
           "status": "online"
@@ -339,14 +305,10 @@ GET /api/bigscreen/panorama/overview
       "handleRateText": "100%"
     },
     "high": {
-      "level": "HIGH",
-      "levelName": "高风险",
-      "count": 5,
       "items": [
         {
           "alarmId": "alarm-001",
           "title": "发生火灾",
-          "category": "BUSINESS",
           "categoryName": "业务告警",
           "level": "HIGH",
           "levelName": "高风险",
@@ -361,7 +323,7 @@ GET /api/bigscreen/panorama/overview
             "address": "A区主干道",
             "updatedAt": "2026-06-12 11:30:58"
           },
-          "robotId": "robot-001",
+          "robotId": "test001",
           "deviceName": "R1轮式机器人",
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
@@ -375,15 +337,9 @@ GET /api/bigscreen/panorama/overview
       ]
     },
     "medium": {
-      "level": "MEDIUM",
-      "levelName": "中风险",
-      "count": 5,
       "items": []
     },
     "low": {
-      "level": "LOW",
-      "levelName": "低风险",
-      "count": 5,
       "items": []
     }
   },
@@ -422,8 +378,8 @@ GET /api/bigscreen/panorama/overview
 
 | robotId | lat | lng | x | y | z |
 |---|---:|---:|---:|---:|---:|
-| `robot-001` | 30.745330 | 106.039428 | 118.4 | 42.8 | 0.0 |
-| `robot-002` | 30.746587087515316 | 106.03824884204943 | 82.6 | 156.2 | 0.0 |
+| `test001` | 30.745330 | 106.039428 | 118.4 | 42.8 | 0.0 |
+| `test002` | 30.746587087515316 | 106.03824884204943 | 82.6 | 156.2 | 0.0 |
 | `robot-unitree-001` | 30.7469491 | 106.0344109 | -64.3 | 198.5 | 0.0 |
 
 `location.lng/lat/altitude` 用于地图经纬度定位；`location.x/y/z` 用于室内图、三维场景或局部坐标系定位。
@@ -440,7 +396,7 @@ GET /api/bigscreen/panorama/devices/{deviceId}
 
 ```json
 {
-  "robotId": "robot-001",
+  "robotId": "test001",
   "clientId": "robot-media-client",
   "name": "R1轮式机器人",
   "type": "轮式机器人",
@@ -495,61 +451,7 @@ GET /api/bigscreen/panorama/devices/{deviceId}
 
 `actions` 由 BFF 返回，前端可直接控制按钮显示和启用状态。
 
-### 5.4 设备分组接口
-
-```http
-GET /api/bigscreen/panorama/device-groups
-```
-
-用途：按在线、离线分组展示各机器人摘要集合，适合大屏侧边栏列表直接渲染。单设备完整详情继续使用 `GET /api/bigscreen/panorama/devices/{deviceId}`。
-
-分组规则：
-
-- `online` 组包含状态为 `online` 和 `fault` 的设备。故障设备仍然可能在线，因此进入在线组，同时通过 `fault` 和 `alarmLevel` 标识异常。
-- `offline` 组包含状态为 `offline` 的设备。
-
-返回结构：
-
-```json
-{
-  "serverTime": "2026-06-12 11:31:02",
-  "deviceGroups": {
-    "total": 4,
-    "online": {
-      "status": "online",
-      "statusName": "在线",
-      "count": 2,
-      "items": [
-        {
-          "robotId": "robot-001",
-          "clientId": "robot-media-client",
-          "name": "R1轮式机器人",
-          "type": "轮式机器人",
-          "typeCode": "WHEELED_ROBOT",
-          "vendor": "SONGLING",
-          "model": "SCOUT",
-          "status": "online",
-          "battery": 100,
-          "fault": false,
-          "alarmLevel": null,
-          "alarmText": "-",
-          "locationText": "A区主干道",
-          "currentTaskId": "task-001",
-          "currentTaskName": "A区-夜间巡逻"
-        }
-      ]
-    },
-    "offline": {
-      "status": "offline",
-      "statusName": "离线",
-      "count": 2,
-      "items": []
-    }
-  }
-}
-```
-
-### 5.5 任务列表接口
+### 5.4 任务列表接口
 
 ```http
 GET /api/bigscreen/panorama/tasks
@@ -584,7 +486,7 @@ GET /api/bigscreen/panorama/tasks
       "currentLocation": "A区北侧消防通道",
       "equipmentList": [
         {
-          "robotId": "robot-002",
+          "robotId": "test002",
           "name": "G1四足机器人",
           "type": "ROBOT_DOG",
           "status": "offline"
@@ -602,7 +504,7 @@ GET /api/bigscreen/panorama/tasks
       "currentLocation": "A区东侧出入口",
       "equipmentList": [
         {
-          "robotId": "robot-001",
+          "robotId": "test001",
           "name": "R1轮式机器人",
           "type": "WHEELED_ROBOT",
           "status": "online"
@@ -613,7 +515,7 @@ GET /api/bigscreen/panorama/tasks
 }
 ```
 
-### 5.6 告警列表接口
+### 5.5 告警列表接口
 
 ```http
 GET /api/bigscreen/panorama/alarms
@@ -634,14 +536,10 @@ GET /api/bigscreen/panorama/alarms
       "handleRateText": "100%"
     },
     "high": {
-      "level": "HIGH",
-      "levelName": "高风险",
-      "count": 5,
       "items": [
         {
           "alarmId": "alarm-001",
           "title": "发生火灾",
-          "category": "BUSINESS",
           "categoryName": "业务告警",
           "level": "HIGH",
           "levelName": "高风险",
@@ -656,7 +554,7 @@ GET /api/bigscreen/panorama/alarms
             "address": "A区主干道",
             "updatedAt": "2026-06-12 11:30:58"
           },
-          "robotId": "robot-001",
+          "robotId": "test001",
           "deviceName": "R1轮式机器人",
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
@@ -670,15 +568,9 @@ GET /api/bigscreen/panorama/alarms
       ]
     },
     "medium": {
-      "level": "MEDIUM",
-      "levelName": "中风险",
-      "count": 5,
       "items": []
     },
     "low": {
-      "level": "LOW",
-      "levelName": "低风险",
-      "count": 5,
       "items": []
     }
   }
@@ -703,7 +595,7 @@ handled / max(totalToday, 1) * 100
 
 当 `totalToday = 0` 时，`handleRate` 返回 `100`，表示当前没有待处理告警；如果业务希望显示 `0%`，可在 BFF 中按产品口径调整。
 
-### 5.7 告警处置接口
+### 5.6 告警处置接口
 
 ```http
 POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
@@ -800,7 +692,7 @@ WebSocket：
   "event": "panorama.device.status.changed",
   "timestamp": "2026-06-12 11:31:10",
   "data": {
-    "robotId": "robot-001",
+    "robotId": "test001",
     "status": "online",
     "battery": 96,
     "controlMode": "MANUAL",
@@ -816,7 +708,7 @@ WebSocket：
   "event": "panorama.device.location.changed",
   "timestamp": "2026-06-12 11:31:11",
   "data": {
-    "robotId": "robot-001",
+    "robotId": "test001",
     "location": {
       "lng": 113.923556,
       "lat": 22.512385,
@@ -869,7 +761,6 @@ WebSocket：
     "alarm": {
       "alarmId": "alarm-001",
       "title": "发生火灾",
-      "category": "BUSINESS",
       "categoryName": "业务告警",
       "level": "HIGH",
       "levelName": "高风险",
@@ -884,7 +775,7 @@ WebSocket：
         "address": "A区主干道",
         "updatedAt": "2026-06-12 11:30:58"
       },
-      "robotId": "robot-001",
+      "robotId": "test001",
       "deviceName": "R1轮式机器人",
       "taskId": "task-002",
       "taskName": "A区-仓库复核",
@@ -971,8 +862,7 @@ mvn spring-boot:run
 
 ```bash
 curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/overview | jq
-curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/devices/robot-001 | jq
-curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/device-groups | jq
+curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/devices/test001 | jq
 curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/tasks | jq
 curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/alarms | jq
 curl -sS -X POST http://127.0.0.1:8090/api/bigscreen/panorama/alarms/alarm-001/disposal \
