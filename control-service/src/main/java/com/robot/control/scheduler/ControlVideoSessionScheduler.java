@@ -10,6 +10,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+/**
+ * 视频会话恢复、释放与对讲超时调度任务。
+ *
+ * @author leelay
+ * @date 2026-07-05
+ */
 @Component
 public class ControlVideoSessionScheduler {
 
@@ -19,6 +25,13 @@ public class ControlVideoSessionScheduler {
     private final ControlVideoCommandService commandService;
     private final ControlServiceProperties properties;
 
+    /**
+     * 创建 ControlVideoSessionScheduler 实例。
+     *
+     * @param mediaServiceClient Media Service 客户端
+     * @param commandService 视频命令服务
+     * @param properties 服务配置
+     */
     public ControlVideoSessionScheduler(
             ControlMediaServiceClient mediaServiceClient,
             ControlVideoCommandService commandService,
@@ -28,6 +41,9 @@ public class ControlVideoSessionScheduler {
         this.properties = properties;
     }
 
+    /**
+     * 执行周期扫描任务。
+     */
     @Scheduled(fixedDelayString = "${media.session.sweep-delay-ms:5000}")
     public void sweep() {
         restartInterruptedSessions();
@@ -35,6 +51,9 @@ public class ControlVideoSessionScheduler {
         releaseIdleSessions();
     }
 
+    /**
+     * 处理过期对讲会话。
+     */
     private void expireStaleIntercoms() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getViewerHeartbeatTimeoutSeconds());
         try {
@@ -50,6 +69,9 @@ public class ControlVideoSessionScheduler {
         }
     }
 
+    /**
+     * 恢复中断的视频会话。
+     */
     private void restartInterruptedSessions() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getInterruptedGraceSeconds());
         try {
@@ -65,6 +87,9 @@ public class ControlVideoSessionScheduler {
         }
     }
 
+    /**
+     * 释放空闲视频会话。
+     */
     private void releaseIdleSessions() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getIdleReleaseDelaySeconds());
         try {
@@ -80,6 +105,11 @@ public class ControlVideoSessionScheduler {
         }
     }
 
+    /**
+     * 返回当前时间。
+     *
+     * @return 当前时间
+     */
     private OffsetDateTime now() {
         return OffsetDateTime.now(ZoneOffset.UTC);
     }

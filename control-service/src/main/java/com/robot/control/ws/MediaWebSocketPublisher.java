@@ -15,6 +15,12 @@ import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+/**
+ * 向已连接前端广播 WebSocket 事件的发布器。
+ *
+ * @author leelay
+ * @date 2026-07-05
+ */
 @Component
 public class MediaWebSocketPublisher {
 
@@ -23,18 +29,39 @@ public class MediaWebSocketPublisher {
     private final ObjectMapper objectMapper;
     private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
 
+    /**
+     * 创建 MediaWebSocketPublisher 实例。
+     *
+     * @param objectMapper JSON 编解码器
+     */
     public MediaWebSocketPublisher(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 登记 WebSocket 会话。
+     *
+     * @param session WebSocket 会话
+     */
     public void addSession(WebSocketSession session) {
         sessions.add(session);
     }
 
+    /**
+     * 移除 WebSocket 会话。
+     *
+     * @param session WebSocket 会话
+     */
     public void removeSession(WebSocketSession session) {
         sessions.remove(session);
     }
 
+    /**
+     * 发布 MQTT 消息。
+     *
+     * @param event 事件名称
+     * @param data 业务数据
+     */
     public void publish(String event, Object data) {
         Map<String, Object> payload = Map.of(
                 "event", event,
@@ -60,6 +87,11 @@ public class MediaWebSocketPublisher {
         }
     }
 
+    /**
+     * 向前端广播二进制消息。
+     *
+     * @param bytes bytes
+     */
     public void publishBinary(byte[] bytes) {
         BinaryMessage message = new BinaryMessage(bytes);
         for (WebSocketSession session : sessions) {

@@ -19,6 +19,12 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+/**
+ * 机器人媒体与客户端状态 MQTT 订阅器。
+ *
+ * @author leelay
+ * @date 2026-07-05
+ */
 @Component
 public class RobotMediaStatusSubscriber {
 
@@ -35,6 +41,16 @@ public class RobotMediaStatusSubscriber {
     private final RobotRegistryService robotRegistryService;
     private MqttClient client;
 
+    /**
+     * 创建 RobotMediaStatusSubscriber 实例。
+     *
+     * @param properties 服务配置
+     * @param objectMapper JSON 编解码器
+     * @param mediaServiceClient Media Service 客户端
+     * @param commandService 视频命令服务
+     * @param equipmentControlService 装备控制服务
+     * @param robotRegistryService robotRegistryService
+     */
     public RobotMediaStatusSubscriber(
             ControlServiceProperties properties,
             ObjectMapper objectMapper,
@@ -50,6 +66,9 @@ public class RobotMediaStatusSubscriber {
         this.robotRegistryService = robotRegistryService;
     }
 
+    /**
+     * 应用启动完成后订阅 MQTT 状态 topic。
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void subscribeOnReady() {
         if (!properties.getMqtt().isEnabled()) {
@@ -67,6 +86,11 @@ public class RobotMediaStatusSubscriber {
         }
     }
 
+    /**
+     * 创建对讲状态 MQTT 监听器。
+     *
+     * @return MQTT 消息监听器
+     */
     private IMqttMessageListener intercomStatusListener() {
         return (topic, message) -> {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
@@ -83,6 +107,11 @@ public class RobotMediaStatusSubscriber {
         };
     }
 
+    /**
+     * 创建视频状态 MQTT 监听器。
+     *
+     * @return MQTT 消息监听器
+     */
     private IMqttMessageListener statusListener() {
         return (topic, message) -> {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
@@ -95,6 +124,11 @@ public class RobotMediaStatusSubscriber {
         };
     }
 
+    /**
+     * 创建机器人客户端状态 MQTT 监听器。
+     *
+     * @return MQTT 消息监听器
+     */
     private IMqttMessageListener clientStatusListener() {
         return (topic, message) -> {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
@@ -113,6 +147,12 @@ public class RobotMediaStatusSubscriber {
         };
     }
 
+    /**
+     * 创建并连接 MQTT 客户端。
+     *
+     * @return MQTT 客户端
+     * @throws MqttException MqttException 处理失败时抛出
+     */
     private synchronized MqttClient mqttClient() throws MqttException {
         if (client != null && client.isConnected()) {
             return client;

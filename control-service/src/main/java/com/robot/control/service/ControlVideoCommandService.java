@@ -25,6 +25,12 @@ import org.springframework.stereotype.Service;
  * @author leelay
  * @date 2026/05/31
  */
+/**
+ * 控制侧视频操作编排服务。
+ *
+ * @author leelay
+ * @date 2026-07-05
+ */
 @Service
 public class ControlVideoCommandService {
 
@@ -225,12 +231,22 @@ public class ControlVideoCommandService {
         mediaServiceClient.onlineRestartCommands(robotId, status).forEach(this::sendStart);
     }
 
+    /**
+     * 下发视频启动命令。
+     *
+     * @param command 命令内容
+     */
     private void sendStart(VideoStartCommand command) {
         if (command != null) {
             commandService.sendStart(command);
         }
     }
 
+    /**
+     * 发送对讲启动命令。
+     *
+     * @param command 命令内容
+     */
     private void sendIntercomStart(IntercomStartCommand command) {
         if (command != null) {
             commandService.sendIntercomStart(command);

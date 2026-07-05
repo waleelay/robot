@@ -16,6 +16,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
 
+/**
+ * Control Service 本地机器人在线状态注册表。
+ *
+ * @author leelay
+ * @date 2026-07-05
+ */
 @Service
 public class RobotRegistryService {
 
@@ -24,6 +30,13 @@ public class RobotRegistryService {
     private final ObjectMapper objectMapper;
     private final Map<String, RobotDevice> devices = new ConcurrentHashMap<>();
 
+    /**
+     * 创建 RobotRegistryService 实例。
+     *
+     * @param properties 服务配置
+     * @param webSocketPublisher webSocketPublisher
+     * @param objectMapper JSON 编解码器
+     */
     public RobotRegistryService(
             ControlServiceProperties properties,
             MediaWebSocketPublisher webSocketPublisher,
@@ -33,6 +46,12 @@ public class RobotRegistryService {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 根据机器人客户端上报更新注册表。
+     *
+     * @param data 业务数据
+     * @return 是否从离线变为在线
+     */
     public boolean update(Map<String, Object> data) {
         String robotId = string(data.get("robotId"), "");
         String clientId = string(data.get("clientId"), "");
@@ -69,6 +88,25 @@ public class RobotRegistryService {
                 mountedDevices);
     }
 
+    /**
+     * 根据机器人客户端上报更新注册表。
+     *
+     * @param robotId 机器人 ID
+     * @param clientId 客户端 ID
+     * @param status 状态消息
+     * @param name 名称
+     * @param type type
+     * @param battery battery
+     * @param controlMode 控制模式
+     * @param stateSeq stateSeq
+     * @param missionStatus missionStatus
+     * @param navigationStatus navigationStatus
+     * @param controlOwner controlOwner
+     * @param estopActive estopActive
+     * @param cameras cameras
+     * @param mountedDevices mountedDevices
+     * @return 是否从离线变为在线
+     */
     public boolean update(
             String robotId,
             String clientId,
@@ -115,6 +153,11 @@ public class RobotRegistryService {
         return becameOnline;
     }
 
+    /**
+     * 列出当前注册的机器人状态。
+     *
+     * @return 列表结果
+     */
     public List<RobotDeviceResponse> list() {
         return devices.values().stream()
                 .sorted(Comparator.comparing(device -> device.robotId))
@@ -122,6 +165,9 @@ public class RobotRegistryService {
                 .toList();
     }
 
+    /**
+     * 扫描并标记心跳超时的机器人。
+     */
     public void sweepOffline() {
         OffsetDateTime threshold = now().minusSeconds(properties.getRobot().getHeartbeatTimeoutSeconds());
         devices.values().forEach(device -> {
@@ -132,6 +178,12 @@ public class RobotRegistryService {
         });
     }
 
+    /**
+     * 转换为 WebSocket 推送状态。
+     *
+     * @param device device
+     * @return WebSocket 状态载荷
+     */
     private Map<String, Object> toState(RobotDevice device) {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("robotId", device.robotId);
@@ -152,6 +204,12 @@ public class RobotRegistryService {
         return state;
     }
 
+    /**
+     * 转换为机器人状态响应。
+     *
+     * @param device device
+     * @return 机器人状态响应
+     */
     private RobotDeviceResponse toResponse(RobotDevice device) {
         return new RobotDeviceResponse(
                 device.robotId,
@@ -172,18 +230,42 @@ public class RobotRegistryService {
                 DateTimeConfig.format(device.lastHeartbeatAt));
     }
 
+    /**
+     * 读取字符串值并应用默认值。
+     *
+     * @param value 待处理值
+     * @param defaultValue 默认值
+     * @return 字符串值
+     */
     private String string(Object value, String defaultValue) {
         return value == null || String.valueOf(value).isBlank() ? defaultValue : String.valueOf(value);
     }
 
+    /**
+     * 判断字符串是否为空白。
+     *
+     * @param value 待处理值
+     * @return 是否为空白
+     */
     private boolean blank(String value) {
         return value == null || value.isBlank();
     }
 
+    /**
+     * 返回当前时间。
+     *
+     * @return 当前时间
+     */
     private OffsetDateTime now() {
         return OffsetDateTime.now(ZoneOffset.UTC);
     }
 
+    /**
+     * 内存中的单台机器人状态快照。
+     *
+     * @author leelay
+     * @date 2026-07-05
+     */
     private static class RobotDevice {
         private final String robotId;
         private String clientId;
@@ -201,6 +283,11 @@ public class RobotRegistryService {
         private List<RobotCameraResponse> cameras = List.of();
         private List<Map<String, Object>> mountedDevices = List.of();
 
+        /**
+         * 创建 RobotDevice 实例。
+         *
+         * @param robotId 机器人 ID
+         */
         private RobotDevice(String robotId) {
             this.robotId = robotId;
             this.name = robotId;
