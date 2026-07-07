@@ -30,8 +30,8 @@ export default {
           this.updateRecordings(items)
         } else {
           this.recordings = this.recordingTab === 'patrol'
-            ? items.filter(item => item.taskExecutionId)
-            : items.filter(item => !item.taskExecutionId)
+            ? items.filter(item => item.extensionId)
+            : items.filter(item => !item.extensionId)
         }
       } catch (error) {
         this.$message.error(errorMessage(error))

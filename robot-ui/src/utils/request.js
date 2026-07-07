@@ -12,6 +12,20 @@ let showAlert = false;
 // 是否显示重新登录
 export let isRelogin = { show: false };
 
+function getResponseErrorMessage(error) {
+  const data = error && error.response && error.response.data
+  if (!data) return ''
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data)
+      return parsed.message || parsed.msg || parsed.error || ''
+    } catch (e) {
+      return data
+    }
+  }
+  return data.message || data.msg || data.error || ''
+}
+
 // axios.defaults.headers['Content-Type'] = 'application/json;charset=utf-8'
 // 创建axios实例
 const service = axios.create({
@@ -85,7 +99,7 @@ service.interceptors.response.use(res => {
     const code = res.data.code === '0' ? 200 : res.data.code || 200;
     // 获取错误信息
     
-    const msg = errorCode[code] || res.data.msg || errorCode['default']
+    const msg = res.data.message || res.data.msg || errorCode[code] || errorCode['default']
     // 二进制数据则直接返回
     if (res.request.responseType ===  'blob' || res.request.responseType ===  'arraybuffer') {
       showAlert = false
@@ -129,8 +143,11 @@ service.interceptors.response.use(res => {
   },
   error => {
     console.log('err' + error)
+    const responseMessage = getResponseErrorMessage(error)
     let { message } = error;
-    if (message == "Network Error") {
+    if (responseMessage) {
+      message = responseMessage
+    } else if (message == "Network Error") {
       message = "后端接口连接异常";
     } else if (message.includes("timeout")) {
       message = "系统接口请求超时";
@@ -141,6 +158,7 @@ service.interceptors.response.use(res => {
       showAlert = true
       Message({ message: message, type: 'error', duration: 5 * 1000 })
     }
+    error.message = message
     return Promise.reject(error)
   }
 )

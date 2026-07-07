@@ -8,7 +8,7 @@
           <span class="status">运行中</span>
         </div>
         <div class="list">
-          <div class="item">装备类型：四足机器人</div>
+          <div class="item">装备类型：四足机器狗</div>
           <div class="item">装备型号：绝影X30PRO</div>
           <div class="item">控制模型：自动控制</div>
           <div class="item">当前速度：1.5m/s</div>
@@ -206,7 +206,7 @@
               <span class="status">运行中</span>
             </div>
             <div class="list">
-              <div class="item">装备类型：四足机器人</div>
+              <div class="item">装备类型：四足机器狗</div>
               <div class="item">装备型号：绝影X30PRO</div>
               <div class="item">控制模型：自动控制</div>
               <div class="item">当前速度：1.5m/s</div>

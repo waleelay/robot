@@ -51,55 +51,53 @@ export function deleteReport(id) {
   })
 }
 
-
-
 // 任务相关
-const taskPre = ''
+const taskPre = '/api/bigscreen/business'
 // 获取任务列表 { pageNum, pageSize, status }
 export function getTaskList(params) {
   return request({
-    url: taskPre + '/api/v1/management/task-workflow-plans',
+    url: taskPre + '/tasks/plans',
     method: 'get',
     params
   })
 }
 export function getTaskDetail(id) {
   return request({
-    url: taskPre + `/api/v1/management/task-workflow-plans/${id}`,
+    url: taskPre + `/tasks/plans/${id}`,
     method: 'get'
   })
 }
 export function createTask(data) {
   return request({
-    url: taskPre + '/api/v1/management/task-workflow-plans',
+    url: taskPre + '/tasks/plans',
     method: 'post',
     data
   })
 }
 export function updateTask(id, data) {
   return request({
-    url: taskPre + `/api/v1/management/task-workflow-plans/${id}`,
+    url: taskPre + `/tasks/plans/${id}`,
     method: 'put',
     data
   })
 }
 export function updateTaskEnabled(id, enabled) {
   return request({
-    url: taskPre + `/api/v1/management/task-workflow-plans/${id}/enabled`,
+    url: taskPre + `/tasks/plans/${id}/enabled`,
     method: 'patch',
     data: { enabled }
   })
 }
 export function previewTaskConfiguration(data) {
   return request({
-    url: taskPre + '/api/v1/management/task-workflow-plans/configuration-previews',
+    url: taskPre + '/tasks/plans/configuration-previews',
     method: 'post',
     data
   })
 }
 export function startTask(id, data) {
   return request({
-    url: taskPre + `/api/v1/management/task-workflow-plans/${id}/starts`,
+    url: taskPre + `/tasks/plans/${id}/starts`,
     method: 'post',
     data
   })
@@ -107,14 +105,14 @@ export function startTask(id, data) {
 
 export function deleteTask(id) {
   return request({
-    url: taskPre + `/api/v1/management/task-workflow-plans/${id}`,
+    url: taskPre + `/tasks/plans/${id}`,
     method: 'delete'
   })
 }
 
 export function getTaskWorkflowDefinitions(params) {
   return request({
-    url: taskPre + '/api/v1/management/task-workflow-definitions',
+    url: taskPre + '/tasks/workflow-definitions',
     method: 'get',
     params
   })
@@ -122,51 +120,45 @@ export function getTaskWorkflowDefinitions(params) {
 
 export function getTaskWorkflowVersionDetail(id, versionId) {
   return request({
-    url: taskPre + `/api/v1/management/task-workflow-definitions/${id}/versions/${versionId}`,
+    url: taskPre + `/tasks/workflow-definitions/${id}/versions/${versionId}`,
     method: 'get'
   })
 }
 
 export function getManagementDevices(params) {
   return request({
-    url: taskPre + '/api/v1/management/devices',
+    url: taskPre + '/devices',
     method: 'get',
     params
   })
 }
 
-
 // 执行记录
-  // detail: (id) => getData(`/api/v1/management/task-workflow-instances/${id}`),
-  // replay: (id) => getData(`/api/v1/management/task-workflow-instances/${id}/replay`),
-  // trackSamples: (id, params) => getData(`/api/v1/management/task-workflow-instances/${id}/track-samples`, params),
-  // humanTasks: (id) => getData(`/api/v1/management/task-workflow-instances/${id}/human-tasks`),
-  // completeHumanTask: (id, taskId, variables = {}) =>
-  //   postData(`/api/v1/management/task-workflow-instances/${id}/human-tasks/${taskId}/complete`, { variables }),
-  // applyComponentSelections: (id, payload) =>
-  //   postData(`/api/v1/management/task-workflow-instances/${id}/component-selections`, payload)
+// detail: (id) => getData(`/tasks/execution-records/${id}`),
+// replay: (id) => getData(`/tasks/execution-records/${id}/replay`),
+// trackSamples: (id, params) => getData(`/tasks/execution-records/${id}/track-samples`, params)
 export function getTaskRecordList(params) {
   return request({
-    url: taskPre + '/api/v1/management/task-workflow-instances',
+    url: taskPre + '/tasks/execution-records',
     method: 'get',
     params
   })
 }
 export function getTaskRecordDetail(id) {
   return request({
-    url: taskPre + `/api/v1/management/task-workflow-instances/${id}`,
+    url: taskPre + `/tasks/execution-records/${id}`,
     method: 'get'
   })
 }
 export function getTaskRecordReplay(id) {
   return request({
-    url: taskPre + `/api/v1/management/task-workflow-instances/${id}/replay`,
+    url: taskPre + `/tasks/execution-records/${id}/replay`,
     method: 'get'
   })
 }
 export function getTrackRecordSamples(id, params) {
   return request({
-    url: taskPre + `/api/v1/management/task-workflow-instances/${id}/track-samples`,
+    url: taskPre + `/tasks/execution-records/${id}/track-samples`,
     method: 'get',
     params
   })
@@ -174,17 +166,17 @@ export function getTrackRecordSamples(id, params) {
 
 export function previewImageBlob(id, cacheKey) {
   return request({
-    url: taskPre + `/api/v1/management/maps/${id}/preview-image`,
+    url: taskPre + `/maps/${id}/preview-image`,
     method: 'get',
     params: cacheKey ? { t: cacheKey } : undefined,
-    responseType: "blob"
+    responseType: 'blob'
   })
 }
 
 // 防止报错==================================
-export function setErrorisDeal (){
+export function setErrorisDeal(id) {
   return request({
-    url: taskPre + `/api/v1/management/maps/${id}/preview-image`,
+    url: taskPre + `/maps/${id}/preview-image`,
     method: 'post',
     data: { errorisDeal: true }
   })

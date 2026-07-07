@@ -8,7 +8,7 @@
           <span class="status">运行中</span>
         </div>
         <div class="list">
-          <div class="item">装备类型：四足机器人</div>
+          <div class="item">装备类型：四足机器狗</div>
           <div class="item">装备型号：绝影X30PRO</div>
           <div class="item">控制模型：自动控制</div>
           <div class="item">当前速度：1.5m/s</div>
@@ -134,7 +134,7 @@ export default {
           position: 'bottomleft'
       }).addTo(this.map);
       // 绑定地图点击事件
-      
+
       // this.map.on('click', this.handleMapClick);
 
       // 处理瓦片加载错误
@@ -145,7 +145,7 @@ export default {
     initPoints() {
       // 创建自定义图标
       const pointAIcon = L.divIcon({
-        // <img src="@/assets/images/new-bi/icon_bg.png" alt="" width="227px" height="227px" class="icon-bg">  
+        // <img src="@/assets/images/new-bi/icon_bg.png" alt="" width="227px" height="227px" class="icon-bg">
         // html: `<div><div class="icon-bg"></div></div>`,
         html: `<div class="custom-point-img"></div>`,
         className: 'custom-point',
@@ -169,14 +169,14 @@ export default {
       });
 
       // 创建点标记
-      this.pointAMarker = L.marker([this.pointA.lat, this.pointA.lng], { 
+      this.pointAMarker = L.marker([this.pointA.lat, this.pointA.lng], {
         icon: pointAIcon,
-        zIndexOffset: 1000 
+        zIndexOffset: 1000
       }).addTo(this.map);
-      
-      this.pointBMarker = L.marker([this.pointB.lat, this.pointB.lng], { 
+
+      this.pointBMarker = L.marker([this.pointB.lat, this.pointB.lng], {
         icon: pointBIcon,
-        zIndexOffset: 900 
+        zIndexOffset: 900
       }).addTo(this.map);
 
       // 初始化移动轨迹
@@ -203,7 +203,7 @@ export default {
               <span class="status">运行中</span>
             </div>
             <div class="list">
-              <div class="item">装备类型：四足机器人</div>
+              <div class="item">装备类型：四足机器狗</div>
               <div class="item">装备型号：绝影X30PRO</div>
               <div class="item">控制模型：自动控制</div>
               <div class="item">当前速度：1.5m/s</div>
@@ -251,29 +251,29 @@ export default {
       // 生成随机移动方向和小距离
       const randomLat = (Math.random() - 0.5) * 0.001;
       const randomLng = (Math.random() - 0.5) * 0.001;
-      
+
       // 更新点A位置
       this.pointA = {
         lat: this.pointA.lat + randomLat,
         lng: this.pointA.lng + randomLng
       };
-      
+
       // 移动标记
       this.pointAMarker.setLatLng([this.pointA.lat, this.pointA.lng]);
-      
+
       // 更新移动轨迹
       this.pathPoints.push([this.pointA.lat, this.pointA.lng]);
       this.movementPath.setLatLngs(this.pathPoints);
-      
+
       // 更新计数
       this.moveCount++;
-      
+
       this.updatePopups();
     },
 
     startMovement() {
       if (this.isMoving) return;
-      
+
       this.isMoving = true;
       this.movementInterval = setInterval(() => {
         this.movePointA();
@@ -282,7 +282,7 @@ export default {
 
     stopMovement() {
       if (!this.isMoving) return;
-      
+
       this.isMoving = false;
       if (this.movementInterval) {
         clearInterval(this.movementInterval);
@@ -293,22 +293,22 @@ export default {
 
     resetPoints() {
       this.stopMovement();
-      
+
       // 重置点位置
       this.pointA = { lat: this.centerPoint.lat, lng: this.centerPoint.lng };
       this.pointB = { lat: 30.748000, lng: 106.040000 };
-      
+
       // 更新标记位置
       this.pointAMarker.setLatLng([this.pointA.lat, this.pointA.lng]);
       this.pointBMarker.setLatLng([this.pointB.lat, this.pointB.lng]);
-      
+
       // 重置移动轨迹
       this.pathPoints = [[this.pointA.lat, this.pointA.lng]];
       this.movementPath.setLatLngs(this.pathPoints);
-      
+
       // 重置计数
       this.moveCount = 0;
-      
+
       this.updatePopups();
     },
 

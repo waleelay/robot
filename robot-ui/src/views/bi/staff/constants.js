@@ -34,7 +34,7 @@ export const robots = [
         "robotId": "robot-002",
         "clientId": "robot-media-client-robot-002",
         "name": "云深处四足机器狗",
-        "type": "四足机器人",
+        "type": "四足机器狗",
         "status": "online",
         "lastHeartbeatAt": "2026-05-25T03:39:29.404898Z",
         "cameras": [
