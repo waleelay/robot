@@ -149,6 +149,12 @@ import { onDragStart, onDragEnd } from '../../../../../store/modules/dragVideo';
 import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
 export default {
   name: 'TaskListTree',
+  props: {
+    updateVideoHandler: {
+      type: Function,
+      default: null
+    }
+  },
   data() {
     return {
       tabList: ['装备列表', '任务列表'],
@@ -219,7 +225,7 @@ export default {
       this.hasLoad = true
       this.setSplitType([1, 4, 6, 9].filter(item => item >= onlineList.length)?.[0] || 9)
       if (this.$route.query.taskId !== undefined) {
-        this.handleSelectTask(this.taskData[this.$route.query.taskId])
+        await this.handleSelectTask(this.taskData[this.$route.query.taskId])
       } else {
         for (const item of onlineList) {
           await this.handleClickRobot(item)
@@ -228,26 +234,33 @@ export default {
     },
     async handleClickRobot(item) {
       if (this.splitType === 1 || this.splitType !== this.checkedRobotIds.length) {
-        this.$emit('updateVideo', item)
+        await this.updateVideo(item)
       }
     },
-    
+    async updateVideo(robot) {
+      if (typeof this.updateVideoHandler === 'function') {
+        await this.updateVideoHandler(robot)
+        return
+      }
+      this.$emit('updateVideo', robot)
+    },
+
     async handleSelectTask(task) {
       this.selectedTaskId = task.taskId
       // 获取新旧设备列表的 robotId 集合
-      const newIds = new Set(task.equipmentList.slice(0, this.splitType).map(item => item.robotId));
-      
+      const newIds = new Set(task.equipmentList.slice(0, this.splitType).map(item => item.robotId))
+
       // 找出需要关闭的设备（旧有但新列表中没有的）
-      const closeIds = [...this.checkedRobotIds].filter(id => !newIds.has(id));
-      const addIds = [...newIds].filter(id => !this.checkedRobotIds.includes(id));
-      
+      const closeIds = [...this.checkedRobotIds].filter(id => !newIds.has(id))
+      const addIds = [...newIds].filter(id => !this.checkedRobotIds.includes(id))
+
       // 关闭对应的视频
       for (const id of [...closeIds, ...addIds]) {
-        console.log(123, id);
-        const robot = this.robots.filter(e => e.robotId === id)[0];
+        console.log(123, id)
+        const robot = this.robots.find(e => e.robotId === id)
         if (robot) {
-          await this.$emit('updateVideo', robot)
-        };
+          await this.updateVideo(robot)
+        }
       }
       // 更新选中设备列表
       this.selectedEquipmentList = task.equipmentList.slice(0, this.splitType);

@@ -614,7 +614,7 @@ const actions = {
   },
 
   // 停止摄像头
-  async stopCamera({ commit, state }, data) {
+  async stopCamera({ commit, state, dispatch }, data) {
     let camera = state.cameras[data.key]
     if (!camera) return
     camera = { ...camera }

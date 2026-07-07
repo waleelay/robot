@@ -10,7 +10,7 @@
 <template>
   <div class="flex h100 pr20 pl20 pb10 pt20">
     <div class="right flex1 flex-column h100">
-      <TaskListTree ref="taskListRef" @select-task="selectTask" @updateVideo="updateVideo" />
+      <TaskListTree ref="taskListRef" :update-video-handler="updateVideo" @select-task="selectTask" />
       <div class="mt20 flex1 flex-column">
         <div class="card-title">
           <div class="text">
@@ -97,12 +97,12 @@ export default {
       
     },
     async updateVideo(data) {
-      this.$nextTick(async () => {
-        console.log('updateVideo');
-        
-        await this.$refs?.leftVideoRef?.test({ data })
-      });
-      
+      await new Promise(resolve => this.$nextTick(resolve))
+      console.log('updateVideo')
+
+      const leftVideoRef = this.$refs?.leftVideoRef
+      if (!leftVideoRef || typeof leftVideoRef.test !== 'function') return
+      await leftVideoRef.test({ data })
     },
     // async updateVideo(data) {
     //   if (data.key) {
