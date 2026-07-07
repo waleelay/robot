@@ -185,7 +185,8 @@ export default {
       ZQL_playingSource: {}, // 键名为'slot_1', 'slot_2'...，值为对应格子的摄像头ID  { 'slot_1': 1, 'slot_2': 2 }
       ZQL_sources: {},
       statusArr: {}, // 改为对象形式，键名为'slot_1'...
-      sourceceList: []
+      sourceceList: [],
+      manualChange: false
     }
   },
   computed: {
@@ -227,6 +228,8 @@ export default {
       return this.$refs?.[refName]?.[0] || {}
     },
     async start(robot, data) {
+      // console.log('start-----------------------------------');
+      
       const emptyIndex = data.index
       if (!robot) return;
       const camera = data.data
@@ -261,7 +264,7 @@ export default {
       })
     },
     async test(data) {
-      // console.log('-----------------------', data);
+      console.log('-----------------------', data, this.ZQL_videosInfos);
       let emptyKey = data.index
       // 填充 放入设备
       const robot = this.robots.find(d => d.robotId === data.data.robotId);
@@ -273,13 +276,20 @@ export default {
         const sourceObj = Object.assign({}, this.ZQL_videosInfos[data.slotKey])
         // console.log('11111111', this.ZQL_playingSource[emptyKey], this.ZQL_playingSource[data.slotKey]);
         if (this.ZQL_playingSource[emptyKey]) {
+          // console.log(1, emptyKey, data.slotKey);
+          
           this.$set(this.ZQL_videosInfos, data.slotKey, existObj)
+          this.$set(this.ZQL_playingSource, data.slotKey, existObj.key)
           const existCamera = existObj.robot ? existObj.robot : robot.robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
           // this.restartCamera(this.cameras?.[this.ZQL_playingSource[emptyKey]] || this.ZQL_videosInfos[emptyKey])
         } else {
           this.$set(this.ZQL_videosInfos, data.slotKey, null)
+          this.$set(this.ZQL_playingSource, data.slotKey, null)
+          // console.log(2, emptyKey, data.slotKey);
         }
+          // console.log(3, emptyKey, data.slotKey);
         this.$set(this.ZQL_videosInfos, emptyKey, sourceObj)
+        this.$set(this.ZQL_playingSource, emptyKey, sourceObj.key)
         // this.restartCamera(camera)
         const key1 = this.ZQL_playingSource[emptyKey]
         const key2 = this.ZQL_playingSource[data.slotKey]        
@@ -293,19 +303,24 @@ export default {
           // 清空视频数据
           await this.stopCamera(this.ZQL_videosInfos['slot_1'])
           if (this.ZQL_playingSource['slot_1'] !== camera.key) {
+            console.log(7);
+            
             await this.start(robot, { index: 'slot_1', data: camera })
           } else {
             this.clearSlot('slot_1')
+            console.log(8);
           }
         } else {
           await this.start(robot, { index: 'slot_1', data: camera })
         }
       } else {
+        console.log(5);
+        
         let hasPlayed = false;
         for (const key of Object.keys(this.ZQL_playingSource)) {
           // 优先在正在播放此摄像头的槽位重新播放
           if (this.ZQL_playingSource[key] === camera.key) {
-            console.log(1);
+            // console.log(1);
             
             await this.stopCamera(camera)
             this.$set(this.ZQL_videosInfos, key, null)
@@ -370,7 +385,7 @@ export default {
       if (!videoInfo || !videoInfo.robot) return;
       
       // 获取摄像头信息
-      const camera = this.cameras?.[camera.key] || this.ZQL_videosInfos[key];
+      const camera = this.cameras?.[videoInfo.key] || this.ZQL_videosInfos[key];
       
       // 标记为重新加载中
       this.$set(this.ZQL_videosInfos, key, { ...camera, loading: true });
@@ -391,6 +406,8 @@ export default {
     },
     // 处理视频删除
     async handleRemoveVideo(key) {
+      console.log(key, this.ZQL_playingSource, this.ZQL_videosInfos);
+      
       const camera = this.cameras?.[this.ZQL_playingSource[key]] || {};
       if (camera) {
         // 从选中设备中移除
@@ -431,6 +448,7 @@ export default {
         return
       }
       const playingBeforeChange = this.orderedPlayingVideoInfos()
+      this.manualChange = true
       this.setSplitType(val);
       this.fullscreenIndex = null;
       this.$nextTick(() => {
@@ -649,6 +667,8 @@ export default {
     // 分屏变化：完全清空所有选择，重置slotDevices为空（全空）
     splitType: {
       async handler(newVal, oldVal) {
+        // console.log('=====================splitType=============================', oldVal, newVal);
+        
         // 退出全屏
         this.fullscreenIndex = null;
         // 清空所有选中项
@@ -665,7 +685,7 @@ export default {
         // // this.fullscreenKey = null;
         // // this.isFullscreen = false;
         // document.body.style.overflow = '';
-        if (oldVal === undefined) this.initSlots(newVal);
+        if (oldVal === undefined || !this.manualChange) this.initSlots(newVal);
         this.slotDevices = new Array(this.splitType).fill(null);
         // this.resetDrag({ splitType: this.splitType });
         const playingKeys = Object.values(this.ZQL_playingSource)
@@ -674,15 +694,14 @@ export default {
 
           if (!playingKeys.includes(key)) {
             if (this.activeCameras[key]?.camera) {
-              // console.log('============================================playingKeys========================================================', key);
-              console.log(2);
+              console.log('============================================playingKeys========================================================', key);
               await this.stopCamera(this.activeCameras[key].camera);
             }
           }
         }
 
       },
-      immediate: true
+      // immediate: true
     },
     robots: {
       handler() {
@@ -717,12 +736,12 @@ export default {
     // }
   },
   async beforeDestroy() {
-    console.info('leafVideo-destroy')
-    for (const [index, key] of Object.keys(this.activeCameras).entries()) {
-      if (this.activeCameras[key]?.camera) {
-        await this.stopCamera(this.activeCameras[key].camera);
-      }
-    }
+    // console.info('leafVideo-destroy')
+    // for (const [index, key] of Object.keys(this.activeCameras).entries()) {
+    //   if (this.activeCameras[key]?.camera) {
+    //     await this.stopCamera(this.activeCameras[key].camera);
+    //   }
+    // }
   }
 }
 </script>

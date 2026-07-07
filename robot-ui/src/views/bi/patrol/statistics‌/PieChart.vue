@@ -241,7 +241,7 @@ export default({
           formatter: (params) => {
             // 仅当系列名称为'项目占比'时展示详情，阴影层不展示
             if (params.seriesName === '项目占比') {
-              return `<strong>${params.name}</strong><br/>占比: ${params.value}% (${this.items[params.dataIndex]})`;
+              return `<strong>${params.name}</strong><br/>占比: ${params.value}% (${this.items[params.dataIndex]?.count})`;
             }
             return '';
           },

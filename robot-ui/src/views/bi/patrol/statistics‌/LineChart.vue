@@ -76,20 +76,54 @@ export default({
           axisPointer: {
             type: 'line',
             lineStyle: {
-              type: 'dashed',
-              color: '#6CB9FF'
+              type: 'solid',
+              // color: '#1968FF'
+              color: new this.$echarts.graphic.LinearGradient(
+                0,
+                0,
+                0,
+                1,
+                [
+                  {
+                    offset: 0,
+                    color: 'rgba(54, 161, 255, 0.00)'
+                  },
+                  {
+                    offset: 0.064,
+                    color: 'rgba(49, 151, 255, 0.10)'
+                  },
+                  {
+                    offset: 0.374,
+                    color: '#1968FF'
+                  },
+                  {
+                    offset: 0.69,
+                    color: 'rgba(25, 104, 255, 0.85)'
+                  },
+                  {
+                    offset: 0.924,
+                    color: 'rgba(52, 157, 255, 0.10)'
+                  },
+                  {
+                    offset: 1,
+                    color: 'rgba(54, 161, 255, 0.00)'
+                  }
+                ],
+                false
+              ),
             }
           },
           transitionDuration: 0,
-          backgroundColor: '#072A4F',
-          padding: [10, 20],
-          borderWidth: 2,
-          borderColor: '#072A4F',
+          backgroundColor: '#336EDF',
+          padding: [7, 10],
+          borderWidth: 0,
+          borderColor: '#336EDF',
           borderRadius: 4,
           textStyle: {
             fontSize: 14,
             color: '#FFF',
-            fontFamily: 'Source Han Sans CN'
+            fontFamily: 'Bahnschrift',
+            lineHeight: 17
           },
           formatter: `{b}：{c}次`
         },
@@ -166,7 +200,23 @@ export default({
               scale: 999
             },
             lineStyle: {
-              color: '#3DC5FF', // 线条颜色
+              color: new this.$echarts.graphic.LinearGradient(
+                0,
+                0,
+                0,
+                1,
+                [
+                  {
+                    offset: 0,
+                    color: '#3DC5FF'
+                  },
+                  {
+                    offset: 1,
+                    color: '#0E65FF'
+                  }
+                ],
+                false
+              ),
               width: 2
             },
             areaStyle: {

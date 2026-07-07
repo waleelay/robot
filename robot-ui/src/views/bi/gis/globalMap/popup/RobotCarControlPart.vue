@@ -63,7 +63,7 @@
             <Talk v-if="showTalk" :isMapInner="showTalk" class="mr30" />
             <div class="flx-justify-between" :class="{ 'flex-column': showTalk }">
               <div class="d-flex">
-                <div class="flex" :class="{ 'is-small': showTalk }">
+                <div class="flex common-control" :class="{ 'is-small': showTalk }">
                   <div class="outer">
                     <div class="inner w100 h100 flx-center m0">
                       <div class="circle flx-center">移动</div>
@@ -248,7 +248,8 @@ export default {
     show(visible) {
       this.visible = visible;
     },
-    goControl() {
+    async goControl() {
+      await this.stopAll()
       this.setSelectedRobotId(this.selectedRobotId)
       this.$router.push({ path: '/bi/patrol/monitor' })
     },
@@ -439,7 +440,6 @@ export default {
       color: #fff;
       font-size: 11.76px;
       line-height: 76.5px;
-      // background: #159AFF;
       border-radius: 50%;
     }
   }
@@ -623,18 +623,18 @@ export default {
       font-size: 12px;
       &.up {
         top: 5px;
-        left: 39px;
+        left: 35px;
       }
       &.right {
-        top: 39px;
+        top: 35px;
         right: 5px;
       }
       &.down {
         bottom: 5px;
-        left: 39px;
+        left: 35px;
       }
       &.left {
-        top: 39px;
+        top: 35px;
         left: 5px;
       }
     }

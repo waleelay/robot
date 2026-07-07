@@ -6,39 +6,9 @@
     @click="$emit('select', index)"
     style="position: relative; box-shadow: 0 0 1px 1px rgba(29,149,255,.36) inset"
   >
-    <!-- {{ ZQL_videosInfos?.[index]?.key }} -->
     <video autoplay muted preload="auto" :id="prefixId + ZQL_videosInfos?.[index]?.key" :style="{ display: ZQL_videosInfos?.[index] ? 'block' : 'none' }" class="w100 h100"></video>
     <audio :id="prefixId + ZQL_videosInfos?.[index]?.key + '-audio'" autoplay />
-    <!-- <video autoplay muted preload="auto" :id="prefixId + ZQL_videosInfos?.[index]?.key" :style="{ display: ZQL_videosInfos?.[index] ? 'block' : 'none' }" class="w100 h100"></video>
-    <audio :id="prefixId + ZQL_videosInfos?.[index]?.key + '-audio'" autoplay /> -->
-    <!-- <canvas class="canvas-shuju" :id="`${prefixId}canvasslot_${index}`" style="z-index: 1; position: absolute;cursor: pointer;"></canvas> -->
     <template v-if="ZQL_videosInfos?.[index]">
-      <!-- <div class="top flx-justify-between w100 pr10 pl10">
-        <div class="title">数据源：{{ ZQL_videosInfos?.[index]?.name }}---{{ ZQL_videosInfos?.[index]?.status }}</div>
-        <div class="flx-center">
-          <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" />
-        </div>
-      </div> -->
-      <!-- <div class="bottom flx-justify-between w100 pr10 pl10" style="z-index: 2;">
-        <div :ref="`dropdownRefslot_${index}`">
-          <el-button v-if="showControlCenter" type="primary" class="video-btn ml10" @click="goControlCenter(ZQL_videosInfos?.[index]?.robotId)">
-            <svg-icon icon-class="system" class="mr4"></svg-icon>控制中心
-          </el-button>
-        </div>
-        <div class="flx-center">
-          <VideoTool
-            :idName="`${prefixId}slot_${index}`"
-            :slotKey="index"
-            :videoStatus="videoStatus(index)"
-            @updateDropdownStyle="updateDropdownStyle"
-            @playPauseVideo="$emit('playPauseVideo')"
-            @toggleFullscreen="$emit('toggleFullscreen', index)"
-            @removeVideo="$emit('removeVideo', $event)"
-            @refreshVideo="$emit('refreshVideo', $event)"
-            :ref="`videoToolRefslot_${index}`"
-            :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" />
-        </div>
-      </div> -->
       <div
         v-if="statusType(ZQL_videosInfos?.[index]?.status) !== 'success'"
         class="w100 h100 flx-center flex-column"
@@ -55,22 +25,14 @@
     <template v-else>
       <div class="w100 h100 flex-column flx-center empty-device">
         未加载
-        <!-- <img src="@/assets/images/new-bi/video-empty.png" alt="" width="76px" height="68px">
-        <div class="mt10">
-          拖拽右侧卡片的设备 可观看视频
-        </div> -->
       </div>
     </template>
   </div>
 </template>
 
 <script>
-// import VideoTool from '../components/VideoTool.vue';
-// import mixin from './drag-mixin';
 export default {
   name: 'VideoBox',
-  // components: { VideoTool, VideoInfo },
-  // mixins: [mixin],
   props: {
     prefixId: {
       type: String,

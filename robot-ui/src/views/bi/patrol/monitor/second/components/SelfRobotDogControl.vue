@@ -27,9 +27,9 @@
         
       </div>
     </div>
-    <div class="flx-center ml54">
+    <div class="flx-center ml54 common-control" :class="{ 'is-disabled': selectedRobot?.controlMode !== 'MANUAL' }">
       <div class="outer flx-center">
-        <div class="inner flx-center no_move">
+        <div class="inner flx-center">
           <div class="circle flx-center">移动</div>
         </div>
         <!-- 'is-disabled' -->
@@ -54,7 +54,9 @@
             v-if="item.key !== 'step'"
             :key="item.key"
             type="primary"
+            :disabled="selectedRobot?.controlMode !== 'MANUAL'"
             class="wp80 hp30 mt10 ml10"
+            :class="{'is-disabled': selectedRobot?.controlMode !== 'MANUAL'}"
             @mousedown.native="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
             @mouseup.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
             @mouseleave.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
@@ -71,7 +73,8 @@
             placeholder="切换步态"
             @change="changeStep"
             class="wp80 ml10 mt10 hp30 butai-select"
-            :class="{ 'tac': butaiValue == 0 }"
+            :disabled="selectedRobot?.controlMode !== 'MANUAL'"
+            :class="{ 'tac': butaiValue == 0, 'is-disabled': selectedRobot?.controlMode !== 'MANUAL' }"
             title="切换步态"
             popper-class="custom-select control-select-popper control-select-popper1 p10"
           >
@@ -103,10 +106,10 @@ export default {
           label: '基础',
           value: 0
         },
-        {
-          label: '高级',
-          value: 1
-        }
+        // {
+        //   label: '高级',
+        //   value: 1
+        // }
       ],
       tabIndex: 0,
       operList: [
@@ -199,11 +202,24 @@ export default {
     color: #FFF;
     font-size: 12px;
     letter-spacing: 0.24px;
-    background: #080808;
+    background: #021328;
+    box-shadow: 0 0 14px 2px #09F inset;
     border-radius: 4px;
     border: none;
-    box-shadow: 0 0 14px 2px #515151 inset;
     text-align: center;
+    &.is-disabled {
+      background: #080808;
+      box-shadow: 0 0 14px 2px #515151 inset;
+      cursor: not-allowed;
+      // pointer-events: none;
+    }
+    
+    &:not(.is-disabled) {
+      &:active {
+        color: #0BF9FE;
+        box-shadow: 0 0 10px 3px #0BF9FE inset;
+      }
+    }
   }
 }
 ::v-deep .el-select {
@@ -246,41 +262,46 @@ export default {
   width: 110px;
   height: 110px;
   margin: 0 auto;
-  background: #080808;
-  border: 1px solid #434343;
-  box-shadow: 0 0 12px 2px #303030 inset;
+  // background: #080808;
+  // border: 1px solid #434343;
+  // box-shadow: 0 0 12px 2px #303030 inset;
+  box-shadow: 0 0 14.154px 2.831px #09F inset;
   border-radius: 50%;
   .inner {
     width: 56px;
     height: 56px;
-    background: #181818;
-    border: 1px solid #5E5E5E;
+    // background: #181818;
+    // border: 1px solid #5E5E5E;
     border-radius: 50%;
     .circle {
       position: relative;
+      width: 100%;
+      height: 100%;
       color: #fff;
+      font-size: 8.625px;
+      line-height: 56px;
       font-size: 8.625px;
       border-radius: 50%;
     }
-    &.no_move {
-      position: relative;
-      &::after {
-        position: absolute;
-        content: '';
-        width: 3.7px;
-        height: 100%;
-        border: 1px solid #181818;
-        background: #8F8F8F;
-        transform: rotate(-45deg);
-      }
-    }
+    // &.no_move {
+    //   position: relative;
+    //   &::after {
+    //     position: absolute;
+    //     content: '';
+    //     width: 3.7px;
+    //     height: 100%;
+    //     border: 1px solid #181818;
+    //     background: #8F8F8F;
+    //     transform: rotate(-45deg);
+    //   }
+    // }
   }
   .arrow {
     position: absolute;
     width: 15.4px;
     height: 15.4px;
     text-align: center;
-    color: #8F8F8F;
+    // color: #8F8F8F;
     cursor: pointer;
     &.up {
       top: 6px;

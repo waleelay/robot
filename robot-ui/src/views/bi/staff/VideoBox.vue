@@ -28,7 +28,8 @@
         <span class="ml4">{{ recordingTime }}</span>
       </div>
       <div class="top flx-justify-between w100 pr10 pl10">
-        <div class="title">数据源：{{ ZQL_videosInfos[`slot_${index}`].name }}---{{ ZQL_videosInfos[`slot_${index}`].status }}</div>
+        <!-- ---{{ ZQL_videosInfos[`slot_${index}`].status }} -->
+        <div class="title">数据源：{{ ZQL_videosInfos[`slot_${index}`].name }}</div>
         <div class="flx-center">
           <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key" />
         </div>
@@ -70,7 +71,7 @@
       <div class="w100 h100 flex-column flx-center empty-device">
         <img src="@/assets/images/new-bi/video-empty.png" alt="" width="76px" height="68px">
         <div class="mt10">
-          拖拽右侧卡片的设备 可观看视频
+          拖拽左侧卡片的设备 可观看视频
         </div>
       </div>
     </template>
@@ -111,6 +112,9 @@ export default {
   },
   computed: {
     ...mapState('websocketRobot', ['cameras', 'selectedRobotId']),
+    activeCameras() {
+      return this.$store.getters['websocketRobot/getActiveCameras']
+    },
     index() {
       return this.videoIndex
     },
@@ -139,12 +143,13 @@ export default {
   },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
-    ...mapActions('websocketRobot', ['setSelectedRobotId']),
-    goControlCenter(robotId) {
-      console.log(111, this.ZQL_videosInfos);
-      // 清空当前页面camera视频
-      console.log('控制中心', robotId);
-      
+    ...mapActions('websocketRobot', ['setSelectedRobotId', 'stopCamera']),
+    async goControlCenter(robotId) {
+      for (const [index, key] of Object.keys(this.activeCameras).entries()) {
+        if (this.activeCameras[key]?.camera) {
+          await this.stopCamera(this.activeCameras[key].camera);
+        }
+      }
       this.setSelectedRobotId(robotId)
     },
     handleFullScreenChange(e) {

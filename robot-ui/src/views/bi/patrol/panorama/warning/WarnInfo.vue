@@ -78,16 +78,16 @@
                 <div class="list-box mt10">
                   <!--  border: 0.5px solid #1665A2; background: #001D46; -->
                   <div class="mt10 flx-center" style="width: 640px; height: 355px;">
-                    <img v-if="details?.title?.includes('火灾')" src="../../../../../assets/images/new-bi/test.png" class="w100" style="height: auto; max-height: 100%;" alt="">
-                    <img v-else src="../../../../../assets/images/new-bi/warning1.png" class="w100" style="height: auto; max-height: 100%;" alt="">
-                    <!-- <el-carousel trigger="click" :autoplay="false" height="100%" ref="carouselRef" @change="handleChangeCarousel">
+                    <!-- <img v-if="details?.title?.includes('火灾')" src="../../../../../assets/images/new-bi/test.png" class="w100" style="height: auto; max-height: 100%;" alt="">
+                    <img v-else src="../../../../../assets/images/new-bi/warning1.png" class="w100" style="height: auto; max-height: 100%;" alt=""> -->
+                    <el-carousel trigger="click" :autoplay="false" height="100%" ref="carouselRef" @change="handleChangeCarousel">
                       <el-carousel-item v-for="item in options" :key="item.key" :name="item.key">
                         <div v-if="item.url" class="img">
                           <img :src="getImageSrc(item.url)" alt="">
                         </div>
                         <div v-else class="w100 h100 flx-center">暂无{{item.label}}图片</div>
                       </el-carousel-item>
-                    </el-carousel> -->
+                    </el-carousel>
                   </div>
                 </div>
               </div>
@@ -178,6 +178,11 @@
 </template>
 
 <script>
+const defaultOptions = [
+  { key: 'visible', label: '云台可见光', url: '1' },
+  { key: 'thermal', label: '云台红外光', url: '2' },
+  { key: 'front', label: '前置摄像头', url: '3' }
+]
 import Gis from './../../../../largeScreen/dialog/gis.vue';
 import WarningExecute from './WarningExecute.vue';
 import WarningExecuteNo from './WarningExecuteNo.vue';
@@ -216,12 +221,7 @@ export default {
       },
       reason: '',
       selectedValue: '',
-      options: [
-        { key: 'ImageUrl', label: '云台可见光', url: '1' },
-        { key: 'nirUrl', label: '云台红外光', url: '2' },
-        { key: 'beforeUrl', label: '机器狗前置', url: '3' },
-        { key: 'afterUrl', label: '机器狗后置', url: '4' }
-      ],
+      options: [],
       dialogImageUrl: '',
       dialogIRUrl: '',
       loading: false,
@@ -240,11 +240,12 @@ export default {
       this.details = {
         ...data
       }
-      this.options[0].url = data.ImageUrl || ''
-      this.options[1].url = data.nirUrl || ''
-      this.options[2].url = data.beforeUrl || ''
-      this.options[3].url = data.afterUrl || ''
-      this.selectedValue = this.options[0].key
+      this.selectedValue = defaultOptions[0].key
+      this.options = [...defaultOptions].map(item => ({
+        ...item,
+        url: this.details?.snapshotUrl?.[item.key] || '',
+        t: new Date().getTime()
+      }))
       this.warningVisible = true
       this.timer = setTimeout(() => {
         this.warningVisible = false
@@ -276,9 +277,10 @@ export default {
     handleChangeCarousel(index) {
       this.selectedValue = this.options[index].key
     },
-    getImageSrc(imgUrl) {
-      return `${process.env.NODE_ENV === 'development' ? process.env.VUE_APP_BASE_IP.replaceAll("'", '') : location.origin}/file/${imgUrl}`;
-    },
+    getImageSrc(url) {
+      const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
+      return `${preUrl}${url}`
+    }
   },
   watch: {
     robotAlarmObj: {
@@ -287,8 +289,16 @@ export default {
         const { alarmId } = this.details
         if (!alarmId) {
           this.details = { ...Object.values(newVal)[0] || {} }
+          this.selectedValue = defaultOptions[0].key
+          this.options = [...defaultOptions].map(item => ({
+            ...item,
+            url: this.details?.snapshotUrl?.[item.key] || '',
+            t: new Date().getTime()
+          }))
         } else if (!newVal[alarmId]) {
           this.details = {}
+          this.selectedValue = ''
+          this.options = [...defaultOptions]
         }
       },
       immediate: true,

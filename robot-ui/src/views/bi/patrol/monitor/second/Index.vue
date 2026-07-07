@@ -23,8 +23,8 @@
         </div>
         <div class="mt21 hp178 d-flex" style="background: #011223; border: 1px solid #123F8C;">
           <div class="flex1 flx-align-center pl37 robot">
-            <img v-if="selectedRobot.type === '四足机器狗'"src="@/assets/images/new-bi/dog.png" alt="" srcset="" width="161" height="104">
-            <img v-else src="@/assets/images/new-bi/car.png" alt="" srcset="" width="143" height="143">
+            <img v-if="selectedRobot.typeCode === 'ROBOT_DOG'"src="@/assets/images/new-bi/dog.png" alt="" srcset="" width="161" height="104">
+            <img v-if="selectedRobot.typeCode === 'WHEELED_ROBOT'" src="@/assets/images/new-bi/car.png" alt="" srcset="" width="143" height="143">
             <div class="basic ml20">
               <div class="desc">当前速度：{{ currenRobot.speed }}m/s</div>
               <div class="desc">当前电量：{{ currenRobot.battery }}%</div>

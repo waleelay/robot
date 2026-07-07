@@ -109,6 +109,19 @@ export default {
       &.bottom {
         transform: rotate(180deg);
       }
+      &.is-disabled {
+        color: #8F8F8F;
+        background: #080808;
+        box-shadow: 0 0 14px 2px #515151 inset;
+        cursor: not-allowed;
+        // pointer-events: none;
+      }
+      &:not(.is-disabled) {
+        &:active {
+          color: #0BF9FE;
+          box-shadow: 0 0 10px 3px #0BF9FE inset;
+        }
+      }
     }
   }
 }

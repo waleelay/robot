@@ -9,8 +9,9 @@
         <SlamMap :map="slamInfo.map" :points="slamInfo.points" :pathPointIds="slamInfo.pathPointIds" :show-labels="true" />
       </div> -->
       
-      <GlobalMap style="z-index: 0;" ref="globalMapRef" />
-      <MapTool @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter " />
+      <GlobalMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
+      <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
+      <MapTool @changeMapAngle="changeMapAngle" @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter " />
       <!-- <div class="map-footer"></div> -->
     </div>
     <!-- <el-select
@@ -44,7 +45,6 @@ import GlobalMap from './../gis/globalMap/Index.vue'
 import MapTool from './../patrol/panorama/map/MapTool.vue'
 import PageChangeDropdown from './PageChangeDropdown.vue'
 
-
 export default {
   name: 'BiIndex',
   components: {Header, BiIndexLeft, BiIndexRight, SlamMap, GlobalMap, MapTool, PageChangeDropdown},
@@ -57,6 +57,7 @@ export default {
         pathPointIds: this.detailPointId(),
         showLabels: true
       },
+      angle: '2D'
     }
   },
   async mounted() {
@@ -64,6 +65,9 @@ export default {
   methods: {
     ...mapActions('websocketRobot', ['connectMediaWebSocket']),
     ...mapActions('websocketExtraData', ['setAll']),
+    changeMapAngle(angle) {
+      this.angle = this.angle === '3D' ? '2D' : '3D'
+    },
     detailPointId() {
       const record = pathInfo.data
       return [...(record?.points || [])].sort((a, b) => a.pointOrder - b.pointOrder).map((item) => item.mapPointId)

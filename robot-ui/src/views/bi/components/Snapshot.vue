@@ -99,7 +99,8 @@ export default {
     async getSnapData() {
       const res = await getFiles({ robotId: 'robot-001', page: this.snapShotInfo.page, size: this.snapShotInfo.size, fileType: 'IMAGE', status: 'READY' }) || {}
       this.snapShotInfo.snapshotList = (res.items || []).map(item => {
-        return { ...item, customUrl: `https://192.168.124.77:24443/api/control/files/${item.fileId}/content` }
+        const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
+        return { ...item, customUrl: `${preUrl}/api/control/files/${item.fileId}/content` }
       })      
       this.snapShotInfo.total = res.total || 0
     },

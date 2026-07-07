@@ -83,7 +83,6 @@ export default {
   },
   async mounted() {
     this.setSelectedRobotId('')
-    // this.setSplitType(1)
     // for (const [index, key] of Object.keys(this.activeCameras).entries()) {
     //   // console.log('++++++++++++++++++++++++++++++');
     //   const res = await this.stopCamera(this.activeCameras[key].camera);
@@ -97,9 +96,11 @@ export default {
       this.$refs.leftVideoRef.slotDevices = this.$refs.leftVideoRef.slotDevices.map((item, index) => selectRows[index] || null)
       
     },
-    updateVideo(data) {
-      this.$nextTick(() => {
-        this.$refs?.leftVideoRef?.test({ data })
+    async updateVideo(data) {
+      this.$nextTick(async () => {
+        console.log('updateVideo');
+        
+        await this.$refs?.leftVideoRef?.test({ data })
       });
       
     },

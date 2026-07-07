@@ -1,13 +1,13 @@
 <template>
-  <div class="left-div ml20 pr20 mt25 no-w-scroll" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', maxHeight: 'calc(100% - 25px)', overflowY: 'auto' }">
-    <div class="container flex-column w100 h100 flx-center" style="flex-wrap: nowrap;">
-      <div class="box" :class="{'hp268': deviceTypeStats?.length, 'hp155': !deviceTypeStats?.length}">
+  <div class="left-div pr28 h100 mt25 no-w-scroll" :class="{ 'ml20': !collapse, 'ml10': collapse }" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }">
+    <div class="container flex-column w100 h100 common-scroll" style="flex-wrap: nowrap;">
+      <div class="box" :class="{'hp264': deviceTypeStats?.length, 'hp155': !deviceTypeStats?.length}">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="getMoreRobotInfo">
           <span class="desc">装备类型</span>
-          <span class="flx-center more curp">
+          <!-- <span class="flx-center more curp">
             <span>更多</span>
             <svg-icon :icon-class="collapseArr[0] ? 'right' : 'down'" class="ml4" />
-          </span>
+          </span> -->
         </div>
         <div class="pt20 pr18 pb20 pl18">
           <div class="count flx-justify-between">
@@ -51,47 +51,47 @@
           </div>
         </div>
       </div>
-      <div class="box mt20 task" :class="{ 'no_data hp41': collapseArr[1] }">
+      <div class="box mt20 task" :class="{ 'no_data hp41': collapseArr[1], 'hp323': !collapseArr[1] }">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="toggleCollapse('collapseArr', 1)">
           <div class="flx-center">
             <span class="desc">任务列表</span>
             <div v-if="Object.keys(taskData || [])?.length" class="ml4 notice pr10 pl10">{{ Object.keys(taskData || []).length ? Object.keys(taskData || []).length > 99 ? '99+' : Object.keys(taskData || []).length : '-'  }}</div>
           </div>
-          <span class="flx-center more curp">
+          <!-- <span class="flx-center more curp">
             <span>更多</span>
             <svg-icon :icon-class="collapseArr[1] ? 'right' : 'down'" class="ml4" />
-          </span>
+          </span> -->
         </div>
         <div class="list pt10 pr20 pl20 mb20 common-scroll ovya" :style="{ maxHeight: collapseArr[2] ? '300px' : '262px' }">
-           <div v-for="(item, key, index) of taskData || []" class="item wp288 pb10" :class="{ 'is-active': activeTaskId === item.id, 'mb10': index !== Object.keys(taskData || {}).length - 1 }" @click="handleClickTask(key)">
+           <div v-for="(item, key, index) of taskData || []" class="item wp288 pb10" :style="{ 'pointer-events': item.status === 'running' ? 'auto' : 'none' }" :class="{ 'is-active': activeTaskId === item.taskId, 'mb10': index !== Object.keys(taskData || {}).length - 1 }" @click="handleClickTask(key)">
             <div class="header flx-justify-between p10">
-              <div class="flx-center">
+              <div class="flx-align-center flex1" style="min-width: 0">
                 <svg-icon icon-class="d-right"></svg-icon>
-                <span class="ml4">{{ item.name }}</span>
+                <span class="ml4 text-ellipsis" :title="item.name">{{ item.name }}</span>
               </div>
-              <span class="status flx-center pt2 pr6 pb2 pl6">
+              <span class="status flx-center pt2 pr6 pb2 pl6 wp64 ml10" :class="getTaskStatusName(item.status)">
                 <svg-icon icon-class="security"></svg-icon>
                 <span class="ml4">{{ item.statusName || '---' }}</span>
               </span>
             </div>
             <div class="desc mt10">
               <div>任务时间：{{ item.timeRange }}</div>
-              <div class="mt10">当前位置：{{ item.currentLocation }}</div>
+              <div class="mt10 text-ellipsis" style="max-width: calc(100% - 45px)">当前位置：{{ item.currentLocation }}</div>
               <div class="mt10">执行装备：{{ item.equipmentList?.length }}台</div>
             </div>
-            <div class="symbol wp36 hp28">
-              <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId === item.taskId ? 'active' : 'off'}.png`)" class="w100 h100" alt="" srcset="">
+            <div v-if="item.status === 'running'" class="symbol wp36 hp28">
+              <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId === item.taskId ? 'active' : 'off1'}.png`)" class="w100 h100" alt="" srcset="">
             </div>
            </div>
         </div>
       </div>
-      <div class="box mt20 alert" :class="{ 'no_data hp41': collapseArr[2] }" style="max-height: 446px;">
+      <div class="box mt20 alert" :class="{ 'no_data hp41': collapseArr[2], 'hp323': !collapseArr[2] }" style="max-height: 446px;">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="toggleCollapse('collapseArr', 2)">
           <span class="desc">告警中心</span>
-          <span class="flx-center more curp">
+          <!-- <span class="flx-center more curp">
             <span>更多</span>
             <svg-icon :icon-class="collapseArr[2] ? 'right' : 'down'" class="ml4" />
-          </span>
+          </span> -->
         </div>
         <div v-if="alarmsData" class="mt10 ml20 common-scroll ovya mb10" :style="{ maxHeight: collapseArr[1] ? '360px' : '262px', minHeight: '146px' }">
           <div v-for="(alarm, key, alarmIndex) in alarms" :key="key" class="type wp288 pt10 pr20 pb10 pl20" :class="[alarm.class, { 'hp42 ovyh': alertCollapseArr[alarmIndex], 'mt10': alarmIndex !== 0 }]">
@@ -108,14 +108,14 @@
             </div>
             <div class="mt20 list">
               <div v-for="(item, index) in alarmsData?.[key]?.items || []" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert(item)">
-                <!-- {{ item.snapshotUrl }} -->
-                <div class="img wp120 hp72 flex"
-                  :style="{ background: `url(${item.title.includes('火灾') ? img1 : img2}) lightgray -4.267px -11.862px / 104% 118.678% no-repeat` }"
+                <div class="img wp120 hp72 flx-center"
                 >
-                  <span class="alert_type">{{ item.categoryName }}</span>
+                <!-- :style="{ background: `url(${getImageUrl(item.snapshotUrl?.visible) || (item.title.includes('火灾') ? img1 : img2)}) lightgray -4.267px -11.862px / 104% 118.678% no-repeat` }" -->
+                  <img :src="getImageUrl(item.snapshotUrl?.visible)" alt="" srcset="" style="width: 100%; height: 100%; object-fit: cover;">
+                  <span class="alert_type wp64 text-ellipsis">{{ item.categoryName }}</span>
                 </div>
-                <div class="ml6 flex1">
-                  <div class="event">事件：{{ item.title }}</div>
+                <div class="ml6 flex1" style="min-width: 0;">
+                  <div class="event text-ellipsis" :title="item.title">事件：{{ item.title }}</div>
                   <div class="time mt2 flx-align-start flex">
                     <span>时间：</span>
                     <div class="flex-column">
@@ -213,6 +213,24 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
+    getImageUrl(url) {
+      const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
+      return `${preUrl}${url}`
+    },
+    getTaskStatusName(status) {
+      switch (status) {
+        case 'running':
+          return 'green'
+        case 'pending':
+          return 'orange'
+        case 'completed':
+          return 'blue'
+        case 'failed':
+          return 'red'
+        default:
+          return 'gray'
+      }
+    },
     getMoreRobotInfo() {
   
     },
@@ -608,13 +626,27 @@ export default {
             .status {
               color: #FFF;
               border-radius: 4px;
-              background: #225CA4;
               font-family: "Microsoft YaHei";
               font-size: 12px;
               line-height: 16px;
               .svg-icon {
                 color: #FFF;
                 font-size: 12px;
+              }
+              &.blue {
+                background: #225CA4;;
+              }
+              &.orange {
+                background: #E18000;
+              }
+              &.gray {
+                background: #616161;
+              }
+              &.green {
+                background: #00B61B;
+              }
+              &.red {
+                background: #A42222;
               }
             }
           }

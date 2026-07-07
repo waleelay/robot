@@ -1,6 +1,6 @@
 <template>
-  <div class="left-div ml20 pr20 mb20 no-w-scroll" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', height: 'calc(100% - 20px)', overflowY: 'auto' }">
-    <div class="container flex-column w100 mt105" style="flex-wrap: nowrap;">
+  <div class="left-div pr28 mb20 no-w-scroll mt105" :class="{ 'ml20': !collapse, 'ml10': collapse }" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', height: 'calc(100% - 154px)', overflowY: 'auto' }">
+    <div class="container flex-column w100" style="flex-wrap: nowrap;">
       <div class="box hp386">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">告警概览</span> 
@@ -39,7 +39,7 @@
           </div>
         </div>
       </div>
-      <div class="box hp508 mt20 task pb18" :class="{ 'no_data hp41': collapseArr[1] }">
+      <div class="box hp520 mt20 task pb18" :class="{ 'no_data hp41': collapseArr[1] }">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">巡逻概览</span>
         </div>
@@ -182,9 +182,8 @@ export default {
           if (!this.robotBaseInfo?.[robot.robotId]) return
           // console.log(111, robotMainCameras.length, robotMainCameras.slice(0, 2).length, this.loadedCameraKeys, this.robotBaseInfo[robot.robotId].status);
           const camera = Object.assign({}, robot.camera)
-          console.log(robot.robotId, this.robotBaseInfo[robot.robotId].status);
-          // if (this.robotBaseInfo[robot.robotId].status === 'online' && !this.loadedCameraKeys.includes(camera.key)) {
-          if (this.robotBaseInfo['robot-001'].status === 'online' && !this.loadedCameraKeys.includes(camera.key)) {
+          if (this.robotBaseInfo[robot.robotId].status === 'online' && !this.loadedCameraKeys.includes(camera.key)) {
+          // if (this.robotBaseInfo['robot-001'].status === 'online' && !this.loadedCameraKeys.includes(camera.key)) {
             this.loadedCameraKeys.push(camera.key)
             // console.log(123, this.loadedCameraKeys);
             await this.startCamera({ robot: Object.assign({}, this.robotBaseInfo[robot.robotId] || {}), camera })
@@ -222,9 +221,9 @@ export default {
     //   immediate: true
     // },
   },
-  beforeDestroy() {
-    if (this.robotMainCameras?.[0]?.camera) {
-      this.stopCamera(this.robotMainCameras?.[0]?.camera)
+  async beforeDestroy() {
+    for (const robot of this.robotMainCameras.slice(0, 2)) {
+      robot.camera && await this.stopCamera(robot.camera)
     }
   }
 }

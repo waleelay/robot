@@ -1,6 +1,6 @@
 <template>
-  <div class="right-div ml20 pr20 no-w-scroll mb20" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', height: 'calc(100% - 20px)', overflowY: 'auto' }">
-    <div class="container flex-column w100 mt105" style="flex-wrap: nowrap;">
+  <div class="right-div ml20 no-w-scroll mb20 mt105" :class="{ 'pr28': collapse, 'pr20 pl28': !collapse }" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', height: 'calc(100% - 154px)', overflowY: 'auto' }">
+    <div class="container flex-column w100" style="flex-wrap: nowrap;">
       <div class="box zbgl">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">装备概览</span> 
@@ -93,11 +93,20 @@
                 <div class="ml10 mr10 wp50">状态</div>
                 <div class="ml10" style="width: 35%;">执行时间</div>
               </div>
-              <div class="common-scroll ovya" style="min-height: 144px; max-height: 252px;">
+              <div class="common-scroll ovya" style="min-height: 288px; max-height: 288px;">
                 <template v-if="tasks.length">
                   <div v-for="item in tasks" class="tasks flx-justify-between pr10 pl10">
                     <div style="width: 43%;" class="text-ellipsis" :title="item.name">{{ item.name }}</div>
-                    <div class="ml10 mr10 status wp50" :class="item.statusName === '执行中' ? 'green' : item.status === '待执行' ? 'orange' : 'gray'">{{ item.statusName }}</div>
+                    <div
+                      class="ml10 mr10 status wp50"
+                      :class="{
+                        green: item.status === 'running',
+                        orange: item.status === 'pending',
+                        blue: item.status === 'completed',
+                        red: item.status?.includes('failed'),
+                        gray: item.status === 'paused'
+                      }"
+                    >{{ item.statusName }}</div>
                     <div class="ml10" style="width: 35%;">{{ item.timeRange }}</div>
                   </div>
                 </template>
@@ -653,6 +662,14 @@ export default {
           &.orange {
             color: #FF7734;
             border: 1px solid #FF7734;
+          }
+          &.blue {
+            color: #D0E5FF;
+            border: 1px solid #225CA4;
+          }
+          &.gray {
+            color: #EFEFEF;
+            border: 1px solid #616161;
           }
         }
       }

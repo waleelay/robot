@@ -35,10 +35,10 @@
           >
             <div class="collapse-header p10 flx-justify-between" @click="toggleCollapse(typeIndex)">
               <div class="flx-center">
-                <svg-icon icon-class="unlink" />
+                <svg-icon :icon-class="equipment.type.includes('在线') ? 'open-wifi' : 'close-wifi'" />
                 <span class="ml10">{{ equipment.type }}({{ equipment.list.length }})</span>
               </div>
-              <svg-icon :icon-class="collapseArr[typeIndex] ? 'down' : 'up'" />
+              <svg-icon :icon-class="collapseArr[typeIndex] ? 'down' : 'up'" style="color: #6A788B" />
             </div>
             <div class="collapse-content pl12 common-scroll mr10 pr7">
               <div
@@ -54,17 +54,17 @@
               >
                 <!-- @click="handleSelectEquipment(item)" -->
                 <div class="flx-center">
-                  <svg-icon :icon-class="ROBOT_TYPE_INFO[item.type]?.icon" />
+                  <svg-icon :icon-class="ROBOT_TYPE_INFO[item.type]?.icon || 'robot'" />
                   <span class="ml10">{{ item.name }}</span>
                 </div>
                 <div class="flx-center">
                   <svg-icon
                     class="battery-svg"
-                    :icon-class="robotBaseInfo[item.robotId].battery >= 90 ? 'battery-4' : item.battery >= 80 ? 'battery-3' : robotBaseInfo[item.robotId].battery >= 50 ? 'battery-2' : robotBaseInfo[item.robotId].battery >= 40 ? 'battery-1' : 'battery-0'"
-                    :style="{ color: robotBaseInfo[item.robotId].battery < 50 ? '#D33333' : '#3DB56A' }"
+                    :icon-class="robotBaseInfo[item.robotId]?.battery >= 90 ? 'battery-4' : item.battery >= 80 ? 'battery-3' : robotBaseInfo[item.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[item.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
+                    :style="{ color: robotBaseInfo[item.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
                   >
                   </svg-icon>
-                  <span class="ml10 wp36 tar">{{ robotBaseInfo[item.robotId].battery }}%</span>
+                  <span class="ml10 wp36 tar">{{ robotBaseInfo[item.robotId]?.battery }}%</span>
                 </div>
               </div>
             </div>
@@ -86,10 +86,13 @@
                 <span>{{ item.name }}</span>
               </div>
               <span
-                class="status p4 wp50"
+                class="status p4 wp50 text-ellipsis"
                 :class="{
                   green: item.status === 'running',
-                  orange: item.status === 'paused'
+                  orange: item.status === 'pending',
+                  blue: item.status === 'completed',
+                  red: item.status?.includes('failed'),
+                  gray: item.status === 'paused'
                 }">{{ item.statusName }}</span>
             </div>
             <div class="info mt10">
@@ -119,17 +122,17 @@
               >
                 <!-- @click="handleSelectEquipment(equipment)" -->
                 <div class="flx-center">
-                  <svg-icon :icon-class="ROBOT_TYPE_INFO[equipment.type]?.icon" />
+                  <svg-icon :icon-class="ROBOT_TYPE_INFO[equipment.type]?.icon || 'robot'" />
                   <span class="ml10">{{ equipment.name }}</span>
                 </div>
                 <div class="flx-center">
                   <svg-icon
-                    :icon-class="robotBaseInfo[equipment.robotId].battery >= 90 ? 'battery-4' : robotBaseInfo[equipment.robotId].battery >= 80 ? 'battery-3' : robotBaseInfo[equipment.robotId].battery >= 50 ? 'battery-2' : robotBaseInfo[equipment.robotId].battery >= 40 ? 'battery-1' : 'battery-0'"
-                    :style="{ color: robotBaseInfo[equipment.robotId] < 50 ? '#D33333' : '#3DB56A' }"
+                    :icon-class="robotBaseInfo[equipment.robotId]?.battery >= 90 ? 'battery-4' : robotBaseInfo[equipment.robotId]?.battery >= 80 ? 'battery-3' : robotBaseInfo[equipment.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[equipment.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
+                    :style="{ color: robotBaseInfo[equipment.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
                   >
                   </svg-icon>
-                  <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId].battery }}%</span>  
-                  <span class="status ml10 p4" :class="robotBaseInfo[equipment.robotId].statusClass">{{ robotBaseInfo[equipment.robotId].customStatusName || robotBaseInfo[equipment.robotId].status || '-' }}</span>
+                  <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId]?.battery }}%</span>  
+                  <span class="status ml10 p4" :class="robotBaseInfo[equipment.robotId]?.statusClass">{{ robotBaseInfo[equipment.robotId]?.customStatusName || robotBaseInfo[equipment.robotId]?.status || '-' }}</span>
                 </div>
               </div>
             </div>
@@ -214,7 +217,7 @@ export default {
       const onlineList = this.equipmentInfo.online.list || []
       if (this.hasLoad || !onlineList.length) return
       this.hasLoad = true
-      this.setSplitType(Math.min(onlineList.length, onlineList.length))
+      this.setSplitType([1, 4, 6, 9].filter(item => item >= onlineList.length)?.[0] || 9)
       if (this.$route.query.taskId !== undefined) {
         this.handleSelectTask(this.taskData[this.$route.query.taskId])
       } else {
@@ -240,6 +243,7 @@ export default {
       
       // 关闭对应的视频
       for (const id of [...closeIds, ...addIds]) {
+        console.log(123, id);
         const robot = this.robots.filter(e => e.robotId === id)[0];
         if (robot) {
           await this.$emit('updateVideo', robot)
@@ -255,14 +259,6 @@ export default {
       },
       deep: true
     },
-    splitType: {
-      handler() {
-        if (this.tabIndex) {
-          this.tabChange(1)
-        }
-      },
-      deep: true
-    },
     robots: {
       handler(newRobots) {        
         if (!newRobots.length) {
@@ -273,10 +269,10 @@ export default {
         const onlineList = []
         const offlineList = []
         newRobots.map(item => {
-          if (item.status === 'online') {
-            onlineList.push(item)
+          if (this.robotBaseInfo?.[item.robotId]?.status === 'online') {
+            onlineList.push(this.robotBaseInfo?.[item.robotId])
           } else {
-            offlineList.push(item)  
+            offlineList.push(this.robotBaseInfo?.[item.robotId])  
           }
         })
         this.equipmentInfo.online.list = onlineList

@@ -16,6 +16,8 @@
 </template>
 
 <script>
+import { mapActions } from 'vuex';
+
 const pages = [
   { label: '指挥中心', value: 'biIndex', icon: 'page-home' },
   { label: '巡逻巡查', value: 'biPatrol', icon: 'page-patrol' },
@@ -28,6 +30,9 @@ export default {
   computed: {
     pageList() {
       return pages.filter((item) => !this.$route.name.includes(item.value))
+    },
+    activeCameras() {
+      return this.$store.getters['websocketRobot/getActiveCameras']
     }
   },
   data() {
@@ -36,7 +41,16 @@ export default {
     }
   },
   methods: {
-    goPage(pathName) {
+     ...mapActions('websocketRobot', ['stopCamera']),
+    async clearCameras() {
+      for (const [index, key] of Object.keys(this.activeCameras).entries()) {
+        if (this.activeCameras[key]?.camera) {
+          await this.stopCamera(this.activeCameras[key].camera);
+        }
+      }
+    },
+    async goPage(pathName) {
+      await this.clearCameras()
       this.$router.push({ name: pathName })
     },
   }

@@ -28,6 +28,7 @@ const state = {
   slamMapData: [],
   taskPathPoints: {}, // { taskId: [pathPoints] } taskId: 任务id，pathId: 路径id，mapId: 地图id，pathPoints: 任务路径点
   mapSearchValue: '',
+  slamMapList: []
 }
 
 const mutations = {
@@ -106,6 +107,9 @@ const mutations = {
   SET_MAP_SEARCH_VALUE(state, value) {
     state.mapSearchValue = value ? `${value}_timestamp_${new Date().getTime()}` : '';
   },
+  SET_SLAM_MAP_LIST(state, value) {
+    state.slamMapList = value;
+  }
 }
 
 const actions = {
@@ -124,49 +128,13 @@ const actions = {
     commit('SET_TASK_OVERVIEW', data?.taskOverview || { totalToday: '-', completedRate: '-', completedRateText: '-%', running: '-', pending: '-' });
     commit('SET_ALARM_SUMMARY', data?.alarms?.summary || { totalToday: '-', handled: '-', unhandled: '-', handleRate: '-', handleRateText: '-%' });
     [...(data?.tasks || [])].concat([
-      {
-        "statusName": "暂停中",
-        "endTime": "2026-06-12 22:00:00",
-        "startTime": "2026-06-12 20:00:00",
-        "taskId": "task-011",
-        "name": "B区-夜间巡逻",
-        "timeRange": "18:00-19:00",
-        "equipmentList": [
-            {
-                "status": "online",
-                "name": "R1轮式机器人",
-                "type": "WHEELED_ROBOT",
-                "robotId": "robot-001"
-            }
-        ],
-        "currentLocation": "B区主干道",
-        "status": "paused"
-    },
-      {
-        "statusName": "暂停中",
-        "endTime": "2026-06-12 22:00:00",
-        "startTime": "2026-06-12 20:00:00",
-        "taskId": "task-012",
-        "name": "B区-仓库复核",
-        "timeRange": "09:00-10:00",
-        "equipmentList": [
-            {
-                "status": "online",
-                "name": "R1轮式机器人",
-                "type": "WHEELED_ROBOT",
-                "robotId": "robot-001"
-            }
-        ],
-        "currentLocation": "B区主干道",
-        "status": "paused"
-    },
     //   {
     //     "statusName": "暂停中",
     //     "endTime": "2026-06-12 22:00:00",
     //     "startTime": "2026-06-12 20:00:00",
-    //     "taskId": "task-013",
-    //     "name": "训练场东门巡检",
-    //     "timeRange": "12:00-13:00",
+    //     "taskId": "task-011",
+    //     "name": "B区-夜间巡逻",
+    //     "timeRange": "18:00-19:00",
     //     "equipmentList": [
     //         {
     //             "status": "online",
@@ -175,11 +143,30 @@ const actions = {
     //             "robotId": "robot-001"
     //         }
     //     ],
-    //     "currentLocation": "训练场东门",
+    //     "currentLocation": "B区主干道",
     //     "status": "paused"
-    // }
+    // },
+    //   {
+    //     "statusName": "暂停中",
+    //     "endTime": "2026-06-12 22:00:00",
+    //     "startTime": "2026-06-12 20:00:00",
+    //     "taskId": "task-012",
+    //     "name": "B区-仓库复核",
+    //     "timeRange": "09:00-10:00",
+    //     "equipmentList": [
+    //         {
+    //             "status": "online",
+    //             "name": "R1轮式机器人",
+    //             "type": "WHEELED_ROBOT",
+    //             "robotId": "robot-001"
+    //         }
+    //     ],
+    //     "currentLocation": "B区主干道",
+    //     "status": "paused"
+    // },
     ]).map(item => {
       commit('SET_TASK_INFO', item);
+      commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } });
     })
     commit('SET_ROBOT_LIST', data?.devices || []);
     data?.devices?.map(item => {
@@ -191,6 +178,7 @@ const actions = {
     data?.alarms?.high?.items.map((item, index) => {
       commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
     })
+    commit('SET_SLAM_MAP_LIST', data?.map || []);
   },
   setSlamMapData({ commit }, value) {
     commit('SET_SLAM_MAP_DATA', value);
@@ -241,6 +229,8 @@ const actions = {
     // | `panorama.stats.changed`           |                                                  |
     if (!event) return
     if (event.event === 'panorama.device.status.changed') {
+      // console.log(123, event.data.robotId, event.data.status);
+      
       commit('SET_ROBOT_BASE_INFO', { robotId: event.data.robotId, robotInfo: { ...state.robotBaseInfo[event.data.robotId], ...event.data } });
     } else if (event.event === 'panorama.device.location.changed') {
       // commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
@@ -272,13 +262,16 @@ const actions = {
   setMapSearchValue({ commit }, value) {
     commit('SET_MAP_SEARCH_VALUE', value);
   },
+  setSlamMapList({ commit }, value) {
+    commit('SET_SLAM_MAP_LIST', value);
+  },
 }
 
-function getRobotStatus(robot, taskData) {  
-  const { status, task = [] } = robot || {}      
+function getRobotStatus(robot, taskData) {
+  const { status, task = [] } = robot || {}
   const runningTask = task?.map(item => taskData?.[item.taskId] || item)?.find(item => item.status === 'running') || null
   const customStatusName = status === 'online' ? runningTask ? '任务中' : '空闲中' : status === 'offline' ? '离线' : '故障'
-  const statusClass = status === 'online' ? runningTask ? 'blue' : 'green' : status === 'offline' ? 'gray' : 'orange'
+  const statusClass = status === 'online' ? runningTask ? 'green' : 'blue' : status === 'offline' ? 'gray' : 'orange'
   return { customStatusName, statusClass, runningTaskId: runningTask?.taskId, runningTask }
 }
 

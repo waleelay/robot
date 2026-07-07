@@ -3,7 +3,7 @@
     <!-- <div id="map" style="width: 100%; height: 100vh;"></div> -->
   <div style="position: relative; width: 100%; height: 100%;" class="flx-center">
     <!-- <MapTool style="z-index: 1;" /> -->
-    <SlamMap :dogId="'dogId'" :style="{ display: isSlam ? 'block' : 'none' }" />
+    <!-- <SlamMap :dogId="'dogId'" :style="{ display: isSlam ? 'block' : 'none' }" /> -->
     <template>
       <div id="map" class="w100 h100" style="z-index: 0;" :style="{ display: !isSlam ? 'block' : 'none' }"></div>
       <Thumbnail v-if="showThumbnail" :centerPoint="centerPoint" :markers="pointMarkers" :mainMap="map" ref="thumbnailRef" />
@@ -30,7 +30,7 @@
     <TaskAdd ref="taskAddRef" />
     <RobotControlPart ref="robotControlPartRef" />
     <RobotCarControlPart ref="robotCarControlPartRef" />
-    <Robot1 ref="robot1Ref" @showControlPart="showControlPart" @showPath="showPathArea" @showSlam="showSlam" @showArea="showDashedArea" @clear="clear" />
+    <Robot1 :style="popupStyle" ref="robot1Ref" @showControlPart="showControlPart" @showPath="showPathArea" @showSlam="showSlam" @showArea="showDashedArea" @clear="clear" />
     <Slam ref="slamRef" />
   </div>
 </template>
@@ -129,10 +129,20 @@ export default {
       distance1: 0,
       layerB: null,
       layerA: null,
-      dogList: []
+      dogList: [],
+      popupVisible: false,
+      popupOffset: { x: 0, y: 0 },
+      timer: null
     }
   },
   computed: {
+    popupStyle() {
+      return this.$route.name === 'biIndex' ? {
+        left: this.popupOffset.x + 'px',
+        top: this.popupOffset.y + 'px',
+        display: this.popupVisible ? 'block' : 'none'
+      } : {};
+    },
     // 计算两点之间的距离
     calculatedDistance() {
       if (!this.map || !this.pointA || !this.pointB) return 0;
@@ -145,6 +155,9 @@ export default {
     },
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
+    },
+    activeCameras() {
+      return this.$store.getters['websocketRobot/getActiveCameras'];
     },
     ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList', 'robotAlarmObj', 'taskData', 'mapSearchValue'])
   },
@@ -167,7 +180,7 @@ export default {
     robotList: {
       handler(newVal, oldVal) {
         // if (this.pointMarkers.length) return
-        setTimeout(() => {
+        this.timer = setTimeout(() => {
           if (this.map) {
             this.initPoints()
           }
@@ -233,8 +246,8 @@ export default {
     mapSearchValue: {
       handler(newVal, oldVal) {
         if (newVal && this.map) {
-          const keywords = newVal.split('_timestamp_')[0]
-          const robot = this.robotList.find(item => item.name.includes(keywords) || item.type.includes(keywords) || item.typeCode.includes(keywords))
+          const keywords = newVal.split('_timestamp_')[0].toLowerCase()
+          const robot = this.getSearchRobot()
           if (robot) {
             this.map.setView([this.robotLocation[robot.robotId].lat, this.robotLocation[robot.robotId].lng])
           } else {
@@ -276,6 +289,9 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotLocation']),
+    getSelectedStatus(robotId) {
+      return this.$route.name !== 'biIndex' && Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
+    },
     // getRobotStatus(robotId) {
     //   const { status, task = [] } = this.robotBaseInfo?.[robotId] || {}      
     //   const runningTask = Array.isArray(task) ? task : [task].map(item => this.taskData?.[item.taskId] || item)?.find(item => item.status === 'running') || null
@@ -316,6 +332,8 @@ export default {
       this.layerB = L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
         maxZoom: 18,
         minZoom: 17,
+        keepBuffer: 300,
+        updateWhenIdle: false
       });
 
       if (!this.map.hasLayer(this.layerB) && !this.map.hasLayer(this.layerA)) {
@@ -341,7 +359,7 @@ export default {
       }).addTo(this.map);
       // 绑定地图点击事件
       
-      this.map.on('click', this.handleMapClick);
+      // this.map.on('click', this.handleMapClick);
 
       // 处理瓦片加载错误
       // L.offlineTiles.on('tileerror', function (error) {
@@ -370,7 +388,7 @@ export default {
       })
 
       this.map.on('move zoom', (e) => {
-        console.log('move zoom', e);
+        // console.log('move zoom', e);
         
         const { lat, lng } = this.map.getCenter()
         if (this.$refs.thumbnailRef) {
@@ -384,7 +402,7 @@ export default {
       // 监听缩放事件，更新图标大小
       // 缩放到停止
       this.map.on('zoomend', () => {
-        console.log('zoomend');
+        // console.log('zoomend');
         
 
         // 监听 zoomend 事件
@@ -420,7 +438,21 @@ export default {
       });
 
 
+
+      // 监听地图事件
+      this.map.on('move', this.updatePopupPosition);
+      this.map.on('moveend', this.updatePopupPosition);
+      this.map.on('click', this.closeAll);
+
+
+      // 绑定预加载
+      this.map.on('movestart', this.preloadTiles);
+      this.map.on('zoomstart', this.preloadTiles);
+      this.map.on('load', this.preloadTiles);
+      
       this.$nextTick(() => {
+        // 初始更新
+        this.updatePopupPosition();
         if (this.$refs.thumbnailRef) {
           this.$refs.thumbnailRef.initMap()
         }
@@ -438,6 +470,49 @@ export default {
       //   }
       // }, 6000);
     },
+
+    preloadTiles() {
+      if (!this.map || !this.tileLayer) return;
+      const map = this.map;
+      const tileLayer = this.tileLayer;
+      const zoom = map.getZoom();
+      const bounds = map.getBounds();
+      const tileSize = tileLayer.getTileSize();
+      
+      // 计算当前视口覆盖的瓦片范围
+      const nwPoint = map.project(bounds.getNorthWest(), zoom);
+      const sePoint = map.project(bounds.getSouthEast(), zoom);
+      const tileBounds = L.bounds(nwPoint, sePoint);
+      
+      // 转换为瓦片坐标
+      const minX = Math.floor(tileBounds.min.x / tileSize.x);
+      const maxX = Math.floor(tileBounds.max.x / tileSize.x);
+      const minY = Math.floor(tileBounds.min.y / tileSize.y);
+      const maxY = Math.floor(tileBounds.max.y / tileSize.y);
+      
+      // 扩展预加载范围
+      const radius = this.preloadRadius;
+        
+      // 预加载周边瓦片
+      for (let i = minX - radius; i <= maxX + radius; i++) {
+        for (let j = minY - radius; j <= maxY + radius; j++) {
+          const coords = { x: i, y: j, z: zoom };
+          const key = tileLayer._tileCoordsToKey(coords);
+          
+          // 只加载尚未加载的瓦片
+          if (!tileLayer._tiles[key]) {
+            tileLayer._loadTile(coords, () => {
+              // 加载完成回调（可选）
+            });
+          }
+        }
+      }
+    },
+
+    closeAll() {
+      this.$refs.robot1Ref?.show(null)
+      this.closePopup()
+    },
     // 自动适应所有点的边界
     setCenter() {
       if (!this.map) return
@@ -449,6 +524,8 @@ export default {
     getIcon(item, options = {}) {
       const sizeObj = ROBOT_TYPE_INFO
       const { typeName, name, type, status, robotId, customStatusName, statusClass } = item
+      // console.log(item.robotId, item.status, item.customStatusName);
+      
       const { width, height, img } = sizeObj[type] || sizeObj.default  
       const zoom = this.map.getZoom();
       const scale = 66 / 93
@@ -460,26 +537,34 @@ export default {
       return L.divIcon(
         // options.html ? { ...options } : {
         {
+          // ${this.robotAlarmObj?.[robotId] ? `
+          //   <div class="robot-warning flx-center" style="height: fit-content;">
+          //     <svg xmlns="http://www.w3.org/2000/svg" width="16" h eight="16" viewBox="0 0 16 16" fill="none">
+          //       <path d="M15.6585 13.1145L9.38682 2.25252C8.6197 0.924516 7.36601 0.924516 6.59909 2.25252L0.327353 13.1145C-0.439564 14.4438 0.187856 15.5282 1.72062 15.5282H14.2652C15.798 15.5282 16.4248 14.4437 15.6585 13.1145ZM7.13152 5.33448C7.35689 5.09081 7.64342 4.96896 7.99287 4.96896C8.3425 4.96896 8.62877 5.08953 8.85438 5.32961C9.07852 5.57023 9.19055 5.87115 9.19055 6.233C9.19055 6.54434 8.7227 8.8337 8.56664 10.4992H7.43975C7.30289 8.83368 6.79524 6.54434 6.79524 6.233C6.79527 5.87664 6.90748 5.57696 7.13152 5.33448ZM8.8386 13.254C8.60154 13.4849 8.31945 13.6 7.99295 13.6C7.66653 13.6 7.38436 13.4849 7.14735 13.254C6.91098 13.0237 6.7935 12.7447 6.7935 12.4171C6.7935 12.0911 6.91098 11.8091 7.14735 11.5727C7.38436 11.3363 7.66653 11.2181 7.99295 11.2181C8.31945 11.2181 8.60154 11.3363 8.8386 11.5727C9.0748 11.8091 9.19256 12.0911 9.19256 12.4171C9.19256 12.7447 9.0748 13.0237 8.8386 13.254Z" fill="#FFDD00"/>
+          //     </svg>
+          //     <span class="ml5">告警事件：${this.robotAlarmObj[robotId].categoryName}：${this.robotAlarmObj[robotId].title}</span>
+          //   </div>` : ''}
           html: `<div class="custom-point-img flx-center flex-column" style="flex-wrap: nowrap;">
-            ${this.robotAlarmObj?.[robotId] ? `
-              <div class="robot-warning flx-center" style="height: fit-content;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" h eight="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M15.6585 13.1145L9.38682 2.25252C8.6197 0.924516 7.36601 0.924516 6.59909 2.25252L0.327353 13.1145C-0.439564 14.4438 0.187856 15.5282 1.72062 15.5282H14.2652C15.798 15.5282 16.4248 14.4437 15.6585 13.1145ZM7.13152 5.33448C7.35689 5.09081 7.64342 4.96896 7.99287 4.96896C8.3425 4.96896 8.62877 5.08953 8.85438 5.32961C9.07852 5.57023 9.19055 5.87115 9.19055 6.233C9.19055 6.54434 8.7227 8.8337 8.56664 10.4992H7.43975C7.30289 8.83368 6.79524 6.54434 6.79524 6.233C6.79527 5.87664 6.90748 5.57696 7.13152 5.33448ZM8.8386 13.254C8.60154 13.4849 8.31945 13.6 7.99295 13.6C7.66653 13.6 7.38436 13.4849 7.14735 13.254C6.91098 13.0237 6.7935 12.7447 6.7935 12.4171C6.7935 12.0911 6.91098 11.8091 7.14735 11.5727C7.38436 11.3363 7.66653 11.2181 7.99295 11.2181C8.31945 11.2181 8.60154 11.3363 8.8386 11.5727C9.0748 11.8091 9.19256 12.0911 9.19256 12.4171C9.19256 12.7447 9.0748 13.0237 8.8386 13.254Z" fill="#FFDD00"/>
-                </svg>
-                <span class="ml5">告警事件：${this.robotAlarmObj[robotId].categoryName}：${this.robotAlarmObj[robotId].title}</span>
-              </div>` : ''}
             <img class="wp${width} hp${height}" src="${require(`@/assets/images/new-bi/${img}.png`)}" />
             <img src="${require(`@/assets/images/new-bi/robot_foot.png`)}" style="margin-top: -5px;" />
             <div class="custom-point-name mt2" style="">${name}</div>
             <div class="custom-point-status mt4 pr10 pl10">${customStatusName}</div>
           </div>`,
-          className: `custom-point ${this.selectedRobot.robotId === robotId ? `show-icon show-icon-${width}-${height}` : ''} ${type} ${statusClass}` ,
+          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${(this.selectedRobot.robotId === robotId || this.getSelectedStatus(robotId)) ? `show-icon show-icon-${width}-${height}` : ''} ${type} ${statusClass}` ,
           // className: `custom-point ${type} ${statusClass}` ,
           iconSize: null,
           // 偏移量
           // iconAnchor: [name.length * 7 > 24 ? name.length * 7 : 24, height],
           iconAnchor: [0, height]
       });
+    },
+    getSearchRobot(robot) {
+      const keywords = this.mapSearchValue.split('_timestamp_')[0].toLowerCase()
+      if (robot) {
+        return robot.name.toLowerCase().includes(keywords) || robot.type.toLowerCase().includes(keywords) || robot.typeCode.toLowerCase().includes(keywords)
+      } else {
+        return this.robotList.find(item => item.name.toLowerCase().includes(keywords) || item.type.toLowerCase().includes(keywords) || item.typeCode.toLowerCase().includes(keywords))
+      }
     },
     initPoints() {
       if (!this.map) return
@@ -592,12 +677,6 @@ export default {
           this.pointMarkers[index].bindPopup(popupInfo.popup, {
             minWidth: '394px',
             keepInView: true,
-            // 设置没效果
-            // offset: L.point(155, 150), // x: 向右偏移, y: 向上偏移（相对右下角）
-            // autoPan: true,
-            // autoPanPadding: L.point(50, 50),
-            // closeButton: false, // 隐藏默认关闭按钮，使用组件内的
-            // className: 'vue-custom-popup'
           });
           this.pointMarkers[index]._vueInstance = popupInfo.popupInstance
           this.setupHoverWithDebounce(this.pointMarkers[index], 300)
@@ -613,56 +692,45 @@ export default {
       marker.off('mouseover');
       marker.off('mouseout');
       // 添加点击事件
-      marker.on('click', (e) => {        
+      marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
+        if (this.$route.name === 'biIndex') {
+          this.showPopup(marker);
+        }
         this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
+        // this.showDashedArea(marker.meta.index);
         if (this.activeMarkerIndex === marker.meta.index) {
           this.activeMarkerIndex = ''
+        } else {
+          this.activeMarkerIndex = marker.meta.index
         }
         this.clearLayer(null)
-        this.activeMarkerIndex = marker.meta.index
-        // this.showDashedArea(marker.meta.index);
       });
+    },
 
-      marker.on('mouseover', () => {
-        clearTimeout(hoverTimer);
-        // 立即显示
-        marker.openPopup();
-      });
+    // ----- 弹框控制 -----
+    showPopup(marker) {
+      if (this.activeMarkerIndex === marker.meta.index) {
+        this.closePopup()
+        return
+      };
+      this.popupVisible = true;
+      setTimeout(() => this.updatePopupPosition())
+    },
+    closePopup() {
+      this.popupVisible = false;
+    },
+    updatePopupPosition(e) {
+      if (this.$route.name !== 'biIndex') return;
+      const marker = this.pointMarkers[this.activeMarkerIndex]
+      if (!this.popupVisible || !this.map || !marker) return;
+      const latLng = marker.getLatLng();      
+      if (!latLng) return;
+      const point = this.map.latLngToContainerPoint(latLng);
+      const robotRef1 = this.$refs.robot1Ref.$el.getBoundingClientRect()
       
-      marker.on('mouseout', () => {
-        hoverTimer = setTimeout(() => {
-          marker.closePopup();
-        }, delay);
-      });
-      
-      // 处理 popup 内部的鼠标事件（防止鼠标移到 popup 上时关闭）
-      marker.on('popupopen', () => {
-        const popupElement = marker.getPopup().getElement();
-        if (popupElement) {
-          popupElement.addEventListener('mouseenter', () => {
-            clearTimeout(hoverTimer);
-          });
-          popupElement.addEventListener('mouseleave', () => {
-            marker.closePopup();
-          });
-          marker.getElement().classList.add('open')
-        }
-      });
-      // marker.on('popupopen', () => {
-      //   console.log('打开');
-      //   // marker.setPopupContent(marker._vueInstance.$el)
-      //   marker.getElement().classList.add('open')
-      // })
-      marker.on('popupclose', () => {
-        console.log('清空实例');
-        marker.getElement().classList.remove('open')
-        // 销毁后点击无响应
-        // this.pointMarkers[index]._vueInstance.$destroy()
-        // this.pointMarkers[index]._vueInstance = null
-      })
-      // console.log(111, this.pointMarkers[index].getPopup().getContent(), this.pointMarkers[index]._vueInstance);
-      // console.log(this.pointMarkers[index]);
+      this.popupOffset = { x: point.x + 29, y: point.y - robotRef1.height - 28 };
+      // this.popupOffset = { x: point.x, y: point.y };
     },
     getPopupContainer(data) {
       const components = [Robot, Uav, UavPort, Battery]
@@ -772,7 +840,7 @@ export default {
       //     lng: e.latlng.lng
       //   };
       //   this.pointBMarker.setLatLng([this.pointB.lat, this.pointB.lng]);
-      //   this.updatePopups();
+        // this.updatePopups();
       //   this.settingPointB = false;
       // }
       
@@ -1077,10 +1145,10 @@ export default {
       this.dialogVisible = true;
       // 关闭一级页面的视频监控连接
     },
-    closePopup(index) {
-      this.pointMarkers[index].closePopup()
-      // 关掉视频
-    },
+    // closePopup(index) {
+    //   this.pointMarkers[index].closePopup()
+    //   // 关掉视频
+    // },
     handleOpen() {
       this.$nextTick(() => {
         const info = this.allRobotInfo.filter(item => item.endpoint === this.selectedEndPoint)[0]
@@ -1156,7 +1224,6 @@ export default {
     showControlPart(visible) {
       if (this.selectedRobot.type === '四足机器狗') {
         this.$refs.robotControlPartRef.show(visible)
-      // } else if (this.selectedRobot.type === '轮式机器人') {
       } else {
         this.$refs.robotCarControlPartRef.show(visible)
       }
@@ -1172,6 +1239,20 @@ export default {
   },
   beforeDestroy() {
     this.stopMovement();
+    if (this.map) {
+      this.map.off('move', this.updatePopupPosition);
+      this.map.off('moveend', this.updatePopupPosition);
+      this.map.off('click', this.closeAll);
+
+      
+      this.map.off('movestart', this.preloadTiles);
+      this.map.off('zoomstart', this.preloadTiles);
+
+      this.map.remove();
+    }
+    if (this.timer) {
+      clearTimeout(this.timer)
+    }
   },
 }
 </script>

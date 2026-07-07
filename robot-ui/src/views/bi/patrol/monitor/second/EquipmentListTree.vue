@@ -49,6 +49,7 @@
 <script>
 import { mapActions, mapState } from 'vuex';
 import { onDragStart, onDragEnd } from '@/store/modules/dragVideo.js';
+import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
 export default {
   name: 'EquipmentListTree',
   computed: {
@@ -116,27 +117,12 @@ export default {
       ],
       collapse: [],
       checkedIds: [],
+      loaded: false,
+      timer: null
     }
-  },
-  created() {
-    this.setSplitType(4)
   },
   async mounted() {
     this.updateRobot()
-    // for (const [index, key] of Object.keys(this.activeCameras).entries()) {
-    //   console.log(1);
-    //   await this.stopCamera(this.activeCameras[key].camera);
-    // }
-    if (this.splitType === 1 || this.splitType !== this.checkedIds.length) {
-      const cameras = (this.robots?.[0]?.cameras || []).sort((a, b) => {
-        if (a.groupType === 'body') return -1; // 最前面
-        if (b.groupType === 'body') return 1;
-        return 0;
-      })
-      console.log(333, this.robots, cameras);
-      
-      await this.$emit('updateVideo', cameras)
-    }
   },
   methods: {
     ...mapActions('dragVideo', ['dragStart', 'setSplitType']),
@@ -150,6 +136,12 @@ export default {
         if (b.groupType === 'body') return 1;
         return 0;
       })
+      if (cameras?.length) {
+        const len = [1, 4, 6, 9].filter(item => item >= cameras.length)?.[0] || 9
+        console.log('setSplitType', len);
+        
+        this.setSplitType(len)
+      }
       if (robot.robotId) {
         for (const item of cameras) {
           const typeObj = Object.assign({}, this.equipmentCameraObj[item.groupType] || {})
@@ -157,13 +149,18 @@ export default {
             this.$set(this.equipmentCameraObj, item.groupType, {
               type: item.groupType,
               name: item.groupTypeName,
-              svg: item.groupType === 'dual_gimbal' ? 'infrared' : item.groupType === 'body' ? 'robot-dog' : 'lidar',
+              svg: item.groupType === 'dual_gimbal' ? 'infrared' : item.groupType === 'body' ? (ROBOT_TYPE_INFO[robot.type].icon || 'robot-dog') : 'lidar',
               cameras: {},
             })
           }
           this.$set(this.equipmentCameraObj[item.groupType].cameras, item.name, { robot, ...item })
         }
       }
+      this.$nextTick(() => {
+        if (cameras?.length && !this.loaded) {
+          this.play()
+        }
+      })
     },
     toggleCollapse(index) {
       this.$set(this.collapse, index, !this.collapse[index])      
@@ -174,27 +171,25 @@ export default {
         await this.$emit('updateVideo', item)
       }
     },
+    async play() {
+      const cameras = this.selectedRobot?.cameras || []
+      for (const camera of cameras) {
+        await this.$emit('updateVideo', camera)
+      }
+    }
   },
   watch: {
-    splitType: {
-      handler() {
-        this.checkedIds = []
-      },
-      deep: true
-    },
-    robots: {
-      handler(newVal) {
-        this.updateRobot()
-      },
-      deep: true,
-      // immediate: true,
-    },
     activeCameras: {
       handler(newVal) {
         this.checkedIds = Object.keys(newVal).map(key => key)
       },
       deep: true
     },
+  },
+  beforeDestroy() {
+    if (this.timer) {
+      clearTimeout(this.timer)
+    }
   }
 }
 </script>

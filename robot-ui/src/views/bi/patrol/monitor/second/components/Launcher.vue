@@ -17,7 +17,7 @@
       </div>
     </div>
     <div class="mt20 flx-center flex-wrap" style="position: relative; margin-top: -10px; margin-left: -10px;">
-      <div class="item p10 flx-center flex-column mt10 ml10" :class="{ 'is-active': item.count > 0, 'pointer-events': (!item.count || !launcherInfo.safeSwitch || !launcherInfo.connectStatus) ? 'none' : 'auto' }" v-for="(item, index) in launcherInfo.bullets" :key="item.id">
+      <div class="item p10 flx-center flex-column mt10 ml10" :class="{ 'is-active': item.count > 0, 'is-disabled': (!item.count || !launcherInfo.safeSwitch || !launcherInfo.connectStatus) ? 'none' : 'auto' }" v-for="(item, index) in launcherInfo.bullets" :key="item.id">
         <div class="text">{{ index + 1 }}号位</div>
         <div class="status pl11 mt4">{{ item.count ? '有' : '无' }}发射物</div>
         <div class="btns mt4">
@@ -85,7 +85,7 @@ export default {
     background: linear-gradient(180deg, rgba(18, 20, 43, 0.00) 0%, #12142B 100%);
     border: 1px solid #747474;
     box-shadow: 0 0 20px 0 rgba(162, 162, 162, 0.50) inset;
-    &.is-active {
+    &.is-active:not(.is-disabled) {
       border-color: #0063AF;
       box-shadow: 0 0 20px 0 rgba(0, 145, 223, 0.50) inset;
       .status::before {
@@ -95,7 +95,24 @@ export default {
         ::v-deep .el-button {
           background: #021328;
           box-shadow: 0 0 14px 2px #09F inset;
+          &.is-disabled {
+            background: #0A0A0A;
+            box-shadow: 0 0 14px 2px #A6A6A6 inset;
+            cursor: not-allowed;
+            // pointer-events: none;
+          }
+          &:not(.is-disabled) {
+            &:active {
+              color: #0BF9FE;
+              box-shadow: 0 0 10px 3px #0BF9FE inset;
+            }
+          }
         }
+      }
+      &.is-disabled {
+        background: linear-gradient(180deg, rgba(18, 20, 43, 0.00) 0%, #12142B 100%);
+        border: 1px solid #747474;
+        box-shadow: 0 0 20px 0 rgba(162, 162, 162, 0.50) inset;
       }
     }
     .text {

@@ -47,12 +47,13 @@
       </div>
       <div class="btns mt10 mb20 ml0 flx-align-center flex-wrap wp360" style="margin-top: -10px !important">
         <el-button v-if="showOper && showControl" type="primary" class="mt20" @click="$emit('showControlPart', true)">远程控制</el-button>
+        <!-- <el-button type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button> -->
         <el-button v-if="showOper && showControl && currenRobot?.runningTaskId" type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button>
         <el-button v-if="showOper && showControl" type="primary" class="mt20" @click="onShutdown()">一键返航</el-button>
         <el-button v-if="showOper && showControl" type="primary" class="mt20" @click="onStartup()">退出充电桩</el-button>
         <!-- <el-button type="primary" @click="onAddTask()">添加任务</el-button> -->
-        <!-- <el-button type="primary" class="mt20" @click="$emit('showPath', true)">显示路径</el-button>
-        <el-button type="primary" class="mt20" @click="$emit('showArea', true)">显示区域</el-button> -->
+        <el-button type="primary" class="mt20" @click="$emit('showPath', true)">显示路径</el-button>
+        <el-button type="primary" class="mt20" @click="$emit('showArea', true)">显示区域</el-button>
       </div>
     </div>
     <!-- <div class="guideline wp157 hp29 mt9 ml161">
@@ -114,12 +115,13 @@ export default {
     },
     show(e, robot) {
       this.$emit('showControlPart', false)
-      if (this.selectedRobotId === robot.robotId) {
+      this.$emit('clear')
+      if (this.selectedRobotId === robot?.robotId || !e) {
         this.setSelectedRobotId('')
         this.handleGlobalClick(e, false)
       } else {
         this.visible = true
-        this.setSelectedRobotId(robot.robotId)
+        this.setSelectedRobotId(robot?.robotId)
         this.handleGlobalClick(e, true)
       }
     }
@@ -140,16 +142,12 @@ export default {
   pointer-events: none;
   will-change: left, top, transform, scale, opacity, backdrop-filter;
   &.visible {
+    opacity: 1;
     visibility: visible;
     pointer-events: auto;
   }
   .box {
     width: min-content;
-    background: linear-gradient(180deg, rgba(4, 91, 149, 0.50) 0.01%, rgba(4, 51, 68, 0.37) 5.51%, rgba(4, 42, 62, 0.40) 51.52%, rgba(7, 56, 94, 0.38) 92.62%, rgba(4, 78, 151, 0.50) 100.03%);
-    border-color: #2A86F3;
-    .top {
-      background: linear-gradient(90deg, #2C8EFF -0.18%, rgba(0, 13, 59, 0.20) 94.39%);
-    }
     .info-content {
       .item {
         color: rgba(255, 255, 255, 0.80);

@@ -57,12 +57,14 @@ export default {
         const playback = await getFilePlayUrl(recording.fileId)
         const ref = this.$refs[`${this.refPrefix}_${recording.fileId}`]
         let player = Array.isArray(ref) ? ref[0] : ref
+        // console.log(1111111111111111111111111111111111111111111111111111111);
         player.loop = false
         let recordedHls = null
         this.destroyRecordedHls(recording.fileId)
         this.selectedRecording = recording
         if (player.canPlayType('application/vnd.apple.mpegurl')) {
-          player.src = 'https://192.168.124.77:24443' + playback.playUrl
+          const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
+          player.src = `${preUrl}${playback.playUrl}`
         } else if (Hls.isSupported()) {
           recordedHls = new Hls()
           recordedHls.loadSource(playback.playUrl)
@@ -93,7 +95,7 @@ export default {
       console.log(11);
       const { player } = this.recordingData[fileId]
       console.log(22);
-      
+
       if (player.paused) {
         player.play()
       } else {
@@ -101,7 +103,7 @@ export default {
       }
       console.log(333, player.paused);
       this.recordingData = Object.assign({}, this.recordingData, {[fileId]: { ...this.recordingData[fileId], player}})
-      
+
     },
     getTotalTime(startTime, endTime) {
       // return this.timeToSeconds(endTime) - this.timeToSeconds(startTime)

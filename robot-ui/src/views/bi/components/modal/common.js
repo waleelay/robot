@@ -36,6 +36,7 @@ export default {
       this.started = false
       await this.startAll()
     },
+    // cameras 已经对调的数据[selectCamera, mainCamera]
     rebindCameraTracks(cameras) {
       this.$nextTick(() => {
         const cameraList = cameras || []
@@ -62,7 +63,6 @@ export default {
       this.$set(this, 'ZQL_videosInfos', null);
       for (const robot of this.robotList) {
         for (const camera of robot.cameras) {
-          console.log('关闭');
           await this.stopCamera(camera)
         }
       }

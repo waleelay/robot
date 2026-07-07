@@ -147,18 +147,18 @@ export default {
         font-size: 12px;
         &.up {
           top: 5px;
-          left: 39px;
+          left: 35px;
         }
         &.right {
-          top: 39px;
+          left: 35px;
           right: 5px;
         }
         &.down {
           bottom: 5px;
-          left: 39px;
+          left: 35px;
         }
         &.left {
-          top: 39px;
+          top: 35px;
           left: 5px;
         }
       }
@@ -252,6 +252,12 @@ export default {
       &.is-disabled {
         color: rgba(183, 188, 194, 0.50);
         background: rgba(34, 53, 67, 0.50);
+      }
+      &:not(.is-disabled) {
+        &:active {
+          color: #0BF9FE;
+          box-shadow: 0 0 10px 3px #0BF9FE inset;
+        }
       }
     }
     .el-select {

@@ -31,6 +31,9 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
+    activeCameras() {
+      return this.$store.getters['websocketRobot/getActiveCameras'];
+    },
     ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList'])
   },
   async mounted(){
@@ -90,10 +93,15 @@ export default {
       //   this.map.setView(this.pointMarkers?.[0]?.getLatLng())
       // }
     },
+    getSelectedStatus(robotId) {
+      return Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
+    },
     // 创建自定义图标
     getIcon(item, options = {}) {      
       const sizeObj = ROBOT_TYPE_INFO
       const { typeName, name, type, status, robotId, customStatusName, statusClass } = item
+      // console.log(333, this.getSelectedStatus(item.robotId));
+      
       const { width, height, img } = sizeObj[type] || sizeObj.default  
       const zoom = this.map.getZoom();
       const scale = 66 / 93
@@ -108,7 +116,7 @@ export default {
             </div>`,
             // ${this.selectedRobot.robotId ? `<img src="${require(`@/assets/images/new-bi/robot_foot1.png`)}" style="margin-top: -5px;" />` : ''}
           // className: `custom-point ${this.selectedRobot.robotId ? `show-icon  show-icon-${width}` : ''} ${type} ${status === 0 ? 'green' : status === 1 ? 'blue' : status === 2 ? 'orange' : 'gray'}` ,
-          className: `custom-point ${`show-icon show-icon-${width}-${height}`} ${type} ${statusClass}` ,
+          className: `custom-point ${this.getSelectedStatus(item.robotId) ? `show-icon show-icon-${width}-${height}` : ''} ${type} ${statusClass}` ,
           iconSize: null,
           // 偏移量
           iconAnchor: [width / 2, height]
@@ -178,6 +186,18 @@ export default {
       //   this.setCenter1()
       // }, 30 * 1000);
       // this.startMovement()
+    },
+    updateIconBaseInfo(info) {
+      const robotId = info.robotId
+      const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === robotId);
+      if (existingIndex < 0) return
+      // const { lat, lng } = this.pointMarkers[existingIndex].getLatLng()
+      this.pointMarkers[existingIndex].setLatLng(L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng))
+      this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng) }};
+      // 存在则更新 icon
+      this.pointMarkers[existingIndex].setIcon(this.getIcon(info));
+      // 更新 meta 数据
+      this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info }};
     },
     setCenter1() {
       // 1. 计算平均中心

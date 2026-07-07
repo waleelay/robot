@@ -34,6 +34,8 @@
         :disabled="audioMuted(audioDevice)"
       /> -->
       <el-slider
+        class="w100"
+        :show-tooltip="false"
         :value="audioVolume(audioDevice)"
         :min="0"
         :max="100"
@@ -44,12 +46,12 @@
     </div>
     <div class="btns" :class="{'mt20': !isMapInner, 'mt30': isMapInner}">
       <el-button v-if="!isMapInner" type="primary" class="wp124 hp30" @click="toggleAudioMute(audioDevice)">{{ audioMuted(audioDevice) ? '取消静音' : '静音' }}</el-button>
-      <el-button type="primary" class="wp124 hp30" :class="{ 'ml20': !isMapInner }" style="cursor: default;">
-        <span @click="adjustAudioVolume(audioDevice, -5)">
+      <el-button type="primary" :disabled="audioMuted(audioDevice)" class="wp124 hp30" :class="{ 'ml20': !isMapInner }" style="cursor: default;">
+        <span class="btn-volume" @click="adjustAudioVolume(audioDevice, -5)">
           <svg-icon icon-class="minus" />
         </span>
         <span class="ml10 mr10">音量</span>
-        <span @click="adjustAudioVolume(audioDevice, 5)">
+        <span class="btn-volume" @click="adjustAudioVolume(audioDevice, 5)">
           <svg-icon icon-class="plus" />
         </span>
       </el-button>
@@ -215,6 +217,23 @@ export default {
       font-size: 16px;
       cursor: pointer;
     }
+    &.is-disabled {
+      background: #080808;
+      box-shadow: 0 0 14px 2px #515151 inset;
+      cursor: not-allowed;
+    }
+    .btn-volume {
+      &:active {
+        color: #0BF9FE;
+        // box-shadow: 0 0 10px 3px #0BF9FE inset;
+      }
+    }
+    // &:not(.is-disabled) {
+    //   &:active {
+    //     color: #0BF9FE;
+    //     box-shadow: 0 0 10px 3px #0BF9FE inset;
+    //   }
+    // }
   }
 }
 
@@ -222,6 +241,35 @@ export default {
 .progress {
   position: relative;
   /* 基础轨道背景容器（作为底层）显示未划过底色 #093974 */
+
+  ::v-deep {
+    .el-slider {
+      width: 100%;
+      &__runway {
+        height: 8px;
+        margin: 0;
+        border-radius: 2px;
+        background: #093974;
+      }
+      &__bar {
+        height: 8px;
+        border-radius: 2px;
+        background: #0C132A;
+        box-shadow: 0 0 6px 2px #09F inset;
+      }
+      .el-slider__button-wrapper {
+        top: -5px;
+        height: auto;      
+        .el-slider__button {
+          width: 16px;
+          height: 16px;
+          border-width: 0;
+          background: #021328;
+          box-shadow: 0 0 10px 2px #09F inset;
+        }
+      }
+    }
+  }
   .track-bg {
     position: absolute;
     top: 50%;

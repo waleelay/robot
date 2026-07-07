@@ -1,5 +1,6 @@
 <template>
   <div class="map-preview-box w100 h100">
+    <!-- <img class="map-preview-image" :src="`http://192.168.124.44:8081/api/v1/management/maps/1/preview-image`" alt="地图预览" style="width: 100%; height: 100%;" /> -->
     <template v-if="hasPreview">
       <div class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #CDCDCD;">
         <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
@@ -69,8 +70,7 @@ import { previewImageBlob } from '../../../../api/new-bi';
 export default {
   name: 'BiPatrolSlam',
   props: {
-    mapId: { type: String, default: '7' },
-    taskId: { type: String, default: '' },
+    taskId: { type: [String, Number], default: '' },
     showLabels: { type: Boolean, default: false }
   },
   data() {
@@ -120,22 +120,23 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapData', 'taskPathPoints']),
-    map() {
-      return this.slamMapData?.[this.mapId] || {}
+    ...mapState('websocketExtraData', ['slamMapList', 'taskPathPoints']),
+    mapId() {
+      return this.taskPathPoints?.[this.taskId]?.mapId || ''
     },
-    points() {
-      return this.slamMapData?.[this.mapId]?.mapPoints || []
+    map() {
+      return this.slamMapList.find(item => item.id === this.mapId) || {}
+    },
+    pathPoints() {
+      return this.taskPathPoints?.[this.taskId]?.pathPoints || []
     },
     pathPointIds() {
-      console.log('2222222222', this.taskId, this.taskPathPoints?.[this.taskId]);
-      
-      return this.taskPathPoints?.[this.taskId]?.pathPointIds || []
+      return this.taskPathPoints?.[this.taskId]?.pathPoints?.map(item => item.id) || []
     },
     // pathPointIdsInfo() {
     //   return this.taskPathPoints?.[this.taskId]?.pathPointIdsInfo || []
     // },
-    hasPreview() {  
+    hasPreview() {
       return !!this.map?.previewFileId &&
         !!this.map?.previewWidth &&
         !!this.map?.previewHeight &&
@@ -152,18 +153,12 @@ export default {
       }
     },
     drawablePoints() {
-      return this.points
+      return this.pathPoints
         .map((point) => ({ ...point, pixel: this.mapPointToPixel(point, this.map) }))
         .filter((point) => point.pixel)
     },
     polylinePoints() {
-      console.log(123, this.pathPointIds);
-      
-      return this.pathPointIds
-        .map((id) => this.drawablePoints.find((point) => point.id === id)?.pixel)
-        .filter(Boolean)
-        .map((pixel) => `${pixel.x},${pixel.y}`)
-        .join(" ")
+      return this.drawablePoints.map((item) => `${item.pixel.x},${item.pixel.y}`).join(" ")
     },
     // 返回需要监听的对象，依赖 map 和 hasPreview
     previewSource() {
@@ -183,32 +178,14 @@ export default {
     },
   },
   watch: {
-    previewSource: {
-      immediate: true,
-      async handler(newVal) {       
-        this.imageObjectUrl = require('./preview-image.png');
-        this.imageUrl = require('./preview-image.png');
-        
-        // const { id, cacheKey, hasPreview } = newVal;
-        // const seq = ++this.imageLoadSeq;
-        // this.revokeImageUrl();
-        // this.previewImageStatus = '地图预览加载中';
-        // if (!hasPreview || !id) return;
-        // try {
-        //   const blob = await previewImageBlob(id, cacheKey);
-        //   const nextUrl = URL.createObjectURL(blob);
-        //   if (seq !== this.imageLoadSeq) {
-        //     URL.revokeObjectURL(nextUrl);
-        //     return;
-        //   }
-        //   this.imageObjectUrl = nextUrl;
-        //   this.imageUrl = nextUrl;
-        // } catch (error) {
-        //   if (seq === this.imageLoadSeq) {
-        //     this.previewImageStatus = '地图预览图片加载失败，请检查接口授权或后端服务';
-        //   }
-        // }
+    mapId: {
+      async handler(newVal) {
+        if (!newVal) return;
+        const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
+        this.imageObjectUrl = `${preUrl}/api/v1/management/maps/${this.mapId}/preview-image`;
+        this.imageUrl = `${preUrl}/api/v1/management/maps/${this.mapId}/preview-image`;
       },
+      immediate: true,
     },
   },
   methods: {
@@ -217,8 +194,6 @@ export default {
     },
     renderPath() {
       this.showPath = !this.showPath;
-        console.log(2, this.polylinePoints);
-        
       // 渲染路径及点
     },
     // 最小缩放比例：确保stage不会小于viewport的宽高

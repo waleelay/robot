@@ -15,9 +15,16 @@ export default {
         left: this.position.left + 'px',
         top: this.position.top + 'px'
       }
+    },
+    showAnimate() {
+      return this.$route.name !== 'biIndex'
     }
   },
   mounted() {
+    if (!this.showAnimate) {
+      this.visible = true
+      return
+    }
     this.currentEl = this.$refs.containerRef;
     this.updateCubeSize();
     // 将方块初始隐藏位置设置到右上角（避免首次显示时闪烁）
@@ -89,14 +96,14 @@ export default {
       const maxLeft = window.innerWidth - this.cubeWidth;
       const maxTop = window.innerHeight - this.cubeHeight;
       
-      startLeft = this.$route.name === 'biIndex' ? location.x : Math.min(Math.max(0, startLeft), maxLeft);
-      startTop = this.$route.name === 'biIndex' ? location.y : Math.min(Math.max(0, startTop), maxTop);
+      startLeft = this.showAnimate ? Math.min(Math.max(0, startLeft), maxLeft) : location.x;
+      startTop = this.showAnimate ? Math.min(Math.max(0, startTop), maxTop) : location.y;
       
       // 3. 获取目标位置
-      const targetPos = this.$route.name === 'biIndex' ? {
+      const targetPos = this.showAnimate ? this.getTargetPosition() : {
         left: location.translateX,
         top: location.translateY
-      } : this.getTargetPosition();      
+      };      
       // 4. 让方块可见（GSAP会控制透明度，但需要让元素显示出来）
       if (!this.visible) {
         this.visible = true;
@@ -140,10 +147,10 @@ export default {
         },
         onComplete: () => {
           // 动画完成，精确归位到右上角（防止浮点误差）
-          const finalPos = this.$route.name === 'biIndex' ? {
+          const finalPos = this.showAnimate ? this.getTargetPosition() : {
               left: location.translateX,
               top: location.translateY
-            } : this.getTargetPosition();            
+            };            
           gsap.set(this.currentEl, {
             left: finalPos.left,
             top: finalPos.top,
@@ -166,6 +173,7 @@ export default {
         this.setHiddenPositionToTarget();
         return
       }
+      if (!this.showAnimate) return
       let clientX = event.clientX;
       let clientY = event.clientY;
       if (clientX === undefined || clientY === undefined) return;
@@ -226,6 +234,7 @@ export default {
     }
   },
   beforeDestroy() {
+    if (!this.showAnimate) return
     // window.removeEventListener('click', this.handleGlobalClick);
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('orientationchange', this.onOrientationChange);

@@ -68,7 +68,7 @@
         <span>控制模式：</span>
         <el-dropdown trigger="click" :class="{ 'mt10': !vehicleLightDevice && !warningLightDevices?.length, 'ml10': vehicleLightDevice || warningLightDevices?.length }" @command="handleModeChange">
           <div class="mode-status success flex-column">
-            <span>{{ selectedRobot?.mode || 'MANUAL'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
+            <span>{{ selectedRobot?.controlMode }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
           </div>
           <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
             <el-dropdown-item command="NAVIGATION">自动巡航模式</el-dropdown-item>
@@ -76,7 +76,7 @@
           </el-dropdown-menu>
         </el-dropdown>
       </div>
-      <div class="mt16 d-flex" :class="{ 'ml30': !vehicleLightDevice && !warningLightDevices?.length }">
+      <div class="mt16 d-flex common-control" :class="{ 'ml30': !vehicleLightDevice && !warningLightDevices?.length, 'is-disabled': selectedRobot?.controlMode !== 'MANUAL' }">
         <div class="outer flx-center">
           <div class="inner flx-center">
             <div class="circle flx-center">移动</div>
@@ -284,11 +284,17 @@ export default {
     color: #FFF;
     font-size: 12px;
     letter-spacing: 0.24px;
-    background: #080808;
+    background: #021328;
+    box-shadow: 0 0 14px 2px #09F inset;
     border-radius: 4px;
     border: none;
-    box-shadow: 0 0 14px 2px #515151 inset;
     text-align: center;
+    &.is-disabled {
+      background: #080808;
+      box-shadow: 0 0 14px 2px #515151 inset;
+      cursor: not-allowed;
+      // pointer-events: none;
+    }
   }
 }
 ::v-deep .el-select {
@@ -387,42 +393,26 @@ export default {
   width: 110px;
   height: 110px;
   margin: 0 auto;
-  background: #080808;
-  border: 1px solid #434343;
-  box-shadow: 0 0 12px 2px #303030 inset;
+  // background: #080808;
+  // border: 1px solid #434343;
+  box-shadow: 0 0 14.154px 2.831px #09F inset;
   border-radius: 50%;
   .inner {
     width: 56px;
     height: 56px;
-    background: #181818;
-    border: 1px solid #5E5E5E;
     border-radius: 50%;
     .circle {
-      position: relative;
+      width: 100%;
+      height: 100%;
       color: #fff;
       font-size: 8.625px;
-      border-radius: 50%;
-    }
-    &.no_move {
-      position: relative;
-      &::after {
-        position: absolute;
-        content: '';
-        width: 3.7px;
-        height: 100%;
-        border: 1px solid #181818;
-        background: #8F8F8F;
-        transform: rotate(-45deg);
-      }
+      line-height: 56px;
+      text-align: center;
     }
   }
   .arrow {
-    position: absolute;
     width: 15.4px;
     height: 15.4px;
-    text-align: center;
-    color: #8F8F8F;
-    cursor: pointer;
     &.up {
       top: 6px;
       left: 47.3px;
@@ -430,20 +420,14 @@ export default {
     &.right {
       top: 47.3px;
       right: 4.95px;
-      transform: rotate(90deg);
-      transform-origin: center;
     }
     &.down {
       bottom: 6px;
       left: 47.3px;
-      transform: rotateZ(-180deg);
-      transform-origin: center;
     }
     &.left {
       top: 47.3px;
       left: 4.95px;
-      transform: rotate(-90deg);
-      transform-origin: center;
     }
     &.is-disabled {
       cursor: not-allowed !important;

@@ -387,9 +387,8 @@ const actions = {
 
   // 连接媒体服务 WebSocket
   connectMediaWebSocket({ commit, state, dispatch }) {
-    // const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    // const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/control`
-    const url = 'wss://192.168.124.77:24443/ws/control'
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/control`
     const socket = new WebSocket(url)
     socket.onopen = () => {
       commit('setWsConnected', true)
@@ -416,10 +415,10 @@ const actions = {
     if (!data || !data.robotId) return
     if (event.event !== 'robot.state' && event.type !== 'robot.state') return
     const incoming = toRobotState(data)
-    // console.log('12', existing)
     const index = state.robots.findIndex(robot => robot.robotId === incoming.robotId)
     if (index >= 0) {
       const existing = state.robots[index]
+      // console.log('12', existing.robotId, existing.status, incoming.status)
       incoming.cameras = incoming.cameras.map(camera => {
         const old = state.cameras[camera.key]
         if (!old) return camera
@@ -491,6 +490,7 @@ const actions = {
   syncControlEvent({ commit, state, dispatch }, event) {
     if (!event) return
     if (event.type === 'control.command.rejected') {
+      console.error('控制命令被拒绝', event)
       Message.error((event.payload && event.payload.message) || '控制命令被拒绝')
     }
     return
@@ -579,15 +579,16 @@ const actions = {
     if (camera.recordingActive) {
       await dispatch('stopCameraRecording', camera)
     }
+    // console.log('%cstartCamera=============', 'color: #00f', state.prefixId + camera.key);
     let camera1 = { ...camera }
-    // if (robot.status !== 'online') return
+    if (robot.status !== 'online') return
     camera1.loading = true
     camera1.stopped = false
     camera1.stopping = false
     camera1.restarting = false
     camera1.watching = true
     try {
-      console.log('startCamera', robot, camera)
+      // console.log('startCamera', robot, camera)
       const session = await createVideoSession({
         robotId: robot.robotId,
         deviceId: camera.deviceId,
@@ -613,12 +614,20 @@ const actions = {
   },
 
   // 停止摄像头
-  async stopCamera({ commit, state }, camera) {
+  async stopCamera({ commit, state }, data) {
+    let camera = state.cameras[data.key]
+    if (!camera) return
+    camera = { ...camera }
+    console.log(1, camera.key);
+    
     if (camera.recordingActive) {
+    console.log(2);
       await dispatch('stopCameraRecording', camera)
     }
+    console.log(3, camera.session);
     // console.log('stopCamera', camera.session)
     if (!camera.session) return
+    console.log(4);
     camera.loading = true
     camera.stopping = true
     camera.stopped = true
@@ -1130,6 +1139,7 @@ const actions = {
       if (data && data.code === 'RECORDING_ALREADY_ACTIVE') {
         Message.info('当前视频正在录制中')
       } else {
+        console.error('开始录像失败', error)
         Message.error(error)
       }
     } finally {
@@ -1163,6 +1173,7 @@ const actions = {
       // TODO 获取新数据
       // if (this.recordingMode) await dispatch('loadRecordings')
     } catch (error) {
+      console.error('停止录像失败', error)
       Message.error(error)
     } finally {
       camera.recordingBusy = false

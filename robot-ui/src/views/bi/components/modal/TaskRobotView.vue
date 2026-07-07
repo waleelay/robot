@@ -55,7 +55,7 @@
                 <div>
                   <div class="flx-justify-between">
                     <div class="title">{{ robot.name }}</div>
-                    <div class="status pl10">LIVE</div>
+                    <!-- <div class="status pl10">LIVE</div> -->
                   </div>
                   <div class="d-flex hp122 mt10">
                     <div class="wp216 h100 main">
@@ -142,7 +142,8 @@ export default {
       this.dialogVisible = false;
       this.$emit('handleClickTask', this.taskInfo.taskId)
     },
-    goTask() {
+    async goTask() {
+      await this.stopAll()
       this.$router.push({ path: '/bi/patrol/monitor', query: { taskId: this.taskInfo.taskId || 0 } })
     },
     orderedCameras(robot) {

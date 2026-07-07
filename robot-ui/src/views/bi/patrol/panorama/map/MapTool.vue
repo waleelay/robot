@@ -162,14 +162,12 @@ export default {
       }
     },
     search() {
-      console.log(111, this.searchValue);
-      
       this.setMapSearchValue(this.searchValue)
     },
     changeLayer() {},
     showPath() {},
     changeAngle() {
-      this.$emit('changeMapAngle', this.angle === '3D' ? '2D' : '3D')
+      this.$emit('changeMapAngle')
     },
     ranging() {},
     changeSkin() {},

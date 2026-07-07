@@ -54,13 +54,13 @@
                   <el-carousel trigger="click" :autoplay="false" height="100%" ref="carouselRef" @change="handleChangeCarousel">
                     <el-carousel-item v-for="item in options" :key="item.key" :name="item.key">
                       <div v-if="item.url" class="img-b w100 h100">
-                        <!-- <img :src="getImageSrc(item.url)" alt=""> -->
-                        <img src="@/assets/images/new-bi/video-bg.png" class="w100 h100" alt="">
+                        <img :src="getImageSrc(item.url)" alt="">
+                        <!-- <img src="@/assets/images/new-bi/video-bg.png" class="w100 h100" alt=""> -->
                       </div>
                       <div v-else class="w100 h100 flx-center">暂无{{item.label}}图片</div>
                     </el-carousel-item>
                     <div class="page">{{ getCurrentPage() }}/{{ options.length }}</div>
-                    <div class="download">下载原图</div>
+                    <div class="download" @click="download()" style="cursor: pointer;">下载原图</div>
                   </el-carousel>
                 </div>
               </div>
@@ -164,11 +164,17 @@
 </template>
 
 <script>
+const defaultOptions = [
+  { key: 'visible', label: '云台可见光', url: '1' },
+  { key: 'thermal', label: '云台红外光', url: '2' },
+  { key: 'front', label: '前置摄像头', url: '3' }
+]
 import WarningExecuteNo from './WarningExecuteNo.vue';
 import WarningExecuteError from './WarningExecuteError.vue';
 import WarningExecute from './WarningExecute.vue';
 import { mapActions, mapState } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
+import { previewImageBlob } from '../../../../../api/new-bi.js';
 export default {
   name: 'WarningInfoBatch',
   components: { WarningExecuteNo, WarningExecuteError, WarningExecute },
@@ -176,13 +182,8 @@ export default {
     return {
       dialogVisible: false,
       details: {},
-      selectedValue: '',
-      options: [
-        { key: 'ImageUrl', label: '云台可见光', url: '1' },
-        { key: 'nirUrl', label: '云台红外光', url: '2' },
-        { key: 'beforeUrl', label: '机器狗前置', url: '3' },
-        { key: 'afterUrl', label: '机器狗后置', url: '4' }
-      ],
+      selectedValue: 'visible',
+      options: [],
       loading: false,
       searchValue: '',
       tabList: [
@@ -295,14 +296,24 @@ export default {
         ...(this.alarmsData[tabIndex === 1 ? 'high' : tabIndex === 2 ? 'medium' : 'low']?.items || [])
       ]).filter(item => item.title.includes(searchValue) || item.categoryName.includes(searchValue) || item?.location?.address.includes(searchValue))
       const { alarmId } = this.details
-      if (this.warningInfo.listData.length && (!alarmId || !this.warningInfo.listData.find(item => item.alarmId === alarmId))) {
-        this.details = this.warningInfo.listData?.[0] || {}
+      if (this.warningInfo.listData.length) {
+        const obj = alarmId ? (this.warningInfo.listData.find(item => item.alarmId === alarmId) || this.warningInfo.listData[0]) : this.warningInfo.listData[0]              
+        this.details = obj
         this.warningInfo.selectedRobotRows = [this.details]
         // 图片
-        // this.selectedValue = this.options[0].key
+        if (this.details.alarmId) {
+          this.selectedValue = defaultOptions[0].key
+          this.options = [...defaultOptions].map(item => ({
+            ...item,
+            url: this.details?.snapshotUrl?.[item.key] || '',
+            t: new Date().getTime()
+          }))
+        }
       } else {
         this.details = {}
         this.warningInfo.selectedRobotRows = []
+        this.selectedValue = ''
+        this.options = [...defaultOptions]
       }
     },
     getCurrentPage() {
@@ -315,14 +326,21 @@ export default {
     handleChangeCarousel(index) {
       this.selectedValue = this.options[index].key
     },
-    getImageSrc(imgUrl) {
-      return `${process.env.NODE_ENV === 'development' ? process.env.VUE_APP_BASE_IP.replaceAll("'", '') : location.origin}/file/${imgUrl}`;
+    getImageSrc(url) {
+      const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
+      return `${preUrl}${url}`
     },
     handleClickWarningRow(item, index) {
       // 单选
       this.warningInfo.selectedRobotRows = [item];
       this.details = item
-      // this.selectedValue = item.name
+      if (this.details.alarmId) {
+        this.selectedValue = defaultOptions[0].key
+        this.options = [...defaultOptions].map(item => {
+          item.url = this.details?.snapshotUrl?.[item.key] || ''
+          return item
+        })        
+      }
     },
     async execute(type) {
       if (!this.details.alarmId) return
@@ -343,6 +361,52 @@ export default {
           this.setRobotAlarmInfo({ robotId: this.details.robotId, alarmInfo: this.details, close: true });
           break;
       }
+    },
+    async download() {
+      const url = this.options.find(item => item.key === this.selectedValue)?.url || ''
+      try {
+        const res = await previewImageBlob(url)
+        const blob = new Blob([res], {type: this.getMimeType(res.type) || ''});
+        // 创建 Blob URL
+        const blobUrl = window.URL.createObjectURL(blob);
+
+        // 创建下载链接
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        // 设置文件名
+        link.download = new Date().getTime() + '.jpg';
+        document.body.appendChild(link);
+
+        // 触发下载
+        link.click();
+
+        // 移除链接并释放 Blob URL
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+      } catch (error) {
+        this.$message.error('下载失败')
+      }
+    },
+    getMimeType(extension) {
+      const mimeTypes = {
+        pdf: 'application/pdf',
+        txt: 'text/plain',
+        doc: 'application/msword',
+        docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        xls: 'application/vnd.ms-excel',
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        gif: 'image/gif',
+        csv: 'text/csv',
+        json: 'application/json',
+        zip: 'application/zip',
+        rar: 'application/x-rar-compressed'
+        // 更多 MIME 类型可以根据需求添加
+      };
+      // 默认类型
+      return mimeTypes[extension] || 'application/octet-stream';
     },
     close() {
       this.dialogVisible = false

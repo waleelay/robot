@@ -80,7 +80,7 @@ import ControlPart from './ControlPart.vue'
 import VideoBox from '../../../components/modal/VideoBox.vue';
 import common from './common.js';
 import { toggleFullscreen } from '../../../../../utils/fullscreen.js';
-import { mapActions } from 'vuex';
+import { mapActions, mapState } from 'vuex';
 import Talk from '../../../patrol/monitor/second/components/Talk.vue'
 import yuntai from '../../../patrol/monitor/second/components/yuntai.js'
 import { setControlMode } from '../../../../../api/media.js';
@@ -113,6 +113,7 @@ export default {
     }
   },
   computed: {
+    ...mapState('websocketExtraData', ['robotBaseInfo']),
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
@@ -146,7 +147,8 @@ export default {
     show(visible) {
       this.visible = visible;
     },
-    goControl() {
+    async goControl() {s
+      await this.stopAll()
       this.setSelectedRobotId(this.selectedRobotId)
       this.$router.push({ path: '/bi/patrol/monitor' })
     },
