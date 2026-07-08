@@ -237,20 +237,21 @@ export default {
     captureFullscreenStageSize() {
       const stage = this.$refs.videoScaleStage
       if (!stage) return
-      const rect = stage.getBoundingClientRect()
-      if (rect.width > 0 && rect.height > 0) {
-        this.fullscreenStageWidth = rect.width
-        this.fullscreenStageHeight = rect.height
-      }
+      const width = Math.max(stage.offsetWidth, stage.scrollWidth)
+      const height = Math.max(stage.offsetHeight, stage.scrollHeight)
+      if (width > 0) this.fullscreenStageWidth = width
+      if (height > 0) this.fullscreenStageHeight = height
     },
     updateFullscreenScale() {
       if (!this.isPageFullscreen) return
       const viewportWidth = window.innerWidth || document.documentElement.clientWidth
       const viewportHeight = window.innerHeight || document.documentElement.clientHeight
-      const horizontalGap = 24
-      const verticalGap = 24
-      const scaleX = (viewportWidth - horizontalGap) / this.fullscreenStageWidth
-      const scaleY = (viewportHeight - verticalGap) / this.fullscreenStageHeight
+      const horizontalGap = 48
+      const verticalGap = 48
+      const availableWidth = Math.max(viewportWidth - horizontalGap, 1)
+      const availableHeight = Math.max(viewportHeight - verticalGap, 1)
+      const scaleX = availableWidth / this.fullscreenStageWidth
+      const scaleY = availableHeight / this.fullscreenStageHeight
       this.fullscreenScale = Math.max(Math.min(scaleX, scaleY), 0.1)
     },
     ...mapActions('dragVideo', ['resetDrag', 'setSplitType']),
@@ -813,6 +814,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  transform: none !important;
 
   .video-scale-stage {
     flex: 0 0 auto;
