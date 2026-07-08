@@ -1,133 +1,135 @@
 <template>
-<div class="custom-video-div" :class="[prefixId, { 'is-page-fullscreen': isPageFullscreen }]" :style="containerStyle">
-  <div class="flx-justify-between">
-    <div class="card-title hp36 flx-justify-between pr26" :class="cardTitleClass" style="line-height: 36px;">
-      <div class="text"> 
-        多设备实时画面
-      </div>
-      <div class="split-screen flx-align-center">
-        <span @click="onSplitChange(1)" :class="{ 'is-active': splitType === 1 }">
-          <svg-icon icon-class="screen-split-1" />
-        </span>
-        <span @click="onSplitChange(4)" class="ml10" :class="{ 'is-active': splitType === 4 }">
-          <svg-icon icon-class="screen-split-4" />
-        </span>
-        <span @click="onSplitChange(6)" class="ml10" :class="{ 'is-active': splitType === 6 }">
-          <svg-icon icon-class="screen-split-6" />
-        </span>
-        <span @click="onSplitChange(9)" class="ml10" :class="{ 'is-active': splitType === 9 }">
-          <svg-icon icon-class="screen-split-9" />
-        </span>
-        <span class="ml10" @click="toggleFullscreen1">
-          <svg-icon :icon-class="isPageFullscreen ? 'close-fullscreen' : 'fullscreen1'" />
-        </span>
-      </div>
-    </div>
-  </div>
-  <div
-    class="list hp759 flx-justify-between flex-wrap mt9 w100"
-    style="width: 1364px;"
-    :class="{
-      'pr13 pl13 pt13 pb13': splitType === 4 && prefixId === 'test-video-div-second',
-      'pr18 pl18': splitType === 6 && prefixId === 'test-video-div-second',
-      'pt13 pb13': splitType === 9 && prefixId === 'test-video-div-second',
-      'pr26 pl26': !(splitType === 4 && prefixId === 'test-video-div-second'),
-      'pr55 pl47': prefixId === 'test-video-div-first'
-    }"
-  >
-    <div class="horn top-left"></div>
-    <div class="horn top-right"></div>
-    <div class="horn bottom-left"></div>
-    <div class="horn bottom-right"></div>
-    <!-- style="width: calc(100% - 42px); height: calc(100% - 30px);" 1312 738 -->
-    <div v-if="splitType === 6" class="pr5 pl5">
-      <div class="d-flex">
-        <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_1')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="1" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-1" />
-        <!-- <VideoBox :videoIndex="0" :prefixId="prefixId" :splitType="splitType" :slotDevices="slotDevices" @updateSlot="updateSlot" className="six-1" /> -->
-        <div class="ml26">
-          <div
-            :draggable="ZQL_videosInfos['slot_2']"
-            @dragstart="onDragStart($event, ZQL_videosInfos['slot_2'].robot, 'smallVideo', 'slot_2')"
-            @dragend="onDragEnd"
-            :style="{ cursor: 'grab' }"
-          >
-            <VideoBox
-              @toggleFullscreen="toggleFullscreen"
-              @onAlgoChange="onAlgoChange"
-              @playPauseVideo="playPauseVideo('slot_2')"
-              @test="test"
-              @removeVideo="handleRemoveVideo"
-              @refreshVideo="handleRefreshVideo"
-              :videoIndex="2"
-              :prefixId="prefixId"
-              :splitType="splitType"
-              :ZQL_videosInfos="ZQL_videosInfos"
-              className="six-2"
-            />
-          </div>
-          <div
-            :draggable="ZQL_videosInfos['slot_3']"
-            @dragstart="onDragStart($event, ZQL_videosInfos['slot_3'].robot, 'smallVideo', 'slot_3')"
-            @dragend="onDragEnd"
-            :style="{ cursor: 'grab' }"
-          >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="mt16 six-3" />
-          </div>
+<div class="custom-video-div" :class="[prefixId, { 'is-page-fullscreen': isPageFullscreen }]">
+  <div ref="videoScaleStage" class="video-scale-stage" :style="fullscreenStageStyle">
+    <div class="flx-justify-between">
+      <div class="card-title hp36 flx-justify-between pr26" :class="cardTitleClass" style="line-height: 36px;">
+        <div class="text">
+          多设备实时画面
         </div>
-      </div>
-      <div class="d-flex mt20">
-        <div
-          :draggable="ZQL_videosInfos['slot_4']"
-          @dragstart="onDragStart($event, ZQL_videosInfos['slot_4'].robot, 'smallVideo', 'slot_4')"
-          @dragend="onDragEnd"
-          :style="{ cursor: 'grab' }"
-        >
-          <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-4" />
-        </div>
-        <div
-          :draggable="ZQL_videosInfos['slot_5']"
-          @dragstart="onDragStart($event, ZQL_videosInfos['slot_5'].robot, 'smallVideo', 'slot_5')"
-          @dragend="onDragEnd"
-          :style="{ cursor: 'grab' }"
-        >
-          <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml28 six-5" />
-        </div>
-        <div
-          :draggable="ZQL_videosInfos['slot_6']"
-          @dragstart="onDragStart($event, ZQL_videosInfos['slot_6'].robot, 'smallVideo', 'slot_6')"
-          @dragend="onDragEnd"
-          :style="{ cursor: 'grab' }"
-          >
-          <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml26 six-6" />
+        <div class="split-screen flx-align-center">
+          <span @click="onSplitChange(1)" :class="{ 'is-active': splitType === 1 }">
+            <svg-icon icon-class="screen-split-1" />
+          </span>
+          <span @click="onSplitChange(4)" class="ml10" :class="{ 'is-active': splitType === 4 }">
+            <svg-icon icon-class="screen-split-4" />
+          </span>
+          <span @click="onSplitChange(6)" class="ml10" :class="{ 'is-active': splitType === 6 }">
+            <svg-icon icon-class="screen-split-6" />
+          </span>
+          <span @click="onSplitChange(9)" class="ml10" :class="{ 'is-active': splitType === 9 }">
+            <svg-icon icon-class="screen-split-9" />
+          </span>
+          <span class="ml10" @click="toggleFullscreen1">
+            <svg-icon :icon-class="isPageFullscreen ? 'close-fullscreen' : 'fullscreen1'" />
+          </span>
         </div>
       </div>
     </div>
-    <template v-else>
-      <!-- <VideoBox
-        v-for="index in splitType"
-        :key="index"
-        :videoIndex="index"
-        :prefixId="prefixId"
-        :splitType="splitType"
-        :ZQL_videosInfos="ZQL_videosInfos"
-        :slotDevices="slotDevices"
-        @updateSlot="updateSlot"
-      /> -->
-      <VideoBox
-        @toggleFullscreen="toggleFullscreen"
-        @onAlgoChange="onAlgoChange"
-        @playPauseVideo="playPauseVideo(`slot_${index}`)"
-        @test="test"
-        @removeVideo="handleRemoveVideo"
-        @refreshVideo="handleRefreshVideo"
-        v-for="index in splitType"
-        :key="index"
-        :videoIndex="index"
-        :prefixId="prefixId"
-        :splitType="splitType"
-        :ZQL_videosInfos="ZQL_videosInfos"
-      />
-    </template>
+    <div
+      class="list hp759 flx-justify-between flex-wrap mt9 w100"
+      style="width: 1364px;"
+      :class="{
+        'pr13 pl13 pt13 pb13': splitType === 4 && prefixId === 'test-video-div-second',
+        'pr18 pl18': splitType === 6 && prefixId === 'test-video-div-second',
+        'pt13 pb13': splitType === 9 && prefixId === 'test-video-div-second',
+        'pr26 pl26': !(splitType === 4 && prefixId === 'test-video-div-second'),
+        'pr55 pl47': prefixId === 'test-video-div-first'
+      }"
+    >
+      <div class="horn top-left"></div>
+      <div class="horn top-right"></div>
+      <div class="horn bottom-left"></div>
+      <div class="horn bottom-right"></div>
+      <!-- style="width: calc(100% - 42px); height: calc(100% - 30px);" 1312 738 -->
+      <div v-if="splitType === 6" class="pr5 pl5">
+        <div class="d-flex">
+          <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_1')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="1" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-1" />
+          <!-- <VideoBox :videoIndex="0" :prefixId="prefixId" :splitType="splitType" :slotDevices="slotDevices" @updateSlot="updateSlot" className="six-1" /> -->
+          <div class="ml26">
+            <div
+              :draggable="ZQL_videosInfos['slot_2']"
+              @dragstart="onDragStart($event, ZQL_videosInfos['slot_2'].robot, 'smallVideo', 'slot_2')"
+              @dragend="onDragEnd"
+              :style="{ cursor: 'grab' }"
+            >
+              <VideoBox
+                @toggleFullscreen="toggleFullscreen"
+                @onAlgoChange="onAlgoChange"
+                @playPauseVideo="playPauseVideo('slot_2')"
+                @test="test"
+                @removeVideo="handleRemoveVideo"
+                @refreshVideo="handleRefreshVideo"
+                :videoIndex="2"
+                :prefixId="prefixId"
+                :splitType="splitType"
+                :ZQL_videosInfos="ZQL_videosInfos"
+                className="six-2"
+              />
+            </div>
+            <div
+              :draggable="ZQL_videosInfos['slot_3']"
+              @dragstart="onDragStart($event, ZQL_videosInfos['slot_3'].robot, 'smallVideo', 'slot_3')"
+              @dragend="onDragEnd"
+              :style="{ cursor: 'grab' }"
+            >
+              <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="mt16 six-3" />
+            </div>
+          </div>
+        </div>
+        <div class="d-flex mt20">
+          <div
+            :draggable="ZQL_videosInfos['slot_4']"
+            @dragstart="onDragStart($event, ZQL_videosInfos['slot_4'].robot, 'smallVideo', 'slot_4')"
+            @dragend="onDragEnd"
+            :style="{ cursor: 'grab' }"
+          >
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-4" />
+          </div>
+          <div
+            :draggable="ZQL_videosInfos['slot_5']"
+            @dragstart="onDragStart($event, ZQL_videosInfos['slot_5'].robot, 'smallVideo', 'slot_5')"
+            @dragend="onDragEnd"
+            :style="{ cursor: 'grab' }"
+          >
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml28 six-5" />
+          </div>
+          <div
+            :draggable="ZQL_videosInfos['slot_6']"
+            @dragstart="onDragStart($event, ZQL_videosInfos['slot_6'].robot, 'smallVideo', 'slot_6')"
+            @dragend="onDragEnd"
+            :style="{ cursor: 'grab' }"
+            >
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml26 six-6" />
+          </div>
+        </div>
+      </div>
+      <template v-else>
+        <!-- <VideoBox
+          v-for="index in splitType"
+          :key="index"
+          :videoIndex="index"
+          :prefixId="prefixId"
+          :splitType="splitType"
+          :ZQL_videosInfos="ZQL_videosInfos"
+          :slotDevices="slotDevices"
+          @updateSlot="updateSlot"
+        /> -->
+        <VideoBox
+          @toggleFullscreen="toggleFullscreen"
+          @onAlgoChange="onAlgoChange"
+          @playPauseVideo="playPauseVideo(`slot_${index}`)"
+          @test="test"
+          @removeVideo="handleRemoveVideo"
+          @refreshVideo="handleRefreshVideo"
+          v-for="index in splitType"
+          :key="index"
+          :videoIndex="index"
+          :prefixId="prefixId"
+          :splitType="splitType"
+          :ZQL_videosInfos="ZQL_videosInfos"
+        />
+      </template>
+    </div>
   </div>
 </div>
 </template>
@@ -187,7 +189,9 @@ export default {
       statusArr: {}, // 改为对象形式，键名为'slot_1'...
       sourceceList: [],
       manualChange: false,
-      scaleRatio: 1, // 缩放比例
+      fullscreenScale: 1,
+      fullscreenStageWidth: 1432,
+      fullscreenStageHeight: 804
     }
   },
   computed: {
@@ -196,38 +200,13 @@ export default {
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
     },
-    containerStyle() {
-      if (this.isPageFullscreen) {
-        const containerWidth = 1432;
-        const containerHeight = 804;
-        // 计算缩放比例，使容器填满视口
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
-        
-        // 减去标题栏高度（约60px）和padding
-        const availableWidth = viewportWidth - 40; // 左右各20px padding
-        const availableHeight = viewportHeight - 80; // 标题栏60px + 上下padding各10px
-        
-        // 计算缩放比例，取较小值保证完整显示
-        const scaleX = availableWidth / containerWidth;
-        const scaleY = availableHeight / containerHeight;
-        this.scaleRatio = Math.min(scaleX, scaleY, 1.5); // 限制最大缩放1.5倍
-        
-        return {
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: `translate(-50%, -50%) scale(${this.scaleRatio})`,
-          transformOrigin: 'center center',
-          width: `${this.containerWidth}px`,
-          height: `${this.containerHeight + 60}px`, // 包含标题栏
-          zIndex: 9999,
-          background: '#1a1a1a',
-          padding: '20px',
-          borderRadius: '8px',
-        };
+    fullscreenStageStyle() {
+      if (!this.isPageFullscreen) return {}
+      return {
+        width: `${this.fullscreenStageWidth}px`,
+        height: `${this.fullscreenStageHeight}px`,
+        transform: `scale(${this.fullscreenScale})`
       }
-      return {};
     }
   },
   async mounted() {
@@ -253,10 +232,26 @@ export default {
   },
   methods: {
     handleResize() {
-      // 窗口变化时重新计算缩放
-      console.log(111);
-      
-      this.$forceUpdate();
+      this.updateFullscreenScale()
+    },
+    captureFullscreenStageSize() {
+      const stage = this.$refs.videoScaleStage
+      if (!stage) return
+      const rect = stage.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        this.fullscreenStageWidth = rect.width
+        this.fullscreenStageHeight = rect.height
+      }
+    },
+    updateFullscreenScale() {
+      if (!this.isPageFullscreen) return
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight
+      const horizontalGap = 24
+      const verticalGap = 24
+      const scaleX = (viewportWidth - horizontalGap) / this.fullscreenStageWidth
+      const scaleY = (viewportHeight - verticalGap) / this.fullscreenStageHeight
+      this.fullscreenScale = Math.max(Math.min(scaleX, scaleY), 0.1)
     },
     ...mapActions('dragVideo', ['resetDrag', 'setSplitType']),
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'restartCamera', 'setPrefixId']),
@@ -613,16 +608,18 @@ export default {
         await this.exitFullscreen()
       } else {
         if (current) await this.exitFullscreen()
+        this.captureFullscreenStageSize()
         await this.requestFullscreen(target)
       }
       this.updatePageFullscreenState()
       if (this.isPageFullscreen) {
         // 全屏时添加resize监听
-        window.addEventListener('resize', this.handleResize);
+        window.addEventListener('resize', this.handleResize)
+        this.$nextTick(() => this.updateFullscreenScale())
         // 阻止页面滚动
         // document.body.style.overflow = 'hidden';
       } else {
-        window.removeEventListener('resize', this.handleResize);
+        window.removeEventListener('resize', this.handleResize)
         // document.body.style.overflow = '';
       }
     },
@@ -631,7 +628,14 @@ export default {
         ? this.$el
         : this.$el && this.$el.querySelector('.custom-video-div')
       this.isPageFullscreen = !!target && this.fullscreenElement() === target
-      if (!this.isPageFullscreen) this.fullscreenIndex = null
+      if (this.isPageFullscreen) {
+        window.addEventListener('resize', this.handleResize)
+        this.$nextTick(() => this.updateFullscreenScale())
+      } else {
+        window.removeEventListener('resize', this.handleResize)
+        this.fullscreenScale = 1
+        this.fullscreenIndex = null
+      }
     },
     orderedPlayingVideoInfos() {
       return Object.keys(this.ZQL_videosInfos)
@@ -796,20 +800,22 @@ export default {
   width: 1364px;
 }
 
+.video-scale-stage {
+  transform-origin: center center;
+}
+
 .custom-video-div.is-page-fullscreen {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
   background: #061a33;
-  padding: 12px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 
-  .card-title,
-  .list {
-    width: 100% !important;
-  }
-
-  .list {
-    height: calc(100vh - 57px) !important;
+  .video-scale-stage {
+    flex: 0 0 auto;
   }
 }
 </style>
