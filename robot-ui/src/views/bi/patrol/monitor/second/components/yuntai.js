@@ -1,3 +1,4 @@
+import { mapState } from "vuex";
 import { takeoverControl, acquireControl, mediaClientId, sendEquipmentCommand, createConfirmToken } from "../../../../../../api/media";
 import { errorMessage } from "../../../../../../utils";
 import ControlModeWarning from "./ControlModeWarning.vue";
@@ -5,6 +6,7 @@ import ControlModeWarning from "./ControlModeWarning.vue";
 export default {
   components: { ControlModeWarning },
   computed: {
+    ...mapState('websocketExtraData', ['robotBaseInfo']),
     mediaSocket() {
       return this.$store.getters['websocketRobot/getMediaSocket'];
     },
@@ -15,7 +17,7 @@ export default {
       return this.$store.getters['websocketRobot/getSelectedRobotId'] || this.cameraInfo?.robotId || ''
     },
     selectedRobot() {
-      return this.$store.getters['websocketRobot/getSelectedRobot']
+      return this.robotBaseInfo?.[this.selectedRobotId] || {}
     },
     controlProfiles() {
       return this.$store.getters['websocketRobot/getControlProfiles']
@@ -146,8 +148,9 @@ export default {
       }
     },
     // 云台开始控制
-    startFrameControl(kind, back) {
-      if (this.selectedRobot?.controlMode !== 'MANUAL') {
+    startFrameControl(kind) {
+      // 本体需要判断是否是手动模式，否则提示切换到手动模式
+      if (this.selectedRobot?.controlMode !== 'MANUAL' && kind.indexOf('base-') > -1) {
         // this.$message.warning('请先切换到手动模式')        
         if (this.$refs.controlModeWarningRef) {
           this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode: 'MANUAL' })

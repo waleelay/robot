@@ -23,6 +23,7 @@ import {
   stopLiveRecording,
 } from "../../api/media"
 import Vue from 'vue';
+import { errorMessage } from '../../utils';
 
 // 定义 WebSocket 模块的初始状态
 const state = {
@@ -390,6 +391,7 @@ const actions = {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/control`
     const socket = new WebSocket(url)
+    // const socket = new WebSocket('wss://192.168.124.115:8080/ws/control')
     socket.onopen = () => {
       commit('setWsConnected', true)
       dispatch('startHeartbeat')
@@ -604,7 +606,7 @@ const actions = {
         await dispatch('connectLiveKit', { camera: camera1 })
       }
     } catch (error) {
-      console.log('ERROR createVideoSession', error.message || '请求失败')
+      // console.log('ERROR createVideoSession', error.message || '请求失败')
     } finally {
       camera1.loading = false
       commit('setCamera', camera1)
@@ -617,17 +619,12 @@ const actions = {
   async stopCamera({ commit, state, dispatch }, data) {
     let camera = state.cameras[data.key]
     if (!camera) return
-    camera = { ...camera }
-    console.log(1, camera.key);
-    
+    camera = { ...camera }    
     if (camera.recordingActive) {
-    console.log(2);
       await dispatch('stopCameraRecording', camera)
     }
-    console.log(3, camera.session);
     // console.log('stopCamera', camera.session)
     if (!camera.session) return
-    console.log(4);
     camera.loading = true
     camera.stopping = true
     camera.stopped = true
@@ -717,8 +714,8 @@ const actions = {
       console.log('API startIntercom', response)
     } catch (error) {
       camera.intercomActive = false
-      // Message.error(this.errorMessage(error))
-      // console.log('ERROR startIntercom', this.errorMessage(error))
+      console.error('ERROR startIntercom', errorMessage(error))
+      Message.error(errorMessage(error))
     } finally {
       camera.intercomBusy = false
       commit('setCamera', camera)
@@ -753,7 +750,8 @@ const actions = {
       }
       console.log('API stopIntercom', response)
     } catch (error) {
-      // Message.error(this.errorMessage(error))
+      console.error('ERROR stopIntercom', errorMessage(error))
+      Message.error(errorMessage(error))
     } finally {
       camera.intercomBusy = false
       commit('setCamera', camera)
@@ -912,11 +910,11 @@ const actions = {
   async changeCameraQuality({ commit, state, dispatch }, camera) {
     if (!camera.session || !camera.watching || camera.stopped) return
     if (activeRecordingInProgress(camera)) {
-      // Message.warning('请先停止录像后再切换清晰度')
+      Message.warning('请先停止录像后再切换清晰度')
       return
     }
     if (intercomInProgress(camera)) {
-      // Message.warning('请先关闭对讲后再切换清晰度')
+      Message.warning('请先关闭对讲后再切换清晰度')
       return
     }
     const nextQuality = effectiveCameraQuality(camera)
@@ -952,13 +950,15 @@ const actions = {
       if (oldRoom) {
         camera.disconnecting = true
         Promise.resolve(oldRoom.disconnect()).catch(error => {
-          console.log('ERROR disconnect old quality room')// this.errorMessage(error)
+          console.error('ERROR disconnect old quality room')
+          Message.error(errorMessage(error))
         })
         camera.disconnecting = false
       }
       state.stoppedSessionIds.add(oldSession.sessionId)
       stopVideoSession(oldSession.sessionId).catch(error => {
-        console.log('ERROR stop old quality session')// this.errorMessage(error)
+        console.error('ERROR stop old quality session')
+        Message.error(errorMessage(error))
       })
       console.log('API switchCameraQuality', {
         from: oldSession.quality,
@@ -973,11 +973,22 @@ const actions = {
       if (nextSession && nextSession.sessionId) {
         stopVideoSession(nextSession.sessionId).catch(() => {})
       }
-      Message.error(`清晰度切换失败：`)
-      console.log('ERROR switchCameraQuality', error)// this.errorMessage(error)
+      Message.error(`清晰度切换失败：`, errorMessage(error))
+      console.log('ERROR switchCameraQuality', errorMessage(error))
     } finally {
       commit('resetCameraQualityChanging', camera)
     }
+  },
+  currentCameraState(camera) {
+    return this.allCameras().find(item => item.key === camera.key) || camera
+  },
+  resetQualityChanging(camera) {
+    camera.disconnecting = false
+    camera.qualityChanging = false
+    const current = this.currentCameraState(camera)
+    current.disconnecting = false
+    current.qualityChanging = false
+    commit('setCamera', current)
   },
   startLatencyStats({commit, state, dispatch}, camera, track, room = camera.room) {
     dispatch('stopLatencyStats', camera)
@@ -1002,6 +1013,7 @@ const actions = {
     }
     sample()
     camera.statsTimer = setInterval(sample, 1000)
+    commit('setCamera', camera)
   },
   stopLatencyStats(camera) {
     if (camera.statsTimer) clearInterval(camera.statsTimer)
@@ -1010,6 +1022,7 @@ const actions = {
     camera.statsRoom = null
     camera.latencyMs = null
     camera.latencyLevel = 'unknown'
+    // commit('setCamera', camera)
   },
   async videoStatsReport({}, track, room) {
     const peerStats = await dispatch('peerConnectionStats', room)

@@ -95,7 +95,7 @@ export default {
       console.log(11);
       const { player } = this.recordingData[fileId]
       console.log(22);
-
+      
       if (player.paused) {
         player.play()
       } else {
@@ -103,7 +103,7 @@ export default {
       }
       console.log(333, player.paused);
       this.recordingData = Object.assign({}, this.recordingData, {[fileId]: { ...this.recordingData[fileId], player}})
-
+      
     },
     getTotalTime(startTime, endTime) {
       // return this.timeToSeconds(endTime) - this.timeToSeconds(startTime)

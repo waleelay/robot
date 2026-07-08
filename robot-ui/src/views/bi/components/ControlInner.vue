@@ -7,10 +7,8 @@
     </div>
     <div class="outer" style="margin-top: -4px;">
       <div class="inner flx-center">
-        <div class="circle flx-center">移动</div>
+        <div class="circle flx-center">{{ cameraInfo.groupType === 'body' ? '本体' : '云台' }}</div>
       </div>
-      <template v-if="cameraInfo.groupType === 'body'">
-      </template>
       <div
         v-for="key in ['advance', 'back', 'turn-left' , 'turn-right']"
         :key="key"
@@ -25,6 +23,7 @@
         <svg-icon icon-class="control-arrow" />
       </div>
     </div>
+    <ControlModeWarning ref="controlModeWarningRef" />
   </div>
 </template>
 

@@ -132,7 +132,7 @@ export default {
       dogList: [],
       popupVisible: false,
       popupOffset: { x: 0, y: 0 },
-      timer: null
+      timer: null,
     }
   },
   computed: {
@@ -159,7 +159,7 @@ export default {
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras'];
     },
-    ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList', 'robotAlarmObj', 'taskData', 'mapSearchValue'])
+    ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList', 'robotAlarmObj', 'taskData', 'mapSearchValue', 'showRobotIds'])
   },
   watch: {
     // 监听距离变化
@@ -210,11 +210,7 @@ export default {
     robotBaseInfo: {
       handler(newVal, oldVal) {
         if (Object.keys(newVal || {}).length) {
-          this.pointMarkers.map(marker => {
-            if (newVal?.[marker.meta?.robot?.robotId]) {
-              this.updateIconBaseInfo(newVal[marker.meta.robot.robotId])
-            }
-          })
+          this.updateAllIcon()
         }
       },
       deep: true,
@@ -256,12 +252,15 @@ export default {
         }
       },
       immediate: true
+    },
+    showRobotIds: {
+      handler(newVal, oldVal) {
+        this.updateAllIcon()
+      }
     }
   },
   async created() {
-    window.openModal = this.openModal;
-    window.closePopup = this.closePopup;
-    window.controlDevice = this.controlDevice;
+    this.setShowRobotIds([])
   },
   async mounted(){
     // await this.getMapIdOptions()
@@ -288,7 +287,7 @@ export default {
     // }, 3000);
   },
   methods: {
-    ...mapActions('websocketExtraData', ['setRobotLocation']),
+    ...mapActions('websocketExtraData', ['setRobotLocation', 'setShowRobotIds']),
     getSelectedStatus(robotId) {
       return this.$route.name !== 'biIndex' && Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
     },
@@ -323,8 +322,8 @@ export default {
       // 关键：手动添加旋转控件到地图
       L.control.rotate().addTo(this.map);
       // 地图底图
-      this.layerA = L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
-      // this.layerA = L.tileLayer('/tdt/tiles/12/{z}/{x}/{y}.png', {
+      // this.layerA = L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
+      this.layerA = L.tileLayer('/tdt/tiles/12/{z}/{x}/{y}.png', {
         maxZoom: 12,
         minZoom: 12,
       });
@@ -550,7 +549,7 @@ export default {
             <div class="custom-point-name mt2" style="">${name}</div>
             <div class="custom-point-status mt4 pr10 pl10">${customStatusName}</div>
           </div>`,
-          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${(this.selectedRobot.robotId === robotId || this.getSelectedStatus(robotId)) ? `show-icon show-icon-${width}-${height}` : ''} ${type} ${statusClass}` ,
+          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${this.showRobotIds.includes(robotId) ? `show-icon show-icon-${width}-${height}` : ''} ${type} ${statusClass}` ,
           // className: `custom-point ${type} ${statusClass}` ,
           iconSize: null,
           // 偏移量
@@ -643,6 +642,7 @@ export default {
       const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === robotId);
       if (existingIndex < 0) return
       // const { lat, lng } = this.pointMarkers[existingIndex].getLatLng()
+      console.log(123, this.robotLocation?.[robotId], this.robotLocation?.[robotId])
       this.pointMarkers[existingIndex].setLatLng(L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng))
       this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng) }};
       // 存在则更新 icon
@@ -697,15 +697,23 @@ export default {
         if (this.$route.name === 'biIndex') {
           this.showPopup(marker);
         }
-        this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
-        // this.showDashedArea(marker.meta.index);
         if (this.activeMarkerIndex === marker.meta.index) {
           this.activeMarkerIndex = ''
         } else {
           this.activeMarkerIndex = marker.meta.index
         }
+        this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
+        // this.updateAllIcon()
+        // this.showDashedArea(marker.meta.index);
         this.clearLayer(null)
       });
+    },
+    updateAllIcon() {
+      this.pointMarkers.map(marker => {
+        if (this.robotBaseInfo?.[marker.meta?.robot?.robotId]) {
+          this.updateIconBaseInfo(this.robotBaseInfo[marker.meta.robot.robotId])
+        }
+      })
     },
 
     // ----- 弹框控制 -----
@@ -1131,24 +1139,7 @@ export default {
     },
     // 一键开关机
     controlDevice(type, dogId) {
-      controlDevice(type, dogId).then(res => {
-        if (res.code === 200) {
-          this.$message.success(res.msg)
-        } else {
-          this.$message.error(res.msg)
-        }
-      })
     },
-    // 打开模态框
-    openModal(endpoint) {
-      this.selectedEndPoint = endpoint
-      this.dialogVisible = true;
-      // 关闭一级页面的视频监控连接
-    },
-    // closePopup(index) {
-    //   this.pointMarkers[index].closePopup()
-    //   // 关掉视频
-    // },
     handleOpen() {
       this.$nextTick(() => {
         const info = this.allRobotInfo.filter(item => item.endpoint === this.selectedEndPoint)[0]
@@ -1231,7 +1222,8 @@ export default {
     showSlam(visible) {
       this.$refs.slamRef.show(visible)
     },
-    clear() {
+    clear(robotId) {
+      this.setShowRobotIds(robotId)
       this.clearLayer(null)
       this.showControlPart(false)
       this.showSlam(false)

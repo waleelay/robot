@@ -2,7 +2,7 @@
   <div class="w100">
     <div class="card-title title-284-37">
       <div class="text">
-        装备列表
+        {{ selectedRobot?.name || '摄像头列表' }}
       </div>
     </div>
     <div class="mt10 hp606 common-scroll" style="overflow-y: auto;">
@@ -138,8 +138,6 @@ export default {
       })
       if (cameras?.length) {
         const len = [1, 4, 6, 9].filter(item => item >= cameras.length)?.[0] || 9
-        console.log('setSplitType', len);
-        
         this.setSplitType(len)
       }
       if (robot.robotId) {

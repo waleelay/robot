@@ -115,14 +115,15 @@ export default {
     },
     show(e, robot) {
       this.$emit('showControlPart', false)
-      this.$emit('clear')
       if (this.selectedRobotId === robot?.robotId || !e) {
         this.setSelectedRobotId('')
         this.handleGlobalClick(e, false)
+        this.$emit('clear', [])
       } else {
         this.visible = true
         this.setSelectedRobotId(robot?.robotId)
         this.handleGlobalClick(e, true)
+        this.$emit('clear', [robot?.robotId])
       }
     }
   },

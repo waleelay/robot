@@ -1,5 +1,5 @@
 <template>
-<div class="custom-video-div" :class="[prefixId, { 'is-page-fullscreen': isPageFullscreen }]">
+<div class="custom-video-div" :class="[prefixId, { 'is-page-fullscreen': isPageFullscreen }]" :style="containerStyle">
   <div class="flx-justify-between">
     <div class="card-title hp36 flx-justify-between pr26" :class="cardTitleClass" style="line-height: 36px;">
       <div class="text"> 
@@ -135,7 +135,7 @@
 <script>
 // import video from '../../../js/mixins/video.js'
 import canvasUtil from '../../../js/mixins/box-canvas.js'
-import VideoBox from './../../../staff/VideoBox.vue';
+import VideoBox from './VideoBox.vue';
 import { mapActions, mapState } from 'vuex';
 import { onDragStart, onDragEnd } from '@/store/modules/dragVideo.js';
 export default {
@@ -186,7 +186,8 @@ export default {
       ZQL_sources: {},
       statusArr: {}, // 改为对象形式，键名为'slot_1'...
       sourceceList: [],
-      manualChange: false
+      manualChange: false,
+      scaleRatio: 1, // 缩放比例
     }
   },
   computed: {
@@ -195,6 +196,39 @@ export default {
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
     },
+    containerStyle() {
+      if (this.isPageFullscreen) {
+        const containerWidth = 1432;
+        const containerHeight = 804;
+        // 计算缩放比例，使容器填满视口
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        // 减去标题栏高度（约60px）和padding
+        const availableWidth = viewportWidth - 40; // 左右各20px padding
+        const availableHeight = viewportHeight - 80; // 标题栏60px + 上下padding各10px
+        
+        // 计算缩放比例，取较小值保证完整显示
+        const scaleX = availableWidth / containerWidth;
+        const scaleY = availableHeight / containerHeight;
+        this.scaleRatio = Math.min(scaleX, scaleY, 1.5); // 限制最大缩放1.5倍
+        
+        return {
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: `translate(-50%, -50%) scale(${this.scaleRatio})`,
+          transformOrigin: 'center center',
+          width: `${this.containerWidth}px`,
+          height: `${this.containerHeight + 60}px`, // 包含标题栏
+          zIndex: 9999,
+          background: '#1a1a1a',
+          padding: '20px',
+          borderRadius: '8px',
+        };
+      }
+      return {};
+    }
   },
   async mounted() {
     // 初始化：不默认填充任何设备
@@ -215,8 +249,15 @@ export default {
     document.removeEventListener('webkitfullscreenchange', this.updatePageFullscreenState)
     document.removeEventListener('mozfullscreenchange', this.updatePageFullscreenState)
     document.removeEventListener('MSFullscreenChange', this.updatePageFullscreenState)
+    document.removeEventListener('resize', this.handleResize)
   },
   methods: {
+    handleResize() {
+      // 窗口变化时重新计算缩放
+      console.log(111);
+      
+      this.$forceUpdate();
+    },
     ...mapActions('dragVideo', ['resetDrag', 'setSplitType']),
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'restartCamera', 'setPrefixId']),
     onDragStart,
@@ -264,7 +305,7 @@ export default {
       })
     },
     async test(data) {
-      console.log('-----------------------', data, this.ZQL_videosInfos);
+      // console.log('-----------------------', data, this.ZQL_videosInfos);
       let emptyKey = data.index
       // 填充 放入设备
       const robot = this.robots.find(d => d.robotId === data.data.robotId);
@@ -303,19 +344,14 @@ export default {
           // 清空视频数据
           await this.stopCamera(this.ZQL_videosInfos['slot_1'])
           if (this.ZQL_playingSource['slot_1'] !== camera.key) {
-            console.log(7);
-            
             await this.start(robot, { index: 'slot_1', data: camera })
           } else {
             this.clearSlot('slot_1')
-            console.log(8);
           }
         } else {
           await this.start(robot, { index: 'slot_1', data: camera })
         }
       } else {
-        console.log(5);
-        
         let hasPlayed = false;
         for (const key of Object.keys(this.ZQL_playingSource)) {
           // 优先在正在播放此摄像头的槽位重新播放
@@ -580,6 +616,15 @@ export default {
         await this.requestFullscreen(target)
       }
       this.updatePageFullscreenState()
+      if (this.isPageFullscreen) {
+        // 全屏时添加resize监听
+        window.addEventListener('resize', this.handleResize);
+        // 阻止页面滚动
+        // document.body.style.overflow = 'hidden';
+      } else {
+        window.removeEventListener('resize', this.handleResize);
+        // document.body.style.overflow = '';
+      }
     },
     updatePageFullscreenState() {
       const target = this.$el && this.$el.classList && this.$el.classList.contains('custom-video-div')

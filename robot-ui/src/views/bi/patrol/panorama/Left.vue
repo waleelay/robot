@@ -63,7 +63,7 @@
           </span> -->
         </div>
         <div class="list pt10 pr20 pl20 mb20 common-scroll ovya" :style="{ maxHeight: collapseArr[2] ? '300px' : '262px' }">
-           <div v-for="(item, key, index) of taskData || []" class="item wp288 pb10" :style="{ 'pointer-events': item.status === 'running' ? 'auto' : 'none' }" :class="{ 'is-active': activeTaskId === item.taskId, 'mb10': index !== Object.keys(taskData || {}).length - 1 }" @click="handleClickTask(key)">
+           <div v-for="(item, key, index) of taskData || []" class="item wp288 pb10" :style="{ 'pointer-events': item.status !== 'running' ? 'auto' : 'none' }" :class="{ 'is-active': activeTaskId === item.taskId, 'mb10': index !== Object.keys(taskData || {}).length - 1 }" @click="handleClickTask(key)">
             <div class="header flx-justify-between p10">
               <div class="flx-align-center flex1" style="min-width: 0">
                 <svg-icon icon-class="d-right"></svg-icon>
@@ -207,12 +207,8 @@ export default {
       img2: require('@/assets/images/new-bi/warning1.png'),
     }
   },
-  async mounted() {
-    // this.handleClickTask(0)
-    // this.overviewInfo = await getPatrolPanoramaOverview()
-  },
   methods: {
-    ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
+    ...mapActions('websocketExtraData', ['setRobotAlarmInfo', 'setShowRobotIds']),
     getImageUrl(url) {
       const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
       return `${preUrl}${url}`
@@ -242,12 +238,15 @@ export default {
         this.$refs.taskRobotViewRef.dialogVisible = false
         // 清空录像
         this.activeTaskId = null
+        this.setShowRobotIds([])
         return
       }
       this.activeTaskId = taskId
+      const robotIds = this.taskData[taskId].equipmentList.map(robot => robot.robotId)
+      this.setShowRobotIds(robotIds)
       this.$refs.taskRobotViewRef.showModal({
         taskInfo: { ...this.taskData[taskId]},
-        robotIds: this.taskData[taskId].equipmentList.map(robot => robot.robotId)
+        robotIds
       })
     },
     handleClickAlert(item) {

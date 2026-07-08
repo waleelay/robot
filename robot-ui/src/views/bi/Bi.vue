@@ -1,9 +1,9 @@
 <template>
-  <!-- <ScaleScreen> -->
+  <ScaleScreen>
     <div class="bi">
       <router-view :key="$route.path" />
     </div>
-  <!-- </ScaleScreen> -->
+  </ScaleScreen>
 </template>
 
 <script>

@@ -1,4 +1,5 @@
 import { set } from "nprogress";
+import { active } from "sortablejs";
 import Vue from "vue";
 
 const state = {
@@ -28,7 +29,8 @@ const state = {
   slamMapData: [],
   taskPathPoints: {}, // { taskId: [pathPoints] } taskId: 任务id，pathId: 路径id，mapId: 地图id，pathPoints: 任务路径点
   mapSearchValue: '',
-  slamMapList: []
+  slamMapList: [],
+  showRobotIds: []
 }
 
 const mutations = {
@@ -109,7 +111,10 @@ const mutations = {
   },
   SET_SLAM_MAP_LIST(state, value) {
     state.slamMapList = value;
-  }
+  },
+  SET_SHOW_ROBOT_IDS(state, value) {
+    state.showRobotIds = value;
+  },
 }
 
 const actions = {
@@ -265,6 +270,9 @@ const actions = {
   setSlamMapList({ commit }, value) {
     commit('SET_SLAM_MAP_LIST', value);
   },
+  setShowRobotIds({ commit }, value) {
+    commit('SET_SHOW_ROBOT_IDS', value);
+  },
 }
 
 function getRobotStatus(robot, taskData) {
@@ -284,6 +292,7 @@ const getters = {
   getalarmsData: state => state.alarmsData,
   // 获取设备类型统计
   getDeviceTypesStats: state => state.deviceTypeStats,
+  getShowRobotIds: state => state.showRobotIds,
 }
 
 

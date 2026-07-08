@@ -2,7 +2,7 @@
   <div class="w100 hp500">
     <div class="card-title">
       <div class="text">
-        任务列表
+        视频数据源
       </div>
     </div>
     <!-- common-scroll -->
@@ -57,7 +57,7 @@
                   <svg-icon :icon-class="ROBOT_TYPE_INFO[item.type]?.icon || 'robot'" />
                   <span class="ml10">{{ item.name }}</span>
                 </div>
-                <div class="flx-center">
+                <div v-if="equipment.type.includes('在线')" class="flx-center">
                   <svg-icon
                     class="battery-svg"
                     :icon-class="robotBaseInfo[item.robotId]?.battery >= 90 ? 'battery-4' : item.battery >= 80 ? 'battery-3' : robotBaseInfo[item.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[item.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
@@ -244,7 +244,7 @@ export default {
       }
       this.$emit('updateVideo', robot)
     },
-
+    
     async handleSelectTask(task) {
       this.selectedTaskId = task.taskId
       // 获取新旧设备列表的 robotId 集合

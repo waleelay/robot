@@ -763,6 +763,9 @@
         transform: rotate(-90deg);
         transform-origin: center;
       }
+      &:active {
+        color: #0BF9FE;
+      }
     }
   }
 

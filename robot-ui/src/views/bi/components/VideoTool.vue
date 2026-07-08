@@ -118,7 +118,7 @@
 
 <script>
 // import Snap from './modal/Snap.vue';
-import videoUtils from './../../..//utils/videoUtils.js'
+import videoUtils from './../../../utils/videoUtils.js'
 import ControlInner from './ControlInner.vue';
 import { snapshotImageUrl, uploadFile } from '../../../api/media.js';
 import { mapActions, mapState } from 'vuex';
@@ -181,7 +181,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSnapshotTime']),
+    ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSnapshotTime', 'changeCameraQuality']),
     // 播放暂停
     playPauseVideo() {
       // 切换状态

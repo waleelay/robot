@@ -11,7 +11,7 @@
       
       <GlobalMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
       <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
-      <MapTool @changeMapAngle="changeMapAngle" @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter " />
+      <MapTool @changeMapAngle="changeMapAngle" :angle="angle" @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter " />
       <!-- <div class="map-footer"></div> -->
     </div>
     <!-- <el-select
