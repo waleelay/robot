@@ -3,6 +3,7 @@ export default {
   data() {
     return {
       visible: false,
+      resizeTimer: null,
       position: {
         left: 0,
         top: 0
@@ -42,6 +43,49 @@ export default {
     console.log('✅ 动画已就绪：点击任意位置，方块将从点击点平滑飞向右上角');
 },
   methods: {
+    getScaleWrapper() {
+      return this.$el && this.$el.closest && this.$el.closest('.screen-wrapper')
+    },
+    getScaleContext() {
+      const wrapper = this.getScaleWrapper()
+      if (!wrapper) {
+        return {
+          left: 0,
+          top: 0,
+          scaleX: 1,
+          scaleY: 1,
+          width: window.innerWidth,
+          height: window.innerHeight
+        }
+      }
+      const rect = wrapper.getBoundingClientRect()
+      const scaleX = rect.width && wrapper.offsetWidth ? rect.width / wrapper.offsetWidth : 1
+      const scaleY = rect.height && wrapper.offsetHeight ? rect.height / wrapper.offsetHeight : 1
+      return {
+        left: rect.left,
+        top: rect.top,
+        scaleX: scaleX || 1,
+        scaleY: scaleY || 1,
+        width: wrapper.offsetWidth || window.innerWidth,
+        height: wrapper.offsetHeight || window.innerHeight
+      }
+    },
+    viewportPointToScalePoint(clientX, clientY) {
+      const context = this.getScaleContext()
+      return {
+        x: (clientX - context.left) / context.scaleX,
+        y: (clientY - context.top) / context.scaleY
+      }
+    },
+    viewportRectToScaleRect(rect) {
+      const context = this.getScaleContext()
+      return {
+        left: (rect.left - context.left) / context.scaleX,
+        top: (rect.top - context.top) / context.scaleY,
+        width: rect.width / context.scaleX,
+        height: rect.height / context.scaleY
+      }
+    },
     // 目标尺寸
     updateCubeSize() {
       if (this.currentEl) {
@@ -54,11 +98,12 @@ export default {
     },
     // 获取右上角目标位置（距离边缘110px）
     getTargetPosition() {
-      const left = Math.max(0, window.innerWidth - this.cubeWidth - 110);
-      const top = 110
+      const context = this.getScaleContext()
+      const left = Math.max(0, context.width - this.cubeWidth - 110);
+      const top = Math.min(110, Math.max(0, context.height - this.cubeHeight))
       return {
         left,
-        top: 110
+        top
       };
     },
     // 将隐藏状态下的方块放到右上角（无动画）
@@ -93,8 +138,9 @@ export default {
       let startLeft = startCenterX - this.cubeWidth / 2;
       let startTop = startCenterY - this.cubeHeight / 2;
       // 边界修正：确保起始位置完全在视口内（避免方块部分超出边缘）
-      const maxLeft = window.innerWidth - this.cubeWidth;
-      const maxTop = window.innerHeight - this.cubeHeight;
+      const context = this.getScaleContext()
+      const maxLeft = Math.max(0, context.width - this.cubeWidth);
+      const maxTop = Math.max(0, context.height - this.cubeHeight);
       
       startLeft = this.showAnimate ? Math.min(Math.max(0, startLeft), maxLeft) : location.x;
       startTop = this.showAnimate ? Math.min(Math.max(0, startTop), maxTop) : location.y;
@@ -174,19 +220,23 @@ export default {
         return
       }
       if (!this.showAnimate) return
-      let clientX = event.clientX;
-      let clientY = event.clientY;
-      if (clientX === undefined || clientY === undefined) return;
+      const rawClientX = event.clientX;
+      const rawClientY = event.clientY;
+      if (rawClientX === undefined || rawClientY === undefined) return;
+      const context = this.getScaleContext()
+      const scalePoint = this.viewportPointToScalePoint(rawClientX, rawClientY)
+      let clientX = scalePoint.x;
+      let clientY = scalePoint.y;
       // 边界限幅
-      clientX = Math.min(Math.max(0, clientX), window.innerWidth);
-      clientY = Math.min(Math.max(0, clientY), window.innerHeight);
+      clientX = Math.min(Math.max(0, clientX), context.width);
+      clientY = Math.min(Math.max(0, clientY), context.height);
       const eleParent = event.target.closest('.custom-point');
-      const transform = window.getComputedStyle(eleParent).transform;
+      if (!eleParent) return
       let location = {}
-      const rect = eleParent.getBoundingClientRect();
-      const width = eleParent.offsetWidth
-      const height = eleParent.offsetHeight
-      
+      const rect = this.viewportRectToScaleRect(eleParent.getBoundingClientRect())
+      const width = rect.width || eleParent.offsetWidth
+      const height = rect.height || eleParent.offsetHeight
+
       location = {
         x: clientX,
         y: clientY + height / 2 - this.cubeHeight,
@@ -197,6 +247,13 @@ export default {
     },
     // 窗口大小改变时，如果方块可见则重新定位（无动画）
     onResize() {
+      if (this.resizeTimer) clearTimeout(this.resizeTimer)
+      this.resizeTimer = setTimeout(() => {
+        this.updatePositionAfterResize()
+        this.resizeTimer = null
+      }, 600)
+    },
+    updatePositionAfterResize() {
       this.updateCubeSize();
       if (this.visible && this.currentEl) {
         gsap.killTweensOf(this.currentEl);
@@ -238,6 +295,7 @@ export default {
     // window.removeEventListener('click', this.handleGlobalClick);
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('orientationchange', this.onOrientationChange);
+    if (this.resizeTimer) clearTimeout(this.resizeTimer)
     if (this.currentEl) gsap.killTweensOf(this.currentEl);
   },
 }

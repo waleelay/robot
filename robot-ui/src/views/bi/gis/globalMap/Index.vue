@@ -133,6 +133,7 @@ export default {
       popupVisible: false,
       popupOffset: { x: 0, y: 0 },
       timer: null,
+      resizePopupTimer: null,
     }
   },
   computed: {
@@ -267,6 +268,7 @@ export default {
     // // await this.getMapSize()
     // await this.changeMap()
     this.initMap();
+    window.addEventListener('resize', this.handleResizePopupPosition);
     // this.initPoints()
 
     // this.initPoints();
@@ -288,6 +290,68 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotLocation', 'setShowRobotIds']),
+    getScaleWrapper() {
+      return this.$el && this.$el.closest && this.$el.closest('.screen-wrapper')
+    },
+    getScaleContext() {
+      const wrapper = this.getScaleWrapper()
+      if (!wrapper) {
+        return {
+          left: 0,
+          top: 0,
+          scaleX: 1,
+          scaleY: 1,
+          width: window.innerWidth,
+          height: window.innerHeight
+        }
+      }
+      const rect = wrapper.getBoundingClientRect()
+      const scaleX = rect.width && wrapper.offsetWidth ? rect.width / wrapper.offsetWidth : 1
+      const scaleY = rect.height && wrapper.offsetHeight ? rect.height / wrapper.offsetHeight : 1
+      return {
+        left: rect.left,
+        top: rect.top,
+        scaleX: scaleX || 1,
+        scaleY: scaleY || 1,
+        width: wrapper.offsetWidth || window.innerWidth,
+        height: wrapper.offsetHeight || window.innerHeight
+      }
+    },
+    viewportRectToScaleRect(rect) {
+      const context = this.getScaleContext()
+      return {
+        left: (rect.left - context.left) / context.scaleX,
+        top: (rect.top - context.top) / context.scaleY,
+        width: rect.width / context.scaleX,
+        height: rect.height / context.scaleY
+      }
+    },
+    getMapOffsetInScaleWrapper() {
+      const container = this.map && this.map.getContainer && this.map.getContainer()
+      if (!container) return { x: 0, y: 0 }
+      const rect = this.viewportRectToScaleRect(container.getBoundingClientRect())
+      return {
+        x: rect.left,
+        y: rect.top
+      }
+    },
+    getElementSizeInScaleWrapper(el) {
+      if (!el) return { width: 0, height: 0 }
+      const rect = this.viewportRectToScaleRect(el.getBoundingClientRect())
+      return {
+        width: el.offsetWidth || rect.width,
+        height: el.offsetHeight || rect.height
+      }
+    },
+    handleResizePopupPosition() {
+      if (this.resizePopupTimer) clearTimeout(this.resizePopupTimer)
+      this.resizePopupTimer = setTimeout(() => {
+        this.$nextTick(() => {
+          this.updatePopupPosition()
+          this.resizePopupTimer = null
+        })
+      }, 600)
+    },
     getSelectedStatus(robotId) {
       return this.$route.name !== 'biIndex' && Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
     },
@@ -732,12 +796,22 @@ export default {
       if (this.$route.name !== 'biIndex') return;
       const marker = this.pointMarkers[this.activeMarkerIndex]
       if (!this.popupVisible || !this.map || !marker) return;
-      const latLng = marker.getLatLng();      
+      const latLng = marker.getLatLng();
       if (!latLng) return;
       const point = this.map.latLngToContainerPoint(latLng);
-      const robotRef1 = this.$refs.robot1Ref.$el.getBoundingClientRect()
-      
-      this.popupOffset = { x: point.x + 29, y: point.y - robotRef1.height - 28 };
+      const mapOffset = this.getMapOffsetInScaleWrapper()
+      const robotEl = this.$refs.robot1Ref && this.$refs.robot1Ref.$el
+      const robotSize = this.getElementSizeInScaleWrapper(robotEl)
+      const context = this.getScaleContext()
+      const maxLeft = Math.max(0, context.width - robotSize.width)
+      const maxTop = Math.max(0, context.height - robotSize.height)
+      const left = mapOffset.x + point.x + 29
+      const top = mapOffset.y + point.y - robotSize.height - 28
+
+      this.popupOffset = {
+        x: Math.min(Math.max(0, left), maxLeft),
+        y: Math.min(Math.max(0, top), maxTop)
+      };
       // this.popupOffset = { x: point.x, y: point.y };
     },
     getPopupContainer(data) {
@@ -1231,6 +1305,7 @@ export default {
   },
   beforeDestroy() {
     this.stopMovement();
+    window.removeEventListener('resize', this.handleResizePopupPosition);
     if (this.map) {
       this.map.off('move', this.updatePopupPosition);
       this.map.off('moveend', this.updatePopupPosition);
@@ -1244,6 +1319,9 @@ export default {
     }
     if (this.timer) {
       clearTimeout(this.timer)
+    }
+    if (this.resizePopupTimer) {
+      clearTimeout(this.resizePopupTimer)
     }
   },
 }
