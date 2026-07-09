@@ -72,31 +72,17 @@
           </template>
         </el-table-column>
         <el-table-column prop="workflowName" label="任务编排" min-width="190" show-overflow-tooltip />
-        <el-table-column prop="equipmentName" key="equipmentName" label="装备名称" width="185">
-          <template slot-scope="scope">
-            <span class="type">{{ scope.row.equipmentName }}</span>
-            <!-- <span class="type ml10">机器人02</span> -->
-          </template>
-        </el-table-column>
         <el-table-column label="执行方式" width="110">
           <template slot-scope="{ row }">{{ executionModeLabel(row.executionMode) }}</template>
         </el-table-column>
         <el-table-column label="计划周期" width="110">
-          <template slot-scope="{ row }">{{ schedulePresetLabel(row?.scheduleConfig?.preset) }}</template>
-        </el-table-column>
-        <el-table-column label="下次执行" min-width="160">
-          <template slot-scope="{ row }">{{ formatDateTime(row.nextTriggerAt) }}</template>
+          <template slot-scope="{ row }">{{ schedulePresetLabel(row.scheduleConfig && row.scheduleConfig.preset) }}</template>
         </el-table-column>
         <el-table-column key="status" width="100" label="执行状态">
           <template slot-scope="scope">
             <span class="status" :class="{ green: scope.row.executionStatus === 'RUNNING', orange: scope.row.executionStatus === 'IDLE', red: scope.row.executionStatus === 'LAST_FAILED' }">
               {{ executionStatusLabel(scope.row.executionStatus) }}
             </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="启用" width="90" align="center">
-          <template slot-scope="{ row }">
-            <span class="status" :class="row.enabled ? 'green' : 'info'">{{ row.enabled ? '启用' : '停用' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="295" fixed="right">
@@ -147,8 +133,8 @@
       <el-alert
         v-if="previewRequirements.length"
         class="mt10"
-        type="warning"
-        title="存在多个可执行组件，需要在任务执行链路中确认执行来源。"
+        type="info"
+        title="部分动作存在多个可执行组件；未指定时会由所有匹配组件执行。"
         :closable="false"
       />
       <span slot="footer">
@@ -162,8 +148,8 @@
 import {
   deleteTask,
   getTaskList,
-  previewTaskConfiguration,
   startTask,
+  startTaskPreview,
   updateTaskEnabled
 } from '@/api/new-bi'
 import PlanEdit from './PlanEdit.vue'
@@ -263,31 +249,32 @@ export default {
       if (this.isStarting(row.id)) return
       this.startingPlanIds = this.startingPlanIds.concat(row.id)
       try {
+        const preview = this.unwrap(await startTaskPreview(row.id, {}))
+        if (preview && preview.valid === false) {
+          this.previewResult = preview
+          this.previewVisible = true
+          return
+        }
+        await this.$confirm('确认立即执行该任务计划？', '提示', { type: 'warning' })
         const data = this.unwrap(await startTask(row.id, {}))
         if (data && data.accepted === false) {
+          this.previewResult = data.preview || data
+          this.previewVisible = true
           this.$message.warning(data.message || '任务未能启动')
-        } else {
-          this.$message.success((data && data.message) || '任务已启动')
-          this.loadRows()
+          return
         }
+        this.$message.success((data && data.message) || '任务已启动')
+        this.loadRows()
+        if (data && data.workflowInstanceId) this.$emit('show-record', data.workflowInstanceId)
       } catch (error) {
-        this.showError(error)
+        if (error !== 'cancel') this.showError(error)
       } finally {
         this.startingPlanIds = this.startingPlanIds.filter(id => id !== row.id)
       }
     },
     async previewPlan(row) {
       try {
-        const payload = {
-          workflowVersionId: row.workflowVersionId,
-          executionMode: row.executionMode,
-          scheduleConfig: row.scheduleConfig || {},
-          eventTriggerConfig: row.eventTriggerConfig || {},
-          offlinePolicy: row.offlinePolicy || 'CONTINUE',
-          roleBindings: row.roleBindings || [],
-          componentBindings: row.componentBindings || []
-        }
-        this.previewResult = this.unwrap(await previewTaskConfiguration(payload))
+        this.previewResult = this.unwrap(await startTaskPreview(row.id, {}))
         this.previewVisible = true
       } catch (error) {
         this.showError(error)

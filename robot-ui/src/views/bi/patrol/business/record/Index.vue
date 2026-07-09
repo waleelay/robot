@@ -71,6 +71,9 @@
             <span class="status" :class="statusTagType(row.status)">{{ statusLabel(row.status) }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="失败原因" min-width="180" show-overflow-tooltip>
+          <template slot-scope="{ row }">{{ failureReason(row) }}</template>
+        </el-table-column>
         <el-table-column label="视频" width="110" align="center">
           <template slot-scope="{ row }">
             <el-button type="text" :disabled="!videoCount(row)" @click="showVideos(row)">
@@ -125,7 +128,9 @@
 
     <el-dialog :visible.sync="videosVisible" title="执行视频结果" width="860px">
       <el-table :data="currentVideos">
-        <el-table-column label="视频 ID" min-width="190" show-overflow-tooltip prop="videoId" />
+        <el-table-column label="文件 ID" min-width="190" show-overflow-tooltip>
+          <template slot-scope="{ row }">{{ row.fileId || row.videoId || '-' }}</template>
+        </el-table-column>
         <el-table-column label="类型" width="110">
           <template slot-scope="{ row }">{{ mediaTypeLabel(row.mediaType) }}</template>
         </el-table-column>
@@ -153,6 +158,12 @@ import RecordDetail from './RecordDetail.vue'
 export default {
   name: 'BiPatrolBusiness2Record',
   components: { RecordDetail },
+  props: {
+    initialId: {
+      type: [String, Number],
+      default: ''
+    }
+  },
   data() {
     return {
       loading: false,
@@ -162,7 +173,7 @@ export default {
         keyword: '',
         status: 'all',
         triggerType: '',
-        includeRunning: false
+        includeRunning: true
       },
       statusTabs: [
         { value: 'all', label: '全部' },
@@ -176,6 +187,14 @@ export default {
       currentVideos: [],
       showDetail: false,
       currentId: ''
+    }
+  },
+  watch: {
+    initialId: {
+      immediate: true,
+      handler(value) {
+        if (value) this.openDetailById(value)
+      }
     }
   },
   mounted() {
@@ -209,16 +228,21 @@ export default {
       this.loadRows(1)
     },
     resetFilters() {
-      this.filters = { keyword: '', status: 'all', triggerType: '', includeRunning: false }
+      this.filters = { keyword: '', status: 'all', triggerType: '', includeRunning: true }
       this.loadRows(1)
     },
     openDetail(row) {
       this.currentId = row.id
       this.showDetail = true
     },
+    openDetailById(id) {
+      this.currentId = String(id)
+      this.showDetail = true
+    },
     closeDetail() {
       this.showDetail = false
       this.currentId = ''
+      this.$emit('clear-record')
     },
     showVideos(row) {
       this.currentVideos = Array.isArray(row.videoResults) ? row.videoResults : []
@@ -232,6 +256,10 @@ export default {
     },
     statusTagType(value) {
       return { COMPLETED: 'green', FAILED: 'red', CANCELED: 'info', RUNNING: 'orange', PREPARING: 'orange' }[value] || 'info'
+    },
+    failureReason(row) {
+      if (!row || row.status !== 'FAILED') return '-'
+      return row.failureReason || '执行失败'
     },
     mediaBindingLabel(value) {
       return { NONE: '无视频', PENDING: '待绑定', BOUND: '已绑定', BIND_FAILED: '绑定失败' }[value] || value || '无视频'

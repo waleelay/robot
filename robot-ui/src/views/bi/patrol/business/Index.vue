@@ -16,8 +16,8 @@
           <span class="ml10">{{ item.name }}</span>
         </div>
       </div>
-      <PlanIndex v-if="activeSideIndex === 0" />
-      <RecordIndex v-else />
+      <PlanIndex v-if="activeSideIndex === 0" @show-record="showRecord" />
+      <RecordIndex v-else :initial-id="recordId" @clear-record="recordId = ''" />
     </div>
   </div>
 </template>
@@ -32,10 +32,17 @@ export default {
   data() {
     return {
       activeSideIndex: 0,
+      recordId: '',
       sideList: [
         { name: '调度任务列表', svg: 'log1' },
         { name: '巡检执行记录', svg: 'detail' }
       ]
+    }
+  },
+  methods: {
+    showRecord(id) {
+      this.recordId = id ? String(id) : ''
+      this.activeSideIndex = 1
     }
   }
 }

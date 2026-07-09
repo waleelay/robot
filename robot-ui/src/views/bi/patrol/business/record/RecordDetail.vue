@@ -38,7 +38,7 @@
             :max="durationSeconds"
             :step="1"
             :show-tooltip="false"
-            @change="loadHighResolutionSamples"
+            @change="syncVideos"
           />
           <div class="time-label right">{{ formatOffset(currentOffset) }} / {{ formatOffset(durationSeconds) }}</div>
           <el-select v-model="playbackRate" class="rate-select" @change="syncVideos">
@@ -64,7 +64,7 @@
             <div class="panel-title">
               <strong>运行轨迹</strong>
               <span v-if="samplesLoading">加载中</span>
-              <span v-else>{{ trackGroups.length || groupedTrackSamples.length }} 台设备 / {{ trackSamples.length }} 个采样点</span>
+              <span v-else>{{ trackGroups.length || groupedTrackSamples.length }} 台设备 / {{ timelineSamples.length }} 个采样点</span>
             </div>
             <div v-if="trackGroups.length" class="track-legend">
               <el-checkbox-group v-model="visibleTrackKeys">
@@ -73,7 +73,7 @@
                 </el-checkbox>
               </el-checkbox-group>
             </div>
-            <div v-if="trackSamples.length" class="track-stage">
+            <div v-if="timelineSamples.length" class="track-stage">
               <svg class="track-svg" :viewBox="trackViewBox" preserveAspectRatio="xMidYMid meet">
                 <image
                   v-if="hasCalibratedMap && mapImageUrl"
@@ -111,38 +111,47 @@
               <strong>视频</strong>
               <span>{{ playbackItems.length }} 路</span>
             </div>
-            <div v-if="playbackItems.length" class="video-list">
-              <div
-                v-for="(video, index) in playbackItems"
-                :key="videoKey(video, index)"
-                class="video-card"
-                :class="{ 'is-primary': primaryVideoKey === videoKey(video, index) }"
-                @click="primaryVideoKey = videoKey(video, index)"
-              >
-                <video
-                  v-if="videoUrl(video)"
-                  :ref="setVideoRef"
-                  muted
-                  controls
-                  preload="metadata"
-                  :src="videoUrl(video)"
-                  :data-video-index="index"
-                  @loadedmetadata="syncVideos"
-                  @play="handleVideoNativePlay"
-                  @pause="handleVideoNativePause"
-                />
-                <div v-else class="video-placeholder">
-                  <strong>{{ video.videoId || '-' }}</strong>
-                  <span>{{ videoSourceLabel(video) }}</span>
+            <div v-if="playbackItems.length" class="video-groups">
+              <section v-for="group in renderVideoGroups" :key="group.key" class="video-device-group">
+                <div class="video-device-header">
+                  <strong>{{ group.deviceName || group.serialNumber || '设备视频' }}</strong>
+                  <span>{{ group.items.length }} 路</span>
                 </div>
-                <div v-if="videoPlaybackState(video).state !== 'PLAYING'" class="video-state">
-                  {{ videoPlaybackState(video).label }}
+                <div class="video-list">
+                  <div
+                    v-for="video in group.items"
+                    :key="videoKey(video, video.flatIndex)"
+                    class="video-card"
+                    :class="{ 'is-primary': primaryVideoKey === videoKey(video, video.flatIndex) }"
+                    @click="primaryVideoKey = videoKey(video, video.flatIndex)"
+                  >
+                    <video
+                      v-if="videoUrl(video)"
+                      ref="videoPlayers"
+                      muted
+                      controls
+                      preload="auto"
+                      :data-video-index="video.flatIndex"
+                      :data-video-url="videoUrl(video)"
+                      @loadedmetadata="syncVideos"
+                      @canplay="handleVideoCanPlay"
+                      @play="handleVideoNativePlay"
+                      @pause="handleVideoNativePause"
+                    />
+                    <div v-else class="video-placeholder">
+                      <strong>{{ videoFileId(video) || '-' }}</strong>
+                      <span>{{ videoSourceLabel(video) }}</span>
+                    </div>
+                    <div v-if="videoPlaybackState(video).state !== 'PLAYING'" class="video-state">
+                      {{ videoPlaybackState(video).label }}
+                    </div>
+                    <div class="video-meta">
+                      <strong>{{ mediaTypeLabel(video.mediaType) }}</strong>
+                      <span>{{ videoSourceLabel(video) }}</span>
+                    </div>
+                  </div>
                 </div>
-                <div class="video-meta">
-                  <strong>{{ mediaTypeLabel(video.mediaType) }}</strong>
-                  <span>{{ videoSourceLabel(video) }}</span>
-                </div>
-              </div>
+              </section>
             </div>
             <el-empty v-else description="暂无视频结果" />
           </div>
@@ -152,27 +161,33 @@
       <section class="panel-row">
         <div class="panel">
           <div class="panel-title"><strong>告警信息</strong><span>{{ alarmEvents.length }} 条</span></div>
-          <el-table :data="alarmEvents" height="260" @row-click="jumpToAlarmEvent">
-            <el-table-column label="时间" min-width="160">
-              <template slot-scope="{ row }">{{ formatDateTime(alarmTimeValue(row)) }}</template>
-            </el-table-column>
-            <el-table-column label="类型" min-width="130" show-overflow-tooltip>
-              <template slot-scope="{ row }">{{ alarmType(row) }}</template>
-            </el-table-column>
-            <el-table-column label="内容" min-width="240" show-overflow-tooltip>
-              <template slot-scope="{ row }">{{ alarmContent(row) }}</template>
-            </el-table-column>
-            <el-table-column prop="eventStatus" label="状态" width="110" />
-          </el-table>
-        </div>
-        <div class="panel">
-          <div class="panel-title"><strong>回放状态</strong><span>{{ trackStatusLabel(replayTrackStatus) }}</span></div>
-          <div class="replay-status-list">
-            <div><span>执行设备</span><strong>{{ deviceSummary }}</strong></div>
-            <div><span>轨迹</span><strong>{{ trackStatusLabel(replayTrackStatus) }}</strong></div>
-            <div><span>视频</span><strong>{{ playbackItems.length }} 路</strong></div>
-            <div><span>告警</span><strong>{{ alarmEvents.length }} 条</strong></div>
+          <div v-if="alarmEvents.length" class="alarm-list">
+            <button
+              v-for="(event, index) in alarmEvents"
+              :key="event.id || event.eventId || index"
+              class="alarm-card"
+              type="button"
+              @click="jumpToAlarmEvent(event)"
+            >
+              <img
+                v-if="alarmImageUrl(event)"
+                class="alarm-card__image"
+                :src="alarmImageUrl(event)"
+                :alt="alarmType(event)"
+              >
+              <div v-else class="alarm-card__empty">告警</div>
+              <div class="alarm-card__body">
+                <div class="alarm-card__meta">
+                  <span>{{ formatDateTime(alarmTimeValue(event)) }}</span>
+                  <span class="status" :class="alarmStatusType(event)">{{ alarmStatusLabel(event) }}</span>
+                </div>
+                <strong>{{ alarmType(event) }}</strong>
+                <p>{{ alarmContent(event) }}</p>
+                <span>{{ alarmDeviceLabel(event) }}</span>
+              </div>
+            </button>
           </div>
+          <el-empty v-else description="暂无告警" />
         </div>
       </section>
     </div>
@@ -180,7 +195,11 @@
 </template>
 
 <script>
-import { getTaskRecordReplay, getTrackRecordSamples, previewImageBlob } from '@/api/new-bi'
+import HlsModule from 'hls.js'
+import { getTaskRecordReplay, previewImageBlob } from '@/api/new-bi'
+import { getFilePlayUrl } from '@/api/media'
+
+const ImportedHls = HlsModule && (HlsModule.default || HlsModule)
 
 export default {
   name: 'BiPatrolBusiness2RecordDetail',
@@ -195,17 +214,18 @@ export default {
       loading: false,
       samplesLoading: false,
       replay: null,
-      trackSamples: [],
       visibleTrackKeys: [],
       currentOffset: 0,
       playing: false,
       playbackRate: 1,
-      videoRefs: [],
       primaryVideoKey: '',
+      videoPlayUrlMap: {},
+      videoPlayLoadingIds: [],
       mapImageUrl: '',
       mapImageStatus: '地图加载中',
       playTimer: null,
       syncingVideos: false,
+      hlsPlayers: new Map(),
       mapImageObjectUrl: '',
       mapImageLoadSeq: 0
     }
@@ -220,14 +240,47 @@ export default {
     alarmEvents() {
       return (this.replay && this.replay.alarmEvents) || []
     },
+    videoGroups() {
+      return (this.replay && this.replay.videoGroups) || []
+    },
+    renderVideoGroups() {
+      let flatIndex = 0
+      const groups = this.videoGroups.length
+        ? this.videoGroups
+        : [{ key: 'legacy-video-group', items: (this.replay && this.replay.mediaPlaybackItems) || this.videoResults }]
+      return groups.map((group, groupIndex) => {
+        const sourceItems = group.items || group.videoResults || group.mediaPlaybackItems || []
+        const items = sourceItems.map(item => Object.assign({}, this.normalizeVideoItem(item), {
+          flatIndex: flatIndex++,
+          groupDeviceTaskInstanceId: group.deviceTaskInstanceId,
+          groupSerialNumber: group.serialNumber,
+          groupDeviceName: group.deviceName
+        }))
+        return Object.assign({}, group, {
+          key: this.videoGroupKey(group, groupIndex),
+          items
+        })
+      }).filter(group => group.items.length)
+    },
     videoResults() {
       return (this.replay && this.replay.videoResults) || []
     },
     playbackItems() {
-      return (this.replay && this.replay.mediaPlaybackItems) || this.videoResults
+      return this.renderVideoGroups.reduce((result, group) => result.concat(group.items), [])
     },
     replayMap() {
       return (this.replay && this.replay.replayMap) || null
+    },
+    timelineSamples() {
+      return this.mergeSamples([], this.trackGroups.reduce((result, group) => {
+        const samples = Array.isArray(group.samples) ? group.samples : []
+        return result.concat(samples.map(sample => Object.assign({}, sample, {
+          deviceTaskInstanceId: sample.deviceTaskInstanceId || group.deviceTaskInstanceId,
+          serialNumber: sample.serialNumber || group.serialNumber,
+          deviceName: sample.deviceName || group.deviceName,
+          color: sample.color || group.color
+        })))
+      }, []))
     },
     replayStartedAt() {
       return (this.replay && (this.replay.startedAt || this.replay.timelineStartAt)) || this.instance.startedAt
@@ -266,7 +319,7 @@ export default {
       return new Date(this.startedAt.getTime() + this.currentOffset * 1000)
     },
     sortedSamples() {
-      return this.trackSamples.slice().sort((left, right) => this.sampleTime(left) - this.sampleTime(right))
+      return this.timelineSamples.slice().sort((left, right) => this.sampleTime(left) - this.sampleTime(right))
     },
     visibleSamples() {
       return this.sortedSamples.filter(sample => !this.trackGroups.length || this.visibleTrackKeys.indexOf(this.sampleTrackKey(sample)) !== -1)
@@ -361,6 +414,7 @@ export default {
       } else if (!items.some((item, index) => this.videoKey(item, index) === this.primaryVideoKey)) {
         this.primaryVideoKey = this.videoKey(items[0], 0)
       }
+      this.loadVideoPlayUrls(items)
     }
   },
   mounted() {
@@ -368,10 +422,11 @@ export default {
   },
   beforeDestroy() {
     this.stopPlayback()
+    this.destroyAllHlsPlayers()
     this.revokeMapImageUrl()
   },
-  beforeUpdate() {
-    this.videoRefs = []
+  updated() {
+    this.attachVideoSources()
   },
   methods: {
     async loadReplay() {
@@ -379,13 +434,13 @@ export default {
       this.stopPlayback()
       this.loading = true
       try {
-        this.replay = this.unwrap(await getTaskRecordReplay(Number(this.id)))
+        this.replay = this.unwrap(await getTaskRecordReplay(this.id))
         this.visibleTrackKeys = this.trackGroups.map(this.trackGroupKey)
         this.currentOffset = 0
-        const initialSamples = this.replay && Array.isArray(this.replay.initialTrackSamples) ? this.replay.initialTrackSamples : []
-        this.trackSamples = initialSamples.length ? this.mergeSamples([], initialSamples) : []
-        if (!initialSamples.length) await this.loadTrackSamples()
         await this.$nextTick()
+        await this.loadVideoPlayUrls(this.playbackItems)
+        await this.$nextTick()
+        this.attachVideoSources()
         this.syncVideos()
       } catch (error) {
         this.showError(error)
@@ -416,36 +471,6 @@ export default {
       if (this.mapImageObjectUrl) URL.revokeObjectURL(this.mapImageObjectUrl)
       this.mapImageObjectUrl = ''
       this.mapImageUrl = ''
-    },
-    async loadTrackSamples(options = {}) {
-      if (!this.id || !this.startedAt) {
-        this.trackSamples = []
-        return
-      }
-      this.samplesLoading = true
-      try {
-        const longTask = this.durationSeconds > 7200
-        const params = {
-          from: this.toApiDate(options.from || this.startedAt),
-          to: this.toApiDate(options.to || this.completedAt || new Date()),
-          resolutionSeconds: options.resolutionSeconds || (longTask ? 10 : this.durationSeconds > 1800 ? 5 : 1)
-        }
-        const samples = this.unwrap(await getTrackRecordSamples(Number(this.id), params))
-        this.trackSamples = this.mergeSamples(this.trackSamples, Array.isArray(samples) ? samples : [])
-      } catch (error) {
-        this.showError(error)
-      } finally {
-        this.samplesLoading = false
-      }
-    },
-    loadHighResolutionSamples() {
-      if (!this.startedAt) return
-      const center = this.currentDateTime || this.startedAt
-      return this.loadTrackSamples({
-        from: new Date(center.getTime() - 120000),
-        to: new Date(center.getTime() + 120000),
-        resolutionSeconds: 1
-      })
     },
     buildPolylines(visitedOnly) {
       return this.groupedTrackSamples.reduce((result, group) => {
@@ -540,7 +565,9 @@ export default {
     startPlayback() {
       if (this.playing) return
       this.playing = true
-      this.syncVideos()
+      this.loadVideoPlayUrls(this.playbackItems).then(() => {
+        if (this.playing) this.syncVideos()
+      })
       this.playTimer = window.setInterval(() => {
         this.currentOffset = Math.min(this.durationSeconds, this.currentOffset + this.playbackRate)
         if (this.currentOffset >= this.durationSeconds) this.stopPlayback()
@@ -550,36 +577,168 @@ export default {
       this.playing = false
       if (this.playTimer) window.clearInterval(this.playTimer)
       this.playTimer = null
-      this.setVideoSyncing(() => this.videoRefs.forEach(video => video && video.pause && video.pause()))
+      this.setVideoSyncing(() => this.getVideoRefs().forEach(video => video && video.pause && video.pause()))
     },
-    setVideoRef(el) {
-      if (el) this.videoRefs.push(el)
+    getVideoRefs() {
+      const refs = this.$refs.videoPlayers
+      if (!refs) return []
+      return Array.isArray(refs) ? refs : [refs]
+    },
+    async loadVideoPlayUrls(items) {
+      const videos = Array.isArray(items) ? items : this.playbackItems
+      const fileIds = Array.from(new Set(videos.map(video => this.videoFileId(video)).filter(Boolean)))
+      const pendingIds = fileIds.filter(fileId => !this.videoPlayUrlMap[fileId] && this.videoPlayLoadingIds.indexOf(fileId) === -1)
+      if (!pendingIds.length) {
+        this.$nextTick(this.attachVideoSources)
+        return
+      }
+      this.videoPlayLoadingIds = this.videoPlayLoadingIds.concat(pendingIds)
+      await Promise.all(pendingIds.map(async fileId => {
+        try {
+          const result = this.unwrap(await getFilePlayUrl(fileId))
+          const playUrl = this.normalizeResourceUrl(result && result.playUrl)
+          if (playUrl) {
+            this.videoPlayUrlMap = Object.assign({}, this.videoPlayUrlMap, { [fileId]: playUrl })
+          }
+        } catch (error) {
+          this.$message.warning(`视频 ${fileId} 播放地址获取失败`)
+        } finally {
+          this.videoPlayLoadingIds = this.videoPlayLoadingIds.filter(id => id !== fileId)
+        }
+      }))
+      await this.$nextTick()
+      this.attachVideoSources()
+    },
+    attachVideoSource(video, item) {
+      const source = this.videoUrl(item)
+      if (!video || !source || (video.dataset && video.dataset.boundVideoUrl === source)) return
+      this.destroyHlsPlayer(video)
+      video.dataset.boundVideoUrl = source
+      const HlsPlayer = this.resolveHlsPlayer()
+      if (this.isHlsUrl(source) && !this.nativeHlsSupported(video) && HlsPlayer && HlsPlayer.isSupported()) {
+        const startPosition = this.videoStartPosition(item)
+        const player = new HlsPlayer({
+          autoStartLoad: true,
+          startPosition,
+          startFragPrefetch: true
+        })
+        player.on(HlsPlayer.Events.MEDIA_ATTACHED, () => {
+          player.loadSource(source)
+        })
+        player.on(HlsPlayer.Events.MANIFEST_PARSED, () => {
+          if (video.dataset && video.dataset.boundVideoUrl === source) {
+            player.startLoad(this.videoStartPosition(item))
+            this.primeVideoBuffer(video)
+            this.syncSingleVideo(video)
+          }
+        })
+        player.attachMedia(video)
+        this.hlsPlayers.set(video, player)
+        return
+      }
+      video.src = source
+      video.load && video.load()
+      this.primeVideoBuffer(video)
+      this.$nextTick(() => this.syncSingleVideo(video))
+    },
+    attachVideoSources() {
+      this.getVideoRefs().forEach(video => {
+        const index = Number(video && video.dataset && video.dataset.videoIndex)
+        this.attachVideoSource(video, this.playbackItems[index])
+      })
+    },
+    destroyHlsPlayer(video) {
+      const player = this.hlsPlayers.get(video)
+      if (player) {
+        player.destroy()
+        this.hlsPlayers.delete(video)
+      }
+      if (video) {
+        video.removeAttribute('src')
+        if (video.dataset) delete video.dataset.boundVideoUrl
+      }
+    },
+    destroyAllHlsPlayers() {
+      this.hlsPlayers.forEach(player => player.destroy())
+      this.hlsPlayers.clear()
+    },
+    nativeHlsSupported(video) {
+      return Boolean(video && video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl'))
+    },
+    isHlsUrl(value) {
+      return typeof value === 'string' && (/\.m3u8(\?|#|$)/i.test(value) || value.indexOf('m3u8') !== -1)
+    },
+    resolveHlsPlayer() {
+      if (ImportedHls && ImportedHls.isSupported) return ImportedHls
+      return window.Hls && window.Hls.isSupported ? window.Hls : null
+    },
+    primeVideoBuffer(video) {
+      if (!video || this.playing || video.dataset.primeRequested === 'true') return
+      video.dataset.primeRequested = 'true'
+      video.dataset.primingBuffer = 'true'
+      const playPromise = video.play && video.play()
+      if (playPromise && playPromise.then) {
+        playPromise
+          .then(() => {
+            if (!this.playing) video.pause()
+            delete video.dataset.primingBuffer
+          })
+          .catch(() => {
+            delete video.dataset.primeRequested
+            delete video.dataset.primingBuffer
+          })
+      } else {
+        if (!this.playing && video.pause) video.pause()
+        delete video.dataset.primingBuffer
+      }
+    },
+    videoStartPosition(video) {
+      const current = this.currentDateTime || this.startedAt
+      const timing = this.videoTiming(video)
+      if (!current || !timing.start) return 0
+      return Math.max(0, (current.getTime() - timing.start.getTime()) / 1000)
     },
     syncVideos() {
       const current = this.currentDateTime
       if (!current) return
       this.setVideoSyncing(() => {
-        this.videoRefs.forEach(video => {
-          const index = Number(video.dataset.videoIndex)
-          const item = this.playbackItems[index]
-          const timing = this.videoTiming(item)
-          if (!timing.start) return
-          const position = this.videoPositionForTimeline(current, timing, video)
-          if (position.seekable && Number.isFinite(position.currentTime) && Math.abs((video.currentTime || 0) - position.currentTime) > (this.playing ? 0.8 : 0.05)) {
-            video.currentTime = position.currentTime
-          }
-          video.playbackRate = this.playbackRate
-          if (this.playing && position.playable && video.paused) video.play().catch(() => undefined)
-          if ((!this.playing || !position.playable) && !video.paused) video.pause()
-        })
+        this.getVideoRefs().forEach(video => this.syncSingleVideo(video))
       })
     },
-    handleVideoNativePlay() {
-      if (this.syncingVideos) return
+    syncSingleVideo(video) {
+      const current = this.currentDateTime
+      if (!current || !video) return
+      const index = Number(video.dataset && video.dataset.videoIndex)
+      const item = this.playbackItems[index]
+      if (!item) return
+      this.attachVideoSource(video, item)
+      const timing = this.videoTiming(item)
+      if (!timing.start) return
+      const position = this.videoPositionForTimeline(current, timing, item)
+      if (position.seekable && Number.isFinite(position.currentTime)) {
+        const threshold = this.playing ? 0.8 : 0.05
+        if (Math.abs((video.currentTime || 0) - position.currentTime) > threshold) {
+          try {
+            video.currentTime = position.currentTime
+          } catch (error) {
+            // Metadata may not be ready yet; loadedmetadata/canplay will resync.
+          }
+        }
+      }
+      video.playbackRate = this.playbackRate
+      if (this.playing && position.playable && video.paused) video.play().catch(() => undefined)
+      if ((!this.playing || !position.playable) && !video.paused) video.pause()
+    },
+    handleVideoCanPlay(event) {
+      if (this.playing) this.syncSingleVideo(event && event.target)
+    },
+    handleVideoNativePlay(event) {
+      if (this.syncingVideos || (event && event.target && event.target.dataset && event.target.dataset.primingBuffer === 'true')) return
       this.syncVideos()
       this.startPlayback()
     },
-    handleVideoNativePause() {
+    handleVideoNativePause(event) {
+      if (event && event.target && event.target.dataset && event.target.dataset.primingBuffer === 'true') return
       if (!this.syncingVideos && this.playing) this.stopPlayback()
     },
     setVideoSyncing(callback) {
@@ -593,7 +752,7 @@ export default {
     jumpToAlarm(alarm) {
       this.stopPlayback()
       this.currentOffset = Math.min(this.durationSeconds, Math.max(0, alarm.offset || 0))
-      this.loadHighResolutionSamples()
+      this.syncVideos()
     },
     jumpToAlarmEvent(event) {
       if (!this.startedAt) return
@@ -602,14 +761,56 @@ export default {
       this.jumpToAlarm({ offset: Math.floor((occurredAt.getTime() - this.startedAt.getTime()) / 1000) })
     },
     videoUrl(video) {
-      const directUrl = (video && video.metadata && video.metadata.playbackUrl) || (video && video.playbackUrl) || ''
-      return directUrl && !this.isDemoUrl(directUrl) ? directUrl : ''
+      const metadata = (video && video.metadata) || {}
+      const directUrl = (video && video.playUrl) || metadata.playUrl || metadata.playbackUrl || (video && video.playbackUrl) || ''
+      if (directUrl && !this.isDemoUrl(directUrl)) return this.normalizeResourceUrl(directUrl)
+      const fileId = this.videoFileId(video)
+      return fileId ? this.videoPlayUrlMap[fileId] || '' : ''
+    },
+    resourceBaseOrigin() {
+      return (process.env.VUE_APP_BASE_ORIGIN || window.location.origin || '').replace(/\/$/, '')
+    },
+    normalizeMediaFilePath(path) {
+      return String(path || '').replace(/^\/api\/media\/files\//, '/api/control/files/')
+    },
+    normalizeResourceUrl(value) {
+      if (!value) return ''
+      const url = String(value).trim()
+      const baseOrigin = this.resourceBaseOrigin()
+      if (/^https?:\/\//i.test(url)) {
+        try {
+          const parsed = new URL(url)
+          const pathname = this.normalizeMediaFilePath(parsed.pathname)
+          if (/^\/api\/control\/files\//.test(pathname)) {
+            return `${baseOrigin}${pathname}${parsed.search}${parsed.hash}`
+          }
+          return url
+        } catch (error) {
+          return url
+        }
+      }
+      const pathname = this.normalizeMediaFilePath(url.charAt(0) === '/' ? url : `/${url}`)
+      return `${baseOrigin}${pathname}`
+    },
+    mediaFileContentUrl(fileId) {
+      return fileId ? `${this.resourceBaseOrigin()}/api/control/files/${encodeURIComponent(fileId)}/content` : ''
     },
     isDemoUrl(value) {
       return typeof value === 'string' && value.indexOf('eiop-demo://') === 0
     },
     videoKey(video, index) {
-      return (video && video.videoId) || `${(video && video.actionRef) || 'video'}-${index}`
+      return this.videoFileId(video) || `${(video && video.actionRef) || 'video'}-${index}`
+    },
+    videoGroupKey(group, index) {
+      return String((group && (group.key || group.deviceTaskInstanceId || group.serialNumber || group.deviceName)) || `video-group-${index}`)
+    },
+    videoFileId(video) {
+      if (typeof video === 'string') return video
+      return (video && (video.fileId || (video.metadata && video.metadata.fileId) || video.videoId)) || ''
+    },
+    normalizeVideoItem(item) {
+      if (typeof item === 'string') return { fileId: item }
+      return item || {}
     },
     videoPlaybackState(video) {
       const current = this.currentDateTime
@@ -630,32 +831,75 @@ export default {
       if (!end || (start && end.getTime() < start.getTime())) end = timelineEnd
       return { start, end }
     },
-    videoPositionForTimeline(current, timing, videoEl) {
+    videoPositionForTimeline(current, timing, video) {
       if (!timing.start) return { currentTime: 0, seekable: false, playable: false }
       const elapsed = Math.max(0, (current.getTime() - timing.start.getTime()) / 1000)
       if (current.getTime() < timing.start.getTime()) return { currentTime: 0, seekable: true, playable: false }
       if (timing.end && current.getTime() > timing.end.getTime()) {
-        return { currentTime: Math.max(0, (timing.end.getTime() - timing.start.getTime()) / 1000), seekable: true, playable: false }
+        const endElapsed = Math.max(0, (timing.end.getTime() - timing.start.getTime()) / 1000)
+        const duration = Number.isFinite(video && video.duration) && video.duration > 0 ? video.duration : null
+        return { currentTime: duration == null ? endElapsed : Math.min(duration, endElapsed), seekable: true, playable: false }
       }
-      const index = Number(videoEl && videoEl.dataset && videoEl.dataset.videoIndex)
-      return { currentTime: elapsed, seekable: true, playable: Boolean(this.videoUrl(this.playbackItems[index])) }
+      const duration = Number.isFinite(video && video.duration) && video.duration > 0 ? video.duration : null
+      return {
+        currentTime: duration == null ? elapsed : Math.min(duration, elapsed),
+        seekable: true,
+        playable: Boolean(this.videoUrl(video))
+      }
     },
     videoSourceLabel(video) {
-      return (video && (video.label || video.sourceComponentName || video.sourceComponentCode || video.actionCode || video.actionRef)) || '视频来源'
+      return (video && (
+        video.label ||
+        video.sourceComponentName ||
+        video.sourceComponentCode ||
+        video.actionCode ||
+        video.actionRef ||
+        video.deviceName ||
+        video.groupDeviceName
+      )) || '视频来源'
     },
     mediaTypeLabel(value) {
       return { VISIBLE: '可见光', THERMAL: '红外', OTHER: '其他' }[value] || value || '其他'
     },
     alarmType(row) {
-      const payload = this.parseJson(row.payloadJson)
-      return payload.alarmType || payload.type || row.eventSubtype || row.eventType || '-'
+      const payload = this.alarmPayload(row)
+      return (row && (row.alarmType || row.title)) || payload.alarmType || payload.type || (row && (row.eventSubtype || row.eventType)) || '-'
     },
     alarmContent(row) {
-      const payload = this.parseJson(row.payloadJson)
-      return payload.content || payload.message || payload.title || payload.alarmContent || row.eventSubtype || '-'
+      const payload = this.alarmPayload(row)
+      return (row && row.content) || payload.content || payload.message || payload.title || payload.alarmContent || (row && row.eventSubtype) || '-'
+    },
+    alarmImageFileId(row) {
+      const payload = this.alarmPayload(row)
+      return (row && row.imageFileId) || payload.fileId || ''
+    },
+    alarmImageUrl(row) {
+      const fileId = this.alarmImageFileId(row)
+      return this.normalizeResourceUrl((row && row.imageUrl) || this.mediaFileContentUrl(fileId))
+    },
+    alarmDeviceLabel(row) {
+      const payload = this.alarmPayload(row)
+      return (row && (row.deviceName || row.serialNumber || row.sourceComponentCode)) ||
+        payload.deviceName ||
+        payload.serialNumber ||
+        payload.sourceComponentCode ||
+        '告警设备'
+    },
+    alarmPayload(row) {
+      const payload = this.parseJson(row && row.payloadJson)
+      const rawPayload = this.parseJson(payload.rawPayload)
+      return Object.assign({}, payload, rawPayload)
+    },
+    alarmStatusLabel(row) {
+      const status = row && (row.status || row.eventStatus)
+      return { ACTIVE: '告警中', RESOLVED: '已恢复', CLOSED: '已关闭', IGNORED: '已忽略' }[status] || status || '-'
+    },
+    alarmStatusType(row) {
+      const status = row && (row.status || row.eventStatus)
+      return { ACTIVE: 'red', RESOLVED: 'green', CLOSED: 'info', IGNORED: 'info' }[status] || 'orange'
     },
     alarmTimeValue(row) {
-      const payload = this.parseJson(row && row.payloadJson)
+      const payload = this.alarmPayload(row)
       return (row && (
         row.occurredAt ||
         row.eventTime ||
@@ -725,11 +969,6 @@ export default {
       } catch (error) {
         return {}
       }
-    },
-    toApiDate(date) {
-      if (!date) return undefined
-      const pad = value => String(value).padStart(2, '0')
-      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
     },
     unwrap(res) {
       if (res && res.code !== undefined) {

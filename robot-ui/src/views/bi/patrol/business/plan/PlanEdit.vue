@@ -7,7 +7,7 @@
         <span>执行方式与设备绑定属于计划，任务流程结构仍由任务编排维护。</span>
       </div>
       <div class="page-action-header__actions">
-        <el-button class="pr20 pl20" plain style="color: #17D1FF" v-if="isViewMode" @click="switchEdit">编辑</el-button>
+        <el-button v-if="isViewMode" class="pr20 pl20" plain style="color: #17D1FF" @click="switchEdit">编辑</el-button>
         <el-button v-else type="primary" class="pr20 pl20" plain style="color: #17D1FF" :loading="saving" @click="savePlan">保存</el-button>
       </div>
     </div>
@@ -134,13 +134,27 @@
           <el-table-column label="执行设备" min-width="160" show-overflow-tooltip>
             <template slot-scope="{ row }">{{ row.deviceName || row.serialNumber || row.deviceId || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="workflowNodeKey" label="流程节点" min-width="140" />
+          <el-table-column label="流程节点" min-width="160" show-overflow-tooltip>
+            <template slot-scope="{ row }">
+              <el-tooltip :content="row.workflowNodeKey || '-'" placement="top">
+                <span>{{ workflowNodeLabel(row) }}</span>
+              </el-tooltip>
+            </template>
+          </el-table-column>
           <el-table-column label="动作" min-width="180">
             <template slot-scope="{ row }">{{ actionLabel(row) }}</template>
           </el-table-column>
           <el-table-column label="执行组件" min-width="190">
             <template slot-scope="{ row }">
-              <el-select :value="componentBindingValue(row)" placeholder="选择组件" @change="applyComponentBinding(row, $event)">
+              <el-select
+                :value="componentBindingValue(row)"
+                multiple
+                collapse-tags
+                clearable
+                filterable
+                placeholder="不选择则全部执行"
+                @change="applyComponentBinding(row, $event)"
+              >
                 <el-option
                   v-for="component in componentOptions(row)"
                   :key="component.componentCode"
@@ -261,7 +275,7 @@ export default {
           planCode: detail.planCode,
           planName: detail.planName,
           workflowVersionId: detail.workflowVersionId,
-          componentBindings: detail.componentBindings || [],
+          componentBindings: this.normalizeComponentBindings(detail.componentBindings || []),
           executionMode: detail.executionMode || 'MANUAL',
           scheduleConfig: this.normalizeScheduleConfig(detail.scheduleConfig),
           eventTriggerConfig: Object.assign({ eventType: 'ALARM', eventSubtype: '' }, detail.eventTriggerConfig || {}),
@@ -423,12 +437,15 @@ export default {
       return `0 ${minute} ${hour} * * ?`
     },
     componentBindingValue(row) {
-      const binding = (this.form.componentBindings || []).find(item => this.sameComponentRequirement(item, row))
-      return binding ? binding.componentCode : ''
+      return (this.form.componentBindings || [])
+        .filter(item => this.sameComponentRequirement(item, row))
+        .map(item => item.componentCode)
+        .filter(Boolean)
     },
-    applyComponentBinding(row, componentCode) {
+    applyComponentBinding(row, value) {
+      const componentCodes = Array.isArray(value) ? value : (value ? [value] : [])
       const next = (this.form.componentBindings || []).filter(item => !this.sameComponentRequirement(item, row))
-      if (componentCode) {
+      componentCodes.forEach(componentCode => {
         next.push({
           roleKey: row.roleKey,
           deviceId: row.deviceId,
@@ -436,8 +453,21 @@ export default {
           actionCode: row.actionCode,
           componentCode
         })
-      }
+      })
       this.form.componentBindings = next
+    },
+    normalizeComponentBindings(bindings) {
+      const next = []
+      ;(bindings || []).forEach(item => {
+        const componentCodes = Array.isArray(item.componentCodes) ? item.componentCodes : (item.componentCode ? [item.componentCode] : [])
+        componentCodes.forEach(componentCode => {
+          next.push(Object.assign({}, item, {
+            componentCode,
+            componentCodes: undefined
+          }))
+        })
+      })
+      return next
     },
     sameComponentRequirement(left, right) {
       return String(left.roleKey || '') === String(right.roleKey || '') &&
@@ -446,7 +476,19 @@ export default {
         String(left.actionCode || '') === String(right.actionCode || '')
     },
     componentOptions(row) {
-      return row.candidates || row.components || []
+      if (Array.isArray(row.sourceComponents) && row.sourceComponents.length) return row.sourceComponents
+      if (Array.isArray(row.candidates) && row.candidates.length) return row.candidates
+      if (Array.isArray(row.components) && row.components.length) return row.components
+      return (row.sourceComponentCodes || []).map(componentCode => ({
+        componentCode,
+        componentName: componentCode
+      }))
+    },
+    workflowNodeLabel(row) {
+      if (row.workflowNodeName) return row.workflowNodeName
+      const nodes = Array.isArray(this.workflowDocument.nodes) ? this.workflowDocument.nodes : []
+      const node = nodes.find(item => item.id === row.workflowNodeKey || item.key === row.workflowNodeKey)
+      return (node && (node.name || node.label)) || row.workflowNodeKey || '-'
     },
     normalizeBinding(role, saved) {
       const savedDeviceIds = Array.isArray(saved && saved.deviceIds) ? saved.deviceIds : []

@@ -1,5 +1,4 @@
 import request from '@/utils/request'
-import { data } from 'jquery'
 
 // 每个浏览器标签页拥有独立 clientId，但同一标签页刷新后保持不变。
 // 这对控制权续用很重要：刷新页面不能被后端误判成另一个终端。
@@ -16,6 +15,11 @@ const headers = {
   'X-Org-Id': 'org001',
   'X-Roles': 'MEDIA_VIEWER,MEDIA_OPERATOR',
   'X-Client-Id': clientId
+}
+
+function mediaControlUrl(path) {
+  const base = (process.env.VUE_APP_BASE_ORIGIN || '').replace(/\/$/, '')
+  return base ? `${base}${path}` : path
 }
 
 // 创建视频会话
@@ -92,7 +96,7 @@ export function switchChannel(sessionId, data) {
 // 创建快照
 export function uploadFile(data) {
   return request({
-    url: '/api/control/files',
+    url: mediaControlUrl('/api/control/files'),
     method: 'post',
     data,
     timeout: 30000
@@ -101,7 +105,7 @@ export function uploadFile(data) {
 
 export function getFiles(params = {}) {
   return request({
-    url: '/api/control/files',
+    url: mediaControlUrl('/api/control/files'),
     method: 'get',
     params
   })
@@ -109,16 +113,12 @@ export function getFiles(params = {}) {
 
 export function fileDownloadUrl(fileId) {
   return request({
-    url: `/api/control/files/${fileId}/download-url`,
+    url: mediaControlUrl(`/api/control/files/${fileId}/download-url`),
     method: 'post'
   })
 }
 export function snapshotImageUrl(fileId) {
-  const base = process.env.VUE_APP_API_BASE || ''
-  return request({
-    url: `${base}/api/control/files/${fileId}/content`,
-    method: 'get'
-  })
+  return mediaControlUrl(`/api/control/files/${fileId}/content`)
 }
 
 // 获取会话快照列表
@@ -176,7 +176,7 @@ export function heartbeatIntercom(sessionId) {
 
 export function getFilePlayUrl(fileId) {
   return request({
-    url: `/api/control/files/${fileId}/play-url`,
+    url: mediaControlUrl(`/api/control/files/${fileId}/play-url`),
     method: 'post'
   })
 }
@@ -200,8 +200,6 @@ export function acquireControl(robotId, data) {
 }
 
 export function takeoverControl(robotId, data) {
-  console.log(robotId, data);
-  
   return request({
     url: `/api/control/robots/${robotId}/control-sessions/takeover`,
     method: 'post',
