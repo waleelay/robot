@@ -481,30 +481,30 @@ export default {
       leftPanelCollapsed: false,
       heartbeatTimer: null,
       stoppedSessionIds: new Set(),
-      selectedRobotId: 'robot-001',
+      selectedRobotId: 'test001',
       robots: [
         {
-          robotId: 'robot-001',
+          robotId: 'test001',
           name: 'R1轮式机器人',
           type: '轮式机器人',
           battery: null,
           status: 'offline',
           cameras: [
-            cameraState('robot-001', 'camera01', '云台-可见光', 'dual_gimbal'),
-            cameraState('robot-001', 'camera02', '云台-热成像', 'dual_gimbal'),
-            cameraState('robot-001', 'camera03', '本体相机', 'body')
+            cameraState('test001', 'camera01', '云台-可见光', 'dual_gimbal'),
+            cameraState('test001', 'camera02', '云台-热成像', 'dual_gimbal'),
+            cameraState('test001', 'camera03', '本体相机', 'body')
           ]
         },
         {
-          robotId: 'robot-002',
-          name: 'G1四足机器人',
-          type: '四足机器人',
+          robotId: 'test002',
+          name: 'G1四足机器狗',
+          type: '四足机器狗',
           battery: null,
           status: 'offline',
           cameras: [
-            cameraState('robot-002', 'gimbal-001', '头部双光云台', 'dual_gimbal'),
-            cameraState('robot-002', 'gimbal-002', '腹部导航相机', 'body'),
-            cameraState('robot-002', 'gimbal-003', '尾部避障相机', 'body')
+            cameraState('test002', 'gimbal-001', '头部双光云台', 'dual_gimbal'),
+            cameraState('test002', 'gimbal-002', '腹部导航相机', 'body'),
+            cameraState('test002', 'gimbal-003', '尾部避障相机', 'body')
           ]
         }
       ],
@@ -922,13 +922,33 @@ export default {
       let nextSession = null
       let nextRoom = null
       try {
-        nextSession = await createVideoSession({
+        const createdSession = await createVideoSession({
           robotId: camera.robotId,
           deviceId: camera.deviceId,
           quality: nextQuality,
           reuse: true
         })
-        nextRoom = await this.connectReplacementLiveKit(camera, nextSession, oldRoom)
+        const viewerToken = await getViewerToken(createdSession.sessionId)
+        nextSession = Object.assign({}, createdSession, {
+          livekitUrl: viewerToken.livekitUrl || createdSession.livekitUrl,
+          roomName: viewerToken.roomName || createdSession.roomName,
+          viewerToken: viewerToken.token,
+          quality: nextQuality,
+        })
+        try {
+          nextRoom = await this.connectReplacementLiveKit(camera, nextSession, oldRoom)
+        } catch (connectError) {
+          this.log('WARN retry replacement quality session', this.errorMessage(connectError))
+          const restartedSession = await restartVideoSession(nextSession.sessionId)
+          const refreshedToken = await getViewerToken(restartedSession.sessionId)
+          nextSession = Object.assign({}, restartedSession, {
+            livekitUrl: refreshedToken.livekitUrl || restartedSession.livekitUrl,
+            roomName: refreshedToken.roomName || restartedSession.roomName,
+            viewerToken: refreshedToken.token,
+            quality: nextQuality,
+          })
+          nextRoom = await this.connectReplacementLiveKit(camera, nextSession, oldRoom)
+        }
         camera.room = nextRoom
         camera.session = Object.assign({}, nextSession)
         camera.status = nextSession.status
@@ -946,10 +966,12 @@ export default {
           })
           camera.disconnecting = false
         }
-        this.stoppedSessionIds.add(oldSession.sessionId)
-        stopVideoSession(oldSession.sessionId).catch(error => {
-          this.log('ERROR stop old quality session', this.errorMessage(error))
-        })
+        if (oldSession.sessionId !== nextSession.sessionId) {
+          this.stoppedSessionIds.add(oldSession.sessionId)
+          stopVideoSession(oldSession.sessionId).catch(error => {
+            this.log('ERROR stop old quality session', this.errorMessage(error))
+          })
+        }
         this.log('API switchCameraQuality', {
           from: oldSession.quality,
           to: nextQuality,
@@ -959,9 +981,6 @@ export default {
       } catch (error) {
         if (nextRoom) {
           await Promise.resolve(nextRoom.disconnect()).catch(() => {})
-        }
-        if (nextSession && nextSession.sessionId) {
-          stopVideoSession(nextSession.sessionId).catch(() => {})
         }
         this.$message.error(`清晰度切换失败：${this.errorMessage(error)}`)
         this.log('ERROR switchCameraQuality', this.errorMessage(error))
@@ -1172,7 +1191,7 @@ export default {
       const sessionId = session.sessionId
       return new Promise((resolve, reject) => {
         let settled = false
-        const timeout = setTimeout(() => fail(new Error('等待新清晰度视频流超时')), 15000)
+        const timeout = setTimeout(() => fail(new Error('等待新清晰度视频流超时')), 30000)
         const done = () => {
           if (settled) return
           settled = true
@@ -1958,6 +1977,7 @@ export default {
             if (video) {
               this.detachRoomFromVideo(oldRoom, video)
               track.attach(video)
+              video.play().catch(() => {})
             }
           })
           .finally(() => {
@@ -1966,21 +1986,29 @@ export default {
           })
     },
     waitForVideoReady(video) {
-      if (video.readyState >= 2 && video.videoWidth > 0) return Promise.resolve()
+      if (video.readyState >= 2 && video.videoWidth > 0) return Promise.resolve(true)
       video.play().catch(() => {})
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => cleanup(() => reject(new Error('等待新清晰度首帧超时'))), 5000)
+      return new Promise((resolve) => {
         const onReady = () => {
           if (video.videoWidth > 0 || video.readyState >= 2) cleanup(resolve)
         }
+        const timeout = setTimeout(() => cleanup(() => resolve(false)), 12000)
+        const interval = setInterval(onReady, 250)
         const cleanup = (done) => {
           clearTimeout(timeout)
+          clearInterval(interval)
+          video.removeEventListener('loadedmetadata', onReady)
           video.removeEventListener('loadeddata', onReady)
           video.removeEventListener('canplay', onReady)
-          done()
+          video.removeEventListener('playing', onReady)
+          video.removeEventListener('resize', onReady)
+          done(true)
         }
+        video.addEventListener('loadedmetadata', onReady)
         video.addEventListener('loadeddata', onReady)
         video.addEventListener('canplay', onReady)
+        video.addEventListener('playing', onReady)
+        video.addEventListener('resize', onReady)
       })
     },
 	    canSnapshot(camera) {

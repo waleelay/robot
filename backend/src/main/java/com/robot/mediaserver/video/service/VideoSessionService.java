@@ -138,29 +138,31 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoSessionResponse create(CreateVideoSessionRequest request, CurrentUser user) {
-        var existing = repository.findFirstByRobotIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
-                request.getRobotId(),
-                request.getDeviceId(),
-                request.getChannel(),
-                request.getQuality(),
-                REUSABLE_STATUSES);
-        if (existing.isPresent()) {
-            VideoSession session = existing.get();
-            addViewer(session, user);
-            session.setIdleSince(null);
-            if (!hasPublishedTrack(session)) {
-                session.setStatus(VideoSessionStatus.INIT);
-                session.setTrackSid(null);
-                session.setTrackName(null);
-            } else if (session.getStatus() == VideoSessionStatus.IDLE_WAIT) {
-                session.setStatus(VideoSessionStatus.STREAMING);
+        if (request.isReuse()) {
+            var existing = repository.findFirstByRobotIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
+                    request.getRobotId(),
+                    request.getDeviceId(),
+                    request.getChannel(),
+                    request.getQuality(),
+                    REUSABLE_STATUSES);
+            if (existing.isPresent()) {
+                VideoSession session = existing.get();
+                addViewer(session, user);
+                session.setIdleSince(null);
+                if (!hasPublishedTrack(session)) {
+                    session.setStatus(VideoSessionStatus.INIT);
+                    session.setTrackSid(null);
+                    session.setTrackName(null);
+                } else if (session.getStatus() == VideoSessionStatus.IDLE_WAIT) {
+                    session.setStatus(VideoSessionStatus.STREAMING);
+                }
+                session.setViewerCount(activeViewerCount(session.getSessionId()));
+                session.setUpdatedAt(now());
+                repository.save(session);
+                TokenResult viewerToken = createBrowserToken(session, user);
+                emit("video.session.reused", session);
+                return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
             }
-            session.setViewerCount(activeViewerCount(session.getSessionId()));
-            session.setUpdatedAt(now());
-            repository.save(session);
-            TokenResult viewerToken = createBrowserToken(session, user);
-            emit("video.session.reused", session);
-            return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
         }
 
         VideoSession session = new VideoSession();
