@@ -17,10 +17,7 @@ const headers = {
   'X-Client-Id': clientId
 }
 
-function mediaControlUrl(path) {
-  const base = (process.env.VUE_APP_BASE_ORIGIN || '').replace(/\/$/, '')
-  return base ? `${base}${path}` : path
-}
+const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
 
 // 创建视频会话
 export function createVideoSession(data) {
@@ -96,7 +93,7 @@ export function switchChannel(sessionId, data) {
 // 创建快照
 export function uploadFile(data) {
   return request({
-    url: mediaControlUrl('/api/control/files'),
+    url: '/api/control/files',
     method: 'post',
     data,
     timeout: 30000
@@ -105,7 +102,7 @@ export function uploadFile(data) {
 
 export function getFiles(params = {}) {
   return request({
-    url: mediaControlUrl('/api/control/files'),
+    url: '/api/control/files',
     method: 'get',
     params
   })
@@ -113,12 +110,16 @@ export function getFiles(params = {}) {
 
 export function fileDownloadUrl(fileId) {
   return request({
-    url: mediaControlUrl(`/api/control/files/${fileId}/download-url`),
+    url: `/api/control/files/${fileId}/download-url`,
     method: 'post'
   })
 }
 export function snapshotImageUrl(fileId) {
-  return mediaControlUrl(`/api/control/files/${fileId}/content`)
+  const base = process.env.VUE_APP_API_BASE || ''
+  return request({
+    url: `${base}/api/control/files/${fileId}/content`,
+    method: 'get'
+  })
 }
 
 // 获取会话快照列表
@@ -176,8 +177,9 @@ export function heartbeatIntercom(sessionId) {
 
 export function getFilePlayUrl(fileId) {
   return request({
-    url: mediaControlUrl(`/api/control/files/${fileId}/play-url`),
-    method: 'post'
+    url: `${preUrl}/api/control/files/${fileId}/play-url`,
+    method: 'post',
+    headers
   })
 }
 
@@ -200,6 +202,8 @@ export function acquireControl(robotId, data) {
 }
 
 export function takeoverControl(robotId, data) {
+  console.log(robotId, data);
+  
   return request({
     url: `/api/control/robots/${robotId}/control-sessions/takeover`,
     method: 'post',
@@ -242,13 +246,15 @@ export function startLiveRecording(sessionId) {
 export function stopLiveRecording(sessionId, fileId) {
   return request({
     url: `/api/control/video-sessions/${sessionId}/recordings/${fileId}/stop`,
-    method: 'post'
+    method: 'post',
+    headers
   })
 }
 export function getActiveLiveRecording(sessionId) {
   return request({
     url: `/api/control/video-sessions/${sessionId}/recordings/active`,
-    method: 'get'
+    method: 'get',
+    headers
   })
 }
 

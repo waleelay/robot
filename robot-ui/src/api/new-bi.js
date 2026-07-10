@@ -51,6 +51,8 @@ export function deleteReport(id) {
   })
 }
 
+
+
 // 任务相关
 const taskPre = '/api/bigscreen/business'
 // 获取任务列表 { pageNum, pageSize, status }
@@ -142,7 +144,8 @@ export function getManagementDevices(params) {
 
 // 执行记录
 // detail: (id) => getData(`/tasks/execution-records/${id}`),
-// replay: (id) => getData(`/tasks/execution-records/${id}/replay`)
+// replay: (id) => getData(`/tasks/execution-records/${id}/replay`),
+// trackSamples: (id, params) => getData(`/tasks/execution-records/${id}/track-samples`, params)
 export function getTaskRecordList(params) {
   return request({
     url: taskPre + '/tasks/execution-records',

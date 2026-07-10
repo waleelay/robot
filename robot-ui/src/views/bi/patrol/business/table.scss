@@ -38,7 +38,6 @@
     }
     td {
       .el-button {
-        padding: 5px;
         &.gray {
           background: #7f7f7f;
           border-color: #797979;
@@ -59,23 +58,7 @@
       }
     }
   }
-  .el-pagination:not(.old) {
-    text-align: right;
-    .el-pager li, button {
-      min-width: 20px !important;
-      height: 20px;
-      color: #999;
-      line-height: 20px;
-      border: 1px solid #e4e4e4;
-    }
-    .el-pager li {
-      &.active {
-        color: #fff;
-        background: #0079FE;
-        border-color: #0079FE;
-      }
-    }
-  }
+  
   .el-table {
     thead {
       background: #1B2D4D;
@@ -157,16 +140,17 @@
     .el-button {
       position: relative;
       &--text {
-        color: #159AFF;
+        color: #22BDFF; 
       }
       & + .el-button {
+        margin-left: 24px;
         &::before {
           position: absolute;
-          width: 2px;
+          width: 1px;
           height: 12px;
           background: #3C4A5C;
           top: 50%;
-          left: -12px;
+          left: -11.5px;
           transform: translateY(-50%);
           content: '';
         }
@@ -239,39 +223,6 @@
       // letter-spacing: 0.75px;
     }
   }
-  .el-pagination {
-    text-align: right;
-    .el-pager li,
-    button,
-    &.is-background .btn-prev,
-    &.is-background .btn-next,
-    &.is-background .el-pager li {
-      min-width: 18px !important;
-      height: 18px;
-      // color: #18ADFE;
-      line-height: 18px;
-      // background: rgba(43, 86, 121, 0.30);
-      // border: 1px solid #18ADFE;
-      border-radius: 2px;
-    }
-    &.is-background:not(.old) {
-      .el-pager li,
-      button,
-      .btn-prev,
-      .btn-next,
-      .el-pager li {
-        color: #18ADFE;
-        background: rgba(43, 86, 121, 0.30);
-        border: 1px solid #18ADFE;
-      }
-      .el-pager li:not(.disabled).active {
-        color: #4AB8FF;
-        border: 1px solid #4AB8FF;
-        background: #0A3560;
-        box-shadow: 0 0 6px 0 #69C4FF inset !important;
-      }
-    }
-  }
 
   .el-table__body tr.hover-row > td.el-table__cell, .el-table__body tr.hover-row.current-row > td.el-table__cell, .el-table__body tr.hover-row.selection-row > td.el-table__cell, .el-table__body tr.hover-row.el-table__row--striped > td.el-table__cell, .el-table__body tr.hover-row.el-table__row--striped.current-row > td.el-table__cell, .el-table__body tr.hover-row.el-table__row--striped.selection-row > td.el-table__cell {
     background: transparent !important;
@@ -299,8 +250,8 @@
   .el-table__body-wrapper {
     /* Webkit浏览器（Chrome, Safari, Edge等） */
     &::-webkit-scrollbar {
-      width: 4px;               /* 垂直滚动条宽度 */
-      height: 4px;              /* 水平滚动条高度 */
+      width: 6px;               /* 垂直滚动条宽度 */
+      height: 6px;              /* 水平滚动条高度 */
     }
 
     &::-webkit-scrollbar-track {

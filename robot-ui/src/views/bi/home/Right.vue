@@ -4,10 +4,10 @@
       <div class="box zbgl">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">装备概览</span> 
-          <span class="flx-center more curp" @click="getMoreRobotInfo">
+          <!-- <span class="flx-center more curp" @click="getMoreRobotInfo">
             <span>更多</span>
             <svg-icon icon-class="right" class="ml4" />
-          </span>
+          </span> -->
         </div>
         <div class="pt20 pr18 pb10 pl18">
           <div class="count flx-justify-between">
@@ -61,10 +61,10 @@
       <div class="box mt20 rwgl">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">任务概览</span> 
-          <span class="flx-center more curp" @click="getMoreRobotInfo">
+          <!-- <span class="flx-center more curp" @click="getMoreRobotInfo">
             <span>更多</span>
             <svg-icon icon-class="right" class="ml4" />
-          </span>
+          </span> -->
         </div>
         <div class="pt20 pr18 pb20 pl18">
           <div class="count flx-justify-between">

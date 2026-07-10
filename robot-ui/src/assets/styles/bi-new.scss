@@ -2375,99 +2375,6 @@ input[type="range"].vertical-slider {
     }
   }
 }
-// 表格列表
-.custom-list-container {
-  background: linear-gradient(180deg, rgba(18, 20, 43, 0.00) 0%, rgba(18, 20, 43, 0.50) 100%);
-  box-shadow: 0 0 20px 0 rgba(33, 108, 149, 0.30) inset;
-  .list {
-    // border-radius: 2px;
-    // border: 1px solid #152C45;
-    .title, .content {
-      padding: 12px 20px;
-      color: #D0DEEE;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 12px;
-      font-style: normal;
-      font-weight: 400;
-      line-height: 12px; /* 100% */
-      letter-spacing: 0.857px;
-    }
-    .title {
-      color: #159AFF;
-      background: rgbA(2, 49, 100, .2);
-    }
-    .content {
-      .item {
-        // & + .item {
-        //   margin-top: 6px;
-        // }
-        .status {
-          padding: 4px;
-          border-radius: 2px;
-          text-align: center;
-          font-family: "Alibaba PuHuiTi";
-          font-size: 12px;
-          line-height: 12px; /* 100% */
-          letter-spacing: 0.857px;
-          color: #1C9DFF;
-          background: rgba(9, 45, 72, 0.50);
-          box-shadow: 0 0 4px 0 #2575AA inset;
-          &.success {
-            color: #25FF6E;
-            background: rgba(9, 72, 47, 0.50);
-            box-shadow: 0 0 4px 0 #25AA75 inset;
-          }
-          &.yellow {
-            color: #F4FF1C;
-            background: rgba(72, 66, 9, 0.50);
-            box-shadow: 0 0 4px 0 #D4CD00 inset;
-          }
-        }
-        .serial {
-          // display: inline-block;
-          // min-width: 20px;
-          text-align: center;
-          line-height: 16px;
-          background: rgba(255, 119, 52, 0.10);
-          border: 0.5px solid #FF7734;
-          color: #FF7734;
-          font-family: "TeX Gyre Adventor";
-          font-size: 12px;
-          font-style: italic;
-          font-weight: 700;
-          // letter-spacing: 0.75px;
-        }
-        .operation-icons {
-          font-size: 16px;
-          color: #159AFF;
-          cursor: pointer;
-        }
-      }
-    }
-  }
-  .custom-pagination.el-pagination {
-    text-align: right;
-    .el-pager li,
-    button,
-    &.is-background .btn-prev,
-    &.is-background .btn-next,
-    &.is-background .el-pager li {
-      min-width: 18px !important;
-      height: 18px;
-      color: #18ADFE;
-      line-height: 18px;
-      background: rgba(43, 86, 121, 0.30);
-      border: 1px solid #18ADFE;
-      border-radius: 2px;
-    }
-    &.is-background .el-pager li:not(.disabled).active {
-      color: #4AB8FF;
-      border: 1px solid #4AB8FF;
-      background: #0A3560;
-      box-shadow: 0 0 6px 0 #69C4FF inset !important;
-    }
-  }
-}
 // 任务概览
 .task-overview {
   padding: 17px 10px;
@@ -3025,6 +2932,13 @@ input[type="range"].vertical-slider {
         background: #f00;
         content: '';
       }
+      &.is-active {
+        top: 2px;
+        left: 2%;
+        width: 6px;
+        height: 6px;
+        border-radius: 0;
+      }
     }
   }
   .video-btn {
@@ -3306,6 +3220,22 @@ input[type="range"].vertical-slider {
         font-size: 10px;
       }
     }
+  }
+}
+
+// 滑动条
+.el-tooltip__popper {
+  &.volume-slider-tooltip {
+    margin-bottom: 2px;
+    padding: 2px;
+    color: #FFF;
+    text-align: center;
+    font-family: "Alibaba PuHuiTi";
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.857px;
+    border-radius: 1px;
+    background: linear-gradient(214deg, #03AFFA 32.73%, #027FFA 87.27%);
   }
 }
 
@@ -3613,6 +3543,36 @@ input[type="range"].vertical-slider {
     background-color: #0263C4 !important;
     &:hover {
       color: #fff !important;
+    }
+  }
+}
+
+// 大屏表格分页
+.el-pagination {
+  &.pagination-row {
+    margin-top: 30px;
+    margin-bottom: 16px;
+    padding: 0;
+    text-align: right;
+    .el-pager li,
+    button,
+    .btn-prev,
+    .btn-next,
+    .el-pager li {
+      min-width: 26px !important;
+      height: 26px;
+      color: #7BA9EA;
+      background: #1A2747;
+      border: none;
+      border-radius: 4px;
+      line-height: 26px;
+      border-radius: 2px;
+    }
+    .el-pager li:not(.disabled).active {
+      color: #FFF;
+      border: none;
+      background: #2A86F3;
+      box-shadow: none !important;
     }
   }
 }

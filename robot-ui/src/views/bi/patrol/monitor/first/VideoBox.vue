@@ -24,7 +24,7 @@
     <!-- <canvas class="canvas-shuju" :id="`${prefixId}canvasslot_${index}`" style="z-index: 1; position: absolute;cursor: pointer;"></canvas> -->
     <template v-if="ZQL_videosInfos[`slot_${index}`]">
       <div v-if="recordingActive" class="recording flx-align-center">
-        <span class="symbol"></span>
+        <span class="symbol" :class="{ 'is-active': recordingActive }"></span>
         <span class="ml4">{{ recordingTime }}</span>
       </div>
       <div class="top flx-justify-between w100 pr10 pl10">

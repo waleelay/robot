@@ -34,8 +34,8 @@ export default {
       activeSideIndex: 0,
       recordId: '',
       sideList: [
-        { name: '调度任务列表', svg: 'log1' },
-        { name: '巡检执行记录', svg: 'detail' }
+        { name: '任务计划', svg: 'log1' },
+        { name: '执行记录', svg: 'detail' }
       ]
     }
   },

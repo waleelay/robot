@@ -63,7 +63,7 @@
           </span> -->
         </div>
         <div class="list pt10 pr20 pl20 mb20 common-scroll ovya" :style="{ maxHeight: collapseArr[2] ? '300px' : '262px' }">
-           <div v-for="(item, key, index) of taskData || []" class="item wp288 pb10" :style="{ 'pointer-events': item.status !== 'running' ? 'auto' : 'none' }" :class="{ 'is-active': activeTaskId === item.taskId, 'mb10': index !== Object.keys(taskData || {}).length - 1 }" @click="handleClickTask(key)">
+           <div v-for="(item, key, index) of taskData || []" class="item wp288 pb10" :style="{ 'pointer-events': item.status === 'running' ? 'auto' : 'none' }" :class="{ 'is-active': activeTaskId == item.taskId, 'mb10': index !== Object.keys(taskData || {}).length - 1 }" @click="handleClickTask(key)">
             <div class="header flx-justify-between p10">
               <div class="flx-align-center flex1" style="min-width: 0">
                 <svg-icon icon-class="d-right"></svg-icon>
@@ -80,7 +80,7 @@
               <div class="mt10">执行装备：{{ item.equipmentList?.length }}台</div>
             </div>
             <div v-if="item.status === 'running'" class="symbol wp36 hp28">
-              <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId === item.taskId ? 'active' : 'off1'}.png`)" class="w100 h100" alt="" srcset="">
+              <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId == item.taskId ? 'active' : 'off1'}.png`)" class="w100 h100" alt="" srcset="">
             </div>
            </div>
         </div>
@@ -233,8 +233,10 @@ export default {
     toggleCollapse(type, typeIndex) {
       this.$set(this[type], typeIndex, !this[type][typeIndex])
     },
-    handleClickTask(taskId) {      
-      if (this.activeTaskId === taskId) {
+    handleClickTask(taskId) {
+      console.log(111, taskId, this.activeTaskId);
+            
+      if (this.activeTaskId == taskId) {
         this.$refs.taskRobotViewRef.dialogVisible = false
         // 清空录像
         this.activeTaskId = null
@@ -242,6 +244,7 @@ export default {
         return
       }
       this.activeTaskId = taskId
+      console.log(222, taskId, this.activeTaskId, taskId === this.activeTaskId);
       const robotIds = this.taskData[taskId].equipmentList.map(robot => robot.robotId)
       this.setShowRobotIds(robotIds)
       this.$refs.taskRobotViewRef.showModal({

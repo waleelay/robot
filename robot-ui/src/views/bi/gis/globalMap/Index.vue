@@ -387,12 +387,12 @@ export default {
       L.control.rotate().addTo(this.map);
       // 地图底图
       // this.layerA = L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
-      this.layerA = L.tileLayer('/tdt/tiles/12/{z}/{x}/{y}.png', {
+      this.layerA = L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/12/{z}/{x}/{y}.png`, {
         maxZoom: 12,
         minZoom: 12,
       });
 
-      this.layerB = L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
+      this.layerB = L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/latest/{z}/{x}/{y}.png`, {
         maxZoom: 18,
         minZoom: 17,
         keepBuffer: 300,
@@ -706,9 +706,14 @@ export default {
       const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === robotId);
       if (existingIndex < 0) return
       // const { lat, lng } = this.pointMarkers[existingIndex].getLatLng()
-      console.log(123, this.robotLocation?.[robotId], this.robotLocation?.[robotId])
-      this.pointMarkers[existingIndex].setLatLng(L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng))
-      this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng) }};
+      // console.log(123, this.robotLocation?.[robotId], this.robotLocation?.[robotId])
+      const latlng = {lat: 30.7478613352993, lng: 106.03655278081857}
+      const lat = robotId === 'test001' ? latlng?.lat : this.robotLocation?.[robotId]?.lat
+      const lng = robotId === 'test001' ? latlng?.lng : this.robotLocation?.[robotId]?.lng
+      // const { lat, lng } = this.robotLocation?.[robotId]
+      this.pointMarkers[existingIndex].setLatLng(L.latLng(lat, lng))
+      // this.pointMarkers[existingIndex].setLatLng(L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng))
+      this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(lat, lng) }};
       // 存在则更新 icon
       this.pointMarkers[existingIndex].setIcon(this.getIcon(info));
       // 更新 meta 数据

@@ -125,7 +125,7 @@ export default {
     this.updateRobot()
   },
   methods: {
-    ...mapActions('dragVideo', ['dragStart', 'setSplitType']),
+    ...mapActions('dragVideo', ['setSplitType']),
     ...mapActions('websocketRobot', ['stopCamera', 'startCamera', 'toggleCamera']),
     onDragStart,
     onDragEnd,

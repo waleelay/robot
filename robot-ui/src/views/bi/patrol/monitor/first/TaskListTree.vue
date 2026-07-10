@@ -202,7 +202,7 @@ export default {
   },
   mounted() {},
   methods: {
-    ...mapActions('dragVideo', ['dragStart','setSplitType']),
+    ...mapActions('dragVideo', ['setSplitType']),
     tabChange(index) {
       this.tabIndex = index
       // if (index && this.taskList.length) {

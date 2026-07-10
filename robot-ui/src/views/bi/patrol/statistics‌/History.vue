@@ -54,7 +54,7 @@
               :total="tableData.total"
               layout="prev, pager, next"
               @current-change="getHistoryData"
-              class="mt10"
+              class="pagination-row"
             />
           </div>
         </div>
@@ -167,57 +167,6 @@ export default {
 ::v-deep {
   .el-table tr th {
     background: #223860;
-  }
-  .el-pagination {
-    text-align: right;
-    .el-pager li,
-    button,
-    &.is-background .btn-prev,
-    &.is-background .btn-next,
-    &.is-background .el-pager li {
-      min-width: 26px !important;
-      height: 26px;
-      // color: #18ADFE;
-      line-height: 26px;
-      // background: rgba(43, 86, 121, 0.30);
-      // border: 1px solid #18ADFE;
-      border-radius: 2px;
-    }
-    &.is-background:not(.old) {
-      .el-pager li,
-      button,
-      .btn-prev,
-      .btn-next,
-      .el-pager li {
-        color: #7BA9EA;
-        background: #1A2747;
-        border: none;
-        border-radius: 4px;
-      }
-      .el-pager li:not(.disabled).active {
-        color: #FFF;
-        border: none;
-        background: #2A86F3;
-        box-shadow: none !important;
-      }
-    }
-  }
-  .el-pagination:not(.old) {
-    text-align: right;
-    .el-pager li, button {
-      min-width: 26px !important;
-      height: 26px;
-      color: #7BA9EA;
-      line-height: 26px;
-      border: none;
-    }
-    .el-pager li {
-      &.active {
-        color: #fff;
-        background: #2A86F3;
-        border: none;
-      }
-    }
   }
 }
 </style>

@@ -8,7 +8,7 @@
         <span>{{ pixel.currentPixelLabel }}</span>
       </div> -->
       <div :ref="`dropdownRef${slotKey}_pixel`" :style="{ display: !qualitySelectDisabled ? 'block' : 'none' }">
-        <el-dropdown class="custom-dropdown pixel-dropdown" trigger="hover" placement="top">
+        <el-dropdown class="custom-dropdown pixel-dropdown" trigger="hover" placement="top" @command="changeQuality">
           <span class="el-dropdown-link">
             {{ pixel.pixelTypes.find(item => item.value === cameraInfo.quality)?.label || '自动' }}
           </span>
@@ -17,7 +17,7 @@
               :key="item.value"
               class="item"
               :disabled="qualitySelectDisabled"
-              @change="changeCameraQuality(cameraInfo)"
+              :command="item.value"
               :class="{'is-active': cameraInfo.quality === item.value}">{{ item.label }}
             </el-dropdown-item>
           </el-dropdown-menu>
@@ -182,6 +182,9 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSnapshotTime', 'changeCameraQuality']),
+    changeQuality(quality) {
+      this.changeCameraQuality({ ...this.cameraInfo, quality })
+    },
     // 播放暂停
     playPauseVideo() {
       // 切换状态

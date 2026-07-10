@@ -10,17 +10,17 @@
 <template>
   <div class="flx-justify-between flex-column" :class="{ 'is-inner': isMapInner }" :style="{ pointerEvents: selectedRobot.status !== 'online' ? 'none' : 'auto' }">
     <div class="circle flx-center flex-column" :class="{ 'talking': selectCamera.intercomActive }" @click="handleTalk">
-      <span>
-        <!-- <svg-icon :icon-class="isTalk ? 'mic-fill' : 'mic-off-fill'" /> -->
+      <span v-if="!selectCamera.intercomActive">
         <svg-icon :icon-class="selectCamera.intercomActive ? 'mic-fill' : 'mic-off-fill'" />
       </span>
+      <VolumeWave :selectCamera="selectCamera" v-else />
       <span class="mt8">{{ selectCamera.intercomActive ? '挂断' : '点击通话' }}</span>
     </div>
     <div v-if="!isMapInner" class="wp269 hp16 mt22 progress flx-align-center">
       <!-- 底层未划过轨道 背景色 #093974 -->
-      <div class="track-bg"></div>
+      <!-- <div class="track-bg"></div> -->
       <!-- 动态划过层：展示颜色 #0C132A 以及 box-shadow: inset 0 0 6px 2px #09F -->
-      <div class="filled-glow" :style="{'--value-percent': Math.ceil(audioVolume(audioDevice)) + '%'}"></div>
+      <!-- <div class="filled-glow" :style="{'--value-percent': Math.ceil(audioVolume(audioDevice)) + '%'}"></div> -->
       <!-- <span class="value">{{ audioVolume(audioDevice) }}</span> -->
       <!-- <input 
         type="range" 
@@ -33,15 +33,19 @@
         :style="{'--value-percent': Math.ceil(audioVolume(audioDevice) / 255 * 100)}"
         :disabled="audioMuted(audioDevice)"
       /> -->
+      <span style="color: #FFF; font-size:16px;" @click="toggleAudioMute(audioDevice)">
+        <svg-icon :icon-class="volumeIconClass" />
+      </span>
       <el-slider
-        class="w100"
-        :show-tooltip="false"
+        class="w100 ml10"
+        tooltip-class="volume-slider-tooltip"
         :value="audioVolume(audioDevice)"
         :min="0"
         :max="100"
+        :format-tooltip="val => `${ audioMuted(audioDevice) ? '已静音' : `音量：${val}` }`"
         :disabled="audioMuted(audioDevice)"
-        @input="value => updateVolume"
-        @change="value => updateVolume"
+        @input="updateAudioVolume"
+        @change="setAudioVolume"
       />
     </div>
     <div class="btns" :class="{'mt20': !isMapInner, 'mt30': isMapInner}">
@@ -65,10 +69,12 @@ import { sendEquipmentCommand } from '../../../../../../api/media';
 import { errorMessage } from '../../../../../../utils';
 import yuntai from './yuntai';
 import { mapActions, mapState } from 'vuex';
+import VolumeWave from './VolumeWave.vue';
 
 export default {
   name: 'Talk',
   mixins: [yuntai],
+  components: { VolumeWave },
   computed: {
     ...mapState('websocketRobot', ['audioState', 'cameras']),
     selectedRobotId() {
@@ -77,11 +83,22 @@ export default {
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot']
     },
-    selectCamera() {
+    selectCamera() {      
       return this.cameras?.[this.selectedRobot?.cameras?.[0].key] || {}
     },
     currentVolume() {
       return this.audioVolume(this.audioDevice)
+    },
+    // 音量图标类，根据音量值动态计算
+    volumeIconClass() {
+      const cur  = Number(this.audioVolume(this.audioDevice))
+      if (cur === 0 || this.audioMuted(this.audioDevice)) {
+        return 'volume-mute';
+      } else if (cur < 50) {
+        return 'volume-l';
+      } else {
+        return 'volume';
+      }
     }
   },
   props: {
@@ -95,9 +112,6 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['toggleIntercom', 'updateAudioState', 'ensureControlSession']),
-    updateVolume(e) {
-      this.setAudioVolume(this.audioDevice, e.target.value)
-    },
     async toggleAudioMute(device) {
       const previous = this.audioStatus(device)
       const muted = !previous.muted
@@ -110,7 +124,11 @@ export default {
         this.setAudioState(device, previous)
       }
     },
-    async setAudioVolume(device, volume) {
+    updateAudioVolume(volume) {
+      this.setAudioState(this.audioDevice, { volume })
+    },
+    async setAudioVolume(volume) {
+      const device = this.audioDevice
       const previous = this.audioStatus(device)
       const nextVolume = Math.max(0, Math.min(100, Number(volume) || 0))      
       this.setAudioState(device, { volume: nextVolume, muted: false })
@@ -142,11 +160,11 @@ export default {
         const session = await this.ensureControlSession({ device, action })
         const response = await sendEquipmentCommand(this.selectedRobotId,
             this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, source || action))
-        console.log('API sendDeviceCommand', response)
+        // console.log('API sendDeviceCommand', response)
         return true
       } catch (error) {
         this.$message.error(errorMessage(error))
-        console.log('ERROR sendDeviceCommand', errorMessage(error))
+        // console.log('ERROR sendDeviceCommand', errorMessage(error))
         return false
       }
     },
@@ -194,10 +212,10 @@ export default {
       color: #159Aff;
     }
     &.talking {
-      box-shadow: 0 0 60px 0 #42B3FF inset;
-      &, .svg-icon {
-        color: #0BF9FE
-      }
+      // box-shadow: 0 0 60px 0 #42B3FF inset;
+      // &, .svg-icon {
+      //   color: #0BF9FE
+      // }
     }
   }
 }

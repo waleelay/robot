@@ -5,7 +5,7 @@
     class="business2-content ml10 flex1 h100 no-w-scroll"
     @close="closeDetail"
   />
-  <div v-else class="business2-content ml10 flex1 h100 no-w-scroll">
+  <div v-else class="business2-content ml10 flex1 flex-column h100 no-w-scroll">
     <div class="business2-toolbar">
       <div class="business2-filter">
         <div class="custom-tab-button flex">
@@ -45,76 +45,78 @@
       </div>
     </div>
 
-    <div class="business2-table">
-      <el-table v-loading="loading" :data="rows" style="width: 100%" :class="{'no-data': !rows.length}">
-        <el-table-column type="index" width="60" label="序号" align="center">
-          <template slot-scope="scope">
-            <span class="td-index1">{{ (page.pageNum - 1) * page.pageSize + scope.$index + 1 }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="执行任务" min-width="240" show-overflow-tooltip>
-          <template slot-scope="{ row }">
-            <div class="flex-column" style="justify-content: center; line-height: 22px;">
-              <strong>{{ row.workflowName || '-' }}</strong>
-              <div class="muted">{{ row.workflowCode || '-' }} · {{ row.businessKey || row.id }}</div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="执行设备" min-width="170" show-overflow-tooltip>
-          <template slot-scope="{ row }">{{ deviceSummary(row) }}</template>
-        </el-table-column>
-        <el-table-column label="触发方式" width="110">
-          <template slot-scope="{ row }">{{ triggerTypeLabel(row.triggerType) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="110" align="center">
-          <template slot-scope="{ row }">
-            <span class="status" :class="statusTagType(row.status)">{{ statusLabel(row.status) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="失败原因" min-width="180" show-overflow-tooltip>
-          <template slot-scope="{ row }">{{ failureReason(row) }}</template>
-        </el-table-column>
-        <el-table-column label="视频" width="110" align="center">
-          <template slot-scope="{ row }">
-            <el-button type="text" :disabled="!videoCount(row)" @click="showVideos(row)">
-              {{ videoCount(row) }} 个视频
-            </el-button>
-          </template>
-        </el-table-column>
-        <el-table-column label="告警" width="90" align="center">
-          <template slot-scope="{ row }">
-            <span class="status" :class="row.alarmCount ? 'red' : 'info'">{{ row.alarmCount || 0 }} 条</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="轨迹" width="110" align="center">
-          <template slot-scope="{ row }">
-            <span class="status" :class="trackStatusType(row.trackStatus)">{{ trackStatusLabel(row.trackStatus) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="媒体绑定" width="120" align="center">
-          <template slot-scope="{ row }">
-            <el-tooltip v-if="row.mediaBindingMessage" :content="row.mediaBindingMessage" placement="top">
-              <span class="status" :class="mediaBindingTagType(row.mediaBindingStatus)">{{ mediaBindingLabel(row.mediaBindingStatus) }}</span>
-            </el-tooltip>
-            <span v-else class="status" :class="mediaBindingTagType(row.mediaBindingStatus)">{{ mediaBindingLabel(row.mediaBindingStatus) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="开始时间" min-width="160">
-          <template slot-scope="{ row }">{{ formatDateTime(row.startedAt) }}</template>
-        </el-table-column>
-        <el-table-column label="完成时间" min-width="160">
-          <template slot-scope="{ row }">{{ formatDateTime(row.completedAt) }}</template>
-        </el-table-column>
-        <el-table-column label="耗时" width="100">
-          <template slot-scope="{ row }">{{ durationLabel(row.durationSeconds) }}</template>
-        </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
-        <el-table-column label="操作" width="60" fixed="right">
-          <template slot-scope="{ row }">
-            <el-button type="text" @click="openDetail(row)">详情</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+    <div class="business2-table flex1 flex-column">
+      <div class="flex1">
+        <el-table v-loading="loading" :data="rows" style="width: 100%" :class="{'no-data': !rows.length}">
+          <el-table-column type="index" width="60" label="序号" align="center">
+            <template slot-scope="scope">
+              <span class="td-index1">{{ (page.pageNum - 1) * page.pageSize + scope.$index + 1 }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="执行任务" min-width="240" show-overflow-tooltip>
+            <template slot-scope="{ row }">
+              <div class="flex-column" style="justify-content: center; line-height: 22px;">
+                <strong>{{ row.workflowName || '-' }}</strong>
+                <div class="muted">{{ row.workflowCode || '-' }} · {{ row.businessKey || row.id }}</div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="执行设备" min-width="170" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ deviceSummary(row) }}</template>
+          </el-table-column>
+          <el-table-column label="触发方式" width="110">
+            <template slot-scope="{ row }">{{ triggerTypeLabel(row.triggerType) }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="110" align="center">
+            <template slot-scope="{ row }">
+              <span class="status" :class="statusTagType(row.status)">{{ statusLabel(row.status) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="失败原因" min-width="180" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ failureReason(row) }}</template>
+          </el-table-column>
+          <el-table-column label="视频" width="110" align="center">
+            <template slot-scope="{ row }">
+              <el-button type="text" :disabled="!videoCount(row)" @click="showVideos(row)">
+                {{ videoCount(row) }} 个视频
+              </el-button>
+            </template>
+          </el-table-column>
+          <el-table-column label="告警" width="90" align="center">
+            <template slot-scope="{ row }">
+              <span class="status" :class="row.alarmCount ? 'red' : 'info'">{{ row.alarmCount || 0 }} 条</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="轨迹" width="110" align="center">
+            <template slot-scope="{ row }">
+              <span class="status" :class="trackStatusType(row.trackStatus)">{{ trackStatusLabel(row.trackStatus) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="媒体绑定" width="120" align="center">
+            <template slot-scope="{ row }">
+              <el-tooltip v-if="row.mediaBindingMessage" :content="row.mediaBindingMessage" placement="top">
+                <span class="status" :class="mediaBindingTagType(row.mediaBindingStatus)">{{ mediaBindingLabel(row.mediaBindingStatus) }}</span>
+              </el-tooltip>
+              <span v-else class="status" :class="mediaBindingTagType(row.mediaBindingStatus)">{{ mediaBindingLabel(row.mediaBindingStatus) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="开始时间" min-width="160">
+            <template slot-scope="{ row }">{{ formatDateTime(row.startedAt) }}</template>
+          </el-table-column>
+          <el-table-column label="完成时间" min-width="160">
+            <template slot-scope="{ row }">{{ formatDateTime(row.completedAt) }}</template>
+          </el-table-column>
+          <el-table-column label="耗时" width="100">
+            <template slot-scope="{ row }">{{ durationLabel(row.durationSeconds) }}</template>
+          </el-table-column>
+          <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+          <el-table-column label="操作" width="60" :fixed="rows.length ? 'right' : false">
+            <template slot-scope="{ row }">
+              <el-button type="text" @click="openDetail(row)">详情</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
       <el-pagination
         class="pagination-row"
         background
@@ -126,27 +128,52 @@
       />
     </div>
 
-    <el-dialog :visible.sync="videosVisible" title="执行视频结果" width="860px">
-      <el-table :data="currentVideos">
-        <el-table-column label="文件 ID" min-width="190" show-overflow-tooltip>
-          <template slot-scope="{ row }">{{ row.fileId || row.videoId || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="类型" width="110">
-          <template slot-scope="{ row }">{{ mediaTypeLabel(row.mediaType) }}</template>
-        </el-table-column>
-        <el-table-column label="来源组件" min-width="150" show-overflow-tooltip>
-          <template slot-scope="{ row }">{{ row.sourceComponentName || row.sourceComponentCode || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="动作" min-width="170" show-overflow-tooltip>
-          <template slot-scope="{ row }">{{ row.actionCode || row.actionRef || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="开始" min-width="160">
-          <template slot-scope="{ row }">{{ formatDateTime(row.startedAt) }}</template>
-        </el-table-column>
-        <el-table-column label="结束" min-width="160">
-          <template slot-scope="{ row }">{{ formatDateTime(row.endedAt) }}</template>
-        </el-table-column>
-      </el-table>
+    <el-dialog
+      class="custom-dialog__wrapper robot-dialog flx-align-center"
+      :visible.sync="videosVisible"
+      :modal-append-to-body="false"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :modal="false"
+      append-to-body
+      center
+      title=""
+    >
+      <template slot="footer"></template>
+      <div class="flex mb20 ml72">
+        <div class="custom-modal-container robot-control-container">
+          <div class="box">
+            <div class="top m10 flx-justify-between">
+              <div class="title ml10">执行视频结果</div>
+              <div class="close mr10" @click="videosVisible = false">
+                <svg-icon icon-class="close"></svg-icon>
+              </div>
+            </div>
+            <div class="info-content p10">
+              <el-table :data="currentVideos">
+                <el-table-column label="文件 ID" min-width="190" show-overflow-tooltip>
+                  <template slot-scope="{ row }">{{ row.fileId || row.videoId || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="类型" width="110">
+                  <template slot-scope="{ row }">{{ mediaTypeLabel(row.mediaType) }}</template>
+                </el-table-column>
+                <el-table-column label="来源组件" min-width="150" show-overflow-tooltip>
+                  <template slot-scope="{ row }">{{ row.sourceComponentName || row.sourceComponentCode || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="动作" min-width="170" show-overflow-tooltip>
+                  <template slot-scope="{ row }">{{ row.actionCode || row.actionRef || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="开始时间" width="150">
+                  <template slot-scope="{ row }">{{ formatDateTime(row.startedAt) }}</template>
+                </el-table-column>
+                <el-table-column label="结束时间" width="160">
+                  <template slot-scope="{ row }">{{ formatDateTime(row.endedAt) }}</template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -313,4 +340,18 @@ export default {
 <style scoped lang="scss">
 @import '../common.scss';
 @import '../table.scss';
+
+.custom-modal-container {
+  background: linear-gradient(180deg, rgba(4, 60, 149, 0.40) 0.01%, rgba(4, 33, 68, 0.30) 6.03%, rgba(4, 23, 62, 0.32) 56.39%, rgba(7, 45, 94, 0.31) 101.39%, rgba(4, 62, 151, 0.40) 109.49%);
+  backdrop-filter: blur(15px);
+  border: 1px solid #2A86F3;
+}
+.custom-dialog__wrapper {
+  background: rgba(2, 19, 40, 0.80);
+  ::v-deep {
+    .el-table tr th {
+      background: #223860;
+    }
+  }
+}
 </style>

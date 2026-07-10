@@ -1,7 +1,7 @@
 import store from '@/store';
 import bigScreen from './bigScreen'; // 导入 store 实例
 import { Message } from 'element-ui';
-import { Room, RoomEvent, Track } from "livekit-client"
+import { Room, RoomEvent, Track, VideoQuality } from "livekit-client"
 import {
   createSnapshot,
   createVideoSession,
@@ -79,6 +79,9 @@ const state = {
 function cameraKey(robotId, camera) {
   return camera.key || `${robotId}-${camera.deviceId || camera.cameraId}`
 }
+function currentCameraState(camera) {
+  return allCameras().find(item => item.key === camera.key) || camera
+}
 
 function toBasicCamera(camera, robotId, key) {
   return {
@@ -141,7 +144,16 @@ const mutations = {
   setCamera(state, camera) {
     if (!camera || !camera.key) return
     camera._revision = (camera._revision || 0) + 1
+    if (camera.key === 'test001-camera01') {
+      // console.log('修改--', camera.intercomActive, camera.remoteAudioTrack);
+    }
     state.cameras = { ...state.cameras, [camera.key]: camera }
+    if (camera.key === 'test001-camera01') {
+      // console.log('修改++', camera.intercomActive, state.cameras[camera.key].remoteAudioTrack);
+    }
+    
+
+    
 
     const robotIndex = state.robots.findIndex(item => item.robotId === camera.robotId)
     if (robotIndex < 0) return
@@ -327,10 +339,10 @@ function activeRecordingInProgress(camera) {
 function intercomInProgress(camera) {
   return camera.intercomActive || (camera.intercomStatus && !['IDLE', 'FAILED'].includes(camera.intercomStatus))
 }
-function effectiveCameraQuality(camera, value, gridMode = 4) {
+function effectiveCameraQuality(camera, value) {
   const quality = value || camera.quality || 'auto'
   if (quality === 'main' || quality === 'sub') return quality
-  return gridMode === 1 ? 'main' : 'sub'
+  return store.state.dragVideo.splitType === 1 ? 'main' : 'sub'
 }
 function firstVideoPublication(room) {
   for (const participant of room.remoteParticipants.values()) {
@@ -339,6 +351,75 @@ function firstVideoPublication(room) {
     }
   }
   return null
+}
+
+function detachRoomFromVideo(room, video) {
+  if (!room || !video) return
+  room.remoteParticipants.forEach(participant => {
+    participant.trackPublications.forEach(publication => {
+      if (publication.track && typeof publication.track.detach === 'function') {
+        publication.track.detach(video)
+      }
+    })
+  })
+}
+function prepareReplacementVideo(camera, track, publication, oldRoom, prefixId) {
+  if (publication && typeof publication.setVideoQuality === 'function') {
+    publication.setVideoQuality(VideoQuality.HIGH)
+  }
+  const warmup = document.createElement('video')
+  warmup.autoplay = true
+  warmup.muted = true
+  warmup.playsInline = true
+  Object.assign(warmup.style, {
+    position: 'fixed',
+    left: '-2px',
+    top: '-2px',
+    width: '1px',
+    height: '1px',
+    opacity: '0',
+    pointerEvents: 'none'
+  })
+  document.body.appendChild(warmup)
+  track.attach(warmup)
+  return waitForVideoReady(warmup)
+      .then(() => {
+        const video = document.getElementById(prefixId + camera.key)
+        if (video) {
+          detachRoomFromVideo(oldRoom, video)
+          track.attach(video)
+        }
+      })
+      .finally(() => {
+        if (typeof track.detach === 'function') track.detach(warmup)
+        warmup.remove()
+      })
+}
+function waitForVideoReady(video) {
+  if (video.readyState >= 2 && video.videoWidth > 0) return Promise.resolve(true)
+    video.play().catch(() => {})
+    return new Promise((resolve) => {
+      const onReady = () => {
+        if (video.videoWidth > 0 || video.readyState >= 2) cleanup(resolve)
+      }
+      const timeout = setTimeout(() => cleanup(() => resolve(false)), 12000)
+      const interval = setInterval(onReady, 250)
+      const cleanup = (done) => {
+        clearTimeout(timeout)
+        clearInterval(interval)
+        video.removeEventListener('loadedmetadata', onReady)
+        video.removeEventListener('loadeddata', onReady)
+        video.removeEventListener('canplay', onReady)
+        video.removeEventListener('playing', onReady)
+        video.removeEventListener('resize', onReady)
+        done(true)
+      }
+      video.addEventListener('loadedmetadata', onReady)
+      video.addEventListener('loadeddata', onReady)
+      video.addEventListener('canplay', onReady)
+      video.addEventListener('playing', onReady)
+      video.addEventListener('resize', onReady)
+    })
 }
 function latencyLevel(camera) {
   if (!Number.isFinite(camera.latencyMs)) return 'unknown'
@@ -429,6 +510,9 @@ const actions = {
           dispatch('stopLatencyStats', old)
           old.room.disconnect()
         }
+        if (old.key === 'test001-camera01') {
+          // console.log('syncRobotEvent--', old.intercomActive, old.remoteAudioTrack);
+        }
         return Object.assign(camera, {
           session: old.session,
           room: incoming.status === 'online' ? old.room : null,
@@ -460,10 +544,10 @@ const actions = {
           remoteVideoTrack: old.remoteVideoTrack || null,
         })
       })
-      incoming.cameras.forEach(camera => commit('setCamera', camera))
+      // incoming.cameras.forEach(camera => commit('setCamera', camera))
       commit('updateRobot', toBasicRobot({ ...existing, ...incoming }))
     } else {
-      incoming.cameras.forEach(camera => commit('setCamera', camera))
+      // incoming.cameras.forEach(camera => commit('setCamera', camera))
       commit('setRobots', [...state.robots, toBasicRobot(incoming)])
     }
   },
@@ -485,6 +569,9 @@ const actions = {
     if (event.event.indexOf('video.intercom.') === 0) {
       camera.intercomStatus = event.data.intercomStatus || camera.intercomStatus
       camera.intercomActive = !['IDLE', 'FAILED'].includes(camera.intercomStatus)
+    }
+    if (camera.key === 'test001-camera01') {
+      // console.log('syncSessionEvent--', camera.intercomActive, camera.remoteAudioTrack);
     }
     commit('setCamera', camera)
   },
@@ -516,8 +603,6 @@ const actions = {
   },
   async ensureControlSession({ commit, state }, {device, action}) {
     if (!device) throw new Error('未找到控制设备')
-      console.log(device, action);
-
     const key = `${state.selectedRobotId}:${device.deviceId}:${action}`
     if (state.controlSessions[key] && state.controlSessions[key].status === 'ACTIVE') {
       return state.controlSessions[key]
@@ -573,7 +658,12 @@ const actions = {
           camera.intercomStatus = response.intercomStatus
         } catch (_) {}
       }
-      if (changed) commit('setCamera', camera)
+      if (changed) {
+        if (camera.key === 'test001-camera01') {
+          // console.log('heartbeatViewers--', camera.intercomActive, camera.remoteAudioTrack);
+        }
+        commit('setCamera', camera)
+      }
     }
   },
   // 启动摄像头
@@ -619,7 +709,9 @@ const actions = {
   async stopCamera({ commit, state, dispatch }, data) {
     let camera = state.cameras[data.key]
     if (!camera) return
-    camera = { ...camera }    
+    camera = { ...camera }
+    console.log('stopCamera', camera.key, camera.recordingActive);
+    
     if (camera.recordingActive) {
       await dispatch('stopCameraRecording', camera)
     }
@@ -712,6 +804,7 @@ const actions = {
         })
       }
       console.log('API startIntercom', response)
+      
     } catch (error) {
       camera.intercomActive = false
       console.error('ERROR startIntercom', errorMessage(error))
@@ -733,6 +826,7 @@ const actions = {
       camera.intercomStatus = 'IDLE'
       camera.intercomToken = null
       camera.hasAudio = false
+      camera.remoteAudioTrack = null
       if (camera.watching) {
         camera.session = mergeSession(camera, response)
       } else {
@@ -792,9 +886,15 @@ const actions = {
           camera.remoteVideoTrack = track
           camera.hasVideo = true
         } else if (track.kind === 'audio') {
+          console.log(111, track);
+          
           camera.remoteAudioTrack = track
           track.attach(document.getElementById(state.prefixId + camera.key + '-audio'))
           camera.hasAudio = true
+
+          
+
+          console.log('音频流+++', camera.remoteAudioTrack, camera.intercomActive)
         }
         commit('setCamera', camera)
       })
@@ -906,9 +1006,11 @@ const actions = {
       console.log('ERROR getControlProfile', error)
     }
   },
-
   async changeCameraQuality({ commit, state, dispatch }, camera) {
+    console.log(1, camera);
+    
     if (!camera.session || !camera.watching || camera.stopped) return
+    console.log(2);
     if (activeRecordingInProgress(camera)) {
       Message.warning('请先停止录像后再切换清晰度')
       return
@@ -917,12 +1019,12 @@ const actions = {
       Message.warning('请先关闭对讲后再切换清晰度')
       return
     }
-    const nextQuality = effectiveCameraQuality(camera, undefined, state.gridMode)
-    const currentQuality = camera.session.quality || effectiveCameraQuality(camera, undefined, state.gridMode)
+    const nextQuality = effectiveCameraQuality(camera)
+    const currentQuality = camera.session.quality || effectiveCameraQuality(camera)
     if (nextQuality === currentQuality) return
-    dispatch('switchCameraQuality', { camera, nextQuality })
+    dispatch('switchCameraQuality', {camera, quality: nextQuality})
   },
-  async switchCameraQuality({ commit, state, dispatch }, { camera, nextQuality }) {
+  async switchCameraQuality({ commit, state, dispatch }, {camera, quality}) {
     const oldSession = camera.session
     const oldRoom = camera.room
     if (!oldSession || camera.qualityChanging) return
@@ -933,37 +1035,40 @@ const actions = {
       const createdSession = await createVideoSession({
         robotId: camera.robotId,
         deviceId: camera.deviceId,
-        quality: nextQuality,
+        quality,
         reuse: true
       })
+      console.log(222, nextSession);
+
       const viewerToken = await getViewerToken(createdSession.sessionId)
       nextSession = Object.assign({}, createdSession, {
         livekitUrl: viewerToken.livekitUrl || createdSession.livekitUrl,
         roomName: viewerToken.roomName || createdSession.roomName,
         viewerToken: viewerToken.token,
-        quality: nextQuality,
+        quality,
       })
       try {
-        nextRoom = await dispatch('connectReplacementLiveKit', { camera, session: nextSession, oldRoom })
+        nextRoom = await dispatch('connectReplacementLiveKit', {camera, session: nextSession, room: oldRoom})
       } catch (connectError) {
-        console.warn('WARN retry replacement quality session', errorMessage(connectError))
+        this.log('WARN retry replacement quality session', this.errorMessage(connectError))
         const restartedSession = await restartVideoSession(nextSession.sessionId)
         const refreshedToken = await getViewerToken(restartedSession.sessionId)
         nextSession = Object.assign({}, restartedSession, {
           livekitUrl: refreshedToken.livekitUrl || restartedSession.livekitUrl,
           roomName: refreshedToken.roomName || restartedSession.roomName,
           viewerToken: refreshedToken.token,
-          quality: nextQuality,
+          quality,
         })
-        nextRoom = await dispatch('connectReplacementLiveKit', { camera, session: nextSession, oldRoom })
+        nextRoom = await dispatch('connectReplacementLiveKit', {camera, session: nextSession, room: oldRoom})
       }
+
       camera.room = nextRoom
       camera.session = Object.assign({}, nextSession)
       camera.status = nextSession.status
       camera.viewerCount = nextSession.viewerCount
       camera.hasVideo = true
       const publication = firstVideoPublication(nextRoom)
-      if (publication && publication.track) dispatch('startLatencyStats', { camera, track: publication.track, room: nextRoom })
+      if (publication && publication.track) dispatch('startLatencyStats', {camera, track: publication.track, room: nextRoom})
       camera.stopped = false
       camera.stopping = false
       state.stoppedSessionIds.delete(nextSession.sessionId)
@@ -975,42 +1080,40 @@ const actions = {
         })
         camera.disconnecting = false
       }
-      if (oldSession.sessionId !== nextSession.sessionId) {
-        state.stoppedSessionIds.add(oldSession.sessionId)
-        stopVideoSession(oldSession.sessionId).catch(error => {
-          console.error('ERROR stop old quality session')
-          Message.error(errorMessage(error))
-        })
-      }
+      state.stoppedSessionIds.add(oldSession.sessionId)
+      stopVideoSession(oldSession.sessionId).catch(error => {
+        console.error('ERROR stop old quality session')
+        Message.error(errorMessage(error))
+      })
       console.log('API switchCameraQuality', {
         from: oldSession.quality,
-        to: nextQuality,
+        to: quality,
         oldSessionId: oldSession.sessionId,
         newSessionId: nextSession.sessionId
       })
     } catch (error) {
+      console.error(333, error)
       if (nextRoom) {
         await Promise.resolve(nextRoom.disconnect()).catch(() => {})
       }
-      Message.error(`清晰度切换失败：${errorMessage(error)}`)
+      if (nextSession && nextSession.sessionId) {
+        stopVideoSession(nextSession.sessionId).catch(() => {})
+      }
+      Message.error(`清晰度切换失败：`, errorMessage(error))
       console.log('ERROR switchCameraQuality', errorMessage(error))
     } finally {
-      commit('resetCameraQualityChanging', camera)
+      dispatch('resetQualityChanging', camera)
     }
   },
-  currentCameraState(camera) {
-    return this.allCameras().find(item => item.key === camera.key) || camera
-  },
-  resetQualityChanging(camera) {
+  resetQualityChanging({ commit }, camera) {
     camera.disconnecting = false
     camera.qualityChanging = false
-    const current = this.currentCameraState(camera)
+    const current = currentCameraState(camera)
     current.disconnecting = false
     current.qualityChanging = false
     commit('setCamera', current)
   },
-  startLatencyStats({commit, state, dispatch}, { camera, track, room }) {
-    room = room || camera.room
+  startLatencyStats({commit, state, dispatch}, {camera, track, room = camera.room}) {
     dispatch('stopLatencyStats', camera)
     camera.statsTrack = track
     camera.statsRoom = room
@@ -1019,8 +1122,8 @@ const actions = {
     const sample = async () => {
       if (camera.statsTrack !== track || camera.statsRoom !== room || (room && camera.room !== room)) return
       try {
-        const stats = await dispatch('videoStatsReport', { track, room })
-        const latencyMs = await dispatch('estimateLatencyMs', stats)
+        const stats = await dispatch('videoStatsReport', track, room)
+        const latencyMs = dispatch('estimateLatencyMs', stats)
         if (camera.statsTrack !== track || camera.statsRoom !== room || (room && camera.room !== room)) return
         camera.latencyMs = latencyMs
         camera.latencyLevel = latencyLevel(camera)
@@ -1035,7 +1138,7 @@ const actions = {
     camera.statsTimer = setInterval(sample, 1000)
     commit('setCamera', camera)
   },
-  stopLatencyStats({}, camera) {
+  stopLatencyStats(camera) {
     if (camera.statsTimer) clearInterval(camera.statsTimer)
     camera.statsTimer = null
     camera.statsTrack = null
@@ -1044,7 +1147,7 @@ const actions = {
     camera.latencyLevel = 'unknown'
     // commit('setCamera', camera)
   },
-  async videoStatsReport({ dispatch }, { track, room }) {
+  async videoStatsReport({}, track, room) {
     const peerStats = await dispatch('peerConnectionStats', room)
     if (peerStats) return peerStats
     if (track && typeof track.getRTCStatsReport === 'function') {
@@ -1069,9 +1172,9 @@ const actions = {
     }
     return null
   },
-  estimateLatencyMs({}, stats) {
+  estimateLatencyMs(stats) {
     if (!stats || typeof stats.forEach !== 'function') return null
-    const pairRtt = selectedCandidatePairRtt(stats)
+    const pairRtt = this.selectedCandidatePairRtt(stats)
     if (Number.isFinite(pairRtt)) return Math.round(pairRtt * 1000)
     let receiverRtt = null
     let jitterDelay = null
@@ -1100,23 +1203,6 @@ const actions = {
     }
     const room = new Room()
     const sessionId = session.sessionId
-    const attachReplacementVideo = (track) => {
-      const video = document.getElementById(state.prefixId + camera.key)
-      if (video) {
-        if (oldRoom) {
-          oldRoom.remoteParticipants.forEach(participant => {
-            participant.trackPublications.forEach(publication => {
-              if (publication.track && typeof publication.track.detach === 'function') {
-                publication.track.detach(video)
-              }
-            })
-          })
-        }
-        track.attach(video)
-      }
-      camera.remoteVideoTrack = track
-      camera.hasVideo = true
-    }
     return new Promise((resolve, reject) => {
       let settled = false
       const timeout = setTimeout(() => fail(new Error('等待新清晰度视频流超时')), 30000)
@@ -1135,9 +1221,13 @@ const actions = {
       }
       room.on(RoomEvent.TrackSubscribed, (track, publication) => {
         if (track.kind !== 'video') return
-        attachReplacementVideo(track)
-        console.log('LiveKit TrackSubscribed', `${camera.name} ${track.sid || track.name}`)
-        done()
+        prepareReplacementVideo(camera, track, publication, oldRoom, state.prefixId)
+            .then(() => {
+              camera.hasVideo = true
+              console.log('LiveKit TrackSubscribed', `${camera.name} ${track.sid || track.name}`)
+              done()
+            })
+            .catch(fail)
       })
       room.on(RoomEvent.Disconnected, () => {
         fail(new Error('新清晰度 LiveKit 连接已断开'))
@@ -1146,9 +1236,13 @@ const actions = {
           .then(() => {
             const publication = firstVideoPublication(room)
             if (!publication || !publication.track) return
-            attachReplacementVideo(publication.track)
-            console.log('LiveKit TrackAttached', `${camera.name} ${publication.track.sid || publication.track.name}`)
-            done()
+            prepareReplacementVideo(camera, publication.track, publication, oldRoom)
+                .then(() => {
+                  camera.hasVideo = true
+                  console.log('LiveKit TrackAttached', `${camera.name} ${publication.track.sid || publication.track.name}`)
+                  done()
+                })
+                .catch(fail)
           })
           .catch(fail)
     })
@@ -1165,6 +1259,7 @@ const actions = {
     camera.recordingBusy = true
     try {
       const active = await getActiveLiveRecording(camera.session.sessionId)
+      console.log('startCameraRecording', camera.key, active);
       if (active) {
         camera.activeRecording = active
         camera.recordingActive = false
@@ -1179,6 +1274,7 @@ const actions = {
     } catch (error) {
       const data = error && error.response && error.response.data
       if (data && data.code === 'RECORDING_ALREADY_ACTIVE') {
+    console.log('startCameraRecording', camera.key, data.code);
         Message.info('当前视频正在录制中')
       } else {
         console.error('开始录像失败', error)
@@ -1186,6 +1282,7 @@ const actions = {
       }
     } finally {
       camera.recordingBusy = false
+      commit('setCamera', camera)
     }
   },
   async syncActiveRecording({ commit, state, dispatch }, camera) {
@@ -1199,6 +1296,8 @@ const actions = {
     } catch (_) {
       camera.activeRecording = null
       camera.recordingActive = false
+    } finally {
+      commit('setCamera', camera)
     }
   },
   async stopCameraRecording({ commit, state, dispatch }, camera) {
@@ -1219,6 +1318,7 @@ const actions = {
       Message.error(error)
     } finally {
       camera.recordingBusy = false
+      commit('setCamera', camera)
     }
   },
   setSnapshotTime({ commit }, time) {

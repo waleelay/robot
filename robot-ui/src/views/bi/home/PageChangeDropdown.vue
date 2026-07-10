@@ -5,7 +5,7 @@
     </span>
     <el-dropdown-menu slot="dropdown" class="custom-dropdown-menu page-dropdown-menu p10" :class="{'mt25': $route.name !== 'biIndex'}" :style="{ transform: $route.name !== 'biIndex' ? 'translateX(185px)' : 'translateX(0px)' }">
       <div class="d-flex">
-        <el-dropdown-item v-for="item in pageList" :key="item.label" :command="item.value" class="flx-center flex-column wp76 hp68" :class="{ 'is-active': $route.name.includes(item.value) }">
+        <el-dropdown-item v-for="item in pageList" :key="item.label" :title="item.value.includes('no-') ? '暂未开放' : ''" :command="item.value" class="flx-center flex-column wp76 hp68" :class="{ 'is-active': $route.name.includes(item.value) }">
           <svg-icon class="default-svg-icon" :icon-class="item.icon" style="font-size: 26px" />
           <svg-icon class="active-svg-icon" :icon-class="item.icon + 1" style="font-size: 26px" />
           <span class="text mt2">{{ item.label }}</span>
@@ -21,9 +21,9 @@ import { mapActions } from 'vuex';
 const pages = [
   { label: '指挥中心', value: 'biIndex', icon: 'page-home' },
   { label: '巡逻巡查', value: 'biPatrol', icon: 'page-patrol' },
-  { label: '人员管控', value: 'biStaff', icon: 'page-staff' },
-  { label: '生产安全', value: 'biSafety', icon: 'page-safety'},
-  { label: '应急处置', value: 'biEmergency', icon: 'page-emergency' }
+  { label: '人员管控', value: 'no-biStaff', icon: 'page-staff' },
+  { label: '生产安全', value: 'no-biSafety', icon: 'page-safety'},
+  { label: '应急处置', value: 'no-biEmergency', icon: 'page-emergency' }
 ]
 export default {
   name: 'PageChangeDropdown',
@@ -50,6 +50,13 @@ export default {
       }
     },
     async goPage(pathName) {
+      if (pathName.includes('no-')) {
+        this.$message({
+          message: '暂未开放',
+          type: 'warning'
+        })
+        return
+      }
       await this.clearCameras()
       this.$router.push({ name: pathName })
     },

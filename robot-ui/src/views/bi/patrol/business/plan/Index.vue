@@ -7,7 +7,7 @@
     @close="backToList"
     @saved="handleSaved"
   />
-  <div v-else class="business2-content ml10 flex1 h100 no-w-scroll">
+  <div v-else class="business2-content ml10 flex1 flex-column h100 no-w-scroll">
     <div class="business2-toolbar">
       <div class="business2-filter">
         <div class="custom-tab-button flex">
@@ -26,10 +26,10 @@
           <el-option label="手动执行" value="MANUAL" />
           <el-option label="计划执行" value="SCHEDULE" />
         </el-select>
-        <el-select v-model="filters.enabled" clearable placeholder="启用状态" class="business2-search" @change="loadRows(1)">
+        <!-- <el-select v-model="filters.enabled" clearable placeholder="启用状态" class="business2-search" @change="loadRows(1)">
           <el-option label="启用" :value="true" />
           <el-option label="停用" :value="false" />
-        </el-select>
+        </el-select> -->
       </div>
       <div class="business2-actions flx-align-center">
         <div class="custom-search-div">
@@ -56,58 +56,63 @@
       </div>
     </div>
 
-    <div class="business2-table">
-      <el-table v-loading="loading" :data="rows" style="width: 100%" :class="{'no-data': !rows.length}">
-        <el-table-column type="index" width="60" label="序号" align="center">
-          <template slot-scope="scope">
-            <span class="td-index1">{{ (page.pageNum - 1) * page.pageSize + scope.$index + 1 }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="任务计划" min-width="220" show-overflow-tooltip>
-          <template slot-scope="{ row }">
-            <div class="flex-column" style="justify-content: center; line-height: 22px;">
-              <strong>{{ row.planName || '-' }}</strong>
-              <div class="muted">{{ row.planCode || '-' }}</div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="workflowName" label="任务编排" min-width="190" show-overflow-tooltip />
-        <el-table-column label="执行方式" width="110">
-          <template slot-scope="{ row }">{{ executionModeLabel(row.executionMode) }}</template>
-        </el-table-column>
-        <el-table-column label="计划周期" width="110">
-          <template slot-scope="{ row }">{{ schedulePresetLabel(row.scheduleConfig && row.scheduleConfig.preset) }}</template>
-        </el-table-column>
-        <el-table-column key="status" width="100" label="执行状态">
-          <template slot-scope="scope">
-            <span class="status" :class="{ green: scope.row.executionStatus === 'RUNNING', orange: scope.row.executionStatus === 'IDLE', red: scope.row.executionStatus === 'LAST_FAILED' }">
-              {{ executionStatusLabel(scope.row.executionStatus) }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="295" fixed="right">
-          <template slot-scope="{ row }">
-            <el-button type="text" @click="openEditor(row.id, 'view')">详情</el-button>
-            <el-button type="text" @click="openEditor(row.id, 'edit')">编辑</el-button>
-            <el-button type="text" :disabled="!row.enabled" @click="previewPlan(row)">预览</el-button>
-            <el-button
-              type="text"
-              :disabled="!row.enabled || Boolean(row.activeWorkflowInstanceId)"
-              :loading="isStarting(row.id)"
-              @click="startPlan(row)"
-            >
-              立即执行
-            </el-button>
-            <el-dropdown @command="handleMore($event, row)">
-              <el-button type="text">更多<i class="el-icon-arrow-down el-icon--right" /></el-button>
-              <el-dropdown-menu slot="dropdown">
-                <el-dropdown-item command="toggle">{{ row.enabled ? '停用' : '启用' }}</el-dropdown-item>
-                <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
-              </el-dropdown-menu>
-            </el-dropdown>
-          </template>
-        </el-table-column>
-      </el-table>
+    <div class="business2-table flex1 flex-column">
+      <div class="flex1">
+        <el-table v-loading="loading" :data="rows" style="width: 100%" :class="{'no-data': !rows.length}">
+          <el-table-column type="index" width="60" label="序号" align="center">
+            <template slot-scope="scope">
+              <span class="td-index1">{{ (page.pageNum - 1) * page.pageSize + scope.$index + 1 }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="任务计划" min-width="220" show-overflow-tooltip>
+            <template slot-scope="{ row }">
+              <div class="flex-column" style="justify-content: center; line-height: 22px;">
+                <strong>{{ row.planName || '-' }}</strong>
+                <div class="muted">{{ row.planCode || '-' }}</div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="workflowName" label="任务编排" min-width="190" show-overflow-tooltip />
+          <el-table-column label="执行方式" width="110">
+            <template slot-scope="{ row }">{{ executionModeLabel(row.executionMode) }}</template>
+          </el-table-column>
+          <el-table-column label="计划周期" width="110">
+            <template slot-scope="{ row }">{{ schedulePresetLabel(row.scheduleConfig && row.scheduleConfig.preset) }}</template>
+          </el-table-column>
+          <el-table-column key="status" width="100" label="执行状态">
+            <template slot-scope="scope">
+              <span class="status" :class="{ green: scope.row.executionStatus === 'RUNNING', orange: scope.row.executionStatus === 'IDLE', red: scope.row.executionStatus === 'LAST_FAILED' }">
+                {{ executionStatusLabel(scope.row.executionStatus) }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="325" fixed="right">
+            <template slot-scope="{ row }">
+              <el-button type="text" @click="openEditor(row.id, 'view')">详情</el-button>
+              <el-button type="text" @click="openEditor(row.id, 'edit')">编辑</el-button>
+              <el-button type="text" :disabled="!row.enabled" @click="previewPlan(row)">预览</el-button>
+              <el-button
+                type="text"
+                :disabled="!row.enabled || Boolean(row.activeWorkflowInstanceId)"
+                :loading="isStarting(row.id)"
+                @click="startPlan(row)"
+              >
+                {{isStarting(row.id) ? '执行中' : '立即执行'}}
+              </el-button>
+              <el-button type="text" @click="deletePlan(row)">
+                删除
+              </el-button>
+              <!-- <el-dropdown @command="handleMore($event, row)">
+                <el-button type="text">更多<i class="el-icon-arrow-down el-icon--right" /></el-button>
+                <el-dropdown-menu slot="dropdown">
+                  <el-dropdown-item command="toggle">{{ row.enabled ? '停用' : '启用' }}</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </el-dropdown> -->
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
       <el-pagination
         class="pagination-row"
         background
@@ -205,7 +210,8 @@ export default {
           pageSize: this.page.pageSize,
           keyword: this.filters.keyword || undefined,
           executionMode: this.filters.executionMode || undefined,
-          enabled: this.filters.enabled === '' ? undefined : this.filters.enabled,
+          // enabled: this.filters.enabled === '' ? undefined : this.filters.enabled,
+          enabled: true,
           executeStatus: this.filters.executionStatus === 'all' ? undefined : this.filters.executionStatus
         }
         const data = this.unwrap(await getTaskList(params))

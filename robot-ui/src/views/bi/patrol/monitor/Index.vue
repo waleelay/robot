@@ -42,6 +42,7 @@ export default {
     selectedRobotId: {
       handler(newVal, oldVal) {
         this.isFirst = !Boolean(newVal)
+        // this.isFirst = false
       },
       immediate: true
     },

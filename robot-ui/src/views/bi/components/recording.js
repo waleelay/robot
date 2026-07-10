@@ -17,7 +17,7 @@ export default {
       this.recordingsLoading = true
       try {
         const params = {
-          robotId: 'robot-001',
+          // robotId: 'robot-001',
           status: 'READY',
           fileType: 'VIDEO',
           page: this.recordInfo.page,
@@ -92,10 +92,8 @@ export default {
       }
     },
     playPause(fileId) {
-      console.log(11);
       const { player } = this.recordingData[fileId]
-      console.log(22);
-      
+      if (!player) return
       if (player.paused) {
         player.play()
       } else {

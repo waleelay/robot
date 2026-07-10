@@ -3,6 +3,7 @@
     <div class="bi">
       <router-view :key="$route.path" />
     </div>
+    <WarningPending />
   </ScaleScreen>
 </template>
 
@@ -11,10 +12,12 @@ import mqttClient from '@/plugins/mqtt-client'
 import { mapActions } from 'vuex';
 import { getPatrolPanoramaOverview } from '../../api/new-bi';
 import ScaleScreen from './../../components/largeScreen/scale-screen.vue'
+import WarningPending from './patrol/panorama/warning/WarnPending1.vue';
 export default {
   name: 'Bi',
   components: {
-    ScaleScreen
+    ScaleScreen,
+    WarningPending
   },
   data() {
     return {

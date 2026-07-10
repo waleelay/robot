@@ -209,9 +209,9 @@ export default {
   position: absolute;
   top: 33px !important;
   right: 20px !important;
-  width: 48px;
+  width: 50px;
   .operation {
-    width: 48px;
+    width: 50px;
     padding: 20px 10px;
     border-radius: 4px;
     border: 1px solid #4C617B;
