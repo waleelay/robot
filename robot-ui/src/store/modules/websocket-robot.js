@@ -656,6 +656,9 @@ const actions = {
           const response = await heartbeatIntercom(camera.session.sessionId)
           changed = camera.intercomStatus !== response.intercomStatus || changed
           camera.intercomStatus = response.intercomStatus
+          const intercomActive = !['IDLE', 'FAILED'].includes(camera.intercomStatus)
+          changed = camera.intercomActive !== intercomActive || changed
+          camera.intercomActive = intercomActive
         } catch (_) {}
       }
       if (changed) {
@@ -761,13 +764,17 @@ const actions = {
 
   async toggleIntercom({ commit, state, dispatch }, {robotId, camera}) {
     // console.log('toggleIntercom', robotId, camera)
-    if (camera.intercomActive) {
-      await dispatch('hangupIntercom', camera)
+    const currentCamera = (camera && camera.key && state.cameras[camera.key]) || camera
+    if (!currentCamera || currentCamera.intercomBusy) return
+    if (currentCamera.intercomActive) {
+      await dispatch('hangupIntercom', currentCamera)
     } else {
-      await dispatch('startIntercom', {robotId, camera})
+      await dispatch('startIntercom', {robotId, camera: currentCamera})
     }
   },
   async startIntercom({ commit, state, dispatch }, {robotId, camera}) {
+    camera = (camera && camera.key && state.cameras[camera.key]) || camera
+    if (!camera || camera.intercomBusy) return
     camera.intercomBusy = true
     try {
       const response = camera.session
@@ -815,18 +822,30 @@ const actions = {
     }
   },
   async hangupIntercom({ commit, state, dispatch }, camera) {
-    if (!camera.session) return
-    camera.intercomBusy = true
-    try {
-      if (camera.room) {
-        await camera.room.localParticipant.setMicrophoneEnabled(false)
-      }
-      const response = await stopIntercom(camera.session.sessionId)
+    camera = (camera && camera.key && state.cameras[camera.key]) || camera
+    if (!camera || camera.intercomBusy) return
+    if (!camera.session) {
       camera.intercomActive = false
       camera.intercomStatus = 'IDLE'
       camera.intercomToken = null
       camera.hasAudio = false
       camera.remoteAudioTrack = null
+      camera.intercomBusy = false
+      commit('setCamera', camera)
+      return
+    }
+    camera.intercomBusy = true
+    camera.intercomActive = false
+    camera.intercomStatus = 'IDLE'
+    camera.intercomToken = null
+    camera.hasAudio = false
+    camera.remoteAudioTrack = null
+    commit('setCamera', camera)
+    try {
+      if (camera.room) {
+        await camera.room.localParticipant.setMicrophoneEnabled(false)
+      }
+      const response = await stopIntercom(camera.session.sessionId)
       if (camera.watching) {
         camera.session = mergeSession(camera, response)
       } else {
