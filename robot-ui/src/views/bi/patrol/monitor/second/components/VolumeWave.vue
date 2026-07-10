@@ -22,7 +22,11 @@ export default {
   props: {
     selectCamera: {
       type: Object,
-      default: () => {}
+      default: () => ({})
+    },
+    muted: {
+      type: Boolean,
+      default: false
     }
   },
   computed: {
@@ -30,18 +34,22 @@ export default {
       return this.selectCamera.intercomActive
     },
     track() {
-      // return this.selectCamera?.room?.localParticipant?.getTrack(Track.Source.Microphone) || null;
-      return this.selectCamera.remoteAudioTrack
+      const localParticipant = this.selectCamera?.room?.localParticipant
+      if (!localParticipant) return null
+      const publication = localParticipant.getTrackPublication
+        ? localParticipant.getTrackPublication(Track.Source.Microphone)
+        : localParticipant.getTrack && localParticipant.getTrack(Track.Source.Microphone)
+      return publication?.track || publication || null
     }
   },
   data() {
     return {
       bars: [],
       // 音频相关
-      audioContext: null,
       analyser: null,
+      analyserCleanup: null,
+      calculateVolume: null,
       dataArray: null,
-      stream: null,
       animationFrame: null,
       smoothedVolume: 0,
       isIdleWave: true,
@@ -53,16 +61,17 @@ export default {
   mounted() {
     this.initBars();
     this.startIdleWave();
+    this.startMicrophone();
   },
   watch: {
-    track(newVal, oldVal) {
-      if (newVal) {
-        if (newVal) {
-          this.startMicrophone();
-        }
-      } else {
-        this.toggleMicrophone();
-      }
+    track() {
+      this.startMicrophone();
+    },
+    intercomActive() {
+      this.startMicrophone();
+    },
+    muted() {
+      this.startMicrophone();
     }
   },
   methods: {
@@ -85,7 +94,7 @@ export default {
       this.updateIdleWave();
     },
     updateIdleWave() {
-      if (!this.isIdleWave || this.intercomActive) return;
+      if (!this.isIdleWave) return;
       const time = Date.now() / 1000;
       const bars = this.bars;
       for (let i = 0; i < bars.length; i++) {
@@ -128,102 +137,67 @@ export default {
     // 处理音频
     processAudio() {
       if (!this.analyser) return;
-      this.analyser.getByteFrequencyData(this.dataArray);
-      let sum = 0;
-      for (let i = 0; i < this.dataArray.length; i++) {
-        sum += this.dataArray[i];
+      let rawVolume = this.calculateVolume ? this.calculateVolume() : 0
+      if (!rawVolume) {
+        this.analyser.getByteFrequencyData(this.dataArray);
+        let sum = 0;
+        for (let i = 0; i < this.dataArray.length; i++) {
+          sum += this.dataArray[i] * this.dataArray[i];
+        }
+        rawVolume = Math.sqrt(sum / this.dataArray.length) / 255;
       }
-      let avg = sum / this.dataArray.length;
-      let rawVolume = avg / 255;
-      let volume = Math.pow(rawVolume, 0.5);
+      let volume = Math.pow(rawVolume, 0.65);
       volume = Math.min(volume, 1.0);
       
-      this.smoothedVolume = this.smoothedVolume * 0.5 + volume * 0.5;
-      const finalVolume = Math.max(this.smoothedVolume, 0.05);
+      this.smoothedVolume = this.smoothedVolume * 0.7 + volume * 0.3;
+      const finalVolume = Math.max(this.smoothedVolume, 0.03);
       this.updateBars(finalVolume);
       
       this.animationFrame = requestAnimationFrame(this.processAudio);
     },
     // 启动麦克风
-    async startMicrophone() {
-
-      // this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      // // console.log(123, this.audioContext.state);
-      
-      // if (this.audioContext.state === 'suspended') {
-      //   await this.audioContext.resume();
-      // }
-      
-      // this.analyser = this.audioContext.createAnalyser();
-      // this.analyser.fftSize = 256;
-      // this.analyser.smoothingTimeConstant = 0.8;
-
-      // const source = this.audioContext.createMediaStreamSource(this.track.mediaStream);
-      // source.connect(this.analyser);
-
-      // 1. 创建音频分析器
-      const { analyser, calculateVolume, cleanup } = createAudioAnalyser(this.track);
-      const volume = calculateVolume(); 
-      console.log('当前音量:', volume, analyser);
-      // 3. 在组件卸载或不需要时，清理资源
-      // cleanup(); 
-      // clearInterval(intervalId);
-      this.analyser = analyser
-      this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-      
-      // 停止空闲波动
-      this.stopIdleWave();
-      
-      if (this.animationFrame) {
-        cancelAnimationFrame(this.animationFrame);
-        this.animationFrame = null;
+    startMicrophone() {
+      if (!this.intercomActive || this.muted || !this.track) {
+        this.stopMicrophone();
+        return;
       }
-      
-      this.smoothedVolume = 0.1;
+      this.stopAudioAnalyser();
+      let audioAnalyser;
+      try {
+        audioAnalyser = createAudioAnalyser(this.track);
+      } catch (error) {
+        this.startIdleWave();
+        return;
+      }
+      this.analyser = audioAnalyser.analyser;
+      this.calculateVolume = audioAnalyser.calculateVolume;
+      this.analyserCleanup = audioAnalyser.cleanup;
+      this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+
+      this.stopIdleWave();
+      this.smoothedVolume = 0.08;
       this.processAudio();
     },
     // 停止麦克风
     stopMicrophone() {
-      if (this.stream) {
-        this.stream.getTracks().forEach(track => track.stop());
-        this.stream = null;
-      }
-      if (this.audioContext) {
-        this.audioContext.close().catch(e => console.warn);
-        this.audioContext = null;
-        this.analyser = null;
-        this.dataArray = null;
-      }
+      this.stopAudioAnalyser();
+      this.startIdleWave();
+    },
+    stopAudioAnalyser() {
       if (this.animationFrame) {
         cancelAnimationFrame(this.animationFrame);
         this.animationFrame = null;
       }
-      
-      // this.intercomActive = false;
-      
-      // 恢复空闲波动
-      this.startIdleWave();
-      
-      this.resetUI();
-      this.errorMsg = '⏹ 已停止录音';
-    },
-    toggleMicrophone() {
-      if (this.intercomActive) {
-        this.stopMicrophone();
-      } else {
-        this.startMicrophone();
+      if (this.analyserCleanup) {
+        this.analyserCleanup();
       }
+      this.analyser = null;
+      this.analyserCleanup = null;
+      this.calculateVolume = null;
+      this.dataArray = null;
     },
     cleanup() {
-      if (this.stream) {
-        this.stream.getTracks().forEach(track => track.stop());
-      }
-      if (this.audioContext) {
-        this.audioContext.close();
-      }
-      if (this.animationFrame) {
-        cancelAnimationFrame(this.animationFrame);
-      }
+      this.stopAudioAnalyser();
     }
   },
   beforeDestroy() {

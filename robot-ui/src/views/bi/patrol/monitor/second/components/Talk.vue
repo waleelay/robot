@@ -13,7 +13,7 @@
       <span v-if="!selectCamera.intercomActive">
         <svg-icon :icon-class="selectCamera.intercomActive ? 'mic-fill' : 'mic-off-fill'" />
       </span>
-      <VolumeWave :selectCamera="selectCamera" v-else />
+      <VolumeWave :selectCamera="selectCamera" :muted="audioMuted(audioDevice)" v-else />
       <span class="mt8">{{ selectCamera.intercomActive ? '挂断' : '点击通话' }}</span>
     </div>
     <div v-if="!isMapInner" class="wp269 hp16 mt22 progress flx-align-center">
@@ -174,6 +174,9 @@ export default {
       this.updateAudioState({ key, ...Object.assign({}, this.audioStatus(device), patch) })
     },
     async handleTalk() {
+      if (!this.selectCamera.intercomActive && this.audioDevice && this.audioMuted(this.audioDevice)) {
+        await this.toggleAudioMute(this.audioDevice)
+      }
       await this.toggleIntercom({ robotId: this.selectedRobotId, camera: this.selectCamera })
     },
     audioKey(device) {
