@@ -26,7 +26,7 @@ class RobotMQTTClient:
         self.probe = probe
         self.publisher = publisher
         self.intercom = intercom
-        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=cfg.client_id)
+        self.client = make_mqtt_client(cfg.client_id)
         self.executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="mqtt-command")
         self.lock = threading.RLock()
         self.subscriptions: dict[str, Callable[[bytes, str], None]] = {}
@@ -37,6 +37,7 @@ class RobotMQTTClient:
         self.control_mode = "MANUAL"
         self.device_state: dict[str, dict[str, object]] = {}
         self.stop_event = threading.Event()
+        self.connected = threading.Event()
 
     def run(self) -> None:
         """连接 MQTT broker，启动网络循环、心跳线程，并阻塞直到客户端被停止。"""
@@ -66,11 +67,12 @@ class RobotMQTTClient:
         """请求主循环退出。"""
         self.stop_event.set()
 
-    def _on_connect(self, client: mqtt.Client, _userdata: object, _flags: mqtt.ConnectFlags, rc: mqtt.ReasonCode, _properties: mqtt.Properties | None) -> None:
+    def _on_connect(self, client: mqtt.Client, _userdata: object, _flags: object, rc: object, *_args: object) -> None:
         """MQTT 连接成功后订阅机器人专属控制 topic，并立即上报在线状态。"""
-        if rc.is_failure:
+        if is_connect_failure(rc):
             print("mqtt connect failed", rc, flush=True)
             return
+        self.connected.set()
         robot = self.cfg.robot_id
         self.subscriptions = {
             f"robot/{robot}/media/video/start": self._handle_start,
@@ -86,12 +88,14 @@ class RobotMQTTClient:
         print("mqtt subscriptions registered", " ".join(self.subscriptions.keys()), flush=True)
         self.executor.submit(self.online, "online")
 
-    def _on_subscribe(self, _client: mqtt.Client, _userdata: object, mid: int, reason_codes: Any, _properties: mqtt.Properties | None = None) -> None:
+    def _on_subscribe(self, _client: mqtt.Client, _userdata: object, mid: int, reason_codes: Any = None, *_args: object) -> None:
         """打印 broker 对订阅请求的确认，便于排查 topic 未订阅成功的问题。"""
         print("mqtt subscribe ack", f"mid={mid}", f"reason={reason_codes}", flush=True)
 
-    def _on_disconnect(self, _client: mqtt.Client, _userdata: object, _flags: mqtt.DisconnectFlags, rc: mqtt.ReasonCode, _properties: mqtt.Properties | None) -> None:
+    def _on_disconnect(self, _client: mqtt.Client, _userdata: object, *args: object) -> None:
         """MQTT 断开时立即停止本地视频和对讲资源，避免无人控制的推流残留。"""
+        rc = args[-2] if len(args) >= 2 else (args[-1] if args else None)
+        self.connected.clear()
         print("mqtt lost", rc, flush=True)
         self.publisher.stop_all()
         self.intercom.stop_all()
@@ -314,9 +318,16 @@ class RobotMQTTClient:
 
     def publish(self, topic: str, payload: dict[str, Any]) -> None:
         """发布 MQTT 消息并等待 QoS1 入队完成，失败时打印可排查日志。"""
+        if not self.connected.is_set():
+            print("mqtt publish skipped disconnected", topic, flush=True)
+            return
         body = json.dumps(without_empty(payload), ensure_ascii=False, separators=(",", ":"))
         info = self.client.publish(topic, body.encode(), qos=1, retain=False)
-        info.wait_for_publish(timeout=5)
+        try:
+            info.wait_for_publish(timeout=5)
+        except RuntimeError as exc:
+            print("mqtt publish failed", topic, exc, flush=True)
+            return
         if not info.is_published():
             print("mqtt publish timeout", topic, body, flush=True)
 
@@ -407,7 +418,10 @@ class RobotMQTTClient:
     def _heartbeat_loop(self) -> None:
         """按配置间隔持续上报在线状态，驱动后端机器人心跳。"""
         while not self.stop_event.wait(self.cfg.heartbeat_interval):
-            self.online("online")
+            try:
+                self.online("online")
+            except Exception as exc:
+                print("mqtt heartbeat failed", exc, flush=True)
 
 
 class Broker:
@@ -417,6 +431,25 @@ class Broker:
         """保存 broker host/port。"""
         self.host = host
         self.port = port
+
+
+def make_mqtt_client(client_id: str) -> mqtt.Client:
+    """创建兼容 paho-mqtt 1.x 和 2.x 的 MQTT client。"""
+    callback_api = getattr(mqtt, "CallbackAPIVersion", None)
+    if callback_api is not None:
+        return mqtt.Client(callback_api.VERSION2, client_id=client_id)
+    return mqtt.Client(client_id=client_id)
+
+
+def is_connect_failure(rc: object) -> bool:
+    """判断 paho 1.x int rc 或 paho 2.x ReasonCode 是否表示连接失败。"""
+    is_failure = getattr(rc, "is_failure", None)
+    if isinstance(is_failure, bool):
+        return is_failure
+    try:
+        return int(rc) != 0
+    except (TypeError, ValueError):
+        return str(rc).lower() not in {"0", "success"}
 
 
 def parse_broker(raw: str) -> Broker:

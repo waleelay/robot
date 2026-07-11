@@ -559,7 +559,7 @@ public class EquipmentControlService {
                 object(
                         "robotId", "test002",
                         "clientId", "robot-client-deep-001",
-                        "name", "G1四足机器人",
+                        "name", "G1四足机器狗",
                         "type", "四足机器狗",
                         "vendor", "DEEPNROBOTICS",
                         "model", "X30",
@@ -571,7 +571,7 @@ public class EquipmentControlService {
                 object(
                         "robotId", "robot-unitree-001",
                         "clientId", "robot-client-unitree-001",
-                        "name", "G2四足机器人",
+                        "name", "G2四足机器狗",
                         "type", "四足机器狗",
                         "vendor", "UNITREE",
                         "model", "B2",

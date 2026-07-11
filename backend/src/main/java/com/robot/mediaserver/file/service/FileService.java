@@ -89,7 +89,7 @@ public class FileService {
             FileType fileType,
             String robotId,
             String deviceId,
-            String taskExecutionId,
+            String extensionId,
             String sourceFileId,
             String metadata) {
         if (file == null || file.isEmpty()) {
@@ -103,7 +103,7 @@ public class FileService {
                 user == null ? properties.getFile().getDefaultOrgId() : user.orgId(),
                 robotId,
                 deviceId,
-                taskExecutionId,
+                extensionId,
                 sourceFileId,
                 fileType,
                 file.getOriginalFilename() == null ? "file" : file.getOriginalFilename(),
@@ -154,7 +154,7 @@ public class FileService {
                     properties.getFile().getDefaultOrgId(),
                     robotId,
                     request.getDeviceId(),
-                    request.getTaskExecutionId(),
+                    request.getExtensionId(),
                     request.getSourceFileId(),
                     request.getFileType(),
                     request.getFileName(),
@@ -230,7 +230,7 @@ public class FileService {
             CurrentUser user,
             String robotId,
             String deviceId,
-            String taskExecutionId,
+            String extensionId,
             FileType fileType,
             FileStatus status,
             int page,
@@ -242,8 +242,8 @@ public class FileService {
         if (deviceId != null && !deviceId.isBlank()) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("deviceId"), deviceId));
         }
-        if (taskExecutionId != null && !taskExecutionId.isBlank()) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("taskExecutionId"), taskExecutionId));
+        if (extensionId != null && !extensionId.isBlank()) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("extensionId"), extensionId));
         }
         if (fileType != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("fileType"), fileType));
@@ -258,15 +258,19 @@ public class FileService {
     }
 
     @Transactional
-    public void bindTaskExecution(CurrentUser user, Map<String, Object> request) {
-        String taskExecutionId = stringValue(request.get("taskExecutionId"));
-        if (taskExecutionId == null || taskExecutionId.isBlank()) {
-            throw error(HttpStatus.BAD_REQUEST, "TASK_EXECUTION_ID_REQUIRED", "任务执行记录 ID 不能为空");
+    public void bindExtension(CurrentUser user, Map<String, Object> request) {
+        String extensionId = stringValue(request.get("extensionId"));
+        if (extensionId == null || extensionId.isBlank()) {
+            throw error(HttpStatus.BAD_REQUEST, "EXTENSION_ID_REQUIRED", "通用扩展 ID 不能为空");
         }
+        List<String> genericFileIds = stringList(request.get("fileIds"));
         List<String> videoFileIds = stringList(request.get("videoFileIds"));
         String pointFileId = stringValue(request.get("pointFileId"));
 
         LinkedHashSet<String> fileIds = new LinkedHashSet<>();
+        genericFileIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .forEach(fileIds::add);
         videoFileIds.stream()
                 .filter(id -> id != null && !id.isBlank())
                 .forEach(fileIds::add);
@@ -311,7 +315,7 @@ public class FileService {
 
         OffsetDateTime timestamp = now();
         for (MediaFile file : files) {
-            file.setTaskExecutionId(taskExecutionId);
+            file.setExtensionId(extensionId);
             file.setUpdatedAt(timestamp);
         }
         fileRepository.saveAll(files);
@@ -355,7 +359,7 @@ public class FileService {
         }
         OffsetDateTime expiresAt = now().plusSeconds(properties.getFile().getPlayUrlTtlSeconds());
         String token = signPlayback(fileId, expiresAt.toEpochSecond());
-        String path = "/api/control/files/" + fileId + "/hls/" + playlistAssetName(file, video) + "?token="
+        String path = "/api/media/files/" + fileId + "/hls/" + playlistAssetName(file, video) + "?token="
                 + URLEncoder.encode(token, StandardCharsets.UTF_8);
         return new FilePlayUrlResponse(fileId, "hls", "application/vnd.apple.mpegurl", path, expiresAt);
     }
@@ -579,7 +583,7 @@ public class FileService {
             String orgId,
             String robotId,
             String deviceId,
-            String taskExecutionId,
+            String extensionId,
             String sourceFileId,
             FileType fileType,
             String fileName,
@@ -593,7 +597,7 @@ public class FileService {
         file.setOrgId(orgId);
         file.setRobotId(blankToNull(robotId));
         file.setDeviceId(blankToNull(deviceId));
-        file.setTaskExecutionId(blankToNull(taskExecutionId));
+        file.setExtensionId(blankToNull(extensionId));
         file.setSourceFileId(blankToNull(sourceFileId));
         file.setFileType(fileType);
         file.setFileName(fileName);
@@ -786,7 +790,7 @@ public class FileService {
                 file.getFileId(),
                 file.getRobotId(),
                 file.getDeviceId(),
-                file.getTaskExecutionId(),
+                file.getExtensionId(),
                 file.getFileType().name(),
                 file.getFileName(),
                 file.getContentType(),

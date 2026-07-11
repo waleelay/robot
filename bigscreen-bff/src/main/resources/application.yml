@@ -3,13 +3,18 @@ server:
 
 center:
   manage-base-url: ${CENTER_MANAGE_BASE_URL:http://192.168.124.44:8081}
-  control-base-url: ${CENTER_CONTROL_BASE_URL:http://localhost:8088}
+  control-base-url: ${CENTER_CONTROL_BASE_URL:http://localhost:8082}
+  v1-control-base-url: ${CENTER_V1_CONTROL_BASE_URL:http://192.168.124.44:8082}
   media-base-url: ${CENTER_MEDIA_BASE_URL:http://localhost:8088}
-  websocket-control-url: ${CENTER_CONTROL_WS_URL:ws://localhost:8088/ws/control}
+  websocket-control-url: ${CENTER_CONTROL_WS_URL:ws://192.168.124.44:8082/ws/control}
 
 statistics:
   report:
     storage-dir: ${STATISTICS_REPORT_STORAGE_DIR:data/statistics-reports}
+
+bigscreen:
+  cors:
+    allowed-origin-patterns: ${BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:8080,http://127.0.0.1:8080,http://192.168.*.*:8080,https://192.168.124.77:4443}
 
 spring:
   application:

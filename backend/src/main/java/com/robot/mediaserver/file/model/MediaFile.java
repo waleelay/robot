@@ -14,7 +14,7 @@ import java.time.OffsetDateTime;
         name = "media_file",
         indexes = {
                 @Index(name = "idx_file_org_robot_time", columnList = "orgId,robotId,createdAt"),
-                @Index(name = "idx_file_org_task", columnList = "orgId,taskExecutionId"),
+                @Index(name = "idx_file_org_extension", columnList = "orgId,extensionId"),
                 @Index(name = "idx_file_type_status", columnList = "fileType,status"),
                 @Index(name = "idx_file_robot_source", columnList = "robotId,sourceFileId")
         })
@@ -33,8 +33,8 @@ public class MediaFile {
     @Column(length = 64)
     private String deviceId;
 
-    @Column(length = 128)
-    private String taskExecutionId;
+    @Column(name = "extension_id", length = 128)
+    private String extensionId;
 
     @Column(length = 256)
     private String sourceFileId;
@@ -84,8 +84,8 @@ public class MediaFile {
     public void setRobotId(String robotId) { this.robotId = robotId; }
     public String getDeviceId() { return deviceId; }
     public void setDeviceId(String deviceId) { this.deviceId = deviceId; }
-    public String getTaskExecutionId() { return taskExecutionId; }
-    public void setTaskExecutionId(String taskExecutionId) { this.taskExecutionId = taskExecutionId; }
+    public String getExtensionId() { return extensionId; }
+    public void setExtensionId(String extensionId) { this.extensionId = extensionId; }
     public String getSourceFileId() { return sourceFileId; }
     public void setSourceFileId(String sourceFileId) { this.sourceFileId = sourceFileId; }
     public FileType getFileType() { return fileType; }

@@ -49,7 +49,7 @@ public class FileController {
             @RequestParam FileType fileType,
             @RequestParam(required = false) String robotId,
             @RequestParam(required = false) String deviceId,
-            @RequestParam(required = false) String taskExecutionId,
+            @RequestParam(required = false) String extensionId,
             @RequestParam(required = false) String sourceFileId,
             @RequestParam(required = false) String metadata,
             HttpServletRequest request) {
@@ -59,7 +59,7 @@ public class FileController {
                 fileType,
                 robotId,
                 deviceId,
-                taskExecutionId,
+                extensionId,
                 sourceFileId,
                 metadata);
     }
@@ -97,20 +97,20 @@ public class FileController {
     public FileListResponse list(
             @RequestParam(required = false) String robotId,
             @RequestParam(required = false) String deviceId,
-            @RequestParam(required = false) String taskExecutionId,
+            @RequestParam(required = false) String extensionId,
             @RequestParam(required = false) FileType fileType,
             @RequestParam(required = false) FileStatus status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             HttpServletRequest request) {
-        return service.list(currentUserResolver.resolve(request), robotId, deviceId, taskExecutionId, fileType, status, page, size);
+        return service.list(currentUserResolver.resolve(request), robotId, deviceId, extensionId, fileType, status, page, size);
     }
 
-    @PostMapping("/task-execution-binding")
-    public ResponseEntity<Void> bindTaskExecution(
+    @PostMapping("/extension-binding")
+    public ResponseEntity<Void> bindExtension(
             @RequestBody Map<String, Object> body,
             HttpServletRequest request) {
-        service.bindTaskExecution(currentUserResolver.resolve(request), body);
+        service.bindExtension(currentUserResolver.resolve(request), body);
         return ResponseEntity.noContent().build();
     }
 

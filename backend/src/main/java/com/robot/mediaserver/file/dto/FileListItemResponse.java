@@ -6,7 +6,7 @@ public record FileListItemResponse(
         String fileId,
         String robotId,
         String deviceId,
-        String taskExecutionId,
+        String extensionId,
         String fileType,
         String fileName,
         String contentType,

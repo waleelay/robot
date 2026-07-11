@@ -65,8 +65,8 @@
       "filePath": "/Users/leelay/Documents/robot-mediaserver/client/recordings/test.mp4",
       "fileSize": 8557004,
       "createdAt": "2025-11-20T10:23:42Z",
-      "status": "READY",
-      "updatedAt": "2026-07-01T12:50:19.376079Z",
+      "status": "LOCAL_DELETED",
+      "updatedAt": "2026-07-02T12:50:48.976402Z",
       "fileId": "file_8a7bb110a2cb47e9b5d6f26fafe29ff7",
       "uploadId": "upl_cb0f9b41ded14d2b993eca5e309d3bb0"
     }

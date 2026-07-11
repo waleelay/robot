@@ -31,6 +31,27 @@ pip install -r requirements.txt
 
 `ffprobe` and `gstreamer-publisher` or the configured `FFMPEG_PUBLISHER_CMD` must be available in `PATH`, matching the Go client runtime requirements.
 
+On Ubuntu/Jetson, if the default `gstreamer-publisher` path fails because the local GStreamer stack cannot create an EGL display, the client falls back to `scripts/ffmpeg-livekit-publisher.sh`. Keep the `scripts/` directory with `python-client/`, and make sure both `ffmpeg` and `gstreamer-publisher` are installed:
+
+```bash
+chmod +x scripts/ffmpeg-livekit-publisher.sh
+sudo apt-get install -y ffmpeg
+sh ../client/scripts/install-gstreamer-publisher.sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+You can also override the fallback command explicitly:
+
+```bash
+export FFMPEG_PUBLISHER_CMD='/home/jetson/payload/demo/python-client/scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}'
+```
+
+If the install script is not available on the target machine, build `gstreamer-publisher` manually from `https://github.com/livekit/gstreamer-publisher` and set:
+
+```bash
+export GSTREAMER_PUBLISHER_PATH="$HOME/.local/bin/gstreamer-publisher"
+```
+
 ## Run
 
 ```bash
@@ -41,8 +62,8 @@ python -m robot_media_client
 The environment variables are intentionally the same as the Go client, for example:
 
 ```bash
-ROBOT_ID='robot-001' \
-ROBOT_CLIENT_ID='robot-media-client-robot-001' \
+ROBOT_ID='test001' \
+ROBOT_CLIENT_ID='robot-media-client-test001' \
 RTSP_CAMERA01_MAIN='rtsp://192.168.124.204:8554/camera03' \
 RTSP_CAMERA01_SUB='rtsp://192.168.124.204:8554/camera03' \
 RTSP_CAMERA02_MAIN='rtsp://192.168.124.204:8554/camera03' \
@@ -58,8 +79,8 @@ python -m robot_media_client
 cd client/python-client
 docker build -t robot-media-client-python:dev .
 docker run --rm \
-  -e ROBOT_ID='robot-001' \
-  -e ROBOT_CLIENT_ID='robot-media-client-robot-001' \
+  -e ROBOT_ID='test001' \
+  -e ROBOT_CLIENT_ID='robot-media-client-test001' \
   -e RTSP_CAMERA01_MAIN='rtsp://192.168.124.204:8554/camera03' \
   -e RTSP_CAMERA01_SUB='rtsp://192.168.124.204:8554/camera03' \
   -e RTSP_CAMERA02_MAIN='rtsp://192.168.124.204:8554/camera03' \

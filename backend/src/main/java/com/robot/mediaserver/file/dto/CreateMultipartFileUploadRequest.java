@@ -8,7 +8,7 @@ import jakarta.validation.constraints.NotNull;
 public class CreateMultipartFileUploadRequest {
     private String robotId;
     private String deviceId;
-    private String taskExecutionId;
+    private String extensionId;
     private String sourceFileId;
 
     @NotNull
@@ -29,8 +29,8 @@ public class CreateMultipartFileUploadRequest {
     public void setRobotId(String robotId) { this.robotId = robotId; }
     public String getDeviceId() { return deviceId; }
     public void setDeviceId(String deviceId) { this.deviceId = deviceId; }
-    public String getTaskExecutionId() { return taskExecutionId; }
-    public void setTaskExecutionId(String taskExecutionId) { this.taskExecutionId = taskExecutionId; }
+    public String getExtensionId() { return extensionId; }
+    public void setExtensionId(String extensionId) { this.extensionId = extensionId; }
     public String getSourceFileId() { return sourceFileId; }
     public void setSourceFileId(String sourceFileId) { this.sourceFileId = sourceFileId; }
     public FileType getFileType() { return fileType; }

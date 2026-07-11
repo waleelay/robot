@@ -25,11 +25,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
-public class StatisticsMockService {
+public class StatisticsService {
 
     private static final ZoneOffset CHINA_ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter FILE_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final AtomicLong reportId = new AtomicLong();
@@ -39,7 +38,7 @@ public class StatisticsMockService {
     private final Path reportStorageDir;
     private final Path reportIndexPath;
 
-    public StatisticsMockService(
+    public StatisticsService(
             ObjectMapper objectMapper,
             @Value("${statistics.report.storage-dir:data/statistics-reports}") String reportStorageDir) {
         this.objectMapper = objectMapper;
@@ -50,19 +49,18 @@ public class StatisticsMockService {
 
     public Map<String, Object> overview(String range, String startTime, String endTime, String deviceType, String areaId) {
         Map<String, Object> normalizedRange = normalizedRange(range, startTime, endTime);
-        StatsScenario scenario = scenario((String) normalizedRange.get("type"), blankToDefault(deviceType, "all"));
         return object(
                 "serverTime", now(),
                 "range", normalizedRange,
                 "filters", object(
                         "deviceType", blankToDefault(deviceType, "all"),
                         "areaId", areaId),
-                "kpis", kpis(scenario),
-                "equipmentRuntime", equipmentRuntime(scenario),
-                "aiAlarmAnalysis", aiAlarmAnalysis(scenario),
-                "alarmAreaRanking", alarmAreaRanking(scenario),
-                "alarmTrend", alarmTrend(scenario),
-                "taskCompletion", taskCompletion(scenario));
+                "kpis", emptyKpis(),
+                "equipmentRuntime", emptyEquipmentRuntime(),
+                "aiAlarmAnalysis", emptyAiAlarmAnalysis(),
+                "alarmAreaRanking", List.of(),
+                "alarmTrend", emptyAlarmTrend(),
+                "taskCompletion", emptyTaskCompletion());
     }
 
     public byte[] exportPdf(Map<String, Object> request) {
@@ -253,75 +251,39 @@ public class StatisticsMockService {
                 "endTime", normalizedEnd);
     }
 
-    private Map<String, Object> kpis(StatsScenario scenario) {
+    private Map<String, Object> emptyKpis() {
         Map<String, Object> kpis = new LinkedHashMap<>();
-        kpis.put("taskTotal", kpi(scaleInt(288, scenario), scenario.taskCompare()));
-        kpis.put("patrolMileage", kpi(scaleDouble(356.8, scenario), scenario.mileageCompare()));
-        kpis.put("aiAlarmTotal", kpi(scaleInt(286, scenario), scenario.alarmCompare()));
-        kpis.put("autoHandleSuccessRate", kpi(scenario.successRate(), scenario.successCompare()));
+        kpis.put("taskTotal", kpi(null, null));
+        kpis.put("patrolMileage", kpi(null, null));
+        kpis.put("aiAlarmTotal", kpi(null, null));
+        kpis.put("autoHandleSuccessRate", kpi(null, null));
         return kpis;
     }
 
-    private Map<String, Object> equipmentRuntime(StatsScenario scenario) {
+    private Map<String, Object> emptyEquipmentRuntime() {
         return object(
-                "onlineRate", scenario.onlineRate(),
-                "taskCompletionRate", scenario.taskCompletionRate(),
-                "unit", "小时",
-                "items", List.of(
-                        runtime("UAV", "无人机", scenario, 72, 6, 21),
-                        runtime("ROBOT_DOG", "机器狗", scenario, 88, 14, 18),
-                        runtime("UGV", "无人车", scenario, 96, 10, 16),
-                        runtime("HUMANOID_ROBOT", "机器人", scenario, 64, 8, 12)));
+                "onlineRate", null,
+                "taskCompletionRate", null,
+                "unit", null,
+                "items", List.of());
     }
 
-    private Map<String, Object> aiAlarmAnalysis(StatsScenario scenario) {
+    private Map<String, Object> emptyAiAlarmAnalysis() {
         return object(
-                "alarmTypeRanking", List.of(
-                        alarmType("FIGHT", "打架斗殴", scaleInt(80, scenario), scenario.percent(28.0, 0)),
-                        alarmType("CLIMB_FENCE", "攀爬围栏", scaleInt(66, scenario), scenario.percent(23.1, 1)),
-                        alarmType("PERSON_ALONE", "人员落单", scaleInt(58, scenario), scenario.percent(20.3, 2)),
-                        alarmType("PERSON_GATHER", "人员聚集", scaleInt(50, scenario), scenario.percent(17.5, 3)),
-                        alarmType("OUTSOURCER_ESCORT", "外协陪同", scaleInt(32, scenario), scenario.percent(11.1, 4))),
-                "handleMethodRanking", List.of(
-                        handleMethod("VOICE_BROADCAST", "语音播报", scaleInt(96, scenario)),
-                        handleMethod("AUTO_DISPATCH", "自动调度", scaleInt(58, scenario)),
-                        handleMethod("REMOTE_CONTROL", "远程控制", scaleInt(39, scenario)),
-                        handleMethod("MANUAL_HANDLE", "人工处理", scaleInt(17, scenario))));
+                "alarmTypeRanking", List.of(),
+                "handleMethodRanking", List.of());
     }
 
-    private List<Map<String, Object>> alarmAreaRanking(StatsScenario scenario) {
-        int top = scaleInt(52, scenario);
-        return List.of(
-                area("area-001", "2监区8号楼", top, 100),
-                rankedArea("area-002", "训练场西门", scaleInt(20, scenario), top),
-                rankedArea("area-003", "食堂大门", scaleInt(18, scenario), top),
-                rankedArea("area-004", "3监区2号楼", scaleInt(10, scenario), top),
-                rankedArea("area-005", "训练场东门", scaleInt(6, scenario), top));
+    private Map<String, Object> emptyAlarmTrend() {
+        return object(
+                "unit", null,
+                "points", List.of());
     }
 
-    private Map<String, Object> alarmTrend(StatsScenario scenario) {
-        LocalDate today = LocalDate.now(CHINA_ZONE);
-        List<Map<String, Object>> points = new ArrayList<>();
-        int[] values = scenario.trendValues();
-        for (int i = 6; i >= 0; i--) {
-            LocalDate date = today.minusDays(i);
-            points.add(object(
-                    "date", date.format(DATE_FORMATTER),
-                    "label", date.getMonthValue() + "." + date.getDayOfMonth(),
-                    "count", values[6 - i]));
-        }
+    private Map<String, Object> emptyTaskCompletion() {
         return object(
-                "unit", "次",
-                "points", points);
-    }
-
-    private Map<String, Object> taskCompletion(StatsScenario scenario) {
-        return object(
-                "items", List.of(
-                        taskStatus("COMPLETED", "已完成", scaleInt(196, scenario), scenario.completedRate()),
-                        taskStatus("RUNNING", "执行中", scaleInt(124, scenario), scenario.runningRate()),
-                        taskStatus("INTERRUPTED", "异常中断", scaleInt(20, scenario), scenario.interruptedRate())),
-                "insight", scenario.insight());
+                "items", List.of(),
+                "insight", null);
     }
 
     private ReportSelection reportSelection(Map<String, Object> request) {
@@ -416,7 +378,7 @@ public class StatisticsMockService {
         }
 
         pdf.section("七、报告说明");
-        pdf.line("本报告由数据统计大屏按筛选条件同步生成，当前为模拟数据版本，用于接口联调和报告模板确认。");
+        pdf.line("本报告由数据统计大屏按筛选条件同步生成；未接入真实统计来源的模块以空值或空列表展示。");
         return pdf.build();
     }
 
@@ -509,37 +471,6 @@ public class StatisticsMockService {
                 "compareRate", compareRate);
     }
 
-    private Map<String, Object> runtime(String deviceType, String deviceTypeName, StatsScenario scenario,
-            int runningHours, int faultHours, int offlineHours) {
-        double typeBoost = scenario.deviceType().equals(deviceType) ? 1.45 : scenario.deviceType().equals("all") ? 1 : 0.55;
-        return object(
-                "deviceType", deviceType,
-                "deviceTypeName", deviceTypeName,
-                "runningHours", Math.max(1, (int) Math.round(runningHours * scenario.rangeFactor() * typeBoost)),
-                "faultHours", Math.max(0, (int) Math.round(faultHours * scenario.rangeFactor() * typeBoost)),
-                "offlineHours", Math.max(0, (int) Math.round(offlineHours * scenario.rangeFactor() * typeBoost)));
-    }
-
-    private Map<String, Object> alarmType(String type, String name, int count, double percent) {
-        return object("type", type, "name", name, "count", count, "percent", percent);
-    }
-
-    private Map<String, Object> handleMethod(String method, String name, int count) {
-        return object("method", method, "name", name, "count", count);
-    }
-
-    private Map<String, Object> area(String areaId, String areaName, int count, double percent) {
-        return object("areaId", areaId, "areaName", areaName, "count", count, "percent", percent);
-    }
-
-    private Map<String, Object> rankedArea(String areaId, String areaName, int count, int top) {
-        return area(areaId, areaName, count, Math.round(count * 1000.0 / Math.max(top, 1)) / 10.0);
-    }
-
-    private Map<String, Object> taskStatus(String status, String name, int count, double percent) {
-        return object("status", status, "name", name, "count", count, "percent", percent);
-    }
-
     private String now() {
         return LocalDateTime.now(CHINA_ZONE).format(DATE_TIME_FORMATTER);
     }
@@ -554,18 +485,6 @@ public class StatisticsMockService {
             map.put((String) entries[i], entries[i + 1]);
         }
         return map;
-    }
-
-    private StatsScenario scenario(String range, String deviceType) {
-        return new StatsScenario(range, deviceType);
-    }
-
-    private int scaleInt(int value, StatsScenario scenario) {
-        return Math.max(0, (int) Math.round(value * scenario.rangeFactor() * scenario.deviceFactor()));
-    }
-
-    private double scaleDouble(double value, StatsScenario scenario) {
-        return Math.round(value * scenario.rangeFactor() * scenario.deviceFactor() * 10.0) / 10.0;
     }
 
     private record ReportSelection(String rangeType, String startTime, String endTime, String deviceType,
@@ -588,10 +507,7 @@ public class StatisticsMockService {
                     "filename", filename,
                     "filePath", filePath,
                     // 兼容当前历史报告弹窗的占位字段，前端后续可直接切换到上面的标准字段。
-                    "mapName", reportName,
-                    "equipmentName", downloadTime,
-                    "jobName", format,
-                    "alertTimes", "COMPLETED".equals(status) ? "已完成" : status);
+                    "statusName", "COMPLETED".equals(status) ? "已完成" : status);
         }
 
         Map<String, Object> toIndexEntry() {
@@ -759,180 +675,4 @@ public class StatisticsMockService {
         }
     }
 
-    private record StatsScenario(String range, String deviceType) {
-
-        double rangeFactor() {
-            return switch (range) {
-                case "today" -> 0.18;
-                case "week" -> 0.62;
-                case "all" -> 2.15;
-                default -> 1.0;
-            };
-        }
-
-        double deviceFactor() {
-            return switch (deviceType) {
-                case "UAV" -> 0.32;
-                case "ROBOT_DOG" -> 0.44;
-                case "UGV" -> 0.58;
-                case "HUMANOID_ROBOT" -> 0.36;
-                default -> 1.0;
-            };
-        }
-
-        String compareLabel() {
-            return switch (range) {
-                case "today" -> "较昨日";
-                case "week" -> "较上周";
-                case "all" -> "较同期";
-                default -> "较上月";
-            };
-        }
-
-        int taskCompare() {
-            return switch (range) {
-                case "today" -> 8;
-                case "week" -> 12;
-                case "all" -> 18;
-                default -> -5;
-            } + deviceOffset();
-        }
-
-        int mileageCompare() {
-            return switch (range) {
-                case "today" -> 5;
-                case "week" -> -3;
-                case "all" -> 15;
-                default -> -5;
-            } + deviceOffset();
-        }
-
-        int alarmCompare() {
-            return switch (range) {
-                case "today" -> -12;
-                case "week" -> 9;
-                case "all" -> 22;
-                default -> -5;
-            } + deviceOffset();
-        }
-
-        int successCompare() {
-            return switch (range) {
-                case "today" -> 2;
-                case "week" -> 4;
-                case "all" -> 7;
-                default -> 5;
-            };
-        }
-
-        String trend(int compareRate) {
-            return compareRate >= 0 ? "up" : "down";
-        }
-
-        int successRate() {
-            return clampRate(switch (range) {
-                case "today" -> 96;
-                case "week" -> 98;
-                case "all" -> 94;
-                default -> 100;
-            } - Math.max(deviceOffset(), 0));
-        }
-
-        int onlineRate() {
-            return clampRate(switch (range) {
-                case "today" -> 92;
-                case "week" -> 95;
-                case "all" -> 89;
-                default -> 98;
-            } - Math.max(deviceOffset(), 0));
-        }
-
-        int taskCompletionRate() {
-            return clampRate(switch (range) {
-                case "today" -> 88;
-                case "week" -> 93;
-                case "all" -> 91;
-                default -> 100;
-            } - Math.max(deviceOffset(), 0));
-        }
-
-        double percent(double base, int index) {
-            double rangeShift = switch (range) {
-                case "today" -> 2.8;
-                case "week" -> 1.4;
-                case "all" -> -1.2;
-                default -> 0;
-            };
-            double deviceShift = deviceType.equals("all") ? 0 : (index % 2 == 0 ? 1.6 : -1.1);
-            return Math.max(1, Math.round((base + rangeShift + deviceShift) * 10.0) / 10.0);
-        }
-
-        int[] trendValues() {
-            int[] month = {27, 28, 48, 81, 32, 77, 44};
-            int[] week = {12, 18, 24, 33, 22, 35, 28};
-            int[] today = {2, 4, 5, 8, 6, 9, 7};
-            int[] all = {58, 70, 92, 118, 86, 132, 104};
-            int[] source = switch (range) {
-                case "today" -> today;
-                case "week" -> week;
-                case "all" -> all;
-                default -> month;
-            };
-            int[] values = new int[source.length];
-            for (int i = 0; i < source.length; i++) {
-                values[i] = Math.max(0, (int) Math.round(source[i] * deviceFactor()));
-            }
-            return values;
-        }
-
-        int completedRate() {
-            return clampRate(switch (range) {
-                case "today" -> 86;
-                case "week" -> 91;
-                case "all" -> 88;
-                default -> 98;
-            });
-        }
-
-        int runningRate() {
-            return clampRate(switch (range) {
-                case "today" -> 42;
-                case "week" -> 55;
-                case "all" -> 48;
-                default -> 62;
-            });
-        }
-
-        int interruptedRate() {
-            return clampRate(switch (range) {
-                case "today" -> 14;
-                case "week" -> 8;
-                case "all" -> 12;
-                default -> 10;
-            });
-        }
-
-        String insight() {
-            return switch (range) {
-                case "today" -> "今日任务响应较昨日提升，异常中断主要集中在高峰时段";
-                case "week" -> "本周巡逻覆盖率提升，AI告警处置效率保持稳定";
-                case "all" -> "累计数据看，任务完成率稳定，重点区域告警仍需持续关注";
-                default -> "本月对比上月任务处置时长缩短10%，系统响应速度提升";
-            };
-        }
-
-        private int deviceOffset() {
-            return switch (deviceType) {
-                case "UAV" -> -2;
-                case "ROBOT_DOG" -> 1;
-                case "UGV" -> 3;
-                case "HUMANOID_ROBOT" -> -1;
-                default -> 0;
-            };
-        }
-
-        private int clampRate(int value) {
-            return Math.max(0, Math.min(100, value));
-        }
-    }
 }

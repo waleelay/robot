@@ -8,7 +8,7 @@
 浏览器/Vue2 调试台
   -> Nginx HTTPS/WSS 入口
   -> Bigscreen BFF REST/WebSocket
-  -> Center Control/Media Service REST/WebSocket
+  -> Control Service / Media Service REST/WebSocket
   -> EMQX 下发机器人媒体指令
   -> 机器人侧 Go 云接入客户端
   -> RTSP 双光云台
@@ -20,7 +20,8 @@
 
 ```text
 Bigscreen BFF: 面向大屏前端的 REST/WebSocket 入口，代理/聚合中心端接口，不承载媒体流
-Center Control/Media Service: 会话编排、Token 签发、MQTT 指令、WebSocket 事件、通用文件上传/播放、状态入库
+Control Service: `/api/control/**`、`/ws/control`、机器人在线/设备状态、MQTT 指令与状态桥接
+Media Service: 视频会话、LiveKit Token/Room、通用文件上传/播放、媒体状态入库
 Robot Client: RTSP 探测、可见光/热成像源选择、LiveKit 发布、MQTT ACK/状态上报、本地文件上传
 LiveKit: 实时媒体转发、多人订阅、Room/Track 生命周期事件
 Frontend: 创建会话、订阅 Track、即时抓拍上传、录像/图片/文件展示、调试事件查看
@@ -32,7 +33,8 @@ Redis/Elasticsearch: 预留缓存、检索和统计扩展
 ## 工程结构
 
 ```text
-backend/   Java 17 + Spring Boot 3 中心端控制/媒体服务
+backend/   Java 17 + Spring Boot 3 媒体服务
+control-service/ Java 17 + Spring Boot 3 控制服务
 bigscreen-bff/ Java 17 + Spring Boot 3 大屏 BFF，面向前端代理中心端接口
 frontend/  Vue2 + Element UI 实时视频调试台
 client/    Go 机器人侧云接入客户端骨架
@@ -43,11 +45,12 @@ tools/     设计文档生成脚本
 ## 设计文档
 
 ```text
-docs/realtime-video-interface-flow.md     实时视频三端交互与接口
-docs/file-upload-design.md                通用文件上传、存储与播放方案
-docs/media-service-integration-guide.md   边缘端/管理服务对接媒体服务实操文档
-docs/recorded-video-upload-design.md      巡逻视频上传旧方案归档，当前以通用文件方案为准
-docs/bigscreen-bff-panorama-design.md     大屏 BFF 抽层与全景地图接口方案
+docs/实时视频接口流程.md                  实时视频三端交互与接口
+docs/通用文件上传存储与播放设计.md        通用文件上传、存储与播放方案
+docs/媒体服务集成指南.md                  边缘端/管理服务对接媒体服务实操文档
+docs/巡逻视频上传旧方案归档.md            巡逻视频上传旧方案归档，当前以通用文件方案为准
+docs/大屏BFF全景地图设计.md               大屏 BFF 抽层与全景地图接口方案
+docs/前端控制与后端Java接口文档.md        前端、Control、Backend Java 接口文档
 ```
 
 ## 环境依赖
@@ -81,7 +84,7 @@ elasticsearch
 
 ## 环境变量
 
-后端：
+媒体后端 `backend`：
 
 ```bash
 export MYSQL_URL='jdbc:mysql://localhost:3306/robot_media?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai'
@@ -89,7 +92,6 @@ export MYSQL_USERNAME='root'
 export MYSQL_PASSWORD='root'
 export REDIS_HOST='localhost'
 export REDIS_PORT='6379'
-export MEDIA_SERVICE_BASE_URL='http://localhost:8088'
 export LIVEKIT_URL='ws://localhost:7880'
 export LIVEKIT_API_KEY='devkey'
 export LIVEKIT_API_SECRET='dev-secret-dev-secret-dev-secret-32'
@@ -116,6 +118,20 @@ export MEDIA_FILE_HLS_WORKER_CONCURRENCY='2'
 export MEDIA_FILE_RETENTION_DAYS='30'
 ```
 
+控制服务 `control-service`：
+
+```bash
+export CONTROL_SERVER_PORT='8082'
+export MEDIA_SERVICE_BASE_URL='http://localhost:8088'
+export MQTT_ENABLED='true'
+export MQTT_BROKER_URL='tcp://localhost:1883'
+export MQTT_USERNAME=''
+export MQTT_PASSWORD=''
+export MQTT_CLIENT_ID='robot-control-service'
+export ROBOT_HEARTBEAT_TIMEOUT_SECONDS='15'
+export ROBOT_HEARTBEAT_SWEEP_DELAY_MS='5000'
+```
+
 前端：
 
 ```bash
@@ -126,8 +142,8 @@ export VUE_APP_WS_URL=''
 机器人侧客户端：
 
 ```bash
-export ROBOT_ID='robot-001'
-export ROBOT_CLIENT_ID='robot-media-client-robot-001'
+export ROBOT_ID='test001'
+export ROBOT_CLIENT_ID='robot-media-client-test001'
 export ROBOT_BATTERY='82'
 export MQTT_BROKER_URL='tcp://localhost:1883'
 export MQTT_USERNAME=''
@@ -167,12 +183,13 @@ export CAMERA_CAMERA03_GROUP_TYPE='arm'
 
 1. 启动 Docker 中间件。
 2. 确认 MySQL 库 `robot_media` 已存在。
-3. 启动中心端后端。
-4. 启动大屏 BFF。
-5. 启动机器人侧客户端。
-6. 启动前端调试台或通过 Nginx 访问构建产物。
-7. 在前端创建实时视频会话。
-8. 检查 MQTT ACK/status、WebSocket 事件、LiveKit Track、文件上传与抓拍结果。
+3. 启动媒体后端 `backend`，默认端口 `8088`。
+4. 启动控制服务 `control-service`，默认端口 `8082`。
+5. 启动大屏 BFF，默认端口 `8090`。
+6. 启动机器人侧客户端。
+7. 启动前端调试台或通过 Nginx 访问构建产物。
+8. 在前端创建实时视频会话。
+9. 检查 MQTT ACK/status、WebSocket 事件、LiveKit Track、文件上传与抓拍结果。
 
 ## 局域网 HTTPS 通话
 
@@ -190,22 +207,22 @@ sh deploy/nginx/generate-lan-cert.sh 192.168.124.77
 
 将 [deploy/nginx/certs/server.crt](deploy/nginx/certs/server.crt) 安装为每台访问终端的受信任证书。证书必须包含实际使用的局域网 IP，否则浏览器不会允许麦克风权限。
 
-后端启动前配置 LiveKit 内部地址：
+媒体后端启动前配置 LiveKit 内部地址，控制服务启动前配置 Media Service 内部地址：
 
 ```bash
-export MEDIA_SERVICE_BASE_URL='http://localhost:8088'
 export LIVEKIT_URL='ws://192.168.124.77:7880'
+export MEDIA_SERVICE_BASE_URL='http://localhost:8088'
 ```
 
-当前 Control 与 Media 模块运行在同一个后端进程中，`MEDIA_SERVICE_BASE_URL` 必须指向后端内部 HTTP 地址，不要配置为 Nginx 的 `https://<lan-ip>:4443` 浏览器入口。
+当前 Control 与 Media 已拆为同级独立服务。`control-service` 的 `MEDIA_SERVICE_BASE_URL` 必须指向 Media Service 内部 HTTP 地址，不要配置为 Nginx 的 `https://<lan-ip>:4443` 浏览器入口。
 
-大屏 BFF 默认监听 `8090`，并通过内部地址访问中心端；本地开发时可直接指向当前 `backend:8088`，不要让 BFF 再绕回 Nginx：
+大屏 BFF 默认监听 `8090`，并通过内部地址访问 Control 与 Media；本地开发时不要让 BFF 再绕回 Nginx：
 
 ```bash
 export CENTER_MANAGE_BASE_URL='http://localhost:8088'
-export CENTER_CONTROL_BASE_URL='http://localhost:8088'
+export CENTER_CONTROL_BASE_URL='http://localhost:8082'
 export CENTER_MEDIA_BASE_URL='http://localhost:8088'
-export CENTER_CONTROL_WS_URL='ws://localhost:8088/ws/control'
+export CENTER_CONTROL_WS_URL='ws://localhost:8082/ws/control'
 
 cd bigscreen-bff
 mvn spring-boot:run
@@ -231,7 +248,7 @@ docker run --rm --name robot-mediaserver-nginx \
 LiveKit 信令:    wss://192.168.124.77:4443/livekit
 ```
 
-Nginx 配置默认通过 `host.docker.internal` 将 `/api/*`、`/ws/control`、`/ws/bigscreen` 转发到主机上的 `8090` 大屏 BFF，将 `/livekit/*` 转发到 `7880` LiveKit。BFF 再通过 `CENTER_*_BASE_URL` 访问中心端 `8088`，服务端到服务端链路不经过 Nginx。若 Nginx、BFF、中心端和 LiveKit 位于同一 Docker 网络，可将 [deploy/nginx/robot-mediaserver.conf](deploy/nginx/robot-mediaserver.conf) 中的 upstream 改为对应容器服务名。
+Nginx 配置默认通过 `host.docker.internal` 将 `/api/*`、`/ws/control`、`/ws/bigscreen` 转发到主机上的 `8090` 大屏 BFF，将 `/livekit/*` 转发到 `7880` LiveKit。BFF 再通过 `CENTER_*_BASE_URL` 访问 Control `8082` 与 Media `8088`，服务端到服务端链路不经过 Nginx。若 Nginx、BFF、Control、Media 和 LiveKit 位于同一 Docker 网络，可将 [deploy/nginx/robot-mediaserver.conf](deploy/nginx/robot-mediaserver.conf) 中的 upstream 改为对应容器服务名。
 
 前端在 HTTPS 页面中自动使用当前页面主机和端口下的 `/livekit` 公开前缀，因此通过 `:4443` 打开页面时会连接 `wss://<lan-ip>:4443/livekit`。LiveKit Web SDK 会在该地址后请求 `/rtc` 或 `/rtc/v1`，Nginx 会去除前缀后转发到 LiveKit。LiveKit 的 WebRTC 媒体端口仍需在局域网中可达；Nginx 只终止 HTTPS/WSS，不替代 LiveKit 的 UDP/TCP 媒体传输配置。
 
@@ -277,7 +294,7 @@ POST /api/media/files/multipart-uploads/{uploadId}/part-urls
 POST /api/media/files/multipart-uploads/{uploadId}/complete
 GET  /api/media/files
 GET  /api/media/files/{fileId}
-POST /api/media/files/task-execution-binding
+POST /api/media/files/extension-binding
 POST /api/media/files/{fileId}/play-url
 POST /api/media/files/{fileId}/download-url
 POST /api/internal/livekit/webhook
@@ -483,7 +500,7 @@ POST /api/control/files
 ```text
 fileType=IMAGE
 sourceType=SNAPSHOT
-robotId=robot-001
+robotId=test001
 deviceId=camera01
 sessionId=vs_xxx
 trackSid=TR_xxx

@@ -160,7 +160,7 @@ GET /api/bigscreen/panorama/tasks
 GET /api/bigscreen/panorama/alarms
 ```
 
-机器人基础字段统一聚合到 `/api/bigscreen/panorama/overview.devices` 中；数据来源为平台管理设备、实时状态和本地兜底数据。历史 `/api/control/robots` 列表接口已移除，不再作为字段语义来源。
+机器人基础字段统一聚合到 `/api/bigscreen/panorama/overview.devices` 中；数据来源为平台管理设备和控制端实时状态。历史 `/api/control/robots` 列表接口已移除，不再作为字段语义来源。
 
 ### 5.2 首屏聚合接口
 
@@ -169,6 +169,8 @@ GET /api/bigscreen/panorama/overview
 ```
 
 用途：一次返回全景地图 tab 页首屏需要的数据。
+
+`devices[]` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，数组字段返回空数组。
 
 返回结构：
 
@@ -232,7 +234,7 @@ GET /api/bigscreen/panorama/overview
           "quality": "sub"
         }
       ],
-      "devices": [
+      "mountedDevices": [
         {
           "deviceId": "camera01",
           "name": "前向双光云台",
@@ -268,17 +270,19 @@ GET /api/bigscreen/panorama/overview
         "badgeText": "空闲中",
         "badgeStatus": "idle"
       },
-      "task": {
-        "taskId": "task-001",
-        "name": "A区-夜间巡逻",
-        "status": "running",
-        "timeRange": "20:00-22:00"
-      }
+      "task": [
+        {
+          "taskId": "task-001",
+          "name": "A区-夜间巡逻",
+          "status": "running",
+          "timeRange": "20:00-22:00"
+        }
+      ]
     }
   ],
   "tasks": [
     {
-      "taskId": "task-001",
+      "taskId": 1,
       "name": "A区-夜间巡逻",
       "status": "running",
       "statusName": "执行中",
@@ -293,6 +297,13 @@ GET /api/bigscreen/panorama/overview
           "type": "WHEELED_ROBOT",
           "status": "online"
         }
+      ],
+      "mapId": 1,
+      "mapPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
+      ],
+      "pathPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
       ]
     }
   ],
@@ -330,9 +341,9 @@ GET /api/bigscreen/panorama/overview
           "taskName": "A区-仓库复核",
           "status": "unhandled",
           "snapshotUrl": {
-            "visible": "",
-            "thermal": "",
-            "front": ""
+            "visible": "/api/media/files/file_04a5e988115c40a68f1b697622375979/content",
+            "thermal": "/api/media/files/file_3c13535973f94599b34b77e2fd5bf647/content",
+            "front": "/api/media/files/file_1e82f88847c545579fd1850ce753b8c0/content"
           }
         }
       ]
@@ -344,15 +355,20 @@ GET /api/bigscreen/panorama/overview
       "items": []
     }
   },
-  "map": {
-    "center": {
-      "lng": 106.03655278081857,
-      "lat": 30.7478613352993
-    },
-    "zoom": 17,
-    "defaultLayer": "dark-vector",
-    "updatedAt": "2026-06-12 11:31:02"
-  }
+  "map": [
+    {
+      "mapId": 1,
+      "name": "A区巡逻地图",
+      "enabled": true,
+      "center": {
+        "lng": 106.03655278081857,
+        "lat": 30.7478613352993
+      },
+      "zoom": 17,
+      "defaultLayer": "dark-vector",
+      "updatedAt": "2026-06-12 11:31:02"
+    }
+  ]
 }
 ```
 
@@ -374,6 +390,19 @@ GET /api/bigscreen/panorama/overview
 | `taskOverview.completedRateText` | 完成率展示文本 | 完成率 |
 | `taskOverview.running` | 执行中的任务数 | 执行中 |
 | `taskOverview.pending` | 待执行的任务数 | 待执行 |
+
+`tasks[]` 来源于 `/api/v1/management/task-workflow-plans?pageNum=1&pageSize=20` 的任务计划列表；地图与路径字段说明：
+
+`tasks[]` 不再使用 mock 数据兜底；`timeRange`、`currentLocation`、`mapId` 等未查询到的标量字段返回 `null`，`equipmentList`、`mapPoints`、`pathPoints` 等数组字段返回空数组。
+
+| 字段 | 含义 | 数据来源 |
+|---|---|---|
+| `tasks[]` | 任务列表 | `/api/v1/management/task-workflow-plans?pageNum=1&pageSize=20` |
+| `tasks[].taskId` | 任务计划 ID，number/int | `/api/v1/management/task-workflow-plans` 的 `id` |
+| `tasks[].mapId` | 任务关联地图 ID，number/int | `task-workflow-definitions.{workflowDefinitionId}.mapId` |
+| `tasks[].mapPoints` | 任务地图点位集合 | `/api/v1/management/maps/{mapId}/points` 返回值 |
+| `tasks[].pathPoints` | 任务路径点位对应的地图点位集合 | 根据 `/api/v1/management/paths/{pathId}/points` 中每个 `mapPointId` 到 `tasks[].mapPoints[].id` 过滤得到 |
+| `map` | 可用地图数组 | `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
 
 当前 mock 的 3 台机器人定位：
 
@@ -408,7 +437,7 @@ GET /api/bigscreen/panorama/devices/{deviceId}
   "battery": 100,
   "lastHeartbeatAt": "2026-06-12 11:30:58",
   "cameras": [],
-  "devices": [],
+  "mountedDevices": [],
   "stateSeq": 1,
   "alarmStatus": "none",
   "alarmText": "-",
@@ -433,12 +462,14 @@ GET /api/bigscreen/panorama/devices/{deviceId}
       "status": "online"
     }
   ],
-  "currentTask": {
-    "taskId": "task-001",
-    "name": "A区-夜间巡逻",
-    "status": "running",
-    "timeRange": "20:00-22:00"
-  },
+  "currentTask": [
+    {
+      "taskId": "task-001",
+      "name": "A区-夜间巡逻",
+      "status": "running",
+      "timeRange": "20:00-22:00"
+    }
+  ],
   "actions": {
     "remoteControl": true,
     "slamMap": true,
@@ -466,7 +497,7 @@ GET /api/bigscreen/panorama/tasks
   "total": 5,
   "items": [
     {
-      "taskId": "task-001",
+      "taskId": 1,
       "name": "A区-夜间巡逻",
       "status": "running",
       "statusName": "执行中",
@@ -474,10 +505,17 @@ GET /api/bigscreen/panorama/tasks
       "endTime": "2026-06-12 22:00:00",
       "timeRange": "20:00-22:00",
       "currentLocation": "A区主干道",
-      "equipmentList": []
+      "equipmentList": [],
+      "mapId": 1,
+      "mapPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
+      ],
+      "pathPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
+      ]
     },
     {
-      "taskId": "task-004",
+      "taskId": 4,
       "name": "北侧消防通道巡检",
       "status": "running",
       "statusName": "执行中",
@@ -488,14 +526,21 @@ GET /api/bigscreen/panorama/tasks
       "equipmentList": [
         {
           "robotId": "test002",
-          "name": "G1四足机器人",
+          "name": "G1四足机器狗",
           "type": "ROBOT_DOG",
           "status": "offline"
         }
+      ],
+      "mapId": 1,
+      "mapPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
+      ],
+      "pathPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
       ]
     },
     {
-      "taskId": "task-005",
+      "taskId": 5,
       "name": "东侧出入口值守巡检",
       "status": "pending",
       "statusName": "待执行",
@@ -510,6 +555,13 @@ GET /api/bigscreen/panorama/tasks
           "type": "WHEELED_ROBOT",
           "status": "online"
         }
+      ],
+      "mapId": 1,
+      "mapPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
+      ],
+      "pathPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
       ]
     }
   ]
@@ -521,6 +573,8 @@ GET /api/bigscreen/panorama/tasks
 ```http
 GET /api/bigscreen/panorama/alarms
 ```
+
+`alarms` 不再使用 mock 数据兜底；管理端未提供或链路未查询到的标量字段返回 `null`，分组数组字段返回空数组。
 
 返回结构：
 
@@ -545,26 +599,13 @@ GET /api/bigscreen/panorama/alarms
           "level": "HIGH",
           "levelName": "高风险",
           "eventTime": "2023-08-01 10:00:00",
-          "location": {
-            "lng": 106.03655278081857,
-            "lat": 30.7478613352993,
-            "altitude": null,
-            "x": 118.4,
-            "y": 42.8,
-            "z": 0.0,
-            "address": "A区主干道",
-            "updatedAt": "2026-06-12 11:30:58"
-          },
+          "location": null,
           "robotId": "test001",
           "deviceName": "R1轮式机器人",
           "taskId": "task-002",
-          "taskName": "A区-仓库复核",
+          "taskName": null,
           "status": "unhandled",
-          "snapshotUrl": {
-            "visible": "",
-            "thermal": "",
-            "front": ""
-          }
+          "snapshotUrl": null
         }
       ]
     },
@@ -602,7 +643,7 @@ handled / max(totalToday, 1) * 100
 POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 ```
 
-用途：大屏侧对指定告警进行处置。当前 BFF 返回 mock 成功结果；待中心端告警处置接口完成后，由 BFF 内部转调中心端接口并保持大屏接口路径和参数稳定。
+用途：大屏侧对指定告警进行处置。BFF 内部转调中心端告警处置接口，并保持大屏接口路径和参数稳定。
 
 请求参数：
 
@@ -619,8 +660,6 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | `IMMEDIATE_DISPOSAL` | 立即处置 | `handled` |
 | `FALSE_ALARM` | 误报 | `false_alarm` |
 
-当前 mock 也兼容中文值：`立即处置`、`误报`。
-
 返回结构：
 
 ```json
@@ -631,7 +670,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
   "disposalStatus": "IMMEDIATE_DISPOSAL",
   "disposalStatusName": "立即处置",
   "status": "handled",
-  "message": "告警处置状态已模拟更新"
+  "message": "告警处置状态已更新"
 }
 ```
 
@@ -782,9 +821,9 @@ WebSocket：
       "taskName": "A区-仓库复核",
       "status": "unhandled",
       "snapshotUrl": {
-        "visible": "",
-        "thermal": "",
-        "front": ""
+        "visible": "/api/media/files/file_04a5e988115c40a68f1b697622375979/content",
+        "thermal": "/api/media/files/file_3c13535973f94599b34b77e2fd5bf647/content",
+        "front": "/api/media/files/file_1e82f88847c545579fd1850ce753b8c0/content"
       }
     }
   }
@@ -844,12 +883,12 @@ WebSocket：
 
 ## 7. 实现与测试
 
-当前已在 BFF 中实现 mock 版接口：
+当前已在 BFF 中实现全景地图接口：
 
 ```text
 bigscreen-bff/src/main/java/com/robot/bigscreen/panorama/PanoramaController.java
-bigscreen-bff/src/main/java/com/robot/bigscreen/panorama/PanoramaMockService.java
-bigscreen-bff/src/main/java/com/robot/bigscreen/panorama/PanoramaMockWebSocketEventPublisher.java
+bigscreen-bff/src/main/java/com/robot/bigscreen/panorama/PanoramaService.java
+bigscreen-bff/src/main/java/com/robot/bigscreen/panorama/PanoramaCenterClient.java
 ```
 
 启动 BFF：
@@ -897,20 +936,19 @@ Upgrade
 - BFF 独立启动。
 - `/api/control/robots` 在 BFF 对外移除，前端改从 `/api/bigscreen/panorama/overview.devices` 获取机器人列表。
 - 其他 `/api/control/**` 可按迁移节奏继续短期兼容。
-- `/api/bigscreen/panorama/**` 返回 mock 页面模型。
+- `/api/bigscreen/panorama/**` 返回真实查询聚合模型；未查询到的字段保留 `null` 或空数组。
 - 全景地图前端改调用 `/api/bigscreen/panorama/overview`。
 
 第二阶段：
 
 - BFF 接中心端已有机器人接口，填充设备数量、设备类型、地图点位。
-- 任务、告警如中心端暂无接口，继续 mock 或返回空集合。
+- 任务、告警如中心端暂无接口，返回空集合或 `null` 字段。
 - 前端全景地图 tab 将静态数据替换为 `/api/bigscreen/panorama/overview`。
 
 第三阶段：
 
-- BFF 继续使用 mock 数据，模拟推送所有 `panorama.*` 动态事件。
-- mock 事件先推送到 `/ws/control`，复用前端现有 WebSocket 连接，前端暂不改。
-- `/ws/control` 同时保留到 Control Service WebSocket 的桥接能力；Control Service WebSocket 暂不可用时，BFF 降级为仅推送本地 mock 事件。
+- BFF 不再本地模拟推送 `panorama.*` 动态事件。
+- `/ws/control` 保留到 Control Service WebSocket 的桥接能力；Control Service WebSocket 暂不可用时，不推送本地假数据。
 - 后续前端再从只打印事件演进为消费 `panorama.*`，形成 REST 快照 + WebSocket 增量。
 
 第三阶段后半段：

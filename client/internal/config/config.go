@@ -76,7 +76,7 @@ type Device struct {
 }
 
 func Load() Config {
-	robotID := env("ROBOT_ID", "robot-001")
+	robotID := env("ROBOT_ID", "test001")
 	return Config{
 		RobotID:                  robotID,
 		RobotName:                env("ROBOT_NAME", defaultRobotName(robotID)),
@@ -124,7 +124,7 @@ func devices(robotID string) []Device {
 	maxLinearX := 1.0
 	maxLinearY := 0.4
 	maxAngularZ := 0.8
-	if robotID == "robot-002" {
+	if robotID == "test002" {
 		baseType = "QUADRUPED_BASE"
 		baseVendor = "DEEPNROBOTICS"
 		baseModel = "X30"
@@ -316,7 +316,7 @@ func cameras(robotID string) []Camera {
 	ids := []string{"camera01", "camera02", "camera03"}
 	names := []string{"云台-可见光", "云台-热成像", "本体相机"}
 	groupTypes := []string{"dual_gimbal", "dual_gimbal", "body"}
-	if robotID == "robot-002" {
+	if robotID == "test002" {
 		ids = []string{"camera04", "camera05", "camera06"}
 		names = []string{"头部双光云台", "腹部导航相机", "尾部避障相机"}
 		groupTypes = []string{"dual_gimbal", "body", "body"}
@@ -343,15 +343,15 @@ func cameras(robotID string) []Camera {
 }
 
 func defaultRobotName(robotID string) string {
-	if robotID == "robot-002" {
-		return "G1四足机器人"
+	if robotID == "test002" {
+		return "G1四足机器狗"
 	}
 	return "R1轮式机器人"
 }
 
 func defaultType(robotID string) string {
-	if robotID == "robot-002" {
-		return "四足机器人"
+	if robotID == "test002" {
+		return "四足机器狗"
 	}
 	return "轮式机器人"
 }

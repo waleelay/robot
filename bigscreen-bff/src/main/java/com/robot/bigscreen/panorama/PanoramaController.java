@@ -15,42 +15,37 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/bigscreen/panorama")
 public class PanoramaController {
 
-    private final PanoramaMockService panoramaMockService;
+    private final PanoramaService panoramaService;
 
-    public PanoramaController(PanoramaMockService panoramaMockService) {
-        this.panoramaMockService = panoramaMockService;
+    public PanoramaController(PanoramaService panoramaService) {
+        this.panoramaService = panoramaService;
     }
 
     @GetMapping("/overview")
     public Map<String, Object> overview() {
-        return panoramaMockService.overview();
+        return panoramaService.overview();
     }
 
     @GetMapping("/devices/{deviceId}")
     public Map<String, Object> deviceDetail(@PathVariable String deviceId) {
-        return panoramaMockService.deviceDetail(deviceId);
-    }
-
-    @GetMapping("/device-groups")
-    public Map<String, Object> deviceGroups() {
-        return panoramaMockService.deviceGroups();
+        return panoramaService.deviceDetail(deviceId);
     }
 
     @GetMapping("/tasks")
     public Map<String, Object> tasks() {
-        return panoramaMockService.tasks();
+        return panoramaService.tasks();
     }
 
     @GetMapping("/alarms")
     public Map<String, Object> alarms() {
-        return panoramaMockService.alarms();
+        return panoramaService.alarms();
     }
 
     @PostMapping("/alarms/{alarmId}/disposal")
     public Map<String, Object> disposeAlarm(
             @PathVariable String alarmId,
             @RequestBody Map<String, Object> request) {
-        return panoramaMockService.disposeAlarm(alarmId, request);
+        return panoramaService.disposeAlarm(alarmId, request);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

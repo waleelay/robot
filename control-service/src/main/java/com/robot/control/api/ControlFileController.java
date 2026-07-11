@@ -157,7 +157,13 @@ public class ControlFileController {
      */
     @PostMapping("/{fileId}/play-url")
     public FilePlayUrlResponse playUrl(@PathVariable String fileId, HttpServletRequest request) {
-        return mediaServiceClient.filePlayUrl(fileId, currentUserResolver.resolve(request));
+        FilePlayUrlResponse response = mediaServiceClient.filePlayUrl(fileId, currentUserResolver.resolve(request));
+        return new FilePlayUrlResponse(
+                response.fileId(),
+                response.format(),
+                response.contentType(),
+                toControlPlayUrl(response.playUrl()),
+                response.expiresAt());
     }
 
     /**
@@ -196,5 +202,12 @@ public class ControlFileController {
             return "video/mp2t";
         }
         return "application/octet-stream";
+    }
+
+    private String toControlPlayUrl(String playUrl) {
+        if (playUrl == null || playUrl.isBlank()) {
+            return playUrl;
+        }
+        return playUrl.replaceFirst("/api/media/files/", "/api/control/files/");
     }
 }

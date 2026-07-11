@@ -10,9 +10,12 @@
 |---|---|
 | `devices` | 设备列表 |
 | `tasks` | 任务列表 |
+| `maps` | 地图列表、地图点位、路径点位 |
 | `alarms` | 告警数据 |
 
 ## 1. 设备数据
+
+说明：BFF 输出 `devices[]` 时不再使用 mock 数据兜底；管理端或控制端未提供的标量字段返回 `null`，数组字段返回空数组。
 
 设备列表字段：
 
@@ -44,8 +47,8 @@
     "updatedAt": "yyyy-MM-dd HH:mm:ss"
   },
   "cameras": [],
-  "devices": [],
-  "task": null
+  "mountedDevices": [],
+  "task": []
 }
 ```
 
@@ -77,8 +80,8 @@
 | `location.address` | 位置描述 |
 | `location.updatedAt` | 位置更新时间 |
 | `cameras` | 摄像头列表 |
-| `devices` | 上装设备列表 |
-| `task` | 设备列表当前任务摘要 |
+| `mountedDevices` | 上装设备列表 |
+| `task` | 设备列表当前任务摘要数组，无任务时为空数组 |
 
 摄像头字段：
 
@@ -94,29 +97,33 @@
 
 | 字段 | 中文说明 |
 |---|---|
-| `devices.deviceId` | 上装设备标识 |
-| `devices.name` | 上装设备名称 |
-| `devices.type` | 上装设备类型 |
-| `devices.status` | 上装设备状态 |
+| `mountedDevices.deviceId` | 上装设备标识 |
+| `mountedDevices.name` | 上装设备名称 |
+| `mountedDevices.type` | 上装设备类型 |
+| `mountedDevices.status` | 上装设备状态 |
 
 当前任务摘要字段：
 
 | 字段 | 中文说明 |
 |---|---|
-| `task.taskId/currentTask.taskId` | 当前任务 ID |
-| `task.name/currentTask.name` | 当前任务名称 |
-| `task.status/currentTask.status` | 当前任务状态 |
-| `task.timeRange/currentTask.timeRange` | 当前任务时间段 |
+| `task[].taskId/currentTask[].taskId` | 当前任务 ID |
+| `task[].name/currentTask[].name` | 当前任务名称 |
+| `task[].status/currentTask[].status` | 当前任务状态 |
+| `task[].timeRange/currentTask[].timeRange` | 当前任务时间段 |
 
-地图配置字段：
+地图数据字段：
 
 | 字段 | 中文说明 |
 |---|---|
-| `map.center.lng` | 地图中心点经度 |
-| `map.center.lat` | 地图中心点纬度 |
-| `map.zoom` | 地图默认缩放级别 |
-| `map.defaultLayer` | 地图默认图层 |
-| `map.updatedAt` | 地图配置更新时间 |
+| `maps.records` | 可用地图列表，来自 `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
+| `maps.records.mapId/id` | 地图唯一标识 |
+| `maps.records.name/mapName` | 地图名称 |
+| `maps.records.enabled` | 是否启用 |
+| `maps.records.center.lng` | 地图中心点经度 |
+| `maps.records.center.lat` | 地图中心点纬度 |
+| `maps.records.zoom` | 地图默认缩放级别 |
+| `maps.records.defaultLayer` | 地图默认图层 |
+| `maps.records.updatedAt` | 地图更新时间 |
 
 ## 2. 巡逻与任务数据
 
@@ -134,16 +141,18 @@
 
 | 字段 | 中文说明 |
 |---|---|
-| `taskId` | 任务唯一标识 |
+| `taskId` | 任务唯一标识，number/int |
 | `status` | 任务状态编码 |
 | `startTime` | 任务开始时间 |
 | `endTime` | 任务结束时间 |
 
 任务列表字段：
 
+说明：BFF 输出 `tasks[]` 时不再使用 mock 数据兜底；管理端未提供或链路未查询到的标量字段返回 `null`，数组字段返回空数组。
+
 | 字段 | 中文说明 |
 |---|---|
-| `taskId` | 任务唯一标识 |
+| `taskId` | 任务唯一标识，number/int |
 | `name` | 任务名称 |
 | `status` | 任务状态编码 |
 | `statusName` | 任务状态名称 |
@@ -151,10 +160,26 @@
 | `endTime` | 结束时间 |
 | `timeRange` | 页面展示时间段 |
 | `currentLocation` | 当前任务位置 |
+| `workflowPlanId/planId/id` | 任务计划 ID |
+| `planName/workflowName/name` | 任务计划名称 |
+| `workflowDefinitionId` | 工作流定义 ID，由任务计划提供 |
+| `definition.mapId` | 工作流定义关联地图 ID，number/int |
+| `definition.pathId` | 工作流定义关联路径 ID |
+| `mapPoints` | `/api/v1/management/maps/{mapId}/points` 返回的地图点位列表 |
+| `pathPoints` | 根据 `/api/v1/management/paths/{pathId}/points` 响应中的 `mapPointId` 到 `mapPoints[].id` 过滤出的地图点位列表 |
 | `equipmentList.robotId` | 执行装备机器人 ID |
 | `equipmentList.name` | 执行装备名称 |
 | `equipmentList.type` | 执行装备类型 |
 | `equipmentList.status` | 执行装备状态 |
+
+任务地图与路径所需接口：
+
+| 接口 | 需要字段 |
+|---|---|
+| `GET /api/v1/management/task-workflow-plans?pageNum=1&pageSize=20` | `id/name/workflowDefinitionId` |
+| `GET /api/v1/management/task-workflow-definitions/{workflowDefinitionId}` | `mapId/pathId` |
+| `GET /api/v1/management/maps/{mapId}/points` | 点位列表，BFF 原样放入 `tasks[].mapPoints` |
+| `GET /api/v1/management/paths/{pathId}/points` | 路径点引用列表，需包含 `mapPointId` |
 
 ## 3. 告警数据
 
@@ -169,11 +194,12 @@
 
 告警列表字段：
 
+说明：BFF 输出 `alarms` 时不再使用 mock 数据兜底；管理端未提供或链路未查询到的标量字段返回 `null`，分组数组字段返回空数组。
+
 | 字段 | 中文说明 |
 |---|---|
 | `alarmId` | 告警唯一标识 |
 | `title` | 告警标题 |
-| `category` | 告警分类编码 |
 | `categoryName` | 告警分类名称 |
 | `level` | 风险等级编码，`HIGH/MEDIUM/LOW` |
 | `levelName` | 风险等级名称 |
@@ -217,17 +243,21 @@
 | `serverTime` | BFF 当前时间 |
 | `deviceStats.total/online/fault/offline` | `devices.status`、`devices.fault` |
 | `deviceTypeStats.*` | `devices.typeCode`、`devices.type`、`devices.status`、`devices.fault` |
-| `mountedDeviceCount` | `devices.devices` 上装设备列表长度 |
-| `mountedDevices` | `devices.devices` |
+| `mountedDeviceCount` | `devices.mountedDevices` 上装设备列表长度 |
+| `mountedDevices` | `devices.mountedDevices` |
 | `alarmStatus` | `devices.alarmLevel` |
 | `alarmText` | `devices.alarmLevel` |
 | `mapDisplay.*` | 设备基础字段、`devices.status`、`devices.alarmLevel` |
-| `currentTask` | `devices.task` |
+| `currentTask` | `devices.task` 数组 |
 | `actions.*` | `devices.status` |
 | `patrolOverview.*` | `patrolDuration`、`patrolDurationUnit`、`patrolMileage`、`patrolMileageUnit`、`patrolDate` |
 | `taskOverview.totalToday/running/pending` | `tasks.status`、`tasks.startTime`、`tasks.endTime` |
 | `taskOverview.completedRate/completedRateText` | `tasks.status` 统计出的任务总数、已完成任务数 |
 | `tasks.total` | `tasks` 列表长度 |
+| `tasks.mapId` | `task-workflow-definitions.mapId`，number/int |
+| `tasks.mapPoints` | `/api/v1/management/maps/{mapId}/points` 返回值 |
+| `tasks.pathPoints` | 根据 `/api/v1/management/paths/{pathId}/points` 中的 `mapPointId` 到 `tasks.mapPoints[].id` 过滤得到 |
+| `map` | `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
 | `alarms.total` | `alarms` 列表数量 |
 | `alarms.summary.*` | `alarms.status`、`alarms.eventTime` |
 | `alarms.high/medium/low.items` | `alarms.level` |

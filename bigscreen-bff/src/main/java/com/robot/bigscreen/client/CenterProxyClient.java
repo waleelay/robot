@@ -47,10 +47,18 @@ public class CenterProxyClient {
     }
 
     public ResponseEntity<byte[]> forward(HttpServletRequest request) {
+        return forward(request, targetBaseUrl(request), targetPath(request));
+    }
+
+    public ResponseEntity<byte[]> forwardToManage(HttpServletRequest request, String targetPath) {
+        return forward(request, properties.getManageBaseUrl(), targetPath);
+    }
+
+    private ResponseEntity<byte[]> forward(HttpServletRequest request, String targetBaseUrl, String targetPath) {
         if (isMultipart(request)) {
-            return forwardMultipart(request);
+            return forwardMultipart(request, targetBaseUrl, targetPath);
         }
-        String target = targetBaseUrl(request) + targetPath(request);
+        String target = targetBaseUrl + targetPath;
         String query = request.getQueryString();
         URI uri = UriComponentsBuilder.fromUriString(target)
                 .query(query)
@@ -66,8 +74,8 @@ public class CenterProxyClient {
                         .body(clientResponse.getBody().readAllBytes()));
     }
 
-    private ResponseEntity<byte[]> forwardMultipart(HttpServletRequest request) {
-        String target = targetBaseUrl(request) + targetPath(request);
+    private ResponseEntity<byte[]> forwardMultipart(HttpServletRequest request, String targetBaseUrl, String targetPath) {
+        String target = targetBaseUrl + targetPath;
         String query = request.getQueryString();
         URI uri = UriComponentsBuilder.fromUriString(target)
                 .query(query)
@@ -87,6 +95,9 @@ public class CenterProxyClient {
         String path = request.getRequestURI();
         if (path.startsWith("/api/manage") || path.startsWith("/api/v1/management")) {
             return properties.getManageBaseUrl();
+        }
+        if (path.startsWith("/api/v1/control")) {
+            return properties.getV1ControlBaseUrl();
         }
         if (path.startsWith("/api/media") || path.startsWith("/internal/media")) {
             return properties.getMediaBaseUrl();

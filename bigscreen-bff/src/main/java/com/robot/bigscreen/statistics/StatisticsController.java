@@ -19,10 +19,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/bigscreen/statistics")
 public class StatisticsController {
 
-    private final StatisticsMockService statisticsMockService;
+    private final StatisticsService statisticsService;
 
-    public StatisticsController(StatisticsMockService statisticsMockService) {
-        this.statisticsMockService = statisticsMockService;
+    public StatisticsController(StatisticsService statisticsService) {
+        this.statisticsService = statisticsService;
     }
 
     @GetMapping("/overview")
@@ -32,12 +32,12 @@ public class StatisticsController {
             @RequestParam(required = false) String endTime,
             @RequestParam(defaultValue = "all") String deviceType,
             @RequestParam(required = false) String areaId) {
-        return statisticsMockService.overview(range, startTime, endTime, deviceType, areaId);
+        return statisticsService.overview(range, startTime, endTime, deviceType, areaId);
     }
 
     @PostMapping("/reports/export")
     public ResponseEntity<byte[]> exportReport(@RequestBody Map<String, Object> request) {
-        StatisticsMockService.ReportFile report = statisticsMockService.createReport(request);
+        StatisticsService.ReportFile report = statisticsService.createReport(request);
         return pdfResponse(report);
     }
 
@@ -45,12 +45,12 @@ public class StatisticsController {
     public Map<String, Object> reportHistoryList(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return statisticsMockService.reportHistoryList(page, size);
+        return statisticsService.reportHistoryList(page, size);
     }
 
     @GetMapping("/reports/{id}/download")
     public ResponseEntity<byte[]> downloadReport(@PathVariable String id) {
-        StatisticsMockService.ReportFile report = statisticsMockService.reportFile(id);
+        StatisticsService.ReportFile report = statisticsService.reportFile(id);
         if (report == null) {
             return ResponseEntity.notFound().build();
         }
@@ -59,13 +59,13 @@ public class StatisticsController {
 
     @DeleteMapping("/reports/{id}")
     public ResponseEntity<Void> deleteReport(@PathVariable String id) {
-        if (!statisticsMockService.deleteReport(id)) {
+        if (!statisticsService.deleteReport(id)) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.noContent().build();
     }
 
-    private ResponseEntity<byte[]> pdfResponse(StatisticsMockService.ReportFile report) {
+    private ResponseEntity<byte[]> pdfResponse(StatisticsService.ReportFile report) {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION,

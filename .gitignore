@@ -12,3 +12,4 @@ tmp_docx_render_*/
 robot-mediaserver-*-tcp*/
 deploy/nginx/certs/
 /eiop-admin-ui/
+/robot-control-service-*-tcp*/

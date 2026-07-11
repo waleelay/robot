@@ -163,7 +163,7 @@ Content-Type: application/json
 | `fileId` | string | 文件 ID |
 | `robotId` | string/null | 机器人 ID |
 | `deviceId` | string/null | 设备 ID |
-| `taskExecutionId` | string/null | 任务执行 ID |
+| `extensionId` | string/null | 通用扩展 ID |
 | `fileType` | string | 文件类型 |
 | `fileName` | string | 文件名 |
 | `contentType` | string | MIME 类型 |
@@ -187,7 +187,7 @@ Content-Type: application/json
   "fileId": "file_001",
   "robotId": "test001",
   "deviceId": "camera01",
-  "taskExecutionId": null,
+  "extensionId": null,
   "fileType": "IMAGE",
   "fileName": "snapshot.jpg",
   "contentType": "image/jpeg",
@@ -246,11 +246,12 @@ GET /api/bigscreen/panorama/overview
 | `deviceTypeStats` | array | 按设备类型统计 |
 | `patrolOverview` | object | 今日巡逻时长、里程 |
 | `taskOverview` | object | 今日任务总数、完成率、运行/待执行数量 |
-| `deviceGroups` | object | 在线/离线分组；当前作为 overview 内联字段返回 |
 | `devices` | array | 设备摘要列表 |
 | `tasks` | array | 任务列表 |
 | `alarms` | object | 告警聚合，结构同 `/alarms` |
-| `map` | object | 地图中心点、缩放和图层配置 |
+| `map` | array | 可用地图列表，来自管理端地图列表 `data.records` |
+
+说明：`devices[]` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，数组字段返回空数组。
 
 响应示例：
 
@@ -278,17 +279,49 @@ GET /api/bigscreen/panorama/overview
       "alarmLevel": "HIGH",
       "controlMode": "AUTO",
       "mountedDeviceCount": 3,
+      "mountedDevices": [
+        {"deviceId": "camera01", "name": "前向双光云台", "type": "DUAL_GIMBAL", "status": "online"}
+      ],
       "location": {"lng": 106.03824884204943, "lat": 30.746587087515316, "address": "A区仓库"},
       "mapDisplay": {"icon": "wheeled_robot", "label": "R1轮式机器人", "badgeText": "告警中", "badgeStatus": "alarm"},
-      "task": {"taskId": "task-002", "name": "A区-仓库复核", "status": "paused", "timeRange": "10:00-11:30"}
+      "task": [
+        {"taskId": "task-002", "name": "A区-仓库复核", "status": "paused", "timeRange": "10:00-11:30"}
+      ]
     }
   ],
-  "map": {
-    "center": {"lng": 106.03655278081857, "lat": 30.7478613352993},
-    "zoom": 17,
-    "defaultLayer": "dark-vector",
-    "updatedAt": "2026-07-04 10:00:00"
-  }
+  "tasks": [
+    {
+      "taskId": 1,
+      "name": "A区-夜间巡逻",
+      "status": "running",
+      "statusName": "执行中",
+      "startTime": "2026-06-12 20:00:00",
+      "endTime": "2026-06-12 22:00:00",
+      "timeRange": "20:00-22:00",
+      "currentLocation": "A区主干道",
+      "equipmentList": [
+        {"robotId": "test001", "name": "R1轮式机器人", "type": "WHEELED_ROBOT", "status": "online"}
+      ],
+      "mapId": 1,
+      "mapPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
+      ],
+      "pathPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
+      ]
+    }
+  ],
+  "map": [
+    {
+      "mapId": 1,
+      "name": "A区巡逻地图",
+      "enabled": true,
+      "center": {"lng": 106.03655278081857, "lat": 30.7478613352993},
+      "zoom": 17,
+      "defaultLayer": "dark-vector",
+      "updatedAt": "2026-07-04 10:00:00"
+    }
+  ]
 }
 ```
 
@@ -330,7 +363,9 @@ GET /api/bigscreen/panorama/devices/test001
     {"deviceId": "audio-control-001", "name": "客户端音频", "type": "CLIENT_AUDIO", "status": "online"},
     {"deviceId": "ptz-001", "name": "云台控制", "type": "PTZ", "status": "online"}
   ],
-  "currentTask": {"taskId": "task-002", "name": "A区-仓库复核", "status": "paused", "timeRange": "10:00-11:30"},
+  "currentTask": [
+    {"taskId": "task-002", "name": "A区-仓库复核", "status": "paused", "timeRange": "10:00-11:30"}
+  ],
   "actions": {
     "remoteControl": false,
     "slamMap": false,
@@ -344,7 +379,9 @@ GET /api/bigscreen/panorama/devices/test001
 
 ### 3.4 GET `/api/bigscreen/panorama/tasks`
 
-用途：查询大屏任务列表。
+用途：查询大屏任务列表；数据来源为管理端任务计划列表 `/api/v1/management/task-workflow-plans?pageNum=1&pageSize=20`。
+
+说明：`tasks[]` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，数组字段返回空数组。
 
 请求示例：
 
@@ -360,7 +397,7 @@ GET /api/bigscreen/panorama/tasks
   "total": 1,
   "items": [
     {
-      "taskId": "task-001",
+      "taskId": 1,
       "name": "A区-夜间巡逻",
       "status": "running",
       "statusName": "执行中",
@@ -370,6 +407,13 @@ GET /api/bigscreen/panorama/tasks
       "currentLocation": "A区主干道",
       "equipmentList": [
         {"robotId": "test001", "name": "R1轮式机器人", "type": "WHEELED_ROBOT", "status": "online"}
+      ],
+      "mapId": 1,
+      "mapPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
+      ],
+      "pathPoints": [
+        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
       ]
     }
   ]
@@ -385,6 +429,8 @@ GET /api/bigscreen/panorama/tasks
 ```http
 GET /api/bigscreen/panorama/alarms
 ```
+
+说明：`alarms` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，分组数组字段返回空数组。
 
 响应示例：
 
@@ -403,12 +449,13 @@ GET /api/bigscreen/panorama/alarms
           "level": "HIGH",
           "levelName": "高风险",
           "eventTime": "2023-08-01 10:00:00",
-          "location": {"address": "A区仓库"},
+          "location": null,
           "robotId": "test001",
           "deviceName": "R1轮式机器人",
           "taskId": "task-002",
-          "taskName": "A区-仓库复核",
-          "status": "unhandled"
+          "taskName": null,
+          "status": "unhandled",
+          "snapshotUrl": null
         }
       ]
     },
@@ -420,7 +467,7 @@ GET /api/bigscreen/panorama/alarms
 
 ### 3.6 POST `/api/bigscreen/panorama/alarms/{alarmId}/disposal`
 
-用途：处置告警；BFF 会优先尝试调用管理中心，失败时返回 mock 更新结果。
+用途：处置告警；BFF 调用管理中心，失败时返回失败结果，不再返回模拟成功。
 
 请求参数：
 
@@ -480,28 +527,26 @@ GET /api/bigscreen/statistics/overview?range=month&deviceType=ROBOT_DOG
   "range": {"type": "month", "startTime": "2026-07-01 00:00:00", "endTime": "2026-07-04 23:59:59"},
   "filters": {"deviceType": "ROBOT_DOG", "areaId": null},
   "kpis": {
-    "taskTotal": {"value": 418, "compareRate": -5},
-    "patrolMileage": {"value": 517.4, "compareRate": 12},
-    "aiAlarmTotal": {"value": 415, "compareRate": 8},
-    "autoHandleSuccessRate": {"value": 98, "compareRate": 2}
+    "taskTotal": {"value": null, "compareRate": null},
+    "patrolMileage": {"value": null, "compareRate": null},
+    "aiAlarmTotal": {"value": null, "compareRate": null},
+    "autoHandleSuccessRate": {"value": null, "compareRate": null}
   },
   "equipmentRuntime": {
-    "onlineRate": 98,
-    "taskCompletionRate": 100,
-    "unit": "小时",
-    "items": [
-      {"deviceType": "ROBOT_DOG", "deviceTypeName": "机器狗", "runningHours": 128, "faultHours": 20, "offlineHours": 26}
-    ]
+    "onlineRate": null,
+    "taskCompletionRate": null,
+    "unit": null,
+    "items": []
   },
   "aiAlarmAnalysis": {
-    "alarmTypeRanking": [{"type": "FIGHT", "name": "打架斗殴", "count": 116, "percent": 28.0}],
-    "handleMethodRanking": [{"method": "VOICE_BROADCAST", "name": "语音播报", "count": 139}]
+    "alarmTypeRanking": [],
+    "handleMethodRanking": []
   },
-  "alarmAreaRanking": [{"areaId": "area-001", "areaName": "2监区8号楼", "count": 75, "percent": 100}],
-  "alarmTrend": {"unit": "次", "points": [{"date": "2026-07-04", "label": "7.4", "count": 44}]},
+  "alarmAreaRanking": [],
+  "alarmTrend": {"unit": null, "points": []},
   "taskCompletion": {
-    "items": [{"status": "COMPLETED", "name": "已完成", "count": 284, "percent": 98}],
-    "insight": "本月对比上月任务处置时长缩短10%，系统响应速度提升"
+    "items": [],
+    "insight": null
   }
 }
 ```
@@ -1530,7 +1575,7 @@ GET /api/control/video-sessions/vs_123456/recordings/active
 | `fileType` | enum | 是 | `FileType` |
 | `robotId` | string | 否 | 机器人 ID |
 | `deviceId` | string | 否 | 设备 ID |
-| `taskExecutionId` | string | 否 | 任务执行 ID |
+| `extensionId` | string | 否 | 通用扩展 ID |
 | `sourceFileId` | string | 否 | 来源文件 ID |
 | `metadata` | string | 否 | 元数据，建议 JSON 字符串 |
 
@@ -1559,7 +1604,7 @@ metadata={"source":"snapshot"}
 |---|---|---|---:|---|---|
 | `robotId` | query | string | 否 | - | 机器人 ID |
 | `deviceId` | query | string | 否 | - | 设备 ID |
-| `taskExecutionId` | query | string | 否 | - | 任务执行 ID |
+| `extensionId` | query | string | 否 | - | 通用扩展 ID |
 | `fileType` | query | enum | 否 | - | 文件类型 |
 | `status` | query | enum | 否 | - | 文件状态 |
 | `page` | query | int | 否 | `0` | 页码 |
@@ -1810,7 +1855,7 @@ Backend MQTT 关联说明：
 | POST | `{base}/multipart-uploads/{uploadId}/complete` | 完成分片上传 |
 | GET | `{base}/{fileId}/status` | 查询文件处理状态 |
 | GET | `{base}` | 文件分页查询 |
-| POST | `{base}/task-execution-binding` | 绑定任务执行 ID |
+| POST | `{base}/extension-binding` | 绑定通用扩展 ID |
 | GET | `{base}/{fileId}` | 文件详情 |
 | POST | `{base}/{fileId}/download-url` | 获取下载 URL |
 | GET | `{base}/{fileId}/content` | 获取文件正文 |
@@ -2556,7 +2601,7 @@ POST /internal/media/video-sessions/vs_123456/_mock/track-published/TR_VC_001
 |---|---|---:|---|
 | `robotId` | string | 否 | 机器人 ID；也可通过 `X-Robot-Id` 头传入 |
 | `deviceId` | string | 否 | 设备 ID |
-| `taskExecutionId` | string | 否 | 任务执行 ID |
+| `extensionId` | string | 否 | 通用扩展 ID |
 | `sourceFileId` | string | 否 | 来源文件 ID |
 | `fileType` | enum | 是 | `FileType` |
 | `fileName` | string | 是 | 原始文件名 |
@@ -2644,7 +2689,7 @@ Content-Type: application/json
 {
   "robotId": "test001",
   "deviceId": "camera01",
-  "taskExecutionId": "task_exec_001",
+  "extensionId": "ext_001",
   "fileType": "VIDEO",
   "fileName": "patrol.mp4",
   "contentType": "video/mp4",
@@ -2768,7 +2813,7 @@ X-Robot-Id: test001
 
 | 方法 | 路径 | 请求参数 | 响应 |
 |---|---|---|---|
-| GET | `{base}` | Query: `robotId`、`deviceId`、`taskExecutionId`、`fileType`、`status`、`page`、`size` | `FileListResponse` |
+| GET | `{base}` | Query: `robotId`、`deviceId`、`extensionId`、`fileType`、`status`、`page`、`size` | `FileListResponse` |
 | GET | `{base}/{fileId}` | Path: `fileId` | `FileListItemResponse` |
 | POST | `{base}/{fileId}/download-url` | Path: `fileId` | `FileDownloadUrlResponse` |
 | GET | `{base}/{fileId}/content` | Path: `fileId` | 文件二进制 |
@@ -2790,7 +2835,7 @@ GET /api/media/files?robotId=test001&fileType=VIDEO&status=READY&page=0&size=20
       "fileId": "file_video_001",
       "robotId": "test001",
       "deviceId": "camera01",
-      "taskExecutionId": "task_exec_001",
+      "extensionId": "ext_001",
       "fileType": "VIDEO",
       "fileName": "patrol.mp4",
       "contentType": "video/mp4",
@@ -2827,26 +2872,28 @@ POST /api/media/files/file_video_001/play-url
 }
 ```
 
-### 5.19 POST `{base}/task-execution-binding`
+### 5.19 POST `{base}/extension-binding`
 
-用途：把文件绑定到任务执行记录。Controller 接收通用 `Map<String,Object>`，具体字段由 `FileService.bindTaskExecution` 解释。
+用途：把文件绑定到通用扩展 ID。Controller 接收通用 `Map<String,Object>`，具体字段由 `FileService.bindExtension` 解释。
 
 常用请求字段：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| `fileId` | string | 是 | 文件 ID |
-| `taskExecutionId` | string | 是 | 任务执行 ID |
+| `extensionId` | string | 是 | 通用扩展 ID |
+| `fileIds` | array[string] | 是 | 要绑定的文件 ID 列表 |
+| `videoFileIds` | array[string] | 否 | 历史任务/巡逻链路兼容字段 |
+| `pointFileId` | string | 否 | 历史任务/巡逻链路兼容字段 |
 
 请求示例：
 
 ```http
-POST /api/media/files/task-execution-binding
+POST /api/media/files/extension-binding
 Content-Type: application/json
 
 {
-  "fileId": "file_video_001",
-  "taskExecutionId": "task_exec_001"
+  "extensionId": "ext_001",
+  "fileIds": ["file_video_001", "file_point_001"]
 }
 ```
 

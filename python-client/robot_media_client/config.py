@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -84,7 +85,7 @@ class Config:
 
 def load() -> Config:
     """读取环境变量并组装完整客户端配置。"""
-    robot_id = env("ROBOT_ID", "robot-001")
+    robot_id = env("ROBOT_ID", "test001")
     return Config(
         robot_id=robot_id,
         robot_name=env("ROBOT_NAME", default_robot_name(robot_id)),
@@ -102,7 +103,7 @@ def load() -> Config:
         devices=devices(robot_id),
         ffprobe_path=env("FFPROBE_PATH", "ffprobe"),
         publisher_cmd=env("PUBLISHER_CMD", ""),
-        ffmpeg_publisher_cmd=env("FFMPEG_PUBLISHER_CMD", "./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}"),
+        ffmpeg_publisher_cmd=env("FFMPEG_PUBLISHER_CMD", default_ffmpeg_publisher_cmd()),
         gstreamer_publisher_path=env("GSTREAMER_PUBLISHER_PATH", "gstreamer-publisher"),
         gstreamer_pipeline=env("GSTREAMER_PIPELINE", "rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1"),
         gst_launch_path=env("GST_LAUNCH_PATH", "gst-launch-1.0"),
@@ -131,7 +132,7 @@ def cameras(robot_id: str) -> list[Camera]:
     ids = ["camera01", "camera02", "camera03"]
     names = ["云台-可见光", "云台-热成像", "本体相机"]
     group_types = ["dual_gimbal", "dual_gimbal", "body"]
-    if robot_id == "robot-002":
+    if robot_id == "test002":
         ids = ["camera04", "camera05", "camera06"]
         names = ["头部双光云台", "腹部导航相机", "尾部避障相机"]
         group_types = ["dual_gimbal", "body", "body"]
@@ -164,7 +165,7 @@ def devices(robot_id: str) -> list[Device]:
     max_linear_x = 1.0
     max_linear_y = 0.4
     max_angular_z = 0.8
-    if robot_id == "robot-002":
+    if robot_id == "test002":
         base_type = "QUADRUPED_BASE"
         base_vendor = "DEEPNROBOTICS"
         base_model = "X30"
@@ -323,16 +324,31 @@ def devices(robot_id: str) -> list[Device]:
 
 def default_robot_name(robot_id: str) -> str:
     """返回已知 robotId 的默认展示名称。"""
-    if robot_id == "robot-002":
-        return "G1四足机器人"
+    if robot_id == "test002":
+        return "G1四足机器狗"
     return "R1轮式机器人"
 
 
 def default_type(robot_id: str) -> str:
     """返回已知 robotId 的默认机器人类型。"""
-    if robot_id == "robot-002":
-        return "四足机器人"
+    if robot_id == "test002":
+        return "四足机器狗"
     return "轮式机器人"
+
+
+def default_ffmpeg_publisher_cmd() -> str:
+    """返回可用的 ffmpeg fallback publisher 命令模板。"""
+    package_root = Path(__file__).resolve().parents[1]
+    candidates = [
+        package_root / "scripts" / "ffmpeg-livekit-publisher.sh",
+        package_root.parent / "client" / "scripts" / "ffmpeg-livekit-publisher.sh",
+        Path.cwd() / "scripts" / "ffmpeg-livekit-publisher.sh",
+        Path.cwd().parent / "client" / "scripts" / "ffmpeg-livekit-publisher.sh",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return f"{candidate} {{rtsp}} {{livekitUrl}} {{token}}"
+    return "ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}"
 
 
 def env(key: str, fallback: str) -> str:
