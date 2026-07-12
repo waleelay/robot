@@ -1,7 +1,6 @@
 package com.robot.control.api;
 
 import com.robot.control.auth.CurrentUserResolver;
-import com.robot.control.client.ControlMediaServiceClient;
 import com.robot.control.dto.ControlStartVideoRequest;
 import com.robot.control.service.EquipmentControlService;
 import com.robot.control.service.ControlVideoCommandService;

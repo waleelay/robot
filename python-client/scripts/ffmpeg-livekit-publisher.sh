@@ -12,6 +12,7 @@ gop="${FFMPEG_TRANSCODE_GOP:-25}"
 preset="${FFMPEG_TRANSCODE_PRESET:-veryfast}"
 transport="${FFMPEG_RTSP_TRANSPORT:-tcp}"
 rtsp_timeout_us="${FFMPEG_RTSP_TIMEOUT_US:-8000000}"
+rtsp_timeout_option="${FFMPEG_RTSP_TIMEOUT_OPTION:-auto}"
 
 if ! command -v "${ffmpeg_bin}" >/dev/null 2>&1; then
   echo "ffmpeg not found: ${ffmpeg_bin}" >&2
@@ -24,11 +25,29 @@ if ! command -v "${publisher_bin}" >/dev/null 2>&1; then
   exit 127
 fi
 
+input_args=(
+  -hide_banner
+  -loglevel warning
+  -rtsp_transport "${transport}"
+)
+
+if [ "${rtsp_timeout_option}" = "auto" ]; then
+  rtsp_help="$("${ffmpeg_bin}" -hide_banner -h demuxer=rtsp 2>/dev/null || true)"
+  if printf '%s\n' "${rtsp_help}" | grep -q -- '-rw_timeout'; then
+    rtsp_timeout_option="rw_timeout"
+  elif printf '%s\n' "${rtsp_help}" | grep -q -- '-stimeout'; then
+    rtsp_timeout_option="stimeout"
+  else
+    rtsp_timeout_option=""
+  fi
+fi
+
+if [ -n "${rtsp_timeout_option}" ] && [ "${rtsp_timeout_us}" != "0" ]; then
+  input_args+=("-${rtsp_timeout_option}" "${rtsp_timeout_us}")
+fi
+
 "${ffmpeg_bin}" \
-  -hide_banner \
-  -loglevel warning \
-  -rtsp_transport "${transport}" \
-  -rw_timeout "${rtsp_timeout_us}" \
+  "${input_args[@]}" \
   -fflags nobuffer \
   -flags low_delay \
   -i "${rtsp_url}" \

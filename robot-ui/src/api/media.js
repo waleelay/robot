@@ -130,14 +130,6 @@ export function getSessionSnapshots(sessionId) {
   })
 }
 
-// 获取会话事件
-export function getSessionEvents(sessionId) {
-  return request({
-    url: `/api/control/video-sessions/${sessionId}/events`,
-    method: 'get'
-  })
-}
-
 // 模拟轨道发布（内部接口）
 export function mockTrackPublished(sessionId, trackSid) {
   return request({

@@ -137,7 +137,7 @@ func (c *Client) handleStart(ctx context.Context) paho.MessageHandler {
 			rtspURL = c.rtspURL(command.DeviceID, command.Quality)
 		}
 		// 先探测 RTSP，失败时马上回报 failed，避免后端一直等 track published 超时。
-		if err := c.probe.Check(ctx, rtspURL); err != nil {
+		if _, err := c.probe.Check(ctx, rtspURL); err != nil {
 			c.status(command.SessionID, "failed", "", "", "RTSP_PROBE_FAILED", err.Error())
 			return
 		}

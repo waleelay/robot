@@ -1,6 +1,17 @@
 from __future__ import annotations
 
+import json
 import subprocess
+from dataclasses import dataclass
+
+
+@dataclass
+class StreamInfo:
+    """RTSP 视频流的基础探测信息。"""
+
+    codec_name: str = ""
+    width: int = 0
+    height: int = 0
 
 
 class Probe:
@@ -11,9 +22,9 @@ class Probe:
         self.path = path
         self.timeout = timeout
 
-    def check(self, url: str) -> None:
-        """探测 RTSP 视频流；失败时让 subprocess 抛出异常给调用方。"""
-        subprocess.run(
+    def check(self, url: str) -> StreamInfo:
+        """探测 RTSP 视频流；失败时抛出异常，成功时返回首路视频信息。"""
+        completed = subprocess.run(
             [
                 self.path,
                 "-v",
@@ -30,4 +41,18 @@ class Probe:
             ],
             timeout=self.timeout,
             check=True,
+            capture_output=True,
+            text=True,
+        )
+        if completed.stdout:
+            print(completed.stdout, flush=True)
+        data = json.loads(completed.stdout or "{}")
+        streams = data.get("streams") or []
+        if not streams:
+            return StreamInfo()
+        stream = streams[0]
+        return StreamInfo(
+            codec_name=str(stream.get("codec_name") or ""),
+            width=int(stream.get("width") or 0),
+            height=int(stream.get("height") or 0),
         )

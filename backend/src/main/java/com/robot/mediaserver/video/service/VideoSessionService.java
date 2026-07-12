@@ -12,7 +12,6 @@ import com.robot.mediaserver.video.dto.IntercomResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
-import com.robot.mediaserver.video.event.MediaEventLogService;
 import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import com.robot.mediaserver.video.messaging.IntercomStartCommand;
 import com.robot.mediaserver.video.model.MediaSessionViewer;
@@ -21,6 +20,7 @@ import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
 import com.robot.mediaserver.video.repository.MediaSessionViewerRepository;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
+import com.robot.mediaserver.ws.MediaWebSocketPublisher;
 import jakarta.transaction.Transactional;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -80,9 +80,9 @@ public class VideoSessionService {
     private final LiveKitTokenService liveKitTokenService;
 
     /**
-     * 媒体事件日志服务。
+     * 媒体状态 WebSocket 发布器。
      */
-    private final MediaEventLogService eventLogService;
+    private final MediaWebSocketPublisher webSocketPublisher;
 
     private final FileService fileService;
 
@@ -103,7 +103,7 @@ public class VideoSessionService {
      * @param viewerRepository 观看者会话仓储
      * @param liveKitRoomService LiveKit 房间服务
      * @param liveKitTokenService LiveKit token 服务
-     * @param eventLogService 媒体事件日志服务
+     * @param webSocketPublisher 媒体状态 WebSocket 发布器
      * @param mediaTrackService 媒体轨道服务
      * @param properties 媒体服务配置属性
      */
@@ -112,7 +112,7 @@ public class VideoSessionService {
             MediaSessionViewerRepository viewerRepository,
             LiveKitRoomService liveKitRoomService,
             LiveKitTokenService liveKitTokenService,
-            MediaEventLogService eventLogService,
+            MediaWebSocketPublisher webSocketPublisher,
             FileService fileService,
             MediaTrackService mediaTrackService,
             MediaProperties properties) {
@@ -120,7 +120,7 @@ public class VideoSessionService {
         this.viewerRepository = viewerRepository;
         this.liveKitRoomService = liveKitRoomService;
         this.liveKitTokenService = liveKitTokenService;
-        this.eventLogService = eventLogService;
+        this.webSocketPublisher = webSocketPublisher;
         this.fileService = fileService;
         this.mediaTrackService = mediaTrackService;
         this.properties = properties;
@@ -539,7 +539,7 @@ public class VideoSessionService {
                 transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
             }
             case "failed", "error" -> markFailed(session, errorCode == null ? "CLIENT_STATUS_FAILED" : errorCode, safeMessage(message), "video.session.failed");
-            default -> eventLogService.recordAndPublish(sessionId, "video.client.status", Map.of(
+            default -> emit("video.client.status", Map.of(
                     "sessionId", sessionId,
                     "status", safeMessage(status),
                     "message", safeMessage(message)));
@@ -581,7 +581,7 @@ public class VideoSessionService {
             }
             case "interrupted" -> {
                 session.setIntercomStatus(IntercomStatus.INTERRUPTED);
-                eventLogService.recordAndPublish(sessionId, "video.intercom.interrupted", Map.of(
+                emit("video.intercom.interrupted", Map.of(
                         "sessionId", sessionId, "message", safeMessage(message)));
             }
             case "stopped", "closed" -> {
@@ -592,12 +592,12 @@ public class VideoSessionService {
             }
             case "failed", "error" -> {
                 session.setIntercomStatus(IntercomStatus.FAILED);
-                eventLogService.recordAndPublish(sessionId, "video.intercom.failed", Map.of(
+                emit("video.intercom.failed", Map.of(
                         "sessionId", sessionId,
                         "errorCode", errorCode == null ? "INTERCOM_FAILED" : errorCode,
                         "message", safeMessage(message)));
             }
-            default -> eventLogService.recordAndPublish(sessionId, "video.intercom.status", Map.of(
+            default -> emit("video.intercom.status", Map.of(
                     "sessionId", sessionId, "status", safeMessage(status), "message", safeMessage(message)));
         }
         if (!holdsRoomForIntercom(session)
@@ -913,7 +913,7 @@ public class VideoSessionService {
         session.setIntercomClientId(null);
         session.setRobotAudioTrackSid(null);
         session.setRobotAudioTrackName(null);
-        eventLogService.recordAndPublish(sessionId, "video.intercom.interrupted", Map.of(
+        emit("video.intercom.interrupted", Map.of(
                 "sessionId", sessionId,
                 "message", "intercom heartbeat timeout"));
         if (session.getViewerCount() == 0) {
@@ -998,33 +998,23 @@ public class VideoSessionService {
     }
 
     private void emit(String event, Object data) {
-        eventLogService.recordAndPublish(resolveSessionId(data), event, data);
+        webSocketPublisher.publish(event, data);
     }
 
     private void transition(VideoSession session, VideoSessionStatus targetStatus, String event, Object payload) {
         session.setStatus(targetStatus);
         session.setUpdatedAt(now());
-        eventLogService.recordAndPublish(session.getSessionId(), event, payload);
+        emit(event, payload);
     }
 
     private void markFailed(VideoSession session, String errorCode, String message, String event) {
         session.setStatus(VideoSessionStatus.FAILED);
         session.setLastErrorCode(errorCode);
         session.setLastErrorMessage(message);
-        eventLogService.recordAndPublish(session.getSessionId(), event, Map.of(
+        emit(event, Map.of(
                 "sessionId", session.getSessionId(),
                 "errorCode", errorCode,
                 "message", message));
-    }
-
-    private String resolveSessionId(Object data) {
-        if (data instanceof VideoSession session) {
-            return session.getSessionId();
-        }
-        if (data instanceof Map<?, ?> map && map.get("sessionId") != null) {
-            return String.valueOf(map.get("sessionId"));
-        }
-        return null;
     }
 
     private String safeMessage(String message) {

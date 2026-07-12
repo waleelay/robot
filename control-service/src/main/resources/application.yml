@@ -3,22 +3,35 @@ spring:
     name: robot-control-service
 
 server:
+  # Control Service HTTP 服务端口，优先使用 CONTROL_SERVER_PORT。
   port: ${CONTROL_SERVER_PORT:${SERVER_PORT:8082}}
 
 control:
+  # Media Service 内部接口基础地址。
   media-service-base-url: ${MEDIA_SERVICE_BASE_URL:http://localhost:8088}
   auth:
+    # 控制服务默认组织 ID。
     default-org-id: ${CONTROL_DEFAULT_ORG_ID:org001}
   mqtt:
+    # MQTT Broker 连接地址。
     broker-url: ${MQTT_BROKER_URL:tcp://192.168.124.77:1883}
+    # MQTT 用户名，默认空表示不启用账号认证。
     username: ${MQTT_USERNAME:}
+    # MQTT 密码，默认空表示不启用账号认证。
     password: ${MQTT_PASSWORD:}
+    # Control Service 连接 MQTT 时使用的客户端 ID。
     client-id: ${MQTT_CLIENT_ID:robot-control-service}
+    # 是否启用 MQTT 指令下发。
     enabled: ${MQTT_ENABLED:true}
   robot:
+    # 机器人心跳超时时间，单位秒。
     heartbeat-timeout-seconds: ${ROBOT_HEARTBEAT_TIMEOUT_SECONDS:15}
+    # 机器人心跳扫描任务间隔，单位毫秒。
     heartbeat-sweep-delay-ms: ${ROBOT_HEARTBEAT_SWEEP_DELAY_MS:5000}
   session:
+    # 中断视频会话自动恢复前的宽限时间，单位秒。
     interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}
+    # 空闲视频会话自动释放延迟时间，单位秒。
     idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:600}
+    # 观看者或对讲心跳超时时间，单位秒。
     viewer-heartbeat-timeout-seconds: ${VIEWER_HEARTBEAT_TIMEOUT_SECONDS:15}

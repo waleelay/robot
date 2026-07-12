@@ -24,6 +24,9 @@ type Config struct {
 	Devices                  []Device
 	FFprobePath              string
 	PublisherCmd             string
+	PublisherMode            string
+	PublisherFallbackWatch   time.Duration
+	PublisherFFmpegFirstIDs  map[string]bool
 	FFmpegPublisherCmd       string
 	GStreamerPublisherPath   string
 	GStreamerPipeline        string
@@ -94,6 +97,9 @@ func Load() Config {
 		Devices:                  devices(robotID),
 		FFprobePath:              env("FFPROBE_PATH", "ffprobe"),
 		PublisherCmd:             env("PUBLISHER_CMD", ""),
+		PublisherMode:            strings.ToLower(env("PUBLISHER_MODE", "auto")),
+		PublisherFallbackWatch:   time.Duration(envInt("PUBLISHER_FALLBACK_WATCH_SECONDS", 8)) * time.Second,
+		PublisherFFmpegFirstIDs:  envCSVSet("PUBLISHER_FFMPEG_FIRST_DEVICE_IDS", ""),
 		FFmpegPublisherCmd:       env("FFMPEG_PUBLISHER_CMD", "./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}"),
 		GStreamerPublisherPath:   env("GSTREAMER_PUBLISHER_PATH", "gstreamer-publisher"),
 		GStreamerPipeline:        env("GSTREAMER_PIPELINE", "rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1"),
@@ -396,6 +402,21 @@ func envBool(key string, fallback bool) bool {
 	result, err := strconv.ParseBool(value)
 	if err != nil {
 		return fallback
+	}
+	return result
+}
+
+func envCSVSet(key string, fallback string) map[string]bool {
+	raw := os.Getenv(key)
+	if raw == "" {
+		raw = fallback
+	}
+	result := make(map[string]bool)
+	for _, part := range strings.Split(raw, ",") {
+		item := strings.TrimSpace(part)
+		if item != "" {
+			result[item] = true
+		}
 	}
 	return result
 }

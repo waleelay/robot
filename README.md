@@ -21,12 +21,12 @@
 ```text
 Bigscreen BFF: 面向大屏前端的 REST/WebSocket 入口，代理/聚合中心端接口，不承载媒体流
 Control Service: `/api/control/**`、`/ws/control`、机器人在线/设备状态、MQTT 指令与状态桥接
-Media Service: 视频会话、LiveKit Token/Room、通用文件上传/播放、媒体状态入库
+Media Service: 视频会话、LiveKit Token/Room、通用文件上传/播放、媒体状态推送
 Robot Client: RTSP 探测、可见光/热成像源选择、LiveKit 发布、MQTT ACK/状态上报、本地文件上传
 LiveKit: 实时媒体转发、多人订阅、Room/Track 生命周期事件
-Frontend: 创建会话、订阅 Track、即时抓拍上传、录像/图片/文件展示、调试事件查看
+Frontend: 创建会话、订阅 Track、即时抓拍上传、录像/图片/文件展示、调试状态查看
 MinIO: 视频、图片、日志、配置和任务产物对象存储
-MySQL: 会话、观看者、Track、媒体文件、视频转码信息、事件日志
+MySQL: 会话、观看者、Track、媒体文件、视频转码信息
 Redis/Elasticsearch: 预留缓存、检索和统计扩展
 ```
 
@@ -98,10 +98,6 @@ export LIVEKIT_API_SECRET='dev-secret-dev-secret-dev-secret-32'
 export LIVEKIT_ROOM_API_ENABLED='true'
 export LIVEKIT_ROOM_EMPTY_TIMEOUT_SECONDS='60'
 export LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS='20'
-export MQTT_ENABLED='true'
-export MQTT_BROKER_URL='tcp://localhost:1883'
-export MQTT_USERNAME=''
-export MQTT_PASSWORD=''
 export MINIO_ENABLED='true'
 export MINIO_ENDPOINT='http://localhost:9000'
 export MINIO_ACCESS_KEY='minioadmin'
@@ -287,7 +283,6 @@ POST /internal/media/video-sessions/{sessionId}/token
 POST /internal/media/video-sessions/{sessionId}/stop
 POST /internal/media/video-sessions/{sessionId}/switch-channel
 GET  /internal/media/video-sessions/{sessionId}/tracks
-GET  /internal/media/video-sessions/{sessionId}/events
 POST /api/media/files
 POST /api/media/files/multipart-uploads
 POST /api/media/files/multipart-uploads/{uploadId}/part-urls
@@ -411,7 +406,6 @@ http://localhost:8090
 当前画面截帧抓拍并上传
 查询录像、抓拍图片和任务产物文件
 预览抓拍图片与播放 HLS 视频
-查询事件日志
 模拟 ACK 和 Track published
 ```
 

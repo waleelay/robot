@@ -10,6 +10,6 @@ import org.springframework.context.annotation.Configuration;
  * @date 2026/05/19
  */
 @Configuration
-@EnableConfigurationProperties({MediaProperties.class, ControlProperties.class})
+@EnableConfigurationProperties(MediaProperties.class)
 public class AppConfig {
 }

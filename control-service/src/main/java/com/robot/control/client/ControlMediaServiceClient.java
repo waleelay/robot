@@ -9,7 +9,6 @@ import com.robot.control.dto.FilePlayUrlResponse;
 import com.robot.control.dto.FileStatus;
 import com.robot.control.dto.FileType;
 import com.robot.control.dto.CreateVideoSessionRequest;
-import com.robot.control.dto.MediaEventLogResponse;
 import com.robot.control.dto.MediaTrackResponse;
 import com.robot.control.dto.IntercomResponse;
 import com.robot.control.dto.SwitchChannelRequest;
@@ -144,16 +143,6 @@ public class ControlMediaServiceClient {
      */
     public VideoSessionResponse get(String sessionId, CurrentUser user) {
         return get("/internal/media/video-sessions/{sessionId}", user, VideoSessionResponse.class, sessionId);
-    }
-
-    /**
-     * 查询视频会话事件。
-     *
-     * @param sessionId 会话 ID
-     * @return 事件列表
-     */
-    public List<MediaEventLogResponse> events(String sessionId) {
-        return getList("/internal/media/video-sessions/{sessionId}/events", new ParameterizedTypeReference<>() {}, sessionId);
     }
 
     /**

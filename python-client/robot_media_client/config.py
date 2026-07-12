@@ -60,6 +60,9 @@ class Config:
     devices: list[Device]
     ffprobe_path: str
     publisher_cmd: str
+    publisher_mode: str
+    publisher_fallback_watch_seconds: float
+    publisher_ffmpeg_first_device_ids: set[str]
     ffmpeg_publisher_cmd: str
     gstreamer_publisher_path: str
     gstreamer_pipeline: str
@@ -103,6 +106,9 @@ def load() -> Config:
         devices=devices(robot_id),
         ffprobe_path=env("FFPROBE_PATH", "ffprobe"),
         publisher_cmd=env("PUBLISHER_CMD", ""),
+        publisher_mode=env("PUBLISHER_MODE", "auto").lower(),
+        publisher_fallback_watch_seconds=env_int("PUBLISHER_FALLBACK_WATCH_SECONDS", 8),
+        publisher_ffmpeg_first_device_ids=env_csv_set("PUBLISHER_FFMPEG_FIRST_DEVICE_IDS", ""),
         ffmpeg_publisher_cmd=env("FFMPEG_PUBLISHER_CMD", default_ffmpeg_publisher_cmd()),
         gstreamer_publisher_path=env("GSTREAMER_PUBLISHER_PATH", "gstreamer-publisher"),
         gstreamer_pipeline=env("GSTREAMER_PIPELINE", "rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1"),
@@ -370,6 +376,14 @@ def env_bool(key: str, fallback: bool) -> bool:
     if value is None or value == "":
         return fallback
     return value.lower() in {"1", "t", "true", "y", "yes", "on"}
+
+
+def env_csv_set(key: str, fallback: str) -> set[str]:
+    """读取逗号分隔环境变量，返回去空白后的集合。"""
+    raw = os.environ.get(key)
+    if raw is None:
+        raw = fallback
+    return {part.strip() for part in raw.split(",") if part.strip()}
 
 
 def bounded_percentage(value: int) -> int:

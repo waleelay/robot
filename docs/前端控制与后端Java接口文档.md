@@ -749,7 +749,6 @@ GET /api/media/files?fileType=IMAGE&page=0&size=20
 | GET | `/api/control/video-sessions` | 查询当前用户最近会话 |
 | GET | `/api/control/video-sessions/active` | 查询活跃会话 |
 | GET | `/api/control/video-sessions/{sessionId}` | 查询单会话 |
-| GET | `/api/control/video-sessions/{sessionId}/events` | 查询会话事件 |
 | GET | `/api/control/video-sessions/{sessionId}/tracks` | 查询会话 Track |
 | POST | `/api/control/video-sessions/{sessionId}/token` | 签发观看 Token |
 | POST | `/api/control/video-sessions/{sessionId}/intercom/start` | 在已有会话中开启对讲 |
@@ -1273,42 +1272,6 @@ GET /api/control/video-sessions/vs_123456
 
 响应示例：`VideoSessionResponse`，见 2.4。
 
-#### GET `/api/control/video-sessions/{sessionId}/events`
-
-用途：查询会话事件日志。
-
-响应参数：
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `eventId` | string | 事件 ID |
-| `sessionId` | string | 会话 ID |
-| `eventType` | string | 事件类型 |
-| `eventPayload` | string | JSON 字符串 payload |
-| `traceId` | string/null | 链路 ID |
-| `createdAt` | datetime | 创建时间 |
-
-请求示例：
-
-```http
-GET /api/control/video-sessions/vs_123456/events
-```
-
-响应示例：
-
-```json
-[
-  {
-    "eventId": "evt_001",
-    "sessionId": "vs_123456",
-    "eventType": "video.client.streaming",
-    "eventPayload": "{\"trackSid\":\"TR_VC_001\"}",
-    "traceId": null,
-    "createdAt": "2026-07-04T10:01:00+08:00"
-  }
-]
-```
-
 #### GET `/api/control/video-sessions/{sessionId}/tracks`
 
 用途：查询会话 Track。
@@ -1813,7 +1776,6 @@ Backend MQTT 关联说明：
 | GET | `/internal/media/video-sessions/idle-release-candidates` | 调度器 | 查询需释放的空闲会话 |
 | GET | `/internal/media/video-sessions/intercom-timeout-candidates` | 调度器 | 查询对讲心跳超时会话 |
 | GET | `/internal/media/video-sessions/{sessionId}` | Control | 查询单会话并签发 viewer token |
-| GET | `/internal/media/video-sessions/{sessionId}/events` | Control | 查询会话事件 |
 | GET | `/internal/media/video-sessions/{sessionId}/tracks` | Control | 查询会话 Track |
 | POST | `/internal/media/video-sessions/status` | MQTT 消费链路 | 处理机器人视频状态 |
 | POST | `/internal/media/video-sessions/intercom/status` | MQTT 消费链路 | 处理机器人对讲状态 |
@@ -2154,31 +2116,6 @@ GET /internal/media/video-sessions/vs_123456
 ```
 
 响应示例：`VideoSessionResponse`。
-
-#### GET `/internal/media/video-sessions/{sessionId}/events`
-
-用途：查询会话最近事件。
-
-请求示例：
-
-```http
-GET /internal/media/video-sessions/vs_123456/events
-```
-
-响应示例：
-
-```json
-[
-  {
-    "eventId": "evt_001",
-    "sessionId": "vs_123456",
-    "eventType": "video.session.streaming",
-    "eventPayload": "{\"sessionId\":\"vs_123456\"}",
-    "traceId": null,
-    "createdAt": "2026-07-04T10:01:00+08:00"
-  }
-]
-```
 
 #### GET `/internal/media/video-sessions/{sessionId}/tracks`
 
@@ -3095,7 +3032,6 @@ HTTP/1.1 200 OK
 | `getFiles` | `GET /api/control/files` |
 | `fileDownloadUrl` | `POST /api/control/files/{fileId}/download-url` |
 | `snapshotImageUrl` | `GET /api/control/files/{fileId}/content` |
-| `getSessionEvents` | `GET /api/control/video-sessions/{sessionId}/events` |
 | `getFilePlayUrl` | `POST /api/control/files/{fileId}/play-url` |
 | `startLiveRecording` | `POST /api/control/video-sessions/{sessionId}/recordings/start` |
 | `stopLiveRecording` | `POST /api/control/video-sessions/{sessionId}/recordings/{fileId}/stop` |

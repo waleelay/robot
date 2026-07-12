@@ -4,13 +4,11 @@ import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.auth.CurrentUserResolver;
 import com.robot.mediaserver.file.dto.FileListItemResponse;
 import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
-import com.robot.mediaserver.video.dto.MediaEventLogResponse;
 import com.robot.mediaserver.video.dto.MediaTrackResponse;
 import com.robot.mediaserver.video.dto.IntercomResponse;
 import com.robot.mediaserver.video.dto.SwitchChannelRequest;
 import com.robot.mediaserver.video.dto.VideoSessionResponse;
 import com.robot.mediaserver.video.dto.ViewerTokenResponse;
-import com.robot.mediaserver.video.event.MediaEventLogService;
 import com.robot.mediaserver.video.messaging.VideoStartCommand;
 import com.robot.mediaserver.video.messaging.VideoStatusMessage;
 import com.robot.mediaserver.video.messaging.IntercomStartCommand;
@@ -39,17 +37,14 @@ public class VideoSessionController {
 
     private final VideoSessionService service;
     private final CurrentUserResolver currentUserResolver;
-    private final MediaEventLogService eventLogService;
     private final MediaTrackService mediaTrackService;
 
     public VideoSessionController(
             VideoSessionService service,
             CurrentUserResolver currentUserResolver,
-            MediaEventLogService eventLogService,
             MediaTrackService mediaTrackService) {
         this.service = service;
         this.currentUserResolver = currentUserResolver;
-        this.eventLogService = eventLogService;
         this.mediaTrackService = mediaTrackService;
     }
 
@@ -98,11 +93,6 @@ public class VideoSessionController {
     @GetMapping("/{sessionId}")
     public VideoSessionResponse get(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         return service.get(sessionId, currentUserResolver.resolve(servletRequest));
-    }
-
-    @GetMapping("/{sessionId}/events")
-    public List<MediaEventLogResponse> events(@PathVariable String sessionId) {
-        return eventLogService.recentEvents(sessionId);
     }
 
     @GetMapping("/{sessionId}/tracks")

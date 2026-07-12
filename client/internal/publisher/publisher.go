@@ -24,13 +24,24 @@ type Publisher interface {
 // ProcessPublisher 用外部进程完成 RTSP -> LiveKit 的发布。
 // 默认走 gst-launch/livekit-gstreamer-publisher，也可以通过 PUBLISHER_CMD 注入自定义命令。
 type ProcessPublisher struct {
-	cfg  *config.Config
-	cmds map[string]*exec.Cmd
-	mu   sync.Mutex
+	cfg                    *config.Config
+	cmds                   map[string]*processEntry
+	gstreamerFailedRTSPURL map[string]bool
+	mu                     sync.Mutex
+}
+
+type processEntry struct {
+	cmd  *exec.Cmd
+	done chan error
+	mode string
 }
 
 func NewProcessPublisher(cfg config.Config) *ProcessPublisher {
-	return &ProcessPublisher{cfg: &cfg, cmds: make(map[string]*exec.Cmd)}
+	return &ProcessPublisher{
+		cfg:                    &cfg,
+		cmds:                   make(map[string]*processEntry),
+		gstreamerFailedRTSPURL: make(map[string]bool),
+	}
 }
 
 func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error) {
@@ -41,10 +52,29 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 	if p.cfg.PublisherCmd != "" {
 		return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.PublisherCmd, "custom")
 	}
+	if p.cfg.PublisherMode == "ffmpeg" {
+		if p.cfg.FFmpegPublisherCmd == "" {
+			return "", "", errors.New("PUBLISHER_MODE=ffmpeg requires FFMPEG_PUBLISHER_CMD")
+		}
+		return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg")
+	}
+	if p.cfg.PublisherMode != "auto" && p.cfg.PublisherMode != "gstreamer" {
+		return "", "", errors.New("unsupported PUBLISHER_MODE: " + p.cfg.PublisherMode)
+	}
+	if p.shouldStartWithFFmpeg(command, rtspURL) {
+		return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg-first")
+	}
 	trackSid, publishedTrackName, err := p.startGStreamer(ctx, command, rtspURL, trackName)
-	if err == nil || p.cfg.FFmpegPublisherCmd == "" {
+	if err == nil {
+		if p.cfg.PublisherMode == "auto" && p.cfg.FFmpegPublisherCmd != "" {
+			p.watchGStreamerForFallback(ctx, command, rtspURL, trackName)
+		}
+		return trackSid, publishedTrackName, nil
+	}
+	if p.cfg.PublisherMode == "gstreamer" || p.cfg.FFmpegPublisherCmd == "" {
 		return trackSid, publishedTrackName, err
 	}
+	p.gstreamerFailedRTSPURL[rtspURL] = true
 	log.Println("publisher fallback ffmpeg", command.SessionID, err)
 	return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg")
 }
@@ -71,8 +101,9 @@ func (p *ProcessPublisher) startCommand(ctx context.Context, command model.Start
 	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
-	p.cmds[command.SessionID] = cmd
-	if err := p.ensureRunning(command.SessionID, cmd); err != nil {
+	entry := newProcessEntry(cmd, mode)
+	p.cmds[command.SessionID] = entry
+	if err := p.ensureRunning(command.SessionID, entry); err != nil {
 		return "", "", err
 	}
 	return "TR_" + command.SessionID, trackName, nil
@@ -97,11 +128,57 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
-	p.cmds[command.SessionID] = cmd
-	if err := p.ensureRunning(command.SessionID, cmd); err != nil {
+	entry := newProcessEntry(cmd, "gstreamer")
+	p.cmds[command.SessionID] = entry
+	if err := p.ensureRunning(command.SessionID, entry); err != nil {
 		return "", "", err
 	}
 	return "TR_" + command.SessionID, trackName, nil
+}
+
+func (p *ProcessPublisher) shouldStartWithFFmpeg(command model.StartCommand, rtspURL string) bool {
+	if p.cfg.PublisherMode != "auto" || p.cfg.FFmpegPublisherCmd == "" {
+		return false
+	}
+	if p.gstreamerFailedRTSPURL[rtspURL] {
+		return true
+	}
+	return p.cfg.PublisherFFmpegFirstIDs[command.DeviceID]
+}
+
+func newProcessEntry(cmd *exec.Cmd, mode string) *processEntry {
+	entry := &processEntry{cmd: cmd, done: make(chan error, 1), mode: mode}
+	go func() {
+		entry.done <- cmd.Wait()
+	}()
+	return entry
+}
+
+func (p *ProcessPublisher) watchGStreamerForFallback(ctx context.Context, command model.StartCommand, rtspURL string, trackName string) {
+	entry := p.cmds[command.SessionID]
+	if entry == nil {
+		return
+	}
+	go p.fallbackIfGStreamerExits(ctx, command, rtspURL, trackName, entry)
+}
+
+func (p *ProcessPublisher) fallbackIfGStreamerExits(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, entry *processEntry) {
+	select {
+	case err := <-entry.done:
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.cmds[command.SessionID] != entry {
+			return
+		}
+		delete(p.cmds, command.SessionID)
+		p.gstreamerFailedRTSPURL[rtspURL] = true
+		log.Println("publisher auto fallback ffmpeg", command.SessionID, "gstreamer_exit", err)
+		if _, _, startErr := p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg"); startErr != nil {
+			log.Println("publisher auto fallback failed", command.SessionID, startErr)
+		}
+	case <-time.After(p.cfg.PublisherFallbackWatch):
+	case <-ctx.Done():
+	}
 }
 
 func (p *ProcessPublisher) Stop(sessionID string) error {
@@ -121,25 +198,21 @@ func (p *ProcessPublisher) StopAll() error {
 }
 
 func (p *ProcessPublisher) stopLocked(sessionID string) error {
-	cmd := p.cmds[sessionID]
-	if cmd == nil || cmd.Process == nil {
+	entry := p.cmds[sessionID]
+	if entry == nil || entry.cmd == nil || entry.cmd.Process == nil {
 		return nil
 	}
-	err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	err := syscall.Kill(-entry.cmd.Process.Pid, syscall.SIGKILL)
 	if err != nil {
-		err = cmd.Process.Kill()
+		err = entry.cmd.Process.Kill()
 	}
 	delete(p.cmds, sessionID)
 	return err
 }
 
-func (p *ProcessPublisher) ensureRunning(sessionID string, cmd *exec.Cmd) error {
-	done := make(chan error, 1)
-	go func(cmd *exec.Cmd) {
-		done <- cmd.Wait()
-	}(cmd)
+func (p *ProcessPublisher) ensureRunning(sessionID string, entry *processEntry) error {
 	select {
-	case err := <-done:
+	case err := <-entry.done:
 		// 进程两秒内退出通常表示 pipeline 参数、RTSP 或 token 有问题，直接回报失败。
 		delete(p.cmds, sessionID)
 		if err == nil {

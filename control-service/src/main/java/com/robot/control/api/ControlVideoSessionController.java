@@ -5,7 +5,6 @@ import com.robot.control.auth.CurrentUserResolver;
 import com.robot.control.client.ControlMediaServiceClient;
 import com.robot.control.service.ControlVideoCommandService;
 import com.robot.control.dto.FileListItemResponse;
-import com.robot.control.dto.MediaEventLogResponse;
 import com.robot.control.dto.MediaTrackResponse;
 import com.robot.control.dto.SwitchChannelRequest;
 import com.robot.control.dto.VideoSessionResponse;
@@ -82,17 +81,6 @@ public class ControlVideoSessionController {
     @GetMapping("/{sessionId}")
     public VideoSessionResponse get(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         return mediaServiceClient.get(sessionId, currentUserResolver.resolve(servletRequest));
-    }
-
-    /**
-     * 查询视频会话事件。
-     *
-     * @param sessionId 会话 ID
-     * @return 事件列表
-     */
-    @GetMapping("/{sessionId}/events")
-    public List<MediaEventLogResponse> events(@PathVariable String sessionId) {
-        return mediaServiceClient.events(sessionId);
     }
 
     /**

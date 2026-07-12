@@ -137,10 +137,6 @@ export function snapshotImageUrl(fileId) {
   return `${base}/api/control/files/${fileId}/content`
 }
 
-export function getSessionEvents(sessionId) {
-  return client.get(`/api/control/video-sessions/${sessionId}/events`).then(res => res.data)
-}
-
 export function mockTrackPublished(sessionId, trackSid) {
   return client.post(`/internal/media/video-sessions/${sessionId}/_mock/track-published/${trackSid}`).then(res => res.data)
 }
