@@ -73,7 +73,7 @@ public class EquipmentControlCommandPublisher {
         String domain = switch (deviceType) {
             case "WHEELED_BASE", "QUADRUPED_BASE", "BIPED_BASE" -> "body";
             case "DUAL_LIGHT_PTZ" -> "ptz";
-            case "CLIENT_AUDIO", "INTERCOM", "VOLUME_CONTROL" -> "audio";
+            case "SPEAKER", "CLIENT_AUDIO", "INTERCOM", "VOLUME_CONTROL" -> "audio";
             case "LAUNCHER" -> "launcher";
             case "NET_GUN", "NET_LAUNCHER" -> "net-gun";
             case "WARNING_LIGHT" -> "warning-light";
@@ -93,14 +93,8 @@ public class EquipmentControlCommandPublisher {
         if (action.startsWith("volume.")) {
             return "audio";
         }
-        if (action.startsWith("light.warning.")) {
-            return "warning-light";
-        }
         if (action.startsWith("light.vehicle.")) {
             return "vehicle-light";
-        }
-        if (action.startsWith("payload.fire")) {
-            return "launcher";
         }
         return "payload";
     }

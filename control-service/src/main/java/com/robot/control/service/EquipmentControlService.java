@@ -279,14 +279,18 @@ public class EquipmentControlService {
         Map<String, Object> client = mapValue(request.get("client"));
         Map<String, Object> device = requireDevice(robotId, stringValue(target.get("deviceId"), ""));
         String action = stringValue(request.get("action"), "");
-        Map<String, Object> builtParams = buildParams(action, stringValue(target.get("deviceType"), ""), params, device);
+        if (!stringList(device.get("actions")).contains(action)) {
+            throw new IllegalArgumentException("设备不支持该动作：" + action);
+        }
+        String deviceType = stringValue(device.get("deviceType"), stringValue(target.get("deviceType"), ""));
+        Map<String, Object> builtParams = buildParams(action, deviceType, params, device);
         OffsetDateTime now = OffsetDateTime.now();
         return object(
                 "robotId", robotId,
                 "seq", numberValue(client.get("seq"), 0).longValue(),
                 "target", object(
                         "deviceId", target.get("deviceId"),
-                        "deviceType", target.get("deviceType")),
+                        "deviceType", deviceType),
                 "action", action,
                 "params", builtParams,
                 "issuedAt", now);
@@ -320,12 +324,10 @@ public class EquipmentControlService {
                     "linearY", linearY,
                     "angularZ", clamp(doubleValue(params.get("angularZ"), 0.0), -maxAngularZ, maxAngularZ));
         }
-        if ("ptz.move".equals(action)) {
-            double maxPanSpeed = doubleValue(profile.get("maxPanSpeed"), 1.0);
-            double maxTiltSpeed = doubleValue(profile.get("maxTiltSpeed"), 1.0);
+        if ("DUAL_LIGHT_PTZ".equals(deviceType) && isPtzDirectionAction(action)) {
             return object(
-                    "panSpeed", clamp(doubleValue(params.get("panSpeed"), 0.0), -maxPanSpeed, maxPanSpeed),
-                    "tiltSpeed", clamp(doubleValue(params.get("tiltSpeed"), 0.0), -maxTiltSpeed, maxTiltSpeed));
+                    "speed", clamp(doubleValue(params.get("speed"), 20.0), 0.1, 100.0),
+                    "duration", clamp(doubleValue(params.get("duration"), 0.3), 0.05, 5.0));
         }
         if ("camera.zoom".equals(action)) {
             return object("zoomSpeed", clamp(doubleValue(params.get("zoomSpeed"), 0.0), -1.0, 1.0));
@@ -339,11 +341,25 @@ public class EquipmentControlService {
         if ("control.mode.set".equals(action)) {
             return object("controlMode", normalizeControlMode(stringValue(params.get("controlMode"), "MANUAL")));
         }
-        if (action.startsWith("volume.")) {
+        if (isSpeakerDeviceType(deviceType) && "set_volume".equals(action)) {
             return object(
-                    "volume", clampedInt(params.get("volume"), 50, 0, 100),
-                    "step", clampedInt(params.get("step"), 5, 1, 100),
-                    "muted", booleanValue(params.get("muted"), false));
+                    "volumePercent", clampedInt(valueOrDefault(params, "volumePercent", params.get("volume")), 50, 0, 100));
+        }
+        if (isSpeakerDeviceType(deviceType) && "set_mute".equals(action)) {
+            return object("mute", booleanValue(valueOrDefault(params, "mute", params.get("muted")), false));
+        }
+        if ("WARNING_LIGHT".equals(deviceType) && "get_state".equals(action)) {
+            return object("lightId", warningLightId(params, device));
+        }
+        if ("WARNING_LIGHT".equals(deviceType) && "set_state".equals(action)) {
+            return object(
+                    "lightId", warningLightId(params, device),
+                    "powerOn", booleanValue(valueOrDefault(params, "powerOn", params.get("enabled")), false));
+        }
+        if ("WARNING_LIGHT".equals(deviceType) && "set_mode".equals(action)) {
+            return object(
+                    "lightId", warningLightId(params, device),
+                    "mode", clampedInt(params.get("mode"), 0, 0, 2));
         }
         if ("light.set".equals(action)) {
             return object(
@@ -354,27 +370,28 @@ public class EquipmentControlService {
         if ("light.vehicle.set".equals(action)) {
             Map<String, Object> front = mapValue(params.get("front"));
             Map<String, Object> rear = mapValue(params.get("rear"));
-            int frontMode = vehicleLightMode(front);
-            int rearMode = vehicleLightMode(rear);
-            Map<String, Object> frontStatus = vehicleLightPart(front, frontMode);
-            Map<String, Object> rearStatus = vehicleLightPart(rear, rearMode);
             return object(
-                    "front", frontStatus,
-                    "rear", rearStatus,
-                    "op", "publish",
-                    "topic", "/robot_light_ctl",
-                    "type", "robot_status_core/RobotLightCmd",
-                    "msg", object(
-                            "front_mode", frontMode,
-                            "front_custom_value", frontMode == 3 ? frontStatus.get("customValue") : 0,
-                            "rear_mode", rearMode,
-                            "rear_custom_value", rearMode == 3 ? rearStatus.get("customValue") : 0));
+                    "front", vehicleLightPart(front),
+                    "rear", vehicleLightPart(rear));
         }
-        if ("payload.fire".equals(action)) {
-            return object("channel", numberValue(params.get("channel"), 1).intValue());
+        if ("LAUNCHER".equals(deviceType) && "get_status".equals(action)) {
+            return object(
+                    "temporarilyEnableSafety", booleanValue(params.get("temporarilyEnableSafety"), true),
+                    "restoreSafetyAfterQuery", booleanValue(params.get("restoreSafetyAfterQuery"), true));
         }
-        if ("payload.safety_switch".equals(action)) {
-            return object("enabled", booleanValue(params.get("enabled"), false));
+        if ("LAUNCHER".equals(deviceType) && "set_safety".equals(action)) {
+            return object(
+                    "safetyOn", booleanValue(params.get("safetyOn"), booleanValue(params.get("enabled"), false)),
+                    "waitStatus", booleanValue(params.get("waitStatus"), true));
+        }
+        if ("LAUNCHER".equals(deviceType) && "fire".equals(action)) {
+            return object(
+                    "tube", clampedInt(valueOrDefault(params, "tube", params.get("channel")), 1, 1, 6),
+                    "waitStatusAfterFire", booleanValue(params.get("waitStatusAfterFire"), true),
+                    "keepSafetyOn", booleanValue(params.get("keepSafetyOn"), false));
+        }
+        if (("NET_GUN".equals(deviceType) || "NET_LAUNCHER".equals(deviceType)) && "fire".equals(action)) {
+            return object();
         }
         return copy(params);
     }
@@ -706,7 +723,10 @@ public class EquipmentControlService {
                 "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
-                "actions", List.of("ptz.move", "ptz.auto_rotate", "ptz.home", "camera.zoom"),
+                "actions", List.of(
+                        "up", "down", "left", "right",
+                        "left_up", "right_up", "left_down", "right_down",
+                        "ptz.auto_rotate", "ptz.home", "camera.zoom"),
                 "status", object(
                         "autoRotateEnabled", false,
                         "panSpeed", 0),
@@ -734,7 +754,7 @@ public class EquipmentControlService {
                 "controlStatus", "idle",
                 "enabled", true,
                 "riskLevel", "HIGH",
-                "actions", List.of("payload.fire"),
+                "actions", List.of("fire"),
                 "controlProfile", object(
                         "requiresConfirm", true,
                         "cooldownMs", 3000));
@@ -767,9 +787,9 @@ public class EquipmentControlService {
                 "controlStatus", "idle",
                 "enabled", true,
                 "riskLevel", "HIGH",
-                "actions", List.of("payload.safety_switch", "payload.fire"),
+                "actions", List.of("get_status", "set_safety", "fire"),
                 "controlProfile", object(
-                        "channels", List.of(1, 2, 3, 4, 5, 6),
+                        "tubes", List.of(1, 2, 3, 4, 5, 6),
                         "requiresConfirm", true,
                         "requiresSafetySwitch", true));
     }
@@ -782,6 +802,11 @@ public class EquipmentControlService {
      * @return 警示灯能力
      */
     private static Map<String, Object> warningLight(String deviceId, String displayName) {
+        String lightId = switch (deviceId) {
+            case "warning-light-right" -> "light-002";
+            case "warning-light-all" -> "all";
+            default -> "light-001";
+        };
         return object(
                 "deviceId", deviceId,
                 "bindingId", "bind-" + deviceId,
@@ -793,9 +818,13 @@ public class EquipmentControlService {
                 "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
-                "actions", List.of("light.warning.set"),
-                "status", object("enabled", false),
-                "controlProfile", object("modes", List.of("ON", "OFF")));
+                "actions", List.of("get_state", "set_state", "set_mode"),
+                "status", object("enabled", false, "powerOn", false, "mode", 0, "online", true),
+                "controlProfile", object(
+                        "lightId", lightId,
+                        "lightIds", List.of("light-001", "light-002", "all"),
+                        "modes", List.of(0, 1, 2),
+                        "supportsAll", true));
     }
 
     /**
@@ -819,10 +848,7 @@ public class EquipmentControlService {
                 "controlProfile", object(
                         "parts", List.of("front", "rear"),
                         "modes", List.of("OFF", "ON", "BREATH", "CUSTOM"),
-                        "modeMapping", object("OFF", 0, "ON", 1, "BREATH", 2, "CUSTOM", 3),
-                        "maxBrightness", 100,
-                        "rosTopic", "/robot_light_ctl",
-                        "rosType", "robot_status_core/RobotLightCmd"));
+                        "maxBrightness", 100));
     }
 
     /**
@@ -835,13 +861,13 @@ public class EquipmentControlService {
                 "deviceId", "audio-control-001",
                 "bindingId", "bind-audio-control-001",
                 "scope", "AUDIO",
-                "deviceType", "CLIENT_AUDIO",
-                "displayName", "客户端音量",
+                "deviceType", "SPEAKER",
+                "displayName", "扬声器",
                 "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
-                "actions", List.of("volume.set", "volume.up", "volume.down", "volume.mute"),
-                "status", object("volume", 50, "muted", false),
+                "actions", List.of("set_volume", "set_mute"),
+                "status", object("volume", 50, "volumePercent", 50, "muted", false),
                 "controlProfile", object("step", 5, "minVolume", 0, "maxVolume", 100));
     }
 
@@ -860,8 +886,8 @@ public class EquipmentControlService {
                 "onlineStatus", "offline",
                 "controlStatus", "idle",
                 "enabled", true,
-                "actions", List.of("volume.set", "volume.up", "volume.down", "volume.mute"),
-                "status", object("volume", 50, "muted", false));
+                "actions", List.of("set_volume", "set_mute"),
+                "status", object("volume", 50, "volumePercent", 50, "muted", false));
     }
 
     /**
@@ -921,6 +947,44 @@ public class EquipmentControlService {
             return mode;
         }
         throw new IllegalArgumentException("不支持的控制模式：" + value);
+    }
+
+    /**
+     * 判断是否为双光云台方向动作。
+     *
+     * @param action 动作名
+     * @return true 表示方向动作
+     */
+    private static boolean isPtzDirectionAction(String action) {
+        return List.of(
+                "up", "down", "left", "right",
+                "left_up", "right_up", "left_down", "right_down").contains(action);
+    }
+
+    /**
+     * 判断是否为扬声器/音频控制设备。
+     *
+     * @param deviceType 设备类型
+     * @return true 表示扬声器/音频设备
+     */
+    private static boolean isSpeakerDeviceType(String deviceType) {
+        return List.of("SPEAKER", "CLIENT_AUDIO", "VOLUME_CONTROL", "INTERCOM").contains(deviceType);
+    }
+
+    /**
+     * 读取警示灯底层 lightId。
+     *
+     * @param params 请求参数
+     * @param device 设备能力
+     * @return lightId
+     */
+    private static String warningLightId(Map<String, Object> params, Map<String, Object> device) {
+        Map<String, Object> profile = mapValue(device.get("controlProfile"));
+        String lightId = stringValue(params.get("lightId"), stringValue(profile.get("lightId"), ""));
+        if (List.of("light-001", "light-002", "all").contains(lightId)) {
+            return lightId;
+        }
+        throw new IllegalArgumentException("不支持的警示灯 ID：" + lightId);
     }
 
     /**
@@ -1001,50 +1065,24 @@ public class EquipmentControlService {
     }
 
     /**
-     * 读取车灯模式编码。
-     *
-     * @param part 部件状态
-     * @return 车灯模式编码
-     */
-    private static int vehicleLightMode(Map<String, Object> part) {
-        Object modeCode = part.get("modeCode");
-        if (modeCode instanceof Number number) {
-            return Math.max(0, Math.min(3, number.intValue()));
-        }
-        return switch (stringValue(part.get("mode"), "OFF").toUpperCase()) {
-            case "ON" -> 1;
-            case "BREATH" -> 2;
-            case "CUSTOM" -> 3;
-            default -> 0;
-        };
-    }
-
-    /**
      * 构造车灯部件状态。
      *
      * @param part 部件状态
-     * @param modeCode 模式编码
      * @return 车灯部件状态
      */
-    private static Map<String, Object> vehicleLightPart(Map<String, Object> part, int modeCode) {
-        int customValue = modeCode == 3 ? clampedInt(part.get("customValue"), 0, 0, 100) : 0;
-        return object(
-                "mode", vehicleLightModeName(modeCode),
-                "modeCode", modeCode,
-                "customValue", customValue);
+    private static Map<String, Object> vehicleLightPart(Map<String, Object> part) {
+        String mode = normalizeVehicleLightMode(stringValue(part.get("mode"), "OFF"));
+        int brightness = "CUSTOM".equals(mode)
+                ? clampedInt(valueOrDefault(part, "brightness", part.get("customValue")), 0, 0, 100)
+                : 0;
+        return object("mode", mode, "brightness", brightness);
     }
 
-    /**
-     * 将车灯模式编码转换为名称。
-     *
-     * @param modeCode 模式编码
-     * @return 车灯模式名称
-     */
-    private static String vehicleLightModeName(int modeCode) {
-        return switch (modeCode) {
-            case 1 -> "ON";
-            case 2 -> "BREATH";
-            case 3 -> "CUSTOM";
+    private static String normalizeVehicleLightMode(String value) {
+        return switch (stringValue(value, "OFF").toUpperCase()) {
+            case "ON" -> "ON";
+            case "BREATH" -> "BREATH";
+            case "CUSTOM" -> "CUSTOM";
             default -> "OFF";
         };
     }

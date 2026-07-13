@@ -43,7 +43,7 @@ export default {
     },
     // 语音对讲
     audioDevice() {
-      return this.controlDevices().find(device => ['CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
+      return this.controlDevices().find(device => ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
     },
     // 警示灯
     warningLightDevices() {
@@ -65,12 +65,12 @@ export default {
       // 警示灯状态
       warningLightState: {},
       vehicleLightState: {
-        front: { mode: 'OFF', customValue: 50 },
-        rear: { mode: 'OFF', customValue: 50 }
+        front: { mode: 'OFF', brightness: 50 },
+        rear: { mode: 'OFF', brightness: 50 }
       },
       confirmedVehicleLightState: {
-        front: { mode: 'OFF', customValue: 50 },
-        rear: { mode: 'OFF', customValue: 50 }
+        front: { mode: 'OFF', brightness: 50 },
+        rear: { mode: 'OFF', brightness: 50 }
       },
       vehicleLightParts: [
         { key: 'front', label: '前灯' },
@@ -125,7 +125,7 @@ export default {
     },
     async firePayload(device, channel, source) {
       try {
-        const session = await this.ensureControlSession(device, 'payload.fire')
+        const session = await this.ensureControlSession(device, 'fire')
         const token = await createConfirmToken(this.selectedRobotId, {
           controlSessionId: session.controlSessionId,
           target: {
@@ -133,14 +133,21 @@ export default {
             deviceId: device.deviceId,
             deviceType: device.deviceType
           },
-          action: 'payload.fire',
+          action: 'fire',
           reason: 'manual_confirm'
         })
-        const response = await sendEquipmentCommand(this.selectedRobotId,
-          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'payload.fire', {
-            channel,
+        const fireParams = device.deviceType === 'LAUNCHER'
+          ? {
+            tube: channel,
+            waitStatusAfterFire: true,
+            keepSafetyOn: false,
             confirmToken: token.confirmToken
-          }, source || `payload_fire_${channel}`))
+          }
+          : {
+            confirmToken: token.confirmToken
+          }
+        const response = await sendEquipmentCommand(this.selectedRobotId,
+          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'fire', fireParams, source || `fire_${channel}`))
         console.log('API firePayload', response)
       } catch (error) {
         this.$message.error(errorMessage(error))
@@ -202,18 +209,19 @@ export default {
       }
       if (kind.indexOf('ptz-') === 0) {
         const device = this.ptzDevice
-        const session = await this.ensureControlSession(device, 'ptz.move')
-        const params = {
-          'ptz-up': { panSpeed: 0, tiltSpeed: 0.4 },
-          'ptz-down': { panSpeed: 0, tiltSpeed: -0.4 },
-          'ptz-left': { panSpeed: -0.4, tiltSpeed: 0 },
-          'ptz-right': { panSpeed: 0.4, tiltSpeed: 0 },
-          'ptz-up-left': { panSpeed: -0.3, tiltSpeed: 0.3 },
-          'ptz-up-right': { panSpeed: 0.3, tiltSpeed: 0.3 },
-          'ptz-down-left': { panSpeed: -0.3, tiltSpeed: -0.3 },
-          'ptz-down-right': { panSpeed: 0.3, tiltSpeed: -0.3 }
+        const directionAction = {
+          'ptz-up': 'up',
+          'ptz-down': 'down',
+          'ptz-left': 'left',
+          'ptz-right': 'right',
+          'ptz-up-left': 'left_up',
+          'ptz-up-right': 'right_up',
+          'ptz-down-left': 'left_down',
+          'ptz-down-right': 'right_down'
         }[kind]
-        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'ptz.move', params, kind)
+        const session = await this.ensureControlSession(device, directionAction)
+        const params = { speed: 20, duration: 0.3 }
+        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, directionAction, params, kind)
       }
       if (kind.indexOf('zoom-') === 0) {
         const device = this.ptzDevice
@@ -291,7 +299,7 @@ export default {
     },
     async setLauncherSafety(device, enabled) {
       // this.$set(this.launcherSafety, device.deviceId, enabled)
-      // const ok = await this.sendDeviceCommand(device, 'payload.safety_switch', { enabled }, `launcher_safety_${enabled ? 'on' : 'off'}`)
+      // const ok = await this.sendDeviceCommand(device, 'set_safety', { safetyOn: enabled, waitStatus: true }, `launcher_safety_${enabled ? 'on' : 'off'}`)
       // if (!ok) {
       //   this.$set(this.launcherSafety, device.deviceId, !enabled)
       // }
@@ -301,17 +309,17 @@ export default {
     },
     async setWarningLight(device, enabled) {
       this.$set(this.warningLightState, device.deviceId, enabled)
-      const ok = await this.sendDeviceCommand(device, 'light.warning.set', { enabled }, `${device.deviceId}_${enabled ? 'on' : 'off'}`)
+      const profile = device.controlProfile || {}
+      const ok = await this.sendDeviceCommand(device, 'set_state', {
+        lightId: profile.lightId || device.lightId || device.deviceId,
+        powerOn: enabled
+      }, `${device.deviceId}_${enabled ? 'on' : 'off'}`)
       if (!ok) {
         this.$set(this.warningLightState, device.deviceId, !enabled)
       }
     },
     async setNetGunSafety(device, enabled) {
       this.$set(this.netGunSafety, device.deviceId, enabled)
-      const ok = await this.sendDeviceCommand(device, 'payload.safety_switch', { enabled }, `net_safety_${enabled ? 'on' : 'off'}`)
-      if (!ok) {
-        this.$set(this.netGunSafety, device.deviceId, !enabled)
-      }
     },
     
     cloneVehicleLightState(state) {
@@ -324,8 +332,8 @@ export default {
     async setVehicleLightMode(part, mode) {
       const next = this.cloneVehicleLightState()
       next[part].mode = mode
-      if (mode === 'CUSTOM' && next[part].customValue <= 0) {
-        next[part].customValue = 50
+      if (mode === 'CUSTOM' && next[part].brightness <= 0) {
+        next[part].brightness = 50
       }
       this.vehicleLightState = next
       const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_${String(mode).toLowerCase()}`)
@@ -336,11 +344,11 @@ export default {
       }
     },
     updateVehicleLightBrightness(part, value) {
-      this.vehicleLightState[part].customValue = value
+      this.vehicleLightState[part].brightness = value
     },
     async setVehicleLightBrightness(part, value) {
       this.vehicleLightState[part].mode = 'CUSTOM'
-      this.vehicleLightState[part].customValue = value
+      this.vehicleLightState[part].brightness = value
       const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_custom`)
       if (ok) {
         this.confirmedVehicleLightState = this.cloneVehicleLightState()
@@ -359,11 +367,9 @@ export default {
     },
     vehicleLightPayloadPart(part) {
       const mode = part.mode || 'OFF'
-      const option = this.vehicleLightModeOptions.find(item => item.value === mode)
       return {
         mode,
-        modeCode: option ? option.code : 0,
-        customValue: mode === 'CUSTOM' ? part.customValue : 0
+        brightness: mode === 'CUSTOM' ? part.brightness : 0
       }
     },
   }

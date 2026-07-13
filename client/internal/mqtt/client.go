@@ -232,42 +232,38 @@ func (c *Client) applyControlCommand(command model.ControlCommand) bool {
 	defer c.mu.Unlock()
 	changed := false
 	switch command.Action {
-	case "volume.set":
-		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume), 0, 100)
-		c.audioMuted = anyBool(command.Params["muted"], false)
+	case "set_volume":
+		c.audioVolume = clampInt(anyInt(command.Params["volumePercent"], anyInt(command.Params["volume"], c.audioVolume)), 0, 100)
+		c.audioMuted = false
 		c.setDeviceStateLocked(command.Target.DeviceID, "volume", c.audioVolume)
+		c.setDeviceStateLocked(command.Target.DeviceID, "volumePercent", c.audioVolume)
 		c.setDeviceStateLocked(command.Target.DeviceID, "muted", c.audioMuted)
 		changed = true
-	case "volume.up":
-		step := clampInt(anyInt(command.Params["step"], 5), 1, 100)
-		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume+step), 0, 100)
-		c.audioMuted = anyBool(command.Params["muted"], false)
+	case "set_mute":
+		c.audioMuted = anyBool(command.Params["mute"], anyBool(command.Params["muted"], true))
 		c.setDeviceStateLocked(command.Target.DeviceID, "volume", c.audioVolume)
+		c.setDeviceStateLocked(command.Target.DeviceID, "volumePercent", c.audioVolume)
 		c.setDeviceStateLocked(command.Target.DeviceID, "muted", c.audioMuted)
 		changed = true
-	case "volume.down":
-		step := clampInt(anyInt(command.Params["step"], 5), 1, 100)
-		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume-step), 0, 100)
-		c.audioMuted = anyBool(command.Params["muted"], false)
-		c.setDeviceStateLocked(command.Target.DeviceID, "volume", c.audioVolume)
-		c.setDeviceStateLocked(command.Target.DeviceID, "muted", c.audioMuted)
-		changed = true
-	case "volume.mute":
-		c.audioMuted = anyBool(command.Params["muted"], true)
-		c.audioVolume = clampInt(anyInt(command.Params["volume"], c.audioVolume), 0, 100)
-		c.setDeviceStateLocked(command.Target.DeviceID, "volume", c.audioVolume)
-		c.setDeviceStateLocked(command.Target.DeviceID, "muted", c.audioMuted)
-		changed = true
-	case "payload.safety_switch":
-		c.setDeviceStateLocked(command.Target.DeviceID, "safetySwitchEnabled", anyBool(command.Params["enabled"], false))
+	case "set_safety":
+		c.setDeviceStateLocked(command.Target.DeviceID, "safetySwitchEnabled", anyBool(command.Params["safetyOn"], anyBool(command.Params["enabled"], false)))
 		changed = true
 	case "control.mode.set":
 		controlMode := normalizeControlMode(anyString(command.Params["controlMode"], command.ControlMode))
 		c.controlMode = controlMode
 		changed = true
-	case "light.warning.set":
-		c.setDeviceStateLocked(command.Target.DeviceID, "enabled", anyBool(command.Params["enabled"], false))
-		changed = true
+	case "set_state":
+		if command.Target.DeviceType == "WARNING_LIGHT" {
+			powerOn := anyBool(command.Params["powerOn"], anyBool(command.Params["enabled"], false))
+			c.setDeviceStateLocked(command.Target.DeviceID, "enabled", powerOn)
+			c.setDeviceStateLocked(command.Target.DeviceID, "powerOn", powerOn)
+			changed = true
+		}
+	case "set_mode":
+		if command.Target.DeviceType == "WARNING_LIGHT" {
+			c.setDeviceStateLocked(command.Target.DeviceID, "mode", anyInt(command.Params["mode"], 0))
+			changed = true
+		}
 	case "ptz.auto_rotate":
 		c.setDeviceStateLocked(command.Target.DeviceID, "autoRotateEnabled", anyBool(command.Params["enabled"], false))
 		c.setDeviceStateLocked(command.Target.DeviceID, "panSpeed", anyFloat(command.Params["panSpeed"], 0))
@@ -406,8 +402,9 @@ func (c *Client) deviceStatus(device config.Device) map[string]any {
 	for key, value := range c.deviceState[device.DeviceID] {
 		status[key] = value
 	}
-	if device.DeviceID == "audio-control-001" || device.DeviceType == "CLIENT_AUDIO" || device.DeviceType == "VOLUME_CONTROL" || device.DeviceType == "INTERCOM" {
+	if device.DeviceID == "audio-control-001" || device.DeviceType == "SPEAKER" || device.DeviceType == "CLIENT_AUDIO" || device.DeviceType == "VOLUME_CONTROL" || device.DeviceType == "INTERCOM" {
 		status["volume"] = c.audioVolume
+		status["volumePercent"] = c.audioVolume
 		status["muted"] = c.audioMuted
 	}
 	if len(status) == 0 {
@@ -505,7 +502,7 @@ func vehicleLightState(params map[string]any) (map[string]any, map[string]any) {
 	front := copyAnyMap(params["front"])
 	rear := copyAnyMap(params["rear"])
 	if len(front) > 0 || len(rear) > 0 {
-		return front, rear
+		return normalizeVehicleLightPart(front), normalizeVehicleLightPart(rear)
 	}
 	msg := copyAnyMap(params["msg"])
 	return vehicleLightPart(anyInt(msg["front_mode"], 0), anyInt(msg["front_custom_value"], 0)),
@@ -521,10 +518,42 @@ func vehicleLightPart(modeCode int, customValue int) map[string]any {
 		customValue = 0
 	}
 	return map[string]any{
-		"mode":        mode,
-		"modeCode":    modeCode,
-		"customValue": clampInt(customValue, 0, 100),
+		"mode":       mode,
+		"brightness": clampInt(customValue, 0, 100),
 	}
+}
+
+func normalizeVehicleLightPart(part map[string]any) map[string]any {
+	mode := anyString(part["mode"], "")
+	if mode == "" {
+		mode = map[int]string{0: "OFF", 1: "ON", 2: "BREATH", 3: "CUSTOM"}[clampInt(anyInt(part["modeCode"], 0), 0, 3)]
+	}
+	mode = normalizeVehicleLightMode(mode)
+	brightness := 0
+	if mode == "CUSTOM" {
+		brightness = clampInt(anyInt(valueOrAny(part, "brightness", part["customValue"]), 0), 0, 100)
+	}
+	return map[string]any{"mode": mode, "brightness": brightness}
+}
+
+func normalizeVehicleLightMode(value string) string {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "ON":
+		return "ON"
+	case "BREATH":
+		return "BREATH"
+	case "CUSTOM":
+		return "CUSTOM"
+	default:
+		return "OFF"
+	}
+}
+
+func valueOrAny(source map[string]any, key string, fallback any) any {
+	if value, ok := source[key]; ok {
+		return value
+	}
+	return fallback
 }
 
 func copyStringAnyMap(source map[string]any) map[string]any {

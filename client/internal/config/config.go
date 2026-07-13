@@ -168,7 +168,11 @@ func devices(robotID string) []Device {
 			OnlineStatus:  "online",
 			ControlStatus: "idle",
 			Enabled:       true,
-			Actions:       []string{"ptz.move", "ptz.auto_rotate", "ptz.home", "camera.zoom"},
+			Actions: []string{
+				"up", "down", "left", "right",
+				"left_up", "right_up", "left_down", "right_down",
+				"ptz.auto_rotate", "ptz.home", "camera.zoom",
+			},
 			Status: map[string]any{
 				"autoRotateEnabled": false,
 				"panSpeed":          0,
@@ -183,15 +187,16 @@ func devices(robotID string) []Device {
 			DeviceID:      "audio-control-001",
 			BindingID:     "bind-audio-control-001",
 			Scope:         "AUDIO",
-			DeviceType:    "CLIENT_AUDIO",
-			DisplayName:   "客户端音量",
+			DeviceType:    "SPEAKER",
+			DisplayName:   "扬声器",
 			OnlineStatus:  "online",
 			ControlStatus: "idle",
 			Enabled:       true,
-			Actions:       []string{"volume.set", "volume.up", "volume.down", "volume.mute"},
+			Actions:       []string{"set_volume", "set_mute"},
 			Status: map[string]any{
-				"volume": 50,
-				"muted":  false,
+				"volume":        50,
+				"volumePercent": 50,
+				"muted":         false,
 			},
 			ControlProfile: map[string]any{
 				"step":      5,
@@ -214,9 +219,9 @@ func devices(robotID string) []Device {
 				ControlStatus: "idle",
 				Enabled:       true,
 				RiskLevel:     "HIGH",
-				Actions:       []string{"payload.safety_switch", "payload.fire"},
+				Actions:       []string{"get_status", "set_safety", "fire"},
 				ControlProfile: map[string]any{
-					"channels":             []int{1, 2, 3, 4, 5, 6},
+					"tubes":                []int{1, 2, 3, 4, 5, 6},
 					"requiresConfirm":      true,
 					"requiresSafetySwitch": true,
 				},
@@ -233,7 +238,7 @@ func devices(robotID string) []Device {
 				ControlStatus: "idle",
 				Enabled:       true,
 				RiskLevel:     "HIGH",
-				Actions:       []string{"payload.fire"},
+				Actions:       []string{"fire"},
 				ControlProfile: map[string]any{
 					"requiresConfirm": true,
 					"cooldownMs":      3000,
@@ -252,12 +257,18 @@ func devices(robotID string) []Device {
 			OnlineStatus:  "online",
 			ControlStatus: "idle",
 			Enabled:       true,
-			Actions:       []string{"light.warning.set"},
+			Actions:       []string{"get_state", "set_state", "set_mode"},
 			Status: map[string]any{
 				"enabled": false,
+				"powerOn": false,
+				"mode":    0,
+				"online":  true,
 			},
 			ControlProfile: map[string]any{
-				"modes": []string{"ON", "OFF"},
+				"lightId":     "light-001",
+				"lightIds":    []string{"light-001", "light-002", "all"},
+				"modes":       []int{0, 1, 2},
+				"supportsAll": true,
 			},
 		},
 		Device{
@@ -271,12 +282,18 @@ func devices(robotID string) []Device {
 			OnlineStatus:  "online",
 			ControlStatus: "idle",
 			Enabled:       true,
-			Actions:       []string{"light.warning.set"},
+			Actions:       []string{"get_state", "set_state", "set_mode"},
 			Status: map[string]any{
 				"enabled": false,
+				"powerOn": false,
+				"mode":    0,
+				"online":  true,
 			},
 			ControlProfile: map[string]any{
-				"modes": []string{"ON", "OFF"},
+				"lightId":     "light-002",
+				"lightIds":    []string{"light-001", "light-002", "all"},
+				"modes":       []int{0, 1, 2},
+				"supportsAll": true,
 			},
 		},
 		Device{
@@ -294,10 +311,7 @@ func devices(robotID string) []Device {
 			ControlProfile: map[string]any{
 				"parts":         []string{"front", "rear"},
 				"modes":         []string{"OFF", "ON", "BREATH", "CUSTOM"},
-				"modeMapping":   map[string]int{"OFF": 0, "ON": 1, "BREATH": 2, "CUSTOM": 3},
 				"maxBrightness": 100,
-				"rosTopic":      "/robot_light_ctl",
-				"rosType":       "robot_status_core/RobotLightCmd",
 			},
 		},
 		Device{
@@ -309,10 +323,11 @@ func devices(robotID string) []Device {
 			OnlineStatus:  "online",
 			ControlStatus: "idle",
 			Enabled:       true,
-			Actions:       []string{"volume.set", "volume.up", "volume.down", "volume.mute"},
+			Actions:       []string{"set_volume", "set_mute"},
 			Status: map[string]any{
-				"volume": 50,
-				"muted":  false,
+				"volume":        50,
+				"volumePercent": 50,
+				"muted":         false,
 			},
 		})
 	return items

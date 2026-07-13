@@ -116,9 +116,8 @@ export default {
       const previous = this.audioStatus(device)
       const muted = !previous.muted
       this.setAudioState(device, { muted })
-      const ok = await this.sendDeviceCommand(device, 'volume.mute', {
-        muted,
-        volume: previous.volume
+      const ok = await this.sendDeviceCommand(device, 'set_mute', {
+        mute: muted
       }, muted ? 'volume_mute' : 'volume_unmute')
       if (!ok) {
         this.setAudioState(device, previous)
@@ -132,9 +131,8 @@ export default {
       const previous = this.audioStatus(device)
       const nextVolume = Math.max(0, Math.min(100, Number(volume) || 0))      
       this.setAudioState(device, { volume: nextVolume, muted: false })
-      const ok = await this.sendDeviceCommand(device, 'volume.set', {
-        volume: nextVolume,
-        muted: false
+      const ok = await this.sendDeviceCommand(device, 'set_volume', {
+        volumePercent: nextVolume
       }, 'volume_slider')
       if (!ok) {
         console.log('setAudioVolume failed', previous)
@@ -144,12 +142,9 @@ export default {
     async adjustAudioVolume(device, delta) {
       const previous = this.audioStatus(device)
       const nextVolume = Math.max(0, Math.min(100, previous.volume + delta))
-      const action = delta > 0 ? 'volume.up' : 'volume.down'
       this.setAudioState(device, { volume: nextVolume, muted: false })
-      const ok = await this.sendDeviceCommand(device, action, {
-        step: Math.abs(delta),
-        volume: nextVolume,
-        muted: false
+      const ok = await this.sendDeviceCommand(device, 'set_volume', {
+        volumePercent: nextVolume
       }, delta > 0 ? 'volume_up' : 'volume_down')
       if (!ok) {
         this.setAudioState(device, previous)

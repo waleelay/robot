@@ -239,7 +239,7 @@
             </div>
           </div>
           <div class="control-block" v-if="audioDevice">
-            <strong>客户端音量</strong>
+            <strong>扬声器</strong>
             <small>{{ audioDevice.deviceId }} · {{ hasAudioStatus(audioDevice) ? (audioMuted(audioDevice) ? '已静音' : `音量 ${audioVolume(audioDevice)}`) : '状态同步中' }}</small>
             <div v-if="hasAudioStatus(audioDevice)" class="audio-control">
               <el-slider
@@ -353,13 +353,13 @@
               <div v-if="vehicleLightState[part.key].mode === 'CUSTOM'" class="vehicle-light-brightness">
                 <span>自定义亮度</span>
                 <el-slider
-                    :value="vehicleLightState[part.key].customValue"
+                    :value="vehicleLightState[part.key].brightness"
                     :min="0"
                     :max="100"
                     @input="value => updateVehicleLightBrightness(part.key, value)"
                     @change="value => setVehicleLightBrightness(part.key, value)"
                 />
-                <em>{{ vehicleLightState[part.key].customValue }}</em>
+                <em>{{ vehicleLightState[part.key].brightness }}</em>
               </div>
             </div>
           </div>
@@ -407,8 +407,8 @@ const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 
 function defaultVehicleLightState() {
   return {
-    front: { mode: 'OFF', customValue: 50 },
-    rear: { mode: 'OFF', customValue: 50 }
+    front: { mode: 'OFF', brightness: 50 },
+    rear: { mode: 'OFF', brightness: 50 }
   }
 }
 
@@ -581,7 +581,7 @@ export default {
       return this.controlDevices().find(device => device.deviceType === 'LAUNCHER')
     },
     audioDevice() {
-      return this.controlDevices().find(device => ['CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
+      return this.controlDevices().find(device => ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
     },
     warningLightDevices() {
       return this.controlDevices().filter(device => device.deviceType === 'WARNING_LIGHT')
@@ -1414,18 +1414,19 @@ export default {
       }
       if (kind.indexOf('ptz-') === 0) {
         const device = this.ptzDevice
-        const session = await this.ensureControlSession(device, 'ptz.move')
-        const params = {
-          'ptz-up': { panSpeed: 0, tiltSpeed: 0.4 },
-          'ptz-down': { panSpeed: 0, tiltSpeed: -0.4 },
-          'ptz-left': { panSpeed: -0.4, tiltSpeed: 0 },
-          'ptz-right': { panSpeed: 0.4, tiltSpeed: 0 },
-          'ptz-up-left': { panSpeed: -0.3, tiltSpeed: 0.3 },
-          'ptz-up-right': { panSpeed: 0.3, tiltSpeed: 0.3 },
-          'ptz-down-left': { panSpeed: -0.3, tiltSpeed: -0.3 },
-          'ptz-down-right': { panSpeed: 0.3, tiltSpeed: -0.3 }
+        const directionAction = {
+          'ptz-up': 'up',
+          'ptz-down': 'down',
+          'ptz-left': 'left',
+          'ptz-right': 'right',
+          'ptz-up-left': 'left_up',
+          'ptz-up-right': 'right_up',
+          'ptz-down-left': 'left_down',
+          'ptz-down-right': 'right_down'
         }[kind]
-        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'ptz.move', params, kind)
+        const session = await this.ensureControlSession(device, directionAction)
+        const params = { speed: 20, duration: 0.3 }
+        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, directionAction, params, kind)
       }
       if (kind.indexOf('zoom-') === 0) {
         const device = this.ptzDevice
@@ -1461,7 +1462,7 @@ export default {
           : this.launcherDevice
       const session = await this.ensureControlSession(device, action)
       const params = {
-        'payload.safety_switch': { enabled: true },
+        set_safety: { safetyOn: true, waitStatus: true },
         'light.set': { enabled: true, brightness: 80, mode: 'STEADY' }
       }[action]
       const response = await sendEquipmentCommand(this.selectedRobotId,
@@ -1489,7 +1490,10 @@ export default {
     async setLauncherSafety(device, enabled) {
       this.$set(this.launcherSafety, device.deviceId, enabled)
       this.persistDeviceStateCache()
-      const ok = await this.sendDeviceCommand(device, 'payload.safety_switch', { enabled }, `launcher_safety_${enabled ? 'on' : 'off'}`)
+      const ok = await this.sendDeviceCommand(device, 'set_safety', {
+        safetyOn: enabled,
+        waitStatus: true
+      }, `launcher_safety_${enabled ? 'on' : 'off'}`)
       if (!ok) {
         this.$set(this.launcherSafety, device.deviceId, !enabled)
         this.persistDeviceStateCache()
@@ -1499,18 +1503,22 @@ export default {
       if (!device) return false
       if (this.warningLightState[device.deviceId] !== undefined) return !!this.warningLightState[device.deviceId]
       const status = device.status || device.runtimeStatus || {}
-      return !!status.enabled
+      return !!(status.powerOn === undefined ? status.enabled : status.powerOn)
     },
     hasWarningLightStatus(device) {
       if (!device) return false
       if (this.warningLightState[device.deviceId] !== undefined) return true
       const status = device.status || device.runtimeStatus || {}
-      return status.enabled !== undefined
+      return status.powerOn !== undefined || status.enabled !== undefined
     },
     async setWarningLight(device, enabled) {
       this.$set(this.warningLightState, device.deviceId, enabled)
       this.persistDeviceStateCache()
-      const ok = await this.sendDeviceCommand(device, 'light.warning.set', { enabled }, `${device.deviceId}_${enabled ? 'on' : 'off'}`)
+      const profile = device.controlProfile || {}
+      const ok = await this.sendDeviceCommand(device, 'set_state', {
+        lightId: profile.lightId || device.lightId || device.deviceId,
+        powerOn: enabled
+      }, `${device.deviceId}_${enabled ? 'on' : 'off'}`)
       if (!ok) {
         this.$set(this.warningLightState, device.deviceId, !enabled)
         this.persistDeviceStateCache()
@@ -1555,7 +1563,7 @@ export default {
       if (this.audioState[key]) return this.audioState[key]
       const status = (device && (device.status || device.runtimeStatus)) || {}
       return {
-        volume: status.volume === undefined ? 50 : status.volume,
+        volume: status.volume === undefined ? (status.volumePercent === undefined ? 50 : status.volumePercent) : status.volume,
         muted: status.muted === undefined ? false : status.muted
       }
     },
@@ -1565,7 +1573,7 @@ export default {
         return this.audioState[key].volume !== undefined && this.audioState[key].muted !== undefined
       }
       const status = (device && (device.status || device.runtimeStatus)) || {}
-      return status.volume !== undefined && status.muted !== undefined
+      return (status.volume !== undefined || status.volumePercent !== undefined) && status.muted !== undefined
     },
     audioVolume(device) {
       return this.audioStatus(device).volume
@@ -1586,9 +1594,8 @@ export default {
       const previous = this.audioStatus(device)
       const nextVolume = Math.max(0, Math.min(100, Number(volume) || 0))
       this.setAudioState(device, { volume: nextVolume, muted: false })
-      const ok = await this.sendDeviceCommand(device, 'volume.set', {
-        volume: nextVolume,
-        muted: false
+      const ok = await this.sendDeviceCommand(device, 'set_volume', {
+        volumePercent: nextVolume
       }, 'volume_slider')
       if (!ok) {
         this.setAudioState(device, previous)
@@ -1597,12 +1604,9 @@ export default {
     async adjustAudioVolume(device, delta) {
       const previous = this.audioStatus(device)
       const nextVolume = Math.max(0, Math.min(100, previous.volume + delta))
-      const action = delta > 0 ? 'volume.up' : 'volume.down'
       this.setAudioState(device, { volume: nextVolume, muted: false })
-      const ok = await this.sendDeviceCommand(device, action, {
-        step: Math.abs(delta),
-        volume: nextVolume,
-        muted: false
+      const ok = await this.sendDeviceCommand(device, 'set_volume', {
+        volumePercent: nextVolume
       }, delta > 0 ? 'volume_up' : 'volume_down')
       if (!ok) {
         this.setAudioState(device, previous)
@@ -1612,9 +1616,8 @@ export default {
       const previous = this.audioStatus(device)
       const muted = !previous.muted
       this.setAudioState(device, { muted })
-      const ok = await this.sendDeviceCommand(device, 'volume.mute', {
-        muted,
-        volume: previous.volume
+      const ok = await this.sendDeviceCommand(device, 'set_mute', {
+        mute: muted
       }, muted ? 'volume_mute' : 'volume_unmute')
       if (!ok) {
         this.setAudioState(device, previous)
@@ -1635,7 +1638,7 @@ export default {
     },
     async firePayload(device, channel, source) {
       try {
-        const session = await this.ensureControlSession(device, 'payload.fire')
+        const session = await this.ensureControlSession(device, 'fire')
         const token = await createConfirmToken(this.selectedRobotId, {
           controlSessionId: session.controlSessionId,
           target: {
@@ -1643,14 +1646,21 @@ export default {
             deviceId: device.deviceId,
             deviceType: device.deviceType
           },
-          action: 'payload.fire',
+          action: 'fire',
           reason: 'manual_confirm'
         })
-        const response = await sendEquipmentCommand(this.selectedRobotId,
-            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'payload.fire', {
-              channel,
+        const fireParams = device.deviceType === 'LAUNCHER'
+            ? {
+              tube: channel,
+              waitStatusAfterFire: true,
+              keepSafetyOn: false,
               confirmToken: token.confirmToken
-            }, source || `payload_fire_${channel}`))
+            }
+            : {
+              confirmToken: token.confirmToken
+            }
+        const response = await sendEquipmentCommand(this.selectedRobotId,
+            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'fire', fireParams, source || `fire_${channel}`))
         this.log('API firePayload', response)
       } catch (error) {
         this.$message.error(this.errorMessage(error))
@@ -1675,8 +1685,8 @@ export default {
     async setVehicleLightMode(part, mode) {
       const next = this.cloneVehicleLightState()
       next[part].mode = mode
-      if (mode === 'CUSTOM' && next[part].customValue <= 0) {
-        next[part].customValue = 50
+      if (mode === 'CUSTOM' && next[part].brightness <= 0) {
+        next[part].brightness = 50
       }
       this.vehicleLightState = next
       const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_${String(mode).toLowerCase()}`, next)
@@ -1689,11 +1699,11 @@ export default {
       }
     },
     updateVehicleLightBrightness(part, value) {
-      this.vehicleLightState[part].customValue = value
+      this.vehicleLightState[part].brightness = value
     },
     async setVehicleLightBrightness(part, value) {
       this.vehicleLightState[part].mode = 'CUSTOM'
-      this.vehicleLightState[part].customValue = value
+      this.vehicleLightState[part].brightness = value
       const next = this.cloneVehicleLightState()
       const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_custom`, next)
       if (ok) {
@@ -1715,11 +1725,9 @@ export default {
     },
     vehicleLightPayloadPart(part) {
       const mode = part.mode || 'OFF'
-      const option = this.vehicleLightModeOptions.find(item => item.value === mode)
       return {
         mode,
-        modeCode: option ? option.code : 0,
-        customValue: mode === 'CUSTOM' ? part.customValue : 0
+        brightness: mode === 'CUSTOM' ? part.brightness : 0
       }
     },
     hasVehicleLightStatus(device) {
@@ -1833,14 +1841,15 @@ export default {
     syncAudioStatesFromDevices(robotId, devices, options = {}) {
       if (!robotId || !Array.isArray(devices)) return
       devices
-          .filter(device => ['CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
+          .filter(device => ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
           .forEach(device => {
             const status = device.status || device.runtimeStatus || {}
-            if (status.volume === undefined && status.muted === undefined) return
+            if (status.volume === undefined && status.volumePercent === undefined && status.muted === undefined) return
             const key = `${robotId}:${device.deviceId}`
             const next = Object.assign({}, this.audioState[key] || {})
-            if (status.volume !== undefined && !(options.preserveExisting && next.volume !== undefined)) {
-              next.volume = status.volume
+            const volume = status.volume === undefined ? status.volumePercent : status.volume
+            if (volume !== undefined && !(options.preserveExisting && next.volume !== undefined)) {
+              next.volume = volume
             }
             if (status.muted !== undefined && !(options.preserveExisting && next.muted !== undefined)) {
               next.muted = status.muted
@@ -1858,9 +1867,9 @@ export default {
             !(options.preserveExisting && this.launcherSafety[device.deviceId] !== undefined)) {
           this.$set(this.launcherSafety, device.deviceId, !!status.safetySwitchEnabled)
         }
-        if (device.deviceType === 'WARNING_LIGHT' && status.enabled !== undefined &&
+        if (device.deviceType === 'WARNING_LIGHT' && (status.powerOn !== undefined || status.enabled !== undefined) &&
             !(options.preserveExisting && this.warningLightState[device.deviceId] !== undefined)) {
-          this.$set(this.warningLightState, device.deviceId, !!status.enabled)
+          this.$set(this.warningLightState, device.deviceId, !!(status.powerOn === undefined ? status.enabled : status.powerOn))
         }
         const ptzKey = `${robotId}:${device.deviceId}`
         if (device.deviceType === 'DUAL_LIGHT_PTZ' && status.autoRotateEnabled !== undefined &&
@@ -1886,9 +1895,10 @@ export default {
       if (!part || typeof part !== 'object') return null
       if (part.mode === undefined && part.modeCode === undefined) return null
       const mode = part.mode || this.vehicleLightModeOptions.find(item => item.code === part.modeCode)?.value || 'OFF'
+      const brightness = part.brightness !== undefined ? part.brightness : part.customValue
       return {
         mode,
-        customValue: mode === 'CUSTOM' ? Math.max(0, Math.min(100, Number(part.customValue) || 0)) : 0
+        brightness: mode === 'CUSTOM' ? Math.max(0, Math.min(100, Number(brightness) || 0)) : 0
       }
     },
     persistDeviceStateCache() {

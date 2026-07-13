@@ -47,9 +47,9 @@
               >
               </el-switch>
               <template v-else-if="index === 2">
-                <div class="percent mt1 mb5">{{ vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].customValue }}%</div>
+                <div class="percent mt1 mb5">{{ vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].brightness }}%</div>
                 <el-slider
-                  :value="vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].customValue"
+                  :value="vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].brightness"
                   :min="0"
                   :max="100"
                   @input="value => updateVehicleLightBrightness(tabIndex === 0 ? 'front' : 'rear', value)"

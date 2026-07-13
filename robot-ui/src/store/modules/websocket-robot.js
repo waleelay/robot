@@ -587,13 +587,14 @@ const actions = {
   syncAudioStatesFromDevices({ commit, state }, {robotId, devices}) {
     if (!robotId || !Array.isArray(devices)) return
     devices
-      .filter(device => ['CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
+      .filter(device => ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
       .forEach(device => {
         const status = device.status || device.runtimeStatus || {}
-        if (status.volume === undefined && status.muted === undefined) return
+        if (status.volume === undefined && status.volumePercent === undefined && status.muted === undefined) return
         const key = `${robotId}:${device.deviceId}`
+        const volume = status.volume === undefined ? status.volumePercent : status.volume
         commit('setAudioState', Object.assign({}, state.audioState[key] || { volume: 50, muted: false }, {
-          volume: status.volume === undefined ? (state.audioState[key] && state.audioState[key].volume) || 50 : status.volume,
+          volume: volume === undefined ? (state.audioState[key] && state.audioState[key].volume) || 50 : volume,
           muted: status.muted === undefined ? !!(state.audioState[key] && state.audioState[key].muted) : status.muted
         }))
       })

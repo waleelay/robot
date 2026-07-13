@@ -360,7 +360,7 @@ GET /api/bigscreen/panorama/devices/test001
   "mountedDeviceCount": 3,
   "mountedDevices": [
     {"deviceId": "camera01", "name": "前向双光云台", "type": "DUAL_GIMBAL", "status": "online"},
-    {"deviceId": "audio-control-001", "name": "客户端音频", "type": "CLIENT_AUDIO", "status": "online"},
+    {"deviceId": "audio-control-001", "name": "扬声器", "type": "SPEAKER", "status": "online"},
     {"deviceId": "ptz-001", "name": "云台控制", "type": "PTZ", "status": "online"}
   ],
   "currentTask": [
@@ -838,7 +838,7 @@ GET /api/control/robots/test001/control-profile
 |---|---|---|
 | `deviceId` | string | 设备 ID |
 | `scope` | string | `BODY`、`PAYLOAD`、`AUDIO` 等 |
-| `deviceType` | string | 如 `WHEELED_BASE`、`DUAL_LIGHT_PTZ`、`CLIENT_AUDIO` |
+| `deviceType` | string | 如 `WHEELED_BASE`、`DUAL_LIGHT_PTZ`、`SPEAKER` |
 | `displayName` | string | 展示名称 |
 | `actions` | array[string] | 可执行动作 |
 | `controlProfile` | object | 动作参数边界 |
@@ -1059,14 +1059,14 @@ Content-Type: application/json
 |---|---|---:|---|
 | `target.scope` | string | 否 | 目标 scope |
 | `target.deviceId` | string | 否 | 目标设备 ID |
-| `action` | string | 是 | 动作名，如 `payload.fire` |
+| `action` | string | 是 | 动作名，如 `fire` |
 
 请求示例：
 
 ```json
 {
-  "target": {"scope": "PAYLOAD", "deviceId": "launcher-001"},
-  "action": "payload.fire"
+  "target": {"scope": "PAYLOAD", "deviceId": "launcher-001", "deviceType": "LAUNCHER"},
+  "action": "fire"
 }
 ```
 
@@ -1077,8 +1077,8 @@ Content-Type: application/json
   "confirmToken": "confirm_b8c4a1",
   "expiresAt": "2026-07-04T10:00:30+08:00",
   "robotId": "test001",
-  "target": {"scope": "PAYLOAD", "deviceId": "launcher-001"},
-  "action": "payload.fire"
+  "target": {"scope": "PAYLOAD", "deviceId": "launcher-001", "deviceType": "LAUNCHER"},
+  "action": "fire"
 }
 ```
 
@@ -1092,10 +1092,10 @@ Content-Type: application/json
 |---|---|---|
 | Control -> Go 客户端 | `robot/{robotId}/control/body/command` | `target.deviceType` 为 `WHEELED_BASE`、`QUADRUPED_BASE`、`BIPED_BASE` |
 | Control -> Go 客户端 | `robot/{robotId}/control/ptz/command` | `target.deviceType=DUAL_LIGHT_PTZ` |
-| Control -> Go 客户端 | `robot/{robotId}/control/audio/command` | `target.deviceType` 为 `CLIENT_AUDIO`、`INTERCOM`、`VOLUME_CONTROL`，或 `action` 以 `volume.` 开头 |
-| Control -> Go 客户端 | `robot/{robotId}/control/launcher/command` | `target.deviceType=LAUNCHER`，或 `action` 以 `payload.fire` 开头 |
+| Control -> Go 客户端 | `robot/{robotId}/control/audio/command` | `target.deviceType` 为 `SPEAKER`、`CLIENT_AUDIO`、`INTERCOM`、`VOLUME_CONTROL` |
+| Control -> Go 客户端 | `robot/{robotId}/control/launcher/command` | `target.deviceType=LAUNCHER` |
 | Control -> Go 客户端 | `robot/{robotId}/control/net-gun/command` | `target.deviceType` 为 `NET_GUN`、`NET_LAUNCHER` |
-| Control -> Go 客户端 | `robot/{robotId}/control/warning-light/command` | `target.deviceType=WARNING_LIGHT`，或 `action` 以 `light.warning.` 开头 |
+| Control -> Go 客户端 | `robot/{robotId}/control/warning-light/command` | `target.deviceType=WARNING_LIGHT` |
 | Control -> Go 客户端 | `robot/{robotId}/control/vehicle-light/command` | `target.deviceType` 为 `VEHICLE_LIGHT`、`SEARCHLIGHT`，或 `action` 以 `light.vehicle.` 开头 |
 | Control -> Go 客户端 | `robot/{robotId}/control/payload/command` | 其他未匹配设备类型或动作的兜底 topic |
 
@@ -1115,15 +1115,21 @@ Content-Type: application/json
 | action | 参数说明 |
 |---|---|
 | `drive.velocity` | `linearX`、`linearY`、`angularZ` 按底盘能力裁剪；轮式底盘 `linearY` 固定为 `0` |
-| `ptz.move` | `panSpeed`、`tiltSpeed` 按云台能力裁剪 |
+| `up/down/left/right/left_up/right_up/left_down/right_down` | `speed`、`duration` 按云台能力裁剪 |
 | `camera.zoom` | `zoomSpeed` 裁剪到 `[-1, 1]` |
 | `ptz.auto_rotate` | `enabled`、`panSpeed` |
 | `control.mode.set` | `controlMode` 归一化 |
-| `volume.*` | `volume`、`step`、`muted` |
+| `SPEAKER/set_volume` | `volumePercent` |
+| `SPEAKER/set_mute` | `mute` |
 | `light.set` | `enabled`、`brightness`、`mode` |
-| `light.vehicle.set` | `front`、`rear` 车灯模式，组装 ROS topic 消息 |
-| `payload.fire` | `channel` |
-| `payload.safety_switch` | `enabled` |
+| `light.vehicle.set` | `front`、`rear` 车灯模式和亮度，后端下发平台通用 `mode/brightness`，底层 ROS topic 由客户端适配 |
+| `WARNING_LIGHT/get_state` | `lightId` |
+| `WARNING_LIGHT/set_state` | `lightId`、`powerOn` |
+| `WARNING_LIGHT/set_mode` | `lightId`、`mode` |
+| `LAUNCHER/fire` | `tube`、`waitStatusAfterFire`、`keepSafetyOn` |
+| `LAUNCHER/set_safety` | `safetyOn`、`waitStatus` |
+| `LAUNCHER/get_status` | `temporarilyEnableSafety`、`restoreSafetyAfterQuery` |
+| `NET_GUN/fire` | 捕网器触发，后端校验 `confirmToken` 后不下发该字段 |
 
 请求示例：
 

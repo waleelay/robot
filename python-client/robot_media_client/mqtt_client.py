@@ -230,40 +230,40 @@ class RobotMQTTClient:
         """应用可本地确认的设备控制状态，并触发下一次 client/status 上报。"""
         with self.lock:
             changed = False
-            if command.action == "volume.set":
-                self.audio_volume = clamp_int(any_int(command.params.get("volume"), self.audio_volume), 0, 100)
-                self.audio_muted = any_bool(command.params.get("muted"), False)
+            if command.action == "set_volume":
+                self.audio_volume = clamp_int(
+                    any_int(command.params.get("volumePercent"), any_int(command.params.get("volume"), self.audio_volume)),
+                    0,
+                    100,
+                )
+                self.audio_muted = False
                 self.set_device_state_locked(command.target.device_id, "volume", self.audio_volume)
+                self.set_device_state_locked(command.target.device_id, "volumePercent", self.audio_volume)
                 self.set_device_state_locked(command.target.device_id, "muted", self.audio_muted)
                 changed = True
-            elif command.action == "volume.up":
-                step = clamp_int(any_int(command.params.get("step"), 5), 1, 100)
-                self.audio_volume = clamp_int(any_int(command.params.get("volume"), self.audio_volume + step), 0, 100)
-                self.audio_muted = any_bool(command.params.get("muted"), False)
+            elif command.action == "set_mute":
+                self.audio_muted = any_bool(command.params.get("mute"), any_bool(command.params.get("muted"), True))
                 self.set_device_state_locked(command.target.device_id, "volume", self.audio_volume)
+                self.set_device_state_locked(command.target.device_id, "volumePercent", self.audio_volume)
                 self.set_device_state_locked(command.target.device_id, "muted", self.audio_muted)
                 changed = True
-            elif command.action == "volume.down":
-                step = clamp_int(any_int(command.params.get("step"), 5), 1, 100)
-                self.audio_volume = clamp_int(any_int(command.params.get("volume"), self.audio_volume - step), 0, 100)
-                self.audio_muted = any_bool(command.params.get("muted"), False)
-                self.set_device_state_locked(command.target.device_id, "volume", self.audio_volume)
-                self.set_device_state_locked(command.target.device_id, "muted", self.audio_muted)
-                changed = True
-            elif command.action == "volume.mute":
-                self.audio_muted = any_bool(command.params.get("muted"), True)
-                self.audio_volume = clamp_int(any_int(command.params.get("volume"), self.audio_volume), 0, 100)
-                self.set_device_state_locked(command.target.device_id, "volume", self.audio_volume)
-                self.set_device_state_locked(command.target.device_id, "muted", self.audio_muted)
-                changed = True
-            elif command.action == "payload.safety_switch":
-                self.set_device_state_locked(command.target.device_id, "safetySwitchEnabled", any_bool(command.params.get("enabled"), False))
+            elif command.action == "set_safety":
+                self.set_device_state_locked(
+                    command.target.device_id,
+                    "safetySwitchEnabled",
+                    any_bool(command.params.get("safetyOn"), any_bool(command.params.get("enabled"), False)),
+                )
                 changed = True
             elif command.action == "control.mode.set":
                 self.control_mode = normalize_control_mode(any_str(command.params.get("controlMode"), command.control_mode))
                 changed = True
-            elif command.action == "light.warning.set":
-                self.set_device_state_locked(command.target.device_id, "enabled", any_bool(command.params.get("enabled"), False))
+            elif command.action == "set_state" and command.target.device_type == "WARNING_LIGHT":
+                power_on = any_bool(command.params.get("powerOn"), any_bool(command.params.get("enabled"), False))
+                self.set_device_state_locked(command.target.device_id, "enabled", power_on)
+                self.set_device_state_locked(command.target.device_id, "powerOn", power_on)
+                changed = True
+            elif command.action == "set_mode" and command.target.device_type == "WARNING_LIGHT":
+                self.set_device_state_locked(command.target.device_id, "mode", any_int(command.params.get("mode"), 0))
                 changed = True
             elif command.action == "ptz.auto_rotate":
                 self.set_device_state_locked(command.target.device_id, "autoRotateEnabled", any_bool(command.params.get("enabled"), False))
@@ -374,8 +374,9 @@ class RobotMQTTClient:
         for device in self.cfg.devices:
             status = dict(device.status or {})
             status.update(state_snapshot.get(device.device_id, {}))
-            if device.device_id == "audio-control-001" or device.device_type in {"CLIENT_AUDIO", "VOLUME_CONTROL", "INTERCOM"}:
+            if device.device_id == "audio-control-001" or device.device_type in {"SPEAKER", "CLIENT_AUDIO", "VOLUME_CONTROL", "INTERCOM"}:
                 status["volume"] = audio_volume
+                status["volumePercent"] = audio_volume
                 status["muted"] = audio_muted
             item: dict[str, object] = {
                 "deviceId": device.device_id,
@@ -536,7 +537,7 @@ def vehicle_light_state(params: dict[str, object]) -> tuple[dict[str, object], d
     front = copy_dict(params.get("front"))
     rear = copy_dict(params.get("rear"))
     if front or rear:
-        return front, rear
+        return normalize_vehicle_light_part(front), normalize_vehicle_light_part(rear)
     msg = copy_dict(params.get("msg"))
     return (
         vehicle_light_part(any_int(msg.get("front_mode"), 0), any_int(msg.get("front_custom_value"), 0)),
@@ -551,9 +552,28 @@ def vehicle_light_part(mode_code: int, custom_value: int) -> dict[str, object]:
     mode = {0: "OFF", 1: "ON", 2: "BREATH", 3: "CUSTOM"}.get(mode_code, "OFF")
     return {
         "mode": mode,
-        "modeCode": mode_code,
-        "customValue": clamp_int(custom_value, 0, 100) if mode_code == 3 else 0,
+        "brightness": clamp_int(custom_value, 0, 100) if mode_code == 3 else 0,
     }
+
+
+def normalize_vehicle_light_part(part: dict[str, object]) -> dict[str, object]:
+    """把平台通用或旧兼容车灯状态归一化为 mode/brightness。"""
+    mode = any_str(part.get("mode"), "")
+    if not mode:
+        mode = {0: "OFF", 1: "ON", 2: "BREATH", 3: "CUSTOM"}.get(clamp_int(any_int(part.get("modeCode"), 0), 0, 3), "OFF")
+    mode = normalize_vehicle_light_mode(mode)
+    brightness = 0
+    if mode == "CUSTOM":
+        brightness = clamp_int(any_int(part.get("brightness", part.get("customValue")), 0), 0, 100)
+    return {"mode": mode, "brightness": brightness}
+
+
+def normalize_vehicle_light_mode(value: str) -> str:
+    """规范化平台车灯模式。"""
+    mode = (value or "OFF").strip().upper()
+    if mode in {"ON", "BREATH", "CUSTOM"}:
+        return mode
+    return "OFF"
 
 
 def clamp_int(value: int, minimum: int, maximum: int) -> int:
