@@ -20,7 +20,7 @@ control:
     # MQTT 密码，默认空表示不启用账号认证。
     password: ${MQTT_PASSWORD:}
     # Control Service 连接 MQTT 时使用的客户端 ID。
-    client-id: ${MQTT_CLIENT_ID:robot-control-service}
+    client-id: ${MQTT_CLIENT_ID:robot-control-service-main}
     # 是否启用 MQTT 指令下发。
     enabled: ${MQTT_ENABLED:true}
   robot:

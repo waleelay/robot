@@ -788,6 +788,7 @@ public class EquipmentControlService {
                 "enabled", true,
                 "riskLevel", "HIGH",
                 "actions", List.of("get_status", "set_safety", "fire"),
+                "status", launcherStatus(),
                 "controlProfile", object(
                         "tubes", List.of(1, 2, 3, 4, 5, 6),
                         "requiresConfirm", true,
@@ -825,6 +826,32 @@ public class EquipmentControlService {
                         "lightIds", List.of("light-001", "light-002", "all"),
                         "modes", List.of(0, 1, 2),
                         "supportsAll", true));
+    }
+
+    /**
+     * 构造发射器初始状态。
+     *
+     * @return 发射器状态
+     */
+    private static Map<String, Object> launcherStatus() {
+        return object(
+                "connected", true,
+                "safetySwitchEnabled", false,
+                "tubeCount", 6,
+                "tubes", launcherTubes());
+    }
+
+    /**
+     * 构造发射器弹筒初始状态。
+     *
+     * @return 弹筒状态列表
+     */
+    private static List<Map<String, Object>> launcherTubes() {
+        List<Map<String, Object>> tubes = new ArrayList<>();
+        for (int tube = 1; tube <= 6; tube += 1) {
+            tubes.add(object("tube", tube, "state", 1, "stateName", "LOADED"));
+        }
+        return tubes;
     }
 
     /**

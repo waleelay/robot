@@ -123,7 +123,7 @@ export MQTT_ENABLED='true'
 export MQTT_BROKER_URL='tcp://localhost:1883'
 export MQTT_USERNAME=''
 export MQTT_PASSWORD=''
-export MQTT_CLIENT_ID='robot-control-service'
+export MQTT_CLIENT_ID='robot-control-service-main'
 export ROBOT_HEARTBEAT_TIMEOUT_SECONDS='15'
 export ROBOT_HEARTBEAT_SWEEP_DELAY_MS='5000'
 ```

@@ -841,6 +841,7 @@ GET /api/control/robots/test001/control-profile
 | `deviceType` | string | 如 `WHEELED_BASE`、`DUAL_LIGHT_PTZ`、`SPEAKER` |
 | `displayName` | string | 展示名称 |
 | `actions` | array[string] | 可执行动作 |
+| `status` | object | 客户端上报的设备运行态，前端开关、弹筒、音量等实时渲染优先使用该字段 |
 | `controlProfile` | object | 动作参数边界 |
 
 响应示例：
@@ -867,10 +868,38 @@ GET /api/control/robots/test001/control-profile
       "enabled": true,
       "actions": ["drive.velocity", "navigation.return_home", "docking.leave"],
       "controlProfile": {"maxLinearX": 1.0, "maxLinearY": 0.4, "maxAngularZ": 0.8, "controlFrameRateHz": 10}
+    },
+    {
+      "deviceId": "launcher-001",
+      "scope": "PAYLOAD",
+      "deviceType": "LAUNCHER",
+      "displayName": "六联发射器",
+      "onlineStatus": "online",
+      "controlStatus": "idle",
+      "enabled": true,
+      "actions": ["get_status", "set_safety", "fire"],
+      "status": {
+        "connected": true,
+        "safetySwitchEnabled": false,
+        "tubeCount": 6,
+        "tubes": [
+          {"tube": 1, "state": 1, "stateName": "LOADED"},
+          {"tube": 2, "state": 0, "stateName": "EMPTY"}
+        ]
+      },
+      "controlProfile": {
+        "tubes": [1, 2, 3, 4, 5, 6],
+        "requiresConfirm": true,
+        "requiresSafetySwitch": true
+      }
     }
   ]
 }
 ```
+
+发射器前端渲染约定：`controlProfile.tubes` 只表示能力范围；`status.connected`、`status.safetySwitchEnabled`、`status.tubes[]` 才表示实时状态。发射按钮只有在安全开关打开且对应弹筒 `state=1 / LOADED` 时可点击。
+
+通用状态渲染约定：`controlProfile` 表示设备能力、参数范围和安全策略，`status` 表示机器人端真实运行态。机器人端若提供状态接口或状态上报，客户端应通过 `media/client/status` 写入 `devices[].status`；前端必须优先按 `status` 渲染。状态缺失时，前端可以显示“同步中”或使用本地临时态，但不能把本地默认值当成真实设备状态。
 
 ### 4.4 POST `/api/control/robots/{robotId}/control-sessions/acquire`
 
@@ -1126,9 +1155,9 @@ Content-Type: application/json
 | `WARNING_LIGHT/get_state` | `lightId` |
 | `WARNING_LIGHT/set_state` | `lightId`、`powerOn` |
 | `WARNING_LIGHT/set_mode` | `lightId`、`mode` |
-| `LAUNCHER/fire` | `tube`、`waitStatusAfterFire`、`keepSafetyOn` |
-| `LAUNCHER/set_safety` | `safetyOn`、`waitStatus` |
 | `LAUNCHER/get_status` | `temporarilyEnableSafety`、`restoreSafetyAfterQuery` |
+| `LAUNCHER/set_safety` | `safetyOn`、`waitStatus` |
+| `LAUNCHER/fire` | `tube`、`waitStatusAfterFire`、`keepSafetyOn`；前端 `confirmToken` 仅供后端校验，不下发 MQTT |
 | `NET_GUN/fire` | 捕网器触发，后端校验 `confirmToken` 后不下发该字段 |
 
 请求示例：

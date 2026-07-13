@@ -248,6 +248,11 @@ func (c *Client) applyControlCommand(command model.ControlCommand) bool {
 	case "set_safety":
 		c.setDeviceStateLocked(command.Target.DeviceID, "safetySwitchEnabled", anyBool(command.Params["safetyOn"], anyBool(command.Params["enabled"], false)))
 		changed = true
+	case "fire":
+		if command.Target.DeviceType == "LAUNCHER" {
+			c.applyLauncherFireLocked(command.Target.DeviceID, anyInt(command.Params["tube"], 1))
+			changed = true
+		}
 	case "control.mode.set":
 		controlMode := normalizeControlMode(anyString(command.Params["controlMode"], command.ControlMode))
 		c.controlMode = controlMode
@@ -287,6 +292,31 @@ func (c *Client) setDeviceStateLocked(deviceID string, key string, value any) {
 		c.deviceState[deviceID] = status
 	}
 	status[key] = value
+}
+
+func (c *Client) applyLauncherFireLocked(deviceID string, tube int) {
+	if deviceID == "" {
+		return
+	}
+	if tube < 1 || tube > 6 {
+		tube = 1
+	}
+	status := c.deviceState[deviceID]
+	if status == nil {
+		status = make(map[string]any)
+		c.deviceState[deviceID] = status
+	}
+	tubes := launcherTubesFromState(status["tubes"])
+	for index := range tubes {
+		if anyInt(tubes[index]["tube"], 0) == tube {
+			tubes[index]["state"] = 0
+			tubes[index]["stateName"] = "EMPTY"
+			break
+		}
+	}
+	status["connected"] = true
+	status["tubeCount"] = len(tubes)
+	status["tubes"] = tubes
 }
 
 func (c *Client) status(sessionID, status, trackSid, trackName, errorCode, message string) {
@@ -507,6 +537,53 @@ func vehicleLightState(params map[string]any) (map[string]any, map[string]any) {
 	msg := copyAnyMap(params["msg"])
 	return vehicleLightPart(anyInt(msg["front_mode"], 0), anyInt(msg["front_custom_value"], 0)),
 		vehicleLightPart(anyInt(msg["rear_mode"], 0), anyInt(msg["rear_custom_value"], 0))
+}
+
+func launcherTubesFromState(value any) []map[string]any {
+	var source []any
+	switch items := value.(type) {
+	case []any:
+		source = items
+	case []map[string]any:
+		source = make([]any, 0, len(items))
+		for _, item := range items {
+			source = append(source, item)
+		}
+	}
+	if len(source) == 0 {
+		tubes := make([]map[string]any, 0, 6)
+		for tube := 1; tube <= 6; tube++ {
+			tubes = append(tubes, map[string]any{
+				"tube":      tube,
+				"state":     1,
+				"stateName": "LOADED",
+			})
+		}
+		return tubes
+	}
+	tubes := make([]map[string]any, 0, len(source))
+	for _, item := range source {
+		tube := copyAnyMap(item)
+		state := anyInt(tube["state"], 255)
+		tube["stateName"] = anyString(tube["stateName"], launcherTubeStateName(state))
+		tubes = append(tubes, tube)
+	}
+	return tubes
+}
+
+func launcherTubeStateName(state int) string {
+	switch state {
+	case 0:
+		return "EMPTY"
+	case 1:
+		return "LOADED"
+	case 2:
+		return "FIRING"
+	case 3:
+		return "BLOCKED"
+	default:
+		return "UNKNOWN"
+	}
 }
 
 func vehicleLightPart(modeCode int, customValue int) map[string]any {

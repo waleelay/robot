@@ -84,6 +84,15 @@ export default {
       ]
     }
   },
+  watch: {
+    vehicleLightDevice: {
+      immediate: true,
+      deep: true,
+      handler(device) {
+        this.syncVehicleLightStateFromStatus(device)
+      }
+    }
+  },
   methods: {
     controlDevices() {
       return this.selectedControlProfile.devices || []
@@ -92,7 +101,14 @@ export default {
       return this.controlDevices().find(device => device.deviceId === deviceId)
     },
     isPtzAutoRotateOn(device) {
-      return !!(device && this.ptzAutoRotateState[this.ptzAutoRotateKey(device)])
+      if (!device) return false
+      const status = this.deviceStatus(device)
+      if (status.autoRotateEnabled !== undefined) return !!status.autoRotateEnabled
+      return !!this.ptzAutoRotateState[this.ptzAutoRotateKey(device)]
+    },
+    hasPtzAutoRotateStatus(device) {
+      if (!device) return false
+      return this.deviceStatus(device).autoRotateEnabled !== undefined
     },
     ptzAutoRotateKey(device) {
       return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
@@ -101,7 +117,7 @@ export default {
       const device = this.ptzDevice
       if (!device) return
       const key = this.ptzAutoRotateKey(device)
-      const enabled = !this.ptzAutoRotateState[key]
+      const enabled = !this.isPtzAutoRotateOn(device)
       const ok = await this.sendDeviceCommand(device, 'ptz.auto_rotate', {
         enabled,
         panSpeed: 0.3
@@ -292,20 +308,37 @@ export default {
     isNetGunSafetyOn(device) {
       return !!(device && this.netGunSafety[device.deviceId])
     },
+    isNetGunConnected(device) {
+      if (!device) return true
+      const status = this.deviceStatus(device)
+      return status.connected !== false && status.online !== false
+    },
     
     isLauncherSafetyOn(device) {
-      return false
-      // return !!(device && this.launcherSafety[device.deviceId])
+      return !!this.deviceStatus(device).safetySwitchEnabled
+    },
+    hasLauncherSafetyStatus(device) {
+      return !!device && this.deviceStatus(device).safetySwitchEnabled !== undefined
+    },
+    isLauncherConnected(device) {
+      if (!device) return false
+      return this.deviceStatus(device).connected !== false
     },
     async setLauncherSafety(device, enabled) {
-      // this.$set(this.launcherSafety, device.deviceId, enabled)
-      // const ok = await this.sendDeviceCommand(device, 'set_safety', { safetyOn: enabled, waitStatus: true }, `launcher_safety_${enabled ? 'on' : 'off'}`)
-      // if (!ok) {
-      //   this.$set(this.launcherSafety, device.deviceId, !enabled)
-      // }
+      await this.sendDeviceCommand(device, 'set_safety', { safetyOn: enabled, waitStatus: true }, `launcher_safety_${enabled ? 'on' : 'off'}`)
     },
     isWarningLightOn(device) {
-      return !!(device && this.warningLightState[device.deviceId])
+      if (!device) return false
+      const status = this.deviceStatus(device)
+      if (status.powerOn !== undefined || status.enabled !== undefined) {
+        return !!(status.powerOn === undefined ? status.enabled : status.powerOn)
+      }
+      return !!this.warningLightState[device.deviceId]
+    },
+    hasWarningLightStatus(device) {
+      if (!device) return false
+      const status = this.deviceStatus(device)
+      return status.powerOn !== undefined || status.enabled !== undefined
     },
     async setWarningLight(device, enabled) {
       this.$set(this.warningLightState, device.deviceId, enabled)
@@ -320,6 +353,37 @@ export default {
     },
     async setNetGunSafety(device, enabled) {
       this.$set(this.netGunSafety, device.deviceId, enabled)
+    },
+    deviceStatus(device) {
+      if (!device) return {}
+      return device.status || device.runtimeStatus || {}
+    },
+    vehicleLightStatusPart(part) {
+      if (!part || typeof part !== 'object') return null
+      const mode = part.mode || this.vehicleLightModeOptions.find(item => item.code === part.modeCode)?.value || 'OFF'
+      const normalized = ['OFF', 'ON', 'BREATH', 'CUSTOM'].includes(mode) ? mode : 'OFF'
+      const brightness = part.brightness === undefined ? part.customValue : part.brightness
+      return {
+        mode: normalized,
+        brightness: normalized === 'CUSTOM' ? Math.max(0, Math.min(100, Number(brightness || 0))) : 0
+      }
+    },
+    hasVehicleLightStatus(device) {
+      if (!device) return false
+      const status = this.deviceStatus(device)
+      return !!status.front || !!status.rear
+    },
+    syncVehicleLightStateFromStatus(device) {
+      if (!device) return
+      const status = this.deviceStatus(device)
+      const front = this.vehicleLightStatusPart(status.front)
+      const rear = this.vehicleLightStatusPart(status.rear)
+      if (!front && !rear) return
+      const next = this.cloneVehicleLightState()
+      if (front) next.front = front
+      if (rear) next.rear = rear
+      this.vehicleLightState = next
+      this.confirmedVehicleLightState = this.cloneVehicleLightState(next)
     },
     
     cloneVehicleLightState(state) {

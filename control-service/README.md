@@ -23,7 +23,7 @@ Useful environment variables:
 CONTROL_SERVER_PORT=8082
 MEDIA_SERVICE_BASE_URL=http://localhost:8088
 MQTT_BROKER_URL=tcp://192.168.124.77:1883
-MQTT_CLIENT_ID=robot-control-service
+MQTT_CLIENT_ID=robot-control-service-main
 MQTT_ENABLED=true
 ```
 

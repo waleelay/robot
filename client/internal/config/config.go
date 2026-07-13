@@ -220,6 +220,7 @@ func devices(robotID string) []Device {
 				Enabled:       true,
 				RiskLevel:     "HIGH",
 				Actions:       []string{"get_status", "set_safety", "fire"},
+				Status:        launcherStatus(),
 				ControlProfile: map[string]any{
 					"tubes":                []int{1, 2, 3, 4, 5, 6},
 					"requiresConfirm":      true,
@@ -331,6 +332,27 @@ func devices(robotID string) []Device {
 			},
 		})
 	return items
+}
+
+func launcherStatus() map[string]any {
+	return map[string]any{
+		"connected":           true,
+		"safetySwitchEnabled": false,
+		"tubeCount":           6,
+		"tubes":               launcherTubes(),
+	}
+}
+
+func launcherTubes() []map[string]any {
+	tubes := make([]map[string]any, 0, 6)
+	for tube := 1; tube <= 6; tube++ {
+		tubes = append(tubes, map[string]any{
+			"tube":      tube,
+			"state":     1,
+			"stateName": "LOADED",
+		})
+	}
+	return tubes
 }
 
 func cameras(robotID string) []Camera {

@@ -12,7 +12,7 @@ center:
   # Media Service 基础地址。
   media-base-url: ${CENTER_MEDIA_BASE_URL:http://localhost:8088}
   # Control Service WebSocket 地址。
-  websocket-control-url: ${CENTER_CONTROL_WS_URL:ws://192.168.124.44:8082/ws/control}
+  websocket-control-url: ${CENTER_CONTROL_WS_URL:ws://192.168.124.77:8082/ws/control}
 
 statistics:
   report:

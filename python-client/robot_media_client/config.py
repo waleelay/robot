@@ -260,6 +260,7 @@ def devices(robot_id: str) -> list[Device]:
                 enabled=True,
                 risk_level="HIGH",
                 actions=["get_status", "set_safety", "fire"],
+                status=launcher_status(),
                 control_profile={"tubes": [1, 2, 3, 4, 5, 6], "requiresConfirm": True, "requiresSafetySwitch": True},
             ),
             Device(
@@ -351,6 +352,24 @@ def devices(robot_id: str) -> list[Device]:
         ),
     ])
     return result
+
+
+def launcher_status() -> dict[str, object]:
+    """默认发射器状态，供前端首次渲染安全开关和弹筒。"""
+    return {
+        "connected": True,
+        "safetySwitchEnabled": False,
+        "tubeCount": 6,
+        "tubes": launcher_tubes(),
+    }
+
+
+def launcher_tubes() -> list[dict[str, object]]:
+    """六联发射器默认 1~6 号弹筒均为已装填。"""
+    return [
+        {"tube": tube, "state": 1, "stateName": "LOADED"}
+        for tube in range(1, 7)
+    ]
 
 
 def default_robot_name(robot_id: str) -> str:

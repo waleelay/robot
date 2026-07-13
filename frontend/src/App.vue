@@ -279,13 +279,13 @@
             </div>
             <div class="control-grid control-grid-3">
               <el-button
-                  v-for="channel in 6"
-                  :key="channel"
+                  v-for="tube in launcherTubes(launcherDevice)"
+                  :key="tube.tube"
                   size="mini"
                   type="danger"
-                  :disabled="!isLauncherSafetyOn(launcherDevice)"
-                  @click="firePayload(launcherDevice, channel, `launcher_${channel}`)"
-              >发射{{ channel }}</el-button>
+                  :disabled="!canFireLauncherTube(launcherDevice, tube)"
+                  @click="firePayload(launcherDevice, tube.tube, `launcher_${tube.tube}`)"
+              >{{ tube.tube }}号 {{ launcherTubeLabel(tube) }}</el-button>
             </div>
           </div>
           <div class="control-block" v-if="netGunDevice">
@@ -1477,8 +1477,9 @@ export default {
     },
     isLauncherSafetyOn(device) {
       if (!device) return false
-      if (this.launcherSafety[device.deviceId] !== undefined) return !!this.launcherSafety[device.deviceId]
       const status = device.status || device.runtimeStatus || {}
+      if (status.safetySwitchEnabled !== undefined) return !!status.safetySwitchEnabled
+      if (this.launcherSafety[device.deviceId] !== undefined) return !!this.launcherSafety[device.deviceId]
       return !!status.safetySwitchEnabled
     },
     hasLauncherSafetyStatus(device) {
@@ -1486,6 +1487,51 @@ export default {
       if (this.launcherSafety[device.deviceId] !== undefined) return true
       const status = device.status || device.runtimeStatus || {}
       return status.safetySwitchEnabled !== undefined
+    },
+    isLauncherConnected(device) {
+      if (!device) return false
+      const status = device.status || device.runtimeStatus || {}
+      return status.connected !== false
+    },
+    launcherTubes(device) {
+      if (!device) return []
+      const status = device.status || device.runtimeStatus || {}
+      if (Array.isArray(status.tubes) && status.tubes.length) {
+        return status.tubes.map(item => this.normalizeLauncherTube(item))
+      }
+      const profile = device.controlProfile || {}
+      const tubes = Array.isArray(profile.tubes) && profile.tubes.length ? profile.tubes : [1, 2, 3, 4, 5, 6]
+      return tubes.map(tube => this.normalizeLauncherTube({ tube }))
+    },
+    normalizeLauncherTube(tube) {
+      const number = Number(tube.tube) || 0
+      const state = tube.state === undefined ? 255 : Number(tube.state)
+      return {
+        tube: number,
+        state,
+        stateName: tube.stateName || this.launcherTubeStateName(state)
+      }
+    },
+    launcherTubeStateName(state) {
+      return {
+        0: 'EMPTY',
+        1: 'LOADED',
+        2: 'FIRING',
+        3: 'BLOCKED',
+        255: 'UNKNOWN'
+      }[state] || 'UNKNOWN'
+    },
+    launcherTubeLabel(tube) {
+      return {
+        EMPTY: '空',
+        LOADED: '已装填',
+        FIRING: '发射中',
+        BLOCKED: '堵塞',
+        UNKNOWN: '未知'
+      }[tube.stateName] || '未知'
+    },
+    canFireLauncherTube(device, tube) {
+      return !!(this.isLauncherConnected(device) && this.isLauncherSafetyOn(device) && tube && tube.state === 1)
     },
     async setLauncherSafety(device, enabled) {
       this.$set(this.launcherSafety, device.deviceId, enabled)
@@ -1501,8 +1547,11 @@ export default {
     },
     isWarningLightOn(device) {
       if (!device) return false
-      if (this.warningLightState[device.deviceId] !== undefined) return !!this.warningLightState[device.deviceId]
       const status = device.status || device.runtimeStatus || {}
+      if (status.powerOn !== undefined || status.enabled !== undefined) {
+        return !!(status.powerOn === undefined ? status.enabled : status.powerOn)
+      }
+      if (this.warningLightState[device.deviceId] !== undefined) return !!this.warningLightState[device.deviceId]
       return !!(status.powerOn === undefined ? status.enabled : status.powerOn)
     },
     hasWarningLightStatus(device) {
@@ -1530,8 +1579,9 @@ export default {
     isPtzAutoRotateOn(device) {
       if (!device) return false
       const key = this.ptzAutoRotateKey(device)
-      if (this.ptzAutoRotateState[key] !== undefined) return !!this.ptzAutoRotateState[key]
       const status = device.status || device.runtimeStatus || {}
+      if (status.autoRotateEnabled !== undefined) return !!status.autoRotateEnabled
+      if (this.ptzAutoRotateState[key] !== undefined) return !!this.ptzAutoRotateState[key]
       return !!status.autoRotateEnabled
     },
     hasPtzAutoRotateStatus(device) {
@@ -1545,7 +1595,7 @@ export default {
       const device = this.ptzDevice
       if (!device) return
       const key = this.ptzAutoRotateKey(device)
-      const enabled = !this.ptzAutoRotateState[key]
+      const enabled = !this.isPtzAutoRotateOn(device)
       const ok = await this.sendDeviceCommand(device, 'ptz.auto_rotate', {
         enabled,
         panSpeed: 0.3
@@ -1749,6 +1799,7 @@ export default {
       if (!data || !data.robotId) return
       if (event.event !== 'robot.state' && event.type !== 'robot.state') return
       const incoming = this.toRobotState(data)
+      this.mergeControlProfileDevices(incoming.robotId, incoming.devices)
       this.syncDeviceStatesFromDevices(incoming.robotId, incoming.devices)
       const index = this.robots.findIndex(robot => robot.robotId === incoming.robotId)
       if (index >= 0) {
@@ -1856,6 +1907,20 @@ export default {
             }
             this.$set(this.audioState, key, next)
           })
+    },
+    mergeControlProfileDevices(robotId, devices) {
+      if (!robotId || !Array.isArray(devices)) return
+      const profile = this.controlProfiles[robotId]
+      if (!profile || !Array.isArray(profile.devices)) return
+      const incoming = new Map(devices.map(device => [device.deviceId, device]))
+      const merged = profile.devices.map(device => {
+        const next = incoming.get(device.deviceId)
+        if (!next) return device
+        return Object.assign({}, device, next, {
+          controlProfile: Object.assign({}, device.controlProfile || {}, next.controlProfile || {})
+        })
+      })
+      this.$set(this.controlProfiles, robotId, Object.assign({}, profile, { devices: merged }))
     },
     syncDeviceStatesFromDevices(robotId, devices, options = {}) {
       if (!robotId || !Array.isArray(devices)) return

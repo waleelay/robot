@@ -280,6 +280,9 @@ class RobotMQTTClient:
                     any_bool(command.params.get("safetyOn"), any_bool(command.params.get("enabled"), False)),
                 )
                 changed = True
+            elif command.action == "fire" and command.target.device_type == "LAUNCHER":
+                self.apply_launcher_fire_locked(command.target.device_id, any_int(command.params.get("tube"), 1))
+                changed = True
             elif command.action == "control.mode.set":
                 self.control_mode = normalize_control_mode(any_str(command.params.get("controlMode"), command.control_mode))
                 changed = True
@@ -317,6 +320,23 @@ class RobotMQTTClient:
                 f"old={old_value}",
                 flush=True,
             )
+
+    def apply_launcher_fire_locked(self, device_id: str, tube: int) -> None:
+        """模拟发射器发射后弹筒状态变化。"""
+        if not device_id:
+            return
+        if tube < 1 or tube > 6:
+            tube = 1
+        status = self.device_state.setdefault(device_id, {})
+        tubes = launcher_tubes_from_state(status.get("tubes"))
+        for item in tubes:
+            if any_int(item.get("tube"), 0) == tube:
+                item["state"] = 0
+                item["stateName"] = "EMPTY"
+                break
+        status["connected"] = True
+        status["tubeCount"] = len(tubes)
+        status["tubes"] = tubes
 
     def status(self, session_id: str, status: str, track_sid: str, track_name: str, error_code: str, message: str) -> None:
         """上报实时视频 session 状态给后端状态订阅器。"""
@@ -569,6 +589,32 @@ def vehicle_light_state(params: dict[str, object]) -> tuple[dict[str, object], d
         vehicle_light_part(any_int(msg.get("front_mode"), 0), any_int(msg.get("front_custom_value"), 0)),
         vehicle_light_part(any_int(msg.get("rear_mode"), 0), any_int(msg.get("rear_custom_value"), 0)),
     )
+
+
+def launcher_tubes_from_state(value: object) -> list[dict[str, object]]:
+    """读取模拟状态里的弹筒列表，没有状态时默认 6 个已装填。"""
+    if isinstance(value, list) and value:
+        tubes: list[dict[str, object]] = []
+        for item in value:
+            tube = dict(item) if isinstance(item, dict) else {}
+            state = any_int(tube.get("state"), 255)
+            tube["stateName"] = any_str(tube.get("stateName"), launcher_tube_state_name(state))
+            tubes.append(tube)
+        return tubes
+    return [
+        {"tube": tube, "state": 1, "stateName": "LOADED"}
+        for tube in range(1, 7)
+    ]
+
+
+def launcher_tube_state_name(state: int) -> str:
+    """发射器弹筒状态码转展示名。"""
+    return {
+        0: "EMPTY",
+        1: "LOADED",
+        2: "FIRING",
+        3: "BLOCKED",
+    }.get(state, "UNKNOWN")
 
 
 def vehicle_light_part(mode_code: int, custom_value: int) -> dict[str, object]:

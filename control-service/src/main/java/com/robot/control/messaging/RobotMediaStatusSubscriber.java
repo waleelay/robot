@@ -9,10 +9,13 @@ import com.robot.control.dto.VideoStatusMessage;
 import com.robot.control.dto.IntercomStatusMessage;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.IMqttMessageListener;
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -32,6 +35,8 @@ public class RobotMediaStatusSubscriber {
     private static final String STATUS_TOPIC = "robot/+/media/video/status";
     private static final String INTERCOM_STATUS_TOPIC = "robot/+/media/video/intercom/status";
     private static final String CLIENT_STATUS_TOPIC = "robot/+/media/client/status";
+    private static final String[] STATUS_TOPICS = {STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC};
+    private static final int[] STATUS_QOS = {1, 1, 1};
 
     private final ControlServiceProperties properties;
     private final ObjectMapper objectMapper;
@@ -76,11 +81,7 @@ public class RobotMediaStatusSubscriber {
             return;
         }
         try {
-            MqttClient mqttClient = mqttClient();
-            mqttClient.subscribe(STATUS_TOPIC, 1, statusListener());
-            mqttClient.subscribe(INTERCOM_STATUS_TOPIC, 1, intercomStatusListener());
-            mqttClient.subscribe(CLIENT_STATUS_TOPIC, 1, clientStatusListener());
-            log.info("Subscribed media MQTT topics: {}, {}, {}", STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC);
+            subscribeStatusTopics(mqttClient());
         } catch (MqttException ex) {
             throw new IllegalStateException("订阅媒体 MQTT 主题失败", ex);
         }
@@ -159,6 +160,32 @@ public class RobotMediaStatusSubscriber {
         }
         String clientId = properties.getMqtt().getClientId() + "-subscriber";
         client = new MqttClient(properties.getMqtt().getBrokerUrl(), clientId);
+        client.setCallback(new MqttCallbackExtended() {
+            @Override
+            public void connectComplete(boolean reconnect, String serverURI) {
+                try {
+                    subscribeStatusTopics(client);
+                    log.info("MQTT status subscriber connected reconnect={} server={}", reconnect, serverURI);
+                } catch (MqttException ex) {
+                    log.warn("Failed to resubscribe media MQTT topics after connect server={}", serverURI, ex);
+                }
+            }
+
+            @Override
+            public void connectionLost(Throwable cause) {
+                log.warn("MQTT status subscriber connection lost", cause);
+            }
+
+            @Override
+            public void messageArrived(String topic, MqttMessage message) {
+                // Per-topic listeners handle subscribed messages.
+            }
+
+            @Override
+            public void deliveryComplete(IMqttDeliveryToken token) {
+                // This client only subscribes.
+            }
+        });
         MqttConnectOptions options = new MqttConnectOptions();
         options.setAutomaticReconnect(true);
         options.setCleanSession(true);
@@ -168,5 +195,19 @@ public class RobotMediaStatusSubscriber {
         }
         client.connect(options);
         return client;
+    }
+
+    /**
+     * 订阅机器人媒体状态 topic。
+     *
+     * @param mqttClient MQTT 客户端
+     * @throws MqttException 订阅失败时抛出
+     */
+    private void subscribeStatusTopics(MqttClient mqttClient) throws MqttException {
+        mqttClient.subscribe(
+                STATUS_TOPICS,
+                STATUS_QOS,
+                new IMqttMessageListener[] {statusListener(), intercomStatusListener(), clientStatusListener()});
+        log.info("Subscribed media MQTT topics: {}, {}, {}", STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC);
     }
 }

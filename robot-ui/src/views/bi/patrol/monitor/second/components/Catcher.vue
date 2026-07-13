@@ -4,7 +4,7 @@
       <img src="@/assets/images/new-bi/catcher.png" alt="" class="w100 h100" />
     </div>
     <div class="mt27 flx-center desc">
-      <div>连接状态：已连接</div>
+      <div>连接状态：{{ isNetGunConnected(netGunDevice) ? '已连接' : '未连接' }}</div>
       <div class="ml35">
         安全开关：<el-switch
           :value="isNetGunSafetyOn(netGunDevice)"
@@ -17,7 +17,7 @@
       </div>
     </div>
     <div class="btns mt30">
-      <el-button type="primary" class="wp124 hp30" @click="handleChangeConfirm(true)" :disabled="!isNetGunSafetyOn(netGunDevice)">发射</el-button>
+      <el-button type="primary" class="wp124 hp30" @click="handleChangeConfirm(true)" :disabled="!isNetGunConnected(netGunDevice) || !isNetGunSafetyOn(netGunDevice)">发射</el-button>
     </div>
     <div class="confirm-div w100 h100 flx-center flex-column" v-if="showConfirm">
       <div class="desc">是否确认发射</div>

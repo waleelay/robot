@@ -98,6 +98,7 @@
         </div>
         <div class="lights flx-center ml38">
           <div v-if="vehicleLightDevice" class="flx-center flex-column">
+            <div v-if="!hasVehicleLightStatus(vehicleLightDevice)" class="light-pending mb4">车灯状态同步中</div>
             <div class="flx-align-center">
               <span class="wp60 tal">前车灯：</span>
               <el-switch
@@ -113,12 +114,12 @@
             <div class="flx-align-center">
               <span class="wp60 tal">后车灯：</span>
               <el-switch
-                :value="vehicleLightState?.near?.mode === 'ON'"
+                :value="vehicleLightState?.rear?.mode === 'ON'"
                 active-text="开启"
                 inactive-text="关闭"
                 active-color="#3DB56A"
                 inactive-color="#5E5E5E"
-                @change="e => setVehicleLightMode('near', e ? 'ON' : 'OFF')"
+                @change="e => setVehicleLightMode('rear', e ? 'ON' : 'OFF')"
               >
               </el-switch>
             </div>
@@ -127,6 +128,7 @@
             <div class="flx-align-center" v-if="getLightDevice('左警示灯').deviceId">
               <span class="wp76 tal">左警示灯：</span>
               <el-switch
+                v-if="hasWarningLightStatus(getLightDevice('左警示灯'))"
                 :value="isWarningLightOn(getLightDevice('左警示灯'))"
                 active-text="开启"
                 inactive-text="关闭"
@@ -134,10 +136,12 @@
                 inactive-color="#5E5E5E"
                 @change="setWarningLight(getLightDevice('左警示灯'), $event)">
               </el-switch>
+              <span v-else class="light-pending">同步中</span>
             </div>
             <div class="flx-align-center" v-if="getLightDevice('右警示灯').deviceId">
               <span class="wp76 tal">右警示灯：</span>
               <el-switch
+                v-if="hasWarningLightStatus(getLightDevice('右警示灯'))"
                 :value="isWarningLightOn(getLightDevice('右警示灯'))"
                 active-text="开启"
                 inactive-text="关闭"
@@ -145,6 +149,7 @@
                 inactive-color="#5E5E5E"
                 @change="setWarningLight(getLightDevice('右警示灯'), $event)">
               </el-switch>
+              <span v-else class="light-pending">同步中</span>
             </div>
           </div>
         </div>
@@ -253,6 +258,13 @@ export default {
     border: 1px solid var(---, #00AC3A);
     background: rgba(17, 108, 31, 0.50);
   }
+}
+
+.light-pending {
+  color: rgba(255, 255, 255, 0.65);
+  font-family: "Microsoft YaHei";
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .mode {

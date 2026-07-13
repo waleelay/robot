@@ -176,6 +176,31 @@ const mutations = {
 
     state.controlProfiles = { ...state.controlProfiles, [robotId]: profile }
   },
+  mergeControlProfileDevices(state, { robotId, devices }) {
+    if (!robotId || !Array.isArray(devices)) return
+    const profile = state.controlProfiles[robotId]
+    if (!profile || !Array.isArray(profile.devices)) return
+    const incoming = new Map(devices.map(device => [device.deviceId, device]))
+    const merged = profile.devices.map(device => {
+      const next = incoming.get(device.deviceId)
+      if (!next) return device
+      return {
+        ...device,
+        ...next,
+        controlProfile: {
+          ...(device.controlProfile || {}),
+          ...(next.controlProfile || {})
+        }
+      }
+    })
+    state.controlProfiles = {
+      ...state.controlProfiles,
+      [robotId]: {
+        ...profile,
+        devices: merged
+      }
+    }
+  },
   setPrefixId(state, prefixId) {
     state.prefixId = prefixId
   },
@@ -498,6 +523,8 @@ const actions = {
     if (!data || !data.robotId) return
     if (event.event !== 'robot.state' && event.type !== 'robot.state') return
     const incoming = toRobotState(data)
+    commit('mergeControlProfileDevices', { robotId: incoming.robotId, devices: incoming.devices || [] })
+    dispatch('syncAudioStatesFromDevices', { robotId: incoming.robotId, devices: incoming.devices || [] })
     const index = state.robots.findIndex(robot => robot.robotId === incoming.robotId)
     if (index >= 0) {
       const existing = state.robots[index]
