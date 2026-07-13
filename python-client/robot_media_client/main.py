@@ -1,3 +1,5 @@
+"""机器人媒体客户端入口模块。"""
+
 from __future__ import annotations
 
 import signal
@@ -24,6 +26,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
 
+    # 这些对象在 MQTT 重连之间复用，避免断线重连时丢失本地推流和对讲管理上下文。
     probe = Probe(cfg.ffprobe_path, cfg.probe_timeout)
     publisher = ProcessPublisher(cfg)
     intercom = IntercomManager(cfg)
@@ -43,6 +46,7 @@ def main() -> None:
         flush=True,
     )
     while not stop_event.is_set():
+        # MQTT client 对象按连接生命周期创建；断线后统一清理，再进入退避重连。
         client = RobotMQTTClient(cfg, probe, publisher, intercom)
         mqtt_thread = threading.Thread(target=client.run)
         mqtt_thread.start()

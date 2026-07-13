@@ -1,3 +1,5 @@
+"""LiveKit 对讲音频桥模块。"""
+
 from __future__ import annotations
 
 import asyncio

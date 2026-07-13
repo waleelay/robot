@@ -1,3 +1,15 @@
+"""机器人侧 MQTT 接入模块。
+
+实时视频推流链路从这里开始：
+
+1. 订阅 `robot/{robotId}/media/video/start` 或 `switch-channel`。
+2. 解析后端下发的 StartCommand。
+3. 根据 deviceId/quality 找到本地 RTSP URL，或使用命令里显式携带的 rtspUrl。
+4. 先用 ffprobe 探测 RTSP 可达性。
+5. 调用 `ProcessPublisher.start()` 启动外部推流进程。
+6. 通过 `media/video/status` 上报 publishing、streaming、failed、stopped。
+"""
+
 from __future__ import annotations
 
 import json
@@ -83,6 +95,7 @@ class RobotMQTTClient:
             f"robot/{robot}/control/#": self._handle_control_command,
         }
         for topic in self.subscriptions:
+            # QoS 1 允许 broker 重投，所以具体命令处理处还会按 commandId 做一次幂等去重。
             result, mid = client.subscribe(topic, qos=1)
             print("mqtt subscribe requested", f"topic={topic}", f"mid={mid}", f"result={result}", flush=True)
         print("mqtt subscriptions registered", " ".join(self.subscriptions.keys()), flush=True)
@@ -121,19 +134,28 @@ class RobotMQTTClient:
             print("mqtt command handler failed", topic, exc, flush=True)
 
     def _handle_start(self, payload: bytes, _topic: str) -> None:
-        """处理 start/switch-channel 指令：探测 RTSP、启动 publisher、上报 streaming。"""
+        """处理 start/switch-channel 指令：探测 RTSP、启动 publisher、上报 streaming。
+
+        `switch-channel` 与 start 共用逻辑：同一个 sessionId 再次 start 时，
+        publisher 会先停掉旧进程，再按新通道/清晰度启动新的推流进程。
+        """
         try:
             command = StartCommand.from_json(json.loads(payload.decode()))
             if self._is_duplicate(command.session_id, command.command_id):
                 return
             print("video start", command.session_id, command.channel, command.quality, flush=True)
+            # 后端可以直接下发 rtspUrl；如果没有，则按 deviceId 和 quality 使用本地配置。
+            # 这样既支持服务端显式指定流，也支持机器人端本地维护摄像头地址。
             rtsp_url = command.rtsp_url or self.rtsp_url(command.device_id, command.quality)
             try:
+                # 先探测 RTSP，失败时直接上报 RTSP_PROBE_FAILED，不启动 publisher。
                 self.probe.check(rtsp_url)
             except Exception as exc:
                 self.status(command.session_id, "failed", "", "", "RTSP_PROBE_FAILED", str(exc))
                 return
             self.status(command.session_id, "publishing", "", "", "", "rtsp ok")
+            # publisher.start 只负责启动外部进程，实际媒体包从 RTSP 摄像头进入
+            # gstreamer-publisher/ffmpeg，再发布到 LiveKit room。
             track_sid, track_name = self.publisher.start(command, rtsp_url)
             # gstreamer-publisher 当前不会把真实 LiveKit track sid 回传给父进程；
             # 与 Go 客户端保持一致，先用 sessionId 派生稳定占位 sid，后端据此进入 STREAMING。
@@ -142,7 +164,10 @@ class RobotMQTTClient:
             print("video start failed", exc, flush=True)
 
     def _handle_stop(self, payload: bytes, _topic: str) -> None:
-        """处理 stop 指令，只停止对应 session 的推流进程。"""
+        """处理 stop 指令，只停止对应 session 的推流进程。
+
+        停止成功后立即上报 stopped；如果该 session 不存在，本地 stop 是幂等的。
+        """
         try:
             command = StopCommand.from_json(json.loads(payload.decode()))
             print("video stop", command.session_id, flush=True)
@@ -221,6 +246,7 @@ class RobotMQTTClient:
     def _is_duplicate(self, session_id: str, command_id: str) -> bool:
         """按 sessionId + commandId 去重，避免 broker 重投导致重复启动进程。"""
         with self.lock:
+            # commandId 为空时仍记录 session，但不拦截，避免旧协议指令被误判为重复。
             if command_id and command_id == self.last_cmds.get(session_id):
                 return True
             self.last_cmds[session_id] = command_id

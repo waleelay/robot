@@ -1,37 +1,73 @@
-# robot-media-client Python
+# robot-media-client Python 客户端
 
-Python implementation of the robot media client, kept alongside the original Go client.
+这是机器人媒体客户端的 Python 实现，功能边界与 Go 客户端保持一致，便于在 Jetson、Ubuntu 或其它 Python 运行环境中部署。
 
-It follows the same responsibilities as the Go implementation:
+客户端主要负责：
 
-- subscribe to robot-scoped MQTT media and control topics
-- resolve local RTSP URLs from environment configuration
-- probe RTSP streams through `ffprobe`
-- publish RTSP video to LiveKit through an external publisher process
-- upload local `.mp4` recordings to the media service with resumable parts
-- bridge LiveKit intercom audio between robot microphone/speaker GStreamer pipelines
-- report online/offline, video session, intercom, and equipment-control status
+- 连接 MQTT，并订阅机器人维度的实时视频、对讲和设备控制 Topic。
+- 根据环境变量解析本地摄像头 RTSP 地址。
+- 使用 `ffprobe` 探测 RTSP 视频流是否可用。
+- 通过外部 publisher 进程把 RTSP 视频发布到 LiveKit。
+- 扫描本地录像目录，并按通用文件 multipart 协议断点续传到媒体服务。
+- 使用 LiveKit Python SDK 和 GStreamer 音频管线桥接机器人端对讲。
+- 上报机器人在线、离线、实时视频、对讲和设备状态。
 
-The Go client remains under `client/cmd` and `client/internal`.
+Go 客户端仍位于仓库 `client/` 目录，Python 客户端位于仓库根目录 `python-client/`。
 
-## Reported Device State
+## 目录结构
 
-The Python client reports the same `devices[]` structure as the Go client in `robot/{robotId}/media/client/status`.
+```text
+python-client/
+  robot_media_client/
+    main.py
+    config.py
+    mqtt_client.py
+    publisher.py
+    rtsp.py
+    intercom.py
+    model.py
+    timeutil.py
+    recordingupload/
+      client.py
+      manifest.py
+      runner.py
+      uploader.py
+  scripts/
+    ffmpeg-livekit-publisher.sh
+  Dockerfile
+  requirements.txt
+  代码结构说明.md
+```
 
-`devices[].status` is refreshed after local equipment-control commands so the frontend can update stateful controls, including `volume/muted`, launcher `safetySwitchEnabled`, warning-light `enabled`, PTZ `autoRotateEnabled`, and vehicle-light `front/rear`.
+更详细的模块职责见 [代码结构说明.md](代码结构说明.md)。
 
-## Install
+## 安装
 
 ```bash
-cd client/python-client
+cd python-client
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`ffprobe` and `gstreamer-publisher` or the configured `FFMPEG_PUBLISHER_CMD` must be available in `PATH`, matching the Go client runtime requirements.
+运行环境还需要安装以下外部命令：
 
-On Ubuntu/Jetson, if the default `gstreamer-publisher` path fails because the local GStreamer stack cannot create an EGL display, the client falls back to `scripts/ffmpeg-livekit-publisher.sh`. Keep the `scripts/` directory with `python-client/`, and make sure both `ffmpeg` and `gstreamer-publisher` are installed:
+- `ffprobe`：RTSP 探测。
+- `gstreamer-publisher`：默认 RTSP 到 LiveKit 推流。
+- `ffmpeg`：默认 GStreamer publisher 失败时的 fallback 推流。
+- `gst-launch-1.0`：本地对讲音频采集和播放。
+
+## GStreamer 与 FFmpeg fallback
+
+默认 `PUBLISHER_MODE=auto`。客户端会优先尝试 GStreamer 直推 RTSP，如果 GStreamer 启动失败或在观察窗口内退出，会自动回退到 `FFMPEG_PUBLISHER_CMD`。
+
+默认 fallback 脚本：
+
+```bash
+./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}
+```
+
+Jetson/Ubuntu 环境可参考：
 
 ```bash
 chmod +x scripts/ffmpeg-livekit-publisher.sh
@@ -40,13 +76,7 @@ GOPROXY=https://goproxy.cn,direct sh ../client/scripts/install-gstreamer-publish
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-You can also override the fallback command explicitly:
-
-```bash
-export FFMPEG_PUBLISHER_CMD='/home/jetson/payload/demo/python-client/scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}'
-```
-
-In `PUBLISHER_MODE=auto`, streams first try the direct GStreamer RTSP path. If a GStreamer publisher fails or exits during the fallback watch window, the same session is restarted through the FFmpeg fallback path, and that RTSP URL is remembered so later starts use FFmpeg first. You can also force specific device IDs to use FFmpeg first.
+常用推流配置：
 
 ```bash
 export PUBLISHER_MODE=auto
@@ -54,29 +84,14 @@ export PUBLISHER_FFMPEG_FIRST_DEVICE_IDS=
 export PUBLISHER_FALLBACK_WATCH_SECONDS=8
 ```
 
-Use `PUBLISHER_MODE=ffmpeg` only when you want every stream to skip direct GStreamer RTSP publishing.
-
-If the install script is not available on the target machine, build `gstreamer-publisher` manually from `https://github.com/livekit/gstreamer-publisher` and set:
+如果希望所有视频都直接使用 FFmpeg：
 
 ```bash
-export GSTREAMER_PUBLISHER_PATH="$HOME/.local/bin/gstreamer-publisher"
+export PUBLISHER_MODE=ffmpeg
+export FFMPEG_PUBLISHER_CMD='/path/to/python-client/scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}'
 ```
 
-If Go dependency downloads time out on Ubuntu/Jetson, retry the install script with a reachable module proxy:
-
-```bash
-GOPROXY=https://goproxy.cn,direct sh ../client/scripts/install-gstreamer-publisher.sh
-GOPROXY=https://proxy.golang.com.cn,direct sh ../client/scripts/install-gstreamer-publisher.sh
-GOPROXY=direct sh ../client/scripts/install-gstreamer-publisher.sh
-```
-
-If the build fails with `gst_debug_message_get_id`, the Jetson system GStreamer headers are older than the `go-gst` dependency expects. Patch that optional debug-message ID call while building:
-
-```bash
-PATCH_GST_DEBUG_MESSAGE_ID=true GOPROXY=https://goproxy.cn,direct sh ../client/scripts/install-gstreamer-publisher.sh
-```
-
-If the fallback FFmpeg publisher fails with `Option rw_timeout not found` or `Unrecognized option 'stimeout'`, use the updated fallback script. It auto-detects the supported RTSP timeout option. You can also override or disable the timeout option:
+如果 `ffmpeg` 报 `Option rw_timeout not found` 或 `Unrecognized option 'stimeout'`，可调整：
 
 ```bash
 export FFMPEG_RTSP_TIMEOUT_OPTION=auto
@@ -85,14 +100,14 @@ export FFMPEG_RTSP_TIMEOUT_OPTION=stimeout
 export FFMPEG_RTSP_TIMEOUT_OPTION=
 ```
 
-## Run
+## 启动
 
 ```bash
-cd client/python-client
+cd python-client
 python -m robot_media_client
 ```
 
-The environment variables are intentionally the same as the Go client, for example:
+示例：
 
 ```bash
 ROBOT_ID='test001' \
@@ -103,14 +118,64 @@ RTSP_CAMERA02_MAIN='rtsp://192.168.124.204:8554/camera03' \
 RTSP_CAMERA02_SUB='rtsp://192.168.124.204:8554/camera03' \
 RTSP_CAMERA03_MAIN='rtsp://192.168.124.204:8554/camera03' \
 RTSP_CAMERA03_SUB='rtsp://192.168.124.204:8554/camera03' \
-PUBLISHER_MODE='ffmpeg' \
+MEDIA_SERVICE_URL='http://192.168.124.77:8088' \
+RECORDING_DIRECTORY='./recordings' \
+PUBLISHER_MODE='auto' \
 python -m robot_media_client
+```
+
+## 文件上传
+
+默认开启本地文件上传：
+
+```text
+RECORDING_UPLOAD_ENABLED=true
+RECORDING_DIRECTORY=./recordings
+MEDIA_SERVICE_URL=http://192.168.124.77:8088
+```
+
+客户端扫描 `RECORDING_DIRECTORY` 下的普通文件，按文件后缀识别 `VIDEO`、`IMAGE`、`LOG`、`CONFIG`、`MAP`、`DOCUMENT` 或 `OTHER`，再调用媒体服务通用文件接口：
+
+```text
+POST /api/media/files/multipart-uploads
+POST /api/media/files/multipart-uploads/{uploadId}/part-urls
+PUT uploadUrl
+POST /api/media/files/multipart-uploads/{uploadId}/complete
+GET /api/media/files/{fileId}/status
+```
+
+本地断点续传状态写入：
+
+```text
+RECORDING_MANIFEST_PATH=./recording-upload-manifest.json
+```
+
+## 对讲
+
+对讲默认开启：
+
+```text
+INTERCOM_AUDIO_ENABLED=true
+```
+
+对讲使用 LiveKit Python SDK，并复用以下音频管线配置：
+
+```text
+GST_LAUNCH_PATH
+AUDIO_CAPTURE_PIPELINE
+AUDIO_PLAYBACK_PIPELINE
+```
+
+如果只希望运行视频能力，可设置：
+
+```bash
+export INTERCOM_AUDIO_ENABLED=false
 ```
 
 ## Docker
 
 ```bash
-cd client/python-client
+cd python-client
 docker build -t robot-media-client-python:dev .
 docker run --rm \
   -e ROBOT_ID='test001' \
@@ -124,8 +189,13 @@ docker run --rm \
   robot-media-client-python:dev
 ```
 
-## Intercom
+## 设备状态上报
 
-Intercom is enabled by default and uses the Python LiveKit RTC SDK plus the same `GST_LAUNCH_PATH`, `AUDIO_CAPTURE_PIPELINE`, and `AUDIO_PLAYBACK_PIPELINE` environment variables as the Go client.
+客户端通过 `robot/{robotId}/media/client/status` 上报 `devices[]`。设备控制指令会更新本地可确认状态，并立即重新上报，例如：
 
-Set `INTERCOM_AUDIO_ENABLED=false` only when you want to run video without the audio bridge.
+- 音量、静音：`volume`、`volumePercent`、`muted`
+- 发射器安全开关：`safetySwitchEnabled`
+- 控制模式：`controlMode`
+- 警示灯：`enabled`、`powerOn`、`mode`
+- 云台自转：`autoRotateEnabled`、`panSpeed`
+- 车灯：`front`、`rear`

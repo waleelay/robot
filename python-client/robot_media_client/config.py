@@ -1,3 +1,8 @@
+"""客户端配置加载模块。
+
+配置统一来自环境变量，并尽量保持与 Go 客户端同名，方便两种客户端互换部署。
+"""
+
 from __future__ import annotations
 
 import os
@@ -146,6 +151,7 @@ def cameras(robot_id: str) -> list[Camera]:
     for index, camera_id in enumerate(ids):
         upper_id = camera_id.upper()
         env_prefix = "RTSP_" + upper_id
+        # 每路摄像头兼容三类配置：旧 RTSP_CAMERAxx、低码流 RTSP_CAMERAxx_SUB、高清 RTSP_CAMERAxx_MAIN。
         legacy_rtsp = env(env_prefix, "rtsp://192.168.124.204:8554/" + camera_id)
         sub_rtsp = env(env_prefix + "_SUB", legacy_rtsp)
         main_rtsp = env(env_prefix + "_MAIN", sub_rtsp)

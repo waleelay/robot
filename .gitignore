@@ -13,3 +13,4 @@ robot-mediaserver-*-tcp*/
 deploy/nginx/certs/
 /eiop-admin-ui/
 /robot-control-service-*-tcp*/
+robot-control-service-*-tcp*/

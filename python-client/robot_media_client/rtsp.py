@@ -1,3 +1,10 @@
+"""RTSP 探测模块。
+
+实时视频 start 时，客户端会先用 ffprobe 轻量探测 RTSP，再启动 publisher。
+这样可以把“摄像头不可达/RTSP 地址错误”和“LiveKit 推流失败”区分开，后端也能
+收到明确的 `RTSP_PROBE_FAILED` 状态。
+"""
+
 from __future__ import annotations
 
 import json
@@ -7,7 +14,10 @@ from dataclasses import dataclass
 
 @dataclass
 class StreamInfo:
-    """RTSP 视频流的基础探测信息。"""
+    """RTSP 视频流的基础探测信息。
+
+    当前主流程只关心探测是否成功，宽高和编码主要用于日志或后续扩展。
+    """
 
     codec_name: str = ""
     width: int = 0
@@ -23,7 +33,11 @@ class Probe:
         self.timeout = timeout
 
     def check(self, url: str) -> StreamInfo:
-        """探测 RTSP 视频流；失败时抛出异常，成功时返回首路视频信息。"""
+        """探测 RTSP 视频流；失败时抛出异常，成功时返回首路视频信息。
+
+        ffprobe 使用 TCP 拉流，并只读取第一路视频流的 codec/width/height。这里
+        不做长时间播放测试，只做启动前的快速可达性检查。
+        """
         completed = subprocess.run(
             [
                 self.path,

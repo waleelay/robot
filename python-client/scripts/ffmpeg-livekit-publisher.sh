@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# FFmpeg fallback publisher:
+#
+# 这个脚本用于 Python 客户端 PUBLISHER_MODE=auto/ffmpeg 时的备用推流链路。
+# 输入 RTSP 先由 ffmpeg 拉取并转成低延迟 H264 elementary stream，再通过管道交给
+# gstreamer-publisher 发布到 LiveKit。
+#
+# 参数：
+#   1. rtsp_url：机器人本地摄像头 RTSP。
+#   2. livekit_url：LiveKit 服务地址。
+#   3. publisher_token：该房间的 publisher token。
 rtsp_url="${1:?rtsp url is required}"
 livekit_url="${2:?livekit url is required}"
 publisher_token="${3:?publisher token is required}"
@@ -32,6 +42,10 @@ input_args=(
 )
 
 if [ "${rtsp_timeout_option}" = "auto" ]; then
+  # 不同 FFmpeg 版本支持的 RTSP 超时参数不一致：
+  # - 较新版本通常支持 rw_timeout。
+  # - 一些旧版本支持 stimeout。
+  # 自动探测可以减少在 Jetson/Ubuntu 现场部署时的参数兼容问题。
   rtsp_help="$("${ffmpeg_bin}" -hide_banner -h demuxer=rtsp 2>/dev/null || true)"
   if printf '%s\n' "${rtsp_help}" | grep -q -- '-rw_timeout'; then
     rtsp_timeout_option="rw_timeout"
@@ -46,6 +60,9 @@ if [ -n "${rtsp_timeout_option}" ] && [ "${rtsp_timeout_us}" != "0" ]; then
   input_args+=("-${rtsp_timeout_option}" "${rtsp_timeout_us}")
 fi
 
+# ffmpeg 输出裸 H264 到 stdout；gstreamer-publisher 从 fdsrc fd=0 读取。
+# 这里会重新编码为 baseline/yuv420p/zerolatency，牺牲一部分 CPU，换取更好的
+# 浏览器/WebRTC 兼容性和更稳定的 fallback 行为。
 "${ffmpeg_bin}" \
   "${input_args[@]}" \
   -fflags nobuffer \
