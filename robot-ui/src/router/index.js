@@ -32,6 +32,10 @@ import path from "path";
 // 公共路由
 export const constantRoutes = [
   {
+    path: '/',
+    redirect: '/bi',
+  },
+  {
     path: '/redirect',
     component: Layout,
     hidden: true,

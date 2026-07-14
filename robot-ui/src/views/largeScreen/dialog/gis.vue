@@ -41,7 +41,7 @@ export default {
       // 注意：实际离线地图需要使用本地瓦片或离线瓦片服务
       L.tileLayer(
         // "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "/tdt/tiles/new/{z}/{x}/{y}.png",
+        `${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/latest/{z}/{x}/{y}.png`,
         {
           attribution:
             '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',

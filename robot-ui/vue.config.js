@@ -10,7 +10,7 @@ const CompressionPlugin = require('compression-webpack-plugin')
 const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer')
 const TerserPlugin = require('terser-webpack-plugin')
 
-const name = process.env.VUE_APP_TITLE || '狱警机器人' // 网页标题
+const name = process.env.VUE_APP_TITLE || '具身智能平台指挥中心' // 网页标题
 
 const port = process.env.port || process.env.npm_config_port || 8080 // 端口
 

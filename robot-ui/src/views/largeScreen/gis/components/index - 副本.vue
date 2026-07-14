@@ -99,10 +99,10 @@ export default {
         // markerZoomAnimation: false,
       });
       // 地图底图
-      L.tileLayer('/tdt/tiles/black/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        minZoom: 17,
-      }).addTo(this.map);
+      // L.tileLayer('/tdt/tiles/black/{z}/{x}/{y}.png', {
+      //   maxZoom: 18,
+      //   minZoom: 17,
+      // }).addTo(this.map);
 
       // 设置地图初始背景色
       const mapElement = document.getElementById('map');
