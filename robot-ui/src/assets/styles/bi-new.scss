@@ -3236,6 +3236,24 @@ input[type="range"].vertical-slider {
     letter-spacing: 0.857px;
     border-radius: 1px;
     background: linear-gradient(214deg, #03AFFA 32.73%, #027FFA 87.27%);
+    .popper__arrow, .popper__arrow::after {
+      // border-top-color: #027FFA;
+      display: none;
+    }
+  }
+}
+
+.el-tooltip__popper {
+  &.recording-popper {
+    padding: 10px;
+    color: var(---, #FFF);
+    background: rgba(0, 0, 0, 0.70);
+    font-family: "Microsoft YaHei";
+    font-size: 10px;
+    line-height: 20px; /* 220% */
+    .popper__arrow, .popper__arrow::after {
+      border-top-color: rgba(0, 0, 0, 0.70);
+    }
   }
 }
 

@@ -16,7 +16,7 @@
         <span class="left" title="左" @mousedown="startFrameControl(ptzObj['l'].key)" @mouseup="stopFrameControl(ptzObj['l'].key)" @mouseleave="stopFrameControl(ptzObj['l'].key)" @touchstart.prevent="startFrameControl(ptzObj['l'].key)" @touchend.prevent="stopFrameControl(ptzObj['l'].key)">
           <svg-icon icon-class="control-arrow" />
         </span>
-        <span class="ml10" :title="isPtzAutoRotateOn(ptzDevice) ? '停止旋转' : '开启自动慢旋转'"  @click="togglePtzAutoRotate">
+        <span class="ml10" :title="hasPtzAutoRotateStatus(ptzDevice) ? (isPtzAutoRotateOn(ptzDevice) ? '停止旋转' : '自动旋转') : '同步中'"  @click="togglePtzAutoRotate" :class="{ 'is-disabled': !hasPtzAutoRotateStatus(ptzDevice) }">
           <svg-icon icon-class="move-slow" style="font-size: 14px;" />
         </span>
         <span class="ml10 right" title="右" @mousedown="startFrameControl(ptzObj['r'].key)" @mouseup="stopFrameControl(ptzObj['r'].key)" @mouseleave="stopFrameControl(ptzObj['r'].key)" @touchstart.prevent="startFrameControl(ptzObj['r'].key)" @touchend.prevent="stopFrameControl(ptzObj['r'].key)">
@@ -114,7 +114,7 @@ export default {
         background: #080808;
         box-shadow: 0 0 14px 2px #515151 inset;
         cursor: not-allowed;
-        // pointer-events: none;
+        pointer-events: none;
       }
       &:not(.is-disabled) {
         &:active {

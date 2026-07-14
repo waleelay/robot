@@ -234,15 +234,19 @@ export default {
     },
     async handleClickRobot(item) {
       if (this.splitType === 1 || this.splitType !== this.checkedRobotIds.length) {
+        console.log('------------------------------------handleClickRobot----------------------------------------', item.status, this.equipmentInfo.online.list.find(e => e.robotId === item.robotId).status);
+        
         await this.updateVideo(item)
       }
     },
     async updateVideo(robot) {
+      console.log('of this.updateVideoHandler', typeof this.updateVideoHandler);
+      
       if (typeof this.updateVideoHandler === 'function') {
         await this.updateVideoHandler(robot)
         return
       }
-      this.$emit('updateVideo', robot)
+      await this.updateVideoHandler(robot)
     },
     
     async handleSelectTask(task) {

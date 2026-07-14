@@ -4,9 +4,10 @@
       <img src="@/assets/images/new-bi/launcher.png" alt="" class="w100 h100" />
     </div>
     <div class="mt20 flx-center desc">
-      <div>连接状态：{{ launcherConnected ? '已连接' : '未连接' }}</div>
+      <div>连接状态：<span :style="{ color: launcherConnected ? '#00FF60' : '#FFF' }">{{ launcherConnected ? '已连接' : '未连接' }}</span></div>
       <div class="ml35">
         安全开关：<el-switch
+          v-if="hasLauncherSafetyStatus(launcherDevice)"
           :value="isLauncherSafetyOn(launcherDevice)"
           active-text="开启"
           inactive-text="关闭"
@@ -17,11 +18,20 @@
       </div>
     </div>
     <div class="mt20 flx-center flex-wrap" style="position: relative; margin-top: -10px; margin-left: -10px;">
-      <div class="item p10 flx-center flex-column mt10 ml10" :class="{ 'is-active': item.state === 1, 'is-disabled': !canFireTube(item) }" v-for="(item, index) in launcherTubes" :key="item.tube">
-        <div class="text">{{ item.tube }}号位</div>
-        <div class="status pl11 mt4">{{ launcherTubeLabel(item) }}</div>
+      <div
+        v-for="(tube, index) in launcherTubes(launcherDevice)"
+        :key="tube.tube"
+        class="item p10 flx-center flex-column mt10 ml10"
+        :class="{
+          'is-active': canFireLauncherTube(launcherDevice, tube),
+          'is-disabled': !canFireLauncherTube(launcherDevice, tube)
+        }"
+        :title="launcherTubeLabel(tube)"
+      >
+        <div class="text">{{ index + 1 }}号位</div>
+        <div class="status pl11 mt4">{{ tube.stateName === 'LOADED' ? '有' : '无' }}发射物</div>
         <div class="btns mt4">
-          <el-button type="primary" class="wp58 hp30" :disabled="!canFireTube(item)" @click="handleChangeConfirm(true, index)">发射</el-button>
+          <el-button type="primary" class="wp58 hp30" :disabled="!isLauncherSafetyOn(launcherDevice)" @click="handleChangeConfirm(true, tube)">发射</el-button>
         </div>
       </div>
       <div class="confirm-div w100 h100 flx-center flex-column wp266 hp206 mt10 ml23" v-if="showConfirm">
@@ -42,69 +52,19 @@ export default {
   mixins: [yuntai],
   data() {
     return {
-      switchValue: false,
       showConfirm: false,
-      index: null
-    }
-  },
-  computed: {
-    launcherStatus() {
-      const device = this.launcherDevice || {}
-      return device.status || device.runtimeStatus || {}
-    },
-    launcherConnected() {
-      return this.launcherStatus.connected !== false
-    },
-    launcherTubes() {
-      const status = this.launcherStatus
-      if (Array.isArray(status.tubes) && status.tubes.length) {
-        return status.tubes.map(item => this.normalizeLauncherTube(item))
-      }
-      const profile = (this.launcherDevice && this.launcherDevice.controlProfile) || {}
-      const tubes = Array.isArray(profile.tubes) && profile.tubes.length ? profile.tubes : [1, 2, 3, 4, 5, 6]
-      return tubes.map(tube => this.normalizeLauncherTube({ tube }))
+      tube: {}
     }
   },
   methods: {
-    handleChangeConfirm(val, index) {
+    handleChangeConfirm(val, tube) {
       this.showConfirm = val
-      this.index = index
+      this.tube = tube
     },
-    async execute() {
-      const tube = this.launcherTubes[this.index]
-      if (!tube) return
-      await this.firePayload(this.launcherDevice, tube.tube, `launcher_${tube.tube}`)
+    async execute() {      
+      await this.firePayload(this.launcherDevice, this.tube.tube, `launcher_${this.tube.tube}`)
       this.showConfirm = false
-    },
-    normalizeLauncherTube(tube) {
-      const number = Number(tube.tube) || 0
-      const state = tube.state === undefined ? 255 : Number(tube.state)
-      return {
-        tube: number,
-        state,
-        stateName: tube.stateName || this.launcherTubeStateName(state)
-      }
-    },
-    launcherTubeStateName(state) {
-      return {
-        0: 'EMPTY',
-        1: 'LOADED',
-        2: 'FIRING',
-        3: 'BLOCKED',
-        255: 'UNKNOWN'
-      }[state] || 'UNKNOWN'
-    },
-    launcherTubeLabel(tube) {
-      return {
-        EMPTY: '空',
-        LOADED: '已装填',
-        FIRING: '发射中',
-        BLOCKED: '堵塞',
-        UNKNOWN: '未知'
-      }[tube.stateName] || '未知'
-    },
-    canFireTube(tube) {
-      return this.launcherConnected && this.isLauncherSafetyOn(this.launcherDevice) && tube && tube.state === 1
+      this.$message.success('发射成功')
     }
   }
 }

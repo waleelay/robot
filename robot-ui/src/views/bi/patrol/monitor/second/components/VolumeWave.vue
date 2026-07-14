@@ -24,10 +24,6 @@ export default {
       type: Object,
       default: () => ({})
     },
-    muted: {
-      type: Boolean,
-      default: false
-    }
   },
   computed: {
     intercomActive() {
@@ -68,9 +64,6 @@ export default {
       this.startMicrophone();
     },
     intercomActive() {
-      this.startMicrophone();
-    },
-    muted() {
       this.startMicrophone();
     }
   },
@@ -157,7 +150,7 @@ export default {
     },
     // 启动麦克风
     startMicrophone() {
-      if (!this.intercomActive || this.muted || !this.track) {
+      if (!this.intercomActive || !this.track) {
         this.stopMicrophone();
         return;
       }

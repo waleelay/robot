@@ -1,3 +1,4 @@
+import Hls from "hls.js"
 import { getFilePlayUrl, getFiles } from "../../../api/media"
 import { errorMessage } from "../../../utils"
 
@@ -108,6 +109,18 @@ export default {
       return (
         (new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000
       );
+    },
+    durationText(seconds) {
+      if (!seconds) return '--:--'
+      const hours = Math.floor(seconds / 3600)
+      const minutes = Math.floor((seconds % 3600) / 60)
+      const remainder = seconds % 60
+      const text = `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+      return hours > 0 ? `${hours}:${text}` : text
+    },
+    recordingTimeRangeText(recording) {
+      if (!recording) return '--'
+      return `${this.dateTimeText(recording.startedAt)} - ${this.dateTimeText(recording.endedAt)}`
     },
   }
 }

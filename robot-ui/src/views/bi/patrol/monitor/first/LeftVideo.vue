@@ -301,7 +301,7 @@ export default {
       })
     },
     async test(data) {
-      // console.log('-----------------------', data, this.ZQL_videosInfos);
+      console.log('-----------------------', data, this.ZQL_videosInfos);
       let emptyKey = data.index
       // 填充 放入设备
       const robot = this.robots.find(d => d.robotId === data.data.robotId);

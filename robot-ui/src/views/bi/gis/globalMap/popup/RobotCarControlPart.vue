@@ -102,12 +102,12 @@
                   <div class="flx-align-center">
                     <span class="wp76 tal">后车灯：</span>
                     <el-switch
-                      :value="vehicleLightState?.near?.mode === 'ON'"
+                      :value="vehicleLightState?.rear?.mode === 'ON'"
                       active-text="开启"
                       inactive-text="关闭"
                       active-color="#3DB56A"
                       inactive-color="#5E5E5E"
-                      @change="e => setVehicleLightMode('near', e ? 'ON' : 'OFF')"
+                      @change="e => setVehicleLightMode('rear', e ? 'ON' : 'OFF')"
                     >
                     </el-switch>
                   </div>

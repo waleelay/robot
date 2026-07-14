@@ -707,10 +707,10 @@ export default {
       if (existingIndex < 0) return
       // const { lat, lng } = this.pointMarkers[existingIndex].getLatLng()
       // console.log(123, this.robotLocation?.[robotId], this.robotLocation?.[robotId])
-      const latlng = {lat: 30.7478613352993, lng: 106.03655278081857}
-      const lat = robotId === 'test001' ? latlng?.lat : this.robotLocation?.[robotId]?.lat
-      const lng = robotId === 'test001' ? latlng?.lng : this.robotLocation?.[robotId]?.lng
-      // const { lat, lng } = this.robotLocation?.[robotId]
+      // const latlng = {lat: 30.7478613352993, lng: 106.03655278081857}
+      // const lat = robotId === 'robot-001' ? latlng?.lat : this.robotLocation?.[robotId]?.lat
+      // const lng = robotId === 'robot-001' ? latlng?.lng : this.robotLocation?.[robotId]?.lng
+      const { lat, lng } = this.robotLocation?.[robotId]
       this.pointMarkers[existingIndex].setLatLng(L.latLng(lat, lng))
       // this.pointMarkers[existingIndex].setLatLng(L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng))
       this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(lat, lng) }};

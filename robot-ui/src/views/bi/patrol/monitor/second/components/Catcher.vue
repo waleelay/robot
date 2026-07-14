@@ -4,7 +4,7 @@
       <img src="@/assets/images/new-bi/catcher.png" alt="" class="w100 h100" />
     </div>
     <div class="mt27 flx-center desc">
-      <div>连接状态：{{ isNetGunConnected(netGunDevice) ? '已连接' : '未连接' }}</div>
+      <div>连接状态：<span :style="{ color: isNetGunConnected(netGunDevice) ? '#00FF60' : '#FFF' }">{{ isNetGunConnected(netGunDevice) ? '已连接' : '未连接' }}</span></div>
       <div class="ml35">
         安全开关：<el-switch
           :value="isNetGunSafetyOn(netGunDevice)"
@@ -12,7 +12,7 @@
           inactive-text="关闭"
           active-color="#159AFF"
           inactive-color="#5E5E5E"
-          @change="setNetGunSafety(netGunDevice, $event)">
+          @change="setFakeNetGunSafety(netGunDevice, $event)">
         </el-switch>
       </div>
     </div>
@@ -47,6 +47,7 @@ export default {
     async execute() {
       await this.firePayload(this.netGunDevice, 1, 'net_gun_fire')
       this.showConfirm = false
+      this.$message.success('发射成功')
     }
   }
 }

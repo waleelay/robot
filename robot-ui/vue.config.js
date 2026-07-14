@@ -56,11 +56,12 @@ module.exports = {
         // target: process.env.VUE_APP_BASE_IP,
         // target: 'http://192.168.124.204:8181',
         // target: 'http://192.168.124.77:8090/',
-        target: 'https://192.168.124.77:4443/',
+        target: 'https://192.168.124.77:24443/',
         // target: 'https://10.2.75.230:443',
         changeOrigin: true,
         // secure: true,
         // secure: false,
+        ws: true,
         onProxyReq: function(proxyReq, req, res) {
           console.log('代理请求:', req.method, req.url)
         },
@@ -70,6 +71,15 @@ module.exports = {
         pathRewrite: {
           ['^' + '/dev-api']: ''
         },
+      },
+      ['/ws']: {
+        // target: process.env.VUE_APP_BASE_IP,
+        // target: 'http://192.168.124.204:8181',
+        // target: 'http://192.168.124.77:8090/',
+        target: 'wss://192.168.124.77:24443/',
+        ws: true,
+        // target: 'https://10.2.75.230:443',
+        changeOrigin: true,
       }
     },
     disableHostCheck: true

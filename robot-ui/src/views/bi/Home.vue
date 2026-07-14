@@ -10,7 +10,7 @@
   // import DragExample from './components/drag/Index.vue'
   export default {
     name: 'BiHome',
-    components: { Header, DragExample },
+    components: { Header },
     data() {
       return {
         

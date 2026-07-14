@@ -9,21 +9,40 @@
       </div>
       <div v-for="(item, index) in snapShotInfo.snapshotList" :key="item.fileId" :style="{ display: tabIndex === 0 ? 'inline-flex' : 'none', marginLeft: index !== 0 ? '15.4px' : 0 }" class="item flx-center wp160 hp90">
         <!-- <img :src="`https://192.168.124.77:4443/api/control/snapshots/${item.fileId}/image`" alt="" class="w100" style="height: auto; max-height: 100%;"> -->
-        <el-image
-          class="w100"
-          style="height: auto; max-height: 100%;" 
-          :alt="item.fileName || item.fileId"
-          :src="item.customUrl"
-          :preview-src-list="srcList">
-        </el-image>
+        <el-tooltip class="w100 h100" effect="dark" placement="top" popper-class="recording-popper">
+          <div slot="content" class="flex-column">
+            <div>装备名称：{{ robotBaseInfo?.[item.robotId]?.name }}</div>
+            <div>摄像头名称：{{ getCameraName(item.robotId, item.deviceId) }}</div>
+            <div>抓拍时间：{{ item.uploadedAt }}</div>
+          </div>
+          <el-image
+            class="w100 h100"
+            style="height: auto; max-height: 100%;" 
+            :alt="item.fileName || item.fileId"
+            :src="item.customUrl"
+            :preview-src-list="srcList">
+          </el-image>
+        </el-tooltip>
       </div>
       <div v-for="(recording, index) in recordings" :style="{ display: tabIndex === 1 ? 'inline-flex' : 'none', marginLeft: index !== 0 ? '15.4px' : 0 }" :key="recording.fileId" class="item flx-center wp160 hp90" :id="'recording' + recording.fileId">
-        <video :ref="`${refPrefix}_${recording.fileId}`" playsinline class="w100 h100" muted />
-        <div class="bottom flx-align-center" style="justify-content: end;">
-          <div :title="recordingData?.[recording.fileId]?.player?.paused ? '播放' : '暂停'" @click="playPause(recording.fileId)" class="snapshot-icon">
-            <!-- <svg-icon :icon-class="recordingData?.[recording.fileId]?.player?.paused ? 'play' : 'pause'" /> -->
-            <svg-icon :icon-class="recordingData?.[recording.fileId]?.player?.paused ? 'play' : 'pause'" />
+         <el-tooltip class="w100 h100" effect="dark" placement="top" popper-class="recording-popper">
+          <div slot="content" class="flex-column">
+            <div>装备名称：{{ robotBaseInfo?.[recording.robotId]?.name }}</div>
+            <div>摄像头名称：{{ getCameraName(recording.robotId, recording.cameraId) }}</div>
+            <div>录制时间：{{ recording.createdAt }}</div>
+            <div>录制时长：{{ durationText(recording.durationSeconds) }}</div>
           </div>
+          <video :ref="`${refPrefix}_${recording.fileId}`" playsinline class="w100 h100" muted />
+        </el-tooltip>
+        <div class="oper-video" :class="{ visible: recordingData?.[recording.fileId]?.player?.paused }" @click="playPause(recording.fileId)">
+          <img v-if="!recordingData?.[recording.fileId]?.player?.paused" src="../../../assets/images/new-bi/pause-b.png" alt="" srcset="">
+          <img v-else src="../../../assets/images/new-bi/play-b.svg" alt="" srcset="">
+        </div>
+        <div class="bottom flx-align-center" style="justify-content: end;">
+          <!-- {{ recordingData?.[recording.fileId]?.player?.paused + '--' }} -->
+          <!-- <div :title="recordingData?.[recording.fileId]?.player?.paused ? '播放' : '暂停'" @click="playPause(recording.fileId)" class="snapshot-icon">
+            <svg-icon :icon-class="recordingData?.[recording.fileId]?.player?.paused ? 'play' : 'pause'" />
+          </div> -->
           <div :title="isFullscreen ? '退出全屏' : '全屏'" @click="toggle('recording' + recording.fileId)" class="snapshot-icon ml10">
             <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen1'" />
           </div>
@@ -66,7 +85,8 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketRobot', ['snapshotTime', 'recordTime']),
+    ...mapState('websocketRobot', ['snapshotTime', 'recordTime', 'robotBaseInfo']),
+    ...mapState('websocketExtraData', ['robotBaseInfo']),
     srcList() {
       return (this.snapShotInfo.snapshotList || []).map(item => {
         return item.customUrl
@@ -121,6 +141,9 @@ export default {
         }
         await this.playRecording(recording)
       }
+    },
+    getCameraName(robotId, deviceId) {
+      return this.robotBaseInfo?.[robotId]?.cameras.find(item => item.deviceId === deviceId)?.name || ''
     }
   },
   async mounted() {
@@ -200,6 +223,25 @@ export default {
 
 .item {
   position: relative;
+  .oper-video {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    opacity: 0;
+    transition: all 0.3s ease-in-out;
+    margin: auto;
+    width: 26px;
+    height: 26px;
+    cursor: pointer;
+    &.visible {
+      opacity: 1;
+    }
+  }
+  &:hover .oper-video {
+    opacity: 1;
+  }
   .bottom {
     position: absolute;
     bottom: 10px;

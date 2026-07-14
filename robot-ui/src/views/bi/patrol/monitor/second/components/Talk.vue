@@ -10,11 +10,12 @@
 <template>
   <div class="flx-justify-between flex-column" :class="{ 'is-inner': isMapInner }" :style="{ pointerEvents: selectedRobot.status !== 'online' ? 'none' : 'auto' }">
     <div class="circle flx-center flex-column" :class="{ 'talking': selectCamera.intercomActive }" @click="handleTalk">
-      <span v-if="!selectCamera.intercomActive">
+      <span v-if="!selectCamera.intercomActive || !selectCamera?.room?.localParticipant">
         <svg-icon :icon-class="selectCamera.intercomActive ? 'mic-fill' : 'mic-off-fill'" />
       </span>
-      <VolumeWave :selectCamera="selectCamera" :muted="audioMuted(audioDevice)" v-else />
-      <span class="mt8">{{ selectCamera.intercomActive ? '挂断' : '点击通话' }}</span>
+      <VolumeWave :selectCamera="selectCamera" v-else />
+      <span class="mt8">{{ selectCamera.intercomActive ? '正在通话' : '点击通话' }}</span>
+      <span v-if="selectCamera.intercomActive && selectCamera?.room?.localParticipant" style="margin-top: -1px; color: rgba(255, 255, 255, 0.80); font-family: 'Alibaba PuHuiTi'; font-size: 10px; font-style: normal; letter-spacing: 0.2px;">再次点击结束</span>
     </div>
     <div v-if="!isMapInner" class="wp269 hp16 mt22 progress flx-align-center">
       <!-- 底层未划过轨道 背景色 #093974 -->
@@ -76,7 +77,7 @@ export default {
   mixins: [yuntai],
   components: { VolumeWave },
   computed: {
-    ...mapState('websocketRobot', ['audioState', 'cameras']),
+    ...mapState('websocketRobot', ['cameras']),
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
@@ -111,62 +112,63 @@ export default {
     return { }
   },
   methods: {
-    ...mapActions('websocketRobot', ['toggleIntercom', 'updateAudioState', 'ensureControlSession']),
+    ...mapActions('websocketRobot', ['toggleIntercom', 'ensureControlSession', 'persistDeviceStateCache', 'setAudioState']),
     async toggleAudioMute(device) {
       const previous = this.audioStatus(device)
       const muted = !previous.muted
-      this.setAudioState(device, { muted })
+      this.updateAudioState(device, { muted })
       const ok = await this.sendDeviceCommand(device, 'set_mute', {
         mute: muted
       }, muted ? 'volume_mute' : 'volume_unmute')
       if (!ok) {
-        this.setAudioState(device, previous)
+        this.updateAudioState(device, previous)
       }
     },
     updateAudioVolume(volume) {
-      this.setAudioState(this.audioDevice, { volume })
+      this.updateAudioState(volume)
     },
     async setAudioVolume(volume) {
       const device = this.audioDevice
       const previous = this.audioStatus(device)
       const nextVolume = Math.max(0, Math.min(100, Number(volume) || 0))      
-      this.setAudioState(device, { volume: nextVolume, muted: false })
+      this.updateAudioState(device, { volume: nextVolume, muted: false })
       const ok = await this.sendDeviceCommand(device, 'set_volume', {
         volumePercent: nextVolume
       }, 'volume_slider')
       if (!ok) {
         console.log('setAudioVolume failed', previous)
-        this.setAudioState(device, previous)
+        this.updateAudioState(device, previous)
       }
     },
     async adjustAudioVolume(device, delta) {
       const previous = this.audioStatus(device)
       const nextVolume = Math.max(0, Math.min(100, previous.volume + delta))
-      this.setAudioState(device, { volume: nextVolume, muted: false })
+      this.updateAudioState(device, { volume: nextVolume, muted: false })
       const ok = await this.sendDeviceCommand(device, 'set_volume', {
         volumePercent: nextVolume
       }, delta > 0 ? 'volume_up' : 'volume_down')
       if (!ok) {
-        this.setAudioState(device, previous)
+        this.updateAudioState(device, previous)
       }
     },
     async sendDeviceCommand(device, action, params, source) {
       try {
-        const session = await this.ensureControlSession({ device, action })
+        const session = await this.ensureControlSession(device, action)
         const response = await sendEquipmentCommand(this.selectedRobotId,
             this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, source || action))
-        // console.log('API sendDeviceCommand', response)
+        console.log('API sendDeviceCommand', response)
         return true
       } catch (error) {
         this.$message.error(errorMessage(error))
-        // console.log('ERROR sendDeviceCommand', errorMessage(error))
+        console.log('ERROR sendDeviceCommand', errorMessage(error))
         return false
       }
     },
-    setAudioState(device, patch) {
+    updateAudioState(device, patch) {
       if (!device) return
       const key = this.audioKey(device)
-      this.updateAudioState({ key, ...Object.assign({}, this.audioStatus(device), patch) })
+      this.setAudioState({ key, ...Object.assign({}, this.audioStatus(device), patch) })
+      this.persistDeviceStateCache({ ...this.deviceStateCache, audioState: this.audioState})
     },
     async handleTalk() {
       if (!this.selectCamera.intercomActive && this.audioDevice && this.audioMuted(this.audioDevice)) {
@@ -179,7 +181,20 @@ export default {
     },
     audioStatus(device) {
       const key = this.audioKey(device)
-      return this.audioState[key] || { volume: 50, muted: false }
+      if (this.audioState[key]) return this.audioState[key]
+      const status = (device && (device.status || device.runtimeStatus)) || {}
+      return {
+        volume: status.volume === undefined ? (status.volumePercent === undefined ? 50 : status.volumePercent) : status.volume,
+        muted: status.muted === undefined ? false : status.muted
+      }
+    },
+    hasAudioStatus(device) {
+      const key = this.audioKey(device)
+      if (this.audioState[key]) {
+        return this.audioState[key].volume !== undefined && this.audioState[key].muted !== undefined
+      }
+      const status = (device && (device.status || device.runtimeStatus)) || {}
+      return (status.volume !== undefined || status.volumePercent !== undefined) && status.muted !== undefined
     },
     audioVolume(device) {
       return this.audioStatus(device).volume

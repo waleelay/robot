@@ -129,7 +129,6 @@ export function getSessionSnapshots(sessionId) {
     method: 'get'
   })
 }
-
 // 模拟轨道发布（内部接口）
 export function mockTrackPublished(sessionId, trackSid) {
   return request({

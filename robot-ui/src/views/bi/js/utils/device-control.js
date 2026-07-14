@@ -9,11 +9,11 @@ const deviceTypes = {
   },
   DUAL_LIGHT_PTZ: {
     // 裁剪云台速度、变焦速度
-    actions: ['up', 'down', 'left', 'right', 'left_up', 'right_up', 'left_down', 'right_down', 'ptz.auto_rotate', 'camera.zoom']
+    actions: ['ptz.move', 'camera.zoom']
   },
   'NET_LAUNCHER': {
     // 校验 confirmToken、安全开关、冷却
-    actions: ['fire']
+    actions: ['payload.safety_switch', 'payload.fire']
   },
   SEARCHLIGHT: {
     // 裁剪亮度，校验模式
@@ -68,13 +68,11 @@ export function createDualPtzParams(initData = {}) {
         deviceId: '',
         deviceType: 'DUAL_LIGHT_PTZ',
       },
-      action: initData.action, // up/down/left/right/left_up... 云台方向、camera.zoom 焦距
-      params: initData.action === 'camera.zoom'
-        ? { zoomSpeed: initData.zoomSpeed || 0.0 }
-        : {
-          speed: initData.speed || 20, // 方向移动速度
-          duration: initData.duration || 0.3, // 单帧持续时间，单位秒
-        },
+      action: initData.action, // ptz.move 云台移动、camera.zoom 焦距
+      params: {
+        panSpeed: initData.panSpeed || 0.0, // 水平速度
+        tiltSpeed: initData.tiltSpeed || 0.0, // 垂直速度
+      },
       client: {
         terminalId: initData.terminalId,
         source: 'ptz_left_button',
@@ -94,10 +92,9 @@ export function createBwqSwitchParams(initData = {}) {
       deviceId: initData.deviceId,              // 捕网器设备 ID
       deviceType: 'NET_LAUNCHER',                 // 捕网器类型
     },
-    action: 'set_safety',                        // 发射器设置安全开关；捕网器安全开关只做前端本地解锁
+    action: 'payload.safety_switch',             // 设置安全开关
     params: {
-      safetyOn: initData.enabled || false,        // true 打开，false 关闭
-      waitStatus: true
+      enabled: initData.enabled || false                              // true 打开，false 关闭
     },
     client: {
       terminalId: initData.terminalId || '',              // 终端 ID
@@ -116,7 +113,7 @@ export function createBwqBeforeExecuteParams (initData = {}) {
       deviceId: initData.deviceId,              // 捕网器
       deviceType: 'NET_LAUNCHER'                 // 捕网器类型
     },
-    action: 'fire',                              // 准备发射
+    action: 'payload.fire',                      // 准备发射
     reason: 'manual_confirm'                    // 人工二次确认
   }
 }
@@ -129,8 +126,9 @@ export function createBwqExecuteParams (initData = {}) {
       deviceId: initData.deviceId,              // 捕网器
       deviceType: 'NET_LAUNCHER'                 // 捕网器类型
     },
-    action: 'fire',
+    action: 'payload.fire',
     params: {
+      channel: initData.channel || 1,                                // 发射通道，一期默认 1
       confirmToken: initData.confirmToken    // 二次确认 token
     },
     client: {

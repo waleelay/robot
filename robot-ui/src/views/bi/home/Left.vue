@@ -185,7 +185,7 @@ export default {
           if (this.robotBaseInfo[robot.robotId].status === 'online' && !this.loadedCameraKeys.includes(camera.key)) {
           // if (this.robotBaseInfo['robot-001'].status === 'online' && !this.loadedCameraKeys.includes(camera.key)) {
             this.loadedCameraKeys.push(camera.key)
-            // console.log(123, this.loadedCameraKeys);
+            // console.log(123, robot.robotId, camera);
             await this.startCamera({ robot: Object.assign({}, this.robotBaseInfo[robot.robotId] || {}), camera })
           }
         }
