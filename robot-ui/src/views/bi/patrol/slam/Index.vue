@@ -1,6 +1,6 @@
 <template>
   <div class="map-preview-box w100 h100">
-    <!-- <img class="map-preview-image" :src="`http://192.168.124.44:8081/api/v1/management/maps/1/preview-image`" alt="地图预览" style="width: 100%; height: 100%;" /> -->
+    <!-- <img class="map-preview-image" :src="`http://192.168.124.44:8866/api/v1/management/maps/1/preview-image`" alt="地图预览" style="width: 100%; height: 100%;" /> -->
     <template v-if="hasPreview">
       <div class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #CDCDCD;">
         <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
@@ -200,13 +200,13 @@ export default {
     minZoom() {
       const stageWidth = Number(this.map?.previewWidth || 0);
       const stageHeight = Number(this.map?.previewHeight || 0);
-      
+
       if (!stageWidth || !stageHeight) return 0.5;
-      
+
       // 计算最小缩放比例，确保stage宽高不小于viewport
       const minZoomByWidth = this.viewportWidth / stageWidth;
       const minZoomByHeight = this.viewportHeight / stageHeight;
-      
+
       return Math.max(minZoomByWidth, minZoomByHeight, 0.5);
     },
     zoomIn() {
@@ -214,20 +214,20 @@ export default {
     },
     zoomOut() {
       this.zoom = Math.max(this.minZoom(), Number((this.zoom - 0.25).toFixed(2)));
-      
+
       // 缩小后检查边界，确保top, left, right, bottom >= 0
       const stageWidth = Number(this.map?.previewWidth || 0) * this.zoom;
       const stageHeight = Number(this.map?.previewHeight || 0) * this.zoom;
       const diffX = stageWidth - this.viewportWidth;
       const diffY = stageHeight - this.viewportHeight;
-      
+
       if (diffX > 0) {
         const maxOffsetX = diffX / 2;
         this.offsetX = Math.max(-maxOffsetX, Math.min(0, this.offsetX));
       } else {
         this.offsetX = 0;
       }
-      
+
       if (diffY > 0) {
         const maxOffsetY = diffY / 2;
         this.offsetY = Math.max(-maxOffsetY, Math.min(0, this.offsetY));
@@ -244,41 +244,41 @@ export default {
       // 获取第4个点（索引为3）
       const point4 = this.drawablePoints[3];
       if (!point4 || !point4.pixel) return;
-      
+
       const stageWidth = Number(this.map?.previewWidth || 0) * this.zoom;
       const stageHeight = Number(this.map?.previewHeight || 0) * this.zoom;
-      
+
       // 计算该点在stage上的位置（已缩放）
       const pointX = point4.pixel.x * this.zoom;
       const pointY = point4.pixel.y * this.zoom;
-      
+
       // 计算使该点居中所需的偏移
       // viewport中心位置
       const viewportCenterX = this.viewportWidth / 2;
       const viewportCenterY = this.viewportHeight / 2;
-      
+
       // 目标偏移 = viewport中心 - 点在stage上的位置
       let targetOffsetX = viewportCenterX - pointX;
       let targetOffsetY = viewportCenterY - pointY;
-      
+
       // 应用边界限制：确保top, left, right, bottom >= 0
       const diffX = stageWidth - this.viewportWidth;
       const diffY = stageHeight - this.viewportHeight;
-      
+
       if (diffX > 0) {
         const maxOffsetX = diffX / 2;
         targetOffsetX = Math.max(-maxOffsetX, Math.min(0, targetOffsetX));
       } else {
         targetOffsetX = 0;
       }
-      
+
       if (diffY > 0) {
         const maxOffsetY = diffY / 2;
         targetOffsetY = Math.max(-maxOffsetY, Math.min(0, targetOffsetY));
       } else {
         targetOffsetY = 0;
       }
-      
+
       this.offsetX = targetOffsetX;
       this.offsetY = targetOffsetY;
     },
@@ -296,15 +296,15 @@ export default {
       if (!this.isDragging) return
       const stageWidth = Number(this.map?.previewWidth || 0) * this.zoom;
       const stageHeight = Number(this.map?.previewHeight || 0) * this.zoom;
-      
+
       // 计算当前偏移
       let newOffsetX = this.startOffsetX + e.clientX - this.startX
       let newOffsetY = this.startOffsetY + e.clientY - this.startY
-      
+
       // 边界限制：确保stage始终完全覆盖viewport，边界距离不为正数
       const diffX = stageWidth - this.viewportWidth;
       const diffY = stageHeight - this.viewportHeight;
-      
+
       if (diffX > 0) {
         // stage比viewport宽，可拖动范围: [-(diffX), 0]
         // 向左拖动可以看到右侧内容，确保left<=0, right<=0
@@ -314,7 +314,7 @@ export default {
         // stage小于等于viewport宽，保持居中
         newOffsetX = 0;
       }
-      
+
       if (diffY > 0) {
         // stage比viewport高，可拖动范围: [-(diffY), 0]
         // 向上拖动可以看到下侧内容，确保top<=0, bottom<=0
@@ -324,7 +324,7 @@ export default {
         // stage小于等于viewport高，保持居中
         newOffsetY = 0;
       }
-      
+
       this.offsetX = newOffsetX
       this.offsetY = newOffsetY
     },
@@ -337,42 +337,42 @@ export default {
       e.preventDefault()
       const viewport = this.$el.querySelector('.map-preview-viewport')
       if (!viewport) return
-      
+
       const rect = viewport.getBoundingClientRect()
       const mouseX = e.clientX - rect.left
       const mouseY = e.clientY - rect.top
-      
+
       // 计算鼠标相对于stage中心的位置
       const stageWidth = Number(this.map?.previewWidth || 0) * this.zoom
       const stageHeight = Number(this.map?.previewHeight || 0) * this.zoom
-      
+
       // 计算鼠标在stage上的原始位置（考虑当前偏移）
       const stageMouseX = mouseX - this.offsetX
       const stageMouseY = mouseY - this.offsetY
-      
+
       // 计算缩放因子
       const delta = e.deltaY > 0 ? -0.1 : 0.1
       const newZoom = Math.max(this.minZoom(), Math.min(5, this.zoom + delta))
-      
+
       // 计算新的偏移，使鼠标位置保持在原地
       const scale = newZoom / this.zoom
       this.offsetX = mouseX - stageMouseX * scale
       this.offsetY = mouseY - stageMouseY * scale
-      
+
       this.zoom = Number(newZoom.toFixed(2))
       // 缩放后检查边界，确保stage始终覆盖viewport
       const newStageWidth = Number(this.map?.previewWidth || 0) * this.zoom;
       const newStageHeight = Number(this.map?.previewHeight || 0) * this.zoom;
       const diffX = newStageWidth - this.viewportWidth;
       const diffY = newStageHeight - this.viewportHeight;
-      
+
       if (diffX > 0) {
         const maxOffsetX = diffX;
         this.offsetX = Math.max(-maxOffsetX, Math.min(0, this.offsetX));
       } else {
         this.offsetX = 0;
       }
-      
+
       if (diffY > 0) {
         const maxOffsetY = diffY;
         this.offsetY = Math.max(-maxOffsetY, Math.min(0, this.offsetY));
@@ -529,7 +529,7 @@ export default {
       }
     }
   }
-  
+
   // 地图工具
   .map-operation {
     position: absolute;

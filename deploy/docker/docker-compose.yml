@@ -1,0 +1,122 @@
+services:
+  livekit-server:
+    image: ${LIVEKIT_SERVER_IMAGE:-livekit/livekit-server:latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-livekit-server
+    restart: unless-stopped
+    command: --config /etc/livekit/livekit.yaml
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${LIVEKIT_HTTP_PORT:-7880}:7880"
+      - "${LIVEKIT_RTC_TCP_PORT:-7881}:7881"
+      - "${LIVEKIT_RTC_PORT_RANGE_START:-50000}-${LIVEKIT_RTC_PORT_RANGE_END:-50100}:${LIVEKIT_RTC_PORT_RANGE_START:-50000}-${LIVEKIT_RTC_PORT_RANGE_END:-50100}/udp"
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-/opt/qihang/robot/dockerWorkspace}/livekit-server:/etc/livekit"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - robot-mediaserver
+
+  livekit-egress:
+    image: ${LIVEKIT_EGRESS_IMAGE:-livekit/egress:latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-livekit-egress
+    restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      EGRESS_CONFIG_FILE: /out/egress.yaml
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-/opt/qihang/robot/dockerWorkspace}/livekit-egress:/out"
+    depends_on:
+      - livekit-server
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - robot-mediaserver
+
+  media-service:
+    image: ${IMAGE_PREFIX:-robot}/media-service:${IMAGE_TAG:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-media-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8088
+      MYSQL_URL: ${MYSQL_URL:-jdbc:mysql://host.docker.internal:3306/robot_media?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+      MYSQL_USERNAME: ${MYSQL_USERNAME:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-123456}
+      REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      ELASTICSEARCH_URIS: ${ELASTICSEARCH_URIS:-http://host.docker.internal:9200}
+      LIVEKIT_URL: ${LIVEKIT_URL:-ws://livekit-server:7880}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-dev-secret-dev-secret-dev-secret-32}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://host.docker.internal:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-robot-media}
+      MEDIA_FILE_HLS_FFMPEG_PATH: ${MEDIA_FILE_HLS_FFMPEG_PATH:-ffmpeg}
+      MEDIA_FILE_FFPROBE_PATH: ${MEDIA_FILE_FFPROBE_PATH:-ffprobe}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${MEDIA_SERVICE_PORT:-8088}:8088"
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-/opt/qihang/robot/dockerWorkspace}/media-service:/app"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - robot-mediaserver
+    depends_on:
+      - livekit-server
+      - livekit-egress
+
+  control-service:
+    image: ${IMAGE_PREFIX:-robot}/control-service:${IMAGE_TAG:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-control-service
+    restart: unless-stopped
+    environment:
+      CONTROL_SERVER_PORT: 8082
+      MEDIA_SERVICE_BASE_URL: ${MEDIA_SERVICE_BASE_URL:-http://media-service:8088}
+      MQTT_ENABLED: ${MQTT_ENABLED:-true}
+      MQTT_BROKER_URL: ${MQTT_BROKER_URL:-tcp://host.docker.internal:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-robot-control-service-main}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${CONTROL_SERVICE_PORT:-8082}:8082"
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-/opt/qihang/robot/dockerWorkspace}/control-service:/app"
+    depends_on:
+      - media-service
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - robot-mediaserver
+
+  bigscreen-bff:
+    image: ${IMAGE_PREFIX:-robot}/bigscreen-bff:${IMAGE_TAG:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-bigscreen-bff
+    restart: unless-stopped
+    environment:
+      BIGSCREEN_BFF_PORT: 8090
+      CENTER_MANAGE_BASE_URL: ${CENTER_MANAGE_BASE_URL:-http://host.docker.internal:8866}
+      CENTER_CONTROL_BASE_URL: ${CENTER_CONTROL_BASE_URL:-http://control-service:8082}
+      CENTER_MEDIA_BASE_URL: ${CENTER_MEDIA_BASE_URL:-http://media-service:8088}
+      CENTER_CONTROL_WS_URL: ${CENTER_CONTROL_WS_URL:-ws://control-service:8082/ws/control}
+      BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS: ${BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:8080,http://127.0.0.1:8080,http://192.168.*.*:8080,https://192.168.*.*:4443}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${BIGSCREEN_BFF_PORT:-8090}:8090"
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-/opt/qihang/robot/dockerWorkspace}/bigscreen-bff:/app"
+    depends_on:
+      - media-service
+      - control-service
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - robot-mediaserver
+
+networks:
+  robot-mediaserver:
+    name: ${DOCKER_NETWORK:-robot-mediaserver}

@@ -1,0 +1,15 @@
+services:
+  media-service:
+    build:
+      context: ../../backend
+    image: ${IMAGE_PREFIX:-robot}/media-service:${IMAGE_TAG:-latest}
+
+  control-service:
+    build:
+      context: ../../control-service
+    image: ${IMAGE_PREFIX:-robot}/control-service:${IMAGE_TAG:-latest}
+
+  bigscreen-bff:
+    build:
+      context: ../../bigscreen-bff
+    image: ${IMAGE_PREFIX:-robot}/bigscreen-bff:${IMAGE_TAG:-latest}

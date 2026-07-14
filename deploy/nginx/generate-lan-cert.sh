@@ -32,7 +32,7 @@ extendedKeyUsage = serverAuth
 basicConstraints = critical, CA:FALSE
 EOF
 
-openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
   -keyout "$CERT_DIR/server.key" \
   -out "$CERT_DIR/server.crt" \
   -config "$TMP_CONFIG"

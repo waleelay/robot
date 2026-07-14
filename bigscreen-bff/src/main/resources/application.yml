@@ -4,7 +4,7 @@ server:
 
 center:
   # 管理中心服务基础地址。
-  manage-base-url: ${CENTER_MANAGE_BASE_URL:http://192.168.124.44:8081}
+  manage-base-url: ${CENTER_MANAGE_BASE_URL:http://192.168.124.44:8866}
   # Control Service 基础地址。
   control-base-url: ${CENTER_CONTROL_BASE_URL:http://localhost:8082}
   # 旧版控制服务基础地址。
