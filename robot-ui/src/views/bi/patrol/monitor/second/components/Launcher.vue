@@ -29,7 +29,7 @@
         :title="launcherTubeLabel(tube)"
       >
         <div class="text">{{ index + 1 }}号位</div>
-        <div class="status pl11 mt4">{{ tube.stateName === 'LOADED' ? '有' : '无' }}发射物</div>
+        <div class="status pl11 mt4">{{ launcherTubeLoaded(tube) ? '有' : '无' }}发射物</div>
         <div class="btns mt4">
           <el-button type="primary" class="wp58 hp30" :disabled="!isLauncherSafetyOn(launcherDevice)" @click="handleChangeConfirm(true, tube)">发射</el-button>
         </div>
@@ -61,7 +61,7 @@ export default {
       this.showConfirm = val
       this.tube = tube
     },
-    async execute() {      
+    async execute() {
       await this.firePayload(this.launcherDevice, this.tube.tube, `launcher_${this.tube.tube}`)
       this.showConfirm = false
       this.$message.success('发射成功')
@@ -116,7 +116,7 @@ export default {
     .text {
       color: #FFF;
       font-family: "Alibaba PuHuiTi";
-      font-size: 16px;      
+      font-size: 16px;
       line-height: 22px;
       letter-spacing: 0.32px;
     }
