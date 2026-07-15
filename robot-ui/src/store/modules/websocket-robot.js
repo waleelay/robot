@@ -490,12 +490,12 @@ const actions = {
     socket.onopen = () => {
       commit('setWsConnected', true)
       dispatch('startHeartbeat')
-      console.log('Media WebSocket connected', url)
+      // console.log('Media WebSocket connected', url)
     }
     socket.onclose = () => {
       commit('setWsConnected', false)
       clearInterval(state.heartbeatTimer)
-      console.log('Media WebSocket closed', url)
+      // console.log('Media WebSocket closed', url)
     }
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data)
@@ -735,9 +735,9 @@ const actions = {
     if (camera.recordingActive) {
       await dispatch('stopCameraRecording', camera)
     }
-    console.log('%startCamera+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 'color: #00f', state.prefixId + camera.key, robot.robotId, robot.status)
+    console.log('%cstartCamera+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 'color: #0f0', state.prefixId + camera.key, robot.robotId, robot.status)
     const camera1 = { ...camera }
-    if (robot.status !== 'online') return
+    // if (robot.status !== 'online') return
     camera1.loading = true
     camera1.stopped = false
     camera1.stopping = false
@@ -754,12 +754,12 @@ const actions = {
       camera1.status = camera1.session.status
       camera1.viewerCount = camera1.session.viewerCount
       state.stoppedSessionIds.delete(camera1.session.sessionId)
-      console.log('API createVideoSession', camera1.session)
+      // console.log('API createVideoSession', camera1.session)
       if (!camera1.room || !camera1.intercomActive) {
         await dispatch('connectLiveKit', { camera: camera1 })
       }
     } catch (error) {
-      console.log('ERROR createVideoSession', error.message || '请求失败')
+      console.error('ERROR createVideoSession', error.message || '请求失败')
     } finally {
       camera1.loading = false
       commit('setCamera', camera1)
@@ -784,9 +784,9 @@ const actions = {
     try {
       const sessionId = camera.session.sessionId
       if (!camera.intercomActive) state.stoppedSessionIds.add(sessionId)
-      console.log('%stopCamera+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 'color: #f00')
+      console.log('%cstopCamera+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 'color: #f0f')
       const stopped = await stopVideoSession(sessionId)
-      console.log('API stopVideoSession', stopped)
+      // console.log('API stopVideoSession', stopped)
       camera.watching = false
       camera.hasVideo = false
       const video = document.getElementById(state.prefixId + camera.key)
@@ -861,14 +861,13 @@ const actions = {
           name: 'audio.operator.mic'
         })
       }
-      console.log('API startIntercom', response)
+      // console.log('API startIntercom', response)
     } catch (error) {
       camera.intercomActive = false
       console.error('ERROR startIntercom', errorMessage(error))
       Message.error(errorMessage(error))
     } finally {
       camera.intercomBusy = false
-      console.info('startIntercom === finally', camera.intercomActive)
       commit('setCamera', camera)
     }
   },
@@ -900,7 +899,7 @@ const actions = {
         camera.session = null
         camera.status = ''
       }
-      console.log('API stopIntercom', response)
+      // console.log('API stopIntercom', response)
     } catch (error) {
       console.error('ERROR stopIntercom', errorMessage(error))
       Message.error(errorMessage(error))
@@ -912,7 +911,7 @@ const actions = {
 
   // 连接 LiveKit 会话
   async connectLiveKit({ commit, dispatch }, { camera, refreshToken, connectionToken }) {
-    console.log('connectLiveKit================================', camera.intercomActive)
+    // console.log('connectLiveKit================================', camera.intercomActive)
 
     if (camera.connecting || !camera.session) return
     camera.connecting = true
@@ -940,7 +939,7 @@ const actions = {
       room.on(RoomEvent.TrackSubscribed, (track) => {
         if (camera.room !== room || !camera.session || camera.session.sessionId !== sessionId) return
         if (track.kind === 'video' && camera.watching) {
-          console.log('TrackSubscribed', camera.key, state.prefixId + camera.key)
+          // console.log('TrackSubscribed', camera.key, state.prefixId + camera.key)
           track.attach(document.getElementById(state.prefixId + camera.key))
           camera.remoteVideoTrack = track
           camera.hasVideo = true
@@ -958,7 +957,7 @@ const actions = {
         if (track.kind === 'audio') camera.hasAudio = false
         if (track.kind === 'video') camera.hasVideo = false
         const { hasVideo, hasAudio } = camera
-        console.log('LiveKit TrackUnsubscribed', `${camera.name} ${track.sid || track.name}`)
+        // console.log('LiveKit TrackUnsubscribed', `${camera.name} ${track.sid || track.name}`)
         if (track.kind === 'video' && camera.watching && !isStoppedSession(camera, sessionId)) {
           dispatch('restartCamera', { ...camera, hasVideo, hasAudio })
         } else {
@@ -969,7 +968,7 @@ const actions = {
         if (camera.room !== room || camera.disconnecting) return
         const newC = Object.assign({}, state.cameras?.[camera.key] || camera)
         camera.hasVideo = false
-        console.log('LiveKit Disconnected', camera.name)
+        // console.log('LiveKit Disconnected', camera.name)
         if (camera.watching && !isStoppedSession(camera, sessionId)) {
           dispatch('restartCamera', { ...camera, hasVideo: false })
         } else {
@@ -978,7 +977,7 @@ const actions = {
       })
       camera.room = room
       await room.connect(livekitUrl, token)
-      console.log('LiveKit connected', `${camera.name} ${camera.session.roomName}`)
+      // console.log('LiveKit connected', `${camera.name} ${camera.session.roomName}`)
     } catch (error) {
       camera.room = null
       camera.hasVideo = false
@@ -1005,7 +1004,7 @@ const actions = {
       camera.session = mergeSession(camera, updated)
       camera.status = camera.session.status
       camera.viewerCount = camera.session.viewerCount
-      console.log('API restartVideoSession', updated)
+      // console.log('API restartVideoSession', updated)
     } catch (error) {
       console.error('ERROR restartVideoSession', error.message || '请求失败')
     } finally {
@@ -1064,7 +1063,7 @@ const actions = {
         dispatch('syncDeviceStatesFromDevices', { robotId, devices: profile.devices, options: {preserveExisting: true} })
       }
     } catch (error) {
-      console.log('ERROR getControlProfile', error)
+      console.error('ERROR getControlProfile', error)
     } finally {
       commit('SET_PROFILE_LOADING', { robotId, loading: false })
     }
@@ -1108,7 +1107,7 @@ const actions = {
       try {
         nextRoom = await dispatch('connectReplacementLiveKit', { camera, session: nextSession, room: oldRoom })
       } catch (connectError) {
-        console.log('WARN retry replacement quality session', errorMessage(connectError))
+        console.error('WARN retry replacement quality session', errorMessage(connectError))
         const restartedSession = await restartVideoSession(nextSession.sessionId)
         const refreshedToken = await getViewerToken(restartedSession.sessionId)
         nextSession = Object.assign({}, restartedSession, {
@@ -1143,12 +1142,12 @@ const actions = {
         console.error('ERROR stop old quality session')
         Message.error(errorMessage(error))
       })
-      console.log('API switchCameraQuality', {
-        from: oldSession.quality,
-        to: quality,
-        oldSessionId: oldSession.sessionId,
-        newSessionId: nextSession.sessionId
-      })
+      // console.log('API switchCameraQuality', {
+      //   from: oldSession.quality,
+      //   to: quality,
+      //   oldSessionId: oldSession.sessionId,
+      //   newSessionId: nextSession.sessionId
+      // })
     } catch (error) {
       if (nextRoom) {
         await Promise.resolve(nextRoom.disconnect()).catch(() => {})
@@ -1157,7 +1156,7 @@ const actions = {
         stopVideoSession(nextSession.sessionId).catch(() => {})
       }
       Message.error(`清晰度切换失败：`, errorMessage(error))
-      console.log('ERROR switchCameraQuality', errorMessage(error))
+      console.error('ERROR switchCameraQuality', errorMessage(error))
     } finally {
       dispatch('resetQualityChanging', camera)
     }
@@ -1281,7 +1280,7 @@ const actions = {
           .then(() => {
             camera.hasVideo = true
             commit('setCamera', { ...state.cameras?.[camera.key], hasVideo: true })
-            console.log('LiveKit TrackSubscribed', `${camera.name} ${track.sid || track.name}`)
+            // console.log('LiveKit TrackSubscribed', `${camera.name} ${track.sid || track.name}`)
             done()
           })
           .catch(fail)
@@ -1297,7 +1296,7 @@ const actions = {
             .then(() => {
               camera.hasVideo = true
               commit('setCamera', { ...state.cameras?.[camera.key], hasVideo: true })
-              console.log('LiveKit TrackAttached', `${camera.name} ${publication.track.sid || publication.track.name}`)
+              // console.log('LiveKit TrackAttached', `${camera.name} ${publication.track.sid || publication.track.name}`)
               done()
             })
             .catch(fail)
@@ -1317,7 +1316,7 @@ const actions = {
     camera.recordingBusy = true
     try {
       const active = await getActiveLiveRecording(camera.session.sessionId)
-      console.log('startCameraRecording', camera.key, active)
+      // console.log('startCameraRecording', camera.key, active)
       if (active) {
         camera.activeRecording = active
         camera.recordingActive = false
@@ -1327,7 +1326,7 @@ const actions = {
       const recording = await startLiveRecording(camera.session.sessionId)
       camera.activeRecording = recording
       camera.recordingActive = recording && recording.status === 'UPLOADING'
-      console.log('API startLiveRecording', recording)
+      // console.log('API startLiveRecording', recording)
       Message.success('已开始录像')
     } catch (error) {
       const data = error && error.response && error.response.data
@@ -1365,7 +1364,7 @@ const actions = {
       const recording = await stopLiveRecording(camera.session.sessionId, camera.activeRecording.fileId)
       camera.activeRecording = recording
       camera.recordingActive = false
-      console.log('API stopLiveRecording', recording)
+      // console.log('API stopLiveRecording', recording)
       Message.success('录像已停止')
       dispatch('setRecordTime', new Date().toISOString())
       // TODO 获取新数据
@@ -1402,7 +1401,7 @@ const actions = {
     try {
       window.localStorage.setItem(DEVICE_STATE_CACHE_KEY, JSON.stringify(cache))
     } catch (error) {
-      console.log('WARN persistDeviceStateCache', errorMessage(error))
+      console.error('WARN persistDeviceStateCache', errorMessage(error))
     }
   }
 }

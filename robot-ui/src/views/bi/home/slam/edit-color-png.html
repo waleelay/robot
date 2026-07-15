@@ -27,14 +27,20 @@
                 const threshold = 30; // 容忍度，可根据需求调整
                 if (data[i] > 10 && data[i+1] > 10 && data[i+2] > 10) {
                     // 替换为红色（保留原透明度）
-                    data[i] = 7;     // R
-                    data[i + 1] = 23;   // G
-                    data[i + 2] = 53;   // B
+                    data[i] = 17;     // R
+                    data[i + 1] = 43;   // G
+                    data[i + 2] = 77;   // B
                     // data[i+3] 透明度保持不变
-                  } else {
-                  data[i] = 255;     // R
-                  data[i + 1] = 255;   // G
-                  data[i + 2] = 255;   // B
+                // } else if (data[i] > 10 && data[i+1] > 10 && data[i+2] > 10) {
+                //     // 替换为红色（保留原透明度）
+                //     data[i] = 17;     // R
+                //     data[i + 1] = 43;   // G
+                //     data[i + 2] = 77;   // B
+                //     // data[i+3] 透明度保持不变
+                } else {
+                    data[i] = 86;     // R
+                    data[i + 1] = 121;   // G
+                    data[i + 2] = 163;   // B
                 }
             }
 

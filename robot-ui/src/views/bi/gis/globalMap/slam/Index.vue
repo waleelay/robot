@@ -1,6 +1,6 @@
 <template>
   <div class="middle_center p0 pr20 pl20">
-    <img :src="currentImage" alt="地图" class="image" ref="mapImage">
+    <img src="currentImage" alt="地图" class="image" ref="mapImage">
     <div class="robot"
       slot="reference"
       style="cursor: pointer;"
@@ -49,71 +49,7 @@ export default {
   },
   async created() {
   },
-  computed: {
-    //获取基础信息
-    basicMessage() {
-      return this.$store.getters['websocket/getBasic'];
-    },
-  },
-  watch: {
-    dogId(newVal) {
-      console.log("当前机器人 ID 变化:", newVal);
-      // 可以在这里调用 API 加载该机器人对应的数据
-    },
-    // 获取基础信息
-    basicMessage: {
-      handler(newMessage) {
-        if (newMessage && newMessage.length > 0) {
-          const message = newMessage[newMessage.length - 1];
-          if (message) {
-            this.handlebasicMessage(message)
-          }
-        }
-      },
-      immediate: true
-    },
-  },
   methods: {
-    //控制机器人样式（正常or异常，以及位置）
-    getRobotStyle(robot) {
-      let imagePath;
-      switch(this.deviceData.status) {
-        case '在线':
-          imagePath = require('../../../../../assets/images/new-bi/robot_normal.png');
-          break;
-        case '离线':
-          imagePath = require('../../../../../assets/images/new-bi/robot_error.png');
-          break;
-        default:
-          imagePath = require('../../../../../assets/images/new-bi/robot_normal.png')
-      }
-      return {
-        left: robot.x+'%',
-        top: robot.y+'%',
-        backgroundImage:`url(${imagePath})`,
-      }
-    },
-    //点击点（机器人），控制弹窗出现，获取该机器人的状态信息
-    pointClick(point) {
-      // console.log(point)
-      this.$emit('toggle-dialog',)
-    },
-    openModal() {
-
-      this.$emit('openModal')
-
-      // console.log('打开模态框====', item);
-      
-      // this.dogId1 = item.dogId
-      // // console.log("选中的机器人 ID:", value);
-      // this.selectedRobot = item.dogId;
-      // this.selectedRobotName = item.dogName;
-      // 可以在这里进行其他逻辑处理，比如获取该机器人的详细信息
-      // this.dialogVisible = true;
-    },
-    handleClose() {
-      this.dialogVisible = false;
-    }
   },
 };
 </script>

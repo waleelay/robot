@@ -120,7 +120,6 @@
                 @click="handleClickRobot(robotBaseInfo[equipment.robotId])"
                 :style="{ cursor: !checkedRobotIds.includes(equipment.robotId) ? 'grab' : 'default' }"
               >
-                <!-- @click="handleSelectEquipment(equipment)" -->
                 <div class="flx-center">
                   <svg-icon :icon-class="ROBOT_TYPE_INFO[equipment.type]?.icon || 'robot'" />
                   <span class="ml10">{{ equipment.name }}</span>
@@ -224,6 +223,7 @@ export default {
       if (this.hasLoad || !onlineList.length) return
       this.hasLoad = true
       this.setSplitType([1, 4, 6, 9].filter(item => item >= onlineList.length)?.[0] || 9)
+      console.log('this.splitType', [1, 4, 6, 9].filter(item => item >= onlineList.length)?.[0] || 9);
       if (this.$route.query.taskId !== undefined) {
         await this.handleSelectTask(this.taskData[this.$route.query.taskId])
       } else {
@@ -233,14 +233,15 @@ export default {
       }
     },
     async handleClickRobot(item) {
+      // console.log('this.splitType===========handleClickRobot', this.splitType);
       if (this.splitType === 1 || this.splitType !== this.checkedRobotIds.length) {
-        console.log('------------------------------------handleClickRobot----------------------------------------', item.status, this.equipmentInfo.online.list.find(e => e.robotId === item.robotId).status);
+        // console.log('------------------------------------handleClickRobot----------------------------------------', item.status, this.equipmentInfo.online.list.find(e => e.robotId === item.robotId).status);
         
         await this.updateVideo(item)
       }
     },
     async updateVideo(robot) {
-      console.log('of this.updateVideoHandler', typeof this.updateVideoHandler);
+      // console.log('of this.updateVideoHandler', typeof this.updateVideoHandler);
       
       if (typeof this.updateVideoHandler === 'function') {
         await this.updateVideoHandler(robot)

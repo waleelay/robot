@@ -44,6 +44,32 @@
         </template>
       </div>
     </div>
+
+    <div class="mt22">
+      <div class="view-change flx-center">
+        <!-- <img src="../../../../../assets/images/new-bi/view.png" width="44px" height="44px" style="border-radius: 50%;" /> -->
+        <img src="../../../../../assets/images/new-bi/video-empty.png" width="44px" height="44px" style="border-radius: 50%;" />
+      </div>
+      <div class="view-container p20">
+        <div class="title">地图选择</div>
+        <div class="d-flex mt8">
+          <div class="img-view wp112 hp63" :class="{ 'is-active': currentType === 'gis' }" @click="currentType = 'gis'">
+            <img src="../../../../../assets/images/new-bi/gis-view.png" alt="" srcset="" class="w100 h100">
+            <span>GIS地图</span>
+          </div>
+          <div class="img-view wp112 hp63 ml10" :class="{ 'is-active': currentType === 'slam' }" @click="currentType = 'slam'">
+            <img src="../../../../../assets/images/new-bi/slam-view.png" alt="" srcset="" class="w100 h100">
+            <span>SLAM地图</span>
+          </div>
+        </div>
+        <div v-if="currentType === 'slam'" class="slam-list pb6">
+          <div v-for="item in slamList" class="item flx-justify-between" :class="{ 'is-active': currentSlam === item.name }">
+            <span>{{ item.name }}</span>
+            <svg-icon v-if="currentSlam === item.name" icon-class="check" style="font-size: 16px;"></svg-icon>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -56,6 +82,18 @@ export default {
     angle: {
       type: String,
       default: '2D'
+    },
+    showAngle: {
+      type: Boolean,
+      default: false
+    },
+    isSlam: {
+      type: Boolean,
+      default: false
+    },
+    currentSlam: {
+      type: String,
+      default: ''
     }
   },
   data() {
@@ -145,6 +183,10 @@ export default {
       searchValue: '',
     }
   },
+  mounted() {
+    this.operList2 = this.operList2.filter(item => this.showAngle || (!this.showAngle && item.key !== 'angle'))
+    this.currentType = this.isSlam ? 'slam' : 'gis'
+  },
   methods: {
     ...mapActions('websocketExtraData', ['setMapSearchValue']),
     handleChangeType(item) {
@@ -177,6 +219,15 @@ export default {
     changeZoom(key) {
       this.$emit('changeMapZoom', { method: key, value: 1 })
     },
+  },
+  watch: {
+    currentType: {
+      async handler(newVal) {
+        if (newVal === 'gis' && this.isSlam) {
+          this.$emit('changeMapType')
+        }
+      },
+    }
   }
 }
 </script>
@@ -247,6 +298,59 @@ export default {
           height: 1px;
           background: rgba(255, 255, 255, 0.30);
           content: '';
+        }
+      }
+    }
+  }
+}
+
+.view-change {
+  position: relative;
+  cursor: pointer;
+  border-radius: 24px; 
+  background: #FFF;
+  box-shadow: 0 1.297px 3.243px 0 rgba(0, 0, 0, 0.30);
+  .view-container {
+    border-radius: 6px;
+    border: 2px solid rgba(0, 0, 0, 0.00);
+    background: rgba(0, 19, 48, 0.90);
+    box-shadow: 0 0 20px 0 rgba(1, 80, 170, 0.80) inset;
+    backdrop-filter: blur(5px);
+    .title {
+      color: #FFF;
+      font-family: "Microsoft YaHei";
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 19px;
+    }
+    .img-view {
+      position: relative;
+      border-radius: 4px;
+      background: linear-gradient(0deg, rgba(0, 0, 0, 0.50) 0%, rgba(0, 0, 0, 0.50) 100%), url(<path-to-image>) lightgray 50% / cover no-repeat;
+      &.is-active {
+        border: 2px solid #0BF9FE;
+      }
+      span {
+        position: absolute;
+        bottom: 0;
+        left: 6px;
+        color: #FFF;
+        font-family: "Microsoft YaHei";
+        font-size: 14px;
+        line-height: 18px;
+      }
+    }
+    .slam-list {
+      .item {
+        width: 234px;
+        padding: 8px 10px;
+        color: #D0DEEE;
+        font-family: "Alibaba PuHuiTi";
+        font-size: 14px;
+        line-height: 19px;
+        letter-spacing: 0.857px;
+        &.is-active {
+          border: 1px solid #0BF9FE;
         }
       }
     }

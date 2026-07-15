@@ -5,13 +5,22 @@
     <BiIndexRight @changeCollapse="changeCollapse" :collapse="collapse" />
     <div class="map-div flx-center" style="height: calc(100% + 55px); margin-top: -55px; align-items: start;" :class="{ full: collapse }">
     <!-- <div class="map-div h100 flx-center pt57" style="align-items: start;" :class="{ full: collapse }"> -->
-      <!-- <div class="hp742 flx-center" style="width: 1118px; background: #071735;">
-        <SlamMap :map="slamInfo.map" :points="slamInfo.points" :pathPointIds="slamInfo.pathPointIds" :show-labels="true" />
-      </div> -->
-      
-      <GlobalMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
-      <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
-      <MapTool @changeMapAngle="changeMapAngle" :angle="angle" @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter " />
+      <!-- <div class="hp742 flx-center" style="width: 1118px; background: #112B4D;"> -->
+      <div v-if="isSlam" class="w100 h100 flx-center" style="z-index: 0; background: #112B4D;">
+        <SlamMap
+          :map="slamInfo.map"
+          :points="slamInfo.points"
+          :pathPointIds="slamInfo.pathPointIds"
+          ref="globalMapRef"
+          :show-labels="true"
+           @changeMapType="changeMapType"
+        />
+      </div>
+      <template v-else>
+        <GlobalMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
+        <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
+      </template>
+      <MapTool :isSlam="isSlam" :showAngle="!isSlam" @changeMapAngle="changeMapAngle" :angle="angle" @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter " />
       <!-- <div class="map-footer"></div> -->
     </div>
     <!-- <el-select
@@ -51,6 +60,7 @@ export default {
   data() {
     return {
       collapse: false,
+      isSlam: true,
       slamInfo: {
         map: mapInfo.data,
         points: mapPoints.data,
@@ -79,7 +89,8 @@ export default {
       this.$refs.globalMapRef.map[data.method](data.value || 1)
     },
     changeMapType() {
-      this.$refs.globalMapRef.changeMapType()
+      this.isSlam = !this.isSlam
+      // this.$refs.globalMapRef.changeMapType()
     },
     setCenter() {
       this.$refs.globalMapRef.setCenter()

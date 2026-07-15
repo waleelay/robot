@@ -10,18 +10,18 @@
         </el-button-group>
         <span class="map-preview-zoom">{{ Math.round(zoom * 100) }}%</span>
       </div> -->
-      <div class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #112B4D;">
+      <div class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #071735;">
         <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
-          <!-- <img v-if="imageUrl" ref="imageRef" class="map-preview-image" :src="imageUrl" alt="地图预览" style="width: 100%; height: 100%;" /> -->
-          <template v-if="imageUrl">
-            <canvas ref="canvas" @contextmenu.prevent="onCanvasClick" class="map-preview-image" style="width: 100%; height: 100%;" />
-            <svg
-              v-if="imageUrl && showPath"
-              ref="overlayRef"
-              class="map-preview-overlay"
-              :viewBox="`0 0 ${map.previewWidth} ${map.previewHeight}`"
-              @click="handleMapClick"
-            >
+          <img v-if="imageUrl" class="map-preview-image" :src="imageUrl" alt="地图预览" style="width: 100%; height: 100%;" />
+          <el-empty v-else :description="previewImageStatus" />
+          <svg
+            v-if="imageUrl"
+            ref="overlayRef"
+            class="map-preview-overlay"
+            :viewBox="`0 0 ${map.previewWidth} ${map.previewHeight}`"
+            @click="handleMapClick"
+          >
+            <template v-if="showPath">
               <polyline v-if="polylinePoints" :points="polylinePoints" class="map-preview-path" />
               <g
                 v-for="point in drawablePoints"
@@ -37,28 +37,8 @@
                 <text v-if="showLabels || point.id === selectedPointId" x="9" y="-9">{{ point.pointName }}</text>
                 <title>{{ point.pointName }} / {{ point.pointCode }}</title>
               </g>
-            </svg>
-          </template>
-          <el-empty v-else :description="previewImageStatus" />
-          <!-- <span class="start-point" :style="{ opacity: locationPoint ? 1 : 0, zIndex: locationPoint ? 1 : 0, left: `${startPoint?.[0] || 0}px`, top: `${startPoint?.[1] || 0}px` }">起始地</span> -->
-          <div :style="{ opacity: locationPoint ? 1 : 0, zIndex: locationPoint ? 1 : 0, ...locationStyle }" class="location flx-center flex-column"  ref="pointLocationRef">
-            <img src="./../../../../assets/images/new-bi/address1.png" alt="位置" class="wp40 hp46" />
-            <span class="margin-top: -2px">临时点</span>
-          </div>
-          <div class="context-menu d-flex" :style="{ display: locationPoint ? 'flex' : 'none', top: `${((locationPoint?.y || 0) - 27)}px`, left: `${((locationPoint?.x || 0) + 65)}px` }">
-            <div class="flx-center div1 p10">
-              <span>派遣设备前往该点</span>
-              <svg-icon icon-class="right" class="ml4" />
-            </div>
-            <div v-if="normalRobots.length" class="div2 ml10 p10">
-              <div v-for="robot in normalRobots" :key="robot.robotId" class="item flx-justify-between p6" :class="robot.statusClass">
-                <span class="name pl14" :class="robot.statusClass">{{ robot.name }}</span>
-                <span class="oper ml4" :class="robot.statusClass">
-                  {{robot.customStatusName === '空闲中' ? '立即派遣' : '终止任务'}}
-                </span>
-              </div>
-            </div>
-          </div>
+            </template>
+          </svg>
         </div>
         <div class="map-operation">
           <div class="operation">
@@ -94,11 +74,8 @@
 </template>
 
 <script>
-import { mapState } from 'vuex';
-import addPointTask from './add-point-task.js'
 export default {
   name: 'BiPatrolSlam',
-  mixins: [addPointTask],
   props: {
     map: { type: Object, default: null },
     points: { type: Array, default: () => [] },
@@ -108,7 +85,7 @@ export default {
   },
   data() {
     return {
-      zoom: 3,
+      zoom: 1,
       imageUrl: '',
       previewImageStatus: '地图预览加载中',
       imageObjectUrl: '',
@@ -148,14 +125,10 @@ export default {
           action: 'zoomOut'
         },
       ],
-      showPath: false,
+      showPath: false
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo']),
-    normalRobots() {
-      return Object.values(this.robotBaseInfo || {}).filter(item => item.status === 'online') || []
-    },
     hasPreview() {  
       return !!this.map?.previewFileId &&
         !!this.map?.previewWidth &&
@@ -169,7 +142,7 @@ export default {
       return {
         width: `${Number(this.map?.previewWidth || 0) * this.zoom}px`,
         height: `${Number(this.map?.previewHeight || 0) * this.zoom}px`,
-        // transform: `translate(${this.offsetX}px, ${this.offsetY}px)`
+        transform: `translate(${this.offsetX}px, ${this.offsetY}px)`
       }
     },
     drawablePoints() {
@@ -199,28 +172,8 @@ export default {
     previewSource: {
       immediate: true,
       async handler(newVal) { 
-        this.imageObjectUrl = require('./preview-image.png');
-        this.imageUrl = require('./preview-image.png');
-        
-        // const { id, cacheKey, hasPreview } = newVal;
-        // const seq = ++this.imageLoadSeq;
-        // this.revokeImageUrl();
-        // this.previewImageStatus = '地图预览加载中';
-        // if (!hasPreview || !id) return;
-        // try {
-        //   const blob = await mapApi.previewImageBlob(id, cacheKey);
-        //   const nextUrl = URL.createObjectURL(blob);
-        //   if (seq !== this.imageLoadSeq) {
-        //     URL.revokeObjectURL(nextUrl);
-        //     return;
-        //   }
-        //   this.imageObjectUrl = nextUrl;
-        //   this.imageUrl = nextUrl;
-        // } catch (error) {
-        //   if (seq === this.imageLoadSeq) {
-        //     this.previewImageStatus = '地图预览图片加载失败，请检查接口授权或后端服务';
-        //   }
-        // }
+        this.imageObjectUrl = require('./preview-image1.png');
+        this.imageUrl = require('./preview-image1.png');
       },
     },
   },
@@ -387,8 +340,6 @@ export default {
     },
     handleWheel(e) {
       e.preventDefault()
-      const viewportWidth = 247;
-      const viewportHeight = 169;
       const viewport = this.$el.querySelector('.map-preview-viewport')
       if (!viewport) return
       
@@ -482,8 +433,7 @@ export default {
       };
     },
     eventToPixel(event) {
-      // const rect = this.$refs?.overlayRef?.getBoundingClientRect();
-      const rect = this.$refs?.canvas?.getBoundingClientRect();
+      const rect = this.$refs?.overlayRef?.getBoundingClientRect();
       if (!rect || !this.map?.previewWidth || !this.map?.previewHeight) return null;
       return {
         x: ((event.clientX - rect.left) / rect.width) * Number(this.map.previewWidth),
@@ -532,7 +482,7 @@ export default {
     cursor: grabbing;
   }
   .map-preview-stage {
-    position: relative;
+    position: absolute;
     top: 0;
     left: 0;
     cursor: grab;
@@ -548,7 +498,6 @@ export default {
       left: 0;
       width: 100%;
       height: 100%;
-      pointer-events: none;
       // cursor: crosshair;
       .map-preview-point {
         cursor: pointer;
@@ -627,93 +576,6 @@ export default {
             content: '';
           }
         }
-      }
-    }
-  }
-}
-.location {
-  position: absolute;
-  span {
-    padding: 2px 4px;
-    color: #FFF;
-    border-radius: 2px;
-    background: #0062AE;
-    font-size: 14px;
-    line-height: 17.517px; /* 125.119% */
-  }
-}
-.start-point {
-  position: absolute;
-  padding: 2px 4px;
-  border-radius: 2px;
-  background: #0D9F31;
-  color: #FFF;
-  font-family: "Microsoft YaHei";
-  font-size: 14px;
-  line-height: 17.517px; /* 125.119% */
-}
-.context-menu {
-  position: absolute;
-  z-index: 1;
-  .div1, .div2 {
-    border-radius: 4px;
-    border: 2px solid rgba(0, 0, 0, 0.00);
-    background: rgba(0, 19, 48, 0.90);
-    box-shadow: 0 0 20px 0 rgba(1, 80, 170, 0.80) inset;
-    backdrop-filter: blur(5px);
-  }
-  .div1 {
-    height: fit-content;
-    color: #FFF;
-    font-family: "Alibaba PuHuiTi";
-    font-size: 16px;
-    line-height: 18px; /* 75% */
-    letter-spacing: 0.857px;
-    .svg-icon {
-      font-size: 14px
-    }
-  }
-  .div2 {
-    .name {
-      position: relative;
-      color: #FFF;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 16px;
-      line-height: 24px; /* 75% */
-      letter-spacing: 0.857px;
-      &::before {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        position: absolute;
-        top: 7px;
-        left: 0;
-        content: '';
-      }
-      &.blue::before {
-        background: #0062AE;
-      }
-      &.green::before {
-        background: #23AB08;
-      }
-    }
-    .oper {
-      padding: 6px 10px;
-      border-radius: 100px;
-      color: #FFF;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 12px;
-      line-height: 12px; /* 100% */
-      letter-spacing: 0.857px;
-      &.blue {
-        border: 1px solid #2A86F3;
-        background: rgba(9, 45, 72, 0.50);
-        box-shadow: 0 0 10px 0 #2A86F3 inset;
-      }
-      &.orange {
-        border: 1px solid #FF9000;
-        background: #1B1A18;
-        box-shadow: 0 0 10px 0 #F3452A inset;
       }
     }
   }

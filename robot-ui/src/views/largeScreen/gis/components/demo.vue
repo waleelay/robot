@@ -99,7 +99,7 @@
           // markerZoomAnimation: false,
         });
         // 地图底图
-        L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/latest/{z}/{x}/{y}.png`, {
+        L.tileLayer("/tdt/tiles/new/{z}/{x}/{y}.png", {
           maxZoom: 20,
           minZoom: 17,
         }).addTo(this.map);

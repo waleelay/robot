@@ -301,7 +301,7 @@ export default {
       })
     },
     async test(data) {
-      console.log('-----------------------', data, this.ZQL_videosInfos);
+      console.log('-----------test------------', data, this.ZQL_videosInfos);
       let emptyKey = data.index
       // 填充 放入设备
       const robot = this.robots.find(d => d.robotId === data.data.robotId);
@@ -487,94 +487,6 @@ export default {
         this.applySplitVideoChannels(playingBeforeChange, val)
       })
     },
-    onSingleDeviceChange1(e) {
-      if (this.splitType !== 1) return;
-      const dev = this.deviceList.find(d => d.id === e);
-      // 创建新的slotDevices对象
-      const newSlotDevices = {};
-      if (!dev) {
-        // 如果设备无效，清空格子
-        newSlotDevices['slot_1'] = null;
-        return;
-      }
-      // 创建设备对象，currentAlgo 默认设为 null（不选中任何算法）
-      newSlotDevices['slot_1'] = {
-        ...dev,
-        currentAlg: null,  // 默认不选中任何算法
-        currentAlgName: null,
-        videoSrc: ''
-      };
-      this.slotDevices = newSlotDevices;
-    },
-    // 多分屏：复选框变化 - 实现取消勾选清空对应格子，勾选新设备填入第一个空位
-    onMultiDeviceChange1(newCheckedIds) {
-      if (this.splitType === 1) return;
-
-      // 找出新增的id (在newCheckedIds中但不在lastCheckedIds中)
-      const added = newCheckedIds.filter(id => !this.lastCheckedIds.includes(id));
-      // 找出移除的id (在lastCheckedIds中但不在newCheckedIds中)
-      const removed = this.lastCheckedIds.filter(id => !newCheckedIds.includes(id));
-
-      // 更新lastCheckedIds供下次使用
-      this.lastCheckedIds = newCheckedIds.slice();
-
-      // 创建新的slotDevices对象（基于当前的slotDevices）
-      const newSlotDevices = { ...this.slotDevices };
-
-      // 1. 处理移除：找到该设备所在的插槽索引，将其置为null
-      removed.forEach(remId => {
-        // 遍历所有插槽找到匹配的设备
-        for (let i = 1; i <= this.splitType; i++) {
-          const key = 'slot_' + i;
-          if (newSlotDevices[key] && newSlotDevices[key].id === remId) {
-            // 如果正在全屏的格子被移除，退出全屏
-            if (this.fullscreenIndex === i) {
-              this.fullscreenIndex = null;
-            }
-            // 将该插槽置空
-            newSlotDevices[key] = null;
-            break;
-          }
-        }
-      });
-
-      // 2. 处理新增：找到第一个为null的插槽，放入设备
-      added.forEach(addId => {
-        const dev = this.deviceList.find(d => d.id === addId);
-        if (!dev) return;
-        
-        // 查找第一个空插槽
-        let emptyKey = null;
-        for (let i = 1; i <= this.splitType; i++) {
-          const key = 'slot_' + i;
-          if (newSlotDevices[key] === null) {
-              emptyKey = key;
-              break;
-          }
-        }
-        
-        if (emptyKey) {
-          // 放入设备，currentAlgo 默认设为 null（不选中任何算法）
-          newSlotDevices[emptyKey] = {
-            ...dev,
-            currentAlg: null,  // 默认不选中任何算法
-            currentAlgName: null,
-            videoSrc: ''
-          };
-        } else {
-          // 没有空位了，无法继续添加，将该id从checkedDeviceIds中移除
-          console.warn('没有空余插槽，无法添加设备', addId);
-          const indexToRemove = this.checkedDeviceIds.indexOf(addId);
-          if (indexToRemove !== -1) {
-            this.checkedDeviceIds.splice(indexToRemove, 1);
-          }
-          // 同步lastCheckedIds
-          this.lastCheckedIds = this.checkedDeviceIds.slice();
-        }
-      });
-      // 更新slotDevices
-      this.slotDevices = newSlotDevices;
-    },
     revertObjToArr(obj) {
       return Object.values(obj)
     },
@@ -686,6 +598,8 @@ export default {
       this.rebindCameraTracks(this.currentVisibleCameras())
     },
     initSlots(splitType) {
+      console.log('initSlots splitType', splitType);
+      
       const newVideosInfos = {};
       const newPlayingSource = {};
       const newStatusArr = {};
@@ -717,7 +631,7 @@ export default {
     // 分屏变化：完全清空所有选择，重置slotDevices为空（全空）
     splitType: {
       async handler(newVal, oldVal) {
-        // console.log('=====================splitType=============================', oldVal, newVal);
+        console.log('=====================splitType=============================', oldVal, newVal);
         
         // 退出全屏
         this.fullscreenIndex = null;

@@ -147,8 +147,8 @@ export default {
     show(visible) {
       this.visible = visible;
     },
-    async goControl() {s
-      await this.stopAll()
+    async goControl() {
+      await this.stopAll()      
       this.setSelectedRobotId(this.selectedRobotId)
       this.$router.push({ path: '/bi/patrol/monitor' })
     },

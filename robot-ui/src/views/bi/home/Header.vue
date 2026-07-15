@@ -105,7 +105,7 @@ export default {
   height: 93px;
   // background-image: url("../../../assets/images/new-bi/header2.png");
   // background-size: 100% 100%;
-  padding: 0 20px;
+  // padding: 0 20px;
   z-index: 100;
 
   &::before, &::after {

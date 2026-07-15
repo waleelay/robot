@@ -104,7 +104,7 @@ export default {
       // });
 
       await new Promise(resolve => this.$nextTick(resolve))
-      console.log('updateVideo')
+      console.log('======updateVideo===')
 
       const leftVideoRef = this.$refs?.leftVideoRef
       if (!leftVideoRef || typeof leftVideoRef.test !== 'function') return

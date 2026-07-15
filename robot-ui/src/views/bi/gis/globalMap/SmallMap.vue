@@ -64,8 +64,8 @@ export default {
         dragging: false // 禁止拖动
       });
       // 地图底图
-      // L.tileLayer('/tdt/tiles/new/small/{z}/{x}/{y}.png', {
-      L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/small/{z}/{x}/{y}.png`, {
+      L.tileLayer('/tdt/tiles/new/small/{z}/{x}/{y}.png', {
+      // L.tileLayer('/tdt/tiles/light/{z}/{x}/{y}.jpg', {
         maxZoom: 18,
         minZoom: 15,
       }).addTo(this.map);
