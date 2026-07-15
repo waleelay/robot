@@ -113,26 +113,15 @@
                   </div>
                 </div>
                 <div v-if="warningLightDevices?.length">
-                  <div class="flx-align-center" v-if="getLightDevice('左警示灯').deviceId">
-                    <span class="wp76 tal">左警示灯：</span>
+                  <div v-for="device in warningLightDevices" :key="device.deviceId" class="flx-align-center">
+                    <span class="wp76 tal">{{ device.displayName || device.deviceId }}：</span>
                     <el-switch
-                      :value="isWarningLightOn(getLightDevice('左警示灯'))"
+                      :value="isWarningLightOn(device)"
                       active-text="开启"
                       inactive-text="关闭"
                       active-color="#3DB56A"
                       inactive-color="#5E5E5E"
-                      @change="setWarningLight(getLightDevice('左警示灯'), $event)">
-                    </el-switch>
-                  </div>
-                  <div class="flx-align-center" v-if="getLightDevice('右警示灯').deviceId">
-                    <span class="wp76 tal">右警示灯：</span>
-                    <el-switch
-                      :value="isWarningLightOn(getLightDevice('右警示灯'))"
-                      active-text="开启"
-                      inactive-text="关闭"
-                      active-color="#3DB56A"
-                      inactive-color="#5E5E5E"
-                      @change="setWarningLight(getLightDevice('右警示灯'), $event)">
+                      @change="setWarningLight(device, $event)">
                     </el-switch>
                   </div>
                 </div>
