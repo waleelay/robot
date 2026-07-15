@@ -30,6 +30,7 @@ const state = {
   taskPathPoints: {}, // { taskId: [pathPoints] } taskId: 任务id，pathId: 路径id，mapId: 地图id，pathPoints: 任务路径点
   mapSearchValue: '',
   slamMapList: [],
+  slamOfRobot: {},
   showRobotIds: []
 }
 
@@ -112,6 +113,9 @@ const mutations = {
   SET_SLAM_MAP_LIST(state, value) {
     state.slamMapList = value;
   },
+  SET_SLAM_OF_ROBOT(state, value) {
+    state.slamOfRobot = value;
+  },
   SET_SHOW_ROBOT_IDS(state, value) {
     state.showRobotIds = value;
   },
@@ -183,7 +187,9 @@ const actions = {
     data?.alarms?.high?.items.map((item, index) => {
       commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
     })
-    commit('SET_SLAM_MAP_LIST', data?.map || []);
+    const slamMapList = data?.map || [];
+    commit('SET_SLAM_MAP_LIST', slamMapList);
+    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, data?.devices || [], data?.tasks || []));
   },
   setSlamMapData({ commit }, value) {
     commit('SET_SLAM_MAP_DATA', value);
@@ -238,7 +244,7 @@ const actions = {
       
       commit('SET_ROBOT_BASE_INFO', { robotId: event.data.robotId, robotInfo: { ...state.robotBaseInfo[event.data.robotId], ...event.data } });
     } else if (event.event === 'panorama.device.location.changed') {
-      // commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
+      commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
     } else if (event.event === 'panorama.task.changed') {
       // commit('SET_TASK_INFO', event.data.task);
     } else if (event.event === 'panorama.alarm.changed') {
@@ -273,6 +279,48 @@ const actions = {
   setShowRobotIds({ commit }, value) {
     commit('SET_SHOW_ROBOT_IDS', value);
   },
+}
+
+function buildSlamOfRobot(maps, robots, tasks) {
+  const result = {}
+  const robotMapIds = {}
+  const taskMapIds = {}
+
+  maps.forEach(mapInfo => {
+    if (mapInfo?.id === undefined || mapInfo?.id === null) return
+    result[String(mapInfo.id)] = { mapInfo, robots: [] }
+  })
+
+  tasks.forEach(task => {
+    const mapId = task?.mapId
+    if (mapId === undefined || mapId === null) return
+    if (task?.taskId !== undefined && task?.taskId !== null) {
+      taskMapIds[String(task.taskId)] = mapId
+    }
+    const equipmentList = task?.equipmentList || task?.devices || task?.robots || []
+    equipmentList.forEach(robot => {
+      const robotId = robot?.robotId || robot?.id || robot
+      if (robotId === undefined || robotId === null) return
+      robotMapIds[String(robotId)] = mapId
+    })
+  })
+
+  robots.forEach(robot => {
+    const directMapId = robot?.mapId ?? robot?.location?.mapId
+    const taskMapId = (Array.isArray(robot?.task) ? robot.task : [robot?.task])
+      .filter(Boolean)
+      .map(task => task?.mapId ?? taskMapIds[String(task?.taskId ?? task?.id)])
+      .find(mapId => mapId !== undefined && mapId !== null)
+    const mapId = directMapId ?? taskMapId ?? robotMapIds[String(robot?.robotId)]
+    if (mapId === undefined || mapId === null) return
+    const key = String(mapId)
+    if (!result[key]) result[key] = { mapInfo: null, robots: [] }
+    if (!result[key].robots.some(item => item.robotId === robot.robotId)) {
+      result[key].robots.push(robot)
+    }
+  })
+
+  return result
 }
 
 function getRobotStatus(robot, taskData) {

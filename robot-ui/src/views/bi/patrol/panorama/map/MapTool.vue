@@ -46,11 +46,11 @@
     </div>
 
     <div class="mt22">
-      <div class="view-change flx-center">
+      <div ref="viewChangeRef" class="view-change flx-center" @click.stop="toggleViewContainer">
         <!-- <img src="../../../../../assets/images/new-bi/view.png" width="44px" height="44px" style="border-radius: 50%;" /> -->
         <img src="../../../../../assets/images/new-bi/video-empty.png" width="44px" height="44px" style="border-radius: 50%;" />
       </div>
-      <div class="view-container p20">
+      <div ref="viewContainerRef" v-show="showViewContainer" class="view-container p20" @click.stop>
         <div class="title">地图选择</div>
         <div class="d-flex mt8">
           <div class="img-view wp112 hp63" :class="{ 'is-active': currentType === 'gis' }" @click="selectMapType('gis')">
@@ -63,9 +63,9 @@
           </div>
         </div>
         <div v-if="currentType === 'slam'" class="slam-list pb6">
-          <div v-for="item in slamList" :key="item.id || item.name" class="item flx-justify-between" :class="{ 'is-active': currentSlam === item.name }">
-            <span>{{ item.name }}</span>
-            <svg-icon v-if="currentSlam === item.name" icon-class="check" style="font-size: 16px;"></svg-icon>
+          <div v-for="item in slamList" :key="item.id || item.mapName || item.name" class="item flx-justify-between" :class="{ 'is-active': String(currentSlam) === String(item.id) }" @click="selectSlamMap(item)">
+            <span>{{ item.mapName || item.name }}</span>
+            <svg-icon v-if="String(currentSlam) === String(item.id)" icon-class="check" style="font-size: 16px;"></svg-icon>
           </div>
         </div>
       </div>
@@ -92,7 +92,7 @@ export default {
       default: false
     },
     currentSlam: {
-      type: String,
+      type: [String, Number],
       default: ''
     }
   },
@@ -182,6 +182,7 @@ export default {
       openSearch: false,
       searchValue: '',
       currentType: this.isSlam ? 'slam' : 'gis',
+      showViewContainer: false,
     }
   },
   computed: {
@@ -191,11 +192,27 @@ export default {
   },
   mounted() {
     this.operList2 = this.operList2.filter(item => this.showAngle || (!this.showAngle && item.key !== 'angle'))
+    document.addEventListener('click', this.handleDocumentClick, true)
   },
   methods: {
     ...mapActions('websocketExtraData', ['setMapSearchValue']),
     selectMapType(type) {
       this.currentType = type
+    },
+    selectSlamMap(mapInfo) {
+      this.currentType = 'slam'
+      this.$emit('changeSlamMap', mapInfo)
+      this.showViewContainer = false
+    },
+    toggleViewContainer() {
+      this.showViewContainer = !this.showViewContainer
+    },
+    hideViewContainer() {
+      this.showViewContainer = false
+    },
+    handleDocumentClick(event) {
+      if (this.$refs.viewChangeRef?.contains(event.target) || this.$refs.viewContainerRef?.contains(event.target)) return
+      this.hideViewContainer()
     },
     handleChangeType(item) {
       if (this.selectedOper2 === item.key) return
@@ -239,6 +256,9 @@ export default {
     isSlam(newVal) {
       this.currentType = newVal ? 'slam' : 'gis'
     }
+  },
+  beforeDestroy() {
+    document.removeEventListener('click', this.handleDocumentClick, true)
   }
 }
 </script>

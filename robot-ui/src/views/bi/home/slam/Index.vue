@@ -10,32 +10,46 @@
         </el-button-group>
         <span class="map-preview-zoom">{{ Math.round(zoom * 100) }}%</span>
       </div> -->
-      <div class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #112B4D;">
+      <div ref="viewportRef" class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #112B4D;">
         <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
           <!-- <img v-if="imageUrl" ref="imageRef" class="map-preview-image" :src="imageUrl" alt="地图预览" style="width: 100%; height: 100%;" /> -->
           <template v-if="imageUrl">
             <canvas ref="canvas" @contextmenu.prevent="onCanvasClick" class="map-preview-image" style="width: 100%; height: 100%;" />
             <svg
-              v-if="imageUrl && showPath"
+              v-if="imageUrl"
               ref="overlayRef"
               class="map-preview-overlay"
               :viewBox="`0 0 ${map.previewWidth} ${map.previewHeight}`"
               @click="handleMapClick"
             >
-              <polyline v-if="polylinePoints" :points="polylinePoints" class="map-preview-path" />
+              <template v-if="showPath">
+                <polyline v-if="polylinePoints" :points="polylinePoints" class="map-preview-path" />
+                <g
+                  v-for="point in drawablePoints"
+                  :key="point.id"
+                  :transform="`translate(${point.pixel.x}, ${point.pixel.y})`"
+                  class="map-preview-point"
+                  :class="{ selected: point.id === selectedPointId, inPath: pathPointIds.includes(point.id), hovered: point.id === hoveredPointId }"
+                  @mouseenter="hoveredPointId = point.id"
+                  @mouseleave="hoveredPointId = null"
+                  @click.stop="handlePointClick(point)"
+                >
+                  <circle r="6" />
+                  <text v-if="showLabels || point.id === selectedPointId" x="9" y="-9">{{ point.pointName }}</text>
+                  <title>{{ point.pointName }} / {{ point.pointCode }}</title>
+                </g>
+              </template>
               <g
-                v-for="point in drawablePoints"
-                :key="point.id"
-                :transform="`translate(${point.pixel.x}, ${point.pixel.y})`"
-                class="map-preview-point"
-                :class="{ selected: point.id === selectedPointId, inPath: pathPointIds.includes(point.id), hovered: point.id === hoveredPointId }"
-                @mouseenter="hoveredPointId = point.id"
-                @mouseleave="hoveredPointId = null"
-                @click.stop="handlePointClick(point)"
+                v-for="robot in drawableRobots"
+                :key="robot.robotId"
+                :transform="`translate(${robot.pixel.x}, ${robot.pixel.y}) scale(${1 / zoom})`"
+                class="map-preview-robot"
+                :class="robot.statusClass"
               >
-                <circle r="6" />
-                <text v-if="showLabels || point.id === selectedPointId" x="9" y="-9">{{ point.pointName }}</text>
-                <title>{{ point.pointName }} / {{ point.pointCode }}</title>
+                <image :href="robotIcon" x="-18" y="-42" width="36" height="36" />
+                <text class="robot-name" x="0" y="8">{{ robot.name }}</text>
+                <rect class="robot-status-bg" x="-28" y="13" width="56" height="18" rx="3" />
+                <text class="robot-status" x="0" y="26">{{ robot.statusText }}</text>
               </g>
             </svg>
           </template>
@@ -109,6 +123,10 @@ export default {
   data() {
     return {
       zoom: 3,
+      minZoomValue: 0.5,
+      maxZoomValue: 3,
+      resizeObserver: null,
+      robotIcon: require('@/assets/images/new-bi/robot-normal.png'),
       imageUrl: '',
       previewImageStatus: '地图预览加载中',
       imageObjectUrl: '',
@@ -152,7 +170,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot']),
     normalRobots() {
       return Object.values(this.robotBaseInfo || {}).filter(item => item.status === 'online') || []
     },
@@ -177,6 +195,25 @@ export default {
         .map((point) => ({ ...point, pixel: this.mapPointToPixel(point, this.map) }))
         .filter((point) => point.pixel)
     },
+    drawableRobots() {
+      const robots = this.slamOfRobot?.[String(this.map?.id)]?.robots || []
+      return robots.map(baseRobot => {
+        const robot = { ...baseRobot, ...(this.robotBaseInfo?.[baseRobot.robotId] || {}) }
+        const location = { ...(baseRobot.location || {}), ...(this.robotLocation?.[baseRobot.robotId] || {}) }
+        const coordinateX = location.x ?? location.coordinateX
+        const coordinateY = location.y ?? location.coordinateY
+        if (coordinateX === undefined || coordinateX === null || coordinateY === undefined || coordinateY === null) return null
+        const pixel = this.mapPointToPixel({ coordinateX, coordinateY }, this.map)
+        if (!pixel) return null
+        return {
+          ...robot,
+          name: robot.name || robot.deviceName || robot.robotId,
+          pixel,
+          statusClass: robot.statusClass || (robot.status === 'offline' ? 'gray' : robot.status === 'online' ? 'blue' : 'orange'),
+          statusText: robot.customStatusName || robot.statusName || (robot.status === 'online' ? '在线' : robot.status === 'offline' ? '离线' : '故障')
+        }
+      }).filter(Boolean)
+    },
     polylinePoints() {
       return this.pathPointIds
         .map((id) => this.drawablePoints.find((point) => point.id === id)?.pixel)
@@ -198,31 +235,29 @@ export default {
   watch: {
     previewSource: {
       immediate: true,
-      async handler(newVal) { 
-        this.imageObjectUrl = require('./preview-image.png');
-        this.imageUrl = require('./preview-image.png');
-        
-        // const { id, cacheKey, hasPreview } = newVal;
-        // const seq = ++this.imageLoadSeq;
-        // this.revokeImageUrl();
-        // this.previewImageStatus = '地图预览加载中';
-        // if (!hasPreview || !id) return;
-        // try {
-        //   const blob = await mapApi.previewImageBlob(id, cacheKey);
-        //   const nextUrl = URL.createObjectURL(blob);
-        //   if (seq !== this.imageLoadSeq) {
-        //     URL.revokeObjectURL(nextUrl);
-        //     return;
-        //   }
-        //   this.imageObjectUrl = nextUrl;
-        //   this.imageUrl = nextUrl;
-        // } catch (error) {
-        //   if (seq === this.imageLoadSeq) {
-        //     this.previewImageStatus = '地图预览图片加载失败，请检查接口授权或后端服务';
-        //   }
-        // }
+      handler({ id, cacheKey, hasPreview }) {
+        this.revokeImageUrl()
+        this.previewImageStatus = '地图预览加载中'
+        if (!hasPreview || id === undefined || id === null) return
+        const preUrl = (process.env.VUE_APP_BASE_ORIGIN || window.location.origin || '').replace(/\/$/, '')
+        this.imageUrl = `${preUrl}/api/v1/management/maps/${id}/preview-image?cacheKey=${encodeURIComponent(cacheKey || '')}`
+        this.$nextTick(() => {
+          this.updateZoomBounds(true)
+          this.observeViewport()
+          if (this.$refs.canvas) {
+            this.canvas = this.$refs.canvas
+            this.ctx = this.canvas.getContext('2d')
+            this.loadMap()
+          }
+        })
       },
     },
+  },
+  mounted() {
+    this.$nextTick(() => {
+      this.updateZoomBounds(true)
+      this.observeViewport()
+    })
   },
   methods: {
     changeMapZoom({ method } = {}) {
@@ -244,51 +279,41 @@ export default {
         
       // 渲染路径及点
     },
-    // 最小缩放比例：确保stage不会小于viewport的宽高
+    updateZoomBounds(reset = false) {
+      const viewport = this.$refs.viewportRef
+      const mapWidth = Number(this.map?.previewWidth || 0)
+      const mapHeight = Number(this.map?.previewHeight || 0)
+      if (!viewport || !mapWidth || !mapHeight) return
+      const wasAtMax = Math.abs(this.zoom - this.maxZoomValue) < 0.01
+      const widthZoom = viewport.clientWidth / mapWidth
+      const heightZoom = viewport.clientHeight / mapHeight
+      this.maxZoomValue = Math.max(0.1, Math.min(widthZoom, heightZoom))
+      this.minZoomValue = Math.max(0.1, this.maxZoomValue * 0.25)
+      this.zoom = reset || wasAtMax
+        ? this.maxZoomValue
+        : Math.max(this.minZoomValue, Math.min(this.maxZoomValue, this.zoom))
+      this.zoom = Number(this.zoom.toFixed(3))
+      this.offsetX = 0
+      this.offsetY = 0
+    },
+    observeViewport() {
+      if (this.resizeObserver || typeof ResizeObserver === 'undefined' || !this.$refs.viewportRef) return
+      this.resizeObserver = new ResizeObserver(() => this.updateZoomBounds())
+      this.resizeObserver.observe(this.$refs.viewportRef)
+    },
     minZoom() {
-      const viewportWidth = 247; // viewport固定宽度
-      const viewportHeight = 169; // viewport固定高度
-      const stageWidth = Number(this.map?.previewWidth || 0);
-      const stageHeight = Number(this.map?.previewHeight || 0);
-      
-      if (!stageWidth || !stageHeight) return 0.5;
-      
-      // 计算最小缩放比例，确保stage宽高不小于viewport
-      const minZoomByWidth = viewportWidth / stageWidth;
-      const minZoomByHeight = viewportHeight / stageHeight;
-      
-      return Math.max(minZoomByWidth, minZoomByHeight, 0.5);
+      return this.minZoomValue
     },
     zoomIn() {
-      this.zoom = Math.min(3, Number((this.zoom + 0.25).toFixed(2)));
+      const step = Math.max(0.1, this.maxZoomValue * 0.05)
+      this.zoom = Math.min(this.maxZoomValue, Number((this.zoom + step).toFixed(3)))
     },
     zoomOut() {
-      this.zoom = Math.max(this.minZoom(), Number((this.zoom - 0.25).toFixed(2)));
-      
-      // 缩小后检查边界，确保top, left, right, bottom >= 0
-      const viewportWidth = 247;
-      const viewportHeight = 169;
-      const stageWidth = Number(this.map?.previewWidth || 0) * this.zoom;
-      const stageHeight = Number(this.map?.previewHeight || 0) * this.zoom;
-      const diffX = stageWidth - viewportWidth;
-      const diffY = stageHeight - viewportHeight;
-      
-      if (diffX > 0) {
-        const maxOffsetX = diffX / 2;
-        this.offsetX = Math.max(-maxOffsetX, Math.min(0, this.offsetX));
-      } else {
-        this.offsetX = 0;
-      }
-      
-      if (diffY > 0) {
-        const maxOffsetY = diffY / 2;
-        this.offsetY = Math.max(-maxOffsetY, Math.min(0, this.offsetY));
-      } else {
-        this.offsetY = 0;
-      }
+      const step = Math.max(0.1, this.maxZoomValue * 0.05)
+      this.zoom = Math.max(this.minZoom(), Number((this.zoom - step).toFixed(3)))
     },
     resetView() {
-      this.zoom = 1
+      this.zoom = this.maxZoomValue
       this.offsetX = 0
       this.offsetY = 0
     },
@@ -392,52 +417,8 @@ export default {
     },
     handleWheel(e) {
       e.preventDefault()
-      const viewportWidth = 247;
-      const viewportHeight = 169;
-      const viewport = this.$el.querySelector('.map-preview-viewport')
-      if (!viewport) return
-      
-      const rect = viewport.getBoundingClientRect()
-      const mouseX = e.clientX - rect.left
-      const mouseY = e.clientY - rect.top
-      
-      // 计算鼠标相对于stage中心的位置
-      const stageWidth = Number(this.map?.previewWidth || 0) * this.zoom
-      const stageHeight = Number(this.map?.previewHeight || 0) * this.zoom
-      
-      // 计算鼠标在stage上的原始位置（考虑当前偏移）
-      const stageMouseX = mouseX - this.offsetX
-      const stageMouseY = mouseY - this.offsetY
-      
-      // 计算缩放因子
-      const delta = e.deltaY > 0 ? -0.1 : 0.1
-      const newZoom = Math.max(this.minZoom(), Math.min(3, this.zoom + delta))
-      
-      // 计算新的偏移，使鼠标位置保持在原地
-      const scale = newZoom / this.zoom
-      this.offsetX = mouseX - stageMouseX * scale
-      this.offsetY = mouseY - stageMouseY * scale
-      
-      this.zoom = Number(newZoom.toFixed(2))
-      // 缩放后检查边界，确保stage始终覆盖viewport
-      const newStageWidth = Number(this.map?.previewWidth || 0) * this.zoom;
-      const newStageHeight = Number(this.map?.previewHeight || 0) * this.zoom;
-      const diffX = newStageWidth - viewportWidth;
-      const diffY = newStageHeight - viewportHeight;
-      
-      if (diffX > 0) {
-        const maxOffsetX = diffX;
-        this.offsetX = Math.max(-maxOffsetX, Math.min(0, this.offsetX));
-      } else {
-        this.offsetX = 0;
-      }
-      
-      if (diffY > 0) {
-        const maxOffsetY = diffY;
-        this.offsetY = Math.max(-maxOffsetY, Math.min(0, this.offsetY));
-      } else {
-        this.offsetY = 0;
-      }
+      if (e.deltaY > 0) this.zoomOut()
+      else this.zoomIn()
     },
     revokeImageUrl() {
       if (this.imageObjectUrl) {
@@ -518,6 +499,7 @@ export default {
   },
   beforeDestroy() {
     this.imageLoadSeq += 1
+    this.resizeObserver?.disconnect()
     this.revokeImageUrl();
   }
 }
@@ -526,8 +508,8 @@ export default {
 <style lang="scss">
 .map-preview-viewport {
   position: relative;
-  width: 247px;
-  height: 169px;
+  width: 100%;
+  height: 100%;
   // background: rgb(243, 240, 210);
   background: #cdcdcd;
   overflow: hidden;
@@ -586,6 +568,41 @@ export default {
         stroke-linecap: round;
         stroke-linejoin: round;
         filter: drop-shadow(0 1px 2px rgba(37, 99, 235, .4));
+      }
+      .map-preview-robot {
+        .robot-name, .robot-status {
+          fill: #fff;
+          font-family: "Microsoft YaHei";
+          text-anchor: middle;
+          paint-order: stroke;
+          stroke: rgba(0, 19, 48, .9);
+          stroke-width: 3px;
+        }
+        .robot-name {
+          font-size: 13px;
+          font-weight: 600;
+        }
+        .robot-status {
+          font-size: 11px;
+          stroke-width: 2px;
+        }
+        .robot-status-bg {
+          fill: #0062ae;
+          stroke: #2a86f3;
+          stroke-width: 1px;
+        }
+        &.green .robot-status-bg {
+          fill: #0d7f2a;
+          stroke: #23ab08;
+        }
+        &.orange .robot-status-bg {
+          fill: #a75400;
+          stroke: #ff9000;
+        }
+        &.gray .robot-status-bg {
+          fill: #515a67;
+          stroke: #8897ab;
+        }
       }
     }
   }

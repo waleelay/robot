@@ -8,7 +8,7 @@
       <!-- <div class="hp742 flx-center" style="width: 1118px; background: #112B4D;"> -->
       <div v-if="isSlam" class="w100 h100 flx-center" style="z-index: 0; background: #112B4D;">
         <SlamMap
-          :map="slamInfo.map"
+          :map="currentSlamMap"
           :points="slamInfo.points"
           :pathPointIds="slamInfo.pathPointIds"
           ref="globalMapRef"
@@ -20,7 +20,7 @@
         <GlobalMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
         <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
       </template>
-      <MapTool :isSlam="isSlam" :showAngle="!isSlam" @changeMapAngle="changeMapAngle" :angle="angle" @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter" />
+      <MapTool :isSlam="isSlam" :showAngle="!isSlam" :currentSlam="currentSlamMapId" @changeMapAngle="changeMapAngle" :angle="angle" @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @changeSlamMap="changeSlamMap" @setCenter="setCenter" />
       <!-- <div class="map-footer"></div> -->
     </div>
     <!-- <el-select
@@ -42,7 +42,7 @@
 
 <script>
 import mqttClient from '@/plugins/mqtt-client'
-import { mapActions } from 'vuex';
+import { mapActions, mapState } from 'vuex';
 import Header from './Header.vue'
 import BiIndexLeft from './Left.vue'
 import BiIndexRight from './Right.vue'
@@ -67,7 +67,15 @@ export default {
         pathPointIds: this.detailPointId(),
         showLabels: true
       },
+      currentSlamMapId: null,
       angle: '2D'
+    }
+  },
+  computed: {
+    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot']),
+    currentSlamMap() {
+      const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
+      return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(this.currentSlamMapId)) || this.slamInfo.map
     }
   },
   async mounted() {
@@ -91,6 +99,10 @@ export default {
     changeMapType(type) {
       this.isSlam = type ? type === 'slam' : !this.isSlam
     },
+    changeSlamMap(mapInfo) {
+      this.currentSlamMapId = mapInfo?.id ?? null
+      this.isSlam = true
+    },
     setCenter() {
       const mapRef = this.$refs.globalMapRef
       if (this.isSlam) {
@@ -99,6 +111,18 @@ export default {
         mapRef?.setCenter()
       }
     },
+  },
+  watch: {
+    slamMapList: {
+      immediate: true,
+      handler(list) {
+        if (!Array.isArray(list) || !list.length) return
+        const selectedExists = list.some(item => String(item.id) === String(this.currentSlamMapId))
+        if (!selectedExists) {
+          this.currentSlamMapId = (list.find(item => item.previewFileId) || list[0]).id
+        }
+      }
+    }
   },
   beforeDestroy() {
     // mqttClient.disconnect()
