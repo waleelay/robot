@@ -365,6 +365,11 @@ export default {
     changeMapType() {
       this.isSlam = !this.isSlam
     },
+    changeMapZoom({ method, value = 1 } = {}) {
+      if (this.map && typeof this.map[method] === 'function') {
+        this.map[method](value)
+      }
+    },
     initMap(){
       // 只能看到18层
       this.map = L.map('map', {

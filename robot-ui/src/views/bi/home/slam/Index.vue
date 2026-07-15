@@ -225,6 +225,11 @@ export default {
     },
   },
   methods: {
+    changeMapZoom({ method } = {}) {
+      if (typeof this[method] === 'function') {
+        this[method]()
+      }
+    },
     handleClickTool(item) {
       this[item.action]();
     },

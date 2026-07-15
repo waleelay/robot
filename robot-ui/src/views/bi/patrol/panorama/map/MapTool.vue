@@ -53,17 +53,17 @@
       <div class="view-container p20">
         <div class="title">地图选择</div>
         <div class="d-flex mt8">
-          <div class="img-view wp112 hp63" :class="{ 'is-active': currentType === 'gis' }" @click="currentType = 'gis'">
+          <div class="img-view wp112 hp63" :class="{ 'is-active': currentType === 'gis' }" @click="selectMapType('gis')">
             <img src="../../../../../assets/images/new-bi/gis-view.png" alt="" srcset="" class="w100 h100">
             <span>GIS地图</span>
           </div>
-          <div class="img-view wp112 hp63 ml10" :class="{ 'is-active': currentType === 'slam' }" @click="currentType = 'slam'">
+          <div class="img-view wp112 hp63 ml10" :class="{ 'is-active': currentType === 'slam' }" @click="selectMapType('slam')">
             <img src="../../../../../assets/images/new-bi/slam-view.png" alt="" srcset="" class="w100 h100">
             <span>SLAM地图</span>
           </div>
         </div>
         <div v-if="currentType === 'slam'" class="slam-list pb6">
-          <div v-for="item in slamList" class="item flx-justify-between" :class="{ 'is-active': currentSlam === item.name }">
+          <div v-for="item in slamList" :key="item.id || item.name" class="item flx-justify-between" :class="{ 'is-active': currentSlam === item.name }">
             <span>{{ item.name }}</span>
             <svg-icon v-if="currentSlam === item.name" icon-class="check" style="font-size: 16px;"></svg-icon>
           </div>
@@ -74,7 +74,7 @@
 </template>
 
 <script>
-import { mapActions } from 'vuex';
+import { mapActions, mapState } from 'vuex';
 
 export default {
   name: 'MapTool',
@@ -181,14 +181,22 @@ export default {
       ],
       openSearch: false,
       searchValue: '',
+      currentType: this.isSlam ? 'slam' : 'gis',
     }
+  },
+  computed: {
+    ...mapState('websocketExtraData', {
+      slamList: state => Array.isArray(state.slamMapList) ? state.slamMapList : []
+    })
   },
   mounted() {
     this.operList2 = this.operList2.filter(item => this.showAngle || (!this.showAngle && item.key !== 'angle'))
-    this.currentType = this.isSlam ? 'slam' : 'gis'
   },
   methods: {
     ...mapActions('websocketExtraData', ['setMapSearchValue']),
+    selectMapType(type) {
+      this.currentType = type
+    },
     handleChangeType(item) {
       if (this.selectedOper2 === item.key) return
       this.selectedOper2 = item.key
@@ -222,11 +230,14 @@ export default {
   },
   watch: {
     currentType: {
-      async handler(newVal) {
-        if (newVal === 'gis' && this.isSlam) {
-          this.$emit('changeMapType')
+      handler(newVal) {
+        if ((newVal === 'slam') !== this.isSlam) {
+          this.$emit('changeMapType', newVal)
         }
       },
+    },
+    isSlam(newVal) {
+      this.currentType = newVal ? 'slam' : 'gis'
     }
   }
 }

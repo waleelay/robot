@@ -20,7 +20,7 @@
         <GlobalMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
         <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
       </template>
-      <MapTool :isSlam="isSlam" :showAngle="!isSlam" @changeMapAngle="changeMapAngle" :angle="angle" @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter " />
+      <MapTool :isSlam="isSlam" :showAngle="!isSlam" @changeMapAngle="changeMapAngle" :angle="angle" @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @setCenter="setCenter" />
       <!-- <div class="map-footer"></div> -->
     </div>
     <!-- <el-select
@@ -86,14 +86,18 @@ export default {
       this.collapse = !this.collapse
     },
     changeMapZoom(data) {
-      this.$refs.globalMapRef.map[data.method](data.value || 1)
+      this.$refs.globalMapRef?.changeMapZoom(data)
     },
-    changeMapType() {
-      this.isSlam = !this.isSlam
-      // this.$refs.globalMapRef.changeMapType()
+    changeMapType(type) {
+      this.isSlam = type ? type === 'slam' : !this.isSlam
     },
     setCenter() {
-      this.$refs.globalMapRef.setCenter()
+      const mapRef = this.$refs.globalMapRef
+      if (this.isSlam) {
+        mapRef?.backCenter()
+      } else {
+        mapRef?.setCenter()
+      }
     },
   },
   beforeDestroy() {
