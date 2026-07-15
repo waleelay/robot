@@ -112,7 +112,7 @@ export default {
     return { }
   },
   methods: {
-    ...mapActions('websocketRobot', ['toggleIntercom', 'ensureControlSession', 'persistDeviceStateCache', 'setAudioState']),
+    ...mapActions('websocketRobot', ['toggleIntercom', 'persistDeviceStateCache', 'setAudioState']),
     async toggleAudioMute(device) {
       const previous = this.audioStatus(device)
       const muted = !previous.muted
@@ -125,7 +125,9 @@ export default {
       }
     },
     updateAudioVolume(volume) {
-      this.updateAudioState(volume)
+      this.updateAudioState(this.audioDevice, {
+        volume: Math.max(0, Math.min(100, Number(volume) || 0))
+      })
     },
     async setAudioVolume(volume) {
       const device = this.audioDevice

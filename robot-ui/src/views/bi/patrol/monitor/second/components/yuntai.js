@@ -182,7 +182,7 @@ export default {
     startFrameControl(kind) {
       // 本体需要判断是否是手动模式，否则提示切换到手动模式
       if (this.selectedRobot?.controlMode !== 'MANUAL' && kind.indexOf('base-') > -1) {
-        // this.$message.warning('请先切换到手动模式')        
+        // this.$message.warning('请先切换到手动模式')
         if (this.$refs.controlModeWarningRef) {
           this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode: 'MANUAL' })
         } else {
@@ -199,7 +199,7 @@ export default {
       if (this.selectedRobot?.controlMode !== 'MANUAL') return
       if (!this.controlTimers[kind]) return
       clearInterval(this.controlTimers[kind])
-      this.$delete(this.controlTimers, kind)      
+      this.$delete(this.controlTimers, kind)
     },
     async sendFrameControl(kind) {
       try {
@@ -245,7 +245,7 @@ export default {
         }[kind]
         const session = await this.ensureControlSession(device, directionAction)
         const params = { speed: 20, duration: 0.3 }
-        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'ptz.move', directionAction, params, kind)
+        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, directionAction, params, kind)
       }
       if (kind.indexOf('zoom-') === 0) {
         const device = this.ptzDevice
@@ -318,7 +318,7 @@ export default {
           : this.launcherDevice
       const session = await this.ensureControlSession(device, action)
       const params = {
-        set_safety: { safetyOn: true, waitStatus: true },
+        set_safety: { safety_on: true, wait_status: true },
         'light.set': { enabled: true, brightness: 80, mode: 'STEADY' }
       }[action]
       const response = await sendEquipmentCommand(this.selectedRobotId,
@@ -361,15 +361,6 @@ export default {
     },
     launcherConnected() {
       return this.launcherStatus.connected !== false
-    },
-    launcherTubes() {
-      const status = this.launcherStatus
-      if (Array.isArray(status.tubes) && status.tubes.length) {
-        return status.tubes.map(item => this.normalizeLauncherTube(item))
-      }
-      const profile = (this.launcherDevice && this.launcherDevice.controlProfile) || {}
-      const tubes = Array.isArray(profile.tubes) && profile.tubes.length ? profile.tubes : [1, 2, 3, 4, 5, 6]
-      return tubes.map(tube => this.normalizeLauncherTube({ tube }))
     },
     launcherTubes(device) {
       if (!device) return []
@@ -415,8 +406,8 @@ export default {
       this.$set(this.launcherSafety, device.deviceId, enabled)
       this.persistDeviceStateCache({ ...this.deviceStateCache, launcherSafety: this.launcherSafety })
       const ok = await this.sendDeviceCommand(device, 'set_safety', {
-        safetyOn: enabled,
-        waitStatus: true
+        safety_on: enabled,
+        wait_status: true
       }, `launcher_safety_${enabled ? 'on' : 'off'}`)
       if (!ok) {
         this.$set(this.launcherSafety, device.deviceId, !enabled)
@@ -468,11 +459,6 @@ export default {
         brightness: normalized === 'CUSTOM' ? Math.max(0, Math.min(100, Number(brightness || 0))) : 0
       }
     },
-    hasVehicleLightStatus(device) {
-      if (!device) return false
-      const status = this.deviceStatus(device)
-      return !!status.front || !!status.rear
-    },
     syncVehicleLightStateFromStatus(device) {
       if (!device) return
       const status = this.deviceStatus(device)
@@ -484,7 +470,7 @@ export default {
       if (rear) next.rear = rear
       this.vehicleLightState = next
       this.confirmedVehicleLightState = this.cloneVehicleLightState(next)
-    },  
+    },
     cloneVehicleLightState(state) {
       const source = state || this.vehicleLightState
       return {
