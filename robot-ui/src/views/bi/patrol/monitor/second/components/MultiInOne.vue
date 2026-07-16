@@ -108,7 +108,7 @@
             v-model="loopPlay"
             active-text="开启"
             inactive-text="关闭"
-            active-color="#159AFF"
+            active-color="#3DB56A"
             inactive-color="#5E5E5E"
           />
         </div>
@@ -132,7 +132,7 @@
         </div>
       </div>
       <div class="btns mt20 flx-center">
-        <el-button type="primary" class="wp124 hp30" @click="noop">播放</el-button>
+        <el-button type="primary" class="wp124 hp30 common-btn" @click="noop">播放</el-button>
       </div>
     </div>
 
@@ -177,9 +177,9 @@
         </div>
       </div>
       <div class="btns mt20 flx-center">
-        <el-button type="primary" class="wp96 hp30" @click="noop">添加</el-button>
-        <el-button type="primary" class="wp96 hp30 ml10" @click="noop">删除</el-button>
-        <el-button type="primary" class="wp96 hp30 ml10" @click="noop">停止</el-button>
+        <el-button type="primary" class="wp96 hp30 common-btn" @click="noop">添加</el-button>
+        <el-button type="primary" class="wp96 hp30 ml10 common-btn" @click="noop">删除</el-button>
+        <el-button type="primary" class="wp96 hp30 ml10 common-btn" @click="noop">停止</el-button>
       </div>
     </div>
 
@@ -196,12 +196,12 @@
           v-model="searchLight"
           active-text="开启"
           inactive-text="关闭"
-          active-color="#159AFF"
+          active-color="#3DB56A"
           inactive-color="#5E5E5E"
         />
       </div>
       <div class="btns mt12">
-        <el-button type="primary" class="wp96 hp30" @click="noop">开爆闪</el-button>
+        <el-button type="primary" class="wp96 hp30 common-btn" @click="noop">开爆闪</el-button>
       </div>
       <div class="slider-block mt18">
         <div class="slider-label">亮度调节</div>
@@ -227,12 +227,12 @@
           v-model="rbLight"
           active-text="开启"
           inactive-text="关闭"
-          active-color="#159AFF"
+          active-color="#3DB56A"
           inactive-color="#5E5E5E"
         />
       </div>
       <div class="btns mt12">
-        <el-button type="primary" class="wp96 hp30" @click="noop">切换模式</el-button>
+        <el-button type="primary" class="wp96 hp30 common-btn" @click="noop">切换模式</el-button>
       </div>
       <div class="slider-block mt18">
         <div class="slider-label">俯仰控制</div>
@@ -366,6 +366,22 @@ export default {
     width: 16px;
     height: 16px;
     display: block;
+  }
+  &:not(.is-disabled) {
+    &:active {
+      box-shadow: 0 0 10px 3px #2f608d inset;
+    }
+    &.alarm:active {
+      background: #c11e1e;
+    }
+  }
+}
+.common-btn {
+  &:not(.is-disabled) {
+    &:active {
+      color: #0BF9FE;
+      box-shadow: 0 0 10px 3px #0BF9FE inset;
+    }
   }
 }
 
