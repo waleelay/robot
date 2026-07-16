@@ -3,9 +3,9 @@
  * @Date: 2026-04-08 09:36:42
  * @LastEditors: dengxumei
  * @LastEditTime: 2026-04-09 14:45:52
- * @Description: 
+ * @Description:
  * @FilePath: \qihang-eiop-ui\src\views\bi\patrol\monitor\second\components\Talk.vue
- * @Version: 
+ * @Version:
 -->
 <template>
   <div class="flx-justify-between flex-column" :class="{ 'is-inner': isMapInner }" :style="{ pointerEvents: selectedRobot.status !== 'online' ? 'none' : 'auto' }">
@@ -23,12 +23,12 @@
       <!-- 动态划过层：展示颜色 #0C132A 以及 box-shadow: inset 0 0 6px 2px #09F -->
       <!-- <div class="filled-glow" :style="{'--value-percent': Math.ceil(audioVolume(audioDevice)) + '%'}"></div> -->
       <!-- <span class="value">{{ audioVolume(audioDevice) }}</span> -->
-      <!-- <input 
-        type="range" 
-        min="0" 
-        max="255" 
+      <!-- <input
+        type="range"
+        min="0"
+        max="255"
         :value="audioVolume(audioDevice)"
-        class="custom-slider" 
+        class="custom-slider"
         @input="updateVolume"
         id="volumeSlider"
         :style="{'--value-percent': Math.ceil(audioVolume(audioDevice) / 255 * 100)}"
@@ -84,7 +84,7 @@ export default {
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot']
     },
-    selectCamera() {      
+    selectCamera() {
       return this.cameras?.[this.selectedRobot?.cameras?.[0].key] || {}
     },
     currentVolume() {
@@ -112,7 +112,7 @@ export default {
     return { }
   },
   methods: {
-    ...mapActions('websocketRobot', ['toggleIntercom', 'ensureControlSession', 'persistDeviceStateCache', 'setAudioState']),
+    ...mapActions('websocketRobot', ['toggleIntercom', 'persistDeviceStateCache', 'setAudioState']),
     async toggleAudioMute(device) {
       const previous = this.audioStatus(device)
       const muted = !previous.muted
@@ -125,12 +125,14 @@ export default {
       }
     },
     updateAudioVolume(volume) {
-      this.updateAudioState(volume)
+      this.updateAudioState(this.audioDevice, {
+        volume: Math.max(0, Math.min(100, Number(volume) || 0))
+      })
     },
     async setAudioVolume(volume) {
       const device = this.audioDevice
       const previous = this.audioStatus(device)
-      const nextVolume = Math.max(0, Math.min(100, Number(volume) || 0))      
+      const nextVolume = Math.max(0, Math.min(100, Number(volume) || 0))
       this.updateAudioState(device, { volume: nextVolume, muted: false })
       const ok = await this.sendDeviceCommand(device, 'set_volume', {
         volumePercent: nextVolume
@@ -155,7 +157,7 @@ export default {
       try {
         const session = await this.ensureControlSession(device, action)
         const response = await sendEquipmentCommand(this.selectedRobotId,
-            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, source || action))
+          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, source || action))
         console.log('API sendDeviceCommand', response)
         return true
       } catch (error) {
@@ -290,7 +292,7 @@ export default {
       }
       .el-slider__button-wrapper {
         top: -5px;
-        height: auto;      
+        height: auto;
         .el-slider__button {
           width: 16px;
           height: 16px;
@@ -383,7 +385,7 @@ export default {
       box-shadow: 0 0 10px 2px #09f inset;
       margin-top: -4px;  /* 因为轨道高10px，thumb高22px，垂直居中偏移 */
     }
-    
+
     &::-moz-range-thumb:hover {
       transform: scale(1.15);
       background: #021328;
