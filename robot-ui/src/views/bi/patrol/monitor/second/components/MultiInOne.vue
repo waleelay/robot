@@ -23,15 +23,15 @@
         </div>
       </div>
       <div class="action-btn flx-center" @click="noop">
-        <img class="btn-icon" src="@/assets/images/new-bi/multi-msg.svg" alt="">
+        <svg-icon icon-class="volume" class="btn-icon" style="font-size: 16px;" />
         <span>开始喊话</span>
       </div>
       <div class="action-btn flx-center mt19" @click="noop">
-        <img class="btn-icon" src="@/assets/images/new-bi/multi-msg.svg" alt="">
+        <svg-icon icon-class="volume" class="btn-icon" style="font-size: 16px;" />
         <span>开始收音</span>
       </div>
       <div class="action-btn alarm flx-center mt19" @click="noop">
-        <img class="btn-icon" src="@/assets/images/new-bi/multi-msg.svg" alt="">
+        <svg-icon icon-class="volume" class="btn-icon" style="font-size: 16px;" />
         <span>播放警报</span>
       </div>
       <div class="slider-block mt18">
@@ -154,7 +154,7 @@
           :class="{ active: selectedAudio === index }"
           @click="selectedAudio = index"
         >
-          <img class="music-icon" src="@/assets/images/new-bi/multi-music.svg" alt="">
+          <svg-icon icon-class="music" class="music-icon" style="font-size: 16px;" />
           <span>{{ file }}</span>
         </div>
       </div>
@@ -466,6 +466,7 @@ export default {
     height: 36px;
     padding: 0 10px;
     margin: 0 -10px;
+    padding-left: 40px;
     color: #FFF;
     font-family: "Alibaba PuHuiTi";
     font-size: 14px;
@@ -474,7 +475,7 @@ export default {
     cursor: pointer;
     gap: 10px;
     &.active {
-      margin: 0;
+      // margin: 0;
       background: #0163C4;
     }
     .music-icon {
