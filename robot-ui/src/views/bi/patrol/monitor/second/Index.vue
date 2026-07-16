@@ -57,6 +57,14 @@
         </div>
         <div class="common-scroll mt10 pr14" style="height: calc(100% - 47px); min-height: 923px; overflow-y: auto; margin-right: -14px;">
           <Yuntai />
+          <div class="mt20">
+            <div class="card-title title-344-37">
+              <div class="text">
+                多合一
+              </div>
+            </div>
+            <MultiInOne />
+          </div>
           <div class="mt20" v-if="audioDevice">
             <div class="card-title title-344-37">
               <div class="text">
@@ -96,6 +104,7 @@ import SelfRobotDogControl from './components/SelfRobotDogControl.vue'
 import SelfRobotCarControl from './components/SelfRobotCarControl.vue'
 import Talk from './components/Talk.vue'
 import Yuntai from './components/Yuntai.vue'
+import MultiInOne from './components/MultiInOne.vue'
 import Catcher from './components/Catcher.vue'
 import Launcher from './components/Launcher.vue'
 import { motionControl } from '@/api/login'
@@ -104,7 +113,7 @@ import yuntai from './components/yuntai'
 import { mapState } from 'vuex'
 export default {
   name: 'BiPatrolMonitorSecondScreen',
-  components: {EquipmentListTree, LeftVideo, SelfRobotDogControl, SelfRobotCarControl, Yuntai, Talk, Catcher, Launcher, SmallMap},
+  components: {EquipmentListTree, LeftVideo, SelfRobotDogControl, SelfRobotCarControl, Yuntai, MultiInOne, Talk, Catcher, Launcher, SmallMap},
   props: {
     prefixId: {
       type: String,
