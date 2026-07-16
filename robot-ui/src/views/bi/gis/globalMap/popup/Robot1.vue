@@ -46,11 +46,11 @@
         </div>
       </div>
       <div class="btns mt10 mb20 ml0 flx-align-center flex-wrap wp360" style="margin-top: -10px !important">
-        <el-button v-if="showOper && showControl" type="primary" class="mt20" @click="$emit('showControlPart', true)">远程控制</el-button>
+        <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="$emit('showControlPart')">远程控制</el-button>
         <!-- <el-button type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button> -->
-        <el-button v-if="showOper && showControl && currenRobot?.runningTaskId" type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button>
-        <el-button v-if="showOper && showControl" type="primary" class="mt20" @click="onShutdown()">一键返航</el-button>
-        <el-button v-if="showOper && showControl" type="primary" class="mt20" @click="onStartup()">退出充电桩</el-button>
+        <el-button v-if="showAnimate && showControl && currenRobot?.runningTaskId" type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button>
+        <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="onShutdown()">一键返航</el-button>
+        <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="onStartup()">退出充电桩</el-button>
         <!-- <el-button type="primary" @click="onAddTask()">添加任务</el-button> -->
         <el-button type="primary" class="mt20" @click="$emit('showPath', true)">显示路径</el-button>
         <el-button type="primary" class="mt20" @click="$emit('showArea', true)">显示区域</el-button>
@@ -59,7 +59,7 @@
     <!-- <div class="guideline wp157 hp29 mt9 ml161">
       <svg-icon icon-class="guideline" class="w100 h100" style="vertical-align: top;"></svg-icon>
     </div> -->
-    <img v-if="!showOper" width="197" height="47" style="position: absolute; bottom: -47px; left: 0" src="@/assets/images/new-bi/guideline.png" alt="">
+    <img v-if="!showAnimate" width="197" height="47" style="position: absolute; bottom: -47px; left: 0" src="@/assets/images/new-bi/guideline.png" alt="">
   </div>
 </template>
 
@@ -75,9 +75,6 @@ export default {
     }
   },
   computed: {
-    showOper() {
-      return this.$route.name !== 'biIndex'
-    },
     showControl() {
       return this.selectedRobot?.status === 'online'
     },
@@ -107,6 +104,12 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['setSelectedRobotId']),
+    onShutdown() {
+      // this.$emit('shutdown')
+    },
+    onStartup() {
+      // this.$emit('startup')
+    },
     onClose() {
       this.visible = false
       this.handleGlobalClick(null, false)
@@ -146,6 +149,7 @@ export default {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
+    backdrop-filter: blur(15px);
   }
   .box {
     width: min-content;

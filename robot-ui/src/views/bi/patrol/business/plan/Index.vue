@@ -91,7 +91,7 @@
               <el-button type="text" @click="openEditor(row.id, 'view')">详情</el-button>
               <el-button type="text" @click="openEditor(row.id, 'edit')">编辑</el-button>
               <el-button type="text" :disabled="!row.enabled" @click="previewPlan(row)">预览</el-button>
-              <el-button
+              <el-button    
                 type="text"
                 :disabled="!row.enabled || Boolean(row.activeWorkflowInstanceId)"
                 :loading="isStarting(row.id)"

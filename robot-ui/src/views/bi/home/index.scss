@@ -140,6 +140,9 @@
     right: 395px !important;
   }
   &.collapse {
+    .map-div::before {
+      display: none;
+    }
     .map-div .map-operation {
       top: 126px !important;
       right: 38px !important;

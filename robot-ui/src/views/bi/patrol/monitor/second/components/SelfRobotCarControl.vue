@@ -96,47 +96,49 @@
             <svg-icon icon-class="control-arrow" />
           </div>
         </div>
-        <div class="lights flx-center ml38">
-          <div v-if="vehicleLightDevice" class="flx-center flex-column">
-            <div v-if="!hasVehicleLightStatus(vehicleLightDevice)" class="light-pending mb4">车灯状态同步中</div>
-            <div class="flx-align-center">
-              <span class="wp60 tal">前车灯：</span>
-              <el-switch
-                :value="vehicleLightState?.front?.mode === 'ON'"
-                active-text="开启"
-                inactive-text="关闭"
-                active-color="#3DB56A"
-                inactive-color="#5E5E5E"
-                @change="e => setVehicleLightMode('front', e ? 'ON' : 'OFF')"
-              >
-              </el-switch>
+        <div class="lights ml38">
+          <div v-if="vehicleLightDevice && !hasVehicleLightStatus(vehicleLightDevice)" class="light-pending mb10">车灯状态同步中</div>
+          <div class="flx-center lights-container">
+            <div v-if="vehicleLightDevice" class="d-flex flex-column" style="align-items: end;">
+              <div class="flx-align-center">
+                <span class="wp60 tal">前车灯：</span>
+                <el-switch
+                  :value="vehicleLightState?.front?.mode === 'ON'"
+                  active-text="开启"
+                  inactive-text="关闭"
+                  active-color="#3DB56A"
+                  inactive-color="#5E5E5E"
+                  @change="e => setVehicleLightMode('front', e ? 'ON' : 'OFF')"
+                >
+                </el-switch>
+              </div>
+              <div class="flx-align-center">
+                <span class="wp60 tal">后车灯：</span>
+                <el-switch
+                  :value="vehicleLightState?.rear?.mode === 'ON'"
+                  active-text="开启"
+                  inactive-text="关闭"
+                  active-color="#3DB56A"
+                  inactive-color="#5E5E5E"
+                  @change="e => setVehicleLightMode('rear', e ? 'ON' : 'OFF')"
+                >
+                </el-switch>
+              </div>
             </div>
-            <div class="flx-align-center">
-              <span class="wp60 tal">后车灯：</span>
-              <el-switch
-                :value="vehicleLightState?.rear?.mode === 'ON'"
-                active-text="开启"
-                inactive-text="关闭"
-                active-color="#3DB56A"
-                inactive-color="#5E5E5E"
-                @change="e => setVehicleLightMode('rear', e ? 'ON' : 'OFF')"
-              >
-              </el-switch>
-            </div>
-          </div>
-          <div v-if="warningLightDevices?.length" class="flx-center flex-column">
-            <div v-for="device in warningLightDevices" :key="device.deviceId" class="flx-align-center">
-              <span class="wp76 tal">{{ device.displayName || device.deviceId }}：</span>
-              <el-switch
-                v-if="hasWarningLightStatus(device)"
-                :value="isWarningLightOn(device)"
-                active-text="开启"
-                inactive-text="关闭"
-                active-color="#3DB56A"
-                inactive-color="#5E5E5E"
-                @change="setWarningLight(device, $event)">
-              </el-switch>
-              <span v-else class="light-pending">同步中</span>
+            <div v-if="warningLightDevices?.length" class="flx-center flex-column">
+              <div v-for="device in warningLightDevices" :key="device.deviceId" class="flx-align-center">
+                <span class="wp76 tal">{{ device.displayName || device.deviceId }}：</span>
+                <el-switch
+                  v-if="hasWarningLightStatus(device)"
+                  :value="isWarningLightOn(device)"
+                  active-text="开启"
+                  inactive-text="关闭"
+                  active-color="#3DB56A"
+                  inactive-color="#5E5E5E"
+                  @change="setWarningLight(device, $event)">
+                </el-switch>
+                <span v-else class="light-pending">同步中</span>
+              </div>
             </div>
           </div>
         </div>
@@ -328,7 +330,7 @@ export default {
     letter-spacing: 0.86px;
     line-height: 20px;
   }
-  & > div {
+  .lights-container > div {
     & + div {
       margin-left: 30px;
     }

@@ -480,385 +480,385 @@
 ::v-deep .popver-machine-info {
   position: relative;
 }
-::v-deep .machine-container {
-  .decoration {
-    color: #2A86F3;
-    .svg-icon {
-      vertical-align: top;
-    }
-  }
-  .box {
-    width: 353px;
-    // height: 405px;
-    background: linear-gradient(180deg, rgba(4, 91, 149, 0.50) 0.01%, rgba(4, 51, 68, 0.37) 5.51%, rgba(4, 42, 62, 0.40) 51.52%, rgba(7, 56, 94, 0.38) 92.62%, rgba(4, 78, 151, 0.50) 100.03%);
-    border: 1px solid #2A86F3;
-    backdrop-filter: blur(15px);
-    .top {
-      // width: 347px;
-      width: calc(100% - 8px);
-      height: 40px;
-      margin-bottom: 0 !important;
-      background: linear-gradient(90deg, #2C8EFF -0.18%, rgba(0, 13, 59, 0.20) 94.39%);
-      .title {
-        color: #FFF;
-        font-family: "Alibaba PuHuiTi";
-        font-size: 18px;
-      }
-      .status {
-        position: relative;
-        padding: 4px 20px;
-        color: #FFF;
-        text-align: center;
-        font-family: "Alibaba PuHuiTi";
-        font-size: 12px;
-        line-height: 12px; /* 100% */
-        letter-spacing: 0.857px;
-        border-radius: 2px;
-        border: 1px solid #0061B1;
-        background: #272727;
-        &::before {
-          position: absolute;
-          top: 7px;
-          left: 10px;
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #FFF;
-          content: '';
-        }
-        &.green {
-          color: #25FF6E;
-          border-color: #25FF6E;
-          background: rgba(0, 117, 57, 0.50);
-          &::before {
-            background: #25FF6E;
-          }
-        }
-        &.blue {
-          color: #D0E5FF;
-          border: 1px solid #225CA4;
-          background: rgba(0, 43, 117, 0.50);
-          &::before {
-            background: #D0E5FF;
-          }
-        }
-        &.orange {
-          color: #FF7100;
-          border: 1px solid #FF7100;
-          background: rgba(117, 39, 0, 0.50);
-          &::before {
-            background: #FF7100;
-          }
-        }
-        &.gray {
-          color: #EFEFEF;
-          border: 1px solid #616161;
-          background: rgba(0, 0, 0, 0.50);
-          &::before {
-            background: #EFEFEF;
-          }
-        }
-      }
-      .close {
-        cursor: pointer;
-        .svg-icon {
-          color: rgba(74, 184, 255, 0.5);
-          font-size: 14px;
-        }
-      }
-    }
-  }
-  .guideline {
-    .svg-icon {
-      color: #2CADFF;
-    }
-  }
-  .btns {
-    .el-button {
-      padding: 0 9px;
-      color: #EFF9FF;
-      text-align: center;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 12px;
-      line-height: 30px; /* 100% */
-      letter-spacing: 0.857px;
-      border-radius: 2px;
-      border: 1px solid #2A86F3;
-      background: rgba(9, 45, 72, 0.50);
-      box-shadow: 0 0 20px 0 #2A86F3 inset;
-      &.is-disabled {
-        color: rgba(183, 188, 194, 0.5);
-        background: rgba(34, 53, 67, 0.50);
-      }
-      &.success {
-        border: 1px solid #25FF6E;
-        background: rgba(9, 72, 16, 0.50);
-        box-shadow: 0 0 20px 0 #00AE3A inset;
-      }
-      &.error {
-        border: 1px solid #FF2C2C;
-        background: rgba(27, 0, 0, 0.50);
-        box-shadow: 0 0 20px 0 #F00 inset;
-      }
-      &.off {
-        border: 1px solid #D3D3D3;
-        background: rgba(0, 0, 0, 0.50);
-        box-shadow: 0 0 20px 0 #4C4C4C inset;
-      }
-    }
-  }
-  &.error {
-    .decoration {
-      color: #FF2C2C;
-    }
-    .box {
-      background: linear-gradient(180deg, rgba(149, 4, 4, 0.40) 0.01%, rgba(62, 4, 4, 0.32) 51.52%, rgba(94, 7, 7, 0.31) 92.62%, rgba(151, 4, 4, 0.40) 100.03%);
-      border-color: #FF2C2C;
-      .top {
-        background: linear-gradient(90deg, #FF2C2C 0.92%, rgba(80, 5, 5, 0.28) 93.38%, rgba(59, 0, 0, 0.19) 104.71%);
-        .close {
-          .svg-icon {
-            color: rgba(255, 74, 74, 0.5);
-          }
-        }
-      }
-      .info-content {
-        .desc {
-          height: 120px;
-          overflow-y: auto;
-          color: #FFF;
-          font-family: "Alibaba PuHuiTi";
-          font-size: 12px;
-          line-height: 12px; /* 100% */
-          letter-spacing: 0.857px;
-          border: 1px solid #620202;
-          background: #320C0D;
-        }
-      }
-    }
-    .guideline {
-      .svg-icon {
-        color: #FF2C2C ;
-      }
-    }
-    .btns .el-button {
-      border: 1px solid #FF2C2C;
-      background: rgba(27, 0, 0, 0.50);
-      box-shadow: 0 0 20px 0 #F00 inset;
-    }
-  }
-  &.off {
-    .decoration {
-      color: #EBEBEB;
-    }
-    .box {
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.40) 0.01%, rgba(74, 74, 74, 0.32) 51.52%, rgba(85, 85, 85, 0.31) 92.62%, rgba(142, 142, 142, 0.40) 100.03%);
-      border-color: #D3D3D3;
-      .top {
-        background: linear-gradient(90deg, #E2E2E2 0.92%, rgba(68, 68, 68, 0.28) 93.38%, rgba(0, 0, 0, 0.19) 104.71%);
-        .close {
-          .svg-icon {
-            color: rgba(255, 255, 255, 0.5);
-          }
-        }
-      }
-      .info-content {
-        .desc {
-          height: 120px;
-          overflow-y: auto;
-          color: #FFF;
-          font-family: "Alibaba PuHuiTi";
-          font-size: 12px;
-          line-height: 12px; /* 100% */
-          letter-spacing: 0.857px;
-          border: 1px solid #D3D3D3;
-          background: #141414;
-        }
-      }
-    }
-    .guideline {
-      .svg-icon {
-        color: #E2E2E2 ;
-      }
-    }
-    .btns .el-button {
-      border: 1px solid #D3D3D3;
-      background: rgba(0, 0, 0, 0.50);
-      box-shadow: 0 0 20px 0 #4C4C4C inset;
-    }
-  }
-  &.robot-container {
-    .box {
-      .info-content {
-        .item {
-          color: #FFF;
-          font-family: Inter;
-          font-size: 14px;
-          line-height: 17px;
-          .status {
-            padding: 2px 6px;
-            border-radius: 2px;
-            border: 0.5px solid #4AB8FF;
-            background: rgba(17, 69, 108, 0.50);
-            color: #6AC5FF;
-            font-family: "Alibaba PuHuiTi";
-            font-size: 10px;
-            line-height: 12px; /* 120% */
-            letter-spacing: 0.857px;
-          }
-        }
-      }
-    }
-  }
-  // 充电桩
-  &.battery-container {
-    .box {
-      .info-content {
-        .item {
-          .label {
-            color: #92A0B6;
-            font-family: Inter;
-            font-size: 14px;
-            font-weight: 400;
-            line-height: 17px;
-          }
-          .value {
-            font-family: "Microsoft YaHei";
-            font-size: 14px;
-            line-height: 16px; /* 100% */
-            &.with-border {
-              padding: 6px 10px;
-              border: 1px solid #05304A;
-              background: #05213A;
-            }
-            &.status {
-              position: relative;
-              padding-left: 26px;
-              &::before {
-                position: absolute;
-                top: 12px;
-                left: 10px;
-                width: 6px;
-                height: 6px;
-                border-radius: 50%;
-                content: '';
-              }
-              &.success {
-                color: #25FF6E;
-                &::before {
-                  background: #25FF6E;
-                }
-              }
-            }
-            &.progress {
-              position: relative;
-              &::before {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: var(--rate);
-                height: 100%;
-                background: linear-gradient(90deg, #0992B3 0%, #2BABFC 100%);
-                content: '';
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  // 无人机
-  &.uav-container {
-    .box {
-      width: 572px;
-    }
-    .info-content {
-      .task-info {
-        gap: 10px;
-        .item {
-          flex: 1;
-          background: #0A233D;
-          .count {
-            color: #15DCFF;
-            font-family: Bahnschrift;
-            font-size: 20px;
-            font-style: normal;
-            font-weight: 400;
-            line-height: 23.583px; /* 117.914% */
-          }
-          .unit {
-            color: #D5EDFF;
-            font-family: Bahnschrift;
-            font-size: 12px;
-            font-style: normal;
-            font-weight: 400;
-            line-height: 23.583px;
-          }
-          .title {
-            color: #72C2FF;
-            font-family: "Microsoft YaHei UI";
-            font-size: 14px;
-            line-height: 19px;
-          }
-          &:nth-child(2) {
-            .count {
-              color: #3DB56A;
-            }
-          }
-          &:nth-child(3) {
-            .count {
-              color: #159AFF;
-            }
-          }
-        }
-      }
-      .list {
-        border-radius: 2px;
-        border: 1px solid #152C45;
-        .title, .content {
-          padding: 12px 20px;
-          color: #D0DEEE;
-          font-family: "Alibaba PuHuiTi";
-          font-size: 12px;
-          font-style: normal;
-          font-weight: 400;
-          line-height: 12px; /* 100% */
-          letter-spacing: 0.857px;
-        }
-        .title {
-          color: #159AFF;
-          background: rgbA(2, 49, 100, .2);
-        }
-        .content {
-          .item {
-            & + .item {
-              margin-top: 6px;
-            }
-            .status {
-              padding: 4px;
-              border-radius: 2px;
-              text-align: center;
-              font-family: "Alibaba PuHuiTi";
-              font-size: 12px;
-              line-height: 12px; /* 100% */
-              letter-spacing: 0.857px;
-              color: #1C9DFF;
-              background: rgba(9, 45, 72, 0.50);
-              box-shadow: 0 0 4px 0 #2575AA inset;
-              &.success {
-                color: #25FF6E;
-                background: rgba(9, 72, 47, 0.50);
-                box-shadow: 0 0 4px 0 #25AA75 inset;
-              }
-              &.yellow {
-                color: #F4FF1C;
-                background: rgba(72, 66, 9, 0.50);
-                box-shadow: 0 0 4px 0 #D4CD00 inset;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+// ::v-deep .machine-container {
+//   .decoration {
+//     color: #2A86F3;
+//     .svg-icon {
+//       vertical-align: top;
+//     }
+//   }
+//   .box {
+//     width: 353px;
+//     // height: 405px;
+//     background: linear-gradient(180deg, rgba(4, 91, 149, 0.50) 0.01%, rgba(4, 51, 68, 0.37) 5.51%, rgba(4, 42, 62, 0.40) 51.52%, rgba(7, 56, 94, 0.38) 92.62%, rgba(4, 78, 151, 0.50) 100.03%);
+//     border: 1px solid #2A86F3;
+//     backdrop-filter: blur(15px);
+//     .top {
+//       // width: 347px;
+//       width: calc(100% - 8px);
+//       height: 40px;
+//       margin-bottom: 0 !important;
+//       background: linear-gradient(90deg, #2C8EFF -0.18%, rgba(0, 13, 59, 0.20) 94.39%);
+//       .title {
+//         color: #FFF;
+//         font-family: "Alibaba PuHuiTi";
+//         font-size: 18px;
+//       }
+//       .status {
+//         position: relative;
+//         padding: 4px 20px;
+//         color: #FFF;
+//         text-align: center;
+//         font-family: "Alibaba PuHuiTi";
+//         font-size: 12px;
+//         line-height: 12px; /* 100% */
+//         letter-spacing: 0.857px;
+//         border-radius: 2px;
+//         border: 1px solid #0061B1;
+//         background: #272727;
+//         &::before {
+//           position: absolute;
+//           top: 7px;
+//           left: 10px;
+//           width: 6px;
+//           height: 6px;
+//           border-radius: 50%;
+//           background: #FFF;
+//           content: '';
+//         }
+//         &.green {
+//           color: #25FF6E;
+//           border-color: #25FF6E;
+//           background: rgba(0, 117, 57, 0.50);
+//           &::before {
+//             background: #25FF6E;
+//           }
+//         }
+//         &.blue {
+//           color: #D0E5FF;
+//           border: 1px solid #225CA4;
+//           background: rgba(0, 43, 117, 0.50);
+//           &::before {
+//             background: #D0E5FF;
+//           }
+//         }
+//         &.orange {
+//           color: #FF7100;
+//           border: 1px solid #FF7100;
+//           background: rgba(117, 39, 0, 0.50);
+//           &::before {
+//             background: #FF7100;
+//           }
+//         }
+//         &.gray {
+//           color: #EFEFEF;
+//           border: 1px solid #616161;
+//           background: rgba(0, 0, 0, 0.50);
+//           &::before {
+//             background: #EFEFEF;
+//           }
+//         }
+//       }
+//       .close {
+//         cursor: pointer;
+//         .svg-icon {
+//           color: rgba(74, 184, 255, 0.5);
+//           font-size: 14px;
+//         }
+//       }
+//     }
+//   }
+//   .guideline {
+//     .svg-icon {
+//       color: #2CADFF;
+//     }
+//   }
+//   .btns {
+//     .el-button {
+//       padding: 0 9px;
+//       color: #EFF9FF;
+//       text-align: center;
+//       font-family: "Alibaba PuHuiTi";
+//       font-size: 12px;
+//       line-height: 30px; /* 100% */
+//       letter-spacing: 0.857px;
+//       border-radius: 2px;
+//       border: 1px solid #2A86F3;
+//       background: rgba(9, 45, 72, 0.50);
+//       box-shadow: 0 0 20px 0 #2A86F3 inset;
+//       &.is-disabled {
+//         color: rgba(183, 188, 194, 0.5);
+//         background: rgba(34, 53, 67, 0.50);
+//       }
+//       &.success {
+//         border: 1px solid #25FF6E;
+//         background: rgba(9, 72, 16, 0.50);
+//         box-shadow: 0 0 20px 0 #00AE3A inset;
+//       }
+//       &.error {
+//         border: 1px solid #FF2C2C;
+//         background: rgba(27, 0, 0, 0.50);
+//         box-shadow: 0 0 20px 0 #F00 inset;
+//       }
+//       &.off {
+//         border: 1px solid #D3D3D3;
+//         background: rgba(0, 0, 0, 0.50);
+//         box-shadow: 0 0 20px 0 #4C4C4C inset;
+//       }
+//     }
+//   }
+//   &.error {
+//     .decoration {
+//       color: #FF2C2C;
+//     }
+//     .box {
+//       background: linear-gradient(180deg, rgba(149, 4, 4, 0.40) 0.01%, rgba(62, 4, 4, 0.32) 51.52%, rgba(94, 7, 7, 0.31) 92.62%, rgba(151, 4, 4, 0.40) 100.03%);
+//       border-color: #FF2C2C;
+//       .top {
+//         background: linear-gradient(90deg, #FF2C2C 0.92%, rgba(80, 5, 5, 0.28) 93.38%, rgba(59, 0, 0, 0.19) 104.71%);
+//         .close {
+//           .svg-icon {
+//             color: rgba(255, 74, 74, 0.5);
+//           }
+//         }
+//       }
+//       .info-content {
+//         .desc {
+//           height: 120px;
+//           overflow-y: auto;
+//           color: #FFF;
+//           font-family: "Alibaba PuHuiTi";
+//           font-size: 12px;
+//           line-height: 12px; /* 100% */
+//           letter-spacing: 0.857px;
+//           border: 1px solid #620202;
+//           background: #320C0D;
+//         }
+//       }
+//     }
+//     .guideline {
+//       .svg-icon {
+//         color: #FF2C2C ;
+//       }
+//     }
+//     .btns .el-button {
+//       border: 1px solid #FF2C2C;
+//       background: rgba(27, 0, 0, 0.50);
+//       box-shadow: 0 0 20px 0 #F00 inset;
+//     }
+//   }
+//   &.off {
+//     .decoration {
+//       color: #EBEBEB;
+//     }
+//     .box {
+//       background: linear-gradient(180deg, rgba(255, 255, 255, 0.40) 0.01%, rgba(74, 74, 74, 0.32) 51.52%, rgba(85, 85, 85, 0.31) 92.62%, rgba(142, 142, 142, 0.40) 100.03%);
+//       border-color: #D3D3D3;
+//       .top {
+//         background: linear-gradient(90deg, #E2E2E2 0.92%, rgba(68, 68, 68, 0.28) 93.38%, rgba(0, 0, 0, 0.19) 104.71%);
+//         .close {
+//           .svg-icon {
+//             color: rgba(255, 255, 255, 0.5);
+//           }
+//         }
+//       }
+//       .info-content {
+//         .desc {
+//           height: 120px;
+//           overflow-y: auto;
+//           color: #FFF;
+//           font-family: "Alibaba PuHuiTi";
+//           font-size: 12px;
+//           line-height: 12px; /* 100% */
+//           letter-spacing: 0.857px;
+//           border: 1px solid #D3D3D3;
+//           background: #141414;
+//         }
+//       }
+//     }
+//     .guideline {
+//       .svg-icon {
+//         color: #E2E2E2 ;
+//       }
+//     }
+//     .btns .el-button {
+//       border: 1px solid #D3D3D3;
+//       background: rgba(0, 0, 0, 0.50);
+//       box-shadow: 0 0 20px 0 #4C4C4C inset;
+//     }
+//   }
+//   &.robot-container {
+//     .box {
+//       .info-content {
+//         .item {
+//           color: #FFF;
+//           font-family: Inter;
+//           font-size: 14px;
+//           line-height: 17px;
+//           .status {
+//             padding: 2px 6px;
+//             border-radius: 2px;
+//             border: 0.5px solid #4AB8FF;
+//             background: rgba(17, 69, 108, 0.50);
+//             color: #6AC5FF;
+//             font-family: "Alibaba PuHuiTi";
+//             font-size: 10px;
+//             line-height: 12px; /* 120% */
+//             letter-spacing: 0.857px;
+//           }
+//         }
+//       }
+//     }
+//   }
+//   // 充电桩
+//   &.battery-container {
+//     .box {
+//       .info-content {
+//         .item {
+//           .label {
+//             color: #92A0B6;
+//             font-family: Inter;
+//             font-size: 14px;
+//             font-weight: 400;
+//             line-height: 17px;
+//           }
+//           .value {
+//             font-family: "Microsoft YaHei";
+//             font-size: 14px;
+//             line-height: 16px; /* 100% */
+//             &.with-border {
+//               padding: 6px 10px;
+//               border: 1px solid #05304A;
+//               background: #05213A;
+//             }
+//             &.status {
+//               position: relative;
+//               padding-left: 26px;
+//               &::before {
+//                 position: absolute;
+//                 top: 12px;
+//                 left: 10px;
+//                 width: 6px;
+//                 height: 6px;
+//                 border-radius: 50%;
+//                 content: '';
+//               }
+//               &.success {
+//                 color: #25FF6E;
+//                 &::before {
+//                   background: #25FF6E;
+//                 }
+//               }
+//             }
+//             &.progress {
+//               position: relative;
+//               &::before {
+//                 position: absolute;
+//                 top: 0;
+//                 left: 0;
+//                 width: var(--rate);
+//                 height: 100%;
+//                 background: linear-gradient(90deg, #0992B3 0%, #2BABFC 100%);
+//                 content: '';
+//               }
+//             }
+//           }
+//         }
+//       }
+//     }
+//   }
+//   // 无人机
+//   &.uav-container {
+//     .box {
+//       width: 572px;
+//     }
+//     .info-content {
+//       .task-info {
+//         gap: 10px;
+//         .item {
+//           flex: 1;
+//           background: #0A233D;
+//           .count {
+//             color: #15DCFF;
+//             font-family: Bahnschrift;
+//             font-size: 20px;
+//             font-style: normal;
+//             font-weight: 400;
+//             line-height: 23.583px; /* 117.914% */
+//           }
+//           .unit {
+//             color: #D5EDFF;
+//             font-family: Bahnschrift;
+//             font-size: 12px;
+//             font-style: normal;
+//             font-weight: 400;
+//             line-height: 23.583px;
+//           }
+//           .title {
+//             color: #72C2FF;
+//             font-family: "Microsoft YaHei UI";
+//             font-size: 14px;
+//             line-height: 19px;
+//           }
+//           &:nth-child(2) {
+//             .count {
+//               color: #3DB56A;
+//             }
+//           }
+//           &:nth-child(3) {
+//             .count {
+//               color: #159AFF;
+//             }
+//           }
+//         }
+//       }
+//       .list {
+//         border-radius: 2px;
+//         border: 1px solid #152C45;
+//         .title, .content {
+//           padding: 12px 20px;
+//           color: #D0DEEE;
+//           font-family: "Alibaba PuHuiTi";
+//           font-size: 12px;
+//           font-style: normal;
+//           font-weight: 400;
+//           line-height: 12px; /* 100% */
+//           letter-spacing: 0.857px;
+//         }
+//         .title {
+//           color: #159AFF;
+//           background: rgbA(2, 49, 100, .2);
+//         }
+//         .content {
+//           .item {
+//             & + .item {
+//               margin-top: 6px;
+//             }
+//             .status {
+//               padding: 4px;
+//               border-radius: 2px;
+//               text-align: center;
+//               font-family: "Alibaba PuHuiTi";
+//               font-size: 12px;
+//               line-height: 12px; /* 100% */
+//               letter-spacing: 0.857px;
+//               color: #1C9DFF;
+//               background: rgba(9, 45, 72, 0.50);
+//               box-shadow: 0 0 4px 0 #2575AA inset;
+//               &.success {
+//                 color: #25FF6E;
+//                 background: rgba(9, 72, 47, 0.50);
+//                 box-shadow: 0 0 4px 0 #25AA75 inset;
+//               }
+//               &.yellow {
+//                 color: #F4FF1C;
+//                 background: rgba(72, 66, 9, 0.50);
+//                 box-shadow: 0 0 4px 0 #D4CD00 inset;
+//               }
+//             }
+//           }
+//         }
+//       }
+//     }
+//   }
+// }

@@ -60,7 +60,7 @@ export default {
   data() {
     return {
       collapse: false,
-      isSlam: true,
+      isSlam: false,
       slamInfo: {
         map: mapInfo.data,
         points: mapPoints.data,
@@ -74,6 +74,8 @@ export default {
   computed: {
     ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot']),
     currentSlamMap() {
+      // console.log('slamInfo.map:', this.slamInfo, this.slamInfo.map)
+      // return this.slamInfo.map
       const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
       return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(this.currentSlamMapId)) || this.slamInfo.map
     }
@@ -98,6 +100,9 @@ export default {
     },
     changeMapType(type) {
       this.isSlam = type ? type === 'slam' : !this.isSlam
+      if (type !== 'slam') {
+        this.currentSlamMapId = null
+      }
     },
     changeSlamMap(mapInfo) {
       this.currentSlamMapId = mapInfo?.id ?? null
@@ -113,16 +118,16 @@ export default {
     },
   },
   watch: {
-    slamMapList: {
-      immediate: true,
-      handler(list) {
-        if (!Array.isArray(list) || !list.length) return
-        const selectedExists = list.some(item => String(item.id) === String(this.currentSlamMapId))
-        if (!selectedExists) {
-          this.currentSlamMapId = (list.find(item => item.previewFileId) || list[0]).id
-        }
-      }
-    }
+    // slamMapList: {
+    //   immediate: false,
+    //   handler(list) {
+    //     if (!Array.isArray(list) || !list.length) return
+    //     const selectedExists = list.some(item => String(item.id) === String(this.currentSlamMapId))
+    //     if (!selectedExists) {
+    //       this.currentSlamMapId = (list.find(item => item.previewFileId) || list[0]).id
+    //     }
+    //   }
+    // }
   },
   beforeDestroy() {
     // mqttClient.disconnect()

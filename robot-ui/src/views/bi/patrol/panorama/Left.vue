@@ -63,26 +63,73 @@
           </span> -->
         </div>
         <div class="list pt10 pr20 pl20 mb20 common-scroll ovya" :style="{ maxHeight: collapseArr[2] ? '300px' : '262px' }">
-           <div v-for="(item, key, index) of taskData || []" class="item wp288 pb10" :style="{ 'pointer-events': item.status === 'running' ? 'auto' : 'none' }" :class="{ 'is-active': activeTaskId == item.taskId, 'mb10': index !== Object.keys(taskData || {}).length - 1 }" @click="handleClickTask(key)">
+          <div
+            v-for="(item, key, index) of taskData || []"
+            :key="key"
+            class="item wp288"
+            :class="{
+              'is-active': activeTaskId == item.taskId || activeTaskId == key,
+              'mb10': index !== Object.keys(taskData || {}).length - 1
+            }"
+          >
             <div class="header flx-justify-between p10">
               <div class="flx-align-center flex1" style="min-width: 0">
                 <svg-icon icon-class="d-right"></svg-icon>
                 <span class="ml4 text-ellipsis" :title="item.name">{{ item.name }}</span>
               </div>
-              <span class="status flx-center pt2 pr6 pb2 pl6 wp64 ml10" :class="getTaskStatusName(item.status)">
+              <span class="status flx-center pt2 pr6 pb2 pl6 ml10" :class="getTaskStatusName(item.status)">
                 <svg-icon icon-class="security"></svg-icon>
                 <span class="ml4">{{ item.statusName || '---' }}</span>
               </span>
             </div>
-            <div class="desc mt10">
-              <div>任务时间：{{ item.timeRange }}</div>
-              <div class="mt10 text-ellipsis" style="max-width: calc(100% - 45px)">当前位置：{{ item.currentLocation }}</div>
-              <div class="mt10">执行装备：{{ item.equipmentList?.length }}台</div>
+            <div class="desc">
+              <div>任务时间：{{ item.timeRange || item.startTime || '-' }}</div>
+              <div class="text-ellipsis">当前位置：{{ item.currentLocation || '-' }}</div>
+              <div>执行装备：{{ item.equipmentList?.length || 0 }}台</div>
             </div>
-            <div v-if="item.status === 'running'" class="symbol wp36 hp28">
-              <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId == item.taskId ? 'active' : 'off1'}.png`)" class="w100 h100" alt="" srcset="">
+            <!-- 执行中：详情 / 暂停(禁用) / 删除 / 播放视频 -->
+            <div v-if="item.status === 'running' || item.status === 'paused'" class="task-actions">
+              <button type="button" class="action-btn action-detail" @click.stop="handleTaskDetail(item, key)">
+                <span>详情</span>
+                <svg-icon icon-class="right" class="ml4" />
+              </button>
+              <button
+                type="button"
+                class="action-btn action-icon is-disabled"
+                disabled
+                title="暂停暂不可用"
+              >
+                <svg-icon :icon-class="item.status === 'paused' ? 'play' : 'pause'" />
+              </button>
+              <button type="button" class="action-btn action-icon" disabled @click.stop="openTaskConfirm('delete', item, key)">
+                <svg-icon icon-class="close1" />
+              </button>
+              <!-- <button
+                type="button"
+                class="action-btn action-video"
+                :class="{ 'is-active': activeTaskId == item.taskId || activeTaskId == key }"
+                @click.stop="handleClickTask(key)"
+              >
+                <svg-icon icon-class="play" />
+              </button> -->
+              <div class="symbol wp36 hp28" @click="handleClickTask(key)">
+                <!-- <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId == item.taskId ? 'active' : 'off1'}.png`)" class="w100 h100" alt="" srcset="" /> -->
+                <img :src="require(`../../../../assets/images/new-bi/camera${activeTaskId == item.taskId ? '2' : '1'}.png`)" class="w100 h100" alt="" srcset="" />
+              </div>
             </div>
-           </div>
+            <!-- 待执行：立即执行 -->
+            <div v-else-if="item.status === 'pending'" class="task-actions">
+              <button
+                type="button"
+                class="action-btn action-execute"
+                :disabled="isStartingTask(item)"
+                @click.stop="openTaskConfirm('execute', item, key)"
+              >
+                <span>{{ isStartingTask(item) ? '执行中' : '立即执行' }}</span>
+                <svg-icon icon-class="right" class="ml4" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="box mt20 alert" :class="{ 'no_data hp41': collapseArr[2], 'hp323': !collapseArr[2] }" style="max-height: 446px;">
@@ -107,7 +154,7 @@
               </span>
             </div>
             <div class="mt20 list">
-              <div v-for="(item, index) in alarmsData?.[key]?.items || []" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert(item)">
+              <div v-for="(item, index) in getObjByOrder(alarmsData?.[key]?.items || [], 'eventTime', 'array')" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert(item)">
                 <div class="img wp120 hp72 flx-center"
                 >
                 <!-- :style="{ background: `url(${getImageUrl(item.snapshotUrl?.visible) || (item.title.includes('火灾') ? img1 : img2)}) lightgray -4.267px -11.862px / 104% 118.678% no-repeat` }" -->
@@ -123,7 +170,7 @@
                       <span>{{ item.eventTime.split(' ')[1] }}</span>
                     </div>
                   </div>
-                  <div class="area mt5">位置：{{ item?.location?.address || '-' }}</div>
+                  <div class="area mt5 text-ellipsis">位置：{{ item?.location?.address || '-' }}</div>
                 </div>
               </div>
             </div>
@@ -139,12 +186,22 @@
     <TaskRobotView ref="taskRobotViewRef" @handleClickTask="handleClickTask" />
     <WarningBatch ref="warningBatchRef" />
     <WarnInfo ref="WarnInfoRef" />
+    <div v-if="taskConfirmVisible" class="notice-modal flx-center">
+      <div class="notice-modal__mask" @click="closeTaskConfirm"></div>
+      <div class="notice-modal__dialog w50 hp180">
+        <p class="notice-modal__text mt23">{{ taskConfirmText }}</p>
+        <div class="notice-modal__btns">
+          <button type="button" class="notice-modal__btn" @click="closeTaskConfirm">取消</button>
+          <button type="button" class="notice-modal__btn is-primary" :disabled="taskConfirmLoading" @click="confirmTaskAction">确定</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
 import { mapState, mapActions } from 'vuex';
-import { getPatrolPanoramaOverview } from '../../../../api/new-bi.js';
+import { deleteTask, startTask, startTaskPreview } from '../../../../api/new-bi.js';
 import TaskRobotView from '../../components/modal/TaskRobotView.vue';
 import WarningBatch from './warning/WarningBatch.vue'
 import WarnInfo from './warning/WarnInfo.vue'
@@ -156,15 +213,6 @@ export default {
       type: Boolean,
       default: false
     }
-  },
-  computed: {
-    selectedRobotId() {
-      return this.$store.getters['websocketRobot/getSelectedRobotId']
-    },
-    robots() {
-      return this.$store.getters['websocketRobot/getRobots'];
-    },
-    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats']),
   },
   data() {
     return {
@@ -205,6 +253,26 @@ export default {
       updated: false,
       img1: require('@/assets/images/new-bi/test.png'),
       img2: require('@/assets/images/new-bi/warning1.png'),
+      startingTaskIds: [],
+      taskConfirmVisible: false,
+      taskConfirmType: '',
+      taskConfirmItem: null,
+      taskConfirmKey: null,
+      taskConfirmLoading: false,
+    }
+  },
+  computed: {
+    selectedRobotId() {
+      return this.$store.getters['websocketRobot/getSelectedRobotId']
+    },
+    robots() {
+      return this.$store.getters['websocketRobot/getRobots'];
+    },
+    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats']),
+    taskConfirmText() {
+      if (this.taskConfirmType === 'delete') return '是否【删除】该任务？'
+      if (this.taskConfirmType === 'execute') return '是否【立即执行】该任务？'
+      return ''
     }
   },
   methods: {
@@ -213,48 +281,182 @@ export default {
       const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
       return `${preUrl}${url}`
     },
+    /**
+     * 通用的按时间属性降序排序函数
+     * @param {Array|Object} data - 要排序的数据
+     * @param {string} timeKey - 时间属性的键名
+     * @param {string} returnType - 返回类型：'array' 或 'object'
+     * @returns {Array|Object} 排序后的数据
+     */
+    getObjByOrder(data, timeKey = 'time', returnType = 'array') {
+      let sortedData = returnType === 'object' ? {} : [];
+      if (returnType === 'object') {
+        sortedData = Object.assign({}, data); // 创建数据的副本以避免修改原始数据
+      } else {
+        sortedData = [].concat(data); // 创建数据的副本以避免修改原始数据
+      }
+      
+      // 如果是数组，直接排序
+      if (Array.isArray(sortedData)) {
+          return sortedData.sort((a, b) => {
+              const timeA = new Date(a[timeKey]).getTime();
+              const timeB = new Date(b[timeKey]).getTime();
+              return timeB - timeA;
+          });
+      }
+      
+      // 如果是对象，转换为数组排序后再转回
+      if (typeof sortedData === 'object' && sortedData !== null) {
+          const entries = Object.entries(sortedData);
+          const sorted = entries.sort(([, a], [, b]) => {
+              const timeA = new Date(a[timeKey]).getTime();
+              const timeB = new Date(b[timeKey]).getTime();
+              return timeB - timeA;
+          });
+          
+          if (returnType === 'object') {
+              return sorted.reduce((result, [key, value]) => {
+                  result[key] = value;
+                  return result;
+              }, {});
+          }
+          
+          return sorted.map(([key, value]) => ({ key, ...value }));
+      }
+      
+      throw new Error('数据类型必须是数组或对象');
+    },
     getTaskStatusName(status) {
       switch (status) {
         case 'running':
-          return 'green'
+          return 'blue'
         case 'pending':
           return 'orange'
+        case 'paused':
+          return 'orange'
         case 'completed':
-          return 'blue'
+          return 'green'
         case 'failed':
           return 'red'
         default:
           return 'gray'
       }
     },
+    getTaskPlanId(item) {
+      return item?.planId || item?.id || item?.taskId || item?.taskPlanId
+    },
+    isStartingTask(item) {
+      const planId = this.getTaskPlanId(item)
+      return planId != null && this.startingTaskIds.indexOf(planId) !== -1
+    },
     getMoreRobotInfo() {
   
     },
     toggleCollapse(type, typeIndex) {
-      this.$set(this[type], typeIndex, !this[type][typeIndex])
+      // this.$set(this[type], typeIndex, !this[type][typeIndex])
     },
     handleClickTask(taskId) {
-      console.log(111, taskId, this.activeTaskId);
-            
       if (this.activeTaskId == taskId) {
         this.$refs.taskRobotViewRef.dialogVisible = false
-        // 清空录像
         this.activeTaskId = null
         this.setShowRobotIds([])
         return
       }
       this.activeTaskId = taskId
-      console.log(222, taskId, this.activeTaskId, taskId === this.activeTaskId);
-      const robotIds = this.taskData[taskId].equipmentList.map(robot => robot.robotId)
+      const robotIds = (this.taskData[taskId]?.equipmentList || []).map(robot => robot.robotId)
       this.setShowRobotIds(robotIds)
       this.$refs.taskRobotViewRef.showModal({
-        taskInfo: { ...this.taskData[taskId]},
+        taskInfo: { ...this.taskData[taskId] },
         robotIds
       })
     },
+    handleTaskDetail() {
+      // 详情入口预留
+    },
+    openTaskConfirm(type, item, key) {
+      this.taskConfirmType = type
+      this.taskConfirmItem = item
+      this.taskConfirmKey = key
+      this.taskConfirmVisible = true
+    },
+    closeTaskConfirm() {
+      if (this.taskConfirmLoading) return
+      this.taskConfirmVisible = false
+      this.taskConfirmType = ''
+      this.taskConfirmItem = null
+      this.taskConfirmKey = null
+    },
+    async confirmTaskAction() {
+      if (this.taskConfirmType === 'delete') {
+        await this.handleDeleteTask()
+      } else if (this.taskConfirmType === 'execute') {
+        await this.handleExecuteTask()
+      }
+    },
+    unwrap(res) {
+      if (res && res.code !== undefined) {
+        if (res.code === '0' || res.code === 0 || res.code === 200) return res.data || {}
+        throw new Error(res.message || '请求失败')
+      }
+      return res || {}
+    },
+    async handleDeleteTask() {
+      const item = this.taskConfirmItem
+      const confirmKey = this.taskConfirmKey
+      const planId = this.getTaskPlanId(item)
+      if (planId == null) {
+        this.$message.error('缺少任务标识，无法删除')
+        return
+      }
+      this.taskConfirmLoading = true
+      try {
+        await deleteTask(planId)
+        this.$message.success('已删除')
+        if (this.activeTaskId == item.taskId || this.activeTaskId == confirmKey) {
+          this.activeTaskId = null
+          this.setShowRobotIds([])
+          if (this.$refs.taskRobotViewRef) this.$refs.taskRobotViewRef.dialogVisible = false
+        }
+        this.taskConfirmLoading = false
+        this.closeTaskConfirm()
+      } catch (error) {
+        this.$message.error((error && error.message) || '删除失败')
+        this.taskConfirmLoading = false
+      }
+    },
+    async handleExecuteTask() {
+      const item = this.taskConfirmItem
+      const planId = this.getTaskPlanId(item)
+      if (planId == null) {
+        this.$message.error('缺少任务标识，无法执行')
+        return
+      }
+      if (this.isStartingTask(item)) return
+      this.startingTaskIds = this.startingTaskIds.concat(planId)
+      this.taskConfirmLoading = true
+      try {
+        const preview = this.unwrap(await startTaskPreview(planId, {}))
+        if (preview && preview.valid === false) {
+          this.$message.warning((preview && preview.message) || '任务预检未通过，无法启动')
+          return
+        }
+        const data = this.unwrap(await startTask(planId, {}))
+        if (data && data.accepted === false) {
+          this.$message.warning((data && data.message) || '任务未能启动')
+          return
+        }
+        this.$message.success((data && data.message) || '任务已启动')
+        this.taskConfirmLoading = false
+        this.closeTaskConfirm()
+      } catch (error) {
+        this.$message.error((error && error.message) || '执行失败')
+      } finally {
+        this.taskConfirmLoading = false
+        this.startingTaskIds = this.startingTaskIds.filter(id => id !== planId)
+      }
+    },
     handleClickAlert(item) {
       this.$refs.warningBatchRef.open(this.alarmsData || {})
-      // this.$refs.WarnInfoRef.open(item)
     }
   },
   watch: {
@@ -598,6 +800,7 @@ export default {
         }
         .item {
           position: relative;
+          padding-bottom: 10px;
           border-radius: 6px;
           border: 1px solid #11203F;
           background: #11203F;
@@ -609,11 +812,11 @@ export default {
               border-radius: 5px 5px 0 0;
               background: #0A224D;
             }
-          }
-          .symbol {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
+            .action-btn {
+              border-color: #D2EBFF;
+              background: #0B2348;
+              box-shadow: inset 0 0 20px 0 #008CFF;
+            }
           }
           .header {
             color: #FFF;
@@ -626,17 +829,19 @@ export default {
               font-size: 18px;
             }
             .status {
+              flex-shrink: 0;
               color: #FFF;
               border-radius: 4px;
               font-family: "Microsoft YaHei";
               font-size: 12px;
               line-height: 16px;
+              white-space: nowrap;
               .svg-icon {
                 color: #FFF;
                 font-size: 12px;
               }
               &.blue {
-                background: #225CA4;;
+                background: #225CA4;
               }
               &.orange {
                 background: #E18000;
@@ -653,16 +858,148 @@ export default {
             }
           }
           .desc {
-            padding-left: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 11px;
+            padding: 0 10px;
             color: #FFF;
             font-family: "Alibaba PuHuiTi";
             font-size: 12px;
             line-height: 16px;
             letter-spacing: 0.802px;
           }
+          .task-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+            padding: 0 10px;
+          }
+          .action-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 28px;
+            padding: 0;
+            border: 1px solid #174D91;
+            border-radius: 2px;
+            background: linear-gradient(180deg, #083B8B 25%, #0B2348 100%);
+            color: #FFF;
+            font-family: "Microsoft YaHei";
+            font-size: 12px;
+            line-height: 16px;
+            cursor: pointer;
+            .svg-icon {
+              color: #FFF;
+            }
+            &:disabled,
+            &.is-disabled {
+              opacity: 0.55;
+              cursor: not-allowed;
+            }
+            /* &:not(.is-disabled) {
+              &:active {
+                color: #0BF9FE;
+                box-shadow: 0 0 10px 3px #0BF9FE inset;
+              }
+            } */
+          }
+          .action-detail {
+            width: 146px;
+            .svg-icon {
+              font-size: 14px;
+            }
+          }
+          .action-icon {
+            width: 28px;
+            .svg-icon {
+              font-size: 14px;
+            }
+          }
+          .action-video {
+            width: 36px;
+            .svg-icon {
+              font-size: 18px;
+            }
+          }
+          .action-execute {
+            width: 100%;
+            .svg-icon {
+              font-size: 14px;
+            }
+          }
         }
       }
     }
+  }
+}
+
+.notice-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  pointer-events: none;
+
+  &__mask {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    pointer-events: auto;
+  }
+
+  &__dialog {
+    position: fixed;
+    /* width: 473px; */
+    min-height: 108px;
+    padding: 20px 20px 24px;
+    border: 1px solid #2A86F3;
+    background: linear-gradient(180deg, rgba(4, 60, 149, 0.40) 0.01%, rgba(4, 33, 68, 0.30) 6.03%, rgba(4, 23, 62, 0.32) 56.39%, rgba(7, 45, 94, 0.31) 101.39%, rgba(4, 62, 151, 0.40) 109.49%);
+    backdrop-filter: blur(15px);
+    box-shadow: inset 0 0 20px 0 rgba(42, 134, 243, 0.35);
+    pointer-events: auto;
+  }
+
+  &__text {
+    margin: 0 0 18px;
+    color: #FFF;
+    text-align: center;
+    font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 22px;
+    letter-spacing: 0.857px;
+  }
+
+  &__btns {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+  }
+
+  &__btn {
+    min-width: 70px;
+    padding: 5px 10px;
+    border: 1px solid #2A86F3;
+    border-radius: 2px;
+    background: rgba(9, 45, 72, 0.50);
+    box-shadow: inset 0 0 10px 0 #2A86F3;
+    color: #FFF;
+    font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 22px;
+    letter-spacing: 0.857px;
+    cursor: pointer;
+
+    &:hover {
+      opacity: 0.9;
+    }
+    /* &:not(.is-disabled) {
+      &:active {
+        color: #0BF9FE;
+        box-shadow: 0 0 10px 3px #0BF9FE inset;
+      }
+    } */
   }
 }
 </style>

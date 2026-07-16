@@ -737,7 +737,7 @@ const actions = {
     }
     console.log('%cstartCamera+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 'color: #0f0', state.prefixId + camera.key, robot.robotId, robot.status)
     const camera1 = { ...camera }
-    // if (robot.status !== 'online') return
+    if (robot.status !== 'online') return
     camera1.loading = true
     camera1.stopped = false
     camera1.stopping = false

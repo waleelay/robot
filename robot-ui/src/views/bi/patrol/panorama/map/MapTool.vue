@@ -45,31 +45,30 @@
       </div>
     </div>
 
-    <div class="mt22">
-      <div ref="viewChangeRef" class="view-change flx-center" @click.stop="toggleViewContainer">
-        <!-- <img src="../../../../../assets/images/new-bi/view.png" width="44px" height="44px" style="border-radius: 50%;" /> -->
-        <img src="../../../../../assets/images/new-bi/video-empty.png" width="44px" height="44px" style="border-radius: 50%;" />
+    <!-- <div class="mt22 view">
+      <div ref="viewChangeRef" class="view-change flx-center wp50 hp50" @click.stop="toggleViewContainer">
+        <img src="../../../../../assets/images/new-bi/view.png" width="44px" height="44px" style="border-radius: 50%;" />
       </div>
-      <div ref="viewContainerRef" v-show="showViewContainer" class="view-container p20" @click.stop>
+      <div ref="viewContainerRef" v-show="showViewContainer" class="view-container p20 wp274" @click.stop :class="{ 'hp332': slamList.length && selectType === 'slam', 'hp145': !slamList.length }">
         <div class="title">地图选择</div>
         <div class="d-flex mt8">
-          <div class="img-view wp112 hp63" :class="{ 'is-active': currentType === 'gis' }" @click="selectMapType('gis')">
+          <div class="img-view wp112 hp63" :class="{ 'is-active': currentType === 'gis' && selectType !== 'slam' }" @click="selectMapType('gis')">
             <img src="../../../../../assets/images/new-bi/gis-view.png" alt="" srcset="" class="w100 h100">
             <span>GIS地图</span>
           </div>
-          <div class="img-view wp112 hp63 ml10" :class="{ 'is-active': currentType === 'slam' }" @click="selectMapType('slam')">
+          <div class="img-view wp112 hp63 ml10" :class="{ 'is-active': currentType === 'slam' || selectType === 'slam' }" @click="selectMapType('slam')">
             <img src="../../../../../assets/images/new-bi/slam-view.png" alt="" srcset="" class="w100 h100">
             <span>SLAM地图</span>
           </div>
         </div>
-        <div v-if="currentType === 'slam'" class="slam-list pb6">
-          <div v-for="item in slamList" :key="item.id || item.mapName || item.name" class="item flx-justify-between" :class="{ 'is-active': String(currentSlam) === String(item.id) }" @click="selectSlamMap(item)">
+        <div v-if="selectType === 'slam'" class="slam-list mt20 pb6">
+          <div v-for="item in slamList" :key="item.id" class="item flx-justify-between" :class="{ 'is-active': String(currentSlam) === String(item.id) }" @click="selectSlamMap(item)">
             <span>{{ item.mapName || item.name }}</span>
             <svg-icon v-if="String(currentSlam) === String(item.id)" icon-class="check" style="font-size: 16px;"></svg-icon>
           </div>
         </div>
       </div>
-    </div>
+    </div> -->
   </div>
 </template>
 
@@ -182,27 +181,37 @@ export default {
       openSearch: false,
       searchValue: '',
       currentType: this.isSlam ? 'slam' : 'gis',
+      selectType: this.isSlam ? 'slam' : 'gis',
       showViewContainer: false,
     }
   },
   computed: {
-    ...mapState('websocketExtraData', {
-      slamList: state => Array.isArray(state.slamMapList) ? state.slamMapList : []
-    })
+    ...mapState('websocketExtraData', ['slamMapList']),
+    slamList() {
+      return Array.isArray(this.slamMapList) ? this.slamMapList : []
+    }
   },
   mounted() {
     this.operList2 = this.operList2.filter(item => this.showAngle || (!this.showAngle && item.key !== 'angle'))
     document.addEventListener('click', this.handleDocumentClick, true)
   },
+  beforeDestroy() {
+    document.removeEventListener('click', this.handleDocumentClick, true)
+  },
   methods: {
     ...mapActions('websocketExtraData', ['setMapSearchValue']),
     selectMapType(type) {
-      this.currentType = type
+      if (this.selectType === type) return
+      this.selectType = type
+      if (type === 'gis') {
+        this.currentType = type
+        this.$emit('changeCurrentSlamId', '')
+      }
     },
     selectSlamMap(mapInfo) {
       this.currentType = 'slam'
       this.$emit('changeSlamMap', mapInfo)
-      this.showViewContainer = false
+      // this.showViewContainer = false
     },
     toggleViewContainer() {
       this.showViewContainer = !this.showViewContainer
@@ -213,6 +222,11 @@ export default {
     handleDocumentClick(event) {
       if (this.$refs.viewChangeRef?.contains(event.target) || this.$refs.viewContainerRef?.contains(event.target)) return
       this.hideViewContainer()
+    },
+    selectSlam(item) {
+      // if (this.currentSlamId === item.id) return
+      // this.$emit('changeCurrentSlamId', item.id)
+      // this.currentType = 'slam'
     },
     handleChangeType(item) {
       if (this.selectedOper2 === item.key) return
@@ -255,10 +269,8 @@ export default {
     },
     isSlam(newVal) {
       this.currentType = newVal ? 'slam' : 'gis'
+      this.selectType = newVal ? 'slam' : 'gis'
     }
-  },
-  beforeDestroy() {
-    document.removeEventListener('click', this.handleDocumentClick, true)
   }
 }
 </script>
@@ -338,10 +350,16 @@ export default {
 .view-change {
   position: relative;
   cursor: pointer;
-  border-radius: 24px; 
+  border-radius: 50%; 
   background: #FFF;
   box-shadow: 0 1.297px 3.243px 0 rgba(0, 0, 0, 0.30);
+}
+.view {
+  position: relative;
   .view-container {
+    position: absolute;
+    top: -80px;
+    right: 60px;
     border-radius: 6px;
     border: 2px solid rgba(0, 0, 0, 0.00);
     background: rgba(0, 19, 48, 0.90);

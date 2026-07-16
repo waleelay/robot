@@ -111,7 +111,7 @@
             <div class="mt10">
               <div class="custom-search-div">
                 <el-input
-                  placeholder="请输入内容"
+                  placeholder="请输入告警内容/类型/位置"
                   v-model="searchValue"
                   clearable
                   @keyup.enter.native="handleChangeTab(tabIndex)"

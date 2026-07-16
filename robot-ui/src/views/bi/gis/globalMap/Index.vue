@@ -30,7 +30,7 @@
     <TaskAdd ref="taskAddRef" />
     <RobotControlPart ref="robotControlPartRef" />
     <RobotCarControlPart ref="robotCarControlPartRef" />
-    <Robot1 :style="popupStyle" ref="robot1Ref" @showControlPart="showControlPart" @showPath="showPathArea" @showSlam="showSlam" @showArea="showDashedArea" @clear="clear" />
+    <Robot1 :showAnimate="showAnimate" :style="popupStyle" ref="robot1Ref" @showControlPart="showControlPart" @showPath="showPathArea" @showSlam="showSlam" @showArea="showDashedArea" @clear="clear" />
     <Slam ref="slamRef" />
   </div>
 </template>
@@ -69,6 +69,7 @@ export default {
       default: false
     }
   },
+
   data () {
     return {
       map: null,
@@ -137,6 +138,9 @@ export default {
     }
   },
   computed: {
+    showAnimate() {
+      return this.$route.name !== 'biIndex'
+    },
     popupStyle() {
       return this.$route.name === 'biIndex' ? {
         left: this.popupOffset.x + 'px',
@@ -654,8 +658,8 @@ export default {
       this.robotList.map((r, index) => {
         const item = Object.assign({}, this.robotBaseInfo?.[r.robotId] || r)
         // item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
-        const lat = this.robotLocation[item.robotId].lat || 39.54
-        const lng = this.robotLocation[item.robotId].lng || 116.23
+        const lat = this.robotLocation?.[item.robotId]?.lat || 39.54
+        const lng = this.robotLocation?.[item.robotId]?.lng || 116.23
         item.points = L.latLng(lat, lng)
         const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === item.robotId);
         if (existingIndex >= 0) {
@@ -715,8 +719,8 @@ export default {
       // const latlng = {lat: 30.7478613352993, lng: 106.03655278081857}
       // const lat = robotId === 'robot-001' ? latlng?.lat : this.robotLocation?.[robotId]?.lat
       // const lng = robotId === 'robot-001' ? latlng?.lng : this.robotLocation?.[robotId]?.lng
-      const { lat, lng } = this.robotLocation?.[robotId]
-      this.pointMarkers[existingIndex].setLatLng(L.latLng(lat, lng))
+      const { lat, lng } = this.robotLocation?.[robotId] || {}
+      this.pointMarkers[existingIndex].setLatLng(L.latLng(lat || 30.7478613352993, lng || 106.03655278081857))
       // this.pointMarkers[existingIndex].setLatLng(L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng))
       this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(lat, lng) }};
       // 存在则更新 icon
@@ -1297,11 +1301,10 @@ export default {
       }, 500);
     },
     showControlPart(visible) {
-      if (this.selectedRobot.type === '四足机器狗') {
-        this.$refs.robotControlPartRef.show(visible)
-      } else {
-        this.$refs.robotCarControlPartRef.show(visible)
-      }
+      const isDog = this.selectedRobot?.type === '四足机器狗' || this.selectedRobot?.type === '四足机器人' || this.selectedRobot?.type === 'ROBOT_DOG'
+      const controlRef = isDog ? this.$refs.robotControlPartRef : this.$refs.robotCarControlPartRef
+      const nextVisible = typeof visible === 'boolean' ? visible : !controlRef?.visible
+      controlRef?.show(nextVisible)
     },
     showSlam(visible) {
       this.$refs.slamRef.show(visible)

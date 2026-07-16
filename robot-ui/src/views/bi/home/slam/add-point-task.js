@@ -1,4 +1,4 @@
-import { computed } from 'vue';
+import { mapState } from 'vuex';
 
 export default {
   name: 'AddPointTask',
@@ -6,7 +6,7 @@ export default {
     return {
       // ---------- 配置 ----------
       imagePath: require('./3.png'), // 请替换为您的PNG实际路径
-      safetyMargin: 1.5,           // 安全距离（像素）
+      safetyMargin: 1,           // 安全距离（像素）
 
       // ---------- 状态 ----------
       img: null,
@@ -22,10 +22,15 @@ export default {
       currentPoint: null,
       isLoaded: false,
 
-      locationPoint: null, 
+      locationPoint: null,
+      robotId: null,
+      lastDrawnPaths: null,
+      baseLineWidth: 3,
+      coloredCanvas: null, // updateColor 后的地图底图缓存
     };
   },
   computed: {
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot']),
     locationStyle() {
       const rect = this.$refs?.pointLocationRef?.getBoundingClientRect() || { width: 0, height: 0 };
       // console.log('缩放', rect.width, rect.height, this.getScaleContext().scaleX, this.getScaleContext().scaleY);
@@ -34,38 +39,143 @@ export default {
         left: `${((this.locationPoint?.x || 0) - rect.width / 2) / this.getScaleContext().scaleX}px`,
       };
     },
+    startPointStyle() {
+      if (!this.startPoint) {
+        return { opacity: 0, zIndex: 0 }
+      }
+      const zoom = Number(this.zoom) || 1
+      return {
+        opacity: 1,
+        zIndex: 1,
+        left: `${this.startPoint[0] * zoom}px`,
+        top: `${this.startPoint[1] * zoom}px`,
+        transform: 'translate(-50%, -50%)'
+      }
+    },
+    // getSelectRobot() {
+    //   return this.drawableRobots?.filter(robot => robot.robotId === this.robotId)?.[0] || null
+    // },
+    getSelectRobotCurrentLocation() {
+      return this.robotLocation?.[this.robotId] || null
+    }
   },
   mounted() {
-    this.canvas = this.$refs.canvas;
-    this.ctx = this.canvas.getContext('2d');
-    this.loadMap();
+    // this.canvas = this.$refs.canvas;
+    // this.ctx = this.canvas.getContext('2d');
+    // this.loadMap();
 
   },
   methods: {
+    showSlamError(message) {
+      this.$message({
+        message: `<div class="slam-error-content"><i class="slam-error-icon" aria-hidden="true"></i><span>${message}</span></div>`,
+        dangerouslyUseHTMLString: true,
+        duration: 3000,
+        offset: 100,
+        customClass: 'slam-map-error-message',
+        showClose: false,
+      });
+    },
+    // 按当前 zoom / DPR 同步 canvas 位图分辨率，避免父级放大导致线条模糊
+    syncCanvasResolution() {
+      if (!this.canvas || !this.ctx || !this.W || !this.H) return;
+      const dpr = window.devicePixelRatio || 1;
+      const zoom = Number(this.zoom) || 1;
+      const scale = Math.max(zoom * dpr, dpr);
+      const nextWidth = Math.max(1, Math.round(this.W * scale));
+      const nextHeight = Math.max(1, Math.round(this.H * scale));
+      if (this.canvas.width !== nextWidth || this.canvas.height !== nextHeight) {
+        this.canvas.width = nextWidth;
+        this.canvas.height = nextHeight;
+      }
+      this.ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      this.ctx.imageSmoothingEnabled = true;
+      this.ensureColoredMap();
+      if (this.lastDrawnPaths && this.lastDrawnPaths.length) {
+        this.drawLine(this.lastDrawnPaths, false);
+      } else {
+        this.draw();
+      }
+    },
+
+    getMapBaseImage() {
+      return this.coloredCanvas || this.img;
+    },
+
+    // 生成并缓存 updateColor 后的底图，后续 draw/reset 都基于该底图
+    ensureColoredMap() {
+      if (!this.img || !this.W || !this.H) return null;
+      if (this.coloredCanvas && this.coloredCanvas.width === this.W && this.coloredCanvas.height === this.H) {
+        return this.coloredCanvas;
+      }
+      const offscreen = document.createElement('canvas');
+      offscreen.width = this.W;
+      offscreen.height = this.H;
+      const octx = offscreen.getContext('2d');
+      octx.drawImage(this.img, 0, 0, this.W, this.H);
+      const imageData = octx.getImageData(0, 0, this.W, this.H);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] > 230 && data[i + 1] > 230 && data[i + 2] > 230) {
+          data[i] = 86;
+          data[i + 1] = 121;
+          data[i + 2] = 163;
+        } else if (data[i] > 10 && data[i + 1] > 10 && data[i + 2] > 10) {
+          data[i] = 17;
+          data[i + 1] = 43;
+          data[i + 2] = 77;
+        } else {
+          data[i] = 7;
+          data[i + 1] = 10;
+          data[i + 2] = 13;
+        }
+      }
+      octx.putImageData(imageData, 0, 0);
+      this.coloredCanvas = offscreen;
+      return this.coloredCanvas;
+    },
+
+    updateColor() {
+      this.coloredCanvas = null;
+      this.ensureColoredMap();
+      if (this.lastDrawnPaths && this.lastDrawnPaths.length) {
+        this.drawLine(this.lastDrawnPaths, false);
+      } else {
+        this.draw();
+      }
+    },
+
     // ---------- 加载地图 ----------
     loadMap() {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         this.img = img;
-        this.W = this.canvas.width = img.width;
-        this.H = this.canvas.height = img.height;
+        this.W = img.width;
+        this.H = img.height;
+        this.coloredCanvas = null;
+        this.canvas = this.$refs.canvas || this.canvas;
+        this.ctx = this.canvas.getContext('2d');
         this.buildGrid(img);
+        this.syncCanvasResolution();
         this.isLoaded = true;
-        this.draw();
         console.log('地图加载完成，安全距离已应用');
       };
       img.onerror = () => {
-        alert('图片加载失败，请确认路径正确: ' + this.imagePath);
+        this.showSlamError('图片加载失败，请确认路径正确: ' + this.imagePath);
       };
       img.src = this.imageUrl;
     },
 
     // ---------- 构建障碍物网格（含安全距离） ----------
     buildGrid(img) {
-      const ctx = this.ctx;
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, this.W, this.H);
+      // 使用离屏 canvas 读取像素，避免依赖当前显示分辨率
+      const offscreen = document.createElement('canvas');
+      offscreen.width = this.W;
+      offscreen.height = this.H;
+      const offCtx = offscreen.getContext('2d');
+      offCtx.drawImage(img, 0, 0, this.W, this.H);
+      const imageData = offCtx.getImageData(0, 0, this.W, this.H);
       const data = imageData.data;
 
       // 1. 识别黑色像素
@@ -103,30 +213,39 @@ export default {
         }
       }
     },
-    drawLine(paths) {
-      if (!this.img) return;
+    getScreenLineWidth(baseWidth = this.baseLineWidth) {
+      const zoom = Number(this.zoom) || 1;
+      // 线条以屏幕像素宽度绘制，父级放大时不随位图被拉伸变糊
+      return baseWidth / zoom;
+    },
+    drawLine(paths, remember = true) {
+      if (!this.img || !this.ctx) return;
+      if (remember) this.lastDrawnPaths = paths;
       const ctx = this.ctx;
-      ctx.drawImage(this.img, 0, 0, this.W, this.H);
-      // 添加文字（核心）
-      // ctx.fillStyle = '#0D9F31';
-      // ctx.fillRect(this.startPoint[0], this.startPoint[1], 50, 22);
-      ctx.fillStyle = '#0D9F31';
-      ctx.font = '8px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      // ctx.lineHeight = '18px';
-      // ctx.padding = '2px 4px';
-      ctx.fillText('起始地', this.startPoint[0], this.startPoint[1]);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.restore();
+      // 重新应用分辨率缩放后绘制
+      const dpr = window.devicePixelRatio || 1;
+      const zoom = Number(this.zoom) || 1;
+      const scale = Math.max(zoom * dpr, dpr);
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      this.ensureColoredMap();
+      ctx.drawImage(this.getMapBaseImage(), 0, 0, this.W, this.H);
+      // 起始地标签改为 DOM 渲染（与 Figma / GIS 样式一致）
       // 绘制路径（亮蓝色）
       if (paths && paths.length > 0) {
         // 遍历每条路径
         paths.forEach((path, index) => {
           // 设置样式（可根据索引或条件设置不同颜色）
           ctx.strokeStyle = index > 0 ? '#0D9F31' : '#0BF9FE';
-          ctx.lineWidth = 1;
+          ctx.lineWidth = this.getScreenLineWidth(3);
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
           
           if (index === 0) {
-            ctx.setLineDash([5, 2]);
+            ctx.setLineDash([5 / zoom, 2 / zoom]);
           } else {
             ctx.setLineDash([]); // 实线
           }
@@ -145,26 +264,28 @@ export default {
 
     // ---------- 绘制 ----------
     draw() {
-      if (!this.img) return;
+      if (!this.img || !this.ctx) return;
       const ctx = this.ctx;
-      ctx.drawImage(this.img, 0, 0, this.W, this.H);
-
-      // // 绘制起点（绿色）
-      // if (this.startPoint) {
-      //   this.mark(this.startPoint, '#2ecc71');
-      // }
-      // // 绘制终点（红色）
-      // if (this.endPoint) {
-      //   this.mark(this.endPoint, '#e74c3c');
-      // }
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.restore();
+      const dpr = window.devicePixelRatio || 1;
+      const zoom = Number(this.zoom) || 1;
+      const scale = Math.max(zoom * dpr, dpr);
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      this.ensureColoredMap();
+      ctx.drawImage(this.getMapBaseImage(), 0, 0, this.W, this.H);
 
       // 绘制路径（亮蓝色）
       if (this.unloadedPath && this.unloadedPath.length > 0) {
         ctx.strokeStyle = '#0BF9FE';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = this.getScreenLineWidth(2);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         // ctx.shadowColor = 'rgba(0, 200, 255, 0.5)';
         // ctx.shadowBlur = 8;
-        ctx.setLineDash([5, 5]);
+        ctx.setLineDash([5 / zoom, 5 / zoom]);
         ctx.beginPath();
         ctx.moveTo(this.unloadedPath[0][0], this.unloadedPath[0][1]);
         for (let i = 1; i < this.unloadedPath.length; i++) {
@@ -195,7 +316,19 @@ export default {
       this.currentPoint = null;
       this.unloadedPath = [];
       this.loadedPath = [];
+      this.lastDrawnPaths = null;
+      // 还原绘制内容时仍使用 updateColor 后的底图
+      this.ensureColoredMap();
       this.draw();
+    },
+
+    // 判断是否为 updateColor 后的白色可通行区域 RGB(86, 121, 163)
+    isWalkableColoredPixel(x, y) {
+      const colored = this.ensureColoredMap();
+      if (!colored) return false;
+      const ctx = colored.getContext('2d');
+      const data = ctx.getImageData(x, y, 1, 1).data;
+      return data[0] === 86 && data[1] === 121 && data[2] === 163;
     },
 
     // ---------- 点击处理 ----------
@@ -212,14 +345,33 @@ export default {
 
       if (x < 0 || x >= this.W || y < 0 || y >= this.H) return;
 
-      // 检查是否可通行
+      // 仅允许点击 updateColor 后的可通行白色区域 RGB(86, 121, 163)
+      if (!this.isWalkableColoredPixel(x, y)) {
+        this.showSlamError('该位置不可通行，请在地图白色区域选择点位');
+        return;
+      }
+      // 检查是否可通行（障碍物安全距离）
       if (this.grid[y] && this.grid[y][x] === 1) {
-        alert('该位置不可通行（障碍物或安全距离内）');
+        this.showSlamError('该位置不可通行（障碍物或安全距离内）');
         return;
       }
       const pixel = this.eventToPixel(event);
       const point = this.pixelToMapPoint(pixel, this.map);
-      this.locationPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top, pixelX: point.x, pixelY: point.y, pixelX: point.pixelX, pixelY: point.pixelY };
+      const viewport = this.$refs.viewportRef;
+      const viewportRect = viewport ? viewport.getBoundingClientRect() : rect;
+      this.locationLabel = '临时点';
+      this.showContextMenu = true;
+      this.locationPoint = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+        viewportX: event.clientX - viewportRect.left,
+        viewportY: event.clientY - viewportRect.top,
+        pixelX: point.pixelX,
+        pixelY: point.pixelY,
+        coordinateX: point.coordinateX,
+        coordinateY: point.coordinateY,
+        label: '临时点',
+      };
       
       // 如果没有起点，设置起点
       // if (!this.startPoint) {
@@ -237,17 +389,17 @@ export default {
         //   alert('无法找到安全路径，请尝试其他终点');
         // }
         
-        const pixelStart = this.drawablePoints?.[0]?.pixel || { x: 0, y: 0 }
-        this.startPoint = [parseInt(pixelStart.x), parseInt(pixelStart.y)]
-        this.currentPoint = [parseInt(pixelStart.x), parseInt(pixelStart.y)]
-        this.renderUnloaded();
+        // const pixelStart = this.drawablePoints?.[0]?.pixel || { x: 0, y: 0 }
+        // this.startPoint = [parseInt(pixelStart.x), parseInt(pixelStart.y)]
+        // this.currentPoint = [parseInt(pixelStart.x), parseInt(pixelStart.y)]
+        // this.renderUnloaded();
 
         
-        setTimeout(() => {
-          console.log('渲染loaded');
+        // setTimeout(() => {
+        //   console.log('渲染loaded');
           
-          this.renderLoaded();
-        }, 3000);
+        //   this.renderLoaded();
+        // }, 3000);
         return;
       }
 
@@ -262,23 +414,53 @@ export default {
       this.draw();
     },
 
+    getPixelByRobotId(robotId) {
+      const location = this.robotLocation?.[robotId || this.robotId] || {}
+      const coordinateX = location.x ?? location.coordinateX
+      const coordinateY = location.y ?? location.coordinateY
+      if (coordinateX === undefined || coordinateX === null || coordinateY === undefined || coordinateY === null) return null
+      const pixel = this.mapPointToPixel({ coordinateX, coordinateY }, this.map)
+      if (!pixel) return null
+      return pixel
+    },
+    // 选择后渲染整个路径
+    setStartPoint(startPoint) {
+      if (!startPoint) {
+        const pixel = this.getPixelByRobotId(this.robotId);
+        if (!pixel) return null;
+        startPoint = [parseInt(pixel.x), parseInt(pixel.y)];
+      }
+      this.currentPoint = startPoint;
+      this.startPoint = startPoint;
+      this.renderUnloaded();
+    },
+
+    getPaths(startPoint, endPoint) {
+      const path = this.aStar(startPoint, endPoint);
+      if (!path || path.length === 0) {
+        this.showSlamError('无法找到安全路径，请尝试其他终点');
+        return null
+      }
+      return path
+    },
     renderUnloaded() {
       this.unloadedPath = this.aStar(this.currentPoint, this.endPoint);
+      // console.log(11, this.unloadedPath, this.currentPoint, this.endPoint);
+      
       if (!this.unloadedPath || this.unloadedPath.length === 0) {
-        alert('无法找到安全路径，请尝试其他终点');
+        this.showSlamError('无法找到安全路径，请尝试其他终点');
         return
       }
       this.drawLine([this.unloadedPath]);
     },
     renderLoaded() {
       // 选择机器狗后计算距离
-      const pixelStart = this.drawablePoints?.[1]?.pixel || { x: 0, y: 0 }
-      this.currentPoint = [29, 39]
+      // const pixelStart = this.drawablePoints?.[1]?.pixel || { x: 0, y: 0 }
+      // this.currentPoint = [29, 39]
       // console.log(333, this.startPoint, this.currentPoint);
-      
       this.loadedPath = this.aStar(this.startPoint, this.currentPoint);
       if (!this.loadedPath || this.loadedPath.length === 0) {
-        alert('无法找到安全路径，请尝试其他终点');
+        // alert('无法找到安全路径，请尝试其他终点');
         return
       }
       this.unloadedPath = this.aStar(this.currentPoint, this.endPoint);
@@ -349,7 +531,7 @@ export default {
     updateLine() {
       this.unloadedPath = this.aStar(this.startPoint, this.endPoint);
       if (!this.unloadedPath || this.unloadedPath.length === 0) {
-        this.$message.warning('无法找到安全路径，请尝试其他终点');
+        this.showSlamError('无法找到安全路径，请尝试其他终点');
       }
       this.draw();
     },
@@ -382,4 +564,17 @@ export default {
       }
     }
   },
+  watch: {
+    getSelectRobotCurrentLocation: {
+      handler(newVal) {
+        if (newVal) {
+          const pixel = this.getPixelByRobotId()
+          if (!pixel) return null
+          this.currentPoint = [parseInt(pixel.x), parseInt(pixel.y)]
+          this.renderLoaded()
+        }
+      },
+      immediate: true
+    }
+  }
 }

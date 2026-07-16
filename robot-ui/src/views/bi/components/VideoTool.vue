@@ -91,9 +91,9 @@
         >
           <svg-icon icon-class="record" :style="{ color: cameraInfo.recordingActive ? '#21C8FF' : '#CAD4E0' }" />
         </div>
-        <div :title="openMic ? '关闭麦克风' : '打开麦克风'" @click="toggleMic()">
+        <!-- <div :title="openMic ? '关闭麦克风' : '打开麦克风'" @click="toggleMic()">
           <svg-icon :icon-class="openMic ? 'mic' : 'mic-off'" />
-        </div>
+        </div> -->
         <div v-if="showControl && ['dual_gimbal', 'body'].includes(cameraInfo.groupType)" @click="$refs.controlInnerRef.visible = !$refs.controlInnerRef.visible">
           <svg-icon title="控制器" icon-class="control" />
         </div>

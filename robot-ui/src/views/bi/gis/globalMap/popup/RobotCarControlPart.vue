@@ -312,27 +312,6 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.machine-container.robot-control-container {
-  position: fixed;
-  bottom: 50px;
-  margin: auto;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: scale(0);
-  &.visible {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-    transform: scale(1);
-  }
-  .box {
-    // width: 944px;
-    width: auto;
-    background: linear-gradient(180deg, rgba(4, 60, 149, 0.40) 0.01%, rgba(4, 33, 68, 0.30) 5.51%, rgba(4, 23, 62, 0.32) 51.52%, rgba(7, 45, 94, 0.31) 92.62%, rgba(4, 62, 151, 0.40) 100.03%);
-    border-color: #2CADFF;
-  }
-}
 .lights {
   span {
     color: #fff;

@@ -10,6 +10,12 @@ export default {
       }
     }
   },
+  props: {
+    showAnimate: {
+      type: Boolean,
+      default: true
+    }
+  },
   computed: {
     positionStyle() {
       return {
@@ -17,9 +23,6 @@ export default {
         top: this.position.top + 'px'
       }
     },
-    showAnimate() {
-      return this.$route.name !== 'biIndex'
-    }
   },
   mounted() {
     if (!this.showAnimate) {

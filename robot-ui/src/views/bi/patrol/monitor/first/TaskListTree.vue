@@ -43,7 +43,7 @@
             <div class="collapse-content pl12 common-scroll mr10 pr7">
               <div
                 v-for="(item, index) in equipment.list"
-                :key="item.name"
+                :key="item.robotId"
                 class="item flx-justify-between"
                 :class="{ 'is-active': checkedRobotIds.includes(item.robotId) }"
                 :draggable="!checkedRobotIds.includes(item.robotId) && item.status !== 'offline'"
@@ -143,7 +143,7 @@
 </template>
 
 <script>
-import { mapState, mapActions, mapGetters } from 'vuex'
+import { mapState, mapActions } from 'vuex'
 import { onDragStart, onDragEnd } from '../../../../../store/modules/dragVideo';
 import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
 export default {
@@ -223,7 +223,7 @@ export default {
       if (this.hasLoad || !onlineList.length) return
       this.hasLoad = true
       this.setSplitType([1, 4, 6, 9].filter(item => item >= onlineList.length)?.[0] || 9)
-      console.log('this.splitType', [1, 4, 6, 9].filter(item => item >= onlineList.length)?.[0] || 9);
+      // console.log('this.splitType', [1, 4, 6, 9].filter(item => item >= onlineList.length)?.[0] || 9);
       if (this.$route.query.taskId !== undefined) {
         await this.handleSelectTask(this.taskData[this.$route.query.taskId])
       } else {
@@ -261,7 +261,7 @@ export default {
 
       // 关闭对应的视频
       for (const id of [...closeIds, ...addIds]) {
-        console.log(123, id)
+        // console.log(123, id)
         const robot = this.robots.find(e => e.robotId === id)
         if (robot) {
           await this.updateVideo(robot)

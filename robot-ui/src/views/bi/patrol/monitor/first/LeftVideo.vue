@@ -301,7 +301,7 @@ export default {
       })
     },
     async test(data) {
-      console.log('-----------test------------', data, this.ZQL_videosInfos);
+      // console.log('-----------test------------', data, this.ZQL_videosInfos);
       let emptyKey = data.index
       // 填充 放入设备
       const robot = this.robots.find(d => d.robotId === data.data.robotId);
@@ -411,7 +411,7 @@ export default {
     },
     // 刷新视频
     refreshVideo(key) {
-      console.log('刷新视频===============', key, this.ZQL_videosInfos[key]);
+      // console.log('刷新视频===============', key, this.ZQL_videosInfos[key]);
       
       const videoInfo = this.ZQL_videosInfos[key];
       if (!videoInfo || !videoInfo.robot) return;
@@ -649,7 +649,9 @@ export default {
         // // this.fullscreenKey = null;
         // // this.isFullscreen = false;
         // document.body.style.overflow = '';
-        if (oldVal === undefined || !this.manualChange) this.initSlots(newVal);
+        // console.log('652-------splitType-----------------------------------------------------------', oldVal);
+        // if (oldVal === undefined || !this.manualChange) this.initSlots(newVal);
+        if (oldVal!== newVal) this.initSlots(newVal);
         this.slotDevices = new Array(this.splitType).fill(null);
         // this.resetDrag({ splitType: this.splitType });
         const playingKeys = Object.values(this.ZQL_playingSource)

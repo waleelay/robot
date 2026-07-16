@@ -25,26 +25,25 @@
                 const b = data[i + 2];
                 // 判断是否为灰色（R=G=B）或接近灰色（允许一定阈值）
                 const threshold = 30; // 容忍度，可根据需求调整
-                if (data[i] > 10 && data[i+1] > 10 && data[i+2] > 10) {
-                    // 替换为红色（保留原透明度）
-                    data[i] = 17;     // R
-                    data[i + 1] = 43;   // G
-                    data[i + 2] = 77;   // B
-                    // data[i+3] 透明度保持不变
-                // } else if (data[i] > 10 && data[i+1] > 10 && data[i+2] > 10) {
-                //     // 替换为红色（保留原透明度）
-                //     data[i] = 17;     // R
-                //     data[i + 1] = 43;   // G
-                //     data[i + 2] = 77;   // B
-                //     // data[i+3] 透明度保持不变
-                } else {
+                if (data[i] > 230 && data[i+1] > 230 && data[i+2] > 230) {
+                    // 白色
                     data[i] = 86;     // R
                     data[i + 1] = 121;   // G
                     data[i + 2] = 163;   // B
+                } else if (data[i] > 10 && data[i+1] > 10 && data[i+2] > 10) {
+                    // 灰色
+                    data[i] = 17;     // R
+                    data[i + 1] = 43;   // G
+                    data[i + 2] = 77;   // B
+                    // data[i+3] 透明度保持不变 
+                } else {
+                    data[i] = 7;     // R
+                    data[i + 1] = 10;   // G
+                    data[i + 2] = 13;   // B
                 }
             }
 
-            // 将修改后的数据放回 Canvas
+            // 将修改后的数据放回 Ca  nvas
             ctx.putImageData(imageData, 0, 0);
             // 此时 Canvas 上显示的就是替换后的图片
             // 可以保存为新的 PNG： canvas.toDataURL('image/png')

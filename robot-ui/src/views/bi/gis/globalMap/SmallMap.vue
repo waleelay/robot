@@ -141,7 +141,7 @@ export default {
       // TODO:默认坐标，后期需要实时坐标
       this.robotList.filter(item => this.selectedRobot.robotId ? item.robotId === this.selectedRobot.robotId : item.robotId).map((item, index) => {
         // item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
-        item.points = L.latLng(this.robotLocation[item.robotId].lat || 39.54, this.robotLocation[item.robotId].lng || 116.23)
+        item.points = L.latLng(this.robotLocation?.[item.robotId]?.lat || 39.54, this.robotLocation?.[item.robotId]?.lng || 116.23)
         // 检查是否已存在相同 robot.name 的标记
         const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === item.robotId);
         if (existingIndex >= 0) {
@@ -204,8 +204,8 @@ export default {
       let sumLat = 0, sumLng = 0;
       const points = this.pointMarkers.map(m => m.getLatLng());
       points.forEach(p => {
-        sumLat += p.lat;
-        sumLng += p.lng;
+        sumLat += p?.lat || 39.54;
+        sumLng += p?.lng || 116.23;
       });
       const center = L.latLng(sumLat / points.length, sumLng / points.length);
       // 2. 创建一个包含所有 marker 的 LatLngBounds 对象
@@ -263,8 +263,8 @@ export default {
             if (lat !== newVal[marker.meta?.robot?.robotId]?.lat || lng !== newVal[marker.meta?.robot?.robotId]?.lng) {
               // console.log('===========更新了==========');
               marker.setLatLng({
-                lat: newVal[marker.meta?.robot?.robotId]?.lat,
-                lng: newVal[marker.meta?.robot?.robotId]?.lng
+                lat: newVal[marker.meta?.robot?.robotId]?.lat || 39.54,
+                lng: newVal[marker.meta?.robot?.robotId]?.lng || 116.23
               })
             }
           })

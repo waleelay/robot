@@ -93,7 +93,10 @@ const mutations = {
     state.patrolOverview = value;
   },
   SET_ROBOT_LOCATION(state, data) {
-    state.robotLocation = { ...state.robotLocation, [data.robotId]: data.location };
+    // setTimeout(() => {
+    //   console.log('执行==========');
+      state.robotLocation = { ...state.robotLocation, [data.robotId]: data.location };
+    // }, 20000);
   },
   SET_ROBOT_BASE_INFO(state, { robotId, robotInfo }) {
     state.robotBaseInfo = { ...state.robotBaseInfo, [robotId]: { ...state.robotBaseInfo?.[robotId] || {}, ...robotInfo, ...getRobotStatus({ ...state.robotBaseInfo?.[robotId], ...robotInfo }, state.taskData) } };
@@ -243,21 +246,22 @@ const actions = {
       // console.log(123, event.data.robotId, event.data.status);
       
       commit('SET_ROBOT_BASE_INFO', { robotId: event.data.robotId, robotInfo: { ...state.robotBaseInfo[event.data.robotId], ...event.data } });
-    } else if (event.event === 'panorama.device.location.changed') {
+      // commit('SET_ROBOT_BASE_INFO', { robotId: 'test111', robotInfo: { ...state.robotBaseInfo['test111'], status: 'online' } });
+    } else if (event.event === 'panorama.device.location.changed') {      
       commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
     } else if (event.event === 'panorama.task.changed') {
-      // commit('SET_TASK_INFO', event.data.task);
+      commit('SET_TASK_INFO', event.data.task);
     } else if (event.event === 'panorama.alarm.changed') {
       // commit('SET_ALARMS_DATA', event.data.alarm);
       // if (event.data.alarm.level.toLowerCase() === 'high') {
       //   commit('SET_ROBOT_ALARM_INFO', { robotId: event.data.alarm.robotId, alarmInfo: event.data.alarm });
       // }
     } else if (event.event === 'panorama.stats.changed') {
-      // commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || []);
-      // commit('SET_DEVICE_STATS', event.data.deviceStats || {});
-      // commit('SET_ALARM_SUMMARY', event.data.alarmSummary || {});
-      // commit('SET_TASK_OVERVIEW', event.data.taskOverview || {});
-      // commit('SET_PATROL_OVERVIEW', event.data.patrolOverview || {});
+      commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || []);
+      commit('SET_DEVICE_STATS', event.data.deviceStats || {});
+      commit('SET_ALARM_SUMMARY', event.data.alarmSummary || {});
+      commit('SET_TASK_OVERVIEW', event.data.taskOverview || {});
+      commit('SET_PATROL_OVERVIEW', event.data.patrolOverview || {});
       // alarmStats: { high: 0, medium: 0, low: 0 }
     }
   },
