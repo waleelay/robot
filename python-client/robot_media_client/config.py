@@ -93,13 +93,13 @@ class Config:
 
 def load() -> Config:
     """读取环境变量并组装完整客户端配置。"""
-    robot_id = env("ROBOT_ID", "test001")
+    robot_id = env("ROBOT_ID", "test111")
     return Config(
         robot_id=robot_id,
         robot_name=env("ROBOT_NAME", default_robot_name(robot_id)),
         type=env("ROBOT_TYPE", default_type(robot_id)),
         battery=bounded_percentage(env_int("ROBOT_BATTERY", 100)),
-        mqtt_broker=env("MQTT_BROKER_URL", "tcp://192.168.124.77:1883"),
+        mqtt_broker=env("MQTT_BROKER_URL", "tcp://192.168.124.235:1884"),
         mqtt_username=env("MQTT_USERNAME", ""),
         mqtt_password=env("MQTT_PASSWORD", ""),
         client_id=env("ROBOT_CLIENT_ID", "robot-media-client"),
@@ -143,7 +143,7 @@ def cameras(robot_id: str) -> list[Camera]:
     ids = ["camera01", "camera02", "camera03"]
     names = ["云台-可见光", "云台-热成像", "本体相机"]
     group_types = ["dual_gimbal", "dual_gimbal", "body"]
-    if robot_id == "test002":
+    if robot_id == "SN006":
         ids = ["camera04", "camera05", "camera06"]
         names = ["头部双光云台", "腹部导航相机", "尾部避障相机"]
         group_types = ["dual_gimbal", "body", "body"]
@@ -177,7 +177,7 @@ def devices(robot_id: str) -> list[Device]:
     max_linear_x = 1.0
     max_linear_y = 0.4
     max_angular_z = 0.8
-    if robot_id == "test002":
+    if robot_id == "SN006":
         base_type = "QUADRUPED_BASE"
         base_vendor = "DEEPNROBOTICS"
         base_model = "X30"
@@ -248,8 +248,8 @@ def devices(robot_id: str) -> list[Device]:
     if robot_id != "robot-unitree-001":
         result.extend([
             Device(
-                device_id="launcher-001",
-                binding_id="bind-launcher-001",
+                device_id="launcher_38mm",
+                binding_id="bind-launcher_38mm",
                 scope="PAYLOAD",
                 device_type="LAUNCHER",
                 display_name="六联发射器",
@@ -374,14 +374,14 @@ def launcher_tubes() -> list[dict[str, object]]:
 
 def default_robot_name(robot_id: str) -> str:
     """返回已知 robotId 的默认展示名称。"""
-    if robot_id == "test002":
+    if robot_id == "SN006":
         return "G1四足机器狗"
     return "R1轮式机器人"
 
 
 def default_type(robot_id: str) -> str:
     """返回已知 robotId 的默认机器人类型。"""
-    if robot_id == "test002":
+    if robot_id == "SN006":
         return "四足机器狗"
     return "轮式机器人"
 

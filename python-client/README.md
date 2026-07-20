@@ -110,8 +110,8 @@ python -m robot_media_client
 示例：
 
 ```bash
-ROBOT_ID='test001' \
-ROBOT_CLIENT_ID='robot-media-client-test001' \
+ROBOT_ID='test111' \
+ROBOT_CLIENT_ID='robot-media-client-test111' \
 RTSP_CAMERA01_MAIN='rtsp://192.168.124.204:8554/camera03' \
 RTSP_CAMERA01_SUB='rtsp://192.168.124.204:8554/camera03' \
 RTSP_CAMERA02_MAIN='rtsp://192.168.124.204:8554/camera03' \
@@ -178,8 +178,8 @@ export INTERCOM_AUDIO_ENABLED=false
 cd python-client
 docker build -t robot-media-client-python:dev .
 docker run --rm \
-  -e ROBOT_ID='test001' \
-  -e ROBOT_CLIENT_ID='robot-media-client-test001' \
+  -e ROBOT_ID='test111' \
+  -e ROBOT_CLIENT_ID='robot-media-client-test111' \
   -e RTSP_CAMERA01_MAIN='rtsp://192.168.124.204:8554/camera03' \
   -e RTSP_CAMERA01_SUB='rtsp://192.168.124.204:8554/camera03' \
   -e RTSP_CAMERA02_MAIN='rtsp://192.168.124.204:8554/camera03' \

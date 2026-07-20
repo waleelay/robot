@@ -8,8 +8,19 @@ LOG_DIR="$BASE_DIR/logs"
 PID_FILE="$BASE_DIR/${APP_NAME}.pid"
 JAVA_OPTS="${JAVA_OPTS:--Xms512m -Xmx512m -Duser.timezone=Asia/Shanghai}"
 SPRING_ARGS="${SPRING_ARGS:---spring.config.additional-location=$BASE_DIR/config/}"
+APP_RUN_MODE="${APP_RUN_MODE:-background}"
+JAVA_DEBUG_ENABLED="${JAVA_DEBUG_ENABLED:-false}"
+JAVA_DEBUG_PORT="${JAVA_DEBUG_PORT:-5005}"
+
+if [ "$JAVA_DEBUG_ENABLED" = "true" ]; then
+  JAVA_OPTS="$JAVA_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:$JAVA_DEBUG_PORT"
+fi
 
 mkdir -p "$LOG_DIR"
+
+if [ "$APP_RUN_MODE" = "foreground" ]; then
+  exec java $JAVA_OPTS -jar "$BASE_DIR/boot/$APP_JAR" $SPRING_ARGS
+fi
 
 if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" >/dev/null 2>&1; then
   echo "$APP_NAME is already running, pid $(cat "$PID_FILE")"

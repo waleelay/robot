@@ -30,12 +30,16 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             "X-Client-Id");
 
     private final CenterServiceProperties properties;
+    private final PanoramaWebSocketEventAdapter eventAdapter;
     private final StandardWebSocketClient webSocketClient = new StandardWebSocketClient();
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
     private final Set<WebSocketSession> browserSessions = ConcurrentHashMap.newKeySet();
 
-    public BigscreenWebSocketBridgeHandler(CenterServiceProperties properties) {
+    public BigscreenWebSocketBridgeHandler(
+            CenterServiceProperties properties,
+            PanoramaWebSocketEventAdapter eventAdapter) {
         this.properties = properties;
+        this.eventAdapter = eventAdapter;
     }
 
     @Override
@@ -50,7 +54,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                     .get();
             centerSessions.put(browserSession.getId(), centerSession);
         } catch (Exception exception) {
-            log.warn("Center websocket unavailable, browser session will receive local mock events only session={}",
+            log.warn("Center websocket unavailable, browser session will not receive center realtime events session={}",
                     browserSession.getId(), exception);
         }
     }
@@ -93,7 +97,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                     browserSession.sendMessage(message);
                 }
             } catch (Exception exception) {
-                log.warn("Failed to broadcast local mock event session={}", browserSession.getId(), exception);
+                log.warn("Failed to broadcast browser event session={}", browserSession.getId(), exception);
             }
         }
     }
@@ -120,7 +124,9 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         @Override
         protected void handleTextMessage(WebSocketSession centerSession, TextMessage message) throws Exception {
             if (browserSession.isOpen()) {
-                browserSession.sendMessage(message);
+                for (String payload : eventAdapter.adapt(message.getPayload())) {
+                    browserSession.sendMessage(new TextMessage(payload));
+                }
             }
         }
 

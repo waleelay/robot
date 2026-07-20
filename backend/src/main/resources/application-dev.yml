@@ -1,11 +1,11 @@
 spring:
   datasource:
     # 开发环境 MySQL 连接地址。
-    url: ${MYSQL_URL:jdbc:mysql://192.168.124.77:3306/robot_media?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    url: ${MYSQL_URL:jdbc:mysql://host.docker.internal:3306/robot_media?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
     # 开发环境 MySQL 用户名。
     username: ${MYSQL_USERNAME:root}
     # 开发环境 MySQL 密码。
-    password: ${MYSQL_PASSWORD:123456}
+    password: ${MYSQL_PASSWORD:root}
   jpa:
     hibernate:
       ddl-auto: update
@@ -16,7 +16,7 @@ spring:
   data:
     redis:
       # 开发环境 Redis 主机地址。
-      host: ${REDIS_HOST:localhost}
+      host: ${REDIS_HOST:host.docker.internal}
       # 开发环境 Redis 端口。
       port: ${REDIS_PORT:6379}
     elasticsearch:
@@ -24,7 +24,7 @@ spring:
         enabled: false
   elasticsearch:
     # 开发环境 Elasticsearch 访问地址。
-    uris: ${ELASTICSEARCH_URIS:http://192.168.124.77:9200}
+    uris: ${ELASTICSEARCH_URIS:http://host.docker.internal:9200}
 
 logging:
   level:

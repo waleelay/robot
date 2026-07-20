@@ -381,8 +381,8 @@ public class EquipmentControlService {
         }
         if ("LAUNCHER".equals(deviceType) && "set_safety".equals(action)) {
             return object(
-                    "safetyOn", booleanValue(params.get("safetyOn"), booleanValue(params.get("enabled"), false)),
-                    "waitStatus", booleanValue(params.get("waitStatus"), true));
+                    "safety_on", booleanValue(params.get("safety_on"), booleanValue(params.get("enabled"), false)),
+                    "wait_status", booleanValue(params.get("wait_status"), true));
         }
         if ("LAUNCHER".equals(deviceType) && "fire".equals(action)) {
             return object(
@@ -559,7 +559,7 @@ public class EquipmentControlService {
     private static List<Map<String, Object>> fixedRobots() {
         return List.of(
                 object(
-                        "robotId", "test001",
+                        "robotId", "test111",
                         "clientId", "robot-client-songling-001",
                         "name", "R1轮式机器人",
                         "type", "轮式机器人",
@@ -568,13 +568,13 @@ public class EquipmentControlService {
                         "status", "offline",
                         "battery", 86,
                         "lastHeartbeatAt", OffsetDateTime.now(),
-                        "devices", devices("test001"),
+                        "devices", devices("test111"),
                         "cameras", List.of(
                                 camera("camera01", "dual_gimbal", "云台-可见光"),
                                 camera("camera02", "dual_gimbal", "云台-热成像"),
                                 camera("camera03", "body", "本体相机"))),
                 object(
-                        "robotId", "test002",
+                        "robotId", "SN006",
                         "clientId", "robot-client-deep-001",
                         "name", "G1四足机器狗",
                         "type", "四足机器狗",
@@ -583,7 +583,7 @@ public class EquipmentControlService {
                         "status", "offline",
                         "battery", 78,
                         "lastHeartbeatAt", OffsetDateTime.now(),
-                        "devices", devices("test002"),
+                        "devices", devices("SN006"),
                         "cameras", List.of(camera("camera04", "dual_gimbal", "头部双光云台"))),
                 object(
                         "robotId", "robot-unitree-001",
@@ -623,7 +623,7 @@ public class EquipmentControlService {
      * @return 设备能力列表
      */
     private static List<Map<String, Object>> devices(String robotId) {
-        if ("test002".equals(robotId)) {
+        if ("SN006".equals(robotId)) {
             return List.of(
                     base("QUADRUPED_BASE", "DEEPNROBOTICS", "X30", 0.8, 0.4, 0.6),
                     ptz(),
@@ -776,8 +776,8 @@ public class EquipmentControlService {
      */
     private static Map<String, Object> launcher() {
         return object(
-                "deviceId", "launcher-001",
-                "bindingId", "bind-launcher-001",
+                "deviceId", "launcher_38mm",
+                "bindingId", "bind-launcher_38mm",
                 "scope", "PAYLOAD",
                 "deviceType", "LAUNCHER",
                 "displayName", "六联发射器",

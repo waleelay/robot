@@ -12,7 +12,7 @@ server:
 media:
   livekit:
     # LiveKit WebSocket 连接地址，浏览器和服务端签发 Token 时使用。
-    url: ${LIVEKIT_URL:ws://192.168.124.77:7880}
+    url: ${LIVEKIT_URL:ws://livekit-server:7880}
     # LiveKit API Key，用于服务端管理 Room、Token、Egress。
     api-key: ${LIVEKIT_API_KEY:devkey}
     # LiveKit API Secret，用于服务端签发访问 Token。
@@ -35,7 +35,7 @@ media:
     room-departure-timeout-seconds: ${LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS:20}
   minio:
     # MinIO/S3 对象存储访问地址。
-    endpoint: ${MINIO_ENDPOINT:http://192.168.124.77:9000}
+    endpoint: ${MINIO_ENDPOINT:http://host.docker.internal:9000}
     # MinIO/S3 访问 Key。
     access-key: ${MINIO_ACCESS_KEY:minioadmin}
     # MinIO/S3 访问 Secret。
@@ -91,7 +91,7 @@ media:
     # 是否启用文本转语音能力。
     enabled: ${TTS_ENABLED:true}
     # TTS 引擎 HTTP 接口地址。
-    engine-url: ${TTS_ENGINE_URL:http://192.168.124.204:5500/api/tts}
+    engine-url: ${TTS_ENGINE_URL:http://tts:5050/api/tts}
     # 默认 TTS 声音或模型标识。
     voice: ${TTS_VOICE:coqui-tts:zh_baker}
     # TTS 输出音频格式。

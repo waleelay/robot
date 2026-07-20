@@ -138,8 +138,8 @@ export VUE_APP_WS_URL=''
 机器人侧客户端：
 
 ```bash
-export ROBOT_ID='test001'
-export ROBOT_CLIENT_ID='robot-media-client-test001'
+export ROBOT_ID='test111'
+export ROBOT_CLIENT_ID='robot-media-client-test111'
 export ROBOT_BATTERY='82'
 export MQTT_BROKER_URL='tcp://localhost:1883'
 export MQTT_USERNAME=''
@@ -494,7 +494,7 @@ POST /api/control/files
 ```text
 fileType=IMAGE
 sourceType=SNAPSHOT
-robotId=test001
+robotId=test111
 deviceId=camera01
 sessionId=vs_xxx
 trackSid=TR_xxx

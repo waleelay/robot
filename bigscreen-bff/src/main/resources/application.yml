@@ -4,15 +4,15 @@ server:
 
 center:
   # 管理中心服务基础地址。
-  manage-base-url: ${CENTER_MANAGE_BASE_URL:http://192.168.124.44:8866}
+  manage-base-url: ${CENTER_MANAGE_BASE_URL:http://host.docker.internal:8866}
   # Control Service 基础地址。
-  control-base-url: ${CENTER_CONTROL_BASE_URL:http://localhost:8082}
+  control-base-url: ${CENTER_CONTROL_BASE_URL:http://control-service:8082}
   # 旧版控制服务基础地址。
-  v1-control-base-url: ${CENTER_V1_CONTROL_BASE_URL:http://192.168.124.44:8082}
+  v1-control-base-url: ${CENTER_V1_CONTROL_BASE_URL:http://host.docker.internal:8867}
   # Media Service 基础地址。
-  media-base-url: ${CENTER_MEDIA_BASE_URL:http://localhost:8088}
+  media-base-url: ${CENTER_MEDIA_BASE_URL:http://media-service:8088}
   # Control Service WebSocket 地址。
-  websocket-control-url: ${CENTER_CONTROL_WS_URL:ws://192.168.124.77:8082/ws/control}
+  websocket-control-url: ${CENTER_CONTROL_WS_URL:ws://control-service:8082/ws/control}
 
 statistics:
   report:
@@ -22,7 +22,7 @@ statistics:
 bigscreen:
   cors:
     # 大屏接口允许跨域访问的来源模式，多个值用逗号分隔。
-    allowed-origin-patterns: ${BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:8080,http://127.0.0.1:8080,http://192.168.*.*:8080,https://192.168.124.77:4443}
+    allowed-origin-patterns: ${BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:8080,http://127.0.0.1:8080,http://192.168.*.*:8080,https://192.168.*.*:4443}
 
 spring:
   application:

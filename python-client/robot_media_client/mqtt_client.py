@@ -277,7 +277,7 @@ class RobotMQTTClient:
                 self.set_device_state_locked(
                     command.target.device_id,
                     "safetySwitchEnabled",
-                    any_bool(command.params.get("safetyOn"), any_bool(command.params.get("enabled"), False)),
+                    any_bool(command.params.get("safety_on"), any_bool(command.params.get("enabled"), False)),
                 )
                 changed = True
             elif command.action == "fire" and command.target.device_type == "LAUNCHER":

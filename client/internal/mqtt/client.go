@@ -246,7 +246,7 @@ func (c *Client) applyControlCommand(command model.ControlCommand) bool {
 		c.setDeviceStateLocked(command.Target.DeviceID, "muted", c.audioMuted)
 		changed = true
 	case "set_safety":
-		c.setDeviceStateLocked(command.Target.DeviceID, "safetySwitchEnabled", anyBool(command.Params["safetyOn"], anyBool(command.Params["enabled"], false)))
+		c.setDeviceStateLocked(command.Target.DeviceID, "safetySwitchEnabled", anyBool(command.Params["safety_on"], anyBool(command.Params["enabled"], false)))
 		changed = true
 	case "fire":
 		if command.Target.DeviceType == "LAUNCHER" {

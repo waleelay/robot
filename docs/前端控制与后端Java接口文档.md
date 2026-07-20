@@ -101,12 +101,12 @@ Content-Type: application/json
 ```json
 {
   "sessionId": "vs_123456",
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
   "channel": "visible",
   "quality": "sub",
   "status": "STREAMING",
-  "roomName": "media.test001.camera01.visible",
+  "roomName": "media.test111.camera01.visible",
   "livekitUrl": "ws://127.0.0.1:7880",
   "viewerToken": "eyJhbGciOi...",
   "trackSid": "TR_VC_001",
@@ -144,9 +144,9 @@ Content-Type: application/json
 ```json
 {
   "sessionId": "vs_123456",
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
-  "roomName": "media.test001.camera01.visible",
+  "roomName": "media.test111.camera01.visible",
   "videoStatus": "STREAMING",
   "intercomStatus": "ACTIVE",
   "intercomAudioOnly": false,
@@ -185,7 +185,7 @@ Content-Type: application/json
 ```json
 {
   "fileId": "file_001",
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
   "extensionId": null,
   "fileType": "IMAGE",
@@ -266,7 +266,7 @@ GET /api/bigscreen/panorama/overview
   "taskOverview": {"totalToday": 50, "completedRate": 100, "completedRateText": "100%", "running": 48, "pending": 2},
   "devices": [
     {
-      "robotId": "test001",
+      "robotId": "test111",
       "clientId": "robot-media-client",
       "name": "R1轮式机器人",
       "type": "轮式机器人",
@@ -300,7 +300,7 @@ GET /api/bigscreen/panorama/overview
       "timeRange": "20:00-22:00",
       "currentLocation": "A区主干道",
       "equipmentList": [
-        {"robotId": "test001", "name": "R1轮式机器人", "type": "WHEELED_ROBOT", "status": "online"}
+        {"robotId": "test111", "name": "R1轮式机器人", "type": "WHEELED_ROBOT", "status": "online"}
       ],
       "mapId": 1,
       "mapPoints": [
@@ -338,7 +338,7 @@ Payload 字段：
 请求示例：
 
 ```http
-GET /api/bigscreen/panorama/devices/test001
+GET /api/bigscreen/panorama/devices/test111
 ```
 
 响应参数：在设备摘要基础上补充 `mountedDevices`、`currentTask`、`actions`。
@@ -347,7 +347,7 @@ GET /api/bigscreen/panorama/devices/test001
 
 ```json
 {
-  "robotId": "test001",
+  "robotId": "test111",
   "clientId": "robot-media-client",
   "name": "R1轮式机器人",
   "type": "轮式机器人",
@@ -406,7 +406,7 @@ GET /api/bigscreen/panorama/tasks
       "timeRange": "20:00-22:00",
       "currentLocation": "A区主干道",
       "equipmentList": [
-        {"robotId": "test001", "name": "R1轮式机器人", "type": "WHEELED_ROBOT", "status": "online"}
+        {"robotId": "test111", "name": "R1轮式机器人", "type": "WHEELED_ROBOT", "status": "online"}
       ],
       "mapId": 1,
       "mapPoints": [
@@ -450,7 +450,7 @@ GET /api/bigscreen/panorama/alarms
           "levelName": "高风险",
           "eventTime": "2023-08-01 10:00:00",
           "location": null,
-          "robotId": "test001",
+          "robotId": "test111",
           "deviceName": "R1轮式机器人",
           "taskId": "task-002",
           "taskName": null,
@@ -811,12 +811,12 @@ GET /api/media/files?fileType=IMAGE&page=0&size=20
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
 |---|---|---|---:|---|
-| `robotId` | path | string | 是 | 当前固定支持 `test001`、`test002`、`robot-unitree-001` |
+| `robotId` | path | string | 是 | 当前固定支持 `test111`、`SN006`、`robot-unitree-001` |
 
 请求示例：
 
 ```http
-GET /api/control/robots/test001/control-profile
+GET /api/control/robots/test111/control-profile
 ```
 
 响应参数：
@@ -848,7 +848,7 @@ GET /api/control/robots/test001/control-profile
 
 ```json
 {
-  "robotId": "test001",
+  "robotId": "test111",
   "type": "轮式机器人",
   "vendor": "SONGLING",
   "model": "SCOUT",
@@ -870,7 +870,7 @@ GET /api/control/robots/test001/control-profile
       "controlProfile": {"maxLinearX": 1.0, "maxLinearY": 0.4, "maxAngularZ": 0.8, "controlFrameRateHz": 10}
     },
     {
-      "deviceId": "launcher-001",
+      "deviceId": "launcher_38mm",
       "scope": "PAYLOAD",
       "deviceType": "LAUNCHER",
       "displayName": "六联发射器",
@@ -916,7 +916,7 @@ GET /api/control/robots/test001/control-profile
 请求示例：
 
 ```http
-POST /api/control/robots/test001/control-sessions/acquire
+POST /api/control/robots/test111/control-sessions/acquire
 Content-Type: application/json
 
 {
@@ -931,7 +931,7 @@ Content-Type: application/json
 ```json
 {
   "controlSessionId": "tc_8e3f1c",
-  "robotId": "test001",
+  "robotId": "test111",
   "ownerUserId": "u1001",
   "ownerClientId": "web-1783120000000-abcd",
   "scope": "DEVICE",
@@ -951,7 +951,7 @@ Content-Type: application/json
   "message": "target is controlled by another terminal",
   "holder": {
     "controlSessionId": "tc_existing",
-    "robotId": "test001",
+    "robotId": "test111",
     "ownerUserId": "u1002",
     "ownerClientId": "web-other",
     "status": "ACTIVE"
@@ -990,7 +990,7 @@ Content-Type: application/json
 ```json
 {
   "controlSessionId": "tc_91ad22",
-  "robotId": "test001",
+  "robotId": "test111",
   "ownerUserId": "u1001",
   "ownerClientId": "web-1783120000000-abcd",
   "scope": "ROBOT",
@@ -1043,7 +1043,7 @@ Content-Type: application/json
 ```json
 {
   "status": "PUBLISHED",
-  "robotId": "test001",
+  "robotId": "test111",
   "controlMode": "NAVIGATION",
   "stateSeq": 2,
   "issuedAt": "2026-07-04T10:00:00+08:00"
@@ -1094,7 +1094,7 @@ Content-Type: application/json
 
 ```json
 {
-  "target": {"scope": "PAYLOAD", "deviceId": "launcher-001", "deviceType": "LAUNCHER"},
+  "target": {"scope": "PAYLOAD", "deviceId": "launcher_38mm", "deviceType": "LAUNCHER"},
   "action": "fire"
 }
 ```
@@ -1105,8 +1105,8 @@ Content-Type: application/json
 {
   "confirmToken": "confirm_b8c4a1",
   "expiresAt": "2026-07-04T10:00:30+08:00",
-  "robotId": "test001",
-  "target": {"scope": "PAYLOAD", "deviceId": "launcher-001", "deviceType": "LAUNCHER"},
+  "robotId": "test111",
+  "target": {"scope": "PAYLOAD", "deviceId": "launcher_38mm", "deviceType": "LAUNCHER"},
   "action": "fire"
 }
 ```
@@ -1156,7 +1156,7 @@ Content-Type: application/json
 | `WARNING_LIGHT/set_state` | `lightId`、`powerOn` |
 | `WARNING_LIGHT/set_mode` | `lightId`、`mode` |
 | `LAUNCHER/get_status` | `temporarilyEnableSafety`、`restoreSafetyAfterQuery` |
-| `LAUNCHER/set_safety` | `safetyOn`、`waitStatus` |
+| `LAUNCHER/set_safety` | `safety_on`、`wait_status` |
 | `LAUNCHER/fire` | `tube`、`waitStatusAfterFire`、`keepSafetyOn`；前端 `confirmToken` 仅供后端校验，不下发 MQTT |
 | `NET_GUN/fire` | 捕网器触发，后端校验 `confirmToken` 后不下发该字段 |
 
@@ -1177,7 +1177,7 @@ Content-Type: application/json
 {
   "commandId": "cmd_f5b0a1",
   "status": "PUBLISHED",
-  "robotId": "test001",
+  "robotId": "test111",
   "target": {"deviceId": "base", "deviceType": "WHEELED_BASE"},
   "action": "drive.velocity",
   "issuedAt": "2026-07-04T10:00:00+08:00"
@@ -1260,12 +1260,12 @@ GET /api/control/video-sessions
 [
   {
     "sessionId": "vs_123456",
-    "robotId": "test001",
+    "robotId": "test111",
     "deviceId": "camera01",
     "channel": "visible",
     "quality": "sub",
     "status": "STREAMING",
-    "roomName": "media.test001.camera01.visible",
+    "roomName": "media.test111.camera01.visible",
     "livekitUrl": "ws://127.0.0.1:7880",
     "viewerToken": "eyJhbGciOi...",
     "viewerCount": 1,
@@ -1341,7 +1341,7 @@ GET /api/control/video-sessions/vs_123456/tracks
     "sessionId": "vs_123456",
     "trackSid": "TR_VC_001",
     "trackName": "video.visible.sub",
-    "participantIdentity": "robot:test001:camera01",
+    "participantIdentity": "robot:test111:camera01",
     "kind": "video",
     "channel": "visible",
     "quality": "sub",
@@ -1377,7 +1377,7 @@ POST /api/control/video-sessions/vs_123456/token
 ```json
 {
   "livekitUrl": "ws://127.0.0.1:7880",
-  "roomName": "media.test001.camera01.visible",
+  "roomName": "media.test111.camera01.visible",
   "token": "eyJhbGciOi...",
   "expiresAt": "2026-07-04T10:30:00+08:00"
 }
@@ -1585,7 +1585,7 @@ Content-Type: multipart/form-data
 
 file=@snapshot.jpg
 fileType=IMAGE
-robotId=test001
+robotId=test111
 deviceId=camera01
 metadata={"source":"snapshot"}
 ```
@@ -1611,7 +1611,7 @@ metadata={"source":"snapshot"}
 请求示例：
 
 ```http
-GET /api/control/files?robotId=test001&fileType=IMAGE&status=READY&page=0&size=20
+GET /api/control/files?robotId=test111&fileType=IMAGE&status=READY&page=0&size=20
 ```
 
 响应参数：
@@ -1630,7 +1630,7 @@ GET /api/control/files?robotId=test001&fileType=IMAGE&status=READY&page=0&size=2
   "items": [
     {
       "fileId": "file_001",
-      "robotId": "test001",
+      "robotId": "test111",
       "deviceId": "camera01",
       "fileType": "IMAGE",
       "fileName": "snapshot.jpg",
@@ -1883,7 +1883,7 @@ Backend MQTT 关联说明：
 
 ```json
 {
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
   "channel": "visible",
   "quality": "sub",
@@ -1963,14 +1963,14 @@ Backend MQTT 关联说明：
 {
   "commandId": "cmd_001",
   "sessionId": "vs_123456",
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
   "channel": "visible",
   "quality": "sub",
   "livekitUrl": "ws://127.0.0.1:7880",
-  "roomName": "media.test001.camera01.visible",
+  "roomName": "media.test111.camera01.visible",
   "publisherToken": "eyJhbGciOi...",
-  "publishIdentity": "robot:test001:camera01",
+  "publishIdentity": "robot:test111:camera01",
   "expiresAt": "2026-07-04T10:30:00+08:00"
 }
 ```
@@ -1997,9 +1997,9 @@ Backend MQTT 关联说明：
 {
   "commandId": "cmd_intercom_001",
   "sessionId": "vs_123456",
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
-  "roomName": "media.test001.camera01.visible",
+  "roomName": "media.test111.camera01.visible",
   "livekitUrl": "ws://127.0.0.1:7880",
   "robotToken": "eyJhbGciOi...",
   "publishAudio": true,
@@ -2022,7 +2022,7 @@ POST /internal/media/video-sessions
 Content-Type: application/json
 
 {
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
   "channel": "visible",
   "quality": "sub",
@@ -2038,12 +2038,12 @@ Content-Type: application/json
 ```json
 {
   "sessionId": "vs_123456",
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
   "channel": "visible",
   "quality": "sub",
   "status": "INIT",
-  "roomName": "media.test001.camera01.visible",
+  "roomName": "media.test111.camera01.visible",
   "livekitUrl": "ws://127.0.0.1:7880",
   "viewerToken": "eyJhbGciOi...",
   "viewerCount": 1,
@@ -2067,7 +2067,7 @@ POST /internal/media/video-sessions/intercom
 Content-Type: application/json
 
 {
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
   "channel": "visible",
   "quality": "sub",
@@ -2082,9 +2082,9 @@ Content-Type: application/json
 ```json
 {
   "sessionId": "vs_123456",
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
-  "roomName": "media.test001.camera01.visible",
+  "roomName": "media.test111.camera01.visible",
   "videoStatus": "ROOM_READY",
   "intercomStatus": "STARTING",
   "intercomAudioOnly": true,
@@ -2112,12 +2112,12 @@ GET /internal/media/video-sessions
 [
   {
     "sessionId": "vs_123456",
-    "robotId": "test001",
+    "robotId": "test111",
     "deviceId": "camera01",
     "channel": "visible",
     "quality": "sub",
     "status": "STREAMING",
-    "roomName": "media.test001.camera01.visible",
+    "roomName": "media.test111.camera01.visible",
     "livekitUrl": "ws://127.0.0.1:7880",
     "viewerToken": null,
     "viewerCount": 1,
@@ -2171,7 +2171,7 @@ GET /internal/media/video-sessions/vs_123456/tracks
     "sessionId": "vs_123456",
     "trackSid": "TR_VC_001",
     "trackName": "video.visible.sub",
-    "participantIdentity": "robot:test001:camera01",
+    "participantIdentity": "robot:test111:camera01",
     "kind": "video",
     "channel": "visible",
     "quality": "sub",
@@ -2287,7 +2287,7 @@ POST /internal/media/video-sessions/vs_123456/token
 ```json
 {
   "livekitUrl": "ws://127.0.0.1:7880",
-  "roomName": "media.test001.camera01.visible",
+  "roomName": "media.test111.camera01.visible",
   "token": "eyJhbGciOi...",
   "expiresAt": "2026-07-04T10:30:00+08:00"
 }
@@ -2382,9 +2382,9 @@ POST /internal/media/video-sessions/vs_123456/intercom/start
 ```json
 {
   "sessionId": "vs_123456",
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
-  "roomName": "media.test001.camera01.visible",
+  "roomName": "media.test111.camera01.visible",
   "videoStatus": "STREAMING",
   "intercomStatus": "STARTING",
   "intercomAudioOnly": false,
@@ -2398,10 +2398,10 @@ POST /internal/media/video-sessions/vs_123456/intercom/start
 
 ```json
 {
-  "robotId": "test001",
+  "robotId": "test111",
   "sessionId": "vs_123456",
   "commandId": "cmd_stop_intercom_001",
-  "roomName": "media.test001.camera01.visible"
+  "roomName": "media.test111.camera01.visible"
 }
 ```
 
@@ -2472,7 +2472,7 @@ POST /internal/media/video-sessions/vs_123456/start-command
 请求示例：
 
 ```http
-POST /internal/media/video-sessions/online-restart-commands?robotId=test001&status=online
+POST /internal/media/video-sessions/online-restart-commands?robotId=test111&status=online
 ```
 
 响应示例：
@@ -2482,14 +2482,14 @@ POST /internal/media/video-sessions/online-restart-commands?robotId=test001&stat
   {
     "commandId": "cmd_001",
     "sessionId": "vs_123456",
-    "robotId": "test001",
+    "robotId": "test111",
     "deviceId": "camera01",
     "channel": "visible",
     "quality": "sub",
     "livekitUrl": "ws://127.0.0.1:7880",
-    "roomName": "media.test001.camera01.visible",
+    "roomName": "media.test111.camera01.visible",
     "publisherToken": "eyJhbGciOi...",
-    "publishIdentity": "robot:test001:camera01",
+    "publishIdentity": "robot:test111:camera01",
     "expiresAt": "2026-07-04T10:30:00+08:00"
   }
 ]
@@ -2511,10 +2511,10 @@ POST /internal/media/video-sessions/vs_123456/release-idle
 
 ```json
 {
-  "robotId": "test001",
+  "robotId": "test111",
   "sessionId": "vs_123456",
   "commandId": "cmd_stop_001",
-  "roomName": "media.test001.camera01.visible"
+  "roomName": "media.test111.camera01.visible"
 }
 ```
 
@@ -2544,7 +2544,7 @@ POST /internal/media/video-sessions/vs_123456/recordings/start
 ```json
 {
   "fileId": "file_rec_001",
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
   "fileType": "VIDEO",
   "fileName": "live-recording.mp4",
@@ -2627,12 +2627,12 @@ POST /internal/media/video-sessions/vs_123456/_mock/track-published/TR_VC_001
 
 ```http
 POST /api/media/files
-X-Robot-Id: test001
+X-Robot-Id: test111
 Content-Type: multipart/form-data
 
 file=@snapshot.jpg
 fileType=IMAGE
-robotId=test001
+robotId=test111
 deviceId=camera01
 metadata={"source":"robot-upload"}
 ```
@@ -2655,11 +2655,11 @@ metadata={"source":"robot-upload"}
 
 ```http
 POST /api/media/files/multipart-uploads
-X-Robot-Id: test001
+X-Robot-Id: test111
 Content-Type: application/json
 
 {
-  "robotId": "test001",
+  "robotId": "test111",
   "deviceId": "camera01",
   "extensionId": "ext_001",
   "fileType": "VIDEO",
@@ -2704,7 +2704,7 @@ Content-Type: application/json
 
 ```http
 POST /api/media/files/multipart-uploads/upl_001/part-urls
-X-Robot-Id: test001
+X-Robot-Id: test111
 Content-Type: application/json
 
 {"partNumbers": [1, 2, 3]}
@@ -2737,7 +2737,7 @@ Content-Type: application/json
 
 ```http
 POST /api/media/files/multipart-uploads/upl_001/complete
-X-Robot-Id: test001
+X-Robot-Id: test111
 ```
 
 响应示例：
@@ -2762,7 +2762,7 @@ X-Robot-Id: test001
 
 ```http
 GET /api/media/files/file_video_001/status
-X-Robot-Id: test001
+X-Robot-Id: test111
 ```
 
 响应示例：
@@ -2795,7 +2795,7 @@ X-Robot-Id: test001
 请求示例：
 
 ```http
-GET /api/media/files?robotId=test001&fileType=VIDEO&status=READY&page=0&size=20
+GET /api/media/files?robotId=test111&fileType=VIDEO&status=READY&page=0&size=20
 ```
 
 响应示例：
@@ -2805,7 +2805,7 @@ GET /api/media/files?robotId=test001&fileType=VIDEO&status=READY&page=0&size=20
   "items": [
     {
       "fileId": "file_video_001",
-      "robotId": "test001",
+      "robotId": "test111",
       "deviceId": "camera01",
       "extensionId": "ext_001",
       "fileType": "VIDEO",
@@ -2905,8 +2905,8 @@ HTTP/1.1 204 No Content
 ```json
 [
   {
-    "robotId": "test001",
-    "clientId": "robot-client-test001",
+    "robotId": "test111",
+    "clientId": "robot-client-test111",
     "name": "R1轮式机器人",
     "type": "轮式机器人",
     "battery": 86,
@@ -2960,8 +2960,8 @@ Payload 示例：
 
 ```json
 {
-  "robotId": "test001",
-  "clientId": "robot-client-test001",
+  "robotId": "test111",
+  "clientId": "robot-client-test111",
   "status": "online",
   "name": "R1轮式机器人",
   "type": "轮式机器人",
@@ -2999,7 +2999,7 @@ Payload 示例：
 
 ```http
 GET /api/media/tts/generate-file?text=%E8%AF%B7%E6%B3%A8%E6%84%8F%E5%AE%89%E5%85%A8
-X-Robot-Id: test001
+X-Robot-Id: test111
 ```
 
 响应示例：
@@ -3007,7 +3007,7 @@ X-Robot-Id: test001
 ```http
 HTTP/1.1 200 OK
 Content-Type: audio/wav
-Content-Disposition: attachment; filename="tts-test001.wav"
+Content-Disposition: attachment; filename="tts-test111.wav"
 
 <audio binary>
 ```
@@ -3029,7 +3029,7 @@ Content-Disposition: attachment; filename="tts-test001.wav"
 
 ```http
 GET /api/media/tts/generate-and-play?text=%E8%AF%B7%E6%B3%A8%E6%84%8F%E5%AE%89%E5%85%A8
-X-Robot-Id: test001
+X-Robot-Id: test111
 ```
 
 响应示例：

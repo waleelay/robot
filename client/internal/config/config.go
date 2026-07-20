@@ -79,13 +79,13 @@ type Device struct {
 }
 
 func Load() Config {
-	robotID := env("ROBOT_ID", "test001")
+	robotID := env("ROBOT_ID", "test111")
 	return Config{
 		RobotID:                  robotID,
 		RobotName:                env("ROBOT_NAME", defaultRobotName(robotID)),
 		Type:                     env("ROBOT_TYPE", defaultType(robotID)),
 		Battery:                  boundedPercentage(envInt("ROBOT_BATTERY", 100)),
-		MQTTBroker:               env("MQTT_BROKER_URL", "tcp://192.168.124.77:1883"),
+		MQTTBroker:               env("MQTT_BROKER_URL", "tcp://192.168.124.235:1884"),
 		MQTTUsername:             env("MQTT_USERNAME", ""),
 		MQTTPassword:             env("MQTT_PASSWORD", ""),
 		ClientID:                 env("ROBOT_CLIENT_ID", "robot-media-client"),
@@ -130,7 +130,7 @@ func devices(robotID string) []Device {
 	maxLinearX := 1.0
 	maxLinearY := 0.4
 	maxAngularZ := 0.8
-	if robotID == "test002" {
+	if robotID == "SN006" {
 		baseType = "QUADRUPED_BASE"
 		baseVendor = "DEEPNROBOTICS"
 		baseModel = "X30"
@@ -208,8 +208,8 @@ func devices(robotID string) []Device {
 	if robotID != "robot-unitree-001" {
 		items = append(items,
 			Device{
-				DeviceID:      "launcher-001",
-				BindingID:     "bind-launcher-001",
+				DeviceID:      "launcher_38mm",
+				BindingID:     "bind-launcher_38mm",
 				Scope:         "PAYLOAD",
 				DeviceType:    "LAUNCHER",
 				DisplayName:   "六联发射器",
@@ -359,7 +359,7 @@ func cameras(robotID string) []Camera {
 	ids := []string{"camera01", "camera02", "camera03"}
 	names := []string{"云台-可见光", "云台-热成像", "本体相机"}
 	groupTypes := []string{"dual_gimbal", "dual_gimbal", "body"}
-	if robotID == "test002" {
+	if robotID == "SN006" {
 		ids = []string{"camera04", "camera05", "camera06"}
 		names = []string{"头部双光云台", "腹部导航相机", "尾部避障相机"}
 		groupTypes = []string{"dual_gimbal", "body", "body"}
@@ -386,14 +386,14 @@ func cameras(robotID string) []Camera {
 }
 
 func defaultRobotName(robotID string) string {
-	if robotID == "test002" {
+	if robotID == "SN006" {
 		return "G1四足机器狗"
 	}
 	return "R1轮式机器人"
 }
 
 func defaultType(robotID string) string {
-	if robotID == "test002" {
+	if robotID == "SN006" {
 		return "四足机器狗"
 	}
 	return "轮式机器人"

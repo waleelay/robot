@@ -215,7 +215,7 @@ GET /api/bigscreen/panorama/overview
   },
   "devices": [
     {
-      "robotId": "test001",
+      "robotId": "test111",
       "clientId": "robot-media-client",
       "name": "R1轮式机器人",
       "type": "轮式机器人",
@@ -292,7 +292,7 @@ GET /api/bigscreen/panorama/overview
       "currentLocation": "A区主干道",
       "equipmentList": [
         {
-          "robotId": "test001",
+          "robotId": "test111",
           "name": "R1轮式机器人",
           "type": "WHEELED_ROBOT",
           "status": "online"
@@ -335,7 +335,7 @@ GET /api/bigscreen/panorama/overview
             "address": "A区主干道",
             "updatedAt": "2026-06-12 11:30:58"
           },
-          "robotId": "test001",
+          "robotId": "test111",
           "deviceName": "R1轮式机器人",
           "taskId": "task-002",
           "taskName": "A区-仓库复核",
@@ -408,8 +408,8 @@ GET /api/bigscreen/panorama/overview
 
 | robotId | lat | lng | x | y | z |
 |---|---:|---:|---:|---:|---:|
-| `test001` | 30.745330 | 106.039428 | 118.4 | 42.8 | 0.0 |
-| `test002` | 30.746587087515316 | 106.03824884204943 | 82.6 | 156.2 | 0.0 |
+| `test111` | 30.745330 | 106.039428 | 118.4 | 42.8 | 0.0 |
+| `SN006` | 30.746587087515316 | 106.03824884204943 | 82.6 | 156.2 | 0.0 |
 | `robot-unitree-001` | 30.7469491 | 106.0344109 | -64.3 | 198.5 | 0.0 |
 
 `location.lng/lat/altitude` 用于地图经纬度定位；`location.x/y/z` 用于室内图、三维场景或局部坐标系定位。
@@ -426,7 +426,7 @@ GET /api/bigscreen/panorama/devices/{deviceId}
 
 ```json
 {
-  "robotId": "test001",
+  "robotId": "test111",
   "clientId": "robot-media-client",
   "name": "R1轮式机器人",
   "type": "轮式机器人",
@@ -525,7 +525,7 @@ GET /api/bigscreen/panorama/tasks
       "currentLocation": "A区北侧消防通道",
       "equipmentList": [
         {
-          "robotId": "test002",
+          "robotId": "SN006",
           "name": "G1四足机器狗",
           "type": "ROBOT_DOG",
           "status": "offline"
@@ -550,7 +550,7 @@ GET /api/bigscreen/panorama/tasks
       "currentLocation": "A区东侧出入口",
       "equipmentList": [
         {
-          "robotId": "test001",
+          "robotId": "test111",
           "name": "R1轮式机器人",
           "type": "WHEELED_ROBOT",
           "status": "online"
@@ -600,7 +600,7 @@ GET /api/bigscreen/panorama/alarms
           "levelName": "高风险",
           "eventTime": "2023-08-01 10:00:00",
           "location": null,
-          "robotId": "test001",
+          "robotId": "test111",
           "deviceName": "R1轮式机器人",
           "taskId": "task-002",
           "taskName": null,
@@ -732,7 +732,7 @@ WebSocket：
   "event": "panorama.device.status.changed",
   "timestamp": "2026-06-12 11:31:10",
   "data": {
-    "robotId": "test001",
+    "robotId": "test111",
     "status": "online",
     "battery": 96,
     "controlMode": "MANUAL",
@@ -748,7 +748,7 @@ WebSocket：
   "event": "panorama.device.location.changed",
   "timestamp": "2026-06-12 11:31:11",
   "data": {
-    "robotId": "test001",
+    "robotId": "test111",
     "location": {
       "lng": 113.923556,
       "lat": 22.512385,
@@ -815,7 +815,7 @@ WebSocket：
         "address": "A区主干道",
         "updatedAt": "2026-06-12 11:30:58"
       },
-      "robotId": "test001",
+      "robotId": "test111",
       "deviceName": "R1轮式机器人",
       "taskId": "task-002",
       "taskName": "A区-仓库复核",
@@ -902,7 +902,7 @@ mvn spring-boot:run
 
 ```bash
 curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/overview | jq
-curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/devices/test001 | jq
+curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/devices/test111 | jq
 curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/tasks | jq
 curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/alarms | jq
 curl -sS -X POST http://127.0.0.1:8090/api/bigscreen/panorama/alarms/alarm-001/disposal \
@@ -947,14 +947,18 @@ Upgrade
 
 第三阶段：
 
-- BFF 不再本地模拟推送 `panorama.*` 动态事件。
+- BFF 不再本地模拟推送全量 `panorama.*` 动态事件。
 - `/ws/control` 保留到 Control Service WebSocket 的桥接能力；Control Service WebSocket 暂不可用时，不推送本地假数据。
-- 后续前端再从只打印事件演进为消费 `panorama.*`，形成 REST 快照 + WebSocket 增量。
+- BFF 已将中心端 `robot.state` 转换为 `panorama.device.status.changed` 并追加转发给前端；当 `robot.state` 携带定位或任务字段时，同步追加 `panorama.device.location.changed`、`panorama.task.changed`。
+- 联调期仅针对 `robotId=test111` 保留定位兜底：当中心端 `robot.state` 未携带定位数据时，BFF 按三组 XYZ 坐标循环追加 `panorama.device.location.changed`。
+- BFF 会基于已收到的机器人状态维护轻量设备统计，并追加 `panorama.stats.changed.deviceStats`。
+- 如果中心端推送 `task.*`、`alarm.*` 原始事件，BFF 会转换为 `panorama.task.changed`、`panorama.alarm.changed`；没有真实原始事件源时不生成本地假数据。
+- 后续前端继续从只打印事件演进为消费更多 `panorama.*`，形成 REST 快照 + WebSocket 增量。
 
 第三阶段后半段：
 
 - 中心端任务、告警、位置服务接入。
-- BFF WebSocket 将中心端事件转换为 `panorama.*` 页面事件。
+- BFF WebSocket 继续补齐任务、告警、位置等中心端事件到 `panorama.*` 页面事件的转换。
 - 前端从 `/ws/control` 收口到 `/ws/bigscreen`。
 
 第四阶段：

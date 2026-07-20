@@ -481,30 +481,30 @@ export default {
       leftPanelCollapsed: false,
       heartbeatTimer: null,
       stoppedSessionIds: new Set(),
-      selectedRobotId: 'test001',
+      selectedRobotId: 'test111',
       robots: [
         {
-          robotId: 'test001',
+          robotId: 'test111',
           name: 'R1轮式机器人',
           type: '轮式机器人',
           battery: null,
           status: 'offline',
           cameras: [
-            cameraState('test001', 'camera01', '云台-可见光', 'dual_gimbal'),
-            cameraState('test001', 'camera02', '云台-热成像', 'dual_gimbal'),
-            cameraState('test001', 'camera03', '本体相机', 'body')
+            cameraState('test111', 'camera01', '云台-可见光', 'dual_gimbal'),
+            cameraState('test111', 'camera02', '云台-热成像', 'dual_gimbal'),
+            cameraState('test111', 'camera03', '本体相机', 'body')
           ]
         },
         {
-          robotId: 'test002',
+          robotId: 'SN006',
           name: 'G1四足机器狗',
           type: '四足机器狗',
           battery: null,
           status: 'offline',
           cameras: [
-            cameraState('test002', 'gimbal-001', '头部双光云台', 'dual_gimbal'),
-            cameraState('test002', 'gimbal-002', '腹部导航相机', 'body'),
-            cameraState('test002', 'gimbal-003', '尾部避障相机', 'body')
+            cameraState('SN006', 'gimbal-001', '头部双光云台', 'dual_gimbal'),
+            cameraState('SN006', 'gimbal-002', '腹部导航相机', 'body'),
+            cameraState('SN006', 'gimbal-003', '尾部避障相机', 'body')
           ]
         }
       ],
@@ -1462,7 +1462,7 @@ export default {
           : this.launcherDevice
       const session = await this.ensureControlSession(device, action)
       const params = {
-        set_safety: { safetyOn: true, waitStatus: true },
+        set_safety: { safety_on: true, wait_status: true },
         'light.set': { enabled: true, brightness: 80, mode: 'STEADY' }
       }[action]
       const response = await sendEquipmentCommand(this.selectedRobotId,
@@ -1537,8 +1537,8 @@ export default {
       this.$set(this.launcherSafety, device.deviceId, enabled)
       this.persistDeviceStateCache()
       const ok = await this.sendDeviceCommand(device, 'set_safety', {
-        safetyOn: enabled,
-        waitStatus: true
+        safety_on: enabled,
+        wait_status: true
       }, `launcher_safety_${enabled ? 'on' : 'off'}`)
       if (!ok) {
         this.$set(this.launcherSafety, device.deviceId, !enabled)
