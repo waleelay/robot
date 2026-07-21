@@ -123,7 +123,7 @@ def load() -> Config:
         probe_timeout=env_int("PROBE_TIMEOUT_MS", 8000) / 1000,
         heartbeat_interval=env_int("HEARTBEAT_INTERVAL_MS", 5000) / 1000,
         recording_upload_enabled=env_bool("RECORDING_UPLOAD_ENABLED", True),
-        media_service_url=env("MEDIA_SERVICE_URL", "http://192.168.124.77:8088"),
+        media_service_url=env("MEDIA_SERVICE_URL", "http://192.168.124.234:8088"),
         recording_directory=env("RECORDING_DIRECTORY", "./recordings"),
         recording_manifest_path=env("RECORDING_MANIFEST_PATH", "./recording-upload-manifest.json"),
         recording_device_id=env("RECORDING_DEVICE_ID", "camera01"),

@@ -109,7 +109,7 @@ func Load() Config {
 		ProbeTimeout:             time.Duration(envInt("PROBE_TIMEOUT_MS", 8000)) * time.Millisecond,
 		HeartbeatInterval:        time.Duration(envInt("HEARTBEAT_INTERVAL_MS", 5000)) * time.Millisecond,
 		RecordingUploadEnabled:   envBool("RECORDING_UPLOAD_ENABLED", true),
-		MediaServiceURL:          env("MEDIA_SERVICE_URL", "http://192.168.124.77:8088"),
+		MediaServiceURL:          env("MEDIA_SERVICE_URL", "http://192.168.124.234:8088"),
 		RecordingDirectory:       env("RECORDING_DIRECTORY", "./recordings"),
 		RecordingManifestPath:    env("RECORDING_MANIFEST_PATH", "./recording-upload-manifest.json"),
 		RecordingDeviceID:        env("RECORDING_DEVICE_ID", "camera01"),

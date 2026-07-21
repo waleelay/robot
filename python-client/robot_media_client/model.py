@@ -98,6 +98,30 @@ class IntercomStartCommand:
 
 
 @dataclass
+class IntercomCallState:
+    """中心端回传的机器人主动呼叫状态。"""
+
+    call_id: str = ""
+    robot_id: str = ""
+    status: str = ""
+    session_id: str = ""
+    message: str = ""
+    timestamp: str = ""
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> "IntercomCallState":
+        """从 call/state MQTT payload 构造状态对象。"""
+        return cls(
+            call_id=str(data.get("callId") or ""),
+            robot_id=str(data.get("robotId") or ""),
+            status=str(data.get("status") or ""),
+            session_id=str(data.get("sessionId") or ""),
+            message=str(data.get("message") or ""),
+            timestamp=str(data.get("timestamp") or ""),
+        )
+
+
+@dataclass
 class ControlTarget:
     """普通设备控制指令中的目标设备描述。"""
 

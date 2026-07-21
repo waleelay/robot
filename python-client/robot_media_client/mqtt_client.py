@@ -23,7 +23,7 @@ import paho.mqtt.client as mqtt
 
 from .config import Config
 from .intercom import IntercomManager
-from .model import ControlCommand, IntercomStartCommand, StartCommand, StopCommand
+from .model import ControlCommand, IntercomCallState, IntercomStartCommand, StartCommand, StopCommand
 from .publisher import ProcessPublisher
 from .rtsp import Probe
 from .timeutil import isoformat
@@ -48,6 +48,8 @@ class RobotMQTTClient:
         self.audio_muted = False
         self.control_mode = "MANUAL"
         self.device_state: dict[str, dict[str, object]] = {}
+        self.call_states: dict[str, IntercomCallState] = {}
+        self.call_state_handler: Callable[[IntercomCallState], None] | None = None
         self.stop_event = threading.Event()
         self.connected = threading.Event()
 
@@ -60,7 +62,17 @@ class RobotMQTTClient:
         self.client.on_disconnect = self._on_disconnect
         self.client.on_message = self._on_message
         self.client.on_subscribe = self._on_subscribe
-        self.client.connect(broker.host, broker.port, keepalive=20)
+        print("mqtt connecting", f"broker={broker.host}:{broker.port}", flush=True)
+        try:
+            self.client.connect(broker.host, broker.port, keepalive=20)
+        except OSError as exc:
+            print(
+                "mqtt connect failed",
+                f"broker={broker.host}:{broker.port}",
+                f"error={exc}",
+                flush=True,
+            )
+            return
         self.client.loop_start()
         heartbeat = threading.Thread(target=self._heartbeat_loop, daemon=True)
         heartbeat.start()
@@ -92,6 +104,7 @@ class RobotMQTTClient:
             f"robot/{robot}/media/video/switch-channel": self._handle_start,
             f"robot/{robot}/media/video/intercom/start": self._handle_intercom_start,
             f"robot/{robot}/media/video/intercom/stop": self._handle_intercom_stop,
+            f"robot/{robot}/media/video/intercom/call/state": self._handle_intercom_call_state,
             f"robot/{robot}/control/#": self._handle_control_command,
         }
         for topic in self.subscriptions:
@@ -202,6 +215,89 @@ class RobotMQTTClient:
             self.intercom_status(command.session_id, "stopped", "", "", "", "intercom stopped")
         except Exception as exc:
             print("intercom stop failed", exc, flush=True)
+
+    def _handle_intercom_call_state(self, payload: bytes, _topic: str) -> None:
+        """保存中心端回传的呼叫状态，并通知机器人本地业务层。"""
+        state = IntercomCallState.from_json(json.loads(payload.decode()))
+        if not state.call_id:
+            print("intercom call state ignored reason=missing-call-id", flush=True)
+            return
+        with self.lock:
+            self.call_states[state.call_id] = state
+            handler = self.call_state_handler
+        print(
+            "intercom call state",
+            state.call_id,
+            state.status,
+            state.session_id,
+            state.message,
+            flush=True,
+        )
+        if handler is not None:
+            handler(state)
+
+    def set_intercom_call_state_handler(self, handler: Callable[[IntercomCallState], None] | None) -> None:
+        """注册状态回调，供机器人按钮、屏幕或其它本地业务模块更新提示。"""
+        with self.lock:
+            self.call_state_handler = handler
+
+    def invite_intercom_call(self, device_id: str, reason: str = "", timeout_seconds: int = 30) -> str:
+        """请求中心端响铃；收到 intercom/start 前不会启动本地音频桥。"""
+        if not device_id.strip():
+            raise ValueError("intercom call device id is required")
+        timeout = timeout_seconds if timeout_seconds > 0 else 30
+        call_id = f"call_{self.cfg.robot_id}_{time.time_ns()}"
+        published = self.publish(
+            f"robot/{self.cfg.robot_id}/media/video/intercom/call/invite",
+            {
+                "callId": call_id,
+                "robotId": self.cfg.robot_id,
+                "deviceId": device_id,
+                "channel": "visible",
+                "quality": "sub",
+                "reason": reason,
+                "timeoutSeconds": timeout,
+                "timestamp": isoformat(),
+            },
+        )
+        if not published:
+            raise RuntimeError("intercom call invite publish failed")
+        return call_id
+
+    def cancel_intercom_call(self, call_id: str, reason: str = "") -> None:
+        """取消仍在振铃的机器人主动呼叫。"""
+        if not call_id.strip():
+            raise ValueError("intercom call id is required")
+        published = self.publish(
+            f"robot/{self.cfg.robot_id}/media/video/intercom/call/cancel",
+            {
+                "callId": call_id,
+                "robotId": self.cfg.robot_id,
+                "reason": reason,
+                "timestamp": isoformat(),
+            },
+        )
+        if not published:
+            raise RuntimeError("intercom call cancel publish failed")
+
+    def end_intercom_call(self, call_id: str) -> None:
+        """机器人端挂断已接听的呼叫，并复用 intercom/status stopped 上报。"""
+        with self.lock:
+            state = self.call_states.get(call_id)
+        if state is None or not state.session_id:
+            raise ValueError(f"intercom call {call_id} has no active session")
+        self.intercom.stop(state.session_id)
+        published = self.publish(
+            f"robot/{self.cfg.robot_id}/media/video/intercom/status",
+            {
+                "sessionId": state.session_id,
+                "status": "stopped",
+                "message": "robot ended intercom",
+                "timestamp": isoformat(),
+            },
+        )
+        if not published:
+            raise RuntimeError("intercom stopped status publish failed")
 
     def _handle_control_command(self, payload: bytes, topic: str) -> None:
         """处理普通设备控制指令，并把可模拟的设备状态回报给后端。"""
@@ -362,20 +458,22 @@ class RobotMQTTClient:
             "timestamp": isoformat(),
         })
 
-    def publish(self, topic: str, payload: dict[str, Any]) -> None:
+    def publish(self, topic: str, payload: dict[str, Any]) -> bool:
         """发布 MQTT 消息并等待 QoS1 入队完成，失败时打印可排查日志。"""
         if not self.connected.is_set():
             print("mqtt publish skipped disconnected", topic, flush=True)
-            return
+            return False
         body = json.dumps(without_empty(payload), ensure_ascii=False, separators=(",", ":"))
         info = self.client.publish(topic, body.encode(), qos=1, retain=False)
         try:
             info.wait_for_publish(timeout=5)
         except RuntimeError as exc:
             print("mqtt publish failed", topic, exc, flush=True)
-            return
+            return False
         if not info.is_published():
             print("mqtt publish timeout", topic, body, flush=True)
+            return False
+        return True
 
     def online(self, status: str) -> None:
         """发布机器人在线状态、基础属性和摄像头清单。"""

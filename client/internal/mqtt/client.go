@@ -3,6 +3,7 @@ package mqtt
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -31,6 +32,8 @@ type Client struct {
 	audioMuted  bool
 	controlMode string
 	deviceState map[string]map[string]any
+	callStates  map[string]model.IntercomCallState
+	callHandler func(model.IntercomCallState)
 }
 
 func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publisher, intercomManager intercom.Manager) *Client {
@@ -44,6 +47,7 @@ func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publish
 		audioMuted:  false,
 		controlMode: "MANUAL",
 		deviceState: make(map[string]map[string]any),
+		callStates:  make(map[string]model.IntercomCallState),
 	}
 }
 
@@ -54,6 +58,7 @@ func (c *Client) Run(ctx context.Context) error {
 	switchTopic := "robot/" + c.cfg.RobotID + "/media/video/switch-channel"
 	intercomStartTopic := "robot/" + c.cfg.RobotID + "/media/video/intercom/start"
 	intercomStopTopic := "robot/" + c.cfg.RobotID + "/media/video/intercom/stop"
+	intercomCallStateTopic := "robot/" + c.cfg.RobotID + "/media/video/intercom/call/state"
 	controlTopic := "robot/" + c.cfg.RobotID + "/control/#"
 	opts := paho.NewClientOptions().
 		AddBroker(c.cfg.MQTTBroker).
@@ -83,8 +88,9 @@ func (c *Client) Run(ctx context.Context) error {
 		c.subscribe(switchTopic, c.handleStart(ctx))
 		c.subscribe(intercomStartTopic, c.handleIntercomStart(ctx))
 		c.subscribe(intercomStopTopic, c.handleIntercomStop())
+		c.subscribe(intercomCallStateTopic, c.handleIntercomCallState())
 		c.subscribe(controlTopic, c.handleControlCommand())
-		log.Println("mqtt subscribed", startTopic, stopTopic, switchTopic, intercomStartTopic, intercomStopTopic, controlTopic)
+		log.Println("mqtt subscribed", startTopic, stopTopic, switchTopic, intercomStartTopic, intercomStopTopic, intercomCallStateTopic, controlTopic)
 		c.online("online")
 	})
 	c.mqtt = paho.NewClient(opts)
@@ -210,6 +216,81 @@ func (c *Client) handleIntercomStop() paho.MessageHandler {
 		_ = c.intercom.Stop(payload.SessionID)
 		c.intercomStatus(payload.SessionID, "stopped", "", "", "", "intercom stopped")
 	}
+}
+
+func (c *Client) handleIntercomCallState() paho.MessageHandler {
+	return func(_ paho.Client, msg paho.Message) {
+		var state model.IntercomCallState
+		if err := json.Unmarshal(msg.Payload(), &state); err != nil {
+			log.Println("intercom call state unmarshal failed", err)
+			return
+		}
+		c.mu.Lock()
+		c.callStates[state.CallID] = state
+		handler := c.callHandler
+		c.mu.Unlock()
+		log.Println("intercom call state", state.CallID, state.Status, state.SessionID, state.Message)
+		if handler != nil {
+			handler(state)
+		}
+	}
+}
+
+// SetIntercomCallStateHandler connects the robot UI or hardware call button to call status updates.
+func (c *Client) SetIntercomCallStateHandler(handler func(model.IntercomCallState)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.callHandler = handler
+}
+
+// InviteIntercomCall asks the control center to ring. Media starts only after intercom/start arrives.
+func (c *Client) InviteIntercomCall(deviceID, reason string, timeoutSeconds int) (string, error) {
+	if strings.TrimSpace(deviceID) == "" {
+		return "", fmt.Errorf("intercom call device id is required")
+	}
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 30
+	}
+	callID := fmt.Sprintf("call_%s_%d", c.cfg.RobotID, time.Now().UnixNano())
+	err := c.publish("robot/"+c.cfg.RobotID+"/media/video/intercom/call/invite", model.IntercomCallInvite{
+		CallID:         callID,
+		RobotID:        c.cfg.RobotID,
+		DeviceID:       deviceID,
+		Channel:        "visible",
+		Quality:        "sub",
+		Reason:         reason,
+		TimeoutSeconds: timeoutSeconds,
+		Timestamp:      time.Now(),
+	})
+	return callID, err
+}
+
+// CancelIntercomCall cancels a call that is still ringing.
+func (c *Client) CancelIntercomCall(callID, reason string) error {
+	if strings.TrimSpace(callID) == "" {
+		return fmt.Errorf("intercom call id is required")
+	}
+	return c.publish("robot/"+c.cfg.RobotID+"/media/video/intercom/call/cancel", model.IntercomCallCancel{
+		CallID:    callID,
+		RobotID:   c.cfg.RobotID,
+		Reason:    reason,
+		Timestamp: time.Now(),
+	})
+}
+
+// EndIntercomCall lets the robot end an accepted call and reports the existing intercom stopped state.
+func (c *Client) EndIntercomCall(callID string) error {
+	c.mu.Lock()
+	state, ok := c.callStates[callID]
+	c.mu.Unlock()
+	if !ok || state.SessionID == "" {
+		return fmt.Errorf("intercom call %s has no active session", callID)
+	}
+	if err := c.intercom.Stop(state.SessionID); err != nil {
+		return err
+	}
+	c.intercomStatus(state.SessionID, "stopped", "", "", "", "robot ended intercom")
+	return nil
 }
 
 func (c *Client) handleControlCommand() paho.MessageHandler {
@@ -343,23 +424,25 @@ func (c *Client) intercomStatus(sessionID, status, trackSid, trackName, errorCod
 	})
 }
 
-func (c *Client) publish(topic string, payload any) {
+func (c *Client) publish(topic string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		log.Println("mqtt publish marshal failed topic=", topic, "error=", err)
-		return
+		return err
 	}
 	if c.mqtt == nil || !c.mqtt.IsConnectionOpen() {
-		return
+		return fmt.Errorf("mqtt is not connected")
 	}
 	token := c.mqtt.Publish(topic, 1, false, body)
 	if !token.WaitTimeout(5 * time.Second) {
 		log.Println("mqtt publish timeout topic=", topic)
-		return
+		return fmt.Errorf("mqtt publish timeout: %s", topic)
 	}
 	if err := token.Error(); err != nil {
 		log.Println("mqtt publish failed topic=", topic, "error=", err)
+		return err
 	}
+	return nil
 }
 
 func (c *Client) online(status string) {

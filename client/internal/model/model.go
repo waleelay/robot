@@ -47,6 +47,33 @@ type IntercomStatusMessage struct {
 	Timestamp           time.Time `json:"timestamp"`
 }
 
+type IntercomCallInvite struct {
+	CallID         string    `json:"callId"`
+	RobotID        string    `json:"robotId"`
+	DeviceID       string    `json:"deviceId"`
+	Channel        string    `json:"channel"`
+	Quality        string    `json:"quality"`
+	Reason         string    `json:"reason,omitempty"`
+	TimeoutSeconds int       `json:"timeoutSeconds"`
+	Timestamp      time.Time `json:"timestamp"`
+}
+
+type IntercomCallCancel struct {
+	CallID    string    `json:"callId"`
+	RobotID   string    `json:"robotId"`
+	Reason    string    `json:"reason,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type IntercomCallState struct {
+	CallID    string `json:"callId"`
+	RobotID   string `json:"robotId"`
+	Status    string `json:"status"`
+	SessionID string `json:"sessionId,omitempty"`
+	Message   string `json:"message,omitempty"`
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
 type StatusMessage struct {
 	SessionID string    `json:"sessionId"`
 	Status    string    `json:"status"`

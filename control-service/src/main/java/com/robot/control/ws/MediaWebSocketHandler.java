@@ -3,6 +3,7 @@ package com.robot.control.ws;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.auth.CurrentUser;
+import com.robot.control.call.IntercomCallService;
 import com.robot.control.config.DateTimeConfig;
 import com.robot.control.service.EquipmentControlService;
 import java.io.IOException;
@@ -28,6 +29,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     private final MediaWebSocketPublisher publisher;
     private final ObjectMapper objectMapper;
     private final EquipmentControlService equipmentControlService;
+    private final IntercomCallService intercomCallService;
 
     /**
      * 创建 MediaWebSocketHandler 实例。
@@ -39,10 +41,12 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     public MediaWebSocketHandler(
             MediaWebSocketPublisher publisher,
             ObjectMapper objectMapper,
-            EquipmentControlService equipmentControlService) {
+            EquipmentControlService equipmentControlService,
+            IntercomCallService intercomCallService) {
         this.publisher = publisher;
         this.objectMapper = objectMapper;
         this.equipmentControlService = equipmentControlService;
+        this.intercomCallService = intercomCallService;
     }
 
     /**
@@ -65,18 +69,38 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         Map<String, Object> incoming = objectMapper.readValue(message.getPayload(), new TypeReference<>() {});
-        if (!"control.command".equals(incoming.get("type"))) {
-            return;
-        }
+        String type = stringValue(incoming.get("type"), "");
         String requestId = stringValue(incoming.get("requestId"), "");
         try {
             Map<String, Object> payload = mapValue(incoming.get("payload"));
-            String robotId = stringValue(payload.get("robotId"), "");
-            Map<String, Object> result = equipmentControlService.publishCommand(robotId, payload, currentUser(session));
-            send(session, "control.command.accepted", requestId, result);
+            switch (type) {
+                case "control.command" -> {
+                    String robotId = stringValue(payload.get("robotId"), "");
+                    Map<String, Object> result = equipmentControlService.publishCommand(robotId, payload, currentUser(session));
+                    send(session, "control.command.accepted", requestId, result);
+                }
+                case "video.intercom.call.accept" -> send(
+                        session,
+                        "video.intercom.call.accepted",
+                        requestId,
+                        intercomCallService.accept(stringValue(payload.get("callId"), ""), currentUser(session)));
+                case "video.intercom.call.reject" -> send(
+                        session,
+                        "video.intercom.call.rejected",
+                        requestId,
+                        intercomCallService.reject(stringValue(payload.get("callId"), ""), currentUser(session)));
+                case "video.intercom.call.query" -> send(
+                        session, "video.intercom.call.list", requestId, intercomCallService.ringingCalls());
+                default -> {
+                    // Ignore unknown message types for forward compatibility.
+                }
+            }
         } catch (Exception ex) {
-            send(session, "control.command.rejected", requestId, object(
-                    "code", "CONTROL_COMMAND_REJECTED",
+            String rejectedType = type.startsWith("video.intercom.call.")
+                    ? "video.intercom.call.operation-failed"
+                    : "control.command.rejected";
+            send(session, rejectedType, requestId, object(
+                    "code", "OPERATION_REJECTED",
                     "message", ex.getMessage()));
         }
     }

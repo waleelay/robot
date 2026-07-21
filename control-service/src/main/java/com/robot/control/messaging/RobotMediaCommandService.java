@@ -87,6 +87,11 @@ public class RobotMediaCommandService {
         publish("robot/" + robotId + "/media/video/intercom/stop", payload);
     }
 
+    /** Sends the current robot initiated call state back to the robot. */
+    public void sendIntercomCallState(String robotId, Object payload) {
+        publish("robot/" + robotId + "/media/video/intercom/call/state", payload);
+    }
+
     /**
      * 发布 MQTT 消息。
      *

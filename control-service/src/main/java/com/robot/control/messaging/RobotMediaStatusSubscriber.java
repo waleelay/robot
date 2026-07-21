@@ -2,6 +2,9 @@ package com.robot.control.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.config.ControlServiceProperties;
+import com.robot.control.call.IntercomCallCancel;
+import com.robot.control.call.IntercomCallInvite;
+import com.robot.control.call.IntercomCallService;
 import com.robot.control.client.ControlMediaServiceClient;
 import com.robot.control.robot.service.RobotRegistryService;
 import com.robot.control.service.EquipmentControlService;
@@ -35,8 +38,12 @@ public class RobotMediaStatusSubscriber {
     private static final String STATUS_TOPIC = "robot/+/media/video/status";
     private static final String INTERCOM_STATUS_TOPIC = "robot/+/media/video/intercom/status";
     private static final String CLIENT_STATUS_TOPIC = "robot/+/media/client/status";
-    private static final String[] STATUS_TOPICS = {STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC};
-    private static final int[] STATUS_QOS = {1, 1, 1};
+    private static final String CALL_INVITE_TOPIC = "robot/+/media/video/intercom/call/invite";
+    private static final String CALL_CANCEL_TOPIC = "robot/+/media/video/intercom/call/cancel";
+    private static final String[] STATUS_TOPICS = {
+        STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC
+    };
+    private static final int[] STATUS_QOS = {1, 1, 1, 1, 1};
 
     private final ControlServiceProperties properties;
     private final ObjectMapper objectMapper;
@@ -44,6 +51,7 @@ public class RobotMediaStatusSubscriber {
     private final RobotMediaCommandService commandService;
     private final EquipmentControlService equipmentControlService;
     private final RobotRegistryService robotRegistryService;
+    private final IntercomCallService intercomCallService;
     private MqttClient client;
 
     /**
@@ -62,13 +70,15 @@ public class RobotMediaStatusSubscriber {
             ControlMediaServiceClient mediaServiceClient,
             RobotMediaCommandService commandService,
             EquipmentControlService equipmentControlService,
-            RobotRegistryService robotRegistryService) {
+            RobotRegistryService robotRegistryService,
+            IntercomCallService intercomCallService) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.mediaServiceClient = mediaServiceClient;
         this.commandService = commandService;
         this.equipmentControlService = equipmentControlService;
         this.robotRegistryService = robotRegistryService;
+        this.intercomCallService = intercomCallService;
     }
 
     /**
@@ -101,11 +111,41 @@ public class RobotMediaStatusSubscriber {
                     log.debug("Ignore intercom status without sessionId topic={}, payload={}", topic, payload);
                     return;
                 }
+                intercomCallService.handleIntercomStatus(status.getSessionId(), status.getStatus(), status.getMessage());
                 mediaServiceClient.updateIntercomStatus(status);
             } catch (Exception ex) {
                 log.warn("Failed to handle intercom status topic={}, payload={}", topic, payload, ex);
             }
         };
+    }
+
+    private IMqttMessageListener callInviteListener() {
+        return (topic, message) -> {
+            String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+            try {
+                intercomCallService.invite(
+                        objectMapper.readValue(payload, IntercomCallInvite.class), robotIdFromTopic(topic));
+            } catch (Exception ex) {
+                log.warn("Failed to handle intercom call invite topic={}, payload={}", topic, payload, ex);
+            }
+        };
+    }
+
+    private IMqttMessageListener callCancelListener() {
+        return (topic, message) -> {
+            String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+            try {
+                intercomCallService.cancel(
+                        objectMapper.readValue(payload, IntercomCallCancel.class), robotIdFromTopic(topic));
+            } catch (Exception ex) {
+                log.warn("Failed to handle intercom call cancel topic={}, payload={}", topic, payload, ex);
+            }
+        };
+    }
+
+    private String robotIdFromTopic(String topic) {
+        String[] parts = topic.split("/");
+        return parts.length > 1 ? parts[1] : "";
     }
 
     /**
@@ -207,7 +247,10 @@ public class RobotMediaStatusSubscriber {
         mqttClient.subscribe(
                 STATUS_TOPICS,
                 STATUS_QOS,
-                new IMqttMessageListener[] {statusListener(), intercomStatusListener(), clientStatusListener()});
-        log.info("Subscribed media MQTT topics: {}, {}, {}", STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC);
+                new IMqttMessageListener[] {
+                    statusListener(), intercomStatusListener(), clientStatusListener(), callInviteListener(), callCancelListener()
+                });
+        log.info("Subscribed media MQTT topics: {}, {}, {}, {}, {}",
+                STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC);
     }
 }

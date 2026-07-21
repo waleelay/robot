@@ -43,6 +43,7 @@ def main() -> None:
         f"recordingUploadEnabled={cfg.recording_upload_enabled}",
         f"recordingDirectory={cfg.recording_directory}",
         f"mediaService={cfg.media_service_url}",
+        f"mqttBroker={cfg.mqtt_broker}",
         flush=True,
     )
     while not stop_event.is_set():

@@ -4,6 +4,7 @@
       <router-view :key="$route.path" />
     </div>
     <WarningPending />
+    <IncomingIntercomCall />
   </ScaleScreen>
 </template>
 
@@ -13,11 +14,13 @@ import { mapActions } from 'vuex';
 import { getPatrolPanoramaOverview } from '../../api/new-bi';
 import ScaleScreen from './../../components/largeScreen/scale-screen.vue'
 import WarningPending from './patrol/panorama/warning/WarnPending1.vue';
+import IncomingIntercomCall from './components/IncomingIntercomCall.vue';
 export default {
   name: 'Bi',
   components: {
     ScaleScreen,
-    WarningPending
+    WarningPending,
+    IncomingIntercomCall
   },
   data() {
     return {

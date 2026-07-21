@@ -172,6 +172,34 @@ AUDIO_PLAYBACK_PIPELINE
 export INTERCOM_AUDIO_ENABLED=false
 ```
 
+### 机器人主动呼叫中心端
+
+启动客户端时应确保 `MQTT_BROKER_URL` 与 Control Service 使用同一个 Broker，例如：
+
+```bash
+export MQTT_BROKER_URL='tcp://192.168.124.235:1884'
+```
+
+机器人本地按钮或业务模块可以调用 `RobotMQTTClient`：
+
+```python
+call_id = client.invite_intercom_call("camera01", "机器人请求人工对讲", 30)
+# 振铃阶段由机器人取消
+client.cancel_intercom_call(call_id, "用户取消呼叫")
+# 或者中心端接听后，由机器人挂断
+client.end_intercom_call(call_id)
+```
+
+可通过状态回调更新机器人屏幕或语音提示：
+
+```python
+client.set_intercom_call_state_handler(
+    lambda state: print(state.call_id, state.status, state.message)
+)
+```
+
+客户端只发起来电邀请；中心端接听后，仍由现有 `intercom/start` 启动 LiveKit 音频桥。
+
 ## Docker
 
 ```bash

@@ -56,7 +56,10 @@ const state = {
   controlSessions: {},
   snapshotTime: 0,
   recordTime: 0,
-  deviceStateCache: readDeviceStateCache()
+  deviceStateCache: readDeviceStateCache(),
+  incomingCalls: [],
+  activeIncomingCall: null,
+  callOperationPending: false
 }
 
 function cameraKey(robotId, camera) {
@@ -240,7 +243,28 @@ const mutations = {
   },
   SET_DEVICE_STATE_CACHE(state, cache) {
     state.deviceStateCache = cache
+  },
+  SET_INCOMING_CALLS(state, calls) {
+    state.incomingCalls = calls.map(withCallReceipt)
+  },
+  UPSERT_INCOMING_CALL(state, call) {
+    const calls = state.incomingCalls.filter(item => item.callId !== call.callId)
+    state.incomingCalls = [...calls, withCallReceipt(call)]
+      .sort((left, right) => String(left.expiresAt).localeCompare(String(right.expiresAt)))
+  },
+  REMOVE_INCOMING_CALL(state, callId) {
+    state.incomingCalls = state.incomingCalls.filter(item => item.callId !== callId)
+  },
+  SET_ACTIVE_INCOMING_CALL(state, call) {
+    state.activeIncomingCall = call
+  },
+  SET_CALL_OPERATION_PENDING(state, pending) {
+    state.callOperationPending = pending
   }
+}
+
+function withCallReceipt(call) {
+  return { ...call, receivedAtEpochMillis: Date.now() }
 }
 
 // ============ 导出 actions ============
@@ -490,6 +514,11 @@ const actions = {
     socket.onopen = () => {
       commit('setWsConnected', true)
       dispatch('startHeartbeat')
+      socket.send(JSON.stringify({
+        type: 'video.intercom.call.query',
+        requestId: `call-query-${Date.now()}`,
+        payload: {}
+      }))
       // console.log('Media WebSocket connected', url)
     }
     socket.onclose = () => {
@@ -503,8 +532,116 @@ const actions = {
       dispatch('websocketExtraData/syncRobot', event, { root: true })
       dispatch('syncSessionEvent', event)
       dispatch('syncControlEvent', event)
+      dispatch('syncIntercomCallEvent', event)
     }
     commit('setMediaSocket', socket)
+  },
+  syncIntercomCallEvent({ commit, state, dispatch }, event) {
+    if (!event) return
+    if (event.type === 'video.intercom.call.list') {
+      commit('SET_INCOMING_CALLS', Array.isArray(event.payload) ? event.payload : [])
+      return
+    }
+    if (event.event === 'video.intercom.call.incoming' && event.data) {
+      commit('UPSERT_INCOMING_CALL', event.data)
+      return
+    }
+    if (event.event === 'video.intercom.call.status' && event.data) {
+      if (event.data.status === 'RINGING') {
+        commit('UPSERT_INCOMING_CALL', event.data)
+      } else {
+        commit('REMOVE_INCOMING_CALL', event.data.callId)
+      }
+      if (state.activeIncomingCall && state.activeIncomingCall.callId === event.data.callId &&
+          ['ENDED', 'FAILED'].includes(event.data.status)) {
+        dispatch('clearActiveIncomingCall', event.data)
+      }
+      return
+    }
+    if (event.type === 'video.intercom.call.accepted' && event.payload) {
+      commit('SET_CALL_OPERATION_PENDING', false)
+      commit('REMOVE_INCOMING_CALL', event.payload.call.callId)
+      dispatch('activateIncomingIntercom', event.payload)
+      return
+    }
+    if (event.type === 'video.intercom.call.rejected') {
+      commit('SET_CALL_OPERATION_PENDING', false)
+      commit('REMOVE_INCOMING_CALL', event.payload.callId)
+      return
+    }
+    if (event.type === 'video.intercom.call.operation-failed') {
+      commit('SET_CALL_OPERATION_PENDING', false)
+      Message.error((event.payload && event.payload.message) || '来电操作失败')
+    }
+  },
+  sendIntercomCallOperation({ commit, state }, { action, callId }) {
+    if (!state.mediaSocket || state.mediaSocket.readyState !== WebSocket.OPEN) {
+      Message.error('控制通道未连接')
+      return
+    }
+    commit('SET_CALL_OPERATION_PENDING', true)
+    state.mediaSocket.send(JSON.stringify({
+      type: `video.intercom.call.${action}`,
+      requestId: `call-${action}-${Date.now()}`,
+      payload: { callId }
+    }))
+  },
+  acceptIncomingCall({ dispatch }, callId) {
+    dispatch('sendIntercomCallOperation', { action: 'accept', callId })
+  },
+  rejectIncomingCall({ dispatch }, callId) {
+    dispatch('sendIntercomCallOperation', { action: 'reject', callId })
+  },
+  async activateIncomingIntercom({ commit, state, dispatch }, { call, intercom }) {
+    let camera = allCameras().find(item => item.robotId === call.robotId && item.deviceId === call.deviceId)
+    if (!camera) {
+      camera = cameraState(call.robotId, call.deviceId, call.cameraName || call.deviceId, 'body')
+    } else {
+      camera = { ...camera }
+    }
+    commit('setSelectedRobotId', call.robotId)
+    camera.intercomBusy = true
+    try {
+      await dispatch('applyIntercomResponse', { camera, response: intercom })
+      commit('SET_ACTIVE_INCOMING_CALL', { ...call, cameraKey: camera.key, sessionId: intercom.sessionId })
+    } catch (error) {
+      camera.intercomActive = false
+      camera.intercomStatus = 'IDLE'
+      camera.intercomToken = null
+      if (camera.room) {
+        await Promise.resolve(camera.room.disconnect()).catch(() => {})
+        camera.room = null
+      }
+      await stopIntercom(intercom.sessionId).catch(() => {})
+      Message.error(errorMessage(error))
+    } finally {
+      camera.intercomBusy = false
+      commit('setCamera', camera)
+    }
+  },
+  async clearActiveIncomingCall({ commit, state }) {
+    const active = state.activeIncomingCall
+    if (active && active.cameraKey && state.cameras[active.cameraKey]) {
+      const camera = { ...state.cameras[active.cameraKey] }
+      if (camera.room) {
+        await Promise.resolve(camera.room.disconnect()).catch(() => {})
+      }
+      camera.room = null
+      camera.session = null
+      camera.intercomActive = false
+      camera.intercomStatus = 'IDLE'
+      camera.intercomToken = null
+      camera.hasAudio = false
+      commit('setCamera', camera)
+    }
+    commit('SET_ACTIVE_INCOMING_CALL', null)
+  },
+  async hangupIncomingCall({ state, dispatch, commit }) {
+    const active = state.activeIncomingCall
+    if (!active) return
+    const camera = state.cameras[active.cameraKey]
+    if (camera) await dispatch('hangupIntercom', { ...camera })
+    commit('SET_ACTIVE_INCOMING_CALL', null)
   },
   // 处理机器人在线/离线事件
   syncRobotEvent({ commit, state, dispatch }, event) {
@@ -835,32 +972,7 @@ const actions = {
           deviceId: camera.deviceId,
           quality: camera.quality
         })
-      camera.session = mergeSession(camera, {
-        sessionId: response.sessionId,
-        robotId: response.robotId,
-        deviceId: response.deviceId,
-        roomName: response.roomName,
-        status: response.videoStatus,
-        intercomStatus: response.intercomStatus,
-        intercomAudioOnly: response.intercomAudioOnly,
-        livekitUrl: response.livekitUrl
-      })
-      camera.intercomToken = response.operatorToken
-      camera.intercomActive = true
-      camera.intercomStatus = response.intercomStatus
-      camera.stopped = false
-      if (!camera.room) {
-        await dispatch('connectLiveKit', { camera, refreshToken: false, connectionToken: response.operatorToken })
-      }
-      if (camera.room) {
-        await camera.room.localParticipant.setMicrophoneEnabled(true, {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }, {
-          name: 'audio.operator.mic'
-        })
-      }
+      await dispatch('applyIntercomResponse', { camera, response })
       // console.log('API startIntercom', response)
     } catch (error) {
       camera.intercomActive = false
@@ -869,6 +981,35 @@ const actions = {
     } finally {
       camera.intercomBusy = false
       commit('setCamera', camera)
+    }
+  },
+  async applyIntercomResponse({ dispatch }, { camera, response }) {
+    camera.session = mergeSession(camera, {
+      sessionId: response.sessionId,
+      robotId: response.robotId,
+      deviceId: response.deviceId,
+      roomName: response.roomName,
+      status: response.videoStatus,
+      intercomStatus: response.intercomStatus,
+      intercomAudioOnly: response.intercomAudioOnly,
+      livekitUrl: response.livekitUrl
+    })
+    camera.intercomToken = response.operatorToken
+    camera.intercomActive = true
+    camera.intercomStatus = response.intercomStatus
+    camera.stopped = false
+    if (!camera.room) {
+      await dispatch('connectLiveKit', { camera, refreshToken: false, connectionToken: response.operatorToken })
+    }
+    if (!camera.room) throw new Error('对讲媒体连接失败')
+    if (camera.room) {
+      await camera.room.localParticipant.setMicrophoneEnabled(true, {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }, {
+        name: 'audio.operator.mic'
+      })
     }
   },
   async hangupIntercom({ commit, state, dispatch }, camera) {
@@ -945,7 +1086,16 @@ const actions = {
           camera.hasVideo = true
         } else if (track.kind === 'audio') {
           camera.remoteAudioTrack = track
-          track.attach(document.getElementById(state.prefixId + camera.key + '-audio'))
+          const audioId = state.prefixId + camera.key + '-audio'
+          let audioElement = document.getElementById(audioId)
+          if (!audioElement) {
+            audioElement = track.attach()
+            audioElement.id = audioId
+            audioElement.style.display = 'none'
+            document.body.appendChild(audioElement)
+          } else {
+            track.attach(audioElement)
+          }
           camera.hasAudio = true
         }
         const { remoteVideoTrack, hasVideo, remoteAudioTrack, hasAudio } = camera
@@ -1425,7 +1575,10 @@ const getters = {
   getMediaSocket: (state) => state.mediaSocket,
   getWsConnected: (state) => state.wsConnected,
   getActiveCameras: state => state.activeCameras,
-  getControlProfiles: state => state.controlProfiles
+  getControlProfiles: state => state.controlProfiles,
+  getIncomingCalls: state => state.incomingCalls,
+  getActiveIncomingCall: state => state.activeIncomingCall,
+  getCallOperationPending: state => state.callOperationPending
 }
 
 // 导出 WebSocket 模块

@@ -2,6 +2,7 @@ package com.robot.control.api;
 
 import com.robot.control.auth.CurrentUser;
 import com.robot.control.auth.CurrentUserResolver;
+import com.robot.control.call.IntercomCallService;
 import com.robot.control.client.ControlMediaServiceClient;
 import com.robot.control.service.ControlVideoCommandService;
 import com.robot.control.dto.FileListItemResponse;
@@ -33,6 +34,7 @@ public class ControlVideoSessionController {
     private final ControlMediaServiceClient mediaServiceClient;
     private final ControlVideoCommandService controlVideoCommandService;
     private final CurrentUserResolver currentUserResolver;
+    private final IntercomCallService intercomCallService;
 
     /**
      * 创建 ControlVideoSessionController 实例。
@@ -44,10 +46,12 @@ public class ControlVideoSessionController {
     public ControlVideoSessionController(
             ControlMediaServiceClient mediaServiceClient,
             ControlVideoCommandService controlVideoCommandService,
-            CurrentUserResolver currentUserResolver) {
+            CurrentUserResolver currentUserResolver,
+            IntercomCallService intercomCallService) {
         this.mediaServiceClient = mediaServiceClient;
         this.controlVideoCommandService = controlVideoCommandService;
         this.currentUserResolver = currentUserResolver;
+        this.intercomCallService = intercomCallService;
     }
 
     /**
@@ -152,7 +156,9 @@ public class ControlVideoSessionController {
      */
     @PostMapping("/{sessionId}/intercom/stop")
     public VideoSessionResponse stopIntercom(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return controlVideoCommandService.stopIntercom(sessionId, currentUserResolver.resolve(servletRequest));
+        VideoSessionResponse response = controlVideoCommandService.stopIntercom(sessionId, currentUserResolver.resolve(servletRequest));
+        intercomCallService.endBySession(sessionId);
+        return response;
     }
 
     /**

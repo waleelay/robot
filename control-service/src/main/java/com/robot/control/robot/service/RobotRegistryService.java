@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
 
@@ -163,6 +164,12 @@ public class RobotRegistryService {
                 .sorted(Comparator.comparing(device -> device.robotId))
                 .map(this::toResponse)
                 .toList();
+    }
+
+    /** Returns the latest in-memory state for one robot. */
+    public Optional<RobotDeviceResponse> find(String robotId) {
+        RobotDevice device = devices.get(robotId);
+        return device == null ? Optional.empty() : Optional.of(toResponse(device));
     }
 
     /**
