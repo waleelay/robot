@@ -1,5 +1,9 @@
 <template>
-  <div class="map-preview-box w100 h100 flx-center">
+  <div
+    class="map-preview-box w100 h100 flx-center"
+    :class="{ 'fit-visible-area': !!visibleLayout }"
+    :style="visibleAreaStyle"
+  >
     <template v-if="hasPreview">
       <div ref="viewportRef" class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #112B4D;">
         <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
@@ -20,14 +24,15 @@
               :viewBox="`0 0 ${map.previewWidth} ${map.previewHeight}`"
               @click="handleMapClick"
             >
-              <template v-if="showPath">
-                <polyline v-if="polylinePoints" :points="polylinePoints" class="map-preview-path" />
+              <!-- Robot1「显示路径」：polyline + 路径点；MapTool「点位」：地图点位，互不影响 -->
+              <polyline v-if="showPolyline && polylinePoints" :points="polylinePoints" class="map-preview-path" />
+              <template v-if="showPath || showPolyline">
                 <g
-                  v-for="point in drawablePoints"
+                  v-for="point in overlayPoints"
                   :key="point.id"
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y})`"
                   class="map-preview-point"
-                  :class="{ selected: point.id === selectedPointId, inPath: activePathPointIds.includes(point.id), hovered: point.id === hoveredPointId }"
+                  :class="{ selected: point.id === selectedPointId, inPath: isPointInPath(point), hovered: point.id === hoveredPointId }"
                   @mouseenter="hoveredPointId = point.id"
                   @mouseleave="hoveredPointId = null"
                   @click.stop="handlePointClick(point)"
@@ -226,7 +231,11 @@ export default {
     // points: { type: Array, default: () => [] },
     selectedPointId: { type: Number, default: null },
     pathPointIds: { type: Array, default: () => [] },
-    showLabels: { type: Boolean, default: false }
+    showLabels: { type: Boolean, default: false },
+    // 侧栏是否收缩；与 visibleLayout 配合，将地图限制在未遮挡区域
+    collapse: { type: Boolean, default: false },
+    // 'home' 指挥中心（顶栏+左右侧）| 'panorama' 全景（顶栏+左侧）| '' 不限制
+    visibleLayout: { type: String, default: '' }
   },
   data() {
     return {
@@ -281,9 +290,13 @@ export default {
         // },
       ],
       showPath: false,
+      // Robot1「显示路径」：仅控制任务路径 polyline，与 MapTool 点位无关
+      showPolyline: false,
+      showArea: false,
       showNotice: false,
       showContextMenu: false,
       locationLabel: '临时点',
+      collapseZoomTimer: null,
     }
   },
   computed: {
@@ -324,7 +337,7 @@ export default {
       const ids = Array.isArray(this.showRobotIds) ? this.showRobotIds : []
       return ids.length === 1 ? ids[0] : null
     },
-    // 选中单个装备时：按 runningTaskId + 当前 map.id 匹配任务路径
+    // 选中单个装备时：按 runningTaskId + 当前 map.id 匹配任务路径（供 polyline 使用）
     activeTaskPathData() {
       if (!this.selectedShowRobotId) return null
       const robot = this.robotBaseInfo?.[this.selectedShowRobotId] || {}
@@ -335,39 +348,38 @@ export default {
       if (String(pathData.mapId) !== String(this.map?.id)) return null
       return pathData
     },
+    // MapTool「点位」是否可切换：仅看当前地图是否有点位
     canTogglePath() {
-      if (this.selectedShowRobotId) return !!this.activeTaskPathData
       return Array.isArray(this.map?.points) && this.map.points.length > 0
     },
+    // MapTool 点位始终使用当前地图点位，不受装备选中影响
     activePoints() {
-      if (this.selectedShowRobotId && this.activeTaskPathData) {
-        return this.activeTaskPathData.pathPoints
-      }
       return this.map?.points || []
     },
     activePathPointIds() {
-      if (this.selectedShowRobotId && this.activeTaskPathData) {
+      if (this.showPolyline && this.activeTaskPathData) {
         return this.activeTaskPathData.pathPoints
           .map(point => point.id ?? point.mapPointId)
           .filter(id => id !== undefined && id !== null)
       }
       if (Array.isArray(this.pathPointIds) && this.pathPointIds.length) return this.pathPointIds
-      return (this.map?.points || []).map(point => point.id).filter(id => id !== undefined && id !== null)
+      return (this.map?.points || [])
+        .map(point => point.id ?? point.mapPointId)
+        .filter(id => id !== undefined && id !== null)
     },
     drawablePoints() {
-      return this.activePoints
-        .map((point) => {
-          const id = point.id ?? point.mapPointId
-          const coordinateX = point.coordinateX ?? point.x
-          const coordinateY = point.coordinateY ?? point.y
-          const pixel = this.mapPointToPixel({
-            ...point,
-            coordinateX,
-            coordinateY
-          }, this.map)
-          return pixel ? { ...point, id, pixel } : null
-        })
-        .filter(Boolean)
+      return this.toDrawablePoints(this.activePoints)
+    },
+    // Robot1 路径点：仅来自装备关联的任务路径数据
+    drawablePathPoints() {
+      if (!this.activeTaskPathData) return []
+      return this.toDrawablePoints(this.activeTaskPathData.pathPoints)
+    },
+    // MapTool 开点位 → 全量地图点；仅 Robot1 开路径 → 任务路径点；两者都开时保留地图点（不打断 MapTool）
+    overlayPoints() {
+      if (this.showPath) return this.drawablePoints
+      if (this.showPolyline) return this.drawablePathPoints
+      return []
     },
     drawableRobots() {
       // const robots = this.robotBaseInfo?.['test111'] ? [this.robotBaseInfo?.['test111']] : []
@@ -409,12 +421,12 @@ export default {
         }
       }).filter(Boolean)
     },
+    // Robot1 路径线：仅来自装备关联的任务路径数据
     polylinePoints() {
-      return this.activePathPointIds
-        .map((id) => this.drawablePoints.find((point) => String(point.id) === String(id))?.pixel)
-        .filter(Boolean)
-        .map((pixel) => `${pixel.x},${pixel.y}`)
-        .join(" ")
+      if (!this.showPolyline || !this.activeTaskPathData) return ''
+      const points = this.drawablePathPoints
+      if (points.length < 2) return ''
+      return points.map((point) => `${point.pixel.x},${point.pixel.y}`).join(' ')
     },
     contextMenuStyle() {
       // 菜单在 stage 内：直接用地图像素 * zoom，与临时点同一坐标系，缩放/平移自动同步
@@ -466,8 +478,50 @@ export default {
         hasPreview: this.hasPreview,
       };
     },
+    // 侧栏/顶栏遮挡下的可见区域：默认铺满未遮挡区域
+    // 设计稿 1920：侧栏约 401px（与 map-operation right:395 对齐）；收缩后留操作边距
+    visibleAreaStyle() {
+      if (!this.visibleLayout) return {}
+      // 与左右面板宽度（334+外边距）及 map-operation 定位保持一致
+      const sideExpanded = 401
+      const sideCollapsed = 20
+      if (this.visibleLayout === 'home') {
+        // 指挥中心：除去顶部导航与两侧；收缩则占满，否则居中于两侧之间
+        // map-div 有 margin-top:-55px，top:55 对齐顶栏下方可见区
+        return {
+          left: `${this.collapse ? sideCollapsed : sideExpanded}px`,
+          right: `${this.collapse ? 38 : sideExpanded}px`,
+          top: '55px',
+          bottom: '20px',
+          width: 'auto',
+          height: 'auto'
+        }
+      }
+      if (this.visibleLayout === 'panorama') {
+        // 全景地图：仅考虑顶部（外层 pt80）与左侧收缩；右侧留地图工具栏空间
+        return {
+          left: `${this.collapse ? sideCollapsed : sideExpanded}px`,
+          right: '70px',
+          top: '0',
+          bottom: '0',
+          width: 'auto',
+          height: 'auto'
+        }
+      }
+      return {}
+    },
   },
   watch: {
+    collapse() {
+      // 侧栏动画结束后按新可见区域重算缩放
+      if (this.collapseZoomTimer) clearTimeout(this.collapseZoomTimer)
+      this.$nextTick(() => {
+        this.collapseZoomTimer = setTimeout(() => {
+          this.collapseZoomTimer = null
+          this.updateZoomBounds(true)
+        }, 520)
+      })
+    },
     previewSource: {
       immediate: true,
       handler({ id, cacheKey, hasPreview }, oldVal) {
@@ -491,14 +545,21 @@ export default {
         })
       },
     },
+    // 选中/打开装备不再关闭 MapTool 点位；无任务路径时仅关闭 polyline
     showRobotIds: {
       deep: true,
       handler() {
-        if (this.showPath && !this.canTogglePath) {
-          this.showPath = false
+        if (this.showPolyline && !this.activeTaskPathData) {
+          this.showPolyline = false
         }
       }
+    },
+    activeTaskPathData(val) {
+      if (!val && this.showPolyline) this.showPolyline = false
     }
+  },
+  async created() {
+    this.setShowRobotIds([])
   },
   mounted() {
     this.$nextTick(() => {
@@ -508,12 +569,35 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setShowRobotIds']),
+    toDrawablePoints(points) {
+      return (Array.isArray(points) ? points : [])
+        .map((point) => {
+          const id = point.id ?? point.mapPointId
+          const coordinateX = point.coordinateX ?? point.x
+          const coordinateY = point.coordinateY ?? point.y
+          const pixel = this.mapPointToPixel({
+            ...point,
+            coordinateX,
+            coordinateY
+          }, this.map)
+          return pixel ? { ...point, id, pixel } : null
+        })
+        .filter(Boolean)
+    },
+    isPointInPath(point) {
+      if (!point) return false
+      const ids = this.activePathPointIds || []
+      if (!ids.length) return false
+      return ids.some((id) =>
+        String(id) === String(point.id) || String(id) === String(point.mapPointId)
+      )
+    },
     isRobotHighlighted(robotId) {
       return (this.showRobotIds || []).some(id => String(id) === String(robotId))
     },
     handleRobotClick(event, robot) {
-      // 点击装备时还原 SLAM 绘制状态（临时点、路径线），仅保留装备信息
-      this.resetSlamDrawState()
+      // 点击装备时仅还原临时打点/派遣状态，保留 MapTool 点位渲染
+      this.resetSlamDrawState({ keepMapToolPath: true })
       if (this.$route.name === 'biIndex') {
         if (this.activeRobotId === robot.robotId) {
           this.closePopup()
@@ -530,8 +614,10 @@ export default {
       // Robot1.show -> clear([robotId]) -> setShowRobotIds，与 GIS 一致
       this.$refs.robot1Ref?.show(event, robot)
     },
-    resetSlamDrawState() {
-      this.showPath = false
+    resetSlamDrawState({ keepMapToolPath = false } = {}) {
+      // MapTool 点位由 MapTool 控制；打开/关闭装备时保持不变
+      if (!keepMapToolPath) this.showPath = false
+      this.showPolyline = false
       this.locationPoint = null
       this.showContextMenu = false
       this.showNotice = false
@@ -550,6 +636,7 @@ export default {
         this.showPath = false
         return
       }
+      // MapTool 只控制点位，不联动 polyline
       this.showPath = typeof visible === 'boolean' ? visible : !this.showPath
     },
     closePopup() {
@@ -626,11 +713,13 @@ export default {
       const nextVisible = typeof visible === 'boolean' ? visible : !controlRef?.visible
       controlRef?.show(nextVisible)
     },
-    showPathArea() {
-      this.showPath = !this.showPath      
+    showPathArea(visible) {
+      // Robot1「显示/隐藏路径」同时控制 polyline 与路径点位
+      this.showPolyline = typeof visible === 'boolean' ? visible : !this.showPolyline
     },
     showDashedArea() {
       // SLAM 地图暂无区域图层，保留接口以兼容 Robot1
+      this.showArea = !this.showArea
     },
     showSlam(visible) {
       // this.$refs.slamRef?.show(visible)
@@ -640,6 +729,8 @@ export default {
       this.showControlPart(false)
       this.showSlam(false)
       if (!robotId || !robotId.length) {
+        // 关闭 Robot1：关掉路径线，保留 MapTool 点位
+        this.showPolyline = false
         this.closePopup()
       }
     },
@@ -883,6 +974,7 @@ export default {
   },
   beforeDestroy() {
     this.imageLoadSeq += 1
+    if (this.collapseZoomTimer) clearTimeout(this.collapseZoomTimer)
     this.resizeObserver?.disconnect()
     this.revokeImageUrl();
   }
@@ -897,6 +989,17 @@ export default {
   max-width: 100%;
   min-width: 0;
   overflow: hidden;
+  &.fit-visible-area {
+    position: absolute;
+    width: auto !important;
+    height: auto !important;
+    z-index: 0;
+    background: #112B4D;
+    transition: left 0.5s cubic-bezier(0.23, 0.9, 0.35, 1),
+      right 0.5s cubic-bezier(0.23, 0.9, 0.35, 1),
+      top 0.5s cubic-bezier(0.23, 0.9, 0.35, 1),
+      bottom 0.5s cubic-bezier(0.23, 0.9, 0.35, 1);
+  }
 }
 .map-preview-viewport {
   position: relative;

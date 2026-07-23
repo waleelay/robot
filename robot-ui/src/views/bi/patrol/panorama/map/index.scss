@@ -24,6 +24,14 @@
     top: 20px;
     right: 420px;
   }
+  .slam-map-host {
+    position: relative;
+    background: rgb(17, 43, 77);
+    pointer-events: none;
+    .map-preview-box {
+      pointer-events: auto;
+    }
+  }
   &.full {
     .map-operation {
       right: 20px;

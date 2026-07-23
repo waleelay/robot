@@ -199,5 +199,14 @@
       height: 100px;
       background: linear-gradient(90deg, rgba(20, 31, 51, 0.90) -0.36%, rgba(19, 30, 50, 0.00) 79.21%);
     }
+    .slam-map-host {
+      position: relative;
+      background: rgb(17, 43, 77);
+      // SLAM 可见区由 GlobalSlamMap 绝对定位铺满未遮挡区域；宿主保留定位上下文
+      pointer-events: none;
+      .map-preview-box {
+        pointer-events: auto;
+      }
+    }
   }
 }

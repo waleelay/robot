@@ -113,7 +113,7 @@ export default {
       operList2: [
         {
           icon: 'map-path',
-          name: '路径',
+          name: '点位',
           key: 'path',
           action: 'showPath'
         },
@@ -174,7 +174,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'showRobotIds', 'robotBaseInfo', 'taskPathPoints']),
+    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot']),
     slamList() {
       return Array.isArray(this.slamMapList) ? this.slamMapList : []
     },
@@ -185,24 +185,14 @@ export default {
         || this.slamList.find(item => String(item.id) === String(id))
         || null
     },
-    // SLAM 下路径是否可操作：无选中装备看地图点位；选中一个装备看任务路径
+    // SLAM 下「点位」是否可操作：仅看当前地图是否存在点位信息
     pathOperable() {
       if (!this.isSlam) return false
-      const ids = Array.isArray(this.showRobotIds) ? this.showRobotIds : []
-      if (!ids.length) {
-        const slamId = this.currentSlam
-        if (slamId === undefined || slamId === null || slamId === '') return false
-        const group = this.slamOfRobot?.[String(slamId)]
-        const points = group?.points || this.currentSlamMapInfo?.points
-        return Array.isArray(points) && points.length > 0
-      }
-      if (ids.length !== 1) return false
-      const robot = this.robotBaseInfo?.[ids[0]] || {}
-      const taskId = robot.runningTaskId
-      if (taskId === undefined || taskId === null || taskId === '') return false
-      const pathData = this.taskPathPoints?.[taskId]
-      if (!pathData || !Array.isArray(pathData.pathPoints) || !pathData.pathPoints.length) return false
-      return String(pathData.mapId) === String(this.currentSlam)
+      const slamId = this.currentSlam
+      if (slamId === undefined || slamId === null || slamId === '') return false
+      const group = this.slamOfRobot?.[String(slamId)]
+      const points = group?.points || this.currentSlamMapInfo?.points
+      return Array.isArray(points) && points.length > 0
     }
   },
   mounted() {
@@ -317,13 +307,8 @@ export default {
       this.syncGlobalMapId()
     },
     pathOperable(val) {
+      // 仅当地图本身无点位时关闭；选中/打开装备不影响点位渲染
       if (!val) this.resetPathActive()
-    },
-    showRobotIds: {
-      deep: true,
-      handler() {
-        if (!this.pathOperable) this.resetPathActive()
-      }
     }
   }
 }

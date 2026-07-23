@@ -49,6 +49,7 @@ module.exports = {
     'curly': [2, 'multi-line'],
     'dot-location': [2, 'property'],
     'eol-last': 2,
+    // 'eqeqeq': ['warn', 'never', { 'null': 'ignore' }],
     'eqeqeq': 'off',
     // 遗留代码大量匿名回调，关闭该规则避免无意义报错
     'func-names': 'off',

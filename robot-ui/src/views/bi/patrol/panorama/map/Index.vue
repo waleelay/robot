@@ -9,10 +9,12 @@
 -->
 <template>
   <div class="map-div h100" :class="{ full: collapse }">
-    <div v-if="isSlam" class="w100 h100 flx-center" style="z-index: 0; background: #112B4D;">
+    <div v-if="isSlam" class="slam-map-host w100 h100" style="z-index: 0;">
       <GlobalSlamMap
         :map="slamMapPayload"
         :pathPointIds="slamPathPointIds"
+        :collapse="collapse"
+        visible-layout="panorama"
         ref="globalMapRef"
         :show-labels="true"
         @changeMapType="changeMapType"

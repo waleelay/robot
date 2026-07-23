@@ -87,16 +87,16 @@
             :key="key"
             :class="['arrow', robotControlObj[key].class]"
             :title="robotControlObj[key].label"
-             @mousedown="startFrameControl(robotControlObj[key].key)"
-             @mouseup="stopFrameControl(robotControlObj[key].key)"
-             @mouseleave="stopFrameControl(robotControlObj[key].key)"
-             @touchstart.prevent="startFrameControl(robotControlObj[key].key)"
-             @touchend.prevent="stopFrameControl(robotControlObj[key].key)"
+            @mousedown="startFrameControl(robotControlObj[key].key)"
+            @mouseup="stopFrameControl(robotControlObj[key].key)"
+            @mouseleave="stopFrameControl(robotControlObj[key].key)"
+            @touchstart.prevent="startFrameControl(robotControlObj[key].key)"
+            @touchend.prevent="stopFrameControl(robotControlObj[key].key)"
           >
             <svg-icon icon-class="control-arrow" />
           </div>
         </div>
-        <div class="lights ml38">
+        <div class="lights ml38 flex-column" style="justify-content: center;">
           <div v-if="vehicleLightDevice && !hasVehicleLightStatus(vehicleLightDevice)" class="light-pending mb10">车灯状态同步中</div>
           <div class="flx-center lights-container">
             <div v-if="vehicleLightDevice" class="d-flex flex-column" style="align-items: end;">

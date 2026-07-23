@@ -52,8 +52,8 @@
         <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="onShutdown()">一键返航</el-button>
         <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="onStartup()">退出充电桩</el-button>
         <!-- <el-button type="primary" @click="onAddTask()">添加任务</el-button> -->
-        <el-button type="primary" class="mt20" @click="$emit('showPath', true)">显示路径</el-button>
-        <el-button type="primary" class="mt20" @click="$emit('showArea', true)">显示区域</el-button>
+        <el-button v-if="hasTaskPath || globalMapId === 'gis'" type="primary" class="mt20" @click="togglePath()">显示路径</el-button>
+        <el-button v-if="globalMapId === 'gis'" type="primary" class="mt20" @click="$emit('showArea', true)">显示区域</el-button>
       </div>
     </div>
     <!-- <div class="guideline wp157 hp29 mt9 ml161">
@@ -73,6 +73,7 @@ export default {
   data() {
     return {
       className: '',
+      pathVisible: false,
     }
   },
   computed: {
@@ -85,13 +86,26 @@ export default {
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData', 'taskPathPoints', 'globalMapId']),
     currenRobot() {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
     },
     taskList() {
       const { task = [] } = this.currenRobot || {}
       return getDescArr(task?.map(item => this.taskData?.[item.taskId] || item) || [], 'timestamp')
+    },
+    // 装备关联任务路径有点位时才显示「显示路径」按钮
+    hasTaskPath() {
+      const taskId = this.currenRobot?.runningTaskId
+      if (taskId === undefined || taskId === null || taskId === '') return false
+      const pathData = this.taskPathPoints?.[taskId]
+      if (!pathData || !Array.isArray(pathData.pathPoints) || !pathData.pathPoints.length) return false
+      const mapId = this.globalMapId
+      if (mapId && mapId !== 'gis' && pathData.mapId != null && pathData.mapId !== '' &&
+        String(pathData.mapId) !== String(mapId)) {
+        return false
+      }
+      return true
     },
     // getRunningTask() {
     //   return this.taskList?.find(item => item.status === 'running') || null
@@ -103,6 +117,14 @@ export default {
     //   return this.currenRobot?.status === 'online' ? this.getRunningTask ? 'blue' : 'green' : this.currenRobot?.status === 'offline' ? '' : 'orange'
     // }
   },
+  watch: {
+    hasTaskPath(val) {
+      if (!val && this.pathVisible) {
+        this.pathVisible = false
+        this.$emit('showPath', false)
+      }
+    }
+  },
   methods: {
     ...mapActions('websocketRobot', ['setSelectedRobotId']),
     onShutdown() {
@@ -113,17 +135,28 @@ export default {
     },
     onClose() {
       this.visible = false
+      this.pathVisible = false
+      this.$emit('showPath', false)
       this.handleGlobalClick(null, false)
       this.setSelectedRobotId('')
       this.$emit('clear')
     },
+    togglePath() {
+      this.pathVisible = !this.pathVisible
+      this.$emit('showPath', this.pathVisible)
+    },
     show(e, robot) {
       this.$emit('showControlPart', false)
       if (this.selectedRobotId === robot?.robotId || !e) {
+        this.pathVisible = false
+        this.$emit('showPath', false)
         this.setSelectedRobotId('')
         this.handleGlobalClick(e, false)
         this.$emit('clear', [])
       } else {
+        // 切换装备时关闭路径线，不影响 MapTool 点位
+        this.pathVisible = false
+        this.$emit('showPath', false)
         this.visible = true
         this.setSelectedRobotId(robot?.robotId)
         this.handleGlobalClick(e, true)

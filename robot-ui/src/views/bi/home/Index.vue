@@ -6,10 +6,12 @@
     <div class="map-div flx-center" style="height: calc(100% + 55px); margin-top: -55px; align-items: start;" :class="{ full: collapse }">
     <!-- <div class="map-div h100 flx-center pt57" style="align-items: start;" :class="{ full: collapse }"> -->
       <!-- <div class="hp742 flx-center" style="width: 1118px; background: #112B4D;"> -->
-      <div v-if="isSlam" class="w100 h100 flx-center" style="z-index: 0; background: #112B4D;">
+      <div v-if="isSlam" class="slam-map-host w100 h100" style="z-index: 0;">
         <GlobalSlamMap
           :map="slamMapPayload"
           :pathPointIds="slamInfo.pathPointIds"
+          :collapse="collapse"
+          visible-layout="home"
           ref="globalMapRef"
           :show-labels="true"
           @changeMapType="changeMapType"
@@ -60,8 +62,8 @@ import BiIndexRight from './Right.vue'
 import mapInfo from '../gis/globalMap/slam/mapInfo.json'
 import pathInfo from '../gis/globalMap/slam/pathInfo.json'
 import mapPoints from '../gis/globalMap/slam/map-points.json'
-import GlobalGisMap from '../gis/globalMap/slam/GlobalSlamMap.vue'
-import GlobalSlamMap from './../gis/globalMap/slam/GlobalSlamMap.vue'
+import GlobalGisMap from '../gis/globalMap/GlobalGisMap.vue'
+import GlobalSlamMap from '../gis/globalMap/slam/GlobalSlamMap.vue'
 import MapTool from './../patrol/panorama/map/MapTool.vue'
 import PageChangeDropdown from './PageChangeDropdown.vue'
 

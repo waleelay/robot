@@ -199,7 +199,68 @@ const actions = {
     data?.alarms?.high?.items.map((item, index) => {
       commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
     })
-    const slamMapList = data?.map || [];
+    const slamMapList = (data?.map || []).map(item => {
+      if (item.mapName.includes('联通')) {
+        item.points = [
+    {
+        "id": "2077776201211469825",
+        "mapId": "2077775285125144578",
+        "pointCode": "point-1",
+        "pointName": "point-1",
+        "pointType": "NORMAL",
+        "coordinateX": -2.874684,
+        "coordinateY": -0.391763,
+        "coordinateZ": null,
+        "remark": null
+    },
+    {
+        "id": "2077776298003423234",
+        "mapId": "2077775285125144578",
+        "pointCode": "point-2",
+        "pointName": "point-2",
+        "pointType": "NORMAL",
+        "coordinateX": -9.842506,
+        "coordinateY": -0.33602,
+        "coordinateZ": null,
+        "remark": null
+    },
+    {
+        "id": "2077776460083912705",
+        "mapId": "2077775285125144578",
+        "pointCode": "point-3",
+        "pointName": "point-3",
+        "pointType": "NORMAL",
+        "coordinateX": -10.670098,
+        "coordinateY": 5.522158,
+        "coordinateZ": null,
+        "remark": null
+    },
+    {
+        "id": "2077776541868646401",
+        "mapId": "2077775285125144578",
+        "pointCode": "point-4",
+        "pointName": "point-4",
+        "pointType": "NORMAL",
+        "coordinateX": -10.91751,
+        "coordinateY": -0.278282,
+        "coordinateZ": null,
+        "remark": null
+    },
+    {
+        "id": "2077776632289452034",
+        "mapId": "2077775285125144578",
+        "pointCode": "point-5",
+        "pointName": "point-5",
+        "pointType": "NORMAL",
+        "coordinateX": -3.165264,
+        "coordinateY": 0.436464,
+        "coordinateZ": null,
+        "remark": null
+    }
+]
+      }
+      return item;
+    });
     commit('SET_SLAM_MAP_LIST', slamMapList);
     commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, data?.devices || [], data?.tasks || []));
   },
