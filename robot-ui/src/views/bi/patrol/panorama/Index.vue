@@ -17,7 +17,7 @@
 
 <script>
 import BiPatrolPanoramaMap from './map/Index.vue';
-// import GlobalMap from './../../gis/globalMap/Index.vue'
+// import GlobalGisMap from './../../gis/globalMap/GlobalGisMap.vue'
 import Left from './Left.vue';
 // import Right from './Right.vue';
 export default {
@@ -26,7 +26,7 @@ export default {
     BiPatrolPanoramaMap,
     Left,
     // Right,
-    // GlobalMap
+    // GlobalGisMap
   },
   data() {
     return {

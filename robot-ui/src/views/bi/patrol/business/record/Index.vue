@@ -34,13 +34,14 @@
             placeholder="编排名称 / 业务键"
             class="business2-search"
             @keyup.enter.native="loadRows(1)"
+            @clear="resetFilters"
           >
             <svg-icon slot="prefix" icon-class="search" />
           </el-input>
         </div>
         <div class="table-btns ml10">
           <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="loadRows(1)">查询</el-button>
-          <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="resetFilters">重置</el-button>
+          <!-- <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="resetFilters">重置</el-button> -->
         </div>
       </div>
     </div>

@@ -56,7 +56,7 @@ import UavPort from './popup/UavPort.vue';
 import Battery from './popup/Battery.vue';
 import Slam from './popup/Slam.vue'
 import Thumbnail from './thumbnail/Index.vue'
-import SlamMap from './slam/Index.vue'
+import SlamMap from './slam1/Index.vue'
 import { mapActions, mapState } from 'vuex';
 import { ROBOT_TYPE_INFO } from '../../../../constants/robot.js';
 
@@ -139,10 +139,10 @@ export default {
   },
   computed: {
     showAnimate() {
-      return this.$route.name !== 'biIndex'
+      return this.currenRouteName !== 'biIndex'
     },
     popupStyle() {
-      return this.$route.name === 'biIndex' ? {
+      return this.currenRouteName === 'biIndex' ? {
         left: this.popupOffset.x + 'px',
         top: this.popupOffset.y + 'px',
         display: this.popupVisible ? 'block' : 'none'
@@ -164,7 +164,13 @@ export default {
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras'];
     },
-    ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList', 'robotAlarmObj', 'taskData', 'mapSearchValue', 'showRobotIds'])
+    ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList', 'robotAlarmObj', 'mapSearchValue', 'showRobotIds']),
+    showSmall() {
+      return this.currenRouteName === 'biPatrolMonitor'
+    },
+    currenRouteName() {
+      return this.$route.name
+    }
   },
   watch: {
     // 监听距离变化
@@ -294,6 +300,9 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotLocation', 'setShowRobotIds']),
+    getSelectedStatus(robotId) {
+      return Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
+    },
     getScaleWrapper() {
       return this.$el && this.$el.closest && this.$el.closest('.screen-wrapper')
     },
@@ -357,15 +366,8 @@ export default {
       }, 600)
     },
     getSelectedStatus(robotId) {
-      return this.$route.name !== 'biIndex' && Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
+      return this.currenRouteName !== 'biIndex' && Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
     },
-    // getRobotStatus(robotId) {
-    //   const { status, task = [] } = this.robotBaseInfo?.[robotId] || {}      
-    //   const runningTask = Array.isArray(task) ? task : [task].map(item => this.taskData?.[item.taskId] || item)?.find(item => item.status === 'running') || null
-    //   const customStatusName = status === 'online' ? runningTask ? '任务中' : '空闲中' : status === 'offline' ? '离线' : '故障'
-    //   const statusClass = status === 'online' ? runningTask ? 'blue' : 'green' : status === 'offline' ? 'gray' : 'orange'
-    //   return { customStatusName, statusClass }
-    // },
     changeMapType() {
       this.isSlam = !this.isSlam
     },
@@ -409,9 +411,9 @@ export default {
       });
 
       if (!this.map.hasLayer(this.layerB) && !this.map.hasLayer(this.layerA)) {
-        this.map.setBearing(this.$route.name === 'biIndex' ? 0 : -45)
-        this.map.setView([30.7478613352993, 106.03655278081857], this.$route.name === 'biIndex' ? 12 : 18)
-        this.map.addLayer(this[this.$route.name === 'biIndex' ? 'layerA' : 'layerB'])
+        this.map.setBearing(this.currenRouteName === 'biIndex' ? 0 : -45)
+        this.map.setView([30.7478613352993, 106.03655278081857], this.currenRouteName === 'biIndex' ? 12 : 18)
+        this.map.addLayer(this[this.currenRouteName === 'biIndex' ? 'layerA' : 'layerB'])
       }
 
       
@@ -605,7 +607,7 @@ export default {
       const iconSize = [(zoom * 5 + 3) * scale, zoom * 5 + 3]
       const iconAnchor = [(zoom * 4 + 13) * scaleAnchor, zoom * 4 + 13]
       
-      // console.log('+++++++++', robotId, this.robotAlarmObj?.[robotId]);
+      // console.log('+++++++++', this.showSmall, robotId, this.robotAlarmObj?.[robotId]);
       return L.divIcon(
         // options.html ? { ...options } : {
         {
@@ -618,11 +620,13 @@ export default {
           //   </div>` : ''}
           html: `<div class="custom-point-img flx-center flex-column" style="flex-wrap: nowrap;">
             <img class="wp${width} hp${height}" src="${require(`@/assets/images/new-bi/${img}.png`)}" />
-            <img src="${require(`@/assets/images/new-bi/robot_foot.png`)}" style="margin-top: -5px;" />
-            <div class="custom-point-name mt2" style="">${name}</div>
-            <div class="custom-point-status mt4 pr10 pl10">${customStatusName}</div>
+            <img src="${require(`@/assets/images/new-bi/${this.showSmall ? 'robot_foot1' : 'robot_foot'}.png`)}" style="margin-top: -5px;" />
+            ${this.showSmall ? '' : `
+              <div class="custom-point-name mt2" style="">${name}</div>
+              <div class="custom-point-status mt4 pr10 pl10">${customStatusName}</div>
+            `}
           </div>`,
-          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${this.showRobotIds.includes(robotId) ? `show-icon show-icon-${width}-${height}` : ''} ${type} ${statusClass}` ,
+          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${(this.showRobotIds.includes(robotId) || this.getSelectedStatus(robotId)) ? `show-icon show-icon-${width}-${height}` : ''} ${type} ${statusClass}` ,
           // className: `custom-point ${type} ${statusClass}` ,
           iconSize: null,
           // 偏移量
@@ -772,7 +776,7 @@ export default {
       // 添加点击事件
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
-        if (this.$route.name === 'biIndex') {
+        if (this.currenRouteName === 'biIndex') {
           this.showPopup(marker);
         }
         if (this.activeMarkerIndex === marker.meta.index) {
@@ -807,7 +811,7 @@ export default {
       this.popupVisible = false;
     },
     updatePopupPosition(e) {
-      if (this.$route.name !== 'biIndex') return;
+      if (this.currenRouteName !== 'biIndex') return;
       const marker = this.pointMarkers[this.activeMarkerIndex]
       if (!this.popupVisible || !this.map || !marker) return;
       const latLng = marker.getLatLng();

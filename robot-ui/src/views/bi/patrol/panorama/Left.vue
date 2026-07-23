@@ -55,81 +55,84 @@
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="toggleCollapse('collapseArr', 1)">
           <div class="flx-center">
             <span class="desc">任务列表</span>
-            <div v-if="Object.keys(taskData || [])?.length" class="ml4 notice pr10 pl10">{{ Object.keys(taskData || []).length ? Object.keys(taskData || []).length > 99 ? '99+' : Object.keys(taskData || []).length : '-'  }}</div>
+            <div v-if="taskData1.length" class="ml4 notice pr10 pl10">{{ taskData1.length ? taskData1.length > 99 ? '99+' : taskData1.length : '-'  }}</div>
           </div>
           <!-- <span class="flx-center more curp">
             <span>更多</span>
             <svg-icon :icon-class="collapseArr[1] ? 'right' : 'down'" class="ml4" />
           </span> -->
         </div>
-        <div class="list pt10 pr20 pl20 mb20 common-scroll ovya" :style="{ maxHeight: collapseArr[2] ? '300px' : '262px' }">
-          <div
-            v-for="(item, key, index) of taskData || []"
-            :key="key"
-            class="item wp288"
-            :class="{
-              'is-active': activeTaskId == item.taskId || activeTaskId == key,
-              'mb10': index !== Object.keys(taskData || {}).length - 1
-            }"
-          >
-            <div class="header flx-justify-between p10">
-              <div class="flx-align-center flex1" style="min-width: 0">
-                <svg-icon icon-class="d-right"></svg-icon>
-                <span class="ml4 text-ellipsis" :title="item.name">{{ item.name }}</span>
+        <div class="list pt10 pr20 pl20 mb20 common-scroll ovya" :style="{ height: collapseArr[2] ? '300px' : '262px' }">
+          <template v-if="taskData1.length">
+            <div
+              v-for="(item, index) in taskData1 || []"
+              :key="item.taskId"
+              class="item wp288"
+              :class="{
+                'is-active': activeTaskId == item.taskId || activeTaskId == key,
+                'mb10': index !== taskData1.length - 1
+              }"
+            >
+              <div class="header flx-justify-between p10">
+                <div class="flx-align-center flex1" style="min-width: 0">
+                  <svg-icon icon-class="d-right"></svg-icon>
+                  <span class="ml4 text-ellipsis" :title="item.name">{{ item.name }}</span>
+                </div>
+                <span class="status flx-center pt2 pr6 pb2 pl6 ml10" :class="getTaskStatusName(item.status)">
+                  <svg-icon icon-class="security"></svg-icon>
+                  <span class="ml4">{{ item.statusName || '---' }}</span>
+                </span>
               </div>
-              <span class="status flx-center pt2 pr6 pb2 pl6 ml10" :class="getTaskStatusName(item.status)">
-                <svg-icon icon-class="security"></svg-icon>
-                <span class="ml4">{{ item.statusName || '---' }}</span>
-              </span>
-            </div>
-            <div class="desc">
-              <div>任务时间：{{ item.timeRange || item.startTime || '-' }}</div>
-              <div class="text-ellipsis">当前位置：{{ item.currentLocation || '-' }}</div>
-              <div>执行装备：{{ item.equipmentList?.length || 0 }}台</div>
-            </div>
-            <!-- 执行中：详情 / 暂停(禁用) / 删除 / 播放视频 -->
-            <div v-if="item.status === 'running' || item.status === 'paused'" class="task-actions">
-              <button type="button" class="action-btn action-detail" @click.stop="handleTaskDetail(item, key)">
-                <span>详情</span>
-                <svg-icon icon-class="right" class="ml4" />
-              </button>
-              <button
-                type="button"
-                class="action-btn action-icon is-disabled"
-                disabled
-                title="暂停暂不可用"
-              >
-                <svg-icon :icon-class="item.status === 'paused' ? 'play' : 'pause'" />
-              </button>
-              <button type="button" class="action-btn action-icon" disabled @click.stop="openTaskConfirm('delete', item, key)">
-                <svg-icon icon-class="close1" />
-              </button>
-              <!-- <button
-                type="button"
-                class="action-btn action-video"
-                :class="{ 'is-active': activeTaskId == item.taskId || activeTaskId == key }"
-                @click.stop="handleClickTask(key)"
-              >
-                <svg-icon icon-class="play" />
-              </button> -->
-              <div class="symbol wp36 hp28" @click="handleClickTask(key)">
-                <!-- <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId == item.taskId ? 'active' : 'off1'}.png`)" class="w100 h100" alt="" srcset="" /> -->
-                <img :src="require(`../../../../assets/images/new-bi/camera${activeTaskId == item.taskId ? '2' : '1'}.png`)" class="w100 h100" alt="" srcset="" />
+              <div class="desc">
+                <div>任务时间：{{ item.timeRange || item.startTime || '-' }}</div>
+                <div class="text-ellipsis">当前位置：{{ item.currentLocation || '-' }}</div>
+                <div>执行装备：{{ item.equipmentList?.length || 0 }}台</div>
+              </div>
+              <!-- 执行中：详情 / 暂停(禁用) / 删除 / 播放视频 -->
+              <div v-if="item.status === 'running' || item.status === 'paused'" class="task-actions">
+                <button type="button" class="action-btn action-detail" @click.stop="handleTaskDetail(item, key)">
+                  <span>详情</span>
+                  <svg-icon icon-class="right" class="ml4" />
+                </button>
+                <button
+                  type="button"
+                  class="action-btn action-icon is-disabled"
+                  disabled
+                  title="暂停暂不可用"
+                >
+                  <svg-icon :icon-class="item.status === 'paused' ? 'play' : 'pause'" />
+                </button>
+                <button type="button" class="action-btn action-icon" disabled @click.stop="openTaskConfirm('delete', item, key)">
+                  <svg-icon icon-class="close1" />
+                </button>
+                <!-- <button
+                  type="button"
+                  class="action-btn action-video"
+                  :class="{ 'is-active': activeTaskId == item.taskId || activeTaskId == key }"
+                  @click.stop="handleClickTask(key)"
+                >
+                  <svg-icon icon-class="play" />
+                </button> -->
+                <div class="symbol wp36 hp28" @click="handleClickTask(key)">
+                  <!-- <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId == item.taskId ? 'active' : 'off1'}.png`)" class="w100 h100" alt="" srcset="" /> -->
+                  <img :src="require(`../../../../assets/images/new-bi/camera${activeTaskId == item.taskId ? '2' : '1'}.png`)" class="w100 h100" alt="" srcset="" />
+                </div>
+              </div>
+              <!-- 待执行：立即执行 -->
+              <div v-else-if="item.status === 'pending'" class="task-actions">
+                <button
+                  type="button"
+                  class="action-btn action-execute"
+                  :disabled="isStartingTask(item)"
+                  @click.stop="openTaskConfirm('execute', item, key)"
+                >
+                  <span>{{ isStartingTask(item) ? '执行中' : '立即执行' }}</span>
+                  <svg-icon icon-class="right" class="ml4" />
+                </button>
               </div>
             </div>
-            <!-- 待执行：立即执行 -->
-            <div v-else-if="item.status === 'pending'" class="task-actions">
-              <button
-                type="button"
-                class="action-btn action-execute"
-                :disabled="isStartingTask(item)"
-                @click.stop="openTaskConfirm('execute', item, key)"
-              >
-                <span>{{ isStartingTask(item) ? '执行中' : '立即执行' }}</span>
-                <svg-icon icon-class="right" class="ml4" />
-              </button>
-            </div>
-          </div>
+          </template>
+          <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" />
         </div>
       </div>
       <div class="box mt20 alert" :class="{ 'no_data hp41': collapseArr[2], 'hp323': !collapseArr[2] }" style="max-height: 446px;">
@@ -205,9 +208,11 @@ import { deleteTask, startTask, startTaskPreview } from '../../../../api/new-bi.
 import TaskRobotView from '../../components/modal/TaskRobotView.vue';
 import WarningBatch from './warning/WarningBatch.vue'
 import WarnInfo from './warning/WarnInfo.vue'
+import { getDescArr } from '../../../../utils/index.js';
+import Empty from '../../components/Empty.vue';
 export default {
   name: 'BiPatrolPanoramaLeft',
-  components: { TaskRobotView, WarningBatch, WarnInfo },
+  components: { TaskRobotView, WarningBatch, WarnInfo, Empty  },
   props: {
     collapse: {
       type: Boolean,
@@ -273,6 +278,9 @@ export default {
       if (this.taskConfirmType === 'delete') return '是否【删除】该任务？'
       if (this.taskConfirmType === 'execute') return '是否【立即执行】该任务？'
       return ''
+    },
+    taskData1() {
+      return getDescArr(this.taskData || {}, 'timestamp').filter(item => ['running', 'pending', 'paused'].includes(item.status)) || []
     }
   },
   methods: {

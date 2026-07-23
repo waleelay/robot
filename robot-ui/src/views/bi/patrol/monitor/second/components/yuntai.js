@@ -318,7 +318,7 @@ export default {
           : this.launcherDevice
       const session = await this.ensureControlSession(device, action)
       const params = {
-        set_safety: { safety_on: true, waitStatus: true },
+        set_safety: { safety_on: true, wait_status: true },
         'light.set': { enabled: true, brightness: 80, mode: 'STEADY' }
       }[action]
       const response = await sendEquipmentCommand(this.selectedRobotId,
@@ -431,7 +431,7 @@ export default {
       this.persistDeviceStateCache({ ...this.deviceStateCache, launcherSafety: this.launcherSafety })
       const ok = await this.sendDeviceCommand(device, 'set_safety', {
         safety_on: enabled,
-        waitStatus: true
+        wait_status: true
       }, `launcher_safety_${enabled ? 'on' : 'off'}`)
       if (!ok) {
         this.$set(this.launcherSafety, device.deviceId, !enabled)

@@ -31,7 +31,9 @@ const state = {
   mapSearchValue: '',
   slamMapList: [],
   slamOfRobot: {},
-  showRobotIds: []
+  showRobotIds: [],
+  // 当前全局地图标识：GIS 为 'gis'，SLAM 为对应地图 id
+  globalMapId: 'gis',
 }
 
 const mutations = {
@@ -39,7 +41,11 @@ const mutations = {
     state.deviceObj = value;
   },
   SET_TASK_INFO(state, value) {
-    state.taskData = Object.assign({}, state.taskData, { [value.taskId]: {...state.taskData[value.taskId] || {}, ...value} });
+    const obj = { ...value };
+    if (!state.taskData[value.taskId] && !value.timestamp) {
+      obj.timestamp = new Date().getTime() + 10;
+    }
+    state.taskData = Object.assign({}, state.taskData, { [value.taskId]: {...state.taskData[value.taskId] || {}, ...obj} });
   },
   SET_ALARMS_DATA(state, value) {
     if (value.high && value.medium && value.low) {
@@ -120,7 +126,10 @@ const mutations = {
     state.slamOfRobot = value;
   },
   SET_SHOW_ROBOT_IDS(state, value) {
-    state.showRobotIds = value;
+    state.showRobotIds = Array.isArray(value) ? value : (value != null && value !== '' ? [value] : []);
+  },
+  SET_GLOBAL_MAP_ID(state, value) {
+    state.globalMapId = value == null || value === '' ? 'gis' : value;
   },
 }
 
@@ -176,8 +185,8 @@ const actions = {
     //     "currentLocation": "B区主干道",
     //     "status": "paused"
     // },
-    ]).map(item => {
-      commit('SET_TASK_INFO', item);
+    ]).map((item, index) => {
+      commit('SET_TASK_INFO', { ...item, timestamp: new Date().getTime() + data.tasks.length - index });
       commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } });
     })
     commit('SET_ROBOT_LIST', data?.devices || []);
@@ -248,6 +257,7 @@ const actions = {
       commit('SET_ROBOT_BASE_INFO', { robotId: event.data.robotId, robotInfo: { ...state.robotBaseInfo[event.data.robotId], ...event.data } });
       // commit('SET_ROBOT_BASE_INFO', { robotId: 'test111', robotInfo: { ...state.robotBaseInfo['test111'], status: 'online' } });
     } else if (event.event === 'panorama.device.location.changed') {      
+      // commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
       commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
     } else if (event.event === 'panorama.task.changed') {
       commit('SET_TASK_INFO', event.data.task);
@@ -282,6 +292,9 @@ const actions = {
   },
   setShowRobotIds({ commit }, value) {
     commit('SET_SHOW_ROBOT_IDS', value);
+  },
+  setGlobalMapId({ commit }, value) {
+    commit('SET_GLOBAL_MAP_ID', value);
   },
 }
 

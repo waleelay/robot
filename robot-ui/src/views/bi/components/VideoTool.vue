@@ -1,13 +1,8 @@
 <template>
   <div>
     <div class="flx-center p10 custom-video-tool" :class="className">
-      <!-- <div class="p6 pixel">
-        <div class="w100 list">
-          <div v-for="item in pixel.pixelTypes" :key="item.value" class="item" @click="handleChangePixel(item)" :class="{'is-active': pixel.currentPixel === item.value}">{{ item.label }}</div>
-        </div>
-        <span>{{ pixel.currentPixelLabel }}</span>
-      </div> -->
-      <div :ref="`dropdownRef${slotKey}_pixel`" :style="{ display: !qualitySelectDisabled ? 'block' : 'none' }">
+      <!-- 视频清晰度 -->
+      <!-- <div :ref="`dropdownRef${slotKey}_pixel`" :style="{ display: !qualitySelectDisabled ? 'block' : 'none' }">
         <el-dropdown class="custom-dropdown pixel-dropdown" trigger="hover" placement="top" @command="changeQuality">
           <span class="el-dropdown-link">
             {{ pixel.pixelTypes.find(item => item.value === cameraInfo.quality)?.label || '自动' }}
@@ -22,13 +17,11 @@
             </el-dropdown-item>
           </el-dropdown-menu>
         </el-dropdown>
-      </div>
+      </div> -->
       <template :style="{ display: canSnapshot ? 'block' : 'none' }">
-        <div :ref="`dropdownRef${slotKey}_volume`">
+        <!-- 音量 -->
+        <!-- <div :ref="`dropdownRef${slotKey}_volume`">
           <el-dropdown class="custom-dropdown volume-dropdown" trigger="hover" :hide-on-click="false" placement="top" @visible-change="handleVolumeVisibleChange">
-            <!-- <span class="el-dropdown-link">
-              {{ pixel.currentPixelLabel }}
-            </span> -->
             <span @click="toggleMute" :title="volumeValue">
               <svg-icon :icon-class="volumeIconClass" />
             </span>
@@ -36,16 +29,6 @@
               <el-dropdown-item>
                 <div class="info flx-center">
                   <span class="value mt10">{{ volumeInfo.currentVolume }}</span>
-                  <!-- <input 
-                    type="range" 
-                    min="0" 
-                    max="100" 
-                    v-model="volumeInfo.currentVolume"
-                    class="mt10 mb10 vertical-slider" 
-                    @input="updateVolume"
-                    id="volumeSlider"
-                    :style="{'--value-percent': `${volumeInfo.currentVolume}%`}"
-                  /> -->
                   <el-slider
                     :min="0" 
                     :max="100" 
@@ -62,26 +45,7 @@
               </el-dropdown-item>
             </el-dropdown-menu>
           </el-dropdown>
-        </div>
-        <!-- <div class="volume ml20">
-          <div class="info flx-center">
-            <span class="value">{{ volumeInfo.currentVolume }}</span>
-            <input 
-              type="range" 
-              min="0" 
-              max="100" 
-              v-model="volumeInfo.currentVolume"
-              class="mt10 mb10 vertical-slider" 
-              @input="updateVolume"
-              id="volumeSlider"
-              :style="{'--value-percent': `${volumeInfo.currentVolume}%`}"
-            />
-          </div>
-          <span @click="toggleMute" :title="volumeValue">
-            <svg-icon :icon-class="volumeIconClass" />
-          </span>
         </div> -->
-        
         <div @click="openSnapModal()" title="抓拍" :style="{ 'pointer-events': canSnapshot ? 'auto' : 'none' }"><svg-icon icon-class="camera" /></div>
         <div
           v-if="canRecord"

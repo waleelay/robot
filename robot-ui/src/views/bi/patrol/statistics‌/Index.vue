@@ -126,13 +126,15 @@
           <div class="flex1 flex-column">
             <div class="title">告警类型分布排行</div>
             <div class="mt30 w100 h100">
-              <PieChart :items="aiAlarmAnalysis.alarmTypeRanking || []" />
+              <PieChart v-if="aiAlarmAnalysis.alarmTypeRanking?.length" :items="aiAlarmAnalysis.alarmTypeRanking || []" />
+              <Empty v-else width="194px" />
             </div>
           </div>
           <div class="flex1 flex-column pl34 with-border">
             <div class="title">处理方式分布排行</div>
             <div class="mt30 w100 h100">
-              <BarChart1 :items="aiAlarmAnalysis.handleMethodRanking || []" />
+              <BarChart1 v-if="aiAlarmAnalysis.handleMethodRanking?.length" :items="aiAlarmAnalysis.handleMethodRanking || []" />
+              <Empty v-else width="194px" />
             </div>
           </div>
         </div>
@@ -146,15 +148,18 @@
           </div>
         </div>
         <div class="ranking-list p20 d-flex flex-column hp279">
-          <div v-for="(item, index) in alarmAreaRanking" :key="item.name" :class="{'mt16': index !== 0, light: index > 2}" class="ranking-list-item d-flex flex-column flx-justify-between">
-            <div class="d-flex flex1 flx-justify-between w100">
-              <div class="level wp60 hp23">TOP.{{ index + 1 }}</div>
-              <div class="name ml20 flex1" :title="item.name">{{ item.name }}</div>
-              <!-- <div class="number">{{ item.nums ? Util.getCurrencySize1(item.nums) : 0 }}</div> -->
-              <div class="number">{{ item.nums || 0 }}</div>
+          <template v-if="alarmAreaRanking.length">
+            <div v-for="(item, index) in alarmAreaRanking" :key="item.name" :class="{'mt16': index !== 0, light: index > 2}" class="ranking-list-item d-flex flex-column flx-justify-between">
+              <div class="d-flex flex1 flx-justify-between w100">
+                <div class="level wp60 hp23">TOP.{{ index + 1 }}</div>
+                <div class="name ml20 flex1" :title="item.name">{{ item.name }}</div>
+                <!-- <div class="number">{{ item.nums ? Util.getCurrencySize1(item.nums) : 0 }}</div> -->
+                <div class="number">{{ item.nums || 0 }}</div>
+              </div>
+              <div class="progress w100 hp6 mt6" :style="{ '--percent': item.percent + '%' }"></div>
             </div>
-            <div class="progress w100 hp6 mt6" :style="{ '--percent': item.percent + '%' }"></div>
-          </div>
+          </template>
+          <Empty v-else width="194px" />
         </div>
       </div>
       <div class="flex1 d-flex ml20">
@@ -208,6 +213,7 @@ import PieChart from './PieChart.vue';
 import HistoryReportList from './History.vue';
 import { getPatrolStatisticsOverview, exportPatrolStatisticsReport } from '@/api/new-bi';
 import { saveAs } from 'file-saver';
+import Empty from '../../components/Empty.vue';
 const cityOptions = ['装备运行时长', 'AI告警分析', '告警高发区域', '告警趋势图'];
 const moduleMap = {
   装备运行时长: 'equipmentRuntime',
@@ -218,7 +224,7 @@ const moduleMap = {
 
 export default {
   name: 'BiPatrolStatistics',
-  components: { BarChart, BarChart1, LineChart, PieChart, HistoryReportList },
+  components: { BarChart, BarChart1, LineChart, PieChart, HistoryReportList, Empty },
   data() {
     return {
       loading: false,
@@ -331,14 +337,14 @@ export default {
       const max = source[0] && source[0].nums ? source[0].nums : 1;
       return source.map(item => ({
         ...item,
-        percent: item.percent || item.nums / max * 100
+        percent: item.percent || (max ? item.nums / max * 100 : 0)
       }));
     },
     taskCompletionItems() {
       return (this.statistics && this.statistics.taskCompletion && this.statistics.taskCompletion.items) || [
-        { status: 'COMPLETED', name: '已完成', percent: 98 },
-        { status: 'RUNNING', name: '执行中', percent: 60 },
-        { status: 'INTERRUPTED', name: '异常中断', percent: 10 }
+        { status: 'COMPLETED', name: '已完成', percent: 0 },
+        { status: 'RUNNING', name: '执行中', percent: 0 },
+        { status: 'INTERRUPTED', name: '异常中断', percent: 0 }
       ];
     },
     taskInsight() {
@@ -359,7 +365,7 @@ export default {
   },
   mounted() {
     this.rankList.map(item => {
-      item.percent = item.nums / this.rankList[0].nums * 100
+      item.percent = this.rankList[0].nums ? item.nums / this.rankList[0].nums * 100 : 0 
       return item
     })
     this.loadStatistics()

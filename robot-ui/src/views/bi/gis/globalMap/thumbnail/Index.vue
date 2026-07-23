@@ -49,7 +49,7 @@ export default {
       }).setView([this.centerPoint.lat, this.centerPoint.lng], 15);
 
       // 使用离线地图瓦片 - 根据您的实际路径和级别
-      L.tileLayer('/tdt/tiles/new/{z}/{x}/{y}.png', {
+      L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/latest/{z}/{x}/{y}.png`, {
         attribution: '离线地图',
         maxZoom: 20,
         minZoom: 17,

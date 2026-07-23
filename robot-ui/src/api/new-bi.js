@@ -175,11 +175,11 @@ export function previewImageBlob(id, cacheKey) {
   })
 }
 
-// 防止报错==================================
-export function setErrorisDeal(id) {
+// 添加指定点的临时任务
+export function addTaskByPoint(data) {
   return request({
-    url: taskPre + `/maps/${id}/preview-image`,
+    url: `/api/v1/management/external/temporary-navigations`,
     method: 'post',
-    data: { errorisDeal: true }
+    data
   })
 }

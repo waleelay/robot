@@ -143,13 +143,13 @@ export default {
         this.map.zoomOut(1);
       */
       // 添加离线地图图层
-      L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
-      // const customTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 18,
-        // 允许跨域请求
-        // crossOrigin: true
-      }).addTo(this.map);
+      // L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
+      // // const customTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      //   attribution: '&copy; OpenStreetMap contributors',
+      //   maxZoom: 18,
+      //   // 允许跨域请求
+      //   // crossOrigin: true
+      // }).addTo(this.map);
 
       // 添加自定义缩放控件
       // L.control.zoom({

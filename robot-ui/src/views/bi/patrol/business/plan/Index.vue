@@ -39,6 +39,7 @@
             placeholder="计划名称 / 编码"
             class="business2-search"
             @keyup.enter.native="loadRows(1)"
+            @clear="resetFilters"
           >
             <svg-icon slot="prefix" icon-class="search" />
           </el-input>
@@ -47,7 +48,7 @@
           <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="loadRows(1)">
             查询
           </el-button>
-          <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="resetFilters">重置</el-button>
+          <!-- <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="resetFilters">重置</el-button> -->
           <el-button type="primary" plain style="color: #17D1FF" @click="openEditor('', 'create')">
             <svg-icon icon-class="plus" class="mr10" />
             新建计划

@@ -93,7 +93,7 @@
                 <div class="ml10 mr10 wp50">状态</div>
                 <div class="ml10" style="width: 35%;">执行时间</div>
               </div>
-              <div class="common-scroll ovya" style="min-height: 288px; max-height: 288px;">
+              <div class="common-scroll ovya" style="height: 288px;">
                 <template v-if="tasks.length">
                   <div v-for="item in tasks" class="tasks flx-justify-between pr10 pl10">
                     <div style="width: 43%;" class="text-ellipsis" :title="item.name">{{ item.name }}</div>
@@ -110,7 +110,8 @@
                     <div class="ml10" style="width: 35%;">{{ item.timeRange }}</div>
                   </div>
                 </template>
-                <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div>
+                <!-- <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div> -->
+                <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" />
               </div>
             </div>
           </div>
@@ -132,8 +133,11 @@ import { mapState } from 'vuex';
 // import TaskRobotView from '../components/modal/TaskRobotView.vue';
 // import WarningBatch from './WarningBatch.vue'
 import { mapActions } from 'vuex/dist/vuex.common.js';
+import { getDescArr } from '../../../utils';
+import Empty from '../components/Empty.vue';
 export default {
   name: 'BiIndexLeft',
+  components: { Empty },
   props: {
     collapse: {
       type: Boolean,
@@ -149,7 +153,7 @@ export default {
     },
     ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'taskOverview']),
     tasks() {
-      return Object.keys(this.taskData || {}).map(key => this.taskData[key])
+      return getDescArr(this.taskData || {}, 'timestamp')
     },
   },
   data() {

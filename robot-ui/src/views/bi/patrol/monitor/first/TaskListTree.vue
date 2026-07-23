@@ -73,69 +73,71 @@
       </div>
       <div v-else class="task-div1 mt10 common-scroll pr10" style="height: calc(100% - 119px); margin-right: -10px;">
         <div class="task-list">
-          <div
-            v-for="(item, key, index) of taskData || {}"
-            :key="index"
-            class="task-item p10"
-            :class="{ 'is-active': item.taskId === selectedTaskId }"
-            @click="handleSelectTask(item)"
-            >
-            <div class="flx-justify-between title">
-              <div class="flx-align-center">
-                <span class="location" style="font-size: 16px;">{{ item.currentLocation }}</span>-
-                <span>{{ item.name }}</span>
-              </div>
-              <span
-                class="status p4 wp50 text-ellipsis"
-                :class="{
-                  green: item.status === 'running',
-                  orange: item.status === 'pending',
-                  blue: item.status === 'completed',
-                  red: item.status?.includes('failed'),
-                  gray: item.status === 'paused'
-                }">{{ item.statusName }}</span>
-            </div>
-            <div class="info mt10">
-              <div class="flx-align-center">
-                <svg-icon icon-class="time" />
-                <span class="ml10">{{ item.timeRange }}（预计{{ item.duration }}分钟）</span>
-              </div>
-              <div class="flx-align-center mt6">
-                <svg-icon icon-class="location" />
-                <span class="ml10">{{ item.currentLocation }}</span>
-              </div>
-              <div class="flx-align-center mt6">
-                <span>执行装备（{{ item.equipmentList?.length }}）</span>
-              </div>
-            </div>
-            <div class="device mt10" v-if="item.equipmentList?.length">
-              <div
-                v-for="equipment in item.equipmentList"
-                :key="equipment.name"
-                class="item flx-justify-between"
-                :class="{ 'is-active': checkedRobotIds.includes(equipment.robotId) }"
-                :draggable="!checkedRobotIds.includes(equipment.robotId) && equipment.status === 'online'"
-                @dragstart="onDragStart($event, robotBaseInfo[equipment.robotId], 'equipmentListComponent')"
-                @dragend="onDragEnd"
-                @click="handleClickRobot(robotBaseInfo[equipment.robotId])"
-                :style="{ cursor: !checkedRobotIds.includes(equipment.robotId) ? 'grab' : 'default' }"
+          <template v-for="(item, index) in tasks || {}">
+            <div
+              v-if="['running', 'pending', 'paused'].includes(item.status.toLowerCase())"
+              :key="item.taskId"
+              class="task-item p10"
+              :class="{ 'is-active': item.taskId === selectedTaskId }"
+              @click="handleSelectTask(item)"
               >
-                <div class="flx-center">
-                  <svg-icon :icon-class="ROBOT_TYPE_INFO[equipment.type]?.icon || 'robot'" />
-                  <span class="ml10">{{ equipment.name }}</span>
+              <div class="flx-justify-between title">
+                <div class="flx-align-center">
+                  <span class="location" style="font-size: 16px;">{{ item.currentLocation }}</span>-
+                  <span>{{ item.name }}</span>
                 </div>
-                <div class="flx-center">
-                  <svg-icon
-                    :icon-class="robotBaseInfo[equipment.robotId]?.battery >= 90 ? 'battery-4' : robotBaseInfo[equipment.robotId]?.battery >= 80 ? 'battery-3' : robotBaseInfo[equipment.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[equipment.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
-                    :style="{ color: robotBaseInfo[equipment.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
-                  >
-                  </svg-icon>
-                  <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId]?.battery }}%</span>  
-                  <span class="status ml10 p4" :class="robotBaseInfo[equipment.robotId]?.statusClass">{{ robotBaseInfo[equipment.robotId]?.customStatusName || robotBaseInfo[equipment.robotId]?.status || '-' }}</span>
+                <span
+                  class="status p4 wp50 text-ellipsis"
+                  :class="{
+                    green: item.status === 'running',
+                    orange: item.status === 'pending',
+                    blue: item.status === 'completed',
+                    red: item.status?.includes('failed'),
+                    gray: item.status === 'paused'
+                  }">{{ item.statusName }}</span>
+              </div>
+              <div class="info mt10">
+                <div class="flx-align-center">
+                  <svg-icon icon-class="time" />
+                  <span class="ml10">{{ item.timeRange }}（预计{{ item.duration }}分钟）</span>
+                </div>
+                <div class="flx-align-center mt6">
+                  <svg-icon icon-class="location" />
+                  <span class="ml10">{{ item.currentLocation }}</span>
+                </div>
+                <div class="flx-align-center mt6">
+                  <span>执行装备（{{ item.equipmentList?.length }}）</span>
+                </div>
+              </div>
+              <div class="device mt10" v-if="item.equipmentList?.length">
+                <div
+                  v-for="equipment in item.equipmentList"
+                  :key="equipment.name"
+                  class="item flx-justify-between"
+                  :class="{ 'is-active': checkedRobotIds.includes(equipment.robotId) }"
+                  :draggable="!checkedRobotIds.includes(equipment.robotId) && equipment.status === 'online'"
+                  @dragstart="onDragStart($event, robotBaseInfo[equipment.robotId], 'equipmentListComponent')"
+                  @dragend="onDragEnd"
+                  @click="handleClickRobot(robotBaseInfo[equipment.robotId])"
+                  :style="{ cursor: !checkedRobotIds.includes(equipment.robotId) ? 'grab' : 'default' }"
+                >
+                  <div class="flx-center">
+                    <svg-icon :icon-class="ROBOT_TYPE_INFO[equipment.type]?.icon || 'robot'" />
+                    <span class="ml10">{{ equipment.name }}</span>
+                  </div>
+                  <div class="flx-center">
+                    <svg-icon
+                      :icon-class="robotBaseInfo[equipment.robotId]?.battery >= 90 ? 'battery-4' : robotBaseInfo[equipment.robotId]?.battery >= 80 ? 'battery-3' : robotBaseInfo[equipment.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[equipment.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
+                      :style="{ color: robotBaseInfo[equipment.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
+                    >
+                    </svg-icon>
+                    <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId]?.battery }}%</span>  
+                    <span class="status ml10 p4" :class="robotBaseInfo[equipment.robotId]?.statusClass">{{ robotBaseInfo[equipment.robotId]?.customStatusName || robotBaseInfo[equipment.robotId]?.status || '-' }}</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          </template>
         </div>
       </div>
     </div>
@@ -146,6 +148,7 @@
 import { mapState, mapActions } from 'vuex'
 import { onDragStart, onDragEnd } from '../../../../../store/modules/dragVideo';
 import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
+import { getDescArr } from '../../../../../utils';
 export default {
   name: 'TaskListTree',
   props: {
@@ -197,7 +200,10 @@ export default {
     },
     checkedRobotIds() {
       return [...new Set(Object.values(this.activeCameras).map(item => item.robot.robotId))];
-    }
+    },
+    tasks() {
+      return getDescArr(this.taskData || {}, 'timestamp')
+    },
   },
   mounted() {},
   methods: {
@@ -295,7 +301,7 @@ export default {
         })
         this.equipmentInfo.online.list = onlineList
         this.equipmentInfo.offline.list = offlineList
-        this.executePlay()
+        // this.executePlay()
       },
       deep: true,
       immediate: true

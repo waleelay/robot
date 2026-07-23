@@ -17,7 +17,7 @@
         <div class="summary-item"><span>开始时间</span><strong>{{ formatDateTime(replayStartedAt) }}</strong></div>
         <div class="summary-item"><span>结束时间</span><strong>{{ formatDateTime(replayCompletedAt) }}</strong></div>
         <div class="summary-item"><span>告警</span><strong>{{ alarmEvents.length }}</strong></div>
-        <div class="summary-item"><span>视频</span><strong>{{ playbackItems.length }}</strong></div>
+        <div class="summary-item"><span>视频源</span><strong>{{ playbackItems.length }}</strong></div>
         <div class="summary-item"><span>轨迹状态</span><strong>{{ trackStatusLabel(replayTrackStatus) }}</strong></div>
       </section>
 

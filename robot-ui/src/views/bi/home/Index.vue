@@ -7,20 +7,31 @@
     <!-- <div class="map-div h100 flx-center pt57" style="align-items: start;" :class="{ full: collapse }"> -->
       <!-- <div class="hp742 flx-center" style="width: 1118px; background: #112B4D;"> -->
       <div v-if="isSlam" class="w100 h100 flx-center" style="z-index: 0; background: #112B4D;">
-        <SlamMap
-          :map="currentSlamMap"
-          :points="slamInfo.points"
+        <GlobalSlamMap
+          :map="slamMapPayload"
           :pathPointIds="slamInfo.pathPointIds"
           ref="globalMapRef"
           :show-labels="true"
-           @changeMapType="changeMapType"
+          @changeMapType="changeMapType"
         />
       </div>
       <template v-else>
-        <GlobalMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
+        <GlobalGisMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
         <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
       </template>
-      <MapTool :isSlam="isSlam" :showAngle="!isSlam" :currentSlam="currentSlamMapId" @changeMapAngle="changeMapAngle" :angle="angle" @changeMapZoom="changeMapZoom" @changeMapType="changeMapType" @changeSlamMap="changeSlamMap" @setCenter="setCenter" />
+      <MapTool
+        ref="mapToolRef"
+        :isSlam="isSlam"
+        :showAngle="!isSlam"
+        :currentSlam="currentSlamMapId"
+        @changeMapAngle="changeMapAngle"
+        :angle="angle"
+        @changeMapZoom="changeMapZoom"
+        @changeMapType="changeMapType"
+        @changeSlamMap="changeSlamMap"
+        @setCenter="setCenter"
+        @togglePath="togglePath"
+      />
       <!-- <div class="map-footer"></div> -->
     </div>
     <!-- <el-select
@@ -46,17 +57,17 @@ import { mapActions, mapState } from 'vuex';
 import Header from './Header.vue'
 import BiIndexLeft from './Left.vue'
 import BiIndexRight from './Right.vue'
-import SlamMap from './slam/Index.vue';
-import mapInfo from './slam/mapInfo.json'
-import pathInfo from './slam/pathInfo.json'
-import mapPoints from './slam/map-points.json'
-import GlobalMap from './../gis/globalMap/Index.vue'
+import mapInfo from '../gis/globalMap/slam/mapInfo.json'
+import pathInfo from '../gis/globalMap/slam/pathInfo.json'
+import mapPoints from '../gis/globalMap/slam/map-points.json'
+import GlobalGisMap from '../gis/globalMap/slam/GlobalSlamMap.vue'
+import GlobalSlamMap from './../gis/globalMap/slam/GlobalSlamMap.vue'
 import MapTool from './../patrol/panorama/map/MapTool.vue'
 import PageChangeDropdown from './PageChangeDropdown.vue'
 
 export default {
   name: 'BiIndex',
-  components: {Header, BiIndexLeft, BiIndexRight, SlamMap, GlobalMap, MapTool, PageChangeDropdown},
+  components: {Header, BiIndexLeft, BiIndexRight, GlobalSlamMap, GlobalGisMap, MapTool, PageChangeDropdown},
   data() {
     return {
       collapse: false,
@@ -68,16 +79,20 @@ export default {
         showLabels: true
       },
       currentSlamMapId: null,
-      angle: '2D'
+      angle: '2D',
+      autoSwitchedSlam: false
     }
   },
   computed: {
     ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot']),
     currentSlamMap() {
-      // console.log('slamInfo.map:', this.slamInfo, this.slamInfo.map)
-      // return this.slamInfo.map
       const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
       return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(this.currentSlamMapId)) || this.slamInfo.map
+    },
+    slamMapPayload() {
+      const map = this.currentSlamMap || {}
+      const points = map.points?.length ? map.points : (this.slamInfo.points || [])
+      return { ...map, points }
     }
   },
   async mounted() {
@@ -100,13 +115,34 @@ export default {
     },
     changeMapType(type) {
       this.isSlam = type ? type === 'slam' : !this.isSlam
-      if (type !== 'slam') {
+      if (!this.isSlam) {
         this.currentSlamMapId = null
+      } else if (!this.currentSlamMapId) {
+        this.selectDefaultSlamMap()
       }
     },
     changeSlamMap(mapInfo) {
-      this.currentSlamMapId = mapInfo?.id ?? null
+      const nextId = mapInfo?.id ?? null
+      const changed = String(this.currentSlamMapId) !== String(nextId)
+      this.currentSlamMapId = nextId
       this.isSlam = true
+      if (changed) {
+        this.$nextTick(() => {
+          this.$refs.globalMapRef?.resetSlamDrawState?.()
+          this.$refs.mapToolRef?.resetPathActive?.()
+        })
+      }
+    },
+    selectDefaultSlamMap() {
+      const list = Array.isArray(this.slamMapList) ? this.slamMapList : []
+      if (!list.length) return
+      // const preferred = list.find(item => String(item.id) === '1') || list[0]
+      const preferred = list[0]
+      this.currentSlamMapId = preferred?.id ?? null
+      this.isSlam = true
+    },
+    togglePath(visible) {
+      this.$refs.globalMapRef?.togglePath?.(visible)
     },
     setCenter() {
       const mapRef = this.$refs.globalMapRef
@@ -118,16 +154,21 @@ export default {
     },
   },
   watch: {
-    // slamMapList: {
-    //   immediate: false,
-    //   handler(list) {
-    //     if (!Array.isArray(list) || !list.length) return
-    //     const selectedExists = list.some(item => String(item.id) === String(this.currentSlamMapId))
-    //     if (!selectedExists) {
-    //       this.currentSlamMapId = (list.find(item => item.previewFileId) || list[0]).id
-    //     }
-    //   }
-    // }
+    slamMapList: {
+      immediate: true,
+      handler(list) {
+        if (!Array.isArray(list) || !list.length) return
+        if (!this.autoSwitchedSlam) {
+          this.selectDefaultSlamMap()
+          this.autoSwitchedSlam = true
+          return
+        }
+        if (this.isSlam && this.currentSlamMapId != null) {
+          const stillExists = list.some(item => String(item.id) === String(this.currentSlamMapId))
+          if (!stillExists) this.selectDefaultSlamMap()
+        }
+      }
+    }
   },
   beforeDestroy() {
     // mqttClient.disconnect()

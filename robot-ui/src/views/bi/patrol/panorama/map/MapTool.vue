@@ -25,7 +25,10 @@
         :key="item.key"
         @click="handleClickTool(item)"
         class="operation-item flx-center flex-column"
-        :class="{ 'is-active': selectedOper2 === item.key }"
+        :class="{
+          'is-active': item.key === 'path' ? pathActive : selectedOper2 === item.key,
+          'is-disabled': item.key === 'path' && !pathOperable
+        }"
       >
         <template v-if="index === 10">
           <el-popover placement="left" trigger="hover" popper-class="custom-popover map-layer-popover">
@@ -45,7 +48,7 @@
       </div>
     </div>
 
-    <!-- <div class="mt22 view">
+    <div class="mt22 view">
       <div ref="viewChangeRef" class="view-change flx-center wp50 hp50" @click.stop="toggleViewContainer">
         <img src="../../../../../assets/images/new-bi/view.png" width="44px" height="44px" style="border-radius: 50%;" />
       </div>
@@ -63,12 +66,12 @@
         </div>
         <div v-if="selectType === 'slam'" class="slam-list mt20 pb6">
           <div v-for="item in slamList" :key="item.id" class="item flx-justify-between" :class="{ 'is-active': String(currentSlam) === String(item.id) }" @click="selectSlamMap(item)">
-            <span>{{ item.mapName || item.name }}</span>
+            <span>{{ item.mapName }}</span>
             <svg-icon v-if="String(currentSlam) === String(item.id)" icon-class="check" style="font-size: 16px;"></svg-icon>
           </div>
         </div>
       </div>
-    </div> -->
+    </div>
   </div>
 </template>
 
@@ -108,28 +111,12 @@ export default {
         }
       ],
       operList2: [
-        // {
-        //   icon: 'map-in-out-side',
-        //   name: '外部',
-        //   key: 'outer'
-        // },
-        // {
-        //   icon: 'map-in-out-side',
-        //   name: '内部',
-        //   key: 'inner'
-        // },
-        // {
-        //   icon: 'map-layer',
-        //   name: '图层',
-        //   key: 'layer',
-        //   action: 'changeLayer'
-        // },
-        // {
-        //   icon: 'map-path',
-        //   name: '路径',
-        //   key: 'path',
-        //   action: 'showPath'
-        // },
+        {
+          icon: 'map-path',
+          name: '路径',
+          key: 'path',
+          action: 'showPath'
+        },
         {
           icon: 'map-angle',
           name: '视角',
@@ -183,33 +170,71 @@ export default {
       currentType: this.isSlam ? 'slam' : 'gis',
       selectType: this.isSlam ? 'slam' : 'gis',
       showViewContainer: false,
+      pathActive: false,
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapList']),
+    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'showRobotIds', 'robotBaseInfo', 'taskPathPoints']),
     slamList() {
       return Array.isArray(this.slamMapList) ? this.slamMapList : []
+    },
+    currentSlamMapInfo() {
+      const id = this.currentSlam
+      if (id === undefined || id === null || id === '') return null
+      return this.slamOfRobot?.[String(id)]?.mapInfo
+        || this.slamList.find(item => String(item.id) === String(id))
+        || null
+    },
+    // SLAM 下路径是否可操作：无选中装备看地图点位；选中一个装备看任务路径
+    pathOperable() {
+      if (!this.isSlam) return false
+      const ids = Array.isArray(this.showRobotIds) ? this.showRobotIds : []
+      if (!ids.length) {
+        const slamId = this.currentSlam
+        if (slamId === undefined || slamId === null || slamId === '') return false
+        const group = this.slamOfRobot?.[String(slamId)]
+        const points = group?.points || this.currentSlamMapInfo?.points
+        return Array.isArray(points) && points.length > 0
+      }
+      if (ids.length !== 1) return false
+      const robot = this.robotBaseInfo?.[ids[0]] || {}
+      const taskId = robot.runningTaskId
+      if (taskId === undefined || taskId === null || taskId === '') return false
+      const pathData = this.taskPathPoints?.[taskId]
+      if (!pathData || !Array.isArray(pathData.pathPoints) || !pathData.pathPoints.length) return false
+      return String(pathData.mapId) === String(this.currentSlam)
     }
   },
   mounted() {
     this.operList2 = this.operList2.filter(item => this.showAngle || (!this.showAngle && item.key !== 'angle'))
     document.addEventListener('click', this.handleDocumentClick, true)
+    this.syncGlobalMapId()
   },
   beforeDestroy() {
     document.removeEventListener('click', this.handleDocumentClick, true)
   },
   methods: {
-    ...mapActions('websocketExtraData', ['setMapSearchValue']),
+    ...mapActions('websocketExtraData', ['setMapSearchValue', 'setGlobalMapId']),
+    syncGlobalMapId() {
+      const slamId = this.currentSlam
+      const nextId = this.isSlam && slamId != null && slamId !== '' ? slamId : 'gis'
+      if (this.$store.state.websocketExtraData.globalMapId === nextId) return
+      this.setGlobalMapId(nextId)
+    },
     selectMapType(type) {
       if (this.selectType === type) return
       this.selectType = type
       if (type === 'gis') {
         this.currentType = type
+        this.setGlobalMapId('gis')
         this.$emit('changeCurrentSlamId', '')
       }
     },
     selectSlamMap(mapInfo) {
       this.currentType = 'slam'
+      if (mapInfo?.id != null && mapInfo?.id !== '') {
+        this.setGlobalMapId(mapInfo.id)
+      }
       this.$emit('changeSlamMap', mapInfo)
       // this.showViewContainer = false
     },
@@ -234,6 +259,7 @@ export default {
       this.$emit('changeMapType')
     },
     handleClickTool(item) {
+      if (item.key === 'path' && !this.pathOperable) return
       this[item.action](item.key);
     },
     handleSearch() {
@@ -246,7 +272,20 @@ export default {
       this.setMapSearchValue(this.searchValue)
     },
     changeLayer() {},
-    showPath() {},
+    showPath() {
+      if (!this.pathOperable) {
+        this.pathActive = false
+        this.$emit('togglePath', false)
+        return
+      }
+      this.pathActive = !this.pathActive
+      this.$emit('togglePath', this.pathActive)
+    },
+    resetPathActive() {
+      if (!this.pathActive) return
+      this.pathActive = false
+      this.$emit('togglePath', false)
+    },
     changeAngle() {
       this.$emit('changeMapAngle')
     },
@@ -270,6 +309,21 @@ export default {
     isSlam(newVal) {
       this.currentType = newVal ? 'slam' : 'gis'
       this.selectType = newVal ? 'slam' : 'gis'
+      if (!newVal) this.resetPathActive()
+      this.syncGlobalMapId()
+    },
+    currentSlam() {
+      this.resetPathActive()
+      this.syncGlobalMapId()
+    },
+    pathOperable(val) {
+      if (!val) this.resetPathActive()
+    },
+    showRobotIds: {
+      deep: true,
+      handler() {
+        if (!this.pathOperable) this.resetPathActive()
+      }
     }
   }
 }
@@ -328,6 +382,11 @@ export default {
       }
       &:hover, &.is-active {
         color: #00CBFD;
+      }
+      &.is-disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        pointer-events: none;
       }
       & + .operation-item {
         position: relative;

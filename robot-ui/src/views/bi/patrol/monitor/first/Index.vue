@@ -9,16 +9,17 @@
 -->
 <template>
   <div class="flex h100 pr20 pl20 pb10 pt20">
-    <div class="right flex1 flex-column h100">
+    <div class="right flex1 flex-column h100" style="min-width: 0; max-width: 100%; overflow: hidden;">
       <TaskListTree ref="taskListRef" @select-task="selectTask" :update-video-handler="updateVideo" />
-      <div class="mt20 flex1 flex-column">
+      <div class="mt20 flex1 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
         <div class="card-title">
           <div class="text">
-            实时地图
+            实时地图{{ globalMapId }}
           </div>
         </div>
-        <div class="flex1 mt10 h100" style="min-height: 403px; background: #1c121c;">
-          <SmallMap />
+        <div class="flex1 mt10 h100 slam-map-wrap">
+          <GlobalGisMap v-if="globalMapId === 'gis'" />
+          <GlobalSlamMap v-else :map="slamMapPayload" :show-labels="true" />
         </div>
       </div>
     </div>
@@ -50,11 +51,12 @@
 import LeftVideo from './LeftVideo.vue'
 import Snapshot from '../../../components/Snapshot.vue'
 import TaskListTree from './TaskListTree.vue';
-import { mapActions } from 'vuex'
-import SmallMap from '../../../gis/globalMap/SmallMap.vue';
+import { mapActions, mapState } from 'vuex'
+import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue';
+import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue';
 export default {
   name: 'BiPatrolMonitor',
-  components: { TaskListTree, LeftVideo, Snapshot, SmallMap },
+  components: { TaskListTree, LeftVideo, Snapshot, GlobalGisMap, GlobalSlamMap },
   props: {
     prefixId: {
       type: String,
@@ -77,8 +79,50 @@ export default {
     }
   },
   computed: {
+    ...mapState('websocketExtraData', ['globalMapId', 'slamMapList', 'slamOfRobot', 'robotBaseInfo', 'taskPathPoints', 'taskData']),
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
+    },
+    robots() {
+      return this.$store.getters['websocketRobot/getRobots'] || []
+    },
+    // 当前界面播放中的装备 id（按激活摄像头顺序去重）
+    checkedRobotIds() {
+      return [...new Set(Object.values(this.activeCameras || {}).map(item => item.robot?.robotId).filter(Boolean))]
+    },
+    // 播放中的第一个装备
+    firstSelectedRobotId() {
+      return this.checkedRobotIds[0] || null
+    },
+    // 第一个在线装备
+    firstOnlineRobotId() {
+      for (const item of this.robots) {
+        const robotId = item?.robotId
+        if (!robotId) continue
+        if (this.robotBaseInfo?.[robotId]?.status === 'online') return robotId
+      }
+      return null
+    },
+    // 优先播放中的第一个装备，无播放设备时回退到第一个在线装备
+    targetRobotId() {
+      return this.firstSelectedRobotId || this.firstOnlineRobotId
+    },
+    // 目标装备对应的 SLAM 地图 id
+    currentSlamMapId() {
+      if (!this.targetRobotId) return null
+      return this.resolveRobotSlamMapId(this.targetRobotId)
+    },
+    currentSlamMap() {
+      const id = this.currentSlamMapId
+      if (id === undefined || id === null || id === '') return null
+      const group = this.slamOfRobot?.[String(id)]
+      return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(id)) || null
+    },
+    slamMapPayload() {
+      if (!this.currentSlamMap) return null
+      const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
+      const points = group?.points?.length ? group.points : (this.currentSlamMap.points || [])
+      return { ...this.currentSlamMap, points }
     }
   },
   async mounted() {
@@ -92,6 +136,27 @@ export default {
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
     ...mapActions('websocketRobot', ['stopCamera', 'setSelectedRobotId']),
+    // 解析装备关联的 SLAM 地图：直接 mapId > 任务 mapId > slamOfRobot 归属
+    resolveRobotSlamMapId(robotId) {
+      if (robotId === undefined || robotId === null || robotId === '') return null
+      const robot = this.robotBaseInfo?.[robotId] || {}
+      const directMapId = robot.mapId ?? robot.location?.mapId
+      if (directMapId !== undefined && directMapId !== null && directMapId !== '') return directMapId
+
+      const taskId = robot.runningTaskId
+      if (taskId !== undefined && taskId !== null && taskId !== '') {
+        const taskMapId = this.taskPathPoints?.[taskId]?.mapId ?? this.taskData?.[taskId]?.mapId
+        if (taskMapId !== undefined && taskMapId !== null && taskMapId !== '') return taskMapId
+      }
+
+      const targetId = String(robotId)
+      for (const [mapId, group] of Object.entries(this.slamOfRobot || {})) {
+        if (group?.robots?.some(item => String(item.robotId) === targetId)) {
+          return mapId
+        }
+      }
+      return null
+    },
     selectTask(selectRows) {
       this.$refs.leftVideoRef.slotDevices = this.$refs.leftVideoRef.slotDevices.map((item, index) => selectRows[index] || null)
       
@@ -126,6 +191,13 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.slam-map-wrap {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 403px;
+  overflow: hidden;
+  background: #1c121c;
+}
 .custom-tab-button1 {
   width: fit-content;
   border: 1px solid #334465;

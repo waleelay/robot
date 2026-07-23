@@ -10,9 +10,8 @@
 <template>
   <div class="map-div h100" :class="{ full: collapse }">
     <div v-if="isSlam" class="w100 h100 flx-center" style="z-index: 0; background: #112B4D;">
-      <SlamMap
-        :map="currentSlamMap"
-        :points="slamPoints"
+      <GlobalSlamMap
+        :map="slamMapPayload"
         :pathPointIds="slamPathPointIds"
         ref="globalMapRef"
         :show-labels="true"
@@ -20,10 +19,11 @@
       />
     </div>
     <template v-else>
-      <GlobalMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
+      <GlobalGisMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
       <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
     </template>
     <MapTool
+      ref="mapToolRef"
       :isSlam="isSlam"
       :showAngle="!isSlam"
       :currentSlam="currentSlamMapId"
@@ -33,6 +33,7 @@
       @changeSlamMap="changeSlamMap"
       @setCenter="setCenter"
       @changeMapAngle="changeMapAngle"
+      @togglePath="togglePath"
     />
   </div>
 </template>
@@ -40,8 +41,8 @@
 <script>
 import { mapState } from 'vuex'
 import MapTool from './MapTool.vue'
-import GlobalMap from './../../../gis/globalMap/Index.vue'
-import SlamMap from './../../../home/slam/Index.vue'
+import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue'
+import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue'
 
 export default {
   name: 'BiPatrolPanoramaMap',
@@ -52,9 +53,9 @@ export default {
     }
   },
   components: {
-    GlobalMap,
+    GlobalGisMap,
     MapTool,
-    SlamMap
+    GlobalSlamMap
   },
   data() {
     return {
@@ -62,7 +63,8 @@ export default {
       intervalId: null,
       angle: '2D',
       isSlam: false,
-      currentSlamMapId: null
+      currentSlamMapId: null,
+      autoSwitchedSlam: false
     }
   },
   computed: {
@@ -73,11 +75,18 @@ export default {
     },
     slamPoints() {
       const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
-      return group?.points || []
+      return group?.points || this.currentSlamMap?.points || []
     },
     slamPathPointIds() {
       const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
       return group?.pathPointIds || []
+    },
+    slamMapPayload() {
+      if (!this.currentSlamMap) return null
+      return {
+        ...this.currentSlamMap,
+        points: this.slamPoints.length ? this.slamPoints : (this.currentSlamMap.points || [])
+      }
     }
   },
   mounted() {
@@ -104,13 +113,34 @@ export default {
     },
     changeMapType(type) {
       this.isSlam = type ? type === 'slam' : !this.isSlam
-      if (type !== 'slam') {
+      if (!this.isSlam) {
         this.currentSlamMapId = null
+      } else if (!this.currentSlamMapId) {
+        this.selectDefaultSlamMap()
       }
     },
     changeSlamMap(mapInfo) {
-      this.currentSlamMapId = mapInfo?.id ?? null
+      const nextId = mapInfo?.id ?? null
+      const changed = String(this.currentSlamMapId) !== String(nextId)
+      this.currentSlamMapId = nextId
       this.isSlam = true
+      if (changed) {
+        this.$nextTick(() => {
+          this.$refs.globalMapRef?.resetSlamDrawState?.()
+          this.$refs.mapToolRef?.resetPathActive?.()
+        })
+      }
+    },
+    selectDefaultSlamMap() {
+      const list = Array.isArray(this.slamMapList) ? this.slamMapList : []
+      if (!list.length) return
+      // const preferred = list.find(item => String(item.id) === '1') || list[0]
+      const preferred = list[0]
+      this.currentSlamMapId = preferred?.id ?? null
+      this.isSlam = true
+    },
+    togglePath(visible) {
+      this.$refs.globalMapRef?.togglePath?.(visible)
     },
     setCenter() {
       const mapRef = this.$refs.globalMapRef
@@ -126,6 +156,24 @@ export default {
         height: '28px',
         top: '200px',
         left: 500 + this.count + 'px'
+      }
+    }
+  },
+  watch: {
+    slamMapList: {
+      immediate: true,
+      handler(list) {
+        if (!Array.isArray(list) || !list.length) return
+        // slamList 有数据时首次自动切到 SLAM，并优先选择 id=1
+        if (!this.autoSwitchedSlam) {
+          this.selectDefaultSlamMap()
+          this.autoSwitchedSlam = true
+          return
+        }
+        if (this.isSlam && this.currentSlamMapId != null) {
+          const stillExists = list.some(item => String(item.id) === String(this.currentSlamMapId))
+          if (!stillExists) this.selectDefaultSlamMap()
+        }
       }
     }
   },

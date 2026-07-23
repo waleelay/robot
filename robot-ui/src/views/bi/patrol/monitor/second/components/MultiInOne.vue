@@ -1,5 +1,5 @@
 <template>
-  <div class="box multi-in-one p20 mt10">
+  <div class="box multi-in-one p20 mt10 hp440">
     <div class="tabs flx-align-center">
       <div
         v-for="item in tabs"

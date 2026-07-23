@@ -1,15 +1,16 @@
 <template>
   <div class="d-flex h100 pr20 pl10 pb10 pt20">
-    <div class="left flex-column h100 wp284">
+    <div class="left flex-column h100 wp284" style="min-width: 0; overflow: hidden;">
       <EquipmentListTree @updateVideo="updateVideo" />
-      <div class="mt20 flex1 flex-column">
+      <div class="mt20 flex1 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
         <div class="card-title title-284-37">
           <div class="text">
             实时地图
           </div>
         </div>
-        <div class="flex1 mt10 h100" style="min-height: 250px;">
-          <SmallMap />
+        <div class="flex1 mt10 h100 slam-map-wrap">
+          <GlobalGisMap v-if="globalMapId === 'gis'" />
+          <GlobalSlamMap v-else :map="slamMapPayload" :show-labels="true" />
         </div>
       </div> 
     </div>
@@ -107,13 +108,25 @@ import Yuntai from './components/Yuntai.vue'
 import MultiInOne from './components/MultiInOne.vue'
 import Catcher from './components/Catcher.vue'
 import Launcher from './components/Launcher.vue'
-import { motionControl } from '@/api/login'
-import SmallMap from '../../../gis/globalMap/SmallMap.vue'
+import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue'
+import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue'
 import yuntai from './components/yuntai'
 import { mapState } from 'vuex'
 export default {
   name: 'BiPatrolMonitorSecondScreen',
-  components: {EquipmentListTree, LeftVideo, SelfRobotDogControl, SelfRobotCarControl, Yuntai, MultiInOne, Talk, Catcher, Launcher, SmallMap},
+  components: {
+    EquipmentListTree,
+    LeftVideo,
+    SelfRobotDogControl,
+    SelfRobotCarControl,
+    Yuntai,
+    MultiInOne,
+    Talk,
+    Catcher,
+    Launcher,
+    GlobalGisMap,
+    GlobalSlamMap
+  },
   props: {
     prefixId: {
       type: String,
@@ -127,9 +140,36 @@ export default {
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
-    ...mapState('websocketExtraData', ['robotBaseInfo']),
+    ...mapState('websocketExtraData', [
+      'robotBaseInfo',
+      'globalMapId',
+      'slamMapList',
+      'slamOfRobot',
+      'taskPathPoints',
+      'taskData'
+    ]),
     currenRobot() {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
+    },
+    // second 界面以当前选中装备确定 SLAM 地图
+    targetRobotId() {
+      return this.selectedRobotId || null
+    },
+    currentSlamMapId() {
+      if (!this.targetRobotId) return null
+      return this.resolveRobotSlamMapId(this.targetRobotId)
+    },
+    currentSlamMap() {
+      const id = this.currentSlamMapId
+      if (id === undefined || id === null || id === '') return null
+      const group = this.slamOfRobot?.[String(id)]
+      return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(id)) || null
+    },
+    slamMapPayload() {
+      if (!this.currentSlamMap) return null
+      const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
+      const points = group?.points?.length ? group.points : (this.currentSlamMap.points || [])
+      return { ...this.currentSlamMap, points }
     }
   },
   data() {
@@ -138,6 +178,27 @@ export default {
   },
   mixins: [yuntai],
   methods: {
+    // 解析装备关联的 SLAM 地图：直接 mapId > 任务 mapId > slamOfRobot 归属
+    resolveRobotSlamMapId(robotId) {
+      if (robotId === undefined || robotId === null || robotId === '') return null
+      const robot = this.robotBaseInfo?.[robotId] || {}
+      const directMapId = robot.mapId ?? robot.location?.mapId
+      if (directMapId !== undefined && directMapId !== null && directMapId !== '') return directMapId
+
+      const taskId = robot.runningTaskId
+      if (taskId !== undefined && taskId !== null && taskId !== '') {
+        const taskMapId = this.taskPathPoints?.[taskId]?.mapId ?? this.taskData?.[taskId]?.mapId
+        if (taskMapId !== undefined && taskMapId !== null && taskMapId !== '') return taskMapId
+      }
+
+      const targetId = String(robotId)
+      for (const [mapId, group] of Object.entries(this.slamOfRobot || {})) {
+        if (group?.robots?.some(item => String(item.robotId) === targetId)) {
+          return mapId
+        }
+      }
+      return null
+    },
     async updateVideo(data) {
       if (data.key) {
         await this.$refs.leftVideoRef.test({ data })
@@ -155,6 +216,13 @@ export default {
 </script>
 
 <style scoped lang="scss">
+.slam-map-wrap {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 250px;
+  overflow: hidden;
+  background: #1c121c;
+}
 .basic {
   .desc {
     color: rgba($color: #FFF, $alpha: .8);

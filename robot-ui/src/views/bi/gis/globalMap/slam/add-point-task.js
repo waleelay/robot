@@ -7,7 +7,8 @@ export default {
       // ---------- 配置 ----------
       imagePath: require('./3.png'), // 请替换为您的PNG实际路径
       safetyMargin: 1,           // 安全距离（像素）
-
+      // true：打点校验安全区域，派遣后自定义路径；false：不校验，虚线直连两点
+      enableSafetyAreaCheck: false,
       // ---------- 状态 ----------
       img: null,
       canvas: null,
@@ -26,20 +27,12 @@ export default {
       robotId: null,
       lastDrawnPaths: null,
       baseLineWidth: 3,
+      locationStyle: { top:0, left: 0 },
       coloredCanvas: null, // updateColor 后的地图底图缓存
     };
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot']),
-    locationStyle() {
-      const rect = this.$refs?.pointLocationRef?.getBoundingClientRect() || { width: 0, height: 0 };
-      // console.log('缩放', rect.width, rect.height, this.getScaleContext().scaleX, this.getScaleContext().scaleY);
-      return {
-        top: `${((this.locationPoint?.y || 0) - rect.height / 2) / this.getScaleContext().scaleY}px`,
-        left: `${((this.locationPoint?.x || 0) - rect.width / 2) / this.getScaleContext().scaleX}px`,
-      };
-    },
-    startPointStyle() {
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot']),    startPointStyle() {
       if (!this.startPoint) {
         return { opacity: 0, zIndex: 0 }
       }
@@ -92,7 +85,11 @@ export default {
       this.ctx.imageSmoothingEnabled = true;
       this.ensureColoredMap();
       if (this.lastDrawnPaths && this.lastDrawnPaths.length) {
-        this.drawLine(this.lastDrawnPaths, false);
+        if (this.enableSafetyAreaCheck) {
+          this.drawLine(this.lastDrawnPaths, false);
+        } else {
+          this.drawStraightLine(this.lastDrawnPaths, false);
+        }
       } else {
         this.draw();
       }
@@ -139,7 +136,11 @@ export default {
       this.coloredCanvas = null;
       this.ensureColoredMap();
       if (this.lastDrawnPaths && this.lastDrawnPaths.length) {
-        this.drawLine(this.lastDrawnPaths, false);
+        if (this.enableSafetyAreaCheck) {
+          this.drawLine(this.lastDrawnPaths, false);
+        } else {
+          this.drawStraightLine(this.lastDrawnPaths, false);
+        }
       } else {
         this.draw();
       }
@@ -220,7 +221,12 @@ export default {
     },
     drawLine(paths, remember = true) {
       if (!this.img || !this.ctx) return;
-      if (remember) this.lastDrawnPaths = paths;
+      // 统一为 [已走AB, 未走BC]；仅传一段时视为未走路径（蓝色虚线）
+      let segments = paths || [];
+      if (segments.length === 1) {
+        segments = [[], segments[0]];
+      }
+      if (remember) this.lastDrawnPaths = segments;
       const ctx = this.ctx;
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -234,21 +240,23 @@ export default {
       this.ensureColoredMap();
       ctx.drawImage(this.getMapBaseImage(), 0, 0, this.W, this.H);
       // 起始地标签改为 DOM 渲染（与 Figma / GIS 样式一致）
-      // 绘制路径（亮蓝色）
-      if (paths && paths.length > 0) {
-        // 遍历每条路径
-        paths.forEach((path, index) => {
-          // 设置样式（可根据索引或条件设置不同颜色）
-          ctx.strokeStyle = index > 0 ? '#0D9F31' : '#0BF9FE';
+      // 绘制路径：index 0 = AB(已走，绿色实线)，index 1 = BC(未走，蓝色虚线)
+      if (segments.length > 0) {
+        segments.forEach((path, index) => {
+          if (!path || path.length < 2) return;
+          if (index === 0) {
+            // AB：已走线路，绿色实线
+            ctx.strokeStyle = '#0D9F31';
+            ctx.setLineDash([]);
+          } else {
+            // BC：未走线路，蓝色虚线
+            ctx.strokeStyle = '#2563EB';
+            // ctx.setLineDash([5 / zoom, 2 / zoom]);
+            ctx.setLineDash([5, 5]);
+          }
           ctx.lineWidth = this.getScreenLineWidth(3);
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
-          
-          if (index === 0) {
-            ctx.setLineDash([5 / zoom, 2 / zoom]);
-          } else {
-            ctx.setLineDash([]); // 实线
-          }
 
           ctx.beginPath();
           ctx.moveTo(path[0][0], path[0][1]);
@@ -257,7 +265,7 @@ export default {
           }
           ctx.stroke();
         });
-
+        ctx.setLineDash([]);
         ctx.shadowBlur = 0;
       }
     },
@@ -277,22 +285,35 @@ export default {
       this.ensureColoredMap();
       ctx.drawImage(this.getMapBaseImage(), 0, 0, this.W, this.H);
 
-      // 绘制路径（亮蓝色）
-      if (this.unloadedPath && this.unloadedPath.length > 0) {
-        ctx.strokeStyle = '#0BF9FE';
-        ctx.lineWidth = this.getScreenLineWidth(2);
+      // 绘制已走路径 AB（绿色实线）
+      if (this.loadedPath && this.loadedPath.length > 0) {
+        ctx.strokeStyle = '#0D9F31';
+        ctx.lineWidth = this.getScreenLineWidth(3);
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        // ctx.shadowColor = 'rgba(0, 200, 255, 0.5)';
-        // ctx.shadowBlur = 8;
-        ctx.setLineDash([5 / zoom, 5 / zoom]);
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(this.loadedPath[0][0], this.loadedPath[0][1]);
+        for (let i = 1; i < this.loadedPath.length; i++) {
+          ctx.lineTo(this.loadedPath[i][0], this.loadedPath[i][1]);
+        }
+        ctx.stroke();
+      }
+      // 绘制未走路径 BC（蓝色虚线）
+      if (this.unloadedPath && this.unloadedPath.length > 0) {
+        ctx.strokeStyle = '#2563EB';
+        ctx.lineWidth = this.getScreenLineWidth(3);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        // ctx.setLineDash([5 / zoom, 2 / zoom]);
+        ctx.setLineDash([5, 5]);
         ctx.beginPath();
         ctx.moveTo(this.unloadedPath[0][0], this.unloadedPath[0][1]);
         for (let i = 1; i < this.unloadedPath.length; i++) {
           ctx.lineTo(this.unloadedPath[i][0], this.unloadedPath[i][1]);
         }
         ctx.stroke();
-        ctx.shadowBlur = 0;
+        ctx.setLineDash([]);
       }
     },
 
@@ -337,6 +358,7 @@ export default {
         alert('地图尚未加载完成，请稍后');
         return;
       }
+      this.showContextMenu = false
       const rect = this.canvas.getBoundingClientRect();      
       const scaleX = this.W / rect.width;
       const scaleY = this.H / rect.height;
@@ -345,16 +367,17 @@ export default {
 
       if (x < 0 || x >= this.W || y < 0 || y >= this.H) return;
 
-      // 仅允许点击 updateColor 后的可通行白色区域 RGB(86, 121, 163)
+      // 两种模式均要求打点在可行区域 RGB(86, 121, 163)
       if (!this.isWalkableColoredPixel(x, y)) {
-        this.showSlamError('该位置不可通行，请在地图白色区域选择点位');
+        this.showSlamError('该位置不可通行，请在地图可通行区域选择点位');
         return;
       }
-      // 检查是否可通行（障碍物安全距离）
-      if (this.grid[y] && this.grid[y][x] === 1) {
+      // 开启安全区域判断时：额外避开障碍物安全距离
+      if (this.enableSafetyAreaCheck && this.grid[y] && this.grid[y][x] === 1) {
         this.showSlamError('该位置不可通行（障碍物或安全距离内）');
         return;
       }
+
       const pixel = this.eventToPixel(event);
       const point = this.pixelToMapPoint(pixel, this.map);
       const viewport = this.$refs.viewportRef;
@@ -372,6 +395,7 @@ export default {
         coordinateY: point.coordinateY,
         label: '临时点',
       };
+      // console.log('临时点locationPoint', this.locationPoint);
       
       // 如果没有起点，设置起点
       // if (!this.startPoint) {
@@ -423,50 +447,121 @@ export default {
       if (!pixel) return null
       return pixel
     },
-    // 选择后渲染整个路径
+    // 选择后渲染整个路径：A(startPoint)固定为规划时装备点位，B(currentPoint)为实时点位
     setStartPoint(startPoint) {
       if (!startPoint) {
         const pixel = this.getPixelByRobotId(this.robotId);
         if (!pixel) return null;
         startPoint = [parseInt(pixel.x), parseInt(pixel.y)];
       }
+      // 初始规划时 A=B，后续 B 随装备实时位置更新
       this.currentPoint = startPoint;
       this.startPoint = startPoint;
       this.renderUnloaded();
     },
 
     getPaths(startPoint, endPoint) {
-      const path = this.aStar(startPoint, endPoint);
+      if (!startPoint || !endPoint) return null
+      // 关闭安全区域判断时：直接返回两点，不做路径可行性校验
+      if (!this.enableSafetyAreaCheck) {
+        return [startPoint, endPoint]
+      }
+      const path = this.aStar(startPoint, endPoint)
       if (!path || path.length === 0) {
-        this.showSlamError('无法找到安全路径，请尝试其他终点');
+        this.showSlamError('无法找到安全路径，请尝试其他终点')
         return null
       }
       return path
     },
     renderUnloaded() {
-      this.unloadedPath = this.aStar(this.currentPoint, this.endPoint);
-      // console.log(11, this.unloadedPath, this.currentPoint, this.endPoint);
-      
-      if (!this.unloadedPath || this.unloadedPath.length === 0) {
-        this.showSlamError('无法找到安全路径，请尝试其他终点');
+      if (!this.currentPoint || !this.endPoint) return
+      // 固定槽位：[已走AB, 未走BC]，避免仅有未走路径时被当成 index0 画成绿色
+      const loaded = this.loadedPath && this.loadedPath.length ? this.loadedPath : []
+      if (this.enableSafetyAreaCheck) {
+        // 自定义路径：A* 避障，沿安全网格规划
+        this.unloadedPath = this.aStar(this.currentPoint, this.endPoint)
+        if (!this.unloadedPath || this.unloadedPath.length === 0) {
+          this.showSlamError('无法找到安全路径，请尝试其他终点')
+          return
+        }
+        this.drawLine([loaded, this.unloadedPath])
         return
       }
-      this.drawLine([this.unloadedPath]);
+      // 关闭安全区域判断：两点虚线直连
+      this.unloadedPath = [this.currentPoint, this.endPoint]
+      this.drawStraightLine([loaded, this.unloadedPath])
     },
     renderLoaded() {
-      // 选择机器狗后计算距离
-      // const pixelStart = this.drawablePoints?.[1]?.pixel || { x: 0, y: 0 }
-      // this.currentPoint = [29, 39]
-      // console.log(333, this.startPoint, this.currentPoint);
-      this.loadedPath = this.aStar(this.startPoint, this.currentPoint);
-      if (!this.loadedPath || this.loadedPath.length === 0) {
-        // alert('无法找到安全路径，请尝试其他终点');
+      // A=起点(固定)，B=装备实时位置(currentPoint)，C=终点
+      if (!this.startPoint || !this.currentPoint || !this.endPoint) return
+      if (this.enableSafetyAreaCheck) {
+        this.loadedPath = this.aStar(this.startPoint, this.currentPoint)
+        this.unloadedPath = this.aStar(this.currentPoint, this.endPoint)
+        if (!this.loadedPath?.length || !this.unloadedPath?.length) {
+          this.showSlamError('无法找到安全路径，请尝试其他终点')
+          return
+        }
+        this.drawLine([this.loadedPath, this.unloadedPath])
         return
       }
-      this.unloadedPath = this.aStar(this.currentPoint, this.endPoint);
-      this.drawLine([this.unloadedPath, this.loadedPath]);
+      // 关闭安全区域判断：AB 绿实线 / BC 蓝虚线，均直连
+      this.loadedPath = [this.startPoint, this.currentPoint]
+      this.unloadedPath = [this.currentPoint, this.endPoint]
+      this.drawStraightLine([this.loadedPath, this.unloadedPath])
     },
+    // 两点直连（取路径首尾点直线连接，不走 A*）
+    // 约定入参：[已走AB, 未走BC]；仅传一段时视为未走路径
+    drawStraightLine(paths, remember = true) {
+      if (!this.img || !this.ctx) return;
+      // 兼容 [start, end] 与 [[path1], [path2]] 两种入参
+      let segments = paths;
+      if (paths && paths.length >= 2 && typeof paths[0]?.[0] === 'number') {
+        segments = [[], paths]; // 单段两点 → 视为未走 BC
+      } else if (paths && paths.length === 1) {
+        segments = [[], paths[0]];
+      }
+      // 每段只保留首尾两点，保证直连
+      const straightPaths = (segments || []).map((path) => {
+        if (!path || path.length < 2) return [];
+        return [path[0], path[path.length - 1]];
+      });
+      // 保证始终为 [AB, BC] 两槽
+      while (straightPaths.length < 2) straightPaths.unshift([]);
+      if (remember) this.lastDrawnPaths = straightPaths;
 
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.restore();
+      const dpr = window.devicePixelRatio || 1;
+      const zoom = Number(this.zoom) || 1;
+      const scale = Math.max(zoom * dpr, dpr);
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      this.ensureColoredMap();
+      ctx.drawImage(this.getMapBaseImage(), 0, 0, this.W, this.H);
+      straightPaths.forEach((path, index) => {
+        if (!path || path.length < 2) return;
+        if (index === 0) {
+          // AB：已走线路，绿色实线
+          ctx.strokeStyle = '#0D9F31';
+          ctx.setLineDash([]);
+        } else {
+          // BC：未走线路，蓝色虚线
+          ctx.strokeStyle = '#2563EB';
+          // ctx.setLineDash([5 / zoom, 2 / zoom]);
+          ctx.setLineDash([5, 5]);
+        }
+        ctx.lineWidth = this.getScreenLineWidth(3);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(path[0][0], path[0][1]);
+        ctx.lineTo(path[1][0], path[1][1]);
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
+    },
     // ---------- A* 寻路（8方向，使用安全距离网格） ----------
     aStar(start, end) {
       const W = this.W;
@@ -475,7 +570,6 @@ export default {
 
       const key = (p) => p[0] + ',' + p[1];
       const heuristic = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
-
       const open = [{ p: start, g: 0, f: heuristic(start, end) }];
       const came = {};
       const cost = {};
@@ -562,16 +656,65 @@ export default {
         width: wrapper.offsetWidth || window.innerWidth,
         height: wrapper.offsetHeight || window.innerHeight
       }
+    },
+    getContextMenuStyle() {
+      // 依赖平移/缩放，保证菜单位置随右键点更新
+      const { offsetX, offsetY, zoom, showContextMenu } = this
+      if (!showContextMenu || !this.locationPoint || !this.$refs.canvas || !this.$refs.viewportRef) {
+        return { display: 'none' }
+      }
+      return this.contextMenuStyle
+    },
+    // 临时点在 stage 本地坐标系定位（地图像素 * zoom），随缩放同步，不受 screen-wrapper 二次换算影响
+    updateLocationStyle() {
+      this.$nextTick(() => {
+        if (!this.locationPoint) {
+          this.locationStyle = { top: '0px', left: '0px' }
+          return
+        }
+        const zoom = Number(this.zoom) || 1
+        const pixelX = Number(this.locationPoint.pixelX)
+        const pixelY = Number(this.locationPoint.pixelY)
+        const x = Number.isFinite(pixelX) ? pixelX * zoom : 0
+        const y = Number.isFinite(pixelY) ? pixelY * zoom : 0
+        const el = this.$refs.pointLocationRef
+        let width = 40
+        let height = 66
+        if (el) {
+          const scale = this.getScaleContext()
+          const rect = el.getBoundingClientRect()
+          width = el.offsetWidth || rect.width / (scale.scaleX || 1)
+          height = el.offsetHeight || rect.height / (scale.scaleY || 1)
+        }
+        this.locationStyle = {
+          top: `${y - height / 2}px`,
+          left: `${x - width / 2}px`,
+        }
+      })
     }
   },
   watch: {
+    locationPoint: {
+      handler() {
+        this.updateLocationStyle()
+      },
+      immediate: true
+    },
+    zoom() {
+      this.updateLocationStyle()
+    },
     getSelectRobotCurrentLocation: {
       handler(newVal) {
-        if (newVal) {
+        // 装备实时位置变化时更新 B(currentPoint)，A(startPoint) 保持不变
+        if (newVal && this.startPoint?.length) {
           const pixel = this.getPixelByRobotId()
-          if (!pixel) return null
+          if (!pixel) return
           this.currentPoint = [parseInt(pixel.x), parseInt(pixel.y)]
-          this.renderLoaded()
+          this.currentPoint = [parseInt(pixel.x), parseInt(pixel.y)]
+          // setTimeout(() => {
+          //   this.currentPoint = [parseInt(269.2), parseInt(114.9)]
+          //   this.renderLoaded()
+          // }, 5000)
         }
       },
       immediate: true

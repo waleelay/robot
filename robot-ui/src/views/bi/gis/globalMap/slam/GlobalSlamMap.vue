@@ -5,7 +5,14 @@
         <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
           <!-- <img v-if="imageUrl" ref="imageRef" class="map-preview-image" :src="imageUrl" alt="地图预览" style="width: 100%; height: 100%;" /> -->
           <template v-if="imageUrl">
-            <canvas ref="canvas" @contextmenu.prevent="onCanvasClick" class="map-preview-image" style="width: 100%; height: 100%;" />
+            <canvas
+              ref="canvas"
+              title="右键点击可设置临时点位"
+              @contextmenu.prevent="onCanvasClick"
+              @click="handleCanvasBlankClick"
+              class="map-preview-image"
+              style="width: 100%; height: 100%;"
+            />
             <svg
               v-if="imageUrl"
               ref="overlayRef"
@@ -20,24 +27,31 @@
                   :key="point.id"
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y})`"
                   class="map-preview-point"
-                  :class="{ selected: point.id === selectedPointId, inPath: pathPointIds.includes(point.id), hovered: point.id === hoveredPointId }"
+                  :class="{ selected: point.id === selectedPointId, inPath: activePathPointIds.includes(point.id), hovered: point.id === hoveredPointId }"
                   @mouseenter="hoveredPointId = point.id"
                   @mouseleave="hoveredPointId = null"
                   @click.stop="handlePointClick(point)"
                 >
                   <circle r="2" />
                   <text v-if="showLabels || point.id === selectedPointId" x="9" y="-9">{{ point.pointName }}</text>
-                  <title>{{ point.pointName }} / {{ point.pointCode }}</title>
+                  <title>{{ point.pointName }} / {{ point.pointCode || point.id }} / 任务路径点</title>
                 </g>
               </template>
               <g
                 v-for="robot in drawableRobots"
                 :key="robot.robotId"
-                :transform="`translate(${robot.pixel.x}, ${robot.pixel.y}) scale(${1 / zoom})`"
+                :transform="`translate(${robot.pixel.x}, ${robot.pixel.y})${showSmall ? '' : ` scale(${1 / zoom})`}`"
                 class="map-preview-robot custom-point"
-                :class="[robot.statusClass, { 'show-icon': (showRobotIds || []).includes(robot.robotId) }]"
+                :class="[robot.statusClass, { 'show-icon': isRobotHighlighted(robot.robotId) }]"
                 @click.stop="handleRobotClick($event, robot)"
               >
+                <circle
+                  v-if="isRobotHighlighted(robot.robotId)"
+                  class="robot-highlight"
+                  cx="0"
+                  cy="-23"
+                  r="30"
+                />
                 <image :href="robotBg" x="-20" y="-43" width="40" height="43" class="robot-bg" />
                 <image
                   :href="robot.iconUrl"
@@ -60,6 +74,7 @@
                   >{{ robot.name }}</div>
                 </foreignObject>
                 <foreignObject
+                  v-if="!showSmall"
                   class="robot-status-fo"
                   :x="robot.statusBgX"
                   y="22"
@@ -70,7 +85,7 @@
                     xmlns="http://www.w3.org/1999/xhtml"
                     class="robot-status-pill"
                     :class="robot.statusClass"
-                  >{{ robot.statusText }}</div>
+                  >{{ robot.customStatusName }}</div>
                 </foreignObject>
               </g>
             </svg>
@@ -83,7 +98,7 @@
             class="location flx-center flex-column"
             ref="pointLocationRef"
           >
-            <img src="./../../../../assets/images/new-bi/address1.png" alt="位置" class="wp40 hp46" />
+            <img src="./../../../../../assets/images/new-bi/address1.png" alt="位置" class="wp40 hp46" />
             <input
               ref="locationLabelInput"
               v-model="locationLabel"
@@ -94,22 +109,23 @@
               @keydown.enter.prevent="blurLocationLabel"
             />
           </div>
-        </div>
-        <div v-show="showContextMenu" class="context-menu d-flex" :style="contextMenuStyle">
-          <div class="flx-center div1">
-            <span>派遣设备前往该点</span>
-            <svg-icon icon-class="right" class="ml4" />
-          </div>
-          <div v-if="normalRobots.length" class="div2 ml10">
-            <div v-for="robot in normalRobots" :key="robot.robotId" class="item flx-justify-between p6" :class="robot.statusClass">
-              <span class="name pl14" :class="robot.statusClass">{{ robot.name }}</span>
-              <span class="oper ml4" :class="robot.statusClass" @click="handleSelectRobot(robot)">
-                {{robot.customStatusName === '空闲中' ? '立即派遣' : '终止任务'}}
-              </span>
+          <!-- 放在 stage 内，随 zoom / translate 同步，避免缩放后 getBoundingClientRect 错位 -->
+          <div v-show="showContextMenu" class="context-menu d-flex" style="width: inherit;" :style="contextMenuStyle">
+            <div class="flx-center div1">
+              <span>派遣设备前往该点</span>
+              <svg-icon icon-class="right" class="ml4" />
+            </div>
+            <div v-if="normalRobots.length" class="div2 ml10">
+              <div v-for="robot in normalRobots" :key="robot.robotId" class="item flx-justify-between p6" :class="robot.statusClass">
+                <span class="name pl14" :class="robot.statusClass">{{ robot.name }}</span>
+                <span class="oper ml4" :class="robot.statusClass" @click="handleSelectRobot(robot)">
+                  {{robot.customStatusName === '空闲中' ? '立即派遣' : '终止任务'}}
+                </span>
+              </div>
             </div>
           </div>
         </div>
-        <div class="map-operation">
+        <div v-if="operList.length" class="map-operation">
           <div class="operation">
             <div
               v-for="(item, index) in operList"
@@ -145,25 +161,26 @@
         <p class="notice-modal__text">当前选择装备正在【任务中】，是否终止任务？进行新任务</p>
         <div class="notice-modal__btns">
           <button type="button" class="notice-modal__btn" @click="closeNotice">取消</button>
-          <button type="button" class="notice-modal__btn is-primary" @click="executeTask">确定</button>
+          <button type="button" class="notice-modal__btn is-primary" @click="addTask">确定</button>
         </div>
       </div>
     </div>
     <RobotControlPart ref="robotControlPartRef" />
     <RobotCarControlPart ref="robotCarControlPartRef" />
     <Robot1 :showAnimate="true" ref="robot1Ref" @showControlPart="showControlPart" @showPath="showPathArea" @showSlam="showSlam" @showArea="showDashedArea" @clear="clear" />
-    <Slam ref="slamRef" />
+    <!-- <Slam ref="slamRef" /> -->
   </div>
 </template>
 
 <script>
 import { mapActions, mapState } from 'vuex';
 import addPointTask from './add-point-task.js'
-import Robot1 from '../../gis/globalMap/popup/Robot1.vue'
-import RobotControlPart from '../../gis/globalMap/popup/RobotControlPart.vue'
-import RobotCarControlPart from '../../gis/globalMap/popup/RobotCarControlPart.vue'
-import Slam from '../../gis/globalMap/popup/Slam.vue'
+import Robot1 from '../popup/Robot1.vue'
+import RobotControlPart from '../popup/RobotControlPart.vue'
+import RobotCarControlPart from '../popup/RobotCarControlPart.vue'
+// import Slam from '../../gis/globalMap/popup/Slam.vue'
 import { ROBOT_TYPE_INFO } from '@/constants/robot.js'
+import { addTaskByPoint } from '@/api/new-bi.js';
 
 const ROBOT_BG = require('@/assets/images/new-bi/robot-bg.svg')
 const ROBOT_ICON_SCALE = 0.55
@@ -171,10 +188,10 @@ const ROBOT_ICON_SCALE = 0.55
 export default {
   name: 'BiPatrolSlam',
   mixins: [addPointTask],
-  components: { Robot1, RobotControlPart, RobotCarControlPart, Slam },
+  components: { Robot1, RobotControlPart, RobotCarControlPart },
   props: {
     map: { type: Object, default: null },
-    points: { type: Array, default: () => [] },
+    // points: { type: Array, default: () => [] },
     selectedPointId: { type: Number, default: null },
     pathPointIds: { type: Array, default: () => [] },
     showLabels: { type: Boolean, default: false }
@@ -196,6 +213,7 @@ export default {
       offsetX: 0,
       offsetY: 0,
       isDragging: false,
+      dragMoved: false,
       startX: 0,
       startY: 0,
       startOffsetX: 0,
@@ -204,30 +222,30 @@ export default {
       popupOffset: { x: 0, y: 0 },
       activeRobotId: null,
       operList: [
-        {
-          icon: 'map-path',
-          name: '路径',
-          key: 'path',
-          action: 'renderPath'
-        },
-        {
-          icon: 'map-location',
-          name: '定位',
-          key: 'location',
-          action: 'backCenter'
-        },
-        {
-          icon: 'map-zoom-in',
-          name: '放大',
-          key: 'zoomIn',
-          action: 'zoomIn'
-        },
-        {
-          icon: 'map-zoom-out',
-          name: '缩小',
-          key: 'zoomOut',
-          action: 'zoomOut'
-        },
+        // {
+        //   icon: 'map-path',
+        //   name: '路径',
+        //   key: 'path',
+        //   action: 'renderPath'
+        // },
+        // {
+        //   icon: 'map-location',
+        //   name: '定位',
+        //   key: 'location',
+        //   action: 'backCenter'
+        // },
+        // {
+        //   icon: 'map-zoom-in',
+        //   name: '放大',
+        //   key: 'zoomIn',
+        //   action: 'zoomIn'
+        // },
+        // {
+        //   icon: 'map-zoom-out',
+        //   name: '缩小',
+        //   key: 'zoomOut',
+        //   action: 'zoomOut'
+        // },
       ],
       showPath: false,
       showNotice: false,
@@ -236,9 +254,13 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds', 'taskPathPoints']),
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
+    },
+    // biPatrolMonitor：精简图标，不展示状态信息（与 GIS 一致）
+    showSmall() {
+      return this.$route.name === 'biPatrolMonitor'
     },
     popupStyle() {
       return this.$route.name === 'biIndex' ? {
@@ -251,12 +273,6 @@ export default {
       return Object.values(this.robotBaseInfo || {}).filter(item => item.status === 'online') || []
     },
     hasPreview() {
-      // console.log(123, this.map, this.map?.resolution !== undefined &&
-      //   this.map?.originX !== undefined &&
-      //   this.map?.originY !== undefined &&
-      //   this.map?.originYaw !== undefined, !!this.map?.previewFileId &&
-      //   !!this.map?.previewWidth &&
-      //   !!this.map?.previewHeight);
       return !!this.map?.previewWidth &&
         !!this.map?.previewHeight &&
         this.map?.resolution !== undefined &&
@@ -271,24 +287,73 @@ export default {
         transform: `translate(${this.offsetX}px, ${this.offsetY}px)`
       }
     },
+    selectedShowRobotId() {
+      const ids = Array.isArray(this.showRobotIds) ? this.showRobotIds : []
+      return ids.length === 1 ? ids[0] : null
+    },
+    // 选中单个装备时：按 runningTaskId + 当前 map.id 匹配任务路径
+    activeTaskPathData() {
+      if (!this.selectedShowRobotId) return null
+      const robot = this.robotBaseInfo?.[this.selectedShowRobotId] || {}
+      const taskId = robot.runningTaskId
+      if (taskId === undefined || taskId === null || taskId === '') return null
+      const pathData = this.taskPathPoints?.[taskId]
+      if (!pathData || !Array.isArray(pathData.pathPoints) || !pathData.pathPoints.length) return null
+      if (String(pathData.mapId) !== String(this.map?.id)) return null
+      return pathData
+    },
+    canTogglePath() {
+      if (this.selectedShowRobotId) return !!this.activeTaskPathData
+      return Array.isArray(this.map?.points) && this.map.points.length > 0
+    },
+    activePoints() {
+      if (this.selectedShowRobotId && this.activeTaskPathData) {
+        return this.activeTaskPathData.pathPoints
+      }
+      return this.map?.points || []
+    },
+    activePathPointIds() {
+      if (this.selectedShowRobotId && this.activeTaskPathData) {
+        return this.activeTaskPathData.pathPoints
+          .map(point => point.id ?? point.mapPointId)
+          .filter(id => id !== undefined && id !== null)
+      }
+      if (Array.isArray(this.pathPointIds) && this.pathPointIds.length) return this.pathPointIds
+      return (this.map?.points || []).map(point => point.id).filter(id => id !== undefined && id !== null)
+    },
     drawablePoints() {
-      return this.points
-        .map((point) => ({ ...point, pixel: this.mapPointToPixel(point, this.map) }))
-        .filter((point) => point.pixel)
+      return this.activePoints
+        .map((point) => {
+          const id = point.id ?? point.mapPointId
+          const coordinateX = point.coordinateX ?? point.x
+          const coordinateY = point.coordinateY ?? point.y
+          const pixel = this.mapPointToPixel({
+            ...point,
+            coordinateX,
+            coordinateY
+          }, this.map)
+          return pixel ? { ...point, id, pixel } : null
+        })
+        .filter(Boolean)
     },
     drawableRobots() {
+      // const robots = this.robotBaseInfo?.['test111'] ? [this.robotBaseInfo?.['test111']] : []
+      // biPatrolMonitor：按当前地图关联装备展示；其他场景同样以 slamOfRobot 为准
       const robots = this.slamOfRobot?.[String(this.map?.id)]?.robots || []
       return robots.map(baseRobot => {
         const robot = { ...baseRobot, ...(this.robotBaseInfo?.[baseRobot.robotId] || {}) }
-        const location = { ...(baseRobot.location || {}), ...(this.robotLocation?.[baseRobot.robotId] || {}) }
+        let location = { ...(baseRobot.location || {}), ...(this.robotLocation?.[baseRobot.robotId] || {}) }
+        // if (this.startPoint) {
+        //   location = { ...location, x: -2.627, y: 3.787 }
+        // }
         const coordinateX = location.x ?? location.coordinateX
         const coordinateY = location.y ?? location.coordinateY
         if (coordinateX === undefined || coordinateX === null || coordinateY === undefined || coordinateY === null) return null
         const pixel = this.mapPointToPixel({ coordinateX, coordinateY }, this.map)
         if (!pixel) return null
         const typeInfo = ROBOT_TYPE_INFO[robot.type] || ROBOT_TYPE_INFO.default
-        const statusText = robot.customStatusName || robot.statusName || (robot.status === 'online' ? '在线' : robot.status === 'offline' ? '离线' : '故障')
-        const statusClass = robot.statusClass || (robot.status === 'offline' ? 'gray' : robot.status === 'online' ? 'blue' : 'orange')
+        const statusText = robot.customStatusName || robot.statusName
+        const statusClass = robot.statusClass
         const isCamouflage = statusClass === 'blue' || statusClass === 'green'
         const name = robot.name || robot.deviceName || robot.robotId
         const nameWidth = Math.max(44, Math.ceil(String(name).length * 11) + 8)
@@ -302,35 +367,32 @@ export default {
           iconUrl: require(`@/assets/images/new-bi/${typeInfo.img}.png`),
           iconWidth: typeInfo.width,
           iconHeight: typeInfo.height,
-          statusClass,
-          statusText,
           statusBgWidth,
           statusBgX
         }
       }).filter(Boolean)
     },
     polylinePoints() {
-      return this.pathPointIds
-        .map((id) => this.drawablePoints.find((point) => point.id === id)?.pixel)
+      return this.activePathPointIds
+        .map((id) => this.drawablePoints.find((point) => String(point.id) === String(id))?.pixel)
         .filter(Boolean)
         .map((pixel) => `${pixel.x},${pixel.y}`)
         .join(" ")
     },
     contextMenuStyle() {
-      // 依赖平移/缩放，保证菜单位置随右键点更新
-      const { offsetX, offsetY, zoom, showContextMenu } = this
-      if (!showContextMenu || !this.locationPoint || !this.$refs.canvas || !this.$refs.viewportRef) {
+      // 菜单在 stage 内：直接用地图像素 * zoom，与临时点同一坐标系，缩放/平移自动同步
+      if (!this.showContextMenu || !this.locationPoint) {
         return { display: 'none' }
       }
-      void offsetX
-      void offsetY
-      void zoom
-      const canvasRect = this.$refs.canvas.getBoundingClientRect()
-      const viewportRect = this.$refs.viewportRef.getBoundingClientRect()
+      const zoom = Number(this.zoom) || 1
+      const pixelX = Number(this.locationPoint.pixelX)
+      const pixelY = Number(this.locationPoint.pixelY)
+      const pointX = Number.isFinite(pixelX) ? pixelX * zoom : 0
+      const pointY = Number.isFinite(pixelY) ? pixelY * zoom : 0
       return {
         display: 'flex',
-        left: `${canvasRect.left - viewportRect.left + (this.locationPoint.x || 0) + 65}px`,
-        top: `${canvasRect.top - viewportRect.top + (this.locationPoint.y || 0) - 27}px`
+        left: `${pointX + 65}px`,
+        top: `${pointY - 27}px`
       }
     },
     noticeDialogStyle() {
@@ -371,8 +433,11 @@ export default {
   watch: {
     previewSource: {
       immediate: true,
-      handler({ id, cacheKey, hasPreview }) {
-        // console.log('previewSource changed:', this.map, { id, cacheKey, hasPreview });
+      handler({ id, cacheKey, hasPreview }, oldVal) {
+        // 切换 SLAM 地图：清空路径/画线/打点，重新加载底图与装备
+        if (oldVal && String(oldVal.id) !== String(id)) {
+          this.resetSlamDrawState()
+        }
         this.revokeImageUrl()
         this.previewImageStatus = '地图预览加载中'
         if (!hasPreview || id === undefined || id === null) return
@@ -389,6 +454,14 @@ export default {
         })
       },
     },
+    showRobotIds: {
+      deep: true,
+      handler() {
+        if (this.showPath && !this.canTogglePath) {
+          this.showPath = false
+        }
+      }
+    }
   },
   mounted() {
     this.$nextTick(() => {
@@ -398,6 +471,9 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setShowRobotIds']),
+    isRobotHighlighted(robotId) {
+      return (this.showRobotIds || []).some(id => String(id) === String(robotId))
+    },
     handleRobotClick(event, robot) {
       // 点击装备时还原 SLAM 绘制状态（临时点、路径线），仅保留装备信息
       this.resetSlamDrawState()
@@ -414,6 +490,7 @@ export default {
       } else {
         this.activeRobotId = robot.robotId
       }
+      // Robot1.show -> clear([robotId]) -> setShowRobotIds，与 GIS 一致
       this.$refs.robot1Ref?.show(event, robot)
     },
     resetSlamDrawState() {
@@ -422,9 +499,21 @@ export default {
       this.showContextMenu = false
       this.showNotice = false
       this.locationLabel = '临时点'
+      this.endPoint = null
+      this.startPoint = null
+      this.unloadedPath = []
+      this.loadedPath = []
+      this.lastDrawnPaths = null
       if (typeof this.reset === 'function') {
         this.reset()
       }
+    },
+    togglePath(visible) {
+      if (!this.canTogglePath) {
+        this.showPath = false
+        return
+      }
+      this.showPath = typeof visible === 'boolean' ? visible : !this.showPath
     },
     closePopup() {
       this.popupVisible = false
@@ -500,14 +589,14 @@ export default {
       const nextVisible = typeof visible === 'boolean' ? visible : !controlRef?.visible
       controlRef?.show(nextVisible)
     },
-    showPathArea(flag) {
-      this.showPath = !!flag
+    showPathArea() {
+      this.showPath = !this.showPath      
     },
     showDashedArea() {
       // SLAM 地图暂无区域图层，保留接口以兼容 Robot1
     },
     showSlam(visible) {
-      this.$refs.slamRef?.show(visible)
+      // this.$refs.slamRef?.show(visible)
     },
     clear(robotId) {
       this.setShowRobotIds(robotId || [])
@@ -522,17 +611,18 @@ export default {
       const pixel = this.getPixelByRobotId(robot.robotId)
       if (!pixel) return null
       const startPoint = [parseInt(pixel.x), parseInt(pixel.y)]
-      const path = this.getPaths(startPoint, this.endPoint)
-      if (!path) {
-        return
+      if (!this.endPoint) return
+      // 开启安全区域判断时：先校验是否存在可通行自定义路径
+      if (this.enableSafetyAreaCheck) {
+        const path = this.getPaths(startPoint, this.endPoint)
+        if (!path) return
       }
       if (robot.customStatusName !== '空闲中') {
         this.showNotice = true
         this.closeContextMenu()
         return
       }
-      this.setStartPoint(startPoint)
-      this.closeContextMenu()
+      this.addTask(startPoint)
     },
     closeContextMenu() {
       this.showContextMenu = false
@@ -540,10 +630,26 @@ export default {
     closeNotice() {
       this.showNotice = false
     },
-    executeTask() {
+    async addTask(startPoint) {
+      const pixel = { x: this.endPoint?.[0] || 0, y: this.endPoint?.[1] || 0 }
+      const { coordinateX, coordinateY, coordinateZ } = this.pixelToMapPoint(pixel, this.map)
+      const data = {
+        robotId: this.robotId,
+        x: coordinateX,
+        y: coordinateY,
+        yaw: coordinateZ,
+      }
+      const res = await addTaskByPoint(data)
+      console.log('派遣任务结果', res)
       this.showNotice = false
-      this.setStartPoint()
+      this.setStartPoint(startPoint)
       this.closeContextMenu()
+      // if (res.code === 0) {
+      //   this.$message.success('任务派遣成功')
+      //   this.closeContextMenu()
+      // } else {
+      //   this.$message.error(res.msg || '任务派遣失败')
+      // }
     },
     saveLocationLabel() {
       const next = String(this.locationLabel || '').trim()
@@ -567,15 +673,7 @@ export default {
       this[item.action]();
     },
     renderPath() {
-      this.showPath = !this.showPath;
-      // console.log(11, this.pathPointIds
-      //   .map((id) => this.drawablePoints.find((point) => point.id === id)?.pixel).filter(Boolean)
-      //   .map((pixel) => `${pixel.x},${pixel.y}`)
-      //   .join(" "))
-
-      //   console.log(2, this.polylinePoints);
-        
-      // 渲染路径及点
+      this.togglePath()
     },
     updateZoomBounds(reset = false) {
       const viewport = this.$refs.viewportRef
@@ -624,8 +722,9 @@ export default {
       this.offsetY = 0
     },
     handleMouseDown(e) {
-      if (e.target.closest('.map-preview-point') || e.target.closest('.map-preview-robot') || e.target.closest('.map-operation') || e.target.closest('.context-menu')) return
+      if (e.target.closest('.map-preview-point') || e.target.closest('.map-preview-robot') || e.target.closest('.map-operation') || e.target.closest('.context-menu') || e.target.closest('.location')) return
       this.isDragging = true
+      this.dragMoved = false
       this.startX = e.clientX
       this.startY = e.clientY
       this.startOffsetX = this.offsetX
@@ -635,6 +734,9 @@ export default {
     },
     handleMouseMove(e) {
       if (!this.isDragging) return
+      if (Math.abs(e.clientX - this.startX) > 3 || Math.abs(e.clientY - this.startY) > 3) {
+        this.dragMoved = true
+      }
       // 当前视图内自由拖拽
       this.offsetX = this.startOffsetX + e.clientX - this.startX
       this.offsetY = this.startOffsetY + e.clientY - this.startY
@@ -706,11 +808,26 @@ export default {
         y: ((event.clientY - rect.top) / rect.height) * Number(this.map.previewHeight)
       };
     },
+    // 有临时点但尚未生成临时路径时，点击空白处隐藏临时点与右键菜单
+    clearTempPointIfNoPath() {
+      if (!this.locationPoint) return
+      const hasTempPath = !!this.startPoint ||
+        (this.unloadedPath && this.unloadedPath.length > 0) ||
+        (this.loadedPath && this.loadedPath.length > 0)
+      if (hasTempPath) return
+      this.locationPoint = null
+      this.showContextMenu = false
+      this.endPoint = null
+    },
+    handleCanvasBlankClick() {
+      // 拖拽平移地图后不触发清除
+      if (this.dragMoved) return
+      this.clearTempPointIfNoPath()
+    },
     handleMapClick(event) {
+      this.clearTempPointIfNoPath()
       const pixel = this.eventToPixel(event);
       const point = this.pixelToMapPoint(pixel, this.map);
-      // console.log('point', point);
-      
       // if (point) this.$emit("map-click", point);
     },
     handlePointClick(point) {
@@ -738,11 +855,18 @@ export default {
 <style lang="scss">
 .map-preview-box {
   position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 .map-preview-viewport {
   position: relative;
   width: 100%;
   height: 100%;
+  max-width: 100%;
+  min-width: 0;
   // background: rgb(243, 240, 210);
   background: #cdcdcd;
   overflow: hidden;
@@ -769,6 +893,7 @@ export default {
       width: 100%;
       height: 100%;
       pointer-events: none;
+      overflow: visible;
       // cursor: crosshair;
       .map-preview-point {
         pointer-events: auto;
@@ -807,6 +932,15 @@ export default {
       .map-preview-robot {
         pointer-events: auto;
         cursor: pointer;
+        .robot-highlight {
+          fill: rgba(21, 154, 255, 0.28);
+          stroke: #159AFF;
+          stroke-width: 1;
+          pointer-events: none;
+        }
+        &.show-icon .robot-bg {
+          filter: drop-shadow(0 0 6px rgba(21, 154, 255, 0.95));
+        }
         .robot-name-fo {
           overflow: visible;
         }
@@ -977,12 +1111,31 @@ export default {
   z-index: 20;
   pointer-events: auto;
   .div1, .div2 {
+    position: relative;
     padding: 9px 10px;
     border-radius: 4px;
     border: 2px solid #000;
     background: rgba(0, 19, 48, 0.9);
     box-shadow: inset 0 0 20px 0 rgba(1, 80, 170, 0.8);
     backdrop-filter: blur(5px);
+    &::before {
+      background: linear-gradient(90deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) left top no-repeat,
+        linear-gradient(180deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) left top no-repeat,
+        linear-gradient(270deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) right bottom no-repeat,
+        linear-gradient(0deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) right bottom no-repeat;
+      background-size: 80px 2.5px, 2.5px 80px, 80px 2.5px, 2.5px 80px;
+      background-repeat: no-repeat;
+      border-radius: 4px;
+    }
+    &::after {
+      background: linear-gradient(270deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) right top no-repeat,
+        linear-gradient(180deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) right top no-repeat,
+        linear-gradient(90deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) left bottom no-repeat,
+        linear-gradient(0deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) left bottom no-repeat;
+      background-size: 80px 2.5px, 2.5px 80px, 80px 2.5px, 2.5px 80px;
+      background-repeat: no-repeat;
+      border-radius: 4px;
+    }
   }
   .div1 {
     height: fit-content;

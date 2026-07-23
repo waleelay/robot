@@ -1575,10 +1575,7 @@ const getters = {
   getMediaSocket: (state) => state.mediaSocket,
   getWsConnected: (state) => state.wsConnected,
   getActiveCameras: state => state.activeCameras,
-  getControlProfiles: state => state.controlProfiles,
-  getIncomingCalls: state => state.incomingCalls,
-  getActiveIncomingCall: state => state.activeIncomingCall,
-  getCallOperationPending: state => state.callOperationPending
+  getControlProfiles: state => state.controlProfiles
 }
 
 // 导出 WebSocket 模块

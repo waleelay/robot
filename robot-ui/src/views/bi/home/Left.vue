@@ -102,9 +102,9 @@ export default {
         // { name: '高风险', value: this.alarmsData?.high?.items?.length || 0, color: '#FF2424' },
         // { name: '中风险', value: this.alarmsData?.medium?.items?.length || 0, color: '#FFA024' },
         // { name: '低风险', value: this.alarmsData?.low?.items?.length || 0, color: '#24CBFF' },
-        { name: '高风险', value: 1, color: '#FF2424' },
-        { name: '中风险', value: 2, color: '#FFA024' },
-        { name: '低风险', value: 20, color: '#00D8A4' },
+        { name: '高风险', value: 0, color: '#FF2424' },
+        { name: '中风险', value: 0, color: '#FFA024' },
+        { name: '低风险', value: 0, color: '#00D8A4' },
       ]
     },
     robotMainCameras() {

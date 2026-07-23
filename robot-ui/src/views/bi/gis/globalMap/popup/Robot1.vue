@@ -66,6 +66,7 @@
 <script>
 import { mapActions, mapState } from 'vuex';
 import gsap from './gsap.js';
+import { getDescArr } from '../../../../../utils/index.js';
 export default {
   name: 'Modal',
   mixins: [gsap],
@@ -90,7 +91,7 @@ export default {
     },
     taskList() {
       const { task = [] } = this.currenRobot || {}
-      return task?.map(item => this.taskData?.[item.taskId] || item) || []
+      return getDescArr(task?.map(item => this.taskData?.[item.taskId] || item) || [], 'timestamp')
     },
     // getRunningTask() {
     //   return this.taskList?.find(item => item.status === 'running') || null

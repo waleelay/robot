@@ -97,6 +97,10 @@ export default({
     },
     renderGroupBarChart() {
       if (!this.barChart) return;
+      let count = 0;
+      this.firstLayerData.forEach(item => {
+        count += item.value;
+      });
       // 分组柱状图配置：三个系列，分别代表运行中、故障、离线，通过barCategoryGap和barGap控制并排不重叠
       const option = {
         // 工具箱辅助保存图片等
@@ -132,7 +136,7 @@ export default({
             const total = this.items.reduce(function(sum, cur) { return sum + cur.value; }, 0);
             const item = this.items.find(item => item.name === name);
             if (item) {
-              var percent = (item.value / total * 100).toFixed(0);
+              var percent = total ? ((item.value / total) * 100).toFixed(0) : 0;
               return `${name}  ${percent }%`;
             }
             return name;
@@ -150,7 +154,35 @@ export default({
         // 配色工具背景透明
         backgroundColor: 'transparent',
         // 系列定义: 第一层数据环形图 + 第二层阴影环形图
-        series: [
+        series: !count ? [{
+            type: 'pie',
+            // 圆心偏左 (左侧留出30%空间，饼图位于左侧区域，右边留给图例)
+            center: ['25%', '50%'],
+            // 半径严格按照要求: 外半径93%，内半径37.5%  -> 对应第一层 radius: ['37.5%', '93%']
+            radius: ['31.5%', '95%'],
+            data: [{ name: '阴影层', value: 100, itemStyle: { color: 'rgba(0, 19, 66, 0.50)' } }],
+            label: { show: false },
+            labelLine: { show: false },
+            // 关闭鼠标悬浮高亮效果，避免干扰第一层的交互
+            emphasis: { scale: false, label: { show: false } },
+            // 静默模式，不触发tooltip
+            silent: true,
+            // 工具提示关闭
+            tooltip: { show: false },
+            // 扇区间隙为0，构成完整圆环
+            itemStyle: {
+              color: 'rgba(0, 19, 66, 0.50)',
+              borderWidth: 0,
+              borderRadius: 0,
+              shadowBlur: 0
+            },
+            // 起始角度与第一层一致保证对齐（实际上透明覆盖无影响）
+            startAngle: 30,
+            // 避免图例显示该系列
+            legendHoverLink: false,
+            // 不参与图例计算
+            seriesLayoutBy: 'column'
+          }] : [
           {
             // ========= 第一层：项目占比环形图 =========
             name: '项目占比',
