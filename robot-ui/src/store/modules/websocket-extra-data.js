@@ -243,7 +243,7 @@ const actions = {
   setRobotLocation({ commit }, { robotId, location }) {
     commit('SET_ROBOT_LOCATION', { robotId, location });
   },
-  syncRobot({ commit }, event) {
+  syncRobot({ commit, rootState }, event) {
     // | `panorama.device.status.changed`   | 设备在线、离线、故障、电量变化                   |
     // | ---------------------------------- | ------------------------------------------------ |
     // | `panorama.device.location.changed` | 地图位置、速度、朝向变化                         |
@@ -253,8 +253,11 @@ const actions = {
     if (!event) return
     if (event.event === 'panorama.device.status.changed') {
       // console.log(123, event.data.robotId, event.data.status);
-      
-      commit('SET_ROBOT_BASE_INFO', { robotId: event.data.robotId, robotInfo: { ...state.robotBaseInfo[event.data.robotId], ...event.data } });
+      const robotId= event.data.robotId;
+      const robot = rootState.websocketRobot.robots?.length
+      ? rootState.websocketRobot.robots.find(item => item.robotId === robotId) || {}
+      : {};
+      commit('SET_ROBOT_BASE_INFO', { robotId, robotInfo: { ...robot, ...state.robotBaseInfo[robotId], ...event.data }});
       // commit('SET_ROBOT_BASE_INFO', { robotId: 'test111', robotInfo: { ...state.robotBaseInfo['test111'], status: 'online' } });
     } else if (event.event === 'panorama.device.location.changed') {      
       // commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });

@@ -45,22 +45,50 @@
                 :class="[robot.statusClass, { 'show-icon': isRobotHighlighted(robot.robotId) }]"
                 @click.stop="handleRobotClick($event, robot)"
               >
-                <circle
+                <!-- 选中光圈：Figma 50×54，相对 tip 偏移 (-25, -47) -->
+                <image
                   v-if="isRobotHighlighted(robot.robotId)"
-                  class="robot-highlight"
-                  cx="0"
-                  cy="-23"
-                  r="30"
+                  :href="robotSelectedHalo"
+                  x="-25"
+                  y="-47"
+                  width="50"
+                  height="54"
+                  class="robot-selected-halo"
+                  pointer-events="none"
                 />
+                <!-- 默认/选中底图：Figma 39.68×42.97 ≈ 40×43 -->
                 <image :href="robotBg" x="-20" y="-43" width="40" height="43" class="robot-bg" />
+                <!-- 装备图标：Figma 机器狗展示尺寸 23.017×16.525 -->
                 <image
                   :href="robot.iconUrl"
-                  :x="-robot.iconWidth * robotIconScale / 2"
-                  :y="-(23 + robot.iconHeight * robotIconScale / 2)"
-                  :width="robot.iconWidth * robotIconScale"
-                  :height="robot.iconHeight * robotIconScale"
+                  :x="-robot.displayIconWidth / 2"
+                  :y="-(23 + robot.displayIconHeight / 2)"
+                  :width="robot.displayIconWidth"
+                  :height="robot.displayIconHeight"
                   class="robot-type-icon"
                 />
+                <!-- 选中四角：Figma 66×6（含发光 viewBox 72×12），上下各一，底边垂直翻转 -->
+                <template v-if="isRobotHighlighted(robot.robotId)">
+                  <image
+                    :href="robotSelectedCorners"
+                    x="-36"
+                    y="-56"
+                    width="72"
+                    height="12"
+                    class="robot-selected-corners"
+                    pointer-events="none"
+                  />
+                  <g transform="matrix(1 0 0 -1 0 20)" pointer-events="none">
+                    <image
+                      :href="robotSelectedCorners"
+                      x="-36"
+                      y="4"
+                      width="72"
+                      height="12"
+                      class="robot-selected-corners"
+                    />
+                  </g>
+                </template>
                 <foreignObject
                   class="robot-name-fo"
                   :x="-robot.nameWidth / 2"
@@ -183,7 +211,11 @@ import { ROBOT_TYPE_INFO } from '@/constants/robot.js'
 import { addTaskByPoint } from '@/api/new-bi.js';
 
 const ROBOT_BG = require('@/assets/images/new-bi/robot-bg.svg')
-const ROBOT_ICON_SCALE = 0.55
+const ROBOT_SELECTED_HALO = require('@/assets/images/new-bi/robot-selected-halo.svg')
+const ROBOT_SELECTED_CORNERS = require('@/assets/images/new-bi/robot-selected-corners.svg')
+// Figma 机器狗图标展示 23.017×16.525，对应源图 38×28
+const ROBOT_ICON_SCALE_X = 23.017 / 38
+const ROBOT_ICON_SCALE_Y = 16.525 / 28
 
 export default {
   name: 'BiPatrolSlam',
@@ -203,7 +235,8 @@ export default {
       maxZoomValue: 3,
       resizeObserver: null,
       robotBg: ROBOT_BG,
-      robotIconScale: ROBOT_ICON_SCALE,
+      robotSelectedHalo: ROBOT_SELECTED_HALO,
+      robotSelectedCorners: ROBOT_SELECTED_CORNERS,
       imageUrl: '',
       previewImageStatus: '地图预览加载中',
       imageObjectUrl: '',
@@ -359,6 +392,8 @@ export default {
         const nameWidth = Math.max(44, Math.ceil(String(name).length * 11) + 8)
         const statusBgWidth = Math.max(56, String(statusText).length * 12 + (isCamouflage ? 36 : 28))
         const statusBgX = -statusBgWidth / 2
+        const displayIconWidth = typeInfo.width * ROBOT_ICON_SCALE_X
+        const displayIconHeight = typeInfo.height * ROBOT_ICON_SCALE_Y
         return {
           ...robot,
           name,
@@ -367,6 +402,8 @@ export default {
           iconUrl: require(`@/assets/images/new-bi/${typeInfo.img}.png`),
           iconWidth: typeInfo.width,
           iconHeight: typeInfo.height,
+          displayIconWidth,
+          displayIconHeight,
           statusBgWidth,
           statusBgX
         }
@@ -932,14 +969,9 @@ export default {
       .map-preview-robot {
         pointer-events: auto;
         cursor: pointer;
-        .robot-highlight {
-          fill: rgba(21, 154, 255, 0.28);
-          stroke: #159AFF;
-          stroke-width: 1;
+        .robot-selected-halo,
+        .robot-selected-corners {
           pointer-events: none;
-        }
-        &.show-icon .robot-bg {
-          filter: drop-shadow(0 0 6px rgba(21, 154, 255, 0.95));
         }
         .robot-name-fo {
           overflow: visible;

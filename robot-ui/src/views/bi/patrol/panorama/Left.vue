@@ -1,7 +1,8 @@
 <template>
   <div class="left-div pr28 h100 mt25 no-w-scroll" :class="{ 'ml20': !collapse, 'ml10': collapse }" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }">
     <div class="container flex-column w100 h100 common-scroll" style="flex-wrap: nowrap;">
-      <div class="box" :class="{'hp264': deviceTypeStats?.length, 'hp155': !deviceTypeStats?.length}">
+      <!--  :class="{'hp264': deviceTypeStats?.length, 'hp155': !deviceTypeStats?.length}" -->
+      <div class="box hp264">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="getMoreRobotInfo">
           <span class="desc">装备类型</span>
           <!-- <span class="flx-center more curp">

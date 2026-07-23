@@ -524,6 +524,7 @@ export default {
     async setVehicleLightBrightness(part, value) {
       this.vehicleLightState[part].mode = 'CUSTOM'
       this.vehicleLightState[part].brightness = value
+      const next = this.cloneVehicleLightState();
       const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_custom`)
       if (ok) {
         this.confirmedVehicleLightState = this.cloneVehicleLightState(next)
@@ -574,7 +575,6 @@ export default {
               next.muted = status.muted
             }
             this.$set(this.audioState, key, next)
-            commit('SET_AUDIO_STATE', { key, next })
           })
     },
     syncDeviceStatesFromDevices(robotId, devices, options = {}) {

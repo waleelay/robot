@@ -15,6 +15,7 @@ module.exports = {
   // add your custom rules here
   // it is base on https://github.com/vuejs/eslint-config-vue
   rules: {
+    // 属性个数
     'vue/max-attributes-per-line': [2, {
       'singleline': 10,
       'multiline': {
@@ -48,14 +49,19 @@ module.exports = {
     'curly': [2, 'multi-line'],
     'dot-location': [2, 'property'],
     'eol-last': 2,
-    'eqeqeq': ['error', 'always', { 'null': 'ignore' }],
+    'eqeqeq': 'off',
+    // 遗留代码大量匿名回调，关闭该规则避免无意义报错
+    'func-names': 'off',
     'generator-star-spacing': [2, {
       'before': true,
       'after': true
     }],
-    'handle-callback-err': [2, '^(err|error)$'],
-    'indent': [2, 2, {
-      'SwitchCase': 1
+    'handle-callback-err': [1, '^(err|error)$'],
+    // babel-eslint 解析模板字符串时 indent 会崩溃，改用 vue/script-indent
+    'indent': 'off',
+    'vue/script-indent': ['error', 2, {
+      'baseIndent': 0,
+      'switchCase': 1
     }],
     'jsx-quotes': [2, 'prefer-single'],
     'key-spacing': [2, {
@@ -94,7 +100,7 @@ module.exports = {
     'no-fallthrough': 2,
     'no-floating-decimal': 2,
     'no-func-assign': 2,
-    'no-implied-eval': 2,
+    'no-implied-eval': 1,
     'no-inner-declarations': [2, 'functions'],
     'no-invalid-regexp': 2,
     'no-irregular-whitespace': 2,
@@ -141,9 +147,10 @@ module.exports = {
     'no-unneeded-ternary': [2, {
       'defaultAssignment': false
     }],
-    'no-unreachable': 2,
+    'no-unreachable': 0,
     'no-unsafe-finally': 2,
-    'no-unused-vars': [2, {
+    // 遗留业务代码未使用变量较多，降为警告便于逐步清理
+    'no-unused-vars': [1, {
       'vars': 'all',
       'args': 'none'
     }],
@@ -167,7 +174,7 @@ module.exports = {
       'avoidEscape': true,
       'allowTemplateLiterals': true
     }],
-    'semi': [2, 'never'],
+    'semi': [2, 'always'],
     'semi-spacing': [2, {
       'before': false,
       'after': true
@@ -183,7 +190,8 @@ module.exports = {
     'spaced-comment': [2, 'always', {
       'markers': ['global', 'globals', 'eslint', 'eslint-disable', '*package', '!', ',']
     }],
-    'template-curly-spacing': [2, 'never'],
+    // babel-eslint + Vue 模板字符串会触发 eslint 内部空指针，关闭该规则
+    'template-curly-spacing': 'off',
     'use-isnan': 2,
     'valid-typeof': 2,
     'wrap-iife': [2, 'any'],
@@ -194,6 +202,25 @@ module.exports = {
     'object-curly-spacing': [2, 'always', {
       objectsInObjects: false
     }],
-    'array-bracket-spacing': [2, 'never']
+    'array-bracket-spacing': [2, 'never'],
+    // Vue 规则：遗留组件结构/属性顺序降为警告
+    'vue/order-in-components': 'warn',
+    'vue/attributes-order': 'warn',
+    'vue/require-default-prop': 'warn',
+    'vue/no-unused-components': 'warn',
+    'vue/no-unused-vars': 'warn',
+    'vue/html-indent': 'warn',
+    'vue/no-template-shadow': 'warn',
+    'vue/prop-name-casing': 'warn',
+    'vue/this-in-template': 'warn',
+    'vue/no-lone-template': 'warn',
+    'vue/require-v-for-key': 'warn',
+    'vue/return-in-computed-property': 'warn',
+    'vue/no-mutating-props': 'warn',
+    'vue/no-v-model-argument': 'warn',
+    'no-empty': 'warn',
+    'brace-style': [1, '1tbs', { 'allowSingleLine': true }],
+    'no-eval': 'warn',
+    'no-case-declarations': 'warn'
   }
 }

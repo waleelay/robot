@@ -1,5 +1,5 @@
 {
-  "name": "ruoyi",
+  "name": "eiop",
   "version": "3.8.8",
   "description": "具身智能平台指挥中心",
   "author": "",
@@ -9,7 +9,8 @@
     "build:prod": "vue-cli-service build",
     "build:stage": "vue-cli-service build --mode staging",
     "preview": "node build/index.js --preview",
-    "lint": "eslint --ext .js,.vue src"
+    "lint": "eslint --ext .js,.vue src",
+    "lint:fix": "eslint --ext .js,.vue src --fix"
   },
   "husky": {
     "hooks": {

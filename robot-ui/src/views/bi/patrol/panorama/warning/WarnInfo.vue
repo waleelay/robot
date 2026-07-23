@@ -183,7 +183,7 @@ const defaultOptions = [
   { key: 'thermal', label: '云台红外光', url: '2' },
   { key: 'front', label: '前置摄像头', url: '3' }
 ]
-import Gis from './../../../../largeScreen/dialog/gis.vue';
+// import Gis from './../../../../largeScreen/dialog/gis.vue';
 import WarningExecute from './WarningExecute.vue';
 import WarningExecuteNo from './WarningExecuteNo.vue';
 import WarningExecuteError from './WarningExecuteError.vue';
@@ -193,7 +193,7 @@ export default {
   name: 'WarningInfo',
   dicts: ['qh_alarm_record_type'],
   components: {
-    Gis,
+    // Gis,
     WarningExecute,
     WarningExecuteNo,
     WarningExecuteError

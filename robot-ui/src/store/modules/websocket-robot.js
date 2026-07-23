@@ -1140,7 +1140,7 @@ const actions = {
   },
 
   // 重启摄像头
-  async restartCamera({ commit, state }, camera) {
+  async restartCamera({ commit, dispatch, state }, camera) {
     if (camera.recordingActive) {
       await dispatch('stopCameraRecording', camera)
     }
@@ -1352,7 +1352,7 @@ const actions = {
     camera.latencyMs = null
     camera.latencyLevel = 'unknown'
   },
-  async videoStatsReport({}, track, room) {
+  async videoStatsReport({ dispatch }, track, room) {
     const peerStats = await dispatch('peerConnectionStats', room)
     if (peerStats) return peerStats
     if (track && typeof track.getRTCStatsReport === 'function') {
