@@ -7,7 +7,6 @@ import './assets/styles/element-variables.scss'
 
 import './utils/dialogDrag'
 import '@/assets/styles/index.scss' // global css
-import '@/assets/styles/ruoyi.scss' // ruoyi css
 import '@/assets/styles/font.css' // font css
 import App from './App'
 import store from './store'

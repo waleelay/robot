@@ -12,14 +12,6 @@ NProgress.configure({ showSpinner: false })
 
 const whiteList = [
   '/login',
-  '/register',
-  '/bigScreen',
-  '/images/1.jpg',
-  '/bigScreen/default',
-  '/bigScreen/shouye', 
-  '/bigScreen/xlxc', 
-  '/bigScreen/rygk', 
-  '/bigScreen/cljg',
   '/bi/home',
   '/bi/index',
   '/bi/patrol/panorama',
@@ -29,7 +21,7 @@ const whiteList = [
   '/bi/patrol/app',
   '/bi/staff',
   '/bi/vehicle',
-  '/bi/demo',
+  // '/bi/demo',
 ]
 
 router.beforeEach((to, from, next) => {
