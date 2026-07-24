@@ -1,0 +1,141 @@
+services:
+  nginx:
+    image: ${NGINX_IMAGE:-nginx:alpine}
+    platform: ${TARGET_PLATFORM:-linux/amd64}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-nginx
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/nginx/conf/nginx.conf:/etc/nginx/nginx.conf:ro"
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/nginx/ssl:/etc/nginx/ssl:ro"
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/nginx/html:/usr/share/nginx/html:ro"
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/nginx/logs:/var/log/nginx"
+    depends_on:
+      - media-service
+      - control-service
+      - bigscreen-bff
+      - livekit-server
+
+  tts:
+    profiles:
+      - tts
+    image: ${TTS_IMAGE:-local/sherpa-tts-http:zh-en}
+    platform: ${TARGET_PLATFORM:-linux/amd64}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-tts
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      TTS_OUTPUT_ROOT: ${TTS_OUTPUT_ROOT:-/data/tts}
+      TTS_MAX_TEXT_LENGTH: ${TTS_MAX_TEXT_LENGTH:-1000}
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/tts:/data/tts"
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/tts/app.py:/opt/tts-service/app.py"
+
+  livekit-server:
+    image: ${LIVEKIT_SERVER_IMAGE:-livekit/livekit-server:latest}
+    platform: ${TARGET_PLATFORM:-linux/amd64}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-livekit-server
+    restart: unless-stopped
+    network_mode: host
+    command: --config /livekit.yaml
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/livekit.yaml:/livekit.yaml"
+
+  livekit-egress:
+    image: ${LIVEKIT_EGRESS_IMAGE:-livekit/egress:latest}
+    platform: ${TARGET_PLATFORM:-linux/amd64}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-livekit-egress
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      EGRESS_CONFIG_FILE: /livekit-egress.yaml
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/livekit-egress.yaml:/livekit-egress.yaml"
+    depends_on:
+      - livekit-server
+
+  media-service:
+    image: ${IMAGE_PREFIX:-robot}/media-service:${IMAGE_TAG:-latest}
+    platform: ${TARGET_PLATFORM:-linux/amd64}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-media-service
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      SERVER_PORT: 8088
+      MYSQL_URL: ${MYSQL_URL:-jdbc:mysql://127.0.0.1:3306/robot_media?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+      MYSQL_USERNAME: ${MYSQL_USERNAME:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-123456}
+      REDIS_HOST: ${REDIS_HOST:-127.0.0.1}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      ELASTICSEARCH_URIS: ${ELASTICSEARCH_URIS:-http://127.0.0.1:9200}
+      LIVEKIT_URL: ${LIVEKIT_URL:-ws://127.0.0.1:7880}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-dev-secret-dev-secret-dev-secret-32}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://127.0.0.1:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-robot-media}
+      TTS_ENGINE_URL: ${TTS_ENGINE_URL:-http://127.0.0.1:8080/api/tts}
+      MEDIA_FILE_HLS_FFMPEG_PATH: ${MEDIA_FILE_HLS_FFMPEG_PATH:-ffmpeg}
+      MEDIA_FILE_FFPROBE_PATH: ${MEDIA_FILE_FFPROBE_PATH:-ffprobe}
+      JAVA_DEBUG_ENABLED: ${JAVA_DEBUG_ENABLED:-false}
+      JAVA_DEBUG_PORT: ${MEDIA_SERVICE_DEBUG_PORT:-5005}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/media-service:/app"
+    depends_on:
+      - livekit-server
+      - livekit-egress
+
+  control-service:
+    image: ${IMAGE_PREFIX:-robot}/control-service:${IMAGE_TAG:-latest}
+    platform: ${TARGET_PLATFORM:-linux/amd64}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-control-service
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      CONTROL_SERVER_PORT: 8082
+      MEDIA_SERVICE_BASE_URL: ${MEDIA_SERVICE_BASE_URL:-http://127.0.0.1:8088}
+      MQTT_ENABLED: ${MQTT_ENABLED:-true}
+      MQTT_BROKER_URL: ${MQTT_BROKER_URL:-tcp://127.0.0.1:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-robot-control-service-main}
+      JAVA_DEBUG_ENABLED: ${JAVA_DEBUG_ENABLED:-false}
+      JAVA_DEBUG_PORT: ${CONTROL_SERVICE_DEBUG_PORT:-5006}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/control-service:/app"
+    depends_on:
+      - media-service
+
+  bigscreen-bff:
+    image: ${IMAGE_PREFIX:-robot}/bigscreen-bff:${IMAGE_TAG:-latest}
+    platform: ${TARGET_PLATFORM:-linux/amd64}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-bigscreen-bff
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      BIGSCREEN_BFF_PORT: 8090
+      CENTER_MANAGE_BASE_URL: ${CENTER_MANAGE_BASE_URL:-http://127.0.0.1:8866}
+      CENTER_CONTROL_BASE_URL: ${CENTER_CONTROL_BASE_URL:-http://127.0.0.1:8082}
+      CENTER_V1_CONTROL_BASE_URL: ${CENTER_V1_CONTROL_BASE_URL:-http://127.0.0.1:8867}
+      CENTER_MEDIA_BASE_URL: ${CENTER_MEDIA_BASE_URL:-http://127.0.0.1:8088}
+      CENTER_CONTROL_WS_URL: ${CENTER_CONTROL_WS_URL:-ws://127.0.0.1:8082/ws/control}
+      BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS: ${BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:8080,http://127.0.0.1:8080,http://192.168.*.*:8080,https://192.168.*.*:4443}
+      JAVA_DEBUG_ENABLED: ${JAVA_DEBUG_ENABLED:-false}
+      JAVA_DEBUG_PORT: ${BIGSCREEN_BFF_DEBUG_PORT:-5007}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/bigscreen-bff:/app"
+    depends_on:
+      - media-service
+      - control-service

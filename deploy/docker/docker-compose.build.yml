@@ -1,15 +1,18 @@
 services:
   media-service:
+    platform: ${TARGET_PLATFORM:-linux/amd64}
     build:
       context: ../../backend
     image: ${IMAGE_PREFIX:-robot}/media-service:${IMAGE_TAG:-latest}
 
   control-service:
+    platform: ${TARGET_PLATFORM:-linux/amd64}
     build:
       context: ../../control-service
     image: ${IMAGE_PREFIX:-robot}/control-service:${IMAGE_TAG:-latest}
 
   bigscreen-bff:
+    platform: ${TARGET_PLATFORM:-linux/amd64}
     build:
       context: ../../bigscreen-bff
     image: ${IMAGE_PREFIX:-robot}/bigscreen-bff:${IMAGE_TAG:-latest}
