@@ -18,13 +18,12 @@
 |---|---|
 | `/api/control/snapshots/**` | 当前 `control-service` 无 Snapshot Controller |
 | `/api/control/recordings/**` | 已迁移到 `/api/control/files` 与 `/api/control/video-sessions/{sessionId}/recordings/**` |
-| `/internal/media/video-sessions/{sessionId}/_mock/track-published/{trackSid}` | `backend` 已实现的调试接口，不属于 BFF/Control 对外接口 |
 
 ## 2. 通用约定
 
 ### 2.1 鉴权与用户上下文 Header
 
-当前开发阶段由前端请求头模拟登录态；缺省值在 `CurrentUserResolver` 中定义。
+当前实现从以下请求头解析用户上下文，并在 `CurrentUserResolver` 中保留兼容缺省值。外部生产部署必须由可信网关注入或校验这些身份字段，不能把浏览器自行填写的 Header 作为可信鉴权结果。
 
 | Header | 类型 | 必填 | 说明 |
 |---|---|---:|---|
@@ -811,7 +810,7 @@ GET /api/media/files?fileType=IMAGE&page=0&size=20
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
 |---|---|---|---:|---|
-| `robotId` | path | string | 是 | 当前固定支持 `test111`、`SN006`、`robot-unitree-001` |
+| `robotId` | path | string | 是 | 管理端已登记机器人的序列号/平台路由 ID |
 
 请求示例：
 
@@ -844,7 +843,7 @@ GET /api/control/robots/test111/control-profile
 | `status` | object | 客户端上报的设备运行态，前端开关、弹筒、音量等实时渲染优先使用该字段 |
 | `controlProfile` | object | 动作参数边界 |
 
-响应示例：
+响应示例（仅说明结构，设备 ID 和状态均非固定数据）：
 
 ```json
 {
@@ -863,8 +862,6 @@ GET /api/control/robots/test111/control-profile
       "displayName": "机器人本体",
       "vendor": "SONGLING",
       "model": "SCOUT",
-      "onlineStatus": "offline",
-      "controlStatus": "idle",
       "enabled": true,
       "actions": ["drive.velocity", "navigation.return_home", "docking.leave"],
       "controlProfile": {"maxLinearX": 1.0, "maxLinearY": 0.4, "maxAngularZ": 0.8, "controlFrameRateHz": 10}
@@ -874,8 +871,6 @@ GET /api/control/robots/test111/control-profile
       "scope": "PAYLOAD",
       "deviceType": "LAUNCHER",
       "displayName": "六联发射器",
-      "onlineStatus": "online",
-      "controlStatus": "idle",
       "enabled": true,
       "actions": ["get_status", "set_safety", "fire"],
       "status": {
@@ -1833,7 +1828,6 @@ Backend MQTT 关联说明：
 | POST | `/internal/media/video-sessions/{sessionId}/recordings/start` | Control | 开始实时录像 |
 | POST | `/internal/media/video-sessions/{sessionId}/recordings/{fileId}/stop` | Control | 停止实时录像 |
 | GET | `/internal/media/video-sessions/{sessionId}/recordings/active` | Control | 查询当前活跃录像 |
-| POST | `/internal/media/video-sessions/{sessionId}/_mock/track-published/{trackSid}` | 调试 | 模拟 Track 已发布 |
 
 #### 文件：`FileController`
 
@@ -2524,14 +2518,13 @@ POST /internal/media/video-sessions/vs_123456/release-idle
 {}
 ```
 
-### 5.11 Backend 录像与调试接口
+### 5.11 Backend 录像接口
 
 | 方法 | 路径 | 请求参数 | 响应 |
 |---|---|---|---|
 | POST | `/internal/media/video-sessions/{sessionId}/recordings/start` | Path: `sessionId` | `FileListItemResponse` |
 | POST | `/internal/media/video-sessions/{sessionId}/recordings/{fileId}/stop` | Path: `sessionId`、`fileId` | `FileListItemResponse` |
 | GET | `/internal/media/video-sessions/{sessionId}/recordings/active` | Path: `sessionId` | `FileListItemResponse` |
-| POST | `/internal/media/video-sessions/{sessionId}/_mock/track-published/{trackSid}` | Path: `sessionId`、`trackSid` | `VideoSessionResponse` |
 
 请求示例：
 
@@ -2556,14 +2549,6 @@ POST /internal/media/video-sessions/vs_123456/recordings/start
   "metadata": "{\"source\":\"LIVEKIT_EGRESS\"}"
 }
 ```
-
-调试接口请求示例：
-
-```http
-POST /internal/media/video-sessions/vs_123456/_mock/track-published/TR_VC_001
-```
-
-响应示例：`VideoSessionResponse`，状态通常变为 `STREAMING`。
 
 ### 5.12 Backend 文件接口通用模型
 
@@ -2929,13 +2914,13 @@ HTTP/1.1 204 No Content
 
 #### MQTT `robot/+/media/client/status`
 
-用途：更新 Control Service 本地机器人客户端状态；返回是否从离线变为在线等判断结果仅在进程内使用。
+用途：更新 Control Service 本地机器人客户端状态，并合并管理端登记的设备标识、动作和参数范围；返回是否从离线变为在线等判断结果仅在进程内使用。
 
 关联 MQTT：
 
 | 方向 | Topic | 消费方 / 后续动作 |
 |---|---|---|
-| Go 客户端 -> Control | `robot/+/media/client/status` | `RobotMediaStatusSubscriber.clientStatusListener` 反序列化为 `Map` 后调用 `RobotRegistryService.update(...)`；若客户端从离线变在线，会再查询 `/internal/media/video-sessions/online-restart-commands` 并发布 `robot/{robotId}/media/video/start` |
+| 机器人客户端 -> Control | `robot/+/media/client/status` | `RobotMediaStatusSubscriber.clientStatusListener` 反序列化后先调用 `EquipmentControlService.handleClientState(...)` 合并管理端数据，再调用 `RobotRegistryService.update(...)` 缓存并广播一条 `robot.state`；若客户端从离线变在线，会再查询 `/internal/media/video-sessions/online-restart-commands` 并发布 `robot/{robotId}/media/video/start` |
 
 请求参数：
 
@@ -2954,7 +2939,7 @@ HTTP/1.1 204 No Content
 | `estopActive` | boolean | 否 | null | 急停状态 |
 | `battery` | number | 否 | null | 电量 |
 | `cameras` | array | 否 | `[]` | 摄像头列表 |
-| `devices` | array | 否 | `[]` | 设备能力列表 |
+| `devices` | array | 否 | `[]` | 客户端掌握的设备运行态。对外能力列表由后端与管理端组件合并，运行状态保留在 `devices[].status` |
 
 Payload 示例：
 
@@ -2980,7 +2965,7 @@ Payload 示例：
 
 响应示例：
 
-无 HTTP 响应；`becameOnline` 结果仅用于 Control 进程内判断是否触发恢复推流。
+无 HTTP 响应。每条上报只生成一条合并后的 `robot.state` 广播；这不是仅在首次上报时发布。`becameOnline` 结果仅用于 Control 进程内判断是否触发恢复推流。
 
 ### 5.21 Backend TTS 接口
 
@@ -3072,4 +3057,4 @@ HTTP/1.1 200 OK
 | `stopLiveRecording` | `POST /api/control/video-sessions/{sessionId}/recordings/{fileId}/stop` |
 | `getActiveLiveRecording` | `GET /api/control/video-sessions/{sessionId}/recordings/active` |
 
-`robot-ui/src/api/media.js` 中仍有 `/api/control/snapshots/**`、`/api/control/recordings/**` 旧调用，当前 Java Controller 未实现，联调时建议迁移到 `/api/control/files` 和视频会话录像接口。
+`robot-ui/src/api/media.js` 已移除 `/api/control/snapshots/**`、`/api/control/recordings/**` 旧调用，文件与录像统一使用 `/api/control/files` 和视频会话录像接口。

@@ -119,6 +119,7 @@ export MEDIA_FILE_RETENTION_DAYS='30'
 ```bash
 export CONTROL_SERVER_PORT='8082'
 export MEDIA_SERVICE_BASE_URL='http://localhost:8088'
+export CENTER_MANAGE_BASE_URL='http://localhost:8866'
 export MQTT_ENABLED='true'
 export MQTT_BROKER_URL='tcp://localhost:1883'
 export MQTT_USERNAME=''
@@ -208,9 +209,10 @@ sh deploy/nginx/generate-lan-cert.sh 192.168.124.77
 ```bash
 export LIVEKIT_URL='ws://192.168.124.77:7880'
 export MEDIA_SERVICE_BASE_URL='http://localhost:8088'
+export CENTER_MANAGE_BASE_URL='http://localhost:8866'
 ```
 
-当前 Control 与 Media 已拆为同级独立服务。`control-service` 的 `MEDIA_SERVICE_BASE_URL` 必须指向 Media Service 内部 HTTP 地址，不要配置为 Nginx 的 `https://<lan-ip>:4443` 浏览器入口。
+当前 Control 与 Media 已拆为同级独立服务。`control-service` 的 `MEDIA_SERVICE_BASE_URL` 必须指向 Media Service 内部 HTTP 地址，`CENTER_MANAGE_BASE_URL` 必须指向 Management Service 内部 HTTP 地址；都不要配置为 Nginx 的 `https://<lan-ip>:4443` 浏览器入口。
 
 大屏 BFF 默认监听 `8090`，并通过内部地址访问 Control 与 Media；本地开发时不要让 BFF 再绕回 Nginx：
 
@@ -294,13 +296,6 @@ POST /api/media/files/{fileId}/play-url
 POST /api/media/files/{fileId}/download-url
 POST /api/internal/livekit/webhook
 WS   /ws/media
-```
-
-联调 Mock 接口：
-
-```text
-POST /internal/media/video-sessions/{sessionId}/_mock/client-acked
-POST /internal/media/video-sessions/{sessionId}/_mock/track-published/{trackSid}
 ```
 
 媒体源接口：
@@ -406,7 +401,6 @@ http://localhost:8090
 当前画面截帧抓拍并上传
 查询录像、抓拍图片和任务产物文件
 预览抓拍图片与播放 HLS 视频
-模拟 ACK 和 Track published
 ```
 
 ## 机器人侧客户端

@@ -4,7 +4,6 @@ import { Room, RoomEvent, Track, VideoQuality } from 'livekit-client'
 import {
   createSnapshot,
   createVideoSession,
-  getRobots,
   getViewerToken,
   heartbeatVideoSession,
   heartbeatIntercom,
@@ -492,7 +491,6 @@ const actions = {
   // ============ Media 相关 actions ============
   // 加载机器人列表
   async loadRobots({ commit, state, dispatch }, payload) {
-    // const robots = await getRobots()
     const robots = payload
     if (robots && robots.length) {
       const fullRobots = robots.map(robot => toRobotState(robot))

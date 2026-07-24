@@ -98,6 +98,7 @@ case "$DEPLOY_NETWORK_MODE" in
     set_env_value_if_default LIVEKIT_URL ws://host.docker.internal:7880 ws://127.0.0.1:7880
     set_env_value_if_default LIVEKIT_EGRESS_WS_URL ws://livekit-server:7880 ws://127.0.0.1:7880
     set_env_value_if_default MEDIA_SERVICE_BASE_URL http://media-service:8088 http://127.0.0.1:8088
+    set_env_value_if_default CENTER_MANAGE_BASE_URL http://host.docker.internal:8866 http://127.0.0.1:8866
     set_env_value_if_default CENTER_CONTROL_BASE_URL http://control-service:8082 http://127.0.0.1:8082
     set_env_value_if_default CENTER_MEDIA_BASE_URL http://media-service:8088 http://127.0.0.1:8088
     set_env_value_if_default CENTER_CONTROL_WS_URL ws://control-service:8082/ws/control ws://127.0.0.1:8082/ws/control

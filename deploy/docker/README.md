@@ -336,6 +336,12 @@ sed -i 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/root/mounts/media#' .env
 sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env
 ```
 
+控制服务和大屏 BFF 都需要访问管理中心。管理中心部署在当前服务器时，bridge 模式可保留默认值；部署在其他服务器时改为实际内部地址：
+
+```bash
+sed -i 's#^CENTER_MANAGE_BASE_URL=.*#CENTER_MANAGE_BASE_URL=http://管理中心IP:8866#' .env
+```
+
 如果是 MacBook / OrbStack 部署，运行目录建议使用当前用户目录：
 
 ```bash
@@ -369,7 +375,7 @@ sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/m
 外部中间件不在本机时，继续按实际情况修改：
 
 ```bash
-grep --color=never -nE '^(MYSQL_URL|MYSQL_USERNAME|MYSQL_PASSWORD|REDIS_HOST|REDIS_PORT|MINIO_ENDPOINT|MQTT_BROKER_URL|ELASTICSEARCH_URIS)=' .env
+grep --color=never -nE '^(MYSQL_URL|MYSQL_USERNAME|MYSQL_PASSWORD|REDIS_HOST|REDIS_PORT|MINIO_ENDPOINT|MQTT_BROKER_URL|ELASTICSEARCH_URIS|CENTER_MANAGE_BASE_URL)=' .env
 ```
 
 MySQL 首次部署希望自动创建 `robot_media` 数据库时，`MYSQL_URL` 需要包含：

@@ -1,4 +1,4 @@
-ARG JAVA_RUNTIME_IMAGE=eclipse-temurin:17-jre-jammy
+ARG JAVA_RUNTIME_IMAGE=robot/java17-ffmpeg-runtime:latest
 FROM ${JAVA_RUNTIME_IMAGE}
 WORKDIR /app
 
