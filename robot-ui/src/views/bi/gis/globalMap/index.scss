@@ -1,6 +1,21 @@
 #map {
   /* filter: invert(100%) hue-rotate(200deg); background: transparent;
   filter: grayscale(100%) invert(100%) sepia(15%) hue-rotate(180deg) saturate(1040%) brightness(70%) contrast(90%); */
+  background: #001529; /* 缝隙即使露出也是深色，不显白 */
+}
+
+/* Leaflet 瓦片亚像素缝隙：轻微放大盖住接缝，并关闭 plus-lighter 亮边 */
+::v-deep .leaflet-container {
+  background: #001529;
+}
+
+::v-deep .leaflet-container img.leaflet-tile {
+  mix-blend-mode: normal !important;
+}
+
+::v-deep .leaflet-tile-container img {
+  width: 256.5px !important;
+  height: 256.5px !important;
 }
 .my-custom-icon {
   width: 66px !important;
