@@ -9,6 +9,8 @@ server:
 control:
   # Media Service 内部接口基础地址。
   media-service-base-url: ${MEDIA_SERVICE_BASE_URL:http://media-service:8088}
+  # Management Service 内部接口基础地址。
+  management-service-base-url: ${CENTER_MANAGE_BASE_URL:http://host.docker.internal:8866}
   auth:
     # 控制服务默认组织 ID。
     default-org-id: ${CONTROL_DEFAULT_ORG_ID:org001}

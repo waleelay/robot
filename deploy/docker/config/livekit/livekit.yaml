@@ -1,0 +1,15 @@
+port: {{LIVEKIT_HTTP_PORT}}
+log_level: {{LIVEKIT_LOG_LEVEL}}
+rtc:
+  tcp_port: {{LIVEKIT_RTC_TCP_PORT}}
+  port_range_start: {{LIVEKIT_RTC_PORT_RANGE_START}}
+  port_range_end: {{LIVEKIT_RTC_PORT_RANGE_END}}
+  use_external_ip: {{LIVEKIT_USE_EXTERNAL_IP}}
+  node_ip: "{{LIVEKIT_NODE_IP}}"
+redis:
+  address: {{LIVEKIT_REDIS_ADDRESS}}
+  username: "{{LIVEKIT_REDIS_USERNAME}}"
+  password: "{{LIVEKIT_REDIS_PASSWORD}}"
+  db: {{LIVEKIT_REDIS_DB}}
+keys:
+  {{LIVEKIT_API_KEY}}: {{LIVEKIT_API_SECRET}}

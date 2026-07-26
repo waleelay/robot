@@ -175,8 +175,8 @@ public class RobotMediaStatusSubscriber {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
             try {
                 Map<String, Object> data = objectMapper.readValue(payload, Map.class);
-                boolean becameOnline = robotRegistryService.update(data);
-                equipmentControlService.handleClientState(data);
+                Map<String, Object> state = equipmentControlService.handleClientState(data);
+                boolean becameOnline = robotRegistryService.update(state);
                 if (becameOnline) {
                     String robotId = String.valueOf(data.get("robotId"));
                     String status = String.valueOf(data.get("status"));

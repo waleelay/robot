@@ -221,8 +221,4 @@ public class VideoSessionController {
         return service.activeRecording(sessionId, currentUserResolver.resolve(servletRequest));
     }
 
-    @PostMapping("/{sessionId}/_mock/track-published/{trackSid}")
-    public VideoSessionResponse mockTrackPublished(@PathVariable String sessionId, @PathVariable String trackSid) {
-        return service.markTrackPublished(sessionId, trackSid);
-    }
 }

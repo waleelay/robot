@@ -474,28 +474,6 @@ public class VideoSessionService {
     }
 
     /**
-     * 标记 LiveKit 视频轨道已经发布。
-     *
-     * @param sessionId 实时视频会话编号
-     * @param trackSid LiveKit track sid
-     * @return 实时视频会话响应
-     */
-    @Transactional
-    public VideoSessionResponse markTrackPublished(String sessionId, String trackSid) {
-        VideoSession session = requireSession(sessionId);
-        session.setTrackSid(trackSid);
-        session.setTrackName("video." + session.getChannel() + "." + session.getQuality());
-        mediaTrackService.publish(session, trackSid, session.getTrackName());
-        session.setStartedAt(now());
-        transition(session, VideoSessionStatus.STREAMING, "video.track.published", session);
-        session.setUpdatedAt(now());
-        repository.save(session);
-        emit("video.session.streaming", session);
-        return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
-    }
-
-
-    /**
      * 处理机器人客户端上报的视频推流状态。
      *
      * @param sessionId 实时视频会话编号

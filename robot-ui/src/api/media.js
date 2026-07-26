@@ -33,14 +33,6 @@ export function createVideoSession(data) {
   })
 }
 
-// 获取机器人列表
-export function getRobots() {
-  return request({
-    url: '/api/control/robots',
-    method: 'get'
-  })
-}
-
 // 获取活跃视频会话
 export function getActiveVideoSessions() {
   return request({
@@ -122,20 +114,6 @@ export function snapshotImageUrl(fileId) {
   })
 }
 
-// 获取会话快照列表
-export function getSessionSnapshots(sessionId) {
-  return request({
-    url: `/api/control/video-sessions/${sessionId}/snapshots`,
-    method: 'get'
-  })
-}
-// 模拟轨道发布（内部接口）
-export function mockTrackPublished(sessionId, trackSid) {
-  return request({
-    url: `/internal/media/video-sessions/${sessionId}/_mock/track-published/${trackSid}`,
-    method: 'post'
-  })
-}
 export function stopIntercom(sessionId) {
   return request({
     url: `/api/control/video-sessions/${sessionId}/intercom/stop`,

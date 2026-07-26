@@ -1,5 +1,6 @@
 package com.robot.control.service;
 
+import com.robot.control.client.ControlManagementClient;
 import com.robot.control.auth.CurrentUser;
 import com.robot.control.config.DateTimeConfig;
 import com.robot.control.messaging.EquipmentControlCommandPublisher;
@@ -8,8 +9,10 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
@@ -25,6 +28,7 @@ public class EquipmentControlService {
 
     private final EquipmentControlCommandPublisher commandPublisher;
     private final MediaWebSocketPublisher webSocketPublisher;
+    private final ControlManagementClient managementClient;
     private final Map<String, Map<String, Object>> sessions = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> robotStates = new ConcurrentHashMap<>();
 
@@ -36,10 +40,11 @@ public class EquipmentControlService {
      */
     public EquipmentControlService(
             EquipmentControlCommandPublisher commandPublisher,
-            MediaWebSocketPublisher webSocketPublisher) {
+            MediaWebSocketPublisher webSocketPublisher,
+            ControlManagementClient managementClient) {
         this.commandPublisher = commandPublisher;
         this.webSocketPublisher = webSocketPublisher;
-        fixedRobots().forEach(robot -> robotStates.put(String.valueOf(robot.get("robotId")), defaultRobotState(robot)));
+        this.managementClient = managementClient;
     }
 
     /**
@@ -260,8 +265,10 @@ public class EquipmentControlService {
         state.putIfAbsent("controlMode", "MANUAL");
         state.put("timestamp", DateTimeConfig.normalize(state.getOrDefault("timestamp", OffsetDateTime.now())));
         enrichRobotState(robotId, state);
+        Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
+        managementClient.deviceBySerialNumber(robotId)
+                .ifPresent(robot -> state.put("devices", devices(robot, runtimeDevices)));
         robotStates.put(robotId, state);
-        webSocketPublisher.publish("robot.state", state);
         return state;
     }
 
@@ -480,9 +487,7 @@ public class EquipmentControlService {
      * @return 机器人状态
      */
     private Map<String, Object> requireRobot(String robotId) {
-        return fixedRobots().stream()
-                .filter(robot -> robotId.equals(robot.get("robotId")))
-                .findFirst()
+        return managementClient.deviceBySerialNumber(robotId)
                 .orElseThrow(() -> new IllegalArgumentException("未找到机器人：" + robotId));
     }
 
@@ -520,16 +525,16 @@ public class EquipmentControlService {
      * @param robot 机器人配置
      * @return 默认机器人状态
      */
-    private static Map<String, Object> defaultRobotState(Map<String, Object> robot) {
+    private Map<String, Object> defaultRobotState(Map<String, Object> robot) {
         return object(
-                "robotId", robot.get("robotId"),
+                "robotId", firstValue(robot, "serialNumber", "robotId"),
                 "controlMode", "MANUAL",
                 "stateSeq", 1,
                 "missionStatus", "IDLE",
                 "navigationStatus", "IDLE",
                 "controlOwner", null,
                 "estopActive", false,
-                "devices", devices(String.valueOf(robot.get("robotId"))),
+                "devices", devices(String.valueOf(firstValue(robot, "serialNumber", "robotId"))),
                 "status", "offline",
                 "timestamp", OffsetDateTime.now());
     }
@@ -540,80 +545,13 @@ public class EquipmentControlService {
      * @param robotId 机器人 ID
      * @param state 机器人状态
      */
-    private static void enrichRobotState(String robotId, Map<String, Object> state) {
+    private void enrichRobotState(String robotId, Map<String, Object> state) {
         if (!stringValue(state.get("type"), "").isBlank()) {
             return;
         }
-        fixedRobots().stream()
-                .filter(robot -> robotId.equals(robot.get("robotId")))
-                .findFirst()
-                .map(robot -> robot.get("type"))
+        managementClient.deviceBySerialNumber(robotId)
+                .map(robot -> firstValue(robot, "deviceType", "typeCode", "type"))
                 .ifPresent(type -> state.put("type", type));
-    }
-
-    /**
-     * 构造本地固定机器人数据。
-     *
-     * @return 固定机器人列表
-     */
-    private static List<Map<String, Object>> fixedRobots() {
-        return List.of(
-                object(
-                        "robotId", "test111",
-                        "clientId", "robot-client-songling-001",
-                        "name", "R1轮式机器人",
-                        "type", "轮式机器人",
-                        "vendor", "SONGLING",
-                        "model", "SCOUT",
-                        "status", "offline",
-                        "battery", 86,
-                        "lastHeartbeatAt", OffsetDateTime.now(),
-                        "devices", devices("test111"),
-                        "cameras", List.of(
-                                camera("camera01", "dual_gimbal", "云台-可见光"),
-                                camera("camera02", "dual_gimbal", "云台-热成像"),
-                                camera("camera03", "body", "本体相机"))),
-                object(
-                        "robotId", "SN006",
-                        "clientId", "robot-client-deep-001",
-                        "name", "G1四足机器狗",
-                        "type", "四足机器狗",
-                        "vendor", "DEEPNROBOTICS",
-                        "model", "X30",
-                        "status", "offline",
-                        "battery", 78,
-                        "lastHeartbeatAt", OffsetDateTime.now(),
-                        "devices", devices("SN006"),
-                        "cameras", List.of(camera("camera04", "dual_gimbal", "头部双光云台"))),
-                object(
-                        "robotId", "robot-unitree-001",
-                        "clientId", "robot-client-unitree-001",
-                        "name", "G2四足机器狗",
-                        "type", "四足机器狗",
-                        "vendor", "UNITREE",
-                        "model", "B2",
-                        "status", "offline",
-                        "battery", 92,
-                        "lastHeartbeatAt", OffsetDateTime.now(),
-                        "devices", devices("robot-unitree-001"),
-                        "cameras", List.of(camera("camera07", "dual_gimbal", "双光云台"))));
-    }
-
-    /**
-     * 构造摄像头描述。
-     *
-     * @param deviceId 设备 ID
-     * @param groupType groupType
-     * @param name 名称
-     * @return 摄像头信息
-     */
-    private static Map<String, Object> camera(String deviceId, String groupType, String name) {
-        return object(
-                "cameraId", deviceId,
-                "deviceId", deviceId,
-                "groupType", groupType,
-                "name", name,
-                "quality", "sub");
     }
 
     /**
@@ -622,299 +560,295 @@ public class EquipmentControlService {
      * @param robotId 机器人 ID
      * @return 设备能力列表
      */
-    private static List<Map<String, Object>> devices(String robotId) {
-        if ("SN006".equals(robotId)) {
-            return List.of(
-                    base("QUADRUPED_BASE", "DEEPNROBOTICS", "X30", 0.8, 0.4, 0.6),
-                    ptz(),
-                    audioControl(),
-                    launcher(),
-                    netGun(),
-                    warningLight("warning-light-left", "左警示灯"),
-                    warningLight("warning-light-right", "右警示灯"),
-                    vehicleLight(),
-                    intercom());
-        }
-        if ("robot-unitree-001".equals(robotId)) {
-            return List.of(
-                    base("QUADRUPED_BASE", "UNITREE", "B2", 0.8, 0.4, 0.6),
-                    ptz(),
-                    audioControl(),
-                    warningLight("warning-light-left", "左警示灯"),
-                    warningLight("warning-light-right", "右警示灯"),
-                    vehicleLight(),
-                    object(
-                            "deviceId", "searchlight-001",
-                            "bindingId", "bind-robot-unitree-001-searchlight-001",
-                            "scope", "PAYLOAD",
-                            "deviceType", "SEARCHLIGHT",
-                            "displayName", "探照灯",
-                            "vendor", "CUSTOM",
-                            "model", "SL-01",
-                            "onlineStatus", "offline",
-                            "controlStatus", "idle",
-                            "enabled", true,
-                            "actions", List.of("light.set"),
-                            "controlProfile", object("maxBrightness", 100)));
-        }
-        return List.of(
-                base("WHEELED_BASE", "SONGLING", "SCOUT", 1.0, 0.4, 0.8),
-                ptz(),
-                audioControl(),
-                launcher(),
-                netGun(),
-                warningLight("warning-light-left", "左警示灯"),
-                warningLight("warning-light-right", "右警示灯"),
-                vehicleLight(),
-                intercom());
+    private List<Map<String, Object>> devices(String robotId) {
+        Map<String, Object> robot = requireRobot(robotId);
+        return devices(robot, statusByDeviceId(robotStates.getOrDefault(robotId, Map.of())));
     }
 
-    /**
-     * 构造底盘控制能力。
-     *
-     * @param deviceType deviceType
-     * @param vendor vendor
-     * @param model model
-     * @param maxLinearX maxLinearX
-     * @param maxLinearY maxLinearY
-     * @param maxAngularZ maxAngularZ
-     * @return 底盘控制能力
-     */
-    private static Map<String, Object> base(
+    private List<Map<String, Object>> devices(
+            Map<String, Object> robot,
+            Map<String, Map<String, Object>> statusByDeviceId) {
+        List<Map<String, Object>> components = mapList(robot.get("components"));
+        if (components.isEmpty()) {
+            return List.of();
+        }
+        return components.stream()
+                .flatMap(component -> managementDevices(robot, component, statusByDeviceId).stream())
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private List<Map<String, Object>> managementDevices(
+            Map<String, Object> robot,
+            Map<String, Object> component,
+            Map<String, Map<String, Object>> statusByDeviceId) {
+        String componentType = normalized(firstString(component, "componentType", "type"));
+        String componentCode = firstString(component, "code", "deviceId", "id");
+        if ("PAYLOAD".equals(componentType) && "warning_light".equals(componentCode)) {
+            return List.of(
+                    managementDevice(robot, component, "warning-light-left", "WARNING_LIGHT", "左警示灯", "light-001", statusByDeviceId),
+                    managementDevice(robot, component, "warning-light-right", "WARNING_LIGHT", "右警示灯", "light-002", statusByDeviceId));
+        }
+        String deviceType = controlDeviceType(robot, component);
+        if (deviceType == null) {
+            return List.of();
+        }
+        return List.of(managementDevice(
+                robot,
+                component,
+                controlDeviceId(component, deviceType),
+                deviceType,
+                firstString(component, "name", "componentName", "code"),
+                null,
+                statusByDeviceId));
+    }
+
+    private Map<String, Object> managementDevice(
+            Map<String, Object> robot,
+            Map<String, Object> component,
+            String deviceId,
             String deviceType,
-            String vendor,
-            String model,
-            double maxLinearX,
-            double maxLinearY,
-            double maxAngularZ) {
-        return object(
-                "deviceId", "base",
-                "bindingId", "bind-base",
-                "scope", "BODY",
-                "deviceType", deviceType,
-                "displayName", "机器人本体",
-                "vendor", vendor,
-                "model", model,
-                "onlineStatus", "offline",
-                "controlStatus", "idle",
-                "enabled", true,
-                "actions", List.of("drive.velocity", "navigation.return_home", "docking.leave"),
-                "controlProfile", object(
-                        "maxLinearX", maxLinearX,
-                        "maxLinearY", maxLinearY,
-                        "maxAngularZ", maxAngularZ,
-                        "controlFrameRateHz", 10));
-    }
-
-    /**
-     * 构造云台设备能力。
-     *
-     * @return 云台能力
-     */
-    private static Map<String, Object> ptz() {
-        return object(
-                "deviceId", "ptz-dual-001",
-                "bindingId", "bind-ptz-dual-001",
-                "scope", "PAYLOAD",
-                "deviceType", "DUAL_LIGHT_PTZ",
-                "displayName", "双光云台",
-                "vendor", "CUSTOM",
-                "model", "DL-PTZ-01",
-                "onlineStatus", "offline",
-                "controlStatus", "idle",
-                "enabled", true,
-                "actions", List.of(
-                        "up", "down", "left", "right",
-                        "left_up", "right_up", "left_down", "right_down",
-                        "ptz.auto_rotate", "ptz.home", "camera.zoom"),
-                "status", object(
-                        "autoRotateEnabled", false,
-                        "panSpeed", 0),
-                "controlProfile", object(
-                        "maxPanSpeed", 1.0,
-                        "maxTiltSpeed", 1.0,
-                        "controlFrameRateHz", 10));
-    }
-
-    /**
-     * 构造网枪设备能力。
-     *
-     * @return 网枪能力
-     */
-    private static Map<String, Object> buildNetGun() {
-        return object(
-                "deviceId", "net-gun-001",
-                "bindingId", "bind-net-gun-001",
-                "scope", "PAYLOAD",
-                "deviceType", "NET_GUN",
-                "displayName", "捕网枪",
-                "vendor", "CUSTOM",
-                "model", "NL-01",
-                "onlineStatus", "offline",
-                "controlStatus", "idle",
-                "enabled", true,
-                "riskLevel", "HIGH",
-                "actions", List.of("fire"),
-                "controlProfile", object(
-                        "requiresConfirm", true,
-                        "cooldownMs", 3000));
-    }
-
-    /**
-     * 构造网枪发射部件。
-     *
-     * @return 网枪部件
-     */
-    private static Map<String, Object> netGun() {
-        return buildNetGun();
-    }
-
-    /**
-     * 构造发射器部件。
-     *
-     * @return 发射器部件
-     */
-    private static Map<String, Object> launcher() {
-        return object(
-                "deviceId", "launcher_38mm",
-                "bindingId", "bind-launcher_38mm",
-                "scope", "PAYLOAD",
-                "deviceType", "LAUNCHER",
-                "displayName", "六联发射器",
-                "vendor", "CUSTOM",
-                "model", "LCH-06",
-                "onlineStatus", "offline",
-                "controlStatus", "idle",
-                "enabled", true,
-                "riskLevel", "HIGH",
-                "actions", List.of("get_status", "set_safety", "fire"),
-                "status", launcherStatus(),
-                "controlProfile", object(
-                        "tubes", List.of(1, 2, 3, 4, 5, 6),
-                        "requiresConfirm", true,
-                        "requiresSafetySwitch", true));
-    }
-
-    /**
-     * 构造警示灯设备能力。
-     *
-     * @param deviceId 设备 ID
-     * @param displayName displayName
-     * @return 警示灯能力
-     */
-    private static Map<String, Object> warningLight(String deviceId, String displayName) {
-        String lightId = switch (deviceId) {
-            case "warning-light-right" -> "light-002";
-            case "warning-light-all" -> "all";
-            default -> "light-001";
-        };
-        return object(
-                "deviceId", deviceId,
-                "bindingId", "bind-" + deviceId,
-                "scope", "PAYLOAD",
-                "deviceType", "WARNING_LIGHT",
-                "displayName", displayName,
-                "vendor", "CUSTOM",
-                "model", "WL-01",
-                "onlineStatus", "offline",
-                "controlStatus", "idle",
-                "enabled", true,
-                "actions", List.of("get_state", "set_state", "set_mode"),
-                "status", object("enabled", false, "powerOn", false, "mode", 0, "online", true),
-                "controlProfile", object(
-                        "lightId", lightId,
-                        "lightIds", List.of("light-001", "light-002", "all"),
-                        "modes", List.of(0, 1, 2),
-                        "supportsAll", true));
-    }
-
-    /**
-     * 构造发射器初始状态。
-     *
-     * @return 发射器状态
-     */
-    private static Map<String, Object> launcherStatus() {
-        return object(
-                "connected", true,
-                "safetySwitchEnabled", false,
-                "tubeCount", 6,
-                "tubes", launcherTubes());
-    }
-
-    /**
-     * 构造发射器弹筒初始状态。
-     *
-     * @return 弹筒状态列表
-     */
-    private static List<Map<String, Object>> launcherTubes() {
-        List<Map<String, Object>> tubes = new ArrayList<>();
-        for (int tube = 1; tube <= 6; tube += 1) {
-            tubes.add(object("tube", tube, "state", 1, "stateName", "LOADED"));
+            String displayName,
+            String profileLightId,
+            Map<String, Map<String, Object>> statusByDeviceId) {
+        String componentCode = firstString(component, "code", "deviceId", "id");
+        Map<String, Object> runtime = statusByDeviceId.getOrDefault(
+                deviceId,
+                statusByDeviceId.getOrDefault(
+                        componentCode,
+                        statusByDeviceId.getOrDefault("type:" + deviceType, Map.of())));
+        Map<String, Object> result = copy(runtime);
+        result.put("deviceId", deviceId);
+        result.put("scope", controlScope(deviceType));
+        result.put("deviceType", deviceType);
+        result.put("displayName", displayName);
+        result.put("actions", controlActions(component, deviceType));
+        result.put("controlProfile", controlProfile(component, deviceType, profileLightId));
+        Map<String, Object> status = mapValue(runtime.get("status"));
+        if (!status.isEmpty()) {
+            result.put("status", status);
+        } else {
+            result.remove("status");
         }
-        return tubes;
+        return result;
+    }
+
+    private Map<String, Map<String, Object>> statusByDeviceId(Map<String, Object> state) {
+        Map<String, Map<String, Object>> result = new LinkedHashMap<>();
+        Map<String, Integer> typeCounts = new LinkedHashMap<>();
+        for (Map<String, Object> device : mapList(state.get("devices"))) {
+            String deviceId = firstString(device, "deviceId");
+            if (deviceId != null) {
+                result.put(deviceId, device);
+            }
+            String deviceType = firstString(device, "deviceType");
+            if (deviceType != null) {
+                String typeKey = "type:" + deviceType;
+                int count = typeCounts.merge(typeKey, 1, Integer::sum);
+                if (count == 1) {
+                    result.put(typeKey, device);
+                } else {
+                    result.remove(typeKey);
+                }
+            }
+            Map<String, Object> status = mapValue(device.get("status"));
+            String driverDeviceId = firstString(status, "driverDeviceId");
+            if (driverDeviceId != null) {
+                result.put(driverDeviceId, device);
+            }
+        }
+        return result;
+    }
+
+    private String controlDeviceId(Map<String, Object> component, String deviceType) {
+        return firstString(component, "code", "deviceId", "id");
+    }
+
+    private String controlDeviceType(Map<String, Object> robot, Map<String, Object> component) {
+        String componentType = normalized(firstString(component, "componentType", "type"));
+        String code = firstString(component, "code", "deviceId", "id");
+        if ("BODY".equals(componentType)) {
+            return baseDeviceType(robot);
+        }
+        if ("PTZ".equals(componentType)) {
+            return "DUAL_LIGHT_PTZ";
+        }
+        if ("SPEAKER".equals(componentType) && code != null && code.contains("microphone")) {
+            return "INTERCOM";
+        }
+        if ("SPEAKER".equals(componentType)) {
+            return "SPEAKER";
+        }
+        if ("ALGORITHM_BOX".equals(componentType)) {
+            return "ALGORITHM_BOX";
+        }
+        if ("PAYLOAD".equals(componentType) && code != null && code.contains("launcher")) {
+            return "LAUNCHER";
+        }
+        if ("PAYLOAD".equals(componentType) && code != null && code.contains("catcher")) {
+            return "NET_GUN";
+        }
+        if ("PAYLOAD".equals(componentType) && code != null && code.contains("warning_light")) {
+            return "WARNING_LIGHT";
+        }
+        return componentType == null || componentType.isBlank() ? null : componentType;
+    }
+
+    private String baseDeviceType(Map<String, Object> robot) {
+        String robotType = normalized(firstString(robot, "deviceType", "typeCode", "type"));
+        if ("ROBOT_DOG".equals(robotType) || "QUADRUPED_ROBOT".equals(robotType)) {
+            return "QUADRUPED_BASE";
+        }
+        return "WHEELED_BASE";
+    }
+
+    private String controlScope(String deviceType) {
+        if ("WHEELED_BASE".equals(deviceType) || "QUADRUPED_BASE".equals(deviceType)) {
+            return "BODY";
+        }
+        if ("SPEAKER".equals(deviceType) || "INTERCOM".equals(deviceType)) {
+            return "AUDIO";
+        }
+        return "PAYLOAD";
+    }
+
+    private List<String> controlActions(Map<String, Object> component, String deviceType) {
+        List<String> mapped = new ArrayList<>(managementActionCodes(component).stream()
+                .map(code -> controlAction(code, deviceType))
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList());
+        List<String> capabilityCodes = managementCapabilityCodes(component);
+        if (("WHEELED_BASE".equals(deviceType) || "QUADRUPED_BASE".equals(deviceType))
+                && capabilityCodes.contains("MOTION_CONTROL")
+                && !mapped.contains("drive.velocity")) {
+            mapped.add(0, "drive.velocity");
+        }
+        if (!mapped.isEmpty()) {
+            return mapped;
+        }
+        return compatibilityActions(deviceType);
     }
 
     /**
-     * 构造车灯设备能力。
+     * 返回已与机器人端联调的生产兼容动作。
      *
-     * @return 车灯能力
+     * <p>管理端尚未登记动作时使用此表，避免改变既有 MQTT 协议。这里不包含设备运行状态，
+     * 也不用于伪造在线、灯光、音量或弹筒状态。</p>
      */
-    private static Map<String, Object> vehicleLight() {
-        return object(
-                "deviceId", "vehicle-light",
-                "bindingId", "bind-vehicle-light",
-                "scope", "PAYLOAD",
-                "deviceType", "VEHICLE_LIGHT",
-                "displayName", "车灯光",
-                "vendor", "CUSTOM",
-                "model", "VL-01",
-                "onlineStatus", "offline",
-                "controlStatus", "idle",
-                "enabled", true,
-                "actions", List.of("light.vehicle.set"),
-                "controlProfile", object(
-                        "parts", List.of("front", "rear"),
-                        "modes", List.of("OFF", "ON", "BREATH", "CUSTOM"),
-                        "maxBrightness", 100));
+    private List<String> compatibilityActions(String deviceType) {
+        return switch (deviceType) {
+            case "WHEELED_BASE", "QUADRUPED_BASE" -> List.of("drive.velocity", "navigation.return_home", "docking.leave");
+            case "DUAL_LIGHT_PTZ" -> List.of(
+                    "up", "down", "left", "right",
+                    "left_up", "right_up", "left_down", "right_down",
+                    "ptz.auto_rotate", "camera.zoom");
+            case "SPEAKER", "INTERCOM" -> List.of("set_volume", "set_mute");
+            case "LAUNCHER" -> List.of("get_status", "set_safety", "fire");
+            case "NET_GUN" -> List.of("fire");
+            case "WARNING_LIGHT" -> List.of("get_state", "set_state", "set_mode");
+            default -> List.of();
+        };
+    }
+
+    private String controlAction(String managementActionCode, String deviceType) {
+        String code = normalized(managementActionCode);
+        return switch (code) {
+            case "DRIVE.VELOCITY", "DRIVE_VELOCITY", "TELEOP_DRIVE" -> "drive.velocity";
+            case "PTZ_UP", "UP" -> "up";
+            case "PTZ_DOWN", "DOWN" -> "down";
+            case "PTZ_LEFT", "LEFT" -> "left";
+            case "PTZ_RIGHT", "RIGHT" -> "right";
+            case "PTZ_LEFT_UP", "LEFT_UP" -> "left_up";
+            case "PTZ_RIGHT_UP", "RIGHT_UP" -> "right_up";
+            case "PTZ_LEFT_DOWN", "LEFT_DOWN" -> "left_down";
+            case "PTZ_RIGHT_DOWN", "RIGHT_DOWN" -> "right_down";
+            case "PTZ.AUTO_ROTATE", "PTZ_AUTO_ROTATE" -> "ptz.auto_rotate";
+            case "PTZ.HOME", "PTZ_HOME" -> "ptz.home";
+            case "CAMERA.ZOOM", "CAMERA_ZOOM" -> "camera.zoom";
+            case "GET_LAUNCHER_STATUS", "GET_STATUS" -> "get_status";
+            case "SET_LAUNCHER_SAFETY", "SET_SAFETY" -> "set_safety";
+            case "FIRE_LAUNCHER", "FIRE_CATCHER", "FIRE" -> "fire";
+            case "GET_LIGHT_STATE", "GET_STATE" -> "get_state";
+            case "SET_LIGHT_STATE", "SET_STATE" -> "set_state";
+            case "SET_LIGHT_MODE", "SET_MODE" -> "set_mode";
+            case "SET_SPEAKER_VOLUME", "SET_VOLUME" -> "set_volume";
+            case "SET_SPEAKER_MUTE", "SET_MUTE" -> "set_mute";
+            case "MOVE_TO_POSE" -> "navigation.return_home";
+            case "NAVIGATION.RETURN_HOME", "NAVIGATION_RETURN_HOME" -> "navigation.return_home";
+            case "DOCKING.LEAVE", "DOCKING_LEAVE" -> "docking.leave";
+            case "LIGHT.SET", "LIGHT_SET" -> "light.set";
+            case "LIGHT.VEHICLE.SET", "LIGHT_VEHICLE_SET" -> "light.vehicle.set";
+            default -> "ALGORITHM_BOX".equals(deviceType) ? code : null;
+        };
+    }
+
+    private List<String> managementActionCodes(Map<String, Object> component) {
+        return mapList(component.get("capabilities")).stream()
+                .flatMap(capability -> mapList(capability.get("actions")).stream())
+                .map(action -> firstString(action, "code", "capabilityCode", "name"))
+                .filter(Objects::nonNull)
+                .map(this::normalized)
+                .distinct()
+                .toList();
+    }
+
+    private List<String> managementCapabilityCodes(Map<String, Object> component) {
+        return mapList(component.get("capabilities")).stream()
+                .map(capability -> firstString(capability, "code", "capabilityCode", "name"))
+                .filter(Objects::nonNull)
+                .map(this::normalized)
+                .distinct()
+                .toList();
+    }
+
+    private Map<String, Object> controlProfile(Map<String, Object> component, String deviceType, String profileLightId) {
+        Map<String, Object> profile = compatibilityControlProfile(component, deviceType, profileLightId);
+        Map<String, Object> registeredProfile = mapValue(component.get("controlProfile"));
+        registeredProfile.forEach((key, value) -> {
+            if (value != null) {
+                profile.put(key, value);
+            }
+        });
+        return profile;
     }
 
     /**
-     * 构造音频控制能力。
+     * 返回已经完成端到端联调的参数范围和安全约束。
      *
-     * @return 音频控制能力
+     * <p>这些值只参与前端控件范围与服务端参数裁剪，不改变 MQTT action/params 字段名。
+     * 管理端登记了 controlProfile 时，以管理端非空字段覆盖这里的兼容值。</p>
      */
-    private static Map<String, Object> audioControl() {
-        return object(
-                "deviceId", "audio-control-001",
-                "bindingId", "bind-audio-control-001",
-                "scope", "AUDIO",
-                "deviceType", "SPEAKER",
-                "displayName", "扬声器",
-                "onlineStatus", "offline",
-                "controlStatus", "idle",
-                "enabled", true,
-                "actions", List.of("set_volume", "set_mute"),
-                "status", object("volume", 50, "volumePercent", 50, "muted", false),
-                "controlProfile", object("step", 5, "minVolume", 0, "maxVolume", 100));
-    }
-
-    /**
-     * 构造对讲能力。
-     *
-     * @return 对讲能力
-     */
-    private static Map<String, Object> intercom() {
-        return object(
-                "deviceId", "intercom-001",
-                "bindingId", "bind-intercom-001",
-                "scope", "AUDIO",
-                "deviceType", "INTERCOM",
-                "displayName", "语音对讲",
-                "onlineStatus", "offline",
-                "controlStatus", "idle",
-                "enabled", true,
-                "actions", List.of("set_volume", "set_mute"),
-                "status", object("volume", 50, "volumePercent", 50, "muted", false));
+    private Map<String, Object> compatibilityControlProfile(
+            Map<String, Object> component,
+            String deviceType,
+            String profileLightId) {
+        if ("WHEELED_BASE".equals(deviceType)) {
+            return object("maxLinearX", 1.0, "maxLinearY", 0.4, "maxAngularZ", 0.8, "controlFrameRateHz", 10);
+        }
+        if ("QUADRUPED_BASE".equals(deviceType)) {
+            return object("maxLinearX", 0.8, "maxLinearY", 0.4, "maxAngularZ", 0.6, "controlFrameRateHz", 10);
+        }
+        if ("DUAL_LIGHT_PTZ".equals(deviceType)) {
+            return object("maxPanSpeed", 100.0, "maxTiltSpeed", 100.0, "controlFrameRateHz", 10);
+        }
+        if ("SPEAKER".equals(deviceType) || "INTERCOM".equals(deviceType)) {
+            return object("step", 5, "minVolume", 0, "maxVolume", 100);
+        }
+        if ("LAUNCHER".equals(deviceType)) {
+            return object("tubes", List.of(1, 2, 3, 4, 5, 6), "requiresConfirm", true, "requiresSafetySwitch", true);
+        }
+        if ("NET_GUN".equals(deviceType)) {
+            return object("requiresConfirm", true, "cooldownMs", 3000);
+        }
+        if ("WARNING_LIGHT".equals(deviceType)) {
+            return object(
+                    "lightId", profileLightId == null ? "all" : profileLightId,
+                    "lightIds", List.of("left_warning", "right_warning", "all", "light-001", "light-002"),
+                    "modes", List.of(0, 1, 2),
+                    "supportsAll", true);
+        }
+        return object("componentType", firstString(component, "componentType"), "capabilities", managementActionCodes(component));
     }
 
     /**
@@ -1008,10 +942,40 @@ public class EquipmentControlService {
     private static String warningLightId(Map<String, Object> params, Map<String, Object> device) {
         Map<String, Object> profile = mapValue(device.get("controlProfile"));
         String lightId = stringValue(params.get("lightId"), stringValue(profile.get("lightId"), ""));
-        if (List.of("light-001", "light-002", "all").contains(lightId)) {
+        if (List.of("light-001", "light-002", "left_warning", "right_warning", "all").contains(lightId)) {
             return lightId;
         }
         throw new IllegalArgumentException("不支持的警示灯 ID：" + lightId);
+    }
+
+    private static Object firstValue(Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String firstString(Map<String, Object> source, String... keys) {
+        Object value = firstValue(source, keys);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> mapList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .filter(Map.class::isInstance)
+                .map(item -> (Map<String, Object>) new LinkedHashMap<>((Map<String, Object>) item))
+                .toList();
+    }
+
+    private String normalized(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
     /**

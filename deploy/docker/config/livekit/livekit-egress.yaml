@@ -1,0 +1,13 @@
+log_level: {{LIVEKIT_LOG_LEVEL}}
+
+api_key: {{LIVEKIT_API_KEY}}
+api_secret: {{LIVEKIT_API_SECRET}}
+
+ws_url: {{LIVEKIT_EGRESS_WS_URL}}
+insecure: true
+
+redis:
+  address: {{LIVEKIT_EGRESS_REDIS_ADDRESS}}
+  username: "{{LIVEKIT_EGRESS_REDIS_USERNAME}}"
+  password: "{{LIVEKIT_EGRESS_REDIS_PASSWORD}}"
+  db: {{LIVEKIT_EGRESS_REDIS_DB}}
