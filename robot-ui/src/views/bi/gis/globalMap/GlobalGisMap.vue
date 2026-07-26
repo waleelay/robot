@@ -59,6 +59,7 @@ import Thumbnail from './thumbnail/Index.vue'
 import SlamMap from './slam1/Index.vue'
 import { mapActions, mapState } from 'vuex';
 import { ROBOT_TYPE_INFO } from '../../../../constants/robot.js';
+import { POLYGON_POINTS, WAY_POINTS } from '../../js/constants/gisMapPoints.js';
 
 export default {
   name: 'GisGlobalMap',
@@ -69,7 +70,6 @@ export default {
       default: false
     }
   },
-
   data () {
     return {
       map: null,
@@ -81,19 +81,7 @@ export default {
       dashedPolygonLayer: null,
       activeMarkerIndex: null,
       currentRectangle: null,
-      waypoints: [
-        { lat: 30.74858822373491, lng: 106.03506952591954, desc: '起始地' },
-        { lat: 30.748379525423942, lng: 106.03487979487186 },
-        { lat: 30.748229520051265, lng: 106.03472042553155 },
-        { lat: 30.74812517003875, lng: 106.03462176616857 },
-        { lat: 30.747603565260476, lng: 106.03519074431382 },
-        { lat: 30.747271049335637, lng: 106.03561559199737 },
-        { lat: 30.747140651711415, lng: 106.03579008416635 },
-        { lat: 30.7478613352993, lng: 106.03655278081857 },
-        { lat: 30.7483112149064, lng: 106.03603690298392 },
-        { lat: 30.748686106849632, lng: 106.0355627433318 },
-        { lat: 30.748881699556307, lng: 106.03529721123913, desc: '目的地' }
-      ],
+      waypoints: WAY_POINTS,
       pathLayers: [],
       movementPath: null,
       isMoving: false,
@@ -102,7 +90,6 @@ export default {
       moveCount: 0,
       movementInterval: null,
       distance: 0,
-      centerPoint: { lat: 30.7472254, lng: 106.03737831115724 },
       markers: [
         // { lat: 30.7472254, lng: 106.03737831115724, pathPoints: [], movementPath: null },
         // { lat: 30.7472254, lng: 106.040000, pathPoints: [], movementPath: null }
@@ -138,6 +125,10 @@ export default {
     }
   },
   computed: {
+    ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList', 'robotAlarmObj', 'mapSearchValue', 'showRobotIds', 'gisMapCenterPoint']),
+    centerPoint() {
+      return { lat: this.gisMapCenterPoint[0], lng: this.gisMapCenterPoint[1] }
+    },
     showAnimate() {
       return this.currenRouteName !== 'biIndex'
     },
@@ -164,7 +155,6 @@ export default {
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras'];
     },
-    ...mapState('websocketExtraData', ['robotLocation', 'robotBaseInfo', 'robotList', 'robotAlarmObj', 'mapSearchValue', 'showRobotIds']),
     showSmall() {
       return this.currenRouteName === 'biPatrolMonitor'
     },
@@ -412,7 +402,7 @@ export default {
 
       if (!this.map.hasLayer(this.layerB) && !this.map.hasLayer(this.layerA)) {
         this.map.setBearing(this.currenRouteName === 'biIndex' ? 0 : -45)
-        this.map.setView([30.7478613352993, 106.03655278081857], this.currenRouteName === 'biIndex' ? 12 : 18)
+        this.map.setView(this.gisMapCenterPoint, this.currenRouteName === 'biIndex' ? 12 : 18)
         this.map.addLayer(this[this.currenRouteName === 'biIndex' ? 'layerA' : 'layerB'])
       }
 
@@ -486,7 +476,7 @@ export default {
         // 根据缩放级别显示/隐藏图层
         if (currentZoom > 17 && currentZoom < 18) {
           this.map.setBearing(0)
-          this.map.setView([30.7478613352993, 106.03655278081857], 12)
+          this.map.setView(this.gisMapCenterPoint, 12)
           if (!this.map.hasLayer(this.layerA)) {
             this.layerA.addTo(this.map);
           }
@@ -496,7 +486,7 @@ export default {
           // 缩小时，显示 layerB，隐藏 layerA
         } else if(currentZoom > 12) {
           this.map.setBearing(-45)
-          this.map.setView([30.7478613352993, 106.03655278081857], 18)
+          this.map.setView(this.gisMapCenterPoint, 18)
           
           if (!this.map.hasLayer(this.layerB)) {
             this.layerB.addTo(this.map);
@@ -662,8 +652,8 @@ export default {
       this.robotList.map((r, index) => {
         const item = Object.assign({}, this.robotBaseInfo?.[r.robotId] || r)
         // item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
-        const lat = this.robotLocation?.[item.robotId]?.lat || 39.54
-        const lng = this.robotLocation?.[item.robotId]?.lng || 116.23
+        const lat = this.robotLocation?.[item.robotId]?.lat || this.gisMapCenterPoint[0]
+        const lng = this.robotLocation?.[item.robotId]?.lng || this.gisMapCenterPoint[1]
         item.points = L.latLng(lat, lng)
         const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === item.robotId);
         if (existingIndex >= 0) {
@@ -724,7 +714,7 @@ export default {
       // const lat = robotId === 'robot-001' ? latlng?.lat : this.robotLocation?.[robotId]?.lat
       // const lng = robotId === 'robot-001' ? latlng?.lng : this.robotLocation?.[robotId]?.lng
       const { lat, lng } = this.robotLocation?.[robotId] || {}
-      this.pointMarkers[existingIndex].setLatLng(L.latLng(lat || 30.7478613352993, lng || 106.03655278081857))
+      this.pointMarkers[existingIndex].setLatLng(L.latLng(lat || this.gisMapCenterPoint[0], lng || this.gisMapCenterPoint[1]))
       // this.pointMarkers[existingIndex].setLatLng(L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng))
       this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(lat, lng) }};
       // 存在则更新 icon
@@ -880,22 +870,12 @@ export default {
         if (this.dashedPolygonLayer.getLayers().length) this.clearLayer(null)
         return
       }
-      const polygonPoints = [
-        // [30.747402094262892, 106.03720949762425],  // 点1 (上偏左)
-        // [30.746587087515316,106.03824884204943],  // 点2 (右上)
-        // [30.745824237436622,106.03739157519864],  // 点3 (下偏右)
-        // [30.746639250628817,106.03635981721821]   // 点4 (左侧)
-        [ 30.748881699556307, 106.03529721123913 ],
-        [ 30.7478613352993, 106.03655278081857 ],
-        [ 30.747140651711415, 106.03579008416635 ],
-        [ 30.74812517003875, 106.03462176616857 ],
-      ];
       // 如果已有虚线多边形，移除
       if (this.dashedPolygonLayer.getLayers().length) {
         this.clearLayer('dashedPolygonLayer')
         return;
       }
-      L.polygon(polygonPoints, {
+      L.polygon(POLYGON_POINTS, {
         color: "#0BF9FE",          // 边框红色虚线醒目
         weight: 2,
         // opacity: 0.9,
@@ -907,7 +887,7 @@ export default {
         className: "dashed-select-area"
       }).addTo(this.dashedPolygonLayer);
       // 加一个平滑的flyToBounds，提高体验，但不强制刷新map，如果超出范围则适应。
-      const bounds = L.latLngBounds(polygonPoints);
+      const bounds = L.latLngBounds(POLYGON_POINTS);
       if (!this.map.getBounds().contains(bounds)) {
         this.map.flyToBounds(bounds, { padding: [30, 30], duration: 0.6 });
       }

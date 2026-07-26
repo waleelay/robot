@@ -1,7 +1,7 @@
 <template>
   <div class="w100 h100 flx-center flex-column empty" :style="{ '--textColor': textColor }">
     <img src="@/assets/images/new-bi/empty.png" :style="{ width, height: 'auto', opacity }" alt="" class="empty-img" />
-    <span class="empty-text mt10">暂无数据</span>
+    <span class="empty-text mt10">{{ text }}</span>
   </div>
 </template>
 
@@ -20,6 +20,10 @@ export default {
     opacity: {
       type: Number,
       default: 1
+    },
+    text: {
+      type: String,
+      default: '暂无数据'
     },
   }
 }

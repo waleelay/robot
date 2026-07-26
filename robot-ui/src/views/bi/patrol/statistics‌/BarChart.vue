@@ -14,10 +14,10 @@ export default({
     return {
       // 设备基础数据 (从题目获取)
       devices: [
-        { name: '无人车', total: 90836 },
-        { name: '机器狗', total: 905236 },
-        { name: '无人机', total: 925436 },
-        { name: '机器人', total: 925436 }
+        // { name: '无人车', total: 90836 },
+        // { name: '机器狗', total: 905236 },
+        // { name: '无人机', total: 925436 },
+        // { name: '机器人', total: 925436 }
       ],
       // 状态比例: 运行中70%，故障15%，离线15%
       runningRatio: 0.70,

@@ -13,19 +13,19 @@
           <div class="count flx-justify-between">
             <div class="item wp66 hp70 flx-center flex-column">
               <div class="desc">总数</div>
-              <div class="value mt4">{{ deviceStats?.total ? String(deviceStats?.total).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.total ? String(deviceStats?.total).padStart(2, '0') : '0' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 green">
               <div class="desc">在线</div>
-              <div class="value mt4">{{ deviceStats?.online ? String(deviceStats?.online).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.online ? String(deviceStats?.online).padStart(2, '0') : '0' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 orange">
               <div class="desc">故障</div>
-              <div class="value mt4">{{ deviceStats?.fault ? String(deviceStats?.fault).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.fault ? String(deviceStats?.fault).padStart(2, '0') : '0' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 gray">
               <div class="desc">离线</div>
-              <div class="value mt4">{{ deviceStats?.offline ? String(deviceStats?.offline).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.offline ? String(deviceStats?.offline).padStart(2, '0') : '0' }}</div>
             </div>
           </div>
           <div class="mt20">
@@ -70,19 +70,19 @@
           <div class="count flx-justify-between">
             <div class="item wp66 hp70 flx-center flex-column">
               <div class="desc">今日任务</div>
-              <div class="value mt4">{{ taskOverview?.totalToday || '-' }}</div>
+              <div class="value mt4">{{ taskOverview?.totalToday || '0' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10">
               <div class="desc">完成率</div>
-              <div class="value mt4">{{ taskOverview?.completedRateText || '-' }}</div>
+              <div class="value mt4">{{ taskOverview?.completedRateText || '0' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 green">
               <div class="desc">执行中</div>
-              <div class="value mt4">{{ taskOverview?.running || '-' }}</div>
+              <div class="value mt4">{{ taskOverview?.running || '0' }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 orange">
               <div class="desc">待执行</div>
-              <div class="value mt4">{{ taskOverview?.pending || '-' }}</div>
+              <div class="value mt4">{{ taskOverview?.pending || '0' }}</div>
             </div>
           </div>
           <div class="mt20">

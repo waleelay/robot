@@ -8,29 +8,85 @@ export default({
     points: {
       type: Array,
       default: () => []
+    },
+    tabDate: {
+      type: String,
+      default: ''
     }
   },
   data() {
     return {
-      list: [4, 5, 4, 7, 4, 3, 3],
-      xTimeData: [6.13, 6.12, 6.11, 6.10, 6.09, 6.08, 6.07],
+      list: [], // [4, 5, 4, 7, 4, 3, 3],
+      xTimeData: [], // [6.13, 6.12, 6.11, 6.10, 6.09, 6.08, 6.07],
       barChart: null,
       resizeHandler: null
     }
   },
   computed: {
+    emptyAxisData() {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      // MM.DD（如 07.26 / 6.13）
+      const formatDay = (d) => `${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+      const labels = [];
+
+      if (this.tabDate === 'today') {
+        // 最近 24 小时，按小时生成；时间降序（当前时刻在前）
+        for (let i = 0; i < 24; i++) {
+          const d = new Date(now.getTime() - i * 60 * 60 * 1000);
+          labels.push(`${pad(d.getHours())}:00`);
+        }
+      } else if (this.tabDate === 'week' || this.tabDate === 'all') {
+        // 最近七天，时间降序（今天在前）
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(now);
+          d.setHours(0, 0, 0, 0);
+          d.setDate(d.getDate() - i);
+          labels.push(formatDay(d));
+        }
+      } else if (this.tabDate === 'month') {
+        // 最近一个月（30 天），时间降序（今天在前）
+        for (let i = 0; i < 30; i++) {
+          const d = new Date(now);
+          d.setHours(0, 0, 0, 0);
+          d.setDate(d.getDate() - i);
+          labels.push(formatDay(d));
+        }
+      }
+
+      return {
+        labels,
+        values: labels.map(() => 0)
+      };
+    },
     chartLabels() {
-      return this.points && this.points.length ? this.points.map(item => item.label || item.date) : this.xTimeData;
+      if (this.points && this.points.length) {
+        return this.points.map(item => item.label || item.date);
+      }
+      return this.emptyAxisData.labels.length ? this.emptyAxisData.labels : this.xTimeData;
     },
     chartValues() {
-      return this.points && this.points.length ? this.points.map(item => item.count || 0) : this.list;
+      if (this.points && this.points.length) {
+        return this.points.map(item => item.count || 0);
+      }
+      return this.emptyAxisData.values.length ? this.emptyAxisData.values : this.list;
     }
   },
   watch: {
     points: {
       deep: true,
       handler() {
-        this.renderGroupBarChart();
+        this.refreshChart();
+      }
+    },
+    tabDate() {
+      this.refreshChart();
+    },
+    // points 仍为 [] 时依赖 tabDate 生成的横轴也需强制刷新
+    chartLabels: {
+      deep: true,
+      handler() {
+        this.refreshChart();
       }
     }
   },
@@ -58,6 +114,11 @@ export default({
         this.barChart = this.$echarts.init(dom);
         this.renderGroupBarChart();
       }
+    },
+    refreshChart() {
+      this.$nextTick(() => {
+        this.renderGroupBarChart();
+      });
     },
     renderGroupBarChart() {
       if (!this.barChart) return;
@@ -149,7 +210,7 @@ export default({
         yAxis: {
           name: '单位（次）',
           nameTextStyle: {
-            padding: [0, 0, 0, 20],
+            padding: [0, 0, 0, this.xTimeData.length ? 42 : 70],
             fontSize: 14,
             fontFamily: 'Microsoft YaHei',
             color: 'rgba(122, 155, 189, 0.80)',

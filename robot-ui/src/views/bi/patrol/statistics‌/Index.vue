@@ -10,7 +10,7 @@
             style="font-size: 14px; line-height: 19px;"
             :class="{ 'is-active': tabDate === item.value }"
             @click="handleClickTabDate(item.value)">
-            {{ item.label }}
+              {{ item.label }}
             <el-date-picker
               v-if="item.value === 'custom'"
               v-model="dateValue"
@@ -20,8 +20,10 @@
               end-placeholder="结束日期"
               format="yyyy-M-d"
               value-format="yyyy-M-d"
+              :clearable="false"
               :picker-options="pickerOptions"
-              @change="loadStatistics"
+              @click.native.stop
+              @change="handleCustomDateChange"
             >
             </el-date-picker>
           </div>
@@ -88,7 +90,7 @@
           <div class="desc mt4 d-flex" style="align-items: end">
             <span class="mr10">{{ tabDate === 'today' ? '较昨日' : tabDate === 'week' ? '较上周' : tabDate === 'month' ? '较上月' : '较同期' }}</span>
             <svg-icon icon-class="increase" class="increase" :class="{ 't': item.compareRate > 0 }" />
-            <span class="ml2">{{ item.compareRate > 0 ? '+' : '' }}{{ item.compareRate || '-' }}<span style="font-size: 14px;">%</span></span>
+            <span class="ml2">{{ item.compareRate > 0 ? '+' : '' }}{{ item.compareRate || '0' }}<span style="font-size: 14px;">%</span></span>
           </div>
         </div>
       </div>
@@ -108,11 +110,12 @@
                 <span class="ml10 value">{{ equipmentRuntime.onlineRate || 0 }}%</span>
               </div>
               <div class="ml40">
-                <span>任务完成率率</span>
+                <span>任务完成率</span>
                 <span class="ml10 value">{{ equipmentRuntime.taskCompletionRate || 0 }}%</span>
               </div>
             </div>
-            <BarChart class="mt5" :items="equipmentRuntime.items || []" />
+            <BarChart v-if="equipmentRuntime.items?.length" class="mt5" :items="equipmentRuntime.items || []" />
+            <Empty v-else class="mt5" width="194px" />
           </div>
         </div>
       </div>
@@ -170,7 +173,8 @@
             </div>
           </div>
           <div class="hp279 p20">
-            <LineChart :points="alarmTrendPoints" />
+            <LineChart v-if="alarmTrendPoints.length || tabDate !== 'custom'" :tabDate="tabDate" :points="alarmTrendPoints" />
+            <Empty v-else width="194px" />
           </div>
         </div>
         <div class="flex1 flex-column ml20 task">
@@ -341,7 +345,8 @@ export default {
       }));
     },
     taskCompletionItems() {
-      return (this.statistics && this.statistics.taskCompletion && this.statistics.taskCompletion.items) || [
+      const items = (this.statistics && this.statistics.taskCompletion && this.statistics.taskCompletion.items) || []
+      return items.length ? items : [
         { status: 'COMPLETED', name: '已完成', percent: 0 },
         { status: 'RUNNING', name: '执行中', percent: 0 },
         { status: 'INTERRUPTED', name: '异常中断', percent: 0 }
@@ -372,9 +377,18 @@ export default {
   },
   methods: {
     handleClickTabDate(e) {
+      if (e === 'custom') {
+        // 自定义由透明 date-picker 打开面板；已有日期时保持 dateValue，不要清空
+        return;
+      }
       this.tabDate = e
-      if (e !== 'custom') {
-        this.loadStatistics()
+      this.dateValue = []
+      this.loadStatistics()
+    },
+    handleCustomDateChange(val) {
+      // Element 清空时会把 v-model 置为 null；仅在选齐起止日期时请求
+      if (val && val.length === 2) {
+        this.loadStatistics('custom')
       }
     },
     handleClickTabRobot(e) {
@@ -416,7 +430,8 @@ export default {
         console.error('报告下载失败', err);
       }
     },
-    async loadStatistics() {
+    async loadStatistics(e) {
+      this.tabDate = e || this.tabDate
       const loading = this.$loading({
         lock: true,
         text: '',

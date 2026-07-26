@@ -199,7 +199,7 @@ export default {
     WarningExecuteError
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotAlarmObj']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotAlarmObj', 'gisMapCenterPoint']),
     firePersonError() {
       return this.$store.getters['websocket/getFirePersonError'];
     },
@@ -213,8 +213,8 @@ export default {
       warningVisible: false,
       details: {
         location: {
-          lat: 30.7453550,
-          longitude: 106.0376233
+          lat: this.gisMapCenterPoint?.[0] || '',
+          longitude: this.gisMapCenterPoint?.[1] || ''
           // lat: '',
           // longitude: ''
         }

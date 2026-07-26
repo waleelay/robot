@@ -14,7 +14,7 @@
       <div class="mt20 flex1 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
         <div class="card-title">
           <div class="text">
-            实时地图{{ globalMapId }}
+            实时地图
           </div>
         </div>
         <div class="flex1 mt10 h100 slam-map-wrap">
@@ -196,7 +196,10 @@ export default {
   max-width: 100%;
   min-height: 403px;
   overflow: hidden;
-  background: #1c121c;
+  background: linear-gradient(180deg, rgba(18, 20, 43, 0) 0%, #12142B 100%);
+  border: 1px solid #005BB5;
+  -webkit-box-shadow: 0 0 20px 0 rgba(0, 166, 255, 0.5) inset;
+  box-shadow: 0 0 20px 0 rgba(0, 166, 255, 0.5) inset;
 }
 .custom-tab-button1 {
   width: fit-content;

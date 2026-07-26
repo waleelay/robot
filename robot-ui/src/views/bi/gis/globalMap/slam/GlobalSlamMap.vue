@@ -187,7 +187,7 @@
         </div>
       </div>
     </template>
-    <el-empty v-else description="当前地图暂无预览，请先生成地图预览" />
+    <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="当前地图暂无预览，请先生成地图预览" />
     <div v-if="showNotice" class="notice-modal flx-center">
       <div class="notice-modal__mask" @click="closeNotice"></div>
       <div class="notice-modal__dialog">
@@ -206,6 +206,7 @@
 </template>
 
 <script>
+import Empty from '../../../components/Empty.vue'
 import { mapActions, mapState } from 'vuex';
 import addPointTask from './add-point-task.js'
 import Robot1 from '../popup/Robot1.vue'
@@ -225,7 +226,7 @@ const ROBOT_ICON_SCALE_Y = 16.525 / 28
 export default {
   name: 'BiPatrolSlam',
   mixins: [addPointTask],
-  components: { Robot1, RobotControlPart, RobotCarControlPart },
+  components: { Robot1, RobotControlPart, RobotCarControlPart, Empty },
   props: {
     map: { type: Object, default: null },
     // points: { type: Array, default: () => [] },

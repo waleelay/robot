@@ -46,11 +46,11 @@
         <div class="xlgl mt20 d-flex pr20 pl20">
           <div class="item hp62 flex1 flx-center flex-column">
             <div class="desc1">今日巡逻时长</div>
-            <div class="value mt4"><span class="mr4">{{ patrolOverview.durationToday || 0 }}</span>{{ patrolOverview.durationUnit || '-' }}</div>
+            <div class="value mt4"><span class="mr4">{{ patrolOverview.durationToday || 0 }}</span>{{ patrolOverview.durationUnit || '小时' }}</div>
           </div>
           <div class="item hp62 flex1 flx-center flex-column ml10">
             <div class="desc1">今日巡逻里程</div>
-            <div class="value mt4"><span class="mr4">{{ patrolOverview.mileageToday || 0 }}</span>{{ patrolOverview.mileageUnit || '-' }}</div>
+            <div class="value mt4"><span class="mr4">{{ patrolOverview.mileageToday || 0 }}</span>{{ patrolOverview.mileageUnit || 'KM' }}</div>
           </div>
         </div>
         <div class="mt18">

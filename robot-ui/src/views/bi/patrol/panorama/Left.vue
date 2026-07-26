@@ -14,28 +14,28 @@
           <div class="count flx-justify-between">
             <div class="item wp66 flex1 pt9 pr5 pb5 pl9">
               <div class="desc">总数</div>
-              <div class="value mt4">{{ deviceStats?.total ? String(deviceStats?.total).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.total ? String(deviceStats?.total).padStart(2, '0') : '0' }}</div>
               <div class="tar hp16" style="margin-top: -4px;">
                 <svg-icon icon-class="robot"></svg-icon>
               </div>
             </div>
             <div class="item wp66 flex1 ml10 pt9 pr5 pb5 pl9">
               <div class="desc">在线</div>
-              <div class="value mt4">{{ deviceStats?.online ? String(deviceStats?.online).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.online ? String(deviceStats?.online).padStart(2, '0') : '0' }}</div>
               <div class="tar hp16" style="margin-top: -4px;">
                 <svg-icon icon-class="robot"></svg-icon>
               </div>
             </div>
             <div class="item wp66 flex1 ml10 pt9 pr5 pb5 pl9">
               <div class="desc">故障</div>
-              <div class="value mt4">{{ deviceStats?.fault ? String(deviceStats?.fault).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.fault ? String(deviceStats?.fault).padStart(2, '0') : '0' }}</div>
               <div class="tar hp16" style="margin-top: -4px;">
                 <svg-icon icon-class="robot"></svg-icon>
               </div>
             </div>
             <div class="item wp66 flex1 ml10 pt9 pr5 pb5 pl9">
               <div class="desc">离线</div>
-              <div class="value mt4">{{ deviceStats?.offline ? String(deviceStats?.offline).padStart(2, '0') : '-' }}</div>
+              <div class="value mt4">{{ deviceStats?.offline ? String(deviceStats?.offline).padStart(2, '0') : '0' }}</div>
               <div class="tar hp16" style="margin-top: -4px">
                 <svg-icon icon-class="robot"></svg-icon>
               </div>

@@ -34,6 +34,8 @@ const state = {
   showRobotIds: [],
   // 当前全局地图标识：GIS 为 'gis'，SLAM 为对应地图 id
   globalMapId: 'gis',
+  // gis中心视图，南充市，默认坐标点[lat, lng]
+  gisMapCenterPoint: [30.7478613352993, 106.03655278081857]
 }
 
 const mutations = {

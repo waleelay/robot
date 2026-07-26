@@ -9,7 +9,7 @@ import store from '@/store/index.js';
  * @Version: 
  */
 const state = {
-  splitType: 6,
+  splitType: 1,
   isDragging: false,
   sourceData: null,
   sourceComponent: null,
