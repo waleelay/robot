@@ -1,6 +1,9 @@
-export const robotControlList = {
-
+export const controlModeObj =  {
+  MANUAL: '手动模式',
+  ASSISTED: '辅助模式',
+  NAVIGATION: '导航模式'
 }
+
 // 机器狗本体控制指令
 export const robotControlObj = {
   advance: { label: '前进', value: 1, class: 'up', key: 'base-forward' },

@@ -54,7 +54,7 @@
               <span>控制模式：</span>
               <el-dropdown :class="{ 'mt10': !showTalk, 'ml10': showTalk }" trigger="click" @command="handleModeChange">
                 <div class="mode-status success flex-column">
-                  <span>{{ selectedRobot?.controlMode || 'MANUAL'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
+                  <span>{{ controlModeObj[selectedRobot?.controlMode] || '-'  }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
                 </div>
                 <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
                   <el-dropdown-item command="NAVIGATION">导航模式</el-dropdown-item>

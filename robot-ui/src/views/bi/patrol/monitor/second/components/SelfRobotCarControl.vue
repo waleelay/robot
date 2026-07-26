@@ -68,7 +68,7 @@
         <span>控制模式：</span>
         <el-dropdown trigger="click" :class="{ 'mt10': !vehicleLightDevice && !warningLightDevices?.length, 'ml10': vehicleLightDevice || warningLightDevices?.length }" @command="handleModeChange">
           <div class="mode-status success flex-column">
-            <span>{{ selectedRobot?.controlMode }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
+            <span>{{ controlModeObj[selectedRobot?.controlMode] || '-' }}模式<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
           </div>
           <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
             <el-dropdown-item command="NAVIGATION">自动巡航模式</el-dropdown-item>

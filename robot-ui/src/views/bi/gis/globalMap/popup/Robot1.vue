@@ -27,7 +27,7 @@
           是否告警：<span class="value">{{ currenRobot?.alarmLevel === 'none' ? '否' : '是' }}</span>
         </div>
         <div class="item wp156 mt10">
-          控制模型：<span class="value">{{ currenRobot?.controlMode || '-' }}</span>
+          控制模型：<span class="value">{{ controlModeObj[currenRobot?.controlMode] || '-' }}</span>
         </div>
         <div class="item wp149 ml26 mt10">
           上装设备：<span class="value">{{ currenRobot?.mountedDeviceCount || 0 }}台</span>
@@ -67,6 +67,7 @@
 import { mapActions, mapState } from 'vuex';
 import gsap from './gsap.js';
 import { getDescArr } from '../../../../../utils/index.js';
+import { controlModeObj } from '../../../js/constants/robot-control'
 export default {
   name: 'Modal',
   mixins: [gsap],
@@ -74,6 +75,7 @@ export default {
     return {
       className: '',
       pathVisible: false,
+      controlModeObj
     }
   },
   computed: {

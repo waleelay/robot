@@ -24,13 +24,13 @@
         </div>
         <div class="mt21 hp178 d-flex" style="background: #011223; border: 1px solid #123F8C;">
           <div class="flex1 flx-align-center pl37 robot">
-            <img v-if="selectedRobot.typeCode === 'ROBOT_DOG'"src="@/assets/images/new-bi/dog.png" alt="" srcset="" width="161" height="104">
+            <img v-if="selectedRobot.typeCode === 'ROBOT_DOG'" src="@/assets/images/new-bi/dog.png" alt="" srcset="" width="161" height="104">
             <img v-if="selectedRobot.typeCode === 'WHEELED_ROBOT'" src="@/assets/images/new-bi/car.png" alt="" srcset="" width="143" height="143">
             <div class="basic ml20">
               <div class="desc">当前速度：{{ currenRobot.speed }}m/s</div>
               <div class="desc">当前电量：{{ currenRobot.battery }}%</div>
               <div class="desc">当前任务：{{ currenRobot?.runningTask?.name || '-' }}</div>
-              <div class="desc">控制模型：{{ currenRobot?.controlMode}}</div>
+              <div class="desc">控制模型：{{ controlModeObj[currenRobot?.controlMode] || '-'}}</div>
             </div>
           </div>
           <div class="flex1 flx-align-center">
@@ -58,14 +58,14 @@
         </div>
         <div class="common-scroll mt10 pr14" style="height: calc(100% - 47px); min-height: 923px; overflow-y: auto; margin-right: -14px;">
           <Yuntai />
-          <div class="mt20">
+          <!-- <div class="mt20">
             <div class="card-title title-344-37">
               <div class="text">
                 多合一
               </div>
             </div>
             <MultiInOne />
-          </div>
+          </div> -->
           <div class="mt20" v-if="audioDevice">
             <div class="card-title title-344-37">
               <div class="text">

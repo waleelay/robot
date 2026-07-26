@@ -2,6 +2,7 @@ import { mapActions, mapState } from "vuex";
 import { takeoverControl, acquireControl, mediaClientId, sendEquipmentCommand, createConfirmToken } from "../../../../../../api/media";
 import { errorMessage } from "../../../../../../utils";
 import ControlModeWarning from "./ControlModeWarning.vue";
+import { controlModeObj } from "../../../../js/constants/robot-control";
 
 function defaultVehicleLightState() {
   return {
@@ -70,6 +71,7 @@ export default {
   },
   data() {
     return {
+      controlModeObj,
       controlTimers: {},
       controlSeq: 1,
       controlSessions: {},
