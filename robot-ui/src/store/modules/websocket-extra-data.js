@@ -78,7 +78,7 @@ const mutations = {
   },
   SET_ROBOT_ALARM_INFO(state, { robotId, alarmInfo, close }) {
     if (close) {
-      Vue.delete(state.robotAlarmObj, robotId);      
+      Vue.delete(state.robotAlarmObj, robotId);
     } else {
       state.robotAlarmObj = { ...state.robotAlarmObj, [robotId]: alarmInfo };
     }
@@ -114,7 +114,7 @@ const mutations = {
     state.slamMapData = value;
   },
   SET_TASK_PATH_POINTS(state, { taskId, data }) {
-    state.taskPathPoints = { ...state.taskPathPoints, [taskId]: data };    
+    state.taskPathPoints = { ...state.taskPathPoints, [taskId]: data };
   },
   SET_MAP_SEARCH_VALUE(state, value) {
     state.mapSearchValue = value ? `${value}_timestamp_${new Date().getTime()}` : '';
@@ -194,80 +194,19 @@ const actions = {
       state.robotBaseInfo[item.robotId] = Object.assign({}, item);
       commit('SET_ROBOT_BASE_INFO', { robotId: item.robotId, robotInfo: { ...item } });
       commit('SET_ROBOT_LOCATION', { robotId: item.robotId, location: item.location });
-      
+
     })
     data?.alarms?.high?.items.map((item, index) => {
       commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
     })
-    const slamMapList = (data?.map || []).map(item => {
-      if (item.mapName.includes('联通')) {
-        item.points = [
-    {
-        "id": "2077776201211469825",
-        "mapId": "2077775285125144578",
-        "pointCode": "point-1",
-        "pointName": "point-1",
-        "pointType": "NORMAL",
-        "coordinateX": -2.874684,
-        "coordinateY": -0.391763,
-        "coordinateZ": null,
-        "remark": null
-    },
-    {
-        "id": "2077776298003423234",
-        "mapId": "2077775285125144578",
-        "pointCode": "point-2",
-        "pointName": "point-2",
-        "pointType": "NORMAL",
-        "coordinateX": -9.842506,
-        "coordinateY": -0.33602,
-        "coordinateZ": null,
-        "remark": null
-    },
-    {
-        "id": "2077776460083912705",
-        "mapId": "2077775285125144578",
-        "pointCode": "point-3",
-        "pointName": "point-3",
-        "pointType": "NORMAL",
-        "coordinateX": -10.670098,
-        "coordinateY": 5.522158,
-        "coordinateZ": null,
-        "remark": null
-    },
-    {
-        "id": "2077776541868646401",
-        "mapId": "2077775285125144578",
-        "pointCode": "point-4",
-        "pointName": "point-4",
-        "pointType": "NORMAL",
-        "coordinateX": -10.91751,
-        "coordinateY": -0.278282,
-        "coordinateZ": null,
-        "remark": null
-    },
-    {
-        "id": "2077776632289452034",
-        "mapId": "2077775285125144578",
-        "pointCode": "point-5",
-        "pointName": "point-5",
-        "pointType": "NORMAL",
-        "coordinateX": -3.165264,
-        "coordinateY": 0.436464,
-        "coordinateZ": null,
-        "remark": null
-    }
-]
-      }
-      return item;
-    });
+    const slamMapList = data?.map || [];
     commit('SET_SLAM_MAP_LIST', slamMapList);
     commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, data?.devices || [], data?.tasks || []));
   },
   setSlamMapData({ commit }, value) {
     commit('SET_SLAM_MAP_DATA', value);
   },
-  setTaskPathPoints({ commit }, { taskId, data }) {    
+  setTaskPathPoints({ commit }, { taskId, data }) {
     commit('SET_TASK_PATH_POINTS', { taskId, data });
   },
   // 设置设备对象
@@ -320,16 +259,15 @@ const actions = {
       : {};
       commit('SET_ROBOT_BASE_INFO', { robotId, robotInfo: { ...robot, ...state.robotBaseInfo[robotId], ...event.data }});
       // commit('SET_ROBOT_BASE_INFO', { robotId: 'test111', robotInfo: { ...state.robotBaseInfo['test111'], status: 'online' } });
-    } else if (event.event === 'panorama.device.location.changed') {      
-      // commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
+    } else if (event.event === 'panorama.device.location.changed') {
       commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
     } else if (event.event === 'panorama.task.changed') {
       commit('SET_TASK_INFO', event.data.task);
     } else if (event.event === 'panorama.alarm.changed') {
-      // commit('SET_ALARMS_DATA', event.data.alarm);
-      // if (event.data.alarm.level.toLowerCase() === 'high') {
-      //   commit('SET_ROBOT_ALARM_INFO', { robotId: event.data.alarm.robotId, alarmInfo: event.data.alarm });
-      // }
+      commit('SET_ALARMS_DATA', event.data.alarm);
+      if (event.data.alarm.level.toLowerCase() === 'high') {
+        commit('SET_ROBOT_ALARM_INFO', { robotId: event.data.alarm.robotId, alarmInfo: event.data.alarm });
+      }
     } else if (event.event === 'panorama.stats.changed') {
       commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || []);
       commit('SET_DEVICE_STATS', event.data.deviceStats || {});

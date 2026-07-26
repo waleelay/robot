@@ -301,7 +301,7 @@ export default {
         })
         this.equipmentInfo.online.list = onlineList
         this.equipmentInfo.offline.list = offlineList
-        // this.executePlay()
+        this.executePlay()
       },
       deep: true,
       immediate: true

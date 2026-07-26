@@ -200,7 +200,7 @@
     </div>
     <RobotControlPart ref="robotControlPartRef" />
     <RobotCarControlPart ref="robotCarControlPartRef" />
-    <Robot1 :showAnimate="true" ref="robot1Ref" @showControlPart="showControlPart" @showPath="showPathArea" @showSlam="showSlam" @showArea="showDashedArea" @clear="clear" />
+    <Robot1 :showAnimate="showAnimate" :style="popupStyle" ref="robot1Ref" @showControlPart="showControlPart" @showPath="showPathArea" @showSlam="showSlam" @showArea="showDashedArea" @clear="clear" />
     <!-- <Slam ref="slamRef" /> -->
   </div>
 </template>
@@ -304,16 +304,22 @@ export default {
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
+    currenRouteName() {
+      return this.$route.name
+    },
     // biPatrolMonitor：精简图标，不展示状态信息（与 GIS 一致）
     showSmall() {
-      return this.$route.name === 'biPatrolMonitor'
+      return this.currenRouteName === 'biPatrolMonitor'
+    },
+    showAnimate() {
+      return this.currenRouteName !== 'biIndex'
     },
     popupStyle() {
-      return this.$route.name === 'biIndex' ? {
+      return this.currenRouteName === 'biIndex' ? {
         left: this.popupOffset.x + 'px',
         top: this.popupOffset.y + 'px',
         display: this.popupVisible ? 'block' : 'none'
-      } : {}
+      } : {};
     },
     normalRobots() {
       return Object.values(this.robotBaseInfo || {}).filter(item => item.status === 'online') || []
@@ -598,7 +604,7 @@ export default {
     handleRobotClick(event, robot) {
       // 点击装备时仅还原临时打点/派遣状态，保留 MapTool 点位渲染
       this.resetSlamDrawState({ keepMapToolPath: true })
-      if (this.$route.name === 'biIndex') {
+      if (this.currenRouteName === 'biIndex') {
         if (this.activeRobotId === robot.robotId) {
           this.closePopup()
         } else {
@@ -688,7 +694,7 @@ export default {
       }
     },
     updatePopupPosition(robot) {
-      if (this.$route.name !== 'biIndex') return
+      if (this.currenRouteName !== 'biIndex') return
       const target = robot || this.drawableRobots.find(item => item.robotId === this.activeRobotId)
       if (!this.popupVisible || !target?.pixel) return
       const stage = this.$el?.querySelector?.('.map-preview-stage')
@@ -1156,8 +1162,7 @@ export default {
       }
     }
   }
-  
-  // 地图工具
+// 地图工具
   .map-operation {
     position: absolute;
     top: 8px !important;
