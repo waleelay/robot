@@ -1,6 +1,7 @@
 import { set } from "nprogress";
 import { active } from "sortablejs";
 import Vue from "vue";
+import { SLAM_POINTS } from "../../views/bi/js/constants/gisMapPoints";
 
 const state = {
   // 设备对象：设备详情，包含坐标位置，task基本信息
@@ -201,7 +202,10 @@ const actions = {
     data?.alarms?.high?.items.map((item, index) => {
       commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
     })
-    const slamMapList = data?.map || [];
+    const slamMapList = (data?.map || []).map(item => {
+      item.points = item.points || SLAM_POINTS?.[item.id] || [];
+      return item;
+    });
     commit('SET_SLAM_MAP_LIST', slamMapList);
     commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, data?.devices || [], data?.tasks || []));
   },

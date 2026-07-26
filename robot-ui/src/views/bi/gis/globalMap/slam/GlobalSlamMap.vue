@@ -5,7 +5,13 @@
     :style="visibleAreaStyle"
   >
     <template v-if="hasPreview">
-      <div ref="viewportRef" class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #112B4D;">
+      <div
+        ref="viewportRef"
+        class="map-preview-viewport flx-center w100 h100"
+        :class="{ 'is-map-loading': mapLoading }"
+        @wheel="handleWheel"
+        style="background: #112B4D;"
+      >
         <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
           <!-- <img v-if="imageUrl" ref="imageRef" class="map-preview-image" :src="imageUrl" alt="地图预览" style="width: 100%; height: 100%;" /> -->
           <template v-if="imageUrl">
@@ -37,7 +43,7 @@
                   @mouseleave="hoveredPointId = null"
                   @click.stop="handlePointClick(point)"
                 >
-                  <circle r="2" />
+                  <circle r="6" />
                   <text v-if="showLabels || point.id === selectedPointId" x="9" y="-9">{{ point.pointName }}</text>
                   <title>{{ point.pointName }} / {{ point.pointCode || point.id }} / 任务路径点</title>
                 </g>
@@ -185,6 +191,12 @@
             </div>
           </div>
         </div>
+        <transition name="slam-map-loading-fade">
+          <div v-if="mapLoading" class="slam-map-loading flx-center flex-column" @wheel.prevent @mousedown.stop>
+            <div class="slam-map-loading__spinner" aria-hidden="true"></div>
+            <p class="slam-map-loading__text">{{ previewImageStatus || '地图加载中' }}</p>
+          </div>
+        </transition>
       </div>
     </template>
     <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="当前地图暂无预览，请先生成地图预览" />
@@ -249,6 +261,7 @@ export default {
       robotSelectedCorners: ROBOT_SELECTED_CORNERS,
       imageUrl: '',
       previewImageStatus: '地图预览加载中',
+      mapLoading: false,
       imageObjectUrl: '',
       imageLoadSeq: 0,
       hoveredPointId: null,
@@ -532,22 +545,45 @@ export default {
     previewSource: {
       immediate: true,
       handler({ id, cacheKey, hasPreview }, oldVal) {
-        // 切换 SLAM 地图：清空路径/画线/打点，重新加载底图与装备
-        if (oldVal && String(oldVal.id) !== String(id)) {
+        const switched = !!(oldVal && String(oldVal.id) !== String(id))
+        // 切换 SLAM 地图：清空路径/画线/打点，并先对齐缩放，避免旧 zoom + 新尺寸造成压缩闪现
+        if (switched) {
           this.resetSlamDrawState()
+          this.invalidateMapBitmap()
         }
-        this.revokeImageUrl()
-        this.previewImageStatus = '地图预览加载中'
-        if (!hasPreview || id === undefined || id === null) return
+        this.previewImageStatus = '地图加载中...'
+        if (!hasPreview || id === undefined || id === null) {
+          this.mapLoading = false
+          this.revokeImageUrl()
+          return
+        }
         const preUrl = (process.env.VUE_APP_BASE_ORIGIN || window.location.origin || '').replace(/\/$/, '')
-        this.imageUrl = `${preUrl}/api/v1/management/maps/${id}/preview-image?t=${encodeURIComponent(cacheKey || '')}`
-        this.$nextTick(() => {
+        const nextUrl = `${preUrl}/api/v1/management/maps/${id}/preview-image?t=${encodeURIComponent(cacheKey || '')}`
+        // 切换时不先置空 imageUrl，避免空态闪一下；同 tick 内同步重算 zoom
+        if (this.imageObjectUrl) {
+          URL.revokeObjectURL(this.imageObjectUrl)
+          this.imageObjectUrl = null
+        }
+        this.coloredCanvas = null
+        const urlChanged = this.imageUrl !== nextUrl
+        if (urlChanged) this.imageUrl = nextUrl
+        // 切换或首次/预览更新时展示加载态
+        if (switched || !oldVal || urlChanged) {
+          this.mapLoading = true
+        }
+        if (switched || !oldVal) {
           this.updateZoomBounds(true)
+        }
+        this.$nextTick(() => {
+          // 首屏 viewport 可能尚未就绪，再对齐一次；切换时保持重置
+          this.updateZoomBounds(switched || !oldVal)
           this.observeViewport()
           if (this.$refs.canvas) {
             this.canvas = this.$refs.canvas
             this.ctx = this.canvas.getContext('2d')
             this.loadMap()
+          } else {
+            this.mapLoading = false
           }
         })
       },
@@ -636,6 +672,20 @@ export default {
       this.lastDrawnPaths = null
       if (typeof this.reset === 'function') {
         this.reset()
+      }
+    },
+    // 切换地图时丢弃旧位图，避免 stage 尺寸变化时旧图被拉伸/压缩
+    invalidateMapBitmap() {
+      this.imageLoadSeq += 1
+      this.img = null
+      this.W = 0
+      this.H = 0
+      this.coloredCanvas = null
+      this.isLoaded = false
+      this.grid = null
+      if (this.canvas) {
+        this.canvas.width = 1
+        this.canvas.height = 1
       }
     },
     togglePath(visible) {
@@ -1022,6 +1072,43 @@ export default {
   &:active {
     cursor: grabbing;
   }
+  &.is-map-loading {
+    cursor: wait;
+    .map-preview-stage {
+      opacity: 0.35;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+  }
+  .slam-map-loading {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    background: rgba(8, 22, 40, 0.55);
+    backdrop-filter: blur(2px);
+    pointer-events: all;
+  }
+  .slam-map-loading__spinner {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid rgba(11, 249, 254, 0.2);
+    border-top-color: #0BF9FE;
+    border-right-color: rgba(0, 203, 253, 0.75);
+    animation: slam-map-spin 0.75s linear infinite;
+    box-shadow: 0 0 16px rgba(11, 249, 254, 0.25);
+  }
+  .slam-map-loading__text {
+    margin: 14px 0 0;
+    color: #D7EDFF;
+    font-family: "Microsoft YaHei";
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: 0.5px;
+  }
   .map-preview-stage {
     position: relative;
     top: 0;
@@ -1030,6 +1117,7 @@ export default {
     // will-change: left, top, width, height;
     will-change: transform;
     transform-origin: center center;
+    transition: opacity 0.2s ease;
     &:active {
       cursor: grabbing;
     }
@@ -1052,11 +1140,13 @@ export default {
           filter: drop-shadow(0 2px 4px rgba(16, 185, 129, .4));
         }
         text {
-          font-size: 12px;
+          font-size: 14px;
           paint-order: stroke;
-          stroke: #fff;
+          // stroke: #fff;
+          stroke: #497da4;
           stroke-width: 1px;
-          fill: #0f172a;
+          // fill: #0f172a;
+          fill: #081018;
         }
         &.inPath circle {
           fill: #2563eb;
@@ -1438,5 +1528,20 @@ export default {
     height: 20px;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M10 2L18 16H2L10 2Z' fill='%23FFC107' stroke='%23FFC107' stroke-width='1'/%3E%3Cpath d='M10 7V11' stroke='%23000' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='10' cy='14' r='1' fill='%23000'/%3E%3C/svg%3E") center/contain no-repeat;
   }
+}
+
+@keyframes slam-map-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.slam-map-loading-fade-enter-active,
+.slam-map-loading-fade-leave-active {
+  transition: opacity 0.22s ease;
+}
+.slam-map-loading-fade-enter,
+.slam-map-loading-fade-leave-to {
+  opacity: 0;
 }
 </style>

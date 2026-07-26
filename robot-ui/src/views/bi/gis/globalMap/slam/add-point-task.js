@@ -149,23 +149,37 @@ export default {
     // ---------- 加载地图 ----------
     loadMap() {
       const img = new Image();
+      const loadSeq = (this.imageLoadSeq = (this.imageLoadSeq || 0) + 1);
+      const targetUrl = this.imageUrl;
+      this.mapLoading = true;
+      this.previewImageStatus = this.previewImageStatus || '地图加载中...';
       img.crossOrigin = 'anonymous';
       img.onload = () => {
+        // 快速切换时忽略过期加载，避免旧图回闪
+        if (loadSeq !== this.imageLoadSeq || this.imageUrl !== targetUrl) return;
         this.img = img;
         this.W = img.width;
         this.H = img.height;
         this.coloredCanvas = null;
         this.canvas = this.$refs.canvas || this.canvas;
+        if (!this.canvas) {
+          this.mapLoading = false;
+          return;
+        }
         this.ctx = this.canvas.getContext('2d');
         this.buildGrid(img);
         this.syncCanvasResolution();
         this.isLoaded = true;
-        console.log('地图加载完成，安全距离已应用');
+        this.mapLoading = false;
+        this.previewImageStatus = '地图预览加载中';
       };
       img.onerror = () => {
+        if (loadSeq !== this.imageLoadSeq || this.imageUrl !== targetUrl) return;
+        this.mapLoading = false;
+        this.previewImageStatus = '地图加载失败';
         this.showSlamError('图片加载失败，请确认路径正确: ' + this.imagePath);
       };
-      img.src = this.imageUrl;
+      img.src = targetUrl;
     },
 
     // ---------- 构建障碍物网格（含安全距离） ----------

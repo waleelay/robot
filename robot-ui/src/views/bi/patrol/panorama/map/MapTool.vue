@@ -52,7 +52,7 @@
       <div ref="viewChangeRef" class="view-change flx-center wp50 hp50" @click.stop="toggleViewContainer">
         <img src="../../../../../assets/images/new-bi/view.png" width="44px" height="44px" style="border-radius: 50%;" />
       </div>
-      <div ref="viewContainerRef" v-show="showViewContainer" class="view-container p20 wp274" @click.stop :class="{ 'hp332': slamList.length && selectType === 'slam', 'hp145': !slamList.length }">
+      <div ref="viewContainerRef" v-show="showViewContainer" class="view-container p20 wp274 flex-column" @click.stop :class="{ 'hp332': slamList.length && selectType === 'slam', 'hp145': !slamList.length }">
         <div class="title">地图选择</div>
         <div class="d-flex mt8">
           <div class="img-view wp112 hp63" :class="{ 'is-active': currentType === 'gis' && selectType !== 'slam' }" @click="selectMapType('gis')">
@@ -64,9 +64,9 @@
             <span>SLAM地图</span>
           </div>
         </div>
-        <div v-if="selectType === 'slam'" class="slam-list mt20 pb6">
+        <div v-if="selectType === 'slam'" class="slam-list mt20 pb6 flex1 common-scroll">
           <div v-for="item in slamList" :key="item.id" class="item flx-justify-between" :class="{ 'is-active': String(currentSlam) === String(item.id) }" @click="selectSlamMap(item)">
-            <span>{{ item.mapName }}</span>
+            <span class="text-ellipsis" :title="item.mapName">{{ item.mapName }}</span>
             <svg-icon v-if="String(currentSlam) === String(item.id)" icon-class="check" style="font-size: 16px;"></svg-icon>
           </div>
         </div>
@@ -221,12 +221,14 @@ export default {
       }
     },
     selectSlamMap(mapInfo) {
+      const nextId = mapInfo?.id
+      if (nextId == null || nextId === '') return
+      // 已选中同一张图时不重复切换，避免触发地图重载闪烁
+      if (this.currentType === 'slam' && String(this.currentSlam) === String(nextId)) return
+      this.selectType = 'slam'
       this.currentType = 'slam'
-      if (mapInfo?.id != null && mapInfo?.id !== '') {
-        this.setGlobalMapId(mapInfo.id)
-      }
+      this.setGlobalMapId(nextId)
       this.$emit('changeSlamMap', mapInfo)
-      // this.showViewContainer = false
     },
     toggleViewContainer() {
       this.showViewContainer = !this.showViewContainer
@@ -434,6 +436,9 @@ export default {
       }
     }
     .slam-list {
+      min-height: 0;
+      overflow-y: auto;
+      margin-right: -20px;
       .item {
         width: 234px;
         padding: 8px 10px;
@@ -442,8 +447,12 @@ export default {
         font-size: 14px;
         line-height: 19px;
         letter-spacing: 0.857px;
+        align-items: flex-start;
         &.is-active {
           border: 1px solid #0BF9FE;
+        }
+        .svg-icon {
+          height: 19px;
         }
       }
     }

@@ -128,11 +128,9 @@ export default {
       const changed = String(this.currentSlamMapId) !== String(nextId)
       this.currentSlamMapId = nextId
       this.isSlam = true
+      // 地图绘制复位由 GlobalSlamMap.previewSource 在同 tick 处理，这里只同步工具栏点位态
       if (changed) {
-        this.$nextTick(() => {
-          this.$refs.globalMapRef?.resetSlamDrawState?.()
-          this.$refs.mapToolRef?.resetPathActive?.()
-        })
+        this.$refs.mapToolRef?.resetPathActive?.()
       }
     },
     selectDefaultSlamMap() {
