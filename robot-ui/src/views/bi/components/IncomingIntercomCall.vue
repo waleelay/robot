@@ -23,7 +23,7 @@
             :disabled="activeIncomingCall.videoLoading"
             @click.stop="enableVideo"
           >
-            {{ activeIncomingCall.videoLoading ? '开启中...' : '开启视频' }}
+            {{ activeIncomingCall.videoLoading ? '开启中...' : '开启画面' }}
           </button>
           <button
             class="header-icon-button"
@@ -32,18 +32,18 @@
             :title="callMode === 'ringing' ? '拒接' : '挂断'"
             @click.stop="closeCall"
           >
-            <svg-icon icon-class="close1" />
+            <svg-icon icon-class="close" />
           </button>
         </div>
       </header>
 
       <div v-if="callMode === 'ringing'" class="compact-call-content">
-        <img class="robot-illustration" src="@/assets/images/new-bi/intercom-robot.png" alt="">
-        <div class="compact-call-info">
-          <strong>{{ robotName }}</strong>
-          <span>{{ ringingDescription }}</span>
+        <img class="robot-illustration" src="@/assets/images/new-bi/car.png" width="78" height="78" alt="">
+        <div class="compact-call-info ml5">
+          <span class="name text-ellipsis" :title="robotName">{{ robotName }}</span>
+          <span class="desc mt10">{{ ringingDescription }}</span>
         </div>
-        <div class="compact-call-actions incoming-actions">
+        <div class="compact-call-actions incoming-actions ml13">
           <button
             class="round-action is-danger"
             type="button"
@@ -66,12 +66,12 @@
       </div>
 
       <div v-else-if="callMode === 'audio'" class="compact-call-content">
-        <img class="robot-illustration" src="@/assets/images/new-bi/intercom-robot.png" alt="">
-        <div class="compact-call-info">
-          <strong>{{ robotName }}</strong>
-          <span>{{ formattedDuration }}</span>
+        <img class="robot-illustration" src="@/assets/images/new-bi/car.png" width="78" height="78" alt="">
+        <div class="compact-call-info ml5">
+          <span class="name text-ellipsis" :title="robotName">{{ robotName }}</span>
+          <span class="desc mt10">{{ formattedDuration }}</span>
         </div>
-        <div class="compact-call-actions audio-actions">
+        <div class="compact-call-actions audio-actions ml13">
           <button
             class="round-action is-danger"
             type="button"
@@ -88,7 +88,7 @@
             :title="activeIncomingCall.micMuted ? '恢复本地麦克风' : '静音本地麦克风'"
             @click="toggleMicrophone"
           >
-            <svg-icon :icon-class="activeIncomingCall.micMuted ? 'mic-off' : 'mic'" />
+            <svg-icon :icon-class="activeIncomingCall.micMuted ? 'mic-off-fill' : 'mic-fill'" />
           </button>
           <button
             class="round-action is-local"
@@ -97,7 +97,15 @@
             :title="activeIncomingCall.speakerMuted ? '恢复本地扬声器' : '静音本地扬声器'"
             @click="toggleSpeaker"
           >
-            <svg-icon :icon-class="activeIncomingCall.speakerMuted ? 'volume-mute' : 'volume-l'" />
+            <svg-icon :icon-class="activeIncomingCall.speakerMuted ? 'volume-mute-fill' : 'volume-fill'" />
+          </button>
+          <button
+            class="round-action is-local"
+            type="button"
+            title="跳转上装控制"
+            @click="openRemoteControl"
+          >
+            <svg-icon icon-class="control" />
           </button>
         </div>
       </div>
@@ -105,23 +113,15 @@
       <div v-else class="video-call-content">
         <div class="call-video-shell">
           <video ref="callVideo" autoplay playsinline muted />
-          <button
-            class="close-video-button"
-            type="button"
-            title="关闭视频"
-            aria-label="关闭视频"
-            @click="disableVideo"
-          >
-            <svg-icon icon-class="close1" />
-          </button>
+          <span class="close-video" @click="disableVideo">关闭画面</span>
           <div v-if="!videoReady" class="video-loading">
             <i class="el-icon-loading" />
             <span>{{ activeIncomingCall.videoLoading ? '正在开启主摄像头...' : '等待视频画面...' }}</span>
           </div>
         </div>
         <div class="video-call-info">
-          <strong>{{ robotName }}</strong>
-          <span>{{ formattedDuration }}</span>
+          <span class="name text-ellipsis" :title="robotName">{{ robotName }}</span>
+          <span class="desc">{{ formattedDuration }}</span>
         </div>
         <div class="video-call-actions">
           <div class="labeled-action">
@@ -144,9 +144,10 @@
               :title="activeIncomingCall.micMuted ? '恢复本地麦克风' : '静音本地麦克风'"
               @click="toggleMicrophone"
             >
-              <svg-icon :icon-class="activeIncomingCall.micMuted ? 'mic-off' : 'mic'" />
+              <svg-icon :icon-class="activeIncomingCall.micMuted ? 'mic-off-fill' : 'mic-fill'" />
             </button>
-            <span>{{ activeIncomingCall.micMuted ? '取消静音' : '静音' }}</span>
+            <span>麦克风</span>
+            <!-- <span>{{ activeIncomingCall.micMuted ? '取消静音' : '静音' }}</span> -->
           </div>
           <div class="labeled-action">
             <button
@@ -156,9 +157,10 @@
               :title="activeIncomingCall.speakerMuted ? '恢复本地扬声器' : '静音本地扬声器'"
               @click="toggleSpeaker"
             >
-              <svg-icon :icon-class="activeIncomingCall.speakerMuted ? 'volume-mute' : 'volume-l'" />
+              <svg-icon :icon-class="activeIncomingCall.speakerMuted ? 'volume-mute-fill' : 'volume-fill'" />
             </button>
-            <span>{{ activeIncomingCall.speakerMuted ? '恢复扬声器' : '扬声器' }}</span>
+            <!-- <span>{{ activeIncomingCall.speakerMuted ? '恢复扬声器' : '扬声器' }}</span> -->
+            <span>扬声器</span>
           </div>
           <div class="labeled-action">
             <button class="round-action is-local" type="button" title="跳转上装控制" @click="openRemoteControl">
@@ -179,6 +181,7 @@ const SCREEN_WIDTH = 1920
 const SCREEN_HEIGHT = 1080
 const WINDOW_MARGIN = 16
 const COMPACT_SIZE = { width: 358, height: 152 }
+const AUDIO_SIZE = { width: 410, height: 152 }// width: 394, height: 152
 const VIDEO_SIZE = { width: 324, height: 382 }
 
 export default {
@@ -210,7 +213,7 @@ export default {
       return this.activeIncomingCall.videoEnabled ? 'video' : 'audio'
     },
     windowSize() {
-      return this.callMode === 'video' ? VIDEO_SIZE : COMPACT_SIZE
+      return this.callMode === 'video' ? VIDEO_SIZE : this.callMode === 'audio' ? AUDIO_SIZE : COMPACT_SIZE
     },
     windowStyle() {
       return {
@@ -442,9 +445,9 @@ export default {
   justify-content: space-between;
   height: 40px;
   margin: 9px 9px 0;
-  padding: 0 9px 0 10px;
+  padding-left: 10px;
   box-sizing: border-box;
-  background: linear-gradient(94deg, #2c8eff 0%, rgba(0, 13, 59, 0.19) 100%);
+  background: linear-gradient(90deg, #2C8EFF -0.18%, rgba(0, 13, 59, 0.19) 94.39%);
   cursor: move;
   touch-action: none;
 
@@ -492,8 +495,8 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   color: #4ab8ff;
   border: 0;
@@ -501,8 +504,7 @@ button {
   cursor: pointer;
 
   .svg-icon {
-    width: 16px;
-    height: 16px;
+    font-size: 16px;
   }
 }
 
@@ -513,7 +515,7 @@ button {
   color: #d7edff;
   border: 0;
   border-radius: 2px;
-  background: rgba(36, 96, 178, 0.62);
+  background: rgba(38, 84, 152, 0.50);
   font-size: 10px;
   cursor: pointer;
 }
@@ -525,17 +527,15 @@ button:disabled {
 
 .compact-call-content {
   display: grid;
-  grid-template-columns: 83px minmax(0, 1fr) auto;
+  grid-template-columns: 78px minmax(0, 1fr) auto;
   align-items: center;
   height: 102px;
-  padding: 0 12px 8px 13px;
+  padding: 12px 10px 12px 14px;
   box-sizing: border-box;
 }
 
 .robot-illustration {
   display: block;
-  width: 83px;
-  height: 73px;
   object-fit: contain;
 }
 
@@ -544,23 +544,18 @@ button:disabled {
   flex-direction: column;
   justify-content: center;
   min-width: 0;
+  font-family: "Microsoft YaHei", sans-serif;
 
-  strong {
-    overflow: hidden;
+  .name {
     font-size: 18px;
-    font-weight: 500;
-    line-height: 1.25;
-    letter-spacing: 0;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-weight: 600;
+    line-height: 17.517px;
   }
 
-  span {
-    margin-top: 7px;
+  .desc {
     color: #d7edff;
     font-size: 14px;
-    line-height: 1.2;
-    letter-spacing: 0;
+    line-height: 17.517px;
   }
 }
 
@@ -573,7 +568,6 @@ button:disabled {
 
 .audio-actions {
   gap: 10px;
-  margin-right: 7px;
 }
 
 .round-action {
@@ -585,10 +579,10 @@ button:disabled {
   height: 36px;
   padding: 0;
   color: #159aff;
-  border: 1px solid rgba(21, 154, 255, 0.82);
+  border: none;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, rgba(7, 89, 150, 0.96), #021328 72%);
-  box-shadow: inset 0 0 7px rgba(21, 154, 255, 0.9);
+  background: #021328;
+  box-shadow: 0 0 6.892px 0 #159AFF inset;
   cursor: pointer;
 
   .svg-icon {
@@ -598,23 +592,20 @@ button:disabled {
 
   &.is-danger {
     color: #fe0b0b;
-    border-color: rgba(255, 28, 28, 0.84);
-    background: radial-gradient(circle at 50% 35%, #720808, #280202 72%);
-    box-shadow: inset 0 0 8px rgba(254, 11, 11, 0.92);
+    background: #280202;
+    box-shadow: 0 0 8px 0 #FE0B0B inset;
   }
 
   &.is-answer {
     color: #0bf9fe;
-    border-color: rgba(11, 249, 254, 0.82);
-    background: radial-gradient(circle at 50% 35%, #057f89, #021f28 72%);
-    box-shadow: inset 0 0 8px rgba(11, 249, 254, 0.92);
+    background: #021F28;
+    box-shadow: 0 0 8px 0 #0BF9FE inset;
   }
 
-  &.is-muted {
-    color: #8aa8bf;
-    border-color: rgba(93, 139, 174, 0.7);
-    filter: saturate(0.55);
-  }
+  // &.is-muted {
+  //   color: #8aa8bf;
+  //   filter: saturate(0.55);
+  // }
 }
 
 .video-call-content {
@@ -641,28 +632,22 @@ button:disabled {
   }
 }
 
-.close-video-button {
+.close-video {
   position: absolute;
   z-index: 2;
-  top: 6px;
-  right: 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 21px;
-  height: 21px;
-  padding: 0;
+  right: 10px;
+  bottom: 8px;
+  padding: 6px;
+  border-radius: 2px;
+  background: #0E1627;
   color: #d7edff;
-  border: 1px solid rgba(124, 202, 255, 0.74);
-  border-radius: 50%;
-  background: rgba(2, 19, 40, 0.82);
-  box-shadow: 0 2px 7px rgba(0, 9, 24, 0.45);
+  color: #FFF;
+  text-align: center;
+  font-family: "Alibaba PuHuiTi";
+  font-size: 12px;
+  line-height: 12px; /* 100% */
+  letter-spacing: 0.857px;
   cursor: pointer;
-
-  .svg-icon {
-    width: 12px;
-    height: 12px;
-  }
 }
 
 .video-loading {
@@ -681,24 +666,19 @@ button:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 17px;
-
-  strong {
+  margin-top: 20px;
+  font-family: "Microsoft YaHei", sans-serif;
+  .name {
     max-width: 280px;
-    overflow: hidden;
-    font-size: 15px;
-    font-weight: 500;
-    line-height: 1.3;
-    letter-spacing: 0;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 17.517px;
   }
 
-  span {
-    margin-top: 1px;
+  .desc {
     color: #d7edff;
-    font-size: 15px;
-    line-height: 1.2;
+    font-size: 14px;
+    line-height: 17.517px;
   }
 }
 

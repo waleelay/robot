@@ -3896,10 +3896,12 @@ input[type="range"].vertical-slider {
     & + .el-dropdown-menu__item {
       margin-top: 2px;
     }
-    &:focus, &.is-active, &:not(.is-disabled):hover {
-      color: #005BA1 !important;
-      border-radius: 3px;
-      background: transparent !important;
+    &:not(.is-active) {
+      &:not(.is-disabled):focus, &:not(.is-disabled):hover {
+        color: #005BA1 !important;
+        border-radius: 3px;
+        background: transparent !important;
+      }
     }
     &.is-active {
       color: #FFF !important;

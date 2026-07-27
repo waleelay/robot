@@ -67,7 +67,7 @@
           <span class="text ml4">成都启航信息</span>
         </div>
       </div>
-      <div class="toolbar flx-align-center h100 new wp576 pr15" style="justify-content: end;">
+      <div class="toolbar flx-align-center h100 new pr15" style="justify-content: end;">
         <div class="time-display flx-align-center">
           <span>{{ currentDate }}</span>
           <span class="ml10">{{ currentTime }}</span>
