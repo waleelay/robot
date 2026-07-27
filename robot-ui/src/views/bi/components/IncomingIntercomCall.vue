@@ -177,9 +177,9 @@ import { mapActions, mapState } from 'vuex'
 
 const SCREEN_WIDTH = 1920
 const SCREEN_HEIGHT = 1080
-const WINDOW_MARGIN = 32
-const COMPACT_SIZE = { width: 716, height: 304 }
-const VIDEO_SIZE = { width: 648, height: 764 }
+const WINDOW_MARGIN = 16
+const COMPACT_SIZE = { width: 358, height: 152 }
+const VIDEO_SIZE = { width: 324, height: 382 }
 
 export default {
   name: 'IncomingIntercomCall',
@@ -421,11 +421,17 @@ export default {
   overflow: hidden;
   box-sizing: border-box;
   color: #fff;
-  border: 2px solid #2c8eff;
-  background:
-    linear-gradient(118deg, rgba(17, 59, 113, 0.68), rgba(2, 19, 40, 0.94)),
-    #06182e;
-  box-shadow: 0 14px 42px rgba(0, 18, 45, 0.55), inset 0 0 44px rgba(43, 134, 255, 0.12);
+  border: 1px solid #2c8eff;
+  background: linear-gradient(
+    180deg,
+    rgba(4, 60, 149, 0.4) 0%,
+    rgba(4, 33, 68, 0.3) 5.5%,
+    rgba(4, 23, 62, 0.32) 51.5%,
+    rgba(7, 45, 94, 0.31) 92.6%,
+    rgba(4, 62, 151, 0.4) 100%
+  );
+  box-shadow: 0 7px 21px rgba(0, 18, 45, 0.55);
+  backdrop-filter: blur(15px);
   pointer-events: auto;
   user-select: none;
 }
@@ -434,17 +440,17 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 80px;
-  margin: 18px 18px 0;
-  padding: 0 22px;
+  height: 40px;
+  margin: 9px 9px 0;
+  padding: 0 9px 0 10px;
   box-sizing: border-box;
-  background: linear-gradient(90deg, rgba(40, 130, 246, 0.9), rgba(15, 43, 86, 0.58));
+  background: linear-gradient(94deg, #2c8eff 0%, rgba(0, 13, 59, 0.19) 100%);
   cursor: move;
   touch-action: none;
 
   h2 {
     margin: 0;
-    font-size: 32px;
+    font-size: 16px;
     font-weight: 600;
     line-height: 1;
     letter-spacing: 0;
@@ -455,19 +461,19 @@ export default {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 18px;
+  gap: 9px;
 }
 
 .waiting-call-badge {
   display: inline-flex;
   align-items: center;
-  height: 32px;
-  padding: 0 10px;
+  height: 16px;
+  padding: 0 5px;
   color: #d7edff;
   border: 1px solid rgba(84, 181, 255, 0.72);
-  border-radius: 4px;
+  border-radius: 2px;
   background: rgba(4, 35, 72, 0.72);
-  font-size: 16px;
+  font-size: 8px;
   line-height: 1;
   white-space: nowrap;
 }
@@ -475,7 +481,7 @@ export default {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 5px;
 }
 
 button {
@@ -486,8 +492,8 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   color: #4ab8ff;
   border: 0;
@@ -495,20 +501,20 @@ button {
   cursor: pointer;
 
   .svg-icon {
-    width: 32px;
-    height: 32px;
+    width: 16px;
+    height: 16px;
   }
 }
 
 .enable-video-button {
-  min-width: 104px;
-  height: 44px;
-  padding: 0 14px;
+  min-width: 52px;
+  height: 21px;
+  padding: 0 7px;
   color: #d7edff;
   border: 0;
-  border-radius: 4px;
+  border-radius: 2px;
   background: rgba(36, 96, 178, 0.62);
-  font-size: 20px;
+  font-size: 10px;
   cursor: pointer;
 }
 
@@ -519,17 +525,17 @@ button:disabled {
 
 .compact-call-content {
   display: grid;
-  grid-template-columns: 150px minmax(220px, 1fr) auto;
+  grid-template-columns: 83px minmax(0, 1fr) auto;
   align-items: center;
-  height: 202px;
-  padding: 0 26px 0 34px;
+  height: 102px;
+  padding: 0 12px 8px 13px;
   box-sizing: border-box;
 }
 
 .robot-illustration {
   display: block;
-  width: 132px;
-  height: 132px;
+  width: 83px;
+  height: 73px;
   object-fit: contain;
 }
 
@@ -538,11 +544,10 @@ button:disabled {
   flex-direction: column;
   justify-content: center;
   min-width: 0;
-  padding-left: 12px;
 
   strong {
     overflow: hidden;
-    font-size: 36px;
+    font-size: 18px;
     font-weight: 500;
     line-height: 1.25;
     letter-spacing: 0;
@@ -551,9 +556,9 @@ button:disabled {
   }
 
   span {
-    margin-top: 14px;
+    margin-top: 7px;
     color: #d7edff;
-    font-size: 28px;
+    font-size: 14px;
     line-height: 1.2;
     letter-spacing: 0;
   }
@@ -563,46 +568,46 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 38px;
-  padding-left: 22px;
+  gap: 20px;
 }
 
 .audio-actions {
-  gap: 26px;
+  gap: 10px;
+  margin-right: 7px;
 }
 
 .round-action {
   display: inline-flex;
-  flex: 0 0 72px;
+  flex: 0 0 36px;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   color: #159aff;
   border: 1px solid rgba(21, 154, 255, 0.82);
   border-radius: 50%;
   background: radial-gradient(circle at 50% 35%, rgba(7, 89, 150, 0.96), #021328 72%);
-  box-shadow: inset 0 0 18px rgba(21, 154, 255, 0.55), 0 0 10px rgba(21, 154, 255, 0.28);
+  box-shadow: inset 0 0 7px rgba(21, 154, 255, 0.9);
   cursor: pointer;
 
   .svg-icon {
-    width: 36px;
-    height: 36px;
+    width: 18px;
+    height: 18px;
   }
 
   &.is-danger {
     color: #fe0b0b;
     border-color: rgba(255, 28, 28, 0.84);
     background: radial-gradient(circle at 50% 35%, #720808, #280202 72%);
-    box-shadow: inset 0 0 18px rgba(255, 0, 0, 0.6), 0 0 10px rgba(255, 0, 0, 0.28);
+    box-shadow: inset 0 0 8px rgba(254, 11, 11, 0.92);
   }
 
   &.is-answer {
     color: #0bf9fe;
     border-color: rgba(11, 249, 254, 0.82);
     background: radial-gradient(circle at 50% 35%, #057f89, #021f28 72%);
-    box-shadow: inset 0 0 18px rgba(11, 249, 254, 0.55), 0 0 10px rgba(11, 249, 254, 0.28);
+    box-shadow: inset 0 0 8px rgba(11, 249, 254, 0.92);
   }
 
   &.is-muted {
@@ -620,12 +625,12 @@ button:disabled {
 
 .call-video-shell {
   position: relative;
-  width: 608px;
-  height: 342px;
-  margin-top: 20px;
+  width: 304px;
+  height: 171px;
+  margin-top: 10px;
   overflow: hidden;
   background: #020b16;
-  box-shadow: 0 10px 28px rgba(0, 9, 24, 0.48);
+  box-shadow: 0 5px 14px rgba(0, 9, 24, 0.48);
 
   video {
     display: block;
@@ -639,24 +644,24 @@ button:disabled {
 .close-video-button {
   position: absolute;
   z-index: 2;
-  top: 12px;
-  right: 12px;
+  top: 6px;
+  right: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 21px;
+  height: 21px;
   padding: 0;
   color: #d7edff;
   border: 1px solid rgba(124, 202, 255, 0.74);
   border-radius: 50%;
   background: rgba(2, 19, 40, 0.82);
-  box-shadow: 0 4px 14px rgba(0, 9, 24, 0.45);
+  box-shadow: 0 2px 7px rgba(0, 9, 24, 0.45);
   cursor: pointer;
 
   .svg-icon {
-    width: 24px;
-    height: 24px;
+    width: 12px;
+    height: 12px;
   }
 }
 
@@ -666,22 +671,22 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 6px;
   color: #aedcff;
   background: rgba(2, 11, 22, 0.82);
-  font-size: 18px;
+  font-size: 9px;
 }
 
 .video-call-info {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 34px;
+  margin-top: 17px;
 
   strong {
-    max-width: 560px;
+    max-width: 280px;
     overflow: hidden;
-    font-size: 30px;
+    font-size: 15px;
     font-weight: 500;
     line-height: 1.3;
     letter-spacing: 0;
@@ -690,9 +695,9 @@ button:disabled {
   }
 
   span {
-    margin-top: 2px;
+    margin-top: 1px;
     color: #d7edff;
-    font-size: 30px;
+    font-size: 15px;
     line-height: 1.2;
   }
 }
@@ -701,21 +706,21 @@ button:disabled {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: 46px;
+  gap: 23px;
   width: 100%;
-  margin-top: 40px;
+  margin-top: 20px;
 }
 
 .labeled-action {
   display: flex;
-  flex: 0 0 80px;
+  flex: 0 0 40px;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
 
   > span {
     color: #d7edff;
-    font-size: 24px;
+    font-size: 12px;
     line-height: 1.2;
     text-align: center;
     white-space: nowrap;
