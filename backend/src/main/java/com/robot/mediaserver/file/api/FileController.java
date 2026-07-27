@@ -19,6 +19,7 @@ import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -117,6 +118,12 @@ public class FileController {
     @GetMapping("/{fileId}")
     public FileListItemResponse detail(@PathVariable String fileId, HttpServletRequest request) {
         return service.detail(currentUserResolver.resolve(request), fileId);
+    }
+
+    @DeleteMapping("/{fileId}")
+    public ResponseEntity<Void> delete(@PathVariable String fileId, HttpServletRequest request) {
+        service.delete(currentUserResolver.resolve(request), fileId);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{fileId}/download-url")

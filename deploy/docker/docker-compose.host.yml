@@ -80,8 +80,8 @@ services:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-dev-secret-dev-secret-dev-secret-32}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://127.0.0.1:9000}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-eiopminio}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-eiopminio123}
       MINIO_BUCKET: ${MINIO_BUCKET:-robot-media}
       TTS_ENGINE_URL: ${TTS_ENGINE_URL:-http://127.0.0.1:8080/api/tts}
       MEDIA_FILE_HLS_FFMPEG_PATH: ${MEDIA_FILE_HLS_FFMPEG_PATH:-ffmpeg}

@@ -37,9 +37,9 @@ media:
     # MinIO/S3 对象存储访问地址。
     endpoint: ${MINIO_ENDPOINT:http://host.docker.internal:9000}
     # MinIO/S3 访问 Key。
-    access-key: ${MINIO_ACCESS_KEY:minioadmin}
+    access-key: ${MINIO_ACCESS_KEY:eiopminio}
     # MinIO/S3 访问 Secret。
-    secret-key: ${MINIO_SECRET_KEY:minioadmin}
+    secret-key: ${MINIO_SECRET_KEY:eiopminio123}
     # 媒体文件存储桶名称。
     bucket: ${MINIO_BUCKET:robot-media}
     # 是否启用对象存储能力。

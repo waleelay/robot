@@ -175,11 +175,13 @@ func (r *Runner) process(ctx context.Context, task *Task) error {
 		return err
 	}
 	// 所有缺失分片上传完成后由服务端 complete 合并对象；非视频 READY，视频进入 PROCESSING。
-	if _, err := r.client.complete(ctx, upload.UploadID); err != nil {
+	response, err := r.client.complete(ctx, upload.UploadID)
+	if err != nil {
 		return err
 	}
 	log.Printf("file upload original file completed fileId=%s", upload.FileID)
-	task.Status = "PROCESSING"
+	task.Status = response.Status
+	task.Error = response.ErrorCode
 	task.UpdatedAt = time.Now()
 	return r.manifest.update(task)
 }
@@ -192,6 +194,8 @@ func fileType(name string) string {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".mp4", ".mov", ".m4v":
 		return "VIDEO"
+	case ".mp3", ".wav", ".aac", ".m4a", ".ogg", ".flac":
+		return "AUDIO"
 	case ".jpg", ".jpeg", ".png", ".webp":
 		return "IMAGE"
 	case ".log", ".txt":
@@ -213,6 +217,18 @@ func contentType(name string) string {
 		return "video/mp4"
 	case ".mov":
 		return "video/quicktime"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".wav":
+		return "audio/wav"
+	case ".aac":
+		return "audio/aac"
+	case ".m4a":
+		return "audio/mp4"
+	case ".ogg":
+		return "audio/ogg"
+	case ".flac":
+		return "audio/flac"
 	case ".jpg", ".jpeg":
 		return "image/jpeg"
 	case ".png":

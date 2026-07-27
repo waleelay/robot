@@ -134,7 +134,7 @@ RECORDING_DIRECTORY=./recordings
 MEDIA_SERVICE_URL=http://192.168.124.77:8088
 ```
 
-客户端扫描 `RECORDING_DIRECTORY` 下的普通文件，按文件后缀识别 `VIDEO`、`IMAGE`、`LOG`、`CONFIG`、`MAP`、`DOCUMENT` 或 `OTHER`，再调用媒体服务通用文件接口：
+客户端扫描 `RECORDING_DIRECTORY` 下的普通文件，按文件后缀识别 `VIDEO`、`AUDIO`、`IMAGE`、`LOG`、`CONFIG`、`MAP`、`DOCUMENT` 或 `OTHER`，再调用媒体服务通用文件接口：
 
 ```text
 POST /api/media/files/multipart-uploads

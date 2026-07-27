@@ -85,8 +85,8 @@ template_default() {
     LIVEKIT_EGRESS_REDIS_PASSWORD) printf '%s' "" ;;
     LIVEKIT_EGRESS_REDIS_DB) printf '%s' 0 ;;
     MINIO_ENDPOINT) printf '%s' http://host.docker.internal:9000 ;;
-    MINIO_ACCESS_KEY) printf '%s' minioadmin ;;
-    MINIO_SECRET_KEY) printf '%s' minioadmin ;;
+    MINIO_ACCESS_KEY) printf '%s' eiopminio ;;
+    MINIO_SECRET_KEY) printf '%s' eiopminio123 ;;
     MINIO_BUCKET) printf '%s' robot-media ;;
     *) printf '%s' "" ;;
   esac
@@ -234,8 +234,8 @@ livekit_use_external_ip=$(env_value LIVEKIT_USE_EXTERNAL_IP false)
 livekit_egress_ws_url=$(env_value LIVEKIT_EGRESS_WS_URL ws://livekit-server:7880)
 livekit_egress_redis_address=$(env_value LIVEKIT_EGRESS_REDIS_ADDRESS host.docker.internal:6379)
 minio_endpoint=$(env_value MINIO_ENDPOINT http://host.docker.internal:9000)
-minio_access_key=$(env_value MINIO_ACCESS_KEY minioadmin)
-minio_secret_key=$(env_value MINIO_SECRET_KEY minioadmin)
+minio_access_key=$(env_value MINIO_ACCESS_KEY eiopminio)
+minio_secret_key=$(env_value MINIO_SECRET_KEY eiopminio123)
 minio_bucket=$(env_value MINIO_BUCKET robot-media)
 
 if install_config_file "$CONFIG_DIR/livekit/livekit.yaml" "$livekit_file" "livekit"; then

@@ -100,8 +100,8 @@ export LIVEKIT_ROOM_EMPTY_TIMEOUT_SECONDS='60'
 export LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS='20'
 export MINIO_ENABLED='true'
 export MINIO_ENDPOINT='http://localhost:9000'
-export MINIO_ACCESS_KEY='minioadmin'
-export MINIO_SECRET_KEY='minioadmin'
+export MINIO_ACCESS_KEY='eiopminio'
+export MINIO_SECRET_KEY='eiopminio123'
 export MINIO_BUCKET='robot-media'
 export MEDIA_FILE_ENABLED='true'
 export MEDIA_FILE_SIMPLE_UPLOAD_MAX_BYTES='20971520'
@@ -291,6 +291,7 @@ POST /api/media/files/multipart-uploads/{uploadId}/part-urls
 POST /api/media/files/multipart-uploads/{uploadId}/complete
 GET  /api/media/files
 GET  /api/media/files/{fileId}
+DELETE /api/media/files/{fileId}
 POST /api/media/files/extension-binding
 POST /api/media/files/{fileId}/play-url
 POST /api/media/files/{fileId}/download-url

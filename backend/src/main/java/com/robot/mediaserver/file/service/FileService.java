@@ -329,6 +329,27 @@ public class FileService {
         return item(file);
     }
 
+    @Transactional
+    public void delete(CurrentUser user, String fileId) {
+        MediaFile file = requireFile(fileId);
+        if (user == null || !Objects.equals(file.getOrgId(), user.orgId())) {
+            throw error(HttpStatus.NOT_FOUND, "FILE_NOT_FOUND", "未找到文件");
+        }
+        if (file.getStatus() == FileStatus.DELETED) {
+            return;
+        }
+
+        uploadRepository
+                .findFirstByFileIdAndStatusOrderByCreatedAtDesc(fileId, FileUploadStatus.ACTIVE)
+                .ifPresent(upload -> {
+                    storage.abortMultipart(file.getObjectKey(), upload.getStorageUploadId());
+                    upload.setStatus(FileUploadStatus.ABORTED);
+                    upload.setLastActiveAt(now());
+                    uploadRepository.save(upload);
+                });
+        deleteFileAssets(file);
+    }
+
     public FileDownloadUrlResponse downloadUrl(CurrentUser user, String fileId) {
         MediaFile file = requirePlayableFile(user, fileId);
         OffsetDateTime expiresAt = now().plusSeconds(properties.getFile().getPlayUrlTtlSeconds());

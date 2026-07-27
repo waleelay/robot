@@ -50,7 +50,7 @@ Content-Type: application/json
 | `VideoQuality` | `sub`、`main`、`auto` | 子码流、主码流、自动 |
 | `VideoSessionStatus` | `INIT`、`REQUESTING_CLIENT`、`ROOM_READY`、`STREAMING`、`INTERRUPTED`、`IDLE_WAIT`、`STOPPING`、`CLOSED`、`TIMEOUT`、`FAILED` | 实时视频会话状态 |
 | `IntercomStatus` | `IDLE`、`STARTING`、`ACTIVE`、`INTERRUPTED`、`STOPPING`、`FAILED` | 对讲状态 |
-| `FileType` | `VIDEO`、`IMAGE`、`LOG`、`CONFIG`、`MAP`、`DOCUMENT`、`OTHER` | 文件类型 |
+| `FileType` | `VIDEO`、`AUDIO`、`IMAGE`、`LOG`、`CONFIG`、`MAP`、`DOCUMENT`、`OTHER` | 文件类型 |
 | `FileStatus` | `UPLOADING`、`PROCESSING`、`READY`、`FAILED`、`DELETED` | 文件状态 |
 | `controlMode` | `MANUAL`、`ASSISTED`、`NAVIGATION` | 设备控制模式 |
 | `disposalStatus` | `IMMEDIATE_DISPOSAL`、`FALSE_ALARM` | 告警处置状态；其他值会返回 `BAD_REQUEST` |
@@ -1848,6 +1848,7 @@ Backend MQTT 关联说明：
 | GET | `{base}` | 文件分页查询 |
 | POST | `{base}/extension-binding` | 绑定通用扩展 ID |
 | GET | `{base}/{fileId}` | 文件详情 |
+| DELETE | `{base}/{fileId}` | 删除文件对象并将记录标记为 DELETED |
 | POST | `{base}/{fileId}/download-url` | 获取下载 URL |
 | GET | `{base}/{fileId}/content` | 获取文件正文 |
 | POST | `{base}/{fileId}/play-url` | 获取播放 URL |
@@ -2772,6 +2773,7 @@ X-Robot-Id: test111
 |---|---|---|---|
 | GET | `{base}` | Query: `robotId`、`deviceId`、`extensionId`、`fileType`、`status`、`page`、`size` | `FileListResponse` |
 | GET | `{base}/{fileId}` | Path: `fileId` | `FileListItemResponse` |
+| DELETE | `{base}/{fileId}` | Path: `fileId`；Header: `X-Org-Id` | `204 No Content` |
 | POST | `{base}/{fileId}/download-url` | Path: `fileId` | `FileDownloadUrlResponse` |
 | GET | `{base}/{fileId}/content` | Path: `fileId` | 文件二进制 |
 | POST | `{base}/{fileId}/play-url` | Path: `fileId` | `FilePlayUrlResponse` |
@@ -2828,6 +2830,15 @@ POST /api/media/files/file_video_001/play-url
   "expiresAt": "2026-07-04T10:30:00+08:00"
 }
 ```
+
+删除请求示例：
+
+```http
+DELETE /api/media/files/file_video_001
+X-Org-Id: org001
+```
+
+删除成功或文件已经处于 `DELETED` 状态时返回 `204 No Content`。删除操作会清理原文件、暂存分片和 HLS 资源，并保留状态为 `DELETED` 的数据库记录。文件不存在或不属于请求组织时返回 `404`。
 
 ### 5.19 POST `{base}/extension-binding`
 

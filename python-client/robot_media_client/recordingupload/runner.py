@@ -294,6 +294,8 @@ def file_type(name: str) -> str:
     suffix = Path(name).suffix.lower()
     if suffix in {".mp4", ".mov", ".m4v"}:
         return "VIDEO"
+    if suffix in {".mp3", ".wav", ".aac", ".m4a", ".ogg", ".flac"}:
+        return "AUDIO"
     if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
         return "IMAGE"
     if suffix in {".log", ".txt"}:
