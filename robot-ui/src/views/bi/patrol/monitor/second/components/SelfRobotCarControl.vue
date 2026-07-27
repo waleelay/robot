@@ -218,9 +218,6 @@ export default {
     handleClickMode(e, index, item) {
       if (e.target.className.includes('el-slider')) return
       this.setVehicleLightMode(this.tabIndex === 0 ? 'front' : 'rear', index === 0 ? 'OFF' : item.key)
-    },
-    async handleModeChange(controlMode) {
-      this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode })
     }
   }
 }

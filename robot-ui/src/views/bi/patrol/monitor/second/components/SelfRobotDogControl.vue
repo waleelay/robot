@@ -143,10 +143,7 @@ export default {
     changeSpeed() {
       this.$refs.speedRef.show();
     },
-    changeStep(e) {},
-    async handleModeChange(controlMode) {
-      this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode })
-    }
+    changeStep(e) {}
   }
 }
 </script>

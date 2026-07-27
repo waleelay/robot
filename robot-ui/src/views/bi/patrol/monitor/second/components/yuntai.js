@@ -119,6 +119,10 @@ export default {
     ptzAutoRotateKey(device) {
       return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
     },
+    async handleModeChange(controlMode) {
+      if (this.selectedRobot.controlMode === controlMode) return
+      this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode })
+    },
     async togglePtzAutoRotate() {
       const device = this.ptzDevice
       if (!device) return

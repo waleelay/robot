@@ -279,9 +279,6 @@ export default {
       this.$set(this.cameraOrderByRobot, this.robot.robotId, cameras.map(camera => this.cameraIdentity(this.robot.robotId, camera)))
       await this.updateInfo()
       this.rebindCameraTracks([cameras[0], cameras[cameraIndex]])
-    },
-    async handleModeChange(controlMode) {
-      this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode })
     }
   },
   watch: {
