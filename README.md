@@ -38,20 +38,13 @@ control-service/ Java 17 + Spring Boot 3 控制服务
 bigscreen-bff/ Java 17 + Spring Boot 3 大屏 BFF，面向前端代理中心端接口
 frontend/  Vue2 + Element UI 实时视频调试台
 client/    Go 机器人侧云接入客户端骨架
-docs/      开发流程与联调说明
+docs/      需求、设计、接口协议、测试与验收文档
 tools/     设计文档生成脚本
 ```
 
-## 设计文档
+## 项目文档
 
-```text
-docs/实时视频接口流程.md                  实时视频三端交互与接口
-docs/通用文件上传存储与播放设计.md        通用文件上传、存储与播放方案
-docs/媒体服务集成指南.md                  边缘端/管理服务对接媒体服务实操文档
-docs/巡逻视频上传旧方案归档.md            巡逻视频上传旧方案归档，当前以通用文件方案为准
-docs/大屏BFF全景地图设计.md               大屏 BFF 抽层与全景地图接口方案
-docs/前端控制与后端Java接口文档.md        前端、Control、Backend Java 接口文档
-```
+项目文档按需求、设计、接口与协议、测试与验收四类维护，统一入口见 [docs/README.md](docs/README.md)。代码结构、配置、启动和构建说明分别维护在各独立模块的 `README.md` 中。
 
 ## 环境依赖
 
@@ -202,7 +195,7 @@ cd ..
 sh deploy/nginx/generate-lan-cert.sh 192.168.124.77
 ```
 
-将 [deploy/nginx/certs/server.crt](deploy/nginx/certs/server.crt) 安装为每台访问终端的受信任证书。证书必须包含实际使用的局域网 IP，否则浏览器不会允许麦克风权限。
+脚本生成 `deploy/nginx/certs/server.crt` 后，将它安装为每台访问终端的受信任证书。证书必须包含实际使用的局域网 IP，否则浏览器不会允许麦克风权限。
 
 媒体后端启动前配置 LiveKit 内部地址，控制服务启动前配置 Media Service 内部地址：
 
