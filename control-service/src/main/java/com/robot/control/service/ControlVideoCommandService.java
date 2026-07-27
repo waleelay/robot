@@ -1,6 +1,7 @@
 package com.robot.control.service;
 
 import com.robot.control.auth.CurrentUser;
+import com.robot.control.call.IntercomBusyException;
 import com.robot.control.client.ControlMediaServiceClient;
 import com.robot.control.dto.ControlStartVideoRequest;
 import com.robot.control.messaging.RobotMediaCommandService;
@@ -10,10 +11,12 @@ import com.robot.control.dto.SwitchChannelRequest;
 import com.robot.control.dto.VideoSessionResponse;
 import com.robot.control.dto.VideoStartCommand;
 import com.robot.control.dto.IntercomStartCommand;
+import com.robot.control.dto.IntercomStatus;
 import com.robot.control.dto.VideoChannel;
 import com.robot.control.dto.VideoQuality;
 import com.robot.control.dto.VideoSessionStatus;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 /**
@@ -109,11 +112,12 @@ public class ControlVideoCommandService {
      * @param user 当前操作用户
      * @return 对讲启动响应
      */
-    public IntercomResponse startIntercom(
+    public synchronized IntercomResponse startIntercom(
             String robotId,
             String deviceId,
             ControlStartVideoRequest request,
             CurrentUser user) {
+        requireIntercomAvailable(robotId, deviceId, null, user);
         ControlStartVideoRequest startRequest = request == null ? new ControlStartVideoRequest() : request;
         CreateVideoSessionRequest mediaRequest = new CreateVideoSessionRequest();
         mediaRequest.setRobotId(robotId);
@@ -133,10 +137,48 @@ public class ControlVideoCommandService {
      * @param user 当前操作用户
      * @return 对讲启动响应
      */
-    public IntercomResponse startIntercom(String sessionId, CurrentUser user) {
+    public synchronized IntercomResponse startIntercom(String sessionId, CurrentUser user) {
+        VideoSessionResponse target = mediaServiceClient.get(sessionId, user);
+        requireIntercomAvailable(target.robotId(), target.deviceId(), sessionId, user);
         IntercomResponse response = mediaServiceClient.startIntercom(sessionId, user);
         sendIntercomStart(mediaServiceClient.intercomStartCommand(sessionId));
         return response;
+    }
+
+    private void requireIntercomAvailable(
+            String robotId,
+            String deviceId,
+            String targetSessionId,
+            CurrentUser user) {
+        mediaServiceClient.active().stream()
+                .filter(session -> occupied(session.intercomStatus()))
+                .filter(session -> !Objects.equals(session.sessionId(), targetSessionId))
+                .forEach(session -> {
+                    boolean sameTarget = Objects.equals(session.robotId(), robotId)
+                            && Objects.equals(session.deviceId(), deviceId);
+                    boolean sameOwner = Objects.equals(session.intercomOperatorId(), user.userId())
+                            && Objects.equals(session.intercomClientId(), user.clientId());
+                    if (sameTarget && sameOwner) {
+                        return;
+                    }
+                    if (Objects.equals(session.robotId(), robotId)) {
+                        throw new IntercomBusyException("ROBOT_BUSY", "该机器人正在进行其他对讲");
+                    }
+                    if (Objects.equals(session.intercomOperatorId(), user.userId())) {
+                        throw new IntercomBusyException(
+                                "OPERATOR_BUSY",
+                                "当前操作员正在与其他机器人通话，请先结束当前通话");
+                    }
+                    if (Objects.equals(session.intercomClientId(), user.clientId())) {
+                        throw new IntercomBusyException(
+                                "CLIENT_BUSY",
+                                "当前终端正在与其他机器人通话，请先结束当前通话");
+                    }
+                });
+    }
+
+    private boolean occupied(IntercomStatus status) {
+        return status == IntercomStatus.STARTING || status == IntercomStatus.ACTIVE;
     }
 
     /**

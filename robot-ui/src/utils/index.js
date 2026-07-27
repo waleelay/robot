@@ -429,6 +429,9 @@ export function errorMessage(error) {
   if (data && data.code === 'INVALID_STATE' && data.message === 'Intercom is occupied by another operator') {
     return '该视频画面正在通话中，请结束当前通话后重试'
   }
+  if (data && data.code === 'INVALID_STATE' && data.message === '当前用户未持有对讲权限') {
+    return '当前通话已结束或已在其他终端处理'
+  }
   return data && (data.message || data.code || data.error)
       ? data.message || data.code || data.error
       : (error && error.message) || '请求失败'

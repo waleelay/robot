@@ -23,6 +23,7 @@ import java.time.OffsetDateTime;
  * @param intercomStatus 对讲状态
  * @param intercomAudioOnly 是否仅对讲音频
  * @param intercomOperatorId 对讲操作员 ID
+ * @param intercomClientId 对讲客户端 ID
  * @param robotAudioTrackSid 机器人音频 Track SID
  * @param robotAudioTrackName 机器人音频 Track 名称
  * @param lastErrorCode 最后错误码
@@ -46,6 +47,7 @@ public record VideoSessionResponse(
         IntercomStatus intercomStatus,
         boolean intercomAudioOnly,
         String intercomOperatorId,
+        String intercomClientId,
         String robotAudioTrackSid,
         String robotAudioTrackName,
         String lastErrorCode,

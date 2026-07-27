@@ -1,6 +1,7 @@
 package com.robot.control.api;
 
 import com.robot.control.auth.CurrentUserResolver;
+import com.robot.control.call.IntercomCallService;
 import com.robot.control.dto.ControlStartVideoRequest;
 import com.robot.control.service.EquipmentControlService;
 import com.robot.control.service.ControlVideoCommandService;
@@ -28,6 +29,7 @@ public class ControlRobotController {
     private final ControlVideoCommandService controlVideoCommandService;
     private final EquipmentControlService equipmentControlService;
     private final CurrentUserResolver currentUserResolver;
+    private final IntercomCallService intercomCallService;
 
     /**
      * 创建 ControlRobotController 实例。
@@ -39,10 +41,12 @@ public class ControlRobotController {
     public ControlRobotController(
             ControlVideoCommandService controlVideoCommandService,
             EquipmentControlService equipmentControlService,
-            CurrentUserResolver currentUserResolver) {
+            CurrentUserResolver currentUserResolver,
+            IntercomCallService intercomCallService) {
         this.controlVideoCommandService = controlVideoCommandService;
         this.equipmentControlService = equipmentControlService;
         this.currentUserResolver = currentUserResolver;
+        this.intercomCallService = intercomCallService;
     }
 
     /**
@@ -185,6 +189,7 @@ public class ControlRobotController {
             @PathVariable String deviceId,
             @RequestBody(required = false) ControlStartVideoRequest request,
             HttpServletRequest servletRequest) {
+        intercomCallService.requireManualIntercomAllowed(robotId);
         return controlVideoCommandService.startIntercom(robotId, deviceId, request, currentUserResolver.resolve(servletRequest));
     }
 }

@@ -1,6 +1,7 @@
 package com.robot.control.call;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -92,6 +93,31 @@ class IntercomCallServiceTest {
         ArgumentCaptor<Object> broadcastCaptor = ArgumentCaptor.forClass(Object.class);
         verify(publisher).publish(eq("video.intercom.call.status"), broadcastCaptor.capture());
         assertThat(broadcastCaptor.getValue().toString()).doesNotContain("operator-secret-token");
+    }
+
+    @Test
+    void busyOperatorDoesNotConsumeRingingCall() {
+        when(videoCommandService.startIntercom(eq("robot-001"), eq("camera01"), any(), any()))
+                .thenThrow(new IntercomBusyException("OPERATOR_BUSY", "当前操作员正在与其他机器人通话，请先结束当前通话"));
+        service.invite(invite("call-busy"), "robot-001");
+
+        assertThatThrownBy(() -> service.accept("call-busy", operator()))
+                .isInstanceOf(IntercomBusyException.class)
+                .hasMessage("当前操作员正在与其他机器人通话，请先结束当前通话");
+
+        assertThat(service.ringingCalls())
+                .singleElement()
+                .extracting(call -> call.get("status"))
+                .isEqualTo("RINGING");
+    }
+
+    @Test
+    void manualIntercomIsBlockedWhileRobotIsRinging() {
+        service.invite(invite("call-ringing"), "robot-001");
+
+        assertThatThrownBy(() -> service.requireManualIntercomAllowed("robot-001"))
+                .isInstanceOf(IntercomBusyException.class)
+                .hasMessage("该机器人正在呼叫中心端，请通过来电窗口接听");
     }
 
     private IntercomCallInvite invite(String callId) {

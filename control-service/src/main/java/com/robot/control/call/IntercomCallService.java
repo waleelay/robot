@@ -116,16 +116,16 @@ public class IntercomCallService {
             throw new IllegalStateException("机器人已离线");
         }
 
-        call.status = IntercomCallStatus.ACCEPTED;
-        call.acceptedBy = user.userId();
-        call.acceptedClientId = user.clientId();
-        call.updatedAt = now();
         try {
             ControlStartVideoRequest request = new ControlStartVideoRequest();
             request.setChannel(parseChannel(call.channel));
             request.setQuality(parseQuality(call.quality));
             request.setReuse(true);
             IntercomResponse intercom = videoCommandService.startIntercom(call.robotId, call.deviceId, request, user);
+            call.status = IntercomCallStatus.ACCEPTED;
+            call.acceptedBy = user.userId();
+            call.acceptedClientId = user.clientId();
+            call.updatedAt = now();
             call.sessionId = intercom.sessionId();
             call.message = "operator accepted";
             sendRobotState(call, call.message);
@@ -134,6 +134,8 @@ public class IntercomCallService {
             result.put("call", payload(call));
             result.put("intercom", intercom);
             return result;
+        } catch (IntercomBusyException ex) {
+            throw ex;
         } catch (RuntimeException ex) {
             fail(call, ex.getMessage());
             throw ex;
@@ -161,6 +163,19 @@ public class IntercomCallService {
                 .sorted((left, right) -> left.createdAt.compareTo(right.createdAt))
                 .forEach(call -> result.add(payload(call)));
         return result;
+    }
+
+    public synchronized void requireManualIntercomAllowed(String robotId) {
+        OffsetDateTime current = now();
+        boolean ringing = calls.values().stream().anyMatch(call ->
+                call.robotId.equals(robotId)
+                        && call.status == IntercomCallStatus.RINGING
+                        && call.expiresAt.isAfter(current));
+        if (ringing) {
+            throw new IntercomBusyException(
+                    "ROBOT_CALL_RINGING",
+                    "该机器人正在呼叫中心端，请通过来电窗口接听");
+        }
     }
 
     public synchronized void handleIntercomStatus(String sessionId, String status, String message) {
@@ -209,9 +224,8 @@ public class IntercomCallService {
             return true;
         }
         return mediaServiceClient.active().stream().anyMatch(session -> robotId.equals(session.robotId())
-                && session.intercomStatus() != null
-                && session.intercomStatus() != IntercomStatus.IDLE
-                && session.intercomStatus() != IntercomStatus.FAILED);
+                && (session.intercomStatus() == IntercomStatus.STARTING
+                || session.intercomStatus() == IntercomStatus.ACTIVE));
     }
 
     private Call requireRinging(String callId) {

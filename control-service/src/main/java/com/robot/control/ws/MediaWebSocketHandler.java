@@ -3,6 +3,7 @@ package com.robot.control.ws;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.auth.CurrentUser;
+import com.robot.control.auth.CurrentUserResolver;
 import com.robot.control.call.IntercomCallService;
 import com.robot.control.config.DateTimeConfig;
 import com.robot.control.service.EquipmentControlService;
@@ -10,7 +11,6 @@ import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -30,6 +30,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final EquipmentControlService equipmentControlService;
     private final IntercomCallService intercomCallService;
+    private final CurrentUserResolver currentUserResolver;
 
     /**
      * 创建 MediaWebSocketHandler 实例。
@@ -42,11 +43,13 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
             MediaWebSocketPublisher publisher,
             ObjectMapper objectMapper,
             EquipmentControlService equipmentControlService,
-            IntercomCallService intercomCallService) {
+            IntercomCallService intercomCallService,
+            CurrentUserResolver currentUserResolver) {
         this.publisher = publisher;
         this.objectMapper = objectMapper;
         this.equipmentControlService = equipmentControlService;
         this.intercomCallService = intercomCallService;
+        this.currentUserResolver = currentUserResolver;
     }
 
     /**
@@ -123,23 +126,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
      * @return 当前用户
      */
     private CurrentUser currentUser(WebSocketSession session) {
-        String userId = headerOrDefault(session, "X-User-Id", "u1001");
-        String orgId = headerOrDefault(session, "X-Org-Id", "org001");
-        String clientId = headerOrDefault(session, "X-Client-Id", session.getId());
-        return new CurrentUser(userId, orgId, Set.of("MEDIA_OPERATOR", "EQUIPMENT_OPERATOR"), clientId);
-    }
-
-    /**
-     * 读取请求头，缺省时返回默认值。
-     *
-     * @param session WebSocket 会话
-     * @param name 名称
-     * @param defaultValue 默认值
-     * @return 请求头值或默认值
-     */
-    private String headerOrDefault(WebSocketSession session, String name, String defaultValue) {
-        String value = session.getHandshakeHeaders().getFirst(name);
-        return value == null || value.isBlank() ? defaultValue : value;
+        return currentUserResolver.resolve(session);
     }
 
     /**

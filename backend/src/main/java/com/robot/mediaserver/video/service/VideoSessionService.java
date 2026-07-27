@@ -329,7 +329,7 @@ public class VideoSessionService {
      * @return 对讲启动响应
      */
     @Transactional
-    public IntercomResponse startIntercom(String sessionId, CurrentUser user) {
+    public synchronized IntercomResponse startIntercom(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         // 对讲同一时间只能由一个浏览器 client 占用。判断 clientId 可以避免同一用户
         // 开多个页面时互相抢占，心跳超时后 expireIntercom 会释放这些字段。
@@ -338,6 +338,7 @@ public class VideoSessionService {
                 || !Objects.equals(session.getIntercomClientId(), user.clientId()))) {
             throw new IllegalStateException("对讲已被其他操作员占用");
         }
+        requireIntercomAvailable(session, user);
         liveKitRoomService.createRoom(session.getRoomName());
         // 如果这个会话原本只是空壳或空闲等待，对讲需要先确保 Room 可用。
         // 但是否发布视频取决于前端是否也发起观看请求。
@@ -366,7 +367,7 @@ public class VideoSessionService {
      * @return 对讲状态响应
      */
     @Transactional
-    public IntercomResponse heartbeatIntercom(String sessionId, CurrentUser user) {
+    public synchronized IntercomResponse heartbeatIntercom(String sessionId, CurrentUser user) {
         VideoSession session = requireIntercomOperator(sessionId, user);
         session.setIntercomHeartbeatAt(now());
         session.setUpdatedAt(now());
@@ -383,7 +384,7 @@ public class VideoSessionService {
      * @return 实时视频会话响应
      */
     @Transactional
-    public VideoSessionResponse stopIntercom(String sessionId, CurrentUser user) {
+    public synchronized VideoSessionResponse stopIntercom(String sessionId, CurrentUser user) {
         VideoSession session = requireIntercomOperator(sessionId, user);
         session.setIntercomStatus(IntercomStatus.STOPPING);
         emit("video.intercom.stopping", session);
@@ -482,9 +483,9 @@ public class VideoSessionService {
      * @param trackName LiveKit track 名称
      * @param errorCode 错误码
      * @param message 状态说明
-     */
+    */
     @Transactional
-    public void handleClientStatus(
+    public synchronized void handleClientStatus(
             String sessionId,
             String status,
             String trackSid,
@@ -494,6 +495,15 @@ public class VideoSessionService {
         VideoSession session = requireSession(sessionId);
         session.setLastStatusAt(now());
         String normalized = status == null ? "" : status.trim().toLowerCase();
+        if (isLateVideoStartStatus(session, normalized)) {
+            emit("video.client.status.ignored", Map.of(
+                    "sessionId", sessionId,
+                    "status", normalized,
+                    "reason", "session has no viewer or intercom owner"));
+            session.setUpdatedAt(now());
+            repository.save(session);
+            return;
+        }
         // Go 客户端通过 MQTT 回报的是轻量字符串状态，这里统一映射为后端状态机枚举，
         // 并在关键节点发布 WebSocket 事件，驱动前端刷新。
         switch (normalized) {
@@ -537,7 +547,7 @@ public class VideoSessionService {
      * @param message 状态说明
      */
     @Transactional
-    public void handleIntercomStatus(
+    public synchronized void handleIntercomStatus(
             String sessionId,
             String status,
             String robotAudioTrackSid,
@@ -880,7 +890,7 @@ public class VideoSessionService {
      * @return 需要下发给机器人客户端的对讲停止命令载荷；不需要停止时返回空 Map
      */
     @Transactional
-    public Map<String, Object> expireIntercom(String sessionId) {
+    public synchronized Map<String, Object> expireIntercom(String sessionId) {
         VideoSession session = requireSession(sessionId);
         if (!holdsRoomForIntercom(session)) {
             return Map.of();
@@ -969,6 +979,39 @@ public class VideoSessionService {
     private boolean holdsRoomForIntercom(VideoSession session) {
         return session.getIntercomStatus() == IntercomStatus.STARTING
                 || session.getIntercomStatus() == IntercomStatus.ACTIVE;
+    }
+
+    private boolean isLateVideoStartStatus(VideoSession session, String status) {
+        boolean startsVideo = "room_ready".equals(status)
+                || "publishing".equals(status)
+                || "streaming".equals(status)
+                || "track_published".equals(status);
+        boolean alreadyReleased = session.getStatus() == VideoSessionStatus.IDLE_WAIT
+                || session.getStatus() == VideoSessionStatus.STOPPING
+                || session.getStatus() == VideoSessionStatus.CLOSED;
+        return startsVideo
+                && alreadyReleased
+                && session.getViewerCount() == 0
+                && !holdsRoomForIntercom(session);
+    }
+
+    private void requireIntercomAvailable(VideoSession target, CurrentUser user) {
+        Set<IntercomStatus> occupiedStatuses = Set.of(
+                IntercomStatus.STARTING,
+                IntercomStatus.ACTIVE);
+        repository.findByIntercomStatusIn(occupiedStatuses).stream()
+                .filter(session -> !session.getSessionId().equals(target.getSessionId()))
+                .forEach(session -> {
+                    if (Objects.equals(session.getRobotId(), target.getRobotId())) {
+                        throw new IllegalStateException("该机器人正在进行其他对讲");
+                    }
+                    if (Objects.equals(session.getIntercomOperatorId(), user.userId())) {
+                        throw new IllegalStateException("当前操作员正在与其他机器人通话，请先结束当前通话");
+                    }
+                    if (Objects.equals(session.getIntercomClientId(), user.clientId())) {
+                        throw new IllegalStateException("当前终端正在与其他机器人通话，请先结束当前通话");
+                    }
+                });
     }
 
     private String roomName(CreateVideoSessionRequest request) {

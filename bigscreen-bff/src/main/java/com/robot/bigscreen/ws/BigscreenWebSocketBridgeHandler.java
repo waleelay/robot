@@ -18,6 +18,7 @@ import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
 public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
@@ -102,7 +103,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         }
     }
 
-    private void copyHandshakeHeaders(WebSocketSession browserSession, WebSocketHttpHeaders headers) {
+    void copyHandshakeHeaders(WebSocketSession browserSession, WebSocketHttpHeaders headers) {
         HttpHeaders source = browserSession.getHandshakeHeaders();
         for (String name : FORWARDED_HEADERS) {
             List<String> values = source.get(name);
@@ -110,7 +111,23 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 headers.put(name, values);
             }
         }
-        headers.putIfAbsent("X-Client-Id", Collections.singletonList(browserSession.getId()));
+        headers.putIfAbsent(
+                "X-Client-Id",
+                Collections.singletonList(clientIdFromQuery(browserSession)));
+    }
+
+    private String clientIdFromQuery(WebSocketSession browserSession) {
+        URI uri = browserSession.getUri();
+        if (uri != null) {
+            String clientId = UriComponentsBuilder.fromUri(uri)
+                    .build()
+                    .getQueryParams()
+                    .getFirst("clientId");
+            if (clientId != null && !clientId.isBlank()) {
+                return clientId;
+            }
+        }
+        return browserSession.getId();
     }
 
     private class CenterToBrowserHandler extends TextWebSocketHandler {

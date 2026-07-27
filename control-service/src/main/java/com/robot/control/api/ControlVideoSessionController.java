@@ -120,7 +120,10 @@ public class ControlVideoSessionController {
      */
     @PostMapping("/{sessionId}/intercom/start")
     public IntercomResponse startIntercom(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return controlVideoCommandService.startIntercom(sessionId, currentUserResolver.resolve(servletRequest));
+        CurrentUser user = currentUserResolver.resolve(servletRequest);
+        VideoSessionResponse session = mediaServiceClient.get(sessionId, user);
+        intercomCallService.requireManualIntercomAllowed(session.robotId());
+        return controlVideoCommandService.startIntercom(sessionId, user);
     }
 
     /**

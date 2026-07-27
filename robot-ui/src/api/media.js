@@ -17,6 +17,10 @@ const headers = {
   'X-Client-Id': clientId
 }
 
+const sessionHeaders = {
+  'X-Client-Id': clientId
+}
+
 const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
 
 // 创建视频会话
@@ -117,7 +121,9 @@ export function snapshotImageUrl(fileId) {
 export function stopIntercom(sessionId) {
   return request({
     url: `/api/control/video-sessions/${sessionId}/intercom/stop`,
-    method: 'post'
+    method: 'post',
+    headers: sessionHeaders,
+    skipErrorMessage: true
   })
 }
 export function startCameraIntercom(data) {
@@ -127,20 +133,26 @@ export function startCameraIntercom(data) {
     data: {
       quality: data.quality,
       reuse: true
-    }
+    },
+    headers: sessionHeaders,
+    skipErrorMessage: true
   })
 }
 
 export function startSessionIntercom(sessionId) {
   return request({
     url: `/api/control/video-sessions/${sessionId}/intercom/start`,
-    method: 'post'
+    method: 'post',
+    headers: sessionHeaders,
+    skipErrorMessage: true
   })
 }
 export function heartbeatIntercom(sessionId) {
   return request({
     url: `/api/control/video-sessions/${sessionId}/intercom/heartbeat`,
-    method: 'post'
+    method: 'post',
+    headers: sessionHeaders,
+    skipErrorMessage: true
   })
 }
 
@@ -172,7 +184,7 @@ export function acquireControl(robotId, data) {
 
 export function takeoverControl(robotId, data) {
   console.log(robotId, data);
-  
+
   return request({
     url: `/api/control/robots/${robotId}/control-sessions/takeover`,
     method: 'post',

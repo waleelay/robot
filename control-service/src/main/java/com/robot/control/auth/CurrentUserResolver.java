@@ -6,6 +6,8 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * 从 HTTP 请求头解析当前用户上下文。
@@ -38,6 +40,33 @@ public class CurrentUserResolver {
         String orgId = headerOrDefault(request, "X-Org-Id", properties.getAuth().getDefaultOrgId());
         String clientId = headerOrDefault(request, "X-Client-Id", "web");
         String rolesHeader = headerOrDefault(request, "X-Roles", "MEDIA_VIEWER,MEDIA_OPERATOR,EQUIPMENT_OPERATOR");
+        return currentUser(userId, orgId, clientId, rolesHeader);
+    }
+
+    /**
+     * 从 WebSocket 握手信息解析当前用户。
+     *
+     * <p>浏览器不能自行设置 WebSocket 请求头，因此 clientId 允许通过查询参数传入。
+     * 用户和角色仍优先读取网关注入的请求头。</p>
+     *
+     * @param session WebSocket 会话
+     * @return 当前用户上下文
+     */
+    public CurrentUser resolve(WebSocketSession session) {
+        String userId = headerOrDefault(session, "X-User-Id", "dev-user");
+        String orgId = headerOrDefault(session, "X-Org-Id", properties.getAuth().getDefaultOrgId());
+        String clientId = headerOrDefault(
+                session,
+                "X-Client-Id",
+                queryOrDefault(session, "clientId", session.getId()));
+        String rolesHeader = headerOrDefault(
+                session,
+                "X-Roles",
+                "MEDIA_VIEWER,MEDIA_OPERATOR,EQUIPMENT_OPERATOR");
+        return currentUser(userId, orgId, clientId, rolesHeader);
+    }
+
+    private CurrentUser currentUser(String userId, String orgId, String clientId, String rolesHeader) {
         Set<String> roles = Arrays.stream(rolesHeader.split(","))
                 .map(String::trim)
                 .filter(role -> !role.isBlank())
@@ -55,6 +84,22 @@ public class CurrentUserResolver {
      */
     private String headerOrDefault(HttpServletRequest request, String name, String defaultValue) {
         String value = request.getHeader(name);
+        return value == null || value.isBlank() ? defaultValue : value;
+    }
+
+    private String headerOrDefault(WebSocketSession session, String name, String defaultValue) {
+        String value = session.getHandshakeHeaders().getFirst(name);
+        return value == null || value.isBlank() ? defaultValue : value;
+    }
+
+    private String queryOrDefault(WebSocketSession session, String name, String defaultValue) {
+        if (session.getUri() == null) {
+            return defaultValue;
+        }
+        String value = UriComponentsBuilder.fromUri(session.getUri())
+                .build()
+                .getQueryParams()
+                .getFirst(name);
         return value == null || value.isBlank() ? defaultValue : value;
     }
 }

@@ -34,6 +34,8 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
             Collection<IntercomStatus> statuses,
             OffsetDateTime heartbeatAt);
 
+    List<VideoSession> findByIntercomStatusIn(Collection<IntercomStatus> statuses);
+
     List<VideoSession> findTop16ByStatusInOrderByUpdatedAtDesc(Collection<VideoSessionStatus> statuses);
 
     List<VideoSession> findByRobotIdAndViewerCountGreaterThanAndStatusInOrderByUpdatedAtDesc(
