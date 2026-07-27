@@ -135,7 +135,7 @@ public class RobotRegistryService {
             device.battery = Math.max(0, Math.min(100, battery));
         }
         device.status = "offline".equalsIgnoreCase(status) ? "offline" : "online";
-        device.controlMode = blank(controlMode) ? "MANUAL" : controlMode;
+        device.controlMode = "MANUAL".equalsIgnoreCase(controlMode) ? "MANUAL" : "NAVIGATION";
         if (stateSeq != null) {
             device.stateSeq = stateSeq;
         }
@@ -200,6 +200,7 @@ public class RobotRegistryService {
         state.put("battery", device.battery == null ? 0 : device.battery);
         state.put("status", device.status);
         state.put("controlMode", device.controlMode);
+        state.put("controlModeName", controlModeName(device.controlMode));
         state.put("stateSeq", device.stateSeq);
         state.put("missionStatus", device.missionStatus);
         state.put("navigationStatus", device.navigationStatus);
@@ -226,6 +227,7 @@ public class RobotRegistryService {
                 device.battery,
                 device.status,
                 device.controlMode,
+                controlModeName(device.controlMode),
                 device.stateSeq,
                 device.missionStatus,
                 device.navigationStatus,
@@ -235,6 +237,10 @@ public class RobotRegistryService {
                 device.cameras,
                 device.mountedDevices,
                 DateTimeConfig.format(device.lastHeartbeatAt));
+    }
+
+    private String controlModeName(String controlMode) {
+        return "MANUAL".equals(controlMode) ? "手动模式" : "导航模式";
     }
 
     /**

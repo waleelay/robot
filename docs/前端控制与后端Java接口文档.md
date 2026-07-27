@@ -52,7 +52,8 @@ Content-Type: application/json
 | `IntercomStatus` | `IDLE`、`STARTING`、`ACTIVE`、`INTERRUPTED`、`STOPPING`、`FAILED` | 对讲状态 |
 | `FileType` | `VIDEO`、`AUDIO`、`IMAGE`、`LOG`、`CONFIG`、`MAP`、`DOCUMENT`、`OTHER` | 文件类型 |
 | `FileStatus` | `UPLOADING`、`PROCESSING`、`READY`、`FAILED`、`DELETED` | 文件状态 |
-| `controlMode` | `MANUAL`、`ASSISTED`、`NAVIGATION` | 设备控制模式 |
+| `controlMode` | `MANUAL`、`NAVIGATION` | 控制模式编码 |
+| `controlModeName` | `手动模式`、`导航模式` | 前端中文显示值 |
 | `disposalStatus` | `IMMEDIATE_DISPOSAL`、`FALSE_ALARM` | 告警处置状态；其他值会返回 `BAD_REQUEST` |
 
 ### 2.3 通用错误响应
@@ -733,7 +734,7 @@ GET /api/media/files?fileType=IMAGE&page=0&size=20
 |---|---|---|
 | GET | `/api/control/robots/{robotId}/control-profile` | 获取机器人控制画像 |
 | POST | `/api/control/robots/{robotId}/control-sessions/acquire` | 获取控制会话 |
-| POST | `/api/control/robots/{robotId}/control-sessions/takeover` | 接管控制 |
+| POST | `/api/control/robots/{robotId}/control-sessions/takeover` | 导航模式人工接管本体，不强制抢占其他终端 |
 | POST | `/api/control/robots/{robotId}/control-mode` | 设置控制模式 |
 | POST | `/api/control/robots/{robotId}/control-sessions/{controlSessionId}/release` | 释放控制会话 |
 | POST | `/api/control/robots/{robotId}/commands/confirm-token` | 生成高风险动作确认 token |
@@ -956,60 +957,25 @@ Content-Type: application/json
 
 ### 4.5 POST `/api/control/robots/{robotId}/control-sessions/takeover`
 
-用途：强制接管控制，将机器人状态切到 `MANUAL`，任务状态切到 `PAUSED`。
+用途：在 `NAVIGATION` 模式下申请本体控制权并下发切换 `MANUAL` 指令。该接口不会抢占其他终端的控制会话，也不会在 MQTT 发布后提前修改机器人状态。
 
 请求参数：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| `observedStateSeq` | number | 否 | 前端观察到的状态序号；小于后端最新值时返回 `ROBOT_STATE_CHANGED` |
-| `scope` | string | 否 | 默认 `ROBOT` |
-| `deviceIds` | array[string] | 否 | 为空时默认 `["base"]` |
-| `actions` | array[string] | 否 | 动作列表 |
-| `fromMode` | string | 否 | 接管前模式，默认 `NAVIGATION` |
+| `observedStateSeq` | number | 是 | 前端最近一次收到的机器人状态序号 |
 
-请求示例：
+响应关键字段：
 
-```json
-{
-  "observedStateSeq": 1,
-  "scope": "ROBOT",
-  "deviceIds": ["base"],
-  "actions": ["drive.velocity"],
-  "fromMode": "NAVIGATION"
-}
-```
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `controlSessionId` | string | 已申请的本体控制会话 |
+| `status` | string | 控制会话状态，成功为 `ACTIVE` |
+| `modeChangeStatus` | string | `PUBLISHED` 表示切手动 MQTT 已发布；`CONFIRMED` 表示当前已经是手动模式 |
+| `controlMode/controlModeName` | string | 当前机器人真实模式及中文名称 |
+| `requestedControlMode/requestedControlModeName` | string | 请求切换的模式及中文名称 |
 
-响应示例：
-
-```json
-{
-  "controlSessionId": "tc_91ad22",
-  "robotId": "test111",
-  "ownerUserId": "u1001",
-  "ownerClientId": "web-1783120000000-abcd",
-  "scope": "ROBOT",
-  "deviceIds": ["base"],
-  "actions": ["drive.velocity"],
-  "mode": "EXCLUSIVE",
-  "status": "ACTIVE",
-  "leaseExpireAt": "2026-07-04T10:00:30+08:00",
-  "previousMode": "NAVIGATION",
-  "controlMode": "MANUAL",
-  "missionStatus": "PAUSED"
-}
-```
-
-状态已变化时：
-
-```json
-{
-  "code": "ROBOT_STATE_CHANGED",
-  "message": "robot state changed, refresh status before takeover",
-  "latestStateSeq": 3,
-  "latestControlMode": "MANUAL"
-}
-```
+其他终端已持有本体控制权时返回 `CONTROL_LOCKED`。前端收到 `modeChangeStatus=PUBLISHED` 后不得立即发送移动指令，必须等待 `robot.state.controlMode=MANUAL`。
 
 ### 4.6 POST `/api/control/robots/{robotId}/control-mode`
 
@@ -1025,12 +991,18 @@ Content-Type: application/json
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| `controlMode` | string | 是 | `MANUAL`、`ASSISTED`、`NAVIGATION` |
+| `controlMode` | string | 是 | `MANUAL`、`NAVIGATION` |
+| `controlSessionId` | string | 是 | 当前终端持有且包含 `base` 的有效控制会话 |
+| `observedStateSeq` | number | 是 | 前端最近一次收到的状态序号，必须等于后端最新值 |
 
 请求示例：
 
 ```json
-{"controlMode": "NAVIGATION"}
+{
+  "controlMode": "NAVIGATION",
+  "controlSessionId": "tc_91ad22",
+  "observedStateSeq": 2
+}
 ```
 
 响应示例：
@@ -1039,11 +1011,16 @@ Content-Type: application/json
 {
   "status": "PUBLISHED",
   "robotId": "test111",
-  "controlMode": "NAVIGATION",
+  "requestedControlMode": "NAVIGATION",
+  "requestedControlModeName": "导航模式",
+  "controlMode": "MANUAL",
+  "controlModeName": "手动模式",
   "stateSeq": 2,
   "issuedAt": "2026-07-04T10:00:00+08:00"
 }
 ```
+
+`PUBLISHED` 只表示 MQTT 已成功发布。后端不会立即修改模式或广播乐观状态；机器人通过 `media/client/status` 上报真实模式后，前端才按 `controlModeName` 更新中文显示。
 
 ### 4.7 POST `/api/control/robots/{robotId}/control-sessions/{controlSessionId}/release`
 

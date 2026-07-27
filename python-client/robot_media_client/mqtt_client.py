@@ -639,19 +639,17 @@ def any_str(value: object, fallback: str) -> str:
 
 
 def normalize_control_mode(value: str) -> str:
-    """规范化控制模式，只接受平台一期定义的三种模式。"""
+    """规范化控制模式，只接受手动和导航两种模式。"""
     mode = (value or "MANUAL").strip().upper()
-    if mode in {"MANUAL", "ASSISTED", "NAVIGATION"}:
+    if mode in {"MANUAL", "NAVIGATION"}:
         return mode
-    return "MANUAL"
+    return "NAVIGATION"
 
 
 def mission_status_for_mode(control_mode: str) -> str:
     """根据控制模式模拟任务状态。"""
     if control_mode == "NAVIGATION":
         return "RUNNING"
-    if control_mode == "ASSISTED":
-        return "ASSISTED"
     return "IDLE"
 
 

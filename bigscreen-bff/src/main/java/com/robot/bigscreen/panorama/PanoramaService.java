@@ -174,7 +174,8 @@ public class PanoramaService {
                 "stateSeq", number(realtimeStatus.get("stateSeq")),
                 "fault", fault,
                 "alarmLevel", alarmLevel,
-                "controlMode", firstString(control, "controlMode"),
+                "controlMode", normalizeControlMode(firstString(control, "controlMode")),
+                "controlModeName", controlModeName(normalizeControlMode(firstString(control, "controlMode"))),
                 "mountedDeviceCount", mountedDeviceCount(source, mountedDevices),
                 "speed", number(motion.get("speed")),
                 "location", location(localization, realtimeStatus),
@@ -573,6 +574,7 @@ public class PanoramaService {
                 "alarmStatus", alarmLevel,
                 "alarmText", alarmLevel == null ? null : "存在未处理告警",
                 "controlMode", device.get("controlMode"),
+                "controlModeName", device.get("controlModeName"),
                 "speed", device.get("speed"),
                 "location", device.get("location"),
                 "mountedDeviceCount", device.get("mountedDeviceCount"),
@@ -598,6 +600,7 @@ public class PanoramaService {
                 "alarmStatus", null,
                 "alarmText", null,
                 "controlMode", null,
+                "controlModeName", null,
                 "speed", null,
                 "location", emptyLocation(),
                 "mountedDeviceCount", null,
@@ -1112,6 +1115,14 @@ public class PanoramaService {
 
     private String suffix(String value, String suffix) {
         return value == null || value.isBlank() ? null : value + suffix;
+    }
+
+    private String normalizeControlMode(String controlMode) {
+        return "MANUAL".equalsIgnoreCase(controlMode) ? "MANUAL" : "NAVIGATION";
+    }
+
+    private String controlModeName(String controlMode) {
+        return "MANUAL".equals(controlMode) ? "手动模式" : "导航模式";
     }
 
     private Number number(Object value) {

@@ -150,6 +150,7 @@ class IntercomCallServiceTest {
                 80,
                 status,
                 "MANUAL",
+                "手动模式",
                 1L,
                 "IDLE",
                 "IDLE",

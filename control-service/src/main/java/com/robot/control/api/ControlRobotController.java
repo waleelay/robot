@@ -77,12 +77,12 @@ public class ControlRobotController {
     }
 
     /**
-     * 强制接管机器人控制权。
+     * 从导航模式发起人工接管。
      *
      * @param robotId 机器人 ID
      * @param request 请求参数
      * @param servletRequest HTTP 请求
-     * @return 接管后的控制会话信息
+     * @return 本体控制会话和模式切换发布结果
      */
     @PostMapping("/{robotId}/control-sessions/takeover")
     public Map<String, Object> takeoverControl(

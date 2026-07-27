@@ -183,8 +183,6 @@ export function acquireControl(robotId, data) {
 }
 
 export function takeoverControl(robotId, data) {
-  console.log(robotId, data);
-
   return request({
     url: `/api/control/robots/${robotId}/control-sessions/takeover`,
     method: 'post',
@@ -245,7 +243,9 @@ export function setControlMode(data) {
     url: `/api/control/robots/${data.robotId}/control-mode`,
     method: 'post',
     data: {
-      controlMode: data.controlMode
+      controlMode: data.controlMode,
+      controlSessionId: data.controlSessionId,
+      observedStateSeq: data.observedStateSeq
     }
   })
 }

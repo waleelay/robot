@@ -579,10 +579,10 @@ func anyString(value any, fallback string) string {
 
 func normalizeControlMode(value string) string {
 	switch strings.ToUpper(strings.TrimSpace(value)) {
-	case "MANUAL", "ASSISTED", "NAVIGATION":
+	case "MANUAL", "NAVIGATION":
 		return strings.ToUpper(strings.TrimSpace(value))
 	default:
-		return "MANUAL"
+		return "NAVIGATION"
 	}
 }
 

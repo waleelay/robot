@@ -14,7 +14,6 @@ import {
   stopVideoSession,
   getControlProfile,
   getRecordings,
-  takeoverControl,
   acquireControl,
   getActiveLiveRecording,
   startLiveRecording,
@@ -283,10 +282,12 @@ function withCallReceipt(call) {
 // ============ 工具函数 ============
 // 用于将机器人数据转换为状态对象
 function toRobotState(robot) {
+  const controlMode = robot.controlMode === 'MANUAL' ? 'MANUAL' : 'NAVIGATION'
   return Object.assign({}, robot, {
     name: robot.name || robot.robotId,
     type: robot.type || '机器人',
-    controlMode: robot.controlMode || 'MANUAL',
+    controlMode,
+    controlModeName: robot.controlModeName || (controlMode === 'MANUAL' ? '手动模式' : '导航模式'),
     stateSeq: robot.stateSeq || 0,
     status: robot.status || 'offline',
     cameras: (robot.cameras || []).map(camera => Object.assign(
@@ -996,27 +997,17 @@ const actions = {
     if (state.controlSessions[key] && state.controlSessions[key].status === 'ACTIVE') {
       return state.controlSessions[key]
     }
-    let session
-    if (device.deviceId === 'base' && ['NAVIGATION', 'ASSISTED'].includes(state.selectedRobot.controlMode)) {
-      session = await takeoverControl(state.selectedRobotId, {
-        fromMode: state.selectedRobot.controlMode,
-        toMode: 'MANUAL',
-        scope: 'ROBOT',
-        deviceIds: ['base'],
-        actions: ['drive.velocity'],
-        observedStateSeq: state.selectedRobot.stateSeq || 0,
-        reason: 'manual_takeover'
-      })
-    } else {
-      session = await acquireControl(state.selectedRobotId, {
-        scope: device.deviceId === 'base' ? 'ROBOT' : 'DEVICE',
-        deviceIds: [device.deviceId],
-        actions: [action],
-        mode: 'EXCLUSIVE',
-        reason: 'manual_teleop',
-        ttlSeconds: 30
-      })
+    if (device.deviceId === 'base' && state.selectedRobot.controlMode !== 'MANUAL') {
+      throw new Error('请先将机器人切换到手动模式')
     }
+    const session = await acquireControl(state.selectedRobotId, {
+      scope: device.deviceId === 'base' ? 'ROBOT' : 'DEVICE',
+      deviceIds: [device.deviceId],
+      actions: [action],
+      mode: 'EXCLUSIVE',
+      reason: 'manual_teleop',
+      ttlSeconds: 30
+    })
     if (session.code) {
       const error = new Error(session.message || session.code)
       error.code = session.code

@@ -18,7 +18,7 @@
         <span class="ml10">切换模式</span>
       </div>
     </template>
-    {{ this.controlMode ? '确认执行切换装备模式的操作？' : '控制本体，需要切换到手动模式，确认执行切换操作？' }}
+    确认切换为{{ controlModeName }}？
     <template slot="footer">
       <el-button tt="modal"  @click="dialogVisible = false">取消</el-button>
       <el-button tt="modal" class="ml10" @click="execute(controlMode)">确认切换</el-button>
@@ -27,7 +27,7 @@
 </template>
 
 <script>
-import { setControlMode } from '../../../../../../api/media';
+import { acquireControl, setControlMode, takeoverControl } from '../../../../../../api/media';
 
 export default {
   name: 'ControlModeWarning',
@@ -37,7 +37,8 @@ export default {
       loading: false,
       timer: null,
       robotId: '',
-      controlMode: ''
+      controlMode: '',
+      controlModeName: ''
     }
   },
   methods: {
@@ -47,6 +48,7 @@ export default {
       this.dialogVisible = true
       this.robotId = data.robotId
       this.controlMode = data?.controlMode || ''
+      this.controlModeName = this.controlMode === 'MANUAL' ? '手动模式' : '导航模式'
     },
     async execute() {
       if (this.loading === true) {
@@ -54,13 +56,44 @@ export default {
       }
       this.loading = true
       try {
-        await setControlMode({ robotId: this.robotId, controlMode: this.controlMode || 'MANUAL' })
-        this.$message.success('成功切换模式')
+        const robot = this.$store.state.websocketRobot.robots.find(item => item.robotId === this.robotId)
+        if (!robot || robot.status !== 'online') {
+          throw new Error('机器人不在线，不能切换控制模式')
+        }
+        let response
+        if (robot.controlMode === 'NAVIGATION' && this.controlMode === 'MANUAL') {
+          response = await takeoverControl(this.robotId, {
+            observedStateSeq: robot.stateSeq
+          })
+        } else {
+          const session = await acquireControl(this.robotId, {
+            scope: 'ROBOT',
+            deviceIds: ['base'],
+            actions: ['control.mode.set', 'drive.velocity']
+          })
+          if (session.code) {
+            throw new Error(session.message || session.code)
+          }
+          response = await setControlMode({
+            robotId: this.robotId,
+            controlMode: this.controlMode,
+            controlSessionId: session.controlSessionId,
+            observedStateSeq: robot.stateSeq
+          })
+        }
+        if (response.code) {
+          throw new Error(response.message || response.code)
+        }
+        this.$message.success(
+          response.status === 'CONFIRMED' || response.modeChangeStatus === 'CONFIRMED'
+            ? `机器人当前已是${response.controlModeName}`
+            : `切换指令已下发，等待机器人确认`
+        )
         this.dialogVisible = false
-        this.loading = false
       } catch (error) {
+        this.$message.error(error.message || '切换模式失败')
+      } finally {
         this.loading = false
-        this.$message.error('切换模式失败')
       }
     },
   },

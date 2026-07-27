@@ -1,5 +1,5 @@
 import { mapActions, mapState } from "vuex";
-import { takeoverControl, acquireControl, mediaClientId, sendEquipmentCommand, createConfirmToken } from "../../../../../../api/media";
+import { acquireControl, mediaClientId, sendEquipmentCommand, createConfirmToken } from "../../../../../../api/media";
 import { errorMessage } from "../../../../../../utils";
 import ControlModeWarning from "./ControlModeWarning.vue";
 import { controlModeObj } from "../../../../js/constants/robot-control";
@@ -263,27 +263,17 @@ export default {
       if (this.controlSessions[key] && this.controlSessions[key].status === 'ACTIVE') {
         return this.controlSessions[key]
       }
-      let session
-      if (device.deviceId === 'base' && ['NAVIGATION', 'ASSISTED'].includes(this.selectedRobot.controlMode)) {
-        session = await takeoverControl(this.selectedRobotId, {
-          fromMode: this.selectedRobot.controlMode,
-          toMode: 'MANUAL',
-          scope: 'ROBOT',
-          deviceIds: ['base'],
-          actions: ['drive.velocity'],
-          observedStateSeq: this.selectedRobot.stateSeq || 0,
-          reason: 'manual_takeover'
-        })
-      } else {
-        session = await acquireControl(this.selectedRobotId, {
-          scope: device.deviceId === 'base' ? 'ROBOT' : 'DEVICE',
-          deviceIds: [device.deviceId],
-          actions: [action],
-          mode: 'EXCLUSIVE',
-          reason: 'manual_teleop',
-          ttlSeconds: 30
-        })
+      if (device.deviceId === 'base' && this.selectedRobot.controlMode !== 'MANUAL') {
+        throw new Error('请先将机器人切换到手动模式')
       }
+      const session = await acquireControl(this.selectedRobotId, {
+        scope: device.deviceId === 'base' ? 'ROBOT' : 'DEVICE',
+        deviceIds: [device.deviceId],
+        actions: [action],
+        mode: 'EXCLUSIVE',
+        reason: 'manual_teleop',
+        ttlSeconds: 30
+      })
       if (session.code) {
         const error = new Error(session.message || session.code)
         error.code = session.code

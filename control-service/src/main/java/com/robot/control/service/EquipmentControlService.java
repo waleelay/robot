@@ -56,13 +56,15 @@ public class EquipmentControlService {
     public Map<String, Object> controlProfile(String robotId) {
         Map<String, Object> robot = requireRobot(robotId);
         Map<String, Object> state = robotStates.getOrDefault(robotId, defaultRobotState(robot));
+        String controlMode = reportedControlMode(state.get("controlMode"));
         return object(
                 "robotId", robotId,
                 "type", robot.get("type"),
                 "vendor", robot.get("vendor"),
                 "model", robot.get("model"),
                 "onlineStatus", valueOrDefault(state, "status", "offline"),
-                "controlMode", valueOrDefault(state, "controlMode", "MANUAL"),
+                "controlMode", controlMode,
+                "controlModeName", controlModeName(controlMode),
                 "stateSeq", valueOrDefault(state, "stateSeq", 1),
                 "devices", devices(robotId));
     }
@@ -75,7 +77,7 @@ public class EquipmentControlService {
      * @param user 当前用户
      * @return 控制会话信息
      */
-    public Map<String, Object> acquire(String robotId, Map<String, Object> request, CurrentUser user) {
+    public synchronized Map<String, Object> acquire(String robotId, Map<String, Object> request, CurrentUser user) {
         requireRobot(robotId);
         pruneExpiredSessions(robotId);
         List<String> deviceIds = stringList(request.get("deviceIds"));
@@ -102,43 +104,56 @@ public class EquipmentControlService {
     }
 
     /**
-     * 接管控制会话。
+     * 从导航模式发起人工接管。
+     *
+     * <p>该操作不会抢占其他终端的控制会话，也不会乐观修改机器人状态。它先申请本体控制权，
+     * 再发布切换手动模式指令，最终模式以机器人客户端状态上报为准。</p>
      *
      * @param robotId 机器人 ID
      * @param request 请求参数
      * @param user 当前用户
-     * @return 控制会话信息
+     * @return 本体控制会话和模式切换发布结果
      */
     public Map<String, Object> takeover(String robotId, Map<String, Object> request, CurrentUser user) {
         requireRobot(robotId);
-        Map<String, Object> state = robotStates.getOrDefault(robotId, defaultRobotState(requireRobot(robotId)));
+        if (request == null || !(request.get("observedStateSeq") instanceof Number observedSeqValue)) {
+            throw new IllegalArgumentException("observedStateSeq 必填且必须为数字");
+        }
+        Map<String, Object> state = robotStates.get(robotId);
+        if (state == null || !"online".equalsIgnoreCase(stringValue(state.get("status"), ""))) {
+            throw new IllegalArgumentException("机器人不在线，不能人工接管");
+        }
         long latestSeq = numberValue(state.get("stateSeq"), 0).longValue();
-        long observedSeq = numberValue(request.get("observedStateSeq"), -1).longValue();
-        if (observedSeq >= 0 && observedSeq < latestSeq) {
+        if (observedSeqValue.longValue() != latestSeq) {
             return object(
                     "code", "ROBOT_STATE_CHANGED",
-                    "message", "robot state changed, refresh status before takeover",
+                    "message", "机器人状态已变化，请刷新后重试",
                     "latestStateSeq", latestSeq,
-                    "latestControlMode", valueOrDefault(state, "controlMode", "MANUAL"));
+                    "latestControlMode", reportedControlMode(state.get("controlMode")),
+                    "latestControlModeName", controlModeName(reportedControlMode(state.get("controlMode"))));
         }
-        List<String> deviceIds = stringList(request.get("deviceIds"));
-        Map<String, Object> session = createSession(
-                robotId,
-                stringValue(request.get("scope"), "ROBOT"),
-                deviceIds.isEmpty() ? List.of("base") : deviceIds,
-                stringList(request.get("actions")),
-                user);
-        state.put("controlMode", "MANUAL");
-        state.put("missionStatus", "PAUSED");
-        state.put("controlOwner", object("userId", user.userId(), "clientId", user.clientId()));
-        state.put("stateSeq", latestSeq + 1);
-        enrichRobotState(robotId, state);
-        robotStates.put(robotId, state);
-        webSocketPublisher.publish("robot.state", state);
-        session.put("previousMode", stringValue(request.get("fromMode"), "NAVIGATION"));
-        session.put("controlMode", "MANUAL");
-        session.put("missionStatus", "PAUSED");
-        return session;
+        Map<String, Object> session = acquire(robotId, object(
+                "scope", "ROBOT",
+                "deviceIds", List.of("base"),
+                "actions", List.of("control.mode.set", "drive.velocity")), user);
+        if (session.containsKey("code")) {
+            return session;
+        }
+        String currentMode = reportedControlMode(state.get("controlMode"));
+        Map<String, Object> response = copy(session);
+        response.put("controlMode", currentMode);
+        response.put("controlModeName", controlModeName(currentMode));
+        response.put("stateSeq", latestSeq);
+        if ("MANUAL".equals(currentMode)) {
+            response.put("modeChangeStatus", "CONFIRMED");
+            return response;
+        }
+        OffsetDateTime issuedAt = publishControlModeCommand(robotId, "MANUAL", latestSeq);
+        response.put("modeChangeStatus", "PUBLISHED");
+        response.put("requestedControlMode", "MANUAL");
+        response.put("requestedControlModeName", "手动模式");
+        response.put("issuedAt", issuedAt.toString());
+        return response;
     }
 
     /**
@@ -151,12 +166,54 @@ public class EquipmentControlService {
      */
     public Map<String, Object> setControlMode(String robotId, Map<String, Object> request, CurrentUser user) {
         requireRobot(robotId);
-        String controlMode = normalizeControlMode(stringValue(request.get("controlMode"), ""));
-        Map<String, Object> state = robotStates.getOrDefault(robotId, defaultRobotState(requireRobot(robotId)));
+        if (request == null) {
+            throw new IllegalArgumentException("请求体不能为空");
+        }
+        String controlMode = normalizeControlMode(requiredString(request, "controlMode"));
+        String controlSessionId = requiredString(request, "controlSessionId");
+        if (!(request.get("observedStateSeq") instanceof Number observedSeqValue)) {
+            throw new IllegalArgumentException("observedStateSeq 必填且必须为数字");
+        }
+        Map<String, Object> state = robotStates.get(robotId);
+        if (state == null || !"online".equalsIgnoreCase(stringValue(state.get("status"), ""))) {
+            throw new IllegalArgumentException("机器人不在线，不能切换控制模式");
+        }
         long latestSeq = numberValue(state.get("stateSeq"), 0).longValue();
+        long observedSeq = observedSeqValue.longValue();
+        if (observedSeq != latestSeq) {
+            return object(
+                    "code", "ROBOT_STATE_CHANGED",
+                    "message", "机器人状态已变化，请刷新后重试",
+                    "latestStateSeq", latestSeq,
+                    "latestControlMode", reportedControlMode(state.get("controlMode")),
+                    "latestControlModeName", controlModeName(reportedControlMode(state.get("controlMode"))));
+        }
+        requireOwnedActiveSession(robotId, controlSessionId, "base", user);
+        String currentMode = reportedControlMode(state.get("controlMode"));
+        if (controlMode.equals(currentMode)) {
+            return object(
+                    "status", "CONFIRMED",
+                    "robotId", robotId,
+                    "controlMode", currentMode,
+                    "controlModeName", controlModeName(currentMode),
+                    "stateSeq", latestSeq);
+        }
+        OffsetDateTime now = publishControlModeCommand(robotId, controlMode, latestSeq);
+        return object(
+                "status", "PUBLISHED",
+                "robotId", robotId,
+                "requestedControlMode", controlMode,
+                "requestedControlModeName", controlModeName(controlMode),
+                "controlMode", currentMode,
+                "controlModeName", controlModeName(currentMode),
+                "stateSeq", latestSeq,
+                "issuedAt", now.toString());
+    }
+
+    private OffsetDateTime publishControlModeCommand(String robotId, String controlMode, long latestSeq) {
         OffsetDateTime now = OffsetDateTime.now();
         Map<String, Object> base = requireDevice(robotId, "base");
-        Map<String, Object> mqttPayload = object(
+        commandPublisher.publishCommand(robotId, object(
                 "robotId", robotId,
                 "seq", latestSeq + 1,
                 "target", object(
@@ -164,23 +221,8 @@ public class EquipmentControlService {
                         "deviceType", base.get("deviceType")),
                 "action", "control.mode.set",
                 "params", object("controlMode", controlMode),
-                "issuedAt", now.toString());
-        commandPublisher.publishCommand(robotId, mqttPayload);
-        state.put("controlMode", controlMode);
-        state.put("missionStatus", missionStatusForMode(controlMode));
-        state.put("navigationStatus", navigationStatusForMode(controlMode));
-        state.put("controlOwner", object("userId", user.userId(), "clientId", user.clientId()));
-        state.put("stateSeq", latestSeq + 1);
-        state.put("timestamp", now.toString());
-        enrichRobotState(robotId, state);
-        robotStates.put(robotId, state);
-        webSocketPublisher.publish("robot.state", state);
-        return object(
-                "status", "PUBLISHED",
-                "robotId", robotId,
-                "controlMode", controlMode,
-                "stateSeq", state.get("stateSeq"),
-                "issuedAt", now.toString());
+                "issuedAt", now.toString()));
+        return now;
     }
 
     /**
@@ -234,6 +276,7 @@ public class EquipmentControlService {
      */
     public Map<String, Object> publishCommand(String robotId, Map<String, Object> request, CurrentUser user) {
         requireRobot(robotId);
+        validateCommandAccess(robotId, request, user);
         Map<String, Object> mqttPayload = buildMqttPayload(robotId, request, user);
         commandPublisher.publishCommand(robotId, mqttPayload);
         String commandId = "cmd_" + compactUuid();
@@ -262,7 +305,9 @@ public class EquipmentControlService {
         Map<String, Object> state = copy(payload);
         state.putIfAbsent("stateSeq", numberValue(state.get("stateSeq"), 1).longValue());
         state.putIfAbsent("status", "offline");
-        state.putIfAbsent("controlMode", "MANUAL");
+        String controlMode = reportedControlMode(state.get("controlMode"));
+        state.put("controlMode", controlMode);
+        state.put("controlModeName", controlModeName(controlMode));
         state.put("timestamp", DateTimeConfig.normalize(state.getOrDefault("timestamp", OffsetDateTime.now())));
         enrichRobotState(robotId, state);
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
@@ -450,6 +495,49 @@ public class EquipmentControlService {
         return session;
     }
 
+    private Map<String, Object> requireOwnedActiveSession(
+            String robotId,
+            String controlSessionId,
+            String deviceId,
+            CurrentUser user) {
+        pruneExpiredSessions(robotId);
+        Map<String, Object> session = requireSession(robotId, controlSessionId);
+        if (!"ACTIVE".equals(session.get("status")) || isExpired(session, OffsetDateTime.now())) {
+            throw new IllegalArgumentException("控制会话已失效，请重新申请");
+        }
+        if (!user.userId().equals(session.get("ownerUserId"))
+                || !user.clientId().equals(session.get("ownerClientId"))) {
+            throw new IllegalArgumentException("控制会话不属于当前用户或终端");
+        }
+        List<String> deviceIds = stringList(session.get("deviceIds"));
+        if (!deviceIds.isEmpty() && !deviceIds.contains(deviceId)) {
+            throw new IllegalArgumentException("控制会话不包含设备：" + deviceId);
+        }
+        session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
+        return session;
+    }
+
+    private void validateCommandAccess(String robotId, Map<String, Object> request, CurrentUser user) {
+        if (request == null) {
+            throw new IllegalArgumentException("请求体不能为空");
+        }
+        Map<String, Object> target = mapValue(request.get("target"));
+        String deviceId = stringValue(target.get("deviceId"), "");
+        String action = stringValue(request.get("action"), "");
+        if (!"base".equals(deviceId) || !"drive.velocity".equals(action)) {
+            return;
+        }
+        Map<String, Object> state = robotStates.get(robotId);
+        if (state == null || !"online".equalsIgnoreCase(stringValue(state.get("status"), ""))) {
+            throw new IllegalArgumentException("机器人不在线，不能下发本体移动指令");
+        }
+        String controlMode = reportedControlMode(state.get("controlMode"));
+        if (!"MANUAL".equals(controlMode)) {
+            throw new IllegalArgumentException("机器人当前为" + controlModeName(controlMode) + "，请先切换到手动模式");
+        }
+        requireOwnedActiveSession(robotId, requiredString(request, "controlSessionId"), "base", user);
+    }
+
     /**
      * 清理指定机器人的过期控制会话。
      *
@@ -529,6 +617,7 @@ public class EquipmentControlService {
         return object(
                 "robotId", firstValue(robot, "serialNumber", "robotId"),
                 "controlMode", "MANUAL",
+                "controlModeName", "手动模式",
                 "stateSeq", 1,
                 "missionStatus", "IDLE",
                 "navigationStatus", "IDLE",
@@ -546,6 +635,9 @@ public class EquipmentControlService {
      * @param state 机器人状态
      */
     private void enrichRobotState(String robotId, Map<String, Object> state) {
+        String controlMode = reportedControlMode(state.get("controlMode"));
+        state.put("controlMode", controlMode);
+        state.put("controlModeName", controlModeName(controlMode));
         if (!stringValue(state.get("type"), "").isBlank()) {
             return;
         }
@@ -903,11 +995,28 @@ public class EquipmentControlService {
      * @return 规范化控制模式
      */
     private static String normalizeControlMode(String value) {
-        String mode = stringValue(value, "MANUAL").toUpperCase();
-        if (List.of("MANUAL", "ASSISTED", "NAVIGATION").contains(mode)) {
+        String mode = stringValue(value, "").trim().toUpperCase(Locale.ROOT);
+        if (List.of("MANUAL", "NAVIGATION").contains(mode)) {
             return mode;
         }
         throw new IllegalArgumentException("不支持的控制模式：" + value);
+    }
+
+    private static String reportedControlMode(Object value) {
+        String mode = stringValue(value, "MANUAL").trim().toUpperCase(Locale.ROOT);
+        return "MANUAL".equals(mode) ? "MANUAL" : "NAVIGATION";
+    }
+
+    private static String controlModeName(String controlMode) {
+        return "MANUAL".equals(controlMode) ? "手动模式" : "导航模式";
+    }
+
+    private static String requiredString(Map<String, Object> source, String field) {
+        String value = stringValue(source.get(field), "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException(field + " 必填");
+        }
+        return value;
     }
 
     /**
@@ -976,30 +1085,6 @@ public class EquipmentControlService {
 
     private String normalized(String value) {
         return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
-    }
-
-    /**
-     * 根据控制模式推导任务状态。
-     *
-     * @param controlMode 控制模式
-     * @return 任务状态
-     */
-    private static String missionStatusForMode(String controlMode) {
-        return switch (controlMode) {
-            case "NAVIGATION" -> "RUNNING";
-            case "ASSISTED" -> "ASSISTED";
-            default -> "IDLE";
-        };
-    }
-
-    /**
-     * 根据控制模式推导导航状态。
-     *
-     * @param controlMode 控制模式
-     * @return 导航状态
-     */
-    private static String navigationStatusForMode(String controlMode) {
-        return "NAVIGATION".equals(controlMode) ? "RUNNING" : "IDLE";
     }
 
     /**

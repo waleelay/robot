@@ -1,6 +1,5 @@
 export const controlModeObj =  {
   MANUAL: '手动模式',
-  ASSISTED: '辅助模式',
   NAVIGATION: '导航模式'
 }
 

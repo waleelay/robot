@@ -17,6 +17,7 @@ import java.util.Map;
  * @param battery 电量
  * @param status 状态
  * @param controlMode 控制模式
+ * @param controlModeName 控制模式中文名称
  * @param stateSeq 状态序号
  * @param missionStatus 任务状态
  * @param navigationStatus 导航状态
@@ -35,6 +36,7 @@ public record RobotDeviceResponse(
         Integer battery,
         String status,
         String controlMode,
+        String controlModeName,
         Long stateSeq,
         String missionStatus,
         String navigationStatus,

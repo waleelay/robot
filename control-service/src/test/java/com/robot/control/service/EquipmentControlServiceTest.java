@@ -1,11 +1,13 @@
 package com.robot.control.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import com.robot.control.auth.CurrentUser;
@@ -142,17 +144,127 @@ class EquipmentControlServiceTest {
         });
     }
 
+    @Test
+    void publishesModeChangeWithoutOptimisticallyPublishingRobotState() {
+        register(component("BODY", "base"));
+        online("MANUAL", 12);
+        Map<String, Object> session = acquireBase();
+
+        Map<String, Object> response = service.setControlMode("robot-001", object(
+                "controlMode", "NAVIGATION",
+                "controlSessionId", session.get("controlSessionId"),
+                "observedStateSeq", 12), operator());
+
+        assertThat(response)
+                .containsEntry("status", "PUBLISHED")
+                .containsEntry("controlMode", "MANUAL")
+                .containsEntry("controlModeName", "手动模式")
+                .containsEntry("requestedControlMode", "NAVIGATION")
+                .containsEntry("requestedControlModeName", "导航模式")
+                .containsEntry("stateSeq", 12L);
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
+        assertThat(map(captor.getValue()))
+                .containsEntry("action", "control.mode.set")
+                .containsEntry("params", object("controlMode", "NAVIGATION"));
+        verify(webSocketPublisher, never()).publish(eq("robot.state"), any());
+    }
+
+    @Test
+    void rejectsUnsupportedOrIncompleteModeChanges() {
+        register(component("BODY", "base"));
+        online("MANUAL", 12);
+        Map<String, Object> session = acquireBase();
+
+        assertThatThrownBy(() -> service.setControlMode("robot-001", object(
+                "controlMode", "ASSISTED",
+                "controlSessionId", session.get("controlSessionId"),
+                "observedStateSeq", 12), operator()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("不支持的控制模式");
+        assertThatThrownBy(() -> service.setControlMode("robot-001", object(
+                "controlMode", "NAVIGATION"), operator()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("controlSessionId 必填");
+    }
+
+    @Test
+    void navigationTakeoverAcquiresBaseAndWaitsForRealManualState() {
+        register(component("BODY", "base"));
+        online("NAVIGATION", 20);
+
+        Map<String, Object> response = service.takeover("robot-001", object(
+                "observedStateSeq", 20), operator());
+
+        assertThat(response)
+                .containsEntry("status", "ACTIVE")
+                .containsEntry("deviceIds", List.of("base"))
+                .containsEntry("controlMode", "NAVIGATION")
+                .containsEntry("controlModeName", "导航模式")
+                .containsEntry("modeChangeStatus", "PUBLISHED")
+                .containsEntry("requestedControlMode", "MANUAL")
+                .containsEntry("requestedControlModeName", "手动模式")
+                .containsKey("controlSessionId");
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
+        assertThat(map(captor.getValue()))
+                .containsEntry("action", "control.mode.set")
+                .containsEntry("params", object("controlMode", "MANUAL"));
+        verify(webSocketPublisher, never()).publish(eq("robot.state"), any());
+    }
+
+    @Test
+    void navigationTakeoverDoesNotStealAnotherTerminalSession() {
+        register(component("BODY", "base"));
+        online("NAVIGATION", 20);
+        acquireBase();
+        CurrentUser otherTerminal = new CurrentUser(
+                "operator-2",
+                "org-1",
+                Set.of("EQUIPMENT_OPERATOR"),
+                "terminal-2");
+
+        Map<String, Object> response = service.takeover("robot-001", object(
+                "observedStateSeq", 20), otherTerminal);
+
+        assertThat(response)
+                .containsEntry("code", "CONTROL_LOCKED")
+                .containsEntry("message", "target is controlled by another terminal");
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+    }
+
     private Map<String, Object> publish(String deviceId, String action, Map<String, Object> params) {
-        service.publishCommand("robot-001", object(
+        Map<String, Object> request = object(
                 "target", object("deviceId", deviceId),
                 "action", action,
                 "params", params,
-                "client", object("seq", 7)), operator());
+                "client", object("seq", 7));
+        if ("base".equals(deviceId) && "drive.velocity".equals(action)) {
+            online("MANUAL", 1);
+            request.put("controlSessionId", acquireBase().get("controlSessionId"));
+        }
+        service.publishCommand("robot-001", request, operator());
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
         Map<String, Object> payload = map(captor.getValue());
         reset(commandPublisher);
         return payload;
+    }
+
+    private void online(String controlMode, long stateSeq) {
+        service.handleClientState(object(
+                "robotId", "robot-001",
+                "status", "online",
+                "controlMode", controlMode,
+                "stateSeq", stateSeq,
+                "devices", List.of()));
+    }
+
+    private Map<String, Object> acquireBase() {
+        return service.acquire("robot-001", object(
+                "scope", "ROBOT",
+                "deviceIds", List.of("base"),
+                "actions", List.of("control.mode.set", "drive.velocity")), operator());
     }
 
     private void register(Map<String, Object> component) {

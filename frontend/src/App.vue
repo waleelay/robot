@@ -529,7 +529,6 @@ export default {
       controlModeChanging: false,
       controlModeOptions: [
         { value: 'MANUAL', label: '手动模式' },
-        { value: 'ASSISTED', label: '辅助模式' },
         { value: 'NAVIGATION', label: '导航模式' }
       ],
       deviceStateCache,
@@ -1289,15 +1288,30 @@ export default {
     async changeControlMode(controlMode) {
       const robot = this.selectedRobot
       if (!robot || !controlMode || controlMode === (robot.controlMode || 'MANUAL')) return
-      const previousMode = robot.controlMode || 'MANUAL'
       const index = this.robots.findIndex(item => item.robotId === robot.robotId)
-      if (index < 0) return
+      if (index < 0 || robot.status !== 'online') return
       this.controlModeChanging = true
-      this.$set(this.robots, index, Object.assign({}, this.robots[index], { controlMode }))
       try {
-        const response = await setControlMode(robot.robotId, {
-          controlMode
-        })
+        let response
+        if (robot.controlMode === 'NAVIGATION' && controlMode === 'MANUAL') {
+          response = await takeoverControl(robot.robotId, {
+            observedStateSeq: robot.stateSeq
+          })
+        } else {
+          const session = await acquireControl(robot.robotId, {
+            scope: 'ROBOT',
+            deviceIds: ['base'],
+            actions: ['control.mode.set', 'drive.velocity']
+          })
+          if (session.code) {
+            throw new Error(session.message || session.code)
+          }
+          response = await setControlMode(robot.robotId, {
+            controlMode,
+            controlSessionId: session.controlSessionId,
+            observedStateSeq: robot.stateSeq
+          })
+        }
         if (response.code) {
           const error = new Error(response.message || response.code)
           error.code = response.code
@@ -1305,24 +1319,11 @@ export default {
           error.latestStateSeq = response.latestStateSeq
           throw error
         }
-        const currentIndex = this.robots.findIndex(item => item.robotId === robot.robotId)
-        if (currentIndex >= 0) {
-          this.$set(this.robots, currentIndex, Object.assign({}, this.robots[currentIndex], {
-            controlMode: response.controlMode || controlMode,
-            stateSeq: response.stateSeq || this.robots[currentIndex].stateSeq
-          }))
-        }
+        this.$message.success(response.status === 'CONFIRMED'
+          ? `机器人当前已是${response.controlModeName}`
+          : '切换指令已下发，等待机器人确认')
         this.log('API setControlMode', response)
       } catch (error) {
-        const latestMode = error.latestControlMode || previousMode
-        const latestSeq = error.latestStateSeq || robot.stateSeq
-        const currentIndex = this.robots.findIndex(item => item.robotId === robot.robotId)
-        if (currentIndex >= 0) {
-          this.$set(this.robots, currentIndex, Object.assign({}, this.robots[currentIndex], {
-            controlMode: latestMode,
-            stateSeq: latestSeq
-          }))
-        }
         this.$message.error(this.errorMessage(error))
         this.log('ERROR setControlMode', this.errorMessage(error))
       } finally {
@@ -1343,27 +1344,17 @@ export default {
       if (this.controlSessions[key] && this.controlSessions[key].status === 'ACTIVE') {
         return this.controlSessions[key]
       }
-      let session
-      if (device.deviceId === 'base' && ['NAVIGATION', 'ASSISTED'].includes(this.selectedRobot.controlMode)) {
-        session = await takeoverControl(this.selectedRobotId, {
-          fromMode: this.selectedRobot.controlMode,
-          toMode: 'MANUAL',
-          scope: 'ROBOT',
-          deviceIds: ['base'],
-          actions: ['drive.velocity'],
-          observedStateSeq: this.selectedRobot.stateSeq || 0,
-          reason: 'manual_takeover'
-        })
-      } else {
-        session = await acquireControl(this.selectedRobotId, {
-          scope: device.deviceId === 'base' ? 'ROBOT' : 'DEVICE',
-          deviceIds: [device.deviceId],
-          actions: [action],
-          mode: 'EXCLUSIVE',
-          reason: 'manual_teleop',
-          ttlSeconds: 30
-        })
+      if (device.deviceId === 'base' && this.selectedRobot.controlMode !== 'MANUAL') {
+        throw new Error('请先将机器人切换到手动模式')
       }
+      const session = await acquireControl(this.selectedRobotId, {
+        scope: device.deviceId === 'base' ? 'ROBOT' : 'DEVICE',
+        deviceIds: [device.deviceId],
+        actions: [action],
+        mode: 'EXCLUSIVE',
+        reason: 'manual_teleop',
+        ttlSeconds: 30
+      })
       if (session.code) {
         const error = new Error(session.message || session.code)
         error.code = session.code
@@ -2332,6 +2323,7 @@ export default {
     toRobotState(robot) {
       // 将后端机器人 DTO 转为页面状态，同时给缺失字段补默认值。
       const status = robot.status || 'offline'
+      const controlMode = robot.controlMode === 'MANUAL' ? 'MANUAL' : 'NAVIGATION'
       return {
         robotId: robot.robotId,
         clientId: robot.clientId,
@@ -2339,7 +2331,8 @@ export default {
         type: robot.type || '机器人',
         vendor: robot.vendor,
         model: robot.model,
-        controlMode: robot.controlMode || 'MANUAL',
+        controlMode,
+        controlModeName: robot.controlModeName || (controlMode === 'MANUAL' ? '手动模式' : '导航模式'),
         stateSeq: robot.stateSeq || 0,
         battery: robot.battery,
         status,

@@ -29,4 +29,12 @@ public class ApiExceptionHandler {
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(ex.getResponseBodyAsString());
     }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(Map.of(
+                "timestamp", DateTimeConfig.format(OffsetDateTime.now()),
+                "code", "INVALID_CONTROL_REQUEST",
+                "message", ex.getMessage()));
+    }
 }

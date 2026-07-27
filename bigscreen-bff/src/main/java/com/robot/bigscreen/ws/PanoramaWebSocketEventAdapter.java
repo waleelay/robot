@@ -117,7 +117,9 @@ public class PanoramaWebSocketEventAdapter {
         data.put("robotId", text(sourceData, "robotId"));
         data.put("status", text(sourceData, "status"));
         putNullableInt(data, "battery", sourceData.get("battery"));
-        data.put("controlMode", text(sourceData, "controlMode"));
+        String controlMode = normalizeControlMode(text(sourceData, "controlMode"));
+        data.put("controlMode", controlMode);
+        data.put("controlModeName", controlModeName(controlMode));
         putNullableNumber(data, "speed", firstExisting(sourceData, "speed", "currentSpeed"));
 
         ObjectNode event = objectMapper.createObjectNode();
@@ -376,6 +378,14 @@ public class PanoramaWebSocketEventAdapter {
 
     private JsonNode textNode(String value) {
         return value == null || value.isBlank() ? null : objectMapper.getNodeFactory().textNode(value);
+    }
+
+    private String normalizeControlMode(String controlMode) {
+        return "MANUAL".equalsIgnoreCase(controlMode) ? "MANUAL" : "NAVIGATION";
+    }
+
+    private String controlModeName(String controlMode) {
+        return "MANUAL".equals(controlMode) ? "手动模式" : "导航模式";
     }
 
     private void putNullableInt(ObjectNode target, String fieldName, JsonNode value) {
