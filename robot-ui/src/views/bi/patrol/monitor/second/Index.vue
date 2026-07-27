@@ -23,14 +23,17 @@
           </div>
         </div>
         <div class="mt21 hp178 d-flex" style="background: #011223; border: 1px solid #123F8C;">
-          <div class="flex1 flx-align-center pl37 robot">
-            <img v-if="selectedRobot.typeCode === 'ROBOT_DOG'" src="@/assets/images/new-bi/dog.png" alt="" srcset="" width="161" height="104">
-            <img v-if="selectedRobot.typeCode === 'WHEELED_ROBOT'" src="@/assets/images/new-bi/car.png" alt="" srcset="" width="143" height="143">
-            <div class="basic ml20">
+          <div class="flex1 flx-align-center pl37 robot basic">
+            <div>
+              <div class="name ">{{ selectedRobot.name }}</div>
+              <img v-if="selectedRobot.typeCode === 'ROBOT_DOG'" src="@/assets/images/new-bi/dog.png" alt="" srcset="" width="96" height="96">
+              <img v-if="selectedRobot.typeCode === 'WHEELED_ROBOT'" src="@/assets/images/new-bi/car.png" alt="" srcset="" width="96" height="96">
+            </div>
+            <div class="ml54">
               <div class="desc">当前速度：{{ currenRobot.speed }}m/s</div>
               <div class="desc">当前电量：{{ currenRobot.battery }}%</div>
               <div class="desc">当前任务：{{ currenRobot?.runningTask?.name || '-' }}</div>
-              <div class="desc">控制模型：{{ controlModeObj[currenRobot?.controlMode] || '-'}}</div>
+              <div class="desc">控制模型：{{ currenRobot?.controlMode === 'MANUAL' ? '手动控制' : currenRobot?.controlMode === 'NAVIGATION' ? '自动控制' : '-' }}</div>
             </div>
           </div>
           <div class="flex1 flx-align-center">
@@ -224,6 +227,16 @@ export default {
   background: #1c121c;
 }
 .basic {
+  .name {
+    font-family: YouSheBiaoTiHei;
+    font-size: 20px;
+    line-height: 26px;
+    letter-spacing: 0.4px;
+    background: linear-gradient(180deg, #FFF 7.28%, #95CFF7 62.98%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
   .desc {
     color: rgba($color: #FFF, $alpha: .8);
     font-family: Inter;

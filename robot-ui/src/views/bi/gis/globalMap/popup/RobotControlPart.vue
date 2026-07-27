@@ -51,14 +51,14 @@
               <div v-for="item in tabList" :key="item.value" class="tab-button-item pr10 pl10" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value" style="font-size: 14px; line-height: 19px">{{ item.label }}</div>
             </div>
             <div class="ml30 mode" :class="{'flex-column': !showTalk, 'flx-align-center': showTalk }">
-              <span>控制模式：</span>
+              <span>当前状态 ：</span>
               <el-dropdown :class="{ 'mt10': !showTalk, 'ml10': showTalk }" trigger="click" @command="handleModeChange">
                 <div class="mode-status success flex-column">
-                  <span>{{ selectedRobot?.controlModeName || controlModeObj[selectedRobot?.controlMode] || '-' }}<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
+                  <span>{{ selectedRobot?.controlModeName || '-' }}<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
                 </div>
                 <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
-                  <el-dropdown-item command="NAVIGATION">导航模式</el-dropdown-item>
-                  <el-dropdown-item command="MANUAL">手动模式</el-dropdown-item>
+                  <el-dropdown-item command="NAVIGATION" :class="{ 'is-active': selectedRobot?.controlMode === 'NAVIGATION' }">导航模式</el-dropdown-item>
+                  <el-dropdown-item command="MANUAL" :class="{ 'is-active': selectedRobot?.controlMode === 'MANUAL' }">手动模式</el-dropdown-item>
                 </el-dropdown-menu>
               </el-dropdown>
             </div>
