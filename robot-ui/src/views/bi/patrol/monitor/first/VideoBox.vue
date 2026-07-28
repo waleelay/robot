@@ -23,9 +23,9 @@
     <audio :id="prefixId + ZQL_videosInfos[`slot_${index}`]?.key + '-audio'" autoplay />
     <!-- <canvas class="canvas-shuju" :id="`${prefixId}canvasslot_${index}`" style="z-index: 1; position: absolute;cursor: pointer;"></canvas> -->
     <template v-if="ZQL_videosInfos[`slot_${index}`]">
-      <div v-if="recordingActive" class="recording flx-align-center">
+      <div v-if="recordingActive" class="recording flx-align-center" @click="toggleLiveRecording(cameraInfo)" title="点击停止录制">
         <span class="symbol" :class="{ 'is-active': recordingActive }"></span>
-        <span class="ml4">{{ recordingTime }}</span>
+        <span class="ml6">{{ recordingTime }}</span>
       </div>
       <div class="top flx-justify-between w100 pr10 pl10">
         <!-- ---{{ ZQL_videosInfos[`slot_${index}`].status }} -->
@@ -143,7 +143,7 @@ export default {
   },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
-    ...mapActions('websocketRobot', ['setSelectedRobotId', 'stopCamera']),
+    ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSelectedRobotId', 'stopCamera']),
     async goControlCenter(robotId) {
       for (const [index, key] of Object.keys(this.activeCameras).entries()) {
         if (this.activeCameras[key]?.camera) {

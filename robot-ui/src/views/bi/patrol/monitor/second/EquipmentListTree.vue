@@ -1,12 +1,12 @@
 <template>
-  <div class="w100">
+  <div class="w100 h100 flex-column">
     <div class="card-title title-284-37">
       <div class="text">
         {{ selectedRobot?.name || '摄像头列表' }}
       </div>
     </div>
-    <div class="mt10 hp606 common-scroll" style="overflow-y: auto;">
-      <div class="collapse-box pl26 h100">
+    <div class="mt10 flex1 pb10 with-bg">
+      <div class="collapse-box common-scroll pl26 h100">
         <div
           v-for="(type, key, index) of equipmentCameraObj"
           class="custom-collapse-div"
@@ -197,7 +197,12 @@ export default {
   opacity: 0.5;
 }
 
+.with-bg {
+  background: linear-gradient(180deg, rgba(18, 20, 43, 0.00) 0%, #12142B 100%);
+  box-shadow: 0 0 20px 0 rgba(33, 108, 149, 0.30) inset;
+}
 .collapse-box {
+  overflow-y: auto;
   .custom-collapse-div {
     position: relative;
     .collapse-header {
@@ -210,7 +215,7 @@ export default {
       }
     }
     .collapse-content {
-      max-height: 200px;
+      // max-height: 200px;
       overflow-y: auto;
       &::-webkit-scrollbar {
         width: 2px;               /* 垂直滚动条宽度 */

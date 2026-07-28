@@ -110,12 +110,16 @@ export function fileDownloadUrl(fileId) {
     method: 'post'
   })
 }
-export function snapshotImageUrl(fileId) {
-  const base = process.env.VUE_APP_API_BASE || ''
+
+export function deleteFile(fileId) {
   return request({
-    url: `${base}/api/control/files/${fileId}/content`,
-    method: 'get'
+    url: `/api/control/files/${fileId}`,
+    method: 'delete'
   })
+}
+export function snapshotImageUrl(fileId) {
+  const base = (process.env.VUE_APP_BASE_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '')
+  return `${base}/api/control/files/${encodeURIComponent(fileId)}/content`
 }
 
 export function stopIntercom(sessionId) {

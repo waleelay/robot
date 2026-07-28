@@ -364,6 +364,16 @@ function mergeSession(camera, update) {
   return next
 }
 
+// 异步后提交 camera 时合并 store，避免覆盖 TrackSubscribed 写入的 track 等字段
+function mergeCameraFromStore(state, camera, patch) {
+  if (!camera || !camera.key) return { ...camera, ...patch }
+  return {
+    ...camera,
+    ...(state.cameras[camera.key] || {}),
+    ...patch
+  }
+}
+
 // 获取所有相机
 function allCameras() {
   return Object.values(state.cameras)
@@ -658,15 +668,20 @@ const actions = {
       await stopIntercom(intercom.sessionId).catch(() => {})
       Message.error(errorMessage(error))
     } finally {
-      camera.intercomBusy = false
-      commit('setCamera', camera)
+      commit('setCamera', mergeCameraFromStore(state, camera, {
+        intercomBusy: false,
+        intercomActive: camera.intercomActive,
+        intercomStatus: camera.intercomStatus,
+        intercomToken: camera.intercomToken,
+        room: camera.room
+      }))
     }
   },
   async clearActiveIncomingCall({ commit, state }) {
     const active = state.activeIncomingCall
     if (active && active.cameraKey && state.cameras[active.cameraKey]) {
       const camera = { ...state.cameras[active.cameraKey] }
-      const audioElement = camera.remoteAudioElement
+      const audioElement = camera.remoteAudioElement      
       const keepWatching = Boolean(state.activeCameras[active.cameraKey] && camera.watching)
       if (camera.room) {
         await Promise.resolve(camera.room.localParticipant.setMicrophoneEnabled(false)).catch(() => {})
@@ -1087,9 +1102,9 @@ const actions = {
     } catch (error) {
       console.error('ERROR createVideoSession', error.message || '请求失败')
     } finally {
-      camera1.loading = false
-      commit('setCamera', camera1)
-      commit('setActiveCamera', { key: camera1.key, robot, camera: camera1 })
+      const next = mergeCameraFromStore(state, camera1, { loading: false })
+      commit('setCamera', next)
+      commit('setActiveCamera', { key: next.key, robot, camera: next })
     }
   },
 
@@ -1185,8 +1200,10 @@ const actions = {
       console.error('ERROR startIntercom', errorMessage(error))
       Message.error(errorMessage(error))
     } finally {
-      camera.intercomBusy = false
-      commit('setCamera', camera)
+      commit('setCamera', mergeCameraFromStore(state, camera, {
+        intercomBusy: false,
+        intercomActive: camera.intercomActive
+      }))
     }
   },
   async applyIntercomResponse({ dispatch }, { camera, response }) {
@@ -1399,8 +1416,17 @@ const actions = {
       const latest = state.cameras[camera.key]
       if (latest && latest.room === camera.room) {
         commit('setCamera', { ...latest, disconnecting: false, connecting: false })
+      } else if (latest && camera.room && latest.room && latest.room !== camera.room) {
+        // store 已被更新的连接替换，勿用旧 camera 回写
       } else {
-        commit('setCamera', camera)
+        // 合并 store，避免丢掉 TrackSubscribed 已写入的 track；room 已清空时同步清掉视频轨
+        commit('setCamera', mergeCameraFromStore(state, camera, {
+          disconnecting: false,
+          connecting: false,
+          room: camera.room,
+          hasVideo: camera.hasVideo,
+          ...(camera.room ? {} : { remoteVideoTrack: null })
+        }))
       }
     }
   },
