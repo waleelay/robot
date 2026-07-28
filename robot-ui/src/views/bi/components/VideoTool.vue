@@ -84,7 +84,7 @@
 // import Snap from './modal/Snap.vue';
 import videoUtils from './../../../utils/videoUtils.js'
 import ControlInner from './ControlInner.vue';
-import { snapshotImageUrl, uploadFile } from '../../../api/media.js';
+import { snapshotImageUrl, fileDownloadUrl, uploadFile } from '../../../api/media.js';
 import { mapActions, mapState } from 'vuex';
 import { none } from 'ol/centerconstraint';
 export default {
@@ -205,12 +205,22 @@ export default {
         canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.88)
       })
     },
-    showSnapshotSuccess(camera, snapshot) {
+    async showSnapshotSuccess(camera, snapshot) {
       if (!snapshot || !snapshot.fileId) {
         this.$message.success('抓拍已保存')
         return
       }
-      const url = snapshotImageUrl(snapshot.fileId)
+      // 新标签页无法带上 axios Authorization，优先用带 token 的 download-url 直接看图
+      let url = snapshotImageUrl(snapshot.fileId)
+      try {
+        const res = await fileDownloadUrl(snapshot.fileId)
+        const downloadUrl = res?.downloadUrl || res?.url || res?.data?.downloadUrl
+        if (downloadUrl) {
+          url = /^https?:\/\//i.test(downloadUrl)
+            ? downloadUrl
+            : `${(process.env.VUE_APP_BASE_ORIGIN || window.location.origin).replace(/\/$/, '')}${downloadUrl.startsWith('/') ? '' : '/'}${downloadUrl}`
+        }
+      } catch (e) { /* 回退 content 直链 */ }
       this.$message({
         type: 'success',
         customClass: 'snapshot-message',

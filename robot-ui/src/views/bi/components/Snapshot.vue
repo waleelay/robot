@@ -7,25 +7,36 @@
       <div class="page page-next flx-center" @click="handleChangePage('next')" :class="{ 'show-next': showNext }">
         <svg-icon icon-class="d-right"></svg-icon>
       </div>
-      <div v-for="(item, index) in snapShotInfo.snapshotList" :key="item.fileId" :style="{ display: tabIndex === 0 ? 'inline-flex' : 'none', marginLeft: index !== 0 ? '15.4px' : 0 }" class="item flx-center wp160 hp90">
-        <!-- <img :src="`https://192.168.124.77:4443/api/control/snapshots/${item.fileId}/image`" alt="" class="w100" style="height: auto; max-height: 100%;"> -->
+      <div
+        v-for="(item, index) in snapShotInfo.snapshotList"
+        :key="item.fileId"
+        :style="{ display: tabIndex === 0 ? 'inline-flex' : 'none', marginLeft: index !== 0 ? '15.4px' : 0 }"
+        class="item flx-center wp160 hp90 curp"
+        @click="openDetail(item, 0)"
+      >
         <el-tooltip class="w100 h100" effect="dark" placement="top" popper-class="recording-popper">
           <div slot="content" class="flex-column">
             <div>装备名称：{{ robotBaseInfo?.[item.robotId]?.name }}</div>
             <div>摄像头名称：{{ getCameraName(item.robotId, item.deviceId) }}</div>
             <div>抓拍时间：{{ item.uploadedAt }}</div>
           </div>
-          <el-image
+          <img
             class="w100 h100"
-            style="height: auto; max-height: 100%;" 
+            style="height: auto; max-height: 100%; object-fit: cover;"
             :alt="item.fileName || item.fileId"
             :src="item.customUrl"
-            :preview-src-list="srcList">
-          </el-image>
+          >
         </el-tooltip>
       </div>
-      <div v-for="(recording, index) in recordings" :style="{ display: tabIndex === 1 ? 'inline-flex' : 'none', marginLeft: index !== 0 ? '15.4px' : 0 }" :key="recording.fileId" class="item flx-center wp160 hp90" :id="'recording' + recording.fileId">
-         <el-tooltip class="w100 h100" effect="dark" placement="top" popper-class="recording-popper">
+      <div
+        v-for="(recording, index) in recordings"
+        :style="{ display: tabIndex === 1 ? 'inline-flex' : 'none', marginLeft: index !== 0 ? '15.4px' : 0 }"
+        :key="recording.fileId"
+        class="item flx-center wp160 hp90 curp"
+        :id="'recording' + recording.fileId"
+        @click="openDetail(recording, 1)"
+      >
+        <el-tooltip class="w100 h100" effect="dark" placement="top" popper-class="recording-popper">
           <div slot="content" class="flex-column">
             <div>装备名称：{{ robotBaseInfo?.[recording.robotId]?.name }}</div>
             <div>摄像头名称：{{ getCameraName(recording.robotId, recording.cameraId) }}</div>
@@ -34,33 +45,25 @@
           </div>
           <video :ref="`${refPrefix}_${recording.fileId}`" playsinline class="w100 h100" muted />
         </el-tooltip>
-        <div class="oper-video" :class="{ visible: recordingData?.[recording.fileId]?.player?.paused }" @click="playPause(recording.fileId)">
-          <img v-if="!recordingData?.[recording.fileId]?.player?.paused" src="../../../assets/images/new-bi/pause-b.png" alt="" srcset="">
-          <img v-else src="../../../assets/images/new-bi/play-b.svg" alt="" srcset="">
-        </div>
-        <div class="bottom flx-align-center" style="justify-content: end;">
-          <!-- {{ recordingData?.[recording.fileId]?.player?.paused + '--' }} -->
-          <!-- <div :title="recordingData?.[recording.fileId]?.player?.paused ? '播放' : '暂停'" @click="playPause(recording.fileId)" class="snapshot-icon">
-            <svg-icon :icon-class="recordingData?.[recording.fileId]?.player?.paused ? 'play' : 'pause'" />
-          </div> -->
-          <div :title="isFullscreen ? '退出全屏' : '全屏'" @click="toggle('recording' + recording.fileId)" class="snapshot-icon ml10">
-            <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen1'" />
-          </div>
+        <div class="oper-video visible">
+          <img src="../../../assets/images/new-bi/play-b.svg" alt="">
         </div>
       </div>
       
     </div>
+    <MultimediaDetail ref="multimediaDetailRef" />
   </div>
 </template>
 
 <script>
 import { mapState } from 'vuex';
 import recordMixin from './recording.js'
-import { getFiles, snapshotImageUrl } from '../../../api/media.js';
-import { previewImageBlob } from '../../../api/new-bi.js';
+import { getFiles } from '../../../api/media.js';
 import videoUtils from '../../../utils/videoUtils.js'
+import MultimediaDetail from '../patrol/monitor/second/components/MultimediaDetail.vue'
 export default {
   name: 'Snapshot',
+  components: { MultimediaDetail },
   props: {
     tabIndex: {
       type: Number,
@@ -87,11 +90,6 @@ export default {
   computed: {
     ...mapState('websocketRobot', ['snapshotTime', 'recordTime', 'robotBaseInfo']),
     ...mapState('websocketExtraData', ['robotBaseInfo']),
-    srcList() {
-      return (this.snapShotInfo.snapshotList || []).map(item => {
-        return item.customUrl
-      })
-    },
     showPage() {
       return (this.tabIndex === 0 && this.snapShotInfo.total > this.snapShotInfo.size) || (this.tabIndex === 1 && this.recordInfo.total > this.recordInfo.size)
     },
@@ -103,13 +101,12 @@ export default {
     },
   },
   methods: {
-    getVideoPaused(id) {
-      const ele = document.getElementById(id)
-      return ele? ele.paused : true
-    },
-    toggle(id) {
-      this.idName = id
-      this.toggleFullscreen()
+    openDetail(item, tabIndex) {
+      this.$refs.multimediaDetailRef?.open({
+        item,
+        tabIndex,
+        simple: true
+      })
     },
     async handleChangePage(type) {
       const key = this.tabIndex === 0 ? 'snapShotInfo' : 'recordInfo'
@@ -137,7 +134,6 @@ export default {
           ...recording,
           recordedHls: null,
           player: null,
-          // startSecs: this.getTotalTime(this.videoObj.startTime, recording.recordedStartedAt)
         }
         await this.playRecording(recording)
       }
@@ -223,6 +219,7 @@ export default {
 
 .item {
   position: relative;
+  cursor: pointer;
   .oper-video {
     position: absolute;
     top: 0;
@@ -234,26 +231,18 @@ export default {
     margin: auto;
     width: 26px;
     height: 26px;
-    cursor: pointer;
+    pointer-events: none;
     &.visible {
       opacity: 1;
+    }
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
     }
   }
   &:hover .oper-video {
     opacity: 1;
-  }
-  .bottom {
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    .snapshot-icon {
-      font-size: 16px;
-      color: #CAD4E0;
-      cursor: pointer;
-      &:hover {
-        color: #21c8ff;
-      }
-    }
   }
 }
 </style>

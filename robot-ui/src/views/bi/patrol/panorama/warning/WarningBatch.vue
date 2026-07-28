@@ -15,15 +15,15 @@
       <div class="decoration wp167 hp5">
         <svg-icon icon-class="decoration" class="w100 h100"></svg-icon>
       </div>
-      <div class="box">
+      <div class="box" :class="{ 'is-simple': simpleMode }">
         <div class="top m4 flx-justify-between">
           <div class="title ml10">告警快速处理列表</div>
-          <div class="close mr10" @click="dialogVisible = false">
+          <div class="close mr10" @click="close">
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>
         <div class="info-content p10 flex">
-          <div class="flex1 task">
+          <div class="task" :class="{ flex1: !simpleMode }">
             <div class="waning-imgs">
               <div class="title flx-justify-between">
                 <div class="second-title">告警画面</div>
@@ -106,19 +106,50 @@
               </div>
             </div>
           </div>
-          <div class="flex1 task">
+          <div v-if="!simpleMode" class="flex1 task list-panel">
             <div class="second-title">告警列表</div>
             <div class="mt10">
-              <div class="custom-search-div">
-                <el-input
-                  placeholder="请输入告警内容/类型/位置"
-                  v-model="searchValue"
-                  clearable
-                  @keyup.enter.native="handleChangeTab(tabIndex)"
-                  @clear="handleChangeTab(tabIndex)"
-                >
-                  <svg-icon slot="prefix" icon-class="search"></svg-icon>
-                </el-input>
+              <div class="filter-panel">
+                <div class="combined-filter flx-align-center">
+                  <div class="search-part flex1">
+                    <el-input
+                      placeholder="请输入告警内容/类型/位置"
+                      v-model="searchValue"
+                      clearable
+                      @keyup.enter.native="handleChangeTab(tabIndex)"
+                      @clear="handleChangeTab(tabIndex)"
+                    >
+                      <svg-icon slot="prefix" icon-class="search"></svg-icon>
+                    </el-input>
+                  </div>
+                  <div
+                    class="date-part"
+                    :class="{ 'is-active': hasDateRange }"
+                    :title="dateRangeLabel"
+                  >
+                    <div class="date-trigger">
+                      <span class="date-text text-ellipsis">{{ hasDateRange ? dateRangeShortLabel : '时间' }}</span>
+                      <el-date-picker
+                        v-model="dateValue"
+                        type="daterange"
+                        range-separator="至"
+                        start-placeholder="开始日期"
+                        end-placeholder="结束日期"
+                        format="yyyy-M-d"
+                        value-format="yyyy-M-d"
+                        :clearable="false"
+                        :picker-options="pickerOptions"
+                        @click.native.stop
+                        @change="handleDateChange"
+                      />
+                    </div>
+                    <i
+                      v-if="hasDateRange"
+                      class="el-icon-circle-close clear-date"
+                      @click.stop="clearDate"
+                    ></i>
+                  </div>
+                </div>
               </div>
               <div class="flx-justify-between mt10">
                 <div class="custom-tab-button warning-tab-button flex">
@@ -181,11 +212,22 @@ export default {
   data() {
     return {
       dialogVisible: false,
+      simpleMode: false,
       details: {},
-      selectedValue: 'visible',
+      selectedValue: '',
       options: [],
       loading: false,
       searchValue: '',
+      dateValue: [],
+      pickerOptions: {
+        disabledDate: (date) => {
+          const before = `${new Date().getFullYear() - 9}-1-1 00:00:00`
+          return (
+            new Date(date).getTime() < new Date(before).getTime() ||
+            new Date(date).getTime() > new Date().getTime()
+          )
+        }
+      },
       tabList: [
         {
           label: '全部',
@@ -265,12 +307,31 @@ export default {
   },
   computed: {
     ...mapState('websocketExtraData', ['alarmsData']),
+    hasDateRange() {
+      return Array.isArray(this.dateValue) && this.dateValue.length === 2
+    },
+    dateRangeLabel() {
+      if (this.hasDateRange) {
+        return `${this.dateValue[0]} 至 ${this.dateValue[1]}`
+      }
+      return '时间段'
+    },
+    dateRangeShortLabel() {
+      if (!this.hasDateRange) return '时间'
+      const fmt = (v) => {
+        const parts = String(v || '').split('-')
+        if (parts.length < 3) return v
+        return `${parts[1]}.${parts[2]}`
+      }
+      return `${fmt(this.dateValue[0])}-${fmt(this.dateValue[1])}`
+    }
   },
   mounted() {},
   watch: {
     alarmsData: {
       handler(newVal, oldVal) {
-        if (Object.keys(newVal).length) {
+        if (!this.dialogVisible || this.simpleMode) return
+        if (newVal && Object.keys(newVal).length) {
           this.handleChangeTab(this.tabIndex)
         }
       },
@@ -279,10 +340,31 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
-    open(alarms) {
-      if (this.dialogVisible) return
+    open({ item = null, simple = false } = {}) {
+      this.simpleMode = !!simple
+      this.searchValue = ''
+      this.dateValue = []
       this.dialogVisible = true
+      if (this.simpleMode && item) {
+        this.applyItem(item)
+        return
+      }
       this.handleChangeTab(0)
+      if (item?.alarmId) {
+        const row = this.warningInfo.listData.find(row => row.alarmId === item.alarmId)
+        if (row) this.handleClickWarningRow(row)
+      }
+    },
+    applyItem(item) {
+      this.details = { ...item }
+      this.warningInfo.listData = [item]
+      this.warningInfo.selectedRobotRows = [item]
+      this.selectedValue = defaultOptions[0].key
+      this.options = [...defaultOptions].map(opt => ({
+        ...opt,
+        url: item?.snapshotUrl?.[opt.key] || '',
+        t: Date.now()
+      }))
     },
     handleChangeTab(tabIndex) {
       this.tabIndex = tabIndex
@@ -294,7 +376,17 @@ export default {
         ...(this.alarmsData.low?.items || [])
       ] : [
         ...(this.alarmsData[tabIndex === 1 ? 'high' : tabIndex === 2 ? 'medium' : 'low']?.items || [])
-      ]).filter(item => item.title.includes(searchValue) || item.categoryName.includes(searchValue) || item?.location?.address.includes(searchValue))
+      ]).filter(item => {
+        const keywordOk = item.title.includes(searchValue)
+          || item.categoryName.includes(searchValue)
+          || item?.location?.address.includes(searchValue)
+        if (!keywordOk) return false
+        if (!this.hasDateRange) return true
+        const t = new Date(item.eventTime).getTime()
+        const startTs = new Date(`${this.dateValue[0]} 00:00:00`).getTime()
+        const endTs = new Date(`${this.dateValue[1]} 23:59:59`).getTime()
+        return !Number.isNaN(t) && t >= startTs && t <= endTs
+      })
       const { alarmId } = this.details
       if (this.warningInfo.listData.length) {
         const obj = alarmId ? (this.warningInfo.listData.find(item => item.alarmId === alarmId) || this.warningInfo.listData[0]) : this.warningInfo.listData[0]              
@@ -315,6 +407,15 @@ export default {
         this.selectedValue = ''
         this.options = [...defaultOptions]
       }
+    },
+    handleDateChange(val) {
+      if (!val || (Array.isArray(val) && (val.length === 2 || val.length === 0))) {
+        this.handleChangeTab(this.tabIndex)
+      }
+    },
+    clearDate() {
+      this.dateValue = []
+      this.handleDateChange([])
     },
     getCurrentPage() {
       const index = this.options.findIndex(item => item.key === this.selectedValue)
@@ -410,11 +511,16 @@ export default {
     },
     close() {
       this.dialogVisible = false
+      this.simpleMode = false
+      this.searchValue = ''
+      this.dateValue = []
+      this.tabIndex = 0
       this.warningInfo.listData = []
       this.warningInfo.count = 0
       this.warningInfo.selectedRobotRows = []
       this.details = {}
       this.selectedValue = ''
+      this.options = []
     }
   }
 }
@@ -422,4 +528,85 @@ export default {
 
 <style lang="scss" scoped>
 @import "./scss/warning-batch.scss";
+.box.is-simple {
+  width: auto !important;
+}
+.filter-panel {
+  .combined-filter {
+    height: 30px;
+    border-radius: 4px;
+    border: 1px solid #374E69;
+    background: #111B2A;
+    overflow: hidden;
+    .search-part {
+      min-width: 0;
+      ::v-deep .el-input {
+        .el-input__prefix {
+          left: 8px;
+          line-height: 28px;
+        }
+        .el-input__inner {
+          height: 28px;
+          padding: 0 24px 0 30px;
+          border: none;
+          border-radius: 0;
+          background: transparent;
+          font-weight: 600;
+          color: #fff;
+          &::placeholder {
+            color: #8897AB;
+            font-size: 12px;
+          }
+        }
+        .el-input__suffix {
+          right: 2px;
+        }
+      }
+    }
+    .date-part {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      max-width: 110px;
+      min-width: 52px;
+      height: 100%;
+      padding: 0 6px 0 8px;
+      border-left: 1px solid #374E69;
+      .date-trigger {
+        position: relative;
+        flex: 1;
+        min-width: 0;
+        height: 100%;
+        cursor: pointer;
+      }
+      .date-text {
+        color: #8897AB;
+        font-size: 12px;
+        line-height: 28px;
+        max-width: 72px;
+      }
+      &.is-active .date-text {
+        color: #4AB8FF;
+      }
+      .clear-date {
+        margin-left: 2px;
+        color: #8897AB;
+        font-size: 12px;
+        cursor: pointer;
+        z-index: 2;
+        &:hover { color: #4AB8FF; }
+      }
+      .el-date-editor {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        opacity: 0;
+        cursor: pointer;
+      }
+    }
+  }
+}
 </style>

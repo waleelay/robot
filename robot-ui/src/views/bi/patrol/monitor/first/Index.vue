@@ -11,7 +11,7 @@
   <div class="flex h100 pr20 pl20 pb10 pt20">
     <div class="right flex1 flex-column h100" style="min-width: 0; max-width: 100%; overflow: hidden;">
       <TaskListTree ref="taskListRef" @select-task="selectTask" :update-video-handler="updateVideo" />
-      <div class="mt20 flex1 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
+      <div class="mt20 hp450 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
         <div class="card-title">
           <div class="text">
             实时地图
@@ -37,11 +37,17 @@
           <div class="text">
             多媒体记录
           </div>
-          <div class="custom-tab-button1 flex mr10 mb5">
-            <div v-for="item in tabList" :key="item.value" class="tab-button-item" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value">{{ item.label }}</div>
+          <div class="flx-justify-between">
+            <div class="custom-tab-button1 flex mr10 mb5">
+              <div v-for="item in tabList" :key="item.value" class="tab-button-item" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value">{{ item.label }}</div>
+            </div>
+            <div class="mr10 mb5" @click="openMore" :title="`点击查看更多${tabIndex ? '视频' : '抓拍'}记录`" style="cursor: pointer;">
+              <svg-icon icon-class="right" style="font-size: 14px; color: #fff" />
+            </div>
           </div>
         </div>
         <Snapshot :tabIndex="tabIndex" />
+        <MultimediaDetail ref="multimediaDetailRef" />
       </div>
     </div>
   </div>
@@ -51,12 +57,13 @@
 import LeftVideo from './LeftVideo.vue'
 import Snapshot from '../../../components/Snapshot.vue'
 import TaskListTree from './TaskListTree.vue';
+import MultimediaDetail from '../second/components/MultimediaDetail.vue'
 import { mapActions, mapState } from 'vuex'
 import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue';
 import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue';
 export default {
   name: 'BiPatrolMonitor',
-  components: { TaskListTree, LeftVideo, Snapshot, GlobalGisMap, GlobalSlamMap },
+  components: { TaskListTree, LeftVideo, Snapshot, MultimediaDetail, GlobalGisMap, GlobalSlamMap },
   props: {
     prefixId: {
       type: String,
@@ -160,6 +167,11 @@ export default {
     selectTask(selectRows) {
       this.$refs.leftVideoRef.slotDevices = this.$refs.leftVideoRef.slotDevices.map((item, index) => selectRows[index] || null)
       
+    },
+    openMore() {
+      this.$refs.multimediaDetailRef?.open({
+        tabIndex: this.tabIndex
+      })
     },
     async updateVideo(data) {
       // this.$nextTick(async () => {

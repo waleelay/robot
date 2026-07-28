@@ -133,16 +133,17 @@
               </div>
             </div>
           </template>
-          <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" />
+          <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无未完成任务" />
         </div>
       </div>
       <div class="box mt20 alert" :class="{ 'no_data hp41': collapseArr[2], 'hp323': !collapseArr[2] }" style="max-height: 446px;">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="toggleCollapse('collapseArr', 2)">
           <span class="desc">告警中心</span>
-          <!-- <span class="flx-center more curp">
+          <span v-if="hasAlarmData" class="flx-center more curp" @click.stop="handleClickAlert()">
             <span>更多</span>
-            <svg-icon :icon-class="collapseArr[2] ? 'right' : 'down'" class="ml4" />
-          </span> -->
+            <!-- <svg-icon :icon-class="collapseArr[2] ? 'right' : 'down'" class="ml4" /> -->
+            <svg-icon icon-class="right" class="ml4" />
+          </span>
         </div>
         <div v-if="alarmsData" class="mt10 ml20 common-scroll ovya mb10" :style="{ maxHeight: collapseArr[1] ? '360px' : '262px', minHeight: '146px' }">
           <div v-for="(alarm, key, alarmIndex) in alarms" :key="key" class="type wp288 pt10 pr20 pb10 pl20" :class="[alarm.class, { 'hp42 ovyh': alertCollapseArr[alarmIndex], 'mt10': alarmIndex !== 0 }]">
@@ -282,6 +283,10 @@ export default {
     },
     taskData1() {
       return getDescArr(this.taskData || {}, 'timestamp').filter(item => ['running', 'pending', 'paused'].includes(item.status)) || []
+    },
+    hasAlarmData() {
+      const data = this.alarmsData || {}
+      return ['high', 'medium', 'low'].some(key => (data[key]?.items || []).length > 0)
     }
   },
   methods: {
@@ -465,7 +470,11 @@ export default {
       }
     },
     handleClickAlert(item) {
-      this.$refs.warningBatchRef.open(this.alarmsData || {})
+      // 无参：查看全部；有参：仅展示当前告警，隐藏右侧列表与搜索
+      this.$refs.warningBatchRef?.open({
+        item: item || null,
+        simple: !!item
+      })
     }
   },
   watch: {
