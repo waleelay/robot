@@ -38,11 +38,21 @@ export default {
     // window.addEventListener('click', this.handleGlobalClick);
     window.addEventListener('resize', this.onResize);
     window.addEventListener('orientationchange', this.onOrientationChange);
-    
-    // 禁用右键和拖拽
-    document.body.addEventListener('contextmenu', (e) => e.preventDefault());
-    document.addEventListener('dragstart', (e) => e.preventDefault());
-    
+
+    // 仅禁用弹窗内部的默认右键/拖拽，避免拦截页面其它 HTML5 拖放（如 TaskListTree）
+    this._onPopupContextMenu = (e) => {
+      if (this.currentEl && this.currentEl.contains(e.target)) {
+        e.preventDefault()
+      }
+    }
+    this._onPopupDragStart = (e) => {
+      if (this.currentEl && this.currentEl.contains(e.target)) {
+        e.preventDefault()
+      }
+    }
+    document.addEventListener('contextmenu', this._onPopupContextMenu)
+    document.addEventListener('dragstart', this._onPopupDragStart)
+
     console.log('✅ 动画已就绪：点击任意位置，方块将从点击点平滑飞向右上角');
 },
   methods: {
@@ -298,6 +308,14 @@ export default {
     // window.removeEventListener('click', this.handleGlobalClick);
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('orientationchange', this.onOrientationChange);
+    if (this._onPopupContextMenu) {
+      document.removeEventListener('contextmenu', this._onPopupContextMenu)
+      this._onPopupContextMenu = null
+    }
+    if (this._onPopupDragStart) {
+      document.removeEventListener('dragstart', this._onPopupDragStart)
+      this._onPopupDragStart = null
+    }
     if (this.resizeTimer) clearTimeout(this.resizeTimer)
     if (this.currentEl) gsap.killTweensOf(this.currentEl);
   },
