@@ -17,6 +17,7 @@
 - 客户端 `devices[].status` 作为运行时真实状态保留；服务不生成虚假的在线、灯光、音量、发射器或弹筒状态。
 - Driver ID 与平台 ID 不一致时，通过 `devices[].status.driverDeviceId` 上报。
 - 管理端登记的 Action 优先；已集成设备类型保留生产兼容 Action 和参数限制，避免改变既有 MQTT `action/params` 契约。
+- 多合一喊话设备使用 `MULTI_FUNCTION_BROADCASTER`，统一命令发布到 `robot/{robotId}/control/multi-function/command`；服务端只组装平台语义参数，不感知设备 IP、端口和二进制协议。
 - 管理端设备数据缓存 30 秒；刷新失败时使用最近一次成功快照。
 - 每条 `robot/{robotId}/media/client/status` 消息先完成合并，再统一发布一次 `robot.state`。
 

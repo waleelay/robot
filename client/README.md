@@ -10,6 +10,7 @@
 2. 接收实时视频 start/stop/switch 指令，探测 RTSP 后启动本地推流进程，将视频发布到 LiveKit。
 3. 接收对讲 start/stop 指令，通过 LiveKit SDK 和本地 GStreamer 音频管线建立双向音频桥。
 4. 后台扫描本地文件，按通用文件 multipart 协议续传到 Media Service/MinIO，并维护本地上传清单。
+5. 消费多合一设备控制指令，通过 TCP `8519/12345` 和 HTTP `8222` 连接机器人局域网内的真实设备。
 
 ## 启动、构建与测试
 
@@ -29,6 +30,8 @@ client/
   cmd/
     robot-media-client/
       main.go
+    multi-function-test/
+      main.go
   internal/
     config/
       config.go
@@ -38,6 +41,10 @@ client/
       model.go
     mqtt/
       client.go
+    multifunction/
+      client.go
+      parser.go
+      protocol.go
     publisher/
       publisher.go
     recordingupload/
@@ -68,6 +75,8 @@ client/
 | `internal/rtsp/probe.go` | 使用 `ffprobe` 检查 RTSP 视频流是否可达 |
 | `internal/publisher/publisher.go` | 按 `sessionId` 管理外部视频推流进程，支持默认 GStreamer publisher、FFmpeg fallback 或自定义命令 |
 | `internal/intercom/intercom.go` | 使用 LiveKit SDK 管理对讲会话，桥接本地麦克风、扬声器与 LiveKit 音频 Track |
+| `internal/multifunction/` | 多合一真实设备 TCP/HTTP 适配、灯光 CRC、状态流拆包和 Opus 帧输入输出 |
+| `cmd/multi-function-test/main.go` | 不依赖 MQTT 的现场设备测试工具；危险动作必须显式增加 `-execute` |
 | `internal/recordingupload/` | 本地文件发现、上传清单、断点续传、分片上传、完成上传和本地缓存清理 |
 | `recordings/` | 默认本地文件扫描目录 |
 | `scripts/` | 客户端部署或依赖安装脚本 |
@@ -159,6 +168,22 @@ main
 | `LocalMinFreeBytes` | `RECORDING_LOCAL_MIN_FREE_BYTES` | 本地磁盘最小剩余空间 |
 | `LocalRetentionAfterReady` | `RECORDING_LOCAL_RETENTION_AFTER_READY_HOURS` | 文件 READY 后本地保留时长 |
 
+### 4.5 多合一设备
+
+| 环境变量 | 默认值 | 说明 |
+|---|---:|---|
+| `MULTI_FUNCTION_ENABLED` | `false` | 是否启用真实设备连接 |
+| `MULTI_FUNCTION_DEVICE_ID` | `broadcaster-001` | 必须与管理端注册及 MQTT target 一致 |
+| `MULTI_FUNCTION_HOST` | `192.168.1.27` | 机器人局域网内设备 IP |
+| `MULTI_FUNCTION_CONTROL_PORT` | `8519` | 控制、状态和 Opus TCP 长连接 |
+| `MULTI_FUNCTION_TILT_PORT` | `12345` | 喊话器俯仰 TCP 端口 |
+| `MULTI_FUNCTION_HTTP_PORT` | `8222` | 文件查询、上传和删除 HTTP 端口 |
+| `MULTI_FUNCTION_DIAL_TIMEOUT_MS` | `3000` | 建连超时 |
+| `MULTI_FUNCTION_WRITE_TIMEOUT_MS` | `3000` | 写入超时 |
+| `MULTI_FUNCTION_HTTP_TIMEOUT_MS` | `5000` | HTTP 超时 |
+| `MULTI_FUNCTION_KEEPALIVE_ENABLED` | `true` | 是否发送灯光协议保活 |
+| `MULTI_FUNCTION_KEEPALIVE_INTERVAL_MS` | `2000` | 保活间隔 |
+
 ## 5. 数据模型
 
 `internal/model/model.go` 定义 MQTT 交互模型。
@@ -189,7 +214,7 @@ main
 | `robot/{robotId}/media/video/switch-channel` | `handleStart` | 切换通道，本地按重新 start 处理 |
 | `robot/{robotId}/media/video/intercom/start` | `handleIntercomStart` | 启动对讲 |
 | `robot/{robotId}/media/video/intercom/stop` | `handleIntercomStop` | 停止对讲 |
-| `robot/{robotId}/control/#` | `handleControlCommand` | 接收本体、云台、扬声器、发射器、警示灯、车灯等装备控制命令 |
+| `robot/{robotId}/control/#` | `handleControlCommand` | 接收本体、云台、扬声器、发射器、警示灯、车灯和多合一设备等装备控制命令 |
 
 ### 6.2 发布 Topic
 
@@ -227,11 +252,33 @@ main
 ```text
 收到 robot/{robotId}/control/# 指令
   -> 反序列化 ControlCommand
-  -> 按 action 更新本地 deviceState
+  -> 多合一 action 调用真实 TCP/HTTP 适配器
+  -> 解析设备状态并更新本地 deviceState
   -> 立即通过 media/client/status 上报 devices[].status
 ```
 
-当前客户端会回写的设备状态包括：扬声器音量/静音 `volume`、`volumePercent`、`muted`，发射器连接状态 `connected`、安全开关 `safetySwitchEnabled`、弹筒数量 `tubeCount`、弹筒状态 `tubes[]`，控制模式 `controlMode`，警示灯 `enabled`，云台自转 `autoRotateEnabled`、`panSpeed`，车灯 `front`、`rear`。模拟客户端收到 `LAUNCHER/fire` 后会把对应弹筒从 `LOADED` 改为 `EMPTY` 并通过下一次 `media/client/status` 回写；真实客户端应以设备查询结果为准。车灯命令以平台通用 `params.front/rear.mode/brightness` 为准；客户端兼容旧 ROS 结构 `params.msg.front_mode/rear_mode`，但最终统一回写为 `devices[].status.front/rear.mode/brightness`；`control.mode.set` 会更新在线心跳中的 `controlMode`。
+当前客户端会回写的设备状态包括：扬声器音量/静音 `volume`、`volumePercent`、`muted`，发射器连接状态 `connected`、安全开关 `safetySwitchEnabled`、弹筒数量 `tubeCount`、弹筒状态 `tubes[]`，控制模式 `controlMode`，警示灯 `enabled`，云台自转 `autoRotateEnabled`、`panSpeed`，车灯 `front`、`rear`，以及多合一设备音量和 `audioSession`。模拟客户端收到 `LAUNCHER/fire` 后会把对应弹筒从 `LOADED` 改为 `EMPTY` 并通过下一次 `media/client/status` 回写；真实客户端应以设备查询结果为准。车灯命令以平台通用 `params.front/rear.mode/brightness` 为准；客户端兼容旧 ROS 结构 `params.msg.front_mode/rear_mode`，但最终统一回写为 `devices[].status.front/rear.mode/brightness`；`control.mode.set` 会更新在线心跳中的 `controlMode`。
+
+多合一客户端消费 `robot/{robotId}/control/multi-function/command`，并调用 TCP `8519/12345`、HTTP `8222`。设备主动上报的音量和温度、HTTP 查询的文件列表以及客户端媒体会话状态会写入统一状态；没有查询接口的照明、警报和文件播放不伪装为设备真实状态。
+
+现场先在能访问设备网段的工控机运行只读测试：
+
+```bash
+go build -o multi-function-test ./cmd/multi-function-test
+./multi-function-test -host 192.168.1.27 -action status
+./multi-function-test -host 192.168.1.27 -action list_audio_files
+```
+
+改变设备状态的动作必须显式增加 `-execute`：
+
+```bash
+./multi-function-test -host 192.168.1.27 -action set_volume \
+  -params '{"volumePercent":30}' -execute
+./multi-function-test -host 192.168.1.27 -action light.set \
+  -params '{"enabled":true,"brightness":20}' -execute
+```
+
+实时喊话/收音的 `[10]+Opus` 写入与 `[40]+Opus` 读取接口已经提供，但多合一 LiveKit Track、重采样和 Opus 编解码尚未接通，不能仅凭离散控制测试视为大屏实时音频验收通过。
 
 连接丢失时：
 

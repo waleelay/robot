@@ -11,6 +11,7 @@ import (
 	"robot-media-client/internal/config"
 	"robot-media-client/internal/intercom"
 	mq "robot-media-client/internal/mqtt"
+	"robot-media-client/internal/multifunction"
 	"robot-media-client/internal/publisher"
 	"robot-media-client/internal/recordingupload"
 	"robot-media-client/internal/rtsp"
@@ -28,6 +29,9 @@ func main() {
 	probe := rtsp.NewProbe(cfg.FFprobePath, cfg.ProbeTimeout)
 	pub := publisher.NewProcessPublisher(cfg)
 	audio := intercom.NewSDKManager(cfg)
+	multiFunctionDevice := multifunction.New(cfg.MultiFunction)
+	multiFunctionDevice.Start(ctx)
+	defer multiFunctionDevice.Close()
 	log.Printf("client starting robotId=%s recordingUploadEnabled=%t recordingDirectory=%s mediaService=%s",
 		cfg.RobotID,
 		cfg.RecordingUploadEnabled,
@@ -41,7 +45,7 @@ func main() {
 	} else {
 		log.Println("recording upload disabled")
 	}
-	client := mq.NewClient(cfg, probe, pub, audio)
+	client := mq.NewClient(cfg, probe, pub, audio, multiFunctionDevice)
 	for ctx.Err() == nil {
 		// MQTT 连接断开时 Run 会返回错误；这里做简单退避重连。
 		// context 取消后不再重连，Run 内部会停止推流/对讲并上报 offline。

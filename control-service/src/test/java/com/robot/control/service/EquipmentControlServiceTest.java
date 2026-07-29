@@ -101,12 +101,26 @@ class EquipmentControlServiceTest {
 
     @Test
     void buildsVehicleLightCommandWithExistingRobotProtocolFields() {
-        register(component(
-                "VEHICLE_LIGHT",
-                "vehicle-light-main",
-                action("LIGHT_VEHICLE_SET")));
+        register(object(
+                "componentType", "BODY",
+                "code", "body",
+                "name", "机器人本体",
+                "capabilities", List.of(object(
+                        "code", "DEVICE_CONTROL",
+                        "actions", List.of(action("SET_LIGHTS"))))));
 
-        Map<String, Object> payload = publish("vehicle-light-main", "light.vehicle.set", object(
+        List<Map<String, Object>> devices = maps(service.controlProfile("robot-001").get("devices"));
+        assertThat(devices)
+                .filteredOn(device -> "vehicle-light".equals(device.get("deviceId")))
+                .singleElement()
+                .satisfies(device -> {
+                    assertThat(device)
+                            .containsEntry("deviceType", "VEHICLE_LIGHT")
+                            .containsEntry("displayName", "车灯光")
+                            .containsEntry("actions", List.of("light.vehicle.set"));
+                });
+
+        Map<String, Object> payload = publish("vehicle-light", "light.vehicle.set", object(
                 "front", object("mode", "CUSTOM", "brightness", 70),
                 "rear", object("mode", "BREATH", "brightness", 80)));
 
@@ -116,7 +130,68 @@ class EquipmentControlServiceTest {
         assertThat(map(map(payload.get("params")).get("rear"))).containsExactly(
                 entry("mode", "BREATH"),
                 entry("brightness", 0));
-        assertTarget(payload, "vehicle-light-main", "VEHICLE_LIGHT");
+        assertTarget(payload, "vehicle-light", "VEHICLE_LIGHT");
+    }
+
+    @Test
+    void buildsMultiFunctionCommandsWithPlatformSemanticFields() {
+        register(component(
+                "MULTI_FUNCTION_BROADCASTER",
+                "broadcaster-001",
+                action("SET_VOLUME"),
+                action("START_MONITOR"),
+                action("SET_MONITOR_SUPPRESSED"),
+                action("PLAY_TTS"),
+                action("PLAY_AUDIO_FILE"),
+                action("LIGHT_SET"),
+                action("SET_LIGHT_TILT")));
+
+        Map<String, Object> volume = publish("broadcaster-001", "set_volume", object("volumePercent", 60));
+        Map<String, Object> monitor = publish(
+                "broadcaster-001", "start_monitor", object("mediaSessionId", "mas-001"));
+        Map<String, Object> suppressed = publish(
+                "broadcaster-001", "set_monitor_suppressed", object("suppressed", true));
+        Map<String, Object> tts = publish("broadcaster-001", "play_tts", object(
+                "text", "请注意安全",
+                "voice", "male",
+                "loop", false));
+        Map<String, Object> file = publish("broadcaster-001", "play_audio_file", object(
+                "fileName", "notice.mp3",
+                "loop", true));
+        Map<String, Object> light = publish("broadcaster-001", "light.set", object(
+                "brightness", 70,
+                "redBlueMode", 2));
+        Map<String, Object> tilt = publish(
+                "broadcaster-001", "set_light_tilt", object("positionPercent", 80));
+
+        assertThat(map(volume.get("params"))).containsExactly(entry("volumePercent", 60));
+        assertThat(map(monitor.get("params"))).containsExactly(entry("mediaSessionId", "mas-001"));
+        assertThat(map(suppressed.get("params"))).containsExactly(entry("suppressed", true));
+        assertThat(map(tts.get("params"))).containsExactly(
+                entry("text", "请注意安全"),
+                entry("voice", "MALE"),
+                entry("loop", false));
+        assertThat(map(file.get("params"))).containsExactly(
+                entry("fileName", "notice.mp3"),
+                entry("loop", true));
+        assertThat(map(light.get("params"))).containsExactly(
+                entry("brightness", 70),
+                entry("redBlueMode", 2));
+        assertThat(map(tilt.get("params"))).containsExactly(entry("positionPercent", 80));
+        assertTarget(light, "broadcaster-001", "MULTI_FUNCTION_BROADCASTER");
+    }
+
+    @Test
+    void rejectsInvalidMultiFunctionFields() {
+        register(component("MULTI_FUNCTION_BROADCASTER", "broadcaster-001"));
+
+        assertThatThrownBy(() -> publish("broadcaster-001", "light.set", object()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("至少需要一个控制参数");
+        assertThatThrownBy(() -> publish(
+                "broadcaster-001", "play_audio_file", object("fileName", "../notice.mp3")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("不能包含路径");
     }
 
     @Test

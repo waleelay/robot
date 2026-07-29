@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"robot-media-client/internal/config"
 	"robot-media-client/internal/intercom"
 	"robot-media-client/internal/model"
+	"robot-media-client/internal/multifunction"
 	"robot-media-client/internal/publisher"
 	"robot-media-client/internal/rtsp"
 )
@@ -22,6 +24,7 @@ type Client struct {
 	probe     *rtsp.Probe
 	publisher publisher.Publisher
 	intercom  intercom.Manager
+	multiFunc multifunction.Adapter
 	mqtt      paho.Client
 	mu        sync.Mutex
 	// lastCmds 用于按 session 去重 MQTT 指令。服务端重试或 broker 重投时，
@@ -36,12 +39,19 @@ type Client struct {
 	callHandler func(model.IntercomCallState)
 }
 
-func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publisher, intercomManager intercom.Manager) *Client {
-	return &Client{
+func NewClient(
+	cfg config.Config,
+	probe *rtsp.Probe,
+	publisher publisher.Publisher,
+	intercomManager intercom.Manager,
+	multiFunctionAdapter multifunction.Adapter,
+) *Client {
+	client := &Client{
 		cfg:         cfg,
 		probe:       probe,
 		publisher:   publisher,
 		intercom:    intercomManager,
+		multiFunc:   multiFunctionAdapter,
 		lastCmds:    make(map[string]string),
 		audioVolume: 50,
 		audioMuted:  false,
@@ -49,6 +59,11 @@ func NewClient(cfg config.Config, probe *rtsp.Probe, publisher publisher.Publish
 		deviceState: make(map[string]map[string]any),
 		callStates:  make(map[string]model.IntercomCallState),
 	}
+	if multiFunctionAdapter != nil {
+		client.updateMultiFunctionState(multiFunctionAdapter.Snapshot())
+		multiFunctionAdapter.SetStateHandler(client.updateMultiFunctionState)
+	}
+	return client
 }
 
 func (c *Client) Run(ctx context.Context) error {
@@ -89,12 +104,15 @@ func (c *Client) Run(ctx context.Context) error {
 		c.subscribe(intercomStartTopic, c.handleIntercomStart(ctx))
 		c.subscribe(intercomStopTopic, c.handleIntercomStop())
 		c.subscribe(intercomCallStateTopic, c.handleIntercomCallState())
-		c.subscribe(controlTopic, c.handleControlCommand())
+		c.subscribe(controlTopic, c.handleControlCommand(ctx))
 		log.Println("mqtt subscribed", startTopic, stopTopic, switchTopic, intercomStartTopic, intercomStopTopic, intercomCallStateTopic, controlTopic)
 		c.online("online")
 	})
-	c.mqtt = paho.NewClient(opts)
-	if token := c.mqtt.Connect(); token.Wait() && token.Error() != nil {
+	mqttClient := paho.NewClient(opts)
+	c.mu.Lock()
+	c.mqtt = mqttClient
+	c.mu.Unlock()
+	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		return token.Error()
 	}
 	log.Println("mqtt connected", c.cfg.MQTTBroker, c.cfg.RobotID)
@@ -116,7 +134,7 @@ func (c *Client) Run(ctx context.Context) error {
 	c.publisher.StopAll()
 	c.intercom.StopAll()
 	c.online("offline")
-	c.mqtt.Disconnect(250)
+	mqttClient.Disconnect(250)
 	return nil
 }
 
@@ -293,7 +311,7 @@ func (c *Client) EndIntercomCall(callID string) error {
 	return nil
 }
 
-func (c *Client) handleControlCommand() paho.MessageHandler {
+func (c *Client) handleControlCommand(ctx context.Context) paho.MessageHandler {
 	return func(_ paho.Client, msg paho.Message) {
 		var command model.ControlCommand
 		if err := json.Unmarshal(msg.Payload(), &command); err != nil {
@@ -302,13 +320,16 @@ func (c *Client) handleControlCommand() paho.MessageHandler {
 		}
 		pretty, _ := json.MarshalIndent(command, "", "  ")
 		log.Println("equipment control command received topic=", msg.Topic(), "payload=", string(pretty))
-		if c.applyControlCommand(command) {
+		if c.applyControlCommand(ctx, command) {
 			c.online("online")
 		}
 	}
 }
 
-func (c *Client) applyControlCommand(command model.ControlCommand) bool {
+func (c *Client) applyControlCommand(ctx context.Context, command model.ControlCommand) bool {
+	if command.Target.DeviceType == "MULTI_FUNCTION_BROADCASTER" {
+		return c.applyMultiFunctionCommand(ctx, command)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	changed := false
@@ -361,6 +382,58 @@ func (c *Client) applyControlCommand(command model.ControlCommand) bool {
 		changed = true
 	}
 	return changed
+}
+
+func (c *Client) applyMultiFunctionCommand(ctx context.Context, command model.ControlCommand) bool {
+	if c.multiFunc == nil {
+		log.Printf("multi-function command rejected action=%s reason=adapter-not-configured", command.Action)
+		return false
+	}
+	if expected := strings.TrimSpace(c.cfg.MultiFunction.DeviceID); expected != "" && command.Target.DeviceID != expected {
+		log.Printf(
+			"multi-function command rejected deviceId=%s expectedDeviceId=%s reason=device-mismatch",
+			command.Target.DeviceID,
+			expected,
+		)
+		return false
+	}
+	timeout := c.cfg.MultiFunction.DialTimeout + c.cfg.MultiFunction.WriteTimeout + c.cfg.MultiFunction.HTTPTimeout
+	if timeout < 5*time.Second {
+		timeout = 5 * time.Second
+	}
+	commandContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	state, err := c.multiFunc.Execute(commandContext, command.Action, command.Params)
+	c.updateMultiFunctionState(state)
+	if err != nil {
+		log.Printf(
+			"multi-function command failed deviceId=%s action=%s error=%v",
+			command.Target.DeviceID,
+			command.Action,
+			err,
+		)
+	}
+	return true
+}
+
+func (c *Client) updateMultiFunctionState(state map[string]any) {
+	if state == nil {
+		return
+	}
+	deviceID := c.cfg.MultiFunction.DeviceID
+	if strings.TrimSpace(deviceID) == "" {
+		deviceID = "broadcaster-001"
+	}
+	snapshot := copyStringAnyMap(state)
+	c.mu.Lock()
+	changed := !reflect.DeepEqual(c.deviceState[deviceID], snapshot)
+	c.deviceState[deviceID] = snapshot
+	mqttClient := c.mqtt
+	mqttConnected := mqttClient != nil && mqttClient.IsConnectionOpen()
+	c.mu.Unlock()
+	if changed && mqttConnected {
+		go c.online("online")
+	}
 }
 
 func (c *Client) setDeviceStateLocked(deviceID string, key string, value any) {
@@ -430,10 +503,13 @@ func (c *Client) publish(topic string, payload any) error {
 		log.Println("mqtt publish marshal failed topic=", topic, "error=", err)
 		return err
 	}
-	if c.mqtt == nil || !c.mqtt.IsConnectionOpen() {
+	c.mu.Lock()
+	mqttClient := c.mqtt
+	c.mu.Unlock()
+	if mqttClient == nil || !mqttClient.IsConnectionOpen() {
 		return fmt.Errorf("mqtt is not connected")
 	}
-	token := c.mqtt.Publish(topic, 1, false, body)
+	token := mqttClient.Publish(topic, 1, false, body)
 	if !token.WaitTimeout(5 * time.Second) {
 		log.Println("mqtt publish timeout topic=", topic)
 		return fmt.Errorf("mqtt publish timeout: %s", topic)
@@ -488,6 +564,14 @@ func (c *Client) cameras() []model.Camera {
 func (c *Client) devices() []model.Device {
 	items := make([]model.Device, 0, len(c.cfg.Devices))
 	for _, device := range c.cfg.Devices {
+		status := c.deviceStatus(device)
+		onlineStatus := device.OnlineStatus
+		if device.DeviceType == "MULTI_FUNCTION_BROADCASTER" {
+			onlineStatus = "offline"
+			if anyBool(status["connected"], false) {
+				onlineStatus = "online"
+			}
+		}
 		items = append(items, model.Device{
 			DeviceID:       device.DeviceID,
 			BindingID:      device.BindingID,
@@ -496,12 +580,12 @@ func (c *Client) devices() []model.Device {
 			DisplayName:    device.DisplayName,
 			Vendor:         device.Vendor,
 			Model:          device.Model,
-			OnlineStatus:   device.OnlineStatus,
+			OnlineStatus:   onlineStatus,
 			ControlStatus:  device.ControlStatus,
 			Enabled:        device.Enabled,
 			RiskLevel:      device.RiskLevel,
 			Actions:        append([]string(nil), device.Actions...),
-			Status:         c.deviceStatus(device),
+			Status:         status,
 			ControlProfile: device.ControlProfile,
 		})
 	}

@@ -47,6 +47,21 @@ type Config struct {
 	LocalCacheMaxBytes       int64
 	LocalMinFreeBytes        int64
 	LocalRetentionAfterReady time.Duration
+	MultiFunction            MultiFunctionConfig
+}
+
+type MultiFunctionConfig struct {
+	Enabled           bool
+	DeviceID          string
+	Host              string
+	ControlPort       int
+	TiltPort          int
+	HTTPPort          int
+	DialTimeout       time.Duration
+	WriteTimeout      time.Duration
+	HTTPTimeout       time.Duration
+	KeepaliveEnabled  bool
+	KeepaliveInterval time.Duration
 }
 
 type Camera struct {
@@ -120,10 +135,24 @@ func Load() Config {
 		LocalCacheMaxBytes:       envInt64("RECORDING_LOCAL_CACHE_MAX_BYTES", 107374182400),
 		LocalMinFreeBytes:        envInt64("RECORDING_LOCAL_MIN_FREE_BYTES", 10737418240),
 		LocalRetentionAfterReady: time.Duration(envInt("RECORDING_LOCAL_RETENTION_AFTER_READY_HOURS", 24)) * time.Hour,
+		MultiFunction: MultiFunctionConfig{
+			Enabled:           envBool("MULTI_FUNCTION_ENABLED", false),
+			DeviceID:          env("MULTI_FUNCTION_DEVICE_ID", "broadcaster-001"),
+			Host:              env("MULTI_FUNCTION_HOST", "192.168.1.27"),
+			ControlPort:       envInt("MULTI_FUNCTION_CONTROL_PORT", 8519),
+			TiltPort:          envInt("MULTI_FUNCTION_TILT_PORT", 12345),
+			HTTPPort:          envInt("MULTI_FUNCTION_HTTP_PORT", 8222),
+			DialTimeout:       time.Duration(envInt("MULTI_FUNCTION_DIAL_TIMEOUT_MS", 3000)) * time.Millisecond,
+			WriteTimeout:      time.Duration(envInt("MULTI_FUNCTION_WRITE_TIMEOUT_MS", 3000)) * time.Millisecond,
+			HTTPTimeout:       time.Duration(envInt("MULTI_FUNCTION_HTTP_TIMEOUT_MS", 5000)) * time.Millisecond,
+			KeepaliveEnabled:  envBool("MULTI_FUNCTION_KEEPALIVE_ENABLED", true),
+			KeepaliveInterval: time.Duration(envInt("MULTI_FUNCTION_KEEPALIVE_INTERVAL_MS", 2000)) * time.Millisecond,
+		},
 	}
 }
 
 func devices(robotID string) []Device {
+	multiFunctionDeviceID := env("MULTI_FUNCTION_DEVICE_ID", "broadcaster-001")
 	baseType := "WHEELED_BASE"
 	baseVendor := "SONGLING"
 	baseModel := "SCOUT"
@@ -247,6 +276,58 @@ func devices(robotID string) []Device {
 			})
 	}
 	items = append(items,
+		Device{
+			DeviceID:      multiFunctionDeviceID,
+			BindingID:     "bind-" + multiFunctionDeviceID,
+			Scope:         "PAYLOAD",
+			DeviceType:    "MULTI_FUNCTION_BROADCASTER",
+			DisplayName:   "多合一喊话设备",
+			Vendor:        "CUSTOM",
+			Model:         "FOUR-IN-ONE",
+			OnlineStatus:  "offline",
+			ControlStatus: "idle",
+			Enabled:       true,
+			Actions: []string{
+				"set_volume",
+				"start_broadcast", "stop_broadcast",
+				"start_monitor", "stop_monitor", "set_monitor_suppressed",
+				"play_tts", "stop_tts",
+				"list_audio_files", "play_audio_file", "stop_audio_file", "delete_audio_file",
+				"play_alarm", "stop_alarm",
+				"light.set", "set_speaker_tilt", "set_light_tilt",
+			},
+			Status: map[string]any{
+				"connected":  false,
+				"audioFiles": []string{},
+				"audioSession": map[string]any{
+					"mediaSessionId":    "",
+					"state":             "IDLE",
+					"broadcastActive":   false,
+					"monitorActive":     false,
+					"monitorSuppressed": false,
+					"monitorTrackSid":   "",
+					"lastError":         nil,
+				},
+			},
+			ControlProfile: map[string]any{
+				"minVolumePercent": 0,
+				"maxVolumePercent": 100,
+				"maxTextLength":    500,
+				"voices":           []string{"MALE", "FEMALE"},
+				"audioFormats":     []string{"mp3", "wav"},
+				"monitor":          map[string]any{"supportsSuppression": true},
+				"light": map[string]any{
+					"minBrightnessPercent": 0,
+					"maxBrightnessPercent": 100,
+					"supportsStrobe":       true,
+					"redBlueModeMin":       0,
+					"redBlueModeMax":       16,
+					"stateReadable":        false,
+				},
+				"speakerTilt": map[string]any{"minPositionPercent": 0, "maxPositionPercent": 100},
+				"lightTilt":   map[string]any{"minPositionPercent": 0, "maxPositionPercent": 100},
+			},
+		},
 		Device{
 			DeviceID:      "warning-light-left",
 			BindingID:     "bind-warning-light-left",

@@ -26,6 +26,25 @@ import org.springframework.stereotype.Service;
 @Service
 public class EquipmentControlService {
 
+    private static final List<String> MULTI_FUNCTION_ACTIONS = List.of(
+            "set_volume",
+            "start_broadcast",
+            "stop_broadcast",
+            "start_monitor",
+            "stop_monitor",
+            "set_monitor_suppressed",
+            "play_tts",
+            "stop_tts",
+            "list_audio_files",
+            "play_audio_file",
+            "stop_audio_file",
+            "delete_audio_file",
+            "play_alarm",
+            "stop_alarm",
+            "light.set",
+            "set_speaker_tilt",
+            "set_light_tilt");
+
     private final EquipmentControlCommandPublisher commandPublisher;
     private final MediaWebSocketPublisher webSocketPublisher;
     private final ControlManagementClient managementClient;
@@ -393,6 +412,9 @@ public class EquipmentControlService {
         if ("control.mode.set".equals(action)) {
             return object("controlMode", normalizeControlMode(stringValue(params.get("controlMode"), "MANUAL")));
         }
+        if ("MULTI_FUNCTION_BROADCASTER".equals(deviceType)) {
+            return buildMultiFunctionParams(action, params, device);
+        }
         if (isSpeakerDeviceType(deviceType) && "set_volume".equals(action)) {
             return object(
                     "volumePercent", clampedInt(valueOrDefault(params, "volumePercent", params.get("volume")), 50, 0, 100));
@@ -446,6 +468,89 @@ public class EquipmentControlService {
             return object();
         }
         return copy(params);
+    }
+
+    private Map<String, Object> buildMultiFunctionParams(
+            String action,
+            Map<String, Object> params,
+            Map<String, Object> device) {
+        Map<String, Object> profile = mapValue(device.get("controlProfile"));
+        return switch (action) {
+            case "set_volume" -> {
+                Map<String, Object> status = mapValue(device.get("status"));
+                int min = clampedInt(profile.get("minVolumePercent"), 0, 0, 100);
+                int profileMax = clampedInt(profile.get("maxVolumePercent"), 100, min, 100);
+                int max = clampedInt(status.get("volumeLimitPercent"), profileMax, min, profileMax);
+                yield object(
+                        "volumePercent",
+                        clampedInt(valueOrDefault(params, "volumePercent", params.get("volume")), 50, min, max));
+            }
+            case "start_broadcast", "stop_broadcast", "start_monitor", "stop_monitor" ->
+                    object("mediaSessionId", requiredString(params, "mediaSessionId"));
+            case "set_monitor_suppressed" ->
+                    object("suppressed", requiredBoolean(params, "suppressed"));
+            case "play_tts" -> {
+                String text = requiredString(params, "text");
+                int maxLength = clampedInt(profile.get("maxTextLength"), 500, 1, 5000);
+                if (text.length() > maxLength) {
+                    throw new IllegalArgumentException("text 长度不能超过 " + maxLength);
+                }
+                String voice = requiredString(params, "voice").toUpperCase(Locale.ROOT);
+                List<String> voices = stringList(profile.get("voices"));
+                if (voices.isEmpty()) {
+                    voices = List.of("MALE", "FEMALE");
+                }
+                if (!voices.contains(voice)) {
+                    throw new IllegalArgumentException("不支持的 TTS 音色：" + voice);
+                }
+                yield object(
+                        "text", text,
+                        "voice", voice,
+                        "loop", booleanValue(params.get("loop"), false));
+            }
+            case "play_audio_file" -> object(
+                    "fileName", safeAudioFileName(params),
+                    "loop", booleanValue(params.get("loop"), false));
+            case "delete_audio_file" -> object("fileName", safeAudioFileName(params));
+            case "light.set" -> multiFunctionLightParams(params, profile);
+            case "set_speaker_tilt", "set_light_tilt" ->
+                    object("positionPercent", clampedInt(params.get("positionPercent"), 50, 0, 100));
+            case "stop_tts", "list_audio_files", "stop_audio_file", "play_alarm", "stop_alarm" -> object();
+            default -> throw new IllegalArgumentException("多合一设备不支持该动作：" + action);
+        };
+    }
+
+    private Map<String, Object> multiFunctionLightParams(
+            Map<String, Object> params,
+            Map<String, Object> profile) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (params.containsKey("enabled")) {
+            result.put("enabled", requiredBoolean(params, "enabled"));
+        }
+        if (params.containsKey("brightness")) {
+            result.put("brightness", clampedInt(params.get("brightness"), 50, 0, 100));
+        }
+        if (params.containsKey("strobeEnabled")) {
+            result.put("strobeEnabled", requiredBoolean(params, "strobeEnabled"));
+        }
+        if (params.containsKey("redBlueMode")) {
+            Map<String, Object> light = mapValue(profile.get("light"));
+            int min = clampedInt(light.get("redBlueModeMin"), 0, 0, 255);
+            int max = clampedInt(light.get("redBlueModeMax"), 16, min, 255);
+            result.put("redBlueMode", clampedInt(params.get("redBlueMode"), 0, min, max));
+        }
+        if (result.isEmpty()) {
+            throw new IllegalArgumentException("light.set 至少需要一个控制参数");
+        }
+        return result;
+    }
+
+    private static String safeAudioFileName(Map<String, Object> params) {
+        String fileName = requiredString(params, "fileName");
+        if (fileName.contains("/") || fileName.contains("\\") || fileName.contains("..")) {
+            throw new IllegalArgumentException("fileName 不能包含路径");
+        }
+        return fileName;
     }
 
     /**
@@ -685,14 +790,28 @@ public class EquipmentControlService {
         if (deviceType == null) {
             return List.of();
         }
-        return List.of(managementDevice(
+        Map<String, Object> primaryDevice = managementDevice(
                 robot,
                 component,
                 controlDeviceId(component, deviceType),
                 deviceType,
                 firstString(component, "name", "componentName", "code"),
                 null,
-                statusByDeviceId));
+                statusByDeviceId);
+        if ("BODY".equals(componentType)
+                && hasManagementAction(component, "DEVICE_CONTROL", "SET_LIGHTS")) {
+            return List.of(
+                    primaryDevice,
+                    managementDevice(
+                            robot,
+                            component,
+                            "vehicle-light",
+                            "VEHICLE_LIGHT",
+                            "车灯光",
+                            null,
+                            statusByDeviceId));
+        }
+        return List.of(primaryDevice);
     }
 
     private Map<String, Object> managementDevice(
@@ -757,8 +876,17 @@ public class EquipmentControlService {
     }
 
     private String controlDeviceType(Map<String, Object> robot, Map<String, Object> component) {
+        String explicitDeviceType = normalized(firstString(component, "deviceType"));
         String componentType = normalized(firstString(component, "componentType", "type"));
         String code = firstString(component, "code", "deviceId", "id");
+        String normalizedCode = normalized(code).replace('-', '_');
+        if ("MULTI_FUNCTION_BROADCASTER".equals(explicitDeviceType)
+                || "MULTI_FUNCTION_BROADCASTER".equals(componentType)
+                || normalizedCode.contains("MULTI_FUNCTION")
+                || normalizedCode.contains("FOUR_IN_ONE")
+                || normalizedCode.contains("BROADCASTER")) {
+            return "MULTI_FUNCTION_BROADCASTER";
+        }
         if ("BODY".equals(componentType)) {
             return baseDeviceType(robot);
         }
@@ -783,6 +911,14 @@ public class EquipmentControlService {
         if ("PAYLOAD".equals(componentType) && code != null && code.contains("warning_light")) {
             return "WARNING_LIGHT";
         }
+        if ("PAYLOAD".equals(componentType)
+                && (normalizedCode.contains("VEHICLE_LIGHT")
+                || managementActionCodes(component).stream()
+                        .map(this::normalized)
+                        .anyMatch(action -> "LIGHT_VEHICLE_SET".equals(action)
+                                || "LIGHT.VEHICLE.SET".equals(action)))) {
+            return "VEHICLE_LIGHT";
+        }
         return componentType == null || componentType.isBlank() ? null : componentType;
     }
 
@@ -805,6 +941,10 @@ public class EquipmentControlService {
     }
 
     private List<String> controlActions(Map<String, Object> component, String deviceType) {
+        if ("VEHICLE_LIGHT".equals(deviceType)
+                && hasManagementAction(component, "DEVICE_CONTROL", "SET_LIGHTS")) {
+            return List.of("light.vehicle.set");
+        }
         List<String> mapped = new ArrayList<>(managementActionCodes(component).stream()
                 .map(code -> controlAction(code, deviceType))
                 .filter(Objects::nonNull)
@@ -839,6 +979,8 @@ public class EquipmentControlService {
             case "LAUNCHER" -> List.of("get_status", "set_safety", "fire");
             case "NET_GUN" -> List.of("fire");
             case "WARNING_LIGHT" -> List.of("get_state", "set_state", "set_mode");
+            case "VEHICLE_LIGHT" -> List.of("light.vehicle.set");
+            case "MULTI_FUNCTION_BROADCASTER" -> MULTI_FUNCTION_ACTIONS;
             default -> List.of();
         };
     }
@@ -871,6 +1013,22 @@ public class EquipmentControlService {
             case "DOCKING.LEAVE", "DOCKING_LEAVE" -> "docking.leave";
             case "LIGHT.SET", "LIGHT_SET" -> "light.set";
             case "LIGHT.VEHICLE.SET", "LIGHT_VEHICLE_SET" -> "light.vehicle.set";
+            case "SET_LIGHTS" -> "VEHICLE_LIGHT".equals(deviceType) ? "light.vehicle.set" : null;
+            case "START_BROADCAST" -> "start_broadcast";
+            case "STOP_BROADCAST" -> "stop_broadcast";
+            case "START_MONITOR" -> "start_monitor";
+            case "STOP_MONITOR" -> "stop_monitor";
+            case "SET_MONITOR_SUPPRESSED" -> "set_monitor_suppressed";
+            case "PLAY_TTS" -> "play_tts";
+            case "STOP_TTS" -> "stop_tts";
+            case "LIST_AUDIO_FILES" -> "list_audio_files";
+            case "PLAY_AUDIO_FILE" -> "play_audio_file";
+            case "STOP_AUDIO_FILE" -> "stop_audio_file";
+            case "DELETE_AUDIO_FILE" -> "delete_audio_file";
+            case "PLAY_ALARM" -> "play_alarm";
+            case "STOP_ALARM" -> "stop_alarm";
+            case "SET_SPEAKER_TILT" -> "set_speaker_tilt";
+            case "SET_LIGHT_TILT" -> "set_light_tilt";
             default -> "ALGORITHM_BOX".equals(deviceType) ? code : null;
         };
     }
@@ -883,6 +1041,22 @@ public class EquipmentControlService {
                 .map(this::normalized)
                 .distinct()
                 .toList();
+    }
+
+    private boolean hasManagementAction(
+            Map<String, Object> component,
+            String capabilityCode,
+            String actionCode) {
+        String expectedCapability = normalized(capabilityCode);
+        String expectedAction = normalized(actionCode);
+        return mapList(component.get("capabilities")).stream()
+                .filter(capability -> expectedCapability.equals(
+                        normalized(firstString(capability, "code", "capabilityCode", "name"))))
+                .flatMap(capability -> mapList(capability.get("actions")).stream())
+                .map(action -> firstString(action, "code", "capabilityCode", "name"))
+                .filter(Objects::nonNull)
+                .map(this::normalized)
+                .anyMatch(expectedAction::equals);
     }
 
     private List<String> managementCapabilityCodes(Map<String, Object> component) {
@@ -939,6 +1113,30 @@ public class EquipmentControlService {
                     "lightIds", List.of("left_warning", "right_warning", "all", "light-001", "light-002"),
                     "modes", List.of(0, 1, 2),
                     "supportsAll", true);
+        }
+        if ("VEHICLE_LIGHT".equals(deviceType)) {
+            return object(
+                    "modes", List.of("OFF", "ON", "BREATH", "CUSTOM"),
+                    "minBrightness", 0,
+                    "maxBrightness", 100);
+        }
+        if ("MULTI_FUNCTION_BROADCASTER".equals(deviceType)) {
+            return object(
+                    "minVolumePercent", 0,
+                    "maxVolumePercent", 100,
+                    "maxTextLength", 500,
+                    "voices", List.of("MALE", "FEMALE"),
+                    "audioFormats", List.of("mp3", "wav"),
+                    "monitor", object("supportsSuppression", true),
+                    "light", object(
+                            "minBrightnessPercent", 0,
+                            "maxBrightnessPercent", 100,
+                            "supportsStrobe", true,
+                            "redBlueModeMin", 0,
+                            "redBlueModeMax", 16,
+                            "stateReadable", false),
+                    "speakerTilt", object("minPositionPercent", 0, "maxPositionPercent", 100),
+                    "lightTilt", object("minPositionPercent", 0, "maxPositionPercent", 100));
         }
         return object("componentType", firstString(component, "componentType"), "capabilities", managementActionCodes(component));
     }
@@ -1017,6 +1215,14 @@ public class EquipmentControlService {
             throw new IllegalArgumentException(field + " 必填");
         }
         return value;
+    }
+
+    private static boolean requiredBoolean(Map<String, Object> source, String field) {
+        Object value = source.get(field);
+        if (!(value instanceof Boolean bool)) {
+            throw new IllegalArgumentException(field + " 必须为 boolean");
+        }
+        return bool;
     }
 
     /**

@@ -24,6 +24,7 @@ import paho.mqtt.client as mqtt
 from .config import Config
 from .intercom import IntercomManager
 from .model import ControlCommand, IntercomCallState, IntercomStartCommand, StartCommand, StopCommand
+from .multifunction import MultiFunctionClient
 from .publisher import ProcessPublisher
 from .rtsp import Probe
 from .timeutil import isoformat
@@ -32,12 +33,20 @@ from .timeutil import isoformat
 class RobotMQTTClient:
     """机器人侧 MQTT 客户端，负责订阅控制命令并上报在线、视频和对讲状态。"""
 
-    def __init__(self, cfg: Config, probe: Probe, publisher: ProcessPublisher, intercom: IntercomManager) -> None:
+    def __init__(
+        self,
+        cfg: Config,
+        probe: Probe,
+        publisher: ProcessPublisher,
+        intercom: IntercomManager,
+        multi_function: MultiFunctionClient | None = None,
+    ) -> None:
         """保存运行依赖，并创建 MQTT client 与后台命令执行池。"""
         self.cfg = cfg
         self.probe = probe
         self.publisher = publisher
         self.intercom = intercom
+        self.multi_function = multi_function
         self.client = make_mqtt_client(cfg.client_id)
         self.executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="mqtt-command")
         self.lock = threading.RLock()
@@ -52,6 +61,9 @@ class RobotMQTTClient:
         self.call_state_handler: Callable[[IntercomCallState], None] | None = None
         self.stop_event = threading.Event()
         self.connected = threading.Event()
+        if self.multi_function is not None:
+            self.update_multi_function_state(self.multi_function.snapshot())
+            self.multi_function.set_state_handler(self.update_multi_function_state)
 
     def run(self) -> None:
         """连接 MQTT broker，启动网络循环、心跳线程，并阻塞直到客户端被停止。"""
@@ -300,7 +312,7 @@ class RobotMQTTClient:
             raise RuntimeError("intercom stopped status publish failed")
 
     def _handle_control_command(self, payload: bytes, topic: str) -> None:
-        """处理普通设备控制指令，并把可模拟的设备状态回报给后端。"""
+        """处理普通设备控制指令，并把真实可读状态回报给后端。"""
         try:
             raw_payload = payload.decode()
             command = ControlCommand.from_json(json.loads(raw_payload))
@@ -349,7 +361,9 @@ class RobotMQTTClient:
             return False
 
     def apply_control_command(self, command: ControlCommand) -> bool:
-        """应用可本地确认的设备控制状态，并触发下一次 client/status 上报。"""
+        """应用普通设备控制；多合一设备会调用真实 TCP/HTTP 适配器。"""
+        if command.target.device_type == "MULTI_FUNCTION_BROADCASTER":
+            return self.apply_multi_function_command(command)
         with self.lock:
             changed = False
             if command.action == "set_volume":
@@ -400,6 +414,58 @@ class RobotMQTTClient:
                 self.set_device_state_locked(command.target.device_id, "rear", rear)
                 changed = True
             return changed
+
+    def apply_multi_function_command(self, command: ControlCommand) -> bool:
+        """调用多合一真实适配器；失败信息也随设备状态上报。"""
+        if self.multi_function is None:
+            print(
+                "multi-function command rejected",
+                f"action={command.action}",
+                "reason=adapter-not-configured",
+                flush=True,
+            )
+            return False
+        expected_device_id = getattr(
+            getattr(self.cfg, "multi_function", None),
+            "device_id",
+            "broadcaster-001",
+        )
+        if command.target.device_id != expected_device_id:
+            print(
+                "multi-function command rejected",
+                f"deviceId={command.target.device_id}",
+                f"expectedDeviceId={expected_device_id}",
+                "reason=device-mismatch",
+                flush=True,
+            )
+            return False
+        try:
+            state = self.multi_function.execute(command.action, command.params)
+        except Exception as exc:
+            state = self.multi_function.snapshot()
+            print(
+                "multi-function command failed",
+                f"deviceId={command.target.device_id}",
+                f"action={command.action}",
+                f"error={exc}",
+                flush=True,
+            )
+        self.update_multi_function_state(state)
+        return True
+
+    def update_multi_function_state(self, state: dict[str, object]) -> None:
+        """合并真实设备状态，并在 MQTT 在线时立即发布一次 client/status。"""
+        multi_config = getattr(self.cfg, "multi_function", None)
+        device_id = getattr(multi_config, "device_id", "broadcaster-001")
+        snapshot = json.loads(json.dumps(state, ensure_ascii=False))
+        with self.lock:
+            changed = self.device_state.get(device_id) != snapshot
+            self.device_state[device_id] = snapshot
+        if changed and self.connected.is_set() and not self.stop_event.is_set():
+            try:
+                self.executor.submit(self.online, "online")
+            except RuntimeError:
+                pass
 
     def set_device_state_locked(self, device_id: str, key: str, value: object) -> None:
         """在已持锁状态下更新设备运行状态。"""
@@ -522,13 +588,16 @@ class RobotMQTTClient:
                 status["volume"] = audio_volume
                 status["volumePercent"] = audio_volume
                 status["muted"] = audio_muted
+            online_status = device.online_status
+            if device.device_type == "MULTI_FUNCTION_BROADCASTER":
+                online_status = "online" if status.get("connected") is True else "offline"
             item: dict[str, object] = {
                 "deviceId": device.device_id,
                 "bindingId": device.binding_id,
                 "scope": device.scope,
                 "deviceType": device.device_type,
                 "displayName": device.display_name,
-                "onlineStatus": device.online_status,
+                "onlineStatus": online_status,
                 "controlStatus": device.control_status,
                 "enabled": device.enabled,
                 "actions": list(device.actions),
@@ -636,6 +705,13 @@ def any_str(value: object, fallback: str) -> str:
     if isinstance(value, str) and value.strip():
         return value
     return fallback
+
+
+def update_audio_session_state(session: dict[str, object]) -> None:
+    """两个音频方向均停止后，把模拟媒体会话恢复为 IDLE。"""
+    if not any_bool(session.get("broadcastActive"), False) and not any_bool(session.get("monitorActive"), False):
+        session["state"] = "IDLE"
+        session["mediaSessionId"] = ""
 
 
 def normalize_control_mode(value: str) -> str:

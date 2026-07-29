@@ -79,6 +79,14 @@
         </div>
         <div class="common-scroll mt10 pr14" style="height: calc(100% - 47px); min-height: 923px; overflow-y: auto; margin-right: -14px;">
           <Yuntai />
+          <div v-if="multiFunctionDevice" class="mt20">
+            <div class="card-title title-344-37">
+              <div class="text">
+                多合一
+              </div>
+            </div>
+            <MultiInOne />
+          </div>
           <div class="mt20" v-if="audioDevice">
             <div class="card-title title-344-37">
               <div class="text">

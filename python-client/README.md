@@ -10,6 +10,7 @@
 - 通过外部 publisher 进程把 RTSP 视频发布到 LiveKit。
 - 扫描本地录像目录，并按通用文件 multipart 协议断点续传到媒体服务。
 - 使用 LiveKit Python SDK 和 GStreamer 音频管线桥接机器人端对讲。
+- 通过 TCP `8519/12345` 和 HTTP `8222` 控制机器人局域网内的多合一真实设备。
 - 上报机器人在线、离线、实时视频、对讲和设备状态。
 
 Go 客户端仍位于仓库 `client/` 目录，Python 客户端位于仓库根目录 `python-client/`。
@@ -25,6 +26,7 @@ python-client/
     publisher.py
     rtsp.py
     intercom.py
+    multifunction.py
     model.py
     timeutil.py
     recordingupload/
@@ -48,6 +50,10 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+多合一实时喊话和收音通过系统 `libopus` 完成裸 Opus 帧编解码。macOS 使用
+`brew install opus`，Ubuntu/Debian 使用 `apt install libopus0`。未安装时，
+离散控制仍可运行，但多合一 LiveKit 音频桥会拒绝启动并输出明确错误。
 
 运行环境还需要安装以下外部命令：
 
@@ -120,6 +126,8 @@ RTSP_CAMERA03_SUB='rtsp://192.168.124.204:8554/camera03' \
 MEDIA_SERVICE_URL='http://192.168.124.77:8088' \
 RECORDING_DIRECTORY='./recordings' \
 PUBLISHER_MODE='auto' \
+MULTI_FUNCTION_ENABLED='true' \
+MULTI_FUNCTION_HOST='192.168.1.27' \
 python -m robot_media_client
 ```
 
@@ -226,6 +234,18 @@ docker run --rm \
 - 警示灯：`enabled`、`powerOn`、`mode`
 - 云台自转：`autoRotateEnabled`、`panSpeed`
 - 车灯：`front`、`rear`
+- 多合一设备：`volumePercent`、`audioSession.broadcastActive`、`audioSession.monitorActive`、`audioSession.monitorSuppressed`
+
+多合一逻辑订阅统一 `control/#`，并把 `MULTI_FUNCTION_BROADCASTER` action 转为 TCP `8519/12345` 或 HTTP `8222` 真实调用。设备连接、音量、温度和文件列表按真实结果上报；照明、警报和文件播放没有查询接口时不写入设备真实状态。
+
+多合一实时喊话和收音复用平台现有 LiveKit 对讲会话。目标 `deviceId` 等于
+`MULTI_FUNCTION_DEVICE_ID` 时，Python 客户端不使用本机默认声卡，而是执行：
+
+- 浏览器 `audio.operator.mic` -> 48kHz PCM -> 8kHz/60ms Opus -> 设备 `[10]+Opus`。
+- 设备 `[40]+Opus` -> 16kHz/20ms PCM -> 48kHz -> LiveKit `audio.robot.mic`。
+
+大屏发送 `start_broadcast` 和 `start_monitor` 分别控制两个方向；两者共用一个
+`mediaSessionId`，并由大屏每 5 秒刷新音频会话心跳。
 
 ## 代码结构与实现说明
 
@@ -321,6 +341,7 @@ main
 | `rtsp.py` | `Probe`、`StreamInfo` | 通过 `ffprobe` 做 RTSP 启动前探测 |
 | `publisher.py` | `ProcessPublisher` | 管理 GStreamer、FFmpeg 或自定义 publisher 进程 |
 | `intercom.py` | `IntercomManager`、`IntercomSession` | 管理 LiveKit 对讲音频桥 |
+| `multifunction.py` | `MultiFunctionClient`、`StreamParser` | 多合一真实设备 TCP/HTTP 适配、CRC、流式拆包和 Opus 帧入口 |
 | `recordingupload/runner.py` | `Runner`、`file_type()`、`content_type()` | 文件发现、上传状态机、本地缓存清理 |
 | `recordingupload/client.py` | `Client`、`UploadResponse`、`StatusResponse` | Media Service 上传接口封装 |
 | `recordingupload/uploader.py` | `upload_missing_parts()`、`PreadReader` | multipart 分片并发 PUT |
@@ -391,6 +412,24 @@ main
 | `local_cache_max_bytes` | `RECORDING_LOCAL_CACHE_MAX_BYTES` | 本地文件缓存上限 |
 | `local_min_free_bytes` | `RECORDING_LOCAL_MIN_FREE_BYTES` | 本地磁盘最小剩余空间 |
 | `local_retention_after_ready` | `RECORDING_LOCAL_RETENTION_AFTER_READY_HOURS` | 文件 READY 后本地保留时长 |
+
+#### 5.5 多合一设备
+
+Go/Python 使用同一组环境变量：
+
+```text
+MULTI_FUNCTION_ENABLED=false
+MULTI_FUNCTION_DEVICE_ID=broadcaster-001
+MULTI_FUNCTION_HOST=192.168.1.27
+MULTI_FUNCTION_CONTROL_PORT=8519
+MULTI_FUNCTION_TILT_PORT=12345
+MULTI_FUNCTION_HTTP_PORT=8222
+MULTI_FUNCTION_DIAL_TIMEOUT_MS=3000
+MULTI_FUNCTION_WRITE_TIMEOUT_MS=3000
+MULTI_FUNCTION_HTTP_TIMEOUT_MS=5000
+MULTI_FUNCTION_KEEPALIVE_ENABLED=true
+MULTI_FUNCTION_KEEPALIVE_INTERVAL_MS=2000
+```
 
 ### 6. MQTT 模块
 

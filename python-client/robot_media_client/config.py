@@ -46,6 +46,23 @@ class Device:
 
 
 @dataclass
+class MultiFunctionConfig:
+    """多合一设备 TCP/HTTP 连接参数。"""
+
+    enabled: bool
+    device_id: str
+    host: str
+    control_port: int
+    tilt_port: int
+    http_port: int
+    dial_timeout: float
+    write_timeout: float
+    http_timeout: float
+    keepalive_enabled: bool
+    keepalive_interval: float
+
+
+@dataclass
 class Config:
     """Python 客户端运行配置，主要从环境变量加载。"""
 
@@ -89,6 +106,7 @@ class Config:
     local_min_free_bytes: int
     local_retention_after_ready: float
     intercom_audio_enabled: bool
+    multi_function: MultiFunctionConfig
 
 
 def load() -> Config:
@@ -135,6 +153,19 @@ def load() -> Config:
         local_min_free_bytes=env_int("RECORDING_LOCAL_MIN_FREE_BYTES", 10737418240),
         local_retention_after_ready=env_int("RECORDING_LOCAL_RETENTION_AFTER_READY_HOURS", 24) * 3600,
         intercom_audio_enabled=env_bool("INTERCOM_AUDIO_ENABLED", True),
+        multi_function=MultiFunctionConfig(
+            enabled=env_bool("MULTI_FUNCTION_ENABLED", False),
+            device_id=env("MULTI_FUNCTION_DEVICE_ID", "broadcaster-001"),
+            host=env("MULTI_FUNCTION_HOST", "192.168.1.27"),
+            control_port=env_int("MULTI_FUNCTION_CONTROL_PORT", 8519),
+            tilt_port=env_int("MULTI_FUNCTION_TILT_PORT", 12345),
+            http_port=env_int("MULTI_FUNCTION_HTTP_PORT", 8222),
+            dial_timeout=env_int("MULTI_FUNCTION_DIAL_TIMEOUT_MS", 3000) / 1000,
+            write_timeout=env_int("MULTI_FUNCTION_WRITE_TIMEOUT_MS", 3000) / 1000,
+            http_timeout=env_int("MULTI_FUNCTION_HTTP_TIMEOUT_MS", 5000) / 1000,
+            keepalive_enabled=env_bool("MULTI_FUNCTION_KEEPALIVE_ENABLED", True),
+            keepalive_interval=env_int("MULTI_FUNCTION_KEEPALIVE_INTERVAL_MS", 2000) / 1000,
+        ),
     )
 
 
@@ -171,6 +202,7 @@ def cameras(robot_id: str) -> list[Camera]:
 
 def devices(robot_id: str) -> list[Device]:
     """生成默认设备能力列表，随 client/status 上报给后端和前端。"""
+    multi_function_device_id = env("MULTI_FUNCTION_DEVICE_ID", "broadcaster-001")
     base_type = "WHEELED_BASE"
     base_vendor = "SONGLING"
     base_model = "SCOUT"
@@ -280,6 +312,68 @@ def devices(robot_id: str) -> list[Device]:
             ),
         ])
     result.extend([
+        Device(
+            device_id=multi_function_device_id,
+            binding_id="bind-" + multi_function_device_id,
+            scope="PAYLOAD",
+            device_type="MULTI_FUNCTION_BROADCASTER",
+            display_name="多合一喊话设备",
+            vendor="CUSTOM",
+            model="FOUR-IN-ONE",
+            online_status="offline",
+            control_status="idle",
+            enabled=True,
+            actions=[
+                "set_volume",
+                "start_broadcast",
+                "stop_broadcast",
+                "start_monitor",
+                "stop_monitor",
+                "set_monitor_suppressed",
+                "play_tts",
+                "stop_tts",
+                "list_audio_files",
+                "play_audio_file",
+                "stop_audio_file",
+                "delete_audio_file",
+                "play_alarm",
+                "stop_alarm",
+                "light.set",
+                "set_speaker_tilt",
+                "set_light_tilt",
+            ],
+            status={
+                "connected": False,
+                "audioFiles": [],
+                "audioSession": {
+                    "mediaSessionId": "",
+                    "state": "IDLE",
+                    "broadcastActive": False,
+                    "monitorActive": False,
+                    "monitorSuppressed": False,
+                    "monitorTrackSid": "",
+                    "lastError": None,
+                },
+            },
+            control_profile={
+                "minVolumePercent": 0,
+                "maxVolumePercent": 100,
+                "maxTextLength": 500,
+                "voices": ["MALE", "FEMALE"],
+                "audioFormats": ["mp3", "wav"],
+                "monitor": {"supportsSuppression": True},
+                "light": {
+                    "minBrightnessPercent": 0,
+                    "maxBrightnessPercent": 100,
+                    "supportsStrobe": True,
+                    "redBlueModeMin": 0,
+                    "redBlueModeMax": 16,
+                    "stateReadable": False,
+                },
+                "speakerTilt": {"minPositionPercent": 0, "maxPositionPercent": 100},
+                "lightTilt": {"minPositionPercent": 0, "maxPositionPercent": 100},
+            },
+        ),
         Device(
             device_id="warning-light-left",
             binding_id="bind-warning-light-left",

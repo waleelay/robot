@@ -55,6 +55,7 @@ Node.js 18+
 npm 9+
 Go 1.24.4+
 FFmpeg/ffprobe
+libopus（Python 客户端多合一实时喊话/收音）
 Docker Desktop
 MySQL 8
 Redis 7
@@ -153,6 +154,12 @@ export AUDIO_PLAYBACK_PIPELINE='fdsrc fd=0 ! audio/x-raw,format=S16LE,rate=48000
 export CAMERA_CAMERA01_GROUP_TYPE='dual_gimbal'
 export CAMERA_CAMERA02_GROUP_TYPE='body'
 export CAMERA_CAMERA03_GROUP_TYPE='arm'
+export MULTI_FUNCTION_ENABLED='false'
+export MULTI_FUNCTION_DEVICE_ID='broadcaster-001'
+export MULTI_FUNCTION_HOST='192.168.1.27'
+export MULTI_FUNCTION_CONTROL_PORT='8519'
+export MULTI_FUNCTION_TILT_PORT='12345'
+export MULTI_FUNCTION_HTTP_PORT='8222'
 ```
 
 `ROBOT_BATTERY` 为 `0-100` 的电量百分比。`CAMERA_<CAMERA_ID>_GROUP_TYPE` 支持 `body`（本体）、`dual_gimbal`（双光云台）和 `arm`（机械臂）。

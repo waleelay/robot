@@ -65,7 +65,7 @@ public class EquipmentControlCommandPublisher {
      * @param payload 消息载荷
      * @return MQTT 命令 topic
      */
-    private String commandTopic(String robotId, Object payload) {
+    String commandTopic(String robotId, Object payload) {
         Map<?, ?> command = objectMapper.convertValue(payload, Map.class);
         Map<?, ?> target = command.get("target") instanceof Map<?, ?> value ? value : Map.of();
         String deviceType = String.valueOf(target.get("deviceType"));
@@ -78,6 +78,7 @@ public class EquipmentControlCommandPublisher {
             case "NET_GUN", "NET_LAUNCHER" -> "net-gun";
             case "WARNING_LIGHT" -> "warning-light";
             case "VEHICLE_LIGHT", "SEARCHLIGHT" -> "vehicle-light";
+            case "MULTI_FUNCTION_BROADCASTER" -> "multi-function";
             default -> fallbackDomain(action);
         };
         return "robot/" + robotId + "/control/" + domain + "/command";

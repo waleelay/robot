@@ -1,6 +1,6 @@
 # 前端、Control Service 与 Media Service 接口文档
 
-本文按当前仓库 Java 代码反查整理，生成时间：2026-07-04。
+本文按当前仓库 Java 代码反查整理，最近更新时间：2026-07-28。
 
 ## 1. 范围说明
 
@@ -1098,7 +1098,14 @@ Content-Type: application/json
 | Control -> Go 客户端 | `robot/{robotId}/control/net-gun/command` | `target.deviceType` 为 `NET_GUN`、`NET_LAUNCHER` |
 | Control -> Go 客户端 | `robot/{robotId}/control/warning-light/command` | `target.deviceType=WARNING_LIGHT` |
 | Control -> Go 客户端 | `robot/{robotId}/control/vehicle-light/command` | `target.deviceType` 为 `VEHICLE_LIGHT`、`SEARCHLIGHT`，或 `action` 以 `light.vehicle.` 开头 |
+| Control -> Go/Python 客户端 | `robot/{robotId}/control/multi-function/command` | `target.deviceType=MULTI_FUNCTION_BROADCASTER` |
 | Control -> Go 客户端 | `robot/{robotId}/control/payload/command` | 其他未匹配设备类型或动作的兜底 topic |
+
+车灯能力来源于管理端本体组件：当 `BODY` 组件的 `DEVICE_CONTROL` 能力中
+存在 `SET_LIGHTS` 动作时，Control 派生
+`deviceId=vehicle-light`、`deviceType=VEHICLE_LIGHT`、
+`actions=[light.vehicle.set]`。管理端无需重复注册独立车灯组件，前端也不直接
+使用管理端动作名 `SET_LIGHTS`。
 
 请求参数：
 
@@ -1122,7 +1129,7 @@ Content-Type: application/json
 | `control.mode.set` | `controlMode` 归一化 |
 | `SPEAKER/set_volume` | `volumePercent` |
 | `SPEAKER/set_mute` | `mute` |
-| `light.set` | `enabled`、`brightness`、`mode` |
+| `SEARCHLIGHT/light.set` | `enabled`、`brightness`、`mode` |
 | `light.vehicle.set` | `front`、`rear` 车灯模式和亮度，后端下发平台通用 `mode/brightness`，底层 ROS topic 由客户端适配 |
 | `WARNING_LIGHT/get_state` | `lightId` |
 | `WARNING_LIGHT/set_state` | `lightId`、`powerOn` |
@@ -1131,6 +1138,77 @@ Content-Type: application/json
 | `LAUNCHER/set_safety` | `safety_on`、`wait_status` |
 | `LAUNCHER/fire` | `tube`、`waitStatusAfterFire`、`keepSafetyOn`；前端 `confirmToken` 仅供后端校验，不下发 MQTT |
 | `NET_GUN/fire` | 捕网器触发，后端校验 `confirmToken` 后不下发该字段 |
+
+`MULTI_FUNCTION_BROADCASTER` 动作参数：
+
+| action | 后端下发 `params` | 校验与说明 |
+|---|---|---|
+| `set_volume` | `volumePercent: integer` | `0~100`，同时受 `controlProfile` 和 `status.volumeLimitPercent` 限制 |
+| `start_broadcast` / `stop_broadcast` | `mediaSessionId: string` | 必填，只传会话 ID，不通过 MQTT 传音频数据 |
+| `start_monitor` / `stop_monitor` | `mediaSessionId: string` | 必填，喊话和收音两个方向独立启停 |
+| `set_monitor_suppressed` | `suppressed: boolean` | 必填，不修改 `monitorActive` |
+| `play_tts` | `text: string`、`voice: MALE/FEMALE`、`loop: boolean` | 文本非空并受 `maxTextLength` 限制 |
+| `stop_tts` | `{}` | 只停止循环 TTS |
+| `list_audio_files` | `{}` | 查询结果由客户端写入统一状态 `status.audioFiles` |
+| `play_audio_file` | `fileName: string`、`loop: boolean` | 文件名不得包含路径或 `..` |
+| `stop_audio_file` | `{}` | 停止当前音频文件播放 |
+| `delete_audio_file` | `fileName: string` | 文件名不得包含路径或 `..` |
+| `play_alarm` / `stop_alarm` | `{}` | 启动或停止设备内置警报 |
+| `light.set` | `enabled?`、`brightness?`、`strobeEnabled?`、`redBlueMode?` | 局部更新，至少传一个字段；亮度 `0~100`，红蓝模式默认 `0~16` |
+| `set_speaker_tilt` | `positionPercent: integer` | 喊话器俯仰，平台范围 `0~100` |
+| `set_light_tilt` | `positionPercent: integer` | 照明灯俯仰，平台范围 `0~100` |
+
+实时喊话和收音除上述控制命令外，还复用现有对讲媒体接口：
+
+1. 大屏首次启动任一方向时调用
+   `POST /api/control/robots/{robotId}/cameras/{deviceId}/video/intercom/start`，
+   其中 `deviceId=broadcaster-001`。
+2. 大屏使用响应中的 `operatorToken/livekitUrl/roomName` 连接 LiveKit；开始喊话时
+   发布 `audio.operator.mic`，开始收音时播放机器人发布的 `audio.robot.mic`。
+3. 返回的 `sessionId` 同时作为控制命令的 `mediaSessionId`，两个方向共用该会话。
+4. 大屏每 5 秒调用
+   `POST /api/control/video-sessions/{sessionId}/intercom/heartbeat`；两个方向均停止后
+   调用 `POST /api/control/video-sessions/{sessionId}/intercom/stop` 并断开房间。
+5. PCM/Opus 音频帧只经过 LiveKit 和机器人客户端，不进入普通控制 HTTP/MQTT payload。
+
+多合一照明只下发本次变化字段。例如调整亮度时，不附带照明开关、爆闪和红蓝模式：
+
+```json
+{
+  "target": {
+    "scope": "PAYLOAD",
+    "deviceId": "broadcaster-001",
+    "deviceType": "MULTI_FUNCTION_BROADCASTER"
+  },
+  "action": "light.set",
+  "params": {
+    "brightness": 70
+  },
+  "client": {
+    "seq": 31
+  }
+}
+```
+
+Control Service 最终发布：
+
+```json
+{
+  "robotId": "robot-dog-001",
+  "seq": 31,
+  "target": {
+    "deviceId": "broadcaster-001",
+    "deviceType": "MULTI_FUNCTION_BROADCASTER"
+  },
+  "action": "light.set",
+  "params": {
+    "brightness": 70
+  },
+  "issuedAt": "2026-07-28T17:00:00+08:00"
+}
+```
+
+客户端负责把平台参数映射为设备 TCP/HTTP 报文。设备 IP、端口、CRC、Opus 帧和原始数值不得进入前端请求或上述 MQTT payload。
 
 请求示例：
 

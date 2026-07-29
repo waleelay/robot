@@ -9,6 +9,7 @@ import time
 from . import config
 from .intercom import IntercomManager
 from .mqtt_client import RobotMQTTClient
+from .multifunction import MultiFunctionClient
 from .publisher import ProcessPublisher
 from .recordingupload import Runner
 from .rtsp import Probe
@@ -29,7 +30,9 @@ def main() -> None:
     # 这些对象在 MQTT 重连之间复用，避免断线重连时丢失本地推流和对讲管理上下文。
     probe = Probe(cfg.ffprobe_path, cfg.probe_timeout)
     publisher = ProcessPublisher(cfg)
-    intercom = IntercomManager(cfg)
+    multi_function = MultiFunctionClient(cfg.multi_function)
+    multi_function.start()
+    intercom = IntercomManager(cfg, multi_function)
     runner: Runner | None = None
     if cfg.recording_upload_enabled:
         runner = Runner(cfg)
@@ -48,7 +51,7 @@ def main() -> None:
     )
     while not stop_event.is_set():
         # MQTT client 对象按连接生命周期创建；断线后统一清理，再进入退避重连。
-        client = RobotMQTTClient(cfg, probe, publisher, intercom)
+        client = RobotMQTTClient(cfg, probe, publisher, intercom, multi_function)
         mqtt_thread = threading.Thread(target=client.run)
         mqtt_thread.start()
         while mqtt_thread.is_alive() and not stop_event.is_set():
@@ -61,5 +64,6 @@ def main() -> None:
 
     publisher.stop_all()
     intercom.stop_all()
+    multi_function.close()
     if runner is not None:
         runner.stop()

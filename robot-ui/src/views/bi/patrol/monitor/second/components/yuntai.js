@@ -66,6 +66,9 @@ export default {
     searchlightDevice() {
       return this.controlDevices().find(device => device.deviceType === 'SEARCHLIGHT')
     },
+    multiFunctionDevice() {
+      return this.controlDevices().find(device => device.deviceType === 'MULTI_FUNCTION_BROADCASTER')
+    },
   },
   data() {
     return {
