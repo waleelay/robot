@@ -44,6 +44,7 @@ type Client struct {
 	conn            net.Conn
 	connectedSignal chan struct{}
 	writeMu         sync.Mutex
+	transferMu      sync.Mutex
 
 	stateMu        sync.RWMutex
 	state          map[string]any
@@ -184,13 +185,39 @@ func (c *Client) Execute(ctx context.Context, action string, params map[string]a
 				"audioFilesUpdatedAt": time.Now().Format(time.RFC3339Nano),
 			})
 		}
+	case "upload_audio_file":
+		err = c.DownloadAndUploadAudioFile(ctx, params)
+		if err != nil {
+			c.updateState(map[string]any{"audioTransfer": map[string]any{
+				"transferId": stringParam(params, "transferId"),
+				"fileName":   stringParam(params, "fileName"),
+				"status":     "FAILED",
+				"error":      err.Error(),
+				"updatedAt":  time.Now().Format(time.RFC3339Nano),
+			}})
+		}
 	case "play_audio_file":
 		fileName := stringParam(params, "fileName")
+		loop := boolParam(params, "loop", false)
 		if err = validateFileName(fileName); err == nil {
-			err = c.sendControl(ctx, audioFileCommand(fileName, boolParam(params, "loop", false)))
+			err = c.sendControl(ctx, audioFileCommand(fileName, loop))
+			if err == nil {
+				c.updateState(map[string]any{"audioPlayback": map[string]any{
+					"playing":  true,
+					"fileName": fileName,
+					"loop":     loop,
+				}})
+			}
 		}
 	case "stop_audio_file":
 		err = c.sendControl(ctx, []byte("[13]"))
+		if err == nil {
+			c.updateState(map[string]any{"audioPlayback": map[string]any{
+				"playing":  false,
+				"fileName": "",
+				"loop":     false,
+			}})
+		}
 	case "delete_audio_file":
 		err = c.DeleteAudioFile(ctx, stringParam(params, "fileName"))
 		if err == nil {
@@ -294,6 +321,13 @@ func (c *Client) DeleteAudioFile(ctx context.Context, fileName string) error {
 }
 
 func (c *Client) UploadAudioFile(ctx context.Context, path string) error {
+	return c.uploadAudioFileAs(ctx, path, filepath.Base(path))
+}
+
+func (c *Client) uploadAudioFileAs(ctx context.Context, path string, fileName string) error {
+	if err := validateFileName(fileName); err != nil {
+		return err
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -301,7 +335,7 @@ func (c *Client) UploadAudioFile(ctx context.Context, path string) error {
 	defer file.Close()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	part, err := writer.CreateFormFile("file", filepath.Base(path))
+	part, err := writer.CreateFormFile("file", fileName)
 	if err != nil {
 		return err
 	}
@@ -329,6 +363,108 @@ func (c *Client) UploadAudioFile(ctx context.Context, path string) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Client) DownloadAndUploadAudioFile(ctx context.Context, params map[string]any) error {
+	c.transferMu.Lock()
+	defer c.transferMu.Unlock()
+
+	transferID := stringParam(params, "transferId")
+	fileID := stringParam(params, "fileId")
+	fileName := stringParam(params, "fileName")
+	orgID := stringParam(params, "orgId")
+	fileSize, fileSizeOK := strictInt(params["fileSize"])
+	if transferID == "" || fileID == "" || orgID == "" {
+		return errors.New("transferId, fileId and orgId are required")
+	}
+	if err := validateFileName(fileName); err != nil {
+		return err
+	}
+	if fileSize <= 0 || fileSize > 20<<20 || !fileSizeOK {
+		return errors.New("fileSize must be an integer between 1 and 20971520")
+	}
+	mediaServiceURL := strings.TrimRight(strings.TrimSpace(c.cfg.MediaServiceURL), "/")
+	parsedURL, err := url.Parse(mediaServiceURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
+		return errors.New("MEDIA_SERVICE_URL must be an absolute http or https URL")
+	}
+	previous := mapValue(c.Snapshot()["audioTransfer"])
+	if stringParam(previous, "transferId") == transferID && stringParam(previous, "status") == "COMPLETED" {
+		return nil
+	}
+
+	c.updateAudioTransfer(transferID, fileName, "DOWNLOADING", nil)
+	tempFile, err := os.CreateTemp("", "multi-function-audio-*"+filepath.Ext(fileName))
+	if err != nil {
+		return err
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
+	defer tempFile.Close()
+
+	downloadURL := mediaServiceURL + "/api/media/files/" + url.PathEscape(fileID) + "/content"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("X-User-Id", "robot-client")
+	request.Header.Set("X-Org-Id", orgID)
+	request.Header.Set("X-Client-Id", "robot-media-client")
+	request.Header.Set("X-Roles", "MEDIA_VIEWER")
+	downloadTimeout := c.cfg.HTTPTimeout
+	if downloadTimeout < 2*time.Minute {
+		downloadTimeout = 2 * time.Minute
+	}
+	response, err := (&http.Client{Timeout: downloadTimeout}).Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		return fmt.Errorf("audio download failed status=%d body=%s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	written, err := io.Copy(tempFile, io.LimitReader(response.Body, int64(fileSize)+1))
+	if err != nil {
+		return err
+	}
+	if written != int64(fileSize) {
+		return fmt.Errorf("audio download size mismatch expected=%d actual=%d", fileSize, written)
+	}
+	if err := tempFile.Close(); err != nil {
+		return err
+	}
+	c.updateAudioTransfer(transferID, fileName, "UPLOADING", nil)
+	if err := c.uploadAudioFileAs(ctx, tempPath, fileName); err != nil {
+		return err
+	}
+	files, listErr := c.ListAudioFiles(ctx)
+	values := map[string]any{}
+	if listErr == nil {
+		values["audioFiles"] = files
+		values["audioFilesUpdatedAt"] = time.Now().Format(time.RFC3339Nano)
+	}
+	c.updateAudioTransfer(transferID, fileName, "COMPLETED", values)
+	return nil
+}
+
+func (c *Client) updateAudioTransfer(
+	transferID string,
+	fileName string,
+	status string,
+	extra map[string]any,
+) {
+	transfer := map[string]any{
+		"transferId": transferID,
+		"fileName":   fileName,
+		"status":     status,
+		"updatedAt":  time.Now().Format(time.RFC3339Nano),
+	}
+	values := map[string]any{"audioTransfer": transfer}
+	for key, value := range extra {
+		values[key] = value
+	}
+	c.updateState(values)
 }
 
 func (c *Client) connectionLoop() {
@@ -416,7 +552,14 @@ func (c *Client) handleStreamEvent(event streamEvent) {
 	case "tts_finished":
 		c.updateState(map[string]any{"lastTtsCompletedAt": time.Now().Format(time.RFC3339Nano)})
 	case "audio_finished":
-		c.updateState(map[string]any{"lastAudioFinishedAt": time.Now().Format(time.RFC3339Nano)})
+		c.updateState(map[string]any{
+			"lastAudioFinishedAt": time.Now().Format(time.RFC3339Nano),
+			"audioPlayback": map[string]any{
+				"playing":  false,
+				"fileName": "",
+				"loop":     false,
+			},
+		})
 	case "monitor_opus":
 		c.stateMu.RLock()
 		handler := c.monitorHandler

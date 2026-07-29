@@ -17,7 +17,7 @@
 - 客户端 `devices[].status` 作为运行时真实状态保留；服务不生成虚假的在线、灯光、音量、发射器或弹筒状态。
 - Driver ID 与平台 ID 不一致时，通过 `devices[].status.driverDeviceId` 上报。
 - 管理端登记的 Action 优先；已集成设备类型保留生产兼容 Action 和参数限制，避免改变既有 MQTT `action/params` 契约。
-- 多合一喊话设备使用 `MULTI_FUNCTION_BROADCASTER`，统一命令发布到 `robot/{robotId}/control/multi-function/command`；服务端只组装平台语义参数，不感知设备 IP、端口和二进制协议。
+- 多合一喊话设备使用 `MULTI_FUNCTION_BROADCASTER`，命令发布到 `robot/{robotId}/control/multi-function/command`。音频文件由通用文件服务保存到 MinIO，Control 只下发 `fileId` 和文件元数据；机器人客户端从 Media Service 下载后调用局域网内厂商 `/upload-file`。
 - 管理端设备数据缓存 30 秒；刷新失败时使用最近一次成功快照。
 - 每条 `robot/{robotId}/media/client/status` 消息先完成合并，再统一发布一次 `robot.state`。
 
@@ -35,6 +35,8 @@ mvn spring-boot:run
 CONTROL_SERVER_PORT=8082
 MEDIA_SERVICE_BASE_URL=http://localhost:8088
 CENTER_MANAGE_BASE_URL=http://localhost:8866
+CONTROL_FILE_UPLOAD_MAX_FILE_SIZE=20MB
+CONTROL_FILE_UPLOAD_MAX_REQUEST_SIZE=21MB
 MQTT_BROKER_URL=tcp://192.168.124.77:1883
 MQTT_CLIENT_ID=robot-control-service-main
 MQTT_ENABLED=true

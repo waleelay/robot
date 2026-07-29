@@ -8,6 +8,7 @@ package com.robot.control.dto;
  */
 public enum FileType {
     VIDEO,
+    AUDIO,
     IMAGE,
     LOG,
     CONFIG,

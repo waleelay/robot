@@ -53,6 +53,7 @@ type Config struct {
 type MultiFunctionConfig struct {
 	Enabled           bool
 	DeviceID          string
+	MediaServiceURL   string
 	Host              string
 	ControlPort       int
 	TiltPort          int
@@ -138,6 +139,7 @@ func Load() Config {
 		MultiFunction: MultiFunctionConfig{
 			Enabled:           envBool("MULTI_FUNCTION_ENABLED", false),
 			DeviceID:          env("MULTI_FUNCTION_DEVICE_ID", "broadcaster-001"),
+			MediaServiceURL:   env("MEDIA_SERVICE_URL", "http://192.168.124.234:8088"),
 			Host:              env("MULTI_FUNCTION_HOST", "192.168.1.27"),
 			ControlPort:       envInt("MULTI_FUNCTION_CONTROL_PORT", 8519),
 			TiltPort:          envInt("MULTI_FUNCTION_TILT_PORT", 12345),
@@ -292,7 +294,7 @@ func devices(robotID string) []Device {
 				"start_broadcast", "stop_broadcast",
 				"start_monitor", "stop_monitor", "set_monitor_suppressed",
 				"play_tts", "stop_tts",
-				"list_audio_files", "play_audio_file", "stop_audio_file", "delete_audio_file",
+				"list_audio_files", "upload_audio_file", "play_audio_file", "stop_audio_file", "delete_audio_file",
 				"play_alarm", "stop_alarm",
 				"light.set", "set_speaker_tilt", "set_light_tilt",
 			},

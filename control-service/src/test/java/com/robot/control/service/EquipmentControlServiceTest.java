@@ -182,6 +182,39 @@ class EquipmentControlServiceTest {
     }
 
     @Test
+    void publishesMultiFunctionAudioTransferWithMediaFileMetadata() {
+        register(component("MULTI_FUNCTION_BROADCASTER", "broadcaster-001"));
+
+        Map<String, Object> response = service.publishMultiFunctionAudioTransfer(
+                "robot-001",
+                "broadcaster-001",
+                object(
+                        "transferId", "mat-001",
+                        "fileId", "file-001",
+                        "fileName", "notice.mp3",
+                        "fileSize", 10,
+                        "orgId", "org001"));
+
+        assertThat(response)
+                .containsEntry("status", "PUBLISHED")
+                .containsEntry("action", "upload_audio_file");
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
+        Map<String, Object> payload = map(captor.getValue());
+        assertThat(payload)
+                .containsEntry("action", "upload_audio_file")
+                .containsKey("commandId");
+        assertThat(map(payload.get("params")))
+                .containsEntry("transferId", "mat-001")
+                .containsEntry("fileId", "file-001")
+                .containsEntry("fileName", "notice.mp3")
+                .containsEntry("fileSize", 10L)
+                .containsEntry("orgId", "org001")
+                .doesNotContainKeys("downloadUrl", "sha256", "expireAt");
+        assertTarget(payload, "broadcaster-001", "MULTI_FUNCTION_BROADCASTER");
+    }
+
+    @Test
     void rejectsInvalidMultiFunctionFields() {
         register(component("MULTI_FUNCTION_BROADCASTER", "broadcaster-001"));
 
@@ -216,7 +249,23 @@ class EquipmentControlServiceTest {
             assertThat(map(device.get("status")))
                     .containsEntry("pan", 0.15)
                     .containsEntry("moving", true);
-        });
+                });
+    }
+
+    @Test
+    void exposesRegisteredMultiFunctionAudioUploadAction() {
+        register(component(
+                "MULTI_FUNCTION_BROADCASTER",
+                "broadcaster-001",
+                action("UPLOAD_AUDIO_FILE")));
+
+        List<Map<String, Object>> devices = maps(service.controlProfile("robot-001").get("devices"));
+
+        assertThat(devices)
+                .filteredOn(device -> "broadcaster-001".equals(device.get("deviceId")))
+                .singleElement()
+                .satisfies(device -> assertThat(device)
+                        .containsEntry("actions", List.of("upload_audio_file")));
     }
 
     @Test

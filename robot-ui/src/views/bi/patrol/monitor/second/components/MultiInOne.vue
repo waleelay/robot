@@ -172,28 +172,56 @@
     <div v-else-if="activeTab === 'audio'" class="panel">
       <div class="audio-toolbar mt12 flx-align-center">
         <span>设备音频文件</span>
-        <el-button
-          type="text"
-          :disabled="!canControl('list_audio_files')"
-          @click="refreshAudioFiles"
-        >
-          刷新
-        </el-button>
+        <div class="audio-toolbar-actions flx-align-center">
+          <el-tooltip content="刷新文件列表" placement="top">
+            <el-button
+              type="text"
+              icon="el-icon-refresh"
+              :disabled="!canControl('list_audio_files')"
+              @click="refreshAudioFiles"
+            />
+          </el-tooltip>
+        </div>
       </div>
       <div class="audio-list common-scroll">
-        <button
+        <div
           v-for="file in audioFiles"
           :key="file"
-          type="button"
           class="audio-item flx-align-center"
           :class="{ active: selectedAudio === file }"
+          role="button"
+          tabindex="0"
           @click="selectedAudio = file"
+          @keydown.enter="selectedAudio = file"
         >
           <svg-icon icon-class="music" class="music-icon" />
-          <span>{{ file }}</span>
-        </button>
+          <span class="audio-file-name">{{ file }}</span>
+          <div class="audio-row-actions flx-align-center" @click.stop>
+            <el-tooltip content="单次播放" placement="top">
+              <el-button
+                type="text"
+                icon="el-icon-video-play"
+                class="audio-icon-btn"
+                :class="{ active: isAudioModeActive(file, false) }"
+                :disabled="!canPlayAudioFile(file)"
+                @click="playAudioFile(file, false)"
+              />
+            </el-tooltip>
+            <el-tooltip content="循环播放" placement="top">
+              <el-button
+                type="text"
+                icon="el-icon-refresh"
+                class="audio-icon-btn"
+                :class="{ active: isAudioModeActive(file, true) }"
+                :disabled="!canPlayAudioFile(file)"
+                @click="playAudioFile(file, true)"
+              />
+            </el-tooltip>
+          </div>
+        </div>
         <div v-if="!audioFiles.length" class="empty-text flx-center">文件列表未同步</div>
       </div>
+      <div v-if="audioTransferText" class="local-state mt10">{{ audioTransferText }}</div>
       <div class="slider-block mt12">
         <div class="slider-label">调整音量</div>
         <div class="slider-row flx-align-center">
@@ -214,9 +242,23 @@
           <span class="slider-value">{{ volume }}%</span>
         </div>
       </div>
-      <div class="btns button-grid mt12">
-        <el-button :disabled="!canPlayFile" type="primary" class="common-btn" @click="playAudioFile(false)">单次播放</el-button>
-        <el-button :disabled="!canPlayFile" type="primary" class="common-btn" @click="playAudioFile(true)">循环播放</el-button>
+      <input
+        ref="audioFileInput"
+        class="audio-file-input"
+        type="file"
+        accept=".mp3,.wav,audio/mpeg,audio/wav"
+        @change="handleAudioFileSelected"
+      >
+      <div class="btns button-grid audio-command-grid mt12">
+        <el-button
+          :loading="audioUploading"
+          :disabled="!canUploadAudio || audioUploading"
+          type="primary"
+          class="common-btn"
+          @click="chooseAudioFile"
+        >
+          添加音频
+        </el-button>
         <el-button :disabled="!canControl('stop_audio_file')" type="primary" class="common-btn" @click="stopAudioFile">停止</el-button>
         <el-button :disabled="!canDeleteFile" type="primary" class="common-btn danger-btn" @click="deleteAudioFile">删除</el-button>
       </div>
@@ -224,29 +266,31 @@
     </div>
 
     <div v-else class="panel">
-      <div class="light-row mt15 flx-align-center">
-        <span class="switch-label">照明灯</span>
-        <el-switch
-          v-model="lightEnabled"
-          active-text="开启"
-          inactive-text="关闭"
-          active-color="#3DB56A"
-          inactive-color="#5E5E5E"
-          :disabled="!canControl('light.set')"
-          @change="setLightEnabled"
-        />
-      </div>
-      <div class="light-row mt12 flx-align-center">
-        <span class="switch-label">爆闪</span>
-        <el-switch
-          v-model="strobeEnabled"
-          active-text="开启"
-          inactive-text="关闭"
-          active-color="#3DB56A"
-          inactive-color="#5E5E5E"
-          :disabled="!canControl('light.set')"
-          @change="setStrobeEnabled"
-        />
+      <div class="light-switches-row mt15">
+        <div class="light-row flx-align-center">
+          <span class="switch-label">照明灯</span>
+          <el-switch
+            v-model="lightEnabled"
+            active-text="开启"
+            inactive-text="关闭"
+            active-color="#3DB56A"
+            inactive-color="#5E5E5E"
+            :disabled="!canControl('light.set')"
+            @change="setLightEnabled"
+          />
+        </div>
+        <div class="light-row flx-align-center">
+          <span class="switch-label">爆闪</span>
+          <el-switch
+            v-model="strobeEnabled"
+            active-text="开启"
+            inactive-text="关闭"
+            active-color="#3DB56A"
+            inactive-color="#5E5E5E"
+            :disabled="!canControl('light.set')"
+            @change="setStrobeEnabled"
+          />
+        </div>
       </div>
       <div class="slider-block mt12">
         <div class="slider-label">亮度调节</div>
@@ -301,7 +345,13 @@
 
 <script>
 import { Room, RoomEvent } from 'livekit-client';
-import { heartbeatIntercom, startCameraIntercom, stopIntercom } from '@/api/media';
+import {
+  heartbeatIntercom,
+  startCameraIntercom,
+  stopIntercom,
+  transferMultiFunctionAudio,
+  uploadFile
+} from '@/api/media';
 import { errorMessage } from '@/utils';
 import yuntai from './yuntai';
 
@@ -341,6 +391,9 @@ export default {
       selectedAudio: '',
       audioPlaying: false,
       audioLooping: false,
+      audioPlayingFile: '',
+      audioUploading: false,
+      audioFilesRequestedFor: '',
       lightEnabled: false,
       strobeEnabled: false,
       redBlueMode: 0,
@@ -392,6 +445,11 @@ export default {
     audioFiles() {
       return Array.isArray(this.status.audioFiles) ? this.status.audioFiles.filter(Boolean) : [];
     },
+    audioTransfer() {
+      return this.status.audioTransfer && typeof this.status.audioTransfer === 'object'
+        ? this.status.audioTransfer
+        : {};
+    },
     broadcastAction() {
       return this.broadcastActive ? 'stop_broadcast' : 'start_broadcast';
     },
@@ -404,15 +462,35 @@ export default {
     ttsAction() {
       return this.ttsLoopActive ? 'stop_tts' : 'play_tts';
     },
-    canPlayFile() {
-      return !!this.selectedAudio && this.canControl('play_audio_file');
-    },
     canDeleteFile() {
       return !!this.selectedAudio && this.canControl('delete_audio_file');
     },
+    canUploadAudio() {
+      return this.connected &&
+        this.actions.includes('upload_audio_file') &&
+        !this.audioUploading &&
+        !this.mediaBusy &&
+        !['DOWNLOADING', 'UPLOADING'].includes(this.audioTransfer.status);
+    },
+    audioTransferText() {
+      const status = this.audioTransfer.status;
+      if (!status) return '';
+      const names = {
+        DOWNLOADING: '客户端下载中',
+        UPLOADING: '正在写入设备',
+        COMPLETED: '上传完成',
+        FAILED: '上传失败'
+      };
+      const fileName = this.audioTransfer.fileName || '';
+      const error = status === 'FAILED' && this.audioTransfer.error
+        ? `：${this.audioTransfer.error}`
+        : '';
+      return `文件传输：${fileName} ${names[status] || status}${error}`;
+    },
     audioPlaybackText() {
       if (!this.audioPlaying) return '播放状态：未播放';
-      return `播放状态：${this.audioLooping ? '循环播放' : '单次播放'}`;
+      const fileName = this.audioPlayingFile || '未知文件';
+      return `播放状态：${this.audioLooping ? '循环播放' : '单次播放'} · ${fileName}`;
     }
   },
   watch: {
@@ -448,6 +526,8 @@ export default {
         this.ttsLoopActive = false;
         this.audioPlaying = false;
         this.audioLooping = false;
+        this.audioPlayingFile = '';
+        this.audioFilesRequestedFor = '';
         this.lightEnabled = false;
         this.strobeEnabled = false;
         this.redBlueMode = 0;
@@ -470,8 +550,20 @@ export default {
       if (session.broadcastActive !== undefined) this.broadcastActive = !!session.broadcastActive;
       if (session.monitorActive !== undefined) this.monitorActive = !!session.monitorActive;
       if (session.monitorSuppressed !== undefined) this.monitorSuppressed = !!session.monitorSuppressed;
-      if (!this.selectedAudio && Array.isArray(status.audioFiles) && status.audioFiles.length) {
-        this.selectedAudio = status.audioFiles[0];
+      const playback = status.audioPlayback || {};
+      if (playback.playing !== undefined) this.audioPlaying = !!playback.playing;
+      if (playback.loop !== undefined) this.audioLooping = !!playback.loop;
+      if (playback.fileName !== undefined) this.audioPlayingFile = playback.fileName || '';
+      if (Array.isArray(status.audioFiles)) {
+        if (!status.audioFiles.includes(this.selectedAudio)) {
+          this.selectedAudio = status.audioFiles[0] || '';
+        }
+      }
+      if (this.connected &&
+        this.actions.includes('list_audio_files') &&
+        this.audioFilesRequestedFor !== device.deviceId) {
+        this.audioFilesRequestedFor = device.deviceId;
+        this.$nextTick(() => this.refreshAudioFiles(true));
       }
     },
     liveKitUrl(url) {
@@ -771,17 +863,86 @@ export default {
       }, 'multi_tts_play');
       if (ok && this.ttsLoop) this.ttsLoopActive = true;
     },
-    async refreshAudioFiles() {
-      await this.dispatchCommand('list_audio_files', {}, 'multi_audio_list');
+    async refreshAudioFiles(silent = false) {
+      const ok = await this.dispatchCommand('list_audio_files', {}, 'multi_audio_list');
+      if (!silent && ok) this.$message.success('文件列表刷新指令已发送');
     },
-    async playAudioFile(loop) {
+    chooseAudioFile() {
+      if (this.$refs.audioFileInput) this.$refs.audioFileInput.click();
+    },
+    async handleAudioFileSelected(event) {
+      const input = event.target;
+      const file = input && input.files && input.files[0];
+      if (!file || !this.device || this.audioUploading) return;
+      const extension = String(file.name || '').split('.').pop().toLowerCase();
+      if (!['mp3', 'wav'].includes(extension)) {
+        this.$message.warning('只支持 mp3、wav 音频文件');
+        input.value = '';
+        return;
+      }
+      if (file.size <= 0 || file.size > 20 * 1024 * 1024) {
+        this.$message.warning('音频文件大小必须大于 0 且不超过 20MB');
+        input.value = '';
+        return;
+      }
+      this.audioUploading = true;
+      try {
+        const form = new FormData();
+        form.append('fileType', 'AUDIO');
+        form.append('robotId', this.selectedRobotId);
+        form.append('deviceId', this.device.deviceId);
+        form.append('sourceFileId', `multi-function/${this.selectedRobotId}/${this.device.deviceId}/${Date.now()}/${file.size}`);
+        form.append('metadata', JSON.stringify({
+          purpose: 'MULTI_FUNCTION_AUDIO',
+          temporary: false
+        }));
+        form.append('file', file, file.name);
+        const storedFile = await uploadFile(form, 120000);
+        if (!storedFile || !storedFile.fileId) {
+          throw new Error('媒体服务未返回 fileId');
+        }
+        const response = await transferMultiFunctionAudio(
+          this.selectedRobotId,
+          this.device.deviceId,
+          storedFile.fileId
+        );
+        const transferId = response && (response.transferId || (response.data && response.data.transferId));
+        this.$message.success(transferId
+          ? `音频传输任务已下发：${transferId}`
+          : '音频传输任务已下发');
+      } catch (error) {
+        this.$message.error(errorMessage(error));
+      } finally {
+        this.audioUploading = false;
+        if (input) input.value = '';
+      }
+    },
+    canPlayAudioFile(file) {
+      return !!file && this.canControl('play_audio_file');
+    },
+    isAudioModeActive(file, loop) {
+      return this.audioPlaying &&
+        this.audioPlayingFile === file &&
+        this.audioLooping === !!loop;
+    },
+    async playAudioFile(file, loop) {
+      this.selectedAudio = file;
+      if (this.audioPlaying) {
+        if (this.isAudioModeActive(file, loop)) {
+          await this.stopAudioFile();
+          return;
+        }
+        const stopped = await this.stopAudioFile();
+        if (!stopped) return;
+      }
       const ok = await this.dispatchCommand('play_audio_file', {
-        fileName: this.selectedAudio,
+        fileName: file,
         loop: !!loop
       }, loop ? 'multi_audio_loop' : 'multi_audio_once');
       if (ok) {
         this.audioPlaying = true;
         this.audioLooping = !!loop;
+        this.audioPlayingFile = file;
       }
     },
     async stopAudioFile() {
@@ -789,7 +950,9 @@ export default {
       if (ok) {
         this.audioPlaying = false;
         this.audioLooping = false;
+        this.audioPlayingFile = '';
       }
+      return ok;
     },
     async deleteAudioFile() {
       try {
@@ -1019,6 +1182,13 @@ export default {
     padding: 0;
     color: #6AC5FF;
   }
+  .audio-toolbar-actions {
+    gap: 12px;
+  }
+}
+
+.audio-file-input {
+  display: none;
 }
 
 .audio-list {
@@ -1045,10 +1215,29 @@ export default {
       height: 16px;
       flex-shrink: 0;
     }
-    span {
+    .audio-file-name {
+      flex: 1;
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .audio-row-actions {
+      flex-shrink: 0;
+      gap: 6px;
+    }
+    ::v-deep .audio-icon-btn {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      margin: 0;
+      color: #6AC5FF;
+      border: 0;
+      background: transparent;
+      &.active {
+        color: #0BF9FE;
+        text-shadow: 0 0 8px #09F;
+      }
     }
   }
   .empty-text {
@@ -1083,6 +1272,20 @@ export default {
     width: 100%;
     height: 30px;
     margin: 0;
+  }
+}
+
+.audio-command-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.light-switches-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  .light-row {
+    min-width: 0;
+    justify-content: space-between;
   }
 }
 

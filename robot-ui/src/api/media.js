@@ -87,12 +87,20 @@ export function switchChannel(sessionId, data) {
 }
 
 // 创建快照
-export function uploadFile(data) {
+export function uploadFile(data, timeout = 30000) {
   return request({
     url: '/api/control/files',
     method: 'post',
     data,
-    timeout: 30000
+    timeout
+  })
+}
+
+export function transferMultiFunctionAudio(robotId, deviceId, fileId) {
+  return request({
+    url: `/api/control/robots/${encodeURIComponent(robotId)}/devices/${encodeURIComponent(deviceId)}/audio-file-transfers`,
+    method: 'post',
+    data: { fileId }
   })
 }
 
@@ -263,4 +271,3 @@ export function executeAlarm(data) {
     }
   })
 }
-

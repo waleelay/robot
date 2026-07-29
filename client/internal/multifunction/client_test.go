@@ -33,6 +33,12 @@ func TestClientExecutesCapturedTCPAndHTTPProtocols(t *testing.T) {
 	uploadedBody := ""
 	httpServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
+		case "/api/media/files/file-001/content":
+			if request.Header.Get("X-Org-Id") != "org001" {
+				http.Error(writer, "missing org", http.StatusForbidden)
+				return
+			}
+			_, _ = writer.Write([]byte("safe-transfer-audio"))
 		case "/fetch-files":
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write([]byte(`{"code":0,"data":["notice.mp3","alarm.wav"]}`))
@@ -72,6 +78,7 @@ func TestClientExecutesCapturedTCPAndHTTPProtocols(t *testing.T) {
 	client := New(config.MultiFunctionConfig{
 		Enabled:           true,
 		DeviceID:          "broadcaster-001",
+		MediaServiceURL:   httpServer.URL,
 		Host:              "127.0.0.1",
 		ControlPort:       listenerPort(controlListener),
 		TiltPort:          listenerPort(tiltListener),
@@ -124,6 +131,24 @@ func TestClientExecutesCapturedTCPAndHTTPProtocols(t *testing.T) {
 	if !bytes.Contains(gotControl, wantControl) {
 		t.Fatalf("control writes mismatch:\n got=% X\nwant=% X", gotControl, wantControl)
 	}
+	if _, err := client.Execute(commandContext, "play_audio_file", map[string]any{
+		"fileName": "notice.mp3",
+		"loop":     true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	playback := mapValue(client.Snapshot()["audioPlayback"])
+	if !boolValue(playback["playing"], false) ||
+		stringParam(playback, "fileName") != "notice.mp3" ||
+		!boolValue(playback["loop"], false) {
+		t.Fatalf("unexpected playback state: %#v", playback)
+	}
+	if _, err := client.Execute(commandContext, "stop_audio_file", map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if boolValue(mapValue(client.Snapshot()["audioPlayback"])["playing"], true) {
+		t.Fatal("playback should be stopped")
+	}
 	select {
 	case got := <-tiltWrite:
 		if !bytes.Equal(got, []byte{0x8D, 0x96}) {
@@ -142,6 +167,25 @@ func TestClientExecutesCapturedTCPAndHTTPProtocols(t *testing.T) {
 	}
 	if err := client.DeleteAudioFile(commandContext, "notice.mp3"); err != nil {
 		t.Fatal(err)
+	}
+	transferBody := []byte("safe-transfer-audio")
+	if _, err := client.Execute(commandContext, "upload_audio_file", map[string]any{
+		"transferId": "mat-test-001",
+		"fileId":     "file-001",
+		"fileName":   "remote-notice.mp3",
+		"fileSize":   len(transferBody),
+		"orgId":      "org001",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deleteMu.Lock()
+	if uploadedFile != "remote-notice.mp3" || uploadedBody != string(transferBody) {
+		t.Fatalf("unexpected transferred file: name=%q body=%q", uploadedFile, uploadedBody)
+	}
+	deleteMu.Unlock()
+	transferState := mapValue(client.Snapshot()["audioTransfer"])
+	if stringParam(transferState, "status") != "COMPLETED" {
+		t.Fatalf("unexpected transfer state: %#v", transferState)
 	}
 	uploadPath := filepath.Join(t.TempDir(), "field-test.wav")
 	if err := os.WriteFile(uploadPath, []byte("safe-test-audio"), 0o600); err != nil {

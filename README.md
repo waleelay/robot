@@ -214,6 +214,10 @@ export CENTER_MANAGE_BASE_URL='http://localhost:8866'
 
 当前 Control 与 Media 已拆为同级独立服务。`control-service` 的 `MEDIA_SERVICE_BASE_URL` 必须指向 Media Service 内部 HTTP 地址，`CENTER_MANAGE_BASE_URL` 必须指向 Management Service 内部 HTTP 地址；都不要配置为 Nginx 的 `https://<lan-ip>:4443` 浏览器入口。
 
+多合一音频先通过通用文件接口保存到 MinIO，Control Service 再通过 MQTT 下发
+`fileId`、文件名和大小。机器人客户端使用 `MEDIA_SERVICE_URL` 从 Media Service
+下载完整文件，随后访问机器人局域网内的厂商 `/upload-file`。
+
 大屏 BFF 默认监听 `8090`，并通过内部地址访问 Control 与 Media；本地开发时不要让 BFF 再绕回 Nginx：
 
 ```bash

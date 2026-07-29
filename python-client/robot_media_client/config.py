@@ -51,6 +51,7 @@ class MultiFunctionConfig:
 
     enabled: bool
     device_id: str
+    media_service_url: str
     host: str
     control_port: int
     tilt_port: int
@@ -156,6 +157,7 @@ def load() -> Config:
         multi_function=MultiFunctionConfig(
             enabled=env_bool("MULTI_FUNCTION_ENABLED", False),
             device_id=env("MULTI_FUNCTION_DEVICE_ID", "broadcaster-001"),
+            media_service_url=env("MEDIA_SERVICE_URL", "http://192.168.124.234:8088"),
             host=env("MULTI_FUNCTION_HOST", "192.168.1.27"),
             control_port=env_int("MULTI_FUNCTION_CONTROL_PORT", 8519),
             tilt_port=env_int("MULTI_FUNCTION_TILT_PORT", 12345),
@@ -333,6 +335,7 @@ def devices(robot_id: str) -> list[Device]:
                 "play_tts",
                 "stop_tts",
                 "list_audio_files",
+                "upload_audio_file",
                 "play_audio_file",
                 "stop_audio_file",
                 "delete_audio_file",

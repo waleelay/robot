@@ -1,6 +1,7 @@
 import socket
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from robot_media_client.multifunction import (
     MultiFunctionClient,
@@ -73,6 +74,7 @@ class MultiFunctionProtocolTest(unittest.TestCase):
         client = MultiFunctionClient(SimpleNamespace(
             enabled=True,
             device_id="broadcaster-001",
+            media_service_url="http://media.example:8088",
             host="127.0.0.1",
             control_port=8519,
             tilt_port=12345,
@@ -100,6 +102,78 @@ class MultiFunctionProtocolTest(unittest.TestCase):
             bytes.fromhex("8D 01 07 02 79"),
         ])
         self.assertEqual(device_socket.recv(len(want)), want)
+        client.execute("play_audio_file", {"fileName": "notice.mp3", "loop": True})
+        self.assertEqual(device_socket.recv(len(b"[12]1notice.mp3")), b"[12]1notice.mp3")
+        self.assertEqual(client.snapshot()["audioPlayback"], {
+            "playing": True,
+            "fileName": "notice.mp3",
+            "loop": True,
+        })
+        client.execute("stop_audio_file", {})
+        self.assertEqual(device_socket.recv(len(b"[13]")), b"[13]")
+        self.assertFalse(client.snapshot()["audioPlayback"]["playing"])
+
+    def test_downloads_verifies_and_uploads_audio_file(self) -> None:
+        client = MultiFunctionClient(SimpleNamespace(
+            enabled=True,
+            device_id="broadcaster-001",
+            media_service_url="http://media.example:8088",
+            host="127.0.0.1",
+            control_port=8519,
+            tilt_port=12345,
+            http_port=8222,
+            dial_timeout=1,
+            write_timeout=1,
+            http_timeout=1,
+            keepalive_enabled=False,
+            keepalive_interval=2,
+        ))
+        content = b"safe-transfer-audio"
+        response = FakeDownloadResponse(content)
+        def fake_get(url, **kwargs):
+            response.request_url = url
+            response.request_headers = kwargs.get("headers", {})
+            return response
+
+        with patch("robot_media_client.multifunction.requests.get", side_effect=fake_get), \
+                patch.object(client, "upload_audio_file") as upload, \
+                patch.object(client, "list_audio_files", return_value=["notice.mp3"]):
+            client.execute("upload_audio_file", {
+                "transferId": "mat-test-001",
+                "fileId": "file-001",
+                "fileName": "notice.mp3",
+                "fileSize": len(content),
+                "orgId": "org001",
+            })
+        self.assertEqual(
+            response.request_url,
+            "http://media.example:8088/api/media/files/file-001/content",
+        )
+        self.assertEqual(response.request_headers["X-Org-Id"], "org001")
+        upload.assert_called_once()
+        self.assertEqual(upload.call_args.args[1], "notice.mp3")
+        self.assertEqual(client.snapshot()["audioTransfer"]["status"], "COMPLETED")
+        self.assertEqual(client.snapshot()["audioFiles"], ["notice.mp3"])
+
+
+class FakeDownloadResponse:
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+        self.request_url = ""
+        self.request_headers = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def iter_content(self, chunk_size: int):
+        del chunk_size
+        yield self.content
 
 
 if __name__ == "__main__":

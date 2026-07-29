@@ -5,6 +5,7 @@ import com.robot.control.call.IntercomCallService;
 import com.robot.control.dto.ControlStartVideoRequest;
 import com.robot.control.service.EquipmentControlService;
 import com.robot.control.service.ControlVideoCommandService;
+import com.robot.control.service.MultiFunctionAudioTransferService;
 import com.robot.control.dto.VideoSessionResponse;
 import com.robot.control.dto.IntercomResponse;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,6 +31,7 @@ public class ControlRobotController {
     private final EquipmentControlService equipmentControlService;
     private final CurrentUserResolver currentUserResolver;
     private final IntercomCallService intercomCallService;
+    private final MultiFunctionAudioTransferService multiFunctionAudioTransferService;
 
     /**
      * 创建 ControlRobotController 实例。
@@ -42,11 +44,13 @@ public class ControlRobotController {
             ControlVideoCommandService controlVideoCommandService,
             EquipmentControlService equipmentControlService,
             CurrentUserResolver currentUserResolver,
-            IntercomCallService intercomCallService) {
+            IntercomCallService intercomCallService,
+            MultiFunctionAudioTransferService multiFunctionAudioTransferService) {
         this.controlVideoCommandService = controlVideoCommandService;
         this.equipmentControlService = equipmentControlService;
         this.currentUserResolver = currentUserResolver;
         this.intercomCallService = intercomCallService;
+        this.multiFunctionAudioTransferService = multiFunctionAudioTransferService;
     }
 
     /**
@@ -154,6 +158,28 @@ public class ControlRobotController {
             @RequestBody Map<String, Object> request,
             HttpServletRequest servletRequest) {
         return equipmentControlService.publishCommand(robotId, request, currentUserResolver.resolve(servletRequest));
+    }
+
+    /**
+     * 将 Media Service 中已就绪的音频文件下发给目标机器人客户端。
+     *
+     * @param robotId 机器人 ID
+     * @param deviceId 多合一设备 ID
+     * @param request 包含 fileId 的请求参数
+     * @param servletRequest HTTP 请求
+     * @return 文件中转任务发布结果
+     */
+    @PostMapping("/{robotId}/devices/{deviceId}/audio-file-transfers")
+    public Map<String, Object> transferMultiFunctionAudioFile(
+            @PathVariable String robotId,
+            @PathVariable String deviceId,
+            @RequestBody Map<String, Object> request,
+            HttpServletRequest servletRequest) {
+        return multiFunctionAudioTransferService.transfer(
+                robotId,
+                deviceId,
+                request,
+                currentUserResolver.resolve(servletRequest));
     }
 
     /**

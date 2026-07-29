@@ -1,6 +1,10 @@
 spring:
   application:
     name: robot-control-service
+  servlet:
+    multipart:
+      max-file-size: ${CONTROL_FILE_UPLOAD_MAX_FILE_SIZE:20MB}
+      max-request-size: ${CONTROL_FILE_UPLOAD_MAX_REQUEST_SIZE:21MB}
 
 server:
   # Control Service HTTP 服务端口，优先使用 CONTROL_SERVER_PORT。

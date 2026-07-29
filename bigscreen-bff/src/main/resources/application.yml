@@ -27,3 +27,7 @@ bigscreen:
 spring:
   application:
     name: bigscreen-bff
+  servlet:
+    multipart:
+      max-file-size: ${BIGSCREEN_MULTIPART_MAX_FILE_SIZE:20MB}
+      max-request-size: ${BIGSCREEN_MULTIPART_MAX_REQUEST_SIZE:21MB}

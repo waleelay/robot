@@ -1158,6 +1158,74 @@ Content-Type: application/json
 | `set_speaker_tilt` | `positionPercent: integer` | 喊话器俯仰，平台范围 `0~100` |
 | `set_light_tilt` | `positionPercent: integer` | 照明灯俯仰，平台范围 `0~100` |
 
+#### 4.9.1 POST `/api/control/files`
+
+用途：复用通用文件上传接口，将多合一音频文件保存到 Media Service 和 MinIO。
+
+请求类型：`multipart/form-data`。
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+|---|---|---|---:|---|
+| `file` | form-data | file | 是 | `mp3` 或 `wav`，最大 `20MB` |
+| `fileType` | form-data | string | 是 | 固定为 `AUDIO` |
+| `robotId` | form-data | string | 是 | 已注册机器人序列号 |
+| `deviceId` | form-data | string | 是 | `MULTI_FUNCTION_BROADCASTER` 设备 ID |
+| `sourceFileId` | form-data | string | 否 | 前端生成的幂等来源标识 |
+| `metadata` | form-data | JSON string | 否 | 建议标记 `purpose=MULTI_FUNCTION_AUDIO` |
+
+成功响应至少包含：
+
+```json
+{
+  "fileId": "file_01",
+  "robotId": "test111",
+  "deviceId": "broadcaster-001",
+  "fileType": "AUDIO",
+  "fileName": "notice.mp3",
+  "fileSize": 160245,
+  "status": "READY"
+}
+```
+
+#### 4.9.2 POST `/api/control/robots/{robotId}/devices/{deviceId}/audio-file-transfers`
+
+用途：将已保存且状态为 `READY` 的通用音频文件下发给指定机器人客户端。
+
+请求：
+
+```json
+{
+  "fileId": "file_01"
+}
+```
+
+Control Service 校验文件类型、状态、大小以及 `robotId/deviceId` 归属后发布
+`upload_audio_file`。文件内容不经过 MQTT，也不保存在 Control Service。
+
+```json
+{
+  "robotId": "test111",
+  "commandId": "cmd_01",
+  "target": {
+    "deviceId": "broadcaster-001",
+    "deviceType": "MULTI_FUNCTION_BROADCASTER"
+  },
+  "action": "upload_audio_file",
+  "params": {
+    "transferId": "mat_01",
+    "fileId": "file_01",
+    "fileName": "notice.mp3",
+    "fileSize": 160245,
+    "orgId": "org001"
+  },
+  "issuedAt": "2026-07-29T20:50:00+08:00"
+}
+```
+
+Go/Python 客户端使用 `MEDIA_SERVICE_URL` 请求
+`GET /api/media/files/{fileId}/content`，校验实际下载大小后调用机器人局域网内
+`POST /upload-file`。最终设备文件列表以 `devices[].status.audioFiles` 为准。
+
 实时喊话和收音除上述控制命令外，还复用现有对讲媒体接口：
 
 1. 大屏首次启动任一方向时调用

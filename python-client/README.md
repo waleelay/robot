@@ -236,7 +236,11 @@ docker run --rm \
 - 车灯：`front`、`rear`
 - 多合一设备：`volumePercent`、`audioSession.broadcastActive`、`audioSession.monitorActive`、`audioSession.monitorSuppressed`
 
-多合一逻辑订阅统一 `control/#`，并把 `MULTI_FUNCTION_BROADCASTER` action 转为 TCP `8519/12345` 或 HTTP `8222` 真实调用。设备连接、音量、温度和文件列表按真实结果上报；照明、警报和文件播放没有查询接口时不写入设备真实状态。
+多合一逻辑订阅统一 `control/#`，并把 `MULTI_FUNCTION_BROADCASTER` action 转为 TCP `8519/12345` 或 HTTP `8222` 真实调用。设备连接、音量、温度和文件列表按真实结果上报；`audioPlayback` 记录客户端已成功写入的播放命令和文件名，不等同于设备查询状态；照明和警报不写入设备真实状态。
+
+`upload_audio_file` 由后台线程根据 `fileId` 和 `MEDIA_SERVICE_URL` 从 Media Service
+下载文件，校验 `fileSize` 后以原文件名调用机器人局域网内 `POST /upload-file`。
+MQTT 只传文件元数据，不传文件内容或分片。
 
 多合一实时喊话和收音复用平台现有 LiveKit 对讲会话。目标 `deviceId` 等于
 `MULTI_FUNCTION_DEVICE_ID` 时，Python 客户端不使用本机默认声卡，而是执行：

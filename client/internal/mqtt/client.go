@@ -320,9 +320,16 @@ func (c *Client) handleControlCommand(ctx context.Context) paho.MessageHandler {
 		}
 		pretty, _ := json.MarshalIndent(command, "", "  ")
 		log.Println("equipment control command received topic=", msg.Topic(), "payload=", string(pretty))
-		if c.applyControlCommand(ctx, command) {
-			c.online("online")
+		apply := func() {
+			if c.applyControlCommand(ctx, command) {
+				c.online("online")
+			}
 		}
+		if command.Action == "upload_audio_file" {
+			go apply()
+			return
+		}
+		apply()
 	}
 }
 
@@ -400,6 +407,9 @@ func (c *Client) applyMultiFunctionCommand(ctx context.Context, command model.Co
 	timeout := c.cfg.MultiFunction.DialTimeout + c.cfg.MultiFunction.WriteTimeout + c.cfg.MultiFunction.HTTPTimeout
 	if timeout < 5*time.Second {
 		timeout = 5 * time.Second
+	}
+	if command.Action == "upload_audio_file" && timeout < 5*time.Minute {
+		timeout = 5 * time.Minute
 	}
 	commandContext, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

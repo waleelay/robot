@@ -311,6 +311,50 @@ public class EquipmentControlService {
     }
 
     /**
+     * 发布多合一设备音频文件中转命令。
+     *
+     * <p>该命令只能由平台上传接口构造，不能由普通控制参数透传。</p>
+     *
+     * @param robotId 机器人 ID
+     * @param deviceId 多合一设备 ID
+     * @param params 已校验的下载元数据
+     * @return 命令发布结果
+     */
+    public Map<String, Object> publishMultiFunctionAudioTransfer(
+            String robotId,
+            String deviceId,
+            Map<String, Object> params) {
+        requireRobot(robotId);
+        Map<String, Object> device = requireDevice(robotId, deviceId);
+        String deviceType = stringValue(device.get("deviceType"), "");
+        if (!"MULTI_FUNCTION_BROADCASTER".equals(deviceType)) {
+            throw new IllegalArgumentException("目标设备不是已注册的多合一设备");
+        }
+        Map<String, Object> transferParams = audioTransferParams(params);
+        OffsetDateTime now = OffsetDateTime.now();
+        String commandId = "cmd_" + compactUuid();
+        Map<String, Object> mqttPayload = object(
+                "robotId", robotId,
+                "commandId", commandId,
+                "target", object(
+                        "deviceId", deviceId,
+                        "deviceType", deviceType),
+                "action", "upload_audio_file",
+                "params", transferParams,
+                "issuedAt", now);
+        commandPublisher.publishCommand(robotId, mqttPayload);
+        Map<String, Object> response = object(
+                "commandId", commandId,
+                "status", "PUBLISHED",
+                "robotId", robotId,
+                "target", mqttPayload.get("target"),
+                "action", mqttPayload.get("action"),
+                "issuedAt", now);
+        webSocketPublisher.publish("control.command.published", response);
+        return response;
+    }
+
+    /**
      * 处理机器人客户端状态载荷。
      *
      * @param payload 消息载荷
@@ -543,6 +587,23 @@ public class EquipmentControlService {
             throw new IllegalArgumentException("light.set 至少需要一个控制参数");
         }
         return result;
+    }
+
+    private Map<String, Object> audioTransferParams(Map<String, Object> params) {
+        String transferId = requiredString(params, "transferId");
+        String fileId = requiredString(params, "fileId");
+        String fileName = safeAudioFileName(params);
+        String orgId = requiredString(params, "orgId");
+        long fileSize = numberValue(params.get("fileSize"), 0).longValue();
+        if (fileSize <= 0 || fileSize > 20L * 1024 * 1024) {
+            throw new IllegalArgumentException("fileSize 必须大于 0 且不超过 20MB");
+        }
+        return object(
+                "transferId", transferId,
+                "fileId", fileId,
+                "fileName", fileName,
+                "fileSize", fileSize,
+                "orgId", orgId);
     }
 
     private static String safeAudioFileName(Map<String, Object> params) {
@@ -1022,6 +1083,7 @@ public class EquipmentControlService {
             case "PLAY_TTS" -> "play_tts";
             case "STOP_TTS" -> "stop_tts";
             case "LIST_AUDIO_FILES" -> "list_audio_files";
+            case "UPLOAD_AUDIO_FILE" -> "upload_audio_file";
             case "PLAY_AUDIO_FILE" -> "play_audio_file";
             case "STOP_AUDIO_FILE" -> "stop_audio_file";
             case "DELETE_AUDIO_FILE" -> "delete_audio_file";

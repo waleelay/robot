@@ -259,7 +259,11 @@ main
 
 当前客户端会回写的设备状态包括：扬声器音量/静音 `volume`、`volumePercent`、`muted`，发射器连接状态 `connected`、安全开关 `safetySwitchEnabled`、弹筒数量 `tubeCount`、弹筒状态 `tubes[]`，控制模式 `controlMode`，警示灯 `enabled`，云台自转 `autoRotateEnabled`、`panSpeed`，车灯 `front`、`rear`，以及多合一设备音量和 `audioSession`。模拟客户端收到 `LAUNCHER/fire` 后会把对应弹筒从 `LOADED` 改为 `EMPTY` 并通过下一次 `media/client/status` 回写；真实客户端应以设备查询结果为准。车灯命令以平台通用 `params.front/rear.mode/brightness` 为准；客户端兼容旧 ROS 结构 `params.msg.front_mode/rear_mode`，但最终统一回写为 `devices[].status.front/rear.mode/brightness`；`control.mode.set` 会更新在线心跳中的 `controlMode`。
 
-多合一客户端消费 `robot/{robotId}/control/multi-function/command`，并调用 TCP `8519/12345`、HTTP `8222`。设备主动上报的音量和温度、HTTP 查询的文件列表以及客户端媒体会话状态会写入统一状态；没有查询接口的照明、警报和文件播放不伪装为设备真实状态。
+多合一客户端消费 `robot/{robotId}/control/multi-function/command`，并调用 TCP `8519/12345`、HTTP `8222`。设备主动上报的音量和温度、HTTP 查询的文件列表以及客户端媒体会话状态会写入统一状态；`audioPlayback` 记录客户端已成功写入的播放命令和文件名，不等同于设备查询状态；照明和警报不伪装为设备真实状态。
+
+`upload_audio_file` 携带 `fileId`、`fileName`、`fileSize`、`orgId` 和 `transferId`。
+客户端通过 `MEDIA_SERVICE_URL` 请求 Media Service `8088` 下载完整文件并校验大小，
+再以原文件名调用设备 `POST /upload-file`；完成后重新查询文件列表。MQTT 不承载文件内容或分片。
 
 现场先在能访问设备网段的工控机运行只读测试：
 

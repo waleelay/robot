@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import math
 import socket
+import tempfile
 import threading
 import time
 from pathlib import Path
 from typing import Callable
+from urllib.parse import quote, urlparse
 
 import requests
 
@@ -24,6 +26,7 @@ class MultiFunctionClient:
         self.connected = threading.Event()
         self.connection_lock = threading.RLock()
         self.write_lock = threading.Lock()
+        self.transfer_lock = threading.Lock()
         self.state_lock = threading.RLock()
         self.connection: socket.socket | None = None
         self.state: dict[str, object] = {
@@ -118,12 +121,25 @@ class MultiFunctionClient:
                     "audioFiles": self.list_audio_files(),
                     "audioFilesUpdatedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 })
+            elif action == "upload_audio_file":
+                self.download_and_upload_audio_file(params)
             elif action == "play_audio_file":
                 file_name = validate_file_name(str(params.get("fileName") or ""))
-                loop_flag = "1" if bool(params.get("loop", False)) else "0"
+                loop = bool(params.get("loop", False))
+                loop_flag = "1" if loop else "0"
                 self._send_control(("[12]" + loop_flag + file_name).encode())
+                self._update_state({"audioPlayback": {
+                    "playing": True,
+                    "fileName": file_name,
+                    "loop": loop,
+                }})
             elif action == "stop_audio_file":
                 self._send_control(b"[13]")
+                self._update_state({"audioPlayback": {
+                    "playing": False,
+                    "fileName": "",
+                    "loop": False,
+                }})
             elif action == "delete_audio_file":
                 self.delete_audio_file(str(params.get("fileName") or ""))
                 self._update_state({
@@ -182,17 +198,107 @@ class MultiFunctionClient:
         response.raise_for_status()
         ensure_optional_device_http_success(response)
 
-    def upload_audio_file(self, path: str) -> None:
+    def upload_audio_file(self, path: str, file_name: str | None = None) -> None:
         """将音频文件上传到设备 HTTP 服务。"""
         source = Path(path)
+        upload_name = validate_file_name(file_name or source.name)
         with source.open("rb") as stream:
             response = requests.post(
                 self._http_url("/upload-file"),
-                files={"file": (source.name, stream)},
-                timeout=self.cfg.http_timeout,
+                files={"file": (upload_name, stream)},
+                timeout=max(self.cfg.http_timeout, 120),
             )
         response.raise_for_status()
         ensure_optional_device_http_success(response)
+
+    def download_and_upload_audio_file(self, params: dict[str, object]) -> None:
+        """从 Media Service 下载文件并上传到机器人局域网设备。"""
+        with self.transfer_lock:
+            transfer_id = str(params.get("transferId") or "").strip()
+            file_id = str(params.get("fileId") or "").strip()
+            file_name = validate_file_name(str(params.get("fileName") or ""))
+            org_id = str(params.get("orgId") or "").strip()
+            file_size = strict_int(params.get("fileSize"), "fileSize")
+            media_service_url = str(self.cfg.media_service_url or "").strip().rstrip("/")
+            parsed_url = urlparse(media_service_url)
+            if not transfer_id or not file_id or not org_id:
+                raise ValueError("transferId, fileId and orgId are required")
+            if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+                raise ValueError("MEDIA_SERVICE_URL must be an absolute http/https URL")
+            if file_size <= 0 or file_size > 20 * 1024 * 1024:
+                raise ValueError("fileSize must be between 1 and 20971520")
+            previous = self.snapshot().get("audioTransfer")
+            if isinstance(previous, dict) \
+                    and previous.get("transferId") == transfer_id \
+                    and previous.get("status") == "COMPLETED":
+                return
+
+            self._update_audio_transfer(transfer_id, file_name, "DOWNLOADING")
+            temp_path = ""
+            try:
+                actual_size = 0
+                download_url = (
+                    f"{media_service_url}/api/media/files/{quote(file_id, safe='')}/content"
+                )
+                with requests.get(
+                    download_url,
+                    stream=True,
+                    timeout=max(self.cfg.http_timeout, 120),
+                    headers={
+                        "X-User-Id": "robot-client",
+                        "X-Org-Id": org_id,
+                        "X-Client-Id": "robot-media-client",
+                        "X-Roles": "MEDIA_VIEWER",
+                    },
+                ) as response:
+                    response.raise_for_status()
+                    with tempfile.NamedTemporaryFile(
+                        prefix="multi-function-audio-",
+                        suffix=Path(file_name).suffix,
+                        delete=False,
+                    ) as output:
+                        temp_path = output.name
+                        for chunk in response.iter_content(chunk_size=64 * 1024):
+                            if not chunk:
+                                continue
+                            actual_size += len(chunk)
+                            if actual_size > file_size:
+                                raise ValueError("audio download is larger than fileSize")
+                            output.write(chunk)
+                if actual_size != file_size:
+                    raise ValueError(
+                        f"audio download size mismatch expected={file_size} actual={actual_size}"
+                    )
+                self._update_audio_transfer(transfer_id, file_name, "UPLOADING")
+                self.upload_audio_file(temp_path, file_name)
+                self._update_state({
+                    "audioFiles": self.list_audio_files(),
+                    "audioFilesUpdatedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                })
+                self._update_audio_transfer(transfer_id, file_name, "COMPLETED")
+            except Exception as exc:
+                self._update_audio_transfer(transfer_id, file_name, "FAILED", str(exc))
+                raise
+            finally:
+                if temp_path:
+                    Path(temp_path).unlink(missing_ok=True)
+
+    def _update_audio_transfer(
+        self,
+        transfer_id: str,
+        file_name: str,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        transfer: dict[str, object] = {
+            "transferId": transfer_id,
+            "fileName": file_name,
+            "status": status,
+            "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        }
+        if error:
+            transfer["error"] = error
+        self._update_state({"audioTransfer": transfer})
 
     def _connection_loop(self) -> None:
         backoff = 1.0
@@ -237,7 +343,14 @@ class MultiFunctionClient:
         elif kind == "tts_finished":
             self._update_state({"lastTtsCompletedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
         elif kind == "audio_finished":
-            self._update_state({"lastAudioFinishedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
+            self._update_state({
+                "lastAudioFinishedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "audioPlayback": {
+                    "playing": False,
+                    "fileName": "",
+                    "loop": False,
+                },
+            })
         elif kind == "monitor_opus":
             with self.state_lock:
                 handler = self.monitor_handler
