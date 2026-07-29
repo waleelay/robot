@@ -545,6 +545,13 @@ export default {
     previewSource: {
       immediate: true,
       handler({ id, cacheKey, hasPreview }, oldVal) {
+        // 父组件常因心跳展开新 map 对象；id/cacheKey/hasPreview 未变时跳过，避免周期性 loadMap 闪屏
+        const samePreview = !!(oldVal
+          && String(oldVal.id) === String(id)
+          && String(oldVal.cacheKey ?? '') === String(cacheKey ?? '')
+          && !!oldVal.hasPreview === !!hasPreview)
+        if (samePreview) return
+
         const switched = !!(oldVal && String(oldVal.id) !== String(id))
         // 切换 SLAM 地图：清空路径/画线/打点，并先对齐缩放，避免旧 zoom + 新尺寸造成压缩闪现
         if (switched) {

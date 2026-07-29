@@ -191,10 +191,20 @@ export default {
       return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(id)) || null
     },
     slamMapPayload() {
-      if (!this.currentSlamMap) return null
+      if (!this.currentSlamMap) {
+        this._slamMapPayloadCache = null
+        return null
+      }
       const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
       const points = group?.points?.length ? group.points : (this.currentSlamMap.points || [])
-      return { ...this.currentSlamMap, points }
+      const cache = this._slamMapPayloadCache
+      // robotBaseInfo 心跳会使本 computed 重算；map/points 未变时复用对象，避免 GlobalSlamMap 误判换图
+      if (cache && cache.mapRef === this.currentSlamMap && cache.points === points) {
+        return cache.payload
+      }
+      const payload = { ...this.currentSlamMap, points }
+      this._slamMapPayloadCache = { mapRef: this.currentSlamMap, points, payload }
+      return payload
     }
   },
   data() {
