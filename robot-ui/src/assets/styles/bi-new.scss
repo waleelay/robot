@@ -1037,6 +1037,37 @@
     }
   }
 }
+.custom-select.el-popper.modal-search-select-popper {
+  border-radius: none;
+  background: #0E1A2F;
+  border: 1px solid #485A7C;
+  backdrop-filter: blur(2.5px);
+  .el-select-dropdown__list {
+    padding: 0;
+    .el-select-dropdown__item {
+      height: 24px;
+      padding: 0 10px;
+      color: #84E0FF;
+      font-size: 12px;
+      line-height: 24px;
+      text-align: center;
+      &:focus, &:not(.is-disabled):hover, &.hover {
+        background-color: transparent;
+      }
+      &.selected {
+        background-color: #002B56 !important;
+      }
+      & + .el-select-dropdown__item {
+        margin-top: 0;
+      }
+    }
+  }
+  .popper__arrow {
+    &, &::after {
+      border-bottom-color: #485A7C;
+    }
+  }
+}
 // 下拉菜单
 .el-dropdown-menu.custom-dropdown-menu {
   padding: 0;

@@ -21,13 +21,13 @@
     </div>
     <div class="operation">
       <div
-        v-for="(item, index) in operList2"
+        v-for="(item, index) in displayOperList2"
         :key="item.key"
         @click="handleClickTool(item)"
         class="operation-item flx-center flex-column"
         :class="{
-          'is-active': item.key === 'path' ? pathActive : selectedOper2 === item.key,
-          'is-disabled': item.key === 'path' && !pathOperable
+          'is-active': (item.key === 'point' || item.key === 'path') ? pathActive : selectedOper2 === item.key,
+          'is-disabled': item.key === 'point' && !pathOperable
         }"
       >
         <template v-if="index === 10">
@@ -113,9 +113,15 @@ export default {
       operList2: [
         {
           icon: 'map-path',
-          name: '点位',
+          name: '路径',
           key: 'path',
           action: 'showPath'
+        },
+        {
+          icon: 'map-point',
+          name: '点位',
+          key: 'point',
+          action: 'showPoint'
         },
         {
           icon: 'map-angle',
@@ -185,6 +191,15 @@ export default {
         || this.slamList.find(item => String(item.id) === String(id))
         || null
     },
+    // GIS 显示「路径」，SLAM 显示「点位」；视角仅 GIS 展示
+    displayOperList2() {
+      return this.operList2.filter(item => {
+        if (item.key === 'angle' && !this.showAngle) return false
+        if (item.key === 'path') return !this.isSlam
+        if (item.key === 'point') return this.isSlam
+        return true
+      })
+    },
     // SLAM 下「点位」是否可操作：仅看当前地图是否存在点位信息
     pathOperable() {
       if (!this.isSlam) return false
@@ -196,7 +211,6 @@ export default {
     }
   },
   mounted() {
-    this.operList2 = this.operList2.filter(item => this.showAngle || (!this.showAngle && item.key !== 'angle'))
     document.addEventListener('click', this.handleDocumentClick, true)
     this.syncGlobalMapId()
   },
@@ -251,7 +265,7 @@ export default {
       this.$emit('changeMapType')
     },
     handleClickTool(item) {
-      if (item.key === 'path' && !this.pathOperable) return
+      if (item.key === 'point' && !this.pathOperable) return
       this[item.action](item.key);
     },
     handleSearch() {
@@ -264,7 +278,13 @@ export default {
       this.setMapSearchValue(this.searchValue)
     },
     changeLayer() {},
+    // GIS 地图：切换内置路径点（与 Robot1「显示路径」相同）
     showPath() {
+      this.pathActive = !this.pathActive
+      this.$emit('togglePath', this.pathActive)
+    },
+    // SLAM 地图：切换点位显示
+    showPoint() {
       if (!this.pathOperable) {
         this.pathActive = false
         this.$emit('togglePath', false)
@@ -301,7 +321,7 @@ export default {
     isSlam(newVal) {
       this.currentType = newVal ? 'slam' : 'gis'
       this.selectType = newVal ? 'slam' : 'gis'
-      if (!newVal) this.resetPathActive()
+      this.resetPathActive()
       this.syncGlobalMapId()
     },
     currentSlam() {

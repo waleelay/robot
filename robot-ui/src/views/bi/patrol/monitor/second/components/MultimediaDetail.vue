@@ -78,8 +78,20 @@
             <div class="mt10">
               <div class="filter-panel">
                 <div class="combined-filter flx-align-center">
-                  <div class="search-part flex1">
+                  <div class="type-part">
+                    <el-select
+                      v-model="searchType"
+                      placeholder="条件"
+                      @change="handleSearchTypeChange"
+                      popper-class="custom-select modal-search-select-popper p9"
+                    >
+                      <el-option label="关键字" value="keyword" />
+                      <el-option label="日期" value="date" />
+                    </el-select>
+                  </div>
+                  <div class="value-part flex1">
                     <el-input
+                      v-if="searchType === 'keyword'"
                       :placeholder="selectedRobotId ? '相机/位置' : '装备/相机/位置'"
                       v-model="searchValue"
                       clearable
@@ -88,33 +100,19 @@
                     >
                       <svg-icon slot="prefix" icon-class="search"></svg-icon>
                     </el-input>
-                  </div>
-                  <div
-                    class="date-part"
-                    :class="{ 'is-active': hasDateRange }"
-                    :title="dateRangeLabel"
-                  >
-                    <div class="date-trigger">
-                      <span class="date-text text-ellipsis">{{ hasDateRange ? dateRangeShortLabel : '时间' }}</span>
-                      <el-date-picker
-                        v-model="dateValue"
-                        type="daterange"
-                        range-separator="至"
-                        start-placeholder="开始日期"
-                        end-placeholder="结束日期"
-                        format="yyyy-M-d"
-                        value-format="yyyy-M-d"
-                        :clearable="false"
-                        :picker-options="pickerOptions"
-                        @click.native.stop
-                        @change="handleDateChange"
-                      />
-                    </div>
-                    <i
-                      v-if="hasDateRange"
-                      class="el-icon-circle-close clear-date"
-                      @click.stop="clearDate"
-                    ></i>
+                    <el-date-picker
+                      v-else
+                      v-model="dateValue"
+                      type="daterange"
+                      range-separator="至"
+                      start-placeholder="开始日期"
+                      end-placeholder="结束日期"
+                      format="yyyy-M-d"
+                      value-format="yyyy-M-d"
+                      clearable
+                      :picker-options="pickerOptions"
+                      @change="handleDateChange"
+                    />
                   </div>
                 </div>
               </div>
@@ -192,6 +190,7 @@ export default {
     return {
       dialogVisible: false,
       details: {},
+      searchType: 'keyword',
       searchValue: '',
       dateValue: [],
       outerTabIndex: 0,
@@ -243,33 +242,19 @@ export default {
     hasDateRange() {
       return Array.isArray(this.dateValue) && this.dateValue.length === 2
     },
-    dateRangeLabel() {
-      if (this.hasDateRange) {
-        return `${this.dateValue[0]} 至 ${this.dateValue[1]}`
-      }
-      return '时间段'
-    },
-    dateRangeShortLabel() {
-      if (!this.hasDateRange) return '时间'
-      const fmt = (v) => {
-        const parts = String(v || '').split('-')
-        if (parts.length < 3) return v
-        return `${parts[1]}.${parts[2]}`
-      }
-      return `${fmt(this.dateValue[0])}-${fmt(this.dateValue[1])}`
-    },
     filteredList() {
       const keyword = (this.searchValue || '').trim()
       let startTs = null
       let endTs = null
-      if (this.hasDateRange) {
+      if (this.searchType === 'date' && this.hasDateRange) {
         startTs = new Date(`${this.dateValue[0]} 00:00:00`).getTime()
         endTs = new Date(`${this.dateValue[1]} 23:59:59`).getTime()
       }
       return this.listData.filter(item => {
-        if (startTs != null && endTs != null) {
+        if (this.searchType === 'date') {
+          if (startTs == null || endTs == null) return true
           const t = new Date(item.uploadedAt || item.createdAt).getTime()
-          if (Number.isNaN(t) || t < startTs || t > endTs) return false
+          return !Number.isNaN(t) && t >= startTs && t <= endTs
         }
         if (!keyword) return true
         const title = this.getListTitle(item)
@@ -289,6 +274,7 @@ export default {
   methods: {
     async open({ item, tabIndex = 0, list = [], simple = false } = {}) {
       this.dialogVisible = true
+      this.searchType = 'keyword'
       this.searchValue = ''
       this.dateValue = []
       this.simpleMode = !!simple
@@ -318,6 +304,12 @@ export default {
         this.$nextTick(() => this.bindListThumbs())
       }
     },
+    handleSearchTypeChange() {
+      this.handleFilter()
+      if (!this.isImage) {
+        this.$nextTick(() => this.bindListThumbs())
+      }
+    },
     handleDateChange(val) {
       if (!val || (Array.isArray(val) && (val.length === 2 || val.length === 0))) {
         this.handleFilter()
@@ -325,10 +317,6 @@ export default {
           this.$nextTick(() => this.bindListThumbs())
         }
       }
-    },
-    clearDate() {
-      this.dateValue = []
-      this.handleDateChange([])
     },
     normalizeItem(item = {}) {
       const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
@@ -530,6 +518,7 @@ export default {
       this.details = {}
       this.listData = []
       this.selectedId = ''
+      this.searchType = 'keyword'
       this.searchValue = ''
       this.dateValue = []
       this.outerTabIndex = 0
@@ -592,76 +581,93 @@ export default {
       border: 1px solid #374E69;
       background: #111B2A;
       overflow: hidden;
-      .search-part {
-        min-width: 0;
-        ::v-deep .el-input {
-          .el-input__prefix {
-            left: 8px;
-            line-height: 28px;
-          }
-          .el-input__inner {
-            height: 28px;
-            padding: 0 24px 0 30px;
-            border: none;
-            border-radius: 0;
-            background: transparent;
-            font-weight: 600;
-            color: #fff;
-            &::placeholder {
-              color: #8897AB;
-              font-size: 12px;
-            }
-          }
-          .el-input__suffix {
-            right: 2px;
-          }
-        }
-      }
-      .date-part {
-        position: relative;
-        flex-shrink: 0;
-        display: flex;
-        align-items: center;
-        max-width: 110px;
-        min-width: 52px;
-        height: 100%;
-        padding: 0 6px 0 8px;
-        border-left: 1px solid #374E69;
-        .date-trigger {
-          position: relative;
-          flex: 1;
-          min-width: 0;
-          height: 100%;
-          cursor: pointer;
-        }
-        .date-text {
-          color: #8897AB;
-          font-size: 12px;
-          line-height: 28px;
-          max-width: 72px;
-        }
-        &.is-active .date-text {
-          color: #4AB8FF;
-        }
-        .clear-date {
-          margin-left: 2px;
-          color: #8897AB;
-          font-size: 12px;
-          cursor: pointer;
-          z-index: 2;
-          &:hover { color: #4AB8FF; }
-        }
-        .el-date-editor {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
+    .type-part {
+      flex-shrink: 0;
+      width: 90px;
+      height: 100%;
+      border-right: 1px solid #374E69;
+      ::v-deep .el-select {
+        width: 100%;
+        .el-input__inner {
+          height: 30px;
+          line-height: 30px;
+          padding: 0 36px 0 10px;
+          border: none;
+          border-radius: 0;
           background: transparent;
-          opacity: 0;
-          cursor: pointer;
+          font-size: 14px;
+          color: #8897AB;
+        }
+        .el-input__suffix {
+          right: 10px;
+          .el-select__caret {
+            color: #8897AB;
+            font-size: 16px;
+          }
+        }
+        .el-input__icon {
+          line-height: 30px;
         }
       }
+    }
+    .value-part {
+      min-width: 0;
+      height: 100%;
+      ::v-deep .el-input {
+        .el-input__prefix {
+          left: 8px;
+          color: #8897AB;
+          line-height: 30px;
+        }
+        .el-input__inner {
+          height: 30px;
+          padding: 0 24px 0 30px;
+          border: none;
+          border-radius: 0;
+          background: transparent;
+          color: #fff;
+          &::placeholder {
+            color: #8897AB;
+            font-size: 14px;
+          }
+        }
+        .el-input__suffix {
+          right: 2px;
+          color: #8897AB;
+        }
+        .el-input__icon {
+          line-height: 30px;
+        }
+      }
+      ::v-deep .el-date-editor {
+        width: 100%;
+        height: 30px;
+        padding: 0 8px;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        .el-range-input {
+          background: transparent;
+          color: #fff;
+          font-size: 14px;
+          &::placeholder {
+            color: #8897AB;
+          }
+        }
+        .el-range-separator {
+          color: #8897AB;
+          line-height: 30px;
+          width: 16px;
+          padding: 0;
+        }
+        .el-range__icon,
+        .el-range__close-icon {
+          line-height: 30px;
+          color: #8897AB;
+        }
+      }
+    }
     }
   }
   .list-box {

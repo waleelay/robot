@@ -21,7 +21,12 @@
       />
     </div>
     <template v-else>
-      <GlobalGisMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
+      <GlobalGisMap
+        v-if="angle === '2D'"
+        style="z-index: 0;"
+        ref="globalMapRef"
+        @pathVisibleChange="onPathVisibleChange"
+      />
       <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
     </template>
     <MapTool
@@ -141,6 +146,12 @@ export default {
     },
     togglePath(visible) {
       this.$refs.globalMapRef?.togglePath?.(visible)
+    },
+    // Robot1 / 地图内部关闭路径时，同步 MapTool 激活态
+    onPathVisibleChange(visible) {
+      const tool = this.$refs.mapToolRef
+      if (!tool || tool.pathActive === !!visible) return
+      tool.pathActive = !!visible
     },
     setCenter() {
       const mapRef = this.$refs.globalMapRef

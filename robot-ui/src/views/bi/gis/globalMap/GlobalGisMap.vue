@@ -856,13 +856,20 @@ export default {
       return { popup, popupInstance };
     },
     showPathArea(flag) {
-      if (flag) {
-        this.redrawPolyline()
-      } else {
-        if (this.pathLayers.getLayers().length) {
-          this.pathLayers.clearLayers()
-        }
+      if (!this.pathLayers) return
+      const visible = !!flag
+      if (this.pathLayers.getLayers().length) {
+        this.pathLayers.clearLayers()
       }
+      // GIS 内置路径点（WAY_POINTS）：与 Robot1「显示路径」同一套绘制
+      if (visible) {
+        this.redrawPolyline()
+      }
+      this.showPath = visible
+      if (this.$refs.robot1Ref) {
+        this.$refs.robot1Ref.pathVisible = visible
+      }
+      this.$emit('pathVisibleChange', visible)
     },
     // 区域图层
     showDashedArea(flag) {
@@ -961,11 +968,10 @@ export default {
     },
     // 绘制折线 (基于 waypoints 顺序连线)
     redrawPolyline() {
-      if (!this.map) return;
-      // 移除旧折线
+      if (!this.map || !this.pathLayers) return;
+      // 先清空再绘制，避免“已有图层则清空返回”导致无法稳定显示
       if (this.pathLayers.getLayers().length) {
         this.pathLayers.clearLayers();
-        return
       }
       const pointsCount = this.waypoints.length;
       if (pointsCount < 2) {
@@ -1183,15 +1189,10 @@ export default {
       
       this.updatePopups();
     },
-    // 切换轨迹显示隐藏
-    togglePath() {
-      this.showPath = !this.showPath;
-      if (this.showPath) {
-        // 默认第一个
-        this.dogList[0].movementPath.addTo(this.map);
-      } else {
-        this.map.removeLayer(this.dogList[0].movementPath);
-      }
+    // MapTool「路径」与 Robot1「显示路径」共用：展示内置 WAY_POINTS
+    togglePath(visible) {
+      const next = typeof visible === 'boolean' ? visible : !this.showPath
+      this.showPathArea(next)
     },
     toggleSetPointB() {
       this.settingPointB = !this.settingPointB;

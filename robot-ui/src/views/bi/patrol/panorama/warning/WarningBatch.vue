@@ -111,8 +111,20 @@
             <div class="mt10">
               <div class="filter-panel">
                 <div class="combined-filter flx-align-center">
-                  <div class="search-part flex1">
+                  <div class="type-part">
+                    <el-select
+                      v-model="searchType"
+                      placeholder="条件"
+                      popper-class="custom-select modal-search-select-popper p9"
+                      @change="handleSearchTypeChange"
+                    >
+                      <el-option label="关键字" value="keyword" />
+                      <el-option label="日期" value="date" />
+                    </el-select>
+                  </div>
+                  <div class="value-part flex1">
                     <el-input
+                      v-if="searchType === 'keyword'"
                       placeholder="请输入告警内容/类型/位置"
                       v-model="searchValue"
                       clearable
@@ -121,33 +133,19 @@
                     >
                       <svg-icon slot="prefix" icon-class="search"></svg-icon>
                     </el-input>
-                  </div>
-                  <div
-                    class="date-part"
-                    :class="{ 'is-active': hasDateRange }"
-                    :title="dateRangeLabel"
-                  >
-                    <div class="date-trigger">
-                      <span class="date-text text-ellipsis">{{ hasDateRange ? dateRangeShortLabel : '时间' }}</span>
-                      <el-date-picker
-                        v-model="dateValue"
-                        type="daterange"
-                        range-separator="至"
-                        start-placeholder="开始日期"
-                        end-placeholder="结束日期"
-                        format="yyyy-M-d"
-                        value-format="yyyy-M-d"
-                        :clearable="false"
-                        :picker-options="pickerOptions"
-                        @click.native.stop
-                        @change="handleDateChange"
-                      />
-                    </div>
-                    <i
-                      v-if="hasDateRange"
-                      class="el-icon-circle-close clear-date"
-                      @click.stop="clearDate"
-                    ></i>
+                    <el-date-picker
+                      v-else
+                      v-model="dateValue"
+                      type="daterange"
+                      range-separator="至"
+                      start-placeholder="开始日期"
+                      end-placeholder="结束日期"
+                      format="yyyy-M-d"
+                      value-format="yyyy-M-d"
+                      clearable
+                      :picker-options="pickerOptions"
+                      @change="handleDateChange"
+                    />
                   </div>
                 </div>
               </div>
@@ -217,6 +215,7 @@ export default {
       selectedValue: '',
       options: [],
       loading: false,
+      searchType: 'keyword',
       searchValue: '',
       dateValue: [],
       pickerOptions: {
@@ -309,21 +308,6 @@ export default {
     ...mapState('websocketExtraData', ['alarmsData']),
     hasDateRange() {
       return Array.isArray(this.dateValue) && this.dateValue.length === 2
-    },
-    dateRangeLabel() {
-      if (this.hasDateRange) {
-        return `${this.dateValue[0]} 至 ${this.dateValue[1]}`
-      }
-      return '时间段'
-    },
-    dateRangeShortLabel() {
-      if (!this.hasDateRange) return '时间'
-      const fmt = (v) => {
-        const parts = String(v || '').split('-')
-        if (parts.length < 3) return v
-        return `${parts[1]}.${parts[2]}`
-      }
-      return `${fmt(this.dateValue[0])}-${fmt(this.dateValue[1])}`
     }
   },
   mounted() {},
@@ -342,6 +326,7 @@ export default {
     ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
     open({ item = null, simple = false } = {}) {
       this.simpleMode = !!simple
+      this.searchType = 'keyword'
       this.searchValue = ''
       this.dateValue = []
       this.dialogVisible = true
@@ -369,7 +354,7 @@ export default {
     handleChangeTab(tabIndex) {
       this.tabIndex = tabIndex
       this.selectedAll = false
-      const searchValue = this.searchValue.toString()
+      const searchValue = this.searchType === 'keyword' ? this.searchValue.toString() : ''
       this.warningInfo.listData = (tabIndex === 0 ? [
         ...(this.alarmsData.high?.items || []),
         ...(this.alarmsData.medium?.items || []),
@@ -377,15 +362,16 @@ export default {
       ] : [
         ...(this.alarmsData[tabIndex === 1 ? 'high' : tabIndex === 2 ? 'medium' : 'low']?.items || [])
       ]).filter(item => {
-        const keywordOk = item.title.includes(searchValue)
+        if (this.searchType === 'date') {
+          if (!this.hasDateRange) return true
+          const t = new Date(item.eventTime).getTime()
+          const startTs = new Date(`${this.dateValue[0]} 00:00:00`).getTime()
+          const endTs = new Date(`${this.dateValue[1]} 23:59:59`).getTime()
+          return !Number.isNaN(t) && t >= startTs && t <= endTs
+        }
+        return item.title.includes(searchValue)
           || item.categoryName.includes(searchValue)
           || item?.location?.address.includes(searchValue)
-        if (!keywordOk) return false
-        if (!this.hasDateRange) return true
-        const t = new Date(item.eventTime).getTime()
-        const startTs = new Date(`${this.dateValue[0]} 00:00:00`).getTime()
-        const endTs = new Date(`${this.dateValue[1]} 23:59:59`).getTime()
-        return !Number.isNaN(t) && t >= startTs && t <= endTs
       })
       const { alarmId } = this.details
       if (this.warningInfo.listData.length) {
@@ -408,14 +394,13 @@ export default {
         this.options = [...defaultOptions]
       }
     },
+    handleSearchTypeChange() {
+      this.handleChangeTab(this.tabIndex)
+    },
     handleDateChange(val) {
       if (!val || (Array.isArray(val) && (val.length === 2 || val.length === 0))) {
         this.handleChangeTab(this.tabIndex)
       }
-    },
-    clearDate() {
-      this.dateValue = []
-      this.handleDateChange([])
     },
     getCurrentPage() {
       const index = this.options.findIndex(item => item.key === this.selectedValue)
@@ -512,6 +497,7 @@ export default {
     close() {
       this.dialogVisible = false
       this.simpleMode = false
+      this.searchType = 'keyword'
       this.searchValue = ''
       this.dateValue = []
       this.tabIndex = 0
@@ -538,73 +524,91 @@ export default {
     border: 1px solid #374E69;
     background: #111B2A;
     overflow: hidden;
-    .search-part {
+    .type-part {
+      flex-shrink: 0;
+      width: 90px;
+      height: 100%;
+      border-right: 1px solid #374E69;
+      ::v-deep .el-select {
+        width: 100%;
+        .el-input__inner {
+          height: 30px;
+          line-height: 30px;
+          padding: 0 36px 0 10px;
+          border: none;
+          border-radius: 0;
+          background: transparent;
+          font-size: 14px;
+          color: #8897AB;
+        }
+        .el-input__suffix {
+          right: 10px;
+          .el-select__caret {
+            color: #8897AB;
+            font-size: 16px;
+          }
+        }
+        .el-input__icon {
+          line-height: 30px;
+        }
+      }
+    }
+    .value-part {
       min-width: 0;
+      height: 100%;
       ::v-deep .el-input {
         .el-input__prefix {
           left: 8px;
-          line-height: 28px;
+          color: #8897AB;
+          line-height: 30px;
         }
         .el-input__inner {
-          height: 28px;
+          height: 30px;
           padding: 0 24px 0 30px;
           border: none;
           border-radius: 0;
           background: transparent;
-          font-weight: 600;
           color: #fff;
           &::placeholder {
             color: #8897AB;
-            font-size: 12px;
+            font-size: 14px;
           }
         }
         .el-input__suffix {
           right: 2px;
+          color: #8897AB;
+        }
+        .el-input__icon {
+          line-height: 30px;
         }
       }
-    }
-    .date-part {
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      max-width: 110px;
-      min-width: 52px;
-      height: 100%;
-      padding: 0 6px 0 8px;
-      border-left: 1px solid #374E69;
-      .date-trigger {
-        position: relative;
-        flex: 1;
-        min-width: 0;
-        height: 100%;
-        cursor: pointer;
-      }
-      .date-text {
-        color: #8897AB;
-        font-size: 12px;
-        line-height: 28px;
-        max-width: 72px;
-      }
-      &.is-active .date-text {
-        color: #4AB8FF;
-      }
-      .clear-date {
-        margin-left: 2px;
-        color: #8897AB;
-        font-size: 12px;
-        cursor: pointer;
-        z-index: 2;
-        &:hover { color: #4AB8FF; }
-      }
-      .el-date-editor {
-        position: absolute;
-        top: 0;
-        left: 0;
+      ::v-deep .el-date-editor {
         width: 100%;
-        height: 100%;
+        height: 30px;
+        padding: 0 8px;
+        border: none;
+        border-radius: 0;
         background: transparent;
-        opacity: 0;
-        cursor: pointer;
+        box-shadow: none;
+        .el-range-input {
+          background: transparent;
+          color: #fff;
+          font-size: 14px;
+          &::placeholder {
+            color: #8897AB;
+          }
+        }
+        .el-range-separator {
+          color: #8897AB;
+          line-height: 30px;
+          width: 16px;
+          padding: 0;
+        }
+        .el-range__icon,
+        .el-range__close-icon {
+          line-height: 30px;
+          color: #8897AB;
+        }
       }
     }
   }

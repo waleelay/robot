@@ -18,7 +18,12 @@
         />
       </div>
       <template v-else>
-        <GlobalGisMap v-if="angle === '2D'" style="z-index: 0;" ref="globalMapRef" />
+        <GlobalGisMap
+          v-if="angle === '2D'"
+          style="z-index: 0;"
+          ref="globalMapRef"
+          @pathVisibleChange="onPathVisibleChange"
+        />
         <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
       </template>
       <MapTool
@@ -143,6 +148,11 @@ export default {
     },
     togglePath(visible) {
       this.$refs.globalMapRef?.togglePath?.(visible)
+    },
+    onPathVisibleChange(visible) {
+      const tool = this.$refs.mapToolRef
+      if (!tool || tool.pathActive === !!visible) return
+      tool.pathActive = !!visible
     },
     setCenter() {
       const mapRef = this.$refs.globalMapRef
