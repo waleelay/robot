@@ -7,22 +7,30 @@
         type="button"
         class="tab-item flx-center"
         :class="{ active: activeTab === item.key }"
-        @click="activeTab = item.key"
-      >
-        {{ item.label }}
-      </button>
+        @click="onTabChange(item.key)"
+      >{{ item.label }}</button>
     </div>
 
-    <div class="status-row flx-align-center">
+    <div v-if="showDeleteConfirm" class="confirm-div w100 h100 flx-center flex-column">
+      <div class="desc">是否确认删除</div>
+      <div v-if="deleteConfirmText" class="confirm-files">{{ deleteConfirmText }}</div>
+      <div class="btns mt14">
+        <el-button type="primary" class="wp58 hp30 common-btn" @click="confirmDeleteAudio">是</el-button>
+        <el-button type="primary" class="wp58 hp30 common-btn" @click="handleDeleteConfirm(false)">否</el-button>
+      </div>
+    </div>
+
+    <div class="status-row mt20 flx-align-center">
       <div class="status-text">
         连接状态：<span :class="{ ok: connected, danger: !connected }">{{ connected ? '已连接' : '未连接' }}</span>
       </div>
       <div class="status-text">
-        温度：<span>{{ temperatureText }}</span>
+        温度：<span :class="{ ok: temperatureNormal, danger: temperatureHigh }">{{ temperatureText }}</span>
+        <span v-if="temperatureNormal" class="ok ml4">温度正常</span>
       </div>
     </div>
 
-    <div v-if="activeTab === 'shout'" class="panel">
+    <div v-if="activeTab === 'shout'" class="panel mt20">
       <button
         type="button"
         class="action-btn flx-center"
@@ -35,7 +43,7 @@
       </button>
       <button
         type="button"
-        class="action-btn flx-center mt12"
+        class="action-btn flx-center mt20"
         :class="{ active: monitorActive, 'is-disabled': !canControl(monitorAction) }"
         :disabled="!canControl(monitorAction)"
         @click="toggleMonitor"
@@ -45,7 +53,7 @@
       </button>
       <button
         type="button"
-        class="action-btn alarm flx-center mt12"
+        class="action-btn alarm flx-center mt20"
         :class="{ active: alarmActive, 'is-disabled': !canControl(alarmAction) }"
         :disabled="!canControl(alarmAction)"
         @click="toggleAlarm"
@@ -54,7 +62,7 @@
         <span>{{ alarmActive ? '停止警报' : '播放警报' }}</span>
       </button>
 
-      <div class="slider-block mt15">
+      <div class="slider-block mt18">
         <div class="slider-label">调整音量</div>
         <div class="slider-row flx-align-center">
           <div class="progress flex1">
@@ -75,7 +83,7 @@
         </div>
       </div>
 
-      <div class="slider-block mt12">
+      <div class="slider-block mt20">
         <div class="slider-label">喊话器俯仰</div>
         <div class="slider-row flx-align-center">
           <div class="progress flex1">
@@ -96,7 +104,7 @@
         </div>
       </div>
 
-      <div class="switch-row end mt12 flx-align-center">
+      <div class="switch-row end mt20 flx-align-center">
         <span class="switch-label">喊话时禁用收音</span>
         <el-switch
           v-model="monitorSuppressed"
@@ -110,7 +118,7 @@
       </div>
     </div>
 
-    <div v-else-if="activeTab === 'tts'" class="panel">
+    <div v-else-if="activeTab === 'tts'" class="panel mt20">
       <el-input
         v-model="ttsText"
         type="textarea"
@@ -118,10 +126,10 @@
         :maxlength="maxTextLength"
         show-word-limit
         placeholder="请输入播报文字"
-        class="tts-input mt15"
+        class="tts-input"
         resize="none"
       />
-      <div class="tts-options mt12 flx-align-center">
+      <div class="tts-options mt10 flx-align-center">
         <el-radio-group v-model="voiceType" class="voice-radios">
           <el-radio label="MALE">男声</el-radio>
           <el-radio label="FEMALE">女声</el-radio>
@@ -137,7 +145,7 @@
           />
         </div>
       </div>
-      <div class="slider-block mt15">
+      <div class="slider-block mt20">
         <div class="slider-label">调整音量</div>
         <div class="slider-row flx-align-center">
           <div class="progress flex1">
@@ -157,7 +165,7 @@
           <span class="slider-value">{{ volume }}%</span>
         </div>
       </div>
-      <div class="btns mt15 flx-center">
+      <div class="btns mt20 flx-center">
         <el-button
           type="primary"
           class="wp124 hp30 common-btn"
@@ -169,7 +177,7 @@
       </div>
     </div>
 
-    <div v-else-if="activeTab === 'audio'" class="panel">
+    <div v-else-if="activeTab === 'audio'" class="panel mt20">
       <div class="audio-toolbar mt12 flx-align-center">
         <span>设备音频文件</span>
         <div class="audio-toolbar-actions flx-align-center">
@@ -188,40 +196,50 @@
           v-for="file in audioFiles"
           :key="file"
           class="audio-item flx-align-center"
-          :class="{ active: selectedAudio === file }"
           role="button"
           tabindex="0"
-          @click="selectedAudio = file"
-          @keydown.enter="selectedAudio = file"
+          @click="toggleAudioChecked(file)"
+          @keydown.enter="toggleAudioChecked(file)"
         >
-          <svg-icon icon-class="music" class="music-icon" />
-          <span class="audio-file-name">{{ file }}</span>
+          <el-checkbox
+            class="audio-check"
+            :value="checkedAudioFiles.includes(file)"
+            @input="setAudioChecked(file, $event)"
+            @click.native.stop
+          />
+          <div class="audio-file-name" :title="file">{{ file }}</div>
           <div class="audio-row-actions flx-align-center" @click.stop>
-            <el-tooltip content="单次播放" placement="top">
-              <el-button
-                type="text"
-                icon="el-icon-video-play"
-                class="audio-icon-btn"
-                :class="{ active: isAudioModeActive(file, false) }"
-                :disabled="!canPlayAudioFile(file)"
-                @click="playAudioFile(file, false)"
-              />
+            <el-tooltip :content="isAudioModeActive(file, false) ? '停止播放' : '单次播放'" placement="top">
+              <span
+                class="audio-icon-btn once-btn"
+                :class="{ active: isAudioModeActive(file, false), disabled: !canPlayAudioFile(file) }"
+                @click="canPlayAudioFile(file) && playAudioFile(file, false)"
+              >
+                <svg-icon
+                  :icon-class="isAudioModeActive(file, false) ? 'pause' : 'play'"
+                  class="audio-svg-icon"
+                  :class="{ 'is-pause': isAudioModeActive(file, false) }"
+                />
+              </span>
             </el-tooltip>
-            <el-tooltip content="循环播放" placement="top">
-              <el-button
-                type="text"
-                icon="el-icon-refresh"
-                class="audio-icon-btn"
-                :class="{ active: isAudioModeActive(file, true) }"
-                :disabled="!canPlayAudioFile(file)"
-                @click="playAudioFile(file, true)"
-              />
+            <el-tooltip :content="isAudioModeActive(file, true) ? '停止循环' : '循环播放'" placement="top">
+              <span
+                class="audio-icon-btn loop-btn"
+                :class="{ active: isAudioModeActive(file, true), disabled: !canPlayAudioFile(file) }"
+                @click="canPlayAudioFile(file) && playAudioFile(file, true)"
+              >
+                <svg-icon icon-class="play-circle" class="audio-svg-icon" />
+              </span>
             </el-tooltip>
           </div>
         </div>
         <div v-if="!audioFiles.length" class="empty-text flx-center">文件列表未同步</div>
       </div>
-      <div v-if="audioTransferText" class="local-state mt10">{{ audioTransferText }}</div>
+      <div
+        v-if="audioTransferText"
+        class="local-state transfer-state mt10"
+        :title="audioTransferText"
+      >{{ audioTransferText }}</div>
       <div class="slider-block mt12">
         <div class="slider-label">调整音量</div>
         <div class="slider-row flx-align-center">
@@ -249,7 +267,7 @@
         accept=".mp3,.wav,audio/mpeg,audio/wav"
         @change="handleAudioFileSelected"
       >
-      <div class="btns button-grid audio-command-grid mt12">
+      <div class="btns button-grid audio-command-grid mt10">
         <el-button
           :loading="audioUploading"
           :disabled="!canUploadAudio || audioUploading"
@@ -260,13 +278,13 @@
           添加音频
         </el-button>
         <el-button :disabled="!canControl('stop_audio_file')" type="primary" class="common-btn" @click="stopAudioFile">停止</el-button>
-        <el-button :disabled="!canDeleteFile" type="primary" class="common-btn danger-btn" @click="deleteAudioFile">删除</el-button>
+        <el-button :disabled="!canDeleteFile" type="primary" class="common-btn" @click="handleDeleteConfirm(true)">删除</el-button>
       </div>
       <div class="local-state mt10">{{ audioPlaybackText }}</div>
     </div>
 
-    <div v-else class="panel">
-      <div class="light-switches-row mt15">
+    <div v-else class="panel mt20">
+      <div class="light-switches-row mt25 flx-align-center">
         <div class="light-row flx-align-center">
           <span class="switch-label">照明灯</span>
           <el-switch
@@ -277,9 +295,10 @@
             inactive-color="#5E5E5E"
             :disabled="!canControl('light.set')"
             @change="setLightEnabled"
+            class="ml10"
           />
         </div>
-        <div class="light-row flx-align-center">
+        <div class="light-row flx-align-center ml20">
           <span class="switch-label">爆闪</span>
           <el-switch
             v-model="strobeEnabled"
@@ -289,10 +308,11 @@
             inactive-color="#5E5E5E"
             :disabled="!canControl('light.set')"
             @change="setStrobeEnabled"
+            class="ml10"
           />
         </div>
       </div>
-      <div class="slider-block mt12">
+      <div class="slider-block mt20">
         <div class="slider-label">亮度调节</div>
         <div class="slider-row flx-align-center">
           <div class="progress flex1">
@@ -312,13 +332,15 @@
           <span class="slider-value">{{ brightness }}%</span>
         </div>
       </div>
-      <div class="red-blue-row mt12 flx-align-center">
+      <div class="red-blue-row mt20 flx-align-center">
         <span class="switch-label">红蓝灯</span>
         <span class="mode-text">{{ redBlueMode ? `模式 ${redBlueMode}` : '关闭' }}</span>
-        <el-button :disabled="!canControl('light.set')" type="primary" class="common-btn" @click="nextRedBlueMode">切换模式</el-button>
-        <el-button :disabled="!canControl('light.set') || redBlueMode === 0" type="primary" class="common-btn" @click="closeRedBlue">关闭</el-button>
+        <div class="btns light-action-btns flx-align-center">
+          <el-button :disabled="!canControl('light.set')" type="primary" class="wp96 hp30 common-btn" @click="nextRedBlueMode">切换模式</el-button>
+          <el-button :disabled="!canControl('light.set') || redBlueMode === 0" type="primary" class="wp96 hp30 common-btn" @click="closeRedBlue">关闭</el-button>
+        </div>
       </div>
-      <div class="slider-block mt12">
+      <div class="slider-block mt20">
         <div class="slider-label">照明灯俯仰</div>
         <div class="slider-row flx-align-center">
           <div class="progress flex1">
@@ -389,6 +411,7 @@ export default {
       ttsLoop: false,
       ttsLoopActive: false,
       selectedAudio: '',
+      checkedAudioFiles: [],
       audioPlaying: false,
       audioLooping: false,
       audioPlayingFile: '',
@@ -397,7 +420,9 @@ export default {
       lightEnabled: false,
       strobeEnabled: false,
       redBlueMode: 0,
-      busyActions: {}
+      busyActions: {},
+      showDeleteConfirm: false,
+      suppressFailedTransfer: false
     };
   },
   computed: {
@@ -418,9 +443,17 @@ export default {
         this.status.connected !== false &&
         this.status.online !== false;
     },
+    temperatureValue() {
+      return Number(this.status.temperatureC);
+    },
     temperatureText() {
-      const value = Number(this.status.temperatureC);
-      return Number.isFinite(value) ? `${value.toFixed(1)}°C` : '--';
+      return Number.isFinite(this.temperatureValue) ? `${this.temperatureValue.toFixed(1)}℃` : '--';
+    },
+    temperatureNormal() {
+      return Number.isFinite(this.temperatureValue) && this.temperatureValue <= 50;
+    },
+    temperatureHigh() {
+      return Number.isFinite(this.temperatureValue) && this.temperatureValue > 50;
     },
     actions() {
       return Array.isArray(this.device && this.device.actions) ? this.device.actions : [];
@@ -463,7 +496,10 @@ export default {
       return this.ttsLoopActive ? 'stop_tts' : 'play_tts';
     },
     canDeleteFile() {
-      return !!this.selectedAudio && this.canControl('delete_audio_file');
+      return this.checkedAudioFiles.length > 0 && this.canControl('delete_audio_file');
+    },
+    deleteConfirmText() {
+      return this.checkedAudioFiles.join('、');
     },
     canUploadAudio() {
       return this.connected &&
@@ -475,6 +511,7 @@ export default {
     audioTransferText() {
       const status = this.audioTransfer.status;
       if (!status) return '';
+      if (status === 'FAILED' && this.suppressFailedTransfer) return '';
       const names = {
         DOWNLOADING: '客户端下载中',
         UPLOADING: '正在写入设备',
@@ -500,6 +537,11 @@ export default {
       handler(device) {
         this.syncDeviceStatus(device);
       }
+    },
+    'audioTransfer.status'(status) {
+      if (status === 'DOWNLOADING' || status === 'UPLOADING' || status === 'COMPLETED') {
+        this.suppressFailedTransfer = false;
+      }
     }
   },
   beforeDestroy() {
@@ -511,8 +553,10 @@ export default {
       return Number.isFinite(number) ? Math.max(min, Math.min(max, Math.round(number))) : fallback;
     },
     canControl(action) {
-      return this.connected &&
-        this.actions.includes(action) &&
+      return this.connected && this.actions.includes(action);
+    },
+    canDispatch(action) {
+      return this.canControl(action) &&
         !this.busyActions[action] &&
         !this.mediaBusy;
     },
@@ -528,6 +572,9 @@ export default {
         this.audioLooping = false;
         this.audioPlayingFile = '';
         this.audioFilesRequestedFor = '';
+        this.checkedAudioFiles = [];
+        this.selectedAudio = '';
+        this.suppressFailedTransfer = false;
         this.lightEnabled = false;
         this.strobeEnabled = false;
         this.redBlueMode = 0;
@@ -555,6 +602,7 @@ export default {
       if (playback.loop !== undefined) this.audioLooping = !!playback.loop;
       if (playback.fileName !== undefined) this.audioPlayingFile = playback.fileName || '';
       if (Array.isArray(status.audioFiles)) {
+        this.checkedAudioFiles = this.checkedAudioFiles.filter((file) => status.audioFiles.includes(file));
         if (!status.audioFiles.includes(this.selectedAudio)) {
           this.selectedAudio = status.audioFiles[0] || '';
         }
@@ -727,7 +775,7 @@ export default {
       this.releaseMediaSession();
     },
     async dispatchCommand(action, params, source) {
-      if (!this.canControl(action)) return false;
+      if (!this.canDispatch(action)) return false;
       this.$set(this.busyActions, action, true);
       try {
         return await this.sendDeviceCommand(this.device, action, params || {}, source || action);
@@ -864,6 +912,9 @@ export default {
       if (ok && this.ttsLoop) this.ttsLoopActive = true;
     },
     async refreshAudioFiles(silent = false) {
+      if (this.audioTransfer.status === 'FAILED') {
+        this.suppressFailedTransfer = true;
+      }
       const ok = await this.dispatchCommand('list_audio_files', {}, 'multi_audio_list');
       if (!silent && ok) this.$message.success('文件列表刷新指令已发送');
     },
@@ -886,6 +937,7 @@ export default {
         return;
       }
       this.audioUploading = true;
+      this.suppressFailedTransfer = false;
       try {
         const form = new FormData();
         form.append('fileType', 'AUDIO');
@@ -954,22 +1006,51 @@ export default {
       }
       return ok;
     },
-    async deleteAudioFile() {
-      try {
-        await this.$confirm(`确认删除音频文件“${this.selectedAudio}”？`, '删除确认', {
-          confirmButtonText: '删除',
-          cancelButtonText: '取消',
-          type: 'warning'
-        });
-      } catch (_error) {
+    handleDeleteConfirm(val) {
+      if (val && !this.canDeleteFile) return;
+      this.showDeleteConfirm = !!val;
+    },
+    onTabChange(key) {
+      this.activeTab = key;
+      this.showDeleteConfirm = false;
+    },
+    toggleAudioChecked(file) {
+      if (!file) return;
+      this.setAudioChecked(file, !this.checkedAudioFiles.includes(file));
+    },
+    setAudioChecked(file, checked) {
+      if (!file) return;
+      const next = !!checked;
+      const index = this.checkedAudioFiles.indexOf(file);
+      if (next && index < 0) this.checkedAudioFiles.push(file);
+      if (!next && index >= 0) this.checkedAudioFiles.splice(index, 1);
+      this.selectedAudio = file;
+    },
+    async confirmDeleteAudio() {
+      if (!this.canDeleteFile) {
+        this.showDeleteConfirm = false;
         return;
       }
-      const ok = await this.dispatchCommand(
-        'delete_audio_file',
-        { fileName: this.selectedAudio },
-        'multi_audio_delete'
-      );
-      if (ok) await this.refreshAudioFiles();
+      const files = this.checkedAudioFiles.slice();
+      let successCount = 0;
+      for (const fileName of files) {
+        const ok = await this.dispatchCommand(
+          'delete_audio_file',
+          { fileName },
+          'multi_audio_delete'
+        );
+        if (ok) {
+          successCount += 1;
+          this.checkedAudioFiles = this.checkedAudioFiles.filter((item) => item !== fileName);
+        } else {
+          break;
+        }
+      }
+      this.showDeleteConfirm = false;
+      if (successCount > 0) {
+        this.$message.success(successCount === files.length ? '删除成功' : `已删除 ${successCount} 个文件`);
+        await this.refreshAudioFiles();
+      }
     },
     async setLightEnabled(value) {
       const ok = await this.dispatchCommand('light.set', { enabled: !!value }, 'multi_light_power');
@@ -1011,22 +1092,34 @@ export default {
 
 <style scoped lang="scss">
 .box {
-  min-height: 440px;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 460px;
+  overflow: hidden;
+  box-sizing: border-box;
   background: linear-gradient(180deg, rgba(18, 20, 43, 0) 0%, #12142B 100%);
   box-shadow: 0 0 20px 0 rgba(33, 108, 149, 0.3) inset;
 }
 
+.panel {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
 .tabs {
   .tab-item {
-    flex: 1;
     min-width: 0;
     height: 32px;
     margin-right: -1px;
-    padding: 0 4px;
+    padding: 10px 12.9px;
     color: #6AC5FF;
     font-family: "Alibaba PuHuiTi";
     font-size: 12px;
-    letter-spacing: 0;
+    line-height: 12px;
+    letter-spacing: 0.857px;
     border: 1px solid #4AB8FF;
     cursor: pointer;
     background: transparent;
@@ -1035,7 +1128,7 @@ export default {
       margin-right: 0;
     }
     &.active {
-      color: #FFF;
+      color: #4AB8FF;
       background: #0A3560;
       box-shadow: inset 0 0 6px 0 #69C4FF;
       z-index: 1;
@@ -1044,41 +1137,41 @@ export default {
 }
 
 .status-row {
-  margin-top: 14px;
   justify-content: space-between;
   .status-text {
     color: rgba(255, 255, 255, 0.8);
     font-family: "Microsoft YaHei";
-    font-size: 13px;
+    font-size: 14px;
     line-height: 18px;
     .ok {
       color: #00FF60;
     }
     .danger {
-      color: #FF6B6B;
+      color: #FF0600;
     }
   }
 }
 
 .action-btn {
   width: 100%;
-  height: 34px;
-  padding: 0;
+  height: 39px;
   color: #FFF;
   font-family: "Alibaba PuHuiTi";
   font-size: 14px;
-  letter-spacing: 0;
+  letter-spacing: 0.857px;
   background: #0F2B44;
   border: 0;
   border-radius: 2px;
   cursor: pointer;
   gap: 10px;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
   &.active {
     color: #0BF9FE;
     box-shadow: 0 0 10px 3px #2f608d inset;
   }
   &.alarm {
-    background: #7D1018;
+    background: #AE0000;
   }
   &.is-disabled {
     opacity: 0.45;
@@ -1095,19 +1188,21 @@ export default {
   .slider-label {
     color: #FFF;
     font-family: "Alibaba PuHuiTi";
-    font-size: 13px;
-    letter-spacing: 0;
-    line-height: 18px;
+    font-size: 14px;
+    letter-spacing: 0.857px;
+    line-height: normal;
   }
   .slider-row {
-    margin-top: 6px;
+    margin-top: 9px;
   }
   .slider-value {
     width: 42px;
-    margin-left: 10px;
+    margin-left: 8px;
     color: #FFF;
-    font-size: 13px;
-    text-align: center;
+    font-family: "Alibaba PuHuiTi";
+    font-size: 14px;
+    letter-spacing: 0.857px;
+    text-align: right;
     flex-shrink: 0;
   }
 }
@@ -1121,7 +1216,8 @@ export default {
   }
   .switch-label {
     color: rgba(255, 255, 255, 0.8);
-    font-size: 13px;
+    font-family: "Microsoft YaHei";
+    font-size: 14px;
     white-space: nowrap;
   }
 }
@@ -1132,20 +1228,23 @@ export default {
     color: #6AC5FF;
     font-size: 12px;
   }
-  ::v-deep .el-button {
-    width: 68px;
-    height: 28px;
-    padding: 0;
-    margin: 0;
+  .light-action-btns {
+    gap: 8px;
+    flex-shrink: 0;
+    ::v-deep .el-button {
+      margin: 0;
+    }
   }
 }
 
 .tts-input {
   ::v-deep .el-textarea__inner {
-    min-height: 112px !important;
+    min-height: 160px !important;
     padding: 10px;
     color: rgba(255, 255, 255, 0.8);
+    font-family: "Microsoft YaHei";
     font-size: 14px;
+    letter-spacing: 0.28px;
     background: #142941;
     border: none;
     border-radius: 4px;
@@ -1159,13 +1258,49 @@ export default {
 
 .tts-options {
   .voice-radios {
+    background: transparent;
     ::v-deep .el-radio {
-      margin-right: 14px;
+      margin-right: 22px;
       color: #FFF;
+      display: inline-flex;
+      align-items: center;
+      .el-radio__input {
+        .el-radio__inner {
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          border: 1px solid #17D1FF !important;
+          background: #021328 !important;
+          box-shadow: 0 0 6px 1px #13DDF3 inset;
+          &::after {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: transparent;
+          }
+        }
+        &.is-checked {
+          .el-radio__inner {
+            border-color: #17D1FF !important;
+            background: #021328 !important;
+            &::after {
+              background: #17D1FF;
+              box-shadow: 0 0 4px 0 #0BF9FE;
+            }
+          }
+          & + .el-radio__label {
+            color: #FFF !important;
+          }
+        }
+      }
       .el-radio__label {
         color: #FFF;
-        font-size: 14px;
-        padding-left: 6px;
+        font-family: "Microsoft YaHei";
+        font-size: 16px;
+        padding-left: 10px;
+      }
+      &:last-child {
+        margin-right: 0;
       }
     }
   }
@@ -1192,51 +1327,118 @@ export default {
 }
 
 .audio-list {
-  height: 132px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 152px;
+  overflow-x: hidden;
   overflow-y: auto;
   margin-top: 6px;
-  background: rgba(2, 19, 40, 0.5);
+  background: #142941;
+  border-radius: 4px;
+  box-sizing: border-box;
   .audio-item {
+    display: flex;
+    align-items: center;
     width: 100%;
-    height: 33px;
-    padding: 0 12px;
+    max-width: 100%;
+    min-width: 0;
+    height: 39px;
+    padding: 10px 12px;
+    box-sizing: border-box;
     color: #FFF;
-    font-size: 13px;
-    letter-spacing: 0;
+    font-family: "Alibaba PuHuiTi";
+    font-size: 14px;
+    letter-spacing: 0.857px;
     border: 0;
     cursor: pointer;
-    gap: 8px;
+    gap: 12px;
     background: transparent;
-    &.active {
-      background: #0163C4;
-    }
-    .music-icon {
-      width: 16px;
-      height: 16px;
-      flex-shrink: 0;
+    overflow: hidden;
+    .audio-check {
+      margin-right: 0;
+      flex: 0 0 auto;
+      height: 14px;
+      line-height: 14px;
+      ::v-deep .el-checkbox__label {
+        display: none;
+      }
+      ::v-deep .el-checkbox__input {
+        line-height: 14px;
+        height: 14px;
+      }
+      ::v-deep .el-checkbox__inner {
+        width: 14px;
+        height: 14px;
+        border-radius: 2px;
+        border-color: #436489 !important;
+        background: transparent !important;
+        &::after {
+          left: 4px;
+          top: 1px;
+          height: 7px;
+          width: 3px;
+        }
+      }
+      ::v-deep .el-checkbox__input.is-checked .el-checkbox__inner {
+        border-color: #159AFF !important;
+        background: #159AFF !important;
+      }
     }
     .audio-file-name {
-      flex: 1;
+      flex: 1 1 0;
+      width: 0;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      word-break: keep-all;
     }
     .audio-row-actions {
-      flex-shrink: 0;
-      gap: 6px;
+      flex: 0 0 auto;
+      gap: 8px;
+      display: flex;
+      align-items: center;
     }
-    ::v-deep .audio-icon-btn {
-      width: 24px;
-      height: 24px;
+    .audio-icon-btn {
+      width: 16px;
+      height: 16px;
       padding: 0;
       margin: 0;
       color: #6AC5FF;
-      border: 0;
-      background: transparent;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      flex-shrink: 0;
+      &.disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        pointer-events: none;
+      }
       &.active {
         color: #0BF9FE;
-        text-shadow: 0 0 8px #09F;
+      }
+      .audio-svg-icon {
+        width: 16px;
+        height: 16px;
+        font-size: 16px;
+        display: block;
+        vertical-align: top;
+        &.is-pause {
+          width: 12px;
+          height: 12px;
+          font-size: 12px;
+        }
+      }
+      &.once-btn {
+        border: 1px solid currentColor;
+        border-radius: 50%;
+        overflow: hidden;
+      }
+      &.loop-btn {
+        border: 0;
       }
     }
   }
@@ -1251,15 +1453,31 @@ export default {
   ::v-deep .el-button {
     padding: 0;
     color: #FFF;
+    font-family: "Alibaba PuHuiTi";
     font-size: 12px;
-    letter-spacing: 0;
+    letter-spacing: 0.24px;
     background: #021328;
     border-radius: 4px;
     border: none;
     box-shadow: 0 0 14px 2px #09F inset;
     text-align: center;
-    &.danger-btn {
-      box-shadow: 0 0 12px 1px #B52732 inset;
+    outline: none;
+    &.is-disabled {
+      background: #080808;
+      box-shadow: 0 0 14px 2px #515151 inset;
+      cursor: not-allowed;
+    }
+    &:focus,
+    &:active {
+      color: #FFF;
+      background: #021328;
+      box-shadow: 0 0 14px 2px #09F inset;
+      outline: none;
+    }
+    &.is-disabled:focus,
+    &.is-disabled:active {
+      background: #080808;
+      box-shadow: 0 0 14px 2px #515151 inset;
     }
   }
 }
@@ -1279,24 +1497,63 @@ export default {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.light-switches-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  .light-row {
-    min-width: 0;
-    justify-content: space-between;
-  }
-}
-
 .local-state {
   color: rgba(255, 255, 255, 0.55);
   font-size: 12px;
   text-align: right;
+  &.transfer-state {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.confirm-div {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 4px;
+  border: 2px solid #0BF9FE;
+  background: rgba(4, 24, 65, 0.60);
+  backdrop-filter: blur(8px);
+  transition: all linear .3s;
+  z-index: 2001;
+  padding: 20px;
+  box-sizing: border-box;
+  .desc {
+    color: #0BF9FE;
+    font-family: "Microsoft YaHei";
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 27px;
+  }
+  .confirm-files {
+    max-width: 90%;
+    margin-top: 10px;
+    color: rgba(255, 255, 255, 0.85);
+    font-family: "Microsoft YaHei";
+    font-size: 14px;
+    line-height: 20px;
+    text-align: center;
+    word-break: break-all;
+  }
+  ::v-deep {
+    .el-button {
+      color: #FFF;
+      font-family: "Alibaba PuHuiTi";
+      border-radius: 4px;
+      background: #021328;
+      box-shadow: 0 0 14px 2px #09F inset;
+      font-size: 12px;
+      letter-spacing: 0.24px;
+    }
+  }
 }
 
 .progress {
   position: relative;
+  display: flex;
+  align-items: center;
   height: 16px;
   .track-bg {
     position: absolute;
@@ -1327,7 +1584,9 @@ export default {
     position: relative;
     z-index: 3;
     width: 100%;
+    height: 16px;
     margin: 0;
+    padding: 0;
     appearance: none;
     -webkit-appearance: none;
     background: transparent;
@@ -1368,11 +1627,6 @@ export default {
     }
   }
 }
-
-.mt10 { margin-top: 10px; }
-.mt12 { margin-top: 12px; }
-.mt15 { margin-top: 15px; }
-.wp124 { width: 124px; }
 
 ::v-deep {
   .el-switch {

@@ -1,6 +1,6 @@
 <template>
   <div class="flex-column h100 pr20 pl20 pb10 pt20 business2-page">
-    <div class="card-title wp226">
+    <div class="card-title wp226 title-284-37">
       <div class="text">业务管理中心</div>
     </div>
     <div class="d-flex flex1 mt10 business2-body">
