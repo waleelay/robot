@@ -114,35 +114,6 @@ function readDeviceStateCache() {
   }
 }
 
-function cloneVehicleLightState(state) {
-  const vehicleLightState = Object.assign({
-      front: { mode: 'OFF', brightness: 50 },
-      rear: { mode: 'OFF', brightness: 50 }
-    }, store.state.websocketRobot.deviceStateCache?.vehicleLightState || {})
-  const source = state || vehicleLightState
-  return {
-    front: Object.assign({}, source.front),
-    rear: Object.assign({}, source.rear)
-  }
-}
-
-function vehicleLightStatusPart(part) {
-  const vehicleLightModeOptions = [
-    { value: 'OFF', label: '常关', code: 0 },
-    { value: 'ON', label: '常开', code: 1 },
-    { value: 'BREATH', label: '呼吸', code: 2 },
-    { value: 'CUSTOM', label: '自定义', code: 3 }
-  ]
-  if (!part || typeof part !== 'object') return null
-  if (part.mode === undefined && part.modeCode === undefined) return null
-  const mode = part.mode || vehicleLightModeOptions.find(item => item.code === part.modeCode)?.value || 'OFF'
-  const brightness = part.brightness !== undefined ? part.brightness : part.customValue
-  return {
-    mode,
-    brightness: mode === 'CUSTOM' ? Math.max(0, Math.min(100, Number(brightness) || 0)) : 0
-  }
-}
-
 // 定义用于修改状态的 mutations，通过这个地方判断是什么类型的信息，然后页面调用不同的信息
 const mutations = {
   // 设置 WebSocket 实例
@@ -980,24 +951,16 @@ const actions = {
       }
       if (device.deviceType === 'WARNING_LIGHT' && (status.powerOn !== undefined || status.enabled !== undefined) &&
           !(options.preserveExisting && state.deviceStateCache?.warningLightState[device.deviceId] !== undefined)) {
-        obj['warningLightState'] = { ...state.deviceStateCache?.warningLightState || {}, [device.deviceId]: !!(status.powerOn === undefined ? status.enabled : status.powerOn) }
+        const powerOn = status.powerOn === undefined ? status.enabled : status.powerOn
+        obj['warningLightState'] = {
+          ...state.deviceStateCache?.warningLightState || {},
+          [device.deviceId]: Array.isArray(powerOn) ? powerOn.length > 0 && powerOn.every(Boolean) : !!powerOn
+        }
       }
       const ptzKey = `${robotId}:${device.deviceId}`
       if (device.deviceType === 'DUAL_LIGHT_PTZ' && status.autoRotateEnabled !== undefined &&
           !(options.preserveExisting && state.deviceStateCache?.ptzAutoRotateState[ptzKey] !== undefined)) {
         obj['ptzAutoRotateState'] = { ...state.deviceStateCache?.ptzAutoRotateState || {}, [ptzKey]: !!status.autoRotateEnabled }
-      }
-      if (device.deviceType === 'VEHICLE_LIGHT' && !(options.preserveExisting && state.deviceStateCache?.vehicleLightStateReady)) {
-        const next = cloneVehicleLightState()
-        const front = vehicleLightStatusPart(status.front)
-        const rear = vehicleLightStatusPart(status.rear)
-        if (front) next.front = front
-        if (rear) next.rear = rear
-        if (front || rear) {
-          obj['vehicleLightState'] = next
-          obj['confirmedVehicleLightState'] = cloneVehicleLightState(next)
-          obj['vehicleLightStateReady'] = true
-        }
       }
     })
     dispatch('persistDeviceStateCache', {
@@ -1835,10 +1798,8 @@ const actions = {
       launcherSafety: payload.launcherSafety,
       netGunSafety: payload.netGunSafety,
       warningLightState: payload.warningLightState,
+      vehicleLightEnabled: payload.vehicleLightEnabled,
       ptzAutoRotateState: payload.ptzAutoRotateState
-    }
-    if (payload.vehicleLightStateReady) {
-      cache.vehicleLightState = payload.vehicleLightState
     }
     commit('SET_DEVICE_STATE_CACHE', cache)
     try {

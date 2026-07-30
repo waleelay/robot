@@ -9,64 +9,10 @@
 -->
 <template>
   <div class="flx-align-center h100 pt20 pb20">
-    <div class="flex flex-column h100 pl30" style="border-left: 1px solid #123F8C;">
-      <div class="d-flex flex-column" style="align-items: start; display: none;" v-if="vehicleLightDevice">
-        <div class="custom-tab-button flex">
-          <div v-for="item in tabList" :key="item.value" class="tab-button-item pr10 pl10" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value" style="font-size: 14px; line-height: 19px">{{ item.label }}</div>
-        </div>
-        <div class="mt15 mode d-flex">
-          <el-switch
-            :value="vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].mode === 'ON'"
-            active-text="开启"
-            inactive-text="关闭"
-            active-color="#3DB56A"
-            inactive-color="#5E5E5E"
-            @change="e => setVehicleLightMode(tabIndex === 0 ? 'front' : 'rear', e ? 'ON' : 'OFF')"
-          >
-          </el-switch>
-          <div
-            style="display: none"
-            class="option wp100 hp122 p10"
-            v-for="(item, index) in modes"
-            :key="item.key"
-            :class="{ ml11 : index !== 0, 'is-active': (vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].mode === item.key) || index === 0 && ['ON', 'OFF'].includes(vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].mode) }"
-            @click="e => handleClickMode(e, index, item)"
-          >
-            <div class="order pl15">模式{{ index === 0 ? '一' : index === 1 ? '二' : '三' }}</div>
-            <div class="mt10 tac name">{{ item.name }}</div>
-            <div class="mt2 tac desc">{{ item.desc }}</div>
-            <div class="mt6 tac flex-column flx-center" :class="{ 'mb6': index > 0 }" :style="{ marginTop: index > 0 ? '1px' : '6px' }">
-              <el-switch
-                :value="vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].mode === item.key"
-                v-if="index === 0"
-                active-text="开启"
-                inactive-text="关闭"
-                active-color="#3DB56A"
-                inactive-color="#5E5E5E"
-                @change="e => setVehicleLightMode(tabIndex === 0 ? 'front' : 'rear', e ? 'ON' : 'OFF')"
-              >
-              </el-switch>
-              <template v-else-if="index === 2">
-                <div class="percent mt1 mb5">{{ vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].brightness }}%</div>
-                <el-slider
-                  :value="vehicleLightState[tabIndex === 0 ? 'front' : 'rear'].brightness"
-                  :min="0"
-                  :max="100"
-                  @input="value => updateVehicleLightBrightness(tabIndex === 0 ? 'front' : 'rear', value)"
-                  @change="value => setVehicleLightBrightness(tabIndex === 0 ? 'front' : 'rear', value)"
-                  :show-tooltip="false"
-                ></el-slider>
-              </template>
-              <svg-icon :icon-class="item.icon" class="mt4"></svg-icon>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div :class="{ 'd-flex': !vehicleLightDevice && !warningLightDevices?.length }">
-      <div class="mode d-flex" :class="{ 'flex-column': !vehicleLightDevice && !warningLightDevices?.length, 'flx-align-center': vehicleLightDevice || warningLightDevices?.length }">
+    <div :class="{ 'd-flex': !vehicleLightDevice && !warningLightDevice }">
+      <div class="mode d-flex" :class="{ 'flex-column': !vehicleLightDevice && !warningLightDevice, 'flx-align-center': vehicleLightDevice || warningLightDevice }">
         <span>当前状态：</span>
-        <el-dropdown trigger="click" :class="{ 'mt10': !vehicleLightDevice && !warningLightDevices?.length, 'ml10': vehicleLightDevice || warningLightDevices?.length }" @command="handleModeChange">
+        <el-dropdown trigger="click" :class="{ 'mt10': !vehicleLightDevice && !warningLightDevice, 'ml10': vehicleLightDevice || warningLightDevice }" @command="handleModeChange">
           <div class="mode-status success flex-column">
             <span>{{ selectedRobot?.controlModeName || '-' }}<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
           </div>
@@ -76,7 +22,7 @@
           </el-dropdown-menu>
         </el-dropdown>
       </div>
-      <div class="mt16 d-flex common-control" :class="{ 'ml30': !vehicleLightDevice && !warningLightDevices?.length, 'is-disabled': selectedRobot?.controlMode !== 'MANUAL' }">
+      <div class="mt16 d-flex common-control" :class="{ 'ml30': !vehicleLightDevice && !warningLightDevice, 'is-disabled': selectedRobot?.controlMode !== 'MANUAL' }">
         <div class="outer flx-center">
           <div class="inner flx-center">
             <div class="circle flx-center">移动</div>
@@ -97,48 +43,37 @@
           </div>
         </div>
         <div class="lights ml38 flex-column" style="justify-content: center;">
-          <div v-if="vehicleLightDevice && !hasVehicleLightStatus(vehicleLightDevice)" class="light-pending mb10">车灯状态同步中</div>
           <div class="flx-center lights-container">
-            <div v-if="vehicleLightDevice" class="d-flex flex-column" style="align-items: end;">
-              <div class="flx-align-center">
-                <span class="wp60 tal">前车灯：</span>
-                <el-switch
-                  :value="vehicleLightState?.front?.mode === 'ON'"
-                  active-text="开启"
-                  inactive-text="关闭"
-                  active-color="#3DB56A"
-                  inactive-color="#5E5E5E"
-                  @change="e => setVehicleLightMode('front', e ? 'ON' : 'OFF')"
-                >
-                </el-switch>
-              </div>
-              <div class="flx-align-center">
-                <span class="wp60 tal">后车灯：</span>
-                <el-switch
-                  :value="vehicleLightState?.rear?.mode === 'ON'"
-                  active-text="开启"
-                  inactive-text="关闭"
-                  active-color="#3DB56A"
-                  inactive-color="#5E5E5E"
-                  @change="e => setVehicleLightMode('rear', e ? 'ON' : 'OFF')"
-                >
-                </el-switch>
-              </div>
+            <div v-if="vehicleLightDevice" class="flx-align-center">
+              <span class="wp60 tal">车灯：</span>
+              <el-switch
+                :value="vehicleLightEnabled"
+                :disabled="!hasDeviceAction(vehicleLightDevice, 'light.vehicle.set')"
+                active-text="开启"
+                inactive-text="关闭"
+                active-color="#3DB56A"
+                inactive-color="#5E5E5E"
+                @change="setVehicleLights">
+              </el-switch>
             </div>
-            <div v-if="warningLightDevices?.length" class="flx-center flex-column">
-              <div v-for="device in warningLightDevices" :key="device.deviceId" class="flx-align-center">
-                <span class="wp76 tal">{{ device.displayName || device.deviceId }}：</span>
-                <el-switch
-                  v-if="hasWarningLightStatus(device)"
-                  :value="isWarningLightOn(device)"
-                  active-text="开启"
-                  inactive-text="关闭"
-                  active-color="#3DB56A"
-                  inactive-color="#5E5E5E"
-                  @change="setWarningLight(device, $event)">
-                </el-switch>
-                <span v-else class="light-pending">同步中</span>
-              </div>
+            <div v-if="warningLightDevice" class="flx-align-center">
+              <span class="wp90 tal">红蓝警示灯：</span>
+              <el-switch
+                :value="isWarningLightOn(warningLightDevice)"
+                :disabled="!hasDeviceAction(warningLightDevice, 'set_state')"
+                active-text="开启"
+                inactive-text="关闭"
+                active-color="#3DB56A"
+                inactive-color="#5E5E5E"
+                @change="setWarningLight(warningLightDevice, $event)">
+              </el-switch>
+              <el-button
+                class="warning-mode-button ml10"
+                size="mini"
+                icon="el-icon-refresh"
+                :disabled="!hasDeviceAction(warningLightDevice, 'set_mode')"
+                @click="switchWarningLightMode(warningLightDevice)"
+              >切换模式</el-button>
             </div>
           </div>
         </div>
@@ -149,7 +84,7 @@
 </template>
 
 <script>
-import { butaiList, robotControlObj } from '../../../../js/constants/robot-control.js';
+import { robotControlObj } from '../../../../js/constants/robot-control.js';
 import Speed from '../../../../components/modal/Speed.vue';
 import yuntai from './yuntai.js';
 export default {
@@ -161,17 +96,6 @@ export default {
   data() {
     return {
       robotControlObj,
-      tabList: [
-        {
-          label: '前车灯', 
-          value: 0
-        },
-        {
-          label: '后车灯',
-          value: 1
-        }
-      ],
-      tabIndex: 0,
       operList: [
         { key: 'zuoyi', label: '左平移' },
         { key: 'youyi', label: '右平移' },
@@ -184,50 +108,11 @@ export default {
         { key: 'step', label: '切换步态' },
         { key: 'speed', label: '设定速度' },
       ],
-      modes: [],
-      modes1: [
-        {
-          code: 0,
-          name: '普通模式',
-          desc: '打开后灯光常亮',
-          icon: 'light-high-beam',
-          key: 'ON/OFF'
-        },
-        {
-          code: 1,
-          name: '呼吸灯模式',
-          desc: '打开后双灯闪烁',
-          icon: 'light-side',
-          key: 'BREATH'
-        },
-        {
-          code: 2,
-          name: '自定义模式',
-          desc: '滑动调节亮度',
-          icon: 'light-car',
-          key: 'CUSTOM'
-        }
-      ],
-      selectMode: 1,
-    }
-  },
-  methods: {
-    getLightDevice(displayName) {
-      return this.warningLightDevices.find(item => item.displayName === displayName) || {}
-    },
-    handleClickMode(e, index, item) {
-      if (e.target.className.includes('el-slider')) return
-      this.setVehicleLightMode(this.tabIndex === 0 ? 'front' : 'rear', index === 0 ? 'OFF' : item.key)
     }
   }
 }
 </script>
 <style scoped lang="scss">
-.custom-tab-button .tab-button-item {
-  padding: 5px 10px;
-  font-size: 12px;
-}
-
 .status {
   color: #FFF;
   font-family: "Microsoft YaHei";
@@ -244,13 +129,6 @@ export default {
     border: 1px solid var(---, #00AC3A);
     background: rgba(17, 108, 31, 0.50);
   }
-}
-
-.light-pending {
-  color: rgba(255, 255, 255, 0.65);
-  font-family: "Microsoft YaHei";
-  font-size: 12px;
-  line-height: 18px;
 }
 
 .mode {
@@ -295,6 +173,35 @@ export default {
     }
   }
 }
+
+::v-deep .warning-mode-button.el-button {
+  padding: 8px 10px;
+  color: #FFF;
+  font-size: 12px;
+  background: #021328;
+  box-shadow: 0 0 14px 2px #09F inset;
+  border: none;
+  border-radius: 4px;
+  &:hover,
+  &:focus {
+    color: #FFF;
+    background: #021328;
+    box-shadow: 0 0 14px 2px #09F inset;
+  }
+  &:active {
+    color: #0BF9FE;
+    background: #021328;
+    box-shadow: 0 0 10px 3px #0BF9FE inset;
+  }
+  &.is-disabled,
+  &.is-disabled:hover,
+  &.is-disabled:focus {
+    color: #8F8F8F;
+    background: #080808;
+    box-shadow: 0 0 14px 2px #515151 inset;
+  }
+}
+
 ::v-deep .el-select {
   .el-input__inner {
     height: 30px;
@@ -437,117 +344,4 @@ export default {
   }
 }
 
-.mode {
-  .option {
-    border-radius: 6px;
-    border: 1px solid #004376;
-    background: #021328;
-    .order {
-      position: relative;
-      color: #C8D2E4;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 12px;
-      line-height: 16px;
-      letter-spacing: 0.857px;
-      &::before, &::after {
-        position: absolute;
-        border-radius: 50%;
-        content: '';
-      }
-      &::before {
-        top: 3px;
-        left: 0;
-        width: 10px;
-        height: 10px;
-        border: 1px solid #C8D2E4;
-      }
-      &::after {
-        top: 6px;
-        left: 3px;
-        width: 4px;
-        height: 4px;
-        display: none;
-        background: linear-gradient(180deg, #E1F7FF 0%, #35CAFF 100%);
-      }
-    }
-    .name {
-      color: #C8D2E4;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 14px;
-      line-height: 19px;
-      letter-spacing: 0.857px;
-    }
-    .desc {
-      color: #8D9BB5;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 10px;
-      line-height: 14px;
-      letter-spacing: 0.857px;
-    }
-    .svg-icon {
-      color: #FFF;
-      font-size: 12px
-    }
-    &.is-active {
-      border-color: #3CABFF;
-      background: #021328;
-      box-shadow: 0 0 20px 0 #159AFF inset;
-      .order {
-        color: #35CAFF;
-        &::before {
-          border-color: #35CAFF;
-        }
-        &::after {
-          display: inline-block;
-        }
-      }
-      .name {
-        background: linear-gradient(180deg, #A3D9FF 42.11%, #4F9ADB 73.68%);
-        background-clip: text;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-      .desc {
-        color: #06AEFC
-      }
-    }
-  }
-}
-.percent {
-  width: auto;
-  padding: 0 2px;
-  color: #FFF;
-  font-family: "Alibaba PuHuiTi";
-  font-size: 8px;
-  line-height: 11px;
-  letter-spacing: 0.857px;
-  border-radius: 1px;
-  background: linear-gradient(214deg, #03AFFA 32.73%, #027FFA 87.27%);
-}
-::v-deep {
-  .el-slider {
-    width: 100%;
-    &__runway {
-      height: 4px;
-      margin: 0;
-      border-radius: 0;
-      background: #D9D9D9;
-    }
-    &__bar {
-      height: 4px;
-      border-radius: 0;
-      background: linear-gradient(90deg, #0278FA 0%, #03BBFA 100%);
-    }
-    .el-slider__button-wrapper {
-      top: -8px;
-      height: auto;      
-      .el-slider__button {
-        width: 10px;
-        height: 10px;
-        border-color: #03ADFA;
-        border-width: 2px;
-      }
-    }
-  }
-}
 </style>

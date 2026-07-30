@@ -841,12 +841,6 @@ public class EquipmentControlService {
             Map<String, Object> component,
             Map<String, Map<String, Object>> statusByDeviceId) {
         String componentType = normalized(firstString(component, "componentType", "type"));
-        String componentCode = firstString(component, "code", "deviceId", "id");
-        if ("PAYLOAD".equals(componentType) && "warning_light".equals(componentCode)) {
-            return List.of(
-                    managementDevice(robot, component, "warning-light-left", "WARNING_LIGHT", "左警示灯", "light-001", statusByDeviceId),
-                    managementDevice(robot, component, "warning-light-right", "WARNING_LIGHT", "右警示灯", "light-002", statusByDeviceId));
-        }
         String deviceType = controlDeviceType(robot, component);
         if (deviceType == null) {
             return List.of();
@@ -857,7 +851,6 @@ public class EquipmentControlService {
                 controlDeviceId(component, deviceType),
                 deviceType,
                 firstString(component, "name", "componentName", "code"),
-                null,
                 statusByDeviceId);
         if ("BODY".equals(componentType)
                 && hasManagementAction(component, "DEVICE_CONTROL", "SET_LIGHTS")) {
@@ -869,7 +862,6 @@ public class EquipmentControlService {
                             "vehicle-light",
                             "VEHICLE_LIGHT",
                             "车灯光",
-                            null,
                             statusByDeviceId));
         }
         return List.of(primaryDevice);
@@ -881,7 +873,6 @@ public class EquipmentControlService {
             String deviceId,
             String deviceType,
             String displayName,
-            String profileLightId,
             Map<String, Map<String, Object>> statusByDeviceId) {
         String componentCode = firstString(component, "code", "deviceId", "id");
         Map<String, Object> runtime = statusByDeviceId.getOrDefault(
@@ -895,7 +886,7 @@ public class EquipmentControlService {
         result.put("deviceType", deviceType);
         result.put("displayName", displayName);
         result.put("actions", controlActions(component, deviceType));
-        result.put("controlProfile", controlProfile(component, deviceType, profileLightId));
+        result.put("controlProfile", controlProfile(component, deviceType));
         Map<String, Object> status = mapValue(runtime.get("status"));
         if (!status.isEmpty()) {
             result.put("status", status);
@@ -933,6 +924,11 @@ public class EquipmentControlService {
     }
 
     private String controlDeviceId(Map<String, Object> component, String deviceType) {
+        if ("WHEELED_BASE".equals(deviceType)
+                || "QUADRUPED_BASE".equals(deviceType)
+                || "BIPED_BASE".equals(deviceType)) {
+            return "base";
+        }
         return firstString(component, "code", "deviceId", "id");
     }
 
@@ -1130,8 +1126,8 @@ public class EquipmentControlService {
                 .toList();
     }
 
-    private Map<String, Object> controlProfile(Map<String, Object> component, String deviceType, String profileLightId) {
-        Map<String, Object> profile = compatibilityControlProfile(component, deviceType, profileLightId);
+    private Map<String, Object> controlProfile(Map<String, Object> component, String deviceType) {
+        Map<String, Object> profile = compatibilityControlProfile(component, deviceType);
         Map<String, Object> registeredProfile = mapValue(component.get("controlProfile"));
         registeredProfile.forEach((key, value) -> {
             if (value != null) {
@@ -1149,8 +1145,7 @@ public class EquipmentControlService {
      */
     private Map<String, Object> compatibilityControlProfile(
             Map<String, Object> component,
-            String deviceType,
-            String profileLightId) {
+            String deviceType) {
         if ("WHEELED_BASE".equals(deviceType)) {
             return object("maxLinearX", 1.0, "maxLinearY", 0.4, "maxAngularZ", 0.8, "controlFrameRateHz", 10);
         }
@@ -1171,8 +1166,8 @@ public class EquipmentControlService {
         }
         if ("WARNING_LIGHT".equals(deviceType)) {
             return object(
-                    "lightId", profileLightId == null ? "all" : profileLightId,
-                    "lightIds", List.of("left_warning", "right_warning", "all", "light-001", "light-002"),
+                    "lightId", "all",
+                    "lightIds", List.of("light-001", "light-002", "all"),
                     "modes", List.of(0, 1, 2),
                     "supportsAll", true);
         }
@@ -1319,7 +1314,7 @@ public class EquipmentControlService {
     private static String warningLightId(Map<String, Object> params, Map<String, Object> device) {
         Map<String, Object> profile = mapValue(device.get("controlProfile"));
         String lightId = stringValue(params.get("lightId"), stringValue(profile.get("lightId"), ""));
-        if (List.of("light-001", "light-002", "left_warning", "right_warning", "all").contains(lightId)) {
+        if (List.of("light-001", "light-002", "all").contains(lightId)) {
             return lightId;
         }
         throw new IllegalArgumentException("不支持的警示灯 ID：" + lightId);

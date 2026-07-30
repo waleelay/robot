@@ -32,7 +32,18 @@ class EquipmentControlServiceTest {
 
     @Test
     void buildsDriveVelocityWithExistingRobotProtocolFields() {
-        register(component("BODY", "base"));
+        register(component("BODY", "body"));
+
+        assertThat(maps(service.controlProfile("robot-001").get("devices")))
+                .filteredOn(device -> "WHEELED_BASE".equals(device.get("deviceType")))
+                .singleElement()
+                .satisfies(device -> assertThat(device)
+                        .containsEntry("deviceId", "base")
+                        .containsEntry("scope", "BODY")
+                        .containsEntry("actions", List.of(
+                                "drive.velocity",
+                                "navigation.return_home",
+                                "docking.leave")));
 
         Map<String, Object> payload = publish("base", "drive.velocity", object(
                 "linearX", 0.3,
@@ -89,14 +100,44 @@ class EquipmentControlServiceTest {
 
     @Test
     void buildsWarningLightCommandWithExistingRobotProtocolFields() {
-        register(component("PAYLOAD", "warning_light"));
+        register(object(
+                "componentType", "PAYLOAD",
+                "code", "warning_light",
+                "name", "红蓝警示灯",
+                "capabilities", List.of(object(
+                        "code", "DEVICE_CONTROL",
+                        "actions", List.of(
+                                action("GET_LIGHT_STATE"),
+                                action("SET_LIGHT_MODE"),
+                                action("SET_LIGHT_STATE"))))));
 
-        Map<String, Object> payload = publish("warning-light-left", "set_state", object("enabled", true));
+        List<Map<String, Object>> devices = maps(service.controlProfile("robot-001").get("devices"));
+        assertThat(devices)
+                .filteredOn(device -> "WARNING_LIGHT".equals(device.get("deviceType")))
+                .singleElement()
+                .satisfies(device -> {
+                    assertThat(device)
+                            .containsEntry("deviceId", "warning_light")
+                            .containsEntry("displayName", "红蓝警示灯")
+                            .containsEntry("actions", List.of("get_state", "set_mode", "set_state"));
+                    assertThat(map(device.get("controlProfile")))
+                            .containsEntry("lightId", "all")
+                            .containsEntry("lightIds", List.of("light-001", "light-002", "all"))
+                            .containsEntry("modes", List.of(0, 1, 2));
+                });
 
-        assertThat(map(payload.get("params"))).containsExactly(
-                entry("lightId", "light-001"),
+        Map<String, Object> state = publish("warning_light", "set_state", object("enabled", true));
+        Map<String, Object> mode = publish("warning_light", "set_mode", object("mode", 2));
+        Map<String, Object> query = publish("warning_light", "get_state", object());
+
+        assertThat(map(state.get("params"))).containsExactly(
+                entry("lightId", "all"),
                 entry("powerOn", true));
-        assertTarget(payload, "warning-light-left", "WARNING_LIGHT");
+        assertThat(map(mode.get("params"))).containsExactly(
+                entry("lightId", "all"),
+                entry("mode", 2));
+        assertThat(map(query.get("params"))).containsExactly(entry("lightId", "all"));
+        assertTarget(state, "warning_light", "WARNING_LIGHT");
     }
 
     @Test
@@ -120,17 +161,26 @@ class EquipmentControlServiceTest {
                             .containsEntry("actions", List.of("light.vehicle.set"));
                 });
 
-        Map<String, Object> payload = publish("vehicle-light", "light.vehicle.set", object(
-                "front", object("mode", "CUSTOM", "brightness", 70),
-                "rear", object("mode", "BREATH", "brightness", 80)));
+        Map<String, Object> enabled = publish("vehicle-light", "light.vehicle.set", object(
+                "front", object("mode", "ON", "brightness", 0),
+                "rear", object("mode", "ON", "brightness", 0)));
+        Map<String, Object> disabled = publish("vehicle-light", "light.vehicle.set", object(
+                "front", object("mode", "OFF", "brightness", 0),
+                "rear", object("mode", "OFF", "brightness", 0)));
 
-        assertThat(map(map(payload.get("params")).get("front"))).containsExactly(
-                entry("mode", "CUSTOM"),
-                entry("brightness", 70));
-        assertThat(map(map(payload.get("params")).get("rear"))).containsExactly(
-                entry("mode", "BREATH"),
+        assertThat(map(map(enabled.get("params")).get("front"))).containsExactly(
+                entry("mode", "ON"),
                 entry("brightness", 0));
-        assertTarget(payload, "vehicle-light", "VEHICLE_LIGHT");
+        assertThat(map(map(enabled.get("params")).get("rear"))).containsExactly(
+                entry("mode", "ON"),
+                entry("brightness", 0));
+        assertThat(map(map(disabled.get("params")).get("front"))).containsExactly(
+                entry("mode", "OFF"),
+                entry("brightness", 0));
+        assertThat(map(map(disabled.get("params")).get("rear"))).containsExactly(
+                entry("mode", "OFF"),
+                entry("brightness", 0));
+        assertTarget(enabled, "vehicle-light", "VEHICLE_LIGHT");
     }
 
     @Test
@@ -270,7 +320,7 @@ class EquipmentControlServiceTest {
 
     @Test
     void publishesModeChangeWithoutOptimisticallyPublishingRobotState() {
-        register(component("BODY", "base"));
+        register(component("BODY", "body"));
         online("MANUAL", 12);
         Map<String, Object> session = acquireBase();
 

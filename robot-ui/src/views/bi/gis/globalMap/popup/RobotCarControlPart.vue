@@ -86,44 +86,36 @@
                 </div>
               </div>
               <div class="lights flx-align-center" :class="{ 'mt15': showTalk, 'ml30 flex-column': !showTalk }">
-                <div v-if="vehicleLightDevice">
-                  <div class="flx-align-center">
-                    <span class="wp76 tal">前车灯：</span>
-                    <el-switch
-                      :value="vehicleLightState?.front?.mode === 'ON'"
-                      active-text="开启"
-                      inactive-text="关闭"
-                      active-color="#3DB56A"
-                      inactive-color="#5E5E5E"
-                      @change="e => setVehicleLightMode('front', e ? 'ON' : 'OFF')"
-                    >
-                    </el-switch>
-                  </div>
-                  <div class="flx-align-center">
-                    <span class="wp76 tal">后车灯：</span>
-                    <el-switch
-                      :value="vehicleLightState?.rear?.mode === 'ON'"
-                      active-text="开启"
-                      inactive-text="关闭"
-                      active-color="#3DB56A"
-                      inactive-color="#5E5E5E"
-                      @change="e => setVehicleLightMode('rear', e ? 'ON' : 'OFF')"
-                    >
-                    </el-switch>
-                  </div>
+                <div v-if="vehicleLightDevice" class="flx-align-center">
+                  <span class="wp76 tal">车灯：</span>
+                  <el-switch
+                    :value="vehicleLightEnabled"
+                    :disabled="!hasDeviceAction(vehicleLightDevice, 'light.vehicle.set')"
+                    active-text="开启"
+                    inactive-text="关闭"
+                    active-color="#3DB56A"
+                    inactive-color="#5E5E5E"
+                    @change="setVehicleLights">
+                  </el-switch>
                 </div>
-                <div v-if="warningLightDevices?.length">
-                  <div v-for="device in warningLightDevices" :key="device.deviceId" class="flx-align-center">
-                    <span class="wp76 tal">{{ device.displayName || device.deviceId }}：</span>
-                    <el-switch
-                      :value="isWarningLightOn(device)"
-                      active-text="开启"
-                      inactive-text="关闭"
-                      active-color="#3DB56A"
-                      inactive-color="#5E5E5E"
-                      @change="setWarningLight(device, $event)">
-                    </el-switch>
-                  </div>
+                <div v-if="warningLightDevice" class="flx-align-center">
+                  <span class="wp90 tal">红蓝警示灯：</span>
+                  <el-switch
+                    :value="isWarningLightOn(warningLightDevice)"
+                    :disabled="!hasDeviceAction(warningLightDevice, 'set_state')"
+                    active-text="开启"
+                    inactive-text="关闭"
+                    active-color="#3DB56A"
+                    inactive-color="#5E5E5E"
+                    @change="setWarningLight(warningLightDevice, $event)">
+                  </el-switch>
+                  <el-button
+                    class="warning-mode-button ml10"
+                    size="mini"
+                    icon="el-icon-refresh"
+                    :disabled="!hasDeviceAction(warningLightDevice, 'set_mode')"
+                    @click="switchWarningLightMode(warningLightDevice)"
+                  >切换模式</el-button>
                 </div>
               </div>
             </div>
@@ -153,44 +145,7 @@ export default {
   data() {
     return {
       visible: false,
-      leftLightSwitch: false,
-      rightLightSwitch: true,
       robotControlObj,
-      tabList: [
-        {
-          label: '前车灯', 
-          value: 0
-        },
-        {
-          label: '后车灯',
-          value: 1
-        }
-      ],
-      tabIndex: 0,
-      modes: [
-        {
-          code: 0,
-          name: '普通模式',
-          desc: '打开后灯光常亮',
-          icon: 'light-high-beam',
-          key: 'ON/OFF'
-        },
-        {
-          code: 1,
-          name: '呼吸灯模式',
-          desc: '打开后双灯闪烁',
-          icon: 'light-side',
-          key: 'BREATH'
-        },
-        {
-          code: 2,
-          name: '自定义模式',
-          desc: '滑动调节亮度',
-          icon: 'light-car',
-          key: 'CUSTOM'
-        }
-      ],
-      selectMode: 1,
       prefixId: 'robot-car-video-div',
       robot: {},
       cameraOrderByRobot: {}
@@ -241,13 +196,6 @@ export default {
       this.$router.push({ path: '/bi/patrol/monitor' })
     },
     handleControl(key) {},
-    getLightDevice(displayName) {
-      return this.warningLightDevices.find(item => item.displayName === displayName) || {}
-    },
-    handleClickMode(e, index, item) {
-      if (e.target.className.includes('el-slider')) return
-      this.setVehicleLightMode(this.tabIndex === 0 ? 'front' : 'rear', index === 0 ? 'OFF' : item.key)
-    },
     cameraIdentity(robotId, camera) {
       return camera.key || `${robotId}-${camera.deviceId || camera.cameraId}`
     },
@@ -332,6 +280,7 @@ export default {
     }
   }
 }
+
 ::v-deep {
   .el-switch {
     line-height: 18px !important;
@@ -379,6 +328,34 @@ export default {
       left: unset;
       right: 3px;
     }
+  }
+}
+
+::v-deep .warning-mode-button.el-button {
+  padding: 8px 10px;
+  color: #FFF;
+  font-size: 12px;
+  background: #021328;
+  box-shadow: 0 0 14px 2px #09F inset;
+  border: none;
+  border-radius: 4px;
+  &:hover,
+  &:focus {
+    color: #FFF;
+    background: #021328;
+    box-shadow: 0 0 14px 2px #09F inset;
+  }
+  &:active {
+    color: #0BF9FE;
+    background: #021328;
+    box-shadow: 0 0 10px 3px #0BF9FE inset;
+  }
+  &.is-disabled,
+  &.is-disabled:hover,
+  &.is-disabled:focus {
+    color: #8F8F8F;
+    background: #080808;
+    box-shadow: 0 0 14px 2px #515151 inset;
   }
 }
 
@@ -436,120 +413,6 @@ export default {
     }
   }
 }
-.mode {
-  .option {
-    border-radius: 6px;
-    border: 1px solid #004376;
-    background: #021328;
-    .order {
-      position: relative;
-      color: #C8D2E4;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 12px;
-      line-height: 16px;
-      letter-spacing: 0.857px;
-      &::before, &::after {
-        position: absolute;
-        border-radius: 50%;
-        content: '';
-      }
-      &::before {
-        top: 3px;
-        left: 0;
-        width: 10px;
-        height: 10px;
-        border: 1px solid #C8D2E4;
-      }
-      &::after {
-        top: 6px;
-        left: 3px;
-        width: 4px;
-        height: 4px;
-        display: none;
-        background: linear-gradient(180deg, #E1F7FF 0%, #35CAFF 100%);
-      }
-    }
-    .name {
-      color: #C8D2E4;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 14px;
-      line-height: 19px;
-      letter-spacing: 0.857px;
-    }
-    .desc {
-      color: #8D9BB5;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 10px;
-      line-height: 14px;
-      letter-spacing: 0.857px;
-    }
-    .svg-icon {
-      color: #FFF;
-      font-size: 12px
-    }
-    &.is-active {
-      border-color: #3CABFF;
-      background: #021328;
-      box-shadow: 0 0 20px 0 #159AFF inset;
-      .order {
-        color: #35CAFF;
-        &::before {
-          border-color: #35CAFF;
-        }
-        &::after {
-          display: inline-block;
-        }
-      }
-      .name {
-        background: linear-gradient(180deg, #A3D9FF 42.11%, #4F9ADB 73.68%);
-        background-clip: text;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-      .desc {
-        color: #06AEFC
-      }
-    }
-  }
-}
-.percent {
-  width: auto;
-  padding: 0 2px;
-  color: #FFF;
-  font-family: "Alibaba PuHuiTi";
-  font-size: 8px;
-  line-height: 11px;
-  letter-spacing: 0.857px;
-  border-radius: 1px;
-  background: linear-gradient(214deg, #03AFFA 32.73%, #027FFA 87.27%);
-}
-::v-deep {
-  .el-slider {
-    width: 100%;
-    &__runway {
-      height: 4px;
-      margin: 0;
-      border-radius: 0;
-      background: #D9D9D9;
-    }
-    &__bar {
-      height: 4px;
-      border-radius: 0;
-      background: linear-gradient(90deg, #0278FA 0%, #03BBFA 100%);
-    }
-    .el-slider__button-wrapper {
-      top: -8px;
-      height: auto;      
-      .el-slider__button {
-        width: 10px;
-        height: 10px;
-        border-color: #03ADFA;
-        border-width: 2px;
-      }
-    }
-  }
-}
-
 .mode {
   color: #FFF;
   font-family: "Microsoft YaHei";

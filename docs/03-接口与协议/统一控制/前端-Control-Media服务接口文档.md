@@ -1092,6 +1092,10 @@ Content-Type: application/json
 | 方向 | Topic | 匹配规则 |
 |---|---|---|
 | Control -> Go 客户端 | `robot/{robotId}/control/body/command` | `target.deviceType` 为 `WHEELED_BASE`、`QUADRUPED_BASE`、`BIPED_BASE` |
+
+管理端本体组件的 `code` 可为 `body` 或其他厂商登记值；Control Service 对
+`BODY` 类型组件统一生成协议设备 ID `base`。前端控制会话、移动控制、模式
+切换和 MQTT `target.deviceId` 均使用 `base`，不直接使用管理端组件 `code`。
 | Control -> Go 客户端 | `robot/{robotId}/control/ptz/command` | `target.deviceType=DUAL_LIGHT_PTZ` |
 | Control -> Go 客户端 | `robot/{robotId}/control/audio/command` | `target.deviceType` 为 `SPEAKER`、`CLIENT_AUDIO`、`INTERCOM`、`VOLUME_CONTROL` |
 | Control -> Go 客户端 | `robot/{robotId}/control/launcher/command` | `target.deviceType=LAUNCHER` |
@@ -1105,7 +1109,17 @@ Content-Type: application/json
 存在 `SET_LIGHTS` 动作时，Control 派生
 `deviceId=vehicle-light`、`deviceType=VEHICLE_LIGHT`、
 `actions=[light.vehicle.set]`。管理端无需重复注册独立车灯组件，前端也不直接
-使用管理端动作名 `SET_LIGHTS`。
+使用管理端动作名 `SET_LIGHTS`。大屏只显示一个车灯总开关，开启时将
+`front.mode`、`rear.mode` 同时设为 `ON`，关闭时同时设为 `OFF`。机器人端
+没有车灯状态查询能力，页面使用最近一次成功操作的本地状态渲染开关。
+
+红蓝警示灯能力来源于管理端 `component.code=warning_light` 组件的
+`DEVICE_CONTROL` 能力。Control 将 `GET_LIGHT_STATE`、`SET_LIGHT_MODE`、
+`SET_LIGHT_STATE` 分别映射为 `get_state`、`set_mode`、`set_state`，并只返回
+一个 `deviceId=warning_light` 的控制设备。大屏整体控制固定下发
+`params.lightId=all`，不再生成左右灯虚拟设备。大屏加载能力或切换机器人后
+自动发送一次 `get_state`，该只读查询不申请控制会话；查询结果由机器人端通过
+统一状态 Topic 上报后刷新页面。
 
 请求参数：
 
@@ -1130,10 +1144,10 @@ Content-Type: application/json
 | `SPEAKER/set_volume` | `volumePercent` |
 | `SPEAKER/set_mute` | `mute` |
 | `SEARCHLIGHT/light.set` | `enabled`、`brightness`、`mode` |
-| `light.vehicle.set` | `front`、`rear` 车灯模式和亮度，后端下发平台通用 `mode/brightness`，底层 ROS topic 由客户端适配 |
-| `WARNING_LIGHT/get_state` | `lightId` |
-| `WARNING_LIGHT/set_state` | `lightId`、`powerOn` |
-| `WARNING_LIGHT/set_mode` | `lightId`、`mode` |
+| `light.vehicle.set` | 必须同时传 `front`、`rear`；一期总开关统一传 `ON` 或 `OFF`，`brightness=0` |
+| `WARNING_LIGHT/get_state` | `lightId=all` |
+| `WARNING_LIGHT/set_state` | `lightId=all`、`powerOn` |
+| `WARNING_LIGHT/set_mode` | `lightId=all`、`mode`；一期大屏“切换模式”固定传 `2`，`0/1` 仅保留底层协议兼容 |
 | `LAUNCHER/get_status` | `temporarilyEnableSafety`、`restoreSafetyAfterQuery` |
 | `LAUNCHER/set_safety` | `safety_on`、`wait_status` |
 | `LAUNCHER/fire` | `tube`、`waitStatusAfterFire`、`keepSafetyOn`；前端 `confirmToken` 仅供后端校验，不下发 MQTT |

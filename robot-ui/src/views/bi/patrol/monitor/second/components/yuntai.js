@@ -2,11 +2,11 @@ import { mapActions, mapState } from "vuex";
 import { acquireControl, mediaClientId, sendEquipmentCommand, createConfirmToken } from "../../../../../../api/media";
 import { errorMessage } from "../../../../../../utils";
 import ControlModeWarning from "./ControlModeWarning.vue";
-function defaultVehicleLightState() {
-  return {
-    front: { mode: 'OFF', brightness: 50 },
-    rear: { mode: 'OFF', brightness: 50 }
-  }
+
+function cachedVehicleLightEnabled(cache) {
+  if (cache?.vehicleLightEnabled !== undefined) return !!cache.vehicleLightEnabled
+  return cache?.vehicleLightState?.front?.mode === 'ON' &&
+    cache?.vehicleLightState?.rear?.mode === 'ON'
 }
 
 export default {
@@ -56,8 +56,16 @@ export default {
       return this.controlDevices().find(device => ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
     },
     // 警示灯
-    warningLightDevices() {
-      return this.controlDevices().filter(device => device.deviceType === 'WARNING_LIGHT')
+    warningLightDevice() {
+      return this.controlDevices().find(device => device.deviceType === 'WARNING_LIGHT')
+    },
+    warningLightQueryKey() {
+      const device = this.warningLightDevice
+      if (this.visible === false ||
+          !this.selectedRobotId ||
+          !device ||
+          !this.hasDeviceAction(device, 'get_state')) return ''
+      return `${this.selectedRobotId}:${device.deviceId}`
     },
     // 车灯
     vehicleLightDevice() {
@@ -75,24 +83,27 @@ export default {
       controlTimers: {},
       controlSeq: 1,
       controlSessions: {},
+      lastWarningLightQueryKey: '',
       ptzAutoRotateState: Object.assign({}, this.deviceStateCache?.ptzAutoRotateState || {}),
       // audioState: Object.assign({}, this.deviceStateCache?.audioState || {}),
       launcherSafety: Object.assign({}, this.deviceStateCache?.launcherSafety || {}),
       netGunSafety: Object.assign({}, this.deviceStateCache?.netGunSafety || {}),
       warningLightState: Object.assign({}, this.deviceStateCache?.warningLightState || {}),
-      vehicleLightState: Object.assign(defaultVehicleLightState(), this.deviceStateCache?.vehicleLightState || {}),
-      confirmedVehicleLightState: Object.assign(defaultVehicleLightState(), this.deviceStateCache?.vehicleLightState || {}),
-      vehicleLightStateReady: !!this.deviceStateCache?.vehicleLightState,
-      vehicleLightParts: [
-        { key: 'front', label: '前灯' },
-        { key: 'rear', label: '后灯' }
-      ],
-      vehicleLightModeOptions: [
-        { value: 'OFF', label: '常关', code: 0 },
-        { value: 'ON', label: '常开', code: 1 },
-        { value: 'BREATH', label: '呼吸', code: 2 },
-        { value: 'CUSTOM', label: '自定义', code: 3 }
-      ]
+      vehicleLightEnabled: cachedVehicleLightEnabled(this.deviceStateCache)
+    }
+  },
+  watch: {
+    warningLightQueryKey: {
+      immediate: true,
+      handler(key) {
+        if (!key) {
+          this.lastWarningLightQueryKey = ''
+          return
+        }
+        if (key === this.lastWarningLightQueryKey) return
+        this.lastWarningLightQueryKey = key
+        this.queryWarningLightState()
+      }
     }
   },
   methods: {
@@ -287,9 +298,8 @@ export default {
       return session
     },
     commandPayload(robotId, controlSessionId, controlMode, device, action, params, source) {
-      return {
+      const payload = {
         robotId,
-        controlSessionId,
         controlMode,
         target: {
           scope: device.scope,
@@ -305,6 +315,8 @@ export default {
           timestamp: new Date().toISOString()
         }
       }
+      if (controlSessionId) payload.controlSessionId = controlSessionId
+      return payload
     },
 
     // ====================================================
@@ -437,30 +449,56 @@ export default {
     isWarningLightOn(device) {
       if (!device) return false
       const status = device.status || device.runtimeStatus || {}
-      if (status.powerOn !== undefined || status.enabled !== undefined) {
-        return !!(status.powerOn === undefined ? status.enabled : status.powerOn)
-      }
+      const powerOn = status.powerOn === undefined ? status.enabled : status.powerOn
+      if (powerOn !== undefined) return this.warningLightPowerOn(powerOn)
       if (this.warningLightState[device.deviceId] !== undefined) return !!this.warningLightState[device.deviceId]
-      return !!(status.powerOn === undefined ? status.enabled : status.powerOn)
+      return false
     },
-    hasWarningLightStatus(device) {
-      if (!device) return false
-      if (this.warningLightState[device.deviceId] !== undefined) return true
-      const status = device.status || device.runtimeStatus || {}
-      return status.powerOn !== undefined || status.enabled !== undefined
+    warningLightPowerOn(value) {
+      return Array.isArray(value) ? value.length > 0 && value.every(Boolean) : !!value
+    },
+    hasDeviceAction(device, action) {
+      return !!(device && Array.isArray(device.actions) && device.actions.includes(action))
+    },
+    async queryWarningLightState() {
+      const device = this.warningLightDevice
+      if (!device || !this.hasDeviceAction(device, 'get_state')) return
+      const profile = device.controlProfile || {}
+      try {
+        await sendEquipmentCommand(this.selectedRobotId,
+          this.commandPayload(
+            this.selectedRobotId,
+            null,
+            this.selectedRobot?.controlMode || 'MANUAL',
+            device,
+            'get_state',
+            { lightId: profile.lightId || 'all' },
+            `${device.deviceId}_get_state`
+          ))
+      } catch (error) {
+        console.warn('WARN query warning light state', errorMessage(error))
+      }
     },
     async setWarningLight(device, enabled) {
       this.$set(this.warningLightState, device.deviceId, enabled)
       this.persistDeviceStateCache({ ...this.deviceStateCache, warningLightState: this.warningLightState })
       const profile = device.controlProfile || {}
       const ok = await this.sendDeviceCommand(device, 'set_state', {
-        lightId: profile.lightId || device.lightId || device.deviceId,
+        lightId: profile.lightId || 'all',
         powerOn: enabled
       }, `${device.deviceId}_${enabled ? 'on' : 'off'}`)
       if (!ok) {
         this.$set(this.warningLightState, device.deviceId, !enabled)
         this.persistDeviceStateCache({ ...this.deviceStateCache, warningLightState: this.warningLightState })
       }
+    },
+    async switchWarningLightMode(device) {
+      if (!device) return
+      const profile = device.controlProfile || {}
+      await this.sendDeviceCommand(device, 'set_mode', {
+        lightId: profile.lightId || 'all',
+        mode: 2
+      }, `${device.deviceId}_mode_pulse`)
     },
     async setNetGunSafety(device, enabled) {
       this.$set(this.netGunSafety, device.deviceId, enabled)
@@ -469,90 +507,27 @@ export default {
       if (!device) return {}
       return device.status || device.runtimeStatus || {}
     },
-    vehicleLightStatusPart(part) {
-      if (!part || typeof part !== 'object') return null
-      const mode = part.mode || this.vehicleLightModeOptions.find(item => item.code === part.modeCode)?.value || 'OFF'
-      const normalized = ['OFF', 'ON', 'BREATH', 'CUSTOM'].includes(mode) ? mode : 'OFF'
-      const brightness = part.brightness === undefined ? part.customValue : part.brightness
-      return {
-        mode: normalized,
-        brightness: normalized === 'CUSTOM' ? Math.max(0, Math.min(100, Number(brightness || 0))) : 0
-      }
-    },
-    syncVehicleLightStateFromStatus(device) {
-      if (!device) return
-      const status = this.deviceStatus(device)
-      const front = this.vehicleLightStatusPart(status.front)
-      const rear = this.vehicleLightStatusPart(status.rear)
-      if (!front && !rear) return
-      const next = this.cloneVehicleLightState()
-      if (front) next.front = front
-      if (rear) next.rear = rear
-      this.vehicleLightState = next
-      this.confirmedVehicleLightState = this.cloneVehicleLightState(next)
-    },
-    cloneVehicleLightState(state) {
-      const source = state || this.vehicleLightState
-      return {
-        front: Object.assign({}, source.front),
-        rear: Object.assign({}, source.rear)
-      }
-    },
-    async setVehicleLightMode(part, mode) {
-      const next = this.cloneVehicleLightState()
-      next[part].mode = mode
-      if (mode === 'CUSTOM' && next[part].brightness <= 0) {
-        next[part].brightness = 50
-      }
-      this.vehicleLightState = next
-      const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_${String(mode).toLowerCase()}`)
-      if (ok) {
-        this.confirmedVehicleLightState = this.cloneVehicleLightState(next)
-        this.vehicleLightStateReady = true
-        this.persistDeviceStateCache({ ...this.deviceStateCache, vehicleLightState: this.vehicleLightState })
-      } else if (this.vehicleLightStateReady) {
-        this.vehicleLightState = this.cloneVehicleLightState(this.confirmedVehicleLightState)
-      }
-    },
-    updateVehicleLightBrightness(part, value) {
-      this.vehicleLightState[part].brightness = value
-    },
-    async setVehicleLightBrightness(part, value) {
-      this.vehicleLightState[part].mode = 'CUSTOM'
-      this.vehicleLightState[part].brightness = value
-      const next = this.cloneVehicleLightState();
-      const ok = await this.sendVehicleLightCommand(`vehicle_light_${part}_custom`)
-      if (ok) {
-        this.confirmedVehicleLightState = this.cloneVehicleLightState(next)
-        this.vehicleLightStateReady = true
-        this.persistDeviceStateCache({ ...this.deviceStateCache, vehicleLightStateReady: this.vehicleLightStateReady })
-      } else if (this.vehicleLightStateReady) {
-        this.vehicleLightState = this.cloneVehicleLightState(this.confirmedVehicleLightState)
-      }
-    },
-    sendVehicleLightCommand(source) {
+    async setVehicleLights(enabled) {
       const device = this.vehicleLightDevice
-      if (!device) return false
-      const state = this.cloneVehicleLightState()
-      return this.sendDeviceCommand(device, 'light.vehicle.set', {
-        front: this.vehicleLightPayloadPart(state.front),
-        rear: this.vehicleLightPayloadPart(state.rear)
-      }, source)
-    },
-    vehicleLightPayloadPart(part) {
-      const mode = part.mode || 'OFF'
-      const option = this.vehicleLightModeOptions.find(item => item.value === mode)
-      return {
-        mode,
-        modeCode: option ? option.code : 0,
-        brightness: mode === 'CUSTOM' ? part.brightness : 0
+      if (!device) return
+      const previous = this.vehicleLightEnabled
+      this.vehicleLightEnabled = !!enabled
+      this.persistDeviceStateCache({
+        ...this.deviceStateCache,
+        vehicleLightEnabled: this.vehicleLightEnabled
+      })
+      const mode = this.vehicleLightEnabled ? 'ON' : 'OFF'
+      const ok = await this.sendDeviceCommand(device, 'light.vehicle.set', {
+        front: { mode, brightness: 0 },
+        rear: { mode, brightness: 0 }
+      }, `vehicle_light_${this.vehicleLightEnabled ? 'on' : 'off'}`)
+      if (!ok) {
+        this.vehicleLightEnabled = previous
+        this.persistDeviceStateCache({
+          ...this.deviceStateCache,
+          vehicleLightEnabled: this.vehicleLightEnabled
+        })
       }
-    },
-    hasVehicleLightStatus(device) {
-      if (!device) return false
-      if (this.vehicleLightStateReady) return true
-      const status = device.status || device.runtimeStatus || {}
-      return !!status.front || !!status.rear
     },
     syncAudioStatesFromDevices(robotId, devices, options = {}) {
       if (!robotId || !Array.isArray(devices)) return
@@ -585,24 +560,17 @@ export default {
         }
         if (device.deviceType === 'WARNING_LIGHT' && (status.powerOn !== undefined || status.enabled !== undefined) &&
             !(options.preserveExisting && this.warningLightState[device.deviceId] !== undefined)) {
-          this.$set(this.warningLightState, device.deviceId, !!(status.powerOn === undefined ? status.enabled : status.powerOn))
+          const powerOn = status.powerOn === undefined ? status.enabled : status.powerOn
+          this.$set(
+            this.warningLightState,
+            device.deviceId,
+            this.warningLightPowerOn(powerOn)
+          )
         }
         const ptzKey = `${robotId}:${device.deviceId}`
         if (device.deviceType === 'DUAL_LIGHT_PTZ' && status.autoRotateEnabled !== undefined &&
             !(options.preserveExisting && this.ptzAutoRotateState[ptzKey] !== undefined)) {
           this.$set(this.ptzAutoRotateState, ptzKey, !!status.autoRotateEnabled)
-        }
-        if (device.deviceType === 'VEHICLE_LIGHT' && !(options.preserveExisting && this.vehicleLightStateReady)) {
-          const next = this.cloneVehicleLightState()
-          const front = this.vehicleLightStatusPart(status.front)
-          const rear = this.vehicleLightStatusPart(status.rear)
-          if (front) next.front = front
-          if (rear) next.rear = rear
-          if (front || rear) {
-            this.vehicleLightState = next
-            this.confirmedVehicleLightState = this.cloneVehicleLightState(next)
-            this.vehicleLightStateReady = true
-          }
         }
       })
       this.persistDeviceStateCache({
@@ -612,7 +580,7 @@ export default {
         netGunSafety: this.netGunSafety,
         warningLightState: this.warningLightState,
         ptzAutoRotateState: this.ptzAutoRotateState,
-        vehicleLightStateReady: this.vehicleLightStateReady
+        vehicleLightEnabled: this.vehicleLightEnabled
       })
     },
   }
