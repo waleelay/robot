@@ -284,14 +284,22 @@ public class VideoSessionService {
         VideoSession session = requireSession(sessionId);
         addViewer(session, user);
         OffsetDateTime heartbeatAt = now();
+        boolean resumeStreaming = session.getStatus() == VideoSessionStatus.IDLE_WAIT && hasPublishedTrack(session);
         if (holdsRoomForIntercom(session)
                 && Objects.equals(session.getIntercomOperatorId(), user.userId())
                 && Objects.equals(session.getIntercomClientId(), user.clientId())) {
             session.setIntercomHeartbeatAt(heartbeatAt);
         }
         session.setViewerCount(activeViewerCount(sessionId));
+        if (resumeStreaming) {
+            session.setStatus(VideoSessionStatus.STREAMING);
+            session.setIdleSince(null);
+        }
         session.setUpdatedAt(heartbeatAt);
         repository.save(session);
+        if (resumeStreaming) {
+            emit("video.session.streaming", session);
+        }
         return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
     }
 

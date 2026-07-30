@@ -1,24 +1,19 @@
 import request from '@/utils/request'
+import { mediaClientId } from '@/utils/media-client-id'
 
 // 每个浏览器标签页拥有独立 clientId，但同一标签页刷新后保持不变。
 // 这对控制权续用很重要：刷新页面不能被后端误判成另一个终端。
-const clientIdKey = 'robot-media-client-id'
-const existingClientId = window.sessionStorage.getItem(clientIdKey)
-const clientId = existingClientId || `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
-if (!existingClientId) {
-  window.sessionStorage.setItem(clientIdKey, clientId)
-}
-export const mediaClientId = clientId
+export { mediaClientId }
 
 const headers = {
   'X-User-Id': 'u1001',
   'X-Org-Id': 'org001',
   'X-Roles': 'MEDIA_VIEWER,MEDIA_OPERATOR',
-  'X-Client-Id': clientId
+  'X-Client-Id': mediaClientId
 }
 
 const sessionHeaders = {
-  'X-Client-Id': clientId
+  'X-Client-Id': mediaClientId
 }
 
 const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin

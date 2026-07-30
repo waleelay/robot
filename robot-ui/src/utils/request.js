@@ -6,6 +6,7 @@ import errorCode from '@/utils/errorCode'
 import { tansParams, blobValidate } from "@/utils/ruoyi";
 import cache from '@/plugins/cache'
 import { saveAs } from 'file-saver'
+import { mediaClientId } from '@/utils/media-client-id'
 
 let downloadLoadingInstance;
 let showAlert = false;
@@ -23,6 +24,10 @@ const service = axios.create({
 
 // request拦截器
 service.interceptors.request.use(config => {
+  config.headers = config.headers || {}
+  if (!config.headers['X-Client-Id']) {
+    config.headers['X-Client-Id'] = mediaClientId
+  }
   // console.log('----------------------------------------------------------', config.url)
   // 是否需要设置 token
   const isToken = (config.headers || {}).isToken === false

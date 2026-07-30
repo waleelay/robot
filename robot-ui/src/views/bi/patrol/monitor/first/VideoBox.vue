@@ -57,12 +57,12 @@
         </div>
       </div>
       <div
-        v-if="statusType(ZQL_videosInfos[`slot_${index}`].status) !== 'success'"
+        v-if="showStatusOverlay(ZQL_videosInfos[`slot_${index}`])"
         class="w100 h100 flx-center flex-column"
         style="position: absolute; top: 0; left: 0; color: #1A5683">
-        <svg-icon :icon-class="statusType(ZQL_videosInfos[`slot_${index}`].status) === 'warning' ? 'loading' : 'unlink1' " style="font-size: 22px;" />
+        <svg-icon :icon-class="isConnectingStatus(ZQL_videosInfos[`slot_${index}`]) ? 'loading' : 'unlink1' " style="font-size: 22px;" />
         <span class="mt10" style="font-family: YouSheBiaoTiHei; font-size: 16.978px; line-height: 22px; letter-spacing: 0.34px;">
-          {{ statusType(ZQL_videosInfos[`slot_${index}`].status) === 'warning' ? '正在连接' : '未连接' }}  
+          {{ isConnectingStatus(ZQL_videosInfos[`slot_${index}`]) ? '正在连接' : '未连接' }}
         </span>
       </div>
     </template>
@@ -187,6 +187,14 @@ export default {
       if (status === 'FAILED' || status === 'TIMEOUT' || status === 'offline') return 'danger'
       if (status === 'REQUESTING_CLIENT' || status === 'ROOM_READY') return 'warning'
       return 'info'
+    },
+    showStatusOverlay(videoInfo) {
+      return !(this.cameraInfo.hasVideo || videoInfo?.hasVideo)
+    },
+    isConnectingStatus(videoInfo) {
+      if (this.cameraInfo.connecting || this.cameraInfo.restarting || videoInfo?.loading) return true
+      return ['INIT', 'REQUESTING_CLIENT', 'ROOM_READY', 'STREAMING', 'INTERRUPTED', 'IDLE_WAIT']
+        .includes(videoInfo?.status)
     },
     // 判断视频是否正在播放
     videoStatus(slotKey) {

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -18,6 +19,7 @@ import com.robot.mediaserver.video.model.VideoSessionStatus;
 import com.robot.mediaserver.video.repository.MediaSessionViewerRepository;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
 import com.robot.mediaserver.ws.MediaWebSocketPublisher;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -102,6 +104,24 @@ class VideoSessionServiceIntercomOccupancyTest {
         assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.IDLE_WAIT);
         assertThat(target.getTrackSid()).isNull();
         verifyNoInteractions(mediaTrackService);
+    }
+
+    @Test
+    void heartbeatRestoresIdleSessionWhenPublishedTrackStillExists() {
+        target.setStatus(VideoSessionStatus.IDLE_WAIT);
+        target.setIdleSince(OffsetDateTime.now());
+        target.setTrackSid("TR_existing");
+        target.setTrackName("video.visible.sub");
+        when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(
+                "vs-target", "user:operator-1:web-1")).thenReturn(Optional.empty());
+        when(viewerRepository.countBySessionIdAndLeftAtIsNull("vs-target")).thenReturn(1L);
+
+        var response = service.heartbeat("vs-target", operator("operator-1", "web-1"));
+
+        assertThat(response.status()).isEqualTo(VideoSessionStatus.STREAMING);
+        assertThat(response.viewerCount()).isEqualTo(1);
+        assertThat(target.getIdleSince()).isNull();
+        verify(publisher).publish("video.session.streaming", target);
     }
 
     private CurrentUser operator(String userId, String clientId) {
