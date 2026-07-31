@@ -8,8 +8,8 @@
  * @Version: 
 -->
 <template>
-  <div class="flx-align-center h100 pt20 pb20">
-    <div class="flex flex-column h100 pl30" style="border-left: 1px solid #123F8C;">
+  <div class="flx-align-center h100 pt20 pb20 with-bl">
+    <div class="flex flex-column h100 pl30">
       <div class="custom-tab-button flex">
         <div v-for="item in tabList" :key="item.value" class="tab-button-item" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value">{{ item.label }}</div>
       </div>
@@ -47,40 +47,54 @@
           <svg-icon icon-class="control-arrow" />
         </div>
       </div>
-      <div class="btns flx-center wp180 ml28 flex-wrap">
+      <div class="ml28">
+        <div class="btns flx-center wp180 flex-wrap">
           <!-- :disabled="deviceData.onDockState === '1'" -->
-        <template v-for="(item, index) in operList.slice(tabIndex === 0 ? 0 : 4, tabIndex === 0 ? 4 : 20)">
-          <el-button
-            v-if="item.key !== 'step'"
-            :key="item.key"
-            type="primary"
-            :disabled="selectedRobot?.controlMode !== 'MANUAL'"
-            class="wp80 hp30 mt10 ml10"
-            :class="{'is-disabled': selectedRobot?.controlMode !== 'MANUAL'}"
-            @mousedown.native="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
-            @mouseup.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
-            @mouseleave.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
-            @touchstart.native.prevent="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
-            @touchend.native.prevent="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
-            @click="controlRobot(item.key)"
-          >
-            {{ item.label }}
-          </el-button>
-          <el-select
-            v-else
-            :key="item.key"
-            v-model="butaiValue"
-            placeholder="切换步态"
-            @change="changeStep"
-            class="wp80 ml10 mt10 hp30 butai-select"
-            :disabled="selectedRobot?.controlMode !== 'MANUAL'"
-            :class="{ 'tac': butaiValue == 0, 'is-disabled': selectedRobot?.controlMode !== 'MANUAL' }"
-            title="切换步态"
-            popper-class="custom-select control-select-popper control-select-popper1 p10"
-          >
-            <el-option v-for="item in butaiList" :key="item.label" :label="item.label" :value="item.value" />
-          </el-select>
-        </template>
+          <template v-for="(item, index) in operList.slice(tabIndex === 0 ? 0 : 4, tabIndex === 0 ? 4 : 20)">
+            <el-button
+              v-if="item.key !== 'step'"
+              :key="item.key"
+              type="primary"
+              :disabled="selectedRobot?.controlMode !== 'MANUAL'"
+              class="wp80 hp30 mt10 ml10"
+              :class="{'is-disabled': selectedRobot?.controlMode !== 'MANUAL'}"
+              @mousedown.native="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
+              @mouseup.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
+              @mouseleave.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
+              @touchstart.native.prevent="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
+              @touchend.native.prevent="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
+              @click="controlRobot(item.key)"
+            >
+              {{ item.label }}
+            </el-button>
+            <el-select
+              v-else
+              :key="item.key"
+              v-model="butaiValue"
+              placeholder="切换步态"
+              @change="changeStep"
+              class="wp80 ml10 mt10 hp30 butai-select"
+              :disabled="selectedRobot?.controlMode !== 'MANUAL'"
+              :class="{ 'tac': butaiValue == 0, 'is-disabled': selectedRobot?.controlMode !== 'MANUAL' }"
+              title="切换步态"
+              popper-class="custom-select control-select-popper control-select-popper1 p10"
+            >
+              <el-option v-for="item in butaiList" :key="item.label" :label="item.label" :value="item.value" />
+            </el-select>
+          </template>
+        </div>
+        <div v-if="vehicleLightDevice" class="lights flx-align-center mt15">
+          <span>车灯：</span>
+          <el-switch
+            :value="vehicleLightEnabled"
+            :disabled="!hasDeviceAction(vehicleLightDevice, 'light.vehicle.set')"
+            active-text="开启"
+            inactive-text="关闭"
+            active-color="#3DB56A"
+            inactive-color="#5E5E5E"
+            @change="setVehicleLights">
+          </el-switch>
+        </div>
       </div>
     </div>
     <ControlModeWarning ref="controlModeWarningRef" />
@@ -219,6 +233,15 @@ export default {
     }
   }
 }
+.lights {
+  span {
+    color: #fff;
+    font-size: 14px;
+    font-family: Alibaba PuHuiTi;
+    letter-spacing: 0.86px;
+    line-height: 20px;
+  }
+}
 ::v-deep .el-select {
   &.butai-select {
     &.tac {
@@ -250,6 +273,56 @@ export default {
         line-height: 30px;
         color: #FFF;
       }
+    }
+  }
+}
+
+::v-deep {
+  .el-switch {
+    line-height: 18px !important;
+    line-height: 16px;
+    // &.is-checked .el-switch__core {
+    //   border-color: var(--success-color) !important;
+    //   background-color: var(--success-color) !important;
+    // }
+    // &.with-text {
+      .el-switch__label.el-switch__label--right {
+        margin-left: 3px;
+      }
+      .el-switch__core {
+        width: 50px !important;
+        &:after {
+          top: 2px;
+          left: 2px;
+          width: 14px;
+          height: 14px;
+        }
+      }
+    // }
+    &__label {
+      position: absolute;
+      display: none !important;
+      // height: 16px;
+      font-weight: normal !important;
+      z-index: 2000;
+      * {
+        font-size: 12px !important;
+      }
+      &.el-switch__label--left {
+        margin-right: 0;
+        margin-left: 19px;
+      }
+      &.el-switch__label--right {
+        margin-left: 3px;
+      }
+      &.is-active {
+        display: inline-block !important;
+        color: #fff !important
+      }
+    }
+    &.is-checked .el-switch__core::after {
+      left: unset;
+      right: 3px;
     }
   }
 }
@@ -329,6 +402,17 @@ export default {
         cursor: not-allowed;
       }
     }
+  }
+}
+.with-bl {
+  position: relative;
+  &::before {
+    position: absolute;
+    top: 30px;
+    left: 0;
+    height: calc(100% - 60px);
+    border-left: 1px solid #123F8C;
+    content: '';
   }
 }
 </style>

@@ -436,9 +436,18 @@ export function errorMessage(error) {
       ? data.message || data.code || data.error
       : (error && error.message) || '请求失败'
 }
-
+// 对象转数组
 export function getDescArr(data, key) {
   // 转换为数组并按 timestamp 降序排序
   const arr = Array.isArray(data) ? [...data] : Object.values(data)
   return arr.sort((a, b) => b[key] - a[key]);
+}
+// 秒 转 时:分:秒
+export function durationText(seconds) {
+  if (!seconds) return '--:--'
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const remainder = seconds % 60
+  const text = `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+  return hours > 0 ? `${hours}:${text}` : text
 }

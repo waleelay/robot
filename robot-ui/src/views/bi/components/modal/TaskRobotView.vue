@@ -36,7 +36,7 @@
             <div class="flx-center">
               <div class="setting flx-center curp" @click="goTask">
                 <svg-icon icon-class="setting"></svg-icon>
-                <span class="ml4">上装控制</span>
+                <span class="ml4">控制中心</span>
               </div>
               <div class="close mr10 ml10" @click="closeModal">
                 <svg-icon icon-class="close"></svg-icon>

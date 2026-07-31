@@ -50,7 +50,7 @@
           <div class="time mt9">{{ formatDateTime(item.uploadedAt || item.createdAt) }}</div>
         </div>
       </div>
-      <Empty v-if="!displayList.length" width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无多媒体记录" />
+      <Empty v-if="!displayList.length" width="126px" :opacity="0.7" textColor="#BEE1FF" :text="`暂无${tabIndex === 0 ? '图片' : '视频'}记录`" />
     </div>
     <MultimediaDetail v-if="!hideHeader" ref="multimediaDetailRef" @deleted="handleDeleted" />
   </div>

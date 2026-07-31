@@ -17,8 +17,8 @@
           <template v-if="imageUrl">
             <canvas
               ref="canvas"
-              title="右键点击可设置临时点位"
-              @contextmenu.prevent="onCanvasClick"
+              :title="enableAddPoint ? '右键点击可设置临时点位' : undefined"
+              @contextmenu.prevent="onCanvasContextMenu"
               @click="handleCanvasBlankClick"
               class="map-preview-image"
               style="width: 100%; height: 100%;"
@@ -53,7 +53,7 @@
                 :key="robot.robotId"
                 :transform="`translate(${robot.pixel.x}, ${robot.pixel.y})${showSmall ? '' : ` scale(${1 / zoom})`}`"
                 class="map-preview-robot custom-point"
-                :class="[robot.statusClass, { 'show-icon': isRobotHighlighted(robot.robotId) }]"
+                :class="[robot.statusClass, { 'show-icon': isRobotHighlighted(robot.robotId), 'is-static': !enableRobotClick }]"
                 @click.stop="handleRobotClick($event, robot)"
               >
                 <!-- 选中光圈：Figma 50×54，相对 tip 偏移 (-25, -47) -->
@@ -199,7 +199,7 @@
         </transition>
       </div>
     </template>
-    <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="当前地图暂无预览，请先生成地图预览" />
+    <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="当前地图暂无预览" />
     <div v-if="showNotice" class="notice-modal flx-center">
       <div class="notice-modal__mask" @click="closeNotice"></div>
       <div class="notice-modal__dialog">
@@ -245,6 +245,10 @@ export default {
     selectedPointId: { type: Number, default: null },
     pathPointIds: { type: Array, default: () => [] },
     showLabels: { type: Boolean, default: false },
+    // 是否允许右键添加临时点位（实时监控等场景关闭）
+    enableAddPoint: { type: Boolean, default: true },
+    // 是否允许点击装备弹窗/切换选中（second 监控页关闭，避免回到 first）
+    enableRobotClick: { type: Boolean, default: true },
     // 侧栏是否收缩；与 visibleLayout 配合，将地图限制在未遮挡区域
     collapse: { type: Boolean, default: false },
     // 'home' 指挥中心（顶栏+左右侧）| 'panorama' 全景（顶栏+左侧）| '' 不限制
@@ -645,7 +649,12 @@ export default {
     isRobotHighlighted(robotId) {
       return (this.showRobotIds || []).some(id => String(id) === String(robotId))
     },
+    onCanvasContextMenu(event) {
+      if (!this.enableAddPoint) return
+      this.onCanvasClick(event)
+    },
     handleRobotClick(event, robot) {
+      if (!this.enableRobotClick) return
       // 点击装备时仅还原临时打点/派遣状态，保留 MapTool 点位渲染
       this.resetSlamDrawState({ keepMapToolPath: true })
       if (this.currenRouteName === 'biIndex') {
@@ -1176,6 +1185,10 @@ export default {
       .map-preview-robot {
         pointer-events: auto;
         cursor: pointer;
+        &.is-static {
+          pointer-events: none;
+          cursor: default;
+        }
         .robot-selected-halo,
         .robot-selected-corners {
           pointer-events: none;

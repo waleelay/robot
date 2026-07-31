@@ -8,8 +8,8 @@
  * @Version: 
 -->
 <template>
-  <div class="flx-align-center h100 pt20 pb20">
-    <div :class="{ 'd-flex': !vehicleLightDevice && !warningLightDevice }">
+  <div class="flx-align-center h100 pt20 pb20 with-bl">
+    <div :class="{ 'd-flex': !vehicleLightDevice && !warningLightDevice }" class="pl30">
       <div class="mode d-flex" :class="{ 'flex-column': !vehicleLightDevice && !warningLightDevice, 'flx-align-center': vehicleLightDevice || warningLightDevice }">
         <span>当前状态：</span>
         <el-dropdown trigger="click" :class="{ 'mt10': !vehicleLightDevice && !warningLightDevice, 'ml10': vehicleLightDevice || warningLightDevice }" @command="handleModeChange">
@@ -43,38 +43,35 @@
           </div>
         </div>
         <div class="lights ml38 flex-column" style="justify-content: center;">
-          <div class="flx-center lights-container">
-            <div v-if="vehicleLightDevice" class="flx-align-center">
-              <span class="wp60 tal">车灯：</span>
-              <el-switch
-                :value="vehicleLightEnabled"
-                :disabled="!hasDeviceAction(vehicleLightDevice, 'light.vehicle.set')"
-                active-text="开启"
-                inactive-text="关闭"
-                active-color="#3DB56A"
-                inactive-color="#5E5E5E"
-                @change="setVehicleLights">
-              </el-switch>
-            </div>
-            <div v-if="warningLightDevice" class="flx-align-center">
-              <span class="wp90 tal">红蓝警示灯：</span>
-              <el-switch
-                :value="isWarningLightOn(warningLightDevice)"
-                :disabled="!hasDeviceAction(warningLightDevice, 'set_state')"
-                active-text="开启"
-                inactive-text="关闭"
-                active-color="#3DB56A"
-                inactive-color="#5E5E5E"
-                @change="setWarningLight(warningLightDevice, $event)">
-              </el-switch>
-              <el-button
-                class="warning-mode-button ml10"
-                size="mini"
-                icon="el-icon-refresh"
-                :disabled="!hasDeviceAction(warningLightDevice, 'set_mode')"
-                @click="switchWarningLightMode(warningLightDevice)"
-              >切换模式</el-button>
-            </div>
+          <div v-if="vehicleLightDevice" class="flx-align-center">
+            <span class="wp90 tal">车灯：</span>
+            <el-switch
+              :value="vehicleLightEnabled"
+              :disabled="!hasDeviceAction(vehicleLightDevice, 'light.vehicle.set')"
+              active-text="开启"
+              inactive-text="关闭"
+              active-color="#3DB56A"
+              inactive-color="#5E5E5E"
+              @change="setVehicleLights">
+            </el-switch>
+          </div>
+          <div v-if="warningLightDevice" class="flx-align-center">
+            <span class="wp90 tal">红蓝警示灯：</span>
+            <el-switch
+              :value="isWarningLightOn(warningLightDevice)"
+              :disabled="!hasDeviceAction(warningLightDevice, 'set_state')"
+              active-text="开启"
+              inactive-text="关闭"
+              active-color="#3DB56A"
+              inactive-color="#5E5E5E"
+              @change="setWarningLight(warningLightDevice, $event)">
+            </el-switch>
+            <el-button
+              class="warning-mode-button ml20"
+              title="切换红蓝警示灯模式"
+              :disabled="!hasDeviceAction(warningLightDevice, 'set_mode')"
+              @click="switchWarningLightMode(warningLightDevice)"
+            >切换模式</el-button>
           </div>
         </div>
       </div>
@@ -234,11 +231,8 @@ export default {
     letter-spacing: 0.86px;
     line-height: 20px;
   }
-  .lights-container > div {
+  & > div {
     & + div {
-      margin-left: 30px;
-    }
-    & > div + div {
       margin-top: 15px;
     }
   }
@@ -343,5 +337,15 @@ export default {
     }
   }
 }
-
+.with-bl {
+  position: relative;
+  &::before {
+    position: absolute;
+    top: 30px;
+    left: 0;
+    height: calc(100% - 60px);
+    border-left: 1px solid #123F8C;
+    content: '';
+  }
+}
 </style>

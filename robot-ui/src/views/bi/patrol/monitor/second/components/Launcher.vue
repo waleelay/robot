@@ -11,7 +11,7 @@
           :value="isLauncherSafetyOn(launcherDevice)"
           active-text="开启"
           inactive-text="关闭"
-          active-color="#159AFF"
+          active-color="#3DB56A"
           inactive-color="#5E5E5E"
           @change="setLauncherSafety(launcherDevice, $event)">
         </el-switch>

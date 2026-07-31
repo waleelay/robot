@@ -86,7 +86,7 @@
             </div>
           </div>
           <div class="mt20">
-            <div class="t2">任务详情</div>
+            <div class="t2">任务列表</div>
             <div class="mt12">
               <div class="flx-justify-between top pr10 pl10">
                 <div style="width: 43%;">任务名称</div>
@@ -94,8 +94,8 @@
                 <div class="ml10" style="width: 35%;">执行时间</div>
               </div>
               <div class="common-scroll ovya" style="height: 288px;">
-                <template v-if="tasks.length">
-                  <div v-for="item in tasks" class="tasks flx-justify-between pr10 pl10">
+                <template v-if="taskData1.length">
+                  <div v-for="item in taskData1" class="tasks flx-justify-between pr10 pl10">
                     <div style="width: 43%;" class="text-ellipsis" :title="item.name">{{ item.name }}</div>
                     <div
                       class="ml10 mr10 status wp50"
@@ -111,7 +111,7 @@
                   </div>
                 </template>
                 <!-- <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div> -->
-                <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" />
+                <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无未完成任务" />
               </div>
             </div>
           </div>
@@ -155,6 +155,9 @@ export default {
     tasks() {
       return getDescArr(this.taskData || {}, 'timestamp')
     },
+    taskData1() {
+      return this.tasks.filter(item => ['running', 'pending', 'paused'].includes(item.status)) || []
+    }
   },
   data() {
     return {

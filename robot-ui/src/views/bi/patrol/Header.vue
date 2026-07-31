@@ -73,12 +73,12 @@
           <span class="ml10">{{ currentTime }}</span>
         </div>
         <div class="flx-center icons h100 ml20">
-          <div class="icon">
+          <div class="icon" @click="toggleFullscreen">
+            <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen'" style="color: #AED1FF;"></svg-icon>
+          </div>
+          <div class="icon ml20">
             <!-- <svg-icon icon-class="home" style="color: #8BAEDC;"></svg-icon> -->
              <PageChangeDropdown />
-          </div>
-          <div class="icon ml20" @click="toggleFullscreen">
-            <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen'" style="color: #AED1FF;"></svg-icon>
           </div>
           <div class="icon ml20" v-if="showBack" @click="back">
             <svg-icon icon-class="back1" style="color: #AED1FF;"></svg-icon>

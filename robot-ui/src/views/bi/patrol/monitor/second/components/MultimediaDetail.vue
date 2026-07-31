@@ -63,7 +63,7 @@
                 <div class="flex mt10">
                   <div class="item flex1">
                     <span class="name">{{ locationLabel }}</span>
-                    <span class="value">{{ getLocationText(details) }}</span>
+                    <span class="value">{{ isImage ? getLocationText(details) : durationText(details.durationSeconds) }}</span>
                   </div>
                   <div class="item flex1 pl30">
                     <span class="name">装备名称：</span>
@@ -181,6 +181,7 @@ import {
   getFilePlayUrl,
   fileDownloadUrl
 } from '../../../../../../api/media.js'
+import { durationText, recordingTimeRangeText } from '../../../../../../utils/index.js'
 import MultimediaDeleteConfirm from './MultimediaDeleteConfirm.vue'
 
 export default {
@@ -234,7 +235,7 @@ export default {
       return this.isImage ? '抓拍相机：' : '录制相机：'
     },
     locationLabel() {
-      return this.isImage ? '抓拍位置：' : '录制位置：'
+      return this.isImage ? '抓拍位置：' : '录制时长：'
     },
     emptyPreviewText() {
       return this.isImage ? '暂无画面' : '暂无视频'
@@ -272,6 +273,7 @@ export default {
     this.destroyThumbPlayers()
   },
   methods: {
+    durationText,
     async open({ item, tabIndex = 0, list = [], simple = false } = {}) {
       this.dialogVisible = true
       this.searchType = 'keyword'
@@ -450,7 +452,7 @@ export default {
       return robot?.location?.address
         || robot?.locationName
         || item.location?.address
-        || '暂无位置信息'
+        || '-'
     },
     formatDateTime(val) {
       if (!val) return '-'
@@ -558,8 +560,8 @@ export default {
     }
     .download {
       position: absolute;
+      top: 10px;
       right: 10px;
-      bottom: 10px;
       display: none;
       padding: 6px 20px;
       color: #fff;

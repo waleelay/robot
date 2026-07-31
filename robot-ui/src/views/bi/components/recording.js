@@ -1,6 +1,6 @@
 import Hls from "hls.js"
 import { getFilePlayUrl, getFiles } from "../../../api/media"
-import { errorMessage } from "../../../utils"
+import { durationText, errorMessage } from "../../../utils"
 
 export default {
   data() {
@@ -13,6 +13,7 @@ export default {
     }
   },
   methods: {
+    durationText,
     // 录像列表只拉 READY 状态，确保用户点开后一定能拿到可播放的 HLS 地址。
     async loadRecordings(isUpdate) {
       this.recordingsLoading = true
@@ -109,18 +110,6 @@ export default {
       return (
         (new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000
       );
-    },
-    durationText(seconds) {
-      if (!seconds) return '--:--'
-      const hours = Math.floor(seconds / 3600)
-      const minutes = Math.floor((seconds % 3600) / 60)
-      const remainder = seconds % 60
-      const text = `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
-      return hours > 0 ? `${hours}:${text}` : text
-    },
-    recordingTimeRangeText(recording) {
-      if (!recording) return '--'
-      return `${this.dateTimeText(recording.startedAt)} - ${this.dateTimeText(recording.endedAt)}`
-    },
+    }
   }
 }

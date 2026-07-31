@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="wave-container flx-center hp22" ref="waveContainerRef">
+    <div class="wave-container flx-center" :class="{'hp16': isMapInner, 'hp22': !isMapInner}" ref="waveContainerRef">
       <div 
         v-for="(bar, index) in bars" 
         :key="index"
@@ -24,6 +24,10 @@ export default {
       type: Object,
       default: () => ({})
     },
+    isMapInner: {
+      type: Boolean,
+      default: false
+    }
   },
   computed: {
     intercomActive() {
@@ -55,6 +59,8 @@ export default {
     }
   },
   mounted() {
+    this.BAR_COUNT = this.isMapInner ? 10 : 15;
+    this.MAX_HEIGHT = this.isMapInner ? 16 : 22;
     this.initBars();
     this.startIdleWave();
     this.startMicrophone();
@@ -202,14 +208,12 @@ export default {
 <style lang="scss" scoped>
   .wave-container {
     gap: 3px;
-    height: 22px;
     // width: 70px;
     // background: rgba(0, 0, 0, 0.3);
     border-radius: 80px;
     // box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.03);
     .wave-bar {
       width: 2px;
-      height: 22px;
       background: #23B2FF;
       border-radius: 20px;
       box-shadow: 0 0 10px rgba(35, 178, 255, 0.6), 0 0 8px rgba(35, 178, 255, 0.3);

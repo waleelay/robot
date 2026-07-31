@@ -10,7 +10,7 @@
           :value="isNetGunSafetyOn(netGunDevice)"
           active-text="开启"
           inactive-text="关闭"
-          active-color="#159AFF"
+          active-color="#3DB56A"
           inactive-color="#5E5E5E"
           @change="setFakeNetGunSafety(netGunDevice, $event)">
         </el-switch>

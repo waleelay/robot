@@ -13,9 +13,9 @@
       <span v-if="!selectCamera.intercomActive || !selectCamera?.room?.localParticipant">
         <svg-icon :icon-class="selectCamera.intercomActive ? 'mic-fill' : 'mic-off-fill'" />
       </span>
-      <VolumeWave :selectCamera="selectCamera" v-else />
+      <VolumeWave :selectCamera="selectCamera" :isMapInner="isMapInner" v-else />
       <span class="mt8">{{ selectCamera.intercomActive ? '正在通话' : '点击通话' }}</span>
-      <span v-if="selectCamera.intercomActive && selectCamera?.room?.localParticipant" style="margin-top: -1px; color: rgba(255, 255, 255, 0.80); font-family: 'Alibaba PuHuiTi'; font-size: 10px; font-style: normal; letter-spacing: 0.2px;">再次点击结束</span>
+      <span v-if="selectCamera.intercomActive && selectCamera?.room?.localParticipant" class="mt2" style="color: rgba(255, 255, 255, 0.80); font-family: 'Alibaba PuHuiTi'; font-size: 10px; font-style: normal; letter-spacing: 0.2px;">点击结束</span>
     </div>
     <div v-if="!isMapInner" class="wp269 hp16 mt22 progress flx-align-center">
       <!-- 底层未划过轨道 背景色 #093974 -->

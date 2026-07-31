@@ -37,7 +37,13 @@
         </div>
         <div class="flex1 mt10 h100 slam-map-wrap">
           <GlobalGisMap v-if="globalMapId === 'gis'" />
-          <GlobalSlamMap v-else :map="slamMapPayload" :show-labels="true" />
+          <GlobalSlamMap
+            v-else
+            :map="slamMapPayload"
+            :show-labels="true"
+            :enable-add-point="false"
+            :enable-robot-click="false"
+          />
         </div>
       </div>
     </div>
@@ -354,5 +360,9 @@ export default {
     background: #123F8C;
     content: '';
   }
+}
+.box {
+  background: linear-gradient(180deg, rgba(18, 20, 43, 0.00) 0%, #12142B 100%);
+  box-shadow: 0 0 20px 0 rgba(33, 108, 149, 0.30) inset;
 }
 </style>

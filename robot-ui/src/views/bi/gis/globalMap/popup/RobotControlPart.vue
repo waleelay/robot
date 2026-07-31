@@ -12,7 +12,7 @@
         <div class="flx-center">
           <div class="setting flx-center curp" @click="goControl">
             <svg-icon icon-class="setting"></svg-icon>
-            <span class="ml4">上装控制</span>
+            <span class="ml4">控制中心</span>
           </div>
           <div class="close mr10 ml10" @click="visible = false">
             <svg-icon icon-class="close"></svg-icon>
@@ -50,9 +50,9 @@
             <div class="custom-tab-button flex" style="height: fit-content">
               <div v-for="item in tabList" :key="item.value" class="tab-button-item pr10 pl10" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value" style="font-size: 14px; line-height: 19px">{{ item.label }}</div>
             </div>
-            <div class="ml30 mode" :class="{'flex-column': !showTalk, 'flx-align-center': showTalk }">
+            <div class="ml30 mode flx-align-center">
               <span>当前状态 ：</span>
-              <el-dropdown :class="{ 'mt10': !showTalk, 'ml10': showTalk }" trigger="click" @command="handleModeChange">
+              <el-dropdown class="ml10" trigger="click" @command="handleModeChange">
                 <div class="mode-status success flex-column">
                   <span>{{ selectedRobot?.controlModeName || '-' }}<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
                 </div>
@@ -61,6 +61,18 @@
                   <el-dropdown-item command="MANUAL" :class="{ 'is-active': selectedRobot?.controlMode === 'MANUAL' }">手动模式</el-dropdown-item>
                 </el-dropdown-menu>
               </el-dropdown>
+            </div>
+            <div v-if="vehicleLightDevice && showTalk" class="lights ml30 flx-align-center">
+              <span>车灯：</span>
+              <el-switch
+                :value="vehicleLightEnabled"
+                :disabled="!hasDeviceAction(vehicleLightDevice, 'light.vehicle.set')"
+                active-text="开启"
+                inactive-text="关闭"
+                active-color="#3DB56A"
+                inactive-color="#5E5E5E"
+                @change="setVehicleLights">
+              </el-switch>
             </div>
           </div>
           <div class="mt24 d-flex">
@@ -99,10 +111,10 @@ export default {
           label: '基础控制',
           value: 0
         },
-        {
-          label: '高级控制',
-          value: 1
-        }
+        // {
+        //   label: '高级控制',
+        //   value: 1
+        // }
       ],
       tabIndex: 0,
       prefixId: 'robot-video-div',
@@ -248,5 +260,66 @@ export default {
   line-height: 13px;
   border-radius: 2px;
   background: rgba(38, 84, 152, 0.50);
+}
+
+
+.lights {
+  span {
+    color: #fff;
+    font-size: 12px;
+    font-family: Alibaba PuHuiTi;
+    letter-spacing: 0.86px;
+    line-height: 20px;
+  }
+}
+
+::v-deep {
+  .el-switch {
+    line-height: 18px !important;
+    line-height: 16px;
+    // &.is-checked .el-switch__core {
+    //   border-color: var(--success-color) !important;
+    //   background-color: var(--success-color) !important;
+    // }
+    // &.with-text {
+      .el-switch__label.el-switch__label--right {
+        margin-left: 3px;
+      }
+      .el-switch__core {
+        width: 50px !important;
+        &:after {
+          top: 2px;
+          left: 2px;
+          width: 14px;
+          height: 14px;
+        }
+      }
+    // }
+    &__label {
+      position: absolute;
+      display: none !important;
+      // height: 16px;
+      font-weight: normal !important;
+      z-index: 2000;
+      * {
+        font-size: 12px !important;
+      }
+      &.el-switch__label--left {
+        margin-right: 0;
+        margin-left: 19px;
+      }
+      &.el-switch__label--right {
+        margin-left: 3px;
+      }
+      &.is-active {
+        display: inline-block !important;
+        color: #fff !important
+      }
+    }
+    &.is-checked .el-switch__core::after {
+      left: unset;
+      right: 3px;
+    }
+  }
 }
 </style>

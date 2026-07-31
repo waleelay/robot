@@ -30,7 +30,7 @@
           控制模型：<span class="value">{{ currenRobot?.controlMode === 'MANUAL' ? '手动控制' : currenRobot?.controlMode === 'NAVIGATION' ? '自动控制' : '-' }}</span>
         </div>
         <div class="item wp149 ml26 mt10">
-          上装设备：<span class="value">{{ currenRobot?.mountedDeviceCount || 0 }}台</span>
+          上装设备：<span class="value">{{ currenRobot?.mountedDeviceCount || 0 }}个</span>
         </div>
         <div class="item wp156 mt10">
           当前速度：<span class="value">{{ currenRobot?.speed || 0 }}m/s</span>

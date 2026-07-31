@@ -19,6 +19,7 @@
             <div>装备名称：{{ robotBaseInfo?.[item.robotId]?.name }}</div>
             <div>摄像头名称：{{ getCameraName(item.robotId, item.deviceId) }}</div>
             <div>抓拍时间：{{ item.uploadedAt }}</div>
+            <div>抓拍位置：{{ getLocationText(item) }}</div>
           </div>
           <img
             class="w100 h100"
@@ -140,6 +141,13 @@ export default {
     },
     getCameraName(robotId, deviceId) {
       return this.robotBaseInfo?.[robotId]?.cameras.find(item => item.deviceId === deviceId)?.name || ''
+    },
+    getLocationText(item) {
+      const robot = this.robotBaseInfo?.[item.robotId]
+      return robot?.location?.address
+        || robot?.locationName
+        || item.location?.address
+        || '-'
     }
   },
   async mounted() {

@@ -102,7 +102,7 @@
           <button
             class="round-action is-local"
             type="button"
-            title="跳转上装控制"
+            title="跳转控制中心"
             @click="openRemoteControl"
           >
             <svg-icon icon-class="control" />
@@ -163,10 +163,10 @@
             <span>扬声器</span>
           </div>
           <div class="labeled-action">
-            <button class="round-action is-local" type="button" title="跳转上装控制" @click="openRemoteControl">
+            <button class="round-action is-local" type="button" title="跳转控制中心" @click="openRemoteControl">
               <svg-icon icon-class="control" />
             </button>
-            <span>上装控制</span>
+            <span>控制中心</span>
           </div>
         </div>
       </div>

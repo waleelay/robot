@@ -19,7 +19,7 @@
         </div>
         <div class="flex1 mt10 h100 slam-map-wrap">
           <GlobalGisMap v-if="globalMapId === 'gis'" />
-          <GlobalSlamMap v-else :map="slamMapPayload" :show-labels="true" />
+          <GlobalSlamMap v-else :map="slamMapPayload" :show-labels="true" :enable-add-point="false" />
         </div>
       </div>
     </div>

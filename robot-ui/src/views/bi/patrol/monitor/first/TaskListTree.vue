@@ -206,7 +206,8 @@ export default {
       return getDescArr(this.taskData || {}, 'timestamp')
     },
     taskData1() {
-      return this.tasks.filter(item => ['running', 'pending', 'paused'].includes(item.status)) || []
+      // 只显示执行中和暂停中的任务
+      return this.tasks.filter(item => ['running', 'paused'].includes(item.status)) || []
     }
   },
   mounted() {},

@@ -12,7 +12,7 @@
         <div class="flx-center">
           <div class="setting flx-center curp" @click="goControl">
             <svg-icon icon-class="setting"></svg-icon>
-            <span class="ml4">上装控制</span>
+            <span class="ml4">控制中心</span>
           </div>
           <div class="close mr10 ml10" @click="visible = false">
             <svg-icon icon-class="close"></svg-icon>
@@ -58,7 +58,6 @@
               </el-dropdown-menu>
             </el-dropdown>
           </div>
-
           <div class="d-flex mt16">
             <Talk v-if="showTalk" :isMapInner="showTalk" class="mr30" />
             <div class="flx-justify-between" :class="{ 'flex-column': showTalk }">
@@ -85,9 +84,9 @@
                   </div>
                 </div>
               </div>
-              <div class="lights flx-align-center" :class="{ 'mt15': showTalk, 'ml30 flex-column': !showTalk }">
+              <div class="lights flex-column" style="justify-content: center;" :class="{ 'mt20': showTalk, 'ml30': !showTalk }">
                 <div v-if="vehicleLightDevice" class="flx-align-center">
-                  <span class="wp76 tal">车灯：</span>
+                  <span class="wp90 tal">车灯：</span>
                   <el-switch
                     :value="vehicleLightEnabled"
                     :disabled="!hasDeviceAction(vehicleLightDevice, 'light.vehicle.set')"
@@ -110,9 +109,8 @@
                     @change="setWarningLight(warningLightDevice, $event)">
                   </el-switch>
                   <el-button
-                    class="warning-mode-button ml10"
-                    size="mini"
-                    icon="el-icon-refresh"
+                    class="warning-mode-button ml20"
+                    title="切换红蓝警示灯模式"
                     :disabled="!hasDeviceAction(warningLightDevice, 'set_mode')"
                     @click="switchWarningLightMode(warningLightDevice)"
                   >切换模式</el-button>
@@ -258,13 +256,14 @@ export default {
 .lights {
   span {
     color: #fff;
-    font-size: 14px;
+    font-size: 12px;
     font-family: Alibaba PuHuiTi;
     letter-spacing: 0.86px;
     line-height: 20px;
   }
   & > div + div {
-    margin-left: 20px;
+    margin-top: 20px;
+    // margin-left: 20px;
   }
   & > div {
     div + div {
