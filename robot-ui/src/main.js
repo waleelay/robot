@@ -14,6 +14,7 @@ import router from './router'
 import directive from './directive' // directive
 import plugins from './plugins' // plugins
 import { download } from '@/utils/request'
+import { initAuth } from '@/auth'
 
 import './assets/icons' // icon
 import './permission' // permission control
@@ -46,17 +47,25 @@ Vue.use(plugins)
 
 Vue.config.productionTip = false
 
-new Vue({
-  el: '#app',
-  router,
-  store,
-  // devtools: process.env.NODE_ENV === "development",
-  devtools: true,
-  render: h => h(App),
-  created() {
-    // 开发环境需要打开
-    // this.$store.dispatch('websocket/initWebSocket');
-    // this.$store.dispatch('voiceCall/initWebsocket');
-    // this.$store.dispatch('bigScreen/initializeStore');
-  }
-})
+initAuth()
+  .then(() => {
+    new Vue({
+      el: '#app',
+      router,
+      store,
+      // devtools: process.env.NODE_ENV === "development",
+      devtools: true,
+      render: h => h(App),
+      created() {
+        // 开发环境需要打开
+        // this.$store.dispatch('websocket/initWebSocket');
+        // this.$store.dispatch('voiceCall/initWebsocket');
+        // this.$store.dispatch('bigScreen/initializeStore');
+      }
+    })
+  })
+  .catch(error => {
+    console.error('初始化统一登录失败', error)
+    const title = document.querySelector('#loader-wrapper .load_title')
+    if (title) title.textContent = '认证服务暂不可用'
+  })

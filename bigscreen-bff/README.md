@@ -32,6 +32,9 @@ src/main/java/com/robot/bigscreen/
 | `CENTER_V1_CONTROL_BASE_URL` | `http://host.docker.internal:8867` | 旧版控制服务地址 |
 | `CENTER_MEDIA_BASE_URL` | `http://media-service:8088` | Media Service 地址 |
 | `CENTER_CONTROL_WS_URL` | `ws://control-service:8082/ws/control` | Control WebSocket 地址 |
+| `BIGSCREEN_AUTH_CLIENT_ID` | `bigscreen-web` | BFF 接受的 Keycloak 客户端 |
+| `BIGSCREEN_AUTH_ISSUER_URI` | `http://localhost:18443/realms/iam-auth` | Keycloak Token 签发者 |
+| `BIGSCREEN_AUTH_JWK_SET_URI` | `http://localhost:18443/realms/iam-auth/protocol/openid-connect/certs` | Keycloak JWK 公钥地址 |
 | `STATISTICS_REPORT_STORAGE_DIR` | `data/statistics-reports` | 统计报告存储目录 |
 | `BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS` | 见 `application.yml` | 允许跨域访问的来源 |
 
@@ -56,11 +59,16 @@ mvn -q -DskipTests package
 本地接口：
 
 ```bash
-curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/overview
-curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/devices/test111
-curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/tasks
-curl -sS http://127.0.0.1:8090/api/bigscreen/panorama/alarms
+curl -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
+  http://127.0.0.1:8090/api/bigscreen/panorama/overview
+curl -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
+  http://127.0.0.1:8090/api/bigscreen/panorama/devices/test111
+curl -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
+  http://127.0.0.1:8090/api/bigscreen/panorama/tasks
+curl -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
+  http://127.0.0.1:8090/api/bigscreen/panorama/alarms
 curl -sS -X POST http://127.0.0.1:8090/api/bigscreen/panorama/alarms/alarm-001/disposal \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"disposalStatus":"IMMEDIATE_DISPOSAL"}'
 ```
@@ -70,6 +78,7 @@ curl -sS -X POST http://127.0.0.1:8090/api/bigscreen/panorama/alarms/alarm-001/d
 接口字段和业务设计以以下文档为准：
 
 - [大屏 BFF 全景地图设计说明书](../docs/02-设计/大屏BFF/大屏BFF全景地图设计说明书.md)
+- [大屏统一登录认证对接指南](../docs/03-接口与协议/大屏BFF/大屏统一登录认证对接指南.md)
 - [大屏 BFF 字段来源映射文档](../docs/03-接口与协议/大屏BFF/大屏BFF字段来源映射文档.md)
 - [大屏统计接口文档](../docs/03-接口与协议/大屏BFF/大屏统计接口文档.md)
 - [大屏 BFF 测试方案](../docs/04-测试与验收/测试方案/大屏BFF测试方案.md)

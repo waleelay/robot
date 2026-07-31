@@ -16,7 +16,7 @@ const port = process.env.port || process.env.npm_config_port || 8080 // 端口
 
 // vue.config.js 配置说明
 module.exports = {
-  transpileDependencies: ['ol'], // 关键：告诉 Vue CLI 转译 ol 及其依赖
+  transpileDependencies: ['ol', 'keycloak-js'], // 转译现代语法依赖，兼容当前 Webpack 4 构建链。
   // 配置1: 多线程打包
   // parallel: require('os').cpus().length > 1,
   // 部署生产环境和开发环境下的URL。

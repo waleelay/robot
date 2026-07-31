@@ -162,6 +162,9 @@ services:
     restart: unless-stopped
     environment:
       BIGSCREEN_BFF_PORT: 8090
+      BIGSCREEN_AUTH_CLIENT_ID: ${BIGSCREEN_AUTH_CLIENT_ID:-bigscreen-web}
+      BIGSCREEN_AUTH_ISSUER_URI: ${BIGSCREEN_AUTH_ISSUER_URI:-https://192.168.124.235:18443/realms/iam-auth}
+      BIGSCREEN_AUTH_JWK_SET_URI: ${BIGSCREEN_AUTH_JWK_SET_URI:-http://192.168.124.235:18080/realms/iam-auth/protocol/openid-connect/certs}
       CENTER_MANAGE_BASE_URL: ${CENTER_MANAGE_BASE_URL:-http://host.docker.internal:8866}
       CENTER_CONTROL_BASE_URL: ${CENTER_CONTROL_BASE_URL:-http://control-service:8082}
       CENTER_V1_CONTROL_BASE_URL: ${CENTER_V1_CONTROL_BASE_URL:-http://host.docker.internal:8867}

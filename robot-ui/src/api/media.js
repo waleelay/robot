@@ -6,9 +6,6 @@ import { mediaClientId } from '@/utils/media-client-id'
 export { mediaClientId }
 
 const headers = {
-  'X-User-Id': 'u1001',
-  'X-Org-Id': 'org001',
-  'X-Roles': 'MEDIA_VIEWER,MEDIA_OPERATOR',
   'X-Client-Id': mediaClientId
 }
 
@@ -112,6 +109,27 @@ export function fileDownloadUrl(fileId) {
     url: `/api/control/files/${fileId}/download-url`,
     method: 'post'
   })
+}
+
+export function getFileContent(fileId) {
+  return request({
+    url: `/api/control/files/${encodeURIComponent(fileId)}/content`,
+    method: 'get',
+    responseType: 'blob',
+    skipErrorMessage: true
+  })
+}
+
+export async function createFileObjectUrl(fileId) {
+  const data = await getFileContent(fileId)
+  const blob = data instanceof Blob ? data : new Blob([data])
+  return URL.createObjectURL(blob)
+}
+
+export function revokeFileObjectUrl(url) {
+  if (typeof url === 'string' && url.startsWith('blob:')) {
+    URL.revokeObjectURL(url)
+  }
 }
 
 export function deleteFile(fileId) {

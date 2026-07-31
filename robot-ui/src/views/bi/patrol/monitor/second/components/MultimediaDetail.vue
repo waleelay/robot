@@ -177,9 +177,11 @@
 import { mapState } from 'vuex'
 import Hls from 'hls.js'
 import {
+  createFileObjectUrl,
   getFiles,
   getFilePlayUrl,
-  fileDownloadUrl
+  fileDownloadUrl,
+  revokeFileObjectUrl
 } from '../../../../../../api/media.js'
 import { durationText, recordingTimeRangeText } from '../../../../../../utils/index.js'
 import MultimediaDeleteConfirm from './MultimediaDeleteConfirm.vue'
@@ -200,6 +202,8 @@ export default {
       selectedId: '',
       detailHls: null,
       thumbPlayers: {},
+      imageLoadSeq: 0,
+      ownedImageObjectUrls: [],
       pickerOptions: {
         disabledDate: (date) => {
           const before = `${new Date().getFullYear() - 9}-1-1 00:00:00`
@@ -269,6 +273,8 @@ export default {
     }
   },
   beforeDestroy() {
+    this.imageLoadSeq += 1
+    this.destroyOwnedImageObjectUrls()
     this.destroyDetailPlayer()
     this.destroyThumbPlayers()
   },
@@ -282,7 +288,9 @@ export default {
       this.simpleMode = !!simple
       this.outerTabIndex = tabIndex === 1 ? 1 : 0
       if (this.simpleMode) {
-        const current = item ? this.normalizeItem(item) : null
+        const hydrated = await this.hydrateImageItems(item ? [item] : [])
+        if (hydrated == null) return
+        const current = hydrated[0] || null
         this.listData = current ? [current] : []
         if (current) {
           await this.selectItem(current)
@@ -321,12 +329,39 @@ export default {
       }
     },
     normalizeItem(item = {}) {
-      const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
       return {
         ...item,
         fileType: item.fileType || (item.contentType?.startsWith('video') ? 'VIDEO' : 'IMAGE'),
-        customUrl: item.customUrl || `${preUrl}/api/control/files/${item.fileId}/content`
+        customUrl: item.customUrl || ''
       }
+    },
+    async hydrateImageItems(items = []) {
+      const loadSeq = ++this.imageLoadSeq
+      const generatedUrls = []
+      const hydrated = await Promise.all(items.map(async source => {
+        const item = this.normalizeItem(source)
+        if (item.fileType !== 'IMAGE' || !item.fileId) {
+          return item
+        }
+        try {
+          const customUrl = await createFileObjectUrl(item.fileId)
+          generatedUrls.push(customUrl)
+          return { ...item, customUrl }
+        } catch (e) {
+          return { ...item, customUrl: '' }
+        }
+      }))
+      if (loadSeq !== this.imageLoadSeq) {
+        generatedUrls.forEach(revokeFileObjectUrl)
+        return null
+      }
+      this.destroyOwnedImageObjectUrls()
+      this.ownedImageObjectUrls = generatedUrls
+      return hydrated
+    },
+    destroyOwnedImageObjectUrls() {
+      this.ownedImageObjectUrls.forEach(revokeFileObjectUrl)
+      this.ownedImageObjectUrls = []
     },
     async loadList() {
       this.destroyThumbPlayers()
@@ -339,8 +374,12 @@ export default {
         }
         if (this.selectedRobotId) params.robotId = this.selectedRobotId
         const res = await getFiles(params) || {}
-        this.listData = (res.items || []).map(this.normalizeItem)
+        const hydrated = await this.hydrateImageItems(res.items || [])
+        if (hydrated != null) {
+          this.listData = hydrated
+        }
       } catch (e) {
+        this.destroyOwnedImageObjectUrls()
         this.listData = []
       }
     },
@@ -514,6 +553,8 @@ export default {
       }
     },
     close() {
+      this.imageLoadSeq += 1
+      this.destroyOwnedImageObjectUrls()
       this.destroyDetailPlayer()
       this.destroyThumbPlayers()
       this.dialogVisible = false

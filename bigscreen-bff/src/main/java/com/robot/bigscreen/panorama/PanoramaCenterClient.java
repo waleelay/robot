@@ -1,5 +1,6 @@
 package com.robot.bigscreen.panorama;
 
+import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
 import java.net.URI;
 import java.util.List;
@@ -21,13 +22,18 @@ public class PanoramaCenterClient {
 
     private final RestClient restClient;
     private final CenterServiceProperties properties;
+    private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
 
-    public PanoramaCenterClient(RestClient.Builder builder, CenterServiceProperties properties) {
+    public PanoramaCenterClient(
+            RestClient.Builder builder,
+            CenterServiceProperties properties,
+            AuthenticatedRequestHeaders authenticatedRequestHeaders) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(2000);
         requestFactory.setReadTimeout(3000);
         this.restClient = builder.requestFactory(requestFactory).build();
         this.properties = properties;
+        this.authenticatedRequestHeaders = authenticatedRequestHeaders;
     }
 
     public List<Map<String, Object>> devices() {
@@ -174,6 +180,7 @@ public class PanoramaCenterClient {
         try {
             restClient.patch()
                     .uri(uri)
+                    .headers(authenticatedRequestHeaders::apply)
                     .body(Map.of("handledBy", "bigscreen", "handleResult", handleResult))
                     .retrieve()
                     .body(MAP_TYPE);
@@ -200,6 +207,7 @@ public class PanoramaCenterClient {
         try {
             Map<String, Object> response = restClient.get()
                     .uri(uri)
+                    .headers(authenticatedRequestHeaders::apply)
                     .retrieve()
                     .body(MAP_TYPE);
             Object data = response == null ? null : response.get("data");
@@ -218,6 +226,7 @@ public class PanoramaCenterClient {
         try {
             Map<String, Object> response = restClient.get()
                     .uri(uri)
+                    .headers(authenticatedRequestHeaders::apply)
                     .retrieve()
                     .body(MAP_TYPE);
             if (response == null) {

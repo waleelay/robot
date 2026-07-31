@@ -81,6 +81,9 @@ npm run lint:fix
 | `VUE_APP_WEBSOCKET_URL` | 业务 WebSocket 地址 |
 | `VUE_APP_WEBRTC` | WebRTC 服务地址 |
 | `VUE_APP_YUNTAI_CONTROL` | 云台控制接口地址 |
+| `VUE_APP_KEYCLOAK_URL` | Keycloak 对外地址 |
+| `VUE_APP_KEYCLOAK_REALM` | Keycloak Realm，默认 `iam-auth` |
+| `VUE_APP_KEYCLOAK_CLIENT_ID` | 大屏 Public SPA Client ID，默认 `bigscreen-web` |
 
 开发环境示例：
 
@@ -89,9 +92,16 @@ VUE_APP_TITLE=具身智能平台指挥中心
 VUE_APP_BASE_API=/dev-api
 VUE_APP_BASE_ORIGIN=https://backend.example.com
 VUE_APP_WS_URL=wss://backend.example.com/ws/control
+VUE_APP_KEYCLOAK_URL=https://auth.example.com
+VUE_APP_KEYCLOAK_REALM=iam-auth
+VUE_APP_KEYCLOAK_CLIENT_ID=bigscreen-web
 ```
 
 开发模式下，`/dev-api` 会通过 `vue.config.js` 代理到 `VUE_APP_BASE_ORIGIN`，并移除 `/dev-api` 前缀。
+
+生产部署也可通过 `public/js/auth-config.js` 提供 Keycloak 运行时配置，无需将具体环境地址写进业务代码。
+管理端需要为大屏注册 Public SPA 客户端并启用 Authorization Code + PKCE(S256)。
+完整配置见[大屏统一登录认证对接指南](../docs/03-接口与协议/大屏BFF/大屏统一登录认证对接指南.md)。
 
 修改环境文件后需要重新启动开发服务。环境文件中不要提交账号、Token、私钥等敏感信息。
 

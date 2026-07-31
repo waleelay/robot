@@ -1,7 +1,7 @@
 <template>
   <div class="w100 header-container">
     <div class="w100 h100 d-flex" style="justify-content: center;">
-      <span class="header-title mt11" >具身智能平台指挥中心</span>  
+      <span class="header-title mt11" >具身智能平台指挥中心</span>
       <div class="toolbar flx-align-center hp40 mt43" style="justify-content: end;">
         <div class="time-display flx-align-center">
           <span>{{ currentDate }}</span>
@@ -33,6 +33,7 @@
 
 <script>
 import PageChangeDropdown from './PageChangeDropdown.vue'
+import { logout } from '@/auth'
 export default {
   name: 'Header',
   components: {
@@ -52,7 +53,7 @@ export default {
   mounted() {
     this.updateTime()
     this.timer = setInterval(this.updateTime, 1000)
-    
+
     // 监听全屏变化
     document.addEventListener('fullscreenchange', this.onFullscreenChange)
   },
@@ -63,8 +64,19 @@ export default {
     document.removeEventListener('fullscreenchange', this.onFullscreenChange)
   },
   methods: {
-    logout() {
-      // this.setSelectedRobotId('')
+    async logout() {
+      try {
+        await this.$confirm('确定注销并退出系统吗？', '提示', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+        await logout()
+      } catch (error) {
+        if (error !== 'cancel' && error !== 'close') {
+          this.$message.error('退出登录失败')
+        }
+      }
     },
     // 更新时间
     updateTime() {

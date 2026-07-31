@@ -59,7 +59,12 @@
 <script>
 import { mapState } from 'vuex'
 import Hls from 'hls.js'
-import { getFiles, getFilePlayUrl } from '../../../../../../api/media.js'
+import {
+  createFileObjectUrl,
+  getFiles,
+  getFilePlayUrl,
+  revokeFileObjectUrl
+} from '../../../../../../api/media.js'
 import MultimediaDetail from './MultimediaDetail.vue'
 import Empty from '../../../../components/Empty.vue'
 
@@ -78,7 +83,9 @@ export default {
       ],
       snapshotList: [],
       recordings: [],
-      videoPlayers: {}
+      videoPlayers: {},
+      snapshotLoadSeq: 0,
+      snapshotObjectUrls: []
     }
   },
   computed: {
@@ -100,21 +107,42 @@ export default {
     }
   },
   mounted() { this.refreshList() },
-  beforeDestroy() { this.destroyVideoPlayers() },
+  beforeDestroy() {
+    this.snapshotLoadSeq += 1
+    this.destroySnapshotObjectUrls()
+    this.destroyVideoPlayers()
+  },
   methods: {
     handleChangeTab(index) { this.$emit('update:tabIndex', index) },
     async refreshList() { await Promise.all([this.getSnapData(), this.getVideoData()]) },
     async getSnapData() {
+      const loadSeq = ++this.snapshotLoadSeq
       try {
         const params = { page: 0, size: 20, fileType: 'IMAGE', status: 'READY' }
         if (this.selectedRobotId) params.robotId = this.selectedRobotId
         const res = await getFiles(params) || {}
-        const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
-        this.snapshotList = (res.items || []).map(item => ({
-          ...item, fileType: item.fileType || 'IMAGE',
-          customUrl: `${preUrl}/api/control/files/${item.fileId}/content`
+        const items = (res.items || []).map(item => ({
+          ...item,
+          fileType: item.fileType || 'IMAGE'
         }))
-      } catch (e) { this.snapshotList = [] }
+        const urls = await Promise.all(items.map(item =>
+          createFileObjectUrl(item.fileId).catch(() => '')
+        ))
+        if (loadSeq !== this.snapshotLoadSeq) {
+          urls.forEach(revokeFileObjectUrl)
+          return
+        }
+        this.destroySnapshotObjectUrls()
+        this.snapshotObjectUrls = urls.filter(Boolean)
+        this.snapshotList = items.map((item, index) => ({
+          ...item,
+          customUrl: urls[index]
+        }))
+      } catch (e) {
+        if (loadSeq !== this.snapshotLoadSeq) return
+        this.destroySnapshotObjectUrls()
+        this.snapshotList = []
+      }
     },
     async getVideoData() {
       this.destroyVideoPlayers()
@@ -165,6 +193,10 @@ export default {
         data.player.load()
       }
       delete this.videoPlayers[fileId]
+    },
+    destroySnapshotObjectUrls() {
+      this.snapshotObjectUrls.forEach(revokeFileObjectUrl)
+      this.snapshotObjectUrls = []
     },
     destroyVideoPlayers() { Object.keys(this.videoPlayers).forEach(id => this.destroyVideoPlayer(id)) },
     getCameraName(robotId, deviceId) {

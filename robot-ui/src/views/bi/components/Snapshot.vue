@@ -50,7 +50,7 @@
           <img src="../../../assets/images/new-bi/play-b.svg" alt="">
         </div>
       </div>
-      
+
     </div>
     <MultimediaDetail ref="multimediaDetailRef" />
   </div>
@@ -59,7 +59,11 @@
 <script>
 import { mapState } from 'vuex';
 import recordMixin from './recording.js'
-import { getFiles } from '../../../api/media.js';
+import {
+  createFileObjectUrl,
+  getFiles,
+  revokeFileObjectUrl
+} from '../../../api/media.js';
 import videoUtils from '../../../utils/videoUtils.js'
 import MultimediaDetail from '../patrol/monitor/second/components/MultimediaDetail.vue'
 export default {
@@ -85,7 +89,9 @@ export default {
         size: 8,
         total: 0,
       },
-      refPrefix: 'recordedPlayer1'
+      refPrefix: 'recordedPlayer1',
+      snapshotLoadSeq: 0,
+      snapshotObjectUrls: []
     }
   },
   computed: {
@@ -115,12 +121,30 @@ export default {
       this.tabIndex === 0 ? this.getSnapData() : await this.getPlayers()
     },
     async getSnapData() {
-      const res = await getFiles({ page: this.snapShotInfo.page, size: this.snapShotInfo.size, fileType: 'IMAGE', status: 'READY' }) || {}
-      this.snapShotInfo.snapshotList = (res.items || []).map(item => {
-        const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
-        return { ...item, customUrl: `${preUrl}/api/control/files/${item.fileId}/content` }
-      })      
-      this.snapShotInfo.total = res.total || 0
+      const loadSeq = ++this.snapshotLoadSeq
+      try {
+        const res = await getFiles({ page: this.snapShotInfo.page, size: this.snapShotInfo.size, fileType: 'IMAGE', status: 'READY' }) || {}
+        const items = res.items || []
+        const urls = await Promise.all(items.map(item =>
+          createFileObjectUrl(item.fileId).catch(() => '')
+        ))
+        if (loadSeq !== this.snapshotLoadSeq) {
+          urls.forEach(revokeFileObjectUrl)
+          return
+        }
+        this.destroySnapshotObjectUrls()
+        this.snapshotObjectUrls = urls.filter(Boolean)
+        this.snapShotInfo.snapshotList = items.map((item, index) => ({
+          ...item,
+          customUrl: urls[index]
+        }))
+        this.snapShotInfo.total = res.total || 0
+      } catch (e) {
+        if (loadSeq !== this.snapshotLoadSeq) return
+        this.destroySnapshotObjectUrls()
+        this.snapShotInfo.snapshotList = []
+        this.snapShotInfo.total = 0
+      }
     },
     async updateRecordings(items) {
       const recordings = this.recordingTab === 'patrol'
@@ -141,6 +165,10 @@ export default {
     },
     getCameraName(robotId, deviceId) {
       return this.robotBaseInfo?.[robotId]?.cameras.find(item => item.deviceId === deviceId)?.name || ''
+    },
+    destroySnapshotObjectUrls() {
+      this.snapshotObjectUrls.forEach(revokeFileObjectUrl)
+      this.snapshotObjectUrls = []
     },
     getLocationText(item) {
       const robot = this.robotBaseInfo?.[item.robotId]
@@ -178,6 +206,8 @@ export default {
     }
   },
   beforeDestroy() {
+    this.snapshotLoadSeq += 1
+    this.destroySnapshotObjectUrls()
   }
 }
 </script>

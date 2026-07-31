@@ -1,5 +1,6 @@
 package com.robot.bigscreen.client;
 
+import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,12 +39,17 @@ public class CenterProxyClient {
 
     private final RestClient restClient;
     private final CenterServiceProperties properties;
+    private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
 
-    public CenterProxyClient(RestClient.Builder builder, CenterServiceProperties properties) {
+    public CenterProxyClient(
+            RestClient.Builder builder,
+            CenterServiceProperties properties,
+            AuthenticatedRequestHeaders authenticatedRequestHeaders) {
         this.restClient = builder
                 .requestFactory(new JdkClientHttpRequestFactory())
                 .build();
         this.properties = properties;
+        this.authenticatedRequestHeaders = authenticatedRequestHeaders;
     }
 
     public ResponseEntity<byte[]> forward(HttpServletRequest request) {
@@ -119,18 +125,18 @@ public class CenterProxyClient {
 
     private void copyRequestHeaders(HttpServletRequest request, HttpHeaders headers, boolean includeContentType) {
         Enumeration<String> names = request.getHeaderNames();
-        if (names == null) {
-            return;
-        }
-        for (String name : Collections.list(names)) {
-            if (HOP_BY_HOP_HEADERS.contains(name.toLowerCase())) {
-                continue;
+        if (names != null) {
+            for (String name : Collections.list(names)) {
+                if (HOP_BY_HOP_HEADERS.contains(name.toLowerCase())) {
+                    continue;
+                }
+                if (!includeContentType && HttpHeaders.CONTENT_TYPE.equalsIgnoreCase(name)) {
+                    continue;
+                }
+                headers.put(name, Collections.list(request.getHeaders(name)));
             }
-            if (!includeContentType && HttpHeaders.CONTENT_TYPE.equalsIgnoreCase(name)) {
-                continue;
-            }
-            headers.put(name, Collections.list(request.getHeaders(name)));
         }
+        authenticatedRequestHeaders.apply(headers);
     }
 
     private boolean isMultipart(HttpServletRequest request) {

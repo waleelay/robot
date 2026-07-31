@@ -22,6 +22,7 @@ import {
 } from '../../api/media'
 import Vue from 'vue'
 import { errorMessage } from '../../utils'
+import { bearerToken } from '@/auth'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 // 定义 WebSocket 模块的初始状态
@@ -500,7 +501,7 @@ const actions = {
   },
 
   // 连接媒体服务 WebSocket
-  connectMediaWebSocket({ commit, state, dispatch }) {
+  async connectMediaWebSocket({ commit, state, dispatch }) {
     if (state.mediaSocket &&
         [WebSocket.CONNECTING, WebSocket.OPEN].includes(state.mediaSocket.readyState)) {
       return
@@ -509,6 +510,10 @@ const actions = {
     const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/control`
     const socketUrl = new URL(url, window.location.href)
     socketUrl.searchParams.set('clientId', mediaClientId)
+    const accessToken = await bearerToken()
+    if (accessToken) {
+      socketUrl.searchParams.set('access_token', accessToken)
+    }
     const socket = new WebSocket(socketUrl.toString())
     // const socket = new WebSocket('wss://192.168.124.115:8080/ws/control')
     socket.onopen = () => {
@@ -652,7 +657,7 @@ const actions = {
     const active = state.activeIncomingCall
     if (active && active.cameraKey && state.cameras[active.cameraKey]) {
       const camera = { ...state.cameras[active.cameraKey] }
-      const audioElement = camera.remoteAudioElement      
+      const audioElement = camera.remoteAudioElement
       const keepWatching = Boolean(state.activeCameras[active.cameraKey] && camera.watching)
       if (camera.room) {
         await Promise.resolve(camera.room.localParticipant.setMicrophoneEnabled(false)).catch(() => {})

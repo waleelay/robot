@@ -1,5 +1,6 @@
 package com.robot.bigscreen.ws;
 
+import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
 import java.net.URI;
 import java.util.Collections;
@@ -10,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -25,6 +27,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(BigscreenWebSocketBridgeHandler.class);
     private static final Set<String> FORWARDED_HEADERS = Set.of(
+            HttpHeaders.AUTHORIZATION,
             "X-User-Id",
             "X-Org-Id",
             "X-Roles",
@@ -32,15 +35,18 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     private final CenterServiceProperties properties;
     private final PanoramaWebSocketEventAdapter eventAdapter;
+    private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final StandardWebSocketClient webSocketClient = new StandardWebSocketClient();
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
     private final Set<WebSocketSession> browserSessions = ConcurrentHashMap.newKeySet();
 
     public BigscreenWebSocketBridgeHandler(
             CenterServiceProperties properties,
-            PanoramaWebSocketEventAdapter eventAdapter) {
+            PanoramaWebSocketEventAdapter eventAdapter,
+            AuthenticatedRequestHeaders authenticatedRequestHeaders) {
         this.properties = properties;
         this.eventAdapter = eventAdapter;
+        this.authenticatedRequestHeaders = authenticatedRequestHeaders;
     }
 
     @Override
@@ -51,7 +57,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             copyHandshakeHeaders(browserSession, headers);
             WebSocketHandler centerHandler = new CenterToBrowserHandler(browserSession);
             WebSocketSession centerSession = webSocketClient
-                    .execute(centerHandler, headers, URI.create(properties.getWebsocketControlUrl()))
+                    .execute(centerHandler, headers, centerUri(browserSession))
                     .get();
             centerSessions.put(browserSession.getId(), centerSession);
         } catch (Exception exception) {
@@ -114,20 +120,43 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         headers.putIfAbsent(
                 "X-Client-Id",
                 Collections.singletonList(clientIdFromQuery(browserSession)));
+        String accessToken = queryParameter(browserSession, "access_token");
+        if (headers.getFirst(HttpHeaders.AUTHORIZATION) == null && accessToken != null) {
+            headers.setBearerAuth(accessToken);
+        }
+        if (browserSession.getPrincipal() instanceof Authentication authentication) {
+            authenticatedRequestHeaders.apply(headers, authentication);
+        }
     }
 
     private String clientIdFromQuery(WebSocketSession browserSession) {
-        URI uri = browserSession.getUri();
-        if (uri != null) {
-            String clientId = UriComponentsBuilder.fromUri(uri)
-                    .build()
-                    .getQueryParams()
-                    .getFirst("clientId");
-            if (clientId != null && !clientId.isBlank()) {
-                return clientId;
-            }
+        String clientId = queryParameter(browserSession, "clientId");
+        return clientId == null ? browserSession.getId() : clientId;
+    }
+
+    URI centerUri(WebSocketSession browserSession) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(properties.getWebsocketControlUrl());
+        String clientId = queryParameter(browserSession, "clientId");
+        String accessToken = queryParameter(browserSession, "access_token");
+        if (clientId != null) {
+            builder.replaceQueryParam("clientId", clientId);
         }
-        return browserSession.getId();
+        if (accessToken != null) {
+            builder.replaceQueryParam("access_token", accessToken);
+        }
+        return builder.build(true).toUri();
+    }
+
+    private String queryParameter(WebSocketSession browserSession, String name) {
+        URI uri = browserSession.getUri();
+        if (uri == null) {
+            return null;
+        }
+        String value = UriComponentsBuilder.fromUri(uri)
+                .build()
+                .getQueryParams()
+                .getFirst(name);
+        return value == null || value.isBlank() ? null : value;
     }
 
     private class CenterToBrowserHandler extends TextWebSocketHandler {

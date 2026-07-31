@@ -56,6 +56,7 @@
     "js-cookie": "3.0.1",
     "jsencrypt": "3.0.0-rc.1",
     "json-loader": "^0.5.7",
+    "keycloak-js": "^26.0.7",
     "leaflet": "^1.9.4",
     "leaflet-lasso": "^2.2.13",
     "leaflet-rotate": "^0.2.8",

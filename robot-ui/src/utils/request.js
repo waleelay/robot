@@ -1,12 +1,11 @@
 import axios from 'axios'
-import { Notification, MessageBox, Message, Loading } from 'element-ui'
-import store from '@/store'
-import { getToken } from '@/utils/auth'
+import { Notification, Message, Loading } from 'element-ui'
 import errorCode from '@/utils/errorCode'
 import { tansParams, blobValidate } from "@/utils/ruoyi";
 import cache from '@/plugins/cache'
 import { saveAs } from 'file-saver'
 import { mediaClientId } from '@/utils/media-client-id'
+import { bearerToken, login } from '@/auth'
 
 let downloadLoadingInstance;
 let showAlert = false;
@@ -23,7 +22,7 @@ const service = axios.create({
 })
 
 // request拦截器
-service.interceptors.request.use(config => {
+service.interceptors.request.use(async config => {
   config.headers = config.headers || {}
   if (!config.headers['X-Client-Id']) {
     config.headers['X-Client-Id'] = mediaClientId
@@ -33,8 +32,11 @@ service.interceptors.request.use(config => {
   const isToken = (config.headers || {}).isToken === false
   // 是否需要防止数据重复提交
   const isRepeatSubmit = (config.headers || {}).repeatSubmit === false
-  if (getToken() && !isToken) {
-    config.headers['Authorization'] = 'Bearer ' + getToken() // 让每个请求携带自定义token 请根据实际情况自行修改
+  if (!isToken) {
+    const token = await bearerToken()
+    if (token) {
+      config.headers['Authorization'] = 'Bearer ' + token
+    }
   }
   if (config.url.includes('/box/box')) {
     config.baseURL = '';
@@ -97,17 +99,7 @@ service.interceptors.response.use(res => {
       return res.data
     }
     if (code === 401) {
-      if (!isRelogin.show) {
-        isRelogin.show = true;
-        MessageBox.confirm('登录状态已过期，您可以继续留在该页面，或者重新登录', '系统提示', { confirmButtonText: '重新登录', cancelButtonText: '取消', type: 'warning' }).then(() => {
-          isRelogin.show = false;
-          store.dispatch('LogOut').then(() => {
-            location.href = '/index';
-          })
-      }).catch(() => {
-        isRelogin.show = false;
-      });
-    }
+      login()
       return Promise.reject('无效的会话，或者会话已过期，请重新登录。')
     } else if (code === 500) {
       if (!showAlert) {
@@ -134,6 +126,10 @@ service.interceptors.response.use(res => {
   },
   error => {
     console.log('err' + error)
+    if (error.response && error.response.status === 401) {
+      login()
+      return Promise.reject(error)
+    }
     let { message } = error;
     if (message == "Network Error") {
       message = "后端接口连接异常";
