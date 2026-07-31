@@ -92,20 +92,6 @@ export default {
       vehicleLightEnabled: cachedVehicleLightEnabled(this.deviceStateCache)
     }
   },
-  watch: {
-    warningLightQueryKey: {
-      immediate: true,
-      handler(key) {
-        if (!key) {
-          this.lastWarningLightQueryKey = ''
-          return
-        }
-        if (key === this.lastWarningLightQueryKey) return
-        this.lastWarningLightQueryKey = key
-        this.queryWarningLightState()
-      }
-    }
-  },
   methods: {
     ...mapActions('websocketRobot', ['persistDeviceStateCache']),
     controlDevices() {

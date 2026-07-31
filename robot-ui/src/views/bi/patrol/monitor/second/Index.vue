@@ -216,6 +216,20 @@ export default {
       mediaTabIndex: 0
     }
   },
+  watch: {
+    warningLightQueryKey: {
+      immediate: true,
+      handler(key) {
+        if (!key) {
+          this.lastWarningLightQueryKey = ''
+          return
+        }
+        if (key === this.lastWarningLightQueryKey) return
+        this.lastWarningLightQueryKey = key
+        this.queryWarningLightState()
+      }
+    }
+  },
   mixins: [yuntai],
   methods: {
     openMultimediaMore() {

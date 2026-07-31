@@ -144,7 +144,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
                 "requestId", requestId,
                 "timestamp", DateTimeConfig.format(OffsetDateTime.now()),
                 "payload", payload);
-        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(body)));
+        publisher.send(session, new TextMessage(objectMapper.writeValueAsString(body)));
     }
 
     /**

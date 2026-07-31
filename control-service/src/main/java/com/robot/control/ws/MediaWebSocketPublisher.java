@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 /**
@@ -57,6 +58,22 @@ public class MediaWebSocketPublisher {
     }
 
     /**
+     * 向指定 WebSocket 会话串行发送消息。
+     *
+     * @param session WebSocket 会话
+     * @param message WebSocket 消息
+     * @throws IOException IOException 发送失败时抛出
+     */
+    public void send(WebSocketSession session, WebSocketMessage<?> message) throws IOException {
+        synchronized (session) {
+            if (!session.isOpen()) {
+                throw new IOException("WebSocket session is closed");
+            }
+            session.sendMessage(message);
+        }
+    }
+
+    /**
      * 发布 MQTT 消息。
      *
      * @param event 事件名称
@@ -79,8 +96,8 @@ public class MediaWebSocketPublisher {
                 continue;
             }
             try {
-                session.sendMessage(new TextMessage(json));
-            } catch (IOException ex) {
+                send(session, new TextMessage(json));
+            } catch (IOException | IllegalStateException ex) {
                 log.warn("Failed to send websocket event={}", event, ex);
                 sessions.remove(session);
             }
@@ -100,8 +117,8 @@ public class MediaWebSocketPublisher {
                 continue;
             }
             try {
-                session.sendMessage(message);
-            } catch (IOException ex) {
+                send(session, message);
+            } catch (IOException | IllegalStateException ex) {
                 log.warn("Failed to send websocket binary message", ex);
                 sessions.remove(session);
             }
