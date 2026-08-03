@@ -1,39 +1,14 @@
 <template>
-  <el-dialog
-    class="control-mode-dialog flx-align-center"
-    v-dialogDrag
-    width="514px"
-    height="164px"
-    :visible.sync="dialogVisible"
-    :modal-append-to-body="false"
-    :close-on-click-modal="false"
-    :close-on-press-escape="false"
-    append-to-body
-    :show-close="false"
-    title=""
-  >
-    <template slot="title">
-      <div class="flx-align-center custom-header">
-        <img src="@/assets/images/new-bi/warning-icon.png" alt="" width="24px" height="24px">
-        <span class="ml10">切换模式</span>
-      </div>
-    </template>
-    确认切换为{{ controlModeName }}？
-    <template slot="footer">
-      <el-button tt="modal"  @click="dialogVisible = false">取消</el-button>
-      <el-button tt="modal" class="ml10" @click="execute(controlMode)">确认切换</el-button>
-    </template>
-  </el-dialog>
+  <div style="display: none;"></div>
 </template>
 
 <script>
-import { acquireControl, setControlMode, takeoverControl } from '../../../../../../api/media';
+import { acquireControl, setControlMode, takeoverControl } from '../../../../../../api/media'
 
 export default {
   name: 'ControlModeWarning',
   data() {
     return {
-      dialogVisible: false,
       loading: false,
       timer: null,
       robotId: '',
@@ -42,13 +17,47 @@ export default {
     }
   },
   methods: {
-    open(data) {
-      if (this.dialogVisible) return
+    hasOtherDialogOpen() {
+      const dialogs = document.querySelectorAll('.el-dialog__wrapper')
+      for (let i = 0; i < dialogs.length; i++) {
+        const el = dialogs[i]
+        if (el.style.display === 'none') continue
+        const style = window.getComputedStyle(el)
+        if (style.display !== 'none' && style.visibility !== 'hidden') {
+          return true
+        }
+      }
+      // 地图装备控制等非 el-dialog 弹层
+      const panels = document.querySelectorAll('.machine-container.visible, .robot-control.inner-video-control')
+      for (let i = 0; i < panels.length; i++) {
+        const el = panels[i]
+        const style = window.getComputedStyle(el)
+        if (style.display !== 'none' && style.visibility !== 'hidden') {
+          return true
+        }
+      }
+      return false
+    },
+    async open(data) {
+      if (this.loading) return
       this.loading = false
-      this.dialogVisible = true
       this.robotId = data.robotId
       this.controlMode = data?.controlMode || ''
       this.controlModeName = this.controlMode === 'MANUAL' ? '手动模式' : '导航模式'
+      const confirmApi = this.hasOtherDialogOpen()
+        ? this.$secondaryConfirm
+        : this.$primaryConfirm
+      try {
+        await confirmApi({
+          title: '切换模式',
+          message: `确认切换为${this.controlModeName}？`,
+          confirmText: '确认切换',
+          cancelText: '取消',
+          onConfirm: () => this.execute()
+        })
+      } catch (error) {
+        // 用户取消
+      }
     },
     async execute() {
       if (this.loading === true) {
@@ -89,13 +98,13 @@ export default {
             ? `机器人当前已是${response.controlModeName}`
             : `切换指令已下发，等待机器人确认`
         )
-        this.dialogVisible = false
       } catch (error) {
         this.$message.error(error.message || '切换模式失败')
+        throw error
       } finally {
         this.loading = false
       }
-    },
+    }
   },
   beforeDestroy() {
     if (this.timer) {
@@ -104,63 +113,3 @@ export default {
   }
 }
 </script>
-
-<style lang="scss" scoped>
-.control-mode-dialog {
-  ::v-deep .el-dialog {
-    background: #021328;
-    border: 1px solid #4395FF;
-    .el-dialog__header {
-      padding: 0;
-      padding-left: 20px;
-      height: 60px;
-      color: #FFF;
-      font-family: "Microsoft YaHei";
-      font-size: 20px;
-      font-style: normal;
-      font-weight: 400;
-      line-height: 60px;
-      background: linear-gradient(180deg, rgba(0, 119, 255, 0.49) 0.11%, rgba(184, 154, 255, 0.00) 100.01%);
-    }
-    .el-dialog__body {
-      padding: 10px 30px 20px 27px;
-      color: rgba(255, 255, 255, 0.80);
-      font-family: "Microsoft YaHei";
-      font-size: 14px;
-      font-style: normal;
-      font-weight: 400;
-      line-height: 18px;
-    }
-
-    .el-textarea__inner {
-      color: rgba(255, 255, 255, 0.80);
-      font-family: "Microsoft YaHei";
-      font-size: 14px;
-      font-style: normal;
-      font-weight: 400;
-      line-height: 18px;
-      background: #0C2748;
-      border: none;
-    }
-    .el-dialog__footer {
-      padding: 0 10px 18px;
-      text-align: right;
-      .el-button[tt="modal"] {
-        height: auto;
-        padding: 10px 20px;
-        color: #FFF;
-        text-align: center;
-        font-family: "Alibaba PuHuiTi";
-        font-size: 14px;
-        font-style: normal;
-        font-weight: 400;
-        line-height: 20px; /* 142.857% */
-        letter-spacing: 1.488px;
-        border-radius: 3.473px;
-        border: 1px solid #4395FF;
-        background: rgba(9, 45, 72, 0.50);
-      }
-    }
-  }
-}
-</style>

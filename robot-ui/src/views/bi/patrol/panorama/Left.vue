@@ -70,7 +70,7 @@
               :key="item.taskId"
               class="item wp288"
               :class="{
-                'is-active': activeTaskId == item.taskId || activeTaskId == key,
+                'is-active': activeTaskId == item.taskId,
                 'mb10': index !== taskData1.length - 1
               }"
             >
@@ -91,7 +91,7 @@
               </div>
               <!-- 执行中：详情 / 暂停(禁用) / 删除 / 播放视频 -->
               <div v-if="item.status === 'running' || item.status === 'paused'" class="task-actions">
-                <button type="button" class="action-btn action-detail" @click.stop="handleTaskDetail(item, key)">
+                <button type="button" class="action-btn action-detail" @click.stop="handleTaskDetail(item)">
                   <span>详情</span>
                   <svg-icon icon-class="right" class="ml4" />
                 </button>
@@ -114,7 +114,7 @@
                 >
                   <svg-icon icon-class="play" />
                 </button> -->
-                <div class="symbol wp36 hp28" @click="handleClickTask(key)">
+                <div class="symbol wp36 hp28" @click="handleClickTask(item.taskId)">
                   <!-- <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId == item.taskId ? 'active' : 'off1'}.png`)" class="w100 h100" alt="" srcset="" /> -->
                   <img :src="require(`../../../../assets/images/new-bi/camera${activeTaskId == item.taskId ? '2' : '1'}.png`)" class="w100 h100" alt="" srcset="" />
                 </div>
@@ -275,7 +275,7 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
-    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats']),
+    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'globalMapId']),
     taskConfirmText() {
       if (this.taskConfirmType === 'delete') return '是否【删除】该任务？'
       if (this.taskConfirmType === 'execute') return '是否【立即执行】该任务？'
@@ -384,6 +384,15 @@ export default {
         robotIds
       })
     },
+    /** 切换地图时关闭任务装备弹窗及相关高亮 */
+    clearTaskRobotView() {
+      this.activeTaskId = null
+      this.setShowRobotIds([])
+      if (this.$refs.taskRobotViewRef) {
+        this.$refs.taskRobotViewRef.dialogVisible = false
+      }
+      this.closeTaskConfirm()
+    },
     handleTaskDetail() {
       // 详情入口预留
     },
@@ -478,6 +487,10 @@ export default {
     }
   },
   watch: {
+    // 切换 GIS/SLAM 或 SLAM 地图时，关闭任务装备弹窗
+    globalMapId() {
+      this.clearTaskRobotView()
+    },
     // robots: {
     //   handler(newVal, oldVal) {
     //     if (newVal?.length && !this.taskList[0]?.robots?.length) {

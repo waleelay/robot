@@ -1,5 +1,5 @@
 <template>
-  <div class="box p30 mt10 flx-center flex-column catcher">
+  <div class="flx-center flex-column catcher">
     <div class="img mt10 wp166 hp113">
       <img src="@/assets/images/new-bi/catcher.png" alt="" class="w100 h100" />
     </div>

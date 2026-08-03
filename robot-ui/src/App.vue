@@ -9,7 +9,11 @@
 -->
 <template>
 <!--  <div id="app">-->
-  <div id="app" :class="{'big-screen-background' :isBigScreen, 'default-background': !isBigScreen}">
+  <div
+    id="app"
+    :class="{'big-screen-background' :isBigScreen, 'default-background': !isBigScreen && !isBiRoute}"
+    :style="appInlineStyle"
+  >
     <router-view />
   </div>
 </template>
@@ -18,11 +22,35 @@
 import { getBasicMessage } from "@/api/menu"
 import axios from "axios";
 
+const BI_MAP_BG_PAGES = ['/bi/index', '/bi/patrol/panorama']
+const BG_GIS = '#1f2c43'
+const BG_SLAM = '#112B4D'
+const BG_BI_DEFAULT = '#021328'
+
 export default {
   name: "App",
   data() {
     return {
       isBigScreen: false
+    }
+  },
+  computed: {
+    isBiRoute() {
+      return (this.$route.path || '').startsWith('/bi')
+    },
+    // 大屏：地图页按 GIS/SLAM 区分，其余 bi 页统一深色；非 bi 走 default-background
+    appBackgroundColor() {
+      if (this.isBigScreen || !this.isBiRoute) return null
+      const path = this.$route.path
+      if (BI_MAP_BG_PAGES.includes(path)) {
+        const mapId = this.$store.state.websocketExtraData?.globalMapId
+        return mapId === 'gis' ? BG_GIS : BG_SLAM
+      }
+      return BG_BI_DEFAULT
+    },
+    appInlineStyle() {
+      if (!this.appBackgroundColor) return null
+      return { backgroundColor: this.appBackgroundColor }
     }
   },
   mounted() {

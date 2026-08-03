@@ -1,5 +1,5 @@
 <template>
-  <div class="box multi-in-one p20 mt10">
+  <div>
     <div class="tabs flx-align-center">
       <button
         v-for="item in tabs"

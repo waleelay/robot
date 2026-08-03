@@ -83,6 +83,17 @@ export function currentToken() {
   return keycloak && keycloak.authenticated ? keycloak.token || '' : ''
 }
 
+export async function tokenClaims() {
+  const token = await bearerToken()
+  if (!token) return {}
+  const payload = token.split('.')[1]
+  if (!payload) return {}
+  const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), '=')
+  const bytes = Uint8Array.from(atob(padded), char => char.charCodeAt(0))
+  return JSON.parse(new TextDecoder().decode(bytes))
+}
+
 export function isAuthenticated() {
   return authDisabled() || Boolean(keycloak && keycloak.authenticated)
 }
@@ -104,6 +115,21 @@ export async function login(redirectPath) {
 export async function logout() {
   if (authDisabled() || !keycloak) return
   await keycloak.logout({ redirectUri: `${window.location.origin}/` })
+}
+
+export async function switchAccount(redirectPath) {
+  if (authDisabled() || !keycloak || loginStarted) return
+  loginStarted = true
+  try {
+    await keycloak.login({
+      redirectUri: redirectUri(redirectPath),
+      prompt: 'login',
+      locale: runtimeValue('keycloakLocale', process.env.VUE_APP_KEYCLOAK_LOCALE || 'zh-CN')
+    })
+  } catch (error) {
+    loginStarted = false
+    throw error
+  }
 }
 
 function redirectUri(redirectPath) {

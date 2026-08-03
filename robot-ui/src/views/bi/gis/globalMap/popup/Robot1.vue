@@ -48,12 +48,12 @@
       <div class="btns mt10 mb20 ml0 flx-align-center flex-wrap wp360" style="margin-top: -10px !important">
         <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="$emit('showControlPart')">远程控制</el-button>
         <!-- <el-button type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button> -->
-        <el-button v-if="showAnimate && showControl && currenRobot?.runningTaskId" type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button>
+        <el-button v-if="showAnimate && showControl && currenRobot?.runningTaskId && globalMapId === 'gis'" type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button>
         <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="onShutdown()">一键返航</el-button>
         <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="onStartup()">退出充电桩</el-button>
         <!-- <el-button type="primary" @click="onAddTask()">添加任务</el-button> -->
         <el-button v-if="hasTaskPath || globalMapId === 'gis'" type="primary" class="mt20" @click="togglePath()">显示路径</el-button>
-        <el-button v-if="globalMapId === 'gis'" type="primary" class="mt20" @click="$emit('showArea', true)">显示区域</el-button>
+        <!-- <el-button v-if="globalMapId === 'gis'" type="primary" class="mt20" @click="$emit('showArea', true)">显示区域</el-button> -->
       </div>
     </div>
     <!-- <div class="guideline wp157 hp29 mt9 ml161">

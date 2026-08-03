@@ -34,7 +34,7 @@ export default {
   &-text {
     color: var(--textColor, #DFEDFF);
     font-family: "Microsoft YaHei";
-    font-size: 16px;
+    font-size: 14px;
     line-height: 28px; /* 175% */
   }
 }

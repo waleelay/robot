@@ -83,17 +83,11 @@
           <div class="icon ml20" v-if="showBack" @click="back">
             <svg-icon icon-class="back1" style="color: #AED1FF;"></svg-icon>
           </div>
-          <div class="icon ml20">
+          <!-- <div class="icon ml20">
             <svg-icon icon-class="clock" style="color: #AED1FF;"></svg-icon>
-          </div>
+          </div> -->
         </div>
-        <div class="user ml40 flx-align-center h100">
-          <div class="avatar">Z</div>
-          <div class="ml10 flex-column">
-            <span class="text">成都启航信息</span>
-            <span class="role pt2 pr10 pb2 pl10">运维管理</span>
-          </div>
-        </div>
+        <UserMenu class="ml40" size="md" />
       </div>
     </div>
   </div>
@@ -102,6 +96,7 @@
 <script>
 import { mapActions } from 'vuex/dist/vuex.common.js';
 import PageChangeDropdown from './../home/PageChangeDropdown.vue'
+import UserMenu from '../components/UserMenu.vue'
 
 export default {
   name: 'Header',
@@ -112,7 +107,8 @@ export default {
     },
   },
   components: {
-    PageChangeDropdown
+    PageChangeDropdown,
+    UserMenu
   },
   computed: {
     showBack() {
@@ -195,28 +191,6 @@ export default {
     // 全屏状态改变
     onFullscreenChange() {
       this.isFullscreen = !!document.fullscreenElement
-    },
-    
-    // 用户菜单命令
-    handleCommand(command) {
-      switch (command) {
-        case 'profile':
-          this.$message.info('跳转到个人中心')
-          break
-        case 'settings':
-          this.$message.info('跳转到账号设置')
-          break
-        case 'logout':
-          this.$confirm('确定要退出登录吗?', '提示', {
-            confirmButtonText: '确定',
-            cancelButtonText: '取消',
-            type: 'warning'
-          }).then(() => {
-            this.$message.success('退出成功')
-            // 这里添加退出登录逻辑
-          })
-          break
-      }
     }
   }
 }
@@ -416,49 +390,6 @@ export default {
       font-family: "Alibaba PuHuiTi";
       font-size: 16px;
       line-height: 22px;
-    }
-    .user {
-      position: relative;
-      &::before {
-        position: absolute;
-        top: 24px;
-        left: -20px;
-        width: 1px;
-        height: 32px;
-        background: rgba(156, 184, 212, 0.50);
-        content: "";
-      }
-      .avatar {
-        width: 36px;
-        height: 36px;
-        text-align: center;
-        line-height: 36px;
-        background: linear-gradient(180deg, #0080D5 0%, #0054CC 100%);
-        border: 1px solid #5AA0FF;
-        border-radius: 50%;
-        font-size: 20px;
-        color: #AED1FF;
-        font-family: "Microsoft YaHei";
-        font-size: 20px;
-        font-weight: 700;
-      }
-      .text {
-        color: #BFDFFF;
-        text-shadow: 0 1px 3px rgba(5, 12, 25, 0.54);
-        font-family: Bahnschrift;
-        font-size: 18px;
-        line-height: 22px;
-      }
-      .role {
-        display: block;
-        width: fit-content;
-        color: #BFDFFF;
-        font-family: "Alibaba PuHuiTi";
-        font-size: 10px;
-        line-height: 14px;
-        opacity: 0.8;
-        background: #00589A;
-      }
     }
   }
 }

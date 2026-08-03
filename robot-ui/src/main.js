@@ -13,6 +13,7 @@ import store from './store'
 import router from './router'
 import directive from './directive' // directive
 import plugins from './plugins' // plugins
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { download } from '@/utils/request'
 import { initAuth } from '@/auth'
 
@@ -35,6 +36,7 @@ Vue.use(Element, {
 })
 Vue.use(directive)
 Vue.use(plugins)
+Vue.use(ConfirmDialog)
 
 /**
  * If you don't want to use mock-server

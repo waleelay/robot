@@ -1286,6 +1286,11 @@ export default {
       }, 500);
     },
     showControlPart(visible) {
+      if (visible === false) {
+        this.$refs.robotControlPartRef?.show?.(false)
+        this.$refs.robotCarControlPartRef?.show?.(false)
+        return
+      }
       const isDog = this.selectedRobot?.type === '四足机器狗' || this.selectedRobot?.type === '四足机器人' || this.selectedRobot?.type === 'ROBOT_DOG'
       const controlRef = isDog ? this.$refs.robotControlPartRef : this.$refs.robotCarControlPartRef
       const nextVisible = typeof visible === 'boolean' ? visible : !controlRef?.visible

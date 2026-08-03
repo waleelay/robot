@@ -1,5 +1,5 @@
 <template>
-  <div class="box p30 mt10 flx-center yuntai">
+  <div class="flx-center yuntai">
     <div class="flx-center flex-column">
       <div class="item wp120 flx-center">
         <span class="left-top" title="左上" @mousedown="startFrameControl(ptzObj['tl'].key)" @mouseup="stopFrameControl(ptzObj['tl'].key)" @mouseleave="stopFrameControl(ptzObj['tl'].key)" @touchstart.prevent="startFrameControl(ptzObj['tl'].key)" @touchend.prevent="stopFrameControl(ptzObj['tl'].key)">

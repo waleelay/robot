@@ -15,17 +15,11 @@
             <!-- <svg-icon icon-class="home" style="color: #8BAEDC;"></svg-icon> -->
              <PageChangeDropdown />
           </div>
-          <div class="icon ml20" @click="logout">
+          <!-- <div class="icon ml20">
             <svg-icon icon-class="clock" style="color: #AED1FF;"></svg-icon>
-          </div>
+          </div> -->
         </div>
-        <div class="user ml40 flx-align-center h100">
-          <div class="avatar">Z</div>
-          <div class="ml10 flex-column">
-            <span class="text">成都启航信息</span>
-            <span class="role pt0 pr10 pb0 pl10">运维管理</span>
-          </div>
-        </div>
+        <UserMenu class="ml40" size="sm" />
       </div>
     </div>
   </div>
@@ -33,11 +27,12 @@
 
 <script>
 import PageChangeDropdown from './PageChangeDropdown.vue'
-import { logout } from '@/auth'
+import UserMenu from '../components/UserMenu.vue'
 export default {
   name: 'Header',
   components: {
-    PageChangeDropdown
+    PageChangeDropdown,
+    UserMenu
   },
   data() {
     return {
@@ -64,20 +59,6 @@ export default {
     document.removeEventListener('fullscreenchange', this.onFullscreenChange)
   },
   methods: {
-    async logout() {
-      try {
-        await this.$confirm('确定注销并退出系统吗？', '提示', {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
-          type: 'warning'
-        })
-        await logout()
-      } catch (error) {
-        if (error !== 'cancel' && error !== 'close') {
-          this.$message.error('退出登录失败')
-        }
-      }
-    },
     // 更新时间
     updateTime() {
       const now = new Date()
@@ -220,51 +201,6 @@ export default {
       font-family: "Alibaba PuHuiTi";
       font-size: 16px;
       line-height: 22px;
-    }
-    .user {
-      position: relative;
-      &::before {
-        position: absolute;
-        top: 4px;
-        left: -20px;
-        width: 1px;
-        height: 32px;
-        background: rgba(156, 184, 212, 0.50);
-        content: "";
-      }
-      .avatar {
-        width: 28px;
-        height: 28px;
-        text-align: center;
-        line-height: 28px;
-        background: linear-gradient(180deg, #0080D5 0%, #0054CC 100%);
-        border: 1px solid #5AA0FF;
-        border-radius: 50%;
-        color: #AED1FF;
-        font-family: "Microsoft YaHei";
-        font-size: 16px;
-        font-style: normal;
-        font-weight: 700;
-        line-height: 28px;
-      }
-      .text {
-        color: #BFDFFF;
-        text-shadow: 0 1px 3px rgba(5, 12, 25, 0.54);
-        font-family: Bahnschrift;
-        font-size: 14px;
-        line-height: 17px;
-        color: #BFDFFF;
-      }
-      .role {
-        display: block;
-        width: fit-content;
-        color: #BFDFFF;
-        font-family: "Alibaba PuHuiTi";
-        font-size: 10px;
-        line-height: 14px;
-        opacity: 0.8;
-        background: #00589A;
-      }
     }
   }
 }

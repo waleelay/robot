@@ -32,20 +32,85 @@
             >
               <!-- Robot1「显示路径」：polyline + 路径点；MapTool「点位」：地图点位，互不影响 -->
               <polyline v-if="showPolyline && polylinePoints" :points="polylinePoints" class="map-preview-path" />
-              <template v-if="showPath || showPolyline">
+              <!-- MapTool「点位」：逻辑不变 -->
+              <template v-if="showPath">
                 <g
-                  v-for="point in overlayPoints"
+                  v-for="point in drawablePoints"
                   :key="point.id"
-                  :transform="`translate(${point.pixel.x}, ${point.pixel.y})`"
-                  class="map-preview-point"
-                  :class="{ selected: point.id === selectedPointId, inPath: isPointInPath(point), hovered: point.id === hoveredPointId }"
+                  :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
+                  class="map-preview-point is-map-tool"
+                  :class="{
+                    selected: point.id === selectedPointId,
+                    inPath: isPointInPath(point),
+                    hovered: point.id === hoveredPointId
+                  }"
                   @mouseenter="hoveredPointId = point.id"
                   @mouseleave="hoveredPointId = null"
                   @click.stop="handlePointClick(point)"
                 >
-                  <circle r="6" />
-                  <text v-if="showLabels || point.id === selectedPointId" x="9" y="-9">{{ point.pointName }}</text>
+                  <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
+                  <image
+                    :href="mapPointMarker"
+                    x="-10"
+                    y="-26"
+                    width="20"
+                    height="26"
+                    class="map-point-marker"
+                  />
+                  <foreignObject
+                    class="map-point-name-fo"
+                    :x="-point.nameWidth / 2"
+                    y="4"
+                    :width="point.nameWidth"
+                    height="20"
+                  >
+                    <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
+                  </foreignObject>
                   <title>{{ point.pointName }} / {{ point.pointCode || point.id }} / 任务路径点</title>
+                </g>
+              </template>
+              <!-- 装备任务路径点：按顺序标注 Figma 右上角序号，相对点位图标偏移 -->
+              <template v-if="showPolyline">
+                <g
+                  v-for="point in drawablePathPoints"
+                  :key="`path-${point.id}`"
+                  :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
+                  class="map-preview-point is-path-point"
+                  :class="{
+                    selected: point.id === selectedPointId,
+                    hovered: point.id === hoveredPointId
+                  }"
+                  @mouseenter="hoveredPointId = point.id"
+                  @mouseleave="hoveredPointId = null"
+                  @click.stop="handlePointClick(point)"
+                >
+                  <!-- MapTool 未开点位时，路径点仍展示图标+名称 -->
+                  <template v-if="!showPath">
+                    <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
+                    <image
+                      :href="mapPointMarker"
+                      x="-10"
+                      y="-26"
+                      width="20"
+                      height="26"
+                      class="map-point-marker"
+                    />
+                    <foreignObject
+                      class="map-point-name-fo"
+                      :x="-point.nameWidth / 2"
+                      y="4"
+                      :width="point.nameWidth"
+                      height="20"
+                    >
+                      <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
+                    </foreignObject>
+                  </template>
+                  <!-- Figma：20×20 序号，相对点位图标右上角 -->
+                  <g class="path-seq-badge" transform="translate(6, -40)" pointer-events="none">
+                    <image :href="pathPointBadge" x="0" y="0" width="20" height="20" />
+                    <text x="10" y="14.5" text-anchor="middle" class="path-seq-text">{{ point.pathIndex }}</text>
+                  </g>
+                  <title>{{ point.pointName }} / 路径序号 {{ point.pathIndex }}</title>
                 </g>
               </template>
               <g
@@ -157,7 +222,7 @@
             <div v-if="normalRobots.length" class="div2 ml10">
               <div v-for="robot in normalRobots" :key="robot.robotId" class="item flx-justify-between p6" :class="robot.statusClass">
                 <span class="name pl14" :class="robot.statusClass">{{ robot.name }}</span>
-                <span class="oper ml4" :class="robot.statusClass" @click="handleSelectRobot(robot)">
+                <span class="oper ml4" :class="robot.customStatusName === '空闲中' ? 'blue' : 'orange '" @click="handleSelectRobot(robot)">
                   {{robot.customStatusName === '空闲中' ? '立即派遣' : '终止任务'}}
                 </span>
               </div>
@@ -200,16 +265,6 @@
       </div>
     </template>
     <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="当前地图暂无预览" />
-    <div v-if="showNotice" class="notice-modal flx-center">
-      <div class="notice-modal__mask" @click="closeNotice"></div>
-      <div class="notice-modal__dialog">
-        <p class="notice-modal__text">当前选择装备正在【任务中】，是否终止任务？进行新任务</p>
-        <div class="notice-modal__btns">
-          <button type="button" class="notice-modal__btn" @click="closeNotice">取消</button>
-          <button type="button" class="notice-modal__btn is-primary" @click="addTask">确定</button>
-        </div>
-      </div>
-    </div>
     <RobotControlPart ref="robotControlPartRef" />
     <RobotCarControlPart ref="robotCarControlPartRef" />
     <Robot1 :showAnimate="showAnimate" :style="popupStyle" ref="robot1Ref" @showControlPart="showControlPart" @showPath="showPathArea" @showSlam="showSlam" @showArea="showDashedArea" @clear="clear" />
@@ -226,11 +281,15 @@ import RobotControlPart from '../popup/RobotControlPart.vue'
 import RobotCarControlPart from '../popup/RobotCarControlPart.vue'
 // import Slam from '../../gis/globalMap/popup/Slam.vue'
 import { ROBOT_TYPE_INFO } from '@/constants/robot.js'
-import { addTaskByPoint } from '@/api/new-bi.js';
+import { addTaskByPoint, previewImageBlob } from '@/api/new-bi.js';
 
 const ROBOT_BG = require('@/assets/images/new-bi/robot-bg.svg')
 const ROBOT_SELECTED_HALO = require('@/assets/images/new-bi/robot-selected-halo.svg')
 const ROBOT_SELECTED_CORNERS = require('@/assets/images/new-bi/robot-selected-corners.svg')
+// MapTool 点位图标：Figma 20×26，底部尖端为锚点
+const MAP_POINT_MARKER = require('@/assets/images/new-bi/map-point-marker.svg')
+// 任务路径序号底图：Figma 20×20，#456393 / #8EBAFF
+const PATH_POINT_BADGE = require('@/assets/images/new-bi/path-point-badge.svg')
 // Figma 机器狗图标展示 23.017×16.525，对应源图 38×28
 const ROBOT_ICON_SCALE_X = 23.017 / 38
 const ROBOT_ICON_SCALE_Y = 16.525 / 28
@@ -256,13 +315,17 @@ export default {
   },
   data() {
     return {
-      zoom: 3,
-      minZoomValue: 0.5,
+      zoom: 1,
+      minZoomValue: 0.25,
       maxZoomValue: 3,
+      // 适应当前视口的默认比例（侧栏展开时小于最大）
+      defaultZoomValue: 1,
       resizeObserver: null,
       robotBg: ROBOT_BG,
       robotSelectedHalo: ROBOT_SELECTED_HALO,
       robotSelectedCorners: ROBOT_SELECTED_CORNERS,
+      mapPointMarker: MAP_POINT_MARKER,
+      pathPointBadge: PATH_POINT_BADGE,
       imageUrl: '',
       previewImageStatus: '地图预览加载中',
       mapLoading: false,
@@ -311,7 +374,6 @@ export default {
       // Robot1「显示路径」：仅控制任务路径 polyline，与 MapTool 点位无关
       showPolyline: false,
       showArea: false,
-      showNotice: false,
       showContextMenu: false,
       locationLabel: '临时点',
       collapseZoomTimer: null,
@@ -351,9 +413,12 @@ export default {
         this.map?.originYaw !== undefined
     },
     stageStyle() {
+      const mapW = Number(this.map?.previewWidth || 0)
+      const mapH = Number(this.map?.previewHeight || 0)
+      // 宽高共用同一 zoom，保证等比、不变形
       return {
-        width: `${Number(this.map?.previewWidth || 0) * this.zoom}px`,
-        height: `${Number(this.map?.previewHeight || 0) * this.zoom}px`,
+        width: `${mapW * this.zoom}px`,
+        height: `${mapH * this.zoom}px`,
         transform: `translate(${this.offsetX}px, ${this.offsetY}px)`
       }
     },
@@ -394,12 +459,13 @@ export default {
     drawablePoints() {
       return this.toDrawablePoints(this.activePoints)
     },
-    // Robot1 路径点：仅来自装备关联的任务路径数据
+    // Robot1 路径点：仅来自装备关联的任务路径数据，带路径顺序号
     drawablePathPoints() {
       if (!this.activeTaskPathData) return []
       return this.toDrawablePoints(this.activeTaskPathData.pathPoints)
+        .map((point, index) => ({ ...point, pathIndex: index + 1 }))
     },
-    // MapTool 开点位 → 全量地图点；仅 Robot1 开路径 → 任务路径点；两者都开时保留地图点（不打断 MapTool）
+    // MapTool 开点位 → 全量地图点；仅 Robot1 开路径 → 任务路径点（模板已拆分，此计算属性保留兼容）
     overlayPoints() {
       if (this.showPath) return this.drawablePoints
       if (this.showPolyline) return this.drawablePathPoints
@@ -468,26 +534,6 @@ export default {
         top: `${pointY - 27}px`
       }
     },
-    noticeDialogStyle() {
-      const { offsetX, offsetY, zoom, showNotice } = this
-      if (!showNotice) return {}
-      void offsetX
-      void offsetY
-      void zoom
-      if (!this.locationPoint || !this.$refs.canvas) {
-        return {
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%)'
-        }
-      }
-      const canvasRect = this.$refs.canvas.getBoundingClientRect()
-      return {
-        left: `${canvasRect.left + (this.locationPoint.x || 0) + 40}px`,
-        top: `${canvasRect.top + (this.locationPoint.y || 0) - 20}px`,
-        transform: 'none'
-      }
-    },
     locationLabelWidth() {
       const len = String(this.locationLabel || '').length || 3
       return `${Math.max(48, len * 14 + 8)}px`
@@ -534,6 +580,17 @@ export default {
       }
       return {}
     },
+    // 两侧收缩时的边距（用于计算最大缩放）
+    collapsedVisibleInsets() {
+      if (!this.visibleLayout) return { left: 0, right: 0, top: 0, bottom: 0 }
+      if (this.visibleLayout === 'home') {
+        return { left: 20, right: 38, top: 55, bottom: 20 }
+      }
+      if (this.visibleLayout === 'panorama') {
+        return { left: 20, right: 70, top: 0, bottom: 0 }
+      }
+      return { left: 0, right: 0, top: 0, bottom: 0 }
+    },
   },
   watch: {
     collapse() {
@@ -548,7 +605,7 @@ export default {
     },
     previewSource: {
       immediate: true,
-      handler({ id, cacheKey, hasPreview }, oldVal) {
+      async handler({ id, cacheKey, hasPreview }, oldVal) {
         // 父组件常因心跳展开新 map 对象；id/cacheKey/hasPreview 未变时跳过，避免周期性 loadMap 闪屏
         const samePreview = !!(oldVal
           && String(oldVal.id) === String(id)
@@ -557,8 +614,9 @@ export default {
         if (samePreview) return
 
         const switched = !!(oldVal && String(oldVal.id) !== String(id))
-        // 切换 SLAM 地图：清空路径/画线/打点，并先对齐缩放，避免旧 zoom + 新尺寸造成压缩闪现
+        // 切换 SLAM 地图：清空装备选中/操作框、路径画线，并先对齐缩放
         if (switched) {
+          this.clearRobotSelectionUI()
           this.resetSlamDrawState()
           this.invalidateMapBitmap()
         }
@@ -568,35 +626,53 @@ export default {
           this.revokeImageUrl()
           return
         }
-        const preUrl = (process.env.VUE_APP_BASE_ORIGIN || window.location.origin || '').replace(/\/$/, '')
-        const nextUrl = `${preUrl}/api/v1/management/maps/${id}/preview-image?t=${encodeURIComponent(cacheKey || '')}`
-        // 切换时不先置空 imageUrl，避免空态闪一下；同 tick 内同步重算 zoom
-        if (this.imageObjectUrl) {
-          URL.revokeObjectURL(this.imageObjectUrl)
-          this.imageObjectUrl = null
-        }
         this.coloredCanvas = null
-        const urlChanged = this.imageUrl !== nextUrl
-        if (urlChanged) this.imageUrl = nextUrl
         // 切换或首次/预览更新时展示加载态
-        if (switched || !oldVal || urlChanged) {
+        if (switched || !oldVal) {
+          this.mapLoading = true
+          this.updateZoomBounds(true)
+        } else {
           this.mapLoading = true
         }
-        if (switched || !oldVal) {
-          this.updateZoomBounds(true)
-        }
-        this.$nextTick(() => {
-          // 首屏 viewport 可能尚未就绪，再对齐一次；切换时保持重置
-          this.updateZoomBounds(switched || !oldVal)
-          this.observeViewport()
-          if (this.$refs.canvas) {
-            this.canvas = this.$refs.canvas
-            this.ctx = this.canvas.getContext('2d')
-            this.loadMap()
-          } else {
-            this.mapLoading = false
+
+        // 预览图接口需 Bearer；用 axios 拉取 blob，再交给 Image 渲染
+        const loadSeq = (this.imageLoadSeq = (this.imageLoadSeq || 0) + 1)
+        try {
+          const res = await previewImageBlob(id, cacheKey)
+          if (loadSeq !== this.imageLoadSeq) return
+          const blob = res && res.data instanceof Blob ? res.data : res
+          if (!(blob instanceof Blob)) {
+            throw new Error('地图预览响应无效')
           }
-        })
+          const nextUrl = URL.createObjectURL(blob)
+          if (loadSeq !== this.imageLoadSeq) {
+            URL.revokeObjectURL(nextUrl)
+            return
+          }
+          if (this.imageObjectUrl) {
+            URL.revokeObjectURL(this.imageObjectUrl)
+          }
+          this.imageObjectUrl = nextUrl
+          this.imageUrl = nextUrl
+          this.$nextTick(() => {
+            if (loadSeq !== this.imageLoadSeq) return
+            // 首屏 viewport 可能尚未就绪，再对齐一次；切换时保持重置
+            this.updateZoomBounds(switched || !oldVal)
+            this.observeViewport()
+            if (this.$refs.canvas) {
+              this.canvas = this.$refs.canvas
+              this.ctx = this.canvas.getContext('2d')
+              this.loadMap()
+            } else {
+              this.mapLoading = false
+            }
+          })
+        } catch (error) {
+          if (loadSeq !== this.imageLoadSeq) return
+          this.mapLoading = false
+          this.previewImageStatus = '地图加载失败'
+          console.error('加载 SLAM 地图预览失败', error)
+        }
       },
     },
     // 选中/打开装备不再关闭 MapTool 点位；无任务路径时仅关闭 polyline
@@ -623,6 +699,25 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setShowRobotIds']),
+    ...mapActions('websocketRobot', ['setSelectedRobotId']),
+    /** 切换地图时清空选中装备及 Robot1 / 遥控等操作框 */
+    clearRobotSelectionUI() {
+      // 先关遥控：selectedRobot 清空后 showControlPart 会选错面板
+      this.$refs.robotControlPartRef?.show?.(false)
+      this.$refs.robotCarControlPartRef?.show?.(false)
+      // Robot1.show(null) 会关弹窗、清选中并发 clear([])
+      if (this.$refs.robot1Ref?.show) {
+        this.$refs.robot1Ref.show(null)
+      } else {
+        this.setSelectedRobotId('')
+        this.clear([])
+      }
+      this.showSlam(false)
+      this.activeRobotId = null
+      this.closePopup()
+      this.closeContextMenu()
+      this.$emit('clear-selection')
+    },
     toDrawablePoints(points) {
       return (Array.isArray(points) ? points : [])
         .map((point) => {
@@ -634,7 +729,11 @@ export default {
             coordinateX,
             coordinateY
           }, this.map)
-          return pixel ? { ...point, id, pixel } : null
+          if (!pixel) return null
+          const pointName = point.pointName || point.name || point.pointCode || String(id)
+          // Figma 点位名 14px，左右各留 4px
+          const nameWidth = Math.max(28, Math.ceil(String(pointName).length * 14) + 8)
+          return { ...point, id, pixel, pointName, nameWidth }
         })
         .filter(Boolean)
     },
@@ -679,7 +778,6 @@ export default {
       this.showPolyline = false
       this.locationPoint = null
       this.showContextMenu = false
-      this.showNotice = false
       this.locationLabel = '临时点'
       this.endPoint = null
       this.startPoint = null
@@ -780,6 +878,12 @@ export default {
       }
     },
     showControlPart(visible) {
+      // 关闭时两侧都关，避免选中态已清空时关错面板
+      if (visible === false) {
+        this.$refs.robotControlPartRef?.show?.(false)
+        this.$refs.robotCarControlPartRef?.show?.(false)
+        return
+      }
       const type = this.selectedRobot?.type
       const isDog = type === '四足机器狗' || type === '四足机器人' || type === 'ROBOT_DOG'
       const controlRef = isDog ? this.$refs.robotControlPartRef : this.$refs.robotCarControlPartRef
@@ -807,7 +911,7 @@ export default {
         this.closePopup()
       }
     },
-    handleSelectRobot(robot) {
+    async handleSelectRobot(robot) {
       this.robotId = robot.robotId
       const pixel = this.getPixelByRobotId(robot.robotId)
       if (!pixel) return null
@@ -819,17 +923,26 @@ export default {
         if (!path) return
       }
       if (robot.customStatusName !== '空闲中') {
-        this.showNotice = true
         this.closeContextMenu()
+        try {
+          await this.$primaryConfirm({
+            title: '提示',
+            message: '当前选择装备正在【任务中】，是否终止任务？进行新任务',
+            confirmText: '确定',
+            cancelText: '取消',
+            onConfirm: async () => {
+              await this.addTask(startPoint)
+            }
+          })
+        } catch (error) {
+          // 用户取消
+        }
         return
       }
       this.addTask(startPoint)
     },
     closeContextMenu() {
       this.showContextMenu = false
-    },
-    closeNotice() {
-      this.showNotice = false
     },
     async addTask(startPoint) {
       const pixel = { x: this.endPoint?.[0] || 0, y: this.endPoint?.[1] || 0 }
@@ -842,7 +955,6 @@ export default {
       }
       const res = await addTaskByPoint(data)
       console.log('派遣任务结果', res)
-      this.showNotice = false
       this.setStartPoint(startPoint)
       this.closeContextMenu()
       // if (res.code === 0) {
@@ -881,18 +993,56 @@ export default {
       const mapWidth = Number(this.map?.previewWidth || 0)
       const mapHeight = Number(this.map?.previewHeight || 0)
       if (!viewport || !mapWidth || !mapHeight) return
+      const curW = viewport.clientWidth
+      const curH = viewport.clientHeight
+      if (!curW || !curH) return
+
+      const wasAtDefault = Math.abs(this.zoom - this.defaultZoomValue) < 0.01
       const wasAtMax = Math.abs(this.zoom - this.maxZoomValue) < 0.01
-      const widthZoom = viewport.clientWidth / mapWidth
-      const heightZoom = viewport.clientHeight / mapHeight
-      this.maxZoomValue = Math.max(0.1, Math.min(widthZoom, heightZoom))
-      this.minZoomValue = Math.max(0.1, this.maxZoomValue * 0.25)
-      this.zoom = reset || wasAtMax
-        ? this.maxZoomValue
-        : Math.max(this.minZoomValue, Math.min(this.maxZoomValue, this.zoom))
+
+      // 当前视口：默认等比适配（不变形）
+      const defaultZoom = Math.max(0.1, Math.min(curW / mapWidth, curH / mapHeight))
+
+      // 最大比例：按两侧收缩后的可视宽高计算（更宽），仍取 min 保证等比不超出该边界
+      const collapsedSize = this.getCollapsedViewportSize()
+      const maxZoom = Math.max(
+        0.1,
+        Math.min(collapsedSize.width / mapWidth, collapsedSize.height / mapHeight)
+      )
+
+      this.defaultZoomValue = defaultZoom
+      this.maxZoomValue = Math.max(defaultZoom, maxZoom)
+      this.minZoomValue = Math.max(0.1, defaultZoom * 0.25)
+
+      if (reset || wasAtDefault) {
+        this.zoom = this.defaultZoomValue
+      } else if (wasAtMax) {
+        this.zoom = this.maxZoomValue
+      } else {
+        this.zoom = Math.max(this.minZoomValue, Math.min(this.maxZoomValue, this.zoom))
+      }
       this.zoom = Number(this.zoom.toFixed(3))
       this.offsetX = 0
       this.offsetY = 0
       this.$nextTick(() => this.syncCanvasResolution())
+    },
+    // 两侧收缩时的可视区域尺寸（最大缩放基准）
+    getCollapsedViewportSize() {
+      const viewport = this.$refs.viewportRef
+      if (!this.visibleLayout) {
+        return {
+          width: viewport?.clientWidth || 0,
+          height: viewport?.clientHeight || 0
+        }
+      }
+      const parent = this.$el?.parentElement
+      const parentW = parent?.clientWidth || viewport?.clientWidth || 0
+      const parentH = parent?.clientHeight || viewport?.clientHeight || 0
+      const insets = this.collapsedVisibleInsets
+      return {
+        width: Math.max(1, parentW - insets.left - insets.right),
+        height: Math.max(1, parentH - insets.top - insets.bottom)
+      }
     },
     observeViewport() {
       if (this.resizeObserver || typeof ResizeObserver === 'undefined' || !this.$refs.viewportRef) return
@@ -903,17 +1053,18 @@ export default {
       return this.minZoomValue
     },
     zoomIn() {
-      const step = Math.max(0.1, this.maxZoomValue * 0.05)
+      // 放大：宽高等比，上限为两侧收缩时的视口比例
+      const step = Math.max(0.1, this.defaultZoomValue * 0.05)
       this.zoom = Math.min(this.maxZoomValue, Number((this.zoom + step).toFixed(3)))
       this.$nextTick(() => this.syncCanvasResolution())
     },
     zoomOut() {
-      const step = Math.max(0.1, this.maxZoomValue * 0.05)
+      const step = Math.max(0.1, this.defaultZoomValue * 0.05)
       this.zoom = Math.max(this.minZoom(), Number((this.zoom - step).toFixed(3)))
       this.$nextTick(() => this.syncCanvasResolution())
     },
     resetView() {
-      this.zoom = this.maxZoomValue
+      this.zoom = this.defaultZoomValue
       this.offsetX = 0
       this.offsetY = 0
       this.$nextTick(() => this.syncCanvasResolution())
@@ -1129,6 +1280,9 @@ export default {
     position: relative;
     top: 0;
     left: 0;
+    // 禁止 flex 压缩舞台，避免宽高被非等比挤压变形
+    flex-shrink: 0;
+    flex-grow: 0;
     cursor: grab;
     // will-change: left, top, width, height;
     will-change: transform;
@@ -1136,6 +1290,13 @@ export default {
     transition: opacity 0.2s ease;
     &:active {
       cursor: grabbing;
+    }
+    .map-preview-image {
+      display: block;
+      width: 100%;
+      height: 100%;
+      // 跟随舞台等比尺寸，禁止拉伸变形
+      object-fit: fill;
     }
     & > svg {
       position: absolute;
@@ -1171,6 +1332,48 @@ export default {
         &.hovered circle {
           stroke: #0f172a;
           stroke-width: 3;
+        }
+        // MapTool 点位：Figma 黄点 + 名称，底部尖端为锚点
+        &.is-map-tool,
+        &.is-path-point {
+          .map-point-marker {
+            filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+          }
+          .map-point-name-fo {
+            overflow: visible;
+          }
+          .map-point-name {
+            box-sizing: border-box;
+            width: 100%;
+            height: 18px;
+            color: #D7EDFF;
+            font-family: "Microsoft YaHei", sans-serif;
+            font-size: 14px;
+            font-weight: 400;
+            line-height: 17.517px;
+            text-align: center;
+            white-space: nowrap;
+            text-shadow:
+              1px 0 rgba(0, 19, 48, 0.85),
+              -1px 0 rgba(0, 19, 48, 0.85),
+              0 1px rgba(0, 19, 48, 0.85),
+              0 -1px rgba(0, 19, 48, 0.85);
+          }
+          &.hovered .map-point-marker {
+            filter: drop-shadow(0 0 4px rgba(255, 246, 69, 0.65));
+          }
+        }
+        // 任务路径序号：Figma 右上角蓝底白字
+        .path-seq-badge {
+          .path-seq-text {
+            fill: #FFF;
+            stroke: none;
+            font-family: "Microsoft YaHei", sans-serif;
+            font-size: 14px;
+            font-weight: 400;
+            line-height: 17.517px;
+            paint-order: normal;
+          }
         }
       }
       .map-preview-path {
@@ -1441,74 +1644,6 @@ export default {
         border: 1px solid #FF9000;
         background: #1B1A18;
         box-shadow: 0 0 10px 0 #F3452A inset;
-      }
-    }
-  }
-}
-
-.notice-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 3000;
-  pointer-events: none;
-
-  &__mask {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    pointer-events: auto;
-  }
-
-  &__dialog {
-    position: fixed;
-    // width: 473px;
-    min-height: 108px;
-    padding: 20px 20px 24px;
-    border: 1px solid #2A86F3;
-    background: linear-gradient(180deg, rgba(4, 60, 149, 0.40) 0.01%, rgba(4, 33, 68, 0.30) 6.03%, rgba(4, 23, 62, 0.32) 56.39%, rgba(7, 45, 94, 0.31) 101.39%, rgba(4, 62, 151, 0.40) 109.49%);
-    backdrop-filter: blur(15px);
-    box-shadow: inset 0 0 20px 0 rgba(42, 134, 243, 0.35);
-    pointer-events: auto;
-  }
-
-  &__text {
-    margin: 0 0 24px;
-    color: #FFF;
-    text-align: center;
-    font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
-    font-size: 16px;
-    line-height: 22px;
-    letter-spacing: 0.857px;
-  }
-
-  &__btns {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
-  }
-
-  &__btn {
-    min-width: 70px;
-    padding: 6px 10px;
-    border: 1px solid #2A86F3;
-    border-radius: 2px;
-    background: rgba(9, 45, 72, 0.50);
-    box-shadow: inset 0 0 10px 0 #2A86F3;
-    color: #FFF;
-    font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
-    font-size: 12px;
-    line-height: 12px;
-    letter-spacing: 0.857px;
-    cursor: pointer;
-
-    &:hover {
-      opacity: 0.9;
-    }
-    &:not(.is-disabled) {
-      &:active {
-        color: #0BF9FE;
-        box-shadow: 0 0 10px 3px #0BF9FE inset;
       }
     }
   }

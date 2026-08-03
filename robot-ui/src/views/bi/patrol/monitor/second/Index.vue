@@ -80,44 +80,57 @@
       <div class="h100 pr14">
         <div class="card-title title-344-37">
           <div class="text">
-            双光云台
+            上装控制区域
           </div>
         </div>
         <div class="common-scroll mt10 pr14" style="height: calc(100% - 47px); min-height: 923px; overflow-y: auto; margin-right: -14px;">
-          <Yuntai />
-          <div v-if="multiFunctionDevice" class="mt20">
-            <div class="card-title title-344-37">
-              <div class="text">
-                多合一
+          <div class="box p20 mt10">
+            <div class="card-title-t2">
+              <div class="text pb12">
+                双光云台
               </div>
             </div>
-            <MultiInOne />
+            <Yuntai class="mt20 pt10 pb10" />
+          </div>
+          <div v-if="multiFunctionDevice" class="mt20">
+            <div class="box p20">
+              <div class="card-title-t2">
+                <div class="text pb12">
+                  多合一
+                </div>
+              </div>
+              <MultiInOne class="mt20" />
+            </div>
           </div>
           <div class="mt20" v-if="audioDevice">
-            <div class="card-title title-344-37">
-              <div class="text">
-                双向对讲机
+            <div class="box p20">
+              <div class="card-title-t2">
+                <div class="text pb12">
+                  双向对讲机
+                </div>
               </div>
-            </div>
-            <div class="box p20 mt10 flx-center flex-column">
-              <Talk />
+              <Talk class="mt20 flx-center flex-column" />
             </div>
           </div>
           <div class="mt20" v-if="netGunDevice">
-            <div class="card-title title-344-37">
-              <div class="text">
-                捕网器
+            <div class="box p20">
+              <div class="card-title-t2">
+                <div class="text pb12">
+                  捕网器
+                </div>
               </div>
+              <Catcher class="mt20" />
             </div>
-            <Catcher />
           </div>
           <div class="mt20" v-if="launcherDevice">
-            <div class="card-title title-344-37">
-              <div class="text">
-                发射器
+            <div class="box p20">
+              <div class="card-title-t2">
+                <div class="text pb12">
+                  发射器
+                </div>
               </div>
+              <Launcher class="mt20" />
             </div>
-            <Launcher />
           </div>
         </div>
       </div>

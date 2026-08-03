@@ -105,8 +105,8 @@ export default {
   async mounted() {
   },
   methods: {
-    ...mapActions('websocketRobot', ['connectMediaWebSocket']),
-    ...mapActions('websocketExtraData', ['setAll']),
+    ...mapActions('websocketRobot', ['connectMediaWebSocket', 'setSelectedRobotId']),
+    ...mapActions('websocketExtraData', ['setAll', 'setShowRobotIds']),
     changeMapAngle(angle) {
       this.angle = this.angle === '3D' ? '2D' : '3D'
     },
@@ -122,6 +122,7 @@ export default {
     },
     changeMapType(type) {
       this.isSlam = type ? type === 'slam' : !this.isSlam
+      this.clearMapSelectionUI()
       if (!this.isSlam) {
         this.currentSlamMapId = null
       } else if (!this.currentSlamMapId) {
@@ -135,8 +136,15 @@ export default {
       this.isSlam = true
       // 地图绘制复位由 GlobalSlamMap.previewSource 在同 tick 处理，这里只同步工具栏点位态
       if (changed) {
+        this.clearMapSelectionUI()
         this.$refs.mapToolRef?.resetPathActive?.()
       }
+    },
+    clearMapSelectionUI() {
+      this.$refs.globalMapRef?.clearRobotSelectionUI?.()
+      // 地图组件可能已销毁/切换，仍清理全局选中与高亮
+      this.setSelectedRobotId('')
+      this.setShowRobotIds([])
     },
     selectDefaultSlamMap() {
       const list = Array.isArray(this.slamMapList) ? this.slamMapList : []

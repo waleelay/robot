@@ -169,7 +169,6 @@
         </div>
       </div>
     </div>
-    <MultimediaDeleteConfirm ref="deleteConfirmRef" @confirm="afterDelete" />
   </el-dialog>
 </template>
 
@@ -181,14 +180,13 @@ import {
   getFiles,
   getFilePlayUrl,
   fileDownloadUrl,
-  revokeFileObjectUrl
+  revokeFileObjectUrl,
+  deleteFile
 } from '../../../../../../api/media.js'
 import { durationText, recordingTimeRangeText } from '../../../../../../utils/index.js'
-import MultimediaDeleteConfirm from './MultimediaDeleteConfirm.vue'
 
 export default {
   name: 'MultimediaDetail',
-  components: { MultimediaDeleteConfirm },
   data() {
     return {
       dialogVisible: false,
@@ -532,8 +530,22 @@ export default {
         }
       }
     },
-    handleDelete(item) {
-      this.$refs.deleteConfirmRef?.open(item)
+    async handleDelete(item) {
+      if (!item?.fileId) return
+      try {
+        await this.$secondaryConfirm({
+          title: '删除',
+          message: '记录删除后不可恢复，确认执行删除操作?',
+          confirmText: '确认',
+          cancelText: '取消',
+          onConfirm: async () => {
+            await deleteFile(item.fileId)
+          }
+        })
+        await this.afterDelete(item)
+      } catch (error) {
+        // 用户取消或删除失败
+      }
     },
     async afterDelete(item) {
       const deletedId = item?.fileId

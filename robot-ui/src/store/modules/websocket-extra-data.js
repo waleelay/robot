@@ -1,7 +1,11 @@
 import { set } from "nprogress";
 import { active } from "sortablejs";
 import Vue from "vue";
-import { SLAM_POINTS } from "../../views/bi/js/constants/gisMapPoints";
+import {
+  SLAM_POINTS,
+  ENABLE_LIANTONG_SLAM_MOCK,
+  getLiantongSlamMock
+} from "../../views/bi/js/constants/gisMapPoints";
 
 const state = {
   // 设备对象：设备详情，包含坐标位置，task基本信息
@@ -138,8 +142,21 @@ const mutations = {
 
 const actions = {
   setAll({commit, state, dispatch}, data) {
+    // 联通展厅 SLAM：注入模拟装备与任务路径（点位 1→2→3）
+    const devices = [...(data?.devices || [])]
+    const tasks = [...(data?.tasks || [])]
+    if (ENABLE_LIANTONG_SLAM_MOCK) {
+      const mock = getLiantongSlamMock()
+      if (!devices.some(item => String(item.robotId) === String(mock.robotId))) {
+        devices.push(mock.device)
+      }
+      if (!tasks.some(item => String(item.taskId) === String(mock.taskId))) {
+        tasks.push(mock.task)
+      }
+    }
+
     // 调用 websocketRobot 模块的 loadRobots
-    dispatch('websocketRobot/loadRobots', data?.devices || [], { root: true })
+    dispatch('websocketRobot/loadRobots', devices, { root: true })
     commit('SET_ALARMS_DATA', data?.alarms || {});
     commit('SET_DEVICE_TYPES_STATS', data?.deviceTypeStats || []);
     commit('SET_DEVICE_STATS', data?.deviceStats || {
@@ -151,7 +168,7 @@ const actions = {
     commit('SET_PATROL_OVERVIEW', data?.patrolOverview || { durationToday: '-', durationUnit: '小时', mileageToday: '-', mileageUnit: 'KM' });
     commit('SET_TASK_OVERVIEW', data?.taskOverview || { totalToday: '-', completedRate: '-', completedRateText: '-%', running: '-', pending: '-' });
     commit('SET_ALARM_SUMMARY', data?.alarms?.summary || { totalToday: '-', handled: '-', unhandled: '-', handleRate: '-', handleRateText: '-%' });
-    [...(data?.tasks || [])].concat([
+    [...tasks].concat([
     //   {
     //     "statusName": "暂停中",
     //     "endTime": "2026-06-12 22:00:00",
@@ -189,11 +206,11 @@ const actions = {
     //     "status": "paused"
     // },
     ]).map((item, index) => {
-      commit('SET_TASK_INFO', { ...item, timestamp: new Date().getTime() + data.tasks.length - index });
+      commit('SET_TASK_INFO', { ...item, timestamp: new Date().getTime() + tasks.length - index });
       commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } });
     })
-    commit('SET_ROBOT_LIST', data?.devices || []);
-    data?.devices?.map(item => {
+    commit('SET_ROBOT_LIST', devices);
+    devices.map(item => {
       state.robotBaseInfo[item.robotId] = Object.assign({}, item);
       commit('SET_ROBOT_BASE_INFO', { robotId: item.robotId, robotInfo: { ...item } });
       commit('SET_ROBOT_LOCATION', { robotId: item.robotId, location: item.location });
@@ -203,11 +220,11 @@ const actions = {
       commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
     })
     const slamMapList = (data?.map || []).map(item => {
-      item.points = item.points || SLAM_POINTS?.[item.id] || [];
+      item.points = item.points || (ENABLE_LIANTONG_SLAM_MOCK ? SLAM_POINTS?.[item.id] || [] : []);
       return item;
     });
     commit('SET_SLAM_MAP_LIST', slamMapList);
-    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, data?.devices || [], data?.tasks || []));
+    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devices, tasks));
   },
   setSlamMapData({ commit }, value) {
     commit('SET_SLAM_MAP_DATA', value);

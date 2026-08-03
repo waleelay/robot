@@ -143,3 +143,60 @@ export const SLAM_POINTS = {
     }
   ]
 }
+
+/** 联通展厅 SLAM 地图 id */
+export const LIANTONG_SLAM_MAP_ID = '2077775285125144578'
+
+/**
+ * 联通展厅装备/任务路径模拟开关（联调用）
+ * 装备位置：point-1 坐标；执行中任务路径：点位 1→2→3
+ */
+export const ENABLE_LIANTONG_SLAM_MOCK = false
+
+/** 生成联通展厅 SLAM 模拟装备与任务（路径点 1/2/3） */
+export function getLiantongSlamMock() {
+  const mapId = LIANTONG_SLAM_MAP_ID
+  const pathPoints = (SLAM_POINTS[mapId] || []).slice(0, 3)
+  const robotId = 'mock-liantong-slam-robot'
+  const taskId = 'mock-liantong-task-path-123'
+  const coordinateX = -2.874684
+  const coordinateY = -0.391763
+  const device = {
+    robotId,
+    name: '联通展厅机器狗',
+    type: '四足机器狗',
+    model: 'MOCK-DOG',
+    status: 'online',
+    battery: 88,
+    speed: 0.4,
+    controlMode: 'NAVIGATION',
+    alarmLevel: 'none',
+    mountedDeviceCount: 0,
+    mapId,
+    location: {
+      mapId,
+      x: coordinateX,
+      y: coordinateY,
+      coordinateX,
+      coordinateY,
+      yaw: 0
+    },
+    task: [{ taskId, mapId }]
+  }
+  const task = {
+    taskId,
+    mapId,
+    name: '联通展厅路径点1-2-3',
+    status: 'running',
+    statusName: '执行中',
+    timeRange: '全天',
+    pathPoints,
+    equipmentList: [{
+      robotId,
+      name: device.name,
+      type: device.type,
+      status: 'online'
+    }]
+  }
+  return { mapId, robotId, taskId, device, task, pathPoints }
+}

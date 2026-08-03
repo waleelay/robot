@@ -27,7 +27,7 @@
         <div class="box">
           <div class="top m4 flx-justify-between">
             <div class="flx-align-center">
-              <div class="title ml10">{{ taskInfo.name }}</div>
+              <div class="title ml10 text-ellipsis" :style="{ maxWidth }">{{ taskInfo.name }}</div>
               <!-- <span class="status flx-center ml10 pt2 pr6 pb2 pl6">
                 <svg-icon icon-class="security"></svg-icon>
                 <span class="ml4">{{ taskInfo.status }}</span>
@@ -127,6 +127,14 @@ export default {
     cameras() {
       return this.$store.getters['websocketRobot/getCameras'];
     },
+    // 无装备 / 无视频 / 单装备单视频时标题限宽，否则随弹窗变宽
+    maxWidth() {
+      const robots = this.robotList || []
+      if (!robots.length) return '150px'
+      const videoCount = robots.reduce((sum, robot) => sum + (robot.cameras?.length || 0), 0)
+      if (!videoCount || (robots.length === 1 && videoCount === 1)) return '150px'
+      return undefined
+    }
   },
   methods: {
     ...mapActions('websocketRobot', ['setPrefixId']),

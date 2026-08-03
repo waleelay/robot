@@ -46,7 +46,7 @@
 </template>
 
 <script>
-import { mapState } from 'vuex'
+import { mapState, mapActions } from 'vuex'
 import MapTool from './MapTool.vue'
 import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue'
 import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue'
@@ -105,6 +105,8 @@ export default {
     clearInterval(this.intervalId)
   },
   methods: {
+    ...mapActions('websocketRobot', ['setSelectedRobotId']),
+    ...mapActions('websocketExtraData', ['setShowRobotIds']),
     changeMapAngle() {
       this.angle = this.angle === '3D' ? '2D' : '3D'
     },
@@ -120,6 +122,7 @@ export default {
     },
     changeMapType(type) {
       this.isSlam = type ? type === 'slam' : !this.isSlam
+      this.clearMapSelectionUI()
       if (!this.isSlam) {
         this.currentSlamMapId = null
       } else if (!this.currentSlamMapId) {
@@ -133,8 +136,14 @@ export default {
       this.isSlam = true
       // 地图绘制复位由 GlobalSlamMap.previewSource 在同 tick 处理，这里只同步工具栏点位态
       if (changed) {
+        this.clearMapSelectionUI()
         this.$refs.mapToolRef?.resetPathActive?.()
       }
+    },
+    clearMapSelectionUI() {
+      this.$refs.globalMapRef?.clearRobotSelectionUI?.()
+      this.setSelectedRobotId('')
+      this.setShowRobotIds([])
     },
     selectDefaultSlamMap() {
       const list = Array.isArray(this.slamMapList) ? this.slamMapList : []

@@ -54,6 +54,15 @@
   margin: 0 auto;
 }
 
+// 去掉默认 margin-top: 15vh，配合 flx-align-center 垂直居中
+.el-dialog__wrapper.flx-align-center {
+  justify-content: center;
+  .el-dialog {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+}
+
 // refine element ui upload
 .upload-container {
   .el-upload {

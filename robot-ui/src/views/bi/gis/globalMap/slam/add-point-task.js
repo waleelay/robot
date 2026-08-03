@@ -153,7 +153,10 @@ export default {
       const targetUrl = this.imageUrl;
       this.mapLoading = true;
       this.previewImageStatus = this.previewImageStatus || '地图加载中...';
-      img.crossOrigin = 'anonymous';
+      // blob: 同源无需 CORS；远程 URL 需 anonymous 才能 getImageData
+      if (targetUrl && !String(targetUrl).startsWith('blob:')) {
+        img.crossOrigin = 'anonymous';
+      }
       img.onload = () => {
         // 快速切换时忽略过期加载，避免旧图回闪
         if (loadSeq !== this.imageLoadSeq || this.imageUrl !== targetUrl) return;
