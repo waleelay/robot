@@ -43,14 +43,21 @@
       <!-- style="width: calc(100% - 42px); height: calc(100% - 30px);" 1312 738 -->
       <div v-if="splitType === 6" class="pr5 pl5">
         <div class="d-flex">
-          <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_1')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="1" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-1" />
+          <div
+            :draggable="!!ZQL_videosInfos['slot_1']"
+            @dragstart="onSlotDragStart($event, 'slot_1')"
+            @dragend="onDragEnd"
+            :style="{ cursor: ZQL_videosInfos['slot_1'] ? 'grab' : 'default' }"
+          >
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_1')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="1" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-1" />
+          </div>
           <!-- <VideoBox :videoIndex="0" :prefixId="prefixId" :splitType="splitType" :slotDevices="slotDevices" @updateSlot="updateSlot" className="six-1" /> -->
           <div class="ml26">
             <div
-              :draggable="ZQL_videosInfos['slot_2']"
-              @dragstart="onDragStart($event, ZQL_videosInfos['slot_2'].robot, 'smallVideo', 'slot_2')"
+              :draggable="!!ZQL_videosInfos['slot_2']"
+              @dragstart="onSlotDragStart($event, 'slot_2')"
               @dragend="onDragEnd"
-              :style="{ cursor: 'grab' }"
+              :style="{ cursor: ZQL_videosInfos['slot_2'] ? 'grab' : 'default' }"
             >
               <VideoBox
                 @toggleFullscreen="toggleFullscreen"
@@ -67,10 +74,10 @@
               />
             </div>
             <div
-              :draggable="ZQL_videosInfos['slot_3']"
-              @dragstart="onDragStart($event, ZQL_videosInfos['slot_3'].robot, 'smallVideo', 'slot_3')"
+              :draggable="!!ZQL_videosInfos['slot_3']"
+              @dragstart="onSlotDragStart($event, 'slot_3')"
               @dragend="onDragEnd"
-              :style="{ cursor: 'grab' }"
+              :style="{ cursor: ZQL_videosInfos['slot_3'] ? 'grab' : 'default' }"
             >
               <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="mt16 six-3" />
             </div>
@@ -78,42 +85,55 @@
         </div>
         <div class="d-flex mt20">
           <div
-            :draggable="ZQL_videosInfos['slot_4']"
-            @dragstart="onDragStart($event, ZQL_videosInfos['slot_4'].robot, 'smallVideo', 'slot_4')"
+            :draggable="!!ZQL_videosInfos['slot_4']"
+            @dragstart="onSlotDragStart($event, 'slot_4')"
             @dragend="onDragEnd"
-            :style="{ cursor: 'grab' }"
+            :style="{ cursor: ZQL_videosInfos['slot_4'] ? 'grab' : 'default' }"
           >
             <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-4" />
           </div>
           <div
-            :draggable="ZQL_videosInfos['slot_5']"
-            @dragstart="onDragStart($event, ZQL_videosInfos['slot_5'].robot, 'smallVideo', 'slot_5')"
+            :draggable="!!ZQL_videosInfos['slot_5']"
+            @dragstart="onSlotDragStart($event, 'slot_5')"
             @dragend="onDragEnd"
-            :style="{ cursor: 'grab' }"
+            :style="{ cursor: ZQL_videosInfos['slot_5'] ? 'grab' : 'default' }"
           >
             <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml28 six-5" />
           </div>
           <div
-            :draggable="ZQL_videosInfos['slot_6']"
-            @dragstart="onDragStart($event, ZQL_videosInfos['slot_6'].robot, 'smallVideo', 'slot_6')"
+            :draggable="!!ZQL_videosInfos['slot_6']"
+            @dragstart="onSlotDragStart($event, 'slot_6')"
             @dragend="onDragEnd"
-            :style="{ cursor: 'grab' }"
+            :style="{ cursor: ZQL_videosInfos['slot_6'] ? 'grab' : 'default' }"
             >
             <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml26 six-6" />
           </div>
         </div>
       </div>
-      <template v-else>
-        <!-- <VideoBox
+      <template v-else-if="splitType === 4 || splitType === 9">
+        <div
           v-for="index in splitType"
           :key="index"
-          :videoIndex="index"
-          :prefixId="prefixId"
-          :splitType="splitType"
-          :ZQL_videosInfos="ZQL_videosInfos"
-          :slotDevices="slotDevices"
-          @updateSlot="updateSlot"
-        /> -->
+          :draggable="!!ZQL_videosInfos[`slot_${index}`]"
+          @dragstart="onSlotDragStart($event, `slot_${index}`)"
+          @dragend="onDragEnd"
+          :style="{ cursor: ZQL_videosInfos[`slot_${index}`] ? 'grab' : 'default' }"
+        >
+          <VideoBox
+            @toggleFullscreen="toggleFullscreen"
+            @onAlgoChange="onAlgoChange"
+            @playPauseVideo="playPauseVideo(`slot_${index}`)"
+            @test="test"
+            @removeVideo="handleRemoveVideo"
+            @refreshVideo="handleRefreshVideo"
+            :videoIndex="index"
+            :prefixId="prefixId"
+            :splitType="splitType"
+            :ZQL_videosInfos="ZQL_videosInfos"
+          />
+        </div>
+      </template>
+      <template v-else>
         <VideoBox
           @toggleFullscreen="toggleFullscreen"
           @onAlgoChange="onAlgoChange"
@@ -215,6 +235,8 @@ export default {
     this.checkedIds = [];
     this.lastCheckedIds = [];
     this.slotDevices = new Array(this.splitType).fill(null);
+    // 进入控制中心时分屏数可能未变化，必须主动初始化槽位，否则空槽查找会全部落到 slot_1
+    this.initSlots(this.splitType)
     // 从 store 加载机器人列表
 
     this.setPrefixId(this.prefixId)
@@ -258,6 +280,15 @@ export default {
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'restartCamera', 'setPrefixId']),
     onDragStart,
     onDragEnd,
+    // 六分屏窗口拖拽：未播放不可拖
+    onSlotDragStart(event, slotKey) {
+      const videoInfo = this.ZQL_videosInfos[slotKey]
+      if (!videoInfo || !this.ZQL_playingSource[slotKey]) {
+        event.preventDefault()
+        return
+      }
+      onDragStart(event, videoInfo.robot || videoInfo, 'smallVideo', slotKey)
+    },
     updateSlot(data) {
       this.slotDevices[data.index] = data.data
     },
@@ -303,36 +334,33 @@ export default {
     async test(data) {
       // console.log('-----------test------------', data, this.ZQL_videosInfos);
       let emptyKey = data.index
+
+      // 四/六/九分屏：窗口间拖拽互换（未播放窗口不可作为源）
+      if ([4, 6, 9].includes(this.splitType) && data.componentId === 'smallVideo') {
+        if (emptyKey === data.slotKey) return
+        const existObj = this.ZQL_videosInfos[emptyKey] ? Object.assign({}, this.ZQL_videosInfos[emptyKey]) : null
+        const sourceObj = this.ZQL_videosInfos[data.slotKey] ? Object.assign({}, this.ZQL_videosInfos[data.slotKey]) : null
+        if (!sourceObj || !sourceObj.key || !this.ZQL_playingSource[data.slotKey]) return
+        if (this.ZQL_playingSource[emptyKey] && existObj) {
+          this.$set(this.ZQL_videosInfos, data.slotKey, existObj)
+          this.$set(this.ZQL_playingSource, data.slotKey, existObj.key)
+        } else {
+          this.$set(this.ZQL_videosInfos, data.slotKey, null)
+          this.$set(this.ZQL_playingSource, data.slotKey, null)
+        }
+        this.$set(this.ZQL_videosInfos, emptyKey, sourceObj)
+        this.$set(this.ZQL_playingSource, emptyKey, sourceObj.key)
+        const key1 = this.ZQL_playingSource[emptyKey]
+        const key2 = this.ZQL_playingSource[data.slotKey]
+        this.rebindCameraTracks([this.cameras?.[key1], this.cameras?.[key2]])
+        return
+      }
+
       // 填充 放入设备
       const robot = this.robots.find(d => d.robotId === data.data.robotId);
       // 拖拽默认第一个摄像头或者主体摄像头
       const cameraObj = data?.data?.key ? data.data : robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
       const camera = this.cameras?.[cameraObj.key] || cameraObj
-      if (this.splitType === 6 && data.componentId === 'smallVideo') {
-        const existObj = Object.assign({}, this.ZQL_videosInfos[emptyKey])
-        const sourceObj = Object.assign({}, this.ZQL_videosInfos[data.slotKey])
-        // console.log('11111111', this.ZQL_playingSource[emptyKey], this.ZQL_playingSource[data.slotKey]);
-        if (this.ZQL_playingSource[emptyKey]) {
-          // console.log(1, emptyKey, data.slotKey);
-          
-          this.$set(this.ZQL_videosInfos, data.slotKey, existObj)
-          this.$set(this.ZQL_playingSource, data.slotKey, existObj.key)
-          const existCamera = existObj.robot ? existObj.robot : robot.robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
-          // this.restartCamera(this.cameras?.[this.ZQL_playingSource[emptyKey]] || this.ZQL_videosInfos[emptyKey])
-        } else {
-          this.$set(this.ZQL_videosInfos, data.slotKey, null)
-          this.$set(this.ZQL_playingSource, data.slotKey, null)
-          // console.log(2, emptyKey, data.slotKey);
-        }
-          // console.log(3, emptyKey, data.slotKey);
-        this.$set(this.ZQL_videosInfos, emptyKey, sourceObj)
-        this.$set(this.ZQL_playingSource, emptyKey, sourceObj.key)
-        // this.restartCamera(camera)
-        const key1 = this.ZQL_playingSource[emptyKey]
-        const key2 = this.ZQL_playingSource[data.slotKey]        
-        this.rebindCameraTracks([this.cameras?.[key1], this.cameras?.[key2]])
-        return
-      }
       if (this.splitType === 1) {
         if (this.ZQL_playingSource['slot_1']) {
           // console.log('--------------------------------------------------------已存在', camera);
@@ -364,9 +392,7 @@ export default {
         // 如果没有找到正在播放的槽位，在第一个空位播放
         if (!hasPlayed) {
           // console.log(2);
-          emptyKey = emptyKey || Object.keys(this.ZQL_playingSource).find(
-            key => this.ZQL_playingSource[key] === null
-          ) || 'slot_1';
+          emptyKey = emptyKey || this.findEmptySlotKey()
           
           if (emptyKey) {
             await this.start(robot, { index: emptyKey, data: camera });
@@ -473,19 +499,22 @@ export default {
         }
       });
     },
-    // 分屏切换时（已经在watch中清空，但需要额外处理一些边界）
-    onSplitChange(val) {
+    // 分屏切换：由 applySplitVideoChannels 统一保留/停流，避免与 watch 重复 stop
+    async onSplitChange(val) {
       if (this.splitType === val) {
         this.rebindCameraTracks(this.currentVisibleCameras())
         return
       }
       const playingBeforeChange = this.orderedPlayingVideoInfos()
       this.manualChange = true
-      this.setSplitType(val);
-      this.fullscreenIndex = null;
-      this.$nextTick(() => {
-        this.applySplitVideoChannels(playingBeforeChange, val)
-      })
+      this.setSplitType(val)
+      this.fullscreenIndex = null
+      try {
+        await this.$nextTick()
+        await this.applySplitVideoChannels(playingBeforeChange, val)
+      } finally {
+        this.manualChange = false
+      }
     },
     revertObjToArr(obj) {
       return Object.values(obj)
@@ -551,9 +580,14 @@ export default {
       }
     },
     orderedPlayingVideoInfos() {
+      // 按槽位序号收集正在播放的画面（拖拽后 slot_1 可能为空，不能只看 slot_1）
       return Object.keys(this.ZQL_videosInfos)
         .sort((a, b) => Number(a.replace('slot_', '')) - Number(b.replace('slot_', '')))
-        .map(key => this.ZQL_videosInfos[key])
+        .map(key => {
+          const info = this.ZQL_videosInfos[key]
+          if (!info || !this.ZQL_playingSource[key]) return null
+          return info
+        })
         .filter(Boolean)
     },
     currentVisibleCameras() {
@@ -565,7 +599,15 @@ export default {
       const nextVideosInfos = {}
       const nextPlayingSource = {}
       const retainedKeys = new Set()
-      const items = playingItems || []
+      let items = (playingItems || []).filter(Boolean)
+
+      // 切到一分屏：优先保留正在播放的 body，否则保留当前第一个播放中的流
+      if (splitType === 1 && items.length > 1) {
+        const bodyItem = items.find(item => item.groupType === 'body')
+        if (bodyItem) {
+          items = [bodyItem, ...items.filter(item => item.key !== bodyItem.key)]
+        }
+      }
 
       for (let i = 1; i <= splitType; i++) {
         const key = `slot_${i}`
@@ -582,6 +624,7 @@ export default {
         retainedKeys.add(camera.key)
       }
 
+      // 只停多余路，保留的视频流不 stop、不重启
       const removedItems = items.slice(splitType)
       for (const item of removedItems) {
         const camera = this.cameras?.[item.key] || item
@@ -595,6 +638,21 @@ export default {
       this.checkedIds = Object.values(nextPlayingSource).filter(Boolean)
       this.lastCheckedIds = this.checkedIds.slice()
       this.slotDevices = new Array(splitType).fill(null)
+
+      // 等待分屏 DOM 重建后再挂载 track
+      await this.$nextTick()
+      await this.$nextTick()
+      this.rebindCameraTracks(this.currentVisibleCameras())
+      for (let i = 0; i < Math.min(items.length, splitType); i++) {
+        const item = items[i]
+        if (!item?.key) continue
+        const camera = this.cameras?.[item.key] || item
+        if (camera.remoteVideoTrack || camera.session) continue
+        const robot = item.robot || this.robots.find(robotItem => robotItem.robotId === item.robotId)
+        if (robot) {
+          await this.startCamera({ robot, camera })
+        }
+      }
       this.rebindCameraTracks(this.currentVisibleCameras())
     },
     initSlots(splitType) {
@@ -626,38 +684,40 @@ export default {
       this.$set(this.ZQL_videosInfos, key, null);
       this.$set(this.ZQL_playingSource, key, null);
     },
+    // 按分屏顺序查找第一个空槽，避免 Object.keys 未初始化或乱序导致全部落到 slot_1
+    findEmptySlotKey() {
+      for (let i = 1; i <= this.splitType; i++) {
+        const key = `slot_${i}`
+        if (!this.ZQL_playingSource[key]) return key
+      }
+      return null
+    },
   },
+
   watch: {
-    // 分屏变化：完全清空所有选择，重置slotDevices为空（全空）
+    // 分屏变化
     splitType: {
       async handler(newVal, oldVal) {
         console.log('=====================splitType=============================', oldVal, newVal);
-        
-        // 退出全屏
+        if (oldVal === newVal) return
+
         this.fullscreenIndex = null;
-        // 清空所有选中项
         this.singleId = null;
+        this.slotDevices = new Array(newVal).fill(null);
+
+        // 界面点击切换分屏：由 onSplitChange → applySplitVideoChannels 统一处理保留/停流，避免重复 stop
+        if (this.manualChange) {
+          this.checkedIds = [];
+          this.lastCheckedIds = [];
+          return
+        }
+
+        // 外部 setSplitType（如进入控制中心按摄像头数量改分屏）时初始化空槽
         this.checkedIds = [];
         this.lastCheckedIds = [];
-        // // 重新初始化 slotDevices，所有键对应的值都为null
-        // const newSlotDevices = {};
-        // for (let i = 1; i <= newVal; i++) {
-        //     newSlotDevices['slot_' + i] = null;
-        // }
-        // this.slotDevices = newSlotDevices;
-        // // 退出全屏
-        // // this.fullscreenKey = null;
-        // // this.isFullscreen = false;
-        // document.body.style.overflow = '';
-        // console.log('652-------splitType-----------------------------------------------------------', oldVal);
-        // if (oldVal === undefined || !this.manualChange) this.initSlots(newVal);
-        if (oldVal!== newVal) this.initSlots(newVal);
-        this.slotDevices = new Array(this.splitType).fill(null);
-        // this.resetDrag({ splitType: this.splitType });
-        const playingKeys = Object.values(this.ZQL_playingSource)
-        // console.log('playingKeys', playingKeys, this.activeCameras)
-        for (const [index, key] of Object.keys(this.activeCameras).entries()) {
-
+        this.initSlots(newVal);
+        const playingKeys = Object.values(this.ZQL_playingSource).filter(Boolean)
+        for (const key of Object.keys(this.activeCameras)) {
           if (!playingKeys.includes(key)) {
             if (this.activeCameras[key]?.camera) {
               console.log('============================================playingKeys========================================================', key);
@@ -665,7 +725,6 @@ export default {
             }
           }
         }
-
       },
       // immediate: true
     },

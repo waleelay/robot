@@ -97,6 +97,7 @@
 import { mapActions } from 'vuex/dist/vuex.common.js';
 import PageChangeDropdown from './../home/PageChangeDropdown.vue'
 import UserMenu from '../components/UserMenu.vue'
+import { events, isPageFullscreen, togglePageFullscreen } from '@/utils/fullscreen'
 
 export default {
   name: 'Header',
@@ -131,15 +132,21 @@ export default {
   mounted() {
     this.updateTime()
     this.timer = setInterval(this.updateTime, 1000)
-    
-    // 监听全屏变化
-    document.addEventListener('fullscreenchange', this.onFullscreenChange)
+
+    // 监听 Fullscreen API 与窗口尺寸变化，保持图标同步
+    events.forEach(event => document.addEventListener(event, this.onFullscreenChange))
+    window.addEventListener('resize', this.onFullscreenChange)
+    // 拦截 F11，改走 Fullscreen API，以便点击图标可退出
+    window.addEventListener('keydown', this.onFullscreenKeydown)
+    this.onFullscreenChange()
   },
   beforeDestroy() {
     if (this.timer) {
       clearInterval(this.timer)
     }
-    document.removeEventListener('fullscreenchange', this.onFullscreenChange)
+    events.forEach(event => document.removeEventListener(event, this.onFullscreenChange))
+    window.removeEventListener('resize', this.onFullscreenChange)
+    window.removeEventListener('keydown', this.onFullscreenKeydown)
   },
   methods: {
     ...mapActions('websocketRobot', ['setSelectedRobotId']),
@@ -176,21 +183,23 @@ export default {
     handleNotification() {
       this.$message.info('您有 ' + this.notificationCount + ' 条新通知')
     },
-    
-    // 全屏切换
-    toggleFullscreen() {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen()
-      } else {
-        if (document.exitFullscreen) {
-          document.exitFullscreen()
-        }
+
+    // 拦截 F11，切换网页全屏
+    onFullscreenKeydown(e) {
+      if (e.key === 'F11') {
+        e.preventDefault()
+        this.toggleFullscreen()
       }
     },
     
-    // 全屏状态改变
+    // 网页全屏切换（不影响视频框全屏状态判断）
+    toggleFullscreen() {
+      togglePageFullscreen()
+    },
+    
+    // 网页全屏状态改变
     onFullscreenChange() {
-      this.isFullscreen = !!document.fullscreenElement
+      this.isFullscreen = isPageFullscreen()
     }
   }
 }

@@ -68,7 +68,7 @@
       <div v-if="canSnapshot && ['paused', 'playing'].includes(videoStatus)" :title="videoStatus === 'paused' ? `播放-${videoStatus}` : `暂停-${videoStatus}`" @click="playPauseVideo()">
         <svg-icon :icon-class="videoStatus === 'paused' ? 'play' : 'pause'" />
       </div>
-      <div :title="isFullscreen ? '退出全屏' : '全屏'" @click="toggleFullscreen()">
+      <div :title="isFullscreen ? '退出视频全屏' : '视频全屏'" @click="toggleFullscreen()">
         <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen1'" />
       </div>
       <div title="移除" @click="$emit('removeVideo', slotKey)">

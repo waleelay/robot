@@ -156,7 +156,7 @@ export default {
       }
       this.$nextTick(() => {
         if (cameras?.length && !this.loaded) {
-          this.play()
+          this.play(cameras)
         }
       })
     },
@@ -169,11 +169,12 @@ export default {
         await this.$emit('updateVideo', item)
       }
     },
-    async play() {
-      const cameras = this.selectedRobot?.cameras || []
-      for (const camera of cameras) {
-        await this.$emit('updateVideo', camera)
-      }
+    // 一次性把全部摄像头交给父组件顺序加载；$emit 不可 await，不能在循环里逐个 emit
+    play(cameras) {
+      const list = cameras || this.selectedRobot?.cameras || []
+      if (!list.length) return
+      this.loaded = true
+      this.$emit('updateVideo', list)
     }
   },
   watch: {

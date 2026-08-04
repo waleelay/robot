@@ -123,12 +123,12 @@ export default {
           key: 'point',
           action: 'showPoint'
         },
-        {
-          icon: 'map-angle',
-          name: '视角',
-          key: 'angle',
-          action: 'changeAngle'
-        },
+        // {
+        //   icon: 'map-angle',
+        //   name: '视角',
+        //   key: 'angle',
+        //   action: 'changeAngle'
+        // },
         // {
         //   icon: 'map-scale',
         //   name: '测距',

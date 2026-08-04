@@ -286,12 +286,16 @@ export default {
       return null
     },
     async updateVideo(data) {
-      if (data.key) {
-        await this.$refs.leftVideoRef.test({ data })
-      } else {
-        for (const item of data) {
-          await this.$refs.leftVideoRef.test({ data: item })
-        }
+      await this.$nextTick()
+      const leftVideoRef = this.$refs.leftVideoRef
+      if (!leftVideoRef || typeof leftVideoRef.test !== 'function') return
+
+      // 进入控制中心默认加载全部视频源：按空槽顺序依次播放，避免并发全部落到第一个窗口
+      const cameraList = Array.isArray(data) ? data : (data ? [data] : [])
+      for (const item of cameraList) {
+        if (!item) continue
+        const emptyKey = leftVideoRef.findEmptySlotKey ? leftVideoRef.findEmptySlotKey() : null
+        await leftVideoRef.test({ data: item, index: emptyKey })
       }
     }
   }

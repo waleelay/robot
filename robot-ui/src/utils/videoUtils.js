@@ -17,8 +17,8 @@ export default {
       isPlay: true,
       // 打开/关闭麦克风
       openMic: true,
-      // 切换全屏
-      isFullscreen: true,
+      // 当前视频框是否全屏（与网页全屏相互独立）
+      isFullscreen: false,
       pixel: {
         currentPixel: 'auto',
         currentPixelLabel: '自动',
@@ -158,13 +158,12 @@ export default {
         event.preventDefault();
         this.toggleMute();
       } else if (event.key === 'Escape' && this.isFullscreen) {
-        // 退出全屏
+        // 仅退出当前视频框全屏
         this.exitFullscreen()
       }
     },
-    // 切换全屏
+    // 视频框全屏
     initFullscreen() {
-      // 添加事件监听
       this.addEventListeners()
       this.checkFullscreenStatus()
     },
@@ -196,7 +195,7 @@ export default {
       
       document.removeEventListener('keydown', this.handleKeydown)
     },
-    // 进入全屏
+    // 进入当前视频框全屏
     async enterFullscreen() {
       const el = document.getElementById(this.idName)
       
@@ -214,8 +213,9 @@ export default {
         }
       }
     },
-    // 退出全屏
+    // 退出当前视频框全屏（仅当本视频框处于全屏时）
     async exitFullscreen() {
+      if (!this.isVideoElementFullscreen()) return
       const methods = [
         'exitFullscreen',
         'mozCancelFullScreen',
@@ -230,7 +230,7 @@ export default {
         }
       }
     },
-    // 切换全屏
+    // 切换当前视频框全屏（与网页 Header 全屏相互独立）
     async toggleFullscreen() {
       if (!this.isFullscreen) {
         await this.enterFullscreen()
@@ -238,6 +238,7 @@ export default {
         await this.exitFullscreen()
       }
       await new Promise(resolve => requestAnimationFrame(resolve))
+      this.checkFullscreenStatus()
       this.updateDropdownStyle('pixel');
       this.updateDropdownStyle('volume');
       this.$emit('updateDropdownStyle');
@@ -285,14 +286,20 @@ export default {
         }
       })
     },
-    // 检查全屏状态
-    checkFullscreenStatus() {
-      this.isFullscreen = !!(
-        document.fullscreenElement ||
-        document.mozFullScreenElement ||
-        document.webkitFullscreenElement ||
-        document.msFullscreenElement
+    // 当前全屏元素是否为本视频框
+    isVideoElementFullscreen() {
+      const el = document.getElementById(this.idName)
+      if (!el) return false
+      return (
+        document.fullscreenElement === el ||
+        document.mozFullScreenElement === el ||
+        document.webkitFullscreenElement === el ||
+        document.msFullscreenElement === el
       )
+    },
+    // 仅同步本视频框全屏状态，忽略网页 documentElement 全屏
+    checkFullscreenStatus() {
+      this.isFullscreen = this.isVideoElementFullscreen()
     },
     handleFullscreenChange() {
       this.checkFullscreenStatus()

@@ -23,7 +23,12 @@
         <div class="info-content p10 flex">
           <div class="task preview-panel">
             <div class="capture-view">
-              <div class="second-title">{{ previewTitle }}</div>
+              <div class="flx-justify-between">
+                <div class="second-title">{{ previewTitle }}</div>
+                <span v-if="simpleMode" class="delete-span" @click.stop="handleDelete(details)">
+                  <svg-icon icon-class="delete"></svg-icon>
+                </span>
+              </div>
               <div class="list-box mt10">
                 <div class="preview-box wp576 hp324">
                   <template v-if="details.fileId">
@@ -775,5 +780,16 @@ export default {
     }
   }
 }
-.text-ellipsis { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.delete-span {
+  cursor: pointer;
+  .svg-icon {
+    color: #D0DEEE;
+    font-size: 16px;
+  }
+  &:hover {
+    .svg-icon {
+      color: #2A86F3 !important;
+    }
+  }
+}
 </style>
