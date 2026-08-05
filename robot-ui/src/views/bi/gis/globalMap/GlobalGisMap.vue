@@ -165,7 +165,7 @@ export default {
       return this.currenRouteName === 'biIndex' ? 12 : 18
     },
     defaultGisBearing() {
-      return 0
+      // return 0
       return this.defaultGisZoom >= 18 ? -45 : 0
     }
   },
@@ -467,11 +467,11 @@ export default {
       
       // 监听缩放事件：18 级旋转 45°，其余不旋转；不再切换 layerA/layerB
       this.map.on('zoomend', () => {
-        // const currentZoom = this.map.getZoom();
-        // const nextBearing = currentZoom >= 18 ? -45 : 0
-        // if (this.map.getBearing() !== nextBearing) {
-        //   this.map.setBearing(nextBearing)
-        // }
+        const currentZoom = this.map.getZoom();
+        const nextBearing = currentZoom >= 18 ? -45 : 0
+        if (this.map.getBearing() !== nextBearing) {
+          this.map.setBearing(nextBearing)
+        }
         this.pointMarkers.map((marker, index) => {
           // console.log(111111111, marker.getIcon().options, this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
           this.pointMarkers[index].setIcon(this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
