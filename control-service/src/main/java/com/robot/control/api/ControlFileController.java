@@ -2,6 +2,8 @@ package com.robot.control.api;
 
 import com.robot.control.auth.CurrentUserResolver;
 import com.robot.control.client.ControlMediaServiceClient;
+import com.robot.control.dto.FileBatchDeleteRequest;
+import com.robot.control.dto.FileBatchDeleteResponse;
 import com.robot.control.dto.FileDownloadUrlResponse;
 import com.robot.control.dto.FileListItemResponse;
 import com.robot.control.dto.FileListResponse;
@@ -9,12 +11,15 @@ import com.robot.control.dto.FilePlayUrlResponse;
 import com.robot.control.dto.FileStatus;
 import com.robot.control.dto.FileType;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -122,6 +127,33 @@ public class ControlFileController {
     @GetMapping("/{fileId}")
     public FileListItemResponse detail(@PathVariable String fileId, HttpServletRequest request) {
         return mediaServiceClient.file(fileId, currentUserResolver.resolve(request));
+    }
+
+    /**
+     * 删除文件。
+     *
+     * @param fileId 文件 ID
+     * @param request 请求参数
+     * @return 空响应
+     */
+    @DeleteMapping("/{fileId}")
+    public ResponseEntity<Void> delete(@PathVariable String fileId, HttpServletRequest request) {
+        mediaServiceClient.deleteFile(fileId, currentUserResolver.resolve(request));
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 批量删除文件。
+     *
+     * @param body 批量删除请求
+     * @param request 请求参数
+     * @return 逐条删除结果
+     */
+    @DeleteMapping("/batch")
+    public FileBatchDeleteResponse deleteBatch(
+            @Valid @RequestBody FileBatchDeleteRequest body,
+            HttpServletRequest request) {
+        return mediaServiceClient.deleteFiles(body, currentUserResolver.resolve(request));
     }
 
     /**

@@ -148,6 +148,7 @@
 | `map[].previewGeneratedAt` | string/null | 条件需要 | 预览图生成时间 |
 | `map[].enabled` | boolean/null | 需要 | 地图是否启用 |
 | `map[].remark` | string/null | 条件需要 | 备注 |
+| `map[].points` | array<object> | 条件需要 | 当前地图的点位集合；BFF 按地图 ID 查询后挂载到对应地图对象 |
 
 ### 2.11 `alarms.*.items[]`
 

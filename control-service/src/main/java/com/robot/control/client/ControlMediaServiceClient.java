@@ -2,6 +2,8 @@ package com.robot.control.client;
 
 import com.robot.control.auth.CurrentUser;
 import com.robot.control.config.ControlProperties;
+import com.robot.control.dto.FileBatchDeleteRequest;
+import com.robot.control.dto.FileBatchDeleteResponse;
 import com.robot.control.dto.FileDownloadUrlResponse;
 import com.robot.control.dto.FileListItemResponse;
 import com.robot.control.dto.FileListResponse;
@@ -24,6 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
@@ -398,6 +401,32 @@ public class ControlMediaServiceClient {
      */
     public FileListItemResponse file(String fileId, CurrentUser user) {
         return get("/internal/media/files/{fileId}", user, FileListItemResponse.class, fileId);
+    }
+
+    /**
+     * 删除文件。
+     *
+     * @param fileId 文件 ID
+     * @param user 当前用户
+     */
+    public void deleteFile(String fileId, CurrentUser user) {
+        withHeaders(restClient.delete().uri("/internal/media/files/{fileId}", fileId), user)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    /**
+     * 批量删除文件。
+     *
+     * @param request 批量删除请求
+     * @param user 当前用户
+     * @return 逐条删除结果
+     */
+    public FileBatchDeleteResponse deleteFiles(FileBatchDeleteRequest request, CurrentUser user) {
+        RestClient.RequestBodySpec spec = withHeaders(
+                restClient.method(HttpMethod.DELETE).uri("/internal/media/files/batch"),
+                user);
+        return spec.body(request).retrieve().body(FileBatchDeleteResponse.class);
     }
 
     /**

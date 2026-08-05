@@ -37,6 +37,7 @@ public class PanoramaService {
         Map<String, Object> overview = object("serverTime", now());
         List<Map<String, Object>> devices = devices();
         overview.put("devices", devices);
+        overview.put("gpsDevices", gpsDevices(devices));
         overview.put("deviceStats", deviceStats(devices));
         overview.put("deviceTypeStats", deviceTypeStats(devices));
 
@@ -45,11 +46,64 @@ public class PanoramaService {
         overview.put("tasks", panoramaTasks.items());
         overview.put("taskOverview", taskOverview(panoramaTasks.items()));
 
-        List<Map<String, Object>> maps = centerClient.enabledMaps();
-        overview.put("map", maps);
+        overview.put("map", mapsWithPointsAndDevices(centerClient.enabledMaps(), devices));
 
         overview.put("alarms", alarmsPayload());
         return overview;
+    }
+
+    private List<Map<String, Object>> mapsWithPointsAndDevices(
+            List<Map<String, Object>> maps,
+            List<Map<String, Object>> devices) {
+        if (maps == null || maps.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<Map<String, Object>>> pointsByMapId = new LinkedHashMap<>();
+        List<Map<String, Object>> result = new ArrayList<>(maps.size());
+        for (Map<String, Object> source : maps) {
+            Map<String, Object> map = mutable(source);
+            String mapId = firstString(source, "id", "mapId");
+            List<Map<String, Object>> points = mapId == null
+                    ? List.of()
+                    : pointsByMapId.computeIfAbsent(mapId, centerClient::mapPoints);
+            map.put("points", points);
+            map.put("devices", devicesForMap(mapId, devices));
+            result.add(map);
+        }
+        return result;
+    }
+
+    private List<Map<String, Object>> devicesForMap(String mapId, List<Map<String, Object>> devices) {
+        if (mapId == null || devices == null || devices.isEmpty()) {
+            return List.of();
+        }
+        return devices.stream()
+                .filter(device -> Objects.equals(mapId, firstString(map(device.get("location")), "mapId")))
+                .toList();
+    }
+
+    private List<Map<String, Object>> gpsDevices(List<Map<String, Object>> devices) {
+        if (devices == null || devices.isEmpty()) {
+            return List.of();
+        }
+        return devices.stream()
+                .filter(this::hasGpsLocation)
+                .toList();
+    }
+
+    private boolean hasGpsLocation(Map<String, Object> device) {
+        Map<String, Object> location = map(device.get("location"));
+        return validCoordinate(location.get("lng"), -180, 180)
+                && validCoordinate(location.get("lat"), -90, 90);
+    }
+
+    private boolean validCoordinate(Object value, double minimum, double maximum) {
+        Number coordinate = number(value);
+        if (coordinate == null) {
+            return false;
+        }
+        double numericValue = coordinate.doubleValue();
+        return Double.isFinite(numericValue) && numericValue >= minimum && numericValue <= maximum;
     }
 
     public Map<String, Object> deviceDetail(String deviceId) {
@@ -255,6 +309,7 @@ public class PanoramaService {
             Map<String, Object> localization,
             Map<String, Object> realtimeStatus) {
         return object(
+                "mapId", firstValue(localization, "mapId", "mapID"),
                 "lng", number(firstValue(localization, "lng", "longitude")),
                 "lat", number(firstValue(localization, "lat", "latitude")),
                 "altitude", number(firstValue(localization, "altitude")),
@@ -267,6 +322,7 @@ public class PanoramaService {
 
     private Map<String, Object> emptyLocation() {
         return object(
+                "mapId", null,
                 "lng", null,
                 "lat", null,
                 "altitude", null,

@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.file.dto.CreateMultipartFileUploadRequest;
+import com.robot.mediaserver.file.dto.FileBatchDeleteResponse;
+import com.robot.mediaserver.file.dto.FileDeleteResultResponse;
 import com.robot.mediaserver.file.dto.FileDownloadUrlResponse;
 import com.robot.mediaserver.file.dto.FileListItemResponse;
 import com.robot.mediaserver.file.dto.FileListResponse;
@@ -49,6 +51,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -56,6 +60,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class FileService {
+
+    private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
     private final MediaProperties properties;
     private final MediaFileRepository fileRepository;
@@ -348,6 +354,28 @@ public class FileService {
                     uploadRepository.save(upload);
                 });
         deleteFileAssets(file);
+    }
+
+    public FileBatchDeleteResponse deleteBatch(CurrentUser user, List<String> fileIds) {
+        List<FileDeleteResultResponse> results = new ArrayList<>(fileIds.size());
+        int succeeded = 0;
+        for (String fileId : fileIds) {
+            try {
+                delete(user, fileId);
+                results.add(new FileDeleteResultResponse(fileId, true, "DELETED", "删除成功"));
+                succeeded++;
+            } catch (ResponseStatusException ex) {
+                String code = ex.getStatusCode().value() == HttpStatus.NOT_FOUND.value()
+                        ? "FILE_NOT_FOUND"
+                        : "DELETE_FAILED";
+                String message = ex.getReason() == null ? "删除失败" : ex.getReason();
+                results.add(new FileDeleteResultResponse(fileId, false, code, message));
+            } catch (RuntimeException ex) {
+                log.warn("批量删除文件失败: fileId={}", fileId, ex);
+                results.add(new FileDeleteResultResponse(fileId, false, "DELETE_FAILED", "删除失败"));
+            }
+        }
+        return new FileBatchDeleteResponse(fileIds.size(), succeeded, fileIds.size() - succeeded, results);
     }
 
     public FileDownloadUrlResponse downloadUrl(CurrentUser user, String fileId) {

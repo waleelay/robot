@@ -170,7 +170,7 @@ GET /api/bigscreen/panorama/overview
 
 用途：一次返回全景地图 tab 页首屏需要的数据。
 
-`devices[]` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，数组字段返回空数组。
+`devices[]` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，数组字段返回空数组。`gpsDevices[]` 复用 `devices[]` 的完整对象结构，仅包含 `location.lng` 与 `location.lat` 同时为有限数值且处于合法经纬度范围的设备；只有 XYZ 局部坐标的设备不进入该数组。
 
 返回结构：
 
@@ -280,6 +280,22 @@ GET /api/bigscreen/panorama/overview
       ]
     }
   ],
+  "gpsDevices": [
+    {
+      "robotId": "test111",
+      "name": "R1轮式机器人",
+      "location": {
+        "lng": 106.03655278081857,
+        "lat": 30.7478613352993,
+        "altitude": null,
+        "x": 118.4,
+        "y": 42.8,
+        "z": 0.0,
+        "address": "A区主干道",
+        "updatedAt": "2026-06-12 11:30:58"
+      }
+    }
+  ],
   "tasks": [
     {
       "taskId": 1,
@@ -366,7 +382,28 @@ GET /api/bigscreen/panorama/overview
       },
       "zoom": 17,
       "defaultLayer": "dark-vector",
-      "updatedAt": "2026-06-12 11:31:02"
+      "updatedAt": "2026-06-12 11:31:02",
+      "points": [
+        {
+          "id": 101,
+          "mapId": 1,
+          "pointName": "A区主干道",
+          "coordinateX": 118.4,
+          "coordinateY": 42.8,
+          "coordinateZ": 0.0
+        }
+      ],
+      "devices": [
+        {
+          "robotId": "test111",
+          "name": "R1轮式机器人",
+          "location": {
+            "mapId": 1,
+            "lng": 106.03655278081857,
+            "lat": 30.7478613352993
+          }
+        }
+      ]
     }
   ]
 }
@@ -398,11 +435,14 @@ GET /api/bigscreen/panorama/overview
 | 字段 | 含义 | 数据来源 |
 |---|---|---|
 | `tasks[]` | 任务列表 | `/api/v1/management/task-workflow-plans?pageNum=1&pageSize=20` |
+| `gpsDevices[]` | 具备 GPS 经纬度的设备列表，对象结构同 `devices[]` | BFF 从 `devices[]` 中筛选经度 `[-180, 180]`、纬度 `[-90, 90]` 且均为有限数值的设备 |
 | `tasks[].taskId` | 任务计划 ID，number/int | `/api/v1/management/task-workflow-plans` 的 `id` |
 | `tasks[].mapId` | 任务关联地图 ID，number/int | `task-workflow-definitions.{workflowDefinitionId}.mapId` |
 | `tasks[].mapPoints` | 任务地图点位集合 | `/api/v1/management/maps/{mapId}/points` 返回值 |
 | `tasks[].pathPoints` | 任务路径点位对应的地图点位集合 | 根据 `/api/v1/management/paths/{pathId}/points` 中每个 `mapPointId` 到 `tasks[].mapPoints[].id` 过滤得到 |
 | `map` | 可用地图数组 | `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
+| `map[].points` | 每张地图的点位集合 | 按 `map[].id/mapId` 请求 `/api/v1/management/maps/{mapId}/points`；查询失败或无点位时返回 `[]` |
+| `map[].devices` | 当前地图的设备集合，对象结构同 `devices[]` | 按 `devices[].location.mapId` 与地图 `id/mapId` 匹配；无匹配设备时返回 `[]` |
 
 当前 mock 的 3 台机器人定位：
 

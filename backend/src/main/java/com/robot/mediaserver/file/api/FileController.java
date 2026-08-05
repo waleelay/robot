@@ -3,6 +3,8 @@ package com.robot.mediaserver.file.api;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.auth.CurrentUserResolver;
 import com.robot.mediaserver.file.dto.CreateMultipartFileUploadRequest;
+import com.robot.mediaserver.file.dto.FileBatchDeleteRequest;
+import com.robot.mediaserver.file.dto.FileBatchDeleteResponse;
 import com.robot.mediaserver.file.dto.FileDownloadUrlResponse;
 import com.robot.mediaserver.file.dto.FileListItemResponse;
 import com.robot.mediaserver.file.dto.FileListResponse;
@@ -124,6 +126,13 @@ public class FileController {
     public ResponseEntity<Void> delete(@PathVariable String fileId, HttpServletRequest request) {
         service.delete(currentUserResolver.resolve(request), fileId);
         return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/batch")
+    public FileBatchDeleteResponse deleteBatch(
+            @Valid @RequestBody FileBatchDeleteRequest body,
+            HttpServletRequest request) {
+        return service.deleteBatch(currentUserResolver.resolve(request), body.fileIds());
     }
 
     @PostMapping("/{fileId}/download-url")

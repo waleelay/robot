@@ -49,6 +49,7 @@ GET /api/bigscreen/panorama/overview
 |---|---|---|---|
 | `serverTime` | BFF 当前服务时间 | BFF 生成 | `OffsetDateTime.now(+08:00)` |
 | `devices` | 全部机器人/设备展示列表 | 管理端 + 控制端 + BFF 组装 | 见 3.2 |
+| `gpsDevices` | 具备 GPS 经纬度的设备列表 | BFF 筛选 | 从 `devices[]` 筛选经度 `[-180, 180]`、纬度 `[-90, 90]` 且均为有限数值的设备；对象结构同 `devices[]` |
 | `deviceStats.total` | 设备总数 | BFF 计算 | `devices.size()` |
 | `deviceStats.online` | 在线设备数 | BFF 计算 | 统计 `devices[].status == online` |
 | `deviceStats.fault` | 故障设备数 | BFF 计算 | 统计 `devices[].fault == true` |
@@ -64,7 +65,7 @@ GET /api/bigscreen/panorama/overview
 | `taskOverview.completedRateText` | 完成率文案 | BFF 计算 | `completedRate + "%"` |
 | `taskOverview.running` | 执行中任务数 | BFF 计算 | 统计 `tasks[].status == running` |
 | `taskOverview.pending` | 待执行任务数 | BFF 计算 | 统计 `tasks[].status == pending` |
-| `map` | 地图列表 | 管理端 | 直接返回 `/api/v1/management/maps` 的 `data.records` |
+| `map` | 地图列表 | 管理端 + BFF 组装 | 返回 `/api/v1/management/maps` 的 `data.records`，并为每张地图补充点位集合 |
 | `alarms` | 告警聚合对象 | 管理端 + BFF 组装 | 见 3.8 |
 
 ### 3.2 `devices[]`
@@ -123,6 +124,7 @@ GET /api/bigscreen/panorama/overview
 |---|---|---|---|
 | `lng` | 经度 | 控制端 | `status.localization.lng/longitude` |
 | `lat` | 纬度 | 控制端 | `status.localization.lat/latitude` |
+| `mapId` | 当前定位所属地图 ID | 控制端 | `status.localization.mapId/mapID` |
 | `altitude` | 高度 | 控制端 | `status.localization.altitude` |
 | `x` | 地图/局部坐标 X | 控制端 | `status.localization.coordinateX` |
 | `y` | 地图/局部坐标 Y | 控制端 | `status.localization.coordinateY` |
@@ -302,7 +304,7 @@ PATCH /api/v1/management/alarms/{alarmId}/handled
 
 ## 8. 地图字段
 
-`overview.map[]` 直接返回管理端 `/api/v1/management/maps` 的 `records`，BFF 当前不改字段名。
+`overview.map[]` 保留管理端 `/api/v1/management/maps` 的 `records` 字段，并按每条记录的 `id/mapId` 查询地图点位、匹配设备，补充 `points` 和 `devices` 数组。
 
 | 管理端字段 | 字段说明 |
 |---|---|
@@ -326,6 +328,8 @@ PATCH /api/v1/management/alarms/{alarmId}/handled
 | `previewGeneratedAt` | 预览图生成时间 |
 | `enabled` | 是否启用 |
 | `remark` | 备注 |
+| `points` | 地图点位数组，来自 `/api/v1/management/maps/{mapId}/points`；查询失败或无数据时为 `[]` |
+| `devices` | 当前地图设备数组；按 `devices[].location.mapId` 与地图 `id/mapId` 匹配，对象结构同顶层 `devices[]`；无匹配时为 `[]` |
 
 ## 9. 统计接口
 

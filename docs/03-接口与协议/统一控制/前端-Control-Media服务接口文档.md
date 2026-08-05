@@ -247,9 +247,13 @@ GET /api/bigscreen/panorama/overview
 | `patrolOverview` | object | 今日巡逻时长、里程 |
 | `taskOverview` | object | 今日任务总数、完成率、运行/待执行数量 |
 | `devices` | array | 设备摘要列表 |
+| `gpsDevices` | array | 具备 GPS 经纬度的设备列表，对象结构同 `devices[]`；经度范围 `[-180, 180]`、纬度范围 `[-90, 90]` |
+| `devices[].location.mapId` | string/number/null | 设备实时定位所属地图 ID，来自控制端 `status.localization.mapId` |
 | `tasks` | array | 任务列表 |
 | `alarms` | object | 告警聚合，结构同 `/alarms` |
 | `map` | array | 可用地图列表，来自管理端地图列表 `data.records` |
+| `map[].points` | array | 当前地图点位集合；无数据时为 `[]` |
+| `map[].devices` | array | 当前地图设备集合，按定位 `mapId` 匹配，对象结构同顶层 `devices[]`；无匹配时为 `[]` |
 
 说明：`devices[]` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，数组字段返回空数组。
 
@@ -289,6 +293,13 @@ GET /api/bigscreen/panorama/overview
       ]
     }
   ],
+  "gpsDevices": [
+    {
+      "robotId": "test111",
+      "name": "R1轮式机器人",
+      "location": {"mapId": 1, "lng": 106.03824884204943, "lat": 30.746587087515316, "address": "A区仓库"}
+    }
+  ],
   "tasks": [
     {
       "taskId": 1,
@@ -319,7 +330,13 @@ GET /api/bigscreen/panorama/overview
       "center": {"lng": 106.03655278081857, "lat": 30.7478613352993},
       "zoom": 17,
       "defaultLayer": "dark-vector",
-      "updatedAt": "2026-07-04 10:00:00"
+      "updatedAt": "2026-07-04 10:00:00",
+      "points": [
+        {"id": 101, "mapId": 1, "pointName": "A区主干道", "coordinateX": 118.4, "coordinateY": 42.8, "coordinateZ": 0.0}
+      ],
+      "devices": [
+        {"robotId": "test111", "name": "R1轮式机器人", "location": {"mapId": 1, "lng": 106.03824884204943, "lat": 30.746587087515316}}
+      ]
     }
   ]
 }
@@ -770,6 +787,8 @@ GET /api/media/files?fileType=IMAGE&page=0&size=20
 | POST | `/api/control/files` | multipart 简单上传 |
 | GET | `/api/control/files` | 文件分页查询 |
 | GET | `/api/control/files/{fileId}` | 文件详情 |
+| DELETE | `/api/control/files/{fileId}` | 删除单个文件 |
+| DELETE | `/api/control/files/batch` | 批量删除文件并返回逐条结果 |
 | POST | `/api/control/files/{fileId}/download-url` | 获取下载 URL |
 | GET | `/api/control/files/{fileId}/content` | 获取文件正文 |
 | POST | `/api/control/files/{fileId}/play-url` | 获取播放 URL |
@@ -1906,6 +1925,38 @@ Content-Type: application/vnd.apple.mpegurl
 | `.ts` | `video/mp2t` |
 | 其他 | `application/octet-stream` |
 
+### 4.23 DELETE `/api/control/files/{fileId}`
+
+删除大屏展示的单个抓拍或视频文件。成功或文件已经处于 `DELETED` 状态时返回 `204 No Content`。
+
+```http
+DELETE /api/control/files/file_image_001
+```
+
+### 4.24 DELETE `/api/control/files/batch`
+
+批量删除大屏展示的抓拍或视频文件，每次最多 100 个；单个文件失败不会中断其他文件。
+
+```json
+{
+  "fileIds": ["file_image_001", "file_video_001"]
+}
+```
+
+响应：
+
+```json
+{
+  "total": 2,
+  "succeeded": 1,
+  "failed": 1,
+  "results": [
+    {"fileId": "file_image_001", "success": true, "code": "DELETED", "message": "删除成功"},
+    {"fileId": "file_video_001", "success": false, "code": "FILE_NOT_FOUND", "message": "未找到文件"}
+  ]
+}
+```
+
 ## 5. Backend Media Service Java 接口
 
 本章覆盖 `backend/src/main/java` 下的 Java Controller。`backend` 的主要职责是媒体能力，其中：
@@ -1986,6 +2037,7 @@ Backend MQTT 关联说明：
 | POST | `{base}/extension-binding` | 绑定通用扩展 ID |
 | GET | `{base}/{fileId}` | 文件详情 |
 | DELETE | `{base}/{fileId}` | 删除文件对象并将记录标记为 DELETED |
+| DELETE | `{base}/batch` | 批量删除文件并返回逐条结果 |
 | POST | `{base}/{fileId}/download-url` | 获取下载 URL |
 | GET | `{base}/{fileId}/content` | 获取文件正文 |
 | POST | `{base}/{fileId}/play-url` | 获取播放 URL |
@@ -2911,6 +2963,7 @@ X-Robot-Id: test111
 | GET | `{base}` | Query: `robotId`、`deviceId`、`extensionId`、`fileType`、`status`、`page`、`size` | `FileListResponse` |
 | GET | `{base}/{fileId}` | Path: `fileId` | `FileListItemResponse` |
 | DELETE | `{base}/{fileId}` | Path: `fileId`；Header: `X-Org-Id` | `204 No Content` |
+| DELETE | `{base}/batch` | Body: `fileIds`，最多 100 个；Header: `X-Org-Id` | `FileBatchDeleteResponse` |
 | POST | `{base}/{fileId}/download-url` | Path: `fileId` | `FileDownloadUrlResponse` |
 | GET | `{base}/{fileId}/content` | Path: `fileId` | 文件二进制 |
 | POST | `{base}/{fileId}/play-url` | Path: `fileId` | `FilePlayUrlResponse` |
@@ -3198,6 +3251,8 @@ HTTP/1.1 200 OK
 | `switchChannel` | `POST /api/control/video-sessions/{sessionId}/switch-channel` |
 | `uploadFile` | `POST /api/control/files` |
 | `getFiles` | `GET /api/control/files` |
+| `deleteFile` | `DELETE /api/control/files/{fileId}` |
+| `deleteFiles` | `DELETE /api/control/files/batch` |
 | `fileDownloadUrl` | `POST /api/control/files/{fileId}/download-url` |
 | `snapshotImageUrl` | `GET /api/control/files/{fileId}/content` |
 | `getFilePlayUrl` | `POST /api/control/files/{fileId}/play-url` |

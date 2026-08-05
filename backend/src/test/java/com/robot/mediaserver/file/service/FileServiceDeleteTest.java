@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.file.dto.FileDeleteResultResponse;
 import com.robot.mediaserver.file.model.FileStatus;
 import com.robot.mediaserver.file.model.FileUploadStatus;
 import com.robot.mediaserver.file.model.MediaFile;
@@ -19,6 +20,7 @@ import com.robot.mediaserver.file.repository.MediaFileRepository;
 import com.robot.mediaserver.file.repository.MediaFileUploadRepository;
 import com.robot.mediaserver.file.repository.MediaVideoFileRepository;
 import com.robot.mediaserver.livekit.LiveKitEgressService;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -90,6 +92,24 @@ class FileServiceDeleteTest {
                 .hasMessageContaining("404 NOT_FOUND");
 
         verifyNoInteractions(storage);
+    }
+
+    @Test
+    void returnsPerFileResultsForBatchDelete() {
+        MediaFile ownedFile = file("file-1", "org001", FileStatus.READY);
+        when(fileRepository.findById("file-1")).thenReturn(Optional.of(ownedFile));
+        when(fileRepository.findById("file-missing")).thenReturn(Optional.empty());
+        when(storage.fileRootPrefix(ownedFile.getObjectKey())).thenReturn("files/org001/file-1/");
+
+        var response = service.deleteBatch(user("org001"), List.of("file-1", "file-missing"));
+
+        assertThat(response.total()).isEqualTo(2);
+        assertThat(response.succeeded()).isEqualTo(1);
+        assertThat(response.failed()).isEqualTo(1);
+        assertThat(response.results()).containsExactly(
+                new FileDeleteResultResponse("file-1", true, "DELETED", "删除成功"),
+                new FileDeleteResultResponse("file-missing", false, "FILE_NOT_FOUND", "未找到文件"));
+        assertThat(ownedFile.getStatus()).isEqualTo(FileStatus.DELETED);
     }
 
     private CurrentUser user(String orgId) {

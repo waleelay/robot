@@ -138,6 +138,14 @@ export function deleteFile(fileId) {
     method: 'delete'
   })
 }
+
+export function deleteFiles(fileIds) {
+  return request({
+    url: '/api/control/files/batch',
+    method: 'delete',
+    data: { fileIds }
+  })
+}
 export function snapshotImageUrl(fileId) {
   const base = (process.env.VUE_APP_BASE_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '')
   return `${base}/api/control/files/${encodeURIComponent(fileId)}/content`
