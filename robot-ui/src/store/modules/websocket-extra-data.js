@@ -39,7 +39,9 @@ const state = {
   slamOfRobot: {},
   showRobotIds: [],
   // 当前全局地图标识：GIS 为 'gis'，SLAM 为对应地图 id
-  globalMapId: 'gis',
+  globalMapId: '',
+  // 具备 GPS 经纬度的设备列表（来自 panorama overview.gpsDevices）
+  defaultGpsDevices: [],
   // gis中心视图，南充市，默认坐标点[lat, lng]
   gisMapCenterPoint: [30.7478613352993, 106.03655278081857]
 }
@@ -137,7 +139,11 @@ const mutations = {
     state.showRobotIds = Array.isArray(value) ? value : (value != null && value !== '' ? [value] : []);
   },
   SET_GLOBAL_MAP_ID(state, value) {
-    state.globalMapId = value == null || value === '' ? 'gis' : value;
+    // 允许 ''：无 GPS 且无 SLAM 时保持未就绪/无地图，避免被改写成 gis 导致闪现
+    state.globalMapId = value == null ? '' : value;
+  },
+  SET_DEFAULT_GPS_DEVICES(state, value) {
+    state.defaultGpsDevices = Array.isArray(value) ? value : [];
   },
 }
 
@@ -176,44 +182,7 @@ const actions = {
     commit('SET_PATROL_OVERVIEW', data?.patrolOverview || { durationToday: '-', durationUnit: '小时', mileageToday: '-', mileageUnit: 'KM' });
     commit('SET_TASK_OVERVIEW', data?.taskOverview || { totalToday: '-', completedRate: '-', completedRateText: '-%', running: '-', pending: '-' });
     commit('SET_ALARM_SUMMARY', data?.alarms?.summary || { totalToday: '-', handled: '-', unhandled: '-', handleRate: '-', handleRateText: '-%' });
-    [...tasks].concat([
-    //   {
-    //     "statusName": "暂停中",
-    //     "endTime": "2026-06-12 22:00:00",
-    //     "startTime": "2026-06-12 20:00:00",
-    //     "taskId": "task-011",
-    //     "name": "B区-夜间巡逻",
-    //     "timeRange": "18:00-19:00",
-    //     "equipmentList": [
-    //         {
-    //             "status": "online",
-    //             "name": "R1轮式机器人",
-    //             "type": "WHEELED_ROBOT",
-    //             "robotId": "robot-001"
-    //         }
-    //     ],
-    //     "currentLocation": "B区主干道",
-    //     "status": "paused"
-    // },
-    //   {
-    //     "statusName": "暂停中",
-    //     "endTime": "2026-06-12 22:00:00",
-    //     "startTime": "2026-06-12 20:00:00",
-    //     "taskId": "task-012",
-    //     "name": "B区-仓库复核",
-    //     "timeRange": "09:00-10:00",
-    //     "equipmentList": [
-    //         {
-    //             "status": "online",
-    //             "name": "R1轮式机器人",
-    //             "type": "WHEELED_ROBOT",
-    //             "robotId": "robot-001"
-    //         }
-    //     ],
-    //     "currentLocation": "B区主干道",
-    //     "status": "paused"
-    // },
-    ]).map((item, index) => {
+    tasks.map((item, index) => {
       commit('SET_TASK_INFO', { ...item, timestamp: new Date().getTime() + tasks.length - index });
       commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } });
     })
@@ -227,10 +196,21 @@ const actions = {
     data?.alarms?.high?.items.map((item, index) => {
       commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
     })
+    // 当前地图点位数据模拟在map对象的points字段中
     const slamMapList = (data?.map || []).map(item => {
       item.points = item.points || (ENABLE_LIANTONG_SLAM_MOCK ? SLAM_POINTS?.[item.id] || [] : []);
       return item;
     });
+    // 有 GPS 设备时默认 GIS；否则默认第一张 SLAM 地图
+    const defaultGpsDevices = data?.gpsDevices || [];
+    commit('SET_DEFAULT_GPS_DEVICES', defaultGpsDevices);
+    if (defaultGpsDevices.length) {
+      commit('SET_GLOBAL_MAP_ID', 'gis');
+    } else if (slamMapList.length) {
+      commit('SET_GLOBAL_MAP_ID', slamMapList[0]?.id);
+    } else {
+      commit('SET_GLOBAL_MAP_ID', '');
+    }
     commit('SET_SLAM_MAP_LIST', slamMapList);
     commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devices, tasks));
   },

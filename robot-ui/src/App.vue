@@ -44,6 +44,7 @@ export default {
       const path = this.$route.path
       if (BI_MAP_BG_PAGES.includes(path)) {
         const mapId = this.$store.state.websocketExtraData?.globalMapId
+        if (!mapId) return BG_BI_DEFAULT
         return mapId === 'gis' ? BG_GIS : BG_SLAM
       }
       return BG_BI_DEFAULT

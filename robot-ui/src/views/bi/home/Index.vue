@@ -6,7 +6,7 @@
     <div class="map-div flx-center" style="height: calc(100% + 55px); margin-top: -55px; align-items: start;" :class="{ full: collapse }">
     <!-- <div class="map-div h100 flx-center pt57" style="align-items: start;" :class="{ full: collapse }"> -->
       <!-- <div class="hp742 flx-center" style="width: 1118px; background: #112B4D;"> -->
-      <div v-if="isSlam" class="slam-map-host w100 h100" style="z-index: 0;">
+      <div v-if="globalMapId && globalMapId !== 'gis'" class="slam-map-host w100 h100" style="z-index: 0;">
         <GlobalSlamMap
           :map="slamMapPayload"
           :pathPointIds="slamInfo.pathPointIds"
@@ -17,14 +17,14 @@
           @changeMapType="changeMapType"
         />
       </div>
-      <template v-else>
+      <template v-if="globalMapId === 'gis'">
         <GlobalGisMap
           v-if="angle === '2D'"
           style="z-index: 0;"
           ref="globalMapRef"
           @pathVisibleChange="onPathVisibleChange"
         />
-        <img v-else src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
+        <img v-if="angle !== '2D'" src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
       </template>
       <MapTool
         ref="mapToolRef"
@@ -92,7 +92,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot']),
+    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'defaultGpsDevices', 'globalMapId']),
     currentSlamMap() {
       const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
       return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(this.currentSlamMapId)) || this.slamInfo.map
@@ -107,7 +107,7 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['connectMediaWebSocket', 'setSelectedRobotId']),
-    ...mapActions('websocketExtraData', ['setAll', 'setShowRobotIds']),
+    ...mapActions('websocketExtraData', ['setShowRobotIds']),
     changeMapAngle(angle) {
       this.angle = this.angle === '3D' ? '2D' : '3D'
     },
@@ -176,15 +176,26 @@ export default {
     },
   },
   watch: {
+    // overview 就绪后按 globalMapId 同步本地态，避免先渲染 GIS 再切 SLAM
+    globalMapId: {
+      immediate: true,
+      handler(id) {
+        if (!id || this.autoSwitchedSlam) return
+        if (id === 'gis') {
+          this.isSlam = false
+          this.currentSlamMapId = null
+        } else {
+          this.currentSlamMapId = id
+          this.isSlam = true
+        }
+        this.autoSwitchedSlam = true
+      }
+    },
     slamMapList: {
       immediate: true,
       handler(list) {
         if (!Array.isArray(list) || !list.length) return
-        if (!this.autoSwitchedSlam) {
-          this.selectDefaultSlamMap()
-          this.autoSwitchedSlam = true
-          return
-        }
+        if (!this.autoSwitchedSlam) return
         if (this.isSlam && this.currentSlamMapId != null) {
           const stillExists = list.some(item => String(item.id) === String(this.currentSlamMapId))
           if (!stillExists) this.selectDefaultSlamMap()

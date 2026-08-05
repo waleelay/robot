@@ -49,25 +49,23 @@ Vue.use(ConfirmDialog)
 
 Vue.config.productionTip = false
 
-initAuth()
-  .then(() => {
-    new Vue({
-      el: '#app',
-      router,
-      store,
-      // devtools: process.env.NODE_ENV === "development",
-      devtools: true,
-      render: h => h(App),
-      created() {
-        // 开发环境需要打开
-        // this.$store.dispatch('websocket/initWebSocket');
-        // this.$store.dispatch('voiceCall/initWebsocket');
-        // this.$store.dispatch('bigScreen/initializeStore');
-      }
-    })
-  })
-  .catch(error => {
-    console.error('初始化统一登录失败', error)
-    const title = document.querySelector('#loader-wrapper .load_title')
-    if (title) title.textContent = '认证服务暂不可用'
-  })
+// 先挂载页面，认证由路由守卫 await initAuth，避免启动白屏等待
+initAuth().catch(error => {
+  console.error('初始化统一登录失败', error)
+})
+
+new Vue({
+  el: '#app',
+  router,
+  store,
+  // devtools: process.env.NODE_ENV === "development",
+  devtools: true,
+  render: h => h(App),
+  created() {
+    // 开发环境需要打开
+    // this.$store.dispatch('websocket/initWebSocket');
+    // this.$store.dispatch('voiceCall/initWebsocket');
+    // this.$store.dispatch('bigScreen/initializeStore');
+  }
+})
+

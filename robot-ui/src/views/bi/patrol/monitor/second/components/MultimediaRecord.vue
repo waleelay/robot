@@ -234,9 +234,15 @@ export default {
       }
       this.$refs.multimediaDetailRef?.open(payload)
     },
-    handleDeleted() {
+    handleDeleted(item) {
+      const fileId = item?.fileId
+      if (fileId) {
+        this.snapshotList = this.snapshotList.filter(row => row.fileId !== fileId)
+        this.destroyVideoPlayer(fileId)
+        this.recordings = this.recordings.filter(row => row.fileId !== fileId)
+      }
       this.refreshList()
-      this.$emit('deleted')
+      this.$emit('deleted', item)
     }
   }
 }

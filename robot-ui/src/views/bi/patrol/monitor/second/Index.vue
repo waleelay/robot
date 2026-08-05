@@ -38,7 +38,7 @@
         <div class="flex1 mt10 h100 slam-map-wrap">
           <GlobalGisMap v-if="globalMapId === 'gis'" />
           <GlobalSlamMap
-            v-else
+            v-if="globalMapId && globalMapId !== 'gis'"
             :map="slamMapPayload"
             :show-labels="true"
             :enable-add-point="false"

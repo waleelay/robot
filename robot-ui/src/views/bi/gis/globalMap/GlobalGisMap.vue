@@ -393,7 +393,8 @@ export default {
         minZoom: 12,
       });
 
-      this.layerB = L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/latest/{z}/{x}/{y}.png`, {
+      // this.layerB = L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/latest/{z}/{x}/{y}.png`, {
+      this.layerB = L.tileLayer(`http://192.168.124.234:8787/services/city/tiles/{z}/{x}/{y}.png`, {
         maxZoom: 18,
         minZoom: 17,
         keepBuffer: 300,

@@ -57,23 +57,31 @@
                   class="map-preview-point is-path-point"
                 >
                   <template v-if="!showPath">
-                    <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
+                    <rect
+                      :x="mapPointIconX - 4"
+                      :y="mapPointIconY - 4"
+                      :width="mapPointWidth + 8"
+                      :height="mapPointHeight + 28"
+                      fill="transparent"
+                    />
                     <image
                       :href="mapPointMarker"
-                      x="-10"
-                      y="-26"
-                      width="20"
-                      height="26"
+                      :x="mapPointIconX"
+                      :y="mapPointIconY"
+                      :width="mapPointWidth"
+                      :height="mapPointHeight"
                       class="map-point-marker"
                     />
                     <foreignObject
                       class="map-point-name-fo"
-                      :x="-point.nameWidth / 2"
-                      y="4"
-                      :width="point.nameWidth"
-                      height="20"
+                      :x="-mapPointNameMaxWidth / 2"
+                      :y="mapPointNameY"
+                      :width="mapPointNameMaxWidth"
+                      height="24"
                     >
-                      <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
+                      <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
+                        <div class="map-point-name" :title="point.pointName">{{ point.pointName }}</div>
+                      </div>
                     </foreignObject>
                   </template>
                   <g
@@ -103,23 +111,31 @@
                   @mouseleave="onMapPointLeave"
                   @click.stop="handlePointClick(point)"
                 >
-                  <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
+                  <rect
+                    :x="mapPointIconX - 4"
+                    :y="mapPointIconY - 4"
+                    :width="mapPointWidth + 8"
+                    :height="mapPointHeight + 28"
+                    fill="transparent"
+                  />
                   <image
                     :href="mapPointMarker"
-                    x="-10"
-                    y="-26"
-                    width="20"
-                    height="26"
+                    :x="mapPointIconX"
+                    :y="mapPointIconY"
+                    :width="mapPointWidth"
+                    :height="mapPointHeight"
                     class="map-point-marker"
                   />
                   <foreignObject
                     class="map-point-name-fo"
-                    :x="-point.nameWidth / 2"
-                    y="4"
-                    :width="point.nameWidth"
-                    height="20"
+                    :x="-mapPointNameMaxWidth / 2"
+                    :y="mapPointNameY"
+                    :width="mapPointNameMaxWidth"
+                    height="24"
                   >
-                    <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
+                    <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
+                      <div class="map-point-name" :title="point.pointName">{{ point.pointName }}</div>
+                    </div>
                   </foreignObject>
                   <title>{{ point.pointName }} / {{ point.pointCode || point.id }}</title>
                 </g>
@@ -233,23 +249,31 @@
                   @mouseleave="onMapPointLeave"
                   @click.stop="handlePointClick(point)"
                 >
-                  <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
+                  <rect
+                    :x="mapPointIconX - 4"
+                    :y="mapPointIconY - 4"
+                    :width="mapPointWidth + 8"
+                    :height="mapPointHeight + 28"
+                    fill="transparent"
+                  />
                   <image
                     :href="mapPointMarker"
-                    x="-10"
-                    y="-26"
-                    width="20"
-                    height="26"
+                    :x="mapPointIconX"
+                    :y="mapPointIconY"
+                    :width="mapPointWidth"
+                    :height="mapPointHeight"
                     class="map-point-marker"
                   />
                   <foreignObject
                     class="map-point-name-fo"
-                    :x="-point.nameWidth / 2"
-                    y="4"
-                    :width="point.nameWidth"
-                    height="20"
+                    :x="-mapPointNameMaxWidth / 2"
+                    :y="mapPointNameY"
+                    :width="mapPointNameMaxWidth"
+                    height="24"
                   >
-                    <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
+                    <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
+                      <div class="map-point-name" :title="point.pointName">{{ point.pointName }}</div>
+                    </div>
                   </foreignObject>
                   <title>{{ point.pointName }} / {{ point.pointCode || point.id }}</title>
                 </g>
@@ -281,23 +305,31 @@
                   class="map-preview-point is-path-point"
                 >
                   <template v-if="!showPath">
-                    <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
+                    <rect
+                      :x="mapPointIconX - 4"
+                      :y="mapPointIconY - 4"
+                      :width="mapPointWidth + 8"
+                      :height="mapPointHeight + 28"
+                      fill="transparent"
+                    />
                     <image
                       :href="mapPointMarker"
-                      x="-10"
-                      y="-26"
-                      width="20"
-                      height="26"
+                      :x="mapPointIconX"
+                      :y="mapPointIconY"
+                      :width="mapPointWidth"
+                      :height="mapPointHeight"
                       class="map-point-marker"
                     />
                     <foreignObject
                       class="map-point-name-fo"
-                      :x="-point.nameWidth / 2"
-                      y="4"
-                      :width="point.nameWidth"
-                      height="20"
+                      :x="-mapPointNameMaxWidth / 2"
+                      :y="mapPointNameY"
+                      :width="mapPointNameMaxWidth"
+                      height="24"
                     >
-                      <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
+                      <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
+                        <div class="map-point-name" :title="point.pointName">{{ point.pointName }}</div>
+                      </div>
                     </foreignObject>
                   </template>
                   <g
@@ -410,8 +442,15 @@ import { addTaskByPoint, previewImageBlob } from '@/api/new-bi.js';
 const ROBOT_BG = require('@/assets/images/new-bi/robot-bg.svg')
 const ROBOT_SELECTED_HALO = require('@/assets/images/new-bi/robot-selected-halo.svg')
 const ROBOT_SELECTED_CORNERS = require('@/assets/images/new-bi/robot-selected-corners.svg')
-// MapTool 点位图标：Figma 20×26，底部尖端为锚点
-const MAP_POINT_MARKER = require('@/assets/images/new-bi/map-point-marker.svg')
+// 点位图标 40×46，锚点距图片底部 14px；名称在图片底边下方 1px
+const MAP_POINT_MARKER = require('@/assets/images/new-bi/map_point2.png')
+const MAP_POINT_WIDTH = 40
+const MAP_POINT_HEIGHT = 46
+const MAP_POINT_ANCHOR_BOTTOM = 14
+const MAP_POINT_ICON_X = -MAP_POINT_WIDTH / 2
+const MAP_POINT_ICON_Y = -(MAP_POINT_HEIGHT - MAP_POINT_ANCHOR_BOTTOM)
+const MAP_POINT_NAME_Y = MAP_POINT_ICON_Y + MAP_POINT_HEIGHT + 1
+const MAP_POINT_NAME_MAX_WIDTH = 160
 // 任务路径序号底图：Figma 20×20，#456393 / #8EBAFF
 const PATH_POINT_BADGE = require('@/assets/images/new-bi/path-point-badge.svg')
 // Figma 机器狗图标展示 23.017×16.525，对应源图 38×28
@@ -451,6 +490,12 @@ export default {
       robotSelectedHalo: ROBOT_SELECTED_HALO,
       robotSelectedCorners: ROBOT_SELECTED_CORNERS,
       mapPointMarker: MAP_POINT_MARKER,
+      mapPointWidth: MAP_POINT_WIDTH,
+      mapPointHeight: MAP_POINT_HEIGHT,
+      mapPointIconX: MAP_POINT_ICON_X,
+      mapPointIconY: MAP_POINT_ICON_Y,
+      mapPointNameY: MAP_POINT_NAME_Y,
+      mapPointNameMaxWidth: MAP_POINT_NAME_MAX_WIDTH,
       pathPointBadge: PATH_POINT_BADGE,
       imageUrl: '',
       previewImageStatus: '地图预览加载中',
@@ -701,7 +746,7 @@ export default {
         const nameWidth = Math.max(44, Math.ceil(String(name).length * 11) + 8)
         const statusBgWidth = Math.max(56, String(statusText).length * 12 + (isCamouflage ? 36 : 28))
         const statusBgX = -statusBgWidth / 2
-        // 固定摄像头：原图 44×62，不走机器狗缩放，且不展示 robot-bg
+        // 固定摄像头：原图 44×62，不走机器狗缩放，且不展示 robot-bg；选中用 active 图
         const isFixedCamera = typeInfo.img === 'robot-camera-normal'
           || robot.type === '固定摄像头'
           || robot.type === 'FIXED_CAMERA'
@@ -723,13 +768,15 @@ export default {
         // 选中时：名称距第二个 selected-corners 底部 2px（随四角偏移同步）
         const nameYSelected = defaultCornersBottomY + 2 + cornersOffsetY
         const statusYSelected = nameYSelected + 22
+        const cameraSelected = isFixedCamera && this.isRobotHighlighted(robot.robotId)
+        const iconFile = cameraSelected ? 'robot-camera-active' : typeInfo.img
         return {
           ...robot,
           name,
           pixel,
           nameWidth,
           isFixedCamera,
-          iconUrl: require(`@/assets/images/new-bi/${typeInfo.img}.png`),
+          iconUrl: require(`@/assets/images/new-bi/${iconFile}.png`),
           iconWidth: typeInfo.width,
           iconHeight: typeInfo.height,
           displayIconWidth,
@@ -990,9 +1037,7 @@ export default {
           }, this.map)
           if (!pixel) return null
           const pointName = point.pointName || point.name || point.pointCode || String(id)
-          // Figma 点位名 14px，左右各留 4px
-          const nameWidth = Math.max(28, Math.ceil(String(pointName).length * 14) + 8)
-          return { ...point, id, pixel, pointName, nameWidth }
+          return { ...point, id, pixel, pointName }
         })
         .filter(Boolean)
     },
@@ -1387,12 +1432,13 @@ export default {
       // 当前视口：默认等比适配（不变形）
       const defaultZoom = Math.max(0.1, Math.min(curW / mapWidth, curH / mapHeight))
 
-      // 最大比例：按两侧收缩后的可视宽高计算（更宽），仍取 min 保证等比不超出该边界
+      // 视口贴合上限（两侧收缩后可视区）；再放大 2.5 倍，仍用同一 zoom 保证宽高等比不变形
       const collapsedSize = this.getCollapsedViewportSize()
-      const maxZoom = Math.max(
+      const fitMaxZoom = Math.max(
         0.1,
         Math.min(collapsedSize.width / mapWidth, collapsedSize.height / mapHeight)
       )
+      const maxZoom = fitMaxZoom * 2.5
 
       this.defaultZoomValue = defaultZoom
       this.maxZoomValue = Math.max(defaultZoom, maxZoom)
@@ -1437,7 +1483,7 @@ export default {
       return this.minZoomValue
     },
     zoomIn() {
-      // 放大：宽高等比，上限为两侧收缩时的视口比例
+      // 放大：宽高等比共用同一 zoom，上限为视口贴合比例 × 2.5
       const step = Math.max(0.1, this.defaultZoomValue * 0.05)
       this.zoom = Math.min(this.maxZoomValue, Number((this.zoom + step).toFixed(3)))
       this.$nextTick(() => {
@@ -1730,7 +1776,7 @@ export default {
           stroke: #0f172a;
           stroke-width: 3;
         }
-        // MapTool 点位：Figma 黄点 + 名称，底部尖端为锚点
+        // MapTool 点位：map_point2 40×46，锚点距底 14px；名称在图片下方 1px
         &.is-map-tool,
         &.is-path-point {
           .map-point-marker {
@@ -1739,22 +1785,29 @@ export default {
           .map-point-name-fo {
             overflow: visible;
           }
+          .map-point-name-wrap {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            pointer-events: none;
+          }
           .map-point-name {
             box-sizing: border-box;
-            width: 100%;
-            height: 18px;
-            color: #D7EDFF;
+            width: fit-content;
+            max-width: 100%;
+            padding: 2px 4px;
+            border-radius: 2px;
+            background: #009465;
+            color: #FFF;
             font-family: "Microsoft YaHei", sans-serif;
             font-size: 14px;
+            font-style: normal;
             font-weight: 400;
-            line-height: 17.517px;
+            line-height: 17.517px; /* 125.119% */
             text-align: center;
             white-space: nowrap;
-            text-shadow:
-              1px 0 rgba(0, 19, 48, 0.85),
-              -1px 0 rgba(0, 19, 48, 0.85),
-              0 1px rgba(0, 19, 48, 0.85),
-              0 -1px rgba(0, 19, 48, 0.85);
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
           &.hovered .map-point-marker {
             filter: drop-shadow(0 0 4px rgba(255, 246, 69, 0.65));
@@ -1817,18 +1870,23 @@ export default {
           width: 100%;
           height: 20px;
           padding: 2px 4px;
-          color: #FFF;
+          color: #000;
           font-family: "Microsoft YaHei";
           font-size: 11px;
           font-weight: 600;
           line-height: 16px;
           text-align: center;
           white-space: nowrap;
+          // 1px 白色描边，保证地图上清晰可读
           text-shadow:
-            1px 0 rgba(0, 19, 48, 0.9),
-            -1px 0 rgba(0, 19, 48, 0.9),
-            0 1px rgba(0, 19, 48, 0.9),
-            0 -1px rgba(0, 19, 48, 0.9);
+            -1px -1px 0 #FFF,
+             1px -1px 0 #FFF,
+            -1px  1px 0 #FFF,
+             1px  1px 0 #FFF,
+             0   -1px 0 #FFF,
+             0    1px 0 #FFF,
+            -1px  0   0 #FFF,
+             1px  0   0 #FFF;
         }
         .robot-status-fo {
           overflow: visible;

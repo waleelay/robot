@@ -52,7 +52,7 @@
       </div>
 
     </div>
-    <MultimediaDetail ref="multimediaDetailRef" />
+    <MultimediaDetail ref="multimediaDetailRef" @deleted="handleDeleted" />
   </div>
 </template>
 
@@ -114,6 +114,22 @@ export default {
         tabIndex,
         simple: true
       })
+    },
+    // 详情内删除后刷新列表（图片 + 视频）
+    async handleDeleted() {
+      await this.refreshList()
+      this.$emit('deleted')
+    },
+    async refreshList() {
+      await this.getSnapData()
+      Object.keys(this.recordingData || {}).forEach(id => {
+        try { this.destroyRecordedHls(id) } catch (e) { /* ignore */ }
+      })
+      this.recordingData = {}
+      this.recordings = []
+      this.recordInfo.page = 0
+      await this.$nextTick()
+      await this.getPlayers()
     },
     async handleChangePage(type) {
       const key = this.tabIndex === 0 ? 'snapShotInfo' : 'recordInfo'

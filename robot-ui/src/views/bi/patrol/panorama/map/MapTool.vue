@@ -23,6 +23,7 @@
       <div
         v-for="(item, index) in displayOperList2"
         :key="item.key"
+        :title="item.title || item.name"
         @click="handleClickTool(item)"
         class="operation-item flx-center flex-column"
         :class="{
@@ -128,13 +129,15 @@ export default {
           icon: 'map-path',
           name: '路径',
           key: 'path',
-          action: 'showPath'
+          action: 'showPath',
+          title: '任务路径'
         },
         {
-          icon: 'map-point',
+          icon: 'map-point3',
           name: '点位',
           key: 'point',
-          action: 'showPoint'
+          action: 'showPoint',
+          title: '地图点位'
         },
         // {
         //   icon: 'map-angle',
@@ -152,7 +155,8 @@ export default {
           icon: 'map-location',
           name: '定位',
           key: 'location',
-          action: 'backCenter'
+          action: 'backCenter',
+          title: '回到中心'
         },
         // {
         //   icon: 'map-scale',
@@ -194,7 +198,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'deviceStats', 'taskPathPoints']),
+    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'deviceStats', 'taskPathPoints', 'robotLocation']),
     slamList() {
       return Array.isArray(this.slamMapList) ? this.slamMapList : []
     },
@@ -235,13 +239,19 @@ export default {
     },
     // 有gps定位功能的装备
     gisCountText() {
-      const exist = 2;
+      const locations = this.robotLocation || {}
+      const gpsDevices = Object.entries(locations).filter(([, location]) => {
+        const lat = location?.lat
+        const lng = location?.lng
+        return lat != null && lat !== '' && lng != null && lng !== ''
+      })
+      // console.log('有 lat/lng 的装备', gpsDevices.map(([robotId, location]) => ({ robotId, ...location })))
+      const exist = gpsDevices.length
       return `${exist}/${this.deviceStats?.total || 0}`
     }
   },
   mounted() {
     document.addEventListener('click', this.handleDocumentClick, true)
-    this.syncGlobalMapId()
   },
   beforeDestroy() {
     document.removeEventListener('click', this.handleDocumentClick, true)
@@ -257,8 +267,13 @@ export default {
     },
     syncGlobalMapId() {
       const slamId = this.currentSlam
-      const nextId = this.isSlam && slamId != null && slamId !== '' ? slamId : 'gis'
-      if (this.$store.state.websocketExtraData.globalMapId === nextId) return
+      const storeId = this.$store.state.websocketExtraData.globalMapId
+      // overview 未写入前（globalMapId 仍为空）不要默认写成 gis，否则会先闪 GIS 再切 SLAM
+      if (!storeId && !this.isSlam) return
+      // isSlam 已切真但 slamId 尚未到位时，不要回写成 gis
+      if (this.isSlam && (slamId == null || slamId === '')) return
+      const nextId = this.isSlam ? slamId : 'gis'
+      if (storeId === nextId) return
       this.setGlobalMapId(nextId)
     },
     selectMapType(type) {

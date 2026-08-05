@@ -19,7 +19,7 @@
         </div>
         <div class="flex1 mt10 h100 slam-map-wrap">
           <GlobalGisMap v-if="globalMapId === 'gis'" />
-          <GlobalSlamMap v-else :map="slamMapPayload" :show-labels="true" :enable-add-point="false" />
+          <GlobalSlamMap v-if="globalMapId && globalMapId !== 'gis'" :map="slamMapPayload" :show-labels="true" :enable-add-point="false" />
         </div>
       </div>
     </div>
@@ -46,8 +46,8 @@
             </div>
           </div>
         </div>
-        <Snapshot :tabIndex="tabIndex" />
-        <MultimediaDetail ref="multimediaDetailRef" />
+        <Snapshot ref="snapshotRef" :tabIndex="tabIndex" />
+        <MultimediaDetail ref="multimediaDetailRef" @deleted="handleMultimediaDeleted" />
       </div>
     </div>
   </div>
@@ -182,6 +182,9 @@ export default {
       this.$refs.multimediaDetailRef?.open({
         tabIndex: this.tabIndex
       })
+    },
+    handleMultimediaDeleted() {
+      this.$refs.snapshotRef?.refreshList?.()
     },
     async updateVideo(data) {
       // this.$nextTick(async () => {
