@@ -213,25 +213,15 @@
       }
       &.show-icon {
         &::before {
-          position: absolute; 
+          position: absolute;
+          top: 0;
+          left: 0;
           opacity: 1;
-          // top: -67px;
-          // left: -80.5px;
-          // width: 227px;
-          // height: 227px;
-          // background: url(~@/assets/images/new-bi/icon_bg.png) no-repeat center center;
-          // top: -31.5px;
-          // left: -9px;
-          // width: 100px;
-          // height: 100px;
-          // top: -31.5px;
-          // left: -9px;
           width: 60px;
           height: 60px;
           border-radius: 50%;
           border: 1px solid #159AFF;
           background: radial-gradient(50% 50% at 50% 50%, rgba(21, 154, 255, 0.50) 0%, rgba(6, 78, 133, 0.25) 100%);
-          // filter: blur(35.376625061035156px);
           transition: all linear 0.3s;
           content: '';
           z-index: -1;
@@ -247,6 +237,12 @@
         }
         &.show-icon-43-20::before {
           transform: translate(-50%, calc(-50% + 10px));
+        }
+        // 固定摄像头 44×62：光圈放大并按图标半高偏移，使图标处于圆心
+        &.show-icon-44-62::before {
+          width: 80px;
+          height: 80px;
+          transform: translate(-50%, calc(-50% + 31px));
         }
       }
       &.open, &:hover {

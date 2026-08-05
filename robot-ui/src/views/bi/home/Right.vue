@@ -1,7 +1,7 @@
 <template>
   <div class="right-div ml20 no-w-scroll mb20 mt105" :class="{ 'pr28': collapse, 'pr20 pl28': !collapse }" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', height: 'calc(100% - 154px)', overflowY: 'auto' }">
     <div class="container flex-column w100" style="flex-wrap: nowrap;">
-      <div class="box zbgl">
+      <div class="box bi-corner-box zbgl">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">装备概览</span> 
           <!-- <span class="flx-center more curp" @click="getMoreRobotInfo">
@@ -58,7 +58,7 @@
           </div>
         </div>
       </div>
-      <div class="box mt20 rwgl">
+      <div class="box bi-corner-box mt20 rwgl">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">任务概览</span> 
           <!-- <span class="flx-center more curp" @click="getMoreRobotInfo">
@@ -237,56 +237,9 @@ export default {
     }
     .box {
       width: 334px;
-      border-radius: 6px;
-      border: 2px solid rgba(0, 0, 0, 0.00);
-      background: rgba(0, 19, 48, 0.60);
-      box-shadow: 0 0 20px 0 rgba(1, 80, 170, 0.80) inset;
+      // border: 2px solid rgba(0, 0, 0, 0.00);
       &:not(.no_data) {
-        position: relative;
-        /* border: 2px solid transparent; */
-        border: none;
-        background: rgba(0, 19, 48, 0.60);
-        box-shadow: 0 0 20px 0 rgba(1, 80, 170, 0.80) inset, 0 12px 28px -8px rgba(0, 0, 0, 0.5);
-        isolation: isolate;
-        transition: all 0.25s ease;
         backdrop-filter: blur(0px);
-        z-index: 1;
-        &::before, &::after {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          content: '';
-          pointer-events: none;
-          z-index: 2;
-        }
-        &::before {
-          /* 1. 左上角 水平线 (从左向右 #2497FC → 透明) */
-          /* 2. 左上角 垂直线 (从上向下 #2497FC → 透明) */
-          /* 3. 右下角 水平线 (从右向左 #2497FC → 透明，因右下角从右下端点向左淡化) */
-          /* 4. 右下角 垂直线 (从下向上 #2497FC → 透明) */
-          background: linear-gradient(90deg, #2497FC 0%, rgba(36, 151, 252, 0) 100%) left top no-repeat,
-            linear-gradient(180deg, #2497FC 0%, rgba(36, 151, 252, 0) 100%) left top no-repeat,
-            linear-gradient(270deg, #2497FC 0%, rgba(36, 151, 252, 0) 100%) right bottom no-repeat,
-            linear-gradient(0deg, #2497FC 0%, rgba(36, 151, 252, 0) 100%) right bottom no-repeat;
-          background-size: 80px 2.5px, 2.5px 80px, 80px 2.5px, 2.5px 80px;
-          background-repeat: no-repeat;
-          border-radius: 6px;
-        }
-        &::after {
-          /* 1. 右上角 水平线 (从右向左 #2497FC → 透明) */
-          /* 3. 左下角 水平线 (从左向右 #2497FC → 透明) */
-          /* 2. 右上角 垂直线 (从上向下 #2497FC → 透明) */
-          /* 4. 左下角 垂直线 (从下向上 #2497FC → 透明) */
-          background: linear-gradient(270deg, #2497FC 0%, rgba(36, 151, 252, 0) 100%) right top no-repeat,
-            linear-gradient(180deg, #2497FC 0%, rgba(36, 151, 252, 0) 100%) right top no-repeat,
-            linear-gradient(90deg, #2497FC 0%, rgba(36, 151, 252, 0) 100%) left bottom no-repeat,
-            linear-gradient(0deg, #2497FC 0%, rgba(36, 151, 252, 0) 100%) left bottom no-repeat;
-          background-size: 80px 2.5px, 2.5px 80px, 80px 2.5px, 2.5px 80px;
-          background-repeat: no-repeat;
-          border-radius: 6px;
-        }
       }
       &.no_data {
         overflow: hidden;

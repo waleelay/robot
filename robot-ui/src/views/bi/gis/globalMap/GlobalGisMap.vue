@@ -590,12 +590,18 @@ export default {
       const { typeName, name, type, status, robotId, customStatusName, statusClass } = item
       // console.log(item.robotId, item.status, item.customStatusName);
       
-      const { width, height, img } = sizeObj[type] || sizeObj.default  
+      const { width, height, img } = sizeObj[type] || sizeObj.default
+      // 固定摄像头：不展示脚部标签，锚点距图标底部 4px
+      const isFixedCamera = img === 'robot-camera-normal' || type === '固定摄像头' || type === 'FIXED_CAMERA'
       const zoom = this.map.getZoom();
       const scale = 66 / 93
       const scaleAnchor = 33.5 / 85
       const iconSize = [(zoom * 5 + 3) * scale, zoom * 5 + 3]
       const iconAnchor = [(zoom * 4 + 13) * scaleAnchor, zoom * 4 + 13]
+      const footHtml = isFixedCamera
+        ? ''
+        : `<img src="${require(`@/assets/images/new-bi/${this.showSmall ? 'robot_foot1' : 'robot_foot'}.png`)}" style="margin-top: -5px;" />`
+      const anchorY = isFixedCamera ? Math.max(0, height - 4) : height
       
       // console.log('+++++++++', this.showSmall, robotId, this.robotAlarmObj?.[robotId]);
       return L.divIcon(
@@ -610,7 +616,7 @@ export default {
           //   </div>` : ''}
           html: `<div class="custom-point-img flx-center flex-column" style="flex-wrap: nowrap;">
             <img class="wp${width} hp${height}" src="${require(`@/assets/images/new-bi/${img}.png`)}" />
-            <img src="${require(`@/assets/images/new-bi/${this.showSmall ? 'robot_foot1' : 'robot_foot'}.png`)}" style="margin-top: -5px;" />
+            ${footHtml}
             ${this.showSmall ? '' : `
               <div class="custom-point-name mt2" style="">${name}</div>
               <div class="custom-point-status mt4 pr10 pl10">${customStatusName}</div>
@@ -621,7 +627,7 @@ export default {
           iconSize: null,
           // 偏移量
           // iconAnchor: [name.length * 7 > 24 ? name.length * 7 : 24, height],
-          iconAnchor: [0, height]
+          iconAnchor: [0, anchorY]
       });
     },
     getSearchRobot(robot) {
@@ -766,10 +772,23 @@ export default {
       // 添加点击事件
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
+        const isSame = this.activeMarkerIndex === marker.meta.index
         if (this.currenRouteName === 'biIndex') {
-          this.showPopup(marker);
+          if (isSame) {
+            this.activeMarkerIndex = ''
+            this.closePopup()
+            this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
+            return
+          }
+          this.activeMarkerIndex = marker.meta.index
+          this.popupVisible = true
+          // 先切换选中内容再定位，避免沿用上一台装备高度
+          this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
+          this.schedulePopupPositionUpdate()
+          this.clearLayer(null)
+          return
         }
-        if (this.activeMarkerIndex === marker.meta.index) {
+        if (isSame) {
           this.activeMarkerIndex = ''
         } else {
           this.activeMarkerIndex = marker.meta.index
@@ -793,34 +812,93 @@ export default {
       if (this.activeMarkerIndex === marker.meta.index) {
         this.closePopup()
         return
-      };
-      this.popupVisible = true;
-      setTimeout(() => this.updatePopupPosition())
+      }
+      this.popupVisible = true
+      this.schedulePopupPositionUpdate()
     },
     closePopup() {
-      this.popupVisible = false;
+      this.popupVisible = false
     },
-    updatePopupPosition(e) {
-      if (this.currenRouteName !== 'biIndex') return;
+    schedulePopupPositionUpdate() {
+      if (this.currenRouteName !== 'biIndex' || !this.popupVisible) return
+      // 双 nextTick：等选中装备内容渲染完再量高，避免切换装备错位
+      this.$nextTick(() => {
+        this.$nextTick(() => this.updatePopupPosition({ correct: true }))
+      })
+    },
+    updatePopupPosition(options = {}) {
+      const correct = !!(options && options.correct)
+      if (this.currenRouteName !== 'biIndex') return
       const marker = this.pointMarkers[this.activeMarkerIndex]
-      if (!this.popupVisible || !this.map || !marker) return;
-      const latLng = marker.getLatLng();
-      if (!latLng) return;
-      const point = this.map.latLngToContainerPoint(latLng);
+      if (!this.popupVisible || !this.map || !marker) return
+      const latLng = marker.getLatLng()
+      if (!latLng) return
+      const point = this.map.latLngToContainerPoint(latLng)
       const mapOffset = this.getMapOffsetInScaleWrapper()
       const robotEl = this.$refs.robot1Ref && this.$refs.robot1Ref.$el
       const robotSize = this.getElementSizeInScaleWrapper(robotEl)
-      const context = this.getScaleContext()
-      const maxLeft = Math.max(0, context.width - robotSize.width)
-      const maxTop = Math.max(0, context.height - robotSize.height)
-      const left = mapOffset.x + point.x + 29
-      const top = mapOffset.y + point.y - robotSize.height - 28
-
+      if (!robotSize.height) {
+        if (!this._popupPosRetry) this._popupPosRetry = 0
+        if (this._popupPosRetry < 8) {
+          this._popupPosRetry += 1
+          this.$nextTick(() => this.updatePopupPosition({ correct }))
+        }
+        return
+      }
+      this._popupPosRetry = 0
+      const robot = marker.meta?.robot || {}
+      const typeInfo = ROBOT_TYPE_INFO[robot.type] || ROBOT_TYPE_INFO.default
+      const isFixedCamera = typeInfo.img === 'robot-camera-normal'
+        || robot.type === '固定摄像头'
+        || robot.type === 'FIXED_CAMERA'
+      // 选中光圈默认 60px；摄像头 80px，均以 latlng（图标水平中心）为圆心
+      const haloRadius = isFixedCamera ? 40 : 30
+      const gap = 1
+      // guideline.png（高 47、bottom:-47px）最底边作为模态底部对齐点
+      const guidelineNaturalH = 47
+      const anchorX = mapOffset.x + point.x
+      const anchorY = mapOffset.y + point.y
+      // 左右：弹窗左缘贴光圈右缘；垂直：guideline 最底边对齐地图锚点 Y（lat）
       this.popupOffset = {
-        x: Math.min(Math.max(0, left), maxLeft),
-        y: Math.min(Math.max(0, top), maxTop)
-      };
-      // this.popupOffset = { x: point.x, y: point.y };
+        x: anchorX + haloRadius + gap,
+        y: anchorY - robotSize.height - guidelineNaturalH
+      }
+      if (!correct) return
+      const token = (this._popupPosToken = (this._popupPosToken || 0) + 1)
+      this.$nextTick(() => {
+        requestAnimationFrame(() => {
+          if (token !== this._popupPosToken || !this.popupVisible) return
+          const el = this.$refs.robot1Ref && this.$refs.robot1Ref.$el
+          const tipEl = this.$refs.robot1Ref && this.$refs.robot1Ref.$refs && this.$refs.robot1Ref.$refs.guidelineRef
+          if (!el) return
+          // 地图可能已平移，重新取锚点
+          const latest = this.pointMarkers[this.activeMarkerIndex]
+          if (!latest || !this.map) return
+          const latestLatLng = latest.getLatLng()
+          if (!latestLatLng) return
+          const latestPoint = this.map.latLngToContainerPoint(latestLatLng)
+          const latestMapOffset = this.getMapOffsetInScaleWrapper()
+          const latestAnchorX = latestMapOffset.x + latestPoint.x
+          const latestAnchorY = latestMapOffset.y + latestPoint.y
+          const modalRect = this.viewportRectToScaleRect(el.getBoundingClientRect())
+          const dx = modalRect.left - (latestAnchorX + haloRadius + gap)
+          let dy = 0
+          if (tipEl) {
+            const tipRect = this.viewportRectToScaleRect(tipEl.getBoundingClientRect())
+            const guidelineBottomY = tipRect.top + tipRect.height
+            dy = guidelineBottomY - latestAnchorY
+          } else {
+            const h = this.getElementSizeInScaleWrapper(el).height || robotSize.height
+            dy = (modalRect.top + h + guidelineNaturalH) - latestAnchorY
+          }
+          if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            this.popupOffset = {
+              x: this.popupOffset.x - dx,
+              y: this.popupOffset.y - dy
+            }
+          }
+        })
+      })
     },
     getPopupContainer(data) {
       const components = [Robot, Uav, UavPort, Battery]

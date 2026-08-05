@@ -545,8 +545,8 @@ const actions = {
     }
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data)
-      dispatch('syncRobotEvent', event)
-      dispatch('websocketExtraData/syncRobot', event, { root: true })
+      // dispatch('syncRobotEvent', event)
+      // dispatch('websocketExtraData/syncRobot', event, { root: true })
       dispatch('syncSessionEvent', event)
       dispatch('syncControlEvent', event)
       dispatch('syncIntercomCallEvent', event)

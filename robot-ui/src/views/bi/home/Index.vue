@@ -38,6 +38,7 @@
         @changeSlamMap="changeSlamMap"
         @setCenter="setCenter"
         @togglePath="togglePath"
+        @toggleTaskPaths="toggleTaskPaths"
       />
       <!-- <div class="map-footer"></div> -->
     </div>
@@ -156,6 +157,9 @@ export default {
     },
     togglePath(visible) {
       this.$refs.globalMapRef?.togglePath?.(visible)
+    },
+    toggleTaskPaths(visible) {
+      this.$refs.globalMapRef?.toggleTaskPaths?.(visible)
     },
     onPathVisibleChange(visible) {
       const tool = this.$refs.mapToolRef

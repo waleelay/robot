@@ -26,8 +26,12 @@
         @click="handleClickTool(item)"
         class="operation-item flx-center flex-column"
         :class="{
-          'is-active': (item.key === 'point' || item.key === 'path') ? pathActive : selectedOper2 === item.key,
-          'is-disabled': item.key === 'point' && !pathOperable
+          'is-active': item.key === 'path'
+            ? pathActive
+            : item.key === 'point'
+              ? pointActive
+              : selectedOper2 === item.key,
+          'is-disabled': (item.key === 'point' && !pathOperable) || (item.key === 'path' && isSlam && !taskPathOperable)
         }"
       >
         <template v-if="index === 10">
@@ -52,22 +56,31 @@
       <div ref="viewChangeRef" class="view-change flx-center wp50 hp50" @click.stop="toggleViewContainer">
         <img src="../../../../../assets/images/new-bi/view.png" width="44px" height="44px" style="border-radius: 50%;" />
       </div>
-      <div ref="viewContainerRef" v-show="showViewContainer" class="view-container p20 wp274 flex-column" @click.stop :class="{ 'hp332': slamList.length && selectType === 'slam', 'hp145': !slamList.length }">
+      <div ref="viewContainerRef" v-show="showViewContainer" class="view-container bi-corner-box p20 wp274 flex-column" @click.stop :class="{ 'hp332': slamList.length && selectType === 'slam', 'hp145': !slamList.length }">
         <div class="title">地图选择</div>
         <div class="d-flex mt8">
           <div class="img-view wp112 hp63" :class="{ 'is-active': currentType === 'gis' && selectType !== 'slam' }" @click="selectMapType('gis')">
             <img src="../../../../../assets/images/new-bi/gis-view.png" alt="" srcset="" class="w100 h100">
-            <span>GIS地图</span>
+            <span class="type-name">GIS地图</span>
+            <span class="count p2">({{ gisCountText }})</span>
           </div>
           <div class="img-view wp112 hp63 ml10" :class="{ 'is-active': currentType === 'slam' || selectType === 'slam' }" @click="selectMapType('slam')">
             <img src="../../../../../assets/images/new-bi/slam-view.png" alt="" srcset="" class="w100 h100">
-            <span>SLAM地图</span>
+            <span class="type-name">SLAM地图</span>
           </div>
         </div>
         <div v-if="selectType === 'slam'" class="slam-list mt20 pb6 flex1 common-scroll">
           <div v-for="item in slamList" :key="item.id" class="item flx-justify-between" :class="{ 'is-active': String(currentSlam) === String(item.id) }" @click="selectSlamMap(item)">
             <span class="text-ellipsis" :title="item.mapName">{{ item.mapName }}</span>
-            <svg-icon v-if="String(currentSlam) === String(item.id)" icon-class="check" style="font-size: 16px;"></svg-icon>
+            <div class="flx-align-center">
+              <span class="ml10">{{ getSlamRobotCount(item) }}台</span>
+              <!-- <svg-icon v-if="String(currentSlam) === String(item.id)" icon-class="check" class="ml10" style="font-size: 16px;"></svg-icon> -->
+            </div>
+          </div>
+        </div>
+        <div v-else class="desc mt16 pt10 pb10">
+          <div class="text red pl8 text-ellipsis">
+            GIS地图仅展示支持GPS定位的设备
           </div>
         </div>
       </div>
@@ -177,10 +190,11 @@ export default {
       selectType: this.isSlam ? 'slam' : 'gis',
       showViewContainer: false,
       pathActive: false,
+      pointActive: false,
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot']),
+    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'deviceStats', 'taskPathPoints']),
     slamList() {
       return Array.isArray(this.slamMapList) ? this.slamMapList : []
     },
@@ -191,11 +205,10 @@ export default {
         || this.slamList.find(item => String(item.id) === String(id))
         || null
     },
-    // GIS 显示「路径」，SLAM 显示「点位」；视角仅 GIS 展示
+    // GIS / SLAM 均显示「路径」；「点位」仅 SLAM；视角仅 GIS
     displayOperList2() {
       return this.operList2.filter(item => {
         if (item.key === 'angle' && !this.showAngle) return false
-        if (item.key === 'path') return !this.isSlam
         if (item.key === 'point') return this.isSlam
         return true
       })
@@ -208,6 +221,22 @@ export default {
       const group = this.slamOfRobot?.[String(slamId)]
       const points = group?.points || this.currentSlamMapInfo?.points
       return Array.isArray(points) && points.length > 0
+    },
+    // SLAM 下「路径」是否可操作：当前地图是否有关联任务路径
+    taskPathOperable() {
+      if (!this.isSlam) return true
+      const slamId = this.currentSlam
+      if (slamId === undefined || slamId === null || slamId === '') return false
+      const paths = this.taskPathPoints || {}
+      return Object.keys(paths).some(taskId => {
+        const data = paths[taskId]
+        return data && String(data.mapId) === String(slamId) && Array.isArray(data.pathPoints) && data.pathPoints.length > 0
+      })
+    },
+    // 有gps定位功能的装备
+    gisCountText() {
+      const exist = 2;
+      return `${exist}/${this.deviceStats?.total || 0}`
     }
   },
   mounted() {
@@ -219,6 +248,13 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setMapSearchValue', 'setGlobalMapId']),
+    // 统计指定 SLAM 地图关联的装备数量
+    getSlamRobotCount(mapItem) {
+      const id = mapItem?.id
+      if (id === undefined || id === null || id === '') return 0
+      const robots = this.slamOfRobot?.[String(id)]?.robots
+      return Array.isArray(robots) ? robots.length : 0
+    },
     syncGlobalMapId() {
       const slamId = this.currentSlam
       const nextId = this.isSlam && slamId != null && slamId !== '' ? slamId : 'gis'
@@ -266,6 +302,7 @@ export default {
     },
     handleClickTool(item) {
       if (item.key === 'point' && !this.pathOperable) return
+      if (item.key === 'path' && this.isSlam && !this.taskPathOperable) return
       this[item.action](item.key);
     },
     handleSearch() {
@@ -278,25 +315,35 @@ export default {
       this.setMapSearchValue(this.searchValue)
     },
     changeLayer() {},
-    // GIS 地图：切换内置路径点（与 Robot1「显示路径」相同）
+    // GIS：内置路径；SLAM：当前地图全部任务路径
     showPath() {
       this.pathActive = !this.pathActive
+      if (this.isSlam) {
+        this.$emit('toggleTaskPaths', this.pathActive)
+        return
+      }
       this.$emit('togglePath', this.pathActive)
     },
     // SLAM 地图：切换点位显示
     showPoint() {
       if (!this.pathOperable) {
-        this.pathActive = false
+        this.pointActive = false
         this.$emit('togglePath', false)
         return
       }
-      this.pathActive = !this.pathActive
-      this.$emit('togglePath', this.pathActive)
+      this.pointActive = !this.pointActive
+      this.$emit('togglePath', this.pointActive)
     },
     resetPathActive() {
-      if (!this.pathActive) return
-      this.pathActive = false
-      this.$emit('togglePath', false)
+      if (this.pathActive) {
+        this.pathActive = false
+        if (this.isSlam) this.$emit('toggleTaskPaths', false)
+        else this.$emit('togglePath', false)
+      }
+      if (this.pointActive) {
+        this.pointActive = false
+        this.$emit('togglePath', false)
+      }
     },
     changeAngle() {
       this.$emit('changeMapAngle')
@@ -330,7 +377,16 @@ export default {
     },
     pathOperable(val) {
       // 仅当地图本身无点位时关闭；选中/打开装备不影响点位渲染
-      if (!val) this.resetPathActive()
+      if (!val && this.pointActive) {
+        this.pointActive = false
+        this.$emit('togglePath', false)
+      }
+    },
+    taskPathOperable(val) {
+      if (!val && this.isSlam && this.pathActive) {
+        this.pathActive = false
+        this.$emit('toggleTaskPaths', false)
+      }
     }
   }
 }
@@ -426,11 +482,6 @@ export default {
     position: absolute;
     top: -80px;
     right: 60px;
-    border-radius: 6px;
-    border: 2px solid rgba(0, 0, 0, 0.00);
-    background: rgba(0, 19, 48, 0.90);
-    box-shadow: 0 0 20px 0 rgba(1, 80, 170, 0.80) inset;
-    backdrop-filter: blur(5px);
     .title {
       color: #FFF;
       font-family: "Microsoft YaHei";
@@ -445,14 +496,28 @@ export default {
       &.is-active {
         border: 2px solid #0BF9FE;
       }
-      span {
+      .type-name, .count {
         position: absolute;
+        color: #FFF;
+      }
+      .type-name {
         bottom: 0;
         left: 6px;
-        color: #FFF;
         font-family: "Microsoft YaHei";
         font-size: 14px;
         line-height: 18px;
+      }
+      .count {
+        top: 4px;
+        right: 4px;
+        border-radius: 2px;
+        background: rgba(0, 0, 0, 0.60);
+        color: #FFF;
+        font-family: Bahnschrift;
+        font-size: 12px;
+        font-weight: 350;
+        letter-spacing: 0.857px;
+        line-height: 14px;
       }
     }
     .slam-list {
@@ -473,6 +538,45 @@ export default {
         }
         .svg-icon {
           height: 19px;
+        }
+      }
+    }
+    .desc{
+      position: relative;
+      &::before, &::after {
+        position: absolute;
+        left: 0;
+        width: 100%;
+        height: 1px;
+        background: url("../../../../../assets/images/new-bi/border.svg") center no-repeat;
+        content: '';
+      }
+      &::before {
+        top: 0;
+      }
+      &::after {
+        bottom: 0;
+      }
+      .text {
+        position: relative;
+        color: #D0DEEE;
+        font-family: "Alibaba PuHuiTi";
+        font-size: 12px;
+        line-height: 16px;
+        letter-spacing: 0.857px;
+        &::before {
+          position: absolute;
+          top: 6px;
+          left: 0;
+          width: 4px;
+          height: 4px;
+          border-radius: 50%;
+          content: '';
+        }
+        &.red {
+          &::before {
+            background: #FF0000;
+          }
         }
       }
     }

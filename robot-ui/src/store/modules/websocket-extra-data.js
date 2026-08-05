@@ -4,7 +4,8 @@ import Vue from "vue";
 import {
   SLAM_POINTS,
   ENABLE_LIANTONG_SLAM_MOCK,
-  getLiantongSlamMock
+  getLiantongSlamMock,
+  getLiantongFixedCameraMock
 } from "../../views/bi/js/constants/gisMapPoints";
 
 const state = {
@@ -152,6 +153,13 @@ const actions = {
       }
       if (!tasks.some(item => String(item.taskId) === String(mock.taskId))) {
         tasks.push(mock.task)
+      }
+      const cameraMock = getLiantongFixedCameraMock()
+      if (!devices.some(item => String(item.robotId) === String(cameraMock.robotId))) {
+        devices.push(cameraMock.device)
+      }
+      if (cameraMock.task && !tasks.some(item => String(item.taskId) === String(cameraMock.taskId))) {
+        tasks.push(cameraMock.task)
       }
     }
 

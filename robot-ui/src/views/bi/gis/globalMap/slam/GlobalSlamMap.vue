@@ -4,7 +4,7 @@
     :class="{ 'fit-visible-area': !!visibleLayout }"
     :style="visibleAreaStyle"
   >
-    <template v-if="hasPreview">
+    <template v-if="hasPreview && !mapLoadFailed">
       <div
         ref="viewportRef"
         class="map-preview-viewport flx-center w100 h100"
@@ -30,61 +30,32 @@
               :viewBox="`0 0 ${map.previewWidth} ${map.previewHeight}`"
               @click="handleMapClick"
             >
-              <!-- Robot1「显示路径」：polyline + 路径点；MapTool「点位」：地图点位，互不影响 -->
-              <polyline v-if="showPolyline && polylinePoints" :points="polylinePoints" class="map-preview-path" />
-              <!-- MapTool「点位」：逻辑不变 -->
-              <template v-if="showPath">
+              <!-- 底层：未置顶的任务路径 -->
+              <g
+                v-for="path in baseDisplayTaskPaths"
+                :key="`task-path-${path.taskId}`"
+                class="map-task-path-layer"
+                @mouseenter="raiseTaskPath(path.taskId)"
+                @mouseleave="clearRaisedTaskPath"
+              >
+                <polyline
+                  v-if="path.polylinePoints"
+                  :points="path.polylinePoints"
+                  class="map-preview-path-hit"
+                />
+                <polyline
+                  v-if="path.polylinePoints"
+                  :points="path.polylinePoints"
+                  class="map-preview-path"
+                  :style="{ stroke: path.color }"
+                />
+                <title>{{ path.taskName }}</title>
                 <g
-                  v-for="point in drawablePoints"
-                  :key="point.id"
-                  :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
-                  class="map-preview-point is-map-tool"
-                  :class="{
-                    selected: point.id === selectedPointId,
-                    inPath: isPointInPath(point),
-                    hovered: point.id === hoveredPointId
-                  }"
-                  @mouseenter="hoveredPointId = point.id"
-                  @mouseleave="hoveredPointId = null"
-                  @click.stop="handlePointClick(point)"
-                >
-                  <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
-                  <image
-                    :href="mapPointMarker"
-                    x="-10"
-                    y="-26"
-                    width="20"
-                    height="26"
-                    class="map-point-marker"
-                  />
-                  <foreignObject
-                    class="map-point-name-fo"
-                    :x="-point.nameWidth / 2"
-                    y="4"
-                    :width="point.nameWidth"
-                    height="20"
-                  >
-                    <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
-                  </foreignObject>
-                  <title>{{ point.pointName }} / {{ point.pointCode || point.id }} / 任务路径点</title>
-                </g>
-              </template>
-              <!-- 装备任务路径点：按顺序标注 Figma 右上角序号，相对点位图标偏移 -->
-              <template v-if="showPolyline">
-                <g
-                  v-for="point in drawablePathPoints"
-                  :key="`path-${point.id}`"
+                  v-for="point in path.points"
+                  :key="`task-path-${path.taskId}-${point.id}`"
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
                   class="map-preview-point is-path-point"
-                  :class="{
-                    selected: point.id === selectedPointId,
-                    hovered: point.id === hoveredPointId
-                  }"
-                  @mouseenter="hoveredPointId = point.id"
-                  @mouseleave="hoveredPointId = null"
-                  @click.stop="handlePointClick(point)"
                 >
-                  <!-- MapTool 未开点位时，路径点仍展示图标+名称 -->
                   <template v-if="!showPath">
                     <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
                     <image
@@ -105,14 +76,55 @@
                       <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
                     </foreignObject>
                   </template>
-                  <!-- Figma：20×20 序号，相对点位图标右上角 -->
-                  <g class="path-seq-badge" transform="translate(6, -40)" pointer-events="none">
+                  <g
+                    v-if="shouldShowPathSeq(path.taskId)"
+                    class="path-seq-badge"
+                    transform="translate(6, -40)"
+                    pointer-events="none"
+                  >
                     <image :href="pathPointBadge" x="0" y="0" width="20" height="20" />
                     <text x="10" y="14.5" text-anchor="middle" class="path-seq-text">{{ point.pathIndex }}</text>
                   </g>
-                  <title>{{ point.pointName }} / 路径序号 {{ point.pathIndex }}</title>
+                </g>
+              </g>
+              <!-- MapTool「点位」：未置顶 -->
+              <template v-if="showPath && !pointsRaised">
+                <g
+                  v-for="point in drawablePoints"
+                  :key="`map-point-${point.id}`"
+                  :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
+                  class="map-preview-point is-map-tool"
+                  :class="{
+                    selected: point.id === selectedPointId,
+                    inPath: isPointInPath(point),
+                    hovered: point.id === hoveredPointId
+                  }"
+                  @mouseenter="onMapPointEnter(point)"
+                  @mouseleave="onMapPointLeave"
+                  @click.stop="handlePointClick(point)"
+                >
+                  <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
+                  <image
+                    :href="mapPointMarker"
+                    x="-10"
+                    y="-26"
+                    width="20"
+                    height="26"
+                    class="map-point-marker"
+                  />
+                  <foreignObject
+                    class="map-point-name-fo"
+                    :x="-point.nameWidth / 2"
+                    y="4"
+                    :width="point.nameWidth"
+                    height="20"
+                  >
+                    <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
+                  </foreignObject>
+                  <title>{{ point.pointName }} / {{ point.pointCode || point.id }}</title>
                 </g>
               </template>
+              <!-- 装备 -->
               <g
                 v-for="robot in drawableRobots"
                 :key="robot.robotId"
@@ -120,10 +132,12 @@
                 class="map-preview-robot custom-point"
                 :class="[robot.statusClass, { 'show-icon': isRobotHighlighted(robot.robotId), 'is-static': !enableRobotClick }]"
                 @click.stop="handleRobotClick($event, robot)"
+                @mouseenter="onRobotPathHover(robot)"
+                @mouseleave="clearRaisedTaskPath"
               >
-                <!-- 选中光圈：Figma 50×54，相对 tip 偏移 (-25, -47) -->
+                <!-- 选中光圈：固定摄像头不展示 -->
                 <image
-                  v-if="isRobotHighlighted(robot.robotId)"
+                  v-if="isRobotHighlighted(robot.robotId) && !robot.isFixedCamera"
                   :href="robotSelectedHalo"
                   x="-25"
                   y="-47"
@@ -132,19 +146,31 @@
                   class="robot-selected-halo"
                   pointer-events="none"
                 />
-                <!-- 默认/选中底图：Figma 39.68×42.97 ≈ 40×43 -->
-                <image :href="robotBg" x="-20" y="-43" width="40" height="43" class="robot-bg" />
-                <!-- 装备图标：Figma 机器狗展示尺寸 23.017×16.525 -->
+                <!-- 默认/选中底图：固定摄像头不展示 -->
+                <image
+                  v-if="!robot.isFixedCamera"
+                  :href="robotBg"
+                  x="-20"
+                  y="-43"
+                  width="40"
+                  height="43"
+                  class="robot-bg"
+                />
+                <!-- 装备图标：普通装备按 Figma 缩放；固定摄像头 44×62，锚点距底部 4px -->
                 <image
                   :href="robot.iconUrl"
-                  :x="-robot.displayIconWidth / 2"
-                  :y="-(23 + robot.displayIconHeight / 2)"
+                  :x="robot.iconX"
+                  :y="robot.iconY"
                   :width="robot.displayIconWidth"
                   :height="robot.displayIconHeight"
                   class="robot-type-icon"
                 />
-                <!-- 选中四角：Figma 66×6（含发光 viewBox 72×12），上下各一，底边垂直翻转 -->
-                <template v-if="isRobotHighlighted(robot.robotId)">
+                <!-- 选中四角：Figma 66×6（含发光 viewBox 72×12），上下各一，底边垂直翻转；摄像头按图标居中偏移 -->
+                <g
+                  v-if="isRobotHighlighted(robot.robotId)"
+                  :transform="robot.cornersOffsetY ? `translate(0, ${robot.cornersOffsetY})` : undefined"
+                  pointer-events="none"
+                >
                   <image
                     :href="robotSelectedCorners"
                     x="-36"
@@ -152,9 +178,8 @@
                     width="72"
                     height="12"
                     class="robot-selected-corners"
-                    pointer-events="none"
                   />
-                  <g transform="matrix(1 0 0 -1 0 20)" pointer-events="none">
+                  <g transform="matrix(1 0 0 -1 0 20)">
                     <image
                       :href="robotSelectedCorners"
                       x="-36"
@@ -164,11 +189,11 @@
                       class="robot-selected-corners"
                     />
                   </g>
-                </template>
+                </g>
                 <foreignObject
                   class="robot-name-fo"
                   :x="-robot.nameWidth / 2"
-                  y="0"
+                  :y="isRobotHighlighted(robot.robotId) ? robot.nameYSelected : robot.nameY"
                   :width="robot.nameWidth"
                   height="20"
                 >
@@ -181,7 +206,7 @@
                   v-if="!showSmall"
                   class="robot-status-fo"
                   :x="robot.statusBgX"
-                  y="22"
+                  :y="isRobotHighlighted(robot.robotId) ? robot.statusYSelected : robot.statusY"
                   :width="robot.statusBgWidth"
                   height="20"
                 >
@@ -192,9 +217,102 @@
                   >{{ robot.customStatusName }}</div>
                 </foreignObject>
               </g>
+              <!-- 置顶：地图点位 -->
+              <template v-if="showPath && pointsRaised">
+                <g
+                  v-for="point in drawablePoints"
+                  :key="`map-point-raised-${point.id}`"
+                  :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
+                  class="map-preview-point is-map-tool is-raised"
+                  :class="{
+                    selected: point.id === selectedPointId,
+                    inPath: isPointInPath(point),
+                    hovered: point.id === hoveredPointId
+                  }"
+                  @mouseenter="onMapPointEnter(point)"
+                  @mouseleave="onMapPointLeave"
+                  @click.stop="handlePointClick(point)"
+                >
+                  <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
+                  <image
+                    :href="mapPointMarker"
+                    x="-10"
+                    y="-26"
+                    width="20"
+                    height="26"
+                    class="map-point-marker"
+                  />
+                  <foreignObject
+                    class="map-point-name-fo"
+                    :x="-point.nameWidth / 2"
+                    y="4"
+                    :width="point.nameWidth"
+                    height="20"
+                  >
+                    <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
+                  </foreignObject>
+                  <title>{{ point.pointName }} / {{ point.pointCode || point.id }}</title>
+                </g>
+              </template>
+              <!-- 置顶：任务路径（线条 + 点位） -->
+              <g
+                v-if="raisedDisplayTaskPath"
+                :key="`task-path-raised-${raisedDisplayTaskPath.taskId}`"
+                class="map-task-path-layer is-raised"
+                @mouseenter="raiseTaskPath(raisedDisplayTaskPath.taskId)"
+                @mouseleave="clearRaisedTaskPath"
+              >
+                <polyline
+                  v-if="raisedDisplayTaskPath.polylinePoints"
+                  :points="raisedDisplayTaskPath.polylinePoints"
+                  class="map-preview-path-hit"
+                />
+                <polyline
+                  v-if="raisedDisplayTaskPath.polylinePoints"
+                  :points="raisedDisplayTaskPath.polylinePoints"
+                  class="map-preview-path"
+                  :style="{ stroke: raisedDisplayTaskPath.color }"
+                />
+                <title>{{ raisedDisplayTaskPath.taskName }}</title>
+                <g
+                  v-for="point in raisedDisplayTaskPath.points"
+                  :key="`task-path-raised-${raisedDisplayTaskPath.taskId}-${point.id}`"
+                  :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
+                  class="map-preview-point is-path-point"
+                >
+                  <template v-if="!showPath">
+                    <rect x="-14" y="-28" width="28" height="50" fill="transparent" />
+                    <image
+                      :href="mapPointMarker"
+                      x="-10"
+                      y="-26"
+                      width="20"
+                      height="26"
+                      class="map-point-marker"
+                    />
+                    <foreignObject
+                      class="map-point-name-fo"
+                      :x="-point.nameWidth / 2"
+                      y="4"
+                      :width="point.nameWidth"
+                      height="20"
+                    >
+                      <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name">{{ point.pointName }}</div>
+                    </foreignObject>
+                  </template>
+                  <g
+                    v-if="shouldShowPathSeq(raisedDisplayTaskPath.taskId)"
+                    class="path-seq-badge"
+                    transform="translate(6, -40)"
+                    pointer-events="none"
+                  >
+                    <image :href="pathPointBadge" x="0" y="0" width="20" height="20" />
+                    <text x="10" y="14.5" text-anchor="middle" class="path-seq-text">{{ point.pathIndex }}</text>
+                  </g>
+                </g>
+              </g>
             </svg>
           </template>
-          <el-empty v-else :description="previewImageStatus" />
           <span class="start-point" :style="startPointStyle">起始地</span>
           <div
             v-show="locationPoint"
@@ -215,11 +333,11 @@
           </div>
           <!-- 放在 stage 内，随 zoom / translate 同步，避免缩放后 getBoundingClientRect 错位 -->
           <div v-show="showContextMenu" class="context-menu d-flex" style="width: inherit;" :style="contextMenuStyle">
-            <div class="flx-center div1">
+            <div class="flx-center div1 bi-corner-box">
               <span>派遣设备前往该点</span>
               <svg-icon icon-class="right" class="ml4" />
             </div>
-            <div v-if="normalRobots.length" class="div2 ml10">
+            <div v-if="normalRobots.length" class="div2 ml10 bi-corner-box">
               <div v-for="robot in normalRobots" :key="robot.robotId" class="item flx-justify-between p6" :class="robot.statusClass">
                 <span class="name pl14" :class="robot.statusClass">{{ robot.name }}</span>
                 <span class="oper ml4" :class="robot.customStatusName === '空闲中' ? 'blue' : 'orange '" @click="handleSelectRobot(robot)">
@@ -264,7 +382,13 @@
         </transition>
       </div>
     </template>
-    <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="当前地图暂无预览" />
+    <Empty
+      v-else
+      width="126px"
+      :opacity="0.7"
+      textColor="#BEE1FF"
+      :text="mapLoadFailed ? '地图加载失败' : '当前地图暂无预览'"
+    />
     <RobotControlPart ref="robotControlPartRef" />
     <RobotCarControlPart ref="robotCarControlPartRef" />
     <Robot1 :showAnimate="showAnimate" :style="popupStyle" ref="robot1Ref" @showControlPart="showControlPart" @showPath="showPathArea" @showSlam="showSlam" @showArea="showDashedArea" @clear="clear" />
@@ -293,6 +417,8 @@ const PATH_POINT_BADGE = require('@/assets/images/new-bi/path-point-badge.svg')
 // Figma 机器狗图标展示 23.017×16.525，对应源图 38×28
 const ROBOT_ICON_SCALE_X = 23.017 / 38
 const ROBOT_ICON_SCALE_Y = 16.525 / 28
+// MapTool「路径」多任务折线配色
+const TASK_PATH_COLORS = ['#2563EB', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4', '#EF4444']
 
 export default {
   name: 'BiPatrolSlam',
@@ -329,6 +455,7 @@ export default {
       imageUrl: '',
       previewImageStatus: '地图预览加载中',
       mapLoading: false,
+      mapLoadFailed: false,
       imageObjectUrl: '',
       imageLoadSeq: 0,
       hoveredPointId: null,
@@ -371,8 +498,15 @@ export default {
         // },
       ],
       showPath: false,
-      // Robot1「显示路径」：仅控制任务路径 polyline，与 MapTool 点位无关
+      // Robot1「显示路径」：仅控制当前选中装备任务路径
       showPolyline: false,
+      // MapTool「路径」：当前 SLAM 地图全部任务路径
+      showAllTaskPaths: false,
+      // 悬停置顶：地图点位 / 某条任务路径
+      pointsRaised: false,
+      raisedTaskPathId: null,
+      // Robot1「显示路径」在全量路径已开时钉住的任务路径（等同悬停效果，不受 mouseleave 清除）
+      pinnedTaskPathId: null,
       showArea: false,
       showContextMenu: false,
       locationLabel: '临时点',
@@ -380,7 +514,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds', 'taskPathPoints']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds', 'taskPathPoints', 'taskData']),
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
@@ -465,6 +599,79 @@ export default {
       return this.toDrawablePoints(this.activeTaskPathData.pathPoints)
         .map((point, index) => ({ ...point, pathIndex: index + 1 }))
     },
+    // MapTool「路径」：当前地图全部任务路径（含配色与名称）
+    mapTaskPaths() {
+      const mapId = this.map?.id
+      if (mapId === undefined || mapId === null) return []
+      const entries = Object.entries(this.taskPathPoints || {})
+      const list = []
+      entries.forEach(([taskId, data]) => {
+        if (!data || String(data.mapId) !== String(mapId)) return
+        if (!Array.isArray(data.pathPoints) || !data.pathPoints.length) return
+        const points = this.toDrawablePoints(data.pathPoints)
+          .map((point, pathIndex) => ({ ...point, pathIndex: pathIndex + 1 }))
+        if (points.length < 1) return
+        const polylinePoints = points.length >= 2
+          ? points.map(point => `${point.pixel.x},${point.pixel.y}`).join(' ')
+          : ''
+        const taskInfo = this.taskData?.[taskId] || {}
+        list.push({
+          taskId,
+          taskName: taskInfo.name || taskInfo.taskName || `任务 ${taskId}`,
+          color: TASK_PATH_COLORS[list.length % TASK_PATH_COLORS.length],
+          points,
+          polylinePoints
+        })
+      })
+      return list
+    },
+    // Robot1 单装备路径层（与 MapTool 全量路径合并展示）
+    robot1TaskPathLayer() {
+      if (!this.showPolyline || !this.activeTaskPathData) return null
+      const robot = this.robotBaseInfo?.[this.selectedShowRobotId] || {}
+      const taskId = robot.runningTaskId
+      if (taskId === undefined || taskId === null || taskId === '') return null
+      const points = this.drawablePathPoints
+      if (!points.length) return null
+      const polylinePoints = points.length >= 2
+        ? points.map(point => `${point.pixel.x},${point.pixel.y}`).join(' ')
+        : ''
+      const taskInfo = this.taskData?.[taskId] || this.activeTaskPathData || {}
+      const existing = this.mapTaskPaths.find(item => String(item.taskId) === String(taskId))
+      return {
+        taskId,
+        taskName: taskInfo.name || taskInfo.taskName || existing?.taskName || `任务 ${taskId}`,
+        color: existing?.color || '#2563EB',
+        points,
+        polylinePoints
+      }
+    },
+    // 当前应展示的全部任务路径层
+    allDisplayTaskPaths() {
+      const list = []
+      if (this.showAllTaskPaths) {
+        list.push(...this.mapTaskPaths)
+      }
+      const robot1Path = this.robot1TaskPathLayer
+      if (robot1Path && !list.some(item => String(item.taskId) === String(robot1Path.taskId))) {
+        list.push(robot1Path)
+      }
+      return list
+    },
+    baseDisplayTaskPaths() {
+      const raisedId = this.activeRaisedTaskPathId
+      if (raisedId === undefined || raisedId === null || raisedId === '') return this.allDisplayTaskPaths
+      return this.allDisplayTaskPaths.filter(item => String(item.taskId) !== String(raisedId))
+    },
+    raisedDisplayTaskPath() {
+      const raisedId = this.activeRaisedTaskPathId
+      if (raisedId === undefined || raisedId === null || raisedId === '') return null
+      return this.allDisplayTaskPaths.find(item => String(item.taskId) === String(raisedId)) || null
+    },
+    // 悬停优先于钉住
+    activeRaisedTaskPathId() {
+      return this.raisedTaskPathId || this.pinnedTaskPathId
+    },
     // MapTool 开点位 → 全量地图点；仅 Robot1 开路径 → 任务路径点（模板已拆分，此计算属性保留兼容）
     overlayPoints() {
       if (this.showPath) return this.drawablePoints
@@ -494,18 +701,46 @@ export default {
         const nameWidth = Math.max(44, Math.ceil(String(name).length * 11) + 8)
         const statusBgWidth = Math.max(56, String(statusText).length * 12 + (isCamouflage ? 36 : 28))
         const statusBgX = -statusBgWidth / 2
-        const displayIconWidth = typeInfo.width * ROBOT_ICON_SCALE_X
-        const displayIconHeight = typeInfo.height * ROBOT_ICON_SCALE_Y
+        // 固定摄像头：原图 44×62，不走机器狗缩放，且不展示 robot-bg
+        const isFixedCamera = typeInfo.img === 'robot-camera-normal'
+          || robot.type === '固定摄像头'
+          || robot.type === 'FIXED_CAMERA'
+        const displayIconWidth = isFixedCamera ? typeInfo.width : typeInfo.width * ROBOT_ICON_SCALE_X
+        const displayIconHeight = isFixedCamera ? typeInfo.height : typeInfo.height * ROBOT_ICON_SCALE_Y
+        // 组原点为地图锚点；摄像头锚点距图标底部 4px
+        const iconX = -displayIconWidth / 2
+        const iconY = isFixedCamera
+          ? -(displayIconHeight - 4)
+          : -(23 + displayIconHeight / 2)
+        const nameY = isFixedCamera ? 6 : 0
+        const statusY = isFixedCamera ? 28 : 22
+        // 选中四角默认框：y=-56 ~ 16，中心 -20；摄像头按图标中心对齐四角
+        const defaultCornersTopY = -56
+        const defaultCornersBottomY = 16
+        const defaultFrameCenterY = (defaultCornersTopY + defaultCornersBottomY) / 2
+        const iconCenterY = iconY + displayIconHeight / 2
+        const cornersOffsetY = isFixedCamera ? iconCenterY - defaultFrameCenterY : 0
+        // 选中时：名称距第二个 selected-corners 底部 2px（随四角偏移同步）
+        const nameYSelected = defaultCornersBottomY + 2 + cornersOffsetY
+        const statusYSelected = nameYSelected + 22
         return {
           ...robot,
           name,
           pixel,
           nameWidth,
+          isFixedCamera,
           iconUrl: require(`@/assets/images/new-bi/${typeInfo.img}.png`),
           iconWidth: typeInfo.width,
           iconHeight: typeInfo.height,
           displayIconWidth,
           displayIconHeight,
+          iconX,
+          iconY,
+          cornersOffsetY,
+          nameY,
+          statusY,
+          nameYSelected,
+          statusYSelected,
           statusBgWidth,
           statusBgX
         }
@@ -517,6 +752,9 @@ export default {
       const points = this.drawablePathPoints
       if (points.length < 2) return ''
       return points.map((point) => `${point.pixel.x},${point.pixel.y}`).join(' ')
+    },
+    canToggleTaskPaths() {
+      return this.mapTaskPaths.length > 0
     },
     contextMenuStyle() {
       // 菜单在 stage 内：直接用地图像素 * zoom，与临时点同一坐标系，缩放/平移自动同步
@@ -593,6 +831,22 @@ export default {
     },
   },
   watch: {
+    zoom() {
+      this.schedulePopupPositionUpdate()
+    },
+    offsetX() {
+      this.schedulePopupPositionUpdate()
+    },
+    offsetY() {
+      this.schedulePopupPositionUpdate()
+    },
+    // 装备位置推送时同步弹窗
+    drawableRobots: {
+      deep: true,
+      handler() {
+        this.schedulePopupPositionUpdate()
+      }
+    },
     collapse() {
       // 侧栏动画结束后按新可见区域重算缩放
       if (this.collapseZoomTimer) clearTimeout(this.collapseZoomTimer)
@@ -621,8 +875,10 @@ export default {
           this.invalidateMapBitmap()
         }
         this.previewImageStatus = '地图加载中...'
+        this.mapLoadFailed = false
         if (!hasPreview || id === undefined || id === null) {
           this.mapLoading = false
+          this.mapLoadFailed = false
           this.revokeImageUrl()
           return
         }
@@ -654,6 +910,7 @@ export default {
           }
           this.imageObjectUrl = nextUrl
           this.imageUrl = nextUrl
+          this.mapLoadFailed = false
           this.$nextTick(() => {
             if (loadSeq !== this.imageLoadSeq) return
             // 首屏 viewport 可能尚未就绪，再对齐一次；切换时保持重置
@@ -670,7 +927,9 @@ export default {
         } catch (error) {
           if (loadSeq !== this.imageLoadSeq) return
           this.mapLoading = false
+          this.mapLoadFailed = true
           this.previewImageStatus = '地图加载失败'
+          this.revokeImageUrl()
           console.error('加载 SLAM 地图预览失败', error)
         }
       },
@@ -754,17 +1013,22 @@ export default {
     },
     handleRobotClick(event, robot) {
       if (!this.enableRobotClick) return
-      // 点击装备时仅还原临时打点/派遣状态，保留 MapTool 点位渲染
-      this.resetSlamDrawState({ keepMapToolPath: true })
+      // 点击装备时仅还原临时打点/派遣状态，保留 MapTool 点位与全量任务路径
+      this.resetSlamDrawState({ keepMapToolPath: true, keepAllTaskPaths: true })
       if (this.currenRouteName === 'biIndex') {
         if (this.activeRobotId === robot.robotId) {
           this.closePopup()
-        } else {
-          this.activeRobotId = robot.robotId
-          this.popupVisible = true
-          this.$nextTick(() => this.updatePopupPosition(robot))
+          this.$refs.robot1Ref?.show(event, robot)
+          return
         }
-      } else if (this.activeRobotId === robot.robotId) {
+        this.activeRobotId = robot.robotId
+        this.popupVisible = true
+        // 先切换选中装备（更新弹窗内容高度），再定位，避免沿用上一台装备的高度导致错位
+        this.$refs.robot1Ref?.show(event, robot)
+        this.schedulePopupPositionUpdate(robot)
+        return
+      }
+      if (this.activeRobotId === robot.robotId) {
         this.activeRobotId = ''
       } else {
         this.activeRobotId = robot.robotId
@@ -772,10 +1036,14 @@ export default {
       // Robot1.show -> clear([robotId]) -> setShowRobotIds，与 GIS 一致
       this.$refs.robot1Ref?.show(event, robot)
     },
-    resetSlamDrawState({ keepMapToolPath = false } = {}) {
+    resetSlamDrawState({ keepMapToolPath = false, keepAllTaskPaths = false } = {}) {
       // MapTool 点位由 MapTool 控制；打开/关闭装备时保持不变
       if (!keepMapToolPath) this.showPath = false
+      if (!keepAllTaskPaths) this.showAllTaskPaths = false
       this.showPolyline = false
+      this.pointsRaised = false
+      this.raisedTaskPathId = null
+      this.pinnedTaskPathId = null
       this.locationPoint = null
       this.showContextMenu = false
       this.locationLabel = '临时点'
@@ -805,10 +1073,53 @@ export default {
     togglePath(visible) {
       if (!this.canTogglePath) {
         this.showPath = false
+        this.pointsRaised = false
         return
       }
-      // MapTool 只控制点位，不联动 polyline
+      // MapTool「点位」
       this.showPath = typeof visible === 'boolean' ? visible : !this.showPath
+      if (!this.showPath) this.pointsRaised = false
+    },
+    toggleTaskPaths(visible) {
+      if (!this.canToggleTaskPaths) {
+        this.showAllTaskPaths = false
+        this.raisedTaskPathId = null
+        this.pinnedTaskPathId = null
+        return
+      }
+      this.showAllTaskPaths = typeof visible === 'boolean' ? visible : !this.showAllTaskPaths
+      if (!this.showAllTaskPaths) {
+        this.raisedTaskPathId = null
+        this.pinnedTaskPathId = null
+      }
+    },
+    raiseTaskPath(taskId) {
+      if (!this.showAllTaskPaths && !this.showPolyline) return
+      this.raisedTaskPathId = taskId
+    },
+    clearRaisedTaskPath() {
+      // 仅清除悬停置顶，保留 Robot1 钉住的路径
+      this.raisedTaskPathId = null
+    },
+    // 多路径时默认隐藏序号，仅悬停/钉住对应路径时显示；单路径始终显示
+    shouldShowPathSeq(taskId) {
+      if (this.allDisplayTaskPaths.length <= 1) return true
+      return String(this.activeRaisedTaskPathId) === String(taskId)
+    },
+    onMapPointEnter(point) {
+      this.hoveredPointId = point?.id ?? null
+      if (this.showPath) this.pointsRaised = true
+    },
+    onMapPointLeave() {
+      this.hoveredPointId = null
+      this.pointsRaised = false
+    },
+    onRobotPathHover(robot) {
+      if (!this.showAllTaskPaths && !this.showPolyline) return
+      const taskId = robot?.runningTaskId
+      if (taskId === undefined || taskId === null || taskId === '') return
+      const visible = this.allDisplayTaskPaths.some(item => String(item.taskId) === String(taskId))
+      if (visible) this.raisedTaskPathId = taskId
     },
     closePopup() {
       this.popupVisible = false
@@ -867,15 +1178,64 @@ export default {
       const stageRect = this.viewportRectToScaleRect(stage.getBoundingClientRect())
       const robotEl = this.$refs.robot1Ref && this.$refs.robot1Ref.$el
       const robotSize = this.getElementSizeInScaleWrapper(robotEl)
-      const context = this.getScaleContext()
-      const maxLeft = Math.max(0, context.width - robotSize.width)
-      const maxTop = Math.max(0, context.height - robotSize.height)
-      const left = stageRect.left + target.pixel.x * this.zoom + 29
-      const top = stageRect.top + target.pixel.y * this.zoom - robotSize.height - 28
-      this.popupOffset = {
-        x: Math.min(Math.max(0, left), maxLeft),
-        y: Math.min(Math.max(0, top), maxTop)
+      if (!robotSize.height) {
+        if (!this._popupPosRetry) this._popupPosRetry = 0
+        if (this._popupPosRetry < 8) {
+          this._popupPosRetry += 1
+          this.$nextTick(() => this.updatePopupPosition(target))
+        }
+        return
       }
+      this._popupPosRetry = 0
+      // 选中四角 x=-36、宽 72、y=-56~16；中点本地 y=-20（摄像头另加 cornersOffsetY）
+      const cornersHalfWidth = 36
+      const cornersMidOffsetY = -20 + (Number(target.cornersOffsetY) || 0)
+      const gap = 1
+      // guideline.png（高 47、bottom:-47px）最底边作为模态底部对齐点
+      const guidelineNaturalH = 47
+      const anchorX = stageRect.left + target.pixel.x * this.zoom
+      const anchorY = stageRect.top + target.pixel.y * this.zoom
+      const cornersRightX = anchorX + cornersHalfWidth
+      const cornersMidY = anchorY + cornersMidOffsetY
+      // 初值：左缘贴四角右缘；guideline 最底边对齐四角中点
+      this.popupOffset = {
+        x: cornersRightX + gap,
+        y: cornersMidY - robotSize.height - guidelineNaturalH
+      }
+      // 内容切换后高度可能变化，下一帧按实测左缘/guideline 底边再校正，避免切换装备错位
+      const token = (this._popupPosToken = (this._popupPosToken || 0) + 1)
+      this.$nextTick(() => {
+        requestAnimationFrame(() => {
+          if (token !== this._popupPosToken || !this.popupVisible) return
+          const el = this.$refs.robot1Ref && this.$refs.robot1Ref.$el
+          const tipEl = this.$refs.robot1Ref && this.$refs.robot1Ref.$refs && this.$refs.robot1Ref.$refs.guidelineRef
+          if (!el) return
+          const modalRect = this.viewportRectToScaleRect(el.getBoundingClientRect())
+          const dx = modalRect.left - (cornersRightX + gap)
+          let dy = 0
+          if (tipEl) {
+            const tipRect = this.viewportRectToScaleRect(tipEl.getBoundingClientRect())
+            const guidelineBottomY = tipRect.top + tipRect.height
+            dy = guidelineBottomY - cornersMidY
+          } else {
+            const h = this.getElementSizeInScaleWrapper(el).height || robotSize.height
+            dy = (modalRect.top + h + guidelineNaturalH) - cornersMidY
+          }
+          if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            this.popupOffset = {
+              x: this.popupOffset.x - dx,
+              y: this.popupOffset.y - dy
+            }
+          }
+        })
+      })
+    },
+    schedulePopupPositionUpdate(robot) {
+      if (this.currenRouteName !== 'biIndex' || !this.popupVisible) return
+      // 双 nextTick：等选中装备内容（任务行数等）渲染完再量高
+      this.$nextTick(() => {
+        this.$nextTick(() => this.updatePopupPosition(robot))
+      })
     },
     showControlPart(visible) {
       // 关闭时两侧都关，避免选中态已清空时关错面板
@@ -891,8 +1251,30 @@ export default {
       controlRef?.show(nextVisible)
     },
     showPathArea(visible) {
-      // Robot1「显示/隐藏路径」同时控制 polyline 与路径点位
-      this.showPolyline = typeof visible === 'boolean' ? visible : !this.showPolyline
+      const next = typeof visible === 'boolean' ? visible : !this.showPolyline
+      // SLAM 全量任务路径已显示时：点击「显示路径」= 钉住当前装备路径（等同鼠标移入效果）
+      if (this.showAllTaskPaths) {
+        const robot = this.robotBaseInfo?.[this.selectedShowRobotId] || {}
+        const taskId = robot.runningTaskId
+        if (next && taskId !== undefined && taskId !== null && taskId !== '') {
+          const onMap = this.mapTaskPaths.some(item => String(item.taskId) === String(taskId))
+          if (onMap) {
+            this.pinnedTaskPathId = taskId
+            this.raisedTaskPathId = null
+            this.showPolyline = false
+            return
+          }
+        }
+        if (!next) {
+          this.pinnedTaskPathId = null
+          this.raisedTaskPathId = null
+          this.showPolyline = false
+          return
+        }
+      }
+      // 常规：Robot1 单独控制当前装备任务路径
+      this.showPolyline = next
+      if (!next) this.pinnedTaskPathId = null
     },
     showDashedArea() {
       // SLAM 地图暂无区域图层，保留接口以兼容 Robot1
@@ -906,8 +1288,10 @@ export default {
       this.showControlPart(false)
       this.showSlam(false)
       if (!robotId || !robotId.length) {
-        // 关闭 Robot1：关掉路径线，保留 MapTool 点位
+        // 关闭 Robot1：关掉路径线与钉住态，保留 MapTool 点位/全量路径
         this.showPolyline = false
+        this.pinnedTaskPathId = null
+        this.raisedTaskPathId = null
         this.closePopup()
       }
     },
@@ -1056,22 +1440,32 @@ export default {
       // 放大：宽高等比，上限为两侧收缩时的视口比例
       const step = Math.max(0.1, this.defaultZoomValue * 0.05)
       this.zoom = Math.min(this.maxZoomValue, Number((this.zoom + step).toFixed(3)))
-      this.$nextTick(() => this.syncCanvasResolution())
+      this.$nextTick(() => {
+        this.syncCanvasResolution()
+        this.schedulePopupPositionUpdate()
+      })
     },
     zoomOut() {
       const step = Math.max(0.1, this.defaultZoomValue * 0.05)
       this.zoom = Math.max(this.minZoom(), Number((this.zoom - step).toFixed(3)))
-      this.$nextTick(() => this.syncCanvasResolution())
+      this.$nextTick(() => {
+        this.syncCanvasResolution()
+        this.schedulePopupPositionUpdate()
+      })
     },
     resetView() {
       this.zoom = this.defaultZoomValue
       this.offsetX = 0
       this.offsetY = 0
-      this.$nextTick(() => this.syncCanvasResolution())
+      this.$nextTick(() => {
+        this.syncCanvasResolution()
+        this.schedulePopupPositionUpdate()
+      })
     },
     backCenter() {
       this.offsetX = 0
       this.offsetY = 0
+      this.schedulePopupPositionUpdate()
     },
     handleMouseDown(e) {
       if (e.target.closest('.map-preview-point') || e.target.closest('.map-preview-robot') || e.target.closest('.map-operation') || e.target.closest('.context-menu') || e.target.closest('.location')) return
@@ -1092,16 +1486,19 @@ export default {
       // 当前视图内自由拖拽
       this.offsetX = this.startOffsetX + e.clientX - this.startX
       this.offsetY = this.startOffsetY + e.clientY - this.startY
+      this.schedulePopupPositionUpdate()
     },
     handleMouseUp() {
       this.isDragging = false
       document.removeEventListener('mousemove', this.handleMouseMove)
       document.removeEventListener('mouseup', this.handleMouseUp)
+      this.schedulePopupPositionUpdate()
     },
     handleWheel(e) {
       e.preventDefault()
       if (e.deltaY > 0) this.zoomOut()
       else this.zoomIn()
+      this.schedulePopupPositionUpdate()
     },
     revokeImageUrl() {
       if (this.imageObjectUrl) {
@@ -1384,6 +1781,22 @@ export default {
         stroke-linejoin: round;
         vector-effect: non-scaling-stroke;
         filter: drop-shadow(0 1px 2px rgba(37, 99, 235, .4));
+        pointer-events: stroke;
+      }
+      .map-preview-path-hit {
+        fill: none;
+        stroke: transparent;
+        stroke-width: 14;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
+        pointer-events: stroke;
+      }
+      .map-task-path-layer {
+        pointer-events: auto;
+        &.is-raised .map-preview-path {
+          stroke-width: 6;
+        }
       }
       .map-preview-robot {
         pointer-events: auto;
@@ -1565,31 +1978,7 @@ export default {
   z-index: 20;
   pointer-events: auto;
   .div1, .div2 {
-    position: relative;
     padding: 9px 10px;
-    border-radius: 4px;
-    border: 2px solid #000;
-    background: rgba(0, 19, 48, 0.9);
-    box-shadow: inset 0 0 20px 0 rgba(1, 80, 170, 0.8);
-    backdrop-filter: blur(5px);
-    &::before {
-      background: linear-gradient(90deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) left top no-repeat,
-        linear-gradient(180deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) left top no-repeat,
-        linear-gradient(270deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) right bottom no-repeat,
-        linear-gradient(0deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) right bottom no-repeat;
-      background-size: 80px 2.5px, 2.5px 80px, 80px 2.5px, 2.5px 80px;
-      background-repeat: no-repeat;
-      border-radius: 4px;
-    }
-    &::after {
-      background: linear-gradient(270deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) right top no-repeat,
-        linear-gradient(180deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) right top no-repeat,
-        linear-gradient(90deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) left bottom no-repeat,
-        linear-gradient(0deg, #038EFF 0%, rgba(36, 151, 252, 0) 100%) left bottom no-repeat;
-      background-size: 80px 2.5px, 2.5px 80px, 80px 2.5px, 2.5px 80px;
-      background-repeat: no-repeat;
-      border-radius: 4px;
-    }
   }
   .div1 {
     height: fit-content;

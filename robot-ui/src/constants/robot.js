@@ -7,4 +7,6 @@ export const ROBOT_TYPE_INFO = {
   机器人: { width: 24, height: 39, img: 'robot1', icon: 'robot' },
   default: { width: 24, height: 39, img: 'robot1', icon: 'robot' },
   UAV: { width: 43, height: 20, img: 'robot_uav', icon: 'robot-uav' },
+  固定摄像头: { width: 44, height: 62, img: 'robot-camera-normal', icon: 'robot-camera' },
+  'FIXED_CAMERA': { width: 44, height: 62, img: 'robot-camera-normal', icon: 'robot-camera' },
 }

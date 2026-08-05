@@ -149,7 +149,8 @@ export const LIANTONG_SLAM_MAP_ID = '2077775285125144578'
 
 /**
  * 联通展厅装备/任务路径模拟开关（联调用）
- * 装备位置：point-1 坐标；执行中任务路径：点位 1→2→3
+ * 机器狗：point-1，执行中任务路径 1→2→3
+ * 固定摄像头：point-2，执行中任务路径 1→4→5
  */
 export const ENABLE_LIANTONG_SLAM_MOCK = false
 
@@ -165,6 +166,7 @@ export function getLiantongSlamMock() {
     robotId,
     name: '联通展厅机器狗',
     type: '四足机器狗',
+    typeCode: 'ROBOT_DOG',
     model: 'MOCK-DOG',
     status: 'online',
     battery: 88,
@@ -195,6 +197,71 @@ export function getLiantongSlamMock() {
       robotId,
       name: device.name,
       type: device.type,
+      typeCode: device.typeCode,
+      status: 'online'
+    }]
+  }
+  return { mapId, robotId, taskId, device, task, pathPoints }
+}
+
+/** 生成联通展厅固定摄像头模拟装备（挂在同一张 SLAM 地图 point-2，执行中任务路径 1→4→5） */
+export function getLiantongFixedCameraMock() {
+  const mapId = LIANTONG_SLAM_MAP_ID
+  const robotId = 'mock-liantong-fixed-camera'
+  const taskId = 'mock-liantong-camera-task-path-145'
+  const allPoints = SLAM_POINTS[mapId] || []
+  // 点位顺序：1、4、5（对应数组下标 0、3、4）
+  const pathPoints = [allPoints[0], allPoints[3], allPoints[4]].filter(Boolean)
+  const coordinateX = -9.842506
+  const coordinateY = -0.33602
+  const device = {
+    robotId,
+    name: '联通展厅固定摄像头',
+    type: '固定摄像头',
+    typeCode: 'FIXED_CAMERA',
+    model: 'MOCK-FIXED-CAMERA',
+    status: 'online',
+    battery: null,
+    speed: 0,
+    controlMode: 'IDLE',
+    alarmLevel: 'none',
+    mountedDeviceCount: 1,
+    mapId,
+    location: {
+      mapId,
+      x: coordinateX,
+      y: coordinateY,
+      coordinateX,
+      coordinateY,
+      yaw: 0,
+      lat: 30.74812517003875,
+      lng: 106.03462176616857
+    },
+    cameras: [
+      {
+        cameraId: 'fixed-camera-01',
+        deviceId: 'fixed-camera-01',
+        name: '联通展厅固定监控',
+        groupType: 'body',
+        quality: 'sub',
+        sourceType: 'FIXED_CAMERA'
+      }
+    ],
+    task: [{ taskId, mapId }]
+  }
+  const task = {
+    taskId,
+    mapId,
+    name: '联通展厅固定摄像头巡检',
+    status: 'running',
+    statusName: '执行中',
+    timeRange: '全天',
+    pathPoints,
+    equipmentList: [{
+      robotId,
+      name: device.name,
+      type: device.type,
+      typeCode: device.typeCode,
       status: 'online'
     }]
   }

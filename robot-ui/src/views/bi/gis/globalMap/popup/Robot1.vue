@@ -59,7 +59,15 @@
     <!-- <div class="guideline wp157 hp29 mt9 ml161">
       <svg-icon icon-class="guideline" class="w100 h100" style="vertical-align: top;"></svg-icon>
     </div> -->
-    <img v-if="!showAnimate" width="197" height="47" style="position: absolute; bottom: -47px; left: 0" src="@/assets/images/new-bi/guideline.png" alt="">
+    <img
+      v-if="!showAnimate"
+      ref="guidelineRef"
+      width="197"
+      height="47"
+      class="robot1-guideline"
+      src="@/assets/images/new-bi/guideline.png"
+      alt=""
+    >
   </div>
 </template>
 
@@ -77,6 +85,14 @@ export default {
     }
   },
   computed: {
+    // 指挥中心由父组件 popupStyle 定位，避免 mixin 的 left/top:0 覆盖锚点偏移
+    positionStyle() {
+      if (!this.showAnimate) return {}
+      return {
+        left: this.position.left + 'px',
+        top: this.position.top + 'px'
+      }
+    },
     showControl() {
       return this.selectedRobot?.status === 'online'
     },
@@ -212,6 +228,14 @@ export default {
         }
       }
     }
+  }
+  .robot1-guideline {
+    position: absolute;
+    bottom: -47px;
+    left: 0;
+    width: 197px;
+    height: 47px;
+    pointer-events: none;
   }
 }
 </style>

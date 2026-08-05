@@ -174,13 +174,17 @@ export default {
         this.syncCanvasResolution();
         this.isLoaded = true;
         this.mapLoading = false;
+        this.mapLoadFailed = false;
         this.previewImageStatus = '地图预览加载中';
       };
       img.onerror = () => {
         if (loadSeq !== this.imageLoadSeq || this.imageUrl !== targetUrl) return;
         this.mapLoading = false;
+        this.mapLoadFailed = true;
         this.previewImageStatus = '地图加载失败';
-        this.showSlamError('图片加载失败，请确认路径正确: ' + this.imagePath);
+        if (typeof this.revokeImageUrl === 'function') {
+          this.revokeImageUrl();
+        }
       };
       img.src = targetUrl;
     },

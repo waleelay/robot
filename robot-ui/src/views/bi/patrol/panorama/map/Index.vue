@@ -41,6 +41,7 @@
       @setCenter="setCenter"
       @changeMapAngle="changeMapAngle"
       @togglePath="togglePath"
+      @toggleTaskPaths="toggleTaskPaths"
     />
   </div>
 </template>
@@ -155,6 +156,9 @@ export default {
     },
     togglePath(visible) {
       this.$refs.globalMapRef?.togglePath?.(visible)
+    },
+    toggleTaskPaths(visible) {
+      this.$refs.globalMapRef?.toggleTaskPaths?.(visible)
     },
     // Robot1 / 地图内部关闭路径时，同步 MapTool 激活态
     onPathVisibleChange(visible) {
