@@ -57,7 +57,16 @@
       <div ref="viewChangeRef" class="view-change flx-center wp50 hp50" @click.stop="toggleViewContainer">
         <img src="../../../../../assets/images/new-bi/view.png" width="44px" height="44px" style="border-radius: 50%;" />
       </div>
-      <div ref="viewContainerRef" v-show="showViewContainer" class="view-container bi-corner-box p20 wp274 flex-column" @click.stop :class="{ 'hp332': slamList.length && selectType === 'slam', 'hp145': !slamList.length }">
+      <div
+        ref="viewContainerRef"
+        v-show="showViewContainer"
+        class="view-container bi-corner-box p20 wp274 flex-column"
+        @click.stop
+        :class="{
+          'hp332': slamList.length && selectType === 'slam',
+          'is-gis-tip': selectType !== 'slam'
+        }"
+      >
         <div class="title">地图选择</div>
         <div class="d-flex mt8">
           <div class="img-view wp112 hp63" :class="{ 'is-active': currentType === 'gis' && selectType !== 'slam' }" @click="selectMapType('gis')">
@@ -497,6 +506,12 @@ export default {
     position: absolute;
     top: -80px;
     right: 60px;
+    // 避免定高 + transform:scale 后底边 1px 装饰被裁切
+    overflow: visible;
+    &.is-gis-tip {
+      height: auto !important;
+      min-height: 181px;
+    }
     .title {
       color: #FFF;
       font-family: "Microsoft YaHei";
@@ -558,13 +573,20 @@ export default {
     }
     .desc{
       position: relative;
+      z-index: 3;
+      // 给上下装饰线留出空间，避免贴边被 scale 裁切
+      padding-top: 12px !important;
+      padding-bottom: 12px !important;
       &::before, &::after {
         position: absolute;
         left: 0;
         width: 100%;
-        height: 1px;
-        background: url("../../../../../assets/images/new-bi/border.svg") center no-repeat;
+        // ScaleScreen 缩放后 1px 会变成亚像素消失，用 2px + 渐变更稳
+        height: 2px;
+        background: linear-gradient(90deg, #091D3C 0%, #038EFF 52%, #021534 100%);
         content: '';
+        z-index: 1;
+        pointer-events: none;
       }
       &::before {
         top: 0;
@@ -574,6 +596,7 @@ export default {
       }
       .text {
         position: relative;
+        z-index: 1;
         color: #D0DEEE;
         font-family: "Alibaba PuHuiTi";
         font-size: 12px;

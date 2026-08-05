@@ -116,7 +116,6 @@ export default {
       testB: { lat: 30.7472254, lng: 106.040000 },
       distance1: 0,
       layerB: null,
-      layerA: null,
       dogList: [],
       popupVisible: false,
       popupOffset: { x: 0, y: 0 },
@@ -160,6 +159,14 @@ export default {
     },
     currenRouteName() {
       return this.$route.name
+    },
+    // 指挥中心默认 12 级；全景 / 监控小窗默认 18 级
+    defaultGisZoom() {
+      return this.currenRouteName === 'biIndex' ? 12 : 18
+    },
+    defaultGisBearing() {
+      return 0
+      return this.defaultGisZoom >= 18 ? -45 : 0
     }
   },
   watch: {
@@ -367,10 +374,10 @@ export default {
       }
     },
     initMap(){
-      // 只能看到18层
+      // 仅 layerB：12～18 级；18 级时旋转 45°
       this.map = L.map('map', {
         center: [this.centerPoint.lat, this.centerPoint.lng],
-        zoom: 12,
+        zoom: this.defaultGisZoom,
         maxZoom: 18,
         minZoom: 12,
         rotate: true,
@@ -386,25 +393,19 @@ export default {
       });
       // 关键：手动添加旋转控件到地图
       L.control.rotate().addTo(this.map);
-      // 地图底图
-      // this.layerA = L.tileLayer('/tdt/tiles/new/latest/{z}/{x}/{y}.png', {
-      this.layerA = L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/12/{z}/{x}/{y}.png`, {
-        maxZoom: 12,
-        minZoom: 12,
-      });
-
-      // this.layerB = L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/latest/{z}/{x}/{y}.png`, {
-      this.layerB = L.tileLayer(`http://192.168.124.234:8787/services/city/tiles/{z}/{x}/{y}.png`, {
+      // 仅展示 layerB（12～18）
+      this.layerB = L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/nanchong/{z}/{x}/{y}.png`, {
         maxZoom: 18,
-        minZoom: 17,
+        minZoom: 12,
         keepBuffer: 300,
         updateWhenIdle: false
       });
+      this.tileLayer = this.layerB
 
-      if (!this.map.hasLayer(this.layerB) && !this.map.hasLayer(this.layerA)) {
-        this.map.setBearing(this.currenRouteName === 'biIndex' ? 0 : -45)
-        this.map.setView(this.gisMapCenterPoint, this.currenRouteName === 'biIndex' ? 12 : 18)
-        this.map.addLayer(this[this.currenRouteName === 'biIndex' ? 'layerA' : 'layerB'])
+      if (!this.map.hasLayer(this.layerB)) {
+        this.map.setBearing(this.defaultGisBearing)
+        this.map.setView(this.gisMapCenterPoint, this.defaultGisZoom)
+        this.map.addLayer(this.layerB)
       }
 
       
@@ -464,38 +465,13 @@ export default {
         }
       });
       
-      // 监听缩放事件，更新图标大小
-      // 缩放到停止
+      // 监听缩放事件：18 级旋转 45°，其余不旋转；不再切换 layerA/layerB
       this.map.on('zoomend', () => {
-        // console.log('zoomend');
-        
-
-        // 监听 zoomend 事件
-        var currentZoom = this.map.getZoom();
-        // console.log('当前缩放级别:', currentZoom); // 使用 map.getZoom() 获取当前级别 [citation:1]
-
-        // 根据缩放级别显示/隐藏图层
-        if (currentZoom > 17 && currentZoom < 18) {
-          this.map.setBearing(0)
-          this.map.setView(this.gisMapCenterPoint, 12)
-          if (!this.map.hasLayer(this.layerA)) {
-            this.layerA.addTo(this.map);
-          }
-          if (this.map.hasLayer(this.layerB)) {
-            this.map.removeLayer(this.layerB);
-          }
-          // 缩小时，显示 layerB，隐藏 layerA
-        } else if(currentZoom > 12) {
-          this.map.setBearing(-45)
-          this.map.setView(this.gisMapCenterPoint, 18)
-          
-          if (!this.map.hasLayer(this.layerB)) {
-            this.layerB.addTo(this.map);
-          }
-          if (this.map.hasLayer(this.layerA)) {
-            this.map.removeLayer(this.layerA);
-          }
-        }
+        // const currentZoom = this.map.getZoom();
+        // const nextBearing = currentZoom >= 18 ? -45 : 0
+        // if (this.map.getBearing() !== nextBearing) {
+        //   this.map.setBearing(nextBearing)
+        // }
         this.pointMarkers.map((marker, index) => {
           // console.log(111111111, marker.getIcon().options, this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
           this.pointMarkers[index].setIcon(this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
