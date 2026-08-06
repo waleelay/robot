@@ -70,8 +70,8 @@
             </div>
           </div>
           <div class="flex1 flx-align-center">
-            <SelfRobotDogControl v-if="selectedRobot.type === '四足机器狗'" />
-            <SelfRobotCarControl v-if="selectedRobot.type === '轮式机器人'" />
+            <SelfRobotDogControl v-if="showDogControl" />
+            <SelfRobotCarControl v-if="showCarControl" />
           </div>
         </div>
       </div>
@@ -194,6 +194,16 @@ export default {
     ]),
     currenRobot() {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
+    },
+    showDogControl() {
+      if (this.baseDevice?.deviceType === 'QUADRUPED_BASE') return true
+      const type = this.selectedRobot.typeCode || this.selectedRobot.type
+      return ['ROBOT_DOG', 'QUADRUPED_ROBOT', '四足机器狗', '四足机器人', '机器狗'].includes(type)
+    },
+    showCarControl() {
+      if (this.baseDevice?.deviceType === 'WHEELED_BASE') return true
+      const type = this.selectedRobot.typeCode || this.selectedRobot.type
+      return ['WHEELED_ROBOT', '轮式机器人', '轮式车'].includes(type)
     },
     // second 界面以当前选中装备确定 SLAM 地图
     targetRobotId() {

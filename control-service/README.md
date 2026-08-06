@@ -98,6 +98,11 @@ control-service/src/main/java/com/robot/control/
   - 通过 `RestClient` 调用 Media Service 的 `/internal/media/**` 内部接口。
   - Control 和 Media 已拆成独立服务，Java 包与部署进程均隔离。
 
+- `ControlManagementClient`
+  - 查询管理端机器人档案、部件与控制能力。
+  - 由前端 HTTP 请求触发时，向管理端透传当前 `Authorization: Bearer ...`。
+  - MQTT 等无用户请求上下文的后台处理只使用已缓存档案，不匿名请求管理端。
+
 - `RobotMediaCommandService`
   - MQTT 指令发送封装。
   - 负责发送 start、stop、switch-channel、intercom 等机器人媒体命令。

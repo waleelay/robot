@@ -1,5 +1,6 @@
 package com.robot.control.client;
 
+import com.robot.control.auth.RequestAuthorizationHeaders;
 import com.robot.control.config.ControlProperties;
 import java.net.URI;
 import java.time.Duration;
@@ -15,6 +16,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /**
@@ -32,6 +34,7 @@ public class ControlManagementClient {
 
     private final RestClient restClient;
     private final ControlProperties properties;
+    private final RequestAuthorizationHeaders requestAuthorizationHeaders;
     private final Map<String, CachedDevice> deviceCache = new ConcurrentHashMap<>();
 
     /**
@@ -39,13 +42,18 @@ public class ControlManagementClient {
      *
      * @param builder RestClient 构建器
      * @param properties 服务配置
+     * @param requestAuthorizationHeaders 当前请求认证头透传器
      */
-    public ControlManagementClient(RestClient.Builder builder, ControlProperties properties) {
+    public ControlManagementClient(
+            RestClient.Builder builder,
+            ControlProperties properties,
+            RequestAuthorizationHeaders requestAuthorizationHeaders) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(2000);
         requestFactory.setReadTimeout(3000);
         this.restClient = builder.requestFactory(requestFactory).build();
         this.properties = properties;
+        this.requestAuthorizationHeaders = requestAuthorizationHeaders;
     }
 
     /**
@@ -74,6 +82,22 @@ public class ControlManagementClient {
             deviceCache.put(serialNumber, new CachedDevice(snapshot, now.plus(DEVICE_CACHE_TTL)));
             return Optional.of(new LinkedHashMap<>(snapshot));
         }
+        return cached == null
+                ? Optional.empty()
+                : Optional.of(new LinkedHashMap<>(cached.device()));
+    }
+
+    /**
+     * 查询已缓存的设备档案，不发起管理端请求。
+     *
+     * @param serialNumber 机器人序列号
+     * @return 已缓存设备档案
+     */
+    public Optional<Map<String, Object>> cachedDeviceBySerialNumber(String serialNumber) {
+        if (serialNumber == null || serialNumber.isBlank()) {
+            return Optional.empty();
+        }
+        CachedDevice cached = deviceCache.get(serialNumber);
         return cached == null
                 ? Optional.empty()
                 : Optional.of(new LinkedHashMap<>(cached.device()));
@@ -139,6 +163,7 @@ public class ControlManagementClient {
         try {
             Map<String, Object> response = restClient.get()
                     .uri(uri)
+                    .headers(requestAuthorizationHeaders::apply)
                     .retrieve()
                     .body(MAP_TYPE);
             if (response == null) {
@@ -152,6 +177,12 @@ public class ControlManagementClient {
                 return Optional.of(response);
             }
             return Optional.empty();
+        } catch (RestClientResponseException exception) {
+            log.warn(
+                    "Management service rejected request uri={} status={}",
+                    uri,
+                    exception.getStatusCode());
+            throw exception;
         } catch (RuntimeException exception) {
             log.warn("Failed to request management service uri={}", uri, exception);
             return Optional.empty();

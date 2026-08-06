@@ -472,11 +472,12 @@ class EquipmentControlServiceTest {
     }
 
     private void register(Map<String, Object> component) {
-        when(managementClient.deviceBySerialNumber("robot-001"))
-                .thenReturn(Optional.of(object(
-                        "serialNumber", "robot-001",
-                        "deviceType", "WHEELED_ROBOT",
-                        "components", List.of(component))));
+        Map<String, Object> robot = object(
+                "serialNumber", "robot-001",
+                "deviceType", "WHEELED_ROBOT",
+                "components", List.of(component));
+        when(managementClient.deviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
+        when(managementClient.cachedDeviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
     }
 
     private Map<String, Object> component(String type, String code, Map<String, Object>... actions) {

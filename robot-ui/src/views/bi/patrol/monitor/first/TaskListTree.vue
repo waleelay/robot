@@ -298,10 +298,14 @@ export default {
         const onlineList = []
         const offlineList = []
         newRobots.map(item => {
-          if (this.robotBaseInfo?.[item.robotId]?.status === 'online') {
-            onlineList.push(this.robotBaseInfo?.[item.robotId])
+          const robot = {
+            ...item,
+            ...(this.robotBaseInfo?.[item.robotId] || {})
+          }
+          if (robot.status === 'online') {
+            onlineList.push(robot)
           } else {
-            offlineList.push(this.robotBaseInfo?.[item.robotId])  
+            offlineList.push(robot)
           }
         })
         this.equipmentInfo.online.list = onlineList

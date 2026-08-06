@@ -373,7 +373,7 @@ public class EquipmentControlService {
         state.put("controlModeName", controlModeName(controlMode));
         state.put("timestamp", DateTimeConfig.normalize(state.getOrDefault("timestamp", OffsetDateTime.now())));
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
-        managementClient.deviceBySerialNumber(robotId)
+        managementClient.cachedDeviceBySerialNumber(robotId)
                 .ifPresent(robot -> {
                     enrichRobotState(state, robot);
                     state.put("devices", devices(robot, runtimeDevices));
@@ -403,7 +403,7 @@ public class EquipmentControlService {
         state.putIfAbsent("missionStatus", "IDLE");
         state.putIfAbsent("navigationStatus", "IDLE");
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
-        managementClient.deviceBySerialNumber(serialNumber)
+        managementClient.cachedDeviceBySerialNumber(serialNumber)
                 .ifPresent(robot -> {
                     enrichRobotState(state, robot);
                     state.put("devices", devices(robot, runtimeDevices));
