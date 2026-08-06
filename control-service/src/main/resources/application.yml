@@ -27,7 +27,7 @@ control:
     password: ${MQTT_PASSWORD:}
     # Control Service 连接 MQTT 时使用的客户端 ID。
     client-id: ${MQTT_CLIENT_ID:robot-control-service-main}
-    # 是否启用 MQTT 指令下发。
+    # 是否启用 MQTT 状态订阅与指令下发。
     enabled: ${MQTT_ENABLED:true}
   robot:
     # 机器人心跳超时时间，单位秒。

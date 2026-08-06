@@ -26,6 +26,21 @@ import org.springframework.stereotype.Service;
 @Service
 public class RobotRegistryService {
 
+    private static final List<String> DYNAMIC_STATE_FIELDS = List.of(
+            "speed",
+            "moving",
+            "location",
+            "runningStatus",
+            "healthStatus",
+            "chargingStatus",
+            "softStopActive",
+            "remoteControlEnabled",
+            "taskProgressPercent",
+            "edgeStatus",
+            "edgeMessageId",
+            "edgeSchemaVersion",
+            "stateSource");
+
     private final ControlServiceProperties properties;
     private final MediaWebSocketPublisher webSocketPublisher;
     private final ObjectMapper objectMapper;
@@ -86,7 +101,8 @@ public class RobotRegistryService {
                 controlOwner,
                 estopActive,
                 cameras,
-                mountedDevices);
+                mountedDevices,
+                data);
     }
 
     /**
@@ -123,18 +139,54 @@ public class RobotRegistryService {
             Boolean estopActive,
             List<RobotCameraResponse> cameras,
             List<Map<String, Object>> mountedDevices) {
+        return update(
+                robotId,
+                clientId,
+                status,
+                name,
+                type,
+                battery,
+                controlMode,
+                stateSeq,
+                missionStatus,
+                navigationStatus,
+                controlOwner,
+                estopActive,
+                cameras,
+                mountedDevices,
+                Map.of());
+    }
+
+    private boolean update(
+            String robotId,
+            String clientId,
+            String status,
+            String name,
+            String type,
+            Integer battery,
+            String controlMode,
+            Long stateSeq,
+            String missionStatus,
+            String navigationStatus,
+            Object controlOwner,
+            Boolean estopActive,
+            List<RobotCameraResponse> cameras,
+            List<Map<String, Object>> mountedDevices,
+            Map<String, Object> dynamicState) {
         if (robotId == null || robotId.isBlank()) {
             return false;
         }
         RobotDevice device = devices.computeIfAbsent(robotId, RobotDevice::new);
-        boolean becameOnline = !"online".equals(device.status) && !"offline".equalsIgnoreCase(status);
+        boolean wasConnected = "online".equals(device.status) || "fault".equals(device.status);
+        boolean reportedConnected = !"offline".equalsIgnoreCase(status);
+        boolean becameOnline = !wasConnected && reportedConnected;
         device.clientId = clientId;
         device.name = blank(name) ? robotId : name;
         device.type = blank(type) ? "机器人" : type;
         if (battery != null) {
             device.battery = Math.max(0, Math.min(100, battery));
         }
-        device.status = "offline".equalsIgnoreCase(status) ? "offline" : "online";
+        device.status = normalizedStatus(status);
         device.controlMode = "MANUAL".equalsIgnoreCase(controlMode) ? "MANUAL" : "NAVIGATION";
         if (stateSeq != null) {
             device.stateSeq = stateSeq;
@@ -150,6 +202,11 @@ public class RobotRegistryService {
         if (mountedDevices != null && !mountedDevices.isEmpty()) {
             device.mountedDevices = new ArrayList<>(mountedDevices);
         }
+        DYNAMIC_STATE_FIELDS.forEach(field -> {
+            if (dynamicState.containsKey(field) && dynamicState.get(field) != null) {
+                device.dynamicState.put(field, dynamicState.get(field));
+            }
+        });
         webSocketPublisher.publish("robot.state", toState(device));
         return becameOnline;
     }
@@ -208,8 +265,19 @@ public class RobotRegistryService {
         state.put("estopActive", device.estopActive);
         state.put("cameras", device.cameras);
         state.put("devices", device.mountedDevices);
+        state.putAll(device.dynamicState);
         state.put("timestamp", DateTimeConfig.format(now()));
         return state;
+    }
+
+    private String normalizedStatus(String status) {
+        if ("offline".equalsIgnoreCase(status)) {
+            return "offline";
+        }
+        if ("fault".equalsIgnoreCase(status) || "error".equalsIgnoreCase(status)) {
+            return "fault";
+        }
+        return "online";
     }
 
     /**
@@ -295,6 +363,7 @@ public class RobotRegistryService {
         private OffsetDateTime lastHeartbeatAt;
         private List<RobotCameraResponse> cameras = List.of();
         private List<Map<String, Object>> mountedDevices = List.of();
+        private Map<String, Object> dynamicState = new LinkedHashMap<>();
 
         /**
          * 创建 RobotDevice 实例。

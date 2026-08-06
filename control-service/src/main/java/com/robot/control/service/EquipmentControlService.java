@@ -372,11 +372,43 @@ public class EquipmentControlService {
         state.put("controlMode", controlMode);
         state.put("controlModeName", controlModeName(controlMode));
         state.put("timestamp", DateTimeConfig.normalize(state.getOrDefault("timestamp", OffsetDateTime.now())));
-        enrichRobotState(robotId, state);
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
         managementClient.deviceBySerialNumber(robotId)
-                .ifPresent(robot -> state.put("devices", devices(robot, runtimeDevices)));
+                .ifPresent(robot -> {
+                    enrichRobotState(state, robot);
+                    state.put("devices", devices(robot, runtimeDevices));
+                });
         robotStates.put(robotId, state);
+        return state;
+    }
+
+    /**
+     * 将边缘设备状态合并到控制服务现有机器人状态中。
+     *
+     * @param serialNumber 设备序列号
+     * @param update 边缘状态转换结果
+     * @return 合并后的完整状态
+     */
+    public Map<String, Object> mergeEdgeDeviceStatus(String serialNumber, Map<String, Object> update) {
+        Map<String, Object> state = copy(robotStates.getOrDefault(serialNumber, Map.of()));
+        state.put("robotId", serialNumber);
+        update.forEach((key, value) -> {
+            if (value != null) {
+                state.put(key, value);
+            }
+        });
+        state.putIfAbsent("stateSeq", 1L);
+        state.putIfAbsent("status", "online");
+        state.putIfAbsent("controlMode", "MANUAL");
+        state.putIfAbsent("missionStatus", "IDLE");
+        state.putIfAbsent("navigationStatus", "IDLE");
+        Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
+        managementClient.deviceBySerialNumber(serialNumber)
+                .ifPresent(robot -> {
+                    enrichRobotState(state, robot);
+                    state.put("devices", devices(robot, runtimeDevices));
+                });
+        robotStates.put(serialNumber, state);
         return state;
     }
 
@@ -797,19 +829,25 @@ public class EquipmentControlService {
     /**
      * 补齐机器人状态的派生字段。
      *
-     * @param robotId 机器人 ID
      * @param state 机器人状态
+     * @param robot 管理端机器人档案
      */
-    private void enrichRobotState(String robotId, Map<String, Object> state) {
+    private void enrichRobotState(Map<String, Object> state, Map<String, Object> robot) {
         String controlMode = reportedControlMode(state.get("controlMode"));
         state.put("controlMode", controlMode);
         state.put("controlModeName", controlModeName(controlMode));
-        if (!stringValue(state.get("type"), "").isBlank()) {
-            return;
+        if (stringValue(state.get("name"), "").isBlank()) {
+            Object name = firstValue(robot, "name", "deviceName");
+            if (name != null) {
+                state.put("name", name);
+            }
         }
-        managementClient.deviceBySerialNumber(robotId)
-                .map(robot -> firstValue(robot, "deviceType", "typeCode", "type"))
-                .ifPresent(type -> state.put("type", type));
+        if (stringValue(state.get("type"), "").isBlank()) {
+            Object type = firstValue(robot, "deviceType", "typeCode", "type");
+            if (type != null) {
+                state.put("type", type);
+            }
+        }
     }
 
     /**

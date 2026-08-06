@@ -407,6 +407,36 @@ class EquipmentControlServiceTest {
         verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
     }
 
+    @Test
+    void mergesEdgeDeviceStatusWithoutClearingExistingRuntimeDevices() {
+        register(component("PTZ", "ptz-new-001"));
+        service.handleClientState(object(
+                "robotId", "robot-001",
+                "status", "online",
+                "controlMode", "MANUAL",
+                "devices", List.of(object(
+                        "deviceId", "ptz-new-001",
+                        "deviceType", "DUAL_LIGHT_PTZ",
+                        "status", object("pan", 0.15)))));
+
+        Map<String, Object> state = service.mergeEdgeDeviceStatus("robot-001", object(
+                "status", "fault",
+                "battery", 47,
+                "controlMode", "NAVIGATION",
+                "location", object("x", 5.28, "y", 1.37, "z", 0),
+                "edgeStatus", object("basic", object("healthStatus", "异常"))));
+
+        assertThat(state)
+                .containsEntry("robotId", "robot-001")
+                .containsEntry("status", "fault")
+                .containsEntry("battery", 47)
+                .containsEntry("controlMode", "NAVIGATION");
+        assertThat(maps(state.get("devices")))
+                .filteredOn(device -> "ptz-new-001".equals(device.get("deviceId")))
+                .singleElement()
+                .satisfies(device -> assertThat(map(device.get("status"))).containsEntry("pan", 0.15));
+    }
+
     private Map<String, Object> publish(String deviceId, String action, Map<String, Object> params) {
         Map<String, Object> request = object(
                 "target", object("deviceId", deviceId),

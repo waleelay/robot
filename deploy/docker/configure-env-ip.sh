@@ -110,6 +110,8 @@ replace_all_host
 set_env_value "LIVEKIT_URL" "ws://$EXTERNAL_IP:7880"
 set_env_value "LIVEKIT_NODE_IP" "$EXTERNAL_IP"
 set_env_value "NGINX_TLS_HOST" "$EXTERNAL_IP"
+set_env_value "BIGSCREEN_AUTH_ISSUER_URI" "https://$EXTERNAL_IP:18443/realms/iam-auth"
+set_env_value "BIGSCREEN_AUTH_JWK_SET_URI" "http://$INTERNAL_IP:18080/realms/iam-auth/protocol/openid-connect/certs"
 add_csv_value "BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS" "https://$EXTERNAL_IP:4443"
 
 echo "updated $ENV_TARGET"

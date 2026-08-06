@@ -3122,6 +3122,7 @@ HTTP/1.1 204 No Content
 | 方向 | Topic | 消费方 / 后续动作 |
 |---|---|---|
 | 机器人客户端 -> Control | `robot/+/media/client/status` | `RobotMediaStatusSubscriber.clientStatusListener` 反序列化后先调用 `EquipmentControlService.handleClientState(...)` 合并管理端数据，再调用 `RobotRegistryService.update(...)` 缓存并广播一条 `robot.state`；若客户端从离线变在线，会再查询 `/internal/media/video-sessions/online-restart-commands` 并发布 `robot/{robotId}/media/video/start` |
+| 平台边缘端 -> Control | `eiop/v1/edge/+/status` | `RobotMediaStatusSubscriber.edgeDeviceStatusListener` 调用 `EdgeDeviceStatusHandler`，按 topic 中的 `serialNumber` 合并本体、运动、电量、控制、任务和定位状态，再广播一条 `robot.state` |
 
 请求参数：
 

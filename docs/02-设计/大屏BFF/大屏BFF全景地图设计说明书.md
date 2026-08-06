@@ -946,6 +946,7 @@ WebSocket：
 - BFF 不再本地模拟推送全量 `panorama.*` 动态事件。
 - `/ws/control` 保留到 Control Service WebSocket 的桥接能力；Control Service WebSocket 暂不可用时，不推送本地假数据。
 - BFF 已将中心端 `robot.state` 转换为 `panorama.device.status.changed` 并追加转发给前端；当 `robot.state` 携带定位或任务字段时，同步追加 `panorama.device.location.changed`、`panorama.task.changed`。
+- 当前控制服务并行订阅 `eiop/v1/edge/{serialNumber}/status`，转换并广播 `robot.state`。BFF 将其中的健康、速度、电量、控制模式和 SLAM `x/y/z/yaw/mapId` 等字段继续转换为全景事件，无需前端直接订阅 MQTT。
 - 联调期仅针对 `robotId=test111` 保留定位兜底：当中心端 `robot.state` 未携带定位数据时，BFF 按三组 XYZ 坐标循环追加 `panorama.device.location.changed`。
 - BFF 会基于已收到的机器人状态维护轻量设备统计，并追加 `panorama.stats.changed.deviceStats`。
 - 如果中心端推送 `task.*`、`alarm.*` 原始事件，BFF 会转换为 `panorama.task.changed`、`panorama.alarm.changed`；没有真实原始事件源时不生成本地假数据。

@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -86,7 +87,7 @@ public class PanoramaWebSocketEventAdapter {
         }
 
         messages.add(writePanoramaDeviceStatus(root, data));
-        updateRobotStatus(robotId, text(data, "status"));
+        updateRobotStatus(robotId, panoramaDeviceStatus(data));
         messages.add(writePanoramaStats(root));
 
         JsonNode location = firstObject(data, "location", "localization");
@@ -115,12 +116,18 @@ public class PanoramaWebSocketEventAdapter {
     private String writePanoramaDeviceStatus(JsonNode sourceRoot, JsonNode sourceData) {
         ObjectNode data = objectMapper.createObjectNode();
         data.put("robotId", text(sourceData, "robotId"));
-        data.put("status", text(sourceData, "status"));
+        data.put("status", panoramaDeviceStatus(sourceData));
         putNullableInt(data, "battery", sourceData.get("battery"));
         String controlMode = normalizeControlMode(text(sourceData, "controlMode"));
         data.put("controlMode", controlMode);
         data.put("controlModeName", controlModeName(controlMode));
         putNullableNumber(data, "speed", firstExisting(sourceData, "speed", "currentSpeed"));
+        putNullableText(data, "runningStatus", sourceData.get("runningStatus"));
+        putNullableText(data, "healthStatus", sourceData.get("healthStatus"));
+        putNullableText(data, "chargingStatus", sourceData.get("chargingStatus"));
+        putNullableText(data, "missionStatus", sourceData.get("missionStatus"));
+        putNullableBoolean(data, "moving", sourceData.get("moving"));
+        putNullableBoolean(data, "estopActive", sourceData.get("estopActive"));
 
         ObjectNode event = objectMapper.createObjectNode();
         event.put("event", PANORAMA_DEVICE_STATUS_CHANGED);
@@ -211,6 +218,10 @@ public class PanoramaWebSocketEventAdapter {
         putNullableNumber(location, "x", firstExisting(sourceLocation, "x", "coordinateX"));
         putNullableNumber(location, "y", firstExisting(sourceLocation, "y", "coordinateY"));
         putNullableNumber(location, "z", firstExisting(sourceLocation, "z", "coordinateZ"));
+        putNullableNumber(location, "yaw", sourceLocation.get("yaw"));
+        putNullableText(location, "coordinateType", sourceLocation.get("coordinateType"));
+        putNullableText(location, "mapId", sourceLocation.get("mapId"));
+        putNullableBoolean(location, "localized", sourceLocation.get("localized"));
         putNullableText(location, "address", sourceLocation.get("address"));
         String updatedAt = firstText(sourceLocation, "updatedAt", "reportedAt", "receivedAt");
         location.put("updatedAt", updatedAt.isBlank() ? timestamp(sourceRoot) : updatedAt);
@@ -360,7 +371,8 @@ public class PanoramaWebSocketEventAdapter {
     }
 
     private boolean hasLocation(JsonNode location) {
-        return location != null && hasAny(location, "lng", "longitude", "lat", "latitude", "x", "coordinateX", "address");
+        return location != null && hasAny(
+                location, "lng", "longitude", "lat", "latitude", "x", "coordinateX", "address", "localized");
     }
 
     private boolean hasAny(JsonNode node, String... fieldNames) {
@@ -382,6 +394,21 @@ public class PanoramaWebSocketEventAdapter {
 
     private String normalizeControlMode(String controlMode) {
         return "MANUAL".equalsIgnoreCase(controlMode) ? "MANUAL" : "NAVIGATION";
+    }
+
+    private String panoramaDeviceStatus(JsonNode sourceData) {
+        String status = text(sourceData, "status");
+        if ("offline".equalsIgnoreCase(status)) {
+            return "offline";
+        }
+        String healthStatus = text(sourceData, "healthStatus").toUpperCase(Locale.ROOT);
+        if (healthStatus.contains("ERROR")
+                || healthStatus.contains("FAULT")
+                || healthStatus.contains("异常")
+                || healthStatus.contains("故障")) {
+            return "fault";
+        }
+        return status.isBlank() ? "online" : status;
     }
 
     private String controlModeName(String controlMode) {
@@ -410,5 +437,13 @@ public class PanoramaWebSocketEventAdapter {
             return;
         }
         target.put(fieldName, value.asDouble());
+    }
+
+    private void putNullableBoolean(ObjectNode target, String fieldName, JsonNode value) {
+        if (value == null || value.isNull() || !value.isBoolean()) {
+            target.putNull(fieldName);
+            return;
+        }
+        target.put(fieldName, value.asBoolean());
     }
 }
