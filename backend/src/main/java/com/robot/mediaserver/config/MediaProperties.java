@@ -374,8 +374,8 @@ public class MediaProperties {
     private String hlsFfmpegPath = "ffmpeg";
     private String ffprobePath = "ffprobe";
     private int hlsSegmentDurationSeconds = 6;
-    private int maxActiveUploadsPerRobot = 2;
-    private int maxActiveUploadsGlobal = 50;
+    private int maxActiveUploadsPerRobot = 20;
+    private int maxActiveUploadsGlobal = 500;
     private int hlsWorkerConcurrency = 2;
     private int hlsProcessingLeaseSeconds = 300;
     private int retentionDays = 30;

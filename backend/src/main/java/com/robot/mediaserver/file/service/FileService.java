@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.file.api.FileApiException;
 import com.robot.mediaserver.file.dto.CreateMultipartFileUploadRequest;
 import com.robot.mediaserver.file.dto.FileBatchDeleteResponse;
 import com.robot.mediaserver.file.dto.FileDeleteResultResponse;
@@ -56,7 +57,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class FileService {
@@ -121,12 +121,11 @@ public class FileService {
         fileRepository.save(entity);
         try {
             storage.upload(entity.getObjectKey(), file.getInputStream(), file.getSize(), entity.getContentType());
+        } catch (FileStorageException ex) {
+            markSimpleUploadFailed(entity, "STORAGE_UNAVAILABLE", ex.getMessage());
+            throw ex;
         } catch (Exception ex) {
-            entity.setStatus(FileStatus.FAILED);
-            entity.setErrorCode("SIMPLE_UPLOAD_FAILED");
-            entity.setErrorMessage(ex.getMessage());
-            entity.setUpdatedAt(now());
-            fileRepository.save(entity);
+            markSimpleUploadFailed(entity, "SIMPLE_UPLOAD_FAILED", ex.getMessage());
             throw error(HttpStatus.CONFLICT, "SIMPLE_UPLOAD_FAILED", ex.getMessage());
         }
         markUploaded(entity);
@@ -214,7 +213,7 @@ public class FileService {
         storage.completeMultipart(file.getObjectKey(), upload.getStorageUploadId(), parts);
         long storedSize = storage.statSize(file.getObjectKey());
         if (storedSize != file.getFileSize()) {
-            throw error(HttpStatus.CONFLICT, "FILE_SIZE_MISMATCH", "合成后的对象大小与登记文件不一致");
+            throw error(HttpStatus.CONFLICT, "UPLOAD_SIZE_MISMATCH", "合成后的对象大小与登记文件不一致");
         }
         upload.setStatus(FileUploadStatus.COMPLETED);
         upload.setCompletedAt(now());
@@ -364,12 +363,8 @@ public class FileService {
                 delete(user, fileId);
                 results.add(new FileDeleteResultResponse(fileId, true, "DELETED", "删除成功"));
                 succeeded++;
-            } catch (ResponseStatusException ex) {
-                String code = ex.getStatusCode().value() == HttpStatus.NOT_FOUND.value()
-                        ? "FILE_NOT_FOUND"
-                        : "DELETE_FAILED";
-                String message = ex.getReason() == null ? "删除失败" : ex.getReason();
-                results.add(new FileDeleteResultResponse(fileId, false, code, message));
+            } catch (FileApiException ex) {
+                results.add(new FileDeleteResultResponse(fileId, false, ex.getCode(), ex.getMessage()));
             } catch (RuntimeException ex) {
                 log.warn("批量删除文件失败: fileId={}", fileId, ex);
                 results.add(new FileDeleteResultResponse(fileId, false, "DELETE_FAILED", "删除失败"));
@@ -753,11 +748,44 @@ public class FileService {
     }
 
     private void checkQuota(String robotId) {
-        if (uploadRepository.countByStatus(FileUploadStatus.ACTIVE) >= properties.getFile().getMaxActiveUploadsGlobal()
-                || (robotId != null && uploadRepository.countActiveByRobotId(robotId, FileUploadStatus.ACTIVE)
-                        >= properties.getFile().getMaxActiveUploadsPerRobot())) {
-            throw error(HttpStatus.TOO_MANY_REQUESTS, "UPLOAD_CONCURRENCY_LIMIT", "上传并发数超过限制");
+        OffsetDateTime timestamp = now();
+        int globalLimit = properties.getFile().getMaxActiveUploadsGlobal();
+        long globalCount = uploadRepository.countByStatusAndExpiresAtAfter(FileUploadStatus.ACTIVE, timestamp);
+        if (globalCount >= globalLimit) {
+            throw new FileApiException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "UPLOAD_SESSION_LIMIT",
+                    "全局未完成上传会话数量达到上限，请稍后重试",
+                    true,
+                    Map.of("scope", "GLOBAL", "activeCount", globalCount, "limit", globalLimit));
         }
+        if (robotId != null) {
+            int robotLimit = properties.getFile().getMaxActiveUploadsPerRobot();
+            long robotCount = uploadRepository.countActiveByRobotId(
+                    robotId,
+                    FileUploadStatus.ACTIVE,
+                    timestamp);
+            if (robotCount >= robotLimit) {
+                throw new FileApiException(
+                        HttpStatus.TOO_MANY_REQUESTS,
+                        "UPLOAD_SESSION_LIMIT",
+                        "机器人未完成上传会话数量达到上限，请稍后重试",
+                        true,
+                        Map.of(
+                                "scope", "ROBOT",
+                                "robotId", robotId,
+                                "activeCount", robotCount,
+                                "limit", robotLimit));
+            }
+        }
+    }
+
+    private void markSimpleUploadFailed(MediaFile file, String code, String message) {
+        file.setStatus(FileStatus.FAILED);
+        file.setErrorCode(code);
+        file.setErrorMessage(message);
+        file.setUpdatedAt(now());
+        fileRepository.save(file);
     }
 
     private MediaFileUpload requireActiveUpload(String robotId, String uploadId) {
@@ -1029,8 +1057,8 @@ public class FileService {
         return UUID.randomUUID().toString().replace("-", "");
     }
 
-    private ResponseStatusException error(HttpStatus status, String code, String message) {
-        return new ResponseStatusException(status, message == null ? code : message);
+    private FileApiException error(HttpStatus status, String code, String message) {
+        return new FileApiException(status, code, message);
     }
 
     private String truncate(String message) {

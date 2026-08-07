@@ -57,7 +57,7 @@ public class FileObjectStorageService {
                     .expiry(properties.getFile().getUploadUrlTtlSeconds(), TimeUnit.SECONDS)
                     .build());
         } catch (Exception ex) {
-            throw new IllegalStateException("生成文件分片上传预签名地址失败", ex);
+            throw new FileStorageException("生成文件分片上传预签名地址失败", ex);
         }
     }
 
@@ -80,7 +80,7 @@ public class FileObjectStorageService {
             parts.sort(Comparator.comparingInt(StoredPart::partNumber));
             return parts;
         } catch (Exception ex) {
-            throw new IllegalStateException("列出文件分片失败", ex);
+            throw new FileStorageException("列出文件分片失败", ex);
         }
     }
 
@@ -100,7 +100,7 @@ public class FileObjectStorageService {
                     .build());
             abortMultipart(objectKey, storageUploadId);
         } catch (Exception ex) {
-            throw new IllegalStateException("合成文件对象失败", ex);
+            throw new FileStorageException("合成文件对象失败", ex);
         }
     }
 
@@ -114,7 +114,7 @@ public class FileObjectStorageService {
                         .build());
             }
         } catch (Exception ex) {
-            throw new IllegalStateException("删除暂存文件分片失败", ex);
+            throw new FileStorageException("删除暂存文件分片失败", ex);
         }
     }
 
@@ -127,7 +127,7 @@ public class FileObjectStorageService {
                     .build());
             return response.size();
         } catch (Exception ex) {
-            throw new IllegalStateException("获取文件对象信息失败：" + objectKey, ex);
+            throw new FileStorageException("获取文件对象信息失败：" + objectKey, ex);
         }
     }
 
@@ -142,7 +142,7 @@ public class FileObjectStorageService {
                     .contentType(contentType)
                     .build());
         } catch (Exception ex) {
-            throw new IllegalStateException("上传文件对象失败：" + objectKey, ex);
+            throw new FileStorageException("上传文件对象失败：" + objectKey, ex);
         }
     }
 
@@ -157,7 +157,7 @@ public class FileObjectStorageService {
                     .contentType(contentType)
                     .build());
         } catch (Exception ex) {
-            throw new IllegalStateException("上传文件对象失败：" + objectKey, ex);
+            throw new FileStorageException("上传文件对象失败：" + objectKey, ex);
         }
     }
 
@@ -171,7 +171,7 @@ public class FileObjectStorageService {
                     .overwrite(true)
                     .build());
         } catch (Exception ex) {
-            throw new IllegalStateException("下载文件对象失败：" + objectKey, ex);
+            throw new FileStorageException("下载文件对象失败：" + objectKey, ex);
         }
     }
 
@@ -185,7 +185,7 @@ public class FileObjectStorageService {
             input.transferTo(output);
             return output.toByteArray();
         } catch (Exception ex) {
-            throw new IllegalArgumentException("未找到文件对象：" + objectKey, ex);
+            throw new FileStorageException("读取文件对象失败：" + objectKey, ex);
         }
     }
 
@@ -204,7 +204,7 @@ public class FileObjectStorageService {
                                     : contentType))
                     .build());
         } catch (Exception ex) {
-            throw new IllegalStateException("生成文件下载地址失败：" + objectKey, ex);
+            throw new FileStorageException("生成文件下载地址失败：" + objectKey, ex);
         }
     }
 
@@ -230,7 +230,7 @@ public class FileObjectStorageService {
                         .build());
             }
         } catch (Exception ex) {
-            throw new IllegalStateException("删除文件对象失败：" + prefix, ex);
+            throw new FileStorageException("删除文件对象失败：" + prefix, ex);
         }
     }
 
@@ -284,7 +284,7 @@ public class FileObjectStorageService {
 
     private void requireEnabled() {
         if (!properties.getMinio().isEnabled()) {
-            throw new IllegalStateException("文件上传需要启用 MinIO");
+            throw new FileStorageException("文件服务未启用对象存储");
         }
     }
 
@@ -294,7 +294,7 @@ public class FileObjectStorageService {
                 client().makeBucket(MakeBucketArgs.builder().bucket(bucket()).build());
             }
         } catch (Exception ex) {
-            throw new IllegalStateException("准备文件存储桶失败", ex);
+            throw new FileStorageException("准备文件存储桶失败", ex);
         }
     }
 

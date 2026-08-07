@@ -439,30 +439,31 @@ manifest 作用：
 原因：
 
 ```text
-同一 robotId 的 ACTIVE 上传会话超过限制
+同一 robotId 或全局未过期 ACTIVE 上传会话达到容量上限
 ```
 
 默认：
 
 ```text
-MEDIA_FILE_MAX_ACTIVE_UPLOADS_PER_ROBOT=2
-MEDIA_FILE_MAX_ACTIVE_UPLOADS_GLOBAL=50
+MEDIA_FILE_MAX_ACTIVE_UPLOADS_PER_ROBOT=20
+MEDIA_FILE_MAX_ACTIVE_UPLOADS_GLOBAL=500
+MEDIA_FILE_CLEANUP_DELAY_MS=60000
 ```
 
 常见触发方式：
 
 1. 没有传 `sourceFileId`，重复 create 产生多个 ACTIVE 上传。
 2. create 后没有继续 PUT 和 complete。
-3. 客户端崩溃留下 ACTIVE 上传，会等过期清理。
+3. 客户端持续为不同源文件创建会话，但没有继续 PUT 和 complete。
 
 处理：
 
 1. 必须传稳定 `sourceFileId`。
-2. 客户端限制多文件并发，默认 2。
-3. 对 429 做退避重试。
-4. 排查数据库 `media_file_upload.status=ACTIVE` 的记录。
+2. 查看响应 `details.scope`、`activeCount`、`limit`，区分机器人容量和全局容量。
+3. 客户端实际多文件并发仍建议保持 2，并按响应头 `Retry-After` 退避重试。
+4. 排查数据库中 `status=ACTIVE AND expires_at > NOW()` 的记录。过期记录不占容量，并由后台每分钟批量清理。
 
-### 13.2 409 INVALID_STATE：准备文件存储桶失败
+### 13.2 503 STORAGE_UNAVAILABLE
 
 原因：
 
@@ -479,6 +480,8 @@ MINIO_SECRET_KEY
 MINIO_BUCKET
 MINIO_ENABLED
 ```
+
+`MINIO_ENDPOINT` 必须是机器人能够访问的外部 IP 或域名，因为 `partUrls[].uploadUrl` 会直接使用该地址。修改部署环境变量后需要重建 `media-service` 容器，不能只执行 `docker compose restart`。
 
 ### 13.3 409 SOURCE_FILE_CHANGED
 

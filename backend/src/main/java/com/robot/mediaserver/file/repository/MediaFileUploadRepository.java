@@ -13,13 +13,17 @@ public interface MediaFileUploadRepository extends JpaRepository<MediaFileUpload
 
     Optional<MediaFileUpload> findFirstByFileIdAndStatusOrderByCreatedAtDesc(String fileId, FileUploadStatus status);
 
-    List<MediaFileUpload> findTop20ByStatusAndExpiresAtBeforeOrderByExpiresAtAsc(
+    List<MediaFileUpload> findTop100ByStatusAndExpiresAtBeforeOrderByExpiresAtAsc(
             FileUploadStatus status,
             OffsetDateTime expiresAt);
 
-    long countByStatus(FileUploadStatus status);
+    long countByStatusAndExpiresAtAfter(FileUploadStatus status, OffsetDateTime expiresAt);
 
     @Query("select count(u) from MediaFileUpload u, MediaFile f "
-            + "where u.fileId = f.fileId and u.status = :status and f.robotId = :robotId")
-    long countActiveByRobotId(@Param("robotId") String robotId, @Param("status") FileUploadStatus status);
+            + "where u.fileId = f.fileId and u.status = :status and u.expiresAt > :expiresAt "
+            + "and f.robotId = :robotId")
+    long countActiveByRobotId(
+            @Param("robotId") String robotId,
+            @Param("status") FileUploadStatus status,
+            @Param("expiresAt") OffsetDateTime expiresAt);
 }

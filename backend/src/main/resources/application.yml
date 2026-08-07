@@ -71,10 +71,12 @@ media:
     ffprobe-path: ${MEDIA_FILE_FFPROBE_PATH:${FFPROBE_PATH:ffprobe}}
     # HLS 转码分片时长，单位秒。
     hls-segment-duration-seconds: ${MEDIA_FILE_HLS_SEGMENT_DURATION_SECONDS:6}
-    # 单个机器人允许同时进行的上传任务数量。
-    max-active-uploads-per-robot: ${MEDIA_FILE_MAX_ACTIVE_UPLOADS_PER_ROBOT:2}
-    # 全局允许同时进行的上传任务数量。
-    max-active-uploads-global: ${MEDIA_FILE_MAX_ACTIVE_UPLOADS_GLOBAL:50}
+    # 单机器人允许存在的未过期 multipart 上传会话容量，不代表客户端 PUT 并发数。
+    max-active-uploads-per-robot: ${MEDIA_FILE_MAX_ACTIVE_UPLOADS_PER_ROBOT:20}
+    # 全局允许存在的未过期 multipart 上传会话容量。
+    max-active-uploads-global: ${MEDIA_FILE_MAX_ACTIVE_UPLOADS_GLOBAL:500}
+    # 过期上传会话清理周期，单位毫秒。
+    cleanup-delay-ms: ${MEDIA_FILE_CLEANUP_DELAY_MS:60000}
     # HLS 转码工作线程并发数。
     hls-worker-concurrency: ${MEDIA_FILE_HLS_WORKER_CONCURRENCY:2}
     # HLS 转码任务租约时间，单位秒。

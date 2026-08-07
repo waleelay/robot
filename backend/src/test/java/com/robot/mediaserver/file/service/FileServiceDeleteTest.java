@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.file.api.FileApiException;
 import com.robot.mediaserver.file.dto.FileDeleteResultResponse;
 import com.robot.mediaserver.file.model.FileStatus;
 import com.robot.mediaserver.file.model.FileUploadStatus;
@@ -25,7 +26,6 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.server.ResponseStatusException;
 
 class FileServiceDeleteTest {
 
@@ -88,8 +88,12 @@ class FileServiceDeleteTest {
         when(fileRepository.findById("file-1")).thenReturn(Optional.of(file));
 
         assertThatThrownBy(() -> service.delete(user("org001"), "file-1"))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("404 NOT_FOUND");
+                .isInstanceOf(FileApiException.class)
+                .satisfies(ex -> {
+                    FileApiException apiException = (FileApiException) ex;
+                    assertThat(apiException.getStatus().value()).isEqualTo(404);
+                    assertThat(apiException.getCode()).isEqualTo("FILE_NOT_FOUND");
+                });
 
         verifyNoInteractions(storage);
     }

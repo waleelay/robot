@@ -368,6 +368,7 @@ sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/m
 将 host.docker.internal 替换成 internal-ip
 设置 LIVEKIT_URL=ws://external-ip:7880
 设置 LIVEKIT_NODE_IP=external-ip
+设置 MINIO_ENDPOINT=http://external-ip:9000
 设置 NGINX_TLS_HOST=external-ip
 追加 https://external-ip:4443 到 BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS
 ```
@@ -376,6 +377,14 @@ sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/m
 
 ```bash
 grep --color=never -nE '^(MYSQL_URL|MYSQL_USERNAME|MYSQL_PASSWORD|REDIS_HOST|REDIS_PORT|MINIO_ENDPOINT|MQTT_BROKER_URL|ELASTICSEARCH_URIS|CENTER_MANAGE_BASE_URL)=' .env
+```
+
+`MINIO_ENDPOINT` 会同时用于媒体服务访问 MinIO 和生成分片预签名 `uploadUrl`。机器人跨主机或公网直传时，必须配置为机器人能够访问的外部 IP 或域名，例如 `http://175.155.35.79:9000`，并确认防火墙、安全组和 MinIO 监听地址已开放该端口。
+
+修改后需要重建媒体服务容器使环境变量生效：
+
+```bash
+docker compose -f docker-compose.yml up -d --force-recreate media-service
 ```
 
 MySQL 首次部署希望自动创建 `robot_media` 数据库时，`MYSQL_URL` 需要包含：

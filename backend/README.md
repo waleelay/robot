@@ -131,7 +131,7 @@ video/
   - 作为 Media Service 内部 API 供 Control 层调用；前端统一通过 `/api/control/**` 访问。
 
 - `ApiExceptionHandler`
-  - 全局 REST 异常处理，统一返回错误响应。
+  - 全局 REST 异常处理；文件接口保留业务错误码、是否可重试、请求 ID 和错误上下文。
 
 ### 核心 Service
 
