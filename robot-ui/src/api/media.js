@@ -1,5 +1,6 @@
 import request from '@/utils/request'
 import { mediaClientId } from '@/utils/media-client-id'
+import { withApiPrefix, withBigscreenApiPrefix } from '@/utils/api-url'
 
 // 每个浏览器标签页拥有独立 clientId，但同一标签页刷新后保持不变。
 // 这对控制权续用很重要：刷新页面不能被后端误判成另一个终端。
@@ -13,8 +14,6 @@ const sessionHeaders = {
   'X-Client-Id': mediaClientId
 }
 
-const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
-
 // 创建视频会话
 export function createVideoSession(data) {
   const payload = {
@@ -23,7 +22,7 @@ export function createVideoSession(data) {
     clientRequestId: data.clientRequestId
   }
   return request({
-    url: `/api/control/robots/${data.robotId}/cameras/${data.deviceId}/video/start`,
+    url: `/api/bigscreen/control/robots/${data.robotId}/cameras/${data.deviceId}/video/start`,
     method: 'post',
     data: payload
   })
@@ -32,7 +31,7 @@ export function createVideoSession(data) {
 // 获取活跃视频会话
 export function getActiveVideoSessions() {
   return request({
-    url: '/api/control/video-sessions/active',
+    url: '/api/bigscreen/control/video-sessions/active',
     method: 'get'
   })
 }
@@ -40,7 +39,7 @@ export function getActiveVideoSessions() {
 // 获取观看令牌
 export function getViewerToken(sessionId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/token`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/token`,
     method: 'post'
   })
 }
@@ -48,7 +47,7 @@ export function getViewerToken(sessionId) {
 // 停止视频会话
 export function stopVideoSession(sessionId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/stop`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/stop`,
     method: 'post'
   })
 }
@@ -56,7 +55,7 @@ export function stopVideoSession(sessionId) {
 // 视频会话心跳
 export function heartbeatVideoSession(sessionId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/heartbeat`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/heartbeat`,
     method: 'post'
   })
 }
@@ -64,7 +63,7 @@ export function heartbeatVideoSession(sessionId) {
 // 重启视频会话
 export function restartVideoSession(sessionId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/restart`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/restart`,
     method: 'post'
   })
 }
@@ -72,7 +71,7 @@ export function restartVideoSession(sessionId) {
 // 切换频道
 export function switchChannel(sessionId, data) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/switch-channel`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/switch-channel`,
     method: 'post',
     data
   })
@@ -81,7 +80,7 @@ export function switchChannel(sessionId, data) {
 // 创建快照
 export function uploadFile(data, timeout = 30000) {
   return request({
-    url: '/api/control/files',
+    url: '/api/bigscreen/control/files',
     method: 'post',
     data,
     timeout
@@ -90,7 +89,7 @@ export function uploadFile(data, timeout = 30000) {
 
 export function transferMultiFunctionAudio(robotId, deviceId, fileId) {
   return request({
-    url: `/api/control/robots/${encodeURIComponent(robotId)}/devices/${encodeURIComponent(deviceId)}/audio-file-transfers`,
+    url: `/api/bigscreen/control/robots/${encodeURIComponent(robotId)}/devices/${encodeURIComponent(deviceId)}/audio-file-transfers`,
     method: 'post',
     data: { fileId }
   })
@@ -98,7 +97,7 @@ export function transferMultiFunctionAudio(robotId, deviceId, fileId) {
 
 export function getFiles(params = {}) {
   return request({
-    url: '/api/control/files',
+    url: '/api/bigscreen/control/files',
     method: 'get',
     params
   })
@@ -106,14 +105,14 @@ export function getFiles(params = {}) {
 
 export function fileDownloadUrl(fileId) {
   return request({
-    url: `/api/control/files/${fileId}/download-url`,
+    url: `/api/bigscreen/control/files/${fileId}/download-url`,
     method: 'post'
   })
 }
 
 export function getFileContent(fileId) {
   return request({
-    url: `/api/control/files/${encodeURIComponent(fileId)}/content`,
+    url: `/api/bigscreen/control/files/${encodeURIComponent(fileId)}/content`,
     method: 'get',
     responseType: 'blob',
     skipErrorMessage: true
@@ -134,26 +133,26 @@ export function revokeFileObjectUrl(url) {
 
 export function deleteFile(fileId) {
   return request({
-    url: `/api/control/files/${fileId}`,
+    url: `/api/bigscreen/control/files/${fileId}`,
     method: 'delete'
   })
 }
 
 export function deleteFiles(fileIds) {
   return request({
-    url: '/api/control/files/batch',
+    url: '/api/bigscreen/control/files/batch',
     method: 'delete',
     data: { fileIds }
   })
 }
 export function snapshotImageUrl(fileId) {
   const base = (process.env.VUE_APP_BASE_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '')
-  return `${base}/api/control/files/${encodeURIComponent(fileId)}/content`
+  return `${base}${withApiPrefix(`/api/bigscreen/control/files/${encodeURIComponent(fileId)}/content`)}`
 }
 
 export function stopIntercom(sessionId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/intercom/stop`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/intercom/stop`,
     method: 'post',
     headers: sessionHeaders,
     skipErrorMessage: true
@@ -161,7 +160,7 @@ export function stopIntercom(sessionId) {
 }
 export function startCameraIntercom(data) {
   return request({
-    url: `/api/control/robots/${data.robotId}/cameras/${data.deviceId}/video/intercom/start`,
+    url: `/api/bigscreen/control/robots/${data.robotId}/cameras/${data.deviceId}/video/intercom/start`,
     method: 'post',
     data: {
       quality: data.quality,
@@ -174,7 +173,7 @@ export function startCameraIntercom(data) {
 
 export function startSessionIntercom(sessionId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/intercom/start`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/intercom/start`,
     method: 'post',
     headers: sessionHeaders,
     skipErrorMessage: true
@@ -182,7 +181,7 @@ export function startSessionIntercom(sessionId) {
 }
 export function heartbeatIntercom(sessionId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/intercom/heartbeat`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/intercom/heartbeat`,
     method: 'post',
     headers: sessionHeaders,
     skipErrorMessage: true
@@ -191,10 +190,13 @@ export function heartbeatIntercom(sessionId) {
 
 export function getFilePlayUrl(fileId) {
   return request({
-    url: `${preUrl}/api/control/files/${fileId}/play-url`,
+    url: `/api/bigscreen/control/files/${fileId}/play-url`,
     method: 'post',
     headers
-  })
+  }).then(response => ({
+    ...response,
+    playUrl: withBigscreenApiPrefix(response && response.playUrl)
+  }))
 }
 
 // ==============================================================远程控制=================================================================
@@ -202,14 +204,14 @@ export function getFilePlayUrl(fileId) {
 // 双光云台
 export function getControlProfile(robotId) {
   return request({
-    url: `/api/control/robots/${robotId}/control-profile`,
+    url: `/api/bigscreen/control/robots/${robotId}/control-profile`,
     method: 'get'
   })
 }
 
 export function acquireControl(robotId, data) {
   return request({
-    url: `/api/control/robots/${robotId}/control-sessions/acquire`,
+    url: `/api/bigscreen/control/robots/${robotId}/control-sessions/acquire`,
     method: 'post',
     data
   })
@@ -217,7 +219,7 @@ export function acquireControl(robotId, data) {
 
 export function takeoverControl(robotId, data) {
   return request({
-    url: `/api/control/robots/${robotId}/control-sessions/takeover`,
+    url: `/api/bigscreen/control/robots/${robotId}/control-sessions/takeover`,
     method: 'post',
     data
   })
@@ -225,7 +227,7 @@ export function takeoverControl(robotId, data) {
 
 export function releaseControl(robotId, controlSessionId, data) {
   return request({
-    url: `/api/control/robots/${robotId}/control-sessions/${controlSessionId}/release`,
+    url: `/api/bigscreen/control/robots/${robotId}/control-sessions/${controlSessionId}/release`,
     method: 'post',
     data: data || {}
   })
@@ -233,7 +235,7 @@ export function releaseControl(robotId, controlSessionId, data) {
 
 export function createConfirmToken(robotId, data) {
   return request({
-    url: `/api/control/robots/${robotId}/commands/confirm-token`,
+    url: `/api/bigscreen/control/robots/${robotId}/commands/confirm-token`,
     method: 'post',
     data
   })
@@ -241,7 +243,7 @@ export function createConfirmToken(robotId, data) {
 
 export function sendEquipmentCommand(robotId, data) {
   return request({
-    url: `/api/control/robots/${robotId}/commands`,
+    url: `/api/bigscreen/control/robots/${robotId}/commands`,
     method: 'post',
     data
   })
@@ -249,7 +251,7 @@ export function sendEquipmentCommand(robotId, data) {
 
 export function startLiveRecording(sessionId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/recordings/start`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/recordings/start`,
     method: 'post',
     headers
   })
@@ -257,14 +259,14 @@ export function startLiveRecording(sessionId) {
 
 export function stopLiveRecording(sessionId, fileId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/recordings/${fileId}/stop`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/recordings/${fileId}/stop`,
     method: 'post',
     headers
   })
 }
 export function getActiveLiveRecording(sessionId) {
   return request({
-    url: `/api/control/video-sessions/${sessionId}/recordings/active`,
+    url: `/api/bigscreen/control/video-sessions/${sessionId}/recordings/active`,
     method: 'get',
     headers
   })
@@ -273,7 +275,7 @@ export function getActiveLiveRecording(sessionId) {
 // 控制模式 导航模式 NAVIGATION 手动模式 MANUAL
 export function setControlMode(data) {
   return request({
-    url: `/api/control/robots/${data.robotId}/control-mode`,
+    url: `/api/bigscreen/control/robots/${data.robotId}/control-mode`,
     method: 'post',
     data: {
       controlMode: data.controlMode,

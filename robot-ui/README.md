@@ -74,9 +74,9 @@ npm run lint:fix
 | 变量 | 作用 |
 | --- | --- |
 | `VUE_APP_TITLE` | 浏览器标题和系统名称 |
-| `VUE_APP_BASE_API` | Axios 请求的基础路径 |
+| `VUE_APP_BASE_API` | Axios 请求的基础路径，生产环境使用 `/api-gw` |
 | `VUE_APP_BASE_ORIGIN` | 后端服务源地址，也用于部分地图和媒体接口 |
-| `VUE_APP_WS_URL` | 机器人控制 WebSocket 地址，例如 `wss://host/ws/control` |
+| `VUE_APP_WS_URL` | 大屏 WebSocket 地址，例如 `wss://host/api-gw/ws/bigscreen` |
 | `VUE_APP_VOICEWEBSOCKET_URL` | 语音服务 WebSocket 地址 |
 | `VUE_APP_WEBSOCKET_URL` | 业务 WebSocket 地址 |
 | `VUE_APP_WEBRTC` | WebRTC 服务地址 |
@@ -91,7 +91,7 @@ npm run lint:fix
 VUE_APP_TITLE=具身智能平台指挥中心
 VUE_APP_BASE_API=/dev-api
 VUE_APP_BASE_ORIGIN=https://backend.example.com
-VUE_APP_WS_URL=wss://backend.example.com/ws/control
+VUE_APP_WS_URL=wss://backend.example.com/api-gw/ws/bigscreen
 VUE_APP_KEYCLOAK_URL=https://auth.example.com
 VUE_APP_KEYCLOAK_REALM=iam-auth
 VUE_APP_KEYCLOAK_CLIENT_ID=bigscreen-web
@@ -102,6 +102,9 @@ VUE_APP_KEYCLOAK_CLIENT_ID=bigscreen-web
 生产部署也可通过 `public/js/auth-config.js` 提供 Keycloak 运行时配置，无需将具体环境地址写进业务代码。
 管理端需要为大屏注册 Public SPA 客户端并启用 Authorization Code + PKCE(S256)。
 完整配置见[大屏统一登录认证对接指南](../docs/03-接口与协议/大屏BFF/大屏统一登录认证对接指南.md)。
+
+生产环境的 REST 和 WebSocket 分别访问 `/api-gw/api/bigscreen/**`、
+`/api-gw/ws/bigscreen`，由大屏 Nginx 转发到管理端 API Gateway。
 
 修改环境文件后需要重新启动开发服务。环境文件中不要提交账号、Token、私钥等敏感信息。
 
@@ -167,7 +170,7 @@ npm run build:prod
 
 - 单页应用路由回退到 `index.html`
 - 业务 API 反向代理
-- `/ws/control` 等 WebSocket 路径的 Upgrade/Connection 请求头
+- `/api-gw/` 的 API Gateway 反向代理及 WebSocket Upgrade/Connection 请求头
 - `/livekit` 的 WebSocket 和 HTTP 代理
 - HTTPS 站点使用浏览器信任、域名匹配且未过期的证书
 

@@ -198,6 +198,7 @@
 import HlsModule from 'hls.js'
 import { getTaskRecordReplay, previewImageBlob } from '@/api/new-bi'
 import { getFilePlayUrl } from '@/api/media'
+import { withApiPrefix } from '@/utils/api-url'
 
 const ImportedHls = HlsModule && (HlsModule.default || HlsModule)
 
@@ -771,7 +772,9 @@ export default {
       return (process.env.VUE_APP_BASE_ORIGIN || window.location.origin || '').replace(/\/$/, '')
     },
     normalizeMediaFilePath(path) {
-      return String(path || '').replace(/^\/api\/media\/files\//, '/api/control/files/')
+      return String(path || '')
+        .replace(/^\/api\/media\/files\//, '/api/bigscreen/control/files/')
+        .replace(/^\/api\/control(?=\/|$)/, '/api/bigscreen/control')
     },
     normalizeResourceUrl(value) {
       if (!value) return ''
@@ -781,8 +784,8 @@ export default {
         try {
           const parsed = new URL(url)
           const pathname = this.normalizeMediaFilePath(parsed.pathname)
-          if (/^\/api\/control\/files\//.test(pathname)) {
-            return `${baseOrigin}${pathname}${parsed.search}${parsed.hash}`
+          if (/^\/api\/bigscreen\/control\/files\//.test(pathname)) {
+            return `${baseOrigin}${withApiPrefix(pathname)}${parsed.search}${parsed.hash}`
           }
           return url
         } catch (error) {
@@ -790,10 +793,12 @@ export default {
         }
       }
       const pathname = this.normalizeMediaFilePath(url.charAt(0) === '/' ? url : `/${url}`)
-      return `${baseOrigin}${pathname}`
+      return `${baseOrigin}${withApiPrefix(pathname)}`
     },
     mediaFileContentUrl(fileId) {
-      return fileId ? `${this.resourceBaseOrigin()}/api/control/files/${encodeURIComponent(fileId)}/content` : ''
+      return fileId
+        ? `${this.resourceBaseOrigin()}${withApiPrefix(`/api/bigscreen/control/files/${encodeURIComponent(fileId)}/content`)}`
+        : ''
     },
     isDemoUrl(value) {
       return typeof value === 'string' && value.indexOf('eiop-demo://') === 0

@@ -65,6 +65,7 @@ import {
   getFilePlayUrl,
   revokeFileObjectUrl
 } from '../../../../../../api/media.js'
+import { withApiPrefix } from '../../../../../../utils/api-url.js'
 import MultimediaDetail from './MultimediaDetail.vue'
 import Empty from '../../../../components/Empty.vue'
 
@@ -153,7 +154,7 @@ export default {
         const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
         this.recordings = (res.items || []).map(item => ({
           ...item, fileType: item.fileType || 'VIDEO',
-          customUrl: `${preUrl}/api/control/files/${item.fileId}/content`
+          customUrl: `${preUrl}${withApiPrefix(`/api/bigscreen/control/files/${item.fileId}/content`)}`
         }))
         if (this.tabIndex === 1) this.$nextTick(() => this.bindVideoPlayers())
       } catch (e) { this.recordings = [] }

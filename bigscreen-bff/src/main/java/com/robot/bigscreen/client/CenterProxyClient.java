@@ -112,7 +112,13 @@ public class CenterProxyClient {
     }
 
     private String targetPath(HttpServletRequest request) {
-        String path = request.getRequestURI();
+        return targetPath(request.getRequestURI());
+    }
+
+    static String targetPath(String path) {
+        if (path.startsWith("/api/bigscreen/control")) {
+            return "/api/control" + path.substring("/api/bigscreen/control".length());
+        }
         if (path.startsWith("/api/bigscreen")) {
             return "/api/control" + path.substring("/api/bigscreen".length());
         }

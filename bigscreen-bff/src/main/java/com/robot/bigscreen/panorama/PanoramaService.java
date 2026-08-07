@@ -59,6 +59,7 @@ public class PanoramaService {
             return List.of();
         }
         Map<String, List<Map<String, Object>>> pointsByMapId = new LinkedHashMap<>();
+        Map<String, List<Map<String, Object>>> fixedCamerasByMapId = new LinkedHashMap<>();
         List<Map<String, Object>> result = new ArrayList<>(maps.size());
         for (Map<String, Object> source : maps) {
             Map<String, Object> map = mutable(source);
@@ -66,8 +67,12 @@ public class PanoramaService {
             List<Map<String, Object>> points = mapId == null
                     ? List.of()
                     : pointsByMapId.computeIfAbsent(mapId, centerClient::mapPoints);
+            List<Map<String, Object>> fixedCameras = mapId == null
+                    ? List.of()
+                    : fixedCamerasByMapId.computeIfAbsent(mapId, centerClient::fixedCameras);
             map.put("points", points);
             map.put("devices", devicesForMap(mapId, devices));
+            map.put("fixedCamares", fixedCameras);
             result.add(map);
         }
         return result;
@@ -556,7 +561,7 @@ public class PanoramaService {
             return imageUrl;
         }
         String imageFileId = firstString(source, "imageFileId");
-        return imageFileId == null ? null : "/api/control/files/" + imageFileId + "/content";
+        return imageFileId == null ? null : "/api/bigscreen/control/files/" + imageFileId + "/content";
     }
 
     private Map<String, Object> alarmSummary(List<Map<String, Object>> alarms) {

@@ -14,16 +14,19 @@ import org.junit.jupiter.api.Test;
 class PanoramaServiceTest {
 
     @Test
-    void addsPointsToEveryMapInOverview() {
+    void addsPointsAndFixedCamerasToEveryMapInOverview() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         Map<String, Object> firstMap = Map.of("id", 2077775285125144578L, "mapName", "Map One");
         Map<String, Object> secondMap = Map.of("mapId", 2, "mapName", "Map Two");
         Map<String, Object> mapWithoutId = Map.of("mapName", "Map Without Id");
         List<Map<String, Object>> firstPoints = List.of(Map.of("id", 101L, "pointName", "Start"));
+        List<Map<String, Object>> firstFixedCameras = List.of(Map.of("id", 201L, "cameraName", "Fixed Camera"));
         when(centerClient.enabledMaps()).thenReturn(List.of(firstMap, secondMap, mapWithoutId));
         when(centerClient.mapPoints("2077775285125144578")).thenReturn(firstPoints);
         when(centerClient.mapPoints("2")).thenReturn(List.of());
+        when(centerClient.fixedCameras("2077775285125144578")).thenReturn(firstFixedCameras);
+        when(centerClient.fixedCameras("2")).thenReturn(List.of());
 
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
         Map<String, Object> overview = service.overview();
@@ -35,9 +38,15 @@ class PanoramaServiceTest {
         assertEquals(List.of(), maps.get(0).get("devices"));
         assertEquals(List.of(), maps.get(1).get("devices"));
         assertEquals(List.of(), maps.get(2).get("devices"));
+        assertEquals(firstFixedCameras, maps.get(0).get("fixedCamares"));
+        assertEquals(List.of(), maps.get(1).get("fixedCamares"));
+        assertEquals(List.of(), maps.get(2).get("fixedCamares"));
         assertFalse(firstMap.containsKey("points"));
+        assertFalse(firstMap.containsKey("fixedCamares"));
         verify(centerClient).mapPoints("2077775285125144578");
         verify(centerClient).mapPoints("2");
+        verify(centerClient).fixedCameras("2077775285125144578");
+        verify(centerClient).fixedCameras("2");
     }
 
     @Test
@@ -75,6 +84,8 @@ class PanoramaServiceTest {
                 Map.of("mapName", "Map Without Id")));
         when(centerClient.mapPoints("1001")).thenReturn(List.of());
         when(centerClient.mapPoints("1002")).thenReturn(List.of());
+        when(centerClient.fixedCameras("1001")).thenReturn(List.of());
+        when(centerClient.fixedCameras("1002")).thenReturn(List.of());
         when(centerClient.devices()).thenReturn(List.of(
                 Map.of("serialNumber", "robot-001", "deviceName", "Robot One"),
                 Map.of("serialNumber", "robot-002", "deviceName", "Robot Two"),

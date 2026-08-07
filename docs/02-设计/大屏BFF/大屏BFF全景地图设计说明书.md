@@ -403,11 +403,22 @@ GET /api/bigscreen/panorama/overview
             "lat": 30.7478613352993
           }
         }
+      ],
+      "fixedCamares": [
+        {
+          "id": 201,
+          "mapId": 1,
+          "cameraName": "A区固定摄像头"
+        }
       ]
     }
   ]
 }
 ```
+
+`map[].fixedCamares` 为当前地图的固定摄像头列表。BFF 按每张地图的 `id/mapId`
+请求 `/api/v1/management/fixed-cameras?pageNum=1&pageSize=100&mapId={mapId}`，取分页响应
+`data.records` 原样写入；地图无 ID 或未查到数据时返回 `[]`。
 
 `patrolOverview` 字段说明：
 

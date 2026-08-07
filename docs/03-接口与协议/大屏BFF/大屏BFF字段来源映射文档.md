@@ -167,7 +167,15 @@ GET /api/bigscreen/panorama/overview
 | `status` | 当前任务状态 | 控制端 + 管理端 + BFF 转换 | 优先 `status.task.taskStatus/status`；没有时用任务实例 `status` |
 | `timeRange` | 当前任务时间段 | 管理端 + BFF 计算 | 任务实例 `startedAt/completedAt` 计算；缺失为 `null` |
 
-### 3.8 `alarms`
+### 3.8 `map[]`
+
+| BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
+|---|---|---|---|
+| `points` | 地图点位列表 | 管理端 | `/api/v1/management/maps/{mapId}/points` 返回值 |
+| `devices` | 当前地图的机器人列表 | 管理端 + BFF 过滤 | 按 `devices[].location.mapId` 与地图 ID 匹配 |
+| `fixedCamares` | 当前地图的固定摄像头列表 | 管理端 | `/api/v1/management/fixed-cameras?pageNum=1&pageSize=100&mapId={mapId}` 的 `data.records` |
+
+### 3.9 `alarms`
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
@@ -181,7 +189,7 @@ GET /api/bigscreen/panorama/overview
 | `medium.items` | 中风险告警集合 | BFF 分组 | `items[].level == MEDIUM` |
 | `low.items` | 低风险告警集合 | BFF 分组 | `items[].level == LOW` |
 
-### 3.9 `alarms.*.items[]`
+### 3.10 `alarms.*.items[]`
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|

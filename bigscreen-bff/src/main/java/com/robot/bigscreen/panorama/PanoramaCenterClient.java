@@ -151,6 +151,19 @@ public class PanoramaCenterClient {
         return records(uri);
     }
 
+    public List<Map<String, Object>> fixedCameras(String mapId) {
+        if (mapId == null || mapId.isBlank()) {
+            return List.of();
+        }
+        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/fixed-cameras")
+                .queryParam("pageNum", 1)
+                .queryParam("pageSize", 100)
+                .queryParam("mapId", mapId)
+                .build(true)
+                .toUri();
+        return records(uri);
+    }
+
     public List<Map<String, Object>> pathPoints(String pathId) {
         if (pathId == null || pathId.isBlank()) {
             return List.of();

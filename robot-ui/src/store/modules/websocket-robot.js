@@ -507,7 +507,8 @@ const actions = {
       return
     }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/control`
+    const apiPrefix = (process.env.VUE_APP_BASE_API || '').replace(/\/$/, '')
+    const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}${apiPrefix}/ws/bigscreen`
     const socketUrl = new URL(url, window.location.href)
     socketUrl.searchParams.set('clientId', mediaClientId)
     const accessToken = await bearerToken()
@@ -515,7 +516,6 @@ const actions = {
       socketUrl.searchParams.set('access_token', accessToken)
     }
     const socket = new WebSocket(socketUrl.toString())
-    // const socket = new WebSocket('wss://192.168.124.115:8080/ws/control')
     socket.onopen = () => {
       if (state.mediaReconnectTimer) {
         clearTimeout(state.mediaReconnectTimer)
