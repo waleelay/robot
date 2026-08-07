@@ -22,6 +22,7 @@ class PanoramaWebSocketEventAdapterTest {
                     "robotId":"test115",
                     "status":"online",
                     "healthStatus":"异常",
+                    "controlMode":"导航模式",
                     "location":{
                       "localized":true,
                       "coordinateType":"地图坐标",
@@ -54,6 +55,8 @@ class PanoramaWebSocketEventAdapterTest {
                 .orElseThrow();
         assertThat(statusEvent.path("data").path("status").asText()).isEqualTo("fault");
         assertThat(statusEvent.path("data").path("healthStatus").asText()).isEqualTo("异常");
+        assertThat(statusEvent.path("data").path("controlMode").asText()).isEqualTo("导航模式");
+        assertThat(statusEvent.path("data").path("controlModeName").asText()).isEqualTo("导航模式");
         JsonNode statsEvent = events.stream()
                 .map(this::readTree)
                 .filter(node -> "panorama.stats.changed".equals(node.path("event").asText()))

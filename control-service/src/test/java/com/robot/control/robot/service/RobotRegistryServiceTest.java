@@ -32,6 +32,7 @@ class RobotRegistryServiceTest {
                 "battery", 47,
                 "speed", 0.6,
                 "healthStatus", "异常",
+                "controlMode", "导航模式",
                 "location", object("x", 5.28, "y", 1.37, "z", 0, "yaw", -2.87),
                 "edgeStatus", object("basic", object("healthStatus", "异常"))));
 
@@ -45,6 +46,8 @@ class RobotRegistryServiceTest {
                 .containsEntry("battery", 47)
                 .containsEntry("speed", 0.6)
                 .containsEntry("healthStatus", "异常")
+                .containsEntry("controlMode", "导航模式")
+                .containsEntry("controlModeName", "导航模式")
                 .containsEntry("devices", List.of(object("deviceId", "ptz-001")));
         assertThat(map(state.get("location"))).containsEntry("yaw", -2.87);
     }

@@ -127,21 +127,15 @@ public class EdgeDeviceStatusHandler {
     }
 
     private String normalizeControlMode(Object value) {
-        String mode = string(value).trim().toUpperCase(Locale.ROOT);
+        String mode = string(value).trim();
         if (mode.isBlank()) {
             return null;
         }
-        if (mode.contains("MANUAL")
-                        || mode.contains("REMOTE")
-                        || mode.contains("手动")
-                        || mode.contains("远程")) {
-            return "MANUAL";
+        if ("手动模式".equals(mode)) {
+            return "手动模式";
         }
-        if (mode.contains("NAVIGATION")
-                || mode.contains("AUTO")
-                || mode.contains("导航")
-                || mode.contains("自动")) {
-            return "NAVIGATION";
+        if ("导航模式".equals(mode)) {
+            return "导航模式";
         }
         return null;
     }

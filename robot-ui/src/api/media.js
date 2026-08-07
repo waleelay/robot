@@ -272,7 +272,7 @@ export function getActiveLiveRecording(sessionId) {
   })
 }
 
-// 控制模式 导航模式 NAVIGATION 手动模式 MANUAL
+// 控制模式请求与状态统一使用“导航模式”“手动模式”
 export function setControlMode(data) {
   return request({
     url: `/api/bigscreen/control/robots/${data.robotId}/control-mode`,

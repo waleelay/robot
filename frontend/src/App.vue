@@ -192,7 +192,7 @@
             <el-select
                 class="control-mode-select"
                 size="mini"
-                :value="selectedRobot.controlMode || 'MANUAL'"
+                :value="selectedRobot.controlMode || '手动模式'"
                 :disabled="selectedRobot.status !== 'online' || controlModeChanging"
                 @change="changeControlMode"
             >
@@ -528,8 +528,8 @@ export default {
       controlTimers: {},
       controlModeChanging: false,
       controlModeOptions: [
-        { value: 'MANUAL', label: '手动模式' },
-        { value: 'NAVIGATION', label: '导航模式' }
+        { value: '手动模式', label: '手动模式' },
+        { value: '导航模式', label: '导航模式' }
       ],
       deviceStateCache,
       ptzAutoRotateState: Object.assign({}, deviceStateCache.ptzAutoRotateState || {}),
@@ -1287,13 +1287,13 @@ export default {
     },
     async changeControlMode(controlMode) {
       const robot = this.selectedRobot
-      if (!robot || !controlMode || controlMode === (robot.controlMode || 'MANUAL')) return
+      if (!robot || !controlMode || controlMode === (robot.controlMode || '手动模式')) return
       const index = this.robots.findIndex(item => item.robotId === robot.robotId)
       if (index < 0 || robot.status !== 'online') return
       this.controlModeChanging = true
       try {
         let response
-        if (robot.controlMode === 'NAVIGATION' && controlMode === 'MANUAL') {
+        if (robot.controlMode === '导航模式' && controlMode === '手动模式') {
           response = await takeoverControl(robot.robotId, {
             observedStateSeq: robot.stateSeq
           })
@@ -1344,7 +1344,7 @@ export default {
       if (this.controlSessions[key] && this.controlSessions[key].status === 'ACTIVE') {
         return this.controlSessions[key]
       }
-      if (device.deviceId === 'base' && this.selectedRobot.controlMode !== 'MANUAL') {
+      if (device.deviceId === 'base' && this.selectedRobot.controlMode !== '手动模式') {
         throw new Error('请先将机器人切换到手动模式')
       }
       const session = await acquireControl(this.selectedRobotId, {
@@ -1401,7 +1401,7 @@ export default {
           'base-strafe-left': { linearX: 0, linearY: 0.2, angularZ: 0 },
           'base-strafe-right': { linearX: 0, linearY: -0.2, angularZ: 0 }
         }[kind]
-        return this.commandPayload(robotId, session.controlSessionId, 'MANUAL', device, 'drive.velocity', params, kind)
+        return this.commandPayload(robotId, session.controlSessionId, '手动模式', device, 'drive.velocity', params, kind)
       }
       if (kind.indexOf('ptz-') === 0) {
         const device = this.ptzDevice
@@ -1417,13 +1417,13 @@ export default {
         }[kind]
         const session = await this.ensureControlSession(device, directionAction)
         const params = { speed: 20, duration: 0.3 }
-        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, directionAction, params, kind)
+        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || '手动模式', device, directionAction, params, kind)
       }
       if (kind.indexOf('zoom-') === 0) {
         const device = this.ptzDevice
         const session = await this.ensureControlSession(device, 'camera.zoom')
         const params = { zoomSpeed: kind === 'zoom-in' ? 0.5 : -0.5 }
-        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'camera.zoom', params, kind)
+        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || '手动模式', device, 'camera.zoom', params, kind)
       }
       return null
     },
@@ -1457,7 +1457,7 @@ export default {
         'light.set': { enabled: true, brightness: 80, mode: 'STEADY' }
       }[action]
       const response = await sendEquipmentCommand(this.selectedRobotId,
-          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, action))
+          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || '手动模式', device, action, params, action))
       this.log('API sendEquipmentCommand', response)
     },
     isNetGunSafetyOn(device) {
@@ -1668,7 +1668,7 @@ export default {
       try {
         const session = await this.ensureControlSession(device, action)
         const response = await sendEquipmentCommand(this.selectedRobotId,
-            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, source || action))
+            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || '手动模式', device, action, params, source || action))
         this.log('API sendDeviceCommand', response)
         return true
       } catch (error) {
@@ -1701,7 +1701,7 @@ export default {
               confirmToken: token.confirmToken
             }
         const response = await sendEquipmentCommand(this.selectedRobotId,
-            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'fire', fireParams, source || `fire_${channel}`))
+            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || '手动模式', device, 'fire', fireParams, source || `fire_${channel}`))
         this.log('API firePayload', response)
       } catch (error) {
         this.$message.error(this.errorMessage(error))
@@ -2323,7 +2323,7 @@ export default {
     toRobotState(robot) {
       // 将后端机器人 DTO 转为页面状态，同时给缺失字段补默认值。
       const status = robot.status || 'offline'
-      const controlMode = robot.controlMode === 'MANUAL' ? 'MANUAL' : 'NAVIGATION'
+      const controlMode = robot.controlMode === '手动模式' ? '手动模式' : '导航模式'
       return {
         robotId: robot.robotId,
         clientId: robot.clientId,
@@ -2332,7 +2332,7 @@ export default {
         vendor: robot.vendor,
         model: robot.model,
         controlMode,
-        controlModeName: robot.controlModeName || (controlMode === 'MANUAL' ? '手动模式' : '导航模式'),
+        controlModeName: robot.controlModeName || controlMode,
         stateSeq: robot.stateSeq || 0,
         battery: robot.battery,
         status,

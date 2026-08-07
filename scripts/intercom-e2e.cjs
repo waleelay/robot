@@ -180,7 +180,7 @@ async function publishRobotStatus(robotId) {
     type: '轮式机器人',
     battery: 100,
     status: 'online',
-    controlMode: 'MANUAL',
+    controlMode: '手动模式',
     stateSeq: Date.now(),
     missionStatus: 'IDLE',
     navigationStatus: 'IDLE',

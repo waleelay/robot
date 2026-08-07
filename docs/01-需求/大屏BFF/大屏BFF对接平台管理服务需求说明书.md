@@ -34,7 +34,7 @@
   "stateSeq": 1,
   "fault": false,
   "alarmLevel": null,
-  "controlMode": "MANUAL",
+  "controlMode": "手动模式",
   "speed": 0.0,
   "location": {
     "lng": 0.0,

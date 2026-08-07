@@ -254,12 +254,12 @@ function withCallReceipt(call) {
 // ============ 工具函数 ============
 // 用于将机器人数据转换为状态对象
 function toRobotState(robot) {
-  const controlMode = robot.controlMode === 'MANUAL' ? 'MANUAL' : 'NAVIGATION'
+  const controlMode = robot.controlMode === '手动模式' ? '手动模式' : '导航模式'
   return Object.assign({}, robot, {
     name: robot.name || robot.robotId,
     type: robot.type || '机器人',
     controlMode,
-    controlModeName: robot.controlModeName || (controlMode === 'MANUAL' ? '手动模式' : '导航模式'),
+    controlModeName: robot.controlModeName || controlMode,
     stateSeq: robot.stateSeq || 0,
     status: robot.status || 'offline',
     cameras: (robot.cameras || []).map(camera => Object.assign(
@@ -980,7 +980,7 @@ const actions = {
     if (state.controlSessions[key] && state.controlSessions[key].status === 'ACTIVE') {
       return state.controlSessions[key]
     }
-    if (device.deviceId === 'base' && state.selectedRobot.controlMode !== 'MANUAL') {
+    if (device.deviceId === 'base' && state.selectedRobot.controlMode !== '手动模式') {
       throw new Error('请先将机器人切换到手动模式')
     }
     const session = await acquireControl(state.selectedRobotId, {

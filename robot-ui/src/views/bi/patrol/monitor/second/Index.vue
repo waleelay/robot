@@ -66,7 +66,7 @@
               <div class="desc">当前速度：{{ currenRobot.speed }}m/s</div>
               <div class="desc">当前电量：{{ currenRobot.battery }}%</div>
               <div class="desc">当前任务：{{ currenRobot?.runningTask?.name || '-' }}</div>
-              <div class="desc">控制模型：{{ currenRobot?.controlMode === 'MANUAL' ? '手动控制' : currenRobot?.controlMode === 'NAVIGATION' ? '自动控制' : '-' }}</div>
+              <div class="desc">控制模型：{{ currenRobot?.controlMode === '手动模式' ? '手动控制' : currenRobot?.controlMode === '导航模式' ? '自动控制' : '-' }}</div>
             </div>
           </div>
           <div class="flex1 flx-align-center">

@@ -17,12 +17,12 @@
             <span>{{ selectedRobot?.controlModeName || '-' }}<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
           </div>
           <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
-            <el-dropdown-item command="NAVIGATION" :class="{ 'is-active': selectedRobot?.controlMode === 'NAVIGATION' }">导航模式</el-dropdown-item>
-            <el-dropdown-item command="MANUAL" :class="{ 'is-active': selectedRobot?.controlMode === 'MANUAL' }">手动模式</el-dropdown-item>
+            <el-dropdown-item command="导航模式" :class="{ 'is-active': selectedRobot?.controlMode === '导航模式' }">导航模式</el-dropdown-item>
+            <el-dropdown-item command="手动模式" :class="{ 'is-active': selectedRobot?.controlMode === '手动模式' }">手动模式</el-dropdown-item>
           </el-dropdown-menu>
         </el-dropdown>
       </div>
-      <div class="mt16 d-flex common-control" :class="{ 'ml30': !vehicleLightDevice && !warningLightDevice, 'is-disabled': selectedRobot?.controlMode !== 'MANUAL' }">
+      <div class="mt16 d-flex common-control" :class="{ 'ml30': !vehicleLightDevice && !warningLightDevice, 'is-disabled': selectedRobot?.controlMode !== '手动模式' }">
         <div class="outer flx-center">
           <div class="inner flx-center">
             <div class="circle flx-center">移动</div>

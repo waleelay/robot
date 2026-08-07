@@ -74,7 +74,7 @@ public class RobotRegistryService {
         String status = string(data.get("status"), "");
         String name = string(data.get("name"), robotId);
         String type = string(data.get("type"), "机器人");
-        String controlMode = string(data.get("controlMode"), "MANUAL");
+        String controlMode = string(data.get("controlMode"), "手动模式");
         Long stateSeq = data.get("stateSeq") instanceof Number seqValue ? seqValue.longValue() : null;
         String missionStatus = string(data.get("missionStatus"), "IDLE");
         String navigationStatus = string(data.get("navigationStatus"), "IDLE");
@@ -187,7 +187,7 @@ public class RobotRegistryService {
             device.battery = Math.max(0, Math.min(100, battery));
         }
         device.status = normalizedStatus(status);
-        device.controlMode = "MANUAL".equalsIgnoreCase(controlMode) ? "MANUAL" : "NAVIGATION";
+        device.controlMode = normalizedControlMode(controlMode);
         if (stateSeq != null) {
             device.stateSeq = stateSeq;
         }
@@ -308,7 +308,12 @@ public class RobotRegistryService {
     }
 
     private String controlModeName(String controlMode) {
-        return "MANUAL".equals(controlMode) ? "手动模式" : "导航模式";
+        return normalizedControlMode(controlMode);
+    }
+
+    private String normalizedControlMode(String controlMode) {
+        String mode = controlMode == null ? "" : controlMode.trim();
+        return "导航模式".equals(mode) ? "导航模式" : "手动模式";
     }
 
     /**
@@ -354,7 +359,7 @@ public class RobotRegistryService {
         private String type;
         private Integer battery;
         private String status = "offline";
-        private String controlMode = "MANUAL";
+        private String controlMode = "手动模式";
         private Long stateSeq = 1L;
         private String missionStatus = "IDLE";
         private String navigationStatus = "IDLE";

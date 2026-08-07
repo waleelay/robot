@@ -163,13 +163,13 @@ public class EquipmentControlService {
         response.put("controlMode", currentMode);
         response.put("controlModeName", controlModeName(currentMode));
         response.put("stateSeq", latestSeq);
-        if ("MANUAL".equals(currentMode)) {
+        if ("手动模式".equals(currentMode)) {
             response.put("modeChangeStatus", "CONFIRMED");
             return response;
         }
-        OffsetDateTime issuedAt = publishControlModeCommand(robotId, "MANUAL", latestSeq);
+        OffsetDateTime issuedAt = publishControlModeCommand(robotId, "手动模式", latestSeq);
         response.put("modeChangeStatus", "PUBLISHED");
-        response.put("requestedControlMode", "MANUAL");
+        response.put("requestedControlMode", "手动模式");
         response.put("requestedControlModeName", "手动模式");
         response.put("issuedAt", issuedAt.toString());
         return response;
@@ -209,7 +209,7 @@ public class EquipmentControlService {
         }
         requireOwnedActiveSession(robotId, controlSessionId, "base", user);
         String currentMode = reportedControlMode(state.get("controlMode"));
-        if (controlMode.equals(currentMode)) {
+        if (controlModeName(controlMode).equals(currentMode)) {
             return object(
                     "status", "CONFIRMED",
                     "robotId", robotId,
@@ -399,7 +399,10 @@ public class EquipmentControlService {
         });
         state.putIfAbsent("stateSeq", 1L);
         state.putIfAbsent("status", "online");
-        state.putIfAbsent("controlMode", "MANUAL");
+        state.putIfAbsent("controlMode", "手动模式");
+        String controlMode = reportedControlMode(state.get("controlMode"));
+        state.put("controlMode", controlMode);
+        state.put("controlModeName", controlModeName(controlMode));
         state.putIfAbsent("missionStatus", "IDLE");
         state.putIfAbsent("navigationStatus", "IDLE");
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
@@ -486,7 +489,7 @@ public class EquipmentControlService {
                     "panSpeed", clamp(doubleValue(params.get("panSpeed"), 0.3), 0.0, maxPanSpeed));
         }
         if ("control.mode.set".equals(action)) {
-            return object("controlMode", normalizeControlMode(stringValue(params.get("controlMode"), "MANUAL")));
+            return object("controlMode", normalizeControlMode(stringValue(params.get("controlMode"), "手动模式")));
         }
         if ("MULTI_FUNCTION_BROADCASTER".equals(deviceType)) {
             return buildMultiFunctionParams(action, params, device);
@@ -730,7 +733,7 @@ public class EquipmentControlService {
             throw new IllegalArgumentException("机器人不在线，不能下发本体移动指令");
         }
         String controlMode = reportedControlMode(state.get("controlMode"));
-        if (!"MANUAL".equals(controlMode)) {
+        if (!"手动模式".equals(controlMode)) {
             throw new IllegalArgumentException("机器人当前为" + controlModeName(controlMode) + "，请先切换到手动模式");
         }
         requireOwnedActiveSession(robotId, requiredString(request, "controlSessionId"), "base", user);
@@ -814,7 +817,7 @@ public class EquipmentControlService {
     private Map<String, Object> defaultRobotState(Map<String, Object> robot) {
         return object(
                 "robotId", firstValue(robot, "serialNumber", "robotId"),
-                "controlMode", "MANUAL",
+                "controlMode", "手动模式",
                 "controlModeName", "手动模式",
                 "stateSeq", 1,
                 "missionStatus", "IDLE",
@@ -1288,20 +1291,20 @@ public class EquipmentControlService {
      * @return 规范化控制模式
      */
     private static String normalizeControlMode(String value) {
-        String mode = stringValue(value, "").trim().toUpperCase(Locale.ROOT);
-        if (List.of("MANUAL", "NAVIGATION").contains(mode)) {
+        String mode = stringValue(value, "").trim();
+        if (List.of("手动模式", "导航模式").contains(mode)) {
             return mode;
         }
         throw new IllegalArgumentException("不支持的控制模式：" + value);
     }
 
     private static String reportedControlMode(Object value) {
-        String mode = stringValue(value, "MANUAL").trim().toUpperCase(Locale.ROOT);
-        return "MANUAL".equals(mode) ? "MANUAL" : "NAVIGATION";
+        String mode = stringValue(value, "手动模式").trim();
+        return "导航模式".equals(mode) ? "导航模式" : "手动模式";
     }
 
     private static String controlModeName(String controlMode) {
-        return "MANUAL".equals(controlMode) ? "手动模式" : "导航模式";
+        return reportedControlMode(controlMode);
     }
 
     private static String requiredString(Map<String, Object> source, String field) {

@@ -55,7 +55,7 @@ class RobotMQTTClient:
         self.state_seq = 0
         self.audio_volume = 50
         self.audio_muted = False
-        self.control_mode = "MANUAL"
+        self.control_mode = "手动模式"
         self.device_state: dict[str, dict[str, object]] = {}
         self.call_states: dict[str, IntercomCallState] = {}
         self.call_state_handler: Callable[[IntercomCallState], None] | None = None
@@ -716,22 +716,22 @@ def update_audio_session_state(session: dict[str, object]) -> None:
 
 def normalize_control_mode(value: str) -> str:
     """规范化控制模式，只接受手动和导航两种模式。"""
-    mode = (value or "MANUAL").strip().upper()
-    if mode in {"MANUAL", "NAVIGATION"}:
+    mode = (value or "手动模式").strip()
+    if mode in {"手动模式", "导航模式"}:
         return mode
-    return "NAVIGATION"
+    return "导航模式"
 
 
 def mission_status_for_mode(control_mode: str) -> str:
     """根据控制模式模拟任务状态。"""
-    if control_mode == "NAVIGATION":
+    if control_mode == "导航模式":
         return "RUNNING"
     return "IDLE"
 
 
 def navigation_status_for_mode(control_mode: str) -> str:
     """根据控制模式模拟导航状态。"""
-    return "RUNNING" if control_mode == "NAVIGATION" else "IDLE"
+    return "RUNNING" if control_mode == "导航模式" else "IDLE"
 
 
 def any_float(value: object, fallback: float) -> float:

@@ -123,6 +123,9 @@ export default {
       if (this.selectedRobot.controlMode === controlMode) return
       this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode })
     },
+    controlModeCommand(controlMode) {
+      return controlMode === '手动模式' ? '手动模式' : '导航模式'
+    },
     async togglePtzAutoRotate() {
       const device = this.ptzDevice
       if (!device) return
@@ -141,7 +144,7 @@ export default {
       try {
         const session = await this.ensureControlSession(device, action)
         const response = await sendEquipmentCommand(this.selectedRobotId,
-            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, source || action))
+            this.commandPayload(this.selectedRobotId, session.controlSessionId, this.controlModeCommand(this.selectedRobot.controlMode), device, action, params, source || action))
         console.log('API sendDeviceCommand', response)
         return true
       } catch (error) {
@@ -174,7 +177,7 @@ export default {
               confirmToken: token.confirmToken
             }
         const response = await sendEquipmentCommand(this.selectedRobotId,
-          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'fire', fireParams, source || `fire_${channel}`))
+          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.controlModeCommand(this.selectedRobot.controlMode), device, 'fire', fireParams, source || `fire_${channel}`))
         console.log('API firePayload', response)
       } catch (error) {
         this.$message.error(errorMessage(error))
@@ -184,12 +187,12 @@ export default {
     // 云台开始控制
     startFrameControl(kind) {
       // 本体需要判断是否是手动模式，否则提示切换到手动模式
-      if (this.selectedRobot?.controlMode !== 'MANUAL' && kind.indexOf('base-') > -1) {
+      if (this.selectedRobot?.controlMode !== '手动模式' && kind.indexOf('base-') > -1) {
         // this.$message.warning('请先切换到手动模式')
         if (this.$refs.controlModeWarningRef) {
-          this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode: 'MANUAL' })
+          this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode: '手动模式' })
         } else {
-          this.$emit('handleModeChange', 'MANUAL')
+          this.$emit('handleModeChange', '手动模式')
         }
         return
       }
@@ -199,7 +202,7 @@ export default {
     },
     // 云台停止控制
     stopFrameControl(kind) {
-      if (this.selectedRobot?.controlMode !== 'MANUAL') return
+      if (this.selectedRobot?.controlMode !== '手动模式') return
       if (!this.controlTimers[kind]) return
       clearInterval(this.controlTimers[kind])
       this.$delete(this.controlTimers, kind)
@@ -232,7 +235,7 @@ export default {
           'base-strafe-left': { linearX: 0, linearY: 0.2, angularZ: 0 },
           'base-strafe-right': { linearX: 0, linearY: -0.2, angularZ: 0 }
         }[kind]
-        return this.commandPayload(robotId, session.controlSessionId, 'MANUAL', device, 'drive.velocity', params, kind)
+        return this.commandPayload(robotId, session.controlSessionId, '手动模式', device, 'drive.velocity', params, kind)
       }
       if (kind.indexOf('ptz-') === 0) {
         const device = this.ptzDevice
@@ -248,13 +251,13 @@ export default {
         }[kind]
         const session = await this.ensureControlSession(device, directionAction)
         const params = { speed: 20, duration: 0.3 }
-        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, directionAction, params, kind)
+        return this.commandPayload(robotId, session.controlSessionId, this.controlModeCommand(this.selectedRobot.controlMode), device, directionAction, params, kind)
       }
       if (kind.indexOf('zoom-') === 0) {
         const device = this.ptzDevice
         const session = await this.ensureControlSession(device, 'camera.zoom')
         const params = { zoomSpeed: kind === 'zoom-in' ? 0.5 : -0.5 }
-        return this.commandPayload(robotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, 'camera.zoom', params, kind)
+        return this.commandPayload(robotId, session.controlSessionId, this.controlModeCommand(this.selectedRobot.controlMode), device, 'camera.zoom', params, kind)
       }
       return null
     },
@@ -264,7 +267,7 @@ export default {
       if (this.controlSessions[key] && this.controlSessions[key].status === 'ACTIVE') {
         return this.controlSessions[key]
       }
-      if (device.deviceId === 'base' && this.selectedRobot.controlMode !== 'MANUAL') {
+      if (device.deviceId === 'base' && this.selectedRobot.controlMode !== '手动模式') {
         throw new Error('请先将机器人切换到手动模式')
       }
       const session = await acquireControl(this.selectedRobotId, {
@@ -316,7 +319,7 @@ export default {
         'light.set': { enabled: true, brightness: 80, mode: 'STEADY' }
       }[action]
       const response = await sendEquipmentCommand(this.selectedRobotId,
-          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.selectedRobot.controlMode || 'MANUAL', device, action, params, action))
+          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.controlModeCommand(this.selectedRobot.controlMode), device, action, params, action))
       console.log('API sendEquipmentCommand', response)
     },
     isNetGunSafetyOn(device) {
@@ -455,7 +458,7 @@ export default {
           this.commandPayload(
             this.selectedRobotId,
             null,
-            this.selectedRobot?.controlMode || 'MANUAL',
+            this.controlModeCommand(this.selectedRobot?.controlMode),
             device,
             'get_state',
             { lightId: profile.lightId || 'all' },

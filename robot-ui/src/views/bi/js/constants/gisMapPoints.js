@@ -171,7 +171,7 @@ export function getLiantongSlamMock() {
     status: 'online',
     battery: 88,
     speed: 0.4,
-    controlMode: 'NAVIGATION',
+    controlMode: '导航模式',
     alarmLevel: 'none',
     mountedDeviceCount: 0,
     mapId,

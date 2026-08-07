@@ -149,7 +149,7 @@ class IntercomCallServiceTest {
                 "轮式机器人",
                 80,
                 status,
-                "MANUAL",
+                "手动模式",
                 "手动模式",
                 1L,
                 "IDLE",

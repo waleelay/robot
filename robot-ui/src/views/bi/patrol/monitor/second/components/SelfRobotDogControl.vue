@@ -20,14 +20,14 @@
             <span>{{ selectedRobot?.controlModeName || '-' }}<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
           </div>
           <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
-            <el-dropdown-item command="NAVIGATION" :class="{ 'is-active': selectedRobot?.controlMode === 'NAVIGATION' }">导航模式</el-dropdown-item>
-            <el-dropdown-item command="MANUAL" :class="{ 'is-active': selectedRobot?.controlMode === 'MANUAL' }">手动模式</el-dropdown-item>
+            <el-dropdown-item command="导航模式" :class="{ 'is-active': selectedRobot?.controlMode === '导航模式' }">导航模式</el-dropdown-item>
+            <el-dropdown-item command="手动模式" :class="{ 'is-active': selectedRobot?.controlMode === '手动模式' }">手动模式</el-dropdown-item>
           </el-dropdown-menu>
         </el-dropdown>
         
       </div>
     </div>
-    <div class="flx-center ml54 common-control" :class="{ 'is-disabled': selectedRobot?.controlMode !== 'MANUAL' }">
+    <div class="flx-center ml54 common-control" :class="{ 'is-disabled': selectedRobot?.controlMode !== '手动模式' }">
       <div class="outer flx-center">
         <div class="inner flx-center">
           <div class="circle flx-center">移动</div>
@@ -55,9 +55,9 @@
               v-if="item.key !== 'step'"
               :key="item.key"
               type="primary"
-              :disabled="selectedRobot?.controlMode !== 'MANUAL'"
+              :disabled="selectedRobot?.controlMode !== '手动模式'"
               class="wp80 hp30 mt10 ml10"
-              :class="{'is-disabled': selectedRobot?.controlMode !== 'MANUAL'}"
+              :class="{'is-disabled': selectedRobot?.controlMode !== '手动模式'}"
               @mousedown.native="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
               @mouseup.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
               @mouseleave.native="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
@@ -74,8 +74,8 @@
               placeholder="切换步态"
               @change="changeStep"
               class="wp80 ml10 mt10 hp30 butai-select"
-              :disabled="selectedRobot?.controlMode !== 'MANUAL'"
-              :class="{ 'tac': butaiValue == 0, 'is-disabled': selectedRobot?.controlMode !== 'MANUAL' }"
+              :disabled="selectedRobot?.controlMode !== '手动模式'"
+              :class="{ 'tac': butaiValue == 0, 'is-disabled': selectedRobot?.controlMode !== '手动模式' }"
               title="切换步态"
               popper-class="custom-select control-select-popper control-select-popper1 p10"
             >

@@ -33,7 +33,7 @@ export function createRobotBodyParams(initData = {}) {
     payload: {
       robotId: initData.robotId,
       controlSessionId: initData.controlSessionId,
-      controlMode: "MANUAL",                    // 本体手动控制固定
+      controlMode: '手动模式',                   // 本体手动控制固定
       target: {
         scope: 'BODY',
         deviceId: 'base',
@@ -62,7 +62,7 @@ export function createDualPtzParams(initData = {}) {
     payload: {
       robotId: initData.robotId,
       controlSessionId: initData.controlSessionId,
-      controlMode: initData.controlMode, // 导航中控制云台时可保持 NAVIGATION；纯手动可填 MANUAL
+      controlMode: initData.controlMode, // 导航中控制云台时可保持导航模式；纯手动填写手动模式
       target: {
         scope: 'PAYLOAD',
         deviceId: '',
@@ -148,7 +148,7 @@ function createControlParams(initData = {}) {
     payload: {
       robotId: initData.robotId,            // 要控制的机器人 ID
       controlSessionId: initData.controlSessionId,     // 控制权会话 ID
-      controlMode: initData.controlMode || 'MANUAL',                    // 本体手动控制固定 MANUAL
+      controlMode: initData.controlMode || '手动模式',                  // 本体手动控制固定手动模式
       target: {
         scope: initData.scope || 'BODY',                          // BODY 本体 PAYLOAD 上装
         deviceId: initData.deviceId || 'base',                       // 本体设备固定 base

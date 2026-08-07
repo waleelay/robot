@@ -55,7 +55,7 @@ func NewClient(
 		lastCmds:    make(map[string]string),
 		audioVolume: 50,
 		audioMuted:  false,
-		controlMode: "MANUAL",
+		controlMode: "手动模式",
 		deviceState: make(map[string]map[string]any),
 		callStates:  make(map[string]model.IntercomCallState),
 	}
@@ -672,11 +672,11 @@ func anyString(value any, fallback string) string {
 }
 
 func normalizeControlMode(value string) string {
-	switch strings.ToUpper(strings.TrimSpace(value)) {
-	case "MANUAL", "NAVIGATION":
-		return strings.ToUpper(strings.TrimSpace(value))
+	switch strings.TrimSpace(value) {
+	case "手动模式", "导航模式":
+		return strings.TrimSpace(value)
 	default:
-		return "NAVIGATION"
+		return "导航模式"
 	}
 }
 

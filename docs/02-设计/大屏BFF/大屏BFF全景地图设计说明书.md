@@ -251,7 +251,7 @@ GET /api/bigscreen/panorama/overview
       "stateSeq": 1,
       "fault": false,
       "alarmLevel": null,
-      "controlMode": "MANUAL",
+      "controlMode": "手动模式",
       "mountedDeviceCount": 3,
       "speed": null,
       "location": {
@@ -492,7 +492,7 @@ GET /api/bigscreen/panorama/devices/{deviceId}
   "stateSeq": 1,
   "alarmStatus": "none",
   "alarmText": "-",
-  "controlMode": "MANUAL",
+  "controlMode": "手动模式",
   "speed": null,
   "location": {
     "lng": 106.03655278081857,
@@ -786,7 +786,7 @@ WebSocket：
     "robotId": "test111",
     "status": "online",
     "battery": 96,
-    "controlMode": "MANUAL",
+    "controlMode": "手动模式",
     "speed": 0.6
   }
 }

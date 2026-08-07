@@ -52,8 +52,8 @@ Content-Type: application/json
 | `IntercomStatus` | `IDLE`、`STARTING`、`ACTIVE`、`INTERRUPTED`、`STOPPING`、`FAILED` | 对讲状态 |
 | `FileType` | `VIDEO`、`AUDIO`、`IMAGE`、`LOG`、`CONFIG`、`MAP`、`DOCUMENT`、`OTHER` | 文件类型 |
 | `FileStatus` | `UPLOADING`、`PROCESSING`、`READY`、`FAILED`、`DELETED` | 文件状态 |
-| `controlMode` | `MANUAL`、`NAVIGATION` | 控制模式编码 |
-| `controlModeName` | `手动模式`、`导航模式` | 前端中文显示值 |
+| `controlMode` | `手动模式`、`导航模式` | 机器人上报并由后端统一输出的当前模式状态 |
+| `controlModeName` | `手动模式`、`导航模式` | 当前模式显示值 |
 | `disposalStatus` | `IMMEDIATE_DISPOSAL`、`FALSE_ALARM` | 告警处置状态；其他值会返回 `BAD_REQUEST` |
 
 ### 2.3 通用错误响应
@@ -872,7 +872,7 @@ GET /api/control/robots/test111/control-profile
   "vendor": "SONGLING",
   "model": "SCOUT",
   "onlineStatus": "offline",
-  "controlMode": "MANUAL",
+  "controlMode": "手动模式",
   "stateSeq": 1,
   "devices": [
     {
@@ -976,7 +976,7 @@ Content-Type: application/json
 
 ### 4.5 POST `/api/control/robots/{robotId}/control-sessions/takeover`
 
-用途：在 `NAVIGATION` 模式下申请本体控制权并下发切换 `MANUAL` 指令。该接口不会抢占其他终端的控制会话，也不会在 MQTT 发布后提前修改机器人状态。
+用途：在“导航模式”下申请本体控制权并下发切换“手动模式”指令。该接口不会抢占其他终端的控制会话，也不会在 MQTT 发布后提前修改机器人状态。
 
 请求参数：
 
@@ -994,7 +994,7 @@ Content-Type: application/json
 | `controlMode/controlModeName` | string | 当前机器人真实模式及中文名称 |
 | `requestedControlMode/requestedControlModeName` | string | 请求切换的模式及中文名称 |
 
-其他终端已持有本体控制权时返回 `CONTROL_LOCKED`。前端收到 `modeChangeStatus=PUBLISHED` 后不得立即发送移动指令，必须等待 `robot.state.controlMode=MANUAL`。
+其他终端已持有本体控制权时返回 `CONTROL_LOCKED`。前端收到 `modeChangeStatus=PUBLISHED` 后不得立即发送移动指令，必须等待 `robot.state.controlMode=手动模式`。
 
 ### 4.6 POST `/api/control/robots/{robotId}/control-mode`
 
@@ -1010,7 +1010,7 @@ Content-Type: application/json
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| `controlMode` | string | 是 | `MANUAL`、`NAVIGATION` |
+| `controlMode` | string | 是 | `手动模式`、`导航模式` |
 | `controlSessionId` | string | 是 | 当前终端持有且包含 `base` 的有效控制会话 |
 | `observedStateSeq` | number | 是 | 前端最近一次收到的状态序号，必须等于后端最新值 |
 
@@ -1018,7 +1018,7 @@ Content-Type: application/json
 
 ```json
 {
-  "controlMode": "NAVIGATION",
+  "controlMode": "导航模式",
   "controlSessionId": "tc_91ad22",
   "observedStateSeq": 2
 }
@@ -1030,16 +1030,16 @@ Content-Type: application/json
 {
   "status": "PUBLISHED",
   "robotId": "test111",
-  "requestedControlMode": "NAVIGATION",
+  "requestedControlMode": "导航模式",
   "requestedControlModeName": "导航模式",
-  "controlMode": "MANUAL",
+  "controlMode": "手动模式",
   "controlModeName": "手动模式",
   "stateSeq": 2,
   "issuedAt": "2026-07-04T10:00:00+08:00"
 }
 ```
 
-`PUBLISHED` 只表示 MQTT 已成功发布。后端不会立即修改模式或广播乐观状态；机器人通过 `media/client/status` 上报真实模式后，前端才按 `controlModeName` 更新中文显示。
+`PUBLISHED` 只表示 MQTT 已成功发布。切换请求和下发 MQTT 的目标模式统一使用 `手动模式`、`导航模式`；后端不会立即修改模式或广播乐观状态。机器人通过 `eiop/v1/edge/{serialNumber}/status` 重新上报真实模式后，`robot.state.controlMode` 保持相同中文值，前端据此更新下拉框状态和控制可用性。
 
 ### 4.7 POST `/api/control/robots/{robotId}/control-sessions/{controlSessionId}/release`
 
@@ -3097,7 +3097,7 @@ HTTP/1.1 204 No Content
     "type": "轮式机器人",
     "battery": 86,
     "status": "online",
-    "controlMode": "MANUAL",
+    "controlMode": "手动模式",
     "stateSeq": 12,
     "missionStatus": "IDLE",
     "navigationStatus": "IDLE",
@@ -3133,7 +3133,7 @@ HTTP/1.1 204 No Content
 | `status` | string | 是 | - | `online`、`offline` 等 |
 | `name` | string | 否 | `robotId` | 展示名称 |
 | `type` | string | 否 | `机器人` | 机器人类型 |
-| `controlMode` | string | 否 | `MANUAL` | 控制模式 |
+| `controlMode` | string | 否 | `手动模式` | 控制模式，取值为 `手动模式`、`导航模式` |
 | `stateSeq` | number | 否 | null | 状态序号 |
 | `missionStatus` | string | 否 | `IDLE` | 任务状态 |
 | `navigationStatus` | string | 否 | `IDLE` | 导航状态 |
@@ -3153,7 +3153,7 @@ Payload 示例：
   "name": "R1轮式机器人",
   "type": "轮式机器人",
   "battery": 86,
-  "controlMode": "MANUAL",
+  "controlMode": "手动模式",
   "stateSeq": 12,
   "missionStatus": "IDLE",
   "navigationStatus": "IDLE",

@@ -54,7 +54,7 @@ class EdgeDeviceStatusHandlerTest {
                 .containsEntry("status", "online")
                 .containsEntry("battery", 47)
                 .containsEntry("speed", 0.6)
-                .containsEntry("controlMode", "NAVIGATION")
+                .containsEntry("controlMode", "导航模式")
                 .containsEntry("missionStatus", "COMPLETED")
                 .containsEntry("softStopActive", true)
                 .containsEntry("timestamp", "2026-08-05 17:07:43");

@@ -1179,11 +1179,12 @@ public class PanoramaService {
     }
 
     private String normalizeControlMode(String controlMode) {
-        return "MANUAL".equalsIgnoreCase(controlMode) ? "MANUAL" : "NAVIGATION";
+        String mode = controlMode == null ? "" : controlMode;
+        return "手动模式".equals(mode) ? "手动模式" : "导航模式";
     }
 
     private String controlModeName(String controlMode) {
-        return "MANUAL".equals(controlMode) ? "手动模式" : "导航模式";
+        return controlMode;
     }
 
     private Number number(Object value) {

@@ -43,7 +43,7 @@ export default {
       this.loading = false
       this.robotId = data.robotId
       this.controlMode = data?.controlMode || ''
-      this.controlModeName = this.controlMode === 'MANUAL' ? '手动模式' : '导航模式'
+      this.controlModeName = this.controlMode
       const confirmApi = this.hasOtherDialogOpen()
         ? this.$secondaryConfirm
         : this.$primaryConfirm
@@ -70,7 +70,7 @@ export default {
           throw new Error('机器人不在线，不能切换控制模式')
         }
         let response
-        if (robot.controlMode === 'NAVIGATION' && this.controlMode === 'MANUAL') {
+        if (robot.controlMode === '导航模式' && this.controlMode === '手动模式') {
           response = await takeoverControl(this.robotId, {
             observedStateSeq: robot.stateSeq
           })

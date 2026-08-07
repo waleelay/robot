@@ -393,7 +393,8 @@ public class PanoramaWebSocketEventAdapter {
     }
 
     private String normalizeControlMode(String controlMode) {
-        return "MANUAL".equalsIgnoreCase(controlMode) ? "MANUAL" : "NAVIGATION";
+        String mode = controlMode == null ? "" : controlMode;
+        return "手动模式".equals(mode) ? "手动模式" : "导航模式";
     }
 
     private String panoramaDeviceStatus(JsonNode sourceData) {
@@ -412,7 +413,7 @@ public class PanoramaWebSocketEventAdapter {
     }
 
     private String controlModeName(String controlMode) {
-        return "MANUAL".equals(controlMode) ? "手动模式" : "导航模式";
+        return controlMode;
     }
 
     private void putNullableInt(ObjectNode target, String fieldName, JsonNode value) {

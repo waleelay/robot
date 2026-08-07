@@ -321,33 +321,33 @@ class EquipmentControlServiceTest {
     @Test
     void publishesModeChangeWithoutOptimisticallyPublishingRobotState() {
         register(component("BODY", "body"));
-        online("MANUAL", 12);
+        online("手动模式", 12);
         Map<String, Object> session = acquireBase();
 
         Map<String, Object> response = service.setControlMode("robot-001", object(
-                "controlMode", "NAVIGATION",
+                "controlMode", "导航模式",
                 "controlSessionId", session.get("controlSessionId"),
                 "observedStateSeq", 12), operator());
 
         assertThat(response)
                 .containsEntry("status", "PUBLISHED")
-                .containsEntry("controlMode", "MANUAL")
+                .containsEntry("controlMode", "手动模式")
                 .containsEntry("controlModeName", "手动模式")
-                .containsEntry("requestedControlMode", "NAVIGATION")
+                .containsEntry("requestedControlMode", "导航模式")
                 .containsEntry("requestedControlModeName", "导航模式")
                 .containsEntry("stateSeq", 12L);
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
         assertThat(map(captor.getValue()))
                 .containsEntry("action", "control.mode.set")
-                .containsEntry("params", object("controlMode", "NAVIGATION"));
+                .containsEntry("params", object("controlMode", "导航模式"));
         verify(webSocketPublisher, never()).publish(eq("robot.state"), any());
     }
 
     @Test
     void rejectsUnsupportedOrIncompleteModeChanges() {
         register(component("BODY", "base"));
-        online("MANUAL", 12);
+        online("手动模式", 12);
         Map<String, Object> session = acquireBase();
 
         assertThatThrownBy(() -> service.setControlMode("robot-001", object(
@@ -357,7 +357,7 @@ class EquipmentControlServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("不支持的控制模式");
         assertThatThrownBy(() -> service.setControlMode("robot-001", object(
-                "controlMode", "NAVIGATION"), operator()))
+                "controlMode", "导航模式"), operator()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("controlSessionId 必填");
     }
@@ -365,7 +365,7 @@ class EquipmentControlServiceTest {
     @Test
     void navigationTakeoverAcquiresBaseAndWaitsForRealManualState() {
         register(component("BODY", "base"));
-        online("NAVIGATION", 20);
+        online("导航模式", 20);
 
         Map<String, Object> response = service.takeover("robot-001", object(
                 "observedStateSeq", 20), operator());
@@ -373,24 +373,24 @@ class EquipmentControlServiceTest {
         assertThat(response)
                 .containsEntry("status", "ACTIVE")
                 .containsEntry("deviceIds", List.of("base"))
-                .containsEntry("controlMode", "NAVIGATION")
+                .containsEntry("controlMode", "导航模式")
                 .containsEntry("controlModeName", "导航模式")
                 .containsEntry("modeChangeStatus", "PUBLISHED")
-                .containsEntry("requestedControlMode", "MANUAL")
+                .containsEntry("requestedControlMode", "手动模式")
                 .containsEntry("requestedControlModeName", "手动模式")
                 .containsKey("controlSessionId");
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
         assertThat(map(captor.getValue()))
                 .containsEntry("action", "control.mode.set")
-                .containsEntry("params", object("controlMode", "MANUAL"));
+                .containsEntry("params", object("controlMode", "手动模式"));
         verify(webSocketPublisher, never()).publish(eq("robot.state"), any());
     }
 
     @Test
     void navigationTakeoverDoesNotStealAnotherTerminalSession() {
         register(component("BODY", "base"));
-        online("NAVIGATION", 20);
+        online("导航模式", 20);
         acquireBase();
         CurrentUser otherTerminal = new CurrentUser(
                 "operator-2",
@@ -413,7 +413,7 @@ class EquipmentControlServiceTest {
         service.handleClientState(object(
                 "robotId", "robot-001",
                 "status", "online",
-                "controlMode", "MANUAL",
+                "controlMode", "手动模式",
                 "devices", List.of(object(
                         "deviceId", "ptz-new-001",
                         "deviceType", "DUAL_LIGHT_PTZ",
@@ -422,7 +422,7 @@ class EquipmentControlServiceTest {
         Map<String, Object> state = service.mergeEdgeDeviceStatus("robot-001", object(
                 "status", "fault",
                 "battery", 47,
-                "controlMode", "NAVIGATION",
+                "controlMode", "导航模式",
                 "location", object("x", 5.28, "y", 1.37, "z", 0),
                 "edgeStatus", object("basic", object("healthStatus", "异常"))));
 
@@ -430,7 +430,7 @@ class EquipmentControlServiceTest {
                 .containsEntry("robotId", "robot-001")
                 .containsEntry("status", "fault")
                 .containsEntry("battery", 47)
-                .containsEntry("controlMode", "NAVIGATION");
+                .containsEntry("controlMode", "导航模式");
         assertThat(maps(state.get("devices")))
                 .filteredOn(device -> "ptz-new-001".equals(device.get("deviceId")))
                 .singleElement()
@@ -444,7 +444,7 @@ class EquipmentControlServiceTest {
                 "params", params,
                 "client", object("seq", 7));
         if ("base".equals(deviceId) && "drive.velocity".equals(action)) {
-            online("MANUAL", 1);
+            online("手动模式", 1);
             request.put("controlSessionId", acquireBase().get("controlSessionId"));
         }
         service.publishCommand("robot-001", request, operator());

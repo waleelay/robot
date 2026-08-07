@@ -53,8 +53,8 @@
                 <span>{{ selectedRobot?.controlModeName || '-' }}<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
               </div>
               <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
-                <el-dropdown-item command="NAVIGATION" :class="{ 'is-active': selectedRobot?.controlMode === 'NAVIGATION' }">导航模式</el-dropdown-item>
-                <el-dropdown-item command="MANUAL" :class="{ 'is-active': selectedRobot?.controlMode === 'MANUAL' }">手动模式</el-dropdown-item>
+                <el-dropdown-item command="导航模式" :class="{ 'is-active': selectedRobot?.controlMode === '导航模式' }">导航模式</el-dropdown-item>
+                <el-dropdown-item command="手动模式" :class="{ 'is-active': selectedRobot?.controlMode === '手动模式' }">手动模式</el-dropdown-item>
               </el-dropdown-menu>
             </el-dropdown>
           </div>
@@ -180,7 +180,7 @@ export default {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
     },
     canControl() {
-      return this.selectedRobot?.controlMode === 'MANUAL'
+      return this.selectedRobot?.controlMode === '手动模式'
     }
   },
   methods: {
