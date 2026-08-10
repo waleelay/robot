@@ -749,6 +749,15 @@ export default {
       // 添加点击事件
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
+        const robot = marker.meta?.robot || {}
+        // first 监控页：固定摄像头不可点；未播放视频的装备不可点
+        const isFixedCamera = robot.type === '固定摄像头'
+          || robot.type === 'FIXED_CAMERA'
+          || robot.typeCode === 'FIXED_CAMERA'
+        if (this.showSmall) {
+          if (isFixedCamera) return
+          if (!this.getSelectedStatus(robot.robotId)) return
+        }
         const isSame = this.activeMarkerIndex === marker.meta.index
         if (this.currenRouteName === 'biIndex') {
           if (isSame) {

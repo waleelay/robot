@@ -26,15 +26,12 @@
       </div>
     </div>
     <div
-      class="list hp759 flx-justify-between flex-wrap mt9 w100"
+      class="list hp759 flx-justify-between flex-wrap w100"
+      :class="[
+        'mt9',
+        listPaddingClass
+      ]"
       style="width: 1364px;"
-      :class="{
-        'pr13 pl13 pt13 pb13': splitType === 4 && prefixId === 'test-video-div-second',
-        'pr18 pl18': splitType === 6 && prefixId === 'test-video-div-second',
-        'pt13 pb13': splitType === 9 && prefixId === 'test-video-div-second',
-        'pr26 pl26': !(splitType === 4 && prefixId === 'test-video-div-second'),
-        'pr55 pl47': prefixId === 'test-video-div-first'
-      }"
     >
       <div class="horn top-left"></div>
       <div class="horn top-right"></div>
@@ -219,6 +216,22 @@ export default {
     ...mapState('websocketRobot', ['robots', 'cameras']),
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
+    },
+    isSecondScreen() {
+      return this.prefixId === 'test-video-div-second'
+    },
+    isFirstScreen() {
+      return this.prefixId === 'test-video-div-first'
+    },
+    listPaddingClass() {
+      if (this.isFirstScreen) return 'pr51 pl51'
+      if (this.isSecondScreen) {
+        if (this.splitType === 4) return 'pr12 pl12 pt10 pb10'
+        if (this.splitType === 6) return 'pr14 pl14 pt8 pb8'
+        if (this.splitType === 9) return 'pr10 pl10 pt8 pb8'
+        return 'pr18 pl18 pt10 pb10'
+      }
+      return 'pr26 pl26'
     },
     fullscreenStageStyle() {
       if (!this.isPageFullscreen) return {}

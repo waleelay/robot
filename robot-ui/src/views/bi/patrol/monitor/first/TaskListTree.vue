@@ -137,7 +137,7 @@
             </div>
           </div>
         </div>
-        <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无未完成任务" />
+        <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无任务计划" />
       </div>
     </div>
   </div>
@@ -308,6 +308,7 @@ export default {
             offlineList.push(robot)
           }
         })
+        console.log('onlineList')
         this.equipmentInfo.online.list = onlineList
         this.equipmentInfo.offline.list = offlineList
         this.executePlay()

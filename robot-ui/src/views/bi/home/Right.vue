@@ -111,7 +111,7 @@
                   </div>
                 </template>
                 <!-- <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div> -->
-                <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无未完成任务" />
+                <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无任务" />
               </div>
             </div>
           </div>

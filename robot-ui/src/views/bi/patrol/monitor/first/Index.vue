@@ -32,8 +32,8 @@
       <el-checkbox-group @change="onMultiDeviceChange" v-else v-model="checkedIds" class="custom-check-group flex vertical ml20">
         <el-checkbox v-for="dev in deviceList" :key="dev.id" :label="dev.id" class="flx-align-center">{{ dev.desc }}</el-checkbox>
       </el-checkbox-group> -->
-      <div class="mt9" style="width: 1432px">
-        <div class="card-title flx-justify-between title-1364-30 mb9 w100 hp30 pl30" style="line-height: 30px;">
+      <div class="mt10" style="width: 1432px">
+        <div class="card-title flx-justify-between title-1364-30 mb14 w100 hp30 pl30" style="line-height: 30px;">
           <div class="text">
             多媒体记录
           </div>

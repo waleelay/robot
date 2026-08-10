@@ -48,6 +48,11 @@
       </div>
     </div>
     <div class="ml38">
+      <div class="page-tab flx-align-center mb15">
+        <span class="page-tab__item is-link ml10" @click="backToMonitor">实时监控</span>
+        <svg-icon icon-class="right" class="ml10" style="color: #fff; font-size: 14px;"></svg-icon>
+        <span class="page-tab__item is-current ml10">深度控制</span>
+      </div>
       <LeftVideo :prefixId="prefixId" ref="leftVideoRef" style="width: 1134px;" card-title-class="title-1127-37" />
       <div class="mt21">
         <div class="card-title hp30 title-1132-30 pr30">
@@ -55,7 +60,7 @@
             基本信息
           </div>
         </div>
-        <div class="mt21 hp178 d-flex" style="background: #011223; border: 1px solid #123F8C;">
+        <div class="mt10 hp162 d-flex" style="background: #011223; border: 1px solid #123F8C;">
           <div class="flex1 flx-align-center pl37 robot basic">
             <div>
               <div class="name ">{{ selectedRobot.name }}</div>
@@ -78,12 +83,17 @@
     </div>
     <div class="ml62 flex1">
       <div class="h100 pr14">
+        <div class="page-back-row flx-align-center mb15">
+          <div class="page-back" title="返回" @click="backToMonitor">
+            <svg-icon icon-class="back1" />
+          </div>
+        </div>
         <div class="card-title title-344-37">
           <div class="text">
             上装控制区域
           </div>
         </div>
-        <div class="common-scroll mt10 pr14" style="height: calc(100% - 47px); min-height: 923px; overflow-y: auto; margin-right: -14px;">
+        <div class="common-scroll mt10 pr14" style="height: calc(100% - 94px); min-height: 876px; overflow-y: auto; margin-right: -14px;">
           <div class="box p20 mt10">
             <div class="card-title-t2">
               <div class="text pb12">
@@ -153,7 +163,7 @@ import MultimediaDetail from './components/MultimediaDetail.vue'
 import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue'
 import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue'
 import yuntai from './components/yuntai'
-import { mapState } from 'vuex'
+import { mapActions, mapState } from 'vuex'
 export default {
   name: 'BiPatrolMonitorSecondScreen',
   components: {
@@ -261,6 +271,11 @@ export default {
   },
   mixins: [yuntai],
   methods: {
+    ...mapActions('websocketRobot', ['setSelectedRobotId']),
+    // 与 Header.back 一致：清空选中装备，回到一级实时监控
+    backToMonitor() {
+      this.setSelectedRobotId('')
+    },
     openMultimediaMore() {
       const recordRef = this.$refs.multimediaRecordRef
       this.$refs.multimediaDetailRef?.open({
@@ -313,6 +328,46 @@ export default {
 </script>
 
 <style scoped lang="scss">
+.page-tab {
+  font-family: "Microsoft YaHei";
+  font-size: 16px;
+  line-height: 21px;
+  .page-tab__item {
+    white-space: nowrap;
+    &.is-link {
+      color: #fff;
+      cursor: pointer;
+      &:hover {
+        color: #0BF9FE;
+      }
+    }
+    &.is-current {
+      color: #0BF9FE;
+    }
+  }
+}
+.page-back-row {
+  justify-content: flex-end;
+  min-height: 32px;
+}
+.page-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 32px;
+  border-radius: 100px;
+  border: 1px solid #5AA0FF;
+  background: linear-gradient(180deg, #011C39 0%, #0073C1 100%);
+  cursor: pointer;
+  .svg-icon {
+    font-size: 20px;
+    color: #AED1FF;
+  }
+  &:hover {
+    filter: brightness(1.08);
+  }
+}
 .custom-tab-button1 {
   width: fit-content;
   border: 1px solid #334465;

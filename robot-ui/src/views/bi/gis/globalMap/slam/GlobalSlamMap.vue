@@ -141,12 +141,14 @@
                 </g>
               </template>
               <!-- 装备 -->
+              <!-- 图标随地图缩放而变化 -->
+              <!-- :transform="`translate(${robot.pixel.x}, ${robot.pixel.y})${showSmall ? '' : ` scale(${1 / zoom})`}`" -->
               <g
                 v-for="robot in drawableRobots"
                 :key="robot.robotId"
-                :transform="`translate(${robot.pixel.x}, ${robot.pixel.y})${showSmall ? '' : ` scale(${1 / zoom})`}`"
+                :transform="`translate(${robot.pixel.x}, ${robot.pixel.y}) scale(${1 / zoom})`"
                 class="map-preview-robot custom-point"
-                :class="[robot.statusClass, { 'show-icon': isRobotHighlighted(robot.robotId), 'is-static': !enableRobotClick }]"
+                :class="[robot.statusClass, { 'show-icon': isRobotHighlighted(robot.robotId), 'is-static': !isRobotClickable(robot) }]"
                 @click.stop="handleRobotClick($event, robot)"
                 @mouseenter="onRobotPathHover(robot)"
                 @mouseleave="clearRaisedTaskPath"
@@ -562,6 +564,9 @@ export default {
     ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds', 'taskPathPoints', 'taskData']),
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
+    },
+    activeCameras() {
+      return this.$store.getters['websocketRobot/getActiveCameras'] || {}
     },
     currenRouteName() {
       return this.$route.name
@@ -1056,8 +1061,23 @@ export default {
       if (!this.enableAddPoint) return
       this.onCanvasClick(event)
     },
+    // first 监控页：固定摄像头不可点；未播放视频的装备不可点
+    isRobotClickable(robot) {
+      if (!this.enableRobotClick) return false
+      if (this.showSmall) {
+        if (robot?.isFixedCamera) return false
+        if (!this.hasActiveVideo(robot?.robotId)) return false
+      }
+      return true
+    },
+    hasActiveVideo(robotId) {
+      if (robotId === undefined || robotId === null || robotId === '') return false
+      return Object.values(this.activeCameras || {}).some(
+        item => String(item?.robot?.robotId) === String(robotId)
+      )
+    },
     handleRobotClick(event, robot) {
-      if (!this.enableRobotClick) return
+      if (!this.isRobotClickable(robot)) return
       // 点击装备时仅还原临时打点/派遣状态，保留 MapTool 点位与全量任务路径
       this.resetSlamDrawState({ keepMapToolPath: true, keepAllTaskPaths: true })
       if (this.currenRouteName === 'biIndex') {

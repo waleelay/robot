@@ -133,7 +133,7 @@
               </div>
             </div>
           </template>
-          <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无未完成任务" />
+          <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无任务计划" />
         </div>
       </div>
       <div class="box bi-corner-box mt20 alert" :class="{ 'no_data hp41': collapseArr[2], 'hp323': !collapseArr[2] }" style="max-height: 446px;">

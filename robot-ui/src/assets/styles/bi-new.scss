@@ -3279,7 +3279,7 @@ input[type="range"].vertical-slider {
       &:not(.empty) {
         .custom-video-tool {
           .svg-icon {
-            font-size: 16px;
+            font-size: 24px;
           }
         }
       }
@@ -3310,7 +3310,7 @@ input[type="range"].vertical-slider {
         .video-btn {
           padding: 4px 6px;
           height: 20px;
-          font-size: 10px;
+          font-size: 12px;
         }
       }
       &.six {
@@ -3414,10 +3414,10 @@ input[type="range"].vertical-slider {
   }
   .video-btn {
     padding: 6px;
-    height: 24px;
-    font-size: 12px;
+    height: 26px;
+    font-size: 14px;
     font-family: "Alibaba PuHuiTi";
-    line-height: 12px;
+    line-height: 14px;
     letter-spacing: 0.857px;
     border-radius: 2px;
     background: #0E1627;
@@ -3435,7 +3435,7 @@ input[type="range"].vertical-slider {
   }
 
   &.test-video-div-second .list {
-    height: 675px !important;
+    height: 659px !important;
     .item {
       &.one {
         width: 1088px;
@@ -3616,7 +3616,7 @@ input[type="range"].vertical-slider {
 
   &.four, &.nine {
     .svg-icon {
-      font-size: 16px;
+      font-size: 18px !important;
     }
     .custom-dropdown.pixel-dropdown.el-dropdown {
       padding: 4px 6px;

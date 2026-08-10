@@ -58,7 +58,7 @@
         <!-- <div :title="openMic ? '关闭麦克风' : '打开麦克风'" @click="toggleMic()">
           <svg-icon :icon-class="openMic ? 'mic' : 'mic-off'" />
         </div> -->
-        <div v-if="showControl && ['dual_gimbal', 'body'].includes(cameraInfo.groupType)" @click="$refs.controlInnerRef.visible = !$refs.controlInnerRef.visible">
+        <div v-if="showCameraControl" @click="$refs.controlInnerRef.visible = !$refs.controlInnerRef.visible">
           <svg-icon title="控制器" icon-class="control" />
         </div>
       </template>
@@ -76,7 +76,7 @@
       </div>
     </div>
     <!-- <Snap ref="snapModalRef" :idName="idName" /> -->
-    <ControlInner v-if="['dual_gimbal', 'body'].includes(cameraInfo.groupType)" ref="controlInnerRef" :cameraInfo="cameraInfo" />
+    <ControlInner v-if="showCameraControl" ref="controlInnerRef" :cameraInfo="cameraInfo" />
   </div>
 </template>
 
@@ -121,9 +121,27 @@ export default {
   },
   mixins: [videoUtils],
   computed: {
-    ...mapState('websocketRobot', ['cameras']),
+    ...mapState('websocketRobot', ['cameras', 'robots']),
+    ...mapState('websocketExtraData', ['robotBaseInfo']),
     cameraInfo() {
       return this.cameras?.[this.cameraKey] || {}
+    },
+    // 固定摄像头不可遥控，不展示控制器
+    isFixedCamera() {
+      const info = this.cameraInfo || {}
+      if (info.sourceType === 'FIXED_CAMERA') return true
+      const robotId = info.robotId
+      const robot = this.robotBaseInfo?.[robotId]
+        || (this.robots || []).find(item => String(item.robotId) === String(robotId))
+        || {}
+      return robot.typeCode === 'FIXED_CAMERA'
+        || robot.type === 'FIXED_CAMERA'
+        || robot.type === '固定摄像头'
+    },
+    showCameraControl() {
+      return this.showControl
+        && !this.isFixedCamera
+        && ['dual_gimbal', 'body'].includes(this.cameraInfo.groupType)
     },
     canSnapshot() {
       return this.cameraInfo.remoteVideoTrack

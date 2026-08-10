@@ -36,7 +36,7 @@
       </div>
       <div class="bottom flx-justify-between w100 pr10 pl10" style="z-index: 2;">
         <div :ref="`dropdownRefslot_${index}`">
-          <el-button v-if="!selectedRobotId" type="primary" class="video-btn ml10" @click="goControlCenter(ZQL_videosInfos[`slot_${index}`].robotId)">
+          <el-button v-if="!selectedRobotId && !isFixedCamera" type="primary" class="video-btn ml10" @click="goControlCenter(ZQL_videosInfos[`slot_${index}`].robotId)">
             <svg-icon icon-class="system" class="mr4"></svg-icon>控制中心
           </el-button>
         </div>
@@ -53,7 +53,7 @@
             @refreshVideo="$emit('refreshVideo', $event)"
             :ref="`videoToolRefslot_${index}`"
             :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }"
-            :showControl="showControl" />
+            :showControl="showControl && !isFixedCamera" />
         </div>
       </div>
       <div
@@ -111,7 +111,8 @@ export default {
     },
   },
   computed: {
-    ...mapState('websocketRobot', ['cameras', 'selectedRobotId']),
+    ...mapState('websocketRobot', ['cameras', 'selectedRobotId', 'robots']),
+    ...mapState('websocketExtraData', ['robotBaseInfo']),
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
     },
@@ -123,6 +124,19 @@ export default {
     },
     recordingActive() {
       return this.cameraInfo.recordingActive
+    },
+    // 固定摄像头：不展示控制中心 / 控制器
+    isFixedCamera() {
+      const video = this.ZQL_videosInfos[`slot_${this.index}`] || {}
+      if (video.sourceType === 'FIXED_CAMERA' || this.cameraInfo.sourceType === 'FIXED_CAMERA') return true
+      const robotId = video.robotId || this.cameraInfo.robotId
+      const robot = video.robot
+        || this.robotBaseInfo?.[robotId]
+        || (this.robots || []).find(item => String(item.robotId) === String(robotId))
+        || {}
+      return robot.typeCode === 'FIXED_CAMERA'
+        || robot.type === 'FIXED_CAMERA'
+        || robot.type === '固定摄像头'
     },
     showControl() {
       return !this.selectedRobotId || (this.selectedRobotId && (this.className.includes('six-1') || this.splitType === 1 || this.splitType === 4))
