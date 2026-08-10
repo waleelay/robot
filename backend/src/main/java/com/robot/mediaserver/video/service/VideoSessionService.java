@@ -18,6 +18,7 @@ import com.robot.mediaserver.video.model.MediaSessionViewer;
 import com.robot.mediaserver.video.model.IntercomStatus;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
+import com.robot.mediaserver.video.model.VideoSourceType;
 import com.robot.mediaserver.video.repository.MediaSessionViewerRepository;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
 import com.robot.mediaserver.ws.MediaWebSocketPublisher;
@@ -139,8 +140,9 @@ public class VideoSessionService {
     @Transactional
     public VideoSessionResponse create(CreateVideoSessionRequest request, CurrentUser user) {
         if (request.isReuse()) {
-            var existing = repository.findFirstByRobotIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
-                    request.getRobotId(),
+            var existing = repository.findFirstBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
+                    request.getSourceType(),
+                    request.getSourceId(),
                     request.getDeviceId(),
                     request.getChannel(),
                     request.getQuality(),
@@ -168,6 +170,8 @@ public class VideoSessionService {
         VideoSession session = new VideoSession();
         session.setSessionId("vs_" + compactUuid());
         session.setRobotId(request.getRobotId());
+        session.setSourceType(request.getSourceType());
+        session.setSourceId(request.getSourceId());
         session.setDeviceId(request.getDeviceId());
         session.setChannel(request.getChannel());
         session.setQuality(request.getQuality());
@@ -205,8 +209,9 @@ public class VideoSessionService {
      */
     @Transactional
     public IntercomResponse createForIntercom(CreateVideoSessionRequest request, CurrentUser user) {
-        VideoSession session = repository.findFirstByRobotIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
-                        request.getRobotId(),
+        VideoSession session = repository.findFirstBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
+                        request.getSourceType(),
+                        request.getSourceId(),
                         request.getDeviceId(),
                         request.getChannel(),
                         request.getQuality(),
@@ -215,6 +220,8 @@ public class VideoSessionService {
                     VideoSession created = new VideoSession();
                     created.setSessionId("vs_" + compactUuid());
                     created.setRobotId(request.getRobotId());
+                    created.setSourceType(request.getSourceType());
+                    created.setSourceId(request.getSourceId());
                     created.setDeviceId(request.getDeviceId());
                     created.setChannel(request.getChannel());
                     created.setQuality(request.getQuality());
@@ -459,7 +466,7 @@ public class VideoSessionService {
         if (request.getQuality() != null) {
             session.setQuality(request.getQuality());
         }
-        session.setRoomName("media." + session.getRobotId() + "." + session.getDeviceId() + "." + session.getChannel() + "." + session.getQuality());
+        session.setRoomName(roomName(session));
         requestClientStart(session, "video.track.switching", false);
         session.setUpdatedAt(now());
         repository.save(session);
@@ -734,7 +741,7 @@ public class VideoSessionService {
                 "sessionId", session.getSessionId(),
                 "roomName", session.getRoomName()));
         TokenResult publisherToken = liveKitTokenService.createPublisherToken(
-                session.getRoomName(), session.getRobotId(), session.getDeviceId());
+                session.getRoomName(), publisherIdentity(session), session.getDeviceId());
         String commandId = "cmd_" + compactUuid();
         session.setCommandId(commandId);
         session.setCommandRequestedAt(now());
@@ -755,31 +762,44 @@ public class VideoSessionService {
                 commandId,
                 session.getSessionId(),
                 session.getRobotId(),
+                session.getSourceType(),
+                session.getSourceId(),
                 session.getDeviceId(),
                 session.getChannel(),
                 session.getQuality(),
                 properties.getLivekit().getUrl(),
                 session.getRoomName(),
                 publisherToken.token(),
-                "robot:" + session.getRobotId() + ":" + session.getDeviceId(),
+                publisherIdentity(session),
+                null,
                 publisherToken.expiresAt());
     }
 
     private VideoStartCommand createStartCommand(VideoSession session) {
         TokenResult publisherToken = liveKitTokenService.createPublisherToken(
-                session.getRoomName(), session.getRobotId(), session.getDeviceId());
+                session.getRoomName(), publisherIdentity(session), session.getDeviceId());
         return new VideoStartCommand(
                 session.getCommandId(),
                 session.getSessionId(),
                 session.getRobotId(),
+                session.getSourceType(),
+                session.getSourceId(),
                 session.getDeviceId(),
                 session.getChannel(),
                 session.getQuality(),
                 properties.getLivekit().getUrl(),
                 session.getRoomName(),
                 publisherToken.token(),
-                "robot:" + session.getRobotId() + ":" + session.getDeviceId(),
+                publisherIdentity(session),
+                null,
                 publisherToken.expiresAt());
+    }
+
+    private String publisherIdentity(VideoSession session) {
+        if (session.getSourceType() == VideoSourceType.FIXED_CAMERA) {
+            return "fixed-camera:" + session.getSourceId();
+        }
+        return "robot:" + session.getRobotId() + ":" + session.getDeviceId();
     }
 
     /**
@@ -818,6 +838,9 @@ public class VideoSessionService {
         mediaTrackService.unpublish(session);
         Map<String, Object> stopPayload = Map.of(
                 "robotId", session.getRobotId(),
+                "sourceType", session.getSourceType().name(),
+                "sourceId", session.getSourceId(),
+                "deviceId", session.getDeviceId(),
                 "sessionId", session.getSessionId(),
                 "commandId", "cmd_" + compactUuid(),
                 "roomName", session.getRoomName());
@@ -1023,7 +1046,17 @@ public class VideoSessionService {
     }
 
     private String roomName(CreateVideoSessionRequest request) {
+        if (request.getSourceType() == VideoSourceType.FIXED_CAMERA) {
+            return "media.fixed." + request.getSourceId() + "." + request.getChannel() + "." + request.getQuality();
+        }
         return "media." + request.getRobotId() + "." + request.getDeviceId() + "." + request.getChannel() + "." + request.getQuality();
+    }
+
+    private String roomName(VideoSession session) {
+        if (session.getSourceType() == VideoSourceType.FIXED_CAMERA) {
+            return "media.fixed." + session.getSourceId() + "." + session.getChannel() + "." + session.getQuality();
+        }
+        return "media." + session.getRobotId() + "." + session.getDeviceId() + "." + session.getChannel() + "." + session.getQuality();
     }
 
     private void emit(String event, Object data) {

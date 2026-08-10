@@ -61,7 +61,7 @@ template_default() {
     NGINX_MEDIA_SERVICE_UPSTREAM) printf '%s' host.docker.internal:8088 ;;
     NGINX_BIGSCREEN_BFF_UPSTREAM) printf '%s' host.docker.internal:8090 ;;
     NGINX_LIVEKIT_UPSTREAM) printf '%s' host.docker.internal:7880 ;;
-    NGINX_API_GATEWAY_UPSTREAM) printf '%s' 192.168.124.235:8080 ;;
+    NGINX_API_GATEWAY_UPSTREAM) printf '%s' host.docker.internal:8080 ;;
     NGINX_MEDIA_SERVICE_TEST_UPSTREAM) printf '%s' host.docker.internal:28088 ;;
     NGINX_BIGSCREEN_BFF_TEST_UPSTREAM) printf '%s' host.docker.internal:28090 ;;
     NGINX_LIVEKIT_TEST_UPSTREAM) printf '%s' host.docker.internal:7880 ;;

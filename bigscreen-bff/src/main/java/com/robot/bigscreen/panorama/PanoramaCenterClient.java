@@ -68,6 +68,13 @@ public class PanoramaCenterClient {
         return records(builder.build(true).toUri());
     }
 
+    public List<Map<String, Object>> registeredRobots() {
+        URI uri = uri(properties.getControlBaseUrl(), "/api/control/robots/registry")
+                .build(true)
+                .toUri();
+        return records(uri);
+    }
+
     public List<Map<String, Object>> taskWorkflowPlans() {
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-plans")
                 .queryParam("pageNum", 1)
@@ -164,6 +171,15 @@ public class PanoramaCenterClient {
         return records(uri);
     }
 
+    public List<Map<String, Object>> fixedCameras() {
+        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/fixed-cameras")
+                .queryParam("pageNum", 1)
+                .queryParam("pageSize", 500)
+                .build(true)
+                .toUri();
+        return records(uri);
+    }
+
     public List<Map<String, Object>> pathPoints(String pathId) {
         if (pathId == null || pathId.isBlank()) {
             return List.of();
@@ -204,59 +220,69 @@ public class PanoramaCenterClient {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> records(URI uri) {
-        return dataMap(uri)
-                .map(data -> {
-                    Object records = data.get("records");
-                    if (records instanceof List<?> list) {
+        return responseMap(uri)
+                .map(response -> {
+                    Object data = response.get("data");
+                    if (data instanceof Map<?, ?> dataMap) {
+                        Object records = dataMap.get("records");
+                        if (records instanceof List<?> list) {
+                            return maps(list);
+                        }
+                        return List.of((Map<String, Object>) dataMap);
+                    }
+                    if (data instanceof List<?> list) {
                         return maps(list);
                     }
-                    return List.<Map<String, Object>>of(data);
+                    if (!response.containsKey("code") && !response.containsKey("data")) {
+                        return List.of(response);
+                    }
+                    return List.<Map<String, Object>>of();
                 })
-                .orElseGet(() -> listData(uri));
-    }
-
-    private List<Map<String, Object>> listData(URI uri) {
-        try {
-            Map<String, Object> response = restClient.get()
-                    .uri(uri)
-                    .headers(authenticatedRequestHeaders::apply)
-                    .retrieve()
-                    .body(MAP_TYPE);
-            Object data = response == null ? null : response.get("data");
-            if (data instanceof List<?> list) {
-                return maps(list);
-            }
-            return List.of();
-        } catch (RuntimeException exception) {
-            log.warn("Failed to request panorama center list uri={}", uri, exception);
-            return List.of();
-        }
+                .orElse(List.of());
     }
 
     @SuppressWarnings("unchecked")
     private Optional<Map<String, Object>> dataMap(URI uri) {
+        return responseMap(uri)
+                .flatMap(response -> {
+                    Object data = response.get("data");
+                    if (data instanceof Map<?, ?> map) {
+                        return Optional.of((Map<String, Object>) map);
+                    }
+                    if (!response.containsKey("code") && !response.containsKey("data")) {
+                        return Optional.of(response);
+                    }
+                    return Optional.empty();
+                });
+    }
+
+    private Optional<Map<String, Object>> responseMap(URI uri) {
+        long startNanos = System.nanoTime();
         try {
             Map<String, Object> response = restClient.get()
                     .uri(uri)
                     .headers(authenticatedRequestHeaders::apply)
                     .retrieve()
                     .body(MAP_TYPE);
-            if (response == null) {
-                return Optional.empty();
-            }
-            Object data = response.get("data");
-            if (data instanceof Map<?, ?> map) {
-                return Optional.of((Map<String, Object>) map);
-            }
-            if (!response.containsKey("code") && !response.containsKey("data")) {
-                return Optional.of(response);
-            }
-            return Optional.empty();
+            logSlowRequest(uri, startNanos);
+            return response == null ? Optional.empty() : Optional.of(response);
         } catch (RuntimeException exception) {
-            log.warn("Failed to request panorama center data uri={}", uri, exception);
+            log.warn("Failed to request panorama center uri={} elapsedMs={}", uri, elapsedMillis(startNanos), exception);
             return Optional.empty();
         }
+    }
+
+    private void logSlowRequest(URI uri, long startNanos) {
+        long elapsedMs = elapsedMillis(startNanos);
+        if (elapsedMs >= 1000) {
+            log.warn("Slow panorama center request uri={} elapsedMs={}", uri, elapsedMs);
+        }
+    }
+
+    private long elapsedMillis(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000;
     }
 
     @SuppressWarnings("unchecked")

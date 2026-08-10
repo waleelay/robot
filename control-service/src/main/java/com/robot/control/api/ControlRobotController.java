@@ -8,7 +8,9 @@ import com.robot.control.service.ControlVideoCommandService;
 import com.robot.control.service.MultiFunctionAudioTransferService;
 import com.robot.control.dto.VideoSessionResponse;
 import com.robot.control.dto.IntercomResponse;
+import com.robot.control.robot.service.RobotRegistryService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,6 +34,7 @@ public class ControlRobotController {
     private final CurrentUserResolver currentUserResolver;
     private final IntercomCallService intercomCallService;
     private final MultiFunctionAudioTransferService multiFunctionAudioTransferService;
+    private final RobotRegistryService robotRegistryService;
 
     /**
      * 创建 ControlRobotController 实例。
@@ -45,12 +48,27 @@ public class ControlRobotController {
             EquipmentControlService equipmentControlService,
             CurrentUserResolver currentUserResolver,
             IntercomCallService intercomCallService,
-            MultiFunctionAudioTransferService multiFunctionAudioTransferService) {
+            MultiFunctionAudioTransferService multiFunctionAudioTransferService,
+            RobotRegistryService robotRegistryService) {
         this.controlVideoCommandService = controlVideoCommandService;
         this.equipmentControlService = equipmentControlService;
         this.currentUserResolver = currentUserResolver;
         this.intercomCallService = intercomCallService;
         this.multiFunctionAudioTransferService = multiFunctionAudioTransferService;
+        this.robotRegistryService = robotRegistryService;
+    }
+
+    /**
+     * 查询 Control Service 当前内存中的机器人注册状态。
+     *
+     * @return 机器人注册表快照
+     */
+    @GetMapping("/registry")
+    public Map<String, Object> registry() {
+        List<?> records = robotRegistryService.list();
+        return Map.of(
+                "records", records,
+                "total", records.size());
     }
 
     /**

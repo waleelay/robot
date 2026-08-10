@@ -69,9 +69,11 @@ client/
 | 路径 | 职责 |
 |---|---|
 | `cmd/robot-media-client/main.go` | 程序入口，加载配置，初始化 RTSP 探测、视频 publisher、对讲 manager、录像上传 runner 和 MQTT client |
+| `cmd/fixed-camera-gateway/main.go` | 固定摄像头 Gateway 入口，只订阅固定摄像头 MQTT 视频命令，查询管理端摄像头档案并推流到 LiveKit |
 | `internal/config/config.go` | 从环境变量加载机器人、MQTT、RTSP、GStreamer、文件上传和本地缓存配置 |
 | `internal/model/model.go` | MQTT 指令、状态消息、机器人在线消息、摄像头信息等 JSON 数据模型 |
 | `internal/mqtt/client.go` | MQTT 连接、订阅、心跳、指令分发、状态发布 |
+| `internal/fixedcamera/gateway.go` | 固定摄像头 MQTT 命令处理、管理端档案查询、RTSP 选流和状态上报 |
 | `internal/rtsp/probe.go` | 使用 `ffprobe` 检查 RTSP 视频流是否可达 |
 | `internal/publisher/publisher.go` | 按 `sessionId` 管理外部视频推流进程，支持默认 GStreamer publisher、FFmpeg fallback 或自定义命令 |
 | `internal/intercom/intercom.go` | 使用 LiveKit SDK 管理对讲会话，桥接本地麦克风、扬声器与 LiveKit 音频 Track |
@@ -84,7 +86,7 @@ client/
 
 ## 3. 启动入口
 
-入口文件为 `cmd/robot-media-client/main.go`。
+机器人客户端入口文件为 `cmd/robot-media-client/main.go`。
 
 启动流程：
 
@@ -102,6 +104,8 @@ main
 
 进程退出时，根 `context` 会统一通知 MQTT、推流进程、对讲音频桥和录像上传 runner 收尾。
 
+固定摄像头 Gateway 入口文件为 `cmd/fixed-camera-gateway/main.go`。该入口不启动机器人在线心跳、对讲、多合一设备控制和录像上传，只复用 RTSP 探测与视频 publisher，用于中心侧固定监控摄像头推流。
+
 ## 4. 配置模块
 
 `internal/config/config.go` 定义 `Config`，所有配置从环境变量读取，并提供默认值。
@@ -118,7 +122,17 @@ main
 | `MQTTUsername` | `MQTT_USERNAME` | MQTT 用户名 |
 | `MQTTPassword` | `MQTT_PASSWORD` | MQTT 密码 |
 | `ClientID` | `ROBOT_CLIENT_ID` | MQTT clientId |
+| `FixedCameraGatewayID` | `FIXED_CAMERA_GATEWAY_ID` | 固定摄像头 Gateway 订阅命令使用的实例 ID，默认 `default` |
 | `HeartbeatInterval` | `HEARTBEAT_INTERVAL_MS` | 在线心跳间隔 |
+
+### 4.1.1 固定摄像头 Gateway
+
+| 字段 | 环境变量 | 说明 |
+|---|---|---|
+| `FixedCameraGatewayID` | `FIXED_CAMERA_GATEWAY_ID` | 与 Control Service 下发 topic 中的 `{gatewayId}` 一致 |
+| `ManagementServiceURL` | `MANAGEMENT_SERVICE_URL` / `CENTER_MANAGE_BASE_URL` | 管理端服务地址，用于查询 `/api/v1/management/fixed-cameras` |
+| `ManagementToken` | `MANAGEMENT_SERVICE_TOKEN` | 调管理端接口时附加的 Bearer token，可为空 |
+| `ManagementInsecureTLS` | `MANAGEMENT_INSECURE_SKIP_VERIFY` | 内网自签 HTTPS 证书兼容开关，默认关闭 |
 
 ### 4.2 摄像头与 RTSP
 
@@ -201,7 +215,7 @@ main
 
 ## 6. MQTT 模块
 
-`internal/mqtt/client.go` 是实时控制链路的中心。
+`internal/mqtt/client.go` 是机器人实时控制链路的中心。固定摄像头 Gateway 使用 `internal/fixedcamera/gateway.go`，不订阅机器人控制或对讲 topic。
 
 ### 6.1 订阅 Topic
 
@@ -216,6 +230,14 @@ main
 | `robot/{robotId}/media/video/intercom/stop` | `handleIntercomStop` | 停止对讲 |
 | `robot/{robotId}/control/#` | `handleControlCommand` | 接收本体、云台、扬声器、发射器、警示灯、车灯和多合一设备等装备控制命令 |
 
+固定摄像头 Gateway 订阅：
+
+| Topic | 处理函数 | 说明 |
+|---|---|---|
+| `gateway/fixed-camera/{gatewayId}/video/start` | `handleStart` | 启动固定摄像头实时视频 |
+| `gateway/fixed-camera/{gatewayId}/video/stop` | `handleStop` | 停止指定 `sessionId` 的固定摄像头推流 |
+| `gateway/fixed-camera/{gatewayId}/video/restart` | `handleStart` | 重启固定摄像头推流 |
+
 ### 6.2 发布 Topic
 
 | Topic | 消息类型 | 说明 |
@@ -223,6 +245,7 @@ main
 | `robot/{robotId}/media/client/status` | `OnlineMessage` | 上线、下线和周期心跳，携带摄像头清单与 `devices[]` 能力/状态 |
 | `robot/{robotId}/media/video/status` | `StatusMessage` | 实时视频状态 |
 | `robot/{robotId}/media/video/intercom/status` | `IntercomStatusMessage` | 对讲状态 |
+| `gateway/fixed-camera/{gatewayId}/video/status` | `StatusMessage` | 固定摄像头实时视频状态 |
 
 ### 6.3 指令处理流程
 
@@ -556,7 +579,7 @@ Task
 `client/Dockerfile` 分两阶段构建：
 
 1. `golang:1.24-alpine` 编译 Go 二进制，安装 `build-base`、`pkgconf`、`opus-dev`。
-2. `alpine:3.20` 运行，安装 `ffmpeg`、`ca-certificates`、`opus`、`gstreamer`、`gst-plugins-base`、`gst-plugins-good`。
+2. `alpine:3.20` 运行，安装 `bash`、`ffmpeg`、`ca-certificates`、`opus`、`gstreamer`、`gst-plugins-base`、`gst-plugins-good`、`gst-plugins-bad`。
 
 构建命令：
 

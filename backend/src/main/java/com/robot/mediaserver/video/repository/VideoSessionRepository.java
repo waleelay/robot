@@ -5,6 +5,7 @@ import com.robot.mediaserver.video.model.VideoQuality;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
 import com.robot.mediaserver.video.model.IntercomStatus;
+import com.robot.mediaserver.video.model.VideoSourceType;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -21,6 +22,14 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
 
         Optional<VideoSession> findFirstByRobotIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
             String robotId,
+            String deviceId,
+            VideoChannel channel,
+            VideoQuality quality,
+            Collection<VideoSessionStatus> statuses);
+
+        Optional<VideoSession> findFirstBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
+            VideoSourceType sourceType,
+            String sourceId,
             String deviceId,
             VideoChannel channel,
             VideoQuality quality,

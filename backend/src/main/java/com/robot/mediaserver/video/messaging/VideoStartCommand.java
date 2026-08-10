@@ -2,6 +2,7 @@ package com.robot.mediaserver.video.messaging;
 
 import com.robot.mediaserver.video.model.VideoChannel;
 import com.robot.mediaserver.video.model.VideoQuality;
+import com.robot.mediaserver.video.model.VideoSourceType;
 import java.time.OffsetDateTime;
 
 /**
@@ -17,6 +18,8 @@ public record VideoStartCommand(
         String commandId,
         String sessionId,
         String robotId,
+        VideoSourceType sourceType,
+        String sourceId,
         String deviceId,
         VideoChannel channel,
         VideoQuality quality,
@@ -24,5 +27,6 @@ public record VideoStartCommand(
         String roomName,
         String publisherToken,
         String publishIdentity,
+        String rtspUrl,
         OffsetDateTime expiresAt) {
 }

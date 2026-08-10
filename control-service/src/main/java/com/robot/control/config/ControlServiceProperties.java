@@ -127,6 +127,7 @@ public class ControlServiceProperties {
         private String username;
         private String password = "";
         private String clientId = "robot-control-service";
+        private String fixedCameraGatewayId = "default";
         private boolean enabled = true;
 
         /**
@@ -199,6 +200,14 @@ public class ControlServiceProperties {
          */
         public void setClientId(String clientId) {
             this.clientId = clientId;
+        }
+
+        public String getFixedCameraGatewayId() {
+            return fixedCameraGatewayId;
+        }
+
+        public void setFixedCameraGatewayId(String fixedCameraGatewayId) {
+            this.fixedCameraGatewayId = fixedCameraGatewayId;
         }
 
         /**

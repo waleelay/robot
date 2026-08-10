@@ -118,6 +118,35 @@ public class ControlManagementClient {
     }
 
     /**
+     * 查询管理端固定摄像头列表。
+     *
+     * @return 固定摄像头列表
+     */
+    public List<Map<String, Object>> fixedCameras() {
+        URI uri = uri("/api/v1/management/fixed-cameras")
+                .queryParam("pageNum", 1)
+                .queryParam("pageSize", 500)
+                .build(true)
+                .toUri();
+        return records(uri);
+    }
+
+    /**
+     * 根据摄像头 ID 查询固定摄像头。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @return 固定摄像头
+     */
+    public Optional<Map<String, Object>> fixedCamera(String cameraId) {
+        if (cameraId == null || cameraId.isBlank()) {
+            return Optional.empty();
+        }
+        return fixedCameras().stream()
+                .filter(camera -> cameraId.equals(firstString(camera, "cameraId", "id")))
+                .findFirst();
+    }
+
+    /**
      * 查询管理端设备详情。
      *
      * @param id 管理端设备 ID

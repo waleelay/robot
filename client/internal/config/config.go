@@ -16,6 +16,10 @@ type Config struct {
 	MQTTUsername             string
 	MQTTPassword             string
 	ClientID                 string
+	FixedCameraGatewayID     string
+	ManagementServiceURL     string
+	ManagementToken          string
+	ManagementInsecureTLS    bool
 	RTSPVisibleSub           string
 	RTSPVisibleMain          string
 	RTSPThermalSub           string
@@ -105,6 +109,10 @@ func Load() Config {
 		MQTTUsername:             env("MQTT_USERNAME", ""),
 		MQTTPassword:             env("MQTT_PASSWORD", ""),
 		ClientID:                 env("ROBOT_CLIENT_ID", "robot-media-client"),
+		FixedCameraGatewayID:     env("FIXED_CAMERA_GATEWAY_ID", "default"),
+		ManagementServiceURL:     env("MANAGEMENT_SERVICE_URL", env("CENTER_MANAGE_BASE_URL", "http://host.docker.internal:8866")),
+		ManagementToken:          env("MANAGEMENT_SERVICE_TOKEN", ""),
+		ManagementInsecureTLS:    envBool("MANAGEMENT_INSECURE_SKIP_VERIFY", false),
 		RTSPVisibleSub:           env("RTSP_VISIBLE_SUB", "rtsp://admin:okwy1688@192.168.1.64:554/Streaming/Channels/102"),
 		RTSPVisibleMain:          env("RTSP_VISIBLE_MAIN", "rtsp://admin:okwy1688@192.168.1.64:554/Streaming/Channels/101"),
 		RTSPThermalSub:           env("RTSP_THERMAL_SUB", "rtsp://admin:okwy1688@192.168.1.65:554/Streaming/Channels/102"),

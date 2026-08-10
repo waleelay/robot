@@ -15,8 +15,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -34,48 +41,64 @@ public class PanoramaService {
     }
 
     public Map<String, Object> overview() {
+        OverviewRequestCache cache = new OverviewRequestCache();
         Map<String, Object> overview = object("serverTime", now());
-        List<Map<String, Object>> devices = devices();
+        CompletableFuture<List<Map<String, Object>>> devicesFuture = async(this::devices);
+        CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
+        CompletableFuture<List<Map<String, Object>>> mapsFuture = async(centerClient::enabledMaps);
+        CompletableFuture<Map<String, Object>> alarmsFuture = async(this::alarmsPayload);
+
+        List<Map<String, Object>> devices = join(devicesFuture, List.of());
+        PanoramaTasks panoramaTasks = join(tasksFuture, new PanoramaTasks(List.of(), List.of()));
         overview.put("devices", devices);
         overview.put("gpsDevices", gpsDevices(devices));
         overview.put("deviceStats", deviceStats(devices));
         overview.put("deviceTypeStats", deviceTypeStats(devices));
 
-        PanoramaTasks panoramaTasks = taskPayload();
         overview.put("patrolOverview", patrolOverview(panoramaTasks.instances()));
         overview.put("tasks", panoramaTasks.items());
         overview.put("taskOverview", taskOverview(panoramaTasks.items()));
 
-        overview.put("map", mapsWithPointsAndDevices(centerClient.enabledMaps(), devices));
+        overview.put("map", mapsWithPointsAndDevices(join(mapsFuture, List.of()), devices, cache));
 
-        overview.put("alarms", alarmsPayload());
+        overview.put("alarms", join(alarmsFuture, emptyAlarmsPayload()));
         return overview;
     }
 
     private List<Map<String, Object>> mapsWithPointsAndDevices(
             List<Map<String, Object>> maps,
-            List<Map<String, Object>> devices) {
+            List<Map<String, Object>> devices,
+            OverviewRequestCache cache) {
         if (maps == null || maps.isEmpty()) {
             return List.of();
         }
-        Map<String, List<Map<String, Object>>> pointsByMapId = new LinkedHashMap<>();
-        Map<String, List<Map<String, Object>>> fixedCamerasByMapId = new LinkedHashMap<>();
-        List<Map<String, Object>> result = new ArrayList<>(maps.size());
-        for (Map<String, Object> source : maps) {
-            Map<String, Object> map = mutable(source);
-            String mapId = firstString(source, "id", "mapId");
-            List<Map<String, Object>> points = mapId == null
-                    ? List.of()
-                    : pointsByMapId.computeIfAbsent(mapId, centerClient::mapPoints);
-            List<Map<String, Object>> fixedCameras = mapId == null
-                    ? List.of()
-                    : fixedCamerasByMapId.computeIfAbsent(mapId, centerClient::fixedCameras);
-            map.put("points", points);
-            map.put("devices", devicesForMap(mapId, devices));
-            map.put("fixedCamares", fixedCameras);
-            result.add(map);
-        }
-        return result;
+        List<CompletableFuture<Map<String, Object>>> futures = maps.stream()
+                .map(source -> async(() -> mapWithPointsAndDevices(source, devices, cache)))
+                .toList();
+        return futures.stream()
+                .map(future -> join(future, null))
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private Map<String, Object> mapWithPointsAndDevices(
+            Map<String, Object> source,
+            List<Map<String, Object>> devices,
+            OverviewRequestCache cache) {
+        Map<String, Object> map = mutable(source);
+        String mapId = firstString(source, "id", "mapId");
+        CompletableFuture<List<Map<String, Object>>> pointsFuture = mapId == null
+                ? CompletableFuture.completedFuture(List.of())
+                : cache.mapPointsFuture(mapId);
+        CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = mapId == null
+                ? CompletableFuture.completedFuture(List.of())
+                : cache.fixedCamerasFuture(mapId);
+        List<Map<String, Object>> points = join(pointsFuture, List.of());
+        List<Map<String, Object>> fixedCameras = join(fixedCamerasFuture, List.of());
+        map.put("points", points);
+        map.put("devices", devicesForMap(mapId, devices));
+        map.put("fixedCamares", fixedCameras);
+        return map;
     }
 
     private List<Map<String, Object>> devicesForMap(String mapId, List<Map<String, Object>> devices) {
@@ -120,7 +143,7 @@ public class PanoramaService {
     }
 
     public Map<String, Object> tasks() {
-        List<Map<String, Object>> tasks = taskPayload().items();
+        List<Map<String, Object>> tasks = taskPayload(new OverviewRequestCache()).items();
         return object(
                 "serverTime", now(),
                 "total", tasks.size(),
@@ -151,17 +174,39 @@ public class PanoramaService {
 
     private List<Map<String, Object>> devices() {
         List<Map<String, Object>> managementDevices = centerClient.devices();
-        if (managementDevices.isEmpty()) {
-            return List.of();
-        }
         TaskInstanceResolver taskInstanceResolver = new TaskInstanceResolver(List.of());
-        Map<String, Map<String, Object>> statusBySerial = statusBySerial(managementDevices);
-        List<Map<String, Object>> result = new ArrayList<>();
+        CompletableFuture<Map<String, Map<String, Object>>> statusBySerialFuture = async(() -> statusBySerial(managementDevices));
+        CompletableFuture<List<Map<String, Object>>> registeredRobotsFuture = async(centerClient::registeredRobots);
+        CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = async(centerClient::fixedCameras);
+        Map<String, Map<String, Object>> statusBySerial = join(statusBySerialFuture, Map.of());
+        List<CompletableFuture<Map<String, Object>>> deviceFutures = new ArrayList<>();
+        List<String> appendedRobotIds = new ArrayList<>();
         for (Map<String, Object> managementDevice : managementDevices) {
             String robotId = firstString(managementDevice, "serialNumber");
             Map<String, Object> realtimeStatus = statusBySerial.getOrDefault(robotId, Map.of());
-            result.add(device(deviceSource(managementDevice), realtimeStatus, taskInstanceResolver));
+            CompletableFuture<Map<String, Object>> deviceFuture = async(() ->
+                    device(deviceSource(managementDevice), realtimeStatus, taskInstanceResolver));
+            deviceFutures.add(deviceFuture);
         }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (CompletableFuture<Map<String, Object>> deviceFuture : deviceFutures) {
+            Map<String, Object> device = join(deviceFuture, null);
+            if (device == null) {
+                continue;
+            }
+            result.add(device);
+            appendRobotId(appendedRobotIds, device.get("robotId"));
+        }
+        join(registeredRobotsFuture, List.<Map<String, Object>>of()).stream()
+                .filter(robot -> !containsRobotId(appendedRobotIds, firstValue(robot, "robotId", "serialNumber")))
+                .map(this::registeredRobotDevice)
+                .forEach(device -> {
+                    result.add(device);
+                    appendRobotId(appendedRobotIds, device.get("robotId"));
+                });
+        join(fixedCamerasFuture, List.<Map<String, Object>>of()).stream()
+                .map(this::fixedCameraDevice)
+                .forEach(result::add);
         return result;
     }
 
@@ -210,7 +255,7 @@ public class PanoramaService {
         Map<String, Object> control = map(path(realtimeStatus, "status", "control"));
         Map<String, Object> task = map(path(realtimeStatus, "status", "task"));
 
-        Object robotId = firstValue(source, "serialNumber");
+        Object robotId = firstValue(source, "serialNumber", "robotId", "id");
         String status = onlineStatus(string(realtimeStatus.get("onlineStatus")));
         List<Map<String, Object>> mountedDevices = mountedDevices(source, status);
         Object alarmLevel = alarmLevel(basic);
@@ -240,6 +285,134 @@ public class PanoramaService {
                 "location", location(localization, realtimeStatus),
                 "mapDisplay", mapDisplay(name, status, alarmLevel),
                 "task", deviceTasks(task, taskInstanceResolver));
+    }
+
+    private Map<String, Object> registeredRobotDevice(Map<String, Object> source) {
+        String robotId = firstString(source, "robotId", "serialNumber", "id");
+        String status = onlineStatus(firstString(source, "status", "onlineStatus"));
+        String name = value(firstString(source, "name", "deviceName"), robotId);
+        List<Map<String, Object>> mountedDevices = list(firstValue(source, "devices", "mountedDevices"));
+        Object alarmLevel = null;
+        return object(
+                "robotId", robotId,
+                "clientId", firstValue(source, "clientId", "authMqttClientId"),
+                "name", name,
+                "type", typeName(firstString(source, "type", "deviceType", "typeCode")),
+                "typeCode", firstValue(source, "typeCode", "deviceType", "type"),
+                "vendor", firstValue(source, "manufacturer", "vendor"),
+                "model", firstValue(source, "model"),
+                "status", status,
+                "battery", number(source.get("battery")),
+                "lastHeartbeatAt", formatTime(firstString(source, "lastHeartbeatAt", "timestamp")),
+                "cameras", registeredRobotCameras(source, robotId),
+                "mountedDevices", mountedDevices,
+                "stateSeq", number(source.get("stateSeq")),
+                "fault", "fault".equals(status),
+                "alarmLevel", alarmLevel,
+                "controlMode", normalizeControlMode(firstString(source, "controlMode")),
+                "controlModeName", value(firstString(source, "controlModeName"), controlModeName(normalizeControlMode(firstString(source, "controlMode")))),
+                "mountedDeviceCount", mountedDevices.size(),
+                "speed", number(source.get("speed")),
+                "location", registeredRobotLocation(source),
+                "mapDisplay", mapDisplay(name, status, alarmLevel),
+                "task", List.of());
+    }
+
+    private List<Map<String, Object>> registeredRobotCameras(Map<String, Object> source, String robotId) {
+        List<Map<String, Object>> cameras = list(source.get("cameras"));
+        if (!cameras.isEmpty()) {
+            return cameras.stream()
+                    .map(camera -> object(
+                            "cameraId", firstValue(camera, "cameraId", "id", "deviceId"),
+                            "deviceId", firstValue(camera, "deviceId", "cameraId", "id"),
+                            "groupType", firstValue(camera, "groupType"),
+                            "name", firstString(camera, "name", "cameraName"),
+                            "quality", value(firstString(camera, "quality"), "sub")))
+                    .toList();
+        }
+        if (robotId == null || robotId.isBlank()) {
+            return List.of();
+        }
+        return List.of(camera(robotId, robotId, "body", "本体相机"));
+    }
+
+    private Map<String, Object> registeredRobotLocation(Map<String, Object> source) {
+        Map<String, Object> location = map(source.get("location"));
+        return object(
+                "mapId", firstValue(location, "mapId", "mapID"),
+                "lng", number(firstValue(location, "lng", "longitude")),
+                "lat", number(firstValue(location, "lat", "latitude")),
+                "altitude", number(firstValue(location, "altitude")),
+                "x", number(firstValue(location, "coordinateX", "x")),
+                "y", number(firstValue(location, "coordinateY", "y")),
+                "z", number(firstValue(location, "coordinateZ", "z")),
+                "address", firstString(location, "address"),
+                "updatedAt", formatTime(value(firstString(location, "updatedAt"), firstString(source, "timestamp", "lastHeartbeatAt"))));
+    }
+
+    private Map<String, Object> fixedCameraDevice(Map<String, Object> source) {
+        String cameraId = firstString(source, "cameraId", "id");
+        boolean enabled = booleanValue(source.get("enabled"));
+        String defaultQuality = firstString(source, "subStreamUrl") == null ? "main" : "sub";
+        boolean playable = enabled && (firstString(source, "mainStreamUrl") != null || firstString(source, "subStreamUrl") != null);
+        String status = enabled ? "online" : "offline";
+        return object(
+                "robotId", cameraId,
+                "equipmentId", cameraId,
+                "cameraId", cameraId,
+                "clientId", "fixed-camera-gateway",
+                "name", firstString(source, "cameraName", "name"),
+                "type", "固定摄像头",
+                "typeCode", "FIXED_CAMERA",
+                "equipmentType", "FIXED_CAMERA",
+                "sourceType", "FIXED_CAMERA",
+                "status", status,
+                "battery", null,
+                "lastHeartbeatAt", null,
+                "cameras", List.of(camera(cameraId, cameraId, "fixed_camera", firstString(source, "cameraName", "name"), defaultQuality)),
+                "mountedDevices", List.of(),
+                "stateSeq", null,
+                "fault", false,
+                "alarmLevel", null,
+                "controlMode", null,
+                "controlModeName", null,
+                "mountedDeviceCount", 0,
+                "speed", null,
+                "location", fixedCameraLocation(source),
+                "mapDisplay", fixedCameraMapDisplay(source, enabled),
+                "task", List.of(),
+                "mapId", firstValue(source, "mapId"),
+                "locationDescription", firstValue(source, "locationDescription"),
+                "coordinateX", number(source.get("coordinateX")),
+                "coordinateY", number(source.get("coordinateY")),
+                "headingYaw", number(source.get("headingYaw")),
+                "protocolType", firstString(source, "protocolType"),
+                "defaultQuality", defaultQuality,
+                "playable", playable,
+                "showControlCenter", false,
+                "showController", false);
+    }
+
+    private Map<String, Object> fixedCameraLocation(Map<String, Object> source) {
+        return object(
+                "mapId", firstValue(source, "mapId"),
+                "lng", null,
+                "lat", null,
+                "altitude", null,
+                "x", number(source.get("coordinateX")),
+                "y", number(source.get("coordinateY")),
+                "z", null,
+                "address", firstString(source, "locationDescription"),
+                "updatedAt", null);
+    }
+
+    private Map<String, Object> fixedCameraMapDisplay(Map<String, Object> source, boolean enabled) {
+        return object(
+                "visible", true,
+                "label", firstString(source, "cameraName", "name"),
+                "status", enabled ? "enabled" : "disabled",
+                "icon", enabled ? "robot-camera-normal" : "robot-camera-off",
+                "headingYaw", number(source.get("headingYaw")));
     }
 
     private Object mountedDeviceCount(Map<String, Object> source, List<Map<String, Object>> mountedDevices) {
@@ -280,12 +453,16 @@ public class PanoramaService {
     }
 
     private Map<String, Object> camera(String cameraId, String deviceId, String groupType, String name) {
+        return camera(cameraId, deviceId, groupType, name, "sub");
+    }
+
+    private Map<String, Object> camera(String cameraId, String deviceId, String groupType, String name, String quality) {
         return object(
                 "cameraId", cameraId,
                 "deviceId", deviceId,
                 "groupType", groupType,
                 "name", name,
-                "quality", "sub");
+                "quality", quality);
     }
 
     private boolean dualGimbalComponent(Map<String, Object> component) {
@@ -353,19 +530,26 @@ public class PanoramaService {
                 "timeRange", timeRange(startTime, endTime, null)));
     }
 
-    private PanoramaTasks taskPayload() {
-        List<Map<String, Object>> taskPlans = centerClient.taskWorkflowPlans();
-        List<Map<String, Object>> taskInstances = centerClient.taskWorkflowInstances();
+    private PanoramaTasks taskPayload(OverviewRequestCache cache) {
+        CompletableFuture<List<Map<String, Object>>> taskPlansFuture = async(centerClient::taskWorkflowPlans);
+        CompletableFuture<List<Map<String, Object>>> taskInstancesFuture = async(centerClient::taskWorkflowInstances);
+        List<Map<String, Object>> taskPlans = join(taskPlansFuture, List.of());
+        List<Map<String, Object>> taskInstances = join(taskInstancesFuture, List.of());
         if (taskPlans.isEmpty()) {
             return new PanoramaTasks(List.of(), taskInstances);
         }
         TaskInstanceResolver taskInstanceResolver = new TaskInstanceResolver(taskInstances);
-        TaskRouteResolver routeResolver = new TaskRouteResolver(taskPlans);
-        List<Map<String, Object>> result = new ArrayList<>();
+        TaskRouteResolver routeResolver = new TaskRouteResolver(taskPlans, cache);
+        List<CompletableFuture<Map<String, Object>>> futures = new ArrayList<>();
         for (int index = 0; index < taskPlans.size(); index++) {
             Map<String, Object> sourceTask = taskPlans.get(index);
-            result.add(taskItem(sourceTask, routeResolver.resolve(sourceTask, index), taskInstanceResolver));
+            int taskIndex = index;
+            futures.add(async(() -> taskItem(sourceTask, routeResolver.resolve(sourceTask, taskIndex), taskInstanceResolver)));
         }
+        List<Map<String, Object>> result = futures.stream()
+                .map(future -> join(future, null))
+                .filter(Objects::nonNull)
+                .toList();
         return new PanoramaTasks(result, taskInstances);
     }
 
@@ -730,6 +914,39 @@ public class PanoramaService {
                 "showArea", null);
     }
 
+    private Map<String, Object> emptyAlarmsPayload() {
+        return object(
+                "total", 0,
+                "summary", alarmSummary(List.of()),
+                "high", alarmGroup(List.of()),
+                "medium", alarmGroup(List.of()),
+                "low", alarmGroup(List.of()));
+    }
+
+    private <T> CompletableFuture<T> async(Supplier<T> supplier) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return CompletableFuture.supplyAsync(() -> {
+            SecurityContext previousContext = SecurityContextHolder.getContext();
+            SecurityContext context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(authentication);
+            try {
+                SecurityContextHolder.setContext(context);
+                return supplier.get();
+            } finally {
+                SecurityContextHolder.setContext(previousContext);
+            }
+        });
+    }
+
+    private <T> T join(CompletableFuture<T> future, T fallback) {
+        try {
+            T value = future.join();
+            return value == null ? fallback : value;
+        } catch (CompletionException exception) {
+            return fallback;
+        }
+    }
+
     private Map<String, Object> mapDisplay(String name, String status, Object alarmLevel) {
         return object(
                 "icon", null,
@@ -754,11 +971,44 @@ public class PanoramaService {
         return alarms.stream().filter(alarm -> level.equals(alarm.get("level"))).toList();
     }
 
+    private final class OverviewRequestCache {
+
+        private final Map<String, CompletableFuture<List<Map<String, Object>>>> mapPointsByMapId = new ConcurrentHashMap<>();
+        private final Map<String, CompletableFuture<List<Map<String, Object>>>> pathPointsByPathId = new ConcurrentHashMap<>();
+        private final Map<String, CompletableFuture<List<Map<String, Object>>>> fixedCamerasByMapId = new ConcurrentHashMap<>();
+
+        private List<Map<String, Object>> mapPoints(String mapId) {
+            return join(mapPointsFuture(mapId), List.of());
+        }
+
+        private CompletableFuture<List<Map<String, Object>>> mapPointsFuture(String mapId) {
+            return cachedList(mapPointsByMapId, mapId, centerClient::mapPoints);
+        }
+
+        private List<Map<String, Object>> pathPoints(String pathId) {
+            return join(cachedList(pathPointsByPathId, pathId, centerClient::pathPoints), List.of());
+        }
+
+        private CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture(String mapId) {
+            return cachedList(fixedCamerasByMapId, mapId, centerClient::fixedCameras);
+        }
+
+        private CompletableFuture<List<Map<String, Object>>> cachedList(
+                Map<String, CompletableFuture<List<Map<String, Object>>>> cache,
+                String key,
+                Function<String, List<Map<String, Object>>> loader) {
+            if (key == null || key.isBlank()) {
+                return CompletableFuture.completedFuture(List.of());
+            }
+            return cache.computeIfAbsent(key, value -> async(() -> loader.apply(value)));
+        }
+    }
+
     private final class TaskInstanceResolver {
 
-        private final Map<String, Map<String, Object>> instancesById = new LinkedHashMap<>();
-        private final Map<String, Map<String, Object>> replaysById = new LinkedHashMap<>();
-        private final Map<String, List<Map<String, Object>>> deviceTasksByWorkflowInstanceId = new LinkedHashMap<>();
+        private final Map<String, Map<String, Object>> instancesById = new ConcurrentHashMap<>();
+        private final Map<String, CompletableFuture<Map<String, Object>>> replaysById = new ConcurrentHashMap<>();
+        private final Map<String, CompletableFuture<List<Map<String, Object>>>> deviceTasksByWorkflowInstanceId = new ConcurrentHashMap<>();
 
         private TaskInstanceResolver(List<Map<String, Object>> taskInstances) {
             for (Map<String, Object> taskInstance : taskInstances) {
@@ -782,8 +1032,8 @@ public class PanoramaService {
             if (id == null) {
                 return Map.of();
             }
-            return replaysById.computeIfAbsent(id,
-                    value -> centerClient.taskWorkflowReplay(value).orElse(Map.of()));
+            return join(replaysById.computeIfAbsent(id,
+                    value -> async(() -> centerClient.taskWorkflowReplay(value).orElse(Map.of()))), Map.of());
         }
 
         private List<Map<String, Object>> deviceTaskInstances(Object workflowInstanceId) {
@@ -791,7 +1041,8 @@ public class PanoramaService {
             if (id == null) {
                 return List.of();
             }
-            return deviceTasksByWorkflowInstanceId.computeIfAbsent(id, centerClient::deviceTaskInstances);
+            return join(deviceTasksByWorkflowInstanceId.computeIfAbsent(id,
+                    value -> async(() -> centerClient.deviceTaskInstances(value))), List.of());
         }
 
         private Map<String, Object> loadInstance(String workflowInstanceId) {
@@ -816,12 +1067,12 @@ public class PanoramaService {
         private final List<Map<String, Object>> plans;
         private final Map<String, Map<String, Object>> plansById;
         private final Map<String, Map<String, Object>> plansByName;
-        private final Map<String, TaskRouteData> routesByDefinitionId = new LinkedHashMap<>();
-        private final Map<String, List<Map<String, Object>>> mapPointsByMapId = new LinkedHashMap<>();
-        private final Map<String, List<Map<String, Object>>> pathPointsByPathId = new LinkedHashMap<>();
+        private final Map<String, CompletableFuture<TaskRouteData>> routesByDefinitionId = new ConcurrentHashMap<>();
+        private final OverviewRequestCache cache;
 
-        private TaskRouteResolver(List<Map<String, Object>> plans) {
+        private TaskRouteResolver(List<Map<String, Object>> plans, OverviewRequestCache cache) {
             this.plans = plans == null ? List.of() : plans;
+            this.cache = cache;
             this.plansById = indexPlans("id", "planId", "workflowPlanId", "taskWorkflowPlanId", "code");
             this.plansByName = indexPlans("planName", "workflowName", "name");
         }
@@ -836,7 +1087,8 @@ public class PanoramaService {
             if (workflowDefinitionId == null || workflowDefinitionId.isBlank()) {
                 return TaskRouteData.empty();
             }
-            return routesByDefinitionId.computeIfAbsent(workflowDefinitionId, this::routeData);
+            return join(routesByDefinitionId.computeIfAbsent(workflowDefinitionId,
+                    value -> async(() -> routeData(value))), TaskRouteData.empty());
         }
 
         private Map<String, Object> plan(Map<String, Object> source, int index) {
@@ -865,10 +1117,10 @@ public class PanoramaService {
             Object pathId = firstValue(definition, "pathId", "routeId");
             List<Map<String, Object>> mapPoints = mapId == null
                     ? List.of()
-                    : mapPointsByMapId.computeIfAbsent(string(mapId), centerClient::mapPoints);
+                    : cache.mapPoints(string(mapId));
             List<Map<String, Object>> pathPointRefs = pathId == null
                     ? List.of()
-                    : pathPointsByPathId.computeIfAbsent(string(pathId), centerClient::pathPoints);
+                    : cache.pathPoints(string(pathId));
             return new TaskRouteData(mapId, mapPoints, resolvePathPoints(mapPoints, pathPointRefs));
         }
 
@@ -1110,6 +1362,18 @@ public class PanoramaService {
         }
         Map<String, Object> task = map(value);
         return task.isEmpty() ? List.of() : List.of(task);
+    }
+
+    private void appendRobotId(List<String> robotIds, Object value) {
+        String robotId = string(value);
+        if (robotId != null && !robotId.isBlank()) {
+            robotIds.add(robotId);
+        }
+    }
+
+    private boolean containsRobotId(List<String> robotIds, Object value) {
+        String robotId = string(value);
+        return robotId != null && robotIds.contains(robotId);
     }
 
     private Map<String, Object> mutable(Map<String, Object> source) {

@@ -23,6 +23,7 @@ import java.time.OffsetDateTime;
         name = "media_video_session",
         indexes = {
                 @Index(name = "idx_video_session_device_status", columnList = "robotId,deviceId,channel,status"),
+                @Index(name = "idx_video_session_source_status", columnList = "sourceType,sourceId,deviceId,channel,status"),
                 @Index(name = "idx_video_session_created_by", columnList = "createdBy,createdAt")
         })
 public class VideoSession {
@@ -36,6 +37,13 @@ public class VideoSession {
 
     @Column(nullable = false, length = 64)
     private String deviceId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    private VideoSourceType sourceType = VideoSourceType.ROBOT_CAMERA;
+
+    @Column(length = 64)
+    private String sourceId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)
@@ -129,6 +137,22 @@ public class VideoSession {
 
     public void setDeviceId(String deviceId) {
         this.deviceId = deviceId;
+    }
+
+    public VideoSourceType getSourceType() {
+        return sourceType == null ? VideoSourceType.ROBOT_CAMERA : sourceType;
+    }
+
+    public void setSourceType(VideoSourceType sourceType) {
+        this.sourceType = sourceType == null ? VideoSourceType.ROBOT_CAMERA : sourceType;
+    }
+
+    public String getSourceId() {
+        return sourceId == null || sourceId.isBlank() ? robotId : sourceId;
+    }
+
+    public void setSourceId(String sourceId) {
+        this.sourceId = sourceId;
     }
 
     public VideoChannel getChannel() {

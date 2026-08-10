@@ -34,6 +34,8 @@ import java.time.OffsetDateTime;
 public record VideoSessionResponse(
         String sessionId,
         String robotId,
+        VideoSourceType sourceType,
+        String sourceId,
         String deviceId,
         VideoChannel channel,
         VideoQuality quality,

@@ -3,8 +3,11 @@ package com.robot.control.messaging;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.config.ControlServiceProperties;
-import com.robot.control.dto.VideoStartCommand;
 import com.robot.control.dto.IntercomStartCommand;
+import com.robot.control.dto.VideoStartCommand;
+import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
@@ -49,6 +52,15 @@ public class RobotMediaCommandService {
     }
 
     /**
+     * 下发固定摄像头视频启动命令。
+     *
+     * @param command 命令内容
+     */
+    public void sendFixedCameraStart(VideoStartCommand command) {
+        publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/video/start", command);
+    }
+
+    /**
      * 下发视频停止命令。
      *
      * @param robotId 机器人 ID
@@ -59,6 +71,15 @@ public class RobotMediaCommandService {
     }
 
     /**
+     * 下发固定摄像头视频停止命令。
+     *
+     * @param payload 消息载荷
+     */
+    public void sendFixedCameraStop(Object payload) {
+        publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/video/stop", payload);
+    }
+
+    /**
      * 下发切换通道命令。
      *
      * @param robotId 机器人 ID
@@ -66,6 +87,15 @@ public class RobotMediaCommandService {
      */
     public void sendSwitchChannel(String robotId, Object payload) {
         publish("robot/" + robotId + "/media/video/switch-channel", payload);
+    }
+
+    /**
+     * 下发固定摄像头重启或码流切换命令。
+     *
+     * @param payload 消息载荷
+     */
+    public void sendFixedCameraRestart(Object payload) {
+        publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/video/restart", payload);
     }
 
     /**
@@ -100,7 +130,7 @@ public class RobotMediaCommandService {
      */
     private void publish(String topic, Object payload) {
         try {
-            String json = objectMapper.writeValueAsString(payload);
+            String json = objectMapper.writeValueAsString(mqttPayload(payload));
             if (!properties.getMqtt().isEnabled()) {
                 log.info("MQTT disabled, skip publish topic={}, payload={}", topic, json);
                 return;
@@ -113,6 +143,47 @@ public class RobotMediaCommandService {
         } catch (JsonProcessingException | MqttException ex) {
             throw new IllegalStateException("发布 MQTT 指令失败：" + topic, ex);
         }
+    }
+
+    private Object mqttPayload(Object payload) {
+        if (payload instanceof VideoStartCommand command) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("commandId", command.commandId());
+            result.put("sessionId", command.sessionId());
+            result.put("robotId", command.robotId());
+            result.put("sourceType", command.sourceType());
+            result.put("sourceId", command.sourceId());
+            result.put("deviceId", command.deviceId());
+            result.put("channel", command.channel());
+            result.put("quality", command.quality());
+            result.put("livekitUrl", command.livekitUrl());
+            result.put("roomName", command.roomName());
+            result.put("publisherToken", command.publisherToken());
+            result.put("publishIdentity", command.publishIdentity());
+            result.put("rtspUrl", command.rtspUrl());
+            result.put("expiresAt", isoTime(command.expiresAt()));
+            return result;
+        }
+        if (payload instanceof IntercomStartCommand command) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("commandId", command.commandId());
+            result.put("sessionId", command.sessionId());
+            result.put("robotId", command.robotId());
+            result.put("deviceId", command.deviceId());
+            result.put("roomName", command.roomName());
+            result.put("livekitUrl", command.livekitUrl());
+            result.put("robotToken", command.robotToken());
+            result.put("publishAudio", command.publishAudio());
+            result.put("subscribeOperatorAudio", command.subscribeOperatorAudio());
+            result.put("publishVideo", command.publishVideo());
+            result.put("expiresAt", isoTime(command.expiresAt()));
+            return result;
+        }
+        return payload;
+    }
+
+    private String isoTime(OffsetDateTime value) {
+        return value == null ? null : value.toInstant().toString();
     }
 
     /**
@@ -135,5 +206,10 @@ public class RobotMediaCommandService {
         }
         client.connect(options);
         return client;
+    }
+
+    private String fixedCameraGatewayId() {
+        String gatewayId = properties.getMqtt().getFixedCameraGatewayId();
+        return gatewayId == null || gatewayId.isBlank() ? "default" : gatewayId;
     }
 }

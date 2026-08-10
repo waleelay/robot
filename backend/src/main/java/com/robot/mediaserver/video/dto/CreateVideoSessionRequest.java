@@ -2,6 +2,7 @@ package com.robot.mediaserver.video.dto;
 
 import com.robot.mediaserver.video.model.VideoChannel;
 import com.robot.mediaserver.video.model.VideoQuality;
+import com.robot.mediaserver.video.model.VideoSourceType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -18,6 +19,9 @@ public class CreateVideoSessionRequest {
 
     @NotBlank
     private String deviceId;
+
+    private VideoSourceType sourceType = VideoSourceType.ROBOT_CAMERA;
+    private String sourceId;
 
     @NotNull
     private VideoChannel channel;
@@ -42,6 +46,22 @@ public class CreateVideoSessionRequest {
 
     public void setDeviceId(String deviceId) {
         this.deviceId = deviceId;
+    }
+
+    public VideoSourceType getSourceType() {
+        return sourceType == null ? VideoSourceType.ROBOT_CAMERA : sourceType;
+    }
+
+    public void setSourceType(VideoSourceType sourceType) {
+        this.sourceType = sourceType == null ? VideoSourceType.ROBOT_CAMERA : sourceType;
+    }
+
+    public String getSourceId() {
+        return sourceId == null || sourceId.isBlank() ? robotId : sourceId;
+    }
+
+    public void setSourceId(String sourceId) {
+        this.sourceId = sourceId;
     }
 
     public VideoChannel getChannel() {

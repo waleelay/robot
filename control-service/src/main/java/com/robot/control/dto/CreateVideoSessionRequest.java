@@ -17,6 +17,9 @@ public class CreateVideoSessionRequest {
     @NotBlank
     private String deviceId;
 
+    private VideoSourceType sourceType = VideoSourceType.ROBOT_CAMERA;
+    private String sourceId;
+
     @NotNull
     private VideoChannel channel;
 
@@ -60,6 +63,22 @@ public class CreateVideoSessionRequest {
      */
     public void setDeviceId(String deviceId) {
         this.deviceId = deviceId;
+    }
+
+    public VideoSourceType getSourceType() {
+        return sourceType == null ? VideoSourceType.ROBOT_CAMERA : sourceType;
+    }
+
+    public void setSourceType(VideoSourceType sourceType) {
+        this.sourceType = sourceType == null ? VideoSourceType.ROBOT_CAMERA : sourceType;
+    }
+
+    public String getSourceId() {
+        return sourceId == null || sourceId.isBlank() ? robotId : sourceId;
+    }
+
+    public void setSourceId(String sourceId) {
+        this.sourceId = sourceId;
     }
 
     /**

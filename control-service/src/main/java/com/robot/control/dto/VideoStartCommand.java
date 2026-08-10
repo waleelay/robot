@@ -18,12 +18,15 @@ import java.time.OffsetDateTime;
  * @param roomName LiveKit 房间名
  * @param publisherToken 发布端 Token
  * @param publishIdentity 发布身份
+ * @param rtspUrl 外部媒体源 RTSP 地址，机器人摄像头为空
  * @param expiresAt 过期时间
  */
 public record VideoStartCommand(
         String commandId,
         String sessionId,
         String robotId,
+        VideoSourceType sourceType,
+        String sourceId,
         String deviceId,
         VideoChannel channel,
         VideoQuality quality,
@@ -31,5 +34,6 @@ public record VideoStartCommand(
         String roomName,
         String publisherToken,
         String publishIdentity,
+        String rtspUrl,
         OffsetDateTime expiresAt) {
 }

@@ -7,12 +7,14 @@ import static org.mockito.Mockito.when;
 
 import com.robot.control.auth.CurrentUser;
 import com.robot.control.call.IntercomBusyException;
+import com.robot.control.client.ControlManagementClient;
 import com.robot.control.client.ControlMediaServiceClient;
 import com.robot.control.dto.IntercomStatus;
 import com.robot.control.dto.VideoChannel;
 import com.robot.control.dto.VideoQuality;
 import com.robot.control.dto.VideoSessionResponse;
 import com.robot.control.dto.VideoSessionStatus;
+import com.robot.control.dto.VideoSourceType;
 import com.robot.control.messaging.RobotMediaCommandService;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -23,8 +25,9 @@ class ControlVideoCommandServiceTest {
 
     private final ControlMediaServiceClient mediaServiceClient = mock(ControlMediaServiceClient.class);
     private final RobotMediaCommandService commandService = mock(RobotMediaCommandService.class);
+    private final ControlManagementClient managementClient = mock(ControlManagementClient.class);
     private final ControlVideoCommandService service =
-            new ControlVideoCommandService(mediaServiceClient, commandService);
+            new ControlVideoCommandService(mediaServiceClient, commandService, managementClient);
 
     @Test
     void blocksOperatorFromStartingSecondRobotIntercom() {
@@ -64,6 +67,8 @@ class ControlVideoCommandServiceTest {
         OffsetDateTime now = OffsetDateTime.now();
         return new VideoSessionResponse(
                 sessionId,
+                robotId,
+                VideoSourceType.ROBOT_CAMERA,
                 robotId,
                 "camera01",
                 VideoChannel.visible,

@@ -6,6 +6,8 @@ type StartCommand struct {
 	CommandID       string    `json:"commandId"`
 	SessionID       string    `json:"sessionId"`
 	RobotID         string    `json:"robotId"`
+	SourceType      string    `json:"sourceType"`
+	SourceID        string    `json:"sourceId"`
 	DeviceID        string    `json:"deviceId"`
 	Channel         string    `json:"channel"`
 	Quality         string    `json:"quality"`
@@ -18,9 +20,12 @@ type StartCommand struct {
 }
 
 type StopCommand struct {
-	CommandID string `json:"commandId"`
-	SessionID string `json:"sessionId"`
-	RoomName  string `json:"roomName"`
+	CommandID  string `json:"commandId"`
+	SessionID  string `json:"sessionId"`
+	SourceType string `json:"sourceType,omitempty"`
+	SourceID   string `json:"sourceId,omitempty"`
+	DeviceID   string `json:"deviceId,omitempty"`
+	RoomName   string `json:"roomName"`
 }
 
 type IntercomStartCommand struct {

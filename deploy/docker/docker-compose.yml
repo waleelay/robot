@@ -143,6 +143,7 @@ services:
       MQTT_USERNAME: ${MQTT_USERNAME:-}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-}
       MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-robot-control-service-main}
+      FIXED_CAMERA_GATEWAY_ID: ${FIXED_CAMERA_GATEWAY_ID:-default}
       JAVA_DEBUG_ENABLED: ${JAVA_DEBUG_ENABLED:-false}
       JAVA_DEBUG_PORT: 5006
       TZ: ${TZ:-Asia/Shanghai}
@@ -153,6 +154,38 @@ services:
       - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/control-service:/app"
     depends_on:
       - media-service
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - robot-mediaserver
+
+  fixed-camera-gateway:
+    image: ${IMAGE_PREFIX:-robot}/robot-media-client:${IMAGE_TAG:-latest}
+    platform: ${TARGET_PLATFORM:-linux/amd64}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-fixed-camera-gateway
+    restart: unless-stopped
+    entrypoint: ["fixed-camera-gateway"]
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      ROBOT_CLIENT_ID: ${FIXED_CAMERA_CLIENT_ID:-fixed-camera-gateway}
+      FIXED_CAMERA_GATEWAY_ID: ${FIXED_CAMERA_GATEWAY_ID:-default}
+      MQTT_BROKER_URL: ${MQTT_BROKER_URL:-tcp://host.docker.internal:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MANAGEMENT_SERVICE_URL: ${MANAGEMENT_SERVICE_URL:-http://host.docker.internal:8866}
+      MANAGEMENT_SERVICE_TOKEN: ${MANAGEMENT_SERVICE_TOKEN:-}
+      MANAGEMENT_INSECURE_SKIP_VERIFY: ${MANAGEMENT_INSECURE_SKIP_VERIFY:-false}
+      FFPROBE_PATH: ${FIXED_CAMERA_FFPROBE_PATH:-ffprobe}
+      PROBE_TIMEOUT_MS: ${FIXED_CAMERA_PROBE_TIMEOUT_MS:-8000}
+      PUBLISHER_MODE: ${FIXED_CAMERA_PUBLISHER_MODE:-auto}
+      PUBLISHER_CMD: ${FIXED_CAMERA_PUBLISHER_CMD:-}
+      FFMPEG_PUBLISHER_CMD: ${FIXED_CAMERA_FFMPEG_PUBLISHER_CMD:-./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}}
+      GSTREAMER_PUBLISHER_PATH: ${FIXED_CAMERA_GSTREAMER_PUBLISHER_PATH:-gstreamer-publisher}
+      GSTREAMER_PIPELINE: ${FIXED_CAMERA_GSTREAMER_PIPELINE:-rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1}
+      GST_LAUNCH_PATH: ${FIXED_CAMERA_GST_LAUNCH_PATH:-gst-launch-1.0}
+    depends_on:
+      - control-service
+      - livekit-server
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

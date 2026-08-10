@@ -191,6 +191,7 @@ build_image() {
 build_image "backend" "$image_prefix/media-service:$image_tag"
 build_image "control-service" "$image_prefix/control-service:$image_tag"
 build_image "bigscreen-bff" "$image_prefix/bigscreen-bff:$image_tag"
+build_image "client" "$image_prefix/robot-media-client:$image_tag"
 
 save_image() {
   image=$1
@@ -210,6 +211,7 @@ save_image() {
 save_image "$image_prefix/media-service:$image_tag" "media-service-image.tar.gz"
 save_image "$image_prefix/control-service:$image_tag" "control-service-image.tar.gz"
 save_image "$image_prefix/bigscreen-bff:$image_tag" "bigscreen-bff-image.tar.gz"
+save_image "$image_prefix/robot-media-client:$image_tag" "robot-media-client-image.tar.gz"
 
 if [ -d "$TOOL_IMAGE_DIR" ]; then
   echo "copying tool images from $TOOL_IMAGE_DIR"

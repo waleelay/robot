@@ -21,6 +21,13 @@ export function createVideoSession(data) {
     reuse: data.reuse,
     clientRequestId: data.clientRequestId
   }
+  if (data.sourceType === 'FIXED_CAMERA') {
+    return request({
+      url: `/api/bigscreen/control/fixed-cameras/${data.robotId}/video/start`,
+      method: 'post',
+      data: payload
+    })
+  }
   return request({
     url: `/api/bigscreen/control/robots/${data.robotId}/cameras/${data.deviceId}/video/start`,
     method: 'post',

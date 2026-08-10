@@ -76,7 +76,7 @@ npm run lint:fix
 | `VUE_APP_TITLE` | 浏览器标题和系统名称 |
 | `VUE_APP_BASE_API` | Axios 请求的基础路径，生产环境使用 `/api-gw` |
 | `VUE_APP_BASE_ORIGIN` | 后端服务源地址，也用于部分地图和媒体接口 |
-| `VUE_APP_WS_URL` | 大屏 WebSocket 地址，例如 `wss://host/api-gw/ws/bigscreen` |
+| `VUE_APP_WS_URL` | 大屏 WebSocket 地址，例如 `wss://host/ws/bigscreen`；不配置时使用当前页面同源地址 |
 | `VUE_APP_VOICEWEBSOCKET_URL` | 语音服务 WebSocket 地址 |
 | `VUE_APP_WEBSOCKET_URL` | 业务 WebSocket 地址 |
 | `VUE_APP_WEBRTC` | WebRTC 服务地址 |
@@ -91,7 +91,7 @@ npm run lint:fix
 VUE_APP_TITLE=具身智能平台指挥中心
 VUE_APP_BASE_API=/dev-api
 VUE_APP_BASE_ORIGIN=https://backend.example.com
-VUE_APP_WS_URL=wss://backend.example.com/api-gw/ws/bigscreen
+VUE_APP_WS_URL=wss://backend.example.com/ws/bigscreen
 VUE_APP_KEYCLOAK_URL=https://auth.example.com
 VUE_APP_KEYCLOAK_REALM=iam-auth
 VUE_APP_KEYCLOAK_CLIENT_ID=bigscreen-web
@@ -103,8 +103,8 @@ VUE_APP_KEYCLOAK_CLIENT_ID=bigscreen-web
 管理端需要为大屏注册 Public SPA 客户端并启用 Authorization Code + PKCE(S256)。
 完整配置见[大屏统一登录认证对接指南](../docs/03-接口与协议/大屏BFF/大屏统一登录认证对接指南.md)。
 
-生产环境的 REST 和 WebSocket 分别访问 `/api-gw/api/bigscreen/**`、
-`/api-gw/ws/bigscreen`，由大屏 Nginx 转发到管理端 API Gateway。
+生产环境的 REST 访问 `/api-gw/api/bigscreen/**`，由大屏 Nginx 转发到管理端
+API Gateway；WebSocket 访问同源 `/ws/bigscreen`，由大屏 Nginx 直接转发到 BFF。
 
 修改环境文件后需要重新启动开发服务。环境文件中不要提交账号、Token、私钥等敏感信息。
 

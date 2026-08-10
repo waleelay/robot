@@ -5,6 +5,7 @@ import com.robot.mediaserver.video.model.IntercomStatus;
 import com.robot.mediaserver.video.model.VideoQuality;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.model.VideoSessionStatus;
+import com.robot.mediaserver.video.model.VideoSourceType;
 import java.time.OffsetDateTime;
 
 /**
@@ -16,6 +17,8 @@ import java.time.OffsetDateTime;
 public record VideoSessionResponse(
         String sessionId,
         String robotId,
+        VideoSourceType sourceType,
+        String sourceId,
         String deviceId,
         VideoChannel channel,
         VideoQuality quality,
@@ -41,6 +44,8 @@ public record VideoSessionResponse(
         return new VideoSessionResponse(
                 session.getSessionId(),
                 session.getRobotId(),
+                session.getSourceType(),
+                session.getSourceId(),
                 session.getDeviceId(),
                 session.getChannel(),
                 session.getQuality(),

@@ -281,7 +281,8 @@ function groupTypeText(groupType) {
   return {
     body: '本体',
     dual_gimbal: '双光云台',
-    arm: '机械臂'
+    arm: '机械臂',
+    fixed_camera: '固定摄像头'
   }[groupType] || groupType || '未分组'
 }
 
@@ -507,8 +508,7 @@ const actions = {
       return
     }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const apiPrefix = (process.env.VUE_APP_BASE_API || '').replace(/\/$/, '')
-    const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}${apiPrefix}/ws/bigscreen`
+    const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/bigscreen`
     const socketUrl = new URL(url, window.location.href)
     socketUrl.searchParams.set('clientId', mediaClientId)
     const accessToken = await bearerToken()
@@ -1055,6 +1055,7 @@ const actions = {
     try {
       const session = await createVideoSession({
         robotId: robot.robotId,
+        sourceType: robot.sourceType,
         deviceId: camera.deviceId,
         quality: camera.quality,
         reuse: true

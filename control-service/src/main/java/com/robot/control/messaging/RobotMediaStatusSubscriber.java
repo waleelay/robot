@@ -36,16 +36,17 @@ public class RobotMediaStatusSubscriber {
 
     private static final Logger log = LoggerFactory.getLogger(RobotMediaStatusSubscriber.class);
     private static final String STATUS_TOPIC = "robot/+/media/video/status";
+    private static final String FIXED_CAMERA_STATUS_TOPIC = "gateway/fixed-camera/+/video/status";
     private static final String INTERCOM_STATUS_TOPIC = "robot/+/media/video/intercom/status";
     private static final String CLIENT_STATUS_TOPIC = "robot/+/media/client/status";
     private static final String EDGE_DEVICE_STATUS_TOPIC = "eiop/v1/edge/+/status";
     private static final String CALL_INVITE_TOPIC = "robot/+/media/video/intercom/call/invite";
     private static final String CALL_CANCEL_TOPIC = "robot/+/media/video/intercom/call/cancel";
     private static final String[] STATUS_TOPICS = {
-        STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
+        STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
         EDGE_DEVICE_STATUS_TOPIC
     };
-    private static final int[] STATUS_QOS = {1, 1, 1, 1, 1, 1};
+    private static final int[] STATUS_QOS = {1, 1, 1, 1, 1, 1, 1};
 
     private final ControlServiceProperties properties;
     private final ObjectMapper objectMapper;
@@ -259,11 +260,11 @@ public class RobotMediaStatusSubscriber {
                 STATUS_TOPICS,
                 STATUS_QOS,
                 new IMqttMessageListener[] {
-                    statusListener(), intercomStatusListener(), clientStatusListener(), callInviteListener(), callCancelListener(),
+                    statusListener(), statusListener(), intercomStatusListener(), clientStatusListener(), callInviteListener(), callCancelListener(),
                     edgeDeviceStatusListener()
                 });
-        log.info("Subscribed media MQTT topics: {}, {}, {}, {}, {}, {}",
-                STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
+        log.info("Subscribed media MQTT topics: {}, {}, {}, {}, {}, {}, {}",
+                STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
                 EDGE_DEVICE_STATUS_TOPIC);
     }
 }
