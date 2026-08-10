@@ -39,6 +39,7 @@
         @setCenter="setCenter"
         @togglePath="togglePath"
         @toggleTaskPaths="toggleTaskPaths"
+        @toggleRanging="toggleRanging"
       />
       <!-- <div class="map-footer"></div> -->
     </div>
@@ -160,6 +161,9 @@ export default {
     },
     toggleTaskPaths(visible) {
       this.$refs.globalMapRef?.toggleTaskPaths?.(visible)
+    },
+    toggleRanging(visible) {
+      this.$refs.globalMapRef?.toggleRanging?.(visible)
     },
     onPathVisibleChange(visible) {
       const tool = this.$refs.mapToolRef

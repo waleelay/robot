@@ -31,7 +31,9 @@
             ? pathActive
             : item.key === 'point'
               ? pointActive
-              : selectedOper2 === item.key,
+              : item.key === 'scale'
+                ? rangingActive
+                : selectedOper2 === item.key,
           'is-disabled': (item.key === 'point' && !pathOperable) || (item.key === 'path' && isSlam && !taskPathOperable)
         }"
       >
@@ -154,12 +156,13 @@ export default {
         //   key: 'angle',
         //   action: 'changeAngle'
         // },
-        // {
-        //   icon: 'map-scale',
-        //   name: '测距',
-        //   key: 'scale',
-        //   action: 'ranging'
-        // },
+        {
+          icon: 'map-scale',
+          name: '测距',
+          key: 'scale',
+          action: 'ranging',
+          title: '测距：单击加点，双击结束，Esc清除/退出'
+        },
         {
           icon: 'map-location',
           name: '定位',
@@ -204,6 +207,7 @@ export default {
       showViewContainer: false,
       pathActive: false,
       pointActive: false,
+      rangingActive: false,
     }
   },
   computed: {
@@ -368,11 +372,20 @@ export default {
         this.pointActive = false
         this.$emit('togglePath', false)
       }
+      this.resetRangingActive()
     },
     changeAngle() {
       this.$emit('changeMapAngle')
     },
-    ranging() {},
+    ranging() {
+      this.rangingActive = !this.rangingActive
+      this.$emit('toggleRanging', this.rangingActive)
+    },
+    resetRangingActive() {
+      if (!this.rangingActive) return
+      this.rangingActive = false
+      this.$emit('toggleRanging', false)
+    },
     changeSkin() {},
     backCenter() {
       this.$emit('setCenter')

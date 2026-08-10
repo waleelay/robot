@@ -1,3 +1,39 @@
+::v-deep .leaflet-container.is-measuring {
+  cursor: crosshair !important;
+  .leaflet-marker-pane .leaflet-marker-icon,
+  .leaflet-marker-pane .custom-point {
+    pointer-events: none !important;
+    cursor: crosshair !important;
+  }
+}
+
+::v-deep .leaflet-marker-pane {
+  .gis-measure-label,
+  .gis-measure-total {
+    background: transparent !important;
+    border: none !important;
+  }
+  .gis-measure-label__text,
+  .gis-measure-total__text {
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
+    font-size: 12px;
+    line-height: 16px;
+    color: #E8F7FF;
+    background: rgba(1, 28, 57, 0.88);
+    border: 1px solid rgba(33, 200, 255, 0.65);
+    box-shadow: 0 0 6px rgba(33, 200, 255, 0.25);
+    pointer-events: none;
+  }
+  .gis-measure-total__text {
+    color: #0BF9FE;
+    font-weight: 600;
+  }
+}
+
 #map {
   /* filter: invert(100%) hue-rotate(200deg); background: transparent;
   filter: grayscale(100%) invert(100%) sepia(15%) hue-rotate(180deg) saturate(1040%) brightness(70%) contrast(90%); */

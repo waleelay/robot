@@ -118,6 +118,12 @@ export default {
       layerB: null,
       dogList: [],
       popupVisible: false,
+      measureActive: false,
+      measurePoints: [],
+      measureLayer: null,
+      measureTotalMeters: 0,
+      measureFinished: false,
+      measureClickTimer: null,
       popupOffset: { x: 0, y: 0 },
       timer: null,
       resizePopupTimer: null,
@@ -476,6 +482,8 @@ export default {
           // console.log(111111111, marker.getIcon().options, this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
           this.pointMarkers[index].setIcon(this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
         })
+        // 缩放刷新 icon 后，测距模式需继续屏蔽装备点击
+        if (this.measureActive) this.setRobotMarkersInteractive(false)
       });
 
 
@@ -483,8 +491,8 @@ export default {
       // 监听地图事件
       this.map.on('move', this.updatePopupPosition);
       this.map.on('moveend', this.updatePopupPosition);
-      this.map.on('click', this.closeAll);
-
+      this.map.on('click', this.handleGisMapClick);
+      this.map.on('dblclick', this.handleGisMeasureDblClick);
 
       // 绑定预加载
       this.map.on('movestart', this.preloadTiles);
@@ -702,6 +710,11 @@ export default {
       this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(lat, lng) }};
       // 存在则更新 icon
       this.pointMarkers[existingIndex].setIcon(this.getIcon(info));
+      // 测距中刷新 icon 后保持不可点
+      if (this.measureActive && this.pointMarkers[existingIndex]?._icon) {
+        this.pointMarkers[existingIndex]._icon.style.pointerEvents = 'none'
+        this.pointMarkers[existingIndex]._icon.style.cursor = 'crosshair'
+      }
       // 更新 meta 数据
       this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info }};
     },
@@ -749,6 +762,11 @@ export default {
       // 添加点击事件
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
+        // 测距中：不选中装备，改为测距落点
+        if (this.measureActive) {
+          this.scheduleMeasurePoint(e.latlng)
+          return
+        }
         const robot = marker.meta?.robot || {}
         // first 监控页：固定摄像头不可点；未播放视频的装备不可点
         const isFixedCamera = robot.type === '固定摄像头'
@@ -1258,6 +1276,171 @@ export default {
       const next = typeof visible === 'boolean' ? visible : !this.showPath
       this.showPathArea(next)
     },
+    // MapTool 测距：GIS 经纬度距离（米）
+    toggleRanging(visible) {
+      const next = typeof visible === 'boolean' ? visible : !this.measureActive
+      this.measureActive = next
+      if (!this.map) return
+      if (next) {
+        if (!this.measureLayer) this.measureLayer = L.layerGroup().addTo(this.map)
+        this.map.getContainer().classList.add('is-measuring')
+        this.map.getContainer().style.cursor = 'crosshair'
+        this.map.doubleClickZoom.disable()
+        this.setRobotMarkersInteractive(false)
+        window.addEventListener('keydown', this.handleMeasureKeydown)
+      } else {
+        this.clearMeasure()
+        this.map.getContainer().classList.remove('is-measuring')
+        this.map.getContainer().style.cursor = ''
+        this.map.doubleClickZoom.enable()
+        this.setRobotMarkersInteractive(true)
+        window.removeEventListener('keydown', this.handleMeasureKeydown)
+      }
+    },
+    // 测距时禁用装备 marker 交互，点击穿透到地图落点
+    setRobotMarkersInteractive(interactive) {
+      ;(this.pointMarkers || []).forEach(marker => {
+        if (!marker) return
+        marker.options.interactive = interactive
+        if (marker._icon) {
+          marker._icon.style.pointerEvents = interactive ? '' : 'none'
+          marker._icon.style.cursor = interactive ? '' : 'crosshair'
+        }
+        if (marker._shadow) {
+          marker._shadow.style.pointerEvents = interactive ? '' : 'none'
+        }
+      })
+    },
+    handleGisMapClick(e) {
+      if (this.measureActive) {
+        L.DomEvent.stopPropagation(e)
+        this.scheduleMeasurePoint(e.latlng)
+        return
+      }
+      this.closeAll()
+    },
+    handleGisMeasureDblClick(e) {
+      if (!this.measureActive) return
+      L.DomEvent.stop(e)
+      // 取消双击触发的 click 落点，只结束测段
+      this.cancelPendingMeasurePoint()
+      if (this.measurePoints.length >= 2) {
+        this.redrawMeasure({ finished: true })
+      }
+    },
+    handleMeasureKeydown(e) {
+      if (!this.measureActive) return
+      if (e.key === 'Escape') {
+        this.clearMeasure()
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault()
+        this.undoMeasurePoint()
+      }
+    },
+    scheduleMeasurePoint(latlng) {
+      if (!latlng) return
+      const payload = { lat: latlng.lat, lng: latlng.lng }
+      this.cancelPendingMeasurePoint()
+      this.measureClickTimer = setTimeout(() => {
+        this.measureClickTimer = null
+        this.commitMeasurePoint(payload)
+      }, 250)
+    },
+    cancelPendingMeasurePoint() {
+      if (!this.measureClickTimer) return
+      clearTimeout(this.measureClickTimer)
+      this.measureClickTimer = null
+    },
+    commitMeasurePoint(latlng) {
+      if (!latlng || !this.map) return
+      if (this.measureFinished) {
+        this.clearMeasure()
+      }
+      this.measurePoints.push({ lat: latlng.lat, lng: latlng.lng })
+      this.redrawMeasure()
+    },
+    undoMeasurePoint() {
+      this.cancelPendingMeasurePoint()
+      if (!this.measurePoints.length) return
+      this.measurePoints.pop()
+      this.measureFinished = false
+      this.redrawMeasure()
+    },
+    clearMeasure() {
+      this.cancelPendingMeasurePoint()
+      this.measurePoints = []
+      this.measureTotalMeters = 0
+      this.measureFinished = false
+      if (this.measureLayer) this.measureLayer.clearLayers()
+    },
+    formatMeasureDistance(meters) {
+      const m = Number(meters) || 0
+      if (m >= 1000) return `${(m / 1000).toFixed(2)} km`
+      return `${m.toFixed(1)} m`
+    },
+    redrawMeasure({ finished = false } = {}) {
+      if (!this.map) return
+      if (!this.measureLayer) this.measureLayer = L.layerGroup().addTo(this.map)
+      this.measureLayer.clearLayers()
+      const points = this.measurePoints
+      if (!points.length) {
+        this.measureTotalMeters = 0
+        this.measureFinished = false
+        return
+      }
+      if (finished) this.measureFinished = true
+      const isFinished = this.measureFinished
+      let total = 0
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i]
+        L.circleMarker([p.lat, p.lng], {
+          radius: 5,
+          color: '#fff',
+          weight: 2,
+          fillColor: isFinished ? '#22C55E' : '#21C8FF',
+          fillOpacity: 1,
+          interactive: false
+        }).addTo(this.measureLayer)
+        if (i === 0) continue
+        const prev = points[i - 1]
+        const seg = this.map.distance(L.latLng(prev.lat, prev.lng), L.latLng(p.lat, p.lng))
+        total += seg
+        const mid = L.latLng((prev.lat + p.lat) / 2, (prev.lng + p.lng) / 2)
+        L.marker(mid, {
+          interactive: false,
+          keyboard: false,
+          icon: L.divIcon({
+            className: 'gis-measure-label',
+            html: `<div class="gis-measure-label__text">${this.formatMeasureDistance(seg)}</div>`,
+            iconSize: [0, 0],
+            iconAnchor: [0, 0]
+          })
+        }).addTo(this.measureLayer)
+      }
+      if (points.length >= 2) {
+        L.polyline(points.map(p => [p.lat, p.lng]), {
+          color: '#21C8FF',
+          weight: 3,
+          opacity: 0.95,
+          dashArray: isFinished ? null : '6,4',
+          lineCap: 'round',
+          lineJoin: 'round',
+          interactive: false
+        }).addTo(this.measureLayer)
+        const last = points[points.length - 1]
+        L.marker([last.lat, last.lng], {
+          interactive: false,
+          keyboard: false,
+          icon: L.divIcon({
+            className: 'gis-measure-total',
+            html: `<div class="gis-measure-total__text">总长 ${this.formatMeasureDistance(total)}</div>`,
+            iconSize: [0, 0],
+            iconAnchor: [-10, -10]
+          })
+        }).addTo(this.measureLayer)
+      }
+      this.measureTotalMeters = total
+    },
     toggleSetPointB() {
       this.settingPointB = !this.settingPointB;
     },
@@ -1373,10 +1556,13 @@ export default {
   beforeDestroy() {
     this.stopMovement();
     window.removeEventListener('resize', this.handleResizePopupPosition);
+    window.removeEventListener('keydown', this.handleMeasureKeydown);
+    this.cancelPendingMeasurePoint();
     if (this.map) {
       this.map.off('move', this.updatePopupPosition);
       this.map.off('moveend', this.updatePopupPosition);
-      this.map.off('click', this.closeAll);
+      this.map.off('click', this.handleGisMapClick);
+      this.map.off('dblclick', this.handleGisMeasureDblClick);
 
       
       this.map.off('movestart', this.preloadTiles);

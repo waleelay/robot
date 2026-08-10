@@ -8,7 +8,7 @@
       <div
         ref="viewportRef"
         class="map-preview-viewport flx-center w100 h100"
-        :class="{ 'is-map-loading': mapLoading }"
+        :class="{ 'is-map-loading': mapLoading, 'is-measuring': measureActive }"
         @wheel="handleWheel"
         style="background: #112B4D;"
       >
@@ -20,6 +20,7 @@
               :title="enableAddPoint ? '右键点击可设置临时点位' : undefined"
               @contextmenu.prevent="onCanvasContextMenu"
               @click="handleCanvasBlankClick"
+              @dblclick.prevent="handleMeasureDblClick"
               class="map-preview-image"
               style="width: 100%; height: 100%;"
             />
@@ -29,6 +30,7 @@
               class="map-preview-overlay"
               :viewBox="`0 0 ${map.previewWidth} ${map.previewHeight}`"
               @click="handleMapClick"
+              @dblclick.prevent="handleMeasureDblClick"
             >
               <!-- 底层：未置顶的任务路径 -->
               <g
@@ -345,6 +347,39 @@
                   </g>
                 </g>
               </g>
+              <!-- 测距层 -->
+              <g v-if="measurePoints.length" class="map-measure-layer" pointer-events="none">
+                <polyline
+                  v-if="measurePolylinePoints"
+                  :points="measurePolylinePoints"
+                  class="map-measure-line"
+                  :class="{ 'is-finished': measureFinished }"
+                />
+                <g
+                  v-for="(seg, index) in measureSegments"
+                  :key="`measure-seg-${index}`"
+                  :transform="`translate(${seg.midX}, ${seg.midY}) scale(${1 / zoom})`"
+                >
+                  <foreignObject x="-48" y="-12" width="96" height="24">
+                    <div xmlns="http://www.w3.org/1999/xhtml" class="map-measure-label">{{ seg.label }}</div>
+                  </foreignObject>
+                </g>
+                <g
+                  v-for="(pt, index) in measurePoints"
+                  :key="`measure-pt-${index}`"
+                  :transform="`translate(${pt.pixel.x}, ${pt.pixel.y}) scale(${1 / zoom})`"
+                >
+                  <circle r="5" class="map-measure-dot" :class="{ 'is-finished': measureFinished }" />
+                </g>
+                <g
+                  v-if="measureTotalLabel"
+                  :transform="`translate(${measurePoints[measurePoints.length - 1].pixel.x}, ${measurePoints[measurePoints.length - 1].pixel.y}) scale(${1 / zoom})`"
+                >
+                  <foreignObject x="8" y="-28" width="120" height="24">
+                    <div xmlns="http://www.w3.org/1999/xhtml" class="map-measure-total">总长 {{ measureTotalLabel }}</div>
+                  </foreignObject>
+                </g>
+              </g>
             </svg>
           </template>
           <span class="start-point" :style="startPointStyle">起始地</span>
@@ -558,6 +593,10 @@ export default {
       showContextMenu: false,
       locationLabel: '临时点',
       collapseZoomTimer: null,
+      measureActive: false,
+      measureFinished: false,
+      measurePoints: [],
+      measureClickTimer: null,
     }
   },
   computed: {
@@ -577,6 +616,32 @@ export default {
     },
     showAnimate() {
       return this.currenRouteName !== 'biIndex'
+    },
+    measurePolylinePoints() {
+      if (this.measurePoints.length < 2) return ''
+      return this.measurePoints.map(p => `${p.pixel.x},${p.pixel.y}`).join(' ')
+    },
+    measureSegments() {
+      const segs = []
+      for (let i = 1; i < this.measurePoints.length; i++) {
+        const a = this.measurePoints[i - 1]
+        const b = this.measurePoints[i]
+        const meters = this.slamPointDistance(a.mapPoint, b.mapPoint)
+        segs.push({
+          midX: (a.pixel.x + b.pixel.x) / 2,
+          midY: (a.pixel.y + b.pixel.y) / 2,
+          label: this.formatMeasureDistance(meters),
+          meters
+        })
+      }
+      return segs
+    },
+    measureTotalMeters() {
+      return this.measureSegments.reduce((sum, seg) => sum + (seg.meters || 0), 0)
+    },
+    measureTotalLabel() {
+      if (this.measurePoints.length < 2) return ''
+      return this.formatMeasureDistance(this.measureTotalMeters)
     },
     popupStyle() {
       return this.currenRouteName === 'biIndex' ? {
@@ -1130,6 +1195,7 @@ export default {
       this.coloredCanvas = null
       this.isLoaded = false
       this.grid = null
+      this.clearMeasure()
       if (this.canvas) {
         this.canvas.width = 1
         this.canvas.height = 1
@@ -1634,16 +1700,106 @@ export default {
       this.showContextMenu = false
       this.endPoint = null
     },
-    handleCanvasBlankClick() {
+    handleCanvasBlankClick(event) {
       // 拖拽平移地图后不触发清除
       if (this.dragMoved) return
+      if (this.measureActive) {
+        this.scheduleMeasurePoint(event)
+        return
+      }
       this.clearTempPointIfNoPath()
     },
     handleMapClick(event) {
+      if (this.dragMoved) return
+      if (this.measureActive) {
+        this.scheduleMeasurePoint(event)
+        return
+      }
       this.clearTempPointIfNoPath()
       const pixel = this.eventToPixel(event);
       const point = this.pixelToMapPoint(pixel, this.map);
       // if (point) this.$emit("map-click", point);
+    },
+    // MapTool 测距：SLAM 地图坐标系距离（米）
+    toggleRanging(visible) {
+      const next = typeof visible === 'boolean' ? visible : !this.measureActive
+      this.measureActive = next
+      if (next) {
+        this.measureFinished = false
+        window.addEventListener('keydown', this.handleMeasureKeydown)
+      } else {
+        this.clearMeasure()
+        window.removeEventListener('keydown', this.handleMeasureKeydown)
+      }
+    },
+    // 延迟落点：双击产生的 click 在提交前被取消，避免多打点
+    scheduleMeasurePoint(event) {
+      const pixel = this.eventToPixel(event)
+      if (!pixel) return
+      const mapPoint = this.pixelToMapPoint(pixel, this.map)
+      if (!mapPoint) return
+      const payload = {
+        pixel: { x: pixel.x, y: pixel.y },
+        mapPoint
+      }
+      this.cancelPendingMeasurePoint()
+      this.measureClickTimer = setTimeout(() => {
+        this.measureClickTimer = null
+        this.commitMeasurePoint(payload)
+      }, 250)
+    },
+    cancelPendingMeasurePoint() {
+      if (!this.measureClickTimer) return
+      clearTimeout(this.measureClickTimer)
+      this.measureClickTimer = null
+    },
+    handleMeasureDblClick(event) {
+      if (!this.measureActive) return
+      event.preventDefault()
+      event.stopPropagation()
+      // 取消双击触发的 click 落点，只结束测段
+      this.cancelPendingMeasurePoint()
+      if (this.measurePoints.length >= 2) this.measureFinished = true
+    },
+    handleMeasureKeydown(e) {
+      if (!this.measureActive) return
+      if (e.key === 'Escape') {
+        this.clearMeasure()
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault()
+        this.undoMeasurePoint()
+      }
+    },
+    commitMeasurePoint(payload) {
+      if (!payload?.pixel || !payload?.mapPoint) return
+      if (this.measureFinished) {
+        this.measurePoints = []
+        this.measureFinished = false
+      }
+      this.measurePoints.push(payload)
+    },
+    undoMeasurePoint() {
+      this.cancelPendingMeasurePoint()
+      if (!this.measurePoints.length) return
+      this.measurePoints.pop()
+      this.measureFinished = false
+    },
+    clearMeasure() {
+      this.cancelPendingMeasurePoint()
+      this.measurePoints = []
+      this.measureFinished = false
+    },
+    slamPointDistance(a, b) {
+      if (!a || !b) return 0
+      const dx = Number(a.coordinateX) - Number(b.coordinateX)
+      const dy = Number(a.coordinateY) - Number(b.coordinateY)
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return 0
+      return Math.sqrt(dx * dx + dy * dy)
+    },
+    formatMeasureDistance(meters) {
+      const m = Number(meters) || 0
+      if (m >= 1000) return `${(m / 1000).toFixed(2)} km`
+      return `${m.toFixed(1)} m`
     },
     handlePointClick(point) {
       const nearby = this.drawablePoints.filter((item) => {
@@ -1662,6 +1818,8 @@ export default {
   beforeDestroy() {
     this.imageLoadSeq += 1
     if (this.collapseZoomTimer) clearTimeout(this.collapseZoomTimer)
+    this.cancelPendingMeasurePoint()
+    window.removeEventListener('keydown', this.handleMeasureKeydown)
     this.resizeObserver?.disconnect()
     this.revokeImageUrl();
   }
@@ -1701,6 +1859,32 @@ export default {
   will-change: transform;
   &:active {
     cursor: grabbing;
+  }
+  &.is-measuring {
+    cursor: crosshair !important;
+    &:active {
+      cursor: crosshair !important;
+    }
+    // 测距时 SVG 需接收空白点击；并屏蔽点位/装备/路径抢占事件
+    .map-preview-stage {
+      cursor: crosshair !important;
+      &:active {
+        cursor: crosshair !important;
+      }
+      > svg {
+        pointer-events: auto !important;
+        cursor: crosshair !important;
+      }
+      .map-preview-image {
+        cursor: crosshair !important;
+      }
+    }
+    .map-preview-point,
+    .map-preview-robot,
+    .map-task-path-layer {
+      pointer-events: none !important;
+      cursor: crosshair !important;
+    }
   }
   &.is-map-loading {
     cursor: wait;
@@ -1864,6 +2048,50 @@ export default {
         stroke-linejoin: round;
         vector-effect: non-scaling-stroke;
         pointer-events: stroke;
+      }
+      .map-measure-line {
+        fill: none;
+        stroke: #21C8FF;
+        stroke-width: 3;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: 6 4;
+        vector-effect: non-scaling-stroke;
+        &.is-finished {
+          stroke-dasharray: none;
+        }
+      }
+      .map-measure-dot {
+        fill: #21C8FF;
+        stroke: #fff;
+        stroke-width: 2;
+        &.is-finished {
+          fill: #22C55E;
+        }
+      }
+      .map-measure-label,
+      .map-measure-total {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        padding: 0 6px;
+        border-radius: 4px;
+        box-sizing: border-box;
+        font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
+        font-size: 12px;
+        line-height: 16px;
+        color: #E8F7FF;
+        background: rgba(1, 28, 57, 0.88);
+        border: 1px solid rgba(33, 200, 255, 0.65);
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      .map-measure-total {
+        color: #0BF9FE;
+        font-weight: 600;
+        justify-content: flex-start;
       }
       .map-task-path-layer {
         pointer-events: auto;
