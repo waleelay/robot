@@ -10,6 +10,7 @@ export default {
       recordingData: {},
       refPrefix: 'recordedPlayer',
       recordingTab: 'manual',
+      recordingLoadSeq: 0,
     }
   },
   methods: {
@@ -42,25 +43,29 @@ export default {
       }
     },
     async getPlayers() {
+      const loadSeq = ++this.recordingLoadSeq
       await this.loadRecordings()
+      if (loadSeq !== this.recordingLoadSeq) return
       for (const recording of this.recordings) {
+        if (loadSeq !== this.recordingLoadSeq) return
         this.recordingData[recording.fileId] = {
           ...recording,
           recordedHls: null,
           player: null,
           // startSecs: this.getTotalTime(this.videoObj.startTime, recording.recordedStartedAt)
         }
-        await this.playRecording(recording)
+        await this.playRecording(recording, loadSeq)
       }
     },
-    async playRecording(recording) {
+    async playRecording(recording, loadSeq) {
       if (recording.status !== 'READY') return
+      const seq = loadSeq != null ? loadSeq : this.recordingLoadSeq
       try {
         const playback = await getFilePlayUrl(recording.fileId)
+        if (seq !== this.recordingLoadSeq) return
         const ref = this.$refs[`${this.refPrefix}_${recording.fileId}`]
         let player = Array.isArray(ref) ? ref[0] : ref
-        // console.log(1111111111111111111111111111111111111111111111111111111);
-        player.loop = false
+        if (!player) return
         let recordedHls = null
         this.destroyRecordedHls(recording.fileId)
         this.selectedRecording = recording
@@ -74,24 +79,41 @@ export default {
         } else {
           throw new Error('当前浏览器不支持 HLS 播放')
         }
+        if (seq !== this.recordingLoadSeq) {
+          if (recordedHls) recordedHls.destroy()
+          return
+        }
+        if (!this.recordingData[recording.fileId]) {
+          if (recordedHls) recordedHls.destroy()
+          return
+        }
         this.recordingData[recording.fileId].player = player
         this.recordingData[recording.fileId].recordedHls = recordedHls
         // await player.play().catch(() => {})
       } catch (error) {
+        if (seq !== this.recordingLoadSeq) return
         this.$message.error(errorMessage(error))
       }
     },
     destroyRecordedHls(fileId) {
-      const { recordedHls, player } = this.recordingData[fileId]
-      if (recordedHls) {
-        recordedHls.destroy()
-        recordedHls = null
+      const data = this.recordingData[fileId]
+      if (!data) return
+      if (data.recordedHls) {
+        data.recordedHls.destroy()
+        data.recordedHls = null
       }
-      if (player) {
-        player.pause()
-        player.removeAttribute('src')
-        player.load()
+      if (data.player) {
+        data.player.pause()
+        data.player.removeAttribute('src')
+        data.player.load()
+        data.player = null
       }
+    },
+    destroyAllRecordedHls() {
+      this.recordingLoadSeq += 1
+      Object.keys(this.recordingData || {}).forEach(fileId => {
+        this.destroyRecordedHls(fileId)
+      })
     },
     playPause(fileId) {
       const { player } = this.recordingData[fileId]

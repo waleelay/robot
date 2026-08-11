@@ -122,9 +122,7 @@ export default {
     },
     async refreshList() {
       await this.getSnapData()
-      Object.keys(this.recordingData || {}).forEach(id => {
-        try { this.destroyRecordedHls(id) } catch (e) { /* ignore */ }
-      })
+      this.destroyAllRecordedHls()
       this.recordingData = {}
       this.recordings = []
       this.recordInfo.page = 0
@@ -170,13 +168,15 @@ export default {
       await this.updatePlayers(recordings)
     },
     async updatePlayers(recordings) {
+      const loadSeq = this.recordingLoadSeq
       for (const recording of recordings) {
+        if (loadSeq !== this.recordingLoadSeq) return
         this.recordingData[recording.fileId] = {
           ...recording,
           recordedHls: null,
           player: null,
         }
-        await this.playRecording(recording)
+        await this.playRecording(recording, loadSeq)
       }
     },
     getCameraName(robotId, deviceId) {
@@ -224,6 +224,7 @@ export default {
   beforeDestroy() {
     this.snapshotLoadSeq += 1
     this.destroySnapshotObjectUrls()
+    this.destroyAllRecordedHls()
   }
 }
 </script>
