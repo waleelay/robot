@@ -24,7 +24,7 @@
           <el-option label="手动执行" value="MANUAL" />
           <el-option label="计划执行" value="SCHEDULE" />
         </el-select>
-        <el-checkbox v-model="filters.includeRunning" @change="loadRows(1)">包含运行中</el-checkbox>
+        <el-checkbox v-model="filters.includeRunning" @change="loadRows(1)">包含执行中</el-checkbox>
       </div>
       <div class="business2-actions flx-align-center">
         <div class="custom-search-div">
@@ -181,6 +181,10 @@
 
 <script>
 import { getTaskRecordList } from '@/api/new-bi'
+import {
+  executionStatusLabel as resolveExecutionStatusLabel,
+  executionStatusType as resolveExecutionStatusType
+} from '../execution-status'
 import RecordDetail from './RecordDetail.vue'
 
 export default {
@@ -205,11 +209,9 @@ export default {
       },
       statusTabs: [
         { value: 'all', label: '全部' },
-        { value: 'PREPARING', label: '准备中' },
-        { value: 'RUNNING', label: '运行中' },
         { value: 'COMPLETED', label: '已完成' },
-        { value: 'FAILED', label: '失败' },
-        { value: 'CANCELED', label: '已取消' }
+        { value: 'TERMINATED', label: '已终止' },
+        { value: 'FAILED', label: '失败' }
       ],
       videosVisible: false,
       currentVideos: [],
@@ -280,10 +282,10 @@ export default {
       return { MANUAL: '手动执行', SCHEDULE: '计划执行' }[value] || value || '-'
     },
     statusLabel(value) {
-      return { PREPARING: '准备中', RUNNING: '运行中', COMPLETED: '已完成', FAILED: '失败', CANCELED: '已取消' }[value] || value || '-'
+      return resolveExecutionStatusLabel(value)
     },
     statusTagType(value) {
-      return { COMPLETED: 'green', FAILED: 'red', CANCELED: 'info', RUNNING: 'orange', PREPARING: 'orange' }[value] || 'info'
+      return resolveExecutionStatusType(value)
     },
     failureReason(row) {
       if (!row || row.status !== 'FAILED') return '-'
@@ -332,7 +334,7 @@ export default {
       return res || {}
     },
     showError(error) {
-      this.$message.error((error && error.message) || '请求失败')
+      // this.$message.error((error && error.message) || '请求失败')
     }
   }
 }

@@ -80,13 +80,25 @@
           <el-table-column label="计划周期" width="110">
             <template slot-scope="{ row }">{{ schedulePresetLabel(row.scheduleConfig && row.scheduleConfig.preset) }}</template>
           </el-table-column>
-          <el-table-column key="status" width="100" label="执行状态">
+          <el-table-column key="status" width="110" label="执行状态" align="center">
             <template slot-scope="scope">
-              <span class="status" :class="{ green: scope.row.executionStatus === 'RUNNING', orange: scope.row.executionStatus === 'IDLE', red: scope.row.executionStatus === 'LAST_FAILED' }">
+              <span class="status" :class="executionStatusType(scope.row.executionStatus)">
                 {{ executionStatusLabel(scope.row.executionStatus) }}
               </span>
             </template>
           </el-table-column>
+          <!-- <el-table-column key="lastResultStatus" min-width="140" label="最近一次执行状态" align="center">
+            <template slot-scope="scope">
+              <span
+                v-if="scope.row.lastResultStatus"
+                class="status"
+                :class="executionStatusType(scope.row.lastResultStatus)"
+              >
+                {{ executionStatusLabel(scope.row.lastResultStatus) }}
+              </span>
+              <span v-else class="muted">-</span>
+            </template>
+          </el-table-column> -->
           <el-table-column label="操作" width="325" fixed="right">
             <template slot-scope="{ row }">
               <el-button type="text" @click="openEditor(row.id, 'view')">详情</el-button>
@@ -158,6 +170,10 @@ import {
   startTaskPreview,
   updateTaskEnabled
 } from '@/api/new-bi'
+import {
+  executionStatusLabel as resolveExecutionStatusLabel,
+  executionStatusType as resolveExecutionStatusType
+} from '../execution-status'
 import PlanEdit from './PlanEdit.vue'
 
 export default {
@@ -178,10 +194,8 @@ export default {
       },
       statusTabs: [
         { value: 'all', label: '全部' },
-        { value: 'IDLE', label: '空闲' },
-        { value: 'RUNNING', label: '运行中' },
-        { value: 'LAST_COMPLETED', label: '最近完成' },
-        { value: 'LAST_FAILED', label: '最近失败' }
+        { value: 'IDLE', label: '待执行' },
+        { value: 'RUNNING', label: '执行中' }
       ],
       startingPlanIds: [],
       previewVisible: false,
@@ -323,10 +337,10 @@ export default {
       return { HOURLY: '每小时', DAILY: '每天', WORKDAY: '工作日', WEEKLY: '每周', CUSTOM: '自定义' }[value] || value || '-'
     },
     executionStatusLabel(value) {
-      return { IDLE: '空闲', RUNNING: '运行中', LAST_COMPLETED: '最近完成', LAST_FAILED: '最近失败' }[value] || value || '空闲'
+      return resolveExecutionStatusLabel(value, '待执行')
     },
     executionStatusType(value) {
-      return { IDLE: 'info', RUNNING: 'orange', LAST_COMPLETED: 'green', LAST_FAILED: 'red' }[value] || 'info'
+      return resolveExecutionStatusType(value)
     },
     formatDateTime(value) {
       if (!value) return '-'
@@ -340,7 +354,7 @@ export default {
       return res || {}
     },
     showError(error) {
-      this.$message.error((error && error.message) || '请求失败')
+      // this.$message.error((error && error.message) || '请求失败')
     }
   }
 }

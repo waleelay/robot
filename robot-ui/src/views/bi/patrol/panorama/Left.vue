@@ -68,11 +68,12 @@
             <div
               v-for="(item, index) in taskData1 || []"
               :key="item.taskId"
-              class="item wp288"
+              class="item wp288 curp"
               :class="{
                 'is-active': activeTaskId == item.taskId,
                 'mb10': index !== taskData1.length - 1
               }"
+              @click="selectTask(item.taskId)"
             >
               <div class="header flx-justify-between p10">
                 <div class="flx-align-center flex1" style="min-width: 0">
@@ -81,7 +82,7 @@
                 </div>
                 <span class="status flx-center pt2 pr6 pb2 pl6 ml10" :class="getTaskStatusName(item.status)">
                   <svg-icon icon-class="security"></svg-icon>
-                  <span class="ml4">{{ item.statusName || '---' }}</span>
+                  <span class="ml4">{{ executionStatusLabel(item.status, '---') }}</span>
                 </span>
               </div>
               <div class="desc">
@@ -89,7 +90,7 @@
                 <div class="text-ellipsis">当前位置：{{ item.currentLocation || '-' }}</div>
                 <div>执行装备：{{ item.equipmentList?.length || 0 }}台</div>
               </div>
-              <!-- 执行中：详情 / 暂停(禁用) / 删除 / 播放视频 -->
+              <!-- 执行中：详情 / 暂停/恢复 / 定位装备 / 终止 / 播放视频 -->
               <div v-if="item.status === 'running' || item.status === 'paused'" class="task-actions">
                 <button type="button" class="action-btn action-detail" @click.stop="handleTaskDetail(item)">
                   <span>详情</span>
@@ -97,13 +98,27 @@
                 </button>
                 <button
                   type="button"
-                  class="action-btn action-icon is-disabled"
-                  disabled
-                  title="暂停暂不可用"
+                  class="action-btn action-icon wp30"
+                  :disabled="isActingTaskRecord(item)"
+                  :title="item.status === 'paused' ? '恢复' : '暂停'"
+                  @click.stop="item.status === 'paused' ? handleResumeTask(item) : handlePauseTask(item)"
                 >
                   <svg-icon :icon-class="item.status === 'paused' ? 'play' : 'pause'" />
                 </button>
-                <button type="button" class="action-btn action-icon" disabled @click.stop="openTaskConfirm('delete', item, key)">
+                <button
+                  type="button"
+                  class="action-btn action-icon wp30"
+                  title="定位执行此任务的装备"
+                >
+                  <svg-icon icon-class="map-location" style="font-size: 16px;" />
+                </button>
+                <button
+                  type="button"
+                  class="action-btn action-icon wp30"
+                  title="终止任务"
+                  :disabled="isActingTaskRecord(item)"
+                  @click.stop="handleTerminateTask(item)"
+                >
                   <svg-icon icon-class="close1" />
                 </button>
                 <!-- <button
@@ -114,20 +129,20 @@
                 >
                   <svg-icon icon-class="play" />
                 </button> -->
-                <div class="symbol wp36 hp28" @click="handleClickTask(item.taskId)">
+                <div class="symbol wp36 hp28" @click.stop="openTaskVideo(item.taskId)">
                   <!-- <img :src="require(`../../../../assets/images/new-bi/camera-${activeTaskId == item.taskId ? 'active' : 'off1'}.png`)" class="w100 h100" alt="" srcset="" /> -->
                   <img :src="require(`../../../../assets/images/new-bi/camera${activeTaskId == item.taskId ? '2' : '1'}.png`)" class="w100 h100" alt="" srcset="" />
                 </div>
               </div>
               <!-- 待执行：立即执行 -->
-              <div v-else-if="item.status === 'pending'" class="task-actions">
+              <div v-else-if="item.status === 'waiting'" class="task-actions">
                 <button
                   type="button"
                   class="action-btn action-execute"
                   :disabled="isStartingTask(item)"
                   @click.stop="openTaskConfirm('execute', item, key)"
                 >
-                  <span>{{ isStartingTask(item) ? '执行中' : '立即执行' }}</span>
+                  <span>立即执行</span>
                   <svg-icon icon-class="right" class="ml4" />
                 </button>
               </div>
@@ -188,7 +203,8 @@
         <svg-icon :icon-class="collapse ? 'right-s' : 'left-s'" />
       </div>
     </div>
-    <TaskRobotView ref="taskRobotViewRef" @handleClickTask="handleClickTask" />
+    <!-- <TaskRobotView ref="taskRobotViewRef" @handleClickTask="handleClickTask" /> -->
+    <TaskRobotView ref="taskRobotViewRef" />
     <WarningBatch ref="warningBatchRef" />
     <WarnInfo ref="WarnInfoRef" />
     <div v-if="taskConfirmVisible" class="notice-modal flx-center">
@@ -206,12 +222,19 @@
 
 <script>
 import { mapState, mapActions } from 'vuex';
-import { deleteTask, startTask, startTaskPreview } from '../../../../api/new-bi.js';
+import {
+  pauseTaskRecord,
+  resumeTaskRecord,
+  startTask,
+  startTaskPreview,
+  terminateTaskRecord
+} from '../../../../api/new-bi.js';
 import TaskRobotView from '../../components/modal/TaskRobotView.vue';
 import WarningBatch from './warning/WarningBatch.vue'
 import WarnInfo from './warning/WarnInfo.vue'
 import { getDescArr } from '../../../../utils/index.js';
 import Empty from '../../components/Empty.vue';
+import { executionStatusLabel } from '../business/execution-status.js';
 export default {
   name: 'BiPatrolPanoramaLeft',
   components: { TaskRobotView, WarningBatch, WarnInfo, Empty  },
@@ -261,6 +284,7 @@ export default {
       img1: require('@/assets/images/new-bi/test.png'),
       img2: require('@/assets/images/new-bi/warning1.png'),
       startingTaskIds: [],
+      actingRecordIds: [],
       taskConfirmVisible: false,
       taskConfirmType: '',
       taskConfirmItem: null,
@@ -277,12 +301,11 @@ export default {
     },
     ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'globalMapId']),
     taskConfirmText() {
-      if (this.taskConfirmType === 'delete') return '是否【删除】该任务？'
       if (this.taskConfirmType === 'execute') return '是否【立即执行】该任务？'
       return ''
     },
     taskData1() {
-      return getDescArr(this.taskData || {}, 'timestamp').filter(item => ['running', 'pending', 'paused'].includes(item.status)) || []
+      return getDescArr(this.taskData || {}, 'timestamp') || []
     },
     hasAlarmData() {
       const data = this.alarmsData || {}
@@ -291,6 +314,7 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotAlarmInfo', 'setShowRobotIds']),
+    executionStatusLabel,
     getImageUrl(url) {
       const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
       return `${preUrl}${url}`
@@ -343,15 +367,9 @@ export default {
     getTaskStatusName(status) {
       switch (status) {
         case 'running':
-          return 'blue'
-        case 'pending':
-          return 'orange'
-        case 'paused':
-          return 'orange'
-        case 'completed':
           return 'green'
-        case 'failed':
-          return 'red'
+        case 'waiting':
+          return 'orange'
         default:
           return 'gray'
       }
@@ -359,17 +377,68 @@ export default {
     getTaskPlanId(item) {
       return item?.planId || item?.id || item?.taskId || item?.taskPlanId
     },
+    getTaskRecordId(item) {
+      return item?.executionRecordId
+        || item?.activeWorkflowInstanceId
+        || item?.workflowInstanceId
+        || item?.recordId
+        || item?.taskInstanceId
+    },
     isStartingTask(item) {
       const planId = this.getTaskPlanId(item)
       return planId != null && this.startingTaskIds.indexOf(planId) !== -1
+    },
+    isActingTaskRecord(item) {
+      const recordId = this.getTaskRecordId(item)
+      return recordId != null && this.actingRecordIds.indexOf(recordId) !== -1
     },
     getMoreRobotInfo() {
   
     },
     toggleCollapse(type, typeIndex) {
       // this.$set(this[type], typeIndex, !this[type][typeIndex])
+    },getTaskRobotIds(taskId) {
+      return (this.taskData[taskId]?.equipmentList || []).map(robot => robot.robotId)
     },
+    /** 点击任务卡片：选中/取消选中卡片，并在地图上高亮相关装备（不打开视频弹窗） */
+    selectTask(taskId) {
+      if (this.activeTaskId == taskId) {
+        this.activeTaskId = null
+        this.setShowRobotIds([])
+        if (this.$refs.taskRobotViewRef) {
+          this.$refs.taskRobotViewRef.dialogVisible = false
+        }
+        return
+      }
+      this.activeTaskId = taskId
+      this.setShowRobotIds(this.getTaskRobotIds(taskId))
+      // 切换任务时关闭上一任务的视频弹窗
+      if (this.$refs.taskRobotViewRef?.dialogVisible) {
+        this.$refs.taskRobotViewRef.dialogVisible = false
+      }
+    },
+    /** 点击视频图标：打开/关闭任务视频弹窗，并同步选中卡片与地图装备 */
+    openTaskVideo(taskId) {
+      const dialog = this.$refs.taskRobotViewRef
+      if (!dialog) return
+      // 已打开同一任务弹窗时再次点击：仅关闭弹窗，保留卡片与地图选中
+      if (this.activeTaskId == taskId && dialog.dialogVisible) {
+        dialog.dialogVisible = false
+        return
+      }
+      this.activeTaskId = taskId
+      const robotIds = this.getTaskRobotIds(taskId)
+      this.setShowRobotIds(robotIds)
+      dialog.showModal({
+        taskInfo: { ...this.taskData[taskId] },
+        robotIds
+      })
+    },
+    /** 兼容旧调用名 */
     handleClickTask(taskId) {
+      this.openTaskVideo(taskId)
+    },
+    handleClickTask1(taskId) {
       if (this.activeTaskId == taskId) {
         this.$refs.taskRobotViewRef.dialogVisible = false
         this.activeTaskId = null
@@ -410,9 +479,7 @@ export default {
       this.taskConfirmKey = null
     },
     async confirmTaskAction() {
-      if (this.taskConfirmType === 'delete') {
-        await this.handleDeleteTask()
-      } else if (this.taskConfirmType === 'execute') {
+      if (this.taskConfirmType === 'execute') {
         await this.handleExecuteTask()
       }
     },
@@ -423,29 +490,84 @@ export default {
       }
       return res || {}
     },
-    async handleDeleteTask() {
-      const item = this.taskConfirmItem
-      const confirmKey = this.taskConfirmKey
-      const planId = this.getTaskPlanId(item)
-      if (planId == null) {
-        this.$message.error('缺少任务标识，无法删除')
+    clearActiveTaskView(item) {
+      if (!item) return
+      if (this.activeTaskId == item.taskId || this.activeTaskId == this.getTaskPlanId(item)) {
+        this.activeTaskId = null
+        this.setShowRobotIds([])
+        if (this.$refs.taskRobotViewRef) this.$refs.taskRobotViewRef.dialogVisible = false
+      }
+    },
+    async requestTaskRecordAction({ item, action, confirmMessage, successMessage, failMessage, api }) {
+      const recordId = this.getTaskRecordId(item)
+      if (recordId == null || recordId === '') {
+        this.$message.error('缺少执行记录标识，无法操作')
         return
       }
-      this.taskConfirmLoading = true
+      if (this.isActingTaskRecord(item)) return
       try {
-        await deleteTask(planId)
-        this.$message.success('已删除')
-        if (this.activeTaskId == item.taskId || this.activeTaskId == confirmKey) {
-          this.activeTaskId = null
-          this.setShowRobotIds([])
-          if (this.$refs.taskRobotViewRef) this.$refs.taskRobotViewRef.dialogVisible = false
-        }
-        this.taskConfirmLoading = false
-        this.closeTaskConfirm()
+        await this.$primaryConfirm({
+          title: '提示',
+          message: confirmMessage,
+          confirmText: '确定',
+          cancelText: '取消',
+          onConfirm: async () => {
+            this.actingRecordIds = this.actingRecordIds.concat(recordId)
+            try {
+              const data = this.unwrap(await api(recordId, {}))
+              if (data && data.accepted === false) {
+                this.$message.warning((data && data.message) || '操作未接受')
+                const rejected = new Error((data && data.message) || '操作未接受')
+                rejected.handled = true
+                throw rejected
+              }
+              this.$message.success((data && data.message) || successMessage)
+              if (action === 'terminate') {
+                this.clearActiveTaskView(item)
+              }
+            } catch (error) {
+              if (!(error && error.handled)) {
+                // this.$message.error((error && error.message) || failMessage)
+              }
+              throw error
+            } finally {
+              this.actingRecordIds = this.actingRecordIds.filter(id => id !== recordId)
+            }
+          }
+        })
       } catch (error) {
-        this.$message.error((error && error.message) || '删除失败')
-        this.taskConfirmLoading = false
+        // 用户取消
       }
+    },
+    handlePauseTask(item) {
+      return this.requestTaskRecordAction({
+        item,
+        action: 'pause',
+        confirmMessage: '是否【暂停】该任务？',
+        successMessage: '已暂停',
+        failMessage: '暂停失败',
+        api: pauseTaskRecord
+      })
+    },
+    handleResumeTask(item) {
+      return this.requestTaskRecordAction({
+        item,
+        action: 'resume',
+        confirmMessage: '是否【恢复】该任务？',
+        successMessage: '已恢复',
+        failMessage: '恢复失败',
+        api: resumeTaskRecord
+      })
+    },
+    handleTerminateTask(item) {
+      return this.requestTaskRecordAction({
+        item,
+        action: 'terminate',
+        confirmMessage: '是否【终止】该任务？',
+        successMessage: '已终止',
+        failMessage: '终止失败',
+        api: terminateTaskRecord
+      })
     },
     async handleExecuteTask() {
       const item = this.taskConfirmItem

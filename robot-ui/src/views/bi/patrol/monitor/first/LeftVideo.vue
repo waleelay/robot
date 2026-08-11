@@ -315,7 +315,7 @@ export default {
       if (!robot) return;
       const camera = data.data
       this.$set(this.ZQL_playingSource, emptyIndex, camera.key);
-      this.$set(this.ZQL_videosInfos, emptyIndex, { robot, ...camera });
+      this.$set(this.ZQL_videosInfos, emptyIndex, { robot, ...camera, robotId: robot.robotId });
       // console.log('ZQL_playingSource', this.ZQL_playingSource);
       await this.startCamera({ robot, camera })
     },
@@ -602,6 +602,76 @@ export default {
           return info
         })
         .filter(Boolean)
+    },
+    /** 视频框中实际展示的装备 ID（含离线占位，不以 activeCameras 为准） */
+    getPlayingRobotIds() {
+      return [...new Set(
+        this.orderedPlayingVideoInfos()
+          .map(info => info.robotId || info.robot?.robotId)
+          .filter(Boolean)
+          .map(id => String(id))
+      )]
+    },
+    /** 按装备取视频框中正在展示的摄像头信息 */
+    getPlayingCameraByRobotId(robotId) {
+      const targetId = String(robotId)
+      for (const slotKey of Object.keys(this.ZQL_videosInfos || {})) {
+        const info = this.ZQL_videosInfos[slotKey]
+        if (!info || !this.ZQL_playingSource[slotKey]) continue
+        const id = info.robotId || info.robot?.robotId
+        if (String(id) !== targetId) continue
+        return {
+          ...info,
+          key: info.key || this.ZQL_playingSource[slotKey]
+        }
+      }
+      return null
+    },
+    /**
+     * 按任务装备列表同步视频框：
+     * - 目标列表中已有的装备：复用，不关不重启
+     * - 不在目标列表中的装备：关闭
+     * - 目标列表中尚未展示的装备：打开
+     * - 传入空数组：关闭全部
+     */
+    async syncTaskRobots(robotIds = []) {
+      const targetIds = [...new Set((robotIds || []).map(id => String(id)).filter(Boolean))]
+      const targetSet = new Set(targetIds)
+
+      // 1) 关闭不在目标列表中的装备视频
+      for (let i = 1; i <= this.splitType; i++) {
+        const slotKey = `slot_${i}`
+        const info = this.ZQL_videosInfos[slotKey]
+        const playingKey = this.ZQL_playingSource[slotKey]
+        if (!info || !playingKey) continue
+        const robotId = String(info.robotId || info.robot?.robotId || '')
+        if (robotId && targetSet.has(robotId)) continue
+        const camera = this.cameras?.[playingKey] || info
+        try {
+          await this.stopCamera(camera)
+        } catch (e) {}
+        this.checkedIds = this.checkedIds.filter(key => key !== playingKey)
+        this.$set(this.ZQL_videosInfos, slotKey, null)
+        this.$set(this.ZQL_playingSource, slotKey, null)
+      }
+
+      // 2) 打开尚未展示的目标装备（已展示的直接复用）
+      const playingIds = new Set(this.getPlayingRobotIds())
+      for (const robotId of targetIds) {
+        if (playingIds.has(robotId)) continue
+        const robot = (this.robots || []).find(item => String(item.robotId) === robotId)
+        if (!robot) continue
+        const cameraObj = robot.cameras?.find(c => c.groupType === 'body') || robot.cameras?.[0]
+        if (!cameraObj) continue
+        const camera = this.cameras?.[cameraObj.key] || cameraObj
+        const emptyKey = this.findEmptySlotKey() || (this.splitType === 1 ? 'slot_1' : null)
+        if (!emptyKey) break
+        await this.start(robot, { index: emptyKey, data: camera })
+        playingIds.add(robotId)
+      }
+
+      this.checkedIds = Object.values(this.ZQL_playingSource).filter(Boolean)
+      this.lastCheckedIds = this.checkedIds.slice()
     },
     currentVisibleCameras() {
       return Object.values(this.ZQL_videosInfos)

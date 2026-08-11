@@ -259,7 +259,7 @@ export default {
           const keywords = newVal.split('_timestamp_')[0].toLowerCase()
           const robot = this.getSearchRobot()
           if (robot) {
-            this.map.setView([this.robotLocation[robot.robotId].lat, this.robotLocation[robot.robotId].lng])
+            this.map.setView([this.robotLocation[robot.robotId].lat || this.gisMapCenterPoint[0], this.robotLocation[robot.robotId].lng || this.gisMapCenterPoint[1]])
           } else {
             this.$message.error('未找到相关装备')
           }
@@ -618,9 +618,9 @@ export default {
     getSearchRobot(robot) {
       const keywords = this.mapSearchValue.split('_timestamp_')[0].toLowerCase()
       if (robot) {
-        return robot.name.toLowerCase().includes(keywords) || robot.type.toLowerCase().includes(keywords) || robot.typeCode.toLowerCase().includes(keywords)
+        return String(robot?.name || '').toLowerCase().includes(keywords) || String(robot?.type || '').toLowerCase().includes(keywords) || String(robot?.typeCode || '').toLowerCase().includes(keywords)
       } else {
-        return this.robotList.find(item => item.name.toLowerCase().includes(keywords) || item.type.toLowerCase().includes(keywords) || item.typeCode.toLowerCase().includes(keywords))
+        return this.robotList.find(item => String(item?.name || '').toLowerCase().includes(keywords) || String(item?.type || '').toLowerCase().includes(keywords) || String(item?.typeCode || '').toLowerCase().includes(keywords))
       }
     },
     initPoints() {

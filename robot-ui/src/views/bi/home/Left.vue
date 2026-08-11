@@ -54,7 +54,7 @@
           </div>
         </div>
         <div class="mt18">
-          <div class="t2 ml10">巡逻画面</div>
+          <div class="t2 ml20">巡逻画面</div>
           <div class="flex flex-wrap pl10">
             <!-- wp142 hp80  -->
             <!-- 随机显示一个摄像头画面 -->

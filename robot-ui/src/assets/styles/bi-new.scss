@@ -391,7 +391,7 @@
           }
           .title {
             color: #92A0B6;
-            font-size: 14px !important;
+            font-size: 14px;
             font-weight: 600;
             line-height: 21px;
           }
@@ -3330,10 +3330,7 @@ input[type="range"].vertical-slider {
   }
   .top, .bottom {
     position: absolute;
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0.1) 100%);
     .title {
-      padding: 4px 10px;
-      background: rgba(22, 21, 22, 0.5);
       color: var(---, #FFF);
       font-family: "Microsoft YaHei";
       font-size: 14px;
@@ -3361,7 +3358,7 @@ input[type="range"].vertical-slider {
   }
   .top {
     top: 0;
-    // padding-top: 15px;
+    padding-top: 15px;
     // background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, .8));
   }
   .bottom {
@@ -3668,6 +3665,9 @@ input[type="range"].vertical-slider {
     }
     .status {
       border-radius: 2px;
+      background: rgba(40, 118, 210, 0.20);
+      box-shadow: 0 0 4px 0 #69C4FF inset;
+      color: #0BF9FE;
       text-align: center;
       font-family: "Alibaba PuHuiTi";
       font-size: 10px;
@@ -3675,16 +3675,6 @@ input[type="range"].vertical-slider {
       font-weight: 400;
       line-height: 12px; /* 120% */
       letter-spacing: 0.857px;
-      &.green {
-        background: rgb(40 210 64 / 20%);
-        box-shadow: 0 0 4px 0 #69ff79 inset;
-        color: #1cfe0b;
-      } 
-      &.blue {
-        background: rgba(40, 118, 210, 0.20);
-        box-shadow: 0 0 4px 0 #69C4FF inset;
-        color: #0BF9FE;
-      }
     }
   }
   &.four, &.nine {

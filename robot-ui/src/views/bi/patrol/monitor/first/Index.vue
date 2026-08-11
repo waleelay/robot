@@ -10,7 +10,12 @@
 <template>
   <div class="flex h100 pr20 pl20 pb10 pt20">
     <div class="right flex1 flex-column h100" style="min-width: 0; max-width: 100%; overflow: hidden;">
-      <TaskListTree ref="taskListRef" @select-task="selectTask" :update-video-handler="updateVideo" />
+      <TaskListTree
+        ref="taskListRef"
+        @select-task="selectTask"
+        :update-video-handler="(robot) => updateVideo(robot)"
+        :sync-task-videos="(robotIds) => syncTaskVideos(robotIds)"
+      />
       <div class="mt20 hp450 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
         <div class="card-title">
           <div class="text">
@@ -177,6 +182,11 @@ export default {
     selectTask(selectRows) {
       this.$refs.leftVideoRef.slotDevices = this.$refs.leftVideoRef.slotDevices.map((item, index) => selectRows[index] || null)
       
+    },
+    async syncTaskVideos(robotIds) {
+      const leftVideoRef = this.$refs?.leftVideoRef
+      if (!leftVideoRef || typeof leftVideoRef.syncTaskRobots !== 'function') return
+      await leftVideoRef.syncTaskRobots(robotIds || [])
     },
     openMore() {
       this.$refs.multimediaDetailRef?.open({

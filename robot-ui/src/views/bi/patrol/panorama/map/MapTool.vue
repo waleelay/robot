@@ -165,10 +165,10 @@ export default {
         },
         {
           icon: 'map-location',
-          name: '定位',
+          name: '复位',
           key: 'location',
           action: 'backCenter',
-          title: '回到中心'
+          title: '回到初始点'
         },
         // {
         //   icon: 'map-scale',

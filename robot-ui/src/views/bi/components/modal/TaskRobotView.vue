@@ -108,7 +108,7 @@ export default {
     return {
       dialogVisible: false,
       taskInfo: {},
-      robotIds: ['robot-001'],
+      robotIds: [],
       robotList: [],
       taskIndex: '',
       prefixId: 'task-robot-video-div',
@@ -148,7 +148,8 @@ export default {
     },
     closeModal() {
       this.dialogVisible = false;
-      this.$emit('handleClickTask', this.taskInfo.taskId)
+      // 关闭弹窗不取消任务卡片与地图装备选中
+      this.$emit('close', this.taskInfo.taskId)
     },
     async goTask() {
       await this.stopAll()
@@ -266,6 +267,7 @@ export default {
       background: #6E6E6E;
     }
     .side-list {
+      overflow-x: hidden;
       border-radius: 4px;
       border: 1px solid #0053B5;
     }

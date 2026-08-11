@@ -98,7 +98,7 @@ export default {
         },
         {
           icon: 'map-location',
-          name: '定位',
+          name: '复位',
           key: 'location',
           action: 'backCenter'
         },

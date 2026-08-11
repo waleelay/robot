@@ -165,6 +165,27 @@ export function getTaskRecordReplay(id) {
     method: 'get'
   })
 }
+export function pauseTaskRecord(id, data) {
+  return request({
+    url: taskPre + `/tasks/execution-records/${id}/pauses`,
+    method: 'post',
+    data: data || {}
+  })
+}
+export function resumeTaskRecord(id, data) {
+  return request({
+    url: taskPre + `/tasks/execution-records/${id}/resumes`,
+    method: 'post',
+    data: data || {}
+  })
+}
+export function terminateTaskRecord(id, data) {
+  return request({
+    url: taskPre + `/tasks/execution-records/${id}/terminates`,
+    method: 'post',
+    data: data || {}
+  })
+}
 
 export function previewImageBlob(id, cacheKey) {
   return request({

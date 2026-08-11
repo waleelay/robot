@@ -76,8 +76,8 @@
           <div
             v-for="(item, index) in taskData1"
             :key="item.taskId"
-            class="task-item p10"
-            :class="{ 'is-active': item.taskId === selectedTaskId }"
+            class="task-item p10 curp"
+            :class="{ 'is-active': String(item.taskId) === String(selectedTaskId) }"
             @click="handleSelectTask(item)"
             >
             <div class="flx-justify-between title">
@@ -111,18 +111,18 @@
             <div class="device mt10" v-if="item.equipmentList?.length">
               <div
                 v-for="equipment in item.equipmentList"
-                :key="equipment.name"
+                :key="equipment.robotId || equipment.name"
                 class="item flx-justify-between"
-                :class="{ 'is-active': checkedRobotIds.includes(equipment.robotId) }"
-                :draggable="!checkedRobotIds.includes(equipment.robotId) && equipment.status === 'online'"
-                @dragstart="onDragStart($event, robotBaseInfo[equipment.robotId], 'equipmentListComponent')"
+                :class="{ 'is-active': isRobotChecked(equipment.robotId) }"
+                :draggable="canDragTaskEquipment(equipment)"
+                @dragstart.stop="onTaskEquipmentDragStart($event, equipment)"
                 @dragend="onDragEnd"
-                @click="handleClickRobot(robotBaseInfo[equipment.robotId])"
-                :style="{ cursor: !checkedRobotIds.includes(equipment.robotId) ? 'grab' : 'default' }"
+                @click.stop="handleClickRobot(getTaskEquipmentRobot(equipment))"
+                :style="{ cursor: canDragTaskEquipment(equipment) ? 'grab' : (getTaskEquipmentStatus(equipment) === 'offline' ? 'not-allowed' : 'default') }"
               >
                 <div class="flx-center">
-                  <svg-icon :icon-class="ROBOT_TYPE_INFO[equipment.type]?.icon || 'robot'" />
-                  <span class="ml10">{{ equipment.name }}</span>
+                  <svg-icon :icon-class="ROBOT_TYPE_INFO[getTaskEquipmentRobot(equipment)?.type || equipment.type]?.icon || 'robot'" />
+                  <span class="ml10">{{ getTaskEquipmentRobot(equipment)?.name || equipment.name }}</span>
                 </div>
                 <div class="flx-center">
                   <svg-icon
@@ -154,6 +154,10 @@ export default {
   components: { Empty },
   props: {
     updateVideoHandler: {
+      type: Function,
+      default: null
+    },
+    syncTaskVideos: {
       type: Function,
       default: null
     }
@@ -244,12 +248,46 @@ export default {
       }
     },
     async handleClickRobot(item) {
+      if (!item?.robotId) return
       // console.log('this.splitType===========handleClickRobot', this.splitType);
       if (this.splitType === 1 || this.splitType !== this.checkedRobotIds.length) {
         // console.log('------------------------------------handleClickRobot----------------------------------------', item.status, this.equipmentInfo.online.list.find(e => e.robotId === item.robotId).status);
         
         await this.updateVideo(item)
       }
+    },
+    isRobotChecked(robotId) {
+      if (robotId === undefined || robotId === null || robotId === '') return false
+      const targetId = String(robotId)
+      return this.checkedRobotIds.some(id => String(id) === targetId)
+    },
+    getTaskEquipmentRobot(equipment) {
+      if (!equipment) return null
+      const robotId = equipment.robotId || equipment.id
+      if (robotId === undefined || robotId === null || robotId === '') return equipment
+      return this.robotBaseInfo?.[robotId]
+        || this.robotBaseInfo?.[String(robotId)]
+        || (this.robots || []).find(item => String(item.robotId) === String(robotId))
+        || { ...equipment, robotId }
+    },
+    getTaskEquipmentStatus(equipment) {
+      const robot = this.getTaskEquipmentRobot(equipment)
+      return robot?.status || equipment?.status || ''
+    },
+    /** 与装备列表一致：未在播放中且非离线才可拖 */
+    canDragTaskEquipment(equipment) {
+      const robot = this.getTaskEquipmentRobot(equipment)
+      if (!robot?.robotId) return false
+      if (this.isRobotChecked(robot.robotId)) return false
+      return this.getTaskEquipmentStatus(equipment) !== 'offline'
+    },
+    onTaskEquipmentDragStart(event, equipment) {
+      const robot = this.getTaskEquipmentRobot(equipment)
+      if (!robot?.robotId || !this.canDragTaskEquipment(equipment)) {
+        event.preventDefault()
+        return
+      }
+      onDragStart(event, robot, 'equipmentListComponent')
     },
     async updateVideo(robot) {
       // console.log('of this.updateVideoHandler', typeof this.updateVideoHandler);
@@ -260,26 +298,33 @@ export default {
       }
       await this.updateVideoHandler(robot)
     },
-    
+    /**
+     * 任务卡片点击：
+     * - 切换任务：共用装备视频复用；非共用装备关闭旧的、打开新的
+     * - 再次点击已选任务：取消选中，并关闭全部装备视频
+     */
     async handleSelectTask(task) {
-      this.selectedTaskId = task.taskId
-      // 获取新旧设备列表的 robotId 集合
-      const newIds = new Set(task.equipmentList.slice(0, this.splitType).map(item => item.robotId))
+      if (!task?.taskId) return
+      if (typeof this.syncTaskVideos !== 'function') return
 
-      // 找出需要关闭的设备（旧有但新列表中没有的）
-      const closeIds = [...this.checkedRobotIds].filter(id => !newIds.has(id))
-      const addIds = [...newIds].filter(id => !this.checkedRobotIds.includes(id))
-
-      // 关闭对应的视频
-      for (const id of [...closeIds, ...addIds]) {
-        // console.log(123, id)
-        const robot = this.robots.find(e => e.robotId === id)
-        if (robot) {
-          await this.updateVideo(robot)
-        }
+      // 取消选中：关闭当前所有装备视频
+      if (String(this.selectedTaskId) === String(task.taskId)) {
+        this.selectedTaskId = ''
+        this.selectedEquipmentList = []
+        await this.syncTaskVideos([])
+        return
       }
-      // 更新选中设备列表
-      this.selectedEquipmentList = task.equipmentList.slice(0, this.splitType);
+
+      const equipmentList = Array.isArray(task.equipmentList) ? task.equipmentList : []
+      const targetEquipment = equipmentList.slice(0, this.splitType)
+      const robotIds = targetEquipment
+        .map(item => item?.robotId || item?.id)
+        .filter(id => id !== undefined && id !== null && id !== '')
+        .map(id => String(id))
+
+      this.selectedTaskId = task.taskId
+      this.selectedEquipmentList = targetEquipment
+      await this.syncTaskVideos(robotIds)
     },
   },
   watch: {

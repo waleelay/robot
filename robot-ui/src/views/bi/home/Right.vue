@@ -94,8 +94,8 @@
                 <div class="ml10" style="width: 35%;">执行时间</div>
               </div>
               <div class="common-scroll ovya" style="height: 288px;">
-                <template v-if="taskData1.length">
-                  <div v-for="item in taskData1" class="tasks flx-justify-between pr10 pl10">
+                <template v-if="tasks.length">
+                  <div v-for="item in tasks" class="tasks flx-justify-between pr10 pl10">
                     <div style="width: 43%;" class="text-ellipsis" :title="item.name">{{ item.name }}</div>
                     <div
                       class="ml10 mr10 status wp50"
@@ -106,7 +106,7 @@
                         red: item.status?.includes('failed'),
                         gray: item.status === 'paused'
                       }"
-                    >{{ item.statusName }}</div>
+                    >{{ executionStatusLabel(item.status) }}</div>
                     <div class="ml10" style="width: 35%;">{{ item.timeRange }}</div>
                   </div>
                 </template>
@@ -135,6 +135,7 @@ import { mapState } from 'vuex';
 import { mapActions } from 'vuex/dist/vuex.common.js';
 import { getDescArr } from '../../../utils';
 import Empty from '../components/Empty.vue';
+import { executionStatusLabel } from '../patrol/business/execution-status.js';
 export default {
   name: 'BiIndexLeft',
   components: { Empty },
@@ -154,9 +155,6 @@ export default {
     ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'taskOverview']),
     tasks() {
       return getDescArr(this.taskData || {}, 'timestamp')
-    },
-    taskData1() {
-      return this.tasks.filter(item => ['running', 'pending', 'paused'].includes(item.status)) || []
     }
   },
   data() {
@@ -167,10 +165,10 @@ export default {
       activeTaskId: null,
       overviewInfo: {},
       devices: [
-        { name: '机器狗', total: 10, fault: 0, offline: 3 },
-        { name: '机器人', total: 0, fault: 0, offline: 0 },
-        { name: '无人机', total: 0, fault: 0, offline: 0 },
-        { name: '无人车', total: 0, fault: 0, offline: 0 },
+        // { name: '机器狗', total: 10, fault: 0, offline: 3 },
+        // { name: '机器人', total: 0, fault: 0, offline: 0 },
+        // { name: '无人机', total: 0, fault: 0, offline: 0 },
+        // { name: '无人车', total: 0, fault: 0, offline: 0 },
       ],
       // tasks: [
       //   { name: '任务1', status: '执行中', period: '2-4小时' },
@@ -186,6 +184,7 @@ export default {
     }
   },
   methods: {
+    executionStatusLabel,
     getMoreRobotInfo() {
   
     },
@@ -630,6 +629,10 @@ export default {
           &.gray {
             color: #EFEFEF;
             border: 1px solid #616161;
+          }
+          &.gray {
+            color: #FF0600;
+            border: 1px solid #AC1515;
           }
         }
       }

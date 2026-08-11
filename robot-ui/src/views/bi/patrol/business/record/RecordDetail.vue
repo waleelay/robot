@@ -199,6 +199,10 @@ import HlsModule from 'hls.js'
 import { getTaskRecordReplay, previewImageBlob } from '@/api/new-bi'
 import { getFilePlayUrl } from '@/api/media'
 import { withApiPrefix } from '@/utils/api-url'
+import {
+  executionStatusLabel as resolveExecutionStatusLabel,
+  executionStatusType as resolveExecutionStatusType
+} from '../execution-status'
 
 const ImportedHls = HlsModule && (HlsModule.default || HlsModule)
 
@@ -916,10 +920,10 @@ export default {
       )) || payload.occurredAt || payload.eventTime || payload.alarmTime || payload.timestamp || payload.createdAt || payload.time || null
     },
     statusLabel(value) {
-      return { PREPARING: '准备中', RUNNING: '运行中', COMPLETED: '已完成', FAILED: '失败', CANCELED: '已取消' }[value] || value || '-'
+      return resolveExecutionStatusLabel(value)
     },
     statusTagType(value) {
-      return { COMPLETED: 'green', FAILED: 'red', CANCELED: 'info', RUNNING: 'orange', PREPARING: 'orange' }[value] || 'info'
+      return resolveExecutionStatusType(value)
     },
     trackStatusLabel(value) {
       return { AVAILABLE: '轨迹正常', PROCESSING: '轨迹处理中', MISSING: '轨迹缺失' }[value] || value || '轨迹处理中'
