@@ -64,7 +64,7 @@
                     :style="{ color: robotBaseInfo[item.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
                   >
                   </svg-icon>
-                  <span class="ml10 wp36 tar">{{ robotBaseInfo[item.robotId]?.battery }}%</span>
+                  <span class="ml10 wp36 tar">{{ robotBaseInfo[item.robotId]?.battery || 0 }}%</span>
                 </div>
               </div>
             </div>
@@ -130,7 +130,7 @@
                     :style="{ color: robotBaseInfo[equipment.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
                   >
                   </svg-icon>
-                  <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId]?.battery }}%</span>  
+                  <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId]?.battery || 0 }}%</span>  
                   <span class="status ml10 p4" :class="robotBaseInfo[equipment.robotId]?.statusClass">{{ robotBaseInfo[equipment.robotId]?.customStatusName || robotBaseInfo[equipment.robotId]?.status || '-' }}</span>
                 </div>
               </div>

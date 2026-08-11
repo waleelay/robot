@@ -64,7 +64,7 @@ const state = {
 }
 
 function cameraKey(robotId, camera) {
-  return camera.key || `${robotId}-${camera.deviceId || camera.cameraId}`
+  return camera.key || `${robotId}-${camera.deviceId}-${camera.cameraId}`
 }
 function currentCameraState(camera) {
   return allCameras().find(item => item.key === camera.key) || camera
@@ -265,7 +265,7 @@ function toRobotState(robot) {
     cameras: (robot.cameras || []).map(camera => Object.assign(
       {},
       camera,
-      cameraState(robot.robotId, camera.deviceId || camera.cameraId, camera.name || camera.cameraId, camera.groupType),
+      cameraState(robot.robotId, camera.deviceId, camera.cameraId || camera.deviceId, camera.name || camera.cameraId, camera.groupType),
       {
         cameraId: camera.cameraId || camera.deviceId,
         groupType: camera.groupType || 'body',
@@ -287,9 +287,9 @@ function groupTypeText(groupType) {
 }
 
 // 用于将相机数据转换为状态对象
-function cameraState(robotId, deviceId, name, groupType) {
+function cameraState(robotId, deviceId, cameraId, name, groupType) {
   return {
-    key: `${robotId}-${deviceId}`,
+    key: `${robotId}-${deviceId}-${cameraId}`,
     robotId,
     deviceId,
     name,
@@ -612,7 +612,7 @@ const actions = {
   async activateIncomingIntercom({ commit, state, dispatch }, { call, intercom }) {
     let camera = allCameras().find(item => item.robotId === call.robotId && item.deviceId === call.deviceId)
     if (!camera) {
-      camera = cameraState(call.robotId, call.deviceId, call.cameraName || call.deviceId, 'body')
+      camera = cameraState(call.robotId, call.deviceId, call.cameraId || call.deviceId, call.cameraName || call.deviceId, 'body')
     } else {
       camera = { ...camera }
     }

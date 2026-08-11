@@ -1,26 +1,24 @@
 <template>
   <div class="flx-center custom-video-info" :class="className">
     <div class="info-item flx-center">
-      <!-- <svg-icon icon-class="battery-2" style="color: #3DB56A" />
-      <span class="ml4">60%</span> -->
-      <!-- <svg-icon
-        :icon-class="item.battery >= 90 ? 'battery-4' : item.battery >= 80 ? 'battery-3' : item.battery >= 50 ? 'battery-2' : item.battery >= 40 ? 'battery-1' : 'battery-0'"
-        :style="{ color: item.battery < 50 ? '#D33333' : '#3DB56A' }"
+      <svg-icon
+        :icon-class="currentRobot?.battery >= 90 ? 'battery-4' : currentRobot?.battery >= 80 ? 'battery-3' : currentRobot?.battery >= 50 ? 'battery-2' : currentRobot?.battery >= 40 ? 'battery-1' : 'battery-0'"
+        :style="{ color: currentRobot?.battery < 50 ? '#D33333' : '#3DB56A' }"
       >
       </svg-icon>
-      <span class="ml4">{{ item.battery }}%</span> -->
-    </div>
-    <!-- <div class="info-item flx-center ml20">
-      <svg-icon icon-class="meter" style="color: #21CCE7" />
-      <span class="ml4">1.2m/s</span>
+      <span class="ml4">{{ currentRobot?.battery || 0 }}%</span>
     </div>
     <div class="info-item flx-center ml20">
+      <svg-icon icon-class="meter" style="color: #21CCE7" />
+      <span class="ml4">{{ currentRobot?.speed || 0 }}m/s</span>
+    </div>
+    <!-- <div class="info-item flx-center ml20">
       <svg-icon icon-class="data" style="color: #159AFF" />
-      <span class="ml4">106ms</span>
+      <span class="ml4">{{ latencyText }}</span>
     </div> -->
-    <!-- <div class="info-item flx-center">
-      <span class="status p4">{{ cameraInfo?.robot?.status }}</span>
-    </div> -->
+    <div class="info-item flx-center ml20">
+      <span class="status p4" :class="currentRobot?.statusClass || ''">{{ currentRobot?.customStatusName || currentRobot?.status || '-' }}</span>
+    </div>
   </div>
 </template>
 
@@ -41,8 +39,20 @@ export default {
   },
   computed: {
     ...mapState('websocketRobot', ['cameras']),
+    ...mapState('websocketExtraData', ['robotBaseInfo']),
     cameraInfo() {
       return this.cameras?.[this.cameraKey] || {}
+    },
+    currentRobot() {
+      const robotId = this.cameraInfo?.robotId
+      return this.robotBaseInfo?.[robotId] || {}
+    },
+    latencyText() {
+      const latencyMs = this.cameraInfo?.latencyMs
+      if (latencyMs === undefined || latencyMs === null || !Number.isFinite(Number(latencyMs))) {
+        return '-'
+      }
+      return `${Math.round(Number(latencyMs))}ms`
     },
   }
 }

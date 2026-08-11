@@ -27,9 +27,12 @@
         <span class="symbol" :class="{ 'is-active': recordingActive }"></span>
         <span class="ml6">{{ recordingTime }}</span>
       </div>
-      <div class="top flx-justify-between w100 pr10 pl10">
+      <div class="top flx-justify-between w100 pr10 pl10 pt10 pb18">
         <!-- ---{{ ZQL_videosInfos[`slot_${index}`].status }} -->
-        <div class="title">数据源：{{ ZQL_videosInfos[`slot_${index}`].name }}</div>
+        <div class="title flx-center">
+          <svg-icon :icon-class="ROBOT_TYPE_INFO[currentRobot?.type]?.icon || 'robot'" style="color: #0BF9FE; font-size: 16px" />
+          <span class="ml10">{{ currentRobot?.name || '-' }}-{{ ZQL_videosInfos[`slot_${index}`].name }}</span>
+        </div>
         <div class="flx-center">
           <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key" />
         </div>
@@ -84,6 +87,7 @@ import VideoTool from '../../../components/VideoTool.vue';
 import { mapActions, mapState } from 'vuex';
 import mixin from './drag-mixin';
 import { formatTiming } from '@/utils/index.js';
+import { ROBOT_TYPE_INFO } from '@/constants/robot';
 export default {
   name: 'VideoBox',
   components: { VideoTool, VideoInfo },
@@ -122,6 +126,14 @@ export default {
     cameraInfo() {
       return this.cameras?.[this.ZQL_videosInfos[`slot_${this.index}`]?.key] || {}
     },
+    currentRobot() {
+      const video = this.ZQL_videosInfos[`slot_${this.index}`] || {}
+      const robotId = video.robotId || this.cameraInfo.robotId
+      return this.robotBaseInfo?.[robotId]
+        || video.robot
+        || (this.robots || []).find(item => String(item.robotId) === String(robotId))
+        || {}
+    },
     recordingActive() {
       return this.cameraInfo.recordingActive
     },
@@ -129,11 +141,7 @@ export default {
     isFixedCamera() {
       const video = this.ZQL_videosInfos[`slot_${this.index}`] || {}
       if (video.sourceType === 'FIXED_CAMERA' || this.cameraInfo.sourceType === 'FIXED_CAMERA') return true
-      const robotId = video.robotId || this.cameraInfo.robotId
-      const robot = video.robot
-        || this.robotBaseInfo?.[robotId]
-        || (this.robots || []).find(item => String(item.robotId) === String(robotId))
-        || {}
+      const robot = this.currentRobot
       return robot.typeCode === 'FIXED_CAMERA'
         || robot.type === 'FIXED_CAMERA'
         || robot.type === '固定摄像头'
@@ -148,7 +156,8 @@ export default {
       seconds: 0,
       recordTimer: null,
       resetTimer: null,
-      recordingTime: formatTiming(0)
+      recordingTime: formatTiming(0),
+      ROBOT_TYPE_INFO,
     }
   },
   mounted() {
