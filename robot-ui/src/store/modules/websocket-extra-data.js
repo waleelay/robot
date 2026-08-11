@@ -280,11 +280,11 @@ const actions = {
         commit('SET_ROBOT_ALARM_INFO', { robotId: event.data.alarm.robotId, alarmInfo: event.data.alarm });
       }
     } else if (event.event === 'panorama.stats.changed') {
-      commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || []);
-      commit('SET_DEVICE_STATS', event.data.deviceStats || {});
-      commit('SET_ALARM_SUMMARY', event.data.alarmSummary || {});
-      commit('SET_TASK_OVERVIEW', event.data.taskOverview || {});
-      commit('SET_PATROL_OVERVIEW', event.data.patrolOverview || {});
+      commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || state.deviceTypeStats || []);
+      commit('SET_DEVICE_STATS', event.data.deviceStats || state.deviceStats || {});
+      commit('SET_ALARM_SUMMARY', event.data.alarmSummary || state.alarmSummary || {});
+      commit('SET_TASK_OVERVIEW', event.data.taskOverview || state.taskOverview || {});
+      commit('SET_PATROL_OVERVIEW', event.data.patrolOverview || state.patrolOverview || {});
       // alarmStats: { high: 0, medium: 0, low: 0 }
     }
   },

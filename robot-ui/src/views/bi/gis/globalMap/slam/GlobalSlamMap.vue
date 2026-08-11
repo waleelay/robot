@@ -1120,7 +1120,10 @@ export default {
       )
     },
     isRobotHighlighted(robotId) {
-      return (this.showRobotIds || []).some(id => String(id) === String(robotId))
+      if ((this.showRobotIds || []).some(id => String(id) === String(robotId))) return true
+      // 监控等非指挥中心页：开视频后同步选中地图装备（与 GlobalGisMap.getSelectedStatus 一致）
+      if (this.currenRouteName !== 'biIndex' && this.hasActiveVideo(robotId)) return true
+      return false
     },
     onCanvasContextMenu(event) {
       if (!this.enableAddPoint) return

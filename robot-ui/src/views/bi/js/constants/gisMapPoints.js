@@ -219,6 +219,7 @@ export function getLiantongFixedCameraMock() {
     name: '联通展厅固定摄像头',
     type: '固定摄像头',
     typeCode: 'FIXED_CAMERA',
+    sourceType: 'FIXED_CAMERA',
     model: 'MOCK-FIXED-CAMERA',
     status: 'online',
     battery: null,

@@ -3309,7 +3309,7 @@ input[type="range"].vertical-slider {
         }
         .video-btn {
           padding: 4px 6px;
-          height: 20px;
+          height: 23px;
           font-size: 12px;
         }
       }
@@ -3360,6 +3360,10 @@ input[type="range"].vertical-slider {
     top: 0;
     padding-top: 15px;
     // background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, .8));
+    .title {
+      padding: 4px 10px;
+      background: rgba(22, 21, 22, 0.5);
+    }
   }
   .bottom {
     bottom: 0;

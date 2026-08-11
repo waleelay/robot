@@ -104,19 +104,30 @@ service.interceptors.response.use(res => {
     } else if (code === 500) {
       if (!showAlert) {
         showAlert = true
-        Message({ message: msg, type: 'error' })
+        Message({
+          message: msg,
+          type: 'error',
+          onClose: () => { showAlert = false }
+        })
       }
       return Promise.reject(new Error(msg))
     } else if (code === 601) {
       if (!showAlert) {
         showAlert = true
-        Message({ message: msg, type: 'warning' })
+        Message({
+          message: msg,
+          type: 'warning',
+          onClose: () => { showAlert = false }
+        })
       }
       return Promise.reject('error')
     } else if (code !== 200) {
       if (!showAlert) {
         showAlert = true
-        Notification.error({ title: msg })
+        Notification.error({
+          title: msg,
+          onClose: () => { showAlert = false }
+        })
       }
       return Promise.reject('error')
     } else {
@@ -141,7 +152,12 @@ service.interceptors.response.use(res => {
     const skipErrorMessage = Boolean(error.config && error.config.skipErrorMessage)
     if (!skipErrorMessage && !showAlert) {
       showAlert = true
-      Message({ message: message, type: 'error', duration: 5 * 1000 })
+      Message({
+        message: message,
+        type: 'error',
+        duration: 5 * 1000,
+        onClose: () => { showAlert = false }
+      })
     }
     return Promise.reject(error)
   }

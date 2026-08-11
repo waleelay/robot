@@ -44,7 +44,16 @@
           <div class="mt20">
             <div v-if="deviceTypeStats?.length" class="t2">设备类型</div>
             <div class="device_types mt10 flx-justify-between">
-              <div v-for="(item, index) in deviceTypeStats || []" :key="item.type" class="item flex1 p9" :class="{'ml10': index !== 0}">
+              <div
+                v-for="(item, index) in deviceTypeStats || []"
+                :key="item.type"
+                class="item flex1 hp62"
+                :class="{
+                  'ml10': index !== 0,
+                  'p9': !(item.name && item.name.length > 4),
+                  'is-long-name': item.name && item.name.length > 4
+                }"
+              >
                 <div class="desc">{{ item.name }}</div>
                 <div class="value mt4">{{ item.count ? String(item.count).padStart(2, '0') : '-' }}</div>
               </div>
@@ -140,7 +149,7 @@
                   type="button"
                   class="action-btn action-execute"
                   :disabled="isStartingTask(item)"
-                  @click.stop="openTaskConfirm('execute', item, key)"
+                  @click.stop="handleExecuteTask(item)"
                 >
                   <span>立即执行</span>
                   <svg-icon icon-class="right" class="ml4" />
@@ -207,16 +216,6 @@
     <TaskRobotView ref="taskRobotViewRef" />
     <WarningBatch ref="warningBatchRef" />
     <WarnInfo ref="WarnInfoRef" />
-    <div v-if="taskConfirmVisible" class="notice-modal flx-center">
-      <div class="notice-modal__mask" @click="closeTaskConfirm"></div>
-      <div class="notice-modal__dialog w50 hp180">
-        <p class="notice-modal__text mt23">{{ taskConfirmText }}</p>
-        <div class="notice-modal__btns">
-          <button type="button" class="notice-modal__btn" @click="closeTaskConfirm">取消</button>
-          <button type="button" class="notice-modal__btn is-primary" :disabled="taskConfirmLoading" @click="confirmTaskAction">确定</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -285,11 +284,6 @@ export default {
       img2: require('@/assets/images/new-bi/warning1.png'),
       startingTaskIds: [],
       actingRecordIds: [],
-      taskConfirmVisible: false,
-      taskConfirmType: '',
-      taskConfirmItem: null,
-      taskConfirmKey: null,
-      taskConfirmLoading: false,
     }
   },
   computed: {
@@ -300,10 +294,6 @@ export default {
       return this.$store.getters['websocketRobot/getRobots'];
     },
     ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'globalMapId']),
-    taskConfirmText() {
-      if (this.taskConfirmType === 'execute') return '是否【立即执行】该任务？'
-      return ''
-    },
     taskData1() {
       return getDescArr(this.taskData || {}, 'timestamp') || []
     },
@@ -460,28 +450,9 @@ export default {
       if (this.$refs.taskRobotViewRef) {
         this.$refs.taskRobotViewRef.dialogVisible = false
       }
-      this.closeTaskConfirm()
     },
     handleTaskDetail() {
       // 详情入口预留
-    },
-    openTaskConfirm(type, item, key) {
-      this.taskConfirmType = type
-      this.taskConfirmItem = item
-      this.taskConfirmKey = key
-      this.taskConfirmVisible = true
-    },
-    closeTaskConfirm() {
-      if (this.taskConfirmLoading) return
-      this.taskConfirmVisible = false
-      this.taskConfirmType = ''
-      this.taskConfirmItem = null
-      this.taskConfirmKey = null
-    },
-    async confirmTaskAction() {
-      if (this.taskConfirmType === 'execute') {
-        await this.handleExecuteTask()
-      }
     },
     unwrap(res) {
       if (res && res.code !== undefined) {
@@ -569,35 +540,49 @@ export default {
         api: terminateTaskRecord
       })
     },
-    async handleExecuteTask() {
-      const item = this.taskConfirmItem
+    async handleExecuteTask(item) {
       const planId = this.getTaskPlanId(item)
       if (planId == null) {
         this.$message.error('缺少任务标识，无法执行')
         return
       }
       if (this.isStartingTask(item)) return
-      this.startingTaskIds = this.startingTaskIds.concat(planId)
-      this.taskConfirmLoading = true
       try {
-        const preview = this.unwrap(await startTaskPreview(planId, {}))
-        if (preview && preview.valid === false) {
-          this.$message.warning((preview && preview.message) || '任务预检未通过，无法启动')
-          return
-        }
-        const data = this.unwrap(await startTask(planId, {}))
-        if (data && data.accepted === false) {
-          this.$message.warning((data && data.message) || '任务未能启动')
-          return
-        }
-        this.$message.success((data && data.message) || '任务已启动')
-        this.taskConfirmLoading = false
-        this.closeTaskConfirm()
+        await this.$primaryConfirm({
+          title: '提示',
+          message: '是否【立即执行】该任务？',
+          confirmText: '确定',
+          cancelText: '取消',
+          onConfirm: async () => {
+            this.startingTaskIds = this.startingTaskIds.concat(planId)
+            try {
+              const preview = this.unwrap(await startTaskPreview(planId, {}))
+              if (preview && preview.valid === false) {
+                this.$message.warning((preview && preview.message) || '任务预检未通过，无法启动')
+                const rejected = new Error((preview && preview.message) || '任务预检未通过，无法启动')
+                rejected.handled = true
+                throw rejected
+              }
+              const data = this.unwrap(await startTask(planId, {}))
+              if (data && data.accepted === false) {
+                this.$message.warning((data && data.message) || '任务未能启动')
+                const rejected = new Error((data && data.message) || '任务未能启动')
+                rejected.handled = true
+                throw rejected
+              }
+              this.$message.success((data && data.message) || '任务已启动')
+            } catch (error) {
+              if (!(error && error.handled)) {
+                this.$message.error((error && error.message) || '执行失败')
+              }
+              throw error
+            } finally {
+              this.startingTaskIds = this.startingTaskIds.filter(id => id !== planId)
+            }
+          }
+        })
       } catch (error) {
-        this.$message.error((error && error.message) || '执行失败')
-      } finally {
-        this.taskConfirmLoading = false
-        this.startingTaskIds = this.startingTaskIds.filter(id => id !== planId)
+        // 用户取消
       }
     },
     handleClickAlert(item) {
@@ -748,6 +733,12 @@ export default {
           /* border: 1px solid #041B3E;
           background: rgba(0, 49, 98, 0.50); */
           background: #012851;
+          &.is-long-name {
+            padding: 9px 2px;
+            .desc {
+              white-space: nowrap;
+            }
+          }
           .desc {
             color: #BEE1FF;
             font-family: "Microsoft YaHei";
@@ -1038,74 +1029,6 @@ export default {
         }
       }
     }
-  }
-}
-
-.notice-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 3000;
-  pointer-events: none;
-
-  &__mask {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    pointer-events: auto;
-  }
-
-  &__dialog {
-    position: fixed;
-    /* width: 473px; */
-    min-height: 108px;
-    padding: 20px 20px 24px;
-    border: 1px solid #2A86F3;
-    background: linear-gradient(180deg, rgba(4, 60, 149, 0.40) 0.01%, rgba(4, 33, 68, 0.30) 6.03%, rgba(4, 23, 62, 0.32) 56.39%, rgba(7, 45, 94, 0.31) 101.39%, rgba(4, 62, 151, 0.40) 109.49%);
-    backdrop-filter: blur(15px);
-    box-shadow: inset 0 0 20px 0 rgba(42, 134, 243, 0.35);
-    pointer-events: auto;
-  }
-
-  &__text {
-    margin: 0 0 18px;
-    color: #FFF;
-    text-align: center;
-    font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
-    font-size: 16px;
-    line-height: 22px;
-    letter-spacing: 0.857px;
-  }
-
-  &__btns {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
-  }
-
-  &__btn {
-    min-width: 70px;
-    padding: 5px 10px;
-    border: 1px solid #2A86F3;
-    border-radius: 2px;
-    background: rgba(9, 45, 72, 0.50);
-    box-shadow: inset 0 0 10px 0 #2A86F3;
-    color: #FFF;
-    font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
-    font-size: 16px;
-    line-height: 22px;
-    letter-spacing: 0.857px;
-    cursor: pointer;
-
-    &:hover {
-      opacity: 0.9;
-    }
-    /* &:not(.is-disabled) {
-      &:active {
-        color: #0BF9FE;
-        box-shadow: 0 0 10px 3px #0BF9FE inset;
-      }
-    } */
   }
 }
 </style>

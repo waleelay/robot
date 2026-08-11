@@ -45,12 +45,6 @@
                     <div class="flex1 tac ml10">{{ item.fault || 0 }}</div>
                     <div class="flex1 tac ml10">{{ item.offline || 0  }}</div>
                   </div>
-                  <div class="devices flx-center pr10 pl10">
-                    <div class="tal" style="width: 40%;">摄像头</div>
-                    <div class="flex1 tac ml10">6</div>
-                    <div class="flex1 tac ml10">0</div>
-                    <div class="flex1 tac ml10">0</div>
-                  </div>
                 </template>
                 <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div>
               </div>

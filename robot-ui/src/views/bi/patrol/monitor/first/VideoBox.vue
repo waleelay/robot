@@ -31,7 +31,7 @@
         <!-- ---{{ ZQL_videosInfos[`slot_${index}`].status }} -->
         <div class="title flx-center">
           <svg-icon :icon-class="ROBOT_TYPE_INFO[currentRobot?.type]?.icon || 'robot'" style="color: #0BF9FE; font-size: 16px" />
-          <span class="ml10">{{ currentRobot?.name || '-' }}-{{ ZQL_videosInfos[`slot_${index}`].name }}</span>
+          <span class="ml10">{{ currentRobot?.name || '-' }}<template v-if="!isFixedCamera">-{{ ZQL_videosInfos[`slot_${index}`].name }}</template></span>
         </div>
         <div class="flx-center">
           <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key" />

@@ -45,7 +45,43 @@
           </div>
         </div>
       </div>
-      <div class="btns mt10 mb20 ml0 flx-align-center flex-wrap wp360" style="margin-top: -10px !important">
+      <!-- 固定摄像头：仅显示/关闭画面；视频区始终占位，避免高度变化导致相对装备错位 -->
+      <template v-if="isFixedCamera">
+        <div class="btns mt10 ml0 flx-align-center flex-wrap wp360" style="margin-top: -10px !important">
+          <el-button type="primary" class="mt20" :disabled="videoToggling" @click="toggleFixedCameraVideo">
+            {{ videoVisible ? '关闭画面' : '显示画面' }}
+          </el-button>
+        </div>
+        <div class="fixed-camera-video mt10 mb20 flx-center">
+          <div class="fixed-camera-video__inner flx-center">
+            <video
+              v-show="videoVisible && fixedCameraInfo?.key"
+              :id="fixedCameraVideoId"
+              class="fixed-camera-video__stream"
+              autoplay
+              muted
+              playsinline
+              preload="auto"
+            />
+            <audio
+              v-if="fixedCameraInfo?.key"
+              :id="prefixId + fixedCameraInfo.key + '-audio'"
+              autoplay
+            />
+            <div
+              v-if="videoVisible && fixedCameraInfo && !fixedCameraInfo.hasVideo"
+              class="fixed-camera-video__status flx-center flex-column"
+            >
+              <svg-icon :icon-class="videoStatusIcon" style="font-size: 16px;" />
+              <span class="mt2">{{ videoStatusText }}</span>
+            </div>
+            <div v-else-if="!videoVisible" class="fixed-camera-video__placeholder flx-center">
+              暂无画面
+            </div>
+          </div>
+        </div>
+      </template>
+      <div v-else class="btns mt10 mb20 ml0 flx-align-center flex-wrap wp360" style="margin-top: -10px !important">
         <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="$emit('showControlPart')">远程控制</el-button>
         <!-- <el-button type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button> -->
         <el-button v-if="showAnimate && showControl && currenRobot?.runningTaskId && globalMapId === 'gis'" type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button>
@@ -81,7 +117,12 @@ export default {
   data() {
     return {
       className: '',
-      pathVisible: false
+      pathVisible: false,
+      videoVisible: false,
+      videoToggling: false,
+      prefixId: 'robot1-fixed-camera-',
+      // 当前弹窗内已开流的相机，切换/关闭时按此引用停流，避免 selectedRobotId 已变更关错流
+      playingCamera: null,
     }
   },
   computed: {
@@ -102,9 +143,45 @@ export default {
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
+    cameras() {
+      return this.$store.getters['websocketRobot/getCameras'] || {}
+    },
     ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData', 'taskPathPoints', 'globalMapId']),
     currenRobot() {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
+    },
+    isFixedCamera() {
+      const robot = this.currenRobot || this.selectedRobot || {}
+      return robot.sourceType === 'FIXED_CAMERA'
+        || robot.typeCode === 'FIXED_CAMERA'
+        || robot.equipmentType === 'FIXED_CAMERA'
+        || robot.type === 'FIXED_CAMERA'
+        || robot.type === '固定摄像头'
+    },
+    // 固定摄像头主相机（取装备第一路，并合并 store 实时状态）
+    fixedCameraInfo() {
+      if (!this.isFixedCamera) return null
+      const robot = this.selectedRobot || {}
+      const basic = (robot.cameras || [])[0]
+        || Object.values(this.cameras).find(item => String(item.robotId) === String(this.selectedRobotId))
+      if (!basic) return null
+      const key = basic.key || `${robot.robotId || this.selectedRobotId}-${basic.deviceId || basic.cameraId}-${basic.cameraId || basic.deviceId}`
+      return { ...basic, ...(this.cameras[key] || {}), key }
+    },
+    fixedCameraVideoId() {
+      return this.fixedCameraInfo?.key ? `${this.prefixId}${this.fixedCameraInfo.key}` : ''
+    },
+    videoStatusIcon() {
+      const status = this.fixedCameraInfo?.status
+      if (status === 'FAILED' || status === 'TIMEOUT' || status === 'offline') return 'unlink1'
+      return 'loading'
+    },
+    videoStatusText() {
+      const info = this.fixedCameraInfo || {}
+      if (info.hasVideo) return ''
+      if (info.session) return '连接中'
+      if (info.status === 'FAILED' || info.status === 'TIMEOUT' || info.status === 'offline') return '连接失败'
+      return '连接中'
     },
     taskList() {
       const { task = [] } = this.currenRobot || {}
@@ -123,15 +200,6 @@ export default {
       }
       return true
     },
-    // getRunningTask() {
-    //   return this.taskList?.find(item => item.status === 'running') || null
-    // },
-    // getStatus() {
-    //   return this.currenRobot?.status === 'online' ? this.getRunningTask ? '任务中' : '空闲中' : this.currenRobot?.status === 'offline' ? '离线' : '故障'
-    // },
-    // getStatusClass() {
-    //   return this.currenRobot?.status === 'online' ? this.getRunningTask ? 'blue' : 'green' : this.currenRobot?.status === 'offline' ? '' : 'orange'
-    // }
   },
   watch: {
     hasTaskPath(val) {
@@ -139,17 +207,29 @@ export default {
         this.pathVisible = false
         this.$emit('showPath', false)
       }
+    },
+    // 指挥中心 Left 会反复把全局 prefixId 改回 home-video，需在 track 就绪后主动挂到本弹窗 video
+    'fixedCameraInfo.remoteVideoTrack'(track) {
+      if (this.videoVisible && track) this.attachFixedCameraTrack()
+    },
+    'fixedCameraInfo.hasVideo'(val) {
+      if (this.videoVisible && val) this.attachFixedCameraTrack()
     }
   },
+  beforeDestroy() {
+    this.clearAttachRetry()
+    this.stopFixedCameraVideo()
+  },
   methods: {
-    ...mapActions('websocketRobot', ['setSelectedRobotId']),
+    ...mapActions('websocketRobot', ['setSelectedRobotId', 'startCamera', 'stopCamera', 'setPrefixId']),
     onShutdown() {
       // this.$emit('shutdown')
     },
     onStartup() {
       // this.$emit('startup')
     },
-    onClose() {
+    async onClose() {
+      await this.stopFixedCameraVideo()
       this.visible = false
       this.pathVisible = false
       this.$emit('showPath', false)
@@ -161,16 +241,122 @@ export default {
       this.pathVisible = !this.pathVisible
       this.$emit('showPath', this.pathVisible)
     },
-    show(e, robot) {
+    async toggleFixedCameraVideo() {
+      if (this.videoToggling) return
+      if (this.videoVisible) {
+        await this.stopFixedCameraVideo()
+        return
+      }
+      await this.startFixedCameraVideo()
+    },
+    attachFixedCameraTrack() {
+      const camera = this.cameras[this.playingCamera?.key] || this.fixedCameraInfo
+      if (!camera?.key) return false
+      const video = document.getElementById(this.prefixId + camera.key)
+      const audio = document.getElementById(this.prefixId + camera.key + '-audio')
+      let attached = false
+      if (camera.remoteVideoTrack && video && typeof camera.remoteVideoTrack.attach === 'function') {
+        camera.remoteVideoTrack.attach(video)
+        video.play?.().catch?.(() => {})
+        attached = true
+      }
+      if (camera.remoteAudioTrack && audio && typeof camera.remoteAudioTrack.attach === 'function') {
+        camera.remoteAudioTrack.attach(audio)
+      }
+      return attached
+    },
+    clearAttachRetry() {
+      if (this._attachRetryTimer) {
+        clearInterval(this._attachRetryTimer)
+        this._attachRetryTimer = null
+      }
+    },
+    scheduleAttachRetry() {
+      this.clearAttachRetry()
+      let tries = 0
+      this._attachRetryTimer = setInterval(() => {
+        tries += 1
+        const ok = this.attachFixedCameraTrack()
+        if (ok || tries >= 15 || !this.videoVisible) this.clearAttachRetry()
+      }, 200)
+    },
+    async startFixedCameraVideo() {
+      if (!this.isFixedCamera || this.videoToggling) return
+      const camera = this.fixedCameraInfo
+      if (!camera?.key) {
+        this.$message?.warning?.('未找到可播放的摄像头')
+        return
+      }
+      this.videoToggling = true
+      const prevPrefixId = this.$store.state.websocketRobot?.prefixId
+      try {
+        this.videoVisible = true
+        this.playingCamera = camera
+        this.setPrefixId(this.prefixId)
+        await this.$nextTick()
+        const robot = {
+          ...(this.selectedRobot || {}),
+          ...(this.currenRobot || {}),
+          sourceType: 'FIXED_CAMERA',
+          status: (this.selectedRobot?.status || this.currenRobot?.status) === 'offline' ? 'offline' : 'online'
+        }
+        await this.startCamera({ robot, camera })
+        // 不等 TrackSubscribed 时的全局 prefixId（可能已被指挥中心 Left 覆盖），主动挂载
+        this.attachFixedCameraTrack()
+        await this.$nextTick()
+        this.attachFixedCameraTrack()
+        this.scheduleAttachRetry()
+      } catch (error) {
+        this.videoVisible = false
+        this.playingCamera = null
+        this.clearAttachRetry()
+        this.$message?.error?.(error?.message || '开启画面失败')
+      } finally {
+        // 播放中仍保留本弹窗 prefix，便于断线重连；若此前有其它页面 prefix 则在关闭时恢复
+        this._prevPrefixId = prevPrefixId
+        this.videoToggling = false
+      }
+    },
+    async stopFixedCameraVideo() {
+      this.clearAttachRetry()
+      const camera = this.playingCamera || this.fixedCameraInfo
+      this.videoVisible = false
+      if (!camera?.key) {
+        this.playingCamera = null
+        return
+      }
+      this.videoToggling = true
+      try {
+        const latest = this.cameras[camera.key] || camera
+        const video = document.getElementById(this.prefixId + camera.key)
+        if (latest.remoteVideoTrack && video && typeof latest.remoteVideoTrack.detach === 'function') {
+          latest.remoteVideoTrack.detach(video)
+        }
+        if (video) video.srcObject = null
+        await this.stopCamera(latest)
+      } catch (error) {
+        // ignore
+      } finally {
+        this.playingCamera = null
+        this.videoToggling = false
+        if (this._prevPrefixId != null && this._prevPrefixId !== this.prefixId) {
+          this.setPrefixId(this._prevPrefixId)
+        }
+        this._prevPrefixId = null
+      }
+    },
+    async show(e, robot) {
       this.$emit('showControlPart', false)
       if (this.selectedRobotId === robot?.robotId || !e) {
+        await this.stopFixedCameraVideo()
         this.pathVisible = false
         this.$emit('showPath', false)
         this.setSelectedRobotId('')
         this.handleGlobalClick(e, false)
         this.$emit('clear', [])
       } else {
-        // 切换装备时关闭路径线，不影响 MapTool 点位
+        // 切换装备时关闭路径线 / 固定摄像头画面，不影响 MapTool 点位
+        await this.stopFixedCameraVideo()
         this.pathVisible = false
         this.$emit('showPath', false)
         this.visible = true
@@ -187,6 +373,52 @@ export default {
 .btns {
   .el-button:first-child {
     margin-left: 10px;
+  }
+}
+.fixed-camera-video {
+  width: 340px;
+  height: 200px;
+  margin-left: 10px;
+  margin-right: 10px;
+  border-radius: 4px;
+  border: 1px solid #005FCF;
+  background: rgba(4, 24, 65, 0.20);
+  backdrop-filter: blur(2.5px);
+  box-sizing: border-box;
+
+  &__inner {
+    position: relative;
+    width: 320px;
+    height: 180px;
+    overflow: hidden;
+  }
+
+  &__stream {
+    width: 320px;
+    height: 180px;
+    object-fit: contain;
+    background: #000;
+  }
+
+  &__status {
+    position: absolute;
+    inset: 0;
+    color: #1A5683;
+    font-family: YouSheBiaoTiHei;
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.34px;
+    pointer-events: none;
+  }
+
+  &__placeholder {
+    position: absolute;
+    inset: 0;
+    color: rgba(190, 225, 255, 0.55);
+    font-family: "Microsoft YaHei";
+    font-size: 12px;
+    line-height: 16px;
+    pointer-events: none;
   }
 }
 .machine-container.robot-container.new {
