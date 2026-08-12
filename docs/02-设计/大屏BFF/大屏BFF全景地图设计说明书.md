@@ -839,12 +839,14 @@ WebSocket：
 }
 ```
 
-临时桥接方案：在管理端暂不能推送标准任务事件时，由 control 服务订阅
-`eiop/v1/edge/+/tasks/progress` 和 `eiop/v1/edge/+/tasks/control-results`，
-并通过 `/ws/control` 转换推送为 `panorama.task.changed`。MQTT payload 中的
-`taskInstanceId` 为管理端下发给边缘端的任务实例 ID，边缘端上报时原样带回，
-control 服务将其映射为事件中的 `workflowInstanceId`；如 payload 未携带 `taskId`，
-事件仍会推送，但 `taskId` 为 `null`。
+当前任务桥接方案：本项目 control 服务不再直接订阅边缘任务进度和控制结果
+MQTT Topic，而是作为 STOMP 客户端连接同事的 `eiop-control-service:/ws/control`，
+固定订阅 `/topic/platform/realtime-events`。收到 `task.changed.v1` 且 `scopes`
+包含 `PLAN` 或 `EXECUTION` 时，向本地 `/ws/control` 推送
+`management.task.invalidated`。BFF 收到失效通知后防抖查询管理端任务计划与实例，
+比较任务快照并将变化项转换为现有 `panorama.task.changed` 结构。STOMP 仅负责
+通知“任务已变化”，任务状态、`workflowInstanceId` 和生命周期结果始终以管理端
+HTTP 查询结果为准。
 
 告警变化事件示例：
 

@@ -40,15 +40,13 @@ public class RobotMediaStatusSubscriber {
     private static final String INTERCOM_STATUS_TOPIC = "robot/+/media/video/intercom/status";
     private static final String CLIENT_STATUS_TOPIC = "robot/+/media/client/status";
     private static final String EDGE_DEVICE_STATUS_TOPIC = "eiop/v1/edge/+/status";
-    private static final String EDGE_TASK_PROGRESS_TOPIC = "eiop/v1/edge/+/tasks/progress";
-    private static final String EDGE_TASK_CONTROL_RESULTS_TOPIC = "eiop/v1/edge/+/tasks/control-results";
     private static final String CALL_INVITE_TOPIC = "robot/+/media/video/intercom/call/invite";
     private static final String CALL_CANCEL_TOPIC = "robot/+/media/video/intercom/call/cancel";
     private static final String[] STATUS_TOPICS = {
         STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
-        EDGE_DEVICE_STATUS_TOPIC, EDGE_TASK_PROGRESS_TOPIC, EDGE_TASK_CONTROL_RESULTS_TOPIC
+        EDGE_DEVICE_STATUS_TOPIC
     };
-    private static final int[] STATUS_QOS = {1, 1, 1, 1, 1, 1, 1, 0, 0};
+    private static final int[] STATUS_QOS = {1, 1, 1, 1, 1, 1, 1};
 
     private final ControlServiceProperties properties;
     private final ObjectMapper objectMapper;
@@ -58,7 +56,6 @@ public class RobotMediaStatusSubscriber {
     private final RobotRegistryService robotRegistryService;
     private final IntercomCallService intercomCallService;
     private final EdgeDeviceStatusHandler edgeDeviceStatusHandler;
-    private final EdgeTaskEventHandler edgeTaskEventHandler;
     private MqttClient client;
 
     /**
@@ -79,8 +76,7 @@ public class RobotMediaStatusSubscriber {
             EquipmentControlService equipmentControlService,
             RobotRegistryService robotRegistryService,
             IntercomCallService intercomCallService,
-            EdgeDeviceStatusHandler edgeDeviceStatusHandler,
-            EdgeTaskEventHandler edgeTaskEventHandler) {
+            EdgeDeviceStatusHandler edgeDeviceStatusHandler) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.mediaServiceClient = mediaServiceClient;
@@ -89,7 +85,6 @@ public class RobotMediaStatusSubscriber {
         this.robotRegistryService = robotRegistryService;
         this.intercomCallService = intercomCallService;
         this.edgeDeviceStatusHandler = edgeDeviceStatusHandler;
-        this.edgeTaskEventHandler = edgeTaskEventHandler;
     }
 
     /**
@@ -205,18 +200,6 @@ public class RobotMediaStatusSubscriber {
                 new String(message.getPayload(), StandardCharsets.UTF_8));
     }
 
-    private IMqttMessageListener edgeTaskProgressListener() {
-        return (topic, message) -> edgeTaskEventHandler.handleProgress(
-                topic,
-                new String(message.getPayload(), StandardCharsets.UTF_8));
-    }
-
-    private IMqttMessageListener edgeTaskControlResultListener() {
-        return (topic, message) -> edgeTaskEventHandler.handleControlResult(
-                topic,
-                new String(message.getPayload(), StandardCharsets.UTF_8));
-    }
-
     /**
      * 创建并连接 MQTT 客户端。
      *
@@ -278,10 +261,10 @@ public class RobotMediaStatusSubscriber {
                 STATUS_QOS,
                 new IMqttMessageListener[] {
                     statusListener(), statusListener(), intercomStatusListener(), clientStatusListener(), callInviteListener(), callCancelListener(),
-                    edgeDeviceStatusListener(), edgeTaskProgressListener(), edgeTaskControlResultListener()
+                    edgeDeviceStatusListener()
                 });
-        log.info("Subscribed media MQTT topics: {}, {}, {}, {}, {}, {}, {}, {}, {}",
+        log.info("Subscribed media MQTT topics: {}, {}, {}, {}, {}, {}, {}",
                 STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
-                EDGE_DEVICE_STATUS_TOPIC, EDGE_TASK_PROGRESS_TOPIC, EDGE_TASK_CONTROL_RESULTS_TOPIC);
+                EDGE_DEVICE_STATUS_TOPIC);
     }
 }

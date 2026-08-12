@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -651,7 +652,7 @@ public class PanoramaService {
         Map<String, Object> instance = taskInstanceResolver.instance(workflowInstanceId);
         Map<String, Object> replay = taskInstanceResolver.replay(workflowInstanceId);
         List<Map<String, Object>> deviceTaskInstances = taskInstanceResolver.deviceTaskInstances(workflowInstanceId);
-        String rawStatus = firstString(source, "executionStatus");
+        String rawStatus = taskPlanStatus(source, instance);
         String startTime = formatTime(value(
                 firstString(instance, "startedAt"),
                 firstString(source, "startedAt", "lastStartedAt", "startTime")));
@@ -664,8 +665,8 @@ public class PanoramaService {
                 "name", firstString(source, "planName", "workflowName", "name"),
                 "executionMode", firstValue(source, "executionMode"),
                 "expectedDurationSeconds", firstValue(source, "expectedDurationSeconds"),
-                "status", taskPlanStatusCode(rawStatus),
-                "statusName", taskPlanStatusName(rawStatus),
+                "status", taskStatusCode(rawStatus),
+                "statusName", taskStatusName(rawStatus),
                 "startTime", startTime,
                 "endTime", endTime,
                 "timeRange", timeRange(startTime, endTime, null),
@@ -1304,27 +1305,51 @@ public class PanoramaService {
         };
     }
 
-    private String taskPlanStatusCode(String source) {
+    private String taskStatusCode(String source) {
         if (source == null || source.isBlank()) {
             return null;
         }
         return switch (source.toUpperCase(Locale.ROOT)) {
-            case "WAITING" -> "waiting";
+            case "WAITING", "PENDING", "PREPARING" -> "waiting";
             case "RUNNING" -> "running";
+            case "PAUSING" -> "pausing";
             case "PAUSED" -> "paused";
+            case "RESUMING" -> "resuming";
+            case "TERMINATING" -> "terminating";
+            case "CONTROL_FAILED", "FAILED" -> "failed";
+            case "COMPLETED" -> "completed";
+            case "TERMINATED" -> "terminated";
             default -> null;
         };
     }
 
-    private String taskPlanStatusName(String source) {
-        String status = taskPlanStatusCode(source);
+    private String taskPlanStatus(Map<String, Object> source, Map<String, Object> instance) {
+        String activeStatus = firstString(source, "activeWorkflowInstanceStatus");
+        if (activeStatus != null && Set.of(
+                "PREPARING", "RUNNING", "PAUSING", "PAUSED", "RESUMING", "TERMINATING", "CONTROL_FAILED")
+                .contains(activeStatus.toUpperCase(Locale.ROOT))) {
+            return activeStatus;
+        }
+        return value(
+                firstString(source, "executionStatus"),
+                value(firstString(instance, "status"), firstString(source, "lastResultStatus")));
+    }
+
+    private String taskStatusName(String source) {
+        String status = taskStatusCode(source);
         if (status == null) {
             return null;
         }
         return switch (status) {
             case "waiting" -> "待执行";
             case "running" -> "执行中";
-            case "paused" -> "暂停中";
+            case "pausing" -> "暂停中";
+            case "paused" -> "已暂停";
+            case "resuming" -> "恢复中";
+            case "terminating" -> "终止中";
+            case "failed" -> "执行失败";
+            case "completed" -> "已完成";
+            case "terminated" -> "已终止";
             default -> null;
         };
     }

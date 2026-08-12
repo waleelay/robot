@@ -66,6 +66,7 @@ class BigscreenWebSocketBridgeHandlerTest {
                 properties,
                 mock(PanoramaWebSocketEventAdapter.class),
                 mock(PanoramaStatsEventRefresher.class),
+                mock(PanoramaTaskEventRefresher.class),
                 mock(AuthenticatedRequestHeaders.class));
         WebSocketSession browserSession = browserSession(
                 new HttpHeaders(),
@@ -86,6 +87,7 @@ class BigscreenWebSocketBridgeHandlerTest {
                 mock(CenterServiceProperties.class),
                 mock(PanoramaWebSocketEventAdapter.class),
                 mock(PanoramaStatsEventRefresher.class),
+                mock(PanoramaTaskEventRefresher.class),
                 mock(AuthenticatedRequestHeaders.class));
     }
 

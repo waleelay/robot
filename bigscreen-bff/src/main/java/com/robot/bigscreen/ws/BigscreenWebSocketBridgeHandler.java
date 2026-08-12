@@ -36,6 +36,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private final CenterServiceProperties properties;
     private final PanoramaWebSocketEventAdapter eventAdapter;
     private final PanoramaStatsEventRefresher statsEventRefresher;
+    private final PanoramaTaskEventRefresher taskEventRefresher;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final StandardWebSocketClient webSocketClient = new StandardWebSocketClient();
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
@@ -45,10 +46,12 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             CenterServiceProperties properties,
             PanoramaWebSocketEventAdapter eventAdapter,
             PanoramaStatsEventRefresher statsEventRefresher,
+            PanoramaTaskEventRefresher taskEventRefresher,
             AuthenticatedRequestHeaders authenticatedRequestHeaders) {
         this.properties = properties;
         this.eventAdapter = eventAdapter;
         this.statsEventRefresher = statsEventRefresher;
+        this.taskEventRefresher = taskEventRefresher;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
     }
 
@@ -85,6 +88,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         browserSessions.remove(browserSession);
         eventAdapter.removeSession(browserSession.getId());
         statsEventRefresher.remove(browserSession.getId());
+        taskEventRefresher.remove(browserSession.getId());
         WebSocketSession centerSession = centerSessions.remove(browserSession.getId());
         if (centerSession != null && centerSession.isOpen()) {
             centerSession.close(status);
@@ -177,12 +181,20 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             if (browserSession.isOpen()) {
                 String centerPayload = message.getPayload();
                 boolean refreshStats = eventAdapter.requiresStatsRefresh(browserSession.getId(), centerPayload);
+                boolean refreshTasks = eventAdapter.isTaskInvalidation(centerPayload);
                 for (String payload : eventAdapter.adapt(centerPayload)) {
                     browserSession.sendMessage(new TextMessage(payload));
                 }
                 if (refreshStats) {
                     Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
                     statsEventRefresher.requestRefresh(
+                            browserSession.getId(),
+                            authentication,
+                            payload -> sendToBrowserSession(browserSession, payload));
+                }
+                if (refreshTasks) {
+                    Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
+                    taskEventRefresher.requestRefresh(
                             browserSession.getId(),
                             authentication,
                             payload -> sendToBrowserSession(browserSession, payload));

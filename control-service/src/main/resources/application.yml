@@ -31,6 +31,16 @@ control:
     fixed-camera-gateway-id: ${FIXED_CAMERA_GATEWAY_ID:default}
     # 是否启用 MQTT 状态订阅与指令下发。
     enabled: ${MQTT_ENABLED:true}
+  center-stomp:
+    # 同事 Control 的 STOMP 端点。任务实时状态以 Management HTTP 查询结果为准。
+    enabled: ${CENTER_STOMP_ENABLED:false}
+    websocket-url: ${CENTER_STOMP_WS_URL:ws://host.docker.internal:8867/ws/control}
+    topic: ${CENTER_STOMP_TOPIC:/topic/platform/realtime-events}
+    access-token: ${CENTER_STOMP_ACCESS_TOKEN:}
+    token-url: ${CENTER_STOMP_TOKEN_URL:}
+    client-id: ${CENTER_STOMP_CLIENT_ID:}
+    client-secret: ${CENTER_STOMP_CLIENT_SECRET:}
+    reconnect-delay-ms: ${CENTER_STOMP_RECONNECT_DELAY_MS:5000}
   robot:
     # 机器人心跳超时时间，单位秒。
     heartbeat-timeout-seconds: ${ROBOT_HEARTBEAT_TIMEOUT_SECONDS:15}

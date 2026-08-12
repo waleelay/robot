@@ -15,6 +15,7 @@ public class ControlServiceProperties {
     private Mqtt mqtt = new Mqtt();
     private Robot robot = new Robot();
     private Session session = new Session();
+    private CenterStomp centerStomp = new CenterStomp();
 
     /**
      * 返回认证配置。
@@ -50,6 +51,14 @@ public class ControlServiceProperties {
      */
     public void setMqtt(Mqtt mqtt) {
         this.mqtt = mqtt;
+    }
+
+    public CenterStomp getCenterStomp() {
+        return centerStomp;
+    }
+
+    public void setCenterStomp(CenterStomp centerStomp) {
+        this.centerStomp = centerStomp;
     }
 
     /**
@@ -255,6 +264,34 @@ public class ControlServiceProperties {
         public void setHeartbeatTimeoutSeconds(long heartbeatTimeoutSeconds) {
             this.heartbeatTimeoutSeconds = heartbeatTimeoutSeconds;
         }
+    }
+
+    public static class CenterStomp {
+        private boolean enabled;
+        private String websocketUrl = "ws://localhost:8867/ws/control";
+        private String topic = "/topic/platform/realtime-events";
+        private String accessToken;
+        private String tokenUrl;
+        private String clientId;
+        private String clientSecret;
+        private long reconnectDelayMs = 5000;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getWebsocketUrl() { return websocketUrl; }
+        public void setWebsocketUrl(String websocketUrl) { this.websocketUrl = websocketUrl; }
+        public String getTopic() { return topic; }
+        public void setTopic(String topic) { this.topic = topic; }
+        public String getAccessToken() { return accessToken; }
+        public void setAccessToken(String accessToken) { this.accessToken = accessToken; }
+        public String getTokenUrl() { return tokenUrl; }
+        public void setTokenUrl(String tokenUrl) { this.tokenUrl = tokenUrl; }
+        public String getClientId() { return clientId; }
+        public void setClientId(String clientId) { this.clientId = clientId; }
+        public String getClientSecret() { return clientSecret; }
+        public void setClientSecret(String clientSecret) { this.clientSecret = clientSecret; }
+        public long getReconnectDelayMs() { return reconnectDelayMs; }
+        public void setReconnectDelayMs(long reconnectDelayMs) { this.reconnectDelayMs = reconnectDelayMs; }
     }
 
     /**

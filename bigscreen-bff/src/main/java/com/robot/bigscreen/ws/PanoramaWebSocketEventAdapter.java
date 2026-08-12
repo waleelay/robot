@@ -25,6 +25,7 @@ public class PanoramaWebSocketEventAdapter {
     private static final String PANORAMA_DEVICE_LOCATION_CHANGED = "panorama.device.location.changed";
     private static final String PANORAMA_TASK_CHANGED = "panorama.task.changed";
     private static final String PANORAMA_ALARM_CHANGED = "panorama.alarm.changed";
+    private static final String MANAGEMENT_TASK_INVALIDATED = "management.task.invalidated";
     private static final Set<String> TASK_EVENTS = Set.of(
             "task.changed",
             "task.created",
@@ -84,6 +85,11 @@ public class PanoramaWebSocketEventAdapter {
             messages.add(writePanoramaAlarm(root, data));
         }
         return messages;
+    }
+
+    public boolean isTaskInvalidation(String centerPayload) {
+        JsonNode root = readTree(centerPayload);
+        return root != null && MANAGEMENT_TASK_INVALIDATED.equals(text(root, "event"));
     }
 
     private void appendRobotStateEvents(List<String> messages, JsonNode root, JsonNode data) {
@@ -294,7 +300,8 @@ public class PanoramaWebSocketEventAdapter {
             return false;
         }
         String event = text(root, "event");
-        if (TASK_EVENTS.contains(event) || ALARM_EVENTS.contains(event) || DEVICE_EVENTS.contains(event)) {
+        if (TASK_EVENTS.contains(event) || ALARM_EVENTS.contains(event) || DEVICE_EVENTS.contains(event)
+                || MANAGEMENT_TASK_INVALIDATED.equals(event)) {
             return true;
         }
         if (!ROBOT_STATE_EVENT.equals(event)) {

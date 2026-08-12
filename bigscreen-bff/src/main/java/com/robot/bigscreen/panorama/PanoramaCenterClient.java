@@ -106,7 +106,7 @@ public class PanoramaCenterClient {
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances")
                 .queryParam("pageNum", 1)
                 .queryParam("pageSize", 100)
-                .queryParam("includeRunning", true)
+                .queryParam("scope", "ALL")
                 .build(true)
                 .toUri();
         return records(uri);

@@ -20,6 +20,8 @@
 - 多合一喊话设备使用 `MULTI_FUNCTION_BROADCASTER`，命令发布到 `robot/{robotId}/control/multi-function/command`。音频文件由通用文件服务保存到 MinIO，Control 只下发 `fileId` 和文件元数据；机器人客户端从 Media Service 下载后调用局域网内厂商 `/upload-file`。
 - 管理端设备数据缓存 30 秒；刷新失败时使用最近一次成功快照。
 - 每条 `robot/{robotId}/media/client/status` 消息先完成合并，再统一发布一次 `robot.state`。
+- 任务计划与实例变化不再直接消费边缘任务 MQTT Topic；Control 通过一条上游 STOMP
+  连接订阅同事 Control 的 `/topic/platform/realtime-events`，再由 BFF 查询管理端权威快照。
 
 ## 启动与构建
 
@@ -40,6 +42,12 @@ CONTROL_FILE_UPLOAD_MAX_REQUEST_SIZE=21MB
 MQTT_BROKER_URL=tcp://192.168.124.77:1883
 MQTT_CLIENT_ID=robot-control-service-main
 MQTT_ENABLED=true
+CENTER_STOMP_ENABLED=false
+CENTER_STOMP_WS_URL=ws://host.docker.internal:8867/ws/control
+CENTER_STOMP_TOPIC=/topic/platform/realtime-events
+CENTER_STOMP_TOKEN_URL=
+CENTER_STOMP_CLIENT_ID=
+CENTER_STOMP_CLIENT_SECRET=
 ```
 
 本地不连接 MQTT 时：
