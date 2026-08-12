@@ -22,13 +22,13 @@
 
 ## 2. 部署与请求链路
 
-### 2.1 当前本地部署
+### 2.1 当前部署边界
 
 当前本地只需要一个 Nginx，作为浏览器入口网关：
 
 ```text
 浏览器
-  -> https://192.168.124.77:4443
+  -> https://<gateway-host>:<https-port>
   -> Nginx
 
 Nginx /                 -> frontend/dist
@@ -47,16 +47,16 @@ bigscreen-bff:8090
 BFF 到 Control Service 与 Media Service 不建议走 Nginx，应直接使用内部 HTTP 地址：
 
 ```text
-CENTER_MANAGE_BASE_URL=http://localhost:8088
-CENTER_CONTROL_BASE_URL=http://localhost:8082
-CENTER_MEDIA_BASE_URL=http://localhost:8088
-CENTER_CONTROL_WS_URL=ws://localhost:8082/ws/control
+CENTER_MANAGE_BASE_URL=http://<management-host>:<port>
+CENTER_CONTROL_BASE_URL=http://<control-host>:8082
+CENTER_MEDIA_BASE_URL=http://<media-host>:8088
+CENTER_CONTROL_WS_URL=ws://<control-host>:8082/ws/control
 ```
 
 不要让 BFF 再调用：
 
 ```text
-https://192.168.124.77:4443/api/...
+https://<gateway-host>:<https-port>/api/...
 ```
 
 否则链路会变成：
@@ -149,9 +149,9 @@ BFF 不负责：
 
 ## 5. 全景地图接口设计
 
-### 5.1 第一版接口
+### 5.1 当前接口
 
-第一版先只开发 BFF 接口，不改前端。数据可以 mock 返回，后续替换为中心端聚合。
+当前 BFF 已实现以下聚合接口，并从 Management、旧版实时状态服务和 Control 内存注册表组合数据。REST 不使用整套 mock 快照兜底；字段没有权威来源时按字段类型返回 `null` 或空数组。仅 WebSocket 对三个明确的演示机器人保留硬编码位置，详见 5.7 节。
 
 ```text
 GET /api/bigscreen/panorama/overview
@@ -459,7 +459,7 @@ GET /api/bigscreen/panorama/overview
 | `map[].points` | 每张地图的点位集合 | 按 `map[].id/mapId` 请求 `/api/v1/management/maps/{mapId}/points`；查询失败或无点位时返回 `[]` |
 | `map[].devices` | 当前地图的设备集合，对象结构同 `devices[]` | 按 `devices[].robotId` 匹配 `tasks[].equipmentList[].robotId`，将第一条非空 `tasks[].mapId` 填入 `devices[].location.mapId` 后与地图 `id` 匹配；无匹配设备时返回 `[]` |
 
-当前 mock 的 3 台机器人定位：
+历史 REST mock 点位表不再是当前 REST 数据源。当前代码只在 WebSocket `robot.state` 不带定位时，对 `test111`、`SN005`、`SN006` 生成演示位置；以下旧表不得作为当前接口期望：
 
 | robotId | lat | lng | x | y | z |
 |---|---:|---:|---:|---:|---:|
@@ -757,11 +757,12 @@ WebSocket 增量事件
 WebSocket：
 
 ```text
-当前 mock 联调阶段：WS /ws/control
-后续路径收口阶段：WS /ws/bigscreen
+/ws/control
+/ws/media
+/ws/bigscreen
 ```
 
-当前边界：BFF 先模拟推送所有全景地图动态事件数据，并推送到前端已连接的 `/ws/control`。前端暂不做任何改动，只会收到并打印 `panorama.*` 事件；后续再将消费逻辑接到全景地图页面状态。
+三个路径当前都由同一 BFF Handler 桥接 Control `/ws/control`。BFF 原样返回上游消息，并对设备、任务、告警变化派生 `panorama.*`；没有独立“模拟所有动态事件”调度器。
 
 统一事件结构：
 

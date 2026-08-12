@@ -25,7 +25,7 @@
 Python 客户端默认配置：
 
 ```text
-MEDIA_SERVICE_URL=http://175.155.35.79:8088
+MEDIA_SERVICE_URL=http://<media-host>:8088
 RECORDING_UPLOAD_ENABLED=true
 RECORDING_DIRECTORY=./recordings
 RECORDING_MANIFEST_PATH=./recording-upload-manifest.json

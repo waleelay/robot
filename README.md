@@ -1,554 +1,186 @@
 # robot-mediaserver
 
-具身智能装备集成管理平台媒体服务模块。当前工程覆盖实时视频链路的服务端、调试前端、机器人侧云接入客户端骨架和开发流程。
+具身智能装备集成管理平台的媒体与控制相关单仓库。仓库包含大屏接入层、控制编排、媒体服务、机器人侧客户端和两个前端；浏览器通过 LiveKit 直接收发媒体流，BFF 和 Control 只处理鉴权、业务编排、状态与信令。
 
-## 架构边界
-
-```text
-浏览器/Vue2 调试台
-  -> Nginx HTTPS/WSS 入口
-  -> Bigscreen BFF REST/WebSocket
-  -> Control Service / Media Service REST/WebSocket
-  -> EMQX 下发机器人媒体指令
-  -> 机器人侧 Go 云接入客户端
-  -> RTSP 双光云台
-  -> LiveKit 发布 Track
-  -> 浏览器订阅 LiveKit Room
-```
-
-核心边界：
+## 1. 当前架构
 
 ```text
-Bigscreen BFF: 面向大屏前端的 REST/WebSocket 入口，代理/聚合中心端接口，不承载媒体流
-Control Service: `/api/control/**`、`/ws/control`、机器人在线/设备状态、MQTT 指令与状态桥接
-Media Service: 视频会话、LiveKit Token/Room、通用文件上传/播放、媒体状态推送
-Robot Client: RTSP 探测、可见光/热成像源选择、LiveKit 发布、MQTT ACK/状态上报、本地文件上传
-LiveKit: 实时媒体转发、多人订阅、Room/Track 生命周期事件
-Frontend: 创建会话、订阅 Track、即时抓拍上传、录像/图片/文件展示、调试状态查看
-MinIO: 视频、图片、日志、配置和任务产物对象存储
-MySQL: 会话、观看者、Track、媒体文件、视频转码信息
-Redis/Elasticsearch: 预留缓存、检索和统计扩展
+浏览器 / robot-ui / frontend
+  -> Bigscreen BFF :8090（JWT 验证、REST 代理与聚合、WebSocket 桥接）
+  -> Control Service :8082（控制会话、设备状态、MQTT 与媒体编排）
+  -> Media Service :8088（视频会话、LiveKit、文件、TTS）
+
+Control Service -> Management Service（设备档案、能力、固定摄像头）
+Control Service <-> EMQX <-> 机器人客户端 / 固定摄像头 Gateway
+Media Service -> LiveKit / MinIO / MySQL
+浏览器 <-> LiveKit（WebRTC 媒体流不经过 BFF 或 Control）
 ```
 
-## 工程结构
+服务职责边界：
+
+| 模块 | 当前职责 |
+| --- | --- |
+| `bigscreen-bff/` | 大屏统一认证入口、下游代理、全景聚合、统计报告、WebSocket 事件适配 |
+| `control-service/` | `/api/control/**`、控制租约、设备命令、机器人状态、固定摄像头、MQTT、视频编排 |
+| `backend/` | 视频会话与对讲、LiveKit Room/Token/Egress、通用文件、HLS、TTS |
+| `client/` | Go 机器人客户端与固定摄像头 Gateway；RTSP、LiveKit、MQTT、设备驱动和文件上传 |
+| `python-client/` | Python 机器人客户端，能力边界与 Go 客户端保持一致 |
+| `robot-ui/` | 指挥中心前端 |
+| `frontend/` | 实时视频和文件能力调试前端 |
+
+Media Service 不发布 MQTT；Control Service 不保存媒体文件或承载媒体流；BFF 不复制 Control/Media 的核心业务。
+
+## 2. 工程结构
 
 ```text
-backend/   Java 17 + Spring Boot 3 媒体服务
-control-service/ Java 17 + Spring Boot 3 控制服务
-bigscreen-bff/ Java 17 + Spring Boot 3 大屏 BFF，面向前端代理中心端接口
-frontend/  Vue2 + Element UI 实时视频调试台
-client/    Go 机器人侧云接入客户端骨架
-docs/      需求、设计、接口协议、测试与验收文档
-tools/     设计文档生成脚本
+backend/          Java 17 + Spring Boot 3 Media Service
+control-service/  Java 17 + Spring Boot 3 Control Service
+bigscreen-bff/    Java 17 + Spring Boot 3 Bigscreen BFF
+client/           Go 机器人客户端及固定摄像头 Gateway
+python-client/    Python 机器人客户端
+frontend/         Vue 2 实时视频调试前端
+robot-ui/         Vue 指挥中心前端
+deploy/           Docker、Nginx 与离线部署资源
+scripts/          仓库级开发检查脚本
+docs/             需求、设计、接口与协议、测试与验收
 ```
 
-## 项目文档
+各模块的代码结构、配置和启动方式放在模块自己的 README；文档统一入口为 [docs/README.md](docs/README.md)，Java 服务接口入口为 [Java 服务接口总览](docs/03-接口与协议/Java服务接口总览.md)。
 
-项目文档按需求、设计、接口与协议、测试与验收四类维护，统一入口见 [docs/README.md](docs/README.md)。代码结构、配置、启动和构建说明分别维护在各独立模块的 `README.md` 中。
-
-## 环境依赖
+## 3. 环境要求
 
 ```text
 JDK 17
 Maven 3.9+
-Node.js 18+
-npm 9+
-Go 1.24.4+
-FFmpeg/ffprobe
-libopus（Python 客户端多合一实时喊话/收音）
-Docker Desktop
+Node.js 18+ / npm 9+
+Go 1.24+
+Python 3
+Docker
 MySQL 8
-Redis 7
 EMQX 5
-LiveKit Server
+LiveKit Server / Egress
 MinIO
-Elasticsearch
+FFmpeg / ffprobe
 ```
 
-当前已使用的本地容器名称：
+Redis 和 Elasticsearch 已配置依赖，但当前 Java 业务主链路不以它们作为权威数据源。
 
-```text
-mysql
-redis
-emqx
-livekit
-minio
-elasticsearch
-```
+## 4. 本地启动
 
-## 环境变量
+建议顺序：
 
-媒体后端 `backend`：
+1. 启动 MySQL、EMQX、LiveKit、MinIO 等依赖。
+2. 启动 `backend`，默认端口 `8088`。
+3. 启动 `control-service`，默认端口 `8082`。
+4. 启动 `bigscreen-bff`，默认端口 `8090`。
+5. 启动机器人客户端或固定摄像头 Gateway。
+6. 启动 `robot-ui`、`frontend`，或通过 Nginx 访问构建产物。
+
+Java 服务：
 
 ```bash
-export MYSQL_URL='jdbc:mysql://localhost:3306/robot_media?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai'
-export MYSQL_USERNAME='root'
-export MYSQL_PASSWORD='root'
-export REDIS_HOST='localhost'
-export REDIS_PORT='6379'
-export LIVEKIT_URL='ws://localhost:7880'
-export LIVEKIT_API_KEY='devkey'
-export LIVEKIT_API_SECRET='dev-secret-dev-secret-dev-secret-32'
-export LIVEKIT_ROOM_API_ENABLED='true'
-export LIVEKIT_ROOM_EMPTY_TIMEOUT_SECONDS='60'
-export LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS='20'
-export MINIO_ENABLED='true'
-# 机器人直传时应配置为机器人可访问的外部 IP 或域名，预签名 uploadUrl 会使用该地址。
-export MINIO_ENDPOINT='http://localhost:9000'
-export MINIO_ACCESS_KEY='eiopminio'
-export MINIO_SECRET_KEY='eiopminio123'
-export MINIO_BUCKET='robot-media'
-export MEDIA_FILE_ENABLED='true'
-export MEDIA_FILE_SIMPLE_UPLOAD_MAX_BYTES='20971520'
-export MEDIA_FILE_MAX_FILE_SIZE_BYTES='21474836480'
-export MEDIA_FILE_PART_SIZE_BYTES='16777216'
-export MEDIA_FILE_MAX_PART_URLS_PER_REQUEST='16'
-export MEDIA_FILE_INITIAL_PART_URL_COUNT='16'
-export MEDIA_FILE_UPLOAD_URL_TTL_SECONDS='900'
-export MEDIA_FILE_MAX_ACTIVE_UPLOADS_PER_ROBOT='20'
-export MEDIA_FILE_MAX_ACTIVE_UPLOADS_GLOBAL='500'
-export MEDIA_FILE_CLEANUP_DELAY_MS='60000'
-export MEDIA_FILE_HLS_WORKER_CONCURRENCY='2'
-export MEDIA_FILE_RETENTION_DAYS='30'
+(cd backend && mvn spring-boot:run)
+(cd control-service && mvn spring-boot:run)
+(cd bigscreen-bff && mvn spring-boot:run)
 ```
 
-控制服务 `control-service`：
+Go 客户端的实时音频路径不需要 `opusfile` 文件解码库，本地验证使用：
 
 ```bash
-export CONTROL_SERVER_PORT='8082'
-export MEDIA_SERVICE_BASE_URL='http://localhost:8088'
-export CENTER_MANAGE_BASE_URL='http://localhost:8866'
-export MQTT_ENABLED='true'
-export MQTT_BROKER_URL='tcp://localhost:1883'
-export MQTT_USERNAME=''
-export MQTT_PASSWORD=''
-export MQTT_CLIENT_ID='robot-control-service-main'
-export ROBOT_HEARTBEAT_TIMEOUT_SECONDS='15'
-export ROBOT_HEARTBEAT_SWEEP_DELAY_MS='5000'
+(cd client && go test -tags nolibopusfile ./...)
+(cd client && go build -tags nolibopusfile -o robot-media-client ./cmd/robot-media-client)
 ```
 
-前端：
+完整配置分别见 [Media Service README](backend/README.md)、[Control Service README](control-service/README.md) 和 [Bigscreen BFF README](bigscreen-bff/README.md)。生产环境必须覆盖示例密钥、对象存储凭据、JWT Issuer、服务地址和允许跨域来源，不能直接使用仓库中的开发默认值。
 
-```bash
-export VUE_APP_API_BASE=''
-export VUE_APP_WS_URL=''
-```
+## 5. 生产鉴权与访问边界
 
-机器人侧客户端：
+生产 REST/WebSocket 请求应先进入 Bigscreen BFF。BFF 验证 JWT 后覆盖 `X-User-Id`、`X-Org-Id`、`X-Roles` 并传给下游；Control 和 Media 当前信任这些受控 Header，自身不独立验签 JWT，不能直接暴露到不可信网络。
 
-```bash
-export ROBOT_ID='test111'
-export ROBOT_CLIENT_ID='robot-media-client-test111'
-export ROBOT_BATTERY='82'
-export MQTT_BROKER_URL='tcp://localhost:1883'
-export MQTT_USERNAME=''
-export MQTT_PASSWORD=''
-export RTSP_VISIBLE_SUB='rtsp://192.168.124.204:8554/camera01'
-export RTSP_VISIBLE_MAIN='rtsp://192.168.124.204:8554/camera01'
-export RTSP_THERMAL_SUB='rtsp://192.168.124.204:8554/camera01'
-export RTSP_THERMAL_MAIN='rtsp://192.168.124.204:8554/camera01'
-export FFPROBE_PATH='ffprobe'
-export PROBE_TIMEOUT_MS='8000'
-export PUBLISHER_CMD=''
-export GSTREAMER_PUBLISHER_PATH='gstreamer-publisher'
-export GSTREAMER_PIPELINE='rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1'
-export GST_LAUNCH_PATH='gst-launch-1.0'
-export AUDIO_CAPTURE_PIPELINE='autoaudiosrc ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! fdsink fd=1'
-export AUDIO_PLAYBACK_PIPELINE='fdsrc fd=0 ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! audioconvert ! audioresample ! autoaudiosink'
-export CAMERA_CAMERA01_GROUP_TYPE='dual_gimbal'
-export CAMERA_CAMERA02_GROUP_TYPE='body'
-export CAMERA_CAMERA03_GROUP_TYPE='arm'
-export MULTI_FUNCTION_ENABLED='false'
-export MULTI_FUNCTION_DEVICE_ID='broadcaster-001'
-export MULTI_FUNCTION_HOST='192.168.1.27'
-export MULTI_FUNCTION_CONTROL_PORT='8519'
-export MULTI_FUNCTION_TILT_PORT='12345'
-export MULTI_FUNCTION_HTTP_PORT='8222'
-```
-
-`ROBOT_BATTERY` 为 `0-100` 的电量百分比。`CAMERA_<CAMERA_ID>_GROUP_TYPE` 支持 `body`（本体）、`dual_gimbal`（双光云台）和 `arm`（机械臂）。
-
-`LIVEKIT_URL` 用于后端和机器人客户端连接 LiveKit。前端在 HTTPS 入口下会自动改用同源 `wss://<当前主机>/livekit`；本机 HTTP 调试仍使用接口返回的 `LIVEKIT_URL`。
-
-`PUBLISHER_CMD` 支持占位符：
-
-```text
-{rtsp}
-{livekitUrl}
-{token}
-{room}
-{track}
-```
-
-## 启动顺序
-
-1. 启动 Docker 中间件。
-2. 确认 MySQL 库 `robot_media` 已存在。
-3. 启动媒体后端 `backend`，默认端口 `8088`。
-4. 启动控制服务 `control-service`，默认端口 `8082`。
-5. 启动大屏 BFF，默认端口 `8090`。
-6. 启动机器人侧客户端。
-7. 启动前端调试台或通过 Nginx 访问构建产物。
-8. 在前端创建实时视频会话。
-9. 检查 MQTT ACK/status、WebSocket 事件、LiveKit Track、文件上传与抓拍结果。
-
-## 局域网 HTTPS 通话
-
-浏览器在非本机地址使用麦克风必须处于安全上下文。通过局域网 IP 访问时，使用 Nginx 提供 HTTPS、业务 WebSocket 的 WSS 代理，以及 LiveKit 的 WSS 信令入口。
-
-示例以服务主机地址 `192.168.124.77` 为例：
-
-```bash
-cd frontend
-npm run build
-
-cd ..
-sh deploy/nginx/generate-lan-cert.sh 192.168.124.77
-```
-
-脚本生成 `deploy/nginx/certs/server.crt` 后，将它安装为每台访问终端的受信任证书。证书必须包含实际使用的局域网 IP，否则浏览器不会允许麦克风权限。
-
-媒体后端启动前配置 LiveKit 内部地址，控制服务启动前配置 Media Service 内部地址：
-
-```bash
-export LIVEKIT_URL='ws://192.168.124.77:7880'
-export MEDIA_SERVICE_BASE_URL='http://localhost:8088'
-export CENTER_MANAGE_BASE_URL='http://localhost:8866'
-```
-
-当前 Control 与 Media 已拆为同级独立服务。`control-service` 的 `MEDIA_SERVICE_BASE_URL` 必须指向 Media Service 内部 HTTP 地址，`CENTER_MANAGE_BASE_URL` 必须指向 Management Service 内部 HTTP 地址；都不要配置为 Nginx 的 `https://<lan-ip>:4443` 浏览器入口。
-
-多合一音频先通过通用文件接口保存到 MinIO，Control Service 再通过 MQTT 下发
-`fileId`、文件名和大小。机器人客户端使用 `MEDIA_SERVICE_URL` 从 Media Service
-下载完整文件，随后访问机器人局域网内的厂商 `/upload-file`。
-
-大屏 BFF 默认监听 `8090`，并通过内部地址访问 Control 与 Media；本地开发时不要让 BFF 再绕回 Nginx：
-
-```bash
-export CENTER_MANAGE_BASE_URL='http://localhost:8088'
-export CENTER_CONTROL_BASE_URL='http://localhost:8082'
-export CENTER_MEDIA_BASE_URL='http://localhost:8088'
-export CENTER_CONTROL_WS_URL='ws://localhost:8082/ws/control'
-
-cd bigscreen-bff
-mvn spring-boot:run
-```
-
-在 macOS Docker Desktop 上启动 Nginx：
-
-```bash
-docker run --rm --name robot-mediaserver-nginx \
-  -p 80:80 -p 4443:4443 \
-  -v "$PWD/deploy/nginx/robot-mediaserver.conf:/etc/nginx/conf.d/default.conf:ro" \
-  -v "$PWD/deploy/nginx/certs:/etc/nginx/certs:ro" \
-  -v "$PWD/frontend/dist:/usr/share/nginx/html/robot-mediaserver:ro" \
-  nginx:alpine
-```
-
-访问入口：
-
-```text
-页面/API:        https://192.168.124.77:4443
-业务 WebSocket:  wss://192.168.124.77:4443/ws/control
-大屏 WebSocket:  wss://192.168.124.77:4443/ws/bigscreen
-LiveKit 信令:    wss://192.168.124.77:4443/livekit
-```
-
-Nginx 配置默认通过 `host.docker.internal` 将 `/api/*`、`/ws/control`、`/ws/bigscreen` 转发到主机上的 `8090` 大屏 BFF，将 `/livekit/*` 转发到 `7880` LiveKit。BFF 再通过 `CENTER_*_BASE_URL` 访问 Control `8082` 与 Media `8088`，服务端到服务端链路不经过 Nginx。若 Nginx、BFF、Control、Media 和 LiveKit 位于同一 Docker 网络，可将 [deploy/nginx/robot-mediaserver.conf](deploy/nginx/robot-mediaserver.conf) 中的 upstream 改为对应容器服务名。
-
-前端在 HTTPS 页面中自动使用当前页面主机和端口下的 `/livekit` 公开前缀，因此通过 `:4443` 打开页面时会连接 `wss://<lan-ip>:4443/livekit`。LiveKit Web SDK 会在该地址后请求 `/rtc` 或 `/rtc/v1`，Nginx 会去除前缀后转发到 LiveKit。LiveKit 的 WebRTC 媒体端口仍需在局域网中可达；Nginx 只终止 HTTPS/WSS，不替代 LiveKit 的 UDP/TCP 媒体传输配置。
-
-## 后端开发
-
-启动：
-
-```bash
-cd backend
-mvn spring-boot:run
-```
-
-构建：
-
-```bash
-cd backend
-mvn -q -DskipTests package
-```
-
-Mock 请求头：
+开发环境可使用以下 Header 直连下游：
 
 ```http
 X-User-Id: u1001
 X-Org-Id: org001
-X-Roles: MEDIA_VIEWER,MEDIA_OPERATOR
+X-Roles: MEDIA_VIEWER,MEDIA_OPERATOR,EQUIPMENT_OPERATOR
+X-Client-Id: web-1
 ```
 
-主要接口：
+Header 缺失时 Control 和 Media 会启用开发默认身份，该行为不是生产匿名授权。完整规则见 [Java 服务接口通用约定](docs/03-接口与协议/公共约定/Java服务接口通用约定.md)。
+
+## 6. 当前核心能力
+
+- 机器人摄像头和固定摄像头视频会话创建、复用、恢复、切换、停止与视频墙。
+- LiveKit viewer/publisher Token、Track 状态、语音对讲与 Egress 手动录像。
+- 机器人排他控制租约、设备能力校验、通用设备命令和多合一设备控制。
+- 固定摄像头管理端档案校验、主/子码流选择及 Gateway MQTT 编排。
+- 机器人在线/设备状态合并、WebSocket 广播和任务失效通知。
+- 通用文件简单上传、分片直传、批量删除、下载、HLS 转码和播放。
+- Media OpenTTS 生成/二进制广播，以及多合一设备文本 TTS 命令。
+- 大屏设备、任务、告警聚合，业务白名单代理和本地 PDF 统计报告。
+
+当前代码没有媒体源 CRUD、独立 RTSP 探测 REST API、LiveKit Webhook Controller 或服务端 Snapshot Worker。抓拍由前端从 LiveKit Track 截帧，再按普通 `IMAGE` 文件上传；LiveKit Track 状态以机器人/Control 状态上报为准。
+
+## 7. 通用文件与前端抓拍
+
+前端抓拍是通用文件流程，不存在视频会话专用抓拍 API：
 
 ```text
-POST /internal/media/video-sessions
-GET  /internal/media/video-sessions
-GET  /internal/media/video-sessions/active
-GET  /internal/media/video-sessions/{sessionId}
-POST /internal/media/video-sessions/{sessionId}/token
-POST /internal/media/video-sessions/{sessionId}/stop
-POST /internal/media/video-sessions/{sessionId}/switch-channel
-GET  /internal/media/video-sessions/{sessionId}/tracks
-POST /api/media/files
-POST /api/media/files/multipart-uploads
-POST /api/media/files/multipart-uploads/{uploadId}/part-urls
-POST /api/media/files/multipart-uploads/{uploadId}/complete
-GET  /api/media/files
-GET  /api/media/files/{fileId}
-DELETE /api/media/files/{fileId}
-POST /api/media/files/extension-binding
-POST /api/media/files/{fileId}/play-url
-POST /api/media/files/{fileId}/download-url
-POST /api/internal/livekit/webhook
-WS   /ws/media
+前端从当前 LiveKit Track 截帧
+  -> POST /api/control/files
+  -> Control 代理到 Media
+  -> Media 写入 MinIO，并创建 READY 的 IMAGE 文件记录
+  -> 前端按 fileId 查询或预览
 ```
 
-媒体源接口：
-
-```text
-GET    /api/media/sources
-POST   /api/media/sources
-PUT    /api/media/sources/{sourceId}
-DELETE /api/media/sources/{sourceId}
-```
-
-## MQTT 协议
-
-服务端下发：
-
-```text
-robot/{robotId}/media/video/start
-robot/{robotId}/media/video/stop
-robot/{robotId}/media/video/switch-channel
-```
-
-客户端 ACK：
-
-```text
-robot/{robotId}/media/video/ack
-```
-
-```json
-{
-  "commandId": "cmd_xxx",
-  "sessionId": "vs_xxx",
-  "success": true,
-  "message": "accepted",
-  "timestamp": "2026-05-20T09:30:00+08:00"
-}
-```
-
-客户端状态：
-
-```text
-robot/{robotId}/media/video/status
-```
-
-```json
-{
-  "sessionId": "vs_xxx",
-  "status": "streaming",
-  "trackSid": "TR_xxx",
-  "trackName": "video.visible.sub",
-  "message": "track published",
-  "timestamp": "2026-05-20T09:30:05+08:00"
-}
-```
-
-支持状态：
-
-```text
-acked
-room_ready
-publishing
-streaming
-track_published
-interrupted
-stopped
-closed
-failed
-error
-```
-
-## 前端调试台
-
-启动：
+示例：
 
 ```bash
-cd frontend
-npm install
-npm run serve
+curl -X POST http://localhost:8090/api/control/files \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@snapshot.jpg;type=image/jpeg" \
+  -F "fileType=IMAGE" \
+  -F "robotId=robot-001" \
+  -F "deviceId=camera01" \
+  -F 'metadata={"type":"snapshot","channel":"visible","sessionId":"vs_xxx","trackSid":"TR_xxx"}'
 ```
 
-构建：
+`sourceType`、`sessionId`、`trackSid` 和备注不是简单上传的独立表单字段；需扩展的信息统一放入 `metadata` JSON。
 
-```bash
-cd frontend
-npm run build
-```
+## 8. 局域网 HTTPS/WSS
 
-默认开发地址：
+非 `localhost` 页面调用麦克风必须使用安全上下文。Nginx 可统一暴露页面、REST、业务 WebSocket 和 LiveKit WSS：
 
 ```text
-http://localhost:8090
+https://<host>:4443/          页面与 REST
+wss://<host>:4443/ws/control 业务 WebSocket
+wss://<host>:4443/ws/bigscreen 大屏兼容 WebSocket
+wss://<host>:4443/livekit     LiveKit 信令
 ```
 
-功能：
-
-```text
-创建实时视频会话
-保存媒体源 RTSP 配置
-连接业务 WebSocket
-订阅 LiveKit Room
-可见光/热成像切换
-停止观看
-查询活跃视频墙列表
-当前画面截帧抓拍并上传
-查询录像、抓拍图片和任务产物文件
-预览抓拍图片与播放 HLS 视频
-```
-
-## 机器人侧客户端
-
-音频对讲使用实时 PCM 管线，不需要 `opusfile` 文件解码库。本地执行和构建必须携带 `-tags nolibopusfile`。
-
-本地运行：
+Nginx 只代理 LiveKit 信令，不替代 LiveKit UDP/TCP 媒体端口。Control 的 `MEDIA_SERVICE_BASE_URL`、BFF 的 `CENTER_*_BASE_URL` 应指向内部服务地址，不要绕回浏览器 HTTPS 入口。局域网证书生成脚本为：
 
 ```bash
-cd client
-go mod download
-go run -tags nolibopusfile ./cmd/robot-media-client
+sh deploy/nginx/generate-lan-cert.sh <实际局域网IP>
 ```
 
-安装 LiveKit GStreamer Publisher：
+## 9. 验证
+
+按改动范围执行最小充分验证；仓库级快速检查：
 
 ```bash
-cd client
-sh scripts/install-gstreamer-publisher.sh
-export PATH="$HOME/.local/bin:$PATH"
+sh scripts/dev-check.sh
 ```
 
-构建：
+常用模块命令：
 
 ```bash
-cd client
-go build -tags nolibopusfile -o robot-media-client ./cmd/robot-media-client
+(cd backend && mvn test)
+(cd control-service && mvn test)
+(cd bigscreen-bff && mvn test)
+(cd python-client && python -m unittest discover -s tests)
+(cd frontend && npm run build)
+(cd robot-ui && npm run lint && npm run build:prod)
 ```
 
-Docker 构建：
-
-```bash
-cd client
-docker build -t robot-media-client:dev .
-```
-
-当前客户端实现：
-
-```text
-订阅 start/stop/switch-channel 指令
-订阅视频房间内的 intercom start/stop 指令
-解析通道和清晰度
-使用 ffprobe 探测 RTSP
-发布 ACK/status
-默认通过 gstreamer-publisher 作为 LiveKit Publisher 发布 Track
-可通过 PUBLISHER_CMD 覆盖发布命令
-通过内置 LiveKit 音频模块发布/订阅对讲 Track
-通过 GStreamer 设备管线采集麦克风与播放扬声器 PCM
-```
-
-## LiveKit Webhook
-
-配置地址：
-
-```text
-POST /api/internal/livekit/webhook
-```
-
-已处理事件：
-
-```text
-track_published      -> STREAMING
-track_unpublished    -> INTERRUPTED
-participant_left     -> robot participant 离开时 INTERRUPTED
-room_finished        -> CLOSED
-```
-
-## 通用文件与抓拍流程
-
-```text
-前端从正在播放的 LiveKit Track 截当前帧
-前端以 multipart/form-data 调用通用文件单接口上传 JPEG
-BFF/Control Server 转发到 Media Service
-服务端创建 IMAGE 文件记录并直接写入 MinIO
-服务端写入 READY 状态
-前端提示“抓拍已保存”，点击后按 fileId 查看图片
-```
-
-小文件上传接口：
-
-```http
-POST /api/control/files
-```
-
-```text
-fileType=IMAGE
-sourceType=SNAPSHOT
-robotId=test111
-deviceId=camera01
-sessionId=vs_xxx
-trackSid=TR_xxx
-remark=云台-可见光 手动抓拍
-file=@snapshot.jpg
-```
-
-对象归档路径由服务端统一生成：
-
-```text
-files/{orgId}/{fileType}/{yyyy}/{MM}/{dd}/{fileId}/original/{filename}
-```
-
-查询、预览和播放：
-
-```http
-GET  /api/control/files?fileType=IMAGE&status=READY&page=0&size=20
-GET  /api/control/files/{fileId}/content
-POST /api/control/files/{fileId}/play-url
-GET  /api/control/files/{fileId}/hls/{objectName}
-```
-
-## 验证命令
-
-```bash
-cd backend
-mvn -q -DskipTests package
-```
-
-```bash
-cd frontend
-npm run build
-```
-
-```bash
-ffprobe -v error -rtsp_transport tcp -select_streams v:0 -show_entries stream=codec_name,width,height -of json 'rtsp://192.168.124.204:8554/camera01'
-```
-
-```bash
-cd client
-go build -tags nolibopusfile -o robot-media-client ./cmd/robot-media-client
-```
-
-## 当前开发状态
-
-```text
-服务端实时视频链路已实现
-Vue2 调试前端已实现
-机器人侧 Go 客户端已实现 MQTT/RTSP/GStreamer LiveKit Publisher 闭环
-媒体源配置管理已实现
-Snapshot Worker 已实现 ffmpeg 截帧和 MinIO 入库
-Webhook Token 校验已实现
-Nginx HTTPS/WSS 配置已补充
-```
+接口、事件载荷、配置、模块职责或启动方式变化时，应同步更新模块 README 与 `docs/` 中的权威专项文档。

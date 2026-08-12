@@ -1,6 +1,6 @@
 # 大屏 BFF 未接入数据字段清单
 
-更新时间：2026-07-08
+更新时间：2026-08-12
 
 ## 1. 口径
 
@@ -14,7 +14,7 @@
 | BFF 计算 | 根据已查询到的数据统计、分组、转换出的字段 | 通常不需要 |
 | 缺少真实来源 | 中心端当前没有提供，BFF 只能返回 `null`、`[]`，或本地拼出来 | 需要补齐或确认可为空 |
 
-当前 `PanoramaMockService`、`StatisticsMockService` 已移除，BFF 不再使用固定 mock 场景数据兜底。
+当前 `PanoramaMockService`、`StatisticsMockService` 已移除，REST 聚合不再使用整套固定场景数据兜底。但 `PanoramaWebSocketEventAdapter` 对无定位的 `test111`、`SN005`、`SN006` 仍会派生硬编码演示位置事件；这些事件不是权威定位，生产不得作为真实数据。
 
 ## 2. 全景地图接口
 
@@ -44,6 +44,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | 路径点位引用 | `/api/v1/management/paths/{pathId}/points` |
 | 告警列表 | `/api/v1/management/alarms` |
 | 告警处置 | `/api/v1/management/alarms/{alarmId}/handled` |
+| 固定摄像头 | `/api/v1/management/fixed-cameras` |
 
 ### 2.2 顶层字段
 
@@ -89,6 +90,8 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | `mapDisplay.badgeStatus` | BFF 派生 | 根据状态/告警展示编码 |
 | `task[].name` | 间接查询 | 优先取控制端实时任务名称；没有时按任务实例 ID 查询管理端任务实例补齐 |
 | `task[].timeRange` | BFF 计算 | 按任务实例 `startedAt/completedAt` 计算；时间不完整时为 `null` |
+
+固定摄像头也会合并进 `devices[]`。其 `status=online` 仅由 `enabled=true` 推导，不是 Gateway 或 RTSP 探活；`playable=true` 还要求主/子码流至少一条存在。BFF 不输出码流 URL。
 
 ### 2.4 `/devices/{deviceId}` 设备详情
 
@@ -198,12 +201,13 @@ DELETE /api/bigscreen/statistics/reports/{id}
 ```text
 /api/bigscreen/business/**
 /api/control/**
-/api/v1/control/**
 /api/media/**
 /internal/media/**
 /api/manage/**
 /api/v1/management/**
 ```
+
+`/api/v1/control/**` 不是 BFF 对外透明代理。BFF 仅在全景聚合内部通过 `CENTER_V1_CONTROL_BASE_URL` 调用旧版控制服务的 `/api/v1/control/device-realtime-statuses`。
 
 特殊说明：
 
@@ -222,14 +226,14 @@ DELETE /api/bigscreen/statistics/reports/{id}
 /ws/bigscreen
 ```
 
-实际行为是桥接到配置的中心端 `center.websocket-control-url`。当前 BFF 代码里没有定时推送本地 panorama mock 事件的调度器；如果中心端 WebSocket 不可用，BFF 不会主动补真实动态事件。
+实际行为是桥接到配置的 Control `center.websocket-control-url`。当前没有定时推送整套本地 panorama mock 的调度器；如果上游 WebSocket 不可用，BFF 不会主动补齐业务快照。上游发来 `robot.state` 但不带定位时，只有上述三个演示 robotId 会触发本地位置事件。
 
 需要中心端提供或确认的实时数据：
 
 | 事件/数据 | 当前状态 |
 |---|---|
 | 设备状态变化 | 依赖中心端 WebSocket 推送 |
-| 设备位置变化 | 依赖中心端 WebSocket 推送 |
+| 设备位置变化 | 依赖 Control WebSocket 中的 `robot.state` 定位；三个特定 ID 存在演示兜底 |
 | 任务变化 | 依赖中心端 WebSocket 推送 |
 | 告警变化 | 依赖中心端 WebSocket 推送 |
 | 统计类实时变化 | 当前未接入 |

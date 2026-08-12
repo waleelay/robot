@@ -1,8 +1,10 @@
 # Media Service
 
-`backend/` 是媒体服务，负责实时视频会话、LiveKit Token/Room、通用文件上传与 HLS 回放等媒体能力。本 README 说明模块职责、代码结构、配置、调用链路和开发约定；控制服务的代码说明见 [Control Service README](../control-service/README.md)。
+`backend/` 是 Java 17 + Spring Boot 3 媒体服务，默认端口 `8088`。它负责视频会话、LiveKit、通用文件和 OpenTTS 接入，不负责机器人 MQTT、设备档案或控制会话。
 
-## 启动、构建与测试
+接口权威定义见 [媒体服务接口文档](../docs/03-接口与协议/媒体服务/媒体服务接口文档.md)；实时视频状态机和命令载荷见 [实时视频接口与协议文档](../docs/03-接口与协议/实时视频/实时视频接口与协议文档.md)。
+
+## 1. 启动、构建与测试
 
 ```bash
 cd backend
@@ -11,391 +13,100 @@ mvn test
 mvn -q -DskipTests package
 ```
 
-默认端口为 `8088`。启动前需要按根目录 README 配置 MySQL、Redis、LiveKit 和 MinIO。
+运行依赖 MySQL、LiveKit 和 MinIO；视频文件 HLS 处理还需要 `ffmpeg/ffprobe`，TTS 需要可访问的 OpenTTS HTTP 服务。Redis 和 Elasticsearch 依赖仍保留，但不是当前业务主链路的权威存储。
 
-通用文件接口定义见[通用文件服务接口文档](../docs/03-接口与协议/文件服务/通用文件服务接口文档.md)。
-
-## 1. 工程概览
+## 2. 代码结构
 
 ```text
-backend/
-├── pom.xml
-└── src/
-    ├── main/
-    │   ├── java/com/robot/mediaserver/
-    │   │   ├── RobotMediaServerApplication.java
-    │   │   ├── auth/
-    │   │   ├── config/
-    │   │   ├── livekit/
-    │   │   ├── file/
-    │   │   ├── storage/
-    │   │   ├── video/
-    │   │   └── ws/
-    │   └── resources/
-    │       ├── application.yml
-    │       └── application-dev.yml
-    └── test/
+src/main/java/com/robot/mediaserver/
+├── auth/      可信用户 Header 解析
+├── config/    配置属性、时间序列化、MVC 与 WebSocket 配置
+├── video/     视频会话、viewer、Track、对讲、录像及状态机
+├── livekit/   Room、Token 和 Egress SDK 封装
+├── file/      文件上传、MinIO、HLS、播放和保留期清理
+├── tts/       OpenTTS 调用、缓存和音频广播
+└── ws/        `/ws/media` 连接与事件/二进制广播
 ```
 
-入口类是 `RobotMediaServerApplication`，通过 `@SpringBootApplication` 启动 Spring Boot，并通过 `@EnableScheduling` 开启定时任务。
+### `video/`
 
-`pom.xml` 中主要依赖如下：
+- `VideoSessionController`：提供 `/internal/media/video-sessions/**`，供 Control 调用。
+- `VideoSessionService`：创建/复用 Room、签发 Token、维护 viewer 和对讲占用、生成 start/stop 命令并处理客户端状态。
+- `MediaTrackService`：维护 `MediaTrack` 发布记录。
+- `VideoSessionTimeoutScheduler`：处理发布超时；`ViewerStartupCleaner` 在启动时关闭遗留 viewer。
+- 主要实体：`VideoSession`、`MediaSessionViewer`、`MediaTrack`。
 
-- Spring Web：提供 REST API。
-- Spring WebSocket：提供业务 WebSocket 事件推送。
-- Spring Validation：请求参数校验。
-- Spring Data JPA：MySQL 数据访问。
-- Spring Data Redis：预留或支持缓存/状态能力。
-- Spring Data Elasticsearch：当前配置中关闭 repository，但保留依赖。
-- MySQL Driver：运行时数据库驱动。
-- Eclipse Paho MQTT：机器人媒体指令和状态通信。
-- MinIO SDK：抓拍、通用文件、视频源文件和 HLS 对象存储。
-- JJWT：LiveKit Token 和文件播放 Token 相关签名能力。
+会话复用键为 `sourceType + sourceId + deviceId + channel + quality`，只复用 `ROOM_READY`、`STREAMING`、`IDLE_WAIT`。固定摄像头用 `sourceType=FIXED_CAMERA`、`sourceId=cameraId`；`robotId` 当前仍传 `cameraId` 仅为兼容非空约束。
 
-## 2. 配置文件
+### `file/`
 
-### `application.yml`
+- `FileController` 同时注册 `/api/media/files/**` 和 `/internal/media/files/**`。
+- `FileService` 处理简单上传、multipart、列表、扩展绑定、删除、下载和播放。
+- `FileObjectStorageService` 封装 MinIO/S3 操作。
+- `FileHlsProcessingService` 使用 ffprobe/ffmpeg 生成 fMP4 HLS。
+- 三个 Scheduler 分别处理上传过期、HLS 任务和文件保留期。
+- 主要实体：`MediaFile`、`MediaFileUpload`、`MediaVideoFile`。
 
-基础配置和媒体能力配置集中在 `media.*` 下：
+`/api/media/files` 主要用于机器人直传，`/internal/media/files` 供 Control 代理。可信网段过滤器按配置启用，只检查 TCP 对端地址，不信任 `X-Forwarded-For`。
 
-- `server.port`：默认 `8088`。
-- `media.livekit`：LiveKit 地址、API key、Token TTL、Room API 开关。
-- `media.minio`：MinIO endpoint、bucket、启用开关。
-- `media.file`：通用文件上传、分片、回放、HLS 转码、保留策略、机器人可信网段。
-- `media.session`：视频会话 Track 发布超时、空闲释放、viewer 心跳、视频墙数量和清晰度限制。
+### `tts/`
 
-### `application-dev.yml`
+`RobotTtsController` 提供 `/api/media/tts/generate-file` 和 `/generate-and-play`。`TtsAudioService` 按文本、voice、format 计算缓存键，并把生成文件放在按机器人隔离的本地目录。`generate-and-play` 会向所有 `/ws/media` 连接先发 `tts.audio.meta`，再发二进制音频，不按 robotId 定向。
 
-开发环境配置：
+### `livekit/` 与 `ws/`
 
-- MySQL 数据源，JPA `ddl-auto=update`。
-- Redis 连接地址。
-- Elasticsearch 地址，repository 默认关闭。
-- `com.robot.mediaserver` 日志级别为 `debug`。
+- `LiveKitRoomService`：创建、查询和删除 Room。
+- `LiveKitTokenService`：签发 viewer、operator、publisher 和机器人对讲 Token。
+- `LiveKitEgressService`：开始/停止录像并与通用文件记录关联。
+- `MediaWebSocketHandler`：只管理 `/ws/media` 连接，不处理文本控制请求。
+- `MediaWebSocketPublisher`：广播 `{event,timestamp,data}` 与 TTS 二进制帧。
 
-## 3. 顶层包职责
+## 3. 接口边界
 
-```text
-com.robot.mediaserver
-├── auth       当前用户解析和用户上下文
-├── config     Spring Bean、配置属性、WebSocket 配置
-├── livekit    LiveKit Room 与 Token 能力
-├── file       通用文件上传、转码、回放、清理
-├── storage    MinIO/对象存储封装
-├── video      实时视频会话、Track、抓拍、状态机
-└── ws         WebSocket 连接管理和事件广播
-```
+| 路径 | 调用方 | 说明 |
+| --- | --- | --- |
+| `/internal/media/video-sessions/**` | Control Service | 视频、对讲、Track、Token、调度候选和录像 |
+| `/internal/media/files/**` | Control Service | 文件能力内部别名 |
+| `/api/media/files/**` | 机器人或受控调用方 | 文件上传、状态、查询、下载与播放 |
+| `/api/media/tts/**` | 内部调用方/调试端 | TTS 生成与 WebSocket 音频广播 |
+| `/ws/media` | 内部调试/TTS 客户端 | 事件及二进制音频广播 |
 
-后端代码整体按业务域拆分，每个业务域内部通常继续按 `api`、`dto`、`model`、`repository`、`service`、`scheduler` 分层。
+Media 不存在媒体源 CRUD、LiveKit Webhook、专用 Snapshot Controller，也不直接发布 MQTT。Control 从 Media 获取命令载荷后决定下发 Topic。
 
-## 4. 通用基础模块
+## 4. 配置
 
-### `auth/`
+配置入口为 `src/main/resources/application.yml` 和 `config/MediaProperties.java`：
 
-- `CurrentUser`：当前请求用户上下文，包含 `userId`、`orgId`、`roles`、`clientId`。
-- `CurrentUserResolver`：Spring MVC 参数解析器，用于在 Controller 方法中直接注入 `CurrentUser`，当前从请求头读取用户、组织和角色。
+| 前缀 | 说明 |
+| --- | --- |
+| `media.livekit.*` | LiveKit 地址、Key/Secret、Token、Room 与 Egress |
+| `media.minio.*` | 对象存储地址、凭据、bucket 和开关 |
+| `media.file.*` | 文件大小、multipart、播放 Token、HLS、保留期与可信网段 |
+| `media.tts.*` | OpenTTS 地址、voice、format、缓存目录和超时 |
+| `media.session.*` | 发布超时、中断宽限、空闲释放、viewer 超时和视频墙上限 |
 
-### `config/`
+开发 Profile 还配置 `spring.datasource`、Redis 与 Elasticsearch 地址。生产必须替换 LiveKit Secret、MinIO 凭据和文件播放 Token Secret。
 
-- `AppConfig`：注册 MVC 相关配置，例如参数解析器。
-- `WebSocketConfig`：注册业务 WebSocket endpoint。
-- `MediaProperties`：绑定 `media.*` 配置，是 LiveKit、MinIO、文件、TTS、会话等配置的统一入口。
+Media/Control JSON 时间统一显示为上海时区 `yyyy-MM-dd HH:mm:ss`。Media 通过 `X-User-Id`、`X-Org-Id`、`X-Roles`、`X-Client-Id` 解析调用者；生产应只允许 BFF/Control 等受控上游访问。
 
-### `ws/`
-
-- `MediaWebSocketHandler`：维护 WebSocket 连接，接收客户端连接/断开。
-- `MediaWebSocketPublisher`：封装事件广播能力，业务模块通过它向前端推送设备、视频会话等事件。
-
-## 5. 实时视频模块 `video/`
-
-`video` 是后端最核心的媒体会话模块，负责视频会话生命周期、LiveKit 房间和 Token、机器人状态回写、Track 记录和状态推送。
-
-### 目录结构
+## 5. 典型调用链
 
 ```text
-video/
-├── api/          REST API 和异常处理
-├── dto/          请求/响应 DTO
-├── messaging/    MQTT/内部指令和状态消息模型
-├── model/        JPA 实体和枚举
-├── repository/   JPA Repository
-├── scheduler/    会话超时、viewer 清理
-└── service/      核心业务服务
-```
-
-### API 入口
-
-- `VideoSessionController`
-  - 路径：`/internal/media/video-sessions`。
-  - 负责创建/查询/停止/重启视频会话、签发 viewer token、处理机器人状态、对讲状态、切换通道、创建抓拍。
-  - 作为 Media Service 内部 API 供 Control 层调用；前端统一通过 `/api/control/**` 访问。
-
-- `ApiExceptionHandler`
-  - 全局 REST 异常处理；文件接口保留业务错误码、是否可重试、请求 ID 和错误上下文。
-
-### 核心 Service
-
-- `VideoSessionService`
-  - 视频会话状态机核心。
-  - 负责创建或复用会话、创建 LiveKit Room、签发 publisher/viewer token、维护 viewer 心跳和人数、停止/重启会话、处理机器人上报的 streaming/interrupted/failed 状态、生成 MQTT start/stop/switch 指令 payload。
-
-- `MediaTrackService`
-  - 记录 LiveKit Track 发布和取消发布。
-  - 提供按会话查询最近 Track 的能力。
-
-### 数据模型
-
-- `VideoSession`
-  - 表示一路机器人摄像头视频会话。
-  - 关键字段：`sessionId`、`robotId`、`deviceId`、`channel`、`quality`、`roomName`、`status`、`viewerCount`、`trackSid`、`commandId`、`idleSince`、错误信息等。
-
-- `MediaSessionViewer`
-  - 表示观看者会话。
-  - 用于 viewer 心跳、离开时间、并发观看人数统计。
-
-- `MediaTrack`
-  - 记录 LiveKit Track 发布信息。
-
-### 主要枚举
-
-- `VideoSessionStatus`：视频会话状态。
-- `VideoChannel`：视频通道，如可见光/热成像等。
-- `VideoQuality`：视频质量。
-- `IntercomStatus`：对讲状态。
-
-### 定时任务
-
-- `VideoSessionTimeoutScheduler`
-  - 清理过期 viewer。
-  - 检测等待客户端发布 Track 超时的会话并标记失败。
-
-- `ViewerStartupCleaner`
-  - 应用启动后关闭遗留活跃 viewer，避免服务重启后 viewer 计数不一致。
-
-## 6. 通用文件模块 `file/`
-
-`file` 模块负责通用文件上传、分片上传 URL 生成、上传完成确认、视频 HLS 转码、播放 URL、文件列表和保留清理。手动录像、任务录像、抓拍图片、日志、配置、地图和普通附件统一落到该模块。
-
-### 目录结构
-
-```text
-file/
-├── api/          通用文件 API、机器人上传可信网段过滤器
-├── dto/          文件上传、分片、列表、播放 URL DTO
-├── model/        文件、上传会话、视频扩展 JPA 实体/状态枚举
-├── repository/   JPA Repository
-├── scheduler/    上传过期清理、HLS 处理、保留期清理
-└── service/      文件上传、存储、播放和 HLS 处理服务
-```
-
-### API 入口
-
-- `FileController`
-  - 路径：`/api/media/files` 与 `/internal/media/files`。
-  - 提供通用文件接口：
-    - `POST /` 小文件单接口上传。
-    - `POST /multipart-uploads` 创建或恢复 multipart 上传。
-    - `POST /multipart-uploads/{uploadId}/part-urls` 获取分片上传 URL。
-    - `POST /multipart-uploads/{uploadId}/complete` 完成上传。
-    - `GET /{fileId}/status` 查询上传/处理状态。
-    - `GET /` / `GET /{fileId}` 查询列表和详情。
-    - `DELETE /{fileId}` 删除对象存储资源并将文件标记为 `DELETED`。
-    - `POST /{fileId}/download-url` 生成下载 URL。
-    - `POST /{fileId}/play-url` 生成 HLS 播放 URL。
-    - `GET /{fileId}/content` 读取文件正文。
-    - `GET /{fileId}/hls/{objectName}` 读取 HLS 资源。
-
-- `TrustedRobotNetworkFilter`
-  - 可选的机器人可信网段过滤，用于限制机器人上传接口来源。
-
-### 核心 Service
-
-- `FileService`
-  - 通用文件上传和回放主服务。
-  - 负责小文件上传、创建/恢复 multipart 上传会话、签发分片上传 URL、完成 multipart 上传、查询状态、分页查询文件、生成下载/播放 URL、读取播放资产、LiveKit Egress 手动录像接入、过期上传处理、文件删除和资源清理。
-
-- `FileHlsProcessingService`
-  - 领取待处理视频文件，使用 ffprobe/ffmpeg 转 fMP4 HLS，上传 HLS playlist/init/segment，回写处理结果。
-
-- `FileObjectStorageService`
-  - 通用对象存储封装。
-  - 支持 multipart 初始化、分片预签名 URL、列出分片、完成/中止 multipart、读取对象、上传文件、下载文件、按前缀删除。
-
-### 数据模型
-
-- `MediaFile`
-  - 文件主表。
-  - 关键字段：`fileId`、`orgId`、`robotId`、`deviceId`、`extensionId`、`sourceFileId`、`fileType`、`fileName`、`contentType`、`fileSize`、`objectKey`、`uploadMode`、`status`、错误信息、上传时间等。
-
-- `MediaFileUpload`
-  - 文件 multipart 上传会话表。
-  - 关键字段：`uploadId`、`fileId`、`storageUploadId`、`partSize`、`partCount`、`status`、`expiresAt`、`lastActiveAt`。
-
-- `MediaVideoFile`
-  - 视频扩展表。
-  - 关键字段：`fileId`、编码、时长、分辨率、HLS playlist key、HLS segment 数、处理状态和错误信息。
-
-- `FileStatus` / `FileUploadStatus` / `VideoFileStatus`
-  - 文件、上传会话和视频处理状态。
-
-### 定时任务
-
-- `FileUploadCleanupScheduler`
-  - 清理过期上传会话并中止对象存储 multipart 上传。
-
-- `FileHlsProcessingScheduler`
-  - 定时领取待处理视频文件并生成 HLS 播放资产。
-
-- `FileRetentionCleanupScheduler`
-  - 按保留天数删除过期文件及对象存储资产。
-
-## 7. LiveKit 模块 `livekit/`
-
-- `LiveKitTokenService`
-  - 签发 LiveKit token。
-  - 支持 viewer、interactive viewer、operator、publisher、robot intercom、admin 等身份。
-
-- `LiveKitRoomService`
-  - 通过 LiveKit Room API 创建和删除房间。
-  - 当 Room API 关闭时，可按配置跳过实际 Room 管理。
-
-该模块被 `VideoSessionService` 调用，是实时视频房间和鉴权能力的基础。
-
-## 8. 存储模块 `storage/`
-
-通用文件对象存储封装位于 `file/service/FileObjectStorageService.java`，业务层只处理 object key 和业务状态。
-
-## 9. 接口路径分层
-
-后端接口大致分为三类：
-
-### 面向前端/管理端：`/api/control/*`
-
-由 `control-service` 的 `com.robot.control.api` 提供，前端主要调用这些接口：
-
-- `/api/control/robots/{robotId}/control-profile`
-- `/api/control/robots/{robotId}/control-sessions/acquire`
-- `/api/control/robots/{robotId}/control-sessions/takeover`
-- `/api/control/robots/{robotId}/control-mode`
-- `/api/control/robots/{robotId}/control-sessions/{controlSessionId}/release`
-- `/api/control/robots/{robotId}/commands`
-- `/api/control/robots/{robotId}/cameras/{deviceId}/video/start`
-- `/api/control/video-sessions`
-- `/api/control/video-sessions/{sessionId}/token`
-- `/api/control/video-sessions/{sessionId}/heartbeat`
-- `/api/control/video-sessions/{sessionId}/stop`
-- `/api/control/video-sessions/{sessionId}/restart`
-- `/api/control/video-sessions/{sessionId}/switch-channel`
-- `/api/control/video-sessions/{sessionId}/recordings/start`
-- `/api/control/video-sessions/{sessionId}/recordings/{fileId}/stop`
-- `/api/control/video-sessions/{sessionId}/recordings/active`
-- `/api/control/files`
-- `/api/control/files/{fileId}/play-url`
-- `/api/control/files/{fileId}/download-url`
-- `/api/control/files/{fileId}/content`
-- `/api/control/files/{fileId}/hls/{objectName}`
-
-### 面向机器人端：`/api/media/*`
-
-由 `file/api` 提供机器人文件上传接口：
-
-- `/api/media/files/multipart-uploads`
-- `/api/media/files/multipart-uploads/{uploadId}/part-urls`
-- `/api/media/files/multipart-uploads/{uploadId}/complete`
-- `/api/media/files/{fileId}/status`
-
-### 内部调用：`/internal/media/*`
-
-用于 Control 层、内部 Worker 或服务间调用：
-
-- `/internal/media/video-sessions`
-- `/internal/media/files`
-
-## 10. 典型调用链路
-
-### 启动一路实时视频
-
-```text
-前端
-  -> ControlRobotController
-  -> ControlVideoCommandService
-  -> ControlMediaServiceClient
+Control 创建视频
   -> VideoSessionController / VideoSessionService
-  -> LiveKitRoomService 创建 Room
-  -> LiveKitTokenService 签发 publisher/viewer token
+  -> LiveKitRoomService + LiveKitTokenService
   -> 返回 VideoStartCommand
-  -> RobotMediaCommandService 通过 MQTT 下发 start
-  -> 机器人 Go 客户端推流到 LiveKit
-  -> RobotMediaStatusSubscriber 接收 streaming 状态
-  -> VideoSessionService 更新 session/track
-  -> MediaWebSocketPublisher 推送事件给前端
+  -> Control 通过 MQTT 下发
+  -> Control 转发客户端 status
+  -> Media 更新 VideoSession/MediaTrack 并广播事件
 ```
-
-### viewer 停止观看
 
 ```text
-前端
-  -> ControlVideoSessionController
-  -> ControlVideoCommandService
-  -> VideoSessionService stop viewer
-  -> 更新 MediaSessionViewer / viewerCount
-  -> 若 viewerCount 为 0，进入 IDLE_WAIT
-  -> ControlVideoSessionScheduler 到期后 release idle session
-  -> MQTT 下发 stop
-  -> LiveKitRoomService 删除 Room
+机器人创建 multipart
+  -> Media 创建 MediaFile/MediaFileUpload
+  -> 客户端凭预签名 URL 直传 MinIO
+  -> complete 后 VIDEO 进入 HLS 处理，其他文件进入 READY
+  -> 前端经 BFF/Control 获取下载或播放地址
 ```
 
-### 机器人文件上传
-
-```text
-机器人 Go 客户端
-  -> FileController 创建/恢复上传
-  -> FileService 创建 MediaFile / MediaFileUpload
-  -> FileObjectStorageService 初始化 multipart
-  -> FileController 获取 part upload URLs
-  -> 客户端直传 MinIO 分片
-  -> FileController complete
-  -> FileService 完成 multipart 并标记 READY 或 PROCESSING
-  -> 视频由 FileHlsProcessingScheduler / FileHlsProcessingService 转 HLS
-  -> 前端通过 ControlFileController 获取播放 URL 和 HLS 资源
-```
-
-## 11. 数据持久化
-
-当前后端使用 Spring Data JPA + MySQL。主要 Repository：
-
-- `VideoSessionRepository`
-- `MediaSessionViewerRepository`
-- `MediaTrackRepository`
-- `MediaFileRepository`
-- `MediaFileUploadRepository`
-- `MediaVideoFileRepository`
-
-机器人设备注册已迁移到 `control-service` 的 `RobotRegistryService`，由内存注册表维护，不是 `backend` JPA 实体。
-
-## 12. 外部系统依赖
-
-- LiveKit：实时媒体 Room、Track、Token。
-- MQTT/EMQX：机器人媒体指令下发和状态上报。
-- MinIO：抓拍图片、文件源对象、HLS 播放资产。
-- MySQL：视频会话、Track、抓拍、事件、文件等持久化。
-- Redis：已引入并配置，当前代码结构中不是核心业务主路径。
-- ffmpeg/ffprobe：视频文件 HLS 处理。
-
-## 13. 开发时定位建议
-
-- 查前端调用入口：先看 `control/api`。
-- 查媒体会话状态机：看 `video/service/VideoSessionService.java`。
-- 查机器人 MQTT 指令：看 `control/messaging/RobotMediaCommandService.java`。
-- 查机器人状态上报：看 `control/messaging/RobotMediaStatusSubscriber.java` 和 `video/service/VideoSessionService.java`。
-- 查抓拍图片上传/展示：看 `file/service/FileService.java` 和 `control/api/ControlFileController.java`。
-- 查文件上传/回放：看 `file/service/FileService.java` 和 `file/service/FileHlsProcessingService.java`。
-- 查配置项含义：看 `config/MediaProperties.java` 和 `src/main/resources/application.yml`。
-
-## 14. 扩展规则建议
-
-- 新增前端业务接口时，优先放在 `control/api`，由 `control/service` 编排，再调用媒体内部能力。
-- 新增媒体核心能力时，优先放在对应业务域的 `service`，Controller 只做参数接收和响应转换。
-- 新增持久化表时，按 `model` + `repository` + `dto` + `service` 的方式落地。
-- 新增定时后台任务时，放在业务域 `scheduler`，调度类只负责触发，复杂逻辑放入 Service。
-- 新增外部系统调用时，优先封装到独立基础模块，避免 Controller 或业务 Service 直接依赖 SDK 细节。
+修改接口、状态、配置或模型含义时，同时更新本 README 和对应接口/协议文档。
