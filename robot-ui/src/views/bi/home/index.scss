@@ -208,5 +208,50 @@
         pointer-events: auto;
       }
     }
+    // overview 未就绪：与 SLAM 地图加载态一致
+    .slam-map-loading {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 5;
+      background: rgba(8, 22, 40, 0.55);
+      backdrop-filter: blur(2px);
+      pointer-events: all;
+    }
+    .slam-map-loading__spinner {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 2px solid rgba(11, 249, 254, 0.2);
+      border-top-color: #0BF9FE;
+      border-right-color: rgba(0, 203, 253, 0.75);
+      animation: slam-map-spin 0.75s linear infinite;
+      box-shadow: 0 0 16px rgba(11, 249, 254, 0.25);
+    }
+    .slam-map-loading__text {
+      margin: 14px 0 0;
+      color: #D7EDFF;
+      font-family: "Microsoft YaHei";
+      font-size: 14px;
+      line-height: 20px;
+      letter-spacing: 0.5px;
+    }
   }
+}
+
+@keyframes slam-map-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.slam-map-loading-fade-enter-active,
+.slam-map-loading-fade-leave-active {
+  transition: opacity 0.22s ease;
+}
+.slam-map-loading-fade-enter,
+.slam-map-loading-fade-leave-to {
+  opacity: 0;
 }

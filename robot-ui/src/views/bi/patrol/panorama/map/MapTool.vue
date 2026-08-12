@@ -34,7 +34,7 @@
               : item.key === 'scale'
                 ? rangingActive
                 : selectedOper2 === item.key,
-          'is-disabled': (item.key === 'point' && !pathOperable) || (item.key === 'path' && isSlam && !taskPathOperable)
+          'is-disabled': isOperDisabled(item)
         }"
       >
         <template v-if="index === 10">
@@ -101,7 +101,8 @@
 </template>
 
 <script>
-import { mapActions, mapState } from 'vuex';
+import { mapActions, mapState } from 'vuex'
+import { getGisZoomRange } from '../../../js/constants/gisMapPoints.js'
 
 export default {
   name: 'MapTool',
@@ -121,6 +122,11 @@ export default {
     currentSlam: {
       type: [String, Number],
       default: ''
+    },
+    // GIS 当前缩放层级（由 GlobalGisMap zoom-change 同步）
+    currentGisZoom: {
+      type: Number,
+      default: null
     }
   },
   data() {
@@ -168,7 +174,7 @@ export default {
           name: '复位',
           key: 'location',
           action: 'backCenter',
-          title: '回到初始点'
+          title: '复位到默认视图'
         },
         // {
         //   icon: 'map-scale',
@@ -211,7 +217,16 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'deviceStats', 'taskPathPoints', 'robotLocation']),
+    ...mapState('websocketExtraData', [
+      'slamMapList',
+      'slamOfRobot',
+      'deviceStats',
+      'taskPathPoints',
+      'robotLocation',
+      'defaultGpsDevices',
+      'globalMapId',
+      'overviewReady'
+    ]),
     slamList() {
       return Array.isArray(this.slamMapList) ? this.slamMapList : []
     },
@@ -250,21 +265,39 @@ export default {
         return data && String(data.mapId) === String(slamId) && Array.isArray(data.pathPoints) && data.pathPoints.length > 0
       })
     },
-    // 有gps定位功能的装备
-    gisCountText() {
+    // 具备 GPS 经纬度的装备数量（overview.gpsDevices 或实时 location）
+    gpsEquipmentCount() {
+      const fromOverview = Array.isArray(this.defaultGpsDevices) ? this.defaultGpsDevices.length : 0
+      if (fromOverview > 0) return fromOverview
       const locations = this.robotLocation || {}
-      const gpsDevices = Object.entries(locations).filter(([, location]) => {
+      return Object.values(locations).filter(location => {
         const lat = location?.lat
         const lng = location?.lng
         return lat != null && lat !== '' && lng != null && lng !== ''
-      })
-      // console.log('有 lat/lng 的装备', gpsDevices.map(([robotId, location]) => ({ robotId, ...location })))
-      const exist = gpsDevices.length
-      return `${exist}/${this.deviceStats?.total || 0}`
+      }).length
+    },
+    // 有gps定位功能的装备
+    gisCountText() {
+      return `${this.gpsEquipmentCount}/${this.deviceStats?.total || 0}`
+    },
+    // GIS 缩放上下限来自 map-config zoom: [min, max]
+    gisZoomRange() {
+      return getGisZoomRange()
+    },
+    // 已到最大层级：禁用放大
+    zoomInDisabled() {
+      if (this.isSlam || this.currentGisZoom == null) return false
+      return this.currentGisZoom >= this.gisZoomRange.maxZoom - 1e-6
+    },
+    // 已到最小层级：禁用缩小
+    zoomOutDisabled() {
+      if (this.isSlam || this.currentGisZoom == null) return false
+      return this.currentGisZoom <= this.gisZoomRange.minZoom + 1e-6
     }
   },
   mounted() {
     document.addEventListener('click', this.handleDocumentClick, true)
+    // 不在此处兜底 GIS：须等 overview（setAll）完成 GPS / SLAM 判断
   },
   beforeDestroy() {
     document.removeEventListener('click', this.handleDocumentClick, true)
@@ -278,25 +311,46 @@ export default {
       const robots = this.slamOfRobot?.[String(id)]?.robots
       return Array.isArray(robots) ? robots.length : 0
     },
+    /**
+     * 仅在 overview 已就绪、且无 SLAM、globalMapId 仍为空时补写 'gis'。
+     * 默认地图选择以 setAll 为准，避免页面加载瞬间抢先挂载 GIS。
+     */
+    ensureDefaultGisMap() {
+      if (!this.overviewReady) return
+      if (this.isSlam) return
+      if (this.globalMapId) return
+      if (this.slamList.length) return
+      this.currentType = 'gis'
+      this.selectType = 'gis'
+      this.setGlobalMapId('gis')
+    },
     syncGlobalMapId() {
       const slamId = this.currentSlam
-      const storeId = this.$store.state.websocketExtraData.globalMapId
-      // overview 未写入前（globalMapId 仍为空）不要默认写成 gis，否则会先闪 GIS 再切 SLAM
-      if (!storeId && !this.isSlam) return
+      const storeId = this.globalMapId
       // isSlam 已切真但 slamId 尚未到位时，不要回写成 gis
       if (this.isSlam && (slamId == null || slamId === '')) return
+      // overview 未就绪时不写 gis，避免抢在 SLAM 判断前渲染
+      if (!this.overviewReady) return
+      if (!storeId && !this.isSlam) {
+        this.ensureDefaultGisMap()
+        return
+      }
       const nextId = this.isSlam ? slamId : 'gis'
       if (storeId === nextId) return
       this.setGlobalMapId(nextId)
     },
     selectMapType(type) {
-      if (this.selectType === type) return
-      this.selectType = type
       if (type === 'gis') {
+        // UI 已是 GIS 时仍可能尚未写入 globalMapId，不能直接 return
+        if (this.selectType === type && this.globalMapId === 'gis') return
+        this.selectType = type
         this.currentType = type
         this.setGlobalMapId('gis')
         this.$emit('changeCurrentSlamId', '')
+        return
       }
+      if (this.selectType === type) return
+      this.selectType = type
     },
     selectSlamMap(mapInfo) {
       const nextId = mapInfo?.id
@@ -328,9 +382,15 @@ export default {
       this.selectedOper2 = item.key
       this.$emit('changeMapType')
     },
+    isOperDisabled(item) {
+      if (item.key === 'point' && !this.pathOperable) return true
+      if (item.key === 'path' && this.isSlam && !this.taskPathOperable) return true
+      if (item.key === 'zoomIn' && this.zoomInDisabled) return true
+      if (item.key === 'zoomOut' && this.zoomOutDisabled) return true
+      return false
+    },
     handleClickTool(item) {
-      if (item.key === 'point' && !this.pathOperable) return
-      if (item.key === 'path' && this.isSlam && !this.taskPathOperable) return
+      if (this.isOperDisabled(item)) return
       this[item.action](item.key);
     },
     handleSearch() {
@@ -424,6 +484,16 @@ export default {
         this.pathActive = false
         this.$emit('toggleTaskPaths', false)
       }
+    },
+    // overview 就绪后若仍无 globalMapId 且无 SLAM，再兜底 GIS
+    overviewReady(val) {
+      if (val) this.ensureDefaultGisMap()
+    },
+    defaultGpsDevices() {
+      this.ensureDefaultGisMap()
+    },
+    slamMapList() {
+      this.ensureDefaultGisMap()
     }
   }
 }

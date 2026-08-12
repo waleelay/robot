@@ -7,55 +7,69 @@
       <div class="top m4 flx-justify-between">
         <div class="flx-align-center">
           <div class="title ml10">{{currenRobot?.name  || '-'}}</div>
-          <div class="status ml10" :class="currenRobot?.statusClass || ''">{{ currenRobot?.customStatusName || currenRobot?.status || '-' }}</div>
+          <div v-if="!isFixedCamera" class="status ml10" :class="currenRobot?.statusClass || ''">{{ currenRobot?.customStatusName || currenRobot?.status || '-' }}</div>
         </div>
         <div class="close mr10" @click="onClose()">
           <svg-icon icon-class="close"></svg-icon>
         </div>
       </div>
       <div class="info-content pr10 pl10 flex flex-wrap mt15">
-        <div class="item wp156">
-          装备类型：<span class="value">{{ currenRobot?.type || '-' }}</span>
-        </div>
-        <div class="item wp149 ml26">
-          当前电量：<span class="value">{{ currenRobot?.battery || '-' }}%</span>
-        </div>
-        <div class="item wp156 mt10">
-          装备型号：<span class="value">{{ currenRobot?.model || '-' }}</span>
-        </div>
-        <div class="item wp149 ml26 mt10">
-          是否告警：<span class="value">{{ currenRobot?.alarmLevel === 'none' ? '否' : '是' }}</span>
-        </div>
-        <div class="item wp156 mt10">
-          控制模型：<span class="value">{{ currenRobot?.controlMode === '手动模式' ? '手动控制' : currenRobot?.controlMode === '导航模式' ? '自动控制' : '-' }}</span>
-        </div>
-        <div class="item wp149 ml26 mt10">
-          上装设备：<span class="value">{{ currenRobot?.mountedDeviceCount || 0 }}个</span>
-        </div>
-        <div class="item wp156 mt10">
-          当前速度：<span class="value">{{ currenRobot?.speed || 0 }}m/s</span>
-        </div>
-        <div class="mt10 with-divider w100"></div>
-        <div v-for="(task, index) in taskList" :key="task.taskId" class="mt10 task flex" :class="task.status" :title="task?.statusName">
-          <div class="item wp156 text-ellipsis" :title="task?.name || ''">
-            <span class="wp60 tar">任务{{index + 1}}：</span><span class="value">{{ task?.name || '-' }}</span>
+        <!-- 固定摄像头：仅装备类型、装备位置 -->
+        <template v-if="isFixedCamera">
+          <div class="item wp156">
+            装备类型：<span class="value">{{ currenRobot?.type || '-' }}</span>
+          </div>
+          <div class="item wp149 ml26 text-ellipsis" :title="fixedCameraLocation">
+            装备位置：<span class="value">{{ fixedCameraLocation }}</span>
+          </div>
+        </template>
+        <template v-else>
+          <div class="item wp156">
+            装备类型：<span class="value">{{ currenRobot?.type || '-' }}</span>
           </div>
           <div class="item wp149 ml26">
-            任务时段：<span class="value">{{ task?.timeRange || '-' }}</span>
+            当前电量：<span class="value">{{ currenRobot?.battery || '-' }}%</span>
           </div>
-        </div>
+          <div class="item wp156 mt10">
+            装备型号：<span class="value">{{ currenRobot?.model || '-' }}</span>
+          </div>
+          <div class="item wp149 ml26 mt10">
+            是否告警：<span class="value">{{ currenRobot?.alarmLevel === 'none' ? '否' : '是' }}</span>
+          </div>
+          <div class="item wp156 mt10">
+            控制模型：<span class="value">{{ currenRobot?.controlMode === '手动模式' ? '手动控制' : currenRobot?.controlMode === '导航模式' ? '自动控制' : '-' }}</span>
+          </div>
+          <div class="item wp149 ml26 mt10">
+            上装设备：<span class="value">{{ currenRobot?.mountedDeviceCount || 0 }}个</span>
+          </div>
+          <div class="item wp156 mt10">
+            当前速度：<span class="value">{{ Number(currenRobot?.speed || 0).toFixed(2) }}m/s</span>
+          </div>
+          <div class="mt10 with-divider w100"></div>
+          <div v-for="(task, index) in taskList" :key="task.taskId" class="mt10 task flex" :class="task.status" :title="task?.statusName">
+            <div class="item wp156 text-ellipsis" :title="task?.name || ''">
+              <span class="wp60 tar">任务{{index + 1}}：</span><span class="value">{{ task?.name || '-' }}</span>
+            </div>
+            <div class="item wp149 ml26">
+              任务时段：<span class="value">{{ task?.timeRange || '-' }}</span>
+            </div>
+          </div>
+        </template>
       </div>
-      <!-- 固定摄像头：仅显示/关闭画面；视频区始终占位，避免高度变化导致相对装备错位 -->
+      <!-- 固定摄像头：画面框内 play/pause 切换实时视频，始终占位避免弹窗高度跳动 -->
       <template v-if="isFixedCamera">
-        <div class="btns mt10 ml0 flx-align-center flex-wrap wp360" style="margin-top: -10px !important">
-          <el-button type="primary" class="mt20" :disabled="videoToggling" @click="toggleFixedCameraVideo">
-            {{ videoVisible ? '关闭画面' : '显示画面' }}
-          </el-button>
-        </div>
-        <div class="fixed-camera-video mt10 mb20 flx-center">
-          <div class="fixed-camera-video__inner flx-center">
+        <div class="fixed-camera-video mt20 mb20 flx-center">
+          <div
+            class="fixed-camera-video__inner flx-center"
+            :class="{
+              'is-playing': isFixedCameraPlaying,
+              'is-disabled': videoToggling
+            }"
+            :title="fixedCameraVideoActionTitle"
+            @click="toggleFixedCameraVideo"
+          >
             <video
-              v-show="videoVisible && fixedCameraInfo?.key"
+              v-show="isFixedCameraPlaying && fixedCameraInfo?.key"
               :id="fixedCameraVideoId"
               class="fixed-camera-video__stream"
               autoplay
@@ -63,20 +77,33 @@
               playsinline
               preload="auto"
             />
+            <!-- 关闭实时流后保留最后一帧 -->
+            <img
+              v-show="showLastFrame"
+              :src="lastFrameUrl"
+              class="fixed-camera-video__stream fixed-camera-video__last-frame"
+              alt=""
+            />
             <audio
               v-if="fixedCameraInfo?.key"
               :id="prefixId + fixedCameraInfo.key + '-audio'"
               autoplay
             />
             <div
-              v-if="videoVisible && fixedCameraInfo && !fixedCameraInfo.hasVideo"
+              v-if="isFixedCameraPlaying && fixedCameraInfo && !fixedCameraInfo.hasVideo"
               class="fixed-camera-video__status flx-center flex-column"
             >
               <svg-icon :icon-class="videoStatusIcon" style="font-size: 16px;" />
               <span class="mt2">{{ videoStatusText }}</span>
             </div>
-            <div v-else-if="!videoVisible" class="fixed-camera-video__placeholder flx-center">
-              暂无画面
+            <div
+              v-else
+              class="fixed-camera-video__oper flx-center"
+              :class="{ visible: !isFixedCameraPlaying }"
+            >
+              <span class="fixed-camera-video__oper-btn flx-center">
+                <svg-icon :icon-class="fixedCameraVideoActionIcon" />
+              </span>
             </div>
           </div>
         </div>
@@ -123,6 +150,8 @@ export default {
       prefixId: 'robot1-fixed-camera-',
       // 当前弹窗内已开流的相机，切换/关闭时按此引用停流，避免 selectedRobotId 已变更关错流
       playingCamera: null,
+      // 关闭实时流后保留的最后一帧（dataURL）
+      lastFrameUrl: '',
     }
   },
   computed: {
@@ -146,7 +175,7 @@ export default {
     cameras() {
       return this.$store.getters['websocketRobot/getCameras'] || {}
     },
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData', 'taskPathPoints', 'globalMapId']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'taskData', 'taskPathPoints', 'globalMapId']),
     currenRobot() {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
     },
@@ -157,6 +186,16 @@ export default {
         || robot.equipmentType === 'FIXED_CAMERA'
         || robot.type === 'FIXED_CAMERA'
         || robot.type === '固定摄像头'
+    },
+    /** 固定摄像头位置：优先实时 location，再回落档案字段 */
+    fixedCameraLocation() {
+      const robot = this.currenRobot || this.selectedRobot || {}
+      const live = this.robotLocation?.[this.selectedRobotId] || {}
+      return live.address
+        || robot.location?.address
+        || robot.locationName
+        || robot.address
+        || '-'
     },
     // 固定摄像头主相机（取装备第一路，并合并 store 实时状态）
     fixedCameraInfo() {
@@ -170,6 +209,22 @@ export default {
     },
     fixedCameraVideoId() {
       return this.fixedCameraInfo?.key ? `${this.prefixId}${this.fixedCameraInfo.key}` : ''
+    },
+    /** 有最后一帧且当前未在出实时画面时展示 */
+    showLastFrame() {
+      return !!this.lastFrameUrl && !(this.isFixedCameraPlaying && this.fixedCameraInfo?.hasVideo)
+    },
+    // 固定摄像头实时流是否处于打开/播放中（含连接中）
+    isFixedCameraPlaying() {
+      return !!this.videoVisible
+    },
+    // 按播放状态提示：未播放→打开；播放中→关闭
+    fixedCameraVideoActionTitle() {
+      if (this.videoToggling) return ''
+      return this.isFixedCameraPlaying ? '关闭实时视频' : '打开实时视频'
+    },
+    fixedCameraVideoActionIcon() {
+      return this.isFixedCameraPlaying ? 'pause' : 'play'
     },
     videoStatusIcon() {
       const status = this.fixedCameraInfo?.status
@@ -218,7 +273,7 @@ export default {
   },
   beforeDestroy() {
     this.clearAttachRetry()
-    this.stopFixedCameraVideo()
+    this.stopFixedCameraVideo({ keepLastFrame: false })
   },
   methods: {
     ...mapActions('websocketRobot', ['setSelectedRobotId', 'startCamera', 'stopCamera', 'setPrefixId']),
@@ -229,7 +284,7 @@ export default {
       // this.$emit('startup')
     },
     async onClose() {
-      await this.stopFixedCameraVideo()
+      await this.stopFixedCameraVideo({ keepLastFrame: false })
       this.visible = false
       this.pathVisible = false
       this.$emit('showPath', false)
@@ -244,10 +299,28 @@ export default {
     async toggleFixedCameraVideo() {
       if (this.videoToggling) return
       if (this.videoVisible) {
-        await this.stopFixedCameraVideo()
+        await this.stopFixedCameraVideo({ keepLastFrame: true })
         return
       }
       await this.startFixedCameraVideo()
+    },
+    /** 从当前 video 截取最后一帧，供停流后展示 */
+    captureLastFrame(video) {
+      if (!video || !video.videoWidth || !video.videoHeight) return ''
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return ''
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        return canvas.toDataURL('image/jpeg', 0.92)
+      } catch (e) {
+        return ''
+      }
+    },
+    clearLastFrame() {
+      this.lastFrameUrl = ''
     },
     attachFixedCameraTrack() {
       const camera = this.cameras[this.playingCamera?.key] || this.fixedCameraInfo
@@ -317,18 +390,29 @@ export default {
         this.videoToggling = false
       }
     },
-    async stopFixedCameraVideo() {
+    /**
+     * 停止实时流；keepLastFrame=true 时先截帧再 stop，界面保留最后一帧
+     */
+    async stopFixedCameraVideo({ keepLastFrame = true } = {}) {
       this.clearAttachRetry()
       const camera = this.playingCamera || this.fixedCameraInfo
-      this.videoVisible = false
       if (!camera?.key) {
+        this.videoVisible = false
         this.playingCamera = null
+        if (!keepLastFrame) this.clearLastFrame()
         return
       }
       this.videoToggling = true
       try {
         const latest = this.cameras[camera.key] || camera
         const video = document.getElementById(this.prefixId + camera.key)
+        if (keepLastFrame) {
+          const frame = this.captureLastFrame(video)
+          if (frame) this.lastFrameUrl = frame
+        } else {
+          this.clearLastFrame()
+        }
+        this.videoVisible = false
         if (latest.remoteVideoTrack && video && typeof latest.remoteVideoTrack.detach === 'function') {
           latest.remoteVideoTrack.detach(video)
         }
@@ -348,7 +432,7 @@ export default {
     async show(e, robot) {
       this.$emit('showControlPart', false)
       if (this.selectedRobotId === robot?.robotId || !e) {
-        await this.stopFixedCameraVideo()
+        await this.stopFixedCameraVideo({ keepLastFrame: false })
         this.pathVisible = false
         this.$emit('showPath', false)
         this.setSelectedRobotId('')
@@ -356,7 +440,7 @@ export default {
         this.$emit('clear', [])
       } else {
         // 切换装备时关闭路径线 / 固定摄像头画面，不影响 MapTool 点位
-        await this.stopFixedCameraVideo()
+        await this.stopFixedCameraVideo({ keepLastFrame: false })
         this.pathVisible = false
         this.$emit('showPath', false)
         this.visible = true
@@ -391,6 +475,15 @@ export default {
     width: 320px;
     height: 180px;
     overflow: hidden;
+    cursor: pointer;
+    background: #001529;
+    &.is-disabled {
+      cursor: wait;
+      pointer-events: none;
+    }
+    &:hover .fixed-camera-video__oper {
+      opacity: 1;
+    }
   }
 
   &__stream {
@@ -398,6 +491,14 @@ export default {
     height: 180px;
     object-fit: contain;
     background: #000;
+    pointer-events: none;
+  }
+
+  &__last-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
   }
 
   &__status {
@@ -409,16 +510,31 @@ export default {
     line-height: 16px;
     letter-spacing: 0.34px;
     pointer-events: none;
+    z-index: 1;
   }
 
-  &__placeholder {
+  /* 参考多媒体记录：画面中央 play/pause */
+  &__oper {
     position: absolute;
     inset: 0;
-    color: rgba(190, 225, 255, 0.55);
-    font-family: "Microsoft YaHei";
-    font-size: 12px;
-    line-height: 16px;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    z-index: 2;
     pointer-events: none;
+    &.visible {
+      opacity: 1;
+    }
+  }
+
+  &__oper-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.8);
+    color: #FFF;
+    .svg-icon {
+      font-size: 24px;
+    }
   }
 }
 .machine-container.robot-container.new {

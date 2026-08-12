@@ -1,28 +1,63 @@
-// 路径点
-export const POLYGON_POINTS = [
-  // [30.747402094262892, 106.03720949762425],  // 点1 (上偏左)
-  // [30.746587087515316,106.03824884204943],  // 点2 (右上)
-  // [30.745824237436622,106.03739157519864],  // 点3 (下偏右)
-  // [30.746639250628817,106.03635981721821]   // 点4 (左侧)
-  [ 30.748881699556307, 106.03529721123913 ],
-  [ 30.7478613352993, 106.03655278081857 ],
-  [ 30.747140651711415, 106.03579008416635 ],
-  [ 30.74812517003875, 106.03462176616857 ],
-]
-// 区域
-export const WAY_POINTS = [
-  { lat: 30.74858822373491, lng: 106.03506952591954, desc: '起始地' },
-  { lat: 30.748379525423942, lng: 106.03487979487186 },
-  { lat: 30.748229520051265, lng: 106.03472042553155 },
-  { lat: 30.74812517003875, lng: 106.03462176616857 },
-  { lat: 30.747603565260476, lng: 106.03519074431382 },
-  { lat: 30.747271049335637, lng: 106.03561559199737 },
-  { lat: 30.747140651711415, lng: 106.03579008416635 },
-  { lat: 30.7478613352993, lng: 106.03655278081857 },
-  { lat: 30.7483112149064, lng: 106.03603690298392 },
-  { lat: 30.748686106849632, lng: 106.0355627433318 },
-  { lat: 30.748881699556307, lng: 106.03529721123913, desc: '目的地' }
-]
+/**
+ * 从 public/js/map-config.js 的全局 gisConfig 读取当前区域配置
+ * 切换区域：修改 gisConfig.area.key（如 nanchong / qihang）
+ */
+export function getGisAreaConfig() {
+  const config = typeof window !== 'undefined' ? window.gisConfig : null
+  const key = config?.area?.key
+  if (key && config?.[key]) return config[key]
+  return {}
+}
+
+// 区域多边形点 [lat, lng][]
+export const POLYGON_POINTS = getGisAreaConfig().polygonPoints || []
+
+// 路径点 { lat, lng, desc? }[]
+export const WAY_POINTS = getGisAreaConfig().wayPoints || []
+
+// GIS 中心点 [lat, lng]
+export const GIS_MAP_CENTER_POINT = getGisAreaConfig().center || []
+
+/**
+ * GIS 缩放范围：map-config 中 zoom: [min, max]
+ * - minZoom：Leaflet 下限，指挥中心默认显示级别
+ * - maxZoom：Leaflet 上限，巡逻巡查（全景/监控）默认显示级别
+ */
+export function getGisZoomRange() {
+  const zoom = getGisAreaConfig().zoom
+  const fallback = { minZoom: 12, maxZoom: 18 }
+  if (!Array.isArray(zoom) || zoom.length < 2) return fallback
+  const a = Number(zoom[0])
+  const b = Number(zoom[1])
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return fallback
+  return {
+    minZoom: Math.min(a, b),
+    maxZoom: Math.max(a, b)
+  }
+}
+
+export const GIS_ZOOM_RANGE = getGisZoomRange()
+
+/** 最大缩放层级时的地图旋转角（度），来自 map-config.rotate */
+export function getGisMapRotate() {
+  const rotate = Number(getGisAreaConfig().rotate)
+  return Number.isFinite(rotate) ? rotate : 0
+}
+
+export const GIS_MAP_ROTATE = getGisMapRotate()
+
+// 当前区域 key（用于 tdt 瓦片路径等）
+export const GIS_AREA_KEY = getGisAreaConfig().key
+  || (typeof window !== 'undefined' ? window.gisConfig?.area?.key : '')
+  || ''
+
+/** 天地图离线瓦片地址：/tdt/{areaKey}/{z}/{x}/{y}.png */
+export function getGisTileUrl() {
+  const base = process.env.VUE_APP_BASE_ORIGIN
+    || (typeof location !== 'undefined' ? location.origin : '')
+    || ''
+  return `${base}/tdt/${GIS_AREA_KEY}/{z}/{x}/{y}.png`
+}
 
 // slam地图点位，暂时固定，后续需对接接口
 export const SLAM_POINTS = {

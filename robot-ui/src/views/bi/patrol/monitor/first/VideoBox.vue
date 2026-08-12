@@ -29,11 +29,17 @@
       </div>
       <div class="top flx-justify-between w100 pr10 pl10 pt10 pb18">
         <!-- ---{{ ZQL_videosInfos[`slot_${index}`].status }} -->
+        <!-- 二级监控：仅左上角摄像头名称；一级保留装备图标/名称 + 右上角 VideoInfo -->
         <div class="title flx-center">
-          <svg-icon :icon-class="ROBOT_TYPE_INFO[currentRobot?.type]?.icon || 'robot'" style="color: #0BF9FE; font-size: 16px" />
-          <span class="ml10">{{ currentRobot?.name || '-' }}<template v-if="!isFixedCamera">-{{ ZQL_videosInfos[`slot_${index}`].name }}</template></span>
+          <template v-if="cameraTitleOnly">
+            <span>{{ ZQL_videosInfos[`slot_${index}`].name || '-' }}</span>
+          </template>
+          <template v-else>
+            <svg-icon :icon-class="ROBOT_TYPE_INFO[currentRobot?.type]?.icon || 'robot'" style="color: #0BF9FE; font-size: 16px" />
+            <span class="ml10">{{ currentRobot?.name || '-' }}<template v-if="!isFixedCamera">-{{ ZQL_videosInfos[`slot_${index}`].name }}</template></span>
+          </template>
         </div>
-        <div class="flx-center">
+        <div v-if="!cameraTitleOnly" class="flx-center">
           <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key" />
         </div>
       </div>
@@ -148,6 +154,10 @@ export default {
     },
     showControl() {
       return !this.selectedRobotId || (this.selectedRobotId && (this.className.includes('six-1') || this.splitType === 1 || this.splitType === 4))
+    },
+    /** 二级监控（深度控制）：顶部仅显示摄像头名称 */
+    cameraTitleOnly() {
+      return String(this.prefixId || '').endsWith('-second')
     }
   },
   data() {

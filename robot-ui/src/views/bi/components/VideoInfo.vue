@@ -10,7 +10,7 @@
     </div>
     <div class="info-item flx-center ml20">
       <svg-icon icon-class="meter" style="color: #21CCE7" />
-      <span class="ml4">{{ currentRobot?.speed || 0 }}m/s</span>
+      <span class="ml4">{{ Number(currentRobot?.speed || 0).toFixed(2) }}m/s</span>
     </div>
     <!-- <div class="info-item flx-center ml20">
       <svg-icon icon-class="data" style="color: #159AFF" />

@@ -1,5 +1,5 @@
 <template>
-  <div class="right-div ml20 no-w-scroll mb20 mt105" :class="{ 'pr28': collapse, 'pr20 pl28': !collapse }" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', height: 'calc(100% - 154px)', overflowY: 'auto' }">
+  <div class="right-div ml20 no-w-scroll mb20 mt105" :class="{ 'pr28': collapse, 'pr20 pl28': !collapse }" :style="{ 'pointer-events': sidebarPointerEvents, height: 'calc(100% - 154px)', overflowY: 'auto' }">
     <div class="container flex-column w100" style="flex-wrap: nowrap;">
       <div class="box bi-corner-box zbgl">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
@@ -83,25 +83,25 @@
             <div class="t2">任务列表</div>
             <div class="mt12">
               <div class="flx-justify-between top pr10 pl10">
-                <div style="width: 43%;">任务名称</div>
+                <div style="width: 37%;">任务名称</div>
                 <div class="ml10 mr10 wp50">状态</div>
-                <div class="ml10" style="width: 35%;">执行时间</div>
+                <div class="ml10" style="width: 41%;">开始时间</div>
               </div>
               <div class="common-scroll ovya" style="height: 288px;">
                 <template v-if="tasks.length">
                   <div v-for="item in tasks" class="tasks flx-justify-between pr10 pl10">
-                    <div style="width: 43%;" class="text-ellipsis" :title="item.name">{{ item.name }}</div>
+                    <div style="width: 37%;" class="text-ellipsis" :title="item.name">{{ item.name }}</div>
                     <div
                       class="ml10 mr10 status wp50"
                       :class="{
                         green: item.status === 'running',
-                        orange: item.status === 'pending',
+                        orange: item.status === 'waiting',
                         blue: item.status === 'completed',
                         red: item.status?.includes('failed'),
                         gray: item.status === 'paused'
                       }"
                     >{{ executionStatusLabel(item.status) }}</div>
-                    <div class="ml10" style="width: 35%;">{{ item.timeRange }}</div>
+                    <div class="ml10" style="width: 41%;">{{ item.executionMode === 'MANUAL' && item.status === 'waiting' ? '-' : item.startTime }}</div>
                   </div>
                 </template>
                 <!-- <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div> -->
@@ -146,7 +146,22 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
-    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'taskOverview']),
+    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'taskOverview', 'robotBaseInfo']),
+    /** 选中固定摄像头时不禁用侧边栏 */
+    isSelectedFixedCamera() {
+      if (!this.selectedRobotId) return false
+      const robot = this.robotBaseInfo?.[this.selectedRobotId]
+        || this.$store.getters['websocketRobot/getSelectedRobot']
+        || {}
+      return robot.sourceType === 'FIXED_CAMERA'
+        || robot.typeCode === 'FIXED_CAMERA'
+        || robot.equipmentType === 'FIXED_CAMERA'
+        || robot.type === 'FIXED_CAMERA'
+        || robot.type === '固定摄像头'
+    },
+    sidebarPointerEvents() {
+      return (this.selectedRobotId && !this.isSelectedFixedCamera) ? 'none' : 'auto'
+    },
     tasks() {
       return getDescArr(this.taskData || {}, 'timestamp')
     }

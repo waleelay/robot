@@ -62,13 +62,13 @@
         </div>
         <div class="mt10 hp162 d-flex" style="background: #011223; border: 1px solid #123F8C;">
           <div class="flex1 flx-align-center pl37 robot basic">
-            <div>
-              <div class="name ">{{ selectedRobot.name }}</div>
+            <div class="flex-column flx-align-center">
+              <div class="name text-ellipsis">{{ selectedRobot.name }}</div>
               <img v-if="selectedRobot.typeCode === 'ROBOT_DOG'" src="@/assets/images/new-bi/dog.png" alt="" srcset="" width="96" height="96">
               <img v-if="selectedRobot.typeCode === 'WHEELED_ROBOT'" src="@/assets/images/new-bi/car.png" alt="" srcset="" width="96" height="96">
             </div>
             <div class="ml54">
-              <div class="desc">当前速度：{{ currenRobot.speed }}m/s</div>
+              <div class="desc">当前速度：{{ Number(currenRobot.speed || 0).toFixed(2) }}m/s</div>
               <div class="desc">当前电量：{{ currenRobot.battery }}%</div>
               <div class="desc">当前任务：{{ currenRobot?.runningTask?.name || '-' }}</div>
               <div class="desc">控制模型：{{ currenRobot?.controlMode === '手动模式' ? '手动控制' : currenRobot?.controlMode === '导航模式' ? '自动控制' : '-' }}</div>
@@ -208,12 +208,12 @@ export default {
     showDogControl() {
       if (this.baseDevice?.deviceType === 'QUADRUPED_BASE') return true
       const type = this.selectedRobot.typeCode || this.selectedRobot.type
-      return ['ROBOT_DOG', 'QUADRUPED_ROBOT', '四足机器狗', '四足机器人', '机器狗'].includes(type)
+      return ['ROBOT_DOG', '机器狗'].includes(type)
     },
     showCarControl() {
       if (this.baseDevice?.deviceType === 'WHEELED_BASE') return true
       const type = this.selectedRobot.typeCode || this.selectedRobot.type
-      return ['WHEELED_ROBOT', '轮式机器人', '轮式车'].includes(type)
+      return ['WHEELED_ROBOT', '轮式机器人'].includes(type)
     },
     // second 界面以当前选中装备确定 SLAM 地图
     targetRobotId() {
@@ -412,6 +412,7 @@ export default {
 }
 .basic {
   .name {
+    max-width: 160px;
     font-family: YouSheBiaoTiHei;
     font-size: 20px;
     line-height: 26px;

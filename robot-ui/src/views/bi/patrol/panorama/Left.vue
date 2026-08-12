@@ -1,5 +1,5 @@
 <template>
-  <div class="left-div pr28 h100 mt25 no-w-scroll" :class="{ 'ml20': !collapse, 'ml10': collapse }" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }">
+  <div class="left-div pr28 h100 mt25 no-w-scroll" :class="{ 'ml20': !collapse, 'ml10': collapse }" :style="{ 'pointer-events': sidebarPointerEvents, maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }">
     <div class="container flex-column w100 h100 common-scroll" style="flex-wrap: nowrap;">
       <!--  :class="{'hp264': deviceTypeStats?.length, 'hp155': !deviceTypeStats?.length}" -->
       <div class="box bi-corner-box hp264">
@@ -50,8 +50,8 @@
                 class="item flex1 hp62"
                 :class="{
                   'ml10': index !== 0,
-                  'p9': !(item.name && item.name.length > 4),
-                  'is-long-name': item.name && item.name.length > 4
+                  'p9': !(item.name && item.name.length > 4 && deviceTypeStats.length > 4),
+                  'is-long-name': item.name && item.name.length > 4 && deviceTypeStats.length > 4
                 }"
               >
                 <div class="desc">{{ item.name }}</div>
@@ -91,13 +91,18 @@
                 </div>
                 <span class="status flx-center pt2 pr6 pb2 pl6 ml10" :class="getTaskStatusName(item.status)">
                   <svg-icon icon-class="security"></svg-icon>
-                  <span class="ml4">{{ executionStatusLabel(item.status, '---') }}</span>
+                  <span class="ml4">{{ executionStatusLabel(item.status, '-') }}</span>
                 </span>
               </div>
               <div class="desc">
-                <div>任务时间：{{ item.timeRange || item.startTime || '-' }}</div>
+                <div :title="isManualWaitingTask(item) ? '手动执行' : undefined">
+                  任务开始时间：{{ isManualWaitingTask(item) ? '-' : (item.startTime || '-') }}
+                </div>
+                <div class="flx-align-center">
+                  <span class="wp150">预计时长：{{ formatEstimatedDuration(item.expectedDurationSeconds) }}</span>
+                  <span class="ml20">执行装备：{{ item.equipmentList?.length || 0 }}台</span>
+                </div>
                 <div class="text-ellipsis">当前位置：{{ item.currentLocation || '-' }}</div>
-                <div>执行装备：{{ item.equipmentList?.length || 0 }}台</div>
               </div>
               <!-- 执行中：详情 / 暂停/恢复 / 定位装备 / 终止 / 播放视频 -->
               <div v-if="item.status === 'running' || item.status === 'paused'" class="task-actions">
@@ -293,7 +298,22 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
-    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'globalMapId']),
+    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'globalMapId', 'robotBaseInfo']),
+    /** 选中固定摄像头时不禁用侧边栏 */
+    isSelectedFixedCamera() {
+      if (!this.selectedRobotId) return false
+      const robot = this.robotBaseInfo?.[this.selectedRobotId]
+        || this.$store.getters['websocketRobot/getSelectedRobot']
+        || {}
+      return robot.sourceType === 'FIXED_CAMERA'
+        || robot.typeCode === 'FIXED_CAMERA'
+        || robot.equipmentType === 'FIXED_CAMERA'
+        || robot.type === 'FIXED_CAMERA'
+        || robot.type === '固定摄像头'
+    },
+    sidebarPointerEvents() {
+      return (this.selectedRobotId && !this.isSelectedFixedCamera) ? 'none' : 'auto'
+    },
     taskData1() {
       return getDescArr(this.taskData || {}, 'timestamp') || []
     },
@@ -363,6 +383,31 @@ export default {
         default:
           return 'gray'
       }
+    },
+    /** 手动执行且待执行：开始时间展示为 '-'，并带 title 提示 */
+    isManualWaitingTask(item) {
+      return item?.executionMode === 'MANUAL' && item?.status === 'waiting'
+    },
+    /**
+     * expectedDurationSeconds（秒）→ 时分秒展示
+     * - 不足 60 秒：只显示秒
+     * - 不足 60 分钟：不显示时（60 秒显示为 1 分钟）
+     * - 满 60 分钟显示为 1 小时
+     */
+    formatEstimatedDuration(expectedDurationSeconds) {
+      if (expectedDurationSeconds == null || expectedDurationSeconds === '') return '-'
+      const totalSeconds = Math.floor(Number(expectedDurationSeconds))
+      if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '-'
+      const hours = Math.floor(totalSeconds / 3600)
+      const minutes = Math.floor((totalSeconds % 3600) / 60)
+      const seconds = totalSeconds % 60
+      if (hours > 0) {
+        return minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`
+      }
+      if (minutes > 0) {
+        return seconds > 0 ? `${minutes}分${seconds}秒` : `${minutes}分钟`
+      }
+      return `${seconds}秒`
     },
     getTaskPlanId(item) {
       return item?.planId || item?.id || item?.taskId || item?.taskPlanId
@@ -619,7 +664,7 @@ export default {
 }
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
 .left-div {
   backdrop-filter: unset !important;
   background: transparent !important;
@@ -934,8 +979,8 @@ export default {
               line-height: 16px;
               white-space: nowrap;
               .svg-icon {
-                color: #FFF;
-                font-size: 12px;
+                color: #FFF !important;
+                font-size: 12px !important;
               }
               &.blue {
                 background: #225CA4;

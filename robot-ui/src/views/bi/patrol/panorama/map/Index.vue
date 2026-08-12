@@ -9,6 +9,17 @@
 -->
 <template>
   <div class="map-div h100" :class="{ full: collapse }">
+    <transition name="slam-map-loading-fade">
+      <div
+        v-if="!overviewReady"
+        class="slam-map-loading flx-center flex-column"
+        @wheel.prevent
+        @mousedown.stop
+      >
+        <div class="slam-map-loading__spinner" aria-hidden="true"></div>
+        <p class="slam-map-loading__text">正在获取地图数据</p>
+      </div>
+    </transition>
     <div v-if="globalMapId && globalMapId !== 'gis'" class="slam-map-host w100 h100" style="z-index: 0;">
       <GlobalSlamMap
         :map="slamMapPayload"
@@ -26,6 +37,7 @@
         style="z-index: 0;"
         ref="globalMapRef"
         @pathVisibleChange="onPathVisibleChange"
+        @zoom-change="onGisZoomChange"
       />
       <img v-if="angle !== '2D'" src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
     </template>
@@ -34,6 +46,7 @@
       :isSlam="isSlam"
       :showAngle="!isSlam"
       :currentSlam="currentSlamMapId"
+      :currentGisZoom="currentGisZoom"
       :angle="angle"
       @changeMapZoom="changeMapZoom"
       @changeMapType="changeMapType"
@@ -73,11 +86,12 @@ export default {
       angle: '2D',
       isSlam: false,
       currentSlamMapId: null,
-      autoSwitchedSlam: false
+      autoSwitchedSlam: false,
+      currentGisZoom: null
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'defaultGpsDevices', 'globalMapId']),
+    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'defaultGpsDevices', 'globalMapId', 'overviewReady']),
     currentSlamMap() {
       const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
       return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(this.currentSlamMapId)) || null
@@ -116,11 +130,10 @@ export default {
       this.$emit('getDogList', { dogList: data.dogList })
     },
     changeMapZoom(data) {
-      if (this.isSlam) {
-        this.$refs.globalMapRef?.changeMapZoom(data)
-      } else {
-        this.$refs.globalMapRef?.map?.[data.method]?.(data.value || 1)
-      }
+      this.$refs.globalMapRef?.changeMapZoom(data)
+    },
+    onGisZoomChange(zoom) {
+      this.currentGisZoom = zoom
     },
     changeMapType(type) {
       this.isSlam = type ? type === 'slam' : !this.isSlam
@@ -173,8 +186,11 @@ export default {
     setCenter() {
       const mapRef = this.$refs.globalMapRef
       if (this.isSlam) {
-        mapRef?.backCenter()
+        // SLAM：恢复默认加载时的大小与位置
+        if (typeof mapRef?.resetView === 'function') mapRef.resetView()
+        else mapRef?.backCenter?.()
       } else {
+        // GIS：定位到中心点 + 初始层级
         mapRef?.setCenter()
       }
     },

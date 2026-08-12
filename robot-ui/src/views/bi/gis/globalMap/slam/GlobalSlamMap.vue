@@ -185,10 +185,9 @@
                   :height="robot.displayIconHeight"
                   class="robot-type-icon"
                 />
-                <!-- 选中四角：Figma 66×6（含发光 viewBox 72×12），上下各一，底边垂直翻转；摄像头按图标居中偏移 -->
+                <!-- 选中四角：固定摄像头不展示 -->
                 <g
-                  v-if="isRobotHighlighted(robot.robotId)"
-                  :transform="robot.cornersOffsetY ? `translate(0, ${robot.cornersOffsetY})` : undefined"
+                  v-if="isRobotHighlighted(robot.robotId) && !robot.isFixedCamera"
                   pointer-events="none"
                 >
                   <image
@@ -223,7 +222,7 @@
                   >{{ robot.name }}</div>
                 </foreignObject>
                 <foreignObject
-                  v-if="!showSmall"
+                  v-if="!showSmall && !robot.isFixedCamera"
                   class="robot-status-fo"
                   :x="robot.statusBgX"
                   :y="isRobotHighlighted(robot.robotId) ? robot.statusYSelected : robot.statusY"
@@ -829,14 +828,16 @@ export default {
           : -(23 + displayIconHeight / 2)
         const nameY = isFixedCamera ? 6 : 0
         const statusY = isFixedCamera ? 28 : 22
-        // 选中四角默认框：y=-56 ~ 16，中心 -20；摄像头按图标中心对齐四角
+        // 选中四角默认框：y=-56 ~ 16，中心 -20；摄像头不展示四角，名称保持默认位置
         const defaultCornersTopY = -56
         const defaultCornersBottomY = 16
         const defaultFrameCenterY = (defaultCornersTopY + defaultCornersBottomY) / 2
         const iconCenterY = iconY + displayIconHeight / 2
         const cornersOffsetY = isFixedCamera ? iconCenterY - defaultFrameCenterY : 0
-        // 选中时：名称距第二个 selected-corners 底部 2px（随四角偏移同步）
-        const nameYSelected = defaultCornersBottomY + 2 + cornersOffsetY
+        // 选中时：普通装备名称距第二个 selected-corners 底部 2px；摄像头无四角，沿用 nameY
+        const nameYSelected = isFixedCamera
+          ? nameY
+          : (defaultCornersBottomY + 2 + cornersOffsetY)
         const statusYSelected = nameYSelected + 22
         const cameraSelected = isFixedCamera && this.isRobotHighlighted(robot.robotId)
         const iconFile = cameraSelected ? 'robot-camera-active' : typeInfo.img
@@ -1321,20 +1322,26 @@ export default {
         return
       }
       this._popupPosRetry = 0
-      // 选中四角 x=-36、宽 72、y=-56~16；中点本地 y=-20（摄像头另加 cornersOffsetY）
-      const cornersHalfWidth = 36
-      const cornersMidOffsetY = -20 + (Number(target.cornersOffsetY) || 0)
+      // 普通装备：选中四角 x=-36、宽 72、中点本地 y=-20
+      // 固定摄像头：无四角，按图标半宽 / 图标垂直中心对齐
+      const isFixedCamera = !!target.isFixedCamera
+      const alignHalfWidth = isFixedCamera
+        ? Math.max(22, (Number(target.displayIconWidth) || 44) / 2)
+        : 36
+      const alignMidOffsetY = isFixedCamera
+        ? ((Number(target.iconY) || 0) + (Number(target.displayIconHeight) || 62) / 2)
+        : (-20 + (Number(target.cornersOffsetY) || 0))
       const gap = 1
       // guideline.png（高 47、bottom:-47px）最底边作为模态底部对齐点
       const guidelineNaturalH = 47
       const anchorX = stageRect.left + target.pixel.x * this.zoom
       const anchorY = stageRect.top + target.pixel.y * this.zoom
-      const cornersRightX = anchorX + cornersHalfWidth
-      const cornersMidY = anchorY + cornersMidOffsetY
-      // 初值：左缘贴四角右缘；guideline 最底边对齐四角中点
+      const alignRightX = anchorX + alignHalfWidth
+      const alignMidY = anchorY + alignMidOffsetY
+      // 初值：左缘贴对齐参考右缘；guideline 最底边对齐参考中点
       this.popupOffset = {
-        x: cornersRightX + gap,
-        y: cornersMidY - robotSize.height - guidelineNaturalH
+        x: alignRightX + gap,
+        y: alignMidY - robotSize.height - guidelineNaturalH
       }
       // 内容切换后高度可能变化，下一帧按实测左缘/guideline 底边再校正，避免切换装备错位
       const token = (this._popupPosToken = (this._popupPosToken || 0) + 1)
@@ -1345,15 +1352,15 @@ export default {
           const tipEl = this.$refs.robot1Ref && this.$refs.robot1Ref.$refs && this.$refs.robot1Ref.$refs.guidelineRef
           if (!el) return
           const modalRect = this.viewportRectToScaleRect(el.getBoundingClientRect())
-          const dx = modalRect.left - (cornersRightX + gap)
+          const dx = modalRect.left - (alignRightX + gap)
           let dy = 0
           if (tipEl) {
             const tipRect = this.viewportRectToScaleRect(tipEl.getBoundingClientRect())
             const guidelineBottomY = tipRect.top + tipRect.height
-            dy = guidelineBottomY - cornersMidY
+            dy = guidelineBottomY - alignMidY
           } else {
             const h = this.getElementSizeInScaleWrapper(el).height || robotSize.height
-            dy = (modalRect.top + h + guidelineNaturalH) - cornersMidY
+            dy = (modalRect.top + h + guidelineNaturalH) - alignMidY
           }
           if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
             this.popupOffset = {
@@ -1379,7 +1386,7 @@ export default {
         return
       }
       const type = this.selectedRobot?.type
-      const isDog = type === '四足机器狗' || type === '四足机器人' || type === 'ROBOT_DOG'
+      const isDog = type === '机器狗' || type === 'ROBOT_DOG'
       const controlRef = isDog ? this.$refs.robotControlPartRef : this.$refs.robotCarControlPartRef
       const nextVisible = typeof visible === 'boolean' ? visible : !controlRef?.visible
       controlRef?.show(nextVisible)
@@ -1597,10 +1604,9 @@ export default {
         this.schedulePopupPositionUpdate()
       })
     },
+    /** 复位：恢复默认加载时的缩放与位置（与 resetView 一致） */
     backCenter() {
-      this.offsetX = 0
-      this.offsetY = 0
-      this.schedulePopupPositionUpdate()
+      this.resetView()
     },
     handleMouseDown(e) {
       if (e.target.closest('.map-preview-point') || e.target.closest('.map-preview-robot') || e.target.closest('.map-operation') || e.target.closest('.context-menu') || e.target.closest('.location')) return

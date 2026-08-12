@@ -89,7 +89,7 @@
                 class="status p4 wp50 text-ellipsis"
                 :class="{
                   green: item.status === 'running',
-                  orange: item.status === 'pending',
+                  orange: item.status === 'waiting',
                   blue: item.status === 'completed',
                   red: item.status?.includes('failed'),
                   gray: item.status === 'paused'
@@ -137,7 +137,7 @@
             </div>
           </div>
         </div>
-        <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无任务计划" />
+        <Empty v-else width="126px" :opacity="0.7" textColor="#BEE1FF" text="暂无运行中的任务计划" />
       </div>
     </div>
   </div>

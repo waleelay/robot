@@ -1,6 +1,19 @@
 <template>
-  <div class="left-div pr28 mb20 no-w-scroll mt105" :class="{ 'ml20': !collapse, 'ml10': collapse }" :style="{ 'pointer-events': selectedRobotId ? 'none' : 'auto', height: 'calc(100% - 154px)', overflowY: 'auto' }">
-    <div class="container flex-column w100" style="flex-wrap: nowrap;">
+  <div
+    class="left-div pr28 mb20 no-w-scroll mt105"
+    :class="{ 'ml20': !collapse, 'ml10': collapse }"
+    :style="{
+      'pointer-events': sidebarPointerEvents,
+      height: 'calc(100% - 154px)',
+      overflowY: selectVisible ? 'visible' : 'auto',
+      overflowX: selectVisible ? 'visible' : 'hidden'
+    }"
+  >
+    <div
+      class="container flex-column w100"
+      :class="{ 'ovh-visible': selectVisible }"
+      style="flex-wrap: nowrap;"
+    >
       <div class="box bi-corner-box hp386">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">告警概览</span> 
@@ -39,7 +52,7 @@
           </div>
         </div>
       </div>
-      <div class="box bi-corner-box hp520 mt20 task pb18" :class="{ 'no_data hp41': collapseArr[1] }">
+      <div class="box bi-corner-box hp520 mt20 task pb18 posr" :class="{ 'no_data hp41': collapseArr[1] }">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">巡逻概览</span>
         </div>
@@ -53,21 +66,47 @@
             <div class="value mt4"><span class="mr4">{{ patrolOverview.mileageToday || 0 }}</span>{{ patrolOverview.mileageUnit || 'KM' }}</div>
           </div>
         </div>
-        <div class="mt18">
+        <div class="mt18 patrol-videos posr">
           <div class="t2 ml20">巡逻画面</div>
           <div class="flex flex-wrap pl10">
-            <!-- wp142 hp80  -->
-            <!-- 随机显示一个摄像头画面 -->
-            <div v-for="(robot, index) in robotMainCameras.slice(0, 2)" class="wp296 hp159 mt10 ml10" style="position: relative;">
-              <VideoBox
-                class=""
-                :videoIndex="`${robot.robotId}_${index}_${robot.camera.key}`"
-                :prefixId="prefixId"
-                :ZQL_videosInfos="{ [`${robot.robotId}_${index}_${robot.camera.key}`]: { robot, ...robot.camera } }" />
-              <div class="video-name">{{ robot.name }}</div>
+            <div
+              v-for="(slot, index) in videoSlots"
+              :key="`patrol-slot-${index}`"
+              class="patrol-video-slot wp296 hp159 mt10 ml10 posr ovh curp"
+              :class="{ active: selectVisible && activeSlotIndex === index, empty: !slot }"
+              @click="slot ? toggleEquipmentSelect(index) : openEquipmentSelect(index)"
+            >
+              <template v-if="slot">
+                <VideoBox
+                  :videoIndex="slot.camera.key"
+                  :prefixId="prefixId"
+                  :ZQL_videosInfos="getSlotVideosInfos(slot)"
+                />
+                <div class="video-name text-ellipsis posa">{{ getSlotLabel(slot) }}</div>
+                <div class="video-close curp flx-center posa" @click.stop="clearSlot(index)">
+                  <svg-icon icon-class="close" />
+                </div>
+                <div class="video-switch curp posa" @click.stop="openEquipmentSelect(index)">切换画面</div>
+              </template>
+              <div v-else class="empty-slot w100 h100 flx-center flex-column">
+                <img class="empty-img" src="@/assets/images/new-bi/empty.png" alt="">
+                <div class="empty-text flx-align-center mt10">
+                  <svg-icon icon-class="plus" class="add-icon" />
+                  <span>请添加视频画面</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+        <EquipmentScreenSelect
+          :visible="selectVisible"
+          :title="selectTitle"
+          :placeholder="selectPlaceholder"
+          :options="selectOptions"
+          :selected-id="currentSelectedId"
+          @close="closeEquipmentSelect"
+          @select="handleSelectOption"
+        />
       </div>
     </div>
     <div class="collapse-left flx-center" @click="$emit('changeCollapse')">
@@ -82,9 +121,10 @@
 import { mapActions, mapState } from 'vuex';
 import PieChart from './PieChart.vue';
 import VideoBox from '../components/modal/VideoBox.vue';
+import EquipmentScreenSelect from './EquipmentScreenSelect.vue';
 export default {
   name: 'BiIndexLeft',
-  components: { PieChart, VideoBox },
+  components: { PieChart, VideoBox, EquipmentScreenSelect },
   props: {
     collapse: {
       type: Boolean,
@@ -97,42 +137,91 @@ export default {
     },
     ...mapState('websocketRobot', ['robots', 'cameras']),
     ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'robotBaseInfo', 'alarmSummary', 'patrolOverview']),
+    /** 选中固定摄像头时不禁用侧边栏 */
+    isSelectedFixedCamera() {
+      if (!this.selectedRobotId) return false
+      const robot = this.robotBaseInfo?.[this.selectedRobotId]
+        || this.$store.getters['websocketRobot/getSelectedRobot']
+        || {}
+      return robot.sourceType === 'FIXED_CAMERA'
+        || robot.typeCode === 'FIXED_CAMERA'
+        || robot.equipmentType === 'FIXED_CAMERA'
+        || robot.type === 'FIXED_CAMERA'
+        || robot.type === '固定摄像头'
+    },
+    sidebarPointerEvents() {
+      return (this.selectedRobotId && !this.isSelectedFixedCamera) ? 'none' : 'auto'
+    },
     alarmPieChart() {
       return [
-        // { name: '高风险', value: this.alarmsData?.high?.items?.length || 0, color: '#FF2424' },
-        // { name: '中风险', value: this.alarmsData?.medium?.items?.length || 0, color: '#FFA024' },
-        // { name: '低风险', value: this.alarmsData?.low?.items?.length || 0, color: '#24CBFF' },
         { name: '高风险', value: 0, color: '#FF2424' },
         { name: '中风险', value: 0, color: '#FFA024' },
         { name: '低风险', value: 0, color: '#00D8A4' },
       ]
     },
-    robotMainCameras() {
-      const result = this.robots
-        .map(robot => {
-          const bodyCam = robot.cameras.find(camera => camera.groupType === 'body');
-          return bodyCam ? { robotId: robot.robotId, name: robot.name, camera: this.cameras[bodyCam.key] } : null;
+    onlineRobots() {
+      return (this.robots || []).filter(robot => {
+        const status = this.robotBaseInfo?.[robot.robotId]?.status || robot.status
+        return status === 'online'
+      })
+    },
+    // 仅 1 个在线装备时，选择框展示该装备下全部摄像头（本体优先）
+    isSingleEquipmentCameraMode() {
+      return this.onlineRobots.length === 1
+    },
+    selectTitle() {
+      if (this.isSingleEquipmentCameraMode) {
+        return this.onlineRobots[0]?.name || '装备画面选择'
+      }
+      return '装备画面选择'
+    },
+    selectPlaceholder() {
+      return this.isSingleEquipmentCameraMode ? '请输入摄像头名称' : '请输入装备名称'
+    },
+    currentSelectedId() {
+      const slot = this.videoSlots[this.activeSlotIndex]
+      if (!slot) return ''
+      return this.isSingleEquipmentCameraMode ? slot.camera?.key : slot.robotId
+    },
+    selectOptions() {
+      const otherSlot = this.videoSlots[this.activeSlotIndex === 0 ? 1 : 0]
+      if (this.isSingleEquipmentCameraMode) {
+        const robot = this.onlineRobots[0]
+        const cameras = [...(robot?.cameras || [])].sort((a, b) => {
+          if (a.groupType === 'body') return -1
+          if (b.groupType === 'body') return 1
+          return 0
         })
-        .filter(item => item !== null); // 去除没有 body 摄像头的机器人
-      this.startAll(result)
-      return result
+        return cameras.map(camera => {
+          const occupied = otherSlot?.camera?.key === camera.key
+          return {
+            id: camera.key,
+            label: camera.name || camera.groupTypeName || camera.key,
+            robotId: robot.robotId,
+            cameraKey: camera.key,
+            disabled: occupied,
+            occupied
+          }
+        })
+      }
+      return this.onlineRobots.map(robot => {
+        const occupied = otherSlot?.robotId === robot.robotId
+        return {
+          id: robot.robotId,
+          label: robot.name,
+          robotId: robot.robotId,
+          disabled: occupied,
+          occupied
+        }
+      })
     }
   },
   data() {
     return {
       tabList: [
-        {
-          label: '今日',
-          value: 0
-        },
-        {
-          label: '本月',
-          value: 1
-        },
-        {
-          label: '当年',
-          value: 2
-        }
+        { label: '今日', value: 0 },
+        { label: '本月', value: 1 },
+        { label: '当年', value: 2 }
       ],
       tabIndex: 0,
       collapseArr: [false, false, true],
@@ -141,24 +230,18 @@ export default {
       activeTaskId: null,
       overviewInfo: {},
       alarms: {
-        high: {
-          name: '高风险',
-          class: 'danger'
-        },
-        medium: {
-          name: '中风险',
-          class: 'warning'
-        },
-        low: {
-          name: '低风险',
-          class: 'green'
-        },
+        high: { name: '高风险', class: 'danger' },
+        medium: { name: '中风险', class: 'warning' },
+        low: { name: '低风险', class: 'green' },
       },
       prefixId: 'home-video',
-      loadedCameraKeys: []
+      videoSlots: [null, null],
+      selectVisible: false,
+      activeSlotIndex: 0
     }
   },
   async mounted() {
+    this.setPrefixId(this.prefixId)
     if (this.alarmsData?.high?.items?.length) {
       this.collapseArr[2] = false
     }
@@ -166,38 +249,109 @@ export default {
   methods: {
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'setPrefixId']),
     getMoreRobotInfo() {
-  
+
     },
-    async startAll(robotMainCameras) {
-      this.setPrefixId(this.prefixId)
-      this.$nextTick(async () => {
-        if (!robotMainCameras.length) return
-        if (this.loadedCameraKeys.length === robotMainCameras.length || this.loadedCameraKeys.length === 2) return
-        // const robot = robotMainCameras[0]
-        // console.log(222, robotMainCameras.length);
-        
-        for (const robot of [...robotMainCameras.slice(0, 2)]) {
-          // console.log(111, robot.robotId, this.robotBaseInfo?.[robot.robotId]?.status);
-          
-          if (!this.robotBaseInfo?.[robot.robotId]) return
-          // console.log(111, robotMainCameras.length, robotMainCameras.slice(0, 2).length, this.loadedCameraKeys, this.robotBaseInfo[robot.robotId].status);
-          const camera = Object.assign({}, robot.camera)
-          if (this.robotBaseInfo[robot.robotId].status === 'online' && !this.loadedCameraKeys.includes(camera.key)) {
-          // if (this.robotBaseInfo['robot-001'].status === 'online' && !this.loadedCameraKeys.includes(camera.key)) {
-            this.loadedCameraKeys.push(camera.key)
-            // console.log(123, robot.robotId, camera);
-            await this.startCamera({ robot: Object.assign({}, this.robotBaseInfo[robot.robotId] || {}), camera })
-          }
+    getSlotVideosInfos(slot) {
+      if (!slot?.camera) return {}
+      const camera = this.cameras?.[slot.camera.key] || slot.camera
+      return {
+        [camera.key]: {
+          ...camera,
+          robot: slot.robot
         }
+      }
+    },
+    getSlotLabel(slot) {
+      if (!slot) return ''
+      const equipmentName = slot.robot?.name || ''
+      const cameraName = slot.camera?.name || slot.camera?.groupTypeName || ''
+      return cameraName ? `${equipmentName}-${cameraName}` : equipmentName
+    },
+    openEquipmentSelect(index) {
+      this.activeSlotIndex = index
+      this.selectVisible = true
+      this.$emit('patrol-select-change', true)
+    },
+    toggleEquipmentSelect(index) {
+      if (this.selectVisible && this.activeSlotIndex === index) {
+        this.closeEquipmentSelect()
+        return
+      }
+      this.openEquipmentSelect(index)
+    },
+    closeEquipmentSelect() {
+      this.selectVisible = false
+      this.$emit('patrol-select-change', false)
+    },
+    async clearSlot(index) {
+      const slot = this.videoSlots[index]
+      if (!slot?.camera) {
+        this.$set(this.videoSlots, index, null)
+        return
+      }
+      const camera = this.cameras?.[slot.camera.key] || slot.camera
+      await this.stopCamera(camera)
+      this.$set(this.videoSlots, index, null)
+      if (this.selectVisible && this.activeSlotIndex === index) {
+        // 保持选择框打开，便于继续选择
+      }
+    },
+    async handleSelectOption(item) {
+      const index = this.activeSlotIndex
+      const current = this.videoSlots[index]
+      const currentId = this.isSingleEquipmentCameraMode ? current?.camera?.key : current?.robotId
+      // 再次点击已勾选项：关闭当前画面
+      if (item.id === currentId) {
+        await this.clearSlot(index)
+        return
+      }
+      await this.assignSlot(index, item)
+    },
+    async assignSlot(index, item) {
+      const robot = this.onlineRobots.find(r => r.robotId === item.robotId)
+        || this.robots.find(r => r.robotId === item.robotId)
+      if (!robot) return
+      const robotInfo = Object.assign({}, this.robotBaseInfo?.[robot.robotId] || robot)
+      let cameraMeta = null
+      if (this.isSingleEquipmentCameraMode) {
+        cameraMeta = (robot.cameras || []).find(c => c.key === item.cameraKey || c.key === item.id)
+      } else {
+        cameraMeta = (robot.cameras || []).find(c => c.groupType === 'body') || (robot.cameras || [])[0]
+      }
+      if (!cameraMeta) return
+      const camera = Object.assign({}, this.cameras?.[cameraMeta.key] || cameraMeta)
+      const prev = this.videoSlots[index]
+      if (prev?.camera?.key && prev.camera.key !== camera.key) {
+        await this.stopCamera(this.cameras?.[prev.camera.key] || prev.camera)
+      }
+      // 先挂载视频 DOM，再拉流，保证 LiveKit 能附着到 video 元素
+      this.$set(this.videoSlots, index, {
+        robotId: robot.robotId,
+        robot: { ...robot, ...robotInfo },
+        camera
       })
+      this.setPrefixId(this.prefixId)
+      await this.$nextTick()
+      await this.startCamera({ robot: robotInfo, camera })
+      const latest = this.cameras?.[camera.key] || camera
+      this.$set(this.videoSlots, index, {
+        robotId: robot.robotId,
+        robot: { ...robot, ...robotInfo },
+        camera: latest
+      })
+    },
+    async clearAllSlots() {
+      this.closeEquipmentSelect()
+      for (let i = 0; i < this.videoSlots.length; i++) {
+        await this.clearSlot(i)
+      }
     },
     toggleCollapse(type, typeIndex) {
       this.$set(this[type], typeIndex, !this[type][typeIndex])
     },
-    handleClickTask(taskId) {      
+    handleClickTask(taskId) {
       if (this.activeTaskId === taskId) {
         this.$refs.taskRobotViewRef.dialogVisible = false
-        // 清空录像
         this.activeTaskId = null
         return
       }
@@ -212,41 +366,125 @@ export default {
     }
   },
   watch: {
-    // robots: {
-    //   handler(newVal, oldVal) {
-    //     if (newVal?.length && !this.taskList[0]?.robots?.length) {
-    //       this.$set(this.taskList[0], 'robots', newVal)
-    //     }
-    //   },
-    //   immediate: true
-    // },
+    collapse(val) {
+      if (val && this.selectVisible) {
+        this.closeEquipmentSelect()
+      }
+    },
+    cameras: {
+      handler() {
+        this.videoSlots.forEach((slot, index) => {
+          if (!slot?.camera?.key) return
+          const latest = this.cameras?.[slot.camera.key]
+          if (latest) {
+            this.$set(this.videoSlots, index, { ...slot, camera: latest })
+          }
+        })
+      },
+      deep: true
+    }
   },
   async beforeDestroy() {
-    for (const robot of this.robotMainCameras.slice(0, 2)) {
-      robot.camera && await this.stopCamera(robot.camera)
-    }
+    await this.clearAllSlots()
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.video-name {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  padding: 1px 2px;
-  color: #FFF;
-  background: rgba(0, 0, 0, 0.50);
-  font-family: "Microsoft YaHei";
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 13px;
+.patrol-videos {
+  .patrol-video-slot {
+    background: #092144;
+    border: 1px solid #3877F2;
+    box-sizing: border-box;
+    &.active {
+      box-shadow: 0 0 12px 0 rgba(56, 119, 242, 0.55);
+    }
+    ::v-deep .item {
+      box-shadow: none !important;
+    }
+    .video-name {
+      top: 3px;
+      left: 4px;
+      z-index: 2;
+      padding: 4px;
+      color: #FFF;
+      background: rgba(0, 0, 0, 0.50);
+      font-family: "Microsoft YaHei";
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 19px;
+      max-width: calc(100% - 40px);
+      pointer-events: none;
+    }
+    .video-close,
+    .video-switch {
+      z-index: 3;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+    .video-close {
+      top: 5px;
+      right: 5px;
+      width: 24px;
+      height: 24px;
+      color: #FFF;
+      .svg-icon {
+        width: 14px;
+        height: 14px;
+        font-size: 14px;
+      }
+    }
+    .video-switch {
+      right: 4px;
+      bottom: 4px;
+      padding: 4px;
+      color: #FFF;
+      background: rgba(0, 0, 0, 0.50);
+      font-family: "Microsoft YaHei";
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 19px;
+    }
+    &:hover {
+      .video-close,
+      .video-switch {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
+    .empty-slot {
+      .empty-img {
+        width: 101px;
+        height: 52px;
+        object-fit: contain;
+        opacity: 0.7;
+      }
+      .empty-text {
+        gap: 3px;
+        color: #BEE1FF;
+        font-family: "Microsoft YaHei";
+        font-size: 14px;
+        line-height: 28px;
+        text-decoration: underline;
+        .add-icon {
+          width: 18px;
+          height: 18px;
+          color: #BEE1FF;
+          font-size: 18px;
+        }
+      }
+    }
+  }
 }
 .left-div {
   backdrop-filter: unset !important;
   background: transparent !important;
   .container {
     overflow-y: auto;
+    &.ovh-visible {
+      overflow: visible;
+    }
     &::-webkit-scrollbar {
       width: 2px;               /* 垂直滚动条宽度 */
       height: 2px;              /* 水平滚动条高度 */
@@ -537,6 +775,7 @@ export default {
         }
       }
       &.task {
+        overflow: visible;
         &:not(.no_data) {
           background: #021328;
         }

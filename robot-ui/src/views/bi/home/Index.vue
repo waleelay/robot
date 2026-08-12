@@ -1,11 +1,27 @@
 <template>
   <div class="h100 pt80 common-scroll bi-index-div" :class="{ collapse }">
     <Header />
-    <BiIndexLeft @changeCollapse="changeCollapse" :collapse="collapse" />
+    <BiIndexLeft ref="leftRef" @changeCollapse="changeCollapse" :collapse="collapse" @patrol-select-change="onPatrolSelectChange" />
     <BiIndexRight @changeCollapse="changeCollapse" :collapse="collapse" />
-    <div class="map-div flx-center" style="height: calc(100% + 55px); margin-top: -55px; align-items: start;" :class="{ full: collapse }">
+    <div
+      class="map-div flx-center"
+      style="height: calc(100% + 55px); margin-top: -55px; align-items: start;"
+      :class="{ full: collapse }"
+      @click.capture="onMapBlankClick"
+    >
     <!-- <div class="map-div h100 flx-center pt57" style="align-items: start;" :class="{ full: collapse }"> -->
       <!-- <div class="hp742 flx-center" style="width: 1118px; background: #112B4D;"> -->
+      <transition name="slam-map-loading-fade">
+        <div
+          v-if="!overviewReady"
+          class="slam-map-loading flx-center flex-column"
+          @wheel.prevent
+          @mousedown.stop
+        >
+          <div class="slam-map-loading__spinner" aria-hidden="true"></div>
+          <p class="slam-map-loading__text">正在获取地图数据</p>
+        </div>
+      </transition>
       <div v-if="globalMapId && globalMapId !== 'gis'" class="slam-map-host w100 h100" style="z-index: 0;">
         <GlobalSlamMap
           :map="slamMapPayload"
@@ -23,6 +39,7 @@
           style="z-index: 0;"
           ref="globalMapRef"
           @pathVisibleChange="onPathVisibleChange"
+          @zoom-change="onGisZoomChange"
         />
         <img v-if="angle !== '2D'" src="@/assets/images/new-bi/map-3d.png" width="100%" height="100%" style="z-index: 0;" />
       </template>
@@ -31,6 +48,7 @@
         :isSlam="isSlam"
         :showAngle="!isSlam"
         :currentSlam="currentSlamMapId"
+        :currentGisZoom="currentGisZoom"
         @changeMapAngle="changeMapAngle"
         :angle="angle"
         @changeMapZoom="changeMapZoom"
@@ -89,11 +107,13 @@ export default {
       },
       currentSlamMapId: null,
       angle: '2D',
-      autoSwitchedSlam: false
+      autoSwitchedSlam: false,
+      patrolSelectVisible: false,
+      currentGisZoom: null
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'defaultGpsDevices', 'globalMapId']),
+    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'defaultGpsDevices', 'globalMapId', 'overviewReady']),
     currentSlamMap() {
       const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
       return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(this.currentSlamMapId)) || this.slamInfo.map
@@ -119,8 +139,20 @@ export default {
     changeCollapse() {
       this.collapse = !this.collapse
     },
+    onPatrolSelectChange(visible) {
+      this.patrolSelectVisible = visible
+    },
+    onMapBlankClick(e) {
+      if (!this.patrolSelectVisible) return
+      const selectEl = this.$refs.leftRef?.$el?.querySelector?.('.equipment-screen-select')
+      if (selectEl && selectEl.contains(e.target)) return
+      this.$refs.leftRef?.closeEquipmentSelect?.()
+    },
     changeMapZoom(data) {
       this.$refs.globalMapRef?.changeMapZoom(data)
+    },
+    onGisZoomChange(zoom) {
+      this.currentGisZoom = zoom
     },
     changeMapType(type) {
       this.isSlam = type ? type === 'slam' : !this.isSlam
@@ -173,8 +205,11 @@ export default {
     setCenter() {
       const mapRef = this.$refs.globalMapRef
       if (this.isSlam) {
-        mapRef?.backCenter()
+        // SLAM：恢复默认加载时的大小与位置
+        if (typeof mapRef?.resetView === 'function') mapRef.resetView()
+        else mapRef?.backCenter?.()
       } else {
+        // GIS：定位到中心点 + 初始层级
         mapRef?.setCenter()
       }
     },

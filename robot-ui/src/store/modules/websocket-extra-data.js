@@ -4,6 +4,7 @@ import Vue from "vue";
 import {
   SLAM_POINTS,
   ENABLE_LIANTONG_SLAM_MOCK,
+  GIS_MAP_CENTER_POINT,
   getLiantongSlamMock,
   getLiantongFixedCameraMock
 } from "../../views/bi/js/constants/gisMapPoints";
@@ -42,8 +43,10 @@ const state = {
   globalMapId: '',
   // 具备 GPS 经纬度的设备列表（来自 panorama overview.gpsDevices）
   defaultGpsDevices: [],
-  // gis中心视图，南充市，默认坐标点[lat, lng]
-  gisMapCenterPoint: [30.7478613352993, 106.03655278081857]
+  // overview（setAll）是否已完成默认地图判断；未就绪前不挂载 GIS，避免抢在 SLAM 数据前闪一下
+  overviewReady: false,
+  // gis 中心视图，默认坐标点 [lat, lng]，来自 map-config.js（gisConfig.area.key）
+  gisMapCenterPoint: GIS_MAP_CENTER_POINT
 }
 
 const mutations = {
@@ -139,11 +142,14 @@ const mutations = {
     state.showRobotIds = Array.isArray(value) ? value : (value != null && value !== '' ? [value] : []);
   },
   SET_GLOBAL_MAP_ID(state, value) {
-    // 允许 ''：无 GPS 且无 SLAM 时保持未就绪/无地图，避免被改写成 gis 导致闪现
+    // GIS 为 'gis'；SLAM 为地图 id；空值归一为 ''
     state.globalMapId = value == null ? '' : value;
   },
   SET_DEFAULT_GPS_DEVICES(state, value) {
     state.defaultGpsDevices = Array.isArray(value) ? value : [];
+  },
+  SET_OVERVIEW_READY(state, value) {
+    state.overviewReady = !!value;
   },
 }
 
@@ -201,18 +207,27 @@ const actions = {
       item.points = item.points || (ENABLE_LIANTONG_SLAM_MOCK ? SLAM_POINTS?.[item.id] || [] : []);
       return item;
     });
-    // 有 GPS 设备时默认 GIS；否则默认第一张 SLAM 地图
-    const defaultGpsDevices = data?.gpsDevices || [];
+    // 有 GPS 设备时默认 GIS；否则默认第一张 SLAM；两者都没有时才默认 GIS
+    // 必须等 overview 数据到位后再写入，避免页面加载瞬间先挂 GIS 再被 SLAM 顶掉
+    const defaultGpsDevices = (Array.isArray(data?.gpsDevices) && data.gpsDevices.length)
+      ? data.gpsDevices
+      : devices.filter(item => {
+          const lat = item?.location?.lat
+          const lng = item?.location?.lng
+          return lat != null && lat !== '' && lng != null && lng !== ''
+            && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+        });
     commit('SET_DEFAULT_GPS_DEVICES', defaultGpsDevices);
+    commit('SET_SLAM_MAP_LIST', slamMapList);
+    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devices, tasks));
     if (defaultGpsDevices.length) {
       commit('SET_GLOBAL_MAP_ID', 'gis');
     } else if (slamMapList.length) {
       commit('SET_GLOBAL_MAP_ID', slamMapList[0]?.id);
     } else {
-      commit('SET_GLOBAL_MAP_ID', '');
+      commit('SET_GLOBAL_MAP_ID', 'gis');
     }
-    commit('SET_SLAM_MAP_LIST', slamMapList);
-    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devices, tasks));
+    commit('SET_OVERVIEW_READY', true);
   },
   setSlamMapData({ commit }, value) {
     commit('SET_SLAM_MAP_DATA', value);

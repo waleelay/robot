@@ -59,7 +59,7 @@ import Thumbnail from './thumbnail/Index.vue'
 import SlamMap from './slam1/Index.vue'
 import { mapActions, mapState } from 'vuex';
 import { ROBOT_TYPE_INFO } from '../../../../constants/robot.js';
-import { POLYGON_POINTS, WAY_POINTS } from '../../js/constants/gisMapPoints.js';
+import { POLYGON_POINTS, WAY_POINTS, getGisTileUrl, getGisZoomRange, getGisMapRotate } from '../../js/constants/gisMapPoints.js';
 
 export default {
   name: 'GisGlobalMap',
@@ -166,13 +166,29 @@ export default {
     currenRouteName() {
       return this.$route.name
     },
-    // 指挥中心默认 12 级；全景 / 监控小窗默认 18 级
-    defaultGisZoom() {
-      return this.currenRouteName === 'biIndex' ? 12 : 18
+    // 指挥中心首页
+    isCommandCenter() {
+      return this.currenRouteName === 'biIndex' || this.$route.path === '/bi/index'
     },
+    // 巡逻巡查（全景 / 监控等）
+    isPatrolScene() {
+      return String(this.$route.path || '').startsWith('/bi/patrol')
+    },
+    // 缩放范围来自 map-config zoom: [min, max]
+    gisZoomRange() {
+      return getGisZoomRange()
+    },
+    // 指挥中心 → 最小级别；巡逻巡查 → 最大级别
+    defaultGisZoom() {
+      const { minZoom, maxZoom } = this.gisZoomRange
+      if (this.isCommandCenter) return minZoom
+      if (this.isPatrolScene) return maxZoom
+      return maxZoom
+    },
+    // 最大层级时应用 map-config.rotate
     defaultGisBearing() {
-      // return 0
-      return this.defaultGisZoom >= 18 ? -45 : 0
+      const rotate = getGisMapRotate()
+      return this.defaultGisZoom >= this.gisZoomRange.maxZoom ? -rotate : 0
     }
   },
   watch: {
@@ -194,6 +210,7 @@ export default {
     robotList: {
       handler(newVal, oldVal) {
         // if (this.pointMarkers.length) return
+        if (this.timer) clearTimeout(this.timer)
         this.timer = setTimeout(() => {
           if (this.map) {
             this.initPoints()
@@ -203,20 +220,15 @@ export default {
       immediate: true
     },
     robotLocation: {
-      handler(newVal, oldVal) {
-        if (Object.keys(newVal || {}).length) {
-          this.pointMarkers.map(marker => {
-            const { lat, lng } = marker.getLatLng()
-            // console.log(123, newVal)
-            if (lat !== newVal[marker.meta?.robot?.robotId]?.lat || lng !== newVal[marker.meta?.robot?.robotId]?.lng) {
-              // console.log('===========更新了==========');
-              marker.setLatLng({
-                lat: newVal[marker.meta?.robot?.robotId]?.lat,
-                lng: newVal[marker.meta?.robot?.robotId]?.lng
-              })
-            }
-          })
-        }
+      handler(newVal) {
+        if (!Object.keys(newVal || {}).length) return
+        this.pointMarkers.forEach(marker => {
+          const robotId = marker.meta?.robot?.robotId
+          const next = this.resolveGisLatLng(newVal?.[robotId])
+          const cur = marker.getLatLng() || {}
+          if (cur.lat === next.lat && cur.lng === next.lng) return
+          marker.setLatLng(next)
+        })
       },
       deep: true,
       immediate: true
@@ -303,6 +315,13 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotLocation', 'setShowRobotIds']),
+    // 无坐标时回退到配置中心点：location.lat || 中心点
+    resolveGisLatLng(location) {
+      return {
+        lat: location?.lat || this.gisMapCenterPoint[0],
+        lng: location?.lng || this.gisMapCenterPoint[1]
+      }
+    },
     getSelectedStatus(robotId) {
       return Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
     },
@@ -375,17 +394,24 @@ export default {
       this.isSlam = !this.isSlam
     },
     changeMapZoom({ method, value = 1 } = {}) {
+      // 实际层级以 zoomend → emitZoomChange 为准（含动画过程）
       if (this.map && typeof this.map[method] === 'function') {
         this.map[method](value)
       }
     },
+    emitZoomChange() {
+      if (!this.map) return
+      this.$emit('zoom-change', this.map.getZoom())
+    },
     initMap(){
-      // 仅 layerB：12～18 级；18 级时旋转 45°
+      const { minZoom, maxZoom } = this.gisZoomRange
+      const initialZoom = this.defaultGisZoom
+      // 指挥中心 initialZoom=minZoom；巡逻巡查 initialZoom=maxZoom
       this.map = L.map('map', {
         center: [this.centerPoint.lat, this.centerPoint.lng],
-        zoom: this.defaultGisZoom,
-        maxZoom: 18,
-        minZoom: 12,
+        zoom: initialZoom,
+        maxZoom,
+        minZoom,
         rotate: true,
         rotateControl: false, // 显示旋转控制按钮
         // 提高渲染能力
@@ -399,10 +425,10 @@ export default {
       });
       // 关键：手动添加旋转控件到地图
       L.control.rotate().addTo(this.map);
-      // 仅展示 layerB（12～18）
-      this.layerB = L.tileLayer(`${process.env.VUE_APP_BASE_ORIGIN || location.origin || ''}/tdt/nanchong/{z}/{x}/{y}.png`, {
-        maxZoom: 18,
-        minZoom: 12,
+      console.log('layerB', getGisTileUrl())
+      this.layerB = L.tileLayer(getGisTileUrl(), {
+        maxZoom,
+        minZoom,
         keepBuffer: 300,
         updateWhenIdle: false
       });
@@ -410,7 +436,7 @@ export default {
 
       if (!this.map.hasLayer(this.layerB)) {
         this.map.setBearing(this.defaultGisBearing)
-        this.map.setView(this.gisMapCenterPoint, this.defaultGisZoom)
+        this.map.setView(this.gisMapCenterPoint, initialZoom)
         this.map.addLayer(this.layerB)
       }
 
@@ -471,13 +497,15 @@ export default {
         }
       });
       
-      // 监听缩放事件：18 级旋转 45°，其余不旋转；不再切换 layerA/layerB
+      // 监听缩放事件：达到最大层级时按 map-config.rotate 旋转；同步缩放给 MapTool
       this.map.on('zoomend', () => {
         const currentZoom = this.map.getZoom();
-        const nextBearing = currentZoom >= 18 ? -45 : 0
+        const { maxZoom } = this.gisZoomRange
+        const nextBearing = currentZoom >= maxZoom ? -getGisMapRotate() : 0
         if (this.map.getBearing() !== nextBearing) {
           this.map.setBearing(nextBearing)
         }
+        this.emitZoomChange()
         this.pointMarkers.map((marker, index) => {
           // console.log(111111111, marker.getIcon().options, this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
           this.pointMarkers[index].setIcon(this.getIcon(marker?.meta?.robot || {}, marker.getIcon().options))
@@ -485,6 +513,7 @@ export default {
         // 缩放刷新 icon 后，测距模式需继续屏蔽装备点击
         if (this.measureActive) this.setRobotMarkersInteractive(false)
       });
+      this.emitZoomChange()
 
 
 
@@ -562,12 +591,17 @@ export default {
       this.$refs.robot1Ref?.show(null)
       this.closePopup()
     },
-    // 自动适应所有点的边界
+    // 复位：回到配置中心点与初始层级（与 initMap 一致）
     setCenter() {
       if (!this.map) return
-      const markers = this.pointMarkers.map(marker => [marker.getLatLng().lat, marker.getLatLng().lng])
-      const bounds = L.latLngBounds(markers);
-      this.map.fitBounds(bounds, { padding: [20, 20] });
+      const center = this.gisMapCenterPoint?.length === 2
+        ? this.gisMapCenterPoint
+        : [this.centerPoint.lat, this.centerPoint.lng]
+      if (typeof this.map.setBearing === 'function') {
+        this.map.setBearing(this.defaultGisBearing)
+      }
+      this.map.setView(center, this.defaultGisZoom)
+      this.emitZoomChange()
     },
     // 创建自定义图标
     getIcon(item, options = {}) {
@@ -576,8 +610,10 @@ export default {
       // console.log(item.robotId, item.status, item.customStatusName);
       
       const { width, height, img } = sizeObj[type] || sizeObj.default
-      // 固定摄像头：不展示脚部标签，锚点距图标底部 4px
+      // 固定摄像头：不展示脚部标签 / 状态；选中样式对齐 SLAM（active 图，无光圈/四角）
       const isFixedCamera = img === 'robot-camera-normal' || type === '固定摄像头' || type === 'FIXED_CAMERA'
+      const isSelected = this.showRobotIds.includes(robotId) || this.getSelectedStatus(robotId)
+      const iconFile = isFixedCamera && isSelected ? 'robot-camera-active' : img
       const zoom = this.map.getZoom();
       const scale = 66 / 93
       const scaleAnchor = 33.5 / 85
@@ -586,6 +622,15 @@ export default {
       const footHtml = isFixedCamera
         ? ''
         : `<img src="${require(`@/assets/images/new-bi/${this.showSmall ? 'robot_foot1' : 'robot_foot'}.png`)}" style="margin-top: -5px;" />`
+      const statusHtml = (this.showSmall || isFixedCamera)
+        ? ''
+        : `<div class="custom-point-status mt4 pr10 pl10">${customStatusName}</div>`
+      const nameHtml = this.showSmall
+        ? ''
+        : `<div class="custom-point-name mt2" style="">${name}</div>`
+      const showIconClass = (!isFixedCamera && isSelected)
+        ? `show-icon show-icon-${width}-${height}`
+        : ''
       const anchorY = isFixedCamera ? Math.max(0, height - 4) : height
       
       // console.log('+++++++++', this.showSmall, robotId, this.robotAlarmObj?.[robotId]);
@@ -600,14 +645,12 @@ export default {
           //     <span class="ml5">告警事件：${this.robotAlarmObj[robotId].categoryName}：${this.robotAlarmObj[robotId].title}</span>
           //   </div>` : ''}
           html: `<div class="custom-point-img flx-center flex-column" style="flex-wrap: nowrap;">
-            <img class="wp${width} hp${height}" src="${require(`@/assets/images/new-bi/${img}.png`)}" />
+            <img class="wp${width} hp${height}" src="${require(`@/assets/images/new-bi/${iconFile}.png`)}" />
             ${footHtml}
-            ${this.showSmall ? '' : `
-              <div class="custom-point-name mt2" style="">${name}</div>
-              <div class="custom-point-status mt4 pr10 pl10">${customStatusName}</div>
-            `}
+            ${nameHtml}
+            ${statusHtml}
           </div>`,
-          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${(this.showRobotIds.includes(robotId) || this.getSelectedStatus(robotId)) ? `show-icon show-icon-${width}-${height}` : ''} ${type} ${statusClass}` ,
+          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${showIconClass} ${isFixedCamera ? 'is-fixed-camera' : ''} ${type} ${statusClass}` ,
           // className: `custom-point ${type} ${statusClass}` ,
           iconSize: null,
           // 偏移量
@@ -643,8 +686,7 @@ export default {
       this.robotList.map((r, index) => {
         const item = Object.assign({}, this.robotBaseInfo?.[r.robotId] || r)
         // item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
-        const lat = this.robotLocation?.[item.robotId]?.lat || this.gisMapCenterPoint[0]
-        const lng = this.robotLocation?.[item.robotId]?.lng || this.gisMapCenterPoint[1]
+        const { lat, lng } = this.resolveGisLatLng(this.robotLocation?.[item.robotId])
         item.points = L.latLng(lat, lng)
         const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === item.robotId);
         if (existingIndex >= 0) {
@@ -699,24 +741,14 @@ export default {
       const robotId = info.robotId
       const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === robotId);
       if (existingIndex < 0) return
-      // const { lat, lng } = this.pointMarkers[existingIndex].getLatLng()
-      // console.log(123, this.robotLocation?.[robotId], this.robotLocation?.[robotId])
-      // const latlng = {lat: 30.7478613352993, lng: 106.03655278081857}
-      // const lat = robotId === 'robot-001' ? latlng?.lat : this.robotLocation?.[robotId]?.lat
-      // const lng = robotId === 'robot-001' ? latlng?.lng : this.robotLocation?.[robotId]?.lng
-      const { lat, lng } = this.robotLocation?.[robotId] || {}
-      this.pointMarkers[existingIndex].setLatLng(L.latLng(lat || this.gisMapCenterPoint[0], lng || this.gisMapCenterPoint[1]))
-      // this.pointMarkers[existingIndex].setLatLng(L.latLng(this.robotLocation?.[robotId]?.lat, this.robotLocation?.[robotId]?.lng))
+      const { lat, lng } = this.resolveGisLatLng(this.robotLocation?.[robotId])
+      this.pointMarkers[existingIndex].setLatLng(L.latLng(lat, lng))
       this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(lat, lng) }};
-      // 存在则更新 icon
       this.pointMarkers[existingIndex].setIcon(this.getIcon(info));
-      // 测距中刷新 icon 后保持不可点
       if (this.measureActive && this.pointMarkers[existingIndex]?._icon) {
         this.pointMarkers[existingIndex]._icon.style.pointerEvents = 'none'
         this.pointMarkers[existingIndex]._icon.style.cursor = 'crosshair'
       }
-      // 更新 meta 数据
-      this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info }};
     },
     updatePopups(index) {
       this.setupHoverWithDebounce(this.pointMarkers[index], 300)
@@ -855,16 +887,18 @@ export default {
       const isFixedCamera = typeInfo.img === 'robot-camera-normal'
         || robot.type === '固定摄像头'
         || robot.type === 'FIXED_CAMERA'
-      // 选中光圈默认 60px；摄像头 80px，均以 latlng（图标水平中心）为圆心
-      const haloRadius = isFixedCamera ? 40 : 30
+      // 普通装备按选中光圈右缘对齐；固定摄像头无光圈/四角，按图标半宽对齐
+      const alignRadius = isFixedCamera
+        ? Math.max(22, (typeInfo.width || 44) / 2)
+        : 30
       const gap = 1
       // guideline.png（高 47、bottom:-47px）最底边作为模态底部对齐点
       const guidelineNaturalH = 47
       const anchorX = mapOffset.x + point.x
       const anchorY = mapOffset.y + point.y
-      // 左右：弹窗左缘贴光圈右缘；垂直：guideline 最底边对齐地图锚点 Y（lat）
+      // 左右：弹窗左缘贴选中装饰/图标右缘；垂直：guideline 最底边对齐地图锚点 Y（lat）
       this.popupOffset = {
-        x: anchorX + haloRadius + gap,
+        x: anchorX + alignRadius + gap,
         y: anchorY - robotSize.height - guidelineNaturalH
       }
       if (!correct) return
@@ -885,7 +919,7 @@ export default {
           const latestAnchorX = latestMapOffset.x + latestPoint.x
           const latestAnchorY = latestMapOffset.y + latestPoint.y
           const modalRect = this.viewportRectToScaleRect(el.getBoundingClientRect())
-          const dx = modalRect.left - (latestAnchorX + haloRadius + gap)
+          const dx = modalRect.left - (latestAnchorX + alignRadius + gap)
           let dy = 0
           if (tipEl) {
             const tipRect = this.viewportRectToScaleRect(tipEl.getBoundingClientRect())
@@ -1317,7 +1351,7 @@ export default {
         this.scheduleMeasurePoint(e.latlng)
         return
       }
-      this.closeAll()
+      // 空白处点击不关闭已打开的装备弹窗（与 SLAM 一致）
     },
     handleGisMeasureDblClick(e) {
       if (!this.measureActive) return
@@ -1538,7 +1572,7 @@ export default {
         this.$refs.robotCarControlPartRef?.show?.(false)
         return
       }
-      const isDog = this.selectedRobot?.type === '四足机器狗' || this.selectedRobot?.type === '四足机器人' || this.selectedRobot?.type === 'ROBOT_DOG'
+      const isDog = this.selectedRobot?.type === '机器狗' || this.selectedRobot?.type === 'ROBOT_DOG'
       const controlRef = isDog ? this.$refs.robotControlPartRef : this.$refs.robotCarControlPartRef
       const nextVisible = typeof visible === 'boolean' ? visible : !controlRef?.visible
       controlRef?.show(nextVisible)
