@@ -479,14 +479,16 @@ public class EquipmentControlService {
                     "speed", clamp(doubleValue(params.get("speed"), 20.0), 0.1, 100.0),
                     "duration", clamp(doubleValue(params.get("duration"), 0.3), 0.05, 5.0));
         }
-        if ("camera.zoom".equals(action)) {
-            return object("zoomSpeed", clamp(doubleValue(params.get("zoomSpeed"), 0.0), -1.0, 1.0));
+        if ("zoom_in".equals(action) || "zoom_out".equals(action)) {
+            return object(
+                    "speed", clamp(doubleValue(params.get("speed"), 20.0), 0.1, 100.0),
+                    "duration", clamp(doubleValue(params.get("duration"), 0.3), 0.05, 5.0));
         }
-        if ("ptz.auto_rotate".equals(action)) {
+        if ("auto_rotate".equals(action)) {
             double maxPanSpeed = doubleValue(profile.get("maxPanSpeed"), 1.0);
             return object(
                     "enabled", booleanValue(params.get("enabled"), false),
-                    "panSpeed", clamp(doubleValue(params.get("panSpeed"), 0.3), 0.0, maxPanSpeed));
+                    "speed", clamp(doubleValue(params.get("speed"), 20.0), 0.1, maxPanSpeed));
         }
         if ("control.mode.set".equals(action)) {
             return object("controlMode", normalizeControlMode(stringValue(params.get("controlMode"), "手动模式")));
@@ -1072,7 +1074,7 @@ public class EquipmentControlService {
             case "DUAL_LIGHT_PTZ" -> List.of(
                     "up", "down", "left", "right",
                     "left_up", "right_up", "left_down", "right_down",
-                    "ptz.auto_rotate", "camera.zoom");
+                    "zoom_in", "zoom_out", "auto_rotate");
             case "SPEAKER", "INTERCOM" -> List.of("set_volume", "set_mute");
             case "LAUNCHER" -> List.of("get_status", "set_safety", "fire");
             case "NET_GUN" -> List.of("fire");
@@ -1095,9 +1097,10 @@ public class EquipmentControlService {
             case "PTZ_RIGHT_UP", "RIGHT_UP" -> "right_up";
             case "PTZ_LEFT_DOWN", "LEFT_DOWN" -> "left_down";
             case "PTZ_RIGHT_DOWN", "RIGHT_DOWN" -> "right_down";
-            case "PTZ.AUTO_ROTATE", "PTZ_AUTO_ROTATE" -> "ptz.auto_rotate";
+            case "PTZ.AUTO_ROTATE", "PTZ_AUTO_ROTATE" -> "auto_rotate";
             case "PTZ.HOME", "PTZ_HOME" -> "ptz.home";
-            case "CAMERA.ZOOM", "CAMERA_ZOOM" -> "camera.zoom";
+            case "PTZ.ZOOM_IN", "PTZ_ZOOM_IN" -> "zoom_in";
+            case "PTZ.ZOOM_OUT", "PTZ_ZOOM_OUT" -> "zoom_out";
             case "GET_LAUNCHER_STATUS", "GET_STATUS" -> "get_status";
             case "SET_LAUNCHER_SAFETY", "SET_SAFETY" -> "set_safety";
             case "FIRE_LAUNCHER", "FIRE_CATCHER", "FIRE" -> "fire";

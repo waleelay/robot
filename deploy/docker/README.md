@@ -191,6 +191,9 @@ deploy/docker/tool-images/arm64/
 
 ```text
 java-runtime.tar.gz
+alpine-3.20.tar.gz
+golang-1.26-alpine.tar.gz
+robot-media-client-image.tar.gz
 livekit-server.tar.gz
 livekit-egress.tar.gz
 nginx.tar.gz
@@ -203,6 +206,8 @@ tts.tar.gz
 cd /Users/leelay/Documents/robot-mediaserver
 
 docker buildx build --platform linux/amd64 --load -t robot/java17-ffmpeg-runtime:amd64 deploy/docker/java-runtime
+docker pull --platform linux/amd64 alpine:3.20
+docker pull --platform linux/amd64 golang:1.26-alpine
 docker pull --platform linux/amd64 livekit/livekit-server:latest
 docker pull --platform linux/amd64 livekit/egress:latest
 docker pull --platform linux/amd64 nginx:alpine
@@ -210,6 +215,9 @@ docker pull --platform linux/amd64 nginx:alpine
 mkdir -p deploy/docker/tool-images/amd64
 
 docker image save --platform linux/amd64 robot/java17-ffmpeg-runtime:amd64 | gzip -9 > deploy/docker/tool-images/amd64/java-runtime.tar.gz
+docker image save --platform linux/amd64 alpine:3.20 | gzip -9 > deploy/docker/tool-images/amd64/alpine-3.20.tar.gz
+docker image save --platform linux/amd64 golang:1.26-alpine | gzip -9 > deploy/docker/tool-images/amd64/golang-1.26-alpine.tar.gz
+docker image save --platform linux/amd64 robot/robot-media-client:latest | gzip -9 > deploy/docker/tool-images/amd64/robot-media-client-image.tar.gz
 docker image save --platform linux/amd64 livekit/livekit-server:latest | gzip -9 > deploy/docker/tool-images/amd64/livekit-server.tar.gz
 docker image save --platform linux/amd64 livekit/egress:latest | gzip -9 > deploy/docker/tool-images/amd64/livekit-egress.tar.gz
 docker image save --platform linux/amd64 nginx:alpine | gzip -9 > deploy/docker/tool-images/amd64/nginx.tar.gz
@@ -221,6 +229,8 @@ docker image save --platform linux/amd64 nginx:alpine | gzip -9 > deploy/docker/
 cd /Users/leelay/Documents/robot-mediaserver
 
 docker buildx build --platform linux/arm64 --load -t robot/java17-ffmpeg-runtime:arm64 deploy/docker/java-runtime
+docker pull --platform linux/arm64 alpine:3.20
+docker pull --platform linux/arm64 golang:1.26-alpine
 docker pull --platform linux/arm64 livekit/livekit-server:latest
 docker pull --platform linux/arm64 livekit/egress:latest
 docker pull --platform linux/arm64 nginx:alpine
@@ -228,10 +238,19 @@ docker pull --platform linux/arm64 nginx:alpine
 mkdir -p deploy/docker/tool-images/arm64
 
 docker image save --platform linux/arm64 robot/java17-ffmpeg-runtime:arm64 | gzip -9 > deploy/docker/tool-images/arm64/java-runtime.tar.gz
+docker image save --platform linux/arm64 alpine:3.20 | gzip -9 > deploy/docker/tool-images/arm64/alpine-3.20.tar.gz
+docker image save --platform linux/arm64 golang:1.26-alpine | gzip -9 > deploy/docker/tool-images/arm64/golang-1.26-alpine.tar.gz
+docker image save --platform linux/arm64 robot/robot-media-client:arm64 | gzip -9 > deploy/docker/tool-images/arm64/robot-media-client-image.tar.gz
 docker image save --platform linux/arm64 livekit/livekit-server:latest | gzip -9 > deploy/docker/tool-images/arm64/livekit-server.tar.gz
 docker image save --platform linux/arm64 livekit/egress:latest | gzip -9 > deploy/docker/tool-images/arm64/livekit-egress.tar.gz
 docker image save --platform linux/arm64 nginx:alpine | gzip -9 > deploy/docker/tool-images/arm64/nginx.tar.gz
 ```
+
+`alpine:3.20` 和 `golang:1.26-alpine` 是 `client/Dockerfile` 构建 `robot-media-client` 镜像需要的基础镜像。`package.sh` 会在构建前尝试从 `tool-images/<arch>` 自动加载这两个离线包，避免离线构建时访问 Docker Hub。
+
+如果需要完全避免 Go 客户端构建联网，推荐提前把 `robot-media-client-image.tar.gz` 放到 `tool-images/<arch>`。`package.sh` 检测到该离线镜像后会直接加载并复用，不再执行 `client/Dockerfile`，因此不会触发 `go mod download`、`apk add` 或 `gstreamer-publisher` 的 GitHub clone。
+
+固定摄像头 Gateway 不需要单独镜像。`docker-compose.yml` 中的 `fixed-camera-gateway` 使用的也是 `robot-media-client` 镜像，只是把入口命令切换为 `fixed-camera-gateway`，因此一个 `robot-media-client-image.tar.gz` 同时包含机器人客户端和固定摄像头 Gateway。
 
 如果 apt 源较慢，可以指定 Ubuntu 镜像源，例如：
 
@@ -288,10 +307,11 @@ TARGET_ARCH=arm64 JAVA_RUNTIME_IMAGE=robot/java17-ffmpeg-runtime:arm64 ./package
 1. Maven clean package 重新编译 backend / control-service / bigscreen-bff
 2. npm run build:prod 重新编译 robot-ui
 3. 构建指定架构的 Java 服务镜像
-4. 保存 Java 服务镜像到 images/
-5. 复制 tool-images/<arch> 下的第三方镜像
-6. 复制 LiveKit / Nginx / TTS / 前端 / tdt 配置和资源
-7. 生成最终 tar.gz 安装包
+4. 优先复用 tool-images/<arch>/robot-media-client-image.tar.gz；不存在时才构建 Go 客户端镜像
+5. 保存应用服务镜像到 images/
+6. 复制 tool-images/<arch> 下的第三方镜像
+7. 复制 LiveKit / Nginx / TTS / 前端 / tdt 配置和资源
+8. 生成最终 tar.gz 安装包
 ```
 
 Java 发布包结构：
@@ -469,6 +489,8 @@ curl -k -i -X OPTIONS \
 2. 根据 `.env` 重新渲染 LiveKit / Nginx 等配置文件。
 3. 重建容器，让新的环境变量进入容器。
 
+`prepare-workspace.sh` 默认不会重复解压已有 `nginx/html/tdt` 地图目录。也就是说，改 LiveKit、Nginx 或 Java 服务配置时，即使 `INSTALL_MODE=overwrite`，只要 `TDT_INSTALL_MODE=skip_existing`，已有地图会直接跳过，避免反复解压大地图包。
+
 注意：只执行 `docker compose restart` 不会重新读取 `.env` 中的容器环境变量。
 
 ### 5.1 只改 `.env` 容器环境变量
@@ -485,8 +507,17 @@ docker compose -f docker-compose.yml up -d --force-recreate
 
 ```bash
 sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env
+grep -q '^TDT_INSTALL_MODE=' .env && sed -i 's#^TDT_INSTALL_MODE=.*#TDT_INSTALL_MODE=skip_existing#' .env || printf '\nTDT_INSTALL_MODE=skip_existing\n' >> .env
 ./prepare-workspace.sh
 docker compose -f docker-compose.yml up -d --force-recreate
+```
+
+如果确实需要重新安装地图文件，再单独执行：
+
+```bash
+grep -q '^TDT_INSTALL_MODE=' .env && sed -i 's#^TDT_INSTALL_MODE=.*#TDT_INSTALL_MODE=overwrite#' .env || printf '\nTDT_INSTALL_MODE=overwrite\n' >> .env
+./prepare-workspace.sh
+sed -i 's#^TDT_INSTALL_MODE=.*#TDT_INSTALL_MODE=skip_existing#' .env
 ```
 
 ### 5.3 改了服务目录里的配置文件
@@ -635,6 +666,48 @@ APP_WORKSPACE_ROOT 对应的挂载目录
 ```
 
 脚本会拒绝删除 `/`、`$HOME` 等危险路径。当前脚本不会删除 Docker 镜像，如需删除镜像需手动 `docker rmi`。
+
+### 7.1 安装包解压目录丢失后的手工卸载
+
+如果安装包解压目录已经被删除，无法执行 `./uninstall.sh`，可以按项目名手工清理。默认项目名为 `robot-mediaserver`：
+
+```bash
+docker ps -a --filter "name=robot-mediaserver" --format "{{.Names}}" \
+  | xargs -r docker rm -f
+
+docker network rm robot-mediaserver 2>/dev/null || true
+```
+
+如需同时删除本项目镜像：
+
+```bash
+docker images --format "{{.Repository}}:{{.Tag}}" \
+  | grep -E '^(robot/|livekit/livekit-server:|livekit/egress:|nginx:alpine|local/sherpa-tts-http:)' \
+  | xargs -r docker rmi -f
+```
+
+如需删除宿主机挂载目录，删除 `.env` 中 `APP_WORKSPACE_ROOT` 对应的真实目录。默认是：
+
+```bash
+rm -rf "$HOME/mounts/media"
+```
+
+如果部署时改成了其他目录，按实际路径删除，例如：
+
+```bash
+rm -rf /root/mounts/media
+rm -rf /home/jszn/mounts/media
+```
+
+清理后检查：
+
+```bash
+docker ps -a | grep robot-mediaserver || true
+docker network ls | grep robot-mediaserver || true
+docker images | grep -E 'robot/|livekit|sherpa|nginx' || true
+```
+
+OpenStack 等网络敏感环境不要手工删除 `docker0`。`docker0` 是 Docker daemon 默认桥，卸载本项目只需要删除 `robot-mediaserver` 项目网络。
 
 ## 8. 常见问题
 
@@ -794,4 +867,5 @@ docker compose -f docker-compose.yml up -d --force-recreate
 
 ```text
 tar: 忽略未知的扩展头关键字‘LIBARCHIVE.xattr.com.apple.provenance’
+tar: 忽略未知的扩展头关键字‘LIBARCHIVE.xattr.com.apple.quarantine’
 ```

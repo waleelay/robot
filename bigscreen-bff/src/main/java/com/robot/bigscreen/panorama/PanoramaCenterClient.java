@@ -45,6 +45,13 @@ public class PanoramaCenterClient {
         return records(uri);
     }
 
+    public List<Map<String, Object>> deviceTypeOptions() {
+        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/selection-options/dictionaries/device_type")
+                .build(true)
+                .toUri();
+        return records(uri);
+    }
+
     public Optional<Map<String, Object>> device(String id) {
         if (id == null || id.isBlank()) {
             return Optional.empty();
@@ -230,6 +237,9 @@ public class PanoramaCenterClient {
                         if (records instanceof List<?> list) {
                             return maps(list);
                         }
+                        if (dataMap.isEmpty()) {
+                            return List.<Map<String, Object>>of();
+                        }
                         return List.of((Map<String, Object>) dataMap);
                     }
                     if (data instanceof List<?> list) {
@@ -293,6 +303,7 @@ public class PanoramaCenterClient {
         return list.stream()
                 .filter(Map.class::isInstance)
                 .map(item -> (Map<String, Object>) item)
+                .filter(item -> !item.isEmpty())
                 .toList();
     }
 

@@ -72,6 +72,44 @@ class EquipmentControlServiceTest {
     }
 
     @Test
+    void mapsAndBuildsRegisteredPtzZoomAndAutoRotateCommands() {
+        register(component(
+                "PTZ",
+                "ptz-main",
+                action("PTZ_ZOOM_IN"),
+                action("PTZ_ZOOM_OUT"),
+                action("PTZ_AUTO_ROTATE")));
+
+        assertThat(maps(service.controlProfile("robot-001").get("devices")))
+                .filteredOn(device -> "ptz-main".equals(device.get("deviceId")))
+                .singleElement()
+                .satisfies(device -> assertThat(device)
+                        .containsEntry("deviceType", "DUAL_LIGHT_PTZ")
+                        .containsEntry("actions", List.of("zoom_in", "zoom_out", "auto_rotate")));
+
+        Map<String, Object> zoomIn = publish("ptz-main", "zoom_in", object(
+                "speed", 20.0,
+                "duration", 0.3));
+        Map<String, Object> zoomOut = publish("ptz-main", "zoom_out", object(
+                "speed", 30.0,
+                "duration", 0.4));
+        Map<String, Object> autoRotate = publish("ptz-main", "auto_rotate", object(
+                "enabled", true,
+                "speed", 20.0));
+
+        assertThat(map(zoomIn.get("params"))).containsExactly(
+                entry("speed", 20.0),
+                entry("duration", 0.3));
+        assertThat(map(zoomOut.get("params"))).containsExactly(
+                entry("speed", 30.0),
+                entry("duration", 0.4));
+        assertThat(map(autoRotate.get("params"))).containsExactly(
+                entry("enabled", true),
+                entry("speed", 20.0));
+        assertTarget(zoomIn, "ptz-main", "DUAL_LIGHT_PTZ");
+    }
+
+    @Test
     void buildsSpeakerCommandsWithExistingRobotProtocolFields() {
         register(component("SPEAKER", "speaker-main"));
 

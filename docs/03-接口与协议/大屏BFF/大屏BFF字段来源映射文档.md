@@ -54,7 +54,7 @@ GET /api/bigscreen/panorama/overview
 | `deviceStats.online` | 在线设备数 | BFF 计算 | 统计 `devices[].status == online` |
 | `deviceStats.fault` | 故障设备数 | BFF 计算 | 统计 `devices[].fault == true` |
 | `deviceStats.offline` | 离线设备数 | BFF 计算 | 统计 `devices[].status == offline` |
-| `deviceTypeStats[]` | 按设备类型统计 | BFF 计算 | 按 `devices[].typeCode` 分组，计算 `count/fault/offline` |
+| `deviceTypeStats[]` | 按机器人整机类型统计 | BFF 计算 | 按 `devices[].typeCode` 分组，`type/name` 与 `devices[].typeCode/type` 保持一致，并计算 `count/fault/offline`；整机类型为空的设备不参与分类统计，固定摄像头按 `FIXED_CAMERA/固定摄像头` 统计 |
 | `patrolOverview.durationToday` | 今日巡逻时长，单位小时 | BFF 计算 | 今日任务实例 `durationSeconds`；没有时用 `startedAt/completedAt` 计算 |
 | `patrolOverview.durationUnit` | 巡逻时长单位 | BFF 生成 | `durationToday` 有值时为 `小时` |
 | `patrolOverview.mileageToday` | 今日巡逻里程 | 未对接 | 当前管理端无直接里程字段，返回 `null` |
@@ -75,8 +75,8 @@ GET /api/bigscreen/panorama/overview
 | `robotId` | 机器人唯一展示 ID | 管理端 | `DeviceResponse.serialNumber` |
 | `clientId` | MQTT/客户端 ID | 管理端 | `DeviceResponse.authMqttClientId`，兼容 `clientId` |
 | `name` | 设备名称 | 管理端 | `DeviceResponse.deviceName`，兼容 `name` |
-| `type` | 设备类型中文名 | BFF 计算 | 由 `deviceType/typeCode/type` 转换，如 `ROBOT_DOG -> 机器狗` |
-| `typeCode` | 设备类型编码 | 管理端 | `DeviceResponse.deviceType`，兼容 `typeCode/type` |
+| `type` | 机器人整机类型名称 | 管理端字典 + BFF 关联 | 按 `typeCode` 匹配 `/api/v1/management/selection-options/dictionaries/device_type` 的 `value/label`；未匹配时返回编码本身；固定摄像头由 BFF 固定返回“固定摄像头” |
+| `typeCode` | 机器人整机类型编码 | 管理端 | `DeviceResponse.deviceType`，编码范围以管理端 `device_type` 字典为准；固定摄像头由 BFF 固定返回 `FIXED_CAMERA` |
 | `vendor` | 厂商 | 管理端 | `DeviceResponse.manufacturer`，兼容 `vendor` |
 | `model` | 型号 | 管理端 | `DeviceResponse.model` |
 | `status` | 在线状态 | 控制端 | `DeviceRealtimeStatus.onlineStatus` 转为 `online/offline/fault` |
@@ -124,7 +124,7 @@ GET /api/bigscreen/panorama/overview
 |---|---|---|---|
 | `lng` | 经度 | 控制端 | `status.localization.lng/longitude` |
 | `lat` | 纬度 | 控制端 | `status.localization.lat/latitude` |
-| `mapId` | 当前定位所属地图 ID | 控制端 | `status.localization.mapId/mapID` |
+| `mapId` | 设备所属管理端地图业务主键，字符串；无关联任务时为 `null` | 管理端 + BFF 关联 | 按 `devices[].robotId = tasks[].equipmentList[].robotId` 匹配，取第一条非空 `tasks[].mapId`；不使用控制端 SLAM 图 ID |
 | `altitude` | 高度 | 控制端 | `status.localization.altitude` |
 | `x` | 地图/局部坐标 X | 控制端 | `status.localization.coordinateX` |
 | `y` | 地图/局部坐标 Y | 控制端 | `status.localization.coordinateY` |
@@ -137,8 +137,11 @@ GET /api/bigscreen/panorama/overview
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `taskId` | 任务计划 ID | 管理端 | `TaskWorkflowPlanResponse.id`，兼容 `taskId` |
+| `workflowInstanceId` | 当前任务实例 ID，用于暂停、恢复、终止任务实例 | 管理端 | `TaskWorkflowPlanResponse.activeWorkflowInstanceId/lastWorkflowInstanceId/workflowInstanceId` |
 | `name` | 任务名称 | 管理端 | `TaskWorkflowPlanResponse.planName/workflowName/name` |
-| `status` | 任务状态编码 | 管理端 + BFF 转换 | 优先 `activeWorkflowInstanceStatus`，再取任务实例 `status`、计划 `executionStatus/lastResultStatus/status` |
+| `executionMode` | 执行模式 | 管理端 | 任务计划接口 `executionMode`，例如 `MANUAL`、`SCHEDULE`；缺失时为 `null` |
+| `expectedDurationSeconds` | 预计执行时长，单位秒 | 管理端 | 任务计划接口 `expectedDurationSeconds`；缺失时为 `null` |
+| `status` | 任务状态编码 | 管理端任务计划 + BFF 转换 | 仅取任务计划 `executionStatus`：`WAITING/RUNNING/PAUSED` 分别返回小写 `waiting/running/paused` |
 | `statusName` | 任务状态中文名 | BFF 转换 | 由 `status` 转中文 |
 | `startTime` | 任务开始时间 | 管理端 + BFF 格式化 | 优先任务实例 `startedAt`，其次计划 `startedAt/lastStartedAt/startTime` |
 | `endTime` | 任务结束时间 | 管理端 + BFF 格式化 | 优先任务实例 `completedAt`，其次计划 `completedAt/lastCompletedAt/endTime` |
@@ -156,7 +159,7 @@ GET /api/bigscreen/panorama/overview
 | `robotId` | 执行装备/机器人 ID | 管理端 | 优先 `DeviceTaskInstanceResponse.serialNumber/deviceId/id`，其次 `deviceSummaries[].serialNumber/deviceId/id`，最后 `roleBindings[].deviceIds[]` |
 | `name` | 装备名称 | 管理端 | `DeviceTaskInstanceResponse.deviceName`，其次 `deviceSummaries[].deviceName/name`；`roleBindings` 兜底时为 `null` |
 | `type` | 装备类型中文名 | 管理端 + BFF 转换 | `deviceType/type` 转中文；字段缺失时为 `null` |
-| `status` | 装备任务状态 | 管理端 + BFF 转换 | `DeviceTaskInstanceResponse.status` 或 `deviceSummaries[].status` 转换；缺失时为 `null` |
+| `status` | 装备在线状态 | 管理端 + BFF 关联 | 按 `robotId` 关联 `devices[].status`，仅返回 `online`、`offline`、`fault`；设备未匹配或状态未知时为 `null` |
 
 ### 3.7 `devices[].task[]`
 
@@ -172,7 +175,7 @@ GET /api/bigscreen/panorama/overview
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `points` | 地图点位列表 | 管理端 | `/api/v1/management/maps/{mapId}/points` 返回值 |
-| `devices` | 当前地图的机器人列表 | 管理端 + BFF 过滤 | 按 `devices[].location.mapId` 与地图 ID 匹配 |
+| `devices` | 当前地图的机器人列表 | 管理端 + BFF 过滤 | 按任务关联得到的 `devices[].location.mapId` 与地图 `id` 匹配 |
 | `fixedCamares` | 当前地图的固定摄像头列表 | 管理端 | `/api/v1/management/fixed-cameras?pageNum=1&pageSize=100&mapId={mapId}` 的 `data.records` |
 
 ### 3.9 `alarms`

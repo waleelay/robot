@@ -170,7 +170,7 @@
 | `equipmentList.robotId` | 执行装备机器人 ID |
 | `equipmentList.name` | 执行装备名称 |
 | `equipmentList.type` | 执行装备类型 |
-| `equipmentList.status` | 执行装备状态 |
+| `equipmentList.status` | 执行装备在线状态（在线、离线或故障） |
 
 任务地图与路径所需接口：
 

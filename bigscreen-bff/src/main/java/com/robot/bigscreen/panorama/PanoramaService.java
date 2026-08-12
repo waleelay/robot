@@ -48,21 +48,43 @@ public class PanoramaService {
         CompletableFuture<List<Map<String, Object>>> mapsFuture = async(centerClient::enabledMaps);
         CompletableFuture<Map<String, Object>> alarmsFuture = async(this::alarmsPayload);
 
-        List<Map<String, Object>> devices = join(devicesFuture, List.of());
+        List<Map<String, Object>> maps = join(mapsFuture, List.of());
+        List<Map<String, Object>> rawDevices = join(devicesFuture, List.of());
         PanoramaTasks panoramaTasks = join(tasksFuture, new PanoramaTasks(List.of(), List.of()));
+        List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), rawDevices);
+        List<Map<String, Object>> devices = withTaskLocationMapIds(rawDevices, tasks);
         overview.put("devices", devices);
         overview.put("gpsDevices", gpsDevices(devices));
         overview.put("deviceStats", deviceStats(devices));
         overview.put("deviceTypeStats", deviceTypeStats(devices));
 
         overview.put("patrolOverview", patrolOverview(panoramaTasks.instances()));
-        overview.put("tasks", panoramaTasks.items());
-        overview.put("taskOverview", taskOverview(panoramaTasks.items()));
+        overview.put("tasks", tasks);
+        overview.put("taskOverview", taskOverview(tasks));
 
-        overview.put("map", mapsWithPointsAndDevices(join(mapsFuture, List.of()), devices, cache));
+        overview.put("map", mapsWithPointsAndDevices(maps, devices, cache));
 
         overview.put("alarms", join(alarmsFuture, emptyAlarmsPayload()));
         return overview;
+    }
+
+    public Map<String, Object> statsSnapshot() {
+        OverviewRequestCache cache = new OverviewRequestCache();
+        CompletableFuture<List<Map<String, Object>>> devicesFuture = async(this::devices);
+        CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
+        CompletableFuture<Map<String, Object>> alarmsFuture = async(this::alarmsPayload);
+
+        List<Map<String, Object>> devices = join(devicesFuture, List.of());
+        PanoramaTasks panoramaTasks = join(tasksFuture, new PanoramaTasks(List.of(), List.of()));
+        List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), devices);
+        Map<String, Object> alarms = join(alarmsFuture, emptyAlarmsPayload());
+        return object(
+                "deviceStats", deviceStats(devices),
+                "deviceTypeStats", deviceTypeStats(devices),
+                "patrolOverview", patrolOverview(panoramaTasks.instances()),
+                "taskOverview", taskOverview(tasks),
+                "alarmStats", alarmStats(alarms),
+                "alarmSummary", alarms.get("summary"));
     }
 
     private List<Map<String, Object>> mapsWithPointsAndDevices(
@@ -110,6 +132,51 @@ public class PanoramaService {
                 .toList();
     }
 
+    private List<Map<String, Object>> withTaskLocationMapIds(
+            List<Map<String, Object>> devices,
+            List<Map<String, Object>> tasks) {
+        if (devices == null || devices.isEmpty()) {
+            return List.of();
+        }
+        Map<String, String> taskMapIds = taskMapIdsByRobotId(tasks);
+        return devices.stream()
+                .map(device -> withTaskLocationMapId(device, taskMapIds))
+                .toList();
+    }
+
+    private Map<String, String> taskMapIdsByRobotId(List<Map<String, Object>> tasks) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (tasks == null) {
+            return result;
+        }
+        for (Map<String, Object> task : tasks) {
+            String mapId = firstString(task, "mapId");
+            if (mapId == null || mapId.isBlank()) {
+                continue;
+            }
+            for (Map<String, Object> equipment : list(task.get("equipmentList"))) {
+                String robotId = firstString(equipment, "robotId");
+                if (robotId != null && !robotId.isBlank()) {
+                    result.putIfAbsent(robotId, mapId);
+                }
+            }
+        }
+        return result;
+    }
+
+    private Map<String, Object> withTaskLocationMapId(
+            Map<String, Object> device,
+            Map<String, String> taskMapIds) {
+        if ("FIXED_CAMERA".equals(firstString(device, "sourceType"))) {
+            return device;
+        }
+        Map<String, Object> result = mutable(device);
+        Map<String, Object> location = mutable(map(device.get("location")));
+        location.put("mapId", taskMapIds.get(firstString(device, "robotId")));
+        result.put("location", location);
+        return result;
+    }
+
     private List<Map<String, Object>> gpsDevices(List<Map<String, Object>> devices) {
         if (devices == null || devices.isEmpty()) {
             return List.of();
@@ -135,7 +202,12 @@ public class PanoramaService {
     }
 
     public Map<String, Object> deviceDetail(String deviceId) {
-        return devices().stream()
+        OverviewRequestCache cache = new OverviewRequestCache();
+        CompletableFuture<List<Map<String, Object>>> devicesFuture = async(this::devices);
+        CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
+        return withTaskLocationMapIds(
+                join(devicesFuture, List.of()),
+                join(tasksFuture, new PanoramaTasks(List.of(), List.of())).items()).stream()
                 .filter(device -> Objects.equals(deviceId, string(device.get("robotId"))))
                 .findFirst()
                 .map(this::toDeviceDetail)
@@ -143,7 +215,12 @@ public class PanoramaService {
     }
 
     public Map<String, Object> tasks() {
-        List<Map<String, Object>> tasks = taskPayload(new OverviewRequestCache()).items();
+        OverviewRequestCache cache = new OverviewRequestCache();
+        CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
+        CompletableFuture<List<Map<String, Object>>> devicesFuture = async(this::devices);
+        List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(
+                join(tasksFuture, new PanoramaTasks(List.of(), List.of())).items(),
+                join(devicesFuture, List.of()));
         return object(
                 "serverTime", now(),
                 "total", tasks.size(),
@@ -178,14 +255,19 @@ public class PanoramaService {
         CompletableFuture<Map<String, Map<String, Object>>> statusBySerialFuture = async(() -> statusBySerial(managementDevices));
         CompletableFuture<List<Map<String, Object>>> registeredRobotsFuture = async(centerClient::registeredRobots);
         CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = async(centerClient::fixedCameras);
+        CompletableFuture<List<Map<String, Object>>> deviceTypeOptionsFuture = async(centerClient::deviceTypeOptions);
         Map<String, Map<String, Object>> statusBySerial = join(statusBySerialFuture, Map.of());
+        Map<String, String> deviceTypeNames = deviceTypeNames(join(deviceTypeOptionsFuture, List.of()));
         List<CompletableFuture<Map<String, Object>>> deviceFutures = new ArrayList<>();
         List<String> appendedRobotIds = new ArrayList<>();
         for (Map<String, Object> managementDevice : managementDevices) {
+            if (!hasDeviceId(managementDevice)) {
+                continue;
+            }
             String robotId = firstString(managementDevice, "serialNumber");
             Map<String, Object> realtimeStatus = statusBySerial.getOrDefault(robotId, Map.of());
             CompletableFuture<Map<String, Object>> deviceFuture = async(() ->
-                    device(deviceSource(managementDevice), realtimeStatus, taskInstanceResolver));
+                    device(deviceSource(managementDevice), realtimeStatus, taskInstanceResolver, deviceTypeNames));
             deviceFutures.add(deviceFuture);
         }
         List<Map<String, Object>> result = new ArrayList<>();
@@ -198,13 +280,15 @@ public class PanoramaService {
             appendRobotId(appendedRobotIds, device.get("robotId"));
         }
         join(registeredRobotsFuture, List.<Map<String, Object>>of()).stream()
+                .filter(this::hasDeviceId)
                 .filter(robot -> !containsRobotId(appendedRobotIds, firstValue(robot, "robotId", "serialNumber")))
-                .map(this::registeredRobotDevice)
+                .map(robot -> registeredRobotDevice(robot, deviceTypeNames))
                 .forEach(device -> {
                     result.add(device);
                     appendRobotId(appendedRobotIds, device.get("robotId"));
                 });
         join(fixedCamerasFuture, List.<Map<String, Object>>of()).stream()
+                .filter(camera -> firstValue(camera, "cameraId", "id") != null)
                 .map(this::fixedCameraDevice)
                 .forEach(result::add);
         return result;
@@ -218,6 +302,10 @@ public class PanoramaService {
         return centerClient.device(id)
                 .map(detail -> mergeDevice(listDevice, detail))
                 .orElse(listDevice);
+    }
+
+    private boolean hasDeviceId(Map<String, Object> source) {
+        return firstValue(source, "serialNumber", "robotId", "id") != null;
     }
 
     private Map<String, Object> mergeDevice(Map<String, Object> listDevice, Map<String, Object> detailDevice) {
@@ -247,7 +335,8 @@ public class PanoramaService {
     private Map<String, Object> device(
             Map<String, Object> source,
             Map<String, Object> realtimeStatus,
-            TaskInstanceResolver taskInstanceResolver) {
+            TaskInstanceResolver taskInstanceResolver,
+            Map<String, String> deviceTypeNames) {
         Map<String, Object> basic = map(path(realtimeStatus, "status", "basic"));
         Map<String, Object> motion = map(path(realtimeStatus, "status", "motion"));
         Map<String, Object> localization = map(path(realtimeStatus, "status", "localization"));
@@ -266,7 +355,7 @@ public class PanoramaService {
                 "robotId", robotId,
                 "clientId", firstValue(source, "authMqttClientId", "clientId"),
                 "name", name,
-                "type", typeName(firstString(source, "deviceType", "typeCode", "type")),
+                "type", typeName(firstString(source, "deviceType", "typeCode", "type"), deviceTypeNames),
                 "typeCode", firstValue(source, "deviceType", "typeCode", "type"),
                 "vendor", firstValue(source, "manufacturer", "vendor"),
                 "model", firstValue(source, "model"),
@@ -287,18 +376,19 @@ public class PanoramaService {
                 "task", deviceTasks(task, taskInstanceResolver));
     }
 
-    private Map<String, Object> registeredRobotDevice(Map<String, Object> source) {
+    private Map<String, Object> registeredRobotDevice(Map<String, Object> source, Map<String, String> deviceTypeNames) {
         String robotId = firstString(source, "robotId", "serialNumber", "id");
         String status = onlineStatus(firstString(source, "status", "onlineStatus"));
         String name = value(firstString(source, "name", "deviceName"), robotId);
+        String typeCode = firstString(source, "typeCode", "deviceType");
         List<Map<String, Object>> mountedDevices = list(firstValue(source, "devices", "mountedDevices"));
         Object alarmLevel = null;
         return object(
                 "robotId", robotId,
                 "clientId", firstValue(source, "clientId", "authMqttClientId"),
                 "name", name,
-                "type", typeName(firstString(source, "type", "deviceType", "typeCode")),
-                "typeCode", firstValue(source, "typeCode", "deviceType", "type"),
+                "type", typeName(typeCode, deviceTypeNames),
+                "typeCode", typeCode,
                 "vendor", firstValue(source, "manufacturer", "vendor"),
                 "model", firstValue(source, "model"),
                 "status", status,
@@ -561,17 +651,7 @@ public class PanoramaService {
         Map<String, Object> instance = taskInstanceResolver.instance(workflowInstanceId);
         Map<String, Object> replay = taskInstanceResolver.replay(workflowInstanceId);
         List<Map<String, Object>> deviceTaskInstances = taskInstanceResolver.deviceTaskInstances(workflowInstanceId);
-        String rawStatus = firstString(
-                object("activeWorkflowInstanceStatus", firstString(source, "activeWorkflowInstanceStatus"),
-                        "instanceStatus", firstString(instance, "status"),
-                        "executionStatus", firstString(source, "executionStatus"),
-                        "lastResultStatus", firstString(source, "lastResultStatus"),
-                        "status", firstString(source, "status")),
-                "activeWorkflowInstanceStatus",
-                "instanceStatus",
-                "executionStatus",
-                "lastResultStatus",
-                "status");
+        String rawStatus = firstString(source, "executionStatus");
         String startTime = formatTime(value(
                 firstString(instance, "startedAt"),
                 firstString(source, "startedAt", "lastStartedAt", "startTime")));
@@ -580,9 +660,12 @@ public class PanoramaService {
                 firstString(source, "completedAt", "lastCompletedAt", "endTime")));
         return object(
                 "taskId", firstValue(source, "id", "taskId"),
+                "workflowInstanceId", workflowInstanceId,
                 "name", firstString(source, "planName", "workflowName", "name"),
-                "status", statusCode(rawStatus),
-                "statusName", statusName(rawStatus),
+                "executionMode", firstValue(source, "executionMode"),
+                "expectedDurationSeconds", firstValue(source, "expectedDurationSeconds"),
+                "status", taskPlanStatusCode(rawStatus),
+                "statusName", taskPlanStatusName(rawStatus),
                 "startTime", startTime,
                 "endTime", endTime,
                 "timeRange", timeRange(startTime, endTime, null),
@@ -626,7 +709,7 @@ public class PanoramaService {
                             "robotId", firstValue(task, "serialNumber", "deviceId", "id"),
                             "name", firstString(task, "deviceName", "name"),
                             "type", typeName(firstString(task, "deviceType", "type")),
-                            "status", statusCode(firstString(task, "status"))))
+                            "status", null))
                     .toList();
         }
         List<Map<String, Object>> summaries = list(value(instance.get("deviceSummaries"), replay.get("deviceSummaries")));
@@ -639,7 +722,7 @@ public class PanoramaService {
                             "robotId", firstValue(summary, "serialNumber", "deviceId", "id"),
                             "name", firstString(summary, "deviceName", "name"),
                             "type", typeName(firstString(summary, "deviceType", "type")),
-                            "status", statusCode(firstString(summary, "status"))))
+                            "status", null))
                     .toList();
         }
         List<Map<String, Object>> roleBindings = list(source.get("roleBindings"));
@@ -657,6 +740,41 @@ public class PanoramaService {
             }
         }
         return result;
+    }
+
+    private List<Map<String, Object>> withEquipmentOnlineStatuses(
+            List<Map<String, Object>> tasks,
+            List<Map<String, Object>> devices) {
+        Map<String, String> statusByRobotId = new LinkedHashMap<>();
+        for (Map<String, Object> device : devices) {
+            String robotId = firstString(device, "robotId");
+            String status = equipmentOnlineStatus(device.get("status"));
+            if (robotId != null && status != null) {
+                statusByRobotId.put(robotId, status);
+            }
+        }
+        return tasks.stream()
+                .map(task -> {
+                    Map<String, Object> result = mutable(task);
+                    List<Map<String, Object>> equipment = list(task.get("equipmentList")).stream()
+                            .map(item -> {
+                                Map<String, Object> equipmentItem = mutable(item);
+                                equipmentItem.put("status", statusByRobotId.get(firstString(item, "robotId")));
+                                return equipmentItem;
+                            })
+                            .toList();
+                    result.put("equipmentList", equipment);
+                    return result;
+                })
+                .toList();
+    }
+
+    private String equipmentOnlineStatus(Object source) {
+        String status = onlineStatus(string(source));
+        return switch (status == null ? "" : status) {
+            case "online", "offline", "fault" -> status;
+            default -> null;
+        };
     }
 
     private Map<String, Object> alarmsPayload() {
@@ -760,9 +878,16 @@ public class PanoramaService {
                 "handleRateText", handleRate == null ? null : handleRate + "%");
     }
 
+    private Map<String, Object> alarmStats(Map<String, Object> alarms) {
+        return object(
+                "high", list(map(alarms.get("high")).get("items")).size(),
+                "medium", list(map(alarms.get("medium")).get("items")).size(),
+                "low", list(map(alarms.get("low")).get("items")).size());
+    }
+
     private Map<String, Object> taskOverview(List<Map<String, Object>> tasks) {
         long running = tasks.stream().filter(task -> "running".equals(task.get("status"))).count();
-        long pending = tasks.stream().filter(task -> "pending".equals(task.get("status"))).count();
+        long pending = tasks.stream().filter(task -> "waiting".equals(task.get("status"))).count();
         long completed = tasks.stream().filter(task -> "completed".equals(task.get("status")) || "handled".equals(task.get("status"))).count();
         int total = tasks.size();
         Integer completedRate = total == 0 ? null : (int) Math.round(completed * 100.0 / total);
@@ -787,7 +912,8 @@ public class PanoramaService {
 
     private List<Map<String, Object>> deviceTypeStats(List<Map<String, Object>> devices) {
         Map<String, List<Map<String, Object>>> grouped = devices.stream()
-                .collect(Collectors.groupingBy(device -> value(string(device.get("typeCode")), "-"), LinkedHashMap::new, Collectors.toList()));
+                .filter(device -> string(device.get("typeCode")) != null)
+                .collect(Collectors.groupingBy(device -> string(device.get("typeCode")), LinkedHashMap::new, Collectors.toList()));
         return grouped.entrySet().stream()
                 .map(entry -> {
                     List<Map<String, Object>> items = entry.getValue();
@@ -1178,6 +1304,31 @@ public class PanoramaService {
         };
     }
 
+    private String taskPlanStatusCode(String source) {
+        if (source == null || source.isBlank()) {
+            return null;
+        }
+        return switch (source.toUpperCase(Locale.ROOT)) {
+            case "WAITING" -> "waiting";
+            case "RUNNING" -> "running";
+            case "PAUSED" -> "paused";
+            default -> null;
+        };
+    }
+
+    private String taskPlanStatusName(String source) {
+        String status = taskPlanStatusCode(source);
+        if (status == null) {
+            return null;
+        }
+        return switch (status) {
+            case "waiting" -> "待执行";
+            case "running" -> "执行中";
+            case "paused" -> "暂停中";
+            default -> null;
+        };
+    }
+
     private String statusName(String source) {
         String status = statusCode(source);
         if (status == null) {
@@ -1237,17 +1388,27 @@ public class PanoramaService {
         };
     }
 
+    private Map<String, String> deviceTypeNames(List<Map<String, Object>> options) {
+        Map<String, String> result = new LinkedHashMap<>();
+        for (Map<String, Object> option : options) {
+            String code = firstString(option, "value", "itemValue", "itemCode", "code");
+            String name = firstString(option, "label", "itemName", "name");
+            if (code != null && !code.isBlank() && name != null && !name.isBlank()) {
+                result.put(code.toUpperCase(Locale.ROOT), name);
+            }
+        }
+        return result;
+    }
+
     private String typeName(String typeCode) {
+        return typeName(typeCode, Map.of());
+    }
+
+    private String typeName(String typeCode, Map<String, String> deviceTypeNames) {
         if (typeCode == null || typeCode.isBlank()) {
             return null;
         }
-        return switch (typeCode.toUpperCase(Locale.ROOT)) {
-            case "ROBOT_DOG" -> "机器狗";
-            case "HUMANOID_ROBOT" -> "机器人";
-            case "WHEELED_ROBOT" -> "轮式车";
-            case "UAV_ROBOT" -> "无人机";
-            default -> typeCode;
-        };
+        return deviceTypeNames.getOrDefault(typeCode.toUpperCase(Locale.ROOT), typeCode);
     }
 
     private boolean handled(String status) {
@@ -1443,8 +1604,10 @@ public class PanoramaService {
     }
 
     private String normalizeControlMode(String controlMode) {
-        String mode = controlMode == null ? "" : controlMode;
-        return "手动模式".equals(mode) ? "手动模式" : "导航模式";
+        if (controlMode == null || controlMode.isBlank()) {
+            return null;
+        }
+        return "手动模式".equals(controlMode) ? "手动模式" : "导航模式";
     }
 
     private String controlModeName(String controlMode) {

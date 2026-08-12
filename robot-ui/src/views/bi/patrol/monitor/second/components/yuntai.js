@@ -110,11 +110,7 @@ export default {
       return !!status.autoRotateEnabled
     },
     hasPtzAutoRotateStatus(device) {
-      if (!device) return false
-      const key = this.ptzAutoRotateKey(device)
-      if (this.ptzAutoRotateState[key] !== undefined) return true
-      const status = device.status || device.runtimeStatus || {}
-      return status.autoRotateEnabled !== undefined
+      return this.hasDeviceAction(device, 'auto_rotate')
     },
     ptzAutoRotateKey(device) {
       return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
@@ -128,12 +124,12 @@ export default {
     },
     async togglePtzAutoRotate() {
       const device = this.ptzDevice
-      if (!device) return
+      if (!this.hasDeviceAction(device, 'auto_rotate')) return
       const key = this.ptzAutoRotateKey(device)
       const enabled = !this.isPtzAutoRotateOn(device)
-      const ok = await this.sendDeviceCommand(device, 'ptz.auto_rotate', {
+      const ok = await this.sendDeviceCommand(device, 'auto_rotate', {
         enabled,
-        panSpeed: 0.3
+        speed: 20
       }, `ptz_auto_rotate_${enabled ? 'on' : 'off'}`)
       if (ok) {
         this.$set(this.ptzAutoRotateState, key, enabled)
@@ -197,12 +193,18 @@ export default {
         return
       }
       if (this.controlTimers[kind]) return
+      if (!this.canStartFrameControl(kind)) return
       this.sendFrameControl(kind)
       this.$set(this.controlTimers, kind, setInterval(() => this.sendFrameControl(kind), 100))
     },
+    canStartFrameControl(kind) {
+      if (kind === 'zoom-in') return this.hasDeviceAction(this.ptzDevice, 'zoom_in')
+      if (kind === 'zoom-out') return this.hasDeviceAction(this.ptzDevice, 'zoom_out')
+      return true
+    },
     // 云台停止控制
     stopFrameControl(kind) {
-      if (this.selectedRobot?.controlMode !== '手动模式') return
+      if (this.selectedRobot?.controlMode !== '手动模式' && kind.indexOf('base-') === 0) return
       if (!this.controlTimers[kind]) return
       clearInterval(this.controlTimers[kind])
       this.$delete(this.controlTimers, kind)
@@ -255,9 +257,10 @@ export default {
       }
       if (kind.indexOf('zoom-') === 0) {
         const device = this.ptzDevice
-        const session = await this.ensureControlSession(device, 'camera.zoom')
-        const params = { zoomSpeed: kind === 'zoom-in' ? 0.5 : -0.5 }
-        return this.commandPayload(robotId, session.controlSessionId, this.controlModeCommand(this.selectedRobot.controlMode), device, 'camera.zoom', params, kind)
+        const action = kind === 'zoom-in' ? 'zoom_in' : 'zoom_out'
+        const session = await this.ensureControlSession(device, action)
+        const params = { speed: 20, duration: 0.3 }
+        return this.commandPayload(robotId, session.controlSessionId, this.controlModeCommand(this.selectedRobot.controlMode), device, action, params, kind)
       }
       return null
     },

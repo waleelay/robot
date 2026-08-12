@@ -35,6 +35,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     private final CenterServiceProperties properties;
     private final PanoramaWebSocketEventAdapter eventAdapter;
+    private final PanoramaStatsEventRefresher statsEventRefresher;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final StandardWebSocketClient webSocketClient = new StandardWebSocketClient();
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
@@ -43,9 +44,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     public BigscreenWebSocketBridgeHandler(
             CenterServiceProperties properties,
             PanoramaWebSocketEventAdapter eventAdapter,
+            PanoramaStatsEventRefresher statsEventRefresher,
             AuthenticatedRequestHeaders authenticatedRequestHeaders) {
         this.properties = properties;
         this.eventAdapter = eventAdapter;
+        this.statsEventRefresher = statsEventRefresher;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
     }
 
@@ -80,6 +83,8 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession browserSession, CloseStatus status) throws Exception {
         browserSessions.remove(browserSession);
+        eventAdapter.removeSession(browserSession.getId());
+        statsEventRefresher.remove(browserSession.getId());
         WebSocketSession centerSession = centerSessions.remove(browserSession.getId());
         if (centerSession != null && centerSession.isOpen()) {
             centerSession.close(status);
@@ -170,8 +175,17 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         @Override
         protected void handleTextMessage(WebSocketSession centerSession, TextMessage message) throws Exception {
             if (browserSession.isOpen()) {
-                for (String payload : eventAdapter.adapt(message.getPayload())) {
+                String centerPayload = message.getPayload();
+                boolean refreshStats = eventAdapter.requiresStatsRefresh(browserSession.getId(), centerPayload);
+                for (String payload : eventAdapter.adapt(centerPayload)) {
                     browserSession.sendMessage(new TextMessage(payload));
+                }
+                if (refreshStats) {
+                    Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
+                    statsEventRefresher.requestRefresh(
+                            browserSession.getId(),
+                            authentication,
+                            payload -> sendToBrowserSession(browserSession, payload));
                 }
             }
         }
@@ -188,6 +202,19 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         public void handleTransportError(WebSocketSession centerSession, Throwable exception) throws Exception {
             log.warn("Center websocket transport error browserSession={}", browserSession.getId(), exception);
             afterConnectionClosed(centerSession, CloseStatus.SERVER_ERROR);
+        }
+    }
+
+    private void sendToBrowserSession(WebSocketSession browserSession, String payload) {
+        if (!browserSession.isOpen()) {
+            return;
+        }
+        try {
+            synchronized (browserSession) {
+                browserSession.sendMessage(new TextMessage(payload));
+            }
+        } catch (Exception exception) {
+            log.warn("Failed to send browser event session={}", browserSession.getId(), exception);
         }
     }
 }

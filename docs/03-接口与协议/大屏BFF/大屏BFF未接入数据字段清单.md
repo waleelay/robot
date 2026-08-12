@@ -52,7 +52,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | `serverTime` | BFF 生成 | 当前 BFF 时间，不查询中心端 |
 | `deviceStats` | BFF 计算 | 由 `devices[]` 的总数、状态、故障标识计算 |
 | `gpsDevices` | BFF 筛选 | 从 `devices[]` 中筛选经纬度完整的设备，不新增下游数据源 |
-| `map[].devices` | BFF 匹配 | 按控制端 `status.localization.mapId` 将顶层 `devices[]` 归入对应地图，不新增下游数据源 |
+| `map[].devices` | BFF 匹配 | 按 `tasks[].equipmentList[].robotId` 将任务的数据库地图主键填入 `devices[].location.mapId`，再将设备归入对应地图，不新增下游数据源 |
 | `deviceTypeStats` | BFF 计算 | 由 `devices[]` 按 `typeCode` 分组计算 |
 | `taskOverview` | BFF 计算 | 由 `tasks[]` 的状态统计计算 |
 | `alarms.total` | BFF 计算 | 由告警列表数量计算 |
@@ -114,7 +114,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | `equipmentList[]` | 间接查询 | 优先取设备子任务，其次取任务实例/回放 `deviceSummaries`，最后保留计划 `roleBindings` 空字段结构 |
 | `equipmentList[].name` | 间接查询 | 优先来自设备子任务或 `deviceSummaries`；`roleBindings` 兜底时为 `null` |
 | `equipmentList[].type` | 可能缺少来源 | 只有设备子任务或 `deviceSummaries` 返回设备类型时才有值 |
-| `equipmentList[].status` | 间接查询 | 优先来自设备子任务状态；缺少时为 `null` |
+| `equipmentList[].status` | BFF 关联 | 按 `robotId` 关联 `devices[].status`，表示设备在线状态；未匹配时为 `null` |
 | `mapId` | 间接查询 | 由工作流定义接口返回，不是任务计划直接返回 |
 | `mapPoints` | 间接查询 | 由 `mapId` 查询地图点位 |
 | `pathPoints` | BFF 过滤 | 先查路径点位引用，再按 `mapPointId` 从 `mapPoints` 中过滤 |

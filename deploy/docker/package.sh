@@ -141,6 +141,42 @@ load_image_archive() {
   esac
 }
 
+load_image_if_needed() {
+  image=$1
+  shift
+
+  if $DOCKER image inspect "$image" >/dev/null 2>&1; then
+    return
+  fi
+
+  for archive_name in "$@"; do
+    archive="$TOOL_IMAGE_DIR/$archive_name"
+    if [ -f "$archive" ]; then
+      load_image_archive "$archive"
+      break
+    fi
+  done
+}
+
+find_tool_image_archive() {
+  base_name=$1
+  for archive in \
+    "$TOOL_IMAGE_DIR/$base_name.tar" \
+    "$TOOL_IMAGE_DIR/$base_name.tar.gz" \
+    "$TOOL_IMAGE_DIR/$base_name.tgz" \
+    "$TOOL_IMAGE_DIR/$base_name.tar.xz" \
+    "$TOOL_IMAGE_DIR/$base_name.txz" \
+    "$TOOL_IMAGE_DIR/$base_name.tar.zst" \
+    "$TOOL_IMAGE_DIR/$base_name.tzst"
+  do
+    if [ -f "$archive" ]; then
+      printf '%s' "$archive"
+      return 0
+    fi
+  done
+  return 1
+}
+
 ensure_java_runtime_image() {
   if $DOCKER image inspect "$java_runtime_image" >/dev/null 2>&1; then
     return
@@ -181,6 +217,24 @@ ensure_java_runtime_image() {
 
 ensure_java_runtime_image
 
+load_image_if_needed "alpine:3.20" \
+  "alpine-3.20.tar" \
+  "alpine-3.20.tar.gz" \
+  "alpine-3.20.tgz" \
+  "alpine-3.20.tar.xz" \
+  "alpine-3.20.txz" \
+  "alpine-3.20.tar.zst" \
+  "alpine-3.20.tzst"
+
+load_image_if_needed "golang:1.26-alpine" \
+  "golang-1.26-alpine.tar" \
+  "golang-1.26-alpine.tar.gz" \
+  "golang-1.26-alpine.tgz" \
+  "golang-1.26-alpine.tar.xz" \
+  "golang-1.26-alpine.txz" \
+  "golang-1.26-alpine.tar.zst" \
+  "golang-1.26-alpine.tzst"
+
 build_image() {
   service_dir=$1
   image=$2
@@ -191,7 +245,33 @@ build_image() {
 build_image "backend" "$image_prefix/media-service:$image_tag"
 build_image "control-service" "$image_prefix/control-service:$image_tag"
 build_image "bigscreen-bff" "$image_prefix/bigscreen-bff:$image_tag"
-build_image "client" "$image_prefix/robot-media-client:$image_tag"
+
+robot_media_client_image="$image_prefix/robot-media-client:$image_tag"
+robot_media_client_archive=$(find_tool_image_archive "robot-media-client-image" || true)
+if [ -n "$robot_media_client_archive" ]; then
+  echo "using prebuilt robot-media-client image archive: $robot_media_client_archive"
+  load_image_archive "$robot_media_client_archive"
+  if ! $DOCKER image inspect "$robot_media_client_image" >/dev/null 2>&1; then
+    loaded_client_image=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | awk '
+      $0 == "robot/robot-media-client:latest" { print; exit }
+      $0 == "robot/robot-media-client:amd64" { print; exit }
+      $0 == "robot/robot-media-client:arm64" { print; exit }
+      $0 ~ /\/robot-media-client:/ { print; exit }
+      $0 ~ /^robot-media-client:/ { print; exit }
+    ')
+    if [ -n "$loaded_client_image" ]; then
+      echo "tagging $loaded_client_image as $robot_media_client_image"
+      $DOCKER tag "$loaded_client_image" "$robot_media_client_image"
+    fi
+  fi
+  if ! $DOCKER image inspect "$robot_media_client_image" >/dev/null 2>&1; then
+    echo "prebuilt robot-media-client archive did not provide a tag that can be retagged to $robot_media_client_image" >&2
+    echo "Rebuild and save it as $TOOL_IMAGE_DIR/robot-media-client-image.tar.gz, or remove the archive to build from source." >&2
+    exit 1
+  fi
+else
+  build_image "client" "$robot_media_client_image"
+fi
 
 save_image() {
   image=$1
@@ -211,11 +291,11 @@ save_image() {
 save_image "$image_prefix/media-service:$image_tag" "media-service-image.tar.gz"
 save_image "$image_prefix/control-service:$image_tag" "control-service-image.tar.gz"
 save_image "$image_prefix/bigscreen-bff:$image_tag" "bigscreen-bff-image.tar.gz"
-save_image "$image_prefix/robot-media-client:$image_tag" "robot-media-client-image.tar.gz"
+save_image "$robot_media_client_image" "robot-media-client-image.tar.gz"
 
 if [ -d "$TOOL_IMAGE_DIR" ]; then
   echo "copying tool images from $TOOL_IMAGE_DIR"
-  find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) -exec cp {} "$STAGING_DIR/images/" \;
+  find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) ! -name 'robot-media-client-image.*' -exec cp {} "$STAGING_DIR/images/" \;
 else
   echo "tool image directory not found, skip: $TOOL_IMAGE_DIR"
 fi

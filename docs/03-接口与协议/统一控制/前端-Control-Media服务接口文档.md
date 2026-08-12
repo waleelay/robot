@@ -248,12 +248,12 @@ GET /api/bigscreen/panorama/overview
 | `taskOverview` | object | 今日任务总数、完成率、运行/待执行数量 |
 | `devices` | array | 设备摘要列表 |
 | `gpsDevices` | array | 具备 GPS 经纬度的设备列表，对象结构同 `devices[]`；经度范围 `[-180, 180]`、纬度范围 `[-90, 90]` |
-| `devices[].location.mapId` | string/number/null | 设备实时定位所属地图 ID，来自控制端 `status.localization.mapId` |
+| `devices[].location.mapId` | string/null | 设备所属管理端地图业务主键；按 `robotId` 从 `tasks[].equipmentList[]` 反向关联，取第一条非空 `tasks[].mapId`，无关联任务时返回 `null`；不使用控制端 SLAM 图 ID |
 | `tasks` | array | 任务列表 |
 | `alarms` | object | 告警聚合，结构同 `/alarms` |
 | `map` | array | 可用地图列表，来自管理端地图列表 `data.records` |
 | `map[].points` | array | 当前地图点位集合；无数据时为 `[]` |
-| `map[].devices` | array | 当前地图设备集合，按定位 `mapId` 匹配，对象结构同顶层 `devices[]`；无匹配时为 `[]` |
+| `map[].devices` | array | 当前地图设备集合，按任务关联得到的 `devices[].location.mapId` 与地图 `id` 匹配，对象结构同顶层 `devices[]`；无匹配时为 `[]` |
 
 说明：`devices[]` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，数组字段返回空数组。
 
@@ -301,9 +301,10 @@ GET /api/bigscreen/panorama/overview
     }
   ],
   "tasks": [
-    {
-      "taskId": 1,
-      "name": "A区-夜间巡逻",
+	    {
+	      "taskId": 1,
+	      "workflowInstanceId": 9001,
+	      "name": "A区-夜间巡逻",
       "status": "running",
       "statusName": "执行中",
       "startTime": "2026-06-12 20:00:00",
@@ -413,9 +414,10 @@ GET /api/bigscreen/panorama/tasks
   "serverTime": "2026-07-04 10:00:00",
   "total": 1,
   "items": [
-    {
-      "taskId": 1,
-      "name": "A区-夜间巡逻",
+	    {
+	      "taskId": 1,
+	      "workflowInstanceId": 9001,
+	      "name": "A区-夜间巡逻",
       "status": "running",
       "statusName": "执行中",
       "startTime": "2026-06-12 20:00:00",
@@ -1157,8 +1159,8 @@ Content-Type: application/json
 |---|---|
 | `drive.velocity` | `linearX`、`linearY`、`angularZ` 按底盘能力裁剪；轮式底盘 `linearY` 固定为 `0` |
 | `up/down/left/right/left_up/right_up/left_down/right_down` | `speed`、`duration` 按云台能力裁剪 |
-| `camera.zoom` | `zoomSpeed` 裁剪到 `[-1, 1]` |
-| `ptz.auto_rotate` | `enabled`、`panSpeed` |
+| `zoom_in`、`zoom_out` | 管理端 `PTZ_ZOOM_IN`、`PTZ_ZOOM_OUT`；`speed` 裁剪到 `0.1~100`，`duration` 裁剪到 `0.05~5` 秒；前端长按按 10Hz 连续发送 |
+| `auto_rotate` | 管理端 `PTZ_AUTO_ROTATE`；`enabled` 表示开启或停止，`speed` 为正值旋转速度；前端单击切换 |
 | `control.mode.set` | `controlMode` 归一化 |
 | `SPEAKER/set_volume` | `volumePercent` |
 | `SPEAKER/set_mute` | `mute` |

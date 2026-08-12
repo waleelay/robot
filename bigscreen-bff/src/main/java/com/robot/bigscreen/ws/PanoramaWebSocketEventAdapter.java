@@ -25,7 +25,6 @@ public class PanoramaWebSocketEventAdapter {
     private static final String PANORAMA_DEVICE_LOCATION_CHANGED = "panorama.device.location.changed";
     private static final String PANORAMA_TASK_CHANGED = "panorama.task.changed";
     private static final String PANORAMA_ALARM_CHANGED = "panorama.alarm.changed";
-    private static final String PANORAMA_STATS_CHANGED = "panorama.stats.changed";
     private static final Set<String> TASK_EVENTS = Set.of(
             "task.changed",
             "task.created",
@@ -40,6 +39,13 @@ public class PanoramaWebSocketEventAdapter {
             "alarm.disposed",
             "management.alarm.changed",
             "management.alarm.updated");
+    private static final Set<String> DEVICE_EVENTS = Set.of(
+            "device.created",
+            "device.updated",
+            "device.deleted",
+            "management.device.created",
+            "management.device.updated",
+            "management.device.deleted");
     private static final double[][] TEST111_LOCATION_POINTS = {
             {-1.481845, -1.893522, -0.02789},
             {-1.621149, -8.08522, -0.025462},
@@ -47,7 +53,7 @@ public class PanoramaWebSocketEventAdapter {
     };
 
     private final ObjectMapper objectMapper;
-    private final Map<String, String> robotStatuses = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, String>> robotStatusesBySession = new ConcurrentHashMap<>();
     private final AtomicLong locationTick = new AtomicLong();
     private final AtomicLong test111LocationTick = new AtomicLong();
 
@@ -87,8 +93,6 @@ public class PanoramaWebSocketEventAdapter {
         }
 
         messages.add(writePanoramaDeviceStatus(root, data));
-        updateRobotStatus(robotId, panoramaDeviceStatus(data));
-        messages.add(writePanoramaStats(root));
 
         JsonNode location = firstObject(data, "location", "localization");
         if (location == null) {
@@ -284,31 +288,31 @@ public class PanoramaWebSocketEventAdapter {
         return writeValue(event);
     }
 
-    private String writePanoramaStats(JsonNode sourceRoot) {
-        long online = robotStatuses.values().stream().filter("online"::equalsIgnoreCase).count();
-        long offline = robotStatuses.values().stream().filter("offline"::equalsIgnoreCase).count();
-        long fault = robotStatuses.values().stream().filter("fault"::equalsIgnoreCase).count();
-
-        ObjectNode deviceStats = objectMapper.createObjectNode();
-        deviceStats.put("total", robotStatuses.size());
-        deviceStats.put("online", online);
-        deviceStats.put("fault", fault);
-        deviceStats.put("offline", offline);
-
-        ObjectNode data = objectMapper.createObjectNode();
-        data.set("deviceStats", deviceStats);
-
-        ObjectNode event = objectMapper.createObjectNode();
-        event.put("event", PANORAMA_STATS_CHANGED);
-        event.put("timestamp", timestamp(sourceRoot));
-        event.set("data", data);
-        return writeValue(event);
+    public boolean requiresStatsRefresh(String sessionId, String centerPayload) {
+        JsonNode root = readTree(centerPayload);
+        if (root == null || !root.path("data").isObject()) {
+            return false;
+        }
+        String event = text(root, "event");
+        if (TASK_EVENTS.contains(event) || ALARM_EVENTS.contains(event) || DEVICE_EVENTS.contains(event)) {
+            return true;
+        }
+        if (!ROBOT_STATE_EVENT.equals(event)) {
+            return false;
+        }
+        JsonNode data = root.path("data");
+        String robotId = text(data, "robotId");
+        if (robotId.isBlank()) {
+            return false;
+        }
+        String status = panoramaDeviceStatus(data);
+        Map<String, String> robotStatuses = robotStatusesBySession.computeIfAbsent(
+                sessionId, ignored -> new ConcurrentHashMap<>());
+        return !status.equalsIgnoreCase(robotStatuses.put(robotId, status));
     }
 
-    private void updateRobotStatus(String robotId, String status) {
-        if (!status.isBlank()) {
-            robotStatuses.put(robotId, status);
-        }
+    public void removeSession(String sessionId) {
+        robotStatusesBySession.remove(sessionId);
     }
 
     private JsonNode readTree(String payload) {

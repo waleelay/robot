@@ -116,6 +116,7 @@ if [ "$APP_WORKSPACE_ROOT" != "$raw_workspace_root" ]; then
   set_env_value APP_WORKSPACE_ROOT "$APP_WORKSPACE_ROOT"
 fi
 INSTALL_MODE=$(env_value INSTALL_MODE skip_existing)
+TDT_INSTALL_MODE=$(env_value TDT_INSTALL_MODE skip_existing)
 
 ensure_workspace_writable() {
   check_file="$APP_WORKSPACE_ROOT/.write-check.$$"
@@ -307,7 +308,7 @@ install_tdt_archive() {
   archive_file=$1
   archive_type=$2
 
-  if [ "$INSTALL_MODE" != "overwrite" ] && [ -d "$nginx_html_dir/tdt" ] && [ "$(find "$nginx_html_dir/tdt" -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
+  if [ "$TDT_INSTALL_MODE" != "overwrite" ] && [ -d "$nginx_html_dir/tdt" ] && [ "$(find "$nginx_html_dir/tdt" -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
     echo "skip existing $nginx_html_dir/tdt"
   else
     tmp_tdt_dir="$nginx_html_dir/.tdt-unpack.$$"
@@ -355,7 +356,11 @@ elif [ -f "$CONFIG_DIR/nginx/html/tdt.tgz" ]; then
 elif [ -f "$CONFIG_DIR/nginx/html/tdt.zip" ]; then
   install_tdt_archive "$CONFIG_DIR/nginx/html/tdt.zip" zip
 else
-  install_config_dir "$CONFIG_DIR/nginx/html/tdt" "$nginx_html_dir/tdt" "tdt map files" || true
+  if [ "$TDT_INSTALL_MODE" != "overwrite" ] && [ -d "$nginx_html_dir/tdt" ] && [ "$(find "$nginx_html_dir/tdt" -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
+    echo "skip existing $nginx_html_dir/tdt"
+  else
+    install_config_dir "$CONFIG_DIR/nginx/html/tdt" "$nginx_html_dir/tdt" "tdt map files" || true
+  fi
 fi
 
 tts_dir="$APP_WORKSPACE_ROOT/tts"

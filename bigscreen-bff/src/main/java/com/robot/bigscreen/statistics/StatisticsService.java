@@ -2,6 +2,7 @@ package com.robot.bigscreen.statistics;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.robot.bigscreen.panorama.PanoramaCenterClient;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -35,23 +36,37 @@ public class StatisticsService {
     private final Map<String, ReportHistory> reportHistories = new ConcurrentSkipListMap<>();
     private final Object historyLock = new Object();
     private final ObjectMapper objectMapper;
+    private final PanoramaCenterClient centerClient;
     private final Path reportStorageDir;
     private final Path reportIndexPath;
 
     public StatisticsService(
             ObjectMapper objectMapper,
+            PanoramaCenterClient centerClient,
             @Value("${statistics.report.storage-dir:data/statistics-reports}") String reportStorageDir) {
         this.objectMapper = objectMapper;
+        this.centerClient = centerClient;
         this.reportStorageDir = Paths.get(reportStorageDir);
         this.reportIndexPath = this.reportStorageDir.resolve("index.json");
         loadReportHistories();
     }
 
     public Map<String, Object> overview(String range, String startTime, String endTime, String deviceType, String areaId) {
+        return overview(range, startTime, endTime, deviceType, areaId, deviceTypeOptions());
+    }
+
+    private Map<String, Object> overview(
+            String range,
+            String startTime,
+            String endTime,
+            String deviceType,
+            String areaId,
+            List<Map<String, Object>> deviceTypeOptions) {
         Map<String, Object> normalizedRange = normalizedRange(range, startTime, endTime);
         return object(
                 "serverTime", now(),
                 "range", normalizedRange,
+                "deviceTypeOptions", deviceTypeOptions,
                 "filters", object(
                         "deviceType", blankToDefault(deviceType, "all"),
                         "areaId", areaId),
@@ -69,16 +84,19 @@ public class StatisticsService {
 
     public ReportFile createReport(Map<String, Object> request) {
         ReportSelection selection = reportSelection(request);
+        List<Map<String, Object>> deviceTypeOptions = deviceTypeOptions();
         Map<String, Object> data = overview(
                 selection.rangeType(),
                 selection.startTime(),
                 selection.endTime(),
                 selection.deviceType(),
-                null);
-        byte[] bytes = reportPdf(data, selection);
+                null,
+                deviceTypeOptions);
+        byte[] bytes = reportPdf(data, selection, deviceTypeOptions);
         String id = String.valueOf(reportId.incrementAndGet());
         String createdAt = now();
-        String reportName = "巡逻巡查数据统计报告-" + rangeLabel(selection.rangeType()) + "-" + deviceTypeName(selection.deviceType());
+        String reportName = "巡逻巡查数据统计报告-" + rangeLabel(selection.rangeType()) + "-"
+                + deviceTypeName(selection.deviceType(), deviceTypeOptions);
         String filename = reportName + "-" + LocalDateTime.now(CHINA_ZONE).format(FILE_DATE_FORMATTER) + ".pdf";
         String storedFilename = id + ".pdf";
         Path reportPath = reportStorageDir.resolve(storedFilename);
@@ -299,7 +317,10 @@ public class StatisticsService {
         return new ReportSelection(rangeType, startTime, endTime, deviceType, new LinkedHashSet<>(modules));
     }
 
-    private byte[] reportPdf(Map<String, Object> data, ReportSelection selection) {
+    private byte[] reportPdf(
+            Map<String, Object> data,
+            ReportSelection selection,
+            List<Map<String, Object>> deviceTypeOptions) {
         PdfReportBuilder pdf = new PdfReportBuilder();
         Map<String, Object> range = mapValue(data.get("range"));
         Map<String, Object> kpis = mapValue(data.get("kpis"));
@@ -308,7 +329,7 @@ public class StatisticsService {
         pdf.line("生成时间：" + data.get("serverTime"));
         pdf.line("统计时间：" + rangeLabel(stringValue(range.get("type"), selection.rangeType())) + "（"
                 + valueText(range.get("startTime")) + " 至 " + valueText(range.get("endTime")) + "）");
-        pdf.line("设备类型：" + deviceTypeName(selection.deviceType()));
+        pdf.line("设备类型：" + deviceTypeName(selection.deviceType(), deviceTypeOptions));
         pdf.line("包含模块：" + moduleNames(selection.modules()));
 
         pdf.section("一、核心指标");
@@ -406,14 +427,38 @@ public class StatisticsService {
         };
     }
 
-    private String deviceTypeName(String deviceType) {
-        return switch (deviceType) {
-            case "UAV" -> "无人机";
-            case "ROBOT_DOG" -> "机器狗";
-            case "UGV" -> "无人车";
-            case "HUMANOID_ROBOT" -> "机器人";
-            default -> "全部";
-        };
+    private List<Map<String, Object>> deviceTypeOptions() {
+        Map<String, String> options = new LinkedHashMap<>();
+        for (Map<String, Object> source : centerClient.deviceTypeOptions()) {
+            String value = firstString(source, "value", "itemValue", "itemCode", "code");
+            String label = firstString(source, "label", "itemName", "name");
+            if (value != null && label != null) {
+                options.put(value, label);
+            }
+        }
+        options.putIfAbsent("FIXED_CAMERA", "固定摄像头");
+        List<Map<String, Object>> result = new ArrayList<>();
+        result.add(object("value", "all", "label", "全部"));
+        options.forEach((value, label) -> result.add(object("value", value, "label", label)));
+        return result;
+    }
+
+    private String deviceTypeName(String deviceType, List<Map<String, Object>> options) {
+        return options.stream()
+                .filter(option -> deviceType.equals(stringValue(option.get("value"), null)))
+                .map(option -> stringValue(option.get("label"), deviceType))
+                .findFirst()
+                .orElse(deviceType);
+    }
+
+    private String firstString(Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            String value = stringValue(source.get(key), null);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private String moduleNames(Set<String> modules) {

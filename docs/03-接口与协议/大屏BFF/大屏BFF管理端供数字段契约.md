@@ -95,7 +95,7 @@
 | `tasks[].equipmentList[].robotId` | string/number | 条件需要 | 执行装备/机器人 ID |
 | `tasks[].equipmentList[].name` | string/null | 条件需要 | 执行装备名称 |
 | `tasks[].equipmentList[].type` | string/null | 条件需要 | 执行装备类型 |
-| `tasks[].equipmentList[].status` | string/null | 条件需要 | 执行装备任务状态 |
+| `tasks[].equipmentList[].status` | string/null | 条件需要 | 执行装备在线状态，取值为 `online`、`offline`、`fault`；管理端提供可关联的设备在线状态原始字段 |
 
 ### 2.8 `tasks[].mapPoints[]`
 

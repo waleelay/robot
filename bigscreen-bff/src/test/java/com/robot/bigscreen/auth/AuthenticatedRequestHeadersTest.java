@@ -78,4 +78,22 @@ class AuthenticatedRequestHeadersTest {
 
         assertEquals("MEDIA_VIEWER", headers.getFirst("X-Roles"));
     }
+
+    @Test
+    void expandsPlatformAdministratorToBusinessOperatorRoles() {
+        Jwt jwt = Jwt.withTokenValue("access-token")
+                .header("alg", "none")
+                .subject("platform-admin")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .claim("realm_access", Map.of("roles", List.of("platform_admin")))
+                .build();
+        HttpHeaders headers = new HttpHeaders();
+
+        requestHeaders.apply(headers, new JwtAuthenticationToken(jwt));
+
+        assertEquals(
+                "EQUIPMENT_OPERATOR,MEDIA_OPERATOR,MEDIA_VIEWER,platform_admin",
+                headers.getFirst("X-Roles"));
+    }
 }

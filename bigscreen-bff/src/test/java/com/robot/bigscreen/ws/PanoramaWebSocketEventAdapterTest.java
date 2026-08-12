@@ -57,12 +57,18 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(statusEvent.path("data").path("healthStatus").asText()).isEqualTo("异常");
         assertThat(statusEvent.path("data").path("controlMode").asText()).isEqualTo("导航模式");
         assertThat(statusEvent.path("data").path("controlModeName").asText()).isEqualTo("导航模式");
-        JsonNode statsEvent = events.stream()
+        assertThat(events.stream()
                 .map(this::readTree)
-                .filter(node -> "panorama.stats.changed".equals(node.path("event").asText()))
-                .findFirst()
-                .orElseThrow();
-        assertThat(statsEvent.path("data").path("deviceStats").path("fault").asInt()).isEqualTo(1);
+                .noneMatch(node -> "panorama.stats.changed".equals(node.path("event").asText()))).isTrue();
+        assertThat(adapter.requiresStatsRefresh("browser-a", """
+                {"event":"robot.state","data":{"robotId":"test115","status":"online","healthStatus":"异常"}}
+                """)).isTrue();
+        assertThat(adapter.requiresStatsRefresh("browser-a", """
+                {"event":"robot.state","data":{"robotId":"test115","status":"online","healthStatus":"异常"}}
+                """)).isFalse();
+        assertThat(adapter.requiresStatsRefresh("browser-b", """
+                {"event":"robot.state","data":{"robotId":"test115","status":"online","healthStatus":"异常"}}
+                """)).isTrue();
     }
 
     private JsonNode readTree(String value) {

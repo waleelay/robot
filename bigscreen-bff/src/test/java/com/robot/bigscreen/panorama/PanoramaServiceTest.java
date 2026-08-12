@@ -2,6 +2,7 @@ package com.robot.bigscreen.panorama;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -10,9 +11,24 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class PanoramaServiceTest {
+
+    @Test
+    void ignoresSourceRecordsWithoutDeviceIdentifiers() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.devices()).thenReturn(List.of(Map.of("controlMode", "AUTO")));
+        when(centerClient.registeredRobots()).thenReturn(List.of(Map.of("status", "online")));
+        when(centerClient.fixedCameras()).thenReturn(List.of(Map.of("enabled", true)));
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        assertEquals(List.of(), maps(overview.get("devices")));
+        assertEquals(0, ((Map<?, ?>) overview.get("deviceStats")).get("total"));
+    }
 
     @Test
     void addsPointsAndFixedCamerasToEveryMapInOverview() {
@@ -76,6 +92,87 @@ class PanoramaServiceTest {
     }
 
     @Test
+    void includesWorkflowInstanceIdInOverviewTasks() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "planName", "A区巡逻",
+                "activeWorkflowInstanceId", 9001L,
+                "activeWorkflowInstanceStatus", "FAILED",
+                "executionMode", "SCHEDULE",
+                "expectedDurationSeconds", 3600,
+                "executionStatus", "RUNNING")));
+
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        Map<String, Object> overview = service.overview();
+
+        List<Map<String, Object>> tasks = maps(overview.get("tasks"));
+        assertEquals(1L, tasks.get(0).get("taskId"));
+        assertEquals(9001L, tasks.get(0).get("workflowInstanceId"));
+        assertEquals("SCHEDULE", tasks.get(0).get("executionMode"));
+        assertEquals(3600, tasks.get(0).get("expectedDurationSeconds"));
+        assertEquals("running", tasks.get(0).get("status"));
+    }
+
+    @Test
+    void usesPlanExecutionStatusInsteadOfHistoricalInstanceStatus() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "planName", "A区巡逻",
+                "lastWorkflowInstanceId", 9001L,
+                "executionStatus", "WAITING")));
+        when(centerClient.taskWorkflowInstance("9001")).thenReturn(Optional.of(Map.of("status", "FAILED")));
+        when(centerClient.taskWorkflowReplay("9001")).thenReturn(Optional.empty());
+        when(centerClient.deviceTaskInstances("9001")).thenReturn(List.of());
+
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        Map<String, Object> overview = service.overview();
+
+        Map<String, Object> task = maps(overview.get("tasks")).get(0);
+        assertEquals("waiting", task.get("status"));
+        assertEquals("待执行", task.get("statusName"));
+        assertEquals(1L, ((Map<?, ?>) overview.get("taskOverview")).get("pending"));
+    }
+
+    @Test
+    void usesDeviceOnlineStatusForTaskEquipmentInsteadOfDeviceTaskStatus() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.devices()).thenReturn(List.of(Map.of(
+                "serialNumber", "robot-001",
+                "deviceName", "Robot One")));
+        when(centerClient.realtimeStatuses(List.of("robot-001"))).thenReturn(List.of(
+                realtimeStatus("robot-001", Map.of())));
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "planName", "A区巡逻",
+                "activeWorkflowInstanceId", 9001L,
+                "activeWorkflowInstanceStatus", "RUNNING",
+                "executionStatus", "RUNNING")));
+        when(centerClient.taskWorkflowInstance("9001")).thenReturn(Optional.empty());
+        when(centerClient.taskWorkflowReplay("9001")).thenReturn(Optional.empty());
+        when(centerClient.deviceTaskInstances("9001")).thenReturn(List.of(
+                Map.of(
+                        "serialNumber", "robot-001",
+                        "deviceName", "Robot One",
+                        "status", "TIMEOUT"),
+                Map.of(
+                        "serialNumber", "robot-missing",
+                        "deviceName", "Missing Robot",
+                        "status", "COMPLETED")));
+
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        Map<String, Object> overview = service.overview();
+
+        List<Map<String, Object>> equipment = maps(maps(overview.get("tasks")).get(0).get("equipmentList"));
+        assertEquals("online", equipment.get(0).get("status"));
+        assertNull(equipment.get(1).get("status"));
+    }
+
+    @Test
     void includesOnlyDevicesWithCompleteGpsCoordinates() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
@@ -101,7 +198,7 @@ class PanoramaServiceTest {
     }
 
     @Test
-    void groupsDevicesIntoMapsByRealtimeLocalizationMapId() {
+    void groupsDevicesIntoMapsByTaskMapId() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         when(centerClient.enabledMaps()).thenReturn(List.of(
@@ -117,9 +214,20 @@ class PanoramaServiceTest {
                 Map.of("serialNumber", "robot-002", "deviceName", "Robot Two"),
                 Map.of("serialNumber", "robot-003", "deviceName", "Robot Without Map")));
         when(centerClient.realtimeStatuses(List.of("robot-001", "robot-002", "robot-003"))).thenReturn(List.of(
-                realtimeStatus("robot-001", Map.of("mapId", 1001L, "coordinateX", 1.0)),
-                realtimeStatus("robot-002", Map.of("mapId", "1002", "coordinateX", 2.0)),
-                realtimeStatus("robot-003", Map.of("coordinateX", 3.0))));
+                realtimeStatus("robot-001", Map.of("mapId", "slam-map-one", "coordinateX", 1.0)),
+                realtimeStatus("robot-002", Map.of("mapId", "slam-map-two", "coordinateX", 2.0)),
+                realtimeStatus("robot-003", Map.of("mapId", "unknown-map", "coordinateX", 3.0))));
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(
+                Map.of(
+                        "id", 1L,
+                        "workflowDefinitionId", "definition-001",
+                        "roleBindings", List.of(Map.of("deviceIds", List.of("robot-001")))),
+                Map.of(
+                        "id", 2L,
+                        "workflowDefinitionId", "definition-002",
+                        "roleBindings", List.of(Map.of("deviceIds", List.of("robot-002"))))));
+        when(centerClient.taskWorkflowDefinition("definition-001")).thenReturn(Optional.of(Map.of("mapId", 1001L)));
+        when(centerClient.taskWorkflowDefinition("definition-002")).thenReturn(Optional.of(Map.of("mapId", "1002")));
 
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
         Map<String, Object> overview = service.overview();
@@ -129,7 +237,33 @@ class PanoramaServiceTest {
         assertEquals(List.of(devices.get(0)), maps(maps.get(0).get("devices")));
         assertEquals(List.of(devices.get(1)), maps(maps.get(1).get("devices")));
         assertEquals(List.of(), maps.get(2).get("devices"));
-        assertEquals(1001L, ((Map<?, ?>) devices.get(0).get("location")).get("mapId"));
+        assertEquals("1001", ((Map<?, ?>) devices.get(0).get("location")).get("mapId"));
+        assertEquals("1002", ((Map<?, ?>) devices.get(1).get("location")).get("mapId"));
+        assertNull(((Map<?, ?>) devices.get(2).get("location")).get("mapId"));
+    }
+
+    @Test
+    void returnsTaskMapIdInDeviceDetail() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.devices()).thenReturn(List.of(Map.of(
+                "serialNumber", "robot-001",
+                "deviceName", "Robot One")));
+        when(centerClient.realtimeStatuses(List.of("robot-001"))).thenReturn(List.of(
+                realtimeStatus("robot-001", Map.of("mapId", "2077"))));
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "workflowDefinitionId", "definition-001",
+                "roleBindings", List.of(Map.of("deviceIds", List.of("robot-001"))))));
+        when(centerClient.taskWorkflowDefinition("definition-001")).thenReturn(Optional.of(Map.of(
+                "mapId", "2077775285125144578")));
+
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        Map<String, Object> detail = service.deviceDetail("robot-001");
+
+        assertEquals(
+                "2077775285125144578",
+                ((Map<?, ?>) detail.get("location")).get("mapId"));
     }
 
     @Test
@@ -159,6 +293,8 @@ class PanoramaServiceTest {
         assertEquals("online", devices.get(0).get("status"));
         assertEquals("robot-media-client-test111", devices.get(0).get("clientId"));
         assertEquals(1, maps(devices.get(0).get("cameras")).size());
+        assertNull(devices.get(0).get("typeCode"));
+        assertNull(devices.get(0).get("type"));
     }
 
     @Test
@@ -188,6 +324,7 @@ class PanoramaServiceTest {
         when(centerClient.fixedCameras()).thenReturn(List.of(Map.of(
                 "id", "camera-001",
                 "cameraName", "固定摄像头一",
+                "mapId", "1001",
                 "enabled", true,
                 "mainStreamUrl", "rtsp://example/camera-001")));
 
@@ -199,6 +336,44 @@ class PanoramaServiceTest {
         assertEquals("camera-001", devices.get(0).get("robotId"));
         assertEquals("FIXED_CAMERA", devices.get(0).get("sourceType"));
         assertEquals("online", devices.get(0).get("status"));
+        assertEquals("1001", ((Map<?, ?>) devices.get(0).get("location")).get("mapId"));
+    }
+
+    @Test
+    void resolvesRobotTypeNameFromManagementDictionaryAndKeepsFixedCameraDefault() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.deviceTypeOptions()).thenReturn(List.of(Map.of(
+                "label", "轮式巡检车",
+                "value", "WHEELED_ROBOT")));
+        when(centerClient.devices()).thenReturn(List.of(Map.of(
+                "serialNumber", "robot-001",
+                "deviceName", "Robot One",
+                "deviceType", "WHEELED_ROBOT")));
+        when(centerClient.realtimeStatuses(List.of("robot-001"))).thenReturn(List.of(
+                realtimeStatus("robot-001", Map.of())));
+        when(centerClient.fixedCameras()).thenReturn(List.of(Map.of(
+                "id", "camera-001",
+                "cameraName", "固定摄像头一",
+                "enabled", true,
+                "mainStreamUrl", "rtsp://example/camera-001")));
+
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        Map<String, Object> overview = service.overview();
+        List<Map<String, Object>> devices = maps(overview.get("devices"));
+
+        assertEquals("WHEELED_ROBOT", devices.get(0).get("typeCode"));
+        assertEquals("轮式巡检车", devices.get(0).get("type"));
+        assertEquals("FIXED_CAMERA", devices.get(1).get("typeCode"));
+        assertEquals("固定摄像头", devices.get(1).get("type"));
+        List<Map<String, Object>> typeStats = maps(overview.get("deviceTypeStats"));
+        assertEquals("WHEELED_ROBOT", typeStats.get(0).get("type"));
+        assertEquals("轮式巡检车", typeStats.get(0).get("name"));
+        assertEquals(1, typeStats.get(0).get("count"));
+        assertEquals("FIXED_CAMERA", typeStats.get(1).get("type"));
+        assertEquals("固定摄像头", typeStats.get(1).get("name"));
+        assertEquals(1, typeStats.get(1).get("count"));
+        verify(centerClient).deviceTypeOptions();
     }
 
     private Map<String, Object> realtimeStatus(String serialNumber, Map<String, Object> localization) {
@@ -210,6 +385,7 @@ class PanoramaServiceTest {
 
     private void stubEmptyOverviewSources(PanoramaCenterClient centerClient) {
         when(centerClient.devices()).thenReturn(List.of());
+        when(centerClient.deviceTypeOptions()).thenReturn(List.of());
         when(centerClient.registeredRobots()).thenReturn(List.of());
         when(centerClient.fixedCameras()).thenReturn(List.of());
         when(centerClient.taskWorkflowPlans()).thenReturn(List.of());

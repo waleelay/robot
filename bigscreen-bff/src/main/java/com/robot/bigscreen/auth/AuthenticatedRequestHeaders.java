@@ -15,6 +15,16 @@ import org.springframework.stereotype.Component;
 @Component
 public class AuthenticatedRequestHeaders {
 
+    private static final Set<String> ADMIN_ROLES = Set.of(
+            "platform_admin",
+            "super_admin",
+            "admin");
+
+    private static final Set<String> ADMIN_BUSINESS_ROLES = Set.of(
+            "MEDIA_VIEWER",
+            "MEDIA_OPERATOR",
+            "EQUIPMENT_OPERATOR");
+
     private static final Set<String> TRUSTED_USER_HEADERS = Set.of(
             "X-User-Id",
             "X-Org-Id",
@@ -65,6 +75,9 @@ public class AuthenticatedRequestHeaders {
             if (resource instanceof Map<?, ?> resourceClaims) {
                 addRoles(roles, resourceClaims.get("roles"));
             }
+        }
+        if (roles.stream().anyMatch(ADMIN_ROLES::contains)) {
+            roles.addAll(ADMIN_BUSINESS_ROLES);
         }
         return roles;
     }

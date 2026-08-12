@@ -30,7 +30,7 @@
         </div>
         <div class="custom-tab-button flex ml27">
           <div
-            v-for="item of deviceTypeMap"
+            v-for="item of deviceTypeOptions"
             :key="item.value"
             class="tab-button-item pt5 pb5"
             style="font-size: 14px; line-height: 19px;"
@@ -122,7 +122,7 @@
       <div class="flex1 flex-column ml20 warning">
         <div class="card-title title-920-37">
           <div class="text">
-            AI告警分析 
+            AI告警分析
           </div>
         </div>
         <div class="hp346 d-flex p20">
@@ -169,7 +169,7 @@
         <div class="flex1 flex-column">
           <div class="card-title title-450-37">
             <div class="text">
-              告警异常趋势图 
+              告警异常趋势图
             </div>
           </div>
           <div class="hp279 p20">
@@ -180,7 +180,7 @@
         <div class="flex1 flex-column ml20 task">
           <div class="card-title title-450-37">
             <div class="text">
-              任务完成率 
+              任务完成率
             </div>
           </div>
           <div class="p20 hp279 flex-column flx-justify-between">
@@ -208,7 +208,7 @@
     <HistoryReportList ref="historyReport" />
   </div>
 </template>
- 
+
 <script>
 import BarChart from './BarChart.vue';
 import BarChart1 from './BarChart1.vue';
@@ -260,28 +260,7 @@ export default {
           label: '自定义',
         },
       },
-      deviceTypeMap: {
-        'all': {
-          value: 'all',
-          label: '全部'
-        },
-        'UAV': {
-          value: 'UAV',
-          label: '无人机'
-        },
-        'ROBOT_DOG': {
-          value: 'ROBOT_DOG',
-          label: '机器狗'
-        },
-        'UGV': {
-          value: 'UGV',
-          label: '无人车'
-        },
-        'HUMANOID_ROBOT': {
-          value: 'HUMANOID_ROBOT',
-          label: '机器人'
-        }
-      },
+      deviceTypeOptions: [{ value: 'all', label: '全部' }],
       dateValue: [],
       pickerOptions: {
         disabledDate: (date) => {
@@ -354,7 +333,7 @@ export default {
     },
     taskInsight() {
       return (this.statistics && this.statistics.taskCompletion && this.statistics.taskCompletion.insight)
-        || '本月对比上月任务处置时长缩短10%，系统响应速度提升';
+        || '暂无数据';
     },
     statisticsParams() {
       const params = {
@@ -370,7 +349,7 @@ export default {
   },
   mounted() {
     this.rankList.map(item => {
-      item.percent = this.rankList[0].nums ? item.nums / this.rankList[0].nums * 100 : 0 
+      item.percent = this.rankList[0].nums ? item.nums / this.rankList[0].nums * 100 : 0
       return item
     })
     this.loadStatistics()
@@ -440,6 +419,9 @@ export default {
       });
       try {
         this.statistics = await getPatrolStatisticsOverview(this.statisticsParams);
+        if (this.statistics && Array.isArray(this.statistics.deviceTypeOptions)) {
+          this.deviceTypeOptions = this.statistics.deviceTypeOptions;
+        }
       } finally {
         loading.close()
       }
@@ -559,7 +541,7 @@ export default {
         text-overflow: ellipsis;
         -o-text-overflow: ellipsis;
       }
-      .name { 
+      .name {
         color: #AEC3DC;
         font-family: "Microsoft YaHei";
         font-size: 14px;

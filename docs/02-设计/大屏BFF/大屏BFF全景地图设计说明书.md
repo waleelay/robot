@@ -297,10 +297,13 @@ GET /api/bigscreen/panorama/overview
     }
   ],
   "tasks": [
-    {
-      "taskId": 1,
-      "name": "A区-夜间巡逻",
-      "status": "running",
+	    {
+	      "taskId": 1,
+	      "workflowInstanceId": 9001,
+	      "name": "A区-夜间巡逻",
+	      "executionMode": "SCHEDULE",
+	      "expectedDurationSeconds": 7200,
+	      "status": "running",
       "statusName": "执行中",
       "startTime": "2026-06-12 20:00:00",
       "endTime": "2026-06-12 22:00:00",
@@ -448,12 +451,13 @@ GET /api/bigscreen/panorama/overview
 | `tasks[]` | 任务列表 | `/api/v1/management/task-workflow-plans?pageNum=1&pageSize=20` |
 | `gpsDevices[]` | 具备 GPS 经纬度的设备列表，对象结构同 `devices[]` | BFF 从 `devices[]` 中筛选经度 `[-180, 180]`、纬度 `[-90, 90]` 且均为有限数值的设备 |
 | `tasks[].taskId` | 任务计划 ID，number/int | `/api/v1/management/task-workflow-plans` 的 `id` |
+| `tasks[].workflowInstanceId` | 当前任务实例 ID，number/int/null；用于暂停、恢复、终止任务实例 | `/api/v1/management/task-workflow-plans` 的 `activeWorkflowInstanceId/lastWorkflowInstanceId/workflowInstanceId` |
 | `tasks[].mapId` | 任务关联地图 ID，number/int | `task-workflow-definitions.{workflowDefinitionId}.mapId` |
 | `tasks[].mapPoints` | 任务地图点位集合 | `/api/v1/management/maps/{mapId}/points` 返回值 |
 | `tasks[].pathPoints` | 任务路径点位对应的地图点位集合 | 根据 `/api/v1/management/paths/{pathId}/points` 中每个 `mapPointId` 到 `tasks[].mapPoints[].id` 过滤得到 |
 | `map` | 可用地图数组 | `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
 | `map[].points` | 每张地图的点位集合 | 按 `map[].id/mapId` 请求 `/api/v1/management/maps/{mapId}/points`；查询失败或无点位时返回 `[]` |
-| `map[].devices` | 当前地图的设备集合，对象结构同 `devices[]` | 按 `devices[].location.mapId` 与地图 `id/mapId` 匹配；无匹配设备时返回 `[]` |
+| `map[].devices` | 当前地图的设备集合，对象结构同 `devices[]` | 按 `devices[].robotId` 匹配 `tasks[].equipmentList[].robotId`，将第一条非空 `tasks[].mapId` 填入 `devices[].location.mapId` 后与地图 `id` 匹配；无匹配设备时返回 `[]` |
 
 当前 mock 的 3 台机器人定位：
 
@@ -547,9 +551,12 @@ GET /api/bigscreen/panorama/tasks
   "serverTime": "2026-06-12 11:31:02",
   "total": 5,
   "items": [
-    {
-      "taskId": 1,
-      "name": "A区-夜间巡逻",
+	    {
+	      "taskId": 1,
+	      "workflowInstanceId": 9001,
+	      "name": "A区-夜间巡逻",
+      "executionMode": "SCHEDULE",
+      "expectedDurationSeconds": 7200,
       "status": "running",
       "statusName": "执行中",
       "startTime": "2026-06-12 20:00:00",
@@ -821,18 +828,23 @@ WebSocket：
   "event": "panorama.task.changed",
   "timestamp": "2026-06-12 11:31:15",
   "data": {
-    "taskId": "task-001",
-    "task": {
-      "taskId": "task-001",
-      "name": "A区-夜间巡逻",
-      "status": "running",
-      "statusName": "执行中",
-      "timeRange": "20:00-22:00",
-      "currentLocation": "A区主干道"
-    }
+    "taskId": 1,
+    "workflowInstanceId": 1001,
+    "robotId": "PATROL-001",
+    "status": "running",
+    "statusName": "执行中",
+    "currentLocation": "x:9.2,y:7.8",
+    "location": {"x": 9.2, "y": 7.8, "z": 0, "yaw": 88}
   }
 }
 ```
+
+临时桥接方案：在管理端暂不能推送标准任务事件时，由 control 服务订阅
+`eiop/v1/edge/+/tasks/progress` 和 `eiop/v1/edge/+/tasks/control-results`，
+并通过 `/ws/control` 转换推送为 `panorama.task.changed`。MQTT payload 中的
+`taskInstanceId` 为管理端下发给边缘端的任务实例 ID，边缘端上报时原样带回，
+control 服务将其映射为事件中的 `workflowInstanceId`；如 payload 未携带 `taskId`，
+事件仍会推送，但 `taskId` 为 `null`。
 
 告警变化事件示例：
 
@@ -959,7 +971,8 @@ WebSocket：
 - BFF 已将中心端 `robot.state` 转换为 `panorama.device.status.changed` 并追加转发给前端；当 `robot.state` 携带定位或任务字段时，同步追加 `panorama.device.location.changed`、`panorama.task.changed`。
 - 当前控制服务并行订阅 `eiop/v1/edge/{serialNumber}/status`，转换并广播 `robot.state`。BFF 将其中的健康、速度、电量、控制模式和 SLAM `x/y/z/yaw/mapId` 等字段继续转换为全景事件，无需前端直接订阅 MQTT。
 - 联调期仅针对 `robotId=test111` 保留定位兜底：当中心端 `robot.state` 未携带定位数据时，BFF 按三组 XYZ 坐标循环追加 `panorama.device.location.changed`。
-- BFF 会基于已收到的机器人状态维护轻量设备统计，并追加 `panorama.stats.changed.deviceStats`。
+- BFF 在设备状态发生切换以及收到设备、任务、告警变化事件后，延迟 500ms 合并刷新统计；统计数据与 `/api/bigscreen/panorama/overview` 使用相同管理端数据源和计算口径。新旧统计快照一致时不推送，普通电量、速度、位置心跳不触发统计刷新。
+- `panorama.stats.changed` 推送完整的 `deviceStats`、`deviceTypeStats`、`patrolOverview`、`taskOverview`、`alarmStats`、`alarmSummary`，前端仅更新事件实际携带的统计块。
 - 如果中心端推送 `task.*`、`alarm.*` 原始事件，BFF 会转换为 `panorama.task.changed`、`panorama.alarm.changed`；没有真实原始事件源时不生成本地假数据。
 - 后续前端继续从只打印事件演进为消费更多 `panorama.*`，形成 REST 快照 + WebSocket 增量。
 
