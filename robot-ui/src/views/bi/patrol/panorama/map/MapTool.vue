@@ -56,6 +56,16 @@
     </div>
 
     <div class="mt22 view">
+      <transition name="map-view-tip-fade">
+        <div
+          v-if="slamEmptyTipVisible"
+          class="map-view-tip"
+          role="status"
+        >
+          <span class="map-view-tip__text">{{ slamEmptyTipText }}</span>
+          <i class="map-view-tip__arrow" aria-hidden="true"></i>
+        </div>
+      </transition>
       <div ref="viewChangeRef" class="view-change flx-center wp50 hp50" @click.stop="toggleViewContainer">
         <img src="../../../../../assets/images/new-bi/view.png" width="44px" height="44px" style="border-radius: 50%;" />
       </div>
@@ -214,6 +224,10 @@ export default {
       pathActive: false,
       pointActive: false,
       rangingActive: false,
+      // 默认 SLAM 无预览时，地图选择按钮旁气泡提示（展示态本地控制；是否已提示走 vuex）
+      slamEmptyTipVisible: false,
+      slamEmptyTipText: '点击此处可切换地图',
+      slamEmptyTipTimer: null,
     }
   },
   computed: {
@@ -225,7 +239,9 @@ export default {
       'robotLocation',
       'defaultGpsDevices',
       'globalMapId',
-      'overviewReady'
+      'overviewReady',
+      'defaultMapIsSlam',
+      'slamEmptyTipShown'
     ]),
     slamList() {
       return Array.isArray(this.slamMapList) ? this.slamMapList : []
@@ -301,15 +317,40 @@ export default {
   },
   beforeDestroy() {
     document.removeEventListener('click', this.handleDocumentClick, true)
+    this.clearSlamEmptyTipTimer()
   },
   methods: {
-    ...mapActions('websocketExtraData', ['setMapSearchValue', 'setGlobalMapId']),
+    ...mapActions('websocketExtraData', ['setMapSearchValue', 'setGlobalMapId', 'setSlamEmptyTipShown']),
     // 统计指定 SLAM 地图关联的装备数量
     getSlamRobotCount(mapItem) {
       const id = mapItem?.id
       if (id === undefined || id === null || id === '') return 0
       const robots = this.slamOfRobot?.[String(id)]?.robots
       return Array.isArray(robots) ? robots.length : 0
+    },
+    clearSlamEmptyTipTimer() {
+      if (!this.slamEmptyTipTimer) return
+      clearTimeout(this.slamEmptyTipTimer)
+      this.slamEmptyTipTimer = null
+    },
+    /**
+     * 仅当 overview 默认即为 SLAM、且预览不可用时提示；
+     * 标记写入 vuex，跨路由全局只显示一次。
+     */
+    showSlamEmptyTip(text) {
+      if (!this.isSlam) return
+      if (this.globalMapId === 'gis') return
+      // 默认地图不是 SLAM（含用户后来手动切到 SLAM）不提示
+      if (!this.defaultMapIsSlam) return
+      if (this.slamEmptyTipShown) return
+      this.setSlamEmptyTipShown(true)
+      this.slamEmptyTipText = text || '点击此处可切换地图'
+      this.slamEmptyTipVisible = true
+      this.clearSlamEmptyTipTimer()
+      this.slamEmptyTipTimer = setTimeout(() => {
+        this.slamEmptyTipVisible = false
+        this.slamEmptyTipTimer = null
+      }, 3000)
     },
     /**
      * 仅在 overview 已就绪、且无 SLAM、globalMapId 仍为空时补写 'gis'。
@@ -585,6 +626,41 @@ export default {
 }
 .view {
   position: relative;
+  .map-view-tip {
+    position: absolute;
+    top: 50%;
+    right: calc(100% + 12px);
+    z-index: 6;
+    transform: translateY(-50%);
+    max-width: 220px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    border: 1px solid rgba(11, 249, 254, 0.45);
+    background: rgba(14, 28, 45, 0.92);
+    box-shadow: 0 0 12px rgba(11, 249, 254, 0.18);
+    backdrop-filter: blur(4px);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .map-view-tip__text {
+    color: #D7EDFF;
+    font-family: "Microsoft YaHei";
+    font-size: 13px;
+    line-height: 18px;
+    letter-spacing: 0.3px;
+  }
+  .map-view-tip__arrow {
+    position: absolute;
+    top: 50%;
+    right: -6px;
+    width: 10px;
+    height: 10px;
+    border-top: 1px solid rgba(11, 249, 254, 0.45);
+    border-right: 1px solid rgba(11, 249, 254, 0.45);
+    background: rgba(14, 28, 45, 0.92);
+    transform: translateY(-50%) rotate(45deg);
+    content: '';
+  }
   .view-container {
     position: absolute;
     top: -80px;
@@ -702,5 +778,15 @@ export default {
       }
     }
   }
+}
+
+.map-view-tip-fade-enter-active,
+.map-view-tip-fade-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.map-view-tip-fade-enter,
+.map-view-tip-fade-leave-to {
+  opacity: 0;
+  transform: translate(6px, -50%);
 }
 </style>

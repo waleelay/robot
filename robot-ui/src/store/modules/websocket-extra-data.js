@@ -45,6 +45,10 @@ const state = {
   defaultGpsDevices: [],
   // overview（setAll）是否已完成默认地图判断；未就绪前不挂载 GIS，避免抢在 SLAM 数据前闪一下
   overviewReady: false,
+  // overview 默认地图是否为 SLAM（用于无预览气泡：仅默认 SLAM 时提示）
+  defaultMapIsSlam: false,
+  // SLAM 无预览气泡是否已在全局展示过（跨路由只提示一次）
+  slamEmptyTipShown: false,
   // gis 中心视图，默认坐标点 [lat, lng]，来自 map-config.js（gisConfig.area.key）
   gisMapCenterPoint: GIS_MAP_CENTER_POINT
 }
@@ -151,6 +155,12 @@ const mutations = {
   SET_OVERVIEW_READY(state, value) {
     state.overviewReady = !!value;
   },
+  SET_DEFAULT_MAP_IS_SLAM(state, value) {
+    state.defaultMapIsSlam = !!value;
+  },
+  SET_SLAM_EMPTY_TIP_SHOWN(state, value) {
+    state.slamEmptyTipShown = !!value;
+  },
 }
 
 const actions = {
@@ -222,10 +232,13 @@ const actions = {
     commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devices, tasks));
     if (defaultGpsDevices.length) {
       commit('SET_GLOBAL_MAP_ID', 'gis');
+      commit('SET_DEFAULT_MAP_IS_SLAM', false);
     } else if (slamMapList.length) {
       commit('SET_GLOBAL_MAP_ID', slamMapList[0]?.id);
+      commit('SET_DEFAULT_MAP_IS_SLAM', true);
     } else {
       commit('SET_GLOBAL_MAP_ID', 'gis');
+      commit('SET_DEFAULT_MAP_IS_SLAM', false);
     }
     commit('SET_OVERVIEW_READY', true);
   },
@@ -323,6 +336,9 @@ const actions = {
   },
   setGlobalMapId({ commit }, value) {
     commit('SET_GLOBAL_MAP_ID', value);
+  },
+  setSlamEmptyTipShown({ commit }, value) {
+    commit('SET_SLAM_EMPTY_TIP_SHOWN', value);
   },
 }
 

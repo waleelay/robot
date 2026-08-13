@@ -31,6 +31,7 @@
           ref="globalMapRef"
           :show-labels="true"
           @changeMapType="changeMapType"
+          @preview-unavailable="onSlamPreviewUnavailable"
         />
       </div>
       <template v-if="globalMapId === 'gis'">
@@ -201,6 +202,10 @@ export default {
       const tool = this.$refs.mapToolRef
       if (!tool || tool.pathActive === !!visible) return
       tool.pathActive = !!visible
+    },
+    onSlamPreviewUnavailable(payload) {
+      if (!this.isSlam) return
+      this.$refs.mapToolRef?.showSlamEmptyTip?.(payload?.text)
     },
     setCenter() {
       const mapRef = this.$refs.globalMapRef

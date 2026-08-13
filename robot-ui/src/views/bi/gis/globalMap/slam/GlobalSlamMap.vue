@@ -998,6 +998,7 @@ export default {
           this.mapLoading = false
           this.mapLoadFailed = false
           this.revokeImageUrl()
+          this.emitPreviewUnavailable(false)
           return
         }
         this.coloredCanvas = null
@@ -1049,6 +1050,7 @@ export default {
           this.previewImageStatus = '地图加载失败'
           this.revokeImageUrl()
           console.error('加载 SLAM 地图预览失败', error)
+          this.emitPreviewUnavailable(true)
         }
       },
     },
@@ -1077,6 +1079,13 @@ export default {
   methods: {
     ...mapActions('websocketExtraData', ['setShowRobotIds']),
     ...mapActions('websocketRobot', ['setSelectedRobotId']),
+    /** 预览不可用：通知父级在 MapTool 地图选择处提示 */
+    emitPreviewUnavailable(failed = false) {
+      this.$emit('preview-unavailable', {
+        failed: !!failed,
+        text: failed ? '地图加载失败' : '当前地图暂无预览'
+      })
+    },
     /** 切换地图时清空选中装备及 Robot1 / 遥控等操作框 */
     clearRobotSelectionUI() {
       // 先关遥控：selectedRobot 清空后 showControlPart 会选错面板
