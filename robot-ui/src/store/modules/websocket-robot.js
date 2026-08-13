@@ -286,6 +286,27 @@ function groupTypeText(groupType) {
   }[groupType] || groupType || '未分组'
 }
 
+function isFixedCameraEquipment(robot = {}, cameras = []) {
+  const markers = [robot.sourceType, robot.typeCode, robot.equipmentType, robot.type]
+  if (markers.some(value => value === 'FIXED_CAMERA' || value === '固定摄像头')) {
+    return true
+  }
+  return (cameras || []).some(camera =>
+    camera.groupType === 'fixed_camera' || camera.sourceType === 'FIXED_CAMERA'
+  )
+}
+
+function resolveEquipmentRecord(state, rootState, robotId) {
+  const id = String(robotId)
+  const fromStore = (state.robots || []).find(item => String(item.robotId) === id) || {}
+  const baseInfo = (rootState && rootState.websocketExtraData && rootState.websocketExtraData.robotBaseInfo) || {}
+  const fromBase = baseInfo[robotId] || baseInfo[id] || {}
+  const cameras = fromStore.cameras && fromStore.cameras.length
+    ? fromStore.cameras
+    : Object.values(state.cameras || {}).filter(item => String(item.robotId) === id)
+  return { fromStore, fromBase, cameras }
+}
+
 // 用于将相机数据转换为状态对象
 function cameraState(robotId, deviceId, cameraId, name, groupType) {
   return {
@@ -1460,8 +1481,11 @@ const actions = {
   setPrefixId({ commit }, payload) {
     commit('setPrefixId', payload)
   },
-  async loadControlProfile({ commit, state, dispatch }, robotId) {
+  async loadControlProfile({ commit, state, dispatch, rootState }, robotId) {
     if (!robotId) return
+    const { fromStore, fromBase, cameras } = resolveEquipmentRecord(state, rootState, robotId)
+    // 固定摄像头不可遥控，不查询控制画像
+    if (isFixedCameraEquipment(fromBase, cameras) || isFixedCameraEquipment(fromStore, cameras)) return
     commit('SET_PROFILE_LOADING', { robotId, loading: true })
     try {
       const profile = await getControlProfile(robotId)

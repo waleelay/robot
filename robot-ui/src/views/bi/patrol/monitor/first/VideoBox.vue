@@ -39,7 +39,7 @@
             <span class="ml10">{{ currentRobot?.name || '-' }}<template v-if="!isFixedCamera">-{{ ZQL_videosInfos[`slot_${index}`].name }}</template></span>
           </template>
         </div>
-        <div v-if="!cameraTitleOnly" class="flx-center">
+        <div v-if="!cameraTitleOnly && !isFixedCamera" class="flx-center">
           <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key" />
         </div>
       </div>
