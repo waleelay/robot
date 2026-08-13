@@ -59,6 +59,59 @@ export function getGisTileUrl() {
   return `${base}/tdt/${GIS_AREA_KEY}/{z}/{x}/{y}.png`
 }
 
+// 地图点位类型
+export const MAP_POINT_TYPE = {
+  START: '起始点',
+  NORMAL: '普通点',
+  CHARGE: '充电点',
+  CHECKPOINT: '巡检点',
+  DOOR: '门禁点',
+}
+
+/** 是否为充电点（兼容键名 CHARGE 与中文值） */
+export function isChargeMapPoint(point) {
+  const t = point?.pointType
+  if (t == null || t === '') return false
+  return t === 'CHARGE' || t === MAP_POINT_TYPE.CHARGE
+}
+
+/**
+ * 地图点位图标尺寸与锚点
+ * - 普通点：map_point2 40×46，锚点距底 14px，名称距图底 1px
+ * - 充电点：map_battery2 38×30，锚点为底部中心，名称距图底 4px（mt4）
+ */
+export const MAP_POINT_ICON = {
+  NORMAL: {
+    width: 40,
+    height: 46,
+    anchorBottom: 14,
+    nameGap: 1
+  },
+  CHARGE: {
+    width: 38,
+    height: 30,
+    anchorBottom: 0,
+    nameGap: 4
+  }
+}
+
+/** 按 pointType 返回图标布局（不含图片 url，由调用方挂 marker） */
+export function getMapPointIconMeta(point) {
+  const isCharge = isChargeMapPoint(point)
+  const cfg = isCharge ? MAP_POINT_ICON.CHARGE : MAP_POINT_ICON.NORMAL
+  const iconX = -cfg.width / 2
+  const iconY = -(cfg.height - cfg.anchorBottom)
+  return {
+    isCharge,
+    width: cfg.width,
+    height: cfg.height,
+    iconX,
+    iconY,
+    nameY: iconY + cfg.height + cfg.nameGap,
+    nameMaxWidth: 160
+  }
+}
+
 // slam地图点位，暂时固定，后续需对接接口
 export const SLAM_POINTS = {
   // 红塔
@@ -111,8 +164,8 @@ export const SLAM_POINTS = {
         "id": "2081302263568556034",
         "mapId": "2081299659660746754",
         "pointCode": "1",
-        "pointName": "点位1",
-        "pointType": "NORMAL",
+        "pointName": "充电点1",
+        "pointType": "CHARGE",
         "coordinateX": -0.066766,
         "coordinateY": 0.027624,
         "coordinateZ": 0.106916,
@@ -125,8 +178,8 @@ export const SLAM_POINTS = {
         "id": "2077776201211469825",
         "mapId": "2077775285125144578",
         "pointCode": "point-1",
-        "pointName": "point-1",
-        "pointType": "NORMAL",
+        "pointName": "充电点-1",
+        "pointType": "CHARGE",
         "coordinateX": -2.874684,
         "coordinateY": -0.391763,
         "coordinateZ": null,

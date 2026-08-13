@@ -59,8 +59,9 @@ import Thumbnail from './thumbnail/Index.vue'
 import SlamMap from './slam1/Index.vue'
 import { mapActions, mapState } from 'vuex';
 import { ROBOT_TYPE_INFO } from '../../../../constants/robot.js';
-import { POLYGON_POINTS, WAY_POINTS, getGisTileUrl, getGisZoomRange, getGisMapRotate } from '../../js/constants/gisMapPoints.js';
+import { POLYGON_POINTS, WAY_POINTS, getGisTileUrl, getGisZoomRange, getGisMapRotate, isChargeMapPoint, getMapPointIconMeta } from '../../js/constants/gisMapPoints.js';
 
+const MAP_CHARGE_MARKER = require('@/assets/images/new-bi/map_battery2.png')
 export default {
   name: 'GisGlobalMap',
   components: { TaskAdd, Thumbnail, SlamMap, RobotControlPart, RobotCarControlPart, Robot1, Slam },
@@ -1148,8 +1149,29 @@ export default {
       }
     },
 
-    drawMarkers({ lat, lng, desc }) {
+    drawMarkers(point) {
+      const { lat, lng, desc } = point || {}
       const latLng = [lat, lng]
+      // 充电点：map_battery2，锚点底部中心，名称距图底 4px
+      if (isChargeMapPoint(point)) {
+        const meta = getMapPointIconMeta(point)
+        const name = point.pointName || desc || '充电点'
+        const icon = L.divIcon({
+          html: `<div class="gis-map-point-charge flx-center flex-column">
+            <img src="${MAP_CHARGE_MARKER}" style="width:${meta.width}px;height:${meta.height}px;display:block;" alt="" />
+            <div class="gis-map-point-charge__name" style="margin-top:4px;box-sizing:border-box;height:20px;padding:2px 4px;color:#000;font-family:Microsoft YaHei;font-size:11px;font-weight:600;line-height:16px;text-align:center;white-space:nowrap;text-shadow:-1px -1px 0 #FFF,1px -1px 0 #FFF,-1px 1px 0 #FFF,1px 1px 0 #FFF,0 -1px 0 #FFF,0 1px 0 #FFF,-1px 0 0 #FFF,1px 0 0 #FFF;">${name}</div>
+          </div>`,
+          className: 'gis-map-point-charge-icon',
+          iconSize: [Math.max(meta.width, 80), meta.height + 28],
+          iconAnchor: [Math.max(meta.width, 80) / 2, meta.height]
+        })
+        L.marker(latLng, {
+          icon,
+          interactive: false,
+          zIndexOffset: 200
+        }).addTo(this.pathLayers)
+        return
+      }
       // 使用 CircleMarker 半径设置较大 (9~11像素)，带明亮的红色/橙色填充，加白边和阴影
       const circleMarker = L.circleMarker(latLng, {
         radius: 5,               // 较大半径，突出显示

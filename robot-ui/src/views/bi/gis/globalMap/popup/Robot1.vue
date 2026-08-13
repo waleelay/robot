@@ -13,7 +13,10 @@
           <svg-icon icon-class="close"></svg-icon>
         </div>
       </div>
-      <div class="info-content pr10 pl10 flex flex-wrap mt15">
+      <div
+        class="info-content pr10 pl10 flex flex-wrap mt15"
+        :class="{ mb20: !isFixedCamera && !hasActionButtons }"
+      >
         <!-- 固定摄像头：仅装备类型、装备位置 -->
         <template v-if="isFixedCamera">
           <div class="item wp156">
@@ -45,7 +48,7 @@
           <div class="item wp156 mt10">
             当前速度：<span class="value">{{ Number(currenRobot?.speed || 0).toFixed(2) }}m/s</span>
           </div>
-          <div class="mt10 with-divider w100"></div>
+          <div v-if="hasActionButtons" class="mt10 with-divider w100"></div>
           <div v-for="(task, index) in taskList" :key="task.taskId" class="mt10 task flex" :class="task.status" :title="task?.statusName">
             <div class="item wp156 text-ellipsis" :title="task?.name || ''">
               <span class="wp60 tar">任务{{index + 1}}：</span><span class="value">{{ task?.name || '-' }}</span>
@@ -108,7 +111,7 @@
           </div>
         </div>
       </template>
-      <div v-else class="btns mt10 mb20 ml0 flx-align-center flex-wrap wp360" style="margin-top: -10px !important">
+      <div v-else-if="hasActionButtons" class="btns mt10 mb20 ml0 flx-align-center flex-wrap wp360" style="margin-top: -10px !important">
         <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="$emit('showControlPart')">远程控制</el-button>
         <!-- <el-button type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button> -->
         <el-button v-if="showAnimate && showControl && currenRobot?.runningTaskId && globalMapId === 'gis'" type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button>
@@ -254,6 +257,13 @@ export default {
         return false
       }
       return true
+    },
+    // 是否有任意底部操作按钮（无按钮时不展示分隔线与按钮区）
+    hasActionButtons() {
+      if (this.isFixedCamera) return false
+      if (this.showAnimate && this.showControl) return true
+      if (this.hasTaskPath || this.globalMapId === 'gis') return true
+      return false
     },
   },
   watch: {
@@ -539,6 +549,7 @@ export default {
 }
 .machine-container.robot-container.new {
   position: fixed;
+  z-index: 20;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -550,7 +561,8 @@ export default {
     backdrop-filter: blur(15px);
   }
   .box {
-    width: min-content;
+    // 固定双列信息区宽度；min-content 在无按钮时会收成单列（指挥中心被压缩）
+    width: 360px;
     .info-content {
       .item {
         color: rgba(255, 255, 255, 0.80);

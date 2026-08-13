@@ -1,37 +1,38 @@
 <template>
-  <div
-    class="map-preview-box w100 h100 flx-center"
-    :class="{ 'fit-visible-area': !!visibleLayout }"
-    :style="visibleAreaStyle"
-  >
-    <template v-if="hasPreview && !mapLoadFailed">
-      <div
-        ref="viewportRef"
-        class="map-preview-viewport flx-center w100 h100"
-        :class="{ 'is-map-loading': mapLoading, 'is-measuring': measureActive }"
-        @wheel="handleWheel"
-        style="background: #112B4D;"
-      >
-        <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
-          <!-- <img v-if="imageUrl" ref="imageRef" class="map-preview-image" :src="imageUrl" alt="地图预览" style="width: 100%; height: 100%;" /> -->
-          <template v-if="imageUrl">
-            <canvas
-              ref="canvas"
-              :title="enableAddPoint ? '右键点击可设置临时点位' : undefined"
-              @contextmenu.prevent="onCanvasContextMenu"
-              @click="handleCanvasBlankClick"
-              @dblclick.prevent="handleMeasureDblClick"
-              class="map-preview-image"
-              style="width: 100%; height: 100%;"
-            />
-            <svg
-              v-if="imageUrl"
-              ref="overlayRef"
-              class="map-preview-overlay"
-              :viewBox="`0 0 ${map.previewWidth} ${map.previewHeight}`"
-              @click="handleMapClick"
-              @dblclick.prevent="handleMeasureDblClick"
-            >
+  <div class="slam-map-root w100 h100">
+    <div
+      class="map-preview-box w100 h100 flx-center"
+      :class="{ 'fit-visible-area': !!visibleLayout }"
+      :style="visibleAreaStyle"
+    >
+      <template v-if="hasPreview && !mapLoadFailed">
+        <div
+          ref="viewportRef"
+          class="map-preview-viewport flx-center w100 h100"
+          :class="{ 'is-map-loading': mapLoading, 'is-measuring': measureActive }"
+          @wheel="handleWheel"
+          style="background: #112B4D;"
+        >
+          <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
+            <!-- <img v-if="imageUrl" ref="imageRef" class="map-preview-image" :src="imageUrl" alt="地图预览" style="width: 100%; height: 100%;" /> -->
+            <template v-if="imageUrl">
+              <canvas
+                ref="canvas"
+                :title="enableAddPoint ? '右键点击可设置临时点位' : undefined"
+                @contextmenu.prevent="onCanvasContextMenu"
+                @click="handleCanvasBlankClick"
+                @dblclick.prevent="handleMeasureDblClick"
+                class="map-preview-image"
+                style="width: 100%; height: 100%;"
+              />
+              <svg
+                v-if="imageUrl"
+                ref="overlayRef"
+                class="map-preview-overlay"
+                :viewBox="`0 0 ${map.previewWidth} ${map.previewHeight}`"
+                @click="handleMapClick"
+                @dblclick.prevent="handleMeasureDblClick"
+              >
               <!-- 底层：未置顶的任务路径 -->
               <g
                 v-for="path in baseDisplayTaskPaths"
@@ -60,29 +61,33 @@
                 >
                   <template v-if="!showPath">
                     <rect
-                      :x="mapPointIconX - 4"
-                      :y="mapPointIconY - 4"
-                      :width="mapPointWidth + 8"
-                      :height="mapPointHeight + 28"
+                      :x="point.icon.iconX - 4"
+                      :y="point.icon.iconY - 4"
+                      :width="point.icon.width + 8"
+                      :height="point.icon.height + 28"
                       fill="transparent"
                     />
                     <image
-                      :href="mapPointMarker"
-                      :x="mapPointIconX"
-                      :y="mapPointIconY"
-                      :width="mapPointWidth"
-                      :height="mapPointHeight"
+                      :href="point.icon.marker"
+                      :x="point.icon.iconX"
+                      :y="point.icon.iconY"
+                      :width="point.icon.width"
+                      :height="point.icon.height"
                       class="map-point-marker"
                     />
                     <foreignObject
                       class="map-point-name-fo"
-                      :x="-mapPointNameMaxWidth / 2"
-                      :y="mapPointNameY"
-                      :width="mapPointNameMaxWidth"
-                      height="24"
+                      :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
+                      :y="point.icon.nameY"
+                      :width="point.nameWidth || mapPointNameMaxWidth"
+                      :height="point.icon.isCharge ? 20 : 24"
                     >
                       <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
-                        <div class="map-point-name" :title="point.pointName">{{ point.pointName }}</div>
+                        <div
+                          class="map-point-name"
+                          :class="{ 'is-charge': point.icon.isCharge }"
+                          :title="point.pointName"
+                        >{{ point.pointName }}</div>
                       </div>
                     </foreignObject>
                   </template>
@@ -114,29 +119,33 @@
                   @click.stop="handlePointClick(point)"
                 >
                   <rect
-                    :x="mapPointIconX - 4"
-                    :y="mapPointIconY - 4"
-                    :width="mapPointWidth + 8"
-                    :height="mapPointHeight + 28"
+                    :x="point.icon.iconX - 4"
+                    :y="point.icon.iconY - 4"
+                    :width="point.icon.width + 8"
+                    :height="point.icon.height + 28"
                     fill="transparent"
                   />
                   <image
-                    :href="mapPointMarker"
-                    :x="mapPointIconX"
-                    :y="mapPointIconY"
-                    :width="mapPointWidth"
-                    :height="mapPointHeight"
+                    :href="point.icon.marker"
+                    :x="point.icon.iconX"
+                    :y="point.icon.iconY"
+                    :width="point.icon.width"
+                    :height="point.icon.height"
                     class="map-point-marker"
                   />
                   <foreignObject
                     class="map-point-name-fo"
-                    :x="-mapPointNameMaxWidth / 2"
-                    :y="mapPointNameY"
-                    :width="mapPointNameMaxWidth"
-                    height="24"
+                    :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
+                    :y="point.icon.nameY"
+                    :width="point.nameWidth || mapPointNameMaxWidth"
+                    :height="point.icon.isCharge ? 20 : 24"
                   >
                     <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
-                      <div class="map-point-name" :title="point.pointName">{{ point.pointName }}</div>
+                      <div
+                        class="map-point-name"
+                        :class="{ 'is-charge': point.icon.isCharge }"
+                        :title="point.pointName"
+                      >{{ point.pointName }}</div>
                     </div>
                   </foreignObject>
                   <title>{{ point.pointName }} / {{ point.pointCode || point.id }}</title>
@@ -253,29 +262,33 @@
                   @click.stop="handlePointClick(point)"
                 >
                   <rect
-                    :x="mapPointIconX - 4"
-                    :y="mapPointIconY - 4"
-                    :width="mapPointWidth + 8"
-                    :height="mapPointHeight + 28"
+                    :x="point.icon.iconX - 4"
+                    :y="point.icon.iconY - 4"
+                    :width="point.icon.width + 8"
+                    :height="point.icon.height + 28"
                     fill="transparent"
                   />
                   <image
-                    :href="mapPointMarker"
-                    :x="mapPointIconX"
-                    :y="mapPointIconY"
-                    :width="mapPointWidth"
-                    :height="mapPointHeight"
+                    :href="point.icon.marker"
+                    :x="point.icon.iconX"
+                    :y="point.icon.iconY"
+                    :width="point.icon.width"
+                    :height="point.icon.height"
                     class="map-point-marker"
                   />
                   <foreignObject
                     class="map-point-name-fo"
-                    :x="-mapPointNameMaxWidth / 2"
-                    :y="mapPointNameY"
-                    :width="mapPointNameMaxWidth"
-                    height="24"
+                    :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
+                    :y="point.icon.nameY"
+                    :width="point.nameWidth || mapPointNameMaxWidth"
+                    :height="point.icon.isCharge ? 20 : 24"
                   >
                     <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
-                      <div class="map-point-name" :title="point.pointName">{{ point.pointName }}</div>
+                      <div
+                        class="map-point-name"
+                        :class="{ 'is-charge': point.icon.isCharge }"
+                        :title="point.pointName"
+                      >{{ point.pointName }}</div>
                     </div>
                   </foreignObject>
                   <title>{{ point.pointName }} / {{ point.pointCode || point.id }}</title>
@@ -309,29 +322,33 @@
                 >
                   <template v-if="!showPath">
                     <rect
-                      :x="mapPointIconX - 4"
-                      :y="mapPointIconY - 4"
-                      :width="mapPointWidth + 8"
-                      :height="mapPointHeight + 28"
+                      :x="point.icon.iconX - 4"
+                      :y="point.icon.iconY - 4"
+                      :width="point.icon.width + 8"
+                      :height="point.icon.height + 28"
                       fill="transparent"
                     />
                     <image
-                      :href="mapPointMarker"
-                      :x="mapPointIconX"
-                      :y="mapPointIconY"
-                      :width="mapPointWidth"
-                      :height="mapPointHeight"
+                      :href="point.icon.marker"
+                      :x="point.icon.iconX"
+                      :y="point.icon.iconY"
+                      :width="point.icon.width"
+                      :height="point.icon.height"
                       class="map-point-marker"
                     />
                     <foreignObject
                       class="map-point-name-fo"
-                      :x="-mapPointNameMaxWidth / 2"
-                      :y="mapPointNameY"
-                      :width="mapPointNameMaxWidth"
-                      height="24"
+                      :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
+                      :y="point.icon.nameY"
+                      :width="point.nameWidth || mapPointNameMaxWidth"
+                      :height="point.icon.isCharge ? 20 : 24"
                     >
                       <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
-                        <div class="map-point-name" :title="point.pointName">{{ point.pointName }}</div>
+                        <div
+                          class="map-point-name"
+                          :class="{ 'is-charge': point.icon.isCharge }"
+                          :title="point.pointName"
+                        >{{ point.pointName }}</div>
                       </div>
                     </foreignObject>
                   </template>
@@ -457,6 +474,8 @@
       textColor="#BEE1FF"
       :text="mapLoadFailed ? '地图加载失败' : '当前地图暂无预览'"
     />
+    </div>
+    <!-- 弹层放在地图裁剪容器外，避免 fit-visible-area 的 overflow/z-index 裁切或压住 -->
     <RobotControlPart ref="robotControlPartRef" />
     <RobotCarControlPart ref="robotCarControlPartRef" />
     <Robot1 :showAnimate="showAnimate" :style="popupStyle" ref="robot1Ref" @showControlPart="showControlPart" @showPath="showPathArea" @showSlam="showSlam" @showArea="showDashedArea" @clear="clear" />
@@ -473,19 +492,15 @@ import RobotControlPart from '../popup/RobotControlPart.vue'
 import RobotCarControlPart from '../popup/RobotCarControlPart.vue'
 // import Slam from '../../gis/globalMap/popup/Slam.vue'
 import { ROBOT_TYPE_INFO } from '@/constants/robot.js'
-import { addTaskByPoint, previewImageBlob } from '@/api/new-bi.js';
+import { addTaskByPoint, previewImageBlob } from '@/api/new-bi.js'
+import { getMapPointIconMeta, isChargeMapPoint } from '../../../js/constants/gisMapPoints.js'
 
 const ROBOT_BG = require('@/assets/images/new-bi/robot-bg.svg')
 const ROBOT_SELECTED_HALO = require('@/assets/images/new-bi/robot-selected-halo.svg')
 const ROBOT_SELECTED_CORNERS = require('@/assets/images/new-bi/robot-selected-corners.svg')
-// 点位图标 40×46，锚点距图片底部 14px；名称在图片底边下方 1px
+// 普通点 / 充电点图标（布局见 getMapPointIconMeta）
 const MAP_POINT_MARKER = require('@/assets/images/new-bi/map_point2.png')
-const MAP_POINT_WIDTH = 40
-const MAP_POINT_HEIGHT = 46
-const MAP_POINT_ANCHOR_BOTTOM = 14
-const MAP_POINT_ICON_X = -MAP_POINT_WIDTH / 2
-const MAP_POINT_ICON_Y = -(MAP_POINT_HEIGHT - MAP_POINT_ANCHOR_BOTTOM)
-const MAP_POINT_NAME_Y = MAP_POINT_ICON_Y + MAP_POINT_HEIGHT + 1
+const MAP_CHARGE_MARKER = require('@/assets/images/new-bi/map_battery2.png')
 const MAP_POINT_NAME_MAX_WIDTH = 160
 // 任务路径序号底图：Figma 20×20，#456393 / #8EBAFF
 const PATH_POINT_BADGE = require('@/assets/images/new-bi/path-point-badge.svg')
@@ -525,12 +540,6 @@ export default {
       robotBg: ROBOT_BG,
       robotSelectedHalo: ROBOT_SELECTED_HALO,
       robotSelectedCorners: ROBOT_SELECTED_CORNERS,
-      mapPointMarker: MAP_POINT_MARKER,
-      mapPointWidth: MAP_POINT_WIDTH,
-      mapPointHeight: MAP_POINT_HEIGHT,
-      mapPointIconX: MAP_POINT_ICON_X,
-      mapPointIconY: MAP_POINT_ICON_Y,
-      mapPointNameY: MAP_POINT_NAME_Y,
       mapPointNameMaxWidth: MAP_POINT_NAME_MAX_WIDTH,
       pathPointBadge: PATH_POINT_BADGE,
       imageUrl: '',
@@ -689,9 +698,9 @@ export default {
     canTogglePath() {
       return Array.isArray(this.map?.points) && this.map.points.length > 0
     },
-    // MapTool 点位始终使用当前地图点位，不受装备选中影响
+    // MapTool「点位」仅展示充电点（按钮是否可点不依赖充电点）
     activePoints() {
-      return this.map?.points || []
+      return (this.map?.points || []).filter(isChargeMapPoint)
     },
     activePathPointIds() {
       if (this.showPolyline && this.activeTaskPathData) {
@@ -786,7 +795,7 @@ export default {
     activeRaisedTaskPathId() {
       return this.raisedTaskPathId || this.pinnedTaskPathId
     },
-    // MapTool 开点位 → 全量地图点；仅 Robot1 开路径 → 任务路径点（模板已拆分，此计算属性保留兼容）
+    // MapTool 开点位 → 仅充电点；仅 Robot1 开路径 → 任务路径点（模板已拆分，此计算属性保留兼容）
     overlayPoints() {
       if (this.showPath) return this.drawablePoints
       if (this.showPolyline) return this.drawablePathPoints
@@ -1117,7 +1126,16 @@ export default {
           }, this.map)
           if (!pixel) return null
           const pointName = point.pointName || point.name || point.pointCode || String(id)
-          return { ...point, id, pixel, pointName }
+          const iconMeta = getMapPointIconMeta(point)
+          const icon = {
+            ...iconMeta,
+            marker: iconMeta.isCharge ? MAP_CHARGE_MARKER : MAP_POINT_MARKER
+          }
+          // 充电点名称宽度对齐装备名称计算方式
+          const nameWidth = iconMeta.isCharge
+            ? Math.max(44, Math.ceil(String(pointName).length * 11) + 8)
+            : MAP_POINT_NAME_MAX_WIDTH
+          return { ...point, id, pixel, pointName, icon, nameWidth }
         })
         .filter(Boolean)
     },
@@ -1845,6 +1863,13 @@ export default {
 </script>
 
 <style lang="scss">
+.slam-map-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
 .map-preview-box {
   position: relative;
   width: 100%;
@@ -1998,7 +2023,7 @@ export default {
           stroke: #0f172a;
           stroke-width: 3;
         }
-        // MapTool 点位：map_point2 40×46，锚点距底 14px；名称在图片下方 1px
+        // MapTool 点位：普通点 map_point2；充电点 map_battery2（底部中心锚点，名称 mt4）
         &.is-map-tool,
         &.is-path-point {
           .map-point-marker {
@@ -2030,6 +2055,28 @@ export default {
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            // 充电点名称：与装备名称 robot-name-pill 一致
+            &.is-charge {
+              width: 100%;
+              height: 20px;
+              border-radius: 0;
+              background: transparent;
+              color: #000;
+              font-size: 11px;
+              font-weight: 600;
+              line-height: 16px;
+              overflow: visible;
+              text-overflow: clip;
+              text-shadow:
+                -1px -1px 0 #FFF,
+                 1px -1px 0 #FFF,
+                -1px  1px 0 #FFF,
+                 1px  1px 0 #FFF,
+                 0   -1px 0 #FFF,
+                 0    1px 0 #FFF,
+                -1px  0   0 #FFF,
+                 1px  0   0 #FFF;
+            }
           }
           &.hovered .map-point-marker {
             filter: drop-shadow(0 0 4px rgba(255, 246, 69, 0.65));

@@ -2797,12 +2797,18 @@ input[type="range"].vertical-slider {
 
   &.robot-control-container {
     position: fixed;
+    left: 0;
+    right: 0;
     bottom: 50px;
-    margin: auto;
+    // max-content 按内容撑开，避免 left:50%+fit-content 只剩半屏宽导致视频/操作区换行
+    width: max-content;
+    max-width: 100%;
+    margin: 0 auto;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
     transform: scale(0);
+    transform-origin: center bottom;
     &.visible {
       opacity: 1;
       visibility: visible;

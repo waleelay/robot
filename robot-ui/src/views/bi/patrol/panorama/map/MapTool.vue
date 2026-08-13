@@ -261,13 +261,13 @@ export default {
         return true
       })
     },
-    // SLAM 下「点位」是否可操作：仅看当前地图是否存在点位信息
+    // SLAM 下「点位」是否可操作：当前地图是否存在点位信息
     pathOperable() {
       if (!this.isSlam) return false
       const slamId = this.currentSlam
       if (slamId === undefined || slamId === null || slamId === '') return false
-      const group = this.slamOfRobot?.[String(slamId)]
-      const points = group?.points || this.currentSlamMapInfo?.points
+      const points = this.slamOfRobot?.[String(slamId)]?.mapInfo?.points
+        || this.currentSlamMapInfo?.points
       return Array.isArray(points) && points.length > 0
     },
     // SLAM 下「路径」是否可操作：当前地图是否有关联任务路径
