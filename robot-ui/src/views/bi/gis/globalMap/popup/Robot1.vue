@@ -40,7 +40,7 @@
             是否告警：<span class="value">{{ currenRobot?.alarmLevel === 'none' ? '否' : '是' }}</span>
           </div>
           <div class="item wp156 mt10">
-            控制模型：<span class="value">{{ currenRobot?.controlMode === '手动模式' ? '手动控制' : currenRobot?.controlMode === '导航模式' ? '自动控制' : '-' }}</span>
+            控制模型：<span class="value">{{ currenRobot?.controlMode || '-' }}</span>
           </div>
           <div class="item wp149 ml26 mt10">
             上装设备：<span class="value">{{ currenRobot?.mountedDeviceCount || 0 }}个</span>

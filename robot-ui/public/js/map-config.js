@@ -2,6 +2,12 @@ var gisConfig = {
   area: {
     key: 'qihang'
   },
+  /**
+   * MapTool「点位」按钮禁用策略
+   * true：没有充电点/巡检点/门禁点时禁用
+   * false：没有点位数据时禁用（地图展示仍只渲染上述三类点）
+   */
+  disablePointWithoutCharge: true,
   nanchong: {
     key: 'nanchong',
     center: [30.7478613352993, 106.03655278081857],

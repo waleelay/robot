@@ -95,14 +95,17 @@
                 </span>
               </div>
               <div class="desc">
-                <div :title="isManualWaitingTask(item) ? '手动执行' : undefined">
-                  任务开始时间：{{ isManualWaitingTask(item) ? '-' : (item.startTime || '-') }}
+                <div>
+                  <template v-if="isManualWaitingTask(item)">执行方式：手动执行</template>
+                  <template v-else-if="isScheduleWaitingTask(item)">计划开始时间：{{ item.startTime || '-' }}</template>
+                  <template v-else>任务开始时间：{{ item.startTime || '-' }}</template>
                 </div>
                 <div class="flx-align-center">
                   <span class="wp150">预计时长：{{ formatEstimatedDuration(item.expectedDurationSeconds) }}</span>
-                  <span class="ml20">执行装备：{{ item.equipmentList?.length || 0 }}台</span>
+                  <!-- <span class="ml20">执行装备：{{ item.equipmentList?.length || 0 }}台</span> -->
                 </div>
-                <div class="text-ellipsis">当前位置：{{ item.currentLocation || '-' }}</div>
+                <div>执行装备：{{ item.equipmentList?.length || 0 }}台</div>
+                <!-- <div class="text-ellipsis">当前位置：{{ item.currentLocation || '-' }}</div> -->
               </div>
               <!-- 执行中：详情 / 暂停/恢复 / 定位装备 / 终止 / 播放视频 -->
               <div v-if="item.status === 'running' || item.status === 'paused'" class="task-actions">
@@ -384,9 +387,13 @@ export default {
           return 'gray'
       }
     },
-    /** 手动执行且待执行：开始时间展示为 '-'，并带 title 提示 */
+    /** 手动执行且待执行 */
     isManualWaitingTask(item) {
       return item?.executionMode === 'MANUAL' && item?.status === 'waiting'
+    },
+    /** 计划执行且待执行 */
+    isScheduleWaitingTask(item) {
+      return item?.executionMode === 'SCHEDULE' && item?.status === 'waiting'
     },
     /**
      * expectedDurationSeconds（秒）→ 时分秒展示

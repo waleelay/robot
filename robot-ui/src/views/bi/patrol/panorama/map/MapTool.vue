@@ -112,7 +112,7 @@
 
 <script>
 import { mapActions, mapState } from 'vuex'
-import { getGisZoomRange } from '../../../js/constants/gisMapPoints.js'
+import { getGisZoomRange, isMapToolSpecialPoint, isPointToolRequireCharge } from '../../../js/constants/gisMapPoints.js'
 
 export default {
   name: 'MapTool',
@@ -261,14 +261,16 @@ export default {
         return true
       })
     },
-    // SLAM 下「点位」是否可操作：当前地图是否存在点位信息
+    // SLAM 下「点位」是否可操作：由 map-config.disablePointWithoutCharge 控制
     pathOperable() {
       if (!this.isSlam) return false
       const slamId = this.currentSlam
       if (slamId === undefined || slamId === null || slamId === '') return false
       const points = this.slamOfRobot?.[String(slamId)]?.mapInfo?.points
         || this.currentSlamMapInfo?.points
-      return Array.isArray(points) && points.length > 0
+      if (!Array.isArray(points) || !points.length) return false
+      if (isPointToolRequireCharge()) return points.some(isMapToolSpecialPoint)
+      return true
     },
     // SLAM 下「路径」是否可操作：当前地图是否有关联任务路径
     taskPathOperable() {

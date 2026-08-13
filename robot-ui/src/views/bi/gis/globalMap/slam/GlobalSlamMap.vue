@@ -59,7 +59,7 @@
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
                   class="map-preview-point is-path-point"
                 >
-                  <template v-if="!showPath">
+                  <template v-if="shouldShowPathPointMarker(point)">
                     <rect
                       :x="point.icon.iconX - 4"
                       :y="point.icon.iconY - 4"
@@ -80,12 +80,12 @@
                       :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
                       :y="point.icon.nameY"
                       :width="point.nameWidth || mapPointNameMaxWidth"
-                      :height="point.icon.isCharge ? 20 : 24"
+                      :height="point.icon.useSpecialNameStyle ? 20 : 24"
                     >
                       <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
                         <div
                           class="map-point-name"
-                          :class="{ 'is-charge': point.icon.isCharge }"
+                          :class="{ 'is-equip-name': point.icon.useSpecialNameStyle }"
                           :title="point.pointName"
                         >{{ point.pointName }}</div>
                       </div>
@@ -138,12 +138,12 @@
                     :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
                     :y="point.icon.nameY"
                     :width="point.nameWidth || mapPointNameMaxWidth"
-                    :height="point.icon.isCharge ? 20 : 24"
+                    :height="point.icon.useSpecialNameStyle ? 20 : 24"
                   >
                     <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
                       <div
                         class="map-point-name"
-                        :class="{ 'is-charge': point.icon.isCharge }"
+                        :class="{ 'is-equip-name': point.icon.useSpecialNameStyle }"
                         :title="point.pointName"
                       >{{ point.pointName }}</div>
                     </div>
@@ -281,12 +281,12 @@
                     :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
                     :y="point.icon.nameY"
                     :width="point.nameWidth || mapPointNameMaxWidth"
-                    :height="point.icon.isCharge ? 20 : 24"
+                    :height="point.icon.useSpecialNameStyle ? 20 : 24"
                   >
                     <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
                       <div
                         class="map-point-name"
-                        :class="{ 'is-charge': point.icon.isCharge }"
+                        :class="{ 'is-equip-name': point.icon.useSpecialNameStyle }"
                         :title="point.pointName"
                       >{{ point.pointName }}</div>
                     </div>
@@ -320,7 +320,7 @@
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
                   class="map-preview-point is-path-point"
                 >
-                  <template v-if="!showPath">
+                  <template v-if="shouldShowPathPointMarker(point)">
                     <rect
                       :x="point.icon.iconX - 4"
                       :y="point.icon.iconY - 4"
@@ -341,12 +341,12 @@
                       :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
                       :y="point.icon.nameY"
                       :width="point.nameWidth || mapPointNameMaxWidth"
-                      :height="point.icon.isCharge ? 20 : 24"
+                      :height="point.icon.useSpecialNameStyle ? 20 : 24"
                     >
                       <div xmlns="http://www.w3.org/1999/xhtml" class="map-point-name-wrap">
                         <div
                           class="map-point-name"
-                          :class="{ 'is-charge': point.icon.isCharge }"
+                          :class="{ 'is-equip-name': point.icon.useSpecialNameStyle }"
                           :title="point.pointName"
                         >{{ point.pointName }}</div>
                       </div>
@@ -493,7 +493,7 @@ import RobotCarControlPart from '../popup/RobotCarControlPart.vue'
 // import Slam from '../../gis/globalMap/popup/Slam.vue'
 import { ROBOT_TYPE_INFO } from '@/constants/robot.js'
 import { addTaskByPoint, previewImageBlob } from '@/api/new-bi.js'
-import { getMapPointIconMeta, isChargeMapPoint } from '../../../js/constants/gisMapPoints.js'
+import { getMapPointIconMeta, isMapToolSpecialPoint, isPointToolRequireCharge } from '../../../js/constants/gisMapPoints.js'
 
 const ROBOT_BG = require('@/assets/images/new-bi/robot-bg.svg')
 const ROBOT_SELECTED_HALO = require('@/assets/images/new-bi/robot-selected-halo.svg')
@@ -694,13 +694,16 @@ export default {
       if (String(pathData.mapId) !== String(this.map?.id)) return null
       return pathData
     },
-    // MapTool「点位」是否可切换：仅看当前地图是否有点位
+    // MapTool「点位」是否可切换：由 map-config.disablePointWithoutCharge 控制
     canTogglePath() {
-      return Array.isArray(this.map?.points) && this.map.points.length > 0
+      const points = this.map?.points || []
+      if (!Array.isArray(points) || !points.length) return false
+      if (isPointToolRequireCharge()) return points.some(isMapToolSpecialPoint)
+      return true
     },
-    // MapTool「点位」仅展示充电点（按钮是否可点不依赖充电点）
+    // MapTool「点位」仅展示充电点 / 巡检点 / 门禁点
     activePoints() {
-      return (this.map?.points || []).filter(isChargeMapPoint)
+      return (this.map?.points || []).filter(isMapToolSpecialPoint)
     },
     activePathPointIds() {
       if (this.showPolyline && this.activeTaskPathData) {
@@ -795,7 +798,7 @@ export default {
     activeRaisedTaskPathId() {
       return this.raisedTaskPathId || this.pinnedTaskPathId
     },
-    // MapTool 开点位 → 仅充电点；仅 Robot1 开路径 → 任务路径点（模板已拆分，此计算属性保留兼容）
+    // MapTool 开点位 → 充电点/巡检点/门禁点；仅 Robot1 开路径 → 任务路径点（模板已拆分，此计算属性保留兼容）
     overlayPoints() {
       if (this.showPath) return this.drawablePoints
       if (this.showPolyline) return this.drawablePathPoints
@@ -1116,28 +1119,57 @@ export default {
     toDrawablePoints(points) {
       return (Array.isArray(points) ? points : [])
         .map((point) => {
-          const id = point.id ?? point.mapPointId
-          const coordinateX = point.coordinateX ?? point.x
-          const coordinateY = point.coordinateY ?? point.y
+          // 路径点常缺 pointType：用地图点位数据补齐，以便应用充电/巡检/门禁图标规则
+          const merged = this.mergeMapPointMeta(point)
+          const id = merged.id ?? merged.mapPointId
+          const coordinateX = merged.coordinateX ?? merged.x
+          const coordinateY = merged.coordinateY ?? merged.y
           const pixel = this.mapPointToPixel({
-            ...point,
+            ...merged,
             coordinateX,
             coordinateY
           }, this.map)
           if (!pixel) return null
-          const pointName = point.pointName || point.name || point.pointCode || String(id)
-          const iconMeta = getMapPointIconMeta(point)
+          const pointName = merged.pointName || merged.name || merged.pointCode || String(id)
+          const iconMeta = getMapPointIconMeta(merged)
           const icon = {
             ...iconMeta,
             marker: iconMeta.isCharge ? MAP_CHARGE_MARKER : MAP_POINT_MARKER
           }
-          // 充电点名称宽度对齐装备名称计算方式
-          const nameWidth = iconMeta.isCharge
+          // 充电点/巡检点/门禁点名称宽度对齐装备名称
+          const nameWidth = iconMeta.useSpecialNameStyle
             ? Math.max(44, Math.ceil(String(pointName).length * 11) + 8)
             : MAP_POINT_NAME_MAX_WIDTH
-          return { ...point, id, pixel, pointName, icon, nameWidth }
+          return { ...merged, id, pixel, pointName, icon, nameWidth }
         })
         .filter(Boolean)
+    },
+    /** 用当前地图 points 补齐路径点的 pointType / 名称等 */
+    mergeMapPointMeta(point) {
+      if (!point) return point
+      const id = point.id ?? point.mapPointId
+      if (id === undefined || id === null || id === '') return point
+      const matched = (this.map?.points || []).find(item =>
+        String(item.id ?? item.mapPointId) === String(id)
+      )
+      if (!matched) return point
+      return {
+        ...matched,
+        ...point,
+        pointType: point.pointType || matched.pointType,
+        pointName: point.pointName || matched.pointName || matched.name,
+        pointCode: point.pointCode || matched.pointCode
+      }
+    },
+    /**
+     * 路径上是否渲染点位图标
+     * - 地图「点位」已开启时，已展示的特殊点位不再重复渲染
+     */
+    shouldShowPathPointMarker(point) {
+      if (!this.showPath) return true
+      const id = point?.id ?? point?.mapPointId
+      if (id === undefined || id === null || id === '') return true
+      return !this.drawablePoints.some(item => String(item.id) === String(id))
     },
     isPointInPath(point) {
       if (!point) return false
@@ -2055,8 +2087,8 @@ export default {
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            // 充电点名称：与装备名称 robot-name-pill 一致
-            &.is-charge {
+            // 充电点 / 巡检点 / 门禁点名称：与装备名称 robot-name-pill 一致
+            &.is-equip-name {
               width: 100%;
               height: 20px;
               border-radius: 0;

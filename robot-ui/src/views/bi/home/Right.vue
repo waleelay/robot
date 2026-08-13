@@ -101,7 +101,7 @@
                         gray: item.status === 'paused'
                       }"
                     >{{ executionStatusLabel(item.status) }}</div>
-                    <div class="ml10" style="width: 41%;">{{ item.executionMode === 'MANUAL' && item.status === 'waiting' ? '-' : item.startTime }}</div>
+                    <div class="ml10" style="width: 41%;">{{ item.executionMode === 'MANUAL' && item.status === 'waiting' ? '手动执行' : item.startTime }}</div>
                   </div>
                 </template>
                 <!-- <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div> -->

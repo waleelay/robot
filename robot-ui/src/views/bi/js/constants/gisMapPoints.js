@@ -9,6 +9,16 @@ export function getGisAreaConfig() {
   return {}
 }
 
+/**
+ * MapTool「点位」是否按特殊点位禁用
+ * - true：无充电点/巡检点/门禁点则禁用按钮
+ * - false：无点位数据则禁用（展示层仍只显示上述三类点）
+ */
+export function isPointToolRequireCharge() {
+  const config = typeof window !== 'undefined' ? window.gisConfig : null
+  return !!config?.disablePointWithoutCharge
+}
+
 // 区域多边形点 [lat, lng][]
 export const POLYGON_POINTS = getGisAreaConfig().polygonPoints || []
 
@@ -68,17 +78,43 @@ export const MAP_POINT_TYPE = {
   DOOR: '门禁点',
 }
 
-/** 是否为充电点（兼容键名 CHARGE 与中文值） */
-export function isChargeMapPoint(point) {
+/** MapTool「点位」展示/禁用关联的类型键名 */
+export const MAP_POINT_TOOL_TYPE_KEYS = ['CHARGE', 'CHECKPOINT', 'DOOR']
+
+/** 解析 pointType 为 MAP_POINT_TYPE 键名（兼容键名与中文值） */
+export function resolveMapPointTypeKey(point) {
   const t = point?.pointType
-  if (t == null || t === '') return false
-  return t === 'CHARGE' || t === MAP_POINT_TYPE.CHARGE
+  if (t == null || t === '') return null
+  if (Object.prototype.hasOwnProperty.call(MAP_POINT_TYPE, t)) return t
+  const entry = Object.entries(MAP_POINT_TYPE).find(([, label]) => label === t)
+  return entry ? entry[0] : null
+}
+
+/** 是否为充电点 */
+export function isChargeMapPoint(point) {
+  return resolveMapPointTypeKey(point) === 'CHARGE'
+}
+
+/** 是否为巡检点 */
+export function isCheckpointMapPoint(point) {
+  return resolveMapPointTypeKey(point) === 'CHECKPOINT'
+}
+
+/** 是否为门禁点 */
+export function isDoorMapPoint(point) {
+  return resolveMapPointTypeKey(point) === 'DOOR'
+}
+
+/** MapTool 展示的特殊点位：充电点 / 巡检点 / 门禁点 */
+export function isMapToolSpecialPoint(point) {
+  return MAP_POINT_TOOL_TYPE_KEYS.includes(resolveMapPointTypeKey(point))
 }
 
 /**
  * 地图点位图标尺寸与锚点
- * - 普通点：map_point2 40×46，锚点距底 14px，名称距图底 1px
+ * - 普通点 / 巡检点 / 门禁点：map_point2 40×46，锚点距底 14px
  * - 充电点：map_battery2 38×30，锚点为底部中心，名称距图底 4px（mt4）
+ * - 充电点 / 巡检点 / 门禁点：名称样式对齐装备名称
  */
 export const MAP_POINT_ICON = {
   NORMAL: {
@@ -97,17 +133,23 @@ export const MAP_POINT_ICON = {
 
 /** 按 pointType 返回图标布局（不含图片 url，由调用方挂 marker） */
 export function getMapPointIconMeta(point) {
-  const isCharge = isChargeMapPoint(point)
+  const typeKey = resolveMapPointTypeKey(point)
+  const isCharge = typeKey === 'CHARGE'
+  const useSpecialNameStyle = MAP_POINT_TOOL_TYPE_KEYS.includes(typeKey)
   const cfg = isCharge ? MAP_POINT_ICON.CHARGE : MAP_POINT_ICON.NORMAL
+  // 巡检点/门禁点用普通点图标，名称间距与充电点一致（mt4）
+  const nameGap = useSpecialNameStyle ? (isCharge ? cfg.nameGap : 4) : cfg.nameGap
   const iconX = -cfg.width / 2
   const iconY = -(cfg.height - cfg.anchorBottom)
   return {
+    typeKey,
     isCharge,
+    useSpecialNameStyle,
     width: cfg.width,
     height: cfg.height,
     iconX,
     iconY,
-    nameY: iconY + cfg.height + cfg.nameGap,
+    nameY: iconY + cfg.height + nameGap,
     nameMaxWidth: 160
   }
 }

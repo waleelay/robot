@@ -800,41 +800,93 @@ export default {
           this.scheduleMeasurePoint(e.latlng)
           return
         }
-        const robot = marker.meta?.robot || {}
-        // first 监控页：固定摄像头不可点；未播放视频的装备不可点
-        const isFixedCamera = robot.type === '固定摄像头'
-          || robot.type === 'FIXED_CAMERA'
-          || robot.typeCode === 'FIXED_CAMERA'
-        if (this.showSmall) {
-          if (isFixedCamera) return
-          if (!this.getSelectedStatus(robot.robotId)) return
-        }
-        const isSame = this.activeMarkerIndex === marker.meta.index
-        if (this.currenRouteName === 'biIndex') {
-          if (isSame) {
-            this.activeMarkerIndex = ''
-            this.closePopup()
-            this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
-            return
+        const latLng = marker.getLatLng() || e.latlng
+        const group = this.findOverlappingMarkers(latLng, { onlyClickable: true })
+        if (!group.length) return
+        // 同坐标多装备：以当前选中为起点轮询下一个；否则选中被点中的（最上层）
+        let target = group[0]
+        if (group.length > 1) {
+          const curIdx = group.findIndex(m => m.meta?.index === this.activeMarkerIndex)
+          if (curIdx >= 0) {
+            target = group[(curIdx + 1) % group.length]
+          } else {
+            target = group.find(m => m === marker) || group[0]
           }
-          this.activeMarkerIndex = marker.meta.index
-          this.popupVisible = true
-          // 先切换选中内容再定位，避免沿用上一台装备高度
-          this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
-          this.schedulePopupPositionUpdate()
-          this.clearLayer(null)
-          return
         }
+        this.handleGisMarkerSelect(target, e)
+      });
+    },
+    /** 监控页等场景下该 marker 是否可点 */
+    isGisMarkerClickable(marker) {
+      const robot = marker?.meta?.robot || {}
+      const isFixedCamera = robot.type === '固定摄像头'
+        || robot.type === 'FIXED_CAMERA'
+        || robot.typeCode === 'FIXED_CAMERA'
+      if (this.showSmall) {
+        if (isFixedCamera) return false
+        if (!this.getSelectedStatus(robot.robotId)) return false
+      }
+      return true
+    },
+    /**
+     * 找出与 latLng 重叠（或极近）的装备 marker
+     * @param {object} latLng
+     * @param {{ onlyClickable?: boolean }} options
+     */
+    findOverlappingMarkers(latLng, options = {}) {
+      const { onlyClickable = false } = options
+      const lat = Number(latLng?.lat)
+      const lng = Number(latLng?.lng)
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return []
+      // 约 1e-7 度，视为同坐标
+      const EPS = 1e-7
+      return (this.pointMarkers || []).filter(m => {
+        if (!m) return false
+        const ll = m.getLatLng && m.getLatLng()
+        if (!ll) return false
+        if (Math.abs(Number(ll.lat) - lat) > EPS || Math.abs(Number(ll.lng) - lng) > EPS) return false
+        if (onlyClickable && !this.isGisMarkerClickable(m)) return false
+        return true
+      })
+    },
+    /** 选中装备后抬高 zIndex，其余恢复默认 */
+    bringGisMarkerToFront(marker) {
+      const BASE = 1000
+      const FRONT = 2000
+      ;(this.pointMarkers || []).forEach(m => {
+        if (!m || typeof m.setZIndexOffset !== 'function') return
+        m.setZIndexOffset(m === marker ? FRONT : BASE)
+      })
+    },
+    /** 选中 GIS 装备并打开/切换 Robot1（含同坐标轮询后的目标） */
+    handleGisMarkerSelect(marker, e) {
+      if (!marker?.meta?.robot) return
+      this.bringGisMarkerToFront(marker)
+      const isSame = this.activeMarkerIndex === marker.meta.index
+      if (this.currenRouteName === 'biIndex') {
         if (isSame) {
           this.activeMarkerIndex = ''
-        } else {
-          this.activeMarkerIndex = marker.meta.index
+          this.closePopup()
+          this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
+          return
         }
+        this.activeMarkerIndex = marker.meta.index
+        this.popupVisible = true
+        // 先切换选中内容再定位，避免沿用上一台装备高度
         this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
-        // this.updateAllIcon()
-        // this.showDashedArea(marker.meta.index);
+        this.schedulePopupPositionUpdate()
         this.clearLayer(null)
-      });
+        return
+      }
+      if (isSame) {
+        this.activeMarkerIndex = ''
+      } else {
+        this.activeMarkerIndex = marker.meta.index
+      }
+      this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
+      // this.updateAllIcon()
+      // this.showDashedArea(marker.meta.index);
+      this.clearLayer(null)
     },
     updateAllIcon() {
       this.pointMarkers.map(marker => {
