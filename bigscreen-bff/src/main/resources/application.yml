@@ -21,6 +21,7 @@ statistics:
 
 bigscreen:
   auth:
+    # BFF 校验 JWT audience/authorized party 时使用的客户端 ID。
     client-id: ${BIGSCREEN_AUTH_CLIENT_ID:bigscreen-web}
   cors:
     # 大屏接口允许跨域访问的来源模式，多个值用逗号分隔。
@@ -28,14 +29,19 @@ bigscreen:
 
 spring:
   application:
+    # Spring Boot 应用名称，用于日志、监控和服务标识。
     name: bigscreen-bff
   security:
     oauth2:
       resourceserver:
         jwt:
+          # JWT 签发方地址，必须与 Token 的 issuer 声明一致。
           issuer-uri: ${BIGSCREEN_AUTH_ISSUER_URI:http://localhost:18443/realms/iam-auth}
+          # JWT 验签公钥集合地址。
           jwk-set-uri: ${BIGSCREEN_AUTH_JWK_SET_URI:http://localhost:18443/realms/iam-auth/protocol/openid-connect/certs}
   servlet:
     multipart:
+      # BFF 代理上传时允许的单个文件最大大小。
       max-file-size: ${BIGSCREEN_MULTIPART_MAX_FILE_SIZE:20MB}
+      # BFF 代理上传时允许的 multipart 请求总大小。
       max-request-size: ${BIGSCREEN_MULTIPART_MAX_REQUEST_SIZE:21MB}

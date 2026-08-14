@@ -71,6 +71,44 @@ class PanoramaWebSocketEventAdapterTest {
                 """)).isTrue();
     }
 
+    @Test
+    void suppressesTaskEventWithoutPlanIdAndRequestsAuthoritativeRefresh() {
+        String payload = """
+                {
+                  "event":"panorama.task.changed",
+                  "timestamp":"2026-08-13 19:48:14",
+                  "data":{
+                    "taskId":null,
+                    "workflowInstanceId":2087868758369030100,
+                    "commandId":"task-3ab936c1-b3a0-459a-95d6-511b6f8142b1",
+                    "robotId":"x30_test_26081301",
+                    "source":"EDGE_TASK_MQTT",
+                    "status":"running"
+                  }
+                }
+                """;
+
+        assertThat(adapter.isTaskInvalidation(payload)).isTrue();
+        assertThat(adapter.adapt(payload)).isEmpty();
+    }
+
+    @Test
+    void forwardsTaskEventWithPlanIdWithoutExtraRefresh() {
+        String payload = """
+                {
+                  "event":"panorama.task.changed",
+                  "data":{
+                    "taskId":123,
+                    "workflowInstanceId":456,
+                    "task":{"taskId":123,"status":"running"}
+                  }
+                }
+                """;
+
+        assertThat(adapter.isTaskInvalidation(payload)).isFalse();
+        assertThat(adapter.adapt(payload)).containsExactly(payload);
+    }
+
     private JsonNode readTree(String value) {
         try {
             return objectMapper.readTree(value);

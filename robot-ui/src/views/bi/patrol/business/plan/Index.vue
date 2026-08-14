@@ -80,11 +80,18 @@
           <el-table-column label="计划周期" width="110">
             <template slot-scope="{ row }">{{ schedulePresetLabel(row.scheduleConfig && row.scheduleConfig.preset) }}</template>
           </el-table-column>
-          <el-table-column key="status" width="110" label="执行状态" align="center">
+          <el-table-column label="预计时长" width="110" align="center">
+            <template slot-scope="{ row }">{{ durationLabel(row.expectedDurationSeconds) }}</template>
+          </el-table-column>
+          <el-table-column key="status" width="150" label="执行状态" align="center">
             <template slot-scope="scope">
-              <span class="status" :class="executionStatusType(scope.row.executionStatus)">
-                {{ executionStatusLabel(scope.row.executionStatus) }}
-              </span>
+              <div class="execution-status-cell">
+                <span class="status" :class="executionStatusType(scope.row.executionStatus)">
+                  {{ executionStatusLabel(scope.row.executionStatus) }}
+                </span>
+                <span v-if="scope.row.controlStatus === 'OPERATING'" class="execution-control-note">控制中</span>
+                <span v-else-if="scope.row.controlStatus === 'EXCEPTION'" class="execution-control-note is-error">控制异常</span>
+              </div>
             </template>
           </el-table-column>
           <!-- <el-table-column key="lastResultStatus" min-width="140" label="最近一次执行状态" align="center">
@@ -99,18 +106,54 @@
               <span v-else class="muted">-</span>
             </template>
           </el-table-column> -->
-          <el-table-column label="操作" width="325" fixed="right">
+          <el-table-column label="操作" width="430" fixed="right">
             <template slot-scope="{ row }">
               <el-button type="text" @click="openEditor(row.id, 'view')">详情</el-button>
               <el-button type="text" @click="openEditor(row.id, 'edit')">编辑</el-button>
               <el-button type="text" :disabled="!row.enabled" @click="previewPlan(row)">预览</el-button>
-              <el-button    
+              <el-button
+                v-if="row.activeWorkflowInstanceId"
                 type="text"
-                :disabled="!row.enabled || Boolean(row.activeWorkflowInstanceId)"
+                @click="$emit('show-record', row.activeWorkflowInstanceId)"
+              >
+                查看监控
+              </el-button>
+              <el-button
+                v-if="hasLifecycleAction(row, 'PAUSE')"
+                type="text"
+                @click="controlPlanInstance(row, 'PAUSE')"
+              >
+                暂停
+              </el-button>
+              <el-button
+                v-if="hasLifecycleAction(row, 'RESUME')"
+                type="text"
+                @click="controlPlanInstance(row, 'RESUME')"
+              >
+                恢复
+              </el-button>
+              <el-button
+                v-if="hasLifecycleAction(row, 'TERMINATE') || hasLifecycleAction(row, 'RETRY_TERMINATE')"
+                type="text"
+                @click="controlPlanInstance(row, 'TERMINATE')"
+              >
+                {{ hasLifecycleAction(row, 'RETRY_TERMINATE') ? '重试终止' : '终止' }}
+              </el-button>
+              <el-button
+                v-if="hasLifecycleAction(row, 'FORCE_TERMINATE')"
+                type="text"
+                @click="forceTerminatePlanInstance(row)"
+              >
+                强制结束
+              </el-button>
+              <el-button
+                v-if="!row.activeWorkflowInstanceId"
+                type="text"
+                :disabled="!row.enabled"
                 :loading="isStarting(row.id)"
                 @click="startPlan(row)"
               >
-                {{isStarting(row.id) ? '执行中' : '立即执行'}}
+                {{ isStarting(row.id) ? '执行中' : '立即执行' }}
               </el-button>
               <el-button type="text" @click="deletePlan(row)">
                 删除
@@ -159,15 +202,105 @@
         <el-button @click="previewVisible = false">关闭</el-button>
       </span>
     </el-dialog>
+
+    <el-dialog :visible.sync="executionParameterDialog.visible" title="补充执行参数" width="620px" append-to-body>
+      <p class="dialog-description">请填写本次任务需要的执行参数，保存后将用于本次立即执行。</p>
+      <el-form label-position="top">
+        <div v-if="dialogMissingRequirements.length" class="form-grid">
+          <el-form-item
+            v-for="parameter in dialogMissingRequirements"
+            :key="parameterBindingKey(parameter)"
+            :label="parameterDisplayLabel(parameter)"
+            required
+          >
+            <el-select
+              v-if="parameterHasEnum(parameter)"
+              :value="dialogParameterValue(parameter)"
+              clearable
+              :placeholder="parameter.description || '选择' + parameter.label"
+              @change="setDialogParameterValue(parameter, $event)"
+            >
+              <el-option
+                v-for="option in parameter.schema.enum"
+                :key="String(option)"
+                :label="parameterEnumLabel(parameter, option)"
+                :value="option"
+              />
+            </el-select>
+            <el-switch
+              v-else-if="parameterSchemaType(parameter) === 'boolean'"
+              :value="dialogParameterValue(parameter) === true"
+              @change="setDialogParameterValue(parameter, $event)"
+            />
+            <el-input-number
+              v-else-if="isNumberParameter(parameter)"
+              :value="dialogNumberParameterValue(parameter)"
+              :min="parameter.schema && parameter.schema.minimum"
+              :max="parameter.schema && parameter.schema.maximum"
+              :step="(parameter.schema && parameter.schema.multipleOf) || 1"
+              controls-position="right"
+              @change="setDialogParameterValue(parameter, $event)"
+            />
+            <el-input
+              v-else
+              :value="dialogParameterValue(parameter)"
+              :type="parameter.schema && parameter.schema.format === 'textarea' ? 'textarea' : 'text'"
+              :rows="parameter.schema && parameter.schema.format === 'textarea' ? 3 : undefined"
+              :placeholder="parameter.description || '填写' + parameter.label"
+              @input="setDialogParameterValue(parameter, $event)"
+            />
+            <div v-if="parameter.description" class="parameter-description">{{ parameter.description }}</div>
+          </el-form-item>
+        </div>
+        <section
+          v-for="target in dialogMissingTargetRequirements"
+          :key="dialogTargetBindingKey(target)"
+          class="execution-parameter-card"
+        >
+          <strong>{{ targetDisplayLabel(target) }}</strong>
+          <div class="form-grid">
+            <el-form-item label="X 坐标" required>
+              <el-input-number
+                :value="dialogTargetNumberValue(target, 'x')"
+                controls-position="right"
+                @change="setDialogTargetValue(target, 'x', $event)"
+              />
+            </el-form-item>
+            <el-form-item label="Y 坐标" required>
+              <el-input-number
+                :value="dialogTargetNumberValue(target, 'y')"
+                controls-position="right"
+                @change="setDialogTargetValue(target, 'y', $event)"
+              />
+            </el-form-item>
+            <el-form-item label="朝向">
+              <el-input-number
+                :value="dialogTargetNumberValue(target, 'yaw')"
+                controls-position="right"
+                @change="setDialogTargetValue(target, 'yaw', $event)"
+              />
+            </el-form-item>
+          </div>
+        </section>
+      </el-form>
+      <span slot="footer">
+        <el-button @click="executionParameterDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="executionParameterDialog.submitting" @click="submitExecutionParameters">保存并执行</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import {
   deleteTask,
+  forceTerminateTaskRecord,
   getTaskList,
+  pauseTaskRecord,
+  resumeTaskRecord,
   startTask,
   startTaskPreview,
+  terminateTaskRecord,
   updateTaskEnabled
 } from '@/api/new-bi'
 import {
@@ -199,7 +332,17 @@ export default {
       ],
       startingPlanIds: [],
       previewVisible: false,
-      previewResult: null
+      previewResult: null,
+      executionParameterDialog: {
+        visible: false,
+        submitting: false,
+        planId: '',
+        planName: '',
+        requirements: [],
+        values: {},
+        targetRequirements: [],
+        targetValues: {}
+      }
     }
   },
   computed: {
@@ -210,6 +353,12 @@ export default {
       return this.previewResult && Array.isArray(this.previewResult.componentSelectionRequirements)
         ? this.previewResult.componentSelectionRequirements
         : []
+    },
+    dialogMissingRequirements() {
+      return (this.executionParameterDialog.requirements || []).filter(item => !item.configured)
+    },
+    dialogMissingTargetRequirements() {
+      return (this.executionParameterDialog.targetRequirements || []).filter(item => !item.configured)
     }
   },
   mounted() {
@@ -272,6 +421,12 @@ export default {
       try {
         const preview = this.unwrap(await startTaskPreview(row.id, {}))
         if (preview && preview.valid === false) {
+          const missingParameters = (preview.actionParameterRequirements || []).filter(item => !item.configured)
+          const missingTargets = (preview.targetRequirements || []).filter(item => !item.configured)
+          if (missingParameters.length || missingTargets.length) {
+            this.openExecutionParameterDialog(row, preview.actionParameterRequirements || [], preview.targetRequirements || [])
+            return
+          }
           this.previewResult = preview
           this.previewVisible = true
           return
@@ -291,6 +446,76 @@ export default {
         if (error !== 'cancel') this.showError(error)
       } finally {
         this.startingPlanIds = this.startingPlanIds.filter(id => id !== row.id)
+      }
+    },
+    openExecutionParameterDialog(plan, requirements, targets) {
+      const values = {}
+      ;(requirements || []).forEach(item => {
+        values[this.parameterBindingKey(item)] = item.value
+      })
+      const targetValues = {}
+      ;(targets || []).forEach(item => {
+        targetValues[this.dialogTargetBindingKey(item)] = {
+          x: item.x == null ? null : item.x,
+          y: item.y == null ? null : item.y,
+          yaw: item.yaw == null ? null : item.yaw
+        }
+      })
+      this.executionParameterDialog = {
+        visible: true,
+        submitting: false,
+        planId: plan.id,
+        planName: plan.planName,
+        requirements: requirements || [],
+        values,
+        targetRequirements: targets || [],
+        targetValues
+      }
+    },
+    async submitExecutionParameters() {
+      const missing = this.dialogMissingRequirements.find(item => !this.hasParameterValue(this.dialogParameterValue(item)))
+      if (missing) {
+        this.$message.warning(`请填写${this.parameterDisplayLabel(missing)}`)
+        return
+      }
+      const missingTarget = this.dialogMissingTargetRequirements.find(item => {
+        const value = this.dialogTargetValue(item)
+        return !this.hasParameterValue(value.x) || !this.hasParameterValue(value.y)
+      })
+      if (missingTarget) {
+        this.$message.warning(`请填写${this.targetDisplayLabel(missingTarget)}的 X 坐标和 Y 坐标`)
+        return
+      }
+      this.executionParameterDialog.submitting = true
+      try {
+        const data = this.unwrap(await startTask(this.executionParameterDialog.planId, {
+          actionParameterValues: (this.executionParameterDialog.requirements || []).map(item => ({
+            workflowVersionId: item.workflowVersionId,
+            workflowNodeId: item.workflowNodeId,
+            phase: item.phase,
+            actionIndex: item.actionIndex,
+            parameterName: item.parameterName,
+            value: this.dialogParameterValue(item)
+          })),
+          targetBindings: (this.executionParameterDialog.targetRequirements || []).map(item => Object.assign({
+            workflowVersionId: item.workflowVersionId,
+            workflowNodeId: item.workflowNodeId
+          }, this.dialogTargetValue(item)))
+        }))
+        if (data && data.accepted === false) {
+          this.previewResult = data.preview || data
+          this.previewVisible = true
+          this.$message.warning(data.message || '任务未能启动')
+          return
+        }
+        this.executionParameterDialog.visible = false
+        this.$message.success((data && data.message) || '任务已启动')
+        this.loadRows()
+        if (data && data.workflowInstanceId) this.$emit('show-record', data.workflowInstanceId)
+      } catch (error) {
+        this.showError(error)
+      } finally {
+        this.executionParameterDialog.submitting = false
       }
     },
     async previewPlan(row) {
@@ -327,6 +552,49 @@ export default {
         if (error !== 'cancel') this.showError(error)
       }
     },
+    async controlPlanInstance(row, action) {
+      const label = { PAUSE: '暂停', RESUME: '恢复', TERMINATE: '终止' }[action] || '控制'
+      const api = { PAUSE: pauseTaskRecord, RESUME: resumeTaskRecord, TERMINATE: terminateTaskRecord }[action]
+      if (!api || !row.activeWorkflowInstanceId) return
+      try {
+        await this.$confirm(`确认${label}“${row.planName || row.planCode || row.id}”当前正在执行的任务吗？`, `${label}任务`, {
+          type: action === 'TERMINATE' ? 'warning' : 'info'
+        })
+        const data = this.unwrap(await api(row.activeWorkflowInstanceId, {}))
+        this.$message.success((data && data.message) || `${label}命令已发送`)
+        this.loadRows()
+      } catch (error) {
+        if (error !== 'cancel') this.showError(error)
+      }
+    },
+    async forceTerminatePlanInstance(row) {
+      if (!row.activeWorkflowInstanceId) return
+      try {
+        const { value } = await this.$prompt(
+          '平台将结束任务，但不能证明边缘设备已经停止；未确认设备会进入安全隔离。请输入强制结束原因。',
+          '强制结束任务',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            inputPlaceholder: '请输入现场确认或处置说明',
+            inputValidator: text => {
+              const length = String(text || '').trim().length
+              if (length > 200) return '原因不能超过200字'
+              return length >= 1 || '请输入强制结束原因'
+            }
+          }
+        )
+        const data = this.unwrap(await forceTerminateTaskRecord(row.activeWorkflowInstanceId, String(value).trim()))
+        this.$message.success((data && data.message) || '任务已强制结束，未确认设备已进入安全隔离')
+        this.loadRows()
+      } catch (error) {
+        if (error !== 'cancel') this.showError(error)
+      }
+    },
+    hasLifecycleAction(row, action) {
+      const actions = row && Array.isArray(row.availableLifecycleActions) ? row.availableLifecycleActions : []
+      return Boolean(row && row.activeWorkflowInstanceId && actions.indexOf(action) !== -1)
+    },
     isStarting(planId) {
       return this.startingPlanIds.indexOf(planId) !== -1
     },
@@ -342,6 +610,78 @@ export default {
     executionStatusType(value) {
       return resolveExecutionStatusType(value)
     },
+    durationLabel(seconds) {
+      if (!seconds) return '-'
+      const minutes = Math.round(Number(seconds) / 60)
+      if (!Number.isFinite(minutes) || minutes <= 0) return '-'
+      if (minutes < 60) return `${minutes} 分钟`
+      if (minutes % 60 === 0) return `${minutes / 60} 小时`
+      return `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟`
+    },
+    parameterBindingKey(parameter) {
+      return [
+        parameter.workflowVersionId,
+        parameter.workflowNodeId,
+        parameter.phase,
+        parameter.actionIndex,
+        parameter.parameterName
+      ].join('|')
+    },
+    parameterSchemaType(parameter) {
+      return parameter && parameter.schema && parameter.schema.type
+    },
+    parameterHasEnum(parameter) {
+      return Boolean(parameter && parameter.schema && Array.isArray(parameter.schema.enum))
+    },
+    isNumberParameter(parameter) {
+      return ['number', 'integer'].indexOf(this.parameterSchemaType(parameter)) !== -1
+    },
+    dialogParameterValue(parameter) {
+      const key = this.parameterBindingKey(parameter)
+      return this.executionParameterDialog.values[key] === undefined ? '' : this.executionParameterDialog.values[key]
+    },
+    dialogNumberParameterValue(parameter) {
+      const value = this.dialogParameterValue(parameter)
+      return value === '' || value == null ? undefined : Number(value)
+    },
+    setDialogParameterValue(parameter, value) {
+      const values = Object.assign({}, this.executionParameterDialog.values)
+      values[this.parameterBindingKey(parameter)] = value
+      this.$set(this.executionParameterDialog, 'values', values)
+    },
+    parameterEnumLabel(parameter, option) {
+      const enumValues = parameter && parameter.schema && Array.isArray(parameter.schema.enum) ? parameter.schema.enum : []
+      const index = enumValues.indexOf(option)
+      const names = parameter && parameter.schema && Array.isArray(parameter.schema.enumNames) ? parameter.schema.enumNames : []
+      return names[index] || String(option)
+    },
+    parameterDisplayLabel(parameter) {
+      return [parameter.workflowNodeName, parameter.actionName, parameter.label].filter(Boolean).join(' / ')
+    },
+    targetBindingKey(target) {
+      return [target.workflowVersionId, target.workflowNodeId].join('|')
+    },
+    dialogTargetBindingKey(target) {
+      return this.targetBindingKey(target)
+    },
+    targetDisplayLabel(target) {
+      return [target.workflowName, target.workflowNodeName, '目标坐标'].filter(Boolean).join(' / ')
+    },
+    dialogTargetValue(target) {
+      return this.executionParameterDialog.targetValues[this.dialogTargetBindingKey(target)] || {}
+    },
+    dialogTargetNumberValue(target, field) {
+      const value = this.dialogTargetValue(target)[field]
+      return value === '' || value == null ? undefined : Number(value)
+    },
+    setDialogTargetValue(target, field, value) {
+      const targetValues = Object.assign({}, this.executionParameterDialog.targetValues)
+      targetValues[this.dialogTargetBindingKey(target)] = Object.assign({}, this.dialogTargetValue(target), { [field]: value })
+      this.$set(this.executionParameterDialog, 'targetValues', targetValues)
+    },
+    hasParameterValue(value) {
+      return value != null && (!(typeof value === 'string') || value.trim() !== '')
+    },
     formatDateTime(value) {
       if (!value) return '-'
       return String(value).replace('T', ' ').slice(0, 19)
@@ -354,7 +694,8 @@ export default {
       return res || {}
     },
     showError(error) {
-      // this.$message.error((error && error.message) || '请求失败')
+      const message = error && error.response && error.response.data && error.response.data.message
+      this.$message.error(message || (error && error.message) || '请求失败')
     }
   }
 }

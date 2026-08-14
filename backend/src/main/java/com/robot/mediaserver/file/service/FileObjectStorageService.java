@@ -36,6 +36,7 @@ public class FileObjectStorageService {
 
     private final MediaProperties properties;
     private MinioClient client;
+    private MinioClient presignClient;
 
     public FileObjectStorageService(MediaProperties properties) {
         this.properties = properties;
@@ -50,7 +51,7 @@ public class FileObjectStorageService {
     public String presignUploadPart(String objectKey, String storageUploadId, int partNumber) {
         requireEnabled();
         try {
-            return client().getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+            return presignClient().getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .bucket(bucket())
                     .object(partKey(objectKey, storageUploadId, partNumber))
                     .method(Method.PUT)
@@ -192,7 +193,7 @@ public class FileObjectStorageService {
     public String presignDownload(String objectKey, int ttlSeconds, String fileName, String contentType) {
         requireEnabled();
         try {
-            return client().getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+            return presignClient().getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .bucket(bucket())
                     .object(objectKey)
                     .method(Method.GET)
@@ -306,6 +307,16 @@ public class FileObjectStorageService {
                     .build();
         }
         return client;
+    }
+
+    private synchronized MinioClient presignClient() {
+        if (presignClient == null) {
+            presignClient = MinioClient.builder()
+                    .endpoint(properties.getMinio().getPublicEndpoint())
+                    .credentials(properties.getMinio().getAccessKey(), properties.getMinio().getSecretKey())
+                    .build();
+        }
+        return presignClient;
     }
 
     private String bucket() {

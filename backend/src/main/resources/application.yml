@@ -1,5 +1,6 @@
 spring:
   application:
+    # Spring Boot 应用名称，用于日志、监控和服务标识。
     name: robot-mediaserver
   profiles:
     # 当前启用的 Spring Profile，默认使用开发环境。
@@ -11,8 +12,10 @@ server:
 
 media:
   livekit:
-    # LiveKit WebSocket 连接地址，浏览器和服务端签发 Token 时使用。
+    # 返回给浏览器和机器人客户端的 LiveKit 外部访问地址。
     url: ${LIVEKIT_URL:ws://livekit-server:7880}
+    # 媒体服务调用 LiveKit Room/Egress API 的内部地址；为空时沿用 url。
+    internal-url: ${LIVEKIT_INTERNAL_URL:}
     # LiveKit API Key，用于服务端管理 Room、Token、Egress。
     api-key: ${LIVEKIT_API_KEY:devkey}
     # LiveKit API Secret，用于服务端签发访问 Token。
@@ -34,8 +37,10 @@ media:
     # LiveKit 参与者离开后的保留等待时间，单位秒。
     room-departure-timeout-seconds: ${LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS:20}
   minio:
-    # MinIO/S3 对象存储访问地址。
+    # 媒体服务、HLS 和 Egress 访问 MinIO/S3 的内部地址。
     endpoint: ${MINIO_ENDPOINT:http://host.docker.internal:9000}
+    # 预签名上传/下载 URL 中下发给浏览器或机器人的外部地址；为空时沿用 endpoint。
+    public-endpoint: ${MINIO_PUBLIC_ENDPOINT:}
     # MinIO/S3 访问 Key。
     access-key: ${MINIO_ACCESS_KEY:eiopminio}
     # MinIO/S3 访问 Secret。
@@ -119,7 +124,3 @@ media:
     idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:600}
     # 观看者心跳超时时间，单位秒。
     viewer-heartbeat-timeout-seconds: ${VIEWER_HEARTBEAT_TIMEOUT_SECONDS:15}
-    # 视频墙允许同时打开的最大视频流数量。
-    max-video-wall-streams: ${MAX_VIDEO_WALL_STREAMS:16}
-    # 详情页允许请求的最高视频分辨率。
-    max-detail-resolution: ${MAX_DETAIL_RESOLUTION:2K}

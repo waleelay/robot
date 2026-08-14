@@ -12,12 +12,31 @@
       </div>
     </div>
 
+    <el-alert
+      v-if="instance.terminationMode === 'FORCED'"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="instance.terminationSummary || '任务由平台强制结束，边缘端终止结果未确认。'"
+      class="mb10"
+    />
+
+    <el-alert
+      v-else-if="instance.status === 'FAILED'"
+      type="error"
+      :closable="false"
+      show-icon
+      title="任务执行失败"
+      :description="instance.failureReason || '未获取到具体失败原因，请查看下方执行事件。'"
+      class="mb10"
+    />
+
     <div v-loading="loading" class="replay-layout">
       <section class="summary-grid">
         <div class="summary-item"><span>开始时间</span><strong>{{ formatDateTime(replayStartedAt) }}</strong></div>
         <div class="summary-item"><span>结束时间</span><strong>{{ formatDateTime(replayCompletedAt) }}</strong></div>
         <div class="summary-item"><span>告警</span><strong>{{ alarmEvents.length }}</strong></div>
-        <div class="summary-item"><span>视频源</span><strong>{{ playbackItems.length }}</strong></div>
+        <div class="summary-item"><span>视频</span><strong>{{ playbackItems.length }}</strong></div>
         <div class="summary-item"><span>轨迹状态</span><strong>{{ trackStatusLabel(replayTrackStatus) }}</strong></div>
       </section>
 
@@ -69,11 +88,12 @@
             <div v-if="trackGroups.length" class="track-legend">
               <el-checkbox-group v-model="visibleTrackKeys">
                 <el-checkbox v-for="group in trackGroups" :key="trackGroupKey(group)" :label="trackGroupKey(group)">
+                  <span class="track-legend__swatch" :style="{ background: group.color || defaultTrackColor(group) }" />
                   {{ group.deviceName || group.serialNumber || '设备轨迹' }}
                 </el-checkbox>
               </el-checkbox-group>
             </div>
-            <div v-if="timelineSamples.length" class="track-stage">
+            <div v-if="timelineSamples.length" class="track-stage" :class="{ 'has-map': hasCalibratedMap && mapImageUrl }">
               <svg class="track-svg" :viewBox="trackViewBox" preserveAspectRatio="xMidYMid meet">
                 <image
                   v-if="hasCalibratedMap && mapImageUrl"
@@ -126,7 +146,7 @@
                     @click="primaryVideoKey = videoKey(video, video.flatIndex)"
                   >
                     <video
-                      v-if="videoUrl(video)"
+                      v-if="videoUrl(video) && !videoUnavailable(video, video.flatIndex)"
                       ref="videoPlayers"
                       muted
                       controls
@@ -135,6 +155,7 @@
                       :data-video-url="videoUrl(video)"
                       @loadedmetadata="syncVideos"
                       @canplay="handleVideoCanPlay"
+                      @error="handleVideoError($event, video)"
                       @play="handleVideoNativePlay"
                       @pause="handleVideoNativePause"
                     />
@@ -232,6 +253,7 @@ export default {
       syncingVideos: false,
       hlsPlayers: new Map(),
       mapImageObjectUrl: '',
+      unavailableVideoKeys: [],
       mapImageLoadSeq: 0
     }
   },
@@ -440,6 +462,7 @@ export default {
       this.loading = true
       try {
         this.replay = this.unwrap(await getTaskRecordReplay(this.id))
+        this.unavailableVideoKeys = []
         this.visibleTrackKeys = this.trackGroups.map(this.trackGroupKey)
         this.currentOffset = 0
         await this.$nextTick()
@@ -637,6 +660,12 @@ export default {
             this.syncSingleVideo(video)
           }
         })
+        player.on(HlsPlayer.Events.ERROR, (event, data) => {
+          if (data && data.fatal) {
+            this.markVideoUnavailable(item)
+            this.destroyHlsPlayer(video)
+          }
+        })
         player.attachMedia(video)
         this.hlsPlayers.set(video, player)
         return
@@ -737,6 +766,11 @@ export default {
     handleVideoCanPlay(event) {
       if (this.playing) this.syncSingleVideo(event && event.target)
     },
+    handleVideoError(event, video) {
+      this.markVideoUnavailable(video)
+      const target = event && event.target
+      if (target) this.destroyHlsPlayer(target)
+    },
     handleVideoNativePlay(event) {
       if (this.syncingVideos || (event && event.target && event.target.dataset && event.target.dataset.primingBuffer === 'true')) return
       this.syncVideos()
@@ -766,6 +800,7 @@ export default {
       this.jumpToAlarm({ offset: Math.floor((occurredAt.getTime() - this.startedAt.getTime()) / 1000) })
     },
     videoUrl(video) {
+      if (this.videoUnavailable(video, video && video.flatIndex)) return ''
       const metadata = (video && video.metadata) || {}
       const directUrl = (video && video.playUrl) || metadata.playUrl || metadata.playbackUrl || (video && video.playbackUrl) || ''
       if (directUrl && !this.isDemoUrl(directUrl)) return this.normalizeResourceUrl(directUrl)
@@ -810,6 +845,15 @@ export default {
     videoKey(video, index) {
       return this.videoFileId(video) || `${(video && video.actionRef) || 'video'}-${index}`
     },
+    videoUnavailable(video, index) {
+      return this.unavailableVideoKeys.indexOf(this.videoKey(video, index)) !== -1
+    },
+    markVideoUnavailable(video) {
+      const key = this.videoKey(video, video && video.flatIndex)
+      if (this.unavailableVideoKeys.indexOf(key) === -1) {
+        this.unavailableVideoKeys = this.unavailableVideoKeys.concat(key)
+      }
+    },
     videoGroupKey(group, index) {
       return String((group && (group.key || group.deviceTaskInstanceId || group.serialNumber || group.deviceName)) || `video-group-${index}`)
     },
@@ -824,6 +868,7 @@ export default {
     videoPlaybackState(video) {
       const current = this.currentDateTime
       if (!current) return { state: 'UNKNOWN', label: '等待时间轴' }
+      if (this.videoUnavailable(video, video && video.flatIndex)) return { state: 'UNAVAILABLE', label: '视频不可用' }
       const timing = this.videoTiming(video)
       if (timing.start && current.getTime() < timing.start.getTime()) return { state: 'BEFORE_START', label: '未开始' }
       if (timing.end && current.getTime() > timing.end.getTime()) return { state: 'ENDED', label: '已结束' }
@@ -880,11 +925,17 @@ export default {
     },
     alarmImageFileId(row) {
       const payload = this.alarmPayload(row)
-      return (row && row.imageFileId) || payload.fileId || ''
+      return this.firstValue(row && row.imageFileIds) ||
+        this.firstValue(payload.fileIds) ||
+        (row && row.imageFileId) ||
+        payload.fileId ||
+        ''
     },
     alarmImageUrl(row) {
+      const directUrl = this.firstValue(row && row.imageUrls) || (row && row.imageUrl)
+      if (directUrl) return this.normalizeResourceUrl(directUrl)
       const fileId = this.alarmImageFileId(row)
-      return this.normalizeResourceUrl((row && row.imageUrl) || this.mediaFileContentUrl(fileId))
+      return this.normalizeResourceUrl(this.mediaFileContentUrl(fileId))
     },
     alarmDeviceLabel(row) {
       const payload = this.alarmPayload(row)
@@ -978,6 +1029,10 @@ export default {
       } catch (error) {
         return {}
       }
+    },
+    firstValue(value) {
+      if (Array.isArray(value)) return value.find(item => item != null && item !== '') || ''
+      return value || ''
     },
     unwrap(res) {
       if (res && res.code !== undefined) {

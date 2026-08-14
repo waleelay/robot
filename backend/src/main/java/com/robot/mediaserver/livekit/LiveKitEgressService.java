@@ -80,7 +80,7 @@ public class LiveKitEgressService {
                     .retrieve()
                     .body(Map.class);
         } catch (ResourceAccessException ex) {
-            throw new IllegalStateException("LiveKit Egress API 超时或不可达，请检查 LIVEKIT_URL 和 livekit/egress worker", ex);
+            throw new IllegalStateException("LiveKit Egress API 超时或不可达，请检查 LIVEKIT_INTERNAL_URL 和 livekit/egress worker", ex);
         }
     }
 
@@ -96,7 +96,7 @@ public class LiveKitEgressService {
     }
 
     private String serverHttpUrl() {
-        String url = properties.getLivekit().getUrl();
+        String url = properties.getLivekit().getInternalUrl();
         if (url.startsWith("wss://")) {
             return "https://" + url.substring("wss://".length());
         }

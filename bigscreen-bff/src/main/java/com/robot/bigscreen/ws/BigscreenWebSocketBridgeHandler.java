@@ -2,6 +2,9 @@ package com.robot.bigscreen.ws;
 
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.config.WebSocketConfig;
+import jakarta.websocket.ContainerProvider;
+import jakarta.websocket.WebSocketContainer;
 import java.net.URI;
 import java.util.Collections;
 import java.util.List;
@@ -38,7 +41,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private final PanoramaStatsEventRefresher statsEventRefresher;
     private final PanoramaTaskEventRefresher taskEventRefresher;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
-    private final StandardWebSocketClient webSocketClient = new StandardWebSocketClient();
+    private final StandardWebSocketClient webSocketClient;
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
     private final Set<WebSocketSession> browserSessions = ConcurrentHashMap.newKeySet();
 
@@ -53,6 +56,10 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         this.statsEventRefresher = statsEventRefresher;
         this.taskEventRefresher = taskEventRefresher;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
+        WebSocketContainer container = ContainerProvider.getWebSocketContainer();
+        container.setDefaultMaxTextMessageBufferSize(WebSocketConfig.MAX_TEXT_MESSAGE_SIZE);
+        container.setDefaultMaxBinaryMessageBufferSize(WebSocketConfig.MAX_TEXT_MESSAGE_SIZE);
+        this.webSocketClient = new StandardWebSocketClient(container);
     }
 
     @Override
@@ -85,6 +92,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession browserSession, CloseStatus status) throws Exception {
+        logClose("Browser", browserSession, status);
         browserSessions.remove(browserSession);
         eventAdapter.removeSession(browserSession.getId());
         statsEventRefresher.remove(browserSession.getId());
@@ -183,7 +191,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 boolean refreshStats = eventAdapter.requiresStatsRefresh(browserSession.getId(), centerPayload);
                 boolean refreshTasks = eventAdapter.isTaskInvalidation(centerPayload);
                 for (String payload : eventAdapter.adapt(centerPayload)) {
-                    browserSession.sendMessage(new TextMessage(payload));
+                    sendToBrowserSession(browserSession, payload);
                 }
                 if (refreshStats) {
                     Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
@@ -204,6 +212,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
         @Override
         public void afterConnectionClosed(WebSocketSession centerSession, CloseStatus status) throws Exception {
+            logClose("Center", centerSession, status);
             centerSessions.remove(browserSession.getId());
             if (browserSession.isOpen()) {
                 browserSession.close(status);
@@ -228,5 +237,13 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         } catch (Exception exception) {
             log.warn("Failed to send browser event session={}", browserSession.getId(), exception);
         }
+    }
+
+    private void logClose(String side, WebSocketSession session, CloseStatus status) {
+        if (CloseStatus.NORMAL.equals(status) || CloseStatus.GOING_AWAY.equals(status)) {
+            log.debug("{} websocket closed session={} status={}", side, session.getId(), status);
+            return;
+        }
+        log.warn("{} websocket closed session={} status={}", side, session.getId(), status);
     }
 }

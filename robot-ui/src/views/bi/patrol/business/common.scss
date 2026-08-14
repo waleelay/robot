@@ -142,6 +142,63 @@
   }
 }
 
+.locked-version {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
+  color: #d0dae7;
+}
+
+.field-tip,
+.parameter-description,
+.dialog-description {
+  margin-top: 6px;
+  color: #8897ab;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dialog-description {
+  margin: 0 0 16px;
+}
+
+.execution-parameter-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.execution-parameter-card {
+  padding: 12px;
+  border: 1px solid #1B2D4D;
+  background: rgba(17, 27, 42, .62);
+}
+
+.execution-parameter-card > strong {
+  display: block;
+  margin-bottom: 12px;
+  color: #fff;
+}
+
+.execution-status-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.execution-control-note {
+  color: #FF7734;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.execution-control-note.is-error {
+  color: #FF0404;
+}
+
 .template-summary,
 .summary-grid {
   display: grid;
@@ -278,6 +335,19 @@
   height: 420px;
   background: #071322;
   overflow: hidden;
+}
+
+.track-stage.has-map {
+  background: #050d18;
+}
+
+.track-legend__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
 }
 
 .track-svg {

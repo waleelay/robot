@@ -72,7 +72,7 @@ public class PanoramaTaskEventRefresher {
             if (publisher != null) {
                 current.forEach((taskId, task) -> {
                     if (!Objects.equals(state.previousTasks.get(taskId), task)) {
-                        publisher.accept(event(taskId, task));
+                        publisher.accept(event(task, task.get("taskId")));
                     }
                 });
             }
@@ -106,7 +106,7 @@ public class PanoramaTaskEventRefresher {
         return result;
     }
 
-    private String event(String taskId, Map<String, Object> task) {
+    private String event(Map<String, Object> task, Object taskId) {
         try {
             return objectMapper.writeValueAsString(Map.of(
                     "event", "panorama.task.changed",

@@ -1,4 +1,15 @@
 .DS_Store
+deploy/docker/config/nginx/html/tdt.tar.gz
+deploy/docker/config/nginx/html/tdt.tgz
+deploy/docker/config/nginx/html/tdt.zip
+deploy/docker/config/nginx/html/tdt/
+deploy/docker/tool-images/**/*.tar
+deploy/docker/tool-images/**/*.tar.gz
+deploy/docker/tool-images/**/*.tgz
+deploy/docker/tool-images/**/*.tar.xz
+deploy/docker/tool-images/**/*.txz
+deploy/docker/tool-images/**/*.tar.zst
+deploy/docker/tool-images/**/*.tzst
 target/
 node_modules/
 dist/

@@ -267,7 +267,7 @@ public class ControlServiceProperties {
     }
 
     public static class CenterStomp {
-        private boolean enabled;
+        private boolean enabled = true;
         private String websocketUrl = "ws://localhost:8867/ws/control";
         private String topic = "/topic/platform/realtime-events";
         private String accessToken;

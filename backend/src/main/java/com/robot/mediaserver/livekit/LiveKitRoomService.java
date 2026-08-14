@@ -93,7 +93,7 @@ public class LiveKitRoomService {
     }
 
     private String serverHttpUrl() {
-        String url = properties.getLivekit().getUrl();
+        String url = properties.getLivekit().getInternalUrl();
         if (url.startsWith("wss://")) {
             return "https://" + url.substring("wss://".length());
         }

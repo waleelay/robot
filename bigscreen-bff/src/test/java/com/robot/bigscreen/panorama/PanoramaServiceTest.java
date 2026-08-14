@@ -38,12 +38,14 @@ class PanoramaServiceTest {
         Map<String, Object> secondMap = Map.of("mapId", 2, "mapName", "Map Two");
         Map<String, Object> mapWithoutId = Map.of("mapName", "Map Without Id");
         List<Map<String, Object>> firstPoints = List.of(Map.of("id", 101L, "pointName", "Start"));
-        List<Map<String, Object>> firstFixedCameras = List.of(Map.of("id", 201L, "cameraName", "Fixed Camera"));
+        List<Map<String, Object>> firstFixedCameras = List.of(Map.of(
+                "id", 201L,
+                "mapId", 2077775285125144578L,
+                "cameraName", "Fixed Camera"));
         when(centerClient.enabledMaps()).thenReturn(List.of(firstMap, secondMap, mapWithoutId));
         when(centerClient.mapPoints("2077775285125144578")).thenReturn(firstPoints);
         when(centerClient.mapPoints("2")).thenReturn(List.of());
-        when(centerClient.fixedCameras("2077775285125144578")).thenReturn(firstFixedCameras);
-        when(centerClient.fixedCameras("2")).thenReturn(List.of());
+        when(centerClient.fixedCameras()).thenReturn(firstFixedCameras);
 
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
         Map<String, Object> overview = service.overview();
@@ -52,7 +54,8 @@ class PanoramaServiceTest {
         assertEquals(firstPoints, maps.get(0).get("points"));
         assertEquals(List.of(), maps.get(1).get("points"));
         assertEquals(List.of(), maps.get(2).get("points"));
-        assertEquals(List.of(), maps.get(0).get("devices"));
+        assertEquals(1, maps(maps.get(0).get("devices")).size());
+        assertEquals("201", maps(maps.get(0).get("devices")).get(0).get("robotId"));
         assertEquals(List.of(), maps.get(1).get("devices"));
         assertEquals(List.of(), maps.get(2).get("devices"));
         assertEquals(firstFixedCameras, maps.get(0).get("fixedCamares"));
@@ -62,8 +65,7 @@ class PanoramaServiceTest {
         assertFalse(firstMap.containsKey("fixedCamares"));
         verify(centerClient).mapPoints("2077775285125144578");
         verify(centerClient).mapPoints("2");
-        verify(centerClient).fixedCameras("2077775285125144578");
-        verify(centerClient).fixedCameras("2");
+        verify(centerClient, times(1)).fixedCameras();
     }
 
     @Test
@@ -376,11 +378,40 @@ class PanoramaServiceTest {
         verify(centerClient).deviceTypeOptions();
     }
 
+    @Test
+    void countsOnlyExplicitHealthFailuresAsFaults() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.devices()).thenReturn(List.of(
+                Map.of("serialNumber", "normal-001"),
+                Map.of("serialNumber", "unknown-001"),
+                Map.of("serialNumber", "fault-001")));
+        when(centerClient.realtimeStatuses(List.of("normal-001", "unknown-001", "fault-001"))).thenReturn(List.of(
+                realtimeStatusWithHealth("normal-001", "NORMAL"),
+                realtimeStatusWithHealth("unknown-001", "UNKNOWN"),
+                realtimeStatusWithHealth("fault-001", "FAULT")));
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+        List<Map<String, Object>> devices = maps(overview.get("devices"));
+
+        assertEquals(false, devices.get(0).get("fault"));
+        assertNull(devices.get(1).get("fault"));
+        assertEquals(true, devices.get(2).get("fault"));
+        assertEquals(1L, ((Map<?, ?>) overview.get("deviceStats")).get("fault"));
+    }
+
     private Map<String, Object> realtimeStatus(String serialNumber, Map<String, Object> localization) {
         return Map.of(
                 "serialNumber", serialNumber,
                 "onlineStatus", "ONLINE",
                 "status", Map.of("localization", localization));
+    }
+
+    private Map<String, Object> realtimeStatusWithHealth(String serialNumber, String healthStatus) {
+        return Map.of(
+                "serialNumber", serialNumber,
+                "onlineStatus", "ONLINE",
+                "status", Map.of("basic", Map.of("healthStatus", healthStatus)));
     }
 
     private void stubEmptyOverviewSources(PanoramaCenterClient centerClient) {

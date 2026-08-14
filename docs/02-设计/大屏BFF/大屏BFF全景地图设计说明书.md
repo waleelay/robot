@@ -140,6 +140,8 @@ BFF 不负责：
 约束与优化：
 
 - BFF 内部聚合中心端接口时应并发调用。
+- 全景聚合使用独立的有限 I/O 线程池；设备、任务、地图和告警并发查询，任务实例/路线依赖提前预取。
+- 全量固定摄像头在单次请求内复用并按 `mapId` 分组，避免按地图重复查询；地图点位在地图列表返回后立即并发预取。
 - 设备档案、设备能力、组织信息可做 1 到 5 秒短缓存。
 - 实时状态优先走 WebSocket 或事件总线，减少高频轮询。
 - 高频控制帧走 WebSocket。
@@ -848,6 +850,11 @@ MQTT Topic，而是作为 STOMP 客户端连接同事的 `eiop-control-service:/
 比较任务快照并将变化项转换为现有 `panorama.task.changed` 结构。STOMP 仅负责
 通知“任务已变化”，任务状态、`workflowInstanceId` 和生命周期结果始终以管理端
 HTTP 查询结果为准。
+
+`taskId` 始终表示任务计划 ID，`workflowInstanceId` 表示本次执行实例 ID。
+兼容旧版 Control 时，若 BFF 收到 `taskId` 为空的 `panorama.task.changed`，
+不向前端转发该残缺事件，而是重查管理端任务计划与实例，通过
+`activeWorkflowInstanceId/lastWorkflowInstanceId` 完成关联后再推送完整事件。
 
 告警变化事件示例：
 

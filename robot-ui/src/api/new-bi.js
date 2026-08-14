@@ -51,8 +51,6 @@ export function deleteReport(id) {
   })
 }
 
-
-
 // 任务相关
 const taskPre = '/api/bigscreen/business'
 // 获取任务列表 { pageNum, pageSize, status }
@@ -85,9 +83,8 @@ export function updateTask(id, data) {
 }
 export function updateTaskEnabled(id, enabled) {
   return request({
-    url: taskPre + `/tasks/plans/${id}/enabled`,
-    method: 'patch',
-    data: { enabled }
+    url: taskPre + `/tasks/plans/${id}/${enabled ? 'enable' : 'disable'}`,
+    method: 'patch'
   })
 }
 export function previewTaskConfiguration(data) {
@@ -167,23 +164,30 @@ export function getTaskRecordReplay(id) {
 }
 export function pauseTaskRecord(id, data) {
   return request({
-    url: taskPre + `/tasks/execution-records/${id}/pauses`,
+    url: taskPre + `/tasks/execution-records/${id}/pause`,
     method: 'post',
     data: data || {}
   })
 }
 export function resumeTaskRecord(id, data) {
   return request({
-    url: taskPre + `/tasks/execution-records/${id}/resumes`,
+    url: taskPre + `/tasks/execution-records/${id}/resume`,
     method: 'post',
     data: data || {}
   })
 }
 export function terminateTaskRecord(id, data) {
   return request({
-    url: taskPre + `/tasks/execution-records/${id}/terminates`,
+    url: taskPre + `/tasks/execution-records/${id}/terminate`,
     method: 'post',
     data: data || {}
+  })
+}
+export function forceTerminateTaskRecord(id, reason) {
+  return request({
+    url: taskPre + `/tasks/execution-records/${id}/force-terminate`,
+    method: 'post',
+    data: { reason }
   })
 }
 

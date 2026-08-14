@@ -9,20 +9,34 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -31,6 +45,11 @@ public class StatisticsService {
     private static final ZoneOffset CHINA_ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter FILE_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final ExecutorService IO_EXECUTOR = Executors.newFixedThreadPool(4, runnable -> {
+        Thread thread = new Thread(runnable, "statistics-io");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private final AtomicLong reportId = new AtomicLong();
     private final Map<String, ReportHistory> reportHistories = new ConcurrentSkipListMap<>();
@@ -52,7 +71,7 @@ public class StatisticsService {
     }
 
     public Map<String, Object> overview(String range, String startTime, String endTime, String deviceType, String areaId) {
-        return overview(range, startTime, endTime, deviceType, areaId, deviceTypeOptions());
+        return overview(range, startTime, endTime, deviceType, areaId, null);
     }
 
     private Map<String, Object> overview(
@@ -63,19 +82,46 @@ public class StatisticsService {
             String areaId,
             List<Map<String, Object>> deviceTypeOptions) {
         Map<String, Object> normalizedRange = normalizedRange(range, startTime, endTime);
+        LocalDateTime rangeStart = parseTime(stringValue(normalizedRange.get("startTime"), null));
+        LocalDateTime rangeEnd = parseTime(stringValue(normalizedRange.get("endTime"), null));
+        String normalizedDeviceType = blankToDefault(deviceType, "all");
+
+        CompletableFuture<List<Map<String, Object>>> optionsFuture = deviceTypeOptions == null
+                ? async(this::deviceTypeOptions)
+                : CompletableFuture.completedFuture(deviceTypeOptions);
+        CompletableFuture<List<Map<String, Object>>> devicesFuture = async(centerClient::devices);
+        CompletableFuture<List<Map<String, Object>>> tasksFuture = async(centerClient::taskWorkflowInstancesForStatistics);
+        CompletableFuture<List<Map<String, Object>>> alarmsFuture = async(() -> centerClient.alarmsForStatistics(
+                stringValue(normalizedRange.get("startTime"), null),
+                stringValue(normalizedRange.get("endTime"), null)));
+
+        List<Map<String, Object>> resolvedDeviceTypeOptions = join(optionsFuture, List.of());
+        List<Map<String, Object>> devices = join(devicesFuture, List.of());
+        Map<String, String> deviceTypesBySerial = deviceTypesBySerial(devices);
+        List<Map<String, Object>> tasks = join(tasksFuture, List.<Map<String, Object>>of()).stream()
+                .filter(task -> withinRange(taskTime(task), rangeStart, rangeEnd))
+                .filter(task -> matchesTaskDeviceType(task, normalizedDeviceType, deviceTypesBySerial))
+                .toList();
+        List<Map<String, Object>> alarms = join(alarmsFuture, List.<Map<String, Object>>of()).stream()
+                .filter(alarm -> withinRange(alarmTime(alarm), rangeStart, rangeEnd))
+                .filter(alarm -> matchesAlarmDeviceType(alarm, normalizedDeviceType, deviceTypesBySerial))
+                .toList();
+
+        Map<String, Object> taskCompletion = taskCompletion(tasks);
         return object(
                 "serverTime", now(),
                 "range", normalizedRange,
-                "deviceTypeOptions", deviceTypeOptions,
+                "deviceTypeOptions", resolvedDeviceTypeOptions,
                 "filters", object(
-                        "deviceType", blankToDefault(deviceType, "all"),
+                        "deviceType", normalizedDeviceType,
                         "areaId", areaId),
-                "kpis", emptyKpis(),
-                "equipmentRuntime", emptyEquipmentRuntime(),
-                "aiAlarmAnalysis", emptyAiAlarmAnalysis(),
-                "alarmAreaRanking", List.of(),
-                "alarmTrend", emptyAlarmTrend(),
-                "taskCompletion", emptyTaskCompletion());
+                "kpis", kpis(tasks, alarms),
+                "equipmentRuntime", equipmentRuntime(
+                        devices, tasks, normalizedDeviceType, deviceTypesBySerial, resolvedDeviceTypeOptions),
+                "aiAlarmAnalysis", aiAlarmAnalysis(alarms),
+                "alarmAreaRanking", alarmAreaRanking(alarms),
+                "alarmTrend", alarmTrend(alarms, rangeStart, rangeEnd),
+                "taskCompletion", taskCompletion);
     }
 
     public byte[] exportPdf(Map<String, Object> request) {
@@ -267,6 +313,422 @@ public class StatisticsService {
                 "type", type,
                 "startTime", normalizedStart,
                 "endTime", normalizedEnd);
+    }
+
+    private Map<String, Object> kpis(List<Map<String, Object>> tasks, List<Map<String, Object>> alarms) {
+        Map<String, Object> kpis = emptyKpis();
+        kpis.put("taskTotal", kpi(tasks.size(), null));
+        kpis.put("aiAlarmTotal", kpi(alarms.size(), null));
+        return kpis;
+    }
+
+    private Map<String, Object> equipmentRuntime(
+            List<Map<String, Object>> devices,
+            List<Map<String, Object>> tasks,
+            String deviceType,
+            Map<String, String> deviceTypesBySerial,
+            List<Map<String, Object>> deviceTypeOptions) {
+        List<Map<String, Object>> filteredDevices = devices.stream()
+                .filter(device -> matchesDeviceType(device, deviceType))
+                .toList();
+        List<String> serialNumbers = filteredDevices.stream()
+                .map(device -> firstString(device, "serialNumber", "robotId"))
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Set<String> onlineSerialNumbers = new LinkedHashSet<>();
+        for (Map<String, Object> status : centerClient.realtimeStatuses(serialNumbers)) {
+            if (isOnline(firstString(status, "onlineStatus", "status"))) {
+                String serialNumber = firstString(status, "serialNumber", "robotId");
+                if (serialNumber != null) {
+                    onlineSerialNumbers.add(serialNumber);
+                }
+            }
+        }
+
+        Long onlineRate = serialNumbers.isEmpty()
+                ? null
+                : Math.round(onlineSerialNumbers.size() * 100.0 / serialNumbers.size());
+        long completed = tasks.stream().filter(task -> "COMPLETED".equals(taskStatusGroup(task))).count();
+        Double completionRate = tasks.isEmpty() ? null : percentage(completed, tasks.size());
+        List<Map<String, Object>> runtimeItems = equipmentRuntimeItems(
+                tasks, deviceType, deviceTypesBySerial, deviceTypeOptions);
+        return object(
+                "onlineRate", onlineRate,
+                "taskCompletionRate", completionRate,
+                "unit", runtimeItems.isEmpty() ? null : "小时",
+                "items", runtimeItems);
+    }
+
+    private List<Map<String, Object>> equipmentRuntimeItems(
+            List<Map<String, Object>> tasks,
+            String selectedDeviceType,
+            Map<String, String> deviceTypesBySerial,
+            List<Map<String, Object>> deviceTypeOptions) {
+        Map<String, Long> durationByType = new LinkedHashMap<>();
+        for (Map<String, Object> task : tasks) {
+            Long durationSeconds = durationSeconds(task);
+            if (durationSeconds == null) {
+                continue;
+            }
+            Set<String> taskDeviceTypes = new LinkedHashSet<>();
+            for (Map<String, Object> summary : mapList(task.get("deviceSummaries"))) {
+                String type = firstString(summary, "deviceType", "typeCode", "type");
+                if (type == null) {
+                    String serialNumber = firstString(summary, "serialNumber", "robotId", "deviceCode");
+                    type = deviceTypesBySerial.get(serialNumber);
+                }
+                if (type != null && ("all".equalsIgnoreCase(selectedDeviceType)
+                        || selectedDeviceType.equalsIgnoreCase(type))) {
+                    taskDeviceTypes.add(type);
+                }
+            }
+            taskDeviceTypes.forEach(type -> durationByType.merge(type, durationSeconds, Long::sum));
+        }
+        Map<String, String> typeNames = new LinkedHashMap<>();
+        for (Map<String, Object> option : deviceTypeOptions) {
+            String value = firstString(option, "value");
+            String label = firstString(option, "label");
+            if (value != null && label != null) {
+                typeNames.put(value.toUpperCase(Locale.ROOT), label);
+            }
+        }
+        return durationByType.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> object(
+                        "deviceType", entry.getKey(),
+                        "deviceTypeName", typeNames.getOrDefault(entry.getKey().toUpperCase(Locale.ROOT), entry.getKey()),
+                        "runningHours", oneDecimal(entry.getValue() / 3600.0),
+                        "faultHours", null,
+                        "offlineHours", null))
+                .toList();
+    }
+
+    private Map<String, Object> aiAlarmAnalysis(List<Map<String, Object>> alarms) {
+        return object(
+                "alarmTypeRanking", rankedDistribution(alarms, alarm -> alarmTypeName(firstString(alarm, "alarmType"))),
+                "handleMethodRanking", rankedDistribution(
+                        alarms.stream().filter(alarm -> firstString(alarm, "handleResult") != null).toList(),
+                        alarm -> handleMethodName(firstString(alarm, "handleResult"))));
+    }
+
+    private List<Map<String, Object>> alarmAreaRanking(List<Map<String, Object>> alarms) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (Map<String, Object> alarm : alarms) {
+            String areaName = alarmAreaName(alarm);
+            if (areaName != null) {
+                counts.merge(areaName, 1L, Long::sum);
+            }
+        }
+        long total = counts.values().stream().mapToLong(Long::longValue).sum();
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(10)
+                .map(entry -> object(
+                        "areaId", null,
+                        "areaName", entry.getKey(),
+                        "count", entry.getValue(),
+                        "percent", percentage(entry.getValue(), total)))
+                .toList();
+    }
+
+    private Map<String, Object> alarmTrend(
+            List<Map<String, Object>> alarms,
+            LocalDateTime rangeStart,
+            LocalDateTime rangeEnd) {
+        if (rangeStart == null || rangeEnd == null || rangeEnd.isBefore(rangeStart)) {
+            return emptyAlarmTrend();
+        }
+        long days = ChronoUnit.DAYS.between(rangeStart.toLocalDate(), rangeEnd.toLocalDate()) + 1;
+        if (days <= 1) {
+            Map<String, Long> counts = new LinkedHashMap<>();
+            for (int hour = 0; hour < 24; hour++) {
+                counts.put(String.format(Locale.ROOT, "%02d:00", hour), 0L);
+            }
+            alarms.stream().map(this::alarmTime).filter(Objects::nonNull)
+                    .forEach(time -> counts.computeIfPresent(
+                            String.format(Locale.ROOT, "%02d:00", time.getHour()), (key, value) -> value + 1));
+            return trend("次", counts);
+        }
+        if (days <= 62) {
+            Map<String, Long> counts = new LinkedHashMap<>();
+            for (LocalDate date = rangeStart.toLocalDate(); !date.isAfter(rangeEnd.toLocalDate()); date = date.plusDays(1)) {
+                counts.put(date.format(DateTimeFormatter.ofPattern("MM.dd")), 0L);
+            }
+            alarms.stream().map(this::alarmTime).filter(Objects::nonNull)
+                    .forEach(time -> counts.computeIfPresent(
+                            time.format(DateTimeFormatter.ofPattern("MM.dd")), (key, value) -> value + 1));
+            return trend("次", counts);
+        }
+        Map<String, Long> counts = new LinkedHashMap<>();
+        LocalDate month = rangeStart.toLocalDate().withDayOfMonth(1);
+        LocalDate endMonth = rangeEnd.toLocalDate().withDayOfMonth(1);
+        DateTimeFormatter monthFormatter = DateTimeFormatter.ofPattern("yyyy-MM");
+        while (!month.isAfter(endMonth)) {
+            counts.put(month.format(monthFormatter), 0L);
+            month = month.plusMonths(1);
+        }
+        alarms.stream().map(this::alarmTime).filter(Objects::nonNull)
+                .forEach(time -> counts.computeIfPresent(time.format(monthFormatter), (key, value) -> value + 1));
+        return trend("次", counts);
+    }
+
+    private Map<String, Object> trend(String unit, Map<String, Long> counts) {
+        List<Map<String, Object>> points = counts.entrySet().stream()
+                .map(entry -> object("label", entry.getKey(), "count", entry.getValue()))
+                .toList();
+        return object("unit", unit, "points", points);
+    }
+
+    private Map<String, Object> taskCompletion(List<Map<String, Object>> tasks) {
+        Map<String, String> names = new LinkedHashMap<>();
+        names.put("COMPLETED", "已完成");
+        names.put("RUNNING", "执行中");
+        names.put("PENDING", "待执行");
+        names.put("INTERRUPTED", "异常中断");
+        Map<String, Long> counts = new LinkedHashMap<>();
+        names.keySet().forEach(status -> counts.put(status, 0L));
+        tasks.forEach(task -> counts.computeIfPresent(taskStatusGroup(task), (key, value) -> value + 1));
+
+        List<Map<String, Object>> items = counts.entrySet().stream()
+                .map(entry -> object(
+                        "status", entry.getKey(),
+                        "name", names.get(entry.getKey()),
+                        "count", entry.getValue(),
+                        "percent", percentage(entry.getValue(), tasks.size())))
+                .toList();
+        long completed = counts.get("COMPLETED");
+        String insight = tasks.isEmpty()
+                ? null
+                : "本周期共执行 " + tasks.size() + " 次任务，已完成 " + completed + " 次，完成率 "
+                        + percentage(completed, tasks.size()) + "%";
+        return object("items", items, "insight", insight);
+    }
+
+    private List<Map<String, Object>> rankedDistribution(
+            List<Map<String, Object>> source,
+            java.util.function.Function<Map<String, Object>, String> classifier) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        source.stream().map(classifier).filter(Objects::nonNull).forEach(name -> counts.merge(name, 1L, Long::sum));
+        long total = counts.values().stream().mapToLong(Long::longValue).sum();
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .map(entry -> object(
+                        "name", entry.getKey(),
+                        "count", entry.getValue(),
+                        "percent", percentage(entry.getValue(), total)))
+                .toList();
+    }
+
+    private Map<String, String> deviceTypesBySerial(List<Map<String, Object>> devices) {
+        Map<String, String> result = new LinkedHashMap<>();
+        for (Map<String, Object> device : devices) {
+            String serialNumber = firstString(device, "serialNumber", "robotId");
+            String type = firstString(device, "deviceType", "typeCode", "type");
+            if (serialNumber != null && type != null) {
+                result.put(serialNumber, type);
+            }
+        }
+        return result;
+    }
+
+    private boolean matchesDeviceType(Map<String, Object> device, String deviceType) {
+        return "all".equalsIgnoreCase(deviceType)
+                || deviceType.equalsIgnoreCase(firstString(device, "deviceType", "typeCode", "type"));
+    }
+
+    private boolean matchesTaskDeviceType(
+            Map<String, Object> task,
+            String deviceType,
+            Map<String, String> deviceTypesBySerial) {
+        if ("all".equalsIgnoreCase(deviceType)) {
+            return true;
+        }
+        for (Map<String, Object> summary : mapList(task.get("deviceSummaries"))) {
+            String summaryType = firstString(summary, "deviceType", "typeCode", "type");
+            String serialNumber = firstString(summary, "serialNumber", "robotId", "deviceCode");
+            if (deviceType.equalsIgnoreCase(summaryType)
+                    || deviceType.equalsIgnoreCase(deviceTypesBySerial.get(serialNumber))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesAlarmDeviceType(
+            Map<String, Object> alarm,
+            String deviceType,
+            Map<String, String> deviceTypesBySerial) {
+        if ("all".equalsIgnoreCase(deviceType)) {
+            return true;
+        }
+        String serialNumber = firstString(alarm, "serialNumber", "robotId", "deviceCode");
+        return deviceType.equalsIgnoreCase(deviceTypesBySerial.get(serialNumber));
+    }
+
+    private String taskStatusGroup(Map<String, Object> task) {
+        String status = firstString(task, "status");
+        if (status == null) {
+            return "PENDING";
+        }
+        return switch (status.toUpperCase(Locale.ROOT)) {
+            case "COMPLETED", "SUCCESS", "SUCCEEDED", "FINISHED" -> "COMPLETED";
+            case "RUNNING", "EXECUTING", "PAUSED", "SUSPENDED" -> "RUNNING";
+            case "FAILED", "ERROR", "TERMINATED", "CANCELLED", "INTERRUPTED", "TIMEOUT" -> "INTERRUPTED";
+            default -> "PENDING";
+        };
+    }
+
+    private String alarmTypeName(String alarmType) {
+        if (alarmType == null) {
+            return "未分类";
+        }
+        return switch (alarmType.toUpperCase(Locale.ROOT)) {
+            case "FIRE" -> "火灾告警";
+            case "SMOKE" -> "烟雾告警";
+            case "INTRUSION" -> "入侵告警";
+            case "TEMPERATURE" -> "温度告警";
+            default -> alarmType;
+        };
+    }
+
+    private String handleMethodName(String handleResult) {
+        if (handleResult == null) {
+            return null;
+        }
+        return switch (handleResult.toUpperCase(Locale.ROOT)) {
+            case "IMMEDIATE_DISPOSAL", "HANDLED", "CONFIRMED" -> "立即处置";
+            case "FALSE_ALARM" -> "误报";
+            default -> handleResult;
+        };
+    }
+
+    private String alarmAreaName(Map<String, Object> alarm) {
+        String direct = firstString(alarm, "areaName", "locationName", "address");
+        if (direct != null) {
+            return direct;
+        }
+        Map<String, Object> location = mapValue(alarm.get("location"));
+        String locationAddress = firstString(location, "areaName", "name", "address");
+        if (locationAddress != null) {
+            return locationAddress;
+        }
+        Map<String, Object> rawPayload = rawPayload(alarm);
+        Map<String, Object> rawLocation = mapValue(rawPayload.get("location"));
+        return firstString(rawLocation, "areaName", "name", "address");
+    }
+
+    private Map<String, Object> rawPayload(Map<String, Object> source) {
+        Object rawPayload = source.get("rawPayload");
+        if (rawPayload instanceof Map<?, ?>) {
+            return mapValue(rawPayload);
+        }
+        String text = stringValue(rawPayload, null);
+        if (text == null) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(text, new TypeReference<>() {
+            });
+        } catch (IOException ignored) {
+            return Map.of();
+        }
+    }
+
+    private LocalDateTime taskTime(Map<String, Object> task) {
+        return parseTime(firstString(task, "startedAt", "completedAt", "createdAt"));
+    }
+
+    private LocalDateTime alarmTime(Map<String, Object> alarm) {
+        return parseTime(firstString(alarm, "occurredAt", "createdAt"));
+    }
+
+    private Long durationSeconds(Map<String, Object> task) {
+        Number durationSeconds = numberValue(task.get("durationSeconds"));
+        if (durationSeconds != null) {
+            return Math.max(0L, Math.round(durationSeconds.doubleValue()));
+        }
+        LocalDateTime startedAt = parseTime(firstString(task, "startedAt"));
+        LocalDateTime completedAt = parseTime(firstString(task, "completedAt"));
+        if (startedAt == null || completedAt == null || completedAt.isBefore(startedAt)) {
+            return null;
+        }
+        return Duration.between(startedAt, completedAt).toSeconds();
+    }
+
+    private Number numberValue(Object value) {
+        if (value instanceof Number number) {
+            return number;
+        }
+        try {
+            return value == null ? null : Double.parseDouble(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private Double oneDecimal(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
+    private LocalDateTime parseTime(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(raw).withOffsetSameInstant(CHINA_ZONE).toLocalDateTime();
+        } catch (DateTimeParseException ignored) {
+            // 尝试不带时区的时间格式。
+        }
+        try {
+            return LocalDateTime.parse(raw);
+        } catch (DateTimeParseException ignored) {
+            // 尝试大屏统一时间格式。
+        }
+        try {
+            return LocalDateTime.parse(raw, DATE_TIME_FORMATTER);
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
+    }
+
+    private boolean withinRange(LocalDateTime time, LocalDateTime start, LocalDateTime end) {
+        if (time == null) {
+            return false;
+        }
+        return (start == null || !time.isBefore(start)) && (end == null || !time.isAfter(end));
+    }
+
+    private boolean isOnline(String status) {
+        return status != null && ("online".equalsIgnoreCase(status) || "在线".equals(status));
+    }
+
+    private Double percentage(long count, long total) {
+        return total == 0 ? 0.0 : Math.round(count * 1000.0 / total) / 10.0;
+    }
+
+    private <T> CompletableFuture<T> async(Supplier<T> supplier) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return CompletableFuture.supplyAsync(() -> {
+            SecurityContext previousContext = SecurityContextHolder.getContext();
+            SecurityContext context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(authentication);
+            try {
+                SecurityContextHolder.setContext(context);
+                return supplier.get();
+            } finally {
+                SecurityContextHolder.setContext(previousContext);
+            }
+        }, IO_EXECUTOR);
+    }
+
+    private <T> T join(CompletableFuture<T> future, T fallback) {
+        try {
+            T value = future.join();
+            return value == null ? fallback : value;
+        } catch (CompletionException exception) {
+            return fallback;
+        }
     }
 
     private Map<String, Object> emptyKpis() {

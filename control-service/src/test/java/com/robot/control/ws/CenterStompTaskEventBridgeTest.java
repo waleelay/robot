@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.config.ControlServiceProperties;
@@ -14,6 +15,11 @@ import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestClient;
 
 class CenterStompTaskEventBridgeTest {
+
+    @Test
+    void enablesCenterStompByDefault() {
+        assertTrue(new ControlServiceProperties().getCenterStomp().isEnabled());
+    }
 
     @Test
     void forwardsTaskInvalidationOnceAndIgnoresOtherEvents() {

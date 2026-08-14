@@ -1,9 +1,12 @@
 spring:
   application:
+    # Spring Boot 应用名称，用于日志、监控和服务标识。
     name: robot-control-service
   servlet:
     multipart:
+      # Control 文件代理接口允许的单个上传文件最大大小。
       max-file-size: ${CONTROL_FILE_UPLOAD_MAX_FILE_SIZE:20MB}
+      # Control 文件代理接口允许的 multipart 请求总大小。
       max-request-size: ${CONTROL_FILE_UPLOAD_MAX_REQUEST_SIZE:21MB}
 
 server:
@@ -32,14 +35,21 @@ control:
     # 是否启用 MQTT 状态订阅与指令下发。
     enabled: ${MQTT_ENABLED:true}
   center-stomp:
-    # 同事 Control 的 STOMP 端点。任务实时状态以 Management HTTP 查询结果为准。
-    enabled: ${CENTER_STOMP_ENABLED:false}
+    # 是否连接管理中心 STOMP 端点；任务事实仍以 Management HTTP 查询结果为准。
+    enabled: ${CENTER_STOMP_ENABLED:true}
+    # 管理中心 STOMP WebSocket 地址。
     websocket-url: ${CENTER_STOMP_WS_URL:ws://host.docker.internal:8867/ws/control}
+    # 订阅的管理中心实时事件 Topic。
     topic: ${CENTER_STOMP_TOPIC:/topic/platform/realtime-events}
+    # 直接用于 STOMP 连接的 Bearer Token；为空时可通过 token-url 获取。
     access-token: ${CENTER_STOMP_ACCESS_TOKEN:}
+    # OAuth2 客户端凭据模式 Token 地址；为空时不自动申请 Token。
     token-url: ${CENTER_STOMP_TOKEN_URL:}
+    # 向 token-url 申请访问令牌时使用的 OAuth2 Client ID。
     client-id: ${CENTER_STOMP_CLIENT_ID:}
+    # 向 token-url 申请访问令牌时使用的 OAuth2 Client Secret。
     client-secret: ${CENTER_STOMP_CLIENT_SECRET:}
+    # STOMP 连接断开后的重连等待时间，单位毫秒。
     reconnect-delay-ms: ${CENTER_STOMP_RECONNECT_DELAY_MS:5000}
   robot:
     # 机器人心跳超时时间，单位秒。

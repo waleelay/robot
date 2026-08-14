@@ -8,10 +8,13 @@ spring:
     password: ${MYSQL_PASSWORD:root}
   jpa:
     hibernate:
+      # 开发环境自动更新数据库表结构，生产环境应改用受控迁移脚本。
       ddl-auto: update
+    # 关闭 Web 请求结束前保持 JPA Session，避免在 Controller 层触发延迟加载。
     open-in-view: false
     properties:
       hibernate:
+        # 格式化 Hibernate 输出的 SQL，便于开发环境排查。
         format_sql: true
   data:
     redis:
@@ -21,6 +24,7 @@ spring:
       port: ${REDIS_PORT:6379}
     elasticsearch:
       repositories:
+        # 当前业务未使用 Spring Data Elasticsearch Repository。
         enabled: false
   elasticsearch:
     # 开发环境 Elasticsearch 访问地址。
@@ -28,4 +32,5 @@ spring:
 
 logging:
   level:
+    # Media Service 业务包在开发环境使用 DEBUG 日志级别。
     com.robot.mediaserver: debug

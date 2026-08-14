@@ -197,7 +197,7 @@
                 <div class="progress hp6 mt7" :style="{ '--percent': item.percent + '%' }"></div>
               </div>
             </div>
-            <div class="desc hp73 flx-align-center pr20 pl20">
+            <div class="w100 desc hp73 flx-align-center pr20 pl20">
               <img src="@/assets/images/new-bi/data-task.png" class="wp44 hp52 ml20" alt="" srcset="">
               <div class="ml30">{{ taskInsight }}</div>
             </div>

@@ -24,7 +24,6 @@
           <el-option label="手动执行" value="MANUAL" />
           <el-option label="计划执行" value="SCHEDULE" />
         </el-select>
-        <el-checkbox v-model="filters.includeRunning" @change="loadRows(1)">包含执行中</el-checkbox>
       </div>
       <div class="business2-actions flx-align-center">
         <div class="custom-search-div">
@@ -41,7 +40,7 @@
         </div>
         <div class="table-btns ml10">
           <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="loadRows(1)">查询</el-button>
-          <!-- <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="resetFilters">重置</el-button> -->
+          <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="resetFilters">重置</el-button>
         </div>
       </div>
     </div>
@@ -93,14 +92,6 @@
               <span class="status" :class="trackStatusType(row.trackStatus)">{{ trackStatusLabel(row.trackStatus) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="媒体绑定" width="120" align="center">
-            <template slot-scope="{ row }">
-              <el-tooltip v-if="row.mediaBindingMessage" :content="row.mediaBindingMessage" placement="top">
-                <span class="status" :class="mediaBindingTagType(row.mediaBindingStatus)">{{ mediaBindingLabel(row.mediaBindingStatus) }}</span>
-              </el-tooltip>
-              <span v-else class="status" :class="mediaBindingTagType(row.mediaBindingStatus)">{{ mediaBindingLabel(row.mediaBindingStatus) }}</span>
-            </template>
-          </el-table-column>
           <el-table-column label="开始时间" min-width="160">
             <template slot-scope="{ row }">{{ formatDateTime(row.startedAt) }}</template>
           </el-table-column>
@@ -140,14 +131,14 @@
       center
       title=""
     >
-      <template slot="footer"></template>
+      <template slot="footer" />
       <div class="flex mb20 ml72">
         <div class="custom-modal-container robot-control-container">
           <div class="box">
             <div class="top m10 flx-justify-between">
               <div class="title ml10">执行视频结果</div>
               <div class="close mr10" @click="videosVisible = false">
-                <svg-icon icon-class="close"></svg-icon>
+                <svg-icon icon-class="close" />
               </div>
             </div>
             <div class="info-content p10">
@@ -204,8 +195,7 @@ export default {
       filters: {
         keyword: '',
         status: 'all',
-        triggerType: '',
-        includeRunning: true
+        triggerType: ''
       },
       statusTabs: [
         { value: 'all', label: '全部' },
@@ -241,7 +231,7 @@ export default {
           keyword: this.filters.keyword || undefined,
           status: this.filters.status === 'all' ? undefined : this.filters.status,
           triggerType: this.filters.triggerType || undefined,
-          includeRunning: this.filters.includeRunning || undefined
+          scope: 'TERMINAL'
         }))
         this.rows = data.records || []
         this.page.pageNum = data.pageNum || this.page.pageNum
@@ -258,7 +248,7 @@ export default {
       this.loadRows(1)
     },
     resetFilters() {
-      this.filters = { keyword: '', status: 'all', triggerType: '', includeRunning: true }
+      this.filters = { keyword: '', status: 'all', triggerType: '' }
       this.loadRows(1)
     },
     openDetail(row) {
@@ -289,13 +279,14 @@ export default {
     },
     failureReason(row) {
       if (!row || row.status !== 'FAILED') return '-'
-      return row.failureReason || '执行失败'
-    },
-    mediaBindingLabel(value) {
-      return { NONE: '无视频', PENDING: '待绑定', BOUND: '已绑定', BIND_FAILED: '绑定失败' }[value] || value || '无视频'
-    },
-    mediaBindingTagType(value) {
-      return { BOUND: 'green', PENDING: 'orange', BIND_FAILED: 'red', NONE: 'info' }[value] || 'info'
+      const reason = row.failureReason || '执行失败'
+      const devices = Array.isArray(row.deviceSummaries) ? row.deviceSummaries : []
+      const names = devices.reduce((result, device) => {
+        return result.concat([device.deviceName, device.serialNumber])
+      }, [row.deviceName, row.serialNumber]).filter(Boolean)
+      const prefix = names.find(name => reason.indexOf(`${name}:`) === 0 || reason.indexOf(`${name}：`) === 0)
+      if (!prefix) return reason
+      return reason.slice(prefix.length + 1).trim() || reason
     },
     mediaTypeLabel(value) {
       return { VISIBLE: '可见光', THERMAL: '红外', OTHER: '其他' }[value] || value || '其他'
@@ -334,7 +325,8 @@ export default {
       return res || {}
     },
     showError(error) {
-      // this.$message.error((error && error.message) || '请求失败')
+      const message = error && error.response && error.response.data && error.response.data.message
+      this.$message.error(message || (error && error.message) || '请求失败')
     }
   }
 }

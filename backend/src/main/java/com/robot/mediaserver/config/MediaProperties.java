@@ -62,6 +62,7 @@ public class MediaProperties {
 
     public static class Livekit {
     private String url;
+    private String internalUrl;
     private String apiKey;
     private String apiSecret;
     private long tokenTtlSeconds = 600;
@@ -79,6 +80,14 @@ public class MediaProperties {
 
     public void setUrl(String url) {
             this.url = url;
+        }
+
+    public String getInternalUrl() {
+            return internalUrl == null || internalUrl.isBlank() ? url : internalUrl;
+        }
+
+    public void setInternalUrl(String internalUrl) {
+            this.internalUrl = internalUrl;
         }
 
     public String getApiKey() {
@@ -164,6 +173,7 @@ public class MediaProperties {
 
     public static class Minio {
     private String endpoint;
+    private String publicEndpoint;
     private String accessKey;
     private String secretKey;
     private String bucket;
@@ -175,6 +185,14 @@ public class MediaProperties {
 
     public void setEndpoint(String endpoint) {
             this.endpoint = endpoint;
+        }
+
+    public String getPublicEndpoint() {
+            return publicEndpoint == null || publicEndpoint.isBlank() ? endpoint : publicEndpoint;
+        }
+
+    public void setPublicEndpoint(String publicEndpoint) {
+            this.publicEndpoint = publicEndpoint;
         }
 
     public String getAccessKey() {
@@ -215,8 +233,6 @@ public class MediaProperties {
     private long interruptedGraceSeconds = 15;
     private long idleReleaseDelaySeconds = 60;
     private long viewerHeartbeatTimeoutSeconds = 15;
-    private int maxVideoWallStreams = 16;
-    private String maxDetailResolution = "2K";
 
     public long getTrackPublishTimeoutSeconds() {
             return trackPublishTimeoutSeconds;
@@ -248,22 +264,6 @@ public class MediaProperties {
 
     public void setViewerHeartbeatTimeoutSeconds(long viewerHeartbeatTimeoutSeconds) {
             this.viewerHeartbeatTimeoutSeconds = viewerHeartbeatTimeoutSeconds;
-        }
-
-    public int getMaxVideoWallStreams() {
-            return maxVideoWallStreams;
-        }
-
-    public void setMaxVideoWallStreams(int maxVideoWallStreams) {
-            this.maxVideoWallStreams = maxVideoWallStreams;
-        }
-
-    public String getMaxDetailResolution() {
-            return maxDetailResolution;
-        }
-
-    public void setMaxDetailResolution(String maxDetailResolution) {
-            this.maxDetailResolution = maxDetailResolution;
         }
     }
 

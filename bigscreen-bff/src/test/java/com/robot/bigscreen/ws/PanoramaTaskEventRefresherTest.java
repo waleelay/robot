@@ -48,7 +48,9 @@ class PanoramaTaskEventRefresherTest {
         assertThat(events).hasSize(2);
         JsonNode event = objectMapper.readTree(events.get(1));
         assertThat(event.path("event").asText()).isEqualTo("panorama.task.changed");
-        assertThat(event.path("data").path("taskId").asText()).isEqualTo("1");
+        assertThat(event.path("data").path("taskId").isNumber()).isTrue();
+        assertThat(event.path("data").path("taskId").asLong()).isEqualTo(1L);
+        assertThat(event.path("data").path("task").path("taskId").asLong()).isEqualTo(1L);
         assertThat(event.path("data").path("task").path("workflowInstanceId").asLong()).isEqualTo(9001L);
         assertThat(event.path("data").path("task").path("status").asText()).isEqualTo("completed");
     }

@@ -19,11 +19,8 @@
           <el-form-item label="计划名称" required>
             <el-input v-model="form.planName" placeholder="例如：园区日常巡检计划" />
           </el-form-item>
-          <el-form-item label="计划编码" required>
-            <el-input v-model="form.planCode" :disabled="Boolean(form.id)" placeholder="例如：daily_patrol" />
-          </el-form-item>
           <el-form-item label="任务编排版本" required>
-            <el-select v-model="form.workflowVersionId" filterable placeholder="选择已发布编排版本" @change="handleVersionChange">
+            <el-select v-if="!form.id" v-model="form.workflowVersionId" filterable placeholder="选择已发布编排版本" @change="handleVersionChange">
               <el-option
                 v-for="item in definitionOptions"
                 :key="item.latestPublishedVersionId"
@@ -31,12 +28,27 @@
                 :value="item.latestPublishedVersionId"
               />
             </el-select>
+            <div v-else class="locked-version">
+              <span>{{ lockedVersionLabel }}</span>
+              <span class="status info">已锁定</span>
+              <el-button
+                v-if="!isViewMode && latestVersionOption"
+                type="text"
+                @click="upgradeToLatestVersion"
+              >
+                改用最新版本 v{{ latestVersionOption.latestPublishedVersion }}
+              </el-button>
+            </div>
           </el-form-item>
           <el-form-item label="执行方式" required>
             <el-select v-model="form.executionMode">
               <el-option label="手动执行" value="MANUAL" />
               <el-option label="计划执行" value="SCHEDULE" />
             </el-select>
+          </el-form-item>
+          <el-form-item label="预计执行时长（分钟）" required>
+            <el-input-number v-model="form.expectedDurationMinutes" :min="1" :max="525600" :step="5" style="width: 100%" />
+            <div class="field-tip">到达预计时长仍未收到边缘端执行结果时，任务将按超时失败处理</div>
           </el-form-item>
           <el-form-item v-if="form.executionMode === 'SCHEDULE'" label="计划周期" required>
             <el-select v-model="form.scheduleConfig.preset">
@@ -91,6 +103,87 @@
             </el-table-column>
           </el-table>
         </template>
+
+        <section v-if="executionParameterGroups.length || targetRequirementGroups.length" class="execution-parameter-section">
+          <div class="section-heading">
+            <div>
+              <h3>执行参数</h3>
+              <p>这些参数由任务编排交给计划填写，已配置的专业参数不会在这里重复展示。</p>
+            </div>
+          </div>
+          <div class="execution-parameter-groups">
+            <section v-for="group in executionParameterGroups" :key="group.key" class="execution-parameter-card">
+              <strong>{{ group.title }}</strong>
+              <div class="form-grid">
+                <el-form-item v-for="parameter in group.parameters" :key="parameterBindingKey(parameter)" :label="parameter.label" required>
+                  <el-select
+                    v-if="parameterHasEnum(parameter)"
+                    :value="parameterValue(parameter)"
+                    clearable
+                    :placeholder="parameter.description || '选择' + parameter.label"
+                    @change="setParameterValue(parameter, $event)"
+                  >
+                    <el-option
+                      v-for="option in parameter.schema.enum"
+                      :key="String(option)"
+                      :label="parameterEnumLabel(parameter, option)"
+                      :value="option"
+                    />
+                  </el-select>
+                  <el-switch
+                    v-else-if="parameterSchemaType(parameter) === 'boolean'"
+                    :value="parameterValue(parameter) === true"
+                    @change="setParameterValue(parameter, $event)"
+                  />
+                  <el-input-number
+                    v-else-if="isNumberParameter(parameter)"
+                    :value="numberParameterValue(parameter)"
+                    :min="parameter.schema && parameter.schema.minimum"
+                    :max="parameter.schema && parameter.schema.maximum"
+                    :step="(parameter.schema && parameter.schema.multipleOf) || 1"
+                    controls-position="right"
+                    @change="setParameterValue(parameter, $event)"
+                  />
+                  <el-input
+                    v-else
+                    :value="parameterValue(parameter)"
+                    :type="parameter.schema && parameter.schema.format === 'textarea' ? 'textarea' : 'text'"
+                    :rows="parameter.schema && parameter.schema.format === 'textarea' ? 3 : undefined"
+                    :placeholder="parameter.description || '填写' + parameter.label"
+                    @input="setParameterValue(parameter, $event)"
+                  />
+                  <div v-if="parameter.description" class="parameter-description">{{ parameter.description }}</div>
+                </el-form-item>
+              </div>
+            </section>
+            <section v-for="target in targetRequirementGroups" :key="targetBindingKey(target)" class="execution-parameter-card">
+              <strong>{{ targetDisplayLabel(target) }}</strong>
+              <div class="form-grid">
+                <el-form-item label="X 坐标" required>
+                  <el-input-number
+                    :value="targetNumberValue(target, 'x')"
+                    controls-position="right"
+                    @change="setTargetValue(target, 'x', $event)"
+                  />
+                </el-form-item>
+                <el-form-item label="Y 坐标" required>
+                  <el-input-number
+                    :value="targetNumberValue(target, 'y')"
+                    controls-position="right"
+                    @change="setTargetValue(target, 'y', $event)"
+                  />
+                </el-form-item>
+                <el-form-item label="朝向">
+                  <el-input-number
+                    :value="targetNumberValue(target, 'yaw')"
+                    controls-position="right"
+                    @change="setTargetValue(target, 'yaw', $event)"
+                  />
+                </el-form-item>
+              </div>
+            </section>
+          </div>
+        </section>
 
         <div class="section-heading">
           <div>
@@ -202,6 +295,8 @@ export default {
       deviceOptions: [],
       selectedVersion: null,
       roleBindings: [],
+      actionParameterRequirements: [],
+      targetRequirements: [],
       componentRequirements: [],
       componentResolutionChecked: false,
       schedulePresetOptions: [
@@ -232,6 +327,25 @@ export default {
     },
     dependencyCount() {
       return this.selectedVersion && Array.isArray(this.selectedVersion.dependencies) ? this.selectedVersion.dependencies.length : 0
+    },
+    executionParameterGroups() {
+      return this.groupActionParameterRequirements(this.actionParameterRequirements)
+    },
+    targetRequirementGroups() {
+      return this.targetRequirements
+    },
+    latestVersionOption() {
+      const version = this.selectedVersion
+      if (!this.form.id || !version || !version.workflowDefinitionId) return null
+      return this.definitionOptions.find(item => {
+        return String(item.id) === String(version.workflowDefinitionId) &&
+          Number(item.latestPublishedVersion) > Number(version.versionNo)
+      }) || null
+    },
+    lockedVersionLabel() {
+      const version = this.selectedVersion
+      if (!version) return '未选择发布版本'
+      return `${version.workflowName || '任务编排'} · v${version.versionNo || '-'}`
     }
   },
   watch: {
@@ -264,6 +378,8 @@ export default {
       this.form = this.defaultForm()
       this.selectedVersion = null
       this.roleBindings = []
+      this.actionParameterRequirements = []
+      this.targetRequirements = []
       this.componentRequirements = []
       this.componentResolutionChecked = false
       if (!this.id) return
@@ -272,11 +388,13 @@ export default {
         const detail = this.unwrap(await getTaskDetail(this.id))
         this.form = Object.assign(this.defaultForm(), {
           id: detail.id,
-          planCode: detail.planCode,
           planName: detail.planName,
           workflowVersionId: detail.workflowVersionId,
           componentBindings: this.normalizeComponentBindings(detail.componentBindings || []),
+          actionParameterBindings: detail.actionParameterBindings || [],
+          targetBindings: detail.targetBindings || [],
           executionMode: detail.executionMode || 'MANUAL',
+          expectedDurationMinutes: Math.round((detail.expectedDurationSeconds || 3600) / 60),
           scheduleConfig: this.normalizeScheduleConfig(detail.scheduleConfig),
           eventTriggerConfig: Object.assign({ eventType: 'ALARM', eventSubtype: '' }, detail.eventTriggerConfig || {}),
           offlinePolicy: detail.offlinePolicy || 'CONTINUE',
@@ -300,6 +418,7 @@ export default {
           })
         }
         this.roleBindings = await this.buildRoleBindings(this.selectedVersion, detail.roleBindings || [])
+        await this.loadActionParameterRequirements(this.selectedVersion)
       } catch (error) {
         this.showError(error)
       } finally {
@@ -307,14 +426,66 @@ export default {
       }
     },
     async handleVersionChange(versionId, savedBindings) {
+      this.form.workflowVersionId = versionId
       if (savedBindings === undefined) {
         this.form.componentBindings = []
+        this.form.actionParameterBindings = []
+        this.form.targetBindings = []
         this.componentRequirements = []
         this.componentResolutionChecked = false
       }
       const definition = this.definitionOptions.find(item => item.latestPublishedVersionId === versionId)
       this.selectedVersion = definition ? this.unwrap(await getTaskWorkflowVersionDetail(definition.id, versionId)) : null
       this.roleBindings = await this.buildRoleBindings(this.selectedVersion, savedBindings)
+      await this.loadActionParameterRequirements(this.selectedVersion)
+    },
+    async upgradeToLatestVersion() {
+      const option = this.latestVersionOption
+      if (!option) return
+      try {
+        await this.$confirm(
+          `改用“${option.workflowName} · v${option.latestPublishedVersion}”后，设备角色、组件选择和执行参数会清空，需要重新配置。确定继续吗？`,
+          '改用最新版本',
+          { confirmButtonText: '改用', cancelButtonText: '取消', type: 'warning' }
+        )
+        this.roleBindings = []
+        await this.handleVersionChange(option.latestPublishedVersionId)
+        this.$message.success('已切换到最新版本，请重新配置计划')
+      } catch (error) {
+        if (error !== 'cancel') this.showError(error)
+      }
+    },
+    async loadActionParameterRequirements(version) {
+      if (!version) {
+        this.actionParameterRequirements = []
+        this.targetRequirements = []
+        this.form.actionParameterBindings = []
+        this.form.targetBindings = []
+        return
+      }
+      const documents = [version]
+      const dependencies = version.dependencies || []
+      for (const dependency of dependencies) {
+        try {
+          documents.push(this.unwrap(await getTaskWorkflowVersionDetail(dependency.workflowDefinitionId, dependency.workflowVersionId)))
+        } catch (error) {
+          this.showError(error)
+        }
+      }
+      const requirements = documents.reduce((result, workflowVersion) => {
+        return result.concat(this.collectActionParameterRequirements(workflowVersion))
+      }, [])
+      const targets = documents.reduce((result, workflowVersion) => {
+        return result.concat(this.collectTargetRequirements(workflowVersion))
+      }, [])
+      const requirementKeys = requirements.map(item => this.parameterBindingKey(item))
+      const targetKeys = targets.map(item => this.targetBindingKey(item))
+      this.actionParameterRequirements = requirements
+      this.targetRequirements = targets
+      this.form.actionParameterBindings = (this.form.actionParameterBindings || [])
+        .filter(binding => requirementKeys.indexOf(this.parameterBindingKey(binding)) !== -1)
+      this.form.targetBindings = (this.form.targetBindings || [])
+        .filter(binding => targetKeys.indexOf(this.targetBindingKey(binding)) !== -1)
     },
     async buildRoleBindings(version, savedBindings) {
       if (!version) return []
@@ -381,23 +552,35 @@ export default {
     },
     validateForm() {
       if (!this.form.planName) return '请输入计划名称'
-      if (!this.form.planCode) return '请输入计划编码'
       if (!this.form.workflowVersionId) return '请选择任务编排版本'
+      if (!this.form.expectedDurationMinutes || this.form.expectedDurationMinutes < 1 || this.form.expectedDurationMinutes > 525600) {
+        return '请填写预计执行时长（1～525600 分钟）'
+      }
       if (!this.roleBindings.length) return '任务编排缺少设备角色'
       const missing = this.roleBindings.find(role => !role.deviceId)
       if (missing) return `请为 ${missing.roleName || missing.roleKey} 选择执行设备`
-      if (this.form.executionMode === 'SCHEDULE' && this.form.scheduleConfig.preset === 'CUSTOM' && !this.form.scheduleConfig.cron) {
-        return '请输入 Cron 表达式'
+      if (this.form.executionMode === 'SCHEDULE') {
+        if (!this.form.scheduleConfig.preset) return '请选择计划周期'
+        if (this.showTimeOfDay && !this.form.scheduleConfig.timeOfDay) return '请选择执行时间'
+        if (this.form.scheduleConfig.preset === 'WEEKLY' && !this.form.scheduleConfig.weekday) return '请选择星期'
+        if (this.form.scheduleConfig.preset === 'CUSTOM' && !this.form.scheduleConfig.cron) return '请输入 Cron 表达式'
+        const missingParameter = this.actionParameterRequirements.find(item => !this.hasParameterValue(this.parameterValue(item)))
+        if (missingParameter) return `计划执行需要填写${this.parameterDisplayLabel(missingParameter)}`
+        const missingTarget = this.targetRequirements.find(item => {
+          const value = this.targetValue(item)
+          return !this.hasParameterValue(value.x) || !this.hasParameterValue(value.y)
+        })
+        if (missingTarget) return `计划执行需要填写${this.targetDisplayLabel(missingTarget)}的 X 坐标和 Y 坐标`
       }
       return ''
     },
     buildPayload() {
       return {
         id: this.form.id,
-        planCode: this.form.planCode,
         planName: this.form.planName,
         workflowVersionId: this.form.workflowVersionId,
         executionMode: this.form.executionMode,
+        expectedDurationSeconds: (this.form.expectedDurationMinutes || 0) * 60,
         scheduleConfig: this.form.executionMode === 'SCHEDULE' ? this.normalizedScheduleConfig() : {},
         eventTriggerConfig: {},
         roleBindings: this.roleBindings.map(role => ({
@@ -411,10 +594,153 @@ export default {
           recoveryPolicy: 'FAIL_NODE'
         })),
         componentBindings: this.form.componentBindings || [],
+        actionParameterBindings: this.form.actionParameterBindings || [],
+        targetBindings: this.form.targetBindings || [],
         offlinePolicy: this.form.offlinePolicy,
         enabled: this.form.enabled,
         remark: this.form.remark
       }
+    },
+    collectActionParameterRequirements(workflowVersion) {
+      const document = this.parseDefinition(workflowVersion && workflowVersion.definitionJson)
+      const requirements = []
+      ;(document.nodes || []).forEach(node => {
+        const config = node.config || {}
+        this.collectActionParameterRequirementsForPhase(requirements, workflowVersion, node, 'SINGLE', config.actions)
+        this.collectActionParameterRequirementsForPhase(requirements, workflowVersion, node, 'MOVING', config.transitActions)
+        this.collectActionParameterRequirementsForPhase(requirements, workflowVersion, node, 'ARRIVAL', config.arrivalActions)
+      })
+      return requirements
+    },
+    collectTargetRequirements(workflowVersion) {
+      const document = this.parseDefinition(workflowVersion && workflowVersion.definitionJson)
+      return (document.nodes || [])
+        .filter(node => node.type === 'DEVICE_TASK' && node.config && node.config.targetType === 'PLAN_COORDINATE')
+        .map(node => ({
+          workflowVersionId: workflowVersion.id,
+          workflowName: workflowVersion.workflowName || '任务流程',
+          workflowNodeId: node.id,
+          workflowNodeName: node.name || '设备任务'
+        }))
+    },
+    collectActionParameterRequirementsForPhase(requirements, workflowVersion, node, phase, actions) {
+      if (!Array.isArray(actions)) return
+      actions.forEach((action, index) => {
+        const properties = action && action.paramsSchema && action.paramsSchema.properties ? action.paramsSchema.properties : {}
+        const parameterNames = Array.isArray(action && action.planParameterNames) ? action.planParameterNames : []
+        parameterNames.forEach(parameterName => {
+          const schema = properties[parameterName]
+          if (!schema) return
+          requirements.push({
+            workflowVersionId: workflowVersion.id,
+            workflowName: workflowVersion.workflowName || '任务流程',
+            workflowNodeId: node.id,
+            workflowNodeName: node.name || '执行阶段',
+            phase,
+            actionIndex: index + 1,
+            actionName: action.actionName || action.actionCode || '业务动作',
+            parameterName,
+            label: schema.title || schema.label || parameterName,
+            description: schema.description || '',
+            schema
+          })
+        })
+      })
+    },
+    groupActionParameterRequirements(requirements) {
+      const groups = {}
+      ;(requirements || []).forEach(parameter => {
+        const title = [parameter.workflowName, parameter.workflowNodeName, parameter.actionName].filter(Boolean).join(' / ')
+        const key = [parameter.workflowVersionId, parameter.workflowNodeId, parameter.phase, parameter.actionIndex].join('|')
+        if (!groups[key]) groups[key] = { key, title, parameters: [] }
+        groups[key].parameters.push(parameter)
+      })
+      return Object.keys(groups).map(key => groups[key])
+    },
+    parameterBindingKey(parameter) {
+      return [
+        parameter.workflowVersionId,
+        parameter.workflowNodeId,
+        parameter.phase,
+        parameter.actionIndex,
+        parameter.parameterName
+      ].join('|')
+    },
+    targetBindingKey(target) {
+      return [target.workflowVersionId, target.workflowNodeId].join('|')
+    },
+    targetDisplayLabel(target) {
+      return [target.workflowName, target.workflowNodeName, '目标坐标'].filter(Boolean).join(' / ')
+    },
+    targetValue(target) {
+      return (this.form.targetBindings || []).find(item => this.targetBindingKey(item) === this.targetBindingKey(target)) || {}
+    },
+    targetNumberValue(target, field) {
+      const value = this.targetValue(target)[field]
+      return value === '' || value == null ? undefined : Number(value)
+    },
+    setTargetValue(target, field, value) {
+      const key = this.targetBindingKey(target)
+      const list = this.form.targetBindings || []
+      const index = list.findIndex(item => this.targetBindingKey(item) === key)
+      const binding = Object.assign({}, this.targetValue(target), {
+        workflowVersionId: target.workflowVersionId,
+        workflowNodeId: target.workflowNodeId,
+        [field]: value
+      })
+      if (index < 0) {
+        this.form.targetBindings = list.concat(binding)
+      } else {
+        this.$set(this.form.targetBindings, index, binding)
+      }
+    },
+    parameterSchemaType(parameter) {
+      return parameter && parameter.schema && parameter.schema.type
+    },
+    parameterHasEnum(parameter) {
+      return Boolean(parameter && parameter.schema && Array.isArray(parameter.schema.enum))
+    },
+    isNumberParameter(parameter) {
+      return ['number', 'integer'].indexOf(this.parameterSchemaType(parameter)) !== -1
+    },
+    parameterValue(parameter) {
+      const binding = (this.form.actionParameterBindings || [])
+        .find(item => this.parameterBindingKey(item) === this.parameterBindingKey(parameter))
+      return binding && binding.value !== undefined ? binding.value : ''
+    },
+    numberParameterValue(parameter) {
+      const value = this.parameterValue(parameter)
+      return value === '' || value == null ? undefined : Number(value)
+    },
+    setParameterValue(parameter, value) {
+      const key = this.parameterBindingKey(parameter)
+      const list = this.form.actionParameterBindings || []
+      const index = list.findIndex(item => this.parameterBindingKey(item) === key)
+      const binding = {
+        workflowVersionId: parameter.workflowVersionId,
+        workflowNodeId: parameter.workflowNodeId,
+        phase: parameter.phase,
+        actionIndex: parameter.actionIndex,
+        parameterName: parameter.parameterName,
+        value
+      }
+      if (index < 0) {
+        this.form.actionParameterBindings = list.concat(binding)
+      } else {
+        this.$set(this.form.actionParameterBindings, index, binding)
+      }
+    },
+    parameterEnumLabel(parameter, option) {
+      const enumValues = parameter && parameter.schema && Array.isArray(parameter.schema.enum) ? parameter.schema.enum : []
+      const index = enumValues.indexOf(option)
+      const names = parameter && parameter.schema && Array.isArray(parameter.schema.enumNames) ? parameter.schema.enumNames : []
+      return names[index] || String(option)
+    },
+    parameterDisplayLabel(parameter) {
+      return [parameter.workflowNodeName, parameter.actionName, parameter.label].filter(Boolean).join(' / ')
+    },
+    hasParameterValue(value) {
+      return value != null && (!(typeof value === 'string') || value.trim() !== '')
     },
     normalizedScheduleConfig() {
       const config = this.normalizeScheduleConfig(this.form.scheduleConfig)
@@ -509,12 +835,14 @@ export default {
     defaultForm() {
       return {
         id: null,
-        planCode: '',
         planName: '',
         workflowVersionId: null,
         componentBindings: [],
+        actionParameterBindings: [],
+        targetBindings: [],
         offlinePolicy: 'CONTINUE',
         executionMode: 'MANUAL',
+        expectedDurationMinutes: 60,
         scheduleConfig: { preset: 'HOURLY', cron: '0 0 * * * ?', timezone: 'Asia/Shanghai', timeOfDay: '08:00', weekday: 'MON' },
         eventTriggerConfig: { eventType: 'ALARM', eventSubtype: '' },
         enabled: true,

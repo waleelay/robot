@@ -3,9 +3,11 @@ package com.robot.bigscreen.panorama;
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.IntFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
@@ -112,6 +114,16 @@ public class PanoramaCenterClient {
         return records(uri);
     }
 
+    public List<Map<String, Object>> taskWorkflowInstancesForStatistics() {
+        int pageSize = 100;
+        return pagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances")
+                .queryParam("pageNum", pageNum)
+                .queryParam("pageSize", pageSize)
+                .queryParam("scope", "ALL")
+                .build(true)
+                .toUri(), pageSize);
+    }
+
     public Optional<Map<String, Object>> taskWorkflowInstance(String workflowInstanceId) {
         if (workflowInstanceId == null || workflowInstanceId.isBlank()) {
             return Optional.empty();
@@ -206,6 +218,22 @@ public class PanoramaCenterClient {
         return records(uri);
     }
 
+    public List<Map<String, Object>> alarmsForStatistics(String occurredFrom, String occurredTo) {
+        int pageSize = 100;
+        return pagedRecords(pageNum -> {
+            UriComponentsBuilder builder = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms")
+                    .queryParam("pageNum", pageNum)
+                    .queryParam("pageSize", pageSize);
+            if (occurredFrom != null && !occurredFrom.isBlank()) {
+                builder.queryParam("occurredFrom", occurredFrom.replace(' ', 'T'));
+            }
+            if (occurredTo != null && !occurredTo.isBlank()) {
+                builder.queryParam("occurredTo", occurredTo.replace(' ', 'T'));
+            }
+            return builder.build(true).toUri();
+        }, pageSize);
+    }
+
     public boolean handleAlarm(String alarmId, String handleResult) {
         if (alarmId == null || alarmId.isBlank() || handleResult == null || handleResult.isBlank()) {
             return false;
@@ -282,6 +310,18 @@ public class PanoramaCenterClient {
             log.warn("Failed to request panorama center uri={} elapsedMs={}", uri, elapsedMillis(startNanos), exception);
             return Optional.empty();
         }
+    }
+
+    private List<Map<String, Object>> pagedRecords(IntFunction<URI> uriFactory, int pageSize) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int pageNum = 1; pageNum <= 1000; pageNum++) {
+            List<Map<String, Object>> page = records(uriFactory.apply(pageNum));
+            result.addAll(page);
+            if (page.size() < pageSize) {
+                break;
+            }
+        }
+        return result;
     }
 
     private void logSlowRequest(URI uri, long startNanos) {

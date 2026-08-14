@@ -19,7 +19,7 @@ mvn -q -DskipTests package
 mvn spring-boot:run -Dspring-boot.run.arguments=--control.mqtt.enabled=false
 ```
 
-运行时需要可访问 Media Service；控制画像、设备动作和固定摄像头还依赖 Management Service。启用 MQTT 时需要 EMQX；任务失效通知的上游 STOMP 连接默认关闭。
+运行时需要可访问 Media Service；控制画像、设备动作和固定摄像头还依赖 Management Service。启用 MQTT 时需要 EMQX；任务失效通知的上游 STOMP 连接默认启用，可通过 `CENTER_STOMP_ENABLED=false` 显式关闭。
 
 ## 2. 代码结构
 

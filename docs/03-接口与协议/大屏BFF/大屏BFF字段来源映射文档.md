@@ -52,7 +52,7 @@ GET /api/bigscreen/panorama/overview
 | `gpsDevices` | 具备 GPS 经纬度的设备列表 | BFF 筛选 | 从 `devices[]` 筛选经度 `[-180, 180]`、纬度 `[-90, 90]` 且均为有限数值的设备；对象结构同 `devices[]` |
 | `deviceStats.total` | 设备总数 | BFF 计算 | `devices.size()` |
 | `deviceStats.online` | 在线设备数 | BFF 计算 | 统计 `devices[].status == online` |
-| `deviceStats.fault` | 故障设备数 | BFF 计算 | 统计 `devices[].fault == true` |
+| `deviceStats.fault` | 故障设备数 | BFF 计算 | 统计 `devices[].fault == true`；没有明确故障上报时为 `0` |
 | `deviceStats.offline` | 离线设备数 | BFF 计算 | 统计 `devices[].status == offline` |
 | `deviceTypeStats[]` | 按机器人整机类型统计 | BFF 计算 | 按 `devices[].typeCode` 分组，`type/name` 与 `devices[].typeCode/type` 保持一致，并计算 `count/fault/offline`；整机类型为空的设备不参与分类统计，固定摄像头按 `FIXED_CAMERA/固定摄像头` 统计 |
 | `patrolOverview.durationToday` | 今日巡逻时长，单位小时 | BFF 计算 | 今日任务实例 `durationSeconds`；没有时用 `startedAt/completedAt` 计算 |
@@ -85,7 +85,7 @@ GET /api/bigscreen/panorama/overview
 | `cameras` | 相机展示集合 | BFF 拼装 | 见 3.4；当前未对接权威媒体/相机接口 |
 | `mountedDevices` | 上装设备/组件集合 | 管理端 + BFF 组装 | 见 3.3 |
 | `stateSeq` | 实时状态序号 | 控制端 | `DeviceRealtimeStatus.stateSeq`；无则 `null` |
-| `fault` | 是否故障 | 控制端 + BFF 计算 | `status.basic.healthStatus != NORMAL` |
+| `fault` | 是否故障 | 控制端 + BFF 计算 | `status.basic.healthStatus` 明确为 `ERROR`、`FAULT`、`异常`或`故障`时为 `true`，`NORMAL` 为 `false`，缺失或未知值为 `null` |
 | `alarmLevel` | 设备告警等级 | 控制端 + BFF 转换 | `status.basic.alarmStatus` 转 `HIGH/MEDIUM/LOW`；正常为空 |
 | `controlMode` | 控制模式 | 控制端 | `status.control.controlMode` |
 | `mountedDeviceCount` | 上装设备数量 | BFF 计算 | `DeviceDetailResponse.components.size()`；未返回组件时为 `null` |
@@ -350,7 +350,7 @@ PATCH /api/v1/management/alarms/{alarmId}/handled
 GET /api/bigscreen/statistics/overview
 ```
 
-当前统计接口没有对接管理端统计数据。
+当前统计接口由 BFF 基于管理端设备、实时状态、任务实例和告警明细聚合计算。
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
@@ -360,25 +360,25 @@ GET /api/bigscreen/statistics/overview
 | `range.endTime` | 统计结束时间 | BFF 生成/回显 | 同上 |
 | `filters.deviceType` | 设备类型筛选 | BFF 回显 | 查询参数 `deviceType`，默认 `all` |
 | `filters.areaId` | 区域筛选 | BFF 回显 | 查询参数 `areaId` |
-| `kpis.taskTotal.value` | 任务执行总数 | 未对接 | 当前 `null` |
+| `kpis.taskTotal.value` | 任务执行总数 | BFF 计算 | 统计时间内任务实例数 |
 | `kpis.taskTotal.compareRate` | 任务总数环比 | 未对接 | 当前 `null` |
 | `kpis.patrolMileage.value` | 巡逻总里程 | 未对接 | 当前 `null` |
 | `kpis.patrolMileage.compareRate` | 巡逻里程环比 | 未对接 | 当前 `null` |
-| `kpis.aiAlarmTotal.value` | AI 告警总数 | 未对接 | 当前 `null` |
+| `kpis.aiAlarmTotal.value` | AI 告警总数 | BFF 计算 | 统计时间内管理端告警明细数 |
 | `kpis.aiAlarmTotal.compareRate` | AI 告警环比 | 未对接 | 当前 `null` |
 | `kpis.autoHandleSuccessRate.value` | 自动处置成功率 | 未对接 | 当前 `null` |
 | `kpis.autoHandleSuccessRate.compareRate` | 自动处置成功率环比 | 未对接 | 当前 `null` |
-| `equipmentRuntime.onlineRate` | 装备在线率 | 未对接 | 当前 `null` |
-| `equipmentRuntime.taskCompletionRate` | 装备任务完成率 | 未对接 | 当前 `null` |
-| `equipmentRuntime.unit` | 装备运行统计单位 | 未对接 | 当前 `null` |
-| `equipmentRuntime.items` | 装备运行时长明细 | 未对接 | 当前 `[]` |
-| `aiAlarmAnalysis.alarmTypeRanking` | AI 告警类型排行 | 未对接 | 当前 `[]` |
-| `aiAlarmAnalysis.handleMethodRanking` | 告警处理方式排行 | 未对接 | 当前 `[]` |
-| `alarmAreaRanking` | 告警高发区域排行 | 未对接 | 当前 `[]` |
-| `alarmTrend.unit` | 告警趋势单位 | 未对接 | 当前 `null` |
-| `alarmTrend.points` | 告警趋势点 | 未对接 | 当前 `[]` |
-| `taskCompletion.items` | 任务完成情况明细 | 未对接 | 当前 `[]` |
-| `taskCompletion.insight` | 任务完成统计结论 | 未对接 | 当前 `null` |
+| `equipmentRuntime.onlineRate` | 装备在线率 | BFF 计算 | 当前在线设备数 / 管理端设备数 |
+| `equipmentRuntime.taskCompletionRate` | 装备任务完成率 | BFF 计算 | 已完成任务数 / 任务总数 |
+| `equipmentRuntime.unit` | 装备运行统计单位 | BFF 生成 | 有任务时长时为“小时” |
+| `equipmentRuntime.items` | 装备运行时长明细 | BFF 计算 | 按设备类型累计任务实例时长；故障/离线时长仍为 `null` |
+| `aiAlarmAnalysis.alarmTypeRanking` | AI 告警类型排行 | BFF 计算 | 按 `alarmType` 分组 |
+| `aiAlarmAnalysis.handleMethodRanking` | 告警处理方式排行 | BFF 计算 | 按 `handleResult` 分组 |
+| `alarmAreaRanking` | 告警高发区域排行 | BFF 计算 | 按告警位置名称分组，`areaId` 仍为 `null` |
+| `alarmTrend.unit` | 告警趋势单位 | BFF 生成 | 当前为“次” |
+| `alarmTrend.points` | 告警趋势点 | BFF 计算 | 按时间范围分时/日/月聚合 |
+| `taskCompletion.items` | 任务完成情况明细 | BFF 计算 | 按已完成/执行中/待执行/异常中断归类 |
+| `taskCompletion.insight` | 任务完成统计结论 | BFF 生成 | 任务总数、完成数和完成率文案 |
 
 ## 10. 统计报告接口
 

@@ -77,6 +77,12 @@ public class PanoramaWebSocketEventAdapter {
             return messages;
         }
 
+        // 旧版 Control 直接转发边缘任务进度时无法得到任务计划 ID。残缺事件不下发给前端，
+        // 由 BigscreenWebSocketBridgeHandler 触发管理端快照刷新后生成完整任务事件。
+        if (isUnresolvedPanoramaTask(event, data)) {
+            return List.of();
+        }
+
         if (ROBOT_STATE_EVENT.equals(event)) {
             appendRobotStateEvents(messages, root, data);
         } else if (TASK_EVENTS.contains(event)) {
@@ -89,7 +95,23 @@ public class PanoramaWebSocketEventAdapter {
 
     public boolean isTaskInvalidation(String centerPayload) {
         JsonNode root = readTree(centerPayload);
-        return root != null && MANAGEMENT_TASK_INVALIDATED.equals(text(root, "event"));
+        if (root == null) {
+            return false;
+        }
+        String event = text(root, "event");
+        return MANAGEMENT_TASK_INVALIDATED.equals(event)
+                || isUnresolvedPanoramaTask(event, root.path("data"));
+    }
+
+    private boolean isUnresolvedPanoramaTask(String event, JsonNode data) {
+        if (!PANORAMA_TASK_CHANGED.equals(event) || data == null || !data.isObject()) {
+            return false;
+        }
+        if (hasAny(data, "taskId")) {
+            return false;
+        }
+        JsonNode task = data.path("task");
+        return !task.isObject() || !hasAny(task, "taskId");
     }
 
     private void appendRobotStateEvents(List<String> messages, JsonNode root, JsonNode data) {

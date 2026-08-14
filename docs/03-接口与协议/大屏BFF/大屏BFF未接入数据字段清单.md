@@ -158,32 +158,22 @@ DELETE /api/bigscreen/statistics/reports/{id}
 
 ### 3.1 `/statistics/overview`
 
-当前统计总览未接入中心端统计来源，除 `serverTime`、`range`、`filters` 外，其余业务统计字段均不是从中心端真实查询得到。
+当前统计总览已基于管理端设备、实时状态、任务实例和告警明细完成首批真实统计。下表仅保留尚未接入的字段。
 
 | 字段 | 当前处理 | 说明 |
 |---|---|---|
 | `serverTime` | BFF 生成 | 当前 BFF 时间 |
 | `range` | BFF 生成/回显 | 根据查询参数生成统计时间范围 |
 | `filters` | BFF 回显 | 回显 `deviceType/areaId` |
-| `kpis.taskTotal.value` | 缺少真实来源 | 当前返回 `null` |
 | `kpis.taskTotal.compareRate` | 缺少真实来源 | 当前返回 `null` |
 | `kpis.patrolMileage.value` | 缺少真实来源 | 当前返回 `null` |
 | `kpis.patrolMileage.compareRate` | 缺少真实来源 | 当前返回 `null` |
-| `kpis.aiAlarmTotal.value` | 缺少真实来源 | 当前返回 `null` |
 | `kpis.aiAlarmTotal.compareRate` | 缺少真实来源 | 当前返回 `null` |
 | `kpis.autoHandleSuccessRate.value` | 缺少真实来源 | 当前返回 `null` |
 | `kpis.autoHandleSuccessRate.compareRate` | 缺少真实来源 | 当前返回 `null` |
-| `equipmentRuntime.onlineRate` | 缺少真实来源 | 当前返回 `null` |
-| `equipmentRuntime.taskCompletionRate` | 缺少真实来源 | 当前返回 `null` |
-| `equipmentRuntime.unit` | 缺少真实来源 | 当前返回 `null` |
-| `equipmentRuntime.items` | 缺少真实来源 | 当前返回 `[]` |
-| `aiAlarmAnalysis.alarmTypeRanking` | 缺少真实来源 | 当前返回 `[]` |
-| `aiAlarmAnalysis.handleMethodRanking` | 缺少真实来源 | 当前返回 `[]` |
-| `alarmAreaRanking` | 缺少真实来源 | 当前返回 `[]` |
-| `alarmTrend.unit` | 缺少真实来源 | 当前返回 `null` |
-| `alarmTrend.points` | 缺少真实来源 | 当前返回 `[]` |
-| `taskCompletion.items` | 缺少真实来源 | 当前返回 `[]` |
-| `taskCompletion.insight` | 缺少真实来源 | 当前返回 `null` |
+| `equipmentRuntime.items[].faultHours` | 缺少设备故障历史时长 | 当前返回 `null` |
+| `equipmentRuntime.items[].offlineHours` | 缺少设备离线历史时长 | 当前返回 `null` |
+| `alarmAreaRanking[].areaId` | 告警明细缺少稳定区域 ID | 当前返回 `null` |
 
 ### 3.2 报告接口
 

@@ -387,8 +387,10 @@ sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/m
 ```text
 将 host.docker.internal 替换成 internal-ip
 设置 LIVEKIT_URL=ws://external-ip:7880
+设置 LIVEKIT_INTERNAL_URL=ws://livekit-server:7880
 设置 LIVEKIT_NODE_IP=external-ip
-设置 MINIO_ENDPOINT=http://external-ip:9000
+设置 MINIO_ENDPOINT=http://internal-ip:9000
+设置 MINIO_PUBLIC_ENDPOINT=http://external-ip:9000
 设置 NGINX_TLS_HOST=external-ip
 追加 https://external-ip:4443 到 BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS
 ```
@@ -396,10 +398,19 @@ sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/m
 外部中间件不在本机时，继续按实际情况修改：
 
 ```bash
-grep --color=never -nE '^(MYSQL_URL|MYSQL_USERNAME|MYSQL_PASSWORD|REDIS_HOST|REDIS_PORT|MINIO_ENDPOINT|MQTT_BROKER_URL|ELASTICSEARCH_URIS|CENTER_MANAGE_BASE_URL)=' .env
+grep --color=never -nE '^(MYSQL_URL|MYSQL_USERNAME|MYSQL_PASSWORD|REDIS_HOST|REDIS_PORT|LIVEKIT_URL|LIVEKIT_INTERNAL_URL|MINIO_ENDPOINT|MINIO_PUBLIC_ENDPOINT|MQTT_BROKER_URL|ELASTICSEARCH_URIS|CENTER_MANAGE_BASE_URL)=' .env
 ```
 
-`MINIO_ENDPOINT` 会同时用于媒体服务访问 MinIO 和生成分片预签名 `uploadUrl`。机器人跨主机或公网直传时，必须配置为机器人能够访问的外部 IP 或域名，例如 `http://175.155.35.79:9000`，并确认防火墙、安全组和 MinIO 监听地址已开放该端口。
+`LIVEKIT_INTERNAL_URL` 供媒体服务调用 LiveKit Room/Egress API，bridge 模式应使用 `ws://livekit-server:7880`；`LIVEKIT_URL` 会返回给浏览器和机器人，应使用外部可访问的公网 IP 或域名。两者分离后，服务器不需要通过自身公网 IP 回连 LiveKit。
+
+`MINIO_ENDPOINT` 供媒体服务、HLS 和 Egress 等服务端程序连接 MinIO，应配置为服务器内部可访问地址。`MINIO_PUBLIC_ENDPOINT` 只用于生成预签名上传/下载 URL，应配置为浏览器或机器人能够访问的公网 IP 或域名。例如服务器内网 IP 为 `192.168.124.23`、公网 IP 为 `211.137.109.150`，应配置：
+
+```env
+MINIO_ENDPOINT=http://192.168.124.23:9000
+MINIO_PUBLIC_ENDPOINT=http://211.137.109.150:9000
+```
+
+这样服务器不需要通过自身公网 IP 访问 MinIO，而外部客户端收到的预签名 URL 仍使用公网 IP。还需确认公网端口映射、防火墙、安全组和 MinIO 监听地址允许访问 `9000`。
 
 修改后需要重建媒体服务容器使环境变量生效：
 
