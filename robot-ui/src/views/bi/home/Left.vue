@@ -283,6 +283,9 @@ export default {
       this.selectVisible = false
       this.$emit('patrol-select-change', false)
     },
+    patrolConsumerId(index) {
+      return `home-patrol-${index}`
+    },
     async clearSlot(index) {
       const slot = this.videoSlots[index]
       if (!slot?.camera) {
@@ -290,7 +293,11 @@ export default {
         return
       }
       const camera = this.cameras?.[slot.camera.key] || slot.camera
-      await this.stopCamera(camera)
+      await this.stopCamera({
+        ...camera,
+        consumerId: this.patrolConsumerId(index),
+        prefixId: this.prefixId
+      })
       this.$set(this.videoSlots, index, null)
       if (this.selectVisible && this.activeSlotIndex === index) {
         // 保持选择框打开，便于继续选择
@@ -322,7 +329,11 @@ export default {
       const camera = Object.assign({}, this.cameras?.[cameraMeta.key] || cameraMeta)
       const prev = this.videoSlots[index]
       if (prev?.camera?.key && prev.camera.key !== camera.key) {
-        await this.stopCamera(this.cameras?.[prev.camera.key] || prev.camera)
+        await this.stopCamera({
+          ...(this.cameras?.[prev.camera.key] || prev.camera),
+          consumerId: this.patrolConsumerId(index),
+          prefixId: this.prefixId
+        })
       }
       // 先挂载视频 DOM，再拉流，保证 LiveKit 能附着到 video 元素
       this.$set(this.videoSlots, index, {
@@ -332,8 +343,18 @@ export default {
       })
       this.setPrefixId(this.prefixId)
       await this.$nextTick()
-      await this.startCamera({ robot: robotInfo, camera })
+      await this.startCamera({
+        robot: robotInfo,
+        camera,
+        consumerId: this.patrolConsumerId(index),
+        prefixId: this.prefixId
+      })
       const latest = this.cameras?.[camera.key] || camera
+      const video = document.getElementById(this.prefixId + latest.key)
+      if (latest.remoteVideoTrack && video && typeof latest.remoteVideoTrack.attach === 'function') {
+        latest.remoteVideoTrack.attach(video)
+        video.play?.().catch?.(() => {})
+      }
       this.$set(this.videoSlots, index, {
         robotId: robot.robotId,
         robot: { ...robot, ...robotInfo },

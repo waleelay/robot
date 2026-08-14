@@ -164,9 +164,10 @@ export default {
       this.$set(this.collapse, index, !this.collapse[index])      
     },
     async handleClickCamera(item) {
-      // console.log('点击摄像头', item);
-      if (this.splitType === 1 || this.splitType !== this.checkedIds.length) {
-        await this.$emit('updateVideo', item)
+      // 已选中的可再次点击取消；未选中的仅在一分屏或仍有空槽时加入
+      const alreadyChecked = this.checkedIds.includes(item.key)
+      if (alreadyChecked || this.splitType === 1 || this.splitType !== this.checkedIds.length) {
+        this.$emit('updateVideo', item)
       }
     },
     // 一次性把全部摄像头交给父组件顺序加载；$emit 不可 await，不能在循环里逐个 emit

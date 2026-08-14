@@ -99,7 +99,7 @@
                   </div>
                 </div>
               </div>
-              <div class="btns mt20 mr46 flx-align-center">
+              <div class="w100 flx-justify-between btns mt20 mr46 flx-align-center">
                 <el-button type="primary" class="flex1" @click="execute(0)">立即处置</el-button>
                 <el-button type="primary" class="flex1 success" @click="execute(1)">稍后处置</el-button>
                 <el-button type="primary" class="flex1 error" @click="execute(2)">误报屏蔽</el-button>
@@ -125,7 +125,7 @@
                   <div class="value-part flex1">
                     <el-input
                       v-if="searchType === 'keyword'"
-                      placeholder="请输入告警内容/类型/位置"
+                      placeholder="请输入内容/类型/位置"
                       v-model="searchValue"
                       clearable
                       @keyup.enter.native="handleChangeTab(tabIndex)"

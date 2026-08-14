@@ -13,3 +13,16 @@ export const ROBOT_TYPE_INFO = {
   default: { width: 24, height: 39, img: 'robot1', icon: 'robot' },
   UAV: { width: 43, height: 20, img: 'robot_uav', icon: 'robot-uav' },
 }
+
+export const ROBOT_DOG_TYPE_MARKERS = ['ROBOT_DOG', '机器狗', '四足机器狗', '四足机器人']
+export const FIXED_CAMERA_TYPE_MARKERS = ['FIXED_CAMERA', '固定摄像头']
+
+export function isRobotDog(robot = {}) {
+  const markers = [robot.typeCode, robot.type, robot.equipmentType]
+  return markers.some(value => ROBOT_DOG_TYPE_MARKERS.includes(value))
+}
+
+export function isFixedCamera(robot = {}) {
+  const markers = [robot.typeCode, robot.type, robot.equipmentType, robot.sourceType]
+  return markers.some(value => FIXED_CAMERA_TYPE_MARKERS.includes(value))
+}

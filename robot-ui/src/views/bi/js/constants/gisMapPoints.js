@@ -281,8 +281,22 @@ export const LIANTONG_SLAM_MAP_ID = '2077775285125144578'
  * 联通展厅装备/任务路径模拟开关（联调用）
  * 机器狗：point-1，执行中任务路径 1→2→3
  * 固定摄像头：point-2，执行中任务路径 1→4→5
+ * 轮式车：point-3，任务路径 3→4→5（执行开关关闭时为已暂停）
+ * 待执行任务：机器狗 + 轮式车，路径 2→3→4
  */
 export const ENABLE_LIANTONG_SLAM_MOCK = false
+
+/**
+ * 开启后：创建临时任务成功后，按避障路径模拟装备移动并更新 SLAM 坐标
+ * 速度：1 地图预览像素 / 秒
+ * 未走路径仍为两点虚线；已走路径为避障实线
+ */
+export const ENABLE_LIANTONG_TASK_EXECUTION_MOCK = true
+export const LIANTONG_TASK_MOVE_PIXELS_PER_SECOND = 1
+
+export const LIANTONG_PENDING_TASK_ID = 'mock-liantong-pending-task-dog-wheeled'
+export const LIANTONG_WHEELED_ROBOT_ID = 'mock-liantong-wheeled-robot'
+export const LIANTONG_WHEELED_TASK_ID = 'mock-liantong-wheeled-task-path-345'
 
 /** 生成联通展厅 SLAM 模拟装备与任务（路径点 1/2/3） */
 export function getLiantongSlamMock() {
@@ -313,7 +327,7 @@ export function getLiantongSlamMock() {
       coordinateY,
       yaw: 0
     },
-    task: [{ taskId, mapId }]
+    task: [{ taskId, mapId }, { taskId: LIANTONG_PENDING_TASK_ID, mapId }]
   }
   const task = {
     taskId,
@@ -397,4 +411,92 @@ export function getLiantongFixedCameraMock() {
     }]
   }
   return { mapId, robotId, taskId, device, task, pathPoints }
+}
+
+/** 生成联通展厅轮式车模拟装备（挂在同一张 SLAM 地图 point-3，任务路径 3→4→5） */
+export function getLiantongWheeledRobotMock() {
+  const mapId = LIANTONG_SLAM_MAP_ID
+  const robotId = LIANTONG_WHEELED_ROBOT_ID
+  const taskId = LIANTONG_WHEELED_TASK_ID
+  const allPoints = SLAM_POINTS[mapId] || []
+  // 点位顺序：3、4、5（对应数组下标 2、3、4）
+  const pathPoints = [allPoints[2], allPoints[3], allPoints[4]].filter(Boolean)
+  const coordinateX = -10.670098
+  const coordinateY = 5.522158
+  const device = {
+    robotId,
+    name: '联通展厅轮式车',
+    type: '轮式机器人',
+    typeCode: 'WHEELED_ROBOT',
+    model: 'MOCK-WHEELED',
+    status: 'online',
+    battery: 76,
+    speed: 0.8,
+    controlMode: '手动模式',
+    alarmLevel: 'none',
+    mountedDeviceCount: 0,
+    mapId,
+    location: {
+      mapId,
+      x: coordinateX,
+      y: coordinateY,
+      coordinateX,
+      coordinateY,
+      yaw: 0
+    },
+    task: [{ taskId, mapId }, { taskId: LIANTONG_PENDING_TASK_ID, mapId }]
+  }
+  const task = {
+    taskId,
+    mapId,
+    name: '联通展厅轮式车巡检',
+    status: 'paused',
+    statusName: '暂停中',
+    timeRange: '全天',
+    pathPoints,
+    equipmentList: [{
+      robotId,
+      name: device.name,
+      type: device.type,
+      typeCode: device.typeCode,
+      status: 'online'
+    }]
+  }
+  return { mapId, robotId, taskId, device, task, pathPoints }
+}
+
+/** 生成联通展厅待执行任务：关联机器狗与轮式车，路径 2→3→4 */
+export function getLiantongPendingTaskMock() {
+  const mapId = LIANTONG_SLAM_MAP_ID
+  const taskId = LIANTONG_PENDING_TASK_ID
+  const allPoints = SLAM_POINTS[mapId] || []
+  const pathPoints = [allPoints[1], allPoints[2], allPoints[3]].filter(Boolean)
+  const task = {
+    taskId,
+    mapId,
+    name: '联通展厅机器狗与轮式车联巡',
+    status: 'waiting',
+    statusName: '待执行',
+    executionMode: 'MANUAL',
+    timeRange: '全天',
+    expectedDurationSeconds: 1800,
+    pathPoints,
+    equipmentList: [
+      {
+        robotId: 'mock-liantong-slam-robot',
+        name: '联通展厅机器狗',
+        type: '四足机器狗',
+        typeCode: 'ROBOT_DOG',
+        status: 'online'
+      },
+      {
+        robotId: 'mock-liantong-wheeled-robot',
+        name: '联通展厅轮式车',
+        type: '轮式机器人',
+        typeCode: 'WHEELED_ROBOT',
+        status: 'online'
+      }
+    ]
+  }
+  return { mapId, taskId, task, pathPoints }
 }

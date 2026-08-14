@@ -72,11 +72,12 @@
             <svg-icon :icon-class="collapseArr[1] ? 'right' : 'down'" class="ml4" />
           </span> -->
         </div>
-        <div class="list pt10 pr20 pl20 mb20 common-scroll ovya" :style="{ height: collapseArr[2] ? '300px' : '262px' }">
+        <div ref="taskListRef" class="list pt10 pr20 pl20 mb20 common-scroll ovya" :style="{ height: collapseArr[2] ? '300px' : '262px' }">
           <template v-if="taskData1.length">
             <div
               v-for="(item, index) in taskData1 || []"
               :key="item.taskId"
+              :data-task-id="item.taskId"
               class="item wp288 curp"
               :class="{
                 'is-active': activeTaskId == item.taskId,
@@ -383,6 +384,8 @@ export default {
           return 'green'
         case 'waiting':
           return 'orange'
+        case 'paused':
+          return 'gray'
         default:
           return 'gray'
       }
@@ -438,9 +441,47 @@ export default {
   
     },
     toggleCollapse(type, typeIndex) {
-      // this.$set(this[type], typeIndex, !this[type][typeIndex])
-    },getTaskRobotIds(taskId) {
+      this.$set(this[type], typeIndex, !this[type][typeIndex])
+    },
+    getTaskRobotIds(taskId) {
       return (this.taskData[taskId]?.equipmentList || []).map(robot => robot.robotId)
+    },
+    resolveTaskListId(taskId) {
+      const list = this.taskData1 || []
+      const hit = list.find(item =>
+        String(item.taskId) === String(taskId) ||
+        String(item.planId) === String(taskId) ||
+        String(item.id) === String(taskId) ||
+        String(item.taskPlanId) === String(taskId)
+      )
+      return hit?.taskId ?? taskId
+    },
+    scrollTaskCardToFront(taskId) {
+      const list = this.$refs.taskListRef
+      if (!list) return
+      const el = list.querySelector(`[data-task-id="${String(taskId)}"]`)
+      if (!el) return
+      const cards = list.querySelectorAll('[data-task-id]')
+      const isLast = cards.length > 0 && el === cards[cards.length - 1]
+      const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight)
+      if (isLast) {
+        list.scrollTop = maxScroll
+        return
+      }
+      // list 已 position:relative；offsetTop 含 padding-top，减去后卡片顶边对齐内容区最上方
+      const padTop = parseFloat(window.getComputedStyle(list).paddingTop) || 0
+      list.scrollTop = Math.max(0, Math.min(maxScroll, el.offsetTop - padTop))
+    },
+    /** 地图弹窗点击任务名称：选中对应卡片并滚到列表最前（不切换取消） */
+    focusTaskFromPopup(taskId) {
+      if (taskId == null || taskId === '') return
+      const id = this.resolveTaskListId(taskId)
+      this.activeTaskId = id
+      this.setShowRobotIds(this.getTaskRobotIds(id))
+      if (this.$refs.taskRobotViewRef?.dialogVisible) {
+        this.$refs.taskRobotViewRef.dialogVisible = false
+      }
+      this.$nextTick(() => this.scrollTaskCardToFront(id))
     },
     /** 点击任务卡片：选中/取消选中卡片，并在地图上高亮相关装备（不打开视频弹窗） */
     selectTask(taskId) {
@@ -645,6 +686,12 @@ export default {
       })
     }
   },
+  created() {
+    this.$root.$on('bi-panorama-focus-task', this.focusTaskFromPopup)
+  },
+  beforeDestroy() {
+    this.$root.$off('bi-panorama-focus-task', this.focusTaskFromPopup)
+  },
   watch: {
     // 切换 GIS/SLAM 或 SLAM 地图时，关闭任务装备弹窗
     globalMapId() {
@@ -659,9 +706,9 @@ export default {
     //   immediate: true
     // },
     alarmsData: {
-      handler(newVal, oldVal) {
+      handler(newVal) {
         if (newVal?.high?.items?.length && !this.updated) {
-          this.alertCollapseArr[0] = false
+          this.$set(this.alertCollapseArr, 0, false)
           this.updated = true
         }
       },
@@ -946,6 +993,10 @@ export default {
       &.task {
         &:not(.no_data) {
           background: #021328;
+        }
+        .list {
+          position: relative;
+          overflow-anchor: none;
         }
         .item {
           position: relative;

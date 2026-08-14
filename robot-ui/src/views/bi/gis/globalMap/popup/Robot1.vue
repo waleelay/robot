@@ -49,12 +49,17 @@
             当前速度：<span class="value">{{ Number(currenRobot?.speed || 0).toFixed(2) }}m/s</span>
           </div>
           <div v-if="hasActionButtons" class="mt10 with-divider w100"></div>
-          <div v-for="(task, index) in taskList" :key="task.taskId" class="mt10 task flex" :class="task.status" :title="task?.statusName">
+          <div v-for="(task, index) in taskList" :key="task.taskId" class="mt10 task flex">
             <div class="item wp156 text-ellipsis" :title="task?.name || ''">
-              <span class="wp60 tar">任务{{index + 1}}：</span><span class="value">{{ task?.name || '-' }}</span>
+              <span class="wp60 tar">任务{{index + 1}}：</span>
+              <span
+                class="value"
+                :class="{ 'is-link': !!getTaskId(task) }"
+                @click="focusPanoramaTask(task)"
+              >{{ task?.name || '-' }}</span>
             </div>
             <div class="item wp149 ml26">
-              任务时段：<span class="value">{{ task?.timeRange || '-' }}</span>
+              任务状态：<span class="value" :class="taskStatusClass(task)">{{ task?.statusName || '-' }}</span>
             </div>
           </div>
         </template>
@@ -287,6 +292,23 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['setSelectedRobotId', 'startCamera', 'stopCamera', 'setPrefixId']),
+    getTaskId(task) {
+      return task?.taskId || task?.id || task?.planId || task?.taskPlanId || null
+    },
+    focusPanoramaTask(task) {
+      const taskId = this.getTaskId(task)
+      if (taskId == null || taskId === '') return
+      this.$root.$emit('bi-panorama-focus-task', taskId)
+    },
+    taskStatusClass(task) {
+      const status = String(task?.status || '').toLowerCase()
+      if (status === 'running') return 'green'
+      if (status === 'waiting' || status === 'pending' || status === 'preparing' || status === 'pausing' || status === 'resuming') return 'orange'
+      if (status === 'completed') return 'blue'
+      if (status.includes('fail')) return 'red'
+      if (status === 'paused' || status === 'terminated' || status === 'canceled' || status === 'terminating') return 'gray'
+      return ''
+    },
     onShutdown() {
       // this.$emit('shutdown')
     },
@@ -383,7 +405,12 @@ export default {
           sourceType: 'FIXED_CAMERA',
           status: (this.selectedRobot?.status || this.currenRobot?.status) === 'offline' ? 'offline' : 'online'
         }
-        await this.startCamera({ robot, camera })
+        await this.startCamera({
+          robot,
+          camera,
+          consumerId: 'robot1-fixed-camera',
+          prefixId: this.prefixId
+        })
         // 不等 TrackSubscribed 时的全局 prefixId（可能已被指挥中心 Left 覆盖），主动挂载
         this.attachFixedCameraTrack()
         await this.$nextTick()
@@ -427,7 +454,11 @@ export default {
           latest.remoteVideoTrack.detach(video)
         }
         if (video) video.srcObject = null
-        await this.stopCamera(latest)
+        await this.stopCamera({
+          ...latest,
+          consumerId: 'robot1-fixed-camera',
+          prefixId: this.prefixId
+        })
       } catch (error) {
         // ignore
       } finally {
@@ -576,14 +607,15 @@ export default {
         border-top: 1px solid #5DA7FF;
       }
       .task {
-        &.pending {
-          .value {
-            color: #FF7734;
-          }
-        }
-        &.running {
-          .value {
-            color: #25FF6E;
+        .value {
+          &.green { color: #25FF6E; }
+          &.orange { color: #FF7734; }
+          &.blue { color: #4AB8FF; }
+          &.red { color: #FF3434; }
+          &.gray { color: #8897AB; }
+          &.is-link {
+            cursor: pointer;
+            &:hover { color: #0BF9FE; }
           }
         }
       }

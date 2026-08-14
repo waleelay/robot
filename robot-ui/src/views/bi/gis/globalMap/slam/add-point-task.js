@@ -448,6 +448,11 @@ export default {
         return;
       }
 
+      // 临时任务两点虚线已画出时，仅更新新终点与菜单，不擦除正在展示的虚线
+      if (typeof this.shouldKeepTempTaskDashedLine === 'function' && this.shouldKeepTempTaskDashedLine()) {
+        this.endPoint = [x, y];
+        return;
+      }
       // 如果已有起点和终点，重置并重新开始
       // this.startPoint = [x, y];
       this.startPoint = null;

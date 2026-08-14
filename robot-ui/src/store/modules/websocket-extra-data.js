@@ -6,8 +6,11 @@ import {
   ENABLE_LIANTONG_SLAM_MOCK,
   GIS_MAP_CENTER_POINT,
   getLiantongSlamMock,
-  getLiantongFixedCameraMock
+  getLiantongFixedCameraMock,
+  getLiantongWheeledRobotMock,
+  getLiantongPendingTaskMock
 } from "../../views/bi/js/constants/gisMapPoints";
+import { isPausedTaskStatus, isRunningTaskStatus } from "../../views/bi/patrol/business/execution-status";
 
 const state = {
   // 设备对象：设备详情，包含坐标位置，task基本信息
@@ -165,7 +168,7 @@ const mutations = {
 
 const actions = {
   setAll({commit, state, dispatch}, data) {
-    // 联通展厅 SLAM：注入模拟装备与任务路径（点位 1→2→3）
+    // 联通展厅 SLAM：注入模拟装备与任务路径
     const devices = [...(data?.devices || [])]
     const tasks = [...(data?.tasks || [])]
     if (ENABLE_LIANTONG_SLAM_MOCK) {
@@ -182,6 +185,17 @@ const actions = {
       }
       if (cameraMock.task && !tasks.some(item => String(item.taskId) === String(cameraMock.taskId))) {
         tasks.push(cameraMock.task)
+      }
+      const wheeledMock = getLiantongWheeledRobotMock()
+      if (!devices.some(item => String(item.robotId) === String(wheeledMock.robotId))) {
+        devices.push(wheeledMock.device)
+      }
+      if (wheeledMock.task && !tasks.some(item => String(item.taskId) === String(wheeledMock.taskId))) {
+        tasks.push(wheeledMock.task)
+      }
+      const pendingMock = getLiantongPendingTaskMock()
+      if (pendingMock.task && !tasks.some(item => String(item.taskId) === String(pendingMock.taskId))) {
+        tasks.push(pendingMock.task)
       }
     }
 
@@ -386,7 +400,10 @@ function buildSlamOfRobot(maps, robots, tasks) {
 
 function getRobotStatus(robot, taskData) {
   const { status, task = [] } = robot || {}
-  const runningTask = task?.map(item => taskData?.[item.taskId] || item)?.find(item => item.status === 'running') || null
+  const taskList = task?.map(item => taskData?.[item.taskId] || item) || []
+  const runningTask = taskList.find(item => isRunningTaskStatus(item?.status))
+    || taskList.find(item => isPausedTaskStatus(item?.status))
+    || null
   const customStatusName = status === 'online' ? runningTask ? '任务中' : '空闲中' : status === 'offline' ? '离线' : '故障'
   const statusClass = status === 'online' ? runningTask ? 'green' : 'blue' : status === 'offline' ? 'gray' : 'orange'
   return { customStatusName, statusClass, runningTaskId: runningTask?.taskId, runningTask }

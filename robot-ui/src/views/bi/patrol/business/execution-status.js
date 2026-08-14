@@ -63,3 +63,26 @@ export function executionStatusType(value, fallback = 'info') {
   if (!key) return fallback
   return EXECUTION_STATUS_TYPE[key] || fallback
 }
+
+export function isRunningTaskStatus(value) {
+  return normalizeExecutionStatus(value) === 'RUNNING'
+}
+
+export function isPausedTaskStatus(value) {
+  return normalizeExecutionStatus(value) === 'PAUSED'
+}
+
+/** 装备是否有执行中任务：running 或 paused */
+export function isActiveTaskStatus(value) {
+  return isRunningTaskStatus(value) || isPausedTaskStatus(value)
+}
+
+export function taskStatusColorClass(value) {
+  const key = normalizeExecutionStatus(value)
+  if (key === 'RUNNING') return 'green'
+  if (key === 'WAITING' || key === 'PREPARING' || key === 'PAUSING' || key === 'RESUMING') return 'orange'
+  if (key === 'COMPLETED') return 'blue'
+  if (key === 'FAILED' || key === 'CONTROL_FAILED') return 'red'
+  if (key === 'PAUSED' || key === 'TERMINATED' || key === 'CANCELED' || key === 'TERMINATING') return 'gray'
+  return ''
+}

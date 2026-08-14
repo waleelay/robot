@@ -151,6 +151,29 @@
                   <title>{{ point.pointName }} / {{ point.pointCode || point.id }}</title>
                 </g>
               </template>
+              <!-- 模拟执行：仅画避障后的已走路径；未走仍由 canvas 两点虚线负责 -->
+              <g v-if="mockExecutionPathLayer" class="mock-exec-path-layer" pointer-events="none">
+                <polyline
+                  v-if="mockExecutionPathLayer.traveledPoints"
+                  :points="mockExecutionPathLayer.traveledPoints"
+                  class="mock-exec-path-traveled"
+                />
+                <polyline
+                  v-if="mockExecutionPathLayer.traveledPoints"
+                  :points="mockExecutionPathLayer.traveledPoints"
+                  class="mock-exec-path-traveled-core"
+                />
+              </g>
+              <!-- 真实环境：本页会话内记录的已走路径（刷新后不恢复） -->
+              <g
+                v-for="layer in sessionTraveledPathLayers"
+                :key="`session-traveled-${layer.robotId}`"
+                class="mock-exec-path-layer"
+                pointer-events="none"
+              >
+                <polyline :points="layer.traveledPoints" class="mock-exec-path-traveled" />
+                <polyline :points="layer.traveledPoints" class="mock-exec-path-traveled-core" />
+              </g>
               <!-- 装备 -->
               <!-- 图标随地图缩放而变化 -->
               <!-- :transform="`translate(${robot.pixel.x}, ${robot.pixel.y})${showSmall ? '' : ` scale(${1 / zoom})`}`" -->
@@ -487,13 +510,15 @@
 import Empty from '../../../components/Empty.vue'
 import { mapActions, mapState } from 'vuex';
 import addPointTask from './add-point-task.js'
+import mockTaskExecution from './mock-task-execution.js'
+import sessionTraveledPath from './session-traveled-path.js'
 import Robot1 from '../popup/Robot1.vue'
 import RobotControlPart from '../popup/RobotControlPart.vue'
 import RobotCarControlPart from '../popup/RobotCarControlPart.vue'
 // import Slam from '../../gis/globalMap/popup/Slam.vue'
-import { ROBOT_TYPE_INFO } from '@/constants/robot.js'
+import { ROBOT_TYPE_INFO, isRobotDog, isFixedCamera } from '@/constants/robot.js'
 import { addTaskByPoint, previewImageBlob } from '@/api/new-bi.js'
-import { getMapPointIconMeta, isMapToolSpecialPoint, isPointToolRequireCharge } from '../../../js/constants/gisMapPoints.js'
+import { ENABLE_LIANTONG_SLAM_MOCK, ENABLE_LIANTONG_TASK_EXECUTION_MOCK, getMapPointIconMeta, isMapToolSpecialPoint, isPointToolRequireCharge } from '../../../js/constants/gisMapPoints.js'
 
 const ROBOT_BG = require('@/assets/images/new-bi/robot-bg.svg')
 const ROBOT_SELECTED_HALO = require('@/assets/images/new-bi/robot-selected-halo.svg')
@@ -512,7 +537,7 @@ const TASK_PATH_COLORS = ['#2563EB', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6',
 
 export default {
   name: 'BiPatrolSlam',
-  mixins: [addPointTask],
+  mixins: [addPointTask, mockTaskExecution, sessionTraveledPath],
   components: { Robot1, RobotControlPart, RobotCarControlPart, Empty },
   props: {
     map: { type: Object, default: null },
@@ -659,7 +684,11 @@ export default {
       } : {};
     },
     normalRobots() {
-      return Object.values(this.robotBaseInfo || {}).filter(item => item.status === 'online') || []
+      return Object.values(this.robotBaseInfo || {}).filter(item => {
+        if (item.status !== 'online') return false
+        if (isFixedCamera(item) || item.isFixedCamera) return false
+        return true
+      })
     },
     hasPreview() {
       return !!this.map?.previewWidth &&
@@ -732,6 +761,7 @@ export default {
       const entries = Object.entries(this.taskPathPoints || {})
       const list = []
       entries.forEach(([taskId, data]) => {
+        if (this.mockExecutionTaskId && String(taskId) === String(this.mockExecutionTaskId)) return
         if (!data || String(data.mapId) !== String(mapId)) return
         if (!Array.isArray(data.pathPoints) || !data.pathPoints.length) return
         const points = this.toDrawablePoints(data.pathPoints)
@@ -744,10 +774,15 @@ export default {
         list.push({
           taskId,
           taskName: taskInfo.name || taskInfo.taskName || `任务 ${taskId}`,
-          color: TASK_PATH_COLORS[list.length % TASK_PATH_COLORS.length],
           points,
           polylinePoints
         })
+      })
+      const unifiedColor = TASK_PATH_COLORS[0]
+      list.forEach((item, index) => {
+        item.color = list.length > 1
+          ? TASK_PATH_COLORS[index % TASK_PATH_COLORS.length]
+          : unifiedColor
       })
       return list
     },
@@ -757,6 +792,7 @@ export default {
       const robot = this.robotBaseInfo?.[this.selectedShowRobotId] || {}
       const taskId = robot.runningTaskId
       if (taskId === undefined || taskId === null || taskId === '') return null
+      if (this.mockExecutionTaskId && String(taskId) === String(this.mockExecutionTaskId)) return null
       const points = this.drawablePathPoints
       if (!points.length) return null
       const polylinePoints = points.length >= 2
@@ -782,7 +818,13 @@ export default {
       if (robot1Path && !list.some(item => String(item.taskId) === String(robot1Path.taskId))) {
         list.push(robot1Path)
       }
-      return list
+      const unifiedColor = TASK_PATH_COLORS[0]
+      return list.map((item, index) => ({
+        ...item,
+        color: list.length > 1
+          ? TASK_PATH_COLORS[index % TASK_PATH_COLORS.length]
+          : unifiedColor
+      }))
     },
     baseDisplayTaskPaths() {
       const raisedId = this.activeRaisedTaskPathId
@@ -819,6 +861,9 @@ export default {
         if (coordinateX === undefined || coordinateX === null || coordinateY === undefined || coordinateY === null) return null
         const pixel = this.mapPointToPixel({ coordinateX, coordinateY }, this.map)
         if (!pixel) return null
+        const zoom = Number(this.zoom) || 1
+        pixel.x = Math.round(pixel.x * zoom) / zoom
+        pixel.y = Math.round(pixel.y * zoom) / zoom
         const typeInfo = ROBOT_TYPE_INFO[robot.type] || ROBOT_TYPE_INFO.default
         const statusText = robot.customStatusName || robot.statusName
         const statusClass = robot.statusClass
@@ -1001,7 +1046,7 @@ export default {
         // 切换 SLAM 地图：清空装备选中/操作框、路径画线，并先对齐缩放
         if (switched) {
           this.clearRobotSelectionUI()
-          this.resetSlamDrawState()
+          this.resetSlamDrawState({ keepTempTaskPath: false })
           this.invalidateMapBitmap()
         }
         this.previewImageStatus = '地图加载中...'
@@ -1229,14 +1274,20 @@ export default {
       // Robot1.show -> clear([robotId]) -> setShowRobotIds，与 GIS 一致
       this.$refs.robot1Ref?.show(event, robot)
     },
-    resetSlamDrawState({ keepMapToolPath = false, keepAllTaskPaths = false } = {}) {
-      // MapTool 点位由 MapTool 控制；打开/关闭装备时保持不变
-      if (!keepMapToolPath) this.showPath = false
-      if (!keepAllTaskPaths) this.showAllTaskPaths = false
-      this.showPolyline = false
-      this.pointsRaised = false
-      this.raisedTaskPathId = null
-      this.pinnedTaskPathId = null
+    shouldKeepTempTaskDashedLine() {
+      return this.shouldKeepTempTaskOverlay()
+    },
+    shouldKeepTempTaskOverlay() {
+      if (this.mockExecBindTaskId && !this.mockExecDone) return true
+      if (this.mockExecutionPathLayer?.traveledPoints) return true
+      if (this.sessionTraveledPathLayers && this.sessionTraveledPathLayers.length) return true
+      return !!(this.lastDrawnPaths && this.startPoint && this.endPoint)
+    },
+    hideTempTaskDestination() {
+      this.locationPoint = null
+      this.showContextMenu = false
+    },
+    clearTempTaskOverlay() {
       this.locationPoint = null
       this.showContextMenu = false
       this.locationLabel = '临时点'
@@ -1245,9 +1296,22 @@ export default {
       this.unloadedPath = []
       this.loadedPath = []
       this.lastDrawnPaths = null
-      if (typeof this.reset === 'function') {
-        this.reset()
-      }
+      if (typeof this.reset === 'function') this.reset()
+    },
+    resetSlamDrawState({ keepMapToolPath = false, keepAllTaskPaths = false, keepTempTaskPath } = {}) {
+      // MapTool 点位由 MapTool 控制；打开/关闭装备时保持不变
+      if (!keepMapToolPath) this.showPath = false
+      if (!keepAllTaskPaths) this.showAllTaskPaths = false
+      this.showPolyline = false
+      this.pointsRaised = false
+      this.raisedTaskPathId = null
+      this.pinnedTaskPathId = null
+      this.showContextMenu = false
+      const keepPath = keepTempTaskPath === undefined
+        ? this.shouldKeepTempTaskOverlay()
+        : !!keepTempTaskPath
+      if (keepPath) return
+      this.clearTempTaskOverlay()
     },
     // 切换地图时丢弃旧位图，避免 stage 尺寸变化时旧图被拉伸/压缩
     invalidateMapBitmap() {
@@ -1259,6 +1323,9 @@ export default {
       this.isLoaded = false
       this.grid = null
       this.clearMeasure()
+      if (typeof this.clearMockTaskExecution === 'function') {
+        this.clearMockTaskExecution()
+      }
       if (this.canvas) {
         this.canvas.width = 1
         this.canvas.height = 1
@@ -1444,9 +1511,11 @@ export default {
         this.$refs.robotCarControlPartRef?.show?.(false)
         return
       }
-      const type = this.selectedRobot?.type
-      const isDog = type === '机器狗' || type === 'ROBOT_DOG'
-      const controlRef = isDog ? this.$refs.robotControlPartRef : this.$refs.robotCarControlPartRef
+      const robot = {
+        ...(this.selectedRobot || {}),
+        ...(this.robotBaseInfo?.[this.selectedRobot?.robotId] || {})
+      }
+      const controlRef = isRobotDog(robot) ? this.$refs.robotControlPartRef : this.$refs.robotCarControlPartRef
       const nextVisible = typeof visible === 'boolean' ? visible : !controlRef?.visible
       controlRef?.show(nextVisible)
     },
@@ -1506,24 +1575,22 @@ export default {
         const path = this.getPaths(startPoint, this.endPoint)
         if (!path) return
       }
-      if (robot.customStatusName !== '空闲中') {
-        this.closeContextMenu()
-        try {
-          await this.$primaryConfirm({
-            title: '提示',
-            message: '当前选择装备正在【任务中】，是否终止任务？进行新任务',
-            confirmText: '确定',
-            cancelText: '取消',
-            onConfirm: async () => {
-              await this.addTask(startPoint)
-            }
-          })
-        } catch (error) {
-          // 用户取消
-        }
-        return
+      const isIdle = robot.customStatusName === '空闲中'
+      try {
+        await this.$primaryConfirm({
+          title: '提示',
+          message: isIdle
+            ? '是否【立即派遣】该装备前往该点？'
+            : '当前选择装备正在【任务中】，是否终止任务？进行新任务',
+          confirmText: '确定',
+          cancelText: '取消',
+          onConfirm: async () => {
+            await this.addTask(startPoint)
+          }
+        })
+      } catch (error) {
+        // 用户取消：保留右键菜单，便于继续选择装备
       }
-      this.addTask(startPoint)
     },
     closeContextMenu() {
       this.showContextMenu = false
@@ -1537,16 +1604,106 @@ export default {
         y: coordinateY,
         yaw: coordinateZ,
       }
-      const res = await addTaskByPoint(data)
-      console.log('派遣任务结果', res)
+      const useMock = ENABLE_LIANTONG_SLAM_MOCK && String(this.robotId).startsWith('mock-')
+      let walkPixels = null
+      if (useMock && ENABLE_LIANTONG_TASK_EXECUTION_MOCK) {
+        walkPixels = this.buildMockWalkPixels(startPoint, this.endPoint)
+        if (!walkPixels) {
+          this.showMockNoPathError()
+          throw new Error('MOCK_TEMP_TASK_NO_PATH')
+        }
+      }
+      let taskId = null
+      if (useMock) {
+        taskId = this.applyMockTemporaryTask(data)
+      } else {
+        const res = await addTaskByPoint(data)
+        console.log('派遣任务结果', res)
+      }
       this.setStartPoint(startPoint)
       this.closeContextMenu()
-      // if (res.code === 0) {
-      //   this.$message.success('任务派遣成功')
-      //   this.closeContextMenu()
-      // } else {
-      //   this.$message.error(res.msg || '任务派遣失败')
-      // }
+      this.$message.success('任务派遣成功')
+      if (walkPixels) {
+        this.startMockTaskExecution({
+          robotId: this.robotId,
+          taskId,
+          walkPixels
+        })
+      }
+    },
+    applyMockTemporaryTask({ robotId, x, y, yaw }) {
+      const robot = this.robotBaseInfo?.[robotId] || {}
+      const location = this.robotLocation?.[robotId] || robot.location || {}
+      const oldTaskId = robot.runningTaskId
+      const mapId = this.map?.id
+      if (oldTaskId != null && this.taskData?.[oldTaskId]) {
+        this.$store.commit('websocketExtraData/SET_TASK_INFO', {
+          ...this.taskData[oldTaskId],
+          status: 'terminated',
+          statusName: '已终止'
+        })
+        const oldPath = this.taskPathPoints?.[oldTaskId]
+        this.$store.commit('websocketExtraData/SET_TASK_PATH_POINTS', {
+          taskId: oldTaskId,
+          data: { mapId: oldPath?.mapId || mapId, pathPoints: [] }
+        })
+      }
+      const taskId = `mock-temp-nav-${robotId}-${Date.now()}`
+      const startX = location.x ?? location.coordinateX
+      const startY = location.y ?? location.coordinateY
+      const pathPoints = [
+        {
+          id: `${taskId}-start`,
+          mapId,
+          pointName: '起始地',
+          pointType: 'START',
+          coordinateX: startX,
+          coordinateY: startY,
+          coordinateZ: location.yaw ?? 0
+        },
+        {
+          id: `${taskId}-end`,
+          mapId,
+          pointName: this.locationLabel || '临时点',
+          pointType: 'NORMAL',
+          coordinateX: x,
+          coordinateY: y,
+          coordinateZ: yaw ?? 0
+        }
+      ]
+      this.$store.commit('websocketExtraData/SET_TASK_INFO', {
+        taskId,
+        mapId,
+        name: this.locationLabel || '临时任务',
+        status: 'running',
+        statusName: '执行中',
+        timeRange: '临时',
+        pathPoints,
+        equipmentList: [{
+          robotId,
+          name: robot.name,
+          type: robot.type,
+          typeCode: robot.typeCode,
+          status: 'online'
+        }]
+      })
+      this.$store.commit('websocketExtraData/SET_TASK_PATH_POINTS', {
+        taskId,
+        data: { mapId, pathPoints }
+      })
+      const nextTask = [
+        ...(Array.isArray(robot.task) ? robot.task : []).filter(item => String(item.taskId) !== String(oldTaskId)),
+        { taskId, mapId }
+      ]
+      this.$store.commit('websocketExtraData/SET_ROBOT_BASE_INFO', {
+        robotId,
+        robotInfo: {
+          ...robot,
+          controlMode: '导航模式',
+          task: nextTask
+        }
+      })
+      return taskId
     },
     saveLocationLabel() {
       const next = String(this.locationLabel || '').trim()
@@ -1725,7 +1882,7 @@ export default {
       const localY = -dx * sin + dy * cos;
       return { x: localX / resolution, y: height - localY / resolution };
     },
-    pixelToMapPoint(pixel, map) {
+    pixelToMapPoint(pixel, map, options = {}) {
       if (!this.hasPreview || !map) return null;
       const width = Number(map.previewWidth);
       const height = Number(map.previewHeight);
@@ -1740,9 +1897,20 @@ export default {
       const localY = (height - pixel.y) * resolution;
       const dx = localX * cos - localY * sin;
       const dy = localX * sin + localY * cos;
+      const coordinateX = originX + dx
+      const coordinateY = originY + dy
+      if (options.round === false) {
+        return {
+          coordinateX,
+          coordinateY,
+          coordinateZ: 0,
+          pixelX: pixel.x,
+          pixelY: pixel.y
+        }
+      }
       return {
-        coordinateX: Number((originX + dx).toFixed(3)),
-        coordinateY: Number((originY + dy).toFixed(3)),
+        coordinateX: Number(coordinateX.toFixed(3)),
+        coordinateY: Number(coordinateY.toFixed(3)),
         coordinateZ: 0,
         pixelX: Number(pixel.x.toFixed(1)),
         pixelY: Number(pixel.y.toFixed(1))
@@ -2134,7 +2302,7 @@ export default {
         stroke-linecap: round;
         stroke-linejoin: round;
         vector-effect: non-scaling-stroke;
-        filter: drop-shadow(0 1px 2px rgba(37, 99, 235, .4));
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35));
         pointer-events: stroke;
       }
       .map-preview-path-hit {
@@ -2145,6 +2313,22 @@ export default {
         stroke-linejoin: round;
         vector-effect: non-scaling-stroke;
         pointer-events: stroke;
+      }
+      .mock-exec-path-traveled {
+        fill: none;
+        stroke: #18D0DD;
+        stroke-width: 8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
+      }
+      .mock-exec-path-traveled-core {
+        fill: none;
+        stroke: #fff;
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
       }
       .map-measure-line {
         fill: none;
@@ -2209,6 +2393,7 @@ export default {
         }
         .robot-name-fo {
           overflow: visible;
+          pointer-events: none;
         }
         .robot-name-pill {
           box-sizing: border-box;
@@ -2222,6 +2407,8 @@ export default {
           line-height: 16px;
           text-align: center;
           white-space: nowrap;
+          transform: translateZ(0);
+          backface-visibility: hidden;
           // 1px 白色描边，保证地图上清晰可读
           text-shadow:
             -1px -1px 0 #FFF,
@@ -2235,6 +2422,7 @@ export default {
         }
         .robot-status-fo {
           overflow: visible;
+          pointer-events: none;
         }
         .robot-status-pill {
           box-sizing: border-box;
@@ -2250,6 +2438,8 @@ export default {
           border-radius: 4px;
           white-space: nowrap;
           padding-left: 22px;
+          transform: translateZ(0);
+          backface-visibility: hidden;
           // 默认原点（orange/gray）
           &::before {
             position: absolute;
@@ -2426,7 +2616,7 @@ export default {
       font-size: 12px;
       line-height: 12px; /* 100% */
       letter-spacing: 0.857px;
-      cursor: default;
+      cursor: pointer;
       &.blue {
         border: 1px solid #2A86F3;
         background: rgba(9, 45, 72, 0.50);

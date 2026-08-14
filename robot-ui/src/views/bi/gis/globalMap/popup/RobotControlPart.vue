@@ -46,22 +46,23 @@
           </div>
         </div>
         <div class="flex1 pl28 pr15" style="position: unset;">
-          <div class="d-flex hp29">
+          <div class="d-flex flx-align-center">
             <div class="custom-tab-button flex" style="height: fit-content">
               <div v-for="item in tabList" :key="item.value" class="tab-button-item pr10 pl10" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value" style="font-size: 14px; line-height: 19px">{{ item.label }}</div>
             </div>
-            <div class="ml30 mode flx-align-center">
-              <span>当前状态 ：</span>
-              <el-dropdown class="ml10" trigger="click" @command="handleModeChange">
-                <div class="mode-status success flex-column">
-                  <span>{{ selectedRobot?.controlModeName || '-' }}<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
-                </div>
-                <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
-                  <el-dropdown-item command="导航模式" :class="{ 'is-active': selectedRobot?.controlMode === '导航模式' }">导航模式</el-dropdown-item>
-                  <el-dropdown-item command="手动模式" :class="{ 'is-active': selectedRobot?.controlMode === '手动模式' }">手动模式</el-dropdown-item>
-                </el-dropdown-menu>
-              </el-dropdown>
+            <div class="ml30 mode flx-align-center" :class="{ 'is-active': isNavMode }">
+              <svg-icon icon-class="mode" />
+              <span class="ml10">自主导航模式</span>
             </div>
+            <ControlModeActions
+              extra-class="ml20"
+              :is-nav-mode="isNavMode"
+              :show-resume="showTaskResumeActions"
+              @takeover="handleTakeover"
+              @resume="handleResumeActiveTask"
+              @terminate="handleTerminateActiveTask"
+              class="ml10"
+            />
             <div v-if="vehicleLightDevice && showTalk" class="lights ml30 flx-align-center">
               <span>车灯：</span>
               <el-switch
@@ -74,6 +75,10 @@
                 @change="setVehicleLights">
               </el-switch>
             </div>
+          </div>
+          <div v-if="isInActiveTask" class="active-task-row mt8 flx-align-center">
+            <span>当前任务：{{ activeTask?.name || '-' }}</span>
+            <span class="task-status ml8" :class="activeTaskStatusClass">{{ activeTaskStatusLabel }}</span>
           </div>
           <div class="mt24 d-flex">
             <Talk v-if="showTalk" :isMapInner="showTalk" />
@@ -233,24 +238,43 @@ export default {
   background: rgba(17, 108, 31, 0.50);
 }
 .mode {
+  color: #6A788B;
+  font-family: "Microsoft YaHei";
+  font-size: 12px;
+  line-height: 16px;
+  .svg-icon {
+    font-size: 14px;
+  }
+  &.is-active {
+    color: #FFF;
+  }
+}
+.takeover-btn {
+  padding: 4px 10px;
   color: #FFF;
   font-family: "Microsoft YaHei";
   font-size: 12px;
   line-height: 16px;
-  .mode-status {
-    cursor: default;
-    span {
-      padding: 3px 4px;
-      color: #00AC3A;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 12px;
-      line-height: 12px; /* 100% */
-      letter-spacing: 0.857px;
-      border-radius: 2px;
-      border: 1px solid var(---, #00AC3A);
-      background: rgba(17, 108, 31, 0.50);
-    }
+  border-radius: 4px;
+  background: #021328;
+  box-shadow: 0 0 14px 2px #09F inset;
+  white-space: nowrap;
+  &:hover {
+    color: #0BF9FE;
   }
+}
+.active-task-row {
+  color: rgba(255, 255, 255, 0.8);
+  font-family: "Microsoft YaHei";
+  font-size: 12px;
+  line-height: 16px;
+}
+.task-status {
+  &.green { color: #25FF6E; }
+  &.orange { color: #FF7734; }
+  &.blue { color: #159AFF; }
+  &.red { color: #FF0404; }
+  &.gray { color: #8897AB; }
 }
 .setting {
   padding: 4px 6px;

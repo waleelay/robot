@@ -10,17 +10,20 @@
 <template>
   <div class="flx-align-center h100 pt20 pb20 with-bl">
     <div :class="{ 'd-flex': !vehicleLightDevice && !warningLightDevice }" class="pl30">
-      <div class="mode d-flex" :class="{ 'flex-column': !vehicleLightDevice && !warningLightDevice, 'flx-align-center': vehicleLightDevice || warningLightDevice }">
-        <span>当前状态：</span>
-        <el-dropdown trigger="click" :class="{ 'mt10': !vehicleLightDevice && !warningLightDevice, 'ml10': vehicleLightDevice || warningLightDevice }" @command="handleModeChange">
-          <div class="mode-status success flex-column">
-            <span>{{ selectedRobot?.controlModeName || '-' }}<svg-icon icon-class="d-down" class="ml4"></svg-icon></span>
-          </div>
-          <el-dropdown-menu slot="dropdown" class="wp100 mt2 custom-dropdown-menu mode-dropdown-menu p4">
-            <el-dropdown-item command="导航模式" :class="{ 'is-active': selectedRobot?.controlMode === '导航模式' }">导航模式</el-dropdown-item>
-            <el-dropdown-item command="手动模式" :class="{ 'is-active': selectedRobot?.controlMode === '手动模式' }">手动模式</el-dropdown-item>
-          </el-dropdown-menu>
-        </el-dropdown>
+      <div class="mode d-flex flx-align-center" :class="{ 'flex-column': !vehicleLightDevice && !warningLightDevice, 'is-active': isNavMode }">
+        <div class="d-flex flx-align-center">
+          <svg-icon icon-class="mode" />
+          <span class="ml10">自主导航模式</span>
+        </div>
+        <ControlModeActions
+          :is-nav-mode="isNavMode"
+          :show-resume="showTaskResumeActions"
+          :extra-class="{ 'mt10': !vehicleLightDevice && !warningLightDevice, 'ml20': vehicleLightDevice || warningLightDevice }"
+          @takeover="handleTakeover"
+          @resume="handleResumeActiveTask"
+          @terminate="handleTerminateActiveTask"
+          class="ml10"
+        />
       </div>
       <div class="mt16 d-flex common-control" :class="{ 'ml30': !vehicleLightDevice && !warningLightDevice, 'is-disabled': selectedRobot?.controlMode !== '手动模式' }">
         <div class="outer flx-center">
@@ -129,23 +132,29 @@ export default {
 }
 
 .mode {
+  color: #6A788B;
+  font-family: "Microsoft YaHei";
+  font-size: 12px;
+  line-height: 16px;
+  .svg-icon {
+    font-size: 14px;
+  }
+  &.is-active {
+    color: #FFF;
+  }
+}
+.takeover-btn {
+  padding: 4px 10px;
   color: #FFF;
   font-family: "Microsoft YaHei";
   font-size: 12px;
   line-height: 16px;
-  .mode-status {
-    cursor: default;
-    span {
-      padding: 3px 4px;
-      color: #00AC3A;
-      font-family: "Alibaba PuHuiTi";
-      font-size: 12px;
-      line-height: 12px; /* 100% */
-      letter-spacing: 0.857px;
-      border-radius: 2px;
-      border: 1px solid var(---, #00AC3A);
-      background: rgba(17, 108, 31, 0.50);
-    }
+  border-radius: 4px;
+  background: #021328;
+  box-shadow: 0 0 14px 2px #09F inset;
+  white-space: nowrap;
+  &:hover {
+    color: #0BF9FE;
   }
 }
 

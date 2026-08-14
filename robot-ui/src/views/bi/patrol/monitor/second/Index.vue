@@ -70,7 +70,10 @@
             <div class="ml54">
               <div class="desc">当前速度：{{ Number(currenRobot.speed || 0).toFixed(2) }}m/s</div>
               <div class="desc">当前电量：{{ currenRobot.battery }}%</div>
-              <div class="desc">当前任务：{{ currenRobot?.runningTask?.name || '-' }}</div>
+              <div v-if="currenRobot?.runningTask?.name" class="desc">
+                当前任务：{{ currenRobot?.runningTask?.name || '-' }}
+                <span v-if="currenRobot?.runningTask" class="task-status ml8" :class="activeTaskStatusClass">{{ activeTaskStatusLabel }}</span>
+              </div>
               <div class="desc">控制模型：{{ currenRobot?.controlMode || '-' }}</div>
             </div>
           </div>
@@ -164,6 +167,7 @@ import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue'
 import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue'
 import yuntai from './components/yuntai'
 import { mapActions, mapState } from 'vuex'
+import { isRobotDog } from '@/constants/robot.js'
 export default {
   name: 'BiPatrolMonitorSecondScreen',
   components: {
@@ -207,8 +211,7 @@ export default {
     },
     showDogControl() {
       if (this.baseDevice?.deviceType === 'QUADRUPED_BASE') return true
-      const type = this.selectedRobot.typeCode || this.selectedRobot.type
-      return ['ROBOT_DOG', '机器狗'].includes(type)
+      return isRobotDog(this.selectedRobot) || isRobotDog(this.currenRobot)
     },
     showCarControl() {
       if (this.baseDevice?.deviceType === 'WHEELED_BASE') return true
@@ -430,6 +433,14 @@ export default {
     & + .desc {
       margin-top: 10px;
     }
+  }
+  .task-status {
+    font-size: 12px;
+    &.green { color: #25FF6E; }
+    &.orange { color: #FF7734; }
+    &.blue { color: #159AFF; }
+    &.red { color: #FF0404; }
+    &.gray { color: #8897AB; }
   }
 }
 .snapshot {

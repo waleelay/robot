@@ -27,7 +27,7 @@
         <div class="box">
           <div class="top m4 flx-justify-between">
             <div class="flx-align-center">
-              <div class="title ml10 text-ellipsis" :style="{ maxWidth }">{{ taskInfo.name }}</div>
+              <div class="title ml10 text-ellipsis" :title="taskInfo.name" :style="{ maxWidth }">{{ taskInfo.name }}</div>
               <!-- <span class="status flx-center ml10 pt2 pr6 pb2 pl6">
                 <svg-icon icon-class="security"></svg-icon>
                 <span class="ml4">{{ taskInfo.status }}</span>

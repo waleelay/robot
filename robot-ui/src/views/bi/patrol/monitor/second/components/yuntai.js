@@ -1,6 +1,9 @@
 import { mapActions, mapState } from "vuex";
 import { acquireControl, mediaClientId, sendEquipmentCommand, createConfirmToken } from "../../../../../../api/media";
+import { resumeTaskRecord, terminateTaskRecord } from "../../../../../../api/new-bi";
 import { errorMessage } from "../../../../../../utils";
+import { executionStatusLabel, isActiveTaskStatus, taskStatusColorClass } from "../../../business/execution-status";
+import ControlModeActions from "./ControlModeActions.vue";
 import ControlModeWarning from "./ControlModeWarning.vue";
 
 function cachedVehicleLightEnabled(cache) {
@@ -10,7 +13,7 @@ function cachedVehicleLightEnabled(cache) {
 }
 
 export default {
-  components: { ControlModeWarning },
+  components: { ControlModeWarning, ControlModeActions },
   computed: {
     ...mapState('websocketRobot', ['deviceStateCache', 'audioState']),
     ...mapState('websocketExtraData', ['robotBaseInfo']),
@@ -25,6 +28,34 @@ export default {
     },
     selectedRobot() {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
+    },
+    // 任务/模式以 robotBaseInfo 为准；远程控制面板会覆盖 selectedRobot 为媒体侧对象，不含 runningTask
+    statusRobot() {
+      const id = this.selectedRobotId || this.selectedRobot?.robotId || this.cameraInfo?.robotId || ''
+      return this.robotBaseInfo?.[id] || {}
+    },
+    isNavMode() {
+      return (this.statusRobot?.controlMode || this.selectedRobot?.controlMode) === '导航模式'
+    },
+    isManualMode() {
+      return (this.statusRobot?.controlMode || this.selectedRobot?.controlMode) === '手动模式'
+    },
+    activeTask() {
+      return this.statusRobot?.runningTask || null
+    },
+    isInActiveTask() {
+      if (isActiveTaskStatus(this.activeTask?.status)) return true
+      if (this.statusRobot?.customStatusName === '任务中') return true
+      return !!this.statusRobot?.runningTaskId
+    },
+    showTaskResumeActions() {
+      return this.isManualMode && this.isInActiveTask
+    },
+    activeTaskStatusLabel() {
+      return this.activeTask?.statusName || executionStatusLabel(this.activeTask?.status, '-')
+    },
+    activeTaskStatusClass() {
+      return taskStatusColorClass(this.activeTask?.status)
     },
     controlProfiles() {
       return this.$store.getters['websocketRobot/getControlProfiles']
@@ -89,7 +120,8 @@ export default {
       launcherSafety: Object.assign({}, this.deviceStateCache?.launcherSafety || {}),
       netGunSafety: Object.assign({}, this.deviceStateCache?.netGunSafety || {}),
       warningLightState: Object.assign({}, this.deviceStateCache?.warningLightState || {}),
-      vehicleLightEnabled: cachedVehicleLightEnabled(this.deviceStateCache)
+      vehicleLightEnabled: cachedVehicleLightEnabled(this.deviceStateCache),
+      actingTaskRecord: false
     }
   },
   methods: {
@@ -115,9 +147,97 @@ export default {
     ptzAutoRotateKey(device) {
       return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
     },
+    preferSecondaryConfirm() {
+      const name = this.$options && this.$options.name
+      return name === 'RobotControlPart' || name === 'RobotCarControlPart'
+    },
     async handleModeChange(controlMode) {
       if (this.selectedRobot.controlMode === controlMode) return
-      this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode })
+      this.$refs.controlModeWarningRef.open({
+        robotId: this.selectedRobotId,
+        controlMode,
+        useSecondaryConfirm: this.preferSecondaryConfirm()
+      })
+    },
+    handleTakeover() {
+      this.handleModeChange('手动模式')
+    },
+    getTaskRecordId(task) {
+      if (!task) return null
+      return task.executionRecordId
+        || task.activeWorkflowInstanceId
+        || task.workflowInstanceId
+        || task.recordId
+        || task.taskInstanceId
+        || null
+    },
+    unwrapTaskRecord(res) {
+      if (res && res.code !== undefined) {
+        if (res.code === '0' || res.code === 0 || res.code === 200) return res.data || {}
+        throw new Error(res.message || '请求失败')
+      }
+      return res || {}
+    },
+    taskConfirmApi() {
+      return this.preferSecondaryConfirm() ? this.$secondaryConfirm : this.$primaryConfirm
+    },
+    async requestActiveTaskAction({ action, confirmMessage, successMessage, failMessage, api }) {
+      if (this.actingTaskRecord) return
+      try {
+        await this.taskConfirmApi()({
+          title: '提示',
+          message: confirmMessage,
+          confirmText: '确定',
+          cancelText: '取消',
+          onConfirm: async () => {
+            const recordId = this.getTaskRecordId(this.activeTask)
+            if (recordId == null || recordId === '') {
+              this.$message.error('缺少执行记录标识，无法操作')
+              const missing = new Error('缺少执行记录标识')
+              missing.handled = true
+              throw missing
+            }
+            this.actingTaskRecord = true
+            try {
+              const data = this.unwrapTaskRecord(await api(recordId, {}))
+              if (data && data.accepted === false) {
+                this.$message.warning((data && data.message) || '操作未接受')
+                const rejected = new Error((data && data.message) || '操作未接受')
+                rejected.handled = true
+                throw rejected
+              }
+              this.$message.success((data && data.message) || successMessage)
+            } catch (error) {
+              if (!(error && error.handled)) {
+                this.$message.error((error && error.message) || failMessage)
+              }
+              throw error
+            } finally {
+              this.actingTaskRecord = false
+            }
+          }
+        })
+      } catch (error) {
+        // 用户取消
+      }
+    },
+    handleResumeActiveTask() {
+      return this.requestActiveTaskAction({
+        action: 'resume',
+        confirmMessage: '是否【恢复】该任务？',
+        successMessage: '已恢复',
+        failMessage: '恢复失败',
+        api: resumeTaskRecord
+      })
+    },
+    handleTerminateActiveTask() {
+      return this.requestActiveTaskAction({
+        action: 'terminate',
+        confirmMessage: '是否【终止】该任务？',
+        successMessage: '已终止',
+        failMessage: '终止失败',
+        api: terminateTaskRecord
+      })
     },
     controlModeCommand(controlMode) {
       return controlMode === '手动模式' ? '手动模式' : '导航模式'
@@ -186,7 +306,11 @@ export default {
       if (this.selectedRobot?.controlMode !== '手动模式' && kind.indexOf('base-') > -1) {
         // this.$message.warning('请先切换到手动模式')
         if (this.$refs.controlModeWarningRef) {
-          this.$refs.controlModeWarningRef.open({ robotId: this.selectedRobotId, controlMode: '手动模式' })
+          this.$refs.controlModeWarningRef.open({
+            robotId: this.selectedRobotId,
+            controlMode: '手动模式',
+            useSecondaryConfirm: this.preferSecondaryConfirm()
+          })
         } else {
           this.$emit('handleModeChange', '手动模式')
         }

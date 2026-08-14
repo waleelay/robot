@@ -58,7 +58,7 @@ import Slam from './popup/Slam.vue'
 import Thumbnail from './thumbnail/Index.vue'
 import SlamMap from './slam1/Index.vue'
 import { mapActions, mapState } from 'vuex';
-import { ROBOT_TYPE_INFO } from '../../../../constants/robot.js';
+import { ROBOT_TYPE_INFO, isRobotDog } from '../../../../constants/robot.js';
 import { POLYGON_POINTS, WAY_POINTS, getGisTileUrl, getGisZoomRange, getGisMapRotate, isChargeMapPoint, getMapPointIconMeta } from '../../js/constants/gisMapPoints.js';
 
 const MAP_CHARGE_MARKER = require('@/assets/images/new-bi/map_battery2.png')
@@ -1172,18 +1172,7 @@ export default {
         //   offset: [0, -10]
         // });
       } else {
-        // 创建折线样式: 醒目橙色系路径
-        const arr1 = latlngs.slice(0, 4);
-        const arr2 = latlngs.slice(3, latlngs.length);
-        L.polyline(arr1, {
-          color: '#0D9F31',
-          weight: 3,
-          opacity: 1,
-          lineCap: 'round',
-          lineJoin: 'round',
-          smoothFactor: 1.2,
-        }).addTo(this.pathLayers);
-        L.polyline(arr2, {
+        L.polyline(latlngs, {
           color: '#0090FF',
           weight: 3,
           opacity: 1,
@@ -1646,8 +1635,11 @@ export default {
         this.$refs.robotCarControlPartRef?.show?.(false)
         return
       }
-      const isDog = this.selectedRobot?.type === '机器狗' || this.selectedRobot?.type === 'ROBOT_DOG'
-      const controlRef = isDog ? this.$refs.robotControlPartRef : this.$refs.robotCarControlPartRef
+      const robot = {
+        ...(this.selectedRobot || {}),
+        ...(this.robotBaseInfo?.[this.selectedRobot?.robotId] || {})
+      }
+      const controlRef = isRobotDog(robot) ? this.$refs.robotControlPartRef : this.$refs.robotCarControlPartRef
       const nextVisible = typeof visible === 'boolean' ? visible : !controlRef?.visible
       controlRef?.show(nextVisible)
     },

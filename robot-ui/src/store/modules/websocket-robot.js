@@ -345,7 +345,8 @@ function cameraState(robotId, deviceId, cameraId, name, groupType) {
     viewerCount: 0,
     remoteAudioTrack: null,
     remoteAudioElement: null,
-    remoteVideoTrack: null
+    remoteVideoTrack: null,
+    attachTargets: {}
   }
 }
 
@@ -365,6 +366,61 @@ function mergeCameraFromStore(state, camera, patch) {
     ...camera,
     ...(state.cameras[camera.key] || {}),
     ...patch
+  }
+}
+
+function mergeAttachTargets(...lists) {
+  return Object.assign({}, ...lists.filter(item => item && typeof item === 'object'))
+}
+
+function uniqueAttachPrefixes(camera, state) {
+  const fromTargets = camera && camera.attachTargets ? Object.values(camera.attachTargets) : []
+  const list = fromTargets.length ? fromTargets : (state.prefixId ? [state.prefixId] : [])
+  return [...new Set(list.filter(Boolean))]
+}
+
+function liveKitRoomReusable(camera) {
+  if (!camera || !camera.session || camera.stopping || camera.stopped || camera.disconnecting) return false
+  if (camera.connecting && !camera.room) return true
+  if (!camera.room) return false
+  const roomState = camera.room.state
+  return !roomState || roomState === 'connected' || roomState === 'connecting'
+    || roomState === 'reconnecting' || roomState === 'signalReconnecting'
+}
+
+function attachCameraMedia(camera, prefixId) {
+  if (!camera || !camera.key || !prefixId) return
+  const video = document.getElementById(prefixId + camera.key)
+  if (camera.remoteVideoTrack && video && typeof camera.remoteVideoTrack.attach === 'function') {
+    camera.remoteVideoTrack.attach(video)
+    if (typeof video.play === 'function') video.play().catch(() => {})
+  }
+  const audio = document.getElementById(prefixId + camera.key + '-audio')
+  if (camera.remoteAudioTrack && audio && typeof camera.remoteAudioTrack.attach === 'function') {
+    camera.remoteAudioTrack.attach(audio)
+  }
+}
+
+function detachCameraMedia(camera, prefixId) {
+  if (!camera || !camera.key || !prefixId) return
+  const video = document.getElementById(prefixId + camera.key)
+  if (camera.remoteVideoTrack && video && typeof camera.remoteVideoTrack.detach === 'function') {
+    camera.remoteVideoTrack.detach(video)
+  }
+  if (video) video.srcObject = null
+  const audio = document.getElementById(prefixId + camera.key + '-audio')
+  if (camera.remoteAudioTrack && audio && typeof camera.remoteAudioTrack.detach === 'function') {
+    camera.remoteAudioTrack.detach(audio)
+  }
+}
+
+function attachTrackToCameraTargets(track, camera, state, kind) {
+  if (!track || typeof track.attach !== 'function') return
+  const prefixes = uniqueAttachPrefixes(camera, state)
+  for (const prefixId of prefixes) {
+    const elId = kind === 'audio' ? prefixId + camera.key + '-audio' : prefixId + camera.key
+    const el = document.getElementById(elId)
+    if (el) track.attach(el)
   }
 }
 
@@ -1060,15 +1116,24 @@ const actions = {
       } catch (_) {}
     }
   },
-  // 启动摄像头
-  async startCamera({ commit, state, dispatch }, { robot, camera }) {
+  // 启动摄像头。同一路可被多个画面消费：已有 LiveKit Room 时只挂到新的 video，不重连。
+  async startCamera({ commit, state, dispatch }, { robot, camera, consumerId, prefixId }) {
     if (camera.recordingActive) {
       await dispatch('stopCameraRecording', camera)
     }
-    console.log('%cstartCamera+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 'color: #0f0', state.prefixId + camera.key, robot.robotId, robot.status)
-    const camera1 = { ...camera }
+    const viewerId = consumerId || 'default'
+    const attachPrefix = prefixId || state.prefixId
+    const stored = state.cameras[camera.key] || {}
+    const camera1 = {
+      ...camera,
+      ...stored,
+      key: camera.key || stored.key,
+      attachTargets: mergeAttachTargets(stored.attachTargets, camera.attachTargets, { [viewerId]: attachPrefix })
+    }
+    console.log('%cstartCamera+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 'color: #0f0', attachPrefix + camera1.key, robot.robotId, robot.status)
     if (robot.status !== 'online') return
-    camera1.loading = true
+    const reuseRoom = liveKitRoomReusable(camera1)
+    if (!reuseRoom) camera1.loading = true
     camera1.stopped = false
     camera1.stopping = false
     camera1.restarting = false
@@ -1086,23 +1151,48 @@ const actions = {
       camera1.viewerCount = camera1.session.viewerCount
       state.stoppedSessionIds.delete(camera1.session.sessionId)
       // console.log('API createVideoSession', camera1.session)
-      if (!camera1.room || !camera1.intercomActive) {
+      if (reuseRoom) {
+        attachCameraMedia(camera1, attachPrefix)
+      } else if (!camera1.room || !camera1.intercomActive) {
         await dispatch('connectLiveKit', { camera: camera1 })
+      } else {
+        attachCameraMedia(camera1, attachPrefix)
       }
     } catch (error) {
       console.error('ERROR createVideoSession', error.message || '请求失败')
     } finally {
-      const next = mergeCameraFromStore(state, camera1, { loading: false })
+      const next = mergeCameraFromStore(state, camera1, {
+        loading: false,
+        attachTargets: mergeAttachTargets(
+          state.cameras[camera1.key]?.attachTargets,
+          camera1.attachTargets
+        )
+      })
       commit('setCamera', next)
       commit('setActiveCamera', { key: next.key, robot, camera: next })
     }
   },
 
-  // 停止摄像头
+  // 停止摄像头。传入 consumerId 时，若仍有其他画面在用同一路流，只摘掉本画面，不关会话。
   async stopCamera({ commit, state, dispatch }, data) {
     let camera = state.cameras[data.key]
     if (!camera) return
     camera = { ...camera }
+    const consumerId = data.consumerId
+    const attachPrefix = data.prefixId
+      || (consumerId && camera.attachTargets && camera.attachTargets[consumerId])
+      || state.prefixId
+    if (consumerId && camera.attachTargets) {
+      const nextTargets = { ...camera.attachTargets }
+      delete nextTargets[consumerId]
+      detachCameraMedia(camera, attachPrefix)
+      if (Object.keys(nextTargets).length > 0) {
+        camera.attachTargets = nextTargets
+        commit('setCamera', camera)
+        return
+      }
+      camera.attachTargets = {}
+    }
     if (camera.recordingActive) {
       await dispatch('stopCameraRecording', camera)
     }
@@ -1120,12 +1210,11 @@ const actions = {
       // console.log('API stopVideoSession', stopped)
       camera.watching = false
       camera.hasVideo = false
-      const video = document.getElementById(state.prefixId + camera.key)
-      if (camera.remoteVideoTrack && video && typeof camera.remoteVideoTrack.detach === 'function') {
-        camera.remoteVideoTrack.detach(video)
-      }
-      if (video) video.srcObject = null
+      const prefixes = uniqueAttachPrefixes({ ...camera, attachTargets: camera.attachTargets }, state)
+      if (!prefixes.includes(attachPrefix) && attachPrefix) prefixes.push(attachPrefix)
+      prefixes.forEach(prefixId => detachCameraMedia(camera, prefixId))
       camera.remoteVideoTrack = null
+      camera.attachTargets = {}
       if (camera.intercomActive) {
         camera.status = stopped.status
         camera.viewerCount = stopped.viewerCount || 0
@@ -1318,8 +1407,7 @@ const actions = {
         const current = currentCamera()
         if (!current) return
         if (track.kind === 'video') {
-          const videoElement = document.getElementById(state.prefixId + camera.key)
-          if (current.watching && videoElement) track.attach(videoElement)
+          if (current.watching) attachTrackToCameraTargets(track, current, state, 'video')
           current.remoteVideoTrack = track
           current.hasVideo = true
           if (state.activeIncomingCall &&
@@ -1329,20 +1417,34 @@ const actions = {
           }
         } else if (track.kind === 'audio') {
           current.remoteAudioTrack = track
-          const audioId = state.prefixId + camera.key + '-audio'
-          let audioElement = document.getElementById(audioId)
+          const prefixes = uniqueAttachPrefixes(current, state)
+          let audioElement = null
+          prefixes.forEach(prefixId => {
+            const el = document.getElementById(prefixId + camera.key + '-audio')
+            if (!el) return
+            track.attach(el)
+            el.dataset.intercomSessionId = sessionId
+            el.muted = Boolean(state.activeIncomingCall &&
+              state.activeIncomingCall.sessionId === sessionId &&
+              state.activeIncomingCall.speakerMuted)
+            audioElement = el
+          })
           if (!audioElement) {
-            audioElement = track.attach()
-            audioElement.id = audioId
-            audioElement.style.display = 'none'
-            document.body.appendChild(audioElement)
-          } else {
-            track.attach(audioElement)
+            const audioId = state.prefixId + camera.key + '-audio'
+            audioElement = document.getElementById(audioId)
+            if (!audioElement) {
+              audioElement = track.attach()
+              audioElement.id = audioId
+              audioElement.style.display = 'none'
+              document.body.appendChild(audioElement)
+            } else {
+              track.attach(audioElement)
+            }
+            audioElement.dataset.intercomSessionId = sessionId
+            audioElement.muted = Boolean(state.activeIncomingCall &&
+              state.activeIncomingCall.sessionId === sessionId &&
+              state.activeIncomingCall.speakerMuted)
           }
-          audioElement.dataset.intercomSessionId = sessionId
-          audioElement.muted = Boolean(state.activeIncomingCall &&
-            state.activeIncomingCall.sessionId === sessionId &&
-            state.activeIncomingCall.speakerMuted)
           current.remoteAudioElement = audioElement
           current.hasAudio = true
         }
