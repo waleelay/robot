@@ -293,6 +293,24 @@
                     :class="robot.statusClass"
                   >{{ robot.customStatusName }}</div>
                 </foreignObject>
+                <!-- 暂时不显示告警事件
+                <foreignObject
+                  v-if="robot.alarmText"
+                  class="robot-warning-fo"
+                  :x="robot.alarmX"
+                  :y="robot.alarmY"
+                  :width="robot.alarmWidth"
+                  :height="robot.alarmHeight"
+                  pointer-events="none"
+                >
+                  <div xmlns="http://www.w3.org/1999/xhtml" class="robot-warning flx-center" style="height: fit-content;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M15.6585 13.1145L9.38682 2.25252C8.6197 0.924516 7.36601 0.924516 6.59909 2.25252L0.327353 13.1145C-0.439564 14.4438 0.187856 15.5282 1.72062 15.5282H14.2652C15.798 15.5282 16.4248 14.4437 15.6585 13.1145ZM7.13152 5.33448C7.35689 5.09081 7.64342 4.96896 7.99287 4.96896C8.3425 4.96896 8.62877 5.08953 8.85438 5.32961C9.07852 5.57023 9.19055 5.87115 9.19055 6.233C9.19055 6.54434 8.7227 8.8337 8.56664 10.4992H7.43975C7.30289 8.83368 6.79524 6.54434 6.79524 6.233C6.79527 5.87664 6.90748 5.57696 7.13152 5.33448ZM8.8386 13.254C8.60154 13.4849 8.31945 13.6 7.99295 13.6C7.66653 13.6 7.38436 13.4849 7.14735 13.254C6.91098 13.0237 6.7935 12.7447 6.7935 12.4171C6.7935 12.0911 6.91098 11.8091 7.14735 11.5727C7.38436 11.3363 7.66653 11.2181 7.99295 11.2181C8.31945 11.2181 8.60154 11.3363 8.8386 11.5727C9.0748 11.8091 9.19256 12.0911 9.19256 12.4171C9.19256 12.7447 9.0748 13.0237 8.8386 13.254Z" fill="#FFDD00"/>
+                    </svg>
+                    <span class="ml5">{{ robot.alarmText }}</span>
+                  </div>
+                </foreignObject>
+                -->
               </g>
               <!-- 置顶：地图点位 -->
               <template v-if="showPath && pointsRaised">
@@ -664,7 +682,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds', 'taskPathPoints', 'taskData']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds', 'taskPathPoints', 'taskData' /* , 'robotAlarmObj' */]),
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
@@ -929,6 +947,26 @@ export default {
         const statusYSelected = nameYSelected + 22
         const cameraSelected = isFixedCamera && this.isRobotHighlighted(robot.robotId)
         const iconFile = cameraSelected ? 'robot-camera-active' : typeInfo.img
+        // 暂时不显示告警事件
+        // const alarmInfo = this.robotAlarmObj?.[robot.robotId]
+        // let alarmText = ''
+        // let alarmWidth = 0
+        // let alarmX = 0
+        // let alarmY = 0
+        // const alarmHeight = 50
+        // if (alarmInfo) {
+        //   alarmText = `告警事件：${alarmInfo.categoryName || ''}：${alarmInfo.title || ''}`
+        //   let textWidth = 0
+        //   for (let i = 0; i < alarmText.length; i++) {
+        //     textWidth += alarmText.charCodeAt(i) > 255 ? 16 : 9
+        //   }
+        //   alarmWidth = Math.ceil(textWidth) + 16 + 5 + 24 + 6
+        //   alarmX = -(alarmWidth / 2)
+        //   const visualTopY = isFixedCamera
+        //     ? iconY
+        //     : (this.isRobotHighlighted(robot.robotId) ? -56 : -43)
+        //   alarmY = visualTopY - 53
+        // }
         return {
           ...robot,
           name,
@@ -949,6 +987,11 @@ export default {
           statusYSelected,
           statusBgWidth,
           statusBgX
+          // alarmText,
+          // alarmWidth,
+          // alarmHeight,
+          // alarmX,
+          // alarmY
         }
       }).filter(Boolean)
     },
@@ -1722,16 +1765,11 @@ export default {
         taskId,
         data: { mapId, pathPoints }
       })
-      const nextTask = [
-        ...(Array.isArray(robot.task) ? robot.task : []).filter(item => String(item.taskId) !== String(oldTaskId)),
-        { taskId, mapId }
-      ]
       this.$store.commit('websocketExtraData/SET_ROBOT_BASE_INFO', {
         robotId,
         robotInfo: {
           ...robot,
-          controlMode: '导航模式',
-          task: nextTask
+          controlMode: '导航模式'
         }
       })
       return taskId
@@ -2451,6 +2489,53 @@ export default {
             -1px  0   0 #FFF,
              1px  0   0 #FFF;
         }
+        // 暂时不显示告警事件
+        // .robot-warning-fo {
+        //   overflow: visible;
+        //   pointer-events: none;
+        // }
+        // .robot-warning {
+        //   padding: 10px 12px;
+        //   width: max-content;
+        //   margin-left: -6px;
+        //   color: #FFF;
+        //   font-family: "Microsoft YaHei";
+        //   font-size: 16px;
+        //   line-height: 18px;
+        //   background: #410912;
+        //   border: 1px solid #FF0202;
+        //   border-radius: 2px;
+        //   white-space: nowrap;
+        //   flex-wrap: nowrap;
+        //   position: relative;
+        //   &::after {
+        //     position: absolute;
+        //     right: 0;
+        //     left: 0;
+        //     bottom: -7px;
+        //     margin: 0 auto;
+        //     width: 10px;
+        //     height: 10px;
+        //     background: #410912;
+        //     border: 1px solid #FF0202;
+        //     border-top: none;
+        //     border-right: none;
+        //     transform: rotate(-45deg);
+        //     transform-origin: top;
+        //     content: "";
+        //     z-index: 0;
+        //   }
+        //   svg {
+        //     flex-shrink: 0;
+        //     position: relative;
+        //     z-index: 1;
+        //   }
+        //   .ml5 {
+        //     margin-left: 5px;
+        //     position: relative;
+        //     z-index: 1;
+        //   }
+        // }
         .robot-status-fo {
           overflow: visible;
           pointer-events: none;

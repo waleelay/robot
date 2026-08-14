@@ -10,7 +10,11 @@ import {
   getLiantongWheeledRobotMock,
   getLiantongPendingTaskMock
 } from "../../views/bi/js/constants/gisMapPoints";
-import { isPausedTaskStatus, isRunningTaskStatus } from "../../views/bi/patrol/business/execution-status";
+import {
+  isDeviceAssociatedTaskStatus,
+  isPausedTaskStatus,
+  isRunningTaskStatus
+} from "../../views/bi/patrol/business/execution-status";
 
 const state = {
   // 设备对象：设备详情，包含坐标位置，task基本信息
@@ -31,7 +35,7 @@ const state = {
   alarmSummary: {}, // { totalToday: 50, handled: 18, unhandled: 0, handleRate: 100, handleRateText: "100%" }
    // 实时定位
   robotLocation: {}, // { robotId: { lat, lng, altitude, address, updatedAt } }
-  // 设备基本信息
+  // 设备基本信息；task / runningTask 由 taskData.equipmentList 反查，不取 overview.devices.task
   robotBaseInfo: {}, // { robotId: { ...robotInfo } }
   // 装备列表
   robotList: [],
@@ -61,11 +65,20 @@ const mutations = {
     state.deviceObj = value;
   },
   SET_TASK_INFO(state, value) {
+    if (!value || value.taskId === undefined || value.taskId === null) return
+    const prev = getTaskById(state.taskData, value.taskId) || {}
     const obj = { ...value };
-    if (!state.taskData[value.taskId] && !value.timestamp) {
+    if (!getTaskById(state.taskData, value.taskId) && !value.timestamp) {
       obj.timestamp = new Date().getTime() + 10;
     }
-    state.taskData = Object.assign({}, state.taskData, { [value.taskId]: {...state.taskData[value.taskId] || {}, ...obj} });
+    const merged = { ...prev, ...obj }
+    state.taskData = Object.assign({}, state.taskData, { [value.taskId]: merged });
+    const affectedIds = [
+      ...collectTaskEquipmentIds(prev),
+      ...collectTaskEquipmentIds(merged),
+      ...robotsHoldingTask(state.robotBaseInfo, value.taskId)
+    ]
+    applyDerivedRobotTasks(state, affectedIds)
   },
   SET_ALARMS_DATA(state, value) {
     if (value.high && value.medium && value.low) {
@@ -125,7 +138,23 @@ const mutations = {
     // }, 20000);
   },
   SET_ROBOT_BASE_INFO(state, { robotId, robotInfo }) {
-    state.robotBaseInfo = { ...state.robotBaseInfo, [robotId]: { ...state.robotBaseInfo?.[robotId] || {}, ...robotInfo, ...getRobotStatus({ ...state.robotBaseInfo?.[robotId], ...robotInfo }, state.taskData) } };
+    const incoming = { ...(robotInfo || {}) }
+    delete incoming.task
+    delete incoming.runningTask
+    delete incoming.runningTaskId
+    delete incoming.customStatusName
+    delete incoming.statusClass
+    const merged = {
+      ...state.robotBaseInfo?.[robotId] || {},
+      ...incoming,
+      robotId: incoming.robotId ?? robotId
+    }
+    const task = tasksForRobot(state.taskData, merged.robotId)
+    const withTask = { ...merged, task }
+    state.robotBaseInfo = {
+      ...state.robotBaseInfo,
+      [robotId]: { ...withTask, ...getRobotStatus(withTask, state.taskData) }
+    }
   },
   SET_ROBOT_LIST(state, value) {
     state.robotList = value;
@@ -199,8 +228,16 @@ const actions = {
       }
     }
 
+    // 装备 task 只从全局 taskData 反查，不使用 overview.devices.task
+    const devicesWithoutTask = devices.map(item => {
+      if (!item || item.task === undefined) return item
+      const next = { ...item }
+      delete next.task
+      return next
+    })
+
     // 调用 websocketRobot 模块的 loadRobots
-    dispatch('websocketRobot/loadRobots', devices, { root: true })
+    dispatch('websocketRobot/loadRobots', devicesWithoutTask, { root: true })
     commit('SET_ALARMS_DATA', data?.alarms || {});
     commit('SET_DEVICE_TYPES_STATS', data?.deviceTypeStats || []);
     commit('SET_DEVICE_STATS', data?.deviceStats || {
@@ -216,12 +253,10 @@ const actions = {
       commit('SET_TASK_INFO', { ...item, timestamp: new Date().getTime() + tasks.length - index });
       commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } });
     })
-    commit('SET_ROBOT_LIST', devices);
-    devices.map(item => {
-      state.robotBaseInfo[item.robotId] = Object.assign({}, item);
+    commit('SET_ROBOT_LIST', devicesWithoutTask);
+    devicesWithoutTask.map(item => {
       commit('SET_ROBOT_BASE_INFO', { robotId: item.robotId, robotInfo: { ...item } });
       commit('SET_ROBOT_LOCATION', { robotId: item.robotId, location: item.location });
-
     })
     data?.alarms?.high?.items.map((item, index) => {
       commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
@@ -243,7 +278,7 @@ const actions = {
         });
     commit('SET_DEFAULT_GPS_DEVICES', defaultGpsDevices);
     commit('SET_SLAM_MAP_LIST', slamMapList);
-    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devices, tasks));
+    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devicesWithoutTask, tasks));
     if (defaultGpsDevices.length) {
       commit('SET_GLOBAL_MAP_ID', 'gis');
       commit('SET_DEFAULT_MAP_IS_SLAM', false);
@@ -315,7 +350,8 @@ const actions = {
     } else if (event.event === 'panorama.device.location.changed') {
       commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
     } else if (event.event === 'panorama.task.changed') {
-      commit('SET_TASK_INFO', event.data.task);
+      const task = event.data?.task || (event.data?.taskId != null ? event.data : null)
+      if (task) commit('SET_TASK_INFO', task)
     } else if (event.event === 'panorama.alarm.changed') {
       commit('SET_ALARMS_DATA', event.data.alarm);
       if (event.data.alarm.level.toLowerCase() === 'high') {
@@ -359,7 +395,6 @@ const actions = {
 function buildSlamOfRobot(maps, robots, tasks) {
   const result = {}
   const robotMapIds = {}
-  const taskMapIds = {}
 
   maps.forEach(mapInfo => {
     if (mapInfo?.id === undefined || mapInfo?.id === null) return
@@ -369,9 +404,6 @@ function buildSlamOfRobot(maps, robots, tasks) {
   tasks.forEach(task => {
     const mapId = task?.mapId
     if (mapId === undefined || mapId === null) return
-    if (task?.taskId !== undefined && task?.taskId !== null) {
-      taskMapIds[String(task.taskId)] = mapId
-    }
     const equipmentList = task?.equipmentList || task?.devices || task?.robots || []
     equipmentList.forEach(robot => {
       const robotId = robot?.robotId || robot?.id || robot
@@ -382,11 +414,7 @@ function buildSlamOfRobot(maps, robots, tasks) {
 
   robots.forEach(robot => {
     const directMapId = robot?.mapId ?? robot?.location?.mapId
-    const taskMapId = (Array.isArray(robot?.task) ? robot.task : [robot?.task])
-      .filter(Boolean)
-      .map(task => task?.mapId ?? taskMapIds[String(task?.taskId ?? task?.id)])
-      .find(mapId => mapId !== undefined && mapId !== null)
-    const mapId = directMapId ?? taskMapId ?? robotMapIds[String(robot?.robotId)]
+    const mapId = directMapId ?? robotMapIds[String(robot?.robotId)]
     if (mapId === undefined || mapId === null) return
     const key = String(mapId)
     if (!result[key]) result[key] = { mapInfo: null, robots: [] }
@@ -398,9 +426,88 @@ function buildSlamOfRobot(maps, robots, tasks) {
   return result
 }
 
+function getTaskById(taskData, taskId) {
+  if (taskId === undefined || taskId === null || taskId === '') return null
+  return taskData?.[taskId] || taskData?.[String(taskId)] || null
+}
+
+function collectTaskEquipmentIds(task) {
+  const ids = []
+  const list = task?.equipmentList || task?.devices || task?.robots || []
+  list.forEach(item => {
+    const id = item == null ? null : (typeof item === 'object' ? (item.robotId ?? item.id) : item)
+    if (id !== undefined && id !== null && id !== '') ids.push(String(id))
+  })
+  if (task?.robotId !== undefined && task?.robotId !== null && task?.robotId !== '') {
+    ids.push(String(task.robotId))
+  }
+  return [...new Set(ids)]
+}
+
+function toRobotTaskSummary(task) {
+  return {
+    taskId: task.taskId,
+    workflowInstanceId: task.workflowInstanceId,
+    name: task.name,
+    status: task.status,
+    timeRange: task.timeRange,
+    mapId: task.mapId
+  }
+}
+
+function tasksForRobot(taskData, robotId) {
+  if (robotId === undefined || robotId === null || robotId === '') return []
+  const target = String(robotId)
+  const result = []
+  Object.values(taskData || {}).forEach(task => {
+    if (!task || !isDeviceAssociatedTaskStatus(task.status)) return
+    if (!collectTaskEquipmentIds(task).includes(target)) return
+    if (result.some(item => String(item.taskId) === String(task.taskId))) return
+    result.push(toRobotTaskSummary(task))
+  })
+  return result
+}
+
+function findRobotKey(robotBaseInfo, robotId) {
+  if (!robotBaseInfo || robotId === undefined || robotId === null || robotId === '') return null
+  if (robotBaseInfo[robotId]) return robotId
+  const target = String(robotId)
+  if (robotBaseInfo[target]) return target
+  return Object.keys(robotBaseInfo).find(key => String(key) === target) || null
+}
+
+function robotsHoldingTask(robotBaseInfo, taskId) {
+  const target = String(taskId)
+  return Object.keys(robotBaseInfo || {}).filter(key =>
+    (robotBaseInfo[key]?.task || []).some(item => String(item?.taskId) === target)
+  )
+}
+
+function applyDerivedRobotTasks(state, robotIds) {
+  const seen = new Set()
+  const keys = []
+  ;(robotIds || []).forEach(id => {
+    const key = findRobotKey(state.robotBaseInfo, id)
+    if (key == null || seen.has(String(key))) return
+    seen.add(String(key))
+    keys.push(key)
+  })
+  if (!keys.length) return
+  const next = { ...state.robotBaseInfo }
+  keys.forEach(key => {
+    const robot = next[key]
+    if (!robot) return
+    const task = tasksForRobot(state.taskData, robot.robotId ?? key)
+    const withTask = { ...robot, task }
+    next[key] = { ...withTask, ...getRobotStatus(withTask, state.taskData) }
+  })
+  state.robotBaseInfo = next
+}
+
 function getRobotStatus(robot, taskData) {
-  const { status, task = [] } = robot || {}
-  const taskList = task?.map(item => taskData?.[item.taskId] || item) || []
+  const { status, robotId } = robot || {}
+  const taskList = tasksForRobot(taskData, robotId)
+    .map(item => getTaskById(taskData, item.taskId) || item)
   const runningTask = taskList.find(item => isRunningTaskStatus(item?.status))
     || taskList.find(item => isPausedTaskStatus(item?.status))
     || null

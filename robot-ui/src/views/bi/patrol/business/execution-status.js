@@ -77,6 +77,16 @@ export function isActiveTaskStatus(value) {
   return isRunningTaskStatus(value) || isPausedTaskStatus(value)
 }
 
+/** 可挂到装备 task 上的活跃状态，与 BFF devices.task 口径一致 */
+export function isDeviceAssociatedTaskStatus(value) {
+  const key = normalizeExecutionStatus(value)
+  return key === 'RUNNING'
+    || key === 'PAUSING'
+    || key === 'PAUSED'
+    || key === 'RESUMING'
+    || key === 'TERMINATING'
+}
+
 export function taskStatusColorClass(value) {
   const key = normalizeExecutionStatus(value)
   if (key === 'RUNNING') return 'green'
