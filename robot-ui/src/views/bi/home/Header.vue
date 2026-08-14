@@ -9,7 +9,7 @@
         </div>
         <div class="flx-center icons h100">
           <div class="icon ml20" @click="toggleFullscreen">
-            <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen'" style="color: #AED1FF;"></svg-icon>
+            <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen'" :style="{ color: '#AED1FF', fontSize: isFullscreen ? undefined : '14px' }"></svg-icon>
           </div>
           <div class="icon ml20">
             <!-- <svg-icon icon-class="home" style="color: #8BAEDC;"></svg-icon> -->

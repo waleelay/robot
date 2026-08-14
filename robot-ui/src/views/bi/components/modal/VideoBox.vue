@@ -6,19 +6,26 @@
     @click="$emit('select', index)"
     style="position: relative; box-shadow: 0 0 1px 1px rgba(29,149,255,.36) inset"
   >
-    <video autoplay muted preload="auto" :id="prefixId + ZQL_videosInfos?.[index]?.key" :style="{ display: ZQL_videosInfos?.[index] ? 'block' : 'none' }" class="w100 h100"></video>
+    <video
+      ref="videoEl"
+      autoplay
+      muted
+      playsinline
+      preload="auto"
+      :id="prefixId + ZQL_videosInfos?.[index]?.key"
+      :style="{ display: ZQL_videosInfos?.[index] ? 'block' : 'none' }"
+      class="w100 h100"
+    ></video>
     <audio :id="prefixId + ZQL_videosInfos?.[index]?.key + '-audio'" autoplay />
     <template v-if="ZQL_videosInfos?.[index]">
       <div
-        v-if="statusType(ZQL_videosInfos?.[index]?.status) !== 'success'"
+        v-if="showStatusOverlay"
         class="w100 h100 flx-center flex-column"
         style="position: absolute; top: 0; left: 0; color: #1A5683">
-        <svg-icon :icon-class="statusType(ZQL_videosInfos?.[index]?.status) === 'warning' ? 'loading' : 'unlink1' " style="font-size: 16px;" />
+        <svg-icon :icon-class="isConnectingStatus ? 'loading' : 'unlink1'" style="font-size: 16px;" />
         <span class="mt2" style="font-family: YouSheBiaoTiHei; font-size: 12px; line-height: 16px; letter-spacing: 0.34px;">
-          <!-- {{ statusType(ZQL_videosInfos?.[index]?.status) === 'danger' ? '连接失败' : '' }} -->
-          {{ ZQL_videosInfos?.[index]?.hasVideo ? '' : ZQL_videosInfos?.[index]?.session ? '连接中' : statusType(ZQL_videosInfos?.[index]?.status) === 'danger' ? '连接失败' : '' }}
+          {{ overlayText }}
         </span>
-
       </div>
     </template>
     <!-- 空设备占位 -->
@@ -31,8 +38,12 @@
 </template>
 
 <script>
+import { mapState } from 'vuex'
+import livekitMedia from '@/views/bi/js/mixins/livekit-media'
+
 export default {
   name: 'VideoBox',
+  mixins: [livekitMedia],
   props: {
     prefixId: {
       type: String,
@@ -52,8 +63,32 @@ export default {
     },
   },
   computed: {
+    ...mapState('websocketRobot', ['cameras']),
     index() {
       return this.videoIndex
+    },
+    cameraInfo() {
+      const key = this.ZQL_videosInfos?.[this.index]?.key
+      return (key && this.cameras?.[key]) || this.ZQL_videosInfos?.[this.index] || {}
+    },
+    cameraMediaKey() {
+      return this.ZQL_videosInfos?.[this.index]?.key || ''
+    },
+    slotVideoInfo() {
+      return this.ZQL_videosInfos?.[this.index] || {}
+    },
+    showStatusOverlay() {
+      return !(this.cameraInfo.hasVideo || this.slotVideoInfo.hasVideo)
+    },
+    isConnectingStatus() {
+      const info = this.cameraInfo
+      if (info.connecting || info.restarting || info.loading || this.slotVideoInfo.loading) return true
+      return ['INIT', 'REQUESTING_CLIENT', 'ROOM_READY', 'STREAMING', 'INTERRUPTED', 'IDLE_WAIT']
+        .includes(info.status || this.slotVideoInfo.status)
+    },
+    overlayText() {
+      if (this.isConnectingStatus) return '连接中'
+      return this.statusType(this.cameraInfo.status || this.slotVideoInfo.status) === 'danger' ? '连接失败' : ''
     }
   },
   data() {

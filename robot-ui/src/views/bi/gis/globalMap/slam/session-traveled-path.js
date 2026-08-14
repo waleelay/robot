@@ -1,5 +1,6 @@
 import { isFixedCamera } from '@/constants/robot.js'
 import { isActiveTaskStatus } from '../../../patrol/business/execution-status'
+import { buildPathDirectionArrows } from './path-direction-arrows.js'
 
 const MAX_SESSION_TRAVELED_POINTS = 4000
 
@@ -12,7 +13,7 @@ export default {
   name: 'SessionTraveledPath',
   data() {
     return {
-      // 仅当前页内存：刷新后丢失（后端暂无已走路径接口）
+      // ????????��??????????????????��??????
       sessionTraveledByRobot: {}
     }
   },
@@ -46,7 +47,12 @@ export default {
         if (!rec.points || rec.points.length < 2) return null
         const traveledPoints = toPointsAttr(rec.points)
         if (!traveledPoints) return null
-        return { robotId, taskId: rec.taskId, traveledPoints }
+        return {
+          robotId,
+          taskId: rec.taskId,
+          traveledPoints,
+          arrows: buildPathDirectionArrows(rec.points, this.zoom)
+        }
       }).filter(Boolean)
     }
   },
@@ -61,7 +67,7 @@ export default {
   methods: {
     canTrackSessionTraveled(robotId) {
       if (!robotId) return false
-      // 模拟装备由 mock-task-execution 负责，避免重复画线
+      // ???????? mock-task-execution ??????????????
       if (String(robotId).startsWith('mock-')) return false
       if (this.mockExecRobotId && String(this.mockExecRobotId) === String(robotId) && !this.mockExecDone) {
         return false

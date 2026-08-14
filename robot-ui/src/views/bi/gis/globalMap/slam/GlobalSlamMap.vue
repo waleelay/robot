@@ -163,6 +163,19 @@
                   :points="mockExecutionPathLayer.traveledPoints"
                   class="mock-exec-path-traveled-core"
                 />
+                <g
+                  v-for="(arrow, index) in mockExecutionPathLayer.arrows"
+                  :key="`mock-path-arrow-${index}`"
+                  :transform="`translate(${arrow.x}, ${arrow.y}) rotate(${arrow.deg}) scale(${1 / zoom})`"
+                >
+                  <image
+                    :href="pathDirectionArrow"
+                    :x="-pathArrowWidth / 2"
+                    :y="-pathArrowHeight / 2"
+                    :width="pathArrowWidth"
+                    :height="pathArrowHeight"
+                  />
+                </g>
               </g>
               <!-- 真实环境：本页会话内记录的已走路径（刷新后不恢复） -->
               <g
@@ -173,6 +186,19 @@
               >
                 <polyline :points="layer.traveledPoints" class="mock-exec-path-traveled" />
                 <polyline :points="layer.traveledPoints" class="mock-exec-path-traveled-core" />
+                <g
+                  v-for="(arrow, index) in layer.arrows"
+                  :key="`session-path-arrow-${layer.robotId}-${index}`"
+                  :transform="`translate(${arrow.x}, ${arrow.y}) rotate(${arrow.deg}) scale(${1 / zoom})`"
+                >
+                  <image
+                    :href="pathDirectionArrow"
+                    :x="-pathArrowWidth / 2"
+                    :y="-pathArrowHeight / 2"
+                    :width="pathArrowWidth"
+                    :height="pathArrowHeight"
+                  />
+                </g>
               </g>
               <!-- 装备 -->
               <!-- 图标随地图缩放而变化 -->
@@ -519,6 +545,7 @@ import RobotCarControlPart from '../popup/RobotCarControlPart.vue'
 import { ROBOT_TYPE_INFO, isRobotDog, isFixedCamera } from '@/constants/robot.js'
 import { addTaskByPoint, previewImageBlob } from '@/api/new-bi.js'
 import { ENABLE_LIANTONG_SLAM_MOCK, ENABLE_LIANTONG_TASK_EXECUTION_MOCK, getMapPointIconMeta, isMapToolSpecialPoint, isPointToolRequireCharge } from '../../../js/constants/gisMapPoints.js'
+import { PATH_ARROW_WIDTH, PATH_ARROW_HEIGHT } from './path-direction-arrows.js'
 
 const ROBOT_BG = require('@/assets/images/new-bi/robot-bg.svg')
 const ROBOT_SELECTED_HALO = require('@/assets/images/new-bi/robot-selected-halo.svg')
@@ -529,6 +556,7 @@ const MAP_CHARGE_MARKER = require('@/assets/images/new-bi/map_battery2.png')
 const MAP_POINT_NAME_MAX_WIDTH = 160
 // 任务路径序号底图：Figma 20×20，#456393 / #8EBAFF
 const PATH_POINT_BADGE = require('@/assets/images/new-bi/path-point-badge.svg')
+const PATH_DIRECTION_ARROW = require('@/assets/images/new-bi/path-direction-arrow.svg')
 // Figma 机器狗图标展示 23.017×16.525，对应源图 38×28
 const ROBOT_ICON_SCALE_X = 23.017 / 38
 const ROBOT_ICON_SCALE_Y = 16.525 / 28
@@ -567,6 +595,9 @@ export default {
       robotSelectedCorners: ROBOT_SELECTED_CORNERS,
       mapPointNameMaxWidth: MAP_POINT_NAME_MAX_WIDTH,
       pathPointBadge: PATH_POINT_BADGE,
+      pathDirectionArrow: PATH_DIRECTION_ARROW,
+      pathArrowWidth: PATH_ARROW_WIDTH,
+      pathArrowHeight: PATH_ARROW_HEIGHT,
       imageUrl: '',
       previewImageStatus: '地图预览加载中',
       mapLoading: false,

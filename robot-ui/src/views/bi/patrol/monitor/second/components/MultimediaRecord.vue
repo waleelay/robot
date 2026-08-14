@@ -12,7 +12,7 @@
         >
           {{ item.label }}
         </div>
-        <div class="ml10 curp" @click="openMore" :title="`查看更多${tabIndex ? '视频记录' : '图片记录'}`">
+        <div class="ml10 curp" @click="openMore" :title="`查看更多${tabIndex ? '视频记录' : '抓拍记录'}`">
           <svg-icon icon-class="right" style="font-size: 14px; color: #fff" />
         </div>
       </div>

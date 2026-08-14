@@ -841,15 +841,7 @@ export default {
     //     // this.updateVideoDisplay(newCameras);
     //   },
     //   deep: true
-    // }
-  },
-  async beforeDestroy() {
-    // console.info('leafVideo-destroy')
-    // for (const [index, key] of Object.keys(this.activeCameras).entries()) {
-    //   if (this.activeCameras[key]?.camera) {
-    //     await this.stopCamera(this.activeCameras[key].camera);
-    //   }
-    // }
+    //     }
   }
 }
 </script>

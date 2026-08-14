@@ -49,9 +49,9 @@
     </div>
     <div class="ml38">
       <div class="page-tab flx-align-center mb15">
-        <span class="page-tab__item is-link ml10" @click="backToMonitor">实时监控</span>
+        <span class="page-tab__item is-link ml10" @click="backToMonitor">{{ backLabel }}</span>
         <svg-icon icon-class="right" class="ml10" style="color: #fff; font-size: 14px;"></svg-icon>
-        <span class="page-tab__item is-current ml10">深度控制</span>
+        <span class="page-tab__item is-current ml10">控制中心</span>
       </div>
       <LeftVideo :prefixId="prefixId" ref="leftVideoRef" style="width: 1134px;" card-title-class="title-1127-37" />
       <div class="mt21">
@@ -209,6 +209,20 @@ export default {
     currenRobot() {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
     },
+    controlCenterReturnTo() {
+      return this.$store.getters['websocketRobot/getControlCenterReturnTo']
+    },
+    activeCameras() {
+      return this.$store.getters['websocketRobot/getActiveCameras'] || {}
+    },
+    backLabel() {
+      const path = String(this.controlCenterReturnTo || '').split('?')[0]
+      if (path === '/bi/index' || path === '/bi/home') return '首页'
+      if (path === '/bi/patrol/panorama') return '全景地图'
+      if (path === '/bi/patrol/business') return '业务管理'
+      if (path === '/bi/patrol/statistics') return '数据统计'
+      return '实时监控'
+    },
     showDogControl() {
       if (this.baseDevice?.deviceType === 'QUADRUPED_BASE') return true
       return isRobotDog(this.selectedRobot) || isRobotDog(this.currenRobot)
@@ -274,9 +288,27 @@ export default {
   },
   mixins: [yuntai],
   methods: {
-    ...mapActions('websocketRobot', ['setSelectedRobotId']),
-    // 与 Header.back 一致：清空选中装备，回到一级实时监控
-    backToMonitor() {
+    ...mapActions('websocketRobot', ['setSelectedRobotId', 'stopCamera']),
+    async stopPlayingCameras() {
+      const keys = Object.keys(this.activeCameras || {})
+      for (const key of keys) {
+        const camera = this.activeCameras[key]?.camera
+        if (!camera) continue
+        try {
+          await this.stopCamera(camera)
+        } catch (e) {}
+      }
+    },
+    // 从其它页面进入控制中心时回到原界面，否则回到一级实时监控
+    async backToMonitor() {
+      await this.stopPlayingCameras()
+      const returnTo = this.controlCenterReturnTo
+      const returnPath = String(returnTo || '').split('?')[0]
+      if (returnTo && returnPath && returnPath !== '/bi/patrol/monitor') {
+        try {
+          await this.$router.push(returnTo)
+        } catch (e) {}
+      }
       this.setSelectedRobotId('')
     },
     openMultimediaMore() {

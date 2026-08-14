@@ -17,7 +17,16 @@
     <!-- :id="`${prefixId}videoslot_${index}`" -->
     <!-- 装备列表时默认显示第0个摄像头视频 -->
     
-    <video autoplay muted preload="auto" :id="prefixId + ZQL_videosInfos[`slot_${index}`]?.key" :style="{ display: ZQL_videosInfos[`slot_${index}`] ? 'block' : 'none' }" class="w100 h100">
+    <video
+      ref="videoEl"
+      autoplay
+      muted
+      playsinline
+      preload="auto"
+      :id="prefixId + ZQL_videosInfos[`slot_${index}`]?.key"
+      :style="{ display: ZQL_videosInfos[`slot_${index}`] ? 'block' : 'none' }"
+      class="w100 h100"
+    >
       <!-- <source src="https://mv6.music.tc.qq.com/C2FD55D4D97F547644795652173F9C0B8DD20B57BBF1ACC9CD0841D3ECA6F9A80BFCEDBD225832C0D87DE7BAFC9C39ADZZqqmusic_default__v21501a351/qmmv_0b53puaj6aaaquagbodg4zuvi7iat56qbh2a.f9934.m3u8" type="video/mp4"> -->
     </video>
     <audio :id="prefixId + ZQL_videosInfos[`slot_${index}`]?.key + '-audio'" autoplay />
@@ -92,12 +101,13 @@ import VideoInfo from '../../../components/VideoInfo.vue';
 import VideoTool from '../../../components/VideoTool.vue';
 import { mapActions, mapState } from 'vuex';
 import mixin from './drag-mixin';
+import livekitMedia from '@/views/bi/js/mixins/livekit-media';
 import { formatTiming } from '@/utils/index.js';
 import { ROBOT_TYPE_INFO } from '@/constants/robot';
 export default {
   name: 'VideoBox',
   components: { VideoTool, VideoInfo },
-  mixins: [mixin],
+  mixins: [mixin, livekitMedia],
   props: {
     splitType: {
       type: Number,
@@ -131,6 +141,9 @@ export default {
     },
     cameraInfo() {
       return this.cameras?.[this.ZQL_videosInfos[`slot_${this.index}`]?.key] || {}
+    },
+    cameraMediaKey() {
+      return this.ZQL_videosInfos[`slot_${this.index}`]?.key || ''
     },
     currentRobot() {
       const video = this.ZQL_videosInfos[`slot_${this.index}`] || {}
@@ -176,13 +189,14 @@ export default {
   },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
-    ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSelectedRobotId', 'stopCamera']),
+    ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSelectedRobotId', 'setControlCenterReturnTo', 'stopCamera']),
     async goControlCenter(robotId) {
       for (const [index, key] of Object.keys(this.activeCameras).entries()) {
         if (this.activeCameras[key]?.camera) {
           await this.stopCamera(this.activeCameras[key].camera);
         }
       }
+      this.setControlCenterReturnTo(null)
       this.setSelectedRobotId(robotId)
     },
     handleFullScreenChange(e) {

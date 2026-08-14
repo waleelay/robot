@@ -391,6 +391,7 @@ export default {
       ],
       syncedDeviceId: '',
       mediaSessionId: '',
+      mediaSessionOwned: false,
       mediaRoom: null,
       mediaHeartbeatTimer: null,
       remoteAudioElement: null,
@@ -566,6 +567,7 @@ export default {
         this.releaseMediaSession();
         this.syncedDeviceId = device.deviceId;
         this.mediaSessionId = '';
+        this.mediaSessionOwned = false;
         this.alarmActive = false;
         this.ttsLoopActive = false;
         this.audioPlaying = false;
@@ -593,7 +595,7 @@ export default {
         }
       }
       const session = status.audioSession || {};
-      if (session.mediaSessionId) this.mediaSessionId = session.mediaSessionId;
+      if (session.mediaSessionId && this.mediaSessionOwned) this.mediaSessionId = session.mediaSessionId;
       if (session.broadcastActive !== undefined) this.broadcastActive = !!session.broadcastActive;
       if (session.monitorActive !== undefined) this.monitorActive = !!session.monitorActive;
       if (session.monitorSuppressed !== undefined) this.monitorSuppressed = !!session.monitorSuppressed;
@@ -655,6 +657,7 @@ export default {
         await room.connect(url, response.operatorToken);
         this.mediaRoom = room;
         this.mediaSessionId = response.sessionId;
+        this.mediaSessionOwned = true;
         this.startMediaHeartbeat();
         if (enableMicrophone) await this.setLocalMicrophone(true);
         return response.sessionId;
@@ -700,7 +703,7 @@ export default {
     startMediaHeartbeat() {
       this.stopMediaHeartbeat();
       this.mediaHeartbeatTimer = window.setInterval(() => {
-        if (this.mediaSessionId) heartbeatIntercom(this.mediaSessionId).catch(() => {});
+        if (this.mediaSessionOwned && this.mediaSessionId) heartbeatIntercom(this.mediaSessionId).catch(() => {});
       }, 5000);
     },
     stopMediaHeartbeat() {
@@ -742,16 +745,18 @@ export default {
     },
     async releaseMediaSession() {
       const sessionId = this.mediaSessionId;
+      const owned = this.mediaSessionOwned;
       const room = this.mediaRoom;
       this.stopMediaHeartbeat();
       this.mediaSessionId = '';
+      this.mediaSessionOwned = false;
       this.mediaRoom = null;
       this.removeRemoteAudio();
       if (room) {
         await Promise.resolve(room.localParticipant.setMicrophoneEnabled(false)).catch(() => {});
         await Promise.resolve(room.disconnect()).catch(() => {});
       }
-      if (sessionId) await stopIntercom(sessionId).catch(() => {});
+      if (sessionId && owned) await stopIntercom(sessionId).catch(() => {});
     },
     shutdownAudioSession() {
       const device = this.device;

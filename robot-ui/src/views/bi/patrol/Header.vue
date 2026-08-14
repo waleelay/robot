@@ -52,7 +52,7 @@
         </div>
         <div class="flx-center flex-column full ml20 h100" @click="toggleFullscreen">
           <div class="icon">
-            <svg-icon :icon-class="isFullscreen ? 'fullscreen1' : 'fullscreen'" style="color: #AED1FF;"></svg-icon>
+            <svg-icon :icon-class="isFullscreen ? 'fullscreen1' : 'fullscreen'" :style="{ color: '#AED1FF', fontSize: isFullscreen ? undefined : '14px' }"></svg-icon>
           </div>
           <div class="text mt4">全屏</div>
         </div>
@@ -74,15 +74,15 @@
         </div>
         <div class="flx-center icons h100 ml20">
           <div class="icon" @click="toggleFullscreen">
-            <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen'" style="color: #AED1FF;"></svg-icon>
+            <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen'" :style="{ color: '#AED1FF', fontSize: isFullscreen ? undefined : '18px' }"></svg-icon>
           </div>
           <div class="icon ml20">
             <!-- <svg-icon icon-class="home" style="color: #8BAEDC;"></svg-icon> -->
              <PageChangeDropdown />
           </div>
-          <div class="icon ml20" v-if="showBack" @click="back">
+          <!-- <div class="icon ml20" v-if="showBack" @click="back">
             <svg-icon icon-class="back1" style="color: #AED1FF;"></svg-icon>
-          </div>
+          </div> -->
           <!-- <div class="icon ml20">
             <svg-icon icon-class="clock" style="color: #AED1FF;"></svg-icon>
           </div> -->

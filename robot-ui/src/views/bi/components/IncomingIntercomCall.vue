@@ -302,7 +302,8 @@ export default {
       'toggleIncomingCallSpeaker',
       'enableIncomingCallVideo',
       'disableIncomingCallVideo',
-      'setSelectedRobotId'
+      'setSelectedRobotId',
+      'setControlCenterReturnTo'
     ]),
     pad(value) {
       return String(value).padStart(2, '0')
@@ -397,10 +398,14 @@ export default {
       if (this.activeIncomingCall.videoEnabled) {
         await this.disableVideo()
       }
-      await this.setSelectedRobotId(this.activeIncomingCall.robotId)
       if (this.$route.name !== 'biPatrolMonitor') {
+        this.setControlCenterReturnTo(this.$route.fullPath)
+        await this.setSelectedRobotId(this.activeIncomingCall.robotId)
         await this.$router.push({ name: 'biPatrolMonitor' })
+        return
       }
+      this.setControlCenterReturnTo(null)
+      await this.setSelectedRobotId(this.activeIncomingCall.robotId)
     }
   }
 }

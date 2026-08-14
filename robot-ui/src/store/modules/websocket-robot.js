@@ -42,6 +42,7 @@ const state = {
   heartbeatTimer: null, // 心跳定时器
   stoppedSessionIds: new Set(), // 已停止的会话ID集合
   selectedRobotId: '', // 当前选中的机器人ID
+  controlCenterReturnTo: null, // 进入控制中心前的页面，返回时回到该界面
   activeCameras: {}, // 存储当前激活的摄像头 { [key]: { robot, camera } }
 
   audioState: {},
@@ -161,6 +162,9 @@ const mutations = {
   // 设置选中的机器人ID
   setSelectedRobotId(state, robotId) {
     state.selectedRobotId = robotId
+  },
+  setControlCenterReturnTo(state, path) {
+    state.controlCenterReturnTo = path || null
   },
   // 设置控制配置文件
   setControlProfiles(state, { robotId, profile }) {
@@ -388,21 +392,79 @@ function liveKitRoomReusable(camera) {
     || roomState === 'reconnecting' || roomState === 'signalReconnecting'
 }
 
+const ATTACH_RETRY_MAX_FRAMES = 60
+const attachRetryHandles = new Map()
+
+function attachRetryKey(cameraKey, prefixId, kind) {
+  return `${cameraKey}|${prefixId}|${kind}`
+}
+
+function cancelAttachRetry(cameraKey, prefixId, kind) {
+  if (!cameraKey) return
+  const keys = []
+  attachRetryHandles.forEach((_, key) => {
+    if (!key.startsWith(`${cameraKey}|`)) return
+    if (prefixId && kind && key !== attachRetryKey(cameraKey, prefixId, kind)) return
+    if (prefixId && !kind && !key.startsWith(`${cameraKey}|${prefixId}|`)) return
+    if (!prefixId && kind && !key.endsWith(`|${kind}`)) return
+    keys.push(key)
+  })
+  keys.forEach(key => {
+    const handle = attachRetryHandles.get(key)
+    if (handle) cancelAnimationFrame(handle)
+    attachRetryHandles.delete(key)
+  })
+}
+
+function cameraStillWantsAttach(camera, track, kind) {
+  const latest = state.cameras[camera && camera.key]
+  if (!latest || latest.stopping || latest.stopped) return false
+  const currentTrack = kind === 'audio' ? latest.remoteAudioTrack : latest.remoteVideoTrack
+  return currentTrack === track
+}
+
+function attachTrackToElement(track, elId, play) {
+  if (!track || typeof track.attach !== 'function' || !elId) return false
+  const el = document.getElementById(elId)
+  if (!el) return false
+  track.attach(el)
+  if (play && typeof el.play === 'function') el.play().catch(() => {})
+  return true
+}
+
+function scheduleAttachRetry(track, camera, prefixId, kind) {
+  if (!track || !camera || !camera.key || !prefixId) return
+  const key = attachRetryKey(camera.key, prefixId, kind)
+  const existing = attachRetryHandles.get(key)
+  if (existing) cancelAnimationFrame(existing)
+  let frames = 0
+  const tick = () => {
+    attachRetryHandles.delete(key)
+    if (!cameraStillWantsAttach(camera, track, kind)) return
+    const elId = kind === 'audio' ? prefixId + camera.key + '-audio' : prefixId + camera.key
+    if (attachTrackToElement(track, elId, kind !== 'audio')) return
+    frames += 1
+    if (frames >= ATTACH_RETRY_MAX_FRAMES) return
+    attachRetryHandles.set(key, requestAnimationFrame(tick))
+  }
+  attachRetryHandles.set(key, requestAnimationFrame(tick))
+}
+
 function attachCameraMedia(camera, prefixId) {
   if (!camera || !camera.key || !prefixId) return
-  const video = document.getElementById(prefixId + camera.key)
-  if (camera.remoteVideoTrack && video && typeof camera.remoteVideoTrack.attach === 'function') {
-    camera.remoteVideoTrack.attach(video)
-    if (typeof video.play === 'function') video.play().catch(() => {})
+  if (camera.remoteVideoTrack && typeof camera.remoteVideoTrack.attach === 'function') {
+    const attached = attachTrackToElement(camera.remoteVideoTrack, prefixId + camera.key, true)
+    if (!attached) scheduleAttachRetry(camera.remoteVideoTrack, camera, prefixId, 'video')
   }
-  const audio = document.getElementById(prefixId + camera.key + '-audio')
-  if (camera.remoteAudioTrack && audio && typeof camera.remoteAudioTrack.attach === 'function') {
-    camera.remoteAudioTrack.attach(audio)
+  if (camera.remoteAudioTrack && typeof camera.remoteAudioTrack.attach === 'function') {
+    const attached = attachTrackToElement(camera.remoteAudioTrack, prefixId + camera.key + '-audio', false)
+    if (!attached) scheduleAttachRetry(camera.remoteAudioTrack, camera, prefixId, 'audio')
   }
 }
 
 function detachCameraMedia(camera, prefixId) {
   if (!camera || !camera.key || !prefixId) return
+  cancelAttachRetry(camera.key, prefixId)
   const video = document.getElementById(prefixId + camera.key)
   if (camera.remoteVideoTrack && video && typeof camera.remoteVideoTrack.detach === 'function') {
     camera.remoteVideoTrack.detach(video)
@@ -414,13 +476,13 @@ function detachCameraMedia(camera, prefixId) {
   }
 }
 
-function attachTrackToCameraTargets(track, camera, state, kind) {
+function attachTrackToCameraTargets(track, camera, storeState, kind) {
   if (!track || typeof track.attach !== 'function') return
-  const prefixes = uniqueAttachPrefixes(camera, state)
+  const prefixes = uniqueAttachPrefixes(camera, storeState)
   for (const prefixId of prefixes) {
     const elId = kind === 'audio' ? prefixId + camera.key + '-audio' : prefixId + camera.key
-    const el = document.getElementById(elId)
-    if (el) track.attach(el)
+    const attached = attachTrackToElement(track, elId, kind !== 'audio')
+    if (!attached) scheduleAttachRetry(track, camera, prefixId, kind)
   }
 }
 
@@ -472,7 +534,7 @@ function detachRoomFromVideo(room, video) {
     })
   })
 }
-function prepareReplacementVideo(camera, track, publication, oldRoom, prefixId) {
+function prepareReplacementVideo(camera, track, publication, oldRoom) {
   if (publication && typeof publication.setVideoQuality === 'function') {
     publication.setVideoQuality(VideoQuality.HIGH)
   }
@@ -493,11 +555,12 @@ function prepareReplacementVideo(camera, track, publication, oldRoom, prefixId) 
   track.attach(warmup)
   return waitForVideoReady(warmup)
     .then(() => {
-      const video = document.getElementById(prefixId + camera.key)
-      if (video) {
-        detachRoomFromVideo(oldRoom, video)
-        track.attach(video)
-      }
+      const prefixes = uniqueAttachPrefixes(camera, state)
+      prefixes.forEach(prefixId => {
+        const video = document.getElementById(prefixId + camera.key)
+        if (video) detachRoomFromVideo(oldRoom, video)
+      })
+      attachTrackToCameraTargets(track, camera, state, 'video')
     })
     .finally(() => {
       if (typeof track.detach === 'function') track.detach(warmup)
@@ -1202,6 +1265,7 @@ const actions = {
     camera.stopped = true
     camera.restarting = false
     camera.disconnecting = true
+    cancelAttachRetry(camera.key)
     try {
       const sessionId = camera.session.sessionId
       if (!camera.intercomActive) state.stoppedSessionIds.add(sessionId)
@@ -1316,6 +1380,13 @@ const actions = {
   },
   async hangupIntercom({ commit, state, dispatch }, camera) {
     if (!camera.session) return true
+    const incomingSessionId = state.activeIncomingCall && state.activeIncomingCall.sessionId
+    const holdingIntercom = Boolean(
+      camera.intercomActive ||
+      intercomInProgress(camera) ||
+      (incomingSessionId && camera.session.sessionId === incomingSessionId)
+    )
+    if (!holdingIntercom) return true
     camera.intercomBusy = true
     const audioElement = camera.remoteAudioElement
     let response = null
@@ -1407,9 +1478,9 @@ const actions = {
         const current = currentCamera()
         if (!current) return
         if (track.kind === 'video') {
-          if (current.watching) attachTrackToCameraTargets(track, current, state, 'video')
           current.remoteVideoTrack = track
           current.hasVideo = true
+          if (current.watching) attachTrackToCameraTargets(track, current, state, 'video')
           if (state.activeIncomingCall &&
               state.activeIncomingCall.sessionId === sessionId &&
               state.activeIncomingCall.videoEnabled) {
@@ -1455,6 +1526,7 @@ const actions = {
         if (!current) return
         track.detach()
         if (track.kind === 'audio') {
+          cancelAttachRetry(current.key, null, 'audio')
           const audioElement = current.remoteAudioElement
           if (audioElement && typeof audioElement.remove === 'function') audioElement.remove()
           current.hasAudio = false
@@ -1462,6 +1534,7 @@ const actions = {
           current.remoteAudioElement = null
         }
         if (track.kind === 'video') {
+          cancelAttachRetry(current.key, null, 'video')
           current.hasVideo = false
           current.remoteVideoTrack = null
           if (state.activeIncomingCall &&
@@ -1482,6 +1555,7 @@ const actions = {
         if (!current || current.disconnecting) return
         const audioElement = current.remoteAudioElement
         if (audioElement && typeof audioElement.remove === 'function') audioElement.remove()
+        cancelAttachRetry(current.key)
         current.hasVideo = false
         current.hasAudio = false
         current.remoteVideoTrack = null
@@ -1572,6 +1646,7 @@ const actions = {
   },
   setSelectedRobotId({ commit, dispatch }, payload) {
     commit('setSelectedRobotId', payload)
+    if (!payload) commit('setControlCenterReturnTo', null)
     if (state.recordingMode) {
       state.selectedRecording = null
       state.selectedSnapshot = null
@@ -1582,6 +1657,9 @@ const actions = {
   },
   setPrefixId({ commit }, payload) {
     commit('setPrefixId', payload)
+  },
+  setControlCenterReturnTo({ commit }, payload) {
+    commit('setControlCenterReturnTo', payload)
   },
   async loadControlProfile({ commit, state, dispatch, rootState }, robotId) {
     if (!robotId) return
@@ -1663,7 +1741,10 @@ const actions = {
       camera.viewerCount = nextSession.viewerCount
       camera.hasVideo = true
       const publication = firstVideoPublication(nextRoom)
-      if (publication && publication.track) dispatch('startLatencyStats', { camera, track: publication.track, room: nextRoom })
+      if (publication && publication.track) {
+        camera.remoteVideoTrack = publication.track
+        dispatch('startLatencyStats', { camera, track: publication.track, room: nextRoom })
+      }
       camera.stopped = false
       camera.stopping = false
       state.stoppedSessionIds.delete(nextSession.sessionId)
@@ -1814,7 +1895,7 @@ const actions = {
       }
       room.on(RoomEvent.TrackSubscribed, (track, publication) => {
         if (track.kind !== 'video') return
-        prepareReplacementVideo(camera, track, publication, oldRoom, state.prefixId)
+        prepareReplacementVideo(camera, track, publication, oldRoom)
           .then(() => {
             camera.hasVideo = true
             commit('setCamera', { ...state.cameras?.[camera.key], hasVideo: true })
@@ -1949,6 +2030,7 @@ const getters = {
   getCameras: (state) => state.cameras,
   getCamerasRevision: (state) => state.camerasRevision,
   getSelectedRobotId: (state) => state.selectedRobotId,
+  getControlCenterReturnTo: (state) => state.controlCenterReturnTo,
   getSelectedRobot: (state) => state.robots.find(item => item.robotId === state.selectedRobotId) || {},
   getDisplayedCameras: (state, getters) => {
     const selectedRobot = getters.getSelectedRobot

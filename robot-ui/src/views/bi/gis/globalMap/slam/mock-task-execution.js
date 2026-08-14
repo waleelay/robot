@@ -3,6 +3,7 @@ import {
   ENABLE_LIANTONG_TASK_EXECUTION_MOCK,
   LIANTONG_TASK_MOVE_PIXELS_PER_SECOND
 } from '../../../js/constants/gisMapPoints.js'
+import { buildPathDirectionArrows } from './path-direction-arrows.js'
 
 const TEXT_RUNNING = '\u6267\u884c\u4e2d'
 const TEXT_NAV_MODE = '\u5bfc\u822a\u6a21\u5f0f'
@@ -95,7 +96,8 @@ export default {
       const split = splitPolyline(pixels, this.mockExecTraveledPx)
       return {
         taskId: this.mockExecBindTaskId,
-        traveledPoints: toPointsAttr(split.traveled)
+        traveledPoints: toPointsAttr(split.traveled),
+        arrows: buildPathDirectionArrows(split.traveled, this.zoom)
       }
     }
   },

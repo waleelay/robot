@@ -184,9 +184,15 @@ export default {
       
     },
     async syncTaskVideos(robotIds) {
-      const leftVideoRef = this.$refs?.leftVideoRef
-      if (!leftVideoRef || typeof leftVideoRef.syncTaskRobots !== 'function') return
-      await leftVideoRef.syncTaskRobots(robotIds || [])
+      // TaskListTree 可能早于 LeftVideo 挂载，短重试等待视频区就绪
+      for (let i = 0; i < 20; i++) {
+        const leftVideoRef = this.$refs?.leftVideoRef
+        if (leftVideoRef && typeof leftVideoRef.syncTaskRobots === 'function') {
+          await leftVideoRef.syncTaskRobots(robotIds || [])
+          return
+        }
+        await new Promise(resolve => this.$nextTick(resolve))
+      }
     },
     openMore() {
       this.$refs.multimediaDetailRef?.open({

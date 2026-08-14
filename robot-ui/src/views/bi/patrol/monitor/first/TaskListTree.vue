@@ -190,6 +190,7 @@ export default {
       collapseArr: [],
       selectedEquipmentList2: [],
       hasLoad: false,
+      appliedRouteTaskId: '',
       ROBOT_TYPE_INFO,
     }
   },
@@ -210,13 +211,65 @@ export default {
       return getDescArr(this.taskData || {}, 'timestamp')
     },
     taskData1() {
-      // 只显示执行中和暂停中的任务
-      return this.tasks.filter(item => ['running', 'paused'].includes(item.status)) || []
+      // 只显示执行中和暂停中的任务；路由自动选中的任务不在过滤结果里时仍展示，保证高亮可见
+      const list = this.tasks.filter(item => ['running', 'paused'].includes(item.status)) || []
+      const selected = this.resolveTask(this.selectedTaskId)
+      if (selected?.taskId && !list.some(item => String(item.taskId) === String(selected.taskId))) {
+        return [selected, ...list]
+      }
+      return list
     }
   },
-  mounted() {},
+  mounted() {
+    this.scheduleRouteTaskPlay()
+  },
+  activated() {
+    this.scheduleRouteTaskPlay()
+  },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
+    resolveTask(taskId) {
+      if (taskId === undefined || taskId === null || taskId === '') return null
+      const data = this.taskData || {}
+      return data[taskId]
+        || data[String(taskId)]
+        || (Number.isNaN(Number(taskId)) ? null : data[Number(taskId)])
+        || Object.values(data).find(item => String(item?.taskId) === String(taskId))
+        || null
+    },
+    splitTypeForCount(count) {
+      const n = Math.max(Number(count) || 0, 1)
+      return [1, 4, 6, 9].find(item => item >= n) || 9
+    },
+    getTaskRobotIds(task) {
+      const equipmentList = Array.isArray(task?.equipmentList) ? task.equipmentList : []
+      return equipmentList
+        .map(item => item?.robotId || item?.id)
+        .filter(id => id !== undefined && id !== null && id !== '')
+        .map(id => String(id))
+    },
+    isRobotOnline(robotId) {
+      const targetId = String(robotId)
+      const robot = (this.robots || []).find(item => String(item.robotId) === targetId)
+      const status = this.robotBaseInfo?.[robotId]?.status
+        || this.robotBaseInfo?.[targetId]?.status
+        || robot?.status
+      return status === 'online'
+    },
+    async waitTicks(times = 1) {
+      for (let i = 0; i < times; i++) {
+        await new Promise(resolve => this.$nextTick(resolve))
+      }
+    },
+    routeTaskId() {
+      return this.$route.query.taskId
+    },
+    scheduleRouteTaskPlay() {
+      const taskId = this.routeTaskId()
+      if (taskId === undefined || taskId === null || taskId === '') return
+      this.hasLoad = false
+      this.executePlay()
+    },
     tabChange(index) {
       this.tabIndex = index
       // if (index && this.taskList.length) {
@@ -234,16 +287,54 @@ export default {
     onDragStart,
     onDragEnd,
     async executePlay() {
+      const routeTaskId = this.routeTaskId()
+      if (routeTaskId !== undefined && routeTaskId !== null && routeTaskId !== '') {
+        await this.applyRouteTaskSelection()
+        return
+      }
       const onlineList = this.equipmentInfo.online.list || []
       if (this.hasLoad || !onlineList.length) return
       this.hasLoad = true
-      this.setSplitType([1, 4, 6, 9].filter(item => item >= onlineList.length)?.[0] || 9)
-      // console.log('this.splitType', [1, 4, 6, 9].filter(item => item >= onlineList.length)?.[0] || 9);
-      if (this.$route.query.taskId !== undefined) {
-        await this.handleSelectTask(this.taskData[this.$route.query.taskId])
-      } else {
-        for (const item of onlineList) {
-          await this.handleClickRobot(item)
+      this.setSplitType(this.splitTypeForCount(onlineList.length))
+      await this.waitTicks(2)
+      for (const item of onlineList) {
+        await this.handleClickRobot(item)
+      }
+    },
+    async applyRouteTaskSelection() {
+      const routeTaskId = this.routeTaskId()
+      if (routeTaskId === undefined || routeTaskId === null || routeTaskId === '') return false
+      this.tabIndex = 1
+      const task = this.resolveTask(routeTaskId)
+      if (!task?.taskId) return false
+      if (this._applyingRouteTask) {
+        this._pendingRouteTask = true
+        return false
+      }
+
+      const robotIds = this.getTaskRobotIds(task)
+      const onlineIds = robotIds.filter(id => this.isRobotOnline(id))
+      const playIds = onlineIds.length ? onlineIds : robotIds
+      const alreadySelected = String(this.selectedTaskId) === String(task.taskId)
+      const playing = new Set((this.checkedRobotIds || []).map(id => String(id)))
+      const needPlay = playIds.filter(id => this.isRobotOnline(id) && !playing.has(String(id)))
+      if (alreadySelected && !needPlay.length && String(this.appliedRouteTaskId) === String(task.taskId)) {
+        return true
+      }
+
+      this._applyingRouteTask = true
+      try {
+        this.setSplitType(this.splitTypeForCount(playIds.length || 1))
+        await this.waitTicks(2)
+        await this.handleSelectTask(task, { force: true, robotIds: playIds })
+        this.appliedRouteTaskId = String(task.taskId)
+        this.hasLoad = true
+        return true
+      } finally {
+        this._applyingRouteTask = false
+        if (this._pendingRouteTask) {
+          this._pendingRouteTask = false
+          this.executePlay()
         }
       }
     },
@@ -303,12 +394,13 @@ export default {
      * - 切换任务：共用装备视频复用；非共用装备关闭旧的、打开新的
      * - 再次点击已选任务：取消选中，并关闭全部装备视频
      */
-    async handleSelectTask(task) {
+    async handleSelectTask(task, options = {}) {
       if (!task?.taskId) return
       if (typeof this.syncTaskVideos !== 'function') return
 
-      // 取消选中：关闭当前所有装备视频
-      if (String(this.selectedTaskId) === String(task.taskId)) {
+      const force = Boolean(options.force)
+      // 取消选中：关闭当前所有装备视频（路由自动选中时不切换）
+      if (!force && String(this.selectedTaskId) === String(task.taskId)) {
         this.selectedTaskId = ''
         this.selectedEquipmentList = []
         await this.syncTaskVideos([])
@@ -316,18 +408,35 @@ export default {
       }
 
       const equipmentList = Array.isArray(task.equipmentList) ? task.equipmentList : []
-      const targetEquipment = equipmentList.slice(0, this.splitType)
-      const robotIds = targetEquipment
-        .map(item => item?.robotId || item?.id)
-        .filter(id => id !== undefined && id !== null && id !== '')
-        .map(id => String(id))
+      const robotIds = Array.isArray(options.robotIds)
+        ? options.robotIds.map(id => String(id)).filter(Boolean)
+        : equipmentList
+          .map(item => item?.robotId || item?.id)
+          .filter(id => id !== undefined && id !== null && id !== '')
+          .map(id => String(id))
+          .slice(0, this.splitType)
+      const idSet = new Set(robotIds)
 
+      this.tabIndex = 1
       this.selectedTaskId = task.taskId
-      this.selectedEquipmentList = targetEquipment
+      this.selectedEquipmentList = equipmentList.filter(item => idSet.has(String(item?.robotId || item?.id)))
       await this.syncTaskVideos(robotIds)
     },
   },
   watch: {
+    '$route.query.taskId'() {
+      this.appliedRouteTaskId = ''
+      this.scheduleRouteTaskPlay()
+    },
+    taskData: {
+      handler() {
+        const taskId = this.routeTaskId()
+        if (taskId === undefined || taskId === null || taskId === '') return
+        if (String(this.appliedRouteTaskId) === String(this.resolveTask(taskId)?.taskId || '')) return
+        this.executePlay()
+      },
+      deep: true
+    },
     activeCameras: {
       handler(newVal) {
       },
@@ -338,6 +447,10 @@ export default {
         if (!newRobots.length) {
           this.equipmentInfo.online.list = []
           this.equipmentInfo.offline.list = []
+          const taskId = this.routeTaskId()
+          if (taskId !== undefined && taskId !== null && taskId !== '') {
+            this.executePlay()
+          }
           return
         }
         const onlineList = []

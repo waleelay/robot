@@ -1,7 +1,7 @@
  <template>
   <el-dropdown class="page-dropdown" trigger="click" :placement="$route.name === 'biIndex' ? 'top-end' : 'bottom-end'" @visible-change="isOpen = !isOpen" @command="goPage">
     <span :style="{ 'font-size': $route.name === 'biIndex' ? '16px' : '20px', color: '#AED1FF' }">
-      <svg-icon icon-class="change" />
+      <svg-icon icon-class="app1" />
     </span>
     <el-dropdown-menu slot="dropdown" class="custom-dropdown-menu page-dropdown-menu p10" :class="{'mt25': $route.name !== 'biIndex'}" :style="{ transform: $route.name !== 'biIndex' ? 'translateX(185px)' : 'translateX(0px)' }">
       <div class="d-flex">

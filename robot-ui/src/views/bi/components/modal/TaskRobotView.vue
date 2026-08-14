@@ -137,7 +137,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketRobot', ['setPrefixId']),
+    ...mapActions('websocketRobot', ['setPrefixId', 'setSelectedRobotId', 'setControlCenterReturnTo']),
     async showModal(data) {
       this.dialogVisible = true;
       this.robotIds = data.robotIds
@@ -153,7 +153,18 @@ export default {
     },
     async goTask() {
       await this.stopAll()
-      this.$router.push({ path: '/bi/patrol/monitor', query: { taskId: this.taskInfo.taskId || 0 } })
+      // 进入一级监控任务列表，避免残留的装备选中把页面带到二级控制台
+      this.setControlCenterReturnTo(this.$route.fullPath)
+      this.setSelectedRobotId('')
+      const taskId = this.taskInfo.taskId
+      const query = {
+        taskId: taskId === undefined || taskId === null ? 0 : taskId
+      }
+      try {
+        await this.$router.push({ path: '/bi/patrol/monitor', query })
+      } catch (e) {
+        // 已在实时监控且 query 相同时忽略重复导航
+      }
     },
     orderedCameras(robot) {
       const cameras = (robot.cameras || [])

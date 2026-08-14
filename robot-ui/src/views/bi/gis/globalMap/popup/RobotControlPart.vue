@@ -159,12 +159,13 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketRobot', ['setPrefixId', 'setSelectedRobotId']),
+    ...mapActions('websocketRobot', ['setPrefixId', 'setSelectedRobotId', 'setControlCenterReturnTo']),
     show(visible) {
       this.visible = visible;
     },
     async goControl() {
-      await this.stopAll()      
+      await this.stopAll()
+      this.setControlCenterReturnTo(this.$route.fullPath)
       this.setSelectedRobotId(this.selectedRobotId)
       this.$router.push({ path: '/bi/patrol/monitor' })
     },
