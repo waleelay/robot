@@ -29,6 +29,8 @@ public class RobotRegistryService {
     private static final List<String> DYNAMIC_STATE_FIELDS = List.of(
             "speed",
             "moving",
+            "totalMileage",
+            "currentMileage",
             "location",
             "runningStatus",
             "healthStatus",

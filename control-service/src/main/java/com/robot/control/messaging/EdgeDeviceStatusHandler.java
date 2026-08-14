@@ -3,8 +3,11 @@ package com.robot.control.messaging;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.config.DateTimeConfig;
+import com.robot.control.mileage.MileageReading;
+import com.robot.control.mileage.MileageService;
 import com.robot.control.robot.service.RobotRegistryService;
 import com.robot.control.service.EquipmentControlService;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -25,14 +28,17 @@ public class EdgeDeviceStatusHandler {
     private final ObjectMapper objectMapper;
     private final EquipmentControlService equipmentControlService;
     private final RobotRegistryService robotRegistryService;
+    private final MileageService mileageService;
 
     public EdgeDeviceStatusHandler(
             ObjectMapper objectMapper,
             EquipmentControlService equipmentControlService,
-            RobotRegistryService robotRegistryService) {
+            RobotRegistryService robotRegistryService,
+            MileageService mileageService) {
         this.objectMapper = objectMapper;
         this.equipmentControlService = equipmentControlService;
         this.robotRegistryService = robotRegistryService;
+        this.mileageService = mileageService;
     }
 
     /**
@@ -58,6 +64,7 @@ public class EdgeDeviceStatusHandler {
             }
 
             Map<String, Object> update = normalize(serialNumber, envelope, status);
+            recordMileage(serialNumber, envelope, status);
             Map<String, Object> merged = equipmentControlService.mergeEdgeDeviceStatus(serialNumber, update);
             robotRegistryService.update(merged);
         } catch (Exception ex) {
@@ -84,6 +91,8 @@ public class EdgeDeviceStatusHandler {
         putIfPresent(update, "battery", energy.get("batteryPercent"));
         putIfPresent(update, "speed", motion.get("speed"));
         putIfPresent(update, "moving", motion.get("moving"));
+        putIfPresent(update, "totalMileage", motion.get("totalMileage"));
+        putIfPresent(update, "currentMileage", motion.get("currentMileage"));
         putIfPresent(update, "runningStatus", basic.get("runningStatus"));
         putIfPresent(update, "healthStatus", basic.get("healthStatus"));
         putIfPresent(update, "chargingStatus", energy.get("chargingStatus"));
@@ -111,6 +120,33 @@ public class EdgeDeviceStatusHandler {
         update.put("stateSource", "EDGE_DEVICE_STATUS");
         update.put("timestamp", timestamp);
         return update;
+    }
+
+    private void recordMileage(
+            String serialNumber,
+            Map<String, Object> envelope,
+            Map<String, Object> status) {
+        Map<String, Object> motion = map(status.get("motion"));
+        if (motion.isEmpty()) {
+            return;
+        }
+        try {
+            Map<String, Object> localization = map(status.get("localization"));
+            String timestamp = string(envelope.get("timestamp"));
+            OffsetDateTime eventTime = timestamp.isBlank()
+                    ? OffsetDateTime.now()
+                    : DateTimeConfig.parseOffsetDateTime(timestamp);
+            mileageService.record(new MileageReading(
+                    serialNumber,
+                    string(envelope.get("messageId")),
+                    eventTime,
+                    decimal(motion.get("totalMileage")),
+                    decimal(motion.get("currentMileage")),
+                    string(localization.get("mapId"))));
+        } catch (RuntimeException exception) {
+            // 里程持久化异常不能阻断设备实时状态和控制链路。
+            log.warn("Failed to persist edge device mileage robotId={}", serialNumber, exception);
+        }
     }
 
     private String serialNumberFromTopic(String topic) {
@@ -179,5 +215,16 @@ public class EdgeDeviceStatusHandler {
 
     private String string(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private BigDecimal decimal(Object value) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 }

@@ -80,3 +80,6 @@ BFF 是 OAuth2 Resource Server：
 生产必须使用真实 HTTPS Issuer/JWK、受控 CORS 和内部下游地址。若 REST 正常但 Nginx 返回 502，应检查 upstream，并确认代理未重复转发 `Connection`、`Transfer-Encoding`、`Content-Length`、`Upgrade` 等 hop-by-hop Header。
 
 新增聚合字段时必须同步维护字段来源映射；下游不可用时应保留明确的空值或错误语义，不新增生产假数据兜底。
+
+全景今日里程和统计页区间里程由 Control 对边缘状态上报持久化计算，BFF 通过
+`/api/control/statistics/mileage` 批量查询，展示单位统一换算为 `KM`。

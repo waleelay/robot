@@ -61,6 +61,12 @@ class StatisticsServiceTest {
                 alarm("robot-001", "FIRE", "IMMEDIATE_DISPOSAL", "2026-07-03T11:00:00", "A区"),
                 alarm("robot-001", "FIRE", "FALSE_ALARM", "2026-07-03T12:00:00", "A区"),
                 alarm("robot-002", "SMOKE", null, "2026-07-04T12:00:00", "B区")));
+        when(centerClient.mileageSummary(
+                        "2026-07-01 00:00:00", "2026-07-31 23:59:59", List.of("robot-001")))
+                .thenReturn(Map.of("hasData", true, "totalMeters", 12_000));
+        when(centerClient.mileageSummary(
+                        "2026-05-31 00:00:00", "2026-06-30 23:59:59", List.of("robot-001")))
+                .thenReturn(Map.of("hasData", true, "totalMeters", 8_000));
         StatisticsService service = new StatisticsService(new ObjectMapper(), centerClient, tempDir.toString());
 
         Map<String, Object> overview = service.overview(
@@ -69,6 +75,8 @@ class StatisticsServiceTest {
         Map<String, Object> kpis = map(overview.get("kpis"));
         assertEquals(2, map(kpis.get("taskTotal")).get("value"));
         assertEquals(2, map(kpis.get("aiAlarmTotal")).get("value"));
+        assertEquals(12.0, map(kpis.get("patrolMileage")).get("value"));
+        assertEquals(50.0, map(kpis.get("patrolMileage")).get("compareRate"));
         Map<String, Object> runtime = map(overview.get("equipmentRuntime"));
         assertEquals(100L, runtime.get("onlineRate"));
         assertEquals(50.0, runtime.get("taskCompletionRate"));

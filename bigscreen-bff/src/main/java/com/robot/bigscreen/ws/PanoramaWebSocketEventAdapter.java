@@ -21,6 +21,7 @@ public class PanoramaWebSocketEventAdapter {
 
     private static final DateTimeFormatter EVENT_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String ROBOT_STATE_EVENT = "robot.state";
+    private static final String ROBOT_MILEAGE_CHANGED = "robot.mileage.changed";
     private static final String PANORAMA_DEVICE_STATUS_CHANGED = "panorama.device.status.changed";
     private static final String PANORAMA_DEVICE_LOCATION_CHANGED = "panorama.device.location.changed";
     private static final String PANORAMA_TASK_CHANGED = "panorama.task.changed";
@@ -323,7 +324,7 @@ public class PanoramaWebSocketEventAdapter {
         }
         String event = text(root, "event");
         if (TASK_EVENTS.contains(event) || ALARM_EVENTS.contains(event) || DEVICE_EVENTS.contains(event)
-                || MANAGEMENT_TASK_INVALIDATED.equals(event)) {
+                || MANAGEMENT_TASK_INVALIDATED.equals(event) || ROBOT_MILEAGE_CHANGED.equals(event)) {
             return true;
         }
         if (!ROBOT_STATE_EVENT.equals(event)) {

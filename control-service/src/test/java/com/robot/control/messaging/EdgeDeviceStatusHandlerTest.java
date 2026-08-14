@@ -9,6 +9,8 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.robot.service.RobotRegistryService;
+import com.robot.control.mileage.MileageReading;
+import com.robot.control.mileage.MileageService;
 import com.robot.control.service.EquipmentControlService;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -18,8 +20,9 @@ class EdgeDeviceStatusHandlerTest {
 
     private final EquipmentControlService equipmentControlService = mock(EquipmentControlService.class);
     private final RobotRegistryService robotRegistryService = mock(RobotRegistryService.class);
+    private final MileageService mileageService = mock(MileageService.class);
     private final EdgeDeviceStatusHandler handler = new EdgeDeviceStatusHandler(
-            new ObjectMapper(), equipmentControlService, robotRegistryService);
+            new ObjectMapper(), equipmentControlService, robotRegistryService, mileageService);
 
     @Test
     void mapsRealEdgeStatusPayloadToUnifiedRobotState() {
@@ -34,7 +37,8 @@ class EdgeDeviceStatusHandlerTest {
                   "timestamp":"2026-08-05T17:07:43+08:00",
                   "payload":{"status":{
                     "basic":{"runningStatus":"待机","healthStatus":"异常"},
-                    "motion":{"moving":false,"speed":0.6,"speedUnit":"m/s"},
+                    "motion":{"moving":false,"speed":0.6,"speedUnit":"m/s",
+                      "totalMileage":5578.563,"currentMileage":397.672},
                     "localization":{"localized":true,"coordinateType":"地图坐标","mapId":"2077",
                       "coordinateX":5.28,"coordinateY":1.37,"coordinateZ":0,"yaw":-2.87},
                     "energy":{"batteryPercent":47,"chargingStatus":"未充电"},
@@ -54,6 +58,8 @@ class EdgeDeviceStatusHandlerTest {
                 .containsEntry("status", "online")
                 .containsEntry("battery", 47)
                 .containsEntry("speed", 0.6)
+                .containsEntry("totalMileage", 5578.563)
+                .containsEntry("currentMileage", 397.672)
                 .containsEntry("controlMode", "导航模式")
                 .containsEntry("missionStatus", "COMPLETED")
                 .containsEntry("softStopActive", true)
@@ -68,6 +74,10 @@ class EdgeDeviceStatusHandlerTest {
         assertThat(map(state.get("edgeStatus"))).containsKeys(
                 "basic", "motion", "localization", "energy", "control", "task", "rawStatus");
         verify(robotRegistryService).update(state);
+        ArgumentCaptor<MileageReading> mileageCaptor = ArgumentCaptor.forClass(MileageReading.class);
+        verify(mileageService).record(mileageCaptor.capture());
+        assertThat(mileageCaptor.getValue().robotId()).isEqualTo("test115");
+        assertThat(mileageCaptor.getValue().totalMileageMeters()).isEqualByComparingTo("5578.563");
     }
 
     @SuppressWarnings("unchecked")

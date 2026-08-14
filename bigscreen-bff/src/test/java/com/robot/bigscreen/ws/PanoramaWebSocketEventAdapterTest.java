@@ -109,6 +109,19 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(adapter.adapt(payload)).containsExactly(payload);
     }
 
+    @Test
+    void requestsStatisticsRefreshForMileageChanges() {
+        String payload = """
+                {
+                  "event":"robot.mileage.changed",
+                  "data":{"robotId":"test115","deltaMeters":10.2}
+                }
+                """;
+
+        assertThat(adapter.requiresStatsRefresh("browser-a", payload)).isTrue();
+        assertThat(adapter.adapt(payload)).containsExactly(payload);
+    }
+
     private JsonNode readTree(String value) {
         try {
             return objectMapper.readTree(value);

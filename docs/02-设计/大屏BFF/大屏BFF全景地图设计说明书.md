@@ -735,6 +735,10 @@ WebSocket：
 | `panorama.alarm.changed` | 上游告警创建、更新、处置等 alarm 变更事件 | 收到后立即统一转换并推送；没有真实上游事件时不在 BFF 生成模拟告警。 |
 | `panorama.stats.changed` | 设备业务变更、设备在线/离线/故障状态切换、任务或告警变更 | 短时间内的多次触发合并 500ms 后重查完整统计快照，只在快照与上次不同时推送。普通电量、速度、位置心跳不触发统计刷新。 |
 
+Control 对 `totalMileage/currentMileage` 计算出的有效里程增量累计达到配置阈值时，
+广播 `robot.mileage.changed`。BFF 收到后沿用上述统计刷新机制，输出更新后的
+`panorama.stats.changed`；原始里程事件仍会透传。
+
 BFF 仍会原样转发上游消息，上表只描述追加生成的 `panorama.*` 事件。浏览器会话关闭后，其待发位置事件和统计/任务刷新状态一并清理。
 
 设备状态事件示例：

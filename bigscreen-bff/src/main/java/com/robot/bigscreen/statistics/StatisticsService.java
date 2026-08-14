@@ -106,6 +106,25 @@ public class StatisticsService {
         List<Map<String, Object>> resolvedDeviceTypeOptions = join(optionsFuture, List.of());
         List<Map<String, Object>> devices = join(devicesFuture, List.of());
         Map<String, String> deviceTypesBySerial = deviceTypesBySerial(devices);
+        List<String> mileageRobotIds = devices.stream()
+                .filter(device -> matchesDeviceType(device, normalizedDeviceType))
+                .map(device -> firstString(device, "serialNumber", "robotId"))
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        MileageWindow mileageWindow = mileageWindow(rangeStart, rangeEnd);
+        CompletableFuture<Map<String, Object>> mileageFuture = mileageWindow == null || mileageRobotIds.isEmpty()
+                ? CompletableFuture.completedFuture(Map.of())
+                : async(() -> centerClient.mileageSummary(
+                        mileageWindow.start().format(DATE_TIME_FORMATTER),
+                        mileageWindow.end().format(DATE_TIME_FORMATTER),
+                        mileageRobotIds));
+        CompletableFuture<Map<String, Object>> previousMileageFuture = mileageWindow == null || mileageRobotIds.isEmpty()
+                ? CompletableFuture.completedFuture(Map.of())
+                : async(() -> centerClient.mileageSummary(
+                        mileageWindow.previousStart().format(DATE_TIME_FORMATTER),
+                        mileageWindow.previousEnd().format(DATE_TIME_FORMATTER),
+                        mileageRobotIds));
         List<Map<String, Object>> tasks = join(tasksFuture, List.<Map<String, Object>>of()).stream()
                 .filter(task -> withinRange(taskTime(task), rangeStart, rangeEnd))
                 .filter(task -> matchesTaskDeviceType(task, normalizedDeviceType, deviceTypesBySerial))
@@ -123,7 +142,11 @@ public class StatisticsService {
                 "filters", object(
                         "deviceType", normalizedDeviceType,
                         "areaId", areaId),
-                "kpis", kpis(tasks, alarms),
+                "kpis", kpis(
+                        tasks,
+                        alarms,
+                        join(mileageFuture, Map.of()),
+                        join(previousMileageFuture, Map.of())),
                 "equipmentRuntime", equipmentRuntime(
                         devices, tasks, normalizedDeviceType, deviceTypesBySerial, resolvedDeviceTypeOptions),
                 "aiAlarmAnalysis", aiAlarmAnalysis(alarms),
@@ -323,11 +346,52 @@ public class StatisticsService {
                 "endTime", normalizedEnd);
     }
 
-    private Map<String, Object> kpis(List<Map<String, Object>> tasks, List<Map<String, Object>> alarms) {
+    private Map<String, Object> kpis(
+            List<Map<String, Object>> tasks,
+            List<Map<String, Object>> alarms,
+            Map<String, Object> mileage,
+            Map<String, Object> previousMileage) {
         Map<String, Object> kpis = emptyKpis();
         kpis.put("taskTotal", kpi(tasks.size(), null));
+        Double mileageKilometers = mileageKilometers(mileage);
+        kpis.put("patrolMileage", kpi(
+                mileageKilometers,
+                mileageCompareRate(mileageMeters(mileage), mileageMeters(previousMileage))));
         kpis.put("aiAlarmTotal", kpi(alarms.size(), null));
         return kpis;
+    }
+
+    private MileageWindow mileageWindow(LocalDateTime start, LocalDateTime end) {
+        if (start == null || end == null || end.isBefore(start)) {
+            return null;
+        }
+        long inclusiveSeconds = Duration.between(start, end).getSeconds() + 1;
+        LocalDateTime previousEnd = start.minusSeconds(1);
+        LocalDateTime previousStart = previousEnd.minusSeconds(Math.max(0, inclusiveSeconds - 1));
+        return new MileageWindow(start, end, previousStart, previousEnd);
+    }
+
+    private Double mileageKilometers(Map<String, Object> summary) {
+        Double meters = mileageMeters(summary);
+        return meters == null ? null : oneDecimal(meters.doubleValue() / 1000.0);
+    }
+
+    private Double mileageMeters(Map<String, Object> summary) {
+        if (summary == null || !Boolean.TRUE.equals(summary.get("hasData"))) {
+            return null;
+        }
+        Number meters = numberValue(summary.get("totalMeters"));
+        return meters == null ? null : meters.doubleValue();
+    }
+
+    private Double mileageCompareRate(Double current, Double previous) {
+        if (current == null || previous == null) {
+            return null;
+        }
+        if (previous == 0) {
+            return current == 0 ? 0.0 : null;
+        }
+        return oneDecimal((current - previous) * 100.0 / previous);
     }
 
     private Map<String, Object> equipmentRuntime(
@@ -1074,6 +1138,13 @@ public class StatisticsService {
     }
 
     public record ReportFile(String id, String filename, byte[] bytes) {
+    }
+
+    private record MileageWindow(
+            LocalDateTime start,
+            LocalDateTime end,
+            LocalDateTime previousStart,
+            LocalDateTime previousEnd) {
     }
 
     private record ReportHistory(String id, String reportName, String filename, String downloadTime, String format,

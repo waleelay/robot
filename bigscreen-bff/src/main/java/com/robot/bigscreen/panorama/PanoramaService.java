@@ -64,6 +64,7 @@ public class PanoramaService {
         CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
         CompletableFuture<List<Map<String, Object>>> mapsFuture = async(centerClient::enabledMaps);
         CompletableFuture<Map<String, Object>> alarmsFuture = async(this::alarmsPayload);
+        CompletableFuture<Map<String, Object>> mileageFuture = async(this::todayMileageSummary);
 
         List<Map<String, Object>> maps = join(mapsFuture, List.of());
         prefetchMapResources(maps, cache);
@@ -75,7 +76,8 @@ public class PanoramaService {
         overview.put("deviceStats", deviceStats(devices));
         overview.put("deviceTypeStats", deviceTypeStats(devices));
 
-        overview.put("patrolOverview", patrolOverview(panoramaTasks.instances()));
+        overview.put("patrolOverview", patrolOverview(
+                panoramaTasks.instances(), join(mileageFuture, Map.of())));
         overview.put("tasks", overviewTasks(tasks));
         overview.put("taskOverview", overviewTaskOverview(tasks));
 
@@ -90,6 +92,7 @@ public class PanoramaService {
         CompletableFuture<List<Map<String, Object>>> devicesFuture = async(() -> devices(cache));
         CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
         CompletableFuture<Map<String, Object>> alarmsFuture = async(this::alarmsPayload);
+        CompletableFuture<Map<String, Object>> mileageFuture = async(this::todayMileageSummary);
 
         List<Map<String, Object>> devices = join(devicesFuture, List.of());
         PanoramaTasks panoramaTasks = join(tasksFuture, new PanoramaTasks(List.of(), List.of()));
@@ -98,7 +101,7 @@ public class PanoramaService {
         return object(
                 "deviceStats", deviceStats(devices),
                 "deviceTypeStats", deviceTypeStats(devices),
-                "patrolOverview", patrolOverview(panoramaTasks.instances()),
+                "patrolOverview", patrolOverview(panoramaTasks.instances(), join(mileageFuture, Map.of())),
                 "taskOverview", taskOverview(tasks),
                 "alarmStats", alarmStats(alarms),
                 "alarmSummary", alarms.get("summary"));
@@ -1162,7 +1165,9 @@ public class PanoramaService {
                 "actions", emptyActions());
     }
 
-    private Map<String, Object> patrolOverview(List<Map<String, Object>> taskInstances) {
+    private Map<String, Object> patrolOverview(
+            List<Map<String, Object>> taskInstances,
+            Map<String, Object> mileageSummary) {
         long durationSeconds = taskInstances.stream()
                 .filter(this::todayTaskInstance)
                 .map(this::durationSeconds)
@@ -1170,11 +1175,23 @@ public class PanoramaService {
                 .mapToLong(Long::longValue)
                 .sum();
         Double durationToday = durationSeconds == 0 ? null : oneDecimal(durationSeconds / 3600.0);
+        Number totalMeters = number(mileageSummary.get("totalMeters"));
+        Double mileageToday = Boolean.TRUE.equals(mileageSummary.get("hasData")) && totalMeters != null
+                ? oneDecimal(totalMeters.doubleValue() / 1000.0)
+                : null;
         return object(
                 "durationToday", durationToday,
                 "durationUnit", durationToday == null ? null : "小时",
-                "mileageToday", null,
-                "mileageUnit", null);
+                "mileageToday", mileageToday,
+                "mileageUnit", mileageToday == null ? null : "KM");
+    }
+
+    private Map<String, Object> todayMileageSummary() {
+        LocalDate today = LocalDate.now(CHINA_ZONE);
+        return centerClient.mileageSummary(
+                LocalDateTime.of(today, java.time.LocalTime.MIN).format(DATE_TIME_FORMATTER),
+                LocalDateTime.now(CHINA_ZONE).format(DATE_TIME_FORMATTER),
+                List.of());
     }
 
     private boolean todayTaskInstance(Map<String, Object> taskInstance) {

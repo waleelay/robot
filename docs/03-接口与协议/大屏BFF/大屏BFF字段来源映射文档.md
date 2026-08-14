@@ -56,8 +56,8 @@ GET /api/bigscreen/panorama/overview
 | `deviceTypeStats[]` | 按机器人整机类型统计 | BFF 计算 | 按 `devices[].typeCode` 分组，`type/name` 与 `devices[].typeCode/type` 保持一致，并计算 `count/fault/offline`；整机类型为空的设备不参与分类统计，固定摄像头按 `FIXED_CAMERA/固定摄像头` 统计 |
 | `patrolOverview.durationToday` | 今日巡逻时长，单位小时 | BFF 计算 | 今日任务实例 `durationSeconds`；没有时用 `startedAt/completedAt` 计算 |
 | `patrolOverview.durationUnit` | 巡逻时长单位 | BFF 生成 | `durationToday` 有值时为 `小时` |
-| `patrolOverview.mileageToday` | 今日巡逻里程 | 未对接 | 当前管理端无直接里程字段，返回 `null` |
-| `patrolOverview.mileageUnit` | 巡逻里程单位 | 未对接 | 当前返回 `null` |
+| `patrolOverview.mileageToday` | 今日巡逻里程 | 控制端 | Control 持久化今日有效里程增量，BFF 由米换算为 KM |
+| `patrolOverview.mileageUnit` | 巡逻里程单位 | BFF | 有里程采集基线时返回 `KM`，否则返回 `null` |
 | `tasks` | 任务列表 | 管理端 + BFF 组装 | 见 3.6 |
 | `taskOverview.totalToday` | 今日任务数/当前任务列表总数 | BFF 计算 | `tasks.size()` |
 | `taskOverview.completedRateText` | 完成率文案 | BFF 计算 | `completedRate + "%"` |
@@ -348,8 +348,8 @@ GET /api/bigscreen/statistics/overview
 | `filters.areaId` | 区域筛选 | BFF 回显 | 查询参数 `areaId` |
 | `kpis.taskTotal.value` | 任务执行总数 | BFF 计算 | 统计时间内任务实例数 |
 | `kpis.taskTotal.compareRate` | 任务总数环比 | 未对接 | 当前 `null` |
-| `kpis.patrolMileage.value` | 巡逻总里程 | 未对接 | 当前 `null` |
-| `kpis.patrolMileage.compareRate` | 巡逻里程环比 | 未对接 | 当前 `null` |
+| `kpis.patrolMileage.value` | 巡逻总里程 | 控制端 | 所选时间范围及设备的持久化里程增量，单位 KM |
+| `kpis.patrolMileage.compareRate` | 巡逻里程环比 | BFF | 与紧邻的等长上一周期比较；无有效基数时返回 `null` |
 | `kpis.aiAlarmTotal.value` | AI 告警总数 | BFF 计算 | 统计时间内管理端告警明细数 |
 | `kpis.aiAlarmTotal.compareRate` | AI 告警环比 | 未对接 | 当前 `null` |
 | `kpis.autoHandleSuccessRate.value` | 自动处置成功率 | 未对接 | 当前 `null` |
@@ -394,7 +394,6 @@ DELETE /api/bigscreen/statistics/reports/{id}
 
 | 字段/模块 | 当前状态 | 建议来源 |
 |---|---|---|
-| `patrolOverview.mileageToday/mileageUnit` | `null` | 管理端任务实例统计或轨迹里程统计接口 |
 | `devices[].cameras[]` 权威相机/视频流字段 | BFF 本地推断 | 管理端设备组件扩展相机配置，或媒体服务相机/流接口 |
 | `devices[].mountedDevices[].status` 独立上装状态 | 复用机器人状态 | 管理端组件状态或控制端组件状态 |
 | `devices[].mapDisplay.icon` | `null` | 设备类型图标配置或前端本地配置 |

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,6 +16,20 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class PanoramaServiceTest {
+
+    @Test
+    void returnsPersistedTodayMileageInPatrolOverview() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.mileageSummary(anyString(), anyString(), org.mockito.ArgumentMatchers.eq(List.of())))
+                .thenReturn(Map.of("hasData", true, "totalMeters", 1234.5));
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        Map<String, Object> patrolOverview = map(overview.get("patrolOverview"));
+        assertEquals(1.2, patrolOverview.get("mileageToday"));
+        assertEquals("KM", patrolOverview.get("mileageUnit"));
+    }
 
     @Test
     void ignoresSourceRecordsWithoutDeviceIdentifiers() {

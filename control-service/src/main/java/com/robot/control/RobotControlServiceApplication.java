@@ -2,6 +2,7 @@ package com.robot.control;
 
 import com.robot.control.config.ControlProperties;
 import com.robot.control.config.ControlServiceProperties;
+import com.robot.control.mileage.MileageProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -15,7 +16,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @SpringBootApplication
 @EnableScheduling
-@EnableConfigurationProperties({ControlProperties.class, ControlServiceProperties.class})
+@EnableConfigurationProperties({ControlProperties.class, ControlServiceProperties.class, MileageProperties.class})
 public class RobotControlServiceApplication {
 
     /**

@@ -2,6 +2,12 @@ spring:
   application:
     # Spring Boot 应用名称，用于日志、监控和服务标识。
     name: robot-control-service
+  datasource:
+    # 里程检查点和分钟增量使用与平台一致的 MySQL 数据源。
+    url: ${MYSQL_URL:jdbc:mysql://host.docker.internal:3306/robot_media?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
   servlet:
     multipart:
       # Control 文件代理接口允许的单个上传文件最大大小。
@@ -56,6 +62,11 @@ control:
     heartbeat-timeout-seconds: ${ROBOT_HEARTBEAT_TIMEOUT_SECONDS:15}
     # 机器人心跳扫描任务间隔，单位毫秒。
     heartbeat-sweep-delay-ms: ${ROBOT_HEARTBEAT_SWEEP_DELAY_MS:5000}
+  mileage:
+    # 单次里程增量折算速度超过该值时标记为可疑，不计入大屏统计。
+    max-speed-mps: ${MILEAGE_MAX_SPEED_MPS:15}
+    # 每台设备累计新增达到该距离后广播一次里程变化事件。
+    publish-distance-threshold-meters: ${MILEAGE_PUBLISH_DISTANCE_THRESHOLD_METERS:10}
   session:
     # 中断视频会话自动恢复前的宽限时间，单位秒。
     interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}

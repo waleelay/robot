@@ -61,8 +61,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | `alarms.high/medium/low` | BFF 分组 | 由告警等级分组得到 |
 | `patrolOverview.durationToday` | BFF 计算 | 由今日任务实例 `durationSeconds` 或 `startedAt/completedAt` 计算小时数 |
 | `patrolOverview.durationUnit` | BFF 生成 | `durationToday` 有值时返回“小时” |
-| `patrolOverview.mileageToday` | 缺少真实来源 | 当前返回 `null` |
-| `patrolOverview.mileageUnit` | 缺少真实来源 | 当前返回 `null` |
+| `patrolOverview.mileageUnit` | BFF 生成 | 存在里程采集基线时返回 `KM` |
 
 ### 2.3 `devices[]`
 
@@ -166,8 +165,6 @@ DELETE /api/bigscreen/statistics/reports/{id}
 | `range` | BFF 生成/回显 | 根据查询参数生成统计时间范围 |
 | `filters` | BFF 回显 | 回显 `deviceType/areaId` |
 | `kpis.taskTotal.compareRate` | 缺少真实来源 | 当前返回 `null` |
-| `kpis.patrolMileage.value` | 缺少真实来源 | 当前返回 `null` |
-| `kpis.patrolMileage.compareRate` | 缺少真实来源 | 当前返回 `null` |
 | `kpis.aiAlarmTotal.compareRate` | 缺少真实来源 | 当前返回 `null` |
 | `kpis.autoHandleSuccessRate.value` | 缺少真实来源 | 当前返回 `null` |
 | `kpis.autoHandleSuccessRate.compareRate` | 缺少真实来源 | 当前返回 `null` |
@@ -236,7 +233,6 @@ DELETE /api/bigscreen/statistics/reports/{id}
 |---|---|---|
 | P0 | 设备经纬度、地址、上报时间 | 全景地图设备点位展示依赖 |
 | P0 | 告警结构化位置、多路截图 `snapshotUrl.thermal/front` | 告警列表和弹窗展示依赖 |
-| P1 | 巡逻里程 `patrolOverview.mileageToday` | 管理端当前没有直接里程字段 |
 | P1 | 统计总览 `/statistics/overview` 所需聚合数据 | 当前统计页业务字段基本为空 |
 | P1 | 相机/视频源权威映射 | 当前 `cameras[]` 只是本地拼装，不能证明一定能播放对应流 |
 | P2 | 上装设备独立状态 | 当前上装设备状态直接复用机器人状态 |

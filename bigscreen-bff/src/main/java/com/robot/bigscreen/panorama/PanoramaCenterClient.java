@@ -84,6 +84,21 @@ public class PanoramaCenterClient {
         return records(uri);
     }
 
+    public Map<String, Object> mileageSummary(
+            String startTime,
+            String endTime,
+            List<String> robotIds) {
+        UriComponentsBuilder builder = uri(properties.getControlBaseUrl(), "/api/control/statistics/mileage")
+                .queryParam("startTime", startTime.replace(' ', 'T'))
+                .queryParam("endTime", endTime.replace(' ', 'T'));
+        if (robotIds != null) {
+            robotIds.stream()
+                    .filter(value -> value != null && !value.isBlank())
+                    .forEach(value -> builder.queryParam("robotIds", value));
+        }
+        return dataMap(builder.build(true).toUri()).orElse(Map.of());
+    }
+
     public List<Map<String, Object>> taskWorkflowPlans() {
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-plans")
                 .queryParam("pageNum", 1)

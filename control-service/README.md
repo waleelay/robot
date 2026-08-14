@@ -19,7 +19,7 @@ mvn -q -DskipTests package
 mvn spring-boot:run -Dspring-boot.run.arguments=--control.mqtt.enabled=false
 ```
 
-运行时需要可访问 Media Service；控制画像、设备动作和固定摄像头还依赖 Management Service。启用 MQTT 时需要 EMQX；任务失效通知的上游 STOMP 连接默认启用，可通过 `CENTER_STOMP_ENABLED=false` 显式关闭。
+运行时需要可访问 Media Service 和 MySQL；控制画像、设备动作和固定摄像头还依赖 Management Service。启用 MQTT 时需要 EMQX；任务失效通知的上游 STOMP 连接默认启用，可通过 `CENTER_STOMP_ENABLED=false` 显式关闭。
 
 ## 2. 代码结构
 
@@ -31,6 +31,7 @@ src/main/java/com/robot/control/
 ├── client/     Media/Management HTTP 客户端
 ├── dto/        跨服务请求、响应、枚举与命令模型
 ├── messaging/  MQTT 控制发布、媒体命令和状态订阅
+├── mileage/    里程增量计算、持久化与统计查询
 ├── robot/      内存注册表、设备状态与心跳超时
 ├── scheduler/  视频恢复、空闲释放和对讲超时调度
 ├── service/    控制、视频和多合一音频文件编排
@@ -43,6 +44,7 @@ src/main/java/com/robot/control/
 - `ControlFixedCameraController`：单路/批量固定摄像头启动。
 - `ControlVideoSessionController`：查询、Token、viewer、对讲、切换、重启和录像。
 - `ControlFileController`：把文件请求代理到 Media，并改写播放路径。
+- `MileageController`：按时间范围和机器人批量查询持久化里程。
 
 `GET /api/control/robots` 已移除；内存注册表只通过 `/api/control/robots/registry` 供 BFF 聚合。
 
@@ -111,6 +113,8 @@ gateway/fixed-camera/{gatewayId}/video/status
 | `control.management-service-base-url` | `CENTER_MANAGE_BASE_URL` | Management 地址 |
 | `control.mqtt.*` | `MQTT_*`、`FIXED_CAMERA_GATEWAY_ID` | Broker、凭据、clientId、Gateway ID 和开关 |
 | `control.center-stomp.*` | `CENTER_STOMP_*` | 上游任务事件连接 |
+| `control.mileage.*` | `MILEAGE_*` | 异常速度阈值和统计刷新距离阈值 |
+| `spring.datasource.*` | `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` | 里程检查点和分钟增量桶数据库 |
 | `control.robot.*` | `ROBOT_HEARTBEAT_*` | 心跳超时与扫描周期 |
 | `control.session.*` | `INTERRUPTED_*`、`IDLE_*`、`VIEWER_*` | 视频恢复和释放参数 |
 
