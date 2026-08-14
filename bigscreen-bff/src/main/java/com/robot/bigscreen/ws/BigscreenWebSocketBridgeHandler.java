@@ -38,6 +38,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     private final CenterServiceProperties properties;
     private final PanoramaWebSocketEventAdapter eventAdapter;
+    private final PanoramaLocationEventThrottler locationEventThrottler;
     private final PanoramaStatsEventRefresher statsEventRefresher;
     private final PanoramaTaskEventRefresher taskEventRefresher;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
@@ -48,11 +49,13 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     public BigscreenWebSocketBridgeHandler(
             CenterServiceProperties properties,
             PanoramaWebSocketEventAdapter eventAdapter,
+            PanoramaLocationEventThrottler locationEventThrottler,
             PanoramaStatsEventRefresher statsEventRefresher,
             PanoramaTaskEventRefresher taskEventRefresher,
             AuthenticatedRequestHeaders authenticatedRequestHeaders) {
         this.properties = properties;
         this.eventAdapter = eventAdapter;
+        this.locationEventThrottler = locationEventThrottler;
         this.statsEventRefresher = statsEventRefresher;
         this.taskEventRefresher = taskEventRefresher;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
@@ -95,6 +98,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         logClose("Browser", browserSession, status);
         browserSessions.remove(browserSession);
         eventAdapter.removeSession(browserSession.getId());
+        locationEventThrottler.remove(browserSession.getId());
         statsEventRefresher.remove(browserSession.getId());
         taskEventRefresher.remove(browserSession.getId());
         WebSocketSession centerSession = centerSessions.remove(browserSession.getId());
@@ -191,7 +195,10 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 boolean refreshStats = eventAdapter.requiresStatsRefresh(browserSession.getId(), centerPayload);
                 boolean refreshTasks = eventAdapter.isTaskInvalidation(centerPayload);
                 for (String payload : eventAdapter.adapt(centerPayload)) {
-                    sendToBrowserSession(browserSession, payload);
+                    locationEventThrottler.publish(
+                            browserSession.getId(),
+                            payload,
+                            value -> sendToBrowserSession(browserSession, value));
                 }
                 if (refreshStats) {
                     Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;

@@ -139,6 +139,7 @@ services:
     platform: ${TARGET_PLATFORM:-linux/amd64}
     container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-fixed-camera-gateway
     restart: unless-stopped
+    init: true
     network_mode: host
     entrypoint: ["fixed-camera-gateway"]
     environment:
@@ -154,10 +155,13 @@ services:
       FFPROBE_PATH: ${FIXED_CAMERA_FFPROBE_PATH:-ffprobe}
       PROBE_TIMEOUT_MS: ${FIXED_CAMERA_PROBE_TIMEOUT_MS:-8000}
       PUBLISHER_MODE: ${FIXED_CAMERA_PUBLISHER_MODE:-auto}
+      PUBLISHER_GSTREAMER_RETRY_SECONDS: ${FIXED_CAMERA_PUBLISHER_GSTREAMER_RETRY_SECONDS:-60}
       PUBLISHER_CMD: ${FIXED_CAMERA_PUBLISHER_CMD:-}
       FFMPEG_PUBLISHER_CMD: ${FIXED_CAMERA_FFMPEG_PUBLISHER_CMD:-./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}}
+      FFMPEG_TRANSCODE_PRESET: ${FIXED_CAMERA_FFMPEG_TRANSCODE_PRESET:-ultrafast}
       GSTREAMER_PUBLISHER_PATH: ${FIXED_CAMERA_GSTREAMER_PUBLISHER_PATH:-gstreamer-publisher}
-      GSTREAMER_PIPELINE: ${FIXED_CAMERA_GSTREAMER_PIPELINE:-rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1}
+      GSTREAMER_PIPELINE: ${FIXED_CAMERA_GSTREAMER_PIPELINE:-rtspsrc location={rtsp} protocols=tcp latency=100 drop-on-latency=true ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 leaky=downstream ! rtph264depay ! h264parse config-interval=1}
+      GIO_USE_PROXY_RESOLVER: ${FIXED_CAMERA_GIO_USE_PROXY_RESOLVER:-dummy}
       GST_LAUNCH_PATH: ${FIXED_CAMERA_GST_LAUNCH_PATH:-gst-launch-1.0}
     depends_on:
       - control-service

@@ -65,6 +65,7 @@ class BigscreenWebSocketBridgeHandlerTest {
         BigscreenWebSocketBridgeHandler handler = new BigscreenWebSocketBridgeHandler(
                 properties,
                 mock(PanoramaWebSocketEventAdapter.class),
+                mock(PanoramaLocationEventThrottler.class),
                 mock(PanoramaStatsEventRefresher.class),
                 mock(PanoramaTaskEventRefresher.class),
                 mock(AuthenticatedRequestHeaders.class));
@@ -86,6 +87,7 @@ class BigscreenWebSocketBridgeHandlerTest {
         return new BigscreenWebSocketBridgeHandler(
                 mock(CenterServiceProperties.class),
                 mock(PanoramaWebSocketEventAdapter.class),
+                mock(PanoramaLocationEventThrottler.class),
                 mock(PanoramaStatsEventRefresher.class),
                 mock(PanoramaTaskEventRefresher.class),
                 mock(AuthenticatedRequestHeaders.class));

@@ -158,6 +158,7 @@ main
 | `PublisherMode` | `PUBLISHER_MODE` | `auto` 默认先 GStreamer，并在失败或短时间崩溃后切 FFmpeg；也可设为 `gstreamer` 或 `ffmpeg` |
 | `PublisherFFmpegFirstIDs` | `PUBLISHER_FFMPEG_FIRST_DEVICE_IDS` | `auto` 模式下直接优先走 FFmpeg 的设备 ID 覆盖列表，默认空 |
 | `PublisherFallbackWatch` | `PUBLISHER_FALLBACK_WATCH_SECONDS` | `auto` 模式下观察 GStreamer 启动后短时间退出的窗口，默认 8 秒 |
+| `PublisherGStreamerRetry` | `PUBLISHER_GSTREAMER_RETRY_SECONDS` | GStreamer 失败后使用 FFmpeg 的冷却时间，默认 60 秒；到期重试直推 |
 | `FFmpegPublisherCmd` | `FFMPEG_PUBLISHER_CMD` | GStreamer publisher 启动失败或观察窗口内退出时的 FFmpeg fallback 命令 |
 | `GStreamerPublisherPath` | `GSTREAMER_PUBLISHER_PATH` | 默认 `gstreamer-publisher` |
 | `GStreamerPipeline` | `GSTREAMER_PIPELINE` | RTSP 到 LiveKit publisher 的媒体 pipeline |
@@ -374,12 +375,13 @@ gstreamer-publisher --url {livekitUrl} --token {publisherToken} -- {pipeline}
 
 ```text
 rtspsrc location={rtsp} protocols=tcp latency=100
-  ! queue
+  drop-on-latency=true
+  ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 leaky=downstream
   ! rtph264depay
   ! h264parse config-interval=1
 ```
 
-`PUBLISHER_MODE=auto` 时，客户端先启动默认 GStreamer publisher；如果启动失败，并且 `FFMPEG_PUBLISHER_CMD` 非空，客户端会记录 `publisher fallback ffmpeg` 并执行 FFmpeg fallback 命令，同时记住该 RTSP URL 后续优先走 FFmpeg。若 GStreamer 已启动但在 `PUBLISHER_FALLBACK_WATCH_SECONDS` 窗口内退出，则记录 `publisher auto fallback ffmpeg` 并用 FFmpeg fallback 重启同一个 session，同时记住该 RTSP URL。`PUBLISHER_FFMPEG_FIRST_DEVICE_IDS` 只作为人工覆盖项。默认 fallback 脚本为：
+`PUBLISHER_MODE=auto` 时，客户端先启动默认 GStreamer publisher；如果启动失败，并且 `FFMPEG_PUBLISHER_CMD` 非空，客户端会记录 `publisher fallback ffmpeg` 并执行 FFmpeg fallback 命令。若 GStreamer 已启动但在 `PUBLISHER_FALLBACK_WATCH_SECONDS` 窗口内退出，则记录 `publisher auto fallback ffmpeg` 并用 FFmpeg fallback 重启同一个 session。失败的 RTSP URL 在 `PUBLISHER_GSTREAMER_RETRY_SECONDS` 冷却期内优先走 FFmpeg，到期后重新尝试 GStreamer 直推；`PUBLISHER_FFMPEG_FIRST_DEVICE_IDS` 仍作为永久人工覆盖项。默认 fallback 脚本为：
 
 ```text
 ./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}

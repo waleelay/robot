@@ -172,7 +172,7 @@ GET /api/bigscreen/panorama/overview
 
 用途：一次返回全景地图 tab 页首屏需要的数据。
 
-`devices[]` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，数组字段返回空数组。`gpsDevices[]` 复用 `devices[]` 的完整对象结构，仅包含 `location.lng` 与 `location.lat` 同时为有限数值且处于合法经纬度范围的设备；只有 XYZ 局部坐标的设备不进入该数组。
+`devices[]` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，数组字段返回空数组。前端直接根据 `devices[].location.lng/lat` 筛选 GPS 设备，聚合响应不再重复返回 `gpsDevices[]`。
 
 返回结构：
 
@@ -210,7 +210,6 @@ GET /api/bigscreen/panorama/overview
   },
   "taskOverview": {
     "totalToday": 50,
-    "completedRate": 100,
     "completedRateText": "100%",
     "running": 48,
     "pending": 2
@@ -218,15 +217,12 @@ GET /api/bigscreen/panorama/overview
   "devices": [
     {
       "robotId": "test111",
-      "clientId": "robot-media-client",
       "name": "R1轮式机器人",
       "type": "轮式机器人",
       "typeCode": "WHEELED_ROBOT",
-      "vendor": "SONGLING",
       "model": "SCOUT",
       "status": "online",
       "battery": 100,
-      "lastHeartbeatAt": "2026-06-12 11:30:58",
       "cameras": [
         {
           "cameraId": "camera01",
@@ -234,20 +230,6 @@ GET /api/bigscreen/panorama/overview
           "groupType": "dual_gimbal",
           "name": "前向双光云台",
           "quality": "sub"
-        }
-      ],
-      "mountedDevices": [
-        {
-          "deviceId": "camera01",
-          "name": "前向双光云台",
-          "type": "DUAL_GIMBAL",
-          "status": "online"
-        },
-        {
-          "deviceId": "audio-control-001",
-          "name": "客户端音频",
-          "type": "CLIENT_AUDIO",
-          "status": "online"
         }
       ],
       "stateSeq": 1,
@@ -259,18 +241,10 @@ GET /api/bigscreen/panorama/overview
       "location": {
         "lng": 106.03655278081857,
         "lat": 30.7478613352993,
-        "altitude": null,
         "x": 118.4,
         "y": 42.8,
         "z": 0.0,
-        "address": "A区主干道",
-        "updatedAt": "2026-06-12 11:30:58"
-      },
-      "mapDisplay": {
-        "icon": "wheeled_robot",
-        "label": "R1轮式机器人",
-        "badgeText": "空闲中",
-        "badgeStatus": "idle"
+        "address": "A区主干道"
       },
       "task": [
         {
@@ -280,22 +254,6 @@ GET /api/bigscreen/panorama/overview
           "timeRange": "20:00-22:00"
         }
       ]
-    }
-  ],
-  "gpsDevices": [
-    {
-      "robotId": "test111",
-      "name": "R1轮式机器人",
-      "location": {
-        "lng": 106.03655278081857,
-        "lat": 30.7478613352993,
-        "altitude": null,
-        "x": 118.4,
-        "y": 42.8,
-        "z": 0.0,
-        "address": "A区主干道",
-        "updatedAt": "2026-06-12 11:30:58"
-      }
     }
   ],
   "tasks": [
@@ -320,11 +278,8 @@ GET /api/bigscreen/panorama/overview
         }
       ],
       "mapId": 1,
-      "mapPoints": [
-        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
-      ],
       "pathPoints": [
-        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
+        {"id": 101, "pointCode": "001", "pointName": "A区主干道", "pointType": "NORMAL", "coordinateX": 118.4, "coordinateY": 42.8}
       ]
     }
   ],
@@ -334,7 +289,6 @@ GET /api/bigscreen/panorama/overview
       "totalToday": 50,
       "handled": 18,
       "unhandled": 0,
-      "handleRate": 100,
       "handleRateText": "100%"
     },
     "high": {
@@ -349,12 +303,10 @@ GET /api/bigscreen/panorama/overview
           "location": {
             "lng": 106.03655278081857,
             "lat": 30.7478613352993,
-            "altitude": null,
             "x": 118.4,
             "y": 42.8,
             "z": 0.0,
-            "address": "A区主干道",
-            "updatedAt": "2026-06-12 11:30:58"
+            "address": "A区主干道"
           },
           "robotId": "test111",
           "deviceName": "R1轮式机器人",
@@ -378,37 +330,27 @@ GET /api/bigscreen/panorama/overview
   },
   "map": [
     {
-      "mapId": 1,
-      "name": "A区巡逻地图",
-      "enabled": true,
-      "center": {
-        "lng": 106.03655278081857,
-        "lat": 30.7478613352993
-      },
-      "zoom": 17,
-      "defaultLayer": "dark-vector",
-      "updatedAt": "2026-06-12 11:31:02",
+      "id": 1,
+      "mapName": "A区巡逻地图",
+      "fileId": 1001,
+      "previewWidth": 314,
+      "previewHeight": 352,
+      "resolution": 0.1,
+      "originX": -21.7,
+      "originY": -16.0,
+      "originYaw": 0.0,
+      "previewGeneratedAt": "2026-06-12 11:31:02",
       "points": [
         {
           "id": 101,
-          "mapId": 1,
+          "pointCode": "001",
           "pointName": "A区主干道",
+          "pointType": "NORMAL",
           "coordinateX": 118.4,
-          "coordinateY": 42.8,
-          "coordinateZ": 0.0
+          "coordinateY": 42.8
         }
       ],
-      "devices": [
-        {
-          "robotId": "test111",
-          "name": "R1轮式机器人",
-          "location": {
-            "mapId": 1,
-            "lng": 106.03655278081857,
-            "lat": 30.7478613352993
-          }
-        }
-      ],
+      "deviceIds": ["test111"],
       "fixedCamares": [
         {
           "id": 201,
@@ -439,27 +381,24 @@ GET /api/bigscreen/panorama/overview
 | 字段 | 含义 | 页面显示 |
 |---|---|---|
 | `taskOverview.totalToday` | 今日任务总数 | 今日任务 |
-| `taskOverview.completedRate` | 完成率数值，范围 `0-100` | 完成率计算、排序或判断 |
 | `taskOverview.completedRateText` | 完成率展示文本 | 完成率 |
 | `taskOverview.running` | 执行中的任务数 | 执行中 |
 | `taskOverview.pending` | 待执行的任务数 | 待执行 |
 
 `tasks[]` 来源于 `/api/v1/management/task-workflow-plans?pageNum=1&pageSize=20` 的任务计划列表；地图与路径字段说明：
 
-`tasks[]` 不再使用 mock 数据兜底；`timeRange`、`currentLocation`、`mapId` 等未查询到的标量字段返回 `null`，`equipmentList`、`mapPoints`、`pathPoints` 等数组字段返回空数组。
+`tasks[]` 不再使用 mock 数据兜底；`timeRange`、`currentLocation`、`mapId` 等未查询到的标量字段返回 `null`，`equipmentList`、`pathPoints` 等数组字段返回空数组。
 
 | 字段 | 含义 | 数据来源 |
 |---|---|---|
 | `tasks[]` | 任务列表 | `/api/v1/management/task-workflow-plans?pageNum=1&pageSize=20` |
-| `gpsDevices[]` | 具备 GPS 经纬度的设备列表，对象结构同 `devices[]` | BFF 从 `devices[]` 中筛选经度 `[-180, 180]`、纬度 `[-90, 90]` 且均为有限数值的设备 |
 | `tasks[].taskId` | 任务计划 ID，number/int | `/api/v1/management/task-workflow-plans` 的 `id` |
 | `tasks[].workflowInstanceId` | 当前任务实例 ID，number/int/null；用于暂停、恢复、终止任务实例 | `/api/v1/management/task-workflow-plans` 的 `activeWorkflowInstanceId/lastWorkflowInstanceId/workflowInstanceId` |
 | `tasks[].mapId` | 任务关联地图 ID，number/int | `task-workflow-definitions.{workflowDefinitionId}.mapId` |
-| `tasks[].mapPoints` | 任务地图点位集合 | `/api/v1/management/maps/{mapId}/points` 返回值 |
-| `tasks[].pathPoints` | 任务路径点位对应的地图点位集合 | 根据 `/api/v1/management/paths/{pathId}/points` 中每个 `mapPointId` 到 `tasks[].mapPoints[].id` 过滤得到 |
+| `tasks[].pathPoints` | 任务路径点位对应的地图点位集合 | 根据路径点的 `mapPointId` 到地图点位中匹配，仅返回二维绘制所需字段 |
 | `map` | 可用地图数组 | `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
 | `map[].points` | 每张地图的点位集合 | 按 `map[].id/mapId` 请求 `/api/v1/management/maps/{mapId}/points`；查询失败或无点位时返回 `[]` |
-| `map[].devices` | 当前地图的设备集合，对象结构同 `devices[]` | 按 `devices[].robotId` 匹配 `tasks[].equipmentList[].robotId`，将第一条非空 `tasks[].mapId` 填入 `devices[].location.mapId` 后与地图 `id` 匹配；无匹配设备时返回 `[]` |
+| `map[].deviceIds` | 当前地图的设备 ID 集合 | 按 `devices[].location.mapId` 与地图 `id/mapId` 匹配，只返回 `robotId` 数组；完整设备数据统一使用顶层 `devices[]` |
 
 历史 REST mock 点位表不再是当前 REST 数据源。当前代码只在 WebSocket `robot.state` 不带定位时，对 `test111`、`SN005`、`SN006` 生成演示位置；以下旧表不得作为当前接口期望：
 
@@ -786,6 +725,18 @@ WebSocket：
 | `panorama.alarm.changed` | 告警数据或处置状态变化 |
 | `panorama.stats.changed` | 左侧统计卡片变化 |
 
+各事件的当前推送机制：
+
+| 事件 | 数据来源与触发条件 | BFF 推送策略 |
+|---|---|---|
+| `panorama.device.status.changed` | Control 收到设备状态 MQTT 上报后广播 `robot.state` | 每条可识别的 `robot.state` 都即时派生并推送，不受位置限频影响；在线、离线、故障等状态变化同时触发统计快照刷新。 |
+| `panorama.device.location.changed` | `robot.state` 携带 `location/localization/status.localization` 时派生；联调设备 `test111`、`SN005`、`SN006` 在无真实定位时使用专用演示坐标 | 按“浏览器会话 + `robotId`”独立限频。首条立即推送；同一设备 1 秒内的多条位置只保留最新一条，每秒最多推送一次；`localized=false` 立即推送。没有新定位时不重复发送旧坐标。 |
+| `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 300ms 去抖重查管理端权威快照，逐项比较后只推送发生变化的任务；`taskId` 缺失的旧版事件不直接下发。 |
+| `panorama.alarm.changed` | 上游告警创建、更新、处置等 alarm 变更事件 | 收到后立即统一转换并推送；没有真实上游事件时不在 BFF 生成模拟告警。 |
+| `panorama.stats.changed` | 设备业务变更、设备在线/离线/故障状态切换、任务或告警变更 | 短时间内的多次触发合并 500ms 后重查完整统计快照，只在快照与上次不同时推送。普通电量、速度、位置心跳不触发统计刷新。 |
+
+BFF 仍会原样转发上游消息，上表只描述追加生成的 `panorama.*` 事件。浏览器会话关闭后，其待发位置事件和统计/任务刷新状态一并清理。
+
 设备状态事件示例：
 
 ```json
@@ -952,7 +903,7 @@ HTTP 查询结果为准。
 }
 ```
 
-位置类事件需要限频，建议 1 秒最多推一次，或者仅在设备坐标、速度、方向发生明显变化时推送。
+位置类事件已在 BFF 按设备实施 1 Hz 上限和最新值合并；该限频不会制造新位置，也不会在无新数据时重复推送旧坐标。
 
 ## 7. 测试与验收
 

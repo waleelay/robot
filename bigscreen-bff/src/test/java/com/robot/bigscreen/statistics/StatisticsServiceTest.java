@@ -1,6 +1,8 @@
 package com.robot.bigscreen.statistics;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -9,6 +11,8 @@ import com.robot.bigscreen.panorama.PanoramaCenterClient;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -78,6 +82,34 @@ class StatisticsServiceTest {
         assertEquals(1L, map(taskItems.get(3)).get("count"));
     }
 
+    @Test
+    void generatesFormalReportWithDynamicSectionsAndFriendlyEmptyValues() throws Exception {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.deviceTypeOptions()).thenReturn(List.of());
+        when(centerClient.devices()).thenReturn(List.of());
+        when(centerClient.taskWorkflowInstancesForStatistics()).thenReturn(List.of());
+        when(centerClient.alarmsForStatistics(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of());
+        StatisticsService service = new StatisticsService(new ObjectMapper(), centerClient, tempDir.toString());
+
+        StatisticsService.ReportFile report = service.createReport(Map.of(
+                "modules", List.of("equipmentRuntime"),
+                "timeRange", Map.of("type", "all"),
+                "deviceType", "all"));
+        String text;
+        try (var document = Loader.loadPDF(report.bytes())) {
+            text = new PDFTextStripper().getText(document);
+        }
+
+        assertTrue(report.filename().startsWith("具身智能平台统计报告-全部-全部-"));
+        assertTrue(text.contains("具身智能平台统计报告"));
+        assertTrue(text.contains("三、装备运行时长"));
+        assertTrue(text.contains("四、报告说明"));
+        assertTrue(text.contains("暂无数据"));
+        assertFalse(text.contains("七、报告说明"));
+        assertFalse(text.contains("null"));
+    }
+
     private Map<String, Object> task(String status, String startedAt, String serialNumber, int durationSeconds) {
         return Map.of(
                 "status", status,
@@ -110,4 +142,5 @@ class StatisticsServiceTest {
     private List<Object> list(Object value) {
         return (List<Object>) value;
     }
+
 }

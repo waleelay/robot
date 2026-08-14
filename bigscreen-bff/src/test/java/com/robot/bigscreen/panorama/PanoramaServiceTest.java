@@ -34,10 +34,25 @@ class PanoramaServiceTest {
     void addsPointsAndFixedCamerasToEveryMapInOverview() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
-        Map<String, Object> firstMap = Map.of("id", 2077775285125144578L, "mapName", "Map One");
+        Map<String, Object> firstMap = Map.ofEntries(
+                Map.entry("id", 2077775285125144578L),
+                Map.entry("mapName", "Map One"),
+                Map.entry("mapCode", "MAP-001"),
+                Map.entry("mapType", "INDOOR"),
+                Map.entry("regionId", 11L),
+                Map.entry("fileId", 12L),
+                Map.entry("fileName", "map.zip"),
+                Map.entry("previewImageUrl", "/preview"),
+                Map.entry("enabled", true),
+                Map.entry("remark", "remark"));
         Map<String, Object> secondMap = Map.of("mapId", 2, "mapName", "Map Two");
         Map<String, Object> mapWithoutId = Map.of("mapName", "Map Without Id");
-        List<Map<String, Object>> firstPoints = List.of(Map.of("id", 101L, "pointName", "Start"));
+        List<Map<String, Object>> firstPoints = List.of(Map.of(
+                "id", 101L,
+                "pointName", "Start",
+                "mapId", 2077775285125144578L,
+                "coordinateZ", 1.2,
+                "remark", "remark"));
         List<Map<String, Object>> firstFixedCameras = List.of(Map.of(
                 "id", 201L,
                 "mapId", 2077775285125144578L,
@@ -51,13 +66,21 @@ class PanoramaServiceTest {
         Map<String, Object> overview = service.overview();
 
         List<Map<String, Object>> maps = maps(overview.get("map"));
-        assertEquals(firstPoints, maps.get(0).get("points"));
+        assertEquals(List.of(Map.of("id", 101L, "pointName", "Start")), maps.get(0).get("points"));
+        assertEquals(12L, maps.get(0).get("fileId"));
+        assertFalse(maps.get(0).containsKey("mapCode"));
+        assertFalse(maps.get(0).containsKey("mapType"));
+        assertFalse(maps.get(0).containsKey("regionId"));
+        assertFalse(maps.get(0).containsKey("fileName"));
+        assertFalse(maps.get(0).containsKey("previewImageUrl"));
+        assertFalse(maps.get(0).containsKey("enabled"));
+        assertFalse(maps.get(0).containsKey("remark"));
         assertEquals(List.of(), maps.get(1).get("points"));
         assertEquals(List.of(), maps.get(2).get("points"));
-        assertEquals(1, maps(maps.get(0).get("devices")).size());
-        assertEquals("201", maps(maps.get(0).get("devices")).get(0).get("robotId"));
-        assertEquals(List.of(), maps.get(1).get("devices"));
-        assertEquals(List.of(), maps.get(2).get("devices"));
+        assertEquals(List.of("201"), maps.get(0).get("deviceIds"));
+        assertEquals(List.of(), maps.get(1).get("deviceIds"));
+        assertEquals(List.of(), maps.get(2).get("deviceIds"));
+        assertFalse(maps.get(0).containsKey("devices"));
         assertEquals(firstFixedCameras, maps.get(0).get("fixedCamares"));
         assertEquals(List.of(), maps.get(1).get("fixedCamares"));
         assertEquals(List.of(), maps.get(2).get("fixedCamares"));
@@ -89,7 +112,9 @@ class PanoramaServiceTest {
         Map<String, Object> overview = service.overview();
 
         assertEquals(mapPoints, maps(overview.get("map")).get(0).get("points"));
-        assertEquals(mapPoints, maps(maps(overview.get("tasks")).get(0).get("mapPoints")));
+        Map<String, Object> task = maps(overview.get("tasks")).get(0);
+        assertFalse(task.containsKey("mapPoints"));
+        assertEquals(mapPoints, maps(task.get("pathPoints")));
         verify(centerClient, times(1)).mapPoints("1001");
     }
 
@@ -137,6 +162,7 @@ class PanoramaServiceTest {
         assertEquals("waiting", task.get("status"));
         assertEquals("待执行", task.get("statusName"));
         assertEquals(1L, ((Map<?, ?>) overview.get("taskOverview")).get("pending"));
+        assertFalse(((Map<?, ?>) overview.get("taskOverview")).containsKey("completedRate"));
     }
 
     @Test
@@ -175,7 +201,141 @@ class PanoramaServiceTest {
     }
 
     @Test
-    void includesOnlyDevicesWithCompleteGpsCoordinates() {
+    void keepsRequiredAlarmFieldsWhileCompactingOverviewAlarmLocation() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.alarms()).thenReturn(List.of(Map.ofEntries(
+                Map.entry("id", "alarm-001"),
+                Map.entry("title", "发生火灾"),
+                Map.entry("alarmType", "BUSINESS"),
+                Map.entry("severity", "HIGH"),
+                Map.entry("occurredAt", "2026-08-14 10:00:00"),
+                Map.entry("serialNumber", "robot-001"),
+                Map.entry("taskId", "task-001"),
+                Map.entry("status", "UNHANDLED"),
+                Map.entry("location", Map.ofEntries(
+                        Map.entry("lng", 106.0),
+                        Map.entry("lat", 30.0),
+                        Map.entry("altitude", 5.0),
+                        Map.entry("x", 1.0),
+                        Map.entry("y", 2.0),
+                        Map.entry("z", 3.0),
+                        Map.entry("address", "A区"),
+                        Map.entry("updatedAt", "2026-08-14 10:00:00"))))));
+        when(centerClient.taskWorkflowInstance("task-001")).thenReturn(Optional.empty());
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        Map<String, Object> alarms = map(overview.get("alarms"));
+        assertEquals(1, alarms.get("total"));
+        assertFalse(map(alarms.get("summary")).containsKey("handleRate"));
+        Map<String, Object> alarm = maps(map(alarms.get("high")).get("items")).get(0);
+        assertEquals("task-001", alarm.get("taskId"));
+        assertEquals("unhandled", alarm.get("status"));
+        Map<String, Object> location = map(alarm.get("location"));
+        assertEquals(1.0, location.get("x"));
+        assertEquals(2.0, location.get("y"));
+        assertEquals(3.0, location.get("z"));
+        assertFalse(location.containsKey("altitude"));
+        assertFalse(location.containsKey("updatedAt"));
+    }
+
+    @Test
+    void fillsDeviceTasksFromAlreadyLoadedActiveTaskWithoutExtraQueries() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.devices()).thenReturn(List.of(Map.of(
+                "serialNumber", "robot-001",
+                "deviceName", "Robot One")));
+        when(centerClient.realtimeStatuses(List.of("robot-001"))).thenReturn(List.of(
+                realtimeStatus("robot-001", Map.of())));
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "planName", "A区-夜间巡逻",
+                "activeWorkflowInstanceId", 9001L,
+                "activeWorkflowInstanceStatus", "RUNNING")));
+        when(centerClient.taskWorkflowInstance("9001")).thenReturn(Optional.of(Map.of(
+                "id", 9001L,
+                "status", "RUNNING",
+                "startedAt", "2026-08-14T20:00:00",
+                "completedAt", "2026-08-14T22:00:00")));
+        when(centerClient.taskWorkflowReplay("9001")).thenReturn(Optional.empty());
+        when(centerClient.deviceTaskInstances("9001")).thenReturn(List.of(Map.of(
+                "serialNumber", "robot-001",
+                "deviceName", "Robot One")));
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        Map<String, Object> deviceTask = maps(maps(overview.get("devices")).get(0).get("task")).get(0);
+        assertEquals(1L, deviceTask.get("taskId"));
+        assertEquals(9001L, deviceTask.get("workflowInstanceId"));
+        assertEquals("A区-夜间巡逻", deviceTask.get("name"));
+        assertEquals("running", deviceTask.get("status"));
+        assertEquals("20:00-22:00", deviceTask.get("timeRange"));
+        verify(centerClient, times(1)).deviceTaskInstances("9001");
+        verify(centerClient, times(1)).taskWorkflowInstance("9001");
+    }
+
+    @Test
+    void doesNotFillCompletedTaskIntoDeviceCurrentTask() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.devices()).thenReturn(List.of(Map.of(
+                "serialNumber", "robot-001",
+                "deviceName", "Robot One")));
+        when(centerClient.realtimeStatuses(List.of("robot-001"))).thenReturn(List.of(
+                realtimeStatus("robot-001", Map.of())));
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "planName", "已完成任务",
+                "lastWorkflowInstanceId", 9001L,
+                "executionStatus", "COMPLETED")));
+        when(centerClient.taskWorkflowInstance("9001")).thenReturn(Optional.of(Map.of("status", "COMPLETED")));
+        when(centerClient.taskWorkflowReplay("9001")).thenReturn(Optional.empty());
+        when(centerClient.deviceTaskInstances("9001")).thenReturn(List.of(Map.of("serialNumber", "robot-001")));
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        assertEquals(List.of(), maps(maps(overview.get("devices")).get(0).get("task")));
+    }
+
+    @Test
+    void enrichesRealtimeDeviceTaskWithManagementTaskFields() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.devices()).thenReturn(List.of(Map.of(
+                "serialNumber", "robot-001",
+                "deviceName", "Robot One")));
+        when(centerClient.realtimeStatuses(List.of("robot-001"))).thenReturn(List.of(Map.of(
+                "serialNumber", "robot-001",
+                "onlineStatus", "ONLINE",
+                "status", Map.of("task", Map.of(
+                        "taskInstanceId", 9001L,
+                        "taskStatus", "RUNNING")))));
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "planName", "A区-夜间巡逻",
+                "activeWorkflowInstanceId", 9001L,
+                "activeWorkflowInstanceStatus", "RUNNING")));
+        when(centerClient.taskWorkflowInstance("9001")).thenReturn(Optional.of(Map.of(
+                "id", 9001L,
+                "startedAt", "2026-08-14T20:00:00",
+                "completedAt", "2026-08-14T22:00:00")));
+        when(centerClient.taskWorkflowReplay("9001")).thenReturn(Optional.empty());
+        when(centerClient.deviceTaskInstances("9001")).thenReturn(List.of(Map.of("serialNumber", "robot-001")));
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        Map<String, Object> deviceTask = maps(maps(overview.get("devices")).get(0).get("task")).get(0);
+        assertEquals(1L, deviceTask.get("taskId"));
+        assertEquals(9001L, deviceTask.get("workflowInstanceId"));
+        assertEquals("A区-夜间巡逻", deviceTask.get("name"));
+        assertEquals("running", deviceTask.get("status"));
+        assertEquals("20:00-22:00", deviceTask.get("timeRange"));
+    }
+
+    @Test
+    void omitsRedundantGpsDevicesFromOverview() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         when(centerClient.enabledMaps()).thenReturn(List.of());
@@ -194,9 +354,8 @@ class PanoramaServiceTest {
         Map<String, Object> overview = service.overview();
 
         List<Map<String, Object>> devices = maps(overview.get("devices"));
-        List<Map<String, Object>> gpsDevices = maps(overview.get("gpsDevices"));
         assertEquals(4, devices.size());
-        assertEquals(List.of(devices.get(0)), gpsDevices);
+        assertFalse(overview.containsKey("gpsDevices"));
     }
 
     @Test
@@ -236,9 +395,9 @@ class PanoramaServiceTest {
 
         List<Map<String, Object>> devices = maps(overview.get("devices"));
         List<Map<String, Object>> maps = maps(overview.get("map"));
-        assertEquals(List.of(devices.get(0)), maps(maps.get(0).get("devices")));
-        assertEquals(List.of(devices.get(1)), maps(maps.get(1).get("devices")));
-        assertEquals(List.of(), maps.get(2).get("devices"));
+        assertEquals(List.of("robot-001"), maps.get(0).get("deviceIds"));
+        assertEquals(List.of("robot-002"), maps.get(1).get("deviceIds"));
+        assertEquals(List.of(), maps.get(2).get("deviceIds"));
         assertEquals("1001", ((Map<?, ?>) devices.get(0).get("location")).get("mapId"));
         assertEquals("1002", ((Map<?, ?>) devices.get(1).get("location")).get("mapId"));
         assertNull(((Map<?, ?>) devices.get(2).get("location")).get("mapId"));
@@ -277,8 +436,17 @@ class PanoramaServiceTest {
                 "clientId", "robot-media-client-test111",
                 "name", "test111",
                 "type", "机器人",
+                "vendor", "Vendor",
                 "status", "online",
                 "battery", 80,
+                "lastHeartbeatAt", "2026-08-14 10:00:00",
+                "location", Map.of(
+                        "mapId", "1001",
+                        "longitude", 106.0,
+                        "latitude", 30.0,
+                        "altitude", 2.0,
+                        "coordinateZ", 3.0,
+                        "updatedAt", "2026-08-14 10:00:00"),
                 "cameras", List.of(Map.of(
                         "cameraId", "test111",
                         "deviceId", "test111",
@@ -293,7 +461,15 @@ class PanoramaServiceTest {
         assertEquals(1, devices.size());
         assertEquals("test111", devices.get(0).get("robotId"));
         assertEquals("online", devices.get(0).get("status"));
-        assertEquals("robot-media-client-test111", devices.get(0).get("clientId"));
+        assertFalse(devices.get(0).containsKey("clientId"));
+        assertFalse(devices.get(0).containsKey("vendor"));
+        assertFalse(devices.get(0).containsKey("lastHeartbeatAt"));
+        assertFalse(devices.get(0).containsKey("mountedDevices"));
+        assertFalse(devices.get(0).containsKey("mapDisplay"));
+        Map<?, ?> location = (Map<?, ?>) devices.get(0).get("location");
+        assertFalse(location.containsKey("altitude"));
+        assertFalse(location.containsKey("updatedAt"));
+        assertEquals(3.0, location.get("z"));
         assertEquals(1, maps(devices.get(0).get("cameras")).size());
         assertNull(devices.get(0).get("typeCode"));
         assertNull(devices.get(0).get("type"));
@@ -327,6 +503,11 @@ class PanoramaServiceTest {
                 "id", "camera-001",
                 "cameraName", "固定摄像头一",
                 "mapId", "1001",
+                "locationDescription", "A区",
+                "coordinateX", 1.0,
+                "coordinateY", 2.0,
+                "headingYaw", 90,
+                "protocolType", "RTSP",
                 "enabled", true,
                 "mainStreamUrl", "rtsp://example/camera-001")));
 
@@ -339,6 +520,17 @@ class PanoramaServiceTest {
         assertEquals("FIXED_CAMERA", devices.get(0).get("sourceType"));
         assertEquals("online", devices.get(0).get("status"));
         assertEquals("1001", ((Map<?, ?>) devices.get(0).get("location")).get("mapId"));
+        assertEquals("camera-001", devices.get(0).get("equipmentId"));
+        assertEquals("camera-001", devices.get(0).get("cameraId"));
+        assertEquals("A区", devices.get(0).get("locationDescription"));
+        assertEquals(1.0, devices.get(0).get("coordinateX"));
+        assertEquals(2.0, devices.get(0).get("coordinateY"));
+        assertEquals(90, devices.get(0).get("headingYaw"));
+        assertEquals("RTSP", devices.get(0).get("protocolType"));
+        assertEquals("main", devices.get(0).get("defaultQuality"));
+        assertEquals(true, devices.get(0).get("playable"));
+        assertEquals(false, devices.get(0).get("showControlCenter"));
+        assertEquals(false, devices.get(0).get("showController"));
     }
 
     @Test
@@ -427,5 +619,10 @@ class PanoramaServiceTest {
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> maps(Object value) {
         return (List<Map<String, Object>>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> map(Object value) {
+        return (Map<String, Object>) value;
     }
 }

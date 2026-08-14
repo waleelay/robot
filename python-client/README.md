@@ -391,6 +391,7 @@ main
 | `publisher_cmd` | `PUBLISHER_CMD` | 自定义推流命令；非空时优先使用 |
 | `publisher_mode` | `PUBLISHER_MODE` | 推流模式，支持 `auto`、`gstreamer`、`ffmpeg` |
 | `publisher_fallback_watch_seconds` | `PUBLISHER_FALLBACK_WATCH_SECONDS` | auto 模式下观察 GStreamer 是否异常退出的秒数 |
+| `publisher_gstreamer_retry_seconds` | `PUBLISHER_GSTREAMER_RETRY_SECONDS` | GStreamer 失败后使用 FFmpeg 的冷却秒数，默认 60 |
 | `publisher_ffmpeg_first_device_ids` | `PUBLISHER_FFMPEG_FIRST_DEVICE_IDS` | auto 模式下优先使用 FFmpeg 的设备 ID 列表 |
 | `ffmpeg_publisher_cmd` | `FFMPEG_PUBLISHER_CMD` | FFmpeg fallback 命令 |
 | `gstreamer_publisher_path` | `GSTREAMER_PUBLISHER_PATH` | 默认 `gstreamer-publisher` |
@@ -545,7 +546,8 @@ gstreamer-publisher --url {livekitUrl} --token {publisherToken} -- {pipeline}
 
 ```text
 rtspsrc location={rtsp} protocols=tcp latency=100
-  ! queue
+  drop-on-latency=true
+  ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 leaky=downstream
   ! rtph264depay
   ! h264parse config-interval=1
 ```
@@ -572,7 +574,7 @@ RTSP
   -> LiveKit
 ```
 
-如果某个 RTSP URL 在当前进程生命周期内触发过 GStreamer 失败，后续同 URL 会在 auto 模式下优先使用 FFmpeg。
+某个 RTSP URL 触发 GStreamer 失败后，在 `PUBLISHER_GSTREAMER_RETRY_SECONDS` 冷却期内优先使用 FFmpeg；冷却结束后会恢复尝试 GStreamer 直推。
 
 #### 7.5 自定义命令与 Track
 

@@ -26,7 +26,7 @@ type Publisher interface {
 type ProcessPublisher struct {
 	cfg                    *config.Config
 	cmds                   map[string]*processEntry
-	gstreamerFailedRTSPURL map[string]bool
+	gstreamerFailedRTSPURL map[string]time.Time
 	mu                     sync.Mutex
 }
 
@@ -40,7 +40,7 @@ func NewProcessPublisher(cfg config.Config) *ProcessPublisher {
 	return &ProcessPublisher{
 		cfg:                    &cfg,
 		cmds:                   make(map[string]*processEntry),
-		gstreamerFailedRTSPURL: make(map[string]bool),
+		gstreamerFailedRTSPURL: make(map[string]time.Time),
 	}
 }
 
@@ -74,7 +74,7 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 	if p.cfg.PublisherMode == "gstreamer" || p.cfg.FFmpegPublisherCmd == "" {
 		return trackSid, publishedTrackName, err
 	}
-	p.gstreamerFailedRTSPURL[rtspURL] = true
+	p.gstreamerFailedRTSPURL[rtspURL] = time.Now()
 	log.Println("publisher fallback ffmpeg", command.SessionID, err)
 	return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg")
 }
@@ -140,8 +140,12 @@ func (p *ProcessPublisher) shouldStartWithFFmpeg(command model.StartCommand, rts
 	if p.cfg.PublisherMode != "auto" || p.cfg.FFmpegPublisherCmd == "" {
 		return false
 	}
-	if p.gstreamerFailedRTSPURL[rtspURL] {
-		return true
+	if failedAt, failed := p.gstreamerFailedRTSPURL[rtspURL]; failed {
+		if time.Since(failedAt) < p.cfg.PublisherGStreamerRetry {
+			return true
+		}
+		delete(p.gstreamerFailedRTSPURL, rtspURL)
+		log.Println("publisher retry gstreamer after fallback cooldown", command.SessionID)
 	}
 	return p.cfg.PublisherFFmpegFirstIDs[command.DeviceID]
 }
@@ -171,7 +175,7 @@ func (p *ProcessPublisher) fallbackIfGStreamerExits(ctx context.Context, command
 			return
 		}
 		delete(p.cmds, command.SessionID)
-		p.gstreamerFailedRTSPURL[rtspURL] = true
+		p.gstreamerFailedRTSPURL[rtspURL] = time.Now()
 		log.Println("publisher auto fallback ffmpeg", command.SessionID, "gstreamer_exit", err)
 		if _, _, startErr := p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg"); startErr != nil {
 			log.Println("publisher auto fallback failed", command.SessionID, startErr)

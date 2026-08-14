@@ -85,6 +85,7 @@ class Config:
     publisher_cmd: str
     publisher_mode: str
     publisher_fallback_watch_seconds: float
+    publisher_gstreamer_retry_seconds: float
     publisher_ffmpeg_first_device_ids: set[str]
     ffmpeg_publisher_cmd: str
     gstreamer_publisher_path: str
@@ -132,10 +133,11 @@ def load() -> Config:
         publisher_cmd=env("PUBLISHER_CMD", ""),
         publisher_mode=env("PUBLISHER_MODE", "auto").lower(),
         publisher_fallback_watch_seconds=env_int("PUBLISHER_FALLBACK_WATCH_SECONDS", 8),
+        publisher_gstreamer_retry_seconds=env_int("PUBLISHER_GSTREAMER_RETRY_SECONDS", 60),
         publisher_ffmpeg_first_device_ids=env_csv_set("PUBLISHER_FFMPEG_FIRST_DEVICE_IDS", ""),
         ffmpeg_publisher_cmd=env("FFMPEG_PUBLISHER_CMD", default_ffmpeg_publisher_cmd()),
         gstreamer_publisher_path=env("GSTREAMER_PUBLISHER_PATH", "gstreamer-publisher"),
-        gstreamer_pipeline=env("GSTREAMER_PIPELINE", "rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1"),
+        gstreamer_pipeline=env("GSTREAMER_PIPELINE", "rtspsrc location={rtsp} protocols=tcp latency=100 drop-on-latency=true ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 leaky=downstream ! rtph264depay ! h264parse config-interval=1"),
         gst_launch_path=env("GST_LAUNCH_PATH", "gst-launch-1.0"),
         audio_capture_pipeline=env("AUDIO_CAPTURE_PIPELINE", "autoaudiosrc ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! fdsink fd=1"),
         audio_playback_pipeline=env("AUDIO_PLAYBACK_PIPELINE", "fdsrc fd=0 ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! audioconvert ! audioresample ! autoaudiosink"),

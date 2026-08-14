@@ -69,6 +69,8 @@
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
+| `devices[].task[].taskId` | string/number/null | 需要 | 任务计划 ID，与 `tasks[].taskId` 一致 |
+| `devices[].task[].workflowInstanceId` | string/number/null | 条件需要 | 当前执行实例 ID，每次执行可能变化 |
 | `devices[].task[].name` | string/null | 条件需要 | 当前任务名称 |
 | `devices[].task[].status` | string/null | 条件需要 | 当前任务状态 |
 | `devices[].task[].timeRange` | string/null | 条件需要 | 当前任务时间段，BFF 可根据管理端任务开始/结束时间计算 |
@@ -149,6 +151,7 @@
 | `map[].enabled` | boolean/null | 需要 | 地图是否启用 |
 | `map[].remark` | string/null | 条件需要 | 备注 |
 | `map[].points` | array<object> | 条件需要 | 当前地图的点位集合；BFF 按地图 ID 查询后挂载到对应地图对象 |
+| `map[].deviceIds` | array<string> | 无需直接提供 | BFF 根据顶层 `devices[].location.mapId` 计算的设备 ID 列表 |
 
 ### 2.11 `alarms.*.items[]`
 

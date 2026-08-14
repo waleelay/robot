@@ -30,6 +30,7 @@ type Config struct {
 	PublisherCmd             string
 	PublisherMode            string
 	PublisherFallbackWatch   time.Duration
+	PublisherGStreamerRetry  time.Duration
 	PublisherFFmpegFirstIDs  map[string]bool
 	FFmpegPublisherCmd       string
 	GStreamerPublisherPath   string
@@ -123,10 +124,11 @@ func Load() Config {
 		PublisherCmd:             env("PUBLISHER_CMD", ""),
 		PublisherMode:            strings.ToLower(env("PUBLISHER_MODE", "auto")),
 		PublisherFallbackWatch:   time.Duration(envInt("PUBLISHER_FALLBACK_WATCH_SECONDS", 8)) * time.Second,
+		PublisherGStreamerRetry:  time.Duration(envInt("PUBLISHER_GSTREAMER_RETRY_SECONDS", 60)) * time.Second,
 		PublisherFFmpegFirstIDs:  envCSVSet("PUBLISHER_FFMPEG_FIRST_DEVICE_IDS", ""),
 		FFmpegPublisherCmd:       env("FFMPEG_PUBLISHER_CMD", "./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}"),
 		GStreamerPublisherPath:   env("GSTREAMER_PUBLISHER_PATH", "gstreamer-publisher"),
-		GStreamerPipeline:        env("GSTREAMER_PIPELINE", "rtspsrc location={rtsp} protocols=tcp latency=100 ! queue ! rtph264depay ! h264parse config-interval=1"),
+		GStreamerPipeline:        env("GSTREAMER_PIPELINE", "rtspsrc location={rtsp} protocols=tcp latency=100 drop-on-latency=true ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=200000000 leaky=downstream ! rtph264depay ! h264parse config-interval=1"),
 		GSTLaunchPath:            env("GST_LAUNCH_PATH", "gst-launch-1.0"),
 		AudioCapturePipeline:     env("AUDIO_CAPTURE_PIPELINE", "autoaudiosrc ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! fdsink fd=1"),
 		AudioPlaybackPipeline:    env("AUDIO_PLAYBACK_PIPELINE", "fdsrc fd=0 ! audio/x-raw,format=S16LE,rate=48000,channels=1,layout=interleaved ! audioconvert ! audioresample ! autoaudiosink"),

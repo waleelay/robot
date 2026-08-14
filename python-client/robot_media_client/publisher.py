@@ -43,11 +43,11 @@ class ProcessPublisher:
         """保存配置，并按 sessionId 管理 publisher 子进程。
 
         `gstreamer_failed_rtsp_urls` 是 auto 模式下的本地经验缓存：某个 RTSP URL
-        已经触发过 GStreamer 失败后，后续同 URL 直接先走 FFmpeg，减少失败等待。
+        触发 GStreamer 失败后，冷却期内先走 FFmpeg，冷却结束后恢复尝试直推。
         """
         self.cfg = cfg
         self.processes: dict[str, subprocess.Popen[bytes]] = {}
-        self.gstreamer_failed_rtsp_urls: set[str] = set()
+        self.gstreamer_failed_rtsp_urls: dict[str, float] = {}
         self.lock = threading.RLock()
 
     def start(self, command: StartCommand, rtsp_url: str) -> tuple[str, str]:
@@ -91,7 +91,7 @@ class ProcessPublisher:
                 if self.cfg.publisher_mode == "gstreamer" or not self.cfg.ffmpeg_publisher_cmd:
                     raise
                 # GStreamer 启动阶段失败，auto 模式立即降级 FFmpeg，并记住这个 RTSP URL。
-                self.gstreamer_failed_rtsp_urls.add(rtsp_url)
+                self.gstreamer_failed_rtsp_urls[rtsp_url] = time.monotonic()
                 print("publisher fallback ffmpeg", command.session_id, flush=True)
                 return self._start_command(command, rtsp_url, track_name, self.cfg.ffmpeg_publisher_cmd, "ffmpeg")
 
@@ -121,17 +121,21 @@ class ProcessPublisher:
         return "TR_" + command.session_id, track_name
 
     def _should_start_with_ffmpeg(self, command: StartCommand, rtsp_url: str) -> bool:
-        """在 auto 模式下，对人工指定或已知 GStreamer 失败过的流直接使用 ffmpeg。
+        """在 auto 模式下，对人工指定或冷却期内失败过的流使用 FFmpeg。
 
         两类流会跳过 GStreamer：
 
-        - RTSP URL 在本进程生命周期内已经触发过 GStreamer 失败。
+        - RTSP URL 在 `PUBLISHER_GSTREAMER_RETRY_SECONDS` 冷却期内触发过 GStreamer 失败。
         - deviceId 被配置在 `PUBLISHER_FFMPEG_FIRST_DEVICE_IDS`。
         """
         if self.cfg.publisher_mode != "auto" or not self.cfg.ffmpeg_publisher_cmd:
             return False
-        if rtsp_url in self.gstreamer_failed_rtsp_urls:
-            return True
+        failed_at = self.gstreamer_failed_rtsp_urls.get(rtsp_url)
+        if failed_at is not None:
+            if time.monotonic() - failed_at < self.cfg.publisher_gstreamer_retry_seconds:
+                return True
+            self.gstreamer_failed_rtsp_urls.pop(rtsp_url, None)
+            print("publisher retry gstreamer after fallback cooldown", command.session_id, flush=True)
         return command.device_id in self.cfg.publisher_ffmpeg_first_device_ids
 
     def _watch_gstreamer_for_fallback(self, command: StartCommand, rtsp_url: str, track_name: str) -> None:
@@ -179,7 +183,7 @@ class ProcessPublisher:
                 if self.processes.get(command.session_id) is not process:
                     return
                 self.processes.pop(command.session_id, None)
-                self.gstreamer_failed_rtsp_urls.add(rtsp_url)
+                self.gstreamer_failed_rtsp_urls[rtsp_url] = time.monotonic()
                 print(
                     "publisher auto fallback ffmpeg",
                     command.session_id,

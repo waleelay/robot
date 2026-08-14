@@ -49,7 +49,6 @@ GET /api/bigscreen/panorama/overview
 |---|---|---|---|
 | `serverTime` | BFF 当前服务时间 | BFF 生成 | `OffsetDateTime.now(+08:00)` |
 | `devices` | 全部机器人/设备展示列表 | 管理端 + 控制端 + BFF 组装 | 见 3.2 |
-| `gpsDevices` | 具备 GPS 经纬度的设备列表 | BFF 筛选 | 从 `devices[]` 筛选经度 `[-180, 180]`、纬度 `[-90, 90]` 且均为有限数值的设备；对象结构同 `devices[]` |
 | `deviceStats.total` | 设备总数 | BFF 计算 | `devices.size()` |
 | `deviceStats.online` | 在线设备数 | BFF 计算 | 统计 `devices[].status == online` |
 | `deviceStats.fault` | 故障设备数 | BFF 计算 | 统计 `devices[].fault == true`；没有明确故障上报时为 `0` |
@@ -61,7 +60,6 @@ GET /api/bigscreen/panorama/overview
 | `patrolOverview.mileageUnit` | 巡逻里程单位 | 未对接 | 当前返回 `null` |
 | `tasks` | 任务列表 | 管理端 + BFF 组装 | 见 3.6 |
 | `taskOverview.totalToday` | 今日任务数/当前任务列表总数 | BFF 计算 | `tasks.size()` |
-| `taskOverview.completedRate` | 完成率数字 | BFF 计算 | `completed / total * 100` |
 | `taskOverview.completedRateText` | 完成率文案 | BFF 计算 | `completedRate + "%"` |
 | `taskOverview.running` | 执行中任务数 | BFF 计算 | 统计 `tasks[].status == running` |
 | `taskOverview.pending` | 待执行任务数 | BFF 计算 | 统计 `tasks[].status == pending` |
@@ -73,17 +71,13 @@ GET /api/bigscreen/panorama/overview
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `robotId` | 机器人唯一展示 ID | 管理端 | `DeviceResponse.serialNumber` |
-| `clientId` | MQTT/客户端 ID | 管理端 | `DeviceResponse.authMqttClientId`，兼容 `clientId` |
 | `name` | 设备名称 | 管理端 | `DeviceResponse.deviceName`，兼容 `name` |
 | `type` | 机器人整机类型名称 | 管理端字典 + BFF 关联 | 按 `typeCode` 匹配 `/api/v1/management/selection-options/dictionaries/device_type` 的 `value/label`；未匹配时返回编码本身；固定摄像头由 BFF 固定返回“固定摄像头” |
 | `typeCode` | 机器人整机类型编码 | 管理端 | `DeviceResponse.deviceType`，编码范围以管理端 `device_type` 字典为准；固定摄像头由 BFF 固定返回 `FIXED_CAMERA` |
-| `vendor` | 厂商 | 管理端 | `DeviceResponse.manufacturer`，兼容 `vendor` |
 | `model` | 型号 | 管理端 | `DeviceResponse.model` |
 | `status` | 在线状态 | 控制端 | `DeviceRealtimeStatus.onlineStatus` 转为 `online/offline/fault` |
 | `battery` | 电量百分比 | 控制端 | `status.energy.batteryPercent` |
-| `lastHeartbeatAt` | 最近心跳/上报时间 | 控制端 + BFF 格式化 | `lastSeenAt/receivedAt/reportedAt` |
 | `cameras` | 相机展示集合 | BFF 拼装 | 见 3.4；当前未对接权威媒体/相机接口 |
-| `mountedDevices` | 上装设备/组件集合 | 管理端 + BFF 组装 | 见 3.3 |
 | `stateSeq` | 实时状态序号 | 控制端 | `DeviceRealtimeStatus.stateSeq`；无则 `null` |
 | `fault` | 是否故障 | 控制端 + BFF 计算 | `status.basic.healthStatus` 明确为 `ERROR`、`FAULT`、`异常`或`故障`时为 `true`，`NORMAL` 为 `false`，缺失或未知值为 `null` |
 | `alarmLevel` | 设备告警等级 | 控制端 + BFF 转换 | `status.basic.alarmStatus` 转 `HIGH/MEDIUM/LOW`；正常为空 |
@@ -91,13 +85,12 @@ GET /api/bigscreen/panorama/overview
 | `mountedDeviceCount` | 上装设备数量 | BFF 计算 | `DeviceDetailResponse.components.size()`；未返回组件时为 `null` |
 | `speed` | 当前速度 | 控制端 | `status.motion.speed` |
 | `location` | 设备定位信息 | 控制端 | 见 3.5 |
-| `mapDisplay.icon` | 地图图标 | 未对接 | 当前固定 `null` |
-| `mapDisplay.label` | 地图展示名称 | BFF 生成 | 使用 `devices[].name` |
-| `mapDisplay.badgeText` | 地图状态文案 | BFF 计算 | 有告警为 `告警中`；否则由状态转中文 |
-| `mapDisplay.badgeStatus` | 地图状态编码 | BFF 计算 | 有告警为 `alarm`；否则使用 `status` |
 | `task` | 当前任务数组 | 控制端 + 管理端 + BFF 组装 | 见 3.7 |
 
-### 3.3 `devices[].mountedDevices[]`
+`clientId/vendor/lastHeartbeatAt/mountedDevices/mapDisplay` 不再放入聚合接口的
+`devices[]`。这些字段仍可由设备详情等独立接口按原有契约返回。
+
+### 3.3 设备详情中的 `mountedDevices[]`
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
@@ -125,12 +118,10 @@ GET /api/bigscreen/panorama/overview
 | `lng` | 经度 | 控制端 | `status.localization.lng/longitude` |
 | `lat` | 纬度 | 控制端 | `status.localization.lat/latitude` |
 | `mapId` | 设备所属管理端地图业务主键，字符串；无关联任务时为 `null` | 管理端 + BFF 关联 | 按 `devices[].robotId = tasks[].equipmentList[].robotId` 匹配，取第一条非空 `tasks[].mapId`；不使用控制端 SLAM 图 ID |
-| `altitude` | 高度 | 控制端 | `status.localization.altitude` |
 | `x` | 地图/局部坐标 X | 控制端 | `status.localization.coordinateX` |
 | `y` | 地图/局部坐标 Y | 控制端 | `status.localization.coordinateY` |
 | `z` | 地图/局部坐标 Z | 控制端 | `status.localization.coordinateZ` |
 | `address` | 位置文字 | 控制端 | `status.localization.address` |
-| `updatedAt` | 定位更新时间 | 控制端 + BFF 格式化 | `reportedAt/receivedAt/lastSeenAt` |
 
 ### 3.6 `tasks[]`
 
@@ -149,8 +140,7 @@ GET /api/bigscreen/panorama/overview
 | `currentLocation` | 当前任务位置 | 管理端 + BFF 组装 | 优先计划 `currentLocation`；没有时取回放 `trackGroups[].samples` 最后一个 `pointName` |
 | `equipmentList` | 执行装备列表 | 管理端 + BFF 组装 | 见 3.6.1 |
 | `mapId` | 地图 ID | 管理端 | `TaskWorkflowDefinitionResponse.mapId` |
-| `mapPoints` | 地图点位集合 | 管理端 | `/api/v1/management/maps/{mapId}/points` 返回的点位数组 |
-| `pathPoints` | 路径点位集合 | 管理端 + BFF 过滤 | 用 `TaskWorkflowDefinitionResponse.pathId` 查 `/paths/{pathId}/points`，再按 `mapPointId` 从 `mapPoints` 过滤 |
+| `pathPoints` | 路径点位集合 | 管理端 + BFF 过滤 | 用 `TaskWorkflowDefinitionResponse.pathId` 查 `/paths/{pathId}/points`，再按 `mapPointId` 从地图点位中过滤；每个点仅返回 `id/pointCode/pointName/pointType/coordinateX/coordinateY` |
 
 #### 3.6.1 `tasks[].equipmentList[]`
 
@@ -165,18 +155,25 @@ GET /api/bigscreen/panorama/overview
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
-| `taskId` | 当前任务实例 ID | 控制端 | `status.task.taskInstanceId` |
-| `name` | 当前任务名称 | 控制端 + 管理端 | 优先 `status.task.taskName/workflowName`；没有时按 `taskInstanceId` 查任务实例 `workflowName/planName/name` |
-| `status` | 当前任务状态 | 控制端 + 管理端 + BFF 转换 | 优先 `status.task.taskStatus/status`；没有时用任务实例 `status` |
-| `timeRange` | 当前任务时间段 | 管理端 + BFF 计算 | 任务实例 `startedAt/completedAt` 计算；缺失为 `null` |
+| `taskId` | 任务计划 ID | 管理端 | 按 `tasks[].equipmentList[].robotId` 关联活务后，复制 `tasks[].taskId` |
+| `workflowInstanceId` | 当前执行实例 ID | 控制端 + 管理端 | 实时状态 `status.task.taskInstanceId`，并与 `tasks[].workflowInstanceId` 关联；每次执行都可能变化 |
+| `name` | 当前任务名称 | 控制端 + 管理端 | 优先 `status.task.taskName/workflowName`；缺失时用已查询的 `tasks[].name` 补齐 |
+| `status` | 当前任务状态 | 控制端 + 管理端 + BFF 转换 | 优先 `status.task.taskStatus/status`；缺失时用已查询的 `tasks[].status` 补齐 |
+| `timeRange` | 当前任务时间段 | 管理端 + BFF 计算 | 任务实例 `startedAt/completedAt` 计算；缺失时用已查询的 `tasks[].timeRange` 补齐 |
+
+BFF 只会将 `running/pausing/paused/resuming/terminating` 状态的任务关联到设备，不会把待执行或已结束任务填入“当前任务”。关联复用总览已查询的 `tasks[]`，不会为每台设备新增管理端请求。
 
 ### 3.8 `map[]`
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `points` | 地图点位列表 | 管理端 | `/api/v1/management/maps/{mapId}/points` 返回值 |
-| `devices` | 当前地图的机器人列表 | 管理端 + BFF 过滤 | 按任务关联得到的 `devices[].location.mapId` 与地图 `id` 匹配 |
+| `deviceIds` | 当前地图的设备 ID 列表 | BFF 过滤 | 按 `devices[].location.mapId` 与地图 `id/mapId` 匹配，只返回 `robotId`；完整对象使用顶层 `devices[]` |
 | `fixedCamares` | 当前地图的固定摄像头列表 | 管理端 | `/api/v1/management/fixed-cameras?pageNum=1&pageSize=100&mapId={mapId}` 的 `data.records` |
+
+地图对象保留 `id/mapName/fileId/previewWidth/previewHeight/resolution/originX/originY/originYaw/previewGeneratedAt/points/deviceIds/fixedCamares`。
+`mapCode/mapType/regionId/fileName/previewImageUrl/enabled/remark` 不再放入聚合接口。
+`points[]` 仅返回 `id/pointCode/pointName/pointType/coordinateX/coordinateY`。
 
 ### 3.9 `alarms`
 
@@ -186,7 +183,6 @@ GET /api/bigscreen/panorama/overview
 | `summary.totalToday` | 今日/当前告警数 | BFF 计算 | 当前实现等于告警列表总数 |
 | `summary.handled` | 已处理告警数 | BFF 计算 | 统计状态为 `handled/false_alarm/acknowledged` 的告警 |
 | `summary.unhandled` | 未处理告警数 | BFF 计算 | `total - handled` |
-| `summary.handleRate` | 处置率数字 | BFF 计算 | `handled / total * 100` |
 | `summary.handleRateText` | 处置率文案 | BFF 计算 | `handleRate + "%"` |
 | `high.items` | 高风险告警集合 | BFF 分组 | `items[].level == HIGH` |
 | `medium.items` | 中风险告警集合 | BFF 分组 | `items[].level == MEDIUM` |
@@ -205,12 +201,10 @@ GET /api/bigscreen/panorama/overview
 | `location` | 告警位置对象 | 管理端可选 + BFF 解析 | 优先 `source.location`；没有时尝试解析 `rawPayload.location`；仍无则 `null` |
 | `location.lng` | 经度 | 管理端可选 | `location.lng/longitude` |
 | `location.lat` | 纬度 | 管理端可选 | `location.lat/latitude` |
-| `location.altitude` | 高度 | 管理端可选 | `location.altitude` |
 | `location.x` | 坐标 X | 管理端可选 | `location.x/coordinateX` |
 | `location.y` | 坐标 Y | 管理端可选 | `location.y/coordinateY` |
 | `location.z` | 坐标 Z | 管理端可选 | `location.z/coordinateZ` |
 | `location.address` | 位置文字 | 管理端可选 | `location.address` |
-| `location.updatedAt` | 位置更新时间 | 管理端可选 + BFF 格式化 | `location.updatedAt/reportedAt/receivedAt` |
 | `robotId` | 告警关联机器人 ID | 管理端 | `AlarmRecordResponse.serialNumber`，兼容 `robotId/deviceCode` |
 | `deviceName` | 告警关联设备名称 | 管理端 | `AlarmRecordResponse.deviceName` |
 | `taskId` | 告警关联任务实例 ID | 管理端 | `AlarmRecordResponse.taskInstanceId`，兼容 `taskId` |
@@ -232,7 +226,7 @@ GET /api/bigscreen/panorama/devices/{deviceId}
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
-| `robotId/clientId/name/type/typeCode/vendor/model/status/battery/lastHeartbeatAt/cameras/controlMode/speed/location/mountedDeviceCount/mountedDevices` | 设备基础与实时字段 | 同 `devices[]` | 见 3.2 到 3.5 |
+| `robotId/clientId/name/type/typeCode/vendor/model/status/battery/lastHeartbeatAt/cameras/controlMode/speed/location/mountedDeviceCount/mountedDevices` | 设备基础与实时字段 | 管理端 + 控制端 + BFF 组装 | 设备详情继续返回完整字段；其中 `clientId/vendor/lastHeartbeatAt/mountedDevices` 不受聚合接口精简影响 |
 | `stateSeq` | 实时状态序号 | 控制端 | 同 `devices[].stateSeq` |
 | `alarmStatus` | 告警状态/等级 | BFF 派生 | 使用 `devices[].alarmLevel` |
 | `alarmText` | 告警提示文案 | BFF 生成 | 有 `alarmLevel` 时为 `存在未处理告警`，否则 `null` |
@@ -256,7 +250,7 @@ GET /api/bigscreen/panorama/tasks
 |---|---|---|---|
 | `serverTime` | BFF 当前服务时间 | BFF 生成 | 当前时间 |
 | `total` | 任务数量 | BFF 计算 | `items.size()` |
-| `items` | 任务数组 | 管理端 + BFF 组装 | 同 3.6 `tasks[]` |
+| `items` | 任务数组 | 管理端 + BFF 组装 | 字段来源同 3.6；独立任务接口仍额外返回完整 `mapPoints[]` |
 
 ## 6. 告警列表接口
 
@@ -269,7 +263,7 @@ GET /api/bigscreen/panorama/alarms
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `serverTime` | BFF 当前服务时间 | BFF 生成 | 当前时间 |
-| `alarms` | 告警聚合对象 | 管理端 + BFF 组装 | 同 3.8 到 3.9 |
+| `alarms` | 告警聚合对象 | 管理端 + BFF 组装 | 字段来源同 3.8 到 3.9；独立告警接口仍返回 `summary.handleRate` 以及位置的 `altitude/updatedAt` |
 
 ## 7. 告警处置接口
 
@@ -315,21 +309,14 @@ PATCH /api/v1/management/alarms/{alarmId}/handled
 
 ## 8. 地图字段
 
-`overview.map[]` 保留管理端 `/api/v1/management/maps` 的 `records` 字段，并按每条记录的 `id/mapId` 查询地图点位、匹配设备，补充 `points` 和 `devices` 数组。
+`overview.map[]` 从管理端地图记录中投影前端需要的字段，并按每条记录的
+`id/mapId` 查询地图点位、匹配设备，补充 `points/deviceIds/fixedCamares`。
 
-| 管理端字段 | 字段说明 |
+| BFF 字段 | 字段说明 |
 |---|---|
 | `id` | 地图 ID |
-| `mapCode` | 地图编码 |
 | `mapName` | 地图名称 |
-| `mapType` | 地图类型 |
-| `regionId` | 区域 ID |
 | `fileId` | 地图文件 ID |
-| `fileUri` | 地图文件 URI |
-| `fileName` | 地图文件名 |
-| `fileChecksum` | 文件校验值 |
-| `previewFileId` | 预览图文件 ID |
-| `previewImageUri` | 预览图 URI |
 | `previewWidth` | 预览图宽度 |
 | `previewHeight` | 预览图高度 |
 | `resolution` | 地图分辨率 |
@@ -337,10 +324,9 @@ PATCH /api/v1/management/alarms/{alarmId}/handled
 | `originY` | 地图原点 Y |
 | `originYaw` | 地图原点朝向 |
 | `previewGeneratedAt` | 预览图生成时间 |
-| `enabled` | 是否启用 |
-| `remark` | 备注 |
-| `points` | 地图点位数组，来自 `/api/v1/management/maps/{mapId}/points`；查询失败或无数据时为 `[]` |
-| `devices` | 当前地图设备数组；按 `devices[].location.mapId` 与地图 `id/mapId` 匹配，对象结构同顶层 `devices[]`；无匹配时为 `[]` |
+| `points` | 地图点位数组，仅含 `id/pointCode/pointName/pointType/coordinateX/coordinateY` |
+| `deviceIds` | 当前地图设备 ID 数组；按 `devices[].location.mapId` 匹配 |
+| `fixedCamares` | 当前地图固定摄像头原始记录数组 |
 
 ## 9. 统计接口
 

@@ -3,8 +3,10 @@ package com.robot.bigscreen.statistics;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.panorama.PanoramaCenterClient;
+import java.awt.Color;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -33,6 +35,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
@@ -141,7 +149,7 @@ public class StatisticsService {
         byte[] bytes = reportPdf(data, selection, deviceTypeOptions);
         String id = String.valueOf(reportId.incrementAndGet());
         String createdAt = now();
-        String reportName = "巡逻巡查数据统计报告-" + rangeLabel(selection.rangeType()) + "-"
+        String reportName = "具身智能平台统计报告-" + rangeLabel(selection.rangeType()) + "-"
                 + deviceTypeName(selection.deviceType(), deviceTypeOptions);
         String filename = reportName + "-" + LocalDateTime.now(CHINA_ZONE).format(FILE_DATE_FORMATTER) + ".pdf";
         String storedFilename = id + ".pdf";
@@ -220,7 +228,7 @@ public class StatisticsService {
                 }
                 ReportHistory history = new ReportHistory(
                         id,
-                        stringValue(row.get("reportName"), "巡逻巡查数据统计报告"),
+                        stringValue(row.get("reportName"), "具身智能平台统计报告"),
                         stringValue(row.get("filename"), id + ".pdf"),
                         stringValue(row.get("downloadTime"), "-"),
                         stringValue(row.get("format"), "PDF"),
@@ -787,92 +795,129 @@ public class StatisticsService {
         Map<String, Object> range = mapValue(data.get("range"));
         Map<String, Object> kpis = mapValue(data.get("kpis"));
 
-        pdf.title("巡逻巡查数据统计报告");
-        pdf.line("生成时间：" + data.get("serverTime"));
-        pdf.line("统计时间：" + rangeLabel(stringValue(range.get("type"), selection.rangeType())) + "（"
-                + valueText(range.get("startTime")) + " 至 " + valueText(range.get("endTime")) + "）");
-        pdf.line("设备类型：" + deviceTypeName(selection.deviceType(), deviceTypeOptions));
-        pdf.line("包含模块：" + moduleNames(selection.modules()));
+        pdf.title("具身智能平台统计报告", "巡逻巡查数据统计分析");
+        int sectionNumber = 1;
+        pdf.section(sectionTitle(sectionNumber++, "报告概况"));
+        pdf.line("生成时间：" + valueText(data.get("serverTime")));
+        pdf.line("统计周期：" + rangeLabel(stringValue(range.get("type"), selection.rangeType())));
+        pdf.line("起止时间：" + rangeText(range.get("startTime"), range.get("endTime")));
+        pdf.line("设备类型：" + valueText(deviceTypeName(selection.deviceType(), deviceTypeOptions)));
+        pdf.line("统计内容：" + valueText(moduleNames(selection.modules())));
 
-        pdf.section("一、核心指标");
-        pdf.line("任务执行总数：" + kpiValue(kpis, "taskTotal") + " 个，" + compareText(kpis, "taskTotal"));
-        pdf.line("总巡逻里程：" + kpiValue(kpis, "patrolMileage") + " KM，" + compareText(kpis, "patrolMileage"));
-        pdf.line("AI自动识别异常数：" + kpiValue(kpis, "aiAlarmTotal") + " 个，" + compareText(kpis, "aiAlarmTotal"));
-        pdf.line("自动处置成功率：" + kpiValue(kpis, "autoHandleSuccessRate") + "%，"
+        pdf.section(sectionTitle(sectionNumber++, "核心指标"));
+        pdf.line("任务执行总数：" + valueWithUnit(kpiValue(kpis, "taskTotal"), "个") + "，"
+                + compareText(kpis, "taskTotal"));
+        pdf.line("总巡逻里程：" + valueWithUnit(kpiValue(kpis, "patrolMileage"), "KM") + "，"
+                + compareText(kpis, "patrolMileage"));
+        pdf.line("AI自动识别异常数：" + valueWithUnit(kpiValue(kpis, "aiAlarmTotal"), "个") + "，"
+                + compareText(kpis, "aiAlarmTotal"));
+        pdf.line("自动处置成功率：" + percentText(kpiValue(kpis, "autoHandleSuccessRate")) + "，"
                 + compareText(kpis, "autoHandleSuccessRate"));
 
         if (selection.modules().contains("equipmentRuntime")) {
             Map<String, Object> runtime = mapValue(data.get("equipmentRuntime"));
-            pdf.section("二、装备运行时长");
-            pdf.line("总在线率：" + runtime.get("onlineRate") + "%    任务完成率：" + runtime.get("taskCompletionRate") + "%");
+            pdf.section(sectionTitle(sectionNumber++, "装备运行时长"));
+            pdf.line("总在线率：" + percentText(runtime.get("onlineRate"))
+                    + "    任务完成率：" + percentText(runtime.get("taskCompletionRate")));
             pdf.tableHeader("设备类型", "运行中(小时)", "故障(小时)", "离线(小时)");
-            for (Map<String, Object> item : mapList(runtime.get("items"))) {
+            List<Map<String, Object>> items = mapList(runtime.get("items"));
+            for (Map<String, Object> item : items) {
                 pdf.tableRow(
                         valueText(item.get("deviceTypeName")),
                         valueText(item.get("runningHours")),
                         valueText(item.get("faultHours")),
                         valueText(item.get("offlineHours")));
             }
+            if (items.isEmpty()) {
+                pdf.tableEmpty();
+            }
         }
 
         if (selection.modules().contains("aiAlarmAnalysis")) {
             Map<String, Object> ai = mapValue(data.get("aiAlarmAnalysis"));
-            pdf.section("三、AI告警分析");
+            pdf.section(sectionTitle(sectionNumber++, "AI告警分析"));
             pdf.line("告警类型分布：");
-            for (Map<String, Object> item : mapList(ai.get("alarmTypeRanking"))) {
-                pdf.line("  " + item.get("name") + "：" + item.get("count") + " 次，占比 " + item.get("percent") + "%");
+            List<Map<String, Object>> alarmTypes = mapList(ai.get("alarmTypeRanking"));
+            for (Map<String, Object> item : alarmTypes) {
+                pdf.line("  " + valueText(item.get("name")) + "："
+                        + valueWithUnit(item.get("count"), "次") + "，占比 " + percentText(item.get("percent")));
+            }
+            if (alarmTypes.isEmpty()) {
+                pdf.emptyData();
             }
             pdf.line("处理方式分布：");
-            for (Map<String, Object> item : mapList(ai.get("handleMethodRanking"))) {
-                pdf.line("  " + item.get("name") + "：" + item.get("count") + " 次");
+            List<Map<String, Object>> handleMethods = mapList(ai.get("handleMethodRanking"));
+            for (Map<String, Object> item : handleMethods) {
+                pdf.line("  " + valueText(item.get("name")) + "：" + valueWithUnit(item.get("count"), "次"));
+            }
+            if (handleMethods.isEmpty()) {
+                pdf.emptyData();
             }
         }
 
         if (selection.modules().contains("alarmAreaRanking")) {
-            pdf.section("四、告警高发区域");
+            pdf.section(sectionTitle(sectionNumber++, "告警高发区域"));
             pdf.tableHeader("排名", "区域", "告警次数", "占比");
             int rank = 1;
-            for (Map<String, Object> item : mapList(data.get("alarmAreaRanking"))) {
+            List<Map<String, Object>> areaRanking = mapList(data.get("alarmAreaRanking"));
+            for (Map<String, Object> item : areaRanking) {
                 pdf.tableRow(
                         "TOP." + rank++,
                         valueText(item.get("areaName")),
                         valueText(item.get("count")),
-                        valueText(item.get("percent")) + "%");
+                        percentText(item.get("percent")));
+            }
+            if (areaRanking.isEmpty()) {
+                pdf.tableEmpty();
             }
         }
 
         if (selection.modules().contains("alarmTrend")) {
             Map<String, Object> trend = mapValue(data.get("alarmTrend"));
-            pdf.section("五、告警异常趋势");
+            pdf.section(sectionTitle(sectionNumber++, "告警异常趋势"));
             List<String> points = new ArrayList<>();
             for (Map<String, Object> item : mapList(trend.get("points"))) {
-                points.add(item.get("label") + "：" + item.get("count") + trend.get("unit"));
+                points.add(valueText(item.get("label")) + "："
+                        + valueWithUnit(item.get("count"), valueTextOrEmpty(trend.get("unit"))));
             }
-            pdf.line(String.join("    ", points));
+            if (points.isEmpty()) {
+                pdf.emptyData();
+            } else {
+                pdf.line(String.join("    ", points));
+            }
         }
 
         if (selection.modules().contains("taskCompletion")) {
             Map<String, Object> completion = mapValue(data.get("taskCompletion"));
-            pdf.section("六、任务完成情况");
-            for (Map<String, Object> item : mapList(completion.get("items"))) {
-                pdf.line(item.get("name") + "：" + item.get("count") + " 个，" + item.get("percent") + "%");
+            pdf.keepTogether(145);
+            pdf.section(sectionTitle(sectionNumber++, "任务完成情况"));
+            List<Map<String, Object>> items = mapList(completion.get("items"));
+            for (Map<String, Object> item : items) {
+                pdf.line(valueText(item.get("name")) + "：" + valueWithUnit(item.get("count"), "个")
+                        + "，占比 " + percentText(item.get("percent")));
+            }
+            if (items.isEmpty()) {
+                pdf.emptyData();
             }
             pdf.line("统计结论：" + valueText(completion.get("insight")));
         }
 
-        pdf.section("七、报告说明");
-        pdf.line("本报告由数据统计大屏按筛选条件同步生成；未接入真实统计来源的模块以空值或空列表展示。");
+        pdf.section(sectionTitle(sectionNumber, "报告说明"));
+        pdf.line("本报告由具身智能平台依据所选统计周期、设备类型及统计内容自动汇总生成，"
+                + "用于反映平台装备运行、任务执行和告警处置情况。");
+        pdf.line("报告数据以生成时平台已接入并可查询的数据为准；暂无数据的指标统一标记为“暂无数据”。");
+        pdf.line("本报告用于运行态势分析和管理决策参考，具体业务结论应结合现场记录及相关业务系统复核。");
         return pdf.build();
     }
 
     private Object kpiValue(Map<String, Object> kpis, String code) {
-        return mapValue(kpis.get(code)).getOrDefault("value", 0);
+        return mapValue(kpis.get(code)).get("value");
     }
 
     private String compareText(Map<String, Object> kpis, String code) {
         Object rate = mapValue(kpis.get(code)).get("compareRate");
         if (!(rate instanceof Number number)) {
-            return "环比 -";
+            return "暂无环比数据";
         }
         String prefix = number.doubleValue() > 0 ? "+" : "";
         return "环比 " + prefix + number + "%";
@@ -939,7 +984,37 @@ public class StatisticsService {
     }
 
     private String valueText(Object value) {
-        return value == null ? "-" : String.valueOf(value);
+        String text = value == null ? "" : String.valueOf(value).trim();
+        return text.isEmpty() || "null".equalsIgnoreCase(text) ? "暂无数据" : text;
+    }
+
+    private String valueTextOrEmpty(Object value) {
+        String text = value == null ? "" : String.valueOf(value).trim();
+        return "null".equalsIgnoreCase(text) ? "" : text;
+    }
+
+    private String valueWithUnit(Object value, String unit) {
+        String text = valueText(value);
+        return "暂无数据".equals(text) ? text : text + (unit == null || unit.isBlank() ? "" : " " + unit);
+    }
+
+    private String percentText(Object value) {
+        return valueWithUnit(value, "%").replace(" %", "%");
+    }
+
+    private String rangeText(Object startTime, Object endTime) {
+        String start = valueText(startTime);
+        String end = valueText(endTime);
+        if ("暂无数据".equals(start) && "暂无数据".equals(end)) {
+            return "全部可用数据";
+        }
+        return start + " 至 " + end;
+    }
+
+    private String sectionTitle(int number, String title) {
+        String[] numbers = {"零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"};
+        String label = number >= 0 && number < numbers.length ? numbers[number] : String.valueOf(number);
+        return label + "、" + title;
     }
 
     private String stringValue(Object value, String defaultValue) {
@@ -1039,146 +1114,294 @@ public class StatisticsService {
 
     private static class PdfReportBuilder {
 
-        private static final int PAGE_WIDTH = 595;
-        private static final int PAGE_HEIGHT = 842;
-        private static final int MARGIN_X = 48;
-        private static final int MARGIN_BOTTOM = 52;
-        private static final int START_Y = 790;
-        private static final int BODY_SIZE = 11;
-        private static final int BODY_STEP = 18;
+        private static final float PAGE_WIDTH = PDRectangle.A4.getWidth();
+        private static final float PAGE_HEIGHT = PDRectangle.A4.getHeight();
+        private static final float MARGIN_X = 54;
+        private static final float MARGIN_BOTTOM = 58;
+        private static final float START_Y = 784;
+        private static final float TITLE_SIZE = 24;
+        private static final float SUBTITLE_SIZE = 12;
+        private static final float SECTION_SIZE = 14;
+        private static final float BODY_SIZE = 10;
+        private static final float TABLE_SIZE = 9;
+        private static final float BODY_STEP = 17;
+        private static final Color TEXT_COLOR = new Color(36, 48, 60);
+        private static final Color PRIMARY_COLOR = new Color(31, 91, 140);
+        private static final Color BORDER_COLOR = new Color(205, 216, 226);
+        private static final Color HEADER_BACKGROUND = new Color(237, 245, 250);
 
-        private final List<StringBuilder> pages = new ArrayList<>();
-        private StringBuilder content;
-        private int y;
+        private final PDDocument document = new PDDocument();
+        private final List<PDPage> pages = new ArrayList<>();
+        private final PDFont font;
+        private PDPageContentStream content;
+        private float y;
 
         PdfReportBuilder() {
-            newPage();
+            try (InputStream input = StatisticsService.class.getResourceAsStream("/fonts/alibaba-puhuiti.ttf")) {
+                if (input == null) {
+                    throw new IllegalStateException("统计报告字体资源不存在");
+                }
+                font = PDType0Font.load(document, input, true);
+                newPage();
+            } catch (IOException exception) {
+                closeDocument();
+                throw new IllegalStateException("初始化统计报告失败", exception);
+            }
         }
 
-        void title(String text) {
-            ensureSpace(40);
-            addText(text, 20, MARGIN_X, y);
-            y -= 30;
-            addLineShape(MARGIN_X, y + 10, PAGE_WIDTH - MARGIN_X * 2);
+        void title(String text, String subtitle) {
+            ensureSpace(72);
+            addCenteredText(text, TITLE_SIZE, y);
+            y -= 28;
+            addCenteredText(subtitle, SUBTITLE_SIZE, y);
+            y -= 22;
+            addLineShape(MARGIN_X, y + 8, PAGE_WIDTH - MARGIN_X * 2, PRIMARY_COLOR);
             y -= 12;
         }
 
         void section(String text) {
-            y -= 6;
-            ensureSpace(34);
-            addText(text, 14, MARGIN_X, y);
-            y -= 22;
+            ensureSpace(36);
+            y -= 7;
+            addText(text, SECTION_SIZE, MARGIN_X, y);
+            y -= 23;
         }
 
         void line(String text) {
-            for (String line : wrap(text, 44)) {
+            for (String line : wrap(text, PAGE_WIDTH - MARGIN_X * 2, BODY_SIZE)) {
                 ensureSpace(BODY_STEP);
                 addText(line, BODY_SIZE, MARGIN_X, y);
                 y -= BODY_STEP;
             }
         }
 
+        void keepTogether(float height) {
+            ensureSpace(height);
+        }
+
+        void emptyData() {
+            line("  暂无数据");
+        }
+
         void tableHeader(String... columns) {
-            ensureSpace(BODY_STEP);
-            addText(String.join("        ", columns), BODY_SIZE, MARGIN_X, y);
-            y -= BODY_STEP;
+            ensureSpace(24);
+            addFilledRect(MARGIN_X, y - 7, PAGE_WIDTH - MARGIN_X * 2, 20, HEADER_BACKGROUND);
+            addTableColumns(columns, TABLE_SIZE, y);
+            y -= 22;
         }
 
         void tableRow(String... columns) {
-            line(String.join("        ", columns));
+            ensureSpace(22);
+            addTableColumns(columns, TABLE_SIZE, y);
+            addLineShape(MARGIN_X, y - 7, PAGE_WIDTH - MARGIN_X * 2, BORDER_COLOR);
+            y -= 22;
+        }
+
+        void tableEmpty() {
+            ensureSpace(22);
+            addCenteredText("暂无数据", TABLE_SIZE, y);
+            addLineShape(MARGIN_X, y - 7, PAGE_WIDTH - MARGIN_X * 2, BORDER_COLOR);
+            y -= 22;
         }
 
         byte[] build() {
-            List<String> objects = new ArrayList<>();
-            int pageCount = pages.size();
-            int firstPageObj = 3;
-            int fontObj = firstPageObj + pageCount * 2;
-            int cidFontObj = fontObj + 1;
-            objects.add("<< /Type /Catalog /Pages 2 0 R >>");
-            StringBuilder kids = new StringBuilder();
-            for (int i = 0; i < pageCount; i++) {
-                kids.append(firstPageObj + i * 2).append(" 0 R ");
+            try {
+                closeContent();
+                int pageCount = pages.size();
+                for (int i = 0; i < pageCount; i++) {
+                    try (PDPageContentStream footer = new PDPageContentStream(
+                            document,
+                            pages.get(i),
+                            PDPageContentStream.AppendMode.APPEND,
+                            true,
+                            true)) {
+                        String text = "具身智能平台统计报告    第 " + (i + 1) + " / " + pageCount + " 页";
+                        showText(footer, text, 8, centeredX(text, 8), 34, new Color(102, 112, 122));
+                    }
+                }
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                document.save(output);
+                return output.toByteArray();
+            } catch (IOException exception) {
+                throw new IllegalStateException("生成统计报告失败", exception);
+            } finally {
+                closeDocument();
             }
-            objects.add("<< /Type /Pages /Kids [" + kids + "] /Count " + pageCount + " >>");
-            for (int i = 0; i < pageCount; i++) {
-                int pageObj = firstPageObj + i * 2;
-                int contentObj = pageObj + 1;
-                String stream = pages.get(i).toString();
-                int length = stream.getBytes(StandardCharsets.ISO_8859_1).length;
-                objects.add("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + PAGE_WIDTH + " " + PAGE_HEIGHT
-                        + "] /Resources << /Font << /F1 " + fontObj + " 0 R >> >> /Contents " + contentObj
-                        + " 0 R >>");
-                objects.add("<< /Length " + length + " >>\nstream\n" + stream + "endstream");
-            }
-            objects.add("<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H "
-                    + "/DescendantFonts [" + cidFontObj + " 0 R] >>");
-            objects.add("<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light "
-                    + "/CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 2 >> >>");
-            return serialize(objects);
         }
 
         private void newPage() {
-            content = new StringBuilder();
-            pages.add(content);
-            y = START_Y;
+            try {
+                closeContent();
+                PDPage page = new PDPage(PDRectangle.A4);
+                document.addPage(page);
+                pages.add(page);
+                content = new PDPageContentStream(document, page);
+                y = START_Y;
+                if (pages.size() > 1) {
+                    addText("具身智能平台统计报告", 9, MARGIN_X, 812);
+                    addLineShape(MARGIN_X, 802, PAGE_WIDTH - MARGIN_X * 2, BORDER_COLOR);
+                }
+            } catch (IOException exception) {
+                throw new IllegalStateException("创建统计报告页面失败", exception);
+            }
         }
 
-        private void ensureSpace(int height) {
+        private void ensureSpace(float height) {
             if (y - height < MARGIN_BOTTOM) {
                 newPage();
             }
         }
 
-        private void addText(String text, int size, int x, int baseline) {
-            content.append("BT\n/F1 ").append(size).append(" Tf\n1 0 0 1 ")
-                    .append(x).append(" ").append(baseline).append(" Tm\n<")
-                    .append(toUtf16Hex(text)).append("> Tj\nET\n");
+        private void addText(String text, float size, float x, float baseline) {
+            try {
+                showText(content, valueOf(text), size, x, baseline, TEXT_COLOR);
+            } catch (IOException exception) {
+                throw new IllegalStateException("写入统计报告文字失败", exception);
+            }
         }
 
-        private void addLineShape(int x, int y, int width) {
-            content.append("0.1 0.45 0.75 RG\n")
-                    .append(x).append(" ").append(y).append(" m ")
-                    .append(x + width).append(" ").append(y).append(" l S\n");
+        private void addCenteredText(String text, float size, float baseline) {
+            addText(text, size, centeredX(text, size), baseline);
         }
 
-        private List<String> wrap(String text, int maxChars) {
+        private void addTableColumns(String[] columns, float size, float baseline) {
+            float width = PAGE_WIDTH - MARGIN_X * 2;
+            float columnWidth = width / Math.max(columns.length, 1);
+            for (int i = 0; i < columns.length; i++) {
+                addText(fitText(columns[i], columnWidth - 10, size), size, MARGIN_X + i * columnWidth + 5, baseline);
+            }
+        }
+
+        private void addLineShape(float x, float lineY, float width, Color color) {
+            try {
+                content.setStrokingColor(color);
+                content.setLineWidth(0.6f);
+                content.moveTo(x, lineY);
+                content.lineTo(x + width, lineY);
+                content.stroke();
+            } catch (IOException exception) {
+                throw new IllegalStateException("绘制统计报告分隔线失败", exception);
+            }
+        }
+
+        private void addFilledRect(float x, float rectY, float width, float height, Color color) {
+            try {
+                content.setNonStrokingColor(color);
+                content.addRect(x, rectY, width, height);
+                content.fill();
+            } catch (IOException exception) {
+                throw new IllegalStateException("绘制统计报告表格失败", exception);
+            }
+        }
+
+        private List<String> wrap(String text, float maxWidth, float size) {
             List<String> lines = new ArrayList<>();
             String source = valueOf(text);
-            for (int start = 0; start < source.length(); start += maxChars) {
-                lines.add(source.substring(start, Math.min(start + maxChars, source.length())));
+            StringBuilder current = new StringBuilder();
+            for (String token : source.split(" ", -1)) {
+                String candidate = current.isEmpty() ? token : current + " " + token;
+                if (textWidth(candidate, size) <= maxWidth) {
+                    current.setLength(0);
+                    current.append(candidate);
+                    continue;
+                }
+                if (!current.isEmpty()) {
+                    lines.add(current.toString());
+                    current.setLength(0);
+                }
+                appendWrappedToken(lines, current, token, maxWidth, size);
+            }
+            if (!current.isEmpty()) {
+                lines.add(current.toString());
             }
             return lines.isEmpty() ? List.of("") : lines;
         }
 
+        private void appendWrappedToken(
+                List<String> lines,
+                StringBuilder current,
+                String token,
+                float maxWidth,
+                float size) {
+            for (int i = 0; i < token.length(); i++) {
+                String candidate = current.toString() + token.charAt(i);
+                if (!current.isEmpty() && textWidth(candidate, size) > maxWidth) {
+                    lines.add(current.toString());
+                    current.setLength(0);
+                }
+                current.append(token.charAt(i));
+            }
+        }
+
+        private float textWidth(String text, float size) {
+            try {
+                return font.getStringWidth(valueOf(text)) / 1000 * size;
+            } catch (IOException exception) {
+                throw new IllegalStateException("计算统计报告文字宽度失败", exception);
+            }
+        }
+
+        private String fitText(String text, float maxWidth, float size) {
+            String value = valueOf(text);
+            try {
+                if (font.getStringWidth(value) / 1000 * size <= maxWidth) {
+                    return value;
+                }
+                String suffix = "…";
+                while (!value.isEmpty()
+                        && font.getStringWidth(value + suffix) / 1000 * size > maxWidth) {
+                    value = value.substring(0, value.length() - 1);
+                }
+                return value + suffix;
+            } catch (IOException exception) {
+                throw new IllegalStateException("计算统计报告文字宽度失败", exception);
+            }
+        }
+
+        private float centeredX(String text, float size) {
+            try {
+                float width = font.getStringWidth(valueOf(text)) / 1000 * size;
+                return Math.max(MARGIN_X, (PAGE_WIDTH - width) / 2);
+            } catch (IOException exception) {
+                throw new IllegalStateException("计算统计报告标题位置失败", exception);
+            }
+        }
+
+        private void showText(
+                PDPageContentStream stream,
+                String text,
+                float size,
+                float x,
+                float baseline,
+                Color color) throws IOException {
+            stream.beginText();
+            stream.setNonStrokingColor(color);
+            stream.setFont(font, size);
+            stream.newLineAtOffset(x, baseline);
+            stream.showText(valueOf(text));
+            stream.endText();
+        }
+
+        private void closeContent() throws IOException {
+            if (content != null) {
+                content.close();
+                content = null;
+            }
+        }
+
+        private void closeDocument() {
+            try {
+                if (content != null) {
+                    content.close();
+                    content = null;
+                }
+                document.close();
+            } catch (IOException ignored) {
+                // 主异常优先，关闭失败不覆盖生成错误。
+            }
+        }
+
         private static String valueOf(String text) {
             return text == null ? "" : text;
-        }
-
-        private static String toUtf16Hex(String text) {
-            byte[] bytes = valueOf(text).getBytes(StandardCharsets.UTF_16BE);
-            StringBuilder hex = new StringBuilder(bytes.length * 2);
-            for (byte b : bytes) {
-                hex.append(String.format("%02X", b & 0xff));
-            }
-            return hex.toString();
-        }
-
-        private static byte[] serialize(List<String> objects) {
-            StringBuilder pdf = new StringBuilder("%PDF-1.4\n");
-            List<Integer> offsets = new ArrayList<>();
-            for (int i = 0; i < objects.size(); i++) {
-                offsets.add(pdf.toString().getBytes(StandardCharsets.ISO_8859_1).length);
-                pdf.append(i + 1).append(" 0 obj\n").append(objects.get(i)).append("\nendobj\n");
-            }
-            int xref = pdf.toString().getBytes(StandardCharsets.ISO_8859_1).length;
-            pdf.append("xref\n0 ").append(objects.size() + 1).append("\n");
-            pdf.append("0000000000 65535 f \n");
-            for (Integer offset : offsets) {
-                pdf.append(String.format("%010d 00000 n \n", offset));
-            }
-            pdf.append("trailer\n<< /Size ").append(objects.size() + 1).append(" /Root 1 0 R >>\n");
-            pdf.append("startxref\n").append(xref).append("\n%%EOF\n");
-            return pdf.toString().getBytes(StandardCharsets.ISO_8859_1);
         }
     }
 
