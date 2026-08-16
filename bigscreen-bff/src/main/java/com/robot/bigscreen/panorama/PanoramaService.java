@@ -420,12 +420,44 @@ public class PanoramaService {
                 "alarms", alarmsPayload());
     }
 
+    public Map<String, Object> actionableWorkflowAlarms() {
+        List<Map<String, Object>> items = centerClient.actionableWorkflowAlarms().stream()
+                .map(this::actionableWorkflowAlarmItem)
+                .toList();
+        return object(
+                "serverTime", now(),
+                "total", items.size(),
+                "items", items);
+    }
+
     public Map<String, Object> disposeAlarm(String alarmId, Map<String, Object> request) {
         if (alarmId == null || alarmId.isBlank()) {
             throw new IllegalArgumentException("alarmId is required");
         }
         AlarmDisposalStatus disposalStatus = AlarmDisposalStatus.from(string(request == null ? null : request.get("disposalStatus")));
-        boolean success = centerClient.handleAlarm(alarmId, disposalStatus.code);
+        String handleResult = value(
+                string(request == null ? null : request.get("handleResult")),
+                disposalStatus.name);
+        boolean success = centerClient.handleAlarm(alarmId, disposalStatus.managementAction, handleResult);
+        return disposalResponse(alarmId, disposalStatus, success);
+    }
+
+    public Map<String, Object> handleWorkflowAlarm(String alarmId, Map<String, Object> request) {
+        if (alarmId == null || alarmId.isBlank()) {
+            throw new IllegalArgumentException("alarmId is required");
+        }
+        AlarmDisposalStatus disposalStatus = AlarmDisposalStatus.from(string(request == null ? null : request.get("disposalStatus")));
+        String handleResult = value(
+                string(request == null ? null : request.get("handleResult")),
+                disposalStatus.name);
+        boolean success = centerClient.handleWorkflowAlarm(alarmId, disposalStatus.managementAction, handleResult);
+        return disposalResponse(alarmId, disposalStatus, success);
+    }
+
+    private Map<String, Object> disposalResponse(
+            String alarmId,
+            AlarmDisposalStatus disposalStatus,
+            boolean success) {
         return object(
                 "success", success,
                 "serverTime", now(),
@@ -985,7 +1017,7 @@ public class PanoramaService {
         return object(
                 "alarmId", firstValue(source, "id", "alarmId", "alarmCode"),
                 "title", firstString(source, "title", "alarmName"),
-                "categoryName", categoryName(firstString(source, "alarmType", "category")),
+                "categoryName", categoryName(firstString(source, "sourceType", "alarmType", "category")),
                 "level", levelCode(firstString(source, "severity", "level")),
                 "levelName", levelName(firstString(source, "severity", "level")),
                 "eventTime", formatTime(firstString(source, "occurredAt", "eventTime", "createdAt")),
@@ -996,6 +1028,24 @@ public class PanoramaService {
                 "taskName", value(firstString(source, "taskName", "workflowName"), firstString(taskInstance, "workflowName", "planName", "name")),
                 "status", statusCode(firstString(source, "status")),
                 "snapshotUrl", snapshotUrl(source));
+    }
+
+    private Map<String, Object> actionableWorkflowAlarmItem(Map<String, Object> source) {
+        return object(
+                "alarmId", firstValue(source, "alarmId", "id", "alarmCode"),
+                "title", firstString(source, "title"),
+                "content", firstString(source, "content"),
+                "categoryName", categoryName(firstString(source, "sourceType")),
+                "level", levelCode(firstString(source, "severity", "level")),
+                "levelName", levelName(firstString(source, "severity", "level")),
+                "eventTime", formatTime(firstString(source, "occurredAt", "eventTime")),
+                "robotId", firstValue(source, "serialNumber", "deviceCode", "robotId"),
+                "deviceName", firstString(source, "deviceName"),
+                "snapshotUrl", snapshotUrl(source),
+                "workflowInstanceId", firstValue(source, "workflowInstanceId"),
+                "taskName", firstString(source, "workflowName", "taskName"),
+                "humanTaskId", firstValue(source, "humanTaskId"),
+                "humanTaskName", firstString(source, "humanTaskName"));
     }
 
     private Map<String, Object> alarmLocation(Map<String, Object> source) {
@@ -1043,12 +1093,29 @@ public class PanoramaService {
     }
 
     private String alarmImageUrl(Map<String, Object> source) {
-        String imageUrl = firstString(source, "imageUrl");
+        String imageFileId = firstScalarString(source.get("imageFileIds"));
+        if (imageFileId != null) {
+            return "/api/bigscreen/control/files/" + imageFileId + "/content";
+        }
+        String imageUrl = firstScalarString(source.get("imageUrls"));
         if (imageUrl != null) {
             return imageUrl;
         }
-        String imageFileId = firstString(source, "imageFileId");
+        imageUrl = firstString(source, "imageUrl");
+        if (imageUrl != null) {
+            return imageUrl;
+        }
+        imageFileId = firstString(source, "imageFileId");
         return imageFileId == null ? null : "/api/bigscreen/control/files/" + imageFileId + "/content";
+    }
+
+    private String firstScalarString(Object value) {
+        return scalarList(value).stream()
+                .map(this::string)
+                .filter(Objects::nonNull)
+                .filter(item -> !item.isBlank())
+                .findFirst()
+                .orElse(null);
     }
 
     private Map<String, Object> alarmSummary(List<Map<String, Object>> alarms) {
@@ -1561,7 +1628,8 @@ public class PanoramaService {
             case "PENDING", "WAITING", "READY" -> "pending";
             case "PAUSED", "SUSPENDED" -> "paused";
             case "COMPLETED", "SUCCESS", "FINISHED" -> "completed";
-            case "HANDLED", "ACKNOWLEDGED" -> "handled";
+            case "HANDLED" -> "handled";
+            case "ACKNOWLEDGED" -> "unhandled";
             case "FALSE_ALARM" -> "false_alarm";
             case "FAILED", "ERROR" -> "failed";
             case "UNHANDLED", "NEW" -> "unhandled";
@@ -1674,6 +1742,7 @@ public class PanoramaService {
             case "BUSINESS" -> "业务告警";
             case "DEVICE" -> "设备告警";
             case "TASK" -> "任务告警";
+            case "COMPONENT" -> "组件告警";
             default -> source;
         };
     }
@@ -1702,7 +1771,7 @@ public class PanoramaService {
     }
 
     private boolean handled(String status) {
-        return "handled".equals(status) || "false_alarm".equals(status) || "acknowledged".equals(status);
+        return "handled".equals(status) || "false_alarm".equals(status);
     }
 
     private String timeRange(String startTime, String endTime, String fallback) {
@@ -1948,17 +2017,19 @@ public class PanoramaService {
     }
 
     private enum AlarmDisposalStatus {
-        IMMEDIATE_DISPOSAL("IMMEDIATE_DISPOSAL", "立即处置", "handled"),
-        FALSE_ALARM("FALSE_ALARM", "误报", "false_alarm");
+        IMMEDIATE_DISPOSAL("IMMEDIATE_DISPOSAL", "立即处置", "handled", "HANDLE_NOW"),
+        FALSE_ALARM("FALSE_ALARM", "误报", "false_alarm", "FALSE_ALARM");
 
         private final String code;
         private final String name;
         private final String alarmStatus;
+        private final String managementAction;
 
-        AlarmDisposalStatus(String code, String name, String alarmStatus) {
+        AlarmDisposalStatus(String code, String name, String alarmStatus, String managementAction) {
             this.code = code;
             this.name = name;
             this.alarmStatus = alarmStatus;
+            this.managementAction = managementAction;
         }
 
         private static AlarmDisposalStatus from(String rawStatus) {

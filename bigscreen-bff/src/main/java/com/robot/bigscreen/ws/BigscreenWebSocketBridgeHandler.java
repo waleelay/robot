@@ -41,6 +41,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private final PanoramaLocationEventThrottler locationEventThrottler;
     private final PanoramaStatsEventRefresher statsEventRefresher;
     private final PanoramaTaskEventRefresher taskEventRefresher;
+    private final PanoramaAlarmEventRefresher alarmEventRefresher;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final StandardWebSocketClient webSocketClient;
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
@@ -52,12 +53,14 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             PanoramaLocationEventThrottler locationEventThrottler,
             PanoramaStatsEventRefresher statsEventRefresher,
             PanoramaTaskEventRefresher taskEventRefresher,
+            PanoramaAlarmEventRefresher alarmEventRefresher,
             AuthenticatedRequestHeaders authenticatedRequestHeaders) {
         this.properties = properties;
         this.eventAdapter = eventAdapter;
         this.locationEventThrottler = locationEventThrottler;
         this.statsEventRefresher = statsEventRefresher;
         this.taskEventRefresher = taskEventRefresher;
+        this.alarmEventRefresher = alarmEventRefresher;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
         WebSocketContainer container = ContainerProvider.getWebSocketContainer();
         container.setDefaultMaxTextMessageBufferSize(WebSocketConfig.MAX_TEXT_MESSAGE_SIZE);
@@ -77,7 +80,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                     .get();
             centerSessions.put(browserSession.getId(), centerSession);
         } catch (Exception exception) {
-            log.warn("Center websocket unavailable, browser session will not receive center realtime events session={}",
+            log.warn("中心端 WebSocket 不可用，浏览器会话将无法接收中心端实时事件，会话={}",
                     browserSession.getId(), exception);
         }
     }
@@ -88,19 +91,20 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         if (centerSession != null && centerSession.isOpen()) {
             centerSession.sendMessage(message);
         } else {
-            log.debug("Drop browser websocket message because center websocket is unavailable session={}",
+            log.debug("中心端 WebSocket 不可用，已丢弃浏览器消息，会话={}",
                     browserSession.getId());
         }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession browserSession, CloseStatus status) throws Exception {
-        logClose("Browser", browserSession, status);
+        logClose("浏览器", browserSession, status);
         browserSessions.remove(browserSession);
         eventAdapter.removeSession(browserSession.getId());
         locationEventThrottler.remove(browserSession.getId());
         statsEventRefresher.remove(browserSession.getId());
         taskEventRefresher.remove(browserSession.getId());
+        alarmEventRefresher.remove(browserSession.getId());
         WebSocketSession centerSession = centerSessions.remove(browserSession.getId());
         if (centerSession != null && centerSession.isOpen()) {
             centerSession.close(status);
@@ -109,7 +113,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     @Override
     public void handleTransportError(WebSocketSession browserSession, Throwable exception) throws Exception {
-        log.warn("Browser websocket transport error session={}", browserSession.getId(), exception);
+        log.warn("浏览器 WebSocket 传输异常，会话={}", browserSession.getId(), exception);
         afterConnectionClosed(browserSession, CloseStatus.SERVER_ERROR);
     }
 
@@ -125,7 +129,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                     browserSession.sendMessage(message);
                 }
             } catch (Exception exception) {
-                log.warn("Failed to broadcast browser event session={}", browserSession.getId(), exception);
+                log.warn("向浏览器广播事件失败，会话={}", browserSession.getId(), exception);
             }
         }
     }
@@ -194,6 +198,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 String centerPayload = message.getPayload();
                 boolean refreshStats = eventAdapter.requiresStatsRefresh(browserSession.getId(), centerPayload);
                 boolean refreshTasks = eventAdapter.isTaskInvalidation(centerPayload);
+                boolean refreshAlarms = eventAdapter.isAlarmInvalidation(centerPayload);
                 for (String payload : eventAdapter.adapt(centerPayload)) {
                     locationEventThrottler.publish(
                             browserSession.getId(),
@@ -214,12 +219,19 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                             authentication,
                             payload -> sendToBrowserSession(browserSession, payload));
                 }
+                if (refreshAlarms) {
+                    Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
+                    alarmEventRefresher.requestRefresh(
+                            browserSession.getId(),
+                            authentication,
+                            payload -> sendToBrowserSession(browserSession, payload));
+                }
             }
         }
 
         @Override
         public void afterConnectionClosed(WebSocketSession centerSession, CloseStatus status) throws Exception {
-            logClose("Center", centerSession, status);
+            logClose("中心端", centerSession, status);
             centerSessions.remove(browserSession.getId());
             if (browserSession.isOpen()) {
                 browserSession.close(status);
@@ -228,7 +240,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
         @Override
         public void handleTransportError(WebSocketSession centerSession, Throwable exception) throws Exception {
-            log.warn("Center websocket transport error browserSession={}", browserSession.getId(), exception);
+            log.warn("中心端 WebSocket 传输异常，浏览器会话={}", browserSession.getId(), exception);
             afterConnectionClosed(centerSession, CloseStatus.SERVER_ERROR);
         }
     }
@@ -242,15 +254,15 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 browserSession.sendMessage(new TextMessage(payload));
             }
         } catch (Exception exception) {
-            log.warn("Failed to send browser event session={}", browserSession.getId(), exception);
+            log.warn("向浏览器发送事件失败，会话={}", browserSession.getId(), exception);
         }
     }
 
     private void logClose(String side, WebSocketSession session, CloseStatus status) {
         if (CloseStatus.NORMAL.equals(status) || CloseStatus.GOING_AWAY.equals(status)) {
-            log.debug("{} websocket closed session={} status={}", side, session.getId(), status);
+            log.debug("{} WebSocket 已关闭，会话={} 状态={}", side, session.getId(), status);
             return;
         }
-        log.warn("{} websocket closed session={} status={}", side, session.getId(), status);
+        log.warn("{} WebSocket 异常关闭，会话={} 状态={}", side, session.getId(), status);
     }
 }

@@ -22,7 +22,7 @@ class CenterStompTaskEventBridgeTest {
     }
 
     @Test
-    void forwardsTaskInvalidationOnceAndIgnoresOtherEvents() {
+    void forwardsTaskAndAlarmInvalidationsAndDeduplicatesEvents() throws Exception {
         MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
         CenterStompTaskEventBridge bridge = new CenterStompTaskEventBridge(
                 new ControlServiceProperties(),
@@ -36,12 +36,20 @@ class CenterStompTaskEventBridgeTest {
                 """);
 
         bridge.handleEvent(taskEvent);
+        bridge.handleEvent(new ObjectMapper().readTree("""
+                {"specversion":"1.0","id":"1003","source":"management","type":"task.changed.v1",
+                 "data":{"scopes":["EXECUTION"]}}
+                """));
         bridge.handleEvent(taskEvent);
         bridge.handleEvent(json("""
                 {"specversion":"1.0","id":"1002","source":"control","type":"alarm.changed.v1","data":{}}
                 """));
+        bridge.handleEvent(json("""
+                {"specversion":"1.0","id":"1002","source":"control","type":"alarm.changed.v1","data":{}}
+                """));
 
-        verify(publisher, times(1)).publish(eq("management.task.invalidated"), org.mockito.ArgumentMatchers.any());
+        verify(publisher, times(2)).publish(eq("management.task.invalidated"), org.mockito.ArgumentMatchers.any());
+        verify(publisher, times(1)).publish(eq("management.alarm.invalidated"), org.mockito.ArgumentMatchers.any());
         verify(publisher, never()).publish(eq("panorama.task.changed"), org.mockito.ArgumentMatchers.any());
     }
 

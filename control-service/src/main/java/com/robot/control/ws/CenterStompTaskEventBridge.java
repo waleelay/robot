@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.messaging.converter.ByteArrayMessageConverter;
+import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
@@ -32,7 +32,7 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
-/** 将同事 Control 的 STOMP 任务失效通知桥接到本地普通 WebSocket。 */
+/** 将中心端 STOMP 失效通知桥接到本地普通 WebSocket。 */
 @Component
 public class CenterStompTaskEventBridge implements SmartLifecycle {
 
@@ -62,7 +62,9 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
         this.taskScheduler = taskScheduler;
         this.restClient = restClientBuilder.build();
         this.stompClient = new WebSocketStompClient(new StandardWebSocketClient());
-        this.stompClient.setMessageConverter(new ByteArrayMessageConverter());
+        MappingJackson2MessageConverter messageConverter = new MappingJackson2MessageConverter();
+        messageConverter.setObjectMapper(objectMapper);
+        this.stompClient.setMessageConverter(messageConverter);
         this.stompClient.setTaskScheduler(taskScheduler);
         this.stompClient.setDefaultHeartbeat(new long[] {10_000, 10_000});
     }
@@ -119,26 +121,26 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
                             session = connected;
                             connecting.set(false);
                             subscribe(connected);
-                            log.info("Center STOMP task event bridge connected topic={}", properties.getCenterStomp().getTopic());
+                            log.info("中心端 STOMP 事件桥接已连接，订阅主题={}", properties.getCenterStomp().getTopic());
                         }
 
                         @Override
                         public void handleTransportError(StompSession failed, Throwable exception) {
                             session = null;
                             connecting.set(false);
-                            log.warn("Center STOMP task event bridge disconnected: {}", exception.getMessage());
+                            log.warn("中心端 STOMP 事件桥接已断开：{}", exception.getMessage());
                             scheduleReconnect();
                         }
                     });
             future.exceptionally(exception -> {
                 connecting.set(false);
-                log.warn("Center STOMP task event bridge connection failed: {}", exception.getMessage());
+                log.warn("中心端 STOMP 事件桥接连接失败：{}", exception.getMessage());
                 scheduleReconnect();
                 return null;
             });
         } catch (RuntimeException exception) {
             connecting.set(false);
-            log.warn("Center STOMP task event bridge preparation failed: {}", exception.getMessage());
+            log.warn("中心端 STOMP 事件桥接初始化失败：{}", exception.getMessage());
             scheduleReconnect();
         }
     }
@@ -147,13 +149,13 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
         connected.subscribe(properties.getCenterStomp().getTopic(), new StompFrameHandler() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
-                return byte[].class;
+                return JsonNode.class;
             }
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
-                if (payload instanceof byte[] bytes) {
-                    handleEvent(bytes);
+                if (payload instanceof JsonNode event) {
+                    handleEvent(event);
                 }
             }
         });
@@ -161,22 +163,37 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
 
     void handleEvent(byte[] payload) {
         try {
-            JsonNode event = objectMapper.readTree(payload);
-            if (!"task.changed.v1".equals(event.path("type").asText()) || !taskScope(event.path("data").path("scopes"))) {
-                return;
-            }
-            String source = event.path("source").asText();
-            String eventId = event.path("id").asText();
-            if (!register(source + ":" + eventId)) {
-                return;
-            }
-            publisher.publish("management.task.invalidated", Map.of(
-                    "source", source,
-                    "eventId", eventId,
-                    "scopes", scopes(event.path("data").path("scopes"))));
+            handleEvent(objectMapper.readTree(payload));
         } catch (Exception exception) {
-            log.warn("Ignore invalid center STOMP task event", exception);
+            log.warn("已忽略无效的中心端 STOMP 事件", exception);
         }
+    }
+
+    void handleEvent(JsonNode event) {
+        String type = event.path("type").asText();
+        JsonNode scopes = event.path("data").path("scopes");
+        if (!"alarm.changed.v1".equals(type)
+                && !("task.changed.v1".equals(type) && taskScope(scopes))) {
+            return;
+        }
+        String source = event.path("source").asText();
+        String eventId = event.path("id").asText();
+        if (!register(source + ":" + eventId)) {
+            return;
+        }
+        if ("alarm.changed.v1".equals(type)) {
+            log.debug("转发中心端告警事件，来源={} eventId={}", source, eventId);
+            publisher.publish("management.alarm.invalidated", Map.of(
+                    "source", source,
+                    "eventId", eventId));
+            return;
+        }
+        List<String> eventScopes = scopes(scopes);
+        log.debug("转发中心端任务事件，来源={} eventId={} 范围={}", source, eventId, eventScopes);
+        publisher.publish("management.task.invalidated", Map.of(
+                "source", source,
+                "eventId", eventId,
+                "scopes", eventScopes));
     }
 
     private boolean taskScope(JsonNode scopes) {

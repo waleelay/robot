@@ -213,7 +213,7 @@ public class ControlManagementClient {
                     exception.getStatusCode());
             throw exception;
         } catch (RuntimeException exception) {
-            log.warn("Failed to request management service uri={}", uri, exception);
+            log.warn("请求管理服务失败，请求地址={}", uri, exception);
             return Optional.empty();
         }
     }

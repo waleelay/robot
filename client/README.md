@@ -210,7 +210,7 @@ main
 | `IntercomStartCommand` | 对讲启动指令，包含 LiveKit room、机器人 token、音频发布/订阅开关和 `publishVideo` |
 | `StatusMessage` | 实时视频状态上报，包含状态、Track SID、Track 名称、错误码 |
 | `IntercomStatusMessage` | 对讲状态上报，包含机器人麦克风 Track 信息 |
-| `OnlineMessage` | 客户端在线/离线和周期心跳，携带摄像头清单与 `devices[]` 能力/状态 |
+| `OnlineMessage` | 媒体客户端在线/离线和周期心跳，携带摄像头清单与仍被消费的 `devices[]` 运行态；不携带本体业务状态 |
 | `Camera` | 上报给后端的摄像头信息 |
 | `Device` | 上报给后端的本体和上装设备信息，包含 `actions`、`status`、`controlProfile` |
 
@@ -243,7 +243,7 @@ main
 
 | Topic | 消息类型 | 说明 |
 |---|---|---|
-| `robot/{robotId}/media/client/status` | `OnlineMessage` | 上线、下线和周期心跳，携带摄像头清单与 `devices[]` 能力/状态 |
+| `robot/{robotId}/media/client/status` | `OnlineMessage` | 媒体客户端上线、下线和周期心跳，携带摄像头清单与仍被消费的 `devices[]` 运行态 |
 | `robot/{robotId}/media/video/status` | `StatusMessage` | 实时视频状态 |
 | `robot/{robotId}/media/video/intercom/status` | `IntercomStatusMessage` | 对讲状态 |
 | `gateway/fixed-camera/{gatewayId}/video/status` | `StatusMessage` | 固定摄像头实时视频状态 |
@@ -281,7 +281,7 @@ main
   -> 立即通过 media/client/status 上报 devices[].status
 ```
 
-当前客户端会回写的设备状态包括：扬声器音量/静音 `volume`、`volumePercent`、`muted`，发射器连接状态 `connected`、安全开关 `safetySwitchEnabled`、弹筒数量 `tubeCount`、弹筒状态 `tubes[]`，控制模式 `controlMode`，警示灯 `enabled`，云台自转 `autoRotateEnabled`、`panSpeed`，车灯 `front`、`rear`，以及多合一设备音量和 `audioSession`。模拟客户端收到 `LAUNCHER/fire` 后会把对应弹筒从 `LOADED` 改为 `EMPTY` 并通过下一次 `media/client/status` 回写；真实客户端应以设备查询结果为准。车灯命令以平台通用 `params.front/rear.mode/brightness` 为准；客户端兼容旧 ROS 结构 `params.msg.front_mode/rear_mode`，但最终统一回写为 `devices[].status.front/rear.mode/brightness`；`control.mode.set` 会更新在线心跳中的 `controlMode`。
+当前客户端会回写的设备状态包括：扬声器音量/静音 `volume`、`volumePercent`、`muted`，发射器连接状态 `connected`、安全开关 `safetySwitchEnabled`、弹筒数量 `tubeCount`、弹筒状态 `tubes[]`，警示灯 `enabled`，云台自转 `autoRotateEnabled`、`panSpeed`，车灯 `front`、`rear`，以及多合一设备音量和 `audioSession`。模拟客户端收到 `LAUNCHER/fire` 后会把对应弹筒从 `LOADED` 改为 `EMPTY` 并通过下一次 `media/client/status` 回写；真实客户端应以设备查询结果为准。车灯命令以平台通用 `params.front/rear.mode/brightness` 为准；客户端兼容旧 ROS 结构 `params.msg.front_mode/rear_mode`，但最终统一回写为 `devices[].status.front/rear.mode/brightness`。控制模式不再由媒体心跳上报，以边缘状态 topic 为准。
 
 多合一客户端消费 `robot/{robotId}/control/multi-function/command`，并调用 TCP `8519/12345`、HTTP `8222`。设备主动上报的音量和温度、HTTP 查询的文件列表以及客户端媒体会话状态会写入统一状态；`audioPlayback` 记录客户端已成功写入的播放命令和文件名，不等同于设备查询状态；照明和警报不伪装为设备真实状态。
 

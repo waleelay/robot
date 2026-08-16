@@ -72,7 +72,7 @@ public class PanoramaStatsEventRefresher {
                 }
             }
         } catch (RuntimeException exception) {
-            log.warn("Failed to refresh panorama statistics event session={}", sessionId, exception);
+            log.warn("刷新全景地图统计事件失败，会话={}", sessionId, exception);
         } finally {
             state.scheduled.set(false);
             if (states.get(sessionId) == state && state.dirty.get()) {

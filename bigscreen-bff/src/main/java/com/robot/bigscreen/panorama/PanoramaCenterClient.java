@@ -4,6 +4,7 @@ import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -225,9 +226,16 @@ public class PanoramaCenterClient {
     }
 
     public List<Map<String, Object>> alarms() {
-        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms")
-                .queryParam("pageNum", 1)
-                .queryParam("pageSize", 20)
+        int pageSize = 100;
+        return pagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/alarms")
+                .queryParam("pageNum", pageNum)
+                .queryParam("pageSize", pageSize)
+                .build(true)
+                .toUri(), pageSize);
+    }
+
+    public List<Map<String, Object>> actionableWorkflowAlarms() {
+        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms/actionable-workflow")
                 .build(true)
                 .toUri();
         return records(uri);
@@ -249,23 +257,51 @@ public class PanoramaCenterClient {
         }, pageSize);
     }
 
-    public boolean handleAlarm(String alarmId, String handleResult) {
-        if (alarmId == null || alarmId.isBlank() || handleResult == null || handleResult.isBlank()) {
+    public boolean handleAlarm(String alarmId, String handleAction, String handleResult) {
+        if (alarmId == null || alarmId.isBlank() || handleAction == null || handleAction.isBlank()) {
             return false;
         }
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms/" + alarmId + "/handled")
                 .build(true)
                 .toUri();
+        return updateAlarm(uri, false, handleAction, handleResult);
+    }
+
+    public boolean handleWorkflowAlarm(String alarmId, String handleAction, String handleResult) {
+        if (alarmId == null || alarmId.isBlank() || handleAction == null || handleAction.isBlank()) {
+            return false;
+        }
+        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms/" + alarmId + "/handle-and-continue")
+                .build(true)
+                .toUri();
+        return updateAlarm(uri, true, handleAction, handleResult);
+    }
+
+    private boolean updateAlarm(URI uri, boolean workflow, String handleAction, String handleResult) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("handleAction", handleAction);
+        if (handleResult != null && !handleResult.isBlank()) {
+            body.put("handleResult", handleResult);
+        }
         try {
-            restClient.patch()
-                    .uri(uri)
-                    .headers(authenticatedRequestHeaders::apply)
-                    .body(Map.of("handledBy", "bigscreen", "handleResult", handleResult))
-                    .retrieve()
-                    .body(MAP_TYPE);
+            if (workflow) {
+                restClient.post()
+                        .uri(uri)
+                        .headers(authenticatedRequestHeaders::apply)
+                        .body(body)
+                        .retrieve()
+                        .body(MAP_TYPE);
+            } else {
+                restClient.patch()
+                        .uri(uri)
+                        .headers(authenticatedRequestHeaders::apply)
+                        .body(body)
+                        .retrieve()
+                        .body(MAP_TYPE);
+            }
             return true;
         } catch (RuntimeException exception) {
-            log.warn("Failed to handle panorama alarm alarmId={} uri={}", alarmId, uri, exception);
+            log.warn("更新全景地图告警失败，请求地址={}", uri, exception);
             return false;
         }
     }
@@ -322,7 +358,7 @@ public class PanoramaCenterClient {
             logSlowRequest(uri, startNanos);
             return response == null ? Optional.empty() : Optional.of(response);
         } catch (RuntimeException exception) {
-            log.warn("Failed to request panorama center uri={} elapsedMs={}", uri, elapsedMillis(startNanos), exception);
+            log.warn("请求全景地图中心端接口失败，请求地址={} 耗时毫秒={}", uri, elapsedMillis(startNanos), exception);
             return Optional.empty();
         }
     }
@@ -342,7 +378,7 @@ public class PanoramaCenterClient {
     private void logSlowRequest(URI uri, long startNanos) {
         long elapsedMs = elapsedMillis(startNanos);
         if (elapsedMs >= 1000) {
-            log.warn("Slow panorama center request uri={} elapsedMs={}", uri, elapsedMs);
+            log.warn("全景地图中心端接口响应较慢，请求地址={} 耗时毫秒={}", uri, elapsedMs);
         }
     }
 

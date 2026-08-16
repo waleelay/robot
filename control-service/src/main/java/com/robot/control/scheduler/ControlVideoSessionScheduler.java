@@ -61,11 +61,11 @@ public class ControlVideoSessionScheduler {
                 try {
                     commandService.expireIntercom(sessionId);
                 } catch (Exception ex) {
-                    log.warn("Failed to expire intercom session={}", sessionId, ex);
+                    log.warn("对讲会话过期处理失败，会话={}", sessionId, ex);
                 }
             });
         } catch (Exception ex) {
-            log.warn("Failed to query stale intercom sessions", ex);
+            log.warn("查询过期对讲会话失败", ex);
         }
     }
 
@@ -79,11 +79,11 @@ public class ControlVideoSessionScheduler {
                 try {
                     commandService.restartSession(sessionId);
                 } catch (Exception ex) {
-                    log.warn("Failed to restart interrupted session={}", sessionId, ex);
+                    log.warn("重启中断的视频会话失败，会话={}", sessionId, ex);
                 }
             });
         } catch (Exception ex) {
-            log.warn("Failed to query interrupted sessions", ex);
+            log.warn("查询中断的视频会话失败", ex);
         }
     }
 
@@ -97,11 +97,11 @@ public class ControlVideoSessionScheduler {
                 try {
                     commandService.releaseIdleSession(sessionId);
                 } catch (Exception ex) {
-                    log.warn("Failed to release idle session={}", sessionId, ex);
+                    log.warn("释放空闲视频会话失败，会话={}", sessionId, ex);
                 }
             });
         } catch (Exception ex) {
-            log.warn("Failed to query idle sessions", ex);
+            log.warn("查询空闲视频会话失败", ex);
         }
     }
 

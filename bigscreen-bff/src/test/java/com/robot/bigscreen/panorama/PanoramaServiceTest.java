@@ -256,6 +256,62 @@ class PanoramaServiceTest {
     }
 
     @Test
+    void mapsManagementAlarmContractAndUsesFirstImageAsVisibleSnapshot() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.alarms()).thenReturn(List.of(Map.ofEntries(
+                Map.entry("id", 1001L),
+                Map.entry("sourceType", "COMPONENT"),
+                Map.entry("severity", "CRITICAL"),
+                Map.entry("status", "ACKNOWLEDGED"),
+                Map.entry("title", "云台异常"),
+                Map.entry("imageFileIds", List.of("file-001", "file-002")))));
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        Map<String, Object> alarm = maps(map(map(overview.get("alarms")).get("high")).get("items")).get(0);
+        assertEquals("组件告警", alarm.get("categoryName"));
+        assertEquals("unhandled", alarm.get("status"));
+        assertEquals(
+                "/api/bigscreen/control/files/file-001/content",
+                map(alarm.get("snapshotUrl")).get("visible"));
+        assertNull(map(alarm.get("snapshotUrl")).get("thermal"));
+        assertNull(map(alarm.get("snapshotUrl")).get("front"));
+    }
+
+    @Test
+    void mapsActionableWorkflowAlarmAndHandlingActions() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.actionableWorkflowAlarms()).thenReturn(List.of(Map.ofEntries(
+                Map.entry("alarmId", 1001L),
+                Map.entry("sourceType", "TASK"),
+                Map.entry("severity", "WARN"),
+                Map.entry("title", "检测异常"),
+                Map.entry("workflowName", "火灾告警处理"),
+                Map.entry("imageFileIds", List.of("file-001")))));
+        when(centerClient.handleAlarm("1001", "FALSE_ALARM", "确认误报")).thenReturn(true);
+        when(centerClient.handleWorkflowAlarm("1001", "HANDLE_NOW", "现场已处置")).thenReturn(true);
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+
+        Map<String, Object> actionable = service.actionableWorkflowAlarms();
+        Map<String, Object> item = maps(actionable.get("items")).get(0);
+        assertEquals("任务告警", item.get("categoryName"));
+        assertEquals("MEDIUM", item.get("level"));
+        assertEquals("火灾告警处理", item.get("taskName"));
+
+        Map<String, Object> ordinary = service.disposeAlarm("1001", Map.of(
+                "disposalStatus", "FALSE_ALARM",
+                "handleResult", "确认误报"));
+        Map<String, Object> workflow = service.handleWorkflowAlarm("1001", Map.of(
+                "disposalStatus", "IMMEDIATE_DISPOSAL",
+                "handleResult", "现场已处置"));
+        assertEquals(true, ordinary.get("success"));
+        assertEquals(true, workflow.get("success"));
+        verify(centerClient).handleAlarm("1001", "FALSE_ALARM", "确认误报");
+        verify(centerClient).handleWorkflowAlarm("1001", "HANDLE_NOW", "现场已处置");
+    }
+
+    @Test
     void fillsDeviceTasksFromAlreadyLoadedActiveTaskWithoutExtraQueries() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);

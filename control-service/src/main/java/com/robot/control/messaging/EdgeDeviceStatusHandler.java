@@ -53,13 +53,13 @@ public class EdgeDeviceStatusHandler {
             Map<String, Object> envelope = objectMapper.readValue(json, MAP_TYPE);
             String messageType = string(envelope.get("messageType"));
             if (!messageType.isBlank() && !"DEVICE_STATUS_REPORT".equals(messageType)) {
-                log.debug("Ignore unsupported edge message type={} topic={}", messageType, topic);
+                log.debug("已忽略不支持的边缘消息，类型={} 主题={}", messageType, topic);
                 return;
             }
             Map<String, Object> payload = map(envelope.get("payload"));
             Map<String, Object> status = map(payload.get("status"));
             if (status.isEmpty()) {
-                log.debug("Ignore edge status without payload.status topic={}", topic);
+                log.debug("边缘状态缺少 payload.status，已忽略，主题={}", topic);
                 return;
             }
 
@@ -68,7 +68,7 @@ public class EdgeDeviceStatusHandler {
             Map<String, Object> merged = equipmentControlService.mergeEdgeDeviceStatus(serialNumber, update);
             robotRegistryService.update(merged);
         } catch (Exception ex) {
-            log.warn("Failed to handle edge device status topic={}, payload={}", topic, json, ex);
+            log.warn("处理边缘设备状态失败，主题={} 载荷={}", topic, json, ex);
         }
     }
 
@@ -145,7 +145,7 @@ public class EdgeDeviceStatusHandler {
                     string(localization.get("mapId"))));
         } catch (RuntimeException exception) {
             // 里程持久化异常不能阻断设备实时状态和控制链路。
-            log.warn("Failed to persist edge device mileage robotId={}", serialNumber, exception);
+            log.warn("保存边缘设备里程失败，机器人标识={}", serialNumber, exception);
         }
     }
 

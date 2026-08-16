@@ -4,6 +4,7 @@
       <router-view :key="$route.path" />
     </div>
     <WarningPending />
+    <WarnInfo />
     <IncomingIntercomCall />
   </ScaleScreen>
 </template>
@@ -14,12 +15,14 @@ import { mapActions } from 'vuex';
 import { getPatrolPanoramaOverview } from '../../api/new-bi';
 import ScaleScreen from './../../components/largeScreen/scale-screen.vue'
 import WarningPending from './patrol/panorama/warning/WarnPending1.vue';
+import WarnInfo from './patrol/panorama/warning/WarnInfo.vue';
 import IncomingIntercomCall from './components/IncomingIntercomCall.vue';
 export default {
   name: 'Bi',
   components: {
     ScaleScreen,
     WarningPending,
+    WarnInfo,
     IncomingIntercomCall
   },
   data() {
@@ -51,7 +54,7 @@ export default {
   },
   beforeDestroy() {
     // console.log('11111111111111111111111111111111');
-    
+
     // mqttClient.disconnect()
   },
   // ✅ 组件内守卫，离开当前组件时触发

@@ -19,6 +19,8 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `GET` | `/api/bigscreen/panorama/tasks` | 查询当前任务快照 |
 | `GET` | `/api/bigscreen/panorama/alarms` | 查询告警分组快照 |
 | `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/disposal` | 处置告警 |
+| `GET` | `/api/bigscreen/panorama/alarms/actionable-workflow` | 查询当前用户可处理的工作流告警 |
+| `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue` | 处置告警并继续对应工作流 |
 
 响应字段、来源优先级和空值规则以[大屏 BFF 字段来源映射文档](大屏BFF字段来源映射文档.md)为准。固定摄像头作为 `devices[]` 中的同级装备返回，关键识别字段为：
 
@@ -107,6 +109,7 @@ BFF 在三个兼容路径注册同一桥接处理器：
 | task 变更类事件 | 有完整 `taskId` 时立即转换为 `panorama.task.changed` |
 | `management.task.invalidated` | 300ms 去抖后重查任务权威快照，只推送变化项 |
 | alarm 变更类事件 | 立即转换为 `panorama.alarm.changed`，无真实上游事件时不生成模拟告警 |
+| `management.alarm.invalidated` | 300ms 去抖后重查告警权威快照，只推送变化项 |
 | 设备、任务、告警或机器人在线状态变化 | 500ms 去抖后重查统计快照，仅在快照变化时推送 `panorama.stats.changed` |
 
 当前代码仍对没有定位的 `test111`、`SN005`、`SN006` 生成硬编码演示位置事件。它不是管理端真实位置，也不是通用兜底；生产验收不得把这些事件作为真实定位依据。其他机器人无定位时不补位置事件。若上游 WebSocket 不可用，连接仍可建立，但不会收到上游动态事件，也不会凭空生成业务快照。

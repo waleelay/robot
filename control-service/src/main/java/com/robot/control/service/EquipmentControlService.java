@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Service;
 
 /**
@@ -25,6 +26,31 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class EquipmentControlService {
+
+    private static final long EDGE_STATUS_AUTHORITY_NANOS = TimeUnit.SECONDS.toNanos(30);
+    private static final List<String> EDGE_STATUS_FIELDS = List.of(
+            "status",
+            "battery",
+            "speed",
+            "moving",
+            "totalMileage",
+            "currentMileage",
+            "runningStatus",
+            "healthStatus",
+            "chargingStatus",
+            "controlMode",
+            "controlModeName",
+            "stateSeq",
+            "missionStatus",
+            "taskProgressPercent",
+            "estopActive",
+            "softStopActive",
+            "remoteControlEnabled",
+            "location",
+            "edgeStatus",
+            "edgeMessageId",
+            "edgeSchemaVersion",
+            "stateSource");
 
     private static final List<String> MULTI_FUNCTION_ACTIONS = List.of(
             "set_volume",
@@ -50,6 +76,7 @@ public class EquipmentControlService {
     private final ControlManagementClient managementClient;
     private final Map<String, Map<String, Object>> sessions = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> robotStates = new ConcurrentHashMap<>();
+    private final Map<String, Long> edgeStatusUpdatedNanos = new ConcurrentHashMap<>();
 
     /**
      * 创建 EquipmentControlService 实例。
@@ -365,7 +392,20 @@ public class EquipmentControlService {
         if (robotId.isBlank()) {
             return payload;
         }
-        Map<String, Object> state = copy(payload);
+        Map<String, Object> previous = robotStates.getOrDefault(robotId, Map.of());
+        Map<String, Object> state = copy(previous);
+        payload.forEach((key, value) -> {
+            if (value != null) {
+                state.put(key, value);
+            }
+        });
+        if (hasFreshEdgeStatus(robotId)) {
+            EDGE_STATUS_FIELDS.forEach(field -> {
+                if (previous.containsKey(field)) {
+                    state.put(field, previous.get(field));
+                }
+            });
+        }
         state.putIfAbsent("stateSeq", numberValue(state.get("stateSeq"), 1).longValue());
         state.putIfAbsent("status", "offline");
         String controlMode = reportedControlMode(state.get("controlMode"));
@@ -391,13 +431,14 @@ public class EquipmentControlService {
      */
     public Map<String, Object> mergeEdgeDeviceStatus(String serialNumber, Map<String, Object> update) {
         Map<String, Object> state = copy(robotStates.getOrDefault(serialNumber, Map.of()));
+        long nextStateSeq = numberValue(state.get("stateSeq"), 0).longValue() + 1;
         state.put("robotId", serialNumber);
         update.forEach((key, value) -> {
             if (value != null) {
                 state.put(key, value);
             }
         });
-        state.putIfAbsent("stateSeq", 1L);
+        state.put("stateSeq", nextStateSeq);
         state.putIfAbsent("status", "online");
         state.putIfAbsent("controlMode", "手动模式");
         String controlMode = reportedControlMode(state.get("controlMode"));
@@ -412,7 +453,13 @@ public class EquipmentControlService {
                     state.put("devices", devices(robot, runtimeDevices));
                 });
         robotStates.put(serialNumber, state);
+        edgeStatusUpdatedNanos.put(serialNumber, System.nanoTime());
         return state;
+    }
+
+    private boolean hasFreshEdgeStatus(String robotId) {
+        Long updatedNanos = edgeStatusUpdatedNanos.get(robotId);
+        return updatedNanos != null && System.nanoTime() - updatedNanos <= EDGE_STATUS_AUTHORITY_NANOS;
     }
 
     /**

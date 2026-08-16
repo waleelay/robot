@@ -110,13 +110,13 @@ public class EquipmentControlCommandPublisher {
         try {
             String json = objectMapper.writeValueAsString(payload);
             if (!properties.getMqtt().isEnabled()) {
-                log.info("MQTT disabled, skip equipment control publish topic={}, payload={}", topic, json);
+                log.info("MQTT 已禁用，跳过装备控制消息发布，主题={} 载荷={}", topic, json);
                 return;
             }
             MqttMessage message = new MqttMessage(json.getBytes());
             message.setQos(1);
             mqttClient().publish(topic, message);
-            log.info("Equipment control MQTT published topic={}, payload={}", topic, json);
+            log.info("装备控制 MQTT 消息已发布，主题={} 载荷={}", topic, json);
         } catch (JsonProcessingException | MqttException ex) {
             throw new IllegalStateException("发布设备控制 MQTT 指令失败：" + topic, ex);
         }

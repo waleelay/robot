@@ -41,11 +41,23 @@ public class PanoramaController {
         return panoramaService.alarms();
     }
 
+    @GetMapping("/alarms/actionable-workflow")
+    public Map<String, Object> actionableWorkflowAlarms() {
+        return panoramaService.actionableWorkflowAlarms();
+    }
+
     @PostMapping("/alarms/{alarmId}/disposal")
     public Map<String, Object> disposeAlarm(
             @PathVariable String alarmId,
             @RequestBody Map<String, Object> request) {
         return panoramaService.disposeAlarm(alarmId, request);
+    }
+
+    @PostMapping("/alarms/{alarmId}/handle-and-continue")
+    public Map<String, Object> handleWorkflowAlarm(
+            @PathVariable String alarmId,
+            @RequestBody Map<String, Object> request) {
+        return panoramaService.handleWorkflowAlarm(alarmId, request);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

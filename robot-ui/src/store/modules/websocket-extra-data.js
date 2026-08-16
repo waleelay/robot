@@ -33,6 +33,7 @@ const state = {
   taskOverview: {}, //{ totalToday: 50, completedRate: 100, completedRateText: "100%", running: 48, pending: 2 }
   // 告警统计
   alarmSummary: {}, // { totalToday: 50, handled: 18, unhandled: 0, handleRate: 100, handleRateText: "100%" }
+  alarmRevision: 0,
    // 实时定位
   robotLocation: {}, // { robotId: { lat, lng, altitude, address, updatedAt } }
   // 设备基本信息；task / runningTask 由 taskData.equipmentList 反查，不取 overview.devices.task
@@ -81,33 +82,29 @@ const mutations = {
     applyDerivedRobotTasks(state, affectedIds)
   },
   SET_ALARMS_DATA(state, value) {
+    if (!value) return;
     if (value.high && value.medium && value.low) {
       state.alarmsData = value
       return;
     }
-    value.level = value.level.toLowerCase();
-    if (state.alarmsData?.[value.level]) {
-      const { count, items } = state.alarmsData[value.level];
-      const index = items.findIndex(item => item.alarmId === value.alarmId);
-      if (index !== -1) {
-        // items[index] = value;
-        // items.splice(index, 1);
-      } else {
-        items.push(value);
-      }
-      state.alarmsData = Object.assign({}, state.alarmsData, {[value.level]: {
-        ...state.alarmsData[value.level],
-        count: index !== -1 ? count : (count + 1),
-        items
-      }});
-    } else {
-      state.alarmsData = Object.assign({}, state.alarmsData, { [value.level]: {
-        level: value.level,
-        levelName: value.levelName,
-        count: 1,
-        items: [value]
-      }});
-    }
+    const level = String(value.level || '').toLowerCase();
+    if (!['high', 'medium', 'low'].includes(level) || value.alarmId == null) return;
+    const next = { ...state.alarmsData };
+    ['high', 'medium', 'low'].forEach(key => {
+      const group = next[key] || { items: [] };
+      next[key] = {
+        ...group,
+        items: (group.items || []).filter(item => String(item.alarmId) !== String(value.alarmId))
+      };
+    });
+    next[level] = {
+      ...next[level],
+      items: [...(next[level].items || []), { ...value, level: value.level.toUpperCase() }]
+    };
+    state.alarmsData = next;
+  },
+  BUMP_ALARM_REVISION(state) {
+    state.alarmRevision += 1;
   },
   SET_ROBOT_ALARM_INFO(state, { robotId, alarmInfo, close }) {
     if (close) {
@@ -353,9 +350,17 @@ const actions = {
       const task = event.data?.task || (event.data?.taskId != null ? event.data : null)
       if (task) commit('SET_TASK_INFO', task)
     } else if (event.event === 'panorama.alarm.changed') {
-      commit('SET_ALARMS_DATA', event.data.alarm);
-      if (event.data.alarm.level.toLowerCase() === 'high') {
-        commit('SET_ROBOT_ALARM_INFO', { robotId: event.data.alarm.robotId, alarmInfo: event.data.alarm });
+      const alarm = event.data && event.data.alarm;
+      if (!alarm) return;
+      commit('SET_ALARMS_DATA', alarm);
+      if (event.data.summary) {
+        commit('SET_ALARM_SUMMARY', event.data.summary);
+      }
+      commit('BUMP_ALARM_REVISION');
+      if (alarm.level && alarm.level.toLowerCase() === 'high' && alarm.status === 'unhandled') {
+        commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm });
+      } else if (alarm.robotId) {
+        commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm, close: true });
       }
     } else if (event.event === 'panorama.stats.changed') {
       commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || state.deviceTypeStats || []);

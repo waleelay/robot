@@ -43,7 +43,7 @@
         <div class="line-left"></div> -->
         <div class="top m4 flx-justify-between" style="position: relative; z-index: 2">
           <div class="title ml10">告警信息</div>
-          <div class="close mr10" @click="details = {}">
+          <div class="close mr10" @click="close">
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>
@@ -66,7 +66,7 @@
                         :key="item.key"
                         :label="item.label"
                         :value="item.key">
-                        
+
                         <div class="flx-align-center">
                           <el-radio v-model="selectedValue" :label="item.key" class="custom-radio">{{ item.label }}</el-radio>
                           <!-- <span class="ml10">{{ item.label }}</span> -->
@@ -126,7 +126,15 @@
                   </div>
                   <div class="item flx-justify-between mt20" style="align-items: flex-start">
                     <span class="name" style="width: 75px">告警内容：</span>
-                    <span class="value flex1 tar">{{ details.title }}</span>
+                    <span class="value flex1 tar">{{ details.content || details.title }}</span>
+                  </div>
+                  <div v-if="details.taskName" class="item flx-justify-between mt20">
+                    <span class="name">所属任务：</span>
+                    <span class="value">{{ details.taskName }}</span>
+                  </div>
+                  <div v-if="details.humanTaskName" class="item flx-justify-between mt20">
+                    <span class="name">等待节点：</span>
+                    <span class="value">{{ details.humanTaskName }}</span>
                   </div>
                   <!-- <div class="item flx-justify-between mt20">
                     <span class="name">告警类型：</span>
@@ -189,6 +197,7 @@ import WarningExecuteNo from './WarningExecuteNo.vue';
 import WarningExecuteError from './WarningExecuteError.vue';
 import { mapState, mapActions } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
+import { getActionableWorkflowAlarms, handleWorkflowAlarm } from '../../../../../api/new-bi.js';
 export default {
   name: 'WarningInfo',
   dicts: ['qh_alarm_record_type'],
@@ -199,12 +208,15 @@ export default {
     WarningExecuteError
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotAlarmObj', 'gisMapCenterPoint']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotAlarmObj', 'gisMapCenterPoint', 'alarmRevision']),
     firePersonError() {
       return this.$store.getters['websocket/getFirePersonError'];
     },
     currenAlarm() {
-      return 
+      return
+    },
+    isWorkflowAlarm() {
+      return Boolean(this.details?.workflowInstanceId || this.details?.humanTaskId)
     }
   },
   data() {
@@ -226,13 +238,21 @@ export default {
       dialogIRUrl: '',
       loading: false,
       timer: null,
+      refreshTimer: null,
+      workflowQueue: [],
+      deferredAlarmIds: new Set(),
       show: false
     }
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
     close() {
-      this.details = {}
+      if (this.isWorkflowAlarm && this.details.alarmId != null) {
+        this.deferredAlarmIds.add(String(this.details.alarmId))
+        this.workflowQueue = this.workflowQueue.filter(item => String(item.alarmId) !== String(this.details.alarmId))
+      }
+      this.resetDialog()
+      this.openNextWorkflowAlarm()
     },
     open(data) {
       if (this.dialogVisible || this.warningVisible) return
@@ -254,22 +274,85 @@ export default {
     },
     async execute(type) {
       // 0 立即处置 1 稍后处置 2 误报
-      switch (type) {
-        case 0:
-          await executeAlarm({ alarmId: this.details.alarmId, disposalStatus: 'IMMEDIATE_DISPOSAL' })
-          this.setRobotAlarmInfo({ robotId: this.details.robotId, alarmInfo: this.details, close: true });
-          this.details = {}
-          this.$refs.warningExecuteRef.open(this.details.alarmId)
-          break;
-        case 1:
-          // this.$refs.warningExecuteNoRef.open(this.details.alarmId) // 无需处置
-          this.details = {}
-          break;
-          default:
-          this.$refs.warningExecuteErrorRef.open(this.details.alarmId)
-          this.setRobotAlarmInfo({ robotId: this.details.robotId, alarmInfo: this.details, close: true });
-          break;
+      if (!this.details.alarmId || this.loading) return
+      if (type === 1) {
+        this.close()
+        return
       }
+      if (type === 2) {
+        try {
+          await this.$secondaryConfirm({
+            title: '误报',
+            message: '是否确认为误报',
+            confirmText: '确认',
+            cancelText: '取消'
+          })
+        } catch (error) {
+          return
+        }
+      }
+      const alarm = { ...this.details }
+      const disposalStatus = type === 2 ? 'FALSE_ALARM' : 'IMMEDIATE_DISPOSAL'
+      this.loading = true
+      try {
+        const response = this.isWorkflowAlarm
+          ? await handleWorkflowAlarm(alarm.alarmId, { disposalStatus, handleResult: '' })
+          : await executeAlarm({ alarmId: alarm.alarmId, disposalStatus })
+        if (response?.success === false) {
+          throw new Error(response.message || '告警处置失败')
+        }
+        if (alarm.robotId) {
+          this.setRobotAlarmInfo({ robotId: alarm.robotId, alarmInfo: alarm, close: true })
+        }
+        this.workflowQueue = this.workflowQueue.filter(item => String(item.alarmId) !== String(alarm.alarmId))
+        this.resetDialog()
+        if (type === 0) {
+          this.$refs.warningExecuteRef.open(alarm.alarmId)
+        } else {
+          this.$message.success('已标记为误报')
+        }
+        this.openNextWorkflowAlarm()
+      } catch (error) {
+        this.$message.error(error?.message || '告警处置失败')
+      } finally {
+        this.loading = false
+      }
+    },
+    resetDialog() {
+      if (this.timer) {
+        clearTimeout(this.timer)
+        this.timer = null
+      }
+      this.warningVisible = false
+      this.dialogVisible = false
+      this.details = {}
+      this.selectedValue = ''
+      this.options = [...defaultOptions]
+    },
+    scheduleWorkflowAlarmRefresh() {
+      if (this.refreshTimer) clearTimeout(this.refreshTimer)
+      this.refreshTimer = setTimeout(() => {
+        this.refreshTimer = null
+        this.refreshWorkflowAlarms()
+      }, 300)
+    },
+    async refreshWorkflowAlarms() {
+      try {
+        const response = await getActionableWorkflowAlarms()
+        const items = Array.isArray(response?.items) ? response.items : []
+        this.workflowQueue = items.filter(item => !this.deferredAlarmIds.has(String(item.alarmId)))
+        if (this.isWorkflowAlarm && !this.workflowQueue.some(item => String(item.alarmId) === String(this.details.alarmId))) {
+          this.resetDialog()
+        }
+        this.openNextWorkflowAlarm()
+      } catch (error) {
+        // 无查看权限或中心端暂不可用时，不阻断大屏其他功能。
+      }
+    },
+    openNextWorkflowAlarm() {
+      if (this.dialogVisible || this.warningVisible || this.details.alarmId) return
+      const next = this.workflowQueue[0]
+      if (next) this.open(next)
     },
     handleChangeSelect(name) {
       this.$refs.carouselRef.setActiveItem(name)
@@ -278,6 +361,7 @@ export default {
       this.selectedValue = this.options[index].key
     },
     getImageSrc(url) {
+      if (/^https?:\/\//i.test(url)) return url
       const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
       return `${preUrl}${url}`
     }
@@ -285,21 +369,15 @@ export default {
   watch: {
     robotAlarmObj: {
       handler(newVal) {
-        if (!newVal) return        
-        const { alarmId } = this.details
-        if (!alarmId) {
-          this.details = { ...Object.values(newVal)[0] || {} }
-          this.selectedValue = defaultOptions[0].key
-          this.options = [...defaultOptions].map(item => ({
-            ...item,
-            url: this.details?.snapshotUrl?.[item.key] || '',
-            t: new Date().getTime()
-          }))
-        } else if (!newVal[alarmId]) {
-          this.details = {}
-          this.selectedValue = ''
-          this.options = [...defaultOptions]
+        if (!newVal || this.isWorkflowAlarm) return
+        const alarms = Object.values(newVal).filter(Boolean)
+        const currentExists = alarms.some(item => String(item.alarmId) === String(this.details.alarmId))
+        if (this.details.alarmId && !currentExists) {
+          this.resetDialog()
+          this.openNextWorkflowAlarm()
+          return
         }
+        if (!this.details.alarmId && alarms[0]) this.open(alarms[0])
       },
       immediate: true,
       deep: true
@@ -342,13 +420,20 @@ export default {
           // }
         }
       }
+    },
+    alarmRevision() {
+      this.scheduleWorkflowAlarmRefresh()
     }
+  },
+  mounted() {
+    this.refreshWorkflowAlarms()
   },
   beforeDestroy() {
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
     }
+    if (this.refreshTimer) clearTimeout(this.refreshTimer)
   }
 }
 </script>

@@ -52,7 +52,6 @@ class RobotMQTTClient:
         self.lock = threading.RLock()
         self.subscriptions: dict[str, Callable[[bytes, str], None]] = {}
         self.last_cmds: dict[str, str] = {}
-        self.state_seq = 0
         self.audio_volume = 50
         self.audio_muted = False
         self.control_mode = "手动模式"
@@ -542,24 +541,11 @@ class RobotMQTTClient:
         return True
 
     def online(self, status: str) -> None:
-        """发布机器人在线状态、基础属性和摄像头清单。"""
-        with self.lock:
-            self.state_seq += 1
-            state_seq = self.state_seq
-            control_mode = self.control_mode
+        """发布媒体客户端存活状态、视频源和客户端采集的设备运行态。"""
         self.publish(f"robot/{self.cfg.robot_id}/media/client/status", {
             "robotId": self.cfg.robot_id,
             "clientId": self.cfg.client_id,
-            "name": self.cfg.robot_name,
-            "type": self.cfg.type,
-            "battery": self.cfg.battery,
             "status": status,
-            "controlMode": control_mode,
-            "stateSeq": state_seq,
-            "missionStatus": mission_status_for_mode(control_mode),
-            "navigationStatus": navigation_status_for_mode(control_mode),
-            "controlOwner": None,
-            "estopActive": False,
             "cameras": [
                 {
                     "cameraId": camera.camera_id,
@@ -720,18 +706,6 @@ def normalize_control_mode(value: str) -> str:
     if mode in {"手动模式", "导航模式"}:
         return mode
     return "导航模式"
-
-
-def mission_status_for_mode(control_mode: str) -> str:
-    """根据控制模式模拟任务状态。"""
-    if control_mode == "导航模式":
-        return "RUNNING"
-    return "IDLE"
-
-
-def navigation_status_for_mode(control_mode: str) -> str:
-    """根据控制模式模拟导航状态。"""
-    return "RUNNING" if control_mode == "导航模式" else "IDLE"
 
 
 def any_float(value: object, fallback: float) -> float:

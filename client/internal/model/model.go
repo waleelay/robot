@@ -90,21 +90,12 @@ type StatusMessage struct {
 }
 
 type OnlineMessage struct {
-	RobotID          string    `json:"robotId"`
-	ClientID         string    `json:"clientId"`
-	Name             string    `json:"name"`
-	Type             string    `json:"type"`
-	Battery          int       `json:"battery"`
-	Status           string    `json:"status"`
-	ControlMode      string    `json:"controlMode"`
-	StateSeq         int64     `json:"stateSeq"`
-	MissionStatus    string    `json:"missionStatus"`
-	NavigationStatus string    `json:"navigationStatus"`
-	ControlOwner     any       `json:"controlOwner"`
-	EstopActive      bool      `json:"estopActive"`
-	Cameras          []Camera  `json:"cameras,omitempty"`
-	Devices          []Device  `json:"devices,omitempty"`
-	Timestamp        time.Time `json:"timestamp"`
+	RobotID   string    `json:"robotId"`
+	ClientID  string    `json:"clientId"`
+	Status    string    `json:"status"`
+	Cameras   []Camera  `json:"cameras,omitempty"`
+	Devices   []Device  `json:"devices,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type Camera struct {

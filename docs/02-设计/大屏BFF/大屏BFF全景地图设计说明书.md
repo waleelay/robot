@@ -648,7 +648,8 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 
 ```json
 {
-  "disposalStatus": "IMMEDIATE_DISPOSAL"
+  "disposalStatus": "IMMEDIATE_DISPOSAL",
+  "handleResult": "现场已处置"
 }
 ```
 
@@ -658,6 +659,10 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 |---|---|---|
 | `IMMEDIATE_DISPOSAL` | 立即处置 | `handled` |
 | `FALSE_ALARM` | 误报 | `false_alarm` |
+
+BFF 分别映射为管理端 `handleAction=HANDLE_NOW` 和
+`handleAction=FALSE_ALARM`。`handleResult` 可选；普通告警调用管理端
+`PATCH /api/v1/management/alarms/{id}/handled`。
 
 返回结构：
 
@@ -682,6 +687,23 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
   "message": "disposalStatus must be one of IMMEDIATE_DISPOSAL, FALSE_ALARM"
 }
 ```
+
+### 5.7 工作流告警接口
+
+```http
+GET /api/bigscreen/panorama/alarms/actionable-workflow
+POST /api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue
+```
+
+查询接口只返回管理端工作流当前正等待该告警人工节点的记录。处置接口请求字段与
+5.6 相同，BFF 将 `IMMEDIATE_DISPOSAL/FALSE_ALARM` 映射为管理端
+`HANDLE_NOW/FALSE_ALARM`，调用管理端 `handle-and-continue`，在同一事务中更新告警并
+继续对应工作流。稍后处理只关闭前端当前弹窗，不调用处置接口。
+
+工作流告警返回 `items[]`，保留大屏告警展示字段，并增加
+`workflowInstanceId`、`taskName`、`humanTaskId`、`humanTaskName`。管理端图片未携带通道
+类型时，BFF 仅将第一张 `imageFileIds[]` 映射为 `snapshotUrl.visible`，不推断
+`thermal/front`。
 
 ## 6. 动态数据回显
 
@@ -732,7 +754,7 @@ WebSocket：
 | `panorama.device.status.changed` | Control 收到设备状态 MQTT 上报后广播 `robot.state` | 每条可识别的 `robot.state` 都即时派生并推送，不受位置限频影响；在线、离线、故障等状态变化同时触发统计快照刷新。 |
 | `panorama.device.location.changed` | `robot.state` 携带 `location/localization/status.localization` 时派生；联调设备 `test111`、`SN005`、`SN006` 在无真实定位时使用专用演示坐标 | 按“浏览器会话 + `robotId`”独立限频。首条立即推送；同一设备 1 秒内的多条位置只保留最新一条，每秒最多推送一次；`localized=false` 立即推送。没有新定位时不重复发送旧坐标。 |
 | `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 300ms 去抖重查管理端权威快照，逐项比较后只推送发生变化的任务；`taskId` 缺失的旧版事件不直接下发。 |
-| `panorama.alarm.changed` | 上游告警创建、更新、处置等 alarm 变更事件 | 收到后立即统一转换并推送；没有真实上游事件时不在 BFF 生成模拟告警。 |
+| `panorama.alarm.changed` | 上游完整告警事件，或管理端 STOMP `alarm.changed.v1` 转换的 `management.alarm.invalidated` | 完整事件立即转换；失效通知以 300ms 去抖重查管理端告警快照，按会话比较后只推送变化项。没有真实上游事件时不生成模拟告警。 |
 | `panorama.stats.changed` | 设备业务变更、设备在线/离线/故障状态切换、任务或告警变更 | 短时间内的多次触发合并 500ms 后重查完整统计快照，只在快照与上次不同时推送。普通电量、速度、位置心跳不触发统计刷新。 |
 
 Control 对 `totalMileage/currentMileage` 计算出的有效里程增量累计达到配置阈值时，
@@ -797,14 +819,13 @@ BFF 仍会原样转发上游消息，上表只描述追加生成的 `panorama.*`
 }
 ```
 
-当前任务桥接方案：本项目 control 服务不再直接订阅边缘任务进度和控制结果
-MQTT Topic，而是作为 STOMP 客户端连接同事的 `eiop-control-service:/ws/control`，
-固定订阅 `/topic/platform/realtime-events`。收到 `task.changed.v1` 且 `scopes`
-包含 `PLAN` 或 `EXECUTION` 时，向本地 `/ws/control` 推送
-`management.task.invalidated`。BFF 收到失效通知后防抖查询管理端任务计划与实例，
-比较任务快照并将变化项转换为现有 `panorama.task.changed` 结构。STOMP 仅负责
-通知“任务已变化”，任务状态、`workflowInstanceId` 和生命周期结果始终以管理端
-HTTP 查询结果为准。
+当前任务与告警桥接方案：本项目 Control 作为 STOMP 客户端连接同事的
+`eiop-control-service:/ws/control`，固定订阅 `/topic/platform/realtime-events`。
+收到 `task.changed.v1` 且 `scopes` 包含 `PLAN` 或 `EXECUTION` 时，向本地
+`/ws/control` 推送 `management.task.invalidated`；收到 `alarm.changed.v1` 时推送
+`management.alarm.invalidated`。BFF 收到失效通知后防抖查询管理端权威快照并比较，
+将变化项转换为现有 `panorama.task.changed` 或 `panorama.alarm.changed` 结构。STOMP
+仅负责通知“数据已变化”，任务和告警业务状态始终以管理端 HTTP 查询结果为准。
 
 `taskId` 始终表示任务计划 ID，`workflowInstanceId` 表示本次执行实例 ID。
 兼容旧版 Control 时，若 BFF 收到 `taskId` 为空的 `panorama.task.changed`，
@@ -829,7 +850,7 @@ HTTP 查询结果为准。
     "alarm": {
       "alarmId": "alarm-001",
       "title": "发生火灾",
-      "categoryName": "业务告警",
+      "categoryName": "任务告警",
       "level": "HIGH",
       "levelName": "高风险",
       "eventTime": "2023-08-01 10:00:00",

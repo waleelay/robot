@@ -93,7 +93,7 @@ public class RobotMediaStatusSubscriber {
     @EventListener(ApplicationReadyEvent.class)
     public void subscribeOnReady() {
         if (!properties.getMqtt().isEnabled()) {
-            log.info("MQTT disabled, skip media status subscription");
+            log.info("MQTT 已禁用，跳过媒体状态订阅");
             return;
         }
         try {
@@ -114,13 +114,13 @@ public class RobotMediaStatusSubscriber {
             try {
                 IntercomStatusMessage status = objectMapper.readValue(payload, IntercomStatusMessage.class);
                 if (status.getSessionId() == null || status.getSessionId().isBlank()) {
-                    log.debug("Ignore intercom status without sessionId topic={}, payload={}", topic, payload);
+                    log.debug("对讲状态缺少 sessionId，已忽略，主题={} 载荷={}", topic, payload);
                     return;
                 }
                 intercomCallService.handleIntercomStatus(status.getSessionId(), status.getStatus(), status.getMessage());
                 mediaServiceClient.updateIntercomStatus(status);
             } catch (Exception ex) {
-                log.warn("Failed to handle intercom status topic={}, payload={}", topic, payload, ex);
+                log.warn("处理对讲状态失败，主题={} 载荷={}", topic, payload, ex);
             }
         };
     }
@@ -132,7 +132,7 @@ public class RobotMediaStatusSubscriber {
                 intercomCallService.invite(
                         objectMapper.readValue(payload, IntercomCallInvite.class), robotIdFromTopic(topic));
             } catch (Exception ex) {
-                log.warn("Failed to handle intercom call invite topic={}, payload={}", topic, payload, ex);
+                log.warn("处理对讲呼叫邀请失败，主题={} 载荷={}", topic, payload, ex);
             }
         };
     }
@@ -144,7 +144,7 @@ public class RobotMediaStatusSubscriber {
                 intercomCallService.cancel(
                         objectMapper.readValue(payload, IntercomCallCancel.class), robotIdFromTopic(topic));
             } catch (Exception ex) {
-                log.warn("Failed to handle intercom call cancel topic={}, payload={}", topic, payload, ex);
+                log.warn("处理对讲呼叫取消失败，主题={} 载荷={}", topic, payload, ex);
             }
         };
     }
@@ -166,7 +166,7 @@ public class RobotMediaStatusSubscriber {
                 VideoStatusMessage status = objectMapper.readValue(payload, VideoStatusMessage.class);
                 mediaServiceClient.updateVideoStatus(status);
             } catch (Exception ex) {
-                log.warn("Failed to handle media status topic={}, payload={}", topic, payload, ex);
+                log.warn("处理媒体状态失败，主题={} 载荷={}", topic, payload, ex);
             }
         };
     }
@@ -189,7 +189,7 @@ public class RobotMediaStatusSubscriber {
                     mediaServiceClient.onlineRestartCommands(robotId, status).forEach(commandService::sendStart);
                 }
             } catch (Exception ex) {
-                log.warn("Failed to handle media client status topic={}, payload={}", topic, payload, ex);
+                log.warn("处理媒体客户端状态失败，主题={} 载荷={}", topic, payload, ex);
             }
         };
     }
@@ -217,15 +217,15 @@ public class RobotMediaStatusSubscriber {
             public void connectComplete(boolean reconnect, String serverURI) {
                 try {
                     subscribeStatusTopics(client);
-                    log.info("MQTT status subscriber connected reconnect={} server={}", reconnect, serverURI);
+                    log.info("MQTT 状态订阅器已连接，是否重连={} 服务器={}", reconnect, serverURI);
                 } catch (MqttException ex) {
-                    log.warn("Failed to resubscribe media MQTT topics after connect server={}", serverURI, ex);
+                    log.warn("MQTT 连接后重新订阅媒体主题失败，服务器={}", serverURI, ex);
                 }
             }
 
             @Override
             public void connectionLost(Throwable cause) {
-                log.warn("MQTT status subscriber connection lost", cause);
+                log.warn("MQTT 状态订阅器连接已断开", cause);
             }
 
             @Override
@@ -263,7 +263,7 @@ public class RobotMediaStatusSubscriber {
                     statusListener(), statusListener(), intercomStatusListener(), clientStatusListener(), callInviteListener(), callCancelListener(),
                     edgeDeviceStatusListener()
                 });
-        log.info("Subscribed media MQTT topics: {}, {}, {}, {}, {}, {}, {}",
+        log.info("已订阅媒体 MQTT 主题：{} 、{} 、{} 、{} 、{} 、{} 、{}",
                 STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
                 EDGE_DEVICE_STATUS_TOPIC);
     }

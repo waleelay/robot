@@ -30,7 +30,6 @@ type Client struct {
 	// lastCmds 用于按 session 去重 MQTT 指令。服务端重试或 broker 重投时，
 	// 同一个 commandId 不应再次启动推流/对讲进程。
 	lastCmds    map[string]string
-	stateSeq    int64
 	audioVolume int
 	audioMuted  bool
 	controlMode string
@@ -532,28 +531,14 @@ func (c *Client) publish(topic string, payload any) error {
 }
 
 func (c *Client) online(status string) {
-	c.mu.Lock()
-	c.stateSeq++
-	stateSeq := c.stateSeq
-	controlMode := c.controlMode
-	c.mu.Unlock()
-	// online/offline 消息既是心跳，也是机器人设备注册信息的来源。
+	// 该 topic 只上报媒体客户端存活、视频源和客户端实际采集的设备运行态。
 	c.publish("robot/"+c.cfg.RobotID+"/media/client/status", model.OnlineMessage{
-		RobotID:          c.cfg.RobotID,
-		ClientID:         c.cfg.ClientID,
-		Name:             c.cfg.RobotName,
-		Type:             c.cfg.Type,
-		Battery:          c.cfg.Battery,
-		Status:           status,
-		ControlMode:      controlMode,
-		StateSeq:         stateSeq,
-		MissionStatus:    "IDLE",
-		NavigationStatus: "IDLE",
-		ControlOwner:     nil,
-		EstopActive:      false,
-		Cameras:          c.cameras(),
-		Devices:          c.devices(),
-		Timestamp:        time.Now(),
+		RobotID:   c.cfg.RobotID,
+		ClientID:  c.cfg.ClientID,
+		Status:    status,
+		Cameras:   c.cameras(),
+		Devices:   c.devices(),
+		Timestamp: time.Now(),
 	})
 }
 

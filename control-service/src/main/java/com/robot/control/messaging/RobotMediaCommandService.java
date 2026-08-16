@@ -132,14 +132,14 @@ public class RobotMediaCommandService {
         try {
             String json = objectMapper.writeValueAsString(mqttPayload(payload));
             if (!properties.getMqtt().isEnabled()) {
-                log.info("MQTT disabled, skip publish topic={}, payload={}", topic, json);
+                log.info("MQTT 已禁用，跳过消息发布，主题={} 载荷={}", topic, json);
                 return;
             }
             MqttClient mqtt = mqttClient();
             MqttMessage message = new MqttMessage(json.getBytes());
             message.setQos(1);
             mqtt.publish(topic, message);
-            log.info("MQTT published topic={}, payload={}", topic, json);
+            log.info("MQTT 消息已发布，主题={} 载荷={}", topic, json);
         } catch (JsonProcessingException | MqttException ex) {
             throw new IllegalStateException("发布 MQTT 指令失败：" + topic, ex);
         }

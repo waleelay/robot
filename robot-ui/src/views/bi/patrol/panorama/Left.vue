@@ -224,7 +224,6 @@
     <!-- <TaskRobotView ref="taskRobotViewRef" @handleClickTask="handleClickTask" /> -->
     <TaskRobotView ref="taskRobotViewRef" />
     <WarningBatch ref="warningBatchRef" />
-    <WarnInfo ref="WarnInfoRef" />
   </div>
 </template>
 
@@ -239,13 +238,12 @@ import {
 } from '../../../../api/new-bi.js';
 import TaskRobotView from '../../components/modal/TaskRobotView.vue';
 import WarningBatch from './warning/WarningBatch.vue'
-import WarnInfo from './warning/WarnInfo.vue'
 import { getDescArr } from '../../../../utils/index.js';
 import Empty from '../../components/Empty.vue';
 import { executionStatusLabel } from '../business/execution-status.js';
 export default {
   name: 'BiPatrolPanoramaLeft',
-  components: { TaskRobotView, WarningBatch, WarnInfo, Empty  },
+  components: { TaskRobotView, WarningBatch, Empty },
   props: {
     collapse: {
       type: Boolean,
@@ -347,7 +345,7 @@ export default {
       } else {
         sortedData = [].concat(data); // 创建数据的副本以避免修改原始数据
       }
-      
+
       // 如果是数组，直接排序
       if (Array.isArray(sortedData)) {
           return sortedData.sort((a, b) => {
@@ -356,7 +354,7 @@ export default {
               return timeB - timeA;
           });
       }
-      
+
       // 如果是对象，转换为数组排序后再转回
       if (typeof sortedData === 'object' && sortedData !== null) {
           const entries = Object.entries(sortedData);
@@ -365,17 +363,17 @@ export default {
               const timeB = new Date(b[timeKey]).getTime();
               return timeB - timeA;
           });
-          
+
           if (returnType === 'object') {
               return sorted.reduce((result, [key, value]) => {
                   result[key] = value;
                   return result;
               }, {});
           }
-          
+
           return sorted.map(([key, value]) => ({ key, ...value }));
       }
-      
+
       throw new Error('数据类型必须是数组或对象');
     },
     getTaskStatusName(status) {
@@ -438,7 +436,7 @@ export default {
       return recordId != null && this.actingRecordIds.indexOf(recordId) !== -1
     },
     getMoreRobotInfo() {
-  
+
     },
     toggleCollapse(type, typeIndex) {
       this.$set(this[type], typeIndex, !this[type][typeIndex])

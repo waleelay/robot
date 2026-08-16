@@ -468,11 +468,50 @@ class EquipmentControlServiceTest {
                 .containsEntry("robotId", "robot-001")
                 .containsEntry("status", "fault")
                 .containsEntry("battery", 47)
-                .containsEntry("controlMode", "导航模式");
+                .containsEntry("controlMode", "导航模式")
+                .containsEntry("stateSeq", 2L);
         assertThat(maps(state.get("devices")))
                 .filteredOn(device -> "ptz-new-001".equals(device.get("deviceId")))
                 .singleElement()
                 .satisfies(device -> assertThat(map(device.get("status"))).containsEntry("pan", 0.15));
+    }
+
+    @Test
+    void keepsFreshEdgeBodyStatusWhenMediaClientHeartbeatArrives() {
+        register(component("PTZ", "ptz-new-001"));
+        service.handleClientState(object(
+                "robotId", "robot-001",
+                "clientId", "media-client",
+                "status", "online",
+                "battery", 90,
+                "controlMode", "手动模式",
+                "missionStatus", "IDLE"));
+        service.mergeEdgeDeviceStatus("robot-001", object(
+                "status", "online",
+                "battery", 34,
+                "controlMode", "导航模式",
+                "missionStatus", "COMPLETED",
+                "speed", 0.2,
+                "location", object("x", 1.2, "y", 3.4)));
+
+        Map<String, Object> state = service.handleClientState(object(
+                "robotId", "robot-001",
+                "clientId", "media-client",
+                "status", "online",
+                "battery", 89,
+                "controlMode", "手动模式",
+                "missionStatus", "IDLE",
+                "cameras", List.of(object("cameraId", "camera-001"))));
+
+        assertThat(state)
+                .containsEntry("controlMode", "导航模式")
+                .containsEntry("controlModeName", "导航模式")
+                .containsEntry("battery", 34)
+                .containsEntry("missionStatus", "COMPLETED")
+                .containsEntry("stateSeq", 2L)
+                .containsEntry("speed", 0.2)
+                .containsEntry("location", object("x", 1.2, "y", 3.4))
+                .containsEntry("clientId", "media-client");
     }
 
     private Map<String, Object> publish(String deviceId, String action, Map<String, Object> params) {

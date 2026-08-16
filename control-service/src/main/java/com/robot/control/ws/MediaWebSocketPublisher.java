@@ -98,7 +98,7 @@ public class MediaWebSocketPublisher {
             try {
                 send(session, new TextMessage(json));
             } catch (IOException | IllegalStateException ex) {
-                log.warn("Failed to send websocket event={}", event, ex);
+                log.warn("发送 WebSocket 事件失败，事件={}", event, ex);
                 sessions.remove(session);
             }
         }
@@ -119,7 +119,7 @@ public class MediaWebSocketPublisher {
             try {
                 send(session, message);
             } catch (IOException | IllegalStateException ex) {
-                log.warn("Failed to send websocket binary message", ex);
+                log.warn("发送 WebSocket 二进制消息失败", ex);
                 sessions.remove(session);
             }
         }

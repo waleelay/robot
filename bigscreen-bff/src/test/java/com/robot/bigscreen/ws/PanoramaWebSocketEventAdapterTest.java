@@ -122,6 +122,19 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(adapter.adapt(payload)).containsExactly(payload);
     }
 
+    @Test
+    void recognizesManagementAlarmInvalidation() {
+        String payload = """
+                {
+                  "event":"management.alarm.invalidated",
+                  "data":{"source":"management","eventId":"1001"}
+                }
+                """;
+
+        assertThat(adapter.isAlarmInvalidation(payload)).isTrue();
+        assertThat(adapter.requiresStatsRefresh("browser-a", payload)).isTrue();
+    }
+
     private JsonNode readTree(String value) {
         try {
             return objectMapper.readTree(value);

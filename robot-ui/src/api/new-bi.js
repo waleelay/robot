@@ -10,6 +10,21 @@ export function getPatrolPanoramaOverview() {
   })
 }
 
+export function getActionableWorkflowAlarms() {
+  return request({
+    url: pre + '/bigscreen/panorama/alarms/actionable-workflow',
+    method: 'get'
+  })
+}
+
+export function handleWorkflowAlarm(alarmId, data) {
+  return request({
+    url: pre + `/bigscreen/panorama/alarms/${alarmId}/handle-and-continue`,
+    method: 'post',
+    data
+  })
+}
+
 // 数据统计
 export function getPatrolStatisticsOverview(params) {
   return request({

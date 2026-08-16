@@ -20,11 +20,11 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
-/** 收到管理端任务失效通知后，重新查询权威任务快照并推送变化项。 */
+/** 收到管理端告警失效通知后，重新查询权威告警快照并推送变化项。 */
 @Component
-public class PanoramaTaskEventRefresher {
+public class PanoramaAlarmEventRefresher {
 
-    private static final Logger log = LoggerFactory.getLogger(PanoramaTaskEventRefresher.class);
+    private static final Logger log = LoggerFactory.getLogger(PanoramaAlarmEventRefresher.class);
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final long DEBOUNCE_MILLIS = 300;
 
@@ -33,7 +33,7 @@ public class PanoramaTaskEventRefresher {
     private final TaskScheduler taskScheduler;
     private final Map<String, RefreshState> states = new ConcurrentHashMap<>();
 
-    public PanoramaTaskEventRefresher(
+    public PanoramaAlarmEventRefresher(
             PanoramaService panoramaService,
             ObjectMapper objectMapper,
             TaskScheduler taskScheduler) {
@@ -66,19 +66,21 @@ public class PanoramaTaskEventRefresher {
         }
         state.dirty.set(false);
         try {
-            Map<String, Object> response = withAuthentication(state.authentication, panoramaService::tasks);
-            Map<String, Map<String, Object>> current = index(tasks(response));
+            Map<String, Object> response = withAuthentication(state.authentication, panoramaService::alarms);
+            Map<String, Object> alarms = map(response.get("alarms"));
+            Map<String, Object> summary = map(alarms.get("summary"));
+            Map<String, Map<String, Object>> current = index(alarms);
             Consumer<String> publisher = state.publisher;
             if (publisher != null) {
-                current.forEach((taskId, task) -> {
-                    if (!Objects.equals(state.previousTasks.get(taskId), task)) {
-                        publisher.accept(event(task, task.get("taskId")));
+                current.forEach((alarmId, alarm) -> {
+                    if (!Objects.equals(state.previousAlarms.get(alarmId), alarm)) {
+                        publisher.accept(event(alarmId, alarm, summary));
                     }
                 });
             }
-            state.previousTasks = current;
+            state.previousAlarms = current;
         } catch (RuntimeException exception) {
-            log.warn("刷新全景地图任务事件失败，会话={}", sessionId, exception);
+            log.warn("刷新全景地图告警事件失败，会话={}", sessionId, exception);
         } finally {
             state.scheduled.set(false);
             if (states.get(sessionId) == state && state.dirty.get()) {
@@ -87,33 +89,31 @@ public class PanoramaTaskEventRefresher {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> tasks(Map<String, Object> response) {
-        Object items = response.get("items");
-        return items instanceof List<?> list
-                ? list.stream().filter(Map.class::isInstance).map(item -> (Map<String, Object>) item).toList()
-                : List.of();
-    }
-
-    private Map<String, Map<String, Object>> index(List<Map<String, Object>> tasks) {
+    private Map<String, Map<String, Object>> index(Map<String, Object> alarms) {
         Map<String, Map<String, Object>> result = new LinkedHashMap<>();
-        for (Map<String, Object> task : tasks) {
-            Object taskId = task.get("taskId");
-            if (taskId != null) {
-                result.put(String.valueOf(taskId), new LinkedHashMap<>(task));
+        for (String level : List.of("high", "medium", "low")) {
+            for (Map<String, Object> alarm : maps(map(alarms.get(level)).get("items"))) {
+                Object alarmId = alarm.get("alarmId");
+                if (alarmId != null) {
+                    result.put(String.valueOf(alarmId), new LinkedHashMap<>(alarm));
+                }
             }
         }
         return result;
     }
 
-    private String event(Map<String, Object> task, Object taskId) {
+    private String event(String alarmId, Map<String, Object> alarm, Map<String, Object> summary) {
         try {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("alarmId", alarmId);
+            data.put("alarm", alarm);
+            data.put("summary", summary);
             return objectMapper.writeValueAsString(Map.of(
-                    "event", "panorama.task.changed",
+                    "event", "panorama.alarm.changed",
                     "timestamp", TIME_FORMATTER.format(LocalDateTime.now()),
-                    "data", Map.of("taskId", taskId, "task", task)));
+                    "data", data));
         } catch (Exception exception) {
-            throw new IllegalStateException("Failed to serialize panorama task event", exception);
+            throw new IllegalStateException("序列化全景地图告警事件失败", exception);
         }
     }
 
@@ -129,11 +129,27 @@ public class PanoramaTaskEventRefresher {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> map(Object value) {
+        return value instanceof Map<?, ?> source ? (Map<String, Object>) source : Map.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> maps(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .filter(Map.class::isInstance)
+                .map(item -> (Map<String, Object>) item)
+                .toList();
+    }
+
     private static final class RefreshState {
         private final AtomicBoolean scheduled = new AtomicBoolean();
         private final AtomicBoolean dirty = new AtomicBoolean();
         private volatile Authentication authentication;
         private volatile Consumer<String> publisher;
-        private volatile Map<String, Map<String, Object>> previousTasks = Map.of();
+        private volatile Map<String, Map<String, Object>> previousAlarms = Map.of();
     }
 }
