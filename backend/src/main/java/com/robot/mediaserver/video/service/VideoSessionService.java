@@ -480,6 +480,9 @@ public class VideoSessionService {
         if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
             throw new IllegalStateException("当前会话未在推流");
         }
+        if (!liveKitRoomService.hasActiveVideoTrack(session.getRoomName(), session.getTrackSid())) {
+            throw new IllegalStateException("房间无活跃推流，无法录制");
+        }
         return fileService.startLiveRecording(session, user);
     }
 

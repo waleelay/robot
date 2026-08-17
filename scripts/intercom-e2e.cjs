@@ -176,8 +176,6 @@ async function publishRobotStatus(robotId) {
   await publish(`robot/${robotId}/media/client/status`, {
     robotId,
     clientId: `robot-media-client-${robotId}`,
-    name: robotId === secondaryRobotId ? 'E2E测试机器人' : robotId,
-    type: '轮式机器人',
     battery: 100,
     status: 'online',
     controlMode: '手动模式',

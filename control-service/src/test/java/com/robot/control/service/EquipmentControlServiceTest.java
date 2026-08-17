@@ -341,6 +341,43 @@ class EquipmentControlServiceTest {
     }
 
     @Test
+    void usesManagementIdentityOverClientReportedNameAndType() {
+        when(managementClient.cachedDeviceBySerialNumber("robot-001")).thenReturn(Optional.of(object(
+                "serialNumber", "robot-001",
+                "name", "管理端机器人",
+                "deviceType", "WHEELED_ROBOT",
+                "components", List.of())));
+        when(managementClient.deviceBySerialNumber("robot-001")).thenReturn(Optional.of(object(
+                "serialNumber", "robot-001",
+                "name", "管理端机器人",
+                "deviceType", "WHEELED_ROBOT",
+                "components", List.of())));
+
+        Map<String, Object> state = service.handleClientState(object(
+                "robotId", "robot-001",
+                "name", "客户端硬编码名称",
+                "type", "轮式机器人",
+                "status", "online"));
+
+        assertThat(state)
+                .containsEntry("name", "管理端机器人")
+                .containsEntry("type", "WHEELED_ROBOT");
+    }
+
+    @Test
+    void ignoresClientReportedNameAndTypeWithoutManagement() {
+        Map<String, Object> state = service.handleClientState(object(
+                "robotId", "robot-001",
+                "name", "客户端硬编码名称",
+                "type", "轮式机器人",
+                "status", "online"));
+
+        assertThat(state)
+                .doesNotContainKey("name")
+                .doesNotContainKey("type");
+    }
+
+    @Test
     void exposesRegisteredMultiFunctionAudioUploadAction() {
         register(component(
                 "MULTI_FUNCTION_BROADCASTER",

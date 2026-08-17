@@ -395,7 +395,7 @@ public class EquipmentControlService {
         Map<String, Object> previous = robotStates.getOrDefault(robotId, Map.of());
         Map<String, Object> state = copy(previous);
         payload.forEach((key, value) -> {
-            if (value != null) {
+            if (value != null && !"name".equals(key) && !"type".equals(key)) {
                 state.put(key, value);
             }
         });
@@ -888,17 +888,13 @@ public class EquipmentControlService {
         String controlMode = reportedControlMode(state.get("controlMode"));
         state.put("controlMode", controlMode);
         state.put("controlModeName", controlModeName(controlMode));
-        if (stringValue(state.get("name"), "").isBlank()) {
-            Object name = firstValue(robot, "name", "deviceName");
-            if (name != null) {
-                state.put("name", name);
-            }
+        Object name = firstValue(robot, "name", "deviceName");
+        if (name != null) {
+            state.put("name", name);
         }
-        if (stringValue(state.get("type"), "").isBlank()) {
-            Object type = firstValue(robot, "deviceType", "typeCode", "type");
-            if (type != null) {
-                state.put("type", type);
-            }
+        Object type = firstValue(robot, "deviceType", "typeCode", "type");
+        if (type != null) {
+            state.put("type", type);
         }
     }
 

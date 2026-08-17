@@ -1,6 +1,7 @@
 package com.robot.mediaserver.livekit;
 
 import com.robot.mediaserver.config.MediaProperties;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,6 +76,74 @@ public class LiveKitRoomService {
             throw ex;
         }
         log.info("LiveKit room delete requested room={}", roomName);
+    }
+
+    /**
+     * 校验房间内是否有活跃的视频推流轨道，用于录像启动前避免在即将关闭的房间上启动录制。
+     *
+     * @param roomName 房间名
+     * @param trackSid 会话关联的视频轨道 SID（可空）
+     * @return 房间有活跃视频轨道时返回 {@code true}；房间 API 未启用或查询异常时返回 {@code true}（不阻塞录像）
+     */
+    public boolean hasActiveVideoTrack(String roomName, String trackSid) {
+        if (!properties.getLivekit().isRoomApiEnabled()) {
+            return true;
+        }
+        try {
+            Map<?, ?> body = postForObject(
+                    "/twirp/livekit.RoomService/ListParticipants", Map.of("room", roomName));
+            Object rawParticipants = body == null ? null : body.get("participants");
+            if (!(rawParticipants instanceof List<?> participants) || participants.isEmpty()) {
+                return false;
+            }
+            for (Object participant : participants) {
+                if (!(participant instanceof Map<?, ?> participantMap)) {
+                    continue;
+                }
+                Object rawTracks = participantMap.get("tracks");
+                if (!(rawTracks instanceof List<?> tracks)) {
+                    continue;
+                }
+                for (Object track : tracks) {
+                    if (track instanceof Map<?, ?> trackMap && isVideoTrack(trackMap, trackSid)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
+                log.info("房间不存在，无法校验推流 room={}", roomName);
+                return false;
+            }
+            log.warn("查询房间推流状态失败 room={}，放行录像", roomName, ex);
+            return true;
+        }
+    }
+
+    private boolean isVideoTrack(Map<?, ?> track, String trackSid) {
+        Object sid = track.get("sid");
+        if (trackSid != null && !trackSid.isBlank() && trackSid.equals(String.valueOf(sid))) {
+            return true;
+        }
+        String type = String.valueOf(track.get("type"));
+        String kind = String.valueOf(track.get("kind"));
+        String source = String.valueOf(track.get("source"));
+        return "0".equals(type)
+                || "VIDEO".equalsIgnoreCase(type)
+                || "VIDEO".equalsIgnoreCase(kind)
+                || "CAMERA".equalsIgnoreCase(source)
+                || "SCREEN_SHARE".equalsIgnoreCase(source);
+    }
+
+    private Map<?, ?> postForObject(String path, Object payload) {
+        String token = tokenService.createAdminToken().token();
+        return restClient.post()
+                .uri(serverHttpUrl() + path)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .body(payload)
+                .retrieve()
+                .body(Map.class);
     }
 
     private void post(String path, Object payload) {

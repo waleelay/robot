@@ -596,6 +596,12 @@ public class FileService {
                 file.setErrorMessage(ex.getMessage());
                 file.setUpdatedAt(now());
                 fileRepository.save(file);
+                if (egressAlreadyStopped(ex)) {
+                    // egress 已被 LiveKit 中止/完成，停止请求视为已停止：如实标记失败，不再报错。
+                    file.setErrorCode("EGRESS_ABORTED");
+                    fileRepository.save(file);
+                    return;
+                }
                 throw error(HttpStatus.CONFLICT, "EGRESS_STOP_FAILED", ex.getMessage());
             }
         }
@@ -614,6 +620,13 @@ public class FileService {
             videoRepository.save(video);
         }
         fileRepository.save(file);
+    }
+
+    private boolean egressAlreadyStopped(Exception ex) {
+        String message = String.valueOf(ex.getMessage()).toLowerCase(java.util.Locale.ROOT);
+        return message.contains("egress_aborted")
+                || message.contains("cannot be stopped")
+                || message.contains("failed_precondition");
     }
 
     private void markUploaded(MediaFile file) {
