@@ -10,9 +10,9 @@ import static org.mockito.Mockito.when;
 
 import com.robot.control.auth.CurrentUser;
 import com.robot.control.client.ControlMediaServiceClient;
-import com.robot.control.dto.IntercomResponse;
-import com.robot.control.dto.IntercomStatus;
-import com.robot.control.dto.VideoSessionStatus;
+import com.robot.media.common.video.IntercomResponse;
+import com.robot.media.common.video.IntercomStatus;
+import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.control.messaging.RobotMediaCommandService;
 import com.robot.control.robot.dto.RobotCameraResponse;
 import com.robot.control.robot.dto.RobotDeviceResponse;

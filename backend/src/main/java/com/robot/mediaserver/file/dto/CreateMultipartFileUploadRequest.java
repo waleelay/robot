@@ -1,6 +1,6 @@
 package com.robot.mediaserver.file.dto;
 
-import com.robot.mediaserver.file.model.FileType;
+import com.robot.media.common.file.FileType;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

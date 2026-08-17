@@ -1,11 +1,11 @@
 package com.robot.mediaserver.video.repository;
 
-import com.robot.mediaserver.video.model.VideoChannel;
-import com.robot.mediaserver.video.model.VideoQuality;
+import com.robot.media.common.video.VideoChannel;
+import com.robot.media.common.video.VideoQuality;
 import com.robot.mediaserver.video.model.VideoSession;
-import com.robot.mediaserver.video.model.VideoSessionStatus;
-import com.robot.mediaserver.video.model.IntercomStatus;
-import com.robot.mediaserver.video.model.VideoSourceType;
+import com.robot.media.common.video.VideoSessionStatus;
+import com.robot.media.common.video.IntercomStatus;
+import com.robot.media.common.video.VideoSourceType;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;

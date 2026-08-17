@@ -1,7 +1,7 @@
 package com.robot.control.dto;
 
-import com.robot.control.dto.VideoChannel;
-import com.robot.control.dto.VideoQuality;
+import com.robot.media.common.video.VideoChannel;
+import com.robot.media.common.video.VideoQuality;
 
 /**
  * 前端从机器人摄像头入口启动视频的请求参数。

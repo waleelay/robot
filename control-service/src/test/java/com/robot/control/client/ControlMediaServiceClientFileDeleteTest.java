@@ -10,7 +10,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.robot.control.auth.CurrentUser;
 import com.robot.control.config.ControlProperties;
-import com.robot.control.dto.FileBatchDeleteRequest;
+import com.robot.media.common.file.FileBatchDeleteRequest;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;

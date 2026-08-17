@@ -2,7 +2,7 @@ package com.robot.mediaserver.video.scheduler;
 
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.video.model.VideoSession;
-import com.robot.mediaserver.video.model.VideoSessionStatus;
+import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import java.time.OffsetDateTime;

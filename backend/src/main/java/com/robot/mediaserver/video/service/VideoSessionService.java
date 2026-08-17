@@ -5,20 +5,22 @@ import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.livekit.LiveKitRoomService;
 import com.robot.mediaserver.livekit.LiveKitTokenService;
 import com.robot.mediaserver.livekit.LiveKitTokenService.TokenResult;
-import com.robot.mediaserver.file.dto.FileListItemResponse;
+import com.robot.mediaserver.video.dto.VideoSessionResponses;
+
+import com.robot.media.common.file.FileListItemResponse;
 import com.robot.mediaserver.file.service.FileService;
-import com.robot.mediaserver.video.dto.CreateVideoSessionRequest;
-import com.robot.mediaserver.video.dto.IntercomResponse;
-import com.robot.mediaserver.video.dto.SwitchChannelRequest;
-import com.robot.mediaserver.video.dto.VideoSessionResponse;
-import com.robot.mediaserver.video.dto.ViewerTokenResponse;
-import com.robot.mediaserver.video.messaging.VideoStartCommand;
-import com.robot.mediaserver.video.messaging.IntercomStartCommand;
+import com.robot.media.common.video.CreateVideoSessionRequest;
+import com.robot.media.common.video.IntercomResponse;
+import com.robot.media.common.video.SwitchChannelRequest;
+import com.robot.media.common.video.VideoSessionResponse;
+import com.robot.media.common.video.ViewerTokenResponse;
+import com.robot.media.common.video.VideoStartCommand;
+import com.robot.media.common.video.IntercomStartCommand;
 import com.robot.mediaserver.video.model.MediaSessionViewer;
-import com.robot.mediaserver.video.model.IntercomStatus;
+import com.robot.media.common.video.IntercomStatus;
 import com.robot.mediaserver.video.model.VideoSession;
-import com.robot.mediaserver.video.model.VideoSessionStatus;
-import com.robot.mediaserver.video.model.VideoSourceType;
+import com.robot.media.common.video.VideoSessionStatus;
+import com.robot.media.common.video.VideoSourceType;
 import com.robot.mediaserver.video.repository.MediaSessionViewerRepository;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
 import com.robot.mediaserver.ws.MediaWebSocketPublisher;
@@ -163,7 +165,7 @@ public class VideoSessionService {
                 repository.save(session);
                 TokenResult viewerToken = createBrowserToken(session, user);
                 emit("video.session.reused", session);
-                return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
+                return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), viewerToken.token());
             }
         }
 
@@ -190,7 +192,7 @@ public class VideoSessionService {
         emit("video.session.created", session);
 
         TokenResult viewerToken = createBrowserToken(session, user);
-        return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
+        return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), viewerToken.token());
     }
 
     private boolean hasPublishedTrack(VideoSession session) {
@@ -250,7 +252,7 @@ public class VideoSessionService {
     public VideoSessionResponse get(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
         TokenResult viewerToken = createBrowserToken(session, user);
-        return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), viewerToken.token());
+        return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), viewerToken.token());
     }
 
     /**
@@ -276,7 +278,7 @@ public class VideoSessionService {
     public IntercomResponse createIntercomToken(String sessionId, CurrentUser user) {
         VideoSession session = requireIntercomOperator(sessionId, user);
         TokenResult token = liveKitTokenService.createOperatorToken(session.getRoomName(), user.userId(), user.clientId());
-        return IntercomResponse.from(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
+        return VideoSessionResponses.intercom(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
     }
 
     /**
@@ -307,7 +309,7 @@ public class VideoSessionService {
         if (resumeStreaming) {
             emit("video.session.streaming", session);
         }
-        return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
+        return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
     }
 
     /**
@@ -333,7 +335,7 @@ public class VideoSessionService {
         }
         session.setUpdatedAt(now());
         repository.save(session);
-        return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
+        return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
     }
 
     /**
@@ -371,7 +373,7 @@ public class VideoSessionService {
         repository.save(session);
         emit("video.intercom.starting", session);
         TokenResult token = liveKitTokenService.createOperatorToken(session.getRoomName(), user.userId(), user.clientId());
-        return IntercomResponse.from(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
+        return VideoSessionResponses.intercom(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
     }
 
     /**
@@ -388,7 +390,7 @@ public class VideoSessionService {
         session.setUpdatedAt(now());
         repository.save(session);
         TokenResult token = liveKitTokenService.createOperatorToken(session.getRoomName(), user.userId(), user.clientId());
-        return IntercomResponse.from(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
+        return VideoSessionResponses.intercom(session, properties.getLivekit().getUrl(), token.token(), token.expiresAt());
     }
 
     /**
@@ -421,7 +423,7 @@ public class VideoSessionService {
         session.setUpdatedAt(now());
         repository.save(session);
         emit("video.intercom.closed", session);
-        return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
+        return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
     }
 
     /**
@@ -470,7 +472,7 @@ public class VideoSessionService {
         requestClientStart(session, "video.track.switching", false);
         session.setUpdatedAt(now());
         repository.save(session);
-        return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
+        return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
     }
 
     public FileListItemResponse startRecording(String sessionId, CurrentUser user) {
@@ -665,7 +667,7 @@ public class VideoSessionService {
         addViewer(session, user);
         session.setViewerCount(activeViewerCount(sessionId));
         requestClientStart(session, "video.session.restart", false);
-        return VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null);
+        return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
     }
 
     /**
@@ -859,7 +861,7 @@ public class VideoSessionService {
      */
     public List<VideoSessionResponse> recent(CurrentUser user) {
         return repository.findTop20ByCreatedByOrderByCreatedAtDesc(user.userId()).stream()
-                .map(session -> VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null))
+                .map(session -> VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null))
                 .toList();
     }
 
@@ -870,7 +872,7 @@ public class VideoSessionService {
      */
     public List<VideoSessionResponse> active() {
         return repository.findTop16ByStatusInOrderByUpdatedAtDesc(REUSABLE_STATUSES).stream()
-                .map(session -> VideoSessionResponse.from(session, properties.getLivekit().getUrl(), null))
+                .map(session -> VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null))
                 .toList();
     }
 

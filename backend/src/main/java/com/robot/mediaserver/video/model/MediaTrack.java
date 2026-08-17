@@ -8,6 +8,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
+import com.robot.media.common.video.VideoChannel;
+import com.robot.media.common.video.VideoQuality;
+
 
 @Entity
 @Table(

@@ -23,6 +23,7 @@ Media Service -> LiveKit / MinIO / MySQL
 | `bigscreen-bff/` | 大屏统一认证入口、下游代理、全景聚合、统计报告、WebSocket 事件适配 |
 | `control-service/` | `/api/control/**`、控制租约、设备命令、机器人状态、固定摄像头、MQTT、视频编排 |
 | `backend/` | 视频会话与对讲、LiveKit Room/Token/Egress、通用文件、HLS、TTS |
+| `media-common/` | Media 与 Control 共享的纯 DTO 与枚举契约模块，不承载业务逻辑 |
 | `client/` | Go 机器人客户端与固定摄像头 Gateway；RTSP、LiveKit、MQTT、设备驱动和文件上传 |
 | `python-client/` | Python 机器人客户端，能力边界与 Go 客户端保持一致 |
 | `robot-ui/` | 指挥中心前端 |
@@ -34,6 +35,7 @@ Media Service 不发布 MQTT；Control Service 不保存媒体文件或承载媒
 
 ```text
 backend/          Java 17 + Spring Boot 3 Media Service
+media-common/     Media/Control 共享 DTO 与枚举契约（纯 Java 17）
 control-service/  Java 17 + Spring Boot 3 Control Service
 bigscreen-bff/    Java 17 + Spring Boot 3 Bigscreen BFF
 client/           Go 机器人客户端及固定摄像头 Gateway
@@ -79,6 +81,7 @@ Redis 和 Elasticsearch 已配置依赖，但当前 Java 业务主链路不以�
 Java 服务：
 
 ```bash
+(cd media-common && mvn install)   # 共享契约模块需先安装到本地仓库
 (cd backend && mvn spring-boot:run)
 (cd control-service && mvn spring-boot:run)
 (cd bigscreen-bff && mvn spring-boot:run)

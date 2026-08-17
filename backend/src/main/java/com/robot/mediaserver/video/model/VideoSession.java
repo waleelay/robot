@@ -8,6 +8,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
+import com.robot.media.common.video.IntercomStatus;
+import com.robot.media.common.video.VideoChannel;
+import com.robot.media.common.video.VideoQuality;
+import com.robot.media.common.video.VideoSessionStatus;
+import com.robot.media.common.video.VideoSourceType;
+
 
 /**
  * 实时视频会话实体。

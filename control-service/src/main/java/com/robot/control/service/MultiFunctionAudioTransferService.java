@@ -2,7 +2,7 @@ package com.robot.control.service;
 
 import com.robot.control.auth.CurrentUser;
 import com.robot.control.client.ControlMediaServiceClient;
-import com.robot.control.dto.FileListItemResponse;
+import com.robot.media.common.file.FileListItemResponse;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;

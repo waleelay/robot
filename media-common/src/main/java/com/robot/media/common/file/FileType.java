@@ -1,0 +1,18 @@
+package com.robot.media.common.file;
+
+/**
+ * 媒体文件类型枚举。
+ *
+ * @author leelay
+ * @date 2026-07-05
+ */
+public enum FileType {
+    VIDEO,
+    AUDIO,
+    IMAGE,
+    LOG,
+    CONFIG,
+    MAP,
+    DOCUMENT,
+    OTHER
+}

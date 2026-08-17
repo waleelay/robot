@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.file.api.FileApiException;
 import com.robot.mediaserver.file.dto.CreateMultipartFileUploadRequest;
-import com.robot.mediaserver.file.model.FileType;
+import com.robot.media.common.file.FileType;
 import com.robot.mediaserver.file.model.FileUploadStatus;
 import com.robot.mediaserver.file.repository.MediaFileRepository;
 import com.robot.mediaserver.file.repository.MediaFileUploadRepository;

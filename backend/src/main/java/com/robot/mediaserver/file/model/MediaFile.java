@@ -8,6 +8,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
+import com.robot.media.common.file.FileStatus;
+import com.robot.media.common.file.FileType;
+
 
 @Entity
 @Table(

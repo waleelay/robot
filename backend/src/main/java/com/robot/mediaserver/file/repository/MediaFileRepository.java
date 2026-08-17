@@ -1,7 +1,7 @@
 package com.robot.mediaserver.file.repository;
 
-import com.robot.mediaserver.file.model.FileStatus;
-import com.robot.mediaserver.file.model.FileType;
+import com.robot.media.common.file.FileStatus;
+import com.robot.media.common.file.FileType;
 import com.robot.mediaserver.file.model.MediaFile;
 import java.time.OffsetDateTime;
 import java.util.List;

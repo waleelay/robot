@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.robot.control.auth.CurrentUser;
 import com.robot.control.client.ControlMediaServiceClient;
-import com.robot.control.dto.FileListItemResponse;
+import com.robot.media.common.file.FileListItemResponse;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;

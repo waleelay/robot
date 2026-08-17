@@ -1,6 +1,8 @@
 package com.robot.mediaserver.video.service;
 
-import com.robot.mediaserver.video.dto.MediaTrackResponse;
+import com.robot.media.common.video.MediaTrackResponse;
+import com.robot.mediaserver.video.dto.VideoSessionResponses;
+
 import com.robot.mediaserver.video.model.MediaTrack;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.repository.MediaTrackRepository;
@@ -55,7 +57,7 @@ public class MediaTrackService {
 
     public List<MediaTrackResponse> recentBySession(String sessionId) {
         return repository.findTop20BySessionIdOrderByPublishedAtDesc(sessionId).stream()
-                .map(MediaTrackResponse::from)
+                .map(VideoSessionResponses::from)
                 .toList();
     }
 

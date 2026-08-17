@@ -1,7 +1,7 @@
 package com.robot.mediaserver.file.scheduler;
 
 import com.robot.mediaserver.config.MediaProperties;
-import com.robot.mediaserver.file.model.FileStatus;
+import com.robot.media.common.file.FileStatus;
 import com.robot.mediaserver.file.repository.MediaFileRepository;
 import com.robot.mediaserver.file.service.FileService;
 import java.time.OffsetDateTime;

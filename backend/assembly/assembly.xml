@@ -11,6 +11,9 @@
         <fileSet>
             <directory>${project.build.directory}/${package.out}</directory>
             <outputDirectory>${package.out}</outputDirectory>
+            <excludes>
+                <exclude>bin/**</exclude>
+            </excludes>
             <fileMode>0644</fileMode>
             <directoryMode>0755</directoryMode>
         </fileSet>

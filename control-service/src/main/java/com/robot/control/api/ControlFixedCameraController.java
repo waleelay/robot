@@ -3,7 +3,7 @@ package com.robot.control.api;
 import com.robot.control.auth.CurrentUserResolver;
 import com.robot.control.dto.ControlStartVideoRequest;
 import com.robot.control.dto.FixedCameraBatchStartRequest;
-import com.robot.control.dto.VideoSessionResponse;
+import com.robot.media.common.video.VideoSessionResponse;
 import com.robot.control.service.ControlVideoCommandService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
