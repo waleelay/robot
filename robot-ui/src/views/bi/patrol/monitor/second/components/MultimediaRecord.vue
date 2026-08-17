@@ -66,6 +66,7 @@ import {
   revokeFileObjectUrl
 } from '../../../../../../api/media.js'
 import { withApiPrefix } from '../../../../../../utils/api-url.js'
+import { resolveCameraName } from '../../../../../../utils/index.js'
 import MultimediaDetail from './MultimediaDetail.vue'
 import Empty from '../../../../components/Empty.vue'
 
@@ -90,7 +91,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketRobot', ['snapshotTime', 'recordTime']),
+    ...mapState('websocketRobot', ['snapshotTime', 'recordTime', 'cameras']),
     ...mapState('websocketExtraData', ['robotBaseInfo']),
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
@@ -201,7 +202,7 @@ export default {
     },
     destroyVideoPlayers() { Object.keys(this.videoPlayers).forEach(id => this.destroyVideoPlayer(id)) },
     getCameraName(robotId, deviceId) {
-      return this.robotBaseInfo?.[robotId]?.cameras?.find(item => item.deviceId === deviceId)?.name || ''
+      return resolveCameraName(this.cameras, robotId, deviceId)
     },
     getItemTitle(item) {
       const cameraName = this.getCameraName(item.robotId, item.deviceId || item.cameraId)

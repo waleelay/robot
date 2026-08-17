@@ -444,10 +444,24 @@ export function getDescArr(data, key) {
 }
 // 秒 转 时:分:秒
 export function durationText(seconds) {
-  if (!seconds) return '--:--'
+  if (!seconds) return '-'
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   const remainder = seconds % 60
   const text = `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
   return hours > 0 ? `${hours}:${text}` : text
+}
+
+/** 从 websocketRobot.cameras（robot.state）解析摄像头名称 */
+export function resolveCameraName(cameras, robotId, cameraId) {
+  if (robotId === undefined || robotId === null || robotId === '' ||
+    cameraId === undefined || cameraId === null || cameraId === '') {
+    return ''
+  }
+  const id = String(cameraId)
+  const camera = Object.values(cameras || {}).find(item =>
+    String(item?.robotId) === String(robotId) &&
+    (String(item.deviceId) === id || String(item.cameraId) === id)
+  )
+  return camera?.name || ''
 }

@@ -7,7 +7,7 @@
       @command="handleCommand"
     >
       <div class="user flx-align-center h100" :class="sizeClass">
-        <div class="avatar">{{ userInitials }}</div>
+        <div class="avatar flx-center">{{ userInitials }}</div>
         <div class="ml10 flex-column">
           <span class="text">{{ userName }}</span>
           <span class="role" :class="rolePaddingClass">{{ userRole }}</span>
@@ -196,7 +196,6 @@ export default {
       width: 28px;
       height: 28px;
       font-size: 16px;
-      line-height: 28px;
     }
     .text {
       font-size: 14px;
@@ -212,7 +211,6 @@ export default {
       width: 36px;
       height: 36px;
       font-size: 20px;
-      line-height: 36px;
     }
     .text {
       font-size: 18px;

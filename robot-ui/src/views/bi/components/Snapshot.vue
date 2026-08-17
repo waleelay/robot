@@ -65,6 +65,7 @@ import {
   revokeFileObjectUrl
 } from '../../../api/media.js';
 import videoUtils from '../../../utils/videoUtils.js'
+import { resolveCameraName } from '../../../utils/index.js'
 import MultimediaDetail from '../patrol/monitor/second/components/MultimediaDetail.vue'
 export default {
   name: 'Snapshot',
@@ -95,7 +96,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketRobot', ['snapshotTime', 'recordTime', 'robotBaseInfo']),
+    ...mapState('websocketRobot', ['snapshotTime', 'recordTime', 'cameras']),
     ...mapState('websocketExtraData', ['robotBaseInfo']),
     showPage() {
       return (this.tabIndex === 0 && this.snapShotInfo.total > this.snapShotInfo.size) || (this.tabIndex === 1 && this.recordInfo.total > this.recordInfo.size)
@@ -180,7 +181,7 @@ export default {
       }
     },
     getCameraName(robotId, deviceId) {
-      return this.robotBaseInfo?.[robotId]?.cameras.find(item => item.deviceId === deviceId)?.name || ''
+      return resolveCameraName(this.cameras, robotId, deviceId)
     },
     destroySnapshotObjectUrls() {
       this.snapshotObjectUrls.forEach(revokeFileObjectUrl)

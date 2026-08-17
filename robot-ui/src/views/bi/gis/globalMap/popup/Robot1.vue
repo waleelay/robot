@@ -31,7 +31,7 @@
             装备类型：<span class="value">{{ currenRobot?.type || '-' }}</span>
           </div>
           <div class="item wp149 ml26">
-            当前电量：<span class="value">{{ currenRobot?.battery || '-' }}%</span>
+            当前电量：<span class="value">{{ formatBattery(currenRobot?.battery) }}</span>
           </div>
           <div class="item wp156 mt10">
             装备型号：<span class="value">{{ currenRobot?.model || '-' }}</span>
@@ -292,6 +292,11 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['setSelectedRobotId', 'startCamera', 'stopCamera', 'setPrefixId']),
+    /** 电量展示：有值带 %，无值只显示 -（避免 -%） */
+    formatBattery(battery) {
+      if (battery === undefined || battery === null || battery === '') return '-'
+      return `${battery}%`
+    },
     getTaskId(task) {
       return task?.taskId || task?.id || task?.planId || task?.taskPlanId || null
     },

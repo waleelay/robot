@@ -188,7 +188,7 @@ import {
   revokeFileObjectUrl,
   deleteFile
 } from '../../../../../../api/media.js'
-import { durationText, recordingTimeRangeText } from '../../../../../../utils/index.js'
+import { durationText, recordingTimeRangeText, resolveCameraName } from '../../../../../../utils/index.js'
 
 export default {
   name: 'MultimediaDetail',
@@ -220,6 +220,7 @@ export default {
   },
   computed: {
     ...mapState('websocketExtraData', ['robotBaseInfo']),
+    ...mapState('websocketRobot', ['cameras']),
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
@@ -482,7 +483,7 @@ export default {
       }
     },
     getCameraName(robotId, deviceId) {
-      return this.robotBaseInfo?.[robotId]?.cameras?.find(item => item.deviceId === deviceId)?.name || ''
+      return resolveCameraName(this.cameras, robotId, deviceId)
     },
     getListTitle(item) {
       return this.getCameraName(item.robotId, item.deviceId || item.cameraId)

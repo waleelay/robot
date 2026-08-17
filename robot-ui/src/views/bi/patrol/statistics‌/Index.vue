@@ -183,21 +183,20 @@
               任务完成率
             </div>
           </div>
-          <div class="p20 hp279 flex-column flx-justify-between">
-            <div class="task-list w100 mt10 d-flex flex-column">
+          <div class="pt16 pr20 pb16 pl20 hp279 flex-column flx-justify-between">
+            <div class="task-list w100 flx-justify-between flex-column">
               <div
                 v-for="(item, index) in taskCompletionItems"
                 :key="item.status"
-                class="task-item flex-column"
-                :class="{ 'mt16': index !== 0 }">
+                class="task-item flex-column">
                 <div class="d-flex flex1 flx-justify-between w100">
                   <div class="type">{{ item.name }}</div>
                   <div class="number">{{ item.percent }}%</div>
                 </div>
-                <div class="progress hp6 mt7" :style="{ '--percent': item.percent + '%' }"></div>
+                <div class="progress hp6 mt4" :style="{ '--percent': item.percent + '%' }"></div>
               </div>
             </div>
-            <div class="w100 desc hp73 flx-align-center pr20 pl20">
+            <div class="w100 desc hp73 flx-align-center mt18 pr20 pl20">
               <img src="@/assets/images/new-bi/data-task.png" class="wp44 hp52 ml20" alt="" srcset="">
               <div class="ml30">{{ taskInsight }}</div>
             </div>
