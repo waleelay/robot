@@ -3,8 +3,11 @@ package com.robot.bigscreen.panorama;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class PanoramaServiceTest {
@@ -219,7 +223,7 @@ class PanoramaServiceTest {
     void keepsRequiredAlarmFieldsWhileCompactingOverviewAlarmLocation() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
-        when(centerClient.alarms()).thenReturn(List.of(Map.ofEntries(
+        when(centerClient.alarms(any(), any(), any())).thenReturn(List.of(Map.ofEntries(
                 Map.entry("id", "alarm-001"),
                 Map.entry("title", "发生火灾"),
                 Map.entry("alarmType", "BUSINESS"),
@@ -259,7 +263,7 @@ class PanoramaServiceTest {
     void mapsManagementAlarmContractAndUsesFirstImageAsVisibleSnapshot() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
-        when(centerClient.alarms()).thenReturn(List.of(Map.ofEntries(
+        when(centerClient.alarms(any(), any(), any())).thenReturn(List.of(Map.ofEntries(
                 Map.entry("id", 1001L),
                 Map.entry("sourceType", "COMPONENT"),
                 Map.entry("severity", "CRITICAL"),
@@ -677,6 +681,38 @@ class PanoramaServiceTest {
                 "status", Map.of("basic", Map.of("healthStatus", healthStatus)));
     }
 
+    @Test
+    void statsSnapshotOnlyRecalculatesRequestedParts() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+
+        Map<String, Object> snapshot = service.statsSnapshot(Set.of(StatsPart.ALARMS));
+
+        assertTrue(snapshot.containsKey("alarmStats"));
+        assertTrue(snapshot.containsKey("alarmSummary"));
+        assertFalse(snapshot.containsKey("deviceStats"));
+        assertFalse(snapshot.containsKey("taskOverview"));
+        assertFalse(snapshot.containsKey("patrolOverview"));
+        verify(centerClient, times(2)).alarms(any(), any(), any());
+        verify(centerClient, never()).devices();
+        verify(centerClient, never()).taskWorkflowPlans();
+        verify(centerClient, never()).mileageSummary(any(), any(), any());
+    }
+
+    @Test
+    void statsSnapshotCachesEachPartWithinTtl() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+
+        service.statsSnapshot(Set.of(StatsPart.ALARMS));
+        service.statsSnapshot(Set.of(StatsPart.ALARMS));
+        service.statsSnapshot(Set.of(StatsPart.ALARMS));
+
+        verify(centerClient, times(2)).alarms(any(), any(), any());
+    }
+
     private void stubEmptyOverviewSources(PanoramaCenterClient centerClient) {
         when(centerClient.devices()).thenReturn(List.of());
         when(centerClient.deviceTypeOptions()).thenReturn(List.of());
@@ -684,7 +720,7 @@ class PanoramaServiceTest {
         when(centerClient.fixedCameras()).thenReturn(List.of());
         when(centerClient.taskWorkflowPlans()).thenReturn(List.of());
         when(centerClient.taskWorkflowInstances()).thenReturn(List.of());
-        when(centerClient.alarms()).thenReturn(List.of());
+        when(centerClient.alarms(any(), any(), any())).thenReturn(List.of());
     }
 
     @SuppressWarnings("unchecked")

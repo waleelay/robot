@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.robot.bigscreen.panorama.StatsPart;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -60,15 +61,15 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(events.stream()
                 .map(this::readTree)
                 .noneMatch(node -> "panorama.stats.changed".equals(node.path("event").asText()))).isTrue();
-        assertThat(adapter.requiresStatsRefresh("browser-a", """
+        assertThat(adapter.statsRefreshParts("browser-a", """
                 {"event":"robot.state","data":{"robotId":"test115","status":"online","healthStatus":"异常"}}
-                """)).isTrue();
-        assertThat(adapter.requiresStatsRefresh("browser-a", """
+                """)).contains(StatsPart.DEVICES, StatsPart.TASKS);
+        assertThat(adapter.statsRefreshParts("browser-a", """
                 {"event":"robot.state","data":{"robotId":"test115","status":"online","healthStatus":"异常"}}
-                """)).isFalse();
-        assertThat(adapter.requiresStatsRefresh("browser-b", """
+                """)).isEmpty();
+        assertThat(adapter.statsRefreshParts("browser-b", """
                 {"event":"robot.state","data":{"robotId":"test115","status":"online","healthStatus":"异常"}}
-                """)).isTrue();
+                """)).contains(StatsPart.DEVICES, StatsPart.TASKS);
     }
 
     @Test
@@ -118,7 +119,7 @@ class PanoramaWebSocketEventAdapterTest {
                 }
                 """;
 
-        assertThat(adapter.requiresStatsRefresh("browser-a", payload)).isTrue();
+        assertThat(adapter.statsRefreshParts("browser-a", payload)).containsExactly(StatsPart.TASKS);
         assertThat(adapter.adapt(payload)).containsExactly(payload);
     }
 
@@ -132,7 +133,7 @@ class PanoramaWebSocketEventAdapterTest {
                 """;
 
         assertThat(adapter.isAlarmInvalidation(payload)).isTrue();
-        assertThat(adapter.requiresStatsRefresh("browser-a", payload)).isTrue();
+        assertThat(adapter.statsRefreshParts("browser-a", payload)).containsExactly(StatsPart.ALARMS);
     }
 
     private JsonNode readTree(String value) {

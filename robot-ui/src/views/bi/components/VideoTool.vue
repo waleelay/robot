@@ -30,10 +30,10 @@
                 <div class="info flx-center">
                   <span class="value mt10">{{ volumeInfo.currentVolume }}</span>
                   <el-slider
-                    :min="0" 
-                    :max="100" 
+                    :min="0"
+                    :max="100"
                     v-model="volumeInfo.currentVolume"
-                    class="mt10 mb5 vertical-slider" 
+                    class="mt10 mb5 vertical-slider"
                     vertical
                     @input="updateVolume"
                     @change="updateVolume"
@@ -77,6 +77,7 @@
     </div>
     <!-- <Snap ref="snapModalRef" :idName="idName" /> -->
     <ControlInner v-if="showCameraControl" ref="controlInnerRef" :cameraInfo="cameraInfo" />
+    <MultimediaDetail ref="multimediaDetailRef" />
   </div>
 </template>
 
@@ -84,7 +85,8 @@
 // import Snap from './modal/Snap.vue';
 import videoUtils from './../../../utils/videoUtils.js'
 import ControlInner from './ControlInner.vue';
-import { snapshotImageUrl, fileDownloadUrl, uploadFile } from '../../../api/media.js';
+import MultimediaDetail from '../patrol/monitor/second/components/MultimediaDetail.vue';
+import { uploadFile } from '../../../api/media.js';
 import { mapActions, mapState } from 'vuex';
 import { none } from 'ol/centerconstraint';
 export default {
@@ -92,6 +94,7 @@ export default {
   components: {
     // Snap,
     ControlInner,
+    MultimediaDetail,
   },
   props: {
     slotKey: {
@@ -192,7 +195,7 @@ export default {
         this.$message.warning('当前画面不可抓拍')
         return
       }
-      const form = new FormData()      
+      const form = new FormData()
       form.append('trackSid', camera.session.trackSid || 'TR_pending')
       form.append('fileType', 'IMAGE')
       form.append('robotId', camera.robotId)
@@ -228,32 +231,25 @@ export default {
         this.$message.success('抓拍已保存')
         return
       }
-      // 新标签页无法带上 axios Authorization，优先用带 token 的 download-url 直接看图
-      let url = snapshotImageUrl(snapshot.fileId)
-      try {
-        const res = await fileDownloadUrl(snapshot.fileId)
-        const downloadUrl = res?.downloadUrl || res?.url || res?.data?.downloadUrl
-        if (downloadUrl) {
-          url = /^https?:\/\//i.test(downloadUrl)
-            ? downloadUrl
-            : `${(process.env.VUE_APP_BASE_ORIGIN || window.location.origin).replace(/\/$/, '')}${downloadUrl.startsWith('/') ? '' : '/'}${downloadUrl}`
-        }
-      } catch (e) { /* 回退 content 直链 */ }
+      // 弹窗内用 blob 直链预览（axios 带 token），避免新标签页无法携带 Authorization 的问题。
+      const h = this.$createElement
       this.$message({
         type: 'success',
         customClass: 'snapshot-message',
-        dangerouslyUseHTMLString: true,
-        message: `抓拍已保存 <a class="message-link" href="${this.escapeHtml(url)}" target="_blank" rel="noopener noreferrer">查看</a>`
+        duration: 5000,
+        message: h('div', {}, [
+          '抓拍已保存 ',
+          h('a', {
+            class: 'message-link',
+            on: { click: () => this.openSnapshotDetail(snapshot) }
+          }, '查看')
+        ])
       })
     },
-    escapeHtml(value) {
-      return String(value).replace(/[&<>"']/g, char => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-      }[char]))
+    openSnapshotDetail(snapshot) {
+      const ref = this.$refs.multimediaDetailRef
+      if (!ref) return
+      ref.open({ item: snapshot, tabIndex: 0, simple: true })
     }
   },
   watch: {

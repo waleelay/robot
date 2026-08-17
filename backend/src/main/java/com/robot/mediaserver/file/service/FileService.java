@@ -373,7 +373,7 @@ public class FileService {
         return new FileBatchDeleteResponse(fileIds.size(), succeeded, fileIds.size() - succeeded, results);
     }
 
-    public FileDownloadUrlResponse downloadUrl(CurrentUser user, String fileId) {
+    public FileDownloadUrlResponse downloadUrl(CurrentUser user, String fileId, boolean inline) {
         MediaFile file = requirePlayableFile(user, fileId);
         OffsetDateTime expiresAt = now().plusSeconds(properties.getFile().getPlayUrlTtlSeconds());
         return new FileDownloadUrlResponse(
@@ -382,7 +382,8 @@ public class FileService {
                         file.getObjectKey(),
                         properties.getFile().getPlayUrlTtlSeconds(),
                         file.getFileName(),
-                        file.getContentType()),
+                        file.getContentType(),
+                        inline),
                 expiresAt);
     }
 
@@ -493,7 +494,11 @@ public class FileService {
         return item(file);
     }
 
-    @Transactional
+    /**
+     * 使用独立事务停止指定观看者的直播录像：停止失败时文件状态仍可落库为 FAILED，
+     * 且不会把调用方（如启动清理）的事务标记为 rollback-only 导致进程退出。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public boolean stopLiveRecordingForClient(String sessionId, String clientId) {
         if (clientId == null || clientId.isBlank()) {
             return false;

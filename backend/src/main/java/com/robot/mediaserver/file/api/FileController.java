@@ -136,8 +136,11 @@ public class FileController {
     }
 
     @PostMapping("/{fileId}/download-url")
-    public FileDownloadUrlResponse downloadUrl(@PathVariable String fileId, HttpServletRequest request) {
-        return service.downloadUrl(currentUserResolver.resolve(request), fileId);
+    public FileDownloadUrlResponse downloadUrl(
+            @PathVariable String fileId,
+            @RequestParam(defaultValue = "false") boolean inline,
+            HttpServletRequest request) {
+        return service.downloadUrl(currentUserResolver.resolve(request), fileId, inline);
     }
 
     @GetMapping("/{fileId}/content")

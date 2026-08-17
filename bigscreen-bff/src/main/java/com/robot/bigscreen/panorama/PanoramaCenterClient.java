@@ -226,12 +226,26 @@ public class PanoramaCenterClient {
     }
 
     public List<Map<String, Object>> alarms() {
+        return alarms(null, null, null);
+    }
+
+    public List<Map<String, Object>> alarms(String status, String occurredFrom, String occurredTo) {
         int pageSize = 100;
-        return pagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/alarms")
-                .queryParam("pageNum", pageNum)
-                .queryParam("pageSize", pageSize)
-                .build(true)
-                .toUri(), pageSize);
+        return pagedRecords(pageNum -> {
+            UriComponentsBuilder builder = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms")
+                    .queryParam("pageNum", pageNum)
+                    .queryParam("pageSize", pageSize);
+            if (status != null && !status.isBlank()) {
+                builder.queryParam("status", status);
+            }
+            if (occurredFrom != null && !occurredFrom.isBlank()) {
+                builder.queryParam("occurredFrom", occurredFrom.replace(' ', 'T'));
+            }
+            if (occurredTo != null && !occurredTo.isBlank()) {
+                builder.queryParam("occurredTo", occurredTo.replace(' ', 'T'));
+            }
+            return builder.build(true).toUri();
+        }, pageSize);
     }
 
     public List<Map<String, Object>> actionableWorkflowAlarms() {
@@ -242,19 +256,7 @@ public class PanoramaCenterClient {
     }
 
     public List<Map<String, Object>> alarmsForStatistics(String occurredFrom, String occurredTo) {
-        int pageSize = 100;
-        return pagedRecords(pageNum -> {
-            UriComponentsBuilder builder = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms")
-                    .queryParam("pageNum", pageNum)
-                    .queryParam("pageSize", pageSize);
-            if (occurredFrom != null && !occurredFrom.isBlank()) {
-                builder.queryParam("occurredFrom", occurredFrom.replace(' ', 'T'));
-            }
-            if (occurredTo != null && !occurredTo.isBlank()) {
-                builder.queryParam("occurredTo", occurredTo.replace(' ', 'T'));
-            }
-            return builder.build(true).toUri();
-        }, pageSize);
+        return alarms(null, occurredFrom, occurredTo);
     }
 
     public boolean handleAlarm(String alarmId, String handleAction, String handleResult) {

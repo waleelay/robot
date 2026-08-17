@@ -3,6 +3,7 @@ package com.robot.bigscreen.ws;
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
 import com.robot.bigscreen.config.WebSocketConfig;
+import com.robot.bigscreen.panorama.StatsPart;
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
 import java.net.URI;
@@ -196,7 +197,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         protected void handleTextMessage(WebSocketSession centerSession, TextMessage message) throws Exception {
             if (browserSession.isOpen()) {
                 String centerPayload = message.getPayload();
-                boolean refreshStats = eventAdapter.requiresStatsRefresh(browserSession.getId(), centerPayload);
+                Set<StatsPart> statsParts = eventAdapter.statsRefreshParts(browserSession.getId(), centerPayload);
                 boolean refreshTasks = eventAdapter.isTaskInvalidation(centerPayload);
                 boolean refreshAlarms = eventAdapter.isAlarmInvalidation(centerPayload);
                 for (String payload : eventAdapter.adapt(centerPayload)) {
@@ -205,12 +206,13 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                             payload,
                             value -> sendToBrowserSession(browserSession, value));
                 }
-                if (refreshStats) {
+                if (!statsParts.isEmpty()) {
                     Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
                     statsEventRefresher.requestRefresh(
                             browserSession.getId(),
                             authentication,
-                            payload -> sendToBrowserSession(browserSession, payload));
+                            payload -> sendToBrowserSession(browserSession, payload),
+                            statsParts);
                 }
                 if (refreshTasks) {
                     Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;

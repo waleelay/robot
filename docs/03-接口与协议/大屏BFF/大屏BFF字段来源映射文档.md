@@ -177,16 +177,18 @@ BFF 只会将 `running/pausing/paused/resuming/terminating` 状态的任务关�
 
 ### 3.9 `alarms`
 
+告警采用双路查询：`summary` 统计今日告警（`occurredFrom/occurredTo` 传当日 0 点至当前时刻，不按状态过滤）；分组列表查询未处理告警（`status=NEW`，不限制时间窗口）。
+
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
-| `total` | 告警总数 | BFF 计算 | 告警列表 `items.size()` |
-| `summary.totalToday` | 今日/当前告警数 | BFF 计算 | 当前实现等于告警列表总数 |
-| `summary.handled` | 已处理告警数 | BFF 计算 | 统计状态为 `handled/false_alarm/acknowledged` 的告警 |
-| `summary.unhandled` | 未处理告警数 | BFF 计算 | `total - handled` |
+| `total` | 未处理告警总数 | BFF 计算 | 未处理告警列表 `items.size()` |
+| `summary.totalToday` | 今日告警数 | 管理端 + BFF 计算 | 今日窗口（当日 0 点起）内告警总数，依赖管理端 `occurredFrom/occurredTo` 过滤 |
+| `summary.handled` | 今日已处理告警数 | BFF 计算 | 今日窗口内统计状态为 `handled/false_alarm` 的告警 |
+| `summary.unhandled` | 今日未处理告警数 | BFF 计算 | 今日窗口内 `totalToday - handled` |
 | `summary.handleRateText` | 处置率文案 | BFF 计算 | `handleRate + "%"` |
-| `high.items` | 高风险告警集合 | BFF 分组 | `items[].level == HIGH` |
-| `medium.items` | 中风险告警集合 | BFF 分组 | `items[].level == MEDIUM` |
-| `low.items` | 低风险告警集合 | BFF 分组 | `items[].level == LOW` |
+| `high.items` | 高风险未处理告警集合 | 管理端 + BFF 分组 | 管理端 `status=NEW` 过滤后，`items[].level == HIGH` |
+| `medium.items` | 中风险未处理告警集合 | 管理端 + BFF 分组 | 管理端 `status=NEW` 过滤后，`items[].level == MEDIUM` |
+| `low.items` | 低风险未处理告警集合 | 管理端 + BFF 分组 | 管理端 `status=NEW` 过滤后，`items[].level == LOW` |
 
 ### 3.10 `alarms.*.items[]`
 

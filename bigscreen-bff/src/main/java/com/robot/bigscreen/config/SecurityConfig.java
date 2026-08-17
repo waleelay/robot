@@ -88,9 +88,14 @@ public class SecurityConfig {
             HttpServletRequest request,
             DefaultBearerTokenResolver headerResolver,
             DefaultBearerTokenResolver websocketResolver) {
-        if (request.getRequestURI().startsWith("/ws/")) {
+        String uri = request.getRequestURI();
+        if (uri.startsWith("/ws/") || isFileContentRead(uri)) {
             return websocketResolver.resolve(request);
         }
         return headerResolver.resolve(request);
+    }
+
+    private boolean isFileContentRead(String uri) {
+        return uri.startsWith("/api/bigscreen/control/files/") && uri.endsWith("/content");
     }
 }

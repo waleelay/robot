@@ -104,6 +104,8 @@ services:
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-dev-secret-dev-secret-dev-secret-32}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://host.docker.internal:9000}
       MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-}
+      MINIO_DOWNLOAD_PUBLIC_ENDPOINT: ${MINIO_DOWNLOAD_PUBLIC_ENDPOINT:-}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-eiopminio}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-eiopminio123}
       MINIO_BUCKET: ${MINIO_BUCKET:-robot-media}

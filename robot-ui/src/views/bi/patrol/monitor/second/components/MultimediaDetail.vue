@@ -510,30 +510,19 @@ export default {
       if (!this.details.fileId) return
       try {
         const res = await fileDownloadUrl(this.details.fileId)
-        const url = res?.downloadUrl || res?.url || this.details.customUrl
+        const url = res?.downloadUrl || res?.url
         if (!url) {
           this.$message.error('下载地址获取失败')
           return
         }
-        const link = document.createElement('a')
-        link.href = url
-        link.download = this.details.fileName || `${Date.now()}.${this.isImage ? 'jpg' : 'mp4'}`
-        link.target = '_blank'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+        // 跨域预签名 URL 的 download 属性被浏览器忽略，改用隐藏 iframe 触发附件下载，避免新开标签页。
+        const iframe = document.createElement('iframe')
+        iframe.style.display = 'none'
+        iframe.src = url
+        document.body.appendChild(iframe)
+        setTimeout(() => document.body.removeChild(iframe), 60000)
       } catch (e) {
-        try {
-          const link = document.createElement('a')
-          link.href = this.details.customUrl
-          link.download = this.details.fileName || `${Date.now()}.jpg`
-          link.target = '_blank'
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-        } catch (err) {
-          this.$message.error('下载失败')
-        }
+        this.$message.error('下载失败')
       }
     },
     async handleDelete(item) {

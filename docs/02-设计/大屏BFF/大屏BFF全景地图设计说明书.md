@@ -755,7 +755,7 @@ WebSocket：
 | `panorama.device.location.changed` | `robot.state` 携带 `location/localization/status.localization` 时派生；联调设备 `test111`、`SN005`、`SN006` 在无真实定位时使用专用演示坐标 | 按“浏览器会话 + `robotId`”独立限频。首条立即推送；同一设备 1 秒内的多条位置只保留最新一条，每秒最多推送一次；`localized=false` 立即推送。没有新定位时不重复发送旧坐标。 |
 | `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 300ms 去抖重查管理端权威快照，逐项比较后只推送发生变化的任务；`taskId` 缺失的旧版事件不直接下发。 |
 | `panorama.alarm.changed` | 上游完整告警事件，或管理端 STOMP `alarm.changed.v1` 转换的 `management.alarm.invalidated` | 完整事件立即转换；失效通知以 300ms 去抖重查管理端告警快照，按会话比较后只推送变化项。没有真实上游事件时不生成模拟告警。 |
-| `panorama.stats.changed` | 设备业务变更、设备在线/离线/故障状态切换、任务或告警变更 | 短时间内的多次触发合并 500ms 后重查完整统计快照，只在快照与上次不同时推送。普通电量、速度、位置心跳不触发统计刷新。 |
+| `panorama.stats.changed` | 设备业务变更、设备在线/离线/故障状态切换、任务或告警变更 | 短时间内的多次触发合并 500ms 后按事件类型只重算受影响统计块（设备/任务/告警），推送仍为完整合并快照，只在快照与上次不同时推送。各统计块带 3 秒 TTL 缓存（按用户隔离），多会话与多事件在窗口内共享一次管理端查询。普通电量、速度、位置心跳不触发统计刷新。 |
 
 Control 对 `totalMileage/currentMileage` 计算出的有效里程增量累计达到配置阈值时，
 广播 `robot.mileage.changed`。BFF 收到后沿用上述统计刷新机制，输出更新后的
@@ -957,7 +957,7 @@ BFF 仍会原样转发上游消息，上表只描述追加生成的 `panorama.*`
 - BFF 已将中心端 `robot.state` 转换为 `panorama.device.status.changed` 并追加转发给前端；当 `robot.state` 携带定位或任务字段时，同步追加 `panorama.device.location.changed`、`panorama.task.changed`。
 - 当前控制服务并行订阅 `eiop/v1/edge/{serialNumber}/status`，转换并广播 `robot.state`。BFF 将其中的健康、速度、电量、控制模式和 SLAM `x/y/z/yaw/mapId` 等字段继续转换为全景事件，无需前端直接订阅 MQTT。
 - 联调期仅针对 `robotId=test111` 保留定位兜底：当中心端 `robot.state` 未携带定位数据时，BFF 按三组 XYZ 坐标循环追加 `panorama.device.location.changed`。
-- BFF 在设备状态发生切换以及收到设备、任务、告警变化事件后，延迟 500ms 合并刷新统计；统计数据与 `/api/bigscreen/panorama/overview` 使用相同管理端数据源和计算口径。新旧统计快照一致时不推送，普通电量、速度、位置心跳不触发统计刷新。
+- BFF 在设备状态发生切换以及收到设备、任务、告警变化事件后，延迟 500ms 合并刷新统计；按事件类型只重算受影响统计块（设备/任务/告警），各块带 3 秒 TTL 缓存（按用户隔离），多会话共享；统计数据与 `/api/bigscreen/panorama/overview` 使用相同管理端数据源和计算口径。新旧统计快照一致时不推送，普通电量、速度、位置心跳不触发统计刷新。
 - `panorama.stats.changed` 推送完整的 `deviceStats`、`deviceTypeStats`、`patrolOverview`、`taskOverview`、`alarmStats`、`alarmSummary`，前端仅更新事件实际携带的统计块。
 - 如果中心端推送 `task.*`、`alarm.*` 原始事件，BFF 会转换为 `panorama.task.changed`、`panorama.alarm.changed`；没有真实原始事件源时不生成本地假数据。
 - 后续前端继续从只打印事件演进为消费更多 `panorama.*`，形成 REST 快照 + WebSocket 增量。

@@ -41,6 +41,11 @@ media:
     endpoint: ${MINIO_ENDPOINT:http://host.docker.internal:9000}
     # 预签名上传/下载 URL 中下发给浏览器或机器人的外部地址；为空时沿用 endpoint。
     public-endpoint: ${MINIO_PUBLIC_ENDPOINT:}
+    # 预签名下载 URL 使用的 HTTPS 出口（如经 nginx 反代的 https 地址）；为空时沿用 public-endpoint。
+    # 页面为 HTTPS 时下载地址必须是 HTTPS，否则浏览器 Mixed Content 拦截。
+    download-public-endpoint: ${MINIO_DOWNLOAD_PUBLIC_ENDPOINT:}
+    # MinIO/S3 的 region 声明；显式设置后预签名为本地计算，不再向 endpoint 探测。
+    region: ${MINIO_REGION:us-east-1}
     # MinIO/S3 访问 Key。
     access-key: ${MINIO_ACCESS_KEY:eiopminio}
     # MinIO/S3 访问 Secret。

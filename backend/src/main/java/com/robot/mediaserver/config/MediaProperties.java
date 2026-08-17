@@ -174,6 +174,8 @@ public class MediaProperties {
     public static class Minio {
     private String endpoint;
     private String publicEndpoint;
+    private String downloadPublicEndpoint;
+    private String region;
     private String accessKey;
     private String secretKey;
     private String bucket;
@@ -193,6 +195,22 @@ public class MediaProperties {
 
     public void setPublicEndpoint(String publicEndpoint) {
             this.publicEndpoint = publicEndpoint;
+        }
+
+    public String getDownloadPublicEndpoint() {
+            return downloadPublicEndpoint == null || downloadPublicEndpoint.isBlank() ? getPublicEndpoint() : downloadPublicEndpoint;
+        }
+
+    public void setDownloadPublicEndpoint(String downloadPublicEndpoint) {
+            this.downloadPublicEndpoint = downloadPublicEndpoint;
+        }
+
+    public String getRegion() {
+            return region;
+        }
+
+    public void setRegion(String region) {
+            this.region = region;
         }
 
     public String getAccessKey() {

@@ -10,6 +10,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -29,6 +30,7 @@ import java.util.stream.Collectors;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -36,6 +38,7 @@ public class PanoramaService {
 
     private static final ZoneOffset CHINA_ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final long STATS_CACHE_TTL_MILLIS = 3000;
     private static final ExecutorService IO_EXECUTOR = new ThreadPoolExecutor(
             8,
             64,
@@ -51,6 +54,7 @@ public class PanoramaService {
 
     private final PanoramaCenterClient centerClient;
     private final ObjectMapper objectMapper;
+    private final Map<String, CachedSnapshot> statsCache = new ConcurrentHashMap<>();
 
     public PanoramaService(PanoramaCenterClient centerClient, ObjectMapper objectMapper) {
         this.centerClient = centerClient;
@@ -88,23 +92,66 @@ public class PanoramaService {
     }
 
     public Map<String, Object> statsSnapshot() {
-        OverviewRequestCache cache = new OverviewRequestCache();
-        CompletableFuture<List<Map<String, Object>>> devicesFuture = async(() -> devices(cache));
-        CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
-        CompletableFuture<Map<String, Object>> alarmsFuture = async(this::alarmsPayload);
-        CompletableFuture<Map<String, Object>> mileageFuture = async(this::todayMileageSummary);
+        return statsSnapshot(EnumSet.allOf(StatsPart.class));
+    }
 
-        List<Map<String, Object>> devices = join(devicesFuture, List.of());
-        PanoramaTasks panoramaTasks = join(tasksFuture, new PanoramaTasks(List.of(), List.of()));
-        List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), devices);
-        Map<String, Object> alarms = join(alarmsFuture, emptyAlarmsPayload());
-        return object(
-                "deviceStats", deviceStats(devices),
-                "deviceTypeStats", deviceTypeStats(devices),
-                "patrolOverview", patrolOverview(panoramaTasks.instances(), join(mileageFuture, Map.of())),
-                "taskOverview", taskOverview(tasks),
-                "alarmStats", alarmStats(alarms),
-                "alarmSummary", alarms.get("summary"));
+    /**
+     * 按事件类型只重算受影响部分，未包含的部分保持上一轮快照值。各部分结果带
+     * 3 秒短 TTL 缓存（按用户隔离），多会话与多事件在窗口内共享一次管理端查询。
+     */
+    public Map<String, Object> statsSnapshot(Set<StatsPart> parts) {
+        if (parts == null || parts.isEmpty()) {
+            parts = EnumSet.allOf(StatsPart.class);
+        }
+        Map<String, Object> stats = new LinkedHashMap<>();
+        if (parts.contains(StatsPart.DEVICES)) {
+            List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
+            stats.put("deviceStats", deviceStats(devices));
+            stats.put("deviceTypeStats", deviceTypeStats(devices));
+        }
+        if (parts.contains(StatsPart.TASKS)) {
+            List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
+            PanoramaTasks panoramaTasks = cachedStats("tasks", () -> taskPayload(new OverviewRequestCache()));
+            List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), devices);
+            stats.put("patrolOverview", patrolOverview(panoramaTasks.instances(), cachedStats("mileage", this::todayMileageSummary)));
+            stats.put("taskOverview", taskOverview(tasks));
+        }
+        if (parts.contains(StatsPart.ALARMS)) {
+            Map<String, Object> alarms = cachedStats("alarms", this::alarmsPayload);
+            stats.put("alarmStats", alarmStats(alarms));
+            stats.put("alarmSummary", alarms.get("summary"));
+        }
+        return stats;
+    }
+
+    private <T> T cachedStats(String part, Supplier<T> supplier) {
+        String key = part + ":" + statsUserKey();
+        long now = System.currentTimeMillis();
+        CachedSnapshot snapshot = statsCache.get(key);
+        if (snapshot != null && now - snapshot.createdAt < STATS_CACHE_TTL_MILLIS) {
+            return (T) snapshot.value;
+        }
+        T value = supplier.get();
+        statsCache.put(key, new CachedSnapshot(now, value));
+        return value;
+    }
+
+    private String statsUserKey() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof JwtAuthenticationToken jwt) {
+            return jwt.getToken().getSubject();
+        }
+        return "anonymous";
+    }
+
+    private static final class CachedSnapshot {
+        private final long createdAt;
+        private final Object value;
+
+        private CachedSnapshot(long createdAt, Object value) {
+            this.createdAt = createdAt;
+            this.value = value;
+        }
     }
 
     private List<Map<String, Object>> mapsWithPointsAndDevices(
@@ -995,9 +1042,16 @@ public class PanoramaService {
     }
 
     private Map<String, Object> alarmsPayload() {
-        List<Map<String, Object>> alarms = centerClient.alarms();
+        LocalDateTime now = LocalDateTime.now(CHINA_ZONE);
+        String occurredFrom = now.toLocalDate().atStartOfDay().format(DATE_TIME_FORMATTER);
+        String occurredTo = now.format(DATE_TIME_FORMATTER);
+        List<Map<String, Object>> todayAlarms = centerClient.alarms(null, occurredFrom, occurredTo);
+        List<Map<String, Object>> unhandledAlarms = centerClient.alarms("NEW", null, null);
         TaskInstanceResolver taskInstanceResolver = new TaskInstanceResolver(List.of());
-        List<Map<String, Object>> items = alarms.stream()
+        List<Map<String, Object>> summaryItems = todayAlarms.stream()
+                .map(alarm -> alarmItem(alarm, taskInstanceResolver))
+                .toList();
+        List<Map<String, Object>> items = unhandledAlarms.stream()
                 .map(alarm -> alarmItem(alarm, taskInstanceResolver))
                 .toList();
         List<Map<String, Object>> high = filterAlarms(items, "HIGH");
@@ -1005,7 +1059,7 @@ public class PanoramaService {
         List<Map<String, Object>> low = filterAlarms(items, "LOW");
         return object(
                 "total", items.size(),
-                "summary", alarmSummary(items),
+                "summary", alarmSummary(summaryItems),
                 "high", alarmGroup(high),
                 "medium", alarmGroup(medium),
                 "low", alarmGroup(low));

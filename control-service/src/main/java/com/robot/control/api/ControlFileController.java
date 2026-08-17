@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -164,8 +165,11 @@ public class ControlFileController {
      * @return 下载地址响应
      */
     @PostMapping("/{fileId}/download-url")
-    public FileDownloadUrlResponse downloadUrl(@PathVariable String fileId, HttpServletRequest request) {
-        return mediaServiceClient.fileDownloadUrl(fileId, currentUserResolver.resolve(request));
+    public FileDownloadUrlResponse downloadUrl(
+            @PathVariable String fileId,
+            @RequestParam(defaultValue = "false") boolean inline,
+            HttpServletRequest request) {
+        return mediaServiceClient.fileDownloadUrl(fileId, currentUserResolver.resolve(request), inline);
     }
 
     /**

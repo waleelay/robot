@@ -436,8 +436,8 @@ public class ControlMediaServiceClient {
      * @param user 当前用户
      * @return 下载地址响应
      */
-    public FileDownloadUrlResponse fileDownloadUrl(String fileId, CurrentUser user) {
-        return post("/internal/media/files/{fileId}/download-url", null, user, FileDownloadUrlResponse.class, fileId);
+    public FileDownloadUrlResponse fileDownloadUrl(String fileId, CurrentUser user, boolean inline) {
+        return post("/internal/media/files/{fileId}/download-url?inline={inline}", null, user, FileDownloadUrlResponse.class, fileId, inline);
     }
 
     /**

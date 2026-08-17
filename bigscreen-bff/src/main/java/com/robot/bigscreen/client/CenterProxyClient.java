@@ -65,7 +65,7 @@ public class CenterProxyClient {
             return forwardMultipart(request, targetBaseUrl, targetPath);
         }
         String target = targetBaseUrl + targetPath;
-        String query = request.getQueryString();
+        String query = stripAccessToken(request.getQueryString());
         URI uri = UriComponentsBuilder.fromUriString(target)
                 .query(query)
                 .build(true)
@@ -82,7 +82,7 @@ public class CenterProxyClient {
 
     private ResponseEntity<byte[]> forwardMultipart(HttpServletRequest request, String targetBaseUrl, String targetPath) {
         String target = targetBaseUrl + targetPath;
-        String query = request.getQueryString();
+        String query = stripAccessToken(request.getQueryString());
         URI uri = UriComponentsBuilder.fromUriString(target)
                 .query(query)
                 .build(true)
@@ -143,6 +143,24 @@ public class CenterProxyClient {
             }
         }
         authenticatedRequestHeaders.apply(headers);
+    }
+
+    static String stripAccessToken(String query) {
+        if (query == null || query.isBlank()) {
+            return query;
+        }
+        String[] pairs = query.split("&");
+        StringBuilder kept = new StringBuilder();
+        for (String pair : pairs) {
+            if (pair.startsWith("access_token=")) {
+                continue;
+            }
+            if (!kept.isEmpty()) {
+                kept.append('&');
+            }
+            kept.append(pair);
+        }
+        return kept.toString();
     }
 
     private boolean isMultipart(HttpServletRequest request) {

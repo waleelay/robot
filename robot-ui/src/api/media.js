@@ -110,10 +110,11 @@ export function getFiles(params = {}) {
   })
 }
 
-export function fileDownloadUrl(fileId) {
+export function fileDownloadUrl(fileId, inline = false) {
   return request({
     url: `/api/bigscreen/control/files/${fileId}/download-url`,
-    method: 'post'
+    method: 'post',
+    params: inline ? { inline: true } : undefined
   })
 }
 

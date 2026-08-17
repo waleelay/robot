@@ -2,11 +2,15 @@ package com.robot.bigscreen.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.panorama.PanoramaService;
+import com.robot.bigscreen.panorama.StatsPart;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -39,10 +43,18 @@ public class PanoramaStatsEventRefresher {
         this.taskScheduler = taskScheduler;
     }
 
-    public void requestRefresh(String sessionId, Authentication authentication, Consumer<String> publisher) {
+    public void requestRefresh(
+            String sessionId,
+            Authentication authentication,
+            Consumer<String> publisher,
+            Set<StatsPart> parts) {
         RefreshState state = states.computeIfAbsent(sessionId, ignored -> new RefreshState());
         state.authentication = authentication;
         state.publisher = publisher;
+        if (parts == null || parts.isEmpty()) {
+            parts = EnumSet.allOf(StatsPart.class);
+        }
+        state.mergeParts(parts);
         state.dirty.set(true);
         scheduleIfNeeded(sessionId, state);
     }
@@ -63,12 +75,16 @@ public class PanoramaStatsEventRefresher {
         }
         state.dirty.set(false);
         try {
-            Map<String, Object> snapshot = withAuthentication(state.authentication, panoramaService::statsSnapshot);
-            if (!Objects.equals(state.previousSnapshot, snapshot)) {
-                state.previousSnapshot = snapshot;
+            Set<StatsPart> parts = state.drainParts();
+            Map<String, Object> snapshot = withAuthentication(
+                    state.authentication, () -> panoramaService.statsSnapshot(parts));
+            Map<String, Object> merged = new LinkedHashMap<>(state.previousSnapshot);
+            merged.putAll(snapshot);
+            if (!Objects.equals(state.previousSnapshot, merged)) {
+                state.previousSnapshot = merged;
                 Consumer<String> publisher = state.publisher;
                 if (publisher != null) {
-                    publisher.accept(event(snapshot));
+                    publisher.accept(event(merged));
                 }
             }
         } catch (RuntimeException exception) {
@@ -107,8 +123,23 @@ public class PanoramaStatsEventRefresher {
     private static final class RefreshState {
         private final AtomicBoolean scheduled = new AtomicBoolean();
         private final AtomicBoolean dirty = new AtomicBoolean();
+        private final Set<StatsPart> pendingParts = EnumSet.noneOf(StatsPart.class);
         private volatile Authentication authentication;
         private volatile Consumer<String> publisher;
-        private volatile Map<String, Object> previousSnapshot;
+        private volatile Map<String, Object> previousSnapshot = Map.of();
+
+        private void mergeParts(Set<StatsPart> parts) {
+            synchronized (pendingParts) {
+                pendingParts.addAll(parts);
+            }
+        }
+
+        private Set<StatsPart> drainParts() {
+            synchronized (pendingParts) {
+                Set<StatsPart> parts = EnumSet.copyOf(pendingParts);
+                pendingParts.clear();
+                return parts.isEmpty() ? EnumSet.allOf(StatsPart.class) : parts;
+            }
+        }
     }
 }

@@ -3,10 +3,12 @@ package com.robot.bigscreen.ws;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.robot.bigscreen.panorama.StatsPart;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -323,29 +325,39 @@ public class PanoramaWebSocketEventAdapter {
         return writeValue(event);
     }
 
-    public boolean requiresStatsRefresh(String sessionId, String centerPayload) {
+    public Set<StatsPart> statsRefreshParts(String sessionId, String centerPayload) {
         JsonNode root = readTree(centerPayload);
         if (root == null || !root.path("data").isObject()) {
-            return false;
+            return Set.of();
         }
         String event = text(root, "event");
-        if (TASK_EVENTS.contains(event) || ALARM_EVENTS.contains(event) || DEVICE_EVENTS.contains(event)
-                || MANAGEMENT_TASK_INVALIDATED.equals(event) || MANAGEMENT_ALARM_INVALIDATED.equals(event)
+        Set<StatsPart> parts = new HashSet<>();
+        if (ALARM_EVENTS.contains(event) || MANAGEMENT_ALARM_INVALIDATED.equals(event)) {
+            parts.add(StatsPart.ALARMS);
+        }
+        if (TASK_EVENTS.contains(event) || MANAGEMENT_TASK_INVALIDATED.equals(event)
                 || ROBOT_MILEAGE_CHANGED.equals(event)) {
-            return true;
+            parts.add(StatsPart.TASKS);
+        }
+        if (DEVICE_EVENTS.contains(event)) {
+            parts.add(StatsPart.DEVICES);
         }
         if (!ROBOT_STATE_EVENT.equals(event)) {
-            return false;
+            return parts;
         }
         JsonNode data = root.path("data");
         String robotId = text(data, "robotId");
         if (robotId.isBlank()) {
-            return false;
+            return parts;
         }
         String status = panoramaDeviceStatus(data);
         Map<String, String> robotStatuses = robotStatusesBySession.computeIfAbsent(
                 sessionId, ignored -> new ConcurrentHashMap<>());
-        return !status.equalsIgnoreCase(robotStatuses.put(robotId, status));
+        if (!status.equalsIgnoreCase(robotStatuses.put(robotId, status))) {
+            parts.add(StatsPart.DEVICES);
+            parts.add(StatsPart.TASKS);
+        }
+        return parts;
     }
 
     public void removeSession(String sessionId) {

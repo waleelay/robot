@@ -37,6 +37,7 @@ public class FileObjectStorageService {
     private final MediaProperties properties;
     private MinioClient client;
     private MinioClient presignClient;
+    private MinioClient downloadPresignClient;
 
     public FileObjectStorageService(MediaProperties properties) {
         this.properties = properties;
@@ -191,15 +192,19 @@ public class FileObjectStorageService {
     }
 
     public String presignDownload(String objectKey, int ttlSeconds, String fileName, String contentType) {
+        return presignDownload(objectKey, ttlSeconds, fileName, contentType, false);
+    }
+
+    public String presignDownload(String objectKey, int ttlSeconds, String fileName, String contentType, boolean inline) {
         requireEnabled();
         try {
-            return presignClient().getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+            return downloadPresignClient().getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .bucket(bucket())
                     .object(objectKey)
                     .method(Method.GET)
                     .expiry(ttlSeconds, TimeUnit.SECONDS)
                     .extraQueryParams(Map.of(
-                            "response-content-disposition", contentDisposition(fileName),
+                            "response-content-disposition", contentDisposition(fileName, inline),
                             "response-content-type", contentType == null || contentType.isBlank()
                                     ? "application/octet-stream"
                                     : contentType))
@@ -209,7 +214,10 @@ public class FileObjectStorageService {
         }
     }
 
-    private String contentDisposition(String fileName) {
+    private String contentDisposition(String fileName, boolean inline) {
+        if (inline) {
+            return "inline";
+        }
         String fallback = safeFileName(fileName == null || fileName.isBlank() ? "download" : fileName)
                 .replace("\"", "");
         String encoded = URLEncoder.encode(fileName == null || fileName.isBlank() ? fallback : fileName, StandardCharsets.UTF_8)
@@ -303,6 +311,7 @@ public class FileObjectStorageService {
         if (client == null) {
             client = MinioClient.builder()
                     .endpoint(properties.getMinio().getEndpoint())
+                    .region(properties.getMinio().getRegion())
                     .credentials(properties.getMinio().getAccessKey(), properties.getMinio().getSecretKey())
                     .build();
         }
@@ -313,10 +322,22 @@ public class FileObjectStorageService {
         if (presignClient == null) {
             presignClient = MinioClient.builder()
                     .endpoint(properties.getMinio().getPublicEndpoint())
+                    .region(properties.getMinio().getRegion())
                     .credentials(properties.getMinio().getAccessKey(), properties.getMinio().getSecretKey())
                     .build();
         }
         return presignClient;
+    }
+
+    private synchronized MinioClient downloadPresignClient() {
+        if (downloadPresignClient == null) {
+            downloadPresignClient = MinioClient.builder()
+                    .endpoint(properties.getMinio().getDownloadPublicEndpoint())
+                    .region(properties.getMinio().getRegion())
+                    .credentials(properties.getMinio().getAccessKey(), properties.getMinio().getSecretKey())
+                    .build();
+        }
+        return downloadPresignClient;
     }
 
     private String bucket() {
