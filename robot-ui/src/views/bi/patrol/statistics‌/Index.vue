@@ -184,11 +184,11 @@
             </div>
           </div>
           <div class="pt16 pr20 pb16 pl20 hp279 flex-column flx-justify-between">
-            <div class="task-list w100 flx-justify-between flex-column">
+            <div class="task-list w100 flx-justify-between flex-column flex1">
               <div
                 v-for="(item, index) in taskCompletionItems"
                 :key="item.status"
-                class="task-item flex-column">
+                class="w100 task-item flex-column">
                 <div class="d-flex flex1 flx-justify-between w100">
                   <div class="type">{{ item.name }}</div>
                   <div class="number">{{ item.percent }}%</div>
