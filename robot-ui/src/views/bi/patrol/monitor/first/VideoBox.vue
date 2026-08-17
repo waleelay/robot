@@ -3,7 +3,11 @@
   :key="index" -->
   <div
     class="item"
-    :class="className + ' ' + (splitType === 1 ? 'one' : splitType === 4 ? 'four' : splitType === 6 ? 'six' : 'nine') + (dragOver ? ' drop-active' : '')"
+    :class="[
+      className,
+      splitType === 1 ? 'one' : splitType === 4 ? 'four' : splitType === 6 ? 'six' : 'nine',
+      { 'drop-active': dragOver, 'is-page-fullscreen-cell': isPageFullscreen }
+    ]"
     :id="`${prefixId}slot_${index}`"
     @dragover.prevent="onDragOver"
     @dragenter.prevent="onDragEnter"
@@ -36,7 +40,10 @@
         <span class="symbol" :class="{ 'is-active': recordingActive }"></span>
         <span class="ml6">{{ recordingTime }}</span>
       </div>
-      <div class="top flx-justify-between w100 pr10 pl10 pt10 pb18">
+      <div
+        class="top flx-justify-between w100 pl10 pt10 pb18"
+        :class="isFullscreenTopRightCell ? 'fullscreen-exit-gutter' : 'pr10'"
+      >
         <!-- ---{{ ZQL_videosInfos[`slot_${index}`].status }} -->
         <!-- 二级监控：仅左上角摄像头名称；一级保留装备图标/名称 + 右上角 VideoInfo -->
         <div class="title flx-center">
@@ -49,7 +56,7 @@
           </template>
         </div>
         <div v-if="!cameraTitleOnly && !isFixedCamera" class="flx-center">
-          <VideoInfo :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }" :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key" />
+          <VideoInfo :className="overlaySizeClass" :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key" />
         </div>
       </div>
       <div class="bottom flx-justify-between w100 pr10 pl10" style="z-index: 2;">
@@ -70,7 +77,7 @@
             @removeVideo="$emit('removeVideo', $event)"
             @refreshVideo="$emit('refreshVideo', $event)"
             :ref="`videoToolRefslot_${index}`"
-            :className="{ one: splitType === 1, four: splitType === 4, nine: splitType === 9  }"
+            :className="overlaySizeClass"
             :showControl="showControl && !isFixedCamera" />
         </div>
       </div>
@@ -129,6 +136,11 @@ export default {
       type: String,
       default: ''
     },
+    // 页面全屏：名称常显，底部工具条悬停显示
+    isPageFullscreen: {
+      type: Boolean,
+      default: false
+    }
   },
   computed: {
     ...mapState('websocketRobot', ['cameras', 'selectedRobotId', 'robots']),
@@ -138,6 +150,26 @@ export default {
     },
     index() {
       return this.videoIndex
+    },
+    // 全屏退出按钮在视口右上角，仅右上格需要给电量/状态标签让位
+    isFullscreenTopRightCell() {
+      if (!this.isPageFullscreen) return false
+      if (this.splitType === 1) return this.index === 1
+      if (this.splitType === 4) return this.index === 2
+      if (this.splitType === 6) return this.index === 2
+      if (this.splitType === 9) return this.index === 3
+      return false
+    },
+    // 六分屏小格与九分屏同尺寸，沿用 nine 的图标/标签/文字
+    isSixSmallCell() {
+      return this.splitType === 6 && this.index !== 1
+    },
+    overlaySizeClass() {
+      return {
+        one: this.splitType === 1,
+        four: this.splitType === 4,
+        nine: this.splitType === 9 || this.isSixSmallCell
+      }
     },
     cameraInfo() {
       return this.cameras?.[this.ZQL_videosInfos[`slot_${this.index}`]?.key] || {}
@@ -279,3 +311,55 @@ export default {
   }
 }
 </script>
+
+<style lang="scss" scoped>
+.item {
+  /* 视频铺满时盖住 inset 阴影，用上层描边保证边框可见 */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    border: 1px solid rgba(29, 149, 255, 0.5);
+    pointer-events: none;
+    z-index: 3;
+    box-sizing: border-box;
+  }
+}
+
+/* 页面全屏：名称常显，底部工具条默认隐藏、悬停该格时显示 */
+.item.is-page-fullscreen-cell {
+  min-height: 100%;
+
+  .top {
+    opacity: 1;
+  }
+
+  /* 覆盖 pr10 !important：给右上角退出按钮让位 */
+  .top.fullscreen-exit-gutter {
+    padding-right: 72px !important;
+  }
+
+  .empty-device {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 100% !important;
+  }
+
+  .bottom {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  &:hover .bottom {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+</style>

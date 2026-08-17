@@ -3306,7 +3306,7 @@ input[type="range"].vertical-slider {
         width: 420px;
         height: 236.25px;
       }
-      &.four, &.nine {
+      &.four, &.nine, &.six:not(.six-1) {
         .top, .bottom {
           .title {
             font-size: 12px;

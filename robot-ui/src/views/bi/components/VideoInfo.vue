@@ -1,14 +1,17 @@
 <template>
   <div class="flx-center custom-video-info" :class="className">
-    <div class="info-item flx-center">
+    <div
+      class="info-item flx-center"
+      :title="batteryTitle"
+    >
       <svg-icon
         :icon-class="currentRobot?.battery >= 90 ? 'battery-4' : currentRobot?.battery >= 80 ? 'battery-3' : currentRobot?.battery >= 50 ? 'battery-2' : currentRobot?.battery >= 40 ? 'battery-1' : 'battery-0'"
         :style="{ color: currentRobot?.battery < 50 ? '#D33333' : '#3DB56A' }"
       >
       </svg-icon>
-      <span class="ml4">{{ currentRobot?.battery || 0 }}%</span>
+      <span v-if="!compactInfo" class="ml4">{{ currentRobot?.battery || 0 }}%</span>
     </div>
-    <div class="info-item flx-center ml20">
+    <div v-if="!compactInfo" class="info-item flx-center ml20">
       <svg-icon icon-class="meter" style="color: #21CCE7" />
       <span class="ml4">{{ Number(currentRobot?.speed || 0).toFixed(2) }}m/s</span>
     </div>
@@ -46,6 +49,13 @@ export default {
     currentRobot() {
       const robotId = this.cameraInfo?.robotId
       return this.robotBaseInfo?.[robotId] || {}
+    },
+    // 六分屏小格、九分屏：右上角仅电量图标 + 状态
+    compactInfo() {
+      return !!this.className?.nine
+    },
+    batteryTitle() {
+      return `电量 ${this.currentRobot?.battery || 0}%`
     },
     latencyText() {
       const latencyMs = this.cameraInfo?.latencyMs

@@ -1,44 +1,59 @@
 <template>
-<div class="custom-video-div" :class="[prefixId, { 'is-page-fullscreen': isPageFullscreen }]">
-  <div ref="videoScaleStage" class="video-scale-stage" :style="fullscreenStageStyle">
-    <div class="flx-justify-between">
-      <div class="card-title hp36 flx-justify-between pr26" :class="cardTitleClass" style="line-height: 36px;">
-        <div class="text">
-          多设备实时画面
-        </div>
-        <div class="split-screen flx-align-center">
-          <span @click="onSplitChange(1)" :class="{ 'is-active': splitType === 1 }">
-            <svg-icon icon-class="screen-split-1" />
-          </span>
-          <span @click="onSplitChange(4)" class="ml10" :class="{ 'is-active': splitType === 4 }">
-            <svg-icon icon-class="screen-split-4" />
-          </span>
-          <span @click="onSplitChange(6)" class="ml10" :class="{ 'is-active': splitType === 6 }">
-            <svg-icon icon-class="screen-split-6" />
-          </span>
-          <span @click="onSplitChange(9)" class="ml10" :class="{ 'is-active': splitType === 9 }">
-            <svg-icon icon-class="screen-split-9" />
-          </span>
-          <span class="ml10" @click="toggleFullscreen1">
-            <svg-icon :icon-class="isPageFullscreen ? 'close-fullscreen' : 'fullscreen1'" />
-          </span>
-        </div>
+<div :id="prefixId" class="custom-video-div" :class="[prefixId, { 'is-page-fullscreen': isPageFullscreen }]">
+  <!-- 页面全屏：右上角浮层退出（不占布局行） -->
+  <button
+    v-if="isPageFullscreen"
+    type="button"
+    class="page-fullscreen-exit"
+    title="退出全屏"
+    @click="toggleFullscreen1"
+  >
+    <svg-icon icon-class="close-fullscreen" />
+  </button>
+
+  <!-- 页面级 chrome：全屏时隐藏 -->
+  <div class="page-video-chrome flx-justify-between">
+    <div class="card-title hp36 flx-justify-between pr26" :class="cardTitleClass" style="line-height: 36px;">
+      <div class="text">
+        多设备实时画面
+      </div>
+      <div class="split-screen flx-align-center">
+        <span @click="onSplitChange(1)" :class="{ 'is-active': splitType === 1 }">
+          <svg-icon icon-class="screen-split-1" />
+        </span>
+        <span @click="onSplitChange(4)" class="ml10" :class="{ 'is-active': splitType === 4 }">
+          <svg-icon icon-class="screen-split-4" />
+        </span>
+        <span @click="onSplitChange(6)" class="ml10" :class="{ 'is-active': splitType === 6 }">
+          <svg-icon icon-class="screen-split-6" />
+        </span>
+        <span @click="onSplitChange(9)" class="ml10" :class="{ 'is-active': splitType === 9 }">
+          <svg-icon icon-class="screen-split-9" />
+        </span>
+        <span class="ml10" @click="toggleFullscreen1">
+          <svg-icon :icon-class="isPageFullscreen ? 'close-fullscreen' : 'fullscreen1'" />
+        </span>
       </div>
     </div>
+  </div>
+
+  <!-- 仅缩放视频列表区域，不含标题/分屏条 -->
+  <div ref="videoScaleStage" class="video-scale-stage" :style="fullscreenStageStyle">
     <div
       class="list hp759 flx-justify-between flex-wrap w100"
       :class="[
-        'mt9',
-        listPaddingClass
+        { mt9: !isPageFullscreen },
+        listPaddingClass,
+        isPageFullscreen ? `split-${splitType}` : ''
       ]"
-      style="width: 1364px;"
+      :style="isPageFullscreen ? undefined : { width: '1364px' }"
     >
-      <div class="horn top-left"></div>
-      <div class="horn top-right"></div>
-      <div class="horn bottom-left"></div>
-      <div class="horn bottom-right"></div>
+      <div v-show="!isPageFullscreen" class="horn top-left"></div>
+      <div v-show="!isPageFullscreen" class="horn top-right"></div>
+      <div v-show="!isPageFullscreen" class="horn bottom-left"></div>
+      <div v-show="!isPageFullscreen" class="horn bottom-right"></div>
       <!-- style="width: calc(100% - 42px); height: calc(100% - 30px);" 1312 738 -->
-      <div v-if="splitType === 6" class="pr5 pl5">
+      <div v-if="splitType === 6" class="split-6-wrap" :class="{ 'pr5 pl5': !isPageFullscreen }">
         <div class="d-flex">
           <div
             :draggable="!!ZQL_videosInfos['slot_1']"
@@ -46,7 +61,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_1'] ? 'grab' : 'default' }"
           >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_1')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="1" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-1" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_1')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="1" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :isPageFullscreen="isPageFullscreen" className="six-1" />
           </div>
           <!-- <VideoBox :videoIndex="0" :prefixId="prefixId" :splitType="splitType" :slotDevices="slotDevices" @updateSlot="updateSlot" className="six-1" /> -->
           <div class="ml26">
@@ -67,6 +82,7 @@
                 :prefixId="prefixId"
                 :splitType="splitType"
                 :ZQL_videosInfos="ZQL_videosInfos"
+                :isPageFullscreen="isPageFullscreen"
                 className="six-2"
               />
             </div>
@@ -76,7 +92,7 @@
               @dragend="onDragEnd"
               :style="{ cursor: ZQL_videosInfos['slot_3'] ? 'grab' : 'default' }"
             >
-              <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="mt16 six-3" />
+              <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :isPageFullscreen="isPageFullscreen" className="mt16 six-3" />
             </div>
           </div>
         </div>
@@ -87,7 +103,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_4'] ? 'grab' : 'default' }"
           >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="six-4" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :isPageFullscreen="isPageFullscreen" className="six-4" />
           </div>
           <div
             :draggable="!!ZQL_videosInfos['slot_5']"
@@ -95,7 +111,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_5'] ? 'grab' : 'default' }"
           >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml28 six-5" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :isPageFullscreen="isPageFullscreen" className="ml28 six-5" />
           </div>
           <div
             :draggable="!!ZQL_videosInfos['slot_6']"
@@ -103,7 +119,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_6'] ? 'grab' : 'default' }"
             >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" className="ml26 six-6" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :isPageFullscreen="isPageFullscreen" className="ml26 six-6" />
           </div>
         </div>
       </div>
@@ -127,6 +143,7 @@
             :prefixId="prefixId"
             :splitType="splitType"
             :ZQL_videosInfos="ZQL_videosInfos"
+            :isPageFullscreen="isPageFullscreen"
           />
         </div>
       </template>
@@ -144,6 +161,7 @@
           :prefixId="prefixId"
           :splitType="splitType"
           :ZQL_videosInfos="ZQL_videosInfos"
+          :isPageFullscreen="isPageFullscreen"
         />
       </template>
     </div>
@@ -157,6 +175,7 @@ import canvasUtil from '../../../js/mixins/box-canvas.js'
 import VideoBox from './VideoBox.vue';
 import { mapActions, mapState } from 'vuex';
 import { onDragStart, onDragEnd } from '@/store/modules/dragVideo.js';
+import { events as fullscreenEvents, enterFullscreen, exitFullscreen, isElementFullscreen } from '@/utils/fullscreen.js';
 export default {
   name: 'LeftVideo',
   mixins: [canvasUtil],
@@ -205,10 +224,7 @@ export default {
       ZQL_sources: {},
       statusArr: {}, // 改为对象形式，键名为'slot_1'...
       sourceceList: [],
-      manualChange: false,
-      fullscreenScale: 1,
-      fullscreenStageWidth: 1432,
-      fullscreenStageHeight: 804
+      manualChange: false
     }
   },
   computed: {
@@ -224,6 +240,8 @@ export default {
       return this.prefixId === 'test-video-div-first'
     },
     listPaddingClass() {
+      // 页面全屏时去掉装饰性内边距，便于视频区贴边铺满
+      if (this.isPageFullscreen) return ''
       if (this.isFirstScreen) return 'pr51 pl51'
       if (this.isSecondScreen) {
         if (this.splitType === 4) return 'pr12 pl12 pt10 pb10'
@@ -235,10 +253,10 @@ export default {
     },
     fullscreenStageStyle() {
       if (!this.isPageFullscreen) return {}
+      // 与 VideoTool 一致：元素全屏后用 CSS 铺满，不整体 scale，避免文字/图标被放大
       return {
-        width: `${this.fullscreenStageWidth}px`,
-        height: `${this.fullscreenStageHeight}px`,
-        transform: `scale(${this.fullscreenScale})`
+        width: '100%',
+        height: '100%'
       }
     }
   },
@@ -253,42 +271,18 @@ export default {
     // 从 store 加载机器人列表
 
     this.setPrefixId(this.prefixId)
-    document.addEventListener('fullscreenchange', this.updatePageFullscreenState)
-    document.addEventListener('webkitfullscreenchange', this.updatePageFullscreenState)
-    document.addEventListener('mozfullscreenchange', this.updatePageFullscreenState)
-    document.addEventListener('MSFullscreenChange', this.updatePageFullscreenState)
+    fullscreenEvents.forEach(event => {
+      document.addEventListener(event, this.handleFullscreenChange)
+    })
+    document.addEventListener('keydown', this.handleFullscreenKeydown)
   },
   beforeDestroy() {
-    document.removeEventListener('fullscreenchange', this.updatePageFullscreenState)
-    document.removeEventListener('webkitfullscreenchange', this.updatePageFullscreenState)
-    document.removeEventListener('mozfullscreenchange', this.updatePageFullscreenState)
-    document.removeEventListener('MSFullscreenChange', this.updatePageFullscreenState)
-    document.removeEventListener('resize', this.handleResize)
+    fullscreenEvents.forEach(event => {
+      document.removeEventListener(event, this.handleFullscreenChange)
+    })
+    document.removeEventListener('keydown', this.handleFullscreenKeydown)
   },
   methods: {
-    handleResize() {
-      this.updateFullscreenScale()
-    },
-    captureFullscreenStageSize() {
-      const stage = this.$refs.videoScaleStage
-      if (!stage) return
-      const width = Math.max(stage.offsetWidth, stage.scrollWidth)
-      const height = Math.max(stage.offsetHeight, stage.scrollHeight)
-      if (width > 0) this.fullscreenStageWidth = width
-      if (height > 0) this.fullscreenStageHeight = height
-    },
-    updateFullscreenScale() {
-      if (!this.isPageFullscreen) return
-      const viewportWidth = window.innerWidth || document.documentElement.clientWidth
-      const viewportHeight = window.innerHeight || document.documentElement.clientHeight
-      const horizontalGap = 48
-      const verticalGap = 48
-      const availableWidth = Math.max(viewportWidth - horizontalGap, 1)
-      const availableHeight = Math.max(viewportHeight - verticalGap, 1)
-      const scaleX = availableWidth / this.fullscreenStageWidth
-      const scaleY = availableHeight / this.fullscreenStageHeight
-      this.fullscreenScale = Math.max(Math.min(scaleX, scaleY), 0.1)
-    },
     ...mapActions('dragVideo', ['resetDrag', 'setSplitType']),
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'restartCamera', 'setPrefixId']),
     onDragStart,
@@ -540,57 +534,31 @@ export default {
       // console.log(`设备 ${deviceItem.desc} 算法 -> ${alg?.type || '未选择'}`);
     },
     toggleFullscreen(data) {},
-    fullscreenElement() {
-      return document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement
+    // 仅当本视频区处于元素全屏时退出，不碰网页 Header / F11 全屏
+    async exitPanelFullscreen() {
+      if (!isElementFullscreen(this.prefixId)) return
+      await exitFullscreen()
     },
-    requestFullscreen(element) {
-      const request = element.requestFullscreen || element.webkitRequestFullscreen || element.mozRequestFullScreen || element.msRequestFullscreen
-      if (request) return request.call(element)
-      return Promise.resolve()
-    },
-    exitFullscreen() {
-      const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen
-      if (exit) return exit.call(document)
-      return Promise.resolve()
-    },
+    // 视频区全屏：与 VideoTool 相同，对指定元素 requestFullscreen，与网页全屏相互独立
     async toggleFullscreen1() {
-      const target = this.$el && this.$el.classList && this.$el.classList.contains('custom-video-div')
-        ? this.$el
-        : this.$el && this.$el.querySelector('.custom-video-div')
-      if (!target) return
-      const current = this.fullscreenElement()
-      if (current === target) {
-        await this.exitFullscreen()
+      if (!isElementFullscreen(this.prefixId)) {
+        await enterFullscreen(this.prefixId)
       } else {
-        if (current) await this.exitFullscreen()
-        this.captureFullscreenStageSize()
-        await this.requestFullscreen(target)
+        await this.exitPanelFullscreen()
       }
-      this.updatePageFullscreenState()
-      if (this.isPageFullscreen) {
-        // 全屏时添加resize监听
-        window.addEventListener('resize', this.handleResize)
-        this.$nextTick(() => this.updateFullscreenScale())
-        // 阻止页面滚动
-        // document.body.style.overflow = 'hidden';
-      } else {
-        window.removeEventListener('resize', this.handleResize)
-        // document.body.style.overflow = '';
+      await new Promise(resolve => requestAnimationFrame(resolve))
+      this.syncPanelFullscreen()
+    },
+    handleFullscreenKeydown(event) {
+      if (event.key === 'Escape' && this.isPageFullscreen) {
+        this.exitPanelFullscreen()
       }
     },
-    updatePageFullscreenState() {
-      const target = this.$el && this.$el.classList && this.$el.classList.contains('custom-video-div')
-        ? this.$el
-        : this.$el && this.$el.querySelector('.custom-video-div')
-      this.isPageFullscreen = !!target && this.fullscreenElement() === target
-      if (this.isPageFullscreen) {
-        window.addEventListener('resize', this.handleResize)
-        this.$nextTick(() => this.updateFullscreenScale())
-      } else {
-        window.removeEventListener('resize', this.handleResize)
-        this.fullscreenScale = 1
-        this.fullscreenIndex = null
-      }
+    handleFullscreenChange() {
+      this.syncPanelFullscreen()
+    },
+    syncPanelFullscreen() {
+      this.isPageFullscreen = isElementFullscreen(this.prefixId)
     },
     orderedPlayingVideoInfos() {
       // 按槽位序号收集正在播放的画面（拖拽后 slot_1 可能为空，不能只看 slot_1）
@@ -855,9 +823,37 @@ export default {
   transform-origin: center center;
 }
 
+/* 页面全屏退出浮层：根节点右上角，不占布局行 */
+.page-fullscreen-exit {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  .svg-icon {
+    font-size: 22px;
+  }
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.65);
+  }
+}
+
 .custom-video-div.is-page-fullscreen {
-  width: 100vw;
-  height: 100vh;
+  position: relative;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: #061a33;
   padding: 0;
@@ -866,8 +862,110 @@ export default {
   justify-content: center;
   transform: none !important;
 
+  .page-video-chrome {
+    display: none;
+  }
+
   .video-scale-stage {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 格子 CSS 铺满，文字/图标保持 VideoTool 原 px，不随画面放大 */
+  ::v-deep .list {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100%;
+    max-height: 100%;
+    width: min(100%, calc(100vh * 16 / 9)) !important;
+    height: min(100%, calc(100vw * 9 / 16)) !important;
+
+    .item.one,
+    .item.four,
+    .item.nine,
+    .item.six,
+    .item.six-1 {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    > * {
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+    }
+
+    &.split-1 {
+      display: flex !important;
+      align-items: stretch;
+      justify-content: stretch;
+
+      > * {
+        flex: 1 1 auto;
+        width: 100%;
+        height: 100%;
+      }
+    }
+
+    &.split-4 {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 8px;
+    }
+
+    &.split-9 {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    &.split-6 {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: 1fr 1fr 1fr;
+      gap: 8px;
+      align-items: stretch;
+      justify-items: stretch;
+
+      .split-6-wrap,
+      .split-6-wrap > .d-flex,
+      .split-6-wrap > .d-flex:first-child > .ml26 {
+        display: contents;
+      }
+
+      .split-6-wrap > .d-flex:first-child > div:first-child {
+        grid-column: 1 / 3;
+        grid-row: 1 / 3;
+      }
+
+      /* 无视频流时格子仍占满网格轨道，避免高度塌成 0 */
+      .split-6-wrap > .d-flex > div,
+      .split-6-wrap > .d-flex > .ml26 > div {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        align-self: stretch;
+      }
+
+      .item {
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 100% !important;
+      }
+
+      .ml26,
+      .ml28,
+      .mt16,
+      .mt20 {
+        margin: 0 !important;
+      }
+    }
   }
 }
 </style>
