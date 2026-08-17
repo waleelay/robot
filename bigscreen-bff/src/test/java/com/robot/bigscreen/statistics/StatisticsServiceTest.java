@@ -91,6 +91,42 @@ class StatisticsServiceTest {
     }
 
     @Test
+    void customRangeWithNonPaddedDatesFiltersInsteadOfReturningAllData() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.deviceTypeOptions()).thenReturn(List.of());
+        when(centerClient.devices()).thenReturn(List.of(
+                Map.of("serialNumber", "robot-001", "deviceType", "WHEELED_ROBOT"),
+                Map.of("serialNumber", "robot-002", "deviceType", "ROBOT_DOG")));
+        when(centerClient.realtimeStatuses(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of(Map.of("serialNumber", "robot-001", "onlineStatus", "online")));
+        when(centerClient.taskWorkflowInstancesForStatistics()).thenReturn(List.of(
+                task("COMPLETED", "2026-07-03T10:00:00", "robot-001", 3600),
+                task("FAILED", "2026-07-04T10:00:00", "robot-001", 1800),
+                task("RUNNING", "2026-07-05T10:00:00", "robot-002", 600),
+                task("COMPLETED", "2026-06-30T10:00:00", "robot-001", 3600)));
+        when(centerClient.alarmsForStatistics(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of(
+                        alarm("robot-001", "FIRE", "IMMEDIATE_DISPOSAL", "2026-07-03T11:00:00", "A区"),
+                        alarm("robot-001", "FIRE", "FALSE_ALARM", "2026-07-03T12:00:00", "A区"),
+                        alarm("robot-002", "SMOKE", null, "2026-07-04T12:00:00", "B区")));
+        when(centerClient.mileageSummary(
+                        "2026-07-01 00:00:00", "2026-07-31 23:59:59", List.of("robot-001")))
+                .thenReturn(Map.of("hasData", true, "totalMeters", 12_000));
+        when(centerClient.mileageSummary(
+                        "2026-05-31 00:00:00", "2026-06-30 23:59:59", List.of("robot-001")))
+                .thenReturn(Map.of("hasData", true, "totalMeters", 8_000));
+        StatisticsService service = new StatisticsService(new ObjectMapper(), centerClient, tempDir.toString());
+
+        Map<String, Object> overview = service.overview(
+                "custom", "2026-7-1 00:00:00", "2026-7-31 23:59:59", "WHEELED_ROBOT", null);
+
+        Map<String, Object> kpis = map(overview.get("kpis"));
+        assertEquals(2, map(kpis.get("taskTotal")).get("value"));
+        assertEquals(2, map(kpis.get("aiAlarmTotal")).get("value"));
+        assertEquals(12.0, map(kpis.get("patrolMileage")).get("value"));
+    }
+
+    @Test
     void generatesFormalReportWithDynamicSectionsAndFriendlyEmptyValues() throws Exception {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         when(centerClient.deviceTypeOptions()).thenReturn(List.of());

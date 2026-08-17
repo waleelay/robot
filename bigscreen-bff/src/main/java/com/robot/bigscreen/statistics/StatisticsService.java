@@ -52,6 +52,7 @@ public class StatisticsService {
 
     private static final ZoneOffset CHINA_ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter LENIENT_DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-M-d HH:mm:ss");
     private static final DateTimeFormatter FILE_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final ExecutorService IO_EXECUTOR = Executors.newFixedThreadPool(4, runnable -> {
         Thread thread = new Thread(runnable, "statistics-io");
@@ -759,6 +760,11 @@ public class StatisticsService {
         }
         try {
             return LocalDateTime.parse(raw, DATE_TIME_FORMATTER);
+        } catch (DateTimeParseException ignored) {
+            // 兼容前端自定义时间未补零的格式，例如 2026-7-28 00:00:00。
+        }
+        try {
+            return LocalDateTime.parse(raw, LENIENT_DATE_TIME_FORMATTER);
         } catch (DateTimeParseException ignored) {
             return null;
         }

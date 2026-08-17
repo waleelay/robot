@@ -19,7 +19,7 @@
               start-placeholder="开始日期"
               end-placeholder="结束日期"
               format="yyyy-M-d"
-              value-format="yyyy-M-d"
+              value-format="yyyy-MM-dd"
               :clearable="false"
               :picker-options="pickerOptions"
               @click.native.stop
