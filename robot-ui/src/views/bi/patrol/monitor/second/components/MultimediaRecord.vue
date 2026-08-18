@@ -17,7 +17,7 @@
         </div>
       </div>
     </div>
-    <div class="media-list common-scroll mt10 p10 hp193">
+    <div class="media-list common-scroll mt10 p10 hp223">
       <div
         v-for="(item, index) in displayList"
         :key="item.fileId"
@@ -277,6 +277,8 @@ export default {
     flex-shrink: 0;
     overflow: hidden;
     background: #001529;
+    border: 1px solid rgb(11 249 254 / 16%);
+    // background: linear-gradient(180deg, rgba(0, 0, 0, 0.00) 72.22%, rgba(0, 0, 0, 0.80) 100%), url(<path-to-image>) lightgray 50% / cover no-repeat;
     > img,
     > video {
       width: 100%;

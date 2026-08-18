@@ -21,16 +21,17 @@
       </div>
     </transition>
     <div v-if="globalMapId && globalMapId !== 'gis'" class="slam-map-host w100 h100" style="z-index: 0;">
-      <GlobalSlamMap
-        :map="slamMapPayload"
-        :pathPointIds="slamPathPointIds"
-        :collapse="collapse"
-        visible-layout="panorama"
-        ref="globalMapRef"
-        :show-labels="true"
-        @changeMapType="changeMapType"
-        @preview-unavailable="onSlamPreviewUnavailable"
-      />
+          <GlobalSlamMap
+            :map="slamMapPayload"
+            :pathPointIds="slamPathPointIds"
+            :list-filter-task-id="listFilterTaskId"
+            :collapse="collapse"
+            visible-layout="panorama"
+            ref="globalMapRef"
+            :show-labels="true"
+            @changeMapType="changeMapType"
+            @preview-unavailable="onSlamPreviewUnavailable"
+          />
     </div>
     <template v-if="globalMapId === 'gis'">
       <GlobalGisMap
@@ -73,6 +74,10 @@ export default {
     collapse: {
       type: Boolean,
       default: false
+    },
+    listFilterTaskId: {
+      type: [String, Number],
+      default: null
     }
   },
   components: {
@@ -88,7 +93,8 @@ export default {
       isSlam: false,
       currentSlamMapId: null,
       autoSwitchedSlam: false,
-      currentGisZoom: null
+      currentGisZoom: null,
+      pathOpenedByTaskCard: false
     }
   },
   computed: {
@@ -173,7 +179,30 @@ export default {
       this.$refs.globalMapRef?.togglePath?.(visible)
     },
     toggleTaskPaths(visible) {
+      this.pathOpenedByTaskCard = false
+      this.applyTaskPaths(visible)
+    },
+    applyTaskPaths(visible) {
       this.$refs.globalMapRef?.toggleTaskPaths?.(visible)
+    },
+    setSlamPathActive(active) {
+      const tool = this.$refs.mapToolRef
+      if (!this.isSlam || !tool) return
+      const next = !!active
+      if (tool.pathActive !== next) tool.pathActive = next
+      this.applyTaskPaths(next)
+    },
+    ensureTaskPathHighlighted() {
+      if (!this.isSlam) return
+      const tool = this.$refs.mapToolRef
+      if (!tool || tool.pathActive) return
+      this.pathOpenedByTaskCard = true
+      this.setSlamPathActive(true)
+    },
+    onTaskCardDeselected() {
+      if (!this.pathOpenedByTaskCard) return
+      this.pathOpenedByTaskCard = false
+      this.setSlamPathActive(false)
     },
     toggleRanging(visible) {
       this.$refs.globalMapRef?.toggleRanging?.(visible)
@@ -233,6 +262,13 @@ export default {
           const stillExists = list.some(item => String(item.id) === String(this.currentSlamMapId))
           if (!stillExists) this.selectDefaultSlamMap()
         }
+      }
+    },
+    listFilterTaskId: {
+      handler(taskId) {
+        const hasFilter = taskId !== undefined && taskId !== null && taskId !== ''
+        if (hasFilter) this.ensureTaskPathHighlighted()
+        else this.onTaskCardDeselected()
       }
     }
   },

@@ -152,7 +152,7 @@
                 </g>
               </template>
               <!-- 模拟执行：仅画避障后的已走路径；未走仍由 canvas 两点虚线负责 -->
-              <g v-if="mockExecutionPathLayer" class="mock-exec-path-layer" pointer-events="none">
+              <g v-if="!showSmall && mockExecutionPathLayer" class="mock-exec-path-layer" pointer-events="none">
                 <polyline
                   v-if="mockExecutionPathLayer.traveledPoints"
                   :points="mockExecutionPathLayer.traveledPoints"
@@ -177,7 +177,8 @@
                   />
                 </g>
               </g>
-              <!-- 真实环境：本页会话内记录的已走路径（刷新后不恢复） -->
+              <!-- 真实环境：本页会话内记录的已走路径（刷新后不恢复）；小窗口实时地图不展示 -->
+              <template v-if="!showSmall">
               <g
                 v-for="layer in sessionTraveledPathLayers"
                 :key="`session-traveled-${layer.robotId}`"
@@ -200,6 +201,7 @@
                   />
                 </g>
               </g>
+              </template>
               <!-- 装备 -->
               <!-- 图标随地图缩放而变化 -->
               <!-- :transform="`translate(${robot.pixel.x}, ${robot.pixel.y})${showSmall ? '' : ` scale(${1 / zoom})`}`" -->
@@ -598,7 +600,9 @@ export default {
     // 侧栏是否收缩；与 visibleLayout 配合，将地图限制在未遮挡区域
     collapse: { type: Boolean, default: false },
     // 'home' 指挥中心（顶栏+左右侧）| 'panorama' 全景（顶栏+左侧）| '' 不限制
-    visibleLayout: { type: String, default: '' }
+    visibleLayout: { type: String, default: '' },
+    // 全景任务列表选中的任务：只展示该任务路径；空则按 MapTool「路径」状态
+    listFilterTaskId: { type: [String, Number], default: null }
   },
   data() {
     return {
@@ -858,13 +862,22 @@ export default {
       }
     },
     // 当前应展示的全部任务路径层
+    // 任务卡片过滤仅在 MapTool「路径」高亮（showAllTaskPaths）时生效；关闭路径则清空全部任务路径
     allDisplayTaskPaths() {
       const list = []
+      const filterId = this.listFilterTaskId
+      const hasListFilter = filterId !== undefined && filterId !== null && filterId !== ''
       if (this.showAllTaskPaths) {
-        list.push(...this.mapTaskPaths)
+        if (hasListFilter) {
+          const hit = this.mapTaskPaths.find(item => String(item.taskId) === String(filterId))
+          if (hit) list.push(hit)
+        } else {
+          list.push(...this.mapTaskPaths)
+        }
       }
       const robot1Path = this.robot1TaskPathLayer
-      if (robot1Path && !list.some(item => String(item.taskId) === String(robot1Path.taskId))) {
+      if (robot1Path && (!hasListFilter || String(robot1Path.taskId) === String(filterId))
+        && !list.some(item => String(item.taskId) === String(robot1Path.taskId))) {
         list.push(robot1Path)
       }
       const unifiedColor = TASK_PATH_COLORS[0]

@@ -446,7 +446,9 @@ export default {
       this.setMapSearchValue(this.searchValue)
     },
     changeLayer() {},
-    // GIS：内置路径；SLAM：当前地图全部任务路径
+    // GIS：内置路径；SLAM：当前地图全部任务路径。
+    // 高亮时选中卡片只显示该任务；再点「路径」关闭并清空。
+    // 未高亮时选中卡片会高亮「路径」并只显示该任务；取消卡片或再点「路径」均清空。
     showPath() {
       this.pathActive = !this.pathActive
       if (this.isSlam) {
@@ -454,6 +456,13 @@ export default {
         return
       }
       this.$emit('togglePath', this.pathActive)
+    },
+    setPathActive(active) {
+      const next = !!active
+      if (this.pathActive === next) return
+      this.pathActive = next
+      if (this.isSlam) this.$emit('toggleTaskPaths', next)
+      else this.$emit('togglePath', next)
     },
     // SLAM 地图：切换点位显示
     showPoint() {

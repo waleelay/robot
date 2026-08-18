@@ -103,6 +103,7 @@ export default {
       }
     },
     syncSessionTraveledPaths() {
+      if (this.showSmall) return
       if (this.hasPreview && this.map?.id) {
         const mapId = this.map.id
         const robots = this.slamOfRobot?.[String(mapId)]?.robots || []

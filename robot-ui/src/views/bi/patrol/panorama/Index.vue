@@ -9,9 +9,9 @@
 -->
 <template>
   <div class="panorama-div h100" :class="{ collapse }">
-    <Left @changeSide="$emit('changeSide')" @changeCollapse="changeCollapse" :collapse="collapse" />
+    <Left @changeSide="$emit('changeSide')" @changeCollapse="changeCollapse" :collapse="collapse" @focus-task-path="onFocusTaskPath" />
     <!-- <Right @changeCollapse="changeCollapse" :collapse="collapse" /> -->
-    <BiPatrolPanoramaMap :collapse="collapse" />
+    <BiPatrolPanoramaMap :collapse="collapse" :list-filter-task-id="listFilterTaskId" />
   </div>
 </template>
 
@@ -31,11 +31,15 @@ export default {
   data() {
     return {
       collapse: false,
+      listFilterTaskId: null,
     }
   },
   methods: {
     changeCollapse() {
       this.collapse = !this.collapse
+    },
+    onFocusTaskPath(taskId) {
+      this.listFilterTaskId = (taskId === undefined || taskId === null || taskId === '') ? null : taskId
     }
   }
 }

@@ -476,16 +476,21 @@ export default {
       const id = this.resolveTaskListId(taskId)
       this.activeTaskId = id
       this.setShowRobotIds(this.getTaskRobotIds(id))
+      this.emitFocusTaskPath(id)
       if (this.$refs.taskRobotViewRef?.dialogVisible) {
         this.$refs.taskRobotViewRef.dialogVisible = false
       }
       this.$nextTick(() => this.scrollTaskCardToFront(id))
+    },
+    emitFocusTaskPath(taskId) {
+      this.$emit('focus-task-path', taskId == null || taskId === '' ? null : taskId)
     },
     /** 点击任务卡片：选中/取消选中卡片，并在地图上高亮相关装备（不打开视频弹窗） */
     selectTask(taskId) {
       if (this.activeTaskId == taskId) {
         this.activeTaskId = null
         this.setShowRobotIds([])
+        this.emitFocusTaskPath(null)
         if (this.$refs.taskRobotViewRef) {
           this.$refs.taskRobotViewRef.dialogVisible = false
         }
@@ -493,6 +498,7 @@ export default {
       }
       this.activeTaskId = taskId
       this.setShowRobotIds(this.getTaskRobotIds(taskId))
+      this.emitFocusTaskPath(taskId)
       // 切换任务时关闭上一任务的视频弹窗
       if (this.$refs.taskRobotViewRef?.dialogVisible) {
         this.$refs.taskRobotViewRef.dialogVisible = false
@@ -510,6 +516,7 @@ export default {
       this.activeTaskId = taskId
       const robotIds = this.getTaskRobotIds(taskId)
       this.setShowRobotIds(robotIds)
+      this.emitFocusTaskPath(taskId)
       dialog.showModal({
         taskInfo: { ...this.taskData[taskId] },
         robotIds
@@ -524,11 +531,13 @@ export default {
         this.$refs.taskRobotViewRef.dialogVisible = false
         this.activeTaskId = null
         this.setShowRobotIds([])
+        this.emitFocusTaskPath(null)
         return
       }
       this.activeTaskId = taskId
       const robotIds = (this.taskData[taskId]?.equipmentList || []).map(robot => robot.robotId)
       this.setShowRobotIds(robotIds)
+      this.emitFocusTaskPath(taskId)
       this.$refs.taskRobotViewRef.showModal({
         taskInfo: { ...this.taskData[taskId] },
         robotIds
@@ -538,6 +547,7 @@ export default {
     clearTaskRobotView() {
       this.activeTaskId = null
       this.setShowRobotIds([])
+      this.emitFocusTaskPath(null)
       if (this.$refs.taskRobotViewRef) {
         this.$refs.taskRobotViewRef.dialogVisible = false
       }
@@ -557,6 +567,7 @@ export default {
       if (this.activeTaskId == item.taskId || this.activeTaskId == this.getTaskPlanId(item)) {
         this.activeTaskId = null
         this.setShowRobotIds([])
+        this.emitFocusTaskPath(null)
         if (this.$refs.taskRobotViewRef) this.$refs.taskRobotViewRef.dialogVisible = false
       }
     },

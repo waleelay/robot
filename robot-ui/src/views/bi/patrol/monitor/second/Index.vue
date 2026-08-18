@@ -29,7 +29,7 @@
         />
         <MultimediaDetail ref="multimediaDetailRef" @deleted="handleMultimediaDeleted" />
       </div>
-      <div class="mt20 hp325 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
+      <div class="mt20 hp296 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
         <div class="card-title title-284-37">
           <div class="text">
             实时地图
