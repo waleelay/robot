@@ -74,6 +74,14 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
         Map<String, Object> incoming = objectMapper.readValue(message.getPayload(), new TypeReference<>() {});
         String type = stringValue(incoming.get("type"), "");
         String requestId = stringValue(incoming.get("requestId"), "");
+        jakarta.servlet.http.HttpServletRequest httpRequest = MediaWsAuthHandshakeInterceptor.request(session);
+        org.springframework.web.context.request.ServletRequestAttributes requestAttributes =
+                httpRequest == null ? null : new org.springframework.web.context.request.ServletRequestAttributes(httpRequest);
+        org.springframework.web.context.request.RequestAttributes previous =
+                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (requestAttributes != null) {
+            org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(requestAttributes);
+        }
         try {
             Map<String, Object> payload = mapValue(incoming.get("payload"));
             switch (type) {
@@ -105,6 +113,15 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
             send(session, rejectedType, requestId, object(
                     "code", "OPERATION_REJECTED",
                     "message", ex.getMessage()));
+        } finally {
+            if (requestAttributes != null) {
+                requestAttributes.requestCompleted();
+                if (previous != null) {
+                    org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(previous);
+                } else {
+                    org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+                }
+            }
         }
     }
 

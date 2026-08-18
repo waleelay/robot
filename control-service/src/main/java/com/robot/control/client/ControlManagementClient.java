@@ -30,12 +30,14 @@ public class ControlManagementClient {
 
     private static final Logger log = LoggerFactory.getLogger(ControlManagementClient.class);
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE = new ParameterizedTypeReference<>() {};
-    private static final Duration DEVICE_CACHE_TTL = Duration.ofSeconds(30);
+    private static final Duration DEFAULT_DEVICE_CACHE_TTL = Duration.ofSeconds(600);
 
     private final RestClient restClient;
     private final ControlProperties properties;
     private final RequestAuthorizationHeaders requestAuthorizationHeaders;
     private final Map<String, CachedDevice> deviceCache = new ConcurrentHashMap<>();
+    private volatile List<Map<String, Object>> devicesCache;
+    private volatile Instant devicesCacheExpiresAt;
 
     /**
      * 创建 ControlManagementClient 实例。
@@ -79,7 +81,7 @@ public class ControlManagementClient {
                         .or(() -> Optional.of(device)));
         if (loaded.isPresent()) {
             Map<String, Object> snapshot = new LinkedHashMap<>(loaded.get());
-            deviceCache.put(serialNumber, new CachedDevice(snapshot, now.plus(DEVICE_CACHE_TTL)));
+            deviceCache.put(serialNumber, new CachedDevice(snapshot, Instant.now().plus(deviceTtl())));
             return Optional.of(new LinkedHashMap<>(snapshot));
         }
         return cached == null
@@ -109,12 +111,28 @@ public class ControlManagementClient {
      * @return 设备列表
      */
     public List<Map<String, Object>> devices() {
+        Instant now = Instant.now();
+        if (devicesCache != null && devicesCacheExpiresAt != null && devicesCacheExpiresAt.isAfter(now)) {
+            return devicesCache;
+        }
+        List<Map<String, Object>> loaded = requestDevices();
+        devicesCache = loaded;
+        devicesCacheExpiresAt = now.plus(deviceTtl());
+        return loaded;
+    }
+
+    private List<Map<String, Object>> requestDevices() {
         URI uri = uri("/api/v1/management/devices")
                 .queryParam("pageNum", 1)
-                .queryParam("pageSize", 100)
+                .queryParam("pageSize", 500)
                 .build(true)
                 .toUri();
         return records(uri);
+    }
+
+    private Duration deviceTtl() {
+        int seconds = properties.getDeviceCacheTtlSeconds();
+        return seconds > 0 ? Duration.ofSeconds(seconds) : DEFAULT_DEVICE_CACHE_TTL;
     }
 
     /**

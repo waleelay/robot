@@ -1,6 +1,7 @@
 package com.robot.control.config;
 
 import com.robot.control.ws.MediaWebSocketHandler;
+import com.robot.control.ws.MediaWsAuthHandshakeInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -17,14 +18,19 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final MediaWebSocketHandler mediaWebSocketHandler;
+    private final MediaWsAuthHandshakeInterceptor authHandshakeInterceptor;
 
     /**
      * 创建 WebSocketConfig 实例。
      *
      * @param mediaWebSocketHandler WebSocket 处理器
+     * @param authHandshakeInterceptor 保存握手请求的拦截器
      */
-    public WebSocketConfig(MediaWebSocketHandler mediaWebSocketHandler) {
+    public WebSocketConfig(
+            MediaWebSocketHandler mediaWebSocketHandler,
+            MediaWsAuthHandshakeInterceptor authHandshakeInterceptor) {
         this.mediaWebSocketHandler = mediaWebSocketHandler;
+        this.authHandshakeInterceptor = authHandshakeInterceptor;
     }
 
     /**
@@ -35,6 +41,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(mediaWebSocketHandler, "/ws/media", "/ws/control")
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns("*")
+                .addInterceptors(authHandshakeInterceptor);
     }
 }

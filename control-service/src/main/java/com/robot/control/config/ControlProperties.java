@@ -13,6 +13,7 @@ public class ControlProperties {
 
     private String mediaServiceBaseUrl = "http://localhost:8088";
     private String managementServiceBaseUrl = "http://host.docker.internal:8866";
+    private int deviceCacheTtlSeconds = 600;
 
     /**
      * 返回 Media Service 基础地址。
@@ -48,5 +49,23 @@ public class ControlProperties {
      */
     public void setManagementServiceBaseUrl(String managementServiceBaseUrl) {
         this.managementServiceBaseUrl = managementServiceBaseUrl;
+    }
+
+    /**
+     * 返回设备档案与设备列表缓存 TTL（秒）。
+     *
+     * @return 缓存 TTL 秒数
+     */
+    public int getDeviceCacheTtlSeconds() {
+        return deviceCacheTtlSeconds;
+    }
+
+    /**
+     * 设置设备档案与设备列表缓存 TTL（秒）。
+     *
+     * @param deviceCacheTtlSeconds 缓存 TTL 秒数
+     */
+    public void setDeviceCacheTtlSeconds(int deviceCacheTtlSeconds) {
+        this.deviceCacheTtlSeconds = deviceCacheTtlSeconds;
     }
 }
