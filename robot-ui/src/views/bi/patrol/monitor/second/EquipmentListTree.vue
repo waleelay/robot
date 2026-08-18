@@ -34,7 +34,7 @@
             >
               <!-- @click="handleSelectEquipment(item)" -->
               <div class="flx-center">
-                <span class="dot" :class="{ error: item.status !== 0 }"></span>
+                <span class="dot"></span>
                 <span class="ml10">{{ item.name }}</span>
               </div>
               <!-- <span class="status p4 wp41" :class="{ error: item.status !== 'online' }">{{ item.status }}</span> -->

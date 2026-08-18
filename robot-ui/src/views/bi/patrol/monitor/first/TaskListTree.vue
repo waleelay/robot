@@ -58,13 +58,22 @@
                   <span class="ml10">{{ item.name }}</span>
                 </div>
                 <div v-if="equipment.type.includes('在线')" class="flx-center">
+                  <template v-if="showBattery(item)">
+                    <span class="wp36 tar">{{ robotBaseInfo[item.robotId]?.battery }}%</span>
+                    <svg-icon
+                      class="ml10 battery-svg"
+                      :icon-class="robotBaseInfo[item.robotId]?.battery >= 90 ? 'battery-4' : item.battery >= 80 ? 'battery-3' : robotBaseInfo[item.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[item.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
+                      :style="{ color: robotBaseInfo[item.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
+                    >
+                    </svg-icon>
+                  </template>
                   <svg-icon
-                    class="battery-svg"
-                    :icon-class="robotBaseInfo[item.robotId]?.battery >= 90 ? 'battery-4' : item.battery >= 80 ? 'battery-3' : robotBaseInfo[item.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[item.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
-                    :style="{ color: robotBaseInfo[item.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
-                  >
-                  </svg-icon>
-                  <span class="ml10 wp36 tar">{{ robotBaseInfo[item.robotId]?.battery || 0 }}%</span>
+                    v-if="isRobotFault(item)"
+                    class="ml10 warning-svg"
+                    icon-class="warning"
+                    title="故障"
+                    style="color: #FFDD00 !important; font-size: 14px; cursor: default;"
+                  />
                 </div>
               </div>
             </div>
@@ -125,6 +134,13 @@
                   <span class="ml10">{{ getTaskEquipmentRobot(equipment)?.name || equipment.name }}</span>
                 </div>
                 <div class="flx-center">
+                  <svg-icon
+                    v-if="isRobotFault(getTaskEquipmentRobot(equipment))"
+                    class="mr6"
+                    icon-class="warning"
+                    title="故障"
+                    style="color: #FFDD00; font-size: 14px"
+                  />
                   <svg-icon
                     :icon-class="robotBaseInfo[equipment.robotId]?.battery >= 90 ? 'battery-4' : robotBaseInfo[equipment.robotId]?.battery >= 80 ? 'battery-3' : robotBaseInfo[equipment.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[equipment.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
                     :style="{ color: robotBaseInfo[equipment.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
@@ -249,12 +265,24 @@ export default {
         .map(id => String(id))
     },
     isRobotOnline(robotId) {
+      return this.resolveRobotStatus(robotId) !== 'offline'
+    },
+    isRobotFault(robotOrId) {
+      const status = typeof robotOrId === 'object'
+        ? robotOrId?.status
+        : this.resolveRobotStatus(robotOrId)
+      return status === 'fault'
+    },
+    showBattery(item) {
+      return item.battery != null && item.battery !== ''
+    },
+    resolveRobotStatus(robotId) {
+      if (robotId === undefined || robotId === null || robotId === '') return ''
       const targetId = String(robotId)
-      const robot = (this.robots || []).find(item => String(item.robotId) === targetId)
-      const status = this.robotBaseInfo?.[robotId]?.status
+      return this.robotBaseInfo?.[robotId]?.status
         || this.robotBaseInfo?.[targetId]?.status
-        || robot?.status
-      return status === 'online'
+        || (this.robots || []).find(item => String(item.robotId) === targetId)?.status
+        || ''
     },
     async waitTicks(times = 1) {
       for (let i = 0; i < times; i++) {
@@ -380,6 +408,35 @@ export default {
       }
       onDragStart(event, robot, 'equipmentListComponent')
     },
+    refreshEquipmentLists() {
+      const newRobots = this.robots || []
+      if (!newRobots.length) {
+        this.equipmentInfo.online.list = []
+        this.equipmentInfo.offline.list = []
+        const taskId = this.routeTaskId()
+        if (taskId !== undefined && taskId !== null && taskId !== '') {
+          this.executePlay()
+        }
+        return
+      }
+      const onlineList = []
+      const offlineList = []
+      newRobots.forEach(item => {
+        const robot = {
+          ...item,
+          ...(this.robotBaseInfo?.[item.robotId] || {})
+        }
+        // fault 计入在线装备
+        if (robot.status !== 'offline') {
+          onlineList.push(robot)
+        } else {
+          offlineList.push(robot)
+        }
+      })
+      this.equipmentInfo.online.list = onlineList
+      this.equipmentInfo.offline.list = offlineList
+      this.executePlay()
+    },
     async updateVideo(robot) {
       // console.log('of this.updateVideoHandler', typeof this.updateVideoHandler);
       
@@ -443,36 +500,17 @@ export default {
       deep: true
     },
     robots: {
-      handler(newRobots) {        
-        if (!newRobots.length) {
-          this.equipmentInfo.online.list = []
-          this.equipmentInfo.offline.list = []
-          const taskId = this.routeTaskId()
-          if (taskId !== undefined && taskId !== null && taskId !== '') {
-            this.executePlay()
-          }
-          return
-        }
-        const onlineList = []
-        const offlineList = []
-        newRobots.map(item => {
-          const robot = {
-            ...item,
-            ...(this.robotBaseInfo?.[item.robotId] || {})
-          }
-          if (robot.status === 'online') {
-            onlineList.push(robot)
-          } else {
-            offlineList.push(robot)
-          }
-        })
-        console.log('onlineList')
-        this.equipmentInfo.online.list = onlineList
-        this.equipmentInfo.offline.list = offlineList
-        this.executePlay()
+      handler() {
+        this.refreshEquipmentLists()
       },
       deep: true,
       immediate: true
+    },
+    robotBaseInfo: {
+      handler() {
+        this.refreshEquipmentLists()
+      },
+      deep: true
     }
   }
 }

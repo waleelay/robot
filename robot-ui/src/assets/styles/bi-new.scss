@@ -259,7 +259,8 @@
               border: 1px solid #060E16;
               &.is-active {
                 border-color: #0BF9FE;
-                *:not(.battery-svg use) {
+                color: #0BF9FE;
+                *:not(.battery-svg):not(.warning-svg):not(use) {
                   color: #0BF9FE;
                 }
               }

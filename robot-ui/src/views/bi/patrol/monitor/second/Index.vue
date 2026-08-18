@@ -29,7 +29,7 @@
         />
         <MultimediaDetail ref="multimediaDetailRef" @deleted="handleMultimediaDeleted" />
       </div>
-      <div class="mt20 hp296 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
+      <div class="mt20 hp325 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
         <div class="card-title title-284-37">
           <div class="text">
             实时地图
@@ -97,10 +97,10 @@
           </div>
         </div>
         <div class="common-scroll mt10 pr14" style="height: calc(100% - 94px); min-height: 876px; overflow-y: auto; margin-right: -14px;">
-          <div class="box p20 mt10">
+          <div v-if="ptzDevice" class="box p20 mt10">
             <div class="card-title-t2">
               <div class="text pb12">
-                双光云台
+                {{ ptzDevice?.displayName || '双光云台' }}
               </div>
             </div>
             <Yuntai class="mt20 pt10 pb10" />
@@ -109,7 +109,7 @@
             <div class="box p20">
               <div class="card-title-t2">
                 <div class="text pb12">
-                  多合一
+                  {{ multiFunctionDevice?.displayName || '多合一' }}
                 </div>
               </div>
               <MultiInOne class="mt20" />
@@ -119,7 +119,7 @@
             <div class="box p20">
               <div class="card-title-t2">
                 <div class="text pb12">
-                  双向对讲机
+                  {{ audioDevice?.displayName || '双向对讲机' }}
                 </div>
               </div>
               <Talk class="mt20 flx-center flex-column" />
@@ -129,7 +129,7 @@
             <div class="box p20">
               <div class="card-title-t2">
                 <div class="text pb12">
-                  捕网器
+                  {{ netGunDevice?.displayName || '捕网器' }}
                 </div>
               </div>
               <Catcher class="mt20" />
@@ -139,7 +139,7 @@
             <div class="box p20">
               <div class="card-title-t2">
                 <div class="text pb12">
-                  发射器
+                  {{ launcherDevice?.displayName || '发射器' }}
                 </div>
               </div>
               <Launcher class="mt20" />

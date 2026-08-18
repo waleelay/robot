@@ -16,8 +16,8 @@
       >
         <el-tooltip class="w100 h100" effect="dark" placement="top" popper-class="recording-popper">
           <div slot="content" class="flex-column">
-            <div>装备名称：{{ robotBaseInfo?.[item.robotId]?.name }}</div>
-            <div>摄像头名称：{{ getCameraName(item.robotId, item.deviceId) }}</div>
+            <div>装备名称：{{ robotBaseInfo?.[item.robotId]?.name || '-' }}</div>
+            <div>抓拍相机：{{ getCameraName(item.robotId, item.deviceId || '-') }}</div>
             <div>抓拍时间：{{ item.uploadedAt }}</div>
             <div>抓拍位置：{{ getLocationText(item) }}</div>
           </div>
@@ -39,8 +39,8 @@
       >
         <el-tooltip class="w100 h100" effect="dark" placement="top" popper-class="recording-popper">
           <div slot="content" class="flex-column">
-            <div>装备名称：{{ robotBaseInfo?.[recording.robotId]?.name }}</div>
-            <div>摄像头名称：{{ getCameraName(recording.robotId, recording.cameraId) }}</div>
+            <div>装备名称：{{ robotBaseInfo?.[recording.robotId]?.name || '-' }}</div>
+            <div>录制相机：{{ getCameraName(recording.robotId, recording.deviceId || recording.cameraId || '-') || '-' }}</div>
             <div>录制时间：{{ recording.createdAt }}</div>
             <div>录制时长：{{ durationText(recording.durationSeconds) }}</div>
           </div>
