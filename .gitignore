@@ -28,3 +28,4 @@ robot-control-service-*-tcp*/
 /tmp/
 /tools/
 /outputs/
+/bigscreen-bff/data/statistics-device-status/20260818.json

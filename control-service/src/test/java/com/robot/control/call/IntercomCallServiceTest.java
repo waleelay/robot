@@ -159,6 +159,7 @@ class IntercomCallServiceTest {
                 OffsetDateTime.now(),
                 List.of(new RobotCameraResponse("camera01", "camera01", "body", "前视摄像头", "sub")),
                 List.of(),
+                null,
                 "2026-07-20 12:00:00");
     }
 }

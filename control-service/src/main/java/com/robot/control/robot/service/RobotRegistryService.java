@@ -306,6 +306,7 @@ public class RobotRegistryService {
                 device.lastHeartbeatAt,
                 device.cameras,
                 device.mountedDevices,
+                string(device.dynamicState.get("healthStatus"), null),
                 DateTimeConfig.format(device.lastHeartbeatAt));
     }
 

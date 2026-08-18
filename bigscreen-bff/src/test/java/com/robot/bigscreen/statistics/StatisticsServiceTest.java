@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.panorama.PanoramaCenterClient;
@@ -32,7 +33,7 @@ class StatisticsServiceTest {
         when(centerClient.alarmsForStatistics(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(List.of());
         StatisticsService service = new StatisticsService(
-                new ObjectMapper(), centerClient, tempDir.toString());
+                new ObjectMapper(), centerClient, new DeviceStatusSampler(new ObjectMapper(), centerClient, tempDir.resolve("sampler").toString(), 7), tempDir.toString());
 
         Map<String, Object> overview = service.overview("month", null, null, "all", null);
 
@@ -67,7 +68,9 @@ class StatisticsServiceTest {
         when(centerClient.mileageSummary(
                         "2026-05-31 00:00:00", "2026-06-30 23:59:59", List.of("robot-001")))
                 .thenReturn(Map.of("hasData", true, "totalMeters", 8_000));
-        StatisticsService service = new StatisticsService(new ObjectMapper(), centerClient, tempDir.toString());
+        DeviceStatusSampler sampler = mock(DeviceStatusSampler.class);
+        when(sampler.countsInRange(any(), any(), any())).thenReturn(new long[]{8, 2, 0, 7200});
+        StatisticsService service = new StatisticsService(new ObjectMapper(), centerClient, sampler, tempDir.toString());
 
         Map<String, Object> overview = service.overview(
                 "custom", "2026-07-01 00:00:00", "2026-07-31 23:59:59", "WHEELED_ROBOT", null);
@@ -80,7 +83,12 @@ class StatisticsServiceTest {
         Map<String, Object> runtime = map(overview.get("equipmentRuntime"));
         assertEquals(100L, runtime.get("onlineRate"));
         assertEquals(50.0, runtime.get("taskCompletionRate"));
-        assertEquals(1.5, map(list(runtime.get("items")).get(0)).get("runningHours"));
+        List<?> runtimeItems = list(runtime.get("items"));
+        assertEquals(1, runtimeItems.size());
+        assertEquals("WHEELED_ROBOT", map(runtimeItems.get(0)).get("deviceType"));
+        assertEquals(1.6, map(runtimeItems.get(0)).get("runningHours"));
+        assertEquals(0.4, map(runtimeItems.get(0)).get("offlineHours"));
+        assertEquals(0.0, map(runtimeItems.get(0)).get("faultHours"));
         assertEquals(List.of(
                         Map.of("name", "火灾告警", "count", 2L, "percent", 100.0)),
                 list(map(overview.get("aiAlarmAnalysis")).get("alarmTypeRanking")));
@@ -115,7 +123,7 @@ class StatisticsServiceTest {
         when(centerClient.mileageSummary(
                         "2026-05-31 00:00:00", "2026-06-30 23:59:59", List.of("robot-001")))
                 .thenReturn(Map.of("hasData", true, "totalMeters", 8_000));
-        StatisticsService service = new StatisticsService(new ObjectMapper(), centerClient, tempDir.toString());
+        StatisticsService service = new StatisticsService(new ObjectMapper(), centerClient, new DeviceStatusSampler(new ObjectMapper(), centerClient, tempDir.resolve("sampler").toString(), 7), tempDir.toString());
 
         Map<String, Object> overview = service.overview(
                 "custom", "2026-7-1 00:00:00", "2026-7-31 23:59:59", "WHEELED_ROBOT", null);
@@ -134,7 +142,7 @@ class StatisticsServiceTest {
         when(centerClient.taskWorkflowInstancesForStatistics()).thenReturn(List.of());
         when(centerClient.alarmsForStatistics(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(List.of());
-        StatisticsService service = new StatisticsService(new ObjectMapper(), centerClient, tempDir.toString());
+        StatisticsService service = new StatisticsService(new ObjectMapper(), centerClient, new DeviceStatusSampler(new ObjectMapper(), centerClient, tempDir.resolve("sampler").toString(), 7), tempDir.toString());
 
         StatisticsService.ReportFile report = service.createReport(Map.of(
                 "modules", List.of("equipmentRuntime"),

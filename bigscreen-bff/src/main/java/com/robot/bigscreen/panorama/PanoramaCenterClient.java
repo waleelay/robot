@@ -85,6 +85,25 @@ public class PanoramaCenterClient {
         return records(uri);
     }
 
+    /**
+     * 读取 Control Service 设备注册表快照（在线/离线状态由 MQTT 状态上报维护）。
+     * registry 响应为 {@code {records:[...], total}}，需直接取顶层 records。
+     */
+    public List<Map<String, Object>> deviceRegistry() {
+        URI uri = uri(properties.getControlBaseUrl(), "/api/control/robots/registry")
+                .build(true)
+                .toUri();
+        return responseMap(uri)
+                .map(response -> {
+                    Object records = response.get("records");
+                    if (records instanceof List<?> list) {
+                        return maps(list);
+                    }
+                    return List.<Map<String, Object>>of();
+                })
+                .orElse(List.of());
+    }
+
     public Map<String, Object> mileageSummary(
             String startTime,
             String endTime,

@@ -26,6 +26,7 @@ import java.util.Map;
  * @param lastHeartbeatAt 最后心跳时间
  * @param cameras 摄像头列表
  * @param devices 设备能力列表
+ * @param healthStatus 健康状态
  * @param timestamp 状态时间
  */
 public record RobotDeviceResponse(
@@ -45,5 +46,6 @@ public record RobotDeviceResponse(
         OffsetDateTime lastHeartbeatAt,
         List<RobotCameraResponse> cameras,
         List<Map<String, Object>> devices,
+        String healthStatus,
         String timestamp) {
 }

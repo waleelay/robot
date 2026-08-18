@@ -21,6 +21,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -65,15 +66,18 @@ public class StatisticsService {
     private final Object historyLock = new Object();
     private final ObjectMapper objectMapper;
     private final PanoramaCenterClient centerClient;
+    private final DeviceStatusSampler deviceStatusSampler;
     private final Path reportStorageDir;
     private final Path reportIndexPath;
 
     public StatisticsService(
             ObjectMapper objectMapper,
             PanoramaCenterClient centerClient,
+            DeviceStatusSampler deviceStatusSampler,
             @Value("${statistics.report.storage-dir:data/statistics-reports}") String reportStorageDir) {
         this.objectMapper = objectMapper;
         this.centerClient = centerClient;
+        this.deviceStatusSampler = deviceStatusSampler;
         this.reportStorageDir = Paths.get(reportStorageDir);
         this.reportIndexPath = this.reportStorageDir.resolve("index.json");
         loadReportHistories();
@@ -149,7 +153,8 @@ public class StatisticsService {
                         join(mileageFuture, Map.of()),
                         join(previousMileageFuture, Map.of())),
                 "equipmentRuntime", equipmentRuntime(
-                        devices, tasks, normalizedDeviceType, deviceTypesBySerial, resolvedDeviceTypeOptions),
+                        devices, tasks, normalizedDeviceType, deviceTypesBySerial, resolvedDeviceTypeOptions,
+                        rangeStart, rangeEnd),
                 "aiAlarmAnalysis", aiAlarmAnalysis(alarms),
                 "alarmAreaRanking", alarmAreaRanking(alarms),
                 "alarmTrend", alarmTrend(alarms, rangeStart, rangeEnd),
@@ -400,7 +405,9 @@ public class StatisticsService {
             List<Map<String, Object>> tasks,
             String deviceType,
             Map<String, String> deviceTypesBySerial,
-            List<Map<String, Object>> deviceTypeOptions) {
+            List<Map<String, Object>> deviceTypeOptions,
+            LocalDateTime rangeStart,
+            LocalDateTime rangeEnd) {
         List<Map<String, Object>> filteredDevices = devices.stream()
                 .filter(device -> matchesDeviceType(device, deviceType))
                 .toList();
@@ -425,7 +432,7 @@ public class StatisticsService {
         long completed = tasks.stream().filter(task -> "COMPLETED".equals(taskStatusGroup(task))).count();
         Double completionRate = tasks.isEmpty() ? null : percentage(completed, tasks.size());
         List<Map<String, Object>> runtimeItems = equipmentRuntimeItems(
-                tasks, deviceType, deviceTypesBySerial, deviceTypeOptions);
+                devices, deviceType, deviceTypeOptions, rangeStart, rangeEnd);
         return object(
                 "onlineRate", onlineRate,
                 "taskCompletionRate", completionRate,
@@ -433,31 +440,16 @@ public class StatisticsService {
                 "items", runtimeItems);
     }
 
+    /**
+     * 按设备清单（管理端）枚举所有设备类型，运行/离线/故障时长来自后台 registry 采样
+     * （采样跨度 × 状态占比折算）。未参与采样的设备时长为 0，但仍保留类型显示。
+     */
     private List<Map<String, Object>> equipmentRuntimeItems(
-            List<Map<String, Object>> tasks,
+            List<Map<String, Object>> devices,
             String selectedDeviceType,
-            Map<String, String> deviceTypesBySerial,
-            List<Map<String, Object>> deviceTypeOptions) {
-        Map<String, Long> durationByType = new LinkedHashMap<>();
-        for (Map<String, Object> task : tasks) {
-            Long durationSeconds = durationSeconds(task);
-            if (durationSeconds == null) {
-                continue;
-            }
-            Set<String> taskDeviceTypes = new LinkedHashSet<>();
-            for (Map<String, Object> summary : mapList(task.get("deviceSummaries"))) {
-                String type = firstString(summary, "deviceType", "typeCode", "type");
-                if (type == null) {
-                    String serialNumber = firstString(summary, "serialNumber", "robotId", "deviceCode");
-                    type = deviceTypesBySerial.get(serialNumber);
-                }
-                if (type != null && ("all".equalsIgnoreCase(selectedDeviceType)
-                        || selectedDeviceType.equalsIgnoreCase(type))) {
-                    taskDeviceTypes.add(type);
-                }
-            }
-            taskDeviceTypes.forEach(type -> durationByType.merge(type, durationSeconds, Long::sum));
-        }
+            List<Map<String, Object>> deviceTypeOptions,
+            LocalDateTime rangeStart,
+            LocalDateTime rangeEnd) {
         Map<String, String> typeNames = new LinkedHashMap<>();
         for (Map<String, Object> option : deviceTypeOptions) {
             String value = firstString(option, "value");
@@ -466,15 +458,50 @@ public class StatisticsService {
                 typeNames.put(value.toUpperCase(Locale.ROOT), label);
             }
         }
-        return durationByType.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .map(entry -> object(
-                        "deviceType", entry.getKey(),
-                        "deviceTypeName", typeNames.getOrDefault(entry.getKey().toUpperCase(Locale.ROOT), entry.getKey()),
-                        "runningHours", oneDecimal(entry.getValue() / 3600.0),
-                        "faultHours", null,
-                        "offlineHours", null))
-                .toList();
+        Map<String, List<Map<String, Object>>> devicesByType = new LinkedHashMap<>();
+        for (Map<String, Object> device : devices) {
+            String type = firstString(device, "deviceType", "typeCode", "type");
+            if (type == null) {
+                continue;
+            }
+            if (!"all".equalsIgnoreCase(selectedDeviceType) && !selectedDeviceType.equalsIgnoreCase(type)) {
+                continue;
+            }
+            devicesByType.computeIfAbsent(type, ignored -> new ArrayList<>()).add(device);
+        }
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (Map.Entry<String, List<Map<String, Object>>> entry : devicesByType.entrySet()) {
+            String type = entry.getKey();
+            double running = 0;
+            double offline = 0;
+            double fault = 0;
+            for (Map<String, Object> device : entry.getValue()) {
+                String serial = firstString(device, "serialNumber", "robotId");
+                if (serial == null) {
+                    continue;
+                }
+                long[] counts = deviceStatusSampler.countsInRange(serial, rangeStart, rangeEnd);
+                long on = counts[0];
+                long off = counts[1];
+                long flt = counts[2];
+                long spanSeconds = counts[3];
+                long total = on + off + flt;
+                if (total <= 0 || spanSeconds <= 0) {
+                    continue;
+                }
+                running += spanSeconds * on / (double) total;
+                offline += spanSeconds * off / (double) total;
+                fault += spanSeconds * flt / (double) total;
+            }
+            items.add(object(
+                    "deviceType", type,
+                    "deviceTypeName", typeNames.getOrDefault(type.toUpperCase(Locale.ROOT), type),
+                    "runningHours", oneDecimal(running / 3600.0),
+                    "faultHours", oneDecimal(fault / 3600.0),
+                    "offlineHours", oneDecimal(offline / 3600.0)));
+        }
+        items.sort(Comparator.comparing(item -> String.valueOf(item.get("deviceType"))));
+        return items;
     }
 
     private Map<String, Object> aiAlarmAnalysis(List<Map<String, Object>> alarms) {
