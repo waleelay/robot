@@ -15,6 +15,11 @@ import {
   isPausedTaskStatus,
   isRunningTaskStatus
 } from "../../views/bi/patrol/business/execution-status";
+import {
+  collectTaskEquipmentIds,
+  getTaskById,
+  listTasksForRobot
+} from "../../views/bi/patrol/business/task-equipment";
 
 const state = {
   // 设备对象：设备详情，包含坐标位置，task基本信息
@@ -74,12 +79,12 @@ const mutations = {
     }
     const merged = { ...prev, ...obj }
     state.taskData = Object.assign({}, state.taskData, { [value.taskId]: merged });
-    const affectedIds = [
+    applyDerivedRobotTasks(state, [
       ...collectTaskEquipmentIds(prev),
       ...collectTaskEquipmentIds(merged),
-      ...robotsHoldingTask(state.robotBaseInfo, value.taskId)
-    ]
-    applyDerivedRobotTasks(state, affectedIds)
+      ...robotsHoldingTask(state.robotBaseInfo, value.taskId),
+      ...Object.keys(state.robotBaseInfo || {})
+    ])
   },
   SET_ALARMS_DATA(state, value) {
     if (!value) return;
@@ -146,7 +151,7 @@ const mutations = {
       ...incoming,
       robotId: incoming.robotId ?? robotId
     }
-    const task = tasksForRobot(state.taskData, merged.robotId)
+    const task = toRobotTaskSummaries(state.taskData, merged.robotId)
     const withTask = { ...merged, task }
     state.robotBaseInfo = {
       ...state.robotBaseInfo,
@@ -431,46 +436,23 @@ function buildSlamOfRobot(maps, robots, tasks) {
   return result
 }
 
-function getTaskById(taskData, taskId) {
-  if (taskId === undefined || taskId === null || taskId === '') return null
-  return taskData?.[taskId] || taskData?.[String(taskId)] || null
-}
-
-function collectTaskEquipmentIds(task) {
-  const ids = []
-  const list = task?.equipmentList || task?.devices || task?.robots || []
-  list.forEach(item => {
-    const id = item == null ? null : (typeof item === 'object' ? (item.robotId ?? item.id) : item)
-    if (id !== undefined && id !== null && id !== '') ids.push(String(id))
-  })
-  if (task?.robotId !== undefined && task?.robotId !== null && task?.robotId !== '') {
-    ids.push(String(task.robotId))
-  }
-  return [...new Set(ids)]
-}
-
 function toRobotTaskSummary(task) {
   return {
     taskId: task.taskId,
     workflowInstanceId: task.workflowInstanceId,
     name: task.name,
     status: task.status,
+    statusName: task.statusName,
     timeRange: task.timeRange,
     mapId: task.mapId
   }
 }
 
-function tasksForRobot(taskData, robotId) {
-  if (robotId === undefined || robotId === null || robotId === '') return []
-  const target = String(robotId)
-  const result = []
-  Object.values(taskData || {}).forEach(task => {
-    if (!task || !isDeviceAssociatedTaskStatus(task.status)) return
-    if (!collectTaskEquipmentIds(task).includes(target)) return
-    if (result.some(item => String(item.taskId) === String(task.taskId))) return
-    result.push(toRobotTaskSummary(task))
-  })
-  return result
+function toRobotTaskSummaries(taskData, robotId) {
+  return listTasksForRobot(taskData, robotId, {
+    activeOnly: true,
+    isActive: isDeviceAssociatedTaskStatus
+  }).map(toRobotTaskSummary)
 }
 
 function findRobotKey(robotBaseInfo, robotId) {
@@ -502,7 +484,7 @@ function applyDerivedRobotTasks(state, robotIds) {
   keys.forEach(key => {
     const robot = next[key]
     if (!robot) return
-    const task = tasksForRobot(state.taskData, robot.robotId ?? key)
+    const task = toRobotTaskSummaries(state.taskData, robot.robotId ?? key)
     const withTask = { ...robot, task }
     next[key] = { ...withTask, ...getRobotStatus(withTask, state.taskData) }
   })
@@ -511,8 +493,10 @@ function applyDerivedRobotTasks(state, robotIds) {
 
 function getRobotStatus(robot, taskData) {
   const { status, robotId } = robot || {}
-  const taskList = tasksForRobot(taskData, robotId)
-    .map(item => getTaskById(taskData, item.taskId) || item)
+  const taskList = listTasksForRobot(taskData, robotId, {
+    activeOnly: true,
+    isActive: isDeviceAssociatedTaskStatus
+  }).map(item => getTaskById(taskData, item.taskId) || item)
   const runningTask = taskList.find(item => isRunningTaskStatus(item?.status))
     || taskList.find(item => isPausedTaskStatus(item?.status))
     || null

@@ -76,6 +76,7 @@
                       class="map-point-marker"
                     />
                     <foreignObject
+                      v-if="!activeRaisedTaskPathId"
                       class="map-point-name-fo"
                       :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
                       :y="point.icon.nameY"
@@ -421,12 +422,20 @@
                       </div>
                     </foreignObject>
                   </template>
-                  <g
-                    v-if="shouldShowPathSeq(raisedDisplayTaskPath.taskId)"
-                    class="path-seq-badge"
-                    transform="translate(6, -40)"
-                    pointer-events="none"
-                  >
+                </g>
+              </g>
+              <!-- 置顶：路径点编号（独立图层，压过其它路径名） -->
+              <g
+                v-if="raisedDisplayTaskPath && shouldShowPathSeq(raisedDisplayTaskPath.taskId)"
+                class="path-seq-raised-layer"
+                pointer-events="none"
+              >
+                <g
+                  v-for="point in raisedDisplayTaskPath.points"
+                  :key="`task-path-seq-raised-${raisedDisplayTaskPath.taskId}-${point.id}`"
+                  :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
+                >
+                  <g class="path-seq-badge" transform="translate(6, -40)">
                     <image :href="pathPointBadge" x="0" y="0" width="20" height="20" />
                     <text x="10" y="14.5" text-anchor="middle" class="path-seq-text">{{ point.pathIndex }}</text>
                   </g>
@@ -2364,17 +2373,17 @@ export default {
             filter: drop-shadow(0 0 4px rgba(255, 246, 69, 0.65));
           }
         }
-        // 任务路径序号：Figma 右上角蓝底白字
-        .path-seq-badge {
-          .path-seq-text {
-            fill: #FFF;
-            stroke: none;
-            font-family: "Microsoft YaHei", sans-serif;
-            font-size: 14px;
-            font-weight: 400;
-            line-height: 17.517px;
-            paint-order: normal;
-          }
+      }
+      // 任务路径序号：Figma 右上角蓝底白字（置顶层不在 map-preview-point 内，需与点位同级）
+      .path-seq-badge {
+        .path-seq-text {
+          fill: #FFF;
+          stroke: none;
+          font-family: "Microsoft YaHei", sans-serif;
+          font-size: 14px;
+          font-weight: 400;
+          line-height: 17.517px;
+          paint-order: normal;
         }
       }
       .map-preview-path {

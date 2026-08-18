@@ -36,17 +36,17 @@
           <div class="item wp156 mt10">
             装备型号：<span class="value">{{ currenRobot?.model || '-' }}</span>
           </div>
-          <div class="item wp149 ml26 mt10">
+          <!-- <div class="item wp149 ml26 mt10">
             是否告警：<span class="value">{{ currenRobot?.alarmLevel === 'none' ? '否' : '是' }}</span>
+          </div> -->
+          <div class="item wp149 ml26 mt10">
+            当前速度：<span class="value">{{ Number(currenRobot?.speed || 0).toFixed(2) }}m/s</span>
           </div>
           <div class="item wp156 mt10">
             控制模型：<span class="value">{{ currenRobot?.controlMode || '-' }}</span>
           </div>
           <div class="item wp149 ml26 mt10">
             上装设备：<span class="value">{{ currenRobot?.mountedDeviceCount || 0 }}个</span>
-          </div>
-          <div class="item wp156 mt10">
-            当前速度：<span class="value">{{ Number(currenRobot?.speed || 0).toFixed(2) }}m/s</span>
           </div>
           <div v-if="hasActionButtons" class="mt10 with-divider w100"></div>
           <div v-for="(task, index) in taskList" :key="task.taskId" class="mt10 task flex">
@@ -59,7 +59,7 @@
               >{{ task?.name || '-' }}</span>
             </div>
             <div class="item wp149 ml26">
-              任务状态：<span class="value" :class="taskStatusClass(task)">{{ task?.statusName || '-' }}</span>
+              任务状态：<span class="value" :class="taskStatusClass(task)">{{ task?.statusName || executionStatusLabel(task?.status, '-') }}</span>
             </div>
           </div>
         </template>
@@ -146,6 +146,8 @@
 import { mapActions, mapState } from 'vuex';
 import gsap from './gsap.js';
 import { getDescArr } from '../../../../../utils/index.js';
+import { executionStatusLabel } from '../../../patrol/business/execution-status';
+import { listTasksForRobot } from '../../../patrol/business/task-equipment';
 export default {
   name: 'Modal',
   mixins: [gsap],
@@ -247,8 +249,9 @@ export default {
       return '连接中'
     },
     taskList() {
-      const { task = [] } = this.currenRobot || {}
-      return getDescArr(task?.map(item => this.taskData?.[item.taskId] || item) || [], 'timestamp')
+      const robotId = this.selectedRobotId || this.currenRobot?.robotId
+      const list = listTasksForRobot(this.taskData, robotId)
+      return getDescArr(list, 'timestamp')
     },
     // 装备关联任务路径有点位时才显示「显示路径」按钮
     hasTaskPath() {
@@ -300,6 +303,7 @@ export default {
     getTaskId(task) {
       return task?.taskId || task?.id || task?.planId || task?.taskPlanId || null
     },
+    executionStatusLabel,
     focusPanoramaTask(task) {
       const taskId = this.getTaskId(task)
       if (taskId == null || taskId === '') return
