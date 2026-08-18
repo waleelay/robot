@@ -25,6 +25,7 @@ import { errorMessage } from '../../utils'
 import { bearerToken } from '@/auth'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
+const controlProfileInflight = {}
 // 定义 WebSocket 模块的初始状态
 const state = {
   websocket: null, // 存储 WebSocket 实例
@@ -1663,25 +1664,35 @@ const actions = {
   },
   async loadControlProfile({ commit, state, dispatch, rootState }, robotId) {
     if (!robotId) return
+    if (controlProfileInflight[robotId]) return controlProfileInflight[robotId]
     const { fromStore, fromBase, cameras } = resolveEquipmentRecord(state, rootState, robotId)
     // 固定摄像头不可遥控，不查询控制画像
     if (isFixedCameraEquipment(fromBase, cameras) || isFixedCameraEquipment(fromStore, cameras)) return
-    commit('SET_PROFILE_LOADING', { robotId, loading: true })
-    try {
-      const profile = await getControlProfile(robotId)
-      commit('setControlProfiles', { robotId, profile })
-      const index = state.robots.findIndex(robot => robot.robotId === robotId)
-      if (index >= 0) {
-        state.robots.splice(index, 1, Object.assign({}, state.robots[index], {
-          controlMode: profile.controlMode,
-          stateSeq: profile.stateSeq
-        }))
-        dispatch('syncDeviceStatesFromDevices', { robotId, devices: profile.devices, options: {preserveExisting: true} })
+    const task = (async () => {
+      commit('SET_PROFILE_LOADING', { robotId, loading: true })
+      try {
+        const profile = await getControlProfile(robotId)
+        commit('setControlProfiles', { robotId, profile })
+        const index = state.robots.findIndex(robot => robot.robotId === robotId)
+        if (index >= 0) {
+          state.robots.splice(index, 1, Object.assign({}, state.robots[index], {
+            controlMode: profile.controlMode,
+            stateSeq: profile.stateSeq
+          }))
+          dispatch('syncDeviceStatesFromDevices', { robotId, devices: profile.devices, options: {preserveExisting: true} })
+        }
+        return profile
+      } catch (error) {
+        console.error('ERROR getControlProfile', error)
+      } finally {
+        commit('SET_PROFILE_LOADING', { robotId, loading: false })
       }
-    } catch (error) {
-      console.error('ERROR getControlProfile', error)
+    })()
+    controlProfileInflight[robotId] = task
+    try {
+      return await task
     } finally {
-      commit('SET_PROFILE_LOADING', { robotId, loading: false })
+      if (controlProfileInflight[robotId] === task) delete controlProfileInflight[robotId]
     }
   },
   async changeCameraQuality({ commit, state, dispatch }, camera) {

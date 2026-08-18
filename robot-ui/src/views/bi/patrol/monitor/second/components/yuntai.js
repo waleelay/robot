@@ -125,7 +125,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketRobot', ['persistDeviceStateCache']),
+    ...mapActions('websocketRobot', ['persistDeviceStateCache', 'loadControlProfile']),
     controlDevices() {
       return this.selectedControlProfile.devices || []
     },
@@ -316,6 +316,9 @@ export default {
         }
         return
       }
+
+      console.log(123, kind, this.controlTimers[kind]);
+      
       if (this.controlTimers[kind]) return
       if (!this.canStartFrameControl(kind)) return
       this.sendFrameControl(kind)
@@ -350,6 +353,9 @@ export default {
     },
     async controlFrame(kind) {
       const robotId = this.selectedRobotId
+      if (robotId && !this.controlDevices().length) {
+        await this.loadControlProfile(robotId)
+      }
       if (kind.indexOf('base-') === 0) {
         const device = this.baseDevice
         const session = await this.ensureControlSession(device, 'drive.velocity')

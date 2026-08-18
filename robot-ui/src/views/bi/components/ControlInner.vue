@@ -53,14 +53,26 @@ export default {
     };
   },
   created() {
-    if (!this.selectedRobot?.robotId) {
-      this.loadControlProfile(this.cameraInfo.robotId)
+    this.ensureCameraControlProfile()
+  },
+  watch: {
+    visible(val) {
+      if (val) this.ensureCameraControlProfile()
+    },
+    'cameraInfo.robotId'(robotId) {
+      if (robotId) this.ensureCameraControlProfile()
     }
   },
-  // beforeDestroy() {
-  // },
   methods: {
     ...mapActions('websocketRobot', ['loadControlProfile']),
+    // 一级监控未进入控制中心时，mixin 仍能从 robotBaseInfo 拿到 selectedRobot，
+    // 不能据此跳过控制画像；否则本体/云台控制没有 devices，会报「未找到控制设备」。
+    ensureCameraControlProfile() {
+      const robotId = this.cameraInfo?.robotId || this.singleSelectedRobotId
+      if (!robotId) return
+      if (this.controlProfiles[robotId]) return
+      this.loadControlProfile(robotId)
+    }
   },
 };
 </script>
