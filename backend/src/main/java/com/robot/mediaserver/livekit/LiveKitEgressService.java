@@ -44,9 +44,12 @@ public class LiveKitEgressService {
         return new EgressStartResult(responseValue(response, "egressId", "egress_id"), responseValue(response, "status"));
     }
 
-    public EgressStartResult startRoomMp4(String roomName, String objectKey) {
+    public EgressStartResult startTrackMp4(String roomName, String trackSid, String objectKey) {
         if (!properties.getLivekit().isEgressEnabled()) {
             throw new IllegalStateException("LiveKit egress 未启用");
+        }
+        if (trackSid == null || trackSid.isBlank()) {
+            throw new IllegalStateException("录像失败：会话无视频轨道");
         }
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("fileType", "MP4");
@@ -55,10 +58,11 @@ public class LiveKitEgressService {
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("roomName", roomName);
+        payload.put("video_track_id", trackSid);
         payload.put("videoOnly", true);
         payload.put("fileOutputs", java.util.List.of(output));
 
-        Map<?, ?> response = post("/twirp/livekit.Egress/StartRoomCompositeEgress", payload);
+        Map<?, ?> response = post("/twirp/livekit.Egress/StartTrackCompositeEgress", payload);
         return new EgressStartResult(responseValue(response, "egressId", "egress_id"), responseValue(response, "status"));
     }
 

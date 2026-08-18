@@ -463,7 +463,8 @@ public class FileService {
         video.setStartedAt(timestamp);
         videoRepository.save(video);
         try {
-            LiveKitEgressService.EgressStartResult result = egressService.startRoomMp4(session.getRoomName(), file.getObjectKey());
+            LiveKitEgressService.EgressStartResult result = egressService.startTrackMp4(
+                    session.getRoomName(), session.getTrackSid(), file.getObjectKey());
             metadata.put("egressId", result.egressId());
             metadata.put("egressStatus", result.status());
             file.setMetadataJson(writeMetadata(metadata));
