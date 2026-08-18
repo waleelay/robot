@@ -388,6 +388,7 @@ export default {
         if (this.selectType === type && this.globalMapId === 'gis') return
         this.selectType = type
         this.currentType = type
+        // 单项联动：切 GIS 后侧栏任务卡片展示全部任务，不根据任务反切地图
         this.setGlobalMapId('gis')
         this.$emit('changeCurrentSlamId', '')
         return
@@ -402,6 +403,7 @@ export default {
       if (this.currentType === 'slam' && String(this.currentSlam) === String(nextId)) return
       this.selectType = 'slam'
       this.currentType = 'slam'
+      // 单项联动：写入当前 SLAM 地图，侧栏按 mapId 筛选任务卡片
       this.setGlobalMapId(nextId)
       this.$emit('changeSlamMap', mapInfo)
     },

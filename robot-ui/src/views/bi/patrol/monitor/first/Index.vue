@@ -24,7 +24,13 @@
         </div>
         <div class="flex1 mt10 h100 slam-map-wrap">
           <GlobalGisMap v-if="globalMapId === 'gis'" />
-          <GlobalSlamMap v-if="globalMapId && globalMapId !== 'gis'" :map="slamMapPayload" :show-labels="true" :enable-add-point="false" />
+          <GlobalSlamMap
+            v-if="globalMapId && globalMapId !== 'gis'"
+            :map="slamMapPayload"
+            :list-filter-task-id="selectedTaskId"
+            :show-labels="true"
+            :enable-add-point="false"
+          />
         </div>
       </div>
     </div>
@@ -87,7 +93,8 @@ export default {
           value: 1
         }
       ],
-      tabIndex: 0
+      tabIndex: 0,
+      selectedTaskId: null
     }
   },
   computed: {
@@ -119,8 +126,17 @@ export default {
     targetRobotId() {
       return this.firstSelectedRobotId || this.firstOnlineRobotId
     },
-    // 目标装备对应的 SLAM 地图 id
+    // 小窗口当前是否为 SLAM（GIS 时选中任务不切图）
+    isSlamWindow() {
+      return !!(this.globalMapId && this.globalMapId !== 'gis')
+    },
+    selectedTaskMapId() {
+      if (!this.isSlamWindow) return null
+      return this.resolveTaskSlamMapId(this.selectedTaskId)
+    },
+    // 目标装备对应的 SLAM 地图 id；选中任务时优先任务关联地图
     currentSlamMapId() {
+      if (this.selectedTaskMapId) return this.selectedTaskMapId
       if (!this.targetRobotId) return null
       return this.resolveRobotSlamMapId(this.targetRobotId)
     },
@@ -179,9 +195,17 @@ export default {
       }
       return null
     },
-    selectTask(selectRows) {
-      this.$refs.leftVideoRef.slotDevices = this.$refs.leftVideoRef.slotDevices.map((item, index) => selectRows[index] || null)
-      
+    resolveTaskSlamMapId(taskId) {
+      if (taskId === undefined || taskId === null || taskId === '') return null
+      const task = this.taskData?.[taskId] || this.taskData?.[String(taskId)] || {}
+      if (task.mapId !== undefined && task.mapId !== null && task.mapId !== '') return task.mapId
+      const path = this.taskPathPoints?.[taskId] || this.taskPathPoints?.[String(taskId)]
+      if (path?.mapId !== undefined && path.mapId !== null && path.mapId !== '') return path.mapId
+      const robotId = (task.equipmentList || [])[0]?.robotId || (task.equipmentList || [])[0]?.id
+      return this.resolveRobotSlamMapId(robotId)
+    },
+    selectTask(task) {
+      this.selectedTaskId = task?.taskId ?? null
     },
     async syncTaskVideos(robotIds) {
       // TaskListTree 可能早于 LeftVideo 挂载，短重试等待视频区就绪

@@ -45,12 +45,12 @@
                 v-for="(item, index) in equipment.list"
                 :key="item.robotId"
                 class="item flx-justify-between"
-                :class="{ 'is-active': checkedRobotIds.includes(item.robotId) }"
-                :draggable="!checkedRobotIds.includes(item.robotId) && item.status !== 'offline'"
+                :class="{ 'is-active': isRobotChecked(item.robotId) }"
+                :draggable="!isRobotChecked(item.robotId) && item.status !== 'offline'"
                 @dragstart="onDragStart($event, item, 'equipmentListComponent')"
                 @dragend="onDragEnd"
                 @click="item.status !== 'offline' ? handleClickRobot(item) : ''"
-                :style="{ cursor: (item.status !== 'offline' && !checkedRobotIds.includes(item.robotId)) ? 'grab' : item.status === 'offline' ? 'no-allowed' : 'default' }"
+                :style="{ cursor: item.status === 'offline' ? 'not-allowed' : (isRobotChecked(item.robotId) ? 'pointer' : 'grab') }"
               >
                 <!-- @click="handleSelectEquipment(item)" -->
                 <div class="flx-center">
@@ -361,10 +361,10 @@ export default {
     },
     async handleClickRobot(item) {
       if (!item?.robotId) return
-      // console.log('this.splitType===========handleClickRobot', this.splitType);
-      if (this.splitType === 1 || this.splitType !== this.checkedRobotIds.length) {
-        // console.log('------------------------------------handleClickRobot----------------------------------------', item.status, this.equipmentInfo.online.list.find(e => e.robotId === item.robotId).status);
-        
+      const alreadyChecked = this.isRobotChecked(item.robotId)
+      // 已选中：再次点击取消选中并关闭视频
+      // 未选中：一分屏切换画面；多分屏仅在仍有空窗时打开
+      if (alreadyChecked || this.splitType === 1 || this.checkedRobotIds.length < this.splitType) {
         await this.updateVideo(item)
       }
     },
@@ -453,6 +453,7 @@ export default {
       if (!force && String(this.selectedTaskId) === String(task.taskId)) {
         this.selectedTaskId = ''
         this.selectedEquipmentList = []
+        this.$emit('select-task', null)
         await this.syncTaskVideos([])
         return
       }
@@ -470,6 +471,7 @@ export default {
       this.tabIndex = 1
       this.selectedTaskId = task.taskId
       this.selectedEquipmentList = equipmentList.filter(item => idSet.has(String(item?.robotId || item?.id)))
+      this.$emit('select-task', task)
       await this.syncTaskVideos(robotIds)
     },
   },

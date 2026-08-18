@@ -1218,6 +1218,12 @@ export default {
     },
     activeTaskPathData(val) {
       if (!val && this.showPolyline) this.showPolyline = false
+    },
+    // 实时监控小窗：选中任务后展示该任务路径（全景仍由 MapTool「路径」控制）
+    listFilterTaskId(taskId) {
+      if (this.enableAddPoint) return
+      const hasTask = taskId !== undefined && taskId !== null && taskId !== ''
+      this.showAllTaskPaths = hasTask
     }
   },
   async created() {
