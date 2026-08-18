@@ -426,6 +426,9 @@ export function errorMessage(error) {
       return data || '请求失败'
     }
   }
+  if (data && data.code === 'CONTROL_LOCKED') {
+    return '控制权已被其他终端占用'
+  }
   if (data && data.code === 'INVALID_STATE' && data.message === 'Intercom is occupied by another operator') {
     return '该视频画面正在通话中，请结束当前通话后重试'
   }

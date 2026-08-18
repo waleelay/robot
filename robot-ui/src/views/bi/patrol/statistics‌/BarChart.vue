@@ -151,7 +151,8 @@ export default({
           type: 'category',
           data: this.categories,
           axisLabel: {
-            interval: 1,
+            // 相隔几个显示x轴标签
+            interval: 0,
             margin: 16,
             color: 'rgba(255, 255, 255, 0.65)',
             fontFamily: 'Microsoft YaHei',
@@ -166,7 +167,7 @@ export default({
         yAxis: {
           type: 'value',
           name: '装备运行时长：小时',
-          nameTextStyle: { padding: [0, 0, 0, 70], fontSize: 14, lineHeight: 18, color: 'rgba(255, 255, 255, 0.70)', fontFamily: 'Microsoft YaHei', textAlign: 'left' },
+          nameTextStyle: { padding: [0, 0, 0, 85], fontSize: 14, lineHeight: 18, color: 'rgba(255, 255, 255, 0.70)', fontFamily: 'Microsoft YaHei', textAlign: 'left' },
           axisLabel: {
             color: 'rgba(255, 255, 255, 0.7)',
             fontFamily: 'Microsoft YaHei',

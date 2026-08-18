@@ -58,8 +58,15 @@
                   <span class="ml10">{{ item.name }}</span>
                 </div>
                 <div v-if="equipment.type.includes('在线')" class="flx-center">
+                  <svg-icon
+                    v-if="isRobotFault(item)"
+                    class="warning-svg"
+                    icon-class="warning"
+                    title="故障"
+                    style="color: #FFDD00 !important; font-size: 14px; cursor: default;"
+                  />
                   <template v-if="showBattery(item)">
-                    <span class="wp36 tar">{{ robotBaseInfo[item.robotId]?.battery }}%</span>
+                    <span class="wp36 tar ml10">{{ robotBaseInfo[item.robotId]?.battery }}%</span>
                     <svg-icon
                       class="ml10 battery-svg"
                       :icon-class="robotBaseInfo[item.robotId]?.battery >= 90 ? 'battery-4' : item.battery >= 80 ? 'battery-3' : robotBaseInfo[item.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[item.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
@@ -67,13 +74,6 @@
                     >
                     </svg-icon>
                   </template>
-                  <svg-icon
-                    v-if="isRobotFault(item)"
-                    class="ml10 warning-svg"
-                    icon-class="warning"
-                    title="故障"
-                    style="color: #FFDD00 !important; font-size: 14px; cursor: default;"
-                  />
                 </div>
               </div>
             </div>
@@ -134,13 +134,6 @@
                   <span class="ml10">{{ getTaskEquipmentRobot(equipment)?.name || equipment.name }}</span>
                 </div>
                 <div class="flx-center">
-                  <svg-icon
-                    v-if="isRobotFault(getTaskEquipmentRobot(equipment))"
-                    class="mr6"
-                    icon-class="warning"
-                    title="故障"
-                    style="color: #FFDD00; font-size: 14px"
-                  />
                   <svg-icon
                     :icon-class="robotBaseInfo[equipment.robotId]?.battery >= 90 ? 'battery-4' : robotBaseInfo[equipment.robotId]?.battery >= 80 ? 'battery-3' : robotBaseInfo[equipment.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[equipment.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
                     :style="{ color: robotBaseInfo[equipment.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"

@@ -92,7 +92,7 @@ service.interceptors.response.use(res => {
     const code = res.data.code === '0' ? 200 : res.data.code || 200;
     // 获取错误信息
 
-    const msg = errorCode[code] || res.data.msg || errorCode['default']
+    const msg = errorCode[code] || res.data.msg || res.data.message || errorCode['default']
     // 二进制数据则直接返回
     if (res.request.responseType ===  'blob' || res.request.responseType ===  'arraybuffer') {
       showAlert = false
@@ -142,18 +142,19 @@ service.interceptors.response.use(res => {
       return Promise.reject(error)
     }
     let { message } = error;
+    const msg = error.response?.data?.msg || error.response?.data?.message || ''
     if (message == "Network Error") {
-      message = "后端接口连接异常";
+      message = msg || "后端接口连接异常";
     } else if (message.includes("timeout")) {
-      message = "系统接口请求超时";
+      message = msg || "系统接口请求超时";
     } else if (message.includes("Request failed with status code")) {
-      message = "系统接口" + message.substr(message.length - 3) + "异常";
+      message = msg || "系统接口" + message.substr(message.length - 3) + "异常";
     }
     const skipErrorMessage = Boolean(error.config && error.config.skipErrorMessage)
     if (!skipErrorMessage && !showAlert) {
       showAlert = true
       Message({
-        message: message,
+        message,
         type: 'error',
         duration: 5 * 1000,
         onClose: () => { showAlert = false }
