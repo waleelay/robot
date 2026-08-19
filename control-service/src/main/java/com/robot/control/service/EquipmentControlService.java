@@ -5,6 +5,7 @@ import com.robot.control.auth.CurrentUser;
 import com.robot.control.config.DateTimeConfig;
 import com.robot.control.messaging.EquipmentControlCommandPublisher;
 import com.robot.control.ws.MediaWebSocketPublisher;
+
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+
 import org.springframework.stereotype.Service;
 
 /**
@@ -81,9 +83,9 @@ public class EquipmentControlService {
     /**
      * 创建 EquipmentControlService 实例。
      *
-     * @param commandPublisher commandPublisher
+     * @param commandPublisher   commandPublisher
      * @param webSocketPublisher webSocketPublisher
-     * @param managementClient managementClient
+     * @param managementClient   managementClient
      */
     public EquipmentControlService(
             EquipmentControlCommandPublisher commandPublisher,
@@ -121,7 +123,7 @@ public class EquipmentControlService {
      *
      * @param robotId 机器人 ID
      * @param request 请求参数
-     * @param user 当前用户
+     * @param user    当前用户
      * @return 控制会话信息
      */
     public synchronized Map<String, Object> acquire(String robotId, Map<String, Object> request, CurrentUser user) {
@@ -158,7 +160,7 @@ public class EquipmentControlService {
      *
      * @param robotId 机器人 ID
      * @param request 请求参数
-     * @param user 当前用户
+     * @param user    当前用户
      * @return 本体控制会话和模式切换发布结果
      */
     public Map<String, Object> takeover(String robotId, Map<String, Object> request, CurrentUser user) {
@@ -191,7 +193,7 @@ public class EquipmentControlService {
         response.put("controlMode", currentMode);
         response.put("controlModeName", controlModeName(currentMode));
         response.put("stateSeq", latestSeq);
-        if ("手动模式".equals(currentMode)) {
+        if ("手动模式".equals(currentMode) || "常规模式".equals(currentMode)) {
             response.put("modeChangeStatus", "CONFIRMED");
             return response;
         }
@@ -208,7 +210,7 @@ public class EquipmentControlService {
      *
      * @param robotId 机器人 ID
      * @param request 请求参数
-     * @param user 当前用户
+     * @param user    当前用户
      * @return 控制模式设置结果
      */
     public Map<String, Object> setControlMode(String robotId, Map<String, Object> request, CurrentUser user) {
@@ -275,9 +277,9 @@ public class EquipmentControlService {
     /**
      * 释放控制会话。
      *
-     * @param robotId 机器人 ID
+     * @param robotId          机器人 ID
      * @param controlSessionId 控制会话 ID
-     * @param request 请求参数
+     * @param request          请求参数
      * @return 释放结果
      */
     public Map<String, Object> release(String robotId, String controlSessionId, Map<String, Object> request) {
@@ -296,7 +298,7 @@ public class EquipmentControlService {
      *
      * @param robotId 机器人 ID
      * @param request 请求参数
-     * @param user 当前用户
+     * @param user    当前用户
      * @return 确认 Token 信息
      */
     public Map<String, Object> confirmToken(String robotId, Map<String, Object> request, CurrentUser user) {
@@ -318,7 +320,7 @@ public class EquipmentControlService {
      *
      * @param robotId 机器人 ID
      * @param request 请求参数
-     * @param user 当前用户
+     * @param user    当前用户
      * @return 命令发布结果
      */
     public Map<String, Object> publishCommand(String robotId, Map<String, Object> request, CurrentUser user) {
@@ -343,9 +345,9 @@ public class EquipmentControlService {
      *
      * <p>该命令只能由平台上传接口构造，不能由普通控制参数透传。</p>
      *
-     * @param robotId 机器人 ID
+     * @param robotId  机器人 ID
      * @param deviceId 多合一设备 ID
-     * @param params 已校验的下载元数据
+     * @param params   已校验的下载元数据
      * @return 命令发布结果
      */
     public Map<String, Object> publishMultiFunctionAudioTransfer(
@@ -428,7 +430,7 @@ public class EquipmentControlService {
      * 将边缘设备状态合并到控制服务现有机器人状态中。
      *
      * @param serialNumber 设备序列号
-     * @param update 边缘状态转换结果
+     * @param update       边缘状态转换结果
      * @return 合并后的完整状态
      */
     public Map<String, Object> mergeEdgeDeviceStatus(String serialNumber, Map<String, Object> update) {
@@ -469,7 +471,7 @@ public class EquipmentControlService {
      *
      * @param robotId 机器人 ID
      * @param request 请求参数
-     * @param user 当前用户
+     * @param user    当前用户
      * @return MQTT 载荷
      */
     private Map<String, Object> buildMqttPayload(String robotId, Map<String, Object> request, CurrentUser user) {
@@ -498,10 +500,10 @@ public class EquipmentControlService {
     /**
      * 构建设备动作参数。
      *
-     * @param action 动作名称
+     * @param action     动作名称
      * @param deviceType deviceType
-     * @param params params
-     * @param device device
+     * @param params     params
+     * @param device     device
      * @return 设备动作参数
      */
     private Map<String, Object> buildParams(
@@ -617,8 +619,7 @@ public class EquipmentControlService {
             }
             case "start_broadcast", "stop_broadcast", "start_monitor", "stop_monitor" ->
                     object("mediaSessionId", requiredString(params, "mediaSessionId"));
-            case "set_monitor_suppressed" ->
-                    object("suppressed", requiredBoolean(params, "suppressed"));
+            case "set_monitor_suppressed" -> object("suppressed", requiredBoolean(params, "suppressed"));
             case "play_tts" -> {
                 String text = requiredString(params, "text");
                 int maxLength = clampedInt(profile.get("maxTextLength"), 500, 1, 5000);
@@ -703,11 +704,11 @@ public class EquipmentControlService {
     /**
      * 创建控制会话快照。
      *
-     * @param robotId 机器人 ID
-     * @param scope scope
+     * @param robotId   机器人 ID
+     * @param scope     scope
      * @param deviceIds deviceIds
-     * @param actions actions
-     * @param user 当前用户
+     * @param actions   actions
+     * @param user      当前用户
      * @return 控制会话快照
      */
     private Map<String, Object> createSession(
@@ -735,7 +736,7 @@ public class EquipmentControlService {
     /**
      * 获取并校验控制会话。
      *
-     * @param robotId 机器人 ID
+     * @param robotId          机器人 ID
      * @param controlSessionId 控制会话 ID
      * @return 控制会话
      */
@@ -784,8 +785,8 @@ public class EquipmentControlService {
             throw new IllegalArgumentException("机器人不在线，不能下发本体移动指令");
         }
         String controlMode = reportedControlMode(state.get("controlMode"));
-        if (!"手动模式".equals(controlMode)) {
-            throw new IllegalArgumentException("机器人当前为" + controlModeName(controlMode) + "，请先切换到手动模式");
+        if (!"手动模式".equals(controlMode) && !"常规模式".equals(controlMode)) {
+            throw new IllegalArgumentException("机器人当前为" + controlModeName(controlMode) + "，请先切换到手动模式或常规模式");
         }
         requireOwnedActiveSession(robotId, requiredString(request, "controlSessionId"), "base", user);
     }
@@ -809,7 +810,7 @@ public class EquipmentControlService {
      * 判断控制会话是否过期。
      *
      * @param session WebSocket 会话
-     * @param now now
+     * @param now     now
      * @return 是否过期
      */
     private boolean isExpired(Map<String, Object> session, OffsetDateTime now) {
@@ -834,7 +835,7 @@ public class EquipmentControlService {
     /**
      * 获取并校验机器人设备。
      *
-     * @param robotId 机器人 ID
+     * @param robotId  机器人 ID
      * @param deviceId 设备 ID
      * @return 设备信息
      */
@@ -849,7 +850,7 @@ public class EquipmentControlService {
      * 判断控制范围是否冲突。
      *
      * @param requested 请求范围
-     * @param existing 已有范围
+     * @param existing  已有范围
      * @return 是否冲突
      */
     private static boolean conflicts(List<String> requested, List<String> existing) {
@@ -1059,9 +1060,9 @@ public class EquipmentControlService {
         if ("PAYLOAD".equals(componentType)
                 && (normalizedCode.contains("VEHICLE_LIGHT")
                 || managementActionCodes(component).stream()
-                        .map(this::normalized)
-                        .anyMatch(action -> "LIGHT_VEHICLE_SET".equals(action)
-                                || "LIGHT.VEHICLE.SET".equals(action)))) {
+                .map(this::normalized)
+                .anyMatch(action -> "LIGHT_VEHICLE_SET".equals(action)
+                        || "LIGHT.VEHICLE.SET".equals(action)))) {
             return "VEHICLE_LIGHT";
         }
         return componentType == null || componentType.isBlank() ? null : componentType;
@@ -1115,7 +1116,8 @@ public class EquipmentControlService {
      */
     private List<String> compatibilityActions(String deviceType) {
         return switch (deviceType) {
-            case "WHEELED_BASE", "QUADRUPED_BASE" -> List.of("drive.velocity", "navigation.return_home", "docking.leave");
+            case "WHEELED_BASE", "QUADRUPED_BASE" ->
+                    List.of("drive.velocity", "navigation.return_home", "docking.leave");
             case "DUAL_LIGHT_PTZ" -> List.of(
                     "up", "down", "left", "right",
                     "left_up", "right_up", "left_down", "right_down",
@@ -1324,7 +1326,7 @@ public class EquipmentControlService {
     /**
      * 读取字符串值并应用默认值。
      *
-     * @param value 待处理值
+     * @param value        待处理值
      * @param defaultValue 默认值
      * @return 字符串值
      */
@@ -1442,7 +1444,7 @@ public class EquipmentControlService {
     /**
      * 读取数值并应用默认值。
      *
-     * @param value 待处理值
+     * @param value        待处理值
      * @param defaultValue 默认值
      * @return 数值
      */
@@ -1453,7 +1455,7 @@ public class EquipmentControlService {
     /**
      * 读取 double 值并应用默认值。
      *
-     * @param value 待处理值
+     * @param value        待处理值
      * @param defaultValue 默认值
      * @return double 值
      */
@@ -1464,7 +1466,7 @@ public class EquipmentControlService {
     /**
      * 读取 boolean 值并应用默认值。
      *
-     * @param value 待处理值
+     * @param value        待处理值
      * @param defaultValue 默认值
      * @return boolean 值
      */
@@ -1518,10 +1520,10 @@ public class EquipmentControlService {
     /**
      * 读取并限制整数范围。
      *
-     * @param value 待处理值
+     * @param value        待处理值
      * @param defaultValue 默认值
-     * @param min 最小值
-     * @param max 最大值
+     * @param min          最小值
+     * @param max          最大值
      * @return 限制范围后的整数
      */
     private static int clampedInt(Object value, int defaultValue, int min, int max) {
@@ -1532,8 +1534,8 @@ public class EquipmentControlService {
     /**
      * 读取 Map 值并应用默认值。
      *
-     * @param map map
-     * @param key 字段名
+     * @param map          map
+     * @param key          字段名
      * @param defaultValue 默认值
      * @return 字段值或默认值
      */
@@ -1546,8 +1548,8 @@ public class EquipmentControlService {
      * 限制数值范围。
      *
      * @param value 待处理值
-     * @param min 最小值
-     * @param max 最大值
+     * @param min   最小值
+     * @param max   最大值
      * @return 限制范围后的数值
      */
     private static double clamp(double value, double min, double max) {

@@ -2020,7 +2020,7 @@ public class PanoramaService {
         if (controlMode == null || controlMode.isBlank()) {
             return null;
         }
-        return "手动模式".equals(controlMode) ? "手动模式" : "导航模式";
+        return "导航模式".equals(controlMode) ? "导航模式" : "手动模式";
     }
 
     private String controlModeName(String controlMode) {

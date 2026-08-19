@@ -7,11 +7,13 @@ import com.robot.control.mileage.MileageReading;
 import com.robot.control.mileage.MileageService;
 import com.robot.control.robot.service.RobotRegistryService;
 import com.robot.control.service.EquipmentControlService;
+
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -23,7 +25,8 @@ import org.springframework.stereotype.Component;
 public class EdgeDeviceStatusHandler {
 
     private static final Logger log = LoggerFactory.getLogger(EdgeDeviceStatusHandler.class);
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
+    };
 
     private final ObjectMapper objectMapper;
     private final EquipmentControlService equipmentControlService;
@@ -45,7 +48,7 @@ public class EdgeDeviceStatusHandler {
      * 处理一条 {@code eiop/v1/edge/{serialNumber}/status} 消息。
      *
      * @param topic MQTT topic
-     * @param json MQTT payload
+     * @param json  MQTT payload
      */
     public void handle(String topic, String json) {
         try {
@@ -167,7 +170,7 @@ public class EdgeDeviceStatusHandler {
         if (mode.isBlank()) {
             return null;
         }
-        if ("手动模式".equals(mode)) {
+        if ("手动模式".equals(mode) || "常规模式".equals(mode)) {
             return "手动模式";
         }
         if ("导航模式".equals(mode)) {

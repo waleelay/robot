@@ -450,7 +450,7 @@ public class PanoramaWebSocketEventAdapter {
 
     private String normalizeControlMode(String controlMode) {
         String mode = controlMode == null ? "" : controlMode;
-        return "手动模式".equals(mode) ? "手动模式" : "导航模式";
+        return "导航模式".equals(mode) ? "导航模式" : "手动模式";
     }
 
     private String panoramaDeviceStatus(JsonNode sourceData) {
