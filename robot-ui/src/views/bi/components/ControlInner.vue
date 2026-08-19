@@ -39,6 +39,11 @@ export default {
       type: Object,
       default: () => {},
     },
+    // one-split: mount on .item so panel can vertical-center without stretching .bottom
+    verticalCenter: {
+      type: Boolean,
+      default: false,
+    },
   },
   data() {
     return {
@@ -58,6 +63,10 @@ export default {
   watch: {
     visible(val) {
       if (val) this.ensureCameraControlProfile()
+      this.$emit('visible-change', !!val)
+      if (val && this.verticalCenter) {
+        this.$nextTick(() => this.mountToVideoItem())
+      }
     },
     'cameraInfo.robotId'(robotId) {
       if (robotId) this.ensureCameraControlProfile()
@@ -72,15 +81,38 @@ export default {
       if (!robotId) return
       if (this.controlProfiles[robotId]) return
       this.loadControlProfile(robotId)
+    },
+    // mount on video cell so absolute positioning uses .item as containing block
+    mountToVideoItem() {
+      const el = this.$el
+      if (!el || !el.classList || !el.closest) return
+      const item = el.closest('.item')
+      if (item && el.parentElement !== item) {
+        item.appendChild(el)
+      }
     }
   },
 };
 </script>
 <style lang="scss" scoped>
+/* dock above toolbar; one-split vertical center via bi-new .item.one > .inner-video-control */
 .inner-video-control {
   position: absolute;
-  top: -180px;
+  top: auto;
+  bottom: calc(100% + 8px);
   right: 30px;
   left: unset;
+  z-index: 5;
+  transform-origin: bottom right;
+
+  ::v-deep .outer {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* 仅视频框内控制器中心字号 */
+  .circle {
+    font-size: 16px !important;
+  }
 }
 </style>

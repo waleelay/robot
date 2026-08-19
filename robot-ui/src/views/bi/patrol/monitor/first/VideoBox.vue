@@ -6,7 +6,7 @@
     :class="[
       className,
       splitType === 1 ? 'one' : splitType === 4 ? 'four' : splitType === 6 ? 'six' : 'nine',
-      { 'drop-active': dragOver, 'is-page-fullscreen-cell': isPageFullscreen }
+      { 'drop-active': dragOver, 'is-page-fullscreen-cell': isPageFullscreen, 'is-control-open': controlOpen }
     ]"
     :id="`${prefixId}slot_${index}`"
     @dragover.prevent="onDragOver"
@@ -76,6 +76,7 @@
             @toggleFullscreen="$emit('toggleFullscreen', `slot_${index}`)"
             @removeVideo="$emit('removeVideo', $event)"
             @refreshVideo="$emit('refreshVideo', $event)"
+            @control-visible-change="controlOpen = $event"
             :ref="`videoToolRefslot_${index}`"
             :className="overlaySizeClass"
             :showControl="showControl && !isFixedCamera" />
@@ -197,8 +198,13 @@ export default {
         || robot.type === 'FIXED_CAMERA'
         || robot.type === '固定摄像头'
     },
+    // 九分屏、六分屏小格不展示控制器；其余分屏按控制中心场景决定
     showControl() {
-      return !this.selectedRobotId || (this.selectedRobotId && (this.className.includes('six-1') || this.splitType === 1 || this.splitType === 4))
+      if (this.splitType === 9 || this.isSixSmallCell) return false
+      return !this.selectedRobotId
+        || this.className.includes('six-1')
+        || this.splitType === 1
+        || this.splitType === 4
     },
     /** 二级监控（深度控制）：顶部仅显示摄像头名称 */
     cameraTitleOnly() {
@@ -213,6 +219,7 @@ export default {
       resetTimer: null,
       recordingTime: formatTiming(0),
       ROBOT_TYPE_INFO,
+      controlOpen: false,
     }
   },
   mounted() {
@@ -319,6 +326,9 @@ export default {
 
 <style lang="scss" scoped>
 .item {
+  /* 限制绝对定位控制盘溢出，避免撑出祖先滚动条导致画面“收缩” */
+  overflow: hidden;
+
   /* 视频铺满时盖住 inset 阴影，用上层描边保证边框可见 */
   &::after {
     content: '';
@@ -331,6 +341,12 @@ export default {
     pointer-events: none;
     z-index: 3;
     box-sizing: border-box;
+  }
+
+  /* 控制器打开时：全屏格子仍保持底部工具条可见 */
+  &.is-control-open .bottom {
+    opacity: 1 !important;
+    pointer-events: auto !important;
   }
 }
 

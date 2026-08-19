@@ -147,7 +147,7 @@ export default {
             this.$set(this.equipmentCameraObj, item.groupType, {
               type: item.groupType,
               name: item.groupTypeName,
-              svg: ['single_gimbal', 'dual_gimbal'].includes(item.groupType) ? 'infrared' : item.groupType === 'body' ? (ROBOT_TYPE_INFO[robot.type].icon || 'robot-dog') : 'lidar',
+              svg: ['single_gimbal', 'dual_gimbal'].includes(item.groupType) ? 'infrared' : item.groupType === 'body' ? (ROBOT_TYPE_INFO[robot.type]?.icon || 'robot-dog') : 'lidar',
               cameras: {},
             })
           }

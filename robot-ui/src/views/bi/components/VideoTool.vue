@@ -1,5 +1,5 @@
 <template>
-  <div>
+   <div>
     <div class="flx-center p10 custom-video-tool" :class="className">
       <!-- 视频清晰度 -->
       <!-- <div :ref="`dropdownRef${slotKey}_pixel`" :style="{ display: !qualitySelectDisabled ? 'block' : 'none' }">
@@ -58,8 +58,8 @@
         <!-- <div :title="openMic ? '关闭麦克风' : '打开麦克风'" @click="toggleMic()">
           <svg-icon :icon-class="openMic ? 'mic' : 'mic-off'" />
         </div> -->
-        <div v-if="showCameraControl" @click="$refs.controlInnerRef.visible = !$refs.controlInnerRef.visible">
-          <svg-icon title="控制器" icon-class="control" />
+        <div v-if="showCameraControl" :title="controlTitle" @click="toggleCameraControl">
+          <svg-icon icon-class="control" />
         </div>
       </template>
       <div v-if="!videoStatus || videoStatus === 'stopped'" title="刷新" @click="refreshVideo()">
@@ -76,7 +76,13 @@
       </div>
     </div>
     <!-- <Snap ref="snapModalRef" :idName="idName" /> -->
-    <ControlInner v-if="showCameraControl" ref="controlInnerRef" :cameraInfo="cameraInfo" />
+    <ControlInner
+      v-if="showCameraControl"
+      ref="controlInnerRef"
+      :cameraInfo="cameraInfo"
+      :vertical-center="!!className.one"
+      @visible-change="$emit('control-visible-change', $event)"
+    />
     <MultimediaDetail ref="multimediaDetailRef" />
   </div>
 </template>
@@ -146,6 +152,12 @@ export default {
         && !this.isFixedCamera
         && ['single_gimbal', 'dual_gimbal', 'body'].includes(this.cameraInfo.groupType)
     },
+    controlTitle() {
+      const groupType = this.cameraInfo && this.cameraInfo.groupType
+      if (groupType === 'body') return '本体控制器'
+      if (groupType === 'single_gimbal' || groupType === 'dual_gimbal') return '云台控制器'
+      return '控制器'
+    },
     canSnapshot() {
       return this.cameraInfo.remoteVideoTrack
       // return !!this.cameraInfo.session && this.cameraInfo.watching && !this.cameraInfo.stopping && !this.cameraInfo.stopped
@@ -167,6 +179,16 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSnapshotTime', 'changeCameraQuality']),
+    toggleCameraControl() {
+      const panel = this.$refs.controlInnerRef
+      if (!panel) return
+      panel.visible = !panel.visible
+    },
+    closeCameraControl() {
+      const panel = this.$refs.controlInnerRef
+      if (!panel || !panel.visible) return
+      panel.visible = false
+    },
     changeQuality(quality) {
       this.changeCameraQuality({ ...this.cameraInfo, quality })
     },
@@ -253,6 +275,10 @@ export default {
     }
   },
   watch: {
+    // 视频框互换/换源后关掉控制器，避免控制盘留在错误画面上
+    cameraKey() {
+      this.closeCameraControl()
+    },
     canSnapshot: {
       handler(newVal, oldVal) {
         if (newVal) {
@@ -272,7 +298,3 @@ export default {
   }
 }
 </script>
-
-<style lang="scss" scoped>
-
-</style>

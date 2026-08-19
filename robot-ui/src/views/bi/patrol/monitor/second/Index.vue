@@ -60,7 +60,7 @@
             基本信息
           </div>
         </div>
-        <div class="mt10 hp162 d-flex" style="background: #011223; border: 1px solid #123F8C;">
+        <div class="mt10 hp169 d-flex" style="background: #011223; border: 1px solid #123F8C;">
           <div class="flex1 flx-align-center pl37 robot basic">
             <div class="flex-column flx-align-center">
               <div class="name text-ellipsis">{{ selectedRobot.name }}</div>
@@ -84,8 +84,8 @@
         </div>
       </div>
     </div>
-    <div class="ml62 flex1">
-      <div class="h100 pr14">
+    <div class="ml62 flex1" style="min-width: 0; min-height: 0;">
+      <div class="h100 pr14 flex-column" style="min-height: 0;">
         <div class="page-back-row flx-align-center mb15">
           <div class="page-back" title="返回" @click="backToMonitor">
             <svg-icon icon-class="back1" />
@@ -96,7 +96,11 @@
             上装控制区域
           </div>
         </div>
-        <div class="common-scroll mt10 pr14" style="height: calc(100% - 94px); min-height: 876px; overflow-y: auto; margin-right: -14px;">
+        <div
+          v-if="hasPayloadDevices"
+          class="common-scroll mt10 pr14"
+          style="height: calc(100% - 94px); min-height: 876px; overflow-y: auto; margin-right: -14px;"
+        >
           <div v-if="ptzDevice" class="box p20 mt10">
             <div class="card-title-t2">
               <div class="text pb12">
@@ -146,6 +150,12 @@
             </div>
           </div>
         </div>
+        <div
+          v-else
+          class="payload-empty flx-center flex1 mt10"
+        >
+          <Empty text="暂无上装设备" width="160px" :opacity="0.7" textColor="#BEE1FF" />
+        </div>
       </div>
     </div>
   </div>
@@ -165,6 +175,7 @@ import MultimediaRecord from './components/MultimediaRecord.vue'
 import MultimediaDetail from './components/MultimediaDetail.vue'
 import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue'
 import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue'
+import Empty from '../../../components/Empty.vue'
 import yuntai from './components/yuntai'
 import { mapActions, mapState } from 'vuex'
 import { isRobotDog } from '@/constants/robot.js'
@@ -183,7 +194,8 @@ export default {
     MultimediaRecord,
     MultimediaDetail,
     GlobalGisMap,
-    GlobalSlamMap
+    GlobalSlamMap,
+    Empty
   },
   props: {
     prefixId: {
@@ -261,6 +273,16 @@ export default {
       const payload = { ...this.currentSlamMap, points }
       this._slamMapPayloadCache = { mapRef: this.currentSlamMap, points, payload }
       return payload
+    },
+    /** 是否有任意上装控制设备（云台/多合一/对讲/捕网/发射器） */
+    hasPayloadDevices() {
+      return !!(
+        this.ptzDevice
+        || this.multiFunctionDevice
+        || this.audioDevice
+        || this.netGunDevice
+        || this.launcherDevice
+      )
     }
   },
   data() {
@@ -445,6 +467,11 @@ export default {
   overflow: hidden;
   background: linear-gradient(180deg, rgba(18, 20, 43, 0) 0%, #12142b 100%);
   box-shadow: inset 0 0 20px 0 rgba(33, 108, 149, 0.3);
+}
+.payload-empty {
+  min-height: 0;
+  background: linear-gradient(180deg, rgba(18, 20, 43, 0) 0%, #12142B 100%);
+  box-shadow: 0 0 20px 0 rgba(33, 108, 149, 0.3) inset;
 }
 .basic {
   .name {
