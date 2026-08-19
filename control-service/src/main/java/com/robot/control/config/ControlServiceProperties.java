@@ -246,6 +246,7 @@ public class ControlServiceProperties {
      */
     public static class Robot {
         private long heartbeatTimeoutSeconds = 15;
+        private long offlineRetentionSeconds = 60;
 
         /**
          * 返回机器人心跳超时时间。
@@ -263,6 +264,24 @@ public class ControlServiceProperties {
          */
         public void setHeartbeatTimeoutSeconds(long heartbeatTimeoutSeconds) {
             this.heartbeatTimeoutSeconds = heartbeatTimeoutSeconds;
+        }
+
+        /**
+         * 返回离线注册表条目保留时间。
+         *
+         * @return 离线注册表条目保留时间
+         */
+        public long getOfflineRetentionSeconds() {
+            return offlineRetentionSeconds;
+        }
+
+        /**
+         * 设置离线注册表条目保留时间。
+         *
+         * @param offlineRetentionSeconds 离线注册表条目保留时间
+         */
+        public void setOfflineRetentionSeconds(long offlineRetentionSeconds) {
+            this.offlineRetentionSeconds = offlineRetentionSeconds;
         }
     }
 

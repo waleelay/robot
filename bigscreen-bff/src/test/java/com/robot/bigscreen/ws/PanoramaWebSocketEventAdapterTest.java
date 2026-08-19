@@ -136,6 +136,78 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(adapter.statsRefreshParts("browser-a", payload)).containsExactly(StatsPart.ALARMS);
     }
 
+    @Test
+    void skipsDeviceStatusEventForClientStatusSource() throws Exception {
+        List<String> events = adapter.adapt("""
+                {
+                  "event":"robot.state",
+                  "timestamp":"2026-08-18 10:00:00",
+                  "data":{
+                    "robotId":"test117",
+                    "status":"online",
+                    "stateSource":"MEDIA_CLIENT_STATUS",
+                    "battery":80,
+                    "controlMode":"手动模式"
+                  }
+                }
+                """);
+
+        assertThat(events.stream()
+                .map(this::readTree)
+                .noneMatch(node -> "panorama.device.status.changed".equals(node.path("event").asText()))).isTrue();
+        assertThat(adapter.statsRefreshParts("browser-a", """
+                {"event":"robot.state","data":{"robotId":"test117","status":"online","stateSource":"MEDIA_CLIENT_STATUS"}}
+                """)).isEmpty();
+    }
+
+    @Test
+    void derivesDeviceStatusEventForEdgeStatusSource() throws Exception {
+        List<String> events = adapter.adapt("""
+                {
+                  "event":"robot.state",
+                  "timestamp":"2026-08-18 10:00:00",
+                  "data":{
+                    "robotId":"test118",
+                    "status":"online",
+                    "healthStatus":"异常",
+                    "stateSource":"EDGE_DEVICE_STATUS"
+                  }
+                }
+                """);
+
+        JsonNode statusEvent = events.stream()
+                .map(this::readTree)
+                .filter(node -> "panorama.device.status.changed".equals(node.path("event").asText()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(statusEvent.path("data").path("status").asText()).isEqualTo("fault");
+    }
+
+    @Test
+    void derivesOfflineDeviceStatusEventForOfflineScanSource() throws Exception {
+        List<String> events = adapter.adapt("""
+                {
+                  "event":"robot.state",
+                  "timestamp":"2026-08-18 10:00:00",
+                  "data":{
+                    "robotId":"test119",
+                    "status":"offline",
+                    "stateSource":"OFFLINE_SCAN"
+                  }
+                }
+                """);
+
+        JsonNode statusEvent = events.stream()
+                .map(this::readTree)
+                .filter(node -> "panorama.device.status.changed".equals(node.path("event").asText()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(statusEvent.path("data").path("status").asText()).isEqualTo("offline");
+        assertThat(adapter.statsRefreshParts("browser-a", """
+                {"event":"robot.state","data":{"robotId":"test119","status":"offline","stateSource":"OFFLINE_SCAN"}}
+                """)).contains(StatsPart.DEVICES, StatsPart.TASKS);
+    }
+
     private JsonNode readTree(String value) {
         try {
             return objectMapper.readTree(value);

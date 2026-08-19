@@ -38,12 +38,12 @@ public class RobotMediaStatusSubscriber {
     private static final String STATUS_TOPIC = "robot/+/media/video/status";
     private static final String FIXED_CAMERA_STATUS_TOPIC = "gateway/fixed-camera/+/video/status";
     private static final String INTERCOM_STATUS_TOPIC = "robot/+/media/video/intercom/status";
-    private static final String CLIENT_STATUS_TOPIC = "robot/+/media/client/status";
+    private static final String MEDIA_CLIENT_STATUS_TOPIC = "robot/+/media/client/status";
     private static final String EDGE_DEVICE_STATUS_TOPIC = "eiop/v1/edge/+/status";
     private static final String CALL_INVITE_TOPIC = "robot/+/media/video/intercom/call/invite";
     private static final String CALL_CANCEL_TOPIC = "robot/+/media/video/intercom/call/cancel";
     private static final String[] STATUS_TOPICS = {
-        STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
+        STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, INTERCOM_STATUS_TOPIC, MEDIA_CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
         EDGE_DEVICE_STATUS_TOPIC
     };
     private static final int[] STATUS_QOS = {1, 1, 1, 1, 1, 1, 1};
@@ -264,7 +264,7 @@ public class RobotMediaStatusSubscriber {
                     edgeDeviceStatusListener()
                 });
         log.info("已订阅媒体 MQTT 主题：{} 、{} 、{} 、{} 、{} 、{} 、{}",
-                STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, INTERCOM_STATUS_TOPIC, CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
+                STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, INTERCOM_STATUS_TOPIC, MEDIA_CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
                 EDGE_DEVICE_STATUS_TOPIC);
     }
 }

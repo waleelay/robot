@@ -1,6 +1,7 @@
 package com.robot.control.robot.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -50,6 +51,47 @@ class RobotRegistryServiceTest {
                 .containsEntry("controlModeName", "导航模式")
                 .containsEntry("devices", List.of(object("deviceId", "ptz-001")));
         assertThat(map(state.get("location"))).containsEntry("yaw", -2.87);
+    }
+
+    @Test
+    void sweepOfflinePublishesOfflineWithOfflineScanSource() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        ControlServiceProperties properties = new ControlServiceProperties();
+        properties.getRobot().setHeartbeatTimeoutSeconds(-1);
+        RobotRegistryService service = new RobotRegistryService(
+                properties, publisher, new ObjectMapper());
+        service.update(object(
+                "robotId", "test116",
+                "status", "online"));
+
+        service.sweepOffline();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(publisher, org.mockito.Mockito.times(2)).publish(eq("robot.state"), captor.capture());
+        Map<String, Object> state = captor.getAllValues().get(1);
+        assertThat(state)
+                .containsEntry("robotId", "test116")
+                .containsEntry("status", "offline")
+                .containsEntry("stateSource", "OFFLINE_SCAN");
+    }
+
+    @Test
+    void sweepOfflineRemovesStaleOfflineEntries() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        ControlServiceProperties properties = new ControlServiceProperties();
+        properties.getRobot().setHeartbeatTimeoutSeconds(-1);
+        properties.getRobot().setOfflineRetentionSeconds(-1);
+        RobotRegistryService service = new RobotRegistryService(
+                properties, publisher, new ObjectMapper());
+        service.update(object(
+                "robotId", "test120",
+                "status", "online"));
+
+        service.sweepOffline();
+
+        assertThat(service.list()).isEmpty();
+        verify(publisher, org.mockito.Mockito.times(2)).publish(eq("robot.state"), any());
     }
 
     @SuppressWarnings("unchecked")

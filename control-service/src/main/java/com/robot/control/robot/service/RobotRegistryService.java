@@ -239,8 +239,24 @@ public class RobotRegistryService {
         devices.values().forEach(device -> {
             if ("online".equals(device.status) && device.lastHeartbeatAt != null && device.lastHeartbeatAt.isBefore(threshold)) {
                 device.status = "offline";
+                device.dynamicState.put("stateSource", "OFFLINE_SCAN");
                 webSocketPublisher.publish("robot.state", toState(device));
             }
+        });
+        cleanupStaleOffline();
+    }
+
+    /**
+     * 清理长期离线（超过 {@code control.robot.offline-retention-seconds}）的注册表条目，
+     * 避免未注册或已下架设备的内存条目无限累积。
+     */
+    private void cleanupStaleOffline() {
+        OffsetDateTime retentionThreshold = now().minusSeconds(properties.getRobot().getOfflineRetentionSeconds());
+        devices.entrySet().removeIf(entry -> {
+            RobotDevice device = entry.getValue();
+            return "offline".equals(device.status)
+                    && device.lastHeartbeatAt != null
+                    && device.lastHeartbeatAt.isBefore(retentionThreshold);
         });
     }
 

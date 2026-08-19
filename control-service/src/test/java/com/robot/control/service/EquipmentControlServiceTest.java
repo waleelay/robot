@@ -377,6 +377,15 @@ class EquipmentControlServiceTest {
                 .doesNotContainKey("type");
     }
 
+        @Test
+    void marksClientReportedStateAsClientStatusSource() {
+        Map<String, Object> state = service.handleClientState(object(
+                "robotId", "robot-001",
+                "status", "online"));
+
+        assertThat(state).containsEntry("stateSource", "MEDIA_CLIENT_STATUS");
+    }
+
     @Test
     void exposesRegisteredMultiFunctionAudioUploadAction() {
         register(component(

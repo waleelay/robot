@@ -64,6 +64,8 @@ control:
     heartbeat-timeout-seconds: ${ROBOT_HEARTBEAT_TIMEOUT_SECONDS:15}
     # 机器人心跳扫描任务间隔，单位毫秒。
     heartbeat-sweep-delay-ms: ${ROBOT_HEARTBEAT_SWEEP_DELAY_MS:5000}
+    # 离线注册表条目保留时间，单位秒；超过该时长未再上报的离线设备从注册表中清理。
+    offline-retention-seconds: ${ROBOT_OFFLINE_RETENTION_SECONDS:60}
   mileage:
     # 单次里程增量折算速度超过该值时标记为可疑，不计入大屏统计。
     max-speed-mps: ${MILEAGE_MAX_SPEED_MPS:15}

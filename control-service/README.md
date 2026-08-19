@@ -115,7 +115,7 @@ gateway/fixed-camera/{gatewayId}/video/status
 | `control.center-stomp.*` | `CENTER_STOMP_*` | 上游任务事件连接 |
 | `control.mileage.*` | `MILEAGE_*` | 异常速度阈值和统计刷新距离阈值 |
 | `spring.datasource.*` | `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` | 里程检查点和分钟增量桶数据库 |
-| `control.robot.*` | `ROBOT_HEARTBEAT_*` | 心跳超时与扫描周期 |
+| `control.robot.*` | `ROBOT_HEARTBEAT_*`、`ROBOT_OFFLINE_RETENTION_SECONDS` | 心跳超时与扫描周期、离线注册表清理 |
 | `control.session.*` | `INTERRUPTED_*`、`IDLE_*`、`VIEWER_*` | 视频恢复和释放参数 |
 
 Control 信任 BFF 注入的用户 Header，缺失时使用开发身份；生产不应无防护直连。Java 时间统一输出 `yyyy-MM-dd HH:mm:ss`（`Asia/Shanghai`）。

@@ -24,6 +24,7 @@ public class PanoramaWebSocketEventAdapter {
     private static final DateTimeFormatter EVENT_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String ROBOT_STATE_EVENT = "robot.state";
     private static final String ROBOT_MILEAGE_CHANGED = "robot.mileage.changed";
+    private static final String STATE_SOURCE_CLIENT = "MEDIA_CLIENT_STATUS";
     private static final String PANORAMA_DEVICE_STATUS_CHANGED = "panorama.device.status.changed";
     private static final String PANORAMA_DEVICE_LOCATION_CHANGED = "panorama.device.location.changed";
     private static final String PANORAMA_TASK_CHANGED = "panorama.task.changed";
@@ -129,7 +130,9 @@ public class PanoramaWebSocketEventAdapter {
             return;
         }
 
-        messages.add(writePanoramaDeviceStatus(root, data));
+        if (!STATE_SOURCE_CLIENT.equals(text(data, "stateSource"))) {
+            messages.add(writePanoramaDeviceStatus(root, data));
+        }
 
         JsonNode location = firstObject(data, "location", "localization");
         if (location == null) {
@@ -347,7 +350,7 @@ public class PanoramaWebSocketEventAdapter {
         }
         JsonNode data = root.path("data");
         String robotId = text(data, "robotId");
-        if (robotId.isBlank()) {
+        if (robotId.isBlank() || STATE_SOURCE_CLIENT.equals(text(data, "stateSource"))) {
             return parts;
         }
         String status = panoramaDeviceStatus(data);

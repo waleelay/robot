@@ -751,7 +751,7 @@ WebSocket：
 
 | 事件 | 数据来源与触发条件 | BFF 推送策略 |
 |---|---|---|
-| `panorama.device.status.changed` | Control 收到设备状态 MQTT 上报后广播 `robot.state` | 每条可识别的 `robot.state` 都即时派生并推送，不受位置限频影响；在线、离线、故障等状态变化同时触发统计快照刷新。 |
+| `panorama.device.status.changed` | Control 收到设备状态 MQTT 上报后广播 `robot.state` | 仅当 `robot.state` 来源为边缘状态（`stateSource=EDGE_DEVICE_STATUS`）或离线扫描（`stateSource=OFFLINE_SCAN`）时即时派生并推送，不受位置限频影响；媒体客户端来源（`stateSource=MEDIA_CLIENT_STATUS`）不派生该事件，机器人状态以边缘上报为准。在线、离线、故障等状态变化同时触发统计快照刷新。 |
 | `panorama.device.location.changed` | `robot.state` 携带 `location/localization/status.localization` 时派生；联调设备 `test111`、`SN005`、`SN006` 在无真实定位时使用专用演示坐标 | 按“浏览器会话 + `robotId`”独立限频。首条立即推送；同一设备 1 秒内的多条位置只保留最新一条，每秒最多推送一次；`localized=false` 立即推送。没有新定位时不重复发送旧坐标。 |
 | `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 300ms 去抖重查管理端权威快照，逐项比较后只推送发生变化的任务；`taskId` 缺失的旧版事件不直接下发。 |
 | `panorama.alarm.changed` | 上游完整告警事件，或管理端 STOMP `alarm.changed.v1` 转换的 `management.alarm.invalidated` | 完整事件立即转换；失效通知以 300ms 去抖重查管理端告警快照，按会话比较后只推送变化项。没有真实上游事件时不生成模拟告警。 |

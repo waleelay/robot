@@ -83,6 +83,7 @@ public class EquipmentControlService {
      *
      * @param commandPublisher commandPublisher
      * @param webSocketPublisher webSocketPublisher
+     * @param managementClient managementClient
      */
     public EquipmentControlService(
             EquipmentControlCommandPublisher commandPublisher,
@@ -412,6 +413,7 @@ public class EquipmentControlService {
         state.put("controlMode", controlMode);
         state.put("controlModeName", controlModeName(controlMode));
         state.put("timestamp", DateTimeConfig.normalize(state.getOrDefault("timestamp", OffsetDateTime.now())));
+        state.put("stateSource", "MEDIA_CLIENT_STATUS");
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
         managementClient.cachedDeviceBySerialNumber(robotId)
                 .ifPresent(robot -> {
