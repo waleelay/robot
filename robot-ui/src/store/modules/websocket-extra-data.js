@@ -41,7 +41,7 @@ const state = {
   alarmRevision: 0,
    // 实时定位
   robotLocation: {}, // { robotId: { lat, lng, altitude, address, updatedAt } }
-  // 设备基本信息；task 由 taskData 反查，cameras 由 robot.state 写入 websocketRobot，均不取 overview.devices
+  // 设备基本信息；task 由 taskData 反查；cameras 只存 websocketRobot（overview/robot.state）
   robotBaseInfo: {}, // { robotId: { ...robotInfo } }
   // 已收到实时推送的装备：后续 overview 快照不得覆盖实时字段
   realtimeRobotIds: {},
@@ -239,8 +239,13 @@ const actions = {
       }
     }
 
-    // 装备 task 从 taskData 反查；相机从 robot.state 取。固定摄像头没有媒体心跳，仍保留 overview 相机
-    const devicesWithoutTask = devices.map(item => omitOverviewDerivedFields(item))
+    // 装备 task 只从全局 taskData 反查，不使用 overview.devices.task
+    const devicesWithoutTask = devices.map(item => {
+      if (!item || item.task === undefined) return item
+      const next = { ...item }
+      delete next.task
+      return next
+    })
 
     // 调用 websocketRobot 模块的 loadRobots
     dispatch('websocketRobot/loadRobots', devicesWithoutTask, { root: true })
@@ -442,21 +447,6 @@ function buildSlamOfRobot(maps, robots, tasks) {
   })
 
   return result
-}
-
-function isFixedCameraDevice(item) {
-  const markers = [item?.sourceType, item?.typeCode, item?.equipmentType, item?.type]
-  return markers.some(value => value === 'FIXED_CAMERA' || value === '固定摄像头')
-}
-
-function omitOverviewDerivedFields(item) {
-  if (!item) return item
-  const next = { ...item }
-  delete next.task
-  if (!isFixedCameraDevice(next)) {
-    delete next.cameras
-  }
-  return next
 }
 
 function toRobotTaskSummary(task) {

@@ -122,7 +122,7 @@ import { mapActions, mapState } from 'vuex';
 import PieChart from './PieChart.vue';
 import VideoBox from '../components/modal/VideoBox.vue';
 import EquipmentScreenSelect from './EquipmentScreenSelect.vue';
-import { pickDefaultCamera } from '../js/utils/pick-default-camera';
+import { pickDefaultCamera, isBodyCamera } from '../js/utils/pick-default-camera';
 export default {
   name: 'BiIndexLeft',
   components: { PieChart, VideoBox, EquipmentScreenSelect },
@@ -161,19 +161,19 @@ export default {
       ]
     },
     /** 装备画面选择：在线与故障装备均可选，离线不可选 */
-    onlineRobots() {
+    selectableRobots() {
       return (this.robots || []).filter(robot => {
         const status = robot.status || this.robotBaseInfo?.[robot.robotId]?.status
         return status === 'online' || status === 'fault'
       })
     },
-    // 仅 1 个在线装备时，选择框展示该装备下全部摄像头（本体优先）
+    // 仅 1 个可选装备时，选择框展示该装备下全部摄像头（本体优先）
     isSingleEquipmentCameraMode() {
-      return this.onlineRobots.length === 1
+      return this.selectableRobots.length === 1
     },
     selectTitle() {
       if (this.isSingleEquipmentCameraMode) {
-        return this.onlineRobots[0]?.name || '装备画面选择'
+        return this.selectableRobots[0]?.name || '装备画面选择'
       }
       return '装备画面选择'
     },
@@ -188,11 +188,10 @@ export default {
     selectOptions() {
       const otherSlot = this.videoSlots[this.activeSlotIndex === 0 ? 1 : 0]
       if (this.isSingleEquipmentCameraMode) {
-        const robot = this.onlineRobots[0]
+        const robot = this.selectableRobots[0]
         const cameras = [...(robot?.cameras || [])].sort((a, b) => {
-          if (a.groupType === 'body') return -1
-          if (b.groupType === 'body') return 1
-          return 0
+          if (isBodyCamera(a) === isBodyCamera(b)) return 0
+          return isBodyCamera(a) ? -1 : 1
         })
         return cameras.map(camera => {
           const occupied = otherSlot?.camera?.key === camera.key
@@ -206,7 +205,7 @@ export default {
           }
         })
       }
-      return this.onlineRobots.map(robot => {
+      return this.selectableRobots.map(robot => {
         const occupied = otherSlot?.robotId === robot.robotId
         const hasCamera = !!pickDefaultCamera(robot, this.cameras)
         return {
@@ -319,7 +318,7 @@ export default {
       await this.assignSlot(index, item)
     },
     async assignSlot(index, item) {
-      const robot = this.onlineRobots.find(r => r.robotId === item.robotId)
+      const robot = this.selectableRobots.find(r => r.robotId === item.robotId)
         || this.robots.find(r => r.robotId === item.robotId)
       if (!robot) return
       const robotInfo = Object.assign({}, this.robotBaseInfo?.[robot.robotId] || robot)

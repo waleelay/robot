@@ -45,7 +45,7 @@
                 v-for="(item, index) in equipment.list"
                 :key="item.robotId"
                 class="item flx-justify-between"
-                :title="hasRobotCamera(item) ? undefined : '暂无视频源'"
+                :title="pickDefaultCamera(item, cameras) ? undefined : '暂无视频源'"
                 :class="{ 'is-active': isRobotChecked(item.robotId) }"
                 :draggable="!isRobotChecked(item.robotId) && item.status !== 'offline'"
                 @dragstart="onDragStart($event, item, 'equipmentListComponent')"
@@ -124,7 +124,7 @@
                 :key="equipment.robotId || equipment.name"
                 class="item flx-justify-between"
                 :class="{ 'is-active': isRobotChecked(equipment.robotId) }"
-                :title="hasRobotCamera(getTaskEquipmentRobot(equipment)) ? undefined : '暂无视频源'"
+                :title="pickDefaultCamera(getTaskEquipmentRobot(equipment), cameras) ? undefined : '暂无视频源'"
                 :draggable="canDragTaskEquipment(equipment)"
                 @dragstart.stop="onTaskEquipmentDragStart($event, equipment)"
                 @dragend="onDragEnd"
@@ -243,9 +243,7 @@ export default {
   },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
-    hasRobotCamera(robot) {
-      return Boolean(pickDefaultCamera(robot, this.cameras))
-    },
+    pickDefaultCamera,
     resolveTask(taskId) {
       if (taskId === undefined || taskId === null || taskId === '') return null
       const data = this.taskData || {}
@@ -420,9 +418,6 @@ export default {
       }
       onDragStart(event, robot, 'equipmentListComponent')
     },
-    resolveEquipmentListStatus(liveStatus, baseStatus) {
-      return liveStatus || baseStatus || 'offline'
-    },
     refreshEquipmentLists() {
       const newRobots = this.robots || []
       if (!newRobots.length) {
@@ -440,7 +435,7 @@ export default {
         const base = this.robotBaseInfo?.[item.robotId]
           || this.robotBaseInfo?.[String(item.robotId)]
           || {}
-        const status = this.resolveEquipmentListStatus(item.status, base.status)
+        const status = item.status || base.status || 'offline'
         const robot = {
           ...base,
           ...item,

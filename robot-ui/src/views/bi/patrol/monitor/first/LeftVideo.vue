@@ -176,7 +176,7 @@ import VideoBox from './VideoBox.vue';
 import { mapActions, mapState } from 'vuex';
 import { onDragStart, onDragEnd } from '@/store/modules/dragVideo.js';
 import { events as fullscreenEvents, enterFullscreen, exitFullscreen, isElementFullscreen } from '@/utils/fullscreen.js';
-import { pickDefaultCamera } from '../../../js/utils/pick-default-camera';
+import { pickDefaultCamera, isBodyCamera } from '../../../js/utils/pick-default-camera';
 export default {
   name: 'LeftVideo',
   mixins: [canvasUtil],
@@ -654,7 +654,7 @@ export default {
 
       // 切到一分屏：优先保留正在播放的 body，否则保留当前第一个播放中的流
       if (splitType === 1 && items.length > 1) {
-        const bodyItem = items.find(item => item.groupType === 'body')
+        const bodyItem = items.find(item => isBodyCamera(item))
         if (bodyItem) {
           items = [bodyItem, ...items.filter(item => item.key !== bodyItem.key)]
         }

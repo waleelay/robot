@@ -23,6 +23,8 @@ import {
 import Vue from 'vue'
 import { errorMessage } from '../../utils'
 import { bearerToken } from '@/auth'
+import { overlayLiveRobotRuntimeFields } from '../../views/bi/js/utils/prefer-live-robot-fields'
+import { attachTrackRespectingUserPause } from '../../views/bi/js/utils/livekit-user-pause'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 const controlProfileInflight = {}
@@ -99,31 +101,11 @@ function toBasicRobot(robot) {
   })
 }
 
-function mergeSnapshotWithLive(snapshot, existing, storeState) {
-  const fromSnapshot = toRobotState(snapshot)
-  if (!isFixedCameraEquipment(snapshot, snapshot.cameras)
-      && !(Array.isArray(snapshot.cameras) && snapshot.cameras.length)) {
-    fromSnapshot.cameras = listStoredCameras(storeState, fromSnapshot.robotId)
-  }
-  if (!existing) return fromSnapshot
-  return Object.assign({}, fromSnapshot, {
-    status: existing.status,
-    cameras: (existing.cameras && existing.cameras.length) ? existing.cameras : fromSnapshot.cameras,
-    battery: existing.battery !== undefined && existing.battery !== null ? existing.battery : fromSnapshot.battery,
-    controlMode: existing.controlMode || fromSnapshot.controlMode,
-    controlModeName: existing.controlModeName || fromSnapshot.controlModeName,
-    devices: existing.devices || fromSnapshot.devices,
-    fault: existing.fault !== undefined ? existing.fault : fromSnapshot.fault,
-    speed: existing.speed !== undefined && existing.speed !== null ? existing.speed : fromSnapshot.speed
-  })
-}
-
-function listStoredCameras(storeState, robotId) {
-  const existing = (storeState.robots || []).find(item => String(item.robotId) === String(robotId))
-  if (existing && Array.isArray(existing.cameras) && existing.cameras.length) {
-    return existing.cameras
-  }
-  return Object.values(storeState.cameras || {}).filter(item => String(item && item.robotId) === String(robotId))
+/** overview 装备与已有实时状态合并：优先保留 live 的 status/cameras 等字段 */
+function mergeOverviewRobotWithLive(overviewRobot, existing) {
+  const fromOverview = toRobotState(overviewRobot)
+  if (!existing) return fromOverview
+  return overlayLiveRobotRuntimeFields(fromOverview, existing)
 }
 
 function mergeCamerasIndex(existing, robots) {
@@ -479,19 +461,7 @@ function attachTrackToElement(track, elId, play) {
   if (!track || typeof track.attach !== 'function' || !elId) return false
   const el = document.getElementById(elId)
   if (!el) return false
-  track.attach(el)
-  const userPaused = !!(el.dataset && el.dataset.userPaused === '1')
-  if (userPaused) {
-    if (track.mediaStreamTrack) track.mediaStreamTrack.enabled = false
-    if (el.srcObject && typeof el.srcObject.getVideoTracks === 'function') {
-      el.srcObject.getVideoTracks().forEach(item => { item.enabled = false })
-    }
-    if (typeof el.pause === 'function') el.pause()
-    return true
-  }
-  if (track.mediaStreamTrack) track.mediaStreamTrack.enabled = true
-  if (play && typeof el.play === 'function') el.play().catch(() => {})
-  return true
+  return attachTrackRespectingUserPause(track, el, play)
 }
 
 function scheduleAttachRetry(track, camera, prefixId, kind) {
@@ -695,7 +665,7 @@ const actions = {
     if (robots && robots.length) {
       const fullRobots = robots.map(robot => {
         const existing = (state.robots || []).find(item => String(item.robotId) === String(robot.robotId))
-        return mergeSnapshotWithLive(robot, existing, state)
+        return mergeOverviewRobotWithLive(robot, existing)
       })
       const nextRobots = fullRobots.map(toBasicRobot)
       const ids = new Set(nextRobots.map(item => String(item.robotId)))
@@ -1041,60 +1011,53 @@ const actions = {
     dispatch('mergeControlProfileDevices', { robotId: incoming.robotId, devices: incoming.devices })
     dispatch('syncDeviceStatesFromDevices', { robotId: incoming.robotId, devices: incoming.devices })
     const index = state.robots.findIndex(robot => robot.robotId === incoming.robotId)
-    const hasRealtimeCameras = Array.isArray(data.cameras) && data.cameras.length > 0
     if (index >= 0) {
       const existing = state.robots[index]
-      if (!hasRealtimeCameras) {
-        incoming.cameras = existing.cameras || []
-      } else {
-        incoming.cameras = incoming.cameras.map(camera => {
-          const old = state.cameras[camera.key]
-          if (!old) return camera
-          if (incoming.status === 'offline' && old.room) {
-            old.disconnecting = true
-            dispatch('stopLatencyStats', old)
-            old.room.disconnect()
-          }
-          return Object.assign(camera, {
-            session: old.session,
-            room: incoming.status === 'online' ? old.room : null,
-            hasVideo: incoming.status === 'online' ? old.hasVideo : false,
-            latencyMs: incoming.status === 'online' ? old.latencyMs : null,
-            latencyLevel: incoming.status === 'online' ? old.latencyLevel : 'unknown',
-            statsTimer: incoming.status === 'online' ? old.statsTimer : null,
-            statsTrack: incoming.status === 'online' ? old.statsTrack : null,
-            statsRoom: incoming.status === 'online' ? old.statsRoom : null,
-            status: incoming.status === 'online' ? old.status : 'offline',
-            viewerCount: old.viewerCount,
-            watching: old.watching,
-            hasAudio: old.hasAudio,
-            quality: old.quality,
-            qualityChanging: old.qualityChanging,
-            activeRecording: old.activeRecording,
-            recordingActive: old.recordingActive,
-            recordingBusy: old.recordingBusy,
-            intercomActive: old.intercomActive,
-            intercomBusy: old.intercomBusy,
-            intercomStatus: old.intercomStatus,
-            intercomToken: old.intercomToken,
-            stopped: old.stopped,
-            stopping: old.stopping,
-            restarting: old.restarting,
-            connecting: old.connecting,
-            disconnecting: old.disconnecting,
-            remoteAudioTrack: old.remoteAudioTrack || null,
-            remoteAudioElement: old.remoteAudioElement || null,
-            remoteVideoTrack: old.remoteVideoTrack || null
-          })
+      incoming.cameras = (incoming.cameras || []).map(camera => {
+        const old = state.cameras[camera.key]
+        if (!old) return camera
+        if (incoming.status === 'offline' && old.room) {
+          old.disconnecting = true
+          dispatch('stopLatencyStats', old)
+          old.room.disconnect()
+        }
+        return Object.assign(camera, {
+          session: old.session,
+          room: incoming.status === 'online' ? old.room : null,
+          hasVideo: incoming.status === 'online' ? old.hasVideo : false,
+          latencyMs: incoming.status === 'online' ? old.latencyMs : null,
+          latencyLevel: incoming.status === 'online' ? old.latencyLevel : 'unknown',
+          statsTimer: incoming.status === 'online' ? old.statsTimer : null,
+          statsTrack: incoming.status === 'online' ? old.statsTrack : null,
+          statsRoom: incoming.status === 'online' ? old.statsRoom : null,
+          status: incoming.status === 'online' ? old.status : 'offline',
+          viewerCount: old.viewerCount,
+          watching: old.watching,
+          hasAudio: old.hasAudio,
+          quality: old.quality,
+          qualityChanging: old.qualityChanging,
+          activeRecording: old.activeRecording,
+          recordingActive: old.recordingActive,
+          recordingBusy: old.recordingBusy,
+          intercomActive: old.intercomActive,
+          intercomBusy: old.intercomBusy,
+          intercomStatus: old.intercomStatus,
+          intercomToken: old.intercomToken,
+          stopped: old.stopped,
+          stopping: old.stopping,
+          restarting: old.restarting,
+          connecting: old.connecting,
+          disconnecting: old.disconnecting,
+          remoteAudioTrack: old.remoteAudioTrack || null,
+          remoteAudioElement: old.remoteAudioElement || null,
+          remoteVideoTrack: old.remoteVideoTrack || null
         })
-        commit('setCameras', replaceRobotCamerasInIndex(state.cameras, incoming.robotId, incoming.cameras))
-      }
+      })
+      commit('setCameras', replaceRobotCamerasInIndex(state.cameras, incoming.robotId, incoming.cameras))
       commit('updateRobot', toBasicRobot({ ...existing, ...incoming }))
     } else {
       commit('setRobots', [...state.robots, toBasicRobot(incoming)])
-      if (hasRealtimeCameras) {
-        commit('setCameras', replaceRobotCamerasInIndex(state.cameras, incoming.robotId, incoming.cameras))
-      }
+      commit('setCameras', replaceRobotCamerasInIndex(state.cameras, incoming.robotId, incoming.cameras || []))
     }
     dispatch('websocketExtraData/setRobotBaseInfo', {
       robotId: incoming.robotId,
@@ -1348,8 +1311,13 @@ const actions = {
 
   // 停止摄像头。传入 consumerId 时，若仍有其他画面在用同一路流，只摘掉本画面，不关会话。
   async stopCamera({ commit, state, dispatch }, data) {
+    if (!data || !data.key) return
     let camera = state.cameras[data.key]
-    if (!camera) return
+    // 无相机记录时仍清掉选中，避免无 session 场景下勾选残留
+    if (!camera) {
+      commit('removeActiveCamera', data.key)
+      return
+    }
     camera = { ...camera }
     const consumerId = data.consumerId
     const attachPrefix = data.prefixId
@@ -1369,7 +1337,22 @@ const actions = {
     if (camera.recordingActive) {
       await dispatch('stopCameraRecording', camera)
     }
-    if (!camera.session) return
+    // 未建会话（如无实时推送导致 createVideoSession 失败）也要释放选中态
+    if (!camera.session) {
+      camera.watching = false
+      camera.hasVideo = false
+      camera.stopped = true
+      camera.stopping = false
+      camera.loading = false
+      const prefixes = uniqueAttachPrefixes({ ...camera, attachTargets: camera.attachTargets }, state)
+      if (!prefixes.includes(attachPrefix) && attachPrefix) prefixes.push(attachPrefix)
+      prefixes.forEach(prefixId => detachCameraMedia(camera, prefixId))
+      camera.remoteVideoTrack = null
+      camera.attachTargets = {}
+      commit('setCamera', camera)
+      commit('removeActiveCamera', camera.key)
+      return
+    }
     camera.loading = true
     camera.stopping = true
     camera.stopped = true
