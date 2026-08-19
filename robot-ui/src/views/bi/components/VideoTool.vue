@@ -65,7 +65,7 @@
       <div v-if="!videoStatus || videoStatus === 'stopped'" title="刷新" @click="refreshVideo()">
         <svg-icon icon-class="refresh" />
       </div>
-      <div v-if="canSnapshot && ['paused', 'playing'].includes(videoStatus)" :title="videoStatus === 'paused' ? `播放-${videoStatus}` : `暂停-${videoStatus}`" @click="playPauseVideo()">
+      <div v-if="canSnapshot && ['paused', 'playing'].includes(videoStatus)" :title="videoStatus === 'paused' ? '播放' : '暂停'" @click="playPauseVideo()">
         <svg-icon :icon-class="videoStatus === 'paused' ? 'play' : 'pause'" />
       </div>
       <div :title="isFullscreen ? '退出视频全屏' : '视频全屏'" @click="toggleFullscreen()">
@@ -144,7 +144,7 @@ export default {
     showCameraControl() {
       return this.showControl
         && !this.isFixedCamera
-        && ['dual_gimbal', 'body'].includes(this.cameraInfo.groupType)
+        && ['single_gimbal', 'dual_gimbal', 'body'].includes(this.cameraInfo.groupType)
     },
     canSnapshot() {
       return this.cameraInfo.remoteVideoTrack

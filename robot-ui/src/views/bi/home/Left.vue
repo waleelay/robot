@@ -122,6 +122,7 @@ import { mapActions, mapState } from 'vuex';
 import PieChart from './PieChart.vue';
 import VideoBox from '../components/modal/VideoBox.vue';
 import EquipmentScreenSelect from './EquipmentScreenSelect.vue';
+import { pickDefaultCamera } from '../js/utils/pick-default-camera';
 export default {
   name: 'BiIndexLeft',
   components: { PieChart, VideoBox, EquipmentScreenSelect },
@@ -159,10 +160,11 @@ export default {
         { name: '低风险', value: 0, color: '#00D8A4' },
       ]
     },
+    /** 装备画面选择：在线与故障装备均可选，离线不可选 */
     onlineRobots() {
       return (this.robots || []).filter(robot => {
-        const status = this.robotBaseInfo?.[robot.robotId]?.status || robot.status
-        return status === 'online'
+        const status = robot.status || this.robotBaseInfo?.[robot.robotId]?.status
+        return status === 'online' || status === 'fault'
       })
     },
     // 仅 1 个在线装备时，选择框展示该装备下全部摄像头（本体优先）
@@ -206,9 +208,11 @@ export default {
       }
       return this.onlineRobots.map(robot => {
         const occupied = otherSlot?.robotId === robot.robotId
+        const hasCamera = !!pickDefaultCamera(robot, this.cameras)
         return {
           id: robot.robotId,
           label: robot.name,
+          title: hasCamera ? robot.name : '暂无视频源',
           robotId: robot.robotId,
           disabled: occupied,
           occupied
@@ -323,7 +327,8 @@ export default {
       if (this.isSingleEquipmentCameraMode) {
         cameraMeta = (robot.cameras || []).find(c => c.key === item.cameraKey || c.key === item.id)
       } else {
-        cameraMeta = (robot.cameras || []).find(c => c.groupType === 'body') || (robot.cameras || [])[0]
+        // 默认播放本体相机；没有本体时取装备第一个数据源
+        cameraMeta = pickDefaultCamera(robot, this.cameras)
       }
       if (!cameraMeta) return
       const camera = Object.assign({}, this.cameras?.[cameraMeta.key] || cameraMeta)

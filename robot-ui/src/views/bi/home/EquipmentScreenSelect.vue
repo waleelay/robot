@@ -31,9 +31,10 @@
             occupied: item.occupied,
             mt10: index !== 0
           }"
+          :title="item.title || item.label"
           @click="handleSelect(item)"
         >
-          <span class="item-name text-ellipsis flex1" :title="item.label">{{ item.label }}</span>
+          <span class="item-name text-ellipsis flex1">{{ item.label }}</span>
           <svg-icon
             v-if="item.id === selectedId || item.occupied"
             icon-class="success"

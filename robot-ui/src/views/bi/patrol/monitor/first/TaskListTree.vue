@@ -45,6 +45,7 @@
                 v-for="(item, index) in equipment.list"
                 :key="item.robotId"
                 class="item flx-justify-between"
+                :title="hasRobotCamera(item) ? undefined : '暂无视频源'"
                 :class="{ 'is-active': isRobotChecked(item.robotId) }"
                 :draggable="!isRobotChecked(item.robotId) && item.status !== 'offline'"
                 @dragstart="onDragStart($event, item, 'equipmentListComponent')"
@@ -123,6 +124,7 @@
                 :key="equipment.robotId || equipment.name"
                 class="item flx-justify-between"
                 :class="{ 'is-active': isRobotChecked(equipment.robotId) }"
+                :title="hasRobotCamera(getTaskEquipmentRobot(equipment)) ? undefined : '暂无视频源'"
                 :draggable="canDragTaskEquipment(equipment)"
                 @dragstart.stop="onTaskEquipmentDragStart($event, equipment)"
                 @dragend="onDragEnd"
@@ -158,6 +160,7 @@ import { onDragStart, onDragEnd } from '../../../../../store/modules/dragVideo';
 import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
 import { getDescArr } from '../../../../../utils';
 import Empty from '../../../components/Empty.vue';
+import { pickDefaultCamera } from '../../../js/utils/pick-default-camera';
 export default {
   name: 'TaskListTree',
   components: { Empty },
@@ -213,6 +216,9 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
+    cameras() {
+      return this.$store.getters['websocketRobot/getCameras'] || {}
+    },
     checkedRobotIds() {
       return [...new Set(Object.values(this.activeCameras).map(item => item.robot.robotId))];
     },
@@ -237,6 +243,9 @@ export default {
   },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
+    hasRobotCamera(robot) {
+      return Boolean(pickDefaultCamera(robot, this.cameras))
+    },
     resolveTask(taskId) {
       if (taskId === undefined || taskId === null || taskId === '') return null
       const data = this.taskData || {}
@@ -272,9 +281,9 @@ export default {
     resolveRobotStatus(robotId) {
       if (robotId === undefined || robotId === null || robotId === '') return ''
       const targetId = String(robotId)
-      return this.robotBaseInfo?.[robotId]?.status
+      return (this.robots || []).find(item => String(item.robotId) === targetId)?.status
+        || this.robotBaseInfo?.[robotId]?.status
         || this.robotBaseInfo?.[targetId]?.status
-        || (this.robots || []).find(item => String(item.robotId) === targetId)?.status
         || ''
     },
     async waitTicks(times = 1) {
@@ -315,10 +324,12 @@ export default {
       }
       const onlineList = this.equipmentInfo.online.list || []
       if (this.hasLoad || !onlineList.length) return
+      const playable = onlineList.filter(item => pickDefaultCamera(item, this.cameras))
+      if (!playable.length) return
       this.hasLoad = true
       this.setSplitType(this.splitTypeForCount(onlineList.length))
       await this.waitTicks(2)
-      for (const item of onlineList) {
+      for (const item of playable) {
         await this.handleClickRobot(item)
       }
     },
@@ -377,10 +388,18 @@ export default {
       if (!equipment) return null
       const robotId = equipment.robotId || equipment.id
       if (robotId === undefined || robotId === null || robotId === '') return equipment
-      return this.robotBaseInfo?.[robotId]
-        || this.robotBaseInfo?.[String(robotId)]
-        || (this.robots || []).find(item => String(item.robotId) === String(robotId))
-        || { ...equipment, robotId }
+      const live = (this.robots || []).find(item => String(item.robotId) === String(robotId))
+      const base = this.robotBaseInfo?.[robotId] || this.robotBaseInfo?.[String(robotId)]
+      if (!live && !base) return { ...equipment, robotId }
+      return {
+        ...equipment,
+        ...base,
+        ...live,
+        cameras: (live && live.cameras && live.cameras.length)
+          ? live.cameras
+          : Object.values(this.cameras || {}).filter(item => String(item && item.robotId) === String(robotId)),
+        robotId: live?.robotId || base?.robotId || robotId
+      }
     },
     getTaskEquipmentStatus(equipment) {
       const robot = this.getTaskEquipmentRobot(equipment)
@@ -401,6 +420,9 @@ export default {
       }
       onDragStart(event, robot, 'equipmentListComponent')
     },
+    resolveEquipmentListStatus(liveStatus, baseStatus) {
+      return liveStatus || baseStatus || 'offline'
+    },
     refreshEquipmentLists() {
       const newRobots = this.robots || []
       if (!newRobots.length) {
@@ -415,12 +437,19 @@ export default {
       const onlineList = []
       const offlineList = []
       newRobots.forEach(item => {
+        const base = this.robotBaseInfo?.[item.robotId]
+          || this.robotBaseInfo?.[String(item.robotId)]
+          || {}
+        const status = this.resolveEquipmentListStatus(item.status, base.status)
         const robot = {
+          ...base,
           ...item,
-          ...(this.robotBaseInfo?.[item.robotId] || {})
+          status,
+          cameras: item.cameras,
+          robotId: item.robotId
         }
-        // fault 计入在线装备
-        if (robot.status !== 'offline') {
+        // 在线判定以实时推送（robot.state / 全景事件）为准
+        if (status !== 'offline') {
           onlineList.push(robot)
         } else {
           offlineList.push(robot)
@@ -431,13 +460,10 @@ export default {
       this.executePlay()
     },
     async updateVideo(robot) {
-      // console.log('of this.updateVideoHandler', typeof this.updateVideoHandler);
-      
-      if (typeof this.updateVideoHandler === 'function') {
-        await this.updateVideoHandler(robot)
-        return
-      }
-      await this.updateVideoHandler(robot)
+      if (typeof this.updateVideoHandler !== 'function') return
+      const camera = pickDefaultCamera(robot, this.cameras)
+      const payload = camera ? { ...camera, robotId: robot.robotId } : robot
+      await this.updateVideoHandler(payload)
     },
     /**
      * 任务卡片点击：

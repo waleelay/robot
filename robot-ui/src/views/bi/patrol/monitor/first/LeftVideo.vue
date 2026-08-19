@@ -176,6 +176,7 @@ import VideoBox from './VideoBox.vue';
 import { mapActions, mapState } from 'vuex';
 import { onDragStart, onDragEnd } from '@/store/modules/dragVideo.js';
 import { events as fullscreenEvents, enterFullscreen, exitFullscreen, isElementFullscreen } from '@/utils/fullscreen.js';
+import { pickDefaultCamera } from '../../../js/utils/pick-default-camera';
 export default {
   name: 'LeftVideo',
   mixins: [canvasUtil],
@@ -364,9 +365,12 @@ export default {
       }
 
       // 填充 放入设备
-      const robot = this.robots.find(d => d.robotId === data.data.robotId);
-      // 拖拽默认第一个摄像头或者主体摄像头
-      const cameraObj = data?.data?.key ? data.data : robot.cameras.filter(c => c.groupType === 'body')[0] || robot.cameras[0]
+      const robot = (this.robots || []).find(d => String(d.robotId) === String(data.data.robotId)) || data.data
+      // 拖拽指定摄像头优先；否则默认本体相机，没有本体则取装备第一个数据源
+      const cameraObj = (data?.data?.key && !data.data.cameras)
+        ? data.data
+        : pickDefaultCamera(robot, this.cameras)
+      if (!cameraObj) return
       const camera = this.cameras?.[cameraObj.key] || cameraObj
       if (this.splitType === 1) {
         if (this.ZQL_playingSource['slot_1']) {
@@ -407,39 +411,35 @@ export default {
         }
       }
     },
-    playPauseVideo(key) {     
-      const camera = this.ZQL_videosInfos[key];
-      if (!camera) return;
-      // 获取视频元素
-      const videoElement = document.getElementById(`${this.prefixId}${camera.key}`);
-      
-      // 更新响应式播放状态
-      const isPaused = videoElement.paused;
-      this.$set(this.ZQL_videosInfos[key], 'isPaused', !isPaused);
-      isPaused ? this.resumeVideo(videoElement, this.ZQL_videosInfos[key]) : this.pauseVideo(videoElement)
-      // this.ZQL_videosInfos[key].status ? this.stopVideo(key) : this.startCamera(this.ZQL_videosInfos[key].robot, this.ZQL_videosInfos[key])
+    playPauseVideo(key) {
+      const camera = this.ZQL_videosInfos[key]
+      if (!camera) return
+      const videoElement = document.getElementById(`${this.prefixId}${camera.key}`)
+      if (!videoElement) return
+      const pausing = !camera.isPaused
+      this.$set(this.ZQL_videosInfos[key], 'isPaused', pausing)
+      if (pausing) {
+        this.pauseVideo(videoElement)
+      } else {
+        this.resumeVideo(videoElement, this.ZQL_videosInfos[key])
+      }
     },
     pauseVideo(videoElement) {
-      if (videoElement) {
-        // 暂停视频播放，但保留当前画面，短暂暂停
-        videoElement.pause();
-      }
+      if (!videoElement) return
+      videoElement.dataset.userPaused = '1'
+      videoElement.pause()
     },
     resumeVideo(videoElement, camera) {
       if (videoElement) {
-        // 继续播放视频
+        delete videoElement.dataset.userPaused
         videoElement.play().catch(err => {
-          console.error('播放视频失败:', err);
-          // 如果直接播放失败，尝试重新建立连接
-          if (camera.robot) {
-            this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera });
+          console.error('播放视频失败:', err)
+          if (camera && camera.robot) {
+            this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera })
           }
-        });
-      } else {
-        // 如果视频元素不存在，重新启动摄像头
-        if (camera.robot) {
-          this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera });
-        }
+        })
+      } else if (camera && camera.robot) {
+        this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera })
       }
     },
     // 刷新视频
@@ -629,7 +629,7 @@ export default {
         if (playingIds.has(robotId)) continue
         const robot = (this.robots || []).find(item => String(item.robotId) === robotId)
         if (!robot) continue
-        const cameraObj = robot.cameras?.find(c => c.groupType === 'body') || robot.cameras?.[0]
+        const cameraObj = pickDefaultCamera(robot, this.cameras)
         if (!cameraObj) continue
         const camera = this.cameras?.[cameraObj.key] || cameraObj
         const emptyKey = this.findEmptySlotKey() || (this.splitType === 1 ? 'slot_1' : null)
@@ -793,7 +793,12 @@ export default {
               if (camera) {
                 // console.log('camera--------------------------------', videoInfo.key, camera.status, camera);
                 // 更新视频信息，保持与原数据同步
-                this.$set(this.ZQL_videosInfos, key, { robot, ...videoInfo, ...camera });
+                this.$set(this.ZQL_videosInfos, key, {
+                  robot,
+                  ...videoInfo,
+                  ...camera,
+                  isPaused: videoInfo.isPaused
+                });
               }
             }
           }

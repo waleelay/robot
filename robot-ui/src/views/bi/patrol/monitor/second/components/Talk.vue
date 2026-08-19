@@ -220,7 +220,7 @@ export default {
     box-shadow: 0 0 17px 0 #159Aff inset;
     border-radius: 50%;
     font-family: "Alibaba PuHuiTi";
-    font-size: 10.2px;
+    font-size: 16px;
     letter-spacing: 0.2px;
     .svg-icon {
       font-size: 59px;
@@ -403,7 +403,7 @@ export default {
     width: 90px;
     height: 90px;
     font-family: "Alibaba PuHuiTi";
-    font-size: 7.297px;
+    font-size: 16px;
     line-height: 10px;
     letter-spacing: 0.146px;
     .svg-icon {

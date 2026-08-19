@@ -99,13 +99,63 @@ function toBasicRobot(robot) {
   })
 }
 
-function indexCameras(robots) {
-  return (robots || []).reduce((result, robot) => {
+function mergeSnapshotWithLive(snapshot, existing, storeState) {
+  const fromSnapshot = toRobotState(snapshot)
+  if (!isFixedCameraEquipment(snapshot, snapshot.cameras)
+      && !(Array.isArray(snapshot.cameras) && snapshot.cameras.length)) {
+    fromSnapshot.cameras = listStoredCameras(storeState, fromSnapshot.robotId)
+  }
+  if (!existing) return fromSnapshot
+  return Object.assign({}, fromSnapshot, {
+    status: existing.status,
+    cameras: (existing.cameras && existing.cameras.length) ? existing.cameras : fromSnapshot.cameras,
+    battery: existing.battery !== undefined && existing.battery !== null ? existing.battery : fromSnapshot.battery,
+    controlMode: existing.controlMode || fromSnapshot.controlMode,
+    controlModeName: existing.controlModeName || fromSnapshot.controlModeName,
+    devices: existing.devices || fromSnapshot.devices,
+    fault: existing.fault !== undefined ? existing.fault : fromSnapshot.fault,
+    speed: existing.speed !== undefined && existing.speed !== null ? existing.speed : fromSnapshot.speed
+  })
+}
+
+function listStoredCameras(storeState, robotId) {
+  const existing = (storeState.robots || []).find(item => String(item.robotId) === String(robotId))
+  if (existing && Array.isArray(existing.cameras) && existing.cameras.length) {
+    return existing.cameras
+  }
+  return Object.values(storeState.cameras || {}).filter(item => String(item && item.robotId) === String(robotId))
+}
+
+function mergeCamerasIndex(existing, robots) {
+  const robotIds = new Set((robots || []).map(item => String(item.robotId)))
+  const next = {}
+  Object.keys(existing || {}).forEach(key => {
+    const camera = existing[key]
+    if (camera && robotIds.has(String(camera.robotId))) {
+      next[key] = camera
+    }
+  })
+  ;(robots || []).forEach(robot => {
     (robot.cameras || []).forEach(camera => {
-      result[cameraKey(robot.robotId, camera)] = { ...camera, ...state.cameras[cameraKey(robot.robotId, camera)], robotId: robot.robotId }
+      const key = camera.key || cameraKey(robot.robotId, camera)
+      next[key] = { ...camera, ...(next[key] || {}), robotId: robot.robotId, key }
     })
-    return result
-  }, {})
+  })
+  return next
+}
+
+function replaceRobotCamerasInIndex(existing, robotId, cameras) {
+  const next = { ...(existing || {}) }
+  Object.keys(next).forEach(key => {
+    if (String(next[key]?.robotId) !== String(robotId)) return
+    if (!(cameras || []).some(item => item && item.key === key)) {
+      delete next[key]
+    }
+  })
+  ;(cameras || []).forEach(camera => {
+    if (camera && camera.key) next[camera.key] = camera
+  })
+  return next
 }
 
 function readDeviceStateCache() {
@@ -285,6 +335,7 @@ function toRobotState(robot) {
 function groupTypeText(groupType) {
   return {
     body: '本体',
+    single_gimbal: '单光云台',
     dual_gimbal: '双光云台',
     arm: '机械臂',
     fixed_camera: '固定摄像头'
@@ -429,6 +480,16 @@ function attachTrackToElement(track, elId, play) {
   const el = document.getElementById(elId)
   if (!el) return false
   track.attach(el)
+  const userPaused = !!(el.dataset && el.dataset.userPaused === '1')
+  if (userPaused) {
+    if (track.mediaStreamTrack) track.mediaStreamTrack.enabled = false
+    if (el.srcObject && typeof el.srcObject.getVideoTracks === 'function') {
+      el.srcObject.getVideoTracks().forEach(item => { item.enabled = false })
+    }
+    if (typeof el.pause === 'function') el.pause()
+    return true
+  }
+  if (track.mediaStreamTrack) track.mediaStreamTrack.enabled = true
   if (play && typeof el.play === 'function') el.play().catch(() => {})
   return true
 }
@@ -629,12 +690,20 @@ function getLiveKitUrl(livekitUrl) {
 const actions = {
   // ============ Media 相关 actions ============
   // 加载机器人列表
-  async loadRobots({ commit, state, dispatch }, payload) {
+  async loadRobots({ commit, state }, payload) {
     const robots = payload
     if (robots && robots.length) {
-      const fullRobots = robots.map(robot => toRobotState(robot))
-      commit('setCameras', indexCameras(fullRobots))
-      commit('setRobots', fullRobots.map(toBasicRobot))
+      const fullRobots = robots.map(robot => {
+        const existing = (state.robots || []).find(item => String(item.robotId) === String(robot.robotId))
+        return mergeSnapshotWithLive(robot, existing, state)
+      })
+      const nextRobots = fullRobots.map(toBasicRobot)
+      const ids = new Set(nextRobots.map(item => String(item.robotId)))
+      ;(state.robots || []).forEach(robot => {
+        if (!ids.has(String(robot.robotId))) nextRobots.push(robot)
+      })
+      commit('setCameras', mergeCamerasIndex(state.cameras, nextRobots))
+      commit('setRobots', nextRobots)
     }
     // if (!state.robots.find(robot => robot.robotId === state.selectedRobotId)) {
     //   commit('setSelectedRobotId', state.robots[0]?.robotId || '')
@@ -972,54 +1041,94 @@ const actions = {
     dispatch('mergeControlProfileDevices', { robotId: incoming.robotId, devices: incoming.devices })
     dispatch('syncDeviceStatesFromDevices', { robotId: incoming.robotId, devices: incoming.devices })
     const index = state.robots.findIndex(robot => robot.robotId === incoming.robotId)
+    const hasRealtimeCameras = Array.isArray(data.cameras) && data.cameras.length > 0
     if (index >= 0) {
       const existing = state.robots[index]
-      incoming.cameras = incoming.cameras.map(camera => {
-        const old = state.cameras[camera.key]
-        if (!old) return camera
-        if (incoming.status === 'offline' && old.room) {
-          old.disconnecting = true
-          dispatch('stopLatencyStats', old)
-          old.room.disconnect()
-        }
-        return Object.assign(camera, {
-          session: old.session,
-          room: incoming.status === 'online' ? old.room : null,
-          hasVideo: incoming.status === 'online' ? old.hasVideo : false,
-          latencyMs: incoming.status === 'online' ? old.latencyMs : null,
-          latencyLevel: incoming.status === 'online' ? old.latencyLevel : 'unknown',
-          statsTimer: incoming.status === 'online' ? old.statsTimer : null,
-          statsTrack: incoming.status === 'online' ? old.statsTrack : null,
-          statsRoom: incoming.status === 'online' ? old.statsRoom : null,
-          status: incoming.status === 'online' ? old.status : 'offline',
-          viewerCount: old.viewerCount,
-          watching: old.watching,
-          hasAudio: old.hasAudio,
-          quality: old.quality,
-          qualityChanging: old.qualityChanging,
-          activeRecording: old.activeRecording,
-          recordingActive: old.recordingActive,
-          recordingBusy: old.recordingBusy,
-          intercomActive: old.intercomActive,
-          intercomBusy: old.intercomBusy,
-          intercomStatus: old.intercomStatus,
-          intercomToken: old.intercomToken,
-          stopped: old.stopped,
-          stopping: old.stopping,
-          restarting: old.restarting,
-          connecting: old.connecting,
-          disconnecting: old.disconnecting,
-          remoteAudioTrack: old.remoteAudioTrack || null,
-          remoteAudioElement: old.remoteAudioElement || null,
-          remoteVideoTrack: old.remoteVideoTrack || null
+      if (!hasRealtimeCameras) {
+        incoming.cameras = existing.cameras || []
+      } else {
+        incoming.cameras = incoming.cameras.map(camera => {
+          const old = state.cameras[camera.key]
+          if (!old) return camera
+          if (incoming.status === 'offline' && old.room) {
+            old.disconnecting = true
+            dispatch('stopLatencyStats', old)
+            old.room.disconnect()
+          }
+          return Object.assign(camera, {
+            session: old.session,
+            room: incoming.status === 'online' ? old.room : null,
+            hasVideo: incoming.status === 'online' ? old.hasVideo : false,
+            latencyMs: incoming.status === 'online' ? old.latencyMs : null,
+            latencyLevel: incoming.status === 'online' ? old.latencyLevel : 'unknown',
+            statsTimer: incoming.status === 'online' ? old.statsTimer : null,
+            statsTrack: incoming.status === 'online' ? old.statsTrack : null,
+            statsRoom: incoming.status === 'online' ? old.statsRoom : null,
+            status: incoming.status === 'online' ? old.status : 'offline',
+            viewerCount: old.viewerCount,
+            watching: old.watching,
+            hasAudio: old.hasAudio,
+            quality: old.quality,
+            qualityChanging: old.qualityChanging,
+            activeRecording: old.activeRecording,
+            recordingActive: old.recordingActive,
+            recordingBusy: old.recordingBusy,
+            intercomActive: old.intercomActive,
+            intercomBusy: old.intercomBusy,
+            intercomStatus: old.intercomStatus,
+            intercomToken: old.intercomToken,
+            stopped: old.stopped,
+            stopping: old.stopping,
+            restarting: old.restarting,
+            connecting: old.connecting,
+            disconnecting: old.disconnecting,
+            remoteAudioTrack: old.remoteAudioTrack || null,
+            remoteAudioElement: old.remoteAudioElement || null,
+            remoteVideoTrack: old.remoteVideoTrack || null
+          })
         })
-      })
-      incoming.cameras.forEach(camera => commit('setCamera', camera))
+        commit('setCameras', replaceRobotCamerasInIndex(state.cameras, incoming.robotId, incoming.cameras))
+      }
       commit('updateRobot', toBasicRobot({ ...existing, ...incoming }))
     } else {
       commit('setRobots', [...state.robots, toBasicRobot(incoming)])
-      incoming.cameras.forEach(camera => commit('setCamera', camera))
+      if (hasRealtimeCameras) {
+        commit('setCameras', replaceRobotCamerasInIndex(state.cameras, incoming.robotId, incoming.cameras))
+      }
     }
+    dispatch('websocketExtraData/setRobotBaseInfo', {
+      robotId: incoming.robotId,
+      robotInfo: {
+        name: incoming.name,
+        type: incoming.type,
+        status: incoming.status,
+        battery: incoming.battery,
+        controlMode: incoming.controlMode,
+        controlModeName: incoming.controlModeName,
+        speed: incoming.speed,
+        fault: incoming.fault,
+        lastHeartbeatAt: incoming.lastHeartbeatAt
+      },
+      fromRealtime: true
+    }, { root: true })
+  },
+
+  patchRobotRealtime({ commit, state }, patch) {
+    if (!patch || patch.robotId === undefined || patch.robotId === null || patch.robotId === '') return
+    const existing = (state.robots || []).find(item => String(item.robotId) === String(patch.robotId))
+    if (!existing) {
+      commit('updateRobot', toBasicRobot(toRobotState({ ...patch, cameras: [] })))
+      return
+    }
+    commit('updateRobot', {
+      ...existing,
+      status: patch.status ? patch.status : existing.status,
+      battery: patch.battery !== undefined ? patch.battery : existing.battery,
+      controlMode: patch.controlMode || existing.controlMode,
+      controlModeName: patch.controlModeName || existing.controlModeName,
+      speed: patch.speed !== undefined ? patch.speed : existing.speed,
+      fault: patch.fault !== undefined ? patch.fault : existing.fault
+    })
   },
 
   // 处理会话状态更新事件

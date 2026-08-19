@@ -443,7 +443,8 @@ export default {
   max-width: 100%;
   min-height: 250px;
   overflow: hidden;
-  background: #1c121c;
+  background: linear-gradient(180deg, rgba(18, 20, 43, 0) 0%, #12142b 100%);
+  box-shadow: inset 0 0 20px 0 rgba(33, 108, 149, 0.3);
 }
 .basic {
   .name {

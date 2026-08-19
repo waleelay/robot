@@ -384,7 +384,7 @@ export default {
       border: 0.466px solid #159AFF;
       aspect-ratio: 1/1;
       color: #fff;
-      font-size: 11.76px;
+      font-size: 16px;
       line-height: 76.5px;
       border-radius: 50%;
     }
@@ -466,7 +466,7 @@ export default {
       .circle {
         width: 46px;
         height: 46px;
-        font-size: 10px;
+        font-size: 16px;
         line-height: 46px;
       }
     }

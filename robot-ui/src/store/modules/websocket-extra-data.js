@@ -41,8 +41,10 @@ const state = {
   alarmRevision: 0,
    // 实时定位
   robotLocation: {}, // { robotId: { lat, lng, altitude, address, updatedAt } }
-  // 设备基本信息；task / runningTask 由 taskData.equipmentList 反查，不取 overview.devices.task
+  // 设备基本信息；task 由 taskData 反查，cameras 由 robot.state 写入 websocketRobot，均不取 overview.devices
   robotBaseInfo: {}, // { robotId: { ...robotInfo } }
+  // 已收到实时推送的装备：后续 overview 快照不得覆盖实时字段
+  realtimeRobotIds: {},
   // 装备列表
   robotList: [],
   robotAlarmObj: {}, // { robotId: { ...alarmInfo } }
@@ -139,17 +141,24 @@ const mutations = {
       state.robotLocation = { ...state.robotLocation, [data.robotId]: data.location };
     // }, 20000);
   },
-  SET_ROBOT_BASE_INFO(state, { robotId, robotInfo }) {
+  SET_ROBOT_BASE_INFO(state, { robotId, robotInfo, fromRealtime }) {
     const incoming = { ...(robotInfo || {}) }
     delete incoming.task
     delete incoming.runningTask
     delete incoming.runningTaskId
     delete incoming.customStatusName
     delete incoming.statusClass
-    const merged = {
-      ...state.robotBaseInfo?.[robotId] || {},
-      ...incoming,
-      robotId: incoming.robotId ?? robotId
+    delete incoming.cameras
+    const prev = state.robotBaseInfo?.[robotId] || {}
+    const wasRealtime = !!state.realtimeRobotIds?.[robotId]
+    const merged = fromRealtime
+      ? { ...prev, ...incoming, robotId: incoming.robotId ?? robotId }
+      : wasRealtime
+        ? { ...incoming, ...prev, robotId: prev.robotId ?? incoming.robotId ?? robotId }
+        : { ...prev, ...incoming, robotId: incoming.robotId ?? robotId }
+    delete merged.cameras
+    if (fromRealtime) {
+      state.realtimeRobotIds = { ...state.realtimeRobotIds, [robotId]: true }
     }
     const task = toRobotTaskSummaries(state.taskData, merged.robotId)
     const withTask = { ...merged, task }
@@ -230,13 +239,8 @@ const actions = {
       }
     }
 
-    // 装备 task 只从全局 taskData 反查，不使用 overview.devices.task
-    const devicesWithoutTask = devices.map(item => {
-      if (!item || item.task === undefined) return item
-      const next = { ...item }
-      delete next.task
-      return next
-    })
+    // 装备 task 从 taskData 反查；相机从 robot.state 取。固定摄像头没有媒体心跳，仍保留 overview 相机
+    const devicesWithoutTask = devices.map(item => omitOverviewDerivedFields(item))
 
     // 调用 websocketRobot 模块的 loadRobots
     dispatch('websocketRobot/loadRobots', devicesWithoutTask, { root: true })
@@ -333,7 +337,7 @@ const actions = {
   setRobotLocation({ commit }, { robotId, location }) {
     commit('SET_ROBOT_LOCATION', { robotId, location });
   },
-  syncRobot({ commit, rootState }, event) {
+  syncRobot({ commit, dispatch, rootState }, event) {
     // | `panorama.device.status.changed`   | 设备在线、离线、故障、电量变化                   |
     // | ---------------------------------- | ------------------------------------------------ |
     // | `panorama.device.location.changed` | 地图位置、速度、朝向变化                         |
@@ -342,12 +346,16 @@ const actions = {
     // | `panorama.stats.changed`           |                                                  |
     if (!event) return
     if (event.event === 'panorama.device.status.changed') {
-      // console.log(123, event.data.robotId, event.data.status);
       const robotId= event.data.robotId;
       const robot = rootState.websocketRobot.robots?.length
       ? rootState.websocketRobot.robots.find(item => item.robotId === robotId) || {}
       : {};
-      commit('SET_ROBOT_BASE_INFO', { robotId, robotInfo: { ...robot, ...state.robotBaseInfo[robotId], ...event.data }});
+      commit('SET_ROBOT_BASE_INFO', {
+        robotId,
+        robotInfo: { ...robot, ...state.robotBaseInfo[robotId], ...event.data },
+        fromRealtime: true
+      });
+      dispatch('websocketRobot/patchRobotRealtime', event.data, { root: true })
       // commit('SET_ROBOT_BASE_INFO', { robotId: 'test111', robotInfo: { ...state.robotBaseInfo['test111'], status: 'online' } });
     } else if (event.event === 'panorama.device.location.changed') {
       commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
@@ -376,8 +384,8 @@ const actions = {
       // alarmStats: { high: 0, medium: 0, low: 0 }
     }
   },
-  setRobotBaseInfo({ commit }, { robotId, robotInfo }) {
-    commit('SET_ROBOT_BASE_INFO', { robotId, robotInfo });
+  setRobotBaseInfo({ commit }, { robotId, robotInfo, fromRealtime }) {
+    commit('SET_ROBOT_BASE_INFO', { robotId, robotInfo, fromRealtime });
   },
   setRobotAlarmInfo({ commit }, { robotId, alarmInfo, close }) {
     if (close) {
@@ -434,6 +442,21 @@ function buildSlamOfRobot(maps, robots, tasks) {
   })
 
   return result
+}
+
+function isFixedCameraDevice(item) {
+  const markers = [item?.sourceType, item?.typeCode, item?.equipmentType, item?.type]
+  return markers.some(value => value === 'FIXED_CAMERA' || value === '固定摄像头')
+}
+
+function omitOverviewDerivedFields(item) {
+  if (!item) return item
+  const next = { ...item }
+  delete next.task
+  if (!isFixedCameraDevice(next)) {
+    delete next.cameras
+  }
+  return next
 }
 
 function toRobotTaskSummary(task) {

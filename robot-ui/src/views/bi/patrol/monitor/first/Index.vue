@@ -118,7 +118,7 @@ export default {
       for (const item of this.robots) {
         const robotId = item?.robotId
         if (!robotId) continue
-        if (this.robotBaseInfo?.[robotId]?.status === 'online') return robotId
+        if (item.status === 'online' || this.robotBaseInfo?.[robotId]?.status === 'online') return robotId
       }
       return null
     },

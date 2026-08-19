@@ -72,7 +72,7 @@
             :videoStatus="videoStatus(`slot_${index}`)"
             :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key"
             @updateDropdownStyle="updateDropdownStyle"
-            @playPauseVideo="$emit('playPauseVideo')"
+            @playPauseVideo="toggleUserPaused"
             @toggleFullscreen="$emit('toggleFullscreen', `slot_${index}`)"
             @removeVideo="$emit('removeVideo', $event)"
             @refreshVideo="$emit('refreshVideo', $event)"
@@ -275,13 +275,18 @@ export default {
       return ['INIT', 'REQUESTING_CLIENT', 'ROOM_READY', 'STREAMING', 'INTERRUPTED', 'IDLE_WAIT']
         .includes(videoInfo?.status)
     },
-    // 判断视频是否正在播放
+    // 有实时画面即可播放/暂停；不依赖 session 的 STREAMING 文案
     videoStatus(slotKey) {
-      const videoInfo = this.ZQL_videosInfos[slotKey];
-      if (!videoInfo) return false;
-      if (videoInfo.status === 'STREAMING') {
-        return videoInfo.isPaused ? 'paused' : 'playing'
-      } else return 'stopped'
+      const videoInfo = this.ZQL_videosInfos[slotKey]
+      if (!videoInfo) return false
+      const camera = this.cameras?.[videoInfo.key] || this.cameraInfo || {}
+      const live = camera.hasVideo
+        || camera.remoteVideoTrack
+        || videoInfo.hasVideo
+        || videoInfo.remoteVideoTrack
+        || videoInfo.status === 'STREAMING'
+      if (!live) return 'stopped'
+      return videoInfo.isPaused ? 'paused' : 'playing'
     },
   },
   watch: {

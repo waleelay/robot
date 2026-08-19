@@ -356,9 +356,8 @@ export default {
       width: 100%;
       height: 100%;
       color: #fff;
-      font-size: 8.625px;
+      font-size: 16px;
       line-height: 56px;
-      font-size: 8.625px;
       border-radius: 50%;
     }
     // &.no_move {
