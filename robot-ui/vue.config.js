@@ -53,6 +53,22 @@ module.exports = {
     //   cert: fs.readFileSync('./server.crt'),
     // },
     proxy: {
+      // 仅 HLS 走远端 Nginx 的 /api-gw/.../hls 规则（改写成 /api/control/... 后可凭 play token 匿名拉流）。
+      // play-url、content 仍走 /api/bigscreen，由 axios 携带 Bearer；整段改写到 /api-gw 会导致 play-url 403。
+      '/dev-api/api/bigscreen/control/files': {
+        target: process.env.VUE_APP_BASE_ORIGIN,
+        changeOrigin: true,
+        secure: false,
+        pathRewrite: function(path) {
+          if (/\/hls\//.test(path)) {
+            return path.replace(
+              /^\/dev-api\/api\/bigscreen\/control\/files/,
+              '/api-gw/api/bigscreen/control/files'
+            )
+          }
+          return path.replace(/^\/dev-api/, '')
+        }
+      },
       '/dev-api': {
         target: process.env.VUE_APP_BASE_ORIGIN,
         // target: 'https://192.168.124.77:4443/',
