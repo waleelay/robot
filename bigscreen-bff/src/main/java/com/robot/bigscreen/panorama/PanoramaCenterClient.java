@@ -331,6 +331,10 @@ public class PanoramaCenterClient {
     private List<Map<String, Object>> records(URI uri) {
         return responseMap(uri)
                 .map(response -> {
+                    Object topLevelRecords = response.get("records");
+                    if (topLevelRecords instanceof List<?> list) {
+                        return maps(list);
+                    }
                     Object data = response.get("data");
                     if (data instanceof Map<?, ?> dataMap) {
                         Object records = dataMap.get("records");

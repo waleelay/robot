@@ -559,7 +559,13 @@ class PanoramaServiceTest {
         when(centerClient.registeredRobots()).thenReturn(List.of(Map.of(
                 "robotId", "robot-001",
                 "name", "Runtime Robot",
-                "status", "online")));
+                "status", "online",
+                "cameras", List.of(Map.of(
+                        "cameraId", "robot-001-front",
+                        "deviceId", "body-camera-front",
+                        "groupType", "body",
+                        "name", "本体前相机",
+                        "quality", "main")))));
 
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
         Map<String, Object> overview = service.overview();
@@ -568,6 +574,12 @@ class PanoramaServiceTest {
         assertEquals(1, devices.size());
         assertEquals("robot-001", devices.get(0).get("robotId"));
         assertEquals("Robot One", devices.get(0).get("name"));
+        assertEquals(List.of(Map.of(
+                "cameraId", "robot-001-front",
+                "deviceId", "body-camera-front",
+                "groupType", "body",
+                "name", "本体前相机",
+                "quality", "main")), devices.get(0).get("cameras"));
     }
 
     @Test

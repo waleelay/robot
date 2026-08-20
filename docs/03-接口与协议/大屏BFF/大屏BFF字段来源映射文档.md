@@ -77,7 +77,7 @@ GET /api/bigscreen/panorama/overview
 | `model` | 型号 | 管理端 | `DeviceResponse.model` |
 | `status` | 在线状态 | 控制端 | `DeviceRealtimeStatus.onlineStatus` 转为 `online/offline/fault` |
 | `battery` | 电量百分比 | 控制端 | `status.energy.batteryPercent` |
-| `cameras` | 相机展示集合 | BFF 拼装 | 见 3.4；当前未对接权威媒体/相机接口 |
+| `cameras` | 相机展示集合 | 控制端 + BFF 兜底拼装 | 见 3.4；优先与 `robot.state.cameras` 使用同一份控制端实时相机清单 |
 | `stateSeq` | 实时状态序号 | 控制端 | `DeviceRealtimeStatus.stateSeq`；无则 `null` |
 | `fault` | 是否故障 | 控制端 + BFF 计算 | `status.basic.healthStatus` 明确为 `ERROR`、`FAULT`、`异常`或`故障`时为 `true`，`NORMAL` 为 `false`，缺失或未知值为 `null` |
 | `alarmLevel` | 设备告警等级 | 控制端 + BFF 转换 | `status.basic.alarmStatus` 转 `HIGH/MEDIUM/LOW`；正常为空 |
@@ -103,13 +103,16 @@ GET /api/bigscreen/panorama/overview
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
-| `cameraId` | 相机 ID | BFF 拼装 | 双光云台组件拼 `{componentId}camera01/02`；本体相机用 `robotId` |
-| `deviceId` | 关联设备/组件 ID | BFF 拼装 | 双光云台用组件 ID；本体相机用 `robotId` |
-| `groupType` | 相机分组 | BFF 拼装 | 双光云台为 `dual_gimbal`，本体相机为 `body` |
-| `name` | 相机名称 | BFF 拼装 | `云台-可见光`、`云台-热成像`、`本体相机` |
-| `quality` | 默认清晰度 | BFF 生成 | 固定 `sub` |
+| `cameraId` | 相机 ID | 控制端优先 | `/api/control/robots/registry` 对应机器人的 `cameras[].cameraId`；无实时清单时根据管理端组件兜底拼装 |
+| `deviceId` | 关联设备/组件 ID | 控制端优先 | `/api/control/robots/registry` 对应机器人的 `cameras[].deviceId`；无实时清单时使用管理端组件 ID |
+| `groupType` | 相机分组 | 控制端优先 | `/api/control/robots/registry` 对应机器人的 `cameras[].groupType`；无实时清单时由组件类型推断 |
+| `name` | 相机名称 | 控制端优先 | `/api/control/robots/registry` 对应机器人的 `cameras[].name`；无实时清单时由组件类型生成 |
+| `quality` | 默认清晰度 | 控制端优先 | `/api/control/robots/registry` 对应机器人的 `cameras[].quality`；缺失时默认为 `sub` |
 
-说明：`cameras[]` 当前只根据管理端组件名称包含“双光云台”进行推断，未对接媒体服务或管理端的权威相机/视频流字段。
+说明：Control 服务的机器人注册表与 `robot.state` 使用同一份媒体客户端相机状态，
+因此同一机器人在 `robot.state.cameras` 和聚合接口 `devices[].cameras` 中保持一致。
+只有控制端尚未取得相机清单时，BFF 才根据管理端组件信息兜底拼装；该集合描述
+相机选择信息，不直接包含视频流地址。
 
 ### 3.5 `devices[].location`
 

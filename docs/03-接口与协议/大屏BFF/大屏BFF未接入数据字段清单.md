@@ -73,8 +73,8 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | `mountedDevices[].type` | BFF 提取 | 从组件 `capabilities` 取第一个能力编码 |
 | `mountedDevices[].status` | BFF 派生 | 当前直接使用机器人在线状态，不是上装设备独立状态 |
 | `mountedDeviceCount` | BFF 计算 | 由组件数量计算；组件未返回时为 `null` |
-| `cameras[]` | 本地拼装 | 根据组件名称包含“双光云台”拼出云台相机，并按机器人 ID 拼出本体相机；未查询媒体真实相机/流信息 |
-| `cameras[].quality` | 本地固定值 | 当前固定为 `sub` |
+| `cameras[]` | 控制端实时清单优先 | 优先取 `/api/control/robots/registry` 中与 `robot.state.cameras` 同源的相机清单；控制端无清单时才根据管理端组件兜底拼装 |
+| `cameras[].quality` | 控制端优先、BFF 兜底 | 优先取实时相机清单中的清晰度，字段缺失时默认为 `sub` |
 | `stateSeq` | 可能缺少来源 | 只有控制端实时状态返回 `stateSeq` 时才有值，否则为 `null` |
 | `fault` | BFF 计算 | 由 `status.basic.healthStatus` 判断 |
 | `alarmLevel` | BFF 转换 | 由 `status.basic.alarmStatus` 转换 |
@@ -234,6 +234,6 @@ DELETE /api/bigscreen/statistics/reports/{id}
 | P0 | 设备经纬度、地址、上报时间 | 全景地图设备点位展示依赖 |
 | P0 | 告警结构化位置、多路截图 `snapshotUrl.thermal/front` | 告警列表和弹窗展示依赖 |
 | P1 | 统计总览 `/statistics/overview` 所需聚合数据 | 当前统计页业务字段基本为空 |
-| P1 | 相机/视频源权威映射 | 当前 `cameras[]` 只是本地拼装，不能证明一定能播放对应流 |
+| P1 | 相机与可播放视频源映射 | 相机清单已与 `robot.state` 统一，但当前仍不直接提供流地址，播放能力依赖后续视频会话链路 |
 | P2 | 上装设备独立状态 | 当前上装设备状态直接复用机器人状态 |
 | P2 | 设备详情按钮权限/能力 | 当前 `actions.*` 由在线状态简单派生 |

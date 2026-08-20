@@ -529,6 +529,13 @@ public class PanoramaService {
         CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = cache.allFixedCamerasFuture();
         CompletableFuture<List<Map<String, Object>>> deviceTypeOptionsFuture = async(centerClient::deviceTypeOptions);
         List<Map<String, Object>> managementDevices = join(managementDevicesFuture, List.of());
+        List<Map<String, Object>> registeredRobots = join(registeredRobotsFuture, List.of());
+        Map<String, Map<String, Object>> registeredRobotsById = registeredRobots.stream()
+                .filter(this::hasDeviceId)
+                .collect(Collectors.toMap(
+                        robot -> firstString(robot, "robotId", "serialNumber"),
+                        Function.identity(),
+                        (left, right) -> right));
         CompletableFuture<Map<String, Map<String, Object>>> statusBySerialFuture = async(() -> statusBySerial(managementDevices));
         List<Map<String, Object>> validManagementDevices = managementDevices.stream()
                 .filter(this::hasDeviceId)
@@ -544,12 +551,13 @@ public class PanoramaService {
             Map<String, Object> managementDevice = validManagementDevices.get(index);
             String robotId = firstString(managementDevice, "serialNumber");
             Map<String, Object> realtimeStatus = statusBySerial.getOrDefault(robotId, Map.of());
+            Map<String, Object> registeredRobot = registeredRobotsById.getOrDefault(robotId, Map.of());
             Map<String, Object> source = join(deviceSourceFutures.get(index), managementDevice);
-            Map<String, Object> device = device(source, realtimeStatus, deviceTypeNames);
+            Map<String, Object> device = device(source, realtimeStatus, registeredRobot, deviceTypeNames);
             result.add(device);
             appendRobotId(appendedRobotIds, device.get("robotId"));
         }
-        join(registeredRobotsFuture, List.<Map<String, Object>>of()).stream()
+        registeredRobots.stream()
                 .filter(this::hasDeviceId)
                 .filter(robot -> !containsRobotId(appendedRobotIds, firstValue(robot, "robotId", "serialNumber")))
                 .map(robot -> registeredRobotDevice(robot, deviceTypeNames))
@@ -605,6 +613,7 @@ public class PanoramaService {
     private Map<String, Object> device(
             Map<String, Object> source,
             Map<String, Object> realtimeStatus,
+            Map<String, Object> registeredRobot,
             Map<String, String> deviceTypeNames) {
         Map<String, Object> basic = map(path(realtimeStatus, "status", "basic"));
         Map<String, Object> motion = map(path(realtimeStatus, "status", "motion"));
@@ -631,7 +640,7 @@ public class PanoramaService {
                 "status", status,
                 "battery", number(energy.get("batteryPercent")),
                 "lastHeartbeatAt", formatTime(firstString(realtimeStatus, "lastSeenAt", "receivedAt", "reportedAt")),
-                "cameras", cameras(source, string(robotId)),
+                "cameras", cameras(source, registeredRobot, string(robotId)),
                 "mountedDevices", mountedDevices,
                 "stateSeq", number(realtimeStatus.get("stateSeq")),
                 "fault", fault,
@@ -678,21 +687,26 @@ public class PanoramaService {
     }
 
     private List<Map<String, Object>> registeredRobotCameras(Map<String, Object> source, String robotId) {
-        List<Map<String, Object>> cameras = list(source.get("cameras"));
+        List<Map<String, Object>> cameras = normalizedRegisteredRobotCameras(source);
         if (!cameras.isEmpty()) {
-            return cameras.stream()
-                    .map(camera -> object(
-                            "cameraId", firstValue(camera, "cameraId", "id", "deviceId"),
-                            "deviceId", firstValue(camera, "deviceId", "cameraId", "id"),
-                            "groupType", firstValue(camera, "groupType"),
-                            "name", firstString(camera, "name", "cameraName"),
-                            "quality", value(firstString(camera, "quality"), "sub")))
-                    .toList();
+            return cameras;
         }
         if (robotId == null || robotId.isBlank()) {
             return List.of();
         }
         return List.of(camera(robotId, robotId, "body", "本体相机"));
+    }
+
+    private List<Map<String, Object>> normalizedRegisteredRobotCameras(Map<String, Object> source) {
+        return list(source.get("cameras")).stream()
+                .map(camera -> object(
+                        "cameraId", firstValue(camera, "cameraId", "id", "deviceId"),
+                        "deviceId", firstValue(camera, "deviceId", "cameraId", "id"),
+                        "groupType", firstValue(camera, "groupType"),
+                        "name", firstString(camera, "name", "cameraName"),
+                        "quality", value(firstString(camera, "quality"), "sub")))
+                .filter(camera -> camera.get("cameraId") != null || camera.get("deviceId") != null)
+                .toList();
     }
 
     private Map<String, Object> registeredRobotLocation(Map<String, Object> source) {
@@ -792,7 +806,14 @@ public class PanoramaService {
                 .toList();
     }
 
-    private List<Map<String, Object>> cameras(Map<String, Object> source, String robotId) {
+    private List<Map<String, Object>> cameras(
+            Map<String, Object> source,
+            Map<String, Object> registeredRobot,
+            String robotId) {
+        List<Map<String, Object>> realtimeCameras = normalizedRegisteredRobotCameras(registeredRobot);
+        if (!realtimeCameras.isEmpty()) {
+            return realtimeCameras;
+        }
         List<Map<String, Object>> components = list(source.get("components"));
         List<Map<String, Object>> cameras = new ArrayList<>();
         components.stream()
