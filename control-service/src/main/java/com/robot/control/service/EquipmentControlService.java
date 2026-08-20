@@ -14,10 +14,13 @@ import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -29,6 +32,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class EquipmentControlService {
 
+    private static final Logger log = LoggerFactory.getLogger(EquipmentControlService.class);
     private static final long EDGE_STATUS_AUTHORITY_NANOS = TimeUnit.SECONDS.toNanos(30);
     private static final List<String> EDGE_STATUS_FIELDS = List.of(
             "status",
@@ -395,10 +399,16 @@ public class EquipmentControlService {
         if (robotId.isBlank()) {
             return payload;
         }
+        Optional<Map<String, Object>> managementRobot = managementClient.cachedDeviceBySerialNumber(robotId);
+        if (managementRobot.isEmpty()) {
+            robotStates.remove(robotId);
+            log.debug("媒体客户端状态对应的管理端设备档案不存在，已忽略，robotId={}", robotId);
+            return Map.of();
+        }
         Map<String, Object> previous = robotStates.getOrDefault(robotId, Map.of());
         Map<String, Object> state = copy(previous);
         payload.forEach((key, value) -> {
-            if (value != null && !"name".equals(key) && !"type".equals(key)) {
+            if (value != null && !"name".equals(key) && !"type".equals(key) && !"typeCode".equals(key)) {
                 state.put(key, value);
             }
         });
@@ -417,11 +427,9 @@ public class EquipmentControlService {
         state.put("timestamp", DateTimeConfig.normalize(state.getOrDefault("timestamp", OffsetDateTime.now())));
         state.put("stateSource", "MEDIA_CLIENT_STATUS");
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
-        managementClient.cachedDeviceBySerialNumber(robotId)
-                .ifPresent(robot -> {
-                    enrichRobotState(state, robot);
-                    state.put("devices", devices(robot, runtimeDevices));
-                });
+        Map<String, Object> robot = managementRobot.get();
+        enrichRobotState(state, robot);
+        state.put("devices", devices(robot, runtimeDevices));
         robotStates.put(robotId, state);
         return state;
     }
@@ -438,7 +446,7 @@ public class EquipmentControlService {
         long nextStateSeq = numberValue(state.get("stateSeq"), 0).longValue() + 1;
         state.put("robotId", serialNumber);
         update.forEach((key, value) -> {
-            if (value != null) {
+            if (value != null && !"name".equals(key) && !"type".equals(key) && !"typeCode".equals(key)) {
                 state.put(key, value);
             }
         });
@@ -452,6 +460,7 @@ public class EquipmentControlService {
         state.putIfAbsent("navigationStatus", "IDLE");
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
         managementClient.cachedDeviceBySerialNumber(serialNumber)
+                .or(() -> managementClient.deviceBySerialNumber(serialNumber))
                 .ifPresent(robot -> {
                     enrichRobotState(state, robot);
                     state.put("devices", devices(robot, runtimeDevices));
@@ -897,8 +906,14 @@ public class EquipmentControlService {
         }
         Object type = firstValue(robot, "deviceType", "typeCode", "type");
         if (type != null) {
-            state.put("type", type);
+            state.put("typeCode", type);
+            Object typeName = firstValue(robot, "deviceTypeName", "typeName", "categoryName");
+            state.put("type", typeName == null ? managementDeviceTypeName(String.valueOf(type)) : typeName);
         }
+    }
+
+    private String managementDeviceTypeName(String deviceType) {
+        return managementClient.deviceTypeName(deviceType).orElse(deviceType);
     }
 
     /**

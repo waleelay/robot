@@ -105,6 +105,7 @@ public class ControlServiceProperties {
      */
     public static class Auth {
         private String defaultOrgId = "org001";
+        private boolean allowDefaultUser = false;
 
         /**
          * 返回默认组织 ID。
@@ -122,6 +123,24 @@ public class ControlServiceProperties {
          */
         public void setDefaultOrgId(String defaultOrgId) {
             this.defaultOrgId = defaultOrgId;
+        }
+
+        /**
+         * 是否允许缺少可信身份头时回退到开发默认用户。
+         *
+         * @return true 表示允许开发默认用户
+         */
+        public boolean isAllowDefaultUser() {
+            return allowDefaultUser;
+        }
+
+        /**
+         * 设置是否允许缺少可信身份头时回退到开发默认用户。
+         *
+         * @param allowDefaultUser 是否允许开发默认用户
+         */
+        public void setAllowDefaultUser(boolean allowDefaultUser) {
+            this.allowDefaultUser = allowDefaultUser;
         }
     }
 

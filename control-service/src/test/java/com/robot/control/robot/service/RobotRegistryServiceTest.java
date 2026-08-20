@@ -94,6 +94,115 @@ class RobotRegistryServiceTest {
         verify(publisher, org.mockito.Mockito.times(2)).publish(eq("robot.state"), any());
     }
 
+    @Test
+    void removePublishesOfflineAndDeletesDevice() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+        service.update(object(
+                "robotId", "unknown-robot",
+                "status", "online"));
+
+        service.remove("unknown-robot");
+
+        assertThat(service.list()).isEmpty();
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(publisher, org.mockito.Mockito.times(2)).publish(eq("robot.state"), captor.capture());
+        assertThat(captor.getAllValues().get(1))
+                .containsEntry("robotId", "unknown-robot")
+                .containsEntry("status", "offline")
+                .containsEntry("stateSource", "UNREGISTERED_DEVICE");
+    }
+
+    @Test
+    void publishesManagementTypeNameAndTypeCode() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+
+        service.update(object(
+                "robotId", "dog-001",
+                "status", "online",
+                "typeCode", "ROBOT_DOG",
+                "type", "机器狗"));
+
+        assertThat(service.list()).singleElement().satisfies(robot -> {
+            assertThat(robot.type()).isEqualTo("机器狗");
+            assertThat(robot.typeCode()).isEqualTo("ROBOT_DOG");
+        });
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(publisher).publish(eq("robot.state"), captor.capture());
+        assertThat(captor.getValue())
+                .containsEntry("type", "机器狗")
+                .containsEntry("typeCode", "ROBOT_DOG");
+    }
+
+    @Test
+    void doesNotInventRobotTypeWhenTypeIsMissing() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+
+        service.update(object(
+                "robotId", "m20Pro_01",
+                "status", "online"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(publisher).publish(eq("robot.state"), captor.capture());
+        assertThat(captor.getValue())
+                .containsEntry("robotId", "m20Pro_01")
+                .containsEntry("type", null)
+                .containsEntry("typeCode", null);
+    }
+
+    @Test
+    void acceptsManagementRobotTypeLabel() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+
+        service.update(object(
+                "robotId", "m20Pro_01",
+                "status", "online",
+                "type", "机器人",
+                "typeCode", "ROBOT"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(publisher).publish(eq("robot.state"), captor.capture());
+        assertThat(captor.getValue())
+                .containsEntry("type", "机器人")
+                .containsEntry("typeCode", "ROBOT");
+    }
+
+    @Test
+    void keepsExistingTypeWhenRealtimeStatusDoesNotContainType() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+
+        service.update(object(
+                "robotId", "m20Pro_01",
+                "status", "online",
+                "type", "机器狗",
+                "typeCode", "ROBOT_DOG"));
+        service.update(object(
+                "robotId", "m20Pro_01",
+                "status", "online",
+                "battery", 82));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(publisher, org.mockito.Mockito.times(2)).publish(eq("robot.state"), captor.capture());
+        assertThat(captor.getAllValues().get(1))
+                .containsEntry("type", "机器狗")
+                .containsEntry("typeCode", "ROBOT_DOG")
+                .containsEntry("battery", 82);
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> map(Object value) {
         return (Map<String, Object>) value;

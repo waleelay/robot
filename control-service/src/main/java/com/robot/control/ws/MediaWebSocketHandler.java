@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.auth.CurrentUser;
 import com.robot.control.auth.CurrentUserResolver;
+import com.robot.control.auth.RequestAuthorizationHeaders;
 import com.robot.control.call.IntercomCallService;
 import com.robot.control.config.DateTimeConfig;
 import com.robot.control.service.EquipmentControlService;
@@ -31,6 +32,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     private final EquipmentControlService equipmentControlService;
     private final IntercomCallService intercomCallService;
     private final CurrentUserResolver currentUserResolver;
+    private final RequestAuthorizationHeaders requestAuthorizationHeaders;
 
     /**
      * 创建 MediaWebSocketHandler 实例。
@@ -44,12 +46,14 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
             ObjectMapper objectMapper,
             EquipmentControlService equipmentControlService,
             IntercomCallService intercomCallService,
-            CurrentUserResolver currentUserResolver) {
+            CurrentUserResolver currentUserResolver,
+            RequestAuthorizationHeaders requestAuthorizationHeaders) {
         this.publisher = publisher;
         this.objectMapper = objectMapper;
         this.equipmentControlService = equipmentControlService;
         this.intercomCallService = intercomCallService;
         this.currentUserResolver = currentUserResolver;
+        this.requestAuthorizationHeaders = requestAuthorizationHeaders;
     }
 
     /**
@@ -74,14 +78,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
         Map<String, Object> incoming = objectMapper.readValue(message.getPayload(), new TypeReference<>() {});
         String type = stringValue(incoming.get("type"), "");
         String requestId = stringValue(incoming.get("requestId"), "");
-        jakarta.servlet.http.HttpServletRequest httpRequest = MediaWsAuthHandshakeInterceptor.request(session);
-        org.springframework.web.context.request.ServletRequestAttributes requestAttributes =
-                httpRequest == null ? null : new org.springframework.web.context.request.ServletRequestAttributes(httpRequest);
-        org.springframework.web.context.request.RequestAttributes previous =
-                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-        if (requestAttributes != null) {
-            org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(requestAttributes);
-        }
+        requestAuthorizationHeaders.setWebSocketHeaders(MediaWsAuthHandshakeInterceptor.headers(session));
         try {
             Map<String, Object> payload = mapValue(incoming.get("payload"));
             switch (type) {
@@ -114,14 +111,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
                     "code", "OPERATION_REJECTED",
                     "message", ex.getMessage()));
         } finally {
-            if (requestAttributes != null) {
-                requestAttributes.requestCompleted();
-                if (previous != null) {
-                    org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(previous);
-                } else {
-                    org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
-                }
-            }
+            requestAuthorizationHeaders.clearWebSocketHeaders();
         }
     }
 

@@ -3,6 +3,7 @@ package com.robot.bigscreen.config;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.robot.bigscreen.api.BigscreenProxyController;
@@ -17,6 +18,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.client.ResourceAccessException;
 
 @WebMvcTest(BigscreenProxyController.class)
 @Import(SecurityConfig.class)
@@ -58,5 +60,15 @@ class SecurityConfigWebTest {
     void protectsOtherApiRequests() throws Exception {
         mockMvc.perform(get("/api/bigscreen/panorama/overview"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void mapsProxyResourceAccessFailureToBadGateway() throws Exception {
+        when(proxyClient.forward(any())).thenThrow(new ResourceAccessException("connect failed"));
+
+        mockMvc.perform(get("/api/control/files/file-001/hls/index.m3u8")
+                        .queryParam("token", "signed-play-token"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("UPSTREAM_UNAVAILABLE"));
     }
 }

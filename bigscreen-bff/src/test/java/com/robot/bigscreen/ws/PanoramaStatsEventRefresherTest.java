@@ -79,4 +79,36 @@ class PanoramaStatsEventRefresherTest {
         assertThat(parts.getValue()).containsExactlyInAnyOrder(StatsPart.ALARMS, StatsPart.TASKS, StatsPart.DEVICES);
         assertThat(events).hasSize(1);
     }
+
+    @Test
+    void keepsPreviousDeviceStatsWhenRefreshReturnsTransientEmptyDevices() throws Exception {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler taskScheduler = mock(TaskScheduler.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        Map<String, Object> first = Map.of(
+                "deviceStats", Map.of("total", 1, "online", 1, "fault", 1, "offline", 0),
+                "deviceTypeStats", List.of(Map.of("type", "ROBOT_DOG", "name", "机器狗", "count", 1)),
+                "taskOverview", Map.of("totalToday", 0));
+        Map<String, Object> transientEmpty = Map.of(
+                "deviceStats", Map.of("total", 0, "online", 0, "fault", 0, "offline", 0),
+                "deviceTypeStats", List.of(),
+                "taskOverview", Map.of("totalToday", 1));
+        when(panoramaService.statsSnapshot(any())).thenReturn(first, transientEmpty);
+        ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
+        when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
+        PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
+                panoramaService, objectMapper, taskScheduler);
+        List<String> events = new ArrayList<>();
+
+        refresher.requestRefresh("browser-a", null, events::add, Set.of(StatsPart.DEVICES));
+        tasks.getValue().run();
+        refresher.requestRefresh("browser-a", null, events::add, Set.of(StatsPart.DEVICES, StatsPart.TASKS));
+        tasks.getAllValues().get(1).run();
+
+        assertThat(events).hasSize(2);
+        JsonNode second = objectMapper.readTree(events.get(1));
+        assertThat(second.path("data").path("deviceStats").path("total").asInt()).isEqualTo(1);
+        assertThat(second.path("data").path("deviceTypeStats")).hasSize(1);
+        assertThat(second.path("data").path("taskOverview").path("totalToday").asInt()).isEqualTo(1);
+    }
 }

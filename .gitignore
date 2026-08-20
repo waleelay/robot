@@ -29,3 +29,6 @@ robot-control-service-*-tcp*/
 /tools/
 /outputs/
 /bigscreen-bff/data/statistics-device-status/20260818.json
+/.workbuddy/memory/2026-08-19.md
+/.workbuddy/memory/2026-08-20.md
+/bigscreen-bff/data/statistics-device-status/20260820.json

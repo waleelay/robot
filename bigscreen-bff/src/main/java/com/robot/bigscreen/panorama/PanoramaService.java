@@ -132,6 +132,14 @@ public class PanoramaService {
             return (T) snapshot.value;
         }
         T value = supplier.get();
+        if ("devices".equals(part)
+                && value instanceof List<?> list
+                && list.isEmpty()
+                && snapshot != null
+                && snapshot.value instanceof List<?> previous
+                && !previous.isEmpty()) {
+            return (T) snapshot.value;
+        }
         statsCache.put(key, new CachedSnapshot(now, value));
         return value;
     }

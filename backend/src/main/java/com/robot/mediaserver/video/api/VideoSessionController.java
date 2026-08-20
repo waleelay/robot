@@ -50,7 +50,7 @@ public class VideoSessionController {
 
     @PostMapping
     public VideoSessionResponse create(@Valid @RequestBody CreateVideoSessionRequest request, HttpServletRequest servletRequest) {
-        log.info("create video session robotId={}, deviceId={}, channel={}, quality={}",
+        log.info("创建视频会话 robotId={}, deviceId={}, channel={}, quality={}",
                 request.getRobotId(),
                 request.getDeviceId(),
                 request.getChannel(),

@@ -44,8 +44,10 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private final PanoramaTaskEventRefresher taskEventRefresher;
     private final PanoramaAlarmEventRefresher alarmEventRefresher;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
+    private final BigscreenWebSocketAuthorizationService authorizationService;
     private final StandardWebSocketClient webSocketClient;
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> authorizedRobotIdsBySession = new ConcurrentHashMap<>();
     private final Set<WebSocketSession> browserSessions = ConcurrentHashMap.newKeySet();
 
     public BigscreenWebSocketBridgeHandler(
@@ -55,7 +57,8 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             PanoramaStatsEventRefresher statsEventRefresher,
             PanoramaTaskEventRefresher taskEventRefresher,
             PanoramaAlarmEventRefresher alarmEventRefresher,
-            AuthenticatedRequestHeaders authenticatedRequestHeaders) {
+            AuthenticatedRequestHeaders authenticatedRequestHeaders,
+            BigscreenWebSocketAuthorizationService authorizationService) {
         this.properties = properties;
         this.eventAdapter = eventAdapter;
         this.locationEventThrottler = locationEventThrottler;
@@ -63,6 +66,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         this.taskEventRefresher = taskEventRefresher;
         this.alarmEventRefresher = alarmEventRefresher;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
+        this.authorizationService = authorizationService;
         WebSocketContainer container = ContainerProvider.getWebSocketContainer();
         container.setDefaultMaxTextMessageBufferSize(WebSocketConfig.MAX_TEXT_MESSAGE_SIZE);
         container.setDefaultMaxBinaryMessageBufferSize(WebSocketConfig.MAX_TEXT_MESSAGE_SIZE);
@@ -71,6 +75,10 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession browserSession) throws Exception {
+        Set<String> authorizedRobotIds = authorizationService.authorizedRobotIds(browserSession);
+        authorizedRobotIdsBySession.put(browserSession.getId(), authorizedRobotIds);
+        log.debug("大屏 WebSocket 会话授权设备加载完成，会话={} 数量={}",
+                browserSession.getId(), authorizedRobotIds.size());
         browserSessions.add(browserSession);
         try {
             WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
@@ -101,6 +109,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession browserSession, CloseStatus status) throws Exception {
         logClose("浏览器", browserSession, status);
         browserSessions.remove(browserSession);
+        authorizedRobotIdsBySession.remove(browserSession.getId());
         eventAdapter.removeSession(browserSession.getId());
         locationEventThrottler.remove(browserSession.getId());
         statsEventRefresher.remove(browserSession.getId());
@@ -119,16 +128,13 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     }
 
     public void broadcastToBrowserSessions(String payload) {
-        TextMessage message = new TextMessage(payload);
         for (WebSocketSession browserSession : browserSessions) {
             if (!browserSession.isOpen()) {
                 browserSessions.remove(browserSession);
                 continue;
             }
             try {
-                synchronized (browserSession) {
-                    browserSession.sendMessage(message);
-                }
+                sendToBrowserSession(browserSession, payload);
             } catch (Exception exception) {
                 log.warn("向浏览器广播事件失败，会话={}", browserSession.getId(), exception);
             }
@@ -249,6 +255,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     private void sendToBrowserSession(WebSocketSession browserSession, String payload) {
         if (!browserSession.isOpen()) {
+            return;
+        }
+        Set<String> authorizedRobotIds = authorizedRobotIdsBySession.get(browserSession.getId());
+        if (!authorizationService.canReceive(authorizedRobotIds, payload)) {
+            log.debug("已过滤无权限设备 WebSocket 事件，会话={}", browserSession.getId());
             return;
         }
         try {

@@ -182,6 +182,10 @@ public class RobotMediaStatusSubscriber {
             try {
                 Map<String, Object> data = objectMapper.readValue(payload, Map.class);
                 Map<String, Object> state = equipmentControlService.handleClientState(data);
+                if (state.isEmpty()) {
+                    robotRegistryService.remove(String.valueOf(data.get("robotId")));
+                    return;
+                }
                 boolean becameOnline = robotRegistryService.update(state);
                 if (becameOnline) {
                     String robotId = String.valueOf(data.get("robotId"));

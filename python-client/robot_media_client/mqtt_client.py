@@ -554,7 +554,10 @@ class RobotMQTTClient:
                     "name": camera.name,
                     "quality": camera.quality,
                 }
-                for camera in self.cfg.cameras
+#                 for camera in self.cfg.cameras
+                 for camera in self.cfg.cameras
+                 # 不上报本体摄像头
+                 if "body" not in (camera.group_type or "").lower()
             ],
             "devices": self.devices(),
             "timestamp": isoformat(),

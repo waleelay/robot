@@ -24,11 +24,13 @@ control:
   media-service-base-url: ${MEDIA_SERVICE_BASE_URL:http://media-service:8088}
   # Management Service 内部接口基础地址。
   management-service-base-url: ${CENTER_MANAGE_BASE_URL:http://host.docker.internal:8866}
-  # 设备档案与设备列表缓存 TTL（秒），减少高频控制时对管理端的依赖。
-  device-cache-ttl-seconds: ${MANAGEMENT_DEVICE_CACHE_TTL_SECONDS:600}
+  # 设备档案与设备列表缓存 TTL（秒），生产默认 120 秒，兼顾权限变更生效速度与管理端请求压力。
+  device-cache-ttl-seconds: ${MANAGEMENT_DEVICE_CACHE_TTL_SECONDS:120}
   auth:
     # 控制服务默认组织 ID。
     default-org-id: ${CONTROL_DEFAULT_ORG_ID:org001}
+    # 生产环境必须由 BFF/API 网关注入可信身份头；本地直连调试如需默认 dev-user，可显式设为 true。
+    allow-default-user: ${CONTROL_AUTH_ALLOW_DEFAULT_USER:false}
   mqtt:
     # MQTT Broker 连接地址。
     broker-url: ${MQTT_BROKER_URL:tcp://host.docker.internal:1883}

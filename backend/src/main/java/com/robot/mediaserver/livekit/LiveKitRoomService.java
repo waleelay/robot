@@ -45,7 +45,7 @@ public class LiveKitRoomService {
      */
     public void createRoom(String roomName) {
         if (!properties.getLivekit().isRoomApiEnabled()) {
-            log.info("LiveKit room api disabled, skip create room={}", roomName);
+            log.info("LiveKit 房间 API 未启用，跳过创建房间 room={}", roomName);
             return;
         }
         Map<String, Object> payload = Map.of(
@@ -53,7 +53,7 @@ public class LiveKitRoomService {
                 "emptyTimeout", properties.getLivekit().getRoomEmptyTimeoutSeconds(),
                 "departureTimeout", properties.getLivekit().getRoomDepartureTimeoutSeconds());
         post("/twirp/livekit.RoomService/CreateRoom", payload);
-        log.info("LiveKit room create requested room={}", roomName);
+        log.info("已请求创建 LiveKit 房间 room={}", roomName);
     }
 
     /**
@@ -63,19 +63,19 @@ public class LiveKitRoomService {
      */
     public void deleteRoom(String roomName) {
         if (!properties.getLivekit().isRoomApiEnabled()) {
-            log.info("LiveKit room api disabled, skip delete room={}", roomName);
+            log.info("LiveKit 房间 API 未启用，跳过删除房间 room={}", roomName);
             return;
         }
         try {
             post("/twirp/livekit.RoomService/DeleteRoom", Map.of("room", roomName));
         } catch (RestClientResponseException ex) {
             if (ex.getStatusCode() == HttpStatus.NOT_FOUND || roomAlreadyAbsent(ex)) {
-                log.info("LiveKit room already absent room={}", roomName);
+                log.info("LiveKit 房间已不存在 room={}", roomName);
                 return;
             }
             throw ex;
         }
-        log.info("LiveKit room delete requested room={}", roomName);
+        log.info("已请求删除 LiveKit 房间 room={}", roomName);
     }
 
     /**

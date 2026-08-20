@@ -78,6 +78,7 @@ public class PanoramaStatsEventRefresher {
             Set<StatsPart> parts = state.drainParts();
             Map<String, Object> snapshot = withAuthentication(
                     state.authentication, () -> panoramaService.statsSnapshot(parts));
+            snapshot = stableSnapshot(state.previousSnapshot, snapshot);
             Map<String, Object> merged = new LinkedHashMap<>(state.previousSnapshot);
             merged.putAll(snapshot);
             if (!Objects.equals(state.previousSnapshot, merged)) {
@@ -95,6 +96,35 @@ public class PanoramaStatsEventRefresher {
                 scheduleIfNeeded(sessionId, state);
             }
         }
+    }
+
+    private Map<String, Object> stableSnapshot(Map<String, Object> previousSnapshot, Map<String, Object> snapshot) {
+        if (previousDeviceTotal(previousSnapshot) <= 0 || deviceTotal(snapshot) != 0) {
+            return snapshot;
+        }
+        Map<String, Object> stable = new LinkedHashMap<>(snapshot);
+        if (previousSnapshot.containsKey("deviceStats")) {
+            stable.put("deviceStats", previousSnapshot.get("deviceStats"));
+        }
+        if (previousSnapshot.containsKey("deviceTypeStats")) {
+            stable.put("deviceTypeStats", previousSnapshot.get("deviceTypeStats"));
+        }
+        return stable;
+    }
+
+    private int previousDeviceTotal(Map<String, Object> snapshot) {
+        return deviceTotal(snapshot);
+    }
+
+    private int deviceTotal(Map<String, Object> snapshot) {
+        if (!(snapshot.get("deviceStats") instanceof Map<?, ?> deviceStats)) {
+            return -1;
+        }
+        Object total = deviceStats.get("total");
+        if (total instanceof Number number) {
+            return number.intValue();
+        }
+        return -1;
     }
 
     private String event(Map<String, Object> snapshot) {

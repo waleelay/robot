@@ -143,6 +143,12 @@ const mutations = {
   },
   SET_ROBOT_BASE_INFO(state, { robotId, robotInfo, fromRealtime }) {
     const incoming = { ...(robotInfo || {}) }
+    if (fromRealtime && (incoming.type === undefined || incoming.type === null || incoming.type === '')) {
+      delete incoming.type
+    }
+    if (fromRealtime && (incoming.typeCode === undefined || incoming.typeCode === null || incoming.typeCode === '')) {
+      delete incoming.typeCode
+    }
     delete incoming.task
     delete incoming.runningTask
     delete incoming.runningTaskId

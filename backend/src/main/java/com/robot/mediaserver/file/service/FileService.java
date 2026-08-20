@@ -558,7 +558,8 @@ public class FileService {
         video.setAudioCodec(probe.audioCodec());
         video.setWidth(probe.width());
         video.setHeight(probe.height());
-        video.setDurationSeconds((int) Math.ceil(probe.durationSeconds()));
+        // 与浏览器播放器一致按整秒向下取整，避免小数时长被向上取整后多出 1 秒
+        video.setDurationSeconds((int) Math.floor(Math.max(0d, probe.durationSeconds())));
         alignVideoTimeRange(file, video);
         video.setHlsPlaylistObjectKey(playlistKey);
         video.setHlsSegmentCount(segmentCount);

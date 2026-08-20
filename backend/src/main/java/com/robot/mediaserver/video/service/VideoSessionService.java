@@ -1145,7 +1145,7 @@ public class VideoSessionService {
         try {
             fileService.stopLiveRecordingForClient(sessionId, clientId);
         } catch (Exception ex) {
-            log.warn("Failed to stop recording for viewer sessionId={}, clientId={}", sessionId, clientId, ex);
+            log.warn("停止观看端录像失败 sessionId={}, clientId={}", sessionId, clientId, ex);
         }
     }
 

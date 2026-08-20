@@ -55,7 +55,7 @@ public class VideoSessionTimeoutScheduler {
         try {
             videoSessionService.markTimeout(session.getSessionId(), errorCode, message);
         } catch (Exception ex) {
-            log.warn("Failed to mark session timeout session={}", session.getSessionId(), ex);
+            log.warn("标记视频会话超时失败 session={}", session.getSessionId(), ex);
         }
     }
 

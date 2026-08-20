@@ -342,6 +342,7 @@ class EquipmentControlServiceTest {
 
     @Test
     void usesManagementIdentityOverClientReportedNameAndType() {
+        when(managementClient.deviceTypeName("WHEELED_ROBOT")).thenReturn(Optional.of("轮式机器人"));
         when(managementClient.cachedDeviceBySerialNumber("robot-001")).thenReturn(Optional.of(object(
                 "serialNumber", "robot-001",
                 "name", "管理端机器人",
@@ -361,24 +362,47 @@ class EquipmentControlServiceTest {
 
         assertThat(state)
                 .containsEntry("name", "管理端机器人")
-                .containsEntry("type", "WHEELED_ROBOT");
+                .containsEntry("type", "轮式机器人")
+                .containsEntry("typeCode", "WHEELED_ROBOT");
     }
 
     @Test
-    void ignoresClientReportedNameAndTypeWithoutManagement() {
+    void mapsRobotDogTypeFromManagementProfile() {
+        when(managementClient.deviceTypeName("ROBOT_DOG")).thenReturn(Optional.of("机器狗"));
+        when(managementClient.cachedDeviceBySerialNumber("robot-dog-001")).thenReturn(Optional.of(object(
+                "serialNumber", "robot-dog-001",
+                "name", "管理端机器狗",
+                "deviceType", "ROBOT_DOG",
+                "components", List.of())));
+
+        Map<String, Object> state = service.handleClientState(object(
+                "robotId", "robot-dog-001",
+                "status", "online"));
+
+        assertThat(state)
+                .containsEntry("type", "机器狗")
+                .containsEntry("typeCode", "ROBOT_DOG");
+    }
+
+    @Test
+    void ignoresClientStateWithoutManagementProfile() {
         Map<String, Object> state = service.handleClientState(object(
                 "robotId", "robot-001",
                 "name", "客户端硬编码名称",
                 "type", "轮式机器人",
                 "status", "online"));
 
-        assertThat(state)
-                .doesNotContainKey("name")
-                .doesNotContainKey("type");
+        assertThat(state).isEmpty();
     }
 
-        @Test
+    @Test
     void marksClientReportedStateAsClientStatusSource() {
+        when(managementClient.cachedDeviceBySerialNumber("robot-001")).thenReturn(Optional.of(object(
+                "serialNumber", "robot-001",
+                "name", "管理端机器人",
+                "deviceType", "WHEELED_ROBOT",
+                "components", List.of())));
+
         Map<String, Object> state = service.handleClientState(object(
                 "robotId", "robot-001",
                 "status", "online"));
@@ -520,6 +544,49 @@ class EquipmentControlServiceTest {
                 .filteredOn(device -> "ptz-new-001".equals(device.get("deviceId")))
                 .singleElement()
                 .satisfies(device -> assertThat(map(device.get("status"))).containsEntry("pan", 0.15));
+    }
+
+    @Test
+    void edgeDeviceStatusRefreshesManagementTypeWhenCacheIsMissing() {
+        when(managementClient.cachedDeviceBySerialNumber("m20Pro_01")).thenReturn(Optional.empty());
+        when(managementClient.deviceBySerialNumber("m20Pro_01")).thenReturn(Optional.of(object(
+                "serialNumber", "m20Pro_01",
+                "name", "管理端 m20Pro",
+                "deviceType", "ROBOT_DOG",
+                "components", List.of())));
+        when(managementClient.deviceTypeName("ROBOT_DOG")).thenReturn(Optional.of("机器狗"));
+
+        Map<String, Object> state = service.mergeEdgeDeviceStatus("m20Pro_01", object(
+                "status", "online",
+                "battery", 88,
+                "edgeStatus", object("basic", object("runningStatus", "待机"))));
+
+        assertThat(state)
+                .containsEntry("name", "管理端 m20Pro")
+                .containsEntry("type", "机器狗")
+                .containsEntry("typeCode", "ROBOT_DOG");
+    }
+
+    @Test
+    void edgeDeviceStatusKeepsManagementTypeWhenPayloadContainsType() {
+        when(managementClient.cachedDeviceBySerialNumber("m20Pro_01")).thenReturn(Optional.of(object(
+                "serialNumber", "m20Pro_01",
+                "name", "管理端 m20Pro",
+                "deviceType", "ROBOT_DOG",
+                "components", List.of())));
+        when(managementClient.deviceTypeName("ROBOT_DOG")).thenReturn(Optional.of("机器狗"));
+
+        Map<String, Object> state = service.mergeEdgeDeviceStatus("m20Pro_01", object(
+                "status", "online",
+                "battery", 88,
+                "type", "机器人",
+                "typeCode", "机器人",
+                "edgeStatus", object("basic", object("runningStatus", "待机"))));
+
+        assertThat(state)
+                .containsEntry("type", "机器狗")
+                .containsEntry("typeCode", "ROBOT_DOG")
+                .containsEntry("battery", 88);
     }
 
     @Test

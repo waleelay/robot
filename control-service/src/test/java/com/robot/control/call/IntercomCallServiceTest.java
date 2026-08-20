@@ -147,6 +147,7 @@ class IntercomCallServiceTest {
                 "client-1",
                 "巡检机器人",
                 "轮式机器人",
+                "WHEELED_ROBOT",
                 80,
                 status,
                 "手动模式",

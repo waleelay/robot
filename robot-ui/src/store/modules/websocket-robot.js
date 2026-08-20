@@ -43,6 +43,7 @@ const state = {
   cameras: {}, // 全局摄像头索引 { [cameraKey]: camera }
   camerasRevision: 0,
   heartbeatTimer: null, // 心跳定时器
+  heartbeatPending: false, // 心跳请求是否仍在执行
   stoppedSessionIds: new Set(), // 已停止的会话ID集合
   selectedRobotId: '', // 当前选中的机器人ID
   controlCenterReturnTo: null, // 进入控制中心前的页面，返回时回到该界面
@@ -294,7 +295,7 @@ function toRobotState(robot) {
   const controlMode = robot.controlMode === '手动模式' ? '手动模式' : '导航模式'
   return Object.assign({}, robot, {
     name: robot.name || robot.robotId,
-    type: robot.type || '机器人',
+    type: robot.type || '-',
     controlMode,
     controlModeName: robot.controlModeName || controlMode,
     stateSeq: robot.stateSeq || 0,
@@ -1054,7 +1055,12 @@ const actions = {
         })
       })
       commit('setCameras', replaceRobotCamerasInIndex(state.cameras, incoming.robotId, incoming.cameras))
-      commit('updateRobot', toBasicRobot({ ...existing, ...incoming }))
+      commit('updateRobot', toBasicRobot({
+        ...existing,
+        ...incoming,
+        type: incoming.type || existing.type || null,
+        typeCode: incoming.typeCode || existing.typeCode || null
+      }))
     } else {
       commit('setRobots', [...state.robots, toBasicRobot(incoming)])
       commit('setCameras', replaceRobotCamerasInIndex(state.cameras, incoming.robotId, incoming.cameras || []))
@@ -1214,42 +1220,48 @@ const actions = {
   },
   // 视频会话心跳
   async heartbeatViewers({ state, commit }) {
+    if (state.heartbeatPending) return
+    state.heartbeatPending = true
     const activeIntercomSessionId = state.activeIncomingCall && state.activeIncomingCall.sessionId
     let activeIntercomHeartbeatAttempted = false
-    for (const camera of allCameras()) {
-      let changed = false
-      if (camera.session && !camera.stopped && !camera.stopping) {
+    try {
+      for (const camera of allCameras()) {
+        let changed = false
+        if (camera.session && !camera.stopped && !camera.stopping) {
+          try {
+            const session = camera.watching
+              ? await heartbeatVideoSession(camera.session.sessionId)
+              : camera.session
+            if (camera.session && camera.session.sessionId === session.sessionId) {
+              changed = camera.viewerCount !== session.viewerCount || changed
+              camera.viewerCount = session.viewerCount
+            }
+          } catch (_) {}
+        }
+        const shouldHeartbeatIntercom = camera.session &&
+          (camera.intercomActive || camera.session.sessionId === activeIntercomSessionId)
+        if (shouldHeartbeatIntercom) {
+          if (camera.session.sessionId === activeIntercomSessionId) activeIntercomHeartbeatAttempted = true
+          try {
+            const response = await heartbeatIntercom(camera.session.sessionId)
+            changed = camera.intercomStatus !== response.intercomStatus || changed
+            camera.intercomStatus = response.intercomStatus
+            // const intercomActive = !['IDLE', 'FAILED'].includes(camera.intercomStatus)
+            // changed = camera.intercomActive !== intercomActive || changed
+            // camera.intercomActive = intercomActive
+          } catch (_) {}
+        }
+        if (changed) {
+          commit('setCamera', camera)
+        }
+      }
+      if (activeIntercomSessionId && !activeIntercomHeartbeatAttempted) {
         try {
-          const session = camera.watching
-            ? await heartbeatVideoSession(camera.session.sessionId)
-            : camera.session
-          if (camera.session && camera.session.sessionId === session.sessionId) {
-            changed = camera.viewerCount !== session.viewerCount || changed
-            camera.viewerCount = session.viewerCount
-          }
+          await heartbeatIntercom(activeIntercomSessionId)
         } catch (_) {}
       }
-      const shouldHeartbeatIntercom = camera.session &&
-        (camera.intercomActive || camera.session.sessionId === activeIntercomSessionId)
-      if (shouldHeartbeatIntercom) {
-        if (camera.session.sessionId === activeIntercomSessionId) activeIntercomHeartbeatAttempted = true
-        try {
-          const response = await heartbeatIntercom(camera.session.sessionId)
-          changed = camera.intercomStatus !== response.intercomStatus || changed
-          camera.intercomStatus = response.intercomStatus
-          // const intercomActive = !['IDLE', 'FAILED'].includes(camera.intercomStatus)
-          // changed = camera.intercomActive !== intercomActive || changed
-          // camera.intercomActive = intercomActive
-        } catch (_) {}
-      }
-      if (changed) {
-        commit('setCamera', camera)
-      }
-    }
-    if (activeIntercomSessionId && !activeIntercomHeartbeatAttempted) {
-      try {
-        await heartbeatIntercom(activeIntercomSessionId)
-      } catch (_) {}
+    } finally {
+      state.heartbeatPending = false
     }
   },
   // 启动摄像头。同一路可被多个画面消费：已有 LiveKit Room 时只挂到新的 video，不重连。

@@ -75,7 +75,8 @@ public class RobotRegistryService {
         String clientId = string(data.get("clientId"), "");
         String status = string(data.get("status"), "");
         String name = string(data.get("name"), robotId);
-        String type = string(data.get("type"), "机器人");
+        String type = string(data.get("type"), null);
+        String typeCode = string(data.get("typeCode"), null);
         String controlMode = string(data.get("controlMode"), "手动模式");
         Long stateSeq = data.get("stateSeq") instanceof Number seqValue ? seqValue.longValue() : null;
         String missionStatus = string(data.get("missionStatus"), "IDLE");
@@ -95,6 +96,7 @@ public class RobotRegistryService {
                 status,
                 name,
                 type,
+                typeCode,
                 battery,
                 controlMode,
                 stateSeq,
@@ -147,6 +149,41 @@ public class RobotRegistryService {
                 status,
                 name,
                 type,
+                null,
+                battery,
+                controlMode,
+                stateSeq,
+                missionStatus,
+                navigationStatus,
+                controlOwner,
+                estopActive,
+                cameras,
+                mountedDevices);
+    }
+
+    public boolean update(
+            String robotId,
+            String clientId,
+            String status,
+            String name,
+            String type,
+            String typeCode,
+            Integer battery,
+            String controlMode,
+            Long stateSeq,
+            String missionStatus,
+            String navigationStatus,
+            Object controlOwner,
+            Boolean estopActive,
+            List<RobotCameraResponse> cameras,
+            List<Map<String, Object>> mountedDevices) {
+        return update(
+                robotId,
+                clientId,
+                status,
+                name,
+                type,
+                typeCode,
                 battery,
                 controlMode,
                 stateSeq,
@@ -165,6 +202,7 @@ public class RobotRegistryService {
             String status,
             String name,
             String type,
+            String typeCode,
             Integer battery,
             String controlMode,
             Long stateSeq,
@@ -184,7 +222,14 @@ public class RobotRegistryService {
         boolean becameOnline = !wasConnected && reportedConnected;
         device.clientId = clientId;
         device.name = blank(name) ? robotId : name;
-        device.type = blank(type) ? "机器人" : type;
+        String reportedTypeCode = reportedTypeCode(typeCode, type);
+        String reportedType = reportedType(type);
+        if (!blank(reportedTypeCode)) {
+            device.typeCode = reportedTypeCode;
+        }
+        if (!blank(reportedType)) {
+            device.type = reportedType;
+        }
         if (battery != null) {
             device.battery = Math.max(0, Math.min(100, battery));
         }
@@ -223,6 +268,24 @@ public class RobotRegistryService {
                 .sorted(Comparator.comparing(device -> device.robotId))
                 .map(this::toResponse)
                 .toList();
+    }
+
+    /**
+     * 移除本地注册表中的机器人，并向前端广播离线状态。
+     *
+     * @param robotId 机器人 ID
+     */
+    public void remove(String robotId) {
+        if (robotId == null || robotId.isBlank()) {
+            return;
+        }
+        RobotDevice removed = devices.remove(robotId);
+        if (removed == null) {
+            return;
+        }
+        removed.status = "offline";
+        removed.dynamicState.put("stateSource", "UNREGISTERED_DEVICE");
+        webSocketPublisher.publish("robot.state", toState(removed));
     }
 
     /** Returns the latest in-memory state for one robot. */
@@ -272,6 +335,7 @@ public class RobotRegistryService {
         state.put("clientId", device.clientId == null ? "" : device.clientId);
         state.put("name", device.name);
         state.put("type", device.type);
+        state.put("typeCode", device.typeCode);
         state.put("battery", device.battery == null ? 0 : device.battery);
         state.put("status", device.status);
         state.put("controlMode", device.controlMode);
@@ -310,6 +374,7 @@ public class RobotRegistryService {
                 device.clientId,
                 device.name,
                 device.type,
+                device.typeCode,
                 device.battery,
                 device.status,
                 device.controlMode,
@@ -328,6 +393,25 @@ public class RobotRegistryService {
 
     private String controlModeName(String controlMode) {
         return normalizedControlMode(controlMode);
+    }
+
+    private String reportedTypeCode(String typeCode, String type) {
+        if (!blank(typeCode)) {
+            return typeCode.trim();
+        }
+        return isTypeCode(type) ? type.trim() : null;
+    }
+
+    private String reportedType(String type) {
+        return blank(type) || isTypeCode(type) ? null : type.trim();
+    }
+
+    private boolean isTypeCode(String type) {
+        if (blank(type)) {
+            return false;
+        }
+        String value = type.trim();
+        return value.equals(value.toUpperCase()) && (value.contains("_") || value.matches("[A-Z0-9]+"));
     }
 
     private String normalizedControlMode(String controlMode) {
@@ -376,6 +460,7 @@ public class RobotRegistryService {
         private String clientId;
         private String name;
         private String type;
+        private String typeCode;
         private Integer battery;
         private String status = "offline";
         private String controlMode = "手动模式";
@@ -397,7 +482,6 @@ public class RobotRegistryService {
         private RobotDevice(String robotId) {
             this.robotId = robotId;
             this.name = robotId;
-            this.type = "机器人";
         }
     }
 }

@@ -54,7 +54,7 @@ public class MediaWebSocketPublisher {
             try {
                 session.sendMessage(new TextMessage(json));
             } catch (IOException ex) {
-                log.warn("Failed to send websocket event={}", event, ex);
+                log.warn("发送 WebSocket 事件失败 event={}", event, ex);
                 sessions.remove(session);
             }
         }
@@ -70,7 +70,7 @@ public class MediaWebSocketPublisher {
             try {
                 session.sendMessage(message);
             } catch (IOException ex) {
-                log.warn("Failed to send websocket binary message", ex);
+                log.warn("发送 WebSocket 二进制消息失败", ex);
                 sessions.remove(session);
             }
         }

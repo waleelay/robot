@@ -14,6 +14,7 @@ import java.util.Map;
  * @param clientId 客户端 ID
  * @param name 名称
  * @param type 机器人类型
+ * @param typeCode 机器人类型编码
  * @param battery 电量
  * @param status 状态
  * @param controlMode 控制模式
@@ -34,6 +35,7 @@ public record RobotDeviceResponse(
         String clientId,
         String name,
         String type,
+        String typeCode,
         Integer battery,
         String status,
         String controlMode,

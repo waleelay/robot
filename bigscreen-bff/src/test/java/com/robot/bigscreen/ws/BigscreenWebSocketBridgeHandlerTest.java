@@ -69,7 +69,8 @@ class BigscreenWebSocketBridgeHandlerTest {
                 mock(PanoramaStatsEventRefresher.class),
                 mock(PanoramaTaskEventRefresher.class),
                 mock(PanoramaAlarmEventRefresher.class),
-                mock(AuthenticatedRequestHeaders.class));
+                mock(AuthenticatedRequestHeaders.class),
+                mock(BigscreenWebSocketAuthorizationService.class));
         WebSocketSession browserSession = browserSession(
                 new HttpHeaders(),
                 URI.create("wss://bigscreen/ws/control?clientId=web-tab-123&access_token=jwt-token"),
@@ -92,7 +93,8 @@ class BigscreenWebSocketBridgeHandlerTest {
                 mock(PanoramaStatsEventRefresher.class),
                 mock(PanoramaTaskEventRefresher.class),
                 mock(PanoramaAlarmEventRefresher.class),
-                mock(AuthenticatedRequestHeaders.class));
+                mock(AuthenticatedRequestHeaders.class),
+                mock(BigscreenWebSocketAuthorizationService.class));
     }
 
     private WebSocketSession browserSession(HttpHeaders headers, URI uri, String id) {
