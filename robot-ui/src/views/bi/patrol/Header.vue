@@ -17,17 +17,8 @@
           active-text-color="#fff"
           @select="handleSelect"
         >
-          <el-menu-item index="panorama">
-            <span>全景地图</span>
-          </el-menu-item>
-          <el-menu-item index="monitor">
-            <span>实时监控</span>
-          </el-menu-item>
-          <el-menu-item index="business">
-            <span>业务管理</span>
-          </el-menu-item>
-          <el-menu-item index="statistics">
-            <span>数据统计</span>
+          <el-menu-item v-for="item in visiblePatrolPages" :key="item.key" :index="item.key">
+            <span>{{ item.label }}</span>
           </el-menu-item>
         </el-menu>
       </div>
@@ -98,6 +89,14 @@ import { mapActions } from 'vuex/dist/vuex.common.js';
 import PageChangeDropdown from './../home/PageChangeDropdown.vue'
 import UserMenu from '../components/UserMenu.vue'
 import { events, isPageFullscreen, togglePageFullscreen } from '@/utils/fullscreen'
+import { PATROL_PAGES, hasBigscreenPermission } from '@/utils/bigscreen-access'
+
+const patrolLabels = {
+  panorama: '全景地图',
+  monitor: '实时监控',
+  business: '业务管理',
+  statistics: '数据统计'
+}
 
 export default {
   name: 'Header',
@@ -112,6 +111,12 @@ export default {
     UserMenu
   },
   computed: {
+    visiblePatrolPages() {
+      const permissions = this.$store.getters.bigscreenPermissions
+      return PATROL_PAGES
+        .filter(item => hasBigscreenPermission(permissions, item.permission))
+        .map(item => ({ ...item, label: patrolLabels[item.key] }))
+    },
     showBack() {
       return this.$store.getters['websocketRobot/getSelectedRobotId'] && this.$route.path === '/bi/patrol/monitor'
     }

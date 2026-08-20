@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -22,6 +23,11 @@ public class BigscreenProxyController {
         return ResponseEntity.status(HttpStatus.GONE).body(Map.of(
                 "code", "API_REMOVED",
                 "message", "Use /api/bigscreen/panorama/overview instead of /api/control/robots."));
+    }
+
+    @GetMapping("/api/bigscreen/access-control/me")
+    public ResponseEntity<byte[]> currentAccess(HttpServletRequest request) {
+        return proxyClient.forwardToManage(request, "/api/v1/management/access-control/me");
     }
 
     @RequestMapping({

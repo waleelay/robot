@@ -17,19 +17,34 @@
 
 <script>
 import { mapActions } from 'vuex';
+import {
+  BIGSCREEN_PERMISSIONS,
+  PATROL_PAGES,
+  firstPatrolRouteName,
+  hasAnyBigscreenPermission,
+  hasBigscreenPermission
+} from '@/utils/bigscreen-access'
 
 const pages = [
-  { label: '指挥中心', value: 'biIndex', icon: 'page-home' },
-  { label: '巡逻巡查', value: 'biPatrol', icon: 'page-patrol' },
-  { label: '人员管控', value: 'no-biStaff', icon: 'page-staff' },
-  { label: '生产安全', value: 'no-biSafety', icon: 'page-safety'},
-  { label: '应急处置', value: 'no-biEmergency', icon: 'page-emergency' }
+  { label: '指挥中心', value: 'biIndex', icon: 'page-home', permission: BIGSCREEN_PERMISSIONS.HOME },
+  { label: '巡逻巡查', value: 'biPatrol', icon: 'page-patrol', permissions: PATROL_PAGES.map(page => page.permission) },
+  { label: '人员管控', value: 'biStaff', icon: 'page-staff', permission: BIGSCREEN_PERMISSIONS.STAFF },
+  { label: '生产安全', value: 'no-biSafety', icon: 'page-safety', permission: BIGSCREEN_PERMISSIONS.SAFETY },
+  { label: '应急处置', value: 'no-biEmergency', icon: 'page-emergency', permission: BIGSCREEN_PERMISSIONS.EMERGENCY }
 ]
 export default {
   name: 'PageChangeDropdown',
   computed: {
     pageList() {
-      return pages.filter((item) => !this.$route.name.includes(item.value))
+      return pages.filter(item => {
+        const visible = item.permissions
+          ? hasAnyBigscreenPermission(this.permissions, item.permissions)
+          : hasBigscreenPermission(this.permissions, item.permission)
+        return visible && !this.$route.name.includes(item.value)
+      })
+    },
+    permissions() {
+      return this.$store.getters.bigscreenPermissions
     },
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
@@ -58,7 +73,8 @@ export default {
         return
       }
       await this.clearCameras()
-      this.$router.push({ name: pathName })
+      const routeName = pathName === 'biPatrol' ? firstPatrolRouteName(this.permissions) : pathName
+      if (routeName) this.$router.push({ name: routeName })
     },
   }
 }

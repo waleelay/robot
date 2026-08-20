@@ -13,20 +13,8 @@
         active-text-color="#fff"
         @select="handleSelect"
       >
-        <el-menu-item index="home">
-          <span>首页</span>
-        </el-menu-item>
-        <el-menu-item index="patrol">
-          <span>巡逻巡查</span>
-        </el-menu-item>
-        <el-menu-item index="staff">
-          <span>人员管理</span>
-        </el-menu-item>
-        <el-menu-item index="vehicle">
-          <span>车辆监管</span>
-        </el-menu-item>
-        <el-menu-item index="demo">
-          <span>DEMO组件</span>
+        <el-menu-item v-for="item in visibleMenus" :key="item.key" :index="item.key">
+          <span>{{ item.label }}</span>
         </el-menu-item>
       </el-menu>
     </div>
@@ -89,6 +77,14 @@
 </template>
 
 <script>
+import {
+  BIGSCREEN_PERMISSIONS,
+  PATROL_PAGES,
+  firstPatrolRouteName,
+  hasAnyBigscreenPermission,
+  hasBigscreenPermission
+} from '@/utils/bigscreen-access'
+
 export default {
   name: 'Header',
   props: {
@@ -107,6 +103,18 @@ export default {
       username: '管理员',
       userAvatar: '',
       activeIndex: this.activeHead
+    }
+  },
+  computed: {
+    visibleMenus() {
+      const permissions = this.$store.getters.bigscreenPermissions
+      return [
+        { key: 'home', label: '指挥中心', routeName: 'biIndex', permission: BIGSCREEN_PERMISSIONS.HOME },
+        { key: 'patrol', label: '巡逻巡查', permissions: PATROL_PAGES.map(page => page.permission) },
+        { key: 'staff', label: '人员管控', routeName: 'biStaff', permission: BIGSCREEN_PERMISSIONS.STAFF }
+      ].filter(item => item.permissions
+        ? hasAnyBigscreenPermission(permissions, item.permissions)
+        : hasBigscreenPermission(permissions, item.permission))
     }
   },
   mounted() {
@@ -139,7 +147,11 @@ export default {
     // 菜单选择
     handleSelect(key) {
       this.activeIndex = key
-      this.$router.push(`/bi/${key}`)
+      const menu = this.visibleMenus.find(item => item.key === key)
+      const routeName = key === 'patrol'
+        ? firstPatrolRouteName(this.$store.getters.bigscreenPermissions)
+        : menu?.routeName
+      if (routeName) this.$router.push({ name: routeName })
     },
     
     // 通知点击

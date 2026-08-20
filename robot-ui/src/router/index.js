@@ -4,6 +4,7 @@ import Router from 'vue-router'
 Vue.use(Router)
 
 import path from "path";
+import { BIGSCREEN_PERMISSIONS } from '@/utils/bigscreen-access'
 
 /**
  * Note: 路由配置项
@@ -68,7 +69,8 @@ export const constantRoutes = [
     meta: {
       title: '大屏',
       icon: 'el-icon-data-board',
-      requiresAuth: true
+      requiresAuth: true,
+      permission: BIGSCREEN_PERMISSIONS.HOME
     },
     children: [
       {
@@ -78,7 +80,8 @@ export const constantRoutes = [
         meta: {
           title: '首页',
           icon: 'el-icon-data-board',
-          requiresAuth: true
+          requiresAuth: true,
+          permission: BIGSCREEN_PERMISSIONS.HOME
         }
       },
       {
@@ -88,7 +91,8 @@ export const constantRoutes = [
         meta: {
           title: '首页',
           icon: 'el-icon-data-board',
-          requiresAuth: true
+          requiresAuth: true,
+          permission: BIGSCREEN_PERMISSIONS.HOME
         }
       },
       {
@@ -99,7 +103,8 @@ export const constantRoutes = [
         meta: {
           title: '巡逻巡查',
           icon: 'el-icon-data-board',
-          requiresAuth: true
+          requiresAuth: true,
+          permission: BIGSCREEN_PERMISSIONS.HOME
         },
         children: [
           {
@@ -109,7 +114,8 @@ export const constantRoutes = [
             meta: {
               title: '全景地图',
               icon: 'el-icon-data-board',
-              requiresAuth: true
+              requiresAuth: true,
+              permission: BIGSCREEN_PERMISSIONS.PATROL_MAP
             }
           },
           {
@@ -119,7 +125,8 @@ export const constantRoutes = [
             meta: {
               title: '实时监控',
               icon: 'el-icon-data-board',
-              requiresAuth: true
+              requiresAuth: true,
+              permission: BIGSCREEN_PERMISSIONS.PATROL_MONITOR
             }
           },
           {
@@ -129,7 +136,8 @@ export const constantRoutes = [
             meta: {
               title: '业务管理',
               icon: 'el-icon-data-board',
-              requiresAuth: true
+              requiresAuth: true,
+              permission: BIGSCREEN_PERMISSIONS.PATROL_BUSINESS
             },
             // children: [
             //   {
@@ -151,7 +159,8 @@ export const constantRoutes = [
             meta: {
               title: '数据统计',
               icon: 'el-icon-data-board',
-              requiresAuth: true
+              requiresAuth: true,
+              permission: BIGSCREEN_PERMISSIONS.PATROL_STATS
             }
           },
         ]
@@ -163,7 +172,8 @@ export const constantRoutes = [
         meta: {
           title: '人员管理',
           icon: 'el-icon-data-board',
-          requiresAuth: true
+          requiresAuth: true,
+          permission: BIGSCREEN_PERMISSIONS.STAFF
         }
       },
       {
@@ -173,7 +183,8 @@ export const constantRoutes = [
         meta: {
           title: '车辆监管',
           icon: 'el-icon-data-board',
-          requiresAuth: true
+          requiresAuth: true,
+          unavailable: true
         }
       },
       // {

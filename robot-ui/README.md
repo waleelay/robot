@@ -103,6 +103,11 @@ VUE_APP_KEYCLOAK_CLIENT_ID=bigscreen-web
 管理端需要为大屏注册 Public SPA 客户端并启用 Authorization Code + PKCE(S256)。
 完整配置见[大屏统一登录认证对接指南](../docs/03-接口与协议/大屏BFF/大屏统一登录认证对接指南.md)。
 
+登录完成后，前端请求 BFF 的 `GET /api/bigscreen/access-control/me`，由 BFF 透传当前 JWT 到
+EIOP `GET /api/v1/management/access-control/me`，并使用返回的 `permissions` 过滤大屏一级菜单、
+巡逻二级菜单和路由访问。菜单权限码以 EIOP 权限目录为准；
+BFF 继续向管理端透传当前用户 JWT，菜单权限不替代管理端的数据权限校验。
+
 生产环境的 REST 访问 `/api-gw/api/bigscreen/**`，由大屏 Nginx 转发到管理端
 API Gateway；WebSocket 访问同源 `/ws/bigscreen`，由大屏 Nginx 直接转发到 BFF。
 

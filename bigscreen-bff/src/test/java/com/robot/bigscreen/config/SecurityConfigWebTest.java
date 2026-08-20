@@ -1,7 +1,10 @@
 package com.robot.bigscreen.config;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -59,6 +62,23 @@ class SecurityConfigWebTest {
     @Test
     void protectsOtherApiRequests() throws Exception {
         mockMvc.perform(get("/api/bigscreen/panorama/overview"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void forwardsCurrentAccessToManagementService() throws Exception {
+        when(proxyClient.forwardToManage(any(), eq("/api/v1/management/access-control/me")))
+                .thenReturn(ResponseEntity.ok("{}".getBytes()));
+
+        mockMvc.perform(get("/api/bigscreen/access-control/me").with(jwt()))
+                .andExpect(status().isOk());
+
+        verify(proxyClient).forwardToManage(any(), eq("/api/v1/management/access-control/me"));
+    }
+
+    @Test
+    void protectsCurrentAccessRequest() throws Exception {
+        mockMvc.perform(get("/api/bigscreen/access-control/me"))
                 .andExpect(status().isUnauthorized());
     }
 
