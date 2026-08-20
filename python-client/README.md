@@ -453,7 +453,7 @@ MULTI_FUNCTION_KEEPALIVE_INTERVAL_MS=2000
 
 | Topic | 说明 |
 |---|---|
-| `robot/{robotId}/media/client/status` | 媒体客户端上线、下线和周期心跳，携带摄像头清单与仍被消费的 `devices[]` 运行态；不携带本体业务状态 |
+| `robot/{robotId}/media/client/status` | 媒体客户端上线、下线和周期心跳；机器人 ID 以 topic 为准，仅携带摄像头清单和 `devices[].deviceId/deviceType/onlineStatus/status` 运行态，不携带本体业务状态 |
 | `robot/{robotId}/media/video/status` | 实时视频状态 |
 | `robot/{robotId}/media/video/intercom/status` | 对讲状态 |
 

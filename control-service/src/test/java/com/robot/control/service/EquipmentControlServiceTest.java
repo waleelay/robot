@@ -326,13 +326,16 @@ class EquipmentControlServiceTest {
                         "deviceId", "ptz-dual-001",
                         "bindingId", "old-binding",
                         "deviceType", "DUAL_LIGHT_PTZ",
+                        "actions", List.of("up", "down"),
+                        "controlProfile", object("maxPanSpeed", 100),
                         "status", object("pan", 0.15, "moving", true)))));
 
         List<Map<String, Object>> devices = maps(state.get("devices"));
         assertThat(devices).singleElement().satisfies(device -> {
             assertThat(device)
                     .containsEntry("deviceId", "ptz-new-001")
-                    .containsEntry("bindingId", "old-binding")
+                    .doesNotContainKey("bindingId")
+                    .doesNotContainKey("vendor")
                     .containsEntry("deviceType", "DUAL_LIGHT_PTZ");
             assertThat(map(device.get("status")))
                     .containsEntry("pan", 0.15)
@@ -429,13 +432,13 @@ class EquipmentControlServiceTest {
     @Test
     void publishesModeChangeWithoutOptimisticallyPublishingRobotState() {
         register(component("BODY", "body"));
-        online("手动模式", 12);
+        online("手动模式");
         Map<String, Object> session = acquireBase();
 
         Map<String, Object> response = service.setControlMode("robot-001", object(
                 "controlMode", "导航模式",
                 "controlSessionId", session.get("controlSessionId"),
-                "observedStateSeq", 12), operator());
+                "observedStateSeq", 1), operator());
 
         assertThat(response)
                 .containsEntry("status", "PUBLISHED")
@@ -443,7 +446,7 @@ class EquipmentControlServiceTest {
                 .containsEntry("controlModeName", "手动模式")
                 .containsEntry("requestedControlMode", "导航模式")
                 .containsEntry("requestedControlModeName", "导航模式")
-                .containsEntry("stateSeq", 12L);
+                .containsEntry("stateSeq", 1L);
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
         assertThat(map(captor.getValue()))
@@ -455,13 +458,13 @@ class EquipmentControlServiceTest {
     @Test
     void rejectsUnsupportedOrIncompleteModeChanges() {
         register(component("BODY", "base"));
-        online("手动模式", 12);
+        online("手动模式");
         Map<String, Object> session = acquireBase();
 
         assertThatThrownBy(() -> service.setControlMode("robot-001", object(
                 "controlMode", "ASSISTED",
                 "controlSessionId", session.get("controlSessionId"),
-                "observedStateSeq", 12), operator()))
+                "observedStateSeq", 1), operator()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("不支持的控制模式");
         assertThatThrownBy(() -> service.setControlMode("robot-001", object(
@@ -473,10 +476,10 @@ class EquipmentControlServiceTest {
     @Test
     void navigationTakeoverAcquiresBaseAndWaitsForRealManualState() {
         register(component("BODY", "base"));
-        online("导航模式", 20);
+        online("导航模式");
 
         Map<String, Object> response = service.takeover("robot-001", object(
-                "observedStateSeq", 20), operator());
+                "observedStateSeq", 1), operator());
 
         assertThat(response)
                 .containsEntry("status", "ACTIVE")
@@ -498,7 +501,7 @@ class EquipmentControlServiceTest {
     @Test
     void navigationTakeoverDoesNotStealAnotherTerminalSession() {
         register(component("BODY", "base"));
-        online("导航模式", 20);
+        online("导航模式");
         acquireBase();
         CurrentUser otherTerminal = new CurrentUser(
                 "operator-2",
@@ -507,7 +510,7 @@ class EquipmentControlServiceTest {
                 "terminal-2");
 
         Map<String, Object> response = service.takeover("robot-001", object(
-                "observedStateSeq", 20), otherTerminal);
+                "observedStateSeq", 1), otherTerminal);
 
         assertThat(response)
                 .containsEntry("code", "CONTROL_LOCKED")
@@ -594,7 +597,6 @@ class EquipmentControlServiceTest {
         register(component("PTZ", "ptz-new-001"));
         service.handleClientState(object(
                 "robotId", "robot-001",
-                "clientId", "media-client",
                 "status", "online",
                 "battery", 90,
                 "controlMode", "手动模式",
@@ -609,7 +611,6 @@ class EquipmentControlServiceTest {
 
         Map<String, Object> state = service.handleClientState(object(
                 "robotId", "robot-001",
-                "clientId", "media-client",
                 "status", "online",
                 "battery", 89,
                 "controlMode", "手动模式",
@@ -624,7 +625,7 @@ class EquipmentControlServiceTest {
                 .containsEntry("stateSeq", 2L)
                 .containsEntry("speed", 0.2)
                 .containsEntry("location", object("x", 1.2, "y", 3.4))
-                .containsEntry("clientId", "media-client");
+                .containsEntry("clientId", "");
     }
 
     private Map<String, Object> publish(String deviceId, String action, Map<String, Object> params) {
@@ -634,7 +635,7 @@ class EquipmentControlServiceTest {
                 "params", params,
                 "client", object("seq", 7));
         if ("base".equals(deviceId) && "drive.velocity".equals(action)) {
-            online("手动模式", 1);
+            online("手动模式");
             request.put("controlSessionId", acquireBase().get("controlSessionId"));
         }
         service.publishCommand("robot-001", request, operator());
@@ -645,13 +646,10 @@ class EquipmentControlServiceTest {
         return payload;
     }
 
-    private void online(String controlMode, long stateSeq) {
-        service.handleClientState(object(
-                "robotId", "robot-001",
+    private void online(String controlMode) {
+        service.mergeEdgeDeviceStatus("robot-001", object(
                 "status", "online",
-                "controlMode", controlMode,
-                "stateSeq", stateSeq,
-                "devices", List.of()));
+                "controlMode", controlMode));
     }
 
     private Map<String, Object> acquireBase() {

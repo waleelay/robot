@@ -533,12 +533,9 @@ func (c *Client) publish(topic string, payload any) error {
 func (c *Client) online(status string) {
 	// 该 topic 只上报媒体客户端存活、视频源和客户端实际采集的设备运行态。
 	c.publish("robot/"+c.cfg.RobotID+"/media/client/status", model.OnlineMessage{
-		RobotID:   c.cfg.RobotID,
-		ClientID:  c.cfg.ClientID,
-		Status:    status,
-		Cameras:   c.cameras(),
-		Devices:   c.devices(),
-		Timestamp: time.Now(),
+		Status:  status,
+		Cameras: c.cameras(),
+		Devices: c.devices(),
 	})
 }
 
@@ -568,20 +565,10 @@ func (c *Client) devices() []model.Device {
 			}
 		}
 		items = append(items, model.Device{
-			DeviceID:       device.DeviceID,
-			BindingID:      device.BindingID,
-			Scope:          device.Scope,
-			DeviceType:     device.DeviceType,
-			DisplayName:    device.DisplayName,
-			Vendor:         device.Vendor,
-			Model:          device.Model,
-			OnlineStatus:   onlineStatus,
-			ControlStatus:  device.ControlStatus,
-			Enabled:        device.Enabled,
-			RiskLevel:      device.RiskLevel,
-			Actions:        append([]string(nil), device.Actions...),
-			Status:         status,
-			ControlProfile: device.ControlProfile,
+			DeviceID:     device.DeviceID,
+			DeviceType:   device.DeviceType,
+			OnlineStatus: onlineStatus,
+			Status:       status,
 		})
 	}
 	return items

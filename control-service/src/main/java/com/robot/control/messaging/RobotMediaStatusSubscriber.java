@@ -181,16 +181,23 @@ public class RobotMediaStatusSubscriber {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
             try {
                 Map<String, Object> data = objectMapper.readValue(payload, Map.class);
+                String topicRobotId = robotIdFromTopic(topic);
+                Object reportedRobotIdValue = data.get("robotId");
+                String reportedRobotId = reportedRobotIdValue == null ? "" : String.valueOf(reportedRobotIdValue).trim();
+                if (!reportedRobotId.isBlank() && !topicRobotId.equals(reportedRobotId)) {
+                    log.warn("媒体客户端状态机器人 ID 与 topic 不一致，已忽略，topicRobotId={} reportedRobotId={}", topicRobotId, reportedRobotId);
+                    return;
+                }
+                data.put("robotId", topicRobotId);
                 Map<String, Object> state = equipmentControlService.handleClientState(data);
                 if (state.isEmpty()) {
-                    robotRegistryService.remove(String.valueOf(data.get("robotId")));
+                    robotRegistryService.remove(topicRobotId);
                     return;
                 }
                 boolean becameOnline = robotRegistryService.update(state);
                 if (becameOnline) {
-                    String robotId = String.valueOf(data.get("robotId"));
                     String status = String.valueOf(data.get("status"));
-                    mediaServiceClient.onlineRestartCommands(robotId, status).forEach(commandService::sendStart);
+                    mediaServiceClient.onlineRestartCommands(topicRobotId, status).forEach(commandService::sendStart);
                 }
             } catch (Exception ex) {
                 log.warn("处理媒体客户端状态失败，主题={} 载荷={}", topic, payload, ex);

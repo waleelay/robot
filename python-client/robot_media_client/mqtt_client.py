@@ -543,8 +543,6 @@ class RobotMQTTClient:
     def online(self, status: str) -> None:
         """发布媒体客户端存活状态、视频源和客户端采集的设备运行态。"""
         self.publish(f"robot/{self.cfg.robot_id}/media/client/status", {
-            "robotId": self.cfg.robot_id,
-            "clientId": self.cfg.client_id,
             "status": status,
             "cameras": [
                 {
@@ -554,13 +552,11 @@ class RobotMQTTClient:
                     "name": camera.name,
                     "quality": camera.quality,
                 }
-#                 for camera in self.cfg.cameras
-                 for camera in self.cfg.cameras
-                 # 不上报本体摄像头
-                 if "body" not in (camera.group_type or "").lower()
+                for camera in self.cfg.cameras
+                # 不上报本体摄像头
+                if "body" not in (camera.group_type or "").lower()
             ],
             "devices": self.devices(),
-            "timestamp": isoformat(),
         })
 
     def devices(self) -> list[dict[str, object]]:
@@ -582,25 +578,11 @@ class RobotMQTTClient:
                 online_status = "online" if status.get("connected") is True else "offline"
             item: dict[str, object] = {
                 "deviceId": device.device_id,
-                "bindingId": device.binding_id,
-                "scope": device.scope,
                 "deviceType": device.device_type,
-                "displayName": device.display_name,
                 "onlineStatus": online_status,
-                "controlStatus": device.control_status,
-                "enabled": device.enabled,
-                "actions": list(device.actions),
             }
-            if device.vendor:
-                item["vendor"] = device.vendor
-            if device.model:
-                item["model"] = device.model
-            if device.risk_level:
-                item["riskLevel"] = device.risk_level
             if status:
                 item["status"] = status
-            if device.control_profile:
-                item["controlProfile"] = dict(device.control_profile)
             result.append(item)
         return result
 

@@ -407,11 +407,15 @@ public class EquipmentControlService {
         }
         Map<String, Object> previous = robotStates.getOrDefault(robotId, Map.of());
         Map<String, Object> state = copy(previous);
-        payload.forEach((key, value) -> {
-            if (value != null && !"name".equals(key) && !"type".equals(key) && !"typeCode".equals(key)) {
-                state.put(key, value);
-            }
-        });
+        state.put("robotId", robotId);
+        state.put("clientId", "");
+        state.put("status", stringValue(payload.get("status"), "offline"));
+        if (payload.containsKey("cameras")) {
+            state.put("cameras", mediaClientCameras(payload.get("cameras")));
+        }
+        if (payload.containsKey("devices")) {
+            state.put("devices", mediaClientDevices(payload.get("devices")));
+        }
         if (hasFreshEdgeStatus(robotId)) {
             EDGE_STATUS_FIELDS.forEach(field -> {
                 if (previous.containsKey(field)) {
@@ -420,11 +424,10 @@ public class EquipmentControlService {
             });
         }
         state.putIfAbsent("stateSeq", numberValue(state.get("stateSeq"), 1).longValue());
-        state.putIfAbsent("status", "offline");
         String controlMode = reportedControlMode(state.get("controlMode"));
         state.put("controlMode", controlMode);
         state.put("controlModeName", controlModeName(controlMode));
-        state.put("timestamp", DateTimeConfig.normalize(state.getOrDefault("timestamp", OffsetDateTime.now())));
+        state.put("timestamp", DateTimeConfig.normalize(OffsetDateTime.now()));
         state.put("stateSource", "MEDIA_CLIENT_STATUS");
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
         Map<String, Object> robot = managementRobot.get();
@@ -984,13 +987,17 @@ public class EquipmentControlService {
                 statusByDeviceId.getOrDefault(
                         componentCode,
                         statusByDeviceId.getOrDefault("type:" + deviceType, Map.of())));
-        Map<String, Object> result = copy(runtime);
+        Map<String, Object> result = new LinkedHashMap<>();
         result.put("deviceId", deviceId);
         result.put("scope", controlScope(deviceType));
         result.put("deviceType", deviceType);
         result.put("displayName", displayName);
         result.put("actions", controlActions(component, deviceType));
         result.put("controlProfile", controlProfile(component, deviceType));
+        Object onlineStatus = runtime.get("onlineStatus");
+        if (onlineStatus != null) {
+            result.put("onlineStatus", onlineStatus);
+        }
         Map<String, Object> status = mapValue(runtime.get("status"));
         if (!status.isEmpty()) {
             result.put("status", status);
@@ -998,6 +1005,68 @@ public class EquipmentControlService {
             result.remove("status");
         }
         return result;
+    }
+
+    /**
+     * 只保留媒体客户端实际可确认的上装运行态，设备档案和能力统一由管理端提供。
+     */
+    private List<Map<String, Object>> mediaClientDevices(Object value) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> device : mapList(value)) {
+            String deviceId = firstString(device, "deviceId");
+            if (deviceId == null) {
+                continue;
+            }
+            Map<String, Object> runtime = new LinkedHashMap<>();
+            runtime.put("deviceId", deviceId);
+            String deviceType = firstString(device, "deviceType");
+            if (deviceType != null) {
+                runtime.put("deviceType", deviceType);
+            }
+            Object onlineStatus = device.get("onlineStatus");
+            if (onlineStatus != null) {
+                runtime.put("onlineStatus", onlineStatus);
+            }
+            Map<String, Object> status = mapValue(device.get("status"));
+            if (!status.isEmpty()) {
+                runtime.put("status", status);
+            }
+            result.add(runtime);
+        }
+        return result;
+    }
+
+    /**
+     * 摄像头清单是媒体客户端权威数据，仅允许协议定义的展示与路由字段。
+     */
+    private List<Map<String, Object>> mediaClientCameras(Object value) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> camera : mapList(value)) {
+            String cameraId = firstString(camera, "cameraId");
+            String deviceId = firstString(camera, "deviceId");
+            if (cameraId == null && deviceId == null) {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            if (cameraId != null) {
+                item.put("cameraId", cameraId);
+            }
+            if (deviceId != null) {
+                item.put("deviceId", deviceId);
+            }
+            copyIfPresent(camera, item, "groupType");
+            copyIfPresent(camera, item, "name");
+            copyIfPresent(camera, item, "quality");
+            result.add(item);
+        }
+        return result;
+    }
+
+    private void copyIfPresent(Map<String, Object> source, Map<String, Object> target, String key) {
+        Object value = source.get(key);
+        if (value != null) {
+            target.put(key, value);
+        }
     }
 
     private Map<String, Map<String, Object>> statusByDeviceId(Map<String, Object> state) {

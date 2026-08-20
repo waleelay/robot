@@ -90,12 +90,9 @@ type StatusMessage struct {
 }
 
 type OnlineMessage struct {
-	RobotID   string    `json:"robotId"`
-	ClientID  string    `json:"clientId"`
-	Status    string    `json:"status"`
-	Cameras   []Camera  `json:"cameras,omitempty"`
-	Devices   []Device  `json:"devices,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
+	Status  string   `json:"status"`
+	Cameras []Camera `json:"cameras,omitempty"`
+	Devices []Device `json:"devices,omitempty"`
 }
 
 type Camera struct {
@@ -107,20 +104,10 @@ type Camera struct {
 }
 
 type Device struct {
-	DeviceID       string         `json:"deviceId"`
-	BindingID      string         `json:"bindingId"`
-	Scope          string         `json:"scope"`
-	DeviceType     string         `json:"deviceType"`
-	DisplayName    string         `json:"displayName"`
-	Vendor         string         `json:"vendor,omitempty"`
-	Model          string         `json:"model,omitempty"`
-	OnlineStatus   string         `json:"onlineStatus"`
-	ControlStatus  string         `json:"controlStatus"`
-	Enabled        bool           `json:"enabled"`
-	RiskLevel      string         `json:"riskLevel,omitempty"`
-	Actions        []string       `json:"actions"`
-	Status         map[string]any `json:"status,omitempty"`
-	ControlProfile map[string]any `json:"controlProfile,omitempty"`
+	DeviceID     string         `json:"deviceId"`
+	DeviceType   string         `json:"deviceType,omitempty"`
+	OnlineStatus string         `json:"onlineStatus,omitempty"`
+	Status       map[string]any `json:"status,omitempty"`
 }
 
 type ControlCommand struct {

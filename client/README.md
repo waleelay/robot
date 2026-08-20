@@ -243,7 +243,7 @@ main
 
 | Topic | 消息类型 | 说明 |
 |---|---|---|
-| `robot/{robotId}/media/client/status` | `OnlineMessage` | 媒体客户端上线、下线和周期心跳，携带摄像头清单与仍被消费的 `devices[]` 运行态 |
+| `robot/{robotId}/media/client/status` | `OnlineMessage` | 媒体客户端上线、下线和周期心跳；机器人 ID 以 topic 为准，仅携带摄像头清单和 `devices[].deviceId/deviceType/onlineStatus/status` 运行态 |
 | `robot/{robotId}/media/video/status` | `StatusMessage` | 实时视频状态 |
 | `robot/{robotId}/media/video/intercom/status` | `IntercomStatusMessage` | 对讲状态 |
 | `gateway/fixed-camera/{gatewayId}/video/status` | `StatusMessage` | 固定摄像头实时视频状态 |
