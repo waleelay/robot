@@ -3,7 +3,7 @@ import store from './store'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
 import { initAuth, isAuthenticated, login } from '@/auth'
-import { hasBigscreenPermission } from '@/utils/bigscreen-access'
+import { hasBigscreenPermission, isBigscreenPermissionEnabled } from '@/utils/bigscreen-access'
 
 NProgress.configure({ showSpinner: false })
 
@@ -24,7 +24,10 @@ router.beforeEach(async (to, from, next) => {
     }
     return
   }
-  if (to.path !== '/401' && to.path !== '/404' && to.matched.some(route => route.meta.requiresAuth)) {
+  if (isBigscreenPermissionEnabled()
+    && to.path !== '/401'
+    && to.path !== '/404'
+    && to.matched.some(route => route.meta.requiresAuth)) {
     try {
       await store.dispatch('bigscreenAccess/ensureLoaded')
     } catch (error) {

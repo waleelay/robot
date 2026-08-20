@@ -1,4 +1,5 @@
 import { getCurrentBigscreenAccess } from '@/api/bigscreen-access'
+import { isBigscreenPermissionEnabled } from '@/utils/bigscreen-access'
 
 let pendingRequest = null
 
@@ -29,6 +30,7 @@ const bigscreenAccess = {
 
   actions: {
     ensureLoaded({ state, dispatch }) {
+      if (!isBigscreenPermissionEnabled()) return Promise.resolve(state)
       if (state.loaded) return Promise.resolve(state)
       return dispatch('load')
     },

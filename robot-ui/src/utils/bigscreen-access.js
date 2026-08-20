@@ -16,7 +16,21 @@ export const PATROL_PAGES = Object.freeze([
   { key: 'statistics', routeName: 'biPatrolStatistics', permission: BIGSCREEN_PERMISSIONS.PATROL_STATS }
 ])
 
+function runtimeConfig() {
+  return (typeof window !== 'undefined' && window.__BIGSCREEN_AUTH_CONFIG__) || {}
+}
+
+// 菜单权限开关读 auth-config.js 的 permissionEnabled；未配置或非 false 时默认开启验证。
+export function isBigscreenPermissionEnabled() {
+  const value = runtimeConfig().permissionEnabled
+  if (value === false || `${value}`.trim().toLowerCase() === 'false') {
+    return false
+  }
+  return true
+}
+
 export function hasBigscreenPermission(permissions, permission) {
+  if (!isBigscreenPermissionEnabled()) return true
   return Array.isArray(permissions) && permissions.includes(permission)
 }
 
