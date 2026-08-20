@@ -38,7 +38,7 @@
               class="w100 h100"
               muted
               playsinline
-              preload="metadata"
+              preload="auto"
             />
             <div class="oper-video visible">
               <img src="@/assets/images/new-bi/play-b.svg" alt="">
@@ -65,8 +65,7 @@ import {
   getFilePlayUrl,
   revokeFileObjectUrl
 } from '../../../../../../api/media.js'
-import { withApiPrefix } from '../../../../../../utils/api-url.js'
-import { resolveCameraName } from '../../../../../../utils/index.js'
+import { durationFromVideoElement, resolveCameraName } from '../../../../../../utils/index.js'
 import MultimediaDetail from './MultimediaDetail.vue'
 import Empty from '../../../../components/Empty.vue'
 
@@ -106,6 +105,7 @@ export default {
     selectedRobotId() { this.refreshList() },
     tabIndex(val) {
       if (val === 1) this.$nextTick(() => this.bindVideoPlayers())
+      else this.destroyVideoPlayers()
     }
   },
   mounted() { this.refreshList() },
@@ -152,10 +152,8 @@ export default {
         const params = { page: 0, size: 20, fileType: 'VIDEO', status: 'READY' }
         if (this.selectedRobotId) params.robotId = this.selectedRobotId
         const res = await getFiles(params) || {}
-        const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
         this.recordings = (res.items || []).map(item => ({
-          ...item, fileType: item.fileType || 'VIDEO',
-          customUrl: `${preUrl}${withApiPrefix(`/api/bigscreen/control/files/${item.fileId}/content`)}`
+          ...item, fileType: item.fileType || 'VIDEO'
         }))
         if (this.tabIndex === 1) this.$nextTick(() => this.bindVideoPlayers())
       } catch (e) { this.recordings = [] }
@@ -172,24 +170,71 @@ export default {
         if (!player) return
         this.destroyVideoPlayer(recording.fileId)
         let recordedHls = null
-        const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
         player.muted = true
         player.controls = false
-        if (player.canPlayType('application/vnd.apple.mpegurl')) {
-          player.src = `${preUrl}${playback.playUrl}`
-        } else if (Hls.isSupported()) {
-          recordedHls = new Hls()
-          recordedHls.loadSource(playback.playUrl)
+        player.playsInline = true
+        player.preload = 'auto'
+        const playUrl = playback.playUrl
+        if (Hls.isSupported()) {
+          recordedHls = new Hls({
+            autoStartLoad: true,
+            startFragPrefetch: true
+          })
+          recordedHls.on(Hls.Events.MANIFEST_PARSED, () => {
+            this.primeVideoPoster(player)
+          })
+          recordedHls.loadSource(playUrl)
           recordedHls.attachMedia(player)
+        } else if (player.canPlayType('application/vnd.apple.mpegurl')) {
+          player.src = playUrl
+          player.addEventListener('loadeddata', () => this.primeVideoPoster(player), { once: true })
         }
         this.videoPlayers[recording.fileId] = { player, recordedHls }
+        this.bindRecordingDuration(player, recording)
       } catch (e) {}
+    },
+    bindRecordingDuration(player, recording) {
+      if (!player || !recording || !recording.fileId) return
+      const applyDuration = () => {
+        const seconds = durationFromVideoElement(player)
+        if (!seconds) return
+        const index = this.recordings.findIndex(item => item.fileId === recording.fileId)
+        if (index !== -1 && this.recordings[index].durationSeconds !== seconds) {
+          this.$set(this.recordings, index, Object.assign({}, this.recordings[index], { durationSeconds: seconds }))
+        }
+      }
+      player.addEventListener('loadedmetadata', applyDuration)
+      player.addEventListener('durationchange', applyDuration)
+      applyDuration()
+    },
+    primeVideoPoster(player) {
+      if (!player || player.dataset.posterPrimed === 'true') return
+      player.muted = true
+      player.playsInline = true
+      const finish = () => {
+        player.dataset.posterPrimed = 'true'
+        if (player.pause) player.pause()
+        try {
+          if (!player.currentTime) player.currentTime = 0.001
+        } catch (error) {}
+      }
+      const playPromise = player.play && player.play()
+      if (playPromise && playPromise.then) {
+        playPromise.then(finish).catch(() => {
+          try {
+            if (!player.currentTime) player.currentTime = 0.001
+          } catch (error) {}
+        })
+      } else {
+        finish()
+      }
     },
     destroyVideoPlayer(fileId) {
       const data = this.videoPlayers[fileId]
       if (!data) return
       if (data.recordedHls) data.recordedHls.destroy()
       if (data.player) {
+        delete data.player.dataset.posterPrimed
         data.player.pause()
         data.player.removeAttribute('src')
         data.player.load()

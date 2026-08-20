@@ -41,7 +41,7 @@
                         class="w100 h100"
                         controls
                         playsinline
-                        preload="metadata"
+                        preload="auto"
                       />
                     </div>
                     <div class="download" @click="download">
@@ -143,7 +143,7 @@
                         class="w100 h100"
                         muted
                         playsinline
-                        preload="metadata"
+                        preload="auto"
                       />
                     </div>
                     <div class="ml10 flex1 info-right">
@@ -188,7 +188,7 @@ import {
   revokeFileObjectUrl,
   deleteFile
 } from '../../../../../../api/media.js'
-import { durationText, recordingTimeRangeText, resolveCameraName } from '../../../../../../utils/index.js'
+import { durationFromVideoElement, durationText, resolveCameraName } from '../../../../../../utils/index.js'
 
 export default {
   name: 'MultimediaDetail',
@@ -204,6 +204,7 @@ export default {
       listData: [],
       selectedId: '',
       detailHls: null,
+      detailPlaySeq: 0,
       thumbPlayers: {},
       imageLoadSeq: 0,
       ownedImageObjectUrls: [],
@@ -410,22 +411,82 @@ export default {
     },
     async playDetailVideo(recording) {
       if (!recording?.fileId) return
+      const seq = ++this.detailPlaySeq
       try {
         const playback = await getFilePlayUrl(recording.fileId)
+        if (seq !== this.detailPlaySeq) return
         const player = this.$refs.detailPlayer
         if (!player) return
-        const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
+        delete player.dataset.posterPrimed
+        const playUrl = playback.playUrl
+        player.muted = true
         player.controls = true
         player.loop = false
-        if (player.canPlayType('application/vnd.apple.mpegurl')) {
-          player.src = `${preUrl}${playback.playUrl}`
-        } else if (Hls.isSupported()) {
-          this.detailHls = new Hls()
-          this.detailHls.loadSource(playback.playUrl)
+        player.playsInline = true
+        player.preload = 'auto'
+        if (Hls.isSupported()) {
+          this.detailHls = new Hls({
+            autoStartLoad: true,
+            startFragPrefetch: true
+          })
+          this.detailHls.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (seq !== this.detailPlaySeq) return
+            this.primeVideoPoster(player, { keepMuted: false })
+          })
+          this.detailHls.loadSource(playUrl)
           this.detailHls.attachMedia(player)
+        } else if (player.canPlayType('application/vnd.apple.mpegurl')) {
+          player.src = playUrl
+          player.addEventListener('loadeddata', () => {
+            if (seq !== this.detailPlaySeq) return
+            this.primeVideoPoster(player, { keepMuted: false })
+          }, { once: true })
         }
+        this.bindDetailDuration(player, recording)
       } catch (e) {
+        if (seq !== this.detailPlaySeq) return
         this.$message.error('视频加载失败')
+      }
+    },
+    bindDetailDuration(player, recording) {
+      if (!player || !recording || !recording.fileId) return
+      const applyDuration = () => {
+        const seconds = durationFromVideoElement(player)
+        if (!seconds) return
+        if (this.details.fileId === recording.fileId && this.details.durationSeconds !== seconds) {
+          this.details = Object.assign({}, this.details, { durationSeconds: seconds })
+        }
+        const index = this.listData.findIndex(item => item.fileId === recording.fileId)
+        if (index !== -1 && this.listData[index].durationSeconds !== seconds) {
+          this.$set(this.listData, index, Object.assign({}, this.listData[index], { durationSeconds: seconds }))
+        }
+      }
+      player.addEventListener('loadedmetadata', applyDuration)
+      player.addEventListener('durationchange', applyDuration)
+      applyDuration()
+    },
+    primeVideoPoster(player, { keepMuted = true } = {}) {
+      if (!player || player.dataset.posterPrimed === 'true') return
+      player.muted = true
+      player.playsInline = true
+      const finish = () => {
+        player.dataset.posterPrimed = 'true'
+        if (player.pause) player.pause()
+        if (!keepMuted) player.muted = false
+        try {
+          if (!player.currentTime) player.currentTime = 0.001
+        } catch (error) {}
+      }
+      const playPromise = player.play && player.play()
+      if (playPromise && playPromise.then) {
+        playPromise.then(finish).catch(() => {
+          if (!keepMuted) player.muted = false
+          try {
+            if (!player.currentTime) player.currentTime = 0.001
+          } catch (error) {}
+        })
+      } else {
+        finish()
       }
     },
     async bindListThumbs() {
@@ -443,15 +504,24 @@ export default {
         if (!player) return
         this.destroyThumbPlayer(recording.fileId)
         let recordedHls = null
-        const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
+        const playUrl = playback.playUrl
         player.muted = true
         player.controls = false
-        if (player.canPlayType('application/vnd.apple.mpegurl')) {
-          player.src = `${preUrl}${playback.playUrl}`
-        } else if (Hls.isSupported()) {
-          recordedHls = new Hls()
-          recordedHls.loadSource(playback.playUrl)
+        player.playsInline = true
+        player.preload = 'auto'
+        if (Hls.isSupported()) {
+          recordedHls = new Hls({
+            autoStartLoad: true,
+            startFragPrefetch: true
+          })
+          recordedHls.on(Hls.Events.MANIFEST_PARSED, () => {
+            this.primeVideoPoster(player)
+          })
+          recordedHls.loadSource(playUrl)
           recordedHls.attachMedia(player)
+        } else if (player.canPlayType('application/vnd.apple.mpegurl')) {
+          player.src = playUrl
+          player.addEventListener('loadeddata', () => this.primeVideoPoster(player), { once: true })
         }
         this.thumbPlayers[recording.fileId] = { player, recordedHls }
       } catch (e) {}
@@ -461,6 +531,7 @@ export default {
       if (!data) return
       if (data.recordedHls) data.recordedHls.destroy()
       if (data.player) {
+        delete data.player.dataset.posterPrimed
         data.player.pause()
         data.player.removeAttribute('src')
         data.player.load()
@@ -471,12 +542,14 @@ export default {
       Object.keys(this.thumbPlayers).forEach(id => this.destroyThumbPlayer(id))
     },
     destroyDetailPlayer() {
+      this.detailPlaySeq += 1
       if (this.detailHls) {
         this.detailHls.destroy()
         this.detailHls = null
       }
       const player = this.$refs.detailPlayer
       if (player) {
+        delete player.dataset.posterPrimed
         player.pause()
         player.removeAttribute('src')
         player.load()

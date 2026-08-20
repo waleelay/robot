@@ -201,10 +201,16 @@ export function getFilePlayUrl(fileId) {
     url: `/api/bigscreen/control/files/${fileId}/play-url`,
     method: 'post',
     headers
-  }).then(response => ({
-    ...response,
-    playUrl: withBigscreenApiPrefix(response && response.playUrl)
-  }))
+  }).then(response => {
+    const nested = response && response.data
+    const rawPlayUrl = (response && response.playUrl) || (nested && nested.playUrl)
+    const playUrl = withBigscreenApiPrefix(rawPlayUrl)
+    const next = { ...response, playUrl }
+    if (nested && typeof nested === 'object') {
+      next.data = { ...nested, playUrl }
+    }
+    return next
+  })
 }
 
 // ==============================================================远程控制=================================================================

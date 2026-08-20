@@ -191,9 +191,9 @@
               @click="jumpToAlarmEvent(event)"
             >
               <img
-                v-if="alarmImageUrl(event)"
+                v-if="alarmImageUrl(event, index)"
                 class="alarm-card__image"
-                :src="alarmImageUrl(event)"
+                :src="alarmImageUrl(event, index)"
                 :alt="alarmType(event)"
               >
               <div v-else class="alarm-card__empty">告警</div>
@@ -218,7 +218,7 @@
 <script>
 import HlsModule from 'hls.js'
 import { getTaskRecordReplay, previewImageBlob } from '@/api/new-bi'
-import { getFilePlayUrl } from '@/api/media'
+import { createFileObjectUrl, getFilePlayUrl, revokeFileObjectUrl } from '@/api/media'
 import { withApiPrefix } from '@/utils/api-url'
 import {
   executionStatusLabel as resolveExecutionStatusLabel,
@@ -254,6 +254,8 @@ export default {
       hlsPlayers: new Map(),
       mapImageObjectUrl: '',
       unavailableVideoKeys: [],
+      alarmImageUrls: {},
+      alarmImageLoadSeq: 0,
       mapImageLoadSeq: 0
     }
   },
@@ -451,6 +453,7 @@ export default {
     this.stopPlayback()
     this.destroyAllHlsPlayers()
     this.revokeMapImageUrl()
+    this.revokeAlarmImages()
   },
   updated() {
     this.attachVideoSources()
@@ -465,6 +468,7 @@ export default {
         this.unavailableVideoKeys = []
         this.visibleTrackKeys = this.trackGroups.map(this.trackGroupKey)
         this.currentOffset = 0
+        this.loadAlarmImages()
         await this.$nextTick()
         await this.loadVideoPlayUrls(this.playbackItems)
         await this.$nextTick()
@@ -499,6 +503,39 @@ export default {
       if (this.mapImageObjectUrl) URL.revokeObjectURL(this.mapImageObjectUrl)
       this.mapImageObjectUrl = ''
       this.mapImageUrl = ''
+    },
+    alarmImageKey(row, index) {
+      return String((row && (row.id || row.eventId)) || `alarm-${index}`)
+    },
+    async loadAlarmImages() {
+      const seq = ++this.alarmImageLoadSeq
+      this.revokeAlarmImages()
+      const events = this.alarmEvents || []
+      const nextUrls = {}
+      await Promise.all(events.map(async (event, index) => {
+        const key = this.alarmImageKey(event, index)
+        const fileId = this.alarmImageFileId(event)
+        if (!fileId) return
+        try {
+          const objectUrl = await createFileObjectUrl(fileId)
+          if (seq !== this.alarmImageLoadSeq) {
+            revokeFileObjectUrl(objectUrl)
+            return
+          }
+          nextUrls[key] = objectUrl
+        } catch (error) {
+          // 无权限或文件不存在时保持占位，避免 <img> 直接请求 /content 出现 401。
+        }
+      }))
+      if (seq !== this.alarmImageLoadSeq) {
+        Object.keys(nextUrls).forEach(key => revokeFileObjectUrl(nextUrls[key]))
+        return
+      }
+      this.alarmImageUrls = nextUrls
+    },
+    revokeAlarmImages() {
+      Object.keys(this.alarmImageUrls || {}).forEach(key => revokeFileObjectUrl(this.alarmImageUrls[key]))
+      this.alarmImageUrls = {}
     },
     buildPolylines(visitedOnly) {
       return this.groupedTrackSamples.reduce((result, group) => {
@@ -808,7 +845,11 @@ export default {
       return fileId ? this.videoPlayUrlMap[fileId] || '' : ''
     },
     resourceBaseOrigin() {
-      return (process.env.VUE_APP_BASE_ORIGIN || window.location.origin || '').replace(/\/$/, '')
+      // 媒体/HLS 必须同源请求当前页面，本地才能走 webpack /dev-api 代理。
+      // VUE_APP_BASE_ORIGIN 是代理目标，不能写进 <video>/hls.js 的 src。
+      return (typeof window !== 'undefined' && window.location.origin
+        ? window.location.origin
+        : (process.env.VUE_APP_BASE_ORIGIN || '')).replace(/\/$/, '')
     },
     normalizeMediaFilePath(path) {
       return String(path || '')
@@ -931,11 +972,8 @@ export default {
         payload.fileId ||
         ''
     },
-    alarmImageUrl(row) {
-      const directUrl = this.firstValue(row && row.imageUrls) || (row && row.imageUrl)
-      if (directUrl) return this.normalizeResourceUrl(directUrl)
-      const fileId = this.alarmImageFileId(row)
-      return this.normalizeResourceUrl(this.mediaFileContentUrl(fileId))
+    alarmImageUrl(row, index) {
+      return this.alarmImageUrls[this.alarmImageKey(row, index)] || ''
     },
     alarmDeviceLabel(row) {
       const payload = this.alarmPayload(row)

@@ -1,6 +1,6 @@
 import Hls from "hls.js"
 import { getFilePlayUrl, getFiles } from "../../../api/media"
-import { durationText, errorMessage } from "../../../utils"
+import { durationFromVideoElement, durationText, errorMessage } from "../../../utils"
 
 export default {
   data() {
@@ -69,13 +69,23 @@ export default {
         let recordedHls = null
         this.destroyRecordedHls(recording.fileId)
         this.selectedRecording = recording
-        if (player.canPlayType('application/vnd.apple.mpegurl')) {
-          const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
-          player.src = `${preUrl}${playback.playUrl}`
-        } else if (Hls.isSupported()) {
-          recordedHls = new Hls()
-          recordedHls.loadSource(playback.playUrl)
+        player.muted = true
+        player.playsInline = true
+        player.preload = 'auto'
+        const playUrl = playback.playUrl
+        if (Hls.isSupported()) {
+          recordedHls = new Hls({
+            autoStartLoad: true,
+            startFragPrefetch: true
+          })
+          recordedHls.on(Hls.Events.MANIFEST_PARSED, () => {
+            this.primeVideoPoster(player)
+          })
+          recordedHls.loadSource(playUrl)
           recordedHls.attachMedia(player)
+        } else if (player.canPlayType('application/vnd.apple.mpegurl')) {
+          player.src = playUrl
+          player.addEventListener('loadeddata', () => this.primeVideoPoster(player), { once: true })
         } else {
           throw new Error('当前浏览器不支持 HLS 播放')
         }
@@ -89,11 +99,61 @@ export default {
         }
         this.recordingData[recording.fileId].player = player
         this.recordingData[recording.fileId].recordedHls = recordedHls
-        // await player.play().catch(() => {})
+        this.bindRecordingDuration(player, recording)
       } catch (error) {
         if (seq !== this.recordingLoadSeq) return
         this.$message.error(errorMessage(error))
       }
+    },
+    bindRecordingDuration(player, recording) {
+      if (!player || !recording || !recording.fileId) return
+      const applyDuration = () => {
+        const seconds = durationFromVideoElement(player)
+        if (!seconds) return
+        const index = this.recordings.findIndex(item => item.fileId === recording.fileId)
+        if (index !== -1 && this.recordings[index].durationSeconds !== seconds) {
+          this.$set(this.recordings, index, Object.assign({}, this.recordings[index], { durationSeconds: seconds }))
+        }
+        if (this.recordingData[recording.fileId]) {
+          this.recordingData[recording.fileId].durationSeconds = seconds
+        }
+      }
+      player.addEventListener('loadedmetadata', applyDuration)
+      player.addEventListener('durationchange', applyDuration)
+      applyDuration()
+    },
+    primeVideoPoster(player) {
+      if (!player || player.dataset.posterPrimed === 'true') return
+      player.muted = true
+      player.playsInline = true
+      const finish = () => {
+        player.dataset.posterPrimed = 'true'
+        if (player.pause) player.pause()
+        try {
+          if (!player.currentTime) player.currentTime = 0.001
+        } catch (error) {
+          // 部分浏览器在未就绪时不允许 seek。
+        }
+      }
+      const playPromise = player.play && player.play()
+      if (playPromise && playPromise.then) {
+        playPromise.then(finish).catch(() => {
+          try {
+            if (!player.currentTime) player.currentTime = 0.001
+          } catch (error) {}
+        })
+      } else {
+        finish()
+      }
+    },
+    primeAllRecordingPosters() {
+      Object.keys(this.recordingData || {}).forEach(fileId => {
+        const data = this.recordingData[fileId]
+        if (data && data.player) {
+          delete data.player.dataset.posterPrimed
+          this.primeVideoPoster(data.player)
+        }
+      })
     },
     destroyRecordedHls(fileId) {
       const data = this.recordingData[fileId]

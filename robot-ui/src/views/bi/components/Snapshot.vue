@@ -44,7 +44,7 @@
             <div>录制时间：{{ recording.createdAt }}</div>
             <div>录制时长：{{ durationText(recording.durationSeconds) }}</div>
           </div>
-          <video :ref="`${refPrefix}_${recording.fileId}`" playsinline class="w100 h100" muted />
+          <video :ref="`${refPrefix}_${recording.fileId}`" playsinline muted preload="auto" class="w100 h100" />
         </el-tooltip>
         <div class="oper-video visible">
           <img src="../../../assets/images/new-bi/play-b.svg" alt="">
@@ -197,15 +197,16 @@ export default {
   },
   async mounted() {
     this.getSnapData()
-    await this.getPlayers()
+    if (this.tabIndex === 1) await this.getPlayers()
   },
   watch: {
-    tabIndex(newVal, oldVal) {
-      // if (newVal === 0) {
-      //   this.$nextTick(() => {
-      //     this.getSnapData()
-      //   })
-      // }
+    tabIndex(newVal) {
+      if (newVal === 1) {
+        this.$nextTick(async () => {
+          if (!this.recordings.length) await this.getPlayers()
+          else this.primeAllRecordingPosters()
+        })
+      }
     },
     snapshotTime(newVal, oldVal) {
       if (newVal) {
@@ -276,6 +277,10 @@ export default {
 .item {
   position: relative;
   cursor: pointer;
+  video {
+    object-fit: cover;
+    background: #001428;
+  }
   .oper-video {
     position: absolute;
     top: 0;

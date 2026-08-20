@@ -445,12 +445,24 @@ export function getDescArr(data, key) {
   const arr = Array.isArray(data) ? [...data] : Object.values(data)
   return arr.sort((a, b) => b[key] - a[key]);
 }
+/** 与播放器控件一致：不足 1 秒向下取整，避免向上取整后多出 1 秒 */
+export function floorDurationSeconds(seconds) {
+  const value = Number(seconds)
+  if (!Number.isFinite(value) || value <= 0) return 0
+  return Math.floor(value)
+}
+
+export function durationFromVideoElement(video) {
+  return video ? floorDurationSeconds(video.duration) : 0
+}
+
 // 秒 转 时:分:秒
 export function durationText(seconds) {
-  if (!seconds) return '-'
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const remainder = seconds % 60
+  const total = floorDurationSeconds(seconds)
+  if (!total) return '-'
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const remainder = total % 60
   const text = `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
   return hours > 0 ? `${hours}:${text}` : text
 }
