@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -48,16 +49,28 @@ public class ControlManagementClient {
      * @param properties 服务配置
      * @param requestAuthorizationHeaders 当前请求认证头透传器
      */
+    @Autowired
     public ControlManagementClient(
             RestClient.Builder builder,
             ControlProperties properties,
             RequestAuthorizationHeaders requestAuthorizationHeaders) {
+        this(restClient(builder), properties, requestAuthorizationHeaders);
+    }
+
+    ControlManagementClient(
+            RestClient restClient,
+            ControlProperties properties,
+            RequestAuthorizationHeaders requestAuthorizationHeaders) {
+        this.restClient = restClient;
+        this.properties = properties;
+        this.requestAuthorizationHeaders = requestAuthorizationHeaders;
+    }
+
+    private static RestClient restClient(RestClient.Builder builder) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(2000);
         requestFactory.setReadTimeout(3000);
-        this.restClient = builder.requestFactory(requestFactory).build();
-        this.properties = properties;
-        this.requestAuthorizationHeaders = requestAuthorizationHeaders;
+        return builder.requestFactory(requestFactory).build();
     }
 
     /**
@@ -127,6 +140,31 @@ public class ControlManagementClient {
      */
     public List<Map<String, Object>> devices() {
         return devices(false);
+    }
+
+    /** 使用当前请求身份预热设备档案和设备类型字典缓存。 */
+    public void warmCurrentUserDeviceCache() {
+        String cacheIdentity = cacheIdentity();
+        List<Map<String, Object>> deviceSummaries = devices();
+        Instant expiresAt = Instant.now().plus(deviceTtl());
+        for (Map<String, Object> summary : deviceSummaries) {
+            String serialNumber = firstString(summary, "serialNumber", "robotId");
+            String deviceId = firstString(summary, "id");
+            if (serialNumber == null || serialNumber.isBlank() || deviceId == null || deviceId.isBlank()) {
+                continue;
+            }
+            try {
+                Map<String, Object> profile = device(deviceId)
+                        .map(detail -> mergeDeviceDetail(summary, detail))
+                        .orElse(summary);
+                deviceCache.put(
+                        new DeviceCacheKey(cacheIdentity, serialNumber),
+                        new CachedDevice(new LinkedHashMap<>(profile), expiresAt));
+            } catch (RuntimeException exception) {
+                log.warn("预热管理端设备详情失败，设备标识={} 管理端设备ID={}", serialNumber, deviceId, exception);
+            }
+        }
+        deviceTypeDictionary();
     }
 
     private List<Map<String, Object>> devices(boolean forceRefresh) {
@@ -243,8 +281,13 @@ public class ControlManagementClient {
     }
 
     private List<Map<String, Object>> deviceTypeDictionary() {
-        String cacheIdentity = cacheIdentity();
         Instant now = Instant.now();
+        Optional<String> currentCacheIdentity = requestAuthorizationHeaders.currentCacheKey();
+        if (currentCacheIdentity.isEmpty()) {
+            CachedDictionary newest = newestCachedDictionary(now);
+            return newest == null ? List.of() : copyMaps(newest.records());
+        }
+        String cacheIdentity = currentCacheIdentity.get();
         CachedDictionary cached = dictionaryCache.get(cacheIdentity);
         if (cached != null && cached.expiresAt().isAfter(now)) {
             return copyMaps(cached.records());
@@ -255,6 +298,13 @@ public class ControlManagementClient {
         List<Map<String, Object>> loaded = records(uri);
         dictionaryCache.put(cacheIdentity, new CachedDictionary(copyMaps(loaded), now.plus(deviceTtl())));
         return copyMaps(loaded);
+    }
+
+    private CachedDictionary newestCachedDictionary(Instant now) {
+        return dictionaryCache.values().stream()
+                .filter(dictionary -> dictionary.expiresAt().isAfter(now))
+                .max((left, right) -> left.expiresAt().compareTo(right.expiresAt()))
+                .orElse(null);
     }
 
     private Map<String, Object> mergeDeviceDetail(Map<String, Object> listDevice, Map<String, Object> detail) {

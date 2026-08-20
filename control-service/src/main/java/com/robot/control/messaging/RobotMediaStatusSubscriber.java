@@ -12,6 +12,7 @@ import com.robot.media.common.video.VideoStatusMessage;
 import com.robot.media.common.video.IntercomStatusMessage;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.IMqttMessageListener;
 import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
@@ -56,6 +57,7 @@ public class RobotMediaStatusSubscriber {
     private final RobotRegistryService robotRegistryService;
     private final IntercomCallService intercomCallService;
     private final EdgeDeviceStatusHandler edgeDeviceStatusHandler;
+    private final Map<String, Boolean> mediaClientOnlineByRobot = new ConcurrentHashMap<>();
     private MqttClient client;
 
     /**
@@ -191,18 +193,24 @@ public class RobotMediaStatusSubscriber {
                 data.put("robotId", topicRobotId);
                 Map<String, Object> state = equipmentControlService.handleClientState(data);
                 if (state.isEmpty()) {
-                    robotRegistryService.remove(topicRobotId);
+                    mediaClientOnlineByRobot.remove(topicRobotId);
                     return;
                 }
-                boolean becameOnline = robotRegistryService.update(state);
-                if (becameOnline) {
-                    String status = String.valueOf(data.get("status"));
+                robotRegistryService.update(state);
+                String status = String.valueOf(data.get("status"));
+                if (mediaClientBecameOnline(topicRobotId, status)) {
                     mediaServiceClient.onlineRestartCommands(topicRobotId, status).forEach(commandService::sendStart);
                 }
             } catch (Exception ex) {
                 log.warn("处理媒体客户端状态失败，主题={} 载荷={}", topic, payload, ex);
             }
         };
+    }
+
+    boolean mediaClientBecameOnline(String robotId, String status) {
+        boolean online = "online".equalsIgnoreCase(status);
+        Boolean wasOnline = mediaClientOnlineByRobot.put(robotId, online);
+        return online && !Boolean.TRUE.equals(wasOnline);
     }
 
     private IMqttMessageListener edgeDeviceStatusListener() {

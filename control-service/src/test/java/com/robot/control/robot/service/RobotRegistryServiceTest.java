@@ -30,6 +30,7 @@ class RobotRegistryServiceTest {
         service.update(object(
                 "robotId", "test115",
                 "status", "fault",
+                "stateSource", "EDGE_DEVICE_STATUS",
                 "battery", 47,
                 "speed", 0.6,
                 "healthStatus", "异常",
@@ -62,7 +63,8 @@ class RobotRegistryServiceTest {
                 properties, publisher, new ObjectMapper());
         service.update(object(
                 "robotId", "test116",
-                "status", "online"));
+                "status", "online",
+                "stateSource", "EDGE_DEVICE_STATUS"));
 
         service.sweepOffline();
 
@@ -86,7 +88,8 @@ class RobotRegistryServiceTest {
                 properties, publisher, new ObjectMapper());
         service.update(object(
                 "robotId", "test120",
-                "status", "online"));
+                "status", "online",
+                "stateSource", "EDGE_DEVICE_STATUS"));
 
         service.sweepOffline();
 
@@ -201,6 +204,52 @@ class RobotRegistryServiceTest {
                 .containsEntry("type", "机器狗")
                 .containsEntry("typeCode", "ROBOT_DOG")
                 .containsEntry("battery", 82);
+    }
+
+    @Test
+    void onlyEdgeDeviceStatusCanChangeRobotOnlineStatus() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+
+        service.update(object(
+                "robotId", "study",
+                "status", "online",
+                "stateSource", "MEDIA_CLIENT_STATUS"));
+        assertThat(service.find("study").orElseThrow().status()).isEqualTo("offline");
+
+        service.update(object(
+                "robotId", "study",
+                "status", "online",
+                "stateSource", "EDGE_DEVICE_STATUS"));
+        assertThat(service.find("study").orElseThrow().status()).isEqualTo("online");
+
+        service.update(object(
+                "robotId", "study",
+                "status", "offline",
+                "stateSource", "MEDIA_CLIENT_STATUS"));
+        assertThat(service.find("study").orElseThrow().status()).isEqualTo("online");
+    }
+
+    @Test
+    void edgeStatusTimeoutIsNotExtendedByMediaClientStatus() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        ControlServiceProperties properties = new ControlServiceProperties();
+        properties.getRobot().setHeartbeatTimeoutSeconds(-1);
+        RobotRegistryService service = new RobotRegistryService(
+                properties, publisher, new ObjectMapper());
+
+        service.update(object(
+                "robotId", "study",
+                "status", "online",
+                "stateSource", "EDGE_DEVICE_STATUS"));
+        service.update(object(
+                "robotId", "study",
+                "status", "online",
+                "stateSource", "MEDIA_CLIENT_STATUS"));
+        service.sweepOffline();
+
+        assertThat(service.find("study").orElseThrow().status()).isEqualTo("offline");
     }
 
     @SuppressWarnings("unchecked")

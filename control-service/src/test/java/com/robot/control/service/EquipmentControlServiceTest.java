@@ -550,14 +550,8 @@ class EquipmentControlServiceTest {
     }
 
     @Test
-    void edgeDeviceStatusRefreshesManagementTypeWhenCacheIsMissing() {
+    void edgeDeviceStatusDoesNotQueryManagementWithoutRequestIdentity() {
         when(managementClient.cachedDeviceBySerialNumber("m20Pro_01")).thenReturn(Optional.empty());
-        when(managementClient.deviceBySerialNumber("m20Pro_01")).thenReturn(Optional.of(object(
-                "serialNumber", "m20Pro_01",
-                "name", "管理端 m20Pro",
-                "deviceType", "ROBOT_DOG",
-                "components", List.of())));
-        when(managementClient.deviceTypeName("ROBOT_DOG")).thenReturn(Optional.of("机器狗"));
 
         Map<String, Object> state = service.mergeEdgeDeviceStatus("m20Pro_01", object(
                 "status", "online",
@@ -565,9 +559,9 @@ class EquipmentControlServiceTest {
                 "edgeStatus", object("basic", object("runningStatus", "待机"))));
 
         assertThat(state)
-                .containsEntry("name", "管理端 m20Pro")
-                .containsEntry("type", "机器狗")
-                .containsEntry("typeCode", "ROBOT_DOG");
+                .containsEntry("robotId", "m20Pro_01")
+                .containsEntry("battery", 88);
+        verify(managementClient, never()).deviceBySerialNumber("m20Pro_01");
     }
 
     @Test

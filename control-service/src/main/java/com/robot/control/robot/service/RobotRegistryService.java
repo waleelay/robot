@@ -26,6 +26,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class RobotRegistryService {
 
+    private static final String EDGE_DEVICE_STATUS_SOURCE = "EDGE_DEVICE_STATUS";
+
     private static final List<String> DYNAMIC_STATE_FIELDS = List.of(
             "speed",
             "moving",
@@ -218,8 +220,7 @@ public class RobotRegistryService {
         }
         RobotDevice device = devices.computeIfAbsent(robotId, RobotDevice::new);
         boolean wasConnected = "online".equals(device.status) || "fault".equals(device.status);
-        boolean reportedConnected = !"offline".equalsIgnoreCase(status);
-        boolean becameOnline = !wasConnected && reportedConnected;
+        boolean edgeStatusReport = EDGE_DEVICE_STATUS_SOURCE.equals(dynamicState.get("stateSource"));
         device.clientId = clientId;
         device.name = blank(name) ? robotId : name;
         String reportedTypeCode = reportedTypeCode(typeCode, type);
@@ -233,7 +234,10 @@ public class RobotRegistryService {
         if (battery != null) {
             device.battery = Math.max(0, Math.min(100, battery));
         }
-        device.status = normalizedStatus(status);
+        if (edgeStatusReport) {
+            device.status = normalizedStatus(status);
+            device.lastEdgeStatusAt = now();
+        }
         device.controlMode = normalizedControlMode(controlMode);
         if (stateSeq != null) {
             device.stateSeq = stateSeq;
@@ -254,6 +258,7 @@ public class RobotRegistryService {
                 device.dynamicState.put(field, dynamicState.get(field));
             }
         });
+        boolean becameOnline = !wasConnected && ("online".equals(device.status) || "fault".equals(device.status));
         webSocketPublisher.publish("robot.state", toState(device));
         return becameOnline;
     }
@@ -300,7 +305,10 @@ public class RobotRegistryService {
     public void sweepOffline() {
         OffsetDateTime threshold = now().minusSeconds(properties.getRobot().getHeartbeatTimeoutSeconds());
         devices.values().forEach(device -> {
-            if ("online".equals(device.status) && device.lastHeartbeatAt != null && device.lastHeartbeatAt.isBefore(threshold)) {
+            boolean connected = "online".equals(device.status) || "fault".equals(device.status);
+            if (connected
+                    && device.lastEdgeStatusAt != null
+                    && device.lastEdgeStatusAt.isBefore(threshold)) {
                 device.status = "offline";
                 device.dynamicState.put("stateSource", "OFFLINE_SCAN");
                 webSocketPublisher.publish("robot.state", toState(device));
@@ -470,6 +478,7 @@ public class RobotRegistryService {
         private Object controlOwner;
         private Boolean estopActive = false;
         private OffsetDateTime lastHeartbeatAt;
+        private OffsetDateTime lastEdgeStatusAt;
         private List<RobotCameraResponse> cameras = List.of();
         private List<Map<String, Object>> mountedDevices = List.of();
         private Map<String, Object> dynamicState = new LinkedHashMap<>();

@@ -6,12 +6,15 @@ import com.robot.control.auth.CurrentUser;
 import com.robot.control.auth.CurrentUserResolver;
 import com.robot.control.auth.RequestAuthorizationHeaders;
 import com.robot.control.call.IntercomCallService;
+import com.robot.control.client.ControlManagementClient;
 import com.robot.control.config.DateTimeConfig;
 import com.robot.control.service.EquipmentControlService;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -27,12 +30,15 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 @Component
 public class MediaWebSocketHandler extends TextWebSocketHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(MediaWebSocketHandler.class);
+
     private final MediaWebSocketPublisher publisher;
     private final ObjectMapper objectMapper;
     private final EquipmentControlService equipmentControlService;
     private final IntercomCallService intercomCallService;
     private final CurrentUserResolver currentUserResolver;
     private final RequestAuthorizationHeaders requestAuthorizationHeaders;
+    private final ControlManagementClient managementClient;
 
     /**
      * 创建 MediaWebSocketHandler 实例。
@@ -47,13 +53,15 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
             EquipmentControlService equipmentControlService,
             IntercomCallService intercomCallService,
             CurrentUserResolver currentUserResolver,
-            RequestAuthorizationHeaders requestAuthorizationHeaders) {
+            RequestAuthorizationHeaders requestAuthorizationHeaders,
+            ControlManagementClient managementClient) {
         this.publisher = publisher;
         this.objectMapper = objectMapper;
         this.equipmentControlService = equipmentControlService;
         this.intercomCallService = intercomCallService;
         this.currentUserResolver = currentUserResolver;
         this.requestAuthorizationHeaders = requestAuthorizationHeaders;
+        this.managementClient = managementClient;
     }
 
     /**
@@ -64,6 +72,15 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         publisher.addSession(session);
+        requestAuthorizationHeaders.setWebSocketHeaders(MediaWsAuthHandshakeInterceptor.headers(session));
+        try {
+            managementClient.warmCurrentUserDeviceCache();
+        } catch (RuntimeException exception) {
+            // 档案预热失败不能中断实时 WebSocket，后续请求或重连仍可重新加载。
+            log.warn("预热当前用户设备档案失败，WebSocket 会话={}", session.getId(), exception);
+        } finally {
+            requestAuthorizationHeaders.clearWebSocketHeaders();
+        }
     }
 
     /**

@@ -463,7 +463,6 @@ public class EquipmentControlService {
         state.putIfAbsent("navigationStatus", "IDLE");
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
         managementClient.cachedDeviceBySerialNumber(serialNumber)
-                .or(() -> managementClient.deviceBySerialNumber(serialNumber))
                 .ifPresent(robot -> {
                     enrichRobotState(state, robot);
                     state.put("devices", devices(robot, runtimeDevices));
