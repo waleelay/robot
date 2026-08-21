@@ -34,6 +34,7 @@ import jakarta.transaction.Transactional;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -979,7 +980,15 @@ public class FileService {
                 file.getErrorCode(),
                 file.getUploadedAt(),
                 file.getCreatedAt(),
-                file.getMetadataJson());
+                file.getMetadataJson(),
+                elapsedSeconds(video));
+    }
+
+    private Integer elapsedSeconds(MediaVideoFile video) {
+        if (video == null || video.getStartedAt() == null || video.getStatus() != VideoFileStatus.PROCESSING) {
+            return null;
+        }
+        return Math.max(0, (int) Duration.between(video.getStartedAt(), OffsetDateTime.now(ZoneOffset.UTC)).toSeconds());
     }
 
     private void alignVideoTimeRange(MediaFile file, MediaVideoFile video) {

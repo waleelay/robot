@@ -102,6 +102,7 @@ class MultiFunctionAudioTransferServiceTest {
                 null,
                 null,
                 null,
+                null,
                 null);
     }
 }

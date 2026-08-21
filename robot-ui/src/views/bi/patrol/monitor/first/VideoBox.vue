@@ -236,10 +236,12 @@ export default {
     startRecordTimer() {
       if (this.recordTimer) clearInterval(this.recordTimer)
       const recording = this.cameraInfo.activeRecording || {}
-      const startedAt = recording.startedAt || recording.createdAt
-      const started = startedAt ? new Date(startedAt).getTime() : Date.now()
+      const initialSeconds = Number.isFinite(Number(recording.elapsedSeconds))
+        ? Math.max(0, Number(recording.elapsedSeconds))
+        : 0
+      const startedAt = performance.now()
       const update = () => {
-        this.seconds = Math.max(0, Math.floor((Date.now() - started) / 1000))
+        this.seconds = initialSeconds + Math.max(0, Math.floor((performance.now() - startedAt) / 1000))
         this.recordingTime = formatTiming(this.seconds)
       }
       update()

@@ -27,6 +27,7 @@ import java.time.OffsetDateTime;
  * @param uploadedAt 上传时间
  * @param createdAt 创建时间
  * @param metadata 扩展元数据
+ * @param elapsedSeconds 当前录像已持续秒数
  */
 public record FileListItemResponse(
         String fileId,
@@ -47,5 +48,6 @@ public record FileListItemResponse(
         String errorCode,
         OffsetDateTime uploadedAt,
         OffsetDateTime createdAt,
-        String metadata) {
+        String metadata,
+        Integer elapsedSeconds) {
 }
