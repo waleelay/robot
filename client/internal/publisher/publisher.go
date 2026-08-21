@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -18,6 +19,7 @@ import (
 type Publisher interface {
 	Start(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error)
 	Stop(sessionID string) error
+	StopStream(command model.StopCommand) error
 	StopAll() error
 }
 
@@ -26,20 +28,25 @@ type Publisher interface {
 type ProcessPublisher struct {
 	cfg                    *config.Config
 	cmds                   map[string]*processEntry
+	sessions               map[string]string
+	streamSessions         map[string]map[string]struct{}
 	gstreamerFailedRTSPURL map[string]time.Time
 	mu                     sync.Mutex
 }
 
 type processEntry struct {
-	cmd  *exec.Cmd
-	done chan error
-	mode string
+	cmd       *exec.Cmd
+	done      chan error
+	mode      string
+	expiresAt time.Time
 }
 
 func NewProcessPublisher(cfg config.Config) *ProcessPublisher {
 	return &ProcessPublisher{
 		cfg:                    &cfg,
 		cmds:                   make(map[string]*processEntry),
+		sessions:               make(map[string]string),
+		streamSessions:         make(map[string]map[string]struct{}),
 		gstreamerFailedRTSPURL: make(map[string]time.Time),
 	}
 }
@@ -47,27 +54,38 @@ func NewProcessPublisher(cfg config.Config) *ProcessPublisher {
 func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_ = p.stopLocked(command.SessionID)
+	key := streamKey(command)
+	previousKey := p.unbindSessionLocked(command.SessionID)
+	if previousKey != "" && previousKey != key && len(p.streamSessions[previousKey]) == 0 {
+		_ = p.stopStreamLocked(previousKey)
+	}
+	if entry := p.cmds[key]; entry != nil {
+		if entryRunning(entry) && tokenUsable(entry.expiresAt) && tokenUsable(command.ExpiresAt) {
+			p.bindSessionLocked(command.SessionID, key)
+			return "TR_" + command.SessionID, trackName(command), nil
+		}
+		_ = p.stopStreamLocked(key)
+	}
 	trackName := "video." + command.Channel + "." + command.Quality
 	if p.cfg.PublisherCmd != "" {
-		return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.PublisherCmd, "custom")
+		return p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.PublisherCmd, "custom")
 	}
 	if p.cfg.PublisherMode == "ffmpeg" {
 		if p.cfg.FFmpegPublisherCmd == "" {
 			return "", "", errors.New("PUBLISHER_MODE=ffmpeg requires FFMPEG_PUBLISHER_CMD")
 		}
-		return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg")
+		return p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.FFmpegPublisherCmd, "ffmpeg")
 	}
 	if p.cfg.PublisherMode != "auto" && p.cfg.PublisherMode != "gstreamer" {
 		return "", "", errors.New("unsupported PUBLISHER_MODE: " + p.cfg.PublisherMode)
 	}
 	if p.shouldStartWithFFmpeg(command, rtspURL) {
-		return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg-first")
+		return p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.FFmpegPublisherCmd, "ffmpeg-first")
 	}
-	trackSid, publishedTrackName, err := p.startGStreamer(ctx, command, rtspURL, trackName)
+	trackSid, publishedTrackName, err := p.startGStreamer(ctx, command, rtspURL, trackName, key)
 	if err == nil {
 		if p.cfg.PublisherMode == "auto" && p.cfg.FFmpegPublisherCmd != "" {
-			p.watchGStreamerForFallback(ctx, command, rtspURL, trackName)
+			p.watchGStreamerForFallback(ctx, command, rtspURL, trackName, key)
 		}
 		return trackSid, publishedTrackName, nil
 	}
@@ -76,10 +94,10 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 	}
 	p.gstreamerFailedRTSPURL[rtspURL] = time.Now()
 	log.Println("publisher fallback ffmpeg", command.SessionID, err)
-	return p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg")
+	return p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.FFmpegPublisherCmd, "ffmpeg")
 }
 
-func (p *ProcessPublisher) startCommand(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, template string, mode string) (string, string, error) {
+func (p *ProcessPublisher) startCommand(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, key string, template string, mode string) (string, string, error) {
 	args := strings.Fields(template)
 	if len(args) == 0 {
 		return "", "", errors.New("publisher command is empty")
@@ -97,19 +115,20 @@ func (p *ProcessPublisher) startCommand(ctx context.Context, command model.Start
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	log.Println("publisher command", mode, strings.Join(args, " "))
+	log.Println("publisher command", mode, strings.Join(redactArgs(args), " "))
 	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
-	entry := newProcessEntry(cmd, mode)
-	p.cmds[command.SessionID] = entry
-	if err := p.ensureRunning(command.SessionID, entry); err != nil {
+	entry := newProcessEntry(cmd, mode, command.ExpiresAt)
+	p.cmds[key] = entry
+	p.bindSessionLocked(command.SessionID, key)
+	if err := p.ensureRunning(key, entry); err != nil {
 		return "", "", err
 	}
 	return "TR_" + command.SessionID, trackName, nil
 }
 
-func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.StartCommand, rtspURL string, trackName string) (string, string, error) {
+func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, key string) (string, string, error) {
 	// 默认 pipeline 只描述 GStreamer 的媒体处理部分；LiveKit URL/token 由 publisher 工具参数提供。
 	pipeline := strings.NewReplacer(
 		"{rtsp}", rtspURL,
@@ -124,13 +143,14 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	log.Println("publisher command", p.cfg.GStreamerPublisherPath, strings.Join(args, " "))
+	log.Println("publisher command", p.cfg.GStreamerPublisherPath, strings.Join(redactArgs(args), " "))
 	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
-	entry := newProcessEntry(cmd, "gstreamer")
-	p.cmds[command.SessionID] = entry
-	if err := p.ensureRunning(command.SessionID, entry); err != nil {
+	entry := newProcessEntry(cmd, "gstreamer", command.ExpiresAt)
+	p.cmds[key] = entry
+	p.bindSessionLocked(command.SessionID, key)
+	if err := p.ensureRunning(key, entry); err != nil {
 		return "", "", err
 	}
 	return "TR_" + command.SessionID, trackName, nil
@@ -150,34 +170,34 @@ func (p *ProcessPublisher) shouldStartWithFFmpeg(command model.StartCommand, rts
 	return p.cfg.PublisherFFmpegFirstIDs[command.DeviceID]
 }
 
-func newProcessEntry(cmd *exec.Cmd, mode string) *processEntry {
-	entry := &processEntry{cmd: cmd, done: make(chan error, 1), mode: mode}
+func newProcessEntry(cmd *exec.Cmd, mode string, expiresAt time.Time) *processEntry {
+	entry := &processEntry{cmd: cmd, done: make(chan error, 1), mode: mode, expiresAt: expiresAt}
 	go func() {
 		entry.done <- cmd.Wait()
 	}()
 	return entry
 }
 
-func (p *ProcessPublisher) watchGStreamerForFallback(ctx context.Context, command model.StartCommand, rtspURL string, trackName string) {
-	entry := p.cmds[command.SessionID]
+func (p *ProcessPublisher) watchGStreamerForFallback(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, key string) {
+	entry := p.cmds[key]
 	if entry == nil {
 		return
 	}
-	go p.fallbackIfGStreamerExits(ctx, command, rtspURL, trackName, entry)
+	go p.fallbackIfGStreamerExits(ctx, command, rtspURL, trackName, key, entry)
 }
 
-func (p *ProcessPublisher) fallbackIfGStreamerExits(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, entry *processEntry) {
+func (p *ProcessPublisher) fallbackIfGStreamerExits(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, key string, entry *processEntry) {
 	select {
 	case err := <-entry.done:
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		if p.cmds[command.SessionID] != entry {
+		if p.cmds[key] != entry {
 			return
 		}
-		delete(p.cmds, command.SessionID)
+		delete(p.cmds, key)
 		p.gstreamerFailedRTSPURL[rtspURL] = time.Now()
 		log.Println("publisher auto fallback ffmpeg", command.SessionID, "gstreamer_exit", err)
-		if _, _, startErr := p.startCommand(ctx, command, rtspURL, trackName, p.cfg.FFmpegPublisherCmd, "ffmpeg"); startErr != nil {
+		if _, _, startErr := p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.FFmpegPublisherCmd, "ffmpeg"); startErr != nil {
 			log.Println("publisher auto fallback failed", command.SessionID, startErr)
 		}
 	case <-time.After(p.cfg.PublisherFallbackWatch):
@@ -188,37 +208,63 @@ func (p *ProcessPublisher) fallbackIfGStreamerExits(ctx context.Context, command
 func (p *ProcessPublisher) Stop(sessionID string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.stopLocked(sessionID)
+	key := p.sessions[sessionID]
+	p.unbindSessionLocked(sessionID)
+	if key == "" || len(p.streamSessions[key]) > 0 {
+		return nil
+	}
+	return p.stopStreamLocked(key)
+}
+
+func (p *ProcessPublisher) StopStream(command model.StopCommand) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	key := stopStreamKey(command)
+	for sessionID := range p.streamSessions[key] {
+		delete(p.sessions, sessionID)
+	}
+	delete(p.streamSessions, key)
+	return p.stopStreamLocked(key)
 }
 
 func (p *ProcessPublisher) StopAll() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// map 在遍历时会被 stopLocked 删除。Go 允许删除当前 map key，这里用于快速清空。
-	for sessionID := range p.cmds {
-		_ = p.stopLocked(sessionID)
+	for key := range p.cmds {
+		_ = p.stopStreamLocked(key)
 	}
+	p.sessions = make(map[string]string)
+	p.streamSessions = make(map[string]map[string]struct{})
 	return nil
 }
 
-func (p *ProcessPublisher) stopLocked(sessionID string) error {
-	entry := p.cmds[sessionID]
-	if entry == nil || entry.cmd == nil || entry.cmd.Process == nil {
-		return nil
+func (p *ProcessPublisher) stopStreamLocked(key string) error {
+	entry := p.cmds[key]
+	var err error
+	if entry != nil && entry.cmd != nil && entry.cmd.Process != nil {
+		err = syscall.Kill(-entry.cmd.Process.Pid, syscall.SIGKILL)
+		if err != nil {
+			err = entry.cmd.Process.Kill()
+		}
 	}
-	err := syscall.Kill(-entry.cmd.Process.Pid, syscall.SIGKILL)
-	if err != nil {
-		err = entry.cmd.Process.Kill()
+	delete(p.cmds, key)
+	for sessionID, sessionKey := range p.sessions {
+		if sessionKey == key {
+			delete(p.sessions, sessionID)
+		}
 	}
-	delete(p.cmds, sessionID)
+	delete(p.streamSessions, key)
 	return err
 }
 
-func (p *ProcessPublisher) ensureRunning(sessionID string, entry *processEntry) error {
+func (p *ProcessPublisher) ensureRunning(key string, entry *processEntry) error {
 	select {
 	case err := <-entry.done:
 		// 进程两秒内退出通常表示 pipeline 参数、RTSP 或 token 有问题，直接回报失败。
-		delete(p.cmds, sessionID)
+		if p.cmds[key] == entry {
+			p.stopStreamLocked(key)
+		}
 		if err == nil {
 			return errors.New("publisher exited")
 		}
@@ -227,4 +273,100 @@ func (p *ProcessPublisher) ensureRunning(sessionID string, entry *processEntry) 
 		// 运行超过两秒认为启动成功，后续异常会通过进程退出日志和服务端超时机制兜底。
 		return nil
 	}
+}
+
+func streamKey(command model.StartCommand) string {
+	sourceType := command.SourceType
+	if sourceType == "" {
+		sourceType = "ROBOT"
+	}
+	sourceID := command.SourceID
+	if sourceID == "" {
+		sourceID = command.DeviceID
+	}
+	if sourceID == "" {
+		sourceID = command.RobotID
+	}
+	roomName := command.RoomName
+	if roomName == "" {
+		roomName = command.Channel + "|" + command.Quality
+	}
+	return strings.Join([]string{sourceType, sourceID, roomName}, "|")
+}
+
+func stopStreamKey(command model.StopCommand) string {
+	return streamKey(model.StartCommand{
+		SourceType: command.SourceType,
+		SourceID:   command.SourceID,
+		DeviceID:   command.DeviceID,
+		RoomName:   command.RoomName,
+	})
+}
+
+func trackName(command model.StartCommand) string {
+	return "video." + command.Channel + "." + command.Quality
+}
+
+func tokenUsable(expiresAt time.Time) bool {
+	return expiresAt.IsZero() || expiresAt.After(time.Now().Add(30*time.Second))
+}
+
+func entryRunning(entry *processEntry) bool {
+	return entry != nil && entry.cmd != nil && entry.cmd.Process != nil && entry.cmd.ProcessState == nil
+}
+
+func (p *ProcessPublisher) bindSessionLocked(sessionID string, key string) {
+	if sessionID == "" {
+		return
+	}
+	p.sessions[sessionID] = key
+	if p.streamSessions[key] == nil {
+		p.streamSessions[key] = make(map[string]struct{})
+	}
+	p.streamSessions[key][sessionID] = struct{}{}
+}
+
+func (p *ProcessPublisher) unbindSessionLocked(sessionID string) string {
+	key := p.sessions[sessionID]
+	if key == "" {
+		return ""
+	}
+	delete(p.sessions, sessionID)
+	delete(p.streamSessions[key], sessionID)
+	if len(p.streamSessions[key]) == 0 {
+		delete(p.streamSessions, key)
+	}
+	return key
+}
+
+func redactArgs(args []string) []string {
+	result := append([]string(nil), args...)
+	for i := range result {
+		if result[i] == "--token" && i+1 < len(result) {
+			result[i+1] = "***"
+		}
+		if strings.Contains(result[i], "rtspsrc") || strings.Contains(result[i], "rtsp://") {
+			result[i] = redactRTSP(result[i])
+		}
+	}
+	return result
+}
+
+func redactRTSP(value string) string {
+	start := strings.Index(value, "rtsp://")
+	if start < 0 {
+		return value
+	}
+	prefix := value[:start]
+	rest := value[start:]
+	end := strings.IndexAny(rest, " \t")
+	if end < 0 {
+		end = len(rest)
+	}
+	parsed, err := url.Parse(rest[:end])
+	if err != nil || parsed.User == nil {
+		return value
+	}
+	parsed.User = url.UserPassword(parsed.User.Username(), "***")
+	return prefix + parsed.String() + rest[end:]
 }

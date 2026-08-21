@@ -50,6 +50,9 @@ func NewGateway(cfg config.Config, probe *rtsp.Probe, pub publisher.Publisher) *
 	if cfg.ManagementInsecureTLS {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // 仅用于内网自签证书部署。
 	}
+	if strings.TrimSpace(cfg.FixedCameraGatewayID) == "" {
+		cfg.FixedCameraGatewayID = "default"
+	}
 	return &Gateway{
 		cfg:       cfg,
 		probe:     probe,
@@ -120,18 +123,18 @@ func (g *Gateway) handleStart(ctx context.Context) paho.MessageHandler {
 		}
 		if g.isDuplicate(command.SessionID, command.CommandID) {
 			return
+		}
+		cameraID := firstNonBlank(command.SourceID, command.DeviceID, command.RobotID)
+		log.Println("fixed camera video start", cameraID, command.SessionID, command.Quality)
+		rtspURL := strings.TrimSpace(command.RTSPURL)
+		if rtspURL == "" {
+			var err error
+			rtspURL, err = g.rtspURL(ctx, cameraID, command.Quality)
+			if err != nil {
+				g.status(command.SessionID, "failed", "", "", "FIXED_CAMERA_CONFIG_FAILED", err.Error())
+				return
 			}
-			cameraID := firstNonBlank(command.SourceID, command.DeviceID, command.RobotID)
-			log.Println("fixed camera video start", cameraID, command.SessionID, command.Quality)
-			rtspURL := strings.TrimSpace(command.RTSPURL)
-			if rtspURL == "" {
-				var err error
-				rtspURL, err = g.rtspURL(ctx, cameraID, command.Quality)
-				if err != nil {
-					g.status(command.SessionID, "failed", "", "", "FIXED_CAMERA_CONFIG_FAILED", err.Error())
-					return
-				}
-			}
+		}
 		if _, err := g.probe.Check(ctx, rtspURL); err != nil {
 			g.status(command.SessionID, "failed", "", "", "RTSP_PROBE_FAILED", err.Error())
 			return
@@ -154,7 +157,9 @@ func (g *Gateway) handleStop() paho.MessageHandler {
 			return
 		}
 		log.Println("fixed camera video stop", payload.SourceID, payload.SessionID)
-		g.publisher.Stop(payload.SessionID)
+		if err := g.publisher.StopStream(payload); err != nil {
+			log.Println("fixed camera publisher stop failed", payload.SourceID, payload.SessionID, err)
+		}
 		g.status(payload.SessionID, "stopped", "", "", "", "stopped")
 	}
 }
