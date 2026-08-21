@@ -6,6 +6,7 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,21 +37,24 @@ public class StatisticsController {
     }
 
     @PostMapping("/reports/export")
-    public ResponseEntity<byte[]> exportReport(@RequestBody Map<String, Object> request) {
-        StatisticsService.ReportFile report = statisticsService.createReport(request);
+    public ResponseEntity<byte[]> exportReport(
+            @RequestBody Map<String, Object> request,
+            Authentication authentication) {
+        StatisticsService.ReportFile report = statisticsService.createReport(request, authentication);
         return pdfResponse(report);
     }
 
     @GetMapping("/reports")
     public Map<String, Object> reportHistoryList(
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        return statisticsService.reportHistoryList(page, size);
+            @RequestParam(defaultValue = "10") int size,
+            Authentication authentication) {
+        return statisticsService.reportHistoryList(page, size, authentication);
     }
 
     @GetMapping("/reports/{id}/download")
-    public ResponseEntity<byte[]> downloadReport(@PathVariable String id) {
-        StatisticsService.ReportFile report = statisticsService.reportFile(id);
+    public ResponseEntity<byte[]> downloadReport(@PathVariable String id, Authentication authentication) {
+        StatisticsService.ReportFile report = statisticsService.reportFile(id, authentication);
         if (report == null) {
             return ResponseEntity.notFound().build();
         }
@@ -58,8 +62,8 @@ public class StatisticsController {
     }
 
     @DeleteMapping("/reports/{id}")
-    public ResponseEntity<Void> deleteReport(@PathVariable String id) {
-        if (!statisticsService.deleteReport(id)) {
+    public ResponseEntity<Void> deleteReport(@PathVariable String id, Authentication authentication) {
+        if (!statisticsService.deleteReport(id, authentication)) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.noContent().build();

@@ -12,9 +12,12 @@ import java.util.function.IntFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
@@ -40,12 +43,12 @@ public class PanoramaCenterClient {
     }
 
     public List<Map<String, Object>> devices() {
-        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/devices")
-                .queryParam("pageNum", 1)
-                .queryParam("pageSize", 100)
+        int pageSize = 100;
+        return requiredPagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/devices")
+                .queryParam("pageNum", pageNum)
+                .queryParam("pageSize", pageSize)
                 .build(true)
-                .toUri();
-        return records(uri);
+                .toUri(), pageSize);
     }
 
     public List<Map<String, Object>> deviceTypeOptions() {
@@ -329,32 +332,33 @@ public class PanoramaCenterClient {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> records(URI uri) {
-        return responseMap(uri)
-                .map(response -> {
-                    Object topLevelRecords = response.get("records");
-                    if (topLevelRecords instanceof List<?> list) {
-                        return maps(list);
-                    }
-                    Object data = response.get("data");
-                    if (data instanceof Map<?, ?> dataMap) {
-                        Object records = dataMap.get("records");
-                        if (records instanceof List<?> list) {
-                            return maps(list);
-                        }
-                        if (dataMap.isEmpty()) {
-                            return List.<Map<String, Object>>of();
-                        }
-                        return List.of((Map<String, Object>) dataMap);
-                    }
-                    if (data instanceof List<?> list) {
-                        return maps(list);
-                    }
-                    if (!response.containsKey("code") && !response.containsKey("data")) {
-                        return List.of(response);
-                    }
-                    return List.<Map<String, Object>>of();
-                })
-                .orElse(List.of());
+        return responseMap(uri).map(this::records).orElse(List.of());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> records(Map<String, Object> response) {
+        Object topLevelRecords = response.get("records");
+        if (topLevelRecords instanceof List<?> list) {
+            return maps(list);
+        }
+        Object data = response.get("data");
+        if (data instanceof Map<?, ?> dataMap) {
+            Object nestedRecords = dataMap.get("records");
+            if (nestedRecords instanceof List<?> list) {
+                return maps(list);
+            }
+            if (dataMap.isEmpty()) {
+                return List.of();
+            }
+            return List.of((Map<String, Object>) dataMap);
+        }
+        if (data instanceof List<?> list) {
+            return maps(list);
+        }
+        if (!response.containsKey("code") && !response.containsKey("data")) {
+            return List.of(response);
+        }
+        return List.of();
     }
 
     @SuppressWarnings("unchecked")
@@ -398,6 +402,51 @@ public class PanoramaCenterClient {
             }
         }
         return result;
+    }
+
+    private List<Map<String, Object>> requiredPagedRecords(IntFunction<URI> uriFactory, int pageSize) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int pageNum = 1; pageNum <= 1000; pageNum++) {
+            URI uri = uriFactory.apply(pageNum);
+            List<Map<String, Object>> page = records(requiredResponseMap(uri));
+            result.addAll(page);
+            if (page.size() < pageSize) {
+                return result;
+            }
+        }
+        throw new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "管理端设备分页超过安全上限");
+    }
+
+    private Map<String, Object> requiredResponseMap(URI uri) {
+        long startNanos = System.nanoTime();
+        try {
+            Map<String, Object> response = restClient.get()
+                    .uri(uri)
+                    .headers(authenticatedRequestHeaders::apply)
+                    .retrieve()
+                    .body(MAP_TYPE);
+            logSlowRequest(uri, startNanos);
+            if (response == null) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "管理端设备响应为空");
+            }
+            return response;
+        } catch (RestClientResponseException exception) {
+            HttpStatus status = exception.getStatusCode() == HttpStatus.UNAUTHORIZED
+                    ? HttpStatus.UNAUTHORIZED
+                    : exception.getStatusCode() == HttpStatus.FORBIDDEN
+                            ? HttpStatus.FORBIDDEN
+                            : HttpStatus.SERVICE_UNAVAILABLE;
+            throw new ResponseStatusException(status, "查询管理端授权设备失败", exception);
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "查询管理端授权设备失败",
+                    exception);
+        }
     }
 
     private void logSlowRequest(URI uri, long startNanos) {

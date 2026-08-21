@@ -22,7 +22,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 控制端实时视频命令编排服务。
@@ -86,6 +90,7 @@ public class ControlVideoCommandService {
      * @return 实时视频会话响应
      */
     public VideoSessionResponse startVideo(String robotId, String deviceId, ControlStartVideoRequest request, CurrentUser user) {
+        requireAuthorizedRobot(robotId);
         ControlStartVideoRequest startRequest = request == null ? new ControlStartVideoRequest() : request;
         CreateVideoSessionRequest mediaRequest = new CreateVideoSessionRequest();
         mediaRequest.setRobotId(robotId);
@@ -191,6 +196,7 @@ public class ControlVideoCommandService {
             String deviceId,
             ControlStartVideoRequest request,
             CurrentUser user) {
+        requireAuthorizedRobot(robotId);
         requireIntercomAvailable(robotId, deviceId, null, user);
         ControlStartVideoRequest startRequest = request == null ? new ControlStartVideoRequest() : request;
         CreateVideoSessionRequest mediaRequest = new CreateVideoSessionRequest();
@@ -214,7 +220,7 @@ public class ControlVideoCommandService {
      * @return 对讲启动响应
      */
     public synchronized IntercomResponse startIntercom(String sessionId, CurrentUser user) {
-        VideoSessionResponse target = mediaServiceClient.get(sessionId, user);
+        VideoSessionResponse target = requireAuthorizedSession(sessionId, user);
         requireIntercomAvailable(target.robotId(), target.deviceId(), sessionId, user);
         IntercomResponse response = mediaServiceClient.startIntercom(sessionId, user);
         sendIntercomStart(mediaServiceClient.intercomStartCommand(sessionId));
@@ -265,6 +271,7 @@ public class ControlVideoCommandService {
      * @return 挂断后的实时视频会话响应
      */
     public VideoSessionResponse stopIntercom(String sessionId, CurrentUser user) {
+        requireAuthorizedSession(sessionId, user);
         VideoSessionResponse response = mediaServiceClient.stopIntercom(sessionId, user);
         commandService.sendIntercomStop(response.robotId(), Map.of(
                 "sessionId", response.sessionId(),
@@ -295,6 +302,7 @@ public class ControlVideoCommandService {
      * @return 重启后的实时视频会话响应
      */
     public VideoSessionResponse restartVideo(String sessionId, CurrentUser user) {
+        requireAuthorizedSession(sessionId, user);
         VideoStartCommand command = mediaServiceClient.restartCommand(sessionId, user);
         sendStart(command);
         return mediaServiceClient.get(sessionId, user);
@@ -307,7 +315,8 @@ public class ControlVideoCommandService {
      * @param request 通道切换请求
      * @return 切换后的实时视频会话响应
      */
-    public VideoSessionResponse switchChannel(String sessionId, SwitchChannelRequest request) {
+    public VideoSessionResponse switchChannel(String sessionId, SwitchChannelRequest request, CurrentUser user) {
+        requireAuthorizedSession(sessionId, user);
         VideoSessionResponse response = mediaServiceClient.switchChannel(sessionId, request);
         VideoStartCommand command = mediaServiceClient.currentStartCommand(sessionId);
         if (command.sourceType() == VideoSourceType.FIXED_CAMERA) {
@@ -316,6 +325,50 @@ public class ControlVideoCommandService {
             commandService.sendSwitchChannel(command.robotId(), command);
         }
         return response;
+    }
+
+    /**
+     * 查询并校验当前用户是否仍可访问指定视频会话来源。
+     *
+     * @param sessionId 视频会话 ID
+     * @param user 当前用户
+     * @return 视频会话
+     */
+    public VideoSessionResponse requireAuthorizedSession(String sessionId, CurrentUser user) {
+        VideoSessionResponse session = mediaServiceClient.get(sessionId, user);
+        if (session.sourceType() == VideoSourceType.FIXED_CAMERA) {
+            requirePlayableFixedCamera(session.sourceId());
+        } else {
+            requireAuthorizedRobot(session.robotId());
+        }
+        return session;
+    }
+
+    /**
+     * 按当前用户的 Management 数据权限过滤视频会话列表。
+     *
+     * @param sessions 待过滤会话
+     * @return 当前用户可见会话
+     */
+    public List<VideoSessionResponse> filterAuthorizedSessions(List<VideoSessionResponse> sessions) {
+        if (sessions == null || sessions.isEmpty()) {
+            return List.of();
+        }
+        Set<String> robotIds = managementClient.devices().stream()
+                .map(device -> firstString(device, "serialNumber", "robotId"))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<String> cameraIds = sessions.stream().anyMatch(session -> session.sourceType() == VideoSourceType.FIXED_CAMERA)
+                ? managementClient.fixedCameras().stream()
+                        .map(camera -> firstString(camera, "cameraId", "id"))
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet())
+                : Set.of();
+        return sessions.stream()
+                .filter(session -> session.sourceType() == VideoSourceType.FIXED_CAMERA
+                        ? cameraIds.contains(session.sourceId())
+                        : robotIds.contains(session.robotId()))
+                .toList();
     }
 
     /**
@@ -385,6 +438,22 @@ public class ControlVideoCommandService {
             throw new IllegalStateException("固定摄像头未配置码流：" + cameraId);
         }
         return new LinkedHashMap<>(camera);
+    }
+
+    private void requireAuthorizedRobot(String robotId) {
+        if (robotId == null || robotId.isBlank() || managementClient.deviceBySerialNumber(robotId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问机器人：" + robotId);
+        }
+    }
+
+    private String firstString(Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return String.valueOf(value);
+            }
+        }
+        return null;
     }
 
     private VideoQuality fixedCameraQuality(ControlStartVideoRequest request, Map<String, Object> camera) {

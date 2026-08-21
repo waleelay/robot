@@ -20,8 +20,8 @@ class BigscreenWebSocketAuthorizationServiceTest {
             new ObjectMapper());
 
     @Test
-    void allowsEventsWithoutRobotId() {
-        assertTrue(service.canReceive(Set.of(), "{\"event\":\"panorama.stats.changed\",\"data\":{\"total\":1}}"));
+    void rejectsUpstreamEventsWithoutResourceIdentity() {
+        assertFalse(service.canReceive(Set.of(), "{\"event\":\"panorama.stats.changed\",\"data\":{\"total\":1}}"));
     }
 
     @Test
@@ -56,5 +56,27 @@ class BigscreenWebSocketAuthorizationServiceTest {
 
         assertTrue(service.canReceive(Set.of("m20Pro_01"), payload));
         assertFalse(service.canReceive(Set.of("x30_test_26081302"), payload));
+    }
+
+    @Test
+    void authorizesFixedCameraEventBySourceId() {
+        String payload = """
+                {
+                  "event": "video.session.changed",
+                  "data": {
+                    "sourceType": "FIXED_CAMERA",
+                    "sourceId": "camera-001"
+                  }
+                }
+                """;
+
+        assertTrue(service.canReceive(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(
+                        Set.of(), Set.of("camera-001")),
+                payload));
+        assertFalse(service.canReceive(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(
+                        Set.of(), Set.of("camera-002")),
+                payload));
     }
 }

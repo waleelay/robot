@@ -115,6 +115,30 @@ public class LiveKitTokenService {
         return new TokenResult(token, expiresAt);
     }
 
+    /**
+     * 生成指定房间的管理令牌。
+     *
+     * @param roomName 房间名称
+     * @return 令牌及过期时间
+     */
+    public TokenResult createRoomAdminToken(String roomName) {
+        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
+                .plusSeconds(properties.getLivekit().getTokenTtlSeconds());
+        Map<String, Object> videoGrant = new HashMap<>();
+        videoGrant.put("room", roomName);
+        videoGrant.put("roomAdmin", true);
+
+        SecretKey key = Keys.hmacShaKeyFor(normalizedSecret().getBytes(StandardCharsets.UTF_8));
+        String token = Jwts.builder()
+                .issuer(properties.getLivekit().getApiKey())
+                .subject("media-service")
+                .expiration(Date.from(expiresAt.toInstant()))
+                .claim("video", videoGrant)
+                .signWith(key)
+                .compact();
+        return new TokenResult(token, expiresAt);
+    }
+
     private TokenResult createToken(String roomName, String identity, boolean canPublish, boolean canSubscribe) {
         return createToken(roomName, identity, canPublish, canSubscribe, null);
     }

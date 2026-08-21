@@ -397,6 +397,7 @@ public class MediaProperties {
     private int hlsWorkerConcurrency = 2;
     private int hlsProcessingLeaseSeconds = 300;
     private int retentionDays = 30;
+    private int liveRecordingMaxDurationSeconds = 14400;
     private boolean trustedRobotNetworkEnabled;
     private String trustedRobotCidrs = "127.0.0.1/32,::1/128";
     private String defaultOrgId = "org001";
@@ -437,6 +438,8 @@ public class MediaProperties {
     public void setHlsProcessingLeaseSeconds(int hlsProcessingLeaseSeconds) { this.hlsProcessingLeaseSeconds = hlsProcessingLeaseSeconds; }
     public int getRetentionDays() { return retentionDays; }
     public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
+    public int getLiveRecordingMaxDurationSeconds() { return liveRecordingMaxDurationSeconds; }
+    public void setLiveRecordingMaxDurationSeconds(int liveRecordingMaxDurationSeconds) { this.liveRecordingMaxDurationSeconds = liveRecordingMaxDurationSeconds; }
     public boolean isTrustedRobotNetworkEnabled() { return trustedRobotNetworkEnabled; }
     public void setTrustedRobotNetworkEnabled(boolean trustedRobotNetworkEnabled) { this.trustedRobotNetworkEnabled = trustedRobotNetworkEnabled; }
     public String getTrustedRobotCidrs() { return trustedRobotCidrs; }

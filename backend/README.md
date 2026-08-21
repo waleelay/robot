@@ -80,6 +80,7 @@ Media 不存在媒体源 CRUD、LiveKit Webhook、专用 Snapshot Controller，�
 | 前缀 | 说明 |
 | --- | --- |
 | `media.livekit.*` | LiveKit 地址、Key/Secret、Token、Room 与 Egress |
+| `media.file.live-recording-max-duration-seconds` | 单次手动录像最长持续时间，默认 14400 秒 |
 | `media.minio.*` | 对象存储地址、凭据、bucket 和开关 |
 | `media.file.*` | 文件大小、multipart、播放 Token、HLS、保留期与可信网段 |
 | `media.tts.*` | OpenTTS 地址、voice、format、缓存目录和超时 |

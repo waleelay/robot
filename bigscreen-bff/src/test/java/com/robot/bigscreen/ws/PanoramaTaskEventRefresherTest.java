@@ -30,7 +30,8 @@ class PanoramaTaskEventRefresherTest {
         when(panoramaService.tasks())
                 .thenReturn(Map.of("items", List.of(running)))
                 .thenReturn(Map.of("items", List.of(running)))
-                .thenReturn(Map.of("items", List.of(completed)));
+                .thenReturn(Map.of("items", List.of(completed)))
+                .thenReturn(Map.of("items", List.of()));
         ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
         when(scheduler.schedule(jobs.capture(), any(Instant.class))).thenReturn(null);
         PanoramaTaskEventRefresher refresher = new PanoramaTaskEventRefresher(panoramaService, objectMapper, scheduler);
@@ -44,8 +45,10 @@ class PanoramaTaskEventRefresherTest {
         jobs.getAllValues().get(1).run();
         refresher.requestRefresh("browser-a", null, events::add);
         jobs.getAllValues().get(2).run();
+        refresher.requestRefresh("browser-a", null, events::add);
+        jobs.getAllValues().get(3).run();
 
-        assertThat(events).hasSize(2);
+        assertThat(events).hasSize(3);
         JsonNode event = objectMapper.readTree(events.get(1));
         assertThat(event.path("event").asText()).isEqualTo("panorama.task.changed");
         assertThat(event.path("data").path("taskId").isNumber()).isTrue();
@@ -53,5 +56,9 @@ class PanoramaTaskEventRefresherTest {
         assertThat(event.path("data").path("task").path("taskId").asLong()).isEqualTo(1L);
         assertThat(event.path("data").path("task").path("workflowInstanceId").asLong()).isEqualTo(9001L);
         assertThat(event.path("data").path("task").path("status").asText()).isEqualTo("completed");
+        JsonNode removed = objectMapper.readTree(events.get(2));
+        assertThat(removed.path("data").path("taskId").asLong()).isEqualTo(1L);
+        assertThat(removed.path("data").path("changeType").asText()).isEqualTo("REMOVE");
+        assertThat(removed.path("data").has("task")).isFalse();
     }
 }

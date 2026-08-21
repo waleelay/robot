@@ -77,6 +77,9 @@ public class PanoramaAlarmEventRefresher {
                         publisher.accept(event(alarmId, alarm, summary));
                     }
                 });
+                state.previousAlarms.keySet().stream()
+                        .filter(alarmId -> !current.containsKey(alarmId))
+                        .forEach(alarmId -> publisher.accept(removeEvent(alarmId, summary)));
             }
             state.previousAlarms = current;
         } catch (RuntimeException exception) {
@@ -114,6 +117,20 @@ public class PanoramaAlarmEventRefresher {
                     "data", data));
         } catch (Exception exception) {
             throw new IllegalStateException("序列化全景地图告警事件失败", exception);
+        }
+    }
+
+    private String removeEvent(String alarmId, Map<String, Object> summary) {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                    "event", "panorama.alarm.changed",
+                    "timestamp", TIME_FORMATTER.format(LocalDateTime.now()),
+                    "data", Map.of(
+                            "alarmId", alarmId,
+                            "changeType", "REMOVE",
+                            "summary", summary)));
+        } catch (Exception exception) {
+            throw new IllegalStateException("序列化全景地图告警移除事件失败", exception);
         }
     }
 

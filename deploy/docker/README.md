@@ -637,6 +637,31 @@ scp -P 32272 -r dist/* jszn@175.155.35.79:/home/jszn/mounts/media/nginx/html/dis
 
 Nginx 静态资源替换后一般不需要重启。
 
+### 6.4 增量更新脚本（一条命令）
+
+`update-services.sh` 把 6.2 的 Java 服务增量更新流程和新增环境变量同步合并为一条命令：
+
+```bash
+# 1. 编辑 update-services.env，声明本次发布需要保证的服务器环境变量
+#    （格式：SERVICE VAR=VALUE，已有则改值、缺失则追加，幂等）
+# 2. 执行
+sh deploy/docker/update-services.sh
+```
+
+脚本会自动完成：
+
+```text
+上传 dist 包 -> 同步 .env（备份后增改）-> 接线 docker-compose.yml 对应服务 environment
+-> 备份并替换工作区 bin/boot/lib -> docker compose up -d --force-recreate -> 核验容器/环境变量/启动日志
+```
+
+可配置项（环境变量）：`UPDATE_SERVER`、`UPDATE_SSH_USER`、`UPDATE_SSH_PORT`、
+`UPDATE_INSTALL_DIR`（compose 安装目录）、`UPDATE_WORKSPACE`（服务运行目录）、
+`UPDATE_ENV_FILE`、`UPDATE_SERVICES`、`DIST_MEDIA/DIST_CONTROL/DIST_BIGSCREEN`。
+
+注意：脚本只覆盖 `bin/boot/lib`，不覆盖服务目录下的 `config/`；新增环境变量通过
+容器环境变量注入，优先于 `config/application.yml`，无需改动 config 目录。
+
 ## 7. 卸载
 
 默认卸载：

@@ -18,6 +18,8 @@ import com.robot.media.common.video.VideoSourceType;
 import com.robot.control.messaging.RobotMediaCommandService;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +33,7 @@ class ControlVideoCommandServiceTest {
 
     @Test
     void blocksOperatorFromStartingSecondRobotIntercom() {
+        allowRobot("robot-002");
         when(mediaServiceClient.active()).thenReturn(List.of(activeSession(
                 "vs-active", "robot-001", "operator-1", "web-1")));
 
@@ -45,6 +48,7 @@ class ControlVideoCommandServiceTest {
 
     @Test
     void blocksClientFromStartingSecondRobotIntercom() {
+        allowRobot("robot-002");
         when(mediaServiceClient.active()).thenReturn(List.of(activeSession(
                 "vs-active", "robot-001", "operator-2", "web-1")));
 
@@ -57,6 +61,11 @@ class ControlVideoCommandServiceTest {
 
     private CurrentUser operator(String userId, String clientId) {
         return new CurrentUser(userId, "org001", Set.of("MEDIA_OPERATOR"), clientId);
+    }
+
+    private void allowRobot(String robotId) {
+        when(managementClient.deviceBySerialNumber(robotId))
+                .thenReturn(Optional.of(Map.of("serialNumber", robotId)));
     }
 
     private VideoSessionResponse activeSession(

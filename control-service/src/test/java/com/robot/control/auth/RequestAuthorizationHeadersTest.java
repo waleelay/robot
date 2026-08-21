@@ -63,6 +63,7 @@ class RequestAuthorizationHeadersTest {
     @Test
     void buildsDifferentCacheKeysForDifferentUsers() {
         MockHttpServletRequest first = new MockHttpServletRequest();
+        first.addHeader(HttpHeaders.AUTHORIZATION, "Bearer access-token-a");
         first.addHeader("X-User-Id", "user-a");
         first.addHeader("X-Org-Id", "org-1");
         first.addHeader("X-Roles", "ROLE_A");
@@ -70,6 +71,7 @@ class RequestAuthorizationHeadersTest {
         String firstCacheKey = requestAuthorizationHeaders.currentCacheKey().orElseThrow();
 
         MockHttpServletRequest second = new MockHttpServletRequest();
+        second.addHeader(HttpHeaders.AUTHORIZATION, "Bearer access-token-b");
         second.addHeader("X-User-Id", "user-b");
         second.addHeader("X-Org-Id", "org-1");
         second.addHeader("X-Roles", "ROLE_A");
@@ -93,6 +95,28 @@ class RequestAuthorizationHeadersTest {
         requestAuthorizationHeaders.apply(headers);
 
         assertThat(headers).doesNotContainKey(HttpHeaders.AUTHORIZATION);
+        assertThat(requestAuthorizationHeaders.currentCacheKey()).isEmpty();
+    }
+
+    @Test
+    void doesNotBuildCacheKeyFromIdentityHeadersWithoutBearerToken() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("X-User-Id", "user-a");
+        request.addHeader("X-Org-Id", "org-1");
+        request.addHeader("X-Roles", "ROLE_A");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        assertThat(requestAuthorizationHeaders.currentCacheKey()).isEmpty();
+    }
+
+    @Test
+    void doesNotBuildCacheKeyFromWebSocketIdentityHeadersWithoutBearerToken() {
+        requestAuthorizationHeaders.setWebSocketHeaders(Map.of(
+                "X-User-Id", "user-ws",
+                "X-Org-Id", "org-ws",
+                "X-Roles", "EQUIPMENT_OPERATOR"));
+
+        assertThat(requestAuthorizationHeaders.currentCacheKey()).isEmpty();
     }
 
     @Test

@@ -264,7 +264,7 @@ public class ControlServiceProperties {
      * @date 2026-07-05
      */
     public static class Robot {
-        private long heartbeatTimeoutSeconds = 15;
+        private long heartbeatTimeoutSeconds = 30;
         private long offlineRetentionSeconds = 60;
 
         /**

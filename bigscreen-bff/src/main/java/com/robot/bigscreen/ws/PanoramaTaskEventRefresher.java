@@ -75,6 +75,11 @@ public class PanoramaTaskEventRefresher {
                         publisher.accept(event(task, task.get("taskId")));
                     }
                 });
+                state.previousTasks.forEach((taskId, task) -> {
+                    if (!current.containsKey(taskId)) {
+                        publisher.accept(removeEvent(task.get("taskId")));
+                    }
+                });
             }
             state.previousTasks = current;
         } catch (RuntimeException exception) {
@@ -114,6 +119,17 @@ public class PanoramaTaskEventRefresher {
                     "data", Map.of("taskId", taskId, "task", task)));
         } catch (Exception exception) {
             throw new IllegalStateException("Failed to serialize panorama task event", exception);
+        }
+    }
+
+    private String removeEvent(Object taskId) {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                    "event", "panorama.task.changed",
+                    "timestamp", TIME_FORMATTER.format(LocalDateTime.now()),
+                    "data", Map.of("taskId", taskId, "changeType", "REMOVE")));
+        } catch (Exception exception) {
+            throw new IllegalStateException("序列化全景地图任务移除事件失败", exception);
         }
     }
 

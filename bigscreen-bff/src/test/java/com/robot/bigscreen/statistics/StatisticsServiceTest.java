@@ -16,6 +16,9 @@ import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 class StatisticsServiceTest {
 
@@ -147,7 +150,7 @@ class StatisticsServiceTest {
         StatisticsService.ReportFile report = service.createReport(Map.of(
                 "modules", List.of("equipmentRuntime"),
                 "timeRange", Map.of("type", "all"),
-                "deviceType", "all"));
+                "deviceType", "all"), authentication("user-1", "org-1"));
         String text;
         try (var document = Loader.loadPDF(report.bytes())) {
             text = new PDFTextStripper().getText(document);
@@ -160,6 +163,39 @@ class StatisticsServiceTest {
         assertTrue(text.contains("暂无数据"));
         assertFalse(text.contains("七、报告说明"));
         assertFalse(text.contains("null"));
+    }
+
+    @Test
+    void keepsReportHistoryPrivateToCreator() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.deviceTypeOptions()).thenReturn(List.of());
+        when(centerClient.devices()).thenReturn(List.of());
+        when(centerClient.taskWorkflowInstancesForStatistics()).thenReturn(List.of());
+        when(centerClient.alarmsForStatistics(any(), any())).thenReturn(List.of());
+        StatisticsService service = new StatisticsService(
+                new ObjectMapper(),
+                centerClient,
+                new DeviceStatusSampler(new ObjectMapper(), centerClient, tempDir.resolve("sampler-private").toString(), 7),
+                tempDir.resolve("reports-private").toString());
+
+        StatisticsService.ReportFile report = service.createReport(
+                Map.of("timeRange", Map.of("type", "all"), "deviceType", "all"),
+                authentication("user-1", "org-1"));
+
+        assertEquals(1, service.reportHistoryList(1, 10, authentication("user-1", "org-1")).get("total"));
+        assertEquals(0, service.reportHistoryList(1, 10, authentication("user-2", "org-1")).get("total"));
+        assertEquals(null, service.reportFile(report.id(), authentication("user-2", "org-1")));
+        assertFalse(service.deleteReport(report.id(), authentication("user-2", "org-1")));
+        assertTrue(service.deleteReport(report.id(), authentication("user-1", "org-1")));
+    }
+
+    private Authentication authentication(String subject, String orgId) {
+        Jwt jwt = Jwt.withTokenValue("token-" + subject)
+                .header("alg", "none")
+                .subject(subject)
+                .claim("org_id", orgId)
+                .build();
+        return new JwtAuthenticationToken(jwt);
     }
 
     private Map<String, Object> task(String status, String startedAt, String serialNumber, int durationSeconds) {

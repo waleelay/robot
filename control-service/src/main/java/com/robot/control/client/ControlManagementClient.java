@@ -33,7 +33,7 @@ public class ControlManagementClient {
 
     private static final Logger log = LoggerFactory.getLogger(ControlManagementClient.class);
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE = new ParameterizedTypeReference<>() {};
-    private static final Duration DEFAULT_DEVICE_CACHE_TTL = Duration.ofSeconds(120);
+    private static final Duration DEFAULT_DEVICE_CACHE_TTL = Duration.ofSeconds(30);
 
     private final RestClient restClient;
     private final ControlProperties properties;
@@ -83,7 +83,11 @@ public class ControlManagementClient {
         if (serialNumber == null || serialNumber.isBlank()) {
             return Optional.empty();
         }
-        String cacheIdentity = cacheIdentity();
+        Optional<String> currentCacheIdentity = requestAuthorizationHeaders.currentCacheKey();
+        if (currentCacheIdentity.isEmpty()) {
+            return Optional.empty();
+        }
+        String cacheIdentity = currentCacheIdentity.get();
         DeviceCacheKey cacheKey = new DeviceCacheKey(cacheIdentity, serialNumber);
         CachedDevice cached = deviceCache.get(cacheKey);
         Instant now = Instant.now();
@@ -112,25 +116,15 @@ public class ControlManagementClient {
             return Optional.empty();
         }
         Optional<String> currentCacheKey = requestAuthorizationHeaders.currentCacheKey();
-        if (currentCacheKey.isPresent()) {
-            String cacheIdentity = currentCacheKey.get();
-            CachedDevice cached = deviceCache.get(new DeviceCacheKey(cacheIdentity, serialNumber));
-            if (cached != null && cached.expiresAt().isAfter(Instant.now())) {
-                return Optional.of(new LinkedHashMap<>(cached.device()));
-            }
-            return cachedListDevice(cacheIdentity, serialNumber);
+        if (currentCacheKey.isEmpty()) {
+            return Optional.empty();
         }
-        CachedDevice cached = newestCachedDevice(serialNumber);
-        if (cached != null) {
+        String cacheIdentity = currentCacheKey.get();
+        CachedDevice cached = deviceCache.get(new DeviceCacheKey(cacheIdentity, serialNumber));
+        if (cached != null && cached.expiresAt().isAfter(Instant.now())) {
             return Optional.of(new LinkedHashMap<>(cached.device()));
         }
-        Optional<Map<String, Object>> cachedListDevice = newestCachedListDevice(serialNumber);
-        if (cachedListDevice.isPresent()) {
-            return cachedListDevice;
-        }
-        return cached == null
-                ? Optional.empty()
-                : Optional.of(new LinkedHashMap<>(cached.device()));
+        return cachedListDevice(cacheIdentity, serialNumber);
     }
 
     /**
@@ -144,7 +138,11 @@ public class ControlManagementClient {
 
     /** 使用当前请求身份预热设备档案和设备类型字典缓存。 */
     public void warmCurrentUserDeviceCache() {
-        String cacheIdentity = cacheIdentity();
+        Optional<String> currentCacheIdentity = requestAuthorizationHeaders.currentCacheKey();
+        if (currentCacheIdentity.isEmpty()) {
+            return;
+        }
+        String cacheIdentity = currentCacheIdentity.get();
         List<Map<String, Object>> deviceSummaries = devices();
         Instant expiresAt = Instant.now().plus(deviceTtl());
         for (Map<String, Object> summary : deviceSummaries) {
@@ -168,7 +166,11 @@ public class ControlManagementClient {
     }
 
     private List<Map<String, Object>> devices(boolean forceRefresh) {
-        String cacheIdentity = cacheIdentity();
+        Optional<String> currentCacheIdentity = requestAuthorizationHeaders.currentCacheKey();
+        if (currentCacheIdentity.isEmpty()) {
+            return List.of();
+        }
+        String cacheIdentity = currentCacheIdentity.get();
         Instant now = Instant.now();
         CachedDevices cached = devicesCache.get(cacheIdentity);
         if (!forceRefresh && cached != null && cached.expiresAt().isAfter(now)) {
@@ -225,6 +227,9 @@ public class ControlManagementClient {
      * @return 固定摄像头列表
      */
     public List<Map<String, Object>> fixedCameras() {
+        if (requestAuthorizationHeaders.currentCacheKey().isEmpty()) {
+            return List.of();
+        }
         URI uri = uri("/api/v1/management/fixed-cameras")
                 .queryParam("pageNum", 1)
                 .queryParam("pageSize", 500)
@@ -258,6 +263,9 @@ public class ControlManagementClient {
         if (id == null || id.isBlank()) {
             return Optional.empty();
         }
+        if (requestAuthorizationHeaders.currentCacheKey().isEmpty()) {
+            return Optional.empty();
+        }
         URI uri = uri("/api/v1/management/devices/" + id).build(true).toUri();
         return dataMap(uri);
     }
@@ -284,8 +292,7 @@ public class ControlManagementClient {
         Instant now = Instant.now();
         Optional<String> currentCacheIdentity = requestAuthorizationHeaders.currentCacheKey();
         if (currentCacheIdentity.isEmpty()) {
-            CachedDictionary newest = newestCachedDictionary(now);
-            return newest == null ? List.of() : copyMaps(newest.records());
+            return List.of();
         }
         String cacheIdentity = currentCacheIdentity.get();
         CachedDictionary cached = dictionaryCache.get(cacheIdentity);
@@ -298,13 +305,6 @@ public class ControlManagementClient {
         List<Map<String, Object>> loaded = records(uri);
         dictionaryCache.put(cacheIdentity, new CachedDictionary(copyMaps(loaded), now.plus(deviceTtl())));
         return copyMaps(loaded);
-    }
-
-    private CachedDictionary newestCachedDictionary(Instant now) {
-        return dictionaryCache.values().stream()
-                .filter(dictionary -> dictionary.expiresAt().isAfter(now))
-                .max((left, right) -> left.expiresAt().compareTo(right.expiresAt()))
-                .orElse(null);
     }
 
     private Map<String, Object> mergeDeviceDetail(Map<String, Object> listDevice, Map<String, Object> detail) {
@@ -403,36 +403,12 @@ public class ControlManagementClient {
         return UriComponentsBuilder.fromUriString(properties.getManagementServiceBaseUrl()).path(path);
     }
 
-    private String cacheIdentity() {
-        return requestAuthorizationHeaders.currentCacheKey().orElse("background");
-    }
-
-    private CachedDevice newestCachedDevice(String serialNumber) {
-        Instant now = Instant.now();
-        return deviceCache.entrySet().stream()
-                .filter(entry -> serialNumber.equals(entry.getKey().serialNumber()))
-                .map(Map.Entry::getValue)
-                .filter(device -> device.expiresAt().isAfter(now))
-                .max((left, right) -> left.expiresAt().compareTo(right.expiresAt()))
-                .orElse(null);
-    }
-
     private Optional<Map<String, Object>> cachedListDevice(String cacheIdentity, String serialNumber) {
         CachedDevices cached = devicesCache.get(cacheIdentity);
         if (cached == null || !cached.expiresAt().isAfter(Instant.now())) {
             return Optional.empty();
         }
         return cached.devices().stream()
-                .filter(device -> serialNumber.equals(firstString(device, "serialNumber", "robotId")))
-                .findFirst()
-                .map(LinkedHashMap::new);
-    }
-
-    private Optional<Map<String, Object>> newestCachedListDevice(String serialNumber) {
-        Instant now = Instant.now();
-        return devicesCache.values().stream()
-                .filter(devices -> devices.expiresAt().isAfter(now))
-                .flatMap(devices -> devices.devices().stream())
                 .filter(device -> serialNumber.equals(firstString(device, "serialNumber", "robotId")))
                 .findFirst()
                 .map(LinkedHashMap::new);

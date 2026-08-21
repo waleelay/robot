@@ -1,5 +1,9 @@
 # 大屏 BFF 全景地图设计说明书
 
+设备数据权威来源、用户设备权限、MQTT 运行态、REST/WebSocket 过滤及缓存隔离的
+统一约束见[大屏设备数据权限与缓存边界设计说明书](大屏设备数据权限与缓存边界设计说明书.md)。
+本文只维护全景地图页面模型和接口流程；两份文档冲突时，以权限与缓存边界说明书为准。
+
 ## 1. 背景与目标
 
 当前前端大屏已经通过 Nginx 访问后端接口，页面数据主要来自控制服务、媒体服务以及后续中心端的管理、任务、告警等服务。
@@ -153,7 +157,11 @@ BFF 不负责：
 
 ### 5.1 当前接口
 
-当前 BFF 已实现以下聚合接口，并从 Management、旧版实时状态服务和 Control 内存注册表组合数据。REST 不使用整套 mock 快照兜底；字段没有权威来源时按字段类型返回 `null` 或空数组。仅 WebSocket 对三个明确的演示机器人保留硬编码位置，详见 5.7 节。
+当前 BFF 已实现以下聚合接口。设备集合严格以当前用户从 Management 查询到的
+授权设备为准，旧版实时状态服务和 Control 内存注册表只补充这些设备的实时字段，
+不得向集合追加管理端未授权设备。REST 不使用整套 mock 快照兜底；字段没有权威
+来源时按字段类型返回 `null` 或空数组。仅 WebSocket 对三个明确的演示机器人保留
+硬编码位置，详见 5.7 节。
 
 ```text
 GET /api/bigscreen/panorama/overview
@@ -753,8 +761,8 @@ WebSocket：
 |---|---|---|
 | `panorama.device.status.changed` | Control 收到设备状态 MQTT 上报后广播 `robot.state` | 仅当 `robot.state` 来源为边缘状态（`stateSource=EDGE_DEVICE_STATUS`）或离线扫描（`stateSource=OFFLINE_SCAN`）时即时派生并推送，不受位置限频影响；媒体客户端来源（`stateSource=MEDIA_CLIENT_STATUS`）不派生该事件，机器人状态以边缘上报为准。在线、离线、故障等状态变化同时触发统计快照刷新。 |
 | `panorama.device.location.changed` | `robot.state` 携带 `location/localization/status.localization` 时派生；联调设备 `test111`、`SN005`、`SN006` 在无真实定位时使用专用演示坐标 | 按“浏览器会话 + `robotId`”独立限频。首条立即推送；同一设备 1 秒内的多条位置只保留最新一条，每秒最多推送一次；`localized=false` 立即推送。没有新定位时不重复发送旧坐标。 |
-| `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 300ms 去抖重查管理端权威快照，逐项比较后只推送发生变化的任务；`taskId` 缺失的旧版事件不直接下发。 |
-| `panorama.alarm.changed` | 上游完整告警事件，或管理端 STOMP `alarm.changed.v1` 转换的 `management.alarm.invalidated` | 完整事件立即转换；失效通知以 300ms 去抖重查管理端告警快照，按会话比较后只推送变化项。没有真实上游事件时不生成模拟告警。 |
+| `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 300ms 去抖，按当前 WebSocket 会话身份重查管理端权威快照，逐项比较后只推送发生变化的任务；任务删除或失权时推送 `data.changeType=REMOVE`。`taskId` 缺失的旧版事件不直接下发。 |
+| `panorama.alarm.changed` | 上游完整告警事件，或管理端 STOMP `alarm.changed.v1` 转换的 `management.alarm.invalidated` | 完整事件立即转换；失效通知以 300ms 去抖，按当前 WebSocket 会话身份重查管理端告警快照，只推送变化项；告警删除或失权时推送 `data.changeType=REMOVE`。没有真实上游事件时不生成模拟告警。 |
 | `panorama.stats.changed` | 设备业务变更、设备在线/离线/故障状态切换、任务或告警变更 | 短时间内的多次触发合并 500ms 后按事件类型只重算受影响统计块（设备/任务/告警），推送仍为完整合并快照，只在快照与上次不同时推送。各统计块带 3 秒 TTL 缓存（按用户隔离），多会话与多事件在窗口内共享一次管理端查询。普通电量、速度、位置心跳不触发统计刷新。 |
 
 Control 对 `totalMileage/currentMileage` 计算出的有效里程增量累计达到配置阈值时，
@@ -875,6 +883,29 @@ BFF 仍会原样转发上游消息，上表只描述追加生成的 `panorama.*`
         "front": "/api/media/files/file_1e82f88847c545579fd1850ce753b8c0/content"
       }
     }
+  }
+}
+```
+
+任务或告警从当前用户权威快照中消失时，BFF 推送移除事件；`REMOVE` 事件不再携带
+已经失效的完整业务对象：
+
+```json
+{
+  "event": "panorama.task.changed",
+  "timestamp": "2026-06-12 11:32:00",
+  "data": {"taskId": 1, "changeType": "REMOVE"}
+}
+```
+
+```json
+{
+  "event": "panorama.alarm.changed",
+  "timestamp": "2026-06-12 11:32:01",
+  "data": {
+    "alarmId": "alarm-001",
+    "changeType": "REMOVE",
+    "summary": {"totalToday": 49, "handled": 18, "unhandled": 31}
   }
 }
 ```

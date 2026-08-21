@@ -166,8 +166,9 @@
                     :icon="camera.recordingActive ? 'el-icon-video-pause' : 'el-icon-video-camera'"
                     :loading="camera.recordingBusy"
                     :disabled="!canRecord(camera)"
+                    :title="camera.recordingActive && !camera.recordingOwned ? '其他浏览器正在录制' : ''"
                     @click="toggleLiveRecording(camera)"
-                >{{ camera.recordingActive ? '停录' : '录像' }}</el-button>
+                >{{ camera.recordingActive ? (camera.recordingOwned ? '停录' : '录制中') : '录像' }}</el-button>
                 <el-button
                     size="mini"
                     :icon="camera.intercomActive ? 'el-icon-turn-off-microphone' : 'el-icon-microphone'"
@@ -450,6 +451,7 @@ function cameraState(robotId, deviceId, name, groupType) {
     intercomStatus: 'IDLE',
     intercomToken: null,
     recordingActive: false,
+    recordingOwned: false,
     recordingBusy: false,
     activeRecording: null,
     latencyMs: null,
@@ -468,6 +470,19 @@ function cameraState(robotId, deviceId, name, groupType) {
     status: 'offline',
     viewerCount: 0
   }
+}
+
+function applyActiveRecording(camera, recording) {
+  const active = !!recording && recording.status === 'UPLOADING'
+  let startedClientId = ''
+  try {
+    startedClientId = recording && recording.metadata
+      ? JSON.parse(recording.metadata).startedClientId || ''
+      : ''
+  } catch (_) {}
+  camera.activeRecording = active ? recording : null
+  camera.recordingActive = active
+  camera.recordingOwned = active && (!startedClientId || startedClientId === mediaClientId)
 }
 
 export default {
@@ -878,7 +893,7 @@ export default {
       return this.gridMode === 1 ? 'main' : 'sub'
     },
     activeRecordingInProgress(camera) {
-      return camera.recordingActive || (camera.activeRecording && camera.activeRecording.status === 'RECORDING')
+      return camera.recordingActive || (camera.activeRecording && camera.activeRecording.status === 'UPLOADING')
     },
     intercomInProgress(camera) {
       return camera.intercomActive || (camera.intercomStatus && !['IDLE', 'FAILED'].includes(camera.intercomStatus))
@@ -1821,6 +1836,7 @@ export default {
             qualityChanging: old.qualityChanging,
             activeRecording: old.activeRecording,
             recordingActive: old.recordingActive,
+            recordingOwned: old.recordingOwned,
             recordingBusy: old.recordingBusy,
             intercomActive: old.intercomActive,
             intercomBusy: old.intercomBusy,
@@ -2085,6 +2101,10 @@ export default {
     },
     async toggleLiveRecording(camera) {
       if (camera.recordingActive) {
+        if (!camera.recordingOwned) {
+          this.$message.warning('当前录像由其他浏览器发起')
+          return
+        }
         await this.stopCameraRecording(camera)
       } else {
         await this.startCameraRecording(camera)
@@ -2096,14 +2116,12 @@ export default {
       try {
         const active = await getActiveLiveRecording(camera.session.sessionId)
         if (active) {
-          camera.activeRecording = active
-          camera.recordingActive = false
-          this.$message.info('当前视频正在录制中')
+          applyActiveRecording(camera, active)
+          this.$message.info(camera.recordingOwned ? '当前浏览器正在录制中' : '其他浏览器正在录制中')
           return
         }
         const recording = await startLiveRecording(camera.session.sessionId)
-        camera.activeRecording = recording
-        camera.recordingActive = recording && recording.status === 'UPLOADING'
+        applyActiveRecording(camera, recording)
         this.log('API startLiveRecording', recording)
         this.$message.success('已开始录像')
       } catch (error) {
@@ -2121,22 +2139,19 @@ export default {
       if (!camera.session) return
       try {
         const recording = await getActiveLiveRecording(camera.session.sessionId)
-        camera.activeRecording = recording
-        if (!recording || recording.status !== 'UPLOADING') {
-          camera.recordingActive = false
-        }
-      } catch (_) {
-        camera.activeRecording = null
-        camera.recordingActive = false
-      }
+        applyActiveRecording(camera, recording)
+      } catch (_) {}
     },
     async stopCameraRecording(camera) {
       if (!camera.session || !camera.activeRecording || camera.recordingBusy) return
+      if (!camera.recordingOwned) {
+        this.$message.warning('当前录像由其他浏览器发起')
+        return
+      }
       camera.recordingBusy = true
       try {
         const recording = await stopLiveRecording(camera.session.sessionId, camera.activeRecording.fileId)
-        camera.activeRecording = recording
-        camera.recordingActive = false
+        applyActiveRecording(camera, null)
         this.log('API stopLiveRecording', recording)
         this.$message.success('录像已停止')
         if (this.recordingMode) await this.loadRecordings()

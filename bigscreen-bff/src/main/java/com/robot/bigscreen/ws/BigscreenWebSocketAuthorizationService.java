@@ -48,6 +48,10 @@ public class BigscreenWebSocketAuthorizationService {
     }
 
     public Set<String> authorizedRobotIds(WebSocketSession session) {
+        return authorizedResources(session).robotIds();
+    }
+
+    public AuthorizedResources authorizedResources(WebSocketSession session) {
         HttpHeaders headers = new HttpHeaders();
         if (session.getPrincipal() instanceof Authentication authentication) {
             authenticatedRequestHeaders.apply(headers, authentication);
@@ -58,44 +62,66 @@ public class BigscreenWebSocketAuthorizationService {
             }
         }
         if (headers.getFirst(HttpHeaders.AUTHORIZATION) == null) {
-            log.warn("大屏 WebSocket 会话缺少授权信息，已按空设备权限处理，会话={}", session.getId());
-            return Set.of();
+            throw new IllegalStateException("大屏 WebSocket 会话缺少授权信息");
         }
-
-        URI uri = UriComponentsBuilder.fromUriString(baseUrl() + "/api/v1/management/devices")
-                .queryParam("pageNum", 1)
-                .queryParam("pageSize", 500)
-                .build(true)
-                .toUri();
         try {
-            Map<String, Object> response = restClient.get()
-                    .uri(uri)
-                    .headers(target -> target.addAll(headers))
-                    .retrieve()
-                    .body(MAP_TYPE);
-            return robotIdsFromDeviceRecords(response);
+            Set<String> robotIds = loadAuthorizedIds(
+                    headers,
+                    "/api/v1/management/devices",
+                    "serialNumber", "robotId", "deviceCode", "id");
+            Set<String> cameraIds = loadAuthorizedIds(
+                    headers,
+                    "/api/v1/management/fixed-cameras",
+                    "cameraId", "id");
+            return new AuthorizedResources(robotIds, cameraIds);
         } catch (RuntimeException exception) {
-            log.warn("加载大屏 WebSocket 授权设备列表失败，会话={} 请求地址={}", session.getId(), uri, exception);
-            return Set.of();
+            log.warn("加载大屏 WebSocket 授权资源失败，会话={}", session.getId(), exception);
+            throw exception;
         }
     }
 
     public boolean canReceive(Set<String> authorizedRobotIds, String payload) {
+        return canReceive(new AuthorizedResources(
+                authorizedRobotIds == null ? Set.of() : authorizedRobotIds,
+                Set.of()), payload);
+    }
+
+    public boolean canReceive(AuthorizedResources resources, String payload) {
         Set<String> payloadRobotIds = robotIdsInPayload(payload);
-        if (payloadRobotIds.isEmpty()) {
-            return true;
+        Set<String> payloadCameraIds = cameraIdsInPayload(payload);
+        if (payloadRobotIds.isEmpty() && payloadCameraIds.isEmpty()) {
+            return false;
         }
-        return authorizedRobotIds != null && authorizedRobotIds.containsAll(payloadRobotIds);
+        return resources != null
+                && resources.robotIds().containsAll(payloadRobotIds)
+                && resources.cameraIds().containsAll(payloadCameraIds);
     }
 
     Set<String> robotIdsInPayload(String payload) {
+        return resourceIdsInPayload(payload, "robotId");
+    }
+
+    Set<String> cameraIdsInPayload(String payload) {
+        Set<String> cameraIds = new HashSet<>(resourceIdsInPayload(payload, "cameraId"));
+        if (payload == null || payload.isBlank()) {
+            return Set.copyOf(cameraIds);
+        }
+        try {
+            collectFixedCameraSourceIds(objectMapper.readTree(payload), cameraIds);
+        } catch (Exception exception) {
+            log.debug("解析 WebSocket 固定摄像头 sourceId 失败", exception);
+        }
+        return Set.copyOf(cameraIds);
+    }
+
+    private Set<String> resourceIdsInPayload(String payload, String fieldName) {
         if (payload == null || payload.isBlank()) {
             return Set.of();
         }
         try {
             JsonNode root = objectMapper.readTree(payload);
             Set<String> robotIds = new HashSet<>();
-            collectRobotIds(root, robotIds);
+            collectResourceIds(root, fieldName, robotIds);
             return robotIds;
         } catch (Exception exception) {
             log.debug("解析 WebSocket 事件 robotId 失败，按非设备事件处理", exception);
@@ -104,9 +130,9 @@ public class BigscreenWebSocketAuthorizationService {
     }
 
     @SuppressWarnings("unchecked")
-    private Set<String> robotIdsFromDeviceRecords(Map<String, Object> response) {
+    private List<Map<String, Object>> records(Map<String, Object> response) {
         if (response == null) {
-            return Set.of();
+            throw new IllegalStateException("Management 授权查询返回空响应");
         }
         Object data = response.get("data");
         Object records = data;
@@ -114,33 +140,81 @@ public class BigscreenWebSocketAuthorizationService {
             records = dataMap.get("records");
         }
         if (!(records instanceof List<?> list)) {
-            return Set.of();
+            throw new IllegalStateException("Management 授权查询响应缺少 records 数组");
         }
-        Set<String> robotIds = new HashSet<>();
-        for (Object item : list) {
-            if (item instanceof Map<?, ?> map) {
-                firstString((Map<String, Object>) map, "serialNumber", "robotId", "deviceCode", "id")
-                        .ifPresent(robotIds::add);
-            }
-        }
-        return Set.copyOf(robotIds);
+        return list.stream()
+                .filter(Map.class::isInstance)
+                .map(item -> (Map<String, Object>) item)
+                .toList();
     }
 
-    private void collectRobotIds(JsonNode node, Set<String> robotIds) {
+    private Set<String> loadAuthorizedIds(HttpHeaders headers, String path, String... idFields) {
+        int pageSize = 500;
+        Set<String> ids = new HashSet<>();
+        for (int pageNum = 1; pageNum <= 1000; pageNum++) {
+            URI uri = UriComponentsBuilder.fromUriString(baseUrl() + path)
+                    .queryParam("pageNum", pageNum)
+                    .queryParam("pageSize", pageSize)
+                    .build(true)
+                    .toUri();
+            Map<String, Object> response = restClient.get()
+                    .uri(uri)
+                    .headers(target -> target.addAll(headers))
+                    .retrieve()
+                    .body(MAP_TYPE);
+            List<Map<String, Object>> records = records(response);
+            for (Map<String, Object> item : records) {
+                firstString(item, idFields).ifPresent(ids::add);
+            }
+            if (records.size() < pageSize) {
+                return Set.copyOf(ids);
+            }
+        }
+        throw new IllegalStateException("Management 授权资源分页超过安全上限：" + path);
+    }
+
+    private void collectResourceIds(JsonNode node, String fieldName, Set<String> resourceIds) {
         if (node == null || node.isMissingNode() || node.isNull()) {
             return;
         }
         if (node.isObject()) {
-            JsonNode robotId = node.get("robotId");
-            if (robotId != null && robotId.isValueNode()) {
-                String value = robotId.asText();
+            JsonNode resourceId = node.get(fieldName);
+            if (resourceId != null && resourceId.isValueNode()) {
+                String value = resourceId.asText();
                 if (value != null && !value.isBlank()) {
-                    robotIds.add(value);
+                    resourceIds.add(value);
                 }
             }
-            node.fields().forEachRemaining(entry -> collectRobotIds(entry.getValue(), robotIds));
+            node.fields().forEachRemaining(entry -> collectResourceIds(entry.getValue(), fieldName, resourceIds));
         } else if (node.isArray()) {
-            node.forEach(item -> collectRobotIds(item, robotIds));
+            node.forEach(item -> collectResourceIds(item, fieldName, resourceIds));
+        }
+    }
+
+    private void collectFixedCameraSourceIds(JsonNode node, Set<String> cameraIds) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return;
+        }
+        if (node.isObject()) {
+            JsonNode sourceType = node.get("sourceType");
+            JsonNode sourceId = node.get("sourceId");
+            if (sourceType != null
+                    && "FIXED_CAMERA".equalsIgnoreCase(sourceType.asText())
+                    && sourceId != null
+                    && !sourceId.asText().isBlank()) {
+                cameraIds.add(sourceId.asText());
+            }
+            node.fields().forEachRemaining(entry -> collectFixedCameraSourceIds(entry.getValue(), cameraIds));
+        } else if (node.isArray()) {
+            node.forEach(item -> collectFixedCameraSourceIds(item, cameraIds));
+        }
+    }
+
+    public record AuthorizedResources(Set<String> robotIds, Set<String> cameraIds) {
+
+        public AuthorizedResources {
+            robotIds = robotIds == null ? Set.of() : Set.copyOf(robotIds);
+            cameraIds = cameraIds == null ? Set.of() : Set.copyOf(cameraIds);
         }
     }
 

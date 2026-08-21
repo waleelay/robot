@@ -93,6 +93,8 @@ media:
     hls-processing-lease-seconds: ${MEDIA_FILE_HLS_PROCESSING_LEASE_SECONDS:300}
     # 媒体文件默认保留天数。
     retention-days: ${MEDIA_FILE_RETENTION_DAYS:30}
+    # 单次手动录像最长持续时间，单位秒；小于等于 0 时不限制。
+    live-recording-max-duration-seconds: ${MEDIA_FILE_LIVE_RECORDING_MAX_DURATION_SECONDS:14400}
     # 是否信任机器人侧内网直传来源。
     trusted-robot-network-enabled: ${MEDIA_FILE_TRUSTED_ROBOT_NETWORK_ENABLED:false}
     # 受信任机器人网络 CIDR 列表，多个值用逗号分隔。

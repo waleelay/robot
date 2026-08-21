@@ -30,7 +30,8 @@ class PanoramaAlarmEventRefresherTest {
         when(panoramaService.alarms())
                 .thenReturn(response(unhandled, 1, 0))
                 .thenReturn(response(unhandled, 1, 0))
-                .thenReturn(response(handled, 1, 1));
+                .thenReturn(response(handled, 1, 1))
+                .thenReturn(response(null, 0, 0));
         ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
         when(scheduler.schedule(jobs.capture(), any(Instant.class))).thenReturn(null);
         PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
@@ -45,19 +46,26 @@ class PanoramaAlarmEventRefresherTest {
         jobs.getAllValues().get(1).run();
         refresher.requestRefresh("browser-a", null, events::add);
         jobs.getAllValues().get(2).run();
+        refresher.requestRefresh("browser-a", null, events::add);
+        jobs.getAllValues().get(3).run();
 
-        assertThat(events).hasSize(2);
+        assertThat(events).hasSize(3);
         JsonNode event = objectMapper.readTree(events.get(1));
         assertThat(event.path("event").asText()).isEqualTo("panorama.alarm.changed");
         assertThat(event.path("data").path("alarmId").asText()).isEqualTo("alarm-1");
         assertThat(event.path("data").path("alarm").path("status").asText()).isEqualTo("handled");
         assertThat(event.path("data").path("summary").path("handled").asInt()).isEqualTo(1);
+        JsonNode removed = objectMapper.readTree(events.get(2));
+        assertThat(removed.path("data").path("alarmId").asText()).isEqualTo("alarm-1");
+        assertThat(removed.path("data").path("changeType").asText()).isEqualTo("REMOVE");
+        assertThat(removed.path("data").has("alarm")).isFalse();
     }
 
     private Map<String, Object> response(Map<String, Object> alarm, int total, int handled) {
+        List<Map<String, Object>> highItems = alarm == null ? List.of() : List.of(alarm);
         return Map.of("alarms", Map.of(
                 "summary", Map.of("totalToday", total, "handled", handled, "unhandled", total - handled),
-                "high", Map.of("items", List.of(alarm)),
+                "high", Map.of("items", highItems),
                 "medium", Map.of("items", List.of()),
                 "low", Map.of("items", List.of())));
     }

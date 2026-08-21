@@ -72,7 +72,7 @@ public class PanoramaService {
 
         List<Map<String, Object>> maps = join(mapsFuture, List.of());
         prefetchMapResources(maps, cache);
-        List<Map<String, Object>> rawDevices = join(devicesFuture, List.of());
+        List<Map<String, Object>> rawDevices = joinRequired(devicesFuture);
         PanoramaTasks panoramaTasks = join(tasksFuture, new PanoramaTasks(List.of(), List.of()));
         List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), rawDevices);
         List<Map<String, Object>> devices = withTaskAssociations(rawDevices, tasks);
@@ -132,14 +132,6 @@ public class PanoramaService {
             return (T) snapshot.value;
         }
         T value = supplier.get();
-        if ("devices".equals(part)
-                && value instanceof List<?> list
-                && list.isEmpty()
-                && snapshot != null
-                && snapshot.value instanceof List<?> previous
-                && !previous.isEmpty()) {
-            return (T) snapshot.value;
-        }
         statsCache.put(key, new CachedSnapshot(now, value));
         return value;
     }
@@ -448,7 +440,7 @@ public class PanoramaService {
         CompletableFuture<List<Map<String, Object>>> devicesFuture = async(() -> devices(cache));
         CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
         return withTaskAssociations(
-                join(devicesFuture, List.of()),
+                joinRequired(devicesFuture),
                 join(tasksFuture, new PanoramaTasks(List.of(), List.of())).items()).stream()
                 .filter(device -> Objects.equals(deviceId, string(device.get("robotId"))))
                 .findFirst()
@@ -462,7 +454,7 @@ public class PanoramaService {
         CompletableFuture<List<Map<String, Object>>> devicesFuture = async(() -> devices(cache));
         List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(
                 join(tasksFuture, new PanoramaTasks(List.of(), List.of())).items(),
-                join(devicesFuture, List.of()));
+                joinRequired(devicesFuture));
         return object(
                 "serverTime", now(),
                 "total", tasks.size(),
@@ -528,7 +520,7 @@ public class PanoramaService {
         CompletableFuture<List<Map<String, Object>>> registeredRobotsFuture = async(centerClient::registeredRobots);
         CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = cache.allFixedCamerasFuture();
         CompletableFuture<List<Map<String, Object>>> deviceTypeOptionsFuture = async(centerClient::deviceTypeOptions);
-        List<Map<String, Object>> managementDevices = join(managementDevicesFuture, List.of());
+        List<Map<String, Object>> managementDevices = joinRequired(managementDevicesFuture);
         List<Map<String, Object>> registeredRobots = join(registeredRobotsFuture, List.of());
         Map<String, Map<String, Object>> registeredRobotsById = registeredRobots.stream()
                 .filter(this::hasDeviceId)
@@ -545,7 +537,6 @@ public class PanoramaService {
                 .toList();
         Map<String, Map<String, Object>> statusBySerial = join(statusBySerialFuture, Map.of());
         Map<String, String> deviceTypeNames = deviceTypeNames(join(deviceTypeOptionsFuture, List.of()));
-        List<String> appendedRobotIds = new ArrayList<>();
         List<Map<String, Object>> result = new ArrayList<>();
         for (int index = 0; index < validManagementDevices.size(); index++) {
             Map<String, Object> managementDevice = validManagementDevices.get(index);
@@ -555,16 +546,7 @@ public class PanoramaService {
             Map<String, Object> source = join(deviceSourceFutures.get(index), managementDevice);
             Map<String, Object> device = device(source, realtimeStatus, registeredRobot, deviceTypeNames);
             result.add(device);
-            appendRobotId(appendedRobotIds, device.get("robotId"));
         }
-        registeredRobots.stream()
-                .filter(this::hasDeviceId)
-                .filter(robot -> !containsRobotId(appendedRobotIds, firstValue(robot, "robotId", "serialNumber")))
-                .map(robot -> registeredRobotDevice(robot, deviceTypeNames))
-                .forEach(device -> {
-                    result.add(device);
-                    appendRobotId(appendedRobotIds, device.get("robotId"));
-                });
         join(fixedCamerasFuture, List.<Map<String, Object>>of()).stream()
                 .filter(camera -> firstValue(camera, "cameraId", "id") != null)
                 .map(this::fixedCameraDevice)
@@ -654,49 +636,6 @@ public class PanoramaService {
                 "task", deviceTasks(task));
     }
 
-    private Map<String, Object> registeredRobotDevice(Map<String, Object> source, Map<String, String> deviceTypeNames) {
-        String robotId = firstString(source, "robotId", "serialNumber", "id");
-        String status = onlineStatus(firstString(source, "status", "onlineStatus"));
-        String name = value(firstString(source, "name", "deviceName"), robotId);
-        String typeCode = firstString(source, "typeCode", "deviceType");
-        List<Map<String, Object>> mountedDevices = list(firstValue(source, "devices", "mountedDevices"));
-        Object alarmLevel = null;
-        return object(
-                "robotId", robotId,
-                "clientId", firstValue(source, "clientId", "authMqttClientId"),
-                "name", name,
-                "type", typeName(typeCode, deviceTypeNames),
-                "typeCode", typeCode,
-                "vendor", firstValue(source, "manufacturer", "vendor"),
-                "model", firstValue(source, "model"),
-                "status", status,
-                "battery", number(source.get("battery")),
-                "lastHeartbeatAt", formatTime(firstString(source, "lastHeartbeatAt", "timestamp")),
-                "cameras", registeredRobotCameras(source, robotId),
-                "mountedDevices", mountedDevices,
-                "stateSeq", number(source.get("stateSeq")),
-                "fault", "fault".equals(status),
-                "alarmLevel", alarmLevel,
-                "controlMode", normalizeControlMode(firstString(source, "controlMode")),
-                "controlModeName", value(firstString(source, "controlModeName"), controlModeName(normalizeControlMode(firstString(source, "controlMode")))),
-                "mountedDeviceCount", mountedDevices.size(),
-                "speed", number(source.get("speed")),
-                "location", registeredRobotLocation(source),
-                "mapDisplay", mapDisplay(name, status, alarmLevel),
-                "task", List.of());
-    }
-
-    private List<Map<String, Object>> registeredRobotCameras(Map<String, Object> source, String robotId) {
-        List<Map<String, Object>> cameras = normalizedRegisteredRobotCameras(source);
-        if (!cameras.isEmpty()) {
-            return cameras;
-        }
-        if (robotId == null || robotId.isBlank()) {
-            return List.of();
-        }
-        return List.of(camera(robotId, robotId, "body", "本体相机"));
-    }
-
     private List<Map<String, Object>> normalizedRegisteredRobotCameras(Map<String, Object> source) {
         return list(source.get("cameras")).stream()
                 .map(camera -> object(
@@ -707,20 +646,6 @@ public class PanoramaService {
                         "quality", value(firstString(camera, "quality"), "sub")))
                 .filter(camera -> camera.get("cameraId") != null || camera.get("deviceId") != null)
                 .toList();
-    }
-
-    private Map<String, Object> registeredRobotLocation(Map<String, Object> source) {
-        Map<String, Object> location = map(source.get("location"));
-        return object(
-                "mapId", firstValue(location, "mapId", "mapID"),
-                "lng", number(firstValue(location, "lng", "longitude")),
-                "lat", number(firstValue(location, "lat", "latitude")),
-                "altitude", number(firstValue(location, "altitude")),
-                "x", number(firstValue(location, "coordinateX", "x")),
-                "y", number(firstValue(location, "coordinateY", "y")),
-                "z", number(firstValue(location, "coordinateZ", "z")),
-                "address", firstString(location, "address"),
-                "updatedAt", formatTime(value(firstString(location, "updatedAt"), firstString(source, "timestamp", "lastHeartbeatAt"))));
     }
 
     private Map<String, Object> fixedCameraDevice(Map<String, Object> source) {
@@ -1422,6 +1347,22 @@ public class PanoramaService {
         }
     }
 
+    private <T> T joinRequired(CompletableFuture<T> future) {
+        try {
+            T value = future.join();
+            if (value == null) {
+                throw new IllegalStateException("必需的中心端查询返回空响应");
+            }
+            return value;
+        } catch (CompletionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("必需的中心端查询失败", cause);
+        }
+    }
+
     private Map<String, Object> mapDisplay(String name, String status, Object alarmLevel) {
         return object(
                 "icon", null,
@@ -1965,18 +1906,6 @@ public class PanoramaService {
         }
         Map<String, Object> task = map(value);
         return task.isEmpty() ? List.of() : List.of(task);
-    }
-
-    private void appendRobotId(List<String> robotIds, Object value) {
-        String robotId = string(value);
-        if (robotId != null && !robotId.isBlank()) {
-            robotIds.add(robotId);
-        }
-    }
-
-    private boolean containsRobotId(List<String> robotIds, Object value) {
-        String robotId = string(value);
-        return robotId != null && robotIds.contains(robotId);
     }
 
     private Map<String, Object> mutable(Map<String, Object> source) {

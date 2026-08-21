@@ -164,26 +164,34 @@ const user = {
     },
 
     // 退出系统
-    LogOut({ commit, state }) {
-      return new Promise((resolve, reject) => {
-        keycloakLogout().then(() => {
+    async LogOut({ commit, dispatch }) {
+      try {
+        await dispatch('websocketRobot/stopAllCameraSessions', undefined, { root: true })
+      } catch (_) {}
+      await Promise.allSettled([
+        dispatch('websocketRobot/disconnectMediaWebSocket', undefined, { root: true }),
+        dispatch('websocketExtraData/resetOverviewResourceState', undefined, { root: true })
+      ])
+      await keycloakLogout()
+      commit('SET_TOKEN', '')
+      commit('SET_ROLES', [])
+      commit('SET_PERMISSIONS', [])
+      removeToken()
+    },
+
+    // 前端 登出
+    FedLogOut({ commit, dispatch }) {
+      return new Promise(resolve => {
+        Promise.all([
+          dispatch('websocketRobot/disconnectMediaWebSocket', undefined, { root: true }),
+          dispatch('websocketExtraData/resetOverviewResourceState', undefined, { root: true })
+        ]).finally(() => {
           commit('SET_TOKEN', '')
           commit('SET_ROLES', [])
           commit('SET_PERMISSIONS', [])
           removeToken()
           resolve()
-        }).catch(error => {
-          reject(error)
         })
-      })
-    },
-
-    // 前端 登出
-    FedLogOut({ commit }) {
-      return new Promise(resolve => {
-        commit('SET_TOKEN', '')
-        removeToken()
-        resolve()
       })
     }
   }

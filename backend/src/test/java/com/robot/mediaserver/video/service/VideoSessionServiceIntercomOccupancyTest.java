@@ -124,6 +124,20 @@ class VideoSessionServiceIntercomOccupancyTest {
         verify(publisher).publish("video.session.streaming", target);
     }
 
+    @Test
+    void startsRecordingWithActualLiveKitTrackSid() {
+        target.setStatus(VideoSessionStatus.STREAMING);
+        target.setRoomName("media.robot-002.camera01.visible.auto");
+        target.setTrackSid("TR_vs_placeholder");
+        CurrentUser user = operator("operator-1", "web-1");
+        when(liveKitRoomService.resolveActiveVideoTrackSid(target.getRoomName(), target.getTrackSid()))
+                .thenReturn(Optional.of("TR_actual"));
+
+        service.startRecording("vs-target", user);
+
+        verify(fileService).startLiveRecording(target, "TR_actual", user);
+    }
+
     private CurrentUser operator(String userId, String clientId) {
         return new CurrentUser(userId, "org001", Set.of("MEDIA_OPERATOR"), clientId);
     }

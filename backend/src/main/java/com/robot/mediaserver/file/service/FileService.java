@@ -134,7 +134,12 @@ public class FileService {
 
     @Transactional
     public FileUploadResponse createOrResumeMultipart(String robotIdHeader, CreateMultipartFileUploadRequest request) {
-        String robotId = firstNonBlank(request.getRobotId(), robotIdHeader);
+        String robotId = requiredRobotId(robotIdHeader);
+        if (request.getRobotId() != null
+                && !request.getRobotId().isBlank()
+                && !robotId.equals(request.getRobotId().trim())) {
+            throw error(HttpStatus.FORBIDDEN, "ROBOT_ID_MISMATCH", "请求体机器人标识与请求头不一致");
+        }
         if (request.getFileSize() > properties.getFile().getMaxFileSizeBytes()) {
             throw error(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "文件超过配置的大小限制");
         }
@@ -184,7 +189,7 @@ public class FileService {
 
     @Transactional
     public FilePartUrlsResponse partUrls(String robotId, String uploadId, List<Integer> partNumbers) {
-        MediaFileUpload upload = requireActiveUpload(robotId, uploadId);
+        MediaFileUpload upload = requireActiveUpload(requiredRobotId(robotId), uploadId);
         int maxPartUrls = Math.max(1, properties.getFile().getMaxPartUrlsPerRequest());
         if (partNumbers.size() > maxPartUrls) {
             throw error(HttpStatus.BAD_REQUEST, "TOO_MANY_PART_URLS", "一次请求的分片地址过多");
@@ -203,7 +208,7 @@ public class FileService {
 
     @Transactional
     public FileStatusResponse completeMultipart(String robotId, String uploadId) {
-        MediaFileUpload upload = requireUpload(robotId, uploadId);
+        MediaFileUpload upload = requireUpload(requiredRobotId(robotId), uploadId);
         MediaFile file = requireFile(upload.getFileId());
         if (upload.getStatus() == FileUploadStatus.COMPLETED) {
             return status(file);
@@ -224,11 +229,19 @@ public class FileService {
     }
 
     public FileStatusResponse fileStatus(String robotId, String fileId) {
+        robotId = requiredRobotId(robotId);
         MediaFile file = requireFile(fileId);
-        if (robotId != null && !robotId.isBlank() && !Objects.equals(file.getRobotId(), robotId)) {
+        if (!Objects.equals(file.getRobotId(), robotId)) {
             throw error(HttpStatus.NOT_FOUND, "FILE_NOT_FOUND", "未找到文件");
         }
         return status(file);
+    }
+
+    private String requiredRobotId(String robotId) {
+        if (robotId == null || robotId.isBlank()) {
+            throw error(HttpStatus.UNAUTHORIZED, "ROBOT_ID_REQUIRED", "机器人上传请求缺少 X-Robot-Id");
+        }
+        return robotId.trim();
     }
 
     public FileListResponse list(
@@ -432,7 +445,8 @@ public class FileService {
     }
 
     @Transactional
-    public FileListItemResponse startLiveRecording(VideoSession session, CurrentUser user) {
+    public synchronized FileListItemResponse startLiveRecording(
+            VideoSession session, String liveKitTrackSid, CurrentUser user) {
         MediaFile active = findActiveLiveRecording(session.getSessionId(), user).orElse(null);
         if (active != null) {
             throw error(HttpStatus.CONFLICT, "RECORDING_ALREADY_ACTIVE", "当前视频正在录制中");
@@ -442,7 +456,7 @@ public class FileService {
         metadata.put("source", "LIVEKIT_EGRESS");
         metadata.put("sessionId", session.getSessionId());
         metadata.put("roomName", session.getRoomName());
-        metadata.put("trackSid", session.getTrackSid());
+        metadata.put("trackSid", liveKitTrackSid);
         metadata.put("startedClientId", user.clientId());
         MediaFile file = newFile(
                 user.orgId(),
@@ -464,7 +478,7 @@ public class FileService {
         videoRepository.save(video);
         try {
             LiveKitEgressService.EgressStartResult result = egressService.startTrackMp4(
-                    session.getRoomName(), session.getTrackSid(), file.getObjectKey());
+                    session.getRoomName(), liveKitTrackSid, file.getObjectKey());
             metadata.put("egressId", result.egressId());
             metadata.put("egressStatus", result.status());
             file.setMetadataJson(writeMetadata(metadata));
@@ -491,6 +505,9 @@ public class FileService {
         if (!startedClientId.isBlank() && !Objects.equals(startedClientId, user.clientId())) {
             throw error(HttpStatus.CONFLICT, "RECORDING_STARTED_BY_OTHER_CLIENT", "当前录像由其他浏览器发起");
         }
+        if (file.getStatus() != FileStatus.UPLOADING) {
+            return item(file);
+        }
         finishLiveRecording(file);
         return item(file);
     }
@@ -516,6 +533,34 @@ public class FileService {
 
     public FileListItemResponse activeLiveRecording(String sessionId, CurrentUser user) {
         return findActiveLiveRecording(sessionId, user).map(this::item).orElse(null);
+    }
+
+    public List<String> expiredLiveRecordingIds() {
+        int maxDurationSeconds = properties.getFile().getLiveRecordingMaxDurationSeconds();
+        if (maxDurationSeconds <= 0) {
+            return List.of();
+        }
+        OffsetDateTime threshold = now().minusSeconds(maxDurationSeconds);
+        return fileRepository
+                .findTop100ByFileTypeAndStatusAndSourceFileIdStartingWithAndCreatedAtBeforeOrderByCreatedAtAsc(
+                        FileType.VIDEO,
+                        FileStatus.UPLOADING,
+                        "livekit-egress:",
+                        threshold)
+                .stream()
+                .map(MediaFile::getFileId)
+                .toList();
+    }
+
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void expireLiveRecording(String fileId) {
+        MediaFile file = requireFile(fileId);
+        if (file.getStatus() != FileStatus.UPLOADING
+                || file.getSourceFileId() == null
+                || !file.getSourceFileId().startsWith("livekit-egress:")) {
+            return;
+        }
+        finishLiveRecording(file);
     }
 
     @Transactional
@@ -593,28 +638,34 @@ public class FileService {
             try {
                 egressService.stop(egressId);
             } catch (Exception ex) {
+                if (egressAlreadyStopped(ex)) {
+                    if (storedSourceSize(file) > 0) {
+                        completeStoppedRecording(file);
+                        return;
+                    }
+                    markRecordingAborted(file, ex.getMessage());
+                    return;
+                }
                 file.setStatus(FileStatus.FAILED);
                 file.setErrorCode("EGRESS_STOP_FAILED");
                 file.setErrorMessage(ex.getMessage());
                 file.setUpdatedAt(now());
                 fileRepository.save(file);
-                if (egressAlreadyStopped(ex)) {
-                    // egress 已被 LiveKit 中止/完成，停止请求视为已停止：如实标记失败，不再报错。
-                    file.setErrorCode("EGRESS_ABORTED");
-                    fileRepository.save(file);
-                    return;
-                }
                 throw error(HttpStatus.CONFLICT, "EGRESS_STOP_FAILED", ex.getMessage());
             }
         }
-        try {
-            long sourceSize = storage.statSize(file.getObjectKey());
+        completeStoppedRecording(file);
+    }
+
+    private void completeStoppedRecording(MediaFile file) {
+        long sourceSize = storedSourceSize(file);
+        if (sourceSize > 0) {
             file.setFileSize(sourceSize);
-        } catch (Exception ignored) {
-            // LiveKit may expose the MP4 shortly after stop returns; HLS worker will retry later.
         }
         file.setUploadedAt(now());
         file.setStatus(FileStatus.PROCESSING);
+        file.setErrorCode(null);
+        file.setErrorMessage(null);
         file.setUpdatedAt(now());
         MediaVideoFile video = ensureVideo(file, VideoFileStatus.PROCESSING);
         if (video.getEndedAt() == null) {
@@ -624,9 +675,34 @@ public class FileService {
         fileRepository.save(file);
     }
 
+    private long storedSourceSize(MediaFile file) {
+        try {
+            return storage.statSize(file.getObjectKey());
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private void markRecordingAborted(MediaFile file, String message) {
+        OffsetDateTime timestamp = now();
+        file.setStatus(FileStatus.FAILED);
+        file.setErrorCode("EGRESS_ABORTED");
+        file.setErrorMessage(message);
+        file.setUpdatedAt(timestamp);
+        MediaVideoFile video = ensureVideo(file, VideoFileStatus.FAILED);
+        video.setErrorCode("EGRESS_ABORTED");
+        video.setErrorMessage(message);
+        video.setEndedAt(video.getEndedAt() == null ? timestamp : video.getEndedAt());
+        video.setProcessingCompletedAt(timestamp);
+        videoRepository.save(video);
+        fileRepository.save(file);
+    }
+
     private boolean egressAlreadyStopped(Exception ex) {
         String message = String.valueOf(ex.getMessage()).toLowerCase(java.util.Locale.ROOT);
         return message.contains("egress_aborted")
+                || message.contains("egress not found")
+                || message.contains("egress_not_found")
                 || message.contains("cannot be stopped")
                 || message.contains("failed_precondition");
     }
@@ -840,11 +916,12 @@ public class FileService {
     }
 
     private Optional<MediaFile> findActiveLiveRecording(String sessionId, CurrentUser user) {
-        List<MediaFile> candidates = fileRepository.findTop10ByFileTypeAndStatusOrderByUpdatedAtAsc(FileType.VIDEO, FileStatus.UPLOADING);
-        return candidates.stream()
-                .filter(file -> file.getSourceFileId() != null && file.getSourceFileId().startsWith("livekit-egress:" + sessionId + ":"))
-                .filter(file -> user == null || Objects.equals(file.getOrgId(), user.orgId()))
-                .findFirst();
+        return fileRepository
+                .findFirstByFileTypeAndStatusAndSourceFileIdStartingWithOrderByUpdatedAtAsc(
+                        FileType.VIDEO,
+                        FileStatus.UPLOADING,
+                        "livekit-egress:" + sessionId + ":")
+                .filter(file -> user == null || Objects.equals(file.getOrgId(), user.orgId()));
     }
 
     private void refresh(MediaFileUpload upload) {

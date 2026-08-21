@@ -46,7 +46,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 @Service
 public class StatisticsService {
@@ -55,6 +59,8 @@ public class StatisticsService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter LENIENT_DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-M-d HH:mm:ss");
     private static final DateTimeFormatter FILE_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final int MAX_REPORTS_PER_USER = 100;
+    private static final int REPORT_RETENTION_DAYS = 30;
     private static final ExecutorService IO_EXECUTOR = Executors.newFixedThreadPool(4, runnable -> {
         Thread thread = new Thread(runnable, "statistics-io");
         thread.setDaemon(true);
@@ -161,11 +167,12 @@ public class StatisticsService {
                 "taskCompletion", taskCompletion);
     }
 
-    public byte[] exportPdf(Map<String, Object> request) {
-        return createReport(request).bytes();
+    public byte[] exportPdf(Map<String, Object> request, Authentication authentication) {
+        return createReport(request, authentication).bytes();
     }
 
-    public ReportFile createReport(Map<String, Object> request) {
+    public ReportFile createReport(Map<String, Object> request, Authentication authentication) {
+        ReportOwner owner = reportOwner(authentication);
         ReportSelection selection = reportSelection(request);
         List<Map<String, Object>> deviceTypeOptions = deviceTypeOptions();
         Map<String, Object> data = overview(
@@ -183,21 +190,34 @@ public class StatisticsService {
         String filename = reportName + "-" + LocalDateTime.now(CHINA_ZONE).format(FILE_DATE_FORMATTER) + ".pdf";
         String storedFilename = id + ".pdf";
         Path reportPath = reportStorageDir.resolve(storedFilename);
-        ReportHistory history = new ReportHistory(id, reportName, filename, createdAt, "PDF", "COMPLETED", storedFilename);
+        ReportHistory history = new ReportHistory(
+                id,
+                reportName,
+                filename,
+                createdAt,
+                "PDF",
+                "COMPLETED",
+                storedFilename,
+                owner.userId(),
+                owner.orgId());
         synchronized (historyLock) {
             writeBytes(reportPath, bytes);
             reportHistories.put(id, history);
+            cleanupReportHistories(owner, LocalDateTime.now(CHINA_ZONE));
             saveReportHistories();
         }
         return new ReportFile(id, filename, bytes);
     }
 
-    public Map<String, Object> reportHistoryList(int page, int size) {
+    public Map<String, Object> reportHistoryList(int page, int size, Authentication authentication) {
+        ReportOwner owner = reportOwner(authentication);
         int normalizedPage = Math.max(page, 1);
-        int normalizedSize = Math.max(size, 1);
+        int normalizedSize = Math.min(Math.max(size, 1), 100);
         List<ReportHistory> reports;
         synchronized (historyLock) {
-            reports = new ArrayList<>(reportHistories.values());
+            reports = new ArrayList<>(reportHistories.values().stream()
+                    .filter(report -> report.ownedBy(owner))
+                    .toList());
         }
         reports.sort((left, right) -> Long.compare(parseReportId(right.id()), parseReportId(left.id())));
 
@@ -214,9 +234,10 @@ public class StatisticsService {
                 "size", normalizedSize);
     }
 
-    public ReportFile reportFile(String id) {
+    public ReportFile reportFile(String id, Authentication authentication) {
+        ReportOwner owner = reportOwner(authentication);
         ReportHistory history = reportHistories.get(id);
-        if (history == null) {
+        if (history == null || !history.ownedBy(owner)) {
             return null;
         }
         Path reportPath = reportStorageDir.resolve(history.filePath()).normalize();
@@ -226,15 +247,31 @@ public class StatisticsService {
         return new ReportFile(history.id(), history.filename(), readBytes(reportPath));
     }
 
-    public boolean deleteReport(String id) {
+    public boolean deleteReport(String id, Authentication authentication) {
+        ReportOwner owner = reportOwner(authentication);
         synchronized (historyLock) {
-            ReportHistory history = reportHistories.remove(id);
-            if (history == null) {
+            ReportHistory history = reportHistories.get(id);
+            if (history == null || !history.ownedBy(owner)) {
                 return false;
             }
-            deleteFile(reportStorageDir.resolve(history.filePath()));
+            removeReport(history);
             saveReportHistories();
             return true;
+        }
+    }
+
+    /** 定期清理过期报告；单用户容量限制在生成报告时同步执行。 */
+    @Scheduled(fixedDelayString = "${statistics.report.cleanup-interval-ms:3600000}")
+    void cleanupExpiredReports() {
+        synchronized (historyLock) {
+            int before = reportHistories.size();
+            LocalDateTime cutoff = LocalDateTime.now(CHINA_ZONE).minusDays(REPORT_RETENTION_DAYS);
+            new ArrayList<>(reportHistories.values()).stream()
+                    .filter(report -> report.createdAt().isBefore(cutoff))
+                    .forEach(this::removeReport);
+            if (before != reportHistories.size()) {
+                saveReportHistories();
+            }
         }
     }
 
@@ -262,7 +299,9 @@ public class StatisticsService {
                         stringValue(row.get("downloadTime"), "-"),
                         stringValue(row.get("format"), "PDF"),
                         stringValue(row.get("status"), "COMPLETED"),
-                        filePath);
+                        filePath,
+                        stringValue(row.get("createdBy"), null),
+                        stringValue(row.get("orgId"), null));
                 reportHistories.put(id, history);
                 maxId = Math.max(maxId, parseReportId(id));
             }
@@ -316,6 +355,40 @@ public class StatisticsService {
         } catch (IOException ex) {
             throw new IllegalStateException("删除历史报告文件失败: " + path, ex);
         }
+    }
+
+    private ReportOwner reportOwner(Authentication authentication) {
+        if (authentication == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "缺少有效用户身份");
+        }
+        String userId = authentication.getName();
+        String orgId = null;
+        if (authentication instanceof JwtAuthenticationToken jwtAuthentication) {
+            userId = jwtAuthentication.getToken().getSubject();
+            orgId = firstString(jwtAuthentication.getToken().getClaims(),
+                    "org_id", "orgId", "organization_id", "tenant_id");
+        }
+        if (userId == null || userId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户身份缺少 subject");
+        }
+        return new ReportOwner(userId, orgId);
+    }
+
+    private void cleanupReportHistories(ReportOwner owner, LocalDateTime now) {
+        LocalDateTime cutoff = now.minusDays(REPORT_RETENTION_DAYS);
+        new ArrayList<>(reportHistories.values()).stream()
+                .filter(report -> report.createdAt().isBefore(cutoff))
+                .forEach(this::removeReport);
+        List<ReportHistory> owned = reportHistories.values().stream()
+                .filter(report -> report.ownedBy(owner))
+                .sorted(Comparator.comparingLong(report -> -parseReportId(report.id())))
+                .toList();
+        owned.stream().skip(MAX_REPORTS_PER_USER).forEach(this::removeReport);
+    }
+
+    private void removeReport(ReportHistory history) {
+        reportHistories.remove(history.id(), history);
+        deleteFile(reportStorageDir.resolve(history.filePath()));
     }
 
     private long parseReportId(String id) {
@@ -1173,6 +1246,9 @@ public class StatisticsService {
     public record ReportFile(String id, String filename, byte[] bytes) {
     }
 
+    private record ReportOwner(String userId, String orgId) {
+    }
+
     private record MileageWindow(
             LocalDateTime start,
             LocalDateTime end,
@@ -1181,7 +1257,21 @@ public class StatisticsService {
     }
 
     private record ReportHistory(String id, String reportName, String filename, String downloadTime, String format,
-            String status, String filePath) {
+            String status, String filePath, String createdBy, String orgId) {
+
+        boolean ownedBy(ReportOwner owner) {
+            return createdBy != null
+                    && createdBy.equals(owner.userId())
+                    && Objects.equals(orgId, owner.orgId());
+        }
+
+        LocalDateTime createdAt() {
+            try {
+                return LocalDateTime.parse(downloadTime, DATE_TIME_FORMATTER);
+            } catch (DateTimeParseException exception) {
+                return LocalDateTime.MIN;
+            }
+        }
 
         Map<String, Object> toResponse() {
             return object(
@@ -1204,7 +1294,9 @@ public class StatisticsService {
                     "downloadTime", downloadTime,
                     "format", format,
                     "status", status,
-                    "filePath", filePath);
+                    "filePath", filePath,
+                    "createdBy", createdBy,
+                    "orgId", orgId);
         }
 
         private Map<String, Object> object(Object... entries) {

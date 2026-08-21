@@ -62,7 +62,8 @@ public class ControlVideoSessionController {
      */
     @GetMapping
     public List<VideoSessionResponse> recent(HttpServletRequest servletRequest) {
-        return mediaServiceClient.recent(currentUserResolver.resolve(servletRequest));
+        CurrentUser user = currentUserResolver.resolve(servletRequest);
+        return controlVideoCommandService.filterAuthorizedSessions(mediaServiceClient.recent(user));
     }
 
     /**
@@ -71,8 +72,9 @@ public class ControlVideoSessionController {
      * @return 活跃视频会话列表
      */
     @GetMapping("/active")
-    public List<VideoSessionResponse> active() {
-        return mediaServiceClient.active();
+    public List<VideoSessionResponse> active(HttpServletRequest servletRequest) {
+        currentUserResolver.resolve(servletRequest);
+        return controlVideoCommandService.filterAuthorizedSessions(mediaServiceClient.active());
     }
 
     /**
@@ -84,7 +86,9 @@ public class ControlVideoSessionController {
      */
     @GetMapping("/{sessionId}")
     public VideoSessionResponse get(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return mediaServiceClient.get(sessionId, currentUserResolver.resolve(servletRequest));
+        return controlVideoCommandService.requireAuthorizedSession(
+                sessionId,
+                currentUserResolver.resolve(servletRequest));
     }
 
     /**
@@ -94,7 +98,10 @@ public class ControlVideoSessionController {
      * @return Track 列表
      */
     @GetMapping("/{sessionId}/tracks")
-    public List<MediaTrackResponse> tracks(@PathVariable String sessionId) {
+    public List<MediaTrackResponse> tracks(@PathVariable String sessionId, HttpServletRequest servletRequest) {
+        controlVideoCommandService.requireAuthorizedSession(
+                sessionId,
+                currentUserResolver.resolve(servletRequest));
         return mediaServiceClient.tracks(sessionId);
     }
 
@@ -108,6 +115,7 @@ public class ControlVideoSessionController {
     @PostMapping("/{sessionId}/token")
     public ViewerTokenResponse token(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         CurrentUser user = currentUserResolver.resolve(servletRequest);
+        controlVideoCommandService.requireAuthorizedSession(sessionId, user);
         return mediaServiceClient.token(sessionId, user);
     }
 
@@ -121,7 +129,7 @@ public class ControlVideoSessionController {
     @PostMapping("/{sessionId}/intercom/start")
     public IntercomResponse startIntercom(@PathVariable String sessionId, HttpServletRequest servletRequest) {
         CurrentUser user = currentUserResolver.resolve(servletRequest);
-        VideoSessionResponse session = mediaServiceClient.get(sessionId, user);
+        VideoSessionResponse session = controlVideoCommandService.requireAuthorizedSession(sessionId, user);
         intercomCallService.requireManualIntercomAllowed(session.robotId());
         return controlVideoCommandService.startIntercom(sessionId, user);
     }
@@ -135,7 +143,9 @@ public class ControlVideoSessionController {
      */
     @PostMapping("/{sessionId}/intercom/token")
     public IntercomResponse intercomToken(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return mediaServiceClient.intercomToken(sessionId, currentUserResolver.resolve(servletRequest));
+        CurrentUser user = currentUserResolver.resolve(servletRequest);
+        controlVideoCommandService.requireAuthorizedSession(sessionId, user);
+        return mediaServiceClient.intercomToken(sessionId, user);
     }
 
     /**
@@ -147,7 +157,9 @@ public class ControlVideoSessionController {
      */
     @PostMapping("/{sessionId}/intercom/heartbeat")
     public IntercomResponse intercomHeartbeat(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return mediaServiceClient.intercomHeartbeat(sessionId, currentUserResolver.resolve(servletRequest));
+        CurrentUser user = currentUserResolver.resolve(servletRequest);
+        controlVideoCommandService.requireAuthorizedSession(sessionId, user);
+        return mediaServiceClient.intercomHeartbeat(sessionId, user);
     }
 
     /**
@@ -173,7 +185,9 @@ public class ControlVideoSessionController {
      */
     @PostMapping("/{sessionId}/heartbeat")
     public VideoSessionResponse heartbeat(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return mediaServiceClient.heartbeat(sessionId, currentUserResolver.resolve(servletRequest));
+        CurrentUser user = currentUserResolver.resolve(servletRequest);
+        controlVideoCommandService.requireAuthorizedSession(sessionId, user);
+        return mediaServiceClient.heartbeat(sessionId, user);
     }
 
     /**
@@ -185,7 +199,9 @@ public class ControlVideoSessionController {
      */
     @PostMapping("/{sessionId}/stop")
     public VideoSessionResponse stop(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return mediaServiceClient.stop(sessionId, currentUserResolver.resolve(servletRequest));
+        CurrentUser user = currentUserResolver.resolve(servletRequest);
+        controlVideoCommandService.requireAuthorizedSession(sessionId, user);
+        return mediaServiceClient.stop(sessionId, user);
     }
 
     /**
@@ -208,8 +224,14 @@ public class ControlVideoSessionController {
      * @return 视频会话响应
      */
     @PostMapping("/{sessionId}/switch-channel")
-    public VideoSessionResponse switchChannel(@PathVariable String sessionId, @Valid @RequestBody SwitchChannelRequest request) {
-        return controlVideoCommandService.switchChannel(sessionId, request);
+    public VideoSessionResponse switchChannel(
+            @PathVariable String sessionId,
+            @Valid @RequestBody SwitchChannelRequest request,
+            HttpServletRequest servletRequest) {
+        return controlVideoCommandService.switchChannel(
+                sessionId,
+                request,
+                currentUserResolver.resolve(servletRequest));
     }
 
     /**
@@ -221,7 +243,9 @@ public class ControlVideoSessionController {
      */
     @PostMapping("/{sessionId}/recordings/start")
     public FileListItemResponse startRecording(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return mediaServiceClient.startLiveRecording(sessionId, currentUserResolver.resolve(servletRequest));
+        CurrentUser user = currentUserResolver.resolve(servletRequest);
+        controlVideoCommandService.requireAuthorizedSession(sessionId, user);
+        return mediaServiceClient.startLiveRecording(sessionId, user);
     }
 
     /**
@@ -237,7 +261,9 @@ public class ControlVideoSessionController {
             @PathVariable String sessionId,
             @PathVariable String fileId,
             HttpServletRequest servletRequest) {
-        return mediaServiceClient.stopLiveRecording(sessionId, fileId, currentUserResolver.resolve(servletRequest));
+        CurrentUser user = currentUserResolver.resolve(servletRequest);
+        controlVideoCommandService.requireAuthorizedSession(sessionId, user);
+        return mediaServiceClient.stopLiveRecording(sessionId, fileId, user);
     }
 
     /**
@@ -249,6 +275,8 @@ public class ControlVideoSessionController {
      */
     @GetMapping("/{sessionId}/recordings/active")
     public FileListItemResponse activeRecording(@PathVariable String sessionId, HttpServletRequest servletRequest) {
-        return mediaServiceClient.activeLiveRecording(sessionId, currentUserResolver.resolve(servletRequest));
+        CurrentUser user = currentUserResolver.resolve(servletRequest);
+        controlVideoCommandService.requireAuthorizedSession(sessionId, user);
+        return mediaServiceClient.activeLiveRecording(sessionId, user);
     }
 }

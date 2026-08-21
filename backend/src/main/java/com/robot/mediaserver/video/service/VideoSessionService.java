@@ -480,10 +480,10 @@ public class VideoSessionService {
         if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
             throw new IllegalStateException("当前会话未在推流");
         }
-        if (!liveKitRoomService.hasActiveVideoTrack(session.getRoomName(), session.getTrackSid())) {
-            throw new IllegalStateException("房间无活跃推流，无法录制");
-        }
-        return fileService.startLiveRecording(session, user);
+        String liveKitTrackSid = liveKitRoomService
+                .resolveActiveVideoTrackSid(session.getRoomName(), session.getTrackSid())
+                .orElseThrow(() -> new IllegalStateException("房间无活跃推流，无法录制"));
+        return fileService.startLiveRecording(session, liveKitTrackSid, user);
     }
 
     public FileListItemResponse stopRecording(String sessionId, String fileId, CurrentUser user) {

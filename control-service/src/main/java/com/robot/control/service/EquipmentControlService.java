@@ -284,10 +284,20 @@ public class EquipmentControlService {
      * @param robotId          机器人 ID
      * @param controlSessionId 控制会话 ID
      * @param request          请求参数
+     * @param user 当前用户
      * @return 释放结果
      */
-    public Map<String, Object> release(String robotId, String controlSessionId, Map<String, Object> request) {
+    public Map<String, Object> release(
+            String robotId,
+            String controlSessionId,
+            Map<String, Object> request,
+            CurrentUser user) {
+        requireRobot(robotId);
         Map<String, Object> session = requireSession(robotId, controlSessionId);
+        if (!user.userId().equals(session.get("ownerUserId"))
+                || !user.clientId().equals(session.get("ownerClientId"))) {
+            throw new IllegalArgumentException("当前用户或终端无权释放该控制会话");
+        }
         session.put("status", "RELEASED");
         session.put("releasedAt", OffsetDateTime.now());
         session.put("reason", request == null ? "user_release" : stringValue(request.get("reason"), "user_release"));
@@ -400,11 +410,6 @@ public class EquipmentControlService {
             return payload;
         }
         Optional<Map<String, Object>> managementRobot = managementClient.cachedDeviceBySerialNumber(robotId);
-        if (managementRobot.isEmpty()) {
-            robotStates.remove(robotId);
-            log.debug("媒体客户端状态对应的管理端设备档案不存在，已忽略，robotId={}", robotId);
-            return Map.of();
-        }
         Map<String, Object> previous = robotStates.getOrDefault(robotId, Map.of());
         Map<String, Object> state = copy(previous);
         state.put("robotId", robotId);
@@ -430,9 +435,10 @@ public class EquipmentControlService {
         state.put("timestamp", DateTimeConfig.normalize(OffsetDateTime.now()));
         state.put("stateSource", "MEDIA_CLIENT_STATUS");
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
-        Map<String, Object> robot = managementRobot.get();
-        enrichRobotState(state, robot);
-        state.put("devices", devices(robot, runtimeDevices));
+        managementRobot.ifPresent(robot -> {
+            enrichRobotState(state, robot);
+            state.put("devices", devices(robot, runtimeDevices));
+        });
         robotStates.put(robotId, state);
         return state;
     }

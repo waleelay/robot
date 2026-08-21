@@ -142,8 +142,13 @@ public class ControlRobotController {
     public Map<String, Object> releaseControl(
             @PathVariable String robotId,
             @PathVariable String controlSessionId,
-            @RequestBody(required = false) Map<String, Object> request) {
-        return equipmentControlService.release(robotId, controlSessionId, request);
+            @RequestBody(required = false) Map<String, Object> request,
+            HttpServletRequest servletRequest) {
+        return equipmentControlService.release(
+                robotId,
+                controlSessionId,
+                request,
+                currentUserResolver.resolve(servletRequest));
     }
 
     /**

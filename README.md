@@ -114,7 +114,7 @@ Header 缺失时 Control 和 Media 会启用开发默认身份，该行为不是
 ## 6. 当前核心能力
 
 - 机器人摄像头和固定摄像头视频会话创建、复用、恢复、切换、停止与视频墙。
-- LiveKit viewer/publisher Token、Track 状态、语音对讲与 Egress 手动录像。
+- LiveKit viewer/publisher Token、Track 状态、语音对讲，以及支持刷新恢复、离线收口和最长时长保护的 Egress 手动录像。
 - 机器人排他控制租约、设备能力校验、通用设备命令和多合一设备控制。
 - 固定摄像头管理端档案校验、主/子码流选择及 Gateway MQTT 编排。
 - 机器人在线/设备状态合并、WebSocket 广播和任务失效通知。

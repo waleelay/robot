@@ -13,7 +13,7 @@ public class ControlProperties {
 
     private String mediaServiceBaseUrl = "http://localhost:8088";
     private String managementServiceBaseUrl = "http://host.docker.internal:8866";
-    private int deviceCacheTtlSeconds = 600;
+    private int deviceCacheTtlSeconds = 30;
 
     /**
      * 返回 Media Service 基础地址。

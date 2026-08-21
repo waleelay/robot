@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -47,7 +48,8 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private final BigscreenWebSocketAuthorizationService authorizationService;
     private final StandardWebSocketClient webSocketClient;
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
-    private final Map<String, Set<String>> authorizedRobotIdsBySession = new ConcurrentHashMap<>();
+    private final Map<String, BigscreenWebSocketAuthorizationService.AuthorizedResources> authorizedResourcesBySession =
+            new ConcurrentHashMap<>();
     private final Set<WebSocketSession> browserSessions = ConcurrentHashMap.newKeySet();
 
     public BigscreenWebSocketBridgeHandler(
@@ -75,10 +77,17 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession browserSession) throws Exception {
-        Set<String> authorizedRobotIds = authorizationService.authorizedRobotIds(browserSession);
-        authorizedRobotIdsBySession.put(browserSession.getId(), authorizedRobotIds);
-        log.debug("大屏 WebSocket 会话授权设备加载完成，会话={} 数量={}",
-                browserSession.getId(), authorizedRobotIds.size());
+        BigscreenWebSocketAuthorizationService.AuthorizedResources resources;
+        try {
+            resources = authorizationService.authorizedResources(browserSession);
+        } catch (RuntimeException exception) {
+            log.warn("大屏 WebSocket 初始权限加载失败，会话={}", browserSession.getId(), exception);
+            browserSession.close(new CloseStatus(4003, "权限加载失败"));
+            return;
+        }
+        authorizedResourcesBySession.put(browserSession.getId(), resources);
+        log.debug("大屏 WebSocket 会话授权资源加载完成，会话={} 设备数={} 固定摄像头数={}",
+                browserSession.getId(), resources.robotIds().size(), resources.cameraIds().size());
         browserSessions.add(browserSession);
         try {
             WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
@@ -109,7 +118,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession browserSession, CloseStatus status) throws Exception {
         logClose("浏览器", browserSession, status);
         browserSessions.remove(browserSession);
-        authorizedRobotIdsBySession.remove(browserSession.getId());
+        authorizedResourcesBySession.remove(browserSession.getId());
         eventAdapter.removeSession(browserSession.getId());
         locationEventThrottler.remove(browserSession.getId());
         statsEventRefresher.remove(browserSession.getId());
@@ -137,6 +146,26 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 sendToBrowserSession(browserSession, payload);
             } catch (Exception exception) {
                 log.warn("向浏览器广播事件失败，会话={}", browserSession.getId(), exception);
+            }
+        }
+    }
+
+    /** 定期刷新会话授权；刷新失败时关闭连接，禁止继续使用旧权限快照。 */
+    @Scheduled(fixedDelayString = "${bigscreen.websocket.authorization-refresh-ms:30000}")
+    void refreshSessionAuthorizations() {
+        for (WebSocketSession browserSession : browserSessions) {
+            if (!browserSession.isOpen()) {
+                browserSessions.remove(browserSession);
+                authorizedResourcesBySession.remove(browserSession.getId());
+                continue;
+            }
+            try {
+                authorizedResourcesBySession.put(
+                        browserSession.getId(),
+                        authorizationService.authorizedResources(browserSession));
+            } catch (RuntimeException exception) {
+                log.warn("刷新大屏 WebSocket 会话权限失败，关闭会话={}", browserSession.getId(), exception);
+                closeForAuthorizationFailure(browserSession);
             }
         }
     }
@@ -217,7 +246,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                     statsEventRefresher.requestRefresh(
                             browserSession.getId(),
                             authentication,
-                            payload -> sendToBrowserSession(browserSession, payload),
+                            payload -> sendUserScopedToBrowserSession(browserSession, payload),
                             statsParts);
                 }
                 if (refreshTasks) {
@@ -225,14 +254,14 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                     taskEventRefresher.requestRefresh(
                             browserSession.getId(),
                             authentication,
-                            payload -> sendToBrowserSession(browserSession, payload));
+                            payload -> sendUserScopedToBrowserSession(browserSession, payload));
                 }
                 if (refreshAlarms) {
                     Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
                     alarmEventRefresher.requestRefresh(
                             browserSession.getId(),
                             authentication,
-                            payload -> sendToBrowserSession(browserSession, payload));
+                            payload -> sendUserScopedToBrowserSession(browserSession, payload));
                 }
             }
         }
@@ -257,17 +286,41 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         if (!browserSession.isOpen()) {
             return;
         }
-        Set<String> authorizedRobotIds = authorizedRobotIdsBySession.get(browserSession.getId());
-        if (!authorizationService.canReceive(authorizedRobotIds, payload)) {
+        BigscreenWebSocketAuthorizationService.AuthorizedResources resources =
+                authorizedResourcesBySession.get(browserSession.getId());
+        if (!authorizationService.canReceive(resources, payload)) {
             log.debug("已过滤无权限设备 WebSocket 事件，会话={}", browserSession.getId());
             return;
         }
         try {
-            synchronized (browserSession) {
-                browserSession.sendMessage(new TextMessage(payload));
-            }
+            sendText(browserSession, payload);
         } catch (Exception exception) {
             log.warn("向浏览器发送事件失败，会话={}", browserSession.getId(), exception);
+        }
+    }
+
+    private void sendUserScopedToBrowserSession(WebSocketSession browserSession, String payload) {
+        if (!browserSession.isOpen()) {
+            return;
+        }
+        try {
+            sendText(browserSession, payload);
+        } catch (Exception exception) {
+            log.warn("向浏览器发送用户范围事件失败，会话={}", browserSession.getId(), exception);
+        }
+    }
+
+    private void sendText(WebSocketSession browserSession, String payload) throws Exception {
+        synchronized (browserSession) {
+            browserSession.sendMessage(new TextMessage(payload));
+        }
+    }
+
+    private void closeForAuthorizationFailure(WebSocketSession browserSession) {
+        try {
+            browserSession.close(new CloseStatus(4003, "权限刷新失败"));
+        } catch (Exception closeException) {
+            log.debug("关闭权限失效的大屏 WebSocket 会话失败，会话={}", browserSession.getId(), closeException);
         }
     }
 

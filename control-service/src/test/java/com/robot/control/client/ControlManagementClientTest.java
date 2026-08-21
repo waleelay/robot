@@ -19,7 +19,7 @@ import org.springframework.web.client.RestClient;
 class ControlManagementClientTest {
 
     @Test
-    void warmsDeviceDetailsAndDictionaryForBackgroundStatusEnrichment() {
+    void keepsWarmedDeviceDetailsIsolatedToCurrentUser() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         ControlProperties properties = new ControlProperties();
@@ -46,11 +46,15 @@ class ControlManagementClientTest {
                         """, MediaType.APPLICATION_JSON));
 
         client.warmCurrentUserDeviceCache();
-        when(authorizationHeaders.currentCacheKey()).thenReturn(Optional.empty());
 
         Map<String, Object> profile = client.cachedDeviceBySerialNumber("robot-001").orElseThrow();
         assertThat((List<?>) profile.get("components")).singleElement();
         assertThat(client.deviceTypeName("ROBOT_DOG")).contains("机器狗");
+
+        when(authorizationHeaders.currentCacheKey()).thenReturn(Optional.empty());
+
+        assertThat(client.cachedDeviceBySerialNumber("robot-001")).isEmpty();
+        assertThat(client.deviceTypeName("ROBOT_DOG")).isEmpty();
         server.verify();
     }
 }

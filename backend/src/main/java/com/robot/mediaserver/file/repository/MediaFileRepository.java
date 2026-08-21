@@ -15,6 +15,17 @@ public interface MediaFileRepository extends JpaRepository<MediaFile, String>, J
 
     List<MediaFile> findTop10ByFileTypeAndStatusOrderByUpdatedAtAsc(FileType fileType, FileStatus status);
 
+    Optional<MediaFile> findFirstByFileTypeAndStatusAndSourceFileIdStartingWithOrderByUpdatedAtAsc(
+            FileType fileType,
+            FileStatus status,
+            String sourceFileIdPrefix);
+
+    List<MediaFile> findTop100ByFileTypeAndStatusAndSourceFileIdStartingWithAndCreatedAtBeforeOrderByCreatedAtAsc(
+            FileType fileType,
+            FileStatus status,
+            String sourceFileIdPrefix,
+            OffsetDateTime createdAt);
+
     List<MediaFile> findTop10ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(FileStatus status, OffsetDateTime updatedAt);
 
     List<MediaFile> findTop10ByStatusOrderByUpdatedAtAsc(FileStatus status);

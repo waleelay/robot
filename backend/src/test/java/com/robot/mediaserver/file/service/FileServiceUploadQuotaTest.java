@@ -70,6 +70,31 @@ class FileServiceUploadQuotaTest {
                 });
     }
 
+    @Test
+    void rejectsMissingRobotHeader() {
+        assertThatThrownBy(() -> service.createOrResumeMultipart(" ", request()))
+                .isInstanceOf(FileApiException.class)
+                .satisfies(ex -> {
+                    FileApiException apiException = (FileApiException) ex;
+                    assertThat(apiException.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                    assertThat(apiException.getCode()).isEqualTo("ROBOT_ID_REQUIRED");
+                });
+    }
+
+    @Test
+    void rejectsRobotIdOverrideFromRequestBody() {
+        CreateMultipartFileUploadRequest request = request();
+        request.setRobotId("robot-2");
+
+        assertThatThrownBy(() -> service.createOrResumeMultipart("robot-1", request))
+                .isInstanceOf(FileApiException.class)
+                .satisfies(ex -> {
+                    FileApiException apiException = (FileApiException) ex;
+                    assertThat(apiException.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                    assertThat(apiException.getCode()).isEqualTo("ROBOT_ID_MISMATCH");
+                });
+    }
+
     private CreateMultipartFileUploadRequest request() {
         CreateMultipartFileUploadRequest request = new CreateMultipartFileUploadRequest();
         request.setRobotId("robot-1");

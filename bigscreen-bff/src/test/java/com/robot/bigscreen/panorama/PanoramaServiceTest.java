@@ -503,7 +503,7 @@ class PanoramaServiceTest {
     }
 
     @Test
-    void includesRuntimeRegisteredRobotsWhenManagementListDoesNotContainThem() {
+    void excludesRuntimeRegisteredRobotsWhenManagementListDoesNotAuthorizeThem() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         when(centerClient.registeredRobots()).thenReturn(List.of(Map.of(
@@ -533,21 +533,7 @@ class PanoramaServiceTest {
         Map<String, Object> overview = service.overview();
 
         List<Map<String, Object>> devices = maps(overview.get("devices"));
-        assertEquals(1, devices.size());
-        assertEquals("test111", devices.get(0).get("robotId"));
-        assertEquals("online", devices.get(0).get("status"));
-        assertFalse(devices.get(0).containsKey("clientId"));
-        assertFalse(devices.get(0).containsKey("vendor"));
-        assertFalse(devices.get(0).containsKey("lastHeartbeatAt"));
-        assertFalse(devices.get(0).containsKey("mountedDevices"));
-        assertFalse(devices.get(0).containsKey("mapDisplay"));
-        Map<?, ?> location = (Map<?, ?>) devices.get(0).get("location");
-        assertFalse(location.containsKey("altitude"));
-        assertFalse(location.containsKey("updatedAt"));
-        assertEquals(3.0, location.get("z"));
-        assertEquals(1, maps(devices.get(0).get("cameras")).size());
-        assertNull(devices.get(0).get("typeCode"));
-        assertNull(devices.get(0).get("type"));
+        assertTrue(devices.isEmpty());
     }
 
     @Test

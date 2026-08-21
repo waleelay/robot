@@ -66,9 +66,9 @@ public class RequestAuthorizationHeaders {
     public Optional<String> currentCacheKey() {
         Map<String, String> websocketHeaders = WEBSOCKET_HEADERS.get();
         if (websocketHeaders != null) {
-            return Optional.of(cacheKey(websocketHeaders));
+            return cacheKey(websocketHeaders);
         }
-        return currentRequest().map(request -> {
+        return currentRequest().flatMap(request -> {
             Map<String, String> headers = Map.of(
                     HttpHeaders.AUTHORIZATION, value(request.getHeader(HttpHeaders.AUTHORIZATION)),
                     "X-User-Id", value(request.getHeader("X-User-Id")),
@@ -78,18 +78,19 @@ public class RequestAuthorizationHeaders {
         });
     }
 
-    private String cacheKey(Map<String, String> headers) {
+    private Optional<String> cacheKey(Map<String, String> headers) {
+        String authorization = headers.get(HttpHeaders.AUTHORIZATION);
+        if (!StringUtils.hasText(authorization)
+                || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            return Optional.empty();
+        }
         String userId = headers.get("X-User-Id");
         String orgId = headers.get("X-Org-Id");
         String roles = headers.get("X-Roles");
         if (StringUtils.hasText(userId) || StringUtils.hasText(orgId) || StringUtils.hasText(roles)) {
-            return "headers:" + sha256(value(userId) + "|" + value(orgId) + "|" + value(roles));
+            return Optional.of("headers:" + sha256(value(userId) + "|" + value(orgId) + "|" + value(roles)));
         }
-        String authorization = headers.get(HttpHeaders.AUTHORIZATION);
-        if (StringUtils.hasText(authorization) && authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
-            return "bearer:" + sha256(authorization);
-        }
-        return "anonymous";
+        return Optional.of("bearer:" + sha256(authorization));
     }
 
     private Optional<HttpServletRequest> currentRequest() {

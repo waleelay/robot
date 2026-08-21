@@ -69,6 +69,19 @@ const state = {
 }
 
 const mutations = {
+  RESET_OVERVIEW_RESOURCE_STATE(state) {
+    state.deviceObj = {};
+    state.taskData = {};
+    state.alarmsData = {};
+    state.robotLocation = {};
+    state.robotBaseInfo = {};
+    state.realtimeRobotIds = {};
+    state.robotList = [];
+    state.robotAlarmObj = {};
+    state.taskPathPoints = {};
+    state.defaultGpsDevices = [];
+    state.overviewReady = false;
+  },
   SET_DEVICE_OBJ(state, value) {
     state.deviceObj = value;
   },
@@ -85,6 +98,26 @@ const mutations = {
       ...collectTaskEquipmentIds(prev),
       ...collectTaskEquipmentIds(merged),
       ...robotsHoldingTask(state.robotBaseInfo, value.taskId),
+      ...Object.keys(state.robotBaseInfo || {})
+    ])
+  },
+  REMOVE_TASK_INFO(state, taskId) {
+    if (taskId === undefined || taskId === null) return
+    const prev = getTaskById(state.taskData, taskId)
+    if (!prev) return
+    const nextTasks = { ...state.taskData }
+    Object.keys(nextTasks).forEach(key => {
+      if (String(key) === String(taskId)) delete nextTasks[key]
+    })
+    state.taskData = nextTasks
+    const nextPaths = { ...state.taskPathPoints }
+    Object.keys(nextPaths).forEach(key => {
+      if (String(key) === String(taskId)) delete nextPaths[key]
+    })
+    state.taskPathPoints = nextPaths
+    applyDerivedRobotTasks(state, [
+      ...collectTaskEquipmentIds(prev),
+      ...robotsHoldingTask(state.robotBaseInfo, taskId),
       ...Object.keys(state.robotBaseInfo || {})
     ])
   },
@@ -109,6 +142,25 @@ const mutations = {
       items: [...(next[level].items || []), { ...value, level: value.level.toUpperCase() }]
     };
     state.alarmsData = next;
+  },
+  REMOVE_ALARM_DATA(state, alarmId) {
+    if (alarmId === undefined || alarmId === null) return
+    const next = { ...state.alarmsData }
+    ;['high', 'medium', 'low'].forEach(key => {
+      const group = next[key] || { items: [] }
+      next[key] = {
+        ...group,
+        items: (group.items || []).filter(item => String(item.alarmId) !== String(alarmId))
+      }
+    })
+    state.alarmsData = next
+    const nextRobotAlarms = { ...state.robotAlarmObj }
+    Object.keys(nextRobotAlarms).forEach(robotId => {
+      if (String(nextRobotAlarms[robotId]?.alarmId) === String(alarmId)) {
+        delete nextRobotAlarms[robotId]
+      }
+    })
+    state.robotAlarmObj = nextRobotAlarms
   },
   BUMP_ALARM_REVISION(state) {
     state.alarmRevision += 1;
@@ -213,7 +265,11 @@ const mutations = {
 }
 
 const actions = {
+  resetOverviewResourceState({ commit }) {
+    commit('RESET_OVERVIEW_RESOURCE_STATE')
+  },
   setAll({commit, state, dispatch}, data) {
+    commit('RESET_OVERVIEW_RESOURCE_STATE')
     // 联通展厅 SLAM：注入模拟装备与任务路径
     const devices = [...(data?.devices || [])]
     const tasks = [...(data?.tasks || [])]
@@ -371,9 +427,19 @@ const actions = {
     } else if (event.event === 'panorama.device.location.changed') {
       commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
     } else if (event.event === 'panorama.task.changed') {
+      if (event.data?.changeType === 'REMOVE') {
+        commit('REMOVE_TASK_INFO', event.data.taskId)
+        return
+      }
       const task = event.data?.task || (event.data?.taskId != null ? event.data : null)
       if (task) commit('SET_TASK_INFO', task)
     } else if (event.event === 'panorama.alarm.changed') {
+      if (event.data?.changeType === 'REMOVE') {
+        commit('REMOVE_ALARM_DATA', event.data.alarmId)
+        if (event.data.summary) commit('SET_ALARM_SUMMARY', event.data.summary)
+        commit('BUMP_ALARM_REVISION')
+        return
+      }
       const alarm = event.data && event.data.alarm;
       if (!alarm) return;
       commit('SET_ALARMS_DATA', alarm);

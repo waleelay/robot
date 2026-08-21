@@ -36,7 +36,7 @@
     <audio :id="prefixId + ZQL_videosInfos[`slot_${index}`]?.key + '-audio'" autoplay />
     <!-- <canvas class="canvas-shuju" :id="`${prefixId}canvasslot_${index}`" style="z-index: 1; position: absolute;cursor: pointer;"></canvas> -->
     <template v-if="ZQL_videosInfos[`slot_${index}`]">
-      <div v-if="recordingActive" class="recording flx-align-center" @click="toggleLiveRecording(cameraInfo)" title="点击停止录制">
+      <div v-if="recordingActive" class="recording flx-align-center" @click="toggleLiveRecording(cameraInfo)" :title="recordingTitle">
         <span class="symbol" :class="{ 'is-active': recordingActive }"></span>
         <span class="ml6">{{ recordingTime }}</span>
       </div>
@@ -189,6 +189,9 @@ export default {
     recordingActive() {
       return this.cameraInfo.recordingActive
     },
+    recordingTitle() {
+      return this.cameraInfo.recordingOwned ? '点击停止录制' : '其他浏览器正在录制'
+    },
     // 固定摄像头：不展示控制中心 / 控制器
     isFixedCamera() {
       const video = this.ZQL_videosInfos[`slot_${this.index}`] || {}
@@ -225,10 +228,23 @@ export default {
   mounted() {
     document.addEventListener('fullscreenchange', this.handleFullScreenChange)
     document.addEventListener('webkitfullscreenchange', this.handleFullScreenChange)
+    if (this.recordingActive) this.startRecordTimer()
   },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
     ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSelectedRobotId', 'setControlCenterReturnTo', 'stopCamera']),
+    startRecordTimer() {
+      if (this.recordTimer) clearInterval(this.recordTimer)
+      const recording = this.cameraInfo.activeRecording || {}
+      const startedAt = recording.startedAt || recording.createdAt
+      const started = startedAt ? new Date(startedAt).getTime() : Date.now()
+      const update = () => {
+        this.seconds = Math.max(0, Math.floor((Date.now() - started) / 1000))
+        this.recordingTime = formatTiming(this.seconds)
+      }
+      update()
+      this.recordTimer = setInterval(update, 1000)
+    },
     async goControlCenter(robotId) {
       for (const [index, key] of Object.keys(this.activeCameras).entries()) {
         if (this.activeCameras[key]?.camera) {
@@ -300,13 +316,13 @@ export default {
     recordingActive(newVal) {
       if (newVal) {
         if (this.resetTimer) clearTimeout(this.resetTimer)
-        this.recordTimer = setInterval(() => {
-          this.seconds = this.seconds + 1
-          this.recordingTime = formatTiming(this.seconds)
-        }, 1000)
+        this.startRecordTimer()
       } else {
+        if (this.recordTimer) {
+          clearInterval(this.recordTimer)
+          this.recordTimer = null
+        }
         if (this.seconds) {
-          if (this.recordTimer) clearInterval(this.recordTimer)
           this.resetTimer = setTimeout(() => {
             this.seconds = 0
             this.recordingTime = formatTiming(0)

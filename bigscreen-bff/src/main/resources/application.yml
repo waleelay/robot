@@ -18,8 +18,13 @@ statistics:
   report:
     # 统计报表文件存储目录。
     storage-dir: ${STATISTICS_REPORT_STORAGE_DIR:data/statistics-reports}
+    # 历史报告过期清理周期。
+    cleanup-interval-ms: ${STATISTICS_REPORT_CLEANUP_INTERVAL_MS:3600000}
 
 bigscreen:
+  websocket:
+    # WebSocket 会话设备与固定摄像头权限刷新周期。
+    authorization-refresh-ms: ${BIGSCREEN_WS_AUTHORIZATION_REFRESH_MS:30000}
   auth:
     # BFF 校验 JWT audience/authorized party 时使用的客户端 ID。
     client-id: ${BIGSCREEN_AUTH_CLIENT_ID:bigscreen-web}

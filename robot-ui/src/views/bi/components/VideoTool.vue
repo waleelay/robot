@@ -50,7 +50,7 @@
         <div
           v-if="canRecord"
           @click="toggleLiveRecording(cameraInfo)"
-          :title="cameraInfo.recordingActive ? '停止录制' : '录制'"
+          :title="recordingTitle"
           :style="{ 'pointer-events': canRecord ? 'auto' : 'none' }"
         >
           <svg-icon icon-class="record" :style="{ color: cameraInfo.recordingActive ? '#21C8FF' : '#CAD4E0' }" />
@@ -171,7 +171,11 @@ export default {
           || this.intercomInProgress
     },
     activeRecordingInProgress() {
-      return this.cameraInfo.recordingActive || (this.cameraInfo.activeRecording && this.cameraInfo.activeRecording.status === 'RECORDING')
+      return this.cameraInfo.recordingActive || (this.cameraInfo.activeRecording && this.cameraInfo.activeRecording.status === 'UPLOADING')
+    },
+    recordingTitle() {
+      if (!this.cameraInfo.recordingActive) return '录制'
+      return this.cameraInfo.recordingOwned ? '停止录制' : '其他浏览器正在录制'
     },
     intercomInProgress() {
       return this.cameraInfo.intercomActive || (this.cameraInfo.intercomStatus && !['IDLE', 'FAILED'].includes(this.cameraInfo.intercomStatus))

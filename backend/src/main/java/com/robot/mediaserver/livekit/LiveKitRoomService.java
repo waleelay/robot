@@ -3,6 +3,7 @@ package com.robot.mediaserver.livekit;
 import com.robot.mediaserver.config.MediaProperties;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -52,7 +53,7 @@ public class LiveKitRoomService {
                 "name", roomName,
                 "emptyTimeout", properties.getLivekit().getRoomEmptyTimeoutSeconds(),
                 "departureTimeout", properties.getLivekit().getRoomDepartureTimeoutSeconds());
-        post("/twirp/livekit.RoomService/CreateRoom", payload);
+        post("/twirp/livekit.RoomService/CreateRoom", payload, tokenService.createAdminToken().token());
         log.info("已请求创建 LiveKit 房间 room={}", roomName);
     }
 
@@ -67,7 +68,10 @@ public class LiveKitRoomService {
             return;
         }
         try {
-            post("/twirp/livekit.RoomService/DeleteRoom", Map.of("room", roomName));
+            post(
+                    "/twirp/livekit.RoomService/DeleteRoom",
+                    Map.of("room", roomName),
+                    tokenService.createAdminToken().token());
         } catch (RestClientResponseException ex) {
             if (ex.getStatusCode() == HttpStatus.NOT_FOUND || roomAlreadyAbsent(ex)) {
                 log.info("LiveKit 房间已不存在 room={}", roomName);
@@ -86,46 +90,69 @@ public class LiveKitRoomService {
      * @return 房间有活跃视频轨道时返回 {@code true}；房间 API 未启用或查询异常时返回 {@code true}（不阻塞录像）
      */
     public boolean hasActiveVideoTrack(String roomName, String trackSid) {
+        return resolveActiveVideoTrackSid(roomName, trackSid).isPresent();
+    }
+
+    /**
+     * 查询房间内真实的视频轨道 SID。
+     *
+     * @param roomName 房间名
+     * @param preferredTrackSid 会话记录的轨道 SID
+     * @return 房间内真实存在的视频轨道 SID
+     */
+    public Optional<String> resolveActiveVideoTrackSid(String roomName, String preferredTrackSid) {
         if (!properties.getLivekit().isRoomApiEnabled()) {
-            return true;
+            return Optional.ofNullable(preferredTrackSid).filter(value -> !value.isBlank());
         }
         try {
             Map<?, ?> body = postForObject(
-                    "/twirp/livekit.RoomService/ListParticipants", Map.of("room", roomName));
-            Object rawParticipants = body == null ? null : body.get("participants");
-            if (!(rawParticipants instanceof List<?> participants) || participants.isEmpty()) {
-                return false;
-            }
-            for (Object participant : participants) {
-                if (!(participant instanceof Map<?, ?> participantMap)) {
-                    continue;
-                }
-                Object rawTracks = participantMap.get("tracks");
-                if (!(rawTracks instanceof List<?> tracks)) {
-                    continue;
-                }
-                for (Object track : tracks) {
-                    if (track instanceof Map<?, ?> trackMap && isVideoTrack(trackMap, trackSid)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
+                    "/twirp/livekit.RoomService/ListParticipants",
+                    Map.of("room", roomName),
+                    tokenService.createRoomAdminToken(roomName).token());
+            return resolveVideoTrackSid(body, preferredTrackSid);
         } catch (RestClientResponseException ex) {
             if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
                 log.info("房间不存在，无法校验推流 room={}", roomName);
-                return false;
+                return Optional.empty();
             }
-            log.warn("查询房间推流状态失败 room={}，放行录像", roomName, ex);
-            return true;
+            throw ex;
         }
     }
 
-    private boolean isVideoTrack(Map<?, ?> track, String trackSid) {
-        Object sid = track.get("sid");
-        if (trackSid != null && !trackSid.isBlank() && trackSid.equals(String.valueOf(sid))) {
-            return true;
+    static Optional<String> resolveVideoTrackSid(Map<?, ?> body, String preferredTrackSid) {
+        Object rawParticipants = body == null ? null : body.get("participants");
+        if (!(rawParticipants instanceof List<?> participants)) {
+            return Optional.empty();
         }
+        String firstVideoTrackSid = null;
+        for (Object participant : participants) {
+            if (!(participant instanceof Map<?, ?> participantMap)) {
+                continue;
+            }
+            Object rawTracks = participantMap.get("tracks");
+            if (!(rawTracks instanceof List<?> tracks)) {
+                continue;
+            }
+            for (Object track : tracks) {
+                if (!(track instanceof Map<?, ?> trackMap) || !isVideoTrack(trackMap)) {
+                    continue;
+                }
+                String sid = String.valueOf(trackMap.get("sid"));
+                if (sid.isBlank() || "null".equals(sid)) {
+                    continue;
+                }
+                if (sid.equals(preferredTrackSid)) {
+                    return Optional.of(sid);
+                }
+                if (firstVideoTrackSid == null) {
+                    firstVideoTrackSid = sid;
+                }
+            }
+        }
+        return Optional.ofNullable(firstVideoTrackSid);
+    }
+
+    private static boolean isVideoTrack(Map<?, ?> track) {
         String type = String.valueOf(track.get("type"));
         String kind = String.valueOf(track.get("kind"));
         String source = String.valueOf(track.get("source"));
@@ -136,8 +163,7 @@ public class LiveKitRoomService {
                 || "SCREEN_SHARE".equalsIgnoreCase(source);
     }
 
-    private Map<?, ?> postForObject(String path, Object payload) {
-        String token = tokenService.createAdminToken().token();
+    private Map<?, ?> postForObject(String path, Object payload, String token) {
         return restClient.post()
                 .uri(serverHttpUrl() + path)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
@@ -146,8 +172,7 @@ public class LiveKitRoomService {
                 .body(Map.class);
     }
 
-    private void post(String path, Object payload) {
-        String token = tokenService.createAdminToken().token();
+    private void post(String path, Object payload, String token) {
         restClient.post()
                 .uri(serverHttpUrl() + path)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)

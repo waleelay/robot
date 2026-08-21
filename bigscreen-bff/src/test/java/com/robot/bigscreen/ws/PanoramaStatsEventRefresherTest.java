@@ -81,7 +81,7 @@ class PanoramaStatsEventRefresherTest {
     }
 
     @Test
-    void keepsPreviousDeviceStatsWhenRefreshReturnsTransientEmptyDevices() throws Exception {
+    void publishesAuthorizedEmptyDeviceStatsWithoutKeepingStaleSnapshot() throws Exception {
         PanoramaService panoramaService = mock(PanoramaService.class);
         TaskScheduler taskScheduler = mock(TaskScheduler.class);
         ObjectMapper objectMapper = new ObjectMapper();
@@ -107,8 +107,8 @@ class PanoramaStatsEventRefresherTest {
 
         assertThat(events).hasSize(2);
         JsonNode second = objectMapper.readTree(events.get(1));
-        assertThat(second.path("data").path("deviceStats").path("total").asInt()).isEqualTo(1);
-        assertThat(second.path("data").path("deviceTypeStats")).hasSize(1);
+        assertThat(second.path("data").path("deviceStats").path("total").asInt()).isZero();
+        assertThat(second.path("data").path("deviceTypeStats")).isEmpty();
         assertThat(second.path("data").path("taskOverview").path("totalToday").asInt()).isEqualTo(1);
     }
 }

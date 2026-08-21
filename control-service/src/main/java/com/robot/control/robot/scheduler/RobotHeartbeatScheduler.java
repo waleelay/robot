@@ -27,7 +27,7 @@ public class RobotHeartbeatScheduler {
     /**
      * 执行周期扫描任务。
      */
-    @Scheduled(fixedDelayString = "${control.robot.heartbeat-sweep-delay-ms:5000}")
+    @Scheduled(fixedDelayString = "${control.robot.heartbeat-sweep-delay-ms:1000}")
     public void sweep() {
         registryService.sweepOffline();
     }

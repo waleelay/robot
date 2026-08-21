@@ -39,6 +39,7 @@ const state = {
   wsConnected: false, // 媒体服务 WebSocket 连接状态
   mediaSocket: null, // 媒体服务 WebSocket 实例
   mediaReconnectTimer: null,
+  mediaManualClosing: false,
   robots: [], // 机器人列表
   cameras: {}, // 全局摄像头索引 { [cameraKey]: camera }
   camerasRevision: 0,
@@ -218,6 +219,26 @@ const mutations = {
   setMediaSocket(state, socket) {
     state.mediaSocket = socket
   },
+  setMediaManualClosing(state, value) {
+    state.mediaManualClosing = !!value
+  },
+  RESET_MEDIA_USER_STATE(state) {
+    state.wsConnected = false
+    state.mediaSocket = null
+    state.robots = []
+    state.cameras = {}
+    state.camerasRevision += 1
+    state.selectedRobotId = ''
+    state.activeCameras = {}
+    state.audioState = {}
+    state.controlProfiles = {}
+    state.controlProfileLoading = {}
+    state.controlSessions = {}
+    state.deviceStateCache = {}
+    state.incomingCalls = []
+    state.activeIncomingCall = null
+    state.callOperationPending = false
+  },
   incrementReconnectAttempts(state) {
     state.reconnectAttempts++
   },
@@ -365,8 +386,10 @@ function cameraState(robotId, deviceId, cameraId, name, groupType) {
     intercomStatus: 'IDLE',
     intercomToken: null,
     recordingActive: false,
+    recordingOwned: false,
     recordingBusy: false,
     activeRecording: null,
+    recordingSyncedAt: 0,
     latencyMs: null,
     latencyLevel: 'unknown',
     statsTimer: null,
@@ -538,7 +561,23 @@ function shouldAttachFromEvent(event, camera) {
 }
 
 function activeRecordingInProgress(camera) {
-  return camera.recordingActive || (camera.activeRecording && camera.activeRecording.status === 'RECORDING')
+  return camera.recordingActive || (camera.activeRecording && camera.activeRecording.status === 'UPLOADING')
+}
+function recordingClientId(recording) {
+  if (!recording || !recording.metadata) return ''
+  try {
+    return JSON.parse(recording.metadata).startedClientId || ''
+  } catch (_) {
+    return ''
+  }
+}
+function applyActiveRecording(camera, recording) {
+  const active = !!recording && recording.status === 'UPLOADING'
+  const startedClientId = recordingClientId(recording)
+  camera.activeRecording = active ? recording : null
+  camera.recordingActive = active
+  camera.recordingOwned = active && (!startedClientId || startedClientId === mediaClientId)
+  camera.recordingSyncedAt = Date.now()
 }
 function intercomInProgress(camera) {
   return camera.intercomActive || (camera.intercomStatus && !['IDLE', 'FAILED'].includes(camera.intercomStatus))
@@ -662,20 +701,25 @@ const actions = {
   // ============ Media 相关 actions ============
   // 加载机器人列表
   async loadRobots({ commit, state }, payload) {
-    const robots = payload
-    if (robots && robots.length) {
-      const fullRobots = robots.map(robot => {
-        const existing = (state.robots || []).find(item => String(item.robotId) === String(robot.robotId))
-        return mergeOverviewRobotWithLive(robot, existing)
-      })
-      const nextRobots = fullRobots.map(toBasicRobot)
-      const ids = new Set(nextRobots.map(item => String(item.robotId)))
-      ;(state.robots || []).forEach(robot => {
-        if (!ids.has(String(robot.robotId))) nextRobots.push(robot)
-      })
-      commit('setCameras', mergeCamerasIndex(state.cameras, nextRobots))
-      commit('setRobots', nextRobots)
+    if (!Array.isArray(payload)) return
+    const fullRobots = payload.map(robot => {
+      const existing = (state.robots || []).find(item => String(item.robotId) === String(robot.robotId))
+      return mergeOverviewRobotWithLive(robot, existing)
+    })
+    const nextRobots = fullRobots.map(toBasicRobot)
+    const authorizedRobotIds = new Set(nextRobots.map(item => String(item.robotId)))
+
+    Object.entries(state.activeCameras || {}).forEach(([key, active]) => {
+      const robotId = active?.robot?.robotId ?? active?.camera?.robotId
+      if (robotId === undefined || authorizedRobotIds.has(String(robotId))) return
+      if (active?.camera?.room) active.camera.room.disconnect()
+      commit('removeActiveCamera', key)
+    })
+    if (state.selectedRobotId && !authorizedRobotIds.has(String(state.selectedRobotId))) {
+      commit('setSelectedRobotId', '')
     }
+    commit('setCameras', mergeCamerasIndex(state.cameras, nextRobots))
+    commit('setRobots', nextRobots)
     // if (!state.robots.find(robot => robot.robotId === state.selectedRobotId)) {
     //   commit('setSelectedRobotId', state.robots[0]?.robotId || '')
     // }
@@ -688,6 +732,7 @@ const actions = {
         [WebSocket.CONNECTING, WebSocket.OPEN].includes(state.mediaSocket.readyState)) {
       return
     }
+    commit('setMediaManualClosing', false)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const url = process.env.VUE_APP_WS_URL || `${protocol}//${window.location.host}/ws/bigscreen`
     const socketUrl = new URL(url, window.location.href)
@@ -716,7 +761,7 @@ const actions = {
       if (state.mediaSocket === socket) {
         commit('setMediaSocket', null)
       }
-      if (!state.mediaReconnectTimer && window.location.pathname.startsWith('/bi/')) {
+      if (!state.mediaManualClosing && !state.mediaReconnectTimer && window.location.pathname.startsWith('/bi/')) {
         state.mediaReconnectTimer = setTimeout(() => {
           state.mediaReconnectTimer = null
           dispatch('connectMediaWebSocket')
@@ -733,6 +778,30 @@ const actions = {
       dispatch('syncIntercomCallEvent', event)
     }
     commit('setMediaSocket', socket)
+  },
+  async disconnectMediaWebSocket({ commit, state }, { clearUserState = true } = {}) {
+    commit('setMediaManualClosing', true)
+    if (state.mediaReconnectTimer) {
+      clearTimeout(state.mediaReconnectTimer)
+      state.mediaReconnectTimer = null
+    }
+    if (state.heartbeatTimer) {
+      clearInterval(state.heartbeatTimer)
+      state.heartbeatTimer = null
+    }
+    const rooms = Object.values(state.activeCameras || {})
+      .map(active => active?.camera?.room)
+      .filter(Boolean)
+    await Promise.all(rooms.map(room => Promise.resolve(room.disconnect()).catch(() => {})))
+    if (state.mediaSocket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(state.mediaSocket.readyState)) {
+      state.mediaSocket.close(1000, '用户退出或身份刷新')
+    }
+    commit('setMediaSocket', null)
+    commit('setWsConnected', false)
+    if (clearUserState) {
+      window.localStorage.removeItem(DEVICE_STATE_CACHE_KEY)
+      commit('RESET_MEDIA_USER_STATE')
+    }
   },
   syncIntercomCallEvent({ commit, state, dispatch }, event) {
     if (!event) return
@@ -1039,7 +1108,9 @@ const actions = {
           qualityChanging: old.qualityChanging,
           activeRecording: old.activeRecording,
           recordingActive: old.recordingActive,
+          recordingOwned: old.recordingOwned,
           recordingBusy: old.recordingBusy,
+          recordingSyncedAt: old.recordingSyncedAt,
           intercomActive: old.intercomActive,
           intercomBusy: old.intercomBusy,
           intercomStatus: old.intercomStatus,
@@ -1237,6 +1308,13 @@ const actions = {
               camera.viewerCount = session.viewerCount
             }
           } catch (_) {}
+          if (camera.watching && Date.now() - (camera.recordingSyncedAt || 0) >= 15000) {
+            try {
+              const recording = await getActiveLiveRecording(camera.session.sessionId)
+              applyActiveRecording(camera, recording)
+              changed = true
+            } catch (_) {}
+          }
         }
         const shouldHeartbeatIntercom = camera.session &&
           (camera.intercomActive || camera.session.sessionId === activeIntercomSessionId)
@@ -1266,9 +1344,6 @@ const actions = {
   },
   // 启动摄像头。同一路可被多个画面消费：已有 LiveKit Room 时只挂到新的 video，不重连。
   async startCamera({ commit, state, dispatch }, { robot, camera, consumerId, prefixId }) {
-    if (camera.recordingActive) {
-      await dispatch('stopCameraRecording', camera)
-    }
     const viewerId = consumerId || 'default'
     const attachPrefix = prefixId || state.prefixId
     const stored = state.cameras[camera.key] || {}
@@ -1306,6 +1381,10 @@ const actions = {
       } else {
         attachCameraMedia(camera1, attachPrefix)
       }
+      try {
+        const recording = await getActiveLiveRecording(camera1.session.sessionId)
+        applyActiveRecording(camera1, recording)
+      } catch (_) {}
     } catch (error) {
       console.error('ERROR createVideoSession', error.message || '请求失败')
     } finally {
@@ -1735,6 +1814,14 @@ const actions = {
       dispatch('heartbeatViewers')
     }, 5000)
   },
+  async stopAllCameraSessions({ state, dispatch }) {
+    const cameras = Object.values(state.cameras || {}).filter(camera =>
+      camera && camera.session && (camera.watching || camera.recordingActive || camera.intercomActive)
+    )
+    for (const camera of cameras) {
+      await dispatch('stopCamera', camera)
+    }
+  },
   // 切换激活摄像头
   async toggleCamera({ commit, state, dispatch }, { robot, camera }) {
     const key = camera.key
@@ -2040,6 +2127,10 @@ const actions = {
   },
   async toggleLiveRecording({ commit, state, dispatch }, camera) {
     if (camera.recordingActive) {
+      if (!camera.recordingOwned) {
+        Message.warning('当前录像由其他浏览器发起')
+        return
+      }
       await dispatch('stopCameraRecording', camera)
     } else {
       await dispatch('startCameraRecording', camera)
@@ -2052,14 +2143,12 @@ const actions = {
       const active = await getActiveLiveRecording(camera.session.sessionId)
       // console.log('startCameraRecording', camera.key, active)
       if (active) {
-        camera.activeRecording = active
-        camera.recordingActive = false
-        Message.info('当前视频正在录制中')
+        applyActiveRecording(camera, active)
+        Message.info(camera.recordingOwned ? '当前浏览器正在录制中' : '其他浏览器正在录制中')
         return
       }
       const recording = await startLiveRecording(camera.session.sessionId)
-      camera.activeRecording = recording
-      camera.recordingActive = recording && recording.status === 'UPLOADING'
+      applyActiveRecording(camera, recording)
       // console.log('API startLiveRecording', recording)
       Message.success('已开始录像')
     } catch (error) {
@@ -2080,24 +2169,21 @@ const actions = {
     if (!camera.session) return
     try {
       const recording = await getActiveLiveRecording(camera.session.sessionId)
-      camera.activeRecording = recording
-      if (!recording || recording.status !== 'UPLOADING') {
-        camera.recordingActive = false
-      }
-    } catch (_) {
-      camera.activeRecording = null
-      camera.recordingActive = false
-    } finally {
+      applyActiveRecording(camera, recording)
+    } catch (_) {} finally {
       commit('setCamera', camera)
     }
   },
   async stopCameraRecording({ commit, state, dispatch }, camera) {
     if (!camera.session || !camera.activeRecording || camera.recordingBusy) return
+    if (!camera.recordingOwned) {
+      Message.warning('当前录像由其他浏览器发起')
+      return
+    }
     camera.recordingBusy = true
     try {
-      const recording = await stopLiveRecording(camera.session.sessionId, camera.activeRecording.fileId)
-      camera.activeRecording = recording
-      camera.recordingActive = false
+      await stopLiveRecording(camera.session.sessionId, camera.activeRecording.fileId)
+      applyActiveRecording(camera, null)
       // console.log('API stopLiveRecording', recording)
       Message.success('录像已停止')
       dispatch('setRecordTime', new Date().toISOString())

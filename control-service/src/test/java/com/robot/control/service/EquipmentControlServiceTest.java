@@ -388,14 +388,20 @@ class EquipmentControlServiceTest {
     }
 
     @Test
-    void ignoresClientStateWithoutManagementProfile() {
+    void keepsMediaRuntimeWithoutInventingManagementProfileFields() {
         Map<String, Object> state = service.handleClientState(object(
                 "robotId", "robot-001",
                 "name", "客户端硬编码名称",
                 "type", "轮式机器人",
-                "status", "online"));
+                "status", "online",
+                "devices", List.of(object("deviceId", "ptz-001", "deviceType", "DUAL_LIGHT_PTZ"))));
 
-        assertThat(state).isEmpty();
+        assertThat(state)
+                .containsEntry("robotId", "robot-001")
+                .containsEntry("stateSource", "MEDIA_CLIENT_STATUS")
+                .doesNotContainKeys("name", "type", "typeCode");
+        assertThat(maps(state.get("devices"))).singleElement()
+                .satisfies(device -> assertThat(device).containsEntry("deviceId", "ptz-001"));
     }
 
     @Test

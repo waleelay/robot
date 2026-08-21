@@ -69,14 +69,14 @@ public class FileController {
 
     @PostMapping("/multipart-uploads")
     public FileUploadResponse createMultipart(
-            @RequestHeader(value = "X-Robot-Id", required = false) String robotId,
+            @RequestHeader("X-Robot-Id") String robotId,
             @Valid @RequestBody CreateMultipartFileUploadRequest request) {
         return service.createOrResumeMultipart(robotId, request);
     }
 
     @PostMapping("/multipart-uploads/{uploadId}/part-urls")
     public FilePartUrlsResponse partUrls(
-            @RequestHeader(value = "X-Robot-Id", required = false) String robotId,
+            @RequestHeader("X-Robot-Id") String robotId,
             @PathVariable String uploadId,
             @Valid @RequestBody FilePartUrlsRequest request) {
         return service.partUrls(robotId, uploadId, request.getPartNumbers());
@@ -84,14 +84,14 @@ public class FileController {
 
     @PostMapping("/multipart-uploads/{uploadId}/complete")
     public FileStatusResponse complete(
-            @RequestHeader(value = "X-Robot-Id", required = false) String robotId,
+            @RequestHeader("X-Robot-Id") String robotId,
             @PathVariable String uploadId) {
         return service.completeMultipart(robotId, uploadId);
     }
 
     @GetMapping("/{fileId}/status")
     public FileStatusResponse status(
-            @RequestHeader(value = "X-Robot-Id", required = false) String robotId,
+            @RequestHeader("X-Robot-Id") String robotId,
             @PathVariable String fileId) {
         return service.fileStatus(robotId, fileId);
     }

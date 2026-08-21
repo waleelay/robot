@@ -36,5 +36,12 @@ public class FileUploadCleanupScheduler {
                                 upload.getUploadId(), upload.getFileId(), ex);
                     }
                 });
+        service.expiredLiveRecordingIds().forEach(fileId -> {
+            try {
+                service.expireLiveRecording(fileId);
+            } catch (RuntimeException ex) {
+                log.warn("停止超时手动录像失败: fileId={}", fileId, ex);
+            }
+        });
     }
 }

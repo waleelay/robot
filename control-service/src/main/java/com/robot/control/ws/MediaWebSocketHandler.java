@@ -12,7 +12,11 @@ import com.robot.control.service.EquipmentControlService;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -104,18 +108,20 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
                     Map<String, Object> result = equipmentControlService.publishCommand(robotId, payload, currentUser(session));
                     send(session, "control.command.accepted", requestId, result);
                 }
-                case "video.intercom.call.accept" -> send(
-                        session,
-                        "video.intercom.call.accepted",
-                        requestId,
-                        intercomCallService.accept(stringValue(payload.get("callId"), ""), currentUser(session)));
-                case "video.intercom.call.reject" -> send(
-                        session,
-                        "video.intercom.call.rejected",
-                        requestId,
-                        intercomCallService.reject(stringValue(payload.get("callId"), ""), currentUser(session)));
+                case "video.intercom.call.accept" -> {
+                    String callId = stringValue(payload.get("callId"), "");
+                    requireAuthorizedCall(callId);
+                    send(session, "video.intercom.call.accepted", requestId,
+                            intercomCallService.accept(callId, currentUser(session)));
+                }
+                case "video.intercom.call.reject" -> {
+                    String callId = stringValue(payload.get("callId"), "");
+                    requireAuthorizedCall(callId);
+                    send(session, "video.intercom.call.rejected", requestId,
+                            intercomCallService.reject(callId, currentUser(session)));
+                }
                 case "video.intercom.call.query" -> send(
-                        session, "video.intercom.call.list", requestId, intercomCallService.ringingCalls());
+                        session, "video.intercom.call.list", requestId, authorizedRingingCalls());
                 default -> {
                     // Ignore unknown message types for forward compatibility.
                 }
@@ -151,6 +157,34 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
      */
     private CurrentUser currentUser(WebSocketSession session) {
         return currentUserResolver.resolve(session);
+    }
+
+    private List<Map<String, Object>> authorizedRingingCalls() {
+        Set<String> robotIds = managementClient.devices().stream()
+                .map(device -> firstString(device, "serialNumber", "robotId"))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        return intercomCallService.ringingCalls().stream()
+                .filter(call -> robotIds.contains(firstString(call, "robotId")))
+                .toList();
+    }
+
+    private void requireAuthorizedCall(String callId) {
+        boolean authorized = authorizedRingingCalls().stream()
+                .anyMatch(call -> Objects.equals(callId, firstString(call, "callId")));
+        if (!authorized) {
+            throw new IllegalArgumentException("来电不存在或无权操作");
+        }
+    }
+
+    private String firstString(Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return String.valueOf(value);
+            }
+        }
+        return null;
     }
 
     /**

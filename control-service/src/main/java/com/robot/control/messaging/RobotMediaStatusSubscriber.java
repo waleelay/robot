@@ -214,7 +214,15 @@ public class RobotMediaStatusSubscriber {
     }
 
     private IMqttMessageListener edgeDeviceStatusListener() {
-        return (topic, message) -> edgeDeviceStatusHandler.handle(
+        return this::handleEdgeDeviceStatus;
+    }
+
+    void handleEdgeDeviceStatus(String topic, MqttMessage message) {
+        if (message.isRetained()) {
+            log.info("已忽略 retained 边缘设备状态，不刷新在线时间，主题={}", topic);
+            return;
+        }
+        edgeDeviceStatusHandler.handle(
                 topic,
                 new String(message.getPayload(), StandardCharsets.UTF_8));
     }
