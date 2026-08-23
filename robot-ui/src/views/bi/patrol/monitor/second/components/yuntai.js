@@ -478,7 +478,8 @@ export default {
       if (!device) return false
       if (this.launcherSafety[device.deviceId] !== undefined) return true
       const status = device.status || device.runtimeStatus || {}
-      return status.safetySwitchEnabled !== undefined
+      // 能力已登记但客户端尚未上报真实状态时也要显示开关；未知状态按关闭处理，禁止发射。
+      return status.safetySwitchEnabled !== undefined || this.hasDeviceAction(device, 'set_safety')
     },
     isLauncherConnected(device) {
       if (!device) return false
