@@ -89,6 +89,25 @@ type StatusMessage struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+type FixedCameraGatewayStatus struct {
+	Version    string    `json:"version"`
+	GatewayID  string    `json:"gatewayId"`
+	Status     string    `json:"status"`
+	Sequence   uint64    `json:"sequence"`
+	ReportedAt time.Time `json:"reportedAt"`
+	ReasonCode string    `json:"reasonCode,omitempty"`
+}
+
+type FixedCameraHealthStatus struct {
+	Version    string    `json:"version"`
+	GatewayID  string    `json:"gatewayId"`
+	CameraID   string    `json:"cameraId"`
+	Health     string    `json:"health"`
+	Sequence   uint64    `json:"sequence"`
+	CheckedAt  time.Time `json:"checkedAt"`
+	ReasonCode string    `json:"reasonCode,omitempty"`
+}
+
 type OnlineMessage struct {
 	Status  string   `json:"status"`
 	Cameras []Camera `json:"cameras,omitempty"`

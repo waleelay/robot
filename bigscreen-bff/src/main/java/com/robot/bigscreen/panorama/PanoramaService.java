@@ -519,6 +519,7 @@ public class PanoramaService {
         CompletableFuture<List<Map<String, Object>>> managementDevicesFuture = async(centerClient::devices);
         CompletableFuture<List<Map<String, Object>>> registeredRobotsFuture = async(centerClient::registeredRobots);
         CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = cache.allFixedCamerasFuture();
+        CompletableFuture<Map<String, Object>> fixedCameraHealthFuture = async(centerClient::fixedCameraHealth);
         CompletableFuture<List<Map<String, Object>>> deviceTypeOptionsFuture = async(centerClient::deviceTypeOptions);
         List<Map<String, Object>> managementDevices = joinRequired(managementDevicesFuture);
         List<Map<String, Object>> registeredRobots = join(registeredRobotsFuture, List.of());
@@ -547,9 +548,17 @@ public class PanoramaService {
             Map<String, Object> device = device(source, realtimeStatus, registeredRobot, deviceTypeNames);
             result.add(device);
         }
+        Map<String, Object> fixedCameraHealthResponse = join(fixedCameraHealthFuture, Map.of());
+        Map<String, Map<String, Object>> fixedCameraHealth = list(fixedCameraHealthResponse.get("records")).stream()
+                .filter(item -> firstString(item, "cameraId") != null)
+                .collect(Collectors.toMap(
+                        item -> firstString(item, "cameraId"),
+                        Function.identity(),
+                        (left, right) -> right));
         join(fixedCamerasFuture, List.<Map<String, Object>>of()).stream()
                 .filter(camera -> firstValue(camera, "cameraId", "id") != null)
-                .map(this::fixedCameraDevice)
+                .map(camera -> fixedCameraDevice(camera, fixedCameraHealth.getOrDefault(
+                        firstString(camera, "cameraId", "id"), Map.of())))
                 .forEach(result::add);
         return result;
     }
@@ -648,12 +657,17 @@ public class PanoramaService {
                 .toList();
     }
 
-    private Map<String, Object> fixedCameraDevice(Map<String, Object> source) {
+    private Map<String, Object> fixedCameraDevice(Map<String, Object> source, Map<String, Object> health) {
         String cameraId = firstString(source, "cameraId", "id");
         boolean enabled = booleanValue(source.get("enabled"));
         String defaultQuality = firstString(source, "subStreamUrl") == null ? "main" : "sub";
-        boolean playable = enabled && (firstString(source, "mainStreamUrl") != null || firstString(source, "subStreamUrl") != null);
-        String status = enabled ? "online" : "offline";
+        boolean protocolReady = firstString(source, "protocolType") == null
+                || "RTSP".equalsIgnoreCase(firstString(source, "protocolType"));
+        boolean configReady = protocolReady
+                && (firstString(source, "mainStreamUrl") != null || firstString(source, "subStreamUrl") != null);
+        Map<String, Object> gatewayHealth = map(health.get("gatewayHealth"));
+        Map<String, Object> streamHealth = map(health.get("streamHealth"));
+        String status = fixedCameraStatus(enabled, configReady, gatewayHealth, streamHealth);
         return object(
                 "robotId", cameraId,
                 "equipmentId", cameraId,
@@ -665,6 +679,12 @@ public class PanoramaService {
                 "equipmentType", "FIXED_CAMERA",
                 "sourceType", "FIXED_CAMERA",
                 "status", status,
+                "enabled", enabled,
+                "configStatus", configReady ? "READY" : "INVALID",
+                "configReady", configReady,
+                "gatewayId", firstValue(health, "gatewayId"),
+                "gatewayHealth", normalizedHealth(gatewayHealth, "ONLINE", "OFFLINE", "UNKNOWN"),
+                "streamHealth", normalizedHealth(streamHealth, "AVAILABLE", "UNAVAILABLE", "UNKNOWN"),
                 "battery", null,
                 "lastHeartbeatAt", null,
                 "cameras", List.of(camera(cameraId, cameraId, "fixed_camera", firstString(source, "cameraName", "name"), defaultQuality)),
@@ -686,9 +706,46 @@ public class PanoramaService {
                 "headingYaw", number(source.get("headingYaw")),
                 "protocolType", firstString(source, "protocolType"),
                 "defaultQuality", defaultQuality,
-                "playable", playable,
+                "playable", enabled && configReady,
                 "showControlCenter", false,
                 "showController", false);
+    }
+
+    private String fixedCameraStatus(
+            boolean enabled,
+            boolean configReady,
+            Map<String, Object> gatewayHealth,
+            Map<String, Object> streamHealth) {
+        if (!enabled) {
+            return "disabled";
+        }
+        if (!configReady) {
+            return "unknown";
+        }
+        String gateway = firstString(gatewayHealth, "status");
+        if ("OFFLINE".equalsIgnoreCase(gateway)) {
+            return "offline";
+        }
+        if (!"ONLINE".equalsIgnoreCase(gateway)) {
+            return "unknown";
+        }
+        String stream = firstString(streamHealth, "status");
+        if ("AVAILABLE".equalsIgnoreCase(stream)) {
+            return "online";
+        }
+        if ("UNAVAILABLE".equalsIgnoreCase(stream)) {
+            return "offline";
+        }
+        return "unknown";
+    }
+
+    private Map<String, Object> normalizedHealth(Map<String, Object> source, String... allowed) {
+        String status = firstString(source, "status");
+        boolean valid = status != null && java.util.Arrays.stream(allowed).anyMatch(value -> value.equalsIgnoreCase(status));
+        return object(
+                "status", valid ? status.toUpperCase(Locale.ROOT) : "UNKNOWN",
+                "observedAt", source.get("observedAt"),
+                "reasonCode", valid ? source.get("reasonCode") : "STATUS_MISSING");
     }
 
     private Map<String, Object> fixedCameraLocation(Map<String, Object> source) {
@@ -1163,11 +1220,15 @@ public class PanoramaService {
         long online = devices.stream().filter(device -> "online".equals(device.get("status"))).count();
         long fault = devices.stream().filter(device -> booleanValue(device.get("fault"))).count();
         long offline = devices.stream().filter(device -> "offline".equals(device.get("status"))).count();
+        long unknown = devices.stream().filter(device -> "unknown".equals(device.get("status"))).count();
+        long disabled = devices.stream().filter(device -> "disabled".equals(device.get("status"))).count();
         return object(
                 "total", devices.size(),
                 "online", online,
                 "fault", fault,
-                "offline", offline);
+                "offline", offline,
+                "unknown", unknown,
+                "disabled", disabled);
     }
 
     private List<Map<String, Object>> deviceTypeStats(List<Map<String, Object>> devices) {
@@ -1180,7 +1241,10 @@ public class PanoramaService {
                     String name = items.stream().map(item -> string(item.get("type"))).filter(Objects::nonNull).findFirst().orElse(entry.getKey());
                     long fault = items.stream().filter(item -> booleanValue(item.get("fault"))).count();
                     long offline = items.stream().filter(item -> "offline".equals(item.get("status"))).count();
-                    return object("type", entry.getKey(), "name", name, "count", items.size(), "fault", fault, "offline", offline);
+                    long unknown = items.stream().filter(item -> "unknown".equals(item.get("status"))).count();
+                    long disabled = items.stream().filter(item -> "disabled".equals(item.get("status"))).count();
+                    return object("type", entry.getKey(), "name", name, "count", items.size(), "fault", fault,
+                            "offline", offline, "unknown", unknown, "disabled", disabled);
                 })
                 .toList();
     }

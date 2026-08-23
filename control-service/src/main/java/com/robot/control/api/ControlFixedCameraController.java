@@ -5,9 +5,13 @@ import com.robot.control.dto.ControlStartVideoRequest;
 import com.robot.control.dto.FixedCameraBatchStartRequest;
 import com.robot.media.common.video.VideoSessionResponse;
 import com.robot.control.service.ControlVideoCommandService;
+import com.robot.control.client.ControlManagementClient;
+import com.robot.control.config.ControlServiceProperties;
+import com.robot.control.fixedcamera.FixedCameraHealthService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,12 +29,28 @@ public class ControlFixedCameraController {
 
     private final ControlVideoCommandService controlVideoCommandService;
     private final CurrentUserResolver currentUserResolver;
+    private final ControlManagementClient managementClient;
+    private final FixedCameraHealthService healthService;
+    private final ControlServiceProperties properties;
 
     public ControlFixedCameraController(
             ControlVideoCommandService controlVideoCommandService,
-            CurrentUserResolver currentUserResolver) {
+            CurrentUserResolver currentUserResolver,
+            ControlManagementClient managementClient,
+            FixedCameraHealthService healthService,
+            ControlServiceProperties properties) {
         this.controlVideoCommandService = controlVideoCommandService;
         this.currentUserResolver = currentUserResolver;
+        this.managementClient = managementClient;
+        this.healthService = healthService;
+        this.properties = properties;
+    }
+
+    /** 返回当前用户有权固定摄像头的最新健康状态。 */
+    @GetMapping("/health")
+    public Map<String, Object> health() {
+        return healthService.authorizedSnapshot(
+                managementClient.fixedCameras(), properties.getMqtt().getFixedCameraGatewayId());
     }
 
     /**

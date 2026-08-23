@@ -219,22 +219,30 @@ public class PanoramaCenterClient {
         if (mapId == null || mapId.isBlank()) {
             return List.of();
         }
-        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/fixed-cameras")
-                .queryParam("pageNum", 1)
-                .queryParam("pageSize", 100)
+        int pageSize = 100;
+        return pagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/fixed-cameras")
+                .queryParam("pageNum", pageNum)
+                .queryParam("pageSize", pageSize)
                 .queryParam("mapId", mapId)
                 .build(true)
-                .toUri();
-        return records(uri);
+                .toUri(), pageSize);
     }
 
     public List<Map<String, Object>> fixedCameras() {
-        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/fixed-cameras")
-                .queryParam("pageNum", 1)
-                .queryParam("pageSize", 500)
+        int pageSize = 100;
+        return pagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/fixed-cameras")
+                .queryParam("pageNum", pageNum)
+                .queryParam("pageSize", pageSize)
+                .build(true)
+                .toUri(), pageSize);
+    }
+
+    /** 查询 Control 汇总的当前用户固定摄像头健康状态。 */
+    public Map<String, Object> fixedCameraHealth() {
+        URI uri = uri(properties.getControlBaseUrl(), "/api/control/fixed-cameras/health")
                 .build(true)
                 .toUri();
-        return records(uri);
+        return responseMap(uri).orElse(Map.of("records", List.of()));
     }
 
     public List<Map<String, Object>> pathPoints(String pathId) {

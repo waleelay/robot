@@ -233,12 +233,21 @@ public class ControlManagementClient {
         if (requestAuthorizationHeaders.currentCacheKey().isEmpty()) {
             return List.of();
         }
-        URI uri = uri("/api/v1/management/fixed-cameras")
-                .queryParam("pageNum", 1)
-                .queryParam("pageSize", 500)
-                .build(true)
-                .toUri();
-        return records(uri);
+        int pageSize = 100;
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int pageNum = 1; pageNum <= 1000; pageNum++) {
+            URI uri = uri("/api/v1/management/fixed-cameras")
+                    .queryParam("pageNum", pageNum)
+                    .queryParam("pageSize", pageSize)
+                    .build(true)
+                    .toUri();
+            List<Map<String, Object>> page = records(uri);
+            result.addAll(page);
+            if (page.size() < pageSize) {
+                return result;
+            }
+        }
+        throw new IllegalStateException("固定摄像头分页超过安全上限");
     }
 
     /**

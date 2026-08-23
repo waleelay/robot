@@ -90,7 +90,9 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | `task[].name` | 间接查询 | 优先取控制端实时任务名称；没有时按任务实例 ID 查询管理端任务实例补齐 |
 | `task[].timeRange` | BFF 计算 | 按任务实例 `startedAt/completedAt` 计算；时间不完整时为 `null` |
 
-固定摄像头也会合并进 `devices[]`。其 `status=online` 仅由 `enabled=true` 推导，不是 Gateway 或 RTSP 探活；`playable=true` 还要求主/子码流至少一条存在。BFF 不输出码流 URL。
+固定摄像头也会合并进 `devices[]`。其配置启停、配置完整性、Gateway 心跳和 RTSP 健康
+已经分离；只有全部满足时 `status=online`，健康缺失或过期为 `unknown`。`playable` 是
+`enabled && configReady` 的兼容字段，不表示在线。BFF 不输出码流 URL。
 
 ### 2.4 `/devices/{deviceId}` 设备详情
 

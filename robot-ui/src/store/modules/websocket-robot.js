@@ -342,6 +342,7 @@ function withCallReceipt(call) {
 // 用于将机器人数据转换为状态对象
 function toRobotState(robot) {
   const controlMode = robot.controlMode === '手动模式' ? '手动模式' : '导航模式'
+  const fixedCamera = isFixedCameraEquipment(robot, robot.cameras || [])
   return Object.assign({}, robot, {
     name: robot.name || robot.robotId,
     type: robot.type || '-',
@@ -358,7 +359,7 @@ function toRobotState(robot) {
         groupType: camera.groupType || 'body',
         groupTypeName: groupTypeText(camera.groupType),
         quality: camera.quality || 'sub',
-        status: robot.status === 'online' ? (camera.status || '') : 'offline'
+        status: fixedCamera ? (camera.status || '') : (robot.status === 'online' ? (camera.status || '') : 'offline')
       }
     ))
   })
@@ -825,7 +826,8 @@ const actions = {
     }
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data)
-      if (event.event === 'bigscreen.authorization.changed') {
+      if (event.event === 'bigscreen.authorization.changed' ||
+        event.event === 'bigscreen.fixed-camera.health.changed') {
         refreshAuthorizedOverview(dispatch)
         return
       }
@@ -1416,8 +1418,20 @@ const actions = {
       key: camera.key || stored.key,
       attachTargets: mergeAttachTargets(stored.attachTargets, camera.attachTargets, { [viewerId]: attachPrefix })
     }
-    console.log('%cstartCamera+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 'color: #0f0', attachPrefix + camera1.key, robot.robotId, robot.status)
-    if (robot.status !== 'online') return
+    const fixedCamera = isFixedCameraEquipment(robot, [camera1])
+    if (fixedCamera) {
+      if (!robot.enabled || !robot.configReady) {
+        Message.warning(robot.enabled ? '固定摄像头配置不完整，无法播放' : '固定摄像头已停用，无法播放')
+        return
+      }
+      if (robot.gatewayHealth?.status === 'OFFLINE') {
+        Message.warning('固定摄像头网关离线，无法播放')
+        return
+      }
+      // UNKNOWN 不提前拒绝，由本次启动时的真实 RTSP 探测给出最终结果。
+    } else if (robot.status !== 'online') {
+      return
+    }
     const reuseRoom = liveKitRoomReusable(camera1)
     if (!reuseRoom) camera1.loading = true
     camera1.stopped = false

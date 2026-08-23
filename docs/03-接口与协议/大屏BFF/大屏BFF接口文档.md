@@ -33,6 +33,12 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
   "equipmentType": "FIXED_CAMERA",
   "sourceType": "FIXED_CAMERA",
   "status": "online",
+  "enabled": true,
+  "configStatus": "READY",
+  "configReady": true,
+  "gatewayId": "default",
+  "gatewayHealth": {"status": "ONLINE", "observedAt": "2026-08-23T10:00:00Z", "reasonCode": null},
+  "streamHealth": {"status": "AVAILABLE", "observedAt": "2026-08-23T10:00:00Z", "reasonCode": null},
   "defaultQuality": "sub",
   "playable": true,
   "showControlCenter": false,
@@ -40,7 +46,10 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 }
 ```
 
-这里的 `status=online` 表示管理端配置 `enabled=true`，不是 Gateway 探活结果；`playable=true` 还要求至少配置主码流或子码流。BFF 不向前端返回 RTSP URL 或摄像头凭据。
+固定摄像头 `status=online` 仅在配置启用且完整、Gateway 心跳有效并且最近 RTSP 探测成功时
+成立；还可为 `offline/unknown/disabled`。健康接口不可用、消息缺失或过期时使用 `unknown`，
+不得回退 `enabled=true`。`playable` 是兼容字段，只表示 `enabled && configReady`，不表示
+在线，新调用方应使用 `configReady`。BFF 不向前端返回 RTSP URL 或摄像头凭据。
 
 ## 3. 统计与报告接口
 

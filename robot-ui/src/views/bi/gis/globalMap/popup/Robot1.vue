@@ -25,6 +25,15 @@
           <div class="item wp149 ml26 text-ellipsis" :title="fixedCameraLocation">
             装备位置：<span class="value">{{ fixedCameraLocation }}</span>
           </div>
+          <div class="item wp156 mt10">
+            配置状态：<span class="value">{{ fixedCameraConfigText }}</span>
+          </div>
+          <div class="item wp149 ml26 mt10">
+            网关状态：<span class="value">{{ fixedCameraGatewayText }}</span>
+          </div>
+          <div class="item wp156 mt10">
+            视频流状态：<span class="value">{{ fixedCameraStreamText }}</span>
+          </div>
         </template>
         <template v-else>
           <div class="item wp156">
@@ -207,6 +216,21 @@ export default {
         || robot.address
         || '-'
     },
+    fixedCameraConfigText() {
+      const robot = this.currenRobot || this.selectedRobot || {}
+      if (!robot.enabled) return '已停用'
+      return robot.configReady ? '已启用，配置完整' : '已启用，配置不完整'
+    },
+    fixedCameraGatewayText() {
+      return this.healthText((this.currenRobot || this.selectedRobot || {}).gatewayHealth?.status, {
+        ONLINE: '在线', OFFLINE: '离线', UNKNOWN: '未知'
+      })
+    },
+    fixedCameraStreamText() {
+      return this.healthText((this.currenRobot || this.selectedRobot || {}).streamHealth?.status, {
+        AVAILABLE: '可用', UNAVAILABLE: '不可用', UNKNOWN: '未知'
+      })
+    },
     // 固定摄像头主相机（取装备第一路，并合并 store 实时状态）
     fixedCameraInfo() {
       if (!this.isFixedCamera) return null
@@ -300,6 +324,9 @@ export default {
       if (battery === undefined || battery === null || battery === '') return '-'
       return `${battery}%`
     },
+    healthText(status, labels) {
+      return labels[String(status || 'UNKNOWN').toUpperCase()] || '未知'
+    },
     getTaskId(task) {
       return task?.taskId || task?.id || task?.planId || task?.taskPlanId || null
     },
@@ -341,6 +368,13 @@ export default {
       if (this.videoToggling) return
       if (this.videoVisible) {
         await this.stopFixedCameraVideo({ keepLastFrame: true })
+        return
+      }
+      const robot = this.currenRobot || this.selectedRobot || {}
+      if (!robot.enabled || !robot.configReady || robot.gatewayHealth?.status === 'OFFLINE') {
+        this.$message.warning(!robot.enabled
+          ? '固定摄像头已停用，无法播放'
+          : (!robot.configReady ? '固定摄像头配置不完整，无法播放' : '固定摄像头网关离线，无法播放'))
         return
       }
       await this.startFixedCameraVideo()

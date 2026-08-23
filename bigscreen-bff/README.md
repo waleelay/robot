@@ -58,7 +58,10 @@ BFF 是 OAuth2 Resource Server：
 | `/api/control/**`、`/api/media/**` 等 | 下游透明代理 |
 | `/ws/control`、`/ws/media`、`/ws/bigscreen` | 同一 WebSocket 桥接处理器的兼容路径 |
 
-固定摄像头会作为全景 `devices[]` 中的同级装备返回。当前 `status=online` 只表示管理端 `enabled=true`，不是 Gateway 探活；`playable=true` 还要求存在主或子码流。BFF 不返回 RTSP URL。
+固定摄像头会作为全景 `devices[]` 中的同级装备返回。BFF 合并 Control 健康快照，分别输出
+`enabled/configReady`、`gatewayHealth` 和 `streamHealth`；只有配置启用且完整、Gateway 在线、
+RTSP 可用时 `status=online`，缺失或过期状态为 `unknown`。`playable` 仅为配置门槛兼容字段，
+不表示在线。BFF 不返回 RTSP URL。
 
 下游缺失字段通常返回 `null` 或空集合。代码仍为 `test111`、`SN005`、`SN006` 保留无定位时的硬编码演示位置事件；该兼容只影响 WebSocket 事件，不能作为生产真实定位。
 

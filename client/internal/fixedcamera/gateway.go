@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
@@ -20,13 +21,19 @@ import (
 )
 
 type Gateway struct {
-	cfg       config.Config
-	probe     *rtsp.Probe
-	publisher publisher.Publisher
-	http      *http.Client
-	mqtt      paho.Client
-	mu        sync.Mutex
-	lastCmds  map[string]string
+	cfg          config.Config
+	probe        streamProber
+	publisher    publisher.Publisher
+	http         *http.Client
+	mqtt         paho.Client
+	mu           sync.Mutex
+	lastCmds     map[string]string
+	sequence     atomic.Uint64
+	probeRunning atomic.Bool
+}
+
+type streamProber interface {
+	Check(context.Context, string) (rtsp.StreamInfo, error)
 }
 
 type cameraRecord struct {
@@ -42,10 +49,11 @@ type cameraRecord struct {
 type managementResponse struct {
 	Data struct {
 		Records []cameraRecord `json:"records"`
+		Total   int64          `json:"total"`
 	} `json:"data"`
 }
 
-func NewGateway(cfg config.Config, probe *rtsp.Probe, pub publisher.Publisher) *Gateway {
+func NewGateway(cfg config.Config, probe streamProber, pub publisher.Publisher) *Gateway {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if cfg.ManagementInsecureTLS {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // 仅用于内网自签证书部署。
@@ -88,11 +96,16 @@ func (g *Gateway) Run(ctx context.Context) error {
 		log.Printf("固定摄像头网关 MQTT 连接已断开：%v", err)
 		g.publisher.StopAll()
 	})
+	offlinePayload, _ := json.Marshal(model.FixedCameraGatewayStatus{
+		Version: "1.0", GatewayID: gatewayID, Status: "OFFLINE", ReasonCode: "MQTT_CONNECTION_LOST",
+	})
+	opts.SetWill("gateway/fixed-camera/"+gatewayID+"/status", string(offlinePayload), 1, false)
 	opts.SetOnConnectHandler(func(_ paho.Client) {
 		g.subscribe(startTopic, g.handleStart(ctx))
 		g.subscribe(stopTopic, g.handleStop())
 		g.subscribe(restartTopic, g.handleStart(ctx))
 		log.Printf("固定摄像头网关已订阅主题，启动=%s 停止=%s 重启=%s", startTopic, stopTopic, restartTopic)
+		g.publishGatewayStatus("ONLINE", "")
 	})
 	mqttClient := paho.NewClient(opts)
 	g.mu.Lock()
@@ -102,10 +115,32 @@ func (g *Gateway) Run(ctx context.Context) error {
 		return token.Error()
 	}
 	log.Printf("固定摄像头网关已连接 MQTT，网关ID=%s", gatewayID)
-	<-ctx.Done()
-	g.publisher.StopAll()
-	mqttClient.Disconnect(250)
-	return nil
+	heartbeatInterval := g.cfg.FixedCameraHeartbeat
+	if heartbeatInterval <= 0 {
+		heartbeatInterval = 10 * time.Second
+	}
+	probeInterval := g.cfg.FixedCameraHealthProbe
+	if probeInterval <= 0 {
+		probeInterval = 60 * time.Second
+	}
+	heartbeatTicker := time.NewTicker(heartbeatInterval)
+	probeTicker := time.NewTicker(probeInterval)
+	defer heartbeatTicker.Stop()
+	defer probeTicker.Stop()
+	go g.probeAllCameras(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			g.publishGatewayStatus("OFFLINE", "PROCESS_STOPPED")
+			g.publisher.StopAll()
+			mqttClient.Disconnect(250)
+			return nil
+		case <-heartbeatTicker.C:
+			g.publishGatewayStatus("ONLINE", "")
+		case <-probeTicker.C:
+			go g.probeAllCameras(ctx)
+		}
+	}
 }
 
 func (g *Gateway) subscribe(topic string, handler paho.MessageHandler) {
@@ -136,9 +171,18 @@ func (g *Gateway) handleStart(ctx context.Context) paho.MessageHandler {
 			}
 		}
 		if _, err := g.probe.Check(ctx, rtspURL); err != nil {
+			g.publishCameraHealth(model.FixedCameraHealthStatus{
+				Version: "1.0", GatewayID: g.cfg.FixedCameraGatewayID, CameraID: cameraID,
+				Health: "UNAVAILABLE", Sequence: g.sequence.Add(1), CheckedAt: time.Now(),
+				ReasonCode: "RTSP_PROBE_FAILED",
+			})
 			g.status(command.SessionID, "failed", "", "", "RTSP_PROBE_FAILED", err.Error())
 			return
 		}
+		g.publishCameraHealth(model.FixedCameraHealthStatus{
+			Version: "1.0", GatewayID: g.cfg.FixedCameraGatewayID, CameraID: cameraID,
+			Health: "AVAILABLE", Sequence: g.sequence.Add(1), CheckedAt: time.Now(),
+		})
 		g.status(command.SessionID, "publishing", "", "", "", "RTSP 探测成功")
 		trackSid, trackName, err := g.publisher.Start(ctx, command, rtspURL)
 		if err != nil {
@@ -191,39 +235,162 @@ func (g *Gateway) rtspURL(ctx context.Context, cameraID string, quality string) 
 	return "", fmt.Errorf("固定摄像头未配置码流地址：%s", cameraID)
 }
 
-func (g *Gateway) camera(ctx context.Context, cameraID string) (cameraRecord, error) {
-	if strings.TrimSpace(cameraID) == "" {
-		return cameraRecord{}, fmt.Errorf("固定摄像头 ID 不能为空")
+func rtspURLForCamera(camera cameraRecord, quality string) (string, string) {
+	if !camera.Enabled {
+		return "", "CONFIG_DISABLED"
 	}
+	if camera.ProtocolType != "" && !strings.EqualFold(camera.ProtocolType, "RTSP") {
+		return "", "PROTOCOL_UNSUPPORTED"
+	}
+	if (quality == "sub" || quality == "auto" || quality == "") && strings.TrimSpace(camera.SubStreamURL) != "" {
+		return camera.SubStreamURL, ""
+	}
+	if strings.TrimSpace(camera.MainStreamURL) != "" {
+		return camera.MainStreamURL, ""
+	}
+	if strings.TrimSpace(camera.SubStreamURL) != "" {
+		return camera.SubStreamURL, ""
+	}
+	return "", "STREAM_NOT_CONFIGURED"
+}
+
+func (g *Gateway) cameras(ctx context.Context) ([]cameraRecord, error) {
+	const pageSize = 500
+	const maxPages = 1000
+	var cameras []cameraRecord
+	for pageNum := 1; pageNum <= maxPages; pageNum++ {
+		page, total, err := g.cameraPage(ctx, pageNum, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		cameras = append(cameras, page...)
+		if total > 0 && int64(len(cameras)) >= total {
+			return cameras, nil
+		}
+		if total <= 0 && len(page) < pageSize {
+			return cameras, nil
+		}
+		if len(page) == 0 {
+			return nil, fmt.Errorf("固定摄像头分页提前结束，已读取=%d 总数=%d", len(cameras), total)
+		}
+	}
+	return nil, fmt.Errorf("固定摄像头分页数量超过安全上限，页数=%d", maxPages)
+}
+
+func (g *Gateway) cameraPage(ctx context.Context, pageNum, pageSize int) ([]cameraRecord, int64, error) {
 	baseURL := strings.TrimRight(g.cfg.ManagementServiceURL, "/")
 	requestURL, err := url.Parse(baseURL + "/api/v1/management/fixed-cameras")
 	if err != nil {
-		return cameraRecord{}, err
+		return nil, 0, err
 	}
 	values := requestURL.Query()
-	values.Set("pageNum", "1")
-	values.Set("pageSize", "500")
+	values.Set("pageNum", fmt.Sprintf("%d", pageNum))
+	values.Set("pageSize", fmt.Sprintf("%d", pageSize))
 	requestURL.RawQuery = values.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
 	if err != nil {
-		return cameraRecord{}, err
+		return nil, 0, err
 	}
 	if g.cfg.ManagementToken != "" {
 		req.Header.Set("Authorization", "Bearer "+g.cfg.ManagementToken)
 	}
 	resp, err := g.http.Do(req)
 	if err != nil {
-		return cameraRecord{}, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return cameraRecord{}, fmt.Errorf("查询管理端固定摄像头失败，状态码=%d", resp.StatusCode)
+		return nil, 0, fmt.Errorf("查询管理端固定摄像头失败，状态码=%d", resp.StatusCode)
 	}
 	var body managementResponse
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, 0, err
+	}
+	return body.Data.Records, body.Data.Total, nil
+}
+
+func (g *Gateway) probeAllCameras(ctx context.Context) {
+	if !g.probeRunning.CompareAndSwap(false, true) {
+		log.Printf("固定摄像头健康检查仍在执行，本轮跳过")
+		return
+	}
+	defer g.probeRunning.Store(false)
+	cameras, err := g.cameras(ctx)
+	if err != nil {
+		log.Printf("固定摄像头健康检查读取档案失败：%v", err)
+		return
+	}
+	workers := g.cfg.FixedCameraProbeWorkers
+	if workers < 1 {
+		workers = 1
+	}
+	semaphore := make(chan struct{}, workers)
+	var wait sync.WaitGroup
+	for _, camera := range cameras {
+		camera := camera
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-ctx.Done():
+				return
+			}
+			g.publishCameraHealth(g.cameraHealth(ctx, camera))
+		}()
+	}
+	wait.Wait()
+}
+
+func (g *Gateway) cameraHealth(ctx context.Context, camera cameraRecord) model.FixedCameraHealthStatus {
+	cameraID := firstNonBlank(camera.CameraID, camera.ID)
+	result := model.FixedCameraHealthStatus{
+		Version: "1.0", GatewayID: g.cfg.FixedCameraGatewayID, CameraID: cameraID,
+		Health: "UNKNOWN", Sequence: g.sequence.Add(1), CheckedAt: time.Now(),
+	}
+	rtspURL, reasonCode := rtspURLForCamera(camera, "sub")
+	if reasonCode != "" {
+		result.ReasonCode = reasonCode
+		return result
+	}
+	if _, err := g.probe.Check(ctx, rtspURL); err != nil {
+		result.Health = "UNAVAILABLE"
+		result.ReasonCode = "RTSP_PROBE_FAILED"
+		return result
+	}
+	result.Health = "AVAILABLE"
+	return result
+}
+
+func (g *Gateway) publishGatewayStatus(status, reasonCode string) {
+	if err := g.publish("gateway/fixed-camera/"+g.cfg.FixedCameraGatewayID+"/status", model.FixedCameraGatewayStatus{
+		Version: "1.0", GatewayID: g.cfg.FixedCameraGatewayID, Status: status,
+		Sequence: g.sequence.Add(1), ReportedAt: time.Now(), ReasonCode: reasonCode,
+	}); err != nil {
+		log.Printf("发布固定摄像头网关状态失败，网关ID=%s 状态=%s：%v", g.cfg.FixedCameraGatewayID, status, err)
+	}
+}
+
+func (g *Gateway) publishCameraHealth(status model.FixedCameraHealthStatus) {
+	if strings.TrimSpace(status.CameraID) == "" {
+		return
+	}
+	if err := g.publish("gateway/fixed-camera/"+g.cfg.FixedCameraGatewayID+"/camera/"+status.CameraID+"/status", status); err != nil {
+		log.Printf("发布固定摄像头健康状态失败，网关ID=%s 摄像头ID=%s 状态=%s：%v",
+			g.cfg.FixedCameraGatewayID, status.CameraID, status.Health, err)
+	}
+}
+
+func (g *Gateway) camera(ctx context.Context, cameraID string) (cameraRecord, error) {
+	if strings.TrimSpace(cameraID) == "" {
+		return cameraRecord{}, fmt.Errorf("固定摄像头 ID 不能为空")
+	}
+	cameras, err := g.cameras(ctx)
+	if err != nil {
 		return cameraRecord{}, err
 	}
-	for _, camera := range body.Data.Records {
+	for _, camera := range cameras {
 		if cameraID == firstNonBlank(camera.CameraID, camera.ID) {
 			return camera, nil
 		}

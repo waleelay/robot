@@ -41,6 +41,9 @@
               </div>
             </div>
           </div>
+          <div class="mt6" style="color:#7ba9c7;font-size:12px;text-align:right;">
+            状态未知 {{ deviceStats?.unknown || 0 }}，已停用 {{ deviceStats?.disabled || 0 }}
+          </div>
           <div class="mt20">
             <div v-if="deviceTypeStats?.length" class="t2">设备类型</div>
             <div class="device_types mt10 flx-justify-between">

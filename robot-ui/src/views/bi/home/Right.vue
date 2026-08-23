@@ -28,22 +28,27 @@
               <div class="value mt4">{{ deviceStats?.offline ? String(deviceStats?.offline).padStart(2, '0') : '0' }}</div>
             </div>
           </div>
+          <div class="mt6" style="color:#7ba9c7;font-size:12px;text-align:right;">
+            状态未知 {{ deviceStats?.unknown || 0 }}，已停用 {{ deviceStats?.disabled || 0 }}
+          </div>
           <div class="mt20">
             <div class="t2">装备类型</div>
             <div class="mt12"> 
               <div class="flx-center top pr10 pl10">
-                <div class="tal" style="width: 40%;">装备类型</div>
+                <div class="tal" style="width: 32%;">装备类型</div>
                 <div class="flex1 tac ml10">总数</div>
                 <div class="flex1 tac ml10">故障</div>
                 <div class="flex1 tac ml10">离线</div>
+                <div class="flex1 tac ml10">未知/停用</div>
               </div>
               <div class="common-scroll ovya" style="min-height: 144px; max-height: 216px;">
                 <template v-if="deviceTypeStats.length">
                   <div v-for="item in deviceTypeStats" class="devices flx-center pr10 pl10">
-                    <div class="tal" style="width: 40%;">{{ item.name }}</div>
+                    <div class="tal" style="width: 32%;">{{ item.name }}</div>
                     <div class="flex1 tac ml10">{{ item.count || 0 }}</div>
                     <div class="flex1 tac ml10">{{ item.fault || 0 }}</div>
                     <div class="flex1 tac ml10">{{ item.offline || 0  }}</div>
+                    <div class="flex1 tac ml10">{{ (item.unknown || 0) + (item.disabled || 0) }}</div>
                   </div>
                 </template>
                 <div v-else style="color: #165e8c; font-family: 'Microsoft YaHei'; font-size: 14px; line-height: 108px; text-align: center;">暂无数据</div>

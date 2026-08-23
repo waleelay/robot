@@ -17,6 +17,9 @@ type Config struct {
 	MQTTPassword             string
 	ClientID                 string
 	FixedCameraGatewayID     string
+	FixedCameraHeartbeat     time.Duration
+	FixedCameraHealthProbe   time.Duration
+	FixedCameraProbeWorkers  int
 	ManagementServiceURL     string
 	ManagementToken          string
 	ManagementInsecureTLS    bool
@@ -111,6 +114,9 @@ func Load() Config {
 		MQTTPassword:             env("MQTT_PASSWORD", ""),
 		ClientID:                 env("ROBOT_CLIENT_ID", "robot-media-client"),
 		FixedCameraGatewayID:     env("FIXED_CAMERA_GATEWAY_ID", "default"),
+		FixedCameraHeartbeat:     time.Duration(envInt("FIXED_CAMERA_HEARTBEAT_INTERVAL_SECONDS", 10)) * time.Second,
+		FixedCameraHealthProbe:   time.Duration(envInt("FIXED_CAMERA_HEALTH_PROBE_INTERVAL_SECONDS", 60)) * time.Second,
+		FixedCameraProbeWorkers:  envInt("FIXED_CAMERA_HEALTH_PROBE_CONCURRENCY", 4),
 		ManagementServiceURL:     env("MANAGEMENT_SERVICE_URL", env("CENTER_MANAGE_BASE_URL", "http://host.docker.internal:8866")),
 		ManagementToken:          env("MANAGEMENT_SERVICE_TOKEN", ""),
 		ManagementInsecureTLS:    envBool("MANAGEMENT_INSECURE_SKIP_VERIFY", false),

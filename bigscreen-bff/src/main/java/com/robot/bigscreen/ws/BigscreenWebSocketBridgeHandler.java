@@ -336,6 +336,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 Set<StatsPart> statsParts = eventAdapter.statsRefreshParts(browserSession.getId(), centerPayload);
                 boolean refreshTasks = eventAdapter.isTaskInvalidation(centerPayload);
                 boolean refreshAlarms = eventAdapter.isAlarmInvalidation(centerPayload);
+                boolean refreshFixedCameraHealth = eventAdapter.isFixedCameraHealthInvalidation(centerPayload);
                 for (String payload : eventAdapter.adapt(centerPayload)) {
                     locationEventThrottler.publish(
                             browserSession.getId(),
@@ -363,6 +364,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                             browserSession.getId(),
                             authentication,
                             payload -> sendUserScopedToBrowserSession(browserSession, payload));
+                }
+                if (refreshFixedCameraHealth) {
+                    sendUserScopedToBrowserSession(
+                            browserSession,
+                            eventAdapter.fixedCameraHealthInvalidation(centerPayload));
                 }
             }
         }

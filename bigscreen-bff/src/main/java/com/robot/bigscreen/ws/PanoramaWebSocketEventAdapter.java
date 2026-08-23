@@ -31,6 +31,7 @@ public class PanoramaWebSocketEventAdapter {
     private static final String PANORAMA_ALARM_CHANGED = "panorama.alarm.changed";
     private static final String MANAGEMENT_TASK_INVALIDATED = "management.task.invalidated";
     private static final String MANAGEMENT_ALARM_INVALIDATED = "management.alarm.invalidated";
+    private static final String FIXED_CAMERA_HEALTH_CHANGED = "fixed-camera.health.changed";
     private static final Set<String> TASK_EVENTS = Set.of(
             "task.changed",
             "task.created",
@@ -78,6 +79,11 @@ public class PanoramaWebSocketEventAdapter {
 
         String event = text(root, "event");
         JsonNode data = root.path("data");
+        // Control 原始健康事件含 gatewayId/cameraId，不能直接广播给其他用户。
+        // Bridge 会改发不含资源明细的用户范围失效事件，并按当前身份重查 Overview。
+        if (FIXED_CAMERA_HEALTH_CHANGED.equals(event)) {
+            return List.of();
+        }
         if (!data.isObject()) {
             return messages;
         }
@@ -111,6 +117,20 @@ public class PanoramaWebSocketEventAdapter {
     public boolean isAlarmInvalidation(String centerPayload) {
         JsonNode root = readTree(centerPayload);
         return root != null && MANAGEMENT_ALARM_INVALIDATED.equals(text(root, "event"));
+    }
+
+    public boolean isFixedCameraHealthInvalidation(String centerPayload) {
+        JsonNode root = readTree(centerPayload);
+        return root != null && FIXED_CAMERA_HEALTH_CHANGED.equals(text(root, "event"));
+    }
+
+    public String fixedCameraHealthInvalidation(String centerPayload) {
+        JsonNode root = readTree(centerPayload);
+        ObjectNode event = objectMapper.createObjectNode();
+        event.put("event", "bigscreen.fixed-camera.health.changed");
+        event.put("timestamp", root == null ? EVENT_TIME_FORMATTER.format(LocalDateTime.now()) : timestamp(root));
+        event.set("data", objectMapper.createObjectNode().put("reason", "FIXED_CAMERA_HEALTH_CHANGED"));
+        return writeValue(event);
     }
 
     private boolean isUnresolvedPanoramaTask(String event, JsonNode data) {
@@ -342,7 +362,7 @@ public class PanoramaWebSocketEventAdapter {
                 || ROBOT_MILEAGE_CHANGED.equals(event)) {
             parts.add(StatsPart.TASKS);
         }
-        if (DEVICE_EVENTS.contains(event)) {
+        if (DEVICE_EVENTS.contains(event) || FIXED_CAMERA_HEALTH_CHANGED.equals(event)) {
             parts.add(StatsPart.DEVICES);
         }
         if (!ROBOT_STATE_EVENT.equals(event)) {

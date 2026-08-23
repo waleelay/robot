@@ -569,7 +569,7 @@ class PanoramaServiceTest {
     }
 
     @Test
-    void mapsEnabledFixedCamerasAsOnlineDevices() {
+    void keepsEnabledFixedCameraUnknownWithoutFreshHealth() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         when(centerClient.fixedCameras()).thenReturn(List.of(Map.of(
@@ -591,7 +591,10 @@ class PanoramaServiceTest {
         assertEquals(1, devices.size());
         assertEquals("camera-001", devices.get(0).get("robotId"));
         assertEquals("FIXED_CAMERA", devices.get(0).get("sourceType"));
-        assertEquals("online", devices.get(0).get("status"));
+        assertEquals("unknown", devices.get(0).get("status"));
+        assertEquals(true, devices.get(0).get("enabled"));
+        assertEquals("READY", devices.get(0).get("configStatus"));
+        assertEquals("UNKNOWN", ((Map<?, ?>) devices.get(0).get("gatewayHealth")).get("status"));
         assertEquals("1001", ((Map<?, ?>) devices.get(0).get("location")).get("mapId"));
         assertEquals("camera-001", devices.get(0).get("equipmentId"));
         assertEquals("camera-001", devices.get(0).get("cameraId"));
@@ -604,6 +607,29 @@ class PanoramaServiceTest {
         assertEquals(true, devices.get(0).get("playable"));
         assertEquals(false, devices.get(0).get("showControlCenter"));
         assertEquals(false, devices.get(0).get("showController"));
+        assertEquals(1L, ((Map<?, ?>) overview.get("deviceStats")).get("unknown"));
+    }
+
+    @Test
+    void mapsFixedCameraOnlineOnlyWithFreshGatewayAndStreamHealth() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.fixedCameras()).thenReturn(List.of(Map.of(
+                "cameraId", "camera-001", "cameraName", "固定摄像头一", "protocolType", "RTSP",
+                "enabled", true, "mainStreamUrl", "rtsp://example/camera-001")));
+        when(centerClient.fixedCameraHealth()).thenReturn(Map.of("records", List.of(Map.of(
+                "cameraId", "camera-001",
+                "gatewayId", "gateway-001",
+                "gatewayHealth", Map.of("status", "ONLINE", "observedAt", "2026-08-23T00:00:00Z"),
+                "streamHealth", Map.of("status", "AVAILABLE", "observedAt", "2026-08-23T00:00:00Z")))));
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        Map<String, Object> camera = maps(overview.get("devices")).get(0);
+        assertEquals("online", camera.get("status"));
+        assertEquals("ONLINE", ((Map<?, ?>) camera.get("gatewayHealth")).get("status"));
+        assertEquals("AVAILABLE", ((Map<?, ?>) camera.get("streamHealth")).get("status"));
+        assertEquals(1L, ((Map<?, ?>) overview.get("deviceStats")).get("online"));
     }
 
     @Test
@@ -716,6 +742,7 @@ class PanoramaServiceTest {
         when(centerClient.deviceTypeOptions()).thenReturn(List.of());
         when(centerClient.registeredRobots()).thenReturn(List.of());
         when(centerClient.fixedCameras()).thenReturn(List.of());
+        when(centerClient.fixedCameraHealth()).thenReturn(Map.of("records", List.of()));
         when(centerClient.taskWorkflowPlans()).thenReturn(List.of());
         when(centerClient.taskWorkflowInstances()).thenReturn(List.of());
         when(centerClient.alarms(any(), any(), any())).thenReturn(List.of());

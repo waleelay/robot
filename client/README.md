@@ -133,6 +133,9 @@ main
 | `ManagementServiceURL` | `MANAGEMENT_SERVICE_URL` / `CENTER_MANAGE_BASE_URL` | 管理端服务地址，用于查询 `/api/v1/management/fixed-cameras` |
 | `ManagementToken` | `MANAGEMENT_SERVICE_TOKEN` | 调管理端接口时附加的 Bearer token，可为空 |
 | `ManagementInsecureTLS` | `MANAGEMENT_INSECURE_SKIP_VERIFY` | 内网自签 HTTPS 证书兼容开关，默认关闭 |
+| `FixedCameraHeartbeat` | `FIXED_CAMERA_HEARTBEAT_INTERVAL_SECONDS` | Gateway 心跳周期，默认 10 秒 |
+| `FixedCameraHealthProbe` | `FIXED_CAMERA_HEALTH_PROBE_INTERVAL_SECONDS` | 全量 RTSP 健康扫描周期，默认 60 秒 |
+| `FixedCameraProbeWorkers` | `FIXED_CAMERA_HEALTH_PROBE_CONCURRENCY` | 健康探测最大并发，默认 4 |
 
 ### 4.2 摄像头与 RTSP
 
@@ -247,6 +250,12 @@ main
 | `robot/{robotId}/media/video/status` | `StatusMessage` | 实时视频状态 |
 | `robot/{robotId}/media/video/intercom/status` | `IntercomStatusMessage` | 对讲状态 |
 | `gateway/fixed-camera/{gatewayId}/video/status` | `StatusMessage` | 固定摄像头实时视频状态 |
+| `gateway/fixed-camera/{gatewayId}/status` | `FixedCameraGatewayStatus` | Gateway 上线、离线和周期心跳 |
+| `gateway/fixed-camera/{gatewayId}/camera/{cameraId}/status` | `FixedCameraHealthStatus` | 固定摄像头最近 RTSP 健康 |
+
+Gateway 连接后每 10 秒上报心跳，并设置异常断连 `OFFLINE` 遗嘱。固定摄像头列表按每页
+500 条完整读取，每 60 秒以默认最多 4 个并发执行 RTSP 探测；上一轮未结束时跳过重叠轮次。
+两类健康 Topic 均不携带 RTSP URL 或 Token，也不替代按 `sessionId` 上报的会话状态。
 
 ### 6.3 指令处理流程
 

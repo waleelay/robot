@@ -44,6 +44,13 @@ control:
     fixed-camera-gateway-id: ${FIXED_CAMERA_GATEWAY_ID:default}
     # 是否启用 MQTT 状态订阅与指令下发。
     enabled: ${MQTT_ENABLED:true}
+  fixed-camera-health:
+    # Gateway 连续多久没有心跳后判为离线。
+    gateway-timeout-seconds: ${FIXED_CAMERA_GATEWAY_TIMEOUT_SECONDS:30}
+    # 摄像头 RTSP 健康状态最大有效时间，过期后转为 UNKNOWN。
+    camera-max-age-seconds: ${FIXED_CAMERA_HEALTH_MAX_AGE_SECONDS:120}
+    # 健康状态过期扫描间隔。
+    sweep-delay-ms: ${FIXED_CAMERA_HEALTH_SWEEP_DELAY_MS:1000}
   center-stomp:
     # 是否连接管理中心 STOMP 端点；任务事实仍以 Management HTTP 查询结果为准。
     enabled: ${CENTER_STOMP_ENABLED:true}
