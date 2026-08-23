@@ -31,6 +31,23 @@ class EquipmentControlServiceTest {
             new EquipmentControlService(commandPublisher, webSocketPublisher, managementClient);
 
     @Test
+    void rejectsCommandBeforeMqttWhenCurrentIdentityCannotAccessRobot() {
+        when(managementClient.deviceBySerialNumber("robot-001")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.publishCommand(
+                "robot-001",
+                object(
+                        "target", object("deviceId", "base"),
+                        "action", "drive.velocity",
+                        "params", object("linearX", 0.2, "linearY", 0.0, "angularZ", 0.0)),
+                operator()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未找到机器人");
+
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+    }
+
+    @Test
     void buildsDriveVelocityWithExistingRobotProtocolFields() {
         register(component("BODY", "body"));
 

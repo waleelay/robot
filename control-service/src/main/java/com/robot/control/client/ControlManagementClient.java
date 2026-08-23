@@ -207,9 +207,12 @@ public class ControlManagementClient {
         return records(uri);
     }
 
-    private Duration deviceTtl() {
+    Duration deviceTtl() {
         int seconds = properties.getDeviceCacheTtlSeconds();
-        return seconds > 0 ? Duration.ofSeconds(seconds) : DEFAULT_DEVICE_CACHE_TTL;
+        if (seconds <= 0) {
+            return DEFAULT_DEVICE_CACHE_TTL;
+        }
+        return Duration.ofSeconds(Math.min(seconds, (int) DEFAULT_DEVICE_CACHE_TTL.toSeconds()));
     }
 
     /** 定期清理已过期的用户设备缓存，避免 token 刷新或用户切换后旧条目长期占用内存。 */

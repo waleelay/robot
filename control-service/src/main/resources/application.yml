@@ -24,7 +24,7 @@ control:
   media-service-base-url: ${MEDIA_SERVICE_BASE_URL:http://media-service:8088}
   # Management Service 内部接口基础地址。
   management-service-base-url: ${CENTER_MANAGE_BASE_URL:http://host.docker.internal:8866}
-  # 设备档案与设备列表缓存 TTL（秒），生产默认 120 秒，兼顾权限变更生效速度与管理端请求压力。
+  # 设备档案与授权列表缓存 TTL（秒），默认且代码硬上限均为 30 秒。
   device-cache-ttl-seconds: ${MANAGEMENT_DEVICE_CACHE_TTL_SECONDS:30}
   auth:
     # 控制服务默认组织 ID。

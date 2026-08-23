@@ -28,6 +28,24 @@ import { attachTrackRespectingUserPause } from '../../views/bi/js/utils/livekit-
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 const controlProfileInflight = {}
+
+// 4001 先立即刷新 Token；4003 和网络异常采用带抖动的指数退避，避免权限服务故障时重连风暴。
+export function mediaReconnectDelay(closeCode, attempts, randomValue = Math.random()) {
+  if (closeCode === 4001) return 0
+  const exponent = Math.min(Math.max(Number(attempts) || 0, 0), 4)
+  const baseDelay = Math.min(30000, 2000 * Math.pow(2, exponent))
+  const jitter = Math.floor(Math.max(0, Math.min(randomValue, 1)) * 500)
+  return Math.min(30000, baseDelay + jitter)
+}
+
+function refreshAuthorizedOverview(dispatch) {
+  return dispatch('websocketExtraData/refreshOverviewResources', null, { root: true })
+    .catch(error => {
+      console.error('授权资源变更后刷新大屏总览失败', error)
+      Message.warning('大屏授权数据刷新失败，请稍后重试')
+    })
+}
+
 // 定义 WebSocket 模块的初始状态
 const state = {
   websocket: null, // 存储 WebSocket 实例
@@ -39,6 +57,8 @@ const state = {
   wsConnected: false, // 媒体服务 WebSocket 连接状态
   mediaSocket: null, // 媒体服务 WebSocket 实例
   mediaReconnectTimer: null,
+  mediaReconnectStableTimer: null,
+  mediaReconnectAttempts: 0,
   mediaManualClosing: false,
   robots: [], // 机器人列表
   cameras: {}, // 全局摄像头索引 { [cameraKey]: camera }
@@ -222,9 +242,17 @@ const mutations = {
   setMediaManualClosing(state, value) {
     state.mediaManualClosing = !!value
   },
+  incrementMediaReconnectAttempts(state) {
+    state.mediaReconnectAttempts += 1
+  },
+  resetMediaReconnectAttempts(state) {
+    state.mediaReconnectAttempts = 0
+  },
   RESET_MEDIA_USER_STATE(state) {
     state.wsConnected = false
     state.mediaSocket = null
+    state.mediaReconnectStableTimer = null
+    state.mediaReconnectAttempts = 0
     state.robots = []
     state.cameras = {}
     state.camerasRevision += 1
@@ -743,12 +771,27 @@ const actions = {
     }
     const socket = new WebSocket(socketUrl.toString())
     socket.onopen = () => {
+      const isReconnect = state.mediaReconnectAttempts > 0
       if (state.mediaReconnectTimer) {
         clearTimeout(state.mediaReconnectTimer)
         state.mediaReconnectTimer = null
       }
       commit('setWsConnected', true)
+      if (state.mediaReconnectStableTimer) {
+        clearTimeout(state.mediaReconnectStableTimer)
+      }
+      // 握手成功后 BFF 仍可能因初始权限加载失败立即返回 4003，稳定 10 秒后才清零退避次数。
+      state.mediaReconnectStableTimer = setTimeout(() => {
+        state.mediaReconnectStableTimer = null
+        if (state.mediaSocket === socket && socket.readyState === WebSocket.OPEN) {
+          commit('resetMediaReconnectAttempts')
+        }
+      }, 10000)
       dispatch('startHeartbeat')
+      // 断线期间权限可能变化；重连成功后重新取得权威 Overview，不能沿用旧页面集合。
+      if (isReconnect) {
+        refreshAuthorizedOverview(dispatch)
+      }
       socket.send(JSON.stringify({
         type: 'video.intercom.call.query',
         requestId: `call-query-${Date.now()}`,
@@ -756,21 +799,36 @@ const actions = {
       }))
       // console.log('Media WebSocket connected', url)
     }
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       commit('setWsConnected', false)
+      if (state.mediaReconnectStableTimer) {
+        clearTimeout(state.mediaReconnectStableTimer)
+        state.mediaReconnectStableTimer = null
+      }
       if (state.mediaSocket === socket) {
         commit('setMediaSocket', null)
       }
       if (!state.mediaManualClosing && !state.mediaReconnectTimer && window.location.pathname.startsWith('/bi/')) {
+        const reconnectDelay = mediaReconnectDelay(event.code, state.mediaReconnectAttempts)
+        if (event.code === 4001) {
+          Message.warning('登录凭证已过期，正在刷新凭证并重新连接')
+        } else if (event.code === 4003 && state.mediaReconnectAttempts === 0) {
+          Message.warning('权限服务暂不可用，正在尝试恢复连接')
+        }
+        commit('incrementMediaReconnectAttempts')
         state.mediaReconnectTimer = setTimeout(() => {
           state.mediaReconnectTimer = null
           dispatch('connectMediaWebSocket')
-        }, 2000)
+        }, reconnectDelay)
       }
       // console.log('Media WebSocket closed', url)
     }
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data)
+      if (event.event === 'bigscreen.authorization.changed') {
+        refreshAuthorizedOverview(dispatch)
+        return
+      }
       dispatch('syncRobotEvent', event)
       dispatch('websocketExtraData/syncRobot', event, { root: true })
       dispatch('syncSessionEvent', event)
@@ -785,6 +843,10 @@ const actions = {
       clearTimeout(state.mediaReconnectTimer)
       state.mediaReconnectTimer = null
     }
+    if (state.mediaReconnectStableTimer) {
+      clearTimeout(state.mediaReconnectStableTimer)
+      state.mediaReconnectStableTimer = null
+    }
     if (state.heartbeatTimer) {
       clearInterval(state.heartbeatTimer)
       state.heartbeatTimer = null
@@ -798,6 +860,7 @@ const actions = {
     }
     commit('setMediaSocket', null)
     commit('setWsConnected', false)
+    commit('resetMediaReconnectAttempts')
     if (clearUserState) {
       window.localStorage.removeItem(DEVICE_STATE_CACHE_KEY)
       commit('RESET_MEDIA_USER_STATE')

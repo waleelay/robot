@@ -99,7 +99,35 @@ BFF 在三个兼容路径注册同一桥接处理器：
 /ws/bigscreen
 ```
 
-每个浏览器连接对应一条到 `center.websocket-control-url` 的上游连接。浏览器消息原样转发给上游；上游原始消息也原样回传，同时可能派生 `panorama.*` 事件。
+每个浏览器连接对应一条到 `center.websocket-control-url` 的上游连接。BFF 在转发浏览器消息前检查 Token 和当前授权快照；显式携带无权 `robotId` 或 `cameraId` 的消息不会转发到 Control。通过预校验的消息原样转发；上游原始消息按授权资源过滤后回传，同时可能派生 `panorama.*` 事件。
+
+授权快照最大陈旧时间为 30 秒。初始加载或刷新失败使用 `4003` 关闭连接；握手 JWT 到达 `exp` 后使用 `4001` 关闭。资源集合发生变化时连接保持有效，BFF 发送以下通知，调用方必须重新请求 `/api/bigscreen/panorama/overview`，并以响应完整替换旧设备集合：
+
+```json
+{
+  "event": "bigscreen.authorization.changed",
+  "timestamp": "2026-08-23T22:00:00Z",
+  "data": {
+    "reason": "AUTHORIZED_RESOURCES_CHANGED"
+  }
+}
+```
+
+该通知不携带授权 ID 明细，Overview 是页面完整快照的权威来源。前端应先清除旧资源再请求 Overview；请求失败时不得恢复已清除的旧资源。WebSocket 断线重连成功后也应重新请求 Overview，以覆盖断线期间的权限变化。
+
+显式资源预校验失败时，BFF 返回带原 `requestId` 的失败回执；普通控制消息使用 `control.command.rejected`，对讲消息使用 `video.intercom.call.operation-failed`：
+
+```json
+{
+  "type": "control.command.rejected",
+  "requestId": "request-001",
+  "timestamp": "2026-08-23T22:00:00Z",
+  "payload": {
+    "code": "RESOURCE_FORBIDDEN",
+    "message": "当前用户无权操作目标资源"
+  }
+}
+```
 
 事件适配规则：
 

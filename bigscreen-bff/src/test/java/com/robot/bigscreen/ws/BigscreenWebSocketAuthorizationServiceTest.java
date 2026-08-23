@@ -79,4 +79,42 @@ class BigscreenWebSocketAuthorizationServiceTest {
                         Set.of(), Set.of("camera-002")),
                 payload));
     }
+
+    @Test
+    void rejectsClientCommandForUnauthorizedRobot() {
+        String payload = """
+                {
+                  "type": "control.command",
+                  "requestId": "request-001",
+                  "payload": {
+                    "robotId": "robot-002",
+                    "action": "move"
+                  }
+                }
+                """;
+
+        assertFalse(service.canForwardClientMessage(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(
+                        Set.of("robot-001"), Set.of()),
+                payload));
+        assertTrue(service.canForwardClientMessage(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(
+                        Set.of("robot-001", "robot-002"), Set.of()),
+                payload));
+    }
+
+    @Test
+    void allowsClientQueryWithoutExplicitResourceForControlFinalAuthorization() {
+        String payload = """
+                {
+                  "type": "video.intercom.call.query",
+                  "requestId": "request-002",
+                  "payload": {}
+                }
+                """;
+
+        assertTrue(service.canForwardClientMessage(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(Set.of(), Set.of()),
+                payload));
+    }
 }

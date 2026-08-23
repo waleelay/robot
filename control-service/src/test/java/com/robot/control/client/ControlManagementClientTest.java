@@ -8,6 +8,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.robot.control.auth.RequestAuthorizationHeaders;
 import com.robot.control.config.ControlProperties;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -17,6 +18,16 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 class ControlManagementClientTest {
+
+    @Test
+    void capsDeviceAuthorizationCacheAtThirtySeconds() {
+        ControlProperties properties = new ControlProperties();
+        properties.setDeviceCacheTtlSeconds(300);
+        ControlManagementClient client = new ControlManagementClient(
+                mock(RestClient.class), properties, mock(RequestAuthorizationHeaders.class));
+
+        assertThat(client.deviceTtl()).isEqualTo(Duration.ofSeconds(30));
+    }
 
     @Test
     void keepsWarmedDeviceDetailsIsolatedToCurrentUser() {

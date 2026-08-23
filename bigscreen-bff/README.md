@@ -32,7 +32,7 @@ src/main/java/com/robot/bigscreen/
 - `BusinessTaskProxyController`：只代理任务计划、流程定义、执行记录、设备和地图白名单。
 - `PanoramaService`：并行查询管理端与 Control，组装 overview、设备详情、任务和告警。
 - `StatisticsService`：基于授权设备、实时状态、任务、告警和 Control 里程汇总统计，并同步生成/保存 PDF；缺少权威来源的指标保持 `null`。
-- `BigscreenWebSocketBridgeHandler`：为每个浏览器连接建立一条 Control 上游连接。
+- `BigscreenWebSocketBridgeHandler`：为每个浏览器连接建立一条 Control 上游连接；按用户和组织复用最长 30 秒的授权快照，在事件下发和控制上行前强制检查快照及 Token 有效期；资源集合变化时发送 `bigscreen.authorization.changed`，通知前端重拉 Overview。
 - `PanoramaWebSocketEventAdapter`：将 `robot.state` 等事件适配成 `panorama.*`。
 - `PanoramaTaskEventRefresher` / `PanoramaStatsEventRefresher`：分别以 300ms/500ms 去抖查询权威快照并按差异推送。
 
@@ -72,6 +72,9 @@ BFF 是 OAuth2 Resource Server：
 | `CENTER_V1_CONTROL_BASE_URL` | 旧版控制服务地址，供全景聚合内部查询设备实时状态；BFF 未对外注册 `/api/v1/control/**` 透明代理 |
 | `CENTER_MEDIA_BASE_URL` | Media 地址 |
 | `CENTER_CONTROL_WS_URL` | Control WebSocket 地址 |
+| `BIGSCREEN_WS_AUTHORIZATION_MAX_STALENESS_MS` | WebSocket 授权快照最大陈旧时间，默认 30000，生产不得调大 |
+| `BIGSCREEN_WS_AUTHORIZATION_CHECK_INTERVAL_MS` | Token 和授权快照检查周期，默认 1000 |
+| `BIGSCREEN_WS_AUTHORIZATION_LOAD_TIMEOUT_MS` | 单次完整授权加载总时限，默认 8000 |
 | `BIGSCREEN_AUTH_CLIENT_ID` | JWT `azp/aud` 目标客户端 |
 | `BIGSCREEN_AUTH_ISSUER_URI`、`BIGSCREEN_AUTH_JWK_SET_URI` | JWT Issuer 与 JWK |
 | `BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS` | CORS 来源模式 |

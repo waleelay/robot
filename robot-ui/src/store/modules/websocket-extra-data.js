@@ -20,6 +20,9 @@ import {
   getTaskById,
   listTasksForRobot
 } from "../../views/bi/patrol/business/task-equipment";
+import { getPatrolPanoramaOverview } from '../../api/new-bi'
+
+let overviewRefreshPromise = null
 
 const state = {
   // 设备对象：设备详情，包含坐标位置，task基本信息
@@ -267,6 +270,18 @@ const mutations = {
 const actions = {
   resetOverviewResourceState({ commit }) {
     commit('RESET_OVERVIEW_RESOURCE_STATE')
+  },
+  refreshOverviewResources({ commit, dispatch }) {
+    if (overviewRefreshPromise) return overviewRefreshPromise
+    // 权限收缩时先清空旧资源，避免 REST 刷新失败期间继续展示已失权设备。
+    commit('RESET_OVERVIEW_RESOURCE_STATE')
+    dispatch('websocketRobot/loadRobots', [], { root: true })
+    overviewRefreshPromise = getPatrolPanoramaOverview()
+      .then(data => dispatch('setAll', data))
+      .finally(() => {
+        overviewRefreshPromise = null
+      })
+    return overviewRefreshPromise
   },
   setAll({commit, state, dispatch}, data) {
     commit('RESET_OVERVIEW_RESOURCE_STATE')

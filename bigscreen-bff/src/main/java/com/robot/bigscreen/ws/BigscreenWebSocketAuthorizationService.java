@@ -11,8 +11,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -32,6 +34,9 @@ public class BigscreenWebSocketAuthorizationService {
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
+
+    @Value("${bigscreen.websocket.authorization-load-timeout-ms:8000}")
+    private long authorizationLoadTimeoutMs = 8000L;
 
     public BigscreenWebSocketAuthorizationService(
             CenterServiceProperties properties,
@@ -65,13 +70,17 @@ public class BigscreenWebSocketAuthorizationService {
             throw new IllegalStateException("大屏 WebSocket 会话缺少授权信息");
         }
         try {
+            long deadlineNanos = System.nanoTime()
+                    + TimeUnit.MILLISECONDS.toNanos(Math.max(1000L, authorizationLoadTimeoutMs));
             Set<String> robotIds = loadAuthorizedIds(
                     headers,
                     "/api/v1/management/devices",
+                    deadlineNanos,
                     "serialNumber", "robotId", "deviceCode", "id");
             Set<String> cameraIds = loadAuthorizedIds(
                     headers,
                     "/api/v1/management/fixed-cameras",
+                    deadlineNanos,
                     "cameraId", "id");
             return new AuthorizedResources(robotIds, cameraIds);
         } catch (RuntimeException exception) {
@@ -91,6 +100,23 @@ public class BigscreenWebSocketAuthorizationService {
         Set<String> payloadCameraIds = cameraIdsInPayload(payload);
         if (payloadRobotIds.isEmpty() && payloadCameraIds.isEmpty()) {
             return false;
+        }
+        return resources != null
+                && resources.robotIds().containsAll(payloadRobotIds)
+                && resources.cameraIds().containsAll(payloadCameraIds);
+    }
+
+    /**
+     * 校验浏览器上行消息引用的资源是否属于当前授权集合。
+     *
+     * <p>不包含资源标识的查询类消息继续交给 Control 做最终鉴权；只要消息显式携带
+     * robotId、cameraId 或固定摄像头 sourceId，BFF 就先拒绝明显越权的目标。</p>
+     */
+    public boolean canForwardClientMessage(AuthorizedResources resources, String payload) {
+        Set<String> payloadRobotIds = robotIdsInPayload(payload);
+        Set<String> payloadCameraIds = cameraIdsInPayload(payload);
+        if (payloadRobotIds.isEmpty() && payloadCameraIds.isEmpty()) {
+            return true;
         }
         return resources != null
                 && resources.robotIds().containsAll(payloadRobotIds)
@@ -148,10 +174,15 @@ public class BigscreenWebSocketAuthorizationService {
                 .toList();
     }
 
-    private Set<String> loadAuthorizedIds(HttpHeaders headers, String path, String... idFields) {
+    private Set<String> loadAuthorizedIds(
+            HttpHeaders headers,
+            String path,
+            long deadlineNanos,
+            String... idFields) {
         int pageSize = 500;
         Set<String> ids = new HashSet<>();
         for (int pageNum = 1; pageNum <= 1000; pageNum++) {
+            requireBeforeDeadline(deadlineNanos, path);
             URI uri = UriComponentsBuilder.fromUriString(baseUrl() + path)
                     .queryParam("pageNum", pageNum)
                     .queryParam("pageSize", pageSize)
@@ -162,6 +193,7 @@ public class BigscreenWebSocketAuthorizationService {
                     .headers(target -> target.addAll(headers))
                     .retrieve()
                     .body(MAP_TYPE);
+            requireBeforeDeadline(deadlineNanos, path);
             List<Map<String, Object>> records = records(response);
             for (Map<String, Object> item : records) {
                 firstString(item, idFields).ifPresent(ids::add);
@@ -171,6 +203,12 @@ public class BigscreenWebSocketAuthorizationService {
             }
         }
         throw new IllegalStateException("Management 授权资源分页超过安全上限：" + path);
+    }
+
+    private void requireBeforeDeadline(long deadlineNanos, String path) {
+        if (System.nanoTime() >= deadlineNanos) {
+            throw new IllegalStateException("Management 授权查询超过总时限：" + path);
+        }
     }
 
     private void collectResourceIds(JsonNode node, String fieldName, Set<String> resourceIds) {

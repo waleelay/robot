@@ -23,8 +23,12 @@ statistics:
 
 bigscreen:
   websocket:
-    # WebSocket 会话设备与固定摄像头权限刷新周期。
-    authorization-refresh-ms: ${BIGSCREEN_WS_AUTHORIZATION_REFRESH_MS:30000}
+    # WebSocket 授权快照最大允许陈旧时间；超过后禁止继续收发业务消息。
+    authorization-max-staleness-ms: ${BIGSCREEN_WS_AUTHORIZATION_MAX_STALENESS_MS:30000}
+    # Token/快照过期检查周期；Management 权限查询由独立线程按身份执行。
+    authorization-check-interval-ms: ${BIGSCREEN_WS_AUTHORIZATION_CHECK_INTERVAL_MS:1000}
+    # 单次设备与固定摄像头完整权限加载的总时限。
+    authorization-load-timeout-ms: ${BIGSCREEN_WS_AUTHORIZATION_LOAD_TIMEOUT_MS:8000}
   auth:
     # BFF 校验 JWT audience/authorized party 时使用的客户端 ID。
     client-id: ${BIGSCREEN_AUTH_CLIENT_ID:bigscreen-web}
