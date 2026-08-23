@@ -3,7 +3,6 @@ package rtsp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os/exec"
 	"time"
 )
@@ -29,9 +28,6 @@ func (p *Probe) Check(ctx context.Context, url string) (StreamInfo, error) {
 	output, err := exec.CommandContext(ctx, p.path, "-v", "error", "-rtsp_transport", "tcp", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height", "-of", "json", url).Output()
 	if err != nil {
 		return StreamInfo{}, err
-	}
-	if len(output) > 0 {
-		fmt.Print(string(output))
 	}
 	var payload struct {
 		Streams []struct {

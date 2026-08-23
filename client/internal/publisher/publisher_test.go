@@ -1,12 +1,49 @@
 package publisher
 
 import (
+	"bytes"
+	"context"
+	"log"
+	"strings"
 	"testing"
 	"time"
 
 	"robot-media-client/internal/config"
 	"robot-media-client/internal/model"
 )
+
+func TestPublisherLogDoesNotContainTokenOrRTSPURL(t *testing.T) {
+	var output bytes.Buffer
+	previousWriter := log.Writer()
+	previousFlags := log.Flags()
+	log.SetOutput(&output)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(previousWriter)
+		log.SetFlags(previousFlags)
+	})
+
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/echo {token} {rtsp}"})
+	command := model.StartCommand{
+		SessionID:      "session-log",
+		Channel:        "visible",
+		Quality:        "sub",
+		PublisherToken: "publisher-token-secret",
+		RTSPURL:        "rtsp://user:password@camera.example/live",
+		ExpiresAt:      time.Now().Add(time.Minute),
+	}
+	_, _, _ = pub.Start(context.Background(), command, command.RTSPURL)
+
+	logs := output.String()
+	if !strings.Contains(logs, "推流进程已启动") {
+		t.Fatalf("应输出中文推流启动日志，实际日志=%q", logs)
+	}
+	for _, secret := range []string{"publisher-token-secret", "rtsp://", "password", "camera.example"} {
+		if strings.Contains(logs, secret) {
+			t.Fatalf("日志不得包含敏感信息 %q，实际日志=%q", secret, logs)
+		}
+	}
+}
 
 func TestShouldStartWithFFmpegDuringGStreamerRetryCooldown(t *testing.T) {
 	pub := NewProcessPublisher(config.Config{

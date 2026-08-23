@@ -71,7 +71,8 @@ public class EdgeDeviceStatusHandler {
             Map<String, Object> merged = equipmentControlService.mergeEdgeDeviceStatus(serialNumber, update);
             robotRegistryService.update(merged);
         } catch (Exception ex) {
-            log.warn("处理边缘设备状态失败，主题={} 载荷={}", topic, json, ex);
+            log.warn("处理边缘设备状态失败，主题={} 载荷字节数={}", topic,
+                    json == null ? 0 : json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length, ex);
         }
     }
 

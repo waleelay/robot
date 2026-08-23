@@ -93,7 +93,7 @@ gateway/fixed-camera/{gatewayId}/video/restart
 gateway/fixed-camera/{gatewayId}/video/status
 ```
 
-固定摄像头仅支持 `visible`。Control 查询 Management 档案，校验 `enabled` 和码流，并在主/子码流缺失时回退到另一条可用码流。首次 start 命令含内部 `rtspUrl`；手工重启、自动恢复或切换命令可能不含该字段，由 Gateway 按摄像头 ID 回查 Management。`rtspUrl` 和 LiveKit Token 都是敏感数据；当前 MQTT 发布日志会序列化完整载荷，这是生产前必须关闭或脱敏的缺口。
+固定摄像头仅支持 `visible`。Control 查询 Management 档案，校验 `enabled` 和码流，并在主/子码流缺失时回退到另一条可用码流。首次 start 命令含内部 `rtspUrl`；手工重启、自动恢复或切换命令可能不含该字段，由 Gateway 按摄像头 ID 回查 Management。`rtspUrl` 和 LiveKit Token 都是敏感数据；MQTT 日志只允许输出命令白名单摘要，不得输出完整载荷。
 
 ## 4. WebSocket
 

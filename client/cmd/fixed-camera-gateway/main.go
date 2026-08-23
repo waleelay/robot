@@ -27,7 +27,7 @@ func main() {
 	gateway := fixedcamera.NewGateway(cfg, probe, pub)
 	for ctx.Err() == nil {
 		if err := gateway.Run(ctx); err != nil {
-			log.Println("fixed camera gateway stopped", err)
+			log.Printf("固定摄像头网关运行中断：%v", err)
 			select {
 			case <-ctx.Done():
 				return

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"net/url"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -93,7 +91,7 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 		return trackSid, publishedTrackName, err
 	}
 	p.gstreamerFailedRTSPURL[rtspURL] = time.Now()
-	log.Println("publisher fallback ffmpeg", command.SessionID, err)
+	log.Printf("GStreamer 推流失败，回退到 FFmpeg，会话ID=%s：%v", command.SessionID, err)
 	return p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.FFmpegPublisherCmd, "ffmpeg")
 }
 
@@ -112,13 +110,12 @@ func (p *ProcessPublisher) startCommand(ctx context.Context, command model.Start
 		).Replace(args[i])
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	log.Println("publisher command", mode, strings.Join(redactArgs(args), " "))
 	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
+	// 外部进程参数和输出可能包含 RTSP 凭据或 LiveKit Token，不写入应用日志。
+	log.Printf("推流进程已启动，模式=%s 会话ID=%s", mode, command.SessionID)
 	entry := newProcessEntry(cmd, mode, command.ExpiresAt)
 	p.cmds[key] = entry
 	p.bindSessionLocked(command.SessionID, key)
@@ -140,13 +137,12 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 	args := []string{"--url", command.LiveKitURL, "--token", command.PublisherToken, "--"}
 	args = append(args, strings.Fields(pipeline)...)
 	cmd := exec.CommandContext(ctx, p.cfg.GStreamerPublisherPath, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	log.Println("publisher command", p.cfg.GStreamerPublisherPath, strings.Join(redactArgs(args), " "))
 	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
+	// 外部进程参数和输出可能包含 RTSP 凭据或 LiveKit Token，不写入应用日志。
+	log.Printf("GStreamer 推流进程已启动，会话ID=%s", command.SessionID)
 	entry := newProcessEntry(cmd, "gstreamer", command.ExpiresAt)
 	p.cmds[key] = entry
 	p.bindSessionLocked(command.SessionID, key)
@@ -165,7 +161,7 @@ func (p *ProcessPublisher) shouldStartWithFFmpeg(command model.StartCommand, rts
 			return true
 		}
 		delete(p.gstreamerFailedRTSPURL, rtspURL)
-		log.Println("publisher retry gstreamer after fallback cooldown", command.SessionID)
+		log.Printf("FFmpeg 回退冷却结束，重新尝试 GStreamer，会话ID=%s", command.SessionID)
 	}
 	return p.cfg.PublisherFFmpegFirstIDs[command.DeviceID]
 }
@@ -196,9 +192,9 @@ func (p *ProcessPublisher) fallbackIfGStreamerExits(ctx context.Context, command
 		}
 		delete(p.cmds, key)
 		p.gstreamerFailedRTSPURL[rtspURL] = time.Now()
-		log.Println("publisher auto fallback ffmpeg", command.SessionID, "gstreamer_exit", err)
+		log.Printf("GStreamer 推流进程退出，自动回退到 FFmpeg，会话ID=%s：%v", command.SessionID, err)
 		if _, _, startErr := p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.FFmpegPublisherCmd, "ffmpeg"); startErr != nil {
-			log.Println("publisher auto fallback failed", command.SessionID, startErr)
+			log.Printf("自动回退到 FFmpeg 失败，会话ID=%s：%v", command.SessionID, startErr)
 		}
 	case <-time.After(p.cfg.PublisherFallbackWatch):
 	case <-ctx.Done():
@@ -337,36 +333,4 @@ func (p *ProcessPublisher) unbindSessionLocked(sessionID string) string {
 		delete(p.streamSessions, key)
 	}
 	return key
-}
-
-func redactArgs(args []string) []string {
-	result := append([]string(nil), args...)
-	for i := range result {
-		if result[i] == "--token" && i+1 < len(result) {
-			result[i+1] = "***"
-		}
-		if strings.Contains(result[i], "rtspsrc") || strings.Contains(result[i], "rtsp://") {
-			result[i] = redactRTSP(result[i])
-		}
-	}
-	return result
-}
-
-func redactRTSP(value string) string {
-	start := strings.Index(value, "rtsp://")
-	if start < 0 {
-		return value
-	}
-	prefix := value[:start]
-	rest := value[start:]
-	end := strings.IndexAny(rest, " \t")
-	if end < 0 {
-		end = len(rest)
-	}
-	parsed, err := url.Parse(rest[:end])
-	if err != nil || parsed.User == nil {
-		return value
-	}
-	parsed.User = url.UserPassword(parsed.User.Username(), "***")
-	return prefix + parsed.String() + rest[end:]
 }

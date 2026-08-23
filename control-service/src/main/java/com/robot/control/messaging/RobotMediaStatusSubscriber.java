@@ -116,13 +116,13 @@ public class RobotMediaStatusSubscriber {
             try {
                 IntercomStatusMessage status = objectMapper.readValue(payload, IntercomStatusMessage.class);
                 if (status.getSessionId() == null || status.getSessionId().isBlank()) {
-                    log.debug("对讲状态缺少 sessionId，已忽略，主题={} 载荷={}", topic, payload);
+                    log.debug("对讲状态缺少会话 ID，已忽略，主题={} 状态={}", topic, status.getStatus());
                     return;
                 }
                 intercomCallService.handleIntercomStatus(status.getSessionId(), status.getStatus(), status.getMessage());
                 mediaServiceClient.updateIntercomStatus(status);
             } catch (Exception ex) {
-                log.warn("处理对讲状态失败，主题={} 载荷={}", topic, payload, ex);
+                log.warn("处理对讲状态失败，主题={} 载荷字节数={}", topic, message.getPayload().length, ex);
             }
         };
     }
@@ -134,7 +134,7 @@ public class RobotMediaStatusSubscriber {
                 intercomCallService.invite(
                         objectMapper.readValue(payload, IntercomCallInvite.class), robotIdFromTopic(topic));
             } catch (Exception ex) {
-                log.warn("处理对讲呼叫邀请失败，主题={} 载荷={}", topic, payload, ex);
+                log.warn("处理对讲呼叫邀请失败，主题={} 载荷字节数={}", topic, message.getPayload().length, ex);
             }
         };
     }
@@ -146,7 +146,7 @@ public class RobotMediaStatusSubscriber {
                 intercomCallService.cancel(
                         objectMapper.readValue(payload, IntercomCallCancel.class), robotIdFromTopic(topic));
             } catch (Exception ex) {
-                log.warn("处理对讲呼叫取消失败，主题={} 载荷={}", topic, payload, ex);
+                log.warn("处理对讲呼叫取消失败，主题={} 载荷字节数={}", topic, message.getPayload().length, ex);
             }
         };
     }
@@ -168,7 +168,7 @@ public class RobotMediaStatusSubscriber {
                 VideoStatusMessage status = objectMapper.readValue(payload, VideoStatusMessage.class);
                 mediaServiceClient.updateVideoStatus(status);
             } catch (Exception ex) {
-                log.warn("处理媒体状态失败，主题={} 载荷={}", topic, payload, ex);
+                log.warn("处理媒体状态失败，主题={} 载荷字节数={}", topic, message.getPayload().length, ex);
             }
         };
     }
@@ -202,7 +202,7 @@ public class RobotMediaStatusSubscriber {
                     mediaServiceClient.onlineRestartCommands(topicRobotId, status).forEach(commandService::sendStart);
                 }
             } catch (Exception ex) {
-                log.warn("处理媒体客户端状态失败，主题={} 载荷={}", topic, payload, ex);
+                log.warn("处理媒体客户端状态失败，主题={} 载荷字节数={}", topic, message.getPayload().length, ex);
             }
         };
     }

@@ -85,14 +85,14 @@ func (g *Gateway) Run(ctx context.Context) error {
 		opts.SetPassword(g.cfg.MQTTPassword)
 	}
 	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
-		log.Println("fixed camera gateway mqtt lost", err)
+		log.Printf("固定摄像头网关 MQTT 连接已断开：%v", err)
 		g.publisher.StopAll()
 	})
 	opts.SetOnConnectHandler(func(_ paho.Client) {
 		g.subscribe(startTopic, g.handleStart(ctx))
 		g.subscribe(stopTopic, g.handleStop())
 		g.subscribe(restartTopic, g.handleStart(ctx))
-		log.Println("fixed camera gateway subscribed", startTopic, stopTopic, restartTopic)
+		log.Printf("固定摄像头网关已订阅主题，启动=%s 停止=%s 重启=%s", startTopic, stopTopic, restartTopic)
 	})
 	mqttClient := paho.NewClient(opts)
 	g.mu.Lock()
@@ -101,7 +101,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		return token.Error()
 	}
-	log.Println("fixed camera gateway connected", g.cfg.MQTTBroker, gatewayID)
+	log.Printf("固定摄像头网关已连接 MQTT，网关ID=%s", gatewayID)
 	<-ctx.Done()
 	g.publisher.StopAll()
 	mqttClient.Disconnect(250)
@@ -110,7 +110,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 
 func (g *Gateway) subscribe(topic string, handler paho.MessageHandler) {
 	if token := g.mqtt.Subscribe(topic, 1, handler); token.Wait() && token.Error() != nil {
-		log.Fatal(token.Error())
+		log.Fatalf("订阅固定摄像头 MQTT 主题失败，主题=%s：%v", topic, token.Error())
 	}
 }
 
@@ -118,14 +118,14 @@ func (g *Gateway) handleStart(ctx context.Context) paho.MessageHandler {
 	return func(_ paho.Client, msg paho.Message) {
 		var command model.StartCommand
 		if err := json.Unmarshal(msg.Payload(), &command); err != nil {
-			log.Println("fixed camera start unmarshal failed", err)
+			log.Printf("解析固定摄像头启动命令失败，主题=%s 载荷字节数=%d：%v", msg.Topic(), len(msg.Payload()), err)
 			return
 		}
 		if g.isDuplicate(command.SessionID, command.CommandID) {
 			return
 		}
 		cameraID := firstNonBlank(command.SourceID, command.DeviceID, command.RobotID)
-		log.Println("fixed camera video start", cameraID, command.SessionID, command.Quality)
+		log.Printf("开始固定摄像头推流，摄像头ID=%s 会话ID=%s 清晰度=%s", cameraID, command.SessionID, command.Quality)
 		rtspURL := strings.TrimSpace(command.RTSPURL)
 		if rtspURL == "" {
 			var err error
@@ -139,13 +139,13 @@ func (g *Gateway) handleStart(ctx context.Context) paho.MessageHandler {
 			g.status(command.SessionID, "failed", "", "", "RTSP_PROBE_FAILED", err.Error())
 			return
 		}
-		g.status(command.SessionID, "publishing", "", "", "", "rtsp ok")
+		g.status(command.SessionID, "publishing", "", "", "", "RTSP 探测成功")
 		trackSid, trackName, err := g.publisher.Start(ctx, command, rtspURL)
 		if err != nil {
 			g.status(command.SessionID, "failed", "", "", "PUBLISH_FAILED", err.Error())
 			return
 		}
-		g.status(command.SessionID, "streaming", trackSid, trackName, "", "track published")
+		g.status(command.SessionID, "streaming", trackSid, trackName, "", "视频轨道发布成功")
 	}
 }
 
@@ -153,14 +153,14 @@ func (g *Gateway) handleStop() paho.MessageHandler {
 	return func(_ paho.Client, msg paho.Message) {
 		var payload model.StopCommand
 		if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
-			log.Println("fixed camera stop unmarshal failed", err)
+			log.Printf("解析固定摄像头停止命令失败，主题=%s 载荷字节数=%d：%v", msg.Topic(), len(msg.Payload()), err)
 			return
 		}
-		log.Println("fixed camera video stop", payload.SourceID, payload.SessionID)
+		log.Printf("停止固定摄像头推流，摄像头ID=%s 会话ID=%s", payload.SourceID, payload.SessionID)
 		if err := g.publisher.StopStream(payload); err != nil {
-			log.Println("fixed camera publisher stop failed", payload.SourceID, payload.SessionID, err)
+			log.Printf("停止固定摄像头推流进程失败，摄像头ID=%s 会话ID=%s：%v", payload.SourceID, payload.SessionID, err)
 		}
-		g.status(payload.SessionID, "stopped", "", "", "", "stopped")
+		g.status(payload.SessionID, "stopped", "", "", "", "推流已停止")
 	}
 }
 
@@ -170,10 +170,10 @@ func (g *Gateway) rtspURL(ctx context.Context, cameraID string, quality string) 
 		return "", err
 	}
 	if !camera.Enabled {
-		return "", fmt.Errorf("fixed camera disabled: %s", cameraID)
+		return "", fmt.Errorf("固定摄像头未启用：%s", cameraID)
 	}
 	if !strings.EqualFold(camera.ProtocolType, "") && !strings.EqualFold(camera.ProtocolType, "RTSP") {
-		return "", fmt.Errorf("unsupported fixed camera protocol: %s", camera.ProtocolType)
+		return "", fmt.Errorf("不支持的固定摄像头协议：%s", camera.ProtocolType)
 	}
 	quality = strings.ToLower(strings.TrimSpace(quality))
 	if quality == "main" && strings.TrimSpace(camera.MainStreamURL) != "" {
@@ -188,12 +188,12 @@ func (g *Gateway) rtspURL(ctx context.Context, cameraID string, quality string) 
 	if strings.TrimSpace(camera.SubStreamURL) != "" {
 		return camera.SubStreamURL, nil
 	}
-	return "", fmt.Errorf("fixed camera has no stream url: %s", cameraID)
+	return "", fmt.Errorf("固定摄像头未配置码流地址：%s", cameraID)
 }
 
 func (g *Gateway) camera(ctx context.Context, cameraID string) (cameraRecord, error) {
 	if strings.TrimSpace(cameraID) == "" {
-		return cameraRecord{}, fmt.Errorf("fixed camera id is required")
+		return cameraRecord{}, fmt.Errorf("固定摄像头 ID 不能为空")
 	}
 	baseURL := strings.TrimRight(g.cfg.ManagementServiceURL, "/")
 	requestURL, err := url.Parse(baseURL + "/api/v1/management/fixed-cameras")
@@ -217,7 +217,7 @@ func (g *Gateway) camera(ctx context.Context, cameraID string) (cameraRecord, er
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return cameraRecord{}, fmt.Errorf("management fixed cameras status=%d", resp.StatusCode)
+		return cameraRecord{}, fmt.Errorf("查询管理端固定摄像头失败，状态码=%d", resp.StatusCode)
 	}
 	var body managementResponse
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -228,7 +228,7 @@ func (g *Gateway) camera(ctx context.Context, cameraID string) (cameraRecord, er
 			return camera, nil
 		}
 	}
-	return cameraRecord{}, fmt.Errorf("fixed camera not found: %s", cameraID)
+	return cameraRecord{}, fmt.Errorf("未找到固定摄像头：%s", cameraID)
 }
 
 func (g *Gateway) status(sessionID, status, trackSid, trackName, errorCode, message string) {
@@ -246,18 +246,18 @@ func (g *Gateway) status(sessionID, status, trackSid, trackName, errorCode, mess
 func (g *Gateway) publish(topic string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Println("fixed camera mqtt marshal failed topic=", topic, "error=", err)
+		log.Printf("序列化固定摄像头 MQTT 状态失败，主题=%s：%v", topic, err)
 		return err
 	}
 	g.mu.Lock()
 	mqttClient := g.mqtt
 	g.mu.Unlock()
 	if mqttClient == nil || !mqttClient.IsConnectionOpen() {
-		return fmt.Errorf("mqtt is not connected")
+		return fmt.Errorf("MQTT 尚未连接")
 	}
 	token := mqttClient.Publish(topic, 1, false, body)
 	if !token.WaitTimeout(5 * time.Second) {
-		return fmt.Errorf("mqtt publish timeout: %s", topic)
+		return fmt.Errorf("MQTT 状态发布超时，主题=%s", topic)
 	}
 	return token.Error()
 }
