@@ -105,7 +105,7 @@ public class CenterProxyClient {
         if (path.startsWith("/api/v1/control")) {
             return properties.getV1ControlBaseUrl();
         }
-        if (path.startsWith("/api/media") || path.startsWith("/internal/media")) {
+        if (path.startsWith("/api/media")) {
             return properties.getMediaBaseUrl();
         }
         return properties.getControlBaseUrl();

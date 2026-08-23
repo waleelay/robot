@@ -24,7 +24,7 @@
 |---|---|---|---|
 | `devices` | array<object> | 需要 | 全部机器人/设备列表，设备基础信息来自管理端 |
 | `patrolOverview.durationToday` | number/null | 需要 | 今日巡逻时长，BFF 可基于管理端任务实例耗时计算 |
-| `patrolOverview.mileageToday` | number/null | 条件需要 | 今日巡逻里程；当前无真实来源时返回 `null` |
+| `patrolOverview.mileageToday` | number/null | 条件需要 | 今日巡逻里程，来自 Control 里程增量汇总，单位由 `mileageUnit` 表示；无有效基线时返回 `null` |
 | `tasks` | array<object> | 需要 | 任务列表，来自管理端任务计划、任务实例、路线点位等数据 |
 | `map` | array<object> | 需要 | 地图列表，当前 BFF 透传管理端地图记录 |
 | `alarms` | object | 需要 | 告警聚合对象，告警明细来自管理端 |

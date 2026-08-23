@@ -3,7 +3,7 @@
 | 文档属性 | 内容 |
 | --- | --- |
 | 文档状态 | 当前代码基线 |
-| 基线日期 | 2026-08-12 |
+| 基线日期 | 2026-08-23 |
 | 适用模块 | `bigscreen-bff`、`control-service`、`backend` |
 
 ## 1. 文档定位
@@ -35,6 +35,8 @@ Control Service -> Media Service /internal/media/**
 Control Service <-> EMQX <-> 机器人客户端 / 固定摄像头 Gateway
 浏览器 <-> LiveKit（媒体流不经过 BFF 或 Control）
 ```
+
+Control 的 `/api/control/statistics/mileage` 由边缘状态里程读数计算并持久化增量，供 BFF 统计使用；它不是 Management 的历史报表接口。
 
 ## 3. 对外与内部接口边界
 

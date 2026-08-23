@@ -28,10 +28,10 @@ src/main/java/com/robot/bigscreen/
 └── ws/          上游桥接、事件转换、任务/统计去抖刷新
 ```
 
-- `BigscreenProxyController`：代理 `/api/control/**`、`/api/media/**`、`/internal/media/**`、`/api/manage/**` 和 `/api/v1/management/**`；`GET /api/control/robots` 固定返回 `410`。
+- `BigscreenProxyController`：代理 `/api/control/**`、`/api/media/**`、`/api/manage/**` 和 `/api/v1/management/**`；`GET /api/control/robots` 固定返回 `410`。`/internal/**` 仅供服务间内网调用，不注册为 BFF 对外代理。
 - `BusinessTaskProxyController`：只代理任务计划、流程定义、执行记录、设备和地图白名单。
 - `PanoramaService`：并行查询管理端与 Control，组装 overview、设备详情、任务和告警。
-- `StatisticsService`：返回统计结构，并同步生成/保存 PDF；当前业务统计值未接入权威统计源。
+- `StatisticsService`：基于授权设备、实时状态、任务、告警和 Control 里程汇总统计，并同步生成/保存 PDF；缺少权威来源的指标保持 `null`。
 - `BigscreenWebSocketBridgeHandler`：为每个浏览器连接建立一条 Control 上游连接。
 - `PanoramaWebSocketEventAdapter`：将 `robot.state` 等事件适配成 `panorama.*`。
 - `PanoramaTaskEventRefresher` / `PanoramaStatsEventRefresher`：分别以 300ms/500ms 去抖查询权威快照并按差异推送。

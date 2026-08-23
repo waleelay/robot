@@ -85,7 +85,7 @@ https://<gateway-host>:<https-port>/api/...
 ```text
 前端 -> /api/bigscreen/*
 前端 -> /ws/bigscreen
-BFF  -> /api/control/*、/api/media/*、/api/manage/*、/internal/media/*
+BFF  -> /api/control/*、/api/media/*、/api/manage/*
 ```
 
 第一阶段为了兼容现有前端，BFF 仍可代理部分历史控制接口：

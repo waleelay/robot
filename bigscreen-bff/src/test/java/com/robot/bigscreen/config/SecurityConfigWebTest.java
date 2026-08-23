@@ -2,6 +2,7 @@ package com.robot.bigscreen.config;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -80,6 +81,14 @@ class SecurityConfigWebTest {
     void protectsCurrentAccessRequest() throws Exception {
         mockMvc.perform(get("/api/bigscreen/access-control/me"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void doesNotExposeInternalMediaEndpoints() throws Exception {
+        mockMvc.perform(get("/internal/media/video-sessions"))
+                .andExpect(status().isNotFound());
+
+        verify(proxyClient, never()).forward(any());
     }
 
     @Test

@@ -157,7 +157,7 @@ DELETE /api/bigscreen/statistics/reports/{id}
 
 ### 3.1 `/statistics/overview`
 
-当前统计总览已基于管理端设备、实时状态、任务实例和告警明细完成首批真实统计。下表仅保留尚未接入的字段。
+当前统计总览已基于管理端设备、实时状态、任务实例、告警明细和 Control 里程汇总完成首批真实统计。下表仅保留尚未接入的字段；已接入的里程指标不再列为缺口。
 
 | 字段 | 当前处理 | 说明 |
 |---|---|---|
@@ -189,10 +189,11 @@ DELETE /api/bigscreen/statistics/reports/{id}
 /api/bigscreen/business/**
 /api/control/**
 /api/media/**
-/internal/media/**
 /api/manage/**
 /api/v1/management/**
 ```
+
+`/internal/**` 已从 BFF 对外代理范围移除，只允许内部服务通过内网地址直接调用。
 
 `/api/v1/control/**` 不是 BFF 对外透明代理。BFF 仅在全景聚合内部通过 `CENTER_V1_CONTROL_BASE_URL` 调用旧版控制服务的 `/api/v1/control/device-realtime-statuses`。
 
@@ -223,7 +224,7 @@ DELETE /api/bigscreen/statistics/reports/{id}
 | 设备位置变化 | 依赖 Control WebSocket 中的 `robot.state` 定位；三个特定 ID 存在演示兜底 |
 | 任务变化 | 依赖中心端 WebSocket 推送 |
 | 告警变化 | 依赖中心端 WebSocket 推送 |
-| 统计类实时变化 | 当前未接入 |
+| 统计类实时变化 | 设备/任务/告警变化可触发局部统计刷新；更细粒度历史指标仍未接入 |
 
 ## 6. 建议优先补齐
 
@@ -233,7 +234,7 @@ DELETE /api/bigscreen/statistics/reports/{id}
 |---|---|---|
 | P0 | 设备经纬度、地址、上报时间 | 全景地图设备点位展示依赖 |
 | P0 | 告警结构化位置、多路截图 `snapshotUrl.thermal/front` | 告警列表和弹窗展示依赖 |
-| P1 | 统计总览 `/statistics/overview` 所需聚合数据 | 当前统计页业务字段基本为空 |
+| P1 | 统计总览未接入字段的权威来源 | 已接入字段可用；环比、故障/离线时长和自动处置指标仍为空 |
 | P1 | 相机与可播放视频源映射 | 相机清单已与 `robot.state` 统一，但当前仍不直接提供流地址，播放能力依赖后续视频会话链路 |
 | P2 | 上装设备独立状态 | 当前上装设备状态直接复用机器人状态 |
 | P2 | 设备详情按钮权限/能力 | 当前 `actions.*` 由在线状态简单派生 |

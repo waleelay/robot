@@ -3,7 +3,7 @@
 | 文档属性 | 内容 |
 | --- | --- |
 | 文档状态 | 当前代码基线 |
-| 基线日期 | 2026-08-12 |
+| 基线日期 | 2026-08-23 |
 | 服务端口 | `8090` |
 
 ## 1. 边界与鉴权
@@ -21,6 +21,7 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/disposal` | 处置告警 |
 | `GET` | `/api/bigscreen/panorama/alarms/actionable-workflow` | 查询当前用户可处理的工作流告警 |
 | `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue` | 处置告警并继续对应工作流 |
+| `GET` | `/api/bigscreen/access-control/me` | 代理当前登录用户的管理端数据权限；下游失败时拒绝访问，不返回默认权限 |
 
 响应字段、来源优先级和空值规则以[大屏 BFF 字段来源映射文档](大屏BFF字段来源映射文档.md)为准。固定摄像头作为 `devices[]` 中的同级装备返回，关键识别字段为：
 
@@ -45,13 +46,13 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/bigscreen/statistics/overview` | 返回筛选范围、设备类型选项及统计结构 |
+| `GET` | `/api/bigscreen/statistics/overview` | 基于当前用户授权设备、任务、告警和 Control 里程汇总统计 |
 | `POST` | `/api/bigscreen/statistics/reports/export` | 同步生成并下载 PDF，同时落本地历史记录 |
 | `GET` | `/api/bigscreen/statistics/reports` | 查询本地报告历史，`page` 从 1 开始 |
 | `GET` | `/api/bigscreen/statistics/reports/{id}/download` | 下载历史 PDF |
 | `DELETE` | `/api/bigscreen/statistics/reports/{id}` | 删除历史 PDF 和索引记录，成功返回 `204` |
 
-统计业务值目前未接入权威统计源，除筛选信息和设备类型选项外返回 `null` 或空集合；报告是同步响应，不存在“创建异步任务后轮询状态”的 Java 接口。详细字段见[大屏统计接口文档](大屏统计接口文档.md)。
+统计接口当前已接入管理端设备/任务/告警及 Control 里程汇总；确实没有数据时字段仍返回 `null` 或空集合。报告是同步响应，不存在“创建异步任务后轮询状态”的 Java 接口。详细字段见[大屏统计接口文档](大屏统计接口文档.md)。
 
 ## 4. 业务管理代理
 
@@ -74,10 +75,10 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `/api/control/**` | Control Service | 原路径 |
 | `/api/bigscreen/control/**` | Control Service | 改写为 `/api/control/**` |
 | 其他未被本地 Controller 消费的 `/api/bigscreen/**` | Control Service | 改写为 `/api/control/**` |
-| `/api/media/**`、`/internal/media/**` | Media Service | 原路径 |
+| `/api/media/**` | Media Service | 原路径 |
 | `/api/manage/**`、`/api/v1/management/**` | Management Service | 原路径 |
 
-代理支持普通正文和 `multipart/form-data`。请求会过滤 hop-by-hop Header，并用 JWT 身份覆盖可信用户 Header。
+代理支持普通正文和 `multipart/form-data`。请求会过滤 hop-by-hop Header，并用 JWT 身份覆盖可信用户 Header。`/internal/**` 不属于 BFF 对外代理范围，生产 Nginx 对 `/internal`、`/internal/**`、`/api-gw/internal` 和 `/api-gw/internal/**` 明确返回 `404`；Control 仍通过内网地址直接调用 Media 内部接口。
 
 `GET /api/control/robots` 已显式移除，固定返回 `410 Gone`：
 

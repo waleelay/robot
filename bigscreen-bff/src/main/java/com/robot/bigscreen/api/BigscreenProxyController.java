@@ -35,8 +35,7 @@ public class BigscreenProxyController {
             "/api/bigscreen/**",
             "/api/media/**",
             "/api/manage/**",
-            "/api/v1/management/**",
-            "/internal/media/**"
+            "/api/v1/management/**"
     })
     public ResponseEntity<byte[]> forward(HttpServletRequest request) {
         return proxyClient.forward(request);
