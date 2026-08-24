@@ -102,6 +102,32 @@ class StatisticsServiceTest {
     }
 
     @Test
+    void marksTaskStatisticsDegradedInsteadOfReportingRealZeroOnTimeout() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.deviceTypeOptions()).thenReturn(List.of());
+        when(centerClient.devices()).thenReturn(List.of());
+        when(centerClient.taskWorkflowInstancesForStatistics())
+                .thenThrow(new PanoramaCenterClient.TaskSourceException(
+                        "TASK_QUERY_TIMEOUT", "Management 任务接口连接或读取超时"));
+        when(centerClient.alarmsForStatistics(any(), any())).thenReturn(List.of());
+        StatisticsService service = new StatisticsService(
+                new ObjectMapper(),
+                centerClient,
+                new DeviceStatusSampler(
+                        new ObjectMapper(), centerClient, tempDir.resolve("sampler-timeout").toString(), 7),
+                tempDir.resolve("reports-timeout").toString());
+
+        Map<String, Object> overview = service.overview("month", null, null, "all", null);
+
+        Map<String, Object> quality = map(map(overview.get("dataQuality")).get("tasks"));
+        assertEquals(true, quality.get("degraded"));
+        assertEquals(List.of("TASK_QUERY_TIMEOUT"), quality.get("reasonCodes"));
+        assertEquals(null, map(map(overview.get("kpis")).get("taskTotal")).get("value"));
+        assertEquals(null, map(overview.get("equipmentRuntime")).get("taskCompletionRate"));
+        assertEquals(List.of(), map(overview.get("taskCompletion")).get("items"));
+    }
+
+    @Test
     void customRangeWithNonPaddedDatesFiltersInsteadOfReturningAllData() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         when(centerClient.deviceTypeOptions()).thenReturn(List.of());

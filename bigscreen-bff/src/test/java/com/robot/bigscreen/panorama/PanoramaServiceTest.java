@@ -737,6 +737,42 @@ class PanoramaServiceTest {
         verify(centerClient, times(2)).alarms(any(), any(), any());
     }
 
+    @Test
+    void marksTaskDataDegradedWhenManagementTaskQueryTimesOut() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenThrow(new PanoramaCenterClient.TaskSourceException(
+                "TASK_QUERY_TIMEOUT", "Management 任务接口读取超时"));
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        Map<String, Object> taskQuality = map(map(overview.get("dataQuality")).get("tasks"));
+        assertEquals(false, taskQuality.get("complete"));
+        assertEquals(true, taskQuality.get("degraded"));
+        assertTrue(((List<?>) taskQuality.get("reasonCodes")).contains("TASK_QUERY_TIMEOUT"));
+        assertEquals(List.of(), maps(overview.get("tasks")));
+    }
+
+    @Test
+    void isolatesMissingWorkflowInstanceAndReportsInvalidReference() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", "plan-001",
+                "planName", "失效引用任务",
+                "workflowInstanceId", "instance-deleted")));
+        when(centerClient.taskWorkflowInstance("instance-deleted")).thenReturn(Optional.empty());
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        Map<String, Object> taskQuality = map(map(overview.get("dataQuality")).get("tasks"));
+        assertEquals(false, taskQuality.get("complete"));
+        assertTrue(((List<?>) taskQuality.get("reasonCodes")).contains("WORKFLOW_INSTANCE_NOT_FOUND"));
+        assertEquals(1, taskQuality.get("invalidReferenceCount"));
+        assertEquals(List.of("instance-deleted"), taskQuality.get("invalidWorkflowReferences"));
+        assertEquals(1, maps(overview.get("tasks")).size());
+    }
+
     private void stubEmptyOverviewSources(PanoramaCenterClient centerClient) {
         when(centerClient.devices()).thenReturn(List.of());
         when(centerClient.deviceTypeOptions()).thenReturn(List.of());

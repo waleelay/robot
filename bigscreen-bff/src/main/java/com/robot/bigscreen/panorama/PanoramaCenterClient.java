@@ -8,15 +8,19 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -27,19 +31,31 @@ public class PanoramaCenterClient {
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE = new ParameterizedTypeReference<>() {};
 
     private final RestClient restClient;
+    private final RestClient taskRestClient;
     private final CenterServiceProperties properties;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
+    private final Semaphore taskRequestPermits;
+    private final int taskMaxConcurrency;
 
     public PanoramaCenterClient(
             RestClient.Builder builder,
             CenterServiceProperties properties,
-            AuthenticatedRequestHeaders authenticatedRequestHeaders) {
+            AuthenticatedRequestHeaders authenticatedRequestHeaders,
+            @Value("${panorama.task.connect-timeout-ms:1000}") int taskConnectTimeoutMs,
+            @Value("${panorama.task.read-timeout-ms:1500}") int taskReadTimeoutMs,
+            @Value("${panorama.task.max-concurrency:8}") int taskMaxConcurrency) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(2000);
         requestFactory.setReadTimeout(3000);
         this.restClient = builder.requestFactory(requestFactory).build();
+        SimpleClientHttpRequestFactory taskRequestFactory = new SimpleClientHttpRequestFactory();
+        taskRequestFactory.setConnectTimeout(Math.max(100, Math.min(5000, taskConnectTimeoutMs)));
+        taskRequestFactory.setReadTimeout(Math.max(100, Math.min(10000, taskReadTimeoutMs)));
+        this.taskRestClient = builder.clone().requestFactory(taskRequestFactory).build();
         this.properties = properties;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
+        this.taskMaxConcurrency = Math.max(1, Math.min(32, taskMaxConcurrency));
+        this.taskRequestPermits = new Semaphore(this.taskMaxConcurrency, true);
     }
 
     public List<Map<String, Object>> devices() {
@@ -129,7 +145,7 @@ public class PanoramaCenterClient {
                 .queryParam("enabled", true)
                 .build(true)
                 .toUri();
-        return records(uri);
+        return taskRecords(uri, "TASK_PLANS_UNAVAILABLE");
     }
 
     public Optional<Map<String, Object>> taskWorkflowDefinition(String workflowDefinitionId) {
@@ -139,7 +155,7 @@ public class PanoramaCenterClient {
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-definitions/" + workflowDefinitionId)
                 .build(true)
                 .toUri();
-        return dataMap(uri);
+        return taskDataMap(uri, "WORKFLOW_DEFINITION_UNAVAILABLE", true);
     }
 
     public List<Map<String, Object>> taskWorkflowInstances() {
@@ -149,17 +165,17 @@ public class PanoramaCenterClient {
                 .queryParam("scope", "ALL")
                 .build(true)
                 .toUri();
-        return records(uri);
+        return taskRecords(uri, "TASK_INSTANCES_UNAVAILABLE");
     }
 
     public List<Map<String, Object>> taskWorkflowInstancesForStatistics() {
         int pageSize = 100;
-        return pagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances")
+        return taskPagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances")
                 .queryParam("pageNum", pageNum)
                 .queryParam("pageSize", pageSize)
                 .queryParam("scope", "ALL")
                 .build(true)
-                .toUri(), pageSize);
+                .toUri(), pageSize, "TASK_INSTANCES_UNAVAILABLE");
     }
 
     public Optional<Map<String, Object>> taskWorkflowInstance(String workflowInstanceId) {
@@ -169,7 +185,7 @@ public class PanoramaCenterClient {
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances/" + workflowInstanceId)
                 .build(true)
                 .toUri();
-        return dataMap(uri);
+        return taskDataMap(uri, "WORKFLOW_INSTANCE_UNAVAILABLE", true);
     }
 
     public Optional<Map<String, Object>> taskWorkflowReplay(String workflowInstanceId) {
@@ -179,7 +195,7 @@ public class PanoramaCenterClient {
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances/" + workflowInstanceId + "/replay")
                 .build(true)
                 .toUri();
-        return dataMap(uri);
+        return taskDataMap(uri, "TASK_REPLAY_UNAVAILABLE", true);
     }
 
     public List<Map<String, Object>> deviceTaskInstances(String workflowInstanceId) {
@@ -192,7 +208,14 @@ public class PanoramaCenterClient {
                 .queryParam("workflowInstanceId", workflowInstanceId)
                 .build(true)
                 .toUri();
-        return records(uri);
+        return taskRecords(uri, "DEVICE_TASKS_UNAVAILABLE");
+    }
+
+    public Map<String, Object> taskRequestPoolSnapshot() {
+        return Map.of(
+                "maxConcurrency", taskMaxConcurrency,
+                "activeRequests", taskMaxConcurrency - taskRequestPermits.availablePermits(),
+                "availablePermits", taskRequestPermits.availablePermits());
     }
 
     public List<Map<String, Object>> enabledMaps() {
@@ -400,6 +423,90 @@ public class PanoramaCenterClient {
         }
     }
 
+    private List<Map<String, Object>> taskRecords(URI uri, String unavailableReasonCode) {
+        return records(taskResponseMap(uri, unavailableReasonCode, false).orElse(Map.of()));
+    }
+
+    private List<Map<String, Object>> taskPagedRecords(
+            IntFunction<URI> uriFactory,
+            int pageSize,
+            String unavailableReasonCode) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int pageNum = 1; pageNum <= 1000; pageNum++) {
+            List<Map<String, Object>> page = taskRecords(uriFactory.apply(pageNum), unavailableReasonCode);
+            result.addAll(page);
+            if (page.size() < pageSize) {
+                return List.copyOf(result);
+            }
+        }
+        throw new TaskSourceException("TASK_PAGINATION_LIMIT", "Management 任务分页超过安全上限");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Optional<Map<String, Object>> taskDataMap(
+            URI uri,
+            String unavailableReasonCode,
+            boolean notFoundAllowed) {
+        return taskResponseMap(uri, unavailableReasonCode, notFoundAllowed)
+                .flatMap(response -> {
+                    Object data = response.get("data");
+                    if (data instanceof Map<?, ?> map) {
+                        return Optional.of((Map<String, Object>) map);
+                    }
+                    if (!response.containsKey("code") && !response.containsKey("data")) {
+                        return Optional.of(response);
+                    }
+                    return Optional.empty();
+                });
+    }
+
+    private Optional<Map<String, Object>> taskResponseMap(
+            URI uri,
+            String unavailableReasonCode,
+            boolean notFoundAllowed) {
+        boolean acquired = false;
+        long startNanos = System.nanoTime();
+        try {
+            acquired = taskRequestPermits.tryAcquire(100, TimeUnit.MILLISECONDS);
+            if (!acquired) {
+                throw new TaskSourceException("TASK_QUERY_CONCURRENCY_LIMIT", "任务查询并发已达上限");
+            }
+            Map<String, Object> response = taskRestClient.get()
+                    .uri(uri)
+                    .headers(authenticatedRequestHeaders::apply)
+                    .retrieve()
+                    .body(MAP_TYPE);
+            logSlowRequest(uri, startNanos);
+            if (response == null) {
+                throw new TaskSourceException("TASK_INVALID_RESPONSE", "Management 任务查询返回空响应");
+            }
+            return Optional.of(response);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new TaskSourceException("TASK_QUERY_INTERRUPTED", "任务查询等待被中断", exception);
+        } catch (RestClientResponseException exception) {
+            if (notFoundAllowed && exception.getStatusCode() == HttpStatus.NOT_FOUND) {
+                log.info("Management 任务引用已不存在，请求地址={}", uri);
+                return Optional.empty();
+            }
+            if (exception.getStatusCode() == HttpStatus.UNAUTHORIZED
+                    || exception.getStatusCode() == HttpStatus.FORBIDDEN) {
+                throw new ResponseStatusException(exception.getStatusCode(), "查询 Management 任务权限失败", exception);
+            }
+            log.warn("Management 任务接口响应异常，请求地址={} 状态码={} 耗时毫秒={}",
+                    uri, exception.getStatusCode().value(), elapsedMillis(startNanos));
+            throw new TaskSourceException(unavailableReasonCode, "Management 任务接口响应异常", exception);
+        } catch (ResourceAccessException exception) {
+            log.warn("Management 任务接口连接或读取超时，请求地址={} 耗时毫秒={}",
+                    uri, elapsedMillis(startNanos));
+            throw new TaskSourceException("TASK_QUERY_TIMEOUT", "Management 任务接口连接或读取超时", exception);
+        } finally {
+            if (acquired) {
+                taskRequestPermits.release();
+            }
+        }
+    }
+
     private List<Map<String, Object>> pagedRecords(IntFunction<URI> uriFactory, int pageSize) {
         List<Map<String, Object>> result = new ArrayList<>();
         for (int pageNum = 1; pageNum <= 1000; pageNum++) {
@@ -484,5 +591,24 @@ public class PanoramaCenterClient {
         String normalizedBaseUrl = baseUrl == null || baseUrl.isBlank() ? "http://localhost:8088" : baseUrl;
         String separator = normalizedBaseUrl.endsWith("/") || path.startsWith("/") ? "" : "/";
         return UriComponentsBuilder.fromUriString(normalizedBaseUrl + separator + path);
+    }
+
+    public static final class TaskSourceException extends RuntimeException {
+
+        private final String reasonCode;
+
+        public TaskSourceException(String reasonCode, String message) {
+            super(message);
+            this.reasonCode = reasonCode;
+        }
+
+        public TaskSourceException(String reasonCode, String message, Throwable cause) {
+            super(message, cause);
+            this.reasonCode = reasonCode;
+        }
+
+        public String reasonCode() {
+            return reasonCode;
+        }
     }
 }

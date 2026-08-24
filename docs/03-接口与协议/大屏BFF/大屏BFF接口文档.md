@@ -51,6 +51,27 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 不得回退 `enabled=true`。`playable` 是兼容字段，只表示 `enabled && configReady`，不表示
 在线，新调用方应使用 `configReady`。BFF 不向前端返回 RTSP URL 或摄像头凭据。
 
+`overview` 和任务快照均携带稳定的任务数据质量字段。任务查询失败时 HTTP 仍可返回已成功
+加载的部分数据，但调用方必须按 `degraded=true` 处理，不能把 `items=[]` 解释为真实的 0：
+
+```json
+{
+  "dataQuality": {
+    "tasks": {
+      "complete": false,
+      "degraded": true,
+      "reasonCodes": ["TASK_QUERY_TIMEOUT"],
+      "invalidReferenceCount": 1,
+      "invalidWorkflowReferences": ["workflow-instance-404"]
+    }
+  }
+}
+```
+
+常见 reason code 包括 `TASK_QUERY_TIMEOUT`、`TASK_QUERY_CONCURRENCY_LIMIT`、
+`TASK_EXECUTOR_SATURATED`、`TASK_PAGINATION_LIMIT`、`TASK_INVALID_RESPONSE`、
+`WORKFLOW_INSTANCE_NOT_FOUND` 和 `WORKFLOW_DEFINITION_NOT_FOUND`。401/403 不进入降级响应。
+
 ## 3. 统计与报告接口
 
 | 方法 | 路径 | 说明 |
@@ -61,7 +82,7 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `GET` | `/api/bigscreen/statistics/reports/{id}/download` | 下载历史 PDF |
 | `DELETE` | `/api/bigscreen/statistics/reports/{id}` | 删除历史 PDF 和索引记录，成功返回 `204` |
 
-统计接口当前已接入管理端设备/任务/告警及 Control 里程汇总；确实没有数据时字段仍返回 `null` 或空集合。报告是同步响应，不存在“创建异步任务后轮询状态”的 Java 接口。详细字段见[大屏统计接口文档](大屏统计接口文档.md)。
+统计接口当前已接入管理端设备/任务/告警及 Control 里程汇总；确实没有数据时字段仍返回 `null` 或空集合。任务来源异常时返回 `dataQuality.tasks.degraded=true`，任务总数、完成率为 `null`，任务完成明细为空；不得按真实零值展示。报告是同步响应，不存在“创建异步任务后轮询状态”的 Java 接口。详细字段见[大屏统计接口文档](大屏统计接口文档.md)。
 
 ## 4. 业务管理代理
 

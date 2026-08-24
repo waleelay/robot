@@ -31,7 +31,7 @@ src/main/java/com/robot/bigscreen/
 - `BigscreenProxyController`：代理 `/api/control/**`、`/api/media/**`、`/api/manage/**` 和 `/api/v1/management/**`；`GET /api/control/robots` 固定返回 `410`。`/internal/**` 仅供服务间内网调用，不注册为 BFF 对外代理。
 - `BusinessTaskProxyController`：只代理任务计划、流程定义、执行记录、设备和地图白名单。
 - `PanoramaService`：并行查询管理端与 Control，组装 overview、设备详情、任务和告警。
-- `StatisticsService`：基于授权设备、实时状态、任务、告警和 Control 里程汇总统计，并同步生成/保存 PDF；缺少权威来源的指标保持 `null`。
+- `StatisticsService`：基于授权设备、实时状态、任务、告警和 Control 里程汇总统计，并同步生成/保存 PDF；缺少权威来源的指标保持 `null`，任务查询失败时返回 `dataQuality.tasks`，不把空结果伪装成真实的 0。
 - `BigscreenWebSocketBridgeHandler`：为每个浏览器连接建立一条 Control 上游连接；按用户和组织复用最长 30 秒的授权快照，在事件下发和控制上行前强制检查快照及 Token 有效期。后台刷新暂时失败时保留尚未过期的授权快照并继续重试；JWT 到期或 Management 明确返回 `401` 时以 `4001` 关闭，避免节点时钟漂移把凭证失效误报为权限服务故障；只有其他授权刷新失败持续至快照超过最大陈旧时间才以 `4003` 关闭。资源集合确认变化时发送 `bigscreen.authorization.changed`，通知前端重拉 Overview。
 - `PanoramaWebSocketEventAdapter`：将 `robot.state` 等事件适配成 `panorama.*`。
 - `PanoramaTaskEventRefresher` / `PanoramaStatsEventRefresher`：分别以 300ms/500ms 去抖查询权威快照并按差异推送。
@@ -83,6 +83,9 @@ RTSP 可用时 `status=online`，缺失或过期状态为 `unknown`。`playable`
 | `BIGSCREEN_WS_AUTHORIZATION_LOAD_TIMEOUT_MS` | 单次完整授权加载总时限，默认 8000 |
 | `FIXED_CAMERA_CATALOG_LEASE_ENABLED` | 是否向 Control 同步固定摄像头短租约，默认 `true` |
 | `FIXED_CAMERA_CATALOG_LEASE_SECONDS` | 租约时长，默认 180 秒，代码硬上限 300 秒 |
+| `PANORAMA_TASK_CONNECT_TIMEOUT_MS` | Management 任务专用连接超时，默认 1000 ms，代码限制 100 至 5000 ms |
+| `PANORAMA_TASK_READ_TIMEOUT_MS` | Management 任务专用读取超时，默认 1500 ms，代码限制 100 至 10000 ms |
+| `PANORAMA_TASK_MAX_CONCURRENCY` | 单实例 Management 任务请求并发上限，默认 8，代码限制 1 至 32 |
 | `BIGSCREEN_AUTH_CLIENT_ID` | JWT `azp/aud` 目标客户端 |
 | `BIGSCREEN_AUTH_ISSUER_URI`、`BIGSCREEN_AUTH_JWK_SET_URI` | JWT Issuer 与 JWK |
 | `BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS` | CORS 来源模式 |

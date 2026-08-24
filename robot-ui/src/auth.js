@@ -4,6 +4,7 @@ let keycloak = null
 let initPromise = null
 let loginStarted = false
 const minTokenValiditySeconds = 30
+const oidcCallbackParams = ['code', 'state', 'session_state', 'iss']
 
 function runtimeConfig() {
   return window.__BIGSCREEN_AUTH_CONFIG__ || {}
@@ -53,9 +54,23 @@ export async function initAuth() {
     keycloak.onTokenExpired = () => {
       keycloak.updateToken(0).catch(() => login())
     }
+    clearOidcCallbackParams()
     return true
   })
   return initPromise
+}
+
+/**
+ * 授权码交换成功后清理地址栏中的一次性 OIDC 参数。
+ * 只删除协议回调参数，保留业务查询参数、当前 History 状态和 hash 路由。
+ */
+export function clearOidcCallbackParams() {
+  const current = new URL(window.location.href)
+  if (!current.searchParams.has('code') || !current.searchParams.has('state')) return false
+  oidcCallbackParams.forEach(name => current.searchParams.delete(name))
+  const cleanUrl = `${current.pathname}${current.search}${current.hash}`
+  window.history.replaceState(window.history.state, document.title, cleanUrl)
+  return true
 }
 
 export async function bearerToken() {

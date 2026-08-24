@@ -16,14 +16,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -39,18 +41,18 @@ public class PanoramaService {
     private static final ZoneOffset CHINA_ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final long STATS_CACHE_TTL_MILLIS = 3000;
-    private static final ExecutorService IO_EXECUTOR = new ThreadPoolExecutor(
+    private static final ThreadPoolExecutor IO_EXECUTOR = new ThreadPoolExecutor(
             8,
-            64,
+            16,
             60,
             TimeUnit.SECONDS,
-            new SynchronousQueue<>(),
+            new LinkedBlockingQueue<>(128),
             runnable -> {
                 Thread thread = new Thread(runnable, "panorama-io");
                 thread.setDaemon(true);
                 return thread;
             },
-            new ThreadPoolExecutor.CallerRunsPolicy());
+            new ThreadPoolExecutor.AbortPolicy());
 
     private final PanoramaCenterClient centerClient;
     private final ObjectMapper objectMapper;
@@ -73,7 +75,7 @@ public class PanoramaService {
         List<Map<String, Object>> maps = join(mapsFuture, List.of());
         prefetchMapResources(maps, cache);
         List<Map<String, Object>> rawDevices = joinRequired(devicesFuture);
-        PanoramaTasks panoramaTasks = join(tasksFuture, new PanoramaTasks(List.of(), List.of()));
+        PanoramaTasks panoramaTasks = join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED"));
         List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), rawDevices);
         List<Map<String, Object>> devices = withTaskAssociations(rawDevices, tasks);
         overview.put("devices", overviewDevices(devices));
@@ -84,6 +86,7 @@ public class PanoramaService {
                 panoramaTasks.instances(), join(mileageFuture, Map.of())));
         overview.put("tasks", overviewTasks(tasks));
         overview.put("taskOverview", overviewTaskOverview(tasks));
+        overview.put("dataQuality", object("tasks", panoramaTasks.dataQuality()));
 
         overview.put("map", mapsWithPointsAndDevices(maps, devices, cache));
 
@@ -115,6 +118,7 @@ public class PanoramaService {
             List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), devices);
             stats.put("patrolOverview", patrolOverview(panoramaTasks.instances(), cachedStats("mileage", this::todayMileageSummary)));
             stats.put("taskOverview", taskOverview(tasks));
+            stats.put("dataQuality", object("tasks", panoramaTasks.dataQuality()));
         }
         if (parts.contains(StatsPart.ALARMS)) {
             Map<String, Object> alarms = cachedStats("alarms", this::alarmsPayload);
@@ -441,7 +445,7 @@ public class PanoramaService {
         CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
         return withTaskAssociations(
                 joinRequired(devicesFuture),
-                join(tasksFuture, new PanoramaTasks(List.of(), List.of())).items()).stream()
+                join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED")).items()).stream()
                 .filter(device -> Objects.equals(deviceId, string(device.get("robotId"))))
                 .findFirst()
                 .map(this::toDeviceDetail)
@@ -452,13 +456,15 @@ public class PanoramaService {
         OverviewRequestCache cache = new OverviewRequestCache();
         CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
         CompletableFuture<List<Map<String, Object>>> devicesFuture = async(() -> devices(cache));
+        PanoramaTasks panoramaTasks = join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED"));
         List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(
-                join(tasksFuture, new PanoramaTasks(List.of(), List.of())).items(),
+                panoramaTasks.items(),
                 joinRequired(devicesFuture));
         return object(
                 "serverTime", now(),
                 "total", tasks.size(),
-                "items", tasks);
+                "items", tasks,
+                "dataQuality", object("tasks", panoramaTasks.dataQuality()));
     }
 
     public Map<String, Object> alarms() {
@@ -891,15 +897,18 @@ public class PanoramaService {
     }
 
     private PanoramaTasks taskPayload(OverviewRequestCache cache) {
+        TaskDataQuality quality = new TaskDataQuality();
         CompletableFuture<List<Map<String, Object>>> taskPlansFuture = async(centerClient::taskWorkflowPlans);
         CompletableFuture<List<Map<String, Object>>> taskInstancesFuture = async(centerClient::taskWorkflowInstances);
-        List<Map<String, Object>> taskPlans = join(taskPlansFuture, List.of());
-        List<Map<String, Object>> taskInstances = join(taskInstancesFuture, List.of());
+        List<Map<String, Object>> taskPlans = joinTask(
+                taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
+        List<Map<String, Object>> taskInstances = joinTask(
+                taskInstancesFuture, List.of(), quality, "TASK_INSTANCES_UNAVAILABLE");
         if (taskPlans.isEmpty()) {
-            return new PanoramaTasks(List.of(), taskInstances);
+            return new PanoramaTasks(List.of(), taskInstances, quality.snapshot());
         }
-        TaskInstanceResolver taskInstanceResolver = new TaskInstanceResolver(taskInstances);
-        TaskRouteResolver routeResolver = new TaskRouteResolver(taskPlans, cache);
+        TaskInstanceResolver taskInstanceResolver = new TaskInstanceResolver(taskInstances, quality);
+        TaskRouteResolver routeResolver = new TaskRouteResolver(taskPlans, cache, quality);
         for (int index = 0; index < taskPlans.size(); index++) {
             Map<String, Object> plan = taskPlans.get(index);
             taskInstanceResolver.prefetch(planWorkflowInstanceId(plan));
@@ -912,10 +921,10 @@ public class PanoramaService {
             futures.add(async(() -> taskItem(sourceTask, routeResolver.resolve(sourceTask, taskIndex), taskInstanceResolver)));
         }
         List<Map<String, Object>> result = futures.stream()
-                .map(future -> join(future, null))
+                .map(future -> joinTask(future, null, quality, "TASK_ITEM_UNAVAILABLE"))
                 .filter(Objects::nonNull)
                 .toList();
-        return new PanoramaTasks(result, taskInstances);
+        return new PanoramaTasks(result, taskInstances, quality.snapshot());
     }
 
     private Map<String, Object> taskItem(
@@ -1058,7 +1067,7 @@ public class PanoramaService {
         String occurredTo = now.format(DATE_TIME_FORMATTER);
         List<Map<String, Object>> todayAlarms = centerClient.alarms(null, occurredFrom, occurredTo);
         List<Map<String, Object>> unhandledAlarms = centerClient.alarms("NEW", null, null);
-        TaskInstanceResolver taskInstanceResolver = new TaskInstanceResolver(List.of());
+        TaskInstanceResolver taskInstanceResolver = new TaskInstanceResolver(List.of(), new TaskDataQuality());
         List<Map<String, Object>> summaryItems = todayAlarms.stream()
                 .map(alarm -> alarmItem(alarm, taskInstanceResolver))
                 .toList();
@@ -1389,17 +1398,24 @@ public class PanoramaService {
 
     private <T> CompletableFuture<T> async(Supplier<T> supplier) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return CompletableFuture.supplyAsync(() -> {
-            SecurityContext previousContext = SecurityContextHolder.getContext();
-            SecurityContext context = SecurityContextHolder.createEmptyContext();
-            context.setAuthentication(authentication);
-            try {
-                SecurityContextHolder.setContext(context);
-                return supplier.get();
-            } finally {
-                SecurityContextHolder.setContext(previousContext);
-            }
-        }, IO_EXECUTOR);
+        try {
+            return CompletableFuture.supplyAsync(() -> {
+                SecurityContext previousContext = SecurityContextHolder.getContext();
+                SecurityContext context = SecurityContextHolder.createEmptyContext();
+                context.setAuthentication(authentication);
+                try {
+                    SecurityContextHolder.setContext(context);
+                    return supplier.get();
+                } finally {
+                    SecurityContextHolder.setContext(previousContext);
+                }
+            }, IO_EXECUTOR);
+        } catch (RejectedExecutionException exception) {
+            return CompletableFuture.failedFuture(new PanoramaCenterClient.TaskSourceException(
+                    "TASK_EXECUTOR_SATURATED",
+                    "全景聚合执行器已饱和",
+                    exception));
+        }
     }
 
     private <T> T join(CompletableFuture<T> future, T fallback) {
@@ -1407,6 +1423,26 @@ public class PanoramaService {
             T value = future.join();
             return value == null ? fallback : value;
         } catch (CompletionException exception) {
+            return fallback;
+        }
+    }
+
+    private <T> T joinTask(
+            CompletableFuture<T> future,
+            T fallback,
+            TaskDataQuality quality,
+            String defaultReasonCode) {
+        try {
+            T value = future.join();
+            return value == null ? fallback : value;
+        } catch (CompletionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof org.springframework.web.server.ResponseStatusException responseStatus
+                    && (responseStatus.getStatusCode().value() == 401
+                    || responseStatus.getStatusCode().value() == 403)) {
+                throw responseStatus;
+            }
+            quality.unavailable(cause, defaultReasonCode);
             return fallback;
         }
     }
@@ -1510,8 +1546,10 @@ public class PanoramaService {
         private final Map<String, CompletableFuture<Map<String, Object>>> instanceFuturesById = new ConcurrentHashMap<>();
         private final Map<String, CompletableFuture<Map<String, Object>>> replaysById = new ConcurrentHashMap<>();
         private final Map<String, CompletableFuture<List<Map<String, Object>>>> deviceTasksByWorkflowInstanceId = new ConcurrentHashMap<>();
+        private final TaskDataQuality quality;
 
-        private TaskInstanceResolver(List<Map<String, Object>> taskInstances) {
+        private TaskInstanceResolver(List<Map<String, Object>> taskInstances, TaskDataQuality quality) {
+            this.quality = quality;
             for (Map<String, Object> taskInstance : taskInstances) {
                 String id = firstString(taskInstance, "id", "workflowInstanceId");
                 if (id != null) {
@@ -1529,8 +1567,8 @@ public class PanoramaService {
             if (existing != null) {
                 return existing;
             }
-            Map<String, Object> loaded = join(instanceFuturesById.computeIfAbsent(id,
-                    value -> async(() -> loadInstance(value))), Map.of());
+            Map<String, Object> loaded = joinTask(instanceFuturesById.computeIfAbsent(id,
+                    value -> async(() -> loadInstance(value))), Map.of(), quality, "WORKFLOW_INSTANCE_UNAVAILABLE");
             if (!loaded.isEmpty()) {
                 instancesById.putIfAbsent(id, loaded);
             }
@@ -1556,8 +1594,9 @@ public class PanoramaService {
             if (id == null) {
                 return Map.of();
             }
-            return join(replaysById.computeIfAbsent(id,
-                    value -> async(() -> centerClient.taskWorkflowReplay(value).orElse(Map.of()))), Map.of());
+            return joinTask(replaysById.computeIfAbsent(id,
+                    value -> async(() -> centerClient.taskWorkflowReplay(value).orElse(Map.of()))),
+                    Map.of(), quality, "TASK_REPLAY_UNAVAILABLE");
         }
 
         private List<Map<String, Object>> deviceTaskInstances(Object workflowInstanceId) {
@@ -1565,14 +1604,18 @@ public class PanoramaService {
             if (id == null) {
                 return List.of();
             }
-            return join(deviceTasksByWorkflowInstanceId.computeIfAbsent(id,
-                    value -> async(() -> centerClient.deviceTaskInstances(value))), List.of());
+            return joinTask(deviceTasksByWorkflowInstanceId.computeIfAbsent(id,
+                    value -> async(() -> centerClient.deviceTaskInstances(value))),
+                    List.of(), quality, "DEVICE_TASKS_UNAVAILABLE");
         }
 
         private Map<String, Object> loadInstance(String workflowInstanceId) {
-            return centerClient.taskWorkflowInstance(workflowInstanceId)
-                    .map(this::unwrapInstance)
-                    .orElse(Map.of());
+            Optional<Map<String, Object>> instance = centerClient.taskWorkflowInstance(workflowInstanceId);
+            if (instance.isEmpty()) {
+                quality.invalidReference("WORKFLOW_INSTANCE_NOT_FOUND", workflowInstanceId);
+                return Map.of();
+            }
+            return unwrapInstance(instance.get());
         }
 
         private Map<String, Object> unwrapInstance(Map<String, Object> source) {
@@ -1593,10 +1636,15 @@ public class PanoramaService {
         private final Map<String, Map<String, Object>> plansByName;
         private final Map<String, CompletableFuture<TaskRouteData>> routesByDefinitionId = new ConcurrentHashMap<>();
         private final OverviewRequestCache cache;
+        private final TaskDataQuality quality;
 
-        private TaskRouteResolver(List<Map<String, Object>> plans, OverviewRequestCache cache) {
+        private TaskRouteResolver(
+                List<Map<String, Object>> plans,
+                OverviewRequestCache cache,
+                TaskDataQuality quality) {
             this.plans = plans == null ? List.of() : plans;
             this.cache = cache;
+            this.quality = quality;
             this.plansById = indexPlans("id", "planId", "workflowPlanId", "taskWorkflowPlanId", "code");
             this.plansByName = indexPlans("planName", "workflowName", "name");
         }
@@ -1606,8 +1654,9 @@ public class PanoramaService {
             if (workflowDefinitionId == null || workflowDefinitionId.isBlank()) {
                 return TaskRouteData.empty();
             }
-            return join(routesByDefinitionId.computeIfAbsent(workflowDefinitionId,
-                    value -> async(() -> routeData(value))), TaskRouteData.empty());
+            return joinTask(routesByDefinitionId.computeIfAbsent(workflowDefinitionId,
+                    value -> async(() -> routeData(value))),
+                    TaskRouteData.empty(), quality, "TASK_ROUTE_UNAVAILABLE");
         }
 
         private void prefetch(Map<String, Object> source, int index) {
@@ -1649,7 +1698,12 @@ public class PanoramaService {
         }
 
         private TaskRouteData routeData(String workflowDefinitionId) {
-            Map<String, Object> definition = centerClient.taskWorkflowDefinition(workflowDefinitionId).orElse(Map.of());
+            Optional<Map<String, Object>> definitionResult = centerClient.taskWorkflowDefinition(workflowDefinitionId);
+            if (definitionResult.isEmpty()) {
+                quality.invalidReference("WORKFLOW_DEFINITION_NOT_FOUND", workflowDefinitionId);
+                return TaskRouteData.empty();
+            }
+            Map<String, Object> definition = definitionResult.get();
             Object mapId = firstValue(definition, "mapId", "mapID");
             Object pathId = firstValue(definition, "pathId", "routeId");
             List<Map<String, Object>> mapPoints = mapId == null
@@ -2087,9 +2141,61 @@ public class PanoramaService {
         }
     }
 
+    private PanoramaTasks unavailableTasks(String reasonCode) {
+        TaskDataQuality quality = new TaskDataQuality();
+        quality.unavailable(null, reasonCode);
+        return new PanoramaTasks(List.of(), List.of(), quality.snapshot());
+    }
+
+    private final class TaskDataQuality {
+
+        private static final int MAX_REPORTED_INVALID_REFERENCES = 20;
+        private final Set<String> reasonCodes = new ConcurrentSkipListSet<>();
+        private final Set<String> invalidWorkflowReferences = new ConcurrentSkipListSet<>();
+
+        private void unavailable(Throwable exception, String defaultReasonCode) {
+            Throwable current = exception;
+            while (current instanceof CompletionException && current.getCause() != null) {
+                current = current.getCause();
+            }
+            if (current instanceof PanoramaCenterClient.TaskSourceException taskException) {
+                reasonCodes.add(taskException.reasonCode());
+            } else {
+                reasonCodes.add(defaultReasonCode);
+            }
+        }
+
+        private void invalidReference(String reasonCode, String referenceId) {
+            reasonCodes.add(reasonCode);
+            if (referenceId != null && !referenceId.isBlank()
+                    && invalidWorkflowReferences.size() < MAX_REPORTED_INVALID_REFERENCES) {
+                invalidWorkflowReferences.add(referenceId);
+            }
+        }
+
+        private Map<String, Object> snapshot() {
+            boolean complete = reasonCodes.isEmpty();
+            Map<String, Object> executor = object(
+                    "activeThreads", IO_EXECUTOR.getActiveCount(),
+                    "poolSize", IO_EXECUTOR.getPoolSize(),
+                    "maxPoolSize", IO_EXECUTOR.getMaximumPoolSize(),
+                    "queueSize", IO_EXECUTOR.getQueue().size(),
+                    "queueRemainingCapacity", IO_EXECUTOR.getQueue().remainingCapacity());
+            return object(
+                    "complete", complete,
+                    "degraded", !complete,
+                    "reasonCodes", List.copyOf(reasonCodes),
+                    "invalidReferenceCount", invalidWorkflowReferences.size(),
+                    "invalidWorkflowReferences", List.copyOf(invalidWorkflowReferences),
+                    "executor", executor,
+                    "managementConcurrency", centerClient.taskRequestPoolSnapshot());
+        }
+    }
+
     private record PanoramaTasks(
             List<Map<String, Object>> items,
-            List<Map<String, Object>> instances) {
+            List<Map<String, Object>> instances,
+            Map<String, Object> dataQuality) {
     }
 
     private enum AlarmDisposalStatus {

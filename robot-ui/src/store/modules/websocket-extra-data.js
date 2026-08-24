@@ -1,6 +1,7 @@
 import { set } from "nprogress";
 import { active } from "sortablejs";
 import Vue from "vue";
+import { Message } from 'element-ui'
 import {
   SLAM_POINTS,
   ENABLE_LIANTONG_SLAM_MOCK,
@@ -23,6 +24,7 @@ import {
 import { getPatrolPanoramaOverview } from '../../api/new-bi'
 
 let overviewRefreshPromise = null
+let taskDegradationNoticeSignature = ''
 
 const state = {
   // 设备对象：设备详情，包含坐标位置，task基本信息
@@ -39,6 +41,8 @@ const state = {
   patrolOverview: {}, // { durationToday: 32.6, durationUnit: "小时", mileageToday: 262.6, mileageUnit: "KM" }
   // 任务统计
   taskOverview: {}, //{ totalToday: 50, completedRate: 100, completedRateText: "100%", running: 48, pending: 2 }
+  // 聚合数据质量；任务降级时页面不得把空集合解释为真实的 0 条任务
+  dataQuality: {},
   // 告警统计
   alarmSummary: {}, // { totalToday: 50, handled: 18, unhandled: 0, handleRate: 100, handleRateText: "100%" }
   alarmRevision: 0,
@@ -82,6 +86,7 @@ const mutations = {
     state.robotList = [];
     state.robotAlarmObj = {};
     state.taskPathPoints = {};
+    state.dataQuality = {};
     state.defaultGpsDevices = [];
     state.overviewReady = false;
   },
@@ -187,6 +192,9 @@ const mutations = {
   SET_TASK_OVERVIEW(state, value) {
     state.taskOverview = value;
   },
+  SET_DATA_QUALITY(state, value) {
+    state.dataQuality = value || {};
+  },
   SET_PATROL_OVERVIEW(state, value) {
     state.patrolOverview = value;
   },
@@ -287,6 +295,17 @@ const actions = {
   },
   setAll({commit, state, dispatch}, data) {
     commit('RESET_OVERVIEW_RESOURCE_STATE')
+    const taskQuality = data?.dataQuality?.tasks || { complete: true, degraded: false, reasonCodes: [] }
+    commit('SET_DATA_QUALITY', data?.dataQuality || {})
+    if (taskQuality.degraded) {
+      const signature = JSON.stringify(taskQuality.reasonCodes || [])
+      if (signature !== taskDegradationNoticeSignature) {
+        Message.warning('任务数据暂不完整，当前页面仅展示已成功加载的数据')
+        taskDegradationNoticeSignature = signature
+      }
+    } else {
+      taskDegradationNoticeSignature = ''
+    }
     // 联通展厅 SLAM：注入模拟装备与任务路径
     const devices = [...(data?.devices || [])]
     const tasks = [...(data?.tasks || [])]
@@ -337,7 +356,9 @@ const actions = {
       online: '-'
     });
     commit('SET_PATROL_OVERVIEW', data?.patrolOverview || { durationToday: '-', durationUnit: '小时', mileageToday: '-', mileageUnit: 'KM' });
-    commit('SET_TASK_OVERVIEW', data?.taskOverview || { totalToday: '-', completedRate: '-', completedRateText: '-%', running: '-', pending: '-' });
+    commit('SET_TASK_OVERVIEW', taskQuality.degraded
+      ? { totalToday: '-', completedRate: '-', completedRateText: '-%', running: '-', pending: '-' }
+      : data?.taskOverview || { totalToday: '-', completedRate: '-', completedRateText: '-%', running: '-', pending: '-' });
     commit('SET_ALARM_SUMMARY', data?.alarms?.summary || { totalToday: '-', handled: '-', unhandled: '-', handleRate: '-', handleRateText: '-%' });
     tasks.map((item, index) => {
       commit('SET_TASK_INFO', { ...item, timestamp: new Date().getTime() + tasks.length - index });

@@ -206,6 +206,10 @@
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
 | `items` | array<object> | 需要 | 任务列表，字段同 `overview.tasks[]` |
+| `dataQuality.tasks.complete` | boolean | BFF 派生 | 所需任务查询均成功且没有失效引用时为 `true` |
+| `dataQuality.tasks.degraded` | boolean | BFF 派生 | 任一任务查询失败、超时、饱和或引用失效时为 `true` |
+| `dataQuality.tasks.reasonCodes` | array<string> | BFF 派生 | 稳定降级原因码，调用方不得按错误文案解析 |
+| `dataQuality.tasks.invalidWorkflowReferences` | array<string> | BFF 派生 | 已隔离的失效实例引用，最多 20 个，仅用于联调与清理 |
 
 ## 5. `/api/bigscreen/panorama/alarms`
 
