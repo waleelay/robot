@@ -16,6 +16,13 @@ export const PATROL_PAGES = Object.freeze([
   { key: 'statistics', routeName: 'biPatrolStatistics', permission: BIGSCREEN_PERMISSIONS.PATROL_STATS }
 ])
 
+// 默认落地页顺序与顶栏/页面切换菜单一致：指挥中心 → 巡逻巡查子页 → 人员管控
+export const BIGSCREEN_LANDING_PAGES = Object.freeze([
+  { key: 'home', routeName: 'biIndex', permission: BIGSCREEN_PERMISSIONS.HOME },
+  ...PATROL_PAGES,
+  { key: 'staff', routeName: 'biStaff', permission: BIGSCREEN_PERMISSIONS.STAFF }
+])
+
 function runtimeConfig() {
   return (typeof window !== 'undefined' && window.__BIGSCREEN_AUTH_CONFIG__) || {}
 }
@@ -40,4 +47,8 @@ export function hasAnyBigscreenPermission(permissions, requiredPermissions) {
 
 export function firstPatrolRouteName(permissions) {
   return PATROL_PAGES.find(page => hasBigscreenPermission(permissions, page.permission))?.routeName || ''
+}
+
+export function firstAccessibleRouteName(permissions) {
+  return BIGSCREEN_LANDING_PAGES.find(page => hasBigscreenPermission(permissions, page.permission))?.routeName || ''
 }

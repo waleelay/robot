@@ -64,13 +64,11 @@ export const constantRoutes = [
     path: '/bi',
     name: 'bi',
     hidden: true,
-    redirect: '/bi/index',
     component: () => import('@/views/bi/Bi.vue'),
     meta: {
       title: '大屏',
       icon: 'el-icon-data-board',
-      requiresAuth: true,
-      permission: BIGSCREEN_PERMISSIONS.HOME
+      requiresAuth: true
     },
     children: [
       {
@@ -98,13 +96,11 @@ export const constantRoutes = [
       {
         path: '/bi/patrol',
         name: 'biPatrol',
-        redirect: '/bi/patrol/panorama',
         component: () => import('@/views/bi/patrol/Index.vue'),
         meta: {
           title: '巡逻巡查',
           icon: 'el-icon-data-board',
-          requiresAuth: true,
-          permission: BIGSCREEN_PERMISSIONS.HOME
+          requiresAuth: true
         },
         children: [
           {
