@@ -31,6 +31,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketHandler;
@@ -121,7 +122,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         } catch (RuntimeException exception) {
             authorizationIdentityBySession.remove(browserSession.getId());
             log.warn("大屏 WebSocket 初始权限加载失败，会话={}", browserSession.getId(), exception);
-            browserSession.close(new CloseStatus(4003, "权限加载失败"));
+            if (credentialRejected(exception)) {
+                closeForTokenExpiration(browserSession);
+            } else {
+                browserSession.close(new CloseStatus(4003, "权限加载失败"));
+            }
             return;
         }
         log.debug("大屏 WebSocket 会话授权资源加载完成，会话={} 设备数={} 固定摄像头数={}",
@@ -262,8 +267,13 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                     notifyAuthorizationChanged(identity);
                 }
             } catch (RuntimeException exception) {
-                log.warn("刷新大屏 WebSocket 权限失败，关闭该身份的全部会话，身份={}", identity, exception);
-                sessionsForIdentity(identity).forEach(this::closeForAuthorizationFailure);
+                if (tokenExpired(browserSession, Instant.now()) || credentialRejected(exception)) {
+                    log.info("大屏 WebSocket Token 已失效，按登录凭证失效关闭会话，身份={}", identity);
+                    sessionsForIdentity(identity).forEach(this::closeForTokenExpiration);
+                } else {
+                    log.warn("刷新大屏 WebSocket 权限失败，保留未过期快照并继续重试，身份={}",
+                            identity, exception);
+                }
             } finally {
                 authorizationRefreshesByIdentity.remove(identity, pending);
                 pending.complete(null);
@@ -490,6 +500,24 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         }
         Instant expiresAt = jwtAuthentication.getToken().getExpiresAt();
         return expiresAt != null && !expiresAt.isAfter(now);
+    }
+
+    /**
+     * Management 明确返回 401 时，以对端鉴权结果为准。
+     *
+     * <p>这既覆盖正常 Token 到期，也避免 BFF 主机时钟落后于认证服务时，
+     * 把凭证失效误报成权限服务不可用。</p>
+     */
+    private boolean credentialRejected(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof RestClientResponseException responseException
+                    && responseException.getStatusCode().value() == 401) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private WebSocketSession newestTokenSession(String identity) {

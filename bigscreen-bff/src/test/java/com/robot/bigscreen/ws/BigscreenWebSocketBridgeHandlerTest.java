@@ -19,9 +19,11 @@ import java.time.Instant;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.WebSocketSession;
@@ -135,6 +137,26 @@ class BigscreenWebSocketBridgeHandlerTest {
     }
 
     @Test
+    void closesWith4001WhenInitialAuthorizationRejectsCredential() throws Exception {
+        BigscreenWebSocketAuthorizationService authorizationService =
+                mock(BigscreenWebSocketAuthorizationService.class);
+        WebSocketSession browserSession = browserSession(
+                new HttpHeaders(), URI.create("wss://bigscreen/ws/control"), "session-rejected-credential");
+        when(browserSession.getPrincipal()).thenReturn(authentication("user-001", Instant.now().plusSeconds(300)));
+        when(authorizationService.authorizedResources(browserSession))
+                .thenThrow(HttpClientErrorException.create(
+                        HttpStatus.UNAUTHORIZED, "Unauthorized", HttpHeaders.EMPTY, null, null));
+        BigscreenWebSocketBridgeHandler handler = handler(authorizationService);
+
+        handler.afterConnectionEstablished(browserSession);
+
+        verify(browserSession).close(org.mockito.ArgumentMatchers.argThat(status -> status.getCode() == 4001));
+        verify(browserSession, never()).close(
+                org.mockito.ArgumentMatchers.argThat(status -> status.getCode() == 4003));
+        handler.shutdownAuthorizationRefreshExecutor();
+    }
+
+    @Test
     void reusesValidAuthorizationSnapshotForSameIdentity() throws Exception {
         BigscreenWebSocketAuthorizationService authorizationService =
                 mock(BigscreenWebSocketAuthorizationService.class);
@@ -204,7 +226,7 @@ class BigscreenWebSocketBridgeHandlerTest {
     }
 
     @Test
-    void closesAllIdentitySessionsWhenAsynchronousRefreshFails() throws Exception {
+    void keepsValidSnapshotWhenAsynchronousRefreshFailsAndClosesAfterExpiry() throws Exception {
         BigscreenWebSocketAuthorizationService authorizationService =
                 mock(BigscreenWebSocketAuthorizationService.class);
         WebSocketSession browserSession = browserSession(
@@ -216,13 +238,46 @@ class BigscreenWebSocketBridgeHandlerTest {
                         Set.of("robot-001"), Set.of()))
                 .thenThrow(new IllegalStateException("Management 刷新失败"));
         BigscreenWebSocketBridgeHandler handler = handler(authorizationService);
-        ReflectionTestUtils.setField(handler, "authorizationMaxStalenessMs", 20L);
+        ReflectionTestUtils.setField(handler, "authorizationMaxStalenessMs", 200L);
         handler.afterConnectionEstablished(browserSession);
-        Thread.sleep(12L);
+        Thread.sleep(110L);
 
         handler.refreshSessionAuthorizations();
 
+        verify(authorizationService, timeout(1000).times(2)).authorizedResources(browserSession);
+        verify(browserSession, never()).close(
+                org.mockito.ArgumentMatchers.argThat(status -> status.getCode() == 4003));
+        Thread.sleep(110L);
+        handler.refreshSessionAuthorizations();
         verify(browserSession, timeout(1000)).close(
+                org.mockito.ArgumentMatchers.argThat(status -> status.getCode() == 4003));
+        handler.shutdownAuthorizationRefreshExecutor();
+    }
+
+    @Test
+    void closesWith4001WhenAsynchronousRefreshRejectsCredential() throws Exception {
+        BigscreenWebSocketAuthorizationService authorizationService =
+                mock(BigscreenWebSocketAuthorizationService.class);
+        WebSocketSession browserSession = browserSession(
+                new HttpHeaders(), URI.create("wss://bigscreen/ws/control"), "session-refresh-unauthorized");
+        when(browserSession.getPrincipal()).thenReturn(authentication("user-001", Instant.now().plusSeconds(300)));
+        when(browserSession.isOpen()).thenReturn(true);
+        when(authorizationService.authorizedResources(browserSession))
+                .thenReturn(new BigscreenWebSocketAuthorizationService.AuthorizedResources(
+                        Set.of("robot-001"), Set.of()))
+                .thenThrow(HttpClientErrorException.create(
+                        HttpStatus.UNAUTHORIZED, "Unauthorized", HttpHeaders.EMPTY, null, null));
+        BigscreenWebSocketBridgeHandler handler = handler(authorizationService);
+        ReflectionTestUtils.setField(handler, "authorizationMaxStalenessMs", 200L);
+        handler.afterConnectionEstablished(browserSession);
+        Thread.sleep(110L);
+
+        handler.refreshSessionAuthorizations();
+
+        verify(authorizationService, timeout(1000).times(2)).authorizedResources(browserSession);
+        verify(browserSession, timeout(1000)).close(
+                org.mockito.ArgumentMatchers.argThat(status -> status.getCode() == 4001));
+        verify(browserSession, never()).close(
                 org.mockito.ArgumentMatchers.argThat(status -> status.getCode() == 4003));
         handler.shutdownAuthorizationRefreshExecutor();
     }

@@ -38,11 +38,13 @@ export function mediaReconnectDelay(closeCode, attempts, randomValue = Math.rand
   return Math.min(30000, baseDelay + jitter)
 }
 
-function refreshAuthorizedOverview(dispatch) {
-  return dispatch('websocketExtraData/refreshOverviewResources', null, { root: true })
+function refreshAuthorizedOverview(dispatch, { failClosed = false, notifyOnFailure = false } = {}) {
+  return dispatch('websocketExtraData/refreshOverviewResources', { failClosed }, { root: true })
     .catch(error => {
       console.error('授权资源变更后刷新大屏总览失败', error)
-      Message.warning('大屏授权数据刷新失败，请稍后重试')
+      if (notifyOnFailure) {
+        Message.warning('大屏授权数据刷新失败，请稍后重试')
+      }
     })
 }
 
@@ -791,7 +793,7 @@ const actions = {
       dispatch('startHeartbeat')
       // 断线期间权限可能变化；重连成功后重新取得权威 Overview，不能沿用旧页面集合。
       if (isReconnect) {
-        refreshAuthorizedOverview(dispatch)
+        refreshAuthorizedOverview(dispatch, { failClosed: false, notifyOnFailure: false })
       }
       socket.send(JSON.stringify({
         type: 'video.intercom.call.query',
@@ -811,9 +813,7 @@ const actions = {
       }
       if (!state.mediaManualClosing && !state.mediaReconnectTimer && window.location.pathname.startsWith('/bi/')) {
         const reconnectDelay = mediaReconnectDelay(event.code, state.mediaReconnectAttempts)
-        if (event.code === 4001) {
-          Message.warning('登录凭证已过期，正在刷新凭证并重新连接')
-        } else if (event.code === 4003 && state.mediaReconnectAttempts === 0) {
+        if (event.code === 4003 && state.mediaReconnectAttempts === 0) {
           Message.warning('权限服务暂不可用，正在尝试恢复连接')
         }
         commit('incrementMediaReconnectAttempts')
@@ -826,9 +826,12 @@ const actions = {
     }
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data)
-      if (event.event === 'bigscreen.authorization.changed' ||
-        event.event === 'bigscreen.fixed-camera.health.changed') {
-        refreshAuthorizedOverview(dispatch)
+      if (event.event === 'bigscreen.authorization.changed') {
+        refreshAuthorizedOverview(dispatch, { failClosed: true, notifyOnFailure: true })
+        return
+      }
+      if (event.event === 'bigscreen.fixed-camera.health.changed') {
+        refreshAuthorizedOverview(dispatch, { failClosed: false, notifyOnFailure: false })
         return
       }
       dispatch('syncRobotEvent', event)

@@ -271,11 +271,13 @@ const actions = {
   resetOverviewResourceState({ commit }) {
     commit('RESET_OVERVIEW_RESOURCE_STATE')
   },
-  refreshOverviewResources({ commit, dispatch }) {
+  refreshOverviewResources({ commit, dispatch }, { failClosed = true } = {}) {
     if (overviewRefreshPromise) return overviewRefreshPromise
-    // 权限收缩时先清空旧资源，避免 REST 刷新失败期间继续展示已失权设备。
-    commit('RESET_OVERVIEW_RESOURCE_STATE')
-    dispatch('websocketRobot/loadRobots', [], { root: true })
+    // 只有 BFF 已明确通知权限集合变化时才先清空；普通重连或健康变化不得中断正在观看的视频。
+    if (failClosed) {
+      commit('RESET_OVERVIEW_RESOURCE_STATE')
+      dispatch('websocketRobot/loadRobots', [], { root: true })
+    }
     overviewRefreshPromise = getPatrolPanoramaOverview()
       .then(data => dispatch('setAll', data))
       .finally(() => {
