@@ -85,7 +85,9 @@
           <img :src="item.icon" alt="" srcset="">
         </div>
         <div class="ml30 flex-column">
-          <div class="title mt4">{{ item.name }}</div>
+          <div class="title mt4" :title="item.qualityTitle">
+            {{ item.name }}<span v-if="item.qualityWarning">（质量待确认）</span>
+          </div>
           <div class="value mt4"><span class="mr8">{{ item.value }}</span>{{ item.unit }}</div>
           <div class="desc mt4 d-flex" style="align-items: end">
             <span class="mr10">{{ tabDate === 'today' ? '较昨日' : tabDate === 'week' ? '较上周' : tabDate === 'month' ? '较上月' : '较同期' }}</span>
@@ -293,7 +295,7 @@ export default {
       const { taskTotal, patrolMileage, aiAlarmTotal, autoHandleSuccessRate } = this.statistics?.kpis || {};
       const fallback = [
         { code: 'taskTotal', icon: icons.taskTotal, name: '任务执行总数', value: this.taskDataDegraded ? '--' : (taskTotal?.value ?? 0), unit: this.taskDataDegraded ? '' : '个', compareRate: taskTotal?.compareRate },
-        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: this.mileageDataAvailable ? (patrolMileage?.value ?? 0) : '--', unit: this.mileageDataAvailable ? 'KM' : '', compareRate: patrolMileage?.compareRate },
+        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: this.mileageDataAvailable ? (patrolMileage?.value ?? 0) : '--', unit: this.mileageDataAvailable ? 'KM' : '', compareRate: patrolMileage?.compareRate, qualityWarning: this.mileageQualityIncomplete, qualityTitle: this.mileageQualityTitle },
         { code: 'aiAlarmTotal', icon: icons.aiAlarmTotal, name: 'AI自动识别异常数', value: aiAlarmTotal?.value || 0, unit: '个', compareRate: aiAlarmTotal?.compareRate },
         { code: 'autoHandleSuccessRate', icon: icons.autoHandleSuccessRate, name: '自动处置成功率', value: autoHandleSuccessRate?.value || 0, unit: '%', compareRate: autoHandleSuccessRate?.compareRate }
       ];
@@ -307,6 +309,13 @@ export default {
     },
     mileageDataAvailable() {
       return Boolean(this.statistics?.dataQuality?.mileage?.hasData)
+    },
+    mileageQualityIncomplete() {
+      return this.statistics?.dataQuality?.mileage?.quality === 'UNKNOWN'
+    },
+    mileageQualityTitle() {
+      if (!this.mileageQualityIncomplete) return ''
+      return '历史里程无法精确分类，总里程仍有效'
     },
     aiAlarmAnalysis() {
       return (this.statistics && this.statistics.aiAlarmAnalysis) || {};

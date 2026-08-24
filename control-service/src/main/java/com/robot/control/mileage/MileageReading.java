@@ -9,6 +9,5 @@ public record MileageReading(
         String messageId,
         OffsetDateTime eventTime,
         BigDecimal totalMileageMeters,
-        BigDecimal currentMileageMeters,
-        String mapId) {
+        BigDecimal currentMileageMeters) {
 }

@@ -82,7 +82,7 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `GET` | `/api/bigscreen/statistics/reports/{id}/download` | 下载历史 PDF |
 | `DELETE` | `/api/bigscreen/statistics/reports/{id}` | 删除历史 PDF 和索引记录，成功返回 `204` |
 
-统计接口当前已接入管理端设备/任务/告警及 Control 里程汇总；确实没有数据时字段仍返回 `null` 或空集合。任务来源异常时返回 `dataQuality.tasks.degraded=true`；里程返回 `dataQuality.mileage`，无有效样本时不得按真实零值展示。报告是同步响应，不存在“创建异步任务后轮询状态”的 Java 接口。详细字段见[大屏统计接口文档](大屏统计接口文档.md)。
+统计接口当前已接入管理端设备/任务/告警及 Control 里程汇总；确实没有数据时字段仍返回 `null` 或空集合。任务来源异常时返回 `dataQuality.tasks.degraded=true`；里程返回 `dataQuality.mileage`，无有效样本时不得按真实零值展示，`quality=UNKNOWN` 时保留总里程并提示历史质量无法确认。报告是同步响应，不存在“创建异步任务后轮询状态”的 Java 接口。详细字段见[大屏统计接口文档](大屏统计接口文档.md)。
 
 ## 4. 业务管理代理
 

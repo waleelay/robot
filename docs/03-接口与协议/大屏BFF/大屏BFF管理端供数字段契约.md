@@ -26,9 +26,7 @@
 | `patrolOverview.durationToday` | number/null | 需要 | 今日巡逻时长，BFF 可基于管理端任务实例耗时计算 |
 | `patrolOverview.mileageToday` | number/null | 条件需要 | 今日巡逻里程，来自 Control 里程增量汇总，单位由 `mileageUnit` 表示；无有效样本时返回 `null` |
 | `patrolOverview.mileageHasData` | boolean | 不需要 | 区间是否存在纳入总量的有效里程样本 |
-| `patrolOverview.mileageQuality` | string/null | 不需要 | `NORMAL/ESTIMATED/RESET/SUSPECT/UNKNOWN/NO_DATA` |
-| `patrolOverview.mileageObservedStartTime` | string/null | 不需要 | Control 质量事件在查询范围内的最早观测时间 |
-| `patrolOverview.mileageObservedEndTime` | string/null | 不需要 | Control 质量事件在查询范围内的最晚观测时间 |
+| `patrolOverview.mileageQuality` | string/null | 不需要 | `NORMAL/ESTIMATED/UNKNOWN/NO_DATA`；历史质量不可确认时为 `UNKNOWN` |
 | `tasks` | array<object> | 需要 | 任务列表，来自管理端任务计划、任务实例、路线点位等数据 |
 | `map` | array<object> | 需要 | 地图列表，当前 BFF 透传管理端地图记录 |
 | `alarms` | object | 需要 | 告警聚合对象，告警明细来自管理端 |

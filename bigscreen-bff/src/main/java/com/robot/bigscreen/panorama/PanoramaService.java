@@ -1334,10 +1334,7 @@ public class PanoramaService {
                 "mileageUnit", mileageToday == null ? null : "KM",
                 "mileageHasData", Boolean.TRUE.equals(mileageSummary.get("hasData")),
                 "mileageQuality", mileageSummary.get("quality"),
-                "mileageTimezone", mileageSummary.get("timezone"),
-                "mileageObservedStartTime", mileageSummary.get("observedStartTime"),
-                "mileageObservedEndTime", mileageSummary.get("observedEndTime"),
-                "mileageExcludedSuspectMeters", mileageSummary.get("excludedSuspectMeters"));
+                "mileageTimezone", mileageSummary.get("timezone"));
     }
 
     private Map<String, Object> todayMileageSummary() {

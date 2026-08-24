@@ -137,7 +137,7 @@ export default {
   computed: {
     mileageQualityTitle() {
       const quality = this.patrolOverview?.mileageQuality
-      const labels = { NORMAL: '正常', ESTIMATED: '含估算值', RESET: '设备里程已重置', SUSPECT: '存在异常值，已排除', NO_DATA: '暂无有效里程数据', UNAVAILABLE: '里程服务不可用' }
+      const labels = { NORMAL: '正常', ESTIMATED: '含估算值', UNKNOWN: '历史里程无法精确分类，总里程仍有效', NO_DATA: '暂无有效里程数据', UNAVAILABLE: '里程服务不可用' }
       return labels[quality] || '里程数据质量未知'
     },
     selectedRobotId() {

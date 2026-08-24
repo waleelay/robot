@@ -135,7 +135,6 @@ public class EdgeDeviceStatusHandler {
             return;
         }
         try {
-            Map<String, Object> localization = map(status.get("localization"));
             String timestamp = string(envelope.get("timestamp"));
             OffsetDateTime eventTime = timestamp.isBlank()
                     ? OffsetDateTime.now()
@@ -145,8 +144,7 @@ public class EdgeDeviceStatusHandler {
                     string(envelope.get("messageId")),
                     eventTime,
                     decimal(motion.get("totalMileage")),
-                    decimal(motion.get("currentMileage")),
-                    string(localization.get("mapId"))));
+                    decimal(motion.get("currentMileage"))));
         } catch (RuntimeException exception) {
             // 里程持久化异常不能阻断设备实时状态和控制链路。
             log.warn("保存边缘设备里程失败，机器人标识={}", serialNumber, exception);

@@ -99,7 +99,8 @@ RTSP 可用时 `status=online`，缺失或过期状态为 `unknown`。`playable`
 
 全景今日里程和统计页区间里程由 Control 对边缘状态上报持久化计算，BFF 通过
 `/api/control/statistics/mileage` 批量查询，展示单位统一换算为 `KM`。缺少有效样本时保持
-`null` 并展示 `--`；`dataQuality.mileage` 透传质量、时区和数据覆盖范围。
+`null` 并展示 `--`；`dataQuality.mileage` 只透传总里程是否有数据、简化质量状态和时区。
+`quality=UNKNOWN` 时总里程仍可展示，但页面与 PDF 必须提示历史质量无法精确分类。
 
 生产报告通过 `StatisticsReportStore` 的本地实现保存到专用持久化目录，`index.json` 采用临时文件
 加原子替换。当前边界只允许单实例；写入前检查磁盘余量，部署需监控容量、目录可写和清理异常，

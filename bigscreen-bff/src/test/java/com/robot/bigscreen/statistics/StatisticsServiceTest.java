@@ -201,6 +201,38 @@ class StatisticsServiceTest {
     }
 
     @Test
+    void includesMileageQualityWarningInGeneratedReport() throws Exception {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.deviceTypeOptions()).thenReturn(List.of());
+        when(centerClient.devices()).thenReturn(List.of(
+                Map.of("serialNumber", "robot-001", "deviceType", "WHEELED_ROBOT")));
+        when(centerClient.realtimeStatuses(any())).thenReturn(List.of());
+        when(centerClient.taskWorkflowInstancesForStatistics()).thenReturn(List.of());
+        when(centerClient.alarmsForStatistics(any(), any())).thenReturn(List.of());
+        when(centerClient.mileageSummary(any(), any(), org.mockito.ArgumentMatchers.eq(List.of("robot-001"))))
+                .thenReturn(Map.of(
+                        "hasData", true,
+                        "totalMeters", 12_000,
+                        "quality", "UNKNOWN"));
+        StatisticsService service = new StatisticsService(
+                new ObjectMapper(),
+                centerClient,
+                new DeviceStatusSampler(
+                        new ObjectMapper(), centerClient, tempDir.resolve("sampler-quality").toString(), 7),
+                tempDir.resolve("reports-quality").toString());
+
+        StatisticsService.ReportFile report = service.createReport(
+                Map.of("timeRange", Map.of("type", "month"), "deviceType", "all"),
+                authentication("user-1", "org-1"));
+        String text;
+        try (var document = Loader.loadPDF(report.bytes())) {
+            text = new PDFTextStripper().getText(document);
+        }
+
+        assertTrue(text.contains("历史里程无法精确分类，总里程仍有效"));
+    }
+
+    @Test
     void keepsReportHistoryPrivateToCreator() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         when(centerClient.deviceTypeOptions()).thenReturn(List.of());

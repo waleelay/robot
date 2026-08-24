@@ -345,11 +345,7 @@ public class StatisticsService {
                 "timezone", summary.get("timezone"),
                 "startTime", summary.get("startTime"),
                 "endTime", summary.get("endTime"),
-                "observedStartTime", summary.get("observedStartTime"),
-                "observedEndTime", summary.get("observedEndTime"),
-                "sampleCount", summary.get("sampleCount"),
-                "qualityCounts", summary.get("qualityCounts"),
-                "excludedSuspectMeters", summary.get("excludedSuspectMeters"));
+                "sampleCount", summary.get("sampleCount"));
     }
 
     private Double mileageCompareRate(Double current, Double previous) {
@@ -899,6 +895,10 @@ public class StatisticsService {
                 + compareText(kpis, "taskTotal"));
         pdf.line("总巡逻里程：" + valueWithUnit(kpiValue(kpis, "patrolMileage"), "KM") + "，"
                 + compareText(kpis, "patrolMileage"));
+        Map<String, Object> mileageQuality = mapValue(mapValue(data.get("dataQuality")).get("mileage"));
+        if ("UNKNOWN".equals(mileageQuality.get("quality"))) {
+            pdf.line("里程数据质量：历史里程无法精确分类，总里程仍有效。");
+        }
         pdf.line("AI自动识别异常数：" + valueWithUnit(kpiValue(kpis, "aiAlarmTotal"), "个") + "，"
                 + compareText(kpis, "aiAlarmTotal"));
         pdf.line("自动处置成功率：" + percentText(kpiValue(kpis, "autoHandleSuccessRate")) + "，"
