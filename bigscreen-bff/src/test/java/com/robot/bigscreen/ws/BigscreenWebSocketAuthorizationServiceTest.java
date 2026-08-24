@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
@@ -17,7 +18,8 @@ class BigscreenWebSocketAuthorizationServiceTest {
             new CenterServiceProperties(),
             mock(AuthenticatedRequestHeaders.class),
             RestClient.builder(),
-            new ObjectMapper());
+            new ObjectMapper(),
+            mock(FixedCameraCatalogLeaseClient.class));
 
     @Test
     void rejectsUpstreamEventsWithoutResourceIdentity() {

@@ -12,6 +12,7 @@
 
 Control Service -> Management Service（设备档案、能力、固定摄像头）
 Control Service <-> EMQX <-> 机器人客户端 / 固定摄像头 Gateway
+Bigscreen BFF -> Control Service -> EMQX -> 固定摄像头 Gateway（用户授权短租约目录）
 Media Service -> LiveKit / MinIO / MySQL
 浏览器 <-> LiveKit（WebRTC 媒体流不经过 BFF 或 Control）
 ```
@@ -116,7 +117,8 @@ Header 缺失时 Control 和 Media 会启用开发默认身份，该行为不是
 - 机器人摄像头和固定摄像头视频会话创建、复用、恢复、切换、停止与视频墙。
 - LiveKit viewer/publisher Token、Track 状态、语音对讲，以及支持刷新恢复、离线收口和最长时长保护的 Egress 手动录像。
 - 机器人排他控制租约、设备能力校验、通用设备命令和多合一设备控制。
-- 固定摄像头管理端档案校验、主/子码流选择及 Gateway MQTT 编排。
+- 固定摄像头管理端档案校验、主/子码流选择及 Gateway MQTT 编排；默认由大屏用户授权产生
+  短租约目录，旧 Gateway 直连 Management 方案仅作为显式兼容模式保留。
 - 机器人在线/设备状态合并、WebSocket 广播和任务失效通知。
 - 通用文件简单上传、分片直传、批量删除、下载、HLS 转码和播放。
 - Media OpenTTS 生成/二进制广播，以及多合一设备文本 TTS 命令。

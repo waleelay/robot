@@ -61,7 +61,10 @@ BFF 是 OAuth2 Resource Server：
 固定摄像头会作为全景 `devices[]` 中的同级装备返回。BFF 合并 Control 健康快照，分别输出
 `enabled/configReady`、`gatewayHealth` 和 `streamHealth`；只有配置启用且完整、Gateway 在线、
 RTSP 可用时 `status=online`，缺失或过期状态为 `unknown`。`playable` 仅为配置门槛兼容字段，
-不表示在线。BFF 不返回 RTSP URL。
+不表示在线。BFF 不向浏览器返回 RTSP URL。WebSocket 授权快照完整加载后，BFF 会把当前身份
+可见的固定摄像头配置以 180 秒短租约发送给 Control；快照每 30 秒刷新一次，查询或同步失败时
+不续租，旧目录到期后 Gateway 停止周期探测。这是有用户会话期间的按需健康链路，不承诺
+7×24 小时全量监测。
 
 下游缺失字段通常返回 `null` 或空集合。代码仍为 `test111`、`SN005`、`SN006` 保留无定位时的硬编码演示位置事件；该兼容只影响 WebSocket 事件，不能作为生产真实定位。
 
@@ -78,6 +81,8 @@ RTSP 可用时 `status=online`，缺失或过期状态为 `unknown`。`playable`
 | `BIGSCREEN_WS_AUTHORIZATION_MAX_STALENESS_MS` | WebSocket 授权快照最大陈旧时间，默认 30000，生产不得调大 |
 | `BIGSCREEN_WS_AUTHORIZATION_CHECK_INTERVAL_MS` | Token 和授权快照检查周期，默认 1000 |
 | `BIGSCREEN_WS_AUTHORIZATION_LOAD_TIMEOUT_MS` | 单次完整授权加载总时限，默认 8000 |
+| `FIXED_CAMERA_CATALOG_LEASE_ENABLED` | 是否向 Control 同步固定摄像头短租约，默认 `true` |
+| `FIXED_CAMERA_CATALOG_LEASE_SECONDS` | 租约时长，默认 180 秒，代码硬上限 300 秒 |
 | `BIGSCREEN_AUTH_CLIENT_ID` | JWT `azp/aud` 目标客户端 |
 | `BIGSCREEN_AUTH_ISSUER_URI`、`BIGSCREEN_AUTH_JWK_SET_URI` | JWT Issuer 与 JWK |
 | `BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS` | CORS 来源模式 |

@@ -29,6 +29,11 @@ bigscreen:
     authorization-check-interval-ms: ${BIGSCREEN_WS_AUTHORIZATION_CHECK_INTERVAL_MS:1000}
     # 单次设备与固定摄像头完整权限加载的总时限。
     authorization-load-timeout-ms: ${BIGSCREEN_WS_AUTHORIZATION_LOAD_TIMEOUT_MS:8000}
+  fixed-camera-catalog-lease:
+    # 开启后，BFF 在用户固定摄像头授权列表完整查询成功后向 Control 续租。
+    enabled: ${FIXED_CAMERA_CATALOG_LEASE_ENABLED:true}
+    # 租约过期后 Gateway 停止相应周期探测；代码硬上限为 300 秒。
+    duration-seconds: ${FIXED_CAMERA_CATALOG_LEASE_SECONDS:180}
   auth:
     # BFF 校验 JWT audience/authorized party 时使用的客户端 ID。
     client-id: ${BIGSCREEN_AUTH_CLIENT_ID:bigscreen-web}

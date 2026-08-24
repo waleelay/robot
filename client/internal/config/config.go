@@ -20,6 +20,7 @@ type Config struct {
 	FixedCameraHeartbeat     time.Duration
 	FixedCameraHealthProbe   time.Duration
 	FixedCameraProbeWorkers  int
+	FixedCameraCatalogMode   string
 	ManagementServiceURL     string
 	ManagementToken          string
 	ManagementInsecureTLS    bool
@@ -117,6 +118,7 @@ func Load() Config {
 		FixedCameraHeartbeat:     time.Duration(envInt("FIXED_CAMERA_HEARTBEAT_INTERVAL_SECONDS", 10)) * time.Second,
 		FixedCameraHealthProbe:   time.Duration(envInt("FIXED_CAMERA_HEALTH_PROBE_INTERVAL_SECONDS", 60)) * time.Second,
 		FixedCameraProbeWorkers:  envInt("FIXED_CAMERA_HEALTH_PROBE_CONCURRENCY", 4),
+		FixedCameraCatalogMode:   strings.ToLower(env("FIXED_CAMERA_CATALOG_MODE", "lease")),
 		ManagementServiceURL:     env("MANAGEMENT_SERVICE_URL", env("CENTER_MANAGE_BASE_URL", "http://host.docker.internal:8866")),
 		ManagementToken:          env("MANAGEMENT_SERVICE_TOKEN", ""),
 		ManagementInsecureTLS:    envBool("MANAGEMENT_INSECURE_SKIP_VERIFY", false),

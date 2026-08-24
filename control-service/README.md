@@ -93,14 +93,20 @@ gateway/fixed-camera/{gatewayId}/video/restart
 gateway/fixed-camera/{gatewayId}/video/status
 gateway/fixed-camera/{gatewayId}/status
 gateway/fixed-camera/{gatewayId}/camera/{cameraId}/status
+gateway/fixed-camera/{gatewayId}/catalog/sync
 ```
 
-固定摄像头仅支持 `visible`。Control 查询 Management 档案，校验 `enabled` 和码流，并在主/子码流缺失时回退到另一条可用码流。首次 start 命令含内部 `rtspUrl`；手工重启、自动恢复或切换命令可能不含该字段，由 Gateway 按摄像头 ID 回查 Management。`rtspUrl` 和 LiveKit Token 都是敏感数据；MQTT 日志只允许输出命令白名单摘要，不得输出完整载荷。
+固定摄像头仅支持 `visible`。Control 查询 Management 档案，校验 `enabled` 和码流，并在主/子码流缺失时回退到另一条可用码流。首次 start 命令含内部 `rtspUrl`；目录租约模式下，Gateway 在后续命令缺少该字段时从当前有效目录解析。旧的 Gateway 直连 Management 查询能力仍保留，仅在显式配置 `FIXED_CAMERA_CATALOG_MODE=management` 时启用。`rtspUrl` 和 LiveKit Token 都是敏感数据；MQTT 日志只允许输出命令白名单摘要，不得输出完整载荷。
 
 后两个 Topic 分别表示 Gateway 心跳和摄像头 RTSP 健康。Control 校验 Topic 与载荷身份，
 30 秒无心跳转为 `OFFLINE`，120 秒无新 RTSP 状态转为 `UNKNOWN`，并通过
 `GET /api/control/fixed-cameras/health` 只返回当前用户有权摄像头。健康仓库当前为进程内存，
 多实例部署前必须落实共享短期存储或完整订阅与请求粘滞方案。
+
+`PUT /internal/control/fixed-camera-catalog-leases` 只供 Bigscreen BFF 在内部网络续租。Control
+校验调用方标记、签发时间、版本和最长 300 秒有效期，合并当前有效租约后向 `catalog/sync`
+发布全量快照；最后一个租约过期时发布空目录。该接口不得由 Nginx 或 API Gateway 对外暴露，
+调用方标记只用于误用防护，不等同于独立服务身份认证。
 
 ## 4. WebSocket
 
@@ -120,6 +126,7 @@ gateway/fixed-camera/{gatewayId}/camera/{cameraId}/status
 | `control.management-service-base-url` | `CENTER_MANAGE_BASE_URL` | Management 地址 |
 | `control.mqtt.*` | `MQTT_*`、`FIXED_CAMERA_GATEWAY_ID` | Broker、凭据、clientId、Gateway ID 和开关 |
 | `control.fixed-camera-health.*` | `FIXED_CAMERA_GATEWAY_TIMEOUT_SECONDS`、`FIXED_CAMERA_HEALTH_MAX_AGE_SECONDS` | Gateway 离线与 RTSP 健康过期阈值 |
+| `control.fixed-camera-catalog.*` | `FIXED_CAMERA_CATALOG_MAX_LEASE_SECONDS`、`FIXED_CAMERA_CATALOG_SWEEP_DELAY_MS`、`FIXED_CAMERA_CATALOG_TRUSTED_CALLER` | 目录租约时限、清理周期和内部调用方标记 |
 | `control.center-stomp.*` | `CENTER_STOMP_*` | 上游任务事件连接 |
 | `control.mileage.*` | `MILEAGE_*` | 异常速度阈值和统计刷新距离阈值 |
 | `spring.datasource.*` | `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` | 里程检查点和分钟增量桶数据库 |

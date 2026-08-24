@@ -104,7 +104,7 @@ main
 
 进程退出时，根 `context` 会统一通知 MQTT、推流进程、对讲音频桥和录像上传 runner 收尾。
 
-固定摄像头 Gateway 入口文件为 `cmd/fixed-camera-gateway/main.go`。该入口不启动机器人在线心跳、对讲、多合一设备控制和录像上传，只复用 RTSP 探测与视频 publisher，用于中心侧固定监控摄像头推流。
+固定摄像头 Gateway 入口文件为 `cmd/fixed-camera-gateway/main.go`。该入口不启动机器人在线心跳、对讲、多合一设备控制和录像上传，只复用 RTSP 探测与视频 publisher，用于中心侧固定监控摄像头推流。默认从 MQTT 接收 BFF 用户会话产生的短租约目录，仅探测当前有效目录；没有用户会话或租约过期时不做全量探测，因此不承诺 7×24 小时全量监测。
 
 ## 4. 配置模块
 
@@ -130,8 +130,9 @@ main
 | 字段 | 环境变量 | 说明 |
 |---|---|---|
 | `FixedCameraGatewayID` | `FIXED_CAMERA_GATEWAY_ID` | 与 Control Service 下发 topic 中的 `{gatewayId}` 一致 |
-| `ManagementServiceURL` | `MANAGEMENT_SERVICE_URL` / `CENTER_MANAGE_BASE_URL` | 管理端服务地址，用于查询 `/api/v1/management/fixed-cameras` |
-| `ManagementToken` | `MANAGEMENT_SERVICE_TOKEN` | 调管理端接口时附加的 Bearer token，可为空 |
+| `FixedCameraCatalogMode` | `FIXED_CAMERA_CATALOG_MODE` | 目录来源；默认 `lease`，旧方案可显式设为 `management` |
+| `ManagementServiceURL` | `MANAGEMENT_SERVICE_URL` / `CENTER_MANAGE_BASE_URL` | 仅 `management` 模式使用的管理端地址 |
+| `ManagementToken` | `MANAGEMENT_SERVICE_TOKEN` | 仅 `management` 模式使用的 Bearer Token，可为空 |
 | `ManagementInsecureTLS` | `MANAGEMENT_INSECURE_SKIP_VERIFY` | 内网自签 HTTPS 证书兼容开关，默认关闭 |
 | `FixedCameraHeartbeat` | `FIXED_CAMERA_HEARTBEAT_INTERVAL_SECONDS` | Gateway 心跳周期，默认 10 秒 |
 | `FixedCameraHealthProbe` | `FIXED_CAMERA_HEALTH_PROBE_INTERVAL_SECONDS` | 全量 RTSP 健康扫描周期，默认 60 秒 |
@@ -241,6 +242,7 @@ main
 | `gateway/fixed-camera/{gatewayId}/video/start` | `handleStart` | 启动固定摄像头实时视频 |
 | `gateway/fixed-camera/{gatewayId}/video/stop` | `handleStop` | 停止指定 `sessionId` 的固定摄像头推流 |
 | `gateway/fixed-camera/{gatewayId}/video/restart` | `handleStart` | 重启固定摄像头推流 |
+| `gateway/fixed-camera/{gatewayId}/catalog/sync` | `handleCatalog` | 替换当前短租约摄像头目录；只接受匹配 Gateway ID 且未过期的新快照 |
 
 ### 6.2 发布 Topic
 
@@ -253,8 +255,9 @@ main
 | `gateway/fixed-camera/{gatewayId}/status` | `FixedCameraGatewayStatus` | Gateway 上线、离线和周期心跳 |
 | `gateway/fixed-camera/{gatewayId}/camera/{cameraId}/status` | `FixedCameraHealthStatus` | 固定摄像头最近 RTSP 健康 |
 
-Gateway 连接后每 10 秒上报心跳，并设置异常断连 `OFFLINE` 遗嘱。固定摄像头列表按每页
-500 条完整读取，每 60 秒以默认最多 4 个并发执行 RTSP 探测；上一轮未结束时跳过重叠轮次。
+Gateway 连接后每 10 秒上报心跳，并设置异常断连 `OFFLINE` 遗嘱。`lease` 模式只对目录快照中
+尚未过期的记录每 60 秒以默认最多 4 个并发执行 RTSP 探测；目录按全量快照替换，空快照清空
+目录。`management` 兼容模式仍按每页 500 条完整读取。上一轮未结束时跳过重叠轮次。
 两类健康 Topic 均不携带 RTSP URL 或 Token，也不替代按 `sessionId` 上报的会话状态。
 
 ### 6.3 指令处理流程

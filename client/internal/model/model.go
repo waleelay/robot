@@ -108,6 +108,23 @@ type FixedCameraHealthStatus struct {
 	ReasonCode string    `json:"reasonCode,omitempty"`
 }
 
+type FixedCameraCatalogSnapshot struct {
+	Version        string                     `json:"version"`
+	GatewayID      string                     `json:"gatewayId"`
+	CatalogVersion uint64                     `json:"catalogVersion"`
+	IssuedAt       time.Time                  `json:"issuedAt"`
+	Cameras        []FixedCameraCatalogRecord `json:"cameras"`
+}
+
+type FixedCameraCatalogRecord struct {
+	CameraID      string    `json:"cameraId"`
+	Enabled       bool      `json:"enabled"`
+	ProtocolType  string    `json:"protocolType"`
+	MainStreamURL string    `json:"mainStreamUrl,omitempty"`
+	SubStreamURL  string    `json:"subStreamUrl,omitempty"`
+	ExpiresAt     time.Time `json:"expiresAt"`
+}
+
 type OnlineMessage struct {
 	Status  string   `json:"status"`
 	Cameras []Camera `json:"cameras,omitempty"`

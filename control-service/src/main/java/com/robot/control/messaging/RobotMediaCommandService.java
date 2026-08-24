@@ -3,6 +3,7 @@ package com.robot.control.messaging;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.config.ControlServiceProperties;
+import com.robot.control.fixedcamera.FixedCameraCatalogSnapshot;
 import com.robot.media.common.video.IntercomStartCommand;
 import com.robot.media.common.video.VideoStartCommand;
 import java.time.OffsetDateTime;
@@ -96,6 +97,11 @@ public class RobotMediaCommandService {
      */
     public void sendFixedCameraRestart(Object payload) {
         publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/video/restart", payload);
+    }
+
+    /** 下发当前有效用户租约合并后的固定摄像头全量目录。 */
+    public void sendFixedCameraCatalog(FixedCameraCatalogSnapshot snapshot) {
+        publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/catalog/sync", snapshot);
     }
 
     /**

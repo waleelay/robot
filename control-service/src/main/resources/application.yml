@@ -51,6 +51,13 @@ control:
     camera-max-age-seconds: ${FIXED_CAMERA_HEALTH_MAX_AGE_SECONDS:120}
     # 健康状态过期扫描间隔。
     sweep-delay-ms: ${FIXED_CAMERA_HEALTH_SWEEP_DELAY_MS:1000}
+  fixed-camera-catalog:
+    # BFF 目录租约的最大接受时长；代码硬上限为 300 秒。
+    max-lease-seconds: ${FIXED_CAMERA_CATALOG_MAX_LEASE_SECONDS:300}
+    # 过期租约清理与空目录收口周期。
+    sweep-delay-ms: ${FIXED_CAMERA_CATALOG_SWEEP_DELAY_MS:1000}
+    # 仅是内网边界内的调用方标识，不替代后续服务身份认证。
+    trusted-caller: ${FIXED_CAMERA_CATALOG_TRUSTED_CALLER:bigscreen-bff}
   center-stomp:
     # 是否连接管理中心 STOMP 端点；任务事实仍以 Management HTTP 查询结果为准。
     enabled: ${CENTER_STOMP_ENABLED:true}

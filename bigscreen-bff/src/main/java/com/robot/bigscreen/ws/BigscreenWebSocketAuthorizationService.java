@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import java.net.URI;
 import java.time.Duration;
 import java.util.HashSet;
@@ -34,6 +35,7 @@ public class BigscreenWebSocketAuthorizationService {
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
+    private final FixedCameraCatalogLeaseClient catalogLeaseClient;
 
     @Value("${bigscreen.websocket.authorization-load-timeout-ms:8000}")
     private long authorizationLoadTimeoutMs = 8000L;
@@ -42,10 +44,12 @@ public class BigscreenWebSocketAuthorizationService {
             CenterServiceProperties properties,
             AuthenticatedRequestHeaders authenticatedRequestHeaders,
             RestClient.Builder builder,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            FixedCameraCatalogLeaseClient catalogLeaseClient) {
         this.properties = properties;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
         this.objectMapper = objectMapper;
+        this.catalogLeaseClient = catalogLeaseClient;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(2));
         requestFactory.setReadTimeout(Duration.ofSeconds(3));
@@ -77,11 +81,12 @@ public class BigscreenWebSocketAuthorizationService {
                     "/api/v1/management/devices",
                     deadlineNanos,
                     "serialNumber", "robotId", "deviceCode", "id");
-            Set<String> cameraIds = loadAuthorizedIds(
+            List<Map<String, Object>> cameraRecords = loadAuthorizedRecords(
                     headers,
                     "/api/v1/management/fixed-cameras",
-                    deadlineNanos,
-                    "cameraId", "id");
+                    deadlineNanos);
+            Set<String> cameraIds = ids(cameraRecords, "cameraId", "id");
+            catalogLeaseClient.synchronize(session.getPrincipal(), headers, cameraRecords);
             return new AuthorizedResources(robotIds, cameraIds);
         } catch (RuntimeException exception) {
             log.warn("加载大屏 WebSocket 授权资源失败，会话={}", session.getId(), exception);
@@ -203,6 +208,40 @@ public class BigscreenWebSocketAuthorizationService {
             }
         }
         throw new IllegalStateException("Management 授权资源分页超过安全上限：" + path);
+    }
+
+    private List<Map<String, Object>> loadAuthorizedRecords(
+            HttpHeaders headers,
+            String path,
+            long deadlineNanos) {
+        int pageSize = 500;
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        for (int pageNum = 1; pageNum <= 1000; pageNum++) {
+            requireBeforeDeadline(deadlineNanos, path);
+            URI uri = UriComponentsBuilder.fromUriString(baseUrl() + path)
+                    .queryParam("pageNum", pageNum)
+                    .queryParam("pageSize", pageSize)
+                    .build(true)
+                    .toUri();
+            Map<String, Object> response = restClient.get()
+                    .uri(uri)
+                    .headers(target -> target.addAll(headers))
+                    .retrieve()
+                    .body(MAP_TYPE);
+            requireBeforeDeadline(deadlineNanos, path);
+            List<Map<String, Object>> page = records(response);
+            result.addAll(page);
+            if (page.size() < pageSize) {
+                return List.copyOf(result);
+            }
+        }
+        throw new IllegalStateException("Management 授权资源分页超过安全上限：" + path);
+    }
+
+    private Set<String> ids(List<Map<String, Object>> records, String... idFields) {
+        Set<String> ids = new HashSet<>();
+        records.forEach(item -> firstString(item, idFields).ifPresent(ids::add));
+        return Set.copyOf(ids);
     }
 
     private void requireBeforeDeadline(long deadlineNanos, String path) {

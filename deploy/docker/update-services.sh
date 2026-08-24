@@ -128,7 +128,7 @@ sleep 30
 ssh_run 'docker ps --format "{{.Names}}\t{{.Status}}" | grep robot-mediaserver;
 echo "--- 容器内新环境变量 ---";
 docker inspect robot-mediaserver-control-service --format "{{range .Config.Env}}{{println .}}{{end}}" | grep -E "CONTROL_AUTH_ALLOW_DEFAULT_USER|MANAGEMENT_DEVICE_CACHE_TTL_SECONDS|CONTROL_DEVICE_CACHE_EVICT_DELAY_MS|ROBOT_HEARTBEAT_TIMEOUT_SECONDS|ROBOT_HEARTBEAT_SWEEP_DELAY_MS" || true;
-docker inspect robot-mediaserver-bigscreen-bff --format "{{range .Config.Env}}{{println .}}{{end}}" | grep -E "STATISTICS_REPORT_CLEANUP_INTERVAL_MS|BIGSCREEN_WS_AUTHORIZATION_REFRESH_MS" || true'
+docker inspect robot-mediaserver-bigscreen-bff --format "{{range .Config.Env}}{{println .}}{{end}}" | grep -E "STATISTICS_REPORT_CLEANUP_INTERVAL_MS|BIGSCREEN_WS_AUTHORIZATION_MAX_STALENESS_MS|FIXED_CAMERA_CATALOG_LEASE" || true'
 
 sleep 15
 log "== 6/6 启动日志核验 =="

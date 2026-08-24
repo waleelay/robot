@@ -21,15 +21,19 @@ import (
 )
 
 type Gateway struct {
-	cfg          config.Config
-	probe        streamProber
-	publisher    publisher.Publisher
-	http         *http.Client
-	mqtt         paho.Client
-	mu           sync.Mutex
-	lastCmds     map[string]string
-	sequence     atomic.Uint64
-	probeRunning atomic.Bool
+	cfg                config.Config
+	probe              streamProber
+	publisher          publisher.Publisher
+	http               *http.Client
+	mqtt               paho.Client
+	mu                 sync.Mutex
+	lastCmds           map[string]string
+	sequence           atomic.Uint64
+	probeRunning       atomic.Bool
+	catalogMu          sync.Mutex
+	catalog            map[string]leasedCamera
+	lastCatalog        time.Time
+	lastCatalogVersion uint64
 }
 
 type streamProber interface {
@@ -53,6 +57,11 @@ type managementResponse struct {
 	} `json:"data"`
 }
 
+type leasedCamera struct {
+	record    cameraRecord
+	expiresAt time.Time
+}
+
 func NewGateway(cfg config.Config, probe streamProber, pub publisher.Publisher) *Gateway {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if cfg.ManagementInsecureTLS {
@@ -67,6 +76,7 @@ func NewGateway(cfg config.Config, probe streamProber, pub publisher.Publisher) 
 		publisher: pub,
 		http:      &http.Client{Timeout: 5 * time.Second, Transport: transport},
 		lastCmds:  make(map[string]string),
+		catalog:   make(map[string]leasedCamera),
 	}
 }
 
@@ -78,6 +88,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 	startTopic := "gateway/fixed-camera/" + gatewayID + "/video/start"
 	stopTopic := "gateway/fixed-camera/" + gatewayID + "/video/stop"
 	restartTopic := "gateway/fixed-camera/" + gatewayID + "/video/restart"
+	catalogTopic := "gateway/fixed-camera/" + gatewayID + "/catalog/sync"
 	opts := paho.NewClientOptions().
 		AddBroker(g.cfg.MQTTBroker).
 		SetClientID(g.cfg.ClientID).
@@ -104,6 +115,9 @@ func (g *Gateway) Run(ctx context.Context) error {
 		g.subscribe(startTopic, g.handleStart(ctx))
 		g.subscribe(stopTopic, g.handleStop())
 		g.subscribe(restartTopic, g.handleStart(ctx))
+		if g.catalogMode() != "management" {
+			g.subscribe(catalogTopic, g.handleCatalog())
+		}
 		log.Printf("固定摄像头网关已订阅主题，启动=%s 停止=%s 重启=%s", startTopic, stopTopic, restartTopic)
 		g.publishGatewayStatus("ONLINE", "")
 	})
@@ -208,6 +222,56 @@ func (g *Gateway) handleStop() paho.MessageHandler {
 	}
 }
 
+func (g *Gateway) handleCatalog() paho.MessageHandler {
+	return func(_ paho.Client, msg paho.Message) {
+		var snapshot model.FixedCameraCatalogSnapshot
+		if err := json.Unmarshal(msg.Payload(), &snapshot); err != nil {
+			log.Printf("解析固定摄像头目录快照失败，主题=%s 载荷字节数=%d：%v", msg.Topic(), len(msg.Payload()), err)
+			return
+		}
+		if err := g.applyCatalog(snapshot, time.Now()); err != nil {
+			log.Printf("拒绝固定摄像头目录快照，网关ID=%s：%v", g.cfg.FixedCameraGatewayID, err)
+			return
+		}
+		log.Printf("固定摄像头目录快照已更新，网关ID=%s 摄像头数=%d", snapshot.GatewayID, len(snapshot.Cameras))
+	}
+}
+
+func (g *Gateway) applyCatalog(snapshot model.FixedCameraCatalogSnapshot, now time.Time) error {
+	if strings.TrimSpace(snapshot.GatewayID) != strings.TrimSpace(g.cfg.FixedCameraGatewayID) {
+		return fmt.Errorf("快照网关身份不匹配")
+	}
+	if snapshot.CatalogVersion == 0 || snapshot.IssuedAt.IsZero() || snapshot.IssuedAt.After(now.Add(30*time.Second)) {
+		return fmt.Errorf("快照签发时间无效")
+	}
+	g.catalogMu.Lock()
+	defer g.catalogMu.Unlock()
+	if !g.lastCatalog.IsZero() && snapshot.IssuedAt.Before(g.lastCatalog) {
+		return fmt.Errorf("快照时间早于当前版本")
+	}
+	if snapshot.IssuedAt.Equal(g.lastCatalog) && snapshot.CatalogVersion <= g.lastCatalogVersion {
+		return fmt.Errorf("快照版本未递增")
+	}
+	next := make(map[string]leasedCamera)
+	for _, source := range snapshot.Cameras {
+		cameraID := strings.TrimSpace(source.CameraID)
+		if cameraID == "" || !source.ExpiresAt.After(now) {
+			continue
+		}
+		next[cameraID] = leasedCamera{
+			record: cameraRecord{
+				CameraID: cameraID, Enabled: source.Enabled, ProtocolType: source.ProtocolType,
+				MainStreamURL: source.MainStreamURL, SubStreamURL: source.SubStreamURL,
+			},
+			expiresAt: source.ExpiresAt,
+		}
+	}
+	g.catalog = next
+	g.lastCatalog = snapshot.IssuedAt
+	g.lastCatalogVersion = snapshot.CatalogVersion
+	return nil
+}
+
 func (g *Gateway) rtspURL(ctx context.Context, cameraID string, quality string) (string, error) {
 	camera, err := g.camera(ctx, cameraID)
 	if err != nil {
@@ -255,6 +319,13 @@ func rtspURLForCamera(camera cameraRecord, quality string) (string, string) {
 }
 
 func (g *Gateway) cameras(ctx context.Context) ([]cameraRecord, error) {
+	if g.catalogMode() != "management" {
+		return g.leasedCameras(time.Now()), nil
+	}
+	return g.managementCameras(ctx)
+}
+
+func (g *Gateway) managementCameras(ctx context.Context) ([]cameraRecord, error) {
 	const pageSize = 500
 	const maxPages = 1000
 	var cameras []cameraRecord
@@ -275,6 +346,28 @@ func (g *Gateway) cameras(ctx context.Context) ([]cameraRecord, error) {
 		}
 	}
 	return nil, fmt.Errorf("固定摄像头分页数量超过安全上限，页数=%d", maxPages)
+}
+
+func (g *Gateway) leasedCameras(now time.Time) []cameraRecord {
+	g.catalogMu.Lock()
+	defer g.catalogMu.Unlock()
+	result := make([]cameraRecord, 0, len(g.catalog))
+	for cameraID, camera := range g.catalog {
+		if !camera.expiresAt.After(now) {
+			delete(g.catalog, cameraID)
+			continue
+		}
+		result = append(result, camera.record)
+	}
+	return result
+}
+
+func (g *Gateway) catalogMode() string {
+	mode := strings.ToLower(strings.TrimSpace(g.cfg.FixedCameraCatalogMode))
+	if mode == "management" {
+		return mode
+	}
+	return "lease"
 }
 
 func (g *Gateway) cameraPage(ctx context.Context, pageNum, pageSize int) ([]cameraRecord, int64, error) {
