@@ -133,18 +133,9 @@ export async function logout() {
 }
 
 export async function switchAccount(redirectPath) {
-  if (authDisabled() || !keycloak || loginStarted) return
-  loginStarted = true
-  try {
-    await keycloak.login({
-      redirectUri: redirectUri(redirectPath),
-      prompt: 'login',
-      locale: runtimeValue('keycloakLocale', process.env.VUE_APP_KEYCLOAK_LOCALE || 'zh-CN')
-    })
-  } catch (error) {
-    loginStarted = false
-    throw error
-  }
+  if (authDisabled() || !keycloak) return
+  // 先结束 SSO，再由 login-required 打开空白登录页；仅 prompt=login 会锁定当前用户名。
+  await keycloak.logout({ redirectUri: redirectUri(redirectPath) })
 }
 
 function redirectUri(redirectPath) {
