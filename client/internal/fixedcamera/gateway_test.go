@@ -11,6 +11,21 @@ import (
 	"robot-media-client/internal/rtsp"
 )
 
+type fakePublisher struct {
+	stoppedSessionID string
+}
+
+func (p *fakePublisher) Start(context.Context, model.StartCommand, string) (string, string, error) {
+	return "", "", nil
+}
+
+func (p *fakePublisher) Stop(sessionID string) error {
+	p.stoppedSessionID = sessionID
+	return nil
+}
+
+func (p *fakePublisher) StopAll() error { return nil }
+
 type fakeProber struct {
 	err error
 }
@@ -96,5 +111,18 @@ func TestCameraHealthReportsProbeFailureWithoutLeakingURL(t *testing.T) {
 
 	if status.Health != "UNAVAILABLE" || status.ReasonCode != "RTSP_PROBE_FAILED" {
 		t.Fatalf("期望探测失败，实际=%+v", status)
+	}
+}
+
+func TestStopOnlyUnbindsExactViewingSession(t *testing.T) {
+	pub := &fakePublisher{}
+	gateway := NewGateway(config.Config{FixedCameraGatewayID: "gateway-001"}, fakeProber{}, pub)
+
+	gateway.stop(model.StopCommand{
+		SessionID: "session-002", SourceType: "FIXED_CAMERA", SourceID: "camera-001", RoomName: "room-001",
+	})
+
+	if pub.stoppedSessionID != "session-002" {
+		t.Fatalf("停止命令必须按会话解绑，实际会话ID=%q", pub.stoppedSessionID)
 	}
 }

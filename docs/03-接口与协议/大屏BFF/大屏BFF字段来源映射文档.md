@@ -59,7 +59,10 @@ GET /api/bigscreen/panorama/overview
 | `patrolOverview.durationToday` | 今日巡逻时长，单位小时 | BFF 计算 | 今日任务实例 `durationSeconds`；没有时用 `startedAt/completedAt` 计算 |
 | `patrolOverview.durationUnit` | 巡逻时长单位 | BFF 生成 | `durationToday` 有值时为 `小时` |
 | `patrolOverview.mileageToday` | 今日巡逻里程 | 控制端 | Control 持久化今日有效里程增量，BFF 由米换算为 KM |
-| `patrolOverview.mileageUnit` | 巡逻里程单位 | BFF | 有里程采集基线时返回 `KM`，否则返回 `null` |
+| `patrolOverview.mileageUnit` | 巡逻里程单位 | BFF | 有有效里程样本时返回 `KM`，否则返回 `null` |
+| `patrolOverview.mileageHasData` | 是否有有效里程样本 | 控制端 | 仅基线或仅异常事件时为 `false` |
+| `patrolOverview.mileageQuality` | 里程质量 | 控制端 | 透传 `NORMAL/ESTIMATED/RESET/SUSPECT/UNKNOWN/NO_DATA` |
+| `patrolOverview.mileageObservedStartTime/EndTime` | 质量事件覆盖范围 | 控制端 | 不等同于请求范围；历史无质量事件时可为 `null` |
 | `tasks` | 任务列表 | 管理端 + BFF 组装 | 见 3.6 |
 | `taskOverview.totalToday` | 今日任务数/当前任务列表总数 | BFF 计算 | `tasks.size()` |
 | `taskOverview.completedRateText` | 完成率文案 | BFF 计算 | `completedRate + "%"` |
@@ -372,6 +375,7 @@ GET /api/bigscreen/statistics/overview
 | `kpis.taskTotal.compareRate` | 任务总数环比 | 未对接 | 当前 `null` |
 | `kpis.patrolMileage.value` | 巡逻总里程 | 控制端 | 所选时间范围及设备的持久化里程增量，单位 KM |
 | `kpis.patrolMileage.compareRate` | 巡逻里程环比 | BFF | 与紧邻的等长上一周期比较；无有效基数时返回 `null` |
+| `dataQuality.mileage` | 里程数据质量 | 控制端 + BFF 透传 | 包含有效性、质量、`Asia/Shanghai` 时区、请求/观测范围、样本和异常排除口径 |
 | `kpis.aiAlarmTotal.value` | AI 告警总数 | BFF 计算 | 统计时间内管理端告警明细数 |
 | `kpis.aiAlarmTotal.compareRate` | AI 告警环比 | 未对接 | 当前 `null` |
 | `kpis.autoHandleSuccessRate.value` | 自动处置成功率 | 未对接 | 当前 `null` |
@@ -410,7 +414,7 @@ DELETE /api/bigscreen/statistics/reports/{id}
 | `reports[].filePath` | 本地文件路径 | 本地存储 | `data/statistics-reports/{id}.pdf` |
 | `reports[].statusName` | 报告状态中文名 | BFF 生成 | `已完成` |
 
-说明：统计报告当前由 BFF 本地生成和保存，不对接管理端报告接口。
+说明：统计报告由 BFF 本地计算和生成，不对接 Management 报告接口；当前生产 PDF 与原子索引保存到单实例持久化目录。
 
 ## 11. 当前未对接字段汇总
 
@@ -422,4 +426,4 @@ DELETE /api/bigscreen/statistics/reports/{id}
 | `alarms.*.items[].location` | 仅在告警对象或 `rawPayload` 提供时有值 | 管理端告警记录标准化结构化位置字段 |
 | `alarms.*.items[].snapshotUrl.thermal/front` | 仅在告警对象或 `rawPayload` 提供时有值 | 管理端告警多路截图字段 |
 | `/api/bigscreen/statistics/overview` 业务统计字段 | 大部分 `null/[]` | 管理端统计聚合接口，或 BFF 基于任务/告警/设备历史数据聚合 |
-| 统计报告 | BFF 本地生成 | 如需统一管理，后续对接管理端报告中心 |
+| 统计报告 | BFF 生成并保存到单实例持久化目录 | 与 Management 报告中心保持独立权限和生命周期；扩容前另行实施共享存储 |

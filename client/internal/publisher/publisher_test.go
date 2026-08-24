@@ -3,6 +3,7 @@ package publisher
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"testing"
@@ -104,25 +105,6 @@ func TestStreamKeyUsesCameraAndRoomInsteadOfSession(t *testing.T) {
 	}
 }
 
-func TestStopStreamKeyMatchesStartKey(t *testing.T) {
-	start := model.StartCommand{
-		SourceType: "FIXED_CAMERA",
-		SourceID:   "camera-1",
-		RoomName:   "room-camera-1",
-		Channel:    "visible",
-		Quality:    "sub",
-	}
-	stop := model.StopCommand{
-		SourceType: "FIXED_CAMERA",
-		SourceID:   "camera-1",
-		RoomName:   "room-camera-1",
-	}
-
-	if streamKey(start) != stopStreamKey(stop) {
-		t.Fatal("停止命令应能定位启动命令创建的推流资源")
-	}
-}
-
 func TestStopOnlyStopsAfterLastSessionLeaves(t *testing.T) {
 	pub := NewProcessPublisher(config.Config{})
 	key := "FIXED_CAMERA|camera-1|room-camera-1"
@@ -141,5 +123,63 @@ func TestStopOnlyStopsAfterLastSessionLeaves(t *testing.T) {
 	}
 	if _, exists := pub.streamSessions[key]; exists {
 		t.Fatal("最后一个观看者停止后应清理资源会话映射")
+	}
+}
+
+func TestRejectsMissingPublisherTokenExpiry(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/true"})
+	_, _, err := pub.Start(context.Background(), model.StartCommand{
+		SessionID: "session-no-expiry", PublisherToken: "token",
+	}, "rtsp://camera/live")
+	if err == nil || !strings.Contains(err.Error(), "Token") {
+		t.Fatalf("缺少 Token 到期时间时应拒绝启动，实际错误=%v", err)
+	}
+}
+
+func TestTokenExpiryCleansPublisherAndAllBoundSessions(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{})
+	key := "FIXED_CAMERA|camera-1|room-1"
+	entry := &processEntry{done: make(chan processResult, 1), mode: "test", expiresAt: time.Now().Add(20 * time.Millisecond)}
+	pub.cmds[key] = entry
+	pub.bindSessionLocked("session-1", key)
+	pub.bindSessionLocked("session-2", key)
+	pub.watchTokenExpiry(key, entry, "session-1")
+
+	time.Sleep(80 * time.Millisecond)
+	stats := pub.Snapshot()
+	if stats.ActivePublishers != 0 || stats.ActiveSessions != 0 || stats.TokenExpirations != 1 {
+		t.Fatalf("Token 到期后应完整清理，实际=%+v", stats)
+	}
+	select {
+	case event := <-pub.Events():
+		if event.ReasonCode != "PUBLISH_TOKEN_EXPIRED" || len(event.SessionIDs) != 2 {
+			t.Fatalf("Token 到期事件不完整，实际=%+v", event)
+		}
+	default:
+		t.Fatal("Token 到期后应通知上层回写会话状态")
+	}
+}
+
+func TestUnexpectedProcessExitCleansPublisherMappings(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{})
+	key := "FIXED_CAMERA|camera-1|room-1"
+	entry := &processEntry{done: make(chan processResult, 1), mode: "test", expiresAt: time.Now().Add(time.Minute)}
+	pub.cmds[key] = entry
+	pub.bindSessionLocked("session-1", key)
+	pub.watchProcessExit(key, entry, "session-1")
+	entry.done <- processResult{err: errors.New("模拟异常退出"), exitedAt: time.Now()}
+
+	time.Sleep(20 * time.Millisecond)
+	stats := pub.Snapshot()
+	if stats.ActivePublishers != 0 || stats.ActiveSessions != 0 || stats.UnexpectedExits != 1 {
+		t.Fatalf("进程异常退出后应完整清理，实际=%+v", stats)
+	}
+	select {
+	case event := <-pub.Events():
+		if event.ReasonCode != "PUBLISH_PROCESS_EXITED" || len(event.SessionIDs) != 1 {
+			t.Fatalf("进程退出事件不完整，实际=%+v", event)
+		}
+	default:
+		t.Fatal("进程异常退出后应通知上层回写会话状态")
 	}
 }

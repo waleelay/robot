@@ -26,13 +26,19 @@ class PanoramaServiceTest {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         when(centerClient.mileageSummary(anyString(), anyString(), org.mockito.ArgumentMatchers.eq(List.of())))
-                .thenReturn(Map.of("hasData", true, "totalMeters", 1234.5));
+                .thenReturn(Map.of(
+                        "hasData", true,
+                        "totalMeters", 1234.5,
+                        "quality", "NORMAL",
+                        "timezone", "Asia/Shanghai"));
 
         Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
 
         Map<String, Object> patrolOverview = map(overview.get("patrolOverview"));
         assertEquals(1.2, patrolOverview.get("mileageToday"));
         assertEquals("KM", patrolOverview.get("mileageUnit"));
+        assertEquals(true, patrolOverview.get("mileageHasData"));
+        assertEquals("NORMAL", patrolOverview.get("mileageQuality"));
     }
 
     @Test

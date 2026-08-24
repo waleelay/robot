@@ -21,6 +21,7 @@ type Config struct {
 	FixedCameraHealthProbe   time.Duration
 	FixedCameraProbeWorkers  int
 	FixedCameraCatalogMode   string
+	FixedCameraHTTPAddr      string
 	ManagementServiceURL     string
 	ManagementToken          string
 	ManagementInsecureTLS    bool
@@ -35,6 +36,7 @@ type Config struct {
 	PublisherMode            string
 	PublisherFallbackWatch   time.Duration
 	PublisherGStreamerRetry  time.Duration
+	PublisherStopTimeout     time.Duration
 	PublisherFFmpegFirstIDs  map[string]bool
 	FFmpegPublisherCmd       string
 	GStreamerPublisherPath   string
@@ -119,6 +121,7 @@ func Load() Config {
 		FixedCameraHealthProbe:   time.Duration(envInt("FIXED_CAMERA_HEALTH_PROBE_INTERVAL_SECONDS", 60)) * time.Second,
 		FixedCameraProbeWorkers:  envInt("FIXED_CAMERA_HEALTH_PROBE_CONCURRENCY", 4),
 		FixedCameraCatalogMode:   strings.ToLower(env("FIXED_CAMERA_CATALOG_MODE", "lease")),
+		FixedCameraHTTPAddr:      env("FIXED_CAMERA_HTTP_ADDR", ":9091"),
 		ManagementServiceURL:     env("MANAGEMENT_SERVICE_URL", env("CENTER_MANAGE_BASE_URL", "http://host.docker.internal:8866")),
 		ManagementToken:          env("MANAGEMENT_SERVICE_TOKEN", ""),
 		ManagementInsecureTLS:    envBool("MANAGEMENT_INSECURE_SKIP_VERIFY", false),
@@ -133,6 +136,7 @@ func Load() Config {
 		PublisherMode:            strings.ToLower(env("PUBLISHER_MODE", "auto")),
 		PublisherFallbackWatch:   time.Duration(envInt("PUBLISHER_FALLBACK_WATCH_SECONDS", 8)) * time.Second,
 		PublisherGStreamerRetry:  time.Duration(envInt("PUBLISHER_GSTREAMER_RETRY_SECONDS", 60)) * time.Second,
+		PublisherStopTimeout:     time.Duration(envInt("PUBLISHER_STOP_TIMEOUT_SECONDS", 5)) * time.Second,
 		PublisherFFmpegFirstIDs:  envCSVSet("PUBLISHER_FFMPEG_FIRST_DEVICE_IDS", ""),
 		FFmpegPublisherCmd:       env("FFMPEG_PUBLISHER_CMD", "./scripts/ffmpeg-livekit-publisher.sh {rtsp} {livekitUrl} {token}"),
 		GStreamerPublisherPath:   env("GSTREAMER_PUBLISHER_PATH", "gstreamer-publisher"),

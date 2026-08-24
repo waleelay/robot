@@ -293,7 +293,7 @@ export default {
       const { taskTotal, patrolMileage, aiAlarmTotal, autoHandleSuccessRate } = this.statistics?.kpis || {};
       const fallback = [
         { code: 'taskTotal', icon: icons.taskTotal, name: '任务执行总数', value: this.taskDataDegraded ? '--' : (taskTotal?.value ?? 0), unit: this.taskDataDegraded ? '' : '个', compareRate: taskTotal?.compareRate },
-        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: patrolMileage?.value || 0, unit: 'KM', compareRate: patrolMileage?.compareRate },
+        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: this.mileageDataAvailable ? (patrolMileage?.value ?? 0) : '--', unit: this.mileageDataAvailable ? 'KM' : '', compareRate: patrolMileage?.compareRate },
         { code: 'aiAlarmTotal', icon: icons.aiAlarmTotal, name: 'AI自动识别异常数', value: aiAlarmTotal?.value || 0, unit: '个', compareRate: aiAlarmTotal?.compareRate },
         { code: 'autoHandleSuccessRate', icon: icons.autoHandleSuccessRate, name: '自动处置成功率', value: autoHandleSuccessRate?.value || 0, unit: '%', compareRate: autoHandleSuccessRate?.compareRate }
       ];
@@ -304,6 +304,9 @@ export default {
     },
     taskDataDegraded() {
       return Boolean(this.statistics?.dataQuality?.tasks?.degraded)
+    },
+    mileageDataAvailable() {
+      return Boolean(this.statistics?.dataQuality?.mileage?.hasData)
     },
     aiAlarmAnalysis() {
       return (this.statistics && this.statistics.aiAlarmAnalysis) || {};

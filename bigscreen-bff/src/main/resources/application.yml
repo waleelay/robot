@@ -16,8 +16,12 @@ center:
 
 statistics:
   report:
-    # 统计报表文件存储目录。
+    # 单实例统计报告持久化目录；生产必须挂载独立持久化磁盘。
     storage-dir: ${STATISTICS_REPORT_STORAGE_DIR:data/statistics-reports}
+    # 写入新报告后仍需保留的最小磁盘余量，默认 1 GiB。
+    minimum-free-bytes: ${STATISTICS_REPORT_MINIMUM_FREE_BYTES:1073741824}
+    # 本地存储只允许 1；扩容前必须另行实施共享存储。
+    instance-count: ${STATISTICS_REPORT_INSTANCE_COUNT:1}
     # 历史报告过期清理周期。
     cleanup-interval-ms: ${STATISTICS_REPORT_CLEANUP_INTERVAL_MS:3600000}
 

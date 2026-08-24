@@ -75,6 +75,22 @@ public class MileageService {
                     INDEX idx_mileage_bucket_robot_time (robot_id, bucket_time)
                 )
                 """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS control_device_mileage_quality_event (
+                    robot_id VARCHAR(128) NOT NULL,
+                    event_time TIMESTAMP(3) NOT NULL,
+                    message_id VARCHAR(160) NULL,
+                    map_id VARCHAR(128) NOT NULL DEFAULT '',
+                    delta_m DECIMAL(18,3) NOT NULL DEFAULT 0,
+                    quality VARCHAR(20) NOT NULL,
+                    elapsed_ms BIGINT NOT NULL DEFAULT 0,
+                    speed_mps DECIMAL(18,3) NULL,
+                    created_at TIMESTAMP(3) NOT NULL,
+                    PRIMARY KEY (robot_id, event_time),
+                    INDEX idx_mileage_quality_time (event_time),
+                    INDEX idx_mileage_quality_value_time (quality, event_time)
+                )
+                """);
     }
 
     /** 记录一条设备里程读数。首次读数只建立基线。 */
@@ -85,6 +101,12 @@ public class MileageService {
         MileageResult result = transactionTemplate.execute(status -> recordInTransaction(reading));
         if (result == null) {
             return MileageResult.ignored("TRANSACTION_EMPTY");
+        }
+        if ("RESET".equals(result.quality())
+                || "ESTIMATED".equals(result.quality())
+                || "SUSPECT".equals(result.quality())) {
+            log.warn("检测到里程质量异常，机器人ID={} 质量={} 事件时间={} 增量米数={}",
+                    reading.robotId(), result.quality(), DateTimeConfig.format(reading.eventTime()), result.deltaMeters());
         }
         publishIfNeeded(reading, result);
         return result;
@@ -107,35 +129,132 @@ public class MileageService {
         rangeArgs.add(Timestamp.valueOf(endTime));
         rangeArgs.addAll(normalizedRobotIds);
 
-        List<Map<String, Object>> byRobot = jdbcTemplate.query(
-                "SELECT robot_id, SUM(mileage_m) AS mileage_m "
+        List<Map<String, Object>> distanceRows = jdbcTemplate.query(
+                "SELECT robot_id, SUM(mileage_m) AS mileage_m, SUM(sample_count) AS sample_count, "
+                        + "SUM(CASE WHEN quality = 'NORMAL' THEN mileage_m ELSE 0 END) AS normal_m, "
+                        + "SUM(CASE WHEN quality = 'ESTIMATED' THEN mileage_m ELSE 0 END) AS estimated_m "
                         + "FROM control_device_mileage_bucket "
-                        + "WHERE bucket_time >= ? AND bucket_time <= ? AND quality = 'NORMAL'"
+                        + "WHERE bucket_time >= ? AND bucket_time <= ? AND quality IN ('NORMAL', 'ESTIMATED')"
                         + filter + " GROUP BY robot_id ORDER BY robot_id",
                 (resultSet, rowNum) -> {
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("robotId", resultSet.getString("robot_id"));
                     row.put("mileageMeters", resultSet.getBigDecimal("mileage_m"));
+                    row.put("sampleCount", resultSet.getLong("sample_count"));
+                    row.put("normalMeters", resultSet.getBigDecimal("normal_m"));
+                    row.put("estimatedMeters", resultSet.getBigDecimal("estimated_m"));
                     return row;
                 },
                 rangeArgs.toArray());
-        BigDecimal total = byRobot.stream()
-                .map(item -> (BigDecimal) item.get("mileageMeters"))
-                .reduce(ZERO, BigDecimal::add)
-                .setScale(3, RoundingMode.HALF_UP);
+        List<Map<String, Object>> qualityRows = jdbcTemplate.query(
+                "SELECT robot_id, MIN(event_time) AS observed_start, MAX(event_time) AS observed_end, "
+                        + "SUM(CASE WHEN quality = 'NORMAL' THEN 1 ELSE 0 END) AS normal_count, "
+                        + "SUM(CASE WHEN quality = 'ESTIMATED' THEN 1 ELSE 0 END) AS estimated_count, "
+                        + "SUM(CASE WHEN quality = 'RESET' THEN 1 ELSE 0 END) AS reset_count, "
+                        + "SUM(CASE WHEN quality = 'SUSPECT' THEN 1 ELSE 0 END) AS suspect_count, "
+                        + "SUM(CASE WHEN quality = 'NORMAL' THEN delta_m ELSE 0 END) AS normal_event_m, "
+                        + "SUM(CASE WHEN quality = 'ESTIMATED' THEN delta_m ELSE 0 END) AS estimated_event_m, "
+                        + "SUM(CASE WHEN quality = 'SUSPECT' THEN delta_m ELSE 0 END) AS excluded_suspect_m "
+                        + "FROM control_device_mileage_quality_event "
+                        + "WHERE event_time >= ? AND event_time <= ?" + filter
+                        + " GROUP BY robot_id ORDER BY robot_id",
+                (resultSet, rowNum) -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("robotId", resultSet.getString("robot_id"));
+                    row.put("observedStartTime", resultSet.getTimestamp("observed_start").toLocalDateTime());
+                    row.put("observedEndTime", resultSet.getTimestamp("observed_end").toLocalDateTime());
+                    row.put("normalCount", resultSet.getLong("normal_count"));
+                    row.put("estimatedCount", resultSet.getLong("estimated_count"));
+                    row.put("resetCount", resultSet.getLong("reset_count"));
+                    row.put("suspectCount", resultSet.getLong("suspect_count"));
+                    row.put("normalMeters", resultSet.getBigDecimal("normal_event_m"));
+                    row.put("estimatedMeters", resultSet.getBigDecimal("estimated_event_m"));
+                    row.put("excludedSuspectMeters", resultSet.getBigDecimal("excluded_suspect_m"));
+                    return row;
+                },
+                rangeArgs.toArray());
 
-        List<Object> checkpointArgs = new ArrayList<>(normalizedRobotIds);
-        Long checkpointCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM control_device_mileage_checkpoint WHERE 1=1" + filter,
-                Long.class,
-                checkpointArgs.toArray());
-        return Map.of(
-                "startTime", DateTimeConfig.format(startTime),
-                "endTime", DateTimeConfig.format(endTime),
-                "totalMeters", total,
-                "unit", "m",
-                "hasData", checkpointCount != null && checkpointCount > 0,
-                "byRobot", byRobot);
+        Map<String, Map<String, Object>> distances = indexByRobot(distanceRows);
+        Map<String, Map<String, Object>> qualities = indexByRobot(qualityRows);
+        List<String> resultRobotIds = normalizedRobotIds.isEmpty()
+                ? java.util.stream.Stream.concat(distances.keySet().stream(), qualities.keySet().stream())
+                        .distinct().sorted().toList()
+                : normalizedRobotIds;
+        List<Map<String, Object>> byRobot = new ArrayList<>();
+        BigDecimal total = ZERO;
+        BigDecimal normalTotal = ZERO;
+        BigDecimal estimatedTotal = ZERO;
+        BigDecimal excludedSuspectTotal = ZERO;
+        long sampleCount = 0;
+        long normalCount = 0;
+        long estimatedCount = 0;
+        long resetCount = 0;
+        long suspectCount = 0;
+        LocalDateTime observedStart = null;
+        LocalDateTime observedEnd = null;
+        for (String robotId : resultRobotIds) {
+            Map<String, Object> distance = distances.get(robotId);
+            Map<String, Object> quality = qualities.get(robotId);
+            long robotSamples = longValue(distance, "sampleCount");
+            BigDecimal robotTotal = decimalValue(distance, "mileageMeters");
+            BigDecimal robotNormal = decimalValue(quality, "normalMeters");
+            BigDecimal robotEstimated = decimalValue(quality, "estimatedMeters");
+            BigDecimal robotExcluded = decimalValue(quality, "excludedSuspectMeters");
+            long robotNormalCount = longValue(quality, "normalCount");
+            long robotEstimatedCount = longValue(quality, "estimatedCount");
+            long robotResetCount = longValue(quality, "resetCount");
+            long robotSuspectCount = longValue(quality, "suspectCount");
+            LocalDateTime robotStart = dateTimeValue(quality, "observedStartTime");
+            LocalDateTime robotEnd = dateTimeValue(quality, "observedEndTime");
+
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("robotId", robotId);
+            item.put("hasData", robotSamples > 0);
+            item.put("mileageMeters", robotSamples > 0 ? scale(robotTotal) : null);
+            item.put("normalMeters", scale(robotNormal));
+            item.put("estimatedMeters", scale(robotEstimated));
+            item.put("excludedSuspectMeters", scale(robotExcluded));
+            item.put("sampleCount", robotSamples);
+            item.put("quality", quality(robotSamples, robotNormalCount, robotEstimatedCount, robotResetCount, robotSuspectCount));
+            item.put("qualityCounts", qualityCounts(robotNormalCount, robotEstimatedCount, robotResetCount, robotSuspectCount));
+            item.put("observedStartTime", robotStart == null ? null : DateTimeConfig.format(robotStart));
+            item.put("observedEndTime", robotEnd == null ? null : DateTimeConfig.format(robotEnd));
+            byRobot.add(item);
+
+            total = total.add(robotTotal);
+            normalTotal = normalTotal.add(robotNormal);
+            estimatedTotal = estimatedTotal.add(robotEstimated);
+            excludedSuspectTotal = excludedSuspectTotal.add(robotExcluded);
+            sampleCount += robotSamples;
+            normalCount += robotNormalCount;
+            estimatedCount += robotEstimatedCount;
+            resetCount += robotResetCount;
+            suspectCount += robotSuspectCount;
+            if (robotStart != null && (observedStart == null || robotStart.isBefore(observedStart))) {
+                observedStart = robotStart;
+            }
+            if (robotEnd != null && (observedEnd == null || robotEnd.isAfter(observedEnd))) {
+                observedEnd = robotEnd;
+            }
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("startTime", DateTimeConfig.format(startTime));
+        response.put("endTime", DateTimeConfig.format(endTime));
+        response.put("timezone", CHINA_ZONE.getId());
+        response.put("hasData", sampleCount > 0);
+        response.put("totalMeters", sampleCount > 0 ? scale(total) : null);
+        response.put("normalMeters", scale(normalTotal));
+        response.put("estimatedMeters", scale(estimatedTotal));
+        response.put("excludedSuspectMeters", scale(excludedSuspectTotal));
+        response.put("sampleCount", sampleCount);
+        response.put("quality", quality(sampleCount, normalCount, estimatedCount, resetCount, suspectCount));
+        response.put("qualityCounts", qualityCounts(normalCount, estimatedCount, resetCount, suspectCount));
+        response.put("observedStartTime", observedStart == null ? null : DateTimeConfig.format(observedStart));
+        response.put("observedEndTime", observedEnd == null ? null : DateTimeConfig.format(observedEnd));
+        response.put("unit", "m");
+        response.put("byRobot", byRobot);
+        return response;
     }
 
     private MileageResult recordInTransaction(MileageReading reading) {
@@ -183,8 +302,10 @@ public class MileageService {
             delta = ZERO;
         }
         long elapsedMillis = Duration.between(checkpoint.lastEventTime(), eventTime).toMillis();
+        BigDecimal speedMetersPerSecond = null;
         if (delta.signum() > 0 && elapsedMillis > 0) {
             double metersPerSecond = delta.doubleValue() * 1000.0 / elapsedMillis;
+            speedMetersPerSecond = BigDecimal.valueOf(metersPerSecond).setScale(3, RoundingMode.HALF_UP);
             if (metersPerSecond > properties.getMaxSpeedMps()) {
                 quality = "SUSPECT";
             }
@@ -205,16 +326,84 @@ public class MileageService {
             jdbcTemplate.update("""
                             INSERT INTO control_device_mileage_bucket
                             (robot_id, bucket_time, map_id, mileage_m, sample_count, quality, updated_at)
-                            VALUES (?, ?, ?, ?, 1, 'NORMAL', ?)
+                            VALUES (?, ?, ?, ?, 1, ?, ?)
                             ON DUPLICATE KEY UPDATE
                               mileage_m = mileage_m + VALUES(mileage_m),
                               sample_count = sample_count + 1,
+                              quality = CASE
+                                WHEN quality = 'ESTIMATED' OR ? = 'ESTIMATED' THEN 'ESTIMATED'
+                                ELSE 'NORMAL'
+                              END,
                               updated_at = VALUES(updated_at)
                             """,
                     reading.robotId(), Timestamp.valueOf(bucketTime), value(reading.mapId()), delta,
-                    Timestamp.valueOf(LocalDateTime.now(CHINA_ZONE)));
+                    quality, Timestamp.valueOf(LocalDateTime.now(CHINA_ZONE)), quality);
         }
+        jdbcTemplate.update("""
+                        INSERT INTO control_device_mileage_quality_event
+                        (robot_id, event_time, message_id, map_id, delta_m, quality,
+                         elapsed_ms, speed_mps, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                reading.robotId(), Timestamp.valueOf(eventTime), reading.messageId(), value(reading.mapId()),
+                delta, quality, elapsedMillis, speedMetersPerSecond,
+                Timestamp.valueOf(LocalDateTime.now(CHINA_ZONE)));
         return new MileageResult(delta.setScale(3, RoundingMode.HALF_UP), quality, true);
+    }
+
+    private Map<String, Map<String, Object>> indexByRobot(List<Map<String, Object>> rows) {
+        Map<String, Map<String, Object>> result = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            result.put((String) row.get("robotId"), row);
+        }
+        return result;
+    }
+
+    private BigDecimal decimalValue(Map<String, Object> row, String key) {
+        if (row == null || !(row.get(key) instanceof BigDecimal value)) {
+            return ZERO;
+        }
+        return value;
+    }
+
+    private long longValue(Map<String, Object> row, String key) {
+        if (row == null || !(row.get(key) instanceof Number value)) {
+            return 0;
+        }
+        return value.longValue();
+    }
+
+    private LocalDateTime dateTimeValue(Map<String, Object> row, String key) {
+        return row != null && row.get(key) instanceof LocalDateTime value ? value : null;
+    }
+
+    private BigDecimal scale(BigDecimal value) {
+        return value.setScale(3, RoundingMode.HALF_UP);
+    }
+
+    private String quality(long samples, long normal, long estimated, long reset, long suspect) {
+        if (suspect > 0) {
+            return "SUSPECT";
+        }
+        if (reset > 0) {
+            return "RESET";
+        }
+        if (estimated > 0) {
+            return "ESTIMATED";
+        }
+        if (normal > 0) {
+            return "NORMAL";
+        }
+        return samples > 0 ? "UNKNOWN" : "NO_DATA";
+    }
+
+    private Map<String, Long> qualityCounts(long normal, long estimated, long reset, long suspect) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        counts.put("NORMAL", normal);
+        counts.put("ESTIMATED", estimated);
+        counts.put("RESET", reset);
+        counts.put("SUSPECT", suspect);
+        return counts;
     }
 
     private Checkpoint checkpoint(String robotId) {

@@ -63,7 +63,9 @@
           </div>
           <div class="item hp62 flex1 flx-center flex-column ml10">
             <div class="desc1">今日巡逻里程</div>
-            <div class="value mt4"><span class="mr4">{{ patrolOverview.mileageToday || 0 }}</span>{{ patrolOverview.mileageUnit || 'KM' }}</div>
+            <div class="value mt4" :title="mileageQualityTitle">
+              <span class="mr4">{{ patrolOverview.mileageHasData ? patrolOverview.mileageToday : '--' }}</span>{{ patrolOverview.mileageHasData ? (patrolOverview.mileageUnit || 'KM') : '' }}
+            </div>
           </div>
         </div>
         <div class="mt18 patrol-videos posr">
@@ -133,6 +135,11 @@ export default {
     }
   },
   computed: {
+    mileageQualityTitle() {
+      const quality = this.patrolOverview?.mileageQuality
+      const labels = { NORMAL: '正常', ESTIMATED: '含估算值', RESET: '设备里程已重置', SUSPECT: '存在异常值，已排除', NO_DATA: '暂无有效里程数据', UNAVAILABLE: '里程服务不可用' }
+      return labels[quality] || '里程数据质量未知'
+    },
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },

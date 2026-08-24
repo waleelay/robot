@@ -61,7 +61,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | `alarms.high/medium/low` | BFF 分组 | 由告警等级分组得到 |
 | `patrolOverview.durationToday` | BFF 计算 | 由今日任务实例 `durationSeconds` 或 `startedAt/completedAt` 计算小时数 |
 | `patrolOverview.durationUnit` | BFF 生成 | `durationToday` 有值时返回“小时” |
-| `patrolOverview.mileageUnit` | BFF 生成 | 存在里程采集基线时返回 `KM` |
+| `patrolOverview.mileageUnit` | BFF 生成 | 查询范围存在有效里程样本时返回 `KM` |
 
 ### 2.3 `devices[]`
 

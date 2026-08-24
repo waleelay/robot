@@ -17,7 +17,6 @@ import (
 type Publisher interface {
 	Start(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error)
 	Stop(sessionID string) error
-	StopStream(command model.StopCommand) error
 	StopAll() error
 }
 
@@ -29,14 +28,41 @@ type ProcessPublisher struct {
 	sessions               map[string]string
 	streamSessions         map[string]map[string]struct{}
 	gstreamerFailedRTSPURL map[string]time.Time
+	unexpectedExits        uint64
+	tokenExpirations       uint64
+	forcedKills            uint64
+	lastCleanupMillis      int64
+	maxCleanupMillis       int64
+	events                 chan LifecycleEvent
 	mu                     sync.Mutex
 }
 
 type processEntry struct {
 	cmd       *exec.Cmd
-	done      chan error
+	done      chan processResult
 	mode      string
 	expiresAt time.Time
+}
+
+type processResult struct {
+	err      error
+	exitedAt time.Time
+}
+
+type Snapshot struct {
+	ActivePublishers  int    `json:"activePublishers"`
+	ActiveSessions    int    `json:"activeSessions"`
+	UnexpectedExits   uint64 `json:"unexpectedExits"`
+	TokenExpirations  uint64 `json:"tokenExpirations"`
+	ForcedKills       uint64 `json:"forcedKills"`
+	LastCleanupMillis int64  `json:"lastCleanupMillis"`
+	MaxCleanupMillis  int64  `json:"maxCleanupMillis"`
+}
+
+type LifecycleEvent struct {
+	SessionIDs []string
+	ReasonCode string
+	Message    string
 }
 
 func NewProcessPublisher(cfg config.Config) *ProcessPublisher {
@@ -46,10 +72,14 @@ func NewProcessPublisher(cfg config.Config) *ProcessPublisher {
 		sessions:               make(map[string]string),
 		streamSessions:         make(map[string]map[string]struct{}),
 		gstreamerFailedRTSPURL: make(map[string]time.Time),
+		events:                 make(chan LifecycleEvent, 64),
 	}
 }
 
 func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error) {
+	if !tokenUsable(command.ExpiresAt) {
+		return "", "", errors.New("发布 Token 缺失、已过期或剩余有效期不足 30 秒")
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	key := streamKey(command)
@@ -84,6 +114,8 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 	if err == nil {
 		if p.cfg.PublisherMode == "auto" && p.cfg.FFmpegPublisherCmd != "" {
 			p.watchGStreamerForFallback(ctx, command, rtspURL, trackName, key)
+		} else if entry := p.cmds[key]; entry != nil {
+			p.watchProcessExit(key, entry, command.SessionID)
 		}
 		return trackSid, publishedTrackName, nil
 	}
@@ -122,6 +154,8 @@ func (p *ProcessPublisher) startCommand(ctx context.Context, command model.Start
 	if err := p.ensureRunning(key, entry); err != nil {
 		return "", "", err
 	}
+	p.watchProcessExit(key, entry, command.SessionID)
+	p.watchTokenExpiry(key, entry, command.SessionID)
 	return "TR_" + command.SessionID, trackName, nil
 }
 
@@ -149,6 +183,7 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 	if err := p.ensureRunning(key, entry); err != nil {
 		return "", "", err
 	}
+	p.watchTokenExpiry(key, entry, command.SessionID)
 	return "TR_" + command.SessionID, trackName, nil
 }
 
@@ -167,9 +202,9 @@ func (p *ProcessPublisher) shouldStartWithFFmpeg(command model.StartCommand, rts
 }
 
 func newProcessEntry(cmd *exec.Cmd, mode string, expiresAt time.Time) *processEntry {
-	entry := &processEntry{cmd: cmd, done: make(chan error, 1), mode: mode, expiresAt: expiresAt}
+	entry := &processEntry{cmd: cmd, done: make(chan processResult, 1), mode: mode, expiresAt: expiresAt}
 	go func() {
-		entry.done <- cmd.Wait()
+		entry.done <- processResult{err: cmd.Wait(), exitedAt: time.Now()}
 	}()
 	return entry
 }
@@ -184,20 +219,27 @@ func (p *ProcessPublisher) watchGStreamerForFallback(ctx context.Context, comman
 
 func (p *ProcessPublisher) fallbackIfGStreamerExits(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, key string, entry *processEntry) {
 	select {
-	case err := <-entry.done:
+	case result := <-entry.done:
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		if p.cmds[key] != entry {
 			return
 		}
+		sessionIDs := p.sessionIDsLocked(key)
 		delete(p.cmds, key)
 		p.gstreamerFailedRTSPURL[rtspURL] = time.Now()
-		log.Printf("GStreamer 推流进程退出，自动回退到 FFmpeg，会话ID=%s：%v", command.SessionID, err)
+		p.recordCleanupLocked(result.exitedAt)
+		p.unexpectedExits++
+		log.Printf("GStreamer 推流进程异常退出，自动回退到 FFmpeg，会话ID=%s：%v", command.SessionID, result.err)
 		if _, _, startErr := p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.FFmpegPublisherCmd, "ffmpeg"); startErr != nil {
 			log.Printf("自动回退到 FFmpeg 失败，会话ID=%s：%v", command.SessionID, startErr)
+			p.unbindStreamLocked(key)
+			p.emitLocked(LifecycleEvent{SessionIDs: sessionIDs, ReasonCode: "PUBLISH_PROCESS_EXITED", Message: "推流进程异常退出且回退失败"})
 		}
 	case <-time.After(p.cfg.PublisherFallbackWatch):
+		p.watchProcessExit(key, entry, command.SessionID)
 	case <-ctx.Done():
+		p.watchProcessExit(key, entry, command.SessionID)
 	}
 }
 
@@ -209,17 +251,6 @@ func (p *ProcessPublisher) Stop(sessionID string) error {
 	if key == "" || len(p.streamSessions[key]) > 0 {
 		return nil
 	}
-	return p.stopStreamLocked(key)
-}
-
-func (p *ProcessPublisher) StopStream(command model.StopCommand) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	key := stopStreamKey(command)
-	for sessionID := range p.streamSessions[key] {
-		delete(p.sessions, sessionID)
-	}
-	delete(p.streamSessions, key)
 	return p.stopStreamLocked(key)
 }
 
@@ -239,32 +270,28 @@ func (p *ProcessPublisher) stopStreamLocked(key string) error {
 	entry := p.cmds[key]
 	var err error
 	if entry != nil && entry.cmd != nil && entry.cmd.Process != nil {
-		err = syscall.Kill(-entry.cmd.Process.Pid, syscall.SIGKILL)
+		err = syscall.Kill(-entry.cmd.Process.Pid, syscall.SIGTERM)
 		if err != nil {
-			err = entry.cmd.Process.Kill()
+			err = entry.cmd.Process.Signal(syscall.SIGTERM)
 		}
+		p.forceKillAfterTimeout(entry)
 	}
 	delete(p.cmds, key)
-	for sessionID, sessionKey := range p.sessions {
-		if sessionKey == key {
-			delete(p.sessions, sessionID)
-		}
-	}
-	delete(p.streamSessions, key)
+	p.unbindStreamLocked(key)
 	return err
 }
 
 func (p *ProcessPublisher) ensureRunning(key string, entry *processEntry) error {
 	select {
-	case err := <-entry.done:
+	case result := <-entry.done:
 		// 进程两秒内退出通常表示 pipeline 参数、RTSP 或 token 有问题，直接回报失败。
 		if p.cmds[key] == entry {
 			p.stopStreamLocked(key)
 		}
-		if err == nil {
-			return errors.New("publisher exited")
+		if result.err == nil {
+			return errors.New("推流进程在启动确认前退出")
 		}
-		return err
+		return result.err
 	case <-time.After(2 * time.Second):
 		// 运行超过两秒认为启动成功，后续异常会通过进程退出日志和服务端超时机制兜底。
 		return nil
@@ -290,21 +317,12 @@ func streamKey(command model.StartCommand) string {
 	return strings.Join([]string{sourceType, sourceID, roomName}, "|")
 }
 
-func stopStreamKey(command model.StopCommand) string {
-	return streamKey(model.StartCommand{
-		SourceType: command.SourceType,
-		SourceID:   command.SourceID,
-		DeviceID:   command.DeviceID,
-		RoomName:   command.RoomName,
-	})
-}
-
 func trackName(command model.StartCommand) string {
 	return "video." + command.Channel + "." + command.Quality
 }
 
 func tokenUsable(expiresAt time.Time) bool {
-	return expiresAt.IsZero() || expiresAt.After(time.Now().Add(30*time.Second))
+	return !expiresAt.IsZero() && expiresAt.After(time.Now().Add(30*time.Second))
 }
 
 func entryRunning(entry *processEntry) bool {
@@ -333,4 +351,119 @@ func (p *ProcessPublisher) unbindSessionLocked(sessionID string) string {
 		delete(p.streamSessions, key)
 	}
 	return key
+}
+
+func (p *ProcessPublisher) watchProcessExit(key string, entry *processEntry, sessionID string) {
+	go func() {
+		result := <-entry.done
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.cmds[key] != entry {
+			return
+		}
+		delete(p.cmds, key)
+		sessionIDs := p.sessionIDsLocked(key)
+		p.unbindStreamLocked(key)
+		p.unexpectedExits++
+		p.recordCleanupLocked(result.exitedAt)
+		log.Printf("推流进程异常退出并已清理资源，模式=%s 会话ID=%s：%v", entry.mode, sessionID, result.err)
+		p.emitLocked(LifecycleEvent{SessionIDs: sessionIDs, ReasonCode: "PUBLISH_PROCESS_EXITED", Message: "推流进程异常退出"})
+	}()
+}
+
+func (p *ProcessPublisher) watchTokenExpiry(key string, entry *processEntry, sessionID string) {
+	delay := time.Until(entry.expiresAt)
+	if delay <= 0 {
+		delay = time.Millisecond
+	}
+	go func() {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		<-timer.C
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.cmds[key] != entry {
+			return
+		}
+		p.tokenExpirations++
+		log.Printf("发布 Token 到期，开始清理推流资源，会话ID=%s", sessionID)
+		p.emitLocked(LifecycleEvent{SessionIDs: p.sessionIDsLocked(key), ReasonCode: "PUBLISH_TOKEN_EXPIRED", Message: "发布 Token 已到期"})
+		_ = p.stopStreamLocked(key)
+	}()
+}
+
+func (p *ProcessPublisher) forceKillAfterTimeout(entry *processEntry) {
+	timeout := p.cfg.PublisherStopTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	go func() {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		<-timer.C
+		if entry.cmd == nil || entry.cmd.Process == nil || entry.cmd.ProcessState != nil {
+			return
+		}
+		if err := syscall.Kill(-entry.cmd.Process.Pid, syscall.SIGKILL); err != nil {
+			_ = entry.cmd.Process.Kill()
+		}
+		p.mu.Lock()
+		p.forcedKills++
+		p.mu.Unlock()
+		log.Printf("推流进程未在宽限期内退出，已强制清理，模式=%s", entry.mode)
+	}()
+}
+
+func (p *ProcessPublisher) unbindStreamLocked(key string) {
+	for sessionID, sessionKey := range p.sessions {
+		if sessionKey == key {
+			delete(p.sessions, sessionID)
+		}
+	}
+	delete(p.streamSessions, key)
+}
+
+func (p *ProcessPublisher) recordCleanupLocked(exitedAt time.Time) {
+	millis := time.Since(exitedAt).Milliseconds()
+	if millis < 0 {
+		millis = 0
+	}
+	p.lastCleanupMillis = millis
+	if millis > p.maxCleanupMillis {
+		p.maxCleanupMillis = millis
+	}
+}
+
+func (p *ProcessPublisher) Snapshot() Snapshot {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return Snapshot{
+		ActivePublishers: len(p.cmds), ActiveSessions: len(p.sessions),
+		UnexpectedExits: p.unexpectedExits, TokenExpirations: p.tokenExpirations,
+		ForcedKills: p.forcedKills, LastCleanupMillis: p.lastCleanupMillis,
+		MaxCleanupMillis: p.maxCleanupMillis,
+	}
+}
+
+func (p *ProcessPublisher) Events() <-chan LifecycleEvent {
+	return p.events
+}
+
+func (p *ProcessPublisher) sessionIDsLocked(key string) []string {
+	result := make([]string, 0, len(p.streamSessions[key]))
+	for sessionID := range p.streamSessions[key] {
+		result = append(result, sessionID)
+	}
+	return result
+}
+
+func (p *ProcessPublisher) emitLocked(event LifecycleEvent) {
+	if len(event.SessionIDs) == 0 {
+		return
+	}
+	select {
+	case p.events <- event:
+	default:
+		log.Printf("推流生命周期事件队列已满，事件未下发，原因码=%s", event.ReasonCode)
+	}
 }

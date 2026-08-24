@@ -53,7 +53,7 @@ BFF 是 OAuth2 Resource Server：
 | 路径 | 当前语义 |
 | --- | --- |
 | `/api/bigscreen/panorama/**` | 全景总览、设备详情、任务、告警及处置 |
-| `/api/bigscreen/statistics/**` | 统计结构、同步 PDF 导出和本地报告历史 |
+| `/api/bigscreen/statistics/**` | 统计结构、同步 PDF 导出和按用户隔离的报告历史 |
 | `/api/bigscreen/business/**` | 有限白名单的 Management 业务代理 |
 | `/api/control/**`、`/api/media/**` 等 | 下游透明代理 |
 | `/ws/control`、`/ws/media`、`/ws/bigscreen` | 同一 WebSocket 桥接处理器的兼容路径 |
@@ -89,11 +89,18 @@ RTSP 可用时 `status=online`，缺失或过期状态为 `unknown`。`playable`
 | `BIGSCREEN_AUTH_CLIENT_ID` | JWT `azp/aud` 目标客户端 |
 | `BIGSCREEN_AUTH_ISSUER_URI`、`BIGSCREEN_AUTH_JWK_SET_URI` | JWT Issuer 与 JWK |
 | `BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS` | CORS 来源模式 |
-| `STATISTICS_REPORT_STORAGE_DIR` | PDF 与报告索引目录 |
+| `STATISTICS_REPORT_STORAGE_DIR` | 单实例 PDF 与原子索引的持久化目录 |
+| `STATISTICS_REPORT_MINIMUM_FREE_BYTES` | 生成新报告后必须保留的磁盘余量，默认 1 GiB |
+| `STATISTICS_REPORT_INSTANCE_COUNT` | 必须为 `1`；其他值会拒绝启动，扩容前需另行实施共享存储 |
 
 生产必须使用真实 HTTPS Issuer/JWK、受控 CORS 和内部下游地址。若 REST 正常但 Nginx 返回 502，应检查 upstream，并确认代理未重复转发 `Connection`、`Transfer-Encoding`、`Content-Length`、`Upgrade` 等 hop-by-hop Header。
 
 新增聚合字段时必须同步维护字段来源映射；下游不可用时应保留明确的空值或错误语义，不新增生产假数据兜底。
 
 全景今日里程和统计页区间里程由 Control 对边缘状态上报持久化计算，BFF 通过
-`/api/control/statistics/mileage` 批量查询，展示单位统一换算为 `KM`。
+`/api/control/statistics/mileage` 批量查询，展示单位统一换算为 `KM`。缺少有效样本时保持
+`null` 并展示 `--`；`dataQuality.mileage` 透传质量、时区和数据覆盖范围。
+
+生产报告通过 `StatisticsReportStore` 的本地实现保存到专用持久化目录，`index.json` 采用临时文件
+加原子替换。当前边界只允许单实例；写入前检查磁盘余量，部署需监控容量、目录可写和清理异常，
+并对整个报告目录执行备份恢复演练。

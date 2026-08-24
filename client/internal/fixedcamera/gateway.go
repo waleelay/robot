@@ -157,6 +157,19 @@ func (g *Gateway) Run(ctx context.Context) error {
 	}
 }
 
+func (g *Gateway) ObservePublisherEvents(ctx context.Context, events <-chan publisher.LifecycleEvent) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event := <-events:
+			for _, sessionID := range event.SessionIDs {
+				g.status(sessionID, "failed", "", "", event.ReasonCode, event.Message)
+			}
+		}
+	}
+}
+
 func (g *Gateway) subscribe(topic string, handler paho.MessageHandler) {
 	if token := g.mqtt.Subscribe(topic, 1, handler); token.Wait() && token.Error() != nil {
 		log.Fatalf("订阅固定摄像头 MQTT 主题失败，主题=%s：%v", topic, token.Error())
@@ -214,12 +227,16 @@ func (g *Gateway) handleStop() paho.MessageHandler {
 			log.Printf("解析固定摄像头停止命令失败，主题=%s 载荷字节数=%d：%v", msg.Topic(), len(msg.Payload()), err)
 			return
 		}
-		log.Printf("停止固定摄像头推流，摄像头ID=%s 会话ID=%s", payload.SourceID, payload.SessionID)
-		if err := g.publisher.StopStream(payload); err != nil {
-			log.Printf("停止固定摄像头推流进程失败，摄像头ID=%s 会话ID=%s：%v", payload.SourceID, payload.SessionID, err)
-		}
-		g.status(payload.SessionID, "stopped", "", "", "", "推流已停止")
+		g.stop(payload)
 	}
+}
+
+func (g *Gateway) stop(payload model.StopCommand) {
+	log.Printf("停止固定摄像头推流，摄像头ID=%s 会话ID=%s", payload.SourceID, payload.SessionID)
+	if err := g.publisher.Stop(payload.SessionID); err != nil {
+		log.Printf("停止固定摄像头推流进程失败，摄像头ID=%s 会话ID=%s：%v", payload.SourceID, payload.SessionID, err)
+	}
+	g.status(payload.SessionID, "stopped", "", "", "", "推流已停止")
 }
 
 func (g *Gateway) handleCatalog() paho.MessageHandler {
@@ -492,7 +509,7 @@ func (g *Gateway) camera(ctx context.Context, cameraID string) (cameraRecord, er
 }
 
 func (g *Gateway) status(sessionID, status, trackSid, trackName, errorCode, message string) {
-	g.publish("gateway/fixed-camera/"+g.cfg.FixedCameraGatewayID+"/video/status", model.StatusMessage{
+	if err := g.publish("gateway/fixed-camera/"+g.cfg.FixedCameraGatewayID+"/video/status", model.StatusMessage{
 		SessionID: sessionID,
 		Status:    status,
 		TrackSid:  trackSid,
@@ -500,7 +517,9 @@ func (g *Gateway) status(sessionID, status, trackSid, trackName, errorCode, mess
 		ErrorCode: errorCode,
 		Message:   message,
 		Timestamp: time.Now(),
-	})
+	}); err != nil {
+		log.Printf("发布固定摄像头视频状态失败，会话ID=%s 状态=%s：%v", sessionID, status, err)
+	}
 }
 
 func (g *Gateway) publish(topic string, payload any) error {

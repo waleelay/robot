@@ -137,6 +137,7 @@ main
 | `FixedCameraHeartbeat` | `FIXED_CAMERA_HEARTBEAT_INTERVAL_SECONDS` | Gateway 心跳周期，默认 10 秒 |
 | `FixedCameraHealthProbe` | `FIXED_CAMERA_HEALTH_PROBE_INTERVAL_SECONDS` | 全量 RTSP 健康扫描周期，默认 60 秒 |
 | `FixedCameraProbeWorkers` | `FIXED_CAMERA_HEALTH_PROBE_CONCURRENCY` | 健康探测最大并发，默认 4 |
+| `FixedCameraHTTPAddr` | `FIXED_CAMERA_HTTP_ADDR` | 内部 `/health`、`/metrics` 监听地址，默认 `:9091` |
 
 ### 4.2 摄像头与 RTSP
 
@@ -163,6 +164,7 @@ main
 | `PublisherFFmpegFirstIDs` | `PUBLISHER_FFMPEG_FIRST_DEVICE_IDS` | `auto` 模式下直接优先走 FFmpeg 的设备 ID 覆盖列表，默认空 |
 | `PublisherFallbackWatch` | `PUBLISHER_FALLBACK_WATCH_SECONDS` | `auto` 模式下观察 GStreamer 启动后短时间退出的窗口，默认 8 秒 |
 | `PublisherGStreamerRetry` | `PUBLISHER_GSTREAMER_RETRY_SECONDS` | GStreamer 失败后使用 FFmpeg 的冷却时间，默认 60 秒；到期重试直推 |
+| `PublisherStopTimeout` | `PUBLISHER_STOP_TIMEOUT_SECONDS` | 进程收到 SIGTERM 后的退出宽限，默认 5 秒；超时发送 SIGKILL |
 | `FFmpegPublisherCmd` | `FFMPEG_PUBLISHER_CMD` | GStreamer publisher 启动失败或观察窗口内退出时的 FFmpeg fallback 命令 |
 | `GStreamerPublisherPath` | `GSTREAMER_PUBLISHER_PATH` | 默认 `gstreamer-publisher` |
 | `GStreamerPipeline` | `GSTREAMER_PIPELINE` | RTSP 到 LiveKit publisher 的媒体 pipeline |
@@ -367,13 +369,17 @@ type Publisher interface {
 }
 ```
 
-当前实现为 `ProcessPublisher`，内部用：
+当前实现为 `ProcessPublisher`，内部按源/房间复用进程，并分别维护 session 到流、流到 session 的双向绑定：
 
 ```text
-map[sessionId]*exec.Cmd
+map[streamKey]*processEntry
+map[sessionId]streamKey
+map[streamKey]set(sessionId)
 ```
 
-管理每个视频会话对应的外部进程。
+`Stop(sessionId)` 只解除目标 viewer；最后一个 viewer 离开才停止进程。启动命令必须携带剩余有效期
+超过 30 秒的 `expiresAt`；Token 到期、外部进程异常退出和 MQTT 断线均清理绑定。固定摄像头入口
+把 Token/进程异常事件回写为 session `failed`，避免 Control 保留虚假 streaming 状态。
 
 ### 8.1 默认 GStreamer publisher
 
@@ -419,6 +425,10 @@ rtspsrc location={rtsp} protocols=tcp latency=100
 
 1. 如果进程在 2 秒内退出，认为启动失败。
 2. 如果进程运行超过 2 秒，认为启动成功，返回伪造的 `TR_{sessionId}` 和 Track 名称。
+
+启动成功后的进程仍被持续监视。正常停止先向进程组发送 `SIGTERM`，默认 5 秒未退出再发送
+`SIGKILL`。固定摄像头 Gateway 的内部观测端口默认提供 `/health` 和 `/metrics`，指标包括活动
+publisher/session、异常退出、Token 到期、强杀次数和清理延迟；该 HTTP 服务不提供 start/stop。
 
 Track 名称规则：
 

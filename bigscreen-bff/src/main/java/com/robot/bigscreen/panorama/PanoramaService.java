@@ -1331,7 +1331,13 @@ public class PanoramaService {
                 "durationToday", durationToday,
                 "durationUnit", durationToday == null ? null : "小时",
                 "mileageToday", mileageToday,
-                "mileageUnit", mileageToday == null ? null : "KM");
+                "mileageUnit", mileageToday == null ? null : "KM",
+                "mileageHasData", Boolean.TRUE.equals(mileageSummary.get("hasData")),
+                "mileageQuality", mileageSummary.get("quality"),
+                "mileageTimezone", mileageSummary.get("timezone"),
+                "mileageObservedStartTime", mileageSummary.get("observedStartTime"),
+                "mileageObservedEndTime", mileageSummary.get("observedEndTime"),
+                "mileageExcludedSuspectMeters", mileageSummary.get("excludedSuspectMeters"));
     }
 
     private Map<String, Object> todayMileageSummary() {
