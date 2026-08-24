@@ -74,7 +74,7 @@
 <script>
 import { butaiList, robotControlObj } from '../../../js/constants/robot-control';
 // import robotControlByKeyboard from '../../../js/mixins/robotControlByKeyboard';
-import yuntai from '../../../patrol/monitor/second/components/yuntai';
+import yuntai from '../../../patrol/monitor/second/components/ptz-control-mixin';
 
 export default {
   name: "Control",

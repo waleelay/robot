@@ -86,7 +86,7 @@
 <script>
 import { robotControlObj } from '../../../../js/constants/robot-control.js';
 import Speed from '../../../../components/modal/Speed.vue';
-import yuntai from './yuntai.js';
+import yuntai from './ptz-control-mixin.js';
 export default {
   name: 'CarSelfControl',
   mixins: [yuntai],

@@ -375,7 +375,7 @@ import {
   uploadFile
 } from '@/api/media';
 import { errorMessage } from '@/utils';
-import yuntai from './yuntai';
+import yuntai from './ptz-control-mixin';
 
 export default {
   name: 'MultiInOne',

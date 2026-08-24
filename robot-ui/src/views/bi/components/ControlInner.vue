@@ -29,7 +29,7 @@
 
 <script>
 import { robotControlObj } from '../js/constants/robot-control.js';
-import ptzMixin from '../patrol/monitor/second/components/yuntai.js'
+import ptzMixin from '../patrol/monitor/second/components/ptz-control-mixin.js'
 import { mapActions } from 'vuex';
 export default {
   name: "ControlInner",

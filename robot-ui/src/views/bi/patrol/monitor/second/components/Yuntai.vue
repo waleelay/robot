@@ -49,7 +49,7 @@
 </template>
 
 <script>
-import ptzMixin from './yuntai.js'
+import ptzMixin from './ptz-control-mixin.js'
 export default {
   name: 'Yuntai',
   mixins: [ptzMixin],

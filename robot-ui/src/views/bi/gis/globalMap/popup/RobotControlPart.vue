@@ -98,7 +98,7 @@ import common from './common.js';
 import { toggleFullscreen } from '../../../../../utils/fullscreen.js';
 import { mapActions, mapState } from 'vuex';
 import Talk from '../../../patrol/monitor/second/components/Talk.vue'
-import yuntai from '../../../patrol/monitor/second/components/yuntai.js'
+import yuntai from '../../../patrol/monitor/second/components/ptz-control-mixin.js'
 import { setControlMode } from '../../../../../api/media.js';
 export default {
   name: 'RobotControlPart',

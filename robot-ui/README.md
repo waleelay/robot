@@ -233,6 +233,12 @@ npm run dev -- --port 8081
 
 ## 开发约定
 
+- 云台控制的共享 mixin 统一位于
+  `src/views/bi/patrol/monitor/second/components/ptz-control-mixin.js`；组件文件保持
+  `Yuntai.vue`。不得再创建仅靠大小写区分的 `yuntai.js`，也不得增加旧路径兼容转发。
+- 文件名在 macOS 和 Linux 上必须具有一致解析结果；新增或重命名组件后执行生产构建并处理
+  CaseSensitivePaths 告警。
+
 - 优先复用现有组件、Vuex 模块和业务服务。
 - 页面共享状态统一放入 Vuex，组件内部仅保存局部交互状态。
 - 新增接口放在 `src/api/` 或现有服务模块中，不在组件里重复拼接请求逻辑。

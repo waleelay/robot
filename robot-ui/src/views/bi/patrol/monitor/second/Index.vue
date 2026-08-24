@@ -176,7 +176,7 @@ import MultimediaDetail from './components/MultimediaDetail.vue'
 import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue'
 import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue'
 import Empty from '../../../components/Empty.vue'
-import yuntai from './components/yuntai'
+import yuntai from './components/ptz-control-mixin'
 import { mapActions, mapState } from 'vuex'
 import { isRobotDog } from '@/constants/robot.js'
 export default {

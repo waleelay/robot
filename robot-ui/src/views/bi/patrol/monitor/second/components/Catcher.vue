@@ -30,7 +30,7 @@
 </template>
 
 <script>
-import yuntai from './yuntai';
+import yuntai from './ptz-control-mixin';
 
 export default {
   name: 'Catcher',

@@ -68,7 +68,7 @@
 // import voiceUtil from '../../../../js/mixins/voiceUtil';
 import { sendEquipmentCommand } from '../../../../../../api/media';
 import { errorMessage } from '../../../../../../utils';
-import yuntai from './yuntai';
+import yuntai from './ptz-control-mixin';
 import { mapActions, mapState } from 'vuex';
 import VolumeWave from './VolumeWave.vue';
 
