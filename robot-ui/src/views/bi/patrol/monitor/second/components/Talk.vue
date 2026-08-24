@@ -403,11 +403,11 @@ export default {
     width: 90px;
     height: 90px;
     font-family: "Alibaba PuHuiTi";
-    font-size: 16px;
+    font-size: 10px;
     line-height: 10px;
     letter-spacing: 0.146px;
     .svg-icon {
-      font-size: 36px;
+      font-size: 32px;
     }
   }
 }

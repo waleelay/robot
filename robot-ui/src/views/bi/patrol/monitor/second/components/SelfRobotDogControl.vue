@@ -10,24 +10,17 @@
 <template>
   <div class="flx-align-center h100 pt20 pb20 with-bl">
     <div class="flex flex-column h100 pl30">
-      <div class="custom-tab-button flex">
+      <div v-if="tabList.length > 1" class="custom-tab-button flex">
         <div v-for="item in tabList" :key="item.value" class="tab-button-item" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value">{{ item.label }}</div>
       </div>
-      <div class="mode mt12" :class="{ 'is-active': isNavMode }">
-        <div class="d-flex flx-align-center">
-          <svg-icon icon-class="mode" />
-          <span class="ml10">自主导航模式</span>
-        </div>
-        <ControlModeActions
-          extra-class="mt10"
-          :is-nav-mode="isNavMode"
-          :show-resume="showTaskResumeActions"
-          @takeover="handleTakeover"
-          @resume="handleResumeActiveTask"
-          @terminate="handleTerminateActiveTask"
-          class="ml10"
-        />
-      </div>
+      <ControlModeActions
+        extra-class="mt12 vertical-class"
+        :is-nav-mode="isNavMode"
+        :show-resume="showTaskResumeActions"
+        @takeover="handleTakeover"
+        @resume="handleResumeActiveTask"
+        @terminate="handleTerminateActiveTask"
+      />
     </div>
     <div class="flx-center ml54 common-control" :class="{ 'is-disabled': selectedRobot?.controlMode !== '手动模式' }">
       <div class="outer flx-center">
@@ -186,33 +179,6 @@ export default {
     background: rgba(17, 108, 31, 0.50);
   }
 }
-.mode {
-  color: #6A788B;
-  font-family: "Microsoft YaHei";
-  font-size: 12px;
-  line-height: 16px;
-  .svg-icon {
-    font-size: 14px;
-  }
-  &.is-active {
-    color: #FFF;
-  }
-}
-.takeover-btn {
-  padding: 4px 10px;
-  color: #FFF;
-  font-family: "Microsoft YaHei";
-  font-size: 12px;
-  line-height: 16px;
-  border-radius: 4px;
-  background: #021328;
-  box-shadow: 0 0 14px 2px #09F inset;
-  white-space: nowrap;
-  &:hover {
-    color: #0BF9FE;
-  }
-}
-
 .btns {
   margin-top: -10px;
   margin-left: -10px;
@@ -227,8 +193,8 @@ export default {
     border: none;
     text-align: center;
     &.is-disabled {
-      background: #080808;
-      box-shadow: 0 0 14px 2px #515151 inset;
+      background: #0a0a0a;
+      box-shadow: 0 0 14px 2px #a6a6a6 inset;
       cursor: not-allowed;
       // pointer-events: none;
     }
@@ -268,11 +234,11 @@ export default {
       line-height: 0;
       text-align: left;
       color: #FFF;
-      background: #080808;
+      background: #021328;
       border-radius: 4px;
       border: none;
-      -webkit-box-shadow: 0 0 14px 2px #515151 inset;
-      box-shadow: 0 0 14px 2px #515151 inset;
+      -webkit-box-shadow: 0 0 14px 2px #09F inset;
+      box-shadow: 0 0 14px 2px #09F inset;
     }
     .el-input__suffix {
       .el-input__icon {
@@ -280,6 +246,13 @@ export default {
         font-size: 12px;
         line-height: 30px;
         color: #FFF;
+      }
+    }
+    &.is-disabled {
+      .el-input__inner {
+        background: #0a0a0a;
+        box-shadow: 0 0 14px 2px #a6a6a6 inset;
+        cursor: not-allowed;
       }
     }
   }
@@ -340,9 +313,6 @@ export default {
   width: 110px;
   height: 110px;
   margin: 0 auto;
-  // background: #080808;
-  // border: 1px solid #434343;
-  // box-shadow: 0 0 12px 2px #303030 inset;
   box-shadow: 0 0 14.154px 2.831px #09F inset;
   border-radius: 50%;
   .inner {
@@ -411,6 +381,26 @@ export default {
     }
   }
 }
+
+.common-control.is-disabled {
+  .outer {
+    background: #101214;
+    border-color: #4D4D4D;
+    box-shadow: 0 0 14.154px 2.831px #838383 inset;
+    .inner {
+      background: #101214;
+      border-color: #101214;
+      .circle {
+        background: #4D4D4D;
+        border-color: #4D4D4D;
+      }
+    }
+    .arrow {
+      color: #4D4D4D;
+    }
+  }
+}
+
 .with-bl {
   position: relative;
   &::before {

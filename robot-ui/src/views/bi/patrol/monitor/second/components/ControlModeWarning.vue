@@ -1,8 +1,8 @@
 <template>
-  <!-- 导航 → 手动：先暂停/终止，再确认切换 -->
   <el-dialog
     class="custom-dialog__wrapper robot-dialog flx-align-center primary-confirm-dialog control-mode-warning-dialog"
-    :visible.sync="navToManualVisible"
+    :class="{ 'has-task-selection': showTaskSelection }"
+    :visible.sync="visible"
     top="0"
     :modal-append-to-body="false"
     :close-on-click-modal="false"
@@ -10,7 +10,7 @@
     append-to-body
     :show-close="false"
     title=""
-    @closed="resetNavToManualState"
+    @closed="resetState"
   >
     <div class="custom-modal-container primary-confirm-container control-mode-warning">
       <div class="decoration wp167 hp5">
@@ -18,61 +18,21 @@
       </div>
       <div class="box">
         <div class="top m4 flx-justify-between">
-          <div class="title ml10">切换为手动模式</div>
-          <div class="close mr10" @click="closeNavToManual">
+          <div class="title ml10">{{ dialogTitle }}</div>
+          <div class="close mr10" @click="close">
             <svg-icon icon-class="close" />
           </div>
         </div>
         <div class="info-content">
-          <div class="message flx-align-center">
-            <img
-              src="@/assets/images/new-bi/warning-icon.png"
-              alt=""
-              width="20"
-              height="20"
-            >
-            <span class="ml10">{{ dialogTipText }}</span>
-          </div>
-          <div v-if="taskActionDone" class="task-hint mt12">
-            已{{ taskActionDoneLabel }}任务，可确认切换。
-          </div>
-          <div class="btns mt22">
-            <el-button tt="modal" :disabled="!!taskActing || modeSwitching" @click="closeNavToManual">取消</el-button>
-            <template v-if="showTaskActionButtons">
-              <el-button
-                v-if="showPauseButton"
-                tt="modal"
-                class="ml10"
-                :class="{ 'is-done': taskActionDone === 'pause' }"
-                :loading="taskActing === 'pause'"
-                :disabled="!!taskActing || !!taskActionDone || modeSwitching"
-                @click="handleTaskAction('pause')"
-              >
-                {{ taskActionDone === 'pause' ? '已暂停' : '暂停任务' }}
-              </el-button>
-              <el-button
-                v-if="showTerminateButton"
-                tt="modal"
-                class="ml10"
-                :class="{ 'is-done': taskActionDone === 'terminate' }"
-                :loading="taskActing === 'terminate'"
-                :disabled="!!taskActing || !!taskActionDone || modeSwitching"
-                @click="handleTaskAction('terminate')"
-              >
-                {{ taskActionDone === 'terminate' ? '已终止' : '终止任务' }}
-              </el-button>
-            </template>
-            <el-button
-              tt="modal"
-              class="ml10"
-              :loading="modeSwitching"
-              :disabled="!canConfirmSwitch || !!taskActing"
-              :title="confirmSwitchTitle"
-              @click="confirmNavToManual"
-            >
-              确认切换
-            </el-button>
-          </div>
+          <ControlModeWarningBody
+            :message="dialogMessage"
+            :show-task-selection="showTaskSelection"
+            :selected-task-action.sync="selectedTaskAction"
+            :confirming="confirming"
+            :can-confirm="canConfirm"
+            @cancel="close"
+            @confirm="handleConfirm"
+          />
         </div>
       </div>
     </div>
@@ -80,31 +40,44 @@
 </template>
 
 <script>
-import { acquireControl, setControlMode, takeoverControl } from '../../../../../../api/media'
-import { pauseTaskRecord, terminateTaskRecord } from '../../../../../../api/new-bi'
+import { takeoverControl } from '../../../../../../api/media'
+import { pauseTaskRecord, resumeTaskRecord, terminateTaskRecord } from '../../../../../../api/new-bi'
 import { isActiveTaskStatus, isPausedTaskStatus, isRunningTaskStatus } from '../../../business/execution-status'
+import ControlModeWarningBody from './ControlModeWarningBody.vue'
+
+const ACTION_META = {
+  takeover: {
+    title: '\u7acb\u5373\u63a5\u7ba1',
+    messageInTask: '\u7acb\u5373\u63a5\u7ba1\u524d\uff0c\u8bf7\u6682\u505c\u6216\u7ec8\u6b62\u5f53\u524d\u4efb\u52a1',
+    messageDefault: '\u786e\u8ba4\u7acb\u5373\u63a5\u7ba1\uff1f'
+  },
+  resume: {
+    title: '\u6062\u590d',
+    messageDefault: '\u662f\u5426\u6062\u590d\u8be5\u4efb\u52a1\uff1f'
+  },
+  terminate: {
+    title: '\u7ec8\u6b62',
+    messageDefault: '\u662f\u5426\u7ec8\u6b62\u8be5\u4efb\u52a1\uff1f'
+  }
+}
 
 export default {
   name: 'ControlModeWarning',
+  components: { ControlModeWarningBody },
   data() {
     return {
-      loading: false,
-      timer: null,
+      visible: false,
+      confirming: false,
       robotId: '',
-      controlMode: '',
-      controlModeName: '',
-      navToManualVisible: false,
-      taskActing: '',
-      taskActionDone: '',
-      modeSwitching: false
+      action: 'takeover',
+      selectedTaskAction: ''
     }
   },
   computed: {
-    // 是否处于任务中（running 或 paused）
     isInTask() {
       const base = this.getRobotBaseInfo()
       if (isActiveTaskStatus(base?.runningTask?.status)) return true
-      if (base?.customStatusName === '任务中') return true
+      if (base?.customStatusName === '\u4efb\u52a1\u4e2d') return true
       const taskData = this.$store.state.websocketExtraData?.taskData || {}
       const tasks = Array.isArray(base?.task) ? base.task : []
       return tasks.some(raw => {
@@ -119,39 +92,23 @@ export default {
     isRunningTask() {
       return isRunningTaskStatus(this.relatedTaskStatus)
     },
-    isPausedTask() {
-      return isPausedTaskStatus(this.relatedTaskStatus)
+    showTaskSelection() {
+      return this.action === 'takeover' && this.isInTask && this.isRunningTask
     },
-    // 任务中才展示暂停/终止；已暂停不再展示暂停；成功处理后仍保留完成态直到关闭
-    showTaskActionButtons() {
-      return this.isInTask || !!this.taskActionDone
+    dialogTitle() {
+      return ACTION_META[this.action]?.title || '\u63d0\u793a'
     },
-    showPauseButton() {
-      return this.taskActionDone === 'pause' || (this.showTaskActionButtons && this.isRunningTask && !this.taskActionDone)
-    },
-    showTerminateButton() {
-      return this.taskActionDone === 'terminate' || (this.showTaskActionButtons && this.isInTask && !this.taskActionDone)
-    },
-    // 无任务或已暂停可直接确认；running 须先暂停/终止成功
-    canConfirmSwitch() {
-      if (this.modeSwitching) return false
-      if (!this.isInTask || this.taskActionDone || this.isPausedTask) return true
-      return false
-    },
-    dialogTipText() {
-      if (this.isRunningTask && !this.taskActionDone) {
-        return '当前装备处于任务中，切换为手动模式前请先暂停或终止任务。'
+    dialogMessage() {
+      const meta = ACTION_META[this.action] || {}
+      if (this.action === 'takeover') {
+        return this.showTaskSelection ? meta.messageInTask : meta.messageDefault
       }
-      return '确认将控制模式切换为手动模式？'
+      return meta.messageDefault || ''
     },
-    confirmSwitchTitle() {
-      if (this.canConfirmSwitch) return '确认切换为手动模式'
-      return '请先暂停或终止任务'
-    },
-    taskActionDoneLabel() {
-      if (this.taskActionDone === 'pause') return '暂停'
-      if (this.taskActionDone === 'terminate') return '终止'
-      return '处理'
+    canConfirm() {
+      if (this.confirming) return false
+      if (this.showTaskSelection) return !!this.selectedTaskAction
+      return true
     }
   },
   methods: {
@@ -176,6 +133,9 @@ export default {
       }
       return false
     },
+    shouldUseSecondaryConfirm(data = {}) {
+      return !!(data.useSecondaryConfirm || this.hasOtherDialogOpen())
+    },
     getRobot() {
       const list = this.$store.state.websocketRobot?.robots || []
       return list.find(item => String(item.robotId) === String(this.robotId)) || null
@@ -183,7 +143,6 @@ export default {
     getRobotBaseInfo() {
       return this.$store.state.websocketExtraData?.robotBaseInfo?.[this.robotId] || {}
     },
-    /** 当前执行中的任务（running 或 paused，优先 running） */
     getRelatedTask() {
       const base = this.getRobotBaseInfo()
       if (isActiveTaskStatus(base?.runningTask?.status)) return base.runningTask
@@ -212,173 +171,137 @@ export default {
     unwrap(res) {
       if (res && res.code !== undefined) {
         if (res.code === '0' || res.code === 0 || res.code === 200) return res.data || {}
-        throw new Error(res.message || '请求失败')
+        throw new Error(res.message || '\u8bf7\u6c42\u5931\u8d25')
       }
       return res || {}
     },
-    resetNavToManualState() {
-      this.taskActing = ''
-      this.taskActionDone = ''
-      this.modeSwitching = false
+    resetState() {
+      this.confirming = false
+      this.selectedTaskAction = ''
+      this.action = 'takeover'
+      this.robotId = ''
     },
-    closeNavToManual() {
-      if (this.taskActing || this.modeSwitching) return
-      this.navToManualVisible = false
+    close() {
+      if (this.confirming) return
+      this.visible = false
     },
-    async open(data) {
-      if (this.loading || this.navToManualVisible || this.modeSwitching) return
-      this.robotId = data.robotId
-      this.controlMode = data?.controlMode || ''
-      this.controlModeName = this.controlMode
-      const useSecondaryConfirm = !!data.useSecondaryConfirm
-      const robot = this.getRobot()
-      const isNavToManual = robot?.controlMode === '导航模式' && this.controlMode === '手动模式'
+    async open(data = {}) {
+      if (this.confirming || this.visible) return
 
-      // 地图远程控制面板：一律走全局二级确认框
-      if (isNavToManual && !useSecondaryConfirm) {
-        this.resetNavToManualState()
-        this.navToManualVisible = true
+      this.robotId = data.robotId
+      this.action = data.action || 'takeover'
+      this.selectedTaskAction = ''
+
+      const useSecondary = this.shouldUseSecondaryConfirm(data)
+      const isResumeOrTerminate = this.action === 'resume' || this.action === 'terminate'
+      const needsTaskSelection = this.action === 'takeover' && this.isInTask && this.isRunningTask
+
+      // 恢复/终止：基本信息走全局二级确认（默认图标，不用 warning.svg）
+      // 地图远程控制：二级且无需任务选择时同样走 $secondaryConfirm
+      if ((isResumeOrTerminate || useSecondary) && !needsTaskSelection) {
+        const meta = ACTION_META[this.action] || {}
+        try {
+          await this.$secondaryConfirm({
+            title: meta.title || '\u63d0\u793a',
+            message: meta.messageDefault || '',
+            confirmText: '\u786e\u5b9a',
+            cancelText: '\u53d6\u6d88',
+            onConfirm: () => this.executeAction()
+          })
+        } catch (error) {
+          // 用户取消
+        } finally {
+          this.resetState()
+        }
         return
       }
 
-      const confirmApi = (useSecondaryConfirm || this.hasOtherDialogOpen())
-        ? this.$secondaryConfirm
-        : this.$primaryConfirm
-      try {
-        await confirmApi({
-          title: '切换模式',
-          message: `确认切换为${this.controlModeName}？`,
-          confirmText: '确认切换',
-          cancelText: '取消',
-          onConfirm: () => this.execute()
-        })
-      } catch (error) {
-        // 用户取消
-      }
+      // 一级确认，或二级但需任务选择（SecondaryConfirm 不支持自定义内容）
+      this.visible = true
     },
-    async handleTaskAction(action) {
-      if (!this.isInTask) return
-      if (this.taskActing || this.taskActionDone || this.modeSwitching) return
+    async runTaskAction(action) {
       const task = this.getRelatedTask()
       const recordId = this.getTaskRecordId(task)
       if (recordId == null || recordId === '') {
-        this.$message.error('缺少执行记录标识，无法操作')
+        throw new Error('\u7f3a\u5c11\u6267\u884c\u8bb0\u5f55\u6807\u8bc6\uff0c\u65e0\u6cd5\u64cd\u4f5c')
+      }
+      const apiMap = {
+        pause: pauseTaskRecord,
+        resume: resumeTaskRecord,
+        terminate: terminateTaskRecord
+      }
+      const api = apiMap[action]
+      if (!api) return
+      const data = this.unwrap(await api(recordId, {}))
+      if (data && data.accepted === false) {
+        throw new Error((data && data.message) || '\u64cd\u4f5c\u672a\u63a5\u53d7')
+      }
+      const successMap = {
+        pause: '\u5df2\u6682\u505c\u4efb\u52a1',
+        resume: '\u5df2\u6062\u590d\u4efb\u52a1',
+        terminate: '\u5df2\u7ec8\u6b62\u4efb\u52a1'
+      }
+      this.$message.success((data && data.message) || successMap[action])
+    },
+    async executeTakeover() {
+      const robot = this.getRobot()
+      if (!robot || robot.status !== 'online') {
+        throw new Error('\u673a\u5668\u4eba\u4e0d\u5728\u7ebf\uff0c\u4e0d\u80fd\u63a5\u7ba1')
+      }
+      const response = await takeoverControl(this.robotId, {
+        observedStateSeq: robot.stateSeq
+      })
+      if (response.code) {
+        throw new Error(response.message || response.code)
+      }
+      this.$message.success(
+        response.status === 'CONFIRMED' || response.modeChangeStatus === 'CONFIRMED'
+          ? `\u673a\u5668\u4eba\u5f53\u524d\u5df2\u662f${response.controlModeName || '\u624b\u52a8\u6a21\u5f0f'}`
+          : '\u63a5\u7ba1\u6307\u4ee4\u5df2\u4e0b\u53d1\uff0c\u7b49\u5f85\u673a\u5668\u4eba\u786e\u8ba4'
+      )
+    },
+    async executeAction() {
+      if (this.action === 'takeover') {
+        if (this.showTaskSelection) {
+          await this.runTaskAction(this.selectedTaskAction)
+        }
+        await this.executeTakeover()
         return
       }
-      const api = action === 'pause' ? pauseTaskRecord : terminateTaskRecord
-      const successMessage = action === 'pause' ? '已暂停任务' : '已终止任务'
-      this.taskActing = action
-      try {
-        const data = this.unwrap(await api(recordId, {}))
-        if (data && data.accepted === false) {
-          this.$message.warning((data && data.message) || '操作未接受')
-          return
-        }
-        this.taskActionDone = action
-        this.$message.success((data && data.message) || successMessage)
-      } catch (error) {
-        this.$message.error(error?.message || (action === 'pause' ? '暂停失败' : '终止失败'))
-      } finally {
-        this.taskActing = ''
+      if (this.action === 'resume') {
+        await this.runTaskAction('resume')
+        return
+      }
+      if (this.action === 'terminate') {
+        await this.runTaskAction('terminate')
       }
     },
-    async confirmNavToManual() {
-      if (!this.canConfirmSwitch) return
-      this.modeSwitching = true
+    async handleConfirm() {
+      if (!this.canConfirm) return
+      this.confirming = true
       try {
-        await this.execute()
-        this.navToManualVisible = false
+        await this.executeAction()
+        this.visible = false
       } catch (error) {
-        // execute 内已提示
+        this.$message.error(error?.message || '\u64cd\u4f5c\u5931\u8d25')
       } finally {
-        this.modeSwitching = false
+        this.confirming = false
       }
-    },
-    async execute() {
-      if (this.loading === true) {
-        return false
-      }
-      this.loading = true
-      try {
-        const robot = this.getRobot()
-        if (!robot || robot.status !== 'online') {
-          throw new Error('机器人不在线，不能切换控制模式')
-        }
-        let response
-        if (robot.controlMode === '导航模式' && this.controlMode === '手动模式') {
-          response = await takeoverControl(this.robotId, {
-            observedStateSeq: robot.stateSeq
-          })
-        } else {
-          const session = await acquireControl(this.robotId, {
-            scope: 'ROBOT',
-            deviceIds: ['base'],
-            actions: ['control.mode.set', 'drive.velocity']
-          })
-          if (session.code) {
-            throw new Error(session.message || session.code)
-          }
-          response = await setControlMode({
-            robotId: this.robotId,
-            controlMode: this.controlMode,
-            controlSessionId: session.controlSessionId,
-            observedStateSeq: robot.stateSeq
-          })
-        }
-        if (response.code) {
-          throw new Error(response.message || response.code)
-        }
-        this.$message.success(
-          response.status === 'CONFIRMED' || response.modeChangeStatus === 'CONFIRMED'
-            ? `机器人当前已是${response.controlModeName}`
-            : `切换指令已下发，等待机器人确认`
-        )
-      } catch (error) {
-        this.$message.error(error.message || '切换模式失败')
-        throw error
-      } finally {
-        this.loading = false
-      }
-    }
-  },
-  beforeDestroy() {
-    if (this.timer) {
-      clearTimeout(this.timer)
     }
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.control-mode-warning {
-  .message {
-    align-items: flex-start;
-    span {
-      color: rgba(255, 255, 255, 0.88);
-      font-family: "Microsoft YaHei";
-      font-size: 14px;
-      line-height: 22px;
-    }
+.control-mode-warning-dialog.has-task-selection {
+  ::v-deep .primary-confirm-container .box {
+    width: 650px;
   }
-  .task-hint {
-    color: #0BF9FE;
-    font-family: "Microsoft YaHei";
-    font-size: 12px;
-    line-height: 18px;
-  }
-  .btns {
-    display: flex;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    .el-button.is-disabled,
-    .el-button.is-disabled:hover {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
-    .el-button.is-done {
-      border-color: #0BF9FE !important;
-      color: #0BF9FE !important;
-    }
+
+  ::v-deep .primary-confirm-container .top .title {
+    font-size: 18px;
+    font-family: "Alibaba PuHuiTi";
+    font-weight: 500;
   }
 }
 </style>

@@ -47,10 +47,6 @@
         </div>
         <div class="flex1 flex-column pl28 pr15" style="position: unset;">
           <div class="flx-justify-between flx-align-center">
-            <div class="mode d-flex flx-align-center" :class="{ 'is-active': isNavMode }">
-              <svg-icon icon-class="mode" />
-              <span class="ml10">自主导航模式</span>
-            </div>
             <ControlModeActions
               :is-nav-mode="isNavMode"
               :show-resume="showTaskResumeActions"
@@ -60,15 +56,11 @@
               class="ml10"
             />
           </div>
-          <div v-if="isInActiveTask" class="active-task-row mt8 flx-align-center">
-            <span>当前任务：{{ activeTask?.name || '-' }}</span>
-            <span class="task-status ml8" :class="activeTaskStatusClass">{{ activeTaskStatusLabel }}</span>
-          </div>
-          <div class="d-flex mt16">
+          <div class="d-flex mt16" style="justify-content: center;">
             <Talk v-if="showTalk" :isMapInner="showTalk" class="mr30" />
             <div class="flx-justify-between" :class="{ 'flex-column': showTalk }">
               <div class="d-flex">
-                <div class="flex common-control" :class="{ 'is-small': showTalk }">
+                <div class="flex common-control" :class="{ 'is-small': showTalk, 'is-disabled': isBodyControlDisabled }">
                   <div class="outer">
                     <div class="inner w100 h100 flx-center m0">
                       <div class="circle flx-center">移动</div>
@@ -466,7 +458,7 @@ export default {
       .circle {
         width: 46px;
         height: 46px;
-        font-size: 16px;
+        font-size: 10px;
         line-height: 46px;
       }
     }

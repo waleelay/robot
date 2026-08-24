@@ -1,6 +1,5 @@
 import { mapActions, mapState } from "vuex";
 import { acquireControl, mediaClientId, sendEquipmentCommand, createConfirmToken } from "../../../../../../api/media";
-import { resumeTaskRecord, terminateTaskRecord } from "../../../../../../api/new-bi";
 import { errorMessage } from "../../../../../../utils";
 import { executionStatusLabel, isActiveTaskStatus, taskStatusColorClass } from "../../../business/execution-status";
 import ControlModeActions from "./ControlModeActions.vue";
@@ -121,7 +120,6 @@ export default {
       netGunSafety: Object.assign({}, this.deviceStateCache?.netGunSafety || {}),
       warningLightState: Object.assign({}, this.deviceStateCache?.warningLightState || {}),
       vehicleLightEnabled: cachedVehicleLightEnabled(this.deviceStateCache),
-      actingTaskRecord: false
     }
   },
   methods: {
@@ -153,91 +151,25 @@ export default {
     },
     async handleModeChange(controlMode) {
       if (this.selectedRobot.controlMode === controlMode) return
-      this.$refs.controlModeWarningRef.open({
+      if (controlMode === '手动模式') {
+        this.openControlAction('takeover')
+      }
+    },
+    handleTakeover() {
+      this.openControlAction('takeover')
+    },
+    openControlAction(action) {
+      this.$refs.controlModeWarningRef?.open({
         robotId: this.selectedRobotId,
-        controlMode,
+        action,
         useSecondaryConfirm: this.preferSecondaryConfirm()
       })
     },
-    handleTakeover() {
-      this.handleModeChange('手动模式')
-    },
-    getTaskRecordId(task) {
-      if (!task) return null
-      return task.executionRecordId
-        || task.activeWorkflowInstanceId
-        || task.workflowInstanceId
-        || task.recordId
-        || task.taskInstanceId
-        || null
-    },
-    unwrapTaskRecord(res) {
-      if (res && res.code !== undefined) {
-        if (res.code === '0' || res.code === 0 || res.code === 200) return res.data || {}
-        throw new Error(res.message || '请求失败')
-      }
-      return res || {}
-    },
-    taskConfirmApi() {
-      return this.preferSecondaryConfirm() ? this.$secondaryConfirm : this.$primaryConfirm
-    },
-    async requestActiveTaskAction({ action, confirmMessage, successMessage, failMessage, api }) {
-      if (this.actingTaskRecord) return
-      try {
-        await this.taskConfirmApi()({
-          title: '提示',
-          message: confirmMessage,
-          confirmText: '确定',
-          cancelText: '取消',
-          onConfirm: async () => {
-            const recordId = this.getTaskRecordId(this.activeTask)
-            if (recordId == null || recordId === '') {
-              this.$message.error('缺少执行记录标识，无法操作')
-              const missing = new Error('缺少执行记录标识')
-              missing.handled = true
-              throw missing
-            }
-            this.actingTaskRecord = true
-            try {
-              const data = this.unwrapTaskRecord(await api(recordId, {}))
-              if (data && data.accepted === false) {
-                this.$message.warning((data && data.message) || '操作未接受')
-                const rejected = new Error((data && data.message) || '操作未接受')
-                rejected.handled = true
-                throw rejected
-              }
-              this.$message.success((data && data.message) || successMessage)
-            } catch (error) {
-              if (!(error && error.handled)) {
-                this.$message.error((error && error.message) || failMessage)
-              }
-              throw error
-            } finally {
-              this.actingTaskRecord = false
-            }
-          }
-        })
-      } catch (error) {
-        // 用户取消
-      }
-    },
     handleResumeActiveTask() {
-      return this.requestActiveTaskAction({
-        action: 'resume',
-        confirmMessage: '是否【恢复】该任务？',
-        successMessage: '已恢复',
-        failMessage: '恢复失败',
-        api: resumeTaskRecord
-      })
+      this.openControlAction('resume')
     },
     handleTerminateActiveTask() {
-      return this.requestActiveTaskAction({
-        action: 'terminate',
-        confirmMessage: '是否【终止】该任务？',
-        successMessage: '已终止',
-        failMessage: '终止失败',
-        api: terminateTaskRecord
-      })
+      this.openControlAction('terminate')
     },
     controlModeCommand(controlMode) {
       return controlMode === '手动模式' ? '手动模式' : '导航模式'
@@ -304,11 +236,10 @@ export default {
     startFrameControl(kind) {
       // 本体需要判断是否是手动模式，否则提示切换到手动模式
       if (this.selectedRobot?.controlMode !== '手动模式' && kind.indexOf('base-') > -1) {
-        // this.$message.warning('请先切换到手动模式')
         if (this.$refs.controlModeWarningRef) {
           this.$refs.controlModeWarningRef.open({
             robotId: this.selectedRobotId,
-            controlMode: '手动模式',
+            action: 'takeover',
             useSecondaryConfirm: this.preferSecondaryConfirm()
           })
         } else {
@@ -316,8 +247,6 @@ export default {
         }
         return
       }
-
-      console.log(123, kind, this.controlTimers[kind]);
       
       if (this.controlTimers[kind]) return
       if (!this.canStartFrameControl(kind)) return

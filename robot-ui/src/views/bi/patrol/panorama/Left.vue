@@ -290,8 +290,8 @@ export default {
         },
       },
       updated: false,
-      img1: require('@/assets/images/new-bi/test.png'),
-      img2: require('@/assets/images/new-bi/warning1.png'),
+      // img1: require('@/assets/images/new-bi/test.png'),
+      // img2: require('@/assets/images/new-bi/warning1.png'),
       startingTaskIds: [],
       actingRecordIds: [],
     }

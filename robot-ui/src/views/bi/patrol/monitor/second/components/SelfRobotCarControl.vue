@@ -9,23 +9,16 @@
 -->
 <template>
   <div class="flx-align-center h100 pt20 pb20 with-bl">
-    <div :class="{ 'd-flex': !vehicleLightDevice && !warningLightDevice }" class="pl30">
-      <div class="mode d-flex flx-align-center" :class="{ 'flex-column': !vehicleLightDevice && !warningLightDevice, 'is-active': isNavMode }">
-        <div class="d-flex flx-align-center">
-          <svg-icon icon-class="mode" />
-          <span class="ml10">自主导航模式</span>
-        </div>
-        <ControlModeActions
-          :is-nav-mode="isNavMode"
-          :show-resume="showTaskResumeActions"
-          :extra-class="{ 'mt10': !vehicleLightDevice && !warningLightDevice, 'ml20': vehicleLightDevice || warningLightDevice }"
-          @takeover="handleTakeover"
-          @resume="handleResumeActiveTask"
-          @terminate="handleTerminateActiveTask"
-          class="ml10"
-        />
-      </div>
-      <div class="mt16 d-flex common-control" :class="{ 'ml30': !vehicleLightDevice && !warningLightDevice, 'is-disabled': selectedRobot?.controlMode !== '手动模式' }">
+    <div class="pl22 d-flex">
+      <ControlModeActions
+        :is-nav-mode="isNavMode"
+        :show-resume="showTaskResumeActions"
+        @takeover="handleTakeover"
+        @resume="handleResumeActiveTask"
+        @terminate="handleTerminateActiveTask"
+        extra-class="vertical-class"
+      />
+      <div class="ml15 d-flex common-control flx-center" :class="{ 'is-disabled': selectedRobot?.controlMode !== '手动模式', 'ml55': !vehicleLightDevice && !warningLightDevice }">
         <div class="outer flx-center">
           <div class="inner flx-center">
             <div class="circle flx-center">移动</div>
@@ -45,7 +38,7 @@
             <svg-icon icon-class="control-arrow" />
           </div>
         </div>
-        <div class="lights ml38 flex-column" style="justify-content: center;">
+        <div class="lights ml18 flex-column" style="justify-content: center;">
           <div v-if="vehicleLightDevice" class="flx-align-center">
             <span class="wp90 tal">车灯：</span>
             <el-switch
@@ -128,33 +121,6 @@ export default {
     border-radius: 2px;
     border: 1px solid var(---, #00AC3A);
     background: rgba(17, 108, 31, 0.50);
-  }
-}
-
-.mode {
-  color: #6A788B;
-  font-family: "Microsoft YaHei";
-  font-size: 12px;
-  line-height: 16px;
-  .svg-icon {
-    font-size: 14px;
-  }
-  &.is-active {
-    color: #FFF;
-  }
-}
-.takeover-btn {
-  padding: 4px 10px;
-  color: #FFF;
-  font-family: "Microsoft YaHei";
-  font-size: 12px;
-  line-height: 16px;
-  border-radius: 4px;
-  background: #021328;
-  box-shadow: 0 0 14px 2px #09F inset;
-  white-space: nowrap;
-  &:hover {
-    color: #0BF9FE;
   }
 }
 

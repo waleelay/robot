@@ -906,29 +906,30 @@
   }
   &.is-disabled {
     .outer {
-      background: #080808;
-      border: 1px solid #434343;
-      box-shadow: 0 0 12px 2px #303030 inset;
+      background: #101214;
+      border-color: #4D4D4D;
+      box-shadow: 0 0 16px 0 #838383 inset;
       .inner {
         position: relative;
-        background: #181818;
-        border: 1px solid #5E5E5E;
+        background: #101214;
+        border-color: #838383;
+        box-shadow: 0 0 16px 4px #838383 inset;
         .circle {
-          background: #181818;
-          border: 1px solid #5E5E5E;
+          background: #4D4D4D;
+          border-color: #4D4D4D;
         }
         &::after {
           position: absolute;
           content: '';
           width: 3.7px;
           height: 100%;
-          border: 1px solid #181818;
-          background: #8F8F8F;
+          border: 1px solid transparent;
+          background: transparent;
           transform: rotate(-45deg);
         }
       }
       .arrow {
-        color: #8F8F8F;
+        color: #4D4D4D;
         cursor: not-allowed;
         pointer-events: none;
       }
@@ -2336,9 +2337,9 @@ input[type="range"].vertical-slider {
           }
           &.primary-confirm-container {
             .box {
-              width: 532px;
+              width: 652px;
               .info-content {
-                padding: 20px 10px 20px 21px;
+                padding: 20px 20px 20px 24px;
                 .message {
                   color: #FFF;
                   font-family: "Alibaba PuHuiTi";

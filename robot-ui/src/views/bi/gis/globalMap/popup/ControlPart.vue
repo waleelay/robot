@@ -1,71 +1,77 @@
 <template>
   <div class="flx-center robot-control3" :class="{ 'is-small flex-column': showSmall }">
-    <div class="outer">
-      <div class="inner w100 h100 flx-center m0">
-        <div class="circle flx-center">移动</div>
-      </div>
-      <div
-        v-for="key in ['advance', 'back', 'turn-left' , 'turn-right']"
-        :key="key"
-        :class="['arrow', robotControlObj[key].class]"
-        :title="robotControlObj[key].label"
-        @mousedown="startFrameControl(robotControlObj[key].key)"
-        @mouseup="stopFrameControl(robotControlObj[key].key)"
-        @mouseleave="stopFrameControl(robotControlObj[key].key)"
-        @touchstart.prevent="startFrameControl(robotControlObj[key].key)"
-        @touchend.prevent="stopFrameControl(robotControlObj[key].key)"
-      >
-        <svg-icon icon-class="control-arrow" />
-      </div>
-    </div>
-    <div :class="{ 'ml20': !showSmall, 'mt15': showSmall }">
-      <div class="control-btns">
-        <div class="btn-box flx-center flex-column" :class="{ 'wp166': !showSmall, 'wp249': showSmall }">
-          <div class="flx-justify-between flex-wrap" :class="{ 'w100': tabIndex === 1, 'wp166': tabIndex === 0 }" style="margin-top: -10px; margin-left: -10px;">
-            <template v-for="(item, index) in operList.slice(tabIndex === 0 ? 0 : 4, tabIndex === 0 ? 4 : 20)">
-              <el-button
-                v-if="item.key !== 'step'"
-                :key="item.key"
-                type="primary"
-                class="mt10 ml10 wp73"
-                :class="{ 'hp36': !showSmall, 'hp26': showSmall }"
-                @mousedown="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
-                @mouseup="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
-                @mouseleave="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
-                @touchstart.prevent="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
-                @touchend.prevent="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
-                @click="controlRobot(item.key)"
-              >
-                {{ item.label }}
-              </el-button>
-              <el-select
-                v-else
-                :key="item.key"
-                v-model="butaiValue"
-                placeholder="切换步态"
-                @change="changeStep"
-                class="wp73 ml10 mt10 butai-select"
-                :class="{ 'tac': butaiValue === 0 }"
-                title="切换步态"
-                popper-class="custom-select control-select-popper p10"
-              >
-                <el-option v-for="item in butaiList" :key="item.label" :label="item.label" :value="item.value" />
-              </el-select>
-            </template>
-          </div>
+    <div
+      class="common-control flx-center"
+      :class="{ 'is-disabled': isBodyControlDisabled, 'flex-column': showSmall }"
+    >
+      <div class="outer">
+        <div class="inner w100 h100 flx-center m0">
+          <div class="circle flx-center">移动</div>
+        </div>
+        <div
+          v-for="key in ['advance', 'back', 'turn-left' , 'turn-right']"
+          :key="key"
+          :class="['arrow', robotControlObj[key].class]"
+          :title="robotControlObj[key].label"
+          @mousedown="startFrameControl(robotControlObj[key].key)"
+          @mouseup="stopFrameControl(robotControlObj[key].key)"
+          @mouseleave="stopFrameControl(robotControlObj[key].key)"
+          @touchstart.prevent="startFrameControl(robotControlObj[key].key)"
+          @touchend.prevent="stopFrameControl(robotControlObj[key].key)"
+        >
+          <svg-icon icon-class="control-arrow" />
         </div>
       </div>
-      <div v-if="vehicleLightDevice && !showSmall" class="lights flx-align-center mt15 ml10">
-        <span>车灯：</span>
-        <el-switch
-          :value="vehicleLightEnabled"
-          :disabled="!hasDeviceAction(vehicleLightDevice, 'light.vehicle.set')"
-          active-text="开启"
-          inactive-text="关闭"
-          active-color="#3DB56A"
-          inactive-color="#5E5E5E"
-          @change="setVehicleLights">
-        </el-switch>
+      <div :class="{ 'ml20': !showSmall, 'mt15': showSmall }">
+        <div class="btns control-btns">
+          <div class="btn-box flx-center flex-column" :class="{ 'wp166': !showSmall, 'wp249': showSmall }">
+            <div class="flx-justify-between flex-wrap" :class="{ 'w100': tabIndex === 1, 'wp166': tabIndex === 0 }" style="margin-top: -10px; margin-left: -10px;">
+              <template v-for="(item, index) in operList.slice(tabIndex === 0 ? 0 : 4, tabIndex === 0 ? 4 : 20)">
+                <el-button
+                  v-if="item.key !== 'step'"
+                  :key="item.key"
+                  type="primary"
+                  class="mt10 ml10 wp73"
+                  :class="{ 'hp36': !showSmall, 'hp26': showSmall, 'is-disabled': isBodyControlDisabled }"
+                  :disabled="isBodyControlDisabled"
+                  @mousedown="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
+                  @mouseup="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
+                  @mouseleave="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
+                  @touchstart.prevent="['zuoyi', 'youyi'].includes(item.key) && startFrameControl(robotControlObj[item.key].key)"
+                  @touchend.prevent="['zuoyi', 'youyi'].includes(item.key) && stopFrameControl(robotControlObj[item.key].key)"
+                  @click="controlRobot(item.key)"
+                >
+                  {{ item.label }}
+                </el-button>
+                <el-select
+                  v-else
+                  :key="item.key"
+                  v-model="butaiValue"
+                  placeholder="切换步态"
+                  :disabled="isBodyControlDisabled"
+                  @change="changeStep"
+                  class="wp73 ml10 mt10 butai-select"
+                  :class="{ 'tac': butaiValue === 0, 'is-disabled': isBodyControlDisabled }"
+                  title="切换步态"
+                  popper-class="custom-select control-select-popper p10"
+                >
+                  <el-option v-for="item in butaiList" :key="item.label" :label="item.label" :value="item.value" />
+                </el-select>
+              </template>
+            </div>
+          </div>
+        </div>
+        <div v-if="vehicleLightDevice && !showSmall" class="lights flx-align-center mt15 ml10">
+          <span>车灯：</span>
+          <el-switch
+            :value="vehicleLightEnabled"
+            active-text="开启"
+            inactive-text="关闭"
+            active-color="#3DB56A"
+            inactive-color="#5E5E5E"
+            @change="setVehicleLights">
+          </el-switch>
+        </div>
       </div>
     </div>
   </div>
@@ -73,7 +79,6 @@
 
 <script>
 import { butaiList, robotControlObj } from '../../../js/constants/robot-control';
-// import robotControlByKeyboard from '../../../js/mixins/robotControlByKeyboard';
 import yuntai from '../../../patrol/monitor/second/components/ptz-control-mixin';
 
 export default {
@@ -88,7 +93,7 @@ export default {
       default: false
     }
   },
-  mixins: [yuntai], // robotControlByKeyboard
+  mixins: [yuntai],
   data() {
     return {
       robotControlObj,
@@ -108,7 +113,11 @@ export default {
       butaiValue: 0
     };
   },
-  mounted() {},
+  computed: {
+    isBodyControlDisabled() {
+      return this.selectedRobot?.controlMode !== '手动模式'
+    }
+  },
   methods: {
     controlRobot(key) {
       if (['zuoyi', 'youyi'].includes(key)) return
@@ -146,34 +155,36 @@ export default {
 }
 .robot-control3 {
   &.is-small {
-    .outer {
-      width: 90px;
-      height: 90px;
-      .inner {
-        .circle {
-          width: 46px;
-          height: 46px;
-          font-size: 16px;
-          line-height: 46px;
+    .common-control {
+      .outer {
+        width: 90px;
+        height: 90px;
+        .inner {
+          .circle {
+            width: 46px;
+            height: 46px;
+            font-size: 10px;
+            line-height: 46px;
+          }
         }
-      }
-      .arrow {
-        font-size: 12px;
-        &.up {
-          top: 5px;
-          left: 38px;
-        }
-        &.right {
-          top: 38px;
-          right: 5px;
-        }
-        &.down {
-          bottom: 5px;
-          left: 38px;
-        }
-        &.left {
-          top: 38px;
-          left: 5px;
+        .arrow {
+          font-size: 12px;
+          &.up {
+            top: 5px;
+            left: 38px;
+          }
+          &.right {
+            top: 38px;
+            right: 5px;
+          }
+          &.down {
+            bottom: 5px;
+            left: 38px;
+          }
+          &.left {
+            top: 38px;
+            left: 5px;
+          }
         }
       }
     }
@@ -190,8 +201,13 @@ export default {
         }
       }
     }
+    .btns {
+      ::v-deep .el-button {
+        line-height: 26px;
+      }
+    }
   }
-    
+
   .lights {
     span {
       color: #fff;
@@ -205,28 +221,21 @@ export default {
     .el-switch {
       line-height: 18px !important;
       line-height: 16px;
-      // &.is-checked .el-switch__core {
-      //   border-color: var(--success-color) !important;
-      //   background-color: var(--success-color) !important;
-      // }
-      // &.with-text {
-        .el-switch__label.el-switch__label--right {
-          margin-left: 3px;
+      .el-switch__label.el-switch__label--right {
+        margin-left: 3px;
+      }
+      .el-switch__core {
+        width: 50px !important;
+        &:after {
+          top: 2px;
+          left: 2px;
+          width: 14px;
+          height: 14px;
         }
-        .el-switch__core {
-          width: 50px !important;
-          &:after {
-            top: 2px;
-            left: 2px;
-            width: 14px;
-            height: 14px;
-          }
-        }
-      // }
+      }
       &__label {
         position: absolute;
         display: none !important;
-        // height: 16px;
         font-weight: normal !important;
         z-index: 2000;
         * {
@@ -250,102 +259,103 @@ export default {
       }
     }
   }
-  .outer {
-    position: relative;
-    width: 150px;
-    height: 150px;
-    background: #021328;
-    border: 0.75px solid #18ADFE;
-    box-shadow: 0 0 16.544px 3.309px #09F inset;
-    border-radius: 50%;
-    .inner {
+
+  .common-control {
+    .outer {
+      position: relative;
+      width: 150px;
+      height: 150px;
+      background: #021328;
+      border: 0.75px solid #18ADFE;
+      box-shadow: 0 0 16.544px 3.309px #09F inset;
       border-radius: 50%;
-      .circle {
-        position: relative;
-        width: 76.5px;
-        height: 76.5px;
-        margin: 0 auto;
-        background: #159AFF;
-        border: 0.466px solid #159AFF;
-        aspect-ratio: 1/1;
-        color: #fff;
-        font-size: 16px;
-        line-height: 76.5px;
-        // background: #159AFF;
+      .inner {
         border-radius: 50%;
+        .circle {
+          position: relative;
+          width: 76.5px;
+          height: 76.5px;
+          margin: 0 auto;
+          background: #159AFF;
+          border: 0.466px solid #159AFF;
+          aspect-ratio: 1/1;
+          color: #fff;
+          font-size: 16px;
+          line-height: 76.5px;
+          border-radius: 50%;
+        }
+      }
+      .arrow {
+        position: absolute;
+        font-size: 21px;
+        text-align: center;
+        color: #159AFF;
+        cursor: pointer;
+        &.up {
+          top: 8.25px;
+          left: 64.25px;
+        }
+        &.right {
+          top: 64.25px;
+          right: 8.25px;
+          transform: rotate(90deg);
+          transform-origin: center;
+        }
+        &.down {
+          bottom: 8.25px;
+          left: 64.25px;
+          transform: rotateZ(-180deg);
+          transform-origin: center;
+        }
+        &.left {
+          top: 64.25px;
+          left: 8.25px;
+          transform: rotate(-90deg);
+          transform-origin: center;
+        }
       }
     }
-    .arrow {
-      position: absolute;
-      font-size: 21px;
-      text-align: center;
-      color: #159AFF;
-      cursor: pointer;
-      &.up {
-        top: 8.25px;
-        left: 64.25px;
-      }
-      &.right {
-        top: 64.25px;
-        right: 8.25px;
-        transform: rotate(90deg);
-        transform-origin: center;
-      }
-      &.down {
-        bottom: 8.25px;
-        left: 64.25px;
-        transform: rotateZ(-180deg);
-        transform-origin: center;
-      }
-      &.left {
-        top: 64.25px;
-        left: 8.25px;
-        transform: rotate(-90deg);
-        transform-origin: center;
+    &.is-disabled {
+      .outer {
+        background: #101214;
+        border-color: #4D4D4D;
+        box-shadow: 0 0 16.544px 3.309px #838383 inset;
+        .inner {
+          .circle {
+            background: #4D4D4D;
+            border-color: #4D4D4D;
+          }
+        }
+        .arrow {
+          color: #4D4D4D;
+        }
       }
     }
   }
 
-  .control-btns {
-    .el-button, .el-select .el-input__inner {
-      // padding: 7px 10px;
+  .btns {
+    margin-top: -10px;
+    margin-left: -10px;
+    ::v-deep .el-button {
       padding: 0;
-      color: #fff;
-      text-align: center;
-      font-family: "Alibaba PuHuiTi";
+      color: #FFF;
       font-size: 12px;
-      font-style: normal;
-      font-weight: 400;
-      line-height: 16px; /* 100% */
       letter-spacing: 0.24px;
-      border: none;
-      border-radius: 4px;
       background: #021328;
       box-shadow: 0 0 14px 2px #09F inset;
+      border-radius: 4px;
+      border: none;
+      text-align: center;
       &.is-disabled {
-        color: rgba(183, 188, 194, 0.50);
-        background: rgba(34, 53, 67, 0.50);
+        background: #0a0a0a;
+        box-shadow: 0 0 14px 2px #a6a6a6 inset;
+        cursor: not-allowed;
       }
       &:not(.is-disabled) {
         &:active {
           color: #0BF9FE;
           box-shadow: 0 0 10px 3px #0BF9FE inset;
         }
-      }
-    }
-    .el-select {
-      .el-input__inner {
-        height: 30px !important;
-        padding-right: 27px;
-        line-height: 30px !important;
-        &::placeholder {
-          color: #fff;
-        }
-      }
-      .el-input__suffix .el-input__icon {
-        color: #fff;
-        font-size: 12px;
-        line-height: 100%;
       }
     }
   }
@@ -381,6 +391,13 @@ export default {
         font-size: 12px;
         line-height: 36px;
         color: #FFF;
+      }
+    }
+    &.is-disabled {
+      .el-input__inner {
+        background: #0a0a0a;
+        box-shadow: 0 0 14px 2px #a6a6a6 inset;
+        cursor: not-allowed;
       }
     }
   }
