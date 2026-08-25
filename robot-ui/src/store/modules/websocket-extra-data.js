@@ -20,9 +20,15 @@ import {
   getTaskById,
   listTasksForRobot
 } from "../../views/bi/patrol/business/task-equipment";
-import { getPatrolPanoramaOverview } from '../../api/new-bi'
+import {
+  getPatrolPanoramaMapScene,
+  getPatrolPanoramaMapTaskRoutes,
+  getPatrolPanoramaOverview,
+  getPatrolPanoramaTaskDetail
+} from '../../api/new-bi'
 
 let overviewRefreshPromise = null
+const mapResourcePromises = new Map()
 
 const state = {
   // 设备对象：设备详情，包含坐标位置，task基本信息
@@ -290,7 +296,8 @@ const actions = {
       commit('RESET_OVERVIEW_RESOURCE_STATE')
       dispatch('websocketRobot/loadRobots', [], { root: true })
     }
-    overviewRefreshPromise = getPatrolPanoramaOverview()
+    overviewRefreshPromise = loadOverviewWithRetry()
+      .then(data => dispatch('hydrateOverview', data))
       .then(data => dispatch('setAll', data))
       .catch(error => {
         commit('SET_OVERVIEW_LOAD_ERROR', true)
@@ -300,6 +307,59 @@ const actions = {
         overviewRefreshPromise = null
       })
     return overviewRefreshPromise
+  },
+  async hydrateOverview(context, overview) {
+    const mapId = initialSlamMapId(overview)
+    if (!mapId) return overview
+    const [scene, taskRoutes] = await Promise.all([
+      getPatrolPanoramaMapScene(mapId),
+      getPatrolPanoramaMapTaskRoutes(mapId)
+    ])
+    return mergeOverviewMapResources(overview, scene, taskRoutes)
+  },
+  async loadMapResources({ state, commit }, mapId) {
+    if (mapId === undefined || mapId === null || mapId === '' || mapId === 'gis') return
+    const key = String(mapId)
+    let pending = mapResourcePromises.get(key)
+    if (!pending) {
+      pending = Promise.all([
+        getPatrolPanoramaMapScene(mapId),
+        getPatrolPanoramaMapTaskRoutes(mapId)
+      ]).finally(() => mapResourcePromises.delete(key))
+      mapResourcePromises.set(key, pending)
+    }
+    const [scene, taskRoutes] = await pending
+    const maps = (state.slamMapList || []).map(item => String(item?.id) === key
+      ? { ...item, points: scene?.points || [], fixedCamares: scene?.fixedCamares || [] }
+      : item)
+    commit('SET_SLAM_MAP_LIST', maps)
+    ;(taskRoutes?.items || []).forEach(item => {
+      const previous = getTaskById(state.taskData, item.taskId) || {}
+      commit('SET_TASK_INFO', { ...previous, ...item })
+      commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } })
+    })
+    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(maps, state.robotList || [], Object.values(state.taskData || {})))
+  },
+  /**
+   * 完整任务数据只在用户打开任务视频时请求，避免首屏和切图预取回放、设备任务等高成本数据。
+   * 详情请求失败时由调用方继续使用首屏摘要，不能影响已经可用的视频入口。
+   */
+  async loadTaskDetail({ state, commit }, taskId) {
+    if (taskId === undefined || taskId === null || taskId === '') return null
+    const response = await getPatrolPanoramaTaskDetail(taskId)
+    const payload = response?.data && response?.task === undefined ? response.data : response
+    const task = payload?.task
+    if (!task) return null
+    const previous = getTaskById(state.taskData, taskId) || {}
+    const merged = { ...previous, ...task }
+    commit('SET_TASK_INFO', merged)
+    if (merged.mapId !== undefined && merged.mapId !== null) {
+      commit('SET_TASK_PATH_POINTS', {
+        taskId: merged.taskId ?? taskId,
+        data: { mapId: merged.mapId, pathPoints: merged.pathPoints || [] }
+      })
+    }
+    return merged
   },
   setAll({commit, state, dispatch}, data) {
     commit('RESET_OVERVIEW_RESOURCE_STATE')
@@ -522,12 +582,54 @@ const actions = {
   setShowRobotIds({ commit }, value) {
     commit('SET_SHOW_ROBOT_IDS', value);
   },
-  setGlobalMapId({ commit }, value) {
+  setGlobalMapId({ commit, dispatch }, value) {
     commit('SET_GLOBAL_MAP_ID', value);
+    return dispatch('loadMapResources', value)
   },
   setSlamEmptyTipShown({ commit }, value) {
     commit('SET_SLAM_EMPTY_TIP_SHOWN', value);
   },
+}
+
+/**
+ * 并发登录或下游短暂繁忙时，只在当前页保留一次带抖动的退避重试。
+ * refreshOverviewResources 已通过 overviewRefreshPromise 保证同页不会产生第二个在途请求。
+ */
+async function loadOverviewWithRetry() {
+  try {
+    return await getPatrolPanoramaOverview()
+  } catch (error) {
+    const retryDelayMs = 500 + Math.floor(Math.random() * 300)
+    await new Promise(resolve => window.setTimeout(resolve, retryDelayMs))
+    return getPatrolPanoramaOverview()
+  }
+}
+
+function initialSlamMapId(overview) {
+  const devices = Array.isArray(overview?.devices) ? overview.devices : []
+  const hasGpsDevice = devices.some(item => {
+    const lat = item?.location?.lat
+    const lng = item?.location?.lng
+    return lat != null && lat !== '' && lng != null && lng !== ''
+      && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+  })
+  if (hasGpsDevice) return null
+  const maps = Array.isArray(overview?.map) ? overview.map : []
+  const mapId = maps[0]?.id
+  return mapId === undefined || mapId === null || mapId === '' ? null : mapId
+}
+
+function mergeOverviewMapResources(overview, scene, taskRoutes) {
+  const mapId = scene?.mapId
+  const maps = (overview?.map || []).map(item => String(item?.id) === String(mapId)
+    ? { ...item, points: scene?.points || [], fixedCamares: scene?.fixedCamares || [] }
+    : item)
+  const routesByTaskId = new Map((taskRoutes?.items || []).map(item => [String(item.taskId), item]))
+  const tasks = (overview?.tasks || []).map(task => {
+    const route = routesByTaskId.get(String(task.taskId))
+    return route ? { ...task, mapId: route.mapId, pathPoints: route.pathPoints || [] } : task
+  })
+  return { ...overview, map: maps, tasks }
 }
 
 function buildSlamOfRobot(maps, robots, tasks) {

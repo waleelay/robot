@@ -46,6 +46,11 @@ bigscreen:
     allowed-origin-patterns: ${BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:8080,http://127.0.0.1:8080,http://192.168.*.*:8080,https://192.168.*.*:4443}
 
 panorama:
+  general:
+    # 单个 Overview 会并行读取多个非任务资源；16 足以覆盖一次正常扇出，仍受全局闸门保护。
+    connect-timeout-ms: ${PANORAMA_GENERAL_CONNECT_TIMEOUT_MS:1000}
+    read-timeout-ms: ${PANORAMA_GENERAL_READ_TIMEOUT_MS:1500}
+    max-concurrency: ${PANORAMA_GENERAL_MAX_CONCURRENCY:16}
   task:
     # Management 任务接口使用独立短超时和并发闸门，避免慢请求拖垮全景聚合。
     connect-timeout-ms: ${PANORAMA_TASK_CONNECT_TIMEOUT_MS:1000}

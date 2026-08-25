@@ -55,6 +55,12 @@ export async function initAuth() {
       keycloak.updateToken(0).catch(() => login())
     }
     clearOidcCallbackParams()
+    // Keycloak 适配器在部分浏览器中会在 init resolve 后继续回写当前回调 URL；
+    // 下一轮事件循环和短延迟各复查一次，只移除一次性协议参数，不触发登录或路由跳转。
+    window.setTimeout(clearOidcCallbackParams, 0)
+    window.setTimeout(clearOidcCallbackParams, 500)
+    window.setTimeout(clearOidcCallbackParams, 2000)
+    window.setTimeout(clearOidcCallbackParams, 5000)
     return true
   })
   return initPromise

@@ -43,6 +43,11 @@ public class PanoramaService {
     private static final ZoneOffset CHINA_ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final long STATS_CACHE_TTL_MILLIS = 3000;
+    /**
+     * 同一登录主体的首屏在 5 秒窗口内复用同一份成功快照。它既避免高频刷新击穿 Management，
+     * 也不把失败结果缓存给后续用户请求。
+     */
+    private static final long OVERVIEW_CACHE_TTL_MILLIS = 5000;
     private static final long OVERVIEW_TIMEOUT_MILLIS = 8000;
     /** 顶层编排允许等待子 I/O，但绝不占用子 I/O 执行器。 */
     private static final ThreadPoolExecutor OVERVIEW_EXECUTOR = new ThreadPoolExecutor(
@@ -70,6 +75,9 @@ public class PanoramaService {
     private final PanoramaCenterClient centerClient;
     private final ObjectMapper objectMapper;
     private final Map<String, CachedSnapshot> statsCache = new ConcurrentHashMap<>();
+    private final Map<String, Object> statsCacheLocks = new ConcurrentHashMap<>();
+    private final Map<String, CachedSnapshot> overviewCache = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<Map<String, Object>>> overviewInFlight = new ConcurrentHashMap<>();
 
     public PanoramaService(PanoramaCenterClient centerClient, ObjectMapper objectMapper) {
         this.centerClient = centerClient;
@@ -77,6 +85,66 @@ public class PanoramaService {
     }
 
     public Map<String, Object> overview() {
+        String cacheKey = "overview:" + statsUserKey();
+        CachedSnapshot cached = overviewCache.get(cacheKey);
+        long now = System.currentTimeMillis();
+        if (cached != null && now - cached.createdAt < OVERVIEW_CACHE_TTL_MILLIS) {
+            return castMap(cached.value);
+        }
+        SecurityContext callerContext = copySecurityContext(SecurityContextHolder.getContext());
+        CompletableFuture<Map<String, Object>> shared = overviewInFlight.computeIfAbsent(cacheKey, key -> {
+            CompletableFuture<Map<String, Object>> created;
+            try {
+                created = CompletableFuture.supplyAsync(
+                        () -> loadOverviewWithSecurityContext(callerContext), OVERVIEW_EXECUTOR);
+            } catch (RejectedExecutionException error) {
+                throw new IllegalStateException("大屏总览请求繁忙，请稍后重试", error);
+            }
+            created.whenComplete((value, error) -> {
+                if (error == null && value != null) {
+                    overviewCache.put(key, new CachedSnapshot(System.currentTimeMillis(), value));
+                }
+                overviewInFlight.remove(key, created);
+            });
+            return created;
+        });
+        return joinOverview(shared);
+    }
+
+    private SecurityContext copySecurityContext(SecurityContext source) {
+        SecurityContext copy = SecurityContextHolder.createEmptyContext();
+        copy.setAuthentication(source == null ? null : source.getAuthentication());
+        return copy;
+    }
+
+    private Map<String, Object> loadOverviewWithSecurityContext(SecurityContext callerContext) {
+        SecurityContext previous = SecurityContextHolder.getContext();
+        try {
+            SecurityContextHolder.setContext(callerContext);
+            return loadOverviewWithinDeadline();
+        } finally {
+            SecurityContextHolder.setContext(previous);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> castMap(Object value) {
+        return (Map<String, Object>) value;
+    }
+
+    private Map<String, Object> joinOverview(CompletableFuture<Map<String, Object>> future) {
+        try {
+            return future.join();
+        } catch (CompletionException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw error;
+        }
+    }
+
+    private Map<String, Object> loadOverviewWithinDeadline() {
         Long previousDeadline = OVERVIEW_DEADLINE_NANOS.get();
         OVERVIEW_DEADLINE_NANOS.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(OVERVIEW_TIMEOUT_MILLIS));
         try {
@@ -90,13 +158,12 @@ public class PanoramaService {
         OverviewRequestCache cache = new OverviewRequestCache();
         Map<String, Object> overview = object("serverTime", now());
         CompletableFuture<List<Map<String, Object>>> devicesFuture = asyncOverview(() -> devices(cache));
-        CompletableFuture<PanoramaTasks> tasksFuture = asyncOverview(() -> taskPayload(cache));
+        CompletableFuture<PanoramaTasks> tasksFuture = asyncOverview(this::taskSummaries);
         CompletableFuture<List<Map<String, Object>>> mapsFuture = asyncOverview(centerClient::enabledMaps);
         CompletableFuture<Map<String, Object>> alarmsFuture = asyncOverview(this::alarmsPayload);
         CompletableFuture<Map<String, Object>> mileageFuture = asyncOverview(this::todayMileageSummary);
 
         List<Map<String, Object>> maps = join(mapsFuture, List.of());
-        prefetchMapResources(maps, cache);
         List<Map<String, Object>> rawDevices = joinRequired(devicesFuture);
         PanoramaTasks panoramaTasks = join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED"));
         List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), rawDevices);
@@ -111,7 +178,7 @@ public class PanoramaService {
         overview.put("taskOverview", overviewTaskOverview(tasks));
         overview.put("dataQuality", object("tasks", panoramaTasks.dataQuality()));
 
-        overview.put("map", mapsWithPointsAndDevices(maps, devices, cache));
+        overview.put("map", maps.stream().map(this::overviewMap).toList());
 
         overview.put("alarms", overviewAlarms(join(alarmsFuture, emptyAlarmsPayload())));
         return overview;
@@ -158,9 +225,17 @@ public class PanoramaService {
         if (snapshot != null && now - snapshot.createdAt < STATS_CACHE_TTL_MILLIS) {
             return (T) snapshot.value;
         }
-        T value = supplier.get();
-        statsCache.put(key, new CachedSnapshot(now, value));
-        return value;
+        Object lock = statsCacheLocks.computeIfAbsent(key, ignored -> new Object());
+        synchronized (lock) {
+            snapshot = statsCache.get(key);
+            now = System.currentTimeMillis();
+            if (snapshot != null && now - snapshot.createdAt < STATS_CACHE_TTL_MILLIS) {
+                return (T) snapshot.value;
+            }
+            T value = supplier.get();
+            statsCache.put(key, new CachedSnapshot(now, value));
+            return value;
+        }
     }
 
     private String statsUserKey() {
@@ -475,6 +550,80 @@ public class PanoramaService {
                 .orElseGet(this::emptyDeviceDetail);
     }
 
+    /** 当前地图所需静态场景数据；不加载其他地图的点位。 */
+    public Map<String, Object> mapScene(String mapId) {
+        if (mapId == null || mapId.isBlank()) {
+            throw new IllegalArgumentException("mapId is required");
+        }
+        return cachedStats("map-scene:" + mapId, () -> mapScenePayload(mapId));
+    }
+
+    private Map<String, Object> mapScenePayload(String mapId) {
+        List<Map<String, Object>> points = centerClient.mapPoints(mapId);
+        List<Map<String, Object>> fixedCameras = centerClient.fixedCameras(mapId);
+        return object(
+                "serverTime", now(),
+                "mapId", mapId,
+                "points", overviewPoints(points),
+                "fixedCamares", fixedCameras);
+    }
+
+    /** 当前地图关联任务的路径数据；不加载任务回放或设备任务明细。 */
+    public Map<String, Object> mapTaskRoutes(String mapId) {
+        if (mapId == null || mapId.isBlank()) {
+            throw new IllegalArgumentException("mapId is required");
+        }
+        return cachedStats("map-task-routes:" + mapId, () -> mapTaskRoutesPayload(mapId));
+    }
+
+    private Map<String, Object> mapTaskRoutesPayload(String mapId) {
+        OverviewRequestCache cache = new OverviewRequestCache();
+        TaskDataQuality quality = new TaskDataQuality();
+        List<Map<String, Object>> taskPlans = joinTask(
+                async(centerClient::taskWorkflowPlans), List.of(), quality, "TASK_PLANS_UNAVAILABLE");
+        TaskRouteResolver routeResolver = new TaskRouteResolver(taskPlans, cache, quality);
+        for (int index = 0; index < taskPlans.size(); index++) {
+            routeResolver.prefetch(taskPlans.get(index), index);
+        }
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (int index = 0; index < taskPlans.size(); index++) {
+            Map<String, Object> task = taskPlans.get(index);
+            TaskRouteData route = routeResolver.resolve(task, index);
+            if (Objects.equals(mapId, string(route.mapId()))) {
+                items.add(object(
+                        "taskId", firstValue(task, "id", "taskId"),
+                        "workflowInstanceId", planWorkflowInstanceId(task),
+                        "mapId", route.mapId(),
+                        "pathPoints", overviewPoints(route.pathPoints())));
+            }
+        }
+        return object(
+                "serverTime", now(),
+                "mapId", mapId,
+                "items", items,
+                "dataQuality", object("tasks", quality.snapshot()));
+    }
+
+    /** 任务详情仅在用户打开任务时加载，避免首屏预取回放和设备任务明细。 */
+    public Map<String, Object> taskDetail(String taskId) {
+        if (taskId == null || taskId.isBlank()) {
+            throw new IllegalArgumentException("taskId is required");
+        }
+        OverviewRequestCache cache = new OverviewRequestCache();
+        PanoramaTasks panoramaTasks = taskPayload(cache);
+        return panoramaTasks.items().stream()
+                .filter(task -> Objects.equals(taskId, string(task.get("taskId"))))
+                .findFirst()
+                .map(task -> object(
+                        "serverTime", now(),
+                        "task", task,
+                        "dataQuality", object("tasks", panoramaTasks.dataQuality())))
+                .orElseGet(() -> object(
+                        "serverTime", now(),
+                        "task", null,
+                        "dataQuality", object("tasks", panoramaTasks.dataQuality())));
+    }
+
     public Map<String, Object> tasks() {
         OverviewRequestCache cache = new OverviewRequestCache();
         CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
@@ -497,7 +646,7 @@ public class PanoramaService {
     }
 
     public Map<String, Object> actionableWorkflowAlarms() {
-        List<Map<String, Object>> items = centerClient.actionableWorkflowAlarms().stream()
+        List<Map<String, Object>> items = cachedStats("actionable-workflow-alarms", centerClient::actionableWorkflowAlarms).stream()
                 .map(this::actionableWorkflowAlarmItem)
                 .toList();
         return object(
@@ -562,9 +711,6 @@ public class PanoramaService {
         List<Map<String, Object>> validManagementDevices = managementDevices.stream()
                 .filter(this::hasDeviceId)
                 .toList();
-        List<CompletableFuture<Map<String, Object>>> deviceSourceFutures = validManagementDevices.stream()
-                .map(device -> async(() -> deviceSource(device)))
-                .toList();
         Map<String, Map<String, Object>> statusBySerial = join(statusBySerialFuture, Map.of());
         Map<String, String> deviceTypeNames = deviceTypeNames(join(deviceTypeOptionsFuture, List.of()));
         List<Map<String, Object>> result = new ArrayList<>();
@@ -573,8 +719,7 @@ public class PanoramaService {
             String robotId = firstString(managementDevice, "serialNumber");
             Map<String, Object> realtimeStatus = statusBySerial.getOrDefault(robotId, Map.of());
             Map<String, Object> registeredRobot = registeredRobotsById.getOrDefault(robotId, Map.of());
-            Map<String, Object> source = join(deviceSourceFutures.get(index), managementDevice);
-            Map<String, Object> device = device(source, realtimeStatus, registeredRobot, deviceTypeNames);
+            Map<String, Object> device = device(managementDevice, realtimeStatus, registeredRobot, deviceTypeNames);
             result.add(device);
         }
         Map<String, Object> fixedCameraHealthResponse = join(fixedCameraHealthFuture, Map.of());
@@ -950,6 +1095,55 @@ public class PanoramaService {
         return new PanoramaTasks(result, taskInstances, quality.snapshot());
     }
 
+    /**
+     * 首屏只读取任务计划和实例列表，输出页面列表、统计与设备关联所需的摘要；不触发定义、回放、
+     * 设备任务、路径点等按需数据。
+     */
+    private PanoramaTasks taskSummaries() {
+        TaskDataQuality quality = new TaskDataQuality();
+        CompletableFuture<List<Map<String, Object>>> taskPlansFuture = async(centerClient::taskWorkflowPlans);
+        CompletableFuture<List<Map<String, Object>>> taskInstancesFuture = async(centerClient::taskWorkflowInstances);
+        List<Map<String, Object>> taskPlans = joinTask(
+                taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
+        List<Map<String, Object>> taskInstances = joinTask(
+                taskInstancesFuture, List.of(), quality, "TASK_INSTANCES_UNAVAILABLE");
+        Map<String, Map<String, Object>> instancesById = taskInstances.stream()
+                .filter(item -> firstString(item, "id", "workflowInstanceId") != null)
+                .collect(Collectors.toMap(
+                        item -> firstString(item, "id", "workflowInstanceId"),
+                        Function.identity(),
+                        (left, right) -> right));
+        List<Map<String, Object>> items = taskPlans.stream()
+                .map(plan -> taskSummary(plan, instancesById.get(string(planWorkflowInstanceId(plan)))))
+                .toList();
+        return new PanoramaTasks(items, taskInstances, quality.snapshot());
+    }
+
+    private Map<String, Object> taskSummary(Map<String, Object> source, Map<String, Object> instance) {
+        Map<String, Object> safeInstance = instance == null ? Map.of() : instance;
+        String rawStatus = taskPlanStatus(source, safeInstance);
+        String startTime = formatTime(value(
+                firstString(safeInstance, "startedAt"),
+                firstString(source, "startedAt", "lastStartedAt", "startTime")));
+        String endTime = formatTime(value(
+                firstString(safeInstance, "completedAt"),
+                firstString(source, "completedAt", "lastCompletedAt", "endTime")));
+        return object(
+                "taskId", firstValue(source, "id", "taskId"),
+                "workflowInstanceId", planWorkflowInstanceId(source),
+                "name", firstString(source, "planName", "workflowName", "name"),
+                "executionMode", firstValue(source, "executionMode"),
+                "expectedDurationSeconds", firstValue(source, "expectedDurationSeconds"),
+                "status", taskStatusCode(rawStatus),
+                "statusName", taskStatusName(rawStatus),
+                "startTime", startTime,
+                "endTime", endTime,
+                "timeRange", timeRange(startTime, endTime, null),
+                "equipmentList", equipmentList(source, safeInstance, Map.of(), List.of()),
+                "mapId", firstValue(source, "mapId", "mapID"),
+                "pathPoints", List.of());
+    }
+
     private Map<String, Object> taskItem(
             Map<String, Object> source,
             TaskRouteData routeData,
@@ -1090,12 +1284,11 @@ public class PanoramaService {
         String occurredTo = now.format(DATE_TIME_FORMATTER);
         List<Map<String, Object>> todayAlarms = centerClient.alarms(null, occurredFrom, occurredTo);
         List<Map<String, Object>> unhandledAlarms = centerClient.alarms("NEW", null, null);
-        TaskInstanceResolver taskInstanceResolver = new TaskInstanceResolver(List.of(), new TaskDataQuality());
         List<Map<String, Object>> summaryItems = todayAlarms.stream()
-                .map(alarm -> alarmItem(alarm, taskInstanceResolver))
+                .map(alarm -> alarmItem(alarm, null))
                 .toList();
         List<Map<String, Object>> items = unhandledAlarms.stream()
-                .map(alarm -> alarmItem(alarm, taskInstanceResolver))
+                .map(alarm -> alarmItem(alarm, null))
                 .toList();
         List<Map<String, Object>> high = filterAlarms(items, "HIGH");
         List<Map<String, Object>> medium = filterAlarms(items, "MEDIUM");
@@ -1110,7 +1303,7 @@ public class PanoramaService {
 
     private Map<String, Object> alarmItem(Map<String, Object> source, TaskInstanceResolver taskInstanceResolver) {
         Object taskId = firstValue(source, "taskInstanceId", "taskId");
-        Map<String, Object> taskInstance = taskInstanceResolver.instance(taskId);
+        Map<String, Object> taskInstance = taskInstanceResolver == null ? Map.of() : taskInstanceResolver.instance(taskId);
         return object(
                 "alarmId", firstValue(source, "id", "alarmId", "alarmCode"),
                 "title", firstString(source, "title", "alarmName"),
@@ -2278,7 +2471,8 @@ public class PanoramaService {
                     "invalidReferenceCount", invalidWorkflowReferences.size(),
                     "invalidWorkflowReferences", List.copyOf(invalidWorkflowReferences),
                     "executor", executor,
-                    "managementConcurrency", centerClient.taskRequestPoolSnapshot());
+                    "managementConcurrency", centerClient.taskRequestPoolSnapshot(),
+                    "managementGeneralConcurrency", centerClient.generalRequestPoolSnapshot());
         }
     }
 

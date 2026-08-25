@@ -13,7 +13,6 @@
 import mqttClient from '@/plugins/mqtt-client'
 import { mapActions } from 'vuex';
 import { Message } from 'element-ui'
-import { getPatrolPanoramaOverview } from '../../api/new-bi';
 import ScaleScreen from './../../components/largeScreen/scale-screen.vue'
 import WarningPending from './patrol/panorama/warning/WarnPending1.vue';
 import WarnInfo from './patrol/panorama/warning/WarnInfo.vue';
@@ -39,8 +38,7 @@ export default {
   async mounted() {
     await this.clearCameras()
     try {
-      const res = await getPatrolPanoramaOverview()
-      this.setAll(res)
+      await this.refreshOverviewResources({ failClosed: false })
     } catch (error) {
       this.markOverviewLoadFailed()
       Message.error('大屏数据暂不可用，请稍后刷新页面重试')
@@ -50,7 +48,7 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['connectMediaWebSocket', 'stopCamera']),
-    ...mapActions('websocketExtraData', ['setAll', 'markOverviewLoadFailed']),
+    ...mapActions('websocketExtraData', ['refreshOverviewResources', 'markOverviewLoadFailed']),
     async clearCameras() {
       for (const [index, key] of Object.keys(this.activeCameras).entries()) {
         if (this.activeCameras[key]?.camera) {

@@ -30,7 +30,7 @@ src/main/java/com/robot/bigscreen/
 
 - `BigscreenProxyController`：代理 `/api/control/**`、`/api/media/**`、`/api/manage/**` 和 `/api/v1/management/**`；`GET /api/control/robots` 固定返回 `410`。`/internal/**` 仅供服务间内网调用，不注册为 BFF 对外代理。
 - `BusinessTaskProxyController`：只代理任务计划、流程定义、执行记录、设备和地图白名单。
-- `PanoramaService`：并行查询管理端与 Control，组装 overview、设备详情、任务和告警。
+- `PanoramaService`：组装全景摘要、当前地图资源、按需设备/任务详情和告警。`overview` 只返回首屏所需摘要；地图点、任务路径和任务完整详情由独立接口按需读取，避免首屏预取回放和逐设备详情。
 - `StatisticsService`：基于授权设备、实时状态、任务、告警和 Control 里程汇总统计，并同步生成/保存 PDF；缺少权威来源的指标保持 `null`。
 - `BigscreenWebSocketBridgeHandler`：为每个浏览器连接建立一条 Control 上游连接；按用户和组织复用最长 30 秒的授权快照，在事件下发和控制上行前强制检查快照及 Token 有效期。后台刷新暂时失败时保留尚未过期的授权快照并继续重试；JWT 到期或 Management 明确返回 `401` 时以 `4001` 关闭，避免节点时钟漂移把凭证失效误报为权限服务故障；只有其他授权刷新失败持续至快照超过最大陈旧时间才以 `4003` 关闭。资源集合确认变化时发送 `bigscreen.authorization.changed`，通知前端重拉 Overview。
 - `PanoramaWebSocketEventAdapter`：将 `robot.state` 等事件适配成 `panorama.*`。
@@ -87,6 +87,9 @@ RTSP 可用时 `status=online`，缺失或过期状态为 `unknown`。`playable`
 | `PANORAMA_TASK_CONNECT_TIMEOUT_MS` | Management 任务专用连接超时，默认 1000 ms，代码限制 100 至 5000 ms |
 | `PANORAMA_TASK_READ_TIMEOUT_MS` | Management 任务专用读取超时，默认 1500 ms，代码限制 100 至 10000 ms |
 | `PANORAMA_TASK_MAX_CONCURRENCY` | 单实例 Management 任务请求并发上限，默认 8，代码限制 1 至 32 |
+| `PANORAMA_GENERAL_CONNECT_TIMEOUT_MS` | Management 通用资源连接超时，默认 1000 ms，代码限制 100 至 5000 ms |
+| `PANORAMA_GENERAL_READ_TIMEOUT_MS` | Management 通用资源读取超时，默认 1500 ms，代码限制 100 至 10000 ms |
+| `PANORAMA_GENERAL_MAX_CONCURRENCY` | 单实例 Management 通用资源请求并发上限，默认 16，代码限制 1 至 32 |
 | `BIGSCREEN_AUTH_CLIENT_ID` | JWT `azp/aud` 目标客户端 |
 | `BIGSCREEN_AUTH_ISSUER_URI`、`BIGSCREEN_AUTH_JWK_SET_URI` | JWT Issuer 与 JWK |
 | `BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS` | CORS 来源模式 |
@@ -97,6 +100,8 @@ RTSP 可用时 `status=online`，缺失或过期状态为 `unknown`。`playable`
 生产必须使用真实 HTTPS Issuer/JWK、受控 CORS 和内部下游地址。若 REST 正常但 Nginx 返回 502，应检查 upstream，并确认代理未重复转发 `Connection`、`Transfer-Encoding`、`Content-Length`、`Upgrade` 等 hop-by-hop Header。
 
 新增聚合字段时必须同步维护字段来源映射；下游不可用时应保留明确的空值或错误语义，不新增生产假数据兜底。
+
+全景首屏按已认证 JWT 的 `sub` 在单实例内合并并成功缓存 5 秒；失败结果不缓存。地图场景、地图任务路径、可处置工作流告警和统计分块按同一主体短缓存 3 秒并在同键并发时合并一次读取。该缓存仅用于削峰，不替代权限校验，也不跨用户共享；缓存键和锁的清理、下游 HTTP 主动取消、熔断及多权限并发边界仍按生产风险清单持续验收。
 
 全景今日里程和统计页区间里程由 Control 对边缘状态上报持久化计算，BFF 通过
 `/api/control/statistics/mileage` 批量查询，展示单位统一换算为 `KM`。缺少有效样本时保持

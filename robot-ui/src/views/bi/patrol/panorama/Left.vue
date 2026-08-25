@@ -332,7 +332,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketExtraData', ['setRobotAlarmInfo', 'setShowRobotIds']),
+    ...mapActions('websocketExtraData', ['setRobotAlarmInfo', 'setShowRobotIds', 'loadTaskDetail']),
     executionStatusLabel,
     getImageUrl(url) {
       const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
@@ -527,7 +527,7 @@ export default {
       }
     },
     /** 点击视频图标：打开/关闭任务视频弹窗，并同步选中卡片与地图装备 */
-    openTaskVideo(taskId) {
+    async openTaskVideo(taskId) {
       const dialog = this.$refs.taskRobotViewRef
       if (!dialog) return
       // 已打开同一任务弹窗时再次点击：仅关闭弹窗，保留卡片与地图选中
@@ -536,11 +536,19 @@ export default {
         return
       }
       this.activeTaskId = taskId
+      let taskInfo = this.taskData[taskId] || {}
+      try {
+        const detail = await this.loadTaskDetail(taskId)
+        if (detail) taskInfo = detail
+      } catch (error) {
+        // 详情是按需增强；失败时仍以首屏摘要打开已有视频入口，避免阻断正在值守的用户。
+        this.$message.warning('任务详情暂不可用，已按当前任务信息打开视频')
+      }
       const robotIds = this.getTaskRobotIds(taskId)
       this.setShowRobotIds(robotIds)
       this.emitFocusTaskPath(taskId)
       dialog.showModal({
-        taskInfo: { ...this.taskData[taskId] },
+        taskInfo: { ...taskInfo },
         robotIds
       })
     },

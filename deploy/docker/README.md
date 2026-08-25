@@ -506,7 +506,8 @@ curl -k -i -X OPTIONS \
 
 ### 5.1 只改 `.env` 容器环境变量
 
-例如改了 `MYSQL_URL`、`REDIS_HOST`、`LIVEKIT_URL`、`CENTER_*`、`BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS`：
+例如改了 `MYSQL_URL`、`REDIS_HOST`、`LIVEKIT_URL`、`CENTER_*`、`BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS`、
+`PANORAMA_TASK_*` 或 `PANORAMA_GENERAL_*`：
 
 ```bash
 docker compose -f docker-compose.yml up -d --force-recreate
@@ -661,6 +662,12 @@ sh deploy/docker/update-services.sh
 
 注意：脚本只覆盖 `bin/boot/lib`，不覆盖服务目录下的 `config/`；新增环境变量通过
 容器环境变量注入，优先于 `config/application.yml`，无需改动 config 目录。
+
+`bigscreen-bff` 的 `PANORAMA_GENERAL_CONNECT_TIMEOUT_MS`、`PANORAMA_GENERAL_READ_TIMEOUT_MS` 和
+`PANORAMA_GENERAL_MAX_CONCURRENCY` 分别控制 Management 通用资源的连接时限、读取时限和单实例总并发；
+生产默认值为 `1000`、`1500`、`16`。任务类请求继续使用独立的 `PANORAMA_TASK_*` 三项，默认值为
+`1000`、`1500`、`8`。修改这些变量后必须执行 `docker compose up -d --force-recreate bigscreen-bff`，
+不能只执行 `restart`。
 
 ## 7. 卸载
 

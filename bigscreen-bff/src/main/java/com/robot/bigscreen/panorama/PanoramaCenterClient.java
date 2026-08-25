@@ -35,18 +35,23 @@ public class PanoramaCenterClient {
     private final CenterServiceProperties properties;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final Semaphore taskRequestPermits;
+    private final Semaphore generalRequestPermits;
     private final int taskMaxConcurrency;
+    private final int generalMaxConcurrency;
 
     public PanoramaCenterClient(
             RestClient.Builder builder,
             CenterServiceProperties properties,
             AuthenticatedRequestHeaders authenticatedRequestHeaders,
+            @Value("${panorama.general.connect-timeout-ms:1000}") int generalConnectTimeoutMs,
+            @Value("${panorama.general.read-timeout-ms:1500}") int generalReadTimeoutMs,
+            @Value("${panorama.general.max-concurrency:16}") int generalMaxConcurrency,
             @Value("${panorama.task.connect-timeout-ms:1000}") int taskConnectTimeoutMs,
             @Value("${panorama.task.read-timeout-ms:1500}") int taskReadTimeoutMs,
             @Value("${panorama.task.max-concurrency:8}") int taskMaxConcurrency) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(2000);
-        requestFactory.setReadTimeout(3000);
+        requestFactory.setConnectTimeout(Math.max(100, Math.min(5000, generalConnectTimeoutMs)));
+        requestFactory.setReadTimeout(Math.max(100, Math.min(10000, generalReadTimeoutMs)));
         this.restClient = builder.requestFactory(requestFactory).build();
         SimpleClientHttpRequestFactory taskRequestFactory = new SimpleClientHttpRequestFactory();
         taskRequestFactory.setConnectTimeout(Math.max(100, Math.min(5000, taskConnectTimeoutMs)));
@@ -54,6 +59,8 @@ public class PanoramaCenterClient {
         this.taskRestClient = builder.clone().requestFactory(taskRequestFactory).build();
         this.properties = properties;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
+        this.generalMaxConcurrency = Math.max(1, Math.min(32, generalMaxConcurrency));
+        this.generalRequestPermits = new Semaphore(this.generalMaxConcurrency, true);
         this.taskMaxConcurrency = Math.max(1, Math.min(32, taskMaxConcurrency));
         this.taskRequestPermits = new Semaphore(this.taskMaxConcurrency, true);
     }
@@ -216,6 +223,13 @@ public class PanoramaCenterClient {
                 "maxConcurrency", taskMaxConcurrency,
                 "activeRequests", taskMaxConcurrency - taskRequestPermits.availablePermits(),
                 "availablePermits", taskRequestPermits.availablePermits());
+    }
+
+    public Map<String, Object> generalRequestPoolSnapshot() {
+        return Map.of(
+                "maxConcurrency", generalMaxConcurrency,
+                "activeRequests", generalMaxConcurrency - generalRequestPermits.availablePermits(),
+                "availablePermits", generalRequestPermits.availablePermits());
     }
 
     public List<Map<String, Object>> enabledMaps() {
@@ -408,8 +422,14 @@ public class PanoramaCenterClient {
     }
 
     private Optional<Map<String, Object>> responseMap(URI uri) {
+        boolean acquired = false;
         long startNanos = System.nanoTime();
         try {
+            acquired = generalRequestPermits.tryAcquire(100, TimeUnit.MILLISECONDS);
+            if (!acquired) {
+                log.warn("全景通用查询并发已达上限，请求地址={}", uri);
+                return Optional.empty();
+            }
             Map<String, Object> response = restClient.get()
                     .uri(uri)
                     .headers(authenticatedRequestHeaders::apply)
@@ -420,6 +440,13 @@ public class PanoramaCenterClient {
         } catch (RuntimeException exception) {
             log.warn("请求全景地图中心端接口失败，请求地址={} 耗时毫秒={}", uri, elapsedMillis(startNanos), exception);
             return Optional.empty();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return Optional.empty();
+        } finally {
+            if (acquired) {
+                generalRequestPermits.release();
+            }
         }
     }
 
@@ -571,8 +598,13 @@ public class PanoramaCenterClient {
     }
 
     private Map<String, Object> requiredResponseMap(URI uri) {
+        boolean acquired = false;
         long startNanos = System.nanoTime();
         try {
+            acquired = generalRequestPermits.tryAcquire(100, TimeUnit.MILLISECONDS);
+            if (!acquired) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "管理端通用查询并发已达上限");
+            }
             Map<String, Object> response = restClient.get()
                     .uri(uri)
                     .headers(authenticatedRequestHeaders::apply)
@@ -592,11 +624,18 @@ public class PanoramaCenterClient {
             throw new ResponseStatusException(status, "查询管理端授权设备失败", exception);
         } catch (ResponseStatusException exception) {
             throw exception;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "查询管理端授权设备被中断", exception);
         } catch (RuntimeException exception) {
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,
                     "查询管理端授权设备失败",
                     exception);
+        } finally {
+            if (acquired) {
+                generalRequestPermits.release();
+            }
         }
     }
 

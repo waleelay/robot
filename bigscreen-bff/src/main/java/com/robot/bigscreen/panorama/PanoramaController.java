@@ -31,6 +31,21 @@ public class PanoramaController {
         return panoramaService.deviceDetail(deviceId);
     }
 
+    @GetMapping("/maps/{mapId}/scene")
+    public Map<String, Object> mapScene(@PathVariable String mapId) {
+        return panoramaService.mapScene(mapId);
+    }
+
+    @GetMapping("/maps/{mapId}/task-routes")
+    public Map<String, Object> mapTaskRoutes(@PathVariable String mapId) {
+        return panoramaService.mapTaskRoutes(mapId);
+    }
+
+    @GetMapping("/tasks/{taskId}")
+    public Map<String, Object> taskDetail(@PathVariable String taskId) {
+        return panoramaService.taskDetail(taskId);
+    }
+
     @GetMapping("/tasks")
     public Map<String, Object> tasks() {
         return panoramaService.tasks();

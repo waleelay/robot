@@ -12,6 +12,30 @@ export function getPatrolPanoramaOverview() {
   })
 }
 
+export function getPatrolPanoramaMapScene(mapId) {
+  return request({
+    url: pre + `/bigscreen/panorama/maps/${encodeURIComponent(mapId)}/scene`,
+    method: 'get',
+    timeout: 8000
+  })
+}
+
+export function getPatrolPanoramaMapTaskRoutes(mapId) {
+  return request({
+    url: pre + `/bigscreen/panorama/maps/${encodeURIComponent(mapId)}/task-routes`,
+    method: 'get',
+    timeout: 8000
+  })
+}
+
+export function getPatrolPanoramaTaskDetail(taskId) {
+  return request({
+    url: pre + `/bigscreen/panorama/tasks/${encodeURIComponent(taskId)}`,
+    method: 'get',
+    timeout: 8000
+  })
+}
+
 export function getActionableWorkflowAlarms() {
   return request({
     url: pre + '/bigscreen/panorama/alarms/actionable-workflow',
