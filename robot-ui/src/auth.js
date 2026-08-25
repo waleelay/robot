@@ -66,10 +66,29 @@ export async function initAuth() {
  */
 export function clearOidcCallbackParams() {
   const current = new URL(window.location.href)
-  if (!current.searchParams.has('code') || !current.searchParams.has('state')) return false
-  oidcCallbackParams.forEach(name => current.searchParams.delete(name))
+  const clearedQuery = clearOidcParams(current.searchParams)
+  const clearedHash = clearOidcParamsFromHash(current)
+  if (!clearedQuery && !clearedHash) return false
   const cleanUrl = `${current.pathname}${current.search}${current.hash}`
   window.history.replaceState(window.history.state, document.title, cleanUrl)
+  return true
+}
+
+function clearOidcParams(params) {
+  const hasCallbackParam = oidcCallbackParams.some(name => params.has(name))
+  if (!hasCallbackParam) return false
+  oidcCallbackParams.forEach(name => params.delete(name))
+  return true
+}
+
+function clearOidcParamsFromHash(current) {
+  const queryIndex = current.hash.indexOf('?')
+  if (queryIndex < 0) return false
+  const hashRoute = current.hash.slice(0, queryIndex)
+  const params = new URLSearchParams(current.hash.slice(queryIndex + 1))
+  if (!clearOidcParams(params)) return false
+  const query = params.toString()
+  current.hash = query ? `${hashRoute}?${query}` : hashRoute
   return true
 }
 

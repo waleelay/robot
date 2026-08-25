@@ -42,7 +42,6 @@ class MileageServiceTest {
         Map<String, Object> summary = summary("robot-1");
         assertThat((BigDecimal) summary.get("totalMeters")).isEqualByComparingTo("5.000");
         assertThat(summary.get("sampleCount")).isEqualTo(1L);
-        assertThat(summary.get("quality")).isEqualTo("NORMAL");
     }
 
     @Test
@@ -68,7 +67,6 @@ class MileageServiceTest {
         assertThat(record("robot-current", "c3", 20, null, "2").quality()).isEqualTo("ESTIMATED");
         Map<String, Object> current = summary("robot-current");
         assertThat((BigDecimal) current.get("totalMeters")).isEqualByComparingTo("7.000");
-        assertThat(current.get("quality")).isEqualTo("ESTIMATED");
     }
 
     @Test
@@ -78,22 +76,20 @@ class MileageServiceTest {
         assertThat(record("robot-1", "m2", 10, "90", "1").quality()).isEqualTo("RESET");
         assertThat(record("robot-1", "m3", 11, "190", "101").quality()).isEqualTo("SUSPECT");
         assertThat(summary("robot-1").get("totalMeters")).isNull();
-        assertThat(summary("robot-1").get("quality")).isEqualTo("NO_DATA");
     }
 
     @Test
-    void keepsLegacyBucketTotalAndMarksQualityUnknown() {
+    void keepsLegacyBucketTotal() {
         insertLegacyBucket("legacy-1", LocalDateTime.of(2026, 8, 14, 10, 0), "5.000", 2);
 
         Map<String, Object> summary = summary("legacy-1");
 
         assertThat((BigDecimal) summary.get("totalMeters")).isEqualByComparingTo("5.000");
         assertThat(summary.get("sampleCount")).isEqualTo(2L);
-        assertThat(summary.get("quality")).isEqualTo("UNKNOWN");
     }
 
     @Test
-    void keepsMixedLegacyMinuteUnknownWithoutExtraTables() {
+    void keepsMixedLegacyMinuteWithoutExtraTables() {
         recordAt("mixed-1", "baseline", LocalDateTime.of(2026, 8, 14, 9, 59, 50), "100", "20");
         insertLegacyBucket("mixed-1", LocalDateTime.of(2026, 8, 14, 10, 0), "5.000", 1);
         recordAt("mixed-1", "m2", LocalDateTime.of(2026, 8, 14, 10, 0, 10), "103", "23");
@@ -102,7 +98,6 @@ class MileageServiceTest {
 
         assertThat((BigDecimal) summary.get("totalMeters")).isEqualByComparingTo("8.000");
         assertThat(summary.get("sampleCount")).isEqualTo(2L);
-        assertThat(summary.get("quality")).isEqualTo("UNKNOWN");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
                         + "WHERE TABLE_NAME LIKE 'CONTROL_DEVICE_MILEAGE%'",
@@ -151,8 +146,8 @@ class MileageServiceTest {
     private void insertLegacyBucket(String robotId, LocalDateTime bucketTime, String mileage, long samples) {
         jdbcTemplate.update("""
                         INSERT INTO control_device_mileage_bucket
-                        (robot_id, bucket_time, mileage_m, sample_count, quality, updated_at)
-                        VALUES (?, ?, ?, ?, 'NORMAL', ?)
+                        (robot_id, bucket_time, mileage_m, sample_count, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
                         """,
                 robotId, bucketTime, new BigDecimal(mileage), samples, bucketTime);
     }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -122,6 +123,18 @@ class VideoSessionServiceIntercomOccupancyTest {
         assertThat(response.viewerCount()).isEqualTo(1);
         assertThat(target.getIdleSince()).isNull();
         verify(publisher).publish("video.session.streaming", target);
+    }
+
+    @Test
+    void restartsInterruptedSessionByLastClientStatusInsteadOfViewerHeartbeat() {
+        target.setStatus(VideoSessionStatus.INTERRUPTED);
+        target.setViewerCount(1);
+        OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(15);
+        when(repository.findByStatusAndLastStatusAtBefore(VideoSessionStatus.INTERRUPTED, threshold))
+                .thenReturn(List.of(target));
+
+        assertThat(service.interruptedRestartCandidates(threshold)).containsExactly("vs-target");
+        verify(repository, never()).findByStatusAndUpdatedAtBefore(VideoSessionStatus.INTERRUPTED, threshold);
     }
 
     @Test

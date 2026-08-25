@@ -3,11 +3,12 @@
 #
 # 职责（一条命令完成）：
 #   1. 上传本地 target 打包好的 dist tar.gz 到服务器
-#   2. 同步 update-services.env 中声明的环境变量到服务器 .env（新增/改值，幂等）
-#   3. 把环境变量接线到服务器 docker-compose.yml 对应服务的 environment 段（幂等）
-#   4. 备份并替换服务器工作区各服务的 bin/boot/lib
-#   5. docker compose up -d --force-recreate 重建对应容器（必须 force-recreate 才会重新加载卷内新 jar）
-#   6. 核验：容器状态、容器内环境变量、三个服务启动日志（Started / ERROR）
+#   2. 用仓库 Compose 模板覆盖并备份服务器安装包 Compose，避免运行定义漂移
+#   3. 同步 update-services.env 中声明的环境变量到服务器 .env（新增/改值，幂等）
+#   4. 校验仓库模板与安装包渲染后的关键服务环境变量和挂载一致
+#   5. 备份并替换服务器工作区各服务的 bin/boot/lib
+#   6. docker compose up -d --force-recreate 重建对应容器（必须 force-recreate 才会重新加载卷内新 jar）
+#   7. 核验：容器状态、容器内环境变量、三个服务启动日志（Started / ERROR）
 #
 # 用法：
 #   # 先按本次发布编辑 deploy/docker/update-services.env（SERVICE VAR=VALUE 格式）
@@ -90,15 +91,21 @@ for svc in $UPDATE_SERVICES; do
   "${SCP_BASE[@]}" "$dist" "$HOST:/tmp/$(basename "$dist")"
 done
 
-# ---------- 2+3. 环境变量同步（.env + compose） ----------
-log "== 2/6 同步环境变量到服务器 .env 与 docker-compose.yml =="
+# ---------- 2+3. Compose 模板与环境变量同步 ----------
+log "== 2/7 同步仓库 Compose 模板并更新服务器 .env =="
+"${SCP_BASE[@]}" "$SCRIPT_DIR/docker-compose.yml" "$HOST:/tmp/update-services-compose.yml"
+ssh_run "TS=\$(date +%Y%m%d%H%M%S); cp '$UPDATE_INSTALL_DIR/docker-compose.yml' '$UPDATE_INSTALL_DIR/docker-compose.yml.bak-template-\$TS'; cp /tmp/update-services-compose.yml '$UPDATE_INSTALL_DIR/docker-compose.yml'; cd '$UPDATE_INSTALL_DIR'; docker compose config --quiet"
 # 上传服务器端幂等同步助手，并把增量文件解析为 "SERVICE VAR VALUE" 行通过 stdin 传入
 "${SCP_BASE[@]}" "$SCRIPT_DIR/sync-server-env.py" "$HOST:/tmp/sync-server-env.py"
 awk -F'[ =]' 'NF>=3 && $0 !~ /^#/ && $0 !~ /^$/ {print $1, $2, substr($0, index($0, $2) + length($2) + 1)}' \
   "$UPDATE_ENV_FILE" | "${SSH_BASE[@]}" "$HOST" "python3 /tmp/sync-server-env.py '$UPDATE_INSTALL_DIR/.env' '$UPDATE_INSTALL_DIR/docker-compose.yml'"
 
+log "== 3/7 校验安装包 Compose 与仓库模板 =="
+"${SCP_BASE[@]}" "$SCRIPT_DIR/verify-compose-drift.py" "$HOST:/tmp/verify-compose-drift.py"
+ssh_run "cd '$UPDATE_INSTALL_DIR'; docker compose -f /tmp/update-services-compose.yml --env-file .env config --format json >/tmp/update-services-expected.json; docker compose config --format json >/tmp/update-services-actual.json; PYTHONIOENCODING=utf-8 python3 /tmp/verify-compose-drift.py /tmp/update-services-expected.json /tmp/update-services-actual.json"
+
 # ---------- 4. 备份并替换 bin/boot/lib ----------
-log "== 3/6 备份并替换服务运行目录 =="
+log "== 4/7 备份并替换服务运行目录 =="
 ssh_run "TS=\$(date +%Y%m%d%H%M%S); echo \"TS=\$TS\"; rm -rf /tmp/update-services-extract; mkdir -p /tmp/update-services-extract;
 for svc in $UPDATE_SERVICES; do
   case \$svc in
@@ -119,11 +126,11 @@ for svc in $UPDATE_SERVICES; do
 done"
 
 # ---------- 5. 重建容器 ----------
-log "== 4/6 重建容器 =="
+log "== 5/7 重建容器 =="
 ssh_run "cd '$UPDATE_INSTALL_DIR' && docker compose up -d --force-recreate $UPDATE_SERVICES 2>&1 | tail -8"
 
 # ---------- 6. 核验 ----------
-log "== 5/6 等待启动并核验 =="
+log "== 6/7 等待启动并核验 =="
 sleep 30
 ssh_run 'docker ps --format "{{.Names}}\t{{.Status}}" | grep robot-mediaserver;
 echo "--- 容器内新环境变量 ---";
@@ -131,7 +138,7 @@ docker inspect robot-mediaserver-control-service --format "{{range .Config.Env}}
 docker inspect robot-mediaserver-bigscreen-bff --format "{{range .Config.Env}}{{println .}}{{end}}" | grep -E "STATISTICS_REPORT_CLEANUP_INTERVAL_MS|BIGSCREEN_WS_AUTHORIZATION_MAX_STALENESS_MS|FIXED_CAMERA_CATALOG_LEASE" || true'
 
 sleep 15
-log "== 6/6 启动日志核验 =="
+log "== 7/7 启动日志核验 =="
 ssh_run 'for c in robot-mediaserver-media-service robot-mediaserver-control-service robot-mediaserver-bigscreen-bff; do
   echo "===== $c =====";
   docker logs --since 5m $c 2>&1 | grep -E "Started .*Application in|Tomcat started on port|APPLICATION FAILED|ERROR|BeanCreationException" | tail -5 || true;

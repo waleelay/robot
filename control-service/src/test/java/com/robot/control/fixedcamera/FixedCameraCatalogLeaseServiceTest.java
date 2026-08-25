@@ -75,4 +75,23 @@ class FixedCameraCatalogLeaseServiceTest {
                 .isEqualTo(issuedAt.plusSeconds(120));
         assertThat(json.get("issuedAt").asText()).doesNotContain(" ");
     }
+
+    @Test
+    void releasesLastLeaseAndPublishesEmptyCatalogImmediately() {
+        ControlServiceProperties properties = new ControlServiceProperties();
+        properties.getMqtt().setFixedCameraGatewayId("gateway-001");
+        RobotMediaCommandService commandService = mock(RobotMediaCommandService.class);
+        FixedCameraCatalogLeaseService service = new FixedCameraCatalogLeaseService(properties, commandService);
+        Instant now = Instant.now();
+        service.upsert(new FixedCameraCatalogLeaseRequest(
+                "lease-001", 1L, now.minusSeconds(1), now.plusSeconds(120),
+                List.of(new FixedCameraCatalogLeaseRequest.CameraRecord(
+                        "camera-001", true, "RTSP", "rtsp://camera/main", null))));
+
+        assertThat(service.release("lease-001")).isTrue();
+
+        ArgumentCaptor<FixedCameraCatalogSnapshot> captor = ArgumentCaptor.forClass(FixedCameraCatalogSnapshot.class);
+        verify(commandService, times(2)).sendFixedCameraCatalog(captor.capture());
+        assertThat(captor.getAllValues().get(1).cameras()).isEmpty();
+    }
 }

@@ -70,8 +70,6 @@ class StatisticsServiceTest {
                 .thenReturn(Map.of(
                         "hasData", true,
                         "totalMeters", 12_000,
-                        "quality", "ESTIMATED",
-                        "timezone", "Asia/Shanghai",
                         "sampleCount", 12));
         when(centerClient.mileageSummary(
                         "2026-05-31 00:00:00", "2026-06-30 23:59:59", List.of("robot-001")))
@@ -88,10 +86,6 @@ class StatisticsServiceTest {
         assertEquals(2, map(kpis.get("aiAlarmTotal")).get("value"));
         assertEquals(12.0, map(kpis.get("patrolMileage")).get("value"));
         assertEquals(50.0, map(kpis.get("patrolMileage")).get("compareRate"));
-        Map<String, Object> mileageQuality = map(map(overview.get("dataQuality")).get("mileage"));
-        assertEquals(true, mileageQuality.get("hasData"));
-        assertEquals("ESTIMATED", mileageQuality.get("quality"));
-        assertEquals("Asia/Shanghai", mileageQuality.get("timezone"));
         Map<String, Object> runtime = map(overview.get("equipmentRuntime"));
         assertEquals(100L, runtime.get("onlineRate"));
         assertEquals(50.0, runtime.get("taskCompletionRate"));
@@ -108,32 +102,6 @@ class StatisticsServiceTest {
         List<?> taskItems = list(map(overview.get("taskCompletion")).get("items"));
         assertEquals(1L, map(taskItems.get(0)).get("count"));
         assertEquals(1L, map(taskItems.get(3)).get("count"));
-    }
-
-    @Test
-    void marksTaskStatisticsDegradedInsteadOfReportingRealZeroOnTimeout() {
-        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
-        when(centerClient.deviceTypeOptions()).thenReturn(List.of());
-        when(centerClient.devices()).thenReturn(List.of());
-        when(centerClient.taskWorkflowInstancesForStatistics())
-                .thenThrow(new PanoramaCenterClient.TaskSourceException(
-                        "TASK_QUERY_TIMEOUT", "Management 任务接口连接或读取超时"));
-        when(centerClient.alarmsForStatistics(any(), any())).thenReturn(List.of());
-        StatisticsService service = new StatisticsService(
-                new ObjectMapper(),
-                centerClient,
-                new DeviceStatusSampler(
-                        new ObjectMapper(), centerClient, tempDir.resolve("sampler-timeout").toString(), 7),
-                tempDir.resolve("reports-timeout").toString());
-
-        Map<String, Object> overview = service.overview("month", null, null, "all", null);
-
-        Map<String, Object> quality = map(map(overview.get("dataQuality")).get("tasks"));
-        assertEquals(true, quality.get("degraded"));
-        assertEquals(List.of("TASK_QUERY_TIMEOUT"), quality.get("reasonCodes"));
-        assertEquals(null, map(map(overview.get("kpis")).get("taskTotal")).get("value"));
-        assertEquals(null, map(overview.get("equipmentRuntime")).get("taskCompletionRate"));
-        assertEquals(List.of(), map(overview.get("taskCompletion")).get("items"));
     }
 
     @Test
@@ -198,38 +166,6 @@ class StatisticsServiceTest {
         assertTrue(text.contains("暂无数据"));
         assertFalse(text.contains("七、报告说明"));
         assertFalse(text.contains("null"));
-    }
-
-    @Test
-    void includesMileageQualityWarningInGeneratedReport() throws Exception {
-        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
-        when(centerClient.deviceTypeOptions()).thenReturn(List.of());
-        when(centerClient.devices()).thenReturn(List.of(
-                Map.of("serialNumber", "robot-001", "deviceType", "WHEELED_ROBOT")));
-        when(centerClient.realtimeStatuses(any())).thenReturn(List.of());
-        when(centerClient.taskWorkflowInstancesForStatistics()).thenReturn(List.of());
-        when(centerClient.alarmsForStatistics(any(), any())).thenReturn(List.of());
-        when(centerClient.mileageSummary(any(), any(), org.mockito.ArgumentMatchers.eq(List.of("robot-001"))))
-                .thenReturn(Map.of(
-                        "hasData", true,
-                        "totalMeters", 12_000,
-                        "quality", "UNKNOWN"));
-        StatisticsService service = new StatisticsService(
-                new ObjectMapper(),
-                centerClient,
-                new DeviceStatusSampler(
-                        new ObjectMapper(), centerClient, tempDir.resolve("sampler-quality").toString(), 7),
-                tempDir.resolve("reports-quality").toString());
-
-        StatisticsService.ReportFile report = service.createReport(
-                Map.of("timeRange", Map.of("type", "month"), "deviceType", "all"),
-                authentication("user-1", "org-1"));
-        String text;
-        try (var document = Loader.loadPDF(report.bytes())) {
-            text = new PDFTextStripper().getText(document);
-        }
-
-        assertTrue(text.contains("历史里程无法精确分类，总里程仍有效"));
     }
 
     @Test

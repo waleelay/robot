@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
 import com.robot.bigscreen.config.WebSocketConfig;
+import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import com.robot.bigscreen.panorama.StatsPart;
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
@@ -62,6 +63,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private final PanoramaAlarmEventRefresher alarmEventRefresher;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final BigscreenWebSocketAuthorizationService authorizationService;
+    private final FixedCameraCatalogLeaseClient fixedCameraCatalogLeaseClient;
     private final ObjectMapper objectMapper;
     private final StandardWebSocketClient webSocketClient;
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
@@ -89,6 +91,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             PanoramaAlarmEventRefresher alarmEventRefresher,
             AuthenticatedRequestHeaders authenticatedRequestHeaders,
             BigscreenWebSocketAuthorizationService authorizationService,
+            FixedCameraCatalogLeaseClient fixedCameraCatalogLeaseClient,
             ObjectMapper objectMapper) {
         this.properties = properties;
         this.eventAdapter = eventAdapter;
@@ -98,6 +101,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         this.alarmEventRefresher = alarmEventRefresher;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
         this.authorizationService = authorizationService;
+        this.fixedCameraCatalogLeaseClient = fixedCameraCatalogLeaseClient;
         this.objectMapper = objectMapper;
         WebSocketContainer container = ContainerProvider.getWebSocketContainer();
         container.setDefaultMaxTextMessageBufferSize(WebSocketConfig.MAX_TEXT_MESSAGE_SIZE);
@@ -176,6 +180,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         logClose("浏览器", browserSession, status);
         browserSessions.remove(browserSession);
         String identity = authorizationIdentityBySession.remove(browserSession.getId());
+        if (identity != null && sessionsForIdentity(identity).isEmpty()) {
+            WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
+            copyHandshakeHeaders(browserSession, headers);
+            fixedCameraCatalogLeaseClient.release(browserSession.getPrincipal(), headers);
+        }
         removeUnusedIdentity(identity);
         eventAdapter.removeSession(browserSession.getId());
         locationEventThrottler.remove(browserSession.getId());

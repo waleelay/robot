@@ -61,7 +61,6 @@ GET /api/bigscreen/panorama/overview
 | `patrolOverview.mileageToday` | 今日巡逻里程 | 控制端 | Control 持久化今日有效里程增量，BFF 由米换算为 KM |
 | `patrolOverview.mileageUnit` | 巡逻里程单位 | BFF | 有有效里程样本时返回 `KM`，否则返回 `null` |
 | `patrolOverview.mileageHasData` | 是否有有效里程样本 | 控制端 | 仅基线或仅异常事件时为 `false` |
-| `patrolOverview.mileageQuality` | 里程质量 | 控制端 | 透传 `NORMAL/ESTIMATED/UNKNOWN/NO_DATA` |
 | `tasks` | 任务列表 | 管理端 + BFF 组装 | 见 3.6 |
 | `taskOverview.totalToday` | 今日任务数/当前任务列表总数 | BFF 计算 | `tasks.size()` |
 | `taskOverview.completedRateText` | 完成率文案 | BFF 计算 | `completedRate + "%"` |
@@ -374,7 +373,6 @@ GET /api/bigscreen/statistics/overview
 | `kpis.taskTotal.compareRate` | 任务总数环比 | 未对接 | 当前 `null` |
 | `kpis.patrolMileage.value` | 巡逻总里程 | 控制端 | 所选时间范围及设备的持久化里程增量，单位 KM |
 | `kpis.patrolMileage.compareRate` | 巡逻里程环比 | BFF | 与紧邻的等长上一周期比较；无有效基数时返回 `null` |
-| `dataQuality.mileage` | 里程数据质量 | 控制端 + BFF 透传 | 包含有效性、质量、`Asia/Shanghai` 时区、请求/观测范围、样本和异常排除口径 |
 | `kpis.aiAlarmTotal.value` | AI 告警总数 | BFF 计算 | 统计时间内管理端告警明细数 |
 | `kpis.aiAlarmTotal.compareRate` | AI 告警环比 | 未对接 | 当前 `null` |
 | `kpis.autoHandleSuccessRate.value` | 自动处置成功率 | 未对接 | 当前 `null` |

@@ -105,8 +105,8 @@ VUE_APP_KEYCLOAK_CLIENT_ID=bigscreen-web
 
 授权码交换成功后，前端使用 History API 删除地址栏中的 `code/state/session_state/iss`，同时
 保留业务查询参数、pathname 和 hash 路由且不刷新页面；交换失败时不会提前清理回调参数。
-全景及统计接口返回 `dataQuality.tasks.degraded=true` 时，任务总数和完成率显示为 `--` 或空态，
-并给出一次中文提示，不得将降级空集合显示成真实的 0。
+全景接口返回 `dataQuality.tasks.degraded=true` 时，页面保留已成功加载的数据；统计页按既有统计
+字段展示，不弹出任务数据降级提示。
 
 菜单权限验证由 `public/js/auth-config.js` 的 `permissionEnabled` 控制，默认开启。
 设为 `false` 时不请求权限接口、不拦截路由，并展示全部一级/二级菜单。

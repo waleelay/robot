@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,5 +37,15 @@ public class InternalFixedCameraCatalogController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "固定摄像头目录租约调用方不受信任");
         }
         return leaseService.upsert(request);
+    }
+
+    /** BFF 最后一个同身份会话关闭时主动撤销目录租约。 */
+    @DeleteMapping("/{leaseId}")
+    public void release(@PathVariable String leaseId, HttpServletRequest servletRequest) {
+        String caller = servletRequest.getHeader("X-Internal-Caller");
+        if (caller == null || !caller.equals(trustedCaller)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "固定摄像头目录租约调用方不受信任");
+        }
+        leaseService.release(leaseId);
     }
 }

@@ -23,8 +23,10 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -41,18 +43,29 @@ public class PanoramaService {
     private static final ZoneOffset CHINA_ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final long STATS_CACHE_TTL_MILLIS = 3000;
-    private static final ThreadPoolExecutor IO_EXECUTOR = new ThreadPoolExecutor(
-            8,
-            16,
+    private static final long OVERVIEW_TIMEOUT_MILLIS = 8000;
+    /** 顶层编排允许等待子 I/O，但绝不占用子 I/O 执行器。 */
+    private static final ThreadPoolExecutor OVERVIEW_EXECUTOR = new ThreadPoolExecutor(
+            5,
+            5,
             60,
             TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(128),
-            runnable -> {
-                Thread thread = new Thread(runnable, "panorama-io");
-                thread.setDaemon(true);
-                return thread;
-            },
+            new LinkedBlockingQueue<>(16),
+            namedDaemonThreadFactory("panorama-overview"),
             new ThreadPoolExecutor.AbortPolicy());
+    /**
+     * 只执行下游 I/O。使用直接移交队列，使嵌套任务在有容量时立即扩容；容量耗尽时快速降级，
+     * 不能把子任务排到正在等待它的父任务后面。
+     */
+    private static final ThreadPoolExecutor IO_EXECUTOR = new ThreadPoolExecutor(
+            8,
+            32,
+            60,
+            TimeUnit.SECONDS,
+            new SynchronousQueue<>(),
+            namedDaemonThreadFactory("panorama-io"),
+            new ThreadPoolExecutor.AbortPolicy());
+    private static final ThreadLocal<Long> OVERVIEW_DEADLINE_NANOS = new ThreadLocal<>();
 
     private final PanoramaCenterClient centerClient;
     private final ObjectMapper objectMapper;
@@ -64,13 +77,23 @@ public class PanoramaService {
     }
 
     public Map<String, Object> overview() {
+        Long previousDeadline = OVERVIEW_DEADLINE_NANOS.get();
+        OVERVIEW_DEADLINE_NANOS.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(OVERVIEW_TIMEOUT_MILLIS));
+        try {
+            return overviewWithinDeadline();
+        } finally {
+            restoreOverviewDeadline(previousDeadline);
+        }
+    }
+
+    private Map<String, Object> overviewWithinDeadline() {
         OverviewRequestCache cache = new OverviewRequestCache();
         Map<String, Object> overview = object("serverTime", now());
-        CompletableFuture<List<Map<String, Object>>> devicesFuture = async(() -> devices(cache));
-        CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
-        CompletableFuture<List<Map<String, Object>>> mapsFuture = async(centerClient::enabledMaps);
-        CompletableFuture<Map<String, Object>> alarmsFuture = async(this::alarmsPayload);
-        CompletableFuture<Map<String, Object>> mileageFuture = async(this::todayMileageSummary);
+        CompletableFuture<List<Map<String, Object>>> devicesFuture = asyncOverview(() -> devices(cache));
+        CompletableFuture<PanoramaTasks> tasksFuture = asyncOverview(() -> taskPayload(cache));
+        CompletableFuture<List<Map<String, Object>>> mapsFuture = asyncOverview(centerClient::enabledMaps);
+        CompletableFuture<Map<String, Object>> alarmsFuture = asyncOverview(this::alarmsPayload);
+        CompletableFuture<Map<String, Object>> mileageFuture = asyncOverview(this::todayMileageSummary);
 
         List<Map<String, Object>> maps = join(mapsFuture, List.of());
         prefetchMapResources(maps, cache);
@@ -1332,9 +1355,7 @@ public class PanoramaService {
                 "durationUnit", durationToday == null ? null : "小时",
                 "mileageToday", mileageToday,
                 "mileageUnit", mileageToday == null ? null : "KM",
-                "mileageHasData", Boolean.TRUE.equals(mileageSummary.get("hasData")),
-                "mileageQuality", mileageSummary.get("quality"),
-                "mileageTimezone", mileageSummary.get("timezone"));
+                "mileageHasData", Boolean.TRUE.equals(mileageSummary.get("hasData")));
     }
 
     private Map<String, Object> todayMileageSummary() {
@@ -1399,33 +1420,60 @@ public class PanoramaService {
                 "low", alarmGroup(List.of()));
     }
 
+    private static java.util.concurrent.ThreadFactory namedDaemonThreadFactory(String prefix) {
+        return runnable -> {
+            Thread thread = new Thread(runnable, prefix);
+            thread.setDaemon(true);
+            return thread;
+        };
+    }
+
+    private <T> CompletableFuture<T> asyncOverview(Supplier<T> supplier) {
+        return async(supplier, OVERVIEW_EXECUTOR);
+    }
+
     private <T> CompletableFuture<T> async(Supplier<T> supplier) {
+        return async(supplier, IO_EXECUTOR);
+    }
+
+    private <T> CompletableFuture<T> async(Supplier<T> supplier, ThreadPoolExecutor executor) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Long deadlineNanos = OVERVIEW_DEADLINE_NANOS.get();
         try {
             return CompletableFuture.supplyAsync(() -> {
                 SecurityContext previousContext = SecurityContextHolder.getContext();
+                Long previousDeadline = OVERVIEW_DEADLINE_NANOS.get();
                 SecurityContext context = SecurityContextHolder.createEmptyContext();
                 context.setAuthentication(authentication);
                 try {
                     SecurityContextHolder.setContext(context);
+                    if (deadlineNanos == null) {
+                        OVERVIEW_DEADLINE_NANOS.remove();
+                    } else {
+                        OVERVIEW_DEADLINE_NANOS.set(deadlineNanos);
+                    }
                     return supplier.get();
                 } finally {
                     SecurityContextHolder.setContext(previousContext);
+                    restoreOverviewDeadline(previousDeadline);
                 }
-            }, IO_EXECUTOR);
+            }, executor);
         } catch (RejectedExecutionException exception) {
             return CompletableFuture.failedFuture(new PanoramaCenterClient.TaskSourceException(
-                    "TASK_EXECUTOR_SATURATED",
-                    "全景聚合执行器已饱和",
+                    executor == OVERVIEW_EXECUTOR ? "OVERVIEW_EXECUTOR_SATURATED" : "TASK_EXECUTOR_SATURATED",
+                    executor == OVERVIEW_EXECUTOR ? "全景总览编排执行器已饱和" : "全景聚合下游执行器已饱和",
                     exception));
         }
     }
 
     private <T> T join(CompletableFuture<T> future, T fallback) {
         try {
-            T value = future.join();
+            T value = waitFor(future);
             return value == null ? fallback : value;
-        } catch (CompletionException exception) {
+        } catch (CompletionException | TimeoutException exception) {
+            if (exception instanceof TimeoutException) {
+                future.cancel(true);
+            }
             return fallback;
         }
     }
@@ -1436,8 +1484,12 @@ public class PanoramaService {
             TaskDataQuality quality,
             String defaultReasonCode) {
         try {
-            T value = future.join();
+            T value = waitFor(future);
             return value == null ? fallback : value;
+        } catch (TimeoutException exception) {
+            future.cancel(true);
+            quality.unavailable(exception, "OVERVIEW_TIMEOUT");
+            return fallback;
         } catch (CompletionException exception) {
             Throwable cause = exception.getCause();
             if (cause instanceof org.springframework.web.server.ResponseStatusException responseStatus
@@ -1452,17 +1504,52 @@ public class PanoramaService {
 
     private <T> T joinRequired(CompletableFuture<T> future) {
         try {
-            T value = future.join();
+            T value = waitFor(future);
             if (value == null) {
                 throw new IllegalStateException("必需的中心端查询返回空响应");
             }
             return value;
+        } catch (TimeoutException exception) {
+            future.cancel(true);
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                    "全景总览查询超时",
+                    exception);
         } catch (CompletionException exception) {
             Throwable cause = exception.getCause();
             if (cause instanceof RuntimeException runtimeException) {
                 throw runtimeException;
             }
             throw new IllegalStateException("必需的中心端查询失败", cause);
+        }
+    }
+
+    private <T> T waitFor(CompletableFuture<T> future) throws TimeoutException {
+        Long deadlineNanos = OVERVIEW_DEADLINE_NANOS.get();
+        if (deadlineNanos == null) {
+            return future.join();
+        }
+        long remainingNanos = deadlineNanos - System.nanoTime();
+        if (remainingNanos <= 0) {
+            throw new TimeoutException("全景总览查询超过总时限");
+        }
+        try {
+            return future.get(remainingNanos, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new CompletionException(exception);
+        } catch (java.util.concurrent.ExecutionException exception) {
+            throw new CompletionException(exception.getCause());
+        } catch (java.util.concurrent.TimeoutException exception) {
+            throw new TimeoutException("全景总览查询超过总时限");
+        }
+    }
+
+    private static void restoreOverviewDeadline(Long previousDeadline) {
+        if (previousDeadline == null) {
+            OVERVIEW_DEADLINE_NANOS.remove();
+        } else {
+            OVERVIEW_DEADLINE_NANOS.set(previousDeadline);
         }
     }
 

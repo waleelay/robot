@@ -18,7 +18,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -66,27 +65,12 @@ public class MileageService {
                     bucket_time TIMESTAMP(3) NOT NULL,
                     mileage_m DECIMAL(18,3) NOT NULL DEFAULT 0,
                     sample_count BIGINT NOT NULL DEFAULT 0,
-                    quality VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
-                    quality_known BOOLEAN NOT NULL DEFAULT FALSE,
                     updated_at TIMESTAMP(3) NOT NULL,
                     PRIMARY KEY (robot_id, bucket_time),
                     INDEX idx_mileage_bucket_time (bucket_time),
                     INDEX idx_mileage_bucket_robot_time (robot_id, bucket_time)
                 )
                 """);
-        addQualityKnownColumnForExistingSchema();
-    }
-
-    /** 旧分钟桶没有可靠质量证据，新增列默认保持 false；新记录写入时明确置为 true。 */
-    private void addQualityKnownColumnForExistingSchema() {
-        try {
-            jdbcTemplate.queryForList("SELECT quality_known FROM control_device_mileage_bucket WHERE 1 = 0");
-        } catch (BadSqlGrammarException exception) {
-            jdbcTemplate.execute("""
-                    ALTER TABLE control_device_mileage_bucket
-                    ADD COLUMN quality_known BOOLEAN NOT NULL DEFAULT FALSE
-                    """);
-        }
     }
 
     /** 首次读数只建立基线；重复、乱序、回退和异常跳变不会污染有效里程。 */
@@ -106,7 +90,7 @@ public class MileageService {
         return result;
     }
 
-    /** 查询分钟桶中的有效里程；历史桶质量未知时保留总量并返回 UNKNOWN。 */
+    /** 查询分钟桶中的有效里程。 */
     public Map<String, Object> summary(
             LocalDateTime startTime,
             LocalDateTime endTime,
@@ -124,18 +108,14 @@ public class MileageService {
         args.addAll(normalizedRobotIds);
 
         List<RobotMileage> rows = jdbcTemplate.query(
-                "SELECT robot_id, SUM(mileage_m) AS mileage_m, SUM(sample_count) AS sample_count, "
-                        + "MAX(CASE WHEN quality = 'ESTIMATED' THEN 1 ELSE 0 END) AS has_estimated, "
-                        + "MIN(CASE WHEN quality_known THEN 1 ELSE 0 END) AS all_quality_known "
+                "SELECT robot_id, SUM(mileage_m) AS mileage_m, SUM(sample_count) AS sample_count "
                         + "FROM control_device_mileage_bucket "
                         + "WHERE bucket_time >= ? AND bucket_time <= ?" + filter
                         + " GROUP BY robot_id ORDER BY robot_id",
                 (resultSet, rowNum) -> new RobotMileage(
                         resultSet.getString("robot_id"),
                         resultSet.getBigDecimal("mileage_m"),
-                        resultSet.getLong("sample_count"),
-                        resultSet.getInt("has_estimated") == 1,
-                        resultSet.getInt("all_quality_known") == 1),
+                        resultSet.getLong("sample_count")),
                 args.toArray());
 
         Map<String, RobotMileage> indexed = new LinkedHashMap<>();
@@ -146,8 +126,6 @@ public class MileageService {
         List<Map<String, Object>> byRobot = new ArrayList<>();
         BigDecimal total = ZERO;
         long sampleCount = 0;
-        boolean allQualityKnown = true;
-        boolean hasEstimated = false;
         for (String robotId : resultRobotIds) {
             RobotMileage row = indexed.get(robotId);
             boolean hasData = row != null && row.sampleCount() > 0;
@@ -156,13 +134,10 @@ public class MileageService {
             item.put("hasData", hasData);
             item.put("mileageMeters", hasData ? scale(row.mileageMeters()) : null);
             item.put("sampleCount", hasData ? row.sampleCount() : 0L);
-            item.put("quality", hasData ? quality(row.qualityKnown(), row.hasEstimated()) : "NO_DATA");
             byRobot.add(item);
             if (hasData) {
                 total = total.add(row.mileageMeters());
                 sampleCount += row.sampleCount();
-                allQualityKnown &= row.qualityKnown();
-                hasEstimated |= row.hasEstimated();
             }
         }
 
@@ -173,7 +148,6 @@ public class MileageService {
         response.put("hasData", sampleCount > 0);
         response.put("totalMeters", sampleCount > 0 ? scale(total) : null);
         response.put("sampleCount", sampleCount);
-        response.put("quality", sampleCount == 0 ? "NO_DATA" : quality(allQualityKnown, hasEstimated));
         response.put("unit", "m");
         response.put("byRobot", byRobot);
         return response;
@@ -250,19 +224,15 @@ public class MileageService {
             LocalDateTime now) {
         jdbcTemplate.update("""
                         INSERT INTO control_device_mileage_bucket
-                        (robot_id, bucket_time, mileage_m, sample_count, quality, quality_known, updated_at)
-                        VALUES (?, ?, ?, 1, ?, TRUE, ?)
+                        (robot_id, bucket_time, mileage_m, sample_count, updated_at)
+                        VALUES (?, ?, ?, 1, ?)
                         ON DUPLICATE KEY UPDATE
                           mileage_m = mileage_m + VALUES(mileage_m),
                           sample_count = sample_count + 1,
-                          quality = CASE
-                            WHEN quality = 'ESTIMATED' OR ? = 'ESTIMATED' THEN 'ESTIMATED'
-                            ELSE 'NORMAL'
-                          END,
                           updated_at = VALUES(updated_at)
                         """,
                 reading.robotId(), Timestamp.valueOf(eventTime.truncatedTo(ChronoUnit.MINUTES)),
-                result.deltaMeters(), result.quality(), Timestamp.valueOf(now), result.quality());
+                result.deltaMeters(), Timestamp.valueOf(now));
     }
 
     private Checkpoint checkpoint(String robotId) {
@@ -294,13 +264,6 @@ public class MileageService {
         return result.deltaMeters().signum() > 0
                 && !"RESET".equals(result.quality())
                 && !"SUSPECT".equals(result.quality());
-    }
-
-    private String quality(boolean known, boolean estimated) {
-        if (!known) {
-            return "UNKNOWN";
-        }
-        return estimated ? "ESTIMATED" : "NORMAL";
     }
 
     private void publishIfNeeded(MileageReading reading, MileageResult result) {
@@ -352,9 +315,7 @@ public class MileageService {
     private record RobotMileage(
             String robotId,
             BigDecimal mileageMeters,
-            long sampleCount,
-            boolean hasEstimated,
-            boolean qualityKnown) {
+            long sampleCount) {
     }
 
     public record MileageResult(BigDecimal deltaMeters, String quality, boolean accepted) {

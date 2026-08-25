@@ -136,8 +136,7 @@ public class StatisticsService {
                         mileageWindow.previousStart().format(DATE_TIME_FORMATTER),
                         mileageWindow.previousEnd().format(DATE_TIME_FORMATTER),
                         mileageRobotIds));
-        TaskQueryResult taskQuery = joinTasks(tasksFuture);
-        List<Map<String, Object>> tasks = taskQuery.items().stream()
+        List<Map<String, Object>> tasks = join(tasksFuture, List.<Map<String, Object>>of()).stream()
                 .filter(task -> withinRange(taskTime(task), rangeStart, rangeEnd))
                 .filter(task -> matchesTaskDeviceType(task, normalizedDeviceType, deviceTypesBySerial))
                 .toList();
@@ -146,9 +145,7 @@ public class StatisticsService {
                 .filter(alarm -> matchesAlarmDeviceType(alarm, normalizedDeviceType, deviceTypesBySerial))
                 .toList();
 
-        Map<String, Object> taskCompletion = taskQuery.complete()
-                ? taskCompletion(tasks)
-                : object("items", List.of(), "insight", null);
+        Map<String, Object> taskCompletion = taskCompletion(tasks);
         Map<String, Object> mileageSummary = join(mileageFuture, Map.of());
         Map<String, Object> previousMileageSummary = join(previousMileageFuture, Map.of());
         return object(
@@ -162,18 +159,14 @@ public class StatisticsService {
                         tasks,
                         alarms,
                         mileageSummary,
-                        previousMileageSummary,
-                        taskQuery.complete()),
+                        previousMileageSummary),
                 "equipmentRuntime", equipmentRuntime(
                         devices, tasks, normalizedDeviceType, deviceTypesBySerial, resolvedDeviceTypeOptions,
-                        rangeStart, rangeEnd, taskQuery.complete()),
+                        rangeStart, rangeEnd),
                 "aiAlarmAnalysis", aiAlarmAnalysis(alarms),
                 "alarmAreaRanking", alarmAreaRanking(alarms),
                 "alarmTrend", alarmTrend(alarms, rangeStart, rangeEnd),
-                "taskCompletion", taskCompletion,
-                "dataQuality", object(
-                        "tasks", taskQuery.dataQuality(),
-                        "mileage", mileageQuality(mileageSummary)));
+                "taskCompletion", taskCompletion);
     }
 
     public byte[] exportPdf(Map<String, Object> request, Authentication authentication) {
@@ -297,10 +290,9 @@ public class StatisticsService {
             List<Map<String, Object>> tasks,
             List<Map<String, Object>> alarms,
             Map<String, Object> mileage,
-            Map<String, Object> previousMileage,
-            boolean tasksComplete) {
+            Map<String, Object> previousMileage) {
         Map<String, Object> kpis = emptyKpis();
-        kpis.put("taskTotal", kpi(tasksComplete ? tasks.size() : null, null));
+        kpis.put("taskTotal", kpi(tasks.size(), null));
         Double mileageKilometers = mileageKilometers(mileage);
         kpis.put("patrolMileage", kpi(
                 mileageKilometers,
@@ -332,22 +324,6 @@ public class StatisticsService {
         return meters == null ? null : meters.doubleValue();
     }
 
-    private Map<String, Object> mileageQuality(Map<String, Object> summary) {
-        if (summary == null || summary.isEmpty()) {
-            return object(
-                    "hasData", false,
-                    "quality", "UNAVAILABLE",
-                    "reasonCode", "MILEAGE_SUMMARY_UNAVAILABLE");
-        }
-        return object(
-                "hasData", Boolean.TRUE.equals(summary.get("hasData")),
-                "quality", summary.get("quality"),
-                "timezone", summary.get("timezone"),
-                "startTime", summary.get("startTime"),
-                "endTime", summary.get("endTime"),
-                "sampleCount", summary.get("sampleCount"));
-    }
-
     private Double mileageCompareRate(Double current, Double previous) {
         if (current == null || previous == null) {
             return null;
@@ -365,8 +341,7 @@ public class StatisticsService {
             Map<String, String> deviceTypesBySerial,
             List<Map<String, Object>> deviceTypeOptions,
             LocalDateTime rangeStart,
-            LocalDateTime rangeEnd,
-            boolean tasksComplete) {
+            LocalDateTime rangeEnd) {
         List<Map<String, Object>> filteredDevices = devices.stream()
                 .filter(device -> matchesDeviceType(device, deviceType))
                 .toList();
@@ -389,7 +364,7 @@ public class StatisticsService {
                 ? null
                 : Math.round(onlineSerialNumbers.size() * 100.0 / serialNumbers.size());
         long completed = tasks.stream().filter(task -> "COMPLETED".equals(taskStatusGroup(task))).count();
-        Double completionRate = !tasksComplete || tasks.isEmpty() ? null : percentage(completed, tasks.size());
+        Double completionRate = tasks.isEmpty() ? null : percentage(completed, tasks.size());
         List<Map<String, Object>> runtimeItems = equipmentRuntimeItems(
                 devices, deviceType, deviceTypeOptions, rangeStart, rangeEnd);
         return object(
@@ -795,30 +770,6 @@ public class StatisticsService {
         }
     }
 
-    private TaskQueryResult joinTasks(CompletableFuture<List<Map<String, Object>>> future) {
-        try {
-            List<Map<String, Object>> value = future.join();
-            return new TaskQueryResult(
-                    value == null ? List.of() : value,
-                    true,
-                    object("complete", true, "degraded", false, "reasonCodes", List.of()));
-        } catch (CompletionException exception) {
-            Throwable cause = exception.getCause();
-            if (cause instanceof ResponseStatusException responseStatus
-                    && (responseStatus.getStatusCode().value() == 401
-                    || responseStatus.getStatusCode().value() == 403)) {
-                throw responseStatus;
-            }
-            String reasonCode = cause instanceof PanoramaCenterClient.TaskSourceException taskException
-                    ? taskException.reasonCode()
-                    : "TASK_STATISTICS_UNAVAILABLE";
-            return new TaskQueryResult(
-                    List.of(),
-                    false,
-                    object("complete", false, "degraded", true, "reasonCodes", List.of(reasonCode)));
-        }
-    }
-
     private Map<String, Object> emptyKpis() {
         Map<String, Object> kpis = new LinkedHashMap<>();
         kpis.put("taskTotal", kpi(null, null));
@@ -826,12 +777,6 @@ public class StatisticsService {
         kpis.put("aiAlarmTotal", kpi(null, null));
         kpis.put("autoHandleSuccessRate", kpi(null, null));
         return kpis;
-    }
-
-    private record TaskQueryResult(
-            List<Map<String, Object>> items,
-            boolean complete,
-            Map<String, Object> dataQuality) {
     }
 
     private Map<String, Object> emptyEquipmentRuntime() {
@@ -895,10 +840,6 @@ public class StatisticsService {
                 + compareText(kpis, "taskTotal"));
         pdf.line("总巡逻里程：" + valueWithUnit(kpiValue(kpis, "patrolMileage"), "KM") + "，"
                 + compareText(kpis, "patrolMileage"));
-        Map<String, Object> mileageQuality = mapValue(mapValue(data.get("dataQuality")).get("mileage"));
-        if ("UNKNOWN".equals(mileageQuality.get("quality"))) {
-            pdf.line("里程数据质量：历史里程无法精确分类，总里程仍有效。");
-        }
         pdf.line("AI自动识别异常数：" + valueWithUnit(kpiValue(kpis, "aiAlarmTotal"), "个") + "，"
                 + compareText(kpis, "aiAlarmTotal"));
         pdf.line("自动处置成功率：" + percentText(kpiValue(kpis, "autoHandleSuccessRate")) + "，"

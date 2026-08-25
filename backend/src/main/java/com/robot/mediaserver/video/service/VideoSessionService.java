@@ -885,8 +885,9 @@ public class VideoSessionService {
      * @param updatedBefore 更新时间阈值
      * @return 会话编号列表
      */
-    public List<String> interruptedRestartCandidates(OffsetDateTime updatedBefore) {
-        return repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.INTERRUPTED, updatedBefore).stream()
+    public List<String> interruptedRestartCandidates(OffsetDateTime interruptedBefore) {
+        // viewer 心跳会刷新 updatedAt，不能用它衡量断流已持续多久；lastStatusAt 只由客户端状态上报刷新。
+        return repository.findByStatusAndLastStatusAtBefore(VideoSessionStatus.INTERRUPTED, interruptedBefore).stream()
                 .filter(session -> session.getViewerCount() > 0)
                 .map(VideoSession::getSessionId)
                 .toList();

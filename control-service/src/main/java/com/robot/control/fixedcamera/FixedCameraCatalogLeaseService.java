@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class FixedCameraCatalogLeaseService {
+
+    private static final Logger log = LoggerFactory.getLogger(FixedCameraCatalogLeaseService.class);
 
     private final ControlServiceProperties properties;
     private final RobotMediaCommandService commandService;
@@ -45,6 +49,20 @@ public class FixedCameraCatalogLeaseService {
         leases.put(request.leaseId(), new LeaseState(
                 request.version(), request.expiresAt(), normalize(request.cameras())));
         return publish(now);
+    }
+
+    /**
+     * 最后一个大屏会话关闭时主动撤销其目录租约，避免仍按旧租约继续探测。
+     *
+     * @return 是否实际移除了租约
+     */
+    public synchronized boolean release(String leaseId) {
+        if (leaseId == null || leaseId.isBlank() || leases.remove(leaseId) == null) {
+            return false;
+        }
+        FixedCameraCatalogSnapshot snapshot = publish(Instant.now());
+        log.info("固定摄像头目录租约已主动释放，剩余摄像头数={}", snapshot.cameras().size());
+        return true;
     }
 
     /** 移除过期租约并发布收口快照。 */

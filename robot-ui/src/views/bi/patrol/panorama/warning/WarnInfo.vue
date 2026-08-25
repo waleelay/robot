@@ -128,14 +128,14 @@
                     <span class="name" style="width: 75px">告警内容：</span>
                     <span class="value flex1 tar">{{ details.content || details.title }}</span>
                   </div>
-                  <div v-if="details.taskName" class="item flx-justify-between mt20">
-                    <span class="name">所属任务：</span>
-                    <span class="value">{{ details.taskName }}</span>
-                  </div>
-                  <div v-if="details.humanTaskName" class="item flx-justify-between mt20">
-                    <span class="name">等待节点：</span>
-                    <span class="value">{{ details.humanTaskName }}</span>
-                  </div>
+                  <!--  <div v-if="details.taskName" class="item flx-justify-between mt20">
+                      <span class="name">所属任务：</span>
+                      <span class="value">{{ details.taskName }}</span>
+                    </div>
+                    <div v-if="details.humanTaskName" class="item flx-justify-between mt20">
+                      <span class="name">等待节点：</span>
+                      <span class="value">{{ details.humanTaskName }}</span>
+                    </div>-->
                   <!-- <div class="item flx-justify-between mt20">
                     <span class="name">告警类型：</span>
                     <span class="value">{{ typeFormat('qh_alarm_record_type', details.ErrorType) || '-' }}</span>

@@ -1,7 +1,6 @@
 import { set } from "nprogress";
 import { active } from "sortablejs";
 import Vue from "vue";
-import { Message } from 'element-ui'
 import {
   SLAM_POINTS,
   ENABLE_LIANTONG_SLAM_MOCK,
@@ -24,7 +23,6 @@ import {
 import { getPatrolPanoramaOverview } from '../../api/new-bi'
 
 let overviewRefreshPromise = null
-let taskDegradationNoticeSignature = ''
 
 const state = {
   // 设备对象：设备详情，包含坐标位置，task基本信息
@@ -69,6 +67,8 @@ const state = {
   overviewReady: false,
   // overview 默认地图是否为 SLAM（用于无预览气泡：仅默认 SLAM 时提示）
   defaultMapIsSlam: false,
+  // 首屏总览加载失败时保留明确错误态，不能长期显示“正在获取地图数据”。
+  overviewLoadError: false,
   // SLAM 无预览气泡是否已在全局展示过（跨路由只提示一次）
   slamEmptyTipShown: false,
   // gis 中心视图，默认坐标点 [lat, lng]，来自 map-config.js（gisConfig.area.key）
@@ -89,6 +89,7 @@ const mutations = {
     state.dataQuality = {};
     state.defaultGpsDevices = [];
     state.overviewReady = false;
+    state.overviewLoadError = false;
   },
   SET_DEVICE_OBJ(state, value) {
     state.deviceObj = value;
@@ -267,6 +268,9 @@ const mutations = {
   SET_OVERVIEW_READY(state, value) {
     state.overviewReady = !!value;
   },
+  SET_OVERVIEW_LOAD_ERROR(state, value) {
+    state.overviewLoadError = !!value;
+  },
   SET_DEFAULT_MAP_IS_SLAM(state, value) {
     state.defaultMapIsSlam = !!value;
   },
@@ -288,6 +292,10 @@ const actions = {
     }
     overviewRefreshPromise = getPatrolPanoramaOverview()
       .then(data => dispatch('setAll', data))
+      .catch(error => {
+        commit('SET_OVERVIEW_LOAD_ERROR', true)
+        throw error
+      })
       .finally(() => {
         overviewRefreshPromise = null
       })
@@ -297,15 +305,8 @@ const actions = {
     commit('RESET_OVERVIEW_RESOURCE_STATE')
     const taskQuality = data?.dataQuality?.tasks || { complete: true, degraded: false, reasonCodes: [] }
     commit('SET_DATA_QUALITY', data?.dataQuality || {})
-    if (taskQuality.degraded) {
-      const signature = JSON.stringify(taskQuality.reasonCodes || [])
-      if (signature !== taskDegradationNoticeSignature) {
-        Message.warning('任务数据暂不完整，当前页面仅展示已成功加载的数据')
-        taskDegradationNoticeSignature = signature
-      }
-    } else {
-      taskDegradationNoticeSignature = ''
-    }
+    // 任务查询局部降级时保留已成功加载的数据；页面通过“--”或空态表达未知值，
+    // 不弹出瞬时提示干扰正在查看总览或实时视频的用户。
     // 联通展厅 SLAM：注入模拟装备与任务路径
     const devices = [...(data?.devices || [])]
     const tasks = [...(data?.tasks || [])]
@@ -401,6 +402,10 @@ const actions = {
       commit('SET_DEFAULT_MAP_IS_SLAM', false);
     }
     commit('SET_OVERVIEW_READY', true);
+    commit('SET_OVERVIEW_LOAD_ERROR', false);
+  },
+  markOverviewLoadFailed({ commit }) {
+    commit('SET_OVERVIEW_LOAD_ERROR', true)
   },
   setSlamMapData({ commit }, value) {
     commit('SET_SLAM_MAP_DATA', value);

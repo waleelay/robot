@@ -16,7 +16,7 @@
     >
       <div class="box bi-corner-box hp386">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
-          <span class="desc">告警概览</span> 
+          <span class="desc">告警概览</span>
           <!-- <span class="flx-center more curp" @click="getMoreRobotInfo">
             <span>更多</span>
             <svg-icon icon-class="right" class="ml4" />
@@ -63,7 +63,7 @@
           </div>
           <div class="item hp62 flex1 flx-center flex-column ml10">
             <div class="desc1">今日巡逻里程</div>
-            <div class="value mt4" :title="mileageQualityTitle">
+            <div class="value mt4">
               <span class="mr4">{{ patrolOverview.mileageHasData ? patrolOverview.mileageToday : '--' }}</span>{{ patrolOverview.mileageHasData ? (patrolOverview.mileageUnit || 'KM') : '' }}
             </div>
           </div>
@@ -135,11 +135,6 @@ export default {
     }
   },
   computed: {
-    mileageQualityTitle() {
-      const quality = this.patrolOverview?.mileageQuality
-      const labels = { NORMAL: '正常', ESTIMATED: '含估算值', UNKNOWN: '历史里程无法精确分类，总里程仍有效', NO_DATA: '暂无有效里程数据', UNAVAILABLE: '里程服务不可用' }
-      return labels[quality] || '里程数据质量未知'
-    },
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },

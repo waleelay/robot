@@ -3,9 +3,9 @@
  * @Date: 2026-03-31 10:02:53
  * @LastEditors: dengxumei
  * @LastEditTime: 2026-04-14 11:22:21
- * @Description: 
+ * @Description:
  * @FilePath: \qihang-eiop-ui\src\views\bi\patrol\panorama\map\Index.vue
- * @Version: 
+ * @Version:
 -->
 <template>
   <div class="map-div h100" :class="{ full: collapse }">
@@ -16,8 +16,8 @@
         @wheel.prevent
         @mousedown.stop
       >
-        <div class="slam-map-loading__spinner" aria-hidden="true"></div>
-        <p class="slam-map-loading__text">正在获取地图数据</p>
+          <div v-if="!overviewLoadError" class="slam-map-loading__spinner" aria-hidden="true"></div>
+          <p class="slam-map-loading__text">{{ overviewLoadError ? '大屏数据暂不可用，请刷新页面重试' : '正在获取地图数据' }}</p>
       </div>
     </transition>
     <div v-if="globalMapId && globalMapId !== 'gis'" class="slam-map-host w100 h100" style="z-index: 0;">
@@ -98,7 +98,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'defaultGpsDevices', 'globalMapId', 'overviewReady']),
+    ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'defaultGpsDevices', 'globalMapId', 'overviewReady', 'overviewLoadError']),
     currentSlamMap() {
       const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
       return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(this.currentSlamMapId)) || null

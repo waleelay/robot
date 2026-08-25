@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -78,6 +79,34 @@ class EdgeDeviceStatusHandlerTest {
         verify(mileageService).record(mileageCaptor.capture());
         assertThat(mileageCaptor.getValue().robotId()).isEqualTo("test115");
         assertThat(mileageCaptor.getValue().totalMileageMeters()).isEqualByComparingTo("5578.563");
+    }
+
+    @Test
+    void acceptsUnixSecondsAndMillisIncludingScientificNotationForMileage() {
+        when(equipmentControlService.mergeEdgeDeviceStatus(eq("SN005"), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        handler.handle("eiop/v1/edge/SN005/status", edgeStatus("seconds", "1.754334463E9"));
+        handler.handle("eiop/v1/edge/SN005/status", edgeStatus("millis", "1754334463000"));
+        handler.handle("eiop/v1/edge/SN005/status", edgeStatus("invalid", "not-a-timestamp"));
+
+        ArgumentCaptor<MileageReading> captor = ArgumentCaptor.forClass(MileageReading.class);
+        verify(mileageService, times(2)).record(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(MileageReading::eventTime)
+                .allSatisfy(eventTime -> assertThat(eventTime.toInstant().getEpochSecond()).isEqualTo(1_754_334_463L));
+        verify(robotRegistryService, times(3)).update(any());
+    }
+
+    private String edgeStatus(String messageId, String timestamp) {
+        return """
+                {
+                  "messageId":"%s",
+                  "messageType":"DEVICE_STATUS_REPORT",
+                  "timestamp":%s,
+                  "payload":{"status":{"motion":{"totalMileage":100.5,"currentMileage":10.5}}}
+                }
+                """.formatted(messageId, timestamp.startsWith("not") ? "\"" + timestamp + "\"" : timestamp);
     }
 
     @SuppressWarnings("unchecked")

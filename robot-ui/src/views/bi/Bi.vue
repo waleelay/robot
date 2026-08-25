@@ -12,6 +12,7 @@
 <script>
 import mqttClient from '@/plugins/mqtt-client'
 import { mapActions } from 'vuex';
+import { Message } from 'element-ui'
 import { getPatrolPanoramaOverview } from '../../api/new-bi';
 import ScaleScreen from './../../components/largeScreen/scale-screen.vue'
 import WarningPending from './patrol/panorama/warning/WarnPending1.vue';
@@ -37,13 +38,19 @@ export default {
   },
   async mounted() {
     await this.clearCameras()
-    const res = await getPatrolPanoramaOverview()
-    this.setAll(res)
-    this.connectMediaWebSocket()
+    try {
+      const res = await getPatrolPanoramaOverview()
+      this.setAll(res)
+    } catch (error) {
+      this.markOverviewLoadFailed()
+      Message.error('大屏数据暂不可用，请稍后刷新页面重试')
+    } finally {
+      this.connectMediaWebSocket()
+    }
   },
   methods: {
     ...mapActions('websocketRobot', ['connectMediaWebSocket', 'stopCamera']),
-    ...mapActions('websocketExtraData', ['setAll']),
+    ...mapActions('websocketExtraData', ['setAll', 'markOverviewLoadFailed']),
     async clearCameras() {
       for (const [index, key] of Object.keys(this.activeCameras).entries()) {
         if (this.activeCameras[key]?.camera) {

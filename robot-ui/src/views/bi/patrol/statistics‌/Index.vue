@@ -85,9 +85,7 @@
           <img :src="item.icon" alt="" srcset="">
         </div>
         <div class="ml30 flex-column">
-          <div class="title mt4" :title="item.qualityTitle">
-            {{ item.name }}<span v-if="item.qualityWarning">（质量待确认）</span>
-          </div>
+          <div class="title mt4">{{ item.name }}</div>
           <div class="value mt4"><span class="mr8">{{ item.value }}</span>{{ item.unit }}</div>
           <div class="desc mt4 d-flex" style="align-items: end">
             <span class="mr10">{{ tabDate === 'today' ? '较昨日' : tabDate === 'week' ? '较上周' : tabDate === 'month' ? '较上月' : '较同期' }}</span>
@@ -113,7 +111,7 @@
               </div>
               <div class="ml40">
                 <span>任务完成率</span>
-                <span class="ml10 value">{{ taskDataDegraded ? '--' : `${equipmentRuntime.taskCompletionRate ?? 0}%` }}</span>
+                <span class="ml10 value">{{ equipmentRuntime.taskCompletionRate || 0 }}%</span>
               </div>
             </div>
             <BarChart v-if="equipmentRuntime.items?.length" class="mt5" :items="equipmentRuntime.items || []" />
@@ -294,8 +292,8 @@ export default {
       };
       const { taskTotal, patrolMileage, aiAlarmTotal, autoHandleSuccessRate } = this.statistics?.kpis || {};
       const fallback = [
-        { code: 'taskTotal', icon: icons.taskTotal, name: '任务执行总数', value: this.taskDataDegraded ? '--' : (taskTotal?.value ?? 0), unit: this.taskDataDegraded ? '' : '个', compareRate: taskTotal?.compareRate },
-        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: this.mileageDataAvailable ? (patrolMileage?.value ?? 0) : '--', unit: this.mileageDataAvailable ? 'KM' : '', compareRate: patrolMileage?.compareRate, qualityWarning: this.mileageQualityIncomplete, qualityTitle: this.mileageQualityTitle },
+        { code: 'taskTotal', icon: icons.taskTotal, name: '任务执行总数', value: taskTotal?.value || 0, unit: '个', compareRate: taskTotal?.compareRate },
+        { code: 'patrolMileage', icon: icons.patrolMileage, name: '总巡逻里程', value: patrolMileage?.value ?? '--', unit: patrolMileage?.value == null ? '' : 'KM', compareRate: patrolMileage?.compareRate },
         { code: 'aiAlarmTotal', icon: icons.aiAlarmTotal, name: 'AI自动识别异常数', value: aiAlarmTotal?.value || 0, unit: '个', compareRate: aiAlarmTotal?.compareRate },
         { code: 'autoHandleSuccessRate', icon: icons.autoHandleSuccessRate, name: '自动处置成功率', value: autoHandleSuccessRate?.value || 0, unit: '%', compareRate: autoHandleSuccessRate?.compareRate }
       ];
@@ -303,19 +301,6 @@ export default {
     },
     equipmentRuntime() {
       return (this.statistics && this.statistics.equipmentRuntime) || {};
-    },
-    taskDataDegraded() {
-      return Boolean(this.statistics?.dataQuality?.tasks?.degraded)
-    },
-    mileageDataAvailable() {
-      return Boolean(this.statistics?.dataQuality?.mileage?.hasData)
-    },
-    mileageQualityIncomplete() {
-      return this.statistics?.dataQuality?.mileage?.quality === 'UNKNOWN'
-    },
-    mileageQualityTitle() {
-      if (!this.mileageQualityIncomplete) return ''
-      return '历史里程无法精确分类，总里程仍有效'
     },
     aiAlarmAnalysis() {
       return (this.statistics && this.statistics.aiAlarmAnalysis) || {};
@@ -338,7 +323,6 @@ export default {
       }));
     },
     taskCompletionItems() {
-      if (this.taskDataDegraded) return []
       const items = (this.statistics && this.statistics.taskCompletion && this.statistics.taskCompletion.items) || []
       return items.length ? items : [
         { status: 'COMPLETED', name: '已完成', percent: 0 },
@@ -347,7 +331,6 @@ export default {
       ];
     },
     taskInsight() {
-      if (this.taskDataDegraded) return '任务数据暂不完整'
       return (this.statistics && this.statistics.taskCompletion && this.statistics.taskCompletion.insight)
         || '暂无数据';
     },
@@ -435,9 +418,6 @@ export default {
       });
       try {
         this.statistics = await getPatrolStatisticsOverview(this.statisticsParams);
-        if (this.taskDataDegraded) {
-          this.$message.warning('任务数据暂不完整，任务统计暂不展示')
-        }
         if (this.statistics && Array.isArray(this.statistics.deviceTypeOptions)) {
           this.deviceTypeOptions = this.statistics.deviceTypeOptions;
         }

@@ -71,6 +71,25 @@ public class FixedCameraCatalogLeaseClient {
         }
     }
 
+    /**
+     * 主动释放当前身份的目录租约。失败时不影响 WebSocket 关闭，旧租约仍会按时过期。
+     */
+    public void release(Principal principal, HttpHeaders authorizationHeaders) {
+        if (!enabled) {
+            return;
+        }
+        try {
+            restClient.delete()
+                    .uri(releaseUri(leaseId(principal, authorizationHeaders)))
+                    .header("X-Internal-Caller", "bigscreen-bff")
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("固定摄像头目录租约已主动释放");
+        } catch (RuntimeException exception) {
+            log.warn("主动释放固定摄像头目录租约失败，将由过期机制收口", exception);
+        }
+    }
+
     LeaseRequest leaseRequest(
             Principal principal,
             HttpHeaders authorizationHeaders,
@@ -137,6 +156,15 @@ public class FixedCameraCatalogLeaseClient {
         return UriComponentsBuilder.fromUriString(baseUrl)
                 .path("/internal/control/fixed-camera-catalog-leases")
                 .build(true)
+                .toUri();
+    }
+
+    private URI releaseUri(String leaseId) {
+        String baseUrl = properties.getControlBaseUrl();
+        return UriComponentsBuilder.fromUriString(baseUrl)
+                .path("/internal/control/fixed-camera-catalog-leases/{leaseId}")
+                .buildAndExpand(leaseId)
+                .encode()
                 .toUri();
     }
 

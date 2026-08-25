@@ -103,9 +103,11 @@ gateway/fixed-camera/{gatewayId}/catalog/sync
 `GET /api/control/fixed-cameras/health` 只返回当前用户有权摄像头。健康仓库当前为进程内存，
 多实例部署前必须落实共享短期存储或完整订阅与请求粘滞方案。
 
-`PUT /internal/control/fixed-camera-catalog-leases` 只供 Bigscreen BFF 在内部网络续租。Control
-校验调用方标记、签发时间、版本和最长 300 秒有效期，合并当前有效租约后向 `catalog/sync`
-发布全量快照；最后一个租约过期时发布空目录。该接口不得由 Nginx 或 API Gateway 对外暴露，
+`PUT /internal/control/fixed-camera-catalog-leases` 只供 Bigscreen BFF 在内部网络续租；当同一身份的
+最后一个大屏 WebSocket 会话关闭时，BFF 调用
+`DELETE /internal/control/fixed-camera-catalog-leases/{leaseId}` 主动撤销租约。Control 校验调用方标记、
+签发时间、版本和最长 300 秒有效期，合并当前有效租约后向 `catalog/sync` 发布全量快照；主动撤销或
+最后一个租约过期时均发布空目录。该接口不得由 Nginx 或 API Gateway 对外暴露，
 调用方标记只用于误用防护，不等同于独立服务身份认证。
 
 ## 4. WebSocket

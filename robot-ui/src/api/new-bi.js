@@ -6,7 +6,9 @@ const pre = '/api'
 export function getPatrolPanoramaOverview() {
   return request({
     url: pre + '/bigscreen/panorama/overview',
-    method: 'get'
+    method: 'get',
+    // 首屏总览必须快速失败并交由页面提示重试，不能沿用全局 5 分钟超时一直遮住地图。
+    timeout: 15000
   })
 }
 

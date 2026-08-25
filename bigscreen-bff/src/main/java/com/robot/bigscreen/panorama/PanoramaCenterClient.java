@@ -509,29 +509,65 @@ public class PanoramaCenterClient {
 
     private List<Map<String, Object>> pagedRecords(IntFunction<URI> uriFactory, int pageSize) {
         List<Map<String, Object>> result = new ArrayList<>();
+        List<Map<String, Object>> previousPage = null;
         for (int pageNum = 1; pageNum <= 1000; pageNum++) {
-            List<Map<String, Object>> page = records(uriFactory.apply(pageNum));
-            result.addAll(page);
-            if (page.size() < pageSize) {
-                break;
+            URI uri = uriFactory.apply(pageNum);
+            Map<String, Object> response = responseMap(uri).orElse(Map.of());
+            List<Map<String, Object>> page = records(response);
+            if (page.equals(previousPage)) {
+                log.warn("全景地图中心端分页无进展，停止继续查询，请求地址={} 页码={}", uri, pageNum);
+                return result;
             }
+            result.addAll(page);
+            if (page.size() < pageSize || reachedReportedTotal(response, result.size())) {
+                return result;
+            }
+            previousPage = page;
         }
+        log.warn("全景地图中心端分页达到安全上限，返回已获取数据");
         return result;
     }
 
     private List<Map<String, Object>> requiredPagedRecords(IntFunction<URI> uriFactory, int pageSize) {
         List<Map<String, Object>> result = new ArrayList<>();
+        List<Map<String, Object>> previousPage = null;
         for (int pageNum = 1; pageNum <= 1000; pageNum++) {
             URI uri = uriFactory.apply(pageNum);
-            List<Map<String, Object>> page = records(requiredResponseMap(uri));
+            Map<String, Object> response = requiredResponseMap(uri);
+            List<Map<String, Object>> page = records(response);
+            if (page.equals(previousPage)) {
+                throw new ResponseStatusException(
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "管理端设备分页无进展");
+            }
             result.addAll(page);
-            if (page.size() < pageSize) {
+            if (page.size() < pageSize || reachedReportedTotal(response, result.size())) {
                 return result;
             }
+            previousPage = page;
         }
         throw new ResponseStatusException(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "管理端设备分页超过安全上限");
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean reachedReportedTotal(Map<String, Object> response, int receivedCount) {
+        Object total = response.get("total");
+        if (total == null && response.get("data") instanceof Map<?, ?> data) {
+            total = data.get("total");
+        }
+        if (total instanceof Number number) {
+            return receivedCount >= number.longValue();
+        }
+        if (total instanceof String text) {
+            try {
+                return receivedCount >= Long.parseLong(text);
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        }
+        return false;
     }
 
     private Map<String, Object> requiredResponseMap(URI uri) {

@@ -30,6 +30,11 @@ type fakeProber struct {
 	err error
 }
 
+type sequenceProber struct {
+	errors []error
+	index  int
+}
+
 func TestLeaseCatalogReplacesSnapshotAndExpires(t *testing.T) {
 	now := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
 	gateway := NewGateway(config.Config{
@@ -84,6 +89,15 @@ func (p fakeProber) Check(context.Context, string) (rtsp.StreamInfo, error) {
 	return rtsp.StreamInfo{CodecName: "h264"}, p.err
 }
 
+func (p *sequenceProber) Check(context.Context, string) (rtsp.StreamInfo, error) {
+	if p.index >= len(p.errors) {
+		return rtsp.StreamInfo{CodecName: "h264"}, nil
+	}
+	err := p.errors[p.index]
+	p.index++
+	return rtsp.StreamInfo{CodecName: "h264"}, err
+}
+
 func TestCameraHealthSeparatesConfigurationAndRTSPAvailability(t *testing.T) {
 	gateway := NewGateway(config.Config{FixedCameraGatewayID: "gateway-001"}, fakeProber{}, nil)
 
@@ -111,6 +125,49 @@ func TestCameraHealthReportsProbeFailureWithoutLeakingURL(t *testing.T) {
 
 	if status.Health != "UNAVAILABLE" || status.ReasonCode != "RTSP_PROBE_FAILED" {
 		t.Fatalf("期望探测失败，实际=%+v", status)
+	}
+}
+
+func TestCameraHealthRecoversAfterRTSPBecomesAvailable(t *testing.T) {
+	prober := &sequenceProber{errors: []error{errors.New("断流"), nil}}
+	gateway := NewGateway(config.Config{FixedCameraGatewayID: "gateway-001"}, prober, nil)
+	camera := cameraRecord{
+		CameraID: "camera-001", Enabled: true, ProtocolType: "RTSP", SubStreamURL: "rtsp://example.invalid/stream",
+	}
+
+	unavailable := gateway.cameraHealth(context.Background(), camera)
+	available := gateway.cameraHealth(context.Background(), camera)
+
+	if unavailable.Health != "UNAVAILABLE" || unavailable.ReasonCode != "RTSP_PROBE_FAILED" {
+		t.Fatalf("断流后应发布不可用状态，实际=%+v", unavailable)
+	}
+	if available.Health != "AVAILABLE" || available.ReasonCode != "" {
+		t.Fatalf("恢复后应重新发布可用状态，实际=%+v", available)
+	}
+}
+
+func TestPublisherProcessExitIsReportedAsInterruptedForRecovery(t *testing.T) {
+	if status := publisherEventStatus("PUBLISH_PROCESS_EXITED"); status != "interrupted" {
+		t.Fatalf("推流进程意外退出应进入可恢复中断状态，实际=%s", status)
+	}
+	if status := publisherEventStatus("PUBLISH_TOKEN_EXPIRED"); status != "failed" {
+		t.Fatalf("非断流原因不应被错误标记为可恢复中断，实际=%s", status)
+	}
+}
+
+func TestRecoveryProbeRetriesAreBounded(t *testing.T) {
+	gateway := NewGateway(config.Config{}, fakeProber{}, nil)
+	gateway.recoveryAttempts["vs-1"] = 0
+	for attempt := 0; attempt < maxAutomaticRecoveryAttempts; attempt++ {
+		if status := gateway.recoveryProbeStatus("vs-1"); status != "interrupted" {
+			t.Fatalf("第 %d 次恢复探测失败应保持中断，实际=%s", attempt+1, status)
+		}
+	}
+	if status := gateway.recoveryProbeStatus("vs-1"); status != "failed" {
+		t.Fatalf("超过恢复上限应失败收口，实际=%s", status)
+	}
+	if status := gateway.recoveryProbeStatus("vs-new"); status != "failed" {
+		t.Fatalf("首次启动探测失败应直接失败，实际=%s", status)
 	}
 }
 

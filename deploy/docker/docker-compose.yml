@@ -269,7 +269,7 @@ services:
       - "${BIGSCREEN_BFF_DEBUG_PORT:-5007}:5007"
     volumes:
       - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/bigscreen-bff:/app"
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/bigscreen-bff/data/statistics-reports:/data/statistics-reports"
+      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/statistics-reports:/data/statistics-reports"
     depends_on:
       - media-service
       - control-service

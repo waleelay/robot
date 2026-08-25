@@ -9,7 +9,11 @@ import com.robot.control.robot.service.RobotRegistryService;
 import com.robot.control.service.EquipmentControlService;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.DateTimeException;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -27,6 +31,8 @@ public class EdgeDeviceStatusHandler {
     private static final Logger log = LoggerFactory.getLogger(EdgeDeviceStatusHandler.class);
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
+    private static final BigDecimal UNIX_MILLIS_THRESHOLD = new BigDecimal("100000000000");
+    private static final BigDecimal NANOS_PER_SECOND = new BigDecimal("1000000000");
 
     private final ObjectMapper objectMapper;
     private final EquipmentControlService equipmentControlService;
@@ -66,8 +72,9 @@ public class EdgeDeviceStatusHandler {
                 return;
             }
 
-            Map<String, Object> update = normalize(serialNumber, envelope, status);
-            recordMileage(serialNumber, envelope, status);
+            OffsetDateTime eventTime = parseEdgeEventTime(envelope.get("timestamp"));
+            Map<String, Object> update = normalize(serialNumber, envelope, status, eventTime);
+            recordMileage(serialNumber, envelope, status, eventTime);
             Map<String, Object> merged = equipmentControlService.mergeEdgeDeviceStatus(serialNumber, update);
             robotRegistryService.update(merged);
         } catch (Exception ex) {
@@ -79,7 +86,8 @@ public class EdgeDeviceStatusHandler {
     private Map<String, Object> normalize(
             String serialNumber,
             Map<String, Object> envelope,
-            Map<String, Object> status) {
+            Map<String, Object> status,
+            OffsetDateTime eventTime) {
         Map<String, Object> basic = map(status.get("basic"));
         Map<String, Object> motion = map(status.get("motion"));
         Map<String, Object> localization = map(status.get("localization"));
@@ -87,8 +95,9 @@ public class EdgeDeviceStatusHandler {
         Map<String, Object> control = map(status.get("control"));
         Map<String, Object> task = map(status.get("task"));
 
-        String timestamp = String.valueOf(
-                DateTimeConfig.normalize(envelope.getOrDefault("timestamp", OffsetDateTime.now())));
+        String timestamp = eventTime == null
+                ? string(envelope.get("timestamp"))
+                : DateTimeConfig.format(eventTime);
         Map<String, Object> update = new LinkedHashMap<>();
         update.put("robotId", serialNumber);
         update.put("status", "online");
@@ -129,16 +138,18 @@ public class EdgeDeviceStatusHandler {
     private void recordMileage(
             String serialNumber,
             Map<String, Object> envelope,
-            Map<String, Object> status) {
+            Map<String, Object> status,
+            OffsetDateTime eventTime) {
         Map<String, Object> motion = map(status.get("motion"));
         if (motion.isEmpty()) {
             return;
         }
+        if (eventTime == null) {
+            log.warn("已隔离边缘设备里程，时间戳缺失或无法解析，机器人标识={} 时间戳={}",
+                    serialNumber, string(envelope.get("timestamp")));
+            return;
+        }
         try {
-            String timestamp = string(envelope.get("timestamp"));
-            OffsetDateTime eventTime = timestamp.isBlank()
-                    ? OffsetDateTime.now()
-                    : DateTimeConfig.parseOffsetDateTime(timestamp);
             mileageService.record(new MileageReading(
                     serialNumber,
                     string(envelope.get("messageId")),
@@ -149,6 +160,47 @@ public class EdgeDeviceStatusHandler {
             // 里程持久化异常不能阻断设备实时状态和控制链路。
             log.warn("保存边缘设备里程失败，机器人标识={}", serialNumber, exception);
         }
+    }
+
+    /**
+     * 解析边缘设备事件时间。协议首选 ISO-8601；为兼容已投产设备，也接受数值 Unix 秒或毫秒。
+     * 数值经 JSON 反序列化为 Double 后可能表现为科学计数法，BigDecimal 可无损处理该形式。
+     *
+     * @param value MQTT 载荷中的 timestamp
+     * @return UTC 偏移的事件时间；无法解析时返回 null，由里程分支隔离该条记录
+     */
+    private OffsetDateTime parseEdgeEventTime(Object value) {
+        String timestamp = string(value).trim();
+        if (timestamp.isBlank()) {
+            return null;
+        }
+        try {
+            return DateTimeConfig.parseOffsetDateTime(timestamp);
+        } catch (DateTimeException ignored) {
+            // 非日期文本时继续按 Unix 时间戳解析。
+        }
+        try {
+            BigDecimal epoch = new BigDecimal(timestamp);
+            Instant instant = epoch.abs().compareTo(UNIX_MILLIS_THRESHOLD) >= 0
+                    ? Instant.ofEpochMilli(epoch.longValueExact())
+                    : instantFromEpochSeconds(epoch);
+            return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
+        } catch (NumberFormatException | ArithmeticException | DateTimeException exception) {
+            return null;
+        }
+    }
+
+    private Instant instantFromEpochSeconds(BigDecimal epochSeconds) {
+        BigDecimal wholeSeconds = epochSeconds.setScale(0, RoundingMode.FLOOR);
+        BigDecimal fractionalSeconds = epochSeconds.subtract(wholeSeconds);
+        long seconds = wholeSeconds.longValueExact();
+        int nanos = fractionalSeconds.multiply(NANOS_PER_SECOND)
+                .setScale(0, RoundingMode.HALF_UP)
+                .intValueExact();
+        if (nanos == NANOS_PER_SECOND.intValueExact()) {
+            return Instant.ofEpochSecond(Math.addExact(seconds, 1));
+        }
+        return Instant.ofEpochSecond(seconds, nanos);
     }
 
     private String serialNumberFromTopic(String topic) {

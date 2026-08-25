@@ -28,6 +28,7 @@ type Gateway struct {
 	mqtt               paho.Client
 	mu                 sync.Mutex
 	lastCmds           map[string]string
+	recoveryAttempts   map[string]int
 	sequence           atomic.Uint64
 	probeRunning       atomic.Bool
 	catalogMu          sync.Mutex
@@ -35,6 +36,8 @@ type Gateway struct {
 	lastCatalog        time.Time
 	lastCatalogVersion uint64
 }
+
+const maxAutomaticRecoveryAttempts = 8
 
 type streamProber interface {
 	Check(context.Context, string) (rtsp.StreamInfo, error)
@@ -71,12 +74,13 @@ func NewGateway(cfg config.Config, probe streamProber, pub publisher.Publisher) 
 		cfg.FixedCameraGatewayID = "default"
 	}
 	return &Gateway{
-		cfg:       cfg,
-		probe:     probe,
-		publisher: pub,
-		http:      &http.Client{Timeout: 5 * time.Second, Transport: transport},
-		lastCmds:  make(map[string]string),
-		catalog:   make(map[string]leasedCamera),
+		cfg:              cfg,
+		probe:            probe,
+		publisher:        pub,
+		http:             &http.Client{Timeout: 5 * time.Second, Transport: transport},
+		lastCmds:         make(map[string]string),
+		recoveryAttempts: make(map[string]int),
+		catalog:          make(map[string]leasedCamera),
 	}
 }
 
@@ -164,10 +168,24 @@ func (g *Gateway) ObservePublisherEvents(ctx context.Context, events <-chan publ
 			return
 		case event := <-events:
 			for _, sessionID := range event.SessionIDs {
-				g.status(sessionID, "failed", "", "", event.ReasonCode, event.Message)
+				if event.ReasonCode == "PUBLISH_PROCESS_EXITED" {
+					g.mu.Lock()
+					g.recoveryAttempts[sessionID] = 0
+					g.mu.Unlock()
+				}
+				g.status(sessionID, publisherEventStatus(event.ReasonCode), "", "", event.ReasonCode, event.Message)
 			}
 		}
 	}
+}
+
+// 推流进程意外退出通常由短暂 RTSP 断流引起，保留 viewer 后应由服务端调度重发启动命令。
+// 其他不可恢复原因仍按 failed 收口，避免无限重试错误配置或显式停止的会话。
+func publisherEventStatus(reasonCode string) string {
+	if reasonCode == "PUBLISH_PROCESS_EXITED" {
+		return "interrupted"
+	}
+	return "failed"
 }
 
 func (g *Gateway) subscribe(topic string, handler paho.MessageHandler) {
@@ -203,9 +221,10 @@ func (g *Gateway) handleStart(ctx context.Context) paho.MessageHandler {
 				Health: "UNAVAILABLE", Sequence: g.sequence.Add(1), CheckedAt: time.Now(),
 				ReasonCode: "RTSP_PROBE_FAILED",
 			})
-			g.status(command.SessionID, "failed", "", "", "RTSP_PROBE_FAILED", err.Error())
+			g.status(command.SessionID, g.recoveryProbeStatus(command.SessionID), "", "", "RTSP_PROBE_FAILED", err.Error())
 			return
 		}
+		g.clearRecovery(command.SessionID)
 		g.publishCameraHealth(model.FixedCameraHealthStatus{
 			Version: "1.0", GatewayID: g.cfg.FixedCameraGatewayID, CameraID: cameraID,
 			Health: "AVAILABLE", Sequence: g.sequence.Add(1), CheckedAt: time.Now(),
@@ -218,6 +237,28 @@ func (g *Gateway) handleStart(ctx context.Context) paho.MessageHandler {
 		}
 		g.status(command.SessionID, "streaming", trackSid, trackName, "", "视频轨道发布成功")
 	}
+}
+
+func (g *Gateway) recoveryProbeStatus(sessionID string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	attempts, recovering := g.recoveryAttempts[sessionID]
+	if !recovering {
+		return "failed"
+	}
+	attempts++
+	if attempts > maxAutomaticRecoveryAttempts {
+		delete(g.recoveryAttempts, sessionID)
+		return "failed"
+	}
+	g.recoveryAttempts[sessionID] = attempts
+	return "interrupted"
+}
+
+func (g *Gateway) clearRecovery(sessionID string) {
+	g.mu.Lock()
+	delete(g.recoveryAttempts, sessionID)
+	g.mu.Unlock()
 }
 
 func (g *Gateway) handleStop() paho.MessageHandler {

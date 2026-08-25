@@ -38,7 +38,6 @@ class PanoramaServiceTest {
         assertEquals(1.2, patrolOverview.get("mileageToday"));
         assertEquals("KM", patrolOverview.get("mileageUnit"));
         assertEquals(true, patrolOverview.get("mileageHasData"));
-        assertEquals("NORMAL", patrolOverview.get("mileageQuality"));
     }
 
     @Test
