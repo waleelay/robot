@@ -45,7 +45,7 @@ expand_user_path() {
 }
 
 purge_workspace() {
-  workspace_root=$(expand_user_path "$(env_value APP_WORKSPACE_ROOT ~/mounts/media)")
+  workspace_root=$(expand_user_path "$(env_value APP_WORKSPACE_ROOT /home/jszn/mounts/media)")
 
   case "$workspace_root" in
     ""|"/"|"$HOME"|"$HOME/")

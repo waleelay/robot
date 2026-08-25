@@ -75,8 +75,8 @@ deploy/docker/config/livekit/livekit-egress.yaml
 注意：安装后 LiveKit 使用单文件挂载，目标路径必须是文件，不能是目录：
 
 ```text
-~/mounts/media/livekit.yaml        -> /livekit.yaml
-~/mounts/media/livekit-egress.yaml -> /livekit-egress.yaml
+/home/jszn/mounts/media/livekit.yaml        -> /livekit.yaml
+/home/jszn/mounts/media/livekit-egress.yaml -> /livekit-egress.yaml
 ```
 
 ### 2.3 准备 Nginx 配置和前端
@@ -123,7 +123,7 @@ deploy/docker/config/nginx/html/tdt.tar.gz
 安装时会解压到：
 
 ```text
-~/mounts/media/nginx/html/tdt
+/home/jszn/mounts/media/nginx/html/tdt
 ```
 
 也支持直接放目录：
@@ -155,7 +155,7 @@ TDT_ZIP=/path/to/tdt.zip TARGET_ARCH=amd64 ./package.sh
 如果服务器没有 `unzip`，优先改用 `tdt.tar.gz`。也可以先跳过地图，部署后再把解压好的 `tdt` 目录放到：
 
 ```text
-~/mounts/media/nginx/html/tdt
+/home/jszn/mounts/media/nginx/html/tdt
 ```
 
 ### 2.5 准备 TTS
@@ -175,7 +175,7 @@ deploy/docker/config/tts/app.py
 安装后会复制到：
 
 ```text
-~/mounts/media/tts/app.py
+/home/jszn/mounts/media/tts/app.py
 ```
 
 ### 2.6 准备第三方镜像
@@ -352,7 +352,7 @@ sed -i 's#^TARGET_ARCH=.*#TARGET_ARCH=amd64#' .env
 sed -i 's#^TARGET_PLATFORM=.*#TARGET_PLATFORM=linux/amd64#' .env
 sed -i 's#^DEPLOY_NETWORK_MODE=.*#DEPLOY_NETWORK_MODE=bridge#' .env
 sed -i 's#^DOCKER_NETWORK_SUBNET=.*#DOCKER_NETWORK_SUBNET=10.253.10.0/24#' .env
-sed -i 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/root/mounts/media#' .env
+sed -i 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/home/jszn/mounts/media#' .env
 sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env
 ```
 
@@ -537,9 +537,9 @@ sed -i 's#^TDT_INSTALL_MODE=.*#TDT_INSTALL_MODE=skip_existing#' .env
 如果直接改的是：
 
 ```text
-~/mounts/media/media-service/config
-~/mounts/media/control-service/config
-~/mounts/media/bigscreen-bff/config
+/home/jszn/mounts/media/media-service/config
+/home/jszn/mounts/media/control-service/config
+/home/jszn/mounts/media/bigscreen-bff/config
 ```
 
 重启对应容器：
@@ -732,14 +732,7 @@ docker images --format "{{.Repository}}:{{.Tag}}" \
 如需删除宿主机挂载目录，删除 `.env` 中 `APP_WORKSPACE_ROOT` 对应的真实目录。默认是：
 
 ```bash
-rm -rf "$HOME/mounts/media"
-```
-
-如果部署时改成了其他目录，按实际路径删除，例如：
-
-```bash
-rm -rf /root/mounts/media
-rm -rf /home/jszn/mounts/media
+rm -rf "/home/jszn/mounts/media"
 ```
 
 清理后检查：

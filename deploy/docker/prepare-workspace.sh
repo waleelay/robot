@@ -57,7 +57,7 @@ set_env_value() {
 template_default() {
   key=$1
   case "$key" in
-    APP_WORKSPACE_ROOT) printf '%s' ~/mounts/media ;;
+    APP_WORKSPACE_ROOT) printf '%s' /home/jszn/mounts/media ;;
     NGINX_MEDIA_SERVICE_UPSTREAM) printf '%s' host.docker.internal:8088 ;;
     NGINX_BIGSCREEN_BFF_UPSTREAM) printf '%s' host.docker.internal:8090 ;;
     NGINX_LIVEKIT_UPSTREAM) printf '%s' host.docker.internal:7880 ;;
@@ -110,7 +110,7 @@ render_template_file() {
   done
 }
 
-raw_workspace_root=$(env_value APP_WORKSPACE_ROOT ~/mounts/media)
+raw_workspace_root=$(env_value APP_WORKSPACE_ROOT /home/jszn/mounts/media)
 APP_WORKSPACE_ROOT=$(expand_user_path "$raw_workspace_root")
 if [ "$APP_WORKSPACE_ROOT" != "$raw_workspace_root" ]; then
   set_env_value APP_WORKSPACE_ROOT "$APP_WORKSPACE_ROOT"
@@ -123,13 +123,13 @@ ensure_workspace_writable() {
 
   if ! mkdir -p "$APP_WORKSPACE_ROOT" 2>/dev/null; then
     echo "cannot create APP_WORKSPACE_ROOT: $APP_WORKSPACE_ROOT" >&2
-    echo "Choose a user-writable APP_WORKSPACE_ROOT, for example: ~/mounts/media" >&2
+    echo "Choose a user-writable APP_WORKSPACE_ROOT, for example: /home/jszn/mounts/media" >&2
     exit 1
   fi
 
   if ! : > "$check_file" 2>/dev/null; then
     echo "APP_WORKSPACE_ROOT is not writable: $APP_WORKSPACE_ROOT" >&2
-    echo "Choose a user-writable APP_WORKSPACE_ROOT, for example: ~/mounts/media" >&2
+    echo "Choose a user-writable APP_WORKSPACE_ROOT, for example: /home/jszn/mounts/media" >&2
     exit 1
   fi
 

@@ -19,7 +19,7 @@
 #   UPDATE_SSH_USER      SSH 用户，默认 root
 #   UPDATE_SSH_PORT      SSH 端口，默认 22
 #   UPDATE_INSTALL_DIR   compose 安装目录，默认 /data/robot-mediaserver-installer-amd64-20260719220656
-#   UPDATE_WORKSPACE     服务运行目录，默认 /root/mounts/media
+#   UPDATE_WORKSPACE     服务运行目录，默认 /home/jszn/mounts/media
 #   UPDATE_ENV_FILE      环境变量增量文件，默认 deploy/docker/update-services.env
 #   UPDATE_SERVICES      本次更新的服务列表，默认 "media-service control-service bigscreen-bff"
 #   DIST_MEDIA/DIST_CONTROL/DIST_BIGSCREEN  三个 dist 包路径（默认指向各模块 target）
@@ -36,7 +36,7 @@ UPDATE_SERVER="${UPDATE_SERVER:-192.168.124.234}"
 UPDATE_SSH_USER="${UPDATE_SSH_USER:-root}"
 UPDATE_SSH_PORT="${UPDATE_SSH_PORT:-22}"
 UPDATE_INSTALL_DIR="${UPDATE_INSTALL_DIR:-/data/robot-mediaserver-installer-amd64-20260719220656}"
-UPDATE_WORKSPACE="${UPDATE_WORKSPACE:-/root/mounts/media}"
+UPDATE_WORKSPACE="${UPDATE_WORKSPACE:-/home/jszn/mounts/media}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 UPDATE_ENV_FILE="${UPDATE_ENV_FILE:-$SCRIPT_DIR/update-services.env}"

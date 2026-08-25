@@ -360,7 +360,7 @@ Runtime config templates are stored under `config/`.
 Robot UI dist is stored under `config/nginx/html/dist`.
 TDT map files are stored under `config/nginx/html/tdt.tar.gz`, `config/nginx/html/tdt.zip`, or `config/nginx/html/tdt` when provided.
 Java runtime image defaults to `robot/java17-ffmpeg-runtime:latest`; it must contain Java 17, ffmpeg, and ffprobe for HLS.
-Application files are extracted to `~/mounts/media` by default. `~` means the current user's home directory.
+Application files are extracted to `/home/jszn/mounts/media` by default.
 Runtime IPs, ports, accounts, and secrets should be configured in `.env`.
 For OpenStack/Linux servers that are sensitive to Docker bridge routes, set `DEPLOY_NETWORK_MODE=host` in `.env` before running `./install.sh`.
 Repeated installs use `INSTALL_MODE=skip_existing` by default, so existing runtime directories and LiveKit config files are left untouched. Set `INSTALL_MODE=overwrite` in `.env` to overwrite them during install.

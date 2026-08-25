@@ -71,7 +71,7 @@ set_env_value_if_default() {
   fi
 }
 
-raw_workspace_root=$(env_value APP_WORKSPACE_ROOT ~/mounts/media)
+raw_workspace_root=$(env_value APP_WORKSPACE_ROOT /home/jszn/mounts/media)
 APP_WORKSPACE_ROOT=$(expand_user_path "$raw_workspace_root")
 if [ "$APP_WORKSPACE_ROOT" != "$raw_workspace_root" ]; then
   set_env_value APP_WORKSPACE_ROOT "$APP_WORKSPACE_ROOT"

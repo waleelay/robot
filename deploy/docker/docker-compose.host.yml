@@ -8,10 +8,10 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/nginx/conf/nginx.conf:/etc/nginx/nginx.conf:ro"
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/nginx/ssl:/etc/nginx/ssl:ro"
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/nginx/html:/usr/share/nginx/html:ro"
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/nginx/logs:/var/log/nginx"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/nginx/conf/nginx.conf:/etc/nginx/nginx.conf:ro"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/nginx/ssl:/etc/nginx/ssl:ro"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/nginx/html:/usr/share/nginx/html:ro"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/nginx/logs:/var/log/nginx"
     depends_on:
       - media-service
       - control-service
@@ -31,8 +31,8 @@ services:
       TTS_OUTPUT_ROOT: ${TTS_OUTPUT_ROOT:-/data/tts}
       TTS_MAX_TEXT_LENGTH: ${TTS_MAX_TEXT_LENGTH:-1000}
     volumes:
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/tts:/data/tts"
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/tts/app.py:/opt/tts-service/app.py"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/tts:/data/tts"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/tts/app.py:/opt/tts-service/app.py"
 
   livekit-server:
     image: ${LIVEKIT_SERVER_IMAGE:-livekit/livekit-server:latest}
@@ -44,7 +44,7 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/livekit.yaml:/livekit.yaml"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/livekit.yaml:/livekit.yaml"
 
   livekit-egress:
     image: ${LIVEKIT_EGRESS_IMAGE:-livekit/egress:latest}
@@ -58,7 +58,7 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       EGRESS_CONFIG_FILE: /livekit-egress.yaml
     volumes:
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/livekit-egress.yaml:/livekit-egress.yaml"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/livekit-egress.yaml:/livekit-egress.yaml"
     depends_on:
       - livekit-server
 
@@ -95,7 +95,7 @@ services:
       JAVA_DEBUG_PORT: ${MEDIA_SERVICE_DEBUG_PORT:-5005}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/media-service:/app"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/media-service:/app"
     depends_on:
       - livekit-server
       - livekit-egress
@@ -144,7 +144,7 @@ services:
       JAVA_DEBUG_PORT: ${CONTROL_SERVICE_DEBUG_PORT:-5006}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/control-service:/app"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/control-service:/app"
     depends_on:
       - media-service
 
@@ -219,8 +219,8 @@ services:
       JAVA_DEBUG_PORT: ${BIGSCREEN_BFF_DEBUG_PORT:-5007}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/bigscreen-bff:/app"
-      - "${APP_WORKSPACE_ROOT:-${HOME}/mounts/media}/statistics-reports:/data/statistics-reports"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/bigscreen-bff:/app"
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/statistics-reports:/data/statistics-reports"
     depends_on:
       - media-service
       - control-service
