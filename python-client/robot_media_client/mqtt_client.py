@@ -182,7 +182,7 @@ class RobotMQTTClient:
             # gstreamer-publisher/ffmpeg，再发布到 LiveKit room。
             track_sid, track_name = self.publisher.start(command, rtsp_url)
             # gstreamer-publisher 当前不会把真实 LiveKit track sid 回传给父进程；
-            # 与 Go 客户端保持一致，先用 sessionId 派生稳定占位 sid，后端据此进入 STREAMING。
+            # 先用 sessionId 派生稳定占位 sid，后端据此进入 STREAMING。
             self.status(command.session_id, "streaming", track_sid, track_name, "", "track published")
         except Exception as exc:
             print("video start failed", exc, flush=True)
@@ -647,7 +647,7 @@ def parse_broker(raw: str) -> Broker:
 
 
 def without_empty(payload: dict[str, Any]) -> dict[str, Any]:
-    """移除空字符串和 None，保持 MQTT payload 简洁并兼容 Go 客户端格式。"""
+    """移除空字符串和 None，保持 MQTT payload 简洁。"""
     return {
         key: value
         for key, value in payload.items()

@@ -1,6 +1,6 @@
 # robot-media-client Python 客户端
 
-这是机器人媒体客户端的 Python 实现，功能边界与 Go 客户端保持一致，便于在 Jetson、Ubuntu 或其它 Python 运行环境中部署。
+这是机器人媒体客户端与演示模拟的唯一实现，便于在 Jetson、Ubuntu 或其它 Python 运行环境中部署。
 
 客户端主要负责：
 
@@ -13,7 +13,7 @@
 - 通过 TCP `8519/12345` 和 HTTP `8222` 控制机器人局域网内的多合一真实设备。
 - 上报机器人在线、离线、实时视频、对讲和设备状态。
 
-Go 客户端仍位于仓库 `client/` 目录，Python 客户端位于仓库根目录 `python-client/`。
+固定摄像头推流由仓库根目录的 `fixed-camera-gateway/` 独立承担；Python 客户端只处理机器人协议与模拟。
 
 ## 目录结构
 
@@ -77,7 +77,7 @@ Jetson/Ubuntu 环境可参考：
 ```bash
 chmod +x scripts/ffmpeg-livekit-publisher.sh
 sudo apt-get install -y ffmpeg
-GOPROXY=https://goproxy.cn,direct sh ../client/scripts/install-gstreamer-publisher.sh
+GOPROXY=https://goproxy.cn,direct sh ../fixed-camera-gateway/scripts/install-gstreamer-publisher.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -420,7 +420,7 @@ main
 
 #### 5.5 多合一设备
 
-Go/Python 使用同一组环境变量：
+Python 机器人客户端使用以下环境变量：
 
 ```text
 MULTI_FUNCTION_ENABLED=false

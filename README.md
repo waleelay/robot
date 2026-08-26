@@ -25,8 +25,8 @@ Media Service -> LiveKit / MinIO / MySQL
 | `control-service/` | `/api/control/**`、控制租约、设备命令、机器人状态、固定摄像头、MQTT、视频编排 |
 | `backend/` | 视频会话与对讲、LiveKit Room/Token/Egress、通用文件、HLS、TTS |
 | `media-common/` | Media 与 Control 共享的纯 DTO 与枚举契约模块，不承载业务逻辑 |
-| `client/` | Go 机器人客户端与固定摄像头 Gateway；RTSP、LiveKit、MQTT、设备驱动和文件上传 |
-| `python-client/` | Python 机器人客户端，能力边界与 Go 客户端保持一致 |
+| `fixed-camera-gateway/` | Go 固定摄像头 Gateway；RTSP、LiveKit、MQTT、健康探测与推流进程管理 |
+| `python-client/` | Python 机器人客户端与演示模拟 |
 | `robot-ui/` | 指挥中心前端 |
 | `frontend/` | 实时视频和文件能力调试前端 |
 
@@ -39,8 +39,8 @@ backend/          Java 17 + Spring Boot 3 Media Service
 media-common/     Media/Control 共享 DTO 与枚举契约（纯 Java 17）
 control-service/  Java 17 + Spring Boot 3 Control Service
 bigscreen-bff/    Java 17 + Spring Boot 3 Bigscreen BFF
-client/           Go 机器人客户端及固定摄像头 Gateway
-python-client/    Python 机器人客户端
+fixed-camera-gateway/ Go 固定摄像头 Gateway
+python-client/    Python 机器人客户端及演示模拟
 frontend/         Vue 2 实时视频调试前端
 robot-ui/         Vue 指挥中心前端
 deploy/           Docker、Nginx 与离线部署资源
@@ -88,11 +88,11 @@ Java 服务：
 (cd bigscreen-bff && mvn spring-boot:run)
 ```
 
-Go 客户端的实时音频路径不需要 `opusfile` 文件解码库，本地验证使用：
+固定摄像头 Gateway 的本地验证：
 
 ```bash
-(cd client && go test -tags nolibopusfile ./...)
-(cd client && go build -tags nolibopusfile -o robot-media-client ./cmd/robot-media-client)
+(cd fixed-camera-gateway && go test ./...)
+(cd fixed-camera-gateway && go build -o fixed-camera-gateway ./cmd/fixed-camera-gateway)
 ```
 
 完整配置分别见 [Media Service README](backend/README.md)、[Control Service README](control-service/README.md) 和 [Bigscreen BFF README](bigscreen-bff/README.md)。生产环境必须覆盖示例密钥、对象存储凭据、JWT Issuer、服务地址和允许跨域来源，不能直接使用仓库中的开发默认值。
@@ -117,8 +117,8 @@ Header 缺失时 Control 和 Media 会启用开发默认身份，该行为不是
 - 机器人摄像头和固定摄像头视频会话创建、复用、恢复、切换、停止与视频墙。
 - LiveKit viewer/publisher Token、Track 状态、语音对讲，以及支持刷新恢复、离线收口和最长时长保护的 Egress 手动录像。
 - 机器人排他控制租约、设备能力校验、通用设备命令和多合一设备控制。
-- 固定摄像头管理端档案校验、主/子码流选择及 Gateway MQTT 编排；默认由大屏用户授权产生
-  短租约目录，旧 Gateway 直连 Management 方案仅作为显式兼容模式保留。
+- 固定摄像头管理端档案校验、主/子码流选择及 Gateway MQTT 编排；大屏用户授权后由 Control
+  下发短租约目录。
 - 机器人在线/设备状态合并、WebSocket 广播和任务失效通知。
 - 通用文件简单上传、分片直传、批量删除、下载、HLS 转码和播放。
 - Media OpenTTS 生成/二进制广播，以及多合一设备文本 TTS 命令。

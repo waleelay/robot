@@ -575,7 +575,7 @@ class PanoramaServiceTest {
         assertEquals(1, devices.size());
         assertEquals("camera-001", devices.get(0).get("robotId"));
         assertEquals("FIXED_CAMERA", devices.get(0).get("sourceType"));
-        assertEquals("unknown", devices.get(0).get("status"));
+        assertEquals("offline", devices.get(0).get("status"));
         assertEquals(true, devices.get(0).get("enabled"));
         assertEquals("READY", devices.get(0).get("configStatus"));
         assertEquals("UNKNOWN", ((Map<?, ?>) devices.get(0).get("gatewayHealth")).get("status"));
@@ -591,7 +591,10 @@ class PanoramaServiceTest {
         assertEquals(true, devices.get(0).get("playable"));
         assertEquals(false, devices.get(0).get("showControlCenter"));
         assertEquals(false, devices.get(0).get("showController"));
-        assertEquals(1L, ((Map<?, ?>) overview.get("deviceStats")).get("unknown"));
+        Map<?, ?> stats = (Map<?, ?>) overview.get("deviceStats");
+        assertEquals(1L, stats.get("offline"));
+        assertFalse(stats.containsKey("unknown"));
+        assertFalse(stats.containsKey("disabled"));
     }
 
     @Test
@@ -672,6 +675,7 @@ class PanoramaServiceTest {
         assertEquals(false, devices.get(0).get("fault"));
         assertNull(devices.get(1).get("fault"));
         assertEquals(true, devices.get(2).get("fault"));
+        assertEquals("fault", devices.get(2).get("status"));
         assertEquals(1L, ((Map<?, ?>) overview.get("deviceStats")).get("fault"));
     }
 

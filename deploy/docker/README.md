@@ -193,7 +193,7 @@ deploy/docker/tool-images/arm64/
 java-runtime.tar.gz
 alpine-3.20.tar.gz
 golang-1.26-alpine.tar.gz
-robot-media-client-image.tar.gz
+fixed-camera-gateway-image.tar.gz
 livekit-server.tar.gz
 livekit-egress.tar.gz
 nginx.tar.gz
@@ -217,7 +217,7 @@ mkdir -p deploy/docker/tool-images/amd64
 docker image save --platform linux/amd64 robot/java17-ffmpeg-runtime:amd64 | gzip -9 > deploy/docker/tool-images/amd64/java-runtime.tar.gz
 docker image save --platform linux/amd64 alpine:3.20 | gzip -9 > deploy/docker/tool-images/amd64/alpine-3.20.tar.gz
 docker image save --platform linux/amd64 golang:1.26-alpine | gzip -9 > deploy/docker/tool-images/amd64/golang-1.26-alpine.tar.gz
-docker image save --platform linux/amd64 robot/robot-media-client:latest | gzip -9 > deploy/docker/tool-images/amd64/robot-media-client-image.tar.gz
+docker image save --platform linux/amd64 robot/fixed-camera-gateway:latest | gzip -9 > deploy/docker/tool-images/amd64/fixed-camera-gateway-image.tar.gz
 docker image save --platform linux/amd64 livekit/livekit-server:latest | gzip -9 > deploy/docker/tool-images/amd64/livekit-server.tar.gz
 docker image save --platform linux/amd64 livekit/egress:latest | gzip -9 > deploy/docker/tool-images/amd64/livekit-egress.tar.gz
 docker image save --platform linux/amd64 nginx:alpine | gzip -9 > deploy/docker/tool-images/amd64/nginx.tar.gz
@@ -240,17 +240,15 @@ mkdir -p deploy/docker/tool-images/arm64
 docker image save --platform linux/arm64 robot/java17-ffmpeg-runtime:arm64 | gzip -9 > deploy/docker/tool-images/arm64/java-runtime.tar.gz
 docker image save --platform linux/arm64 alpine:3.20 | gzip -9 > deploy/docker/tool-images/arm64/alpine-3.20.tar.gz
 docker image save --platform linux/arm64 golang:1.26-alpine | gzip -9 > deploy/docker/tool-images/arm64/golang-1.26-alpine.tar.gz
-docker image save --platform linux/arm64 robot/robot-media-client:arm64 | gzip -9 > deploy/docker/tool-images/arm64/robot-media-client-image.tar.gz
+docker image save --platform linux/arm64 robot/fixed-camera-gateway:arm64 | gzip -9 > deploy/docker/tool-images/arm64/fixed-camera-gateway-image.tar.gz
 docker image save --platform linux/arm64 livekit/livekit-server:latest | gzip -9 > deploy/docker/tool-images/arm64/livekit-server.tar.gz
 docker image save --platform linux/arm64 livekit/egress:latest | gzip -9 > deploy/docker/tool-images/arm64/livekit-egress.tar.gz
 docker image save --platform linux/arm64 nginx:alpine | gzip -9 > deploy/docker/tool-images/arm64/nginx.tar.gz
 ```
 
-`alpine:3.20` 和 `golang:1.26-alpine` 是 `client/Dockerfile` 构建 `robot-media-client` 镜像需要的基础镜像。`package.sh` 会在构建前尝试从 `tool-images/<arch>` 自动加载这两个离线包，避免离线构建时访问 Docker Hub。
+`alpine:3.20` 和 `golang:1.26-alpine` 是 `fixed-camera-gateway/Dockerfile` 构建 Gateway 镜像需要的基础镜像。`package.sh` 会在构建前尝试从 `tool-images/<arch>` 自动加载这两个离线包，避免离线构建时访问 Docker Hub。
 
-如果需要完全避免 Go 客户端构建联网，推荐提前把 `robot-media-client-image.tar.gz` 放到 `tool-images/<arch>`。`package.sh` 检测到该离线镜像后会直接加载并复用，不再执行 `client/Dockerfile`，因此不会触发 `go mod download`、`apk add` 或 `gstreamer-publisher` 的 GitHub clone。
-
-固定摄像头 Gateway 不需要单独镜像。`docker-compose.yml` 中的 `fixed-camera-gateway` 使用的也是 `robot-media-client` 镜像，只是把入口命令切换为 `fixed-camera-gateway`，因此一个 `robot-media-client-image.tar.gz` 同时包含机器人客户端和固定摄像头 Gateway。
+如果需要完全避免 Gateway 构建联网，推荐提前把 `fixed-camera-gateway-image.tar.gz` 放到 `tool-images/<arch>`。`package.sh` 检测到该离线镜像后会直接加载并复用，不再执行 `fixed-camera-gateway/Dockerfile`，因此不会触发 `go mod download`、`apk add` 或 `gstreamer-publisher` 的 GitHub clone。
 
 如果 apt 源较慢，可以指定 Ubuntu 镜像源，例如：
 
@@ -307,7 +305,7 @@ TARGET_ARCH=arm64 JAVA_RUNTIME_IMAGE=robot/java17-ffmpeg-runtime:arm64 ./package
 1. Maven clean package 重新编译 backend / control-service / bigscreen-bff
 2. npm run build:prod 重新编译 robot-ui
 3. 构建指定架构的 Java 服务镜像
-4. 优先复用 tool-images/<arch>/robot-media-client-image.tar.gz；不存在时才构建 Go 客户端镜像
+4. 优先复用 tool-images/<arch>/fixed-camera-gateway-image.tar.gz；不存在时才构建固定摄像头 Gateway 镜像
 5. 保存应用服务镜像到 images/
 6. 复制 tool-images/<arch> 下的第三方镜像
 7. 复制 LiveKit / Nginx / TTS / 前端 / tdt 配置和资源

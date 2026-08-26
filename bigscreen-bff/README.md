@@ -60,7 +60,8 @@ BFF 是 OAuth2 Resource Server：
 
 固定摄像头会作为全景 `devices[]` 中的同级装备返回。BFF 合并 Control 健康快照，分别输出
 `enabled/configReady`、`gatewayHealth` 和 `streamHealth`；只有配置启用且完整、Gateway 在线、
-RTSP 可用时 `status=online`，缺失或过期状态为 `unknown`。`playable` 仅为配置门槛兼容字段，
+RTSP 可用时 `status=online`；配置停用、配置无效、健康缺失或过期均归为 `offline`。明确故障上报为
+`fault`。`playable` 仅为配置门槛兼容字段，
 不表示在线。BFF 不向浏览器返回 RTSP URL。WebSocket 授权快照完整加载后，BFF 会把当前身份
 可见的固定摄像头配置以 180 秒短租约发送给 Control；快照每 30 秒刷新一次，同一身份最后一个
 大屏 WebSocket 会话关闭时主动撤销租约。查询、同步或撤销失败时不续租，旧目录到期后 Gateway

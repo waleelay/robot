@@ -49,9 +49,9 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 }
 ```
 
-固定摄像头 `status=online` 仅在配置启用且完整、Gateway 心跳有效并且最近 RTSP 探测成功时
-成立；还可为 `offline/unknown/disabled`。健康接口不可用、消息缺失或过期时使用 `unknown`，
-不得回退 `enabled=true`。`playable` 是兼容字段，只表示 `enabled && configReady`，不表示
+设备对外 `status` 仅为 `online/fault/offline`。固定摄像头 `status=online` 仅在配置启用且完整、Gateway
+心跳有效并且最近 RTSP 探测成功时成立；配置停用、配置无效、健康接口不可用、消息缺失或过期均为
+`offline`，不得回退 `enabled=true`。`playable` 是兼容字段，只表示 `enabled && configReady`，不表示
 在线，新调用方应使用 `configReady`。BFF 不向前端返回 RTSP URL 或摄像头凭据。
 
 `overview` 和任务快照均携带稳定的任务数据质量字段。任务查询失败时 HTTP 仍可返回已成功

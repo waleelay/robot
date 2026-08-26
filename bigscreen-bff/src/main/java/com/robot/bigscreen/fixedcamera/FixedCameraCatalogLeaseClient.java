@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +39,7 @@ public class FixedCameraCatalogLeaseClient {
     private final CenterServiceProperties properties;
     private final RestClient restClient;
     private final AtomicLong versionSequence = new AtomicLong();
+    private final ConcurrentMap<String, LeaseRefreshState> refreshStates = new ConcurrentHashMap<>();
 
     @Value("${bigscreen.fixed-camera-catalog-lease.enabled:true}")
     private boolean enabled = true;
@@ -58,13 +61,19 @@ public class FixedCameraCatalogLeaseClient {
             return;
         }
         try {
-            LeaseRequest request = leaseRequest(principal, authorizationHeaders, cameras, Instant.now());
+            Instant now = Instant.now();
+            LeaseRequest request = leaseRequest(principal, authorizationHeaders, cameras, now);
+            if (!shouldSynchronize(request, now)) {
+                return;
+            }
             restClient.put()
                     .uri(controlUri())
                     .header("X-Internal-Caller", "bigscreen-bff")
                     .body(request)
                     .retrieve()
                     .toBodilessEntity();
+            refreshStates.put(request.leaseId(), new LeaseRefreshState(
+                    request.cameras(), now.plusSeconds(Math.max(15L, boundedDurationSeconds() / 2L))));
             log.debug("固定摄像头目录租约已同步，租约={} 摄像头数={}", request.leaseId(), request.cameras().size());
         } catch (RuntimeException exception) {
             log.warn("同步固定摄像头目录租约失败，将由旧租约过期收口", exception);
@@ -78,9 +87,11 @@ public class FixedCameraCatalogLeaseClient {
         if (!enabled) {
             return;
         }
+        String leaseId = leaseId(principal, authorizationHeaders);
+        refreshStates.remove(leaseId);
         try {
             restClient.delete()
-                    .uri(releaseUri(leaseId(principal, authorizationHeaders)))
+                    .uri(releaseUri(leaseId))
                     .header("X-Internal-Caller", "bigscreen-bff")
                     .retrieve()
                     .toBodilessEntity();
@@ -95,13 +106,24 @@ public class FixedCameraCatalogLeaseClient {
             HttpHeaders authorizationHeaders,
             List<Map<String, Object>> cameras,
             Instant now) {
-        long boundedDuration = Math.max(30L, Math.min(durationSeconds, 300L));
+        long boundedDuration = boundedDurationSeconds();
         return new LeaseRequest(
                 leaseId(principal, authorizationHeaders),
                 nextVersion(now),
                 now,
                 now.plusSeconds(boundedDuration),
                 normalize(cameras));
+    }
+
+    private boolean shouldSynchronize(LeaseRequest request, Instant now) {
+        LeaseRefreshState previous = refreshStates.get(request.leaseId());
+        return previous == null
+                || !previous.cameras().equals(request.cameras())
+                || !now.isBefore(previous.renewAfter());
+    }
+
+    private long boundedDurationSeconds() {
+        return Math.max(30L, Math.min(durationSeconds, 300L));
     }
 
     private long nextVersion(Instant now) {
@@ -196,5 +218,8 @@ public class FixedCameraCatalogLeaseClient {
             String protocolType,
             String mainStreamUrl,
             String subStreamUrl) {
+    }
+
+    private record LeaseRefreshState(List<CameraRecord> cameras, Instant renewAfter) {
     }
 }

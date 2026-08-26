@@ -13,7 +13,6 @@ import static org.mockito.Mockito.when;
 
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
-import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.time.Instant;
@@ -90,7 +89,6 @@ class BigscreenWebSocketBridgeHandlerTest {
                 mock(PanoramaAlarmEventRefresher.class),
                 mock(AuthenticatedRequestHeaders.class),
                 mock(BigscreenWebSocketAuthorizationService.class),
-                mock(FixedCameraCatalogLeaseClient.class),
                 new ObjectMapper());
         WebSocketSession browserSession = browserSession(
                 new HttpHeaders(),
@@ -321,35 +319,27 @@ class BigscreenWebSocketBridgeHandlerTest {
     }
 
     @Test
-    void releasesCatalogLeaseAfterLastIdentitySessionCloses() throws Exception {
+    void keepsCatalogLeaseUntilItsShortExpiryWhenLastIdentitySessionCloses() throws Exception {
         BigscreenWebSocketAuthorizationService authorizationService = mock(BigscreenWebSocketAuthorizationService.class);
-        FixedCameraCatalogLeaseClient leaseClient = mock(FixedCameraCatalogLeaseClient.class);
         WebSocketSession browserSession = browserSession(
                 new HttpHeaders(), URI.create("wss://bigscreen/ws/control"), "session-last");
         when(browserSession.getPrincipal()).thenReturn(authentication("user-001", Instant.now().plusSeconds(300)));
         when(authorizationService.authorizedResources(browserSession)).thenReturn(
                 new BigscreenWebSocketAuthorizationService.AuthorizedResources(Set.of(), Set.of("camera-001")));
-        BigscreenWebSocketBridgeHandler handler = handler(authorizationService, leaseClient);
+        BigscreenWebSocketBridgeHandler handler = handler(authorizationService);
 
         handler.afterConnectionEstablished(browserSession);
         handler.afterConnectionClosed(browserSession, CloseStatus.NORMAL);
 
-        verify(leaseClient).release(any(), any(HttpHeaders.class));
         handler.shutdownAuthorizationRefreshExecutor();
     }
 
     private BigscreenWebSocketBridgeHandler handler() {
-        return handler(mock(BigscreenWebSocketAuthorizationService.class), mock(FixedCameraCatalogLeaseClient.class));
+        return handler(mock(BigscreenWebSocketAuthorizationService.class));
     }
 
     private BigscreenWebSocketBridgeHandler handler(
             BigscreenWebSocketAuthorizationService authorizationService) {
-        return handler(authorizationService, mock(FixedCameraCatalogLeaseClient.class));
-    }
-
-    private BigscreenWebSocketBridgeHandler handler(
-            BigscreenWebSocketAuthorizationService authorizationService,
-            FixedCameraCatalogLeaseClient leaseClient) {
         return new BigscreenWebSocketBridgeHandler(
                 mock(CenterServiceProperties.class),
                 mock(PanoramaWebSocketEventAdapter.class),
@@ -359,7 +349,6 @@ class BigscreenWebSocketBridgeHandlerTest {
                 mock(PanoramaAlarmEventRefresher.class),
                 mock(AuthenticatedRequestHeaders.class),
                 authorizationService,
-                leaseClient,
                 new ObjectMapper()) {
             @Override
             void connectCenter(WebSocketSession browserSession) {

@@ -2,6 +2,8 @@ package com.robot.bigscreen.panorama;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
+import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -35,6 +37,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -74,14 +78,27 @@ public class PanoramaService {
 
     private final PanoramaCenterClient centerClient;
     private final ObjectMapper objectMapper;
+    private final FixedCameraCatalogLeaseClient fixedCameraCatalogLeaseClient;
+    private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final Map<String, CachedSnapshot> statsCache = new ConcurrentHashMap<>();
     private final Map<String, Object> statsCacheLocks = new ConcurrentHashMap<>();
     private final Map<String, CachedSnapshot> overviewCache = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<Map<String, Object>>> overviewInFlight = new ConcurrentHashMap<>();
 
     public PanoramaService(PanoramaCenterClient centerClient, ObjectMapper objectMapper) {
+        this(centerClient, objectMapper, null, null);
+    }
+
+    @Autowired
+    public PanoramaService(
+            PanoramaCenterClient centerClient,
+            ObjectMapper objectMapper,
+            FixedCameraCatalogLeaseClient fixedCameraCatalogLeaseClient,
+            AuthenticatedRequestHeaders authenticatedRequestHeaders) {
         this.centerClient = centerClient;
         this.objectMapper = objectMapper;
+        this.fixedCameraCatalogLeaseClient = fixedCameraCatalogLeaseClient;
+        this.authenticatedRequestHeaders = authenticatedRequestHeaders;
     }
 
     public Map<String, Object> overview() {
@@ -729,12 +746,30 @@ public class PanoramaService {
                         item -> firstString(item, "cameraId"),
                         Function.identity(),
                         (left, right) -> right));
-        join(fixedCamerasFuture, List.<Map<String, Object>>of()).stream()
+        List<Map<String, Object>> fixedCameras = join(fixedCamerasFuture, List.of());
+        synchronizeFixedCameraCatalog(fixedCameras);
+        fixedCameras.stream()
                 .filter(camera -> firstValue(camera, "cameraId", "id") != null)
                 .map(camera -> fixedCameraDevice(camera, fixedCameraHealth.getOrDefault(
                         firstString(camera, "cameraId", "id"), Map.of())))
                 .forEach(result::add);
         return result;
+    }
+
+    private void synchronizeFixedCameraCatalog(List<Map<String, Object>> cameras) {
+        if (fixedCameraCatalogLeaseClient == null || authenticatedRequestHeaders == null) {
+            return;
+        }
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return;
+        }
+        HttpHeaders headers = new HttpHeaders();
+        authenticatedRequestHeaders.apply(headers, authentication);
+        if (headers.getFirst(HttpHeaders.AUTHORIZATION) == null) {
+            return;
+        }
+        fixedCameraCatalogLeaseClient.synchronize(authentication, headers, cameras);
     }
 
     private Map<String, Object> deviceSource(Map<String, Object> listDevice) {
@@ -788,10 +823,12 @@ public class PanoramaService {
         Map<String, Object> task = map(path(realtimeStatus, "status", "task"));
 
         Object robotId = firstValue(source, "serialNumber", "robotId", "id");
-        String status = onlineStatus(string(realtimeStatus.get("onlineStatus")));
-        List<Map<String, Object>> mountedDevices = mountedDevices(source, status);
         Object alarmLevel = alarmLevel(basic);
         Object fault = fault(basic);
+        String status = booleanValue(fault)
+                ? "fault"
+                : onlineStatus(string(realtimeStatus.get("onlineStatus")));
+        List<Map<String, Object>> mountedDevices = mountedDevices(source, status);
         String name = firstString(source, "deviceName", "name");
 
         return object(
@@ -891,17 +928,17 @@ public class PanoramaService {
             Map<String, Object> gatewayHealth,
             Map<String, Object> streamHealth) {
         if (!enabled) {
-            return "disabled";
+            return "offline";
         }
         if (!configReady) {
-            return "unknown";
+            return "offline";
         }
         String gateway = firstString(gatewayHealth, "status");
         if ("OFFLINE".equalsIgnoreCase(gateway)) {
             return "offline";
         }
         if (!"ONLINE".equalsIgnoreCase(gateway)) {
-            return "unknown";
+            return "offline";
         }
         String stream = firstString(streamHealth, "status");
         if ("AVAILABLE".equalsIgnoreCase(stream)) {
@@ -910,7 +947,7 @@ public class PanoramaService {
         if ("UNAVAILABLE".equalsIgnoreCase(stream)) {
             return "offline";
         }
-        return "unknown";
+        return "offline";
     }
 
     private Map<String, Object> normalizedHealth(Map<String, Object> source, String... allowed) {
@@ -1443,17 +1480,13 @@ public class PanoramaService {
 
     private Map<String, Object> deviceStats(List<Map<String, Object>> devices) {
         long online = devices.stream().filter(device -> "online".equals(device.get("status"))).count();
-        long fault = devices.stream().filter(device -> booleanValue(device.get("fault"))).count();
-        long offline = devices.stream().filter(device -> "offline".equals(device.get("status"))).count();
-        long unknown = devices.stream().filter(device -> "unknown".equals(device.get("status"))).count();
-        long disabled = devices.stream().filter(device -> "disabled".equals(device.get("status"))).count();
+        long fault = devices.stream().filter(device -> "fault".equals(device.get("status"))).count();
+        long offline = devices.size() - online - fault;
         return object(
                 "total", devices.size(),
                 "online", online,
                 "fault", fault,
-                "offline", offline,
-                "unknown", unknown,
-                "disabled", disabled);
+                "offline", offline);
     }
 
     private List<Map<String, Object>> deviceTypeStats(List<Map<String, Object>> devices) {
@@ -1464,12 +1497,11 @@ public class PanoramaService {
                 .map(entry -> {
                     List<Map<String, Object>> items = entry.getValue();
                     String name = items.stream().map(item -> string(item.get("type"))).filter(Objects::nonNull).findFirst().orElse(entry.getKey());
-                    long fault = items.stream().filter(item -> booleanValue(item.get("fault"))).count();
-                    long offline = items.stream().filter(item -> "offline".equals(item.get("status"))).count();
-                    long unknown = items.stream().filter(item -> "unknown".equals(item.get("status"))).count();
-                    long disabled = items.stream().filter(item -> "disabled".equals(item.get("status"))).count();
+                    long online = items.stream().filter(item -> "online".equals(item.get("status"))).count();
+                    long fault = items.stream().filter(item -> "fault".equals(item.get("status"))).count();
+                    long offline = items.size() - online - fault;
                     return object("type", entry.getKey(), "name", name, "count", items.size(), "fault", fault,
-                            "offline", offline, "unknown", unknown, "disabled", disabled);
+                            "offline", offline);
                 })
                 .toList();
     }
@@ -2016,13 +2048,13 @@ public class PanoramaService {
 
     private String onlineStatus(String source) {
         if (source == null) {
-            return null;
+            return "offline";
         }
         return switch (source.toUpperCase(Locale.ROOT)) {
             case "ONLINE", "ON_LINE" -> "online";
             case "FAULT" -> "fault";
             case "OFFLINE", "OFF_LINE" -> "offline";
-            default -> source.toLowerCase(Locale.ROOT);
+            default -> "offline";
         };
     }
 

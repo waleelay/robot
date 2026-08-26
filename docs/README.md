@@ -141,8 +141,8 @@
 | Media Service | [backend/README.md](../backend/README.md) |
 | Control Service | [control-service/README.md](../control-service/README.md) |
 | Bigscreen BFF | [bigscreen-bff/README.md](../bigscreen-bff/README.md) |
-| Go 客户端 | [client/README.md](../client/README.md) |
-| Python 客户端 | [python-client/README.md](../python-client/README.md) |
+| 固定摄像头 Gateway | [fixed-camera-gateway/README.md](../fixed-camera-gateway/README.md) |
+| Python 机器人客户端 | [python-client/README.md](../python-client/README.md) |
 | 实时视频调试前端 | [frontend/README.md](../frontend/README.md) |
 | 指挥中心前端 | [robot-ui/README.md](../robot-ui/README.md) |
 

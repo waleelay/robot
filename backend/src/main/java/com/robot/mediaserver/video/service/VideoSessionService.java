@@ -196,10 +196,27 @@ public class VideoSessionService {
     }
 
     private boolean hasPublishedTrack(VideoSession session) {
-        return session.getTrackSid() != null
-                && !session.getTrackSid().isBlank()
-                && session.getTrackName() != null
-                && !session.getTrackName().isBlank();
+        if (session.getTrackSid() == null
+                || session.getTrackSid().isBlank()
+                || session.getTrackName() == null
+                || session.getTrackName().isBlank()) {
+            return false;
+        }
+        if (session.getSourceType() != VideoSourceType.FIXED_CAMERA) {
+            return true;
+        }
+        try {
+            return liveKitRoomService.resolveActiveVideoTrackSid(session.getRoomName(), session.getTrackSid())
+                    .map(trackSid -> {
+                        session.setTrackSid(trackSid);
+                        return true;
+                    })
+                    .orElse(false);
+        } catch (RuntimeException exception) {
+            // 固定摄像头现场网关可重发启动命令；Room API 异常时宁可重新拉流，不能复用失效轨道。
+            log.warn("校验固定摄像头 LiveKit 视频轨道失败，将重新请求推流，sessionId={}", session.getSessionId(), exception);
+            return false;
+        }
     }
 
     /**
@@ -322,6 +339,9 @@ public class VideoSessionService {
     @Transactional
     public VideoSessionResponse stop(String sessionId, CurrentUser user) {
         VideoSession session = requireSession(sessionId);
+        if (session.getStatus() == VideoSessionStatus.CLOSED) {
+            return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
+        }
         stopClientRecordingQuietly(sessionId, user.clientId());
         removeViewer(sessionId, user);
         session.setViewerCount(activeViewerCount(sessionId));

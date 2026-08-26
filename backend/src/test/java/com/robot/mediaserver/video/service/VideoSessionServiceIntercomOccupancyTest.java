@@ -3,6 +3,8 @@ package com.robot.mediaserver.video.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -15,6 +17,10 @@ import com.robot.mediaserver.file.service.FileService;
 import com.robot.mediaserver.livekit.LiveKitRoomService;
 import com.robot.mediaserver.livekit.LiveKitTokenService;
 import com.robot.media.common.video.IntercomStatus;
+import com.robot.media.common.video.CreateVideoSessionRequest;
+import com.robot.media.common.video.VideoChannel;
+import com.robot.media.common.video.VideoQuality;
+import com.robot.media.common.video.VideoSourceType;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.mediaserver.video.repository.MediaSessionViewerRepository;
@@ -123,6 +129,51 @@ class VideoSessionServiceIntercomOccupancyTest {
         assertThat(response.viewerCount()).isEqualTo(1);
         assertThat(target.getIdleSince()).isNull();
         verify(publisher).publish("video.session.streaming", target);
+    }
+
+    @Test
+    void reopensFixedCameraSessionWhenLiveKitHasNoActualTrack() {
+        target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setSourceId("camera-001");
+        target.setChannel(VideoChannel.visible);
+        target.setQuality(VideoQuality.main);
+        target.setStatus(VideoSessionStatus.STREAMING);
+        target.setRoomName("media.fixed.camera-001.visible.main");
+        target.setTrackSid("TR_vs_placeholder");
+        target.setTrackName("video.visible.main");
+        when(repository.findFirstBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
+                any(), anyString(), anyString(), any(), any(), anyCollection())).thenReturn(Optional.of(target));
+        when(liveKitRoomService.resolveActiveVideoTrackSid(target.getRoomName(), target.getTrackSid()))
+                .thenReturn(Optional.empty());
+        when(liveKitTokenService.createInteractiveViewerToken(anyString(), anyString(), anyString()))
+                .thenReturn(new LiveKitTokenService.TokenResult("viewer-token", OffsetDateTime.now().plusMinutes(10)));
+        when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        when(viewerRepository.countBySessionIdAndLeftAtIsNull(target.getSessionId())).thenReturn(1L);
+
+        CreateVideoSessionRequest request = new CreateVideoSessionRequest();
+        request.setReuse(true);
+        request.setSourceType(VideoSourceType.FIXED_CAMERA);
+        request.setSourceId("camera-001");
+        request.setDeviceId("camera01");
+        request.setChannel(VideoChannel.visible);
+        request.setQuality(VideoQuality.main);
+
+        var response = service.create(request, operator("operator-1", "web-1"));
+
+        assertThat(response.status()).isEqualTo(VideoSessionStatus.INIT);
+        assertThat(target.getTrackSid()).isNull();
+        assertThat(target.getTrackName()).isNull();
+    }
+
+    @Test
+    void stopDoesNotReviveClosedSession() {
+        target.setStatus(VideoSessionStatus.CLOSED);
+
+        var response = service.stop("vs-target", operator("operator-1", "web-1"));
+
+        assertThat(response.status()).isEqualTo(VideoSessionStatus.CLOSED);
+        verifyNoInteractions(viewerRepository);
     }
 
     @Test

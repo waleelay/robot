@@ -51,11 +51,9 @@ GET /api/bigscreen/panorama/overview
 | `devices` | 全部机器人/设备展示列表 | 管理端 + 控制端 + BFF 组装 | 见 3.2 |
 | `deviceStats.total` | 设备总数 | BFF 计算 | `devices.size()` |
 | `deviceStats.online` | 在线设备数 | BFF 计算 | 统计 `devices[].status == online` |
-| `deviceStats.fault` | 故障设备数 | BFF 计算 | 统计 `devices[].fault == true`；没有明确故障上报时为 `0` |
-| `deviceStats.offline` | 离线设备数 | BFF 计算 | 统计 `devices[].status == offline` |
-| `deviceStats.unknown` | 状态未知设备数 | BFF 计算 | 统计 `devices[].status == unknown`；固定摄像头健康缺失或过期进入此项 |
-| `deviceStats.disabled` | 已停用设备数 | BFF 计算 | 统计 `devices[].status == disabled` |
-| `deviceTypeStats[]` | 按机器人整机类型统计 | BFF 计算 | 按 `devices[].typeCode` 分组，计算 `count/fault/offline/unknown/disabled`；整机类型为空的设备不参与分类统计，固定摄像头按 `FIXED_CAMERA/固定摄像头` 统计 |
+| `deviceStats.fault` | 故障设备数 | BFF 计算 | 统计 `devices[].status == fault`；明确故障上报优先于在线状态 |
+| `deviceStats.offline` | 离线设备数 | BFF 计算 | 非在线、非故障设备均归入离线，三类数量之和等于 `total` |
+| `deviceTypeStats[]` | 按机器人整机类型统计 | BFF 计算 | 按 `devices[].typeCode` 分组，计算 `count/fault/offline`；整机类型为空的设备不参与分类统计，固定摄像头按 `FIXED_CAMERA/固定摄像头` 统计 |
 | `patrolOverview.durationToday` | 今日巡逻时长，单位小时 | BFF 计算 | 今日任务实例 `durationSeconds`；没有时用 `startedAt/completedAt` 计算 |
 | `patrolOverview.durationUnit` | 巡逻时长单位 | BFF 生成 | `durationToday` 有值时为 `小时` |
 | `patrolOverview.mileageToday` | 今日巡逻里程 | 控制端 | Control 持久化今日有效里程增量，BFF 由米换算为 KM |
@@ -102,10 +100,10 @@ GET /api/bigscreen/panorama/overview
 | `gatewayId` | Control 健康快照 | 负责该摄像头的 Gateway |
 | `gatewayHealth` | Control `/api/control/fixed-cameras/health` | `ONLINE/OFFLINE/UNKNOWN`，含 `observedAt/reasonCode` |
 | `streamHealth` | 同上 | `AVAILABLE/UNAVAILABLE/UNKNOWN`，含 `observedAt/reasonCode` |
-| `status` | BFF 推导 | 停用为 `disabled`；配置无效或健康缺失为 `unknown`；Gateway 离线或 RTSP 不可用为 `offline`；全部满足才为 `online` |
+| `status` | BFF 推导 | 仅为 `online/fault/offline`；配置停用、配置无效、健康缺失、Gateway 离线或 RTSP 不可用均为 `offline`，全部满足才为 `online` |
 | `playable` | BFF 兼容字段 | 仅等于 `enabled && configReady`，不得解释为在线 |
 
-Control 健康查询失败时 BFF 使用空健康快照，因此状态为 `unknown`，不会使用 Management
+Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 `offline`，不会使用 Management
 `enabled` 补成在线。固定摄像头健康变化通过 WebSocket 触发当前用户重新获取 Overview。
 
 ### 3.3 设备详情中的 `mountedDevices[]`

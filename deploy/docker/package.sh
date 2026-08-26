@@ -246,31 +246,31 @@ build_image "backend" "$image_prefix/media-service:$image_tag"
 build_image "control-service" "$image_prefix/control-service:$image_tag"
 build_image "bigscreen-bff" "$image_prefix/bigscreen-bff:$image_tag"
 
-robot_media_client_image="$image_prefix/robot-media-client:$image_tag"
-robot_media_client_archive=$(find_tool_image_archive "robot-media-client-image" || true)
-if [ -n "$robot_media_client_archive" ]; then
-  echo "using prebuilt robot-media-client image archive: $robot_media_client_archive"
-  load_image_archive "$robot_media_client_archive"
-  if ! $DOCKER image inspect "$robot_media_client_image" >/dev/null 2>&1; then
-    loaded_client_image=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | awk '
-      $0 == "robot/robot-media-client:latest" { print; exit }
-      $0 == "robot/robot-media-client:amd64" { print; exit }
-      $0 == "robot/robot-media-client:arm64" { print; exit }
-      $0 ~ /\/robot-media-client:/ { print; exit }
-      $0 ~ /^robot-media-client:/ { print; exit }
+fixed_camera_gateway_image="$image_prefix/fixed-camera-gateway:$image_tag"
+fixed_camera_gateway_archive=$(find_tool_image_archive "fixed-camera-gateway-image" || true)
+if [ -n "$fixed_camera_gateway_archive" ]; then
+  echo "using prebuilt fixed-camera-gateway image archive: $fixed_camera_gateway_archive"
+  load_image_archive "$fixed_camera_gateway_archive"
+  if ! $DOCKER image inspect "$fixed_camera_gateway_image" >/dev/null 2>&1; then
+    loaded_gateway_image=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | awk '
+      $0 == "robot/fixed-camera-gateway:latest" { print; exit }
+      $0 == "robot/fixed-camera-gateway:amd64" { print; exit }
+      $0 == "robot/fixed-camera-gateway:arm64" { print; exit }
+      $0 ~ /\/fixed-camera-gateway:/ { print; exit }
+      $0 ~ /^fixed-camera-gateway:/ { print; exit }
     ')
-    if [ -n "$loaded_client_image" ]; then
-      echo "tagging $loaded_client_image as $robot_media_client_image"
-      $DOCKER tag "$loaded_client_image" "$robot_media_client_image"
+    if [ -n "$loaded_gateway_image" ]; then
+      echo "tagging $loaded_gateway_image as $fixed_camera_gateway_image"
+      $DOCKER tag "$loaded_gateway_image" "$fixed_camera_gateway_image"
     fi
   fi
-  if ! $DOCKER image inspect "$robot_media_client_image" >/dev/null 2>&1; then
-    echo "prebuilt robot-media-client archive did not provide a tag that can be retagged to $robot_media_client_image" >&2
-    echo "Rebuild and save it as $TOOL_IMAGE_DIR/robot-media-client-image.tar.gz, or remove the archive to build from source." >&2
+  if ! $DOCKER image inspect "$fixed_camera_gateway_image" >/dev/null 2>&1; then
+    echo "prebuilt fixed-camera-gateway archive did not provide a tag that can be retagged to $fixed_camera_gateway_image" >&2
+    echo "Rebuild and save it as $TOOL_IMAGE_DIR/fixed-camera-gateway-image.tar.gz, or remove the archive to build from source." >&2
     exit 1
   fi
 else
-  build_image "client" "$robot_media_client_image"
+  build_image "fixed-camera-gateway" "$fixed_camera_gateway_image"
 fi
 
 save_image() {
@@ -291,11 +291,11 @@ save_image() {
 save_image "$image_prefix/media-service:$image_tag" "media-service-image.tar.gz"
 save_image "$image_prefix/control-service:$image_tag" "control-service-image.tar.gz"
 save_image "$image_prefix/bigscreen-bff:$image_tag" "bigscreen-bff-image.tar.gz"
-save_image "$robot_media_client_image" "robot-media-client-image.tar.gz"
+save_image "$fixed_camera_gateway_image" "fixed-camera-gateway-image.tar.gz"
 
 if [ -d "$TOOL_IMAGE_DIR" ]; then
   echo "copying tool images from $TOOL_IMAGE_DIR"
-  find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) ! -name 'robot-media-client-image.*' -exec cp {} "$STAGING_DIR/images/" \;
+  find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) ! -name 'fixed-camera-gateway-image.*' -exec cp {} "$STAGING_DIR/images/" \;
 else
   echo "tool image directory not found, skip: $TOOL_IMAGE_DIR"
 fi

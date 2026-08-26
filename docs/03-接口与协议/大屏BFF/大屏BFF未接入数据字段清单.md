@@ -91,7 +91,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | `task[].timeRange` | BFF 计算 | 按任务实例 `startedAt/completedAt` 计算；时间不完整时为 `null` |
 
 固定摄像头也会合并进 `devices[]`。其配置启停、配置完整性、Gateway 心跳和 RTSP 健康
-已经分离；只有全部满足时 `status=online`，健康缺失或过期为 `unknown`。`playable` 是
+已经分离；只有全部满足时 `status=online`，健康缺失或过期归为 `offline`。`playable` 是
 `enabled && configReady` 的兼容字段，不表示在线。BFF 不输出码流 URL。
 
 ### 2.4 `/devices/{deviceId}` 设备详情
