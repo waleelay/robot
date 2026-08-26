@@ -68,13 +68,22 @@
               <img v-if="selectedRobot.typeCode === 'WHEELED_ROBOT'" src="@/assets/images/new-bi/car.png" alt="" srcset="" width="96" height="96">
             </div>
             <div class="ml54">
-              <div class="desc">当前速度：{{ Number(currenRobot.speed || 0).toFixed(2) }}m/s</div>
-              <div class="desc">当前电量：{{ currenRobot.battery }}%</div>
-              <div v-if="currenRobot?.runningTask?.name" class="desc">
-                当前任务：{{ currenRobot?.runningTask?.name || '-' }}
-                <span v-if="currenRobot?.runningTask" class="task-status ml8" :class="activeTaskStatusClass">{{ activeTaskStatusLabel }}</span>
+              <div class="basic-info">
+                <div class="basic-info__col">
+                  <div class="desc">当前速度：{{ Number(currenRobot.speed || 0).toFixed(2) }}m/s</div>
+                  <div class="desc">当前电量：{{ currenRobot.battery != null ? `${currenRobot.battery}%` : '-' }}</div>
+                </div>
+                <div class="basic-info__col">
+                  <div class="desc">
+                    装备状态：<span class="equip-status" :class="currenRobot?.statusClass || ''">{{ currenRobot?.customStatusName || currenRobot?.status || '-' }}</span>
+                  </div>
+                  <div class="desc">控制模型：{{ currenRobot?.controlMode || '-' }}</div>
+                </div>
               </div>
-              <div class="desc">控制模型：{{ currenRobot?.controlMode || '-' }}</div>
+            </div>
+            <div v-if="currenRobot?.runningTask?.name" class="desc mt20">
+              当前任务：<span class="text-ellipsis" style="max-width: 270px;" :title="currenRobot?.runningTask?.name || '-'"></span>{{ currenRobot?.runningTask?.name || '-' }}
+              <span v-if="currenRobot?.runningTask" class="task-status ml8" :class="activeTaskStatusClass">{{ activeTaskStatusLabel }}</span>
             </div>
           </div>
           <div class="flex1 flx-align-center">
@@ -485,11 +494,22 @@ export default {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
+  .basic-info {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+  }
+  .basic-info__col {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    white-space: nowrap;
+  }
   .desc {
-    color: rgba($color: #FFF, $alpha: .8);
-    font-family: Inter;
+    color: rgba(255, 255, 255, 0.8);
+    font-family: "Microsoft YaHei";
     font-size: 14px;
-    line-height: 17px;
+    line-height: normal;
     & + .desc {
       margin-top: 10px;
     }
@@ -500,6 +520,13 @@ export default {
     &.orange { color: #FF7734; }
     &.blue { color: #159AFF; }
     &.red { color: #FF0404; }
+    &.gray { color: #8897AB; }
+  }
+  .equip-status {
+    &.green { color: #25FF6E; }
+    &.orange { color: #FF7734; }
+    &.blue { color: #4AB8FF; }
+    &.red { color: #FF3434; }
     &.gray { color: #8897AB; }
   }
 }

@@ -179,6 +179,9 @@ export default {
     },
     canControl() {
       return this.selectedRobot?.controlMode === '手动模式'
+    },
+    isBodyControlDisabled() {
+      return this.selectedRobot?.controlMode !== '手动模式'
     }
   },
   methods: {
