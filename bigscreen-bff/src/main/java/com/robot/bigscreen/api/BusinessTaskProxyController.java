@@ -44,6 +44,9 @@ public class BusinessTaskProxyController {
         if (path.equals("/maps") || path.startsWith("/maps/")) {
             return "/api/v1/management/maps" + path.substring("/maps".length());
         }
+        if (path.equals("/selection-options") || path.startsWith("/selection-options/")) {
+            return "/api/v1/management/selection-options" + path.substring("/selection-options".length());
+        }
         throw new ResponseStatusException(NOT_FOUND, "Unsupported bigscreen business API: " + requestPath);
     }
 }

@@ -40,9 +40,11 @@
 </template>
 
 <script>
+import { mapGetters } from 'vuex'
 import { takeoverControl } from '../../../../../../api/media'
 import { pauseTaskRecord, resumeTaskRecord, terminateTaskRecord } from '../../../../../../api/new-bi'
 import { isActiveTaskStatus, isPausedTaskStatus, isRunningTaskStatus } from '../../../business/execution-status'
+import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 import ControlModeWarningBody from './ControlModeWarningBody.vue'
 
 const ACTION_META = {
@@ -74,6 +76,7 @@ export default {
     }
   },
   computed: {
+    ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
     isInTask() {
       const base = this.getRobotBaseInfo()
       if (isActiveTaskStatus(base?.runningTask?.status)) return true
@@ -107,11 +110,30 @@ export default {
     },
     canConfirm() {
       if (this.confirming) return false
-      if (this.showTaskSelection) return !!this.selectedTaskAction
+      if (this.showTaskSelection) {
+        if (!this.selectedTaskAction) return false
+        return this.hasTaskActionPermission(this.selectedTaskAction)
+      }
+      if (this.action === 'resume' || this.action === 'terminate') {
+        return this.hasTaskActionPermission(this.action)
+      }
       return true
     }
   },
   methods: {
+    hasManagementPermission(permission) {
+      return matchManagementPermission(
+        permission,
+        this.bigscreenPermissions,
+        this.bigscreenAuthorizationBypassed
+      )
+    },
+    hasTaskActionPermission(action) {
+      if (action === 'pause') return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_PAUSE)
+      if (action === 'resume') return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_RESUME)
+      if (action === 'terminate') return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_TERMINATE)
+      return true
+    },
     hasOtherDialogOpen() {
       const dialogs = document.querySelectorAll('.el-dialog__wrapper')
       for (let i = 0; i < dialogs.length; i++) {
@@ -220,6 +242,9 @@ export default {
       this.visible = true
     },
     async runTaskAction(action) {
+      if (!this.hasTaskActionPermission(action)) {
+        throw new Error('\u5f53\u524d\u7528\u6237\u65e0\u4efb\u52a1\u64cd\u4f5c\u6743\u9650')
+      }
       const task = this.getRelatedTask()
       const recordId = this.getTaskRecordId(task)
       if (recordId == null || recordId === '') {

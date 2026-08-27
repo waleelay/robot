@@ -49,7 +49,13 @@
             查询
           </el-button>
           <!-- <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="resetFilters">重置</el-button> -->
-          <el-button type="primary" plain style="color: #17D1FF" @click="openEditor('', 'create')">
+          <el-button
+            v-if="canCreatePlan"
+            type="primary"
+            plain
+            style="color: #17D1FF"
+            @click="openEditor('', 'create')"
+          >
             <svg-icon icon-class="plus" class="mr10" />
             新建计划
           </el-button>
@@ -59,7 +65,14 @@
 
     <div class="business2-table flex1 flex-column">
       <div class="flex1">
-        <el-table v-loading="loading" :data="rows" style="width: 100%" :class="{'no-data': !rows.length}">
+        <el-table
+          v-loading="loading"
+          :key="permissionRenderKey"
+          :data="rows"
+          style="width: 100%"
+          :empty-text="canViewPlan ? '暂无数据' : '无权限'"
+          :class="{'no-data': !rows.length}"
+        >
           <el-table-column type="index" width="60" label="序号" align="center">
             <template slot-scope="scope">
               <span class="td-index1">{{ (page.pageNum - 1) * page.pageSize + scope.$index + 1 }}</span>
@@ -108,8 +121,21 @@
           </el-table-column> -->
           <el-table-column label="操作" width="430" fixed="right">
             <template slot-scope="{ row }">
-              <el-button type="text" @click="openEditor(row.id, 'view')">详情</el-button>
-              <el-button type="text" @click="openEditor(row.id, 'edit')">编辑</el-button>
+              <el-button
+                type="text"
+                :disabled="!canViewPlan"
+                :title="canViewPlan ? undefined : '无权限'"
+                @click="openEditor(row.id, 'view')"
+              >
+                详情
+              </el-button>
+              <el-button
+                v-if="canEditPlan"
+                type="text"
+                @click="openEditor(row.id, 'edit')"
+              >
+                编辑
+              </el-button>
               <el-button type="text" :disabled="!row.enabled" @click="previewPlan(row)">预览</el-button>
               <el-button
                 v-if="row.activeWorkflowInstanceId"
@@ -119,35 +145,35 @@
                 查看监控
               </el-button>
               <el-button
-                v-if="hasLifecycleAction(row, 'PAUSE')"
+                v-if="hasLifecycleAction(row, 'PAUSE') && canPauseExecution"
                 type="text"
                 @click="controlPlanInstance(row, 'PAUSE')"
               >
                 暂停
               </el-button>
               <el-button
-                v-if="hasLifecycleAction(row, 'RESUME')"
+                v-if="hasLifecycleAction(row, 'RESUME') && canResumeExecution"
                 type="text"
                 @click="controlPlanInstance(row, 'RESUME')"
               >
                 恢复
               </el-button>
               <el-button
-                v-if="hasLifecycleAction(row, 'TERMINATE') || hasLifecycleAction(row, 'RETRY_TERMINATE')"
+                v-if="(hasLifecycleAction(row, 'TERMINATE') || hasLifecycleAction(row, 'RETRY_TERMINATE')) && canTerminateExecution"
                 type="text"
                 @click="controlPlanInstance(row, 'TERMINATE')"
               >
                 {{ hasLifecycleAction(row, 'RETRY_TERMINATE') ? '重试终止' : '终止' }}
               </el-button>
               <el-button
-                v-if="hasLifecycleAction(row, 'FORCE_TERMINATE')"
+                v-if="hasLifecycleAction(row, 'FORCE_TERMINATE') && canForceTerminateExecution"
                 type="text"
                 @click="forceTerminatePlanInstance(row)"
               >
                 强制结束
               </el-button>
               <el-button
-                v-if="!row.activeWorkflowInstanceId"
+                v-if="!row.activeWorkflowInstanceId && canExecutePlan"
                 type="text"
                 :disabled="!row.enabled"
                 :loading="isStarting(row.id)"
@@ -155,7 +181,11 @@
               >
                 {{ isStarting(row.id) ? '执行中' : '立即执行' }}
               </el-button>
-              <el-button type="text" @click="deletePlan(row)">
+              <el-button
+                v-if="canDeletePlan"
+                type="text"
+                @click="deletePlan(row)"
+              >
                 删除
               </el-button>
               <!-- <el-dropdown @command="handleMore($event, row)">
@@ -285,13 +315,21 @@
       </el-form>
       <span slot="footer">
         <el-button @click="executionParameterDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="executionParameterDialog.submitting" @click="submitExecutionParameters">保存并执行</el-button>
+        <el-button
+          v-if="canExecutePlan"
+          type="primary"
+          :loading="executionParameterDialog.submitting"
+          @click="submitExecutionParameters"
+        >
+          保存并执行
+        </el-button>
       </span>
     </el-dialog>
   </div>
 </template>
 
 <script>
+import { mapGetters } from 'vuex'
 import {
   deleteTask,
   forceTerminateTaskRecord,
@@ -303,10 +341,12 @@ import {
   terminateTaskRecord,
   updateTaskEnabled
 } from '@/api/new-bi'
+import { isRequestErrorNotified } from '@/utils/request'
 import {
   executionStatusLabel as resolveExecutionStatusLabel,
   executionStatusType as resolveExecutionStatusType
 } from '../execution-status'
+import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 import PlanEdit from './PlanEdit.vue'
 
 export default {
@@ -330,9 +370,9 @@ export default {
         { value: 'IDLE', label: '待执行' },
         { value: 'RUNNING', label: '执行中' }
       ],
-      startingPlanIds: [],
       previewVisible: false,
       previewResult: null,
+      startingPlanIds: [],
       executionParameterDialog: {
         visible: false,
         submitting: false,
@@ -346,6 +386,40 @@ export default {
     }
   },
   computed: {
+    ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
+    permissionRenderKey() {
+      return [
+        (this.bigscreenPermissions || []).join('|'),
+        this.bigscreenAuthorizationBypassed ? '1' : '0'
+      ].join('#')
+    },
+    canViewPlan() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.PLAN_VIEW)
+    },
+    canCreatePlan() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.PLAN_CREATE)
+    },
+    canEditPlan() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.PLAN_EDIT)
+    },
+    canExecutePlan() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.PLAN_EXECUTE)
+    },
+    canDeletePlan() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.PLAN_DELETE)
+    },
+    canPauseExecution() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_PAUSE)
+    },
+    canResumeExecution() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_RESUME)
+    },
+    canTerminateExecution() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_TERMINATE)
+    },
+    canForceTerminateExecution() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_FORCE_TERMINATE)
+    },
     previewMessages() {
       return this.previewResult && Array.isArray(this.previewResult.messages) ? this.previewResult.messages : []
     },
@@ -366,6 +440,13 @@ export default {
   },
   methods: {
     async loadRows(pageNum) {
+      if (!this.canViewPlan) {
+        this.rows = []
+        this.page.total = 0
+        this.loading = false
+        this.$message.warning('无权限')
+        return
+      }
       if (pageNum) this.page.pageNum = pageNum
       this.loading = true
       try {
@@ -397,7 +478,17 @@ export default {
       this.filters.executionStatus = value
       this.loadRows(1)
     },
+    hasManagementPermission(permission) {
+      return matchManagementPermission(
+        permission,
+        this.bigscreenPermissions,
+        this.bigscreenAuthorizationBypassed
+      )
+    },
     openEditor(id, mode) {
+      if (mode === 'view' && !this.hasManagementPermission(TASK_PERMISSIONS.PLAN_VIEW)) return
+      if (mode === 'create' && !this.hasManagementPermission(TASK_PERMISSIONS.PLAN_CREATE)) return
+      if (mode === 'edit' && !this.hasManagementPermission(TASK_PERMISSIONS.PLAN_EDIT)) return
       this.currentId = id ? String(id) : ''
       this.mode = mode
     },
@@ -416,6 +507,7 @@ export default {
         this.$emit('show-record', row.activeWorkflowInstanceId)
         return
       }
+      if (!this.hasManagementPermission(TASK_PERMISSIONS.PLAN_EXECUTE)) return
       if (this.isStarting(row.id)) return
       this.startingPlanIds = this.startingPlanIds.concat(row.id)
       try {
@@ -473,6 +565,7 @@ export default {
       }
     },
     async submitExecutionParameters() {
+      if (!this.hasManagementPermission(TASK_PERMISSIONS.PLAN_EXECUTE)) return
       const missing = this.dialogMissingRequirements.find(item => !this.hasParameterValue(this.dialogParameterValue(item)))
       if (missing) {
         this.$message.warning(`请填写${this.parameterDisplayLabel(missing)}`)
@@ -543,6 +636,7 @@ export default {
       }
     },
     async deletePlan(row) {
+      if (!this.hasManagementPermission(TASK_PERMISSIONS.PLAN_DELETE)) return
       try {
         await this.$confirm(`确定删除计划“${row.planName || row.planCode || row.id}”？`, '提示', { type: 'warning' })
         await deleteTask(row.id)
@@ -553,6 +647,12 @@ export default {
       }
     },
     async controlPlanInstance(row, action) {
+      const permission = {
+        PAUSE: TASK_PERMISSIONS.EXECUTION_PAUSE,
+        RESUME: TASK_PERMISSIONS.EXECUTION_RESUME,
+        TERMINATE: TASK_PERMISSIONS.EXECUTION_TERMINATE
+      }[action]
+      if (permission && !this.hasManagementPermission(permission)) return
       const label = { PAUSE: '暂停', RESUME: '恢复', TERMINATE: '终止' }[action] || '控制'
       const api = { PAUSE: pauseTaskRecord, RESUME: resumeTaskRecord, TERMINATE: terminateTaskRecord }[action]
       if (!api || !row.activeWorkflowInstanceId) return
@@ -568,6 +668,7 @@ export default {
       }
     },
     async forceTerminatePlanInstance(row) {
+      if (!this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_FORCE_TERMINATE)) return
       if (!row.activeWorkflowInstanceId) return
       try {
         const { value } = await this.$prompt(
@@ -694,8 +795,8 @@ export default {
       return res || {}
     },
     showError(error) {
-      const message = error && error.response && error.response.data && error.response.data.message
-      this.$message.error(message || (error && error.message) || '请求失败')
+      if (isRequestErrorNotified(error)) return
+      this.$message.error((error && error.message) || '请求失败')
     }
   }
 }

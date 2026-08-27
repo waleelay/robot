@@ -14,6 +14,7 @@ const getters = {
   permissions: state => state.user.permissions,
   bigscreenPermissions: state => state.bigscreenAccess.permissions,
   bigscreenAccessLoaded: state => state.bigscreenAccess.loaded,
+  bigscreenAuthorizationBypassed: state => state.bigscreenAccess.authorizationBypassed,
   permission_routes: state => state.permission.routes,
   topbarRouters:state => state.permission.topbarRouters,
   defaultRoutes:state => state.permission.defaultRoutes,

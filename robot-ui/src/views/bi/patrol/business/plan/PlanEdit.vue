@@ -7,8 +7,26 @@
         <span>执行方式与设备绑定属于计划，任务流程结构仍由任务编排维护。</span>
       </div>
       <div class="page-action-header__actions">
-        <el-button v-if="isViewMode" class="pr20 pl20" plain style="color: #17D1FF" @click="switchEdit">编辑</el-button>
-        <el-button v-else type="primary" class="pr20 pl20" plain style="color: #17D1FF" :loading="saving" @click="savePlan">保存</el-button>
+        <el-button
+          v-if="isViewMode && canEditPlan"
+          class="pr20 pl20"
+          plain
+          style="color: #17D1FF"
+          @click="switchEdit"
+        >
+          编辑
+        </el-button>
+        <el-button
+          v-else-if="!isViewMode && canSavePlan"
+          type="primary"
+          class="pr20 pl20"
+          plain
+          style="color: #17D1FF"
+          :loading="saving"
+          @click="savePlan"
+        >
+          保存
+        </el-button>
       </div>
     </div>
 
@@ -203,7 +221,12 @@
             </div>
             <el-form-item label="执行设备" required>
               <el-select v-model="role.deviceId" filterable clearable placeholder="选择一台实际设备">
-                <el-option v-for="item in deviceOptions" :key="item.value" :label="item.label" :value="item.value" />
+                <el-option
+                  v-for="item in deviceOptionsForRole(role)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
               </el-select>
             </el-form-item>
           </section>
@@ -264,15 +287,20 @@
 </template>
 
 <script>
+import { mapGetters } from 'vuex'
 import {
   createTask,
-  getManagementDevices,
+  getSelectionOptionDevices,
+  getSceneResourceGrants,
+  getSelectionWorkflowDefinition,
   getTaskDetail,
   getTaskWorkflowDefinitions,
   getTaskWorkflowVersionDetail,
   previewTaskConfiguration,
   updateTask
 } from '@/api/new-bi'
+import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
+import { isRequestErrorNotified } from '@/utils/request'
 
 export default {
   name: 'BiPatrolBusiness2PlanEdit',
@@ -293,6 +321,7 @@ export default {
       form: this.defaultForm(),
       definitionOptions: [],
       deviceOptions: [],
+      sceneDeviceScopes: {},
       selectedVersion: null,
       roleBindings: [],
       actionParameterRequirements: [],
@@ -309,12 +338,22 @@ export default {
     }
   },
   computed: {
+    ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
     isViewMode() {
       return this.mode === 'view'
     },
     editorTitle() {
       if (!this.id) return '新建任务计划'
       return this.isViewMode ? '任务计划详情' : '编辑任务计划'
+    },
+    savePermission() {
+      return this.form.id ? TASK_PERMISSIONS.PLAN_EDIT : TASK_PERMISSIONS.PLAN_CREATE
+    },
+    canEditPlan() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.PLAN_EDIT)
+    },
+    canSavePlan() {
+      return this.hasManagementPermission(this.savePermission)
     },
     showTimeOfDay() {
       return this.form.executionMode === 'SCHEDULE' && ['DAILY', 'WORKDAY', 'WEEKLY'].indexOf(this.form.scheduleConfig.preset) !== -1
@@ -355,6 +394,13 @@ export default {
     this.loadPage()
   },
   methods: {
+    hasManagementPermission(permission) {
+      return matchManagementPermission(
+        permission,
+        this.bigscreenPermissions,
+        this.bigscreenAuthorizationBypassed
+      )
+    },
     async loadPage() {
       await this.loadEditorOptions()
       await this.loadEditor()
@@ -362,14 +408,19 @@ export default {
     async loadEditorOptions() {
       try {
         const defs = this.unwrap(await getTaskWorkflowDefinitions({ pageNum: 1, pageSize: 500, status: 'PUBLISHED', enabled: true }))
-        const devices = this.unwrap(await getManagementDevices({ pageNum: 1, pageSize: 500, enabled: true }))
+        const devices = this.unwrapList(await getSelectionOptionDevices())
         this.definitionOptions = (defs.records || []).filter(item => {
           return item.workflowKind === 'MAIN' && item.definitionStatus === 'PUBLISHED' && item.latestPublishedVersionId
         })
-        this.deviceOptions = (devices.records || []).map(item => ({
-          value: item.id,
-          label: `${item.deviceName || item.deviceCode || item.id} / ${item.serialNumber || '-'}`
-        }))
+        this.deviceOptions = devices.map(item => {
+          const attributes = item.attributes || {}
+          const value = item.value || item.id
+          return {
+            value,
+            label: item.label || `${item.deviceName || item.deviceCode || value} / ${item.serialNumber || attributes.serialNumber || '-'}`,
+            raw: Object.assign({ id: value }, item, attributes)
+          }
+        })
       } catch (error) {
         this.showError(error)
       }
@@ -382,6 +433,7 @@ export default {
       this.targetRequirements = []
       this.componentRequirements = []
       this.componentResolutionChecked = false
+      this.sceneDeviceScopes = {}
       if (!this.id) return
       this.editorLoading = true
       try {
@@ -488,31 +540,117 @@ export default {
         .filter(binding => targetKeys.indexOf(this.targetBindingKey(binding)) !== -1)
     },
     async buildRoleBindings(version, savedBindings) {
-      if (!version) return []
-      const documents = [this.parseDefinition(version.definitionJson)]
+      if (!version) {
+        this.sceneDeviceScopes = {}
+        return []
+      }
+      const pairs = []
+      try {
+        pairs.push([
+          version,
+          this.unwrap(await getSelectionWorkflowDefinition(version.workflowDefinitionId))
+        ])
+      } catch (error) {
+        this.showError(error)
+        pairs.push([version, {}])
+      }
       const dependencies = version.dependencies || []
       for (const dependency of dependencies) {
         try {
-          const detail = this.unwrap(await getTaskWorkflowVersionDetail(dependency.workflowDefinitionId, dependency.workflowVersionId))
-          documents.push(this.parseDefinition(detail.definitionJson))
+          const workflowVersion = this.unwrap(await getTaskWorkflowVersionDetail(
+            dependency.workflowDefinitionId,
+            dependency.workflowVersionId
+          ))
+          const definition = this.unwrap(await getSelectionWorkflowDefinition(dependency.workflowDefinitionId))
+          pairs.push([workflowVersion, definition])
         } catch (error) {
           this.showError(error)
         }
       }
       const rolesByKey = {}
-      documents.forEach(document => {
+      pairs.forEach(pair => {
+        const workflowVersion = pair[0]
+        const definition = pair[1] || {}
+        const document = this.parseDefinition(workflowVersion && workflowVersion.definitionJson)
+        const nodes = Array.isArray(document.nodes) ? document.nodes : []
+        const usedRoleKeys = {}
+        nodes.forEach(node => {
+          if (['DEVICE_TASK', 'ACTION', 'CONTROL'].indexOf(node.type) === -1) return
+          const roleKey = node.config && node.config.roleKey
+          if (roleKey) usedRoleKeys[roleKey] = true
+        })
         const roles = Array.isArray(document.deviceRoles) ? document.deviceRoles : []
         roles.forEach(role => {
-          if (role.roleKey && !rolesByKey[role.roleKey]) rolesByKey[role.roleKey] = role
+          if (!role.roleKey || !usedRoleKeys[role.roleKey]) return
+          const existing = rolesByKey[role.roleKey] || Object.assign({}, role, {
+            requiredCapabilityCodes: [],
+            requiredActionCodes: [],
+            sceneIds: []
+          })
+          existing.requiredCapabilityCodes = this.uniqueStrings(
+            (existing.requiredCapabilityCodes || []).concat(role.requiredCapabilityCodes || [])
+          )
+          existing.requiredActionCodes = this.uniqueStrings(
+            (existing.requiredActionCodes || []).concat(role.requiredActionCodes || [])
+          )
+          const sceneId = definition.sceneId != null
+            ? definition.sceneId
+            : (definition.attributes && definition.attributes.sceneId)
+          if (sceneId != null && existing.sceneIds.indexOf(sceneId) === -1) {
+            existing.sceneIds.push(sceneId)
+          }
+          rolesByKey[role.roleKey] = existing
         })
       })
+      const sceneIds = []
+      Object.keys(rolesByKey).forEach(key => {
+        (rolesByKey[key].sceneIds || []).forEach(sceneId => {
+          if (sceneIds.indexOf(sceneId) === -1) sceneIds.push(sceneId)
+        })
+      })
+      await this.loadSceneDeviceScopes(sceneIds)
       const savedByRole = {}
       ;(savedBindings || []).forEach(item => {
         savedByRole[item.roleKey] = item
       })
       return Object.keys(rolesByKey).map(key => this.normalizeBinding(rolesByKey[key], savedByRole[key]))
     },
+    async loadSceneDeviceScopes(sceneIds) {
+      const next = {}
+      await Promise.all((sceneIds || []).map(async sceneId => {
+        try {
+          const grants = this.unwrapList(await getSceneResourceGrants(sceneId))
+          next[String(sceneId)] = {
+            deviceIds: grants
+              .filter(item => item.resourceType === 'DEVICE')
+              .map(item => String(item.resourceId)),
+            deviceGroupIds: grants
+              .filter(item => item.resourceType === 'DEVICE_GROUP')
+              .map(item => String(item.resourceId))
+          }
+        } catch (error) {
+          this.showError(error)
+          next[String(sceneId)] = { deviceIds: [], deviceGroupIds: [] }
+        }
+      }))
+      this.sceneDeviceScopes = next
+    },
+    deviceOptionsForRole(role) {
+      const sceneIds = (role && role.sceneIds) || []
+      if (!sceneIds.length) return []
+      return this.deviceOptions.filter(item => {
+        return sceneIds.every(sceneId => {
+          const scope = this.sceneDeviceScopes[String(sceneId)]
+          if (!scope) return false
+          const deviceId = String(item.value)
+          const groupId = item.raw && item.raw.groupId
+          return scope.deviceIds.indexOf(deviceId) !== -1
+            || (groupId != null && scope.deviceGroupIds.indexOf(String(groupId)) !== -1)
+        })
+      })
+    },
     async savePlan() {
+      if (!this.hasManagementPermission(this.savePermission)) return
       const message = this.validateForm()
       if (message) {
         this.$message.warning(message)
@@ -548,6 +686,7 @@ export default {
       }
     },
     switchEdit() {
+      if (!this.hasManagementPermission(TASK_PERMISSIONS.PLAN_EDIT)) return
       this.$emit('saved', this.id)
     },
     validateForm() {
@@ -557,8 +696,6 @@ export default {
         return '请填写预计执行时长（1～525600 分钟）'
       }
       if (!this.roleBindings.length) return '任务编排缺少设备角色'
-      const missing = this.roleBindings.find(role => !role.deviceId)
-      if (missing) return `请为 ${missing.roleName || missing.roleKey} 选择执行设备`
       if (this.form.executionMode === 'SCHEDULE') {
         if (!this.form.scheduleConfig.preset) return '请选择计划周期'
         if (this.showTimeOfDay && !this.form.scheduleConfig.timeOfDay) return '请选择执行时间'
@@ -572,6 +709,12 @@ export default {
         })
         if (missingTarget) return `计划执行需要填写${this.targetDisplayLabel(missingTarget)}的 X 坐标和 Y 坐标`
       }
+      const missing = this.roleBindings.find(role => !role.deviceId)
+      if (missing) return `请为 ${missing.roleName || missing.roleKey} 选择执行设备`
+      const outOfScopeBinding = this.roleBindings.find(role => {
+        return !this.deviceOptionsForRole(role).some(device => String(device.value) === String(role.deviceId))
+      })
+      if (outOfScopeBinding) return `${outOfScopeBinding.roleName} 的设备不在当前场景资源范围内`
       return ''
     },
     buildPayload() {
@@ -824,6 +967,7 @@ export default {
         roleType: role.roleType || 'EXECUTOR',
         requiredCapabilityCodes: role.requiredCapabilityCodes || [],
         requiredActionCodes: role.requiredActionCodes || [],
+        sceneIds: role.sceneIds || [],
         deviceId: savedDeviceIds[0] || (saved && saved.deviceId) || ''
       }
     },
@@ -878,7 +1022,21 @@ export default {
       }
       return res || {}
     },
+    unwrapList(res) {
+      const data = this.unwrap(res)
+      if (Array.isArray(data)) return data
+      if (data && Array.isArray(data.records)) return data.records
+      return []
+    },
+    uniqueStrings(values) {
+      const next = []
+      ;(values || []).forEach(item => {
+        if (item != null && next.indexOf(item) === -1) next.push(item)
+      })
+      return next
+    },
     showError(error) {
+      if (isRequestErrorNotified(error)) return
       this.$message.error((error && error.message) || '请求失败')
     }
   }

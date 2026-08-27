@@ -12,6 +12,20 @@ let showAlert = false;
 // 是否显示重新登录
 export let isRelogin = { show: false };
 
+const NOTIFIED_FLAG = '__notified'
+
+function markRequestErrorNotified(error) {
+  if (error && typeof error === 'object') {
+    error[NOTIFIED_FLAG] = true
+  }
+  return error
+}
+
+export function isRequestErrorNotified(error) {
+  if (error == null || error === 'cancel' || error === 'error') return true
+  return Boolean(error && error[NOTIFIED_FLAG])
+}
+
 // axios.defaults.headers['Content-Type'] = 'application/json;charset=utf-8'
 // 创建axios实例
 const service = axios.create({
@@ -100,7 +114,7 @@ service.interceptors.response.use(res => {
     }
     if (code === 401) {
       login()
-      return Promise.reject('无效的会话，或者会话已过期，请重新登录。')
+      return Promise.reject(markRequestErrorNotified('无效的会话，或者会话已过期，请重新登录。'))
     } else if (code === 500) {
       if (!showAlert) {
         showAlert = true
@@ -110,7 +124,7 @@ service.interceptors.response.use(res => {
           onClose: () => { showAlert = false }
         })
       }
-      return Promise.reject(new Error(msg))
+      return Promise.reject(markRequestErrorNotified(new Error(msg)))
     } else if (code === 601) {
       if (!showAlert) {
         showAlert = true
@@ -120,7 +134,7 @@ service.interceptors.response.use(res => {
           onClose: () => { showAlert = false }
         })
       }
-      return Promise.reject('error')
+      return Promise.reject(markRequestErrorNotified('error'))
     } else if (code !== 200) {
       if (!showAlert) {
         showAlert = true
@@ -129,7 +143,7 @@ service.interceptors.response.use(res => {
           onClose: () => { showAlert = false }
         })
       }
-      return Promise.reject('error')
+      return Promise.reject(markRequestErrorNotified('error'))
     } else {
       showAlert = false
       return res.data
@@ -160,6 +174,7 @@ service.interceptors.response.use(res => {
         onClose: () => { showAlert = false }
       })
     }
+    if (!skipErrorMessage) markRequestErrorNotified(error)
     return Promise.reject(error)
   }
 )

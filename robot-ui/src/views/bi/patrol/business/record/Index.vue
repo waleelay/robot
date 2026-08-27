@@ -47,7 +47,13 @@
 
     <div class="business2-table flex1 flex-column">
       <div class="flex1">
-        <el-table v-loading="loading" :data="rows" style="width: 100%" :class="{'no-data': !rows.length}">
+        <el-table
+          v-loading="loading"
+          :data="rows"
+          style="width: 100%"
+          :empty-text="canViewRecord ? '暂无数据' : '无权限'"
+          :class="{'no-data': !rows.length}"
+        >
           <el-table-column type="index" width="60" label="序号" align="center">
             <template slot-scope="scope">
               <span class="td-index1">{{ (page.pageNum - 1) * page.pageSize + scope.$index + 1 }}</span>
@@ -104,7 +110,14 @@
           <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
           <el-table-column label="操作" width="60" :fixed="rows.length ? 'right' : false">
             <template slot-scope="{ row }">
-              <el-button type="text" @click="openDetail(row)">详情</el-button>
+              <el-button
+                type="text"
+                :disabled="!canViewRecord"
+                :title="canViewRecord ? undefined : '无权限'"
+                @click="openDetail(row)"
+              >
+                详情
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -171,7 +184,10 @@
 </template>
 
 <script>
+import { mapGetters } from 'vuex'
 import { getTaskRecordList } from '@/api/new-bi'
+import { isRequestErrorNotified } from '@/utils/request'
+import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 import {
   executionStatusLabel as resolveExecutionStatusLabel,
   executionStatusType as resolveExecutionStatusType
@@ -209,6 +225,12 @@ export default {
       currentId: ''
     }
   },
+  computed: {
+    ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
+    canViewRecord() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.RECORD_VIEW)
+    }
+  },
   watch: {
     initialId: {
       immediate: true,
@@ -221,7 +243,21 @@ export default {
     this.loadRows()
   },
   methods: {
+    hasManagementPermission(permission) {
+      return matchManagementPermission(
+        permission,
+        this.bigscreenPermissions,
+        this.bigscreenAuthorizationBypassed
+      )
+    },
     async loadRows(pageNum) {
+      if (!this.canViewRecord) {
+        this.rows = []
+        this.page.total = 0
+        this.loading = false
+        this.$message.warning('无权限')
+        return
+      }
       if (pageNum) this.page.pageNum = pageNum
       this.loading = true
       try {
@@ -252,10 +288,12 @@ export default {
       this.loadRows(1)
     },
     openDetail(row) {
+      if (!this.hasManagementPermission(TASK_PERMISSIONS.RECORD_VIEW)) return
       this.currentId = row.id
       this.showDetail = true
     },
     openDetailById(id) {
+      if (!this.hasManagementPermission(TASK_PERMISSIONS.RECORD_VIEW)) return
       this.currentId = String(id)
       this.showDetail = true
     },
@@ -281,12 +319,12 @@ export default {
       if (!row || row.status !== 'FAILED') return '-'
       const reason = row.failureReason || '执行失败'
       const devices = Array.isArray(row.deviceSummaries) ? row.deviceSummaries : []
-      const names = devices.reduce((result, device) => {
-        return result.concat([device.deviceName, device.serialNumber])
-      }, [row.deviceName, row.serialNumber]).filter(Boolean)
-      const prefix = names.find(name => reason.indexOf(`${name}:`) === 0 || reason.indexOf(`${name}：`) === 0)
-      if (!prefix) return reason
-      return reason.slice(prefix.length + 1).trim() || reason
+      const prefixes = devices
+        .reduce((result, device) => result.concat([device.deviceName, device.serialNumber]), [])
+        .filter(Boolean)
+        .map(name => `${name}：`)
+      const prefix = prefixes.find(candidate => reason.indexOf(candidate) === 0)
+      return prefix ? reason.slice(prefix.length).replace(/^\s+/, '') : reason
     },
     mediaTypeLabel(value) {
       return { VISIBLE: '可见光', THERMAL: '红外', OTHER: '其他' }[value] || value || '其他'
@@ -301,10 +339,10 @@ export default {
       return devices.slice(0, 2).map(item => item.deviceName || item.serialNumber || '-').join('、') + (devices.length > 2 ? ` 等 ${devices.length} 台` : '')
     },
     trackStatusLabel(value) {
-      return { AVAILABLE: '正常', PROCESSING: '处理中', MISSING: '缺失' }[value] || value || '处理中'
+      return { AVAILABLE: '正常', PROCESSING: '处理中', PENDING: '待补传', MISSING: '缺失' }[value] || value || '处理中'
     },
     trackStatusType(value) {
-      return { AVAILABLE: 'green', PROCESSING: 'orange', MISSING: 'red' }[value] || 'info'
+      return { AVAILABLE: 'green', PROCESSING: 'orange', PENDING: 'orange', MISSING: 'red' }[value] || 'info'
     },
     durationLabel(seconds) {
       const value = Number(seconds)
@@ -325,8 +363,8 @@ export default {
       return res || {}
     },
     showError(error) {
-      const message = error && error.response && error.response.data && error.response.data.message
-      this.$message.error(message || (error && error.message) || '请求失败')
+      if (isRequestErrorNotified(error)) return
+      this.$message.error((error && error.message) || '请求失败')
     }
   }
 }

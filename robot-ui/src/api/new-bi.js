@@ -172,6 +172,27 @@ export function getTaskWorkflowVersionDetail(id, versionId) {
   })
 }
 
+export function getSelectionOptionDevices() {
+  return request({
+    url: taskPre + '/selection-options/devices',
+    method: 'get'
+  })
+}
+
+export function getSelectionWorkflowDefinition(id) {
+  return request({
+    url: taskPre + `/selection-options/workflow-definitions/${encodeURIComponent(id)}`,
+    method: 'get'
+  })
+}
+
+export function getSceneResourceGrants(sceneId) {
+  return request({
+    url: taskPre + `/selection-options/scenes/${encodeURIComponent(sceneId)}/resource-grants`,
+    method: 'get'
+  })
+}
+
 export function getManagementDevices(params) {
   return request({
     url: taskPre + '/devices',

@@ -28,7 +28,7 @@ import {
 const pages = [
   { label: '指挥中心', value: 'biIndex', icon: 'page-home', permission: BIGSCREEN_PERMISSIONS.HOME },
   { label: '巡逻巡查', value: 'biPatrol', icon: 'page-patrol', permissions: PATROL_PAGES.map(page => page.permission) },
-  { label: '人员管控', value: 'biStaff', icon: 'page-staff', permission: BIGSCREEN_PERMISSIONS.STAFF },
+  { label: '人员管控', value: 'no-biStaff', icon: 'page-staff', permission: BIGSCREEN_PERMISSIONS.STAFF },
   { label: '生产安全', value: 'no-biSafety', icon: 'page-safety', permission: BIGSCREEN_PERMISSIONS.SAFETY },
   { label: '应急处置', value: 'no-biEmergency', icon: 'page-emergency', permission: BIGSCREEN_PERMISSIONS.EMERGENCY }
 ]

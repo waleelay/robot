@@ -14,14 +14,17 @@
         @click="$emit('takeover')"
       >立即接管</div>
       <template v-else>
-        <div class="mode-action-btn curp flx-center" @click="$emit('resume')">恢复</div>
-        <div class="mode-action-btn curp flx-center" @click="$emit('terminate')">终止任务</div>
+        <div v-if="canResumeExecution" class="mode-action-btn curp flx-center" @click="$emit('resume')">恢复</div>
+        <div v-if="canTerminateExecution" class="mode-action-btn curp flx-center" @click="$emit('terminate')">终止任务</div>
       </template>
     </div>
   </div>
 </template>
 
 <script>
+import { mapGetters } from 'vuex'
+import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
+
 export default {
   name: 'ControlModeActions',
   props: {
@@ -38,9 +41,27 @@ export default {
     }
   },
   computed: {
-    // 自主导航始终可接管；非自主导航仅任务中显示恢复/终止
+    ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
+    canResumeExecution() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_RESUME)
+    },
+    canTerminateExecution() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_TERMINATE)
+    },
+    // 自主导航始终可接管；非自主导航仅任务中且至少有一个可操作按钮时显示
     showActions() {
-      return this.isNavMode || this.showResume
+      if (this.isNavMode) return true
+      if (!this.showResume) return false
+      return this.canResumeExecution || this.canTerminateExecution
+    }
+  },
+  methods: {
+    hasManagementPermission(permission) {
+      return matchManagementPermission(
+        permission,
+        this.bigscreenPermissions,
+        this.bigscreenAuthorizationBypassed
+      )
     }
   }
 }

@@ -117,8 +117,8 @@
                 <button
                   type="button"
                   class="action-btn action-icon wp30"
-                  :disabled="isActingTaskRecord(item)"
-                  :title="item.status === 'paused' ? '恢复' : '暂停'"
+                  :disabled="isActingTaskRecord(item) || !canPauseOrResumeTask(item)"
+                  :title="pauseResumeTitle(item)"
                   @click.stop="item.status === 'paused' ? handleResumeTask(item) : handlePauseTask(item)"
                 >
                   <svg-icon :icon-class="item.status === 'paused' ? 'play' : 'pause'" />
@@ -133,8 +133,8 @@
                 <button
                   type="button"
                   class="action-btn action-icon wp30"
-                  title="终止任务"
-                  :disabled="isActingTaskRecord(item)"
+                  :title="canTerminateExecution ? '终止任务' : '无权限'"
+                  :disabled="isActingTaskRecord(item) || !canTerminateExecution"
                   @click.stop="handleTerminateTask(item)"
                 >
                   <svg-icon icon-class="close1" />
@@ -157,7 +157,8 @@
                 <button
                   type="button"
                   class="action-btn action-execute"
-                  :disabled="isStartingTask(item)"
+                  :disabled="isStartingTask(item) || !canExecutePlan"
+                  :title="canExecutePlan ? undefined : '无权限'"
                   @click.stop="handleExecuteTask(item)"
                 >
                   <span>立即执行</span>
@@ -228,7 +229,7 @@
 </template>
 
 <script>
-import { mapState, mapActions } from 'vuex';
+import { mapGetters, mapState, mapActions } from 'vuex';
 import {
   pauseTaskRecord,
   resumeTaskRecord,
@@ -241,6 +242,7 @@ import WarningBatch from './warning/WarningBatch.vue'
 import { getDescArr } from '../../../../utils/index.js';
 import Empty from '../../components/Empty.vue';
 import { executionStatusLabel } from '../business/execution-status.js';
+import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 export default {
   name: 'BiPatrolPanoramaLeft',
   components: { TaskRobotView, WarningBatch, Empty },
@@ -294,6 +296,19 @@ export default {
     }
   },
   computed: {
+    ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
+    canPauseExecution() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_PAUSE)
+    },
+    canResumeExecution() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_RESUME)
+    },
+    canTerminateExecution() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_TERMINATE)
+    },
+    canExecutePlan() {
+      return this.hasManagementPermission(TASK_PERMISSIONS.PLAN_EXECUTE)
+    },
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
@@ -334,6 +349,20 @@ export default {
   methods: {
     ...mapActions('websocketExtraData', ['setRobotAlarmInfo', 'setShowRobotIds', 'loadTaskDetail']),
     executionStatusLabel,
+    hasManagementPermission(permission) {
+      return matchManagementPermission(
+        permission,
+        this.bigscreenPermissions,
+        this.bigscreenAuthorizationBypassed
+      )
+    },
+    canPauseOrResumeTask(item) {
+      return item && item.status === 'paused' ? this.canResumeExecution : this.canPauseExecution
+    },
+    pauseResumeTitle(item) {
+      if (item && item.status === 'paused') return this.canResumeExecution ? '恢复' : '无权限'
+      return this.canPauseExecution ? '暂停' : '无权限'
+    },
     getImageUrl(url) {
       const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
       return `${preUrl}${url}`
@@ -643,6 +672,7 @@ export default {
       }
     },
     handlePauseTask(item) {
+      if (!this.canPauseExecution) return
       return this.requestTaskRecordAction({
         item,
         action: 'pause',
@@ -653,6 +683,7 @@ export default {
       })
     },
     handleResumeTask(item) {
+      if (!this.canResumeExecution) return
       return this.requestTaskRecordAction({
         item,
         action: 'resume',
@@ -663,6 +694,7 @@ export default {
       })
     },
     handleTerminateTask(item) {
+      if (!this.canTerminateExecution) return
       return this.requestTaskRecordAction({
         item,
         action: 'terminate',
@@ -673,6 +705,7 @@ export default {
       })
     },
     async handleExecuteTask(item) {
+      if (!this.canExecutePlan) return
       const planId = this.getTaskPlanId(item)
       if (planId == null) {
         this.$message.error('缺少任务标识，无法执行')

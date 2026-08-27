@@ -160,7 +160,7 @@
                       @pause="handleVideoNativePause"
                     />
                     <div v-else class="video-placeholder">
-                      <strong>{{ videoFileId(video) || '-' }}</strong>
+                      <strong>{{ video.playbackStatus === 'PENDING' ? '视频待补传' : '视频暂不可用' }}</strong>
                       <span>{{ videoSourceLabel(video) }}</span>
                     </div>
                     <div v-if="videoPlaybackState(video).state !== 'PLAYING'" class="video-state">
@@ -196,7 +196,7 @@
                 :src="alarmImageUrl(event, index)"
                 :alt="alarmType(event)"
               >
-              <div v-else class="alarm-card__empty">告警</div>
+              <div v-else class="alarm-card__empty">{{ event.imageStatus === 'PENDING' ? '待补传' : '告警' }}</div>
               <div class="alarm-card__body">
                 <div class="alarm-card__meta">
                   <span>{{ formatDateTime(alarmTimeValue(event)) }}</span>
@@ -220,6 +220,7 @@ import HlsModule from 'hls.js'
 import { getTaskRecordReplay, previewImageBlob } from '@/api/new-bi'
 import { createFileObjectUrl, getFilePlayUrl, revokeFileObjectUrl } from '@/api/media'
 import { withApiPrefix } from '@/utils/api-url'
+import { isRequestErrorNotified } from '@/utils/request'
 import {
   executionStatusLabel as resolveExecutionStatusLabel,
   executionStatusType as resolveExecutionStatusType
@@ -1015,7 +1016,7 @@ export default {
       return resolveExecutionStatusType(value)
     },
     trackStatusLabel(value) {
-      return { AVAILABLE: '轨迹正常', PROCESSING: '轨迹处理中', MISSING: '轨迹缺失' }[value] || value || '轨迹处理中'
+      return { AVAILABLE: '轨迹正常', PROCESSING: '轨迹处理中', PENDING: '轨迹待补传', MISSING: '轨迹缺失' }[value] || value || '轨迹处理中'
     },
     parseDate(value) {
       if (!value) return null
@@ -1080,6 +1081,7 @@ export default {
       return res || {}
     },
     showError(error) {
+      if (isRequestErrorNotified(error)) return
       this.$message.error((error && error.message) || '请求失败')
     }
   }
