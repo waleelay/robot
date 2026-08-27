@@ -155,6 +155,21 @@ public class PanoramaCenterClient {
         return taskRecords(uri, "TASK_PLANS_UNAVAILABLE");
     }
 
+    /**
+     * 查询一个任务工作流计划关联的可用固定摄像头。该接口由 Management 按工作流依赖的路径汇总，
+     * 不能用某一个 workflowDefinition 的 pathId 替代，否则会遗漏依赖工作流中的摄像头。
+     */
+    public List<Map<String, Object>> taskWorkflowPlanFixedCameras(String taskId) {
+        if (taskId == null || taskId.isBlank()) {
+            return List.of();
+        }
+        URI uri = uri(properties.getManageBaseUrl(),
+                "/api/v1/management/task-workflow-plans/" + taskId + "/fixed-cameras")
+                .build(true)
+                .toUri();
+        return records(taskResponseMap(uri, "TASK_FIXED_CAMERAS_UNAVAILABLE", true).orElse(Map.of()));
+    }
+
     public Optional<Map<String, Object>> taskWorkflowDefinition(String workflowDefinitionId) {
         if (workflowDefinitionId == null || workflowDefinitionId.isBlank()) {
             return Optional.empty();

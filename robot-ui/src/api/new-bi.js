@@ -12,9 +12,9 @@ export function getPatrolPanoramaOverview() {
   })
 }
 
-export function getPatrolPanoramaMapScene(mapId) {
+export function getPatrolPanoramaMapResources(mapId) {
   return request({
-    url: pre + `/bigscreen/panorama/maps/${encodeURIComponent(mapId)}/scene`,
+    url: pre + `/bigscreen/panorama/maps/${encodeURIComponent(mapId)}/resources`,
     method: 'get',
     timeout: 8000
   })
@@ -31,6 +31,15 @@ export function getPatrolPanoramaMapTaskRoutes(mapId) {
 export function getPatrolPanoramaTaskDetail(taskId) {
   return request({
     url: pre + `/bigscreen/panorama/tasks/${encodeURIComponent(taskId)}`,
+    method: 'get',
+    timeout: 8000
+  })
+}
+
+// 实时监控任务卡展开时按需读取关联固定摄像头，不创建视频会话。
+export function getPatrolPanoramaTaskFixedCameras(taskId) {
+  return request({
+    url: pre + `/bigscreen/panorama/tasks/${encodeURIComponent(taskId)}/fixed-cameras`,
     method: 'get',
     timeout: 8000
   })

@@ -15,11 +15,12 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/api/bigscreen/panorama/overview` | 首屏摘要：设备、统计、任务摘要、地图摘要和告警；不加载地图点、任务路径、回放或逐设备详情 |
-| `GET` | `/api/bigscreen/panorama/maps/{mapId}/scene` | 当前地图的点位与固定摄像头；首屏默认地图和用户切图时调用 |
+| `GET` | `/api/bigscreen/panorama/maps/{mapId}/resources` | 当前地图渲染资源：点位、关联设备 ID 与固定摄像头；首屏默认地图和用户切图时调用 |
 | `GET` | `/api/bigscreen/panorama/maps/{mapId}/task-routes` | 当前地图关联任务的路径点；不加载任务回放或设备任务详情 |
 | `GET` | `/api/bigscreen/panorama/devices/{deviceId}` | 查询单个设备聚合详情 |
 | `GET` | `/api/bigscreen/panorama/tasks` | 查询当前任务快照 |
 | `GET` | `/api/bigscreen/panorama/tasks/{taskId}` | 用户打开任务时查询单个任务完整详情（含回放和设备任务明细） |
+| `GET` | `/api/bigscreen/panorama/tasks/{taskId}/fixed-cameras` | 实时监控任务卡展开时按需查询任务关联固定摄像头；只返回安全视频源标识，不创建视频会话 |
 | `GET` | `/api/bigscreen/panorama/alarms` | 查询告警分组快照 |
 | `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/disposal` | 处置告警 |
 | `GET` | `/api/bigscreen/panorama/alarms/actionable-workflow` | 查询当前用户可处理的工作流告警 |
@@ -77,15 +78,25 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 
 ### 2.1 按需读取时序与响应边界
 
-页面首屏先请求 `overview`；若默认地图为 SLAM，再并行请求该地图的 `scene` 和 `task-routes`。用户切换
-SLAM 地图时，仅请求目标 `mapId` 的这两个资源；用户打开任务视频时，才请求 `tasks/{taskId}`。前端不应在
-首屏、定时刷新或切图时预取任务回放、设备任务明细或非当前地图点位。
+页面首屏先请求 `overview`；若默认地图为 SLAM，再并行请求该地图的 `resources` 和 `task-routes`。用户切换
+SLAM 地图时，仅请求目标 `mapId` 的这两个资源；用户打开任务视频时，才请求 `tasks/{taskId}`。实时监控页仅在
+用户展开某张任务卡的“固定摄像头”列表时，请求 `tasks/{taskId}/fixed-cameras`。前端不应在首屏、定时刷新或切图时
+预取任务回放、设备任务明细、任务固定摄像头或非当前地图点位。
 
-`scene` 响应为 `{serverTime, mapId, points, fixedCamares}`，其中 `points` 为当前地图点位，
-`fixedCamares` 保持现有字段拼写，表示当前地图固定摄像头。`task-routes` 响应为
+`resources` 响应为 `{serverTime, mapId, points, deviceIds, fixedCamares}`，表示当前地图渲染所需的按需资源，其中
+`points` 为当前地图点位，
+`deviceIds` 为按设备关联任务的管理端地图 ID 与当前地图匹配的 `robotId` 数组。边缘端实时定位的 SLAM 地图 ID
+不作为管理端地图归属依据；未关联任务地图的设备不出现在任一地图渲染资源响应中。完整设备对象仅使用
+`overview.devices[]`，不得在 `resources` 重复下发；
+`fixedCamares` 保持现有字段拼写，表示当前地图固定摄像头。
+`task-routes` 响应为
 `{serverTime, mapId, items, dataQuality}`；每个 `items[]` 包含 `taskId`、`workflowInstanceId`、`mapId` 和
 `pathPoints`。`tasks/{taskId}` 响应为 `{serverTime, task, dataQuality}`；找不到任务时 `task=null`，不以
-伪造任务替代。
+伪造任务替代。`tasks/{taskId}/fixed-cameras` 响应为 `{serverTime, taskId, items}`，每个 `items[]` 只包含
+`cameraId`、`name`、`sourceType=FIXED_CAMERA`、`sourceId` 和 `defaultQuality`。其来源是 Management
+`task-workflow-plans/{taskId}/fixed-cameras`，覆盖该工作流计划及其依赖工作流关联路径的已启用摄像头并去重；
+不得使用单一 `pathId` 推导，也不得向浏览器返回 RTSP 地址、账号、密码或会话凭据。用户选择一个 `sourceId` 后，
+前端复用既有 `POST /api/bigscreen/control/fixed-cameras/{sourceId}/video/start` 创建会话；再次取消选择时停止该会话。
 
 为抑制同一用户高频刷新，BFF 对同一 JWT `sub` 合并在途 `overview` 并仅复用 5 秒内的成功结果；失败结果
 不缓存。地图场景、地图任务路径和可处置工作流告警按同一用户合并并成功缓存 3 秒。Management 通用资源

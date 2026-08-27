@@ -117,6 +117,40 @@
               <div class="flx-align-center mt6">
                 <span>执行装备（{{ item.equipmentList?.length }}）</span>
               </div>
+              <div
+                class="flx-align-center mt6 curp"
+                @click.stop="toggleTaskFixedCameras(item)"
+              >
+                <svg-icon :icon-class="isTaskFixedCameraExpanded(item.taskId) ? 'up' : 'down'" />
+                <span class="ml6">固定摄像头</span>
+                <span v-if="taskFixedCameraItems(item.taskId) !== null" class="ml4">（{{ taskFixedCameraItems(item.taskId).length }}）</span>
+                <span v-if="isTaskFixedCameraLoading(item.taskId)" class="ml6">加载中</span>
+              </div>
+              <div
+                v-if="isTaskFixedCameraExpanded(item.taskId)"
+                class="device mt6"
+              >
+                <div v-if="!isTaskFixedCameraLoading(item.taskId) && taskFixedCameraItems(item.taskId)?.length === 0" class="item">
+                  暂无关联固定摄像头
+                </div>
+                <div
+                  v-for="camera in taskFixedCameraItems(item.taskId) || []"
+                  :key="camera.sourceId || camera.cameraId"
+                  class="item flx-justify-between"
+                  :class="{ 'is-active': isTaskFixedCameraChecked(camera) }"
+                  :title="taskFixedCameraTitle(camera)"
+                  @click.stop="handleClickTaskFixedCamera(camera)"
+                  :style="{ cursor: canPlayTaskFixedCamera(camera) ? 'pointer' : 'not-allowed' }"
+                >
+                  <div class="flx-center">
+                    <svg-icon icon-class="robot-camera" />
+                    <span class="ml10">{{ camera.name || camera.sourceId || camera.cameraId }}</span>
+                  </div>
+                  <span class="status ml10 p4" :class="isTaskFixedCameraChecked(camera) ? 'green' : 'gray'">
+                    {{ isTaskFixedCameraChecked(camera) ? '播放中' : '未播放' }}
+                  </span>
+                </div>
+              </div>
             </div>
             <div class="device mt10" v-if="item.equipmentList?.length">
               <div
@@ -141,7 +175,7 @@
                     :style="{ color: robotBaseInfo[equipment.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
                   >
                   </svg-icon>
-                  <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId]?.battery || 0 }}%</span>  
+                  <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId]?.battery || 0 }}%</span>
                   <span class="status ml10 p4" :class="robotBaseInfo[equipment.robotId]?.statusClass">{{ robotBaseInfo[equipment.robotId]?.customStatusName || robotBaseInfo[equipment.robotId]?.status || '-' }}</span>
                 </div>
               </div>
@@ -203,12 +237,14 @@ export default {
       selectedEquipmentList2: [],
       hasLoad: false,
       appliedRouteTaskId: '',
+      expandedTaskFixedCameraIds: {},
+      loadingTaskFixedCameraIds: {},
       ROBOT_TYPE_INFO,
     }
   },
   computed: {
     ...mapState('dragVideo', ['dropResult', 'splitType']),
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData', 'taskFixedCameraData']),
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
     },
@@ -243,6 +279,7 @@ export default {
   },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
+    ...mapActions('websocketExtraData', ['loadTaskFixedCameras']),
     pickDefaultCamera,
     resolveTask(taskId) {
       if (taskId === undefined || taskId === null || taskId === '') return null
@@ -256,6 +293,83 @@ export default {
     splitTypeForCount(count) {
       const n = Math.max(Number(count) || 0, 1)
       return [1, 4, 6, 9].find(item => item >= n) || 9
+    },
+    taskFixedCameraKey(taskId) {
+      return taskId === undefined || taskId === null ? '' : String(taskId)
+    },
+    isTaskFixedCameraExpanded(taskId) {
+      return Boolean(this.expandedTaskFixedCameraIds[this.taskFixedCameraKey(taskId)])
+    },
+    isTaskFixedCameraLoading(taskId) {
+      return Boolean(this.loadingTaskFixedCameraIds[this.taskFixedCameraKey(taskId)])
+    },
+    taskFixedCameraItems(taskId) {
+      const key = this.taskFixedCameraKey(taskId)
+      if (!key) return null
+      const items = this.taskFixedCameraData?.[taskId] || this.taskFixedCameraData?.[key]
+      return Array.isArray(items) ? items : null
+    },
+    async toggleTaskFixedCameras(task) {
+      const taskId = task?.taskId
+      const key = this.taskFixedCameraKey(taskId)
+      if (!key) return
+      const expanded = !this.isTaskFixedCameraExpanded(taskId)
+      this.$set(this.expandedTaskFixedCameraIds, key, expanded)
+      if (!expanded || this.taskFixedCameraItems(taskId) !== null || this.isTaskFixedCameraLoading(taskId)) return
+      this.$set(this.loadingTaskFixedCameraIds, key, true)
+      try {
+        await this.loadTaskFixedCameras(taskId)
+      } catch (error) {
+        this.$message.warning('固定摄像头列表暂不可用，请稍后重试')
+      } finally {
+        this.$set(this.loadingTaskFixedCameraIds, key, false)
+      }
+    },
+    getTaskFixedCameraRobot(camera) {
+      const sourceId = camera?.sourceId || camera?.cameraId
+      if (sourceId === undefined || sourceId === null || sourceId === '') return null
+      const id = String(sourceId)
+      const live = (this.robots || []).find(item => String(item.robotId) === id)
+      const base = this.robotBaseInfo?.[sourceId] || this.robotBaseInfo?.[id]
+      if (!live && !base) {
+        return {
+          robotId: sourceId,
+          name: camera?.name || id,
+          type: 'FIXED_CAMERA',
+          typeCode: 'FIXED_CAMERA',
+          sourceType: 'FIXED_CAMERA',
+          status: 'offline',
+          cameras: []
+        }
+      }
+      return {
+        ...camera,
+        ...base,
+        ...live,
+        robotId: live?.robotId || base?.robotId || sourceId,
+        cameras: live?.cameras?.length
+          ? live.cameras
+          : Object.values(this.cameras || {}).filter(item => String(item?.robotId) === id)
+      }
+    },
+    taskFixedCameraTitle(camera) {
+      const robot = this.getTaskFixedCameraRobot(camera)
+      if (!robot || !pickDefaultCamera(robot, this.cameras)) return '固定摄像头当前不可播放'
+      if (robot.status === 'offline') return '固定摄像头当前离线'
+      return undefined
+    },
+    canPlayTaskFixedCamera(camera) {
+      const robot = this.getTaskFixedCameraRobot(camera)
+      return Boolean(robot && robot.status !== 'offline' && pickDefaultCamera(robot, this.cameras))
+    },
+    isTaskFixedCameraChecked(camera) {
+      const robot = this.getTaskFixedCameraRobot(camera)
+      return Boolean(robot?.robotId && this.isRobotChecked(robot.robotId))
+    },
+    async handleClickTaskFixedCamera(camera) {
+      const robot = this.getTaskFixedCameraRobot(camera)
+      if (!robot || !this.canPlayTaskFixedCamera(camera)) return
+      await this.handleClickRobot(robot)
     },
     getTaskRobotIds(task) {
       const equipmentList = Array.isArray(task?.equipmentList) ? task.equipmentList : []
@@ -375,7 +489,9 @@ export default {
       // 未选中：一分屏切换画面；多分屏仅在仍有空窗时打开
       if (alreadyChecked || this.splitType === 1 || this.checkedRobotIds.length < this.splitType) {
         await this.updateVideo(item)
+        return
       }
+      this.$message.warning('当前宫格已满，请先关闭已有画面')
     },
     isRobotChecked(robotId) {
       if (robotId === undefined || robotId === null || robotId === '') return false

@@ -185,6 +185,9 @@ public class PanoramaService {
         PanoramaTasks panoramaTasks = join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED"));
         List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), rawDevices);
         List<Map<String, Object>> devices = withTaskAssociations(rawDevices, tasks);
+        // 地图渲染资源随首屏读取时复用已经补齐任务地图归属的设备快照，避免再次查询设备、实时状态和任务定义。
+        cacheStatsValue("devices", devices);
+        cacheStatsValue("tasks", panoramaTasks);
         overview.put("devices", overviewDevices(devices));
         overview.put("deviceStats", deviceStats(devices));
         overview.put("deviceTypeStats", deviceTypeStats(devices));
@@ -253,6 +256,10 @@ public class PanoramaService {
             statsCache.put(key, new CachedSnapshot(now, value));
             return value;
         }
+    }
+
+    private void cacheStatsValue(String part, Object value) {
+        statsCache.put(part + ":" + statsUserKey(), new CachedSnapshot(System.currentTimeMillis(), value));
     }
 
     private String statsUserKey() {
@@ -549,7 +556,10 @@ public class PanoramaService {
         }
         Map<String, Object> result = mutable(device);
         Map<String, Object> location = mutable(map(device.get("location")));
-        location.put("mapId", taskMapIds.get(firstString(device, "robotId")));
+        // 大屏地图使用管理端任务定义的地图 ID。边缘端上报的是 SLAM 地图 ID，
+        // 两者不保证一致，未关联任务的设备不能据此错误归属到某张管理端地图。
+        String taskMapId = taskMapIds.get(firstString(device, "robotId"));
+        location.put("mapId", taskMapId);
         result.put("location", location);
         return result;
     }
@@ -567,22 +577,66 @@ public class PanoramaService {
                 .orElseGet(this::emptyDeviceDetail);
     }
 
-    /** 当前地图所需静态场景数据；不加载其他地图的点位。 */
-    public Map<String, Object> mapScene(String mapId) {
+    /** 当前地图渲染所需资源；不加载其他地图的点位。 */
+    public Map<String, Object> mapResources(String mapId) {
         if (mapId == null || mapId.isBlank()) {
             throw new IllegalArgumentException("mapId is required");
         }
-        return cachedStats("map-scene:" + mapId, () -> mapScenePayload(mapId));
+        return cachedStats("map-resources:" + mapId, () -> mapResourcesPayload(mapId));
     }
 
-    private Map<String, Object> mapScenePayload(String mapId) {
+    private Map<String, Object> mapResourcesPayload(String mapId) {
         List<Map<String, Object>> points = centerClient.mapPoints(mapId);
         List<Map<String, Object>> fixedCameras = centerClient.fixedCameras(mapId);
+        // 地图渲染资源是地图与顶层 devices[] 的关联入口。只返回 ID，避免重复下发设备详情。
+        // 现场设备常不在实时定位中携带管理端 mapId，必须复用任务定义补齐后的地图归属，
+        // 否则任务已绑定地图的设备会被错误地遗漏。
+        List<Map<String, Object>> devices = mapAssociatedDevices();
         return object(
                 "serverTime", now(),
                 "mapId", mapId,
                 "points", overviewPoints(points),
+                "deviceIds", deviceIdsForMap(mapId, devices),
                 "fixedCamares", fixedCameras);
+    }
+
+    private List<Map<String, Object>> mapAssociatedDevices() {
+        List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
+        // overview 的 tasks 是首屏摘要，不读取工作流定义；场景关联需要管理端地图 ID，
+        // 因此仅在用户请求地图渲染资源时按需补齐，且与首屏摘要缓存隔离。这里刻意不复用
+        // taskPayload：场景关联只需要任务、设备与地图，不能额外读取路径点和任务回放。
+        List<Map<String, Object>> tasks = cachedStats("map-association-tasks", this::mapAssociationTasks);
+        return withTaskLocationMapIds(devices, tasks);
+    }
+
+    private List<Map<String, Object>> mapAssociationTasks() {
+        TaskDataQuality quality = new TaskDataQuality();
+        List<Map<String, Object>> taskPlans = joinTask(
+                async(centerClient::taskWorkflowPlans), List.of(), quality, "TASK_PLANS_UNAVAILABLE");
+        List<CompletableFuture<Map<String, Object>>> futures = taskPlans.stream()
+                .map(task -> async(() -> mapAssociationTask(task, quality)))
+                .toList();
+        return futures.stream()
+                .map(future -> joinTask(future, null, quality, "TASK_MAP_ASSOCIATION_UNAVAILABLE"))
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private Map<String, Object> mapAssociationTask(Map<String, Object> task, TaskDataQuality quality) {
+        Object mapId = firstValue(task, "mapId", "mapID");
+        String workflowDefinitionId = firstString(task, "workflowDefinitionId", "definitionId");
+        if ((mapId == null || string(mapId).isBlank())
+                && workflowDefinitionId != null && !workflowDefinitionId.isBlank()) {
+            Optional<Map<String, Object>> definition = centerClient.taskWorkflowDefinition(workflowDefinitionId);
+            if (definition.isPresent()) {
+                mapId = firstValue(definition.get(), "mapId", "mapID");
+            } else {
+                quality.invalidReference("WORKFLOW_DEFINITION_NOT_FOUND", workflowDefinitionId);
+            }
+        }
+        return object(
+                "mapId", mapId,
+                "equipmentList", equipmentList(task, Map.of(), Map.of(), List.of()));
     }
 
     /** 当前地图关联任务的路径数据；不加载任务回放或设备任务明细。 */
@@ -638,7 +692,34 @@ public class PanoramaService {
                 .orElseGet(() -> object(
                         "serverTime", now(),
                         "task", null,
-                        "dataQuality", object("tasks", panoramaTasks.dataQuality())));
+                "dataQuality", object("tasks", panoramaTasks.dataQuality())));
+    }
+
+    /**
+     * 实时监控任务卡展开时按需读取的固定摄像头视频源。这里不创建视频会话，
+     * 不返回 RTSP 地址或凭据；浏览器选择后仍走 Control 的固定摄像头会话接口。
+     */
+    public Map<String, Object> taskFixedCameras(String taskId) {
+        if (taskId == null || taskId.isBlank()) {
+            throw new IllegalArgumentException("taskId is required");
+        }
+        Map<String, Map<String, Object>> itemsBySourceId = new LinkedHashMap<>();
+        for (Map<String, Object> source : centerClient.taskWorkflowPlanFixedCameras(taskId)) {
+            String cameraId = firstString(source, "cameraId", "id");
+            if (cameraId == null || cameraId.isBlank()) {
+                continue;
+            }
+            itemsBySourceId.putIfAbsent(cameraId, object(
+                    "cameraId", cameraId,
+                    "name", firstString(source, "cameraName", "name"),
+                    "sourceType", "FIXED_CAMERA",
+                    "sourceId", cameraId,
+                    "defaultQuality", firstString(source, "subStreamUrl") == null ? "main" : "sub"));
+        }
+        return object(
+                "serverTime", now(),
+                "taskId", taskId,
+                "items", List.copyOf(itemsBySourceId.values()));
     }
 
     public Map<String, Object> tasks() {

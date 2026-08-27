@@ -55,7 +55,7 @@ class PanoramaServiceTest {
     }
 
     @Test
-    void keepsMapSummaryInOverviewAndLoadsSceneOnDemand() {
+    void keepsMapSummaryInOverviewAndLoadsMapResourcesOnDemand() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         Map<String, Object> firstMap = Map.ofEntries(
@@ -85,6 +85,17 @@ class PanoramaServiceTest {
         when(centerClient.mapPoints("2077775285125144578")).thenReturn(firstPoints);
         when(centerClient.fixedCameras()).thenReturn(firstFixedCameras);
         when(centerClient.fixedCameras("2077775285125144578")).thenReturn(firstFixedCameras);
+        when(centerClient.devices()).thenReturn(List.of(Map.of(
+                "serialNumber", "robot-001",
+                "deviceName", "Robot One")));
+        when(centerClient.realtimeStatuses(List.of("robot-001"))).thenReturn(List.of(realtimeStatus(
+                "robot-001", Map.of("mapId", 2077775285125144578L))));
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "workflowDefinitionId", "definition-001",
+                "roleBindings", List.of(Map.of("deviceIds", List.of("robot-001"))))));
+        when(centerClient.taskWorkflowDefinition("definition-001")).thenReturn(Optional.of(Map.of(
+                "mapId", 2077775285125144578L)));
 
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
         Map<String, Object> overview = service.overview();
@@ -99,9 +110,10 @@ class PanoramaServiceTest {
         assertFalse(maps.get(0).containsKey("previewImageUrl"));
         assertFalse(maps.get(0).containsKey("enabled"));
         assertFalse(maps.get(0).containsKey("remark"));
-        Map<String, Object> scene = service.mapScene("2077775285125144578");
-        assertEquals(List.of(Map.of("id", 101L, "pointName", "Start")), scene.get("points"));
-        assertEquals(firstFixedCameras, scene.get("fixedCamares"));
+        Map<String, Object> resources = service.mapResources("2077775285125144578");
+        assertEquals(List.of(Map.of("id", 101L, "pointName", "Start")), resources.get("points"));
+        assertEquals(List.of("robot-001", "201"), resources.get("deviceIds"));
+        assertEquals(firstFixedCameras, resources.get("fixedCamares"));
         assertFalse(firstMap.containsKey("points"));
         assertFalse(firstMap.containsKey("fixedCamares"));
         verify(centerClient, times(1)).mapPoints("2077775285125144578");
@@ -127,6 +139,38 @@ class PanoramaServiceTest {
         Map<String, Object> routes = service.mapTaskRoutes("1001");
         assertEquals(mapPoints, maps(routes.get("items")).get(0).get("pathPoints"));
         verify(centerClient, times(1)).mapPoints("1001");
+    }
+
+    @Test
+    void loadsTaskFixedCamerasOnDemandWithoutLeakingStreamCredentials() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.taskWorkflowPlanFixedCameras("1001")).thenReturn(List.of(
+                Map.of(
+                        "cameraId", "camera-001",
+                        "cameraName", "东侧通道摄像头",
+                        "subStreamUrl", "rtsp://example/sub",
+                        "mainStreamUrl", "rtsp://example/main",
+                        "username", "operator",
+                        "password", "secret"),
+                Map.of(
+                        "cameraId", "camera-001",
+                        "cameraName", "重复摄像头")));
+
+        Map<String, Object> response = new PanoramaService(centerClient, new ObjectMapper())
+                .taskFixedCameras("1001");
+
+        List<Map<String, Object>> items = maps(response.get("items"));
+        assertEquals(1, items.size());
+        assertEquals(Map.of(
+                "cameraId", "camera-001",
+                "name", "东侧通道摄像头",
+                "sourceType", "FIXED_CAMERA",
+                "sourceId", "camera-001",
+                "defaultQuality", "sub"), items.get(0));
+        assertFalse(items.get(0).containsKey("mainStreamUrl"));
+        assertFalse(items.get(0).containsKey("subStreamUrl"));
+        assertFalse(items.get(0).containsKey("username"));
+        assertFalse(items.get(0).containsKey("password"));
     }
 
     @Test

@@ -21,20 +21,24 @@ import {
   listTasksForRobot
 } from "../../views/bi/patrol/business/task-equipment";
 import {
-  getPatrolPanoramaMapScene,
+  getPatrolPanoramaMapResources,
   getPatrolPanoramaMapTaskRoutes,
   getPatrolPanoramaOverview,
-  getPatrolPanoramaTaskDetail
+  getPatrolPanoramaTaskDetail,
+  getPatrolPanoramaTaskFixedCameras
 } from '../../api/new-bi'
 
 let overviewRefreshPromise = null
 const mapResourcePromises = new Map()
+const taskFixedCameraPromises = new Map()
 
 const state = {
   // 设备对象：设备详情，包含坐标位置，task基本信息
   deviceObj: {},
   // 任务详情
   taskData: {}, // { taskId: { ...taskInfo } }
+  // 实时监控任务卡按需展开的固定摄像头，键为 taskId
+  taskFixedCameraData: {},
   // 告警数据
   alarmsData: {}, // { high: {}, medium: {}, low: {} }
   // 设备类型统计
@@ -85,6 +89,7 @@ const mutations = {
   RESET_OVERVIEW_RESOURCE_STATE(state) {
     state.deviceObj = {};
     state.taskData = {};
+    state.taskFixedCameraData = {};
     state.alarmsData = {};
     state.robotLocation = {};
     state.robotBaseInfo = {};
@@ -115,6 +120,13 @@ const mutations = {
       ...robotsHoldingTask(state.robotBaseInfo, value.taskId),
       ...Object.keys(state.robotBaseInfo || {})
     ])
+  },
+  SET_TASK_FIXED_CAMERAS(state, { taskId, items }) {
+    if (taskId === undefined || taskId === null || taskId === '') return
+    state.taskFixedCameraData = {
+      ...state.taskFixedCameraData,
+      [taskId]: Array.isArray(items) ? items : []
+    }
   },
   REMOVE_TASK_INFO(state, taskId) {
     if (taskId === undefined || taskId === null) return
@@ -311,26 +323,30 @@ const actions = {
   async hydrateOverview(context, overview) {
     const mapId = initialSlamMapId(overview)
     if (!mapId) return overview
-    const [scene, taskRoutes] = await Promise.all([
-      getPatrolPanoramaMapScene(mapId),
+    const [mapResourcesResult, taskRoutesResult] = await Promise.allSettled([
+      getPatrolPanoramaMapResources(mapId),
       getPatrolPanoramaMapTaskRoutes(mapId)
     ])
-    return mergeOverviewMapResources(overview, scene, taskRoutes)
+    const mapResources = fulfilledValue(mapResourcesResult)
+    const taskRoutes = fulfilledValue(taskRoutesResult)
+    return mergeOverviewMapResources(overview, mapResources, taskRoutes)
   },
   async loadMapResources({ state, commit }, mapId) {
     if (mapId === undefined || mapId === null || mapId === '' || mapId === 'gis') return
     const key = String(mapId)
     let pending = mapResourcePromises.get(key)
     if (!pending) {
-      pending = Promise.all([
-        getPatrolPanoramaMapScene(mapId),
+      pending = Promise.allSettled([
+        getPatrolPanoramaMapResources(mapId),
         getPatrolPanoramaMapTaskRoutes(mapId)
       ]).finally(() => mapResourcePromises.delete(key))
       mapResourcePromises.set(key, pending)
     }
-    const [scene, taskRoutes] = await pending
+    const [mapResourcesResult, taskRoutesResult] = await pending
+    const mapResources = fulfilledValue(mapResourcesResult)
+    const taskRoutes = fulfilledValue(taskRoutesResult)
     const maps = (state.slamMapList || []).map(item => String(item?.id) === key
-      ? { ...item, points: scene?.points || [], fixedCamares: scene?.fixedCamares || [] }
+      ? mergeMapResources(item, mapResources)
       : item)
     commit('SET_SLAM_MAP_LIST', maps)
     ;(taskRoutes?.items || []).forEach(item => {
@@ -360,6 +376,26 @@ const actions = {
       })
     }
     return merged
+  },
+  /** 实时监控任务卡展开时读取固定摄像头候选源；不预取，也不创建视频会话。 */
+  async loadTaskFixedCameras({ state, commit }, taskId) {
+    if (taskId === undefined || taskId === null || taskId === '') return []
+    const key = String(taskId)
+    const existing = state.taskFixedCameraData?.[taskId] || state.taskFixedCameraData?.[key]
+    if (Array.isArray(existing)) return existing
+    let pending = taskFixedCameraPromises.get(key)
+    if (!pending) {
+      pending = getPatrolPanoramaTaskFixedCameras(taskId)
+        .then(response => {
+          const payload = response?.data && response?.items === undefined ? response.data : response
+          const items = Array.isArray(payload?.items) ? payload.items : []
+          commit('SET_TASK_FIXED_CAMERAS', { taskId, items })
+          return items
+        })
+        .finally(() => taskFixedCameraPromises.delete(key))
+      taskFixedCameraPromises.set(key, pending)
+    }
+    return pending
   },
   setAll({commit, state, dispatch}, data) {
     commit('RESET_OVERVIEW_RESOURCE_STATE')
@@ -619,10 +655,10 @@ function initialSlamMapId(overview) {
   return mapId === undefined || mapId === null || mapId === '' ? null : mapId
 }
 
-function mergeOverviewMapResources(overview, scene, taskRoutes) {
-  const mapId = scene?.mapId
+function mergeOverviewMapResources(overview, mapResources, taskRoutes) {
+  const mapId = mapResources?.mapId
   const maps = (overview?.map || []).map(item => String(item?.id) === String(mapId)
-    ? { ...item, points: scene?.points || [], fixedCamares: scene?.fixedCamares || [] }
+    ? mergeMapResources(item, mapResources)
     : item)
   const routesByTaskId = new Map((taskRoutes?.items || []).map(item => [String(item.taskId), item]))
   const tasks = (overview?.tasks || []).map(task => {
@@ -632,13 +668,43 @@ function mergeOverviewMapResources(overview, scene, taskRoutes) {
   return { ...overview, map: maps, tasks }
 }
 
+/**
+ * 地图渲染资源只补充当前地图的重数据；设备详情仍由 overview.devices[] 提供。
+ * 每个字段独立合并，保证 task-routes 临时不可用时不影响点位和设备图标，反之亦然。
+ */
+function mergeMapResources(map, mapResources) {
+  if (!mapResources) return map
+  const result = { ...map }
+  if (Array.isArray(mapResources.points)) result.points = mapResources.points
+  if (Array.isArray(mapResources.fixedCamares)) result.fixedCamares = mapResources.fixedCamares
+  if (Array.isArray(mapResources.deviceIds)) result.deviceIds = mapResources.deviceIds
+  return result
+}
+
+function fulfilledValue(result) {
+  return result?.status === 'fulfilled' ? result.value : null
+}
+
 function buildSlamOfRobot(maps, robots, tasks) {
   const result = {}
   const robotMapIds = {}
+  const resourceMapIds = new Set()
+  const resourceDeviceMapIds = {}
 
   maps.forEach(mapInfo => {
     if (mapInfo?.id === undefined || mapInfo?.id === null) return
-    result[String(mapInfo.id)] = { mapInfo, robots: [] }
+    const mapId = String(mapInfo.id)
+    result[mapId] = { mapInfo, robots: [] }
+    // deviceIds 是地图渲染资源返回的归属快照。已加载资源的地图以它为准，
+    // 避免同一装备因旧定位或任务残留被绘制到错误地图。
+    if (Array.isArray(mapInfo.deviceIds)) {
+      resourceMapIds.add(mapId)
+      mapInfo.deviceIds.forEach(robotId => {
+        if (robotId !== undefined && robotId !== null && robotId !== '') {
+          resourceDeviceMapIds[String(robotId)] = mapInfo.id
+        }
+      })
+    }
   })
 
   tasks.forEach(task => {
@@ -654,7 +720,12 @@ function buildSlamOfRobot(maps, robots, tasks) {
 
   robots.forEach(robot => {
     const directMapId = robot?.mapId ?? robot?.location?.mapId
-    const mapId = directMapId ?? robotMapIds[String(robot?.robotId)]
+    const explicitMapId = resourceDeviceMapIds[String(robot?.robotId)]
+    // 已加载渲染资源的地图不得再用旧定位补图标；未加载资源的地图维持原有兜底，
+    // 避免首次总览尚未按需读取时清空其他地图的既有展示。
+    if (directMapId !== undefined && directMapId !== null
+      && resourceMapIds.has(String(directMapId)) && explicitMapId === undefined) return
+    const mapId = explicitMapId ?? directMapId ?? robotMapIds[String(robot?.robotId)]
     if (mapId === undefined || mapId === null) return
     const key = String(mapId)
     if (!result[key]) result[key] = { mapInfo: null, robots: [] }

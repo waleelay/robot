@@ -161,7 +161,21 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 | `mapId` | 地图 ID | 管理端 | `TaskWorkflowDefinitionResponse.mapId` |
 | `pathPoints` | 路径点位集合 | 管理端 + BFF 过滤 | 用 `TaskWorkflowDefinitionResponse.pathId` 查 `/paths/{pathId}/points`，再按 `mapPointId` 从地图点位中过滤；每个点仅返回 `id/pointCode/pointName/pointType/coordinateX/coordinateY` |
 
-#### 3.6.1 `tasks[].equipmentList[]`
+### 3.6.1 任务固定摄像头按需接口 `tasks/{taskId}/fixed-cameras`
+
+| BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
+|---|---|---|---|
+| `taskId` | 任务工作流计划 ID | 请求路径 | 与 `tasks[].taskId` 相同；仅在实时监控页用户展开该任务卡时查询 |
+| `items[]` | 任务关联的固定摄像头安全视频源 | 管理端 + BFF 过滤 | 调用 `TaskWorkflowPlanController.fixedCameras`，由管理端汇总工作流计划及依赖工作流的路径摄像头并去重；不得改用单个路径详情 |
+| `items[].cameraId/sourceId` | 固定摄像头播放源标识 | 管理端 + BFF | 均取 `TaskFixedCameraResponse.cameraId`，浏览器仅可将该值用于既有固定摄像头会话接口 |
+| `items[].name` | 固定摄像头名称 | 管理端 | `TaskFixedCameraResponse.cameraName` |
+| `items[].sourceType` | 视频源类型 | BFF 常量 | 固定为 `FIXED_CAMERA` |
+| `items[].defaultQuality` | 建议默认清晰度 | BFF 计算 | 管理端有 `subStreamUrl` 时为 `sub`，否则为 `main`；不是 RTSP 地址本身 |
+
+该接口不创建、续期或停止视频会话，也不返回 `mainStreamUrl/subStreamUrl/username/password`。前端通过当前
+宫格已有的固定摄像头播放与停止链路处理用户单击、再次单击和宫格释放；首屏、任务刷新和地图切换不得预取。
+
+#### 3.6.2 `tasks[].equipmentList[]`
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
@@ -182,15 +196,16 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 
 BFF 只会将 `running/pausing/paused/resuming/terminating` 状态的任务关联到设备，不会把待执行或已结束任务填入“当前任务”。关联复用总览已查询的 `tasks[]`，不会为每台设备新增管理端请求。
 
-### 3.8 `map[]`
+### 3.8 当前地图渲染资源 `resources`
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
-| `points` | 地图点位列表 | 管理端 | `/api/v1/management/maps/{mapId}/points` 返回值 |
-| `deviceIds` | 当前地图的设备 ID 列表 | BFF 过滤 | 按 `devices[].location.mapId` 与地图 `id/mapId` 匹配，只返回 `robotId`；完整对象使用顶层 `devices[]` |
+| `points` | 当前地图点位列表 | 管理端 | `/api/v1/management/maps/{mapId}/points` 返回值 |
+| `deviceIds` | 当前地图的设备 ID 列表 | BFF 过滤 | 按设备关联任务的管理端地图 ID 与请求 `mapId` 匹配，只返回 `robotId`；边缘端实时定位的 SLAM 地图 ID 不参与管理端地图归属，未关联任务地图的设备不返回，完整对象使用顶层 `overview.devices[]` |
 | `fixedCamares` | 当前地图的固定摄像头列表 | 管理端 | `/api/v1/management/fixed-cameras?pageNum=1&pageSize=100&mapId={mapId}` 的 `data.records` |
 
-地图对象保留 `id/mapName/fileId/previewWidth/previewHeight/resolution/originX/originY/originYaw/previewGeneratedAt/points/deviceIds/fixedCamares`。
+`overview.map[]` 仅保留 `id/mapName/fileId/previewWidth/previewHeight/resolution/originX/originY/previewGeneratedAt`
+等地图摘要；`points/deviceIds/fixedCamares` 仅由 `resources` 返回。
 `mapCode/mapType/regionId/fileName/previewImageUrl/enabled/remark` 不再放入聚合接口。
 `points[]` 仅返回 `id/pointCode/pointName/pointType/coordinateX/coordinateY`。
 
@@ -330,8 +345,9 @@ PATCH /api/v1/management/alarms/{alarmId}/handled
 
 ## 8. 地图字段
 
-`overview.map[]` 从管理端地图记录中投影前端需要的字段，并按每条记录的
-`id/mapId` 查询地图点位、匹配设备，补充 `points/deviceIds/fixedCamares`。
+`overview.map[]` 只保留地图摘要；当前地图的 `points/deviceIds/fixedCamares` 由
+`GET /api/bigscreen/panorama/maps/{mapId}/resources` 按需返回。前端将地图渲染资源与对应地图摘要合并，
+完整设备对象始终使用顶层 `overview.devices[]`。
 
 | BFF 字段 | 字段说明 |
 |---|---|
@@ -345,9 +361,9 @@ PATCH /api/v1/management/alarms/{alarmId}/handled
 | `originY` | 地图原点 Y |
 | `originYaw` | 地图原点朝向 |
 | `previewGeneratedAt` | 预览图生成时间 |
-| `points` | 地图点位数组，仅含 `id/pointCode/pointName/pointType/coordinateX/coordinateY` |
-| `deviceIds` | 当前地图设备 ID 数组；按 `devices[].location.mapId` 匹配 |
-| `fixedCamares` | 当前地图固定摄像头原始记录数组 |
+| `points` | resources 地图点位数组，仅含 `id/pointCode/pointName/pointType/coordinateX/coordinateY` |
+| `deviceIds` | resources 当前地图设备 ID 数组；按设备关联任务的管理端地图 ID 匹配，实时定位的 SLAM 地图 ID 不参与归属，完整对象不重复返回 |
+| `fixedCamares` | resources 当前地图固定摄像头原始记录数组 |
 
 ## 9. 统计接口
 
