@@ -10,7 +10,8 @@
     "build:stage": "vue-cli-service build --mode staging",
     "preview": "node build/index.js --preview",
     "lint": "eslint --ext .js,.vue src",
-    "lint:fix": "eslint --ext .js,.vue src --fix"
+    "lint:fix": "eslint --ext .js,.vue src --fix",
+    "test:admin-console": "node --test test/admin-console-url.test.mjs"
   },
   "husky": {
     "hooks": {

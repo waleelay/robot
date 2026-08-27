@@ -9,6 +9,9 @@ import {
   hasBigscreenPermission,
   isBigscreenPermissionEnabled
 } from '@/utils/bigscreen-access'
+import { captureAdminReturnUrl } from '@/utils/adminConsole'
+
+captureAdminReturnUrl()
 
 NProgress.configure({ showSpinner: false })
 

@@ -64,7 +64,10 @@
           <span class="ml10">{{ currentTime }}</span>
         </div>
         <div class="flx-center icons h100 ml20">
-          <div class="icon" @click="toggleFullscreen">
+          <div class="icon" title="管理后台" @click="openAdminConsole">
+            <svg-icon icon-class="system1" :style="{ color: '#AED1FF' }"></svg-icon>
+          </div>
+          <div class="icon ml20" @click="toggleFullscreen">
             <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen'" :style="{ color: '#AED1FF', fontSize: isFullscreen ? undefined : '18px' }"></svg-icon>
           </div>
           <div class="icon ml20">
@@ -89,6 +92,7 @@ import { mapActions } from 'vuex/dist/vuex.common.js';
 import PageChangeDropdown from './../home/PageChangeDropdown.vue'
 import UserMenu from '../components/UserMenu.vue'
 import { events, isPageFullscreen, togglePageFullscreen } from '@/utils/fullscreen'
+import { openAdminConsole } from '@/utils/adminConsole'
 import { PATROL_PAGES, hasBigscreenPermission } from '@/utils/bigscreen-access'
 
 const patrolLabels = {
@@ -205,7 +209,8 @@ export default {
     // 网页全屏状态改变
     onFullscreenChange() {
       this.isFullscreen = isPageFullscreen()
-    }
+    },
+    openAdminConsole
   }
 }
 </script>
