@@ -872,7 +872,9 @@ export default {
     },
     // 当前应展示的全部任务路径层
     // 任务卡片过滤仅在 MapTool「路径」高亮（showAllTaskPaths）时生效；关闭路径则清空全部任务路径
+    // 实时监控小窗不展示任务路径
     allDisplayTaskPaths() {
+      if (this.showSmall) return []
       const list = []
       const filterId = this.listFilterTaskId
       const hasListFilter = filterId !== undefined && filterId !== null && filterId !== ''
@@ -1219,9 +1221,9 @@ export default {
     activeTaskPathData(val) {
       if (!val && this.showPolyline) this.showPolyline = false
     },
-    // 实时监控小窗：选中任务后展示该任务路径（全景仍由 MapTool「路径」控制）
+    // 实时监控小窗：选中任务仅用于父级切图，不展示任务路径；全景仍由 MapTool「路径」控制
     listFilterTaskId(taskId) {
-      if (this.enableAddPoint) return
+      if (this.enableAddPoint || this.showSmall) return
       const hasTask = taskId !== undefined && taskId !== null && taskId !== ''
       this.showAllTaskPaths = hasTask
     }

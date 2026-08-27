@@ -27,7 +27,6 @@
           <GlobalSlamMap
             v-if="globalMapId && globalMapId !== 'gis'"
             :map="slamMapPayload"
-            :list-filter-task-id="selectedTaskId"
             :show-labels="true"
             :enable-add-point="false"
           />

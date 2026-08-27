@@ -417,6 +417,85 @@
           & + .task-item {
             margin-top: 10px;
           }
+          .task-tree-box {
+            position: relative;
+            .task-tree-group {
+              position: relative;
+              .task-tree-header {
+                color: #ABBACE;
+                font-size: 14px;
+                font-weight: 600;
+                line-height: 18px;
+                cursor: pointer;
+                .svg-icon {
+                  font-size: 16px;
+                }
+              }
+              .task-tree-content {
+                max-height: 200px;
+                overflow-y: auto;
+                &::-webkit-scrollbar {
+                  width: 2px;
+                  height: 2px;
+                }
+                &::-webkit-scrollbar-thumb {
+                  border: 1px solid #42536F;
+                }
+                .item {
+                  position: relative;
+                  &::before {
+                    position: absolute;
+                    top: 15.5px;
+                    left: -10px;
+                    width: 8px;
+                    height: calc(100% + 10px);
+                    content: '';
+                    transition: all 0.3s ease;
+                  }
+                  &:only-of-type::before {
+                    border: none !important;
+                  }
+                  &:first-child::before {
+                    border-top: 1px solid #49556A;
+                  }
+                  &:last-child::before {
+                    display: none;
+                  }
+                  &:not(:last-child)::before {
+                    border-bottom: 1px solid #49556A;
+                    border-left: 1px solid #49556A;
+                  }
+                }
+              }
+              &.collapse {
+                .task-tree-content {
+                  display: none;
+                }
+              }
+              &::before {
+                position: absolute;
+                top: 19px;
+                left: -16px;
+                width: 16px;
+                height: 100%;
+                content: '';
+                transition: all 0.3s ease;
+              }
+              &:only-of-type::before {
+                border: none !important;
+              }
+              &:first-child::before {
+                border-top: 1px solid rgba(136, 151, 171, 0.5);
+              }
+              &:last-child::before {
+                display: none;
+              }
+              &:not(:last-child)::before {
+                border-bottom: 1px solid rgba(136, 151, 171, 0.5);
+                border-left: 1px solid rgba(136, 151, 171, 0.5);
+              }
+            }
+          }
           .device {
             color: #92A0B6;
             font-family: "Microsoft YaHei";

@@ -114,69 +114,84 @@
                 <svg-icon icon-class="location" />
                 <span class="ml10">{{ item.currentLocation }}</span>
               </div>
-              <div class="flx-align-center mt6">
-                <span>执行装备（{{ item.equipmentList?.length }}）</span>
-              </div>
+            </div>
+            <div class="task-tree-box collapse-box pl17 mt10">
               <div
-                class="flx-align-center mt6 curp"
-                @click.stop="toggleTaskFixedCameras(item)"
+                class="task-tree-group"
+                :class="{ collapse: isTaskGroupCollapsed(item.taskId, 'equipment') }"
               >
-                <svg-icon :icon-class="isTaskFixedCameraExpanded(item.taskId) ? 'up' : 'down'" />
-                <span class="ml6">固定摄像头</span>
-                <span v-if="taskFixedCameraItems(item.taskId) !== null" class="ml4">（{{ taskFixedCameraItems(item.taskId).length }}）</span>
-                <span v-if="isTaskFixedCameraLoading(item.taskId)" class="ml6">加载中</span>
-              </div>
-              <div
-                v-if="isTaskFixedCameraExpanded(item.taskId)"
-                class="device mt6"
-              >
-                <div v-if="!isTaskFixedCameraLoading(item.taskId) && taskFixedCameraItems(item.taskId)?.length === 0" class="item">
-                  暂无关联固定摄像头
+                <div class="task-tree-header p10 flx-justify-between" @click.stop="toggleTaskGroup(item, 'equipment')">
+                  <div class="flx-center">
+                    <svg-icon icon-class="robot" />
+                    <span class="ml10">执行装备（{{ item.equipmentList?.length || 0 }}）</span>
+                  </div>
+                  <svg-icon :icon-class="isTaskGroupCollapsed(item.taskId, 'equipment') ? 'down' : 'up'" style="color: #6A788B" />
                 </div>
-                <div
-                  v-for="camera in taskFixedCameraItems(item.taskId) || []"
-                  :key="camera.sourceId || camera.cameraId"
-                  class="item flx-justify-between"
-                  :class="{ 'is-active': isTaskFixedCameraChecked(camera) }"
-                  :title="taskFixedCameraTitle(camera)"
-                  @click.stop="handleClickTaskFixedCamera(camera)"
-                  :style="{ cursor: canPlayTaskFixedCamera(camera) ? 'pointer' : 'not-allowed' }"
-                >
+                <div class="task-tree-content device pl12 common-scroll mr10 pr7">
+                  <div v-if="!item.equipmentList?.length" class="item">暂无执行装备</div>
+                  <div
+                    v-for="equipment in item.equipmentList || []"
+                    :key="equipment.robotId || equipment.name"
+                    class="item flx-justify-between"
+                    :class="{ 'is-active': isRobotChecked(equipment.robotId) }"
+                    :title="pickDefaultCamera(getTaskEquipmentRobot(equipment), cameras) ? undefined : '暂无视频源'"
+                    :draggable="canDragTaskEquipment(equipment)"
+                    @dragstart.stop="onTaskEquipmentDragStart($event, equipment)"
+                    @dragend="onDragEnd"
+                    @click.stop="handleClickRobot(getTaskEquipmentRobot(equipment))"
+                    :style="{ cursor: canDragTaskEquipment(equipment) ? 'grab' : (getTaskEquipmentStatus(equipment) === 'offline' ? 'not-allowed' : 'default') }"
+                  >
+                    <div class="flx-center">
+                      <svg-icon :icon-class="ROBOT_TYPE_INFO[getTaskEquipmentRobot(equipment)?.type || equipment.type]?.icon || 'robot'" />
+                      <span class="ml10">{{ getTaskEquipmentRobot(equipment)?.name || equipment.name }}</span>
+                    </div>
+                    <div class="flx-center">
+                      <svg-icon
+                        :icon-class="robotBaseInfo[equipment.robotId]?.battery >= 90 ? 'battery-4' : robotBaseInfo[equipment.robotId]?.battery >= 80 ? 'battery-3' : robotBaseInfo[equipment.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[equipment.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
+                        :style="{ color: robotBaseInfo[equipment.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
+                      >
+                      </svg-icon>
+                      <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId]?.battery || 0 }}%</span>
+                      <span class="status ml10 p4" :class="robotBaseInfo[equipment.robotId]?.statusClass">{{ robotBaseInfo[equipment.robotId]?.customStatusName || robotBaseInfo[equipment.robotId]?.status || '-' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div
+                class="task-tree-group"
+                :class="{ collapse: isTaskGroupCollapsed(item.taskId, 'cameras') }"
+              >
+                <div class="task-tree-header p10 flx-justify-between" @click.stop="toggleTaskGroup(item, 'cameras')">
                   <div class="flx-center">
                     <svg-icon icon-class="robot-camera" />
-                    <span class="ml10">{{ camera.name || camera.sourceId || camera.cameraId }}</span>
+                    <span class="ml10">固定摄像头</span>
+                    <span v-if="taskFixedCameraItems(item.taskId) !== null">（{{ taskFixedCameraItems(item.taskId).length }}）</span>
+                    <span v-if="isTaskFixedCameraLoading(item.taskId)" class="ml6">加载中</span>
                   </div>
-                  <span class="status ml10 p4" :class="isTaskFixedCameraChecked(camera) ? 'green' : 'gray'">
-                    {{ isTaskFixedCameraChecked(camera) ? '播放中' : '未播放' }}
-                  </span>
+                  <svg-icon :icon-class="isTaskGroupCollapsed(item.taskId, 'cameras') ? 'down' : 'up'" style="color: #6A788B" />
                 </div>
-              </div>
-            </div>
-            <div class="device mt10" v-if="item.equipmentList?.length">
-              <div
-                v-for="equipment in item.equipmentList"
-                :key="equipment.robotId || equipment.name"
-                class="item flx-justify-between"
-                :class="{ 'is-active': isRobotChecked(equipment.robotId) }"
-                :title="pickDefaultCamera(getTaskEquipmentRobot(equipment), cameras) ? undefined : '暂无视频源'"
-                :draggable="canDragTaskEquipment(equipment)"
-                @dragstart.stop="onTaskEquipmentDragStart($event, equipment)"
-                @dragend="onDragEnd"
-                @click.stop="handleClickRobot(getTaskEquipmentRobot(equipment))"
-                :style="{ cursor: canDragTaskEquipment(equipment) ? 'grab' : (getTaskEquipmentStatus(equipment) === 'offline' ? 'not-allowed' : 'default') }"
-              >
-                <div class="flx-center">
-                  <svg-icon :icon-class="ROBOT_TYPE_INFO[getTaskEquipmentRobot(equipment)?.type || equipment.type]?.icon || 'robot'" />
-                  <span class="ml10">{{ getTaskEquipmentRobot(equipment)?.name || equipment.name }}</span>
-                </div>
-                <div class="flx-center">
-                  <svg-icon
-                    :icon-class="robotBaseInfo[equipment.robotId]?.battery >= 90 ? 'battery-4' : robotBaseInfo[equipment.robotId]?.battery >= 80 ? 'battery-3' : robotBaseInfo[equipment.robotId]?.battery >= 50 ? 'battery-2' : robotBaseInfo[equipment.robotId]?.battery >= 40 ? 'battery-1' : 'battery-0'"
-                    :style="{ color: robotBaseInfo[equipment.robotId]?.battery < 50 ? '#D33333' : '#3DB56A' }"
+                <div class="task-tree-content device pl12 common-scroll mr10 pr7">
+                  <div v-if="isTaskFixedCameraLoading(item.taskId)" class="item">加载中</div>
+                  <div v-else-if="taskFixedCameraItems(item.taskId)?.length === 0" class="item">
+                    暂无关联固定摄像头
+                  </div>
+                  <div
+                    v-for="camera in taskFixedCameraItems(item.taskId) || []"
+                    :key="camera.sourceId || camera.cameraId"
+                    class="item flx-justify-between"
+                    :class="{ 'is-active': isTaskFixedCameraChecked(camera) }"
+                    :title="taskFixedCameraTitle(camera)"
+                    @click.stop="handleClickTaskFixedCamera(camera)"
+                    :style="{ cursor: canPlayTaskFixedCamera(camera) ? 'pointer' : 'not-allowed' }"
                   >
-                  </svg-icon>
-                  <span class="ml4 battery wp30">{{ robotBaseInfo[equipment.robotId]?.battery || 0 }}%</span>
-                  <span class="status ml10 p4" :class="robotBaseInfo[equipment.robotId]?.statusClass">{{ robotBaseInfo[equipment.robotId]?.customStatusName || robotBaseInfo[equipment.robotId]?.status || '-' }}</span>
+                    <div class="flx-center">
+                      <svg-icon icon-class="robot-camera" />
+                      <span class="ml10">{{ camera.name || camera.sourceId || camera.cameraId }}</span>
+                    </div>
+                    <span class="status ml10 p4" :class="isTaskFixedCameraChecked(camera) ? 'green' : 'gray'">
+                      {{ isTaskFixedCameraChecked(camera) ? '播放中' : '未播放' }}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -237,7 +252,7 @@ export default {
       selectedEquipmentList2: [],
       hasLoad: false,
       appliedRouteTaskId: '',
-      expandedTaskFixedCameraIds: {},
+      taskGroupCollapse: {},
       loadingTaskFixedCameraIds: {},
       ROBOT_TYPE_INFO,
     }
@@ -297,8 +312,22 @@ export default {
     taskFixedCameraKey(taskId) {
       return taskId === undefined || taskId === null ? '' : String(taskId)
     },
-    isTaskFixedCameraExpanded(taskId) {
-      return Boolean(this.expandedTaskFixedCameraIds[this.taskFixedCameraKey(taskId)])
+    getTaskGroupCollapse(taskId) {
+      const key = this.taskFixedCameraKey(taskId)
+      return this.taskGroupCollapse[key] || { equipment: false, cameras: true }
+    },
+    isTaskGroupCollapsed(taskId, group) {
+      return Boolean(this.getTaskGroupCollapse(taskId)[group])
+    },
+    async toggleTaskGroup(task, group) {
+      const key = this.taskFixedCameraKey(task?.taskId)
+      if (!key) return
+      const current = this.getTaskGroupCollapse(task.taskId)
+      const nextCollapsed = !current[group]
+      this.$set(this.taskGroupCollapse, key, { ...current, [group]: nextCollapsed })
+      if (group === 'cameras' && !nextCollapsed) {
+        await this.ensureTaskFixedCameras(task)
+      }
     },
     isTaskFixedCameraLoading(taskId) {
       return Boolean(this.loadingTaskFixedCameraIds[this.taskFixedCameraKey(taskId)])
@@ -309,13 +338,11 @@ export default {
       const items = this.taskFixedCameraData?.[taskId] || this.taskFixedCameraData?.[key]
       return Array.isArray(items) ? items : null
     },
-    async toggleTaskFixedCameras(task) {
+    async ensureTaskFixedCameras(task) {
       const taskId = task?.taskId
       const key = this.taskFixedCameraKey(taskId)
       if (!key) return
-      const expanded = !this.isTaskFixedCameraExpanded(taskId)
-      this.$set(this.expandedTaskFixedCameraIds, key, expanded)
-      if (!expanded || this.taskFixedCameraItems(taskId) !== null || this.isTaskFixedCameraLoading(taskId)) return
+      if (this.taskFixedCameraItems(taskId) !== null || this.isTaskFixedCameraLoading(taskId)) return
       this.$set(this.loadingTaskFixedCameraIds, key, true)
       try {
         await this.loadTaskFixedCameras(taskId)
