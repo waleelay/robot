@@ -191,6 +191,9 @@
       min-width: 82px;
       background: transparent;
       border: none;
+      &.is-dimmed {
+        opacity: 0.8;
+      }
       &.max-zoom {
         z-index: 10000;
       }

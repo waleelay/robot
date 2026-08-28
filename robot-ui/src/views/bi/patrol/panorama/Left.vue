@@ -171,7 +171,7 @@
         </div>
       </div>
       <div class="box bi-corner-box mt20 alert" :class="{ 'no_data hp41': collapseArr[2], 'hp323': !collapseArr[2] }" style="max-height: 446px;">
-        <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="toggleCollapse('collapseArr', 2)">
+        <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">告警中心</span>
           <span v-if="hasAlarmData" class="flx-center more curp" @click.stop="handleClickAlert()">
             <span>更多</span>
@@ -196,8 +196,13 @@
               <div v-for="(item, index) in getObjByOrder(alarmsData?.[key]?.items || [], 'eventTime', 'array')" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert(item)">
                 <div class="img wp120 hp72 flx-center"
                 >
-                <!-- :style="{ background: `url(${getImageUrl(item.snapshotUrl?.visible) || (item.title.includes('火灾') ? img1 : img2)}) lightgray -4.267px -11.862px / 104% 118.678% no-repeat` }" -->
-                  <img :src="getImageUrl(item.snapshotUrl?.visible)" alt="" srcset="" style="width: 100%; height: 100%; object-fit: cover;">
+                  <img
+                    v-if="alarmImageUrl(item)"
+                    :src="alarmImageUrl(item)"
+                    alt=""
+                    style="width: 100%; height: 100%; object-fit: cover;"
+                  >
+                  <div v-else class="img-placeholder">暂无图片</div>
                   <span class="alert_type wp64 text-ellipsis">{{ item.categoryName }}</span>
                 </div>
                 <div class="ml6 flex1" style="min-width: 0;">
@@ -243,6 +248,7 @@ import { getDescArr } from '../../../../utils/index.js';
 import Empty from '../../components/Empty.vue';
 import { executionStatusLabel } from '../business/execution-status.js';
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
+import { loadAlarmListObjectUrls } from '@/utils/alarm-snapshot'
 export default {
   name: 'BiPatrolPanoramaLeft',
   components: { TaskRobotView, WarningBatch, Empty },
@@ -289,8 +295,8 @@ export default {
         },
       },
       updated: false,
-      // img1: require('@/assets/images/new-bi/test.png'),
-      // img2: require('@/assets/images/new-bi/warning1.png'),
+      alarmImageUrls: {},
+      alarmImageLoadSeq: 0,
       startingTaskIds: [],
       actingRecordIds: [],
     }
@@ -363,9 +369,19 @@ export default {
       if (item && item.status === 'paused') return this.canResumeExecution ? '恢复' : '无权限'
       return this.canPauseExecution ? '暂停' : '无权限'
     },
-    getImageUrl(url) {
-      const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
-      return `${preUrl}${url}`
+    alarmImageUrl(item) {
+      if (!item?.alarmId) return ''
+      return this.alarmImageUrls[String(item.alarmId)] || ''
+    },
+    collectAlarmItems() {
+      const data = this.alarmsData || {}
+      return ['high', 'medium', 'low'].flatMap(key => data[key]?.items || [])
+    },
+    async loadAlarmImages() {
+      const seq = ++this.alarmImageLoadSeq
+      const nextUrls = await loadAlarmListObjectUrls(this.collectAlarmItems())
+      if (seq !== this.alarmImageLoadSeq) return
+      this.alarmImageUrls = nextUrls
     },
     /**
      * 通用的按时间属性降序排序函数
@@ -763,6 +779,7 @@ export default {
   },
   beforeDestroy() {
     this.$root.$off('bi-panorama-focus-task', this.focusTaskFromPopup)
+    this.alarmImageUrls = {}
   },
   watch: {
     // 切换 GIS/SLAM 或 SLAM 地图时，关闭任务装备弹窗
@@ -779,12 +796,14 @@ export default {
     // },
     alarmsData: {
       handler(newVal) {
+        this.loadAlarmImages()
         if (newVal?.high?.items?.length && !this.updated) {
           this.$set(this.alertCollapseArr, 0, false)
           this.updated = true
         }
       },
-      immediate: true
+      immediate: true,
+      deep: true
     }
   },
 }
@@ -963,8 +982,16 @@ export default {
               }
               .img {
                 position: relative;
-                /* background: #ccc; */
-                /* background: var(--img) lightgray -4.267px -11.862px / 104% 118.678% no-repeat; */
+                .img-placeholder {
+                  width: 100%;
+                  height: 100%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  color: #6B8AA8;
+                  font-size: 12px;
+                  background: rgba(0, 29, 70, 0.6);
+                }
                 .alert_type {
                   position: absolute;
                   top: 0;

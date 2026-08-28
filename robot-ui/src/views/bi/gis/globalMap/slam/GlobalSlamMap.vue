@@ -207,11 +207,15 @@
               <!-- 图标随地图缩放而变化 -->
               <!-- :transform="`translate(${robot.pixel.x}, ${robot.pixel.y})${showSmall ? '' : ` scale(${1 / zoom})`}`" -->
               <g
-                v-for="robot in drawableRobots"
+                v-for="robot in sortedDrawableRobots"
                 :key="robot.robotId"
                 :transform="`translate(${robot.pixel.x}, ${robot.pixel.y}) scale(${1 / zoom})`"
                 class="map-preview-robot custom-point"
-                :class="[robot.statusClass, { 'show-icon': isRobotHighlighted(robot.robotId), 'is-static': !isRobotClickable(robot) }]"
+                :class="[robot.statusClass, {
+                  'show-icon': isRobotHighlighted(robot.robotId),
+                  'is-static': !isRobotClickable(robot),
+                  'is-dimmed': hasMapRobotSelection && !isMapRobotSelected(robot.robotId)
+                }]"
                 @click.stop="handleRobotClick($event, robot)"
                 @mouseenter="onRobotPathHover(robot)"
                 @mouseleave="clearRaisedTaskPath"
@@ -1019,6 +1023,33 @@ export default {
         }
       }).filter(Boolean)
     },
+    mapSelectedRobotIds() {
+      const ids = new Set()
+      ;(this.showRobotIds || []).forEach(id => {
+        if (id !== undefined && id !== null && id !== '') ids.add(String(id))
+      })
+      if (this.currenRouteName === 'biIndex' && this.activeRobotId) {
+        ids.add(String(this.activeRobotId))
+      }
+      if (this.currenRouteName !== 'biIndex') {
+        Object.values(this.activeCameras || {}).forEach(item => {
+          const id = item?.robot?.robotId
+          if (id !== undefined && id !== null && id !== '') ids.add(String(id))
+        })
+      }
+      return [...ids]
+    },
+    hasMapRobotSelection() {
+      return this.mapSelectedRobotIds.length > 0
+    },
+    sortedDrawableRobots() {
+      const robots = this.drawableRobots
+      if (!this.hasMapRobotSelection) return robots
+      const selectedSet = new Set(this.mapSelectedRobotIds)
+      const unselected = robots.filter(robot => !selectedSet.has(String(robot.robotId)))
+      const selected = robots.filter(robot => selectedSet.has(String(robot.robotId)))
+      return [...unselected, ...selected]
+    },
     // Robot1 路径线：仅来自装备关联的任务路径数据
     polylinePoints() {
       if (!this.showPolyline || !this.activeTaskPathData) return ''
@@ -1333,6 +1364,9 @@ export default {
       // 监控等非指挥中心页：开视频后同步选中地图装备（与 GlobalGisMap.getSelectedStatus 一致）
       if (this.currenRouteName !== 'biIndex' && this.hasActiveVideo(robotId)) return true
       return false
+    },
+    isMapRobotSelected(robotId) {
+      return this.mapSelectedRobotIds.some(id => String(id) === String(robotId))
     },
     onCanvasContextMenu(event) {
       if (!this.enableAddPoint) return
@@ -2482,6 +2516,9 @@ export default {
       .map-preview-robot {
         pointer-events: auto;
         cursor: pointer;
+        &.is-dimmed {
+          opacity: 0.8;
+        }
         &.is-static {
           pointer-events: none;
           cursor: default;

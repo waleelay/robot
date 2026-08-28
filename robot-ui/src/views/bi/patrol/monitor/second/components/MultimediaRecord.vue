@@ -60,11 +60,9 @@
 import { mapState } from 'vuex'
 import Hls from 'hls.js'
 import {
-  createFileObjectUrl,
-  getFiles,
-  getFilePlayUrl,
-  revokeFileObjectUrl
+  getFiles
 } from '../../../../../../api/media.js'
+import { getCachedFileObjectUrl, getCachedFilePlayUrl, invalidateCachedFile } from '@/utils/file-object-url-cache'
 import { durationFromVideoElement, resolveCameraName } from '../../../../../../utils/index.js'
 import MultimediaDetail from './MultimediaDetail.vue'
 import Empty from '../../../../components/Empty.vue'
@@ -85,8 +83,7 @@ export default {
       snapshotList: [],
       recordings: [],
       videoPlayers: {},
-      snapshotLoadSeq: 0,
-      snapshotObjectUrls: []
+      snapshotLoadSeq: 0
     }
   },
   computed: {
@@ -111,7 +108,6 @@ export default {
   mounted() { this.refreshList() },
   beforeDestroy() {
     this.snapshotLoadSeq += 1
-    this.destroySnapshotObjectUrls()
     this.destroyVideoPlayers()
   },
   methods: {
@@ -128,21 +124,15 @@ export default {
           fileType: item.fileType || 'IMAGE'
         }))
         const urls = await Promise.all(items.map(item =>
-          createFileObjectUrl(item.fileId).catch(() => '')
+          getCachedFileObjectUrl(item.fileId).catch(() => '')
         ))
-        if (loadSeq !== this.snapshotLoadSeq) {
-          urls.forEach(revokeFileObjectUrl)
-          return
-        }
-        this.destroySnapshotObjectUrls()
-        this.snapshotObjectUrls = urls.filter(Boolean)
+        if (loadSeq !== this.snapshotLoadSeq) return
         this.snapshotList = items.map((item, index) => ({
           ...item,
           customUrl: urls[index]
         }))
       } catch (e) {
         if (loadSeq !== this.snapshotLoadSeq) return
-        this.destroySnapshotObjectUrls()
         this.snapshotList = []
       }
     },
@@ -164,7 +154,7 @@ export default {
     async playRecording(recording) {
       if (!recording?.fileId || recording.status !== 'READY') return
       try {
-        const playback = await getFilePlayUrl(recording.fileId)
+        const playback = await getCachedFilePlayUrl(recording.fileId)
         const ref = this.$refs[`listPlayer_${recording.fileId}`]
         const player = Array.isArray(ref) ? ref[0] : ref
         if (!player) return
@@ -241,10 +231,6 @@ export default {
       }
       delete this.videoPlayers[fileId]
     },
-    destroySnapshotObjectUrls() {
-      this.snapshotObjectUrls.forEach(revokeFileObjectUrl)
-      this.snapshotObjectUrls = []
-    },
     destroyVideoPlayers() { Object.keys(this.videoPlayers).forEach(id => this.destroyVideoPlayer(id)) },
     getCameraName(robotId, deviceId) {
       return resolveCameraName(this.cameras, robotId, deviceId)
@@ -284,6 +270,7 @@ export default {
     handleDeleted(item) {
       const fileId = item?.fileId
       if (fileId) {
+        invalidateCachedFile(fileId)
         this.snapshotList = this.snapshotList.filter(row => row.fileId !== fileId)
         this.destroyVideoPlayer(fileId)
         this.recordings = this.recordings.filter(row => row.fileId !== fileId)

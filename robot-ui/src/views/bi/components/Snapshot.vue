@@ -60,10 +60,9 @@
 import { mapState } from 'vuex';
 import recordMixin from './recording.js'
 import {
-  createFileObjectUrl,
-  getFiles,
-  revokeFileObjectUrl
+  getFiles
 } from '../../../api/media.js';
+import { getCachedFileObjectUrl, invalidateCachedFile } from '@/utils/file-object-url-cache'
 import videoUtils from '../../../utils/videoUtils.js'
 import { resolveCameraName } from '../../../utils/index.js'
 import MultimediaDetail from '../patrol/monitor/second/components/MultimediaDetail.vue'
@@ -91,8 +90,7 @@ export default {
         total: 0,
       },
       refPrefix: 'recordedPlayer1',
-      snapshotLoadSeq: 0,
-      snapshotObjectUrls: []
+      snapshotLoadSeq: 0
     }
   },
   computed: {
@@ -117,7 +115,8 @@ export default {
       })
     },
     // 详情内删除后刷新列表（图片 + 视频）
-    async handleDeleted() {
+    async handleDeleted(item) {
+      if (item?.fileId) invalidateCachedFile(item.fileId)
       await this.refreshList()
       this.$emit('deleted')
     },
@@ -141,14 +140,9 @@ export default {
         const res = await getFiles({ page: this.snapShotInfo.page, size: this.snapShotInfo.size, fileType: 'IMAGE', status: 'READY' }) || {}
         const items = res.items || []
         const urls = await Promise.all(items.map(item =>
-          createFileObjectUrl(item.fileId).catch(() => '')
+          getCachedFileObjectUrl(item.fileId).catch(() => '')
         ))
-        if (loadSeq !== this.snapshotLoadSeq) {
-          urls.forEach(revokeFileObjectUrl)
-          return
-        }
-        this.destroySnapshotObjectUrls()
-        this.snapshotObjectUrls = urls.filter(Boolean)
+        if (loadSeq !== this.snapshotLoadSeq) return
         this.snapShotInfo.snapshotList = items.map((item, index) => ({
           ...item,
           customUrl: urls[index]
@@ -156,7 +150,6 @@ export default {
         this.snapShotInfo.total = res.total || 0
       } catch (e) {
         if (loadSeq !== this.snapshotLoadSeq) return
-        this.destroySnapshotObjectUrls()
         this.snapShotInfo.snapshotList = []
         this.snapShotInfo.total = 0
       }
@@ -182,10 +175,6 @@ export default {
     },
     getCameraName(robotId, deviceId) {
       return resolveCameraName(this.cameras, robotId, deviceId)
-    },
-    destroySnapshotObjectUrls() {
-      this.snapshotObjectUrls.forEach(revokeFileObjectUrl)
-      this.snapshotObjectUrls = []
     },
     getLocationText(item) {
       const robot = this.robotBaseInfo?.[item.robotId]
@@ -225,7 +214,6 @@ export default {
   },
   beforeDestroy() {
     this.snapshotLoadSeq += 1
-    this.destroySnapshotObjectUrls()
     this.destroyAllRecordedHls()
   }
 }

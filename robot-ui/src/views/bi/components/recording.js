@@ -1,5 +1,6 @@
 import Hls from "hls.js"
-import { getFilePlayUrl, getFiles } from "../../../api/media"
+import { getFiles } from "../../../api/media"
+import { getCachedFilePlayUrl } from "@/utils/file-object-url-cache"
 import { durationFromVideoElement, durationText, errorMessage } from "../../../utils"
 
 export default {
@@ -61,7 +62,7 @@ export default {
       if (recording.status !== 'READY') return
       const seq = loadSeq != null ? loadSeq : this.recordingLoadSeq
       try {
-        const playback = await getFilePlayUrl(recording.fileId)
+        const playback = await getCachedFilePlayUrl(recording.fileId)
         if (seq !== this.recordingLoadSeq) return
         const ref = this.$refs[`${this.refPrefix}_${recording.fileId}`]
         let player = Array.isArray(ref) ? ref[0] : ref

@@ -53,7 +53,7 @@
               <div class="image-box">
                 <div class="title flx-justify-between">
                   <div class="text">告警画面</div>
-                  <div class="select-list" style="display: none">
+                  <div v-if="options.length > 1" class="select-list">
                     <el-select
                       v-model="selectedValue"
                       placeholder="请选择"
@@ -69,7 +69,6 @@
 
                         <div class="flx-align-center">
                           <el-radio v-model="selectedValue" :label="item.key" class="custom-radio">{{ item.label }}</el-radio>
-                          <!-- <span class="ml10">{{ item.label }}</span> -->
                         </div>
                       </el-option>
                     </el-select>
@@ -80,14 +79,15 @@
                   <div class="mt10 flx-center" style="width: 640px; height: 355px;">
                     <!-- <img v-if="details?.title?.includes('火灾')" src="../../../../../assets/images/new-bi/test.png" class="w100" style="height: auto; max-height: 100%;" alt="">
                     <img v-else src="../../../../../assets/images/new-bi/warning1.png" class="w100" style="height: auto; max-height: 100%;" alt=""> -->
-                    <el-carousel trigger="click" :autoplay="false" height="100%" ref="carouselRef" @change="handleChangeCarousel">
+                    <el-carousel v-if="options.length" trigger="click" :autoplay="false" height="100%" ref="carouselRef" @change="handleChangeCarousel">
                       <el-carousel-item v-for="item in options" :key="item.key" :name="item.key">
-                        <div v-if="item.url" class="img">
-                          <img :src="getImageSrc(item.url)" alt="">
+                        <div class="img">
+                          <img v-if="snapshotImageSrc(item.key)" :src="snapshotImageSrc(item.key)" alt="">
+                          <div v-else class="w100 h100 flx-center">暂无{{ item.label }}图片</div>
                         </div>
-                        <div v-else class="w100 h100 flx-center">暂无{{item.label}}图片</div>
                       </el-carousel-item>
                     </el-carousel>
+                    <div v-else class="w100 h100 flx-center">暂无图片</div>
                   </div>
                 </div>
               </div>
@@ -186,18 +186,13 @@
 </template>
 
 <script>
-const defaultOptions = [
-  { key: 'visible', label: '云台可见光', url: '1' },
-  { key: 'thermal', label: '云台红外光', url: '2' },
-  { key: 'front', label: '前置摄像头', url: '3' }
-]
-// import Gis from './../../../../largeScreen/dialog/gis.vue';
 import WarningExecute from './WarningExecute.vue';
 import WarningExecuteNo from './WarningExecuteNo.vue';
 import WarningExecuteError from './WarningExecuteError.vue';
 import { mapState, mapActions } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
 import { getActionableWorkflowAlarms, handleWorkflowAlarm } from '../../../../../api/new-bi.js';
+import { buildSnapshotOptions, loadSnapshotObjectUrls } from '@/utils/alarm-snapshot'
 export default {
   name: 'WarningInfo',
   dicts: ['qh_alarm_record_type'],
@@ -241,7 +236,9 @@ export default {
       refreshTimer: null,
       workflowQueue: [],
       deferredAlarmIds: new Set(),
-      show: false
+      show: false,
+      snapshotObjectUrls: {},
+      snapshotLoadSeq: 0
     }
   },
   methods: {
@@ -260,17 +257,17 @@ export default {
       this.details = {
         ...data
       }
-      this.selectedValue = defaultOptions[0].key
-      this.options = [...defaultOptions].map(item => ({
-        ...item,
-        url: this.details?.snapshotUrl?.[item.key] || '',
-        t: new Date().getTime()
-      }))
+      this.applySnapshotOptions(this.details)
       this.warningVisible = true
       this.timer = setTimeout(() => {
         this.warningVisible = false
         this.dialogVisible = true
       }, 2000)
+    },
+    applySnapshotOptions(item) {
+      this.options = buildSnapshotOptions(item)
+      this.selectedValue = this.options[0]?.key || ''
+      this.loadDetailSnapshots()
     },
     async execute(type) {
       // 0 立即处置 1 稍后处置 2 误报
@@ -327,7 +324,8 @@ export default {
       this.dialogVisible = false
       this.details = {}
       this.selectedValue = ''
-      this.options = [...defaultOptions]
+      this.options = []
+      this.snapshotObjectUrls = {}
     },
     scheduleWorkflowAlarmRefresh() {
       if (this.refreshTimer) clearTimeout(this.refreshTimer)
@@ -360,10 +358,17 @@ export default {
     handleChangeCarousel(index) {
       this.selectedValue = this.options[index].key
     },
-    getImageSrc(url) {
-      if (/^https?:\/\//i.test(url)) return url
-      const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
-      return `${preUrl}${url}`
+    snapshotImageSrc(key) {
+      return this.snapshotObjectUrls[key] || ''
+    },
+    async loadDetailSnapshots() {
+      const seq = ++this.snapshotLoadSeq
+      this.snapshotObjectUrls = {}
+      const keys = this.options.map(item => item.key)
+      if (!keys.length) return
+      const nextUrls = await loadSnapshotObjectUrls(this.details?.snapshotUrl, this.details, keys)
+      if (seq !== this.snapshotLoadSeq) return
+      this.snapshotObjectUrls = nextUrls
     }
   },
   watch: {

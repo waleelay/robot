@@ -218,8 +218,13 @@ export default {
       }
     },
     openMore() {
+      const snapshotRef = this.$refs.snapshotRef
+      const list = this.tabIndex === 0
+        ? (snapshotRef?.snapShotInfo?.snapshotList || [])
+        : (snapshotRef?.recordings || [])
       this.$refs.multimediaDetailRef?.open({
-        tabIndex: this.tabIndex
+        tabIndex: this.tabIndex,
+        list
       })
     },
     handleMultimediaDeleted() {

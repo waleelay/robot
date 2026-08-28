@@ -3,7 +3,7 @@
     <span :style="{ 'font-size': $route.name === 'biIndex' ? '16px' : '20px', color: '#AED1FF' }">
       <svg-icon icon-class="app1" />
     </span>
-    <el-dropdown-menu slot="dropdown" class="custom-dropdown-menu page-dropdown-menu p10" :class="{'mt25': $route.name !== 'biIndex'}" :style="{ transform: $route.name !== 'biIndex' ? 'translateX(185px)' : 'translateX(0px)' }">
+    <el-dropdown-menu slot="dropdown" class="custom-dropdown-menu page-dropdown-menu p10" :class="{'mt25': $route.name !== 'biIndex'}">
       <div class="d-flex">
         <el-dropdown-item v-for="item in pageList" :key="item.label" :title="item.value.includes('no-') ? '暂未开放' : ''" :command="item.value" class="flx-center flex-column wp76 hp68" :class="{ 'is-active': $route.name.includes(item.value) }">
           <svg-icon class="default-svg-icon" :icon-class="item.icon" style="font-size: 26px" />

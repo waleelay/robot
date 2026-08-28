@@ -64,7 +64,6 @@ new Vue({
   created() {
     // 开发环境需要打开
     // this.$store.dispatch('websocket/initWebSocket');
-    // this.$store.dispatch('voiceCall/initWebsocket');
     // this.$store.dispatch('bigScreen/initializeStore');
   }
 })

@@ -9,7 +9,6 @@ import settings from './modules/settings'
 import getters from './getters'
 import websocket from "./modules/websocket";
 import extra from "./modules/extra";
-import voiceCall from "./modules/voiceCall";
 import bigScreen from "./modules/bigScreen";
 import alert from './modules/alert';
 import dragVideo from './modules/dragVideo';
@@ -29,7 +28,6 @@ const store = new Vuex.Store({
     settings,
     websocket,
     extra,
-    voiceCall,
     bigScreen,
     alert,
     dragVideo,

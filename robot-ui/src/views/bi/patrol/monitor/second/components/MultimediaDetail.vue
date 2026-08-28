@@ -181,13 +181,15 @@
 import { mapState } from 'vuex'
 import Hls from 'hls.js'
 import {
-  createFileObjectUrl,
   getFiles,
-  getFilePlayUrl,
   fileDownloadUrl,
-  revokeFileObjectUrl,
   deleteFile
 } from '../../../../../../api/media.js'
+import {
+  getCachedFileObjectUrl,
+  getCachedFilePlayUrl,
+  invalidateCachedFile
+} from '@/utils/file-object-url-cache'
 import { durationFromVideoElement, durationText, resolveCameraName } from '../../../../../../utils/index.js'
 
 export default {
@@ -207,7 +209,6 @@ export default {
       detailPlaySeq: 0,
       thumbPlayers: {},
       imageLoadSeq: 0,
-      ownedImageObjectUrls: [],
       pickerOptions: {
         disabledDate: (date) => {
           const before = `${new Date().getFullYear() - 9}-1-1 00:00:00`
@@ -279,7 +280,6 @@ export default {
   },
   beforeDestroy() {
     this.imageLoadSeq += 1
-    this.destroyOwnedImageObjectUrls()
     this.destroyDetailPlayer()
     this.destroyThumbPlayers()
   },
@@ -293,10 +293,11 @@ export default {
       this.simpleMode = !!simple
       this.outerTabIndex = tabIndex === 1 ? 1 : 0
       if (this.simpleMode) {
-        const hydrated = await this.hydrateImageItems(item ? [item] : [])
-        if (hydrated == null) return
-        const current = hydrated[0] || null
-        this.listData = current ? [current] : []
+        const seed = item ? [item] : []
+        this.listData = seed.map(row => this.normalizeItem(row))
+        const hydrated = await this.hydrateImageItems(this.listData)
+        if (hydrated != null) this.listData = hydrated
+        const current = this.listData[0] || null
         if (current) {
           await this.selectItem(current)
         } else {
@@ -305,7 +306,7 @@ export default {
         }
         return
       }
-      await this.loadList()
+      await this.loadList(list)
       const current = item
         ? (this.filteredList.find(row => row.fileId === item.fileId) || this.normalizeItem(item))
         : this.filteredList[0]
@@ -334,42 +335,56 @@ export default {
       }
     },
     normalizeItem(item = {}) {
+      const rawType = item.fileType || (item.contentType?.startsWith('video') ? 'VIDEO' : 'IMAGE')
       return {
         ...item,
-        fileType: item.fileType || (item.contentType?.startsWith('video') ? 'VIDEO' : 'IMAGE'),
+        fileType: String(rawType).toUpperCase() === 'VIDEO' ? 'VIDEO' : 'IMAGE',
         customUrl: item.customUrl || ''
       }
     },
+    extractFileItems(res) {
+      if (!res) return []
+      if (Array.isArray(res.items)) return res.items
+      if (Array.isArray(res.data?.items)) return res.data.items
+      if (Array.isArray(res.data)) return res.data
+      if (Array.isArray(res)) return res
+      return []
+    },
     async hydrateImageItems(items = []) {
       const loadSeq = ++this.imageLoadSeq
-      const generatedUrls = []
-      const hydrated = await Promise.all(items.map(async source => {
-        const item = this.normalizeItem(source)
-        if (item.fileType !== 'IMAGE' || !item.fileId) {
-          return item
-        }
+      const normalized = items.map(item => this.normalizeItem(item))
+      await Promise.all(normalized.map(async (item, index) => {
+        if (item.fileType !== 'IMAGE' || !item.fileId || item.customUrl) return
         try {
-          const customUrl = await createFileObjectUrl(item.fileId)
-          generatedUrls.push(customUrl)
-          return { ...item, customUrl }
+          const customUrl = await getCachedFileObjectUrl(item.fileId)
+          if (loadSeq !== this.imageLoadSeq) return
+          this.$set(normalized, index, { ...normalized[index], customUrl })
+          const listIndex = this.listData.findIndex(row => row.fileId === item.fileId)
+          if (listIndex !== -1) {
+            this.$set(this.listData, listIndex, {
+              ...this.listData[listIndex],
+              customUrl
+            })
+          }
+          if (this.details.fileId === item.fileId) {
+            this.details = { ...this.details, customUrl }
+          }
         } catch (e) {
-          return { ...item, customUrl: '' }
+          // 无权限或文件不存在时保持占位
         }
       }))
-      if (loadSeq !== this.imageLoadSeq) {
-        generatedUrls.forEach(revokeFileObjectUrl)
-        return null
-      }
-      this.destroyOwnedImageObjectUrls()
-      this.ownedImageObjectUrls = generatedUrls
-      return hydrated
+      if (loadSeq !== this.imageLoadSeq) return null
+      return normalized
     },
-    destroyOwnedImageObjectUrls() {
-      this.ownedImageObjectUrls.forEach(revokeFileObjectUrl)
-      this.ownedImageObjectUrls = []
-    },
-    async loadList() {
+    async loadList(seedList = []) {
       this.destroyThumbPlayers()
+      const seedItems = (Array.isArray(seedList) ? seedList : [])
+        .filter(Boolean)
+        .map(item => this.normalizeItem(item))
+      // 先用已有缩略图乐观渲染，避免等待接口时右侧空白
+      if (seedItems.length) {
+        this.listData = seedItems
+      }
       try {
         const params = {
           page: 0,
@@ -379,13 +394,24 @@ export default {
         }
         if (this.selectedRobotId) params.robotId = this.selectedRobotId
         const res = await getFiles(params) || {}
-        const hydrated = await this.hydrateImageItems(res.items || [])
+        const items = this.extractFileItems(res)
+        const urlById = {}
+        seedItems.forEach(item => {
+          if (item.fileId && item.customUrl) urlById[item.fileId] = item.customUrl
+        })
+        this.listData = items.map(item => {
+          const normalized = this.normalizeItem(item)
+          return {
+            ...normalized,
+            customUrl: normalized.customUrl || urlById[normalized.fileId] || ''
+          }
+        })
+        const hydrated = await this.hydrateImageItems(this.listData)
         if (hydrated != null) {
           this.listData = hydrated
         }
       } catch (e) {
-        this.destroyOwnedImageObjectUrls()
-        this.listData = []
+        if (!this.listData.length) this.listData = []
       }
     },
     handleFilter() {
@@ -413,7 +439,7 @@ export default {
       if (!recording?.fileId) return
       const seq = ++this.detailPlaySeq
       try {
-        const playback = await getFilePlayUrl(recording.fileId)
+        const playback = await getCachedFilePlayUrl(recording.fileId)
         if (seq !== this.detailPlaySeq) return
         const player = this.$refs.detailPlayer
         if (!player) return
@@ -498,7 +524,7 @@ export default {
     async bindListThumb(recording) {
       if (!recording?.fileId || recording.status !== 'READY') return
       try {
-        const playback = await getFilePlayUrl(recording.fileId)
+        const playback = await getCachedFilePlayUrl(recording.fileId)
         const ref = this.$refs[`listThumb_${recording.fileId}`]
         const player = Array.isArray(ref) ? ref[0] : ref
         if (!player) return
@@ -617,6 +643,7 @@ export default {
     },
     async afterDelete(item) {
       const deletedId = item?.fileId
+      invalidateCachedFile(deletedId)
       const keepId = this.selectedId === deletedId ? '' : this.selectedId
       await this.loadList()
       this.$emit('deleted', item)
@@ -634,7 +661,6 @@ export default {
     },
     close() {
       this.imageLoadSeq += 1
-      this.destroyOwnedImageObjectUrls()
       this.destroyDetailPlayer()
       this.destroyThumbPlayers()
       this.dialogVisible = false

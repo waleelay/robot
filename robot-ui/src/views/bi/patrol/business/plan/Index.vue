@@ -22,7 +22,14 @@
             {{ item.label }}
           </div>
         </div>
-        <el-select v-model="filters.executionMode" clearable placeholder="执行方式" class="business2-search" @change="loadRows(1)">
+        <el-select
+          v-model="filters.executionMode"
+          clearable
+          placeholder="执行方式"
+          class="business2-search business2-filter-select"
+          popper-class="custom-select business2-select-popper p10"
+          @change="loadRows(1)"
+        >
           <el-option label="手动执行" value="MANUAL" />
           <el-option label="计划执行" value="SCHEDULE" />
         </el-select>
@@ -56,8 +63,7 @@
             style="color: #17D1FF"
             @click="openEditor('', 'create')"
           >
-            <svg-icon icon-class="plus" class="mr10" />
-            新建计划
+            <svg-icon icon-class="plus" class="mr10" />新建计划
           </el-button>
         </div>
       </div>

@@ -92,7 +92,7 @@
                   <div v-for="item in tasks" class="tasks flx-justify-between pr10 pl10">
                     <div style="width: 37%;" class="text-ellipsis" :title="item.name">{{ item.name }}</div>
                     <div
-                      class="ml10 mr10 status wp50"
+                      class="ml10 mr10 status wp52"
                       :class="{
                         green: item.status === 'running',
                         orange: item.status === 'waiting',
@@ -101,7 +101,7 @@
                         gray: item.status === 'paused'
                       }"
                     >{{ executionStatusLabel(item.status) }}</div>
-                    <div class="ml10 wp118 text-ellipsis" :style="{ fontSize: item.executionMode === 'MANUAL' && item.status === 'waiting' ? '' : '10px' }" :title="item.executionMode === 'MANUAL' && item.status === 'waiting' ? '手动执行' : item.startTime">
+                    <div class="ml10 wp123 text-ellipsis" :style="{ fontSize: item.executionMode === 'MANUAL' && item.status === 'waiting' ? '' : '10px' }" :title="item.executionMode === 'MANUAL' && item.status === 'waiting' ? '手动执行' : item.startTime">
                       {{ item.executionMode === 'MANUAL' && item.status === 'waiting' ? '手动执行' : item.startTime.replaceAll('-', '.') }}
                     </div>
                   </div>

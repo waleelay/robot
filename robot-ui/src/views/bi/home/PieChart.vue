@@ -203,6 +203,7 @@ export default({
             // 高亮效果
             emphasis: {
               scale: true,
+              scaleSize: 3,
               label: { show: false, fontWeight: 'bold', fontSize: 12 }
             },
             // 不合并扇形，保持独立
@@ -315,7 +316,10 @@ export default({
           formatter: (params) => {
             // 仅当系列名称为'项目占比'时展示详情，阴影层不展示
             if (params.seriesName === '项目占比') {
-              return `<strong>${params.name}</strong><br/>占比: ${params.value}% (${this.items[params.dataIndex].value})`;
+              const total = this.items.reduce((sum, cur) => sum + (Number(cur.value) || 0), 0)
+              const count = Number(params.value) || 0
+              const percent = total ? ((count / total) * 100).toFixed(0) : 0
+              return `<strong>${params.name}</strong><br/>占比: ${percent}% (${count})`
             }
             return '';
           },

@@ -27,7 +27,7 @@
             <div class="waning-imgs">
               <div class="title flx-justify-between">
                 <div class="second-title">告警画面</div>
-                <div class="select-list">
+                <div v-if="options.length > 1" class="select-list">
                   <el-select
                     v-model="selectedValue"
                     placeholder="请选择"
@@ -43,7 +43,6 @@
                       
                       <div class="flx-align-center">
                         <el-radio v-model="selectedValue" :label="item.key" class="custom-radio">{{ item.label }}</el-radio>
-                        <!-- <span class="ml10">{{ item.label }}</span> -->
                       </div>
                     </el-option>
                   </el-select>
@@ -51,17 +50,17 @@
               </div>
               <div class="list-box">
                 <div class="mt10" style="width: 576px; height: 324px; border: 0.5px solid #1665A2; background: #001D46;">
-                  <el-carousel trigger="click" :autoplay="false" height="100%" ref="carouselRef" @change="handleChangeCarousel">
+                  <el-carousel v-if="options.length" trigger="click" :autoplay="false" height="100%" ref="carouselRef" @change="handleChangeCarousel">
                     <el-carousel-item v-for="item in options" :key="item.key" :name="item.key">
-                      <div v-if="item.url" class="img-b w100 h100">
-                        <img :src="getImageSrc(item.url)" alt="">
-                        <!-- <img src="@/assets/images/new-bi/video-bg.png" class="w100 h100" alt=""> -->
+                      <div class="img-b w100 h100">
+                        <img v-if="snapshotImageSrc(item.key)" :src="snapshotImageSrc(item.key)" alt="">
+                        <div v-else class="w100 h100 flx-center">暂无{{ item.label }}图片</div>
                       </div>
-                      <div v-else class="w100 h100 flx-center">暂无{{item.label}}图片</div>
                     </el-carousel-item>
                     <div class="page">{{ getCurrentPage() }}/{{ options.length }}</div>
                     <div class="download" @click="download()" style="cursor: pointer;">下载原图</div>
                   </el-carousel>
+                  <div v-else class="w100 h100 flx-center">暂无图片</div>
                 </div>
               </div>
             </div>
@@ -157,8 +156,15 @@
               <div class="list-box mt10 pr8 hp423">
                 <div v-for="(item, index) in warningInfo.listData" :key="item.alarmId" class="item wp280 pt9 pr10 pb9 pl10 flx-justify-between" :class="{ selected: warningInfo.selectedRobotRows.includes(item) }" @click="handleClickWarningRow(item, index)">
                   <div class="flx-align-center w100">
-                    <div class="img">
-                      <img src="@/assets/images/new-bi/video-bg.png" alt="" class="w100 h100">
+                    <div class="img flx-center">
+                      <img
+                        v-if="listAlarmImageUrl(item)"
+                        :src="listAlarmImageUrl(item)"
+                        alt=""
+                        class="w100 h100"
+                        style="object-fit: cover;"
+                      >
+                      <span v-else class="list-img-placeholder">暂无图片</span>
                     </div>
                     <div class="ml10 flex1">
                       <div class="flx-justify-between flx-align-start">
@@ -193,17 +199,17 @@
 </template>
 
 <script>
-const defaultOptions = [
-  { key: 'visible', label: '云台可见光', url: '1' },
-  { key: 'thermal', label: '云台红外光', url: '2' },
-  { key: 'front', label: '前置摄像头', url: '3' }
-]
 import WarningExecuteNo from './WarningExecuteNo.vue';
 import WarningExecuteError from './WarningExecuteError.vue';
 import WarningExecute from './WarningExecute.vue';
 import { mapActions, mapState } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
-import { previewImageBlob } from '../../../../../api/new-bi.js';
+import {
+  buildSnapshotOptions,
+  downloadAlarmSnapshotFile,
+  loadAlarmListObjectUrls,
+  loadSnapshotObjectUrls
+} from '@/utils/alarm-snapshot'
 export default {
   name: 'WarningInfoBatch',
   components: { WarningExecuteNo, WarningExecuteError, WarningExecute },
@@ -248,60 +254,14 @@ export default {
       tabIndex: 0,
       selectedAll: false,
       warningInfo: {
-        listData: [
-          // {
-          //   name: '绝影X30PRO',
-          //   battery: 60,
-          //   type: 0,
-          //   info: '车辆识别',
-          //   status: 0,
-          // },
-          // {
-          //   name: '绝影002',
-          //   battery: 60,
-          //   type: 2,
-          //   info: '车辆识别',
-          //   status: 0,
-          // },
-          // {
-          //   name: '绝影003',
-          //   battery: 60,
-          //   type: 3,
-          //   info: '车辆识别',
-          //   status: 1,
-          // },
-          // {
-          //   name: '绝影004',
-          //   battery: 30,
-          //   type: 1,
-          //   info: '车辆识别',
-          //   status: 0,
-          // },
-          // {
-          //   name: '绝影005',
-          //   battery: 30,
-          //   type: 3,
-          //   info: '车辆识别',
-          //   status: 0,
-          // },
-          // {
-          //   name: '绝影006',
-          //   battery: 30,
-          //   type: 1,
-          //   info: '车辆识别',
-          //   status: 0,
-          // },
-          // {
-          //   name: '绝影007',
-          //   battery: 30,
-          //   type: 1,
-          //   info: '车辆识别',
-          //   status: 0,
-          // }
-        ],
+        listData: [],
         count: 0,
         selectedRobotRows: [],
       },
+      snapshotObjectUrls: {},
+      snapshotLoadSeq: 0,
+      listAlarmImageUrls: {},
+      listAlarmImageLoadSeq: 0,
     }
   },
   computed: {
@@ -344,12 +304,13 @@ export default {
       this.details = { ...item }
       this.warningInfo.listData = [item]
       this.warningInfo.selectedRobotRows = [item]
-      this.selectedValue = defaultOptions[0].key
-      this.options = [...defaultOptions].map(opt => ({
-        ...opt,
-        url: item?.snapshotUrl?.[opt.key] || '',
-        t: Date.now()
-      }))
+      this.applySnapshotOptions(item)
+      this.loadListAlarmImages()
+    },
+    applySnapshotOptions(item) {
+      this.options = buildSnapshotOptions(item)
+      this.selectedValue = this.options[0]?.key || ''
+      this.loadDetailSnapshots()
     },
     handleChangeTab(tabIndex) {
       this.tabIndex = tabIndex
@@ -378,21 +339,17 @@ export default {
         const obj = alarmId ? (this.warningInfo.listData.find(item => item.alarmId === alarmId) || this.warningInfo.listData[0]) : this.warningInfo.listData[0]              
         this.details = obj
         this.warningInfo.selectedRobotRows = [this.details]
-        // 图片
         if (this.details.alarmId) {
-          this.selectedValue = defaultOptions[0].key
-          this.options = [...defaultOptions].map(item => ({
-            ...item,
-            url: this.details?.snapshotUrl?.[item.key] || '',
-            t: new Date().getTime()
-          }))
+          this.applySnapshotOptions(this.details)
         }
       } else {
         this.details = {}
         this.warningInfo.selectedRobotRows = []
         this.selectedValue = ''
-        this.options = [...defaultOptions]
+        this.options = []
+        this.snapshotObjectUrls = {}
       }
+      this.loadListAlarmImages()
     },
     handleSearchTypeChange() {
       this.handleChangeTab(this.tabIndex)
@@ -412,20 +369,36 @@ export default {
     handleChangeCarousel(index) {
       this.selectedValue = this.options[index].key
     },
-    getImageSrc(url) {
-      const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
-      return `${preUrl}${url}`
+    snapshotImageSrc(key) {
+      return this.snapshotObjectUrls[key] || ''
     },
-    handleClickWarningRow(item, index) {
+    async loadDetailSnapshots() {
+      const seq = ++this.snapshotLoadSeq
+      this.snapshotObjectUrls = {}
+      const keys = this.options.map(item => item.key)
+      if (!keys.length) return
+      const nextUrls = await loadSnapshotObjectUrls(this.details?.snapshotUrl, this.details, keys)
+      if (seq !== this.snapshotLoadSeq) return
+      this.snapshotObjectUrls = nextUrls
+    },
+    listAlarmImageUrl(item) {
+      if (!item?.alarmId) return ''
+      return this.listAlarmImageUrls[String(item.alarmId)] || ''
+    },
+    async loadListAlarmImages() {
+      const seq = ++this.listAlarmImageLoadSeq
+      this.listAlarmImageUrls = {}
+      const items = this.warningInfo.listData || []
+      const nextUrls = await loadAlarmListObjectUrls(items)
+      if (seq !== this.listAlarmImageLoadSeq) return
+      this.listAlarmImageUrls = nextUrls
+    },
+    handleClickWarningRow(item) {
       // 单选
-      this.warningInfo.selectedRobotRows = [item];
+      this.warningInfo.selectedRobotRows = [item]
       this.details = item
       if (this.details.alarmId) {
-        this.selectedValue = defaultOptions[0].key
-        this.options = [...defaultOptions].map(item => {
-          item.url = this.details?.snapshotUrl?.[item.key] || ''
-          return item
-        })        
+        this.applySnapshotOptions(this.details)
       }
     },
     async execute(type) {
@@ -449,50 +422,16 @@ export default {
       }
     },
     async download() {
-      const url = this.options.find(item => item.key === this.selectedValue)?.url || ''
-      try {
-        const res = await previewImageBlob(url)
-        const blob = new Blob([res], {type: this.getMimeType(res.type) || ''});
-        // 创建 Blob URL
-        const blobUrl = window.URL.createObjectURL(blob);
-
-        // 创建下载链接
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        // 设置文件名
-        link.download = new Date().getTime() + '.jpg';
-        document.body.appendChild(link);
-
-        // 触发下载
-        link.click();
-
-        // 移除链接并释放 Blob URL
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(blobUrl);
-      } catch (error) {
-        this.$message.error('下载失败')
+      const key = this.selectedValue || this.options[0]?.key
+      if (!key) {
+        this.$message.warning('暂无可下载图片')
+        return
       }
-    },
-    getMimeType(extension) {
-      const mimeTypes = {
-        pdf: 'application/pdf',
-        txt: 'text/plain',
-        doc: 'application/msword',
-        docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        xls: 'application/vnd.ms-excel',
-        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        png: 'image/png',
-        jpg: 'image/jpeg',
-        jpeg: 'image/jpeg',
-        gif: 'image/gif',
-        csv: 'text/csv',
-        json: 'application/json',
-        zip: 'application/zip',
-        rar: 'application/x-rar-compressed'
-        // 更多 MIME 类型可以根据需求添加
-      };
-      // 默认类型
-      return mimeTypes[extension] || 'application/octet-stream';
+      try {
+        await downloadAlarmSnapshotFile(this.details?.snapshotUrl, key, this.details)
+      } catch (error) {
+        this.$message.error(error?.message || '下载失败')
+      }
     },
     close() {
       this.dialogVisible = false
@@ -507,6 +446,8 @@ export default {
       this.details = {}
       this.selectedValue = ''
       this.options = []
+      this.snapshotObjectUrls = {}
+      this.listAlarmImageUrls = {}
     }
   }
 }
@@ -612,5 +553,9 @@ export default {
       }
     }
   }
+}
+.list-img-placeholder {
+  color: #6B8AA8;
+  font-size: 12px;
 }
 </style>

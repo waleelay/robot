@@ -14,7 +14,7 @@ import mqttClient from '@/plugins/mqtt-client'
 import { mapActions } from 'vuex';
 import { Message } from 'element-ui'
 import ScaleScreen from './../../components/largeScreen/scale-screen.vue'
-import WarningPending from './patrol/panorama/warning/WarnPending1.vue';
+import WarningPending from './patrol/panorama/warning/WarnPending.vue';
 import WarnInfo from './patrol/panorama/warning/WarnInfo.vue';
 import IncomingIntercomCall from './components/IncomingIntercomCall.vue';
 export default {

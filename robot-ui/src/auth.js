@@ -1,4 +1,5 @@
 import Keycloak from 'keycloak-js/lib/keycloak.js'
+import { clearFileObjectUrlCache } from '@/utils/file-object-url-cache'
 
 let keycloak = null
 let initPromise = null
@@ -154,11 +155,13 @@ export async function login(redirectPath) {
 
 export async function logout() {
   if (authDisabled() || !keycloak) return
+  clearFileObjectUrlCache()
   await keycloak.logout({ redirectUri: `${window.location.origin}/` })
 }
 
 export async function switchAccount(redirectPath) {
   if (authDisabled() || !keycloak) return
+  clearFileObjectUrlCache()
   // 先结束 SSO，再由 login-required 打开空白登录页；仅 prompt=login 会锁定当前用户名。
   await keycloak.logout({ redirectUri: redirectUri(redirectPath) })
 }

@@ -1,44 +1,69 @@
 <template>
-  <div>
-    <div class="page-action-header table-btns">
-      <el-button type="primary" class="pr20 pl20" plain style="color: #17D1FF" @click="$emit('close')">返回列表</el-button>
-      <div class="page-action-header__title">
-        {{ editorTitle }}
-        <span>执行方式与设备绑定属于计划，任务流程结构仍由任务编排维护。</span>
+  <div class="plan-edit-page flex-column h100">
+    <div class="page-action-header flx-justify-between mb10">
+      <div class="record-breadcrumb flx-align-center">
+        <span>业务管理</span>
+        <span class="record-breadcrumb__sep flx-center wp20 hp20">
+          <svg-icon icon-class="right" />
+        </span>
+        <span class="record-breadcrumb__link" @click="$emit('close')">任务计划</span>
+        <span class="record-breadcrumb__sep flx-center wp20 hp20">
+          <svg-icon icon-class="right" />
+        </span>
+        <span class="is-current">{{ editorTitle }}</span>
       </div>
-      <div class="page-action-header__actions">
-        <el-button
-          v-if="isViewMode && canEditPlan"
-          class="pr20 pl20"
-          plain
-          style="color: #17D1FF"
-          @click="switchEdit"
-        >
-          编辑
-        </el-button>
-        <el-button
-          v-else-if="!isViewMode && canSavePlan"
-          type="primary"
-          class="pr20 pl20"
-          plain
-          style="color: #17D1FF"
-          :loading="saving"
-          @click="savePlan"
-        >
-          保存
-        </el-button>
+      <div class="page-action-header__actions flx-align-center">
+        <div class="table-btns">
+          <el-button
+            v-if="isViewMode && canEditPlan"
+            type="primary"
+            class="pr20 pl20"
+            plain
+            style="color: #17D1FF"
+            @click="switchEdit"
+          >
+            编辑
+          </el-button>
+          <el-button
+            v-else-if="!isViewMode && canSavePlan"
+            type="primary"
+            class="pr20 pl20"
+            plain
+            style="color: #17D1FF"
+            :loading="saving"
+            @click="savePlan"
+          >
+            保存
+          </el-button>
+        </div>
+        <button type="button" class="record-back ml10" @click="$emit('close')">
+          <svg-icon icon-class="back1" class="record-back__icon" />
+        </button>
       </div>
     </div>
 
-    <section v-loading="editorLoading" class="panel">
-      <el-form :model="form" label-position="top" :disabled="isViewMode">
-        <h3>基础信息</h3>
+    <section v-loading="editorLoading" class="panel flex1">
+      <el-form :model="form" label-position="top" class="business2-form" :disabled="isViewMode">
+        <div class="section-heading section-heading--first">
+          <div>
+            <h3>基础信息</h3>
+            <p>执行方式与设备绑定属于计划，任务流程结构仍由任务编排维护。</p>
+          </div>
+        </div>
         <div class="form-grid">
           <el-form-item label="计划名称" required>
             <el-input v-model="form.planName" placeholder="例如：园区日常巡检计划" />
           </el-form-item>
           <el-form-item label="任务编排版本" required>
-            <el-select v-if="!form.id" v-model="form.workflowVersionId" filterable placeholder="选择已发布编排版本" @change="handleVersionChange">
+            <el-select
+              v-if="!form.id"
+              v-model="form.workflowVersionId"
+              filterable
+              placeholder="选择已发布编排版本"
+              :popper-class="selectPopperClass"
+              :popper-append-to-body="false"
+              @change="handleVersionChange"
+            >
               <el-option
                 v-for="item in definitionOptions"
                 :key="item.latestPublishedVersionId"
@@ -59,25 +84,31 @@
             </div>
           </el-form-item>
           <el-form-item label="执行方式" required>
-            <el-select v-model="form.executionMode">
+            <el-select v-model="form.executionMode" :popper-class="selectPopperClass" :popper-append-to-body="false">
               <el-option label="手动执行" value="MANUAL" />
               <el-option label="计划执行" value="SCHEDULE" />
             </el-select>
           </el-form-item>
           <el-form-item label="预计执行时长（分钟）" required>
-            <el-input-number v-model="form.expectedDurationMinutes" :min="1" :max="525600" :step="5" style="width: 100%" />
+            <el-input-number v-model="form.expectedDurationMinutes" :min="1" :max="525600" :step="5" controls-position="right" />
             <div class="field-tip">到达预计时长仍未收到边缘端执行结果时，任务将按超时失败处理</div>
           </el-form-item>
           <el-form-item v-if="form.executionMode === 'SCHEDULE'" label="计划周期" required>
-            <el-select v-model="form.scheduleConfig.preset">
+            <el-select v-model="form.scheduleConfig.preset" :popper-class="selectPopperClass" :popper-append-to-body="false">
               <el-option v-for="item in schedulePresetOptions" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </el-form-item>
           <el-form-item v-if="showTimeOfDay" label="执行时间" required>
-            <el-time-picker v-model="form.scheduleConfig.timeOfDay" format="HH:mm" value-format="HH:mm" placeholder="选择时间" />
+            <el-time-picker
+              v-model="form.scheduleConfig.timeOfDay"
+              format="HH:mm"
+              value-format="HH:mm"
+              placeholder="选择时间"
+              :popper-class="selectPopperClass"
+            />
           </el-form-item>
           <el-form-item v-if="form.executionMode === 'SCHEDULE' && form.scheduleConfig.preset === 'WEEKLY'" label="星期" required>
-            <el-select v-model="form.scheduleConfig.weekday">
+            <el-select v-model="form.scheduleConfig.weekday" :popper-class="selectPopperClass" :popper-append-to-body="false">
               <el-option label="周一" value="MON" />
               <el-option label="周二" value="TUE" />
               <el-option label="周三" value="WED" />
@@ -91,7 +122,7 @@
             <el-input v-model="form.scheduleConfig.cron" placeholder="例如：0 0 8 * * ?" />
           </el-form-item>
           <el-form-item label="启用状态">
-            <el-switch v-model="form.enabled" />
+            <el-switch v-model="form.enabled" active-color="#3DB56A" inactive-color="#5E5E5E" />
           </el-form-item>
           <el-form-item label="备注" class="full">
             <el-input v-model="form.remark" type="textarea" :rows="3" />
@@ -139,6 +170,8 @@
                     :value="parameterValue(parameter)"
                     clearable
                     :placeholder="parameter.description || '选择' + parameter.label"
+                    :popper-class="selectPopperClass"
+                    :popper-append-to-body="false"
                     @change="setParameterValue(parameter, $event)"
                   >
                     <el-option
@@ -151,6 +184,8 @@
                   <el-switch
                     v-else-if="parameterSchemaType(parameter) === 'boolean'"
                     :value="parameterValue(parameter) === true"
+                    active-color="#3DB56A"
+                    inactive-color="#5E5E5E"
                     @change="setParameterValue(parameter, $event)"
                   />
                   <el-input-number
@@ -209,7 +244,14 @@
             <p>角色来自任务编排；每个角色选择一台实际设备执行。</p>
           </div>
         </div>
-        <el-empty v-if="!roleBindings.length" description="选择任务编排后配置设备角色" />
+        <Empty
+          v-if="!roleBindings.length"
+          class="plan-empty"
+          width="126px"
+          :opacity="0.7"
+          textColor="#BEE1FF"
+          text="选择任务编排后配置设备角色"
+        />
         <div v-else class="role-grid">
           <section v-for="role in roleBindings" :key="role.roleKey" class="role-card">
             <div class="role-card__header">
@@ -220,7 +262,14 @@
               <span class="status info">{{ requirementSummary(role) }}</span>
             </div>
             <el-form-item label="执行设备" required>
-              <el-select v-model="role.deviceId" filterable clearable placeholder="选择一台实际设备">
+              <el-select
+                v-model="role.deviceId"
+                filterable
+                clearable
+                placeholder="选择一台实际设备"
+                :popper-class="selectPopperClass"
+                :popper-append-to-body="false"
+              >
                 <el-option
                   v-for="item in deviceOptionsForRole(role)"
                   :key="item.value"
@@ -269,6 +318,7 @@
                 clearable
                 filterable
                 placeholder="不选择则全部执行"
+                :popper-class="selectPopperClass"
                 @change="applyComponentBinding(row, $event)"
               >
                 <el-option
@@ -301,9 +351,11 @@ import {
 } from '@/api/new-bi'
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 import { isRequestErrorNotified } from '@/utils/request'
+import Empty from '../../../components/Empty.vue'
 
 export default {
   name: 'BiPatrolBusiness2PlanEdit',
+  components: { Empty },
   props: {
     id: {
       type: [String, Number],
@@ -316,6 +368,7 @@ export default {
   },
   data() {
     return {
+      selectPopperClass: 'custom-select business2-select-popper p10',
       editorLoading: false,
       saving: false,
       form: this.defaultForm(),
@@ -1045,4 +1098,8 @@ export default {
 
 <style scoped lang="scss">
 @import '../common.scss';
+
+.plan-empty {
+  min-height: 160px;
+}
 </style>

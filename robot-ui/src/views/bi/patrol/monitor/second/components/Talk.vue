@@ -65,7 +65,6 @@
 </template>
 
 <script>
-// import voiceUtil from '../../../../js/mixins/voiceUtil';
 import { sendEquipmentCommand } from '../../../../../../api/media';
 import { errorMessage } from '../../../../../../utils';
 import yuntai from './ptz-control-mixin';

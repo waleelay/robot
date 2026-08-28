@@ -45,15 +45,11 @@ import XYZ from "ol/source/XYZ";
 import VectorLayer from 'ol/source/Vector';
 import { defaults as defaultControls } from "ol/control";
 import { fromLonLat } from "ol/proj";
-import Robot from './popup/Robot.vue';
 import Robot1 from './popup/Robot1.vue';
 import RobotControlPart from './popup/RobotControlPart.vue';
 import RobotCarControlPart from './popup/RobotCarControlPart.vue';
 import Vue from 'vue';
 import TaskAdd from './../../components/modal/TaskAdd.vue'
-import Uav from './popup/Uav.vue';
-import UavPort from './popup/UavPort.vue';
-import Battery from './popup/Battery.vue';
 import Slam from './popup/Slam.vue'
 import Thumbnail from './thumbnail/Index.vue'
 import SlamMap from './slam1/Index.vue'
@@ -281,9 +277,14 @@ export default {
       immediate: true
     },
     showRobotIds: {
-      handler(newVal, oldVal) {
+      handler() {
+        this.syncGisMarkerLayerOrder()
         this.updateAllIcon()
       }
+    },
+    activeMarkerIndex() {
+      this.syncGisMarkerLayerOrder()
+      this.updateAllIcon()
     }
   },
   async created() {
@@ -324,7 +325,40 @@ export default {
       }
     },
     getSelectedStatus(robotId) {
-      return Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
+      return this.currenRouteName !== 'biIndex' && Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
+    },
+    getMapSelectedRobotIds() {
+      const ids = new Set()
+      ;(this.showRobotIds || []).forEach(id => {
+        if (id !== undefined && id !== null && id !== '') ids.add(String(id))
+      })
+      if (this.currenRouteName === 'biIndex' && this.activeMarkerIndex !== null && this.activeMarkerIndex !== '') {
+        const marker = this.pointMarkers?.[this.activeMarkerIndex]
+        const id = marker?.meta?.robot?.robotId
+        if (id !== undefined && id !== null && id !== '') ids.add(String(id))
+      }
+      if (this.currenRouteName !== 'biIndex') {
+        Object.values(this.activeCameras || {}).forEach(item => {
+          const id = item?.robot?.robotId
+          if (id !== undefined && id !== null && id !== '') ids.add(String(id))
+        })
+      }
+      return ids
+    },
+    isGisRobotSelected(robotId) {
+      return this.getMapSelectedRobotIds().has(String(robotId))
+    },
+    syncGisMarkerLayerOrder() {
+      const selected = this.getMapSelectedRobotIds()
+      const hasSelection = selected.size > 0
+      const BASE = 1000
+      const FRONT = 2000
+      ;(this.pointMarkers || []).forEach(marker => {
+        if (!marker || typeof marker.setZIndexOffset !== 'function') return
+        const robotId = marker.meta?.robot?.robotId
+        const isSelected = robotId && selected.has(String(robotId))
+        marker.setZIndexOffset(hasSelection && isSelected ? FRONT : BASE)
+      })
     },
     getScaleWrapper() {
       return this.$el && this.$el.closest && this.$el.closest('.screen-wrapper')
@@ -387,9 +421,6 @@ export default {
           this.resizePopupTimer = null
         })
       }, 600)
-    },
-    getSelectedStatus(robotId) {
-      return this.currenRouteName !== 'biIndex' && Object.keys(this.activeCameras || {}).find(key => this.activeCameras[key].robot.robotId === robotId)
     },
     changeMapType() {
       this.isSlam = !this.isSlam
@@ -614,6 +645,8 @@ export default {
       // 固定摄像头：不展示脚部标签 / 状态；选中样式对齐 SLAM（active 图，无光圈/四角）
       const isFixedCamera = img === 'robot-camera-normal' || type === '固定摄像头' || type === 'FIXED_CAMERA'
       const isSelected = this.showRobotIds.includes(robotId) || this.getSelectedStatus(robotId)
+      const hasSelection = this.getMapSelectedRobotIds().size > 0
+      const isDimmed = hasSelection && !this.isGisRobotSelected(robotId)
       const iconFile = isFixedCamera && isSelected ? 'robot-camera-active' : img
       const zoom = this.map.getZoom();
       const scale = 66 / 93
@@ -651,7 +684,7 @@ export default {
             ${nameHtml}
             ${statusHtml}
           </div>`,
-          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${showIconClass} ${isFixedCamera ? 'is-fixed-camera' : ''} ${type} ${statusClass}` ,
+          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${showIconClass} ${isFixedCamera ? 'is-fixed-camera' : ''} ${isDimmed ? 'is-dimmed' : ''} ${type} ${statusClass}` ,
           // className: `custom-point ${type} ${statusClass}` ,
           iconSize: null,
           // 偏移量
@@ -850,13 +883,8 @@ export default {
       })
     },
     /** 选中装备后抬高 zIndex，其余恢复默认 */
-    bringGisMarkerToFront(marker) {
-      const BASE = 1000
-      const FRONT = 2000
-      ;(this.pointMarkers || []).forEach(m => {
-        if (!m || typeof m.setZIndexOffset !== 'function') return
-        m.setZIndexOffset(m === marker ? FRONT : BASE)
-      })
+    bringGisMarkerToFront() {
+      this.syncGisMarkerLayerOrder()
     },
     /** 选中 GIS 装备并打开/切换 Robot1（含同坐标轮询后的目标） */
     handleGisMarkerSelect(marker, e) {
@@ -992,7 +1020,7 @@ export default {
       })
     },
     getPopupContainer(data) {
-      const components = [Robot, Uav, UavPort, Battery]
+      const components = []
       const PopupConstructor = Vue.extend(components[data.index])
       const popupInstance = new PopupConstructor({
         propsData: {

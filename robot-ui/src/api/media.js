@@ -112,9 +112,18 @@ export function getFiles(params = {}) {
 
 export function fileDownloadUrl(fileId, inline = false) {
   return request({
-    url: `/api/bigscreen/control/files/${fileId}/download-url`,
+    url: `/api/bigscreen/control/files/${encodeURIComponent(fileId)}/download-url`,
     method: 'post',
     params: inline ? { inline: true } : undefined
+  }).then(response => {
+    const nested = response && response.data
+    const rawDownloadUrl = (response && response.downloadUrl) || (nested && nested.downloadUrl) || (response && response.url) || (nested && nested.url)
+    const downloadUrl = withBigscreenApiPrefix(rawDownloadUrl)
+    const next = { ...response, downloadUrl }
+    if (nested && typeof nested === 'object') {
+      next.data = { ...nested, downloadUrl }
+    }
+    return next
   })
 }
 

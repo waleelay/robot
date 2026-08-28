@@ -20,7 +20,14 @@
             {{ item.label }}
           </div>
         </div>
-        <el-select v-model="filters.triggerType" clearable placeholder="触发方式" class="business2-search" @change="loadRows(1)">
+        <el-select
+          v-model="filters.triggerType"
+          clearable
+          placeholder="触发方式"
+          class="business2-search business2-filter-select"
+          popper-class="custom-select business2-select-popper p10"
+          @change="loadRows(1)"
+        >
           <el-option label="手动执行" value="MANUAL" />
           <el-option label="计划执行" value="SCHEDULE" />
         </el-select>

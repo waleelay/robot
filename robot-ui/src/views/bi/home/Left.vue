@@ -156,10 +156,11 @@ export default {
       return (this.selectedRobotId && !this.isSelectedFixedCamera) ? 'none' : 'auto'
     },
     alarmPieChart() {
+      const data = this.alarmsData || {}
       return [
-        { name: '高风险', value: 0, color: '#FF2424' },
-        { name: '中风险', value: 0, color: '#FFA024' },
-        { name: '低风险', value: 0, color: '#00D8A4' },
+        { name: '高风险', value: (data.high?.items || []).length, color: '#FF2424' },
+        { name: '中风险', value: (data.medium?.items || []).length, color: '#FFA024' },
+        { name: '低风险', value: (data.low?.items || []).length, color: '#00D8A4' },
       ]
     },
     /** 装备画面选择：在线与故障装备均可选，离线不可选 */
