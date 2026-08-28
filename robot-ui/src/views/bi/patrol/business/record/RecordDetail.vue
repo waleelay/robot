@@ -126,22 +126,50 @@
             />
           </div>
 
-          <div class="replay-grid__divider mt18" aria-hidden="true" />
+          <div class="replay-grid__divider mt28" aria-hidden="true" />
 
           <div class="video-panel flex-column">
             <div class="panel-title flx-justify-between mb10">
               <strong>轨迹视频</strong>
             </div>
-            <div v-if="renderVideoGroups.length" class="video-tabs custom-tab-button flex">
-              <div
-                v-for="group in renderVideoGroups"
-                :key="group.key"
-                class="tab-button-item"
-                :class="{ 'is-active': selectedVideoGroupKey === group.key }"
-                @click="selectVideoGroup(group.key)"
+            <div
+              v-if="renderVideoGroups.length"
+              class="video-tabs custom-tab-button"
+              :class="{ 'is-scrollable': videoTabsScrollable }"
+            >
+              <span
+                v-show="videoTabsScrollable"
+                class="video-tabs__nav-prev"
+                :class="{ 'is-disabled': !videoTabsCanScrollPrev }"
+                @click="scrollVideoTabs('prev')"
               >
-                {{ group.deviceName || group.serialNumber || '设备' }}
+                <i class="el-icon-arrow-left" />
+              </span>
+              <div ref="videoTabsNavWrap" class="video-tabs__nav-wrap">
+                <div
+                  ref="videoTabsNav"
+                  class="video-tabs__nav"
+                  :style="{ transform: `translateX(${videoTabsOffset}px)` }"
+                >
+                  <div
+                    v-for="group in renderVideoGroups"
+                    :key="group.key"
+                    class="tab-button-item"
+                    :class="{ 'is-active': selectedVideoGroupKey === group.key }"
+                    @click="selectVideoGroup(group.key)"
+                  >
+                    {{ group.deviceName || group.serialNumber || '设备' }}
+                  </div>
+                </div>
               </div>
+              <span
+                v-show="videoTabsScrollable"
+                class="video-tabs__nav-next"
+                :class="{ 'is-disabled': !videoTabsCanScrollNext }"
+                @click="scrollVideoTabs('next')"
+              >
+                <i class="el-icon-arrow-right" />
+              </span>
             </div>
             <div v-if="activeVideoItems.length" class="video-stage">
               <div class="video-main">
@@ -206,7 +234,7 @@
                   <div v-else class="video-placeholder is-thumb">
                     <span>{{ video.playbackStatus === 'PENDING' ? '待补传' : '不可用' }}</span>
                   </div>
-                  <span class="video-thumb__name">{{ videoSourceLabel(video) }}</span>
+                  <span v-if="videoSourceLabel(video)" class="video-thumb__name">{{ videoSourceLabel(video) }}</span>
                   <button
                     v-if="videoFileId(video)"
                     type="button"
@@ -403,6 +431,7 @@ export default {
       mapImageStatus: '地图加载中',
       playTimer: null,
       syncingVideos: false,
+      switchingPrimaryVideo: false,
       hlsPlayers: new Map(),
       mapImageObjectUrl: '',
       unavailableVideoKeys: [],
@@ -415,7 +444,11 @@ export default {
       trackDragging: false,
       trackDefaultZoom: 1,
       trackMinZoom: 0.25,
-      trackMaxZoom: 2.5
+      trackMaxZoom: 2.5,
+      videoTabsOffset: 0,
+      videoTabsScrollable: false,
+      videoTabsCanScrollPrev: false,
+      videoTabsCanScrollNext: false
     }
   },
   computed: {
@@ -634,6 +667,15 @@ export default {
         this.syncVideos()
       })
     },
+    renderVideoGroups() {
+      this.$nextTick(() => {
+        this.updateVideoTabsScroll()
+        this.scrollActiveVideoTabIntoView()
+      })
+    },
+    selectedVideoGroupKey() {
+      this.$nextTick(() => this.scrollActiveVideoTabIntoView())
+    },
     playbackItems(items) {
       if (!this.renderVideoGroups.length) {
         this.selectedVideoGroupKey = ''
@@ -650,9 +692,11 @@ export default {
   mounted() {
     this.loadReplay()
     document.addEventListener('mousedown', this.handleRateMenuOutside)
+    window.addEventListener('resize', this.updateVideoTabsScroll)
   },
   beforeDestroy() {
     document.removeEventListener('mousedown', this.handleRateMenuOutside)
+    window.removeEventListener('resize', this.updateVideoTabsScroll)
     this.stopPlayback()
     this.destroyAllHlsPlayers()
     this.unbindTrackDrag()
@@ -1016,6 +1060,7 @@ export default {
         else this.$nextTick(() => this.syncVideos())
         return
       }
+      this.switchingPrimaryVideo = true
       const main = this.getMainPlayer()
       if (main) this.destroyHlsPlayer(main)
       this.primaryVideoKey = nextKey
@@ -1023,6 +1068,7 @@ export default {
         this.$nextTick(() => {
           this.attachVideoSources()
           this.syncVideos()
+          this.switchingPrimaryVideo = false
           if (play && !this.playing) this.startPlayback()
         })
       })
@@ -1201,6 +1247,9 @@ export default {
     handleVideoNativePause(event) {
       const target = event && event.target
       if (target && target.dataset && target.dataset.primingBuffer === 'true') return
+      // 切换主视频时旧节点卸载/销毁会触发 pause，不应打断时间轴播放
+      if (this.switchingPrimaryVideo) return
+      if (target && !target.isConnected) return
       if (target && target !== this.getMainPlayer()) return
       if (!this.syncingVideos && this.playing) this.stopPlayback()
     },
@@ -1228,6 +1277,79 @@ export default {
       const group = this.renderVideoGroups.find(item => item.key === key)
       const first = group && group.items && group.items[0]
       this.selectPrimaryVideo(first)
+      this.$nextTick(() => this.scrollActiveVideoTabIntoView())
+    },
+    updateVideoTabsScroll() {
+      const wrap = this.$refs.videoTabsNavWrap
+      const nav = this.$refs.videoTabsNav
+      if (!wrap || !nav) {
+        this.videoTabsScrollable = false
+        this.videoTabsOffset = 0
+        this.videoTabsCanScrollPrev = false
+        this.videoTabsCanScrollNext = false
+        return
+      }
+      const navWidth = nav.scrollWidth
+      // 先按是否超出当前可视宽度判断；加上箭头 padding 后需再量一次
+      let wrapWidth = wrap.clientWidth
+      let scrollable = navWidth > wrapWidth + 1
+      if (scrollable !== this.videoTabsScrollable) {
+        this.videoTabsScrollable = scrollable
+        this.$nextTick(() => this.updateVideoTabsScroll())
+        return
+      }
+      wrapWidth = wrap.clientWidth
+      scrollable = navWidth > wrapWidth + 1
+      this.videoTabsScrollable = scrollable
+      if (!scrollable) {
+        this.videoTabsOffset = 0
+        this.videoTabsCanScrollPrev = false
+        this.videoTabsCanScrollNext = false
+        return
+      }
+      const minOffset = Math.min(0, wrapWidth - navWidth)
+      this.videoTabsOffset = Math.max(minOffset, Math.min(0, this.videoTabsOffset))
+      this.videoTabsCanScrollPrev = this.videoTabsOffset < 0
+      this.videoTabsCanScrollNext = this.videoTabsOffset > minOffset
+    },
+    scrollVideoTabs(direction) {
+      if (!this.videoTabsScrollable) return
+      const wrap = this.$refs.videoTabsNavWrap
+      const nav = this.$refs.videoTabsNav
+      if (!wrap || !nav) return
+      const wrapWidth = wrap.clientWidth
+      const navWidth = nav.scrollWidth
+      const minOffset = Math.min(0, wrapWidth - navWidth)
+      const step = Math.max(wrapWidth * 0.6, 80)
+      const nextOffset = direction === 'prev'
+        ? Math.min(0, this.videoTabsOffset + step)
+        : Math.max(minOffset, this.videoTabsOffset - step)
+      this.videoTabsOffset = nextOffset
+      this.videoTabsCanScrollPrev = nextOffset < 0
+      this.videoTabsCanScrollNext = nextOffset > minOffset
+    },
+    scrollActiveVideoTabIntoView() {
+      this.updateVideoTabsScroll()
+      if (!this.videoTabsScrollable) return
+      const wrap = this.$refs.videoTabsNavWrap
+      const nav = this.$refs.videoTabsNav
+      if (!wrap || !nav) return
+      const active = nav.querySelector('.tab-button-item.is-active')
+      if (!active) return
+      const wrapWidth = wrap.clientWidth
+      const navWidth = nav.scrollWidth
+      const minOffset = Math.min(0, wrapWidth - navWidth)
+      const activeLeft = active.offsetLeft
+      const activeRight = activeLeft + active.offsetWidth
+      let nextOffset = this.videoTabsOffset
+      if (activeLeft + nextOffset < 0) {
+        nextOffset = -activeLeft
+      } else if (activeRight + nextOffset > wrapWidth) {
+        nextOffset = wrapWidth - activeRight
+      }
+      this.videoTabsOffset = Math.max(minOffset, Math.min(0, nextOffset))
+      this.videoTabsCanScrollPrev = this.videoTabsOffset < 0
+      this.videoTabsCanScrollNext = this.videoTabsOffset > minOffset
     },
     async downloadVideo(video) {
       const fileId = this.videoFileId(video)
@@ -1386,11 +1508,13 @@ export default {
         video.label,
         video.sourceComponentName,
         video.cameraName,
+        video.deviceName,
+        video.groupDeviceName,
         video.mediaType === 'THERMAL' ? '红外' : '',
         video.mediaType === 'VISIBLE' ? '可见光' : ''
       ]
       const name = candidates.find(item => item && !this.isTechnicalVideoName(item))
-      return name || ''
+      return name || '视频来源'
     },
     isTechnicalVideoName(value) {
       const text = String(value || '')
@@ -1695,7 +1819,7 @@ export default {
 .replay-grid__divider {
   align-self: start;
   width: 1px;
-  height: calc(100% - 18px);
+  height: calc(100% - 38px);
   background: repeating-linear-gradient(
     to bottom,
     rgba(190, 225, 255, 0.35) 0,
@@ -1797,13 +1921,94 @@ export default {
   z-index: 2;
 }
 
-.video-tabs {
-  margin-bottom: 12px;
-  flex-wrap: nowrap;
+.video-tabs.custom-tab-button {
+  position: relative;
+  display: inline-flex;
   align-items: stretch;
+  // width: auto;
+  max-width: 100%;
+  margin-bottom: 12px;
   flex-shrink: 0;
+  box-sizing: border-box;
+  vertical-align: top;
+
+  .video-tabs__nav-wrap {
+    width: auto;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .video-tabs__nav {
+    display: inline-flex;
+    width: auto;
+    max-width: none;
+    flex: none;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    transition: transform 0.3s;
+  }
+
+  .video-tabs__nav-prev,
+  .video-tabs__nav-next {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 3;
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6AC5FF;
+    background: #0A2544;
+    cursor: pointer;
+    user-select: none;
+
+    i {
+      font-size: 12px;
+    }
+
+    &.is-disabled {
+      color: #3A5A7A;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+  }
+
+  .video-tabs__nav-prev {
+    left: 0;
+  }
+
+  .video-tabs__nav-next {
+    right: 0;
+  }
+
+  &.is-scrollable {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    padding: 0 20px;
+
+    .video-tabs__nav-wrap {
+      flex: 1 1 auto;
+      width: auto;
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    /* 滚动时 nav 仍按内容宽度，不受 wrap 的 flex:1 拉伸 */
+    .video-tabs__nav {
+      display: inline-flex;
+      width: auto;
+      flex: 0 0 auto;
+      max-width: none;
+    }
+  }
 
   .tab-button-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
     padding: 6px 10px;
     font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
     font-size: 14px;
@@ -1930,11 +2135,18 @@ export default {
     position: absolute;
     top: 4px;
     left: 4px;
+    z-index: 2;
+    max-width: calc(100% - 28px);
+    overflow: hidden;
     color: #fff;
     font-family: "Microsoft YaHei", sans-serif;
     font-size: 12px;
     font-weight: 600;
+    line-height: 16px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
   }
 }
 

@@ -125,7 +125,7 @@
               <span v-else class="muted">-</span>
             </template>
           </el-table-column> -->
-          <el-table-column label="操作" width="430" fixed="right">
+          <el-table-column label="操作" width="348" fixed="right">
             <template slot-scope="{ row }">
               <el-button
                 type="text"
@@ -143,13 +143,13 @@
                 编辑
               </el-button>
               <el-button type="text" :disabled="!row.enabled" @click="previewPlan(row)">预览</el-button>
-              <el-button
+              <!-- <el-button
                 v-if="row.activeWorkflowInstanceId"
                 type="text"
                 @click="$emit('show-record', row.activeWorkflowInstanceId)"
               >
                 查看监控
-              </el-button>
+              </el-button> -->
               <el-button
                 v-if="hasLifecycleAction(row, 'PAUSE') && canPauseExecution"
                 type="text"
