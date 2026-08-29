@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.config.ControlServiceProperties;
 import com.robot.control.ws.MediaWebSocketPublisher;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +17,34 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class RobotRegistryServiceTest {
+
+    @Test
+    void runtimeSnapshotAndEventsShareVersionAndIgnoreMediaTelemetry() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(new ControlServiceProperties(), publisher, new ObjectMapper());
+        service.update(object("robotId", "robot-1", "stateSource", "MEDIA_CLIENT_STATUS", "battery", 99, "speed", 4));
+        assertThat(service.find("robot-1").orElseThrow().battery()).isNull();
+        assertThat(service.find("robot-1").orElseThrow().controlMode()).isNull();
+        service.update(object("robotId", "robot-1", "stateSource", "EDGE_DEVICE_STATUS", "status", "online",
+                "battery", 0, "speed", 0.0, "controlMode", "导航模式"));
+        var snapshot = service.find("robot-1").orElseThrow();
+        assertThat(snapshot.speed()).isEqualTo(0.0);
+        assertThat(snapshot.battery()).isZero();
+        assertThat(snapshot.runtimeUpdatedAt()).isNotBlank();
+        service.update(object("robotId", "robot-1", "stateSource", "MEDIA_CLIENT_STATUS",
+                "battery", 99, "speed", 4, "controlMode", "手动模式"));
+        var after = service.find("robot-1").orElseThrow();
+        assertThat(after.runtimeUpdatedAt()).isEqualTo(snapshot.runtimeUpdatedAt());
+        assertThat(after.controlMode()).isEqualTo("导航模式");
+        assertThat(after.speed()).isEqualTo(0.0);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> events = ArgumentCaptor.forClass(Map.class);
+        verify(publisher, org.mockito.Mockito.times(3)).publish(eq("robot.state"), events.capture());
+        assertThat(events.getAllValues().get(2)).containsEntry("runtimeUpdatedAt", snapshot.runtimeUpdatedAt())
+                .containsEntry("battery", 0).containsEntry("speed", 0.0);
+        service.update(object("robotId", "robot-1", "stateSource", "EDGE_DEVICE_STATUS", "status", "online", "controlMode", null));
+        assertThat(service.find("robot-1").orElseThrow().controlMode()).isNull();
+    }
 
     @Test
     void publishesEdgeDynamicFieldsWithoutClearingMountedDevices() {
@@ -75,7 +104,8 @@ class RobotRegistryServiceTest {
         assertThat(state)
                 .containsEntry("robotId", "test116")
                 .containsEntry("status", "offline")
-                .containsEntry("stateSource", "OFFLINE_SCAN");
+                .containsEntry("stateSource", "OFFLINE_SCAN")
+                .containsKey("statusChangedAt");
     }
 
     @Test
@@ -195,6 +225,7 @@ class RobotRegistryServiceTest {
         service.update(object(
                 "robotId", "m20Pro_01",
                 "status", "online",
+                "stateSource", "EDGE_DEVICE_STATUS",
                 "battery", 82));
 
         @SuppressWarnings("unchecked")
@@ -222,7 +253,9 @@ class RobotRegistryServiceTest {
                 "robotId", "study",
                 "status", "online",
                 "stateSource", "EDGE_DEVICE_STATUS"));
-        assertThat(service.find("study").orElseThrow().status()).isEqualTo("online");
+        var online = service.find("study").orElseThrow();
+        assertThat(online.status()).isEqualTo("online");
+        assertThat(online.statusChangedAt()).isNotBlank();
 
         service.update(object(
                 "robotId", "study",
@@ -250,6 +283,30 @@ class RobotRegistryServiceTest {
         service.sweepOffline();
 
         assertThat(service.find("study").orElseThrow().status()).isEqualTo("offline");
+    }
+
+    @Test
+    void statusVersionRemainsOrderedAcrossSameSecondOfflineAndRecovery() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        ControlServiceProperties properties = new ControlServiceProperties();
+        properties.getRobot().setHeartbeatTimeoutSeconds(-1);
+        RobotRegistryService service = new RobotRegistryService(properties, publisher, new ObjectMapper());
+
+        service.update(object(
+                "robotId", "study",
+                "status", "online",
+                "stateSource", "EDGE_DEVICE_STATUS"));
+        OffsetDateTime onlineAt = OffsetDateTime.parse(service.find("study").orElseThrow().statusChangedAt());
+        service.sweepOffline();
+        OffsetDateTime offlineAt = OffsetDateTime.parse(service.find("study").orElseThrow().statusChangedAt());
+        service.update(object(
+                "robotId", "study",
+                "status", "online",
+                "stateSource", "EDGE_DEVICE_STATUS"));
+        OffsetDateTime recoveredAt = OffsetDateTime.parse(service.find("study").orElseThrow().statusChangedAt());
+
+        assertThat(offlineAt).isAfter(onlineAt);
+        assertThat(recoveredAt).isAfter(offlineAt);
     }
 
     @SuppressWarnings("unchecked")

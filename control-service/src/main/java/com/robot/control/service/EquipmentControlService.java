@@ -455,13 +455,12 @@ public class EquipmentControlService {
         long nextStateSeq = numberValue(state.get("stateSeq"), 0).longValue() + 1;
         state.put("robotId", serialNumber);
         update.forEach((key, value) -> {
-            if (value != null && !"name".equals(key) && !"type".equals(key) && !"typeCode".equals(key)) {
+            if ((value != null || "controlMode".equals(key)) && !"name".equals(key) && !"type".equals(key) && !"typeCode".equals(key)) {
                 state.put(key, value);
             }
         });
         state.put("stateSeq", nextStateSeq);
         state.putIfAbsent("status", "online");
-        state.putIfAbsent("controlMode", "手动模式");
         String controlMode = reportedControlMode(state.get("controlMode"));
         state.put("controlMode", controlMode);
         state.put("controlModeName", controlModeName(controlMode));
@@ -803,7 +802,9 @@ public class EquipmentControlService {
         }
         String controlMode = reportedControlMode(state.get("controlMode"));
         if (!"手动模式".equals(controlMode) && !"常规模式".equals(controlMode)) {
-            throw new IllegalArgumentException("机器人当前为" + controlModeName(controlMode) + "，请先切换到手动模式或常规模式");
+            throw new IllegalArgumentException(controlMode == null
+                    ? "机器人控制模式未知，请等待设备状态上报后再操作"
+                    : "机器人当前为" + controlModeName(controlMode) + "，请先切换到手动模式或常规模式");
         }
         requireOwnedActiveSession(robotId, requiredString(request, "controlSessionId"), "base", user);
     }
@@ -886,8 +887,8 @@ public class EquipmentControlService {
     private Map<String, Object> defaultRobotState(Map<String, Object> robot) {
         return object(
                 "robotId", firstValue(robot, "serialNumber", "robotId"),
-                "controlMode", "手动模式",
-                "controlModeName", "手动模式",
+                "controlMode", null,
+                "controlModeName", null,
                 "stateSeq", 1,
                 "missionStatus", "IDLE",
                 "navigationStatus", "IDLE",
@@ -1438,8 +1439,9 @@ public class EquipmentControlService {
     }
 
     private static String reportedControlMode(Object value) {
-        String mode = stringValue(value, "手动模式").trim();
-        return "导航模式".equals(mode) ? "导航模式" : "手动模式";
+        String mode = stringValue(value, "").trim();
+        if ("导航模式".equals(mode)) return mode;
+        return "手动模式".equals(mode) || "常规模式".equals(mode) ? "手动模式" : null;
     }
 
     private static String controlModeName(String controlMode) {

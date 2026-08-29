@@ -90,15 +90,18 @@ export default {
       count: 0,
       intervalId: null,
       angle: '2D',
-      isSlam: false,
-      currentSlamMapId: null,
-      autoSwitchedSlam: false,
       currentGisZoom: null,
       pathOpenedByTaskCard: false
     }
   },
   computed: {
     ...mapState('websocketExtraData', ['slamMapList', 'slamOfRobot', 'defaultGpsDevices', 'globalMapId', 'overviewReady', 'overviewLoadError']),
+    isSlam() {
+      return !!this.globalMapId && this.globalMapId !== 'gis'
+    },
+    currentSlamMapId() {
+      return this.isSlam ? this.globalMapId : null
+    },
     currentSlamMap() {
       const group = this.slamOfRobot?.[String(this.currentSlamMapId)]
       return group?.mapInfo || this.slamMapList.find(item => String(item.id) === String(this.currentSlamMapId)) || null
@@ -129,7 +132,7 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['setSelectedRobotId']),
-    ...mapActions('websocketExtraData', ['setShowRobotIds']),
+    ...mapActions('websocketExtraData', ['setShowRobotIds', 'setGlobalMapId']),
     changeMapAngle() {
       this.angle = this.angle === '3D' ? '2D' : '3D'
     },
@@ -143,37 +146,18 @@ export default {
       this.currentGisZoom = zoom
     },
     changeMapType(type) {
-      this.isSlam = type ? type === 'slam' : !this.isSlam
-      this.clearMapSelectionUI()
-      if (!this.isSlam) {
-        this.currentSlamMapId = null
-      } else if (!this.currentSlamMapId) {
-        this.selectDefaultSlamMap()
-      }
+      const slam = type ? type === 'slam' : !this.isSlam
+      const id = slam ? (this.currentSlamMapId ?? this.slamMapList[0]?.id) : 'gis'
+      if (id != null && String(id) !== String(this.globalMapId)) this.setGlobalMapId(id)
     },
     changeSlamMap(mapInfo) {
-      const nextId = mapInfo?.id ?? null
-      const changed = String(this.currentSlamMapId) !== String(nextId)
-      this.currentSlamMapId = nextId
-      this.isSlam = true
-      // 地图绘制复位由 GlobalSlamMap.previewSource 在同 tick 处理，这里只同步工具栏点位态
-      if (changed) {
-        this.clearMapSelectionUI()
-        this.$refs.mapToolRef?.resetPathActive?.()
-      }
+      const id = mapInfo?.id
+      if (id != null && String(id) !== String(this.globalMapId)) this.setGlobalMapId(id)
     },
     clearMapSelectionUI() {
       this.$refs.globalMapRef?.clearRobotSelectionUI?.()
       this.setSelectedRobotId('')
       this.setShowRobotIds([])
-    },
-    selectDefaultSlamMap() {
-      const list = Array.isArray(this.slamMapList) ? this.slamMapList : []
-      if (!list.length) return
-      // const preferred = list.find(item => String(item.id) === '1') || list[0]
-      const preferred = list[0]
-      this.currentSlamMapId = preferred?.id ?? null
-      this.isSlam = true
     },
     togglePath(visible) {
       this.$refs.globalMapRef?.togglePath?.(visible)
@@ -238,31 +222,10 @@ export default {
     }
   },
   watch: {
-    // overview 就绪后按 globalMapId 同步本地态，避免先渲染 GIS 再切 SLAM
-    globalMapId: {
-      immediate: true,
-      handler(id) {
-        if (!id || this.autoSwitchedSlam) return
-        if (id === 'gis') {
-          this.isSlam = false
-          this.currentSlamMapId = null
-        } else {
-          this.currentSlamMapId = id
-          this.isSlam = true
-        }
-        this.autoSwitchedSlam = true
-      }
-    },
-    slamMapList: {
-      immediate: true,
-      handler(list) {
-        if (!Array.isArray(list) || !list.length) return
-        if (!this.autoSwitchedSlam) return
-        if (this.isSlam && this.currentSlamMapId != null) {
-          const stillExists = list.some(item => String(item.id) === String(this.currentSlamMapId))
-          if (!stillExists) this.selectDefaultSlamMap()
-        }
-      }
+    globalMapId(id, previous) {
+      if (String(id) === String(previous)) return
+      this.clearMapSelectionUI()
+      this.$refs.mapToolRef?.resetPathActive?.()
     },
     listFilterTaskId: {
       handler(taskId) {

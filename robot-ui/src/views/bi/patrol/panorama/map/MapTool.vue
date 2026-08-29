@@ -354,34 +354,6 @@ export default {
         this.slamEmptyTipTimer = null
       }, 3000)
     },
-    /**
-     * 仅在 overview 已就绪、且无 SLAM、globalMapId 仍为空时补写 'gis'。
-     * 默认地图选择以 setAll 为准，避免页面加载瞬间抢先挂载 GIS。
-     */
-    ensureDefaultGisMap() {
-      if (!this.overviewReady) return
-      if (this.isSlam) return
-      if (this.globalMapId) return
-      if (this.slamList.length) return
-      this.currentType = 'gis'
-      this.selectType = 'gis'
-      this.setGlobalMapId('gis')
-    },
-    syncGlobalMapId() {
-      const slamId = this.currentSlam
-      const storeId = this.globalMapId
-      // isSlam 已切真但 slamId 尚未到位时，不要回写成 gis
-      if (this.isSlam && (slamId == null || slamId === '')) return
-      // overview 未就绪时不写 gis，避免抢在 SLAM 判断前渲染
-      if (!this.overviewReady) return
-      if (!storeId && !this.isSlam) {
-        this.ensureDefaultGisMap()
-        return
-      }
-      const nextId = this.isSlam ? slamId : 'gis'
-      if (storeId === nextId) return
-      this.setGlobalMapId(nextId)
-    },
     selectMapType(type) {
       if (type === 'gis') {
         // UI 已是 GIS 时仍可能尚未写入 globalMapId，不能直接 return
@@ -390,7 +362,6 @@ export default {
         this.currentType = type
         // 单项联动：切 GIS 后侧栏任务卡片展示全部任务，不根据任务反切地图
         this.setGlobalMapId('gis')
-        this.$emit('changeCurrentSlamId', '')
         return
       }
       if (this.selectType === type) return
@@ -509,22 +480,16 @@ export default {
     },
   },
   watch: {
-    currentType: {
+    isSlam: {
+      immediate: true,
       handler(newVal) {
-        if ((newVal === 'slam') !== this.isSlam) {
-          this.$emit('changeMapType', newVal)
-        }
-      },
-    },
-    isSlam(newVal) {
-      this.currentType = newVal ? 'slam' : 'gis'
-      this.selectType = newVal ? 'slam' : 'gis'
-      this.resetPathActive()
-      this.syncGlobalMapId()
+        this.currentType = newVal ? 'slam' : 'gis'
+        this.selectType = newVal ? 'slam' : 'gis'
+        this.resetPathActive()
+      }
     },
     currentSlam() {
       this.resetPathActive()
-      this.syncGlobalMapId()
     },
     pathOperable(val) {
       // 仅当地图本身无点位时关闭；选中/打开装备不影响点位渲染
@@ -538,16 +503,6 @@ export default {
         this.pathActive = false
         this.$emit('toggleTaskPaths', false)
       }
-    },
-    // overview 就绪后若仍无 globalMapId 且无 SLAM，再兜底 GIS
-    overviewReady(val) {
-      if (val) this.ensureDefaultGisMap()
-    },
-    defaultGpsDevices() {
-      this.ensureDefaultGisMap()
-    },
-    slamMapList() {
-      this.ensureDefaultGisMap()
     }
   }
 }

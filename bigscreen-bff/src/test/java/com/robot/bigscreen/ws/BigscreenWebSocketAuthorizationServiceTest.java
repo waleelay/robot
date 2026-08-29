@@ -43,6 +43,41 @@ class BigscreenWebSocketAuthorizationServiceTest {
     }
 
     @Test
+    void authorizesRobotStateByRobotIdWithoutTreatingMountedCamerasAsFixedCameras() {
+        String payload = """
+                {
+                  "event": "robot.state",
+                  "data": {
+                    "robotId": "sx-songling-001",
+                    "status": "online",
+                    "cameras": [
+                      {"cameraId": "camera01", "deviceId": "camera01"},
+                      {"cameraId": "camera02", "deviceId": "camera02"}
+                    ],
+                    "devices": [
+                      {
+                        "deviceId": "gimbal-001",
+                        "status": {
+                          "cameraId": "camera01",
+                          "cameraIds": ["camera01", "camera02"]
+                        }
+                      }
+                    ]
+                  }
+                }
+                """;
+
+        assertTrue(service.canReceive(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(
+                        Set.of("sx-songling-001"), Set.of()),
+                payload));
+        assertFalse(service.canReceive(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(
+                        Set.of("another-robot"), Set.of("camera01", "camera02")),
+                payload));
+    }
+
+    @Test
     void extractsNestedAlarmRobotId() {
         String payload = """
                 {
@@ -102,6 +137,28 @@ class BigscreenWebSocketAuthorizationServiceTest {
         assertTrue(service.canForwardClientMessage(
                 new BigscreenWebSocketAuthorizationService.AuthorizedResources(
                         Set.of("robot-001", "robot-002"), Set.of()),
+                payload));
+    }
+
+    @Test
+    void keepsClientCameraIdPreAuthorization() {
+        String payload = """
+                {
+                  "type": "video.session.start",
+                  "requestId": "request-camera-001",
+                  "payload": {
+                    "cameraId": "camera-001"
+                  }
+                }
+                """;
+
+        assertTrue(service.canForwardClientMessage(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(
+                        Set.of(), Set.of("camera-001")),
+                payload));
+        assertFalse(service.canForwardClientMessage(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(
+                        Set.of(), Set.of("camera-002")),
                 payload));
     }
 

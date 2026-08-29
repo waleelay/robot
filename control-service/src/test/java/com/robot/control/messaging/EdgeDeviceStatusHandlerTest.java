@@ -56,7 +56,7 @@ class EdgeDeviceStatusHandlerTest {
         Map<String, Object> state = captor.getValue();
         assertThat(state)
                 .containsEntry("robotId", "test115")
-                .containsEntry("status", "online")
+                .containsEntry("status", "fault")
                 .containsEntry("battery", 47)
                 .containsEntry("speed", 0.6)
                 .containsEntry("totalMileage", 5578.563)
@@ -107,6 +107,23 @@ class EdgeDeviceStatusHandlerTest {
                   "payload":{"status":{"motion":{"totalMileage":100.5,"currentMileage":10.5}}}
                 }
                 """.formatted(messageId, timestamp.startsWith("not") ? "\"" + timestamp + "\"" : timestamp);
+    }
+
+    @Test
+    void distinguishesExplicitUnknownModeFromAbsentMode() {
+        when(equipmentControlService.mergeEdgeDeviceStatus(eq("robot-1"), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        handler.handle("eiop/v1/edge/robot-1/status", """
+                {"payload":{"status":{"control":{"controlMode":"UNKNOWN"}}}}
+                """);
+        handler.handle("eiop/v1/edge/robot-1/status", """
+                {"payload":{"status":{"basic":{"healthStatus":"正常"}}}}
+                """);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> states = ArgumentCaptor.forClass(Map.class);
+        verify(robotRegistryService, times(2)).update(states.capture());
+        assertThat(states.getAllValues().get(0)).containsEntry("controlMode", null);
+        assertThat(states.getAllValues().get(1)).doesNotContainKey("controlMode");
     }
 
     @SuppressWarnings("unchecked")

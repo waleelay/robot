@@ -3,7 +3,7 @@
 | 文档属性 | 内容 |
 | --- | --- |
 | 文档状态 | 当前代码基线 |
-| 基线日期 | 2026-08-25 |
+| 基线日期 | 2026-08-28 |
 | 服务端口 | `8090` |
 
 ## 1. 边界与鉴权
@@ -17,7 +17,7 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `GET` | `/api/bigscreen/panorama/overview` | 首屏摘要：设备、统计、任务摘要、地图摘要和告警；不加载地图点、任务路径、回放或逐设备详情 |
 | `GET` | `/api/bigscreen/panorama/maps/{mapId}/resources` | 当前地图渲染资源：点位、关联设备 ID 与固定摄像头；首屏默认地图和用户切图时调用 |
 | `GET` | `/api/bigscreen/panorama/maps/{mapId}/task-routes` | 当前地图关联任务的路径点；不加载任务回放或设备任务详情 |
-| `GET` | `/api/bigscreen/panorama/devices/{deviceId}` | 查询单个设备聚合详情 |
+| `GET` | `/api/bigscreen/panorama/devices/{deviceId}` | 按装备序列号查询授权设备详情；只补查目标组件，不加载任务回放；弹窗选中时调用 |
 | `GET` | `/api/bigscreen/panorama/tasks` | 查询当前任务快照 |
 | `GET` | `/api/bigscreen/panorama/tasks/{taskId}` | 用户打开任务时查询单个任务完整详情（含回放和设备任务明细） |
 | `GET` | `/api/bigscreen/panorama/tasks/{taskId}/fixed-cameras` | 实时监控任务卡展开时按需查询任务关联固定摄像头；只返回安全视频源标识，不创建视频会话 |
@@ -50,7 +50,24 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 }
 ```
 
-设备对外 `status` 仅为 `online/fault/offline`。固定摄像头 `status=online` 仅在配置启用且完整、Gateway
+设备对外 `status` 仅为 `online/fault/offline`。机器人在线状态来自本项目 Control
+`/api/control/robots/registry`：收到合法、非 retained 的边缘状态后立即为 `online` 或 `fault`，
+连续 30 秒未收到边缘状态后由 Control 标记为 `offline`；Management Control 的
+`DeviceRealtimeStatus.onlineStatus` 不参与状态判定；外部实时状态接口只用于定位、告警和任务等未迁移字段。机器人条目同时返回
+`statusChangedAt`（服务端状态变更时间），前端只允许较新的状态覆盖当前值；注册表中不存在的设备按
+`offline` 返回。
+
+机器人电量、速度、模式统一由本项目 Control 注册表取得，并返回独立的 `runtimeUpdatedAt`。
+Overview、设备详情与 WebSocket 使用相同运行态源，前端按该时间比较运行态新旧，不能用
+仅在在线状态变化时更新的 `statusChangedAt` 来判断速度和模式的新旧。缺值保留 `null`，
+不补零电量、零速度或默认模式。组件数量与详情调用规则见字段来源文档 3.3 节。
+
+装备弹窗打开时全部装备展示字段由设备详情初始化；名称、类型、型号、上装数量和固定摄像头位置
+在本次打开期间保持不变，电量、速度、控制模式与在线状态从共享状态按上述版本更新，不用 Overview
+回填静态档案。重连不清空或重查详情；任务路径及视频会话仍复用共享链路。请求取消与失败重试
+规则见字段来源文档第 4 节；本次不变更 Overview 的响应结构。
+
+固定摄像头 `status=online` 仅在配置启用且完整、Gateway
 心跳有效并且最近 RTSP 探测成功时成立；配置停用、配置无效、健康接口不可用、消息缺失或过期均为
 `offline`，不得回退 `enabled=true`。`playable` 是兼容字段，只表示 `enabled && configReady`，不表示
 在线，新调用方应使用 `configReady`。BFF 不向前端返回 RTSP URL 或摄像头凭据。
@@ -82,6 +99,15 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 SLAM 地图时，仅请求目标 `mapId` 的这两个资源；用户打开任务视频时，才请求 `tasks/{taskId}`。实时监控页仅在
 用户展开某张任务卡的“固定摄像头”列表时，请求 `tasks/{taskId}/fixed-cameras`。前端不应在首屏、定时刷新或切图时
 预取任务回放、设备任务明细、任务固定摄像头或非当前地图点位。
+
+Token 续期、WebSocket 重连及健康变化触发 Overview 刷新时，应保留当前仍有效的地图选择，
+不得每次重选列表第一张。首页/实时监控的底图、工具栏与任务筛选共享 `globalMapId`；
+用户在刷新期间切图时，以最新选择加载资源。所选地图确实不在新列表时才使用默认规则；
+退出登录清空选择和地图资源，不跨账号保留。
+
+Overview 的地图列表查询失败不再降级为 `map=[]`：地图读取超时、HTTP 错误、空响应或并发
+许可耗尽返回 503，401/403 保持原状态；成功且确实无地图才返回空列表。普通刷新失败时前端
+保留当前数据，权限集合明确变化时仍先清空并重新获取，禁止借保留选择恢复已失权数据。
 
 `resources` 响应为 `{serverTime, mapId, points, deviceIds, fixedCamares}`，表示当前地图渲染所需的按需资源，其中
 `points` 为当前地图点位，
@@ -161,6 +187,12 @@ BFF 在三个兼容路径注册同一桥接处理器：
 ```
 
 每个浏览器连接对应一条到 `center.websocket-control-url` 的上游连接。BFF 在转发浏览器消息前检查 Token 和当前授权快照；显式携带无权 `robotId` 或 `cameraId` 的消息不会转发到 Control。通过预校验的消息原样转发；上游原始消息按授权资源过滤后回传，同时可能派生 `panorama.*` 事件。
+
+`robot.state` 只按顶层 `data.robotId` 校验机器人数据权限；`data.cameras[]`
+及上装状态内的 `cameraId` 表示机器人本体相机，继承该机器人权限，不与
+Management 固定摄像头授权集合比较。固定摄像头视频事件使用
+`sourceType=FIXED_CAMERA` 和 `sourceId=cameraId` 识别与授权。浏览器上行消息显式携带
+`cameraId` 时仍执行固定摄像头预校验，不因上述事件规则放宽。
 
 授权快照最大陈旧时间为 30 秒。初始加载或刷新失败使用 `4003` 关闭连接；握手 JWT 到达 `exp` 后使用 `4001` 关闭。资源集合发生变化时连接保持有效，BFF 发送以下通知，调用方必须重新请求 `/api/bigscreen/panorama/overview`，并以响应完整替换旧设备集合：
 

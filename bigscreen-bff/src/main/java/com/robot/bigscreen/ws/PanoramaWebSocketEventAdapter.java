@@ -181,6 +181,9 @@ public class PanoramaWebSocketEventAdapter {
         ObjectNode data = objectMapper.createObjectNode();
         data.put("robotId", text(sourceData, "robotId"));
         data.put("status", panoramaDeviceStatus(sourceData));
+        String statusChangedAt = text(sourceData, "statusChangedAt");
+        data.put("statusChangedAt", statusChangedAt.isBlank() ? timestamp(sourceRoot) : statusChangedAt);
+        putNullableText(data, "runtimeUpdatedAt", sourceData.get("runtimeUpdatedAt"));
         putNullableInt(data, "battery", sourceData.get("battery"));
         String controlMode = normalizeControlMode(text(sourceData, "controlMode"));
         data.put("controlMode", controlMode);
@@ -469,8 +472,9 @@ public class PanoramaWebSocketEventAdapter {
     }
 
     private String normalizeControlMode(String controlMode) {
-        String mode = controlMode == null ? "" : controlMode;
-        return "导航模式".equals(mode) ? "导航模式" : "手动模式";
+        String mode = controlMode == null ? "" : controlMode.trim();
+        if ("导航模式".equals(mode)) return mode;
+        return "手动模式".equals(mode) || "常规模式".equals(mode) ? "手动模式" : null;
     }
 
     private String panoramaDeviceStatus(JsonNode sourceData) {

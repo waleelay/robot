@@ -100,7 +100,7 @@ public class EdgeDeviceStatusHandler {
                 : DateTimeConfig.format(eventTime);
         Map<String, Object> update = new LinkedHashMap<>();
         update.put("robotId", serialNumber);
-        update.put("status", "online");
+        update.put("status", robotStatus(basic.get("healthStatus")));
         putIfPresent(update, "battery", energy.get("batteryPercent"));
         putIfPresent(update, "speed", motion.get("speed"));
         putIfPresent(update, "moving", motion.get("moving"));
@@ -109,7 +109,10 @@ public class EdgeDeviceStatusHandler {
         putIfPresent(update, "runningStatus", basic.get("runningStatus"));
         putIfPresent(update, "healthStatus", basic.get("healthStatus"));
         putIfPresent(update, "chargingStatus", energy.get("chargingStatus"));
-        putIfPresent(update, "controlMode", normalizeControlMode(control.get("controlMode")));
+        if (control.containsKey("controlMode")) {
+            // 明确上报未知模式时清空旧模式；未包含该字段的增量消息则保留上一值。
+            update.put("controlMode", normalizeControlMode(control.get("controlMode")));
+        }
         putIfPresent(update, "estopActive", control.get("emergencyStop"));
         putIfPresent(update, "softStopActive", control.get("softStop"));
         putIfPresent(update, "remoteControlEnabled", control.get("remoteControlEnabled"));
@@ -133,6 +136,17 @@ public class EdgeDeviceStatusHandler {
         update.put("stateSource", "EDGE_DEVICE_STATUS");
         update.put("timestamp", timestamp);
         return update;
+    }
+
+    private String robotStatus(Object healthStatus) {
+        String normalized = string(healthStatus).toUpperCase(Locale.ROOT);
+        if (normalized.contains("ERROR")
+                || normalized.contains("FAULT")
+                || normalized.contains("异常")
+                || normalized.contains("故障")) {
+            return "fault";
+        }
+        return "online";
     }
 
     private void recordMileage(

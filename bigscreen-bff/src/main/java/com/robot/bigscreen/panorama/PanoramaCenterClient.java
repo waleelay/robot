@@ -254,7 +254,7 @@ public class PanoramaCenterClient {
                 .queryParam("enabled", true)
                 .build(true)
                 .toUri();
-        return records(uri);
+        return records(requiredResponseMap(uri));
     }
 
     public List<Map<String, Object>> mapPoints(String mapId) {
@@ -627,7 +627,7 @@ public class PanoramaCenterClient {
                     .body(MAP_TYPE);
             logSlowRequest(uri, startNanos);
             if (response == null) {
-                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "管理端设备响应为空");
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "管理端资源响应为空");
             }
             return response;
         } catch (RestClientResponseException exception) {
@@ -636,16 +636,16 @@ public class PanoramaCenterClient {
                     : exception.getStatusCode() == HttpStatus.FORBIDDEN
                             ? HttpStatus.FORBIDDEN
                             : HttpStatus.SERVICE_UNAVAILABLE;
-            throw new ResponseStatusException(status, "查询管理端授权设备失败", exception);
+            throw new ResponseStatusException(status, "查询管理端授权资源失败", exception);
         } catch (ResponseStatusException exception) {
             throw exception;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "查询管理端授权设备被中断", exception);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "查询管理端授权资源被中断", exception);
         } catch (RuntimeException exception) {
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    "查询管理端授权设备失败",
+                    "查询管理端授权资源失败",
                     exception);
         } finally {
             if (acquired) {

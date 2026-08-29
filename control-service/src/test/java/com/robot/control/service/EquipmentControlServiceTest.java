@@ -24,6 +24,17 @@ import org.mockito.ArgumentCaptor;
 
 class EquipmentControlServiceTest {
 
+    @Test
+    void unknownReportedModeCannotAuthorizeMovement() {
+        register(component("BODY", "body"));
+        online(null);
+        assertThat(service.controlProfile("robot-001").get("controlMode")).isNull();
+        assertThatThrownBy(() -> service.publishCommand("robot-001", object("target", object("deviceId", "base"),
+                "action", "drive.velocity", "params", object("linearX", 0.2)), operator()))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("模式未知");
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+    }
+
     private final EquipmentControlCommandPublisher commandPublisher = mock(EquipmentControlCommandPublisher.class);
     private final MediaWebSocketPublisher webSocketPublisher = mock(MediaWebSocketPublisher.class);
     private final ControlManagementClient managementClient = mock(ControlManagementClient.class);

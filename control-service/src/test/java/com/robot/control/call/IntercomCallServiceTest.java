@@ -150,6 +150,7 @@ class IntercomCallServiceTest {
                 "WHEELED_ROBOT",
                 80,
                 status,
+                "2026-07-20 12:00:00",
                 "手动模式",
                 "手动模式",
                 1L,
@@ -161,6 +162,6 @@ class IntercomCallServiceTest {
                 List.of(new RobotCameraResponse("camera01", "camera01", "body", "前视摄像头", "sub")),
                 List.of(),
                 null,
-                "2026-07-20 12:00:00");
+                "2026-07-20 12:00:00", null, null);
     }
 }

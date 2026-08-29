@@ -31,6 +31,8 @@ src/main/java/com/robot/bigscreen/
 - `BigscreenProxyController`：代理 `/api/control/**`、`/api/media/**`、`/api/manage/**` 和 `/api/v1/management/**`；`GET /api/control/robots` 固定返回 `410`。`/internal/**` 仅供服务间内网调用，不注册为 BFF 对外代理。
 - `BusinessTaskProxyController`：只代理任务计划、流程定义、执行记录、设备和地图白名单。
 - `PanoramaService`：组装全景摘要、当前地图资源、按需设备/任务详情和告警。`overview` 只返回首屏所需摘要；地图点、任务路径和任务完整详情由独立接口按需读取，避免首屏预取回放和逐设备详情。
+- Overview 的地图列表是必需查询：复用现有通用并发许可与必需资源读取链路，HTTP 错误、超时、空响应或并发饱和不转换为 `map=[]`；401/403 保持认证语义，其他读取失败返回 503。只有成功查询无地图时返回空列表，避免前端误判地图已删除。
+- 装备弹窗复用 `/api/bigscreen/panorama/devices/{deviceId}`，仅对授权目标补查组件，复用按用户隔离的短缓存与在途合并；不查任务回放。电量、速度、模式及 `runtimeUpdatedAt` 统一来自本项目 Control 注册表，详见[字段来源映射](../docs/03-接口与协议/大屏BFF/大屏BFF字段来源映射文档.md)。
 - `StatisticsService`：基于授权设备、实时状态、任务、告警和 Control 里程汇总统计，并同步生成/保存 PDF；缺少权威来源的指标保持 `null`。
 - `BigscreenWebSocketBridgeHandler`：为每个浏览器连接建立一条 Control 上游连接；按用户和组织复用最长 30 秒的授权快照，在事件下发和控制上行前强制检查快照及 Token 有效期。后台刷新暂时失败时保留尚未过期的授权快照并继续重试；JWT 到期或 Management 明确返回 `401` 时以 `4001` 关闭，避免节点时钟漂移把凭证失效误报为权限服务故障；只有其他授权刷新失败持续至快照超过最大陈旧时间才以 `4003` 关闭。资源集合确认变化时发送 `bigscreen.authorization.changed`，通知前端重拉 Overview。
 - `PanoramaWebSocketEventAdapter`：将 `robot.state` 等事件适配成 `panorama.*`。

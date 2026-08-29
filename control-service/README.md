@@ -47,6 +47,11 @@ src/main/java/com/robot/control/
 - `MileageController`：按时间范围和机器人批量查询持久化里程。
 
 `GET /api/control/robots` 已移除；内存注册表只通过 `/api/control/robots/registry` 供 BFF 聚合。
+注册表中的机器人 `status` 只由非 retained 边缘状态及 30 秒超时扫描维护，媒体客户端状态不续期；
+`statusChangedAt` 是 Control 服务端记录的状态版本时间，供 BFF 和前端拒绝旧状态覆盖。
+电量、速度和控制模式同样只接受边缘状态，注册表和 `robot.state` 同时返回 `runtimeUpdatedAt`。
+它记录最后接受边缘状态的服务端时间，不随媒体心跳或离线扫描推进；未上报的字段为 `null`，
+未知模式不能下发本体移动指令。完整空值和版本规则见[客户端事件协议](../docs/03-接口与协议/客户端事件/客户端事件与载荷协议文档.md)。
 
 ### 核心服务
 

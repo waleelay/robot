@@ -23,7 +23,7 @@ import {
 import Vue from 'vue'
 import { errorMessage } from '../../utils'
 import { bearerToken } from '@/auth'
-import { overlayLiveRobotRuntimeFields } from '../../views/bi/js/utils/prefer-live-robot-fields'
+import { overlayLiveRobotRuntimeFields, mergeRobotBaseInfo, normalizeRobotControlMode } from '../../views/bi/js/utils/prefer-live-robot-fields'
 import { attachTrackRespectingUserPause } from '../../views/bi/js/utils/livekit-user-pause'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
@@ -343,11 +343,11 @@ function withCallReceipt(call) {
 // ============ 工具函数 ============
 // 用于将机器人数据转换为状态对象
 function toRobotState(robot) {
-  const controlMode = robot.controlMode === '手动模式' ? '手动模式' : '导航模式'
+  const controlMode = normalizeRobotControlMode(robot.controlMode)
   const fixedCamera = isFixedCameraEquipment(robot, robot.cameras || [])
   return Object.assign({}, robot, {
     name: robot.name || robot.robotId,
-    type: robot.type || '-',
+    type: robot.type || null,
     controlMode,
     controlModeName: robot.controlModeName || controlMode,
     stateSeq: robot.stateSeq || 0,
@@ -1145,12 +1145,13 @@ const actions = {
     const data = event && (event.data || event.payload)
     if (!data || !data.robotId) return
     if (event.event !== 'robot.state' && event.type !== 'robot.state') return
-    const incoming = toRobotState(data)
+    let incoming = toRobotState(data)
     dispatch('mergeControlProfileDevices', { robotId: incoming.robotId, devices: incoming.devices })
     dispatch('syncDeviceStatesFromDevices', { robotId: incoming.robotId, devices: incoming.devices })
     const index = state.robots.findIndex(robot => robot.robotId === incoming.robotId)
     if (index >= 0) {
       const existing = state.robots[index]
+      incoming = mergeRobotBaseInfo(existing, incoming, true)
       incoming.cameras = (incoming.cameras || []).map(camera => {
         const old = state.cameras[camera.key]
         if (!old) return camera
@@ -1215,7 +1216,9 @@ const actions = {
         controlModeName: incoming.controlModeName,
         speed: incoming.speed,
         fault: incoming.fault,
-        lastHeartbeatAt: incoming.lastHeartbeatAt
+        lastHeartbeatAt: incoming.lastHeartbeatAt,
+        statusChangedAt: incoming.statusChangedAt,
+        runtimeUpdatedAt: incoming.runtimeUpdatedAt
       },
       fromRealtime: true
     }, { root: true })
@@ -1228,15 +1231,7 @@ const actions = {
       commit('updateRobot', toBasicRobot(toRobotState({ ...patch, cameras: [] })))
       return
     }
-    commit('updateRobot', {
-      ...existing,
-      status: patch.status ? patch.status : existing.status,
-      battery: patch.battery !== undefined ? patch.battery : existing.battery,
-      controlMode: patch.controlMode || existing.controlMode,
-      controlModeName: patch.controlModeName || existing.controlModeName,
-      speed: patch.speed !== undefined ? patch.speed : existing.speed,
-      fault: patch.fault !== undefined ? patch.fault : existing.fault
-    })
+    commit('updateRobot', mergeRobotBaseInfo(existing, patch, true))
   },
 
   // 处理会话状态更新事件
@@ -1946,15 +1941,12 @@ const actions = {
         commit('setControlProfiles', { robotId, profile })
         const index = state.robots.findIndex(robot => robot.robotId === robotId)
         if (index >= 0) {
-          state.robots.splice(index, 1, Object.assign({}, state.robots[index], {
-            controlMode: profile.controlMode,
-            stateSeq: profile.stateSeq
-          }))
+          // 画像用于能力展示；运行模式只接受带运行态版本的 Overview / WebSocket，避免慢画像回退模式。
           dispatch('syncDeviceStatesFromDevices', { robotId, devices: profile.devices, options: {preserveExisting: true} })
         }
         return profile
       } catch (error) {
-        console.error('ERROR getControlProfile', error)
+        console.error('获取装备控制画像失败', error)
       } finally {
         commit('SET_PROFILE_LOADING', { robotId, loading: false })
       }

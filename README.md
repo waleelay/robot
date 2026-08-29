@@ -171,6 +171,9 @@ sh deploy/nginx/generate-lan-cert.sh <实际局域网IP>
 
 ## 9. 验证
 
+装备弹窗全部装备字段按需详情初始化、运行态版本及未知值规则见[大屏字段映射](docs/03-接口与协议/大屏BFF/大屏BFF字段来源映射文档.md)；
+本地竞态回归入口为 `robot-ui/test/robot-popup-state.test.mjs`。
+
 按改动范围执行最小充分验证；仓库级快速检查：
 
 ```bash

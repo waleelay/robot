@@ -1,6 +1,7 @@
 import { set } from "nprogress";
 import { active } from "sortablejs";
 import Vue from "vue";
+import { mergeRobotBaseInfo } from '../../views/bi/js/utils/prefer-live-robot-fields';
 import {
   SLAM_POINTS,
   ENABLE_LIANTONG_SLAM_MOCK,
@@ -58,8 +59,6 @@ const state = {
   robotLocation: {}, // { robotId: { lat, lng, altitude, address, updatedAt } }
   // 设备基本信息；task 由 taskData 反查；cameras 只存 websocketRobot（overview/robot.state）
   robotBaseInfo: {}, // { robotId: { ...robotInfo } }
-  // 已收到实时推送的装备：后续 overview 快照不得覆盖实时字段
-  realtimeRobotIds: {},
   // 装备列表
   robotList: [],
   robotAlarmObj: {}, // { robotId: { ...alarmInfo } }
@@ -71,6 +70,8 @@ const state = {
   showRobotIds: [],
   // 当前全局地图标识：GIS 为 'gis'，SLAM 为对应地图 id
   globalMapId: '',
+  // 快照替换/失权/退出后，旧地图请求不得回写新页面。
+  overviewRevision: 0,
   // 具备 GPS 经纬度的设备列表（来自 panorama overview.gpsDevices）
   defaultGpsDevices: [],
   // overview（setAll）是否已完成默认地图判断；未就绪前不挂载 GIS，避免抢在 SLAM 数据前闪一下
@@ -87,13 +88,16 @@ const state = {
 
 const mutations = {
   RESET_OVERVIEW_RESOURCE_STATE(state) {
+    state.overviewRevision++;
+    mapResourcePromises.clear();
+    state.slamMapList = [];
+    state.slamOfRobot = {};
     state.deviceObj = {};
     state.taskData = {};
     state.taskFixedCameraData = {};
     state.alarmsData = {};
     state.robotLocation = {};
     state.robotBaseInfo = {};
-    state.realtimeRobotIds = {};
     state.robotList = [];
     state.robotAlarmObj = {};
     state.taskPathPoints = {};
@@ -238,16 +242,9 @@ const mutations = {
     delete incoming.statusClass
     delete incoming.cameras
     const prev = state.robotBaseInfo?.[robotId] || {}
-    const wasRealtime = !!state.realtimeRobotIds?.[robotId]
-    const merged = fromRealtime
-      ? { ...prev, ...incoming, robotId: incoming.robotId ?? robotId }
-      : wasRealtime
-        ? { ...incoming, ...prev, robotId: prev.robotId ?? incoming.robotId ?? robotId }
-        : { ...prev, ...incoming, robotId: incoming.robotId ?? robotId }
+    const merged = mergeRobotBaseInfo(prev, incoming, !!fromRealtime)
+    merged.robotId = incoming.robotId ?? robotId
     delete merged.cameras
-    if (fromRealtime) {
-      state.realtimeRobotIds = { ...state.realtimeRobotIds, [robotId]: true }
-    }
     const task = toRobotTaskSummaries(state.taskData, merged.robotId)
     const withTask = { ...merged, task }
     state.robotBaseInfo = {
@@ -300,49 +297,54 @@ const mutations = {
 const actions = {
   resetOverviewResourceState({ commit }) {
     commit('RESET_OVERVIEW_RESOURCE_STATE')
+    commit('SET_GLOBAL_MAP_ID', '')
+    overviewRefreshPromise = null
   },
-  refreshOverviewResources({ commit, dispatch }, { failClosed = true } = {}) {
-    if (overviewRefreshPromise) return overviewRefreshPromise
+  refreshOverviewResources({ state, commit, dispatch }, { failClosed = true } = {}) {
     // 只有 BFF 已明确通知权限集合变化时才先清空；普通重连或健康变化不得中断正在观看的视频。
     if (failClosed) {
       commit('RESET_OVERVIEW_RESOURCE_STATE')
       dispatch('websocketRobot/loadRobots', [], { root: true })
+    } else if (overviewRefreshPromise) {
+      return overviewRefreshPromise
     }
-    overviewRefreshPromise = loadOverviewWithRetry()
-      .then(data => dispatch('hydrateOverview', data))
-      .then(data => dispatch('setAll', data))
+    const revision = state.overviewRevision
+    const pending = loadOverviewWithRetry()
+      .then(data => {
+        if (revision === state.overviewRevision) return dispatch('applyOverview', data)
+      })
       .catch(error => {
+        if (revision !== state.overviewRevision) return
         commit('SET_OVERVIEW_LOAD_ERROR', true)
         throw error
       })
       .finally(() => {
-        overviewRefreshPromise = null
+        if (overviewRefreshPromise === pending) overviewRefreshPromise = null
       })
-    return overviewRefreshPromise
+    overviewRefreshPromise = pending
+    return pending
   },
-  async hydrateOverview(context, overview) {
-    const mapId = initialSlamMapId(overview)
-    if (!mapId) return overview
-    const [mapResourcesResult, taskRoutesResult] = await Promise.allSettled([
-      getPatrolPanoramaMapResources(mapId),
-      getPatrolPanoramaMapTaskRoutes(mapId)
-    ])
+  async applyOverview({ state, dispatch }, overview) {
+    const revision = state.overviewRevision
+    const mapId = resolveOverviewMapId(overview, state.globalMapId)
+    const [mapResourcesResult, taskRoutesResult] = await requestMapResources(mapId, revision)
+    if (revision !== state.overviewRevision) return
     const mapResources = fulfilledValue(mapResourcesResult)
     const taskRoutes = fulfilledValue(taskRoutesResult)
-    return mergeOverviewMapResources(overview, mapResources, taskRoutes)
+    // 等待资源期间允许用户切图；提交时以最新选择为准，必要时补齐新图资源。
+    await dispatch('setAll', mergeOverviewMapResources(overview, mapResources, taskRoutes))
+    if (String(state.globalMapId) !== String(mapId)) {
+      await dispatch('loadMapResources', state.globalMapId)
+    }
   },
   async loadMapResources({ state, commit }, mapId) {
     if (mapId === undefined || mapId === null || mapId === '' || mapId === 'gis') return
     const key = String(mapId)
-    let pending = mapResourcePromises.get(key)
-    if (!pending) {
-      pending = Promise.allSettled([
-        getPatrolPanoramaMapResources(mapId),
-        getPatrolPanoramaMapTaskRoutes(mapId)
-      ]).finally(() => mapResourcePromises.delete(key))
-      mapResourcePromises.set(key, pending)
-    }
-    const [mapResourcesResult, taskRoutesResult] = await pending
+    if (!state.overviewReady || !state.slamMapList.some(item => String(item.id) === key)) return
+    const revision = state.overviewRevision
+    const [mapResourcesResult, taskRoutesResult] = await requestMapResources(mapId, revision)
+    if (revision !== state.overviewRevision || String(state.globalMapId) !== key
+      || !state.slamMapList.some(item => String(item.id) === key)) return
     const mapResources = fulfilledValue(mapResourcesResult)
     const taskRoutes = fulfilledValue(taskRoutesResult)
     const maps = (state.slamMapList || []).map(item => String(item?.id) === key
@@ -476,27 +478,13 @@ const actions = {
     });
     // 有 GPS 设备时默认 GIS；否则默认第一张 SLAM；两者都没有时才默认 GIS
     // 必须等 overview 数据到位后再写入，避免页面加载瞬间先挂 GIS 再被 SLAM 顶掉
-    const defaultGpsDevices = (Array.isArray(data?.gpsDevices) && data.gpsDevices.length)
-      ? data.gpsDevices
-      : devices.filter(item => {
-          const lat = item?.location?.lat
-          const lng = item?.location?.lng
-          return lat != null && lat !== '' && lng != null && lng !== ''
-            && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
-        });
+    const defaultGpsDevices = overviewGpsDevices({ ...data, devices });
     commit('SET_DEFAULT_GPS_DEVICES', defaultGpsDevices);
     commit('SET_SLAM_MAP_LIST', slamMapList);
     commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devicesWithoutTask, tasks));
-    if (defaultGpsDevices.length) {
-      commit('SET_GLOBAL_MAP_ID', 'gis');
-      commit('SET_DEFAULT_MAP_IS_SLAM', false);
-    } else if (slamMapList.length) {
-      commit('SET_GLOBAL_MAP_ID', slamMapList[0]?.id);
-      commit('SET_DEFAULT_MAP_IS_SLAM', true);
-    } else {
-      commit('SET_GLOBAL_MAP_ID', 'gis');
-      commit('SET_DEFAULT_MAP_IS_SLAM', false);
-    }
+    const mapId = resolveOverviewMapId({ ...data, devices }, state.globalMapId);
+    commit('SET_GLOBAL_MAP_ID', mapId);
+    commit('SET_DEFAULT_MAP_IS_SLAM', !defaultGpsDevices.length && slamMapList.length > 0);
     commit('SET_OVERVIEW_READY', true);
     commit('SET_OVERVIEW_LOAD_ERROR', false);
   },
@@ -629,7 +617,7 @@ const actions = {
 
 /**
  * 并发登录或下游短暂繁忙时，只在当前页保留一次带抖动的退避重试。
- * refreshOverviewResources 已通过 overviewRefreshPromise 保证同页不会产生第二个在途请求。
+ * 普通刷新通过 overviewRefreshPromise 合并；权限变化必须废弃旧快照并重新查询。
  */
 async function loadOverviewWithRetry() {
   try {
@@ -641,18 +629,37 @@ async function loadOverviewWithRetry() {
   }
 }
 
-function initialSlamMapId(overview) {
+function resolveOverviewMapId(overview, preferredId) {
+  const maps = Array.isArray(overview?.map) ? overview.map : []
+  if (preferredId === 'gis') return 'gis'
+  const selected = maps.find(item => String(item.id) === String(preferredId))
+  if (selected) return selected.id
+  return overviewGpsDevices(overview).length ? 'gis' : (maps[0]?.id ?? 'gis')
+}
+
+function overviewGpsDevices(overview) {
+  if (Array.isArray(overview?.gpsDevices) && overview.gpsDevices.length) return overview.gpsDevices
   const devices = Array.isArray(overview?.devices) ? overview.devices : []
-  const hasGpsDevice = devices.some(item => {
+  return devices.filter(item => {
     const lat = item?.location?.lat
     const lng = item?.location?.lng
     return lat != null && lat !== '' && lng != null && lng !== ''
       && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
   })
-  if (hasGpsDevice) return null
-  const maps = Array.isArray(overview?.map) ? overview.map : []
-  const mapId = maps[0]?.id
-  return mapId === undefined || mapId === null || mapId === '' ? null : mapId
+}
+
+function requestMapResources(mapId, revision) {
+  if (mapId === 'gis') return Promise.resolve([])
+  const key = `${revision}:${mapId}`
+  let pending = mapResourcePromises.get(key)
+  if (!pending) {
+    pending = Promise.allSettled([
+      getPatrolPanoramaMapResources(mapId),
+      getPatrolPanoramaMapTaskRoutes(mapId)
+    ]).finally(() => mapResourcePromises.delete(key))
+    mapResourcePromises.set(key, pending)
+  }
+  return pending
 }
 
 function mergeOverviewMapResources(overview, mapResources, taskRoutes) {
@@ -829,4 +836,5 @@ export default {
 
 // 导出工具函数供外部使用
 export {
+  getRobotStatus
 }

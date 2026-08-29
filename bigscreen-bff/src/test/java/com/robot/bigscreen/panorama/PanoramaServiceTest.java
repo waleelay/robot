@@ -3,6 +3,7 @@ package com.robot.bigscreen.panorama;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,6 +21,111 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class PanoramaServiceTest {
+
+    @Test
+    void failedMapQueryMustNotBecomeEmptyOverviewAndCanRecover() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        when(client.enabledMaps())
+                .thenThrow(new IllegalStateException("地图查询暂不可用"))
+                .thenReturn(List.of(Map.of("id", "map-a", "mapName", "地图甲")));
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+
+        assertThrows(IllegalStateException.class, service::overview);
+        assertEquals("map-a", maps(service.overview().get("map")).get(0).get("id"));
+        verify(client, times(2)).enabledMaps();
+    }
+
+    @Test
+    void successfulEmptyMapQueryRemainsValidOverview() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        when(client.enabledMaps()).thenReturn(List.of());
+
+        assertEquals(List.of(), maps(new PanoramaService(client, new ObjectMapper()).overview().get("map")));
+    }
+
+    @Test
+    void overviewRuntimeUsesRegistryAndDoesNotLoadComponents() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        when(client.devices()).thenReturn(List.of(Map.of("id", "101", "serialNumber", "robot-1", "model", "M1")));
+        when(client.registeredRobots()).thenReturn(List.of(Map.of("robotId", "robot-1", "status", "online",
+                "battery", 0, "speed", 0.0, "controlMode", "导航模式", "runtimeUpdatedAt", "2026-08-28T07:00:00.123456789Z")));
+        when(client.realtimeStatuses(List.of("robot-1"))).thenReturn(List.of(Map.of("serialNumber", "robot-1",
+                "status", Map.of("energy", Map.of("batteryPercent", 99), "motion", Map.of("speed", 9),
+                        "control", Map.of("controlMode", "手动模式")))));
+        Map<String, Object> device = map(((List<?>) new PanoramaService(client, new ObjectMapper()).overview().get("devices")).get(0));
+        assertEquals(0, device.get("battery"));
+        assertEquals(0.0, device.get("speed"));
+        assertEquals("导航模式", device.get("controlMode"));
+        assertEquals("2026-08-28T07:00:00.123456789Z", device.get("runtimeUpdatedAt"));
+        assertNull(device.get("mountedDeviceCount"));
+        verify(client, never()).device(anyString());
+    }
+
+    @Test
+    void detailLoadsOnlyAuthorizedTargetComponentsAndExcludesBody() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        when(client.devices()).thenReturn(List.of(Map.of("id", "101", "serialNumber", "robot-1"),
+                Map.of("id", "102", "serialNumber", "robot-2")));
+        when(client.device("101")).thenReturn(Optional.of(Map.of("device", Map.of("model", "M2"), "components", List.of(
+                Map.of("code", "body", "componentType", "BODY"),
+                Map.of("code", "ptz", "componentType", "PTZ"),
+                Map.of("code", "speaker", "componentType", "SPEAKER")))));
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+        Map<String, Object> detail = service.deviceDetail("robot-1");
+        assertEquals("M2", detail.get("model"));
+        assertEquals(2, detail.get("mountedDeviceCount"));
+        assertEquals(2, ((List<?>) detail.get("mountedDevices")).size());
+        assertEquals(detail, service.deviceDetail("robot-1"));
+        verify(client, times(1)).device("101");
+        verify(client, never()).device("102");
+        assertNull(service.deviceDetail("not-authorized").get("robotId"));
+        verify(client, never()).device("not-authorized");
+        verify(client, never()).taskWorkflowReplay(anyString());
+    }
+
+    @Test
+    void missingDetailIsUnknownButExplicitEmptyComponentsMeansZero() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        when(client.devices()).thenReturn(List.of(Map.of("id", "101", "serialNumber", "robot-1"),
+                Map.of("id", "102", "serialNumber", "robot-2")));
+        when(client.device("101")).thenReturn(Optional.empty());
+        when(client.device("102")).thenReturn(Optional.of(Map.of("device", Map.of(), "components", List.of())));
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+        assertNull(service.deviceDetail("robot-1").get("mountedDeviceCount"));
+        assertEquals(0, service.deviceDetail("robot-2").get("mountedDeviceCount"));
+    }
+
+    @Test
+    void concurrentDetailRequestsShareOneTargetQuery() throws Exception {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        when(client.devices()).thenReturn(List.of(Map.of("id", "101", "serialNumber", "robot-1")));
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(client.device("101")).thenAnswer(invocation -> {
+            entered.countDown();
+            assertTrue(release.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            return Optional.of(Map.of("components", List.of()));
+        });
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(4);
+        try {
+            var calls = java.util.stream.IntStream.range(0, 4)
+                    .mapToObj(index -> executor.submit(() -> service.deviceDetail("robot-1"))).toList();
+            assertTrue(entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            release.countDown();
+            for (var call : calls) assertEquals(0, call.get(3, java.util.concurrent.TimeUnit.SECONDS).get("mountedDeviceCount"));
+            verify(client, times(1)).device("101");
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
 
     @Test
     void returnsPersistedTodayMileageInPatrolOverview() {
@@ -712,15 +818,53 @@ class PanoramaServiceTest {
                 realtimeStatusWithHealth("normal-001", "NORMAL"),
                 realtimeStatusWithHealth("unknown-001", "UNKNOWN"),
                 realtimeStatusWithHealth("fault-001", "FAULT")));
+        when(centerClient.registeredRobots()).thenReturn(List.of(
+                Map.of("robotId", "normal-001", "status", "online"),
+                Map.of("robotId", "unknown-001", "status", "online"),
+                Map.of("robotId", "fault-001", "status", "fault")));
 
         Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
         List<Map<String, Object>> devices = maps(overview.get("devices"));
 
         assertEquals(false, devices.get(0).get("fault"));
-        assertNull(devices.get(1).get("fault"));
+        assertEquals(false, devices.get(1).get("fault"));
         assertEquals(true, devices.get(2).get("fault"));
         assertEquals("fault", devices.get(2).get("status"));
         assertEquals(1L, ((Map<?, ?>) overview.get("deviceStats")).get("fault"));
+    }
+
+    @Test
+    void usesLocalControlRegistryAsAuthoritativeOnlineStatusSource() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.devices()).thenReturn(List.of(
+                Map.of("serialNumber", "robot-offline"),
+                Map.of("serialNumber", "robot-online"),
+                Map.of("serialNumber", "robot-missing")));
+        when(centerClient.realtimeStatuses(List.of("robot-offline", "robot-online", "robot-missing")))
+                .thenReturn(List.of(
+                        realtimeStatus("robot-offline", Map.of()),
+                        Map.of("serialNumber", "robot-online", "onlineStatus", "OFFLINE", "status", Map.of()),
+                        realtimeStatus("robot-missing", Map.of())));
+        when(centerClient.registeredRobots()).thenReturn(List.of(
+                Map.of(
+                        "robotId", "robot-offline",
+                        "status", "offline",
+                        "statusChangedAt", "2026-08-28 10:00:00"),
+                Map.of(
+                        "robotId", "robot-online",
+                        "status", "online",
+                        "statusChangedAt", "2026-08-28 10:00:01")));
+
+        List<Map<String, Object>> devices = maps(
+                new PanoramaService(centerClient, new ObjectMapper()).overview().get("devices"));
+
+        assertEquals("offline", devices.get(0).get("status"));
+        assertEquals("2026-08-28 10:00:00", devices.get(0).get("statusChangedAt"));
+        assertEquals("online", devices.get(1).get("status"));
+        assertEquals("2026-08-28 10:00:01", devices.get(1).get("statusChangedAt"));
+        assertEquals("offline", devices.get(2).get("status"));
+        assertTrue(devices.get(2).get("statusChangedAt") instanceof String);
     }
 
     private Map<String, Object> realtimeStatus(String serialNumber, Map<String, Object> localization) {

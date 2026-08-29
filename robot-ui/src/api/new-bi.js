@@ -1,6 +1,17 @@
 import request from '@/utils/request'
 const pre = '/api'
 
+// 按选中装备加载档案组件，不增加首屏逐设备请求。
+export function getPatrolPanoramaDeviceDetail(robotId, signal) {
+  return request({
+    url: pre + `/bigscreen/panorama/devices/${encodeURIComponent(robotId)}`,
+    method: 'get',
+    timeout: 8000,
+    skipErrorMessage: true,
+    signal
+  })
+}
+
 // 巡逻巡查
 // 全景地图
 export function getPatrolPanoramaOverview() {

@@ -102,7 +102,7 @@ public class BigscreenWebSocketAuthorizationService {
 
     public boolean canReceive(AuthorizedResources resources, String payload) {
         Set<String> payloadRobotIds = robotIdsInPayload(payload);
-        Set<String> payloadCameraIds = cameraIdsInPayload(payload);
+        Set<String> payloadCameraIds = upstreamFixedCameraIdsInPayload(payload);
         if (payloadRobotIds.isEmpty() && payloadCameraIds.isEmpty()) {
             return false;
         }
@@ -143,6 +143,32 @@ public class BigscreenWebSocketAuthorizationService {
             log.debug("解析 WebSocket 固定摄像头 sourceId 失败", exception);
         }
         return Set.copyOf(cameraIds);
+    }
+
+    /**
+     * 提取上游事件直接引用的固定摄像头资源。
+     *
+     * <p>{@code robot.state} 中的 {@code cameras[].cameraId} 和上装状态里的同名字段
+     * 都是机器人附属相机标识，继承顶层 {@code robotId} 权限，不能拿它们与 Management
+     * 固定摄像头授权集合比较。其他事件继续兼容显式 {@code cameraId}；标准视频源结构则
+     * 始终按 {@code sourceType=FIXED_CAMERA + sourceId} 识别。</p>
+     */
+    private Set<String> upstreamFixedCameraIdsInPayload(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return Set.of();
+        }
+        try {
+            JsonNode root = objectMapper.readTree(payload);
+            Set<String> cameraIds = new HashSet<>();
+            if (!"robot.state".equals(root.path("event").asText())) {
+                collectResourceIds(root, "cameraId", cameraIds);
+            }
+            collectFixedCameraSourceIds(root, cameraIds);
+            return Set.copyOf(cameraIds);
+        } catch (Exception exception) {
+            log.debug("解析 WebSocket 上游固定摄像头资源失败", exception);
+            return Set.of();
+        }
     }
 
     private Set<String> resourceIdsInPayload(String payload, String fieldName) {

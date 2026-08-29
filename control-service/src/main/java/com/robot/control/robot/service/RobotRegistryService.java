@@ -79,7 +79,7 @@ public class RobotRegistryService {
         String name = string(data.get("name"), robotId);
         String type = string(data.get("type"), null);
         String typeCode = string(data.get("typeCode"), null);
-        String controlMode = string(data.get("controlMode"), "手动模式");
+        String controlMode = string(data.get("controlMode"), null);
         Long stateSeq = data.get("stateSeq") instanceof Number seqValue ? seqValue.longValue() : null;
         String missionStatus = string(data.get("missionStatus"), "IDLE");
         String navigationStatus = string(data.get("navigationStatus"), "IDLE");
@@ -219,47 +219,63 @@ public class RobotRegistryService {
             return false;
         }
         RobotDevice device = devices.computeIfAbsent(robotId, RobotDevice::new);
-        boolean wasConnected = "online".equals(device.status) || "fault".equals(device.status);
         boolean edgeStatusReport = EDGE_DEVICE_STATUS_SOURCE.equals(dynamicState.get("stateSource"));
-        device.clientId = clientId;
-        device.name = blank(name) ? robotId : name;
-        String reportedTypeCode = reportedTypeCode(typeCode, type);
-        String reportedType = reportedType(type);
-        if (!blank(reportedTypeCode)) {
-            device.typeCode = reportedTypeCode;
-        }
-        if (!blank(reportedType)) {
-            device.type = reportedType;
-        }
-        if (battery != null) {
-            device.battery = Math.max(0, Math.min(100, battery));
-        }
-        if (edgeStatusReport) {
-            device.status = normalizedStatus(status);
-            device.lastEdgeStatusAt = now();
-        }
-        device.controlMode = normalizedControlMode(controlMode);
-        if (stateSeq != null) {
-            device.stateSeq = stateSeq;
-        }
-        device.missionStatus = blank(missionStatus) ? "IDLE" : missionStatus;
-        device.navigationStatus = blank(navigationStatus) ? "IDLE" : navigationStatus;
-        device.controlOwner = controlOwner;
-        device.estopActive = estopActive == null ? false : estopActive;
-        device.lastHeartbeatAt = now();
-        if (cameras != null && !cameras.isEmpty()) {
-            device.cameras = new ArrayList<>(cameras);
-        }
-        if (mountedDevices != null && !mountedDevices.isEmpty()) {
-            device.mountedDevices = new ArrayList<>(mountedDevices);
-        }
-        DYNAMIC_STATE_FIELDS.forEach(field -> {
-            if (dynamicState.containsKey(field) && dynamicState.get(field) != null) {
-                device.dynamicState.put(field, dynamicState.get(field));
+        boolean becameOnline;
+        Map<String, Object> state;
+        synchronized (device) {
+            // 在取得设备锁后记录处理时间，保证它晚于已经完成的离线扫描版本，避免并发事件时间倒退。
+            OffsetDateTime receivedAt = now();
+            boolean wasConnected = "online".equals(device.status) || "fault".equals(device.status);
+            device.clientId = clientId;
+            device.name = blank(name) ? robotId : name;
+            String reportedTypeCode = reportedTypeCode(typeCode, type);
+            String reportedType = reportedType(type);
+            if (!blank(reportedTypeCode)) {
+                device.typeCode = reportedTypeCode;
             }
-        });
-        boolean becameOnline = !wasConnected && ("online".equals(device.status) || "fault".equals(device.status));
-        webSocketPublisher.publish("robot.state", toState(device));
+            if (!blank(reportedType)) {
+                device.type = reportedType;
+            }
+            if (edgeStatusReport && battery != null) {
+                device.battery = Math.max(0, Math.min(100, battery));
+            }
+            if (edgeStatusReport) {
+                String normalizedStatus = normalizedStatus(status);
+                if (device.lastEdgeStatusAt == null || !normalizedStatus.equals(device.status)) {
+                    device.statusChangedAt = receivedAt;
+                }
+                device.status = normalizedStatus;
+                device.lastEdgeStatusAt = receivedAt;
+            }
+            if (edgeStatusReport && dynamicState.containsKey("controlMode")) {
+                device.controlMode = normalizedControlMode(controlMode);
+            }
+            if (stateSeq != null) {
+                device.stateSeq = stateSeq;
+            }
+            device.missionStatus = blank(missionStatus) ? "IDLE" : missionStatus;
+            device.navigationStatus = blank(navigationStatus) ? "IDLE" : navigationStatus;
+            device.controlOwner = controlOwner;
+            device.estopActive = estopActive == null ? false : estopActive;
+            device.lastHeartbeatAt = receivedAt;
+            if (cameras != null && !cameras.isEmpty()) {
+                device.cameras = new ArrayList<>(cameras);
+            }
+            if (mountedDevices != null && !mountedDevices.isEmpty()) {
+                device.mountedDevices = new ArrayList<>(mountedDevices);
+            }
+            DYNAMIC_STATE_FIELDS.forEach(field -> {
+                if ("speed".equals(field) && !edgeStatusReport) {
+                    return;
+                }
+                if (dynamicState.containsKey(field) && dynamicState.get(field) != null) {
+                    device.dynamicState.put(field, dynamicState.get(field));
+                }
+            });
+            becameOnline = !wasConnected && ("online".equals(device.status) || "fault".equals(device.status));
+            state = toState(device, receivedAt);
+        }
+        webSocketPublisher.publish("robot.state", state);
         return becameOnline;
     }
 
@@ -288,9 +304,15 @@ public class RobotRegistryService {
         if (removed == null) {
             return;
         }
-        removed.status = "offline";
-        removed.dynamicState.put("stateSource", "UNREGISTERED_DEVICE");
-        webSocketPublisher.publish("robot.state", toState(removed));
+        Map<String, Object> state;
+        synchronized (removed) {
+            OffsetDateTime changedAt = now();
+            removed.status = "offline";
+            removed.statusChangedAt = changedAt;
+            removed.dynamicState.put("stateSource", "UNREGISTERED_DEVICE");
+            state = toState(removed, changedAt);
+        }
+        webSocketPublisher.publish("robot.state", state);
     }
 
     /** Returns the latest in-memory state for one robot. */
@@ -303,17 +325,23 @@ public class RobotRegistryService {
      * 扫描并标记心跳超时的机器人。
      */
     public void sweepOffline() {
-        OffsetDateTime threshold = now().minusSeconds(properties.getRobot().getHeartbeatTimeoutSeconds());
+        OffsetDateTime sweepAt = now();
+        OffsetDateTime threshold = sweepAt.minusSeconds(properties.getRobot().getHeartbeatTimeoutSeconds());
+        List<Map<String, Object>> offlineEvents = new ArrayList<>();
         devices.values().forEach(device -> {
-            boolean connected = "online".equals(device.status) || "fault".equals(device.status);
-            if (connected
-                    && device.lastEdgeStatusAt != null
-                    && device.lastEdgeStatusAt.isBefore(threshold)) {
-                device.status = "offline";
-                device.dynamicState.put("stateSource", "OFFLINE_SCAN");
-                webSocketPublisher.publish("robot.state", toState(device));
+            synchronized (device) {
+                boolean connected = "online".equals(device.status) || "fault".equals(device.status);
+                if (connected
+                        && device.lastEdgeStatusAt != null
+                        && device.lastEdgeStatusAt.isBefore(threshold)) {
+                    device.status = "offline";
+                    device.statusChangedAt = sweepAt;
+                    device.dynamicState.put("stateSource", "OFFLINE_SCAN");
+                    offlineEvents.add(toState(device, sweepAt));
+                }
             }
         });
+        offlineEvents.forEach(state -> webSocketPublisher.publish("robot.state", state));
         cleanupStaleOffline();
     }
 
@@ -337,15 +365,18 @@ public class RobotRegistryService {
      * @param device device
      * @return WebSocket 状态载荷
      */
-    private Map<String, Object> toState(RobotDevice device) {
+    private Map<String, Object> toState(RobotDevice device, OffsetDateTime eventAt) {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("robotId", device.robotId);
         state.put("clientId", device.clientId == null ? "" : device.clientId);
         state.put("name", device.name);
         state.put("type", device.type);
         state.put("typeCode", device.typeCode);
-        state.put("battery", device.battery == null ? 0 : device.battery);
+        state.put("battery", device.battery);
+        state.put("speed", device.dynamicState.get("speed"));
+        state.put("runtimeUpdatedAt", runtimeUpdatedAt(device));
         state.put("status", device.status);
+        state.put("statusChangedAt", device.statusChangedAt.toString());
         state.put("controlMode", device.controlMode);
         state.put("controlModeName", controlModeName(device.controlMode));
         state.put("stateSeq", device.stateSeq);
@@ -356,7 +387,7 @@ public class RobotRegistryService {
         state.put("cameras", device.cameras);
         state.put("devices", device.mountedDevices);
         state.putAll(device.dynamicState);
-        state.put("timestamp", DateTimeConfig.format(now()));
+        state.put("timestamp", DateTimeConfig.format(eventAt));
         return state;
     }
 
@@ -377,26 +408,31 @@ public class RobotRegistryService {
      * @return 机器人状态响应
      */
     private RobotDeviceResponse toResponse(RobotDevice device) {
-        return new RobotDeviceResponse(
-                device.robotId,
-                device.clientId,
-                device.name,
-                device.type,
-                device.typeCode,
-                device.battery,
-                device.status,
-                device.controlMode,
-                controlModeName(device.controlMode),
-                device.stateSeq,
-                device.missionStatus,
-                device.navigationStatus,
-                device.controlOwner,
-                device.estopActive,
-                device.lastHeartbeatAt,
-                device.cameras,
-                device.mountedDevices,
-                string(device.dynamicState.get("healthStatus"), null),
-                DateTimeConfig.format(device.lastHeartbeatAt));
+        synchronized (device) {
+            return new RobotDeviceResponse(
+                    device.robotId,
+                    device.clientId,
+                    device.name,
+                    device.type,
+                    device.typeCode,
+                    device.battery,
+                    device.status,
+                    device.statusChangedAt.toString(),
+                    device.controlMode,
+                    controlModeName(device.controlMode),
+                    device.stateSeq,
+                    device.missionStatus,
+                    device.navigationStatus,
+                    device.controlOwner,
+                    device.estopActive,
+                    device.lastHeartbeatAt,
+                    List.copyOf(device.cameras),
+                    List.copyOf(device.mountedDevices),
+                    string(device.dynamicState.get("healthStatus"), null),
+                    DateTimeConfig.format(device.lastHeartbeatAt),
+                    device.dynamicState.get("speed") instanceof Number speed ? speed.doubleValue() : null,
+                    runtimeUpdatedAt(device));
+        }
     }
 
     private String controlModeName(String controlMode) {
@@ -424,7 +460,12 @@ public class RobotRegistryService {
 
     private String normalizedControlMode(String controlMode) {
         String mode = controlMode == null ? "" : controlMode.trim();
-        return "导航模式".equals(mode) ? "导航模式" : "手动模式";
+        if ("导航模式".equals(mode)) return mode;
+        return "手动模式".equals(mode) || "常规模式".equals(mode) ? "手动模式" : null;
+    }
+
+    private String runtimeUpdatedAt(RobotDevice device) {
+        return device.lastEdgeStatusAt == null ? null : device.lastEdgeStatusAt.toString();
     }
 
     /**
@@ -471,7 +512,8 @@ public class RobotRegistryService {
         private String typeCode;
         private Integer battery;
         private String status = "offline";
-        private String controlMode = "手动模式";
+        private OffsetDateTime statusChangedAt = OffsetDateTime.now(ZoneOffset.UTC);
+        private String controlMode;
         private Long stateSeq = 1L;
         private String missionStatus = "IDLE";
         private String navigationStatus = "IDLE";

@@ -24,6 +24,8 @@ class PanoramaWebSocketEventAdapterTest {
                     "status":"online",
                     "healthStatus":"异常",
                     "controlMode":"导航模式",
+                    "runtimeUpdatedAt":"2026-08-05T09:07:43.123456789Z",
+                    "speed":0,
                     "location":{
                       "localized":true,
                       "coordinateType":"地图坐标",
@@ -58,6 +60,8 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(statusEvent.path("data").path("healthStatus").asText()).isEqualTo("异常");
         assertThat(statusEvent.path("data").path("controlMode").asText()).isEqualTo("导航模式");
         assertThat(statusEvent.path("data").path("controlModeName").asText()).isEqualTo("导航模式");
+        assertThat(statusEvent.path("data").path("runtimeUpdatedAt").asText()).isEqualTo("2026-08-05T09:07:43.123456789Z");
+        assertThat(statusEvent.path("data").path("speed").asDouble()).isZero();
         assertThat(events.stream()
                 .map(this::readTree)
                 .noneMatch(node -> "panorama.stats.changed".equals(node.path("event").asText()))).isTrue();
@@ -70,6 +74,19 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(adapter.statsRefreshParts("browser-b", """
                 {"event":"robot.state","data":{"robotId":"test115","status":"online","healthStatus":"异常"}}
                 """)).contains(StatsPart.DEVICES, StatsPart.TASKS);
+    }
+
+    @Test
+    void doesNotInventTelemetryWhenRobotHasNotReportedIt() {
+        JsonNode data = adapter.adapt("""
+                {"event":"robot.state","data":{"robotId":"robot-1","status":"online"}}
+                """).stream().map(this::readTree)
+                .filter(event -> "panorama.device.status.changed".equals(event.path("event").asText()))
+                .findFirst().orElseThrow().path("data");
+        assertThat(data.path("battery").isNull()).isTrue();
+        assertThat(data.path("speed").isNull()).isTrue();
+        assertThat(data.path("controlMode").isNull()).isTrue();
+        assertThat(data.path("runtimeUpdatedAt").isNull()).isTrue();
     }
 
     @Test
@@ -203,6 +220,8 @@ class PanoramaWebSocketEventAdapterTest {
                 .findFirst()
                 .orElseThrow();
         assertThat(statusEvent.path("data").path("status").asText()).isEqualTo("offline");
+        assertThat(statusEvent.path("data").path("statusChangedAt").asText())
+                .isEqualTo("2026-08-18 10:00:00");
         assertThat(adapter.statsRefreshParts("browser-a", """
                 {"event":"robot.state","data":{"robotId":"test119","status":"offline","stateSource":"OFFLINE_SCAN"}}
                 """)).contains(StatsPart.DEVICES, StatsPart.TASKS);

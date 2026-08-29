@@ -1,6 +1,6 @@
 # 大屏 BFF 字段来源映射文档
 
-更新时间：2026-07-08
+更新时间：2026-08-28
 
 ## 1. 说明
 
@@ -76,15 +76,17 @@ GET /api/bigscreen/panorama/overview
 | `type` | 机器人整机类型名称 | 管理端字典 + BFF 关联 | 按 `typeCode` 匹配 `/api/v1/management/selection-options/dictionaries/device_type` 的 `value/label`；未匹配时返回编码本身；固定摄像头由 BFF 固定返回“固定摄像头” |
 | `typeCode` | 机器人整机类型编码 | 管理端 | `DeviceResponse.deviceType`，编码范围以管理端 `device_type` 字典为准；固定摄像头由 BFF 固定返回 `FIXED_CAMERA` |
 | `model` | 型号 | 管理端 | `DeviceResponse.model` |
-| `status` | 在线状态 | 控制端 | `DeviceRealtimeStatus.onlineStatus` 转为 `online/offline/fault` |
-| `battery` | 电量百分比 | 控制端 | `status.energy.batteryPercent` |
+| `status` | 在线状态 | 本项目 Control | `/api/control/robots/registry` 的 `status`，仅为 `online/offline/fault`；注册表无该设备时为 `offline`。Management Control 的 `DeviceRealtimeStatus.onlineStatus` 不参与在线判定 |
+| `statusChangedAt` | 在线状态最后变更时间 | 本项目 Control + BFF 兜底 | 注册表状态变更的服务端时间；注册表无该设备时取本次 BFF 快照时间，用于前端拒绝旧实时事件覆盖新快照 |
+| `battery` | 电量百分比 | 本项目 Control | 注册表 `battery`；源于边缘 `status.energy.batteryPercent`，未上报为 `null`，真实零电量为 `0` |
+| `runtimeUpdatedAt` | 运行态快照版本 | 本项目 Control | 注册表最后接受边缘状态的服务端 ISO-8601 时间，保留小数秒；没有边缘快照时 BFF 使用本次快照时间，阻止旧事件恢复已失效的运行态 |
 | `cameras` | 相机展示集合 | 控制端 + BFF 兜底拼装 | 见 3.4；优先与 `robot.state.cameras` 使用同一份控制端实时相机清单 |
-| `stateSeq` | 实时状态序号 | 控制端 | `DeviceRealtimeStatus.stateSeq`；无则 `null` |
-| `fault` | 是否故障 | 控制端 + BFF 计算 | `status.basic.healthStatus` 明确为 `ERROR`、`FAULT`、`异常`或`故障`时为 `true`，`NORMAL` 为 `false`，缺失或未知值为 `null` |
+| `stateSeq` | 实时状态序号 | 本项目 Control | 注册表 `stateSeq`；不代替 `runtimeUpdatedAt` 跨重启判断新旧 |
+| `fault` | 是否故障 | 本项目 Control + BFF 计算 | `status=fault` 时为 `true`，`status=online` 时为 `false`，离线时为 `null`；不使用 Management Control 的过期健康状态反向覆盖 |
 | `alarmLevel` | 设备告警等级 | 控制端 + BFF 转换 | `status.basic.alarmStatus` 转 `HIGH/MEDIUM/LOW`；正常为空 |
-| `controlMode` | 控制模式 | 控制端 | `status.control.controlMode` |
-| `mountedDeviceCount` | 上装设备数量 | BFF 计算 | `DeviceDetailResponse.components.size()`；未返回组件时为 `null` |
-| `speed` | 当前速度 | 控制端 | `status.motion.speed` |
+| `controlMode` | 最后上报控制模式 | 本项目 Control | 注册表 `controlMode`；仅 `手动模式/导航模式`，`常规模式` 归为手动，未知为 `null`；不默认成某种可控制模式 |
+| `mountedDeviceCount` | 非本体组件数量 | BFF 计算 | Overview 不逐设备查详情，通常为 `null`；按需详情取 Management `components` 中非 `BODY` 记录数，未取得清单为 `null`，明确空清单为 `0` |
+| `speed` | 最后上报速度（米/秒） | 本项目 Control | 注册表 `speed`，源于边缘 `status.motion.speed`；未知为 `null`，静止为 `0`；离线后保留最后值，但弹窗显示 `-` |
 | `location` | 设备定位信息 | 控制端 | 见 3.5 |
 | `task` | 当前任务数组 | 控制端 + 管理端 + BFF 组装 | 见 3.7 |
 
@@ -107,6 +109,15 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 `enabled` 补成在线。固定摄像头健康变化通过 WebSocket 触发当前用户重新获取 Overview。
 
 ### 3.3 设备详情中的 `mountedDevices[]`
+
+`GET /api/bigscreen/panorama/devices/{deviceId}` 的 `deviceId` 是设备序列号（`robotId`）。
+先在当前用户授权设备列表匹配序列号，再用其 Management 数据库 `id` 查询唯一目标详情；
+解析返回的 `device` 与 `components`，不能把序列号当数据库主键。请求复用用户短缓存，
+保留轻量任务与地图关联，不查询任务回放或其他设备详情。
+
+本接口 `mountedDevices` 与 `mountedDeviceCount` 均按非 `BODY` 组件记录计算；包含非本体子组件，
+不按物理外壳去重，不用能力数或视频通道数替代数量。它不是“只统计 PAYLOAD 类型”。
+档案若不能准确描述物理上装，需在管理端维护组件，BFF 不猜测实际硬件数量。
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
@@ -258,12 +269,28 @@ BFF 只会将 `running/pausing/paused/resuming/terminating` 状态的任务关�
 GET /api/bigscreen/panorama/devices/{deviceId}
 ```
 
-设备详情不是独立调用管理端详情再重组，而是从当前 `devices[]` 中按 `robotId` 过滤并补充详情展示字段。
+设备详情先从当前用户有权设备中按 `robotId` 匹配目标，再用该设备的数据库 ID 补查 Management
+详情并组装展示字段；组件解析及计数见 3.3 节。不遍历查询其他设备详情，不查询任务回放。
+
+`Robot1.vue` 打开时以此接口作为全部装备展示信息的初始来源：名称、类型、电量、型号、速度、
+控制模式、上装数量与状态版本；固定摄像头的类型、位置也从详情读取。不回落 `overview.devices`，
+不将详情写入全局装备档案。名称、类型、型号、上装数量、固定摄像头位置在本次打开期间固定，
+共享状态的缺失字段、空值或新档案不能改写这些展示字段。电量、速度、控制模式及在线状态读取
+`websocketRobot` 既有共享状态，分别比较 `runtimeUpdatedAt` 和 `statusChangedAt`，防止慢详情
+覆盖较新状态；`stateSeq` 随被接受的运行态合并，不用作跨重启版本。弹窗无独立事件订阅或运行态缓存。
+
+加载时原标题显示加载状态，失败时原标题允许点击重试，未知字段为 `-`；同装备在途去重，
+切换/关闭/销毁取消并清空，返回 ID 不匹配视为失败。同次打开查询成功后不再请求详情，只有重新打开、
+切换装备或首次失败重试才发请求。WebSocket 重连不清空/重查档案，动态字段通过既有 WebSocket
+及重连后的 Overview 刷新恢复；授权集合移除当前装备时沿用选择清空链路丢弃详情。
+任务列表/路径继续使用共享任务数据，视频准入/会话使用共享媒体状态；它们不属于本次装备字段迁移。
+Overview 的地图、列表、媒体与控制初始化职责及响应字段保持不变，不增加首屏逐设备详情请求。
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `robotId/clientId/name/type/typeCode/vendor/model/status/battery/lastHeartbeatAt/cameras/controlMode/speed/location/mountedDeviceCount/mountedDevices` | 设备基础与实时字段 | 管理端 + 控制端 + BFF 组装 | 设备详情继续返回完整字段；其中 `clientId/vendor/lastHeartbeatAt/mountedDevices` 不受聚合接口精简影响 |
 | `stateSeq` | 实时状态序号 | 控制端 | 同 `devices[].stateSeq` |
+| `statusChangedAt/runtimeUpdatedAt` | 在线状态/运行态版本 | 本项目 Control + BFF | 与 `devices[]` 同源，分别比较在线状态与电量/速度/模式的新旧，保留小数秒精度 |
 | `alarmStatus` | 告警状态/等级 | BFF 派生 | 使用 `devices[].alarmLevel` |
 | `alarmText` | 告警提示文案 | BFF 生成 | 有 `alarmLevel` 时为 `存在未处理告警`，否则 `null` |
 | `currentTask` | 当前任务数组 | BFF 复制 | 复制 `devices[].task[]` |

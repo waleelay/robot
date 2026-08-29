@@ -180,7 +180,8 @@ public class PanoramaService {
         CompletableFuture<Map<String, Object>> alarmsFuture = asyncOverview(this::alarmsPayload);
         CompletableFuture<Map<String, Object>> mileageFuture = asyncOverview(this::todayMileageSummary);
 
-        List<Map<String, Object>> maps = join(mapsFuture, List.of());
+        // 查询失败不等于地图已移除，不能用空列表触发前端切换地图。
+        List<Map<String, Object>> maps = joinRequired(mapsFuture);
         List<Map<String, Object>> rawDevices = joinRequired(devicesFuture);
         PanoramaTasks panoramaTasks = join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED"));
         List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), rawDevices);
@@ -565,16 +566,32 @@ public class PanoramaService {
     }
 
     public Map<String, Object> deviceDetail(String deviceId) {
-        OverviewRequestCache cache = new OverviewRequestCache();
-        CompletableFuture<List<Map<String, Object>>> devicesFuture = async(() -> devices(cache));
-        CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
-        return withTaskAssociations(
-                joinRequired(devicesFuture),
-                join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED")).items()).stream()
+        // 先按当前用户的设备列表授权，再补查唯一目标的组件；不查询其他设备详情或任务回放。
+        List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
+        Map<String, Object> selected = devices.stream()
                 .filter(device -> Objects.equals(deviceId, string(device.get("robotId"))))
                 .findFirst()
-                .map(this::toDeviceDetail)
-                .orElseGet(this::emptyDeviceDetail);
+                .orElse(null);
+        if (selected == null) return emptyDeviceDetail();
+        // 不为任意传入的无权 ID 建缓存/锁，避免攻击者用随机路径扩大内存占用。
+        return cachedStats("device-detail:" + deviceId, () -> deviceDetailPayload(deviceId, selected));
+    }
+
+    private Map<String, Object> deviceDetailPayload(String deviceId, Map<String, Object> selected) {
+        Map<String, Object> enriched = mutable(selected);
+        cachedStats("management-devices", centerClient::devices).stream()
+                .filter(source -> Objects.equals(deviceId, firstString(source, "serialNumber")))
+                .findFirst().ifPresent(source -> {
+                    Map<String, Object> detail = deviceSource(source);
+                    List<Map<String, Object>> mounted = mountedDevices(detail, string(selected.get("status")));
+                    enriched.put("mountedDevices", mounted);
+                    enriched.put("mountedDeviceCount", mountedDeviceCount(detail, mounted));
+                    enriched.put("model", detail.get("model"));
+                });
+        PanoramaTasks tasks = cachedStats("tasks", this::taskSummaries);
+        List<Map<String, Object>> associated = withTaskAssociations(List.of(enriched), tasks.items());
+        return toDeviceDetail(withTaskLocationMapIds(associated,
+                cachedStats("map-association-tasks", this::mapAssociationTasks)).get(0));
     }
 
     /** 当前地图渲染所需资源；不加载其他地图的点位。 */
@@ -792,7 +809,8 @@ public class PanoramaService {
     }
 
     private List<Map<String, Object>> devices(OverviewRequestCache cache) {
-        CompletableFuture<List<Map<String, Object>>> managementDevicesFuture = async(centerClient::devices);
+        CompletableFuture<List<Map<String, Object>>> managementDevicesFuture = async(
+                () -> cachedStats("management-devices", centerClient::devices));
         CompletableFuture<List<Map<String, Object>>> registeredRobotsFuture = async(centerClient::registeredRobots);
         CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = cache.allFixedCamerasFuture();
         CompletableFuture<Map<String, Object>> fixedCameraHealthFuture = async(centerClient::fixedCameraHealth);
@@ -859,7 +877,11 @@ public class PanoramaService {
             return listDevice;
         }
         return centerClient.device(id)
-                .map(detail -> mergeDevice(listDevice, detail))
+                .map(detail -> {
+                    Map<String, Object> source = mergeDevice(listDevice, map(detail.get("device")));
+                    if (detail.get("components") instanceof List<?>) source.put("components", detail.get("components"));
+                    return source;
+                })
                 .orElse(listDevice);
     }
 
@@ -897,18 +919,20 @@ public class PanoramaService {
             Map<String, Object> registeredRobot,
             Map<String, String> deviceTypeNames) {
         Map<String, Object> basic = map(path(realtimeStatus, "status", "basic"));
-        Map<String, Object> motion = map(path(realtimeStatus, "status", "motion"));
         Map<String, Object> localization = map(path(realtimeStatus, "status", "localization"));
-        Map<String, Object> energy = map(path(realtimeStatus, "status", "energy"));
-        Map<String, Object> control = map(path(realtimeStatus, "status", "control"));
         Map<String, Object> task = map(path(realtimeStatus, "status", "task"));
 
         Object robotId = firstValue(source, "serialNumber", "robotId", "id");
         Object alarmLevel = alarmLevel(basic);
-        Object fault = fault(basic);
-        String status = booleanValue(fault)
-                ? "fault"
-                : onlineStatus(string(realtimeStatus.get("onlineStatus")));
+        // 在线及电量、速度、模式只认本项目 Control 注册表。管理端实时状态仍用于定位等
+        // 业务字段，但其 Redis 过期语义不能作为大屏在线状态源，否则首屏与 WebSocket 会分叉。
+        String status = onlineStatus(firstString(registeredRobot, "status"));
+        String statusChangedAt = value(firstString(registeredRobot, "statusChangedAt"), statusVersionNow());
+        Object fault = switch (status) {
+            case "fault" -> Boolean.TRUE;
+            case "online" -> Boolean.FALSE;
+            default -> null;
+        };
         List<Map<String, Object>> mountedDevices = mountedDevices(source, status);
         String name = firstString(source, "deviceName", "name");
 
@@ -921,17 +945,19 @@ public class PanoramaService {
                 "vendor", firstValue(source, "manufacturer", "vendor"),
                 "model", firstValue(source, "model"),
                 "status", status,
-                "battery", number(energy.get("batteryPercent")),
+                "statusChangedAt", statusChangedAt,
+                "battery", number(registeredRobot.get("battery")),
+                "runtimeUpdatedAt", value(firstString(registeredRobot, "runtimeUpdatedAt"), statusVersionNow()),
                 "lastHeartbeatAt", formatTime(firstString(realtimeStatus, "lastSeenAt", "receivedAt", "reportedAt")),
                 "cameras", cameras(source, registeredRobot, string(robotId)),
                 "mountedDevices", mountedDevices,
-                "stateSeq", number(realtimeStatus.get("stateSeq")),
+                "stateSeq", number(registeredRobot.get("stateSeq")),
                 "fault", fault,
                 "alarmLevel", alarmLevel,
-                "controlMode", normalizeControlMode(firstString(control, "controlMode")),
-                "controlModeName", controlModeName(normalizeControlMode(firstString(control, "controlMode"))),
+                "controlMode", normalizeControlMode(firstString(registeredRobot, "controlMode")),
+                "controlModeName", controlModeName(normalizeControlMode(firstString(registeredRobot, "controlMode"))),
                 "mountedDeviceCount", mountedDeviceCount(source, mountedDevices),
-                "speed", number(motion.get("speed")),
+                "speed", number(registeredRobot.get("speed")),
                 "location", location(localization, realtimeStatus),
                 "mapDisplay", mapDisplay(name, status, alarmLevel),
                 "task", deviceTasks(task));
@@ -1063,7 +1089,7 @@ public class PanoramaService {
     }
 
     private Object mountedDeviceCount(Map<String, Object> source, List<Map<String, Object>> mountedDevices) {
-        return source.containsKey("components") ? mountedDevices.size() : null;
+        return source.get("components") instanceof List<?> ? mountedDevices.size() : null;
     }
 
     private List<Map<String, Object>> mountedDevices(Map<String, Object> source, String robotStatus) {
@@ -1072,6 +1098,8 @@ public class PanoramaService {
             return List.of();
         }
         return components.stream()
+                // 口径为非本体组件记录数；不从能力数量或媒体通道数量推算上装数量。
+                .filter(component -> !"BODY".equalsIgnoreCase(firstString(component, "componentType")))
                 .map(component -> object(
                         "deviceId", firstValue(component, "code", "deviceId", "id"),
                         "name", firstString(component, "name", "componentName"),
@@ -1600,6 +1628,8 @@ public class PanoramaService {
                 "vendor", device.get("vendor"),
                 "model", device.get("model"),
                 "status", device.get("status"),
+                "statusChangedAt", device.get("statusChangedAt"),
+                "runtimeUpdatedAt", device.get("runtimeUpdatedAt"),
                 "battery", device.get("battery"),
                 "lastHeartbeatAt", device.get("lastHeartbeatAt"),
                 "cameras", device.get("cameras"),
@@ -2323,6 +2353,10 @@ public class PanoramaService {
         return OffsetDateTime.now(CHINA_ZONE).format(DATE_TIME_FORMATTER);
     }
 
+    private String statusVersionNow() {
+        return OffsetDateTime.now(CHINA_ZONE).toString();
+    }
+
     private String formatTime(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
@@ -2492,7 +2526,8 @@ public class PanoramaService {
         if (controlMode == null || controlMode.isBlank()) {
             return null;
         }
-        return "导航模式".equals(controlMode) ? "导航模式" : "手动模式";
+        if ("导航模式".equals(controlMode)) return controlMode;
+        return "手动模式".equals(controlMode) || "常规模式".equals(controlMode) ? "手动模式" : null;
     }
 
     private String controlModeName(String controlMode) {
