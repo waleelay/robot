@@ -2,11 +2,33 @@ import { createFileObjectUrl, getFilePlayUrl, revokeFileObjectUrl } from '@/api/
 
 /** @type {Map<string, { url?: string, loading?: Promise<string> }>} */
 const objectUrlCache = new Map()
+const objectUrlQueue = []
+const MAX_OBJECT_URL_CONCURRENCY = 4
+let activeObjectUrlRequests = 0
+let objectUrlGeneration = 0
 
 /** @type {Map<string, { playback?: object, expiresAt?: number, loading?: Promise<object> }>} */
 const playUrlCache = new Map()
 
 const PLAY_URL_REFRESH_BUFFER_MS = 60 * 1000
+
+function drainObjectUrlQueue() {
+  while (activeObjectUrlRequests < MAX_OBJECT_URL_CONCURRENCY && objectUrlQueue.length) {
+    const task = objectUrlQueue.shift()
+    activeObjectUrlRequests += 1
+    Promise.resolve().then(task.load).then(task.resolve, task.reject).finally(() => {
+      activeObjectUrlRequests -= 1
+      drainObjectUrlQueue()
+    })
+  }
+}
+
+function scheduleObjectUrlLoad(load) {
+  return new Promise((resolve, reject) => {
+    objectUrlQueue.push({ load, resolve, reject })
+    drainObjectUrlQueue()
+  })
+}
 
 /**
  * 按 fileId 复用 blob URL，避免同一文件在多个组件中重复拉取。
@@ -19,8 +41,13 @@ export async function getCachedFileObjectUrl(fileId) {
   if (existing?.url) return existing.url
   if (existing?.loading) return existing.loading
 
-  const loading = createFileObjectUrl(id)
+  const generation = objectUrlGeneration
+  const loading = scheduleObjectUrlLoad(() => createFileObjectUrl(id))
     .then(url => {
+      if (generation !== objectUrlGeneration) {
+        revokeFileObjectUrl(url)
+        throw new Error('文件缓存已清空')
+      }
       objectUrlCache.set(id, { url })
       return url
     })
@@ -79,6 +106,9 @@ export function invalidateCachedFile(fileId) {
 }
 
 export function clearFileObjectUrlCache() {
+  objectUrlGeneration += 1
+  const error = new Error('文件缓存已清空')
+  objectUrlQueue.splice(0).forEach(task => task.reject(error))
   objectUrlCache.forEach(entry => {
     if (entry.url) revokeFileObjectUrl(entry.url)
   })

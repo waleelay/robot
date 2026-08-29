@@ -165,8 +165,6 @@
 | `workflowDefinitionId` | 工作流定义 ID，由任务计划提供 |
 | `definition.mapId` | 工作流定义关联地图 ID，number/int |
 | `definition.pathId` | 工作流定义关联路径 ID |
-| `mapPoints` | `/api/v1/management/maps/{mapId}/points` 返回的地图点位列表 |
-| `pathPoints` | 根据 `/api/v1/management/paths/{pathId}/points` 响应中的 `mapPointId` 到 `mapPoints[].id` 过滤出的地图点位列表 |
 | `equipmentList.robotId` | 执行装备机器人 ID |
 | `equipmentList.name` | 执行装备名称 |
 | `equipmentList.type` | 执行装备类型 |
@@ -176,10 +174,10 @@
 
 | 接口 | 需要字段 |
 |---|---|
-| `GET /api/v1/management/task-workflow-plans?pageNum=1&pageSize=20` | `id/name/workflowDefinitionId` |
+| `GET /api/v1/management/task-workflow-plans?pageNum={pageNum}&pageSize=100&enabled=true` | `id/name/workflowDefinitionId`；BFF 按页读取至末页或管理端声明的总数，不能只取首批任务计划 |
 | `GET /api/v1/management/task-workflow-definitions/{workflowDefinitionId}` | `mapId/pathId` |
-| `GET /api/v1/management/maps/{mapId}/points` | 点位列表，BFF 原样放入 `tasks[].mapPoints` |
-| `GET /api/v1/management/paths/{pathId}/points` | 路径点引用列表，需包含 `mapPointId` |
+| `GET /api/v1/management/maps/{mapId}/points` | 当前地图点位列表，由大屏地图渲染资源接口按需返回 |
+| `GET /api/v1/management/paths/{pathId}/points` | 路径点引用列表，需包含 `mapPointId`，由当前地图任务路径接口按需返回 |
 
 ## 3. 告警数据
 

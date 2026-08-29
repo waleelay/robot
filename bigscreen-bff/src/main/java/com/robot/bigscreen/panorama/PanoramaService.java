@@ -2,8 +2,6 @@ package com.robot.bigscreen.panorama;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
-import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -37,8 +35,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -78,27 +74,14 @@ public class PanoramaService {
 
     private final PanoramaCenterClient centerClient;
     private final ObjectMapper objectMapper;
-    private final FixedCameraCatalogLeaseClient fixedCameraCatalogLeaseClient;
-    private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final Map<String, CachedSnapshot> statsCache = new ConcurrentHashMap<>();
     private final Map<String, Object> statsCacheLocks = new ConcurrentHashMap<>();
     private final Map<String, CachedSnapshot> overviewCache = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<Map<String, Object>>> overviewInFlight = new ConcurrentHashMap<>();
 
     public PanoramaService(PanoramaCenterClient centerClient, ObjectMapper objectMapper) {
-        this(centerClient, objectMapper, null, null);
-    }
-
-    @Autowired
-    public PanoramaService(
-            PanoramaCenterClient centerClient,
-            ObjectMapper objectMapper,
-            FixedCameraCatalogLeaseClient fixedCameraCatalogLeaseClient,
-            AuthenticatedRequestHeaders authenticatedRequestHeaders) {
         this.centerClient = centerClient;
         this.objectMapper = objectMapper;
-        this.fixedCameraCatalogLeaseClient = fixedCameraCatalogLeaseClient;
-        this.authenticatedRequestHeaders = authenticatedRequestHeaders;
     }
 
     public Map<String, Object> overview() {
@@ -125,7 +108,14 @@ public class PanoramaService {
             });
             return created;
         });
-        return joinOverview(shared);
+        try {
+            return joinOverview(shared);
+        } catch (RuntimeException exception) {
+            // 原 future 完成与 whenComplete 清理存在极短竞态；失败等待者返回前先条件删除，
+            // 保证紧接着的重试不会再次复用同一个失败结果。
+            overviewInFlight.remove(cacheKey, shared);
+            throw exception;
+        }
     }
 
     private SecurityContext copySecurityContext(SecurityContext source) {
@@ -185,8 +175,9 @@ public class PanoramaService {
         List<Map<String, Object>> rawDevices = joinRequired(devicesFuture);
         PanoramaTasks panoramaTasks = join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED"));
         List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), rawDevices);
-        List<Map<String, Object>> devices = withTaskAssociations(rawDevices, tasks);
-        // 地图渲染资源随首屏读取时复用已经补齐任务地图归属的设备快照，避免再次查询设备、实时状态和任务定义。
+        // 管理端地图 ID 与边缘 SLAM 地图 ID 不是同一命名空间；首屏只用任务摘要修正地图归属，
+        // 不再把重复的任务对象挂回 devices[]。
+        List<Map<String, Object>> devices = withTaskLocationMapIds(rawDevices, tasks);
         cacheStatsValue("devices", devices);
         cacheStatsValue("tasks", panoramaTasks);
         overview.put("devices", overviewDevices(devices));
@@ -281,59 +272,6 @@ public class PanoramaService {
         }
     }
 
-    private List<Map<String, Object>> mapsWithPointsAndDevices(
-            List<Map<String, Object>> maps,
-            List<Map<String, Object>> devices,
-            OverviewRequestCache cache) {
-        if (maps == null || maps.isEmpty()) {
-            return List.of();
-        }
-        List<CompletableFuture<Map<String, Object>>> futures = maps.stream()
-                .map(source -> async(() -> mapWithPointsAndDevices(source, devices, cache)))
-                .toList();
-        return futures.stream()
-                .map(future -> join(future, null))
-                .filter(Objects::nonNull)
-                .toList();
-    }
-
-    private List<Map<String, Object>> prefetchMapResources(
-            List<Map<String, Object>> maps,
-            OverviewRequestCache cache) {
-        if (maps == null) {
-            return List.of();
-        }
-        for (Map<String, Object> map : maps) {
-            String mapId = firstString(map, "id", "mapId");
-            if (mapId != null) {
-                cache.mapPointsFuture(mapId);
-            }
-        }
-        cache.allFixedCamerasFuture();
-        return maps;
-    }
-
-    private Map<String, Object> mapWithPointsAndDevices(
-            Map<String, Object> source,
-            List<Map<String, Object>> devices,
-            OverviewRequestCache cache) {
-        Map<String, Object> map = overviewMap(source);
-        String mapId = firstString(source, "id", "mapId");
-        CompletableFuture<List<Map<String, Object>>> pointsFuture = mapId == null
-                ? CompletableFuture.completedFuture(List.of())
-                : cache.mapPointsFuture(mapId);
-        CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = mapId == null
-                ? CompletableFuture.completedFuture(List.of())
-                : cache.fixedCamerasFuture(mapId);
-        List<Map<String, Object>> points = join(pointsFuture, List.of());
-        List<Map<String, Object>> fixedCameras = join(fixedCamerasFuture, List.of());
-        map.put("points", overviewPoints(points));
-        map.remove("devices");
-        map.put("deviceIds", deviceIdsForMap(mapId, devices));
-        map.put("fixedCamares", fixedCameras);
-        return map;
-    }
-
     private List<Map<String, Object>> overviewDevices(List<Map<String, Object>> devices) {
         return devices.stream().map(this::overviewDevice).toList();
     }
@@ -345,6 +283,7 @@ public class PanoramaService {
         device.remove("lastHeartbeatAt");
         device.remove("mountedDevices");
         device.remove("mapDisplay");
+        device.remove("task");
         Map<String, Object> location = mutable(map(device.get("location")));
         location.remove("altitude");
         location.remove("updatedAt");
@@ -357,7 +296,7 @@ public class PanoramaService {
                 .map(source -> {
                     Map<String, Object> task = mutable(source);
                     task.remove("mapPoints");
-                    task.put("pathPoints", overviewPoints(list(task.get("pathPoints"))));
+                    task.remove("pathPoints");
                     return task;
                 })
                 .toList();
@@ -846,29 +785,12 @@ public class PanoramaService {
                         Function.identity(),
                         (left, right) -> right));
         List<Map<String, Object>> fixedCameras = join(fixedCamerasFuture, List.of());
-        synchronizeFixedCameraCatalog(fixedCameras);
         fixedCameras.stream()
                 .filter(camera -> firstValue(camera, "cameraId", "id") != null)
                 .map(camera -> fixedCameraDevice(camera, fixedCameraHealth.getOrDefault(
                         firstString(camera, "cameraId", "id"), Map.of())))
                 .forEach(result::add);
         return result;
-    }
-
-    private void synchronizeFixedCameraCatalog(List<Map<String, Object>> cameras) {
-        if (fixedCameraCatalogLeaseClient == null || authenticatedRequestHeaders == null) {
-            return;
-        }
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null) {
-            return;
-        }
-        HttpHeaders headers = new HttpHeaders();
-        authenticatedRequestHeaders.apply(headers, authentication);
-        if (headers.getFirst(HttpHeaders.AUTHORIZATION) == null) {
-            return;
-        }
-        fixedCameraCatalogLeaseClient.synchronize(authentication, headers, cameras);
     }
 
     private Map<String, Object> deviceSource(Map<String, Object> listDevice) {
@@ -1152,15 +1074,6 @@ public class PanoramaService {
         return name != null && name.contains("双光云台");
     }
 
-    private List<String> componentActions(Map<String, Object> component) {
-        return list(component.get("capabilities")).stream()
-                .flatMap(capability -> list(capability.get("actions")).stream())
-                .map(action -> firstString(action, "code", "capabilityCode", "name"))
-                .filter(Objects::nonNull)
-                .map(action -> action.toUpperCase(Locale.ROOT))
-                .toList();
-    }
-
     private String componentType(Map<String, Object> component) {
         return list(component.get("capabilities")).stream()
                 .map(capability -> firstString(capability, "code", "capabilityCode"))
@@ -1286,8 +1199,7 @@ public class PanoramaService {
                 "endTime", endTime,
                 "timeRange", timeRange(startTime, endTime, null),
                 "equipmentList", equipmentList(source, safeInstance, Map.of(), List.of()),
-                "mapId", firstValue(source, "mapId", "mapID"),
-                "pathPoints", List.of());
+                "mapId", firstValue(source, "mapId", "mapID"));
     }
 
     private Map<String, Object> taskItem(
@@ -1428,8 +1340,12 @@ public class PanoramaService {
         LocalDateTime now = LocalDateTime.now(CHINA_ZONE);
         String occurredFrom = now.toLocalDate().atStartOfDay().format(DATE_TIME_FORMATTER);
         String occurredTo = now.format(DATE_TIME_FORMATTER);
-        List<Map<String, Object>> todayAlarms = centerClient.alarms(null, occurredFrom, occurredTo);
-        List<Map<String, Object>> unhandledAlarms = centerClient.alarms("NEW", null, null);
+        CompletableFuture<List<Map<String, Object>>> todayAlarmsFuture = async(
+                () -> centerClient.alarms(null, occurredFrom, occurredTo));
+        CompletableFuture<List<Map<String, Object>>> unhandledAlarmsFuture = async(
+                () -> centerClient.alarms("NEW", null, null));
+        List<Map<String, Object>> todayAlarms = join(todayAlarmsFuture, List.of());
+        List<Map<String, Object>> unhandledAlarms = join(unhandledAlarmsFuture, List.of());
         List<Map<String, Object>> summaryItems = todayAlarms.stream()
                 .map(alarm -> alarmItem(alarm, null))
                 .toList();
@@ -1917,7 +1833,6 @@ public class PanoramaService {
 
         private final Map<String, CompletableFuture<List<Map<String, Object>>>> mapPointsByMapId = new ConcurrentHashMap<>();
         private final Map<String, CompletableFuture<List<Map<String, Object>>>> pathPointsByPathId = new ConcurrentHashMap<>();
-        private final Map<String, CompletableFuture<List<Map<String, Object>>>> fixedCamerasByMapId = new ConcurrentHashMap<>();
         private volatile CompletableFuture<List<Map<String, Object>>> allFixedCamerasFuture;
 
         private List<Map<String, Object>> mapPoints(String mapId) {
@@ -1930,16 +1845,6 @@ public class PanoramaService {
 
         private List<Map<String, Object>> pathPoints(String pathId) {
             return join(cachedList(pathPointsByPathId, pathId, centerClient::pathPoints), List.of());
-        }
-
-        private CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture(String mapId) {
-            if (mapId == null || mapId.isBlank()) {
-                return CompletableFuture.completedFuture(List.of());
-            }
-            return fixedCamerasByMapId.computeIfAbsent(mapId, key -> allFixedCamerasFuture()
-                    .thenApply(cameras -> cameras.stream()
-                            .filter(camera -> Objects.equals(key, firstString(camera, "mapId")))
-                            .toList()));
         }
 
         private CompletableFuture<List<Map<String, Object>>> allFixedCamerasFuture() {
@@ -2167,24 +2072,6 @@ public class PanoramaService {
             case "OFFLINE", "OFF_LINE" -> "offline";
             default -> "offline";
         };
-    }
-
-    private Object fault(Map<String, Object> basic) {
-        String healthStatus = string(basic.get("healthStatus"));
-        if (healthStatus == null || healthStatus.isBlank()) {
-            return null;
-        }
-        String normalized = healthStatus.toUpperCase(Locale.ROOT);
-        if ("NORMAL".equals(normalized)) {
-            return false;
-        }
-        if (normalized.contains("ERROR")
-                || normalized.contains("FAULT")
-                || normalized.contains("异常")
-                || normalized.contains("故障")) {
-            return true;
-        }
-        return null;
     }
 
     private String statusCode(String source) {
@@ -2606,21 +2493,12 @@ public class PanoramaService {
 
         private Map<String, Object> snapshot() {
             boolean complete = reasonCodes.isEmpty();
-            Map<String, Object> executor = object(
-                    "activeThreads", IO_EXECUTOR.getActiveCount(),
-                    "poolSize", IO_EXECUTOR.getPoolSize(),
-                    "maxPoolSize", IO_EXECUTOR.getMaximumPoolSize(),
-                    "queueSize", IO_EXECUTOR.getQueue().size(),
-                    "queueRemainingCapacity", IO_EXECUTOR.getQueue().remainingCapacity());
             return object(
                     "complete", complete,
                     "degraded", !complete,
                     "reasonCodes", List.copyOf(reasonCodes),
                     "invalidReferenceCount", invalidWorkflowReferences.size(),
-                    "invalidWorkflowReferences", List.copyOf(invalidWorkflowReferences),
-                    "executor", executor,
-                    "managementConcurrency", centerClient.taskRequestPoolSnapshot(),
-                    "managementGeneralConcurrency", centerClient.generalRequestPoolSnapshot());
+                    "invalidWorkflowReferences", List.copyOf(invalidWorkflowReferences));
         }
     }
 

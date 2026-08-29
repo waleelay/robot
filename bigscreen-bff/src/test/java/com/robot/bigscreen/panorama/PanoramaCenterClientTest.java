@@ -13,6 +13,8 @@ import com.robot.bigscreen.config.CenterServiceProperties;
 import java.net.SocketTimeoutException;
 import java.util.List;
 import java.util.concurrent.Semaphore;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -35,6 +37,7 @@ class PanoramaCenterClientTest {
         client = new PanoramaCenterClient(RestClient.builder(), properties,
                 mock(AuthenticatedRequestHeaders.class), 1000, 1500, 16, 1000, 1500, 8);
         ReflectionTestUtils.setField(client, "restClient", builder.build());
+        ReflectionTestUtils.setField(client, "taskRestClient", builder.build());
     }
 
     @Test
@@ -69,5 +72,45 @@ class PanoramaCenterClientTest {
         ResponseStatusException error = assertThrows(ResponseStatusException.class, client::enabledMaps);
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
         assertEquals(0, permits.availablePermits());
+    }
+
+    @Test
+    void taskPlansReadAllPagesAndStopAtReportedTotal() {
+        String records = IntStream.range(0, 100)
+                .mapToObj(index -> "{\"id\":" + index + "}")
+                .collect(Collectors.joining(","));
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/task-workflow-plans?pageNum=1&pageSize=100&enabled=true"))
+                .andRespond(withSuccess(
+                        "{\"data\":{\"records\":[" + records + "],\"total\":101}}",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/task-workflow-plans?pageNum=2&pageSize=100&enabled=true"))
+                .andRespond(withSuccess(
+                        "{\"data\":{\"records\":[{\"id\":100}],\"total\":101}}",
+                        MediaType.APPLICATION_JSON));
+
+        assertEquals(101, client.taskWorkflowPlans().size());
+        server.verify();
+    }
+
+    @Test
+    void taskPaginationStopsWhenManagementRepeatsTheSameFullPage() {
+        String records = IntStream.range(0, 100)
+                .mapToObj(index -> "{\"id\":" + index + "}")
+                .collect(Collectors.joining(","));
+        String response = "{\"data\":{\"records\":[" + records + "]}}";
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/task-workflow-plans?pageNum=1&pageSize=100&enabled=true"))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/task-workflow-plans?pageNum=2&pageSize=100&enabled=true"))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+
+        PanoramaCenterClient.TaskSourceException error = assertThrows(
+                PanoramaCenterClient.TaskSourceException.class,
+                client::taskWorkflowPlans);
+        assertEquals("TASK_PAGINATION_NO_PROGRESS", error.reasonCode());
+        server.verify();
     }
 }

@@ -23,8 +23,8 @@
 |---|---|
 | 设备列表 | `GET /api/v1/management/devices?pageNum=1&pageSize=100` |
 | 设备详情/组件 | `GET /api/v1/management/devices/{id}` |
-| 任务计划 | `GET /api/v1/management/task-workflow-plans?pageNum=1&pageSize=20&enabled=true` |
-| 任务实例列表 | `GET /api/v1/management/task-workflow-instances?pageNum=1&pageSize=100&includeRunning=true` |
+| 任务计划 | `GET /api/v1/management/task-workflow-plans?pageNum={pageNum}&pageSize=100&enabled=true`，读取完整分页 |
+| 任务实例列表 | `GET /api/v1/management/task-workflow-instances?pageNum={pageNum}&pageSize=100&scope=ALL`，读取完整分页 |
 | 任务实例详情 | `GET /api/v1/management/task-workflow-instances/{id}` |
 | 任务执行回放 | `GET /api/v1/management/task-workflow-instances/{id}/replay` |
 | 设备子任务 | `GET /api/v1/management/device-task-instances?workflowInstanceId={id}` |
@@ -32,7 +32,7 @@
 | 地图列表 | `GET /api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` |
 | 地图点位 | `GET /api/v1/management/maps/{mapId}/points` |
 | 路径点位 | `GET /api/v1/management/paths/{pathId}/points` |
-| 告警列表 | `GET /api/v1/management/alarms?pageNum=1&pageSize=20` |
+| 告警列表 | `GET /api/v1/management/alarms?pageNum={pageNum}&pageSize=100`，读取完整分页 |
 | 告警处置 | `PATCH /api/v1/management/alarms/{alarmId}/handled` |
 
 ## 3. 全景地图聚合接口
@@ -153,7 +153,10 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 | `z` | 地图/局部坐标 Z | 控制端 | `status.localization.coordinateZ` |
 | `address` | 位置文字 | 控制端 | `status.localization.address` |
 
-### 3.6 `tasks[]`
+### 3.6 任务字段
+
+Overview 的 `tasks[]` 只返回任务计划/实例列表可直接得到的摘要；任务路径由
+`maps/{mapId}/task-routes` 返回，回放位置和完整任务数据由 `tasks/{taskId}` 按需返回。
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
@@ -167,10 +170,10 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 | `startTime` | 任务开始时间 | 管理端 + BFF 格式化 | 优先任务实例 `startedAt`，其次计划 `startedAt/lastStartedAt/startTime` |
 | `endTime` | 任务结束时间 | 管理端 + BFF 格式化 | 优先任务实例 `completedAt`，其次计划 `completedAt/lastCompletedAt/endTime` |
 | `timeRange` | 页面展示时间段 | BFF 计算 | 由 `startTime/endTime` 截取 `HH:mm-HH:mm`；时间不完整为 `null` |
-| `currentLocation` | 当前任务位置 | 管理端 + BFF 组装 | 优先计划 `currentLocation`；没有时取回放 `trackGroups[].samples` 最后一个 `pointName` |
+| `currentLocation` | 当前任务位置 | 管理端 + BFF 组装 | 仅任务详情：优先计划 `currentLocation`；没有时取回放 `trackGroups[].samples` 最后一个 `pointName` |
 | `equipmentList` | 执行装备列表 | 管理端 + BFF 组装 | 见 3.6.1 |
-| `mapId` | 地图 ID | 管理端 | `TaskWorkflowDefinitionResponse.mapId` |
-| `pathPoints` | 路径点位集合 | 管理端 + BFF 过滤 | 用 `TaskWorkflowDefinitionResponse.pathId` 查 `/paths/{pathId}/points`，再按 `mapPointId` 从地图点位中过滤；每个点仅返回 `id/pointCode/pointName/pointType/coordinateX/coordinateY` |
+| `mapId` | 地图 ID | 管理端 | Overview 优先取计划的 `mapId`；路径与详情按需读取 `TaskWorkflowDefinitionResponse.mapId` |
+| `pathPoints` | 路径点位集合 | 管理端 + BFF 过滤 | 不在 Overview 返回；按需接口用定义的 `pathId` 查路径点引用，再与地图点位匹配 |
 
 ### 3.6.1 任务固定摄像头按需接口 `tasks/{taskId}/fixed-cameras`
 
@@ -195,7 +198,7 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 | `type` | 装备类型中文名 | 管理端 + BFF 转换 | `deviceType/type` 转中文；字段缺失时为 `null` |
 | `status` | 装备在线状态 | 管理端 + BFF 关联 | 按 `robotId` 关联 `devices[].status`，仅返回 `online`、`offline`、`fault`；设备未匹配或状态未知时为 `null` |
 
-### 3.7 `devices[].task[]`
+### 3.7 设备与任务关联
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
@@ -205,7 +208,9 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 | `status` | 当前任务状态 | 控制端 + 管理端 + BFF 转换 | 优先 `status.task.taskStatus/status`；缺失时用已查询的 `tasks[].status` 补齐 |
 | `timeRange` | 当前任务时间段 | 管理端 + BFF 计算 | 任务实例 `startedAt/completedAt` 计算；缺失时用已查询的 `tasks[].timeRange` 补齐 |
 
-BFF 只会将 `running/pausing/paused/resuming/terminating` 状态的任务关联到设备，不会把待执行或已结束任务填入“当前任务”。关联复用总览已查询的 `tasks[]`，不会为每台设备新增管理端请求。
+Overview 不返回 `devices[].task[]`。前端按 `tasks[].equipmentList[].robotId` 从全局任务状态反查设备当前任务；
+设备详情的 `currentTask` 才补齐当前任务数组。BFF 只关联
+`running/pausing/paused/resuming/terminating`，不会把待执行或已结束任务填入“当前任务”。
 
 ### 3.8 当前地图渲染资源 `resources`
 
@@ -284,7 +289,7 @@ GET /api/bigscreen/panorama/devices/{deviceId}
 切换装备或首次失败重试才发请求。WebSocket 重连不清空/重查档案，动态字段通过既有 WebSocket
 及重连后的 Overview 刷新恢复；授权集合移除当前装备时沿用选择清空链路丢弃详情。
 任务列表/路径继续使用共享任务数据，视频准入/会话使用共享媒体状态；它们不属于本次装备字段迁移。
-Overview 的地图、列表、媒体与控制初始化职责及响应字段保持不变，不增加首屏逐设备详情请求。
+Overview 继续承担地图、列表、媒体与控制初始化，但不增加首屏逐设备详情请求，也不复制设备任务对象。
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
@@ -293,7 +298,7 @@ Overview 的地图、列表、媒体与控制初始化职责及响应字段保�
 | `statusChangedAt/runtimeUpdatedAt` | 在线状态/运行态版本 | 本项目 Control + BFF | 与 `devices[]` 同源，分别比较在线状态与电量/速度/模式的新旧，保留小数秒精度 |
 | `alarmStatus` | 告警状态/等级 | BFF 派生 | 使用 `devices[].alarmLevel` |
 | `alarmText` | 告警提示文案 | BFF 生成 | 有 `alarmLevel` 时为 `存在未处理告警`，否则 `null` |
-| `currentTask` | 当前任务数组 | BFF 复制 | 复制 `devices[].task[]` |
+| `currentTask` | 当前任务数组 | BFF 关联 | 按设备 ID 将控制端实时任务与任务摘要关联，只保留活跃任务 |
 | `actions.remoteControl` | 远程控制按钮是否可用 | BFF 计算 | 设备在线为 `true`，离线为 `false`，未知为 `null` |
 | `actions.slamMap` | SLAM 地图按钮是否可用 | BFF 计算 | 同在线状态 |
 | `actions.returnHome` | 一键返航按钮是否可用 | BFF 计算 | 同在线状态 |

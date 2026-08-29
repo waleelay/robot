@@ -241,7 +241,7 @@ class PanoramaServiceTest {
         when(centerClient.pathPoints("2001")).thenReturn(List.of(Map.of("mapPointId", 101L)));
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
         Map<String, Object> overview = service.overview();
-        assertEquals(List.of(), maps(overview.get("tasks")).get(0).get("pathPoints"));
+        assertFalse(maps(overview.get("tasks")).get(0).containsKey("pathPoints"));
         Map<String, Object> routes = service.mapTaskRoutes("1001");
         assertEquals(mapPoints, maps(routes.get("items")).get(0).get("pathPoints"));
         verify(centerClient, times(1)).mapPoints("1001");
@@ -482,7 +482,7 @@ class PanoramaServiceTest {
 
         Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
 
-        assertEquals(List.of(), maps(maps(overview.get("devices")).get(0).get("task")));
+        assertFalse(maps(overview.get("devices")).get(0).containsKey("task"));
         verify(centerClient, never()).deviceTaskInstances("9001");
         verify(centerClient, never()).taskWorkflowInstance("9001");
     }
@@ -507,11 +507,11 @@ class PanoramaServiceTest {
 
         Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
 
-        assertEquals(List.of(), maps(maps(overview.get("devices")).get(0).get("task")));
+        assertFalse(maps(overview.get("devices")).get(0).containsKey("task"));
     }
 
     @Test
-    void enrichesRealtimeDeviceTaskWithManagementTaskFields() {
+    void omitsRealtimeDeviceTaskFromOverviewBecauseTasksAreTheSingleSummarySource() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         when(centerClient.devices()).thenReturn(List.of(Map.of(
@@ -537,12 +537,7 @@ class PanoramaServiceTest {
 
         Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
 
-        Map<String, Object> deviceTask = maps(maps(overview.get("devices")).get(0).get("task")).get(0);
-        assertNull(deviceTask.get("taskId"));
-        assertEquals(9001L, deviceTask.get("workflowInstanceId"));
-        assertNull(deviceTask.get("name"));
-        assertEquals("running", deviceTask.get("status"));
-        assertNull(deviceTask.get("timeRange"));
+        assertFalse(maps(overview.get("devices")).get(0).containsKey("task"));
     }
 
     @Test

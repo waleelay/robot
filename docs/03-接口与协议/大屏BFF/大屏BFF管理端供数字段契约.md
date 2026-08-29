@@ -44,7 +44,6 @@
 | `devices[].cameras` | array<object> | 条件需要 | 相机配置；需要真实视频流配置时由管理端或后续权威数据源提供 |
 | `devices[].mountedDevices` | array<object> | 条件需要 | 上装设备/组件集合 |
 | `devices[].mountedDeviceCount` | number/null | 条件需要 | 上装设备数量，BFF 可根据管理端组件集合计算 |
-| `devices[].task` | array<object> | 条件需要 | 当前任务详情；任务 ID 可来自控制端，任务名称/状态/时间可由管理端补充 |
 
 ### 2.3 `devices[].mountedDevices[]`
 
@@ -66,17 +65,7 @@
 | `devices[].cameras[].quality` | string | 条件需要 | 默认播放清晰度 |
 | `devices[].cameras[].streamCode` | string/null | 条件需要 | 视频流标识；需要精准播放视频流时提供 |
 
-### 2.5 `devices[].task[]`
-
-| BFF 字段 | 类型 | 管理端提供 | 字段说明 |
-|---|---|---|---|
-| `devices[].task[].taskId` | string/number/null | 需要 | 任务计划 ID，与 `tasks[].taskId` 一致 |
-| `devices[].task[].workflowInstanceId` | string/number/null | 条件需要 | 当前执行实例 ID，每次执行可能变化 |
-| `devices[].task[].name` | string/null | 条件需要 | 当前任务名称 |
-| `devices[].task[].status` | string/null | 条件需要 | 当前任务状态 |
-| `devices[].task[].timeRange` | string/null | 条件需要 | 当前任务时间段，BFF 可根据管理端任务开始/结束时间计算 |
-
-### 2.6 `tasks[]`
+### 2.5 `tasks[]`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -85,13 +74,14 @@
 | `tasks[].status` | string/null | 需要 | 任务状态 |
 | `tasks[].startTime` | string/null | 条件需要 | 任务开始时间 |
 | `tasks[].endTime` | string/null | 条件需要 | 任务结束时间 |
-| `tasks[].currentLocation` | string/null | 条件需要 | 当前任务位置 |
 | `tasks[].equipmentList` | array<object> | 条件需要 | 执行装备列表 |
 | `tasks[].mapId` | string/number/null | 条件需要 | 任务绑定地图 ID |
-| `tasks[].mapPoints` | array<object> | 条件需要 | 任务地图点位集合 |
-| `tasks[].pathPoints` | array<object> | 条件需要 | 任务路径点位集合 |
 
-### 2.7 `tasks[].equipmentList[]`
+Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不再在 `devices[]` 复制 `task`。
+路径只由 `maps/{mapId}/task-routes` 返回；回放位置、地图点和完整设备任务明细只由
+`tasks/{taskId}` 按需返回，不属于 Overview 管理端供数边界。
+
+### 2.6 `tasks[].equipmentList[]`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -100,34 +90,7 @@
 | `tasks[].equipmentList[].type` | string/null | 条件需要 | 执行装备类型 |
 | `tasks[].equipmentList[].status` | string/null | 条件需要 | 执行装备在线状态，取值为 `online`、`offline`、`fault`；管理端提供可关联的设备在线状态原始字段 |
 
-### 2.8 `tasks[].mapPoints[]`
-
-| BFF 字段 | 类型 | 管理端提供 | 字段说明 |
-|---|---|---|---|
-| `tasks[].mapPoints[].id` | string/number | 条件需要 | 地图点位 ID |
-| `tasks[].mapPoints[].mapId` | string/number | 条件需要 | 所属地图 ID |
-| `tasks[].mapPoints[].pointCode` | string/null | 条件需要 | 点位编码 |
-| `tasks[].mapPoints[].pointName` | string/null | 条件需要 | 点位名称 |
-| `tasks[].mapPoints[].pointType` | string/null | 条件需要 | 点位类型 |
-| `tasks[].mapPoints[].coordinateX` | number/null | 条件需要 | 点位坐标 X |
-| `tasks[].mapPoints[].coordinateY` | number/null | 条件需要 | 点位坐标 Y |
-| `tasks[].mapPoints[].coordinateZ` | number/null | 条件需要 | 点位坐标 Z |
-
-### 2.9 `tasks[].pathPoints[]`
-
-| BFF 字段 | 类型 | 管理端提供 | 字段说明 |
-|---|---|---|---|
-| `tasks[].pathPoints[]` | array<object> | 条件需要 | 任务路径点位明细；BFF 最终需要返回真实地图点位对象 |
-| `tasks[].pathPoints[].id` | string/number | 条件需要 | 路径点对应的地图点位 ID |
-| `tasks[].pathPoints[].mapId` | string/number | 条件需要 | 路径点所属地图 ID |
-| `tasks[].pathPoints[].pointCode` | string/null | 条件需要 | 路径点编码 |
-| `tasks[].pathPoints[].pointName` | string/null | 条件需要 | 路径点名称 |
-| `tasks[].pathPoints[].pointType` | string/null | 条件需要 | 路径点类型 |
-| `tasks[].pathPoints[].coordinateX` | number/null | 条件需要 | 路径点坐标 X |
-| `tasks[].pathPoints[].coordinateY` | number/null | 条件需要 | 路径点坐标 Y |
-| `tasks[].pathPoints[].coordinateZ` | number/null | 条件需要 | 路径点坐标 Z |
-
-### 2.10 `map[]`
+### 2.7 `map[]`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -154,7 +117,7 @@
 | `map[].points` | array<object> | 条件需要 | 当前地图的点位集合；BFF 按地图 ID 查询后挂载到对应地图对象 |
 | `map[].deviceIds` | array<string> | 无需直接提供 | BFF 根据顶层 `devices[].location.mapId` 计算的设备 ID 列表 |
 
-### 2.11 `alarms.*.items[]`
+### 2.8 `alarms.*.items[]`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -171,7 +134,7 @@
 | `alarms.*.items[].status` | string/null | 需要 | 告警处置状态 |
 | `alarms.*.items[].snapshotUrl` | object/null | 条件需要 | 告警截图对象 |
 
-### 2.12 `alarms.*.items[].location`
+### 2.9 `alarms.*.items[].location`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -184,7 +147,7 @@
 | `alarms.*.items[].location.address` | string/null | 条件需要 | 位置描述 |
 | `alarms.*.items[].location.updatedAt` | string/null | 条件需要 | 位置更新时间 |
 
-### 2.13 `alarms.*.items[].snapshotUrl`
+### 2.10 `alarms.*.items[].snapshotUrl`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -194,11 +157,11 @@
 
 ## 3. `/api/bigscreen/panorama/devices/{deviceId}`
 
-设备详情接口复用 `overview.devices[]` 的数据结构。管理端需要提供的字段同本文 `2.2` 至 `2.5`。
+设备详情在授权设备摘要上按需补查目标设备组件，并关联活跃任务；不复用 Overview 已移除的重复任务字段。
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
-| `currentTask` | array<object> | 条件需要 | 当前任务数组，字段同 `devices[].task[]` |
+| `currentTask` | array<object> | 条件需要 | 当前任务数组，由控制端实时任务与任务摘要按设备 ID 关联 |
 
 ## 4. `/api/bigscreen/panorama/tasks`
 

@@ -96,13 +96,13 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 
 ### 2.4 `/devices/{deviceId}` 设备详情
 
-设备详情来自 `overview.devices[]` 的单个设备对象，没有额外查询新的详情来源。
+设备详情先校验 Overview 授权设备摘要，再按需补查唯一目标的组件并关联活跃任务，不逐设备预取。
 
 | 字段 | 当前处理 | 说明 |
 |---|---|---|
 | `alarmStatus` | BFF 派生 | 来自 `devices[].alarmLevel` |
 | `alarmText` | BFF 派生 | 有告警等级时固定为“存在未处理告警” |
-| `currentTask` | BFF 复制 | 复制 `devices[].task[]` |
+| `currentTask` | BFF 关联 | 按目标设备 ID 将控制端实时任务与任务摘要关联，只保留活跃任务 |
 | `actions.*` | BFF 派生 | 根据设备在线状态生成按钮可用性；设备状态未知时返回 `null` |
 
 ### 2.5 `tasks[]`

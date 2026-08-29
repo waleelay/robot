@@ -42,6 +42,8 @@ src/main/java/com/robot/mediaserver/
 
 - `FileController` 同时注册 `/api/media/files/**` 和 `/internal/media/files/**`。
 - `FileService` 处理简单上传、multipart、列表、扩展绑定、删除、下载和播放。
+- 文件列表可用 `source` 对 `metadata.source` 做数据库分页前的精确筛选；实时监控据此区分手动抓拍、手动录像与任务/告警文件。
+- 手动抓拍和手动录像写入 `createdBy`，只允许创建人查询、读取和操作；未设置 `createdBy` 的任务、告警和机器人上传文件继续按组织共享。
 - `FileObjectStorageService` 封装 MinIO/S3 操作。
 - `FileHlsProcessingService` 使用 ffprobe/ffmpeg 生成 fMP4 HLS。
 - 三个 Scheduler 分别处理上传过期、HLS 任务和文件保留期。

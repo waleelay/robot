@@ -3,7 +3,7 @@
 | 文档属性 | 内容 |
 | --- | --- |
 | 文档状态 | 当前代码基线 |
-| 基线日期 | 2026-08-28 |
+| 基线日期 | 2026-08-29 |
 | 服务端口 | `8090` |
 
 ## 1. 边界与鉴权
@@ -14,7 +14,7 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/bigscreen/panorama/overview` | 首屏摘要：设备、统计、任务摘要、地图摘要和告警；不加载地图点、任务路径、回放或逐设备详情 |
+| `GET` | `/api/bigscreen/panorama/overview` | 首屏摘要：设备、统计、任务摘要、地图摘要和告警；`devices[]` 不重复任务，`tasks[]` 不返回路径；不加载地图点、回放或逐设备详情 |
 | `GET` | `/api/bigscreen/panorama/maps/{mapId}/resources` | 当前地图渲染资源：点位、关联设备 ID 与固定摄像头；首屏默认地图和用户切图时调用 |
 | `GET` | `/api/bigscreen/panorama/maps/{mapId}/task-routes` | 当前地图关联任务的路径点；不加载任务回放或设备任务详情 |
 | `GET` | `/api/bigscreen/panorama/devices/{deviceId}` | 按装备序列号查询授权设备详情；只补查目标组件，不加载任务回放；弹窗选中时调用 |
@@ -65,7 +65,7 @@ Overview、设备详情与 WebSocket 使用相同运行态源，前端按该时�
 装备弹窗打开时全部装备展示字段由设备详情初始化；名称、类型、型号、上装数量和固定摄像头位置
 在本次打开期间保持不变，电量、速度、控制模式与在线状态从共享状态按上述版本更新，不用 Overview
 回填静态档案。重连不清空或重查详情；任务路径及视频会话仍复用共享链路。请求取消与失败重试
-规则见字段来源文档第 4 节；本次不变更 Overview 的响应结构。
+规则见字段来源文档第 4 节。Overview 只保留地图与任务列表所需设备摘要，静态档案仍以按需详情为准。
 
 固定摄像头 `status=online` 仅在配置启用且完整、Gateway
 心跳有效并且最近 RTSP 探测成功时成立；配置停用、配置无效、健康接口不可用、消息缺失或过期均为
@@ -90,7 +90,7 @@ Overview、设备详情与 WebSocket 使用相同运行态源，前端按该时�
 ```
 
 常见 reason code 包括 `TASK_QUERY_TIMEOUT`、`TASK_QUERY_CONCURRENCY_LIMIT`、
-`TASK_EXECUTOR_SATURATED`、`TASK_PAGINATION_LIMIT`、`TASK_INVALID_RESPONSE`、
+`TASK_EXECUTOR_SATURATED`、`TASK_PAGINATION_LIMIT`、`TASK_PAGINATION_NO_PROGRESS`、`TASK_INVALID_RESPONSE`、
 `WORKFLOW_INSTANCE_NOT_FOUND` 和 `WORKFLOW_DEFINITION_NOT_FOUND`。401/403 不进入降级响应。
 
 ### 2.1 按需读取时序与响应边界
@@ -117,7 +117,8 @@ Overview 的地图列表查询失败不再降级为 `map=[]`：地图读取超�
 `fixedCamares` 保持现有字段拼写，表示当前地图固定摄像头。
 `task-routes` 响应为
 `{serverTime, mapId, items, dataQuality}`；每个 `items[]` 包含 `taskId`、`workflowInstanceId`、`mapId` 和
-`pathPoints`。`tasks/{taskId}` 响应为 `{serverTime, task, dataQuality}`；找不到任务时 `task=null`，不以
+`pathPoints`。Overview 的 `tasks[]` 不返回空的 `pathPoints` 占位，前端只把 `task-routes.items[]` 写入路径状态。
+`tasks/{taskId}` 响应为 `{serverTime, task, dataQuality}`；找不到任务时 `task=null`，不以
 伪造任务替代。`tasks/{taskId}/fixed-cameras` 响应为 `{serverTime, taskId, items}`，每个 `items[]` 只包含
 `cameraId`、`name`、`sourceType=FIXED_CAMERA`、`sourceId` 和 `defaultQuality`。其来源是 Management
 `task-workflow-plans/{taskId}/fixed-cameras`，覆盖该工作流计划及其依赖工作流关联路径的已启用摄像头并去重；
@@ -128,6 +129,10 @@ Overview 的地图列表查询失败不再降级为 `map=[]`：地图读取超�
 不缓存。地图场景、地图任务路径和可处置工作流告警按同一用户合并并成功缓存 3 秒。Management 通用资源
 请求使用独立连接/读取时限（默认各 1000/1500 ms）及单实例公平并发上限（默认 16）；任务请求继续使用
 独立的默认 1000/1500 ms、8 并发边界。缓存不跨用户共享，也不改变 401/403 语义。
+
+固定摄像头目录租约只由 WebSocket 权限快照加载/续期链路同步；Overview 只读取摄像头展示与健康数据，
+不再重复向 Control 写目录租约。今日告警与未处理告警仍属于首屏数据，但两次 Management 查询并行执行。
+任务计划和任务实例使用每页 100 条的完整分页，并在总数满足、末页不足或分页无进展时立即停止。
 
 ## 3. 统计与报告接口
 

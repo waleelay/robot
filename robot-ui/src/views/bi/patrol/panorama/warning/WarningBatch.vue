@@ -157,14 +157,9 @@
                 <div v-for="(item, index) in warningInfo.listData" :key="item.alarmId" class="item wp280 pt9 pr10 pb9 pl10 flx-justify-between" :class="{ selected: warningInfo.selectedRobotRows.includes(item) }" @click="handleClickWarningRow(item, index)">
                   <div class="flx-align-center w100">
                     <div class="img flx-center">
-                      <img
-                        v-if="listAlarmImageUrl(item)"
-                        :src="listAlarmImageUrl(item)"
-                        alt=""
-                        class="w100 h100"
-                        style="object-fit: cover;"
-                      >
-                      <span v-else class="list-img-placeholder">暂无图片</span>
+                      <AlarmSnapshotImage :item="item">
+                        <span class="list-img-placeholder">暂无图片</span>
+                      </AlarmSnapshotImage>
                     </div>
                     <div class="ml10 flex1">
                       <div class="flx-justify-between flx-align-start">
@@ -202,17 +197,17 @@
 import WarningExecuteNo from './WarningExecuteNo.vue';
 import WarningExecuteError from './WarningExecuteError.vue';
 import WarningExecute from './WarningExecute.vue';
+import AlarmSnapshotImage from '@/components/AlarmSnapshotImage.vue'
 import { mapActions, mapState } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
 import {
   buildSnapshotOptions,
   downloadAlarmSnapshotFile,
-  loadAlarmListObjectUrls,
   loadSnapshotObjectUrls
 } from '@/utils/alarm-snapshot'
 export default {
   name: 'WarningInfoBatch',
-  components: { WarningExecuteNo, WarningExecuteError, WarningExecute },
+  components: { WarningExecuteNo, WarningExecuteError, WarningExecute, AlarmSnapshotImage },
   data() {
     return {
       dialogVisible: false,
@@ -260,8 +255,6 @@ export default {
       },
       snapshotObjectUrls: {},
       snapshotLoadSeq: 0,
-      listAlarmImageUrls: {},
-      listAlarmImageLoadSeq: 0,
     }
   },
   computed: {
@@ -305,7 +298,6 @@ export default {
       this.warningInfo.listData = [item]
       this.warningInfo.selectedRobotRows = [item]
       this.applySnapshotOptions(item)
-      this.loadListAlarmImages()
     },
     applySnapshotOptions(item) {
       this.options = buildSnapshotOptions(item)
@@ -349,7 +341,6 @@ export default {
         this.options = []
         this.snapshotObjectUrls = {}
       }
-      this.loadListAlarmImages()
     },
     handleSearchTypeChange() {
       this.handleChangeTab(this.tabIndex)
@@ -380,18 +371,6 @@ export default {
       const nextUrls = await loadSnapshotObjectUrls(this.details?.snapshotUrl, this.details, keys)
       if (seq !== this.snapshotLoadSeq) return
       this.snapshotObjectUrls = nextUrls
-    },
-    listAlarmImageUrl(item) {
-      if (!item?.alarmId) return ''
-      return this.listAlarmImageUrls[String(item.alarmId)] || ''
-    },
-    async loadListAlarmImages() {
-      const seq = ++this.listAlarmImageLoadSeq
-      this.listAlarmImageUrls = {}
-      const items = this.warningInfo.listData || []
-      const nextUrls = await loadAlarmListObjectUrls(items)
-      if (seq !== this.listAlarmImageLoadSeq) return
-      this.listAlarmImageUrls = nextUrls
     },
     handleClickWarningRow(item) {
       // 单选
@@ -447,7 +426,6 @@ export default {
       this.selectedValue = ''
       this.options = []
       this.snapshotObjectUrls = {}
-      this.listAlarmImageUrls = {}
     }
   }
 }

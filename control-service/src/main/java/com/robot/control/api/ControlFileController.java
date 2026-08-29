@@ -92,6 +92,7 @@ public class ControlFileController {
      * @param extensionId 通用扩展 ID
      * @param fileType 文件类型
      * @param status 状态消息
+     * @param source 文件来源，对应 metadata.source
      * @param page page
      * @param size size
      * @param request 请求参数
@@ -104,6 +105,7 @@ public class ControlFileController {
             @RequestParam(required = false) String extensionId,
             @RequestParam(required = false) FileType fileType,
             @RequestParam(required = false) FileStatus status,
+            @RequestParam(required = false) String source,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             HttpServletRequest request) {
@@ -113,6 +115,7 @@ public class ControlFileController {
                 extensionId,
                 fileType,
                 status,
+                source,
                 page,
                 size,
                 currentUserResolver.resolve(request));

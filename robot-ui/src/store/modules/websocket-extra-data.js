@@ -1,5 +1,3 @@
-import { set } from "nprogress";
-import { active } from "sortablejs";
 import Vue from "vue";
 import { mergeRobotBaseInfo } from '../../views/bi/js/utils/prefer-live-robot-fields';
 import {
@@ -34,7 +32,7 @@ const mapResourcePromises = new Map()
 const taskFixedCameraPromises = new Map()
 
 const state = {
-  // 设备对象：设备详情，包含坐标位置，task基本信息
+  // 设备对象：按需加载的设备详情
   deviceObj: {},
   // 任务详情
   taskData: {}, // { taskId: { ...taskInfo } }
@@ -436,16 +434,8 @@ const actions = {
       }
     }
 
-    // 装备 task 只从全局 taskData 反查，不使用 overview.devices.task
-    const devicesWithoutTask = devices.map(item => {
-      if (!item || item.task === undefined) return item
-      const next = { ...item }
-      delete next.task
-      return next
-    })
-
     // 调用 websocketRobot 模块的 loadRobots
-    dispatch('websocketRobot/loadRobots', devicesWithoutTask, { root: true })
+    dispatch('websocketRobot/loadRobots', devices, { root: true })
     commit('SET_ALARMS_DATA', data?.alarms || {});
     commit('SET_DEVICE_TYPES_STATS', data?.deviceTypeStats || []);
     commit('SET_DEVICE_STATS', data?.deviceStats || {
@@ -463,8 +453,8 @@ const actions = {
       commit('SET_TASK_INFO', { ...item, timestamp: new Date().getTime() + tasks.length - index });
       commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } });
     })
-    commit('SET_ROBOT_LIST', devicesWithoutTask);
-    devicesWithoutTask.map(item => {
+    commit('SET_ROBOT_LIST', devices);
+    devices.map(item => {
       commit('SET_ROBOT_BASE_INFO', { robotId: item.robotId, robotInfo: { ...item } });
       commit('SET_ROBOT_LOCATION', { robotId: item.robotId, location: item.location });
     })
@@ -481,7 +471,7 @@ const actions = {
     const defaultGpsDevices = overviewGpsDevices({ ...data, devices });
     commit('SET_DEFAULT_GPS_DEVICES', defaultGpsDevices);
     commit('SET_SLAM_MAP_LIST', slamMapList);
-    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devicesWithoutTask, tasks));
+    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devices, tasks));
     const mapId = resolveOverviewMapId({ ...data, devices }, state.globalMapId);
     commit('SET_GLOBAL_MAP_ID', mapId);
     commit('SET_DEFAULT_MAP_IS_SLAM', !defaultGpsDevices.length && slamMapList.length > 0);
@@ -676,7 +666,7 @@ function mergeOverviewMapResources(overview, mapResources, taskRoutes) {
 }
 
 /**
- * 地图渲染资源只补充当前地图的重数据；设备详情仍由 overview.devices[] 提供。
+ * 地图渲染资源只补充当前地图的重数据；设备详情由 devices/{deviceId} 按需提供。
  * 每个字段独立合并，保证 task-routes 临时不可用时不影响点位和设备图标，反之亦然。
  */
 function mergeMapResources(map, mapResources) {

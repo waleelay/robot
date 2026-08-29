@@ -74,6 +74,9 @@
     `offline`，刷新 Overview 后状态一致；恢复第一条合法、非 retained 边缘状态后立即恢复
     `online/fault`。并发刷新、多标签页、WebSocket 重连和同一秒内离线/上线时，旧事件不得覆盖
     `statusChangedAt` 更新的状态。
+12. 准备 60 条以上带不同截图的未处理告警，首次进入全景地图时只允许可视区及前后 100 px 内的
+    缩略图请求，折叠分组不得预取；滚动、展开后按可视范围继续加载，打开详情时加载当前告警多路图片。
+    同一 `fileId` 只请求一次，不同文件内容请求同时在途数不得超过 4。
 
 ## 3. 构建与接口检查
 
@@ -91,7 +94,7 @@
   核对底图、任务、点位、路径和装备选择一致，无整页重载；本地测试不能代替此验收。
 
 ```bash
-(cd robot-ui && node --test test/panorama-map-state.test.mjs test/robot-popup-state.test.mjs test/admin-console-url.test.mjs)
+(cd robot-ui && node --test test/alarm-image-loading.test.mjs test/panorama-map-state.test.mjs test/robot-popup-state.test.mjs test/admin-console-url.test.mjs)
 (cd robot-ui && npm run build:prod)
 ```
 

@@ -60,7 +60,7 @@
 import { mapState } from 'vuex';
 import recordMixin from './recording.js'
 import {
-  getFiles
+  getManualMediaFiles
 } from '../../../api/media.js';
 import { getCachedFileObjectUrl, invalidateCachedFile } from '@/utils/file-object-url-cache'
 import videoUtils from '../../../utils/videoUtils.js'
@@ -137,7 +137,7 @@ export default {
     async getSnapData() {
       const loadSeq = ++this.snapshotLoadSeq
       try {
-        const res = await getFiles({ page: this.snapShotInfo.page, size: this.snapShotInfo.size, fileType: 'IMAGE', status: 'READY' }) || {}
+        const res = await getManualMediaFiles('IMAGE', { page: this.snapShotInfo.page, size: this.snapShotInfo.size, status: 'READY' }) || {}
         const items = res.items || []
         const urls = await Promise.all(items.map(item =>
           getCachedFileObjectUrl(item.fileId).catch(() => '')
@@ -155,9 +155,7 @@ export default {
       }
     },
     async updateRecordings(items) {
-      const recordings = this.recordingTab === 'patrol'
-            ? items.filter(item => item.sourceType !== 'LIVEKIT_EGRESS' && !this.recordingData[item.fileId])
-            : items.filter(item => !this.recordingData[item.fileId])
+      const recordings = items.filter(item => !this.recordingData[item.fileId])
       this.recordings = [...recordings, ...this.recordings]
       await this.updatePlayers(recordings)
     },

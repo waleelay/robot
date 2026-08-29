@@ -41,20 +41,6 @@ export function buildSnapshotOptions(item = {}) {
     }))
 }
 
-export async function loadAlarmListObjectUrls(items = []) {
-  const urls = {}
-  await Promise.all(items.map(async item => {
-    const fileId = alarmSnapshotFileId(item?.snapshotUrl, 'visible', item)
-    if (!fileId || item.alarmId == null) return
-    try {
-      urls[String(item.alarmId)] = await getCachedFileObjectUrl(fileId)
-    } catch (error) {
-      // 无权限或文件不存在时保持占位，避免 <img> 直接请求 /content 出现 401。
-    }
-  }))
-  return urls
-}
-
 export async function loadSnapshotObjectUrls(snapshotUrl, item = {}, keys) {
   const resolvedKeys = keys && keys.length
     ? keys

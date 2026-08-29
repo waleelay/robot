@@ -365,6 +365,7 @@ public class ControlMediaServiceClient {
      * @param extensionId 通用扩展 ID
      * @param fileType 文件类型
      * @param status 状态消息
+     * @param source 文件来源，对应 metadata.source
      * @param page page
      * @param size size
      * @param user 当前用户
@@ -376,6 +377,7 @@ public class ControlMediaServiceClient {
             String extensionId,
             FileType fileType,
             FileStatus status,
+            String source,
             int page,
             int size,
             CurrentUser user) {
@@ -385,6 +387,7 @@ public class ControlMediaServiceClient {
                 .queryParamIfPresent("extensionId", optional(extensionId))
                 .queryParamIfPresent("fileType", Optional.ofNullable(fileType).map(Enum::name))
                 .queryParamIfPresent("status", Optional.ofNullable(status).map(Enum::name))
+                .queryParamIfPresent("source", optional(source))
                 .queryParam("page", page)
                 .queryParam("size", size)
                 .build()

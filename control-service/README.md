@@ -44,6 +44,7 @@ src/main/java/com/robot/control/
 - `ControlFixedCameraController`：单路/批量固定摄像头启动。
 - `ControlVideoSessionController`：查询、Token、viewer、对讲、切换、重启和录像。
 - `ControlFileController`：把文件请求代理到 Media，并改写播放路径。
+- 文件列表的 `source` 查询参数原样转发给 Media，用于在分页前按 `metadata.source` 区分文件来源。
 - `MileageController`：按时间范围和机器人批量查询持久化里程。
 
 `GET /api/control/robots` 已移除；内存注册表只通过 `/api/control/robots/registry` 供 BFF 聚合。

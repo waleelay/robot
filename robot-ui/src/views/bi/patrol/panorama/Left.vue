@@ -196,13 +196,9 @@
               <div v-for="(item, index) in getObjByOrder(alarmsData?.[key]?.items || [], 'eventTime', 'array')" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert(item)">
                 <div class="img wp120 hp72 flx-center"
                 >
-                  <img
-                    v-if="alarmImageUrl(item)"
-                    :src="alarmImageUrl(item)"
-                    alt=""
-                    style="width: 100%; height: 100%; object-fit: cover;"
-                  >
-                  <div v-else class="img-placeholder">暂无图片</div>
+                  <AlarmSnapshotImage :item="item">
+                    <div class="img-placeholder">暂无图片</div>
+                  </AlarmSnapshotImage>
                   <span class="alert_type wp64 text-ellipsis">{{ item.categoryName }}</span>
                 </div>
                 <div class="ml6 flex1" style="min-width: 0;">
@@ -246,12 +242,12 @@ import TaskRobotView from '../../components/modal/TaskRobotView.vue';
 import WarningBatch from './warning/WarningBatch.vue'
 import { getDescArr } from '../../../../utils/index.js';
 import Empty from '../../components/Empty.vue';
+import AlarmSnapshotImage from '@/components/AlarmSnapshotImage.vue'
 import { executionStatusLabel } from '../business/execution-status.js';
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
-import { loadAlarmListObjectUrls } from '@/utils/alarm-snapshot'
 export default {
   name: 'BiPatrolPanoramaLeft',
-  components: { TaskRobotView, WarningBatch, Empty },
+  components: { TaskRobotView, WarningBatch, Empty, AlarmSnapshotImage },
   props: {
     collapse: {
       type: Boolean,
@@ -295,8 +291,6 @@ export default {
         },
       },
       updated: false,
-      alarmImageUrls: {},
-      alarmImageLoadSeq: 0,
       startingTaskIds: [],
       actingRecordIds: [],
     }
@@ -368,20 +362,6 @@ export default {
     pauseResumeTitle(item) {
       if (item && item.status === 'paused') return this.canResumeExecution ? '恢复' : '无权限'
       return this.canPauseExecution ? '暂停' : '无权限'
-    },
-    alarmImageUrl(item) {
-      if (!item?.alarmId) return ''
-      return this.alarmImageUrls[String(item.alarmId)] || ''
-    },
-    collectAlarmItems() {
-      const data = this.alarmsData || {}
-      return ['high', 'medium', 'low'].flatMap(key => data[key]?.items || [])
-    },
-    async loadAlarmImages() {
-      const seq = ++this.alarmImageLoadSeq
-      const nextUrls = await loadAlarmListObjectUrls(this.collectAlarmItems())
-      if (seq !== this.alarmImageLoadSeq) return
-      this.alarmImageUrls = nextUrls
     },
     /**
      * 通用的按时间属性降序排序函数
@@ -779,7 +759,6 @@ export default {
   },
   beforeDestroy() {
     this.$root.$off('bi-panorama-focus-task', this.focusTaskFromPopup)
-    this.alarmImageUrls = {}
   },
   watch: {
     // 切换 GIS/SLAM 或 SLAM 地图时，关闭任务装备弹窗
@@ -796,7 +775,6 @@ export default {
     // },
     alarmsData: {
       handler(newVal) {
-        this.loadAlarmImages()
         if (newVal?.high?.items?.length && !this.updated) {
           this.$set(this.alertCollapseArr, 0, false)
           this.updated = true

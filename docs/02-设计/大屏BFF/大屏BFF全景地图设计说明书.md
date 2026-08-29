@@ -255,15 +255,7 @@ GET /api/bigscreen/panorama/overview
         "y": 42.8,
         "z": 0.0,
         "address": "A区主干道"
-      },
-      "task": [
-        {
-          "taskId": "task-001",
-          "name": "A区-夜间巡逻",
-          "status": "running",
-          "timeRange": "20:00-22:00"
-        }
-      ]
+      }
     }
   ],
   "tasks": [
@@ -287,10 +279,7 @@ GET /api/bigscreen/panorama/overview
           "status": "online"
         }
       ],
-      "mapId": 1,
-      "pathPoints": [
-        {"id": 101, "pointCode": "001", "pointName": "A区主干道", "pointType": "NORMAL", "coordinateX": 118.4, "coordinateY": 42.8}
-      ]
+      "mapId": 1
     }
   ],
   "alarms": {
@@ -349,33 +338,14 @@ GET /api/bigscreen/panorama/overview
       "originX": -21.7,
       "originY": -16.0,
       "originYaw": 0.0,
-      "previewGeneratedAt": "2026-06-12 11:31:02",
-      "points": [
-        {
-          "id": 101,
-          "pointCode": "001",
-          "pointName": "A区主干道",
-          "pointType": "NORMAL",
-          "coordinateX": 118.4,
-          "coordinateY": 42.8
-        }
-      ],
-      "deviceIds": ["test111"],
-      "fixedCamares": [
-        {
-          "id": 201,
-          "mapId": 1,
-          "cameraName": "A区固定摄像头"
-        }
-      ]
+      "previewGeneratedAt": "2026-06-12 11:31:02"
     }
   ]
 }
 ```
 
-`map[].fixedCamares` 为当前地图的固定摄像头列表。BFF 按每张地图的 `id/mapId`
-请求 `/api/v1/management/fixed-cameras?pageNum=1&pageSize=100&mapId={mapId}`，取分页响应
-`data.records` 原样写入；地图无 ID 或未查到数据时返回 `[]`。
+Overview 的 `map[]` 只返回地图摘要。当前地图的 `points/deviceIds/fixedCamares` 由
+`GET /api/bigscreen/panorama/maps/{mapId}/resources` 按需返回，非当前地图不预取。
 
 `patrolOverview` 字段说明：
 
@@ -395,20 +365,19 @@ GET /api/bigscreen/panorama/overview
 | `taskOverview.running` | 执行中的任务数 | 执行中 |
 | `taskOverview.pending` | 待执行的任务数 | 待执行 |
 
-`tasks[]` 来源于 `/api/v1/management/task-workflow-plans?pageNum=1&pageSize=20` 的任务计划列表；地图与路径字段说明：
+`tasks[]` 来源于 `/api/v1/management/task-workflow-plans?pageNum={pageNum}&pageSize=100` 的完整分页任务计划列表。
 
-`tasks[]` 不再使用 mock 数据兜底；`timeRange`、`currentLocation`、`mapId` 等未查询到的标量字段返回 `null`，`equipmentList`、`pathPoints` 等数组字段返回空数组。
+`tasks[]` 不再使用 mock 数据兜底；`timeRange`、`mapId` 等未查询到的标量字段返回 `null`，
+`equipmentList` 无数据时返回空数组。Overview 不返回 `currentLocation/mapPoints/pathPoints`。
 
 | 字段 | 含义 | 数据来源 |
 |---|---|---|
-| `tasks[]` | 任务列表 | `/api/v1/management/task-workflow-plans?pageNum=1&pageSize=20` |
+| `tasks[]` | 任务列表 | `/api/v1/management/task-workflow-plans?pageNum={pageNum}&pageSize=100`，读取完整分页 |
 | `tasks[].taskId` | 任务计划 ID，number/int | `/api/v1/management/task-workflow-plans` 的 `id` |
 | `tasks[].workflowInstanceId` | 当前任务实例 ID，number/int/null；用于暂停、恢复、终止任务实例 | `/api/v1/management/task-workflow-plans` 的 `activeWorkflowInstanceId/lastWorkflowInstanceId/workflowInstanceId` |
-| `tasks[].mapId` | 任务关联地图 ID，number/int | `task-workflow-definitions.{workflowDefinitionId}.mapId` |
-| `tasks[].pathPoints` | 任务路径点位对应的地图点位集合 | 根据路径点的 `mapPointId` 到地图点位中匹配，仅返回二维绘制所需字段 |
+| `tasks[].mapId` | 任务关联地图 ID，number/int/null | 任务计划的 `mapId/mapID`；定义解析由按需路径/详情接口完成 |
 | `map` | 可用地图数组 | `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
-| `map[].points` | 每张地图的点位集合 | 按 `map[].id/mapId` 请求 `/api/v1/management/maps/{mapId}/points`；查询失败或无点位时返回 `[]` |
-| `map[].deviceIds` | 当前地图的设备 ID 集合 | 按 `devices[].location.mapId` 与地图 `id/mapId` 匹配，只返回 `robotId` 数组；完整设备数据统一使用顶层 `devices[]` |
+| 当前地图渲染资源 | 点位、关联设备 ID、固定摄像头 | `/panorama/maps/{mapId}/resources` 按需返回 |
 
 历史 REST mock 点位表不再是当前 REST 数据源。当前代码只在 WebSocket `robot.state` 不带定位时，对 `test111`、`SN005`、`SN006` 生成演示位置；以下旧表不得作为当前接口期望：
 
@@ -714,6 +683,10 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue
 `workflowInstanceId`、`taskName`、`humanTaskId`、`humanTaskName`。管理端图片未携带通道
 类型时，BFF 仅将第一张 `imageFileIds[]` 映射为 `snapshotUrl.visible`，不推断
 `thermal/front`。
+
+告警列表只加载进入滚动可视区及其前后 100 px 范围的缩略图，折叠分组和未滚动到的告警不请求
+`/api/bigscreen/control/files/{fileId}/content`；打开告警详情后再加载该告警的多路原图。前端按
+`fileId` 合并重复请求并将文件内容请求限制为最多 4 路并发，避免大量未处理告警放大首屏请求。
 
 ## 6. 动态数据回显
 

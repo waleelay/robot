@@ -121,10 +121,16 @@
                   </div>
                 </div>
               </div>
-              <div class="list-box mt10 hp374" style="margin-right: -6px; padding-right: 6px;">
+              <div
+                ref="mediaListBox"
+                class="list-box mt10 hp374"
+                style="margin-right: -6px; padding-right: 6px;"
+                @scroll="handleListScroll"
+              >
                 <div
                   v-for="item in filteredList"
                   :key="item.fileId"
+                  :data-media-file-id="item.fileId"
                   class="item pt9 pr6 pb9 pl10 flx-justify-between"
                   :class="{ selected: selectedId === item.fileId }"
                   @click="handleClickRow(item)"
@@ -168,6 +174,7 @@
                   </div>
                 </div>
                 <div v-if="!filteredList.length" class="empty-text flx-center hp100">暂无记录</div>
+                <div v-else-if="listLoading" class="empty-text flx-center hp30">加载中...</div>
               </div>
             </div>
           </div>
@@ -181,7 +188,7 @@
 import { mapState } from 'vuex'
 import Hls from 'hls.js'
 import {
-  getFiles,
+  getManualMediaFiles,
   fileDownloadUrl,
   deleteFile
 } from '../../../../../../api/media.js'
@@ -208,7 +215,16 @@ export default {
       detailHls: null,
       detailPlaySeq: 0,
       thumbPlayers: {},
+      thumbLoadingIds: new Set(),
       imageLoadSeq: 0,
+      imageLoadingIds: new Set(),
+      listPage: 0,
+      listSize: 20,
+      listTotal: 0,
+      listLoading: false,
+      listLoadSeq: 0,
+      listObserver: null,
+      visibleMediaIds: new Set(),
       pickerOptions: {
         disabledDate: (date) => {
           const before = `${new Date().getFullYear() - 9}-1-1 00:00:00`
@@ -279,7 +295,12 @@ export default {
     }
   },
   beforeDestroy() {
+    this.listLoadSeq += 1
     this.imageLoadSeq += 1
+    this.imageLoadingIds.clear()
+    this.thumbLoadingIds.clear()
+    this.visibleMediaIds.clear()
+    this.destroyListObserver()
     this.destroyDetailPlayer()
     this.destroyThumbPlayers()
   },
@@ -295,8 +316,6 @@ export default {
       if (this.simpleMode) {
         const seed = item ? [item] : []
         this.listData = seed.map(row => this.normalizeItem(row))
-        const hydrated = await this.hydrateImageItems(this.listData)
-        if (hydrated != null) this.listData = hydrated
         const current = this.listData[0] || null
         if (current) {
           await this.selectItem(current)
@@ -316,22 +335,15 @@ export default {
         this.details = {}
         this.selectedId = ''
       }
-      if (!this.isImage) {
-        this.$nextTick(() => this.bindListThumbs())
-      }
     },
     handleSearchTypeChange() {
       this.handleFilter()
-      if (!this.isImage) {
-        this.$nextTick(() => this.bindListThumbs())
-      }
+      this.$nextTick(() => this.observeVisibleMedia())
     },
     handleDateChange(val) {
       if (!val || (Array.isArray(val) && (val.length === 2 || val.length === 0))) {
         this.handleFilter()
-        if (!this.isImage) {
-          this.$nextTick(() => this.bindListThumbs())
-        }
+        this.$nextTick(() => this.observeVisibleMedia())
       }
     },
     normalizeItem(item = {}) {
@@ -350,68 +362,128 @@ export default {
       if (Array.isArray(res)) return res
       return []
     },
-    async hydrateImageItems(items = []) {
-      const loadSeq = ++this.imageLoadSeq
-      const normalized = items.map(item => this.normalizeItem(item))
-      await Promise.all(normalized.map(async (item, index) => {
-        if (item.fileType !== 'IMAGE' || !item.fileId || item.customUrl) return
-        try {
-          const customUrl = await getCachedFileObjectUrl(item.fileId)
-          if (loadSeq !== this.imageLoadSeq) return
-          this.$set(normalized, index, { ...normalized[index], customUrl })
-          const listIndex = this.listData.findIndex(row => row.fileId === item.fileId)
-          if (listIndex !== -1) {
-            this.$set(this.listData, listIndex, {
-              ...this.listData[listIndex],
-              customUrl
-            })
-          }
-          if (this.details.fileId === item.fileId) {
-            this.details = { ...this.details, customUrl }
-          }
-        } catch (e) {
-          // 无权限或文件不存在时保持占位
-        }
-      }))
-      if (loadSeq !== this.imageLoadSeq) return null
-      return normalized
-    },
     async loadList(seedList = []) {
+      const loadSeq = ++this.listLoadSeq
+      this.imageLoadSeq += 1
+      this.imageLoadingIds.clear()
+      this.thumbLoadingIds.clear()
+      this.visibleMediaIds.clear()
+      this.destroyListObserver()
       this.destroyThumbPlayers()
       const seedItems = (Array.isArray(seedList) ? seedList : [])
         .filter(Boolean)
         .map(item => this.normalizeItem(item))
-      // 先用已有缩略图乐观渲染，避免等待接口时右侧空白
-      if (seedItems.length) {
-        this.listData = seedItems
-      }
+      this.listData = seedItems
+      this.listPage = 0
+      this.listTotal = seedItems.length
+      await this.loadListPage(0, true, loadSeq)
+    },
+    async loadListPage(page, replace = false, loadSeq = this.listLoadSeq) {
+      if (this.listLoading) return
+      this.listLoading = true
       try {
         const params = {
-          page: 0,
-          size: 50,
-          status: 'READY',
-          fileType: this.outerTabIndex === 1 ? 'VIDEO' : 'IMAGE'
+          page,
+          size: this.listSize,
+          status: 'READY'
         }
         if (this.selectedRobotId) params.robotId = this.selectedRobotId
-        const res = await getFiles(params) || {}
+        const fileType = this.outerTabIndex === 1 ? 'VIDEO' : 'IMAGE'
+        const res = await getManualMediaFiles(fileType, params) || {}
+        if (loadSeq !== this.listLoadSeq) return
         const items = this.extractFileItems(res)
         const urlById = {}
-        seedItems.forEach(item => {
+        this.listData.forEach(item => {
           if (item.fileId && item.customUrl) urlById[item.fileId] = item.customUrl
         })
-        this.listData = items.map(item => {
+        const normalized = items.map(item => {
           const normalized = this.normalizeItem(item)
           return {
             ...normalized,
             customUrl: normalized.customUrl || urlById[normalized.fileId] || ''
           }
         })
-        const hydrated = await this.hydrateImageItems(this.listData)
-        if (hydrated != null) {
-          this.listData = hydrated
+        if (replace) {
+          this.listData = normalized
+        } else {
+          const knownIds = new Set(this.listData.map(item => item.fileId))
+          this.listData = this.listData.concat(normalized.filter(item => !knownIds.has(item.fileId)))
         }
+        const total = Number(res.total ?? res.data?.total)
+        this.listTotal = Number.isFinite(total) ? total : this.listData.length
+        this.listPage = page
       } catch (e) {
         if (!this.listData.length) this.listData = []
+      } finally {
+        if (loadSeq === this.listLoadSeq) this.listLoading = false
+      }
+      await this.$nextTick()
+      if (loadSeq === this.listLoadSeq) this.observeVisibleMedia()
+    },
+    async handleListScroll(event) {
+      const target = event?.target
+      if (!target || this.listLoading || this.listData.length >= this.listTotal) return
+      if (target.scrollTop + target.clientHeight < target.scrollHeight - 80) return
+      await this.loadListPage(this.listPage + 1)
+    },
+    observeVisibleMedia() {
+      this.destroyListObserver()
+      const root = this.$refs.mediaListBox
+      if (!root || this.simpleMode) return
+      const elements = root.querySelectorAll('[data-media-file-id]')
+      const renderedIds = new Set(Array.from(elements, element => element.dataset.mediaFileId))
+      Object.keys(this.thumbPlayers).forEach(fileId => {
+        if (!renderedIds.has(fileId)) {
+          this.visibleMediaIds.delete(fileId)
+          this.destroyThumbPlayer(fileId)
+        }
+      })
+      if (typeof IntersectionObserver === 'undefined') {
+        this.filteredList.forEach(item => {
+          this.visibleMediaIds.add(item.fileId)
+          this.loadVisibleMedia(item)
+        })
+        return
+      }
+      this.listObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          const fileId = entry.target.dataset.mediaFileId
+          const item = this.listData.find(row => row.fileId === fileId)
+          if (!item) return
+          if (entry.isIntersecting) {
+            this.visibleMediaIds.add(fileId)
+            this.loadVisibleMedia(item)
+          } else {
+            this.visibleMediaIds.delete(fileId)
+            if (item.fileType === 'VIDEO') this.destroyThumbPlayer(fileId)
+          }
+        })
+      }, { root, rootMargin: '80px 0px' })
+      elements.forEach(element => this.listObserver.observe(element))
+    },
+    destroyListObserver() {
+      if (!this.listObserver) return
+      this.listObserver.disconnect()
+      this.listObserver = null
+    },
+    loadVisibleMedia(item) {
+      if (item.fileType === 'IMAGE') this.loadImage(item)
+      else this.bindListThumb(item)
+    },
+    async loadImage(item) {
+      if (!item?.fileId || item.customUrl || this.imageLoadingIds.has(item.fileId)) return
+      const loadSeq = this.imageLoadSeq
+      this.imageLoadingIds.add(item.fileId)
+      try {
+        const customUrl = await getCachedFileObjectUrl(item.fileId)
+        if (loadSeq !== this.imageLoadSeq) return
+        const index = this.listData.findIndex(row => row.fileId === item.fileId)
+        if (index !== -1) this.$set(this.listData, index, { ...this.listData[index], customUrl })
+        if (this.details.fileId === item.fileId) this.details = { ...this.details, customUrl }
+      } catch (e) {
+        // 文件不可用时保留占位。
+      } finally {
+        this.imageLoadingIds.delete(item.fileId)
       }
     },
     handleFilter() {
@@ -431,7 +503,9 @@ export default {
       this.details = { ...item }
       this.selectedId = item.fileId
       this.destroyDetailPlayer()
-      if ((item.fileType || 'IMAGE') === 'VIDEO') {
+      if ((item.fileType || 'IMAGE') === 'IMAGE') {
+        await this.loadImage(item)
+      } else {
         this.$nextTick(() => this.playDetailVideo(item))
       }
     },
@@ -515,16 +589,13 @@ export default {
         finish()
       }
     },
-    async bindListThumbs() {
-      for (const item of this.filteredList) {
-        if ((item.fileType || 'IMAGE') !== 'VIDEO') continue
-        await this.bindListThumb(item)
-      }
-    },
     async bindListThumb(recording) {
-      if (!recording?.fileId || recording.status !== 'READY') return
+      if (!recording?.fileId || recording.status !== 'READY' ||
+        this.thumbPlayers[recording.fileId] || this.thumbLoadingIds.has(recording.fileId)) return
+      this.thumbLoadingIds.add(recording.fileId)
       try {
         const playback = await getCachedFilePlayUrl(recording.fileId)
+        if (!this.visibleMediaIds.has(recording.fileId)) return
         const ref = this.$refs[`listThumb_${recording.fileId}`]
         const player = Array.isArray(ref) ? ref[0] : ref
         if (!player) return
@@ -550,7 +621,10 @@ export default {
           player.addEventListener('loadeddata', () => this.primeVideoPoster(player), { once: true })
         }
         this.thumbPlayers[recording.fileId] = { player, recordedHls }
-      } catch (e) {}
+      } catch (e) {
+      } finally {
+        this.thumbLoadingIds.delete(recording.fileId)
+      }
     },
     destroyThumbPlayer(fileId) {
       const data = this.thumbPlayers[fileId]
@@ -655,12 +729,15 @@ export default {
         this.details = {}
         this.selectedId = ''
       }
-      if (!this.isImage) {
-        this.$nextTick(() => this.bindListThumbs())
-      }
+      this.$nextTick(() => this.observeVisibleMedia())
     },
     close() {
+      this.listLoadSeq += 1
       this.imageLoadSeq += 1
+      this.imageLoadingIds.clear()
+      this.thumbLoadingIds.clear()
+      this.visibleMediaIds.clear()
+      this.destroyListObserver()
       this.destroyDetailPlayer()
       this.destroyThumbPlayers()
       this.dialogVisible = false
@@ -672,6 +749,9 @@ export default {
       this.dateValue = []
       this.outerTabIndex = 0
       this.simpleMode = false
+      this.listPage = 0
+      this.listTotal = 0
+      this.listLoading = false
     }
   }
 }

@@ -1,5 +1,5 @@
 import Hls from "hls.js"
-import { getFiles } from "../../../api/media"
+import { getManualMediaFiles } from "../../../api/media"
 import { getCachedFilePlayUrl } from "@/utils/file-object-url-cache"
 import { durationFromVideoElement, durationText, errorMessage } from "../../../utils"
 
@@ -10,7 +10,6 @@ export default {
       recordingsLoading: false,
       recordingData: {},
       refPrefix: 'recordedPlayer',
-      recordingTab: 'manual',
       recordingLoadSeq: 0,
     }
   },
@@ -23,19 +22,16 @@ export default {
         const params = {
           // robotId: 'robot-001',
           status: 'READY',
-          fileType: 'VIDEO',
           page: this.recordInfo.page,
           size: this.recordInfo.size,
         }
-        const response = await getFiles(params)
+        const response = await getManualMediaFiles('VIDEO', params)
         const items = response.items || []
         this.recordInfo.total = response.total || 0
         if (isUpdate) {
           this.updateRecordings(items)
         } else {
-          this.recordings = this.recordingTab === 'patrol'
-            ? items.filter(item => item.extensionId)
-            : items.filter(item => !item.extensionId)
+          this.recordings = items
         }
       } catch (error) {
         this.$message.error(errorMessage(error))

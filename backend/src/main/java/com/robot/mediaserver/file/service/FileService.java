@@ -46,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -63,6 +64,10 @@ import org.springframework.web.multipart.MultipartFile;
 public class FileService {
 
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
+    private static final String MEDIA_VIEWER = "MEDIA_VIEWER";
+    private static final String MEDIA_OPERATOR = "MEDIA_OPERATOR";
+    private static final Set<String> USER_OWNED_SOURCES = Set.of(
+            "WEB_SNAPSHOT", "LIVEKIT_EGRESS");
 
     private final MediaProperties properties;
     private final MediaFileRepository fileRepository;
@@ -119,6 +124,10 @@ public class FileService {
                 FileUploadMode.SIMPLE,
                 metadata,
                 timestamp);
+        if (isUserOwnedSource(metadata)) {
+            requireRole(user, MEDIA_OPERATOR, "无手动媒体操作权限");
+            entity.setCreatedBy(user.userId());
+        }
         fileRepository.save(entity);
         try {
             storage.upload(entity.getObjectKey(), file.getInputStream(), file.getSize(), entity.getContentType());
@@ -252,9 +261,13 @@ public class FileService {
             String extensionId,
             FileType fileType,
             FileStatus status,
+            String source,
             int page,
             int size) {
         Specification<MediaFile> spec = (root, query, cb) -> cb.equal(root.get("orgId"), user.orgId());
+        spec = spec.and((root, query, cb) -> canViewUserOwnedFiles(user)
+                ? cb.or(cb.isNull(root.get("createdBy")), cb.equal(root.get("createdBy"), user.userId()))
+                : cb.isNull(root.get("createdBy")));
         if (robotId != null && !robotId.isBlank()) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("robotId"), robotId));
         }
@@ -269,6 +282,15 @@ public class FileService {
         }
         if (status != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (source != null && !source.isBlank()) {
+            String normalizedSource = source.trim();
+            spec = spec.and((root, query, cb) -> cb.equal(
+                    cb.function(
+                            "json_unquote",
+                            String.class,
+                            cb.function("json_extract", String.class, root.get("metadataJson"), cb.literal("$.source"))),
+                    normalizedSource));
         }
         Page<MediaFile> result = fileRepository.findAll(
                 spec,
@@ -303,9 +325,7 @@ public class FileService {
         List<MediaFile> files = new ArrayList<>();
         for (String fileId : fileIds) {
             MediaFile file = requireFile(fileId);
-            if (!Objects.equals(file.getOrgId(), user.orgId())) {
-                throw error(HttpStatus.NOT_FOUND, "FILE_NOT_FOUND", "未找到文件");
-            }
+            requireFileAccess(user, file, MEDIA_OPERATOR, "FILE_NOT_FOUND", "未找到文件");
             files.add(file);
         }
 
@@ -342,18 +362,14 @@ public class FileService {
 
     public FileListItemResponse detail(CurrentUser user, String fileId) {
         MediaFile file = requireFile(fileId);
-        if (!Objects.equals(file.getOrgId(), user.orgId())) {
-            throw error(HttpStatus.NOT_FOUND, "FILE_NOT_FOUND", "未找到文件");
-        }
+        requireFileAccess(user, file, MEDIA_VIEWER, "FILE_NOT_FOUND", "未找到文件");
         return item(file);
     }
 
     @Transactional
     public void delete(CurrentUser user, String fileId) {
         MediaFile file = requireFile(fileId);
-        if (user == null || !Objects.equals(file.getOrgId(), user.orgId())) {
-            throw error(HttpStatus.NOT_FOUND, "FILE_NOT_FOUND", "未找到文件");
-        }
+        requireFileAccess(user, file, MEDIA_OPERATOR, "FILE_NOT_FOUND", "未找到文件");
         if (file.getStatus() == FileStatus.DELETED) {
             return;
         }
@@ -448,7 +464,8 @@ public class FileService {
     @Transactional
     public synchronized FileListItemResponse startLiveRecording(
             VideoSession session, String liveKitTrackSid, CurrentUser user) {
-        MediaFile active = findActiveLiveRecording(session.getSessionId(), user).orElse(null);
+        requireRole(user, MEDIA_OPERATOR, "无手动媒体操作权限");
+        MediaFile active = findActiveLiveRecording(session.getSessionId(), null).orElse(null);
         if (active != null) {
             throw error(HttpStatus.CONFLICT, "RECORDING_ALREADY_ACTIVE", "当前视频正在录制中");
         }
@@ -472,6 +489,7 @@ public class FileService {
                 FileUploadMode.MULTIPART,
                 writeMetadata(metadata),
                 timestamp);
+        file.setCreatedBy(user.userId());
         file.setStatus(FileStatus.UPLOADING);
         fileRepository.save(file);
         MediaVideoFile video = ensureVideo(file, VideoFileStatus.PROCESSING);
@@ -499,7 +517,8 @@ public class FileService {
     @Transactional
     public FileListItemResponse stopLiveRecording(String sessionId, String fileId, CurrentUser user) {
         MediaFile file = requireFile(fileId);
-        if (!Objects.equals(file.getOrgId(), user.orgId()) || !liveMetadata(file, "sessionId").equals(sessionId)) {
+        requireFileAccess(user, file, MEDIA_OPERATOR, "RECORDING_NOT_ACTIVE", "录像未在进行中");
+        if (!liveMetadata(file, "sessionId").equals(sessionId)) {
             throw error(HttpStatus.NOT_FOUND, "RECORDING_NOT_ACTIVE", "录像未在进行中");
         }
         String startedClientId = liveMetadata(file, "startedClientId");
@@ -518,11 +537,12 @@ public class FileService {
      * 且不会把调用方（如启动清理）的事务标记为 rollback-only 导致进程退出。
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
-    public boolean stopLiveRecordingForClient(String sessionId, String clientId) {
-        if (clientId == null || clientId.isBlank()) {
+    public boolean stopLiveRecordingForClient(String sessionId, String userId, String clientId) {
+        if (userId == null || userId.isBlank() || clientId == null || clientId.isBlank()) {
             return false;
         }
         MediaFile active = findActiveLiveRecording(sessionId, null)
+                .filter(file -> Objects.equals(file.getCreatedBy(), userId))
                 .filter(file -> Objects.equals(liveMetadata(file, "startedClientId"), clientId))
                 .orElse(null);
         if (active == null) {
@@ -533,6 +553,7 @@ public class FileService {
     }
 
     public FileListItemResponse activeLiveRecording(String sessionId, CurrentUser user) {
+        requireRole(user, MEDIA_VIEWER, "无手动媒体查看权限");
         return findActiveLiveRecording(sessionId, user).map(this::item).orElse(null);
     }
 
@@ -910,7 +931,8 @@ public class FileService {
 
     private MediaFile requirePlayableFile(CurrentUser user, String fileId) {
         MediaFile file = requireFile(fileId);
-        if (!Objects.equals(file.getOrgId(), user.orgId()) || file.getStatus() != FileStatus.READY) {
+        requireFileAccess(user, file, MEDIA_VIEWER, "FILE_NOT_READY", "文件尚未就绪");
+        if (file.getStatus() != FileStatus.READY) {
             throw error(HttpStatus.NOT_FOUND, "FILE_NOT_READY", "文件尚未就绪");
         }
         return file;
@@ -922,7 +944,47 @@ public class FileService {
                         FileType.VIDEO,
                         FileStatus.UPLOADING,
                         "livekit-egress:" + sessionId + ":")
-                .filter(file -> user == null || Objects.equals(file.getOrgId(), user.orgId()));
+                .filter(file -> user == null
+                        || (Objects.equals(file.getOrgId(), user.orgId())
+                                && Objects.equals(file.getCreatedBy(), user.userId())));
+    }
+
+    private void requireFileAccess(
+            CurrentUser user,
+            MediaFile file,
+            String role,
+            String notFoundCode,
+            String notFoundMessage) {
+        if (user == null
+                || !Objects.equals(file.getOrgId(), user.orgId())
+                || (file.getCreatedBy() != null && !Objects.equals(file.getCreatedBy(), user.userId()))) {
+            throw error(HttpStatus.NOT_FOUND, notFoundCode, notFoundMessage);
+        }
+        if (file.getCreatedBy() != null) {
+            requireRole(user, role, MEDIA_OPERATOR.equals(role) ? "无手动媒体操作权限" : "无手动媒体查看权限");
+        }
+    }
+
+    private boolean canViewUserOwnedFiles(CurrentUser user) {
+        return user != null && (user.hasRole(MEDIA_VIEWER) || user.hasRole(MEDIA_OPERATOR));
+    }
+
+    private void requireRole(CurrentUser user, String role, String message) {
+        if (user == null || (!user.hasRole(role) && !(MEDIA_VIEWER.equals(role) && user.hasRole(MEDIA_OPERATOR)))) {
+            throw error(HttpStatus.FORBIDDEN, "MEDIA_PERMISSION_DENIED", message);
+        }
+    }
+
+    private boolean isUserOwnedSource(String metadata) {
+        if (metadata == null || metadata.isBlank()) {
+            return false;
+        }
+        try {
+            Map<String, Object> values = objectMapper.readValue(metadata, new TypeReference<>() {});
+            return USER_OWNED_SOURCES.contains(String.valueOf(values.get("source")));
+        } catch (Exception ex) {
+            return false;
+        }
     }
 
     private void refresh(MediaFileUpload upload) {

@@ -146,13 +146,13 @@ public class PanoramaCenterClient {
     }
 
     public List<Map<String, Object>> taskWorkflowPlans() {
-        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-plans")
-                .queryParam("pageNum", 1)
-                .queryParam("pageSize", 20)
+        int pageSize = 100;
+        return taskPagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-plans")
+                .queryParam("pageNum", pageNum)
+                .queryParam("pageSize", pageSize)
                 .queryParam("enabled", true)
                 .build(true)
-                .toUri();
-        return taskRecords(uri, "TASK_PLANS_UNAVAILABLE");
+                .toUri(), pageSize, "TASK_PLANS_UNAVAILABLE");
     }
 
     /**
@@ -181,13 +181,13 @@ public class PanoramaCenterClient {
     }
 
     public List<Map<String, Object>> taskWorkflowInstances() {
-        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances")
-                .queryParam("pageNum", 1)
-                .queryParam("pageSize", 100)
+        int pageSize = 100;
+        return taskPagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances")
+                .queryParam("pageNum", pageNum)
+                .queryParam("pageSize", pageSize)
                 .queryParam("scope", "ALL")
                 .build(true)
-                .toUri();
-        return taskRecords(uri, "TASK_INSTANCES_UNAVAILABLE");
+                .toUri(), pageSize, "TASK_INSTANCES_UNAVAILABLE");
     }
 
     public List<Map<String, Object>> taskWorkflowInstancesForStatistics() {
@@ -474,12 +474,19 @@ public class PanoramaCenterClient {
             int pageSize,
             String unavailableReasonCode) {
         List<Map<String, Object>> result = new ArrayList<>();
+        List<Map<String, Object>> previousPage = null;
         for (int pageNum = 1; pageNum <= 1000; pageNum++) {
-            List<Map<String, Object>> page = taskRecords(uriFactory.apply(pageNum), unavailableReasonCode);
+            URI uri = uriFactory.apply(pageNum);
+            Map<String, Object> response = taskResponseMap(uri, unavailableReasonCode, false).orElse(Map.of());
+            List<Map<String, Object>> page = records(response);
+            if (page.equals(previousPage)) {
+                throw new TaskSourceException("TASK_PAGINATION_NO_PROGRESS", "Management 任务分页无进展");
+            }
             result.addAll(page);
-            if (page.size() < pageSize) {
+            if (page.size() < pageSize || reachedReportedTotal(response, result.size())) {
                 return List.copyOf(result);
             }
+            previousPage = page;
         }
         throw new TaskSourceException("TASK_PAGINATION_LIMIT", "Management 任务分页超过安全上限");
     }

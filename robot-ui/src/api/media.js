@@ -110,6 +110,15 @@ export function getFiles(params = {}) {
   })
 }
 
+const MANUAL_MEDIA_SOURCES = Object.freeze({
+  IMAGE: 'WEB_SNAPSHOT',
+  VIDEO: 'LIVEKIT_EGRESS'
+})
+
+export function getManualMediaFiles(fileType, params = {}) {
+  return getFiles({ ...params, fileType, source: MANUAL_MEDIA_SOURCES[fileType] })
+}
+
 export function fileDownloadUrl(fileId, inline = false) {
   return request({
     url: `/api/bigscreen/control/files/${encodeURIComponent(fileId)}/download-url`,

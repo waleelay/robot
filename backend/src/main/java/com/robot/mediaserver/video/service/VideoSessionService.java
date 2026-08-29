@@ -342,7 +342,7 @@ public class VideoSessionService {
         if (session.getStatus() == VideoSessionStatus.CLOSED) {
             return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
         }
-        stopClientRecordingQuietly(sessionId, user.clientId());
+        stopClientRecordingQuietly(sessionId, user.userId(), user.clientId());
         removeViewer(sessionId, user);
         session.setViewerCount(activeViewerCount(sessionId));
         if (session.getViewerCount() == 0 && !holdsRoomForIntercom(session)) {
@@ -999,7 +999,7 @@ public class VideoSessionService {
         String clientId = viewerClientId(viewer);
         viewer.setLeftAt(now());
         viewerRepository.save(viewer);
-        stopClientRecordingQuietly(viewer.getSessionId(), clientId);
+        stopClientRecordingQuietly(viewer.getSessionId(), viewer.getUserId(), clientId);
         repository.findById(viewer.getSessionId()).ifPresent(session -> {
             session.setViewerCount(activeViewerCount(session.getSessionId()));
             // 最后一个 viewer 离开后不立刻停止机器人推流，而是进入 IDLE_WAIT。
@@ -1162,11 +1162,11 @@ public class VideoSessionService {
         return marker < 0 || marker == identity.length() - 1 ? null : identity.substring(marker + 1);
     }
 
-    private void stopClientRecordingQuietly(String sessionId, String clientId) {
+    private void stopClientRecordingQuietly(String sessionId, String userId, String clientId) {
         try {
-            fileService.stopLiveRecordingForClient(sessionId, clientId);
+            fileService.stopLiveRecordingForClient(sessionId, userId, clientId);
         } catch (Exception ex) {
-            log.warn("停止观看端录像失败 sessionId={}, clientId={}", sessionId, clientId, ex);
+            log.warn("停止观看端录像失败 sessionId={}, userId={}, clientId={}", sessionId, userId, clientId, ex);
         }
     }
 

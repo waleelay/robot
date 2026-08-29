@@ -21,6 +21,7 @@
 #   UPDATE_INSTALL_DIR   compose 安装目录，默认 /data/robot-mediaserver-installer-amd64-20260719220656
 #   UPDATE_WORKSPACE     服务运行目录，默认 /home/jszn/mounts/media
 #   UPDATE_ENV_FILE      环境变量增量文件，默认 deploy/docker/update-services.env
+#   UPDATE_PYTHON_BIN    服务器环境变量同步脚本使用的 Python 命令，默认 python3
 #   UPDATE_SERVICES      本次更新的服务列表，默认 "media-service control-service bigscreen-bff"
 #   DIST_MEDIA/DIST_CONTROL/DIST_BIGSCREEN  三个 dist 包路径（默认指向各模块 target）
 #
@@ -40,6 +41,7 @@ UPDATE_WORKSPACE="${UPDATE_WORKSPACE:-/home/jszn/mounts/media}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 UPDATE_ENV_FILE="${UPDATE_ENV_FILE:-$SCRIPT_DIR/update-services.env}"
+UPDATE_PYTHON_BIN="${UPDATE_PYTHON_BIN:-python3}"
 UPDATE_SERVICES="${UPDATE_SERVICES:-media-service control-service bigscreen-bff}"
 
 DIST_MEDIA="${DIST_MEDIA:-$REPO_ROOT/backend/target/robot-mediaserver-dist.tar.gz}"
@@ -98,11 +100,11 @@ ssh_run "TS=\$(date +%Y%m%d%H%M%S); cp '$UPDATE_INSTALL_DIR/docker-compose.yml' 
 # 上传服务器端幂等同步助手，并把增量文件解析为 "SERVICE VAR VALUE" 行通过 stdin 传入
 "${SCP_BASE[@]}" "$SCRIPT_DIR/sync-server-env.py" "$HOST:/tmp/sync-server-env.py"
 awk -F'[ =]' 'NF>=3 && $0 !~ /^#/ && $0 !~ /^$/ {print $1, $2, substr($0, index($0, $2) + length($2) + 1)}' \
-  "$UPDATE_ENV_FILE" | "${SSH_BASE[@]}" "$HOST" "python3 /tmp/sync-server-env.py '$UPDATE_INSTALL_DIR/.env' '$UPDATE_INSTALL_DIR/docker-compose.yml'"
+  "$UPDATE_ENV_FILE" | "${SSH_BASE[@]}" "$HOST" "$UPDATE_PYTHON_BIN /tmp/sync-server-env.py '$UPDATE_INSTALL_DIR/.env' '$UPDATE_INSTALL_DIR/docker-compose.yml'"
 
 log "== 3/7 校验安装包 Compose 与仓库模板 =="
 "${SCP_BASE[@]}" "$SCRIPT_DIR/verify-compose-drift.py" "$HOST:/tmp/verify-compose-drift.py"
-ssh_run "cd '$UPDATE_INSTALL_DIR'; docker compose -f /tmp/update-services-compose.yml --env-file .env config --format json >/tmp/update-services-expected.json; docker compose config --format json >/tmp/update-services-actual.json; PYTHONIOENCODING=utf-8 python3 /tmp/verify-compose-drift.py /tmp/update-services-expected.json /tmp/update-services-actual.json"
+ssh_run "cd '$UPDATE_INSTALL_DIR'; docker compose -f /tmp/update-services-compose.yml --env-file .env config --format json >/tmp/update-services-expected.json; docker compose config --format json >/tmp/update-services-actual.json; PYTHONIOENCODING=utf-8 $UPDATE_PYTHON_BIN /tmp/verify-compose-drift.py /tmp/update-services-expected.json /tmp/update-services-actual.json"
 
 # ---------- 4. 备份并替换 bin/boot/lib ----------
 log "== 4/7 备份并替换服务运行目录 =="

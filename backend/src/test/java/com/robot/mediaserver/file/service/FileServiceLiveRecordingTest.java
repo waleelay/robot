@@ -1,6 +1,7 @@
 package com.robot.mediaserver.file.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -13,6 +14,7 @@ import com.robot.media.common.file.FileStatus;
 import com.robot.media.common.file.FileType;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.MediaProperties;
+import com.robot.mediaserver.file.api.FileApiException;
 import com.robot.mediaserver.file.model.FileUploadMode;
 import com.robot.mediaserver.file.model.MediaFile;
 import com.robot.mediaserver.file.model.MediaVideoFile;
@@ -99,6 +101,34 @@ class FileServiceLiveRecordingTest {
     }
 
     @Test
+    void rejectsSameClientWhenRecordingBelongsToAnotherUser() {
+        MediaFile file = recording();
+        when(fileRepository.findById(file.getFileId())).thenReturn(Optional.of(file));
+
+        CurrentUser anotherUser = new CurrentUser(
+                "user-2", "org001", Set.of("MEDIA_OPERATOR"), "web-1");
+
+        assertThatThrownBy(() -> service.stopLiveRecording("vs-1", file.getFileId(), anotherUser))
+                .isInstanceOf(FileApiException.class)
+                .satisfies(ex -> assertThat(((FileApiException) ex).getCode())
+                        .isEqualTo("RECORDING_NOT_ACTIVE"));
+        verifyNoInteractions(egressService);
+    }
+
+    @Test
+    void clientCleanupRequiresBothUserAndClient() {
+        MediaFile file = recording();
+        when(fileRepository.findFirstByFileTypeAndStatusAndSourceFileIdStartingWithOrderByUpdatedAtAsc(
+                        FileType.VIDEO,
+                        FileStatus.UPLOADING,
+                        "livekit-egress:vs-1:"))
+                .thenReturn(Optional.of(file));
+
+        assertThat(service.stopLiveRecordingForClient("vs-1", "user-2", "web-1")).isFalse();
+        verifyNoInteractions(egressService);
+    }
+
+    @Test
     void findsExpiredLiveRecording() {
         MediaFile file = recording();
         file.setSourceFileId("livekit-egress:vs-1:1");
@@ -133,6 +163,7 @@ class FileServiceLiveRecordingTest {
         MediaFile file = new MediaFile();
         file.setFileId("file-1");
         file.setOrgId("org001");
+        file.setCreatedBy("user-1");
         file.setRobotId("robot-1");
         file.setDeviceId("camera01");
         file.setFileType(FileType.VIDEO);

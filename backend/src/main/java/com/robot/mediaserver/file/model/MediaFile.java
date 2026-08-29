@@ -17,6 +17,7 @@ import com.robot.media.common.file.FileType;
         name = "media_file",
         indexes = {
                 @Index(name = "idx_file_org_robot_time", columnList = "orgId,robotId,createdAt"),
+                @Index(name = "idx_file_org_creator_time", columnList = "orgId,createdBy,createdAt"),
                 @Index(name = "idx_file_org_extension", columnList = "orgId,extensionId"),
                 @Index(name = "idx_file_type_status", columnList = "fileType,status"),
                 @Index(name = "idx_file_robot_source", columnList = "robotId,sourceFileId")
@@ -29,6 +30,9 @@ public class MediaFile {
 
     @Column(nullable = false, length = 64)
     private String orgId;
+
+    @Column(length = 64)
+    private String createdBy;
 
     @Column(length = 64)
     private String robotId;
@@ -83,6 +87,8 @@ public class MediaFile {
     public void setFileId(String fileId) { this.fileId = fileId; }
     public String getOrgId() { return orgId; }
     public void setOrgId(String orgId) { this.orgId = orgId; }
+    public String getCreatedBy() { return createdBy; }
+    public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
     public String getRobotId() { return robotId; }
     public void setRobotId(String robotId) { this.robotId = robotId; }
     public String getDeviceId() { return deviceId; }

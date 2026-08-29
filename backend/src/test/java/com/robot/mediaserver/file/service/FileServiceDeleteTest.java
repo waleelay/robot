@@ -99,6 +99,19 @@ class FileServiceDeleteTest {
     }
 
     @Test
+    void hidesUserOwnedFileFromAnotherUserInSameOrganization() {
+        MediaFile file = file("file-1", "org001", FileStatus.READY);
+        file.setCreatedBy("user-2");
+        when(fileRepository.findById("file-1")).thenReturn(Optional.of(file));
+
+        assertThatThrownBy(() -> service.delete(user("org001"), "file-1"))
+                .isInstanceOf(FileApiException.class)
+                .satisfies(ex -> assertThat(((FileApiException) ex).getCode()).isEqualTo("FILE_NOT_FOUND"));
+
+        verifyNoInteractions(storage);
+    }
+
+    @Test
     void returnsPerFileResultsForBatchDelete() {
         MediaFile ownedFile = file("file-1", "org001", FileStatus.READY);
         when(fileRepository.findById("file-1")).thenReturn(Optional.of(ownedFile));

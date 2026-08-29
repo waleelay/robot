@@ -103,10 +103,11 @@ public class FileController {
             @RequestParam(required = false) String extensionId,
             @RequestParam(required = false) FileType fileType,
             @RequestParam(required = false) FileStatus status,
+            @RequestParam(required = false) String source,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             HttpServletRequest request) {
-        return service.list(currentUserResolver.resolve(request), robotId, deviceId, extensionId, fileType, status, page, size);
+        return service.list(currentUserResolver.resolve(request), robotId, deviceId, extensionId, fileType, status, source, page, size);
     }
 
     @PostMapping("/extension-binding")

@@ -60,7 +60,7 @@
 import { mapState } from 'vuex'
 import Hls from 'hls.js'
 import {
-  getFiles
+  getManualMediaFiles
 } from '../../../../../../api/media.js'
 import { getCachedFileObjectUrl, getCachedFilePlayUrl, invalidateCachedFile } from '@/utils/file-object-url-cache'
 import { durationFromVideoElement, resolveCameraName } from '../../../../../../utils/index.js'
@@ -116,9 +116,9 @@ export default {
     async getSnapData() {
       const loadSeq = ++this.snapshotLoadSeq
       try {
-        const params = { page: 0, size: 20, fileType: 'IMAGE', status: 'READY' }
+        const params = { page: 0, size: 20, status: 'READY' }
         if (this.selectedRobotId) params.robotId = this.selectedRobotId
-        const res = await getFiles(params) || {}
+        const res = await getManualMediaFiles('IMAGE', params) || {}
         const items = (res.items || []).map(item => ({
           ...item,
           fileType: item.fileType || 'IMAGE'
@@ -139,9 +139,9 @@ export default {
     async getVideoData() {
       this.destroyVideoPlayers()
       try {
-        const params = { page: 0, size: 20, fileType: 'VIDEO', status: 'READY' }
+        const params = { page: 0, size: 20, status: 'READY' }
         if (this.selectedRobotId) params.robotId = this.selectedRobotId
-        const res = await getFiles(params) || {}
+        const res = await getManualMediaFiles('VIDEO', params) || {}
         this.recordings = (res.items || []).map(item => ({
           ...item, fileType: item.fileType || 'VIDEO'
         }))
