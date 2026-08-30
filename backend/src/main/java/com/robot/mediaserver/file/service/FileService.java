@@ -63,6 +63,8 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class FileService {
 
+    private static final long MAX_PROXIED_FILE_BYTES = 32L * 1024 * 1024;
+
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
     private static final String MEDIA_VIEWER = "MEDIA_VIEWER";
     private static final String MEDIA_OPERATOR = "MEDIA_OPERATOR";
@@ -419,6 +421,7 @@ public class FileService {
 
     public PlaybackAsset content(CurrentUser user, String fileId) {
         MediaFile file = requirePlayableFile(user, fileId);
+        requireProxySize(file.getObjectKey());
         return new PlaybackAsset(storage.readObject(file.getObjectKey()), file.getContentType());
     }
 
@@ -449,6 +452,7 @@ public class FileService {
             throw error(HttpStatus.NOT_FOUND, "VIDEO_NOT_READY", "视频尚未就绪");
         }
         String objectKey = storage.hlsPrefix(file.getObjectKey()) + objectName;
+        requireProxySize(objectKey);
         byte[] bytes = storage.readObject(objectKey);
         if (objectName.endsWith(".m3u8")) {
             String playlist = new String(bytes, StandardCharsets.UTF_8);
@@ -1102,6 +1106,15 @@ public class FileService {
             return playlistKey.substring(prefix.length());
         }
         return "index.m3u8";
+    }
+
+    private void requireProxySize(String objectKey) {
+        if (storage.statSize(objectKey) > MAX_PROXIED_FILE_BYTES) {
+            throw error(
+                    HttpStatus.PAYLOAD_TOO_LARGE,
+                    "FILE_CONTENT_TOO_LARGE",
+                    "文件正文超过代理读取上限，请使用下载地址");
+        }
     }
 
     private String rewriteHlsLine(String line, String encodedToken) {

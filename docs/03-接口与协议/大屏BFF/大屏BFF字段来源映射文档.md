@@ -106,7 +106,8 @@ GET /api/bigscreen/panorama/overview
 | `playable` | BFF 兼容字段 | 仅等于 `enabled && configReady`，不得解释为在线 |
 
 Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 `offline`，不会使用 Management
-`enabled` 补成在线。固定摄像头健康变化通过 WebSocket 触发当前用户重新获取 Overview。
+`enabled` 补成在线。固定摄像头健康变化复用设备统计重算结果，通过
+`panorama.fixed-camera.statuses.changed` 增量更新当前授权快照中的固定摄像头，不重新获取 Overview。
 
 ### 3.3 设备详情中的 `mountedDevices[]`
 

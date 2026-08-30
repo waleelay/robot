@@ -1,6 +1,7 @@
 package com.robot.bigscreen.ws;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -10,7 +11,12 @@ import com.robot.bigscreen.config.CenterServiceProperties;
 import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 class BigscreenWebSocketAuthorizationServiceTest {
 
@@ -20,6 +26,25 @@ class BigscreenWebSocketAuthorizationServiceTest {
             RestClient.builder(),
             new ObjectMapper(),
             mock(FixedCameraCatalogLeaseClient.class));
+
+    @Test
+    void treatsForbiddenResourceQueriesAsRevokedAuthorization() {
+        Set<String> resources = service.emptyWhenForbidden("设备", () -> {
+            throw HttpClientErrorException.create(
+                    HttpStatus.FORBIDDEN, "Forbidden", HttpHeaders.EMPTY, null, null);
+        }, Set.of());
+
+        assertTrue(resources.isEmpty());
+    }
+
+    @Test
+    void keepsManagementFailuresDistinctFromAuthorizationRevocation() {
+        assertThrows(RestClientResponseException.class,
+                () -> service.emptyWhenForbidden("设备", () -> {
+                    throw HttpServerErrorException.create(
+                            HttpStatus.SERVICE_UNAVAILABLE, "Unavailable", HttpHeaders.EMPTY, null, null);
+                }, Set.of()));
+    }
 
     @Test
     void rejectsUpstreamEventsWithoutResourceIdentity() {
@@ -176,4 +201,5 @@ class BigscreenWebSocketAuthorizationServiceTest {
                 new BigscreenWebSocketAuthorizationService.AuthorizedResources(Set.of(), Set.of()),
                 payload));
     }
+
 }

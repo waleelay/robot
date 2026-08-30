@@ -1,6 +1,6 @@
-import { createFileObjectUrl, getFilePlayUrl, revokeFileObjectUrl } from '@/api/media'
+import { getFileInlineUrl, getFilePlayUrl, revokeFileObjectUrl } from '@/api/media'
 
-/** @type {Map<string, { url?: string, loading?: Promise<string> }>} */
+/** @type {Map<string, { url?: string, expiresAt?: number, loading?: Promise<string> }>} */
 const objectUrlCache = new Map()
 const objectUrlQueue = []
 const MAX_OBJECT_URL_CONCURRENCY = 4
@@ -11,6 +11,10 @@ let objectUrlGeneration = 0
 const playUrlCache = new Map()
 
 const PLAY_URL_REFRESH_BUFFER_MS = 60 * 1000
+
+function signedUrlStillValid(entry) {
+  return Boolean(entry?.url && entry.expiresAt - Date.now() > PLAY_URL_REFRESH_BUFFER_MS)
+}
 
 function drainObjectUrlQueue() {
   while (activeObjectUrlRequests < MAX_OBJECT_URL_CONCURRENCY && objectUrlQueue.length) {
@@ -31,24 +35,28 @@ function scheduleObjectUrlLoad(load) {
 }
 
 /**
- * 按 fileId 复用 blob URL，避免同一文件在多个组件中重复拉取。
+ * 按 fileId 复用内联预签名地址，并在到期前重新签发。
  */
 export async function getCachedFileObjectUrl(fileId) {
   const id = String(fileId || '').trim()
   if (!id) return ''
 
   const existing = objectUrlCache.get(id)
-  if (existing?.url) return existing.url
+  if (signedUrlStillValid(existing)) return existing.url
   if (existing?.loading) return existing.loading
 
   const generation = objectUrlGeneration
-  const loading = scheduleObjectUrlLoad(() => createFileObjectUrl(id))
-    .then(url => {
+  const loading = scheduleObjectUrlLoad(() => getFileInlineUrl(id))
+    .then(({ url, expiresAt: expiresAtRaw }) => {
       if (generation !== objectUrlGeneration) {
         revokeFileObjectUrl(url)
         throw new Error('文件缓存已清空')
       }
-      objectUrlCache.set(id, { url })
+      const expiresAt = expiresAtRaw ? new Date(expiresAtRaw).getTime() : 0
+      objectUrlCache.set(id, {
+        url,
+        expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0
+      })
       return url
     })
     .catch(error => {

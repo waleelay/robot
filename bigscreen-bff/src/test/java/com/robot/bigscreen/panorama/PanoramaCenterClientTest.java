@@ -26,6 +26,10 @@ import org.springframework.web.server.ResponseStatusException;
 class PanoramaCenterClientTest {
     private static final String MAPS_URL =
             "http://management.test/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true";
+    private static final String DEVICES_URL =
+            "http://management.test/api/v1/management/devices?pageNum=1&pageSize=100";
+    private static final String FIXED_CAMERAS_URL =
+            "http://management.test/api/v1/management/fixed-cameras?pageNum=1&pageSize=100";
 
     private final RestClient.Builder builder = RestClient.builder();
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -53,6 +57,29 @@ class PanoramaCenterClientTest {
     }
 
     @Test
+    void resourceListForbiddenIsAnAuthorizedEmptySet() {
+        server.expect(requestTo(DEVICES_URL)).andRespond(withStatus(HttpStatus.FORBIDDEN));
+        server.expect(requestTo(FIXED_CAMERAS_URL)).andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        assertEquals(List.of(), client.devices());
+        assertEquals(List.of(), client.fixedCameras());
+        assertEquals(16, client.generalRequestPoolSnapshot().get("availablePermits"));
+        server.verify();
+    }
+
+    @Test
+    void resourceListUnauthorizedIsStillAnAuthenticationFailure() {
+        server.expect(requestTo(DEVICES_URL)).andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+        server.expect(requestTo(FIXED_CAMERAS_URL)).andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+
+        assertEquals(HttpStatus.UNAUTHORIZED,
+                assertThrows(ResponseStatusException.class, client::devices).getStatusCode());
+        assertEquals(HttpStatus.UNAUTHORIZED,
+                assertThrows(ResponseStatusException.class, client::fixedCameras).getStatusCode());
+        server.verify();
+    }
+
+    @Test
     void mapTimeoutAndEmptyResponseFailButSuccessfulEmptyListIsValid() {
         server.expect(requestTo(MAPS_URL)).andRespond(withException(new SocketTimeoutException("测试地图读取超时")));
         server.expect(requestTo(MAPS_URL)).andRespond(withSuccess());
@@ -72,6 +99,21 @@ class PanoramaCenterClientTest {
         ResponseStatusException error = assertThrows(ResponseStatusException.class, client::enabledMaps);
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
         assertEquals(0, permits.availablePermits());
+    }
+
+    @Test
+    void opensCircuitAfterThreeManagementServerFailures() {
+        for (int index = 0; index < 3; index++) {
+            server.expect(requestTo(MAPS_URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        }
+        for (int index = 0; index < 3; index++) {
+            assertThrows(ResponseStatusException.class, client::enabledMaps);
+        }
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class, client::enabledMaps);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
+        server.verify();
     }
 
     @Test

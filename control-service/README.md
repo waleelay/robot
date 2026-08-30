@@ -44,6 +44,8 @@ src/main/java/com/robot/control/
 - `ControlFixedCameraController`：单路/批量固定摄像头启动。
 - `ControlVideoSessionController`：查询、Token、viewer、对讲、切换、重启和录像。
 - `ControlFileController`：把文件请求代理到 Media，并改写播放路径。
+- 简单文件上传转发使用 multipart 输入流，不在 Control 内构造完整文件 `byte[]`；外部接口、
+  20 MiB 上限和机器人直连 Media 的协议保持不变。
 - 文件列表的 `source` 查询参数原样转发给 Media，用于在分页前按 `metadata.source` 区分文件来源。
 - `MileageController`：按时间范围和机器人批量查询持久化里程。
 
@@ -66,7 +68,9 @@ src/main/java/com/robot/control/
 ### 外部连接
 
 - `ControlMediaServiceClient`：调用 `/internal/media/**`，保留 Media 非 2xx 状态和错误正文。
-- `ControlManagementClient`：查询机器人档案、设备动作和固定摄像头；设备详情缓存 30 秒，HTTP 请求链路透传 Bearer Token。
+- `ControlManagementClient`：查询机器人档案、设备动作和固定摄像头；设备与固定摄像头列表统一使用
+  100 条分页、100 页上限和 8 秒总截止时间，并识别总数、短页、重复页和无进展；设备详情缓存
+  30 秒，HTTP 请求链路透传 Bearer Token。
 - `RobotMediaCommandService`：发布机器人视频、对讲和固定摄像头 Gateway 命令。
 - `RobotMediaStatusSubscriber`：订阅客户端在线、视频、对讲、主动呼叫和设备状态。
 - `EquipmentControlCommandPublisher`：按设备类型发布通用控制命令。

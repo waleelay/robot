@@ -8,6 +8,9 @@ import com.robot.media.common.file.FileType;
 import com.robot.mediaserver.file.model.MediaFile;
 import com.robot.mediaserver.file.repository.MediaFileRepository;
 import jakarta.transaction.Transactional;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,10 +21,17 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class FileHlsProcessingService {
+
+    private static final Logger log = LoggerFactory.getLogger(FileHlsProcessingService.class);
+    private static final int PROCESS_OUTPUT_LIMIT_BYTES = 64 * 1024;
+    private static final long PROCESS_STOP_WAIT_SECONDS = 2;
 
     private final MediaProperties properties;
     private final MediaFileRepository fileRepository;
@@ -69,7 +79,7 @@ public class FileHlsProcessingService {
             ProbeResult probe = probe(source);
             Path outputDirectory = directory.resolve("hls");
             Files.createDirectories(outputDirectory);
-            packageHls(source, outputDirectory, canCopyToHls(probe));
+            packageHls(source, outputDirectory, canCopyToHls(probe), probe.durationSeconds());
             List<Path> assets;
             try (var paths = Files.list(outputDirectory)) {
                 assets = paths.sorted(Comparator.comparing(path -> path.getFileName().toString())).toList();
@@ -97,6 +107,9 @@ public class FileHlsProcessingService {
                     segmentCount,
                     totalSize,
                     sourceSize);
+        } catch (ProcessExecutionException ex) {
+            log.warn("HLS 处理子进程失败，文件={}，错误码={}，原因={}", fileId, ex.code(), ex.getMessage());
+            fileService.markVideoFailed(fileId, ex.code(), ex.getMessage());
         } catch (Exception ex) {
             fileService.markVideoFailed(fileId, "HLS_PROCESSING_FAILED", ex.getMessage());
         } finally {
@@ -129,18 +142,13 @@ public class FileHlsProcessingService {
     }
 
     private ProbeResult probe(Path source) throws Exception {
-        Process process = new ProcessBuilder(
+        ProcessResult result = runProcess(List.of(
                 properties.getFile().getFfprobePath(),
                 "-v", "error",
                 "-show_entries", "stream=codec_type,codec_name,width,height,pix_fmt,level:format=duration",
                 "-of", "json",
-                source.toString())
-                .redirectErrorStream(true)
-                .start();
-        String output = new String(process.getInputStream().readAllBytes());
-        if (!process.waitFor(60, TimeUnit.SECONDS) || process.exitValue() != 0) {
-            throw new IllegalStateException("ffprobe 无法读取已上传的视频");
-        }
+                source.toString()), 60, "FFPROBE");
+        String output = result.output();
         JsonNode root = objectMapper.readTree(output);
         String videoCodec = null;
         String audioCodec = null;
@@ -177,7 +185,11 @@ public class FileHlsProcessingService {
                 && (probe.level() == null || probe.level() <= 42);
     }
 
-    private void packageHls(Path source, Path outputDirectory, boolean copyCodecs) throws Exception {
+    private void packageHls(
+            Path source,
+            Path outputDirectory,
+            boolean copyCodecs,
+            double durationSeconds) throws Exception {
         List<String> command = new ArrayList<>();
         command.add(properties.getFile().getHlsFfmpegPath());
         command.add("-y");
@@ -233,12 +245,96 @@ public class FileHlsProcessingService {
         command.add("-hls_segment_filename");
         command.add(outputDirectory.resolve("segment_%06d.m4s").toString());
         command.add(outputDirectory.resolve("index.m3u8").toString());
-        Process process = new ProcessBuilder(command)
-                .redirectErrorStream(true)
-                .start();
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        if (process.waitFor() != 0 || !Files.exists(outputDirectory.resolve("index.m3u8"))) {
-            throw new IllegalStateException("ffmpeg failed to generate HLS playback asset: " + truncate(output));
+        long timeoutSeconds = Math.max(
+                Math.max(1, properties.getFile().getHlsProcessingLeaseSeconds()),
+                (long) Math.ceil(durationSeconds * 2));
+        ProcessResult result = runProcess(command, timeoutSeconds, "FFMPEG");
+        if (!Files.exists(outputDirectory.resolve("index.m3u8"))) {
+            throw new ProcessExecutionException(
+                    "FFMPEG_OUTPUT_MISSING",
+                    "ffmpeg 未生成 HLS 播放清单：" + truncate(result.output()));
+        }
+    }
+
+    ProcessResult runProcess(List<String> command, long timeoutSeconds, String codePrefix) throws Exception {
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        AtomicReference<IOException> readFailure = new AtomicReference<>();
+        Thread outputReader = new Thread(
+                () -> drainProcessOutput(process.getInputStream(), output, readFailure),
+                "media-process-output-" + process.pid());
+        outputReader.setDaemon(true);
+        outputReader.start();
+
+        boolean finished;
+        try {
+            finished = process.waitFor(Math.max(1, timeoutSeconds), TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            stopProcessTree(process);
+            Thread.currentThread().interrupt();
+            throw new ProcessExecutionException(codePrefix + "_INTERRUPTED", "子进程等待被中断");
+        }
+        if (!finished) {
+            stopProcessTree(process);
+            joinOutputReader(outputReader);
+            throw new ProcessExecutionException(codePrefix + "_TIMEOUT", "子进程超过允许执行时间");
+        }
+        joinOutputReader(outputReader);
+        if (readFailure.get() != null) {
+            throw new ProcessExecutionException(codePrefix + "_OUTPUT_READ_FAILED", "读取子进程输出失败");
+        }
+        String text = output.toString(StandardCharsets.UTF_8);
+        if (process.exitValue() != 0) {
+            throw new ProcessExecutionException(codePrefix + "_FAILED", "子进程执行失败：" + truncate(text));
+        }
+        return new ProcessResult(text);
+    }
+
+    private void drainProcessOutput(
+            InputStream input,
+            ByteArrayOutputStream output,
+            AtomicReference<IOException> readFailure) {
+        try (input) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                int remaining = PROCESS_OUTPUT_LIMIT_BYTES - output.size();
+                if (remaining > 0) {
+                    output.write(buffer, 0, Math.min(read, remaining));
+                }
+            }
+        } catch (IOException ex) {
+            readFailure.set(ex);
+        }
+    }
+
+    private void joinOutputReader(Thread outputReader) throws InterruptedException {
+        outputReader.join(TimeUnit.SECONDS.toMillis(PROCESS_STOP_WAIT_SECONDS));
+        if (outputReader.isAlive()) {
+            outputReader.interrupt();
+        }
+    }
+
+    private void stopProcessTree(Process process) {
+        List<ProcessHandle> descendants = process.toHandle().descendants().toList();
+        descendants.forEach(ProcessHandle::destroy);
+        process.destroy();
+        try {
+            if (process.waitFor(PROCESS_STOP_WAIT_SECONDS, TimeUnit.SECONDS)) {
+                descendants.stream().filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly);
+                return;
+            }
+            descendants.forEach(handle -> {
+                if (handle.isAlive()) {
+                    handle.destroyForcibly();
+                }
+            });
+            process.destroyForcibly();
+            process.waitFor(PROCESS_STOP_WAIT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            descendants.forEach(ProcessHandle::destroyForcibly);
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -286,5 +382,21 @@ public class FileHlsProcessingService {
             Integer height,
             Integer level,
             double durationSeconds) {
+    }
+
+    record ProcessResult(String output) {
+    }
+
+    static final class ProcessExecutionException extends Exception {
+        private final String code;
+
+        ProcessExecutionException(String code, String message) {
+            super(message);
+            this.code = code;
+        }
+
+        String code() {
+            return code;
+        }
     }
 }

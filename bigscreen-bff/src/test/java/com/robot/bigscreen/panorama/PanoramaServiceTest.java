@@ -18,9 +18,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.time.Instant;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 class PanoramaServiceTest {
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     void failedMapQueryMustNotBecomeEmptyOverviewAndCanRecover() {
@@ -43,6 +54,20 @@ class PanoramaServiceTest {
         when(client.enabledMaps()).thenReturn(List.of());
 
         assertEquals(List.of(), maps(new PanoramaService(client, new ObjectMapper()).overview().get("map")));
+    }
+
+    @Test
+    void doesNotShareOverviewBetweenOrganizationsWithTheSameSubject() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+
+        authenticate("user-001", "org-a");
+        service.overview();
+        authenticate("user-001", "org-b");
+        service.overview();
+
+        verify(client, times(2)).enabledMaps();
     }
 
     @Test
@@ -138,7 +163,8 @@ class PanoramaServiceTest {
                         "quality", "NORMAL",
                         "timezone", "Asia/Shanghai"));
 
-        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        Map<String, Object> overview = service.overview();
 
         Map<String, Object> patrolOverview = map(overview.get("patrolOverview"));
         assertEquals(1.2, patrolOverview.get("mileageToday"));
@@ -755,13 +781,20 @@ class PanoramaServiceTest {
                 "gatewayHealth", Map.of("status", "ONLINE", "observedAt", "2026-08-23T00:00:00Z"),
                 "streamHealth", Map.of("status", "AVAILABLE", "observedAt", "2026-08-23T00:00:00Z")))));
 
-        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
-
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        Map<String, Object> overview = service.overview();
         Map<String, Object> camera = maps(overview.get("devices")).get(0);
         assertEquals("online", camera.get("status"));
         assertEquals("ONLINE", ((Map<?, ?>) camera.get("gatewayHealth")).get("status"));
         assertEquals("AVAILABLE", ((Map<?, ?>) camera.get("streamHealth")).get("status"));
         assertEquals(1L, ((Map<?, ?>) overview.get("deviceStats")).get("online"));
+        Map<String, Object> status = service.fixedCameraStatuses().get(0);
+        assertEquals(Map.of(
+                "sourceId", "camera-001",
+                "status", "online",
+                "playable", true,
+                "enabled", true,
+                "configReady", true), status);
     }
 
     @Test
@@ -951,6 +984,20 @@ class PanoramaServiceTest {
         when(centerClient.taskWorkflowPlans()).thenReturn(List.of());
         when(centerClient.taskWorkflowInstances()).thenReturn(List.of());
         when(centerClient.alarms(any(), any(), any())).thenReturn(List.of());
+    }
+
+    private void authenticate(String subject, String orgId) {
+        Jwt jwt = Jwt.withTokenValue("token-" + subject + "-" + orgId)
+                .header("alg", "none")
+                .issuer("https://iam.example/realms/platform")
+                .subject(subject)
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .claim("org_id", orgId)
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(
+                jwt,
+                List.of(new SimpleGrantedAuthority("ROLE_MEDIA_VIEWER"))));
     }
 
     @SuppressWarnings("unchecked")

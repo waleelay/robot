@@ -1,7 +1,13 @@
 package com.robot.bigscreen.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import jakarta.servlet.http.Part;
+import java.io.ByteArrayInputStream;
+import org.springframework.web.server.ResponseStatusException;
 import org.junit.jupiter.api.Test;
 
 class CenterProxyClientTest {
@@ -31,5 +37,35 @@ class CenterProxyClientTest {
                 .isEmpty();
         assertThat(CenterProxyClient.stripAccessToken("a=1&access_token=abc&b=2"))
                 .isEqualTo("a=1&b=2");
+    }
+
+    @Test
+    void readsSmallBodiesAndRejectsOversizedBodies() throws Exception {
+        assertThat(CenterProxyClient.readBounded(
+                new ByteArrayInputStream(new byte[] {1, 2, 3}),
+                3,
+                "too large"))
+                .containsExactly(1, 2, 3);
+
+        assertThatThrownBy(() -> CenterProxyClient.readBounded(
+                new ByteArrayInputStream(new byte[] {1, 2, 3, 4}),
+                3,
+                "too large"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("413");
+    }
+
+    @Test
+    void keepsMultipartFileAsStreamResource() throws Exception {
+        Part part = mock(Part.class);
+        when(part.getSubmittedFileName()).thenReturn("snapshot.jpg");
+        when(part.getSize()).thenReturn(3L);
+        when(part.getInputStream()).thenReturn(new ByteArrayInputStream(new byte[] {1, 2, 3}));
+
+        var resource = CenterProxyClient.filePartResource(part);
+
+        assertThat(resource.getFilename()).isEqualTo("snapshot.jpg");
+        assertThat(resource.contentLength()).isEqualTo(3);
+        assertThat(resource.getInputStream().readAllBytes()).containsExactly(1, 2, 3);
     }
 }

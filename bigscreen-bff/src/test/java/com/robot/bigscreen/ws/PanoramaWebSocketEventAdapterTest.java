@@ -228,15 +228,12 @@ class PanoramaWebSocketEventAdapterTest {
     }
 
     @Test
-    void convertsFixedCameraHealthToUserScopedInvalidationAndRefreshesStats() {
+    void suppressesFixedCameraHealthDetailsAndRefreshesOnlyDeviceStats() {
         String payload = """
                 {"event":"fixed-camera.health.changed","timestamp":"2026-08-23 23:00:00",
                  "data":{"scope":"CAMERA","cameraId":"camera-001","status":"AVAILABLE"}}
                 """;
 
-        assertThat(adapter.isFixedCameraHealthInvalidation(payload)).isTrue();
-        assertThat(readTree(adapter.fixedCameraHealthInvalidation(payload)).path("event").asText())
-                .isEqualTo("bigscreen.fixed-camera.health.changed");
         assertThat(adapter.statsRefreshParts("browser-a", payload)).containsExactly(StatsPart.DEVICES);
         assertThat(adapter.adapt(payload)).isEmpty();
     }

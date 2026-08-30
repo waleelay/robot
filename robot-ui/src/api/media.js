@@ -52,10 +52,11 @@ export function getViewerToken(sessionId) {
 }
 
 // 停止视频会话
-export function stopVideoSession(sessionId) {
+export function stopVideoSession(sessionId, options = {}) {
   return request({
     url: `/api/bigscreen/control/video-sessions/${sessionId}/stop`,
-    method: 'post'
+    method: 'post',
+    ...options
   })
 }
 
@@ -63,7 +64,9 @@ export function stopVideoSession(sessionId) {
 export function heartbeatVideoSession(sessionId) {
   return request({
     url: `/api/bigscreen/control/video-sessions/${sessionId}/heartbeat`,
-    method: 'post'
+    method: 'post',
+    timeout: 4000,
+    skipErrorMessage: true
   })
 }
 
@@ -145,10 +148,16 @@ export function getFileContent(fileId) {
   })
 }
 
+export async function getFileInlineUrl(fileId) {
+  const response = await fileDownloadUrl(fileId, true)
+  return {
+    url: response?.downloadUrl || response?.data?.downloadUrl || '',
+    expiresAt: response?.expiresAt || response?.data?.expiresAt || null
+  }
+}
+
 export async function createFileObjectUrl(fileId) {
-  const data = await getFileContent(fileId)
-  const blob = data instanceof Blob ? data : new Blob([data])
-  return URL.createObjectURL(blob)
+  return (await getFileInlineUrl(fileId)).url
 }
 
 export function revokeFileObjectUrl(url) {
@@ -210,6 +219,7 @@ export function heartbeatIntercom(sessionId) {
     url: `/api/bigscreen/control/video-sessions/${sessionId}/intercom/heartbeat`,
     method: 'post',
     headers: sessionHeaders,
+    timeout: 4000,
     skipErrorMessage: true
   })
 }
@@ -300,7 +310,9 @@ export function getActiveLiveRecording(sessionId) {
   return request({
     url: `/api/bigscreen/control/video-sessions/${sessionId}/recordings/active`,
     method: 'get',
-    headers
+    headers,
+    timeout: 4000,
+    skipErrorMessage: true
   })
 }
 

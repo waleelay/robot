@@ -24,7 +24,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -296,7 +296,7 @@ public class ControlMediaServiceClient {
         addPart(body, "sourceFileId", sourceFileId);
         addPart(body, "metadata", metadata);
         try {
-            body.add("file", new ByteArrayResource(file.getBytes()) {
+            body.add("file", new InputStreamResource(file.getInputStream()) {
                 /**
                  * 返回上传文件名。
                  *
@@ -305,6 +305,11 @@ public class ControlMediaServiceClient {
                 @Override
                 public String getFilename() {
                     return file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
+                }
+
+                @Override
+                public long contentLength() {
+                    return file.getSize();
                 }
             });
         } catch (Exception ex) {

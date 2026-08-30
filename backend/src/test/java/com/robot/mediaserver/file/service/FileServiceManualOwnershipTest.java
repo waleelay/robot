@@ -107,6 +107,23 @@ class FileServiceManualOwnershipTest {
                 .isEqualTo(file.getFileId());
     }
 
+    @Test
+    void rejectsOversizedProxyContentBeforeReadingObject() {
+        MediaFile file = file("user-1");
+        when(fileRepository.findById(file.getFileId())).thenReturn(Optional.of(file));
+        when(storage.statSize(file.getObjectKey())).thenReturn(32L * 1024 * 1024 + 1);
+
+        assertThatThrownBy(() -> service.content(viewer("user-1"), file.getFileId()))
+                .isInstanceOf(FileApiException.class)
+                .satisfies(ex -> {
+                    FileApiException apiException = (FileApiException) ex;
+                    assertThat(apiException.getStatus().value()).isEqualTo(413);
+                    assertThat(apiException.getCode()).isEqualTo("FILE_CONTENT_TOO_LARGE");
+                });
+
+        verify(storage, org.mockito.Mockito.never()).readObject(any());
+    }
+
     private CurrentUser operator(String userId) {
         return new CurrentUser(userId, "org001", Set.of("MEDIA_OPERATOR"), "web-1");
     }

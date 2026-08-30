@@ -37,6 +37,11 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
 
         List<VideoSession> findByStatusAndUpdatedAtBefore(VideoSessionStatus status, OffsetDateTime updatedAt);
 
+        List<VideoSession> findByStatusAndSourceTypeAndUpdatedAtBefore(
+            VideoSessionStatus status,
+            VideoSourceType sourceType,
+            OffsetDateTime updatedAt);
+
         List<VideoSession> findByStatusAndLastStatusAtBefore(VideoSessionStatus status, OffsetDateTime lastStatusAt);
 
         List<VideoSession> findByStatusAndIdleSinceBefore(VideoSessionStatus status, OffsetDateTime idleSince);

@@ -21,6 +21,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.SynchronousQueue;
@@ -49,6 +50,9 @@ public class PanoramaService {
      */
     private static final long OVERVIEW_CACHE_TTL_MILLIS = 5000;
     private static final long OVERVIEW_TIMEOUT_MILLIS = 8000;
+    private static final long STATS_TIMEOUT_MILLIS = 5000;
+    private static final int SNAPSHOT_CACHE_MAX_SIZE = 256;
+    private static final int IN_FLIGHT_MAX_SIZE = 128;
     /** 顶层编排允许等待子 I/O，但绝不占用子 I/O 执行器。 */
     private static final ThreadPoolExecutor OVERVIEW_EXECUTOR = new ThreadPoolExecutor(
             5,
@@ -70,13 +74,34 @@ public class PanoramaService {
             new SynchronousQueue<>(),
             namedDaemonThreadFactory("panorama-io"),
             new ThreadPoolExecutor.AbortPolicy());
+    /** WebSocket 统计刷新独立于首屏下游容量，健康或任务事件不能挤占首屏。 */
+    private static final ThreadPoolExecutor STATS_EXECUTOR = new ThreadPoolExecutor(
+            4,
+            4,
+            60,
+            TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(16),
+            namedDaemonThreadFactory("panorama-stats"),
+            new ThreadPoolExecutor.AbortPolicy());
+    private static final ThreadPoolExecutor STATS_IO_EXECUTOR = new ThreadPoolExecutor(
+            4,
+            8,
+            60,
+            TimeUnit.SECONDS,
+            new SynchronousQueue<>(),
+            namedDaemonThreadFactory("panorama-stats-io"),
+            new ThreadPoolExecutor.AbortPolicy());
     private static final ThreadLocal<Long> OVERVIEW_DEADLINE_NANOS = new ThreadLocal<>();
+    private static final ThreadLocal<ThreadPoolExecutor> REQUEST_IO_EXECUTOR = new ThreadLocal<>();
 
     private final PanoramaCenterClient centerClient;
     private final ObjectMapper objectMapper;
-    private final Map<String, CachedSnapshot> statsCache = new ConcurrentHashMap<>();
-    private final Map<String, Object> statsCacheLocks = new ConcurrentHashMap<>();
-    private final Map<String, CachedSnapshot> overviewCache = new ConcurrentHashMap<>();
+    private final BoundedTtlCache<String, Object> statsCache =
+            new BoundedTtlCache<>(SNAPSHOT_CACHE_MAX_SIZE, STATS_CACHE_TTL_MILLIS);
+    private final Map<String, CompletableFuture<Object>> statsPartInFlight = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<Map<String, Object>>> statsSnapshotInFlight = new ConcurrentHashMap<>();
+    private final BoundedTtlCache<String, Map<String, Object>> overviewCache =
+            new BoundedTtlCache<>(SNAPSHOT_CACHE_MAX_SIZE, OVERVIEW_CACHE_TTL_MILLIS);
     private final Map<String, CompletableFuture<Map<String, Object>>> overviewInFlight = new ConcurrentHashMap<>();
 
     public PanoramaService(PanoramaCenterClient centerClient, ObjectMapper objectMapper) {
@@ -86,10 +111,12 @@ public class PanoramaService {
 
     public Map<String, Object> overview() {
         String cacheKey = "overview:" + statsUserKey();
-        CachedSnapshot cached = overviewCache.get(cacheKey);
-        long now = System.currentTimeMillis();
-        if (cached != null && now - cached.createdAt < OVERVIEW_CACHE_TTL_MILLIS) {
-            return castMap(cached.value);
+        Optional<Map<String, Object>> cached = overviewCache.get(cacheKey);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
+        if (!overviewInFlight.containsKey(cacheKey) && overviewInFlight.size() >= IN_FLIGHT_MAX_SIZE) {
+            throw new IllegalStateException("大屏总览并发身份已达上限，请稍后重试");
         }
         SecurityContext callerContext = copySecurityContext(SecurityContextHolder.getContext());
         CompletableFuture<Map<String, Object>> shared = overviewInFlight.computeIfAbsent(cacheKey, key -> {
@@ -102,14 +129,14 @@ public class PanoramaService {
             }
             created.whenComplete((value, error) -> {
                 if (error == null && value != null) {
-                    overviewCache.put(key, new CachedSnapshot(System.currentTimeMillis(), value));
+                    overviewCache.put(key, value);
                 }
                 overviewInFlight.remove(key, created);
             });
             return created;
         });
         try {
-            return joinOverview(shared);
+            return joinShared(shared, OVERVIEW_TIMEOUT_MILLIS);
         } catch (RuntimeException exception) {
             // 原 future 完成与 whenComplete 清理存在极短竞态；失败等待者返回前先条件删除，
             // 保证紧接着的重试不会再次复用同一个失败结果。
@@ -139,25 +166,36 @@ public class PanoramaService {
         return (Map<String, Object>) value;
     }
 
-    private Map<String, Object> joinOverview(CompletableFuture<Map<String, Object>> future) {
+    private Map<String, Object> joinShared(
+            CompletableFuture<Map<String, Object>> future,
+            long timeoutMillis) {
         try {
-            return future.join();
-        } catch (CompletionException error) {
+            return future.get(timeoutMillis + 500, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("大屏聚合等待被中断", error);
+        } catch (java.util.concurrent.TimeoutException error) {
+            future.cancel(true);
+            throw new IllegalStateException("大屏聚合超过总时限", error);
+        } catch (java.util.concurrent.ExecutionException error) {
             Throwable cause = error.getCause();
             if (cause instanceof RuntimeException runtimeException) {
                 throw runtimeException;
             }
-            throw error;
+            throw new CompletionException(cause);
         }
     }
 
     private Map<String, Object> loadOverviewWithinDeadline() {
         Long previousDeadline = OVERVIEW_DEADLINE_NANOS.get();
+        ThreadPoolExecutor previousIoExecutor = REQUEST_IO_EXECUTOR.get();
         OVERVIEW_DEADLINE_NANOS.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(OVERVIEW_TIMEOUT_MILLIS));
+        REQUEST_IO_EXECUTOR.set(IO_EXECUTOR);
         try {
             return overviewWithinDeadline();
         } finally {
             restoreOverviewDeadline(previousDeadline);
+            restoreRequestIoExecutor(previousIoExecutor);
         }
     }
 
@@ -201,13 +239,72 @@ public class PanoramaService {
     }
 
     /**
+     * 当前用户已授权固定摄像头的最小播放状态。复用设备统计的短缓存和单飞查询，
+     * 健康事件不再触发完整 Overview，也不向浏览器暴露 Gateway 健康明细。
+     */
+    public List<Map<String, Object>> fixedCameraStatuses() {
+        return cachedStats("devices", () -> devices(new OverviewRequestCache())).stream()
+                .filter(device -> "FIXED_CAMERA".equals(firstString(device, "sourceType")))
+                .map(device -> object(
+                        "sourceId", device.get("robotId"),
+                        "status", device.get("status"),
+                        "playable", device.get("playable"),
+                        "enabled", device.get("enabled"),
+                        "configReady", device.get("configReady")))
+                .toList();
+    }
+
+    public void invalidateDeviceStats() {
+        statsCache.remove("devices:" + statsUserKey());
+    }
+
+    /**
      * 按事件类型只重算受影响部分，未包含的部分保持上一轮快照值。各部分结果带
      * 3 秒短 TTL 缓存（按用户隔离），多会话与多事件在窗口内共享一次管理端查询。
      */
     public Map<String, Object> statsSnapshot(Set<StatsPart> parts) {
-        if (parts == null || parts.isEmpty()) {
-            parts = EnumSet.allOf(StatsPart.class);
+        Set<StatsPart> requestedParts = parts == null || parts.isEmpty()
+                ? EnumSet.allOf(StatsPart.class)
+                : EnumSet.copyOf(parts);
+        String key = "stats-snapshot:" + statsUserKey() + ":" + requestedParts.stream()
+                .map(Enum::name).sorted().collect(Collectors.joining(","));
+        if (!statsSnapshotInFlight.containsKey(key) && statsSnapshotInFlight.size() >= IN_FLIGHT_MAX_SIZE) {
+            throw new IllegalStateException("大屏统计并发身份已达上限，请稍后重试");
         }
+        SecurityContext callerContext = copySecurityContext(SecurityContextHolder.getContext());
+        CompletableFuture<Map<String, Object>> shared = statsSnapshotInFlight.computeIfAbsent(key, ignored -> {
+            CompletableFuture<Map<String, Object>> created;
+            try {
+                created = CompletableFuture.supplyAsync(
+                        () -> loadStatsWithSecurityContext(callerContext, requestedParts), STATS_EXECUTOR);
+            } catch (RejectedExecutionException exception) {
+                throw new IllegalStateException("大屏统计刷新繁忙，请稍后重试", exception);
+            }
+            created.whenComplete((value, error) -> statsSnapshotInFlight.remove(key, created));
+            return created;
+        });
+        return joinShared(shared, STATS_TIMEOUT_MILLIS);
+    }
+
+    private Map<String, Object> loadStatsWithSecurityContext(
+            SecurityContext callerContext,
+            Set<StatsPart> parts) {
+        SecurityContext previousContext = SecurityContextHolder.getContext();
+        Long previousDeadline = OVERVIEW_DEADLINE_NANOS.get();
+        ThreadPoolExecutor previousIoExecutor = REQUEST_IO_EXECUTOR.get();
+        try {
+            SecurityContextHolder.setContext(callerContext);
+            OVERVIEW_DEADLINE_NANOS.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STATS_TIMEOUT_MILLIS));
+            REQUEST_IO_EXECUTOR.set(STATS_IO_EXECUTOR);
+            return calculateStatsSnapshot(parts);
+        } finally {
+            SecurityContextHolder.setContext(previousContext);
+            restoreOverviewDeadline(previousDeadline);
+            restoreRequestIoExecutor(previousIoExecutor);
+        }
+    }
+
+    private Map<String, Object> calculateStatsSnapshot(Set<StatsPart> parts) {
         Map<String, Object> stats = new LinkedHashMap<>();
         if (parts.contains(StatsPart.DEVICES)) {
             List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
@@ -232,44 +329,60 @@ public class PanoramaService {
 
     private <T> T cachedStats(String part, Supplier<T> supplier) {
         String key = part + ":" + statsUserKey();
-        long now = System.currentTimeMillis();
-        CachedSnapshot snapshot = statsCache.get(key);
-        if (snapshot != null && now - snapshot.createdAt < STATS_CACHE_TTL_MILLIS) {
-            return (T) snapshot.value;
+        Optional<Object> cached = statsCache.get(key);
+        if (cached.isPresent()) {
+            return (T) cached.get();
         }
-        Object lock = statsCacheLocks.computeIfAbsent(key, ignored -> new Object());
-        synchronized (lock) {
-            snapshot = statsCache.get(key);
-            now = System.currentTimeMillis();
-            if (snapshot != null && now - snapshot.createdAt < STATS_CACHE_TTL_MILLIS) {
-                return (T) snapshot.value;
+        if (!statsPartInFlight.containsKey(key) && statsPartInFlight.size() >= IN_FLIGHT_MAX_SIZE) {
+            throw new IllegalStateException("大屏统计缓存并发身份已达上限，请稍后重试");
+        }
+        CompletableFuture<Object> created = new CompletableFuture<>();
+        CompletableFuture<Object> shared = statsPartInFlight.putIfAbsent(key, created);
+        if (shared == null) {
+            shared = created;
+            try {
+                created.complete(supplier.get());
+            } catch (RuntimeException exception) {
+                created.completeExceptionally(exception);
             }
-            T value = supplier.get();
-            statsCache.put(key, new CachedSnapshot(now, value));
-            return value;
+        }
+        try {
+            Object value = shared.join();
+            statsCache.put(key, value);
+            return (T) value;
+        } finally {
+            statsPartInFlight.remove(key, shared);
         }
     }
 
     private void cacheStatsValue(String part, Object value) {
-        statsCache.put(part + ":" + statsUserKey(), new CachedSnapshot(System.currentTimeMillis(), value));
+        statsCache.put(part + ":" + statsUserKey(), value);
     }
 
     private String statsUserKey() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof JwtAuthenticationToken jwt) {
-            return jwt.getToken().getSubject();
+            String issuer = jwt.getToken().getIssuer() == null ? "" : jwt.getToken().getIssuer().toString();
+            String org = firstJwtClaim(jwt, "org_id", "orgId", "organization_id", "tenant_id");
+            String permissionVersion = firstJwtClaim(jwt, "authorization_version", "permission_version", "auth_version");
+            String authorities = authentication.getAuthorities().stream()
+                    .map(authority -> authority.getAuthority())
+                    .sorted()
+                    .collect(Collectors.joining(","));
+            return String.join("|", issuer, value(jwt.getToken().getSubject(), ""), value(org, ""),
+                    value(permissionVersion, ""), authorities);
         }
         return "anonymous";
     }
 
-    private static final class CachedSnapshot {
-        private final long createdAt;
-        private final Object value;
-
-        private CachedSnapshot(long createdAt, Object value) {
-            this.createdAt = createdAt;
-            this.value = value;
+    private String firstJwtClaim(JwtAuthenticationToken authentication, String... names) {
+        for (String name : names) {
+            Object claim = authentication.getToken().getClaim(name);
+            if (claim != null && !String.valueOf(claim).isBlank()) {
+                return String.valueOf(claim);
+            }
         }
+        return null;
     }
 
     private List<Map<String, Object>> overviewDevices(List<Map<String, Object>> devices) {
@@ -1681,20 +1794,23 @@ public class PanoramaService {
     }
 
     private <T> CompletableFuture<T> asyncOverview(Supplier<T> supplier) {
-        return async(supplier, OVERVIEW_EXECUTOR);
+        return async(supplier);
     }
 
     private <T> CompletableFuture<T> async(Supplier<T> supplier) {
-        return async(supplier, IO_EXECUTOR);
+        ThreadPoolExecutor executor = REQUEST_IO_EXECUTOR.get();
+        return async(supplier, executor == null ? IO_EXECUTOR : executor);
     }
 
     private <T> CompletableFuture<T> async(Supplier<T> supplier, ThreadPoolExecutor executor) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         Long deadlineNanos = OVERVIEW_DEADLINE_NANOS.get();
+        ThreadPoolExecutor requestIoExecutor = REQUEST_IO_EXECUTOR.get();
         try {
             return CompletableFuture.supplyAsync(() -> {
                 SecurityContext previousContext = SecurityContextHolder.getContext();
                 Long previousDeadline = OVERVIEW_DEADLINE_NANOS.get();
+                ThreadPoolExecutor previousIoExecutor = REQUEST_IO_EXECUTOR.get();
                 SecurityContext context = SecurityContextHolder.createEmptyContext();
                 context.setAuthentication(authentication);
                 try {
@@ -1704,10 +1820,17 @@ public class PanoramaService {
                     } else {
                         OVERVIEW_DEADLINE_NANOS.set(deadlineNanos);
                     }
+                    if (requestIoExecutor == null) {
+                        REQUEST_IO_EXECUTOR.remove();
+                    } else {
+                        REQUEST_IO_EXECUTOR.set(requestIoExecutor);
+                    }
+                    requireRequestTimeRemaining();
                     return supplier.get();
                 } finally {
                     SecurityContextHolder.setContext(previousContext);
                     restoreOverviewDeadline(previousDeadline);
+                    restoreRequestIoExecutor(previousIoExecutor);
                 }
             }, executor);
         } catch (RejectedExecutionException exception) {
@@ -1802,6 +1925,23 @@ public class PanoramaService {
             OVERVIEW_DEADLINE_NANOS.remove();
         } else {
             OVERVIEW_DEADLINE_NANOS.set(previousDeadline);
+        }
+    }
+
+    static void requireRequestTimeRemaining() {
+        Long deadlineNanos = OVERVIEW_DEADLINE_NANOS.get();
+        if (deadlineNanos != null && System.nanoTime() >= deadlineNanos) {
+            throw new PanoramaCenterClient.TaskSourceException(
+                    "PANORAMA_DEADLINE_EXCEEDED",
+                    "全景聚合已到达总截止时间");
+        }
+    }
+
+    private static void restoreRequestIoExecutor(ThreadPoolExecutor previousExecutor) {
+        if (previousExecutor == null) {
+            REQUEST_IO_EXECUTOR.remove();
+        } else {
+            REQUEST_IO_EXECUTOR.set(previousExecutor);
         }
     }
 

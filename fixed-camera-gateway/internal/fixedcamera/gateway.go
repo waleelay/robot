@@ -25,7 +25,12 @@ type Gateway struct {
 	mu                 sync.Mutex
 	lastCmds           map[string]string
 	activeSessions     map[string]struct{}
-	recoveryAttempts   map[string]int
+	startingSessions   map[string]int
+	stoppingSessions   map[string]int
+	pendingStatuses    map[string]pendingSessionStatus
+	dispatcher         *commandDispatcher
+	connectionCancel   context.CancelFunc
+	subscriptionsReady atomic.Bool
 	sequence           atomic.Uint64
 	probeRunning       atomic.Bool
 	catalogMu          sync.Mutex
@@ -34,7 +39,11 @@ type Gateway struct {
 	lastCatalogVersion uint64
 }
 
-const maxAutomaticRecoveryAttempts = 8
+type pendingSessionStatus struct {
+	status    string
+	errorCode string
+	message   string
+}
 
 type streamProber interface {
 	Check(context.Context, string) (rtsp.StreamInfo, error)
@@ -65,12 +74,16 @@ func NewGateway(cfg config.Config, probe streamProber, pub publisher.Publisher) 
 		publisher:        pub,
 		lastCmds:         make(map[string]string),
 		activeSessions:   make(map[string]struct{}),
-		recoveryAttempts: make(map[string]int),
+		startingSessions: make(map[string]int),
+		stoppingSessions: make(map[string]int),
+		pendingStatuses:  make(map[string]pendingSessionStatus),
 		catalog:          make(map[string]leasedCamera),
 	}
 }
 
 func (g *Gateway) Run(ctx context.Context) error {
+	g.dispatcher = newCommandDispatcher(ctx)
+	defer g.dispatcher.close()
 	gatewayID := strings.TrimSpace(g.cfg.GatewayID)
 	if gatewayID == "" {
 		gatewayID = "default"
@@ -95,19 +108,15 @@ func (g *Gateway) Run(ctx context.Context) error {
 	}
 	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
 		log.Printf("固定摄像头网关 MQTT 连接已断开：%v", err)
-		g.publisher.StopAll()
+		g.handleConnectionLost()
 	})
 	offlinePayload, _ := json.Marshal(model.FixedCameraGatewayStatus{
 		Version: "1.0", GatewayID: gatewayID, Status: "OFFLINE", ReasonCode: "MQTT_CONNECTION_LOST",
 	})
 	opts.SetWill("gateway/fixed-camera/"+gatewayID+"/status", string(offlinePayload), 1, false)
 	opts.SetOnConnectHandler(func(_ paho.Client) {
-		g.subscribe(startTopic, g.handleStart(ctx))
-		g.subscribe(stopTopic, g.handleStop())
-		g.subscribe(restartTopic, g.handleStart(ctx))
-		g.subscribe(catalogTopic, g.handleCatalog(ctx))
-		log.Printf("固定摄像头网关已订阅主题，启动=%s 停止=%s 重启=%s", startTopic, stopTopic, restartTopic)
-		g.publishGatewayStatus("ONLINE", "")
+		connectionCtx := g.beginConnection(ctx)
+		go g.restoreSubscriptions(connectionCtx, startTopic, stopTopic, restartTopic, catalogTopic)
 	})
 	mqttClient := paho.NewClient(opts)
 	g.mu.Lock()
@@ -138,7 +147,10 @@ func (g *Gateway) Run(ctx context.Context) error {
 			mqttClient.Disconnect(250)
 			return nil
 		case <-heartbeatTicker.C:
-			g.publishGatewayStatus("ONLINE", "")
+			if g.subscriptionsReady.Load() {
+				g.flushPendingStatuses()
+				g.publishGatewayStatus("ONLINE", "")
+			}
 		case <-probeTicker.C:
 			go g.probeAllCameras(ctx)
 		}
@@ -153,11 +165,6 @@ func (g *Gateway) ObservePublisherEvents(ctx context.Context, events <-chan publ
 		case event := <-events:
 			for _, sessionID := range event.SessionIDs {
 				g.forgetSession(sessionID)
-				if event.ReasonCode == "PUBLISH_PROCESS_EXITED" {
-					g.mu.Lock()
-					g.recoveryAttempts[sessionID] = 0
-					g.mu.Unlock()
-				}
 				g.status(sessionID, publisherEventStatus(event.ReasonCode), "", "", event.ReasonCode, event.Message)
 			}
 		}
@@ -173,90 +180,212 @@ func publisherEventStatus(reasonCode string) string {
 	return "failed"
 }
 
-func (g *Gateway) subscribe(topic string, handler paho.MessageHandler) {
-	if token := g.mqtt.Subscribe(topic, 1, handler); token.Wait() && token.Error() != nil {
-		log.Fatalf("订阅固定摄像头 MQTT 主题失败，主题=%s：%v", topic, token.Error())
+func (g *Gateway) subscribe(topic string, handler paho.MessageHandler) error {
+	token := g.mqtt.Subscribe(topic, 1, handler)
+	if !token.WaitTimeout(5 * time.Second) {
+		return fmt.Errorf("订阅主题 %s 超时", topic)
+	}
+	if token.Error() != nil {
+		return fmt.Errorf("订阅主题 %s 失败：%w", topic, token.Error())
+	}
+	return nil
+}
+
+func (g *Gateway) beginConnection(parent context.Context) context.Context {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.connectionCancel != nil {
+		g.connectionCancel()
+	}
+	connectionCtx, cancel := context.WithCancel(parent)
+	g.connectionCancel = cancel
+	g.subscriptionsReady.Store(false)
+	return connectionCtx
+}
+
+func (g *Gateway) restoreSubscriptions(
+	ctx context.Context,
+	startTopic, stopTopic, restartTopic, catalogTopic string,
+) {
+	for {
+		err := g.subscribe(startTopic, g.handleStart(ctx, normalCommand))
+		if err == nil {
+			err = g.subscribe(stopTopic, g.handleStop(ctx))
+		}
+		if err == nil {
+			err = g.subscribe(restartTopic, g.handleStart(ctx, priorityCommand))
+		}
+		if err == nil {
+			err = g.subscribe(catalogTopic, g.handleCatalog(ctx))
+		}
+		if err == nil {
+			if ctx.Err() != nil {
+				return
+			}
+			g.subscriptionsReady.Store(true)
+			log.Printf("固定摄像头网关 MQTT 主题订阅已恢复")
+			g.flushPendingStatuses()
+			g.publishGatewayStatus("ONLINE", "")
+			return
+		}
+		log.Printf("恢复固定摄像头 MQTT 订阅失败，5 秒后重试：%v", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
 	}
 }
 
-func (g *Gateway) handleStart(ctx context.Context) paho.MessageHandler {
+func (g *Gateway) handleConnectionLost() {
+	g.subscriptionsReady.Store(false)
+	g.mu.Lock()
+	if g.connectionCancel != nil {
+		g.connectionCancel()
+		g.connectionCancel = nil
+	}
+	for sessionID := range g.activeSessions {
+		g.pendingStatuses[sessionID] = pendingSessionStatus{
+			status: "interrupted", errorCode: "MQTT_CONNECTION_LOST", message: "MQTT 连接中断",
+		}
+	}
+	for sessionID := range g.startingSessions {
+		g.pendingStatuses[sessionID] = pendingSessionStatus{
+			status: "interrupted", errorCode: "MQTT_CONNECTION_LOST", message: "MQTT 连接中断",
+		}
+	}
+	for sessionID := range g.stoppingSessions {
+		g.pendingStatuses[sessionID] = pendingSessionStatus{
+			status: "stopped", errorCode: "", message: "推流已停止",
+		}
+	}
+	g.activeSessions = make(map[string]struct{})
+	g.startingSessions = make(map[string]int)
+	g.stoppingSessions = make(map[string]int)
+	g.mu.Unlock()
+	if g.dispatcher != nil {
+		g.dispatcher.cancelAll()
+	}
+	if err := g.publisher.StopAll(); err != nil {
+		log.Printf("MQTT 断开后停止全部固定摄像头推流失败：%v", err)
+	}
+}
+
+func (g *Gateway) flushPendingStatuses() {
+	g.mu.Lock()
+	pending := make(map[string]pendingSessionStatus, len(g.pendingStatuses))
+	for sessionID, status := range g.pendingStatuses {
+		pending[sessionID] = status
+	}
+	g.mu.Unlock()
+	for sessionID, status := range pending {
+		if err := g.publishSessionStatus(sessionID, status.status, "", "", status.errorCode, status.message); err != nil {
+			log.Printf("补报固定摄像头会话状态失败，会话ID=%s：%v", sessionID, err)
+			continue
+		}
+		g.mu.Lock()
+		if g.pendingStatuses[sessionID] == status {
+			delete(g.pendingStatuses, sessionID)
+		}
+		g.mu.Unlock()
+	}
+}
+
+func (g *Gateway) handleStart(ctx context.Context, priority commandPriority) paho.MessageHandler {
 	return func(_ paho.Client, msg paho.Message) {
 		var command model.StartCommand
 		if err := json.Unmarshal(msg.Payload(), &command); err != nil {
 			log.Printf("解析固定摄像头启动命令失败，主题=%s 载荷字节数=%d：%v", msg.Topic(), len(msg.Payload()), err)
 			return
 		}
-		if g.isDuplicate(command.SessionID, command.CommandID) {
+		if strings.TrimSpace(command.SessionID) == "" {
+			log.Printf("拒绝缺少会话ID的固定摄像头启动命令")
 			return
 		}
-		cameraID := firstNonBlank(command.SourceID, command.DeviceID)
-		log.Printf("开始固定摄像头推流，摄像头ID=%s 会话ID=%s 清晰度=%s", cameraID, command.SessionID, command.Quality)
-		rtspURL := strings.TrimSpace(command.RTSPURL)
-		if rtspURL == "" {
-			var err error
-			rtspURL, err = g.rtspURL(ctx, cameraID, command.Quality)
-			if err != nil {
-				g.status(command.SessionID, "failed", "", "", "FIXED_CAMERA_CONFIG_FAILED", err.Error())
-				return
+		g.beginStarting(command.SessionID)
+		err := g.submitCommand(command.SessionID, command.CommandID, priority, commandJob{
+			ctx:       ctx,
+			sessionID: command.SessionID,
+			run: func(jobCtx context.Context) {
+				g.start(jobCtx, command)
+			},
+		})
+		if err != nil {
+			g.endStarting(command.SessionID)
+			if err != errDuplicateCommand {
+				g.status(command.SessionID, "failed", "", "", "GATEWAY_COMMAND_QUEUE_FULL", err.Error())
 			}
 		}
-		if _, err := g.probe.Check(ctx, rtspURL); err != nil {
-			g.publishCameraHealth(model.FixedCameraHealthStatus{
-				Version: "1.0", GatewayID: g.cfg.GatewayID, CameraID: cameraID,
-				Health: "UNAVAILABLE", Sequence: g.sequence.Add(1), CheckedAt: time.Now(),
-				ReasonCode: "RTSP_PROBE_FAILED",
-			})
-			g.status(command.SessionID, g.recoveryProbeStatus(command.SessionID), "", "", "RTSP_PROBE_FAILED", err.Error())
-			return
-		}
-		g.clearRecovery(command.SessionID)
-		g.publishCameraHealth(model.FixedCameraHealthStatus{
-			Version: "1.0", GatewayID: g.cfg.GatewayID, CameraID: cameraID,
-			Health: "AVAILABLE", Sequence: g.sequence.Add(1), CheckedAt: time.Now(),
-		})
-		g.status(command.SessionID, "publishing", "", "", "", "RTSP 探测成功")
-		_, trackName, err := g.publisher.Start(ctx, command, rtspURL)
+	}
+}
+
+func (g *Gateway) start(ctx context.Context, command model.StartCommand) {
+	defer g.endStarting(command.SessionID)
+	cameraID := firstNonBlank(command.SourceID, command.DeviceID)
+	log.Printf("开始固定摄像头推流，摄像头ID=%s 会话ID=%s 清晰度=%s", cameraID, command.SessionID, command.Quality)
+	rtspURL := strings.TrimSpace(command.RTSPURL)
+	if rtspURL == "" {
+		var err error
+		rtspURL, err = g.rtspURL(ctx, cameraID, command.Quality)
 		if err != nil {
-			g.status(command.SessionID, "failed", "", "", "PUBLISH_FAILED", err.Error())
+			if ctx.Err() == nil {
+				g.status(command.SessionID, "failed", "", "", "FIXED_CAMERA_CONFIG_FAILED", err.Error())
+			}
 			return
 		}
-		g.rememberSession(command.SessionID)
-		// gstreamer-publisher 无法返回 LiveKit 的真实 Track SID，不能把本地占位符当作轨道存在依据。
-		// Media Service 会通过 Room API 校验真实轨道，避免网关重启后复用已失效的会话。
-		g.status(command.SessionID, "streaming", "", trackName, "", "视频轨道发布成功")
 	}
+	// Publisher 启动本身已会读取 RTSP，启动前再执行 ffprobe 只会重复建连。
+	// 摄像头健康由后台探测统一负责，会话启动只回报实际 Publisher 结果。
+	g.status(command.SessionID, "publishing", "", "", "", "开始启动推流进程")
+	_, trackName, err := g.publisher.Start(ctx, command, rtspURL)
+	if err != nil {
+		if ctx.Err() == nil {
+			g.status(command.SessionID, "failed", "", "", "PUBLISH_FAILED", err.Error())
+		}
+		return
+	}
+	if ctx.Err() != nil {
+		_ = g.publisher.Stop(command.SessionID)
+		return
+	}
+	if !g.rememberSessionIfConnected(ctx, command.SessionID) {
+		_ = g.publisher.Stop(command.SessionID)
+		return
+	}
+	// gstreamer-publisher 无法返回 LiveKit 的真实 Track SID，不能把本地占位符当作轨道存在依据。
+	// Media Service 会通过 Room API 校验真实轨道，避免网关重启后复用已失效的会话。
+	g.status(command.SessionID, "streaming", "", trackName, "", "推流进程已启动，等待视频轨道确认")
 }
 
-func (g *Gateway) recoveryProbeStatus(sessionID string) string {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	attempts, recovering := g.recoveryAttempts[sessionID]
-	if !recovering {
-		return "failed"
-	}
-	attempts++
-	if attempts > maxAutomaticRecoveryAttempts {
-		delete(g.recoveryAttempts, sessionID)
-		return "failed"
-	}
-	g.recoveryAttempts[sessionID] = attempts
-	return "interrupted"
-}
-
-func (g *Gateway) clearRecovery(sessionID string) {
-	g.mu.Lock()
-	delete(g.recoveryAttempts, sessionID)
-	g.mu.Unlock()
-}
-
-func (g *Gateway) handleStop() paho.MessageHandler {
+func (g *Gateway) handleStop(ctx context.Context) paho.MessageHandler {
 	return func(_ paho.Client, msg paho.Message) {
 		var payload model.StopCommand
 		if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
 			log.Printf("解析固定摄像头停止命令失败，主题=%s 载荷字节数=%d：%v", msg.Topic(), len(msg.Payload()), err)
 			return
 		}
-		g.stop(payload)
+		if strings.TrimSpace(payload.SessionID) == "" {
+			log.Printf("拒绝缺少会话ID的固定摄像头停止命令")
+			return
+		}
+		g.beginStopping(payload.SessionID)
+		err := g.submitCommand(payload.SessionID, payload.CommandID, priorityCommand, commandJob{
+			ctx:       ctx,
+			sessionID: payload.SessionID,
+			run: func(context.Context) {
+				defer g.endStopping(payload.SessionID)
+				g.stop(payload)
+			},
+		})
+		if err != nil {
+			if err == errDuplicateCommand {
+				g.endStopping(payload.SessionID)
+				return
+			}
+			log.Printf("固定摄像头停止命令队列已满，立即执行精确停止，会话ID=%s", payload.SessionID)
+			g.stop(payload)
+			g.endStopping(payload.SessionID)
+		}
 	}
 }
 
@@ -271,7 +400,7 @@ func (g *Gateway) stop(payload model.StopCommand) {
 
 // stopAllPublishers 在 MQTT 仍连接时先收口会话，避免留下没有实际推流的 STREAMING 状态。
 func (g *Gateway) stopAllPublishers(message string) {
-	sessionIDs := g.activeSessionIDs()
+	sessionIDs := g.trackedSessionIDs()
 	if err := g.publisher.StopAll(); err != nil {
 		log.Printf("停止全部固定摄像头推流进程失败：%v", err)
 	}
@@ -281,6 +410,26 @@ func (g *Gateway) stopAllPublishers(message string) {
 	}
 }
 
+func (g *Gateway) trackedSessionIDs() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	ids := make(map[string]struct{}, len(g.activeSessions)+len(g.startingSessions)+len(g.stoppingSessions))
+	for sessionID := range g.activeSessions {
+		ids[sessionID] = struct{}{}
+	}
+	for sessionID := range g.startingSessions {
+		ids[sessionID] = struct{}{}
+	}
+	for sessionID := range g.stoppingSessions {
+		ids[sessionID] = struct{}{}
+	}
+	result := make([]string, 0, len(ids))
+	for sessionID := range ids {
+		result = append(result, sessionID)
+	}
+	return result
+}
+
 func (g *Gateway) rememberSession(sessionID string) {
 	if strings.TrimSpace(sessionID) == "" {
 		return
@@ -288,6 +437,73 @@ func (g *Gateway) rememberSession(sessionID string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.activeSessions[sessionID] = struct{}{}
+}
+
+func (g *Gateway) rememberSessionIfConnected(ctx context.Context, sessionID string) bool {
+	if strings.TrimSpace(sessionID) == "" {
+		return false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
+	g.activeSessions[sessionID] = struct{}{}
+	return true
+}
+
+func (g *Gateway) beginStarting(sessionID string) {
+	g.mu.Lock()
+	g.startingSessions[sessionID]++
+	g.mu.Unlock()
+}
+
+func (g *Gateway) endStarting(sessionID string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.startingSessions[sessionID] <= 1 {
+		delete(g.startingSessions, sessionID)
+		return
+	}
+	g.startingSessions[sessionID]--
+}
+
+func (g *Gateway) beginStopping(sessionID string) {
+	g.mu.Lock()
+	g.stoppingSessions[sessionID]++
+	g.mu.Unlock()
+}
+
+func (g *Gateway) endStopping(sessionID string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.stoppingSessions[sessionID] <= 1 {
+		delete(g.stoppingSessions, sessionID)
+		return
+	}
+	g.stoppingSessions[sessionID]--
+}
+
+func (g *Gateway) submitCommand(
+	sessionID, commandID string,
+	priority commandPriority,
+	job commandJob,
+) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if commandID != "" && commandID == g.lastCmds[sessionID] {
+		return errDuplicateCommand
+	}
+	if g.dispatcher == nil {
+		return fmt.Errorf("固定摄像头命令调度器尚未启动")
+	}
+	if err := g.dispatcher.submit(priority, job); err != nil {
+		return err
+	}
+	if commandID != "" {
+		g.lastCmds[sessionID] = commandID
+	}
+	return nil
 }
 
 func (g *Gateway) forgetSession(sessionID string) {
@@ -428,15 +644,24 @@ func (g *Gateway) probeAllCameras(ctx context.Context) {
 		return
 	}
 	defer g.probeRunning.Store(false)
-	cameras := g.cameras()
+	groups := make(map[string][]cameraRecord)
+	for _, camera := range g.cameras() {
+		rtspURL, reasonCode := rtspURLForCamera(camera, "sub")
+		if reasonCode != "" {
+			g.publishCameraHealth(g.cameraHealthStatus(camera, "UNKNOWN", reasonCode))
+			continue
+		}
+		groups[rtspURL] = append(groups[rtspURL], camera)
+	}
 	workers := g.cfg.HealthProbeWorkers
 	if workers < 1 {
 		workers = 1
 	}
 	semaphore := make(chan struct{}, workers)
 	var wait sync.WaitGroup
-	for _, camera := range cameras {
-		camera := camera
+	for rtspURL, cameras := range groups {
+		rtspURL := rtspURL
+		cameras := cameras
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
@@ -446,30 +671,25 @@ func (g *Gateway) probeAllCameras(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			}
-			g.publishCameraHealth(g.cameraHealth(ctx, camera))
+			health := "AVAILABLE"
+			reasonCode := ""
+			if _, err := g.probe.Check(ctx, rtspURL); err != nil {
+				health = "UNAVAILABLE"
+				reasonCode = "RTSP_PROBE_FAILED"
+			}
+			for _, camera := range cameras {
+				g.publishCameraHealth(g.cameraHealthStatus(camera, health, reasonCode))
+			}
 		}()
 	}
 	wait.Wait()
 }
 
-func (g *Gateway) cameraHealth(ctx context.Context, camera cameraRecord) model.FixedCameraHealthStatus {
-	cameraID := firstNonBlank(camera.CameraID, camera.ID)
-	result := model.FixedCameraHealthStatus{
-		Version: "1.0", GatewayID: g.cfg.GatewayID, CameraID: cameraID,
-		Health: "UNKNOWN", Sequence: g.sequence.Add(1), CheckedAt: time.Now(),
+func (g *Gateway) cameraHealthStatus(camera cameraRecord, health, reasonCode string) model.FixedCameraHealthStatus {
+	return model.FixedCameraHealthStatus{
+		Version: "1.0", GatewayID: g.cfg.GatewayID, CameraID: firstNonBlank(camera.CameraID, camera.ID),
+		Health: health, Sequence: g.sequence.Add(1), CheckedAt: time.Now(), ReasonCode: reasonCode,
 	}
-	rtspURL, reasonCode := rtspURLForCamera(camera, "sub")
-	if reasonCode != "" {
-		result.ReasonCode = reasonCode
-		return result
-	}
-	if _, err := g.probe.Check(ctx, rtspURL); err != nil {
-		result.Health = "UNAVAILABLE"
-		result.ReasonCode = "RTSP_PROBE_FAILED"
-		return result
-	}
-	result.Health = "AVAILABLE"
-	return result
 }
 
 func (g *Gateway) publishGatewayStatus(status, reasonCode string) {
@@ -505,7 +725,13 @@ func (g *Gateway) camera(ctx context.Context, cameraID string) (cameraRecord, er
 }
 
 func (g *Gateway) status(sessionID, status, trackSid, trackName, errorCode, message string) {
-	if err := g.publish("gateway/fixed-camera/"+g.cfg.GatewayID+"/video/status", model.StatusMessage{
+	if err := g.publishSessionStatus(sessionID, status, trackSid, trackName, errorCode, message); err != nil {
+		log.Printf("发布固定摄像头视频状态失败，会话ID=%s 状态=%s：%v", sessionID, status, err)
+	}
+}
+
+func (g *Gateway) publishSessionStatus(sessionID, status, trackSid, trackName, errorCode, message string) error {
+	return g.publish("gateway/fixed-camera/"+g.cfg.GatewayID+"/video/status", model.StatusMessage{
 		SessionID: sessionID,
 		Status:    status,
 		TrackSid:  trackSid,
@@ -513,9 +739,7 @@ func (g *Gateway) status(sessionID, status, trackSid, trackName, errorCode, mess
 		ErrorCode: errorCode,
 		Message:   message,
 		Timestamp: time.Now(),
-	}); err != nil {
-		log.Printf("发布固定摄像头视频状态失败，会话ID=%s 状态=%s：%v", sessionID, status, err)
-	}
+	})
 }
 
 func (g *Gateway) publish(topic string, payload any) error {
@@ -535,16 +759,6 @@ func (g *Gateway) publish(topic string, payload any) error {
 		return fmt.Errorf("MQTT 状态发布超时，主题=%s", topic)
 	}
 	return token.Error()
-}
-
-func (g *Gateway) isDuplicate(sessionID, commandID string) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if commandID != "" && commandID == g.lastCmds[sessionID] {
-		return true
-	}
-	g.lastCmds[sessionID] = commandID
-	return false
 }
 
 func firstNonBlank(values ...string) string {

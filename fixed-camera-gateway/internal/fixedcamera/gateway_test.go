@@ -2,7 +2,7 @@ package fixedcamera
 
 import (
 	"context"
-	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,9 +34,8 @@ type fakeProber struct {
 	err error
 }
 
-type sequenceProber struct {
-	errors []error
-	index  int
+type countingProber struct {
+	calls atomic.Int32
 }
 
 func TestLeaseCatalogReplacesSnapshotAndExpires(t *testing.T) {
@@ -93,60 +92,38 @@ func (p fakeProber) Check(context.Context, string) (rtsp.StreamInfo, error) {
 	return rtsp.StreamInfo{CodecName: "h264"}, p.err
 }
 
-func (p *sequenceProber) Check(context.Context, string) (rtsp.StreamInfo, error) {
-	if p.index >= len(p.errors) {
-		return rtsp.StreamInfo{CodecName: "h264"}, nil
-	}
-	err := p.errors[p.index]
-	p.index++
-	return rtsp.StreamInfo{CodecName: "h264"}, err
+func (p *countingProber) Check(context.Context, string) (rtsp.StreamInfo, error) {
+	p.calls.Add(1)
+	return rtsp.StreamInfo{CodecName: "h264"}, nil
 }
 
-func TestCameraHealthSeparatesConfigurationAndRTSPAvailability(t *testing.T) {
-	gateway := NewGateway(config.Config{GatewayID: "gateway-001"}, fakeProber{}, nil)
+func TestHealthProbeChecksSameRTSPOnlyOnce(t *testing.T) {
+	prober := &countingProber{}
+	gateway := NewGateway(config.Config{GatewayID: "gateway-001", HealthProbeWorkers: 4}, prober, nil)
+	expiresAt := time.Now().Add(time.Minute)
+	gateway.catalog["camera-001"] = leasedCamera{record: cameraRecord{
+		CameraID: "camera-001", Enabled: true, ProtocolType: "RTSP", SubStreamURL: "rtsp://camera/live",
+	}, expiresAt: expiresAt}
+	gateway.catalog["camera-002"] = leasedCamera{record: cameraRecord{
+		CameraID: "camera-002", Enabled: true, ProtocolType: "RTSP", SubStreamURL: "rtsp://camera/live",
+	}, expiresAt: expiresAt}
 
-	available := gateway.cameraHealth(context.Background(), cameraRecord{
-		CameraID: "camera-001", Enabled: true, ProtocolType: "RTSP", SubStreamURL: "rtsp://example.invalid/stream",
-	})
+	gateway.probeAllCameras(context.Background())
+
+	if calls := prober.calls.Load(); calls != 1 {
+		t.Fatalf("相同 RTSP 每轮只能探测一次，实际=%d", calls)
+	}
+}
+
+func TestCameraHealthStatusUsesResolvedProbeResult(t *testing.T) {
+	gateway := NewGateway(config.Config{GatewayID: "gateway-001"}, fakeProber{}, nil)
+	available := gateway.cameraHealthStatus(cameraRecord{CameraID: "camera-001"}, "AVAILABLE", "")
 	if available.Health != "AVAILABLE" || available.ReasonCode != "" {
 		t.Fatalf("期望摄像头可用，实际=%+v", available)
 	}
-
-	disabled := gateway.cameraHealth(context.Background(), cameraRecord{
-		CameraID: "camera-002", Enabled: false, SubStreamURL: "rtsp://example.invalid/stream",
-	})
-	if disabled.Health != "UNKNOWN" || disabled.ReasonCode != "CONFIG_DISABLED" {
-		t.Fatalf("期望停用摄像头健康未知，实际=%+v", disabled)
-	}
-}
-
-func TestCameraHealthReportsProbeFailureWithoutLeakingURL(t *testing.T) {
-	gateway := NewGateway(config.Config{GatewayID: "gateway-001"}, fakeProber{err: errors.New("探测失败")}, nil)
-
-	status := gateway.cameraHealth(context.Background(), cameraRecord{
-		CameraID: "camera-001", Enabled: true, ProtocolType: "RTSP", MainStreamURL: "rtsp://secret:password@example.invalid/stream",
-	})
-
+	status := gateway.cameraHealthStatus(cameraRecord{CameraID: "camera-001"}, "UNAVAILABLE", "RTSP_PROBE_FAILED")
 	if status.Health != "UNAVAILABLE" || status.ReasonCode != "RTSP_PROBE_FAILED" {
 		t.Fatalf("期望探测失败，实际=%+v", status)
-	}
-}
-
-func TestCameraHealthRecoversAfterRTSPBecomesAvailable(t *testing.T) {
-	prober := &sequenceProber{errors: []error{errors.New("断流"), nil}}
-	gateway := NewGateway(config.Config{GatewayID: "gateway-001"}, prober, nil)
-	camera := cameraRecord{
-		CameraID: "camera-001", Enabled: true, ProtocolType: "RTSP", SubStreamURL: "rtsp://example.invalid/stream",
-	}
-
-	unavailable := gateway.cameraHealth(context.Background(), camera)
-	available := gateway.cameraHealth(context.Background(), camera)
-
-	if unavailable.Health != "UNAVAILABLE" || unavailable.ReasonCode != "RTSP_PROBE_FAILED" {
-		t.Fatalf("断流后应发布不可用状态，实际=%+v", unavailable)
-	}
-	if available.Health != "AVAILABLE" || available.ReasonCode != "" {
-		t.Fatalf("恢复后应重新发布可用状态，实际=%+v", available)
 	}
 }
 
@@ -156,22 +133,6 @@ func TestPublisherProcessExitIsReportedAsInterruptedForRecovery(t *testing.T) {
 	}
 	if status := publisherEventStatus("PUBLISH_TOKEN_EXPIRED"); status != "failed" {
 		t.Fatalf("非断流原因不应被错误标记为可恢复中断，实际=%s", status)
-	}
-}
-
-func TestRecoveryProbeRetriesAreBounded(t *testing.T) {
-	gateway := NewGateway(config.Config{}, fakeProber{}, nil)
-	gateway.recoveryAttempts["vs-1"] = 0
-	for attempt := 0; attempt < maxAutomaticRecoveryAttempts; attempt++ {
-		if status := gateway.recoveryProbeStatus("vs-1"); status != "interrupted" {
-			t.Fatalf("第 %d 次恢复探测失败应保持中断，实际=%s", attempt+1, status)
-		}
-	}
-	if status := gateway.recoveryProbeStatus("vs-1"); status != "failed" {
-		t.Fatalf("超过恢复上限应失败收口，实际=%s", status)
-	}
-	if status := gateway.recoveryProbeStatus("vs-new"); status != "failed" {
-		t.Fatalf("首次启动探测失败应直接失败，实际=%s", status)
 	}
 }
 
@@ -213,5 +174,69 @@ func TestStopAllPublishersClearsTrackedSessions(t *testing.T) {
 	}
 	if sessionIDs := gateway.activeSessionIDs(); len(sessionIDs) != 0 {
 		t.Fatalf("退出后不能保留活动会话，实际=%+v", sessionIDs)
+	}
+}
+
+func TestMQTTConnectionLostStopsPublishersAndKeepsStatusesForReconnect(t *testing.T) {
+	pub := &fakePublisher{}
+	gateway := NewGateway(config.Config{GatewayID: "gateway-001"}, fakeProber{}, pub)
+	gateway.dispatcher = newCommandDispatcher(context.Background())
+	defer gateway.dispatcher.close()
+	gateway.rememberSession("session-active")
+	gateway.beginStarting("session-starting")
+	gateway.beginStopping("session-stopping")
+
+	gateway.handleConnectionLost()
+
+	if pub.stopAllCalls != 1 {
+		t.Fatalf("MQTT 断开必须停止全部推流，实际调用次数=%d", pub.stopAllCalls)
+	}
+	if sessionIDs := gateway.activeSessionIDs(); len(sessionIDs) != 0 {
+		t.Fatalf("MQTT 断开后不能保留活动会话，实际=%+v", sessionIDs)
+	}
+	if status := gateway.pendingStatuses["session-active"]; status.status != "interrupted" {
+		t.Fatalf("活动会话应在重连后补报中断，实际=%+v", status)
+	}
+	if status := gateway.pendingStatuses["session-starting"]; status.status != "interrupted" {
+		t.Fatalf("启动中会话应在重连后补报中断，实际=%+v", status)
+	}
+	if status := gateway.pendingStatuses["session-stopping"]; status.status != "stopped" {
+		t.Fatalf("停止中会话应在重连后补报停止，实际=%+v", status)
+	}
+}
+
+func TestCommandDispatcherSerializesSessionAndPrioritizesStop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dispatcher := newCommandDispatcher(ctx)
+	defer dispatcher.close()
+	started := make(chan struct{})
+	order := make(chan string, 3)
+
+	if err := dispatcher.submit(normalCommand, commandJob{
+		ctx: ctx, sessionID: "session-001",
+		run: func(jobCtx context.Context) {
+			close(started)
+			<-jobCtx.Done()
+			order <- "start"
+		},
+	}); err != nil {
+		t.Fatalf("提交启动命令失败：%v", err)
+	}
+	<-started
+	if err := dispatcher.submit(normalCommand, commandJob{
+		ctx: ctx, sessionID: "session-001", run: func(context.Context) { order <- "queued-start" },
+	}); err != nil {
+		t.Fatalf("提交排队启动命令失败：%v", err)
+	}
+	if err := dispatcher.submit(priorityCommand, commandJob{
+		ctx: ctx, sessionID: "session-001", run: func(context.Context) { order <- "stop" },
+	}); err != nil {
+		t.Fatalf("提交停止命令失败：%v", err)
+	}
+
+	got := []string{<-order, <-order, <-order}
+	if got[0] != "start" || got[1] != "stop" || got[2] != "queued-start" {
+		t.Fatalf("同会话命令顺序错误，实际=%v", got)
 	}
 }

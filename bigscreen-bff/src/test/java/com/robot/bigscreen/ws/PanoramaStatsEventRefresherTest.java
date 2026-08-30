@@ -35,6 +35,12 @@ class PanoramaStatsEventRefresherTest {
                 "alarmStats", Map.of("high", 0, "medium", 0, "low", 0),
                 "alarmSummary", Map.of("totalToday", 0));
         when(panoramaService.statsSnapshot(any())).thenReturn(snapshot);
+        when(panoramaService.fixedCameraStatuses()).thenReturn(List.of(Map.of(
+                "sourceId", "camera-001",
+                "status", "online",
+                "playable", true,
+                "enabled", true,
+                "configReady", true)));
         ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
         when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
         PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
@@ -78,6 +84,36 @@ class PanoramaStatsEventRefresherTest {
         verify(panoramaService).statsSnapshot(parts.capture());
         assertThat(parts.getValue()).containsExactlyInAnyOrder(StatsPart.ALARMS, StatsPart.TASKS, StatsPart.DEVICES);
         assertThat(events).hasSize(1);
+    }
+
+    @Test
+    void publishesAuthorizedFixedCameraStatusesOnlyForDeviceRefresh() throws Exception {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler taskScheduler = mock(TaskScheduler.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        when(panoramaService.statsSnapshot(any())).thenReturn(Map.of(
+                "deviceStats", Map.of("total", 1, "online", 1, "fault", 0, "offline", 0)));
+        when(panoramaService.fixedCameraStatuses()).thenReturn(List.of(Map.of(
+                "sourceId", "camera-001",
+                "status", "online",
+                "playable", true,
+                "enabled", true,
+                "configReady", true)));
+        ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
+        when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
+        PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
+                panoramaService, objectMapper, taskScheduler);
+        List<String> events = new ArrayList<>();
+
+        refresher.requestRefresh("browser-a", null, events::add, Set.of(StatsPart.DEVICES));
+        tasks.getValue().run();
+
+        assertThat(events).hasSize(2);
+        JsonNode statusEvent = objectMapper.readTree(events.get(1));
+        assertThat(statusEvent.path("event").asText()).isEqualTo("panorama.fixed-camera.statuses.changed");
+        assertThat(statusEvent.path("data").path("items").get(0).path("sourceId").asText())
+                .isEqualTo("camera-001");
+        assertThat(statusEvent.toString()).doesNotContain("gatewayId", "streamHealth");
     }
 
     @Test

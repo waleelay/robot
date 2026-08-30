@@ -25,18 +25,11 @@ import { errorMessage } from '../../utils'
 import { bearerToken } from '@/auth'
 import { overlayLiveRobotRuntimeFields, mergeRobotBaseInfo, normalizeRobotControlMode } from '../../views/bi/js/utils/prefer-live-robot-fields'
 import { attachTrackRespectingUserPause } from '../../views/bi/js/utils/livekit-user-pause'
+import { mediaReconnectDelay, isSustainedAuthorizationFailure } from './media-websocket-reconnect'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
+const FIXED_CAMERA_TRACK_WAIT_MS = 15000
 const controlProfileInflight = {}
-
-// 4001 先立即刷新 Token；4003 和网络异常采用带抖动的指数退避，避免权限服务故障时重连风暴。
-export function mediaReconnectDelay(closeCode, attempts, randomValue = Math.random()) {
-  if (closeCode === 4001) return 0
-  const exponent = Math.min(Math.max(Number(attempts) || 0, 0), 4)
-  const baseDelay = Math.min(30000, 2000 * Math.pow(2, exponent))
-  const jitter = Math.floor(Math.max(0, Math.min(randomValue, 1)) * 500)
-  return Math.min(30000, baseDelay + jitter)
-}
 
 function refreshAuthorizedOverview(dispatch, { failClosed = false, notifyOnFailure = false } = {}) {
   return dispatch('websocketExtraData/refreshOverviewResources', { failClosed }, { root: true })
@@ -61,6 +54,8 @@ const state = {
   mediaReconnectTimer: null,
   mediaReconnectStableTimer: null,
   mediaReconnectAttempts: 0,
+  mediaAuthorizationFailures: 0,
+  authorizationUnavailable: false,
   mediaManualClosing: false,
   robots: [], // 机器人列表
   cameras: {}, // 全局摄像头索引 { [cameraKey]: camera }
@@ -96,6 +91,32 @@ function cameraKey(robotId, camera) {
 }
 function currentCameraState(camera) {
   return allCameras().find(item => item.key === camera.key) || camera
+}
+
+function waitForVideoTrack(room, hasVideo) {
+  if (hasVideo()) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer)
+      room.off(RoomEvent.TrackSubscribed, onTrack)
+      room.off(RoomEvent.Disconnected, onDisconnected)
+    }
+    const finish = callback => {
+      cleanup()
+      callback()
+    }
+    const onTrack = track => {
+      if (track.kind === 'video') finish(resolve)
+    }
+    const onDisconnected = () => finish(() => reject(new Error('LiveKit 连接已断开')))
+    const timer = setTimeout(
+      () => finish(() => reject(new Error('固定摄像头视频轨道等待超时'))),
+      FIXED_CAMERA_TRACK_WAIT_MS
+    )
+    room.on(RoomEvent.TrackSubscribed, onTrack)
+    room.on(RoomEvent.Disconnected, onDisconnected)
+    if (hasVideo()) finish(resolve)
+  })
 }
 
 function isIntercomAlreadyStoppedError(error) {
@@ -250,11 +271,17 @@ const mutations = {
   resetMediaReconnectAttempts(state) {
     state.mediaReconnectAttempts = 0
   },
+  setMediaAuthorizationFailures(state, attempts) {
+    state.mediaAuthorizationFailures = attempts
+    state.authorizationUnavailable = isSustainedAuthorizationFailure(4003, attempts)
+  },
   RESET_MEDIA_USER_STATE(state) {
     state.wsConnected = false
     state.mediaSocket = null
     state.mediaReconnectStableTimer = null
     state.mediaReconnectAttempts = 0
+    state.mediaAuthorizationFailures = 0
+    state.authorizationUnavailable = false
     state.robots = []
     state.cameras = {}
     state.camerasRevision += 1
@@ -788,6 +815,7 @@ const actions = {
         state.mediaReconnectStableTimer = null
         if (state.mediaSocket === socket && socket.readyState === WebSocket.OPEN) {
           commit('resetMediaReconnectAttempts')
+          commit('setMediaAuthorizationFailures', 0)
         }
       }, 10000)
       dispatch('startHeartbeat')
@@ -813,9 +841,7 @@ const actions = {
       }
       if (!state.mediaManualClosing && !state.mediaReconnectTimer && window.location.pathname.startsWith('/bi/')) {
         const reconnectDelay = mediaReconnectDelay(event.code, state.mediaReconnectAttempts)
-        if (event.code === 4003 && state.mediaReconnectAttempts === 0) {
-          Message.warning('权限服务暂不可用，正在尝试恢复连接')
-        }
+        commit('setMediaAuthorizationFailures', event.code === 4003 ? state.mediaAuthorizationFailures + 1 : 0)
         commit('incrementMediaReconnectAttempts')
         state.mediaReconnectTimer = setTimeout(() => {
           state.mediaReconnectTimer = null
@@ -828,10 +854,6 @@ const actions = {
       const event = JSON.parse(message.data)
       if (event.event === 'bigscreen.authorization.changed') {
         refreshAuthorizedOverview(dispatch, { failClosed: true, notifyOnFailure: true })
-        return
-      }
-      if (event.event === 'bigscreen.fixed-camera.health.changed') {
-        refreshAuthorizedOverview(dispatch, { failClosed: false, notifyOnFailure: false })
         return
       }
       dispatch('syncRobotEvent', event)
@@ -866,6 +888,7 @@ const actions = {
     commit('setMediaSocket', null)
     commit('setWsConnected', false)
     commit('resetMediaReconnectAttempts')
+    commit('setMediaAuthorizationFailures', 0)
     if (clearUserState) {
       window.localStorage.removeItem(DEVICE_STATE_CACHE_KEY)
       commit('RESET_MEDIA_USER_STATE')
@@ -1234,6 +1257,28 @@ const actions = {
     commit('updateRobot', mergeRobotBaseInfo(existing, patch, true))
   },
 
+  // 固定摄像头健康变化只更新当前授权快照中已有的装备，不通过状态事件新增授权资源。
+  patchFixedCameraStatuses({ commit, state, dispatch }, items) {
+    if (!Array.isArray(items)) return
+    items.forEach(item => {
+      const robotId = item?.sourceId
+      const existing = (state.robots || []).find(robot => String(robot.robotId) === String(robotId))
+      if (!existing || !isFixedCameraEquipment(existing, existing.cameras || [])) return
+      const patch = {
+        status: item.status || 'offline',
+        playable: item.playable === true,
+        enabled: item.enabled === true,
+        configReady: item.configReady === true
+      }
+      commit('updateRobot', { ...existing, ...patch })
+      dispatch('websocketExtraData/setRobotBaseInfo', {
+        robotId: existing.robotId,
+        robotInfo: patch,
+        fromRealtime: true
+      }, { root: true })
+    })
+  },
+
   // 处理会话状态更新事件
   syncSessionEvent({ commit, state, dispatch }, event) {
     if (!event || !event.data || !event.data.sessionId) return
@@ -1357,59 +1402,59 @@ const actions = {
     if (state.heartbeatPending) return
     state.heartbeatPending = true
     const activeIntercomSessionId = state.activeIncomingCall && state.activeIncomingCall.sessionId
-    let activeIntercomHeartbeatAttempted = false
     try {
-      for (const camera of allCameras()) {
+      const camerasBySession = new Map()
+      allCameras().forEach(camera => {
+        if (!camera.session || camera.stopped || camera.stopping) return
+        if (!camera.watching && !camera.recordingActive && !camera.intercomActive &&
+          camera.session.sessionId !== activeIntercomSessionId) return
+        if (!camerasBySession.has(camera.session.sessionId)) {
+          camerasBySession.set(camera.session.sessionId, camera)
+        }
+      })
+      const jobs = [...camerasBySession.values()].map(async camera => {
         let changed = false
-        if (camera.session && !camera.stopped && !camera.stopping) {
-          try {
-            const session = camera.watching
-              ? await heartbeatVideoSession(camera.session.sessionId)
-              : camera.session
+        const sessionId = camera.session.sessionId
+        const requests = []
+        if (camera.watching) {
+          requests.push(heartbeatVideoSession(sessionId).then(session => {
             if (camera.session && camera.session.sessionId === session.sessionId) {
               changed = camera.viewerCount !== session.viewerCount || changed
               camera.viewerCount = session.viewerCount
             }
-          } catch (_) {}
-          if (camera.watching && Date.now() - (camera.recordingSyncedAt || 0) >= 15000) {
-            try {
-              const recording = await getActiveLiveRecording(camera.session.sessionId)
-              applyActiveRecording(camera, recording)
-              changed = true
-            } catch (_) {}
-          }
+          }))
         }
-        const shouldHeartbeatIntercom = camera.session &&
-          (camera.intercomActive || camera.session.sessionId === activeIntercomSessionId)
-        if (shouldHeartbeatIntercom) {
-          if (camera.session.sessionId === activeIntercomSessionId) activeIntercomHeartbeatAttempted = true
-          try {
-            const response = await heartbeatIntercom(camera.session.sessionId)
+        if (camera.watching && Date.now() - (camera.recordingSyncedAt || 0) >= 15000) {
+          requests.push(getActiveLiveRecording(sessionId).then(recording => {
+            applyActiveRecording(camera, recording)
+            changed = true
+          }))
+        }
+        if (camera.intercomActive || sessionId === activeIntercomSessionId) {
+          requests.push(heartbeatIntercom(sessionId).then(response => {
             changed = camera.intercomStatus !== response.intercomStatus || changed
             camera.intercomStatus = response.intercomStatus
-            // const intercomActive = !['IDLE', 'FAILED'].includes(camera.intercomStatus)
-            // changed = camera.intercomActive !== intercomActive || changed
-            // camera.intercomActive = intercomActive
-          } catch (_) {}
+          }))
         }
+        await Promise.allSettled(requests)
         if (changed) {
           commit('setCamera', camera)
         }
+      })
+      if (activeIntercomSessionId && !camerasBySession.has(activeIntercomSessionId)) {
+        jobs.push(heartbeatIntercom(activeIntercomSessionId).catch(() => {}))
       }
-      if (activeIntercomSessionId && !activeIntercomHeartbeatAttempted) {
-        try {
-          await heartbeatIntercom(activeIntercomSessionId)
-        } catch (_) {}
-      }
+      await Promise.allSettled(jobs)
     } finally {
       state.heartbeatPending = false
     }
   },
   // 启动摄像头。同一路可被多个画面消费：已有 LiveKit Room 时只挂到新的 video，不重连。
-  async startCamera({ commit, state, dispatch }, { robot, camera, consumerId, prefixId }) {
+  async startCamera({ commit, state, dispatch }, { robot, camera, consumerId, prefixId, throwOnError = false }) {
     const viewerId = consumerId || 'default'
     const attachPrefix = prefixId || state.prefixId
     const stored = state.cameras[camera.key] || {}
+    const previousActive = state.activeCameras[camera.key]
     const camera1 = {
       ...camera,
       ...stored,
@@ -1420,15 +1465,18 @@ const actions = {
     if (fixedCamera) {
       if (!robot.enabled || !robot.configReady) {
         Message.warning(robot.enabled ? '固定摄像头配置不完整，无法播放' : '固定摄像头已停用，无法播放')
-        return
+        if (throwOnError) throw new Error(robot.enabled ? '固定摄像头配置不完整' : '固定摄像头已停用')
+        return null
       }
       if (robot.gatewayHealth?.status === 'OFFLINE') {
         Message.warning('固定摄像头网关离线，无法播放')
-        return
+        if (throwOnError) throw new Error('固定摄像头网关离线')
+        return null
       }
       // UNKNOWN 不提前拒绝，由本次启动时的真实 RTSP 探测给出最终结果。
     } else if (robot.status !== 'online') {
-      return
+      if (throwOnError) throw new Error('装备当前离线')
+      return null
     }
     const reuseRoom = liveKitRoomReusable(camera1)
     if (!reuseRoom) camera1.loading = true
@@ -1436,6 +1484,7 @@ const actions = {
     camera1.stopping = false
     camera1.restarting = false
     camera1.watching = true
+    let createdSessionId = null
     try {
       const session = await createVideoSession({
         robotId: robot.robotId,
@@ -1444,6 +1493,7 @@ const actions = {
         quality: camera.quality,
         reuse: true
       })
+      createdSessionId = session.sessionId
       camera1.session = mergeSession(camera1, session)
       camera1.status = camera1.session.status
       camera1.viewerCount = camera1.session.viewerCount
@@ -1452,7 +1502,11 @@ const actions = {
       if (reuseRoom) {
         attachCameraMedia(camera1, attachPrefix)
       } else if (!camera1.room || !camera1.intercomActive) {
-        await dispatch('connectLiveKit', { camera: camera1 })
+        await dispatch('connectLiveKit', {
+          camera: camera1,
+          throwOnError: true,
+          waitForVideo: fixedCamera
+        })
       } else {
         attachCameraMedia(camera1, attachPrefix)
       }
@@ -1460,9 +1514,6 @@ const actions = {
         const recording = await getActiveLiveRecording(camera1.session.sessionId)
         applyActiveRecording(camera1, recording)
       } catch (_) {}
-    } catch (error) {
-      console.error('ERROR createVideoSession', error.message || '请求失败')
-    } finally {
       const next = mergeCameraFromStore(state, camera1, {
         loading: false,
         attachTargets: mergeAttachTargets(
@@ -1472,6 +1523,41 @@ const actions = {
       })
       commit('setCamera', next)
       commit('setActiveCamera', { key: next.key, robot, camera: next })
+      return next
+    } catch (error) {
+      console.error('ERROR createVideoSession', error.message || '请求失败')
+      if (camera1.room && camera1.room !== stored.room) {
+        await Promise.resolve(camera1.room.disconnect()).catch(() => {})
+      }
+      detachCameraMedia(camera1, attachPrefix)
+      if (createdSessionId && (!stored.session || stored.session.sessionId !== createdSessionId)) {
+        await stopVideoSession(createdSessionId, { timeout: 4000, skipErrorMessage: true }).catch(() => {})
+        state.stoppedSessionIds.add(createdSessionId)
+      }
+      const restored = Object.keys(stored).length > 0
+        ? { ...stored, loading: false, connecting: false, disconnecting: false }
+        : {
+          ...camera,
+          key: camera1.key,
+          watching: false,
+          loading: false,
+          connecting: false,
+          disconnecting: false,
+          stopped: true,
+          session: null,
+          room: null,
+          hasVideo: false,
+          remoteVideoTrack: null,
+          attachTargets: {}
+        }
+      commit('setCamera', restored)
+      if (previousActive) {
+        commit('setActiveCamera', { key: camera1.key, ...previousActive })
+      } else {
+        commit('removeActiveCamera', camera1.key)
+      }
+      if (throwOnError) throw error
+      return null
     }
   },
 
@@ -1697,7 +1783,13 @@ const actions = {
   },
 
   // 连接 LiveKit 会话
-  async connectLiveKit({ commit, dispatch, state }, { camera, refreshToken, connectionToken }) {
+  async connectLiveKit({ commit, dispatch, state }, {
+    camera,
+    refreshToken,
+    connectionToken,
+    throwOnError = false,
+    waitForVideo = false
+  }) {
     // console.log('connectLiveKit================================', camera.intercomActive)
 
     if (camera.connecting || !camera.session) return
@@ -1713,7 +1805,7 @@ const actions = {
       }
       const token = connectionToken || (camera.intercomActive ? camera.intercomToken : camera.session.viewerToken)
       const livekitUrl = getLiveKitUrl(camera.session.livekitUrl)
-      if (!token || !livekitUrl) return
+      if (!token || !livekitUrl) throw new Error('LiveKit 连接参数不完整')
       if (camera.room) {
         camera.disconnecting = true
         const oldRoom = camera.room
@@ -1830,11 +1922,19 @@ const actions = {
       camera.room = room
       commit('setCamera', camera)
       await room.connect(livekitUrl, token)
+      if (waitForVideo) {
+        await waitForVideoTrack(room, () => Boolean(currentCamera()?.hasVideo))
+      }
       // console.log('LiveKit connected', `${camera.name} ${camera.session.roomName}`)
     } catch (error) {
+      const failedRoom = camera.room
       camera.room = null
       camera.hasVideo = false
+      if (failedRoom) {
+        await Promise.resolve(failedRoom.disconnect()).catch(() => {})
+      }
       console.error('ERROR LiveKit connect', error.message || '请求失败')
+      if (throwOnError) throw error
     } finally {
       camera.disconnecting = false
       camera.connecting = false
@@ -2315,6 +2415,7 @@ const getters = {
   },
   getMediaSocket: (state) => state.mediaSocket,
   getWsConnected: (state) => state.wsConnected,
+  getAuthorizationUnavailable: (state) => state.authorizationUnavailable,
   getActiveCameras: state => state.activeCameras,
   getControlProfiles: state => state.controlProfiles
 }

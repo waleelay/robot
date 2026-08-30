@@ -391,9 +391,8 @@
 <script>
 import HlsModule from 'hls.js'
 import { getTaskRecordReplay, previewImageBlob } from '@/api/new-bi'
-import { createFileObjectUrl, fileDownloadUrl, getFileContent, getFilePlayUrl, revokeFileObjectUrl } from '@/api/media'
+import { createFileObjectUrl, fileDownloadUrl, getFilePlayUrl, revokeFileObjectUrl } from '@/api/media'
 import Empty from '../../../components/Empty.vue'
-import { saveAs } from 'file-saver'
 import { withApiPrefix } from '@/utils/api-url'
 import { isRequestErrorNotified } from '@/utils/request'
 import {
@@ -1368,13 +1367,9 @@ export default {
           this.triggerFileDownload(url, filename)
           return
         }
-        await this.downloadVideoBlob(fileId, filename)
+        throw new Error('无法生成视频下载地址')
       } catch (error) {
-        try {
-          await this.downloadVideoBlob(fileId, filename)
-        } catch (inner) {
-          this.showError(error)
-        }
+        this.showError(error)
       }
     },
     videoDownloadName(video, fileId) {
@@ -1390,11 +1385,6 @@ export default {
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
-    },
-    async downloadVideoBlob(fileId, filename) {
-      const data = await getFileContent(fileId)
-      const blob = data instanceof Blob ? data : new Blob([data])
-      saveAs(blob, filename)
     },
     videoUrl(video) {
       if (this.videoUnavailable(video, video && video.flatIndex)) return ''
@@ -1434,11 +1424,6 @@ export default {
       }
       const pathname = this.normalizeMediaFilePath(url.charAt(0) === '/' ? url : `/${url}`)
       return `${baseOrigin}${withApiPrefix(pathname)}`
-    },
-    mediaFileContentUrl(fileId) {
-      return fileId
-        ? `${this.resourceBaseOrigin()}${withApiPrefix(`/api/bigscreen/control/files/${encodeURIComponent(fileId)}/content`)}`
-        : ''
     },
     isDemoUrl(value) {
       return typeof value === 'string' && value.indexOf('eiop-demo://') === 0

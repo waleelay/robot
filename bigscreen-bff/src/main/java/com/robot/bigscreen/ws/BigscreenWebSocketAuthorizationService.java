@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +23,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -76,21 +78,33 @@ public class BigscreenWebSocketAuthorizationService {
         try {
             long deadlineNanos = System.nanoTime()
                     + TimeUnit.MILLISECONDS.toNanos(Math.max(1000L, authorizationLoadTimeoutMs));
-            Set<String> robotIds = loadAuthorizedIds(
+            Set<String> robotIds = emptyWhenForbidden("设备", () -> loadAuthorizedIds(
                     headers,
                     "/api/v1/management/devices",
                     deadlineNanos,
-                    "serialNumber", "robotId", "deviceCode", "id");
-            List<Map<String, Object>> cameraRecords = loadAuthorizedRecords(
+                    "serialNumber", "robotId", "deviceCode", "id"), Set.of());
+            List<Map<String, Object>> cameraRecords = emptyWhenForbidden("固定摄像头", () -> loadAuthorizedRecords(
                     headers,
                     "/api/v1/management/fixed-cameras",
-                    deadlineNanos);
+                    deadlineNanos), List.of());
             Set<String> cameraIds = ids(cameraRecords, "cameraId", "id");
             catalogLeaseClient.synchronize(session.getPrincipal(), headers, cameraRecords);
             return new AuthorizedResources(robotIds, cameraIds);
         } catch (RuntimeException exception) {
             log.warn("加载大屏 WebSocket 授权资源失败，会话={}", session.getId(), exception);
             throw exception;
+        }
+    }
+
+    <T> T emptyWhenForbidden(String resourceName, Supplier<T> loader, T emptyValue) {
+        try {
+            return loader.get();
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() != 403) {
+                throw exception;
+            }
+            log.info("当前用户的{}查看权限已撤销，授权集合按空集处理", resourceName);
+            return emptyValue;
         }
     }
 

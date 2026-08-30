@@ -43,6 +43,23 @@ test('手动图片和录像查询统一携带服务端来源条件', async () =>
   ])
 })
 
+test('图片展示复用预签名内联地址，不再读取三层文件正文', async () => {
+  const requests = []
+  const api = loadMediaApi(options => {
+    requests.push(options)
+    return Promise.resolve({ downloadUrl: 'https://minio.example/image.jpg' })
+  })
+
+  const signed = await api.getFileInlineUrl('file-1')
+
+  assert.equal(signed.url, 'https://minio.example/image.jpg')
+  assert.deepEqual(JSON.parse(JSON.stringify(requests)), [{
+    url: '/api/bigscreen/control/files/file-1/download-url',
+    method: 'post',
+    params: { inline: true }
+  }])
+})
+
 test('多媒体列表和详情不再按 extensionId 或不存在的 sourceType 补丁过滤', () => {
   const files = [
     '../src/views/bi/components/Snapshot.vue',

@@ -3,6 +3,7 @@ package com.robot.mediaserver.video.scheduler;
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.media.common.video.VideoSessionStatus;
+import com.robot.media.common.video.VideoSourceType;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import java.time.OffsetDateTime;
@@ -38,13 +39,24 @@ public class VideoSessionTimeoutScheduler {
     }
 
     private void handleTrackPublishTimeout() {
-        OffsetDateTime threshold = now().minusSeconds(properties.getSession().getTrackPublishTimeoutSeconds());
+        OffsetDateTime currentTime = now();
+        OffsetDateTime threshold = currentTime.minusSeconds(properties.getSession().getTrackPublishTimeoutSeconds());
         List<VideoSession> requesting = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.REQUESTING_CLIENT, threshold);
         List<VideoSession> roomReady = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.ROOM_READY, threshold);
+        List<VideoSession> fixedCameraReady = repository.findByStatusAndSourceTypeAndUpdatedAtBefore(
+                VideoSessionStatus.ROOM_READY, VideoSourceType.FIXED_CAMERA, currentTime);
         requesting.stream().filter(this::expectsVideoTrack)
                 .forEach(session -> markTimeout(session, "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时"));
         roomReady.stream().filter(this::expectsVideoTrack)
+                .filter(session -> session.getSourceType() != VideoSourceType.FIXED_CAMERA)
                 .forEach(session -> markTimeout(session, "LK_PUBLISH_TIMEOUT", "Room ready 后 Track 发布超时"));
+        fixedCameraReady.stream().filter(this::expectsVideoTrack)
+                .forEach(session -> {
+                    if (!videoSessionService.confirmFixedCameraTrack(session.getSessionId())
+                            && !session.getUpdatedAt().isAfter(threshold)) {
+                        markTimeout(session, "LK_PUBLISH_TIMEOUT", "Room ready 后 Track 发布超时");
+                    }
+                });
     }
 
     private boolean expectsVideoTrack(VideoSession session) {

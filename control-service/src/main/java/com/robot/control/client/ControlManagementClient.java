@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.function.IntFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +36,9 @@ public class ControlManagementClient {
     private static final Logger log = LoggerFactory.getLogger(ControlManagementClient.class);
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE = new ParameterizedTypeReference<>() {};
     private static final Duration DEFAULT_DEVICE_CACHE_TTL = Duration.ofSeconds(30);
+    private static final int MANAGEMENT_PAGE_SIZE = 100;
+    private static final int MANAGEMENT_MAX_PAGES = 100;
+    private static final long MANAGEMENT_PAGING_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(8);
 
     private final RestClient restClient;
     private final ControlProperties properties;
@@ -199,12 +204,11 @@ public class ControlManagementClient {
     }
 
     private List<Map<String, Object>> requestDevices() {
-        URI uri = uri("/api/v1/management/devices")
-                .queryParam("pageNum", 1)
-                .queryParam("pageSize", 500)
+        return pagedRecords(pageNum -> uri("/api/v1/management/devices")
+                .queryParam("pageNum", pageNum)
+                .queryParam("pageSize", MANAGEMENT_PAGE_SIZE)
                 .build(true)
-                .toUri();
-        return records(uri);
+                .toUri());
     }
 
     Duration deviceTtl() {
@@ -233,21 +237,11 @@ public class ControlManagementClient {
         if (requestAuthorizationHeaders.currentCacheKey().isEmpty()) {
             return List.of();
         }
-        int pageSize = 100;
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (int pageNum = 1; pageNum <= 1000; pageNum++) {
-            URI uri = uri("/api/v1/management/fixed-cameras")
+        return pagedRecords(pageNum -> uri("/api/v1/management/fixed-cameras")
                     .queryParam("pageNum", pageNum)
-                    .queryParam("pageSize", pageSize)
+                    .queryParam("pageSize", MANAGEMENT_PAGE_SIZE)
                     .build(true)
-                    .toUri();
-            List<Map<String, Object>> page = records(uri);
-            result.addAll(page);
-            if (page.size() < pageSize) {
-                return result;
-            }
-        }
-        throw new IllegalStateException("固定摄像头分页超过安全上限");
+                    .toUri());
     }
 
     /**
@@ -335,26 +329,68 @@ public class ControlManagementClient {
     }
 
     private List<Map<String, Object>> records(URI uri) {
-        return responseMap(uri)
-                .map(response -> {
-                    Object dataValue = response.get("data");
-                    if (dataValue instanceof List<?> list) {
-                        return maps(list);
-                    }
-                    Map<String, Object> data = map(dataValue);
-                    if (data.isEmpty() && !response.containsKey("code") && !response.containsKey("data")) {
-                        data = response;
-                    }
-                    if (data.isEmpty()) {
-                        return List.<Map<String, Object>>of();
-                    }
-                    Object records = data.get("records");
-                    if (records instanceof List<?> list) {
-                        return maps(list);
-                    }
-                    return List.<Map<String, Object>>of(data);
-                })
-                .orElseGet(List::of);
+        return responseMap(uri).map(this::records).orElseGet(List::of);
+    }
+
+    private List<Map<String, Object>> pagedRecords(IntFunction<URI> uriFactory) {
+        long deadline = System.nanoTime() + MANAGEMENT_PAGING_TIMEOUT_NANOS;
+        List<Map<String, Object>> result = new ArrayList<>();
+        List<Map<String, Object>> previousPage = null;
+        for (int pageNum = 1; pageNum <= MANAGEMENT_MAX_PAGES; pageNum++) {
+            if (System.nanoTime() >= deadline) {
+                throw new IllegalStateException("管理端资源分页查询超过总时限");
+            }
+            URI uri = uriFactory.apply(pageNum);
+            Map<String, Object> response = responseMap(uri)
+                    .orElseThrow(() -> new IllegalStateException("管理端资源分页查询失败"));
+            List<Map<String, Object>> page = records(response);
+            if (page.equals(previousPage)) {
+                throw new IllegalStateException("管理端资源分页无进展");
+            }
+            result.addAll(page);
+            if (page.size() < MANAGEMENT_PAGE_SIZE || reachedReportedTotal(response, result.size())) {
+                return List.copyOf(result);
+            }
+            previousPage = page;
+        }
+        throw new IllegalStateException("管理端资源分页超过安全上限");
+    }
+
+    private List<Map<String, Object>> records(Map<String, Object> response) {
+        Object dataValue = response.get("data");
+        if (dataValue instanceof List<?> list) {
+            return maps(list);
+        }
+        Map<String, Object> data = map(dataValue);
+        if (data.isEmpty() && !response.containsKey("code") && !response.containsKey("data")) {
+            data = response;
+        }
+        if (data.isEmpty()) {
+            return List.of();
+        }
+        Object records = data.get("records");
+        if (records instanceof List<?> list) {
+            return maps(list);
+        }
+        return List.of(data);
+    }
+
+    private boolean reachedReportedTotal(Map<String, Object> response, int receivedCount) {
+        Object total = response.get("total");
+        if (total == null) {
+            total = map(response.get("data")).get("total");
+        }
+        if (total instanceof Number number) {
+            return receivedCount >= number.longValue();
+        }
+        if (total instanceof String text) {
+            try {
+                return receivedCount >= Long.parseLong(text);
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        }
+        return false;
     }
 
     @SuppressWarnings("unchecked")

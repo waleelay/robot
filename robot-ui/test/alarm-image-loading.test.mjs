@@ -6,7 +6,7 @@ import vm from 'node:vm'
 
 const require = createRequire(import.meta.url)
 
-function loadFileCache(createFileObjectUrl) {
+function loadFileCache(getFileInlineUrl, DateImpl = Date) {
   const source = readFileSync(new URL('../src/utils/file-object-url-cache.js', import.meta.url), 'utf8')
   const compiled = require('@babel/core').transformSync(source, {
     babelrc: false,
@@ -18,11 +18,11 @@ function loadFileCache(createFileObjectUrl) {
     exports,
     Promise,
     Map,
-    Date,
+    Date: DateImpl,
     require: name => {
       if (name === '@/api/media') {
         return {
-          createFileObjectUrl,
+          getFileInlineUrl,
           getFilePlayUrl: async () => ({}),
           revokeFileObjectUrl: () => {}
         }
@@ -42,7 +42,7 @@ test('告警图片文件请求最多四路并发，相同 fileId 复用同一请
     maxActive = Math.max(maxActive, active)
     releases.push(() => {
       active -= 1
-      resolve(`blob:${id}`)
+      resolve({ url: `blob:${id}`, expiresAt: new Date(Date.now() + 3600000).toISOString() })
     })
   }))
 
@@ -70,7 +70,7 @@ test('退出清理缓存后不再启动排队图片，迟到结果不写回缓�
   let started = 0
   const cache = loadFileCache(id => new Promise(resolve => {
     started += 1
-    releases.push(() => resolve(`blob:${id}`))
+    releases.push(() => resolve({ url: `blob:${id}`, expiresAt: new Date(Date.now() + 3600000).toISOString() }))
   }))
   const requests = Array.from({ length: 8 }, (_, index) =>
     cache.getCachedFileObjectUrl(`logout-${index}`).catch(error => error.message)
@@ -84,6 +84,27 @@ test('退出清理缓存后不再启动排队图片，迟到结果不写回缓�
 
   assert.equal(started, 4)
   assert.equal(results.every(result => result === '文件缓存已清空'), true)
+})
+
+test('图片预签名地址在到期前复用，剩余不足一分钟时重新签发', async () => {
+  let now = Date.now()
+  class TestDate extends Date {
+    static now() { return now }
+  }
+  let requests = 0
+  const cache = loadFileCache(async id => {
+    requests += 1
+    return {
+      url: `https://files.example/${id}?version=${requests}`,
+      expiresAt: new Date(now + 120000).toISOString()
+    }
+  }, TestDate)
+
+  assert.equal(await cache.getCachedFileObjectUrl('image-1'), 'https://files.example/image-1?version=1')
+  assert.equal(await cache.getCachedFileObjectUrl('image-1'), 'https://files.example/image-1?version=1')
+  now += 61000
+  assert.equal(await cache.getCachedFileObjectUrl('image-1'), 'https://files.example/image-1?version=2')
+  assert.equal(requests, 2)
 })
 
 test('全景告警列表只在图片进入可视区后加载，不再批量预取', () => {

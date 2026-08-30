@@ -3,12 +3,14 @@ package publisher
 import (
 	"context"
 	"errors"
+	"hash/fnv"
 	"log"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -36,6 +38,7 @@ type ProcessPublisher struct {
 	lastCleanupMillis      int64
 	maxCleanupMillis       int64
 	events                 chan LifecycleEvent
+	startLocks             [8]sync.Mutex
 	mu                     sync.Mutex
 }
 
@@ -46,6 +49,7 @@ type processEntry struct {
 	expiresAt    time.Time
 	stderr       *tailBuffer
 	redactValues []string
+	running      atomic.Bool
 }
 
 type processResult struct {
@@ -55,6 +59,10 @@ type processResult struct {
 }
 
 const maxProcessStderrBytes = 4096
+
+// 子进程启动只做快速失败保护；是否真正发布出视频轨道由 Media Service 通过
+// LiveKit Room API 确认，避免这里长时间占用 Gateway 命令工作线程。
+const publisherStartupGuard = 500 * time.Millisecond
 
 var processURLPattern = regexp.MustCompile(`(?i)(?:rtsp|rtsps|https?|wss?)://[^\s]+`)
 
@@ -106,9 +114,12 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 	if !tokenUsable(command.ExpiresAt) {
 		return "", "", errors.New("发布 Token 缺失、已过期或剩余有效期不足 30 秒")
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	key := streamKey(command)
+	startLock := &p.startLocks[streamLockIndex(key)]
+	startLock.Lock()
+	defer startLock.Unlock()
+
+	p.mu.Lock()
 	previousKey := p.unbindSessionLocked(command.SessionID)
 	if previousKey != "" && previousKey != key && len(p.streamSessions[previousKey]) == 0 {
 		_ = p.stopStreamLocked(previousKey)
@@ -116,10 +127,13 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 	if entry := p.cmds[key]; entry != nil {
 		if entryRunning(entry) && tokenUsable(entry.expiresAt) && tokenUsable(command.ExpiresAt) {
 			p.bindSessionLocked(command.SessionID, key)
+			p.mu.Unlock()
 			return "TR_" + command.SessionID, trackName(command), nil
 		}
 		_ = p.stopStreamLocked(key)
 	}
+	p.mu.Unlock()
+
 	trackName := "video." + command.Channel + "." + command.Quality
 	if p.cfg.PublisherCmd != "" {
 		return p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.PublisherCmd, "custom")
@@ -139,7 +153,7 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 	trackSid, publishedTrackName, err := p.startGStreamer(ctx, command, rtspURL, trackName, key)
 	if err == nil {
 		if p.cfg.PublisherMode == "auto" && p.cfg.FFmpegPublisherCmd != "" {
-			p.watchGStreamerForFallback(ctx, command, rtspURL, trackName, key)
+			p.watchGStreamerForFallback(command, rtspURL, trackName, key)
 		} else if entry := p.cmds[key]; entry != nil {
 			p.watchProcessExit(key, entry, command.SessionID)
 		}
@@ -148,12 +162,17 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 	if p.cfg.PublisherMode == "gstreamer" || p.cfg.FFmpegPublisherCmd == "" {
 		return trackSid, publishedTrackName, err
 	}
+	p.mu.Lock()
 	p.gstreamerFailedRTSPURL[rtspURL] = time.Now()
+	p.mu.Unlock()
 	log.Printf("GStreamer 推流失败，回退到 FFmpeg，会话ID=%s：%v", command.SessionID, err)
 	return p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.FFmpegPublisherCmd, "ffmpeg")
 }
 
 func (p *ProcessPublisher) startCommand(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, key string, template string, mode string) (string, string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
 	args := strings.Fields(template)
 	if len(args) == 0 {
 		return "", "", errors.New("publisher command is empty")
@@ -167,7 +186,9 @@ func (p *ProcessPublisher) startCommand(ctx context.Context, command model.Start
 			"{track}", trackName,
 		).Replace(args[i])
 	}
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	// 启动命令上下文只负责中断启动阶段；推流进程由 Stop、StopAll 和 Token
+	// 到期任务显式管理，不能在命令工作线程返回时跟随临时上下文被杀死。
+	cmd := exec.Command(args[0], args[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = directMediaProcessEnv()
 	entry := newProcessEntry(cmd, mode, command.ExpiresAt, command, rtspURL)
@@ -177,8 +198,10 @@ func (p *ProcessPublisher) startCommand(ctx context.Context, command model.Start
 	entry.startWaiting()
 	// 外部进程参数和输出可能包含 RTSP 凭据或 LiveKit Token，不写入应用日志。
 	log.Printf("推流进程已启动，模式=%s 会话ID=%s", mode, command.SessionID)
+	p.mu.Lock()
 	p.cmds[key] = entry
 	p.bindSessionLocked(command.SessionID, key)
+	p.mu.Unlock()
 	if err := p.ensureRunning(key, entry); err != nil {
 		return "", "", err
 	}
@@ -188,6 +211,9 @@ func (p *ProcessPublisher) startCommand(ctx context.Context, command model.Start
 }
 
 func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, key string) (string, string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
 	// 默认 pipeline 只描述 GStreamer 的媒体处理部分；LiveKit URL/token 由 publisher 工具参数提供。
 	pipeline := strings.NewReplacer(
 		"{rtsp}", rtspURL,
@@ -199,7 +225,7 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 	args := []string{"--url", command.LiveKitURL, "--token", command.PublisherToken}
 	args = append(args, "--")
 	args = append(args, strings.Fields(pipeline)...)
-	cmd := exec.CommandContext(ctx, p.cfg.GStreamerPublisherPath, args...)
+	cmd := exec.Command(p.cfg.GStreamerPublisherPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = directMediaProcessEnv()
 	entry := newProcessEntry(cmd, "gstreamer", command.ExpiresAt, command, rtspURL)
@@ -209,8 +235,10 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 	entry.startWaiting()
 	// 外部进程参数和输出可能包含 RTSP 凭据或 LiveKit Token，不写入应用日志。
 	log.Printf("GStreamer 推流进程已启动，会话ID=%s", command.SessionID)
+	p.mu.Lock()
 	p.cmds[key] = entry
 	p.bindSessionLocked(command.SessionID, key)
+	p.mu.Unlock()
 	if err := p.ensureRunning(key, entry); err != nil {
 		return "", "", err
 	}
@@ -219,6 +247,8 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 }
 
 func (p *ProcessPublisher) shouldStartWithFFmpeg(command model.StartCommand, rtspURL string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.cfg.PublisherMode != "auto" || p.cfg.FFmpegPublisherCmd == "" {
 		return false
 	}
@@ -245,8 +275,11 @@ func newProcessEntry(cmd *exec.Cmd, mode string, expiresAt time.Time, command mo
 }
 
 func (p *processEntry) startWaiting() {
+	p.running.Store(true)
 	go func() {
-		p.done <- processResult{err: p.cmd.Wait(), exitedAt: time.Now(), diagnostics: p.diagnostics()}
+		result := processResult{err: p.cmd.Wait(), exitedAt: time.Now(), diagnostics: p.diagnostics()}
+		p.running.Store(false)
+		p.done <- result
 	}()
 }
 
@@ -292,20 +325,25 @@ func withoutProxyEnv(environ []string) []string {
 	return result
 }
 
-func (p *ProcessPublisher) watchGStreamerForFallback(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, key string) {
+func (p *ProcessPublisher) watchGStreamerForFallback(command model.StartCommand, rtspURL string, trackName string, key string) {
+	p.mu.Lock()
 	entry := p.cmds[key]
+	p.mu.Unlock()
 	if entry == nil {
 		return
 	}
-	go p.fallbackIfGStreamerExits(ctx, command, rtspURL, trackName, key, entry)
+	go p.fallbackIfGStreamerExits(command, rtspURL, trackName, key, entry)
 }
 
-func (p *ProcessPublisher) fallbackIfGStreamerExits(ctx context.Context, command model.StartCommand, rtspURL string, trackName string, key string, entry *processEntry) {
+func (p *ProcessPublisher) fallbackIfGStreamerExits(command model.StartCommand, rtspURL string, trackName string, key string, entry *processEntry) {
 	select {
 	case result := <-entry.done:
+		startLock := &p.startLocks[streamLockIndex(key)]
+		startLock.Lock()
+		defer startLock.Unlock()
 		p.mu.Lock()
-		defer p.mu.Unlock()
 		if p.cmds[key] != entry {
+			p.mu.Unlock()
 			return
 		}
 		sessionIDs := p.sessionIDsLocked(key)
@@ -313,15 +351,16 @@ func (p *ProcessPublisher) fallbackIfGStreamerExits(ctx context.Context, command
 		p.gstreamerFailedRTSPURL[rtspURL] = time.Now()
 		p.recordCleanupLocked(result.exitedAt)
 		p.unexpectedExits++
+		p.mu.Unlock()
 		log.Printf("GStreamer 推流进程异常退出，自动回退到 FFmpeg，会话ID=%s：%s", command.SessionID, processExitError(result))
-		if _, _, startErr := p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.FFmpegPublisherCmd, "ffmpeg"); startErr != nil {
+		if _, _, startErr := p.startCommand(context.Background(), command, rtspURL, trackName, key, p.cfg.FFmpegPublisherCmd, "ffmpeg"); startErr != nil {
 			log.Printf("自动回退到 FFmpeg 失败，会话ID=%s：%v", command.SessionID, startErr)
+			p.mu.Lock()
 			p.unbindStreamLocked(key)
 			p.emitLocked(LifecycleEvent{SessionIDs: sessionIDs, ReasonCode: "PUBLISH_PROCESS_EXITED", Message: "推流进程异常退出且回退失败"})
+			p.mu.Unlock()
 		}
 	case <-time.After(p.cfg.PublisherFallbackWatch):
-		p.watchProcessExit(key, entry, command.SessionID)
-	case <-ctx.Done():
 		p.watchProcessExit(key, entry, command.SessionID)
 	}
 }
@@ -365,20 +404,35 @@ func (p *ProcessPublisher) stopStreamLocked(key string) error {
 }
 
 func (p *ProcessPublisher) ensureRunning(key string, entry *processEntry) error {
+	timer := time.NewTimer(publisherStartupGuard)
+	defer timer.Stop()
 	select {
 	case result := <-entry.done:
-		// 进程两秒内退出通常表示 pipeline 参数、RTSP 或 token 有问题，直接回报失败。
+		p.mu.Lock()
 		if p.cmds[key] == entry {
-			p.stopStreamLocked(key)
+			delete(p.cmds, key)
+			p.unbindStreamLocked(key)
 		}
+		p.mu.Unlock()
 		if result.err == nil {
 			return errors.New("推流进程在启动确认前退出")
 		}
-		return result.err
-	case <-time.After(2 * time.Second):
-		// 运行超过两秒认为启动成功，后续异常会通过进程退出日志和服务端超时机制兜底。
+		return errors.New(processExitError(result))
+	case <-timer.C:
+		p.mu.Lock()
+		running := p.cmds[key] == entry && entryRunning(entry)
+		p.mu.Unlock()
+		if !running {
+			return errors.New("推流进程在启动确认期间已停止")
+		}
 		return nil
 	}
+}
+
+func streamLockIndex(key string) int {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(key))
+	return int(hash.Sum32() % 8)
 }
 
 func streamKey(command model.StartCommand) string {
@@ -406,7 +460,7 @@ func tokenUsable(expiresAt time.Time) bool {
 }
 
 func entryRunning(entry *processEntry) bool {
-	return entry != nil && entry.cmd != nil && entry.cmd.Process != nil && entry.cmd.ProcessState == nil
+	return entry != nil && entry.running.Load()
 }
 
 func (p *ProcessPublisher) bindSessionLocked(sessionID string, key string) {

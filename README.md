@@ -135,8 +135,12 @@ Header 缺失时 Control 和 Media 会启用开发默认身份，该行为不是
   -> POST /api/control/files
   -> Control 代理到 Media
   -> Media 写入 MinIO，并创建 READY 的 IMAGE 文件记录
-  -> 前端按 fileId 查询或预览
+  -> 前端按 fileId 获取 inline 预签名地址后预览
 ```
+
+简单上传在 BFF 和 Control 中使用输入流转发；图片预览、普通下载和视频播放分别复用既有
+`download-url`、`play-url`，避免文件正文跨 Media、Control、BFF 重复缓冲。兼容的正文/HLS
+对象代理限制单对象最大 32 MiB，不改变机器人直连 8088 文件接口的路径、鉴权或上传协议。
 
 示例：
 

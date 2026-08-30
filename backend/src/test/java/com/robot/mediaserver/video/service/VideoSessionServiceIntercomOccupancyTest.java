@@ -167,6 +167,49 @@ class VideoSessionServiceIntercomOccupancyTest {
     }
 
     @Test
+    void fixedCameraProcessStatusWaitsForActualLiveKitTrack() {
+        target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setStatus(VideoSessionStatus.REQUESTING_CLIENT);
+        target.setChannel(VideoChannel.visible);
+        target.setQuality(VideoQuality.sub);
+
+        service.handleClientStatus(
+                "vs-target", "streaming", "TR_placeholder", "video.visible.sub", null, null);
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.ROOM_READY);
+        assertThat(target.getTrackSid()).isNull();
+        verifyNoInteractions(mediaTrackService);
+    }
+
+    @Test
+    void confirmsFixedCameraOnlyAfterActualLiveKitTrackExists() {
+        target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setStatus(VideoSessionStatus.ROOM_READY);
+        target.setRoomName("media.fixed.camera-001.visible.sub");
+        target.setChannel(VideoChannel.visible);
+        target.setQuality(VideoQuality.sub);
+        when(liveKitRoomService.resolveActiveVideoTrackSid(target.getRoomName(), null))
+                .thenReturn(Optional.of("TR_actual"));
+
+        assertThat(service.confirmFixedCameraTrack("vs-target")).isTrue();
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.STREAMING);
+        assertThat(target.getTrackSid()).isEqualTo("TR_actual");
+        verify(mediaTrackService).publish(target, "TR_actual", "video.visible.sub");
+    }
+
+    @Test
+    void fixedCameraInitialProcessExitFailsInsteadOfRestartingForever() {
+        target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setStatus(VideoSessionStatus.ROOM_READY);
+
+        service.handleClientStatus(
+                "vs-target", "interrupted", null, null, "PUBLISH_PROCESS_EXITED", "推流进程退出");
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.FAILED);
+        assertThat(target.getLastErrorCode()).isEqualTo("PUBLISH_PROCESS_EXITED");
+    }
+
+    @Test
     void stopDoesNotReviveClosedSession() {
         target.setStatus(VideoSessionStatus.CLOSED);
 

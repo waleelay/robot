@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
@@ -38,6 +39,8 @@ public class PanoramaCenterClient {
     private final Semaphore generalRequestPermits;
     private final int taskMaxConcurrency;
     private final int generalMaxConcurrency;
+    private final FailureCircuit generalCircuit = new FailureCircuit();
+    private final FailureCircuit taskCircuit = new FailureCircuit();
 
     public PanoramaCenterClient(
             RestClient.Builder builder,
@@ -67,11 +70,14 @@ public class PanoramaCenterClient {
 
     public List<Map<String, Object>> devices() {
         int pageSize = 100;
-        return requiredPagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/devices")
-                .queryParam("pageNum", pageNum)
-                .queryParam("pageSize", pageSize)
-                .build(true)
-                .toUri(), pageSize);
+        return emptyListWhenForbidden(
+                () -> requiredPagedRecords(pageNum -> uri(
+                                properties.getManageBaseUrl(), "/api/v1/management/devices")
+                        .queryParam("pageNum", pageNum)
+                        .queryParam("pageSize", pageSize)
+                        .build(true)
+                        .toUri(), pageSize),
+                "设备");
     }
 
     public List<Map<String, Object>> deviceTypeOptions() {
@@ -272,21 +278,41 @@ public class PanoramaCenterClient {
             return List.of();
         }
         int pageSize = 100;
-        return pagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/fixed-cameras")
-                .queryParam("pageNum", pageNum)
-                .queryParam("pageSize", pageSize)
-                .queryParam("mapId", mapId)
-                .build(true)
-                .toUri(), pageSize);
+        return emptyListWhenForbidden(
+                () -> pagedRecords(pageNum -> uri(
+                                properties.getManageBaseUrl(), "/api/v1/management/fixed-cameras")
+                        .queryParam("pageNum", pageNum)
+                        .queryParam("pageSize", pageSize)
+                        .queryParam("mapId", mapId)
+                        .build(true)
+                        .toUri(), pageSize),
+                "固定摄像头");
     }
 
     public List<Map<String, Object>> fixedCameras() {
         int pageSize = 100;
-        return pagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/fixed-cameras")
-                .queryParam("pageNum", pageNum)
-                .queryParam("pageSize", pageSize)
-                .build(true)
-                .toUri(), pageSize);
+        return emptyListWhenForbidden(
+                () -> pagedRecords(pageNum -> uri(
+                                properties.getManageBaseUrl(), "/api/v1/management/fixed-cameras")
+                        .queryParam("pageNum", pageNum)
+                        .queryParam("pageSize", pageSize)
+                        .build(true)
+                        .toUri(), pageSize),
+                "固定摄像头");
+    }
+
+    private List<Map<String, Object>> emptyListWhenForbidden(
+            Supplier<List<Map<String, Object>>> query,
+            String resourceName) {
+        try {
+            return query.get();
+        } catch (ResponseStatusException exception) {
+            if (exception.getStatusCode() != HttpStatus.FORBIDDEN) {
+                throw exception;
+            }
+            log.info("当前用户无{}查看权限，按空集合返回", resourceName);
+            return List.of();
+        }
     }
 
     /** 查询 Control 汇总的当前用户固定摄像头健康状态。 */
@@ -437,11 +463,17 @@ public class PanoramaCenterClient {
     }
 
     private Optional<Map<String, Object>> responseMap(URI uri) {
+        PanoramaService.requireRequestTimeRemaining();
+        if (!generalCircuit.allowRequest()) {
+            log.warn("Management 通用查询熔断中，本次不再请求下游");
+            return Optional.empty();
+        }
         boolean acquired = false;
         long startNanos = System.nanoTime();
         try {
             acquired = generalRequestPermits.tryAcquire(100, TimeUnit.MILLISECONDS);
             if (!acquired) {
+                generalCircuit.recordFailure();
                 log.warn("全景通用查询并发已达上限，请求地址={}", uri);
                 return Optional.empty();
             }
@@ -451,8 +483,32 @@ public class PanoramaCenterClient {
                     .retrieve()
                     .body(MAP_TYPE);
             logSlowRequest(uri, startNanos);
-            return response == null ? Optional.empty() : Optional.of(response);
+            if (response == null) {
+                generalCircuit.recordFailure();
+                return Optional.empty();
+            }
+            generalCircuit.recordSuccess();
+            return Optional.of(response);
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode() == HttpStatus.UNAUTHORIZED
+                    || exception.getStatusCode() == HttpStatus.FORBIDDEN) {
+                generalCircuit.recordSuccess();
+                throw new ResponseStatusException(exception.getStatusCode(), "查询 Management 权限失败", exception);
+            }
+            if (exception.getStatusCode().is5xxServerError()) {
+                generalCircuit.recordFailure();
+            } else {
+                generalCircuit.recordSuccess();
+            }
+            log.warn("请求全景地图中心端接口失败，请求地址={} 状态码={} 耗时毫秒={}",
+                    uri, exception.getStatusCode().value(), elapsedMillis(startNanos));
+            return Optional.empty();
+        } catch (ResourceAccessException exception) {
+            generalCircuit.recordFailure();
+            log.warn("请求全景地图中心端接口超时，请求地址={} 耗时毫秒={}", uri, elapsedMillis(startNanos));
+            return Optional.empty();
         } catch (RuntimeException exception) {
+            generalCircuit.recordFailure();
             log.warn("请求全景地图中心端接口失败，请求地址={} 耗时毫秒={}", uri, elapsedMillis(startNanos), exception);
             return Optional.empty();
         } catch (InterruptedException exception) {
@@ -476,6 +532,7 @@ public class PanoramaCenterClient {
         List<Map<String, Object>> result = new ArrayList<>();
         List<Map<String, Object>> previousPage = null;
         for (int pageNum = 1; pageNum <= 1000; pageNum++) {
+            PanoramaService.requireRequestTimeRemaining();
             URI uri = uriFactory.apply(pageNum);
             Map<String, Object> response = taskResponseMap(uri, unavailableReasonCode, false).orElse(Map.of());
             List<Map<String, Object>> page = records(response);
@@ -513,11 +570,16 @@ public class PanoramaCenterClient {
             URI uri,
             String unavailableReasonCode,
             boolean notFoundAllowed) {
+        PanoramaService.requireRequestTimeRemaining();
+        if (!taskCircuit.allowRequest()) {
+            throw new TaskSourceException("TASK_CIRCUIT_OPEN", "Management 任务查询暂时熔断");
+        }
         boolean acquired = false;
         long startNanos = System.nanoTime();
         try {
             acquired = taskRequestPermits.tryAcquire(100, TimeUnit.MILLISECONDS);
             if (!acquired) {
+                taskCircuit.recordFailure();
                 throw new TaskSourceException("TASK_QUERY_CONCURRENCY_LIMIT", "任务查询并发已达上限");
             }
             Map<String, Object> response = taskRestClient.get()
@@ -527,25 +589,35 @@ public class PanoramaCenterClient {
                     .body(MAP_TYPE);
             logSlowRequest(uri, startNanos);
             if (response == null) {
+                taskCircuit.recordFailure();
                 throw new TaskSourceException("TASK_INVALID_RESPONSE", "Management 任务查询返回空响应");
             }
+            taskCircuit.recordSuccess();
             return Optional.of(response);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new TaskSourceException("TASK_QUERY_INTERRUPTED", "任务查询等待被中断", exception);
         } catch (RestClientResponseException exception) {
             if (notFoundAllowed && exception.getStatusCode() == HttpStatus.NOT_FOUND) {
+                taskCircuit.recordSuccess();
                 log.info("Management 任务引用已不存在，请求地址={}", uri);
                 return Optional.empty();
             }
             if (exception.getStatusCode() == HttpStatus.UNAUTHORIZED
                     || exception.getStatusCode() == HttpStatus.FORBIDDEN) {
+                taskCircuit.recordSuccess();
                 throw new ResponseStatusException(exception.getStatusCode(), "查询 Management 任务权限失败", exception);
+            }
+            if (exception.getStatusCode().is5xxServerError()) {
+                taskCircuit.recordFailure();
+            } else {
+                taskCircuit.recordSuccess();
             }
             log.warn("Management 任务接口响应异常，请求地址={} 状态码={} 耗时毫秒={}",
                     uri, exception.getStatusCode().value(), elapsedMillis(startNanos));
             throw new TaskSourceException(unavailableReasonCode, "Management 任务接口响应异常", exception);
         } catch (ResourceAccessException exception) {
+            taskCircuit.recordFailure();
             log.warn("Management 任务接口连接或读取超时，请求地址={} 耗时毫秒={}",
                     uri, elapsedMillis(startNanos));
             throw new TaskSourceException("TASK_QUERY_TIMEOUT", "Management 任务接口连接或读取超时", exception);
@@ -560,6 +632,7 @@ public class PanoramaCenterClient {
         List<Map<String, Object>> result = new ArrayList<>();
         List<Map<String, Object>> previousPage = null;
         for (int pageNum = 1; pageNum <= 1000; pageNum++) {
+            PanoramaService.requireRequestTimeRemaining();
             URI uri = uriFactory.apply(pageNum);
             Map<String, Object> response = responseMap(uri).orElse(Map.of());
             List<Map<String, Object>> page = records(response);
@@ -581,6 +654,7 @@ public class PanoramaCenterClient {
         List<Map<String, Object>> result = new ArrayList<>();
         List<Map<String, Object>> previousPage = null;
         for (int pageNum = 1; pageNum <= 1000; pageNum++) {
+            PanoramaService.requireRequestTimeRemaining();
             URI uri = uriFactory.apply(pageNum);
             Map<String, Object> response = requiredResponseMap(uri);
             List<Map<String, Object>> page = records(response);
@@ -620,11 +694,16 @@ public class PanoramaCenterClient {
     }
 
     private Map<String, Object> requiredResponseMap(URI uri) {
+        PanoramaService.requireRequestTimeRemaining();
+        if (!generalCircuit.allowRequest()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Management 通用查询暂时熔断");
+        }
         boolean acquired = false;
         long startNanos = System.nanoTime();
         try {
             acquired = generalRequestPermits.tryAcquire(100, TimeUnit.MILLISECONDS);
             if (!acquired) {
+                generalCircuit.recordFailure();
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "管理端通用查询并发已达上限");
             }
             Map<String, Object> response = restClient.get()
@@ -634,10 +713,17 @@ public class PanoramaCenterClient {
                     .body(MAP_TYPE);
             logSlowRequest(uri, startNanos);
             if (response == null) {
+                generalCircuit.recordFailure();
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "管理端资源响应为空");
             }
+            generalCircuit.recordSuccess();
             return response;
         } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().is5xxServerError()) {
+                generalCircuit.recordFailure();
+            } else {
+                generalCircuit.recordSuccess();
+            }
             HttpStatus status = exception.getStatusCode() == HttpStatus.UNAUTHORIZED
                     ? HttpStatus.UNAUTHORIZED
                     : exception.getStatusCode() == HttpStatus.FORBIDDEN
@@ -650,6 +736,7 @@ public class PanoramaCenterClient {
             Thread.currentThread().interrupt();
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "查询管理端授权资源被中断", exception);
         } catch (RuntimeException exception) {
+            generalCircuit.recordFailure();
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,
                     "查询管理端授权资源失败",
@@ -706,6 +793,41 @@ public class PanoramaCenterClient {
 
         public String reasonCode() {
             return reasonCode;
+        }
+    }
+
+    /** 连续三次可恢复失败后短暂打开；到期只放行一个恢复探测。 */
+    private static final class FailureCircuit {
+
+        private static final int FAILURE_THRESHOLD = 3;
+        private static final long OPEN_MILLIS = 5000;
+        private int failures;
+        private long openedAt;
+        private boolean probeInProgress;
+
+        private synchronized boolean allowRequest() {
+            if (failures < FAILURE_THRESHOLD) {
+                return true;
+            }
+            if (System.currentTimeMillis() - openedAt < OPEN_MILLIS || probeInProgress) {
+                return false;
+            }
+            probeInProgress = true;
+            return true;
+        }
+
+        private synchronized void recordSuccess() {
+            failures = 0;
+            openedAt = 0;
+            probeInProgress = false;
+        }
+
+        private synchronized void recordFailure() {
+            failures++;
+            probeInProgress = false;
+            if (failures >= FAILURE_THRESHOLD) {
+                openedAt = System.currentTimeMillis();
+            }
         }
     }
 }

@@ -176,7 +176,7 @@ import VideoBox from './VideoBox.vue';
 import { mapActions, mapState } from 'vuex';
 import { onDragStart, onDragEnd } from '@/store/modules/dragVideo.js';
 import { events as fullscreenEvents, enterFullscreen, exitFullscreen, isElementFullscreen } from '@/utils/fullscreen.js';
-import { pickDefaultCamera, isBodyCamera } from '../../../js/utils/pick-default-camera';
+import { pickDefaultCamera, isBodyCamera, isFixedCameraRobot } from '../../../js/utils/pick-default-camera';
 export default {
   name: 'LeftVideo',
   mixins: [canvasUtil],
@@ -225,7 +225,8 @@ export default {
       ZQL_sources: {},
       statusArr: {}, // 改为对象形式，键名为'slot_1'...
       sourceceList: [],
-      manualChange: false
+      manualChange: false,
+      recoveringFixedCameras: {}
     }
   },
   computed: {
@@ -312,7 +313,44 @@ export default {
       this.$set(this.ZQL_playingSource, emptyIndex, camera.key);
       this.$set(this.ZQL_videosInfos, emptyIndex, { robot, ...camera, robotId: robot.robotId });
       // console.log('ZQL_playingSource', this.ZQL_playingSource);
-      await this.startCamera({ robot, camera })
+      try {
+        await this.startCamera({ robot, camera, throwOnError: true })
+        return true
+      } catch (_) {
+        this.clearSlot(emptyIndex)
+        return false
+      }
+    },
+    isFixedCameraRobot,
+    async syncVideoSlots() {
+      for (const slotKey of Object.keys(this.ZQL_videosInfos)) {
+        const videoInfo = this.ZQL_videosInfos[slotKey]
+        if (!videoInfo?.robotId || !this.ZQL_playingSource[slotKey]) continue
+        const robot = this.robots.find(item => String(item.robotId) === String(videoInfo.robotId))
+        if (!robot) continue
+        const camera = (robot.cameras || []).find(item => item.key === videoInfo.key)
+        if (!camera) continue
+        this.$set(this.ZQL_videosInfos, slotKey, {
+          robot,
+          ...videoInfo,
+          ...camera,
+          isPaused: videoInfo.isPaused
+        })
+        if (!this.isFixedCameraRobot(robot) || robot.status !== 'online'
+          || !robot.enabled || !robot.configReady || robot.playable === false) continue
+        const current = this.cameras?.[camera.key] || camera
+        const sessionActive = current.session && current.session.status !== 'CLOSED'
+        if (sessionActive || current.room || current.loading || current.connecting
+          || this.recoveringFixedCameras[camera.key]) continue
+        this.$set(this.recoveringFixedCameras, camera.key, true)
+        try {
+          await this.startCamera({ robot, camera: current, throwOnError: true })
+        } catch (_) {
+          // 保留原宫格恢复意图，等待下一次真实状态变化再重试。
+        } finally {
+          this.$delete(this.recoveringFixedCameras, camera.key)
+        }
+      }
     },
     rebindCameraTracks(cameras) {
       this.$nextTick(() => {
@@ -435,11 +473,11 @@ export default {
         videoElement.play().catch(err => {
           console.error('播放视频失败:', err)
           if (camera && camera.robot) {
-            this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera })
+            this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera, throwOnError: true }).catch(() => {})
           }
         })
       } else if (camera && camera.robot) {
-        this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera })
+        this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera, throwOnError: true }).catch(() => {})
       }
     },
     // 刷新视频
@@ -459,14 +497,14 @@ export default {
       if (camera.session) {
         this.stopCamera(camera).then(() => {
           // 停止成功后重新启动
-          this.startCamera({ robot: videoInfo.robot, camera });
+          this.startCamera({ robot: videoInfo.robot, camera, throwOnError: true }).catch(() => {});
         }).catch(() => {
           // 即使停止失败也尝试重新启动
-          this.startCamera({ robot: videoInfo.robot, camera });
+          this.startCamera({ robot: videoInfo.robot, camera, throwOnError: true }).catch(() => {});
         });
       } else {
         // 如果没有会话，直接启动
-        this.startCamera({ robot: videoInfo.robot, camera });
+        this.startCamera({ robot: videoInfo.robot, camera, throwOnError: true }).catch(() => {});
       }
     },
     // 处理视频删除
@@ -517,7 +555,6 @@ export default {
       this.setSplitType(val)
       this.fullscreenIndex = null
       try {
-        await this.$nextTick()
         await this.applySplitVideoChannels(playingBeforeChange, val)
       } finally {
         this.manualChange = false
@@ -634,8 +671,9 @@ export default {
         const camera = this.cameras?.[cameraObj.key] || cameraObj
         const emptyKey = this.findEmptySlotKey() || (this.splitType === 1 ? 'slot_1' : null)
         if (!emptyKey) break
-        await this.start(robot, { index: emptyKey, data: camera })
-        playingIds.add(robotId)
+        if (await this.start(robot, { index: emptyKey, data: camera })) {
+          playingIds.add(robotId)
+        }
       }
 
       this.checkedIds = Object.values(this.ZQL_playingSource).filter(Boolean)
@@ -675,6 +713,14 @@ export default {
         retainedKeys.add(camera.key)
       }
 
+      // 先收缩播放意图，再异步停掉多余流；状态监听只能看到新宫格，
+      // 不会把用户主动移除的固定摄像头误判为断流并重新拉起。
+      this.ZQL_videosInfos = nextVideosInfos
+      this.ZQL_playingSource = nextPlayingSource
+      this.checkedIds = Object.values(nextPlayingSource).filter(Boolean)
+      this.lastCheckedIds = this.checkedIds.slice()
+      this.slotDevices = new Array(splitType).fill(null)
+
       // 只停多余路，保留的视频流不 stop、不重启
       const removedItems = items.slice(splitType)
       for (const item of removedItems) {
@@ -684,26 +730,9 @@ export default {
         }
       }
 
-      this.ZQL_videosInfos = nextVideosInfos
-      this.ZQL_playingSource = nextPlayingSource
-      this.checkedIds = Object.values(nextPlayingSource).filter(Boolean)
-      this.lastCheckedIds = this.checkedIds.slice()
-      this.slotDevices = new Array(splitType).fill(null)
-
       // 等待分屏 DOM 重建后再挂载 track
       await this.$nextTick()
       await this.$nextTick()
-      this.rebindCameraTracks(this.currentVisibleCameras())
-      for (let i = 0; i < Math.min(items.length, splitType); i++) {
-        const item = items[i]
-        if (!item?.key) continue
-        const camera = this.cameras?.[item.key] || item
-        if (camera.remoteVideoTrack || camera.session) continue
-        const robot = item.robot || this.robots.find(robotItem => robotItem.robotId === item.robotId)
-        if (robot) {
-          await this.startCamera({ robot, camera })
-        }
-      }
       this.rebindCameraTracks(this.currentVisibleCameras())
     },
     initSlots(splitType) {
@@ -758,8 +787,6 @@ export default {
 
         // 界面点击切换分屏：由 onSplitChange → applySplitVideoChannels 统一处理保留/停流，避免重复 stop
         if (this.manualChange) {
-          this.checkedIds = [];
-          this.lastCheckedIds = [];
           return
         }
 
@@ -780,29 +807,8 @@ export default {
       // immediate: true
     },
     robots: {
-      handler() {
-        // 同步ZQL_videosInfos与robots数据
-        Object.keys(this.ZQL_videosInfos).forEach(key => {
-          const videoInfo = this.ZQL_videosInfos[key];
-          if (videoInfo && videoInfo.robotId) {
-            // 找到对应的机器人
-            const robot = this.robots.find(r => r.robotId === videoInfo.robotId);
-            if (robot) {
-              // 找到对应的摄像头
-              const camera = robot.cameras.find(c => c.key === videoInfo.key);
-              if (camera) {
-                // console.log('camera--------------------------------', videoInfo.key, camera.status, camera);
-                // 更新视频信息，保持与原数据同步
-                this.$set(this.ZQL_videosInfos, key, {
-                  robot,
-                  ...videoInfo,
-                  ...camera,
-                  isPaused: videoInfo.isPaused
-                });
-              }
-            }
-          }
-        });
+      async handler() {
+        await this.syncVideoSlots()
       },
       deep: true,
       immediate: true

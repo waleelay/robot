@@ -31,6 +31,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -549,6 +550,15 @@ public class VideoSessionService {
         switch (normalized) {
             case "room_ready", "publishing" -> transition(session, VideoSessionStatus.ROOM_READY, "video.room.ready", session);
             case "streaming", "track_published" -> {
+                if (session.getSourceType() == VideoSourceType.FIXED_CAMERA) {
+                    // Gateway 只能确认本地进程存活，不能把占位 Track SID 当作 LiveKit 真实轨道。
+                    // 由定时任务通过 Room API 确认后再进入 STREAMING。
+                    session.setTrackName(trackName == null || trackName.isBlank()
+                            ? "video." + session.getChannel() + "." + session.getQuality()
+                            : trackName);
+                    transition(session, VideoSessionStatus.ROOM_READY, "video.room.ready", session);
+                    break;
+                }
                 if (trackSid != null && !trackSid.isBlank()) {
                     session.setTrackSid(trackSid);
                 }
@@ -559,9 +569,20 @@ public class VideoSessionService {
                 session.setStartedAt(session.getStartedAt() == null ? now() : session.getStartedAt());
                 transition(session, VideoSessionStatus.STREAMING, "video.session.streaming", session);
             }
-            case "interrupted" -> transition(session, VideoSessionStatus.INTERRUPTED, "video.session.interrupted", Map.of(
-                    "sessionId", sessionId,
-                    "message", safeMessage(message)));
+            case "interrupted" -> {
+                if (session.getSourceType() == VideoSourceType.FIXED_CAMERA
+                        && session.getStatus() != VideoSessionStatus.STREAMING) {
+                    markFailed(
+                            session,
+                            errorCode == null ? "PUBLISH_PROCESS_EXITED" : errorCode,
+                            safeMessage(message),
+                            "video.session.failed");
+                } else {
+                    transition(session, VideoSessionStatus.INTERRUPTED, "video.session.interrupted", Map.of(
+                            "sessionId", sessionId,
+                            "message", safeMessage(message)));
+                }
+            }
             case "stopped", "closed" -> {
                 session.setEndedAt(now());
                 transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
@@ -574,6 +595,41 @@ public class VideoSessionService {
         }
         session.setUpdatedAt(now());
         repository.save(session);
+    }
+
+    /**
+     * 通过 LiveKit Room API 确认固定摄像头真实视频轨道。
+     *
+     * @param sessionId 视频会话编号
+     * @return 已存在真实视频轨道时返回 {@code true}
+     */
+    @Transactional
+    public synchronized boolean confirmFixedCameraTrack(String sessionId) {
+        VideoSession session = requireSession(sessionId);
+        if (session.getSourceType() != VideoSourceType.FIXED_CAMERA
+                || session.getStatus() != VideoSessionStatus.ROOM_READY) {
+            return session.getStatus() == VideoSessionStatus.STREAMING;
+        }
+        Optional<String> trackSid;
+        try {
+            trackSid = liveKitRoomService.resolveActiveVideoTrackSid(session.getRoomName(), session.getTrackSid());
+        } catch (RuntimeException exception) {
+            log.warn("确认固定摄像头 LiveKit 视频轨道失败，sessionId={}", sessionId, exception);
+            return false;
+        }
+        if (trackSid.isEmpty()) {
+            return false;
+        }
+        session.setTrackSid(trackSid.get());
+        if (session.getTrackName() == null || session.getTrackName().isBlank()) {
+            session.setTrackName("video." + session.getChannel() + "." + session.getQuality());
+        }
+        mediaTrackService.publish(session, session.getTrackSid(), session.getTrackName());
+        session.setStartedAt(session.getStartedAt() == null ? now() : session.getStartedAt());
+        transition(session, VideoSessionStatus.STREAMING, "video.session.streaming", session);
+        session.setUpdatedAt(now());
+        repository.save(session);
+        return true;
     }
 
     /**

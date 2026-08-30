@@ -31,10 +31,11 @@ src/main/java/com/robot/bigscreen/
 - `BigscreenProxyController`：代理 `/api/control/**`、`/api/media/**`、`/api/manage/**` 和 `/api/v1/management/**`；`GET /api/control/robots` 固定返回 `410`。`/internal/**` 仅供服务间内网调用，不注册为 BFF 对外代理。
 - `BusinessTaskProxyController`：只代理任务计划、流程定义、执行记录、设备和地图白名单。
 - `PanoramaService`：组装全景摘要、当前地图资源、按需设备/任务详情和告警。`overview` 只返回首屏所需摘要；地图点、任务路径和任务完整详情由独立接口按需读取，避免首屏预取回放和逐设备详情。
+- Overview 查询设备或固定摄像头列表收到 Management `403` 时，表示当前用户已失去对应资源查看权限，仅将该类资源按空集合组装；`401`、超时、5xx 和异常响应仍按失败处理。地图、任务等其他资源的 `403` 保持原鉴权语义。
 - Overview 的地图列表是必需查询：复用现有通用并发许可与必需资源读取链路，HTTP 错误、超时、空响应或并发饱和不转换为 `map=[]`；401/403 保持认证语义，其他读取失败返回 503。只有成功查询无地图时返回空列表，避免前端误判地图已删除。
 - 装备弹窗复用 `/api/bigscreen/panorama/devices/{deviceId}`，仅对授权目标补查组件，复用按用户隔离的短缓存与在途合并；不查任务回放。电量、速度、模式及 `runtimeUpdatedAt` 统一来自本项目 Control 注册表，详见[字段来源映射](../docs/03-接口与协议/大屏BFF/大屏BFF字段来源映射文档.md)。
 - `StatisticsService`：基于授权设备、实时状态、任务、告警和 Control 里程汇总统计，并同步生成/保存 PDF；缺少权威来源的指标保持 `null`。
-- `BigscreenWebSocketBridgeHandler`：为每个浏览器连接建立一条 Control 上游连接；按用户和组织复用最长 30 秒的授权快照，在事件下发和控制上行前强制检查快照及 Token 有效期。后台刷新暂时失败时保留尚未过期的授权快照并继续重试；JWT 到期或 Management 明确返回 `401` 时以 `4001` 关闭，避免节点时钟漂移把凭证失效误报为权限服务故障；只有其他授权刷新失败持续至快照超过最大陈旧时间才以 `4003` 关闭。资源集合确认变化时发送 `bigscreen.authorization.changed`，通知前端重拉 Overview。
+- `BigscreenWebSocketBridgeHandler`：为每个浏览器连接建立一条 Control 上游连接；按用户和组织复用最长 30 秒的授权快照，在事件下发和控制上行前强制检查快照及 Token 有效期。后台刷新暂时失败时保留尚未过期的授权快照并继续重试；JWT 到期或 Management 明确返回 `401` 时以 `4001` 关闭。Management 对设备或固定摄像头查询返回 `403` 表示对应查看权限已撤销，该类授权集合按空集更新并触发 `bigscreen.authorization.changed`；只有超时、5xx 或异常响应持续至快照超过最大陈旧时间才以 `4003` 关闭。
 - `PanoramaWebSocketEventAdapter`：将 `robot.state` 等事件适配成 `panorama.*`。
 - `PanoramaTaskEventRefresher` / `PanoramaStatsEventRefresher`：分别以 300ms/500ms 去抖查询权威快照并按差异推送。
 
@@ -59,6 +60,10 @@ BFF 是 OAuth2 Resource Server：
 | `/api/bigscreen/business/**` | 有限白名单的 Management 业务代理 |
 | `/api/control/**`、`/api/media/**` 等 | 下游透明代理 |
 | `/ws/control`、`/ws/media`、`/ws/bigscreen` | 同一 WebSocket 桥接处理器的兼容路径 |
+
+通用 REST 代理设置 2 秒连接和 30 秒读取超时，普通请求体最大 1 MiB、响应体最大 32 MiB；
+multipart 文件 Part 以输入流转发。文件预览和下载复用下游既有预签名地址，不在 BFF 增设第二套
+文件代理或对象存储元数据。
 
 固定摄像头会作为全景 `devices[]` 中的同级装备返回。BFF 合并 Control 健康快照，分别输出
 `enabled/configReady`、`gatewayHealth` 和 `streamHealth`；只有配置启用且完整、Gateway 在线、
@@ -104,7 +109,11 @@ RTSP 可用时 `status=online`；配置停用、配置无效、健康缺失或�
 
 新增聚合字段时必须同步维护字段来源映射；下游不可用时应保留明确的空值或错误语义，不新增生产假数据兜底。
 
-全景首屏按已认证 JWT 的 `sub` 在单实例内合并并成功缓存 5 秒；失败结果不缓存。地图场景、地图任务路径、可处置工作流告警和统计分块按同一主体短缓存 3 秒并在同键并发时合并一次读取。该缓存仅用于削峰，不替代权限校验，也不跨用户共享；缓存键和锁的清理、下游 HTTP 主动取消、熔断及多权限并发边界仍按生产风险清单持续验收。
+全景首屏按已认证 JWT 的 issuer、subject、组织、权限版本和角色生成隔离键，在单实例内合并并成功缓存
+5 秒；失败结果不缓存。地图资源、地图任务路径、可处置工作流告警和统计分块短缓存 3 秒，同键并发只
+执行一次读取。缓存采用 TTL 与 256 项容量上限，在途项完成后立即清理；Overview 与统计分别使用有界
+编排、I/O 执行器和 8 秒/5 秒总截止时间。Management 连续出现连接、读取、5xx 或容量故障时短时熔断，
+401/403 保持原鉴权语义。该机制只用于单实例削峰和故障收口，不替代每次请求的权限校验。
 
 全景今日里程和统计页区间里程由 Control 对边缘状态上报持久化计算，BFF 通过
 `/api/control/statistics/mileage` 批量查询，展示单位统一换算为 `KM`。缺少有效样本时保持

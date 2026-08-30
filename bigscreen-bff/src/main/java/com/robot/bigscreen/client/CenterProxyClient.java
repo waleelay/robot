@@ -6,11 +6,14 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.Part;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.Set;
-import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -20,10 +23,14 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
 public class CenterProxyClient {
+
+    private static final int MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+    private static final int MAX_RESPONSE_BODY_BYTES = 32 * 1024 * 1024;
 
     private static final Set<String> HOP_BY_HOP_HEADERS = Set.of(
             "connection",
@@ -45,9 +52,10 @@ public class CenterProxyClient {
             RestClient.Builder builder,
             CenterServiceProperties properties,
             AuthenticatedRequestHeaders authenticatedRequestHeaders) {
-        this.restClient = builder
-                .requestFactory(new JdkClientHttpRequestFactory())
-                .build();
+        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofSeconds(30));
+        this.restClient = builder.requestFactory(requestFactory).build();
         this.properties = properties;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
     }
@@ -77,7 +85,7 @@ public class CenterProxyClient {
                 .body(requestBody(request))
                 .exchange((clientRequest, clientResponse) -> ResponseEntity.status(clientResponse.getStatusCode())
                         .headers(sanitizeResponseHeaders(clientResponse.getHeaders()))
-                        .body(clientResponse.getBody().readAllBytes()));
+                        .body(readBounded(clientResponse.getBody(), MAX_RESPONSE_BODY_BYTES, "下游响应超过允许大小")));
     }
 
     private ResponseEntity<byte[]> forwardMultipart(HttpServletRequest request, String targetBaseUrl, String targetPath) {
@@ -94,7 +102,7 @@ public class CenterProxyClient {
                 .body(multipartBody(request))
                 .exchange((clientRequest, clientResponse) -> ResponseEntity.status(clientResponse.getStatusCode())
                         .headers(sanitizeResponseHeaders(clientResponse.getHeaders()))
-                        .body(clientResponse.getBody().readAllBytes()));
+                        .body(readBounded(clientResponse.getBody(), MAX_RESPONSE_BODY_BYTES, "下游响应超过允许大小")));
     }
 
     private String targetBaseUrl(HttpServletRequest request) {
@@ -173,16 +181,11 @@ public class CenterProxyClient {
         try {
             for (Part part : request.getParts()) {
                 String filename = part.getSubmittedFileName();
-                byte[] bytes = part.getInputStream().readAllBytes();
                 if (filename == null) {
+                    byte[] bytes = readBounded(part.getInputStream(), MAX_REQUEST_BODY_BYTES, "multipart 文本字段超过允许大小");
                     body.add(part.getName(), new String(bytes, request.getCharacterEncoding() == null ? "UTF-8" : request.getCharacterEncoding()));
                 } else {
-                    body.add(part.getName(), new ByteArrayResource(bytes) {
-                        @Override
-                        public String getFilename() {
-                            return filename;
-                        }
-                    });
+                    body.add(part.getName(), filePartResource(part));
                 }
             }
         } catch (IOException | ServletException ex) {
@@ -193,10 +196,33 @@ public class CenterProxyClient {
 
     private byte[] requestBody(HttpServletRequest request) {
         try {
-            return request.getInputStream().readAllBytes();
+            return readBounded(request.getInputStream(), MAX_REQUEST_BODY_BYTES, "请求体超过允许大小");
         } catch (IOException ex) {
             throw new IllegalStateException("读取转发请求体失败", ex);
         }
+    }
+
+    static InputStreamResource filePartResource(Part part) throws IOException {
+        String filename = part.getSubmittedFileName();
+        return new InputStreamResource(part.getInputStream()) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+
+            @Override
+            public long contentLength() {
+                return part.getSize();
+            }
+        };
+    }
+
+    static byte[] readBounded(InputStream input, int maxBytes, String message) throws IOException {
+        byte[] bytes = input.readNBytes(maxBytes + 1);
+        if (bytes.length > maxBytes) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE, message);
+        }
+        return bytes;
     }
 
     private HttpHeaders sanitizeResponseHeaders(HttpHeaders source) {

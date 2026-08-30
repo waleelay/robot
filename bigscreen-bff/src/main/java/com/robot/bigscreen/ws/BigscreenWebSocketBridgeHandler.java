@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
 import com.robot.bigscreen.config.WebSocketConfig;
+import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import com.robot.bigscreen.panorama.StatsPart;
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
@@ -62,6 +63,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private final PanoramaAlarmEventRefresher alarmEventRefresher;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final BigscreenWebSocketAuthorizationService authorizationService;
+    private final FixedCameraCatalogLeaseClient catalogLeaseClient;
     private final ObjectMapper objectMapper;
     private final StandardWebSocketClient webSocketClient;
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
@@ -89,6 +91,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             PanoramaAlarmEventRefresher alarmEventRefresher,
             AuthenticatedRequestHeaders authenticatedRequestHeaders,
             BigscreenWebSocketAuthorizationService authorizationService,
+            FixedCameraCatalogLeaseClient catalogLeaseClient,
             ObjectMapper objectMapper) {
         this.properties = properties;
         this.eventAdapter = eventAdapter;
@@ -98,6 +101,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         this.alarmEventRefresher = alarmEventRefresher;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
         this.authorizationService = authorizationService;
+        this.catalogLeaseClient = catalogLeaseClient;
         this.objectMapper = objectMapper;
         WebSocketContainer container = ContainerProvider.getWebSocketContainer();
         container.setDefaultMaxTextMessageBufferSize(WebSocketConfig.MAX_TEXT_MESSAGE_SIZE);
@@ -121,6 +125,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             }
         } catch (RuntimeException exception) {
             authorizationIdentityBySession.remove(browserSession.getId());
+            removeUnusedIdentity(identity, browserSession);
             log.warn("大屏 WebSocket 初始权限加载失败，会话={}", browserSession.getId(), exception);
             if (credentialRejected(exception)) {
                 closeForTokenExpiration(browserSession);
@@ -176,7 +181,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         logClose("浏览器", browserSession, status);
         browserSessions.remove(browserSession);
         String identity = authorizationIdentityBySession.remove(browserSession.getId());
-        removeUnusedIdentity(identity);
+        removeUnusedIdentity(identity, browserSession);
         eventAdapter.removeSession(browserSession.getId());
         locationEventThrottler.remove(browserSession.getId());
         statsEventRefresher.remove(browserSession.getId());
@@ -222,7 +227,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             if (!browserSession.isOpen()) {
                 browserSessions.remove(browserSession);
                 String identity = authorizationIdentityBySession.remove(browserSession.getId());
-                removeUnusedIdentity(identity);
+                removeUnusedIdentity(identity, browserSession);
                 continue;
             }
             if (tokenExpired(browserSession, now)) {
@@ -346,7 +351,6 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 Set<StatsPart> statsParts = eventAdapter.statsRefreshParts(browserSession.getId(), centerPayload);
                 boolean refreshTasks = eventAdapter.isTaskInvalidation(centerPayload);
                 boolean refreshAlarms = eventAdapter.isAlarmInvalidation(centerPayload);
-                boolean refreshFixedCameraHealth = eventAdapter.isFixedCameraHealthInvalidation(centerPayload);
                 for (String payload : eventAdapter.adapt(centerPayload)) {
                     locationEventThrottler.publish(
                             browserSession.getId(),
@@ -374,11 +378,6 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                             browserSession.getId(),
                             authentication,
                             payload -> sendUserScopedToBrowserSession(browserSession, payload));
-                }
-                if (refreshFixedCameraHealth) {
-                    sendUserScopedToBrowserSession(
-                            browserSession,
-                            eventAdapter.fixedCameraHealthInvalidation(centerPayload));
                 }
             }
         }
@@ -544,11 +543,18 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 .toList();
     }
 
-    private void removeUnusedIdentity(String identity) {
-        if (identity == null || !sessionsForIdentity(identity).isEmpty()) {
+    private void removeUnusedIdentity(String identity, WebSocketSession browserSession) {
+        if (identity == null || authorizationIdentityBySession.containsValue(identity)) {
             return;
         }
-        authorizationSnapshotsByIdentity.remove(identity);
+        // remove 返回值同时作为并发关闭时的单次释放闸门。
+        if (authorizationSnapshotsByIdentity.remove(identity) == null) {
+            return;
+        }
+        HttpHeaders headers = browserSession.getHandshakeHeaders() == null
+                ? new HttpHeaders()
+                : browserSession.getHandshakeHeaders();
+        catalogLeaseClient.release(browserSession.getPrincipal(), headers);
     }
 
     private void sendAuthorizationRejected(WebSocketSession browserSession, String payload) {

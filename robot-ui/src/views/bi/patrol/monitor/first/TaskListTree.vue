@@ -209,7 +209,7 @@ import { onDragStart, onDragEnd } from '../../../../../store/modules/dragVideo';
 import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
 import { getDescArr } from '../../../../../utils';
 import Empty from '../../../components/Empty.vue';
-import { pickDefaultCamera } from '../../../js/utils/pick-default-camera';
+import { pickDefaultCamera, isFixedCameraRobot } from '../../../js/utils/pick-default-camera';
 export default {
   name: 'TaskListTree',
   components: { Empty },
@@ -309,6 +309,7 @@ export default {
       const n = Math.max(Number(count) || 0, 1)
       return [1, 4, 6, 9].find(item => item >= n) || 9
     },
+    isFixedCameraRobot,
     taskFixedCameraKey(taskId) {
       return taskId === undefined || taskId === null ? '' : String(taskId)
     },
@@ -463,12 +464,15 @@ export default {
       }
       const onlineList = this.equipmentInfo.online.list || []
       if (this.hasLoad || !onlineList.length) return
-      const playable = onlineList.filter(item => pickDefaultCamera(item, this.cameras))
+      const playable = onlineList.filter(item =>
+        !this.isFixedCameraRobot(item) && pickDefaultCamera(item, this.cameras)
+      )
       if (!playable.length) return
       this.hasLoad = true
-      this.setSplitType(this.splitTypeForCount(onlineList.length))
+      this.setSplitType(this.splitTypeForCount(playable.length))
       await this.waitTicks(2)
-      for (const item of playable) {
+      // 自动填充在发送请求前按实际宫格容量截断；超出的机器人保持未选中且不提示。
+      for (const item of playable.slice(0, this.splitType)) {
         await this.handleClickRobot(item)
       }
     },
@@ -483,7 +487,12 @@ export default {
         return false
       }
 
-      const robotIds = this.getTaskRobotIds(task)
+      const robotIds = this.getTaskRobotIds(task).filter(id => {
+        const robot = (this.robots || []).find(item => String(item.robotId) === String(id))
+          || this.robotBaseInfo?.[id]
+          || this.robotBaseInfo?.[String(id)]
+        return !this.isFixedCameraRobot(robot)
+      })
       const onlineIds = robotIds.filter(id => this.isRobotOnline(id))
       const playIds = onlineIds.length ? onlineIds : robotIds
       const alreadySelected = String(this.selectedTaskId) === String(task.taskId)

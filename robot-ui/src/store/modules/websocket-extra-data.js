@@ -28,6 +28,7 @@ import {
 } from '../../api/new-bi'
 
 let overviewRefreshPromise = null
+let overviewAbortController = null
 const mapResourcePromises = new Map()
 const taskFixedCameraPromises = new Map()
 
@@ -297,17 +298,22 @@ const actions = {
     commit('RESET_OVERVIEW_RESOURCE_STATE')
     commit('SET_GLOBAL_MAP_ID', '')
     overviewRefreshPromise = null
+    overviewAbortController?.abort()
+    overviewAbortController = null
   },
   refreshOverviewResources({ state, commit, dispatch }, { failClosed = true } = {}) {
     // 只有 BFF 已明确通知权限集合变化时才先清空；普通重连或健康变化不得中断正在观看的视频。
     if (failClosed) {
+      overviewAbortController?.abort()
       commit('RESET_OVERVIEW_RESOURCE_STATE')
       dispatch('websocketRobot/loadRobots', [], { root: true })
     } else if (overviewRefreshPromise) {
       return overviewRefreshPromise
     }
     const revision = state.overviewRevision
-    const pending = loadOverviewWithRetry()
+    const controller = typeof AbortController === 'function' ? new AbortController() : null
+    overviewAbortController = controller
+    const pending = loadOverviewWithRetry(controller?.signal)
       .then(data => {
         if (revision === state.overviewRevision) return dispatch('applyOverview', data)
       })
@@ -318,6 +324,7 @@ const actions = {
       })
       .finally(() => {
         if (overviewRefreshPromise === pending) overviewRefreshPromise = null
+        if (overviewAbortController === controller) overviewAbortController = null
       })
     overviewRefreshPromise = pending
     return pending
@@ -569,6 +576,8 @@ const actions = {
       } else if (alarm.robotId) {
         commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm, close: true });
       }
+    } else if (event.event === 'panorama.fixed-camera.statuses.changed') {
+      dispatch('websocketRobot/patchFixedCameraStatuses', event.data?.items, { root: true })
     } else if (event.event === 'panorama.stats.changed') {
       commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || state.deviceTypeStats || []);
       commit('SET_DEVICE_STATS', event.data.deviceStats || state.deviceStats || {});
@@ -609,13 +618,15 @@ const actions = {
  * 并发登录或下游短暂繁忙时，只在当前页保留一次带抖动的退避重试。
  * 普通刷新通过 overviewRefreshPromise 合并；权限变化必须废弃旧快照并重新查询。
  */
-async function loadOverviewWithRetry() {
+async function loadOverviewWithRetry(signal) {
   try {
-    return await getPatrolPanoramaOverview()
+    return await getPatrolPanoramaOverview(signal)
   } catch (error) {
+    if (signal?.aborted) throw error
     const retryDelayMs = 500 + Math.floor(Math.random() * 300)
     await new Promise(resolve => window.setTimeout(resolve, retryDelayMs))
-    return getPatrolPanoramaOverview()
+    if (signal?.aborted) throw error
+    return getPatrolPanoramaOverview(signal)
   }
 }
 

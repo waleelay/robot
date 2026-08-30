@@ -1,4 +1,4 @@
-import { getFileContent } from '@/api/media'
+import { fileDownloadUrl } from '@/api/media'
 import { getCachedFileObjectUrl } from '@/utils/file-object-url-cache'
 
 const FILE_CONTENT_PATH = /\/api\/bigscreen\/control\/files\/([^/]+)\/content/
@@ -68,14 +68,15 @@ export function clearSnapshotObjectUrlMap(urls = {}) {
 export async function downloadAlarmSnapshotFile(snapshotUrl, key, item = {}, filename) {
   const fileId = alarmSnapshotFileId(snapshotUrl, key, item)
   if (!fileId) throw new Error('暂无可下载图片')
-  const data = await getFileContent(fileId)
-  const blob = data instanceof Blob ? data : new Blob([data])
-  const blobUrl = window.URL.createObjectURL(blob)
+  const response = await fileDownloadUrl(fileId)
+  const downloadUrl = response?.downloadUrl || response?.data?.downloadUrl
+  if (!downloadUrl) throw new Error('无法生成下载地址')
   const link = document.createElement('a')
-  link.href = blobUrl
+  link.href = downloadUrl
   link.download = filename || `${Date.now()}.jpg`
+  link.rel = 'noopener'
+  link.target = '_blank'
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
-  window.URL.revokeObjectURL(blobUrl)
 }

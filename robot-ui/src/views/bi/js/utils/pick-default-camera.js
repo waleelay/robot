@@ -21,3 +21,9 @@ export function pickDefaultCamera(robot, camerasIndex) {
   if (!cameras.length) return null
   return cameras.find(isBodyCamera) || cameras[0]
 }
+
+/** 固定摄像头是独立视频源，不能混入机器人首次自动播放。 */
+export function isFixedCameraRobot(robot) {
+  return [robot && robot.sourceType, robot && robot.typeCode, robot && robot.equipmentType, robot && robot.type]
+    .some(value => value === 'FIXED_CAMERA' || value === '固定摄像头')
+}

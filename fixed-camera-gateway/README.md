@@ -30,6 +30,10 @@ env \
 
 默认使用 `gstreamer-publisher` 推流；同一路 RTSP 的 GStreamer 推流异常后，在冷却周期内自动使用 FFmpeg 回退。生产镜像已包含两者。宿主机运行时可执行 `sh scripts/install-gstreamer-publisher.sh` 安装前者。
 
+视频会话启动不再额外执行 RTSP 预探测，不同视频流可并行启动；后台健康检查对相同 RTSP 每轮只
+建立一次探测连接。Gateway 上报 `streaming` 仅表示 Publisher 进程已启动，真实 LiveKit 视频 Track
+由 Media Service 统一确认。
+
 ## 必要配置
 
 | 环境变量 | 默认值 | 说明 |

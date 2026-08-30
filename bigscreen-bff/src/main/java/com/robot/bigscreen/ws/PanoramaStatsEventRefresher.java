@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -54,6 +55,12 @@ public class PanoramaStatsEventRefresher {
         if (parts == null || parts.isEmpty()) {
             parts = EnumSet.allOf(StatsPart.class);
         }
+        if (parts.contains(StatsPart.DEVICES)) {
+            withAuthentication(authentication, () -> {
+                panoramaService.invalidateDeviceStats();
+                return null;
+            });
+        }
         state.mergeParts(parts);
         state.dirty.set(true);
         scheduleIfNeeded(sessionId, state);
@@ -76,15 +83,24 @@ public class PanoramaStatsEventRefresher {
         state.dirty.set(false);
         try {
             Set<StatsPart> parts = state.drainParts();
-            Map<String, Object> snapshot = withAuthentication(
-                    state.authentication, () -> panoramaService.statsSnapshot(parts));
+            RefreshSnapshot refreshed = withAuthentication(state.authentication, () -> new RefreshSnapshot(
+                    panoramaService.statsSnapshot(parts),
+                    parts.contains(StatsPart.DEVICES) ? panoramaService.fixedCameraStatuses() : null));
+            Map<String, Object> snapshot = refreshed.stats();
             Map<String, Object> merged = new LinkedHashMap<>(state.previousSnapshot);
             merged.putAll(snapshot);
+            Consumer<String> publisher = state.publisher;
             if (!Objects.equals(state.previousSnapshot, merged)) {
                 state.previousSnapshot = merged;
-                Consumer<String> publisher = state.publisher;
                 if (publisher != null) {
-                    publisher.accept(event(merged));
+                    publisher.accept(statsEvent(merged));
+                }
+            }
+            if (refreshed.fixedCameraStatuses() != null
+                    && !Objects.equals(state.previousFixedCameraStatuses, refreshed.fixedCameraStatuses())) {
+                state.previousFixedCameraStatuses = refreshed.fixedCameraStatuses();
+                if (publisher != null) {
+                    publisher.accept(fixedCameraStatusesEvent(refreshed.fixedCameraStatuses()));
                 }
             }
         } catch (RuntimeException exception) {
@@ -97,14 +113,22 @@ public class PanoramaStatsEventRefresher {
         }
     }
 
-    private String event(Map<String, Object> snapshot) {
+    private String statsEvent(Map<String, Object> snapshot) {
+        return event("panorama.stats.changed", snapshot);
+    }
+
+    private String fixedCameraStatusesEvent(List<Map<String, Object>> statuses) {
+        return event("panorama.fixed-camera.statuses.changed", Map.of("items", statuses));
+    }
+
+    private String event(String eventName, Object data) {
         try {
             return objectMapper.writeValueAsString(Map.of(
-                    "event", "panorama.stats.changed",
+                    "event", eventName,
                     "timestamp", TIME_FORMATTER.format(LocalDateTime.now()),
-                    "data", snapshot));
+                    "data", data));
         } catch (Exception exception) {
-            throw new IllegalStateException("Failed to serialize panorama statistics event", exception);
+            throw new IllegalStateException("序列化全景地图事件失败", exception);
         }
     }
 
@@ -127,6 +151,7 @@ public class PanoramaStatsEventRefresher {
         private volatile Authentication authentication;
         private volatile Consumer<String> publisher;
         private volatile Map<String, Object> previousSnapshot = Map.of();
+        private volatile List<Map<String, Object>> previousFixedCameraStatuses = List.of();
 
         private void mergeParts(Set<StatsPart> parts) {
             synchronized (pendingParts) {
@@ -141,5 +166,10 @@ public class PanoramaStatsEventRefresher {
                 return parts.isEmpty() ? EnumSet.allOf(StatsPart.class) : parts;
             }
         }
+    }
+
+    private record RefreshSnapshot(
+            Map<String, Object> stats,
+            List<Map<String, Object>> fixedCameraStatuses) {
     }
 }

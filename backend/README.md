@@ -33,6 +33,8 @@ src/main/java/com/robot/mediaserver/
 - `VideoSessionController`：提供 `/internal/media/video-sessions/**`，供 Control 调用。
 - `VideoSessionService`：创建/复用 Room、签发 Token、维护 viewer 和对讲占用、生成 start/stop 命令并处理客户端状态。
 - `MediaTrackService`：维护 `MediaTrack` 发布记录。
+- 固定摄像头只有在 LiveKit Room API 返回真实视频 Track 后才进入 `STREAMING`；Gateway 的进程
+  启动状态先保持为 `ROOM_READY`，发布超时由既有会话扫描收口。
 - `VideoSessionTimeoutScheduler`：处理发布超时；`ViewerStartupCleaner` 在启动时关闭遗留 viewer。
 - 主要实体：`VideoSession`、`MediaSessionViewer`、`MediaTrack`。
 
@@ -45,7 +47,10 @@ src/main/java/com/robot/mediaserver/
 - 文件列表可用 `source` 对 `metadata.source` 做数据库分页前的精确筛选；实时监控据此区分手动抓拍、手动录像与任务/告警文件。
 - 手动抓拍和手动录像写入 `createdBy`，只允许创建人查询、读取和操作；未设置 `createdBy` 的任务、告警和机器人上传文件继续按组织共享。
 - `FileObjectStorageService` 封装 MinIO/S3 操作。
-- `FileHlsProcessingService` 使用 ffprobe/ffmpeg 生成 fMP4 HLS。
+- `FileHlsProcessingService` 使用 ffprobe/ffmpeg 生成 fMP4 HLS；并行排空有界输出，ffprobe 限时
+  60 秒，ffmpeg 按处理租约和视频时长设置总时限，超时回收进程树并清理临时目录。
+- 文件正文和 HLS 兼容代理在读取对象前执行 32 MiB 上限；页面预览、下载和视频播放分别优先使用
+  既有 `download-url` 与 `play-url`，避免大对象跨服务重复缓冲。
 - 三个 Scheduler 分别处理上传过期、HLS 任务和文件保留期。
 - 主要实体：`MediaFile`、`MediaFileUpload`、`MediaVideoFile`。
 

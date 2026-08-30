@@ -233,3 +233,61 @@ func TestUnexpectedProcessExitCleansPublisherMappings(t *testing.T) {
 		t.Fatal("进程异常退出后应通知上层回写会话状态")
 	}
 }
+
+func TestDifferentStreamsStartInParallel(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/sleep 2"})
+	first := model.StartCommand{
+		SessionID: "session-parallel-1", SourceID: "camera-1", RoomName: "room-1",
+		Channel: "visible", Quality: "sub", PublisherToken: "token-1", ExpiresAt: time.Now().Add(time.Minute),
+	}
+	second := model.StartCommand{
+		SessionID: "session-parallel-2", SourceID: "camera-2", RoomName: "room-2",
+		Channel: "visible", Quality: "sub", PublisherToken: "token-2", ExpiresAt: time.Now().Add(time.Minute),
+	}
+	for streamLockIndex(streamKey(first)) == streamLockIndex(streamKey(second)) {
+		second.SourceID += "x"
+		second.RoomName += "x"
+	}
+	startedAt := time.Now()
+	errors := make(chan error, 2)
+	for _, command := range []model.StartCommand{first, second} {
+		command := command
+		go func() {
+			_, _, err := pub.Start(context.Background(), command, "rtsp://camera/live")
+			errors <- err
+		}()
+	}
+	for range 2 {
+		if err := <-errors; err != nil {
+			t.Fatalf("不同视频流应并行启动：%v", err)
+		}
+	}
+	if elapsed := time.Since(startedAt); elapsed >= 800*time.Millisecond {
+		t.Fatalf("不同视频流被串行启动，耗时=%s", elapsed)
+	}
+	if err := pub.StopAll(); err != nil {
+		t.Fatalf("清理测试推流进程失败：%v", err)
+	}
+}
+
+func TestPublisherSurvivesStartContextCancellation(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/sleep 5"})
+	ctx, cancel := context.WithCancel(context.Background())
+	command := model.StartCommand{
+		SessionID: "session-context", SourceID: "camera-context", RoomName: "room-context",
+		Channel: "visible", Quality: "sub", PublisherToken: "token", ExpiresAt: time.Now().Add(time.Minute),
+	}
+
+	if _, _, err := pub.Start(ctx, command, "rtsp://camera/live"); err != nil {
+		t.Fatalf("启动推流进程失败：%v", err)
+	}
+	cancel()
+	time.Sleep(100 * time.Millisecond)
+
+	if stats := pub.Snapshot(); stats.ActivePublishers != 1 || stats.ActiveSessions != 1 {
+		t.Fatalf("启动命令结束后推流进程应继续运行，实际=%+v", stats)
+	}
+	if err := pub.StopAll(); err != nil {
+		t.Fatalf("清理测试推流进程失败：%v", err)
+	}
+}

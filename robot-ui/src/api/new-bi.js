@@ -14,12 +14,13 @@ export function getPatrolPanoramaDeviceDetail(robotId, signal) {
 
 // 巡逻巡查
 // 全景地图
-export function getPatrolPanoramaOverview() {
+export function getPatrolPanoramaOverview(signal) {
   return request({
     url: pre + '/bigscreen/panorama/overview',
     method: 'get',
     // 首屏总览必须快速失败并交由页面提示重试，不能沿用全局 5 分钟超时一直遮住地图。
-    timeout: 15000
+    timeout: 15000,
+    signal
   })
 }
 

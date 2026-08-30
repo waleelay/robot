@@ -3,6 +3,9 @@
     <div class="bi">
       <router-view :key="$route.path" />
     </div>
+    <div v-if="authorizationUnavailable" class="realtime-connection-status">
+      实时数据连接暂不可用，正在自动恢复
+    </div>
     <WarningPending />
     <WarnInfo />
     <IncomingIntercomCall />
@@ -31,6 +34,9 @@ export default {
     }
   },
   computed: {
+    authorizationUnavailable() {
+      return this.$store.getters['websocketRobot/getAuthorizationUnavailable']
+    },
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
     },
@@ -89,5 +95,18 @@ export default {
     height: 1080px;
     background: #021328;
     transform-origin: 0 0;
+  }
+
+  .realtime-connection-status {
+    position: fixed;
+    top: 86px;
+    left: 50%;
+    z-index: 101;
+    transform: translateX(-50%);
+    padding: 6px 16px;
+    border: 1px solid rgba(255, 190, 90, 0.55);
+    border-radius: 3px;
+    color: #ffd591;
+    background: rgba(35, 28, 16, 0.9);
   }
 </style>
