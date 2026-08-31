@@ -74,6 +74,15 @@ public class PanoramaService {
             new SynchronousQueue<>(),
             namedDaemonThreadFactory("panorama-io"),
             new ThreadPoolExecutor.AbortPolicy());
+    /** 任务事件刷新独立限流，繁忙时不得占用全景页面查询的 I/O 线程。 */
+    private static final ThreadPoolExecutor TASK_EVENT_IO_EXECUTOR = new ThreadPoolExecutor(
+            2,
+            4,
+            60,
+            TimeUnit.SECONDS,
+            new SynchronousQueue<>(),
+            namedDaemonThreadFactory("panorama-task-event-io"),
+            new ThreadPoolExecutor.AbortPolicy());
     /** WebSocket 统计刷新独立于首屏下游容量，健康或任务事件不能挤占首屏。 */
     private static final ThreadPoolExecutor STATS_EXECUTOR = new ThreadPoolExecutor(
             4,
@@ -806,6 +815,23 @@ public class PanoramaService {
                 "dataQuality", object("tasks", panoramaTasks.dataQuality()));
     }
 
+    /** WebSocket 任务事件只读取列表摘要，避免状态变化时加载回放、路径和设备任务明细。 */
+    public Map<String, Object> taskEventSnapshot() {
+        ThreadPoolExecutor previousExecutor = REQUEST_IO_EXECUTOR.get();
+        REQUEST_IO_EXECUTOR.set(TASK_EVENT_IO_EXECUTOR);
+        try {
+            PanoramaTasks panoramaTasks = taskSummaries();
+            if (Boolean.TRUE.equals(panoramaTasks.dataQuality().get("degraded"))) {
+                throw new IllegalStateException("全景地图任务事件快照不完整");
+            }
+            return object(
+                    "items", panoramaTasks.items(),
+                    "convergencePending", panoramaTasks.convergencePending());
+        } finally {
+            restoreRequestIoExecutor(previousExecutor);
+        }
+    }
+
     public Map<String, Object> alarms() {
         return object(
                 "serverTime", now(),
@@ -1245,7 +1271,7 @@ public class PanoramaService {
         List<Map<String, Object>> taskInstances = joinTask(
                 taskInstancesFuture, List.of(), quality, "TASK_INSTANCES_UNAVAILABLE");
         if (taskPlans.isEmpty()) {
-            return new PanoramaTasks(List.of(), taskInstances, quality.snapshot());
+            return new PanoramaTasks(List.of(), taskInstances, quality.snapshot(), false);
         }
         TaskInstanceResolver taskInstanceResolver = new TaskInstanceResolver(taskInstances, quality);
         TaskRouteResolver routeResolver = new TaskRouteResolver(taskPlans, cache, quality);
@@ -1264,7 +1290,7 @@ public class PanoramaService {
                 .map(future -> joinTask(future, null, quality, "TASK_ITEM_UNAVAILABLE"))
                 .filter(Objects::nonNull)
                 .toList();
-        return new PanoramaTasks(result, taskInstances, quality.snapshot());
+        return new PanoramaTasks(result, taskInstances, quality.snapshot(), hasPreparingPlan(taskPlans));
     }
 
     /**
@@ -1288,7 +1314,7 @@ public class PanoramaService {
         List<Map<String, Object>> items = taskPlans.stream()
                 .map(plan -> taskSummary(plan, instancesById.get(string(planWorkflowInstanceId(plan)))))
                 .toList();
-        return new PanoramaTasks(items, taskInstances, quality.snapshot());
+        return new PanoramaTasks(items, taskInstances, quality.snapshot(), hasPreparingPlan(taskPlans));
     }
 
     private Map<String, Object> taskSummary(Map<String, Object> source, Map<String, Object> instance) {
@@ -1306,6 +1332,7 @@ public class PanoramaService {
                 "name", firstString(source, "planName", "workflowName", "name"),
                 "executionMode", firstValue(source, "executionMode"),
                 "expectedDurationSeconds", firstValue(source, "expectedDurationSeconds"),
+                "availableLifecycleActions", firstValue(source, "availableLifecycleActions"),
                 "status", taskStatusCode(rawStatus),
                 "statusName", taskStatusName(rawStatus),
                 "startTime", startTime,
@@ -1336,6 +1363,7 @@ public class PanoramaService {
                 "name", firstString(source, "planName", "workflowName", "name"),
                 "executionMode", firstValue(source, "executionMode"),
                 "expectedDurationSeconds", firstValue(source, "expectedDurationSeconds"),
+                "availableLifecycleActions", firstValue(source, "availableLifecycleActions"),
                 "status", taskStatusCode(rawStatus),
                 "statusName", taskStatusName(rawStatus),
                 "startTime", startTime,
@@ -2238,8 +2266,8 @@ public class PanoramaService {
             return null;
         }
         return switch (source.toUpperCase(Locale.ROOT)) {
-            case "WAITING", "PENDING", "PREPARING" -> "waiting";
-            case "RUNNING" -> "running";
+            case "WAITING", "PENDING" -> "waiting";
+            case "PREPARING", "RUNNING" -> "running";
             case "PAUSING" -> "pausing";
             case "PAUSED" -> "paused";
             case "RESUMING" -> "resuming";
@@ -2261,6 +2289,11 @@ public class PanoramaService {
         return value(
                 firstString(source, "executionStatus"),
                 value(firstString(instance, "status"), firstString(source, "lastResultStatus")));
+    }
+
+    private boolean hasPreparingPlan(List<Map<String, Object>> taskPlans) {
+        return taskPlans.stream().anyMatch(plan ->
+                "PREPARING".equalsIgnoreCase(firstString(plan, "activeWorkflowInstanceStatus")));
     }
 
     private String taskStatusName(String source) {
@@ -2602,7 +2635,7 @@ public class PanoramaService {
     private PanoramaTasks unavailableTasks(String reasonCode) {
         TaskDataQuality quality = new TaskDataQuality();
         quality.unavailable(null, reasonCode);
-        return new PanoramaTasks(List.of(), List.of(), quality.snapshot());
+        return new PanoramaTasks(List.of(), List.of(), quality.snapshot(), false);
     }
 
     private final class TaskDataQuality {
@@ -2645,7 +2678,8 @@ public class PanoramaService {
     private record PanoramaTasks(
             List<Map<String, Object>> items,
             List<Map<String, Object>> instances,
-            Map<String, Object> dataQuality) {
+            Map<String, Object> dataQuality,
+            boolean convergencePending) {
     }
 
     private enum AlarmDisposalStatus {

@@ -166,7 +166,8 @@ Overview 的 `tasks[]` 只返回任务计划/实例列表可直接得到的摘�
 | `name` | 任务名称 | 管理端 | `TaskWorkflowPlanResponse.planName/workflowName/name` |
 | `executionMode` | 执行模式 | 管理端 | 任务计划接口 `executionMode`，例如 `MANUAL`、`SCHEDULE`；缺失时为 `null` |
 | `expectedDurationSeconds` | 预计执行时长，单位秒 | 管理端 | 任务计划接口 `expectedDurationSeconds`；缺失时为 `null` |
-| `status` | 任务状态编码 | 管理端任务计划 + BFF 转换 | 仅取任务计划 `executionStatus`：`WAITING/RUNNING/PAUSED` 分别返回小写 `waiting/running/paused` |
+| `availableLifecycleActions` | 当前允许的任务生命周期操作 | 管理端 | 原样透传任务计划 `availableLifecycleActions`，页面操作按钮还需同时校验用户权限 |
+| `status` | 任务状态编码 | 管理端任务计划 + BFF 转换 | 优先取 `activeWorkflowInstanceStatus`；`PREPARING` 投影为现有 `running`，不向全景页增加准备中状态，其余状态转换为对应小写编码 |
 | `statusName` | 任务状态中文名 | BFF 转换 | 由 `status` 转中文 |
 | `startTime` | 任务开始时间 | 管理端 + BFF 格式化 | 优先任务实例 `startedAt`，其次计划 `startedAt/lastStartedAt/startTime` |
 | `endTime` | 任务结束时间 | 管理端 + BFF 格式化 | 优先任务实例 `completedAt`，其次计划 `completedAt/lastCompletedAt/endTime` |

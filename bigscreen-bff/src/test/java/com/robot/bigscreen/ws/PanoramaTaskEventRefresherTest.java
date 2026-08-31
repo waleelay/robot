@@ -27,11 +27,11 @@ class PanoramaTaskEventRefresherTest {
         ObjectMapper objectMapper = new ObjectMapper();
         Map<String, Object> running = Map.of("taskId", 1L, "workflowInstanceId", 9001L, "status", "running");
         Map<String, Object> completed = Map.of("taskId", 1L, "workflowInstanceId", 9001L, "status", "completed");
-        when(panoramaService.tasks())
-                .thenReturn(Map.of("items", List.of(running)))
-                .thenReturn(Map.of("items", List.of(running)))
-                .thenReturn(Map.of("items", List.of(completed)))
-                .thenReturn(Map.of("items", List.of()));
+        when(panoramaService.taskEventSnapshot())
+                .thenReturn(Map.of("items", List.of(running), "convergencePending", false))
+                .thenReturn(Map.of("items", List.of(running), "convergencePending", false))
+                .thenReturn(Map.of("items", List.of(completed), "convergencePending", false))
+                .thenReturn(Map.of("items", List.of(), "convergencePending", false));
         ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
         when(scheduler.schedule(jobs.capture(), any(Instant.class))).thenReturn(null);
         PanoramaTaskEventRefresher refresher = new PanoramaTaskEventRefresher(panoramaService, objectMapper, scheduler);
@@ -60,5 +60,30 @@ class PanoramaTaskEventRefresherTest {
         assertThat(removed.path("data").path("taskId").asLong()).isEqualTo(1L);
         assertThat(removed.path("data").path("changeType").asText()).isEqualTo("REMOVE");
         assertThat(removed.path("data").has("task")).isFalse();
+    }
+
+    @Test
+    void retriesFailedRefreshAndPreparingConvergenceWithBoundedBackoff() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        Map<String, Object> running = Map.of("taskId", 1L, "status", "running");
+        when(panoramaService.taskEventSnapshot())
+                .thenThrow(new IllegalStateException("busy"))
+                .thenReturn(Map.of("items", List.of(running), "convergencePending", true))
+                .thenReturn(Map.of("items", List.of(running), "convergencePending", false));
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        when(scheduler.schedule(jobs.capture(), any(Instant.class))).thenReturn(null);
+        PanoramaTaskEventRefresher refresher = new PanoramaTaskEventRefresher(
+                panoramaService, new ObjectMapper(), scheduler);
+        List<String> events = new ArrayList<>();
+
+        refresher.requestRefresh("browser-a", null, events::add);
+        jobs.getAllValues().get(0).run();
+        jobs.getAllValues().get(1).run();
+        jobs.getAllValues().get(2).run();
+
+        verify(panoramaService, times(3)).taskEventSnapshot();
+        verify(scheduler, times(3)).schedule(any(Runnable.class), any(Instant.class));
+        assertThat(events).hasSize(1);
     }
 }

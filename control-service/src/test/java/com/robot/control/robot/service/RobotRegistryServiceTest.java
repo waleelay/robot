@@ -39,8 +39,8 @@ class RobotRegistryServiceTest {
         assertThat(after.speed()).isEqualTo(0.0);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> events = ArgumentCaptor.forClass(Map.class);
-        verify(publisher, org.mockito.Mockito.times(3)).publish(eq("robot.state"), events.capture());
-        assertThat(events.getAllValues().get(2)).containsEntry("runtimeUpdatedAt", snapshot.runtimeUpdatedAt())
+        verify(publisher, org.mockito.Mockito.times(2)).publish(eq("robot.state"), events.capture());
+        assertThat(events.getAllValues().get(1)).containsEntry("runtimeUpdatedAt", snapshot.runtimeUpdatedAt())
                 .containsEntry("battery", 0).containsEntry("speed", 0.0);
         service.update(object("robotId", "robot-1", "stateSource", "EDGE_DEVICE_STATUS", "status", "online", "controlMode", null));
         assertThat(service.find("robot-1").orElseThrow().controlMode()).isNull();

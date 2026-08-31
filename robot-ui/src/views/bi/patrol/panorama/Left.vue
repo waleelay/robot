@@ -133,8 +133,8 @@
                 <button
                   type="button"
                   class="action-btn action-icon wp30"
-                  :title="canTerminateExecution ? '终止任务' : '无权限'"
-                  :disabled="isActingTaskRecord(item) || !canTerminateExecution"
+                  :title="terminateTitle(item)"
+                  :disabled="isActingTaskRecord(item) || !canTerminateTask(item)"
                   @click.stop="handleTerminateTask(item)"
                 >
                   <svg-icon icon-class="close1" />
@@ -356,12 +356,28 @@ export default {
         this.bigscreenAuthorizationBypassed
       )
     },
+    hasLifecycleAction(item, action) {
+      const actions = item && Array.isArray(item.availableLifecycleActions)
+        ? item.availableLifecycleActions
+        : []
+      return actions.includes(action)
+    },
     canPauseOrResumeTask(item) {
-      return item && item.status === 'paused' ? this.canResumeExecution : this.canPauseExecution
+      return item && item.status === 'paused'
+        ? this.canResumeExecution && this.hasLifecycleAction(item, 'RESUME')
+        : this.canPauseExecution && this.hasLifecycleAction(item, 'PAUSE')
     },
     pauseResumeTitle(item) {
-      if (item && item.status === 'paused') return this.canResumeExecution ? '恢复' : '无权限'
-      return this.canPauseExecution ? '暂停' : '无权限'
+      if (item && item.status === 'paused') {
+        return !this.canResumeExecution ? '无权限' : this.hasLifecycleAction(item, 'RESUME') ? '恢复' : '当前状态不可恢复'
+      }
+      return !this.canPauseExecution ? '无权限' : this.hasLifecycleAction(item, 'PAUSE') ? '暂停' : '当前状态不可暂停'
+    },
+    canTerminateTask(item) {
+      return this.canTerminateExecution && this.hasLifecycleAction(item, 'TERMINATE')
+    },
+    terminateTitle(item) {
+      return !this.canTerminateExecution ? '无权限' : this.hasLifecycleAction(item, 'TERMINATE') ? '终止任务' : '当前状态不可终止'
     },
     /**
      * 通用的按时间属性降序排序函数
@@ -668,7 +684,7 @@ export default {
       }
     },
     handlePauseTask(item) {
-      if (!this.canPauseExecution) return
+      if (!this.canPauseOrResumeTask(item)) return
       return this.requestTaskRecordAction({
         item,
         action: 'pause',
@@ -679,7 +695,7 @@ export default {
       })
     },
     handleResumeTask(item) {
-      if (!this.canResumeExecution) return
+      if (!this.canPauseOrResumeTask(item)) return
       return this.requestTaskRecordAction({
         item,
         action: 'resume',
@@ -690,7 +706,7 @@ export default {
       })
     },
     handleTerminateTask(item) {
-      if (!this.canTerminateExecution) return
+      if (!this.canTerminateTask(item)) return
       return this.requestTaskRecordAction({
         item,
         action: 'terminate',

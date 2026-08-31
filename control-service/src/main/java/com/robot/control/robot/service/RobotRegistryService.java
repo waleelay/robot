@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 public class RobotRegistryService {
 
     private static final String EDGE_DEVICE_STATUS_SOURCE = "EDGE_DEVICE_STATUS";
+    private static final String MEDIA_CLIENT_STATUS_SOURCE = "MEDIA_CLIENT_STATUS";
 
     private static final List<String> DYNAMIC_STATE_FIELDS = List.of(
             "speed",
@@ -219,8 +220,10 @@ public class RobotRegistryService {
             return false;
         }
         RobotDevice device = devices.computeIfAbsent(robotId, RobotDevice::new);
-        boolean edgeStatusReport = EDGE_DEVICE_STATUS_SOURCE.equals(dynamicState.get("stateSource"));
+        Object stateSource = dynamicState.get("stateSource");
+        boolean edgeStatusReport = EDGE_DEVICE_STATUS_SOURCE.equals(stateSource);
         boolean becameOnline;
+        boolean publishState;
         Map<String, Object> state;
         synchronized (device) {
             // 在取得设备锁后记录处理时间，保证它晚于已经完成的离线扫描版本，避免并发事件时间倒退。
@@ -273,9 +276,14 @@ public class RobotRegistryService {
                 }
             });
             becameOnline = !wasConnected && ("online".equals(device.status) || "fault".equals(device.status));
+            // 媒体客户端只补充摄像头等附属信息，首个边缘状态到达前没有在线状态真值。
+            // 此时保留注册表快照为离线，但不把默认值作为实时状态广播给页面。
+            publishState = !MEDIA_CLIENT_STATUS_SOURCE.equals(stateSource) || device.lastEdgeStatusAt != null;
             state = toState(device, receivedAt);
         }
-        webSocketPublisher.publish("robot.state", state);
+        if (publishState) {
+            webSocketPublisher.publish("robot.state", state);
+        }
         return becameOnline;
     }
 

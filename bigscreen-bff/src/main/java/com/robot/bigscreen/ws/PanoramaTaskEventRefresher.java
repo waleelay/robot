@@ -27,6 +27,7 @@ public class PanoramaTaskEventRefresher {
     private static final Logger log = LoggerFactory.getLogger(PanoramaTaskEventRefresher.class);
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final long DEBOUNCE_MILLIS = 300;
+    private static final long[] RETRY_DELAYS_MILLIS = {1000, 2000, 4000, 8000};
 
     private final PanoramaService panoramaService;
     private final ObjectMapper objectMapper;
@@ -46,17 +47,18 @@ public class PanoramaTaskEventRefresher {
         RefreshState state = states.computeIfAbsent(sessionId, ignored -> new RefreshState());
         state.authentication = authentication;
         state.publisher = publisher;
+        state.retryCount = 0;
         state.dirty.set(true);
-        scheduleIfNeeded(sessionId, state);
+        scheduleIfNeeded(sessionId, state, DEBOUNCE_MILLIS);
     }
 
     public void remove(String sessionId) {
         states.remove(sessionId);
     }
 
-    private void scheduleIfNeeded(String sessionId, RefreshState state) {
+    private void scheduleIfNeeded(String sessionId, RefreshState state, long delayMillis) {
         if (state.scheduled.compareAndSet(false, true)) {
-            taskScheduler.schedule(() -> refresh(sessionId, state), Instant.now().plusMillis(DEBOUNCE_MILLIS));
+            taskScheduler.schedule(() -> refresh(sessionId, state), Instant.now().plusMillis(delayMillis));
         }
     }
 
@@ -65,8 +67,9 @@ public class PanoramaTaskEventRefresher {
             return;
         }
         state.dirty.set(false);
+        boolean retry = false;
         try {
-            Map<String, Object> response = withAuthentication(state.authentication, panoramaService::tasks);
+            Map<String, Object> response = withAuthentication(state.authentication, panoramaService::taskEventSnapshot);
             Map<String, Map<String, Object>> current = index(tasks(response));
             Consumer<String> publisher = state.publisher;
             if (publisher != null) {
@@ -82,12 +85,23 @@ public class PanoramaTaskEventRefresher {
                 });
             }
             state.previousTasks = current;
+            retry = Boolean.TRUE.equals(response.get("convergencePending"));
         } catch (RuntimeException exception) {
             log.warn("刷新全景地图任务事件失败，会话={}", sessionId, exception);
+            retry = true;
         } finally {
+            if (retry && state.retryCount < RETRY_DELAYS_MILLIS.length) {
+                state.dirty.set(true);
+                state.retryCount++;
+            } else if (!retry) {
+                state.retryCount = 0;
+            }
             state.scheduled.set(false);
             if (states.get(sessionId) == state && state.dirty.get()) {
-                scheduleIfNeeded(sessionId, state);
+                long delay = state.retryCount == 0
+                        ? DEBOUNCE_MILLIS
+                        : RETRY_DELAYS_MILLIS[state.retryCount - 1];
+                scheduleIfNeeded(sessionId, state, delay);
             }
         }
     }
@@ -151,5 +165,6 @@ public class PanoramaTaskEventRefresher {
         private volatile Authentication authentication;
         private volatile Consumer<String> publisher;
         private volatile Map<String, Map<String, Object>> previousTasks = Map.of();
+        private volatile int retryCount;
     }
 }

@@ -330,6 +330,41 @@ class PanoramaServiceTest {
     }
 
     @Test
+    void projectsPreparingAsRunningAndKeepsManagementLifecycleActions() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "planName", "A区巡逻",
+                "activeWorkflowInstanceId", 9001L,
+                "activeWorkflowInstanceStatus", "PREPARING",
+                "executionStatus", "RUNNING",
+                "availableLifecycleActions", List.of("TERMINATE"))));
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+
+        Map<String, Object> response = service.taskEventSnapshot();
+        Map<String, Object> task = maps(response.get("items")).get(0);
+
+        assertEquals("running", task.get("status"));
+        assertEquals("执行中", task.get("statusName"));
+        assertEquals(List.of("TERMINATE"), task.get("availableLifecycleActions"));
+        assertEquals(true, response.get("convergencePending"));
+        verify(centerClient, never()).taskWorkflowReplay(anyString());
+        verify(centerClient, never()).deviceTaskInstances(anyString());
+    }
+
+    @Test
+    void rejectsDegradedTaskEventSnapshotInsteadOfRemovingKnownTasks() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenThrow(new IllegalStateException("unavailable"));
+
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+
+        assertThrows(IllegalStateException.class, service::taskEventSnapshot);
+    }
+
+    @Test
     void usesPlanExecutionStatusInsteadOfHistoricalInstanceStatus() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
