@@ -331,10 +331,13 @@ export function setControlMode(data) {
 // 告警处置 立即处置：IMMEDIATE_DISPOSAL 误报：FALSE_ALARM
 export function executeAlarm(data) {
   return request({
-    url: `/api/bigscreen/panorama/alarms/${data.alarmId}/disposal`,
+    url: data.workflowActionable === true
+      ? `/api/bigscreen/panorama/alarms/${data.alarmId}/handle-and-continue`
+      : `/api/bigscreen/panorama/alarms/${data.alarmId}/handled`,
     method: 'post',
     data: {
-      disposalStatus: data.disposalStatus
+      disposalStatus: data.disposalStatus,
+      handleResult: null
     }
   })
 }

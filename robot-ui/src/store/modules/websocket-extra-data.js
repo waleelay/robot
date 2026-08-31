@@ -590,11 +590,8 @@ const actions = {
   setRobotBaseInfo({ commit }, { robotId, robotInfo, fromRealtime }) {
     commit('SET_ROBOT_BASE_INFO', { robotId, robotInfo, fromRealtime });
   },
-  setRobotAlarmInfo({ commit }, { robotId, alarmInfo, close }) {
-    if (close) {
-      commit('SET_ALARMS_DATA', alarmInfo);
-    }
-    commit('SET_ROBOT_ALARM_INFO', { robotId, alarmInfo, close });
+  removeAlarm({ commit }, alarmId) {
+    commit('REMOVE_ALARM_DATA', alarmId)
   },
   setMapSearchValue({ commit }, value) {
     commit('SET_MAP_SEARCH_VALUE', value);

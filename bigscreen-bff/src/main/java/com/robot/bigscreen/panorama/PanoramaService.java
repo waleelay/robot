@@ -848,14 +848,12 @@ public class PanoramaService {
                 "items", items);
     }
 
-    public Map<String, Object> disposeAlarm(String alarmId, Map<String, Object> request) {
+    public Map<String, Object> handleAlarm(String alarmId, Map<String, Object> request) {
         if (alarmId == null || alarmId.isBlank()) {
             throw new IllegalArgumentException("alarmId is required");
         }
         AlarmDisposalStatus disposalStatus = AlarmDisposalStatus.from(string(request == null ? null : request.get("disposalStatus")));
-        String handleResult = value(
-                string(request == null ? null : request.get("handleResult")),
-                disposalStatus.name);
+        String handleResult = string(request == null ? null : request.get("handleResult"));
         boolean success = centerClient.handleAlarm(alarmId, disposalStatus.managementAction, handleResult);
         return disposalResponse(alarmId, disposalStatus, success);
     }
@@ -865,9 +863,7 @@ public class PanoramaService {
             throw new IllegalArgumentException("alarmId is required");
         }
         AlarmDisposalStatus disposalStatus = AlarmDisposalStatus.from(string(request == null ? null : request.get("disposalStatus")));
-        String handleResult = value(
-                string(request == null ? null : request.get("handleResult")),
-                disposalStatus.name);
+        String handleResult = string(request == null ? null : request.get("handleResult"));
         boolean success = centerClient.handleWorkflowAlarm(alarmId, disposalStatus.managementAction, handleResult);
         return disposalResponse(alarmId, disposalStatus, success);
     }
@@ -1526,6 +1522,7 @@ public class PanoramaService {
     private Map<String, Object> actionableWorkflowAlarmItem(Map<String, Object> source) {
         return object(
                 "alarmId", firstValue(source, "alarmId", "id", "alarmCode"),
+                "workflowActionable", true,
                 "title", firstString(source, "title"),
                 "content", firstString(source, "content"),
                 "categoryName", categoryName(firstString(source, "sourceType")),

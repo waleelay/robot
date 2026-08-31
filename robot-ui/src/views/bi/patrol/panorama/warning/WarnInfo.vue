@@ -191,7 +191,7 @@ import WarningExecuteNo from './WarningExecuteNo.vue';
 import WarningExecuteError from './WarningExecuteError.vue';
 import { mapState, mapActions } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
-import { getActionableWorkflowAlarms, handleWorkflowAlarm } from '../../../../../api/new-bi.js';
+import { getActionableWorkflowAlarms } from '../../../../../api/new-bi.js';
 import { buildSnapshotOptions, loadSnapshotObjectUrls } from '@/utils/alarm-snapshot'
 export default {
   name: 'WarningInfo',
@@ -211,7 +211,7 @@ export default {
       return
     },
     isWorkflowAlarm() {
-      return Boolean(this.details?.workflowInstanceId || this.details?.humanTaskId)
+      return this.details?.workflowActionable === true
     }
   },
   data() {
@@ -242,7 +242,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
+    ...mapActions('websocketExtraData', ['removeAlarm']),
     close() {
       if (this.isWorkflowAlarm && this.details.alarmId != null) {
         this.deferredAlarmIds.add(String(this.details.alarmId))
@@ -292,15 +292,11 @@ export default {
       const disposalStatus = type === 2 ? 'FALSE_ALARM' : 'IMMEDIATE_DISPOSAL'
       this.loading = true
       try {
-        const response = this.isWorkflowAlarm
-          ? await handleWorkflowAlarm(alarm.alarmId, { disposalStatus, handleResult: '' })
-          : await executeAlarm({ alarmId: alarm.alarmId, disposalStatus })
+        const response = await executeAlarm({ ...alarm, disposalStatus })
         if (response?.success === false) {
           throw new Error(response.message || '告警处置失败')
         }
-        if (alarm.robotId) {
-          this.setRobotAlarmInfo({ robotId: alarm.robotId, alarmInfo: alarm, close: true })
-        }
+        this.removeAlarm(alarm.alarmId)
         this.workflowQueue = this.workflowQueue.filter(item => String(item.alarmId) !== String(alarm.alarmId))
         this.resetDialog()
         if (type === 0) {

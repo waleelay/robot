@@ -618,7 +618,7 @@ handled / max(totalToday, 1) * 100
 ### 5.6 告警处置接口
 
 ```http
-POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
+POST /api/bigscreen/panorama/alarms/{alarmId}/handled
 ```
 
 用途：大屏侧对指定告警进行处置。BFF 内部转调中心端告警处置接口，并保持大屏接口路径和参数稳定。
@@ -628,7 +628,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 ```json
 {
   "disposalStatus": "IMMEDIATE_DISPOSAL",
-  "handleResult": "现场已处置"
+  "handleResult": null
 }
 ```
 
@@ -640,7 +640,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
 | `FALSE_ALARM` | 误报 | `false_alarm` |
 
 BFF 分别映射为管理端 `handleAction=HANDLE_NOW` 和
-`handleAction=FALSE_ALARM`。`handleResult` 可选；普通告警调用管理端
+`handleAction=FALSE_ALARM`，`handleResult` 保留前端传入的 `null`。普通告警调用管理端
 `PATCH /api/v1/management/alarms/{id}/handled`。
 
 返回结构：
@@ -677,7 +677,8 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue
 查询接口只返回管理端工作流当前正等待该告警人工节点的记录。处置接口请求字段与
 5.6 相同，BFF 将 `IMMEDIATE_DISPOSAL/FALSE_ALARM` 映射为管理端
 `HANDLE_NOW/FALSE_ALARM`，调用管理端 `handle-and-continue`，在同一事务中更新告警并
-继续对应工作流。稍后处理只关闭前端当前弹窗，不调用处置接口。
+继续对应工作流；`handleResult` 显式传 `null`。稍后处理只关闭前端当前弹窗，
+不调用处置接口。
 
 工作流告警返回 `items[]`，保留大屏告警展示字段，并增加
 `workflowInstanceId`、`taskName`、`humanTaskId`、`humanTaskName`。管理端图片未携带通道

@@ -276,7 +276,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketExtraData', ['setRobotAlarmInfo']),
+    ...mapActions('websocketExtraData', ['removeAlarm']),
     open({ item = null, simple = false } = {}) {
       this.simpleMode = !!simple
       this.searchType = 'keyword'
@@ -381,23 +381,43 @@ export default {
       }
     },
     async execute(type) {
-      if (!this.details.alarmId) return
+      if (!this.details.alarmId || this.loading) return
       // 0 立即处置 1 稍后处置 2 误报
-      switch (type) {
-        case 0:
-          await executeAlarm({ alarmId: this.details.alarmId, disposalStatus: 'IMMEDIATE_DISPOSAL' })
-          this.setRobotAlarmInfo({ robotId: this.details.robotId, alarmInfo: this.details, close: true });
-          this.$refs.warningExecuteRef.open(this.details.alarmId)
-          // this.details = {}
-          break;
-        case 1:
-          // this.$refs.warningExecuteNoRef.open(this.details.alarmId) // 无需处置
-          // this.details = {}
-          break;
-          default:
-          this.$refs.warningExecuteErrorRef.open(this.details.alarmId)
-          this.setRobotAlarmInfo({ robotId: this.details.robotId, alarmInfo: this.details, close: true });
-          break;
+      if (type === 1) {
+        this.close()
+        return
+      }
+      if (type === 2) {
+        try {
+          await this.$secondaryConfirm({
+            title: '误报',
+            message: '是否确认为误报',
+            confirmText: '确认',
+            cancelText: '取消'
+          })
+        } catch (error) {
+          return
+        }
+      }
+      const alarm = { ...this.details }
+      const disposalStatus = type === 2 ? 'FALSE_ALARM' : 'IMMEDIATE_DISPOSAL'
+      this.loading = true
+      try {
+        const response = await executeAlarm({ ...alarm, disposalStatus })
+        if (response?.success === false) {
+          throw new Error(response.message || '告警处置失败')
+        }
+        this.removeAlarm(alarm.alarmId)
+        this.close()
+        if (type === 0) {
+          this.$refs.warningExecuteRef.open(alarm.alarmId)
+        } else {
+          this.$message.success('已标记为误报')
+        }
+      } catch (error) {
+        this.$message.error(error?.message || '告警处置失败')
+      } finally {
+        this.loading = false
       }
     },
     async download() {

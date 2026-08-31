@@ -25,7 +25,7 @@ GET  /api/bigscreen/panorama/overview
 GET  /api/bigscreen/panorama/devices/{deviceId}
 GET  /api/bigscreen/panorama/tasks
 GET  /api/bigscreen/panorama/alarms
-POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
+POST /api/bigscreen/panorama/alarms/{alarmId}/handled
 ```
 
 ### 2.1 已真实查询的数据来源

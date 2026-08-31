@@ -183,7 +183,7 @@ Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不�
 |---|---|---|---|
 | `alarms` | object | 需要 | 告警聚合对象，告警明细字段同 `overview.alarms` |
 
-## 6. `/api/bigscreen/panorama/alarms/{alarmId}/disposal`
+## 6. `/api/bigscreen/panorama/alarms/{alarmId}/handled`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|

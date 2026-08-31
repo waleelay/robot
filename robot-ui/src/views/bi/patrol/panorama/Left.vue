@@ -347,7 +347,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketExtraData', ['setRobotAlarmInfo', 'setShowRobotIds', 'loadTaskDetail']),
+    ...mapActions('websocketExtraData', ['setShowRobotIds', 'loadTaskDetail']),
     executionStatusLabel,
     hasManagementPermission(permission) {
       return matchManagementPermission(

@@ -501,11 +501,12 @@ class PanoramaServiceTest {
 
         Map<String, Object> actionable = service.actionableWorkflowAlarms();
         Map<String, Object> item = maps(actionable.get("items")).get(0);
+        assertEquals(true, item.get("workflowActionable"));
         assertEquals("任务告警", item.get("categoryName"));
         assertEquals("MEDIUM", item.get("level"));
         assertEquals("火灾告警处理", item.get("taskName"));
 
-        Map<String, Object> ordinary = service.disposeAlarm("1001", Map.of(
+        Map<String, Object> ordinary = service.handleAlarm("1001", Map.of(
                 "disposalStatus", "FALSE_ALARM",
                 "handleResult", "确认误报"));
         Map<String, Object> workflow = service.handleWorkflowAlarm("1001", Map.of(
@@ -515,6 +516,19 @@ class PanoramaServiceTest {
         assertEquals(true, workflow.get("success"));
         verify(centerClient).handleAlarm("1001", "FALSE_ALARM", "确认误报");
         verify(centerClient).handleWorkflowAlarm("1001", "HANDLE_NOW", "现场已处置");
+    }
+
+    @Test
+    void preservesMissingAlarmHandleResultAsNull() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.handleWorkflowAlarm("1001", "HANDLE_NOW", null)).thenReturn(true);
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+
+        Map<String, Object> response = service.handleWorkflowAlarm("1001", Map.of(
+                "disposalStatus", "IMMEDIATE_DISPOSAL"));
+
+        assertEquals(true, response.get("success"));
+        verify(centerClient).handleWorkflowAlarm("1001", "HANDLE_NOW", null);
     }
 
     @Test

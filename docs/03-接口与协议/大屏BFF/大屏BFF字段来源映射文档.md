@@ -340,7 +340,7 @@ GET /api/bigscreen/panorama/alarms
 接口：
 
 ```text
-POST /api/bigscreen/panorama/alarms/{alarmId}/disposal
+POST /api/bigscreen/panorama/alarms/{alarmId}/handled
 ```
 
 请求：
@@ -360,8 +360,8 @@ PATCH /api/v1/management/alarms/{alarmId}/handled
 
 ```json
 {
-  "handledBy": "bigscreen",
-  "handleResult": "IMMEDIATE_DISPOSAL 或 FALSE_ALARM"
+  "handleAction": "HANDLE_NOW 或 FALSE_ALARM",
+  "handleResult": null
 }
 ```
 

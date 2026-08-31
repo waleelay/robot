@@ -3,6 +3,8 @@ package com.robot.bigscreen.panorama;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -16,6 +18,7 @@ import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -153,6 +156,32 @@ class PanoramaCenterClientTest {
                 PanoramaCenterClient.TaskSourceException.class,
                 client::taskWorkflowPlans);
         assertEquals("TASK_PAGINATION_NO_PROGRESS", error.reasonCode());
+        server.verify();
+    }
+
+    @Test
+    void workflowAlarmHandlingSendsExplicitNullResult() {
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/alarms/1001/handle-and-continue"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json(
+                        "{\"handleAction\":\"HANDLE_NOW\",\"handleResult\":null}", true))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        assertEquals(true, client.handleWorkflowAlarm("1001", "HANDLE_NOW", null));
+        server.verify();
+    }
+
+    @Test
+    void ordinaryAlarmHandlingUsesPatchAndSendsExplicitNullResult() {
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/alarms/1001/handled"))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json(
+                        "{\"handleAction\":\"FALSE_ALARM\",\"handleResult\":null}", true))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        assertEquals(true, client.handleAlarm("1001", "FALSE_ALARM", null));
         server.verify();
     }
 }

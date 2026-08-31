@@ -22,10 +22,12 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `GET` | `/api/bigscreen/panorama/tasks/{taskId}` | 用户打开任务时查询单个任务完整详情（含回放和设备任务明细） |
 | `GET` | `/api/bigscreen/panorama/tasks/{taskId}/fixed-cameras` | 实时监控任务卡展开时按需查询任务关联固定摄像头；只返回安全视频源标识，不创建视频会话 |
 | `GET` | `/api/bigscreen/panorama/alarms` | 查询告警分组快照 |
-| `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/disposal` | 处置告警 |
+| `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/handled` | 处置普通告警 |
 | `GET` | `/api/bigscreen/panorama/alarms/actionable-workflow` | 查询当前用户可处理的工作流告警 |
 | `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue` | 处置告警并继续对应工作流 |
 | `GET` | `/api/bigscreen/access-control/me` | 代理当前登录用户的管理端数据权限；下游失败时拒绝访问，不返回默认权限 |
+
+`actionable-workflow` 返回的每条告警均带有 `workflowActionable: true`，前端以该标识选择 `handle-and-continue`，不再根据工作流实例或人工任务字段是否存在进行推断。
 
 响应字段、来源优先级和空值规则以[大屏 BFF 字段来源映射文档](大屏BFF字段来源映射文档.md)为准。固定摄像头作为 `devices[]` 中的同级装备返回，关键识别字段为：
 

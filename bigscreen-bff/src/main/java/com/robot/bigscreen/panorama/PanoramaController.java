@@ -66,11 +66,11 @@ public class PanoramaController {
         return panoramaService.actionableWorkflowAlarms();
     }
 
-    @PostMapping("/alarms/{alarmId}/disposal")
-    public Map<String, Object> disposeAlarm(
+    @PostMapping("/alarms/{alarmId}/handled")
+    public Map<String, Object> handleAlarm(
             @PathVariable String alarmId,
             @RequestBody Map<String, Object> request) {
-        return panoramaService.disposeAlarm(alarmId, request);
+        return panoramaService.handleAlarm(alarmId, request);
     }
 
     @PostMapping("/alarms/{alarmId}/handle-and-continue")

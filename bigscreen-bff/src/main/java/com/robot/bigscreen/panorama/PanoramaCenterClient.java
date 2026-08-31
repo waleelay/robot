@@ -3,6 +3,8 @@ package com.robot.bigscreen.panorama;
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -52,9 +55,12 @@ public class PanoramaCenterClient {
             @Value("${panorama.task.connect-timeout-ms:1000}") int taskConnectTimeoutMs,
             @Value("${panorama.task.read-timeout-ms:1500}") int taskReadTimeoutMs,
             @Value("${panorama.task.max-concurrency:8}") int taskMaxConcurrency) {
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Math.max(100, Math.min(5000, generalConnectTimeoutMs)));
-        requestFactory.setReadTimeout(Math.max(100, Math.min(10000, generalReadTimeoutMs)));
+        int connectTimeoutMs = Math.max(100, Math.min(5000, generalConnectTimeoutMs));
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(connectTimeoutMs))
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofMillis(Math.max(100, Math.min(10000, generalReadTimeoutMs))));
         this.restClient = builder.requestFactory(requestFactory).build();
         SimpleClientHttpRequestFactory taskRequestFactory = new SimpleClientHttpRequestFactory();
         taskRequestFactory.setConnectTimeout(Math.max(100, Math.min(5000, taskConnectTimeoutMs)));
@@ -390,9 +396,7 @@ public class PanoramaCenterClient {
     private boolean updateAlarm(URI uri, boolean workflow, String handleAction, String handleResult) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("handleAction", handleAction);
-        if (handleResult != null && !handleResult.isBlank()) {
-            body.put("handleResult", handleResult);
-        }
+        body.put("handleResult", handleResult);
         try {
             if (workflow) {
                 restClient.post()
