@@ -71,7 +71,7 @@ func TestProcessDiagnosticsRedactsSensitiveValues(t *testing.T) {
 
 func TestProcessDiagnosticsCollectsStdoutAndStderr(t *testing.T) {
 	cmd := exec.Command("/bin/sh", "-c", "echo stdout-message; echo stderr-message >&2; exit 1")
-	entry := newProcessEntry(cmd, "test", time.Now().Add(time.Minute), model.StartCommand{}, "")
+	entry := newProcessEntry(cmd, "test", model.StartCommand{}, "")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -186,34 +186,30 @@ func TestRejectsMissingPublisherTokenExpiry(t *testing.T) {
 	}
 }
 
-func TestTokenExpiryCleansPublisherAndAllBoundSessions(t *testing.T) {
+func TestRunningPublisherReuseDoesNotDependOnOriginalTokenExpiry(t *testing.T) {
 	pub := NewProcessPublisher(config.Config{})
-	key := "FIXED_CAMERA|camera-1|room-1"
-	entry := &processEntry{done: make(chan processResult, 1), mode: "test", expiresAt: time.Now().Add(20 * time.Millisecond)}
+	command := model.StartCommand{
+		SessionID: "session-2", SourceType: "FIXED_CAMERA", SourceID: "camera-1", RoomName: "room-1",
+		Channel: "visible", Quality: "sub", PublisherToken: "new-token", ExpiresAt: time.Now().Add(time.Minute),
+	}
+	key := streamKey(command)
+	entry := &processEntry{done: make(chan processResult, 1), mode: "test"}
+	entry.running.Store(true)
 	pub.cmds[key] = entry
 	pub.bindSessionLocked("session-1", key)
-	pub.bindSessionLocked("session-2", key)
-	pub.watchTokenExpiry(key, entry, "session-1")
 
-	time.Sleep(80 * time.Millisecond)
-	stats := pub.Snapshot()
-	if stats.ActivePublishers != 0 || stats.ActiveSessions != 0 || stats.TokenExpirations != 1 {
-		t.Fatalf("Token 到期后应完整清理，实际=%+v", stats)
+	if _, _, err := pub.Start(context.Background(), command, "rtsp://camera/live"); err != nil {
+		t.Fatalf("已连接的推流不应因原始 Token 生命周期被重启：%v", err)
 	}
-	select {
-	case event := <-pub.Events():
-		if event.ReasonCode != "PUBLISH_TOKEN_EXPIRED" || len(event.SessionIDs) != 2 {
-			t.Fatalf("Token 到期事件不完整，实际=%+v", event)
-		}
-	default:
-		t.Fatal("Token 到期后应通知上层回写会话状态")
+	if pub.cmds[key] != entry || len(pub.streamSessions[key]) != 2 {
+		t.Fatalf("应复用原推流并绑定新会话，实际推流=%p 会话数=%d", pub.cmds[key], len(pub.streamSessions[key]))
 	}
 }
 
 func TestUnexpectedProcessExitCleansPublisherMappings(t *testing.T) {
 	pub := NewProcessPublisher(config.Config{})
 	key := "FIXED_CAMERA|camera-1|room-1"
-	entry := &processEntry{done: make(chan processResult, 1), mode: "test", expiresAt: time.Now().Add(time.Minute)}
+	entry := &processEntry{done: make(chan processResult, 1), mode: "test"}
 	pub.cmds[key] = entry
 	pub.bindSessionLocked("session-1", key)
 	pub.watchProcessExit(key, entry, "session-1")

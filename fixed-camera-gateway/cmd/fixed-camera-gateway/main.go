@@ -61,12 +61,11 @@ func startObservabilityServer(ctx context.Context, address string, pub *publishe
 			"fixed_camera_publisher_active %d\n"+
 				"fixed_camera_publisher_sessions_active %d\n"+
 				"fixed_camera_publisher_unexpected_exits_total %d\n"+
-				"fixed_camera_publisher_token_expirations_total %d\n"+
 				"fixed_camera_publisher_forced_kills_total %d\n"+
 				"fixed_camera_publisher_cleanup_last_milliseconds %d\n"+
 				"fixed_camera_publisher_cleanup_max_milliseconds %d\n",
 			stats.ActivePublishers, stats.ActiveSessions, stats.UnexpectedExits,
-			stats.TokenExpirations, stats.ForcedKills, stats.LastCleanupMillis, stats.MaxCleanupMillis)
+			stats.ForcedKills, stats.LastCleanupMillis, stats.MaxCleanupMillis)
 	})
 	server := &http.Server{Addr: address, Handler: mux, ReadHeaderTimeout: 3 * time.Second}
 	go func() {

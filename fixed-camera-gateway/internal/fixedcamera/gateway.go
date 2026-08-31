@@ -165,19 +165,10 @@ func (g *Gateway) ObservePublisherEvents(ctx context.Context, events <-chan publ
 		case event := <-events:
 			for _, sessionID := range event.SessionIDs {
 				g.forgetSession(sessionID)
-				g.status(sessionID, publisherEventStatus(event.ReasonCode), "", "", event.ReasonCode, event.Message)
+				g.status(sessionID, "interrupted", "", "", event.ReasonCode, event.Message)
 			}
 		}
 	}
-}
-
-// 推流进程意外退出通常由短暂 RTSP 断流引起，保留 viewer 后应由服务端调度重发启动命令。
-// 其他不可恢复原因仍按 failed 收口，避免无限重试错误配置或显式停止的会话。
-func publisherEventStatus(reasonCode string) string {
-	if reasonCode == "PUBLISH_PROCESS_EXITED" {
-		return "interrupted"
-	}
-	return "failed"
 }
 
 func (g *Gateway) subscribe(topic string, handler paho.MessageHandler) error {

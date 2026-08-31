@@ -127,15 +127,6 @@ func TestCameraHealthStatusUsesResolvedProbeResult(t *testing.T) {
 	}
 }
 
-func TestPublisherProcessExitIsReportedAsInterruptedForRecovery(t *testing.T) {
-	if status := publisherEventStatus("PUBLISH_PROCESS_EXITED"); status != "interrupted" {
-		t.Fatalf("推流进程意外退出应进入可恢复中断状态，实际=%s", status)
-	}
-	if status := publisherEventStatus("PUBLISH_TOKEN_EXPIRED"); status != "failed" {
-		t.Fatalf("非断流原因不应被错误标记为可恢复中断，实际=%s", status)
-	}
-}
-
 func TestStopOnlyUnbindsExactViewingSession(t *testing.T) {
 	pub := &fakePublisher{}
 	gateway := NewGateway(config.Config{GatewayID: "gateway-001"}, fakeProber{}, pub)

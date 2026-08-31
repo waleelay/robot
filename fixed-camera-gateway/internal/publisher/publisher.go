@@ -33,7 +33,6 @@ type ProcessPublisher struct {
 	streamSessions         map[string]map[string]struct{}
 	gstreamerFailedRTSPURL map[string]time.Time
 	unexpectedExits        uint64
-	tokenExpirations       uint64
 	forcedKills            uint64
 	lastCleanupMillis      int64
 	maxCleanupMillis       int64
@@ -46,7 +45,6 @@ type processEntry struct {
 	cmd          *exec.Cmd
 	done         chan processResult
 	mode         string
-	expiresAt    time.Time
 	stderr       *tailBuffer
 	redactValues []string
 	running      atomic.Bool
@@ -87,7 +85,6 @@ type Snapshot struct {
 	ActivePublishers  int    `json:"activePublishers"`
 	ActiveSessions    int    `json:"activeSessions"`
 	UnexpectedExits   uint64 `json:"unexpectedExits"`
-	TokenExpirations  uint64 `json:"tokenExpirations"`
 	ForcedKills       uint64 `json:"forcedKills"`
 	LastCleanupMillis int64  `json:"lastCleanupMillis"`
 	MaxCleanupMillis  int64  `json:"maxCleanupMillis"`
@@ -125,7 +122,7 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 		_ = p.stopStreamLocked(previousKey)
 	}
 	if entry := p.cmds[key]; entry != nil {
-		if entryRunning(entry) && tokenUsable(entry.expiresAt) && tokenUsable(command.ExpiresAt) {
+		if entryRunning(entry) {
 			p.bindSessionLocked(command.SessionID, key)
 			p.mu.Unlock()
 			return "TR_" + command.SessionID, trackName(command), nil
@@ -186,12 +183,12 @@ func (p *ProcessPublisher) startCommand(ctx context.Context, command model.Start
 			"{track}", trackName,
 		).Replace(args[i])
 	}
-	// 启动命令上下文只负责中断启动阶段；推流进程由 Stop、StopAll 和 Token
-	// 到期任务显式管理，不能在命令工作线程返回时跟随临时上下文被杀死。
+	// 启动命令上下文只负责中断启动阶段；推流进程由 Stop、StopAll 和异常退出监视管理，
+	// 不能在命令工作线程返回时跟随临时上下文被杀死。
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = directMediaProcessEnv()
-	entry := newProcessEntry(cmd, mode, command.ExpiresAt, command, rtspURL)
+	entry := newProcessEntry(cmd, mode, command, rtspURL)
 	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
@@ -206,7 +203,6 @@ func (p *ProcessPublisher) startCommand(ctx context.Context, command model.Start
 		return "", "", err
 	}
 	p.watchProcessExit(key, entry, command.SessionID)
-	p.watchTokenExpiry(key, entry, command.SessionID)
 	return "TR_" + command.SessionID, trackName, nil
 }
 
@@ -228,7 +224,7 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 	cmd := exec.Command(p.cfg.GStreamerPublisherPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = directMediaProcessEnv()
-	entry := newProcessEntry(cmd, "gstreamer", command.ExpiresAt, command, rtspURL)
+	entry := newProcessEntry(cmd, "gstreamer", command, rtspURL)
 	if err := cmd.Start(); err != nil {
 		return "", "", err
 	}
@@ -242,7 +238,6 @@ func (p *ProcessPublisher) startGStreamer(ctx context.Context, command model.Sta
 	if err := p.ensureRunning(key, entry); err != nil {
 		return "", "", err
 	}
-	p.watchTokenExpiry(key, entry, command.SessionID)
 	return "TR_" + command.SessionID, trackName, nil
 }
 
@@ -262,13 +257,13 @@ func (p *ProcessPublisher) shouldStartWithFFmpeg(command model.StartCommand, rts
 	return false
 }
 
-func newProcessEntry(cmd *exec.Cmd, mode string, expiresAt time.Time, command model.StartCommand, rtspURL string) *processEntry {
+func newProcessEntry(cmd *exec.Cmd, mode string, command model.StartCommand, rtspURL string) *processEntry {
 	stderr := &tailBuffer{}
 	// 部分外部 CLI 会把致命错误写到 stdout；统一收集以免诊断丢失。
 	cmd.Stdout = stderr
 	cmd.Stderr = stderr
 	entry := &processEntry{
-		cmd: cmd, done: make(chan processResult, 1), mode: mode, expiresAt: expiresAt, stderr: stderr,
+		cmd: cmd, done: make(chan processResult, 1), mode: mode, stderr: stderr,
 		redactValues: []string{command.PublisherToken, rtspURL, command.LiveKitURL},
 	}
 	return entry
@@ -505,27 +500,6 @@ func (p *ProcessPublisher) watchProcessExit(key string, entry *processEntry, ses
 	}()
 }
 
-func (p *ProcessPublisher) watchTokenExpiry(key string, entry *processEntry, sessionID string) {
-	delay := time.Until(entry.expiresAt)
-	if delay <= 0 {
-		delay = time.Millisecond
-	}
-	go func() {
-		timer := time.NewTimer(delay)
-		defer timer.Stop()
-		<-timer.C
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		if p.cmds[key] != entry {
-			return
-		}
-		p.tokenExpirations++
-		log.Printf("发布 Token 到期，开始清理推流资源，会话ID=%s", sessionID)
-		p.emitLocked(LifecycleEvent{SessionIDs: p.sessionIDsLocked(key), ReasonCode: "PUBLISH_TOKEN_EXPIRED", Message: "发布 Token 已到期"})
-		_ = p.stopStreamLocked(key)
-	}()
-}
-
 func (p *ProcessPublisher) forceKillAfterTimeout(entry *processEntry) {
 	timeout := p.cfg.PublisherStopTimeout
 	if timeout <= 0 {
@@ -573,8 +547,8 @@ func (p *ProcessPublisher) Snapshot() Snapshot {
 	defer p.mu.Unlock()
 	return Snapshot{
 		ActivePublishers: len(p.cmds), ActiveSessions: len(p.sessions),
-		UnexpectedExits: p.unexpectedExits, TokenExpirations: p.tokenExpirations,
-		ForcedKills: p.forcedKills, LastCleanupMillis: p.lastCleanupMillis,
+		UnexpectedExits: p.unexpectedExits,
+		ForcedKills:     p.forcedKills, LastCleanupMillis: p.lastCleanupMillis,
 		MaxCleanupMillis: p.maxCleanupMillis,
 	}
 }

@@ -32,7 +32,8 @@ env \
 
 视频会话启动不再额外执行 RTSP 预探测，不同视频流可并行启动；后台健康检查对相同 RTSP 每轮只
 建立一次探测连接。Gateway 上报 `streaming` 仅表示 Publisher 进程已启动，真实 LiveKit 视频 Track
-由 Media Service 统一确认。
+由 Media Service 统一确认。Publisher Token 的到期时间只校验新连接，已建立的推流持续到最后一个
+观看会话停止、MQTT 连接断开、推流进程异常退出或 Gateway 关闭，不按 Token 到期时间主动断流。
 
 ## 必要配置
 
