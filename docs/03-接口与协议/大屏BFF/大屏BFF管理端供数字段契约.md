@@ -42,19 +42,9 @@
 | `devices[].vendor` | string/null | 条件需要 | 设备厂商 |
 | `devices[].model` | string/null | 条件需要 | 设备型号 |
 | `devices[].cameras` | array<object> | 条件需要 | 相机配置；需要真实视频流配置时由管理端或后续权威数据源提供 |
-| `devices[].mountedDevices` | array<object> | 条件需要 | 上装设备/组件集合 |
-| `devices[].mountedDeviceCount` | number/null | 条件需要 | 上装设备数量，BFF 可根据管理端组件集合计算 |
+| `devices[].mountedDeviceCount` | number/null | 无新增要求 | Overview 当前不逐设备查询组件，通常为 `null`；由独立计数接口按需补充 |
 
-### 2.3 `devices[].mountedDevices[]`
-
-| BFF 字段 | 类型 | 管理端提供 | 字段说明 |
-|---|---|---|---|
-| `devices[].mountedDevices[].deviceId` | string/number | 需要 | 上装设备/组件 ID |
-| `devices[].mountedDevices[].name` | string/null | 需要 | 上装设备/组件名称 |
-| `devices[].mountedDevices[].type` | string/null | 条件需要 | 上装设备/组件类型或能力类型 |
-| `devices[].mountedDevices[].status` | string/null | 条件需要 | 上装设备独立状态；如管理端不提供，BFF 当前只能复用机器人状态 |
-
-### 2.4 `devices[].cameras[]`
+### 2.3 `devices[].cameras[]`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -65,7 +55,7 @@
 | `devices[].cameras[].quality` | string | 条件需要 | 默认播放清晰度 |
 | `devices[].cameras[].streamCode` | string/null | 条件需要 | 视频流标识；需要精准播放视频流时提供 |
 
-### 2.5 `tasks[]`
+### 2.4 `tasks[]`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -81,7 +71,7 @@ Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不�
 路径只由 `maps/{mapId}/task-routes` 返回；回放位置、地图点和完整设备任务明细只由
 `tasks/{taskId}` 按需返回，不属于 Overview 管理端供数边界。
 
-### 2.6 `tasks[].equipmentList[]`
+### 2.5 `tasks[].equipmentList[]`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -90,7 +80,7 @@ Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不�
 | `tasks[].equipmentList[].type` | string/null | 条件需要 | 执行装备类型 |
 | `tasks[].equipmentList[].status` | string/null | 条件需要 | 执行装备在线状态，取值为 `online`、`offline`、`fault`；管理端提供可关联的设备在线状态原始字段 |
 
-### 2.7 `map[]`
+### 2.6 `map[]`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -117,7 +107,7 @@ Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不�
 | `map[].points` | array<object> | 条件需要 | 当前地图的点位集合；BFF 按地图 ID 查询后挂载到对应地图对象 |
 | `map[].deviceIds` | array<string> | 无需直接提供 | BFF 根据顶层 `devices[].location.mapId` 计算的设备 ID 列表 |
 
-### 2.8 `alarms.*.items[]`
+### 2.7 `alarms.*.items[]`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -134,7 +124,7 @@ Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不�
 | `alarms.*.items[].status` | string/null | 需要 | 告警处置状态 |
 | `alarms.*.items[].snapshotUrl` | object/null | 条件需要 | 告警截图对象 |
 
-### 2.9 `alarms.*.items[].location`
+### 2.8 `alarms.*.items[].location`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -147,7 +137,7 @@ Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不�
 | `alarms.*.items[].location.address` | string/null | 条件需要 | 位置描述 |
 | `alarms.*.items[].location.updatedAt` | string/null | 条件需要 | 位置更新时间 |
 
-### 2.10 `alarms.*.items[].snapshotUrl`
+### 2.9 `alarms.*.items[].snapshotUrl`
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -155,17 +145,19 @@ Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不�
 | `alarms.*.items[].snapshotUrl.thermal` | string/null | 条件需要 | 热成像截图地址 |
 | `alarms.*.items[].snapshotUrl.front` | string/null | 条件需要 | 前置/其他截图地址 |
 
-## 3. `/api/bigscreen/panorama/devices/{deviceId}`
+## 3. `/api/bigscreen/panorama/devices/{deviceId}/mounted-device-count`
 
-设备详情在授权设备摘要上按需补查目标设备组件，并关联活跃任务；不复用 Overview 已移除的重复任务字段。
+本期不要求管理端改造。BFF 先按授权设备列表将 `deviceId`（序列号）解析为管理端主键，再复用现有
+设备详情中的 `components` 计算非 `BODY` 组件数量。接口不返回组件明细，也不关联档案、运行态、地图或任务。
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
-| `currentTask` | array<object> | 条件需要 | 当前任务数组，由控制端实时任务与任务摘要按设备 ID 关联 |
+| `robotId` | string | 已有 | 请求中的设备序列号 |
+| `mountedDeviceCount` | number/null | 已有组件清单 | 非 `BODY` 组件记录数；详情不可得时为 `null`，明确空清单为 `0` |
 
 ## 4. `/api/bigscreen/panorama/tasks`
 
-任务列表接口复用 `overview.tasks[]` 的数据结构。管理端需要提供的字段同本文 `2.6` 至 `2.9`。
+任务列表接口复用 `overview.tasks[]` 的数据结构。管理端需要提供的字段同本文 `2.4` 至 `2.5`。
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|
@@ -177,7 +169,7 @@ Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不�
 
 ## 5. `/api/bigscreen/panorama/alarms`
 
-告警列表接口复用 `overview.alarms` 的数据结构。管理端需要提供的字段同本文 `2.11` 至 `2.13`。
+告警列表接口复用 `overview.alarms` 的数据结构。管理端需要提供的字段同本文 `2.7` 至 `2.9`。
 
 | BFF 字段 | 类型 | 管理端提供 | 字段说明 |
 |---|---|---|---|

@@ -167,7 +167,7 @@ BFF 不负责：
 
 ```text
 GET /api/bigscreen/panorama/overview
-GET /api/bigscreen/panorama/devices/{deviceId}
+GET /api/bigscreen/panorama/devices/{deviceId}/mounted-device-count
 GET /api/bigscreen/panorama/tasks
 GET /api/bigscreen/panorama/alarms
 ```
@@ -389,74 +389,24 @@ Overview 的 `map[]` 只返回地图摘要。当前地图的 `points/deviceIds/f
 
 `location.lng/lat/altitude` 用于地图经纬度定位；`location.x/y/z` 用于室内图、三维场景或局部坐标系定位。
 
-### 5.3 设备详情接口
+### 5.3 上装设备计数接口
 
 ```http
-GET /api/bigscreen/panorama/devices/{deviceId}
+GET /api/bigscreen/panorama/devices/{deviceId}/mounted-device-count
 ```
 
-用途：点击地图设备点位后，返回右侧设备弹窗数据。路径变量可传 `robotId`；`deviceId` 命名保留是为了兼容页面语义。
+用途：右侧弹窗已从 Overview 取得主体数据，但普通机器人的上装设备数量未知时，按 `robotId` 补查计数。固定摄像头不调用。
 
 返回结构：
 
 ```json
 {
   "robotId": "test111",
-  "clientId": "robot-media-client",
-  "name": "R1轮式机器人",
-  "type": "轮式机器人",
-  "typeCode": "WHEELED_ROBOT",
-  "vendor": "SONGLING",
-  "status": "online",
-  "model": "SCOUT",
-  "battery": 100,
-  "lastHeartbeatAt": "2026-06-12 11:30:58",
-  "cameras": [],
-  "mountedDevices": [],
-  "stateSeq": 1,
-  "alarmStatus": "none",
-  "alarmText": "-",
-  "controlMode": "手动模式",
-  "speed": null,
-  "location": {
-    "lng": 106.03655278081857,
-    "lat": 30.7478613352993,
-    "altitude": null,
-    "x": 118.4,
-    "y": 42.8,
-    "z": 0.0,
-    "address": "A区主干道",
-    "updatedAt": "2026-06-12 11:30:58"
-  },
-  "mountedDeviceCount": 3,
-  "mountedDevices": [
-      {
-        "deviceId": "camera01",
-        "name": "前向双光云台",
-      "type": "DUAL_GIMBAL",
-      "status": "online"
-    }
-  ],
-  "currentTask": [
-    {
-      "taskId": "task-001",
-      "name": "A区-夜间巡逻",
-      "status": "running",
-      "timeRange": "20:00-22:00"
-    }
-  ],
-  "actions": {
-    "remoteControl": true,
-    "slamMap": true,
-    "returnHome": true,
-    "returnChargingPile": true,
-    "showPath": true,
-    "showArea": true
-  }
+  "mountedDeviceCount": 3
 }
 ```
 
-`actions` 由 BFF 返回，前端可直接控制按钮显示和启用状态。
+接口不返回设备档案、运行态、组件明细、地图、任务或操作能力。
 
 ### 5.4 任务列表接口
 

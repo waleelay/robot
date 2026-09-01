@@ -4,15 +4,17 @@
 
 ## 装备弹窗数据
 
-装备弹窗 `Robot1.vue` 打开时从 `/api/bigscreen/panorama/devices/{robotId}` 初始化全部装备展示字段
-（名称、类型、电量、型号、速度、控制模式、上装数量；固定摄像头类型和位置同样按需查询），不从
-Overview 或全局装备档案回填。名称、类型、型号、上装数量、固定摄像头位置在本次打开期间固定。
-电量、速度、控制模式及在线状态复用 `websocketRobot` 共享状态，按 `runtimeUpdatedAt/statusChangedAt`
-与详情比较新旧，慢详情不能覆盖新状态；弹窗不再单独订阅事件或维护运行态缓存。
+装备弹窗 `Robot1.vue` 直接使用 Overview 初始化的共享装备状态，并由既有 `robot.state` 事件更新
+电量、速度、控制模式和在线状态，不等待额外详情请求。普通机器人仅在
+`mountedDeviceCount == null` 时调用
+`/api/bigscreen/panorama/devices/{robotId}/mounted-device-count` 补充上装设备数量；Overview 已有
+数量或选中固定摄像头时不请求。补充查询失败时数量显示 `-`，不增加点击操作；重新打开或切换机器人时
+自然重新查询。电量、速度、控制模式及在线状态复用 `websocketRobot` 共享状态，按
+`runtimeUpdatedAt/statusChangedAt` 合并；弹窗不再单独订阅事件或维护运行态缓存。
 请求在途去重，切换、关闭或销毁时取消并清空；失败时原标题提供重试，未知值显示 `-`，离线速度和
 模式不标作当前值。查询成功后本次打开期间不再查详情；重连不清空档案，也不重查详情，运行态恢复
 复用现有 WebSocket 和重连后的 Overview 刷新。再次打开或切换装备才重新查询，首次失败可重试。
-加载入口统一为 `deviceDetailTarget`（可见时的装备 ID）的立即监听，不再叠加 mounted 和两个字段监听。
+加载入口统一为 `mountedDeviceCountTarget` 的立即监听，不再叠加多个字段监听。
 状态新旧只在共享合并函数中判断；全局档案不保留旧详情数量，弹窗数量稳定性由本次详情快照保证。
 Overview 继续服务地图、装备列表及共享媒体/控制状态，本次不删减它的响应字段；任务列表、任务路径、
 视频准入与会话仍复用原共享链路，不通过详情另建一套任务或视频状态。

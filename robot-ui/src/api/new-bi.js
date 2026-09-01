@@ -1,10 +1,10 @@
 import request from '@/utils/request'
 const pre = '/api'
 
-// 按选中装备加载档案组件，不增加首屏逐设备请求。
-export function getPatrolPanoramaDeviceDetail(robotId, signal) {
+// Overview 未取得组件数量时，只对当前选中机器人补查一次；固定摄像头不调用。
+export function getPatrolPanoramaMountedDeviceCount(robotId, signal) {
   return request({
-    url: pre + `/bigscreen/panorama/devices/${encodeURIComponent(robotId)}`,
+    url: pre + `/bigscreen/panorama/devices/${encodeURIComponent(robotId)}/mounted-device-count`,
     method: 'get',
     timeout: 8000,
     skipErrorMessage: true,

@@ -17,7 +17,7 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `GET` | `/api/bigscreen/panorama/overview` | 首屏摘要：设备、统计、任务摘要、地图摘要和告警；`devices[]` 不重复任务，`tasks[]` 不返回路径；不加载地图点、回放或逐设备详情 |
 | `GET` | `/api/bigscreen/panorama/maps/{mapId}/resources` | 当前地图渲染资源：点位、关联设备 ID 与固定摄像头；首屏默认地图和用户切图时调用 |
 | `GET` | `/api/bigscreen/panorama/maps/{mapId}/task-routes` | 当前地图关联任务的路径点；不加载任务回放或设备任务详情 |
-| `GET` | `/api/bigscreen/panorama/devices/{deviceId}` | 按装备序列号查询授权设备详情；只补查目标组件，不加载任务回放；弹窗选中时调用 |
+| `GET` | `/api/bigscreen/panorama/devices/{deviceId}/mounted-device-count` | 按装备序列号补查授权机器人的非本体组件数量；仅当 Overview 数量未知时调用，不组装档案、运行态、地图或任务 |
 | `GET` | `/api/bigscreen/panorama/tasks` | 查询当前任务快照 |
 | `GET` | `/api/bigscreen/panorama/tasks/{taskId}` | 用户打开任务时查询单个任务完整详情（含回放和设备任务明细） |
 | `GET` | `/api/bigscreen/panorama/tasks/{taskId}/fixed-cameras` | 实时监控任务卡展开时按需查询任务关联固定摄像头；只返回安全视频源标识，不创建视频会话 |

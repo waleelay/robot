@@ -22,7 +22,7 @@
 
 ```text
 GET  /api/bigscreen/panorama/overview
-GET  /api/bigscreen/panorama/devices/{deviceId}
+GET  /api/bigscreen/panorama/devices/{deviceId}/mounted-device-count
 GET  /api/bigscreen/panorama/tasks
 GET  /api/bigscreen/panorama/alarms
 POST /api/bigscreen/panorama/alarms/{alarmId}/handled
@@ -70,9 +70,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handled
 | `type` | BFF 转换 | 由 `typeCode` 转中文名称 |
 | `status` | BFF 转换 | 由控制端 `onlineStatus` 标准化为 `online/offline/fault` |
 | `lastHeartbeatAt` | BFF 格式化 | 由实时状态时间字段格式化 |
-| `mountedDevices[].type` | BFF 提取 | 从组件 `capabilities` 取第一个能力编码 |
-| `mountedDevices[].status` | BFF 派生 | 当前直接使用机器人在线状态，不是上装设备独立状态 |
-| `mountedDeviceCount` | BFF 计算 | 由组件数量计算；组件未返回时为 `null` |
+| `mountedDeviceCount` | BFF 按需计算 | Overview 不逐设备查询；弹窗计数接口由目标详情的非 `BODY` 组件数量计算，组件未返回时为 `null` |
 | `cameras[]` | 控制端实时清单优先 | 优先取 `/api/control/robots/registry` 中与 `robot.state.cameras` 同源的相机清单；控制端无清单时才根据管理端组件兜底拼装 |
 | `cameras[].quality` | 控制端优先、BFF 兜底 | 优先取实时相机清单中的清晰度，字段缺失时默认为 `sub` |
 | `stateSeq` | 可能缺少来源 | 只有控制端实时状态返回 `stateSeq` 时才有值，否则为 `null` |
@@ -94,16 +92,14 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handled
 已经分离；只有全部满足时 `status=online`，健康缺失或过期归为 `offline`。`playable` 是
 `enabled && configReady` 的兼容字段，不表示在线。BFF 不输出码流 URL。
 
-### 2.4 `/devices/{deviceId}` 设备详情
+### 2.4 `/devices/{deviceId}/mounted-device-count` 上装设备计数
 
-设备详情先校验 Overview 授权设备摘要，再按需补查唯一目标的组件并关联活跃任务，不逐设备预取。
+接口先校验 Overview 授权设备摘要，再按需补查唯一目标的组件，不逐设备预取，不关联档案、运行态、地图或任务。
 
 | 字段 | 当前处理 | 说明 |
 |---|---|---|
-| `alarmStatus` | BFF 派生 | 来自 `devices[].alarmLevel` |
-| `alarmText` | BFF 派生 | 有告警等级时固定为“存在未处理告警” |
-| `currentTask` | BFF 关联 | 按目标设备 ID 将控制端实时任务与任务摘要关联，只保留活跃任务 |
-| `actions.*` | BFF 派生 | 根据设备在线状态生成按钮可用性；设备状态未知时返回 `null` |
+| `robotId` | 请求路径 | 当前授权的机器人序列号 |
+| `mountedDeviceCount` | BFF 计算 | 目标详情中非 `BODY` 组件记录数；详情不可得为 `null`，明确空清单为 `0` |
 
 ### 2.5 `tasks[]`
 

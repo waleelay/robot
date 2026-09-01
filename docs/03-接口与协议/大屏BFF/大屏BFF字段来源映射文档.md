@@ -85,13 +85,13 @@ GET /api/bigscreen/panorama/overview
 | `fault` | 是否故障 | 本项目 Control + BFF 计算 | `status=fault` 时为 `true`，`status=online` 时为 `false`，离线时为 `null`；不使用 Management Control 的过期健康状态反向覆盖 |
 | `alarmLevel` | 设备告警等级 | 控制端 + BFF 转换 | `status.basic.alarmStatus` 转 `HIGH/MEDIUM/LOW`；正常为空 |
 | `controlMode` | 最后上报控制模式 | 本项目 Control | 注册表 `controlMode`；仅 `手动模式/导航模式`，`常规模式` 归为手动，未知为 `null`；不默认成某种可控制模式 |
-| `mountedDeviceCount` | 非本体组件数量 | BFF 计算 | Overview 不逐设备查详情，通常为 `null`；按需详情取 Management `components` 中非 `BODY` 记录数，未取得清单为 `null`，明确空清单为 `0` |
+| `mountedDeviceCount` | 非本体组件数量 | BFF 计算 | Overview 不逐设备查详情，通常为 `null`；弹窗仅在未知时调用独立计数接口，取 Management `components` 中非 `BODY` 记录数，未取得清单为 `null`，明确空清单为 `0` |
 | `speed` | 最后上报速度（米/秒） | 本项目 Control | 注册表 `speed`，源于边缘 `status.motion.speed`；未知为 `null`，静止为 `0`；离线后保留最后值，但弹窗显示 `-` |
 | `location` | 设备定位信息 | 控制端 | 见 3.5 |
 | `task` | 当前任务数组 | 控制端 + 管理端 + BFF 组装 | 见 3.7 |
 
 `clientId/vendor/lastHeartbeatAt/mountedDevices/mapDisplay` 不再放入聚合接口的
-`devices[]`。这些字段仍可由设备详情等独立接口按原有契约返回。
+`devices[]`。本期弹窗也不再补查这些字段。
 
 固定摄像头是 `devices[]` 的特殊项，健康字段来源如下：
 
@@ -109,23 +109,16 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 `enabled` 补成在线。固定摄像头健康变化复用设备统计重算结果，通过
 `panorama.fixed-camera.statuses.changed` 增量更新当前授权快照中的固定摄像头，不重新获取 Overview。
 
-### 3.3 设备详情中的 `mountedDevices[]`
+### 3.3 上装设备计数
 
-`GET /api/bigscreen/panorama/devices/{deviceId}` 的 `deviceId` 是设备序列号（`robotId`）。
+`GET /api/bigscreen/panorama/devices/{deviceId}/mounted-device-count` 的 `deviceId` 是设备序列号（`robotId`）。
 先在当前用户授权设备列表匹配序列号，再用其 Management 数据库 `id` 查询唯一目标详情；
-解析返回的 `device` 与 `components`，不能把序列号当数据库主键。请求复用用户短缓存，
-保留轻量任务与地图关联，不查询任务回放或其他设备详情。
+解析返回的 `components`，不能把序列号当数据库主键。请求复用用户短缓存，不查询其他设备详情，
+也不组装设备档案、运行态、地图或任务。固定摄像头不调用本接口。
 
-本接口 `mountedDevices` 与 `mountedDeviceCount` 均按非 `BODY` 组件记录计算；包含非本体子组件，
+本接口只返回 `robotId` 和 `mountedDeviceCount`。数量按非 `BODY` 组件记录计算；包含非本体子组件，
 不按物理外壳去重，不用能力数或视频通道数替代数量。它不是“只统计 PAYLOAD 类型”。
 档案若不能准确描述物理上装，需在管理端维护组件，BFF 不猜测实际硬件数量。
-
-| BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
-|---|---|---|---|
-| `deviceId` | 上装设备/组件 ID | 管理端 | `DeviceComponentResponse.code/deviceId/id` |
-| `name` | 上装设备名称 | 管理端 | `DeviceComponentResponse.name`，兼容 `componentName` |
-| `type` | 上装能力/类型 | 管理端 | 取 `DeviceComponentCapabilityResponse.code/capabilityCode` 的第一个值 |
-| `status` | 上装设备状态 | BFF 派生 | 当前复用机器人 `status`，未对接上装设备独立状态 |
 
 ### 3.4 `devices[].cameras[]`
 
@@ -268,45 +261,26 @@ Overview 不返回 `devices[].task[]`。前端按 `tasks[].equipmentList[].robot
 | `snapshotUrl.thermal` | 热成像截图 | 管理端可选 | `snapshotUrl.thermal` 或 `rawPayload.snapshotUrl.thermal`；没有为 `null` |
 | `snapshotUrl.front` | 前置/其他截图 | 管理端可选 | `snapshotUrl.front` 或 `rawPayload.snapshotUrl.front`；没有为 `null` |
 
-## 4. 设备详情接口
+## 4. 上装设备计数接口
 
 接口：
 
 ```text
-GET /api/bigscreen/panorama/devices/{deviceId}
+GET /api/bigscreen/panorama/devices/{deviceId}/mounted-device-count
 ```
 
-设备详情先从当前用户有权设备中按 `robotId` 匹配目标，再用该设备的数据库 ID 补查 Management
-详情并组装展示字段；组件解析及计数见 3.3 节。不遍历查询其他设备详情，不查询任务回放。
+`Robot1.vue` 立即使用 `overview.devices[]` 展示名称、类型、型号、位置等主体字段，电量、速度、
+控制模式及在线状态继续由共享 `robot.state` 链路按版本更新。仅普通机器人且
+`mountedDeviceCount == null` 时请求本接口；Overview 已有数量和固定摄像头均不请求。
 
-`Robot1.vue` 打开时以此接口作为全部装备展示信息的初始来源：名称、类型、电量、型号、速度、
-控制模式、上装数量与状态版本；固定摄像头的类型、位置也从详情读取。不回落 `overview.devices`，
-不将详情写入全局装备档案。名称、类型、型号、上装数量、固定摄像头位置在本次打开期间固定，
-共享状态的缺失字段、空值或新档案不能改写这些展示字段。电量、速度、控制模式及在线状态读取
-`websocketRobot` 既有共享状态，分别比较 `runtimeUpdatedAt` 和 `statusChangedAt`，防止慢详情
-覆盖较新状态；`stateSeq` 随被接受的运行态合并，不用作跨重启版本。弹窗无独立事件订阅或运行态缓存。
-
-加载时原标题显示加载状态，失败时原标题允许点击重试，未知字段为 `-`；同装备在途去重，
-切换/关闭/销毁取消并清空，返回 ID 不匹配视为失败。同次打开查询成功后不再请求详情，只有重新打开、
-切换装备或首次失败重试才发请求。WebSocket 重连不清空/重查档案，动态字段通过既有 WebSocket
-及重连后的 Overview 刷新恢复；授权集合移除当前装备时沿用选择清空链路丢弃详情。
-任务列表/路径继续使用共享任务数据，视频准入/会话使用共享媒体状态；它们不属于本次装备字段迁移。
-Overview 继续承担地图、列表、媒体与控制初始化，但不增加首屏逐设备详情请求，也不复制设备任务对象。
+补查只覆盖当前弹窗的 `mountedDeviceCount`，不回填全局档案。查询失败时数量显示 `-`，不提供点击操作；
+重新打开或切换机器人时自然重新查询。同装备在途去重，切换、关闭和销毁会取消并清空，返回 ID 不匹配视为失败。任务列表、地图、
+视频准入和其他装备字段均不依赖本接口。
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
-| `robotId/clientId/name/type/typeCode/vendor/model/status/battery/lastHeartbeatAt/cameras/controlMode/speed/location/mountedDeviceCount/mountedDevices` | 设备基础与实时字段 | 管理端 + 控制端 + BFF 组装 | 设备详情继续返回完整字段；其中 `clientId/vendor/lastHeartbeatAt/mountedDevices` 不受聚合接口精简影响 |
-| `stateSeq` | 实时状态序号 | 控制端 | 同 `devices[].stateSeq` |
-| `statusChangedAt/runtimeUpdatedAt` | 在线状态/运行态版本 | 本项目 Control + BFF | 与 `devices[]` 同源，分别比较在线状态与电量/速度/模式的新旧，保留小数秒精度 |
-| `alarmStatus` | 告警状态/等级 | BFF 派生 | 使用 `devices[].alarmLevel` |
-| `alarmText` | 告警提示文案 | BFF 生成 | 有 `alarmLevel` 时为 `存在未处理告警`，否则 `null` |
-| `currentTask` | 当前任务数组 | BFF 关联 | 按设备 ID 将控制端实时任务与任务摘要关联，只保留活跃任务 |
-| `actions.remoteControl` | 远程控制按钮是否可用 | BFF 计算 | 设备在线为 `true`，离线为 `false`，未知为 `null` |
-| `actions.slamMap` | SLAM 地图按钮是否可用 | BFF 计算 | 同在线状态 |
-| `actions.returnHome` | 一键返航按钮是否可用 | BFF 计算 | 同在线状态 |
-| `actions.returnChargingPile` | 退出充电桩按钮是否可用 | BFF 计算 | 同在线状态 |
-| `actions.showPath` | 显示路径按钮是否可用 | BFF 生成 | 设备状态已知时为 `true`，未知为 `null` |
-| `actions.showArea` | 显示区域按钮是否可用 | BFF 生成 | 设备状态已知时为 `true`，未知为 `null` |
+| `robotId` | 请求目标序列号 | 请求路径 | 仅对当前用户授权的普通机器人返回原值 |
+| `mountedDeviceCount` | 非本体组件数量 | 管理端组件 + BFF 计算 | 非 `BODY` 组件记录数；详情不可得为 `null`，明确空组件清单为 `0` |
 
 ## 5. 任务列表接口
 

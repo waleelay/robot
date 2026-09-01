@@ -6,7 +6,7 @@
     <div class="box">
       <div class="top m4 flx-justify-between">
         <div class="flx-align-center">
-          <div class="title ml10" :title="deviceDetailError ? '点击重试' : ''" @click="retryDeviceDetail">{{ deviceDetailLoading ? '加载中…' : deviceDetailError ? '加载失败，点击重试' : (currenRobot?.name || '-') }}</div>
+          <div class="title ml10">{{ currenRobot?.name || '-' }}</div>
           <div v-if="!isFixedCamera" class="status ml10" :class="currenRobot?.statusClass || ''">{{ currenRobot?.customStatusName || currenRobot?.status || '-' }}</div>
         </div>
         <div class="close mr10" @click="onClose()">
@@ -46,7 +46,7 @@
             控制模式：<span class="value">{{ currenRobot?.status === 'offline' ? '-' : (currenRobot?.controlMode || '-') }}</span>
           </div>
           <div class="item wp149 ml26 mt10">
-            上装设备：<span class="value">{{ currenRobot?.mountedDeviceCount == null ? '-' : currenRobot.mountedDeviceCount + '个' }}</span>
+            上装设备：<span class="value">{{ mountedDeviceCountText }}</span>
           </div>
           <div v-if="hasActionButtons" class="mt10 with-divider w100"></div>
           <div v-for="(task, index) in taskList" :key="task.taskId" class="mt10 task flex">
@@ -148,9 +148,8 @@ import gsap from './gsap.js';
 import { getDescArr } from '../../../../../utils/index.js';
 import { executionStatusLabel } from '../../../patrol/business/execution-status';
 import { listTasksForRobot } from '../../../patrol/business/task-equipment';
-import { getPatrolPanoramaDeviceDetail } from '@/api/new-bi';
-import { formatRobotSpeed, overlayLiveRobotRuntimeFields } from '../../../js/utils/prefer-live-robot-fields';
-import { getRobotStatus } from '@/store/modules/websocket-extra-data';
+import { getPatrolPanoramaMountedDeviceCount } from '@/api/new-bi';
+import { formatRobotSpeed } from '../../../js/utils/prefer-live-robot-fields';
 export default {
   name: 'Modal',
   mixins: [gsap],
@@ -165,10 +164,9 @@ export default {
       playingCamera: null,
       // 关闭实时流后保留的最后一帧（dataURL）
       lastFrameUrl: '',
-      deviceDetail: null,
-      deviceDetailLoading: false,
-      deviceDetailError: false,
-      deviceDetailRobotId: null,
+      mountedDeviceCountSupplement: null,
+      mountedDeviceCountLoading: false,
+      mountedDeviceCountRobotId: null,
     }
   },
   computed: {
@@ -186,8 +184,10 @@ export default {
     selectedRobotId() {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
-    deviceDetailTarget() {
-      return this.visible ? this.selectedRobotId : ''
+    mountedDeviceCountTarget() {
+      if (!this.visible || !this.selectedRobotId) return ''
+      if (!this.currenRobot.robotId || this.isFixedCamera) return ''
+      return this.currenRobot.mountedDeviceCount == null ? this.selectedRobotId : ''
     },
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
@@ -195,13 +195,15 @@ export default {
     cameras() {
       return this.$store.getters['websocketRobot/getCameras'] || {}
     },
-    ...mapState('websocketExtraData', ['taskData', 'taskPathPoints', 'globalMapId']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData', 'taskPathPoints', 'globalMapId']),
     currenRobot() {
-      if (!this.visible || !this.deviceDetail || String(this.deviceDetail.robotId) !== String(this.selectedRobotId)) return {}
-      // 档案在本次打开期间固定；仅从共享状态按版本读取电量、速度、模式及在线状态。
-      const robot = overlayLiveRobotRuntimeFields(this.deviceDetail, this.selectedRobot)
-      // 任务及路径仍复用共享任务链路，不从 Overview.devices 回填装备信息。
-      return robot.status ? { ...robot, ...getRobotStatus(robot, this.taskData) } : robot
+      return this.robotBaseInfo?.[this.selectedRobotId] || {}
+    },
+    mountedDeviceCountText() {
+      if (this.mountedDeviceCountLoading) return '加载中…'
+      const count = this.mountedDeviceCountSupplement?.mountedDeviceCount
+        ?? this.currenRobot?.mountedDeviceCount
+      return count == null ? '-' : `${count}个`
     },
     isFixedCamera() {
       const robot = this.currenRobot.robotId ? this.currenRobot : this.selectedRobot
@@ -211,7 +213,7 @@ export default {
         || robot.type === 'FIXED_CAMERA'
         || robot.type === '固定摄像头'
     },
-    /** 固定摄像头位置同样来自按需详情，不回落 Overview。 */
+    /** 固定摄像头位置直接来自 Overview，并由固定摄像头健康事件更新运行态。 */
     fixedCameraLocation() {
       const robot = this.currenRobot
       return robot.location?.address
@@ -287,7 +289,7 @@ export default {
     },
   },
   watch: {
-    deviceDetailTarget: { immediate: true, handler: 'loadSelectedDeviceDetail' },
+    mountedDeviceCountTarget: { immediate: true, handler: 'loadMountedDeviceCount' },
     hasTaskPath(val) {
       if (!val && this.pathVisible) {
         this.pathVisible = false
@@ -303,50 +305,46 @@ export default {
     }
   },
   beforeDestroy() {
-    this.cancelDeviceDetail()
+    this.cancelMountedDeviceCount()
     this.clearAttachRetry()
     this.stopFixedCameraVideo({ keepLastFrame: false })
   },
   methods: {
     formatRobotSpeed,
-    retryDeviceDetail() {
-      if (this.deviceDetailError) return this.loadSelectedDeviceDetail()
+    cancelMountedDeviceCount() {
+      this.mountedDeviceCountController?.abort()
+      this.mountedDeviceCountController = null
+      this.mountedDeviceCountRobotId = null
+      this.mountedDeviceCountSupplement = null
+      this.mountedDeviceCountLoading = false
     },
-    cancelDeviceDetail() {
-      this.deviceDetailController?.abort()
-      this.deviceDetailController = null
-      this.deviceDetailRobotId = null
-      this.deviceDetail = null
-      this.deviceDetailLoading = false
-      this.deviceDetailError = false
-    },
-    async loadSelectedDeviceDetail() {
-      const robotId = this.deviceDetailTarget
+    async loadMountedDeviceCount() {
+      const robotId = this.mountedDeviceCountTarget
       if (!robotId) {
-        this.cancelDeviceDetail()
+        this.cancelMountedDeviceCount()
         return
       }
-      // 同一次打开成功后不再查询；只有失败重试、重新打开或切换装备才重新取档案。
-      if (this.deviceDetailRobotId === robotId && (this.deviceDetailController || this.deviceDetail)) return
-      this.cancelDeviceDetail()
+      // 同一次打开成功后不再查询；只有失败重试、重新打开或切换装备才重新补充计数。
+      if (this.mountedDeviceCountRobotId === robotId
+        && (this.mountedDeviceCountController || this.mountedDeviceCountSupplement)) return
+      this.cancelMountedDeviceCount()
       const controller = new AbortController()
-      this.deviceDetailController = controller
-      this.deviceDetailRobotId = robotId
-      this.deviceDetailLoading = true
+      this.mountedDeviceCountController = controller
+      this.mountedDeviceCountRobotId = robotId
+      this.mountedDeviceCountLoading = true
       try {
-        const detail = await getPatrolPanoramaDeviceDetail(robotId, controller.signal)
-        if (controller.signal.aborted || this.deviceDetailTarget !== robotId) return
-        if (String(detail?.robotId) !== String(robotId)) throw new Error('装备详情与当前选择不匹配')
-        this.deviceDetail = detail
+        const response = await getPatrolPanoramaMountedDeviceCount(robotId, controller.signal)
+        if (controller.signal.aborted || this.mountedDeviceCountTarget !== robotId) return
+        if (String(response?.robotId) !== String(robotId)) throw new Error('上装设备计数与当前选择不匹配')
+        this.mountedDeviceCountSupplement = response
       } catch (error) {
         if (!controller.signal.aborted) {
-          this.deviceDetailError = true
-          console.warn('获取装备详情失败', { robotId, message: error.message })
+          console.warn('获取上装设备计数失败', { robotId, message: error.message })
         }
       } finally {
-        if (this.deviceDetailController === controller) {
-          this.deviceDetailController = null
-          this.deviceDetailLoading = false
+        if (this.mountedDeviceCountController === controller) {
+          this.mountedDeviceCountController = null
+          this.mountedDeviceCountLoading = false
         }
       }
     },
@@ -381,7 +379,7 @@ export default {
       // this.$emit('startup')
     },
     async onClose() {
-      this.cancelDeviceDetail()
+      this.cancelMountedDeviceCount()
       await this.stopFixedCameraVideo({ keepLastFrame: false })
       this.visible = false
       this.pathVisible = false
@@ -400,7 +398,7 @@ export default {
         await this.stopFixedCameraVideo({ keepLastFrame: true })
         return
       }
-      // 视频准入仍采用共享媒体状态，详情只负责弹窗装备信息。
+      // 视频准入仍采用共享媒体状态，与上装设备计数补查相互独立。
       const robot = this.selectedRobot || {}
       if (!robot.enabled || !robot.configReady || robot.gatewayHealth?.status === 'OFFLINE') {
         this.$message.warning(!robot.enabled

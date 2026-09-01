@@ -26,9 +26,9 @@ public class PanoramaController {
         return panoramaService.overview();
     }
 
-    @GetMapping("/devices/{deviceId}")
-    public Map<String, Object> deviceDetail(@PathVariable String deviceId) {
-        return panoramaService.deviceDetail(deviceId);
+    @GetMapping("/devices/{deviceId}/mounted-device-count")
+    public Map<String, Object> mountedDeviceCount(@PathVariable String deviceId) {
+        return panoramaService.mountedDeviceCount(deviceId);
     }
 
     @GetMapping("/maps/{mapId}/resources")

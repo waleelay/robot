@@ -90,7 +90,7 @@ class PanoramaServiceTest {
     }
 
     @Test
-    void detailLoadsOnlyAuthorizedTargetComponentsAndExcludesBody() {
+    void mountedDeviceCountLoadsOnlyAuthorizedTargetComponentsAndExcludesBody() {
         PanoramaCenterClient client = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(client);
         when(client.devices()).thenReturn(List.of(Map.of("id", "101", "serialNumber", "robot-1"),
@@ -100,20 +100,18 @@ class PanoramaServiceTest {
                 Map.of("code", "ptz", "componentType", "PTZ"),
                 Map.of("code", "speaker", "componentType", "SPEAKER")))));
         PanoramaService service = new PanoramaService(client, new ObjectMapper());
-        Map<String, Object> detail = service.deviceDetail("robot-1");
-        assertEquals("M2", detail.get("model"));
-        assertEquals(2, detail.get("mountedDeviceCount"));
-        assertEquals(2, ((List<?>) detail.get("mountedDevices")).size());
-        assertEquals(detail, service.deviceDetail("robot-1"));
+        Map<String, Object> detail = service.mountedDeviceCount("robot-1");
+        assertEquals(Map.of("robotId", "robot-1", "mountedDeviceCount", 2), detail);
+        assertEquals(detail, service.mountedDeviceCount("robot-1"));
         verify(client, times(1)).device("101");
         verify(client, never()).device("102");
-        assertNull(service.deviceDetail("not-authorized").get("robotId"));
+        assertNull(service.mountedDeviceCount("not-authorized").get("robotId"));
         verify(client, never()).device("not-authorized");
         verify(client, never()).taskWorkflowReplay(anyString());
     }
 
     @Test
-    void missingDetailIsUnknownButExplicitEmptyComponentsMeansZero() {
+    void missingMountedDeviceSourceIsUnknownButExplicitEmptyComponentsMeansZero() {
         PanoramaCenterClient client = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(client);
         when(client.devices()).thenReturn(List.of(Map.of("id", "101", "serialNumber", "robot-1"),
@@ -121,12 +119,12 @@ class PanoramaServiceTest {
         when(client.device("101")).thenReturn(Optional.empty());
         when(client.device("102")).thenReturn(Optional.of(Map.of("device", Map.of(), "components", List.of())));
         PanoramaService service = new PanoramaService(client, new ObjectMapper());
-        assertNull(service.deviceDetail("robot-1").get("mountedDeviceCount"));
-        assertEquals(0, service.deviceDetail("robot-2").get("mountedDeviceCount"));
+        assertNull(service.mountedDeviceCount("robot-1").get("mountedDeviceCount"));
+        assertEquals(0, service.mountedDeviceCount("robot-2").get("mountedDeviceCount"));
     }
 
     @Test
-    void concurrentDetailRequestsShareOneTargetQuery() throws Exception {
+    void concurrentMountedDeviceCountRequestsShareOneTargetQuery() throws Exception {
         PanoramaCenterClient client = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(client);
         when(client.devices()).thenReturn(List.of(Map.of("id", "101", "serialNumber", "robot-1")));
@@ -141,7 +139,7 @@ class PanoramaServiceTest {
         var executor = java.util.concurrent.Executors.newFixedThreadPool(4);
         try {
             var calls = java.util.stream.IntStream.range(0, 4)
-                    .mapToObj(index -> executor.submit(() -> service.deviceDetail("robot-1"))).toList();
+                    .mapToObj(index -> executor.submit(() -> service.mountedDeviceCount("robot-1"))).toList();
             assertTrue(entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
             release.countDown();
             for (var call : calls) assertEquals(0, call.get(3, java.util.concurrent.TimeUnit.SECONDS).get("mountedDeviceCount"));
@@ -683,27 +681,20 @@ class PanoramaServiceTest {
     }
 
     @Test
-    void returnsTaskMapIdInDeviceDetail() {
+    void mountedDeviceCountDoesNotLoadTaskOrMapData() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         when(centerClient.devices()).thenReturn(List.of(Map.of(
+                "id", "101",
                 "serialNumber", "robot-001",
                 "deviceName", "Robot One")));
-        when(centerClient.realtimeStatuses(List.of("robot-001"))).thenReturn(List.of(
-                realtimeStatus("robot-001", Map.of("mapId", "2077"))));
-        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
-                "id", 1L,
-                "workflowDefinitionId", "definition-001",
-                "roleBindings", List.of(Map.of("deviceIds", List.of("robot-001"))))));
-        when(centerClient.taskWorkflowDefinition("definition-001")).thenReturn(Optional.of(Map.of(
-                "mapId", "2077775285125144578")));
+        when(centerClient.device("101")).thenReturn(Optional.of(Map.of("components", List.of())));
 
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
-        Map<String, Object> detail = service.deviceDetail("robot-001");
-
-        assertEquals(
-                "2077775285125144578",
-                ((Map<?, ?>) detail.get("location")).get("mapId"));
+        assertEquals(0, service.mountedDeviceCount("robot-001").get("mountedDeviceCount"));
+        verify(centerClient, never()).taskWorkflowPlans();
+        verify(centerClient, never()).taskWorkflowInstances();
+        verify(centerClient, never()).taskWorkflowDefinition(anyString());
     }
 
     @Test

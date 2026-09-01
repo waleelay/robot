@@ -626,33 +626,34 @@ public class PanoramaService {
         return result;
     }
 
-    public Map<String, Object> deviceDetail(String deviceId) {
-        // 先按当前用户的设备列表授权，再补查唯一目标的组件；不查询其他设备详情或任务回放。
+    public Map<String, Object> mountedDeviceCount(String deviceId) {
+        // 先按当前用户的设备列表授权，再补查唯一目标的组件；固定摄像头和无权设备不查询详情。
         List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
         Map<String, Object> selected = devices.stream()
                 .filter(device -> Objects.equals(deviceId, string(device.get("robotId"))))
                 .findFirst()
                 .orElse(null);
-        if (selected == null) return emptyDeviceDetail();
+        if (selected == null || "FIXED_CAMERA".equals(firstString(selected, "sourceType", "typeCode"))) {
+            return emptyMountedDeviceCount();
+        }
         // 不为任意传入的无权 ID 建缓存/锁，避免攻击者用随机路径扩大内存占用。
-        return cachedStats("device-detail:" + deviceId, () -> deviceDetailPayload(deviceId, selected));
+        return cachedStats("mounted-device-count:" + deviceId, () -> mountedDeviceCountPayload(deviceId));
     }
 
-    private Map<String, Object> deviceDetailPayload(String deviceId, Map<String, Object> selected) {
-        Map<String, Object> enriched = mutable(selected);
-        cachedStats("management-devices", centerClient::devices).stream()
+    private Map<String, Object> mountedDeviceCountPayload(String deviceId) {
+        Object count = cachedStats("management-devices", centerClient::devices).stream()
                 .filter(source -> Objects.equals(deviceId, firstString(source, "serialNumber")))
-                .findFirst().ifPresent(source -> {
+                .findFirst()
+                .map(source -> {
                     Map<String, Object> detail = deviceSource(source);
-                    List<Map<String, Object>> mounted = mountedDevices(detail, string(selected.get("status")));
-                    enriched.put("mountedDevices", mounted);
-                    enriched.put("mountedDeviceCount", mountedDeviceCount(detail, mounted));
-                    enriched.put("model", detail.get("model"));
-                });
-        PanoramaTasks tasks = cachedStats("tasks", this::taskSummaries);
-        List<Map<String, Object>> associated = withTaskAssociations(List.of(enriched), tasks.items());
-        return toDeviceDetail(withTaskLocationMapIds(associated,
-                cachedStats("map-association-tasks", this::mapAssociationTasks)).get(0));
+                    return mountedDeviceCount(detail, mountedDevices(detail, null));
+                })
+                .orElse(null);
+        return object("robotId", deviceId, "mountedDeviceCount", count);
+    }
+
+    private Map<String, Object> emptyMountedDeviceCount() {
+        return object("robotId", null, "mountedDeviceCount", null);
     }
 
     /** 当前地图渲染所需资源；不加载其他地图的点位。 */
@@ -1667,63 +1668,6 @@ public class PanoramaService {
                             "offline", offline);
                 })
                 .toList();
-    }
-
-    private Map<String, Object> toDeviceDetail(Map<String, Object> device) {
-        Object alarmLevel = device.get("alarmLevel");
-        boolean online = "online".equals(device.get("status"));
-        boolean statusKnown = device.get("status") != null;
-        return object(
-                "robotId", device.get("robotId"),
-                "clientId", device.get("clientId"),
-                "name", device.get("name"),
-                "type", device.get("type"),
-                "typeCode", device.get("typeCode"),
-                "vendor", device.get("vendor"),
-                "model", device.get("model"),
-                "status", device.get("status"),
-                "statusChangedAt", device.get("statusChangedAt"),
-                "runtimeUpdatedAt", device.get("runtimeUpdatedAt"),
-                "battery", device.get("battery"),
-                "lastHeartbeatAt", device.get("lastHeartbeatAt"),
-                "cameras", device.get("cameras"),
-                "stateSeq", device.get("stateSeq"),
-                "alarmStatus", alarmLevel,
-                "alarmText", alarmLevel == null ? null : "存在未处理告警",
-                "controlMode", device.get("controlMode"),
-                "controlModeName", device.get("controlModeName"),
-                "speed", device.get("speed"),
-                "location", device.get("location"),
-                "mountedDeviceCount", device.get("mountedDeviceCount"),
-                "mountedDevices", device.get("mountedDevices"),
-                "currentTask", taskArray(device.get("task")),
-                "actions", statusKnown ? actions(online) : emptyActions());
-    }
-
-    private Map<String, Object> emptyDeviceDetail() {
-        return object(
-                "robotId", null,
-                "clientId", null,
-                "name", null,
-                "type", null,
-                "typeCode", null,
-                "vendor", null,
-                "model", null,
-                "status", null,
-                "battery", null,
-                "lastHeartbeatAt", null,
-                "cameras", List.of(),
-                "stateSeq", null,
-                "alarmStatus", null,
-                "alarmText", null,
-                "controlMode", null,
-                "controlModeName", null,
-                "speed", null,
-                "location", emptyLocation(),
-                "mountedDeviceCount", null,
-                "mountedDevices", List.of(),
-                "currentTask", List.of(),
-                "actions", emptyActions());
     }
 
     private Map<String, Object> patrolOverview(
