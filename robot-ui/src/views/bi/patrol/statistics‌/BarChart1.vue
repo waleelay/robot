@@ -97,7 +97,7 @@ export default({
         yAxis: {
           name: '单位（次）',
           nameTextStyle: {
-            padding: [0, 0, 0, 10],
+            padding: [0, 0, 0, 30],
             // align: 'left',
             fontSize: 14,
             fontFamily: 'Microsoft YaHei',

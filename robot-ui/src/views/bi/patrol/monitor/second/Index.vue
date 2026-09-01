@@ -80,10 +80,10 @@
                   <div class="desc">控制模型：{{ currenRobot?.controlMode || '-' }}</div>
                 </div>
               </div>
-            </div>
-            <div v-if="currenRobot?.runningTask?.name" class="desc mt20">
-              当前任务：<span class="text-ellipsis" style="max-width: 270px;" :title="currenRobot?.runningTask?.name || '-'"></span>{{ currenRobot?.runningTask?.name || '-' }}
-              <span v-if="currenRobot?.runningTask" class="task-status ml8" :class="activeTaskStatusClass">{{ activeTaskStatusLabel }}</span>
+              <div v-if="currenRobot?.runningTask?.name" class="desc mt20">
+                当前任务：<span class="text-ellipsis" style="max-width: 270px;" :title="currenRobot?.runningTask?.name || '-'"></span>{{ currenRobot?.runningTask?.name || '-' }}
+                <span v-if="currenRobot?.runningTask" class="task-status ml8" :class="activeTaskStatusClass">{{ activeTaskStatusLabel }}</span>
+              </div>
             </div>
           </div>
           <div class="flex1 flx-align-center">

@@ -210,7 +210,7 @@
                       <span>{{ item.eventTime.split(' ')[1] }}</span>
                     </div>
                   </div>
-                  <div class="area mt5 text-ellipsis">位置：{{ item?.location?.address || '-' }}</div>
+                  <div class="area mt5 text-ellipsis">位置：{{ item?.location?.address || '暂无信息' }}</div>
                 </div>
               </div>
             </div>

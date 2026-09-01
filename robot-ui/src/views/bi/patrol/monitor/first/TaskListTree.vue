@@ -92,7 +92,7 @@
             >
             <div class="flx-justify-between title">
               <div class="flx-align-center">
-                <span class="location" style="font-size: 16px;">{{ item.currentLocation }}</span>-
+                <!-- <span class="location" style="font-size: 16px;">{{ item.currentLocation }}</span>- -->
                 <span>{{ item.name }}</span>
               </div>
               <span
@@ -108,31 +108,35 @@
             <div class="info mt10">
               <div class="flx-align-center">
                 <svg-icon icon-class="time" />
-                <span class="ml10">{{ item.timeRange }}（预计{{ item.duration }}分钟）</span>
+                <span class="ml10">开始时间：{{ item.startTime || '-' }}</span>
               </div>
               <div class="flx-align-center mt6">
+                <svg-icon icon-class="time" />
+                <span class="ml10">预计时长：{{ formatEstimatedDuration(item.expectedDurationSeconds) }}</span>
+              </div>
+              <div v-if="item.currentLocation" class="flx-align-center mt6">
                 <svg-icon icon-class="location" />
                 <span class="ml10">{{ item.currentLocation }}</span>
               </div>
             </div>
-            <div class="task-tree-box collapse-box pl17 mt10">
+            <div class="task-tree-box collapse-box">
               <div
                 class="task-tree-group"
                 :class="{ collapse: isTaskGroupCollapsed(item.taskId, 'equipment') }"
               >
-                <div class="task-tree-header p10 flx-justify-between" @click.stop="toggleTaskGroup(item, 'equipment')">
+                <div class="task-tree-header flx-justify-between pt10 pb10" @click.stop="toggleTaskGroup(item, 'equipment')">
                   <div class="flx-center">
                     <svg-icon icon-class="robot" />
                     <span class="ml10">执行装备（{{ item.equipmentList?.length || 0 }}）</span>
                   </div>
                   <svg-icon :icon-class="isTaskGroupCollapsed(item.taskId, 'equipment') ? 'down' : 'up'" style="color: #6A788B" />
                 </div>
-                <div class="task-tree-content device pl12 common-scroll mr10 pr7">
+                <div class="task-tree-content device pl12 common-scroll pr7">
                   <div v-if="!item.equipmentList?.length" class="item">暂无执行装备</div>
                   <div
                     v-for="equipment in item.equipmentList || []"
                     :key="equipment.robotId || equipment.name"
-                    class="item flx-justify-between"
+                    class="item flx-justify-between mb10"
                     :class="{ 'is-active': isRobotChecked(equipment.robotId) }"
                     :title="pickDefaultCamera(getTaskEquipmentRobot(equipment), cameras) ? undefined : '暂无视频源'"
                     :draggable="canDragTaskEquipment(equipment)"
@@ -161,7 +165,7 @@
                 class="task-tree-group"
                 :class="{ collapse: isTaskGroupCollapsed(item.taskId, 'cameras') }"
               >
-                <div class="task-tree-header p10 flx-justify-between" @click.stop="toggleTaskGroup(item, 'cameras')">
+                <div class="task-tree-header flx-justify-between" @click.stop="toggleTaskGroup(item, 'cameras')">
                   <div class="flx-center">
                     <svg-icon icon-class="robot-camera" />
                     <span class="ml10">固定摄像头</span>
@@ -296,6 +300,27 @@ export default {
     ...mapActions('dragVideo', ['setSplitType']),
     ...mapActions('websocketExtraData', ['loadTaskFixedCameras']),
     pickDefaultCamera,
+    /**
+     * expectedDurationSeconds（秒）→ 时分秒展示
+     * - 不足 60 秒：只显示秒
+     * - 不足 60 分钟：不显示时（60 秒显示为 1 分钟）
+     * - 满 60 分钟显示为 1 小时
+     */
+    formatEstimatedDuration(expectedDurationSeconds) {
+      if (expectedDurationSeconds == null || expectedDurationSeconds === '') return '-'
+      const totalSeconds = Math.floor(Number(expectedDurationSeconds))
+      if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '-'
+      const hours = Math.floor(totalSeconds / 3600)
+      const minutes = Math.floor((totalSeconds % 3600) / 60)
+      const seconds = totalSeconds % 60
+      if (hours > 0) {
+        return minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`
+      }
+      if (minutes > 0) {
+        return seconds > 0 ? `${minutes}分${seconds}秒` : `${minutes}分钟`
+      }
+      return `${seconds}秒`
+    },
     resolveTask(taskId) {
       if (taskId === undefined || taskId === null || taskId === '') return null
       const data = this.taskData || {}
