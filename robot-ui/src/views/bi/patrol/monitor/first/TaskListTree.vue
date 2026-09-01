@@ -214,6 +214,7 @@ import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
 import { getDescArr } from '../../../../../utils';
 import Empty from '../../../components/Empty.vue';
 import { pickDefaultCamera, isFixedCameraRobot } from '../../../js/utils/pick-default-camera';
+import { isDeviceAssociatedTaskStatus } from '../../business/execution-status'
 export default {
   name: 'TaskListTree',
   components: { Empty },
@@ -225,6 +226,10 @@ export default {
     syncTaskVideos: {
       type: Function,
       default: null
+    },
+    closeEndedTaskVideos: {
+      type: Function,
+      default: null
     }
   },
   data() {
@@ -234,6 +239,8 @@ export default {
       // tabIndex: 1,
       searchValue: '',
       selectedTaskId: '',
+      /** 选中任务关联装备/固定摄像头 id，任务删除后仍可用于关流 */
+      selectedTaskRobotIds: [],
       equipmentInfo: {
         online: {
           type: '在线装备',
@@ -281,10 +288,14 @@ export default {
       return getDescArr(this.taskData || {}, 'timestamp')
     },
     taskData1() {
-      // 只显示执行中和暂停中的任务；路由自动选中的任务不在过滤结果里时仍展示，保证高亮可见
+      // 只显示执行中和暂停中的任务；路由自动选中且仍为活跃态时才兜底展示，避免结束后残留
       const list = this.tasks.filter(item => ['running', 'paused'].includes(item.status)) || []
       const selected = this.resolveTask(this.selectedTaskId)
-      if (selected?.taskId && !list.some(item => String(item.taskId) === String(selected.taskId))) {
+      if (
+        selected?.taskId
+        && ['running', 'paused'].includes(selected.status)
+        && !list.some(item => String(item.taskId) === String(selected.taskId))
+      ) {
         return [selected, ...list]
       }
       return list
@@ -372,6 +383,10 @@ export default {
       this.$set(this.loadingTaskFixedCameraIds, key, true)
       try {
         await this.loadTaskFixedCameras(taskId)
+        if (String(this.selectedTaskId) === String(taskId)) {
+          const current = this.resolveTask(taskId) || task
+          this.selectedTaskRobotIds = this.collectTaskCloseRobotIds(current, taskId)
+        }
       } catch (error) {
         this.$message.warning('固定摄像头列表暂不可用，请稍后重试')
       } finally {
@@ -430,6 +445,51 @@ export default {
         .map(item => item?.robotId || item?.id)
         .filter(id => id !== undefined && id !== null && id !== '')
         .map(id => String(id))
+    },
+    /** 任务关联装备 + 已加载的固定摄像头 sourceId */
+    collectTaskCloseRobotIds(task, taskId = task?.taskId) {
+      const ids = this.getTaskRobotIds(task)
+      const fixed = this.taskFixedCameraItems(taskId) || []
+      fixed.forEach(camera => {
+        const sourceId = camera?.sourceId || camera?.cameraId
+        if (sourceId !== undefined && sourceId !== null && sourceId !== '') {
+          ids.push(String(sourceId))
+        }
+      })
+      return [...new Set(ids)]
+    },
+    /** 任务列表选中且任务已结束/终止/删除时，关闭关联视频并取消选中 */
+    async handleSelectedTaskEnded() {
+      if (this.tabIndex !== 1) return
+      const selectedId = this.selectedTaskId
+      if (selectedId === undefined || selectedId === null || selectedId === '') return
+
+      const task = this.resolveTask(selectedId)
+      // terminating / pausing / resuming 仍视为进行中，不关视频
+      if (task && isDeviceAssociatedTaskStatus(task.status)) return
+
+      const robotIds = (task
+        ? this.collectTaskCloseRobotIds(task, selectedId)
+        : this.selectedTaskRobotIds || []).map(id => String(id)).filter(Boolean)
+
+      this.selectedTaskId = ''
+      this.selectedEquipmentList = []
+      this.selectedTaskRobotIds = []
+      this.appliedRouteTaskId = ''
+      this.$emit('select-task', null)
+      // 清掉全景跳转带来的 query.taskId，避免结束后再次自动选中（含待执行残留）
+      this.clearRouteTaskId()
+
+      if (robotIds.length && typeof this.closeEndedTaskVideos === 'function') {
+        await this.closeEndedTaskVideos(robotIds)
+      }
+    },
+    /** 移除路由上的 taskId，保留其他 query */
+    clearRouteTaskId() {
+      if (this.$route.query.taskId === undefined) return
+      const query = { ...this.$route.query }
+      delete query.taskId
+      this.$router.replace({ path: this.$route.path, query }).catch(() => {})
     },
     isRobotOnline(robotId) {
       return this.resolveRobotStatus(robotId) !== 'offline'
@@ -506,7 +566,11 @@ export default {
       if (routeTaskId === undefined || routeTaskId === null || routeTaskId === '') return false
       this.tabIndex = 1
       const task = this.resolveTask(routeTaskId)
-      if (!task?.taskId) return false
+      // 路由任务已不存在或已结束（含 waiting）：清 query，不再自动选中
+      if (!task?.taskId || !isDeviceAssociatedTaskStatus(task.status)) {
+        this.clearRouteTaskId()
+        return false
+      }
       if (this._applyingRouteTask) {
         this._pendingRouteTask = true
         return false
@@ -651,6 +715,7 @@ export default {
       if (!force && String(this.selectedTaskId) === String(task.taskId)) {
         this.selectedTaskId = ''
         this.selectedEquipmentList = []
+        this.selectedTaskRobotIds = []
         this.$emit('select-task', null)
         await this.syncTaskVideos([])
         return
@@ -669,6 +734,7 @@ export default {
       this.tabIndex = 1
       this.selectedTaskId = task.taskId
       this.selectedEquipmentList = equipmentList.filter(item => idSet.has(String(item?.robotId || item?.id)))
+      this.selectedTaskRobotIds = this.collectTaskCloseRobotIds(task)
       this.$emit('select-task', task)
       await this.syncTaskVideos(robotIds)
     },
@@ -680,9 +746,16 @@ export default {
     },
     taskData: {
       handler() {
+        this.handleSelectedTaskEnded()
         const taskId = this.routeTaskId()
         if (taskId === undefined || taskId === null || taskId === '') return
-        if (String(this.appliedRouteTaskId) === String(this.resolveTask(taskId)?.taskId || '')) return
+        const routeTask = this.resolveTask(taskId)
+        // 路由任务已结束则清 query，勿再 executePlay 重新选中
+        if (!routeTask?.taskId || !isDeviceAssociatedTaskStatus(routeTask.status)) {
+          this.clearRouteTaskId()
+          return
+        }
+        if (String(this.appliedRouteTaskId) === String(routeTask.taskId || '')) return
         this.executePlay()
       },
       deep: true

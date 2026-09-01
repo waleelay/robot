@@ -15,6 +15,7 @@
         @select-task="selectTask"
         :update-video-handler="(robot) => updateVideo(robot)"
         :sync-task-videos="(robotIds) => syncTaskVideos(robotIds)"
+        :close-ended-task-videos="(robotIds) => closeEndedTaskVideos(robotIds)"
       />
       <div class="mt20 hp450 flex-column" style="min-width: 0; max-width: 100%; overflow: hidden;">
         <div class="card-title">
@@ -212,6 +213,16 @@ export default {
         const leftVideoRef = this.$refs?.leftVideoRef
         if (leftVideoRef && typeof leftVideoRef.syncTaskRobots === 'function') {
           await leftVideoRef.syncTaskRobots(robotIds || [])
+          return
+        }
+        await new Promise(resolve => this.$nextTick(resolve))
+      }
+    },
+    async closeEndedTaskVideos(robotIds) {
+      for (let i = 0; i < 20; i++) {
+        const leftVideoRef = this.$refs?.leftVideoRef
+        if (leftVideoRef && typeof leftVideoRef.closeEndedTaskVideos === 'function') {
+          await leftVideoRef.closeEndedTaskVideos(robotIds || [])
           return
         }
         await new Promise(resolve => this.$nextTick(resolve))

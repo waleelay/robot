@@ -61,7 +61,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_1'] ? 'grab' : 'default' }"
           >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_1')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="1" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :isPageFullscreen="isPageFullscreen" className="six-1" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_1')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="1" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="six-1" />
           </div>
           <!-- <VideoBox :videoIndex="0" :prefixId="prefixId" :splitType="splitType" :slotDevices="slotDevices" @updateSlot="updateSlot" className="six-1" /> -->
           <div class="ml26">
@@ -82,6 +82,7 @@
                 :prefixId="prefixId"
                 :splitType="splitType"
                 :ZQL_videosInfos="ZQL_videosInfos"
+                :slotCloseHints="slotCloseHints"
                 :isPageFullscreen="isPageFullscreen"
                 className="six-2"
               />
@@ -92,7 +93,7 @@
               @dragend="onDragEnd"
               :style="{ cursor: ZQL_videosInfos['slot_3'] ? 'grab' : 'default' }"
             >
-              <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :isPageFullscreen="isPageFullscreen" className="mt16 six-3" />
+              <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="mt16 six-3" />
             </div>
           </div>
         </div>
@@ -103,7 +104,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_4'] ? 'grab' : 'default' }"
           >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :isPageFullscreen="isPageFullscreen" className="six-4" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="six-4" />
           </div>
           <div
             :draggable="!!ZQL_videosInfos['slot_5']"
@@ -111,7 +112,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_5'] ? 'grab' : 'default' }"
           >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :isPageFullscreen="isPageFullscreen" className="ml28 six-5" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="ml28 six-5" />
           </div>
           <div
             :draggable="!!ZQL_videosInfos['slot_6']"
@@ -119,7 +120,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_6'] ? 'grab' : 'default' }"
             >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :isPageFullscreen="isPageFullscreen" className="ml26 six-6" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="ml26 six-6" />
           </div>
         </div>
       </div>
@@ -143,6 +144,7 @@
             :prefixId="prefixId"
             :splitType="splitType"
             :ZQL_videosInfos="ZQL_videosInfos"
+            :slotCloseHints="slotCloseHints"
             :isPageFullscreen="isPageFullscreen"
           />
         </div>
@@ -161,6 +163,7 @@
           :prefixId="prefixId"
           :splitType="splitType"
           :ZQL_videosInfos="ZQL_videosInfos"
+          :slotCloseHints="slotCloseHints"
           :isPageFullscreen="isPageFullscreen"
         />
       </template>
@@ -226,7 +229,10 @@ export default {
       statusArr: {}, // 改为对象形式，键名为'slot_1'...
       sourceceList: [],
       manualChange: false,
-      recoveringFixedCameras: {}
+      recoveringFixedCameras: {},
+      /** 任务结束后空槽提示：slot_1 → 文案 */
+      slotCloseHints: {},
+      _slotCloseHintTimers: {}
     }
   },
   computed: {
@@ -283,12 +289,55 @@ export default {
       document.removeEventListener(event, this.handleFullscreenChange)
     })
     document.removeEventListener('keydown', this.handleFullscreenKeydown)
+    Object.keys(this._slotCloseHintTimers || {}).forEach(key => {
+      clearTimeout(this._slotCloseHintTimers[key])
+    })
+    this._slotCloseHintTimers = {}
   },
   methods: {
     ...mapActions('dragVideo', ['resetDrag', 'setSplitType']),
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'restartCamera', 'setPrefixId']),
     onDragStart,
     onDragEnd,
+    showSlotCloseHint(slotKey, text = '任务已结束，视频关闭', durationMs = 3000) {
+      if (!slotKey) return
+      const prevTimer = this._slotCloseHintTimers?.[slotKey]
+      if (prevTimer) clearTimeout(prevTimer)
+      this.$set(this.slotCloseHints, slotKey, text)
+      this._slotCloseHintTimers[slotKey] = setTimeout(() => {
+        this.$delete(this.slotCloseHints, slotKey)
+        this.$delete(this._slotCloseHintTimers, slotKey)
+      }, durationMs)
+    },
+    /**
+     * 任务结束/终止：仅关闭传入装备对应槽位，并在空槽显示 3 秒提示。
+     * 不匹配的槽位保持播放。
+     */
+    async closeEndedTaskVideos(robotIds = []) {
+      const targetSet = new Set((robotIds || []).map(id => String(id)).filter(Boolean))
+      if (!targetSet.size) return
+
+      for (let i = 1; i <= this.splitType; i++) {
+        const slotKey = `slot_${i}`
+        const info = this.ZQL_videosInfos[slotKey]
+        const playingKey = this.ZQL_playingSource[slotKey]
+        if (!info && !playingKey) continue
+        const robotId = String(info?.robotId || info?.robot?.robotId || '')
+        if (!robotId || !targetSet.has(robotId)) continue
+
+        const camera = this.cameras?.[playingKey] || info
+        try {
+          if (camera) await this.stopCamera(camera)
+        } catch (e) {}
+        if (playingKey) {
+          this.checkedIds = this.checkedIds.filter(key => key !== playingKey)
+        }
+        this.$set(this.ZQL_videosInfos, slotKey, null)
+        this.$set(this.ZQL_playingSource, slotKey, null)
+        this.showSlotCloseHint(slotKey)
+      }
+      this.lastCheckedIds = this.checkedIds.slice()
+    },
     // 六分屏窗口拖拽：未播放不可拖
     onSlotDragStart(event, slotKey) {
       const videoInfo = this.ZQL_videosInfos[slotKey]

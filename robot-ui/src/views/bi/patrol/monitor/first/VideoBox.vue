@@ -95,10 +95,15 @@
     <!-- 空设备占位 -->
     <template v-else>
       <div class="w100 h100 flex-column flx-center empty-device">
-        <img src="@/assets/images/new-bi/video-empty.png" alt="" width="76px" height="68px">
-        <div class="mt10">
-          拖拽左侧卡片的设备 可观看视频
-        </div>
+        <template v-if="closeHintText">
+          <div class="close-hint">{{ closeHintText }}</div>
+        </template>
+        <template v-else>
+          <img src="@/assets/images/new-bi/video-empty.png" alt="" width="76px" height="68px">
+          <div class="mt10">
+            拖拽左侧卡片的设备 可观看视频
+          </div>
+        </template>
       </div>
     </template>
   </div>
@@ -129,6 +134,10 @@ export default {
       type: Object,
       default: () => ({})
     },
+    slotCloseHints: {
+      type: Object,
+      default: () => ({})
+    },
     videoIndex: {
       type: Number,
       default: 0
@@ -151,6 +160,9 @@ export default {
     },
     index() {
       return this.videoIndex
+    },
+    closeHintText() {
+      return this.slotCloseHints?.[`slot_${this.index}`] || ''
     },
     // 全屏退出按钮在视口右上角，仅右上格需要给电量/状态标签让位
     isFullscreenTopRightCell() {
@@ -400,5 +412,15 @@ export default {
     opacity: 1;
     pointer-events: auto;
   }
+}
+
+.empty-device .close-hint {
+  color: #BEE1FF;
+  font-family: YouSheBiaoTiHei, "Alibaba PuHuiTi", sans-serif;
+  font-size: 16px;
+  line-height: 22px;
+  letter-spacing: 0.34px;
+  text-align: center;
+  padding: 0 16px;
 }
 </style>
