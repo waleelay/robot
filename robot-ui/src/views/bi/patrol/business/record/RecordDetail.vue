@@ -359,6 +359,7 @@
             <Empty v-else class="record-empty" width="75px" :opacity="0.7" textColor="#BEE1FF" text="暂无告警" />
           </div>
         </div>
+        <div class="replay-grid__divider" aria-hidden="true" style="background: transparent" />
         <div class="record-block">
           <div class="record-block__title">事件记录</div>
           <div class="record-table">
@@ -1747,6 +1748,8 @@ export default {
   min-height: 0;
   gap: 12px;
   overflow: hidden;
+  --replay-grid-columns: minmax(0, 1fr) 1px minmax(320px, 686px);
+  --replay-grid-gap: 10px;
 }
 
 .summary-grid {
@@ -1795,8 +1798,8 @@ export default {
 
 .replay-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 1px minmax(320px, 686px);
-  column-gap: 16px;
+  grid-template-columns: var(--replay-grid-columns);
+  column-gap: var(--replay-grid-gap);
   min-height: 0;
   overflow: hidden;
 }
@@ -2324,12 +2327,19 @@ export default {
 
 .records-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  grid-template-columns: var(--replay-grid-columns);
+  column-gap: var(--replay-grid-gap);
+  align-items: stretch;
   max-height: 200px;
   min-height: 0;
   flex: 0 1 200px;
   overflow: hidden;
+}
+
+.records-row > .replay-grid__divider {
+  align-self: stretch;
+  height: auto;
+  margin-top: 22px;
 }
 
 .record-block {
@@ -2613,7 +2623,8 @@ button.record-table__row {
     gap: 12px;
   }
 
-  .replay-grid__divider {
+  .replay-grid__divider,
+  .records-row > .replay-grid__divider {
     display: none;
   }
 

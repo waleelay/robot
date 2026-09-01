@@ -502,7 +502,6 @@ export default {
           expectedDurationMinutes: Math.round((detail.expectedDurationSeconds || 3600) / 60),
           scheduleConfig: this.normalizeScheduleConfig(detail.scheduleConfig),
           eventTriggerConfig: Object.assign({ eventType: 'ALARM', eventSubtype: '' }, detail.eventTriggerConfig || {}),
-          offlinePolicy: detail.offlinePolicy || 'CONTINUE',
           enabled: detail.enabled !== false,
           remark: detail.remark || ''
         })
@@ -792,7 +791,6 @@ export default {
         componentBindings: this.form.componentBindings || [],
         actionParameterBindings: this.form.actionParameterBindings || [],
         targetBindings: this.form.targetBindings || [],
-        offlinePolicy: this.form.offlinePolicy,
         enabled: this.form.enabled,
         remark: this.form.remark
       }
@@ -1037,7 +1035,6 @@ export default {
         componentBindings: [],
         actionParameterBindings: [],
         targetBindings: [],
-        offlinePolicy: 'CONTINUE',
         executionMode: 'MANUAL',
         expectedDurationMinutes: 60,
         scheduleConfig: { preset: 'HOURLY', cron: '0 0 * * * ?', timezone: 'Asia/Shanghai', timeOfDay: '08:00', weekday: 'MON' },

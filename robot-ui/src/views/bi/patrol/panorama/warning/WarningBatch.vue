@@ -68,7 +68,7 @@
               <div class="second-title">告警详情</div>
               <div class="mt10">
                 <div class="flex">
-                  <div class="item flex1">
+                  <div class="item wp230">
                     <span class="name">告警时间：</span>
                     <span class="value">{{ details.eventTime }}</span>
                   </div>
@@ -78,7 +78,7 @@
                   </div>
                 </div>
                 <div class="flex mt10">
-                  <div class="item flex1">
+                  <div class="item wp230">
                     <span class="name">告警类型：</span>
                     <span class="value">{{ details.categoryName }}</span>
                   </div>
@@ -88,13 +88,13 @@
                   </div>
                 </div>
                 <div class="flex mt10">
-                  <div class="item flex1">
+                  <div class="item wp230">
                     <span class="name">严重等级：</span>
                     <span class="status" :class="{ error: details?.level?.toLowerCase() === 'high', orange: details?.level?.toLowerCase() === 'medium', green: details?.level?.toLowerCase() === 'low' }">{{ details.levelName || '-'}}</span>
                   </div>
-                  <div class="item flex1 pl30">
+                  <div class="item flex1 pl30 flx-align-center">
                     <span class="name">执行任务：</span>
-                    <span class="value">{{ details.taskName || '-' }}</span>
+                    <span class="value wp245 text-ellipsis" :title="details.taskName || '-'">{{ details.taskName || '-' }}</span>
                   </div>
                 </div>
               </div>
