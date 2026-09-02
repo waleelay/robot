@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -423,7 +424,7 @@ class PanoramaServiceTest {
     void keepsRequiredAlarmFieldsWhileCompactingOverviewAlarmLocation() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
-        when(centerClient.alarms(any(), any(), any())).thenReturn(List.of(Map.ofEntries(
+        stubAlarmPage(centerClient, "CRITICAL", Map.ofEntries(
                 Map.entry("id", "alarm-001"),
                 Map.entry("title", "发生火灾"),
                 Map.entry("alarmType", "BUSINESS"),
@@ -440,13 +441,13 @@ class PanoramaServiceTest {
                         Map.entry("y", 2.0),
                         Map.entry("z", 3.0),
                         Map.entry("address", "A区"),
-                        Map.entry("updatedAt", "2026-08-14 10:00:00"))))));
+                        Map.entry("updatedAt", "2026-08-14 10:00:00")))));
         when(centerClient.taskWorkflowInstance("task-001")).thenReturn(Optional.empty());
 
         Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
 
         Map<String, Object> alarms = map(overview.get("alarms"));
-        assertEquals(1, alarms.get("total"));
+        assertEquals(1L, alarms.get("total"));
         assertFalse(map(alarms.get("summary")).containsKey("handleRate"));
         Map<String, Object> alarm = maps(map(alarms.get("high")).get("items")).get(0);
         assertEquals("task-001", alarm.get("taskId"));
@@ -463,13 +464,13 @@ class PanoramaServiceTest {
     void mapsManagementAlarmContractAndUsesFirstImageAsVisibleSnapshot() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
-        when(centerClient.alarms(any(), any(), any())).thenReturn(List.of(Map.ofEntries(
+        stubAlarmPage(centerClient, "CRITICAL", Map.ofEntries(
                 Map.entry("id", 1001L),
                 Map.entry("sourceType", "COMPONENT"),
                 Map.entry("severity", "CRITICAL"),
                 Map.entry("status", "ACKNOWLEDGED"),
                 Map.entry("title", "云台异常"),
-                Map.entry("imageFileIds", List.of("file-001", "file-002")))));
+                Map.entry("imageFileIds", List.of("file-001", "file-002"))));
 
         Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
 
@@ -514,6 +515,19 @@ class PanoramaServiceTest {
         assertEquals(true, workflow.get("success"));
         verify(centerClient).handleAlarm("1001", "FALSE_ALARM", "确认误报");
         verify(centerClient).handleWorkflowAlarm("1001", "HANDLE_NOW", "现场已处置");
+    }
+
+    @Test
+    void actionableWorkflowAlarmsAreNotCached() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.actionableWorkflowAlarms())
+                .thenReturn(List.of())
+                .thenReturn(List.of(Map.of("alarmId", 1001L, "sourceType", "TASK", "severity", "WARN")));
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+
+        assertEquals(0, service.actionableWorkflowAlarms().get("total"));
+        assertEquals(1, service.actionableWorkflowAlarms().get("total"));
+        verify(centerClient, times(2)).actionableWorkflowAlarms();
     }
 
     @Test
@@ -962,10 +976,32 @@ class PanoramaServiceTest {
         assertFalse(snapshot.containsKey("deviceStats"));
         assertFalse(snapshot.containsKey("taskOverview"));
         assertFalse(snapshot.containsKey("patrolOverview"));
-        verify(centerClient, times(2)).alarms(any(), any(), any());
+        verify(centerClient, times(6)).alarmPage(any(), any(), any(), any(), anyInt(), anyInt());
         verify(centerClient, never()).devices();
         verify(centerClient, never()).taskWorkflowPlans();
         verify(centerClient, never()).mileageSummary(any(), any(), any());
+    }
+
+    @Test
+    void alarmEventSnapshotReadsOnlyThreeBoundedRiskPages() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+
+        Map<String, Object> snapshot = new PanoramaService(centerClient, new ObjectMapper()).alarmEventSnapshot();
+
+        assertEquals(0L, snapshot.get("total"));
+        verify(centerClient, times(3)).alarmPage(any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void alarmEventSnapshotDoesNotPublishPartialPagesWhenOneRiskQueryFails() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.alarmPage("NEW", "WARN", null, null, 1, 10))
+                .thenThrow(new IllegalStateException("management unavailable"));
+
+        assertThrows(IllegalStateException.class,
+                () -> new PanoramaService(centerClient, new ObjectMapper()).alarmEventSnapshot());
     }
 
     @Test
@@ -978,7 +1014,7 @@ class PanoramaServiceTest {
         service.statsSnapshot(Set.of(StatsPart.ALARMS));
         service.statsSnapshot(Set.of(StatsPart.ALARMS));
 
-        verify(centerClient, times(2)).alarms(any(), any(), any());
+        verify(centerClient, times(6)).alarmPage(any(), any(), any(), any(), anyInt(), anyInt());
     }
 
     @Test
@@ -1023,7 +1059,26 @@ class PanoramaServiceTest {
         when(centerClient.fixedCameraHealth()).thenReturn(Map.of("records", List.of()));
         when(centerClient.taskWorkflowPlans()).thenReturn(List.of());
         when(centerClient.taskWorkflowInstances()).thenReturn(List.of());
-        when(centerClient.alarms(any(), any(), any())).thenReturn(List.of());
+        when(centerClient.alarmPage(any(), any(), any(), any(), anyInt(), anyInt())).thenAnswer(invocation ->
+                new PanoramaCenterClient.AlarmPage(
+                        List.of(),
+                        0,
+                        invocation.getArgument(4),
+                        invocation.getArgument(5)));
+    }
+
+    private void stubAlarmPage(
+            PanoramaCenterClient centerClient,
+            String severity,
+            Map<String, Object> alarm) {
+        when(centerClient.alarmPage(any(), any(), any(), any(), anyInt(), anyInt())).thenAnswer(invocation -> {
+            int pageNum = invocation.getArgument(4);
+            int pageSize = invocation.getArgument(5);
+            if ("NEW".equals(invocation.getArgument(0)) && severity.equals(invocation.getArgument(1))) {
+                return new PanoramaCenterClient.AlarmPage(List.of(alarm), 1, pageNum, pageSize);
+            }
+            return new PanoramaCenterClient.AlarmPage(List.of(), 0, pageNum, pageSize);
+        });
     }
 
     private void authenticate(String subject, String orgId) {

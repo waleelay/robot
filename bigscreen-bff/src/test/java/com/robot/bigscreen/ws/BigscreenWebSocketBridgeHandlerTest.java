@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -178,6 +179,26 @@ class BigscreenWebSocketBridgeHandlerTest {
 
         verify(authorizationService, times(1)).authorizedResources(first);
         verify(authorizationService, never()).authorizedResources(second);
+        handler.shutdownAuthorizationRefreshExecutor();
+    }
+
+    @Test
+    void requestsAlarmSnapshotWhenBrowserConnects() throws Exception {
+        BigscreenWebSocketAuthorizationService authorizationService =
+                mock(BigscreenWebSocketAuthorizationService.class);
+        PanoramaAlarmEventRefresher alarmEventRefresher = mock(PanoramaAlarmEventRefresher.class);
+        JwtAuthenticationToken authentication = authentication("user-001", Instant.now().plusSeconds(300));
+        WebSocketSession browserSession = browserSession(
+                new HttpHeaders(), URI.create("wss://bigscreen/ws/control"), "session-alarm-snapshot");
+        when(browserSession.getPrincipal()).thenReturn(authentication);
+        when(authorizationService.authorizedResources(browserSession)).thenReturn(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(Set.of(), Set.of()));
+        BigscreenWebSocketBridgeHandler handler = handler(
+                authorizationService, mock(FixedCameraCatalogLeaseClient.class), alarmEventRefresher);
+
+        handler.afterConnectionEstablished(browserSession);
+
+        verify(alarmEventRefresher).requestSnapshot(eq("session-alarm-snapshot"), eq(authentication), any());
         handler.shutdownAuthorizationRefreshExecutor();
     }
 
@@ -374,13 +395,20 @@ class BigscreenWebSocketBridgeHandlerTest {
     private BigscreenWebSocketBridgeHandler handler(
             BigscreenWebSocketAuthorizationService authorizationService,
             FixedCameraCatalogLeaseClient catalogLeaseClient) {
+        return handler(authorizationService, catalogLeaseClient, mock(PanoramaAlarmEventRefresher.class));
+    }
+
+    private BigscreenWebSocketBridgeHandler handler(
+            BigscreenWebSocketAuthorizationService authorizationService,
+            FixedCameraCatalogLeaseClient catalogLeaseClient,
+            PanoramaAlarmEventRefresher alarmEventRefresher) {
         return new BigscreenWebSocketBridgeHandler(
                 mock(CenterServiceProperties.class),
                 mock(PanoramaWebSocketEventAdapter.class),
                 mock(PanoramaLocationEventThrottler.class),
                 mock(PanoramaStatsEventRefresher.class),
                 mock(PanoramaTaskEventRefresher.class),
-                mock(PanoramaAlarmEventRefresher.class),
+                alarmEventRefresher,
                 mock(AuthenticatedRequestHeaders.class),
                 authorizationService,
                 catalogLeaseClient,

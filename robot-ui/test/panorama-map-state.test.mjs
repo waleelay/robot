@@ -81,6 +81,27 @@ const panorama = compile('views/bi/patrol/panorama/map/Index.vue')
 const home = compile('views/bi/home/Index.vue')
 const mapTool = compile('views/bi/patrol/panorama/map/MapTool.vue')
 
+test('工作流告警只消费 BFF 快照，普通告警仍仅高风险弹窗', async () => {
+  const ctx = setup()
+  await ctx.dispatch('syncRobot', { event: 'panorama.alarm.changed', data: { alarm: {
+    alarmId: 'workflow-warn', sourceType: 'TASK', level: 'medium', status: 'unhandled', robotId: 'robot-1'
+  } } })
+  assert.equal(ctx.state.workflowAlarms.length, 0)
+  assert.equal(Object.keys(ctx.state.robotAlarmObj).length, 0)
+
+  await ctx.dispatch('syncRobot', { event: 'panorama.workflow-alarms.changed', data: { items: [{
+    alarmId: 'workflow-warn', workflowActionable: true, level: 'MEDIUM', status: 'unhandled'
+  }] } })
+  assert.equal(ctx.state.workflowAlarms[0].alarmId, 'workflow-warn')
+  await ctx.dispatch('syncRobot', { event: 'panorama.workflow-alarms.changed', data: { items: [] } })
+  assert.equal(ctx.state.workflowAlarms.length, 0)
+
+  await ctx.dispatch('syncRobot', { event: 'panorama.alarm.changed', data: { alarm: {
+    alarmId: 'ordinary-high', sourceType: 'COMPONENT', level: 'high', status: 'unhandled', robotId: 'robot-1'
+  } } })
+  assert.equal(ctx.state.robotAlarmObj['robot-1'].alarmId, 'ordinary-high')
+})
+
 test('首屏规则一致：GPS 默认 GIS，无 GPS 默认首张 SLAM，无地图回退 GIS', async () => {
   for (const [data, expected] of [
     [overview(), B],

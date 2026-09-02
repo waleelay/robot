@@ -137,6 +137,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         log.debug("大屏 WebSocket 会话授权资源加载完成，会话={} 设备数={} 固定摄像头数={}",
                 browserSession.getId(), snapshot.resources().robotIds().size(), snapshot.resources().cameraIds().size());
         browserSessions.add(browserSession);
+        requestAlarmSnapshot(browserSession);
         try {
             connectCenter(browserSession);
         } catch (Exception exception) {
@@ -373,11 +374,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                             payload -> sendUserScopedToBrowserSession(browserSession, payload));
                 }
                 if (refreshAlarms) {
-                    Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
-                    alarmEventRefresher.requestRefresh(
-                            browserSession.getId(),
-                            authentication,
-                            payload -> sendUserScopedToBrowserSession(browserSession, payload));
+                    requestAlarmRefresh(browserSession);
                 }
             }
         }
@@ -396,6 +393,22 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             log.warn("中心端 WebSocket 传输异常，浏览器会话={}", browserSession.getId(), exception);
             afterConnectionClosed(centerSession, CloseStatus.SERVER_ERROR);
         }
+    }
+
+    private void requestAlarmRefresh(WebSocketSession browserSession) {
+        Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
+        alarmEventRefresher.requestRefresh(
+                browserSession.getId(),
+                authentication,
+                payload -> sendUserScopedToBrowserSession(browserSession, payload));
+    }
+
+    private void requestAlarmSnapshot(WebSocketSession browserSession) {
+        Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
+        alarmEventRefresher.requestSnapshot(
+                browserSession.getId(),
+                authentication,
+                payload -> sendUserScopedToBrowserSession(browserSession, payload));
     }
 
     private void sendToBrowserSession(WebSocketSession browserSession, String payload) {

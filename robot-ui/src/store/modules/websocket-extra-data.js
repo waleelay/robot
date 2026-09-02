@@ -53,7 +53,7 @@ const state = {
   dataQuality: {},
   // 告警统计
   alarmSummary: {}, // { totalToday: 50, handled: 18, unhandled: 0, handleRate: 100, handleRateText: "100%" }
-  alarmRevision: 0,
+  workflowAlarms: [],
    // 实时定位
   robotLocation: {}, // { robotId: { lat, lng, altitude, address, updatedAt } }
   // 设备基本信息；task 由 taskData 反查；cameras 只存 websocketRobot（overview/robot.state）
@@ -99,6 +99,7 @@ const mutations = {
     state.robotBaseInfo = {};
     state.robotList = [];
     state.robotAlarmObj = {};
+    state.workflowAlarms = [];
     state.taskPathPoints = {};
     state.dataQuality = {};
     state.defaultGpsDevices = [];
@@ -173,13 +174,17 @@ const mutations = {
     };
     state.alarmsData = next;
   },
-  REMOVE_ALARM_DATA(state, alarmId) {
+  REMOVE_ALARM_DATA(state, alarm) {
+    const alarmId = typeof alarm === 'object' ? alarm?.alarmId : alarm
     if (alarmId === undefined || alarmId === null) return
     const next = { ...state.alarmsData }
-    ;['high', 'medium', 'low'].forEach(key => {
+    const matchedLevel = ['high', 'medium', 'low'].find(key =>
+      (next[key]?.items || []).some(item => String(item.alarmId) === String(alarmId)))
+    ;['latest', 'high', 'medium', 'low'].forEach(key => {
       const group = next[key] || { items: [] }
       next[key] = {
         ...group,
+        total: Math.max(0, Number(group.total || 0) - (matchedLevel && (key === 'latest' || key === matchedLevel) ? 1 : 0)),
         items: (group.items || []).filter(item => String(item.alarmId) !== String(alarmId))
       }
     })
@@ -191,9 +196,10 @@ const mutations = {
       }
     })
     state.robotAlarmObj = nextRobotAlarms
+    state.workflowAlarms = state.workflowAlarms.filter(item => String(item.alarmId) !== String(alarmId))
   },
-  BUMP_ALARM_REVISION(state) {
-    state.alarmRevision += 1;
+  SET_WORKFLOW_ALARMS(state, items) {
+    state.workflowAlarms = Array.isArray(items) ? items : [];
   },
   SET_ROBOT_ALARM_INFO(state, { robotId, alarmInfo, close }) {
     if (close) {
@@ -533,7 +539,7 @@ const actions = {
     // | ---------------------------------- | ------------------------------------------------ |
     // | `panorama.device.location.changed` | 地图位置、速度、朝向变化                         |
     // | `panorama.task.changed`            | 任务创建、更新、删除、状态变化、设备任务关联变化 |
-    // | `panorama.alarm.changed`           | 告警创建、更新、处置状态变化                     |
+    // | `panorama.alarms.changed`          | 普通告警分页快照变化                             |
     // | `panorama.stats.changed`           |                                                  |
     if (!event) return
     if (event.event === 'panorama.device.status.changed') {
@@ -557,11 +563,15 @@ const actions = {
       }
       const task = event.data?.task || (event.data?.taskId != null ? event.data : null)
       if (task) commit('SET_TASK_INFO', task)
+    } else if (event.event === 'panorama.workflow-alarms.changed') {
+      commit('SET_WORKFLOW_ALARMS', event.data?.items)
+    } else if (event.event === 'panorama.alarms.changed') {
+      commit('SET_ALARMS_DATA', event.data)
+      if (event.data?.summary) commit('SET_ALARM_SUMMARY', event.data.summary)
     } else if (event.event === 'panorama.alarm.changed') {
       if (event.data?.changeType === 'REMOVE') {
         commit('REMOVE_ALARM_DATA', event.data.alarmId)
         if (event.data.summary) commit('SET_ALARM_SUMMARY', event.data.summary)
-        commit('BUMP_ALARM_REVISION')
         return
       }
       const alarm = event.data && event.data.alarm;
@@ -570,11 +580,13 @@ const actions = {
       if (event.data.summary) {
         commit('SET_ALARM_SUMMARY', event.data.summary);
       }
-      commit('BUMP_ALARM_REVISION');
-      if (alarm.level && alarm.level.toLowerCase() === 'high' && alarm.status === 'unhandled') {
-        commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm });
-      } else if (alarm.robotId) {
-        commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm, close: true });
+      const workflowAlarm = String(alarm.sourceType || '').toUpperCase() === 'TASK';
+      if (!workflowAlarm) {
+        if (alarm.level && alarm.level.toLowerCase() === 'high' && alarm.status === 'unhandled') {
+          commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm });
+        } else if (alarm.robotId) {
+          commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm, close: true });
+        }
       }
     } else if (event.event === 'panorama.fixed-camera.statuses.changed') {
       dispatch('websocketRobot/patchFixedCameraStatuses', event.data?.items, { root: true })
@@ -590,8 +602,8 @@ const actions = {
   setRobotBaseInfo({ commit }, { robotId, robotInfo, fromRealtime }) {
     commit('SET_ROBOT_BASE_INFO', { robotId, robotInfo, fromRealtime });
   },
-  removeAlarm({ commit }, alarmId) {
-    commit('REMOVE_ALARM_DATA', alarmId)
+  removeAlarm({ commit }, alarm) {
+    commit('REMOVE_ALARM_DATA', alarm)
   },
   setMapSearchValue({ commit }, value) {
     commit('SET_MAP_SEARCH_VALUE', value);

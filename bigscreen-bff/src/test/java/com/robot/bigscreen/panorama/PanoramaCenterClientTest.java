@@ -140,6 +140,23 @@ class PanoramaCenterClientTest {
     }
 
     @Test
+    void alarmPageReadsOnlyRequestedPageAndKeepsReportedTotal() {
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/alarms?pageNum=2&pageSize=20&status=NEW&severity=WARN"))
+                .andRespond(withSuccess(
+                        "{\"data\":{\"records\":[{\"id\":101}],\"total\":61}}",
+                        MediaType.APPLICATION_JSON));
+
+        PanoramaCenterClient.AlarmPage page = client.alarmPage("NEW", "WARN", null, null, 2, 20);
+
+        assertEquals(61, page.total());
+        assertEquals(2, page.pageNum());
+        assertEquals(20, page.pageSize());
+        assertEquals(101, page.records().get(0).get("id"));
+        server.verify();
+    }
+
+    @Test
     void taskPaginationStopsWhenManagementRepeatsTheSameFullPage() {
         String records = IntStream.range(0, 100)
                 .mapToObj(index -> "{\"id\":" + index + "}")

@@ -127,8 +127,8 @@
                       placeholder="请输入内容/类型/位置"
                       v-model="searchValue"
                       clearable
-                      @keyup.enter.native="handleChangeTab(tabIndex)"
-                      @clear="handleChangeTab(tabIndex)"
+                      @keyup.enter.native="applyListFilter"
+                      @clear="applyListFilter"
                     >
                       <svg-icon slot="prefix" icon-class="search"></svg-icon>
                     </el-input>
@@ -153,7 +153,7 @@
                   <div v-for="item in tabList" :key="item.value" class="tab-button-item" :class="{ 'is-active': tabIndex === item.value }" @click="handleChangeTab(item.value)">{{ item.label }}</div>
                 </div>
               </div>
-              <div class="list-box mt10 pr8 hp423">
+              <div class="list-box mt10 pr8 hp423" @scroll="handleListScroll">
                 <div v-for="(item, index) in warningInfo.listData" :key="item.alarmId" class="item wp280 pt9 pr10 pb9 pl10 flx-justify-between" :class="{ selected: warningInfo.selectedRobotRows.includes(item) }" @click="handleClickWarningRow(item, index)">
                   <div class="flx-align-center w100">
                     <div class="img flx-center">
@@ -200,6 +200,7 @@ import WarningExecute from './WarningExecute.vue';
 import AlarmSnapshotImage from '@/components/AlarmSnapshotImage.vue'
 import { mapActions, mapState } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
+import { getPatrolPanoramaAlarmPage } from '@/api/new-bi'
 import {
   buildSnapshotOptions,
   downloadAlarmSnapshotFile,
@@ -255,6 +256,12 @@ export default {
       },
       snapshotObjectUrls: {},
       snapshotLoadSeq: 0,
+      loadedAlarms: [],
+      alarmPageNum: 1,
+      alarmPageSize: 10,
+      alarmTotal: 0,
+      alarmListLoading: false,
+      alarmListLoadSeq: 0,
     }
   },
   computed: {
@@ -268,8 +275,8 @@ export default {
     alarmsData: {
       handler(newVal, oldVal) {
         if (!this.dialogVisible || this.simpleMode) return
-        if (newVal && Object.keys(newVal).length) {
-          this.handleChangeTab(this.tabIndex)
+        if (!this.hasDateRange && newVal && Object.keys(newVal).length) {
+          this.seedAlarmList()
         }
       },
       deep: true
@@ -307,25 +314,35 @@ export default {
     handleChangeTab(tabIndex) {
       this.tabIndex = tabIndex
       this.selectedAll = false
+      if (this.hasDateRange) {
+        this.loadAlarmPage(1, true)
+      } else {
+        this.seedAlarmList()
+      }
+    },
+    alarmGroupKey() {
+      return this.tabIndex === 0 ? 'latest' : this.tabIndex === 1 ? 'high' : this.tabIndex === 2 ? 'medium' : 'low'
+    },
+    alarmLevel() {
+      return this.tabIndex === 0 ? undefined : this.tabIndex === 1 ? 'HIGH' : this.tabIndex === 2 ? 'MEDIUM' : 'LOW'
+    },
+    seedAlarmList() {
+      this.alarmListLoadSeq++
+      this.alarmListLoading = false
+      const group = this.alarmsData?.[this.alarmGroupKey()] || {}
+      this.loadedAlarms = [...(group.items || [])]
+      this.alarmPageNum = Number(group.pageNum) || 1
+      this.alarmPageSize = Number(group.pageSize) || 10
+      this.alarmTotal = Number(group.total) || this.loadedAlarms.length
+      this.applyListFilter()
+    },
+    applyListFilter() {
       const searchValue = this.searchType === 'keyword' ? this.searchValue.toString() : ''
-      this.warningInfo.listData = (tabIndex === 0 ? [
-        ...(this.alarmsData.high?.items || []),
-        ...(this.alarmsData.medium?.items || []),
-        ...(this.alarmsData.low?.items || [])
-      ] : [
-        ...(this.alarmsData[tabIndex === 1 ? 'high' : tabIndex === 2 ? 'medium' : 'low']?.items || [])
-      ]).filter(item => {
-        if (this.searchType === 'date') {
-          if (!this.hasDateRange) return true
-          const t = new Date(item.eventTime).getTime()
-          const startTs = new Date(`${this.dateValue[0]} 00:00:00`).getTime()
-          const endTs = new Date(`${this.dateValue[1]} 23:59:59`).getTime()
-          return !Number.isNaN(t) && t >= startTs && t <= endTs
-        }
-        return item.title.includes(searchValue)
-          || item.categoryName.includes(searchValue)
-          || item?.location?.address.includes(searchValue)
-      })
+      this.warningInfo.listData = this.loadedAlarms.filter(item => this.searchType !== 'keyword'
+        || String(item.title || '').includes(searchValue)
+        || String(item.categoryName || '').includes(searchValue)
+        || String(item?.location?.address || '').includes(searchValue))
+      this.warningInfo.count = this.alarmTotal
       const { alarmId } = this.details
       if (this.warningInfo.listData.length) {
         const obj = alarmId ? (this.warningInfo.listData.find(item => item.alarmId === alarmId) || this.warningInfo.listData[0]) : this.warningInfo.listData[0]              
@@ -342,8 +359,50 @@ export default {
         this.snapshotObjectUrls = {}
       }
     },
+    async loadAlarmPage(pageNum, replace = false) {
+      if (this.alarmListLoading && !replace) return
+      const seq = ++this.alarmListLoadSeq
+      this.alarmListLoading = true
+      try {
+        const response = await getPatrolPanoramaAlarmPage({
+          level: this.alarmLevel(),
+          pageNum,
+          pageSize: this.alarmPageSize,
+          occurredFrom: this.hasDateRange ? `${this.dateValue[0]} 00:00:00` : undefined,
+          occurredTo: this.hasDateRange ? `${this.dateValue[1]} 23:59:59` : undefined
+        })
+        if (seq !== this.alarmListLoadSeq) return
+        const items = Array.isArray(response?.items) ? response.items : []
+        const next = replace ? items : [...this.loadedAlarms, ...items]
+        const alarmIds = new Set()
+        this.loadedAlarms = next.filter(item => {
+          const alarmId = String(item.alarmId)
+          if (alarmIds.has(alarmId)) return false
+          alarmIds.add(alarmId)
+          return true
+        })
+        this.alarmPageNum = Number(response?.pageNum) || pageNum
+        this.alarmTotal = Number(response?.total) || 0
+        this.applyListFilter()
+      } catch (error) {
+        if (seq !== this.alarmListLoadSeq) return
+        this.$message.error(error?.message || '告警列表加载失败')
+      } finally {
+        if (seq === this.alarmListLoadSeq) this.alarmListLoading = false
+      }
+    },
+    handleListScroll(event) {
+      const target = event.target
+      if (target.scrollHeight - target.scrollTop - target.clientHeight > 40) return
+      if (this.loadedAlarms.length >= this.alarmTotal) return
+      this.loadAlarmPage(this.alarmPageNum + 1)
+    },
     handleSearchTypeChange() {
-      this.handleChangeTab(this.tabIndex)
+      if (this.searchType === 'date' && this.hasDateRange) {
+        this.loadAlarmPage(1, true)
+      } else {
+        this.seedAlarmList()
+      }
     },
     handleDateChange(val) {
       if (!val || (Array.isArray(val) && (val.length === 2 || val.length === 0))) {
@@ -407,7 +466,7 @@ export default {
         if (response?.success === false) {
           throw new Error(response.message || '告警处置失败')
         }
-        this.removeAlarm(alarm.alarmId)
+        this.removeAlarm(alarm)
         this.close()
         if (type === 0) {
           this.$refs.warningExecuteRef.open(alarm.alarmId)
@@ -446,6 +505,11 @@ export default {
       this.selectedValue = ''
       this.options = []
       this.snapshotObjectUrls = {}
+      this.loadedAlarms = []
+      this.alarmPageNum = 1
+      this.alarmTotal = 0
+      this.alarmListLoading = false
+      this.alarmListLoadSeq++
     }
   }
 }

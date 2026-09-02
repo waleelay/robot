@@ -502,7 +502,11 @@ GET /api/bigscreen/panorama/tasks
 GET /api/bigscreen/panorama/alarms
 ```
 
-`alarms` 不再使用 mock 数据兜底；管理端未提供或链路未查询到的标量字段返回 `null`，分组数组字段返回空数组。
+`alarms` 不再使用 mock 数据兜底。BFF 按风险等级并发读取管理端第一页，每组固定返回最多 10 条和权威
+`total`；`latest` 是三个分组第一页合并后的最新 10 条。页面需要更多记录时使用分页接口，BFF 不遍历全部
+未处置告警。左侧告警中心在用户滚动到已展开风险分组末尾时按需加载下一页；收到新的告警快照后重置为
+权威第一页，避免旧分页记录与最新处置状态混用。管理端未提供或链路未查询到的标量字段返回 `null`，
+分组数组字段返回空数组。
 
 返回结构：
 
@@ -518,7 +522,16 @@ GET /api/bigscreen/panorama/alarms
       "handleRate": 100,
       "handleRateText": "100%"
     },
+    "latest": {
+      "total": 15,
+      "pageNum": 1,
+      "pageSize": 10,
+      "items": []
+    },
     "high": {
+      "total": 8,
+      "pageNum": 1,
+      "pageSize": 10,
       "items": [
         {
           "alarmId": "alarm-001",
@@ -538,9 +551,15 @@ GET /api/bigscreen/panorama/alarms
       ]
     },
     "medium": {
+      "total": 5,
+      "pageNum": 1,
+      "pageSize": 10,
       "items": []
     },
     "low": {
+      "total": 2,
+      "pageNum": 1,
+      "pageSize": 10,
       "items": []
     }
   }
@@ -562,6 +581,15 @@ GET /api/bigscreen/panorama/alarms
 ```text
 handled / max(totalToday, 1) * 100
 ```
+
+滚动分页接口：
+
+```http
+GET /api/bigscreen/panorama/alarms/page?level=MEDIUM&pageNum=2&pageSize=10&occurredFrom=2026-09-01%2000:00:00&occurredTo=2026-09-02%2023:59:59
+```
+
+`level` 可省略，取值为 `HIGH/MEDIUM/LOW`；时间范围可省略。响应包含 `total`、`pageNum`、`pageSize` 和
+`items`。前端首次打开直接使用快照第一页，仅在列表滚动到底部时请求下一页；关键字只过滤已加载记录。
 
 当 `totalToday = 0` 时，`handleRate` 返回 `100`，表示当前没有待处理告警；如果业务希望显示 `0%`，可在 BFF 中按产品口径调整。
 
@@ -627,8 +655,15 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue
 查询接口只返回管理端工作流当前正等待该告警人工节点的记录。处置接口请求字段与
 5.6 相同，BFF 将 `IMMEDIATE_DISPOSAL/FALSE_ALARM` 映射为管理端
 `HANDLE_NOW/FALSE_ALARM`，调用管理端 `handle-and-continue`，在同一事务中更新告警并
-继续对应工作流；`handleResult` 显式传 `null`。稍后处理只关闭前端当前弹窗，
+继续对应工作流；`handleResult` 显式传 `null`。稍后处置只关闭前端当前弹窗，
 不调用处置接口。
+
+`actionable-workflow` 不使用 BFF 统计缓存，每次请求直接查询管理端。普通告警仅在未处置且风险等级为
+`HIGH` 时进入普通弹窗；`sourceType=TASK` 的告警不进入普通弹窗，也不按风险等级过滤，只在查询接口
+返回可处置记录后进入工作流弹窗。BFF 收到告警失效通知后，以独立链路分别查询可处置工作流告警和普通
+告警；工作流快照未变化时每 300 ms 仅重查工作流接口，最长 5 秒，快照变化立即停止，普通告警查询不会
+阻塞该过程。首次连接和重连时，BFF
+主动推送 `panorama.workflow-alarms.changed` 完整快照；前端只替换队列，不发起查询或设置定时器。
 
 工作流告警返回 `items[]`，保留大屏告警展示字段，并增加
 `workflowInstanceId`、`taskName`、`humanTaskId`、`humanTaskName`。管理端图片未携带通道
@@ -688,7 +723,9 @@ WebSocket：
 | `panorama.device.status.changed` | Control 收到设备状态 MQTT 上报后广播 `robot.state` | 仅当 `robot.state` 来源为边缘状态（`stateSource=EDGE_DEVICE_STATUS`）或离线扫描（`stateSource=OFFLINE_SCAN`）时即时派生并推送，不受位置限频影响；媒体客户端来源（`stateSource=MEDIA_CLIENT_STATUS`）不派生该事件，机器人状态以边缘上报为准。在线、离线、故障等状态变化同时触发统计快照刷新。 |
 | `panorama.device.location.changed` | `robot.state` 携带 `location/localization/status.localization` 时派生；联调设备 `test111`、`SN005`、`SN006` 在无真实定位时使用专用演示坐标 | 按“浏览器会话 + `robotId`”独立限频。首条立即推送；同一设备 1 秒内的多条位置只保留最新一条，每秒最多推送一次；`localized=false` 立即推送。没有新定位时不重复发送旧坐标。 |
 | `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 300ms 去抖，按当前 WebSocket 会话身份重查管理端权威快照，逐项比较后只推送发生变化的任务；任务删除或失权时推送 `data.changeType=REMOVE`。`taskId` 缺失的旧版事件不直接下发。 |
-| `panorama.alarm.changed` | 上游完整告警事件，或管理端 STOMP `alarm.changed.v1` 转换的 `management.alarm.invalidated` | 完整事件立即转换；失效通知以 300ms 去抖，按当前 WebSocket 会话身份重查管理端告警快照，只推送变化项；告警删除或失权时推送 `data.changeType=REMOVE`。没有真实上游事件时不生成模拟告警。 |
+| `panorama.alarm.changed` | 上游携带完整告警数据的原始事件 | 完整事件立即转换，继续用于高风险普通告警即时弹窗；没有真实上游事件时不生成模拟告警。 |
+| `panorama.alarms.changed` | 管理端告警失效通知 | 按当前会话身份查询普通告警各风险分组第一页和总数；快照变化时整体推送，前端替换列表第一页，不逐项刷新或遍历全量告警。首屏和重连沿用 Overview，不重复查询。 |
+| `panorama.workflow-alarms.changed` | 浏览器首次连接、重连或管理端告警失效通知 | 独立于普通告警刷新，按当前会话身份立即查询 `actionable-workflow`；快照未变化时每 300ms 仅复查该接口，最长 5 秒，变化后推送完整 `items` 快照并停止。前端以快照整体替换工作流弹窗队列。 |
 | `panorama.stats.changed` | 设备业务变更、设备在线/离线/故障状态切换、任务或告警变更 | 短时间内的多次触发合并 500ms 后按事件类型只重算受影响统计块（设备/任务/告警），推送仍为完整合并快照，只在快照与上次不同时推送。各统计块带 3 秒 TTL 缓存（按用户隔离），多会话与多事件在窗口内共享一次管理端查询。普通电量、速度、位置心跳不触发统计刷新。 |
 
 Control 对 `totalMileage/currentMileage` 计算出的有效里程增量累计达到配置阈值时，
@@ -757,8 +794,9 @@ BFF 仍会原样转发上游消息，上表只描述追加生成的 `panorama.*`
 `eiop-control-service:/ws/control`，固定订阅 `/topic/platform/realtime-events`。
 收到 `task.changed.v1` 且 `scopes` 包含 `PLAN` 或 `EXECUTION` 时，向本地
 `/ws/control` 推送 `management.task.invalidated`；收到 `alarm.changed.v1` 时推送
-`management.alarm.invalidated`。BFF 收到失效通知后防抖查询管理端权威快照并比较，
-将变化项转换为现有 `panorama.task.changed` 或 `panorama.alarm.changed` 结构。STOMP
+`management.alarm.invalidated`。BFF 收到失效通知后查询管理端权威快照并比较，
+任务变化项转换为现有 `panorama.task.changed`，普通告警查询结果以 `panorama.alarms.changed` 分页快照推送；工作流告警使用独立收敛链路，
+不等待普通告警查询，快照变化后推送 `panorama.workflow-alarms.changed` 完整快照。告警内部失效通知不透传浏览器。STOMP
 仅负责通知“数据已变化”，任务和告警业务状态始终以管理端 HTTP 查询结果为准。
 
 `taskId` 始终表示任务计划 ID，`workflowInstanceId` 表示本次执行实例 ID。

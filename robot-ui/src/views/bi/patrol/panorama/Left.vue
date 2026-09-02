@@ -179,21 +179,21 @@
             <svg-icon icon-class="right" class="ml4" />
           </span>
         </div>
-        <div v-if="alarmsData" class="mt10 ml20 common-scroll ovya mb10" :style="{ maxHeight: collapseArr[1] ? '360px' : '262px', minHeight: '146px' }">
+        <div v-if="alarmsData" class="mt10 ml20 common-scroll ovya mb10" :style="{ maxHeight: collapseArr[1] ? '360px' : '262px', minHeight: '146px' }" @scroll="handleAlarmCenterScroll">
           <div v-for="(alarm, key, alarmIndex) in alarms" :key="key" class="type wp288 pt10 pr20 pb10 pl20" :class="[alarm.class, { 'hp42 ovyh': alertCollapseArr[alarmIndex], 'mt10': alarmIndex !== 0 }]">
             <div class="type_name flx-justify-between" @click="toggleCollapse('alertCollapseArr', alarmIndex)">
               <div class="flx-center">
                 <span class="symbol flx-center">
                   <svg-icon icon-class="notice1"></svg-icon>
                 </span>
-                <span class="ml10">{{ alarm.name || '-' }}（{{ alarmsData?.[key]?.items?.length || 0 }}）</span>
+                <span class="ml10">{{ alarm.name || '-' }}（{{ alarmsData?.[key]?.total !== undefined ? alarmsData[key].total : (alarmsData?.[key]?.items?.length || 0) }}）</span>
               </div>
               <span class="flx-center curp">
                 <svg-icon :icon-class="alertCollapseArr[alarmIndex] ? 'down' : 'up'" style="font-size: 14px;"></svg-icon>
               </span>
             </div>
-            <div class="mt20 list">
-              <div v-for="(item, index) in getObjByOrder(alarmsData?.[key]?.items || [], 'eventTime', 'array')" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert(item)">
+            <div class="mt20 list" :data-alarm-level="key">
+              <div v-for="(item, index) in getObjByOrder(alarmPages[key].items, 'eventTime', 'array')" :key="item.alarmId" class="item flx-center" :class="{ 'mt40 mb10': index !== 0 }" @click="handleClickAlert(item)">
                 <div class="img wp120 hp72 flx-center"
                 >
                   <AlarmSnapshotImage :item="item">
@@ -232,6 +232,7 @@
 <script>
 import { mapGetters, mapState, mapActions } from 'vuex';
 import {
+  getPatrolPanoramaAlarmPage,
   pauseTaskRecord,
   resumeTaskRecord,
   startTask,
@@ -289,6 +290,11 @@ export default {
           name: '低风险',
           class: 'green'
         },
+      },
+      alarmPages: {
+        high: { items: [], pageNum: 1, total: 0, loading: false, seq: 0 },
+        medium: { items: [], pageNum: 1, total: 0, loading: false, seq: 0 },
+        low: { items: [], pageNum: 1, total: 0, loading: false, seq: 0 }
       },
       updated: false,
       startingTaskIds: [],
@@ -378,6 +384,57 @@ export default {
     },
     terminateTitle(item) {
       return !this.canTerminateExecution ? '无权限' : this.hasLifecycleAction(item, 'TERMINATE') ? '终止任务' : '当前状态不可终止'
+    },
+    resetAlarmPages(data) {
+      Object.keys(this.alarmPages).forEach(level => {
+        const group = data?.[level] || {}
+        const page = this.alarmPages[level]
+        page.seq++
+        page.items = [...(group.items || [])]
+        page.pageNum = Number(group.pageNum) || 1
+        page.total = Number(group.total) || 0
+        page.loading = false
+      })
+    },
+    handleAlarmCenterScroll(event) {
+      const root = event.currentTarget
+      const rootTop = root.getBoundingClientRect().top
+      const rootBottom = root.getBoundingClientRect().bottom
+      Object.keys(this.alarmPages).forEach((level, index) => {
+        if (this.alertCollapseArr[index]) return
+        const list = root.querySelector(`[data-alarm-level="${level}"]`)
+        const listBottom = list?.getBoundingClientRect().bottom
+        if (listBottom >= rootTop - 40 && listBottom <= rootBottom + 40) {
+          this.loadNextAlarmPage(level)
+        }
+      })
+    },
+    async loadNextAlarmPage(level) {
+      const page = this.alarmPages[level]
+      if (page.loading || page.items.length >= page.total) return
+      const seq = ++page.seq
+      page.loading = true
+      try {
+        const response = await getPatrolPanoramaAlarmPage({
+          level: level.toUpperCase(),
+          pageNum: page.pageNum + 1,
+          pageSize: 10
+        })
+        if (seq !== page.seq) return
+        const alarmIds = new Set(page.items.map(item => String(item.alarmId)))
+        page.items = page.items.concat((response?.items || []).filter(item => {
+          const alarmId = String(item.alarmId)
+          if (alarmIds.has(alarmId)) return false
+          alarmIds.add(alarmId)
+          return true
+        }))
+        page.pageNum = Number(response?.pageNum) || page.pageNum + 1
+        page.total = Number(response?.total) || 0
+      } catch (error) {
+        if (seq === page.seq) this.$message.error(error?.message || '告警列表加载失败')
+      } finally {
+        if (seq === page.seq) page.loading = false
+      }
     },
     /**
      * 通用的按时间属性降序排序函数
@@ -791,6 +848,7 @@ export default {
     // },
     alarmsData: {
       handler(newVal) {
+        this.resetAlarmPages(newVal)
         if (newVal?.high?.items?.length && !this.updated) {
           this.$set(this.alertCollapseArr, 0, false)
           this.updated = true

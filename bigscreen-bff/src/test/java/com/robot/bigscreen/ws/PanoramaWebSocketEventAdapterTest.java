@@ -150,6 +150,7 @@ class PanoramaWebSocketEventAdapterTest {
                 """;
 
         assertThat(adapter.isAlarmInvalidation(payload)).isTrue();
+        assertThat(adapter.adapt(payload)).isEmpty();
         assertThat(adapter.statsRefreshParts("browser-a", payload)).containsExactly(StatsPart.ALARMS);
     }
 

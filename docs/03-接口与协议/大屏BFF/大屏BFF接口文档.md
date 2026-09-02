@@ -22,12 +22,18 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `GET` | `/api/bigscreen/panorama/tasks/{taskId}` | 用户打开任务时查询单个任务完整详情（含回放和设备任务明细） |
 | `GET` | `/api/bigscreen/panorama/tasks/{taskId}/fixed-cameras` | 实时监控任务卡展开时按需查询任务关联固定摄像头；只返回安全视频源标识，不创建视频会话 |
 | `GET` | `/api/bigscreen/panorama/alarms` | 查询告警分组快照 |
+| `GET` | `/api/bigscreen/panorama/alarms/page` | 按风险等级、时间范围分页查询未处置普通告警；用于列表滚动加载 |
 | `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/handled` | 处置普通告警 |
-| `GET` | `/api/bigscreen/panorama/alarms/actionable-workflow` | 查询当前用户可处理的工作流告警 |
+| `GET` | `/api/bigscreen/panorama/alarms/actionable-workflow` | 实时查询当前用户可处理的工作流告警；结果不缓存 |
 | `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue` | 处置告警并继续对应工作流 |
 | `GET` | `/api/bigscreen/access-control/me` | 代理当前登录用户的管理端数据权限；下游失败时拒绝访问，不返回默认权限 |
 
 `actionable-workflow` 返回的每条告警均带有 `workflowActionable: true`，前端以该标识选择 `handle-and-continue`，不再根据工作流实例或人工任务字段是否存在进行推断。
+
+普通告警只在未处置且风险等级为 `HIGH` 时进入弹窗；`sourceType=TASK` 的工作流告警不受风险等级限制，
+只在 BFF 推送的 `panorama.workflow-alarms.changed` 快照中出现后进入工作流弹窗。BFF 收到告警失效通知后
+独立于普通告警刷新立即查询 `actionable-workflow`；快照未变化时每 300 ms 仅重查该接口，最长 5 秒，变化即停。
+首次连接和重连也会推送当前完整快照，前端不调用该查询接口，也不设置告警查询定时器。
 
 响应字段、来源优先级和空值规则以[大屏 BFF 字段来源映射文档](大屏BFF字段来源映射文档.md)为准。固定摄像头作为 `devices[]` 中的同级装备返回，关键识别字段为：
 
@@ -128,7 +134,8 @@ Overview 的地图列表查询失败不再降级为 `map=[]`：地图读取超�
 前端复用既有 `POST /api/bigscreen/control/fixed-cameras/{sourceId}/video/start` 创建会话；再次取消选择时停止该会话。
 
 为抑制同一用户高频刷新，BFF 对同一 JWT `sub` 合并在途 `overview` 并仅复用 5 秒内的成功结果；失败结果
-不缓存。地图场景、地图任务路径和可处置工作流告警按同一用户合并并成功缓存 3 秒。Management 通用资源
+不缓存。地图场景、地图任务路径按同一用户合并并成功缓存 3 秒；可处置工作流告警不缓存，每次请求直接
+查询 Management，避免人工任务刚就绪时复用旧空结果。Management 通用资源
 请求使用独立连接/读取时限（默认各 1000/1500 ms）及单实例公平并发上限（默认 16）；任务请求继续使用
 独立的默认 1000/1500 ms、8 并发边界。缓存不跨用户共享，也不改变 401/403 语义。
 
@@ -246,7 +253,7 @@ BFF 对该类资源返回空集合并继续组装其余有权数据，因此真�
 | task 变更类事件 | 有完整 `taskId` 时立即转换为 `panorama.task.changed`                                                                                                                                                            |
 | `management.task.invalidated` | 300ms 去抖后通过独立有界 I/O 通道重查任务计划/实例摘要并推送变化项；失败或仍处于 `PREPARING` 时按 1/2/4/8 秒最多复查 4 次，不占用全景页面查询线程，也不加载回放、路径和设备任务明细                                                                                             |
 | alarm 变更类事件 | 立即转换为 `panorama.alarm.changed`，无真实上游事件时不生成模拟告警                                                                                                                                                         |
-| `management.alarm.invalidated` | 300ms 去抖后重查告警权威快照，只推送变化项                                                                                                                                                                               |
+| `management.alarm.invalidated` | BFF 内部失效通知，不透传浏览器。按当前会话身份以两条独立链路查询可处置工作流告警和普通告警分页快照；普通告警只查各风险第一页和总数，变化时推送 `panorama.alarms.changed`；工作流快照未变化时每 300ms 仅复查工作流接口，最长 5 秒，普通告警查询不会阻塞工作流推送 |
 | 设备、任务、告警或机器人在线状态变化 | 500ms 去抖后按事件类型只重算受影响统计块（设备/任务/告警，各块 3 秒 TTL 缓存按用户隔离），仅在快照变化时推送 `panorama.stats.changed`                                                                                                                |
 
-当前代码仍对没有定位的 `test111`、`SN005`、`SN006` 生成硬编码演示位置事件。它不是管理端真实位置，也不是通用兜底；生产验收不得把这些事件作为真实定位依据。其他机器人无定位时不补位置事件。若上游 WebSocket 不可用，连接仍可建立，但不会收到上游动态事件，也不会凭空生成业务快照。
+当前代码仍对没有定位的 `test111`、`SN005`、`SN006` 生成硬编码演示位置事件。它不是管理端真实位置，也不是通用兜底；生产验收不得把这些事件作为真实定位依据。其他机器人无定位时不补位置事件。若上游 WebSocket 不可用，连接仍可建立并完成首次用户范围告警快照；恢复上游连接前不会收到后续动态事件。

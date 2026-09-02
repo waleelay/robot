@@ -87,6 +87,9 @@ public class PanoramaWebSocketEventAdapter {
         if (!data.isObject()) {
             return messages;
         }
+        if (MANAGEMENT_ALARM_INVALIDATED.equals(event)) {
+            return List.of();
+        }
 
         // 旧版 Control 直接转发边缘任务进度时无法得到任务计划 ID。残缺事件不下发给前端，
         // 由 BigscreenWebSocketBridgeHandler 触发管理端快照刷新后生成完整任务事件。

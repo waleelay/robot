@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -59,6 +60,16 @@ public class PanoramaController {
     @GetMapping("/alarms")
     public Map<String, Object> alarms() {
         return panoramaService.alarms();
+    }
+
+    @GetMapping("/alarms/page")
+    public Map<String, Object> alarmPage(
+            @RequestParam(required = false) String level,
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(required = false) String occurredFrom,
+            @RequestParam(required = false) String occurredTo) {
+        return panoramaService.alarmPage(level, pageNum, pageSize, occurredFrom, occurredTo);
     }
 
     @GetMapping("/alarms/actionable-workflow")

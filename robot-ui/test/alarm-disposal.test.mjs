@@ -67,6 +67,14 @@ test('两个告警弹窗的稍后处置均只关闭弹窗', () => {
   })
 })
 
+test('工作流告警弹窗只消费 BFF 推送，不在前端查询或定时重试', () => {
+  const source = readFileSync(new URL(
+    '../src/views/bi/patrol/panorama/warning/WarnInfo.vue', import.meta.url
+  ), 'utf8')
+  assert.doesNotMatch(source, /getActionableWorkflowAlarms|workflowProbe|refreshWorkflowAlarms/)
+  assert.match(source, /workflowAlarms:\s*\{[\s\S]*this\.workflowQueue = \(items \|\| \[\]\)/)
+})
+
 test('处置成功后两个告警弹窗均从全局列表移除当前告警', () => {
   const files = [
     '../src/views/bi/patrol/panorama/warning/WarnInfo.vue',
@@ -74,9 +82,29 @@ test('处置成功后两个告警弹窗均从全局列表移除当前告警', ()
   ]
   files.forEach(file => {
     const source = readFileSync(new URL(file, import.meta.url), 'utf8')
-    assert.match(source, /this\.removeAlarm\(alarm\.alarmId\)/)
+    assert.match(source, /this\.removeAlarm\(alarm\)/)
   })
 
   const store = readFileSync(new URL('../src/store/modules/websocket-extra-data.js', import.meta.url), 'utf8')
-  assert.match(store, /removeAlarm\(\{ commit \}, alarmId\) \{\s*commit\('REMOVE_ALARM_DATA', alarmId\)\s*\}/)
+  assert.match(store, /removeAlarm\(\{ commit \}, alarm\) \{\s*commit\('REMOVE_ALARM_DATA', alarm\)\s*\}/)
+})
+
+test('普通告警列表使用服务端分页并仅在滚动到底部时加载下一页', () => {
+  const api = readFileSync(new URL('../src/api/new-bi.js', import.meta.url), 'utf8')
+  const dialog = readFileSync(new URL(
+    '../src/views/bi/patrol/panorama/warning/WarningBatch.vue', import.meta.url
+  ), 'utf8')
+  const left = readFileSync(new URL(
+    '../src/views/bi/patrol/panorama/Left.vue', import.meta.url
+  ), 'utf8')
+  const store = readFileSync(new URL('../src/store/modules/websocket-extra-data.js', import.meta.url), 'utf8')
+
+  assert.match(api, /\/bigscreen\/panorama\/alarms\/page/)
+  assert.match(dialog, /@scroll="handleListScroll"/)
+  assert.match(dialog, /this\.loadAlarmPage\(this\.alarmPageNum \+ 1\)/)
+  assert.match(left, /alarmsData\?\.\[key\]\?\.total/)
+  assert.match(left, /@scroll="handleAlarmCenterScroll"/)
+  assert.match(left, /this\.loadNextAlarmPage\(level\)/)
+  assert.match(left, /getPatrolPanoramaAlarmPage\(\{[\s\S]*level: level\.toUpperCase\(\)/)
+  assert.match(store, /event\.event === 'panorama\.alarms\.changed'/)
 })

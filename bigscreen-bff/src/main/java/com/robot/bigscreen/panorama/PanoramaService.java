@@ -53,6 +53,7 @@ public class PanoramaService {
     private static final long STATS_TIMEOUT_MILLIS = 5000;
     private static final int SNAPSHOT_CACHE_MAX_SIZE = 256;
     private static final int IN_FLIGHT_MAX_SIZE = 128;
+    private static final int ALARM_PAGE_SIZE = 10;
     /** 顶层编排允许等待子 I/O，但绝不占用子 I/O 执行器。 */
     private static final ThreadPoolExecutor OVERVIEW_EXECUTOR = new ThreadPoolExecutor(
             5,
@@ -839,8 +840,39 @@ public class PanoramaService {
                 "alarms", alarmsPayload());
     }
 
+    public Map<String, Object> alarmEventSnapshot() {
+        CompletableFuture<PanoramaCenterClient.AlarmPage> highFuture = alarmPageFuture("CRITICAL", null, null, ALARM_PAGE_SIZE);
+        CompletableFuture<PanoramaCenterClient.AlarmPage> mediumFuture = alarmPageFuture("WARN", null, null, ALARM_PAGE_SIZE);
+        CompletableFuture<PanoramaCenterClient.AlarmPage> lowFuture = alarmPageFuture("INFO", null, null, ALARM_PAGE_SIZE);
+        return alarmListPayload(
+                joinRequired(highFuture),
+                joinRequired(mediumFuture),
+                joinRequired(lowFuture));
+    }
+
+    public Map<String, Object> alarmPage(
+            String level,
+            int pageNum,
+            int pageSize,
+            String occurredFrom,
+            String occurredTo) {
+        PanoramaCenterClient.AlarmPage page = centerClient.alarmPage(
+                "NEW",
+                managementSeverity(level),
+                occurredFrom,
+                occurredTo,
+                pageNum,
+                pageSize);
+        return object(
+                "serverTime", now(),
+                "total", page.total(),
+                "pageNum", page.pageNum(),
+                "pageSize", page.pageSize(),
+                "items", page.records().stream().map(alarm -> alarmItem(alarm, null)).toList());
+    }
+
     public Map<String, Object> actionableWorkflowAlarms() {
-        List<Map<String, Object>> items = cachedStats("actionable-workflow-alarms", centerClient::actionableWorkflowAlarms).stream()
+        List<Map<String, Object>> items = centerClient.actionableWorkflowAlarms().stream()
                 .map(this::actionableWorkflowAlarmItem)
                 .toList();
         return object(
@@ -1478,27 +1510,55 @@ public class PanoramaService {
         LocalDateTime now = LocalDateTime.now(CHINA_ZONE);
         String occurredFrom = now.toLocalDate().atStartOfDay().format(DATE_TIME_FORMATTER);
         String occurredTo = now.format(DATE_TIME_FORMATTER);
-        CompletableFuture<List<Map<String, Object>>> todayAlarmsFuture = async(
-                () -> centerClient.alarms(null, occurredFrom, occurredTo));
-        CompletableFuture<List<Map<String, Object>>> unhandledAlarmsFuture = async(
-                () -> centerClient.alarms("NEW", null, null));
-        List<Map<String, Object>> todayAlarms = join(todayAlarmsFuture, List.of());
-        List<Map<String, Object>> unhandledAlarms = join(unhandledAlarmsFuture, List.of());
-        List<Map<String, Object>> summaryItems = todayAlarms.stream()
+        CompletableFuture<PanoramaCenterClient.AlarmPage> highFuture = alarmPageFuture("CRITICAL", null, null, ALARM_PAGE_SIZE);
+        CompletableFuture<PanoramaCenterClient.AlarmPage> mediumFuture = alarmPageFuture("WARN", null, null, ALARM_PAGE_SIZE);
+        CompletableFuture<PanoramaCenterClient.AlarmPage> lowFuture = alarmPageFuture("INFO", null, null, ALARM_PAGE_SIZE);
+        CompletableFuture<PanoramaCenterClient.AlarmPage> todayFuture = async(
+                () -> centerClient.alarmPage(null, null, occurredFrom, occurredTo, 1, 1));
+        CompletableFuture<PanoramaCenterClient.AlarmPage> handledFuture = async(
+                () -> centerClient.alarmPage("HANDLED", null, occurredFrom, occurredTo, 1, 1));
+        CompletableFuture<PanoramaCenterClient.AlarmPage> falseAlarmFuture = async(
+                () -> centerClient.alarmPage("FALSE_ALARM", null, occurredFrom, occurredTo, 1, 1));
+        PanoramaCenterClient.AlarmPage highPage = join(highFuture, emptyAlarmPage(ALARM_PAGE_SIZE));
+        PanoramaCenterClient.AlarmPage mediumPage = join(mediumFuture, emptyAlarmPage(ALARM_PAGE_SIZE));
+        PanoramaCenterClient.AlarmPage lowPage = join(lowFuture, emptyAlarmPage(ALARM_PAGE_SIZE));
+        Map<String, Object> payload = new LinkedHashMap<>(alarmListPayload(highPage, mediumPage, lowPage));
+        long handled = join(handledFuture, emptyAlarmPage(1)).total()
+                + join(falseAlarmFuture, emptyAlarmPage(1)).total();
+        payload.put("summary", alarmSummary(join(todayFuture, emptyAlarmPage(1)).total(), handled));
+        return payload;
+    }
+
+    private Map<String, Object> alarmListPayload(
+            PanoramaCenterClient.AlarmPage highPage,
+            PanoramaCenterClient.AlarmPage mediumPage,
+            PanoramaCenterClient.AlarmPage lowPage) {
+        long total = highPage.total() + mediumPage.total() + lowPage.total();
+        List<Map<String, Object>> latest = java.util.stream.Stream.of(highPage, mediumPage, lowPage)
+                .flatMap(page -> page.records().stream())
                 .map(alarm -> alarmItem(alarm, null))
+                .sorted((left, right) -> Objects.toString(right.get("eventTime"), "")
+                        .compareTo(Objects.toString(left.get("eventTime"), "")))
+                .limit(ALARM_PAGE_SIZE)
                 .toList();
-        List<Map<String, Object>> items = unhandledAlarms.stream()
-                .map(alarm -> alarmItem(alarm, null))
-                .toList();
-        List<Map<String, Object>> high = filterAlarms(items, "HIGH");
-        List<Map<String, Object>> medium = filterAlarms(items, "MEDIUM");
-        List<Map<String, Object>> low = filterAlarms(items, "LOW");
         return object(
-                "total", items.size(),
-                "summary", alarmSummary(summaryItems),
-                "high", alarmGroup(high),
-                "medium", alarmGroup(medium),
-                "low", alarmGroup(low));
+                "total", total,
+                "latest", alarmGroup(latest, total, 1, ALARM_PAGE_SIZE),
+                "high", alarmGroup(highPage),
+                "medium", alarmGroup(mediumPage),
+                "low", alarmGroup(lowPage));
+    }
+
+    private CompletableFuture<PanoramaCenterClient.AlarmPage> alarmPageFuture(
+            String severity,
+            String occurredFrom,
+            String occurredTo,
+            int pageSize) {
+        return async(() -> centerClient.alarmPage("NEW", severity, occurredFrom, occurredTo, 1, pageSize));
+    }
+
+    private PanoramaCenterClient.AlarmPage emptyAlarmPage(int pageSize) {
+        return new PanoramaCenterClient.AlarmPage(List.of(), 0, 1, pageSize);
     }
 
     private Map<String, Object> alarmItem(Map<String, Object> source, TaskInstanceResolver taskInstanceResolver) {
@@ -1609,9 +1669,7 @@ public class PanoramaService {
                 .orElse(null);
     }
 
-    private Map<String, Object> alarmSummary(List<Map<String, Object>> alarms) {
-        long handled = alarms.stream().filter(alarm -> handled(string(alarm.get("status")))).count();
-        int total = alarms.size();
+    private Map<String, Object> alarmSummary(long total, long handled) {
         Integer handleRate = total == 0 ? null : (int) Math.round(handled * 100.0 / total);
         return object(
                 "totalToday", total,
@@ -1623,9 +1681,14 @@ public class PanoramaService {
 
     private Map<String, Object> alarmStats(Map<String, Object> alarms) {
         return object(
-                "high", list(map(alarms.get("high")).get("items")).size(),
-                "medium", list(map(alarms.get("medium")).get("items")).size(),
-                "low", list(map(alarms.get("low")).get("items")).size());
+                "high", alarmTotal(alarms, "high"),
+                "medium", alarmTotal(alarms, "medium"),
+                "low", alarmTotal(alarms, "low"));
+    }
+
+    private long alarmTotal(Map<String, Object> alarms, String level) {
+        Number total = number(map(alarms.get(level)).get("total"));
+        return total == null ? 0 : total.longValue();
     }
 
     private Map<String, Object> taskOverview(List<Map<String, Object>> tasks) {
@@ -1748,10 +1811,11 @@ public class PanoramaService {
     private Map<String, Object> emptyAlarmsPayload() {
         return object(
                 "total", 0,
-                "summary", alarmSummary(List.of()),
-                "high", alarmGroup(List.of()),
-                "medium", alarmGroup(List.of()),
-                "low", alarmGroup(List.of()));
+                "summary", alarmSummary(0, 0),
+                "latest", alarmGroup(List.of(), 0, 1, ALARM_PAGE_SIZE),
+                "high", alarmGroup(List.of(), 0, 1, ALARM_PAGE_SIZE),
+                "medium", alarmGroup(List.of(), 0, 1, ALARM_PAGE_SIZE),
+                "low", alarmGroup(List.of(), 0, 1, ALARM_PAGE_SIZE));
     }
 
     private static java.util.concurrent.ThreadFactory namedDaemonThreadFactory(String prefix) {
@@ -1930,12 +1994,27 @@ public class PanoramaService {
         return levelCode(alarmStatus);
     }
 
-    private Map<String, Object> alarmGroup(List<Map<String, Object>> items) {
-        return object("items", items);
+    private Map<String, Object> alarmGroup(PanoramaCenterClient.AlarmPage page) {
+        List<Map<String, Object>> items = page.records().stream()
+                .map(alarm -> alarmItem(alarm, null))
+                .toList();
+        return alarmGroup(items, page.total(), page.pageNum(), page.pageSize());
     }
 
-    private List<Map<String, Object>> filterAlarms(List<Map<String, Object>> alarms, String level) {
-        return alarms.stream().filter(alarm -> level.equals(alarm.get("level"))).toList();
+    private Map<String, Object> alarmGroup(List<Map<String, Object>> items, long total, int pageNum, int pageSize) {
+        return object("total", total, "pageNum", pageNum, "pageSize", pageSize, "items", items);
+    }
+
+    private String managementSeverity(String level) {
+        if (level == null || level.isBlank()) {
+            return null;
+        }
+        return switch (level.toUpperCase(Locale.ROOT)) {
+            case "HIGH", "CRITICAL" -> "CRITICAL";
+            case "MEDIUM", "WARN" -> "WARN";
+            case "LOW", "INFO" -> "INFO";
+            default -> throw new IllegalArgumentException("unsupported alarm level");
+        };
     }
 
     private final class OverviewRequestCache {

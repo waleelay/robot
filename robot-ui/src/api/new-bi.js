@@ -24,6 +24,15 @@ export function getPatrolPanoramaOverview(signal) {
   })
 }
 
+export function getPatrolPanoramaAlarmPage(params) {
+  return request({
+    url: pre + '/bigscreen/panorama/alarms/page',
+    method: 'get',
+    params,
+    timeout: 8000
+  })
+}
+
 export function getPatrolPanoramaMapResources(mapId) {
   return request({
     url: pre + `/bigscreen/panorama/maps/${encodeURIComponent(mapId)}/resources`,
@@ -54,13 +63,6 @@ export function getPatrolPanoramaTaskFixedCameras(taskId) {
     url: pre + `/bigscreen/panorama/tasks/${encodeURIComponent(taskId)}/fixed-cameras`,
     method: 'get',
     timeout: 8000
-  })
-}
-
-export function getActionableWorkflowAlarms() {
-  return request({
-    url: pre + '/bigscreen/panorama/alarms/actionable-workflow',
-    method: 'get'
   })
 }
 

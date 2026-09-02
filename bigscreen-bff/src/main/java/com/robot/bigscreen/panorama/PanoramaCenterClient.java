@@ -339,27 +339,33 @@ public class PanoramaCenterClient {
         return records(uri);
     }
 
-    public List<Map<String, Object>> alarms() {
-        return alarms(null, null, null);
-    }
-
-    public List<Map<String, Object>> alarms(String status, String occurredFrom, String occurredTo) {
-        int pageSize = 100;
-        return pagedRecords(pageNum -> {
-            UriComponentsBuilder builder = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms")
-                    .queryParam("pageNum", pageNum)
-                    .queryParam("pageSize", pageSize);
-            if (status != null && !status.isBlank()) {
-                builder.queryParam("status", status);
-            }
-            if (occurredFrom != null && !occurredFrom.isBlank()) {
-                builder.queryParam("occurredFrom", occurredFrom.replace(' ', 'T'));
-            }
-            if (occurredTo != null && !occurredTo.isBlank()) {
-                builder.queryParam("occurredTo", occurredTo.replace(' ', 'T'));
-            }
-            return builder.build(true).toUri();
-        }, pageSize);
+    public AlarmPage alarmPage(
+            String status,
+            String severity,
+            String occurredFrom,
+            String occurredTo,
+            int pageNum,
+            int pageSize) {
+        int safePageNum = Math.max(1, pageNum);
+        int safePageSize = Math.max(1, Math.min(100, pageSize));
+        UriComponentsBuilder builder = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms")
+                .queryParam("pageNum", safePageNum)
+                .queryParam("pageSize", safePageSize);
+        if (status != null && !status.isBlank()) {
+            builder.queryParam("status", status);
+        }
+        if (severity != null && !severity.isBlank()) {
+            builder.queryParam("severity", severity);
+        }
+        if (occurredFrom != null && !occurredFrom.isBlank()) {
+            builder.queryParam("occurredFrom", occurredFrom.replace(' ', 'T'));
+        }
+        if (occurredTo != null && !occurredTo.isBlank()) {
+            builder.queryParam("occurredTo", occurredTo.replace(' ', 'T'));
+        }
+        Map<String, Object> response = responseMap(builder.build(true).toUri()).orElse(Map.of());
+        List<Map<String, Object>> records = records(response);
+        return new AlarmPage(records, reportedTotal(response, records.size()), safePageNum, safePageSize);
     }
 
     public List<Map<String, Object>> actionableWorkflowAlarms() {
@@ -370,7 +376,14 @@ public class PanoramaCenterClient {
     }
 
     public List<Map<String, Object>> alarmsForStatistics(String occurredFrom, String occurredTo) {
-        return alarms(null, occurredFrom, occurredTo);
+        int pageSize = 100;
+        return pagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/alarms")
+                .queryParam("pageNum", pageNum)
+                .queryParam("pageSize", pageSize)
+                .queryParam("occurredFrom", occurredFrom.replace(' ', 'T'))
+                .queryParam("occurredTo", occurredTo.replace(' ', 'T'))
+                .build(true)
+                .toUri(), pageSize);
     }
 
     public boolean handleAlarm(String alarmId, String handleAction, String handleResult) {
@@ -697,6 +710,24 @@ public class PanoramaCenterClient {
         return false;
     }
 
+    private long reportedTotal(Map<String, Object> response, int fallback) {
+        Object total = response.get("total");
+        if (total == null && response.get("data") instanceof Map<?, ?> data) {
+            total = data.get("total");
+        }
+        if (total instanceof Number number) {
+            return number.longValue();
+        }
+        if (total instanceof String text) {
+            try {
+                return Long.parseLong(text);
+            } catch (NumberFormatException ignored) {
+                // 使用当前页数量作为兼容回退。
+            }
+        }
+        return fallback;
+    }
+
     private Map<String, Object> requiredResponseMap(URI uri) {
         PanoramaService.requireRequestTimeRemaining();
         if (!generalCircuit.allowRequest()) {
@@ -779,6 +810,9 @@ public class PanoramaCenterClient {
         String normalizedBaseUrl = baseUrl == null || baseUrl.isBlank() ? "http://localhost:8088" : baseUrl;
         String separator = normalizedBaseUrl.endsWith("/") || path.startsWith("/") ? "" : "/";
         return UriComponentsBuilder.fromUriString(normalizedBaseUrl + separator + path);
+    }
+
+    public record AlarmPage(List<Map<String, Object>> records, long total, int pageNum, int pageSize) {
     }
 
     public static final class TaskSourceException extends RuntimeException {

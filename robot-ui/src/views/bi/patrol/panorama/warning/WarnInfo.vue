@@ -191,7 +191,6 @@ import WarningExecuteNo from './WarningExecuteNo.vue';
 import WarningExecuteError from './WarningExecuteError.vue';
 import { mapState, mapActions } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
-import { getActionableWorkflowAlarms } from '../../../../../api/new-bi.js';
 import { buildSnapshotOptions, loadSnapshotObjectUrls } from '@/utils/alarm-snapshot'
 export default {
   name: 'WarningInfo',
@@ -203,7 +202,7 @@ export default {
     WarningExecuteError
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotAlarmObj', 'gisMapCenterPoint', 'alarmRevision']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotAlarmObj', 'gisMapCenterPoint', 'workflowAlarms']),
     firePersonError() {
       return this.$store.getters['websocket/getFirePersonError'];
     },
@@ -233,7 +232,6 @@ export default {
       dialogIRUrl: '',
       loading: false,
       timer: null,
-      refreshTimer: null,
       workflowQueue: [],
       deferredAlarmIds: new Set(),
       show: false,
@@ -296,7 +294,7 @@ export default {
         if (response?.success === false) {
           throw new Error(response.message || '告警处置失败')
         }
-        this.removeAlarm(alarm.alarmId)
+        this.removeAlarm(alarm)
         this.workflowQueue = this.workflowQueue.filter(item => String(item.alarmId) !== String(alarm.alarmId))
         this.resetDialog()
         if (type === 0) {
@@ -322,26 +320,6 @@ export default {
       this.selectedValue = ''
       this.options = []
       this.snapshotObjectUrls = {}
-    },
-    scheduleWorkflowAlarmRefresh() {
-      if (this.refreshTimer) clearTimeout(this.refreshTimer)
-      this.refreshTimer = setTimeout(() => {
-        this.refreshTimer = null
-        this.refreshWorkflowAlarms()
-      }, 300)
-    },
-    async refreshWorkflowAlarms() {
-      try {
-        const response = await getActionableWorkflowAlarms()
-        const items = Array.isArray(response?.items) ? response.items : []
-        this.workflowQueue = items.filter(item => !this.deferredAlarmIds.has(String(item.alarmId)))
-        if (this.isWorkflowAlarm && !this.workflowQueue.some(item => String(item.alarmId) === String(this.details.alarmId))) {
-          this.resetDialog()
-        }
-        this.openNextWorkflowAlarm()
-      } catch (error) {
-        // 无查看权限或中心端暂不可用时，不阻断大屏其他功能。
-      }
     },
     openNextWorkflowAlarm() {
       if (this.dialogVisible || this.warningVisible || this.details.alarmId) return
@@ -422,19 +400,23 @@ export default {
         }
       }
     },
-    alarmRevision() {
-      this.scheduleWorkflowAlarmRefresh()
+    workflowAlarms: {
+      handler(items) {
+        this.workflowQueue = (items || []).filter(item => !this.deferredAlarmIds.has(String(item.alarmId)))
+        if (this.isWorkflowAlarm && !this.workflowQueue.some(item => String(item.alarmId) === String(this.details.alarmId))) {
+          this.resetDialog()
+        }
+        this.openNextWorkflowAlarm()
+      },
+      immediate: true,
+      deep: true
     }
-  },
-  mounted() {
-    this.refreshWorkflowAlarms()
   },
   beforeDestroy() {
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
     }
-    if (this.refreshTimer) clearTimeout(this.refreshTimer)
   }
 }
 </script>
