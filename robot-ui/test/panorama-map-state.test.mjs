@@ -102,6 +102,28 @@ test('工作流告警只消费 BFF 快照，普通告警仍仅高风险弹窗', 
   assert.equal(ctx.state.robotAlarmObj['robot-1'].alarmId, 'ordinary-high')
 })
 
+test('任务轨迹按执行轮次重置、按毫秒去重并独立更新当前位姿', async () => {
+  const ctx = setup()
+  await ctx.dispatch('syncRobot', { event: 'robot.trajectory.changed', data: {
+    robotId: 'robot-1', workflowInstanceId: 9001, action: 'RESET',
+    points: [{ timestamp: 1000.001, x: 1, y: 2 }, { timestamp: 1000.0014, x: 9, y: 9 }]
+  } })
+  await ctx.dispatch('syncRobot', { event: 'robot.trajectory.changed', data: {
+    robotId: 'robot-1', workflowInstanceId: 9001, action: 'APPEND', points: [],
+    currentPose: { timestamp: 1001, x: 2, y: 3 }
+  } })
+
+  assert.equal(ctx.state.trajectoryByRobot['robot-1'].points.length, 1)
+  assert.equal(ctx.state.trajectoryByRobot['robot-1'].currentPose.x, 2)
+
+  await ctx.dispatch('syncRobot', { event: 'robot.trajectory.changed', data: {
+    robotId: 'robot-1', workflowInstanceId: 9002, action: 'RESET',
+    points: [{ timestamp: 2000, x: 4, y: 5 }]
+  } })
+  assert.equal(ctx.state.trajectoryByRobot['robot-1'].workflowInstanceId, 9002)
+  assert.equal(ctx.state.trajectoryByRobot['robot-1'].points[0].x, 4)
+})
+
 test('首屏规则一致：GPS 默认 GIS，无 GPS 默认首张 SLAM，无地图回退 GIS', async () => {
   for (const [data, expected] of [
     [overview(), B],

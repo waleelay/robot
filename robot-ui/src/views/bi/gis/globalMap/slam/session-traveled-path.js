@@ -1,161 +1,118 @@
 import { isFixedCamera } from '@/constants/robot.js'
-import { isActiveTaskStatus } from '../../../patrol/business/execution-status'
+import { normalizeExecutionStatus } from '../../../patrol/business/execution-status'
+import { listTasksForRobot } from '../../../patrol/business/task-equipment'
 import { buildPathDirectionArrows } from './path-direction-arrows.js'
 
-const MAX_SESSION_TRAVELED_POINTS = 4000
+const WATCHED_STATUSES = new Set(['RUNNING', 'PAUSING', 'PAUSED', 'RESUMING', 'TERMINATING', 'FAILED'])
 
 function toPointsAttr(points) {
-  if (!points || points.length < 2) return ''
-  return points.map(p => `${p.x},${p.y}`).join(' ')
+  return points.length < 2 ? '' : points.map(point => `${point.x},${point.y}`).join(' ')
 }
 
 export default {
   name: 'SessionTraveledPath',
   data() {
     return {
-      // ????????¹×??????????????????¡¤??????
-      sessionTraveledByRobot: {}
+      trajectoryPreviousTargets: [],
+      trajectoryPreviousMapId: null
     }
   },
   computed: {
-    sessionTraveledSyncKey() {
-      const mapId = this.map?.id
-      const robots = this.slamOfRobot?.[String(mapId)]?.robots || []
-      const live = robots.map((item) => {
-        const robotId = item.robotId
-        const loc = this.robotLocation?.[robotId] || {}
-        const info = this.robotBaseInfo?.[robotId] || {}
-        const taskId = info.runningTaskId
-        const status = this.taskData?.[taskId]?.status || ''
-        const x = loc.x ?? loc.coordinateX ?? ''
-        const y = loc.y ?? loc.coordinateY ?? ''
-        return `${robotId}:${taskId || ''}:${status}:${x}:${y}`
-      }).join('|')
-      const stored = Object.keys(this.sessionTraveledByRobot).map((robotId) => {
-        const rec = this.sessionTraveledByRobot[robotId] || {}
-        const info = this.robotBaseInfo?.[robotId] || {}
-        const taskId = info.runningTaskId || rec.taskId
-        const status = this.taskData?.[taskId]?.status || ''
-        return `${robotId}:${taskId || ''}:${status}`
-      }).join('|')
-      return `${live}#${stored}`
+    trajectoryRecords() {
+      return this.$store.state.websocketExtraData?.trajectoryByRobot || {}
+    },
+    trajectoryWatchTargets() {
+      if (this.showSmall || !this.hasPreview || this.map?.id == null) return []
+      const robots = this.slamOfRobot?.[String(this.map.id)]?.robots || []
+      return robots.map(robot => {
+        const robotId = robot.robotId
+        if (!this.canWatchTrajectory(robotId)) return null
+        const task = listTasksForRobot(this.taskData, robotId).find(item =>
+          WATCHED_STATUSES.has(normalizeExecutionStatus(item?.status)) && item?.workflowInstanceId != null)
+        return task ? { robotId, workflowInstanceId: task.workflowInstanceId } : null
+      }).filter(Boolean)
+    },
+    trajectoryWatchKey() {
+      const targets = this.trajectoryWatchTargets
+        .map(item => `${item.robotId}:${item.workflowInstanceId}`)
+        .sort()
+        .join('|')
+      return `${this.map?.id ?? ''}#${targets}`
     },
     sessionTraveledPathLayers() {
-      const mapId = this.map?.id
-      return Object.entries(this.sessionTraveledByRobot).map(([robotId, rec]) => {
-        if (!rec || String(rec.mapId) !== String(mapId)) return null
-        if (!rec.points || rec.points.length < 2) return null
-        const traveledPoints = toPointsAttr(rec.points)
+      if (this.showSmall || !this.map) return []
+      const robotIds = new Set((this.slamOfRobot?.[String(this.map.id)]?.robots || [])
+        .map(item => String(item.robotId)))
+      return Object.entries(this.trajectoryRecords).map(([robotId, record]) => {
+        if (!robotIds.has(String(robotId))) return null
+        const points = (record?.points || []).map(point =>
+          this.mapPointToPixel({ coordinateX: point.x, coordinateY: point.y }, this.map)
+        ).filter(Boolean)
+        const traveledPoints = toPointsAttr(points)
         if (!traveledPoints) return null
         return {
           robotId,
-          taskId: rec.taskId,
+          workflowInstanceId: record.workflowInstanceId,
           traveledPoints,
-          arrows: buildPathDirectionArrows(rec.points, this.zoom)
+          arrows: buildPathDirectionArrows(points, this.zoom)
         }
       }).filter(Boolean)
     }
   },
   watch: {
-    sessionTraveledSyncKey: {
+    trajectoryWatchKey: {
       immediate: true,
       handler() {
-        this.syncSessionTraveledPaths()
+        this.syncTrajectoryWatching()
       }
     }
   },
+  beforeDestroy() {
+    this.$store.dispatch('websocketRobot/syncTrajectoryWatchTargets', [])
+    this.$store.dispatch('websocketExtraData/clearAllTrajectories')
+  },
   methods: {
-    canTrackSessionTraveled(robotId) {
-      if (!robotId) return false
-      // ???????? mock-task-execution ??????????????
-      if (String(robotId).startsWith('mock-')) return false
-      if (this.mockExecRobotId && String(this.mockExecRobotId) === String(robotId) && !this.mockExecDone) {
-        return false
-      }
-      const robot = this.robotBaseInfo?.[robotId] || {}
-      if (isFixedCamera(robot)) return false
-      return true
+    canWatchTrajectory(robotId) {
+      if (!robotId || String(robotId).startsWith('mock-')) return false
+      return !isFixedCamera(this.robotBaseInfo?.[robotId] || {})
     },
-    getSessionActiveTaskId(robotId) {
-      const robot = this.robotBaseInfo?.[robotId] || {}
-      const taskId = robot.runningTaskId
-      if (taskId === undefined || taskId === null || taskId === '') return null
-      const task = this.taskData?.[taskId] || robot.runningTask
-      if (task?.status && !isActiveTaskStatus(task.status)) return null
-      return taskId
-    },
-    getSessionSnappedPixel(robotId) {
-      const location = this.robotLocation?.[robotId] || this.robotBaseInfo?.[robotId]?.location
-      if (!location || !this.map) return null
-      const locMapId = location.mapId
-      if (locMapId != null && this.map.id != null && String(locMapId) !== String(this.map.id)) return null
-      const coordinateX = location.x ?? location.coordinateX
-      const coordinateY = location.y ?? location.coordinateY
-      if (coordinateX === undefined || coordinateX === null || coordinateY === undefined || coordinateY === null) {
-        return null
+    syncTrajectoryWatching() {
+      const mapId = this.map?.id ?? null
+      if (this.trajectoryPreviousMapId != null && String(this.trajectoryPreviousMapId) !== String(mapId)) {
+        this.$store.dispatch('websocketExtraData/clearAllTrajectories')
+        this.trajectoryPreviousTargets = []
       }
-      const pixel = this.mapPointToPixel({ coordinateX, coordinateY }, this.map)
-      if (!pixel) return null
-      const zoom = Number(this.zoom) || 1
-      return {
-        x: Math.round(pixel.x * zoom) / zoom,
-        y: Math.round(pixel.y * zoom) / zoom
-      }
-    },
-    syncSessionTraveledPaths() {
-      if (this.showSmall) return
-      if (this.hasPreview && this.map?.id) {
-        const mapId = this.map.id
-        const robots = this.slamOfRobot?.[String(mapId)]?.robots || []
-        robots.forEach((item) => {
-          const robotId = item.robotId
-          if (!this.canTrackSessionTraveled(robotId)) return
-          const taskId = this.getSessionActiveTaskId(robotId)
-          if (!taskId) return
-          this.appendSessionTraveledPoint(robotId, taskId, mapId)
-        })
-      }
-      Object.keys(this.sessionTraveledByRobot).forEach((robotId) => {
-        const rec = this.sessionTraveledByRobot[robotId]
-        const taskId = this.getSessionActiveTaskId(robotId)
-        if (!taskId || !rec || String(taskId) !== String(rec.taskId)) {
-          this.clearSessionTraveledPath(robotId)
+      const next = this.trajectoryWatchTargets
+      const nextKeys = new Set(next.map(item => `${item.robotId}:${item.workflowInstanceId}`))
+      const currentRobotIds = new Set((this.slamOfRobot?.[String(mapId)]?.robots || [])
+        .map(item => String(item.robotId)))
+      this.trajectoryPreviousTargets.forEach(target => {
+        if (nextKeys.has(`${target.robotId}:${target.workflowInstanceId}`)) return
+        if (currentRobotIds.has(String(target.robotId))) {
+          this.$store.dispatch('websocketExtraData/finishTrajectory', target)
+        } else {
+          this.$store.dispatch('websocketExtraData/clearTrajectory', target.robotId)
         }
       })
-    },
-    appendSessionTraveledPoint(robotId, taskId, mapId) {
-      const pixel = this.getSessionSnappedPixel(robotId)
-      if (!pixel) return
-      const rec = this.sessionTraveledByRobot[robotId]
-      if (!rec || String(rec.taskId) !== String(taskId) || String(rec.mapId) !== String(mapId)) {
-        this.$set(this.sessionTraveledByRobot, robotId, {
-          taskId,
-          mapId,
-          points: [pixel]
-        })
-        return
-      }
-      const last = rec.points[rec.points.length - 1]
-      if (last && last.x === pixel.x && last.y === pixel.y) return
-      const points = rec.points.concat(pixel)
-      const nextPoints = points.length > MAX_SESSION_TRAVELED_POINTS
-        ? points.slice(points.length - MAX_SESSION_TRAVELED_POINTS)
-        : points
-      this.$set(this.sessionTraveledByRobot, robotId, {
-        ...rec,
-        points: nextPoints
+      next.forEach(target => {
+        const record = this.trajectoryRecords[String(target.robotId)]
+        if (record && String(record.workflowInstanceId) !== String(target.workflowInstanceId)) {
+          this.$store.dispatch('websocketExtraData/clearTrajectory', target.robotId)
+        }
       })
+      this.trajectoryPreviousMapId = mapId
+      this.trajectoryPreviousTargets = next.map(item => ({ ...item }))
+      this.$store.dispatch('websocketRobot/syncTrajectoryWatchTargets', next)
     },
-    clearSessionTraveledPath(robotId) {
-      if (!this.sessionTraveledByRobot[robotId]) return
-      this.$delete(this.sessionTraveledByRobot, robotId)
-      if (this.robotId && String(this.robotId) === String(robotId)
-        && typeof this.hideTempTaskDestination === 'function') {
-        this.hideTempTaskDestination()
+    getTrajectoryLocation(robotId, normalLocation) {
+      if (this.showSmall) return normalLocation
+      const record = this.trajectoryRecords[String(robotId)]
+      const pose = record?.currentPose
+      if (!pose || !Number.isFinite(Number(pose.x)) || !Number.isFinite(Number(pose.y))) return normalLocation
+      if (record.stopped && String(normalLocation?.updatedAt) !== String(record.stoppedLocationUpdatedAt)) {
+        return normalLocation
       }
-    },
-    clearAllSessionTraveledPaths() {
-      this.sessionTraveledByRobot = {}
+      return { ...normalLocation, x: pose.x, y: pose.y, yaw: pose.yaw }
     }
   }
 }

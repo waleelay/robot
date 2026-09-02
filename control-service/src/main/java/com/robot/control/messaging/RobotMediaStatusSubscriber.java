@@ -9,6 +9,7 @@ import com.robot.control.client.ControlMediaServiceClient;
 import com.robot.control.robot.service.RobotRegistryService;
 import com.robot.control.service.EquipmentControlService;
 import com.robot.control.fixedcamera.FixedCameraHealthService;
+import com.robot.control.trajectory.TrajectoryCoordinator;
 import com.robot.media.common.video.VideoStatusMessage;
 import com.robot.media.common.video.IntercomStatusMessage;
 import java.nio.charset.StandardCharsets;
@@ -44,14 +45,15 @@ public class RobotMediaStatusSubscriber {
     private static final String INTERCOM_STATUS_TOPIC = "robot/+/media/video/intercom/status";
     private static final String MEDIA_CLIENT_STATUS_TOPIC = "robot/+/media/client/status";
     private static final String EDGE_DEVICE_STATUS_TOPIC = "eiop/v1/edge/+/status";
+    private static final String TRAJECTORY_SNAPSHOT_TOPIC = "eiop/v1/edge/+/trajectory/snapshot";
     private static final String CALL_INVITE_TOPIC = "robot/+/media/video/intercom/call/invite";
     private static final String CALL_CANCEL_TOPIC = "robot/+/media/video/intercom/call/cancel";
     private static final String[] STATUS_TOPICS = {
         STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, FIXED_CAMERA_GATEWAY_STATUS_TOPIC, FIXED_CAMERA_HEALTH_STATUS_TOPIC,
         INTERCOM_STATUS_TOPIC, MEDIA_CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
-        EDGE_DEVICE_STATUS_TOPIC
+        EDGE_DEVICE_STATUS_TOPIC, TRAJECTORY_SNAPSHOT_TOPIC
     };
-    private static final int[] STATUS_QOS = {1, 1, 1, 1, 1, 1, 1, 1, 1};
+    private static final int[] STATUS_QOS = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 
     private final ControlServiceProperties properties;
     private final ObjectMapper objectMapper;
@@ -62,6 +64,7 @@ public class RobotMediaStatusSubscriber {
     private final IntercomCallService intercomCallService;
     private final EdgeDeviceStatusHandler edgeDeviceStatusHandler;
     private final FixedCameraHealthService fixedCameraHealthService;
+    private final TrajectoryCoordinator trajectoryCoordinator;
     private final Map<String, Boolean> mediaClientOnlineByRobot = new ConcurrentHashMap<>();
     private MqttClient client;
 
@@ -84,7 +87,8 @@ public class RobotMediaStatusSubscriber {
             RobotRegistryService robotRegistryService,
             IntercomCallService intercomCallService,
             EdgeDeviceStatusHandler edgeDeviceStatusHandler,
-            FixedCameraHealthService fixedCameraHealthService) {
+            FixedCameraHealthService fixedCameraHealthService,
+            TrajectoryCoordinator trajectoryCoordinator) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.mediaServiceClient = mediaServiceClient;
@@ -94,6 +98,7 @@ public class RobotMediaStatusSubscriber {
         this.intercomCallService = intercomCallService;
         this.edgeDeviceStatusHandler = edgeDeviceStatusHandler;
         this.fixedCameraHealthService = fixedCameraHealthService;
+        this.trajectoryCoordinator = trajectoryCoordinator;
     }
 
     /**
@@ -234,6 +239,13 @@ public class RobotMediaStatusSubscriber {
                 new String(message.getPayload(), StandardCharsets.UTF_8));
     }
 
+    private IMqttMessageListener trajectorySnapshotListener() {
+        return (topic, message) -> {
+            if (message.isRetained()) return;
+            trajectoryCoordinator.handleSnapshot(topic, new String(message.getPayload(), StandardCharsets.UTF_8));
+        };
+    }
+
     /**
      * 创建并连接 MQTT 客户端。
      *
@@ -296,12 +308,12 @@ public class RobotMediaStatusSubscriber {
                 new IMqttMessageListener[] {
                     statusListener(), statusListener(), gatewayStatusListener(), cameraHealthStatusListener(),
                     intercomStatusListener(), clientStatusListener(), callInviteListener(), callCancelListener(),
-                    edgeDeviceStatusListener()
+                    edgeDeviceStatusListener(), trajectorySnapshotListener()
                 });
-        log.info("已订阅媒体 MQTT 主题：{} 、{} 、{} 、{} 、{} 、{} 、{} 、{} 、{}",
+        log.info("已订阅媒体 MQTT 主题：{} 、{} 、{} 、{} 、{} 、{} 、{} 、{} 、{} 、{}",
                 STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, FIXED_CAMERA_GATEWAY_STATUS_TOPIC, FIXED_CAMERA_HEALTH_STATUS_TOPIC,
                 INTERCOM_STATUS_TOPIC, MEDIA_CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
-                EDGE_DEVICE_STATUS_TOPIC);
+                EDGE_DEVICE_STATUS_TOPIC, TRAJECTORY_SNAPSHOT_TOPIC);
     }
 
     private IMqttMessageListener gatewayStatusListener() {

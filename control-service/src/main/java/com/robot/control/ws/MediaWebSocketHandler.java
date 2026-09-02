@@ -9,6 +9,7 @@ import com.robot.control.call.IntercomCallService;
 import com.robot.control.client.ControlManagementClient;
 import com.robot.control.config.DateTimeConfig;
 import com.robot.control.service.EquipmentControlService;
+import com.robot.control.trajectory.TrajectoryCoordinator;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
@@ -43,6 +44,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     private final CurrentUserResolver currentUserResolver;
     private final RequestAuthorizationHeaders requestAuthorizationHeaders;
     private final ControlManagementClient managementClient;
+    private final TrajectoryCoordinator trajectoryCoordinator;
 
     /**
      * 创建 MediaWebSocketHandler 实例。
@@ -58,7 +60,8 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
             IntercomCallService intercomCallService,
             CurrentUserResolver currentUserResolver,
             RequestAuthorizationHeaders requestAuthorizationHeaders,
-            ControlManagementClient managementClient) {
+            ControlManagementClient managementClient,
+            TrajectoryCoordinator trajectoryCoordinator) {
         this.publisher = publisher;
         this.objectMapper = objectMapper;
         this.equipmentControlService = equipmentControlService;
@@ -66,6 +69,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
         this.currentUserResolver = currentUserResolver;
         this.requestAuthorizationHeaders = requestAuthorizationHeaders;
         this.managementClient = managementClient;
+        this.trajectoryCoordinator = trajectoryCoordinator;
     }
 
     /**
@@ -122,6 +126,14 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
                 }
                 case "video.intercom.call.query" -> send(
                         session, "video.intercom.call.list", requestId, authorizedRingingCalls());
+                case "trajectory.watch.sync" -> {
+                    try {
+                        trajectoryCoordinator.sync(session, payload);
+                    } catch (IllegalArgumentException exception) {
+                        log.warn("已忽略非法轨迹观看集合，WebSocket 会话={} 原因={}",
+                                session.getId(), exception.getMessage());
+                    }
+                }
                 default -> {
                     // Ignore unknown message types for forward compatibility.
                 }
@@ -146,6 +158,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
      */
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        trajectoryCoordinator.removeSession(session);
         publisher.removeSession(session);
     }
 

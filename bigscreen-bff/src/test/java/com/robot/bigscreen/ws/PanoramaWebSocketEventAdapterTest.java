@@ -48,7 +48,7 @@ class PanoramaWebSocketEventAdapterTest {
         JsonNode location = locationEvent.path("data").path("location");
         assertThat(location.path("x").asDouble()).isEqualTo(5.28);
         assertThat(location.path("yaw").asDouble()).isEqualTo(-2.87);
-        assertThat(location.path("mapId").asText()).isEqualTo("2077");
+        assertThat(location.has("mapId")).isFalse();
         assertThat(location.path("coordinateType").asText()).isEqualTo("地图坐标");
         assertThat(location.path("localized").asBoolean()).isTrue();
         JsonNode statusEvent = events.stream()

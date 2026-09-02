@@ -31,6 +31,9 @@ let overviewRefreshPromise = null
 let overviewAbortController = null
 const mapResourcePromises = new Map()
 const taskFixedCameraPromises = new Map()
+const trajectoryRetentionTimers = new Map()
+const MAX_TRAJECTORY_POINTS = 15000
+const TRAJECTORY_RETENTION_MILLIS = 5 * 60 * 1000
 
 const state = {
   // 设备对象：按需加载的设备详情
@@ -56,6 +59,7 @@ const state = {
   workflowAlarms: [],
    // 实时定位
   robotLocation: {}, // { robotId: { lat, lng, altitude, address, updatedAt } }
+  trajectoryByRobot: {}, // { robotId: { workflowInstanceId, points, currentPose, stopped } }
   // 设备基本信息；task 由 taskData 反查；cameras 只存 websocketRobot（overview/robot.state）
   robotBaseInfo: {}, // { robotId: { ...robotInfo } }
   // 装备列表
@@ -96,6 +100,9 @@ const mutations = {
     state.taskFixedCameraData = {};
     state.alarmsData = {};
     state.robotLocation = {};
+    state.trajectoryByRobot = {};
+    trajectoryRetentionTimers.forEach(timer => clearTimeout(timer));
+    trajectoryRetentionTimers.clear();
     state.robotBaseInfo = {};
     state.robotList = [];
     state.robotAlarmObj = {};
@@ -232,6 +239,64 @@ const mutations = {
       state.robotLocation = { ...state.robotLocation, [data.robotId]: data.location };
     // }, 20000);
   },
+  APPLY_TRAJECTORY(state, data) {
+    const robotId = data?.robotId
+    const workflowInstanceId = data?.workflowInstanceId
+    const action = String(data?.action || '').toUpperCase()
+    if (robotId == null || workflowInstanceId == null || !['RESET', 'APPEND', 'STOPPED'].includes(action)) return
+    const key = String(robotId)
+    const previous = state.trajectoryByRobot[key]
+    if (action !== 'RESET' && (!previous || String(previous.workflowInstanceId) !== String(workflowInstanceId))) return
+    if (action === 'STOPPED') {
+      state.trajectoryByRobot = {
+        ...state.trajectoryByRobot,
+        [key]: { ...previous, stopped: true, stoppedLocationUpdatedAt: data.normalLocationUpdatedAt }
+      }
+      return
+    }
+    const base = action === 'RESET' ? [] : (previous?.points || [])
+    const seen = new Set(base.map(point => Math.round(Number(point.timestamp) * 1000)))
+    const incoming = (Array.isArray(data.points) ? data.points : []).filter(point => {
+      const timestamp = Number(point?.timestamp)
+      const x = Number(point?.x)
+      const y = Number(point?.y)
+      const token = Math.round(timestamp * 1000)
+      if (!Number.isFinite(timestamp) || !Number.isFinite(x) || !Number.isFinite(y) || seen.has(token)) return false
+      seen.add(token)
+      return true
+    })
+    const points = base.length >= MAX_TRAJECTORY_POINTS
+      ? base
+      : base.concat(incoming.slice(0, MAX_TRAJECTORY_POINTS - base.length))
+    state.trajectoryByRobot = {
+      ...state.trajectoryByRobot,
+      [key]: {
+        workflowInstanceId,
+        points,
+        currentPose: data.currentPose || incoming[incoming.length - 1] || previous?.currentPose || null,
+        stopped: false
+      }
+    }
+  },
+  MARK_TRAJECTORY_STOPPED(state, { robotId, workflowInstanceId, normalLocationUpdatedAt }) {
+    const key = String(robotId)
+    const previous = state.trajectoryByRobot[key]
+    if (!previous || String(previous.workflowInstanceId) !== String(workflowInstanceId)) return
+    state.trajectoryByRobot = {
+      ...state.trajectoryByRobot,
+      [key]: { ...previous, stopped: true, stoppedLocationUpdatedAt: normalLocationUpdatedAt }
+    }
+  },
+  CLEAR_TRAJECTORY(state, robotId) {
+    const key = String(robotId)
+    if (!state.trajectoryByRobot[key]) return
+    const next = { ...state.trajectoryByRobot }
+    delete next[key]
+    state.trajectoryByRobot = next
+  },
+  CLEAR_ALL_TRAJECTORIES(state) {
+    state.trajectoryByRobot = {}
+  },
   SET_ROBOT_BASE_INFO(state, { robotId, robotInfo, fromRealtime }) {
     const incoming = { ...(robotInfo || {}) }
     if (fromRealtime && (incoming.type === undefined || incoming.type === null || incoming.type === '')) {
@@ -306,6 +371,50 @@ const actions = {
     overviewRefreshPromise = null
     overviewAbortController?.abort()
     overviewAbortController = null
+  },
+  applyTrajectoryEvent({ state, commit, dispatch }, data) {
+    const robotId = data?.robotId
+    if (robotId == null) return
+    const key = String(robotId)
+    const oldTimer = trajectoryRetentionTimers.get(key)
+    if (oldTimer) clearTimeout(oldTimer)
+    trajectoryRetentionTimers.delete(key)
+    const payload = String(data.action).toUpperCase() === 'STOPPED'
+      ? { ...data, normalLocationUpdatedAt: state.robotLocation[key]?.updatedAt }
+      : data
+    commit('APPLY_TRAJECTORY', payload)
+    if (String(data.action).toUpperCase() === 'STOPPED') {
+      dispatch('retainStoppedTrajectory', data)
+    }
+  },
+  finishTrajectory({ state, commit, dispatch }, target) {
+    commit('MARK_TRAJECTORY_STOPPED', {
+      ...target,
+      normalLocationUpdatedAt: state.robotLocation[String(target.robotId)]?.updatedAt
+    })
+    dispatch('retainStoppedTrajectory', target)
+  },
+  retainStoppedTrajectory({ commit }, { robotId, workflowInstanceId }) {
+    if (robotId == null) return
+    const key = String(robotId)
+    const oldTimer = trajectoryRetentionTimers.get(key)
+    if (oldTimer) clearTimeout(oldTimer)
+    trajectoryRetentionTimers.set(key, setTimeout(() => {
+      trajectoryRetentionTimers.delete(key)
+      commit('CLEAR_TRAJECTORY', robotId)
+    }, TRAJECTORY_RETENTION_MILLIS))
+  },
+  clearTrajectory({ commit }, robotId) {
+    const key = String(robotId)
+    const timer = trajectoryRetentionTimers.get(key)
+    if (timer) clearTimeout(timer)
+    trajectoryRetentionTimers.delete(key)
+    commit('CLEAR_TRAJECTORY', robotId)
+  },
+  clearAllTrajectories({ commit }) {
+    trajectoryRetentionTimers.forEach(timer => clearTimeout(timer))
+    trajectoryRetentionTimers.clear()
+    commit('CLEAR_ALL_TRAJECTORIES')
   },
   refreshOverviewResources({ state, commit, dispatch }, { failClosed = true } = {}) {
     // 只有 BFF 已明确通知权限集合变化时才先清空；普通重连或健康变化不得中断正在观看的视频。
@@ -556,6 +665,8 @@ const actions = {
       // commit('SET_ROBOT_BASE_INFO', { robotId: 'test111', robotInfo: { ...state.robotBaseInfo['test111'], status: 'online' } });
     } else if (event.event === 'panorama.device.location.changed') {
       commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
+    } else if (event.event === 'robot.trajectory.changed') {
+      dispatch('applyTrajectoryEvent', event.data)
     } else if (event.event === 'panorama.task.changed') {
       if (event.data?.changeType === 'REMOVE') {
         commit('REMOVE_TASK_INFO', event.data.taskId)

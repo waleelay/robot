@@ -10,6 +10,7 @@ import com.robot.control.auth.RequestAuthorizationHeaders;
 import com.robot.control.call.IntercomCallService;
 import com.robot.control.client.ControlManagementClient;
 import com.robot.control.service.EquipmentControlService;
+import com.robot.control.trajectory.TrajectoryCoordinator;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -29,7 +30,8 @@ class MediaWebSocketHandlerTest {
                 mock(IntercomCallService.class),
                 mock(CurrentUserResolver.class),
                 authorizationHeaders,
-                managementClient);
+                managementClient,
+                mock(TrajectoryCoordinator.class));
         WebSocketSession session = mock(WebSocketSession.class);
         Map<String, String> headers = Map.of(HttpHeaders.AUTHORIZATION, "Bearer user-token");
         when(session.getId()).thenReturn("ws-001");

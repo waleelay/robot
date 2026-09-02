@@ -276,7 +276,6 @@ public class PanoramaWebSocketEventAdapter {
         putNullableNumber(location, "z", firstExisting(sourceLocation, "z", "coordinateZ"));
         putNullableNumber(location, "yaw", sourceLocation.get("yaw"));
         putNullableText(location, "coordinateType", sourceLocation.get("coordinateType"));
-        putNullableText(location, "mapId", sourceLocation.get("mapId"));
         putNullableBoolean(location, "localized", sourceLocation.get("localized"));
         putNullableText(location, "address", sourceLocation.get("address"));
         String updatedAt = firstText(sourceLocation, "updatedAt", "reportedAt", "receivedAt");

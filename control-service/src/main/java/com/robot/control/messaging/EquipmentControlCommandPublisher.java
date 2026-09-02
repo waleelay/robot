@@ -58,6 +58,11 @@ public class EquipmentControlCommandPublisher {
         publish("robot/" + robotId + "/control/safety/estop", payload);
     }
 
+    /** 发布设备轨迹查询命令。 */
+    public void publishTrajectoryQuery(String robotId, Object payload) {
+        publish("eiop/v1/platform/" + robotId + "/trajectory/query", payload);
+    }
+
     /**
      * 根据控制目标推导 MQTT 命令 topic。
      *

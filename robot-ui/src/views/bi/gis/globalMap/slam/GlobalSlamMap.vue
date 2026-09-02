@@ -929,7 +929,8 @@ export default {
       const robots = this.slamOfRobot?.[String(this.map?.id)]?.robots || []
       return robots.map(baseRobot => {
         const robot = { ...baseRobot, ...(this.robotBaseInfo?.[baseRobot.robotId] || {}) }
-        let location = { ...(baseRobot.location || {}), ...(this.robotLocation?.[baseRobot.robotId] || {}) }
+        const normalLocation = { ...(baseRobot.location || {}), ...(this.robotLocation?.[baseRobot.robotId] || {}) }
+        let location = this.getTrajectoryLocation(baseRobot.robotId, normalLocation)
         // if (this.startPoint) {
         //   location = { ...location, x: -2.627, y: 3.787 }
         // }

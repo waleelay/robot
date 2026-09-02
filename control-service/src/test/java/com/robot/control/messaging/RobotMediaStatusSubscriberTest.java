@@ -11,6 +11,7 @@ import com.robot.control.config.ControlServiceProperties;
 import com.robot.control.robot.service.RobotRegistryService;
 import com.robot.control.service.EquipmentControlService;
 import com.robot.control.fixedcamera.FixedCameraHealthService;
+import com.robot.control.trajectory.TrajectoryCoordinator;
 import org.junit.jupiter.api.Test;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
@@ -27,7 +28,8 @@ class RobotMediaStatusSubscriberTest {
                 mock(RobotRegistryService.class),
                 mock(IntercomCallService.class),
                 mock(EdgeDeviceStatusHandler.class),
-                mock(FixedCameraHealthService.class));
+                mock(FixedCameraHealthService.class),
+                mock(TrajectoryCoordinator.class));
 
         assertThat(subscriber.mediaClientBecameOnline("study", "online")).isTrue();
         assertThat(subscriber.mediaClientBecameOnline("study", "online")).isFalse();
@@ -47,7 +49,8 @@ class RobotMediaStatusSubscriberTest {
                 mock(RobotRegistryService.class),
                 mock(IntercomCallService.class),
                 edgeHandler,
-                mock(FixedCameraHealthService.class));
+                mock(FixedCameraHealthService.class),
+                mock(TrajectoryCoordinator.class));
         MqttMessage message = new MqttMessage("{}".getBytes());
         message.setRetained(true);
 

@@ -13,6 +13,7 @@ import com.robot.control.robot.service.RobotRegistryService;
 import com.robot.control.mileage.MileageReading;
 import com.robot.control.mileage.MileageService;
 import com.robot.control.service.EquipmentControlService;
+import com.robot.control.trajectory.TrajectoryCoordinator;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -22,8 +23,9 @@ class EdgeDeviceStatusHandlerTest {
     private final EquipmentControlService equipmentControlService = mock(EquipmentControlService.class);
     private final RobotRegistryService robotRegistryService = mock(RobotRegistryService.class);
     private final MileageService mileageService = mock(MileageService.class);
+    private final TrajectoryCoordinator trajectoryCoordinator = mock(TrajectoryCoordinator.class);
     private final EdgeDeviceStatusHandler handler = new EdgeDeviceStatusHandler(
-            new ObjectMapper(), equipmentControlService, robotRegistryService, mileageService);
+            new ObjectMapper(), equipmentControlService, robotRegistryService, mileageService, trajectoryCoordinator);
 
     @Test
     void mapsRealEdgeStatusPayloadToUnifiedRobotState() {
@@ -124,6 +126,18 @@ class EdgeDeviceStatusHandlerTest {
         verify(robotRegistryService, times(2)).update(states.capture());
         assertThat(states.getAllValues().get(0)).containsEntry("controlMode", null);
         assertThat(states.getAllValues().get(1)).doesNotContainKey("controlMode");
+    }
+
+    @Test
+    void forwardsDeviceTaskInstanceIdToTrajectoryCoordinator() {
+        when(equipmentControlService.mergeEdgeDeviceStatus(eq("robot-1"), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        handler.handle("eiop/v1/edge/robot-1/status", """
+                {"payload":{"status":{"task":{"taskInstanceId":42,"taskStatus":"执行中"}}}}
+                """);
+
+        verify(trajectoryCoordinator).observeTaskInstance("robot-1", 42);
     }
 
     @SuppressWarnings("unchecked")

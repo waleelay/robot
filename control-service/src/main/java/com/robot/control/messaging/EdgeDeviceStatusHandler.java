@@ -7,6 +7,7 @@ import com.robot.control.mileage.MileageReading;
 import com.robot.control.mileage.MileageService;
 import com.robot.control.robot.service.RobotRegistryService;
 import com.robot.control.service.EquipmentControlService;
+import com.robot.control.trajectory.TrajectoryCoordinator;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -38,16 +39,19 @@ public class EdgeDeviceStatusHandler {
     private final EquipmentControlService equipmentControlService;
     private final RobotRegistryService robotRegistryService;
     private final MileageService mileageService;
+    private final TrajectoryCoordinator trajectoryCoordinator;
 
     public EdgeDeviceStatusHandler(
             ObjectMapper objectMapper,
             EquipmentControlService equipmentControlService,
             RobotRegistryService robotRegistryService,
-            MileageService mileageService) {
+            MileageService mileageService,
+            TrajectoryCoordinator trajectoryCoordinator) {
         this.objectMapper = objectMapper;
         this.equipmentControlService = equipmentControlService;
         this.robotRegistryService = robotRegistryService;
         this.mileageService = mileageService;
+        this.trajectoryCoordinator = trajectoryCoordinator;
     }
 
     /**
@@ -70,6 +74,11 @@ public class EdgeDeviceStatusHandler {
             if (status.isEmpty()) {
                 log.debug("边缘状态缺少 payload.status，已忽略，主题={}", topic);
                 return;
+            }
+
+            Map<String, Object> task = map(status.get("task"));
+            if (task.containsKey("taskInstanceId")) {
+                trajectoryCoordinator.observeTaskInstance(serialNumber, task.get("taskInstanceId"));
             }
 
             OffsetDateTime eventTime = parseEdgeEventTime(envelope.get("timestamp"));

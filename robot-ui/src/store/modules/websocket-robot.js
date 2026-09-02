@@ -57,6 +57,7 @@ const state = {
   mediaAuthorizationFailures: 0,
   authorizationUnavailable: false,
   mediaManualClosing: false,
+  trajectoryWatchTargets: [],
   robots: [], // 机器人列表
   cameras: {}, // 全局摄像头索引 { [cameraKey]: camera }
   camerasRevision: 0,
@@ -265,6 +266,9 @@ const mutations = {
   setMediaManualClosing(state, value) {
     state.mediaManualClosing = !!value
   },
+  setTrajectoryWatchTargets(state, targets) {
+    state.trajectoryWatchTargets = targets
+  },
   incrementMediaReconnectAttempts(state) {
     state.mediaReconnectAttempts += 1
   },
@@ -282,6 +286,7 @@ const mutations = {
     state.mediaReconnectAttempts = 0
     state.mediaAuthorizationFailures = 0
     state.authorizationUnavailable = false
+    state.trajectoryWatchTargets = []
     state.robots = []
     state.cameras = {}
     state.camerasRevision += 1
@@ -828,6 +833,7 @@ const actions = {
         requestId: `call-query-${Date.now()}`,
         payload: {}
       }))
+      dispatch('sendTrajectoryWatchTargets')
       // console.log('Media WebSocket connected', url)
     }
     socket.onclose = (event) => {
@@ -893,6 +899,21 @@ const actions = {
       window.localStorage.removeItem(DEVICE_STATE_CACHE_KEY)
       commit('RESET_MEDIA_USER_STATE')
     }
+  },
+  syncTrajectoryWatchTargets({ commit, dispatch }, targets) {
+    const normalized = Array.isArray(targets) ? targets.map(target => ({
+      robotId: String(target.robotId),
+      workflowInstanceId: target.workflowInstanceId
+    })) : []
+    commit('setTrajectoryWatchTargets', normalized)
+    dispatch('sendTrajectoryWatchTargets')
+  },
+  sendTrajectoryWatchTargets({ state }) {
+    if (!state.mediaSocket || state.mediaSocket.readyState !== WebSocket.OPEN) return
+    state.mediaSocket.send(JSON.stringify({
+      type: 'trajectory.watch.sync',
+      payload: { targets: state.trajectoryWatchTargets }
+    }))
   },
   syncIntercomCallEvent({ commit, state, dispatch }, event) {
     if (!event) return
