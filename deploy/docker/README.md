@@ -200,6 +200,16 @@ nginx.tar.gz
 tts.tar.gz
 ```
 
+TTS 默认不打包。即使 `tool-images/<arch>/tts.tar.gz` 已存在，`PACKAGE_TTS=false` 时也会排除它；需要将 TTS 放进安装包时执行：
+
+```bash
+PACKAGE_TTS=true TARGET_ARCH=amd64 ./package.sh
+```
+
+安装服务器上还需设置 `COMPOSE_PROFILES=tts`，TTS 容器才会启动。暂时不使用 TTS 时保持 `PACKAGE_TTS=false` 和 `COMPOSE_PROFILES=` 即可。
+
+`COMPOSE_PROFILES` 未包含 `tts` 时，`prepare-workspace.sh` 会跳过 TTS 的 `app.py` 校验，缺少该文件不会阻止其他服务安装启动；只有启用 TTS 时才必须准备 `config/tts/app.py` 或工作区中的 `tts/app.py`。
+
 示例，准备 amd64：
 
 ```bash
@@ -308,7 +318,7 @@ TARGET_ARCH=arm64 JAVA_RUNTIME_IMAGE=robot/java17-ffmpeg-runtime:arm64 ./package
 4. 优先复用 tool-images/<arch>/fixed-camera-gateway-image.tar.gz；不存在时才构建固定摄像头 Gateway 镜像
 5. 保存应用服务镜像到 images/
 6. 复制 tool-images/<arch> 下的第三方镜像
-7. 复制 LiveKit / Nginx / TTS / 前端 / tdt 配置和资源
+7. 复制 LiveKit / Nginx / 前端 / tdt 配置和资源；仅当 `PACKAGE_TTS=true` 时复制 TTS 镜像和配置
 8. 生成最终 tar.gz 安装包
 ```
 

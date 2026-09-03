@@ -43,6 +43,15 @@ case "$TARGET_ARCH" in
     ;;
 esac
 
+PACKAGE_TTS="${PACKAGE_TTS:-$(env_value PACKAGE_TTS false)}"
+case "$PACKAGE_TTS" in
+  true|false) ;;
+  *)
+    echo "unsupported PACKAGE_TTS: $PACKAGE_TTS, expected true or false" >&2
+    exit 1
+    ;;
+esac
+
 TOOL_IMAGE_ROOT="${TOOL_IMAGE_ROOT:-$PROJECT_DIR/deploy/docker/tool-images}"
 TOOL_IMAGE_DIR="${TOOL_IMAGE_DIR:-$TOOL_IMAGE_ROOT/$TARGET_ARCH}"
 if [ ! -d "$TOOL_IMAGE_DIR" ] && [ -d "$TOOL_IMAGE_ROOT" ]; then
@@ -61,6 +70,13 @@ fi
 
 if ! $DOCKER buildx version >/dev/null 2>&1; then
   echo "docker buildx is required for architecture-specific image builds" >&2
+  exit 1
+fi
+
+if ! $DOCKER info >/dev/null 2>&1; then
+  echo "cannot connect to the Docker daemon" >&2
+  echo "start Docker Desktop or OrbStack, then retry package.sh" >&2
+  echo "the selected Docker context must have a running daemon; offline packaging still requires Docker" >&2
   exit 1
 fi
 
@@ -295,7 +311,12 @@ save_image "$fixed_camera_gateway_image" "fixed-camera-gateway-image.tar.gz"
 
 if [ -d "$TOOL_IMAGE_DIR" ]; then
   echo "copying tool images from $TOOL_IMAGE_DIR"
-  find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) ! -name 'fixed-camera-gateway-image.*' -exec cp {} "$STAGING_DIR/images/" \;
+  if [ "$PACKAGE_TTS" = "true" ]; then
+    find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) ! -name 'fixed-camera-gateway-image.*' -exec cp {} "$STAGING_DIR/images/" \;
+  else
+    find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) ! -name 'fixed-camera-gateway-image.*' ! -name 'tts.*' -exec cp {} "$STAGING_DIR/images/" \;
+    echo "skipping TTS image and config because PACKAGE_TTS=false"
+  fi
 else
   echo "tool image directory not found, skip: $TOOL_IMAGE_DIR"
 fi
@@ -310,7 +331,7 @@ elif [ -f "$PROJECT_DIR/deploy/nginx/robot-mediaserver.conf" ]; then
   cp "$PROJECT_DIR/deploy/nginx/robot-mediaserver.conf" "$STAGING_DIR/config/nginx/nginx.conf"
 fi
 
-if [ -f "$SCRIPT_DIR/config/tts/app.py" ]; then
+if [ "$PACKAGE_TTS" = "true" ] && [ -f "$SCRIPT_DIR/config/tts/app.py" ]; then
   cp "$SCRIPT_DIR/config/tts/app.py" "$STAGING_DIR/config/tts/app.py"
 fi
 

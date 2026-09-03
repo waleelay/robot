@@ -12,17 +12,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.robot.bigscreen.api.BigscreenProxyController;
 import com.robot.bigscreen.client.CenterProxyClient;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.server.ResponseStatusException;
 
 @WebMvcTest(BigscreenProxyController.class)
 @Import(SecurityConfig.class)
@@ -99,5 +104,26 @@ class SecurityConfigWebTest {
                         .queryParam("token", "signed-play-token"))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("UPSTREAM_UNAVAILABLE"));
+    }
+
+    @Test
+    void preservesForbiddenStatusFromDownstreamService() throws Exception {
+        HttpClientErrorException forbidden = HttpClientErrorException.create(
+                HttpStatus.FORBIDDEN,
+                "Forbidden",
+                HttpHeaders.EMPTY,
+                "{\"code\":\"403002\"}".getBytes(StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8);
+        when(proxyClient.forward(any())).thenThrow(new ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "查询 Management 权限失败",
+                forbidden));
+
+        mockMvc.perform(get("/api/control/files/file-001/hls/index.m3u8")
+                        .queryParam("token", "signed-play-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("AUTHZ_DENIED"))
+                .andExpect(jsonPath("$.message").value("当前用户没有访问所需业务资源的权限"));
     }
 }

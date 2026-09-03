@@ -363,14 +363,23 @@ else
   fi
 fi
 
-tts_dir="$APP_WORKSPACE_ROOT/tts"
-mkdir -p "$tts_dir"
-if install_config_file "$CONFIG_DIR/tts/app.py" "$tts_dir/app.py" "tts app"; then
-  :
-elif [ ! -f "$tts_dir/app.py" ]; then
-  echo "missing tts app override: $tts_dir/app.py"
-  echo "put app.py in config/tts/app.py before packaging, or create $tts_dir/app.py before starting tts"
-  exit 1
+tts_profile_enabled=false
+case ",${COMPOSE_PROFILES:-}," in
+  *,tts,*) tts_profile_enabled=true ;;
+esac
+
+if [ "$tts_profile_enabled" = true ]; then
+  tts_dir="$APP_WORKSPACE_ROOT/tts"
+  mkdir -p "$tts_dir"
+  if install_config_file "$CONFIG_DIR/tts/app.py" "$tts_dir/app.py" "tts app"; then
+    :
+  elif [ ! -f "$tts_dir/app.py" ]; then
+    echo "missing tts app override: $tts_dir/app.py" >&2
+    echo "put app.py in config/tts/app.py before packaging, or create $tts_dir/app.py before starting tts" >&2
+    exit 1
+  fi
+else
+  echo "skip tts app override because COMPOSE_PROFILES does not include tts"
 fi
 
 if [ ! -f "$nginx_ssl_dir/server.crt" ] || [ ! -f "$nginx_ssl_dir/server.key" ]; then
