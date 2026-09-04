@@ -469,7 +469,7 @@ public class TrajectoryCoordinator {
     private void send(WebSocketSession session, TextMessage message) {
         try {
             webSocketPublisher.send(session, message);
-        } catch (IOException exception) {
+        } catch (IOException | IllegalStateException exception) {
             log.debug("轨迹事件发送失败，WebSocket 会话={}", session.getId(), exception);
         }
     }

@@ -26,6 +26,25 @@ import org.springframework.web.socket.WebSocketSession;
 class TrajectoryCoordinatorTest {
 
     @Test
+    void failedSessionDoesNotInterruptOtherWatchersOrNextQuery() throws Exception {
+        Harness harness = new Harness();
+        WebSocketSession failed = harness.session("ws-failed");
+        WebSocketSession healthy = harness.session("ws-healthy");
+        harness.watch(failed);
+        harness.watch(healthy);
+        harness.failedSessionId = failed.getId();
+        harness.coordinator.observeTaskInstance("robot-1", 42);
+        harness.reply(harness.nextCommand(), "recording", 1, List.of(), false);
+        harness.reply(harness.nextCommand(), "recording", 1, List.of(harness.point(0, 1, 2)), false);
+        assertThat(harness.actions(healthy)).containsExactly("RESET");
+        Map<String, Object> summary = harness.nextCommand();
+        assertThat(summary).containsEntry("format", "summary");
+        harness.reply(summary, "recording", 2, List.of(), false);
+        assertThat(harness.actions(healthy)).containsExactly("RESET", "APPEND");
+        assertThat(harness.nextCommand()).containsEntry("format", "summary");
+    }
+
+    @Test
     void restoresForAllWatchersWhenTaskStarts() throws Exception {
         Harness harness = new Harness();
         WebSocketSession first = harness.session("ws-1");
@@ -102,6 +121,7 @@ class TrajectoryCoordinatorTest {
         private final Deque<Map<String, Object>> commands = new ArrayDeque<>();
         private final Map<String, List<TextMessage>> messages = new HashMap<>();
         private final TrajectoryCoordinator coordinator;
+        private String failedSessionId;
 
         @SuppressWarnings("unchecked")
         private Harness() throws Exception {
@@ -118,6 +138,7 @@ class TrajectoryCoordinatorTest {
             }).when(commandPublisher).publishTrajectoryQuery(any(), any());
             doAnswer(invocation -> {
                 WebSocketSession session = invocation.getArgument(0);
+                if (session.getId().equals(failedSessionId)) throw new IllegalStateException("TEXT_PARTIAL_WRITING");
                 messages.computeIfAbsent(session.getId(), ignored -> new ArrayList<>())
                         .add((TextMessage) invocation.getArgument(1));
                 return null;

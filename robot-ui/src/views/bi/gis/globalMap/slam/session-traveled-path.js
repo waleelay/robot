@@ -13,6 +13,7 @@ export default {
   name: 'SessionTraveledPath',
   data() {
     return {
+      trajectoryOwnsWatching: false,
       trajectoryPreviousTargets: [],
       trajectoryPreviousMapId: null
     }
@@ -27,9 +28,16 @@ export default {
       return robots.map(robot => {
         const robotId = robot.robotId
         if (!this.canWatchTrajectory(robotId)) return null
-        const task = listTasksForRobot(this.taskData, robotId).find(item =>
+        const robotTasks = listTasksForRobot(this.taskData, robotId)
+        const task = robotTasks.find(item =>
           WATCHED_STATUSES.has(normalizeExecutionStatus(item?.status)) && item?.workflowInstanceId != null)
-        return task ? { robotId, workflowInstanceId: task.workflowInstanceId } : null
+        if (task) return { robotId, workflowInstanceId: task.workflowInstanceId }
+        // 任务摘要降级不等于任务结束，只沿用本页已订阅且仍在当前地图的目标。
+        if (this.$store.state.websocketExtraData?.dataQuality?.tasks?.degraded
+          && !robotTasks.length) {
+          return this.trajectoryPreviousTargets.find(item => String(item.robotId) === String(robotId)) || null
+        }
+        return null
       }).filter(Boolean)
     },
     trajectoryWatchKey() {
@@ -68,6 +76,7 @@ export default {
     }
   },
   beforeDestroy() {
+    if (!this.trajectoryOwnsWatching) return
     this.$store.dispatch('websocketRobot/syncTrajectoryWatchTargets', [])
     this.$store.dispatch('websocketExtraData/clearAllTrajectories')
   },
@@ -77,6 +86,8 @@ export default {
       return !isFixedCamera(this.robotBaseInfo?.[robotId] || {})
     },
     syncTrajectoryWatching() {
+      if (this.showSmall) return
+      this.trajectoryOwnsWatching = true
       const mapId = this.map?.id ?? null
       if (this.trajectoryPreviousMapId != null && String(this.trajectoryPreviousMapId) !== String(mapId)) {
         this.$store.dispatch('websocketExtraData/clearAllTrajectories')

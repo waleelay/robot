@@ -90,7 +90,7 @@ const state = {
 }
 
 const mutations = {
-  RESET_OVERVIEW_RESOURCE_STATE(state) {
+  RESET_OVERVIEW_RESOURCE_STATE(state, { preserveTrajectories = false } = {}) {
     state.overviewRevision++;
     mapResourcePromises.clear();
     state.slamMapList = [];
@@ -100,9 +100,11 @@ const mutations = {
     state.taskFixedCameraData = {};
     state.alarmsData = {};
     state.robotLocation = {};
-    state.trajectoryByRobot = {};
-    trajectoryRetentionTimers.forEach(timer => clearTimeout(timer));
-    trajectoryRetentionTimers.clear();
+    if (!preserveTrajectories) {
+      state.trajectoryByRobot = {};
+      trajectoryRetentionTimers.forEach(timer => clearTimeout(timer));
+      trajectoryRetentionTimers.clear();
+    }
     state.robotBaseInfo = {};
     state.robotList = [];
     state.robotAlarmObj = {};
@@ -520,7 +522,9 @@ const actions = {
     return pending
   },
   setAll({commit, state, dispatch}, data) {
-    commit('RESET_OVERVIEW_RESOURCE_STATE')
+    const previousMapId = state.globalMapId
+    // 普通快照回填不能擦除并发到达的轨迹 RESET；失权和退出仍使用默认全量清理。
+    commit('RESET_OVERVIEW_RESOURCE_STATE', { preserveTrajectories: true })
     const taskQuality = data?.dataQuality?.tasks || { complete: true, degraded: false, reasonCodes: [] }
     commit('SET_DATA_QUALITY', data?.dataQuality || {})
     // 任务查询局部降级时保留已成功加载的数据；页面通过“--”或空态表达未知值，
@@ -596,6 +600,13 @@ const actions = {
     commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devices, tasks));
     const mapId = resolveOverviewMapId({ ...data, devices }, state.globalMapId);
     commit('SET_GLOBAL_MAP_ID', mapId);
+    const mapRobotIds = new Set((state.slamOfRobot[String(mapId)]?.robots || [])
+      .map(robot => String(robot.robotId)))
+    Object.keys(state.trajectoryByRobot).forEach(robotId => {
+      if (String(previousMapId) !== String(mapId) || !mapRobotIds.has(robotId)) {
+        dispatch('clearTrajectory', robotId)
+      }
+    })
     commit('SET_DEFAULT_MAP_IS_SLAM', !defaultGpsDevices.length && slamMapList.length > 0);
     commit('SET_OVERVIEW_READY', true);
     commit('SET_OVERVIEW_LOAD_ERROR', false);

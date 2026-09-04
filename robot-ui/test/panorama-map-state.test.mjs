@@ -34,6 +34,7 @@ function compile(path, api = {}) {
     require: name => {
       if (name === 'vue') return Vue
       if (name === 'vuex') return Vuex
+      if (name.endsWith('constants/robot.js')) return { isFixedCamera: () => false }
       if (name.endsWith('api/new-bi')) return api
       for (const [key, value] of Object.entries(helpers)) if (name.endsWith(key)) return value
       if (name.includes('gisMapPoints')) return {
@@ -60,6 +61,7 @@ const resources = mapId => ({ mapId, points: [{ id: 'point-' + mapId }], deviceI
 const routes = mapId => ({ mapId, items: [{ taskId: 'task-' + mapId, mapId, pathPoints: [{ pointId: 'point-' + mapId }] }] })
 function setup(overrides = {}) {
   const requests = []
+  const watches = []
   const api = {
     getPatrolPanoramaOverview: async () => overview(),
     getPatrolPanoramaMapResources: async id => { requests.push(id); return resources(id) },
@@ -69,10 +71,13 @@ function setup(overrides = {}) {
   const module = compile('store/modules/websocket-extra-data.js', api)
   const store = new Vuex.Store({ modules: {
     websocketExtraData: module,
-    websocketRobot: { namespaced: true, actions: { loadRobots() {}, setSelectedRobotId() {} } }
+    websocketRobot: { namespaced: true, actions: {
+      loadRobots() {}, setSelectedRobotId() {},
+      syncTrajectoryWatchTargets(_, targets) { watches.push(targets) }
+    } }
   } })
   return {
-    store, api, requests, state: store.state.websocketExtraData,
+    store, api, requests, watches, state: store.state.websocketExtraData,
     dispatch: (name, payload) => store.dispatch('websocketExtraData/' + name, payload),
     refresh: () => store.dispatch('websocketExtraData/refreshOverviewResources', { failClosed: false })
   }
@@ -80,6 +85,109 @@ function setup(overrides = {}) {
 const panorama = compile('views/bi/patrol/panorama/map/Index.vue')
 const home = compile('views/bi/home/Index.vue')
 const mapTool = compile('views/bi/patrol/panorama/map/MapTool.vue')
+const trajectory = compile('views/bi/gis/globalMap/slam/session-traveled-path.js')
+const trajectoryOverview = (extra = {}) => overview([B], {
+  devices: [{ robotId: 'robot-' + B, mapId: B }],
+  tasks: [{ taskId: 'task-' + B, mapId: B, workflowInstanceId: 9001, status: 'running',
+    equipmentList: [{ robotId: 'robot-' + B }] }], ...extra
+})
+const trajectoryEvent = (action = 'RESET', timestamp = 1000) => ({
+  event: 'robot.trajectory.changed', data: { robotId: 'robot-' + B, workflowInstanceId: 9001,
+    action, points: [{ timestamp, x: 1, y: 2 }] }
+})
+function trajectoryView(ctx, showSmall = false) {
+  return new Vue({ store: ctx.store, mixins: [trajectory],
+    data: () => ({ showSmall, hasPreview: true }),
+    computed: {
+      map() { return ctx.state.slamMapList.find(item => String(item.id) === String(ctx.state.globalMapId)) },
+      slamOfRobot() { return ctx.state.slamOfRobot },
+      taskData() { return ctx.state.taskData },
+      robotBaseInfo() { return ctx.state.robotBaseInfo }
+    }
+  })
+}
+
+test('重连 RESET 与 Overview 任意先后到达均保留基线并继续 APPEND', async () => {
+  for (const resetFirst of [true, false]) {
+    const ctx = setup({ getPatrolPanoramaOverview: async () => trajectoryOverview() })
+    await ctx.refresh()
+    const view = trajectoryView(ctx)
+    await ctx.dispatch('syncRobot', trajectoryEvent())
+    const delayed = deferred()
+    ctx.api.getPatrolPanoramaOverview = () => delayed.promise
+    const refresh = ctx.refresh()
+    if (resetFirst) await ctx.dispatch('syncRobot', trajectoryEvent())
+    const record = ctx.state.trajectoryByRobot['robot-' + B]
+    delayed.resolve(trajectoryOverview())
+    await refresh
+    assert.equal(ctx.state.trajectoryByRobot['robot-' + B], record)
+    if (!resetFirst) await ctx.dispatch('syncRobot', trajectoryEvent())
+    await ctx.dispatch('syncRobot', trajectoryEvent('APPEND', 1001))
+    assert.equal(ctx.state.trajectoryByRobot['robot-' + B].points.length, 2)
+    assert.ok(ctx.watches.every(targets => targets.length === 1))
+    ctx.api.getPatrolPanoramaOverview = async () => { throw new Error('暂不可用') }
+    await assert.rejects(ctx.refresh(), /暂不可用/)
+    assert.equal(ctx.state.trajectoryByRobot['robot-' + B].points.length, 2)
+    view.$destroy()
+  }
+})
+
+test('普通刷新保留已结束轨迹，失权、移图、换轮和退出仍清理', async () => {
+  for (const change of ['device', 'map', 'workflow', 'logout', 'authorization']) {
+    const ctx = setup({ getPatrolPanoramaOverview: async () => trajectoryOverview() })
+    await ctx.refresh()
+    const view = trajectoryView(ctx)
+    await ctx.dispatch('syncRobot', trajectoryEvent())
+    await ctx.dispatch('syncRobot', trajectoryEvent('STOPPED'))
+    const stopped = ctx.state.trajectoryByRobot['robot-' + B]
+    await ctx.refresh()
+    assert.equal(ctx.state.trajectoryByRobot['robot-' + B], stopped)
+    if (change === 'logout') {
+      await ctx.dispatch('resetOverviewResourceState')
+    } else {
+      const data = change === 'device' ? trajectoryOverview({ devices: [] })
+        : change === 'map' ? overview([A]) : trajectoryOverview()
+      if (change === 'workflow') data.tasks[0].workflowInstanceId = 9002
+      ctx.api.getPatrolPanoramaOverview = async () => data
+      if (change === 'authorization') {
+        await ctx.dispatch('refreshOverviewResources', { failClosed: true })
+      } else await ctx.refresh()
+    }
+    await Vue.nextTick()
+    assert.equal(ctx.state.trajectoryByRobot['robot-' + B], undefined, change)
+    view.$destroy()
+  }
+})
+
+test('任务摘要降级沿用已有订阅，明确 waiting 才冻结；小地图不拥有清理权限', async () => {
+  const ctx = setup({ getPatrolPanoramaOverview: async () => trajectoryOverview() })
+  await ctx.refresh()
+  const view = trajectoryView(ctx)
+  await ctx.dispatch('syncRobot', trajectoryEvent())
+  const beforeSmall = ctx.watches.length
+  const small = trajectoryView(ctx, true)
+  small.$destroy()
+  assert.equal(ctx.watches.length, beforeSmall)
+  assert.ok(ctx.state.trajectoryByRobot['robot-' + B])
+  ctx.api.getPatrolPanoramaOverview = async () => trajectoryOverview({
+    tasks: [], dataQuality: { tasks: { degraded: true, complete: false } }
+  })
+  await ctx.refresh()
+  await Vue.nextTick()
+  assert.equal(view.trajectoryWatchTargets.length, 1)
+  assert.equal(ctx.state.trajectoryByRobot['robot-' + B].stopped, false)
+  ctx.api.getPatrolPanoramaOverview = async () => {
+    const data = trajectoryOverview()
+    data.tasks[0].status = 'waiting'
+    return data
+  }
+  await ctx.refresh()
+  await Vue.nextTick()
+  assert.equal(view.trajectoryWatchTargets.length, 0)
+  assert.equal(ctx.state.trajectoryByRobot['robot-' + B].stopped, true)
+  view.$destroy()
+  assert.equal(Object.keys(ctx.state.trajectoryByRobot).length, 0)
+})
 
 test('工作流告警只消费 BFF 快照，普通告警仍仅高风险弹窗', async () => {
   const ctx = setup()
