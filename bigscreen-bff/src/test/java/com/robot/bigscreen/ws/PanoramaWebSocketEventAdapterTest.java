@@ -267,6 +267,15 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(adapter.adapt(payload)).isEmpty();
     }
 
+    @Test
+    void taskInvalidationTriggersBackendRefreshWithoutEarlyBrowserNotification() {
+        String payload = """
+                {"event":"management.task.invalidated","data":{"scopes":["PLAN","EXECUTION"]}}
+                """;
+        assertThat(adapter.isTaskInvalidation(payload)).isTrue();
+        assertThat(adapter.adapt(payload)).isEmpty();
+    }
+
     private JsonNode readTree(String value) {
         try {
             return objectMapper.readTree(value);

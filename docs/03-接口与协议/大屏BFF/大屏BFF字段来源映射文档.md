@@ -155,11 +155,16 @@ Overview 的 `tasks[]` 只返回任务计划/实例列表可直接得到的摘�
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `taskId` | 任务计划 ID | 管理端 | `TaskWorkflowPlanResponse.id`，兼容 `taskId` |
-| `workflowInstanceId` | 当前任务实例 ID，用于暂停、恢复、终止任务实例 | 管理端 | `TaskWorkflowPlanResponse.activeWorkflowInstanceId/lastWorkflowInstanceId/workflowInstanceId` |
+| `workflowInstanceId` | 活动或最近实例 ID，供监控数据与历史回放关联，不能作为计划生命周期操作的回退 ID | 管理端 | `TaskWorkflowPlanResponse.activeWorkflowInstanceId/lastWorkflowInstanceId/workflowInstanceId` |
 | `name` | 任务名称 | 管理端 | `TaskWorkflowPlanResponse.planName/workflowName/name` |
 | `executionMode` | 执行模式 | 管理端 | 任务计划接口 `executionMode`，例如 `MANUAL`、`SCHEDULE`；缺失时为 `null` |
 | `expectedDurationSeconds` | 预计执行时长，单位秒 | 管理端 | 任务计划接口 `expectedDurationSeconds`；缺失时为 `null` |
-| `availableLifecycleActions` | 当前允许的任务生命周期操作 | 管理端 | 原样透传任务计划 `availableLifecycleActions`，页面操作按钮还需同时校验用户权限 |
+| `executionStatus` | 任务卡展示状态 | 管理端 | 原样透传计划 `executionStatus`：`WAITING/RUNNING/PAUSED`；不使用历史执行结果替代 |
+| `activeWorkflowInstanceId` | 当前活动实例 ID | 管理端 | 原样透传；有值才显示生命周期操作，无值显示立即执行 |
+| `activeWorkflowInstanceStatus` | 活动实例详细状态 | 管理端 | 原样透传，供操作后的状态确认 |
+| `lastWorkflowInstanceId` | 最近执行实例 ID | 管理端 | 原样透传，供快速结束的启动操作确认；不用于生命周期指令 |
+| `enabled` | 计划启用状态 | 管理端 | 停用计划不能立即执行 |
+| `availableLifecycleActions` | 当前允许的任务生命周期操作 | 管理端 | 原样透传任务计划 `availableLifecycleActions`，页面操作按钮同时要求活动实例 ID 和用户权限；终止支持 `TERMINATE/RETRY_TERMINATE` |
 | `status` | 任务状态编码 | 管理端任务计划 + BFF 转换 | 优先取 `activeWorkflowInstanceStatus`；`PREPARING` 投影为现有 `running`，不向全景页增加准备中状态，其余状态转换为对应小写编码 |
 | `statusName` | 任务状态中文名 | BFF 转换 | 由 `status` 转中文 |
 | `startTime` | 任务开始时间 | 管理端 + BFF 格式化 | 优先任务实例 `startedAt`，其次计划 `startedAt/lastStartedAt/startTime` |

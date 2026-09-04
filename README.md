@@ -177,6 +177,8 @@ sh deploy/nginx/generate-lan-cert.sh <实际局域网IP>
 
 装备弹窗全部装备字段按需详情初始化、运行态版本及未知值规则见[大屏字段映射](docs/03-接口与协议/大屏BFF/大屏BFF字段来源映射文档.md)；
 本地竞态回归入口为 `robot-ui/test/robot-popup-state.test.mjs`。
+任务计划状态、按钮与事件收敛规则见[大屏 BFF 接口文档](docs/03-接口与协议/大屏BFF/大屏BFF接口文档.md)；
+任务状态、地图及轨迹竞态回归入口为 `robot-ui/test/panorama-map-state.test.mjs`。
 
 按改动范围执行最小充分验证；仓库级快速检查：
 

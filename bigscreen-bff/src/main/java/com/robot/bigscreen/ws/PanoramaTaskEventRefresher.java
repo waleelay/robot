@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ScheduledFuture;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,65 +43,102 @@ public class PanoramaTaskEventRefresher {
         this.taskScheduler = taskScheduler;
     }
 
-    public void requestRefresh(String sessionId, Authentication authentication, Consumer<String> publisher) {
+    public void requestRefresh(String sessionId, Authentication authentication, Consumer<String> publisher, boolean followChanges) {
         RefreshState state = states.computeIfAbsent(sessionId, ignored -> new RefreshState());
-        state.authentication = authentication;
-        state.publisher = publisher;
-        state.retryCount = 0;
-        state.dirty.set(true);
-        scheduleIfNeeded(sessionId, state, DEBOUNCE_MILLIS);
+        synchronized (state) {
+            state.authentication = authentication;
+            state.publisher = publisher;
+            state.followChanges |= followChanges;
+            state.retryCount = 0;
+            state.dirty = true;
+            scheduleIfNeeded(sessionId, state, DEBOUNCE_MILLIS);
+        }
     }
 
     public void remove(String sessionId) {
-        states.remove(sessionId);
+        RefreshState state = states.remove(sessionId);
+        if (state != null) {
+            synchronized (state) {
+                if (state.pending != null) state.pending.cancel(false);
+                state.scheduledAt = null;
+            }
+        }
     }
 
+    // 调用方持有 state 锁；新事件可提前旧退避任务，但不延后已有去抖任务。
     private void scheduleIfNeeded(String sessionId, RefreshState state, long delayMillis) {
-        if (state.scheduled.compareAndSet(false, true)) {
-            taskScheduler.schedule(() -> refresh(sessionId, state), Instant.now().plusMillis(delayMillis));
-        }
+        Instant due = Instant.now().plusMillis(delayMillis);
+        if (state.running || (state.scheduledAt != null && !due.isBefore(state.scheduledAt))) return;
+        if (state.pending != null) state.pending.cancel(false);
+        state.scheduledAt = due;
+        state.pending = taskScheduler.schedule(() -> refresh(sessionId, state, due), due);
     }
 
-    private void refresh(String sessionId, RefreshState state) {
-        if (states.get(sessionId) != state) {
-            return;
+    private void refresh(String sessionId, RefreshState state, Instant due) {
+        synchronized (state) {
+            if (states.get(sessionId) != state || !due.equals(state.scheduledAt)) return;
+            state.scheduledAt = null;
+            state.pending = null;
+            state.running = true;
+            state.dirty = false;
         }
-        state.dirty.set(false);
         boolean retry = false;
         try {
             Map<String, Object> response = withAuthentication(state.authentication, panoramaService::taskEventSnapshot);
-            Map<String, Map<String, Object>> current = index(tasks(response));
+            if (states.get(sessionId) != state) return;
+            boolean complete = Boolean.TRUE.equals(response.get("tasksComplete"));
             Consumer<String> publisher = state.publisher;
-            if (publisher != null) {
+            Map<String, Map<String, Object>> current = index(tasks(response));
+            Object plans = response.get("plans");
+            boolean plansChanged = !Objects.equals(state.previousPlans, plans);
+            if (plansChanged || (complete && !Objects.equals(state.previousTasks, current))) {
+                withAuthentication(state.authentication, () -> {
+                    panoramaService.invalidateTaskOverview();
+                    return null;
+                });
+            }
+            boolean collectionChanged = complete && (!state.collectionInitialized
+                    || !state.previousTasks.keySet().equals(current.keySet()));
+            if (complete) {
                 current.forEach((taskId, task) -> {
                     if (!Objects.equals(state.previousTasks.get(taskId), task)) {
                         publisher.accept(event(task, task.get("taskId")));
                     }
                 });
                 state.previousTasks.forEach((taskId, task) -> {
-                    if (!current.containsKey(taskId)) {
-                        publisher.accept(removeEvent(task.get("taskId")));
-                    }
+                    if (!current.containsKey(taskId)) publisher.accept(removeEvent(task.get("taskId")));
                 });
+                state.previousTasks = current;
             }
-            state.previousTasks = current;
-            retry = Boolean.TRUE.equals(response.get("convergencePending"));
-        } catch (RuntimeException exception) {
+            // 计划快照首次就绪或内容变化才通知列表，与实例摘要查询是否成功无关。
+            if (plansChanged || collectionChanged) {
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("scopes", List.of("PLAN", "EXECUTION"));
+                // 首次完整快照也校准空集合；摘要失败时绝不把空集合当成删除。
+                if (collectionChanged) data.put("taskIds", List.copyOf(current.keySet()));
+                publisher.accept(objectMapper.writeValueAsString(Map.of(
+                        "event", "management.task.invalidated",
+                        "timestamp", TIME_FORMATTER.format(LocalDateTime.now()),
+                        "data", data)));
+                state.previousPlans = plans;
+                if (complete) state.collectionInitialized = true;
+            }
+            // 通知不含目标计划版本，不能用其他任务的变化推断收敛；事件按固定上限复查。
+            // 初次连接的正常快照只查一次，查询失败和准备中仍有界重试。
+            retry = state.followChanges || !complete || Boolean.TRUE.equals(response.get("convergencePending"));
+        } catch (Exception exception) {
             log.warn("刷新全景地图任务事件失败，会话={}", sessionId, exception);
             retry = true;
         } finally {
-            if (retry && state.retryCount < RETRY_DELAYS_MILLIS.length) {
-                state.dirty.set(true);
-                state.retryCount++;
-            } else if (!retry) {
-                state.retryCount = 0;
-            }
-            state.scheduled.set(false);
-            if (states.get(sessionId) == state && state.dirty.get()) {
-                long delay = state.retryCount == 0
-                        ? DEBOUNCE_MILLIS
-                        : RETRY_DELAYS_MILLIS[state.retryCount - 1];
-                scheduleIfNeeded(sessionId, state, delay);
+            synchronized (state) {
+                long delay = DEBOUNCE_MILLIS;
+                // 查询期间的新事件优先，不能被当前请求的退避延后。
+                if (!state.dirty && retry && state.retryCount < RETRY_DELAYS_MILLIS.length) {
+                    state.dirty = true;
+                    delay = RETRY_DELAYS_MILLIS[state.retryCount++];
+                }
+                state.running = false;
+                if (states.get(sessionId) == state && state.dirty) scheduleIfNeeded(sessionId, state, delay);
             }
         }
     }
@@ -160,11 +197,16 @@ public class PanoramaTaskEventRefresher {
     }
 
     private static final class RefreshState {
-        private final AtomicBoolean scheduled = new AtomicBoolean();
-        private final AtomicBoolean dirty = new AtomicBoolean();
+        private ScheduledFuture<?> pending;
+        private Instant scheduledAt;
+        private boolean running;
+        private boolean dirty;
         private volatile Authentication authentication;
         private volatile Consumer<String> publisher;
         private volatile Map<String, Map<String, Object>> previousTasks = Map.of();
         private volatile int retryCount;
+        private volatile boolean followChanges;
+        private Object previousPlans;
+        private boolean collectionInitialized;
     }
 }

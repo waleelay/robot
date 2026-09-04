@@ -140,6 +140,20 @@ class PanoramaCenterClientTest {
     }
 
     @Test
+    void taskInstanceQueriesKeepEventAndOverviewScopesSeparate() {
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/task-workflow-instances?pageNum=1&pageSize=100&scope=ACTIVE"))
+                .andRespond(withSuccess("{\"data\":{\"records\":[]}}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/task-workflow-instances?pageNum=1&pageSize=100&scope=ALL"))
+                .andRespond(withSuccess("{\"data\":{\"records\":[]}}", MediaType.APPLICATION_JSON));
+
+        assertEquals(List.of(), client.activeTaskWorkflowInstances());
+        assertEquals(List.of(), client.taskWorkflowInstances());
+        server.verify();
+    }
+
+    @Test
     void alarmPageReadsOnlyRequestedPageAndKeepsReportedTotal() {
         server.expect(requestTo(
                         "http://management.test/api/v1/management/alarms?pageNum=2&pageSize=20&status=NEW&severity=WARN"))

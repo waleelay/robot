@@ -90,9 +90,9 @@
                   <svg-icon icon-class="d-right"></svg-icon>
                   <span class="ml4 text-ellipsis" :title="item.name">{{ item.name }}</span>
                 </div>
-                <span class="status flx-center pt2 pr6 pb2 pl6 ml10" :class="getTaskStatusName(item.status)">
+                <span class="status flx-center pt2 pr6 pb2 pl6 ml10" :class="getTaskStatusName((item.executionStatus || '').toLowerCase())">
                   <svg-icon icon-class="security"></svg-icon>
-                  <span class="ml4">{{ executionStatusLabel(item.status, '-') }}</span>
+                  <span class="ml4">{{ executionStatusLabel(item.executionStatus, '-') }}</span>
                 </span>
               </div>
               <div class="desc">
@@ -109,7 +109,7 @@
                 <!-- <div class="text-ellipsis">当前位置：{{ item.currentLocation || '-' }}</div> -->
               </div>
               <!-- 执行中：详情 / 暂停/恢复 / 定位装备 / 终止 / 播放视频 -->
-              <div v-if="item.status === 'running' || item.status === 'paused'" class="task-actions">
+              <div v-if="item.activeWorkflowInstanceId" class="task-actions">
                 <button type="button" class="action-btn action-detail" @click.stop="handleTaskDetail(item)">
                   <span>详情</span>
                   <svg-icon icon-class="right" class="ml4" />
@@ -117,11 +117,12 @@
                 <button
                   type="button"
                   class="action-btn action-icon wp30"
+                  v-if="hasLifecycleAction(item, 'PAUSE') || hasLifecycleAction(item, 'RESUME')"
                   :disabled="isActingTaskRecord(item) || !canPauseOrResumeTask(item)"
                   :title="pauseResumeTitle(item)"
-                  @click.stop="item.status === 'paused' ? handleResumeTask(item) : handlePauseTask(item)"
+                  @click.stop="hasLifecycleAction(item, 'RESUME') ? handleResumeTask(item) : handlePauseTask(item)"
                 >
-                  <svg-icon :icon-class="item.status === 'paused' ? 'play' : 'pause'" />
+                  <svg-icon :icon-class="hasLifecycleAction(item, 'RESUME') ? 'play' : 'pause'" />
                 </button>
                 <button
                   type="button"
@@ -133,6 +134,7 @@
                 <button
                   type="button"
                   class="action-btn action-icon wp30"
+                  v-if="hasLifecycleAction(item, 'TERMINATE') || hasLifecycleAction(item, 'RETRY_TERMINATE')"
                   :title="terminateTitle(item)"
                   :disabled="isActingTaskRecord(item) || !canTerminateTask(item)"
                   @click.stop="handleTerminateTask(item)"
@@ -153,11 +155,11 @@
                 </div>
               </div>
               <!-- 待执行：立即执行 -->
-              <div v-else-if="item.status === 'waiting'" class="task-actions">
+              <div v-else class="task-actions">
                 <button
                   type="button"
                   class="action-btn action-execute"
-                  :disabled="isStartingTask(item) || !canExecutePlan"
+                  :disabled="isStartingTask(item) || !canExecutePlan || item.enabled === false"
                   :title="canExecutePlan ? undefined : '无权限'"
                   @click.stop="handleExecuteTask(item)"
                 >
@@ -245,6 +247,7 @@ import { getDescArr } from '../../../../utils/index.js';
 import Empty from '../../components/Empty.vue';
 import AlarmSnapshotImage from '@/components/AlarmSnapshotImage.vue'
 import { executionStatusLabel } from '../business/execution-status.js';
+import { hasPlanAction } from '../business/task-plan-state.js';
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 export default {
   name: 'BiPatrolPanoramaLeft',
@@ -362,28 +365,20 @@ export default {
         this.bigscreenAuthorizationBypassed
       )
     },
-    hasLifecycleAction(item, action) {
-      const actions = item && Array.isArray(item.availableLifecycleActions)
-        ? item.availableLifecycleActions
-        : []
-      return actions.includes(action)
-    },
+    hasLifecycleAction: hasPlanAction,
     canPauseOrResumeTask(item) {
-      return item && item.status === 'paused'
-        ? this.canResumeExecution && this.hasLifecycleAction(item, 'RESUME')
-        : this.canPauseExecution && this.hasLifecycleAction(item, 'PAUSE')
+      return (this.canResumeExecution && this.hasLifecycleAction(item, 'RESUME'))
+        || (this.canPauseExecution && this.hasLifecycleAction(item, 'PAUSE'))
     },
     pauseResumeTitle(item) {
-      if (item && item.status === 'paused') {
-        return !this.canResumeExecution ? '无权限' : this.hasLifecycleAction(item, 'RESUME') ? '恢复' : '当前状态不可恢复'
-      }
-      return !this.canPauseExecution ? '无权限' : this.hasLifecycleAction(item, 'PAUSE') ? '暂停' : '当前状态不可暂停'
+      if (this.hasLifecycleAction(item, 'RESUME')) return this.canResumeExecution ? '恢复' : '无权限'
+      return this.canPauseExecution ? '暂停' : '无权限'
     },
     canTerminateTask(item) {
-      return this.canTerminateExecution && this.hasLifecycleAction(item, 'TERMINATE')
+      return this.canTerminateExecution && (this.hasLifecycleAction(item, 'TERMINATE') || this.hasLifecycleAction(item, 'RETRY_TERMINATE'))
     },
     terminateTitle(item) {
-      return !this.canTerminateExecution ? '无权限' : this.hasLifecycleAction(item, 'TERMINATE') ? '终止任务' : '当前状态不可终止'
+      return !this.canTerminateExecution ? '无权限' : this.hasLifecycleAction(item, 'RETRY_TERMINATE') ? '重试终止' : '终止任务'
     },
     resetAlarmPages(data) {
       Object.keys(this.alarmPages).forEach(level => {
@@ -495,11 +490,11 @@ export default {
     },
     /** 手动执行且待执行 */
     isManualWaitingTask(item) {
-      return item?.executionMode === 'MANUAL' && item?.status === 'waiting'
+      return item?.executionMode === 'MANUAL' && item?.executionStatus === 'WAITING'
     },
     /** 计划执行且待执行 */
     isScheduleWaitingTask(item) {
-      return item?.executionMode === 'SCHEDULE' && item?.status === 'waiting'
+      return item?.executionMode === 'SCHEDULE' && item?.executionStatus === 'WAITING'
     },
     /**
      * expectedDurationSeconds（秒）→ 时分秒展示
@@ -523,14 +518,10 @@ export default {
       return `${seconds}秒`
     },
     getTaskPlanId(item) {
-      return item?.planId || item?.id || item?.taskId || item?.taskPlanId
+      return item?.taskId
     },
     getTaskRecordId(item) {
-      return item?.executionRecordId
-        || item?.activeWorkflowInstanceId
-        || item?.workflowInstanceId
-        || item?.recordId
-        || item?.taskInstanceId
+      return item?.activeWorkflowInstanceId
     },
     isStartingTask(item) {
       const planId = this.getTaskPlanId(item)
@@ -746,7 +737,7 @@ export default {
         item,
         action: 'pause',
         confirmMessage: '是否【暂停】该任务？',
-        successMessage: '已暂停',
+        successMessage: '暂停指令已提交',
         failMessage: '暂停失败',
         api: pauseTaskRecord
       })
@@ -757,7 +748,7 @@ export default {
         item,
         action: 'resume',
         confirmMessage: '是否【恢复】该任务？',
-        successMessage: '已恢复',
+        successMessage: '恢复指令已提交',
         failMessage: '恢复失败',
         api: resumeTaskRecord
       })
@@ -768,13 +759,13 @@ export default {
         item,
         action: 'terminate',
         confirmMessage: '是否【终止】该任务？',
-        successMessage: '已终止',
+        successMessage: '终止指令已提交',
         failMessage: '终止失败',
         api: terminateTaskRecord
       })
     },
     async handleExecuteTask(item) {
-      if (!this.canExecutePlan) return
+      if (!this.canExecutePlan || item.activeWorkflowInstanceId || item.enabled === false) return
       const planId = this.getTaskPlanId(item)
       if (planId == null) {
         this.$message.error('缺少任务标识，无法执行')
@@ -804,7 +795,7 @@ export default {
                 rejected.handled = true
                 throw rejected
               }
-              this.$message.success((data && data.message) || '任务已启动')
+              this.$message.success((data && data.message) || '启动指令已提交')
             } catch (error) {
               if (!(error && error.handled)) {
                 this.$message.error((error && error.message) || '执行失败')

@@ -153,6 +153,7 @@
               <el-button
                 v-if="hasLifecycleAction(row, 'PAUSE') && canPauseExecution"
                 type="text"
+                :disabled="actingPlanIds.includes(row.id)"
                 @click="controlPlanInstance(row, 'PAUSE')"
               >
                 暂停
@@ -160,6 +161,7 @@
               <el-button
                 v-if="hasLifecycleAction(row, 'RESUME') && canResumeExecution"
                 type="text"
+                :disabled="actingPlanIds.includes(row.id)"
                 @click="controlPlanInstance(row, 'RESUME')"
               >
                 恢复
@@ -167,6 +169,7 @@
               <el-button
                 v-if="(hasLifecycleAction(row, 'TERMINATE') || hasLifecycleAction(row, 'RETRY_TERMINATE')) && canTerminateExecution"
                 type="text"
+                :disabled="actingPlanIds.includes(row.id)"
                 @click="controlPlanInstance(row, 'TERMINATE')"
               >
                 {{ hasLifecycleAction(row, 'RETRY_TERMINATE') ? '重试终止' : '终止' }}
@@ -174,6 +177,7 @@
               <el-button
                 v-if="hasLifecycleAction(row, 'FORCE_TERMINATE') && canForceTerminateExecution"
                 type="text"
+                :disabled="actingPlanIds.includes(row.id)"
                 @click="forceTerminatePlanInstance(row)"
               >
                 强制结束
@@ -354,6 +358,7 @@ import {
 } from '../execution-status'
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 import PlanEdit from './PlanEdit.vue'
+import { hasPlanAction } from '../task-plan-state'
 
 export default {
   name: 'BiPatrolBusiness2Plan',
@@ -379,6 +384,8 @@ export default {
       previewVisible: false,
       previewResult: null,
       startingPlanIds: [],
+      actingPlanIds: [],
+      rowsRequest: 0,
       executionParameterDialog: {
         visible: false,
         submitting: false,
@@ -444,8 +451,20 @@ export default {
   mounted() {
     this.loadRows()
   },
+  beforeDestroy() {
+    this.rowsRequest++
+  },
+  watch: {
+    '$store.state.websocketExtraData.taskRefreshRevision'() {
+      if (this.mode === 'list' && !this._isDestroyed) this.loadRows(undefined, true)
+    },
+    mode(value) {
+      if (value === 'list') this.loadRows()
+    }
+  },
   methods: {
-    async loadRows(pageNum) {
+    async loadRows(pageNum, silent = false) {
+      const request = ++this.rowsRequest
       if (!this.canViewPlan) {
         this.rows = []
         this.page.total = 0
@@ -454,7 +473,7 @@ export default {
         return
       }
       if (pageNum) this.page.pageNum = pageNum
-      this.loading = true
+      if (!silent) this.loading = true
       try {
         const params = {
           pageNum: this.page.pageNum,
@@ -466,14 +485,15 @@ export default {
           executeStatus: this.filters.executionStatus === 'all' ? undefined : this.filters.executionStatus
         }
         const data = this.unwrap(await getTaskList(params))
+        if (request !== this.rowsRequest || this._isDestroyed) return
         this.rows = (data.records || []).map(item => Object.assign({ loading: false }, item))
         this.page.pageNum = data.pageNum || this.page.pageNum
         this.page.pageSize = data.pageSize || this.page.pageSize
         this.page.total = data.total || 0
       } catch (error) {
-        this.showError(error)
+        if (request === this.rowsRequest && !this._isDestroyed) this.showError(error)
       } finally {
-        this.loading = false
+        if (request === this.rowsRequest) this.loading = false
       }
     },
     resetFilters() {
@@ -498,15 +518,13 @@ export default {
       this.currentId = id ? String(id) : ''
       this.mode = mode
     },
-    backToList(refresh) {
+    backToList() {
       this.mode = 'list'
       this.currentId = ''
-      if (refresh) this.loadRows()
     },
     handleSaved(id) {
       this.currentId = id ? String(id) : this.currentId
       this.mode = id ? 'edit' : 'list'
-      this.loadRows()
     },
     async startPlan(row) {
       if (row.activeWorkflowInstanceId) {
@@ -537,8 +555,7 @@ export default {
           this.$message.warning(data.message || '任务未能启动')
           return
         }
-        this.$message.success((data && data.message) || '任务已启动')
-        this.loadRows()
+        this.$message.success((data && data.message) || '启动指令已提交，状态以实时更新为准')
         if (data && data.workflowInstanceId) this.$emit('show-record', data.workflowInstanceId)
       } catch (error) {
         if (error !== 'cancel') this.showError(error)
@@ -608,8 +625,7 @@ export default {
           return
         }
         this.executionParameterDialog.visible = false
-        this.$message.success((data && data.message) || '任务已启动')
-        this.loadRows()
+        this.$message.success((data && data.message) || '启动指令已提交，状态以实时更新为准')
         if (data && data.workflowInstanceId) this.$emit('show-record', data.workflowInstanceId)
       } catch (error) {
         this.showError(error)
@@ -661,21 +677,23 @@ export default {
       if (permission && !this.hasManagementPermission(permission)) return
       const label = { PAUSE: '暂停', RESUME: '恢复', TERMINATE: '终止' }[action] || '控制'
       const api = { PAUSE: pauseTaskRecord, RESUME: resumeTaskRecord, TERMINATE: terminateTaskRecord }[action]
-      if (!api || !row.activeWorkflowInstanceId) return
+      if (!api || !row.activeWorkflowInstanceId || this.actingPlanIds.includes(row.id)) return
       try {
         await this.$confirm(`确认${label}“${row.planName || row.planCode || row.id}”当前正在执行的任务吗？`, `${label}任务`, {
           type: action === 'TERMINATE' ? 'warning' : 'info'
         })
+        this.actingPlanIds = this.actingPlanIds.concat(row.id)
         const data = this.unwrap(await api(row.activeWorkflowInstanceId, {}))
         this.$message.success((data && data.message) || `${label}命令已发送`)
-        this.loadRows()
       } catch (error) {
         if (error !== 'cancel') this.showError(error)
+      } finally {
+        this.actingPlanIds = this.actingPlanIds.filter(id => id !== row.id)
       }
     },
     async forceTerminatePlanInstance(row) {
       if (!this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_FORCE_TERMINATE)) return
-      if (!row.activeWorkflowInstanceId) return
+      if (!row.activeWorkflowInstanceId || this.actingPlanIds.includes(row.id)) return
       try {
         const { value } = await this.$prompt(
           '平台将结束任务，但不能证明边缘设备已经停止；未确认设备会进入安全隔离。请输入强制结束原因。',
@@ -691,17 +709,16 @@ export default {
             }
           }
         )
+        this.actingPlanIds = this.actingPlanIds.concat(row.id)
         const data = this.unwrap(await forceTerminateTaskRecord(row.activeWorkflowInstanceId, String(value).trim()))
         this.$message.success((data && data.message) || '任务已强制结束，未确认设备已进入安全隔离')
-        this.loadRows()
       } catch (error) {
         if (error !== 'cancel') this.showError(error)
+      } finally {
+        this.actingPlanIds = this.actingPlanIds.filter(id => id !== row.id)
       }
     },
-    hasLifecycleAction(row, action) {
-      const actions = row && Array.isArray(row.availableLifecycleActions) ? row.availableLifecycleActions : []
-      return Boolean(row && row.activeWorkflowInstanceId && actions.indexOf(action) !== -1)
-    },
+    hasLifecycleAction: hasPlanAction,
     isStarting(planId) {
       return this.startingPlanIds.indexOf(planId) !== -1
     },

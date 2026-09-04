@@ -140,9 +140,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         requestAlarmSnapshot(browserSession);
         try {
             connectCenter(browserSession);
+            requestTaskRefresh(browserSession, false);
         } catch (Exception exception) {
-            log.warn("中心端 WebSocket 不可用，浏览器会话将无法接收中心端实时事件，会话={}",
+            log.warn("中心端 WebSocket 连接失败，关闭浏览器会话以触发现有重连，会话={}",
                     browserSession.getId(), exception);
+            browserSession.close(CloseStatus.SERVER_ERROR);
         }
     }
 
@@ -367,11 +369,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                             statsParts);
                 }
                 if (refreshTasks) {
-                    Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
-                    taskEventRefresher.requestRefresh(
-                            browserSession.getId(),
-                            authentication,
-                            payload -> sendUserScopedToBrowserSession(browserSession, payload));
+                    requestTaskRefresh(browserSession, true);
                 }
                 if (refreshAlarms) {
                     requestAlarmRefresh(browserSession);
@@ -393,6 +391,12 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             log.warn("中心端 WebSocket 传输异常，浏览器会话={}", browserSession.getId(), exception);
             afterConnectionClosed(centerSession, CloseStatus.SERVER_ERROR);
         }
+    }
+
+    private void requestTaskRefresh(WebSocketSession browserSession, boolean followChanges) {
+        Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
+        taskEventRefresher.requestRefresh(browserSession.getId(), authentication,
+                payload -> sendUserScopedToBrowserSession(browserSession, payload), followChanges);
     }
 
     private void requestAlarmRefresh(WebSocketSession browserSession) {

@@ -3,6 +3,7 @@ package com.robot.bigscreen.panorama;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -347,9 +348,111 @@ class PanoramaServiceTest {
         assertEquals("running", task.get("status"));
         assertEquals("执行中", task.get("statusName"));
         assertEquals(List.of("TERMINATE"), task.get("availableLifecycleActions"));
+        assertEquals("RUNNING", task.get("executionStatus"));
+        assertEquals(9001L, task.get("activeWorkflowInstanceId"));
+        assertEquals("PREPARING", task.get("activeWorkflowInstanceStatus"));
         assertEquals(true, response.get("convergencePending"));
         verify(centerClient, never()).taskWorkflowReplay(anyString());
         verify(centerClient, never()).deviceTaskInstances(anyString());
+    }
+
+    @Test
+    void reusesCompleteTaskEventSnapshotOnlyForSameIdentity() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+
+        authenticate("user-a", "org-a");
+        Map<String, Object> first = service.taskEventSnapshot();
+        assertSame(first, service.taskEventSnapshot());
+        verify(client).taskWorkflowPlans();
+        verify(client).activeTaskWorkflowInstances();
+        verify(client, never()).taskWorkflowInstances();
+
+        authenticate("user-b", "org-a");
+        service.taskEventSnapshot();
+        verify(client, times(2)).taskWorkflowPlans();
+        verify(client, times(2)).activeTaskWorkflowInstances();
+    }
+
+    @Test
+    void taskInvalidationOnlyClearsCurrentIdentityOverview() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+        authenticate("user-a", "org-a");
+        service.overview();
+        authenticate("user-b", "org-b");
+        service.overview();
+        authenticate("user-a", "org-a");
+        service.invalidateTaskOverview();
+        authenticate("user-b", "org-b");
+        service.overview();
+        verify(client, times(2)).taskWorkflowPlans();
+        authenticate("user-a", "org-a");
+        service.overview();
+        verify(client, times(3)).taskWorkflowPlans();
+    }
+
+    @Test
+    void taskInvalidationPreventsOldInFlightOverviewFromRefillingCache() throws Exception {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        when(client.taskWorkflowPlans()).thenAnswer(invocation -> {
+            if (calls.incrementAndGet() == 1) {
+                entered.countDown();
+                assertTrue(release.await(3, java.util.concurrent.TimeUnit.SECONDS));
+                return List.of(Map.of("id", 1L, "executionStatus", "WAITING"));
+            }
+            return List.of(Map.of("id", 1L, "executionStatus", "RUNNING"));
+        });
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var old = executor.submit(service::overview);
+            assertTrue(entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            service.invalidateTaskOverview();
+            assertEquals("RUNNING", maps(service.overview().get("tasks")).get(0).get("executionStatus"));
+            release.countDown();
+            old.get(3, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals("RUNNING", maps(service.overview().get("tasks")).get(0).get("executionStatus"));
+            assertEquals(2, calls.get());
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void instanceForbiddenRetainsPlansButUnauthorizedStillFails() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        List<Map<String, Object>> plans = List.of(Map.of("id", 1L));
+        when(client.taskWorkflowPlans()).thenReturn(plans);
+        when(client.activeTaskWorkflowInstances()).thenThrow(
+                new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN),
+                new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNAUTHORIZED));
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+        Map<String, Object> response = service.taskEventSnapshot();
+        assertEquals(plans, response.get("plans"));
+        assertEquals(false, response.get("tasksComplete"));
+        assertEquals(List.of(), response.get("items"));
+        var exception = assertThrows(org.springframework.web.server.ResponseStatusException.class, service::taskEventSnapshot);
+        assertEquals(401, exception.getStatusCode().value());
+    }
+
+    @Test
+    void taskEventRetainsPlansWhenInstanceQueryFails() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        List<Map<String, Object>> plans = List.of(Map.of("id", 1L, "executionStatus", "RUNNING"));
+        when(client.taskWorkflowPlans()).thenReturn(plans);
+        when(client.activeTaskWorkflowInstances()).thenThrow(new IllegalStateException("unavailable"));
+        Map<String, Object> response = new PanoramaService(client, new ObjectMapper()).taskEventSnapshot();
+        assertEquals(plans, response.get("plans"));
+        assertEquals(false, response.get("tasksComplete"));
+        assertEquals(List.of(), response.get("items"));
     }
 
     @Test
@@ -382,6 +485,9 @@ class PanoramaServiceTest {
         Map<String, Object> task = maps(overview.get("tasks")).get(0);
         assertEquals("waiting", task.get("status"));
         assertEquals("待执行", task.get("statusName"));
+        assertEquals("WAITING", task.get("executionStatus"));
+        assertEquals(null, task.get("activeWorkflowInstanceId"));
+        assertEquals(9001L, task.get("lastWorkflowInstanceId"));
         assertEquals(1L, ((Map<?, ?>) overview.get("taskOverview")).get("pending"));
         assertFalse(((Map<?, ?>) overview.get("taskOverview")).containsKey("completedRate"));
     }
@@ -1059,6 +1165,7 @@ class PanoramaServiceTest {
         when(centerClient.fixedCameraHealth()).thenReturn(Map.of("records", List.of()));
         when(centerClient.taskWorkflowPlans()).thenReturn(List.of());
         when(centerClient.taskWorkflowInstances()).thenReturn(List.of());
+        when(centerClient.activeTaskWorkflowInstances()).thenReturn(List.of());
         when(centerClient.alarmPage(any(), any(), any(), any(), anyInt(), anyInt())).thenAnswer(invocation ->
                 new PanoramaCenterClient.AlarmPage(
                         List.of(),

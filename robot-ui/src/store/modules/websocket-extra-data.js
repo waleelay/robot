@@ -31,15 +31,30 @@ let overviewRefreshPromise = null
 let overviewAbortController = null
 const mapResourcePromises = new Map()
 const taskFixedCameraPromises = new Map()
+const taskDetailPromises = new Map()
 const trajectoryRetentionTimers = new Map()
 const MAX_TRAJECTORY_POINTS = 15000
 const TRAJECTORY_RETENTION_MILLIS = 5 * 60 * 1000
+// 保护 BFF 摘要中的权威状态字段；摘要缺失的地图和路径由详情补充。
+const TASK_SUMMARY_FIELDS = [
+  'taskId', 'workflowInstanceId', 'name', 'executionMode', 'expectedDurationSeconds',
+  'executionStatus', 'activeWorkflowInstanceId', 'activeWorkflowInstanceStatus',
+  'lastWorkflowInstanceId', 'enabled', 'availableLifecycleActions', 'status', 'statusName',
+  'startTime', 'endTime', 'timeRange', 'equipmentList'
+]
 
 const state = {
   // 设备对象：按需加载的设备详情
   deviceObj: {},
   // 任务详情
   taskData: {}, // { taskId: { ...taskInfo } }
+  // 任务更新共用递增版本；请求只补充发出后未被更新的数据。
+  taskVersion: 0,
+  taskVersions: {},
+  taskSnapshotVersion: 0,
+  taskCollection: null,
+  taskScopeRevision: 0,
+  taskRefreshRevision: 0,
   // 实时监控任务卡按需展开的固定摄像头，键为 taskId
   taskFixedCameraData: {},
   // 告警数据
@@ -90,13 +105,21 @@ const state = {
 }
 
 const mutations = {
-  RESET_OVERVIEW_RESOURCE_STATE(state, { preserveTrajectories = false } = {}) {
+  RESET_OVERVIEW_RESOURCE_STATE(state, { preserveTrajectories = false, preserveTaskState = false } = {}) {
     state.overviewRevision++;
     mapResourcePromises.clear();
     state.slamMapList = [];
     state.slamOfRobot = {};
     state.deviceObj = {};
     state.taskData = {};
+    if (!preserveTaskState) {
+      state.taskVersions = {};
+      state.taskSnapshotVersion = ++state.taskVersion;
+      state.taskCollection = null;
+      taskDetailPromises.clear();
+      state.taskScopeRevision++;
+      state.taskRefreshRevision++;
+    }
     state.taskFixedCameraData = {};
     state.alarmsData = {};
     state.robotLocation = {};
@@ -117,6 +140,25 @@ const mutations = {
   },
   SET_DEVICE_OBJ(state, value) {
     state.deviceObj = value;
+  },
+  INVALIDATE_TASKS(state, taskIds) {
+    if (Array.isArray(taskIds)) {
+      state.taskCollection = { version: ++state.taskVersion, ids: new Set(taskIds.map(String)) };
+      Object.keys(state.taskData).forEach(id => {
+        if (!state.taskCollection.ids.has(id)) mutations.REMOVE_TASK_INFO(state, id);
+      });
+    }
+    state.taskRefreshRevision++;
+  },
+  SET_TASK_STATE(state, task) {
+    if (task?.taskId == null) return
+    state.taskVersions[task.taskId] = ++state.taskVersion
+    mutations.SET_TASK_INFO(state, task)
+  },
+  COMMIT_TASK_SNAPSHOT(state) {
+    state.taskSnapshotVersion = ++state.taskVersion
+    state.taskVersions = {}
+    state.taskCollection = null
   },
   SET_TASK_INFO(state, value) {
     if (!value || value.taskId === undefined || value.taskId === null) return
@@ -143,6 +185,7 @@ const mutations = {
   },
   REMOVE_TASK_INFO(state, taskId) {
     if (taskId === undefined || taskId === null) return
+    state.taskVersions[taskId] = ++state.taskVersion
     const prev = getTaskById(state.taskData, taskId)
     if (!prev) return
     const nextTasks = { ...state.taskData }
@@ -430,9 +473,10 @@ const actions = {
     const revision = state.overviewRevision
     const controller = typeof AbortController === 'function' ? new AbortController() : null
     overviewAbortController = controller
+    const taskBaseline = state.taskVersion
     const pending = loadOverviewWithRetry(controller?.signal)
       .then(data => {
-        if (revision === state.overviewRevision) return dispatch('applyOverview', data)
+        if (revision === state.overviewRevision) return dispatch('applyOverview', { ...data, taskBaseline })
       })
       .catch(error => {
         if (revision !== state.overviewRevision) return
@@ -447,6 +491,7 @@ const actions = {
     return pending
   },
   async applyOverview({ state, dispatch }, overview) {
+    const taskBaseline = overview.taskBaseline ?? state.taskVersion
     const revision = state.overviewRevision
     const mapId = resolveOverviewMapId(overview, state.globalMapId)
     const [mapResourcesResult, taskRoutesResult] = await requestMapResources(mapId, revision)
@@ -454,7 +499,7 @@ const actions = {
     const mapResources = fulfilledValue(mapResourcesResult)
     const taskRoutes = fulfilledValue(taskRoutesResult)
     // 等待资源期间允许用户切图；提交时以最新选择为准，必要时补齐新图资源。
-    await dispatch('setAll', mergeOverviewMapResources(overview, mapResources, taskRoutes))
+    await dispatch('setAll', { ...mergeOverviewMapResources(overview, mapResources, taskRoutes), taskBaseline })
     if (String(state.globalMapId) !== String(mapId)) {
       await dispatch('loadMapResources', state.globalMapId)
     }
@@ -475,7 +520,7 @@ const actions = {
     commit('SET_SLAM_MAP_LIST', maps)
     ;(taskRoutes?.items || []).forEach(item => {
       const previous = getTaskById(state.taskData, item.taskId) || {}
-      commit('SET_TASK_INFO', { ...previous, ...item })
+      commit('SET_TASK_INFO', { ...previous, mapId: item.mapId, pathPoints: item.pathPoints || [] })
       commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } })
     })
     commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(maps, state.robotList || [], Object.values(state.taskData || {})))
@@ -484,22 +529,42 @@ const actions = {
    * 完整任务数据只在用户打开任务视频时请求，避免首屏和切图预取回放、设备任务等高成本数据。
    * 详情请求失败时由调用方继续使用首屏摘要，不能影响已经可用的视频入口。
    */
-  async loadTaskDetail({ state, commit }, taskId) {
+  loadTaskDetail({ state, commit }, taskId) {
     if (taskId === undefined || taskId === null || taskId === '') return null
-    const response = await getPatrolPanoramaTaskDetail(taskId)
-    const payload = response?.data && response?.task === undefined ? response.data : response
-    const task = payload?.task
-    if (!task) return null
-    const previous = getTaskById(state.taskData, taskId) || {}
-    const merged = { ...previous, ...task }
-    commit('SET_TASK_INFO', merged)
-    if (merged.mapId !== undefined && merged.mapId !== null) {
-      commit('SET_TASK_PATH_POINTS', {
-        taskId: merged.taskId ?? taskId,
-        data: { mapId: merged.mapId, pathPoints: merged.pathPoints || [] }
+    const key = String(taskId)
+    if (taskDetailPromises.has(key)) return taskDetailPromises.get(key)
+    const pending = (async () => {
+      const revision = state.taskScopeRevision
+      const baseline = state.taskVersion
+      const response = await getPatrolPanoramaTaskDetail(taskId)
+      if (revision !== state.taskScopeRevision) return null
+      const changed = taskChangedSince(state, key, baseline)
+      if (changed && !getTaskById(state.taskData, taskId)) return null
+      const payload = response?.data && response?.task === undefined ? response.data : response
+      const task = payload?.task
+      if (!task) return null
+      const previous = getTaskById(state.taskData, taskId) || {}
+      // 实例或地图已经变化时，旧详情的路径和位置也不能混入新任务。
+      if (changed && ['workflowInstanceId', 'mapId'].some(field =>
+        hasTaskIdentity(previous[field]) && hasTaskIdentity(task[field])
+        && String(previous[field]) !== String(task[field]))) return previous
+      const merged = { ...previous, ...task }
+      if (changed) TASK_SUMMARY_FIELDS.forEach(field => {
+        if (Object.prototype.hasOwnProperty.call(previous, field)) merged[field] = previous[field]
       })
-    }
-    return merged
+      commit('SET_TASK_STATE', merged)
+      if (merged.mapId !== undefined && merged.mapId !== null) {
+        commit('SET_TASK_PATH_POINTS', {
+          taskId: merged.taskId ?? taskId,
+          data: { mapId: merged.mapId, pathPoints: merged.pathPoints || [] }
+        })
+      }
+      return merged
+    })().finally(() => {
+      if (taskDetailPromises.get(key) === pending) taskDetailPromises.delete(key)
+    })
+    taskDetailPromises.set(key, pending)
+    return pending
   },
   /** 实时监控任务卡展开时读取固定摄像头候选源；不预取，也不创建视频会话。 */
   async loadTaskFixedCameras({ state, commit }, taskId) {
@@ -523,15 +588,28 @@ const actions = {
   },
   setAll({commit, state, dispatch}, data) {
     const previousMapId = state.globalMapId
+    const previousTasks = state.taskData
     // 普通快照回填不能擦除并发到达的轨迹 RESET；失权和退出仍使用默认全量清理。
-    commit('RESET_OVERVIEW_RESOURCE_STATE', { preserveTrajectories: true })
+    commit('RESET_OVERVIEW_RESOURCE_STATE', { preserveTrajectories: true, preserveTaskState: true })
     const taskQuality = data?.dataQuality?.tasks || { complete: true, degraded: false, reasonCodes: [] }
+    const tasksComplete = taskQuality.complete !== false && !taskQuality.degraded
     commit('SET_DATA_QUALITY', data?.dataQuality || {})
     // 任务查询局部降级时保留已成功加载的数据；页面通过“--”或空态表达未知值，
     // 不弹出瞬时提示干扰正在查看总览或实时视频的用户。
     // 联通展厅 SLAM：注入模拟装备与任务路径
     const devices = [...(data?.devices || [])]
-    const tasks = [...(data?.tasks || [])]
+    const taskItems = tasksComplete
+      ? Object.fromEntries((data?.tasks || []).map(task => [task.taskId, task]))
+      : { ...previousTasks }
+    const baseline = data.taskBaseline ?? state.taskVersion
+    new Set([...Object.keys(taskItems), ...Object.keys(previousTasks)]).forEach(id => {
+      if (!taskChangedSince(state, id, baseline)) return
+      if (previousTasks[id]) taskItems[id] = { ...taskItems[id], ...previousTasks[id] }
+      else delete taskItems[id]
+    })
+    // 完整快照已校准集合，压缩历史版本记录，避免累计删除标记。
+    if (tasksComplete) commit('COMMIT_TASK_SNAPSHOT')
+    const tasks = Object.values(taskItems)
     if (ENABLE_LIANTONG_SLAM_MOCK) {
       const mock = getLiantongSlamMock()
       if (!devices.some(item => String(item.robotId) === String(mock.robotId))) {
@@ -571,7 +649,7 @@ const actions = {
       online: '-'
     });
     commit('SET_PATROL_OVERVIEW', data?.patrolOverview || { durationToday: '-', durationUnit: '小时', mileageToday: '-', mileageUnit: 'KM' });
-    commit('SET_TASK_OVERVIEW', taskQuality.degraded
+    commit('SET_TASK_OVERVIEW', !tasksComplete
       ? { totalToday: '-', completedRate: '-', completedRateText: '-%', running: '-', pending: '-' }
       : data?.taskOverview || { totalToday: '-', completedRate: '-', completedRateText: '-%', running: '-', pending: '-' });
     commit('SET_ALARM_SUMMARY', data?.alarms?.summary || { totalToday: '-', handled: '-', unhandled: '-', handleRate: '-', handleRateText: '-%' });
@@ -678,13 +756,19 @@ const actions = {
       commit('SET_ROBOT_LOCATION', { robotId: event.data.robotId, location: event.data.location });
     } else if (event.event === 'robot.trajectory.changed') {
       dispatch('applyTrajectoryEvent', event.data)
+    } else if (event.event === 'management.task.invalidated') {
+      commit('INVALIDATE_TASKS', event.data?.taskIds)
     } else if (event.event === 'panorama.task.changed') {
       if (event.data?.changeType === 'REMOVE') {
         commit('REMOVE_TASK_INFO', event.data.taskId)
         return
       }
-      const task = event.data?.task || (event.data?.taskId != null ? event.data : null)
-      if (task) commit('SET_TASK_INFO', task)
+      let task = event.data?.task || (event.data?.taskId != null ? event.data : null)
+      if (task) {
+        const currentMapId = getTaskById(state.taskData, task.taskId)?.mapId
+        if (!hasTaskIdentity(task.mapId) && hasTaskIdentity(currentMapId)) task = { ...task, mapId: currentMapId }
+        commit('SET_TASK_STATE', task)
+      }
     } else if (event.event === 'panorama.workflow-alarms.changed') {
       commit('SET_WORKFLOW_ALARMS', event.data?.items)
     } else if (event.event === 'panorama.alarms.changed') {
@@ -743,6 +827,16 @@ const actions = {
   setSlamEmptyTipShown({ commit }, value) {
     commit('SET_SLAM_EMPTY_TIP_SHOWN', value);
   },
+}
+
+// 集合只约束它之前的数据；集合之后的新事件已体现在当前 taskData 中。
+function taskChangedSince(state, id, baseline) {
+  return state.taskSnapshotVersion > baseline || (state.taskVersions[id] || 0) > baseline
+    || (state.taskCollection?.version > baseline && !state.taskCollection.ids.has(String(id)))
+}
+
+function hasTaskIdentity(value) {
+  return value !== undefined && value !== null && value !== ''
 }
 
 /**

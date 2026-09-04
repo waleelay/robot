@@ -118,9 +118,7 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
                     new StompSessionHandlerAdapter() {
                         @Override
                         public void afterConnected(StompSession connected, StompHeaders headers) {
-                            session = connected;
-                            connecting.set(false);
-                            subscribe(connected);
+                            onConnected(connected);
                             log.info("中心端 STOMP 事件桥接已连接，订阅主题={}", properties.getCenterStomp().getTopic());
                         }
 
@@ -143,6 +141,14 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
             log.warn("中心端 STOMP 事件桥接初始化失败：{}", exception.getMessage());
             scheduleReconnect();
         }
+    }
+
+    /** 初次连接和重连都补查任务，恢复断线期间遗漏的变化。 */
+    void onConnected(StompSession connected) {
+        session = connected;
+        connecting.set(false);
+        subscribe(connected);
+        publisher.publish("management.task.invalidated", Map.of("scopes", List.of("PLAN", "EXECUTION")));
     }
 
     private void subscribe(StompSession connected) {

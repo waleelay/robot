@@ -53,6 +53,18 @@ class CenterStompTaskEventBridgeTest {
         verify(publisher, never()).publish(eq("panorama.task.changed"), org.mockito.ArgumentMatchers.any());
     }
 
+    @Test
+    void refreshesTasksOnEachStompConnectionWithoutReplayingOldEvents() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        CenterStompTaskEventBridge bridge = new CenterStompTaskEventBridge(
+                new ControlServiceProperties(), new ObjectMapper(), publisher, mock(TaskScheduler.class), RestClient.builder());
+        org.springframework.messaging.simp.stomp.StompSession session = mock(org.springframework.messaging.simp.stomp.StompSession.class);
+        bridge.onConnected(session);
+        bridge.onConnected(session);
+        verify(session, times(2)).subscribe(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(org.springframework.messaging.simp.stomp.StompFrameHandler.class));
+        verify(publisher, times(2)).publish(eq("management.task.invalidated"), eq(java.util.Map.of("scopes", java.util.List.of("PLAN", "EXECUTION"))));
+    }
+
     private byte[] json(String value) {
         return value.getBytes(StandardCharsets.UTF_8);
     }

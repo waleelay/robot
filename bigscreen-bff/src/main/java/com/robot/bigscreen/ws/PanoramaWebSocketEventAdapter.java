@@ -79,7 +79,8 @@ public class PanoramaWebSocketEventAdapter {
         if (!data.isObject()) {
             return messages;
         }
-        if (MANAGEMENT_ALARM_INVALIDATED.equals(event)) {
+        // 失效通知由 BFF 补查后再通知页面，避免原始通知和快照重复触发查询。
+        if (MANAGEMENT_ALARM_INVALIDATED.equals(event) || MANAGEMENT_TASK_INVALIDATED.equals(event)) {
             return List.of();
         }
 

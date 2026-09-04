@@ -44,6 +44,7 @@ public class PanoramaService {
     private static final ZoneOffset CHINA_ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final long STATS_CACHE_TTL_MILLIS = 3000;
+    private static final long TASK_EVENT_CACHE_TTL_MILLIS = 100;
     /**
      * 同一登录主体的首屏在 5 秒窗口内复用同一份成功快照。它既避免高频刷新击穿 Management，
      * 也不把失败结果缓存给后续用户请求。
@@ -113,6 +114,9 @@ public class PanoramaService {
     private final BoundedTtlCache<String, Map<String, Object>> overviewCache =
             new BoundedTtlCache<>(SNAPSHOT_CACHE_MAX_SIZE, OVERVIEW_CACHE_TTL_MILLIS);
     private final Map<String, CompletableFuture<Map<String, Object>>> overviewInFlight = new ConcurrentHashMap<>();
+    private final BoundedTtlCache<String, Map<String, Object>> taskEventCache =
+            new BoundedTtlCache<>(SNAPSHOT_CACHE_MAX_SIZE, TASK_EVENT_CACHE_TTL_MILLIS);
+    private final Map<String, CompletableFuture<Map<String, Object>>> taskEventInFlight = new ConcurrentHashMap<>();
 
     public PanoramaService(PanoramaCenterClient centerClient, ObjectMapper objectMapper) {
         this.centerClient = centerClient;
@@ -121,37 +125,45 @@ public class PanoramaService {
 
     public Map<String, Object> overview() {
         String cacheKey = "overview:" + statsUserKey();
-        Optional<Map<String, Object>> cached = overviewCache.get(cacheKey);
-        if (cached.isPresent()) {
-            return cached.get();
-        }
-        if (!overviewInFlight.containsKey(cacheKey) && overviewInFlight.size() >= IN_FLIGHT_MAX_SIZE) {
-            throw new IllegalStateException("大屏总览并发身份已达上限，请稍后重试");
-        }
-        SecurityContext callerContext = copySecurityContext(SecurityContextHolder.getContext());
-        CompletableFuture<Map<String, Object>> shared = overviewInFlight.computeIfAbsent(cacheKey, key -> {
-            CompletableFuture<Map<String, Object>> created;
-            try {
-                created = CompletableFuture.supplyAsync(
-                        () -> loadOverviewWithSecurityContext(callerContext), OVERVIEW_EXECUTOR);
-            } catch (RejectedExecutionException error) {
-                throw new IllegalStateException("大屏总览请求繁忙，请稍后重试", error);
+        CompletableFuture<Map<String, Object>> shared;
+        synchronized (overviewCache) {
+            Optional<Map<String, Object>> cached = overviewCache.get(cacheKey);
+            if (cached.isPresent()) return cached.get();
+            if (!overviewInFlight.containsKey(cacheKey) && overviewInFlight.size() >= IN_FLIGHT_MAX_SIZE) {
+                throw new IllegalStateException("大屏总览并发身份已达上限，请稍后重试");
             }
-            created.whenComplete((value, error) -> {
-                if (error == null && value != null) {
-                    overviewCache.put(key, value);
+            SecurityContext callerContext = copySecurityContext(SecurityContextHolder.getContext());
+            shared = overviewInFlight.computeIfAbsent(cacheKey, key -> {
+                try {
+                    return CompletableFuture.supplyAsync(
+                            () -> loadOverviewWithSecurityContext(callerContext), OVERVIEW_EXECUTOR);
+                } catch (RejectedExecutionException error) {
+                    throw new IllegalStateException("大屏总览请求繁忙，请稍后重试", error);
                 }
-                overviewInFlight.remove(key, created);
             });
-            return created;
+        }
+        // 回调放在登记之后；事件已使缓存失效时，旧请求不能重新写入缓存。
+        shared.whenComplete((value, error) -> {
+            synchronized (overviewCache) {
+                if (overviewInFlight.remove(cacheKey, shared) && error == null && value != null) {
+                    overviewCache.put(cacheKey, value);
+                }
+            }
         });
         try {
             return joinShared(shared, OVERVIEW_TIMEOUT_MILLIS);
         } catch (RuntimeException exception) {
-            // 原 future 完成与 whenComplete 清理存在极短竞态；失败等待者返回前先条件删除，
-            // 保证紧接着的重试不会再次复用同一个失败结果。
             overviewInFlight.remove(cacheKey, shared);
             throw exception;
+        }
+    }
+
+    /** 只清除当前身份的总览缓存；在途旧响应仍由前端按请求期间事件保护。 */
+    public void invalidateTaskOverview() {
+        String cacheKey = "overview:" + statsUserKey();
+        synchronized (overviewCache) {
+            overviewInFlight.remove(cacheKey);
+            overviewCache.remove(cacheKey);
         }
     }
 
@@ -819,17 +831,53 @@ public class PanoramaService {
 
     /** WebSocket 任务事件只读取列表摘要，避免状态变化时加载回放、路径和设备任务明细。 */
     public Map<String, Object> taskEventSnapshot() {
+        String cacheKey = "task-event:" + statsUserKey();
+        Optional<Map<String, Object>> cached = taskEventCache.get(cacheKey);
+        if (cached.isPresent()) return cached.get();
+        CompletableFuture<Map<String, Object>> created = new CompletableFuture<>();
+        CompletableFuture<Map<String, Object>> shared = taskEventInFlight.putIfAbsent(cacheKey, created);
+        if (shared != null) return joinShared(shared, OVERVIEW_TIMEOUT_MILLIS);
+        try {
+            Map<String, Object> snapshot = loadTaskEventSnapshot();
+            if (Boolean.TRUE.equals(snapshot.get("tasksComplete"))) taskEventCache.put(cacheKey, snapshot);
+            created.complete(snapshot);
+            return snapshot;
+        } catch (RuntimeException | Error error) {
+            created.completeExceptionally(error);
+            throw error;
+        } finally {
+            taskEventInFlight.remove(cacheKey, created);
+        }
+    }
+
+    private Map<String, Object> loadTaskEventSnapshot() {
+        Long previousDeadline = OVERVIEW_DEADLINE_NANOS.get();
         ThreadPoolExecutor previousExecutor = REQUEST_IO_EXECUTOR.get();
+        OVERVIEW_DEADLINE_NANOS.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(OVERVIEW_TIMEOUT_MILLIS));
         REQUEST_IO_EXECUTOR.set(TASK_EVENT_IO_EXECUTOR);
         try {
-            PanoramaTasks panoramaTasks = taskSummaries();
-            if (Boolean.TRUE.equals(panoramaTasks.dataQuality().get("degraded"))) {
-                throw new IllegalStateException("全景地图任务事件快照不完整");
+            CompletableFuture<List<Map<String, Object>>> plansFuture = async(centerClient::taskWorkflowPlans);
+            CompletableFuture<List<Map<String, Object>>> instancesFuture = async(centerClient::activeTaskWorkflowInstances);
+            List<Map<String, Object>> plans = joinRequired(plansFuture);
+            TaskDataQuality quality = new TaskDataQuality();
+            List<Map<String, Object>> instances;
+            try {
+                instances = joinTask(instancesFuture, List.of(), quality, "TASK_INSTANCES_UNAVAILABLE");
+            } catch (org.springframework.web.server.ResponseStatusException exception) {
+                // 计划和实例权限独立；仅实例 403 可降级，401 仍按登录失效处理。
+                if (exception.getStatusCode().value() != 403) throw exception;
+                quality.unavailable(exception, "TASK_INSTANCES_FORBIDDEN");
+                instances = List.of();
             }
+            boolean complete = !Boolean.TRUE.equals(quality.snapshot().get("degraded"));
+            // 实例查询失败不阻断计划列表刷新，也不能用残缺摘要覆盖运行态或删除任务。
             return object(
-                    "items", panoramaTasks.items(),
-                    "convergencePending", panoramaTasks.convergencePending());
+                    "plans", plans,
+                    "items", complete ? summarizeTasks(plans, instances) : List.of(),
+                    "tasksComplete", complete,
+                    "convergencePending", hasPreparingPlan(plans));
         } finally {
+            restoreOverviewDeadline(previousDeadline);
             restoreRequestIoExecutor(previousExecutor);
         }
     }
@@ -1334,16 +1382,21 @@ public class PanoramaService {
                 taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
         List<Map<String, Object>> taskInstances = joinTask(
                 taskInstancesFuture, List.of(), quality, "TASK_INSTANCES_UNAVAILABLE");
-        Map<String, Map<String, Object>> instancesById = taskInstances.stream()
+        return new PanoramaTasks(summarizeTasks(taskPlans, taskInstances), taskInstances,
+                quality.snapshot(), hasPreparingPlan(taskPlans));
+    }
+
+    private List<Map<String, Object>> summarizeTasks(
+            List<Map<String, Object>> plans, List<Map<String, Object>> instances) {
+        Map<String, Map<String, Object>> instancesById = instances.stream()
                 .filter(item -> firstString(item, "id", "workflowInstanceId") != null)
                 .collect(Collectors.toMap(
                         item -> firstString(item, "id", "workflowInstanceId"),
                         Function.identity(),
                         (left, right) -> right));
-        List<Map<String, Object>> items = taskPlans.stream()
+        return plans.stream()
                 .map(plan -> taskSummary(plan, instancesById.get(string(planWorkflowInstanceId(plan)))))
                 .toList();
-        return new PanoramaTasks(items, taskInstances, quality.snapshot(), hasPreparingPlan(taskPlans));
     }
 
     private Map<String, Object> taskSummary(Map<String, Object> source, Map<String, Object> instance) {
@@ -1361,6 +1414,11 @@ public class PanoramaService {
                 "name", firstString(source, "planName", "workflowName", "name"),
                 "executionMode", firstValue(source, "executionMode"),
                 "expectedDurationSeconds", firstValue(source, "expectedDurationSeconds"),
+                "executionStatus", firstValue(source, "executionStatus"),
+                "activeWorkflowInstanceId", firstValue(source, "activeWorkflowInstanceId"),
+                "activeWorkflowInstanceStatus", firstValue(source, "activeWorkflowInstanceStatus"),
+                "lastWorkflowInstanceId", firstValue(source, "lastWorkflowInstanceId"),
+                "enabled", firstValue(source, "enabled"),
                 "availableLifecycleActions", firstValue(source, "availableLifecycleActions"),
                 "status", taskStatusCode(rawStatus),
                 "statusName", taskStatusName(rawStatus),
@@ -1392,6 +1450,11 @@ public class PanoramaService {
                 "name", firstString(source, "planName", "workflowName", "name"),
                 "executionMode", firstValue(source, "executionMode"),
                 "expectedDurationSeconds", firstValue(source, "expectedDurationSeconds"),
+                "executionStatus", firstValue(source, "executionStatus"),
+                "activeWorkflowInstanceId", firstValue(source, "activeWorkflowInstanceId"),
+                "activeWorkflowInstanceStatus", firstValue(source, "activeWorkflowInstanceStatus"),
+                "lastWorkflowInstanceId", firstValue(source, "lastWorkflowInstanceId"),
+                "enabled", firstValue(source, "enabled"),
                 "availableLifecycleActions", firstValue(source, "availableLifecycleActions"),
                 "status", taskStatusCode(rawStatus),
                 "statusName", taskStatusName(rawStatus),

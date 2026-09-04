@@ -35,6 +35,23 @@ import org.mockito.ArgumentCaptor;
 class BigscreenWebSocketBridgeHandlerTest {
 
     @Test
+    void refreshesTasksAfterConnectingAndClosesBrowserOnInitialUpstreamFailure() throws Exception {
+        BigscreenWebSocketAuthorizationService authorization = mock(BigscreenWebSocketAuthorizationService.class);
+        WebSocketSession browser = browserSession(new HttpHeaders(), URI.create("ws://bigscreen/ws/bigscreen"), "task-test");
+        when(authorization.authorizedResources(browser)).thenReturn(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(Set.of(), Set.of()));
+        BigscreenWebSocketBridgeHandler handler = org.mockito.Mockito.spy(handler(authorization));
+        PanoramaTaskEventRefresher refresher = (PanoramaTaskEventRefresher) ReflectionTestUtils.getField(handler, "taskEventRefresher");
+        handler.afterConnectionEstablished(browser);
+        verify(refresher).requestRefresh(eq("task-test"), any(), any(), eq(false));
+        org.mockito.Mockito.doThrow(new IllegalStateException("upstream unavailable")).when(handler).connectCenter(browser);
+        handler.afterConnectionEstablished(browser);
+        verify(browser).close(CloseStatus.SERVER_ERROR);
+        verify(refresher, times(1)).requestRefresh(eq("task-test"), any(), any(), eq(false));
+        handler.shutdownAuthorizationRefreshExecutor();
+    }
+
+    @Test
     void forwardsClientIdFromBrowserQuery() {
         BigscreenWebSocketBridgeHandler handler = handler();
         WebSocketSession browserSession = browserSession(

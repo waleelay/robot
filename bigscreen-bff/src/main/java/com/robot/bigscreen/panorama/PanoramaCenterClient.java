@@ -193,23 +193,25 @@ public class PanoramaCenterClient {
     }
 
     public List<Map<String, Object>> taskWorkflowInstances() {
+        return taskWorkflowInstances("ALL");
+    }
+
+    public List<Map<String, Object>> activeTaskWorkflowInstances() {
+        return taskWorkflowInstances("ACTIVE");
+    }
+
+    private List<Map<String, Object>> taskWorkflowInstances(String scope) {
         int pageSize = 100;
         return taskPagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances")
                 .queryParam("pageNum", pageNum)
                 .queryParam("pageSize", pageSize)
-                .queryParam("scope", "ALL")
+                .queryParam("scope", scope)
                 .build(true)
                 .toUri(), pageSize, "TASK_INSTANCES_UNAVAILABLE");
     }
 
     public List<Map<String, Object>> taskWorkflowInstancesForStatistics() {
-        int pageSize = 100;
-        return taskPagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances")
-                .queryParam("pageNum", pageNum)
-                .queryParam("pageSize", pageSize)
-                .queryParam("scope", "ALL")
-                .build(true)
-                .toUri(), pageSize, "TASK_INSTANCES_UNAVAILABLE");
+        return taskWorkflowInstances();
     }
 
     public Optional<Map<String, Object>> taskWorkflowInstance(String workflowInstanceId) {
