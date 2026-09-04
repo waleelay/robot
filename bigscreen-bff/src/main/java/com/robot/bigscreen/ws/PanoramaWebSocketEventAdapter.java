@@ -14,7 +14,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.springframework.stereotype.Component;
 
@@ -25,6 +24,7 @@ public class PanoramaWebSocketEventAdapter {
     private static final String ROBOT_STATE_EVENT = "robot.state";
     private static final String ROBOT_MILEAGE_CHANGED = "robot.mileage.changed";
     private static final String STATE_SOURCE_CLIENT = "MEDIA_CLIENT_STATUS";
+    private static final String STATE_SOURCE_GIS_ENRICHMENT = "GIS_LOCATION_ENRICHMENT";
     private static final String PANORAMA_DEVICE_STATUS_CHANGED = "panorama.device.status.changed";
     private static final String PANORAMA_DEVICE_LOCATION_CHANGED = "panorama.device.location.changed";
     private static final String PANORAMA_TASK_CHANGED = "panorama.task.changed";
@@ -53,16 +53,8 @@ public class PanoramaWebSocketEventAdapter {
             "management.device.created",
             "management.device.updated",
             "management.device.deleted");
-    private static final double[][] TEST111_LOCATION_POINTS = {
-            {-1.481845, -1.893522, -0.02789},
-            {-1.621149, -8.08522, -0.025462},
-            {1.4151, -7.861758, -0.044444}
-    };
-
     private final ObjectMapper objectMapper;
     private final Map<String, Map<String, String>> robotStatusesBySession = new ConcurrentHashMap<>();
-    private final AtomicLong locationTick = new AtomicLong();
-    private final AtomicLong test111LocationTick = new AtomicLong();
 
     public PanoramaWebSocketEventAdapter(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -139,7 +131,8 @@ public class PanoramaWebSocketEventAdapter {
             return;
         }
 
-        if (!STATE_SOURCE_CLIENT.equals(text(data, "stateSource"))) {
+        String stateSource = text(data, "stateSource");
+        if (!STATE_SOURCE_CLIENT.equals(stateSource) && !STATE_SOURCE_GIS_ENRICHMENT.equals(stateSource)) {
             messages.add(writePanoramaDeviceStatus(root, data));
         }
 
@@ -149,12 +142,6 @@ public class PanoramaWebSocketEventAdapter {
         }
         if (hasLocation(location)) {
             messages.add(writePanoramaDeviceLocation(root, robotId, location));
-        } else if ("test111".equals(robotId)) {
-            messages.add(writeTest111PanoramaDeviceLocation(root, robotId, test111LocationTick.getAndIncrement()));
-        } else if ("SN005".equals(robotId)) {
-            messages.add(writeMockPanoramaDeviceLocation2(root, robotId, locationTick.incrementAndGet()));
-        } else if ("SN006".equals(robotId)) {
-            messages.add(writeMockPanoramaDeviceLocation(root, robotId, locationTick.incrementAndGet()));
         }
 
         JsonNode task = firstObject(data, "task", "currentTask");
@@ -192,80 +179,6 @@ public class PanoramaWebSocketEventAdapter {
         return writeValue(event);
     }
 
-    private String writeMockPanoramaDeviceLocation(JsonNode sourceRoot, String robotId, long currentTick) {
-        long step = currentTick % 6;
-        double offset = step * 0.00003;
-
-        ObjectNode location = objectMapper.createObjectNode();
-        location.put("lng", 106.03655278081857 + offset);
-        location.put("lat", 30.7478613352993 + offset);
-        location.putNull("altitude");
-        location.put("x", 118.4 + step * 0.6);
-        location.put("y", 42.8 + step * 0.4);
-        location.put("z", 0.0);
-        location.put("address", "A区主干道-" + robotId);
-        location.put("updatedAt", timestamp(sourceRoot));
-
-        ObjectNode data = objectMapper.createObjectNode();
-        data.put("robotId", robotId);
-        data.set("location", location);
-
-        ObjectNode event = objectMapper.createObjectNode();
-        event.put("event", PANORAMA_DEVICE_LOCATION_CHANGED);
-        event.put("timestamp", timestamp(sourceRoot));
-        event.set("data", data);
-        return writeValue(event);
-    }
-    private String writeMockPanoramaDeviceLocation2(JsonNode sourceRoot, String robotId, long currentTick) {
-        long step = currentTick % 6;
-        double offset = step * 0.00003;
-
-        ObjectNode location = objectMapper.createObjectNode();
-        location.put("lng", 106.03655278081857 + offset);
-        location.put("lat", 30.7478613352993 + offset);
-        location.putNull("altitude");
-        location.put("x", 1.4151);
-        location.put("y", -7.861758);
-        location.put("z", -0.044444);
-        location.put("address", "A区主干道-" + robotId);
-        location.put("updatedAt", timestamp(sourceRoot));
-
-        ObjectNode data = objectMapper.createObjectNode();
-        data.put("robotId", robotId);
-        data.set("location", location);
-
-        ObjectNode event = objectMapper.createObjectNode();
-        event.put("event", PANORAMA_DEVICE_LOCATION_CHANGED);
-        event.put("timestamp", timestamp(sourceRoot));
-        event.set("data", data);
-        return writeValue(event);
-    }
-
-    private String writeTest111PanoramaDeviceLocation(JsonNode sourceRoot, String robotId, long currentTick) {
-        int index = Math.floorMod(currentTick, TEST111_LOCATION_POINTS.length);
-        double[] point = TEST111_LOCATION_POINTS[index];
-
-        ObjectNode location = objectMapper.createObjectNode();
-        location.put("lng", 106.03655278081857);
-        location.put("lat", 30.7478613352993);
-        location.putNull("altitude");
-        location.put("x", point[0]);
-        location.put("y", point[1]);
-        location.put("z", point[2]);
-        location.put("address", "A区主干道-" + robotId);
-        location.put("updatedAt", timestamp(sourceRoot));
-
-        ObjectNode data = objectMapper.createObjectNode();
-        data.put("robotId", robotId);
-        data.set("location", location);
-
-        ObjectNode event = objectMapper.createObjectNode();
-        event.put("event", PANORAMA_DEVICE_LOCATION_CHANGED);
-        event.put("timestamp", timestamp(sourceRoot));
-        event.set("data", data);
-        return writeValue(event);
-    }
-
     private String writePanoramaDeviceLocation(JsonNode sourceRoot, String robotId, JsonNode sourceLocation) {
         ObjectNode location = objectMapper.createObjectNode();
         putNullableNumber(location, "lng", firstExisting(sourceLocation, "lng", "longitude"));
@@ -275,6 +188,7 @@ public class PanoramaWebSocketEventAdapter {
         putNullableNumber(location, "y", firstExisting(sourceLocation, "y", "coordinateY"));
         putNullableNumber(location, "z", firstExisting(sourceLocation, "z", "coordinateZ"));
         putNullableNumber(location, "yaw", sourceLocation.get("yaw"));
+        putNullableText(location, "mapId", sourceLocation.get("mapId"));
         putNullableText(location, "coordinateType", sourceLocation.get("coordinateType"));
         putNullableBoolean(location, "localized", sourceLocation.get("localized"));
         putNullableText(location, "address", sourceLocation.get("address"));
@@ -361,7 +275,10 @@ public class PanoramaWebSocketEventAdapter {
         }
         JsonNode data = root.path("data");
         String robotId = text(data, "robotId");
-        if (robotId.isBlank() || STATE_SOURCE_CLIENT.equals(text(data, "stateSource"))) {
+        String stateSource = text(data, "stateSource");
+        if (robotId.isBlank()
+                || STATE_SOURCE_CLIENT.equals(stateSource)
+                || STATE_SOURCE_GIS_ENRICHMENT.equals(stateSource)) {
             return parts;
         }
         String status = panoramaDeviceStatus(data);

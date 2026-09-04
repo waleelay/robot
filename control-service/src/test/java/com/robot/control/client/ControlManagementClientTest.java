@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.robot.control.auth.RequestAuthorizationHeaders;
@@ -15,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -113,6 +115,33 @@ class ControlManagementClientTest {
         assertThatThrownBy(client::devices)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("分页无进展");
+        server.verify();
+    }
+
+    @Test
+    void convertsGisThroughInternalManagementEndpointWithoutUserContext() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        ControlProperties properties = new ControlProperties();
+        properties.setManagementServiceBaseUrl("http://management.test");
+        ControlManagementClient client = new ControlManagementClient(
+                builder.build(), properties, mock(RequestAuthorizationHeaders.class));
+        server.expect(requestTo("http://management.test/internal/v1/management/maps/gis/convert"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("""
+                        {"code":"0","data":{"items":[{"serialNumber":"robot-1","mapId":"map-1",
+                          "x":1.2,"y":3.4,"longitude":104.1,"latitude":30.2,"converted":true}]}}
+                        """, MediaType.APPLICATION_JSON));
+
+        var results = client.convertGis(List.of(
+                new ControlManagementClient.GisCoordinate("robot-1", "map-1", 1.2, 3.4)));
+
+        assertThat(results).singleElement().satisfies(result -> {
+            assertThat(result.serialNumber()).isEqualTo("robot-1");
+            assertThat(result.converted()).isTrue();
+            assertThat(result.longitude()).isEqualTo(104.1);
+            assertThat(result.latitude()).isEqualTo(30.2);
+        });
         server.verify();
     }
 

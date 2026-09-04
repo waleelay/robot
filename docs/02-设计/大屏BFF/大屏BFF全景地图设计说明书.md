@@ -379,14 +379,6 @@ Overview 的 `map[]` 只返回地图摘要。当前地图的 `points/deviceIds/f
 | `map` | 可用地图数组 | `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
 | 当前地图渲染资源 | 点位、关联设备 ID、固定摄像头 | `/panorama/maps/{mapId}/resources` 按需返回 |
 
-历史 REST mock 点位表不再是当前 REST 数据源。当前代码只在 WebSocket `robot.state` 不带定位时，对 `test111`、`SN005`、`SN006` 生成演示位置；以下旧表不得作为当前接口期望：
-
-| robotId | lat | lng | x | y | z |
-|---|---:|---:|---:|---:|---:|
-| `test111` | 30.745330 | 106.039428 | 118.4 | 42.8 | 0.0 |
-| `SN006` | 30.746587087515316 | 106.03824884204943 | 82.6 | 156.2 | 0.0 |
-| `robot-unitree-001` | 30.7469491 | 106.0344109 | -64.3 | 198.5 | 0.0 |
-
 `location.lng/lat/altitude` 用于地图经纬度定位；`location.x/y/z` 用于室内图、三维场景或局部坐标系定位。
 
 ### 5.3 上装设备计数接口
@@ -721,7 +713,7 @@ WebSocket：
 | 事件 | 数据来源与触发条件 | BFF 推送策略 |
 |---|---|---|
 | `panorama.device.status.changed` | Control 收到设备状态 MQTT 上报后广播 `robot.state` | 仅当 `robot.state` 来源为边缘状态（`stateSource=EDGE_DEVICE_STATUS`）或离线扫描（`stateSource=OFFLINE_SCAN`）时即时派生并推送，不受位置限频影响；媒体客户端来源（`stateSource=MEDIA_CLIENT_STATUS`）不派生该事件，机器人状态以边缘上报为准。在线、离线、故障等状态变化同时触发统计快照刷新。 |
-| `panorama.device.location.changed` | `robot.state` 携带 `location/localization/status.localization` 时派生；联调设备 `test111`、`SN005`、`SN006` 在无真实定位时使用专用演示坐标 | 按“浏览器会话 + `robotId`”独立限频。首条立即推送；同一设备 1 秒内的多条位置只保留最新一条，每秒最多推送一次；`localized=false` 立即推送。没有新定位时不重复发送旧坐标。 |
+| `panorama.device.location.changed` | `robot.state` 携带 `location/localization/status.localization` 时派生；不生成模拟坐标 | 按“浏览器会话 + `robotId`”独立限频。首条立即推送；同一设备 1 秒内 GIS 结果优先，更晚的 SLAM 位置保留到下一窗口，每秒最多推送一次；`localized=false` 立即推送。没有新定位时不重复发送旧坐标。 |
 | `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 300ms 去抖，按当前 WebSocket 会话身份重查管理端权威快照，逐项比较后只推送发生变化的任务；任务删除或失权时推送 `data.changeType=REMOVE`。`taskId` 缺失的旧版事件不直接下发。 |
 | `panorama.alarm.changed` | 上游携带完整告警数据的原始事件 | 完整事件立即转换，继续用于高风险普通告警即时弹窗；没有真实上游事件时不生成模拟告警。 |
 | `panorama.alarms.changed` | 管理端告警失效通知 | 按当前会话身份查询普通告警各风险分组第一页和总数；快照变化时整体推送，前端替换列表第一页，不逐项刷新或遍历全量告警。首屏和重连沿用 Overview，不重复查询。 |
@@ -951,7 +943,7 @@ BFF 仍会原样转发上游消息，上表只描述追加生成的 `panorama.*`
 - `/ws/control` 保留到 Control Service WebSocket 的桥接能力；Control Service WebSocket 暂不可用时，不推送本地假数据。
 - BFF 已将中心端 `robot.state` 转换为 `panorama.device.status.changed` 并追加转发给前端；当 `robot.state` 携带定位或任务字段时，同步追加 `panorama.device.location.changed`、`panorama.task.changed`。
 - 当前控制服务并行订阅 `eiop/v1/edge/{serialNumber}/status`，转换并广播 `robot.state`。BFF 将其中的健康、速度、电量、控制模式和 SLAM `x/y/z/yaw/mapId` 等字段继续转换为全景事件，无需前端直接订阅 MQTT。
-- 联调期仅针对 `robotId=test111` 保留定位兜底：当中心端 `robot.state` 未携带定位数据时，BFF 按三组 XYZ 坐标循环追加 `panorama.device.location.changed`。
+- 边缘状态已有合法经纬度时由 Control 原样使用；缺失经纬度且具备 `mapId/x/y` 时，Control 批量调用 Management 内部换算接口补充，BFF 不生成模拟位置。
 - BFF 在设备状态发生切换以及收到设备、任务、告警变化事件后，延迟 500ms 合并刷新统计；按事件类型只重算受影响统计块（设备/任务/告警），各块带 3 秒 TTL 缓存（按用户隔离），多会话共享；统计数据与 `/api/bigscreen/panorama/overview` 使用相同管理端数据源和计算口径。新旧统计快照一致时不推送，普通电量、速度、位置心跳不触发统计刷新。
 - `panorama.stats.changed` 推送完整的 `deviceStats`、`deviceTypeStats`、`patrolOverview`、`taskOverview`、`alarmStats`、`alarmSummary`，前端仅更新事件实际携带的统计块。
 - 如果中心端推送 `task.*`、`alarm.*` 原始事件，BFF 会转换为 `panorama.task.changed`、`panorama.alarm.changed`；没有真实原始事件源时不生成本地假数据。

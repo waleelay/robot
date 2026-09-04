@@ -48,7 +48,7 @@ class PanoramaWebSocketEventAdapterTest {
         JsonNode location = locationEvent.path("data").path("location");
         assertThat(location.path("x").asDouble()).isEqualTo(5.28);
         assertThat(location.path("yaw").asDouble()).isEqualTo(-2.87);
-        assertThat(location.has("mapId")).isFalse();
+        assertThat(location.path("mapId").asText()).isEqualTo("2077");
         assertThat(location.path("coordinateType").asText()).isEqualTo("地图坐标");
         assertThat(location.path("localized").asBoolean()).isTrue();
         JsonNode statusEvent = events.stream()
@@ -176,6 +176,34 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(adapter.statsRefreshParts("browser-a", """
                 {"event":"robot.state","data":{"robotId":"test117","status":"online","stateSource":"MEDIA_CLIENT_STATUS"}}
                 """)).isEmpty();
+    }
+
+    @Test
+    void derivesOnlyLocationForGisEnrichment() {
+        List<String> events = adapter.adapt("""
+                {"event":"robot.state","data":{"robotId":"robot-1","status":"online",
+                  "stateSource":"GIS_LOCATION_ENRICHMENT",
+                  "location":{"longitude":104.1,"latitude":30.2,"x":1.2,"y":3.4}}}
+                """);
+
+        assertThat(events.stream().map(this::readTree)
+                .anyMatch(node -> "panorama.device.location.changed".equals(node.path("event").asText())))
+                .isTrue();
+        assertThat(events.stream().map(this::readTree)
+                .noneMatch(node -> "panorama.device.status.changed".equals(node.path("event").asText())))
+                .isTrue();
+        assertThat(adapter.statsRefreshParts("browser-a", events.get(0))).isEmpty();
+    }
+
+    @Test
+    void doesNotGenerateMockLocationForKnownDemoDevices() {
+        List<String> events = adapter.adapt("""
+                {"event":"robot.state","data":{"robotId":"SN005","status":"online"}}
+                """);
+
+        assertThat(events.stream().map(this::readTree)
+                .noneMatch(node -> "panorama.device.location.changed".equals(node.path("event").asText())))
+                .isTrue();
     }
 
     @Test

@@ -224,6 +224,7 @@ public class RobotRegistryService {
         boolean edgeStatusReport = EDGE_DEVICE_STATUS_SOURCE.equals(stateSource);
         boolean becameOnline;
         boolean publishState;
+        long publishVersion;
         Map<String, Object> state;
         synchronized (device) {
             // 在取得设备锁后记录处理时间，保证它晚于已经完成的离线扫描版本，避免并发事件时间倒退。
@@ -268,7 +269,7 @@ public class RobotRegistryService {
                 device.mountedDevices = new ArrayList<>(mountedDevices);
             }
             DYNAMIC_STATE_FIELDS.forEach(field -> {
-                if ("speed".equals(field) && !edgeStatusReport) {
+                if (!edgeStatusReport && ("speed".equals(field) || "location".equals(field))) {
                     return;
                 }
                 if (dynamicState.containsKey(field) && dynamicState.get(field) != null) {
@@ -280,9 +281,10 @@ public class RobotRegistryService {
             // 此时保留注册表快照为离线，但不把默认值作为实时状态广播给页面。
             publishState = !MEDIA_CLIENT_STATUS_SOURCE.equals(stateSource) || device.lastEdgeStatusAt != null;
             state = toState(device, receivedAt);
+            publishVersion = ++device.publishVersion;
         }
         if (publishState) {
-            webSocketPublisher.publish("robot.state", state);
+            publishIfCurrent(device, publishVersion, state);
         }
         return becameOnline;
     }
@@ -313,14 +315,16 @@ public class RobotRegistryService {
             return;
         }
         Map<String, Object> state;
+        long publishVersion;
         synchronized (removed) {
             OffsetDateTime changedAt = now();
             removed.status = "offline";
             removed.statusChangedAt = changedAt;
             removed.dynamicState.put("stateSource", "UNREGISTERED_DEVICE");
             state = toState(removed, changedAt);
+            publishVersion = ++removed.publishVersion;
         }
-        webSocketPublisher.publish("robot.state", state);
+        publishIfCurrent(removed, publishVersion, state);
     }
 
     /** Returns the latest in-memory state for one robot. */
@@ -329,13 +333,72 @@ public class RobotRegistryService {
         return device == null ? Optional.empty() : Optional.of(toResponse(device));
     }
 
+    /** 判断设备当前是否仍处于可接收实时位置的在线状态。 */
+    public boolean isConnected(String robotId) {
+        RobotDevice device = devices.get(robotId);
+        if (device == null) {
+            return false;
+        }
+        synchronized (device) {
+            return "online".equals(device.status) || "fault".equals(device.status);
+        }
+    }
+
+    /** 原子校验在线状态和当前位置后补充 GIS 坐标，并广播位置状态。 */
+    public boolean enrichLocationIfConnected(
+            String robotId,
+            String mapId,
+            Double x,
+            Double y,
+            Double longitude,
+            Double latitude) {
+        RobotDevice device = devices.get(robotId);
+        if (device == null) {
+            return false;
+        }
+        Map<String, Object> state;
+        long publishVersion;
+        synchronized (device) {
+            if (!("online".equals(device.status) || "fault".equals(device.status))
+                    || !(device.dynamicState.get("location") instanceof Map<?, ?> current)
+                    || !mapId.equals(string(current.get("mapId"), ""))
+                    || !sameNumber(x, current.get("x"))
+                    || !sameNumber(y, current.get("y"))
+                    || current.containsKey("longitude")
+                    || current.containsKey("latitude")) {
+                return false;
+            }
+            Map<String, Object> location = new LinkedHashMap<>();
+            current.forEach((key, value) -> location.put(String.valueOf(key), value));
+            location.put("longitude", longitude);
+            location.put("latitude", latitude);
+            device.dynamicState.put("location", location);
+            device.dynamicState.put("stateSource", "GIS_LOCATION_ENRICHMENT");
+            state = toState(device, now());
+            publishVersion = ++device.publishVersion;
+        }
+        publishIfCurrent(device, publishVersion, state);
+        return true;
+    }
+
+    private void publishIfCurrent(RobotDevice device, long version, Map<String, Object> state) {
+        // 状态更新不持有设备锁做网络 I/O，但同设备的旧快照不得晚于新快照下发。
+        synchronized (device.publishLock) {
+            if (version <= device.lastPublishedVersion) {
+                return;
+            }
+            device.lastPublishedVersion = version;
+            webSocketPublisher.publish("robot.state", state);
+        }
+    }
+
     /**
      * 扫描并标记心跳超时的机器人。
      */
     public void sweepOffline() {
         OffsetDateTime sweepAt = now();
         OffsetDateTime threshold = sweepAt.minusSeconds(properties.getRobot().getHeartbeatTimeoutSeconds());
-        List<Map<String, Object>> offlineEvents = new ArrayList<>();
+        List<StatePublication> offlineEvents = new ArrayList<>();
         devices.values().forEach(device -> {
             synchronized (device) {
                 boolean connected = "online".equals(device.status) || "fault".equals(device.status);
@@ -345,11 +408,12 @@ public class RobotRegistryService {
                     device.status = "offline";
                     device.statusChangedAt = sweepAt;
                     device.dynamicState.put("stateSource", "OFFLINE_SCAN");
-                    offlineEvents.add(toState(device, sweepAt));
+                    offlineEvents.add(new StatePublication(
+                            device, ++device.publishVersion, toState(device, sweepAt)));
                 }
             }
         });
-        offlineEvents.forEach(state -> webSocketPublisher.publish("robot.state", state));
+        offlineEvents.forEach(event -> publishIfCurrent(event.device(), event.version(), event.state()));
         cleanupStaleOffline();
     }
 
@@ -487,6 +551,10 @@ public class RobotRegistryService {
         return value == null || String.valueOf(value).isBlank() ? defaultValue : String.valueOf(value);
     }
 
+    private boolean sameNumber(Double expected, Object value) {
+        return value instanceof Number number && Double.compare(expected, number.doubleValue()) == 0;
+    }
+
     /**
      * 判断字符串是否为空白。
      *
@@ -506,6 +574,9 @@ public class RobotRegistryService {
         return OffsetDateTime.now(ZoneOffset.UTC);
     }
 
+    private record StatePublication(RobotDevice device, long version, Map<String, Object> state) {
+    }
+
     /**
      * 内存中的单台机器人状态快照。
      *
@@ -514,6 +585,9 @@ public class RobotRegistryService {
      */
     private static class RobotDevice {
         private final String robotId;
+        private final Object publishLock = new Object();
+        private long publishVersion;
+        private long lastPublishedVersion;
         private String clientId;
         private String name;
         private String type;

@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -76,6 +77,28 @@ public class ControlManagementClient {
         requestFactory.setConnectTimeout(2000);
         requestFactory.setReadTimeout(3000);
         return builder.requestFactory(requestFactory).build();
+    }
+
+    /** 批量将设备 SLAM 坐标换算为 GIS 经纬度。内部接口不透传用户身份。 */
+    public List<GisConversion> convertGis(List<GisCoordinate> items) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        URI uri = uri("/internal/v1/management/maps/gis/convert").build(true).toUri();
+        Map<String, Object> response = restClient.post()
+                .uri(uri)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("items", items))
+                .retrieve()
+                .body(MAP_TYPE);
+        Object values = map(response == null ? null : response.get("data")).get("items");
+        if (!(values instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .filter(Map.class::isInstance)
+                .map(this::gisConversion)
+                .toList();
     }
 
     /**
@@ -481,6 +504,44 @@ public class ControlManagementClient {
 
     private String string(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private GisConversion gisConversion(Object value) {
+        Map<String, Object> item = map(value);
+        return new GisConversion(
+                string(item.get("serialNumber")),
+                string(item.get("mapId")),
+                number(item.get("x")),
+                number(item.get("y")),
+                number(item.get("longitude")),
+                number(item.get("latitude")),
+                Boolean.TRUE.equals(item.get("converted")),
+                string(item.get("reason")));
+    }
+
+    private Double number(Object value) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        try {
+            return value == null ? null : Double.valueOf(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    public record GisCoordinate(String serialNumber, String mapId, Double x, Double y) {
+    }
+
+    public record GisConversion(
+            String serialNumber,
+            String mapId,
+            Double x,
+            Double y,
+            Double longitude,
+            Double latitude,
+            boolean converted,
+            String reason) {
     }
 
     private record DeviceCacheKey(String cacheIdentity, String serialNumber) {

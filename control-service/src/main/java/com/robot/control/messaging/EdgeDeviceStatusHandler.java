@@ -40,18 +40,21 @@ public class EdgeDeviceStatusHandler {
     private final RobotRegistryService robotRegistryService;
     private final MileageService mileageService;
     private final TrajectoryCoordinator trajectoryCoordinator;
+    private final GisLocationEnrichmentService gisLocationEnrichmentService;
 
     public EdgeDeviceStatusHandler(
             ObjectMapper objectMapper,
             EquipmentControlService equipmentControlService,
             RobotRegistryService robotRegistryService,
             MileageService mileageService,
-            TrajectoryCoordinator trajectoryCoordinator) {
+            TrajectoryCoordinator trajectoryCoordinator,
+            GisLocationEnrichmentService gisLocationEnrichmentService) {
         this.objectMapper = objectMapper;
         this.equipmentControlService = equipmentControlService;
         this.robotRegistryService = robotRegistryService;
         this.mileageService = mileageService;
         this.trajectoryCoordinator = trajectoryCoordinator;
+        this.gisLocationEnrichmentService = gisLocationEnrichmentService;
     }
 
     /**
@@ -86,6 +89,11 @@ public class EdgeDeviceStatusHandler {
             recordMileage(serialNumber, envelope, status, eventTime);
             Map<String, Object> merged = equipmentControlService.mergeEdgeDeviceStatus(serialNumber, update);
             robotRegistryService.update(merged);
+            if (update.get("location") instanceof Map<?, ?> location) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> normalizedLocation = (Map<String, Object>) location;
+                gisLocationEnrichmentService.observe(serialNumber, normalizedLocation);
+            }
         } catch (Exception ex) {
             log.warn("处理边缘设备状态失败，主题={} 载荷字节数={}", topic,
                     json == null ? 0 : json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length, ex);
@@ -132,10 +140,16 @@ public class EdgeDeviceStatusHandler {
             putIfPresent(location, "localized", localization.get("localized"));
             putIfPresent(location, "coordinateType", localization.get("coordinateType"));
             putIfPresent(location, "mapId", localization.get("mapId"));
-            putIfPresent(location, "x", localization.get("coordinateX"));
-            putIfPresent(location, "y", localization.get("coordinateY"));
+            putIfPresent(location, "x", finiteNumber(localization.get("coordinateX")));
+            putIfPresent(location, "y", finiteNumber(localization.get("coordinateY")));
             putIfPresent(location, "z", localization.get("coordinateZ"));
             putIfPresent(location, "yaw", localization.get("yaw"));
+            Double longitude = firstFiniteNumber(localization, "longitude", "lng");
+            Double latitude = firstFiniteNumber(localization, "latitude", "lat");
+            if (validGis(longitude, latitude)) {
+                location.put("longitude", longitude);
+                location.put("latitude", latitude);
+            }
             location.put("updatedAt", timestamp);
             update.put("location", location);
         }
@@ -303,5 +317,24 @@ public class EdgeDeviceStatusHandler {
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    private Double firstFiniteNumber(Map<String, Object> source, String first, String second) {
+        Double value = finiteNumber(source.get(first));
+        return value == null ? finiteNumber(source.get(second)) : value;
+    }
+
+    private Double finiteNumber(Object value) {
+        try {
+            double number = Double.parseDouble(String.valueOf(value));
+            return Double.isFinite(number) ? number : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private boolean validGis(Double longitude, Double latitude) {
+        return longitude != null && longitude >= -180 && longitude <= 180
+                && latitude != null && latitude >= -90 && latitude <= 90;
     }
 }

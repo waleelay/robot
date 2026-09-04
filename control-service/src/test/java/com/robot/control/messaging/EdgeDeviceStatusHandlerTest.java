@@ -24,8 +24,10 @@ class EdgeDeviceStatusHandlerTest {
     private final RobotRegistryService robotRegistryService = mock(RobotRegistryService.class);
     private final MileageService mileageService = mock(MileageService.class);
     private final TrajectoryCoordinator trajectoryCoordinator = mock(TrajectoryCoordinator.class);
+    private final GisLocationEnrichmentService gisLocationEnrichmentService = mock(GisLocationEnrichmentService.class);
     private final EdgeDeviceStatusHandler handler = new EdgeDeviceStatusHandler(
-            new ObjectMapper(), equipmentControlService, robotRegistryService, mileageService, trajectoryCoordinator);
+            new ObjectMapper(), equipmentControlService, robotRegistryService, mileageService, trajectoryCoordinator,
+            gisLocationEnrichmentService);
 
     @Test
     void mapsRealEdgeStatusPayloadToUnifiedRobotState() {
@@ -138,6 +140,42 @@ class EdgeDeviceStatusHandlerTest {
                 """);
 
         verify(trajectoryCoordinator).observeTaskInstance("robot-1", 42);
+    }
+
+    @Test
+    void keepsValidEdgeGisCoordinatesAndSkipsConversionDecisionInsideHandler() {
+        when(equipmentControlService.mergeEdgeDeviceStatus(eq("robot-1"), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        handler.handle("eiop/v1/edge/robot-1/status", """
+                {"payload":{"status":{"localization":{"mapId":"map-1","coordinateX":1.2,"coordinateY":3.4,
+                  "longitude":104.123,"latitude":30.456}}}}
+                """);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(equipmentControlService).mergeEdgeDeviceStatus(eq("robot-1"), captor.capture());
+        Map<String, Object> location = map(captor.getValue().get("location"));
+        assertThat(location).containsEntry("longitude", 104.123).containsEntry("latitude", 30.456);
+        verify(gisLocationEnrichmentService).observe("robot-1", location);
+    }
+
+    @Test
+    void normalizesStringCoordinatesBeforeGisConversion() {
+        when(equipmentControlService.mergeEdgeDeviceStatus(eq("robot-1"), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        handler.handle("eiop/v1/edge/robot-1/status", """
+                {"payload":{"status":{"localization":{"mapId":"map-1",
+                  "coordinateX":"1.2","coordinateY":"3.4"}}}}
+                """);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(equipmentControlService).mergeEdgeDeviceStatus(eq("robot-1"), captor.capture());
+        assertThat(map(captor.getValue().get("location")))
+                .containsEntry("x", 1.2)
+                .containsEntry("y", 3.4);
     }
 
     @SuppressWarnings("unchecked")

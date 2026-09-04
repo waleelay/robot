@@ -94,8 +94,10 @@ class RobotRegistryServiceTest {
                 "robotId", "test116",
                 "status", "online",
                 "stateSource", "EDGE_DEVICE_STATUS"));
+        assertThat(service.isConnected("test116")).isTrue();
 
         service.sweepOffline();
+        assertThat(service.isConnected("test116")).isFalse();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
@@ -106,6 +108,31 @@ class RobotRegistryServiceTest {
                 .containsEntry("status", "offline")
                 .containsEntry("stateSource", "OFFLINE_SCAN")
                 .containsKey("statusChangedAt");
+    }
+
+    @Test
+    void enrichesLocationOnlyWhileDeviceIsConnectedAndPositionStillMatches() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        ControlServiceProperties properties = new ControlServiceProperties();
+        properties.getRobot().setHeartbeatTimeoutSeconds(-1);
+        RobotRegistryService service = new RobotRegistryService(properties, publisher, new ObjectMapper());
+        service.update(object(
+                "robotId", "robot-1",
+                "status", "online",
+                "stateSource", "EDGE_DEVICE_STATUS",
+                "location", object("mapId", "map-1", "x", 1.0, "y", 2.0)));
+
+        assertThat(service.enrichLocationIfConnected("robot-1", "old-map", 1.0, 2.0, 104.1, 30.2)).isFalse();
+        assertThat(service.enrichLocationIfConnected("robot-1", "map-1", 1.0, 2.0, 104.1, 30.2)).isTrue();
+        service.sweepOffline();
+        assertThat(service.enrichLocationIfConnected("robot-1", "map-1", 1.0, 2.0, 105.0, 31.0)).isFalse();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> events = ArgumentCaptor.forClass(Map.class);
+        verify(publisher, org.mockito.Mockito.times(3)).publish(eq("robot.state"), events.capture());
+        assertThat(map(events.getAllValues().get(1).get("location")))
+                .containsEntry("longitude", 104.1)
+                .containsEntry("latitude", 30.2);
     }
 
     @Test
@@ -283,6 +310,28 @@ class RobotRegistryServiceTest {
         service.sweepOffline();
 
         assertThat(service.find("study").orElseThrow().status()).isEqualTo("offline");
+    }
+
+    @Test
+    void mediaClientStatusDoesNotOverwriteEdgeLocation() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+        service.update(object(
+                "robotId", "robot-1", "status", "online", "stateSource", "EDGE_DEVICE_STATUS",
+                "location", object("mapId", "map-1", "x", 1.0, "y", 2.0)));
+        service.enrichLocationIfConnected("robot-1", "map-1", 1.0, 2.0, 104.1, 30.2);
+
+        service.update(object(
+                "robotId", "robot-1", "status", "online", "stateSource", "MEDIA_CLIENT_STATUS",
+                "location", object("mapId", "map-1", "x", 9.0, "y", 9.0)));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> events = ArgumentCaptor.forClass(Map.class);
+        verify(publisher, org.mockito.Mockito.times(3)).publish(eq("robot.state"), events.capture());
+        assertThat(map(events.getAllValues().get(2).get("location")))
+                .containsEntry("x", 1.0)
+                .containsEntry("longitude", 104.1);
     }
 
     @Test

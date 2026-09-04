@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -50,14 +51,30 @@ public class PanoramaLocationEventThrottler {
         synchronized (state) {
             long now = nanoTime.getAsLong();
             state.publisher = publisher;
+            if (!locationEvent.mapId().isBlank() && !Objects.equals(state.mapId, locationEvent.mapId())) {
+                state.mapId = locationEvent.mapId();
+                state.pendingPayload = null;
+                state.pendingHasGis = false;
+                state.deferredSlamPayload = null;
+            }
+            if (!locationEvent.localizationInvalid() && state.pendingHasGis && !locationEvent.hasGis()) {
+                state.deferredSlamPayload = payload;
+                return;
+            }
+            if (locationEvent.hasGis()) {
+                state.deferredSlamPayload = null;
+            }
             if (locationEvent.localizationInvalid()
                     || state.lastPublishedNanos == Long.MIN_VALUE
                     || (!state.scheduled && now - state.lastPublishedNanos >= INTERVAL_NANOS)) {
                 state.pendingPayload = null;
+                state.pendingHasGis = false;
+                state.deferredSlamPayload = null;
                 state.lastPublishedNanos = now;
                 immediatePayload = payload;
             } else {
                 state.pendingPayload = payload;
+                state.pendingHasGis = locationEvent.hasGis();
                 scheduleIfNeeded(key, state, now);
             }
         }
@@ -99,9 +116,16 @@ public class PanoramaLocationEventThrottler {
                 return;
             }
             payload = state.pendingPayload;
+            boolean publishedGis = state.pendingHasGis;
             state.pendingPayload = null;
+            state.pendingHasGis = false;
             state.lastPublishedNanos = now;
             publisher = state.publisher;
+            if (publishedGis && state.deferredSlamPayload != null) {
+                state.pendingPayload = state.deferredSlamPayload;
+                state.deferredSlamPayload = null;
+                scheduleIfNeeded(key, state, now);
+            }
         }
         if (publisher != null) {
             publisher.accept(payload);
@@ -119,22 +143,41 @@ public class PanoramaLocationEventThrottler {
                 return null;
             }
             JsonNode localized = root.path("data").path("location").path("localized");
-            return new LocationEvent(robotId, localized.isBoolean() && !localized.asBoolean());
+            JsonNode location = root.path("data").path("location");
+            boolean hasGis = validGis(location.path("lng"), location.path("lat"));
+            return new LocationEvent(
+                    robotId,
+                    localized.isBoolean() && !localized.asBoolean(),
+                    hasGis,
+                    location.path("mapId").asText(""));
         } catch (Exception exception) {
             return null;
         }
     }
 
+    private boolean validGis(JsonNode longitude, JsonNode latitude) {
+        return longitude.isNumber() && latitude.isNumber()
+                && longitude.doubleValue() >= -180 && longitude.doubleValue() <= 180
+                && latitude.doubleValue() >= -90 && latitude.doubleValue() <= 90;
+    }
+
     private record EventKey(String sessionId, String robotId) {
     }
 
-    private record LocationEvent(String robotId, boolean localizationInvalid) {
+    private record LocationEvent(
+            String robotId,
+            boolean localizationInvalid,
+            boolean hasGis,
+            String mapId) {
     }
 
     private static final class LocationState {
         private long lastPublishedNanos = Long.MIN_VALUE;
         private boolean scheduled;
         private String pendingPayload;
+        private boolean pendingHasGis;
+        private String deferredSlamPayload;
         private Consumer<String> publisher;
+        private String mapId = "";
     }
 }

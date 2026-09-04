@@ -78,6 +78,83 @@ class PanoramaLocationEventThrottlerTest {
     }
 
     @Test
+    void publishesGisFirstAndKeepsLaterSlamForTheNextWindow() {
+        AtomicLong nanoTime = new AtomicLong();
+        AtomicReference<Runnable> scheduled = new AtomicReference<>();
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        doAnswer(invocation -> {
+            scheduled.set(invocation.getArgument(0));
+            return null;
+        }).when(scheduler).schedule(any(Runnable.class), any(java.time.Instant.class));
+        PanoramaLocationEventThrottler throttler = new PanoramaLocationEventThrottler(
+                new ObjectMapper(), scheduler, nanoTime::get);
+        List<String> published = new ArrayList<>();
+
+        throttler.publish("browser-a", location("robot-1", 1), published::add);
+        nanoTime.set(100_000_000L);
+        String gis = gisLocation("robot-1", "map-1", 2, 104.1, 30.2);
+        throttler.publish("browser-a", gis, published::add);
+        String laterSlam = fallbackLocation("robot-1", "map-1", 3);
+        throttler.publish("browser-a", laterSlam, published::add);
+        nanoTime.set(1_000_000_000L);
+        scheduled.get().run();
+
+        assertThat(published).containsExactly(location("robot-1", 1), gis);
+        nanoTime.set(2_000_000_000L);
+        scheduled.get().run();
+        assertThat(published).containsExactly(location("robot-1", 1), gis, laterSlam);
+    }
+
+    @Test
+    void publishesSlamInNextWindowWhenNoNewGisArrives() {
+        AtomicLong nanoTime = new AtomicLong();
+        AtomicReference<Runnable> scheduled = new AtomicReference<>();
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        doAnswer(invocation -> {
+            scheduled.set(invocation.getArgument(0));
+            return null;
+        }).when(scheduler).schedule(any(Runnable.class), any(java.time.Instant.class));
+        PanoramaLocationEventThrottler throttler = new PanoramaLocationEventThrottler(
+                new ObjectMapper(), scheduler, nanoTime::get);
+        List<String> published = new ArrayList<>();
+
+        String gis = gisLocation("robot-1", "map-1", 1, 104.1, 30.2);
+        throttler.publish("browser-a", gis, published::add);
+        nanoTime.set(100_000_000L);
+        String slam = fallbackLocation("robot-1", "map-1", 2);
+        throttler.publish("browser-a", slam, published::add);
+        nanoTime.set(1_000_000_000L);
+        scheduled.get().run();
+
+        assertThat(published).containsExactly(gis, slam);
+    }
+
+    @Test
+    void acceptsSlamOnlyLocationAfterMapChanges() {
+        AtomicLong nanoTime = new AtomicLong();
+        AtomicReference<Runnable> scheduled = new AtomicReference<>();
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        doAnswer(invocation -> {
+            scheduled.set(invocation.getArgument(0));
+            return null;
+        }).when(scheduler).schedule(any(Runnable.class), any(java.time.Instant.class));
+        PanoramaLocationEventThrottler throttler = new PanoramaLocationEventThrottler(
+                new ObjectMapper(), scheduler, nanoTime::get);
+        List<String> published = new ArrayList<>();
+
+        throttler.publish("browser-a", gisLocation("robot-1", "map-1", 1, 104.1, 30.2), published::add);
+        String nextMap = mapLocation("robot-1", "map-2", 2);
+        throttler.publish("browser-a", nextMap, published::add);
+        nanoTime.set(1_000_000_000L);
+        scheduled.get().run();
+
+        assertThat(published).containsExactly(
+                gisLocation("robot-1", "map-1", 1, 104.1, 30.2),
+                nextMap);
+        verify(scheduler).schedule(any(Runnable.class), any(java.time.Instant.class));
+    }
+
+    @Test
     void forwardsOtherEventsWithoutRateLimit() {
         TaskScheduler scheduler = mock(TaskScheduler.class);
         PanoramaLocationEventThrottler throttler = new PanoramaLocationEventThrottler(
@@ -94,5 +171,22 @@ class PanoramaLocationEventThrottlerTest {
     private String location(String robotId, int x) {
         return "{\"event\":\"panorama.device.location.changed\",\"data\":{\"robotId\":\""
                 + robotId + "\",\"location\":{\"x\":" + x + "}}}";
+    }
+
+    private String mapLocation(String robotId, String mapId, int x) {
+        return "{\"event\":\"panorama.device.location.changed\",\"data\":{\"robotId\":\""
+                + robotId + "\",\"location\":{\"mapId\":\"" + mapId + "\",\"x\":" + x + "}}}";
+    }
+
+    private String fallbackLocation(String robotId, String mapId, int x) {
+        return "{\"event\":\"panorama.device.location.changed\",\"data\":{\"robotId\":\""
+                + robotId + "\",\"location\":{\"mapId\":\"" + mapId + "\",\"x\":" + x
+                + ",\"y\":2}}}";
+    }
+
+    private String gisLocation(String robotId, String mapId, int x, double lng, double lat) {
+        return "{\"event\":\"panorama.device.location.changed\",\"data\":{\"robotId\":\""
+                + robotId + "\",\"location\":{\"mapId\":\"" + mapId + "\",\"x\":" + x
+                + ",\"lng\":" + lng + ",\"lat\":" + lat + "}}}";
     }
 }

@@ -248,12 +248,12 @@ BFF 对该类资源返回空集合并继续组装其余有权数据，因此真�
 
 | 上游事件 | 派生事件                                                                                                                                                                                                   |
 | --- |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `robot.state` | `panorama.device.status.changed`：仅边缘状态（`stateSource=EDGE_DEVICE_STATUS`）与离线扫描（`stateSource=OFFLINE_SCAN`）来源派生，媒体客户端来源（`stateSource=MEDIA_CLIENT_STATUS`）不派生；有定位时再派生 `panorama.device.location.changed` |
-| `panorama.device.location.changed` | 按浏览器会话和 `robotId` 隔离；首条立即推送，1 秒内只保留最新一条，每秒最多一次；无新定位不重复推送旧坐标                                                                                                                                            |
+| `robot.state` | `panorama.device.status.changed`：仅边缘状态（`stateSource=EDGE_DEVICE_STATUS`）与离线扫描（`stateSource=OFFLINE_SCAN`）来源派生，媒体客户端及 GIS 位置补充来源不派生；有定位时再派生 `panorama.device.location.changed` |
+| `panorama.device.location.changed` | 按浏览器会话和 `robotId` 隔离；首条立即推送；1 秒内 GIS 结果优先，更晚的 SLAM 位置保留到下一窗口，每秒最多一次；无新定位不重复推送旧坐标 |
 | task 变更类事件 | 有完整 `taskId` 时立即转换为 `panorama.task.changed`                                                                                                                                                            |
 | `management.task.invalidated` | 300ms 去抖后通过独立有界 I/O 通道重查任务计划/实例摘要并推送变化项；失败或仍处于 `PREPARING` 时按 1/2/4/8 秒最多复查 4 次，不占用全景页面查询线程，也不加载回放、路径和设备任务明细                                                                                             |
 | alarm 变更类事件 | 立即转换为 `panorama.alarm.changed`，无真实上游事件时不生成模拟告警                                                                                                                                                         |
 | `management.alarm.invalidated` | BFF 内部失效通知，不透传浏览器。按当前会话身份以两条独立链路查询可处置工作流告警和普通告警分页快照；普通告警只查各风险第一页和总数，变化时推送 `panorama.alarms.changed`；工作流快照未变化时每 300ms 仅复查工作流接口，最长 5 秒，普通告警查询不会阻塞工作流推送 |
 | 设备、任务、告警或机器人在线状态变化 | 500ms 去抖后按事件类型只重算受影响统计块（设备/任务/告警，各块 3 秒 TTL 缓存按用户隔离），仅在快照变化时推送 `panorama.stats.changed`                                                                                                                |
 
-当前代码仍对没有定位的 `test111`、`SN005`、`SN006` 生成硬编码演示位置事件。它不是管理端真实位置，也不是通用兜底；生产验收不得把这些事件作为真实定位依据。其他机器人无定位时不补位置事件。若上游 WebSocket 不可用，连接仍可建立并完成首次用户范围告警快照；恢复上游连接前不会收到后续动态事件。
+BFF 不生成硬编码位置。边缘端已有合法经纬度时由 Control 直接使用；缺失经纬度且具备 `mapId/x/y` 时，Control 通过 Management 内部接口换算后补充位置。同一限频窗口内 GIS 结果优先于 SLAM 坐标，更晚的 SLAM 位置保留到下一窗口；若没有新 GIS 结果，仍会下发最新 SLAM 坐标。若上游 WebSocket 不可用，连接仍可建立并完成首次用户范围告警快照；恢复上游连接前不会收到后续动态事件。

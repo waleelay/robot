@@ -75,6 +75,9 @@ src/main/java/com/robot/control/
 - `RobotMediaStatusSubscriber`：订阅客户端在线、视频、对讲、主动呼叫和设备状态。
 - `EquipmentControlCommandPublisher`：按设备类型发布通用控制命令。
 - `CenterStompTaskEventBridge`：把上游 `task.changed.v1` 转成 `management.task.invalidated` 失效通知。
+- 边缘状态中的合法经纬度直接进入 `robot.state.location`；缺失经纬度但具备 `mapId/x/y` 时，Control
+  每秒按设备保留最新位置，并在独立调度线程每批最多换算 100 台。相同位置的成功结果复用 30 秒，
+  地图不存在或无有效拟合参数时按地图冷却 30 秒；设备离线或换算失败不补充位置，所有失败均不阻断状态广播。
 
 ## 3. 关键业务语义
 
