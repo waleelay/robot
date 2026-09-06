@@ -28,11 +28,16 @@ statistics:
 bigscreen:
   websocket:
     # WebSocket 授权快照最大允许陈旧时间；超过后禁止继续收发业务消息。
-    authorization-max-staleness-ms: ${BIGSCREEN_WS_AUTHORIZATION_MAX_STALENESS_MS:30000}
+    authorization-max-staleness-ms: ${BIGSCREEN_WS_AUTHORIZATION_MAX_STALENESS_MS:300000}
     # Token/快照过期检查周期；Management 权限查询由独立线程按身份执行。
     authorization-check-interval-ms: ${BIGSCREEN_WS_AUTHORIZATION_CHECK_INTERVAL_MS:1000}
     # 单次设备与固定摄像头完整权限加载的总时限。
     authorization-load-timeout-ms: ${BIGSCREEN_WS_AUTHORIZATION_LOAD_TIMEOUT_MS:8000}
+    # 初始化等待及会话配额；超额连接以 4008 关闭，不进入持续重连。
+    initialization-wait-ms: ${BIGSCREEN_WS_INITIALIZATION_WAIT_MS:15000}
+    max-sessions-per-identity: ${BIGSCREEN_WS_MAX_SESSIONS_PER_IDENTITY:8}
+    max-sessions-per-organization: ${BIGSCREEN_WS_MAX_SESSIONS_PER_ORGANIZATION:64}
+    max-sessions-per-instance: ${BIGSCREEN_WS_MAX_SESSIONS_PER_INSTANCE:64}
   fixed-camera-catalog-lease:
     # 开启后，BFF 在用户固定摄像头授权列表完整查询成功后向 Control 续租。
     enabled: ${FIXED_CAMERA_CATALOG_LEASE_ENABLED:true}
@@ -51,6 +56,9 @@ panorama:
     connect-timeout-ms: ${PANORAMA_GENERAL_CONNECT_TIMEOUT_MS:1000}
     read-timeout-ms: ${PANORAMA_GENERAL_READ_TIMEOUT_MS:1500}
     max-concurrency: ${PANORAMA_GENERAL_MAX_CONCURRENCY:16}
+  workflow-alarm:
+    # 工作流告警初始化与事件刷新独立限流，避免批量重连拖垮通用查询。
+    max-concurrency: ${PANORAMA_WORKFLOW_ALARM_MAX_CONCURRENCY:1}
   task:
     # Management 任务接口使用独立短超时和并发闸门，避免慢请求拖垮全景聚合。
     connect-timeout-ms: ${PANORAMA_TASK_CONNECT_TIMEOUT_MS:1000}

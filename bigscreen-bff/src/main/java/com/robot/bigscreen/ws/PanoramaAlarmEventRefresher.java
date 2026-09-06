@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -28,7 +30,7 @@ public class PanoramaAlarmEventRefresher {
 
     private static final Logger log = LoggerFactory.getLogger(PanoramaAlarmEventRefresher.class);
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final long RETRY_MILLIS = 300;
+    private static final long[] RETRY_DELAYS_MILLIS = {300, 600, 1200, 2400};
     private static final long CONVERGENCE_TIMEOUT_MILLIS = 5000;
 
     private final PanoramaService panoramaService;
@@ -49,62 +51,86 @@ public class PanoramaAlarmEventRefresher {
     }
 
     public void requestSnapshot(String sessionId, Authentication authentication, Consumer<String> publisher) {
-        RefreshState state = state(sessionId, authentication, publisher);
-        state.retryDeadlineMillis = 0;
-        state.workflowDirty.set(true);
-        scheduleWorkflowIfNeeded(sessionId, state, 0);
+        RefreshState state = state(sessionId);
+        synchronized (state) {
+            state.authentication = authentication;
+            state.publisher = publisher;
+            state.workflowFailureRetryDeadlineMillis =
+                    System.currentTimeMillis() + CONVERGENCE_TIMEOUT_MILLIS;
+            state.workflowRetryCount = 0;
+            state.forceWorkflowPublish = true;
+            state.workflowDirty = true;
+            scheduleWorkflowIfNeeded(sessionId, state, 0);
+        }
     }
 
     public void requestRefresh(String sessionId, Authentication authentication, Consumer<String> publisher) {
-        RefreshState state = state(sessionId, authentication, publisher);
-        state.retryDeadlineMillis = System.currentTimeMillis() + CONVERGENCE_TIMEOUT_MILLIS;
-        state.workflowDirty.set(true);
+        RefreshState state = state(sessionId);
+        synchronized (state) {
+            state.authentication = authentication;
+            state.publisher = publisher;
+            state.retryDeadlineMillis = System.currentTimeMillis() + CONVERGENCE_TIMEOUT_MILLIS;
+            state.workflowFailureRetryDeadlineMillis = state.retryDeadlineMillis;
+            state.workflowRetryCount = 0;
+            state.workflowDirty = true;
+            scheduleWorkflowIfNeeded(sessionId, state, 0);
+        }
         state.alarmsDirty.set(true);
-        scheduleWorkflowIfNeeded(sessionId, state, 0);
         scheduleAlarmsIfNeeded(sessionId, state);
     }
 
-    private RefreshState state(
-            String sessionId,
-            Authentication authentication,
-            Consumer<String> publisher) {
-        RefreshState state = states.computeIfAbsent(sessionId, ignored -> new RefreshState());
-        state.authentication = authentication;
-        state.publisher = publisher;
-        return state;
+    private RefreshState state(String sessionId) {
+        return states.computeIfAbsent(sessionId, ignored -> new RefreshState());
     }
 
     public void remove(String sessionId) {
-        states.remove(sessionId);
-    }
-
-    private void scheduleWorkflowIfNeeded(String sessionId, RefreshState state, long delayMillis) {
-        if (state.workflowScheduled.compareAndSet(false, true)) {
-            Runnable refresh = () -> taskExecutor.execute(() -> refreshWorkflow(sessionId, state));
-            if (delayMillis == 0) {
-                refresh.run();
-            } else {
-                taskScheduler.schedule(refresh, Instant.now().plusMillis(delayMillis));
+        RefreshState state = states.remove(sessionId);
+        if (state != null) {
+            synchronized (state) {
+                if (state.workflowPending != null) state.workflowPending.cancel(false);
+                state.workflowScheduledAt = null;
             }
         }
     }
 
-    private void refreshWorkflow(String sessionId, RefreshState state) {
-        if (states.get(sessionId) != state) {
+    // 新事件可取消并提前旧退避任务；调用方持有 state 锁。
+    private void scheduleWorkflowIfNeeded(String sessionId, RefreshState state, long delayMillis) {
+        Instant due = Instant.now().plusMillis(delayMillis);
+        if (state.workflowRunning
+                || (state.workflowScheduledAt != null && !due.isBefore(state.workflowScheduledAt))) {
             return;
         }
-        state.workflowDirty.set(false);
-        boolean changed = false;
+        if (state.workflowPending != null) state.workflowPending.cancel(false);
+        state.workflowScheduledAt = due;
+        Runnable dispatch = () -> taskExecutor.execute(() -> refreshWorkflow(sessionId, state, due));
+        if (delayMillis == 0) {
+            dispatch.run();
+        } else {
+            state.workflowPending = taskScheduler.schedule(dispatch, due);
+        }
+    }
+
+    private void refreshWorkflow(String sessionId, RefreshState state, Instant due) {
+        synchronized (state) {
+            if (states.get(sessionId) != state || !due.equals(state.workflowScheduledAt)) return;
+            state.workflowScheduledAt = null;
+            state.workflowPending = null;
+            state.workflowRunning = true;
+            state.workflowDirty = false;
+        }
         boolean retry = false;
         try {
             List<Map<String, Object>> workflowItems = maps(withAuthentication(
                     state.authentication, panoramaService::actionableWorkflowAlarms).get("items"));
+            if (states.get(sessionId) != state) return;
             Map<String, Map<String, Object>> currentWorkflowAlarms = index(workflowItems);
             boolean snapshotPublished = state.workflowSnapshotPublished;
-            changed = !state.workflowSnapshotPublished
+            boolean changed = !snapshotPublished
                     || !Objects.equals(state.previousWorkflowAlarms, currentWorkflowAlarms);
+            boolean publish = state.forceWorkflowPublish || changed;
+            state.forceWorkflowPublish = false;
             Consumer<String> publisher = state.publisher;
-            if (publisher != null && changed) {
+            if (publisher != null && publish) {
                 publisher.accept(workflowSnapshotEvent(workflowItems));
             }
             state.previousWorkflowAlarms = currentWorkflowAlarms;
@@ -112,17 +138,29 @@ public class PanoramaAlarmEventRefresher {
             retry = (!changed || (!snapshotPublished && currentWorkflowAlarms.isEmpty()))
                     && System.currentTimeMillis() < state.retryDeadlineMillis;
         } catch (RuntimeException exception) {
-            log.warn("刷新全景地图工作流告警失败，会话={}", sessionId, exception);
-            retry = System.currentTimeMillis() < state.retryDeadlineMillis;
+            log.warn("刷新全景地图工作流告警失败，身份={}", sessionId, exception);
+            retry = System.currentTimeMillis() < state.workflowFailureRetryDeadlineMillis;
         } finally {
-            if (retry) {
-                state.workflowDirty.set(true);
-            }
-            state.workflowScheduled.set(false);
-            if (states.get(sessionId) == state && state.workflowDirty.get()) {
-                scheduleWorkflowIfNeeded(sessionId, state, retry ? RETRY_MILLIS : 0);
+            synchronized (state) {
+                long delay = 0;
+                if (!state.workflowDirty && retry
+                        && state.workflowRetryCount < RETRY_DELAYS_MILLIS.length) {
+                    state.workflowDirty = true;
+                    delay = jitteredDelay(RETRY_DELAYS_MILLIS[state.workflowRetryCount++]);
+                }
+                state.workflowRunning = false;
+                if (states.get(sessionId) == state && state.workflowDirty) {
+                    scheduleWorkflowIfNeeded(sessionId, state, delay);
+                } else {
+                    state.workflowRetryCount = 0;
+                }
             }
         }
+    }
+
+    private long jitteredDelay(long delayMillis) {
+        long spread = Math.max(1L, delayMillis / 5L);
+        return delayMillis + ThreadLocalRandom.current().nextLong(-spread, spread + 1L);
     }
 
     private void scheduleAlarmsIfNeeded(String sessionId, RefreshState state) {
@@ -139,6 +177,7 @@ public class PanoramaAlarmEventRefresher {
         try {
             Map<String, Object> alarms = withAuthentication(
                     state.authentication, panoramaService::alarmEventSnapshot);
+            if (states.get(sessionId) != state) return;
             boolean changed = !Objects.equals(state.previousAlarms, alarms);
             Consumer<String> publisher = state.publisher;
             if (publisher != null && changed) {
@@ -146,7 +185,7 @@ public class PanoramaAlarmEventRefresher {
             }
             state.previousAlarms = alarms;
         } catch (RuntimeException exception) {
-            log.warn("刷新全景地图普通告警失败，会话={}", sessionId, exception);
+            log.warn("刷新全景地图普通告警失败，身份={}", sessionId, exception);
         } finally {
             state.alarmsScheduled.set(false);
             if (states.get(sessionId) == state && state.alarmsDirty.get()) {
@@ -212,15 +251,20 @@ public class PanoramaAlarmEventRefresher {
     }
 
     private static final class RefreshState {
-        private final AtomicBoolean workflowScheduled = new AtomicBoolean();
-        private final AtomicBoolean workflowDirty = new AtomicBoolean();
         private final AtomicBoolean alarmsScheduled = new AtomicBoolean();
         private final AtomicBoolean alarmsDirty = new AtomicBoolean();
+        private ScheduledFuture<?> workflowPending;
+        private Instant workflowScheduledAt;
+        private boolean workflowRunning;
+        private boolean workflowDirty;
+        private int workflowRetryCount;
+        private boolean forceWorkflowPublish;
         private volatile Authentication authentication;
         private volatile Consumer<String> publisher;
         private volatile Map<String, Object> previousAlarms = Map.of();
         private volatile Map<String, Map<String, Object>> previousWorkflowAlarms = Map.of();
         private volatile long retryDeadlineMillis;
+        private volatile long workflowFailureRetryDeadlineMillis;
         private volatile boolean workflowSnapshotPublished;
     }
 }

@@ -1,7 +1,9 @@
 package com.robot.bigscreen.panorama;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -14,7 +16,10 @@ import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
 import com.robot.bigscreen.config.CenterServiceProperties;
 import java.net.SocketTimeoutException;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
@@ -33,6 +38,8 @@ class PanoramaCenterClientTest {
             "http://management.test/api/v1/management/devices?pageNum=1&pageSize=100";
     private static final String FIXED_CAMERAS_URL =
             "http://management.test/api/v1/management/fixed-cameras?pageNum=1&pageSize=100";
+    private static final String WORKFLOW_ALARMS_URL =
+            "http://management.test/api/v1/management/alarms/actionable-workflow";
 
     private final RestClient.Builder builder = RestClient.builder();
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -42,7 +49,7 @@ class PanoramaCenterClientTest {
         CenterServiceProperties properties = new CenterServiceProperties();
         properties.setManageBaseUrl("http://management.test");
         client = new PanoramaCenterClient(RestClient.builder(), properties,
-                mock(AuthenticatedRequestHeaders.class), 1000, 1500, 16, 1000, 1500, 8);
+                mock(AuthenticatedRequestHeaders.class), 1000, 1500, 16, 1, 1000, 1500, 8);
         ReflectionTestUtils.setField(client, "restClient", builder.build());
         ReflectionTestUtils.setField(client, "taskRestClient", builder.build());
     }
@@ -116,6 +123,49 @@ class PanoramaCenterClientTest {
         ResponseStatusException error = assertThrows(ResponseStatusException.class, client::enabledMaps);
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
+        server.verify();
+    }
+
+    @Test
+    void workflowAlarmFailuresDoNotOpenTheGeneralCircuit() {
+        for (int index = 0; index < 3; index++) {
+            server.expect(requestTo(WORKFLOW_ALARMS_URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        }
+        server.expect(requestTo(MAPS_URL)).andRespond(withSuccess(
+                "{\"code\":\"0\",\"data\":{\"records\":[]}}", MediaType.APPLICATION_JSON));
+        for (int index = 0; index < 3; index++) {
+            assertThrows(ResponseStatusException.class, client::actionableWorkflowAlarms);
+        }
+        // 工作流告警自身已熔断，不再访问下游；通用地图查询仍必须正常放行。
+        assertThrows(ResponseStatusException.class, client::actionableWorkflowAlarms);
+
+        assertEquals(List.of(), client.enabledMaps());
+        server.verify();
+    }
+
+    @Test
+    void workflowAlarmQueryWaitsForAndReleasesItsDedicatedPermit() throws Exception {
+        server.expect(requestTo(WORKFLOW_ALARMS_URL)).andRespond(withSuccess(
+                "{\"code\":\"0\",\"data\":{\"records\":[]}}", MediaType.APPLICATION_JSON));
+        Semaphore permits = (Semaphore) ReflectionTestUtils.getField(client, "workflowAlarmRequestPermits");
+        permits.acquire();
+        boolean releasedForQuery = false;
+        CompletableFuture<List<Map<String, Object>>> query =
+                CompletableFuture.supplyAsync(client::actionableWorkflowAlarms);
+        try {
+            for (int index = 0; index < 100 && permits.getQueueLength() == 0; index++) {
+                Thread.sleep(10);
+            }
+            assertTrue(permits.hasQueuedThreads());
+            assertFalse(query.isDone());
+            permits.release();
+            releasedForQuery = true;
+            assertEquals(List.of(), query.get(2, TimeUnit.SECONDS));
+        } finally {
+            if (!releasedForQuery) permits.release();
+            query.cancel(true);
+        }
+        assertEquals(1, permits.availablePermits());
         server.verify();
     }
 

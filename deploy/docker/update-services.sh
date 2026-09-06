@@ -3,11 +3,10 @@
 #
 # 职责（一条命令完成）：
 #   1. 上传本地 target 打包好的 dist tar.gz 到服务器
-#   2. 用仓库 Compose 模板覆盖并备份服务器安装包 Compose，避免运行定义漂移
-#   3. 同步 update-services.env 中声明的环境变量到服务器 .env（新增/改值，幂等）
-#   4. 校验仓库模板与安装包渲染后的关键服务环境变量和挂载一致
+#   2. 在临时副本同步仓库 Compose 模板和环境变量，渲染校验通过后再替换安装包配置
+#   3. 校验安装包实际渲染结果与已验证的临时副本一致
 #   5. 备份并替换服务器工作区各服务的 bin/boot/lib
-#   6. docker compose up -d --force-recreate 重建对应容器（必须 force-recreate 才会重新加载卷内新 jar）
+#   6. docker compose up -d --force-recreate --no-deps 重建对应容器（避免单服务更新联动重建依赖）
 #   7. 核验：容器状态、容器内环境变量、三个服务启动日志（Started / ERROR）
 #
 # 用法：
@@ -21,7 +20,6 @@
 #   UPDATE_INSTALL_DIR   compose 安装目录，默认 /data/robot-mediaserver-installer-amd64-20260719220656
 #   UPDATE_WORKSPACE     服务运行目录，默认 /home/jszn/mounts/media
 #   UPDATE_ENV_FILE      环境变量增量文件，默认 deploy/docker/update-services.env
-#   UPDATE_PYTHON_BIN    服务器环境变量同步脚本使用的 Python 命令，默认 python3
 #   UPDATE_SERVICES      本次更新的服务列表，默认 "media-service control-service bigscreen-bff"
 #   DIST_MEDIA/DIST_CONTROL/DIST_BIGSCREEN  三个 dist 包路径（默认指向各模块 target）
 #
@@ -41,7 +39,6 @@ UPDATE_WORKSPACE="${UPDATE_WORKSPACE:-/home/jszn/mounts/media}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 UPDATE_ENV_FILE="${UPDATE_ENV_FILE:-$SCRIPT_DIR/update-services.env}"
-UPDATE_PYTHON_BIN="${UPDATE_PYTHON_BIN:-python3}"
 UPDATE_SERVICES="${UPDATE_SERVICES:-media-service control-service bigscreen-bff}"
 
 DIST_MEDIA="${DIST_MEDIA:-$REPO_ROOT/backend/target/robot-mediaserver-dist.tar.gz}"
@@ -94,17 +91,15 @@ for svc in $UPDATE_SERVICES; do
 done
 
 # ---------- 2+3. Compose 模板与环境变量同步 ----------
-log "== 2/7 同步仓库 Compose 模板并更新服务器 .env =="
+log "== 2/7 校验并同步仓库 Compose 模板与服务器 .env =="
 "${SCP_BASE[@]}" "$SCRIPT_DIR/docker-compose.yml" "$HOST:/tmp/update-services-compose.yml"
-ssh_run "TS=\$(date +%Y%m%d%H%M%S); cp '$UPDATE_INSTALL_DIR/docker-compose.yml' '$UPDATE_INSTALL_DIR/docker-compose.yml.bak-template-\$TS'; cp /tmp/update-services-compose.yml '$UPDATE_INSTALL_DIR/docker-compose.yml'; cd '$UPDATE_INSTALL_DIR'; docker compose config --quiet"
 # 上传服务器端幂等同步助手，并把增量文件解析为 "SERVICE VAR VALUE" 行通过 stdin 传入
-"${SCP_BASE[@]}" "$SCRIPT_DIR/sync-server-env.py" "$HOST:/tmp/sync-server-env.py"
+"${SCP_BASE[@]}" "$SCRIPT_DIR/sync-server-env.sh" "$HOST:/tmp/sync-server-env.sh"
 awk -F'[ =]' 'NF>=3 && $0 !~ /^#/ && $0 !~ /^$/ {print $1, $2, substr($0, index($0, $2) + length($2) + 1)}' \
-  "$UPDATE_ENV_FILE" | "${SSH_BASE[@]}" "$HOST" "$UPDATE_PYTHON_BIN /tmp/sync-server-env.py '$UPDATE_INSTALL_DIR/.env' '$UPDATE_INSTALL_DIR/docker-compose.yml'"
+  "$UPDATE_ENV_FILE" | "${SSH_BASE[@]}" "$HOST" "set -e; cp '$UPDATE_INSTALL_DIR/.env' /tmp/update-services.env; sh /tmp/sync-server-env.sh /tmp/update-services.env /tmp/update-services-compose.yml; docker compose -f /tmp/update-services-compose.yml --env-file /tmp/update-services.env config --quiet; TS=\$(date +%Y%m%d%H%M%S)-\$\$; cp '$UPDATE_INSTALL_DIR/.env' '$UPDATE_INSTALL_DIR/.env.bak-\$TS'; cp '$UPDATE_INSTALL_DIR/docker-compose.yml' '$UPDATE_INSTALL_DIR/docker-compose.yml.bak-template-\$TS'; cp /tmp/update-services.env '$UPDATE_INSTALL_DIR/.env'; cp /tmp/update-services-compose.yml '$UPDATE_INSTALL_DIR/docker-compose.yml'"
 
 log "== 3/7 校验安装包 Compose 与仓库模板 =="
-"${SCP_BASE[@]}" "$SCRIPT_DIR/verify-compose-drift.py" "$HOST:/tmp/verify-compose-drift.py"
-ssh_run "cd '$UPDATE_INSTALL_DIR'; docker compose -f /tmp/update-services-compose.yml --env-file .env config --format json >/tmp/update-services-expected.json; docker compose config --format json >/tmp/update-services-actual.json; PYTHONIOENCODING=utf-8 $UPDATE_PYTHON_BIN /tmp/verify-compose-drift.py /tmp/update-services-expected.json /tmp/update-services-actual.json"
+ssh_run "cd '$UPDATE_INSTALL_DIR'; docker compose -f /tmp/update-services-compose.yml --env-file .env config >/tmp/update-services-expected.yml; docker compose config >/tmp/update-services-actual.yml; if ! cmp -s /tmp/update-services-expected.yml /tmp/update-services-actual.yml; then echo '安装包 Compose 与仓库模板存在漂移' >&2; exit 1; fi; echo 'Compose 渲染结果校验通过'"
 
 # ---------- 4. 备份并替换 bin/boot/lib ----------
 log "== 4/7 备份并替换服务运行目录 =="
@@ -129,7 +124,7 @@ done"
 
 # ---------- 5. 重建容器 ----------
 log "== 5/7 重建容器 =="
-ssh_run "cd '$UPDATE_INSTALL_DIR' && docker compose up -d --force-recreate $UPDATE_SERVICES 2>&1 | tail -8"
+ssh_run "cd '$UPDATE_INSTALL_DIR' && docker compose up -d --force-recreate --no-deps $UPDATE_SERVICES 2>&1 | tail -8"
 
 # ---------- 6. 核验 ----------
 log "== 6/7 等待启动并核验 =="

@@ -64,19 +64,19 @@
           <div class="count flx-justify-between">
             <div class="item wp66 hp70 flx-center flex-column">
               <div class="desc">今日任务</div>
-              <div class="value mt4">{{ taskOverview?.totalToday || '0' }}</div>
+              <div class="value mt4">{{ statValue(taskOverview?.totalToday) }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10">
               <div class="desc">完成率</div>
-              <div class="value mt4">{{ taskOverview?.completedRateText || '0' }}</div>
+              <div class="value mt4">{{ statValue(taskOverview?.completedRateText) }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 green">
               <div class="desc">执行中</div>
-              <div class="value mt4">{{ taskOverview?.running || '0' }}</div>
+              <div class="value mt4">{{ statValue(taskOverview?.running) }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 orange">
               <div class="desc">待执行</div>
-              <div class="value mt4">{{ taskOverview?.pending || '0' }}</div>
+              <div class="value mt4">{{ statValue(taskOverview?.pending) }}</div>
             </div>
           </div>
           <div class="mt20">
@@ -196,6 +196,9 @@ export default {
   },
   methods: {
     executionStatusLabel,
+    statValue(value) {
+      return value === null || value === undefined || value === '' ? '--' : value
+    },
     getMoreRobotInfo() {
 
     },

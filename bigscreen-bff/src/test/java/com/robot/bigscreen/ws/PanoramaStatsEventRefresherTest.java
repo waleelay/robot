@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.scheduling.TaskScheduler;
@@ -146,5 +147,57 @@ class PanoramaStatsEventRefresherTest {
         assertThat(second.path("data").path("deviceStats").path("total").asInt()).isZero();
         assertThat(second.path("data").path("deviceTypeStats")).isEmpty();
         assertThat(second.path("data").path("taskOverview").path("totalToday").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void keepsSuccessfulBlocksAndDeepMergesQualityWhenAnotherPartDegrades() throws Exception {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler taskScheduler = mock(TaskScheduler.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        when(panoramaService.statsSnapshot(any())).thenReturn(
+                Map.of(
+                        "taskOverview", Map.of("totalToday", 12),
+                        "dataQuality", Map.of("tasks", Map.of("complete", true, "degraded", false))),
+                Map.of("dataQuality", Map.of("alarms", Map.of(
+                        "complete", false,
+                        "degraded", true,
+                        "reasonCodes", List.of("ALARM_QUERY_TIMEOUT")))));
+        ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
+        when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
+        PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
+                panoramaService, objectMapper, taskScheduler);
+        List<String> events = new ArrayList<>();
+
+        refresher.requestRefresh("browser-a", null, events::add, Set.of(StatsPart.TASKS));
+        tasks.getValue().run();
+        refresher.requestRefresh("browser-a", null, events::add, Set.of(StatsPart.ALARMS));
+        tasks.getAllValues().get(1).run();
+
+        JsonNode second = objectMapper.readTree(events.get(1)).path("data");
+        assertThat(second.path("taskOverview").path("totalToday").asInt()).isEqualTo(12);
+        assertThat(second.path("dataQuality").path("tasks").path("complete").asBoolean()).isTrue();
+        assertThat(second.path("dataQuality").path("alarms").path("degraded").asBoolean()).isTrue();
+    }
+
+    @Test
+    void doesNotPublishAQueryThatCompletesAfterIdentityRemoval() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler taskScheduler = mock(TaskScheduler.class);
+        ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
+        when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
+        AtomicReference<PanoramaStatsEventRefresher> reference = new AtomicReference<>();
+        when(panoramaService.statsSnapshot(any())).thenAnswer(ignored -> {
+            reference.get().remove("identity-a");
+            return Map.of("taskOverview", Map.of("totalToday", 9));
+        });
+        PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
+                panoramaService, new ObjectMapper(), taskScheduler);
+        reference.set(refresher);
+        List<String> events = new ArrayList<>();
+
+        refresher.requestRefresh("identity-a", null, events::add, Set.of(StatsPart.TASKS));
+        tasks.getValue().run();
+
+        assertThat(events).isEmpty();
     }
 }

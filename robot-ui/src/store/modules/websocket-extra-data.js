@@ -797,11 +797,19 @@ const actions = {
     } else if (event.event === 'panorama.fixed-camera.statuses.changed') {
       dispatch('websocketRobot/patchFixedCameraStatuses', event.data?.items, { root: true })
     } else if (event.event === 'panorama.stats.changed') {
+      const dataQuality = event.data?.dataQuality || {}
+      const taskQuality = dataQuality.tasks
+      const alarmQuality = dataQuality.alarms
+      commit('SET_DATA_QUALITY', { ...state.dataQuality, ...dataQuality })
       commit('SET_DEVICE_TYPES_STATS', event.data.deviceTypeStats || state.deviceTypeStats || []);
       commit('SET_DEVICE_STATS', event.data.deviceStats || state.deviceStats || {});
-      commit('SET_ALARM_SUMMARY', event.data.alarmSummary || state.alarmSummary || {});
-      commit('SET_TASK_OVERVIEW', event.data.taskOverview || state.taskOverview || {});
-      commit('SET_PATROL_OVERVIEW', event.data.patrolOverview || state.patrolOverview || {});
+      if (dataComplete(alarmQuality) && event.data.alarmSummary) {
+        commit('SET_ALARM_SUMMARY', event.data.alarmSummary)
+      }
+      if (dataComplete(taskQuality)) {
+        if (event.data.taskOverview) commit('SET_TASK_OVERVIEW', event.data.taskOverview)
+        if (event.data.patrolOverview) commit('SET_PATROL_OVERVIEW', event.data.patrolOverview)
+      }
       // alarmStats: { high: 0, medium: 0, low: 0 }
     }
   },
@@ -837,6 +845,10 @@ function taskChangedSince(state, id, baseline) {
 
 function hasTaskIdentity(value) {
   return value !== undefined && value !== null && value !== ''
+}
+
+function dataComplete(quality) {
+  return !quality || (quality.complete !== false && !quality.degraded)
 }
 
 /**

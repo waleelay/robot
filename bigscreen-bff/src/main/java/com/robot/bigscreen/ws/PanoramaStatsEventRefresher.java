@@ -61,6 +61,18 @@ public class PanoramaStatsEventRefresher {
                 return null;
             });
         }
+        if (parts.contains(StatsPart.TASKS)) {
+            withAuthentication(authentication, () -> {
+                panoramaService.invalidateTaskStats();
+                return null;
+            });
+        }
+        if (parts.contains(StatsPart.ALARMS)) {
+            withAuthentication(authentication, () -> {
+                panoramaService.invalidateAlarmStats();
+                return null;
+            });
+        }
         state.mergeParts(parts);
         state.dirty.set(true);
         scheduleIfNeeded(sessionId, state);
@@ -86,9 +98,9 @@ public class PanoramaStatsEventRefresher {
             RefreshSnapshot refreshed = withAuthentication(state.authentication, () -> new RefreshSnapshot(
                     panoramaService.statsSnapshot(parts),
                     parts.contains(StatsPart.DEVICES) ? panoramaService.fixedCameraStatuses() : null));
+            if (states.get(sessionId) != state) return;
             Map<String, Object> snapshot = refreshed.stats();
-            Map<String, Object> merged = new LinkedHashMap<>(state.previousSnapshot);
-            merged.putAll(snapshot);
+            Map<String, Object> merged = mergeSnapshot(state.previousSnapshot, snapshot);
             Consumer<String> publisher = state.publisher;
             if (!Objects.equals(state.previousSnapshot, merged)) {
                 state.previousSnapshot = merged;
@@ -111,6 +123,26 @@ public class PanoramaStatsEventRefresher {
                 scheduleIfNeeded(sessionId, state);
             }
         }
+    }
+
+    private Map<String, Object> mergeSnapshot(
+            Map<String, Object> previous,
+            Map<String, Object> refreshed) {
+        Map<String, Object> merged = new LinkedHashMap<>(previous);
+        merged.putAll(refreshed);
+        Map<String, Object> previousQuality = map(previous.get("dataQuality"));
+        Map<String, Object> refreshedQuality = map(refreshed.get("dataQuality"));
+        if (!previousQuality.isEmpty() || !refreshedQuality.isEmpty()) {
+            Map<String, Object> quality = new LinkedHashMap<>(previousQuality);
+            quality.putAll(refreshedQuality);
+            merged.put("dataQuality", quality);
+        }
+        return merged;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> map(Object value) {
+        return value instanceof Map<?, ?> ? (Map<String, Object>) value : Map.of();
     }
 
     private String statsEvent(Map<String, Object> snapshot) {

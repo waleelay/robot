@@ -47,53 +47,76 @@ if command -v docker >/dev/null 2>&1; then
   docker network inspect $(docker network ls -q) --format '{{range .IPAM.Config}}{{.Subnet}}{{"\n"}}{{end}}' > "$docker_networks_file" 2>/dev/null || true
 fi
 
-if command -v python3 >/dev/null 2>&1; then
-  python3 - "$DOCKER_NETWORK_SUBNET" "$routes_file" "$docker_networks_file" <<'PY'
-import ipaddress
-import re
-import sys
+awk -v target="$DOCKER_NETWORK_SUBNET" '
+function power_of_two(exponent, result, i) {
+  result = 1
+  for (i = 0; i < exponent; i++) {
+    result *= 2
+  }
+  return result
+}
 
-target = ipaddress.ip_network(sys.argv[1], strict=False)
-route_file = sys.argv[2]
-docker_file = sys.argv[3]
+function ipv4_number(ip, octets, count, i, value) {
+  count = split(ip, octets, ".")
+  if (count != 4) {
+    return -1
+  }
+  value = 0
+  for (i = 1; i <= 4; i++) {
+    if (octets[i] !~ /^[0-9]+$/ || octets[i] < 0 || octets[i] > 255) {
+      return -1
+    }
+    value = value * 256 + octets[i]
+  }
+  return value
+}
 
-networks = []
+function parse_cidr(cidr, parts, count, prefix, address, block_size) {
+  count = split(cidr, parts, "/")
+  if (count != 2 || parts[2] !~ /^[0-9]+$/) {
+    return 0
+  }
+  prefix = parts[2] + 0
+  address = ipv4_number(parts[1])
+  if (address < 0 || prefix < 0 || prefix > 32) {
+    return 0
+  }
+  block_size = power_of_two(32 - prefix)
+  parsed_start = int(address / block_size) * block_size
+  parsed_end = parsed_start + block_size - 1
+  return 1
+}
 
-with open(route_file, "r", encoding="utf-8") as f:
-    for line in f:
-        first = line.split()[0] if line.split() else ""
-        if first == "default":
-            continue
-        if "/" in first:
-            try:
-                networks.append(("route", first, ipaddress.ip_network(first, strict=False)))
-            except ValueError:
-                pass
+BEGIN {
+  if (!parse_cidr(target)) {
+    print "network preflight failed: invalid IPv4 CIDR: " target > "/dev/stderr"
+    exit 2
+  }
+  target_start = parsed_start
+  target_end = parsed_end
+}
 
-with open(docker_file, "r", encoding="utf-8") as f:
-    for raw in f:
-        subnet = raw.strip()
-        if not subnet or ":" in subnet:
-            continue
-        try:
-            networks.append(("docker-network", subnet, ipaddress.ip_network(subnet, strict=False)))
-        except ValueError:
-            pass
+{
+  cidr = $1
+  if (cidr == "" || cidr == "default" || index(cidr, ":") > 0 || !parse_cidr(cidr)) {
+    next
+  }
+  if (target_start <= parsed_end && parsed_start <= target_end) {
+    if (!found) {
+      print "network preflight failed: DOCKER_NETWORK_SUBNET " target " overlaps existing network:" > "/dev/stderr"
+    }
+    kind = (FILENAME == ARGV[1]) ? "route" : "docker-network"
+    print "  - " kind ": " cidr > "/dev/stderr"
+    found = 1
+  }
+}
 
-conflicts = [(kind, text) for kind, text, net in networks if target.overlaps(net)]
-if conflicts:
-    print(f"network preflight failed: DOCKER_NETWORK_SUBNET {target} overlaps existing network:", file=sys.stderr)
-    for kind, text in conflicts:
-        print(f"  - {kind}: {text}", file=sys.stderr)
-    print("Choose another DOCKER_NETWORK_SUBNET, or set DEPLOY_NETWORK_MODE=host on OpenStack/Linux servers that cannot use Docker bridge safely.", file=sys.stderr)
-    sys.exit(1)
-
-print(f"network preflight passed: bridge subnet {target}")
-PY
-else
-  if grep -q "$DOCKER_NETWORK_SUBNET" "$routes_file" "$docker_networks_file"; then
-    echo "network preflight failed: DOCKER_NETWORK_SUBNET appears in current routes or Docker networks: $DOCKER_NETWORK_SUBNET" >&2
+END {
+  if (found) {
+    print "Choose another DOCKER_NETWORK_SUBNET, or set DEPLOY_NETWORK_MODE=host on OpenStack/Linux servers that cannot use Docker bridge safely." > "/dev/stderr"
     exit 1
-  fi
-  echo "network preflight passed: bridge subnet $DOCKER_NETWORK_SUBNET"
-fi
+  }
+}
+' "$routes_file" "$docker_networks_file"
+
+echo "network preflight passed: bridge subnet $DOCKER_NETWORK_SUBNET"

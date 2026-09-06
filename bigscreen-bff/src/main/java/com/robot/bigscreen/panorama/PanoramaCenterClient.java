@@ -33,6 +33,8 @@ public class PanoramaCenterClient {
 
     private static final Logger log = LoggerFactory.getLogger(PanoramaCenterClient.class);
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE = new ParameterizedTypeReference<>() {};
+    private static final int MAX_WORKFLOW_ALARM_CONCURRENCY = 4;
+    private static final long WORKFLOW_ALARM_ACQUIRE_TIMEOUT_MS = 15000;
 
     private final RestClient restClient;
     private final RestClient taskRestClient;
@@ -40,10 +42,12 @@ public class PanoramaCenterClient {
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final Semaphore taskRequestPermits;
     private final Semaphore generalRequestPermits;
+    private final Semaphore workflowAlarmRequestPermits;
     private final int taskMaxConcurrency;
     private final int generalMaxConcurrency;
     private final FailureCircuit generalCircuit = new FailureCircuit();
     private final FailureCircuit taskCircuit = new FailureCircuit();
+    private final FailureCircuit workflowAlarmCircuit = new FailureCircuit();
 
     public PanoramaCenterClient(
             RestClient.Builder builder,
@@ -52,6 +56,7 @@ public class PanoramaCenterClient {
             @Value("${panorama.general.connect-timeout-ms:1000}") int generalConnectTimeoutMs,
             @Value("${panorama.general.read-timeout-ms:1500}") int generalReadTimeoutMs,
             @Value("${panorama.general.max-concurrency:16}") int generalMaxConcurrency,
+            @Value("${panorama.workflow-alarm.max-concurrency:1}") int workflowAlarmMaxConcurrency,
             @Value("${panorama.task.connect-timeout-ms:1000}") int taskConnectTimeoutMs,
             @Value("${panorama.task.read-timeout-ms:1500}") int taskReadTimeoutMs,
             @Value("${panorama.task.max-concurrency:8}") int taskMaxConcurrency) {
@@ -70,6 +75,8 @@ public class PanoramaCenterClient {
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
         this.generalMaxConcurrency = Math.max(1, Math.min(32, generalMaxConcurrency));
         this.generalRequestPermits = new Semaphore(this.generalMaxConcurrency, true);
+        this.workflowAlarmRequestPermits = new Semaphore(
+                Math.max(1, Math.min(MAX_WORKFLOW_ALARM_CONCURRENCY, workflowAlarmMaxConcurrency)), true);
         this.taskMaxConcurrency = Math.max(1, Math.min(32, taskMaxConcurrency));
         this.taskRequestPermits = new Semaphore(this.taskMaxConcurrency, true);
     }
@@ -374,7 +381,26 @@ public class PanoramaCenterClient {
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms/actionable-workflow")
                 .build(true)
                 .toUri();
-        return records(uri);
+        boolean acquired = false;
+        try {
+            acquired = workflowAlarmRequestPermits.tryAcquire(
+                    WORKFLOW_ALARM_ACQUIRE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            if (!acquired) {
+                throw new ResponseStatusException(
+                        HttpStatus.SERVICE_UNAVAILABLE, "工作流告警查询排队超时");
+            }
+            return records(responseMap(uri, workflowAlarmCircuit).orElseThrow(() ->
+                    new ResponseStatusException(
+                            HttpStatus.SERVICE_UNAVAILABLE, "工作流告警查询失败")));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE, "工作流告警查询排队被中断", exception);
+        } finally {
+            if (acquired) {
+                workflowAlarmRequestPermits.release();
+            }
+        }
     }
 
     public List<Map<String, Object>> alarmsForStatistics(String occurredFrom, String occurredTo) {
@@ -437,7 +463,11 @@ public class PanoramaCenterClient {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> records(URI uri) {
-        return responseMap(uri).map(this::records).orElse(List.of());
+        return records(uri, generalCircuit);
+    }
+
+    private List<Map<String, Object>> records(URI uri, FailureCircuit circuit) {
+        return responseMap(uri, circuit).map(this::records).orElse(List.of());
     }
 
     @SuppressWarnings("unchecked")
@@ -482,9 +512,13 @@ public class PanoramaCenterClient {
     }
 
     private Optional<Map<String, Object>> responseMap(URI uri) {
+        return responseMap(uri, generalCircuit);
+    }
+
+    private Optional<Map<String, Object>> responseMap(URI uri, FailureCircuit circuit) {
         PanoramaService.requireRequestTimeRemaining();
-        if (!generalCircuit.allowRequest()) {
-            log.warn("Management 通用查询熔断中，本次不再请求下游");
+        if (!circuit.allowRequest()) {
+            log.warn("Management 查询熔断中，本次不再请求下游，请求地址={}", uri);
             return Optional.empty();
         }
         boolean acquired = false;
@@ -492,7 +526,7 @@ public class PanoramaCenterClient {
         try {
             acquired = generalRequestPermits.tryAcquire(100, TimeUnit.MILLISECONDS);
             if (!acquired) {
-                generalCircuit.recordFailure();
+                circuit.recordFailure();
                 log.warn("全景通用查询并发已达上限，请求地址={}", uri);
                 return Optional.empty();
             }
@@ -503,31 +537,31 @@ public class PanoramaCenterClient {
                     .body(MAP_TYPE);
             logSlowRequest(uri, startNanos);
             if (response == null) {
-                generalCircuit.recordFailure();
+                circuit.recordFailure();
                 return Optional.empty();
             }
-            generalCircuit.recordSuccess();
+            circuit.recordSuccess();
             return Optional.of(response);
         } catch (RestClientResponseException exception) {
             if (exception.getStatusCode() == HttpStatus.UNAUTHORIZED
                     || exception.getStatusCode() == HttpStatus.FORBIDDEN) {
-                generalCircuit.recordSuccess();
+                circuit.recordSuccess();
                 throw new ResponseStatusException(exception.getStatusCode(), "查询 Management 权限失败", exception);
             }
             if (exception.getStatusCode().is5xxServerError()) {
-                generalCircuit.recordFailure();
+                circuit.recordFailure();
             } else {
-                generalCircuit.recordSuccess();
+                circuit.recordSuccess();
             }
             log.warn("请求全景地图中心端接口失败，请求地址={} 状态码={} 耗时毫秒={}",
                     uri, exception.getStatusCode().value(), elapsedMillis(startNanos));
             return Optional.empty();
         } catch (ResourceAccessException exception) {
-            generalCircuit.recordFailure();
+            circuit.recordFailure();
             log.warn("请求全景地图中心端接口超时，请求地址={} 耗时毫秒={}", uri, elapsedMillis(startNanos));
             return Optional.empty();
         } catch (RuntimeException exception) {
-            generalCircuit.recordFailure();
+            circuit.recordFailure();
             log.warn("请求全景地图中心端接口失败，请求地址={} 耗时毫秒={}", uri, elapsedMillis(startNanos), exception);
             return Optional.empty();
         } catch (InterruptedException exception) {

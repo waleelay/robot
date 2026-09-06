@@ -26,19 +26,19 @@
           <div class="count flx-justify-between">
             <div class="item wp66 hp70 flx-center flex-column red">
               <div class="desc">今日告警</div>
-              <div class="value mt4">{{ alarmSummary.totalToday || 0 }}</div>
+              <div class="value mt4">{{ statValue(alarmSummary.totalToday) }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 green">
               <div class="desc">已处理</div>
-              <div class="value mt4">{{ alarmSummary.handled || 0 }}</div>
+              <div class="value mt4">{{ statValue(alarmSummary.handled) }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 gray">
               <div class="desc">未处理</div>
-              <div class="value mt4">{{ alarmSummary.unhandled || 0 }}</div>
+              <div class="value mt4">{{ statValue(alarmSummary.unhandled) }}</div>
             </div>
             <div class="item wp66 hp70 flx-center flex-column ml10 ">
               <div class="desc">处置率</div>
-              <div class="value mt4">{{ alarmSummary.handleRateText || 0 }}</div>
+              <div class="value mt4">{{ statValue(alarmSummary.handleRateText) }}</div>
             </div>
           </div>
           <div class="mt20">
@@ -254,6 +254,9 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'setPrefixId']),
+    statValue(value) {
+      return value === null || value === undefined || value === '' ? '--' : value
+    },
     getMoreRobotInfo() {
 
     },

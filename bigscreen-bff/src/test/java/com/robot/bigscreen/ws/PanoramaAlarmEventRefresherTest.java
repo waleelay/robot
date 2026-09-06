@@ -14,6 +14,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.core.task.TaskExecutor;
@@ -141,6 +143,133 @@ class PanoramaAlarmEventRefresherTest {
         assertThat(workflowEvents).hasSize(2);
         assertThat(objectMapper.readTree(workflowEvents.get(1))
                 .path("data").path("items").get(0).path("alarmId").asText()).isEqualTo("alarm-1");
+    }
+
+    @Test
+    void connectionSnapshotRetriesFailureWithoutPublishingFalseEmptySnapshot() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        TaskExecutor taskExecutor = mock(TaskExecutor.class);
+        when(panoramaService.actionableWorkflowAlarms())
+                .thenThrow(new IllegalStateException("下游超时"))
+                .thenReturn(Map.of("items", List.of()));
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        ArgumentCaptor<Runnable> scheduledJobs = ArgumentCaptor.forClass(Runnable.class);
+        org.mockito.Mockito.doNothing().when(taskExecutor).execute(jobs.capture());
+        when(scheduler.schedule(scheduledJobs.capture(), any(Instant.class))).thenReturn(null);
+        PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
+                panoramaService, new ObjectMapper(), scheduler, taskExecutor);
+        List<String> events = new ArrayList<>();
+
+        refresher.requestSnapshot("identity-a", null, events::add);
+        jobs.getAllValues().get(0).run();
+        assertThat(events).isEmpty();
+
+        scheduledJobs.getValue().run();
+        jobs.getAllValues().get(1).run();
+
+        verify(panoramaService, times(2)).actionableWorkflowAlarms();
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0)).contains("\"panorama.workflow-alarms.changed\"");
+    }
+
+    @Test
+    void connectionSnapshotPublishesAuthoritativeEmptyWithoutRetry() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        TaskExecutor taskExecutor = mock(TaskExecutor.class);
+        when(panoramaService.actionableWorkflowAlarms()).thenReturn(Map.of("items", List.of()));
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        org.mockito.Mockito.doNothing().when(taskExecutor).execute(jobs.capture());
+        PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
+                panoramaService, new ObjectMapper(), scheduler, taskExecutor);
+        List<String> events = new ArrayList<>();
+
+        refresher.requestSnapshot("identity-a", null, events::add);
+        jobs.getValue().run();
+
+        verify(panoramaService).actionableWorkflowAlarms();
+        verify(scheduler, times(0)).schedule(any(Runnable.class), any(Instant.class));
+        assertThat(events).hasSize(1);
+    }
+
+    @Test
+    void connectionSnapshotAdvancesBackoffWithoutStoppingExistingConvergence() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        TaskExecutor taskExecutor = mock(TaskExecutor.class);
+        ScheduledFuture<?> pending = mock(ScheduledFuture.class);
+        when(panoramaService.actionableWorkflowAlarms()).thenReturn(Map.of("items", List.of()));
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        ArgumentCaptor<Runnable> scheduledJobs = ArgumentCaptor.forClass(Runnable.class);
+        org.mockito.Mockito.doNothing().when(taskExecutor).execute(jobs.capture());
+        org.mockito.Mockito.doReturn(pending)
+                .when(scheduler).schedule(scheduledJobs.capture(), any(Instant.class));
+        PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
+                panoramaService, new ObjectMapper(), scheduler, taskExecutor);
+
+        refresher.requestRefresh("identity-a", null, ignored -> { });
+        jobs.getAllValues().get(0).run();
+        Runnable obsoleteRetry = scheduledJobs.getValue();
+
+        refresher.requestSnapshot("identity-a", null, ignored -> { });
+        verify(pending).cancel(false);
+        jobs.getAllValues().get(2).run();
+        verify(scheduler, times(2)).schedule(any(Runnable.class), any(Instant.class));
+
+        obsoleteRetry.run();
+        jobs.getAllValues().get(3).run();
+        verify(panoramaService, times(2)).actionableWorkflowAlarms();
+
+        scheduledJobs.getValue().run();
+        jobs.getAllValues().get(4).run();
+        verify(panoramaService, times(3)).actionableWorkflowAlarms();
+    }
+
+    @Test
+    void doesNotPublishWorkflowQueryThatCompletesAfterIdentityRemoval() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        TaskExecutor taskExecutor = mock(TaskExecutor.class);
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        org.mockito.Mockito.doNothing().when(taskExecutor).execute(jobs.capture());
+        AtomicReference<PanoramaAlarmEventRefresher> reference = new AtomicReference<>();
+        when(panoramaService.actionableWorkflowAlarms()).thenAnswer(ignored -> {
+            reference.get().remove("identity-a");
+            return Map.of("items", List.of(Map.of("alarmId", "alarm-1")));
+        });
+        PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
+                panoramaService, new ObjectMapper(), scheduler, taskExecutor);
+        reference.set(refresher);
+        List<String> events = new ArrayList<>();
+
+        refresher.requestSnapshot("identity-a", null, events::add);
+        jobs.getValue().run();
+
+        assertThat(events).isEmpty();
+    }
+
+    @Test
+    void doesNotPublishAlarmQueryThatCompletesAfterIdentityRemoval() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        TaskExecutor taskExecutor = mock(TaskExecutor.class);
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        org.mockito.Mockito.doNothing().when(taskExecutor).execute(jobs.capture());
+        AtomicReference<PanoramaAlarmEventRefresher> reference = new AtomicReference<>();
+        when(panoramaService.alarmEventSnapshot()).thenAnswer(ignored -> {
+            reference.get().remove("identity-a");
+            return snapshot(Map.of("alarmId", "alarm-1"), 1);
+        });
+        PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
+                panoramaService, new ObjectMapper(), scheduler, taskExecutor);
+        reference.set(refresher);
+        List<String> events = new ArrayList<>();
+
+        refresher.requestRefresh("identity-a", null, events::add);
+        jobs.getAllValues().get(1).run();
+
+        assertThat(events).isEmpty();
     }
 
     private Map<String, Object> snapshot(Map<String, Object> alarm, int total) {

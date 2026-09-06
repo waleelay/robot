@@ -25,7 +25,7 @@ import { errorMessage } from '../../utils'
 import { bearerToken } from '@/auth'
 import { overlayLiveRobotRuntimeFields, mergeRobotBaseInfo, normalizeRobotControlMode } from '../../views/bi/js/utils/prefer-live-robot-fields'
 import { attachTrackRespectingUserPause } from '../../views/bi/js/utils/livekit-user-pause'
-import { mediaReconnectDelay, isSustainedAuthorizationFailure } from './media-websocket-reconnect'
+import { mediaReconnectDelay, isSustainedAuthorizationFailure, shouldReconnectMedia } from './media-websocket-reconnect'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 const FIXED_CAMERA_TRACK_WAIT_MS = 15000
@@ -278,6 +278,10 @@ const mutations = {
   setMediaAuthorizationFailures(state, attempts) {
     state.mediaAuthorizationFailures = attempts
     state.authorizationUnavailable = isSustainedAuthorizationFailure(4003, attempts)
+  },
+  setAuthorizationUnavailable(state, unavailable) {
+    state.authorizationUnavailable = !!unavailable
+    if (!unavailable) state.mediaAuthorizationFailures = 0
   },
   RESET_MEDIA_USER_STATE(state) {
     state.wsConnected = false
@@ -845,7 +849,8 @@ const actions = {
       if (state.mediaSocket === socket) {
         commit('setMediaSocket', null)
       }
-      if (!state.mediaManualClosing && !state.mediaReconnectTimer && window.location.pathname.startsWith('/bi/')) {
+      if (!state.mediaManualClosing && !state.mediaReconnectTimer &&
+          shouldReconnectMedia(event.code) && window.location.pathname.startsWith('/bi/')) {
         const reconnectDelay = mediaReconnectDelay(event.code, state.mediaReconnectAttempts)
         commit('setMediaAuthorizationFailures', event.code === 4003 ? state.mediaAuthorizationFailures + 1 : 0)
         commit('incrementMediaReconnectAttempts')
@@ -858,6 +863,14 @@ const actions = {
     }
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data)
+      if (event.event === 'bigscreen.authorization.state') {
+        const unavailable = event.data?.available === false
+        commit('setAuthorizationUnavailable', unavailable)
+        if (!unavailable) {
+          refreshAuthorizedOverview(dispatch, { failClosed: true, notifyOnFailure: true })
+        }
+        return
+      }
       if (event.event === 'bigscreen.authorization.changed') {
         refreshAuthorizedOverview(dispatch, { failClosed: true, notifyOnFailure: true })
         return

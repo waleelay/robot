@@ -117,6 +117,8 @@ public class PanoramaService {
     private final BoundedTtlCache<String, Map<String, Object>> taskEventCache =
             new BoundedTtlCache<>(SNAPSHOT_CACHE_MAX_SIZE, TASK_EVENT_CACHE_TTL_MILLIS);
     private final Map<String, CompletableFuture<Map<String, Object>>> taskEventInFlight = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<Map<String, Object>>> alarmEventInFlight = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<?>> sourceReadInFlight = new ConcurrentHashMap<>();
 
     public PanoramaService(PanoramaCenterClient centerClient, ObjectMapper objectMapper) {
         this.centerClient = centerClient;
@@ -158,13 +160,24 @@ public class PanoramaService {
         }
     }
 
-    /** 只清除当前身份的总览缓存；在途旧响应仍由前端按请求期间事件保护。 */
+    /** 清除当前身份的任务总览和统计缓存；在途旧 Overview 仍由前端按请求期间事件保护。 */
     public void invalidateTaskOverview() {
-        String cacheKey = "overview:" + statsUserKey();
+        String userKey = statsUserKey();
+        String cacheKey = "overview:" + userKey;
         synchronized (overviewCache) {
             overviewInFlight.remove(cacheKey);
             overviewCache.remove(cacheKey);
         }
+        statsCache.remove("tasks:" + userKey);
+        sourceReadInFlight.remove(sourceReadKey("task-plans"));
+    }
+
+    public void invalidateTaskStats() {
+        statsCache.remove("tasks:" + statsUserKey());
+    }
+
+    public void invalidateAlarmStats() {
+        statsCache.remove("alarms:" + statsUserKey());
     }
 
     private SecurityContext copySecurityContext(SecurityContext source) {
@@ -227,19 +240,25 @@ public class PanoramaService {
         CompletableFuture<List<Map<String, Object>>> devicesFuture = asyncOverview(() -> devices(cache));
         CompletableFuture<PanoramaTasks> tasksFuture = asyncOverview(this::taskSummaries);
         CompletableFuture<List<Map<String, Object>>> mapsFuture = asyncOverview(centerClient::enabledMaps);
-        CompletableFuture<Map<String, Object>> alarmsFuture = asyncOverview(this::alarmsPayload);
+        CompletableFuture<PanoramaAlarms> alarmsFuture = asyncOverview(this::alarmsPayload);
         CompletableFuture<Map<String, Object>> mileageFuture = asyncOverview(this::todayMileageSummary);
 
         // 查询失败不等于地图已移除，不能用空列表触发前端切换地图。
         List<Map<String, Object>> maps = joinRequired(mapsFuture);
         List<Map<String, Object>> rawDevices = joinRequired(devicesFuture);
         PanoramaTasks panoramaTasks = join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED"));
+        PanoramaAlarms panoramaAlarms = joinRequired(alarmsFuture);
         List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), rawDevices);
         // 管理端地图 ID 与边缘 SLAM 地图 ID 不是同一命名空间；首屏只用任务摘要修正地图归属，
         // 不再把重复的任务对象挂回 devices[]。
         List<Map<String, Object>> devices = withTaskLocationMapIds(rawDevices, tasks);
         cacheStatsValue("devices", devices);
-        cacheStatsValue("tasks", panoramaTasks);
+        if (dataComplete(panoramaTasks.dataQuality())) {
+            cacheStatsValue("tasks", panoramaTasks);
+        }
+        if (dataComplete(panoramaAlarms.dataQuality())) {
+            cacheStatsValue("alarms", panoramaAlarms);
+        }
         overview.put("devices", overviewDevices(devices));
         overview.put("deviceStats", deviceStats(devices));
         overview.put("deviceTypeStats", deviceTypeStats(devices));
@@ -248,11 +267,15 @@ public class PanoramaService {
                 panoramaTasks.instances(), join(mileageFuture, Map.of())));
         overview.put("tasks", overviewTasks(tasks));
         overview.put("taskOverview", overviewTaskOverview(tasks));
-        overview.put("dataQuality", object("tasks", panoramaTasks.dataQuality()));
+        overview.put("dataQuality", object(
+                "tasks", panoramaTasks.dataQuality(),
+                "alarms", panoramaAlarms.dataQuality()));
 
         overview.put("map", maps.stream().map(this::overviewMap).toList());
 
-        overview.put("alarms", overviewAlarms(join(alarmsFuture, emptyAlarmsPayload())));
+        overview.put("alarms", dataComplete(panoramaAlarms.dataQuality())
+                ? overviewAlarms(panoramaAlarms.payload())
+                : Map.of());
         return overview;
     }
 
@@ -334,19 +357,38 @@ public class PanoramaService {
             stats.put("deviceTypeStats", deviceTypeStats(devices));
         }
         if (parts.contains(StatsPart.TASKS)) {
-            List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
-            PanoramaTasks panoramaTasks = cachedStats("tasks", () -> taskPayload(new OverviewRequestCache()));
-            List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), devices);
-            stats.put("patrolOverview", patrolOverview(panoramaTasks.instances(), cachedStats("mileage", this::todayMileageSummary)));
-            stats.put("taskOverview", taskOverview(tasks));
-            stats.put("dataQuality", object("tasks", panoramaTasks.dataQuality()));
+            PanoramaTasks panoramaTasks = cachedStats("tasks", this::taskSummaries);
+            putDataQuality(stats, "tasks", panoramaTasks.dataQuality());
+            if (dataComplete(panoramaTasks.dataQuality())) {
+                stats.put("patrolOverview", patrolOverview(
+                        panoramaTasks.instances(), cachedStats("mileage", this::todayMileageSummary)));
+                stats.put("taskOverview", taskOverview(panoramaTasks.items()));
+            } else {
+                invalidateTaskStats();
+            }
         }
         if (parts.contains(StatsPart.ALARMS)) {
-            Map<String, Object> alarms = cachedStats("alarms", this::alarmsPayload);
-            stats.put("alarmStats", alarmStats(alarms));
-            stats.put("alarmSummary", alarms.get("summary"));
+            PanoramaAlarms panoramaAlarms = cachedStats("alarms", this::alarmsPayload);
+            putDataQuality(stats, "alarms", panoramaAlarms.dataQuality());
+            if (dataComplete(panoramaAlarms.dataQuality())) {
+                stats.put("alarmStats", alarmStats(panoramaAlarms.payload()));
+                stats.put("alarmSummary", panoramaAlarms.payload().get("summary"));
+            } else {
+                invalidateAlarmStats();
+            }
         }
         return stats;
+    }
+
+    private void putDataQuality(Map<String, Object> target, String part, Map<String, Object> quality) {
+        Map<String, Object> dataQuality = mutable(map(target.get("dataQuality")));
+        dataQuality.put(part, quality);
+        target.put("dataQuality", dataQuality);
+    }
+
+    private boolean dataComplete(Map<String, Object> quality) {
+        return !Boolean.FALSE.equals(quality.get("complete"))
+                && !Boolean.TRUE.equals(quality.get("degraded"));
     }
 
     private <T> T cachedStats(String part, Supplier<T> supplier) {
@@ -704,7 +746,8 @@ public class PanoramaService {
     private List<Map<String, Object>> mapAssociationTasks() {
         TaskDataQuality quality = new TaskDataQuality();
         List<Map<String, Object>> taskPlans = joinTask(
-                async(centerClient::taskWorkflowPlans), List.of(), quality, "TASK_PLANS_UNAVAILABLE");
+                sharedAsync("task-plans", centerClient::taskWorkflowPlans),
+                List.of(), quality, "TASK_PLANS_UNAVAILABLE");
         List<CompletableFuture<Map<String, Object>>> futures = taskPlans.stream()
                 .map(task -> async(() -> mapAssociationTask(task, quality)))
                 .toList();
@@ -743,7 +786,8 @@ public class PanoramaService {
         OverviewRequestCache cache = new OverviewRequestCache();
         TaskDataQuality quality = new TaskDataQuality();
         List<Map<String, Object>> taskPlans = joinTask(
-                async(centerClient::taskWorkflowPlans), List.of(), quality, "TASK_PLANS_UNAVAILABLE");
+                sharedAsync("task-plans", centerClient::taskWorkflowPlans),
+                List.of(), quality, "TASK_PLANS_UNAVAILABLE");
         TaskRouteResolver routeResolver = new TaskRouteResolver(taskPlans, cache, quality);
         for (int index = 0; index < taskPlans.size(); index++) {
             routeResolver.prefetch(taskPlans.get(index), index);
@@ -856,7 +900,8 @@ public class PanoramaService {
         OVERVIEW_DEADLINE_NANOS.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(OVERVIEW_TIMEOUT_MILLIS));
         REQUEST_IO_EXECUTOR.set(TASK_EVENT_IO_EXECUTOR);
         try {
-            CompletableFuture<List<Map<String, Object>>> plansFuture = async(centerClient::taskWorkflowPlans);
+            CompletableFuture<List<Map<String, Object>>> plansFuture =
+                    sharedAsync("task-plans", centerClient::taskWorkflowPlans);
             CompletableFuture<List<Map<String, Object>>> instancesFuture = async(centerClient::activeTaskWorkflowInstances);
             List<Map<String, Object>> plans = joinRequired(plansFuture);
             TaskDataQuality quality = new TaskDataQuality();
@@ -883,12 +928,18 @@ public class PanoramaService {
     }
 
     public Map<String, Object> alarms() {
+        PanoramaAlarms panoramaAlarms = alarmsPayload();
         return object(
                 "serverTime", now(),
-                "alarms", alarmsPayload());
+                "alarms", panoramaAlarms.payload(),
+                "dataQuality", object("alarms", panoramaAlarms.dataQuality()));
     }
 
     public Map<String, Object> alarmEventSnapshot() {
+        return sharedAlarmEventSnapshot("ordinary", this::loadAlarmEventSnapshot);
+    }
+
+    private Map<String, Object> loadAlarmEventSnapshot() {
         CompletableFuture<PanoramaCenterClient.AlarmPage> highFuture = alarmPageFuture("CRITICAL", null, null, ALARM_PAGE_SIZE);
         CompletableFuture<PanoramaCenterClient.AlarmPage> mediumFuture = alarmPageFuture("WARN", null, null, ALARM_PAGE_SIZE);
         CompletableFuture<PanoramaCenterClient.AlarmPage> lowFuture = alarmPageFuture("INFO", null, null, ALARM_PAGE_SIZE);
@@ -920,6 +971,10 @@ public class PanoramaService {
     }
 
     public Map<String, Object> actionableWorkflowAlarms() {
+        return sharedAlarmEventSnapshot("workflow", this::loadActionableWorkflowAlarms);
+    }
+
+    private Map<String, Object> loadActionableWorkflowAlarms() {
         List<Map<String, Object>> items = centerClient.actionableWorkflowAlarms().stream()
                 .map(this::actionableWorkflowAlarmItem)
                 .toList();
@@ -927,6 +982,31 @@ public class PanoramaService {
                 "serverTime", now(),
                 "total", items.size(),
                 "items", items);
+    }
+
+    /** 同一授权身份的并发告警刷新共享一次读取；完成或失败后立即释放，不缓存业务结果。 */
+    private Map<String, Object> sharedAlarmEventSnapshot(
+            String type,
+            Supplier<Map<String, Object>> loader) {
+        String key = type + ":" + statsUserKey();
+        if (!alarmEventInFlight.containsKey(key) && alarmEventInFlight.size() >= IN_FLIGHT_MAX_SIZE) {
+            throw new IllegalStateException("大屏告警刷新并发身份已达上限，请稍后重试");
+        }
+        CompletableFuture<Map<String, Object>> created = new CompletableFuture<>();
+        CompletableFuture<Map<String, Object>> shared = alarmEventInFlight.putIfAbsent(key, created);
+        if (shared != null) {
+            return joinShared(shared, OVERVIEW_TIMEOUT_MILLIS);
+        }
+        try {
+            Map<String, Object> snapshot = loader.get();
+            created.complete(snapshot);
+            return snapshot;
+        } catch (RuntimeException | Error error) {
+            created.completeExceptionally(error);
+            throw error;
+        } finally {
+            alarmEventInFlight.remove(key, created);
+        }
     }
 
     public Map<String, Object> handleAlarm(String alarmId, Map<String, Object> request) {
@@ -1341,7 +1421,8 @@ public class PanoramaService {
 
     private PanoramaTasks taskPayload(OverviewRequestCache cache) {
         TaskDataQuality quality = new TaskDataQuality();
-        CompletableFuture<List<Map<String, Object>>> taskPlansFuture = async(centerClient::taskWorkflowPlans);
+        CompletableFuture<List<Map<String, Object>>> taskPlansFuture =
+                sharedAsync("task-plans", centerClient::taskWorkflowPlans);
         CompletableFuture<List<Map<String, Object>>> taskInstancesFuture = async(centerClient::taskWorkflowInstances);
         List<Map<String, Object>> taskPlans = joinTask(
                 taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
@@ -1376,7 +1457,8 @@ public class PanoramaService {
      */
     private PanoramaTasks taskSummaries() {
         TaskDataQuality quality = new TaskDataQuality();
-        CompletableFuture<List<Map<String, Object>>> taskPlansFuture = async(centerClient::taskWorkflowPlans);
+        CompletableFuture<List<Map<String, Object>>> taskPlansFuture =
+                sharedAsync("task-plans", centerClient::taskWorkflowPlans);
         CompletableFuture<List<Map<String, Object>>> taskInstancesFuture = async(centerClient::taskWorkflowInstances);
         List<Map<String, Object>> taskPlans = joinTask(
                 taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
@@ -1569,10 +1651,11 @@ public class PanoramaService {
         };
     }
 
-    private Map<String, Object> alarmsPayload() {
+    private PanoramaAlarms alarmsPayload() {
         LocalDateTime now = LocalDateTime.now(CHINA_ZONE);
         String occurredFrom = now.toLocalDate().atStartOfDay().format(DATE_TIME_FORMATTER);
         String occurredTo = now.format(DATE_TIME_FORMATTER);
+        AlarmDataQuality quality = new AlarmDataQuality();
         CompletableFuture<PanoramaCenterClient.AlarmPage> highFuture = alarmPageFuture("CRITICAL", null, null, ALARM_PAGE_SIZE);
         CompletableFuture<PanoramaCenterClient.AlarmPage> mediumFuture = alarmPageFuture("WARN", null, null, ALARM_PAGE_SIZE);
         CompletableFuture<PanoramaCenterClient.AlarmPage> lowFuture = alarmPageFuture("INFO", null, null, ALARM_PAGE_SIZE);
@@ -1582,14 +1665,21 @@ public class PanoramaService {
                 () -> centerClient.alarmPage("HANDLED", null, occurredFrom, occurredTo, 1, 1));
         CompletableFuture<PanoramaCenterClient.AlarmPage> falseAlarmFuture = async(
                 () -> centerClient.alarmPage("FALSE_ALARM", null, occurredFrom, occurredTo, 1, 1));
-        PanoramaCenterClient.AlarmPage highPage = join(highFuture, emptyAlarmPage(ALARM_PAGE_SIZE));
-        PanoramaCenterClient.AlarmPage mediumPage = join(mediumFuture, emptyAlarmPage(ALARM_PAGE_SIZE));
-        PanoramaCenterClient.AlarmPage lowPage = join(lowFuture, emptyAlarmPage(ALARM_PAGE_SIZE));
+        PanoramaCenterClient.AlarmPage highPage = joinAlarm(highFuture, quality, "ALARM_HIGH_QUERY_FAILED");
+        PanoramaCenterClient.AlarmPage mediumPage = joinAlarm(mediumFuture, quality, "ALARM_MEDIUM_QUERY_FAILED");
+        PanoramaCenterClient.AlarmPage lowPage = joinAlarm(lowFuture, quality, "ALARM_LOW_QUERY_FAILED");
+        PanoramaCenterClient.AlarmPage todayPage = joinAlarm(todayFuture, quality, "ALARM_TODAY_QUERY_FAILED");
+        PanoramaCenterClient.AlarmPage handledPage = joinAlarm(handledFuture, quality, "ALARM_HANDLED_QUERY_FAILED");
+        PanoramaCenterClient.AlarmPage falseAlarmPage = joinAlarm(
+                falseAlarmFuture, quality, "ALARM_FALSE_ALARM_QUERY_FAILED");
+        Map<String, Object> dataQuality = quality.snapshot();
+        if (!dataComplete(dataQuality)) {
+            return new PanoramaAlarms(Map.of(), dataQuality);
+        }
         Map<String, Object> payload = new LinkedHashMap<>(alarmListPayload(highPage, mediumPage, lowPage));
-        long handled = join(handledFuture, emptyAlarmPage(1)).total()
-                + join(falseAlarmFuture, emptyAlarmPage(1)).total();
-        payload.put("summary", alarmSummary(join(todayFuture, emptyAlarmPage(1)).total(), handled));
-        return payload;
+        long handled = handledPage.total() + falseAlarmPage.total();
+        payload.put("summary", alarmSummary(todayPage.total(), handled));
+        return new PanoramaAlarms(payload, dataQuality);
     }
 
     private Map<String, Object> alarmListPayload(
@@ -1617,11 +1707,11 @@ public class PanoramaService {
             String occurredFrom,
             String occurredTo,
             int pageSize) {
-        return async(() -> centerClient.alarmPage("NEW", severity, occurredFrom, occurredTo, 1, pageSize));
-    }
-
-    private PanoramaCenterClient.AlarmPage emptyAlarmPage(int pageSize) {
-        return new PanoramaCenterClient.AlarmPage(List.of(), 0, 1, pageSize);
+        String sourceKey = String.join("|",
+                "alarm-page", "NEW", value(severity, ""), value(occurredFrom, ""), value(occurredTo, ""),
+                "1", String.valueOf(pageSize));
+        return sharedAsync(sourceKey,
+                () -> centerClient.alarmPage("NEW", severity, occurredFrom, occurredTo, 1, pageSize));
     }
 
     private Map<String, Object> alarmItem(Map<String, Object> source, TaskInstanceResolver taskInstanceResolver) {
@@ -1871,16 +1961,6 @@ public class PanoramaService {
                 "showArea", null);
     }
 
-    private Map<String, Object> emptyAlarmsPayload() {
-        return object(
-                "total", 0,
-                "summary", alarmSummary(0, 0),
-                "latest", alarmGroup(List.of(), 0, 1, ALARM_PAGE_SIZE),
-                "high", alarmGroup(List.of(), 0, 1, ALARM_PAGE_SIZE),
-                "medium", alarmGroup(List.of(), 0, 1, ALARM_PAGE_SIZE),
-                "low", alarmGroup(List.of(), 0, 1, ALARM_PAGE_SIZE));
-    }
-
     private static java.util.concurrent.ThreadFactory namedDaemonThreadFactory(String prefix) {
         return runnable -> {
             Thread thread = new Thread(runnable, prefix);
@@ -1891,6 +1971,35 @@ public class PanoramaService {
 
     private <T> CompletableFuture<T> asyncOverview(Supplier<T> supplier) {
         return async(supplier);
+    }
+
+    /** 只合并当前授权身份下完全同参的在途读取；不缓存结果，避免跨事件返回旧快照。 */
+    @SuppressWarnings("unchecked")
+    private <T> CompletableFuture<T> sharedAsync(String sourceKey, Supplier<T> supplier) {
+        String key = sourceReadKey(sourceKey);
+        if (!sourceReadInFlight.containsKey(key) && sourceReadInFlight.size() >= IN_FLIGHT_MAX_SIZE) {
+            return CompletableFuture.failedFuture(new PanoramaCenterClient.TaskSourceException(
+                    "SOURCE_READ_SATURATED", "大屏下游共享读取并发身份已达上限"));
+        }
+        CompletableFuture<T> slot = new CompletableFuture<>();
+        CompletableFuture<?> existing = sourceReadInFlight.putIfAbsent(key, slot);
+        if (existing != null) {
+            return (CompletableFuture<T>) existing;
+        }
+        CompletableFuture<T> execution = async(supplier);
+        execution.whenComplete((result, error) -> {
+            if (error == null) {
+                slot.complete(result);
+            } else {
+                slot.completeExceptionally(error);
+            }
+            sourceReadInFlight.remove(key, slot);
+        });
+        return slot;
+    }
+
+    private String sourceReadKey(String sourceKey) {
+        return sourceKey + ":" + statsUserKey();
     }
 
     private <T> CompletableFuture<T> async(Supplier<T> supplier) {
@@ -1970,6 +2079,32 @@ public class PanoramaService {
             }
             quality.unavailable(cause, defaultReasonCode);
             return fallback;
+        }
+    }
+
+    private PanoramaCenterClient.AlarmPage joinAlarm(
+            CompletableFuture<PanoramaCenterClient.AlarmPage> future,
+            AlarmDataQuality quality,
+            String defaultReasonCode) {
+        try {
+            PanoramaCenterClient.AlarmPage value = waitFor(future);
+            if (value == null) {
+                quality.unavailable(null, defaultReasonCode);
+            }
+            return value;
+        } catch (TimeoutException exception) {
+            future.cancel(true);
+            quality.unavailable(exception, "ALARM_QUERY_TIMEOUT");
+            return null;
+        } catch (CompletionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof org.springframework.web.server.ResponseStatusException responseStatus
+                    && (responseStatus.getStatusCode().value() == 401
+                    || responseStatus.getStatusCode().value() == 403)) {
+                throw responseStatus;
+            }
+            quality.unavailable(cause, defaultReasonCode);
+            return null;
         }
     }
 
@@ -2758,11 +2893,43 @@ public class PanoramaService {
         }
     }
 
+    private final class AlarmDataQuality {
+
+        private final Set<String> reasonCodes = new ConcurrentSkipListSet<>();
+
+        private void unavailable(Throwable exception, String defaultReasonCode) {
+            Throwable current = exception;
+            while (current instanceof CompletionException && current.getCause() != null) {
+                current = current.getCause();
+            }
+            if (current instanceof PanoramaCenterClient.TaskSourceException sourceException) {
+                reasonCodes.add("TASK_EXECUTOR_SATURATED".equals(sourceException.reasonCode())
+                        ? "ALARM_EXECUTOR_SATURATED"
+                        : sourceException.reasonCode());
+            } else {
+                reasonCodes.add(defaultReasonCode);
+            }
+        }
+
+        private Map<String, Object> snapshot() {
+            boolean complete = reasonCodes.isEmpty();
+            return object(
+                    "complete", complete,
+                    "degraded", !complete,
+                    "reasonCodes", List.copyOf(reasonCodes));
+        }
+    }
+
     private record PanoramaTasks(
             List<Map<String, Object>> items,
             List<Map<String, Object>> instances,
             Map<String, Object> dataQuality,
             boolean convergencePending) {
+    }
+
+    private record PanoramaAlarms(
+            Map<String, Object> payload,
+            Map<String, Object> dataQuality) {
     }
 
     private enum AlarmDisposalStatus {

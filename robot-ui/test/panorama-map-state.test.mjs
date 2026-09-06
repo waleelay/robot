@@ -212,6 +212,54 @@ test('工作流告警只消费 BFF 快照，普通告警仍仅高风险弹窗', 
   assert.equal(ctx.state.robotAlarmObj['robot-1'].alarmId, 'ordinary-high')
 })
 
+test('统计降级推送保留首次成功值，真实零值仍正常更新', async () => {
+  const ctx = setup({ getPatrolPanoramaOverview: async () => overview([], {
+    taskOverview: { totalToday: 12, completedRateText: '0%', running: 1, pending: 11 },
+    alarms: { high: { items: [] }, summary: {
+      totalToday: 5, handled: 2, unhandled: 3, handleRateText: '40%'
+    } },
+    dataQuality: {
+      tasks: { complete: true, degraded: false },
+      alarms: { complete: true, degraded: false }
+    }
+  }) })
+  await ctx.refresh()
+
+  await ctx.dispatch('syncRobot', { event: 'panorama.stats.changed', data: {
+    taskOverview: { totalToday: 0, completedRateText: null, running: 0, pending: 0 },
+    alarmSummary: { totalToday: 0, handled: 0, unhandled: 0, handleRateText: null },
+    dataQuality: {
+      tasks: { complete: false, degraded: true, reasonCodes: ['TASK_EXECUTOR_SATURATED'] },
+      alarms: { complete: false, degraded: true, reasonCodes: ['ALARM_QUERY_TIMEOUT'] }
+    }
+  } })
+  assert.equal(ctx.state.taskOverview.totalToday, 12)
+  assert.equal(ctx.state.alarmSummary.totalToday, 5)
+
+  await ctx.dispatch('syncRobot', { event: 'panorama.stats.changed', data: {
+    taskOverview: { totalToday: 0, completedRateText: null, running: 0, pending: 0 },
+    alarmSummary: { totalToday: 0, handled: 0, unhandled: 0, handleRateText: null },
+    dataQuality: {
+      tasks: { complete: true, degraded: false },
+      alarms: { complete: true, degraded: false }
+    }
+  } })
+  assert.equal(ctx.state.taskOverview.totalToday, 0)
+  assert.equal(ctx.state.alarmSummary.totalToday, 0)
+})
+
+test('首页统计卡片区分未知值和真实零值', () => {
+  const left = compile('views/bi/home/Left.vue')
+  const right = compile('views/bi/home/Right.vue')
+  for (const component of [left, right]) {
+    assert.equal(component.methods.statValue(null), '--')
+    assert.equal(component.methods.statValue(undefined), '--')
+    assert.equal(component.methods.statValue(''), '--')
+    assert.equal(component.methods.statValue(0), 0)
+    assert.equal(component.methods.statValue('0%'), '0%')
+  }
+})
+
 test('任务轨迹按执行轮次重置、按毫秒去重并独立更新当前位姿', async () => {
   const ctx = setup()
   await ctx.dispatch('syncRobot', { event: 'robot.trajectory.changed', data: {

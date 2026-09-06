@@ -12,3 +12,8 @@ export function mediaReconnectDelay(closeCode, attempts, randomValue = Math.rand
 export function isSustainedAuthorizationFailure(closeCode, attempts) {
   return closeCode === 4003 && attempts >= AUTHORIZATION_FAILURE_NOTICE_ATTEMPTS
 }
+
+// 服务端已明确拒绝超额会话时停止自动重连，避免无效连接持续冲击配额入口。
+export function shouldReconnectMedia(closeCode) {
+  return closeCode !== 4008
+}

@@ -28,7 +28,7 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue` | 处置告警并继续对应工作流 |
 | `GET` | `/api/bigscreen/access-control/me` | 代理当前登录用户的管理端数据权限；下游失败时拒绝访问，不返回默认权限 |
 
-`actionable-workflow` 返回的每条告警均带有 `workflowActionable: true`，前端以该标识选择 `handle-and-continue`，不再根据工作流实例或人工任务字段是否存在进行推断。
+`actionable-workflow` 返回的每条告警均带有 `workflowActionable: true`，前端以该标识选择 `handle-and-continue`，不再根据工作流实例或人工任务字段是否存在进行推断。BFF 对该查询设置独立的公平并发闸门和熔断状态，默认只允许 1 个在途请求，代码硬上限为 4；它仍按当前用户实时查询且不跨身份缓存，但其超时不会打开设备、统计等通用查询熔断器。超时不作为空集合发布，首次快照在 5 秒窗口内执行有界失败重试；权威查询成功返回的真实空集合不重试。
 
 普通告警只在未处置且风险等级为 `HIGH` 时进入弹窗；`sourceType=TASK` 的工作流告警不受风险等级限制，
 只在 BFF 推送的 `panorama.workflow-alarms.changed` 快照中出现后进入工作流弹窗。BFF 收到告警失效通知后
@@ -80,8 +80,8 @@ Overview、设备详情与 WebSocket 使用相同运行态源，前端按该时�
 `offline`，不得回退 `enabled=true`。`playable` 是兼容字段，只表示 `enabled && configReady`，不表示
 在线，新调用方应使用 `configReady`。BFF 不向前端返回 RTSP URL 或摄像头凭据。
 
-`overview` 和任务快照均携带稳定的任务数据质量字段。任务查询失败时 HTTP 仍可返回已成功
-加载的部分数据，但调用方必须按 `degraded=true` 处理，不能把 `items=[]` 解释为真实的 0：
+`overview`、任务快照和统计推送携带分块数据质量字段。任务或告警查询失败时仍可返回已成功
+加载的其他数据，但调用方必须按 `degraded=true` 处理，不能把缺失统计块或空集合解释为真实的 0：
 
 ```json
 {
@@ -92,6 +92,11 @@ Overview、设备详情与 WebSocket 使用相同运行态源，前端按该时�
       "reasonCodes": ["TASK_QUERY_TIMEOUT"],
       "invalidReferenceCount": 1,
       "invalidWorkflowReferences": ["workflow-instance-404"]
+    },
+    "alarms": {
+      "complete": false,
+      "degraded": true,
+      "reasonCodes": ["ALARM_QUERY_TIMEOUT"]
     }
   }
 }
@@ -100,6 +105,8 @@ Overview、设备详情与 WebSocket 使用相同运行态源，前端按该时�
 常见 reason code 包括 `TASK_QUERY_TIMEOUT`、`TASK_QUERY_CONCURRENCY_LIMIT`、
 `TASK_EXECUTOR_SATURATED`、`TASK_PAGINATION_LIMIT`、`TASK_PAGINATION_NO_PROGRESS`、`TASK_INVALID_RESPONSE`、
 `WORKFLOW_INSTANCE_NOT_FOUND` 和 `WORKFLOW_DEFINITION_NOT_FOUND`。401/403 不进入降级响应。
+告警常见 reason code 包括 `ALARM_QUERY_TIMEOUT`、`ALARM_EXECUTOR_SATURATED` 和各告警分块查询失败码。
+告警汇总依赖的查询必须全部成功后才能提交；部分失败时不得以空页计算出 0 或负数。
 
 ### 2.1 按需读取时序与响应边界
 
@@ -208,11 +215,13 @@ Management 固定摄像头授权集合比较。固定摄像头视频事件使用
 `sourceType=FIXED_CAMERA` 和 `sourceId=cameraId` 识别与授权。浏览器上行消息显式携带
 `cameraId` 时仍执行固定摄像头预校验，不因上述事件规则放宽。
 
-授权快照最大陈旧时间为 30 秒。Management 对设备或固定摄像头查询返回 `403` 时表示对应
-查看权限已撤销，该类授权集合按空集更新；`401` 或握手 JWT 到达 `exp` 时使用 `4001` 关闭；
-超时、5xx 或异常响应导致初始加载失败或快照过期时使用 `4003` 关闭。资源集合发生变化时连接
-保持有效，BFF 发送以下通知，调用方必须重新请求 `/api/bigscreen/panorama/overview`，并以响应
-完整替换旧设备集合：
+授权快照最大陈旧时间为 5 分钟，从一次完整授权查询成功后开始计算，并在第 3 至 4 分钟按身份散列错峰刷新。Management 对设备或固定摄像头
+查询返回 `403` 时表示对应查看权限已撤销，该类授权集合按空集更新；`401` 或握手 JWT 到达 `exp`
+时使用 `4001` 关闭。初始授权加载失败仍使用 `4003` 关闭；已建立连接的后台刷新若因超时、5xx 或
+异常响应超过快照期限，则在原连接内进入 fail-closed：暂停业务事件下发和控制上行、保留页面最后
+成功数据，并发送 `bigscreen.authorization.state`，不会断开并触发完整初始化重连。刷新恢复后发送
+`available=true`，前端重新请求 Overview 校准。资源集合发生变化时连接保持有效，BFF 发送以下通知，
+调用方必须重新请求 `/api/bigscreen/panorama/overview`，并以响应完整替换旧设备集合：
 
 ```json
 {
@@ -223,6 +232,24 @@ Management 固定摄像头授权集合比较。固定摄像头视频事件使用
   }
 }
 ```
+
+授权临时不可用状态事件如下；`available=false` 不代表用户已撤权，前端不得据此清空或以 0 覆盖
+已有卡片数据：
+
+```json
+{
+  "event": "bigscreen.authorization.state",
+  "timestamp": "2026-09-06T09:00:00Z",
+  "data": {
+    "available": false
+  }
+}
+```
+
+同一授权身份的并发初始化只执行一次权限加载。授权刷新与中心端 WebSocket 建连分别由固定 16 个
+线程和 64 个排队位置削峰，刷新按身份单飞、分散起始时间并在失败后退避。默认会话配额为同身份 8、
+同 issuer/组织 64、单 BFF 实例 64；配置值仍受代码硬上限约束，扩大默认边界前必须重新完成容量验证。
+超过任一配额时以 `4008` 关闭，前端不得自动重连该连接。Token 没有组织声明时不跨身份计算组织配额。
 
 该通知不携带授权 ID 明细，Overview 是页面完整快照的权威来源。前端应先清除旧资源再请求 Overview；请求失败时不得恢复已清除的旧资源。WebSocket 断线重连成功后也应重新请求 Overview，以覆盖断线期间的权限变化。
 
@@ -251,9 +278,9 @@ BFF 对该类资源返回空集合并继续组装其余有权数据，因此真�
 | `robot.state` | `panorama.device.status.changed`：仅边缘状态（`stateSource=EDGE_DEVICE_STATUS`）与离线扫描（`stateSource=OFFLINE_SCAN`）来源派生，媒体客户端及 GIS 位置补充来源不派生；有定位时再派生 `panorama.device.location.changed` |
 | `panorama.device.location.changed` | 按浏览器会话和 `robotId` 隔离；首条立即推送；1 秒内 GIS 结果优先，更晚的 SLAM 位置保留到下一窗口，每秒最多一次；无新定位不重复推送旧坐标 |
 | task 变更类事件 | 有完整 `taskId` 时立即转换为 `panorama.task.changed`                                                                                                                                                            |
-| `management.task.invalidated` | 300ms 去抖后通过独立有界 I/O 通道重查任务计划和活动实例摘要，整轮查询最长 8 秒；同一身份的完整成功快照在 100ms 内复用；任务变化通知按 1/2/4/8 秒最多复查 4 次，不以其他任务变化推断收敛；初次连接正常时仅补查一次，失败或 `PREPARING` 时有界重试；新事件提前旧退避任务，同一会话不并发查询，不占用全景页面查询线程，也不加载历史实例、回放、路径和设备任务明细                                                                                             |
+| `management.task.invalidated` | 300ms 去抖后通过独立有界 I/O 通道重查任务计划和活动实例摘要，整轮查询最长 8 秒；同一身份的完整成功快照在 100ms 内复用；任务变化通知按 1/2/4/8 秒并加入正负 20% 抖动，最多复查 4 次，不以其他任务变化推断收敛；初次连接正常时仅补查一次，失败或 `PREPARING` 时有界重试；新事件提前旧退避任务，同一身份只保留一个运行和一个待刷新状态，不占用全景页面查询线程，也不加载历史实例、回放、路径和设备任务明细                                                                                             |
 | alarm 变更类事件 | 立即转换为 `panorama.alarm.changed`，无真实上游事件时不生成模拟告警                                                                                                                                                         |
-| `management.alarm.invalidated` | BFF 内部失效通知，不透传浏览器。按当前会话身份以两条独立链路查询可处置工作流告警和普通告警分页快照；普通告警只查各风险第一页和总数，变化时推送 `panorama.alarms.changed`；工作流快照未变化时每 300ms 仅复查工作流接口，最长 5 秒，普通告警查询不会阻塞工作流推送 |
+| `management.alarm.invalidated` | BFF 内部失效通知，不透传浏览器。按授权身份以两条独立链路查询可处置工作流告警和普通告警分页快照；普通告警只查各风险第一页和总数并采用 latest-only，变化时推送 `panorama.alarms.changed`；工作流快照按 0.3/0.6/1.2/2.4 秒退避并加入正负 20% 抖动，首次加最多四次复查且总时限不超过 5 秒，新事件可提前旧退避 |
 | 设备、任务、告警或机器人在线状态变化 | 500ms 去抖后按事件类型只重算受影响统计块（设备/任务/告警，各块 3 秒 TTL 缓存按用户隔离），仅在快照变化时推送 `panorama.stats.changed`                                                                                                                |
 
 BFF 不生成硬编码位置。边缘端已有合法经纬度时由 Control 直接使用；缺失经纬度且具备 `mapId/x/y` 时，Control 通过 Management 内部接口换算后补充位置。同一限频窗口内 GIS 结果优先于 SLAM 坐标，更晚的 SLAM 位置保留到下一窗口；若没有新 GIS 结果，仍会下发最新 SLAM 坐标。若首次连接上游 WebSocket 失败，BFF 以 1011 关闭浏览器连接，复用前端已有退避重连。连接成功后补查任务快照；Control 重连管理端 STOMP 后广播任务失效通知，补齐断线期间变化。

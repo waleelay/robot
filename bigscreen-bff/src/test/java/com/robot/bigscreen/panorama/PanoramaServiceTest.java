@@ -376,6 +376,47 @@ class PanoramaServiceTest {
     }
 
     @Test
+    void concurrentTaskStatsAndTaskEventShareThePlanQueryOnly() throws Exception {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        var planEntered = new java.util.concurrent.CountDownLatch(1);
+        var fullInstancesEntered = new java.util.concurrent.CountDownLatch(1);
+        var activeInstancesEntered = new java.util.concurrent.CountDownLatch(1);
+        var releasePlan = new java.util.concurrent.CountDownLatch(1);
+        when(client.taskWorkflowPlans()).thenAnswer(invocation -> {
+            planEntered.countDown();
+            assertTrue(releasePlan.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            return List.of();
+        });
+        when(client.taskWorkflowInstances()).thenAnswer(invocation -> {
+            fullInstancesEntered.countDown();
+            return List.of();
+        });
+        when(client.activeTaskWorkflowInstances()).thenAnswer(invocation -> {
+            activeInstancesEntered.countDown();
+            return List.of();
+        });
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var stats = executor.submit(() -> service.statsSnapshot(Set.of(StatsPart.TASKS)));
+            var event = executor.submit(service::taskEventSnapshot);
+            assertTrue(planEntered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(fullInstancesEntered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(activeInstancesEntered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            releasePlan.countDown();
+            stats.get(3, java.util.concurrent.TimeUnit.SECONDS);
+            event.get(3, java.util.concurrent.TimeUnit.SECONDS);
+            verify(client, times(1)).taskWorkflowPlans();
+            verify(client, times(1)).taskWorkflowInstances();
+            verify(client, times(1)).activeTaskWorkflowInstances();
+        } finally {
+            releasePlan.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void taskInvalidationOnlyClearsCurrentIdentityOverview() {
         PanoramaCenterClient client = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(client);
@@ -632,6 +673,47 @@ class PanoramaServiceTest {
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
 
         assertEquals(0, service.actionableWorkflowAlarms().get("total"));
+        assertEquals(1, service.actionableWorkflowAlarms().get("total"));
+        verify(centerClient, times(2)).actionableWorkflowAlarms();
+    }
+
+    @Test
+    void concurrentWorkflowAlarmSnapshotsForSameIdentityShareOneQuery() throws Exception {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(centerClient.actionableWorkflowAlarms()).thenAnswer(invocation -> {
+            entered.countDown();
+            assertTrue(release.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            return List.of(Map.of("alarmId", "alarm-1"));
+        });
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(4);
+        try {
+            var calls = java.util.stream.IntStream.range(0, 4)
+                    .mapToObj(index -> executor.submit(service::actionableWorkflowAlarms))
+                    .toList();
+            assertTrue(entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            release.countDown();
+            for (var call : calls) {
+                assertEquals(1, call.get(3, java.util.concurrent.TimeUnit.SECONDS).get("total"));
+            }
+            verify(centerClient, times(1)).actionableWorkflowAlarms();
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void failedWorkflowAlarmSnapshotDoesNotPoisonNextRefresh() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.actionableWorkflowAlarms())
+                .thenThrow(new IllegalStateException("Management unavailable"))
+                .thenReturn(List.of(Map.of("alarmId", "alarm-1")));
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+
+        assertThrows(IllegalStateException.class, service::actionableWorkflowAlarms);
         assertEquals(1, service.actionableWorkflowAlarms().get("total"));
         verify(centerClient, times(2)).actionableWorkflowAlarms();
     }
@@ -1089,6 +1171,80 @@ class PanoramaServiceTest {
     }
 
     @Test
+    void taskStatsUseLightweightSummariesWithoutDetailFanOut() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "lastWorkflowInstanceId", 9001L,
+                "executionStatus", "WAITING",
+                "workflowDefinitionId", "definition-001")));
+        when(centerClient.taskWorkflowInstances()).thenReturn(List.of(Map.of(
+                "id", 9001L,
+                "startedAt", "2026-09-05 08:00:00",
+                "completedAt", "2026-09-05 09:00:00")));
+        when(centerClient.mileageSummary(anyString(), anyString(), org.mockito.ArgumentMatchers.eq(List.of())))
+                .thenReturn(Map.of("hasData", false));
+
+        Map<String, Object> snapshot = new PanoramaService(centerClient, new ObjectMapper())
+                .statsSnapshot(Set.of(StatsPart.TASKS));
+
+        assertEquals(1, map(snapshot.get("taskOverview")).get("totalToday"));
+        assertEquals(1L, map(snapshot.get("taskOverview")).get("pending"));
+        verify(centerClient, never()).taskWorkflowReplay(anyString());
+        verify(centerClient, never()).deviceTaskInstances(anyString());
+        verify(centerClient, never()).taskWorkflowDefinition(anyString());
+        verify(centerClient, never()).devices();
+    }
+
+    @Test
+    void degradedTaskStatsExposeQualityWithoutPublishingFalseZeros() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenThrow(new PanoramaCenterClient.TaskSourceException(
+                "TASK_QUERY_TIMEOUT", "Management 任务接口读取超时"));
+
+        Map<String, Object> snapshot = new PanoramaService(centerClient, new ObjectMapper())
+                .statsSnapshot(Set.of(StatsPart.TASKS));
+
+        Map<String, Object> quality = map(map(snapshot.get("dataQuality")).get("tasks"));
+        assertEquals(true, quality.get("degraded"));
+        assertFalse(snapshot.containsKey("taskOverview"));
+        assertFalse(snapshot.containsKey("patrolOverview"));
+    }
+
+    @Test
+    void degradedAlarmStatsExposeQualityWithoutPublishingPartialZeros() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.alarmPage("NEW", "WARN", null, null, 1, 10))
+                .thenThrow(new IllegalStateException("management unavailable"));
+
+        Map<String, Object> snapshot = new PanoramaService(centerClient, new ObjectMapper())
+                .statsSnapshot(Set.of(StatsPart.ALARMS));
+
+        Map<String, Object> quality = map(map(snapshot.get("dataQuality")).get("alarms"));
+        assertEquals(true, quality.get("degraded"));
+        assertTrue(((List<?>) quality.get("reasonCodes")).contains("ALARM_MEDIUM_QUERY_FAILED"));
+        assertFalse(snapshot.containsKey("alarmStats"));
+        assertFalse(snapshot.containsKey("alarmSummary"));
+    }
+
+    @Test
+    void successfulEmptyAlarmStatsRemainARealZero() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+
+        Map<String, Object> snapshot = new PanoramaService(centerClient, new ObjectMapper())
+                .statsSnapshot(Set.of(StatsPart.ALARMS));
+
+        assertEquals(false, map(map(snapshot.get("dataQuality")).get("alarms")).get("degraded"));
+        assertEquals(0L, map(snapshot.get("alarmSummary")).get("totalToday"));
+        assertEquals(0L, map(snapshot.get("alarmSummary")).get("handled"));
+        assertEquals(0L, map(snapshot.get("alarmSummary")).get("unhandled"));
+    }
+
+    @Test
     void alarmEventSnapshotReadsOnlyThreeBoundedRiskPages() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
@@ -1097,6 +1253,78 @@ class PanoramaServiceTest {
 
         assertEquals(0L, snapshot.get("total"));
         verify(centerClient, times(3)).alarmPage(any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void concurrentOrdinaryAlarmSnapshotsForSameIdentityShareThreeQueries() throws Exception {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var first = new java.util.concurrent.atomic.AtomicBoolean(true);
+        when(centerClient.alarmPage(any(), any(), any(), any(), anyInt(), anyInt())).thenAnswer(invocation -> {
+            if (first.compareAndSet(true, false)) {
+                entered.countDown();
+                assertTrue(release.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            }
+            return new PanoramaCenterClient.AlarmPage(List.of(), 0, 1, 10);
+        });
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(4);
+        try {
+            var calls = java.util.stream.IntStream.range(0, 4)
+                    .mapToObj(index -> executor.submit(service::alarmEventSnapshot))
+                    .toList();
+            assertTrue(entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            release.countDown();
+            for (var call : calls) {
+                assertEquals(0L, call.get(3, java.util.concurrent.TimeUnit.SECONDS).get("total"));
+            }
+            verify(centerClient, times(3)).alarmPage(any(), any(), any(), any(), anyInt(), anyInt());
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentAlarmStatsAndAlarmEventShareTheThreeRiskPages() throws Exception {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        var riskPagesEntered = new java.util.concurrent.CountDownLatch(3);
+        var statsSummaryEntered = new java.util.concurrent.CountDownLatch(1);
+        var releaseRiskPages = new java.util.concurrent.CountDownLatch(1);
+        var blockedSeverities = java.util.concurrent.ConcurrentHashMap.<String>newKeySet();
+        when(centerClient.alarmPage(any(), any(), any(), any(), anyInt(), anyInt())).thenAnswer(invocation -> {
+            String status = invocation.getArgument(0);
+            String severity = invocation.getArgument(1);
+            if (!"NEW".equals(status)) {
+                statsSummaryEntered.countDown();
+            }
+            if ("NEW".equals(status) && blockedSeverities.add(severity)) {
+                riskPagesEntered.countDown();
+                assertTrue(releaseRiskPages.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            }
+            return new PanoramaCenterClient.AlarmPage(List.of(), 0, 1, 10);
+        });
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var stats = executor.submit(() -> service.statsSnapshot(Set.of(StatsPart.ALARMS)));
+            var event = executor.submit(service::alarmEventSnapshot);
+            assertTrue(riskPagesEntered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(statsSummaryEntered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            @SuppressWarnings("unchecked")
+            Map<String, ?> alarmRefreshes = (Map<String, ?>) org.springframework.test.util.ReflectionTestUtils
+                    .getField(service, "alarmEventInFlight");
+            assertFalse(alarmRefreshes.isEmpty());
+            releaseRiskPages.countDown();
+            stats.get(3, java.util.concurrent.TimeUnit.SECONDS);
+            event.get(3, java.util.concurrent.TimeUnit.SECONDS);
+            verify(centerClient, times(6)).alarmPage(any(), any(), any(), any(), anyInt(), anyInt());
+        } finally {
+            releaseRiskPages.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test

@@ -6,7 +6,7 @@ APP_JAR="@build.finalName@.jar"
 BASE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 LOG_DIR="$BASE_DIR/logs"
 PID_FILE="$BASE_DIR/${APP_NAME}.pid"
-JAVA_OPTS="${JAVA_OPTS:--Xms512m -Xmx512m -Duser.timezone=Asia/Shanghai}"
+JAVA_OPTS="${JAVA_OPTS:--Xms512m -Xmx512m -XX:+ExitOnOutOfMemoryError -Duser.timezone=Asia/Shanghai}"
 SPRING_ARGS="${SPRING_ARGS:---spring.config.additional-location=$BASE_DIR/config/}"
 APP_RUN_MODE="${APP_RUN_MODE:-background}"
 JAVA_DEBUG_ENABLED="${JAVA_DEBUG_ENABLED:-false}"

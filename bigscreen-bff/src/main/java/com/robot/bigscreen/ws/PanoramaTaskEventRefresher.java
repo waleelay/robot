@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,7 +50,7 @@ public class PanoramaTaskEventRefresher {
             state.authentication = authentication;
             state.publisher = publisher;
             state.followChanges |= followChanges;
-            state.retryCount = 0;
+            if (followChanges) state.retryCount = 0;
             state.dirty = true;
             scheduleIfNeeded(sessionId, state, DEBOUNCE_MILLIS);
         }
@@ -127,7 +128,7 @@ public class PanoramaTaskEventRefresher {
             // 初次连接的正常快照只查一次，查询失败和准备中仍有界重试。
             retry = state.followChanges || !complete || Boolean.TRUE.equals(response.get("convergencePending"));
         } catch (Exception exception) {
-            log.warn("刷新全景地图任务事件失败，会话={}", sessionId, exception);
+            log.warn("刷新全景地图任务事件失败，身份={}", sessionId, exception);
             retry = true;
         } finally {
             synchronized (state) {
@@ -135,12 +136,20 @@ public class PanoramaTaskEventRefresher {
                 // 查询期间的新事件优先，不能被当前请求的退避延后。
                 if (!state.dirty && retry && state.retryCount < RETRY_DELAYS_MILLIS.length) {
                     state.dirty = true;
-                    delay = RETRY_DELAYS_MILLIS[state.retryCount++];
+                    delay = jitteredDelay(RETRY_DELAYS_MILLIS[state.retryCount++]);
+                } else if (!state.dirty) {
+                    state.followChanges = false;
+                    state.retryCount = 0;
                 }
                 state.running = false;
                 if (states.get(sessionId) == state && state.dirty) scheduleIfNeeded(sessionId, state, delay);
             }
         }
+    }
+
+    private long jitteredDelay(long delayMillis) {
+        long spread = Math.max(1L, delayMillis / 5L);
+        return delayMillis + ThreadLocalRandom.current().nextLong(-spread, spread + 1L);
     }
 
     @SuppressWarnings("unchecked")

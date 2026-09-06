@@ -18,6 +18,9 @@ tts                可选 TTS 服务，默认不启动
 
 MySQL、Redis、EMQX、MinIO、Elasticsearch 等中间件不在安装包内，需要在 `.env` 中配置为容器可访问地址。
 
+部署服务器不要求安装 Python。安装、网络预检和增量更新只依赖标准 Shell 工具、Docker 与
+Docker Compose；Linux Bridge 子网重叠检测由 `awk` 完成。
+
 默认端口：
 
 ```text
@@ -660,22 +663,42 @@ sh deploy/docker/update-services.sh
 脚本会自动完成：
 
 ```text
-上传 dist 包 -> 同步 .env（备份后增改）-> 接线 docker-compose.yml 对应服务 environment
--> 备份并替换工作区 bin/boot/lib -> docker compose up -d --force-recreate -> 核验容器/环境变量/启动日志
+上传 dist 包 -> 在临时副本同步 .env 并接线 Compose -> 渲染校验 -> 备份并写入安装目录
+-> 备份并替换工作区 bin/boot/lib -> docker compose up -d --force-recreate --no-deps -> 核验容器/环境变量/启动日志
 ```
+
+服务器端环境变量同步使用随仓库提供的 `sync-server-env.sh`，不需要安装 `python3`。
+Compose 模板和 `.env` 会先在服务器临时副本上完成同步及渲染校验，校验通过后才备份并替换
+安装目录文件，避免配置解析失败时留下半更新状态。服务目录按服务滚动替换，不是跨服务事务；
+发布多个 Java 服务时若中途失败，应根据脚本输出的同一批次 `.bak-时间戳` 核对并恢复已替换服务。
 
 可配置项（环境变量）：`UPDATE_SERVER`、`UPDATE_SSH_USER`、`UPDATE_SSH_PORT`、
 `UPDATE_INSTALL_DIR`（compose 安装目录）、`UPDATE_WORKSPACE`（服务运行目录）、
 `UPDATE_ENV_FILE`、`UPDATE_SERVICES`、`DIST_MEDIA/DIST_CONTROL/DIST_BIGSCREEN`。
 
 注意：脚本只覆盖 `bin/boot/lib`，不覆盖服务目录下的 `config/`；新增环境变量通过
-容器环境变量注入，优先于 `config/application.yml`，无需改动 config 目录。
+容器环境变量注入，优先于 `config/application.yml`，无需改动 config 目录。脚本使用 `--no-deps`
+重建显式指定的服务，单独更新 BFF 时不会连带重建 Control；跨服务协议变更必须在
+`UPDATE_SERVICES` 中显式列出所有需要更新的服务。
 
 `bigscreen-bff` 的 `PANORAMA_GENERAL_CONNECT_TIMEOUT_MS`、`PANORAMA_GENERAL_READ_TIMEOUT_MS` 和
 `PANORAMA_GENERAL_MAX_CONCURRENCY` 分别控制 Management 通用资源的连接时限、读取时限和单实例总并发；
 生产默认值为 `1000`、`1500`、`16`。任务类请求继续使用独立的 `PANORAMA_TASK_*` 三项，默认值为
-`1000`、`1500`、`8`。修改这些变量后必须执行 `docker compose up -d --force-recreate bigscreen-bff`，
+`1000`、`1500`、`8`。`PANORAMA_WORKFLOW_ALARM_MAX_CONCURRENCY` 单独限制可处置工作流告警查询，
+默认为 `1`、代码硬上限为 `4`，该接口使用独立熔断状态，不能因超时打开通用查询熔断器。修改这些变量后必须执行 `docker compose up -d --force-recreate bigscreen-bff`，
 不能只执行 `restart`。
+
+大屏 WebSocket 初始化与配额由 `BIGSCREEN_WS_INITIALIZATION_WAIT_MS`、
+`BIGSCREEN_WS_MAX_SESSIONS_PER_IDENTITY`、`BIGSCREEN_WS_MAX_SESSIONS_PER_ORGANIZATION` 和
+`BIGSCREEN_WS_MAX_SESSIONS_PER_INSTANCE` 控制，生产默认分别为 15000、8、64、64。超额会话以
+`4008` 关闭且前端停止自动重连；扩大 64 会话边界前必须完成目标容量验证。`BIGSCREEN_BFF_MEMORY_LIMIT`
+默认限制容器为 1 GiB；`BIGSCREEN_BFF_JAVA_OPTS` 默认固定 512 MiB Java 堆并启用
+`-XX:+ExitOnOutOfMemoryError`，极端内存故障时由 `restart: unless-stopped` 接管恢复。修改这些变量同样
+必须重建 `bigscreen-bff` 容器。
+`BIGSCREEN_WS_AUTHORIZATION_MAX_STALENESS_MS` 默认 300000 ms，它是授权快照最大陈旧窗口，
+也意味着 Management 撤权在现有轮询机制下最迟约 5 分钟生效；不能为追求更快撤权直接恢复为
+30 秒，否则多身份大屏会重新形成授权查询洪峰。若业务要求 30 秒内撤权，应先由 Management 提供
+授权版本通知或批量授权能力，再缩短该窗口。
 
 ## 7. 卸载
 
