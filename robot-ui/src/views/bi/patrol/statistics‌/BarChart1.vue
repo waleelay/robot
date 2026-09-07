@@ -1,5 +1,5 @@
 <template>
-  <div id="groupBarChart1" class="chart-container w100 h100"></div>
+  <div class="chart-container w100 h100"></div>
 </template>
 
 <script>
@@ -45,10 +45,13 @@ export default({
   },
   methods: {
     initChart() {
-      const dom = document.getElementById('groupBarChart1');
+      const dom = this.$el;
       if (dom) {
         this.barChart = this.$echarts.init(dom);
         this.renderGroupBarChart();
+        this.$nextTick(() => {
+          if (this.barChart) this.barChart.resize();
+        });
       }
     },
     renderGroupBarChart() {
@@ -65,6 +68,25 @@ export default({
       if (!this.barChart) return;
       // 分组柱状图配置：三个系列，分别代表运行中、故障、离线，通过barCategoryGap和barGap控制并排不重叠
       const option = {
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+          backgroundColor: 'rgba(20, 28, 38, 0.9)',
+          borderColor: '#2c3e4e',
+          borderWidth: 1,
+          padding: [10, 14],
+          textStyle: {
+            color: '#f0f3f8',
+            fontSize: 12,
+            fontFamily: 'Microsoft YaHei'
+          },
+          formatter(params) {
+            const item = Array.isArray(params) ? params[0] : params
+            if (!item) return ''
+            const value = Number(item.value || 0).toLocaleString()
+            return `${item.axisValue || item.name}<br/>${item.marker} 次数：${value} 次`
+          }
+        },
         grid: {
           left: 0,
           right: 0,
@@ -131,7 +153,7 @@ export default({
         },
         series: [
           {
-            name: '哈哈哈',
+            name: '处理次数',
             type: 'bar',
             barWidth: 18,
             showBackground: true,
@@ -152,9 +174,15 @@ export default({
             },
             data: nums
           }
-        ]
+        ],
+        animation: true,
+        animationDuration: 800,
+        animationEasing: 'cubicOut'
       };
       this.barChart.setOption(option, true);
+      this.$nextTick(() => {
+        if (this.barChart) this.barChart.resize();
+      });
     }
   }
 });

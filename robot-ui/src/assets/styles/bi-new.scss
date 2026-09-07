@@ -1720,7 +1720,7 @@ input[type="range"].vertical-slider {
             }
           }
 
-          &.error {
+          &.red {
             .line-up, .line-left, .line-down, .line-right {
               display: none;
             }
@@ -1758,6 +1758,50 @@ input[type="range"].vertical-slider {
               }
             }
           }
+          /* 中风险：橙色外壳 */
+          &.orange {
+            .line-up, .line-left, .line-down, .line-right {
+              display: none;
+            }
+            .decoration {
+              color: #FF7100;
+            }
+            .box {
+              background: linear-gradient(180deg, rgba(149, 74, 4, 0.40) 0.01%, rgba(62, 34, 4, 0.32) 51.52%, rgba(94, 48, 7, 0.31) 92.62%, rgba(151, 74, 4, 0.40) 100.03%);
+              border-color: #FF7100;
+              .top {
+                background: linear-gradient(90deg, #FF7100 0.92%, rgba(80, 40, 5, 0.28) 93.38%, rgba(59, 28, 0, 0.19) 104.71%);
+                .close {
+                  .svg-icon {
+                    color: rgba(255, 160, 74, 0.5);
+                  }
+                }
+              }
+              .info-content {
+                .desc {
+                  height: 120px;
+                  overflow-y: auto;
+                  color: #FFF;
+                  font-family: "Alibaba PuHuiTi";
+                  font-size: 12px;
+                  line-height: 12px;
+                  letter-spacing: 0.857px;
+                  border: 1px solid #6B3A02;
+                  background: #3A220C;
+                }
+              }
+            }
+            .guideline {
+              .svg-icon {
+                color: #FF7100;
+              }
+            }
+          }
+          &.primary {
+            .decoration {
+              color: #2CADFF;
+            }
+          }
           &.off {
             .decoration {
               color: #EBEBEB;
@@ -1793,7 +1837,7 @@ input[type="range"].vertical-slider {
               }
             }
           }
-          &.error-light {
+          &.red-light {
             .line-up, .line-left, .line-down, .line-right {
               display: block;
             }
@@ -1871,6 +1915,72 @@ input[type="range"].vertical-slider {
             //     }
             //   }
             // }
+          }
+          /* 中风险详情流光边框 */
+          &.orange-light {
+            .line-up, .line-left, .line-down, .line-right {
+              display: block;
+            }
+            .box {
+              position: relative;
+              &::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                padding: 4px;
+                background: linear-gradient(
+                    90deg,
+                    #FF7100 0%,
+                    #FF7100 30%,
+                    transparent 30%,
+                    transparent 50%,
+                    #6B3A0230 50%,
+                    #6B3A0230 90%,
+                    transparent 90%,
+                    transparent 100%
+                );
+                background-size: 200% 100%;
+                -webkit-mask:
+                    linear-gradient(#fff 0 0) content-box,
+                    linear-gradient(#fff 0 0);
+                -webkit-mask-composite: xor;
+                mask-composite: exclude;
+                animation: flowDash 1s linear infinite;
+              }
+            }
+          }
+          /* 其它 / 低风险详情流光边框 */
+          &.primary-light {
+            .line-up, .line-left, .line-down, .line-right {
+              display: block;
+            }
+            .box {
+              position: relative;
+              &::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                padding: 4px;
+                background: linear-gradient(
+                    90deg,
+                    #1C9DFF 0%,
+                    #1C9DFF 30%,
+                    transparent 30%,
+                    transparent 50%,
+                    #0A3A6030 50%,
+                    #0A3A6030 90%,
+                    transparent 90%,
+                    transparent 100%
+                );
+                background-size: 200% 100%;
+                -webkit-mask:
+                    linear-gradient(#fff 0 0) content-box,
+                    linear-gradient(#fff 0 0);
+                -webkit-mask-composite: xor;
+                mask-composite: exclude;
+                animation: flowDash 1s linear infinite;
+              }
+            }
           }
           // 机器狗
           &.robot-container {
@@ -2423,20 +2533,20 @@ input[type="range"].vertical-slider {
                       font-size: 12px;
                       line-height: 12px; /* 100% */
                       letter-spacing: 0.857px;
-                      &.error {
+                      &.red {
                         color: #FF0404;
                         border: 0.5px solid #FF2929;
                         background: rgba(72, 9, 9, 0.50);
-                      }
-                      &.green {
-                        color: #23FA6B;
-                        border: 0.5px solid #0ECC4E;
-                        background: rgba(9, 72, 16, 0.50);
                       }
                       &.orange {
                         color: #FF7100;
                         border: 0.5px solid #FF7100;
                         background: rgba(108, 60, 17, 0.50);
+                      }
+                      &.primary {
+                        color: #1C9DFF;
+                        border: 0.5px solid #1C9DFF;
+                        background: rgba(9, 45, 72, 0.50);
                       }
                     }
                   }
@@ -2651,7 +2761,7 @@ input[type="range"].vertical-slider {
       }
     }
   }
-  &.error {
+  &.red {
     .decoration {
       color: #FF2C2C;
     }
@@ -2689,6 +2799,46 @@ input[type="range"].vertical-slider {
       border: 1px solid #FF2C2C;
       background: rgba(27, 0, 0, 0.50);
       box-shadow: 0 0 20px 0 #F00 inset;
+    }
+  }
+  &.orange {
+    .decoration {
+      color: #FF7100;
+    }
+    .box {
+      background: linear-gradient(180deg, rgba(149, 74, 4, 0.40) 0.01%, rgba(62, 34, 4, 0.32) 51.52%, rgba(94, 48, 7, 0.31) 92.62%, rgba(151, 74, 4, 0.40) 100.03%);
+      border-color: #FF7100;
+      .top {
+        background: linear-gradient(90deg, #FF7100 0.92%, rgba(80, 40, 5, 0.28) 93.38%, rgba(59, 28, 0, 0.19) 104.71%);
+        .close {
+          .svg-icon {
+            color: rgba(255, 160, 74, 0.5);
+          }
+        }
+      }
+      .info-content {
+        .desc {
+          height: 120px;
+          overflow-y: auto;
+          color: #FFF;
+          font-family: "Alibaba PuHuiTi";
+          font-size: 12px;
+          line-height: 12px;
+          letter-spacing: 0.857px;
+          border: 1px solid #6B3A02;
+          background: #3A220C;
+        }
+      }
+    }
+    .guideline {
+      .svg-icon {
+        color: #FF7100;
+      }
+    }
+  }
+  &.primary {
+    .decoration {
+      color: #2CADFF;
     }
   }
   &.off {
@@ -3486,7 +3636,7 @@ input[type="range"].vertical-slider {
   .top {
     top: 0;
     padding-top: 15px;
-    // background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, .8));
+    background: linear-gradient(0deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, .8));
     .title {
       padding: 4px 10px;
       background: rgba(22, 21, 22, 0.5);
@@ -3495,7 +3645,7 @@ input[type="range"].vertical-slider {
   .bottom {
     bottom: 0;
     // padding-bottom: 10px;
-    // background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, .8));
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, .8));
   }
   // 录像
   .recording {

@@ -1,5 +1,5 @@
 <template>
-  <div id="pieChart" class="chart-container w100 h100"></div>
+  <div class="chart-container w100 h100"></div>
 </template>
 
 <script>
@@ -84,10 +84,13 @@ export default({
   },
   methods: {
     initChart() {
-      const dom = document.getElementById('pieChart');
+      const dom = this.$el;
       if (dom) {
         this.barChart = this.$echarts.init(dom);
         this.renderGroupBarChart();
+        this.$nextTick(() => {
+          if (this.barChart) this.barChart.resize();
+        });
       }
     },
     updateChart() {
@@ -257,6 +260,9 @@ export default({
       };
 
       this.barChart.setOption(option, true);
+      this.$nextTick(() => {
+        if (this.barChart) this.barChart.resize();
+      });
     },
     setData(num) {
       if (this.xTimeData.length === 7) {

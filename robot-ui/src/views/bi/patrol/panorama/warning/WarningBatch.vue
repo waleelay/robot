@@ -90,7 +90,14 @@
                 <div class="flex mt10">
                   <div class="item wp230">
                     <span class="name">严重等级：</span>
-                    <span class="status" :class="{ error: details?.level?.toLowerCase() === 'high', orange: details?.level?.toLowerCase() === 'medium', green: details?.level?.toLowerCase() === 'low' }">{{ details.levelName || '-'}}</span>
+                    <span
+                      class="status"
+                      :class="{
+                        red: details?.level?.toLowerCase() === 'high',
+                        orange: details?.level?.toLowerCase() === 'medium',
+                        primary: !['high', 'medium'].includes(String(details?.level || '').toLowerCase())
+                      }"
+                    >{{ details.levelName || '-'}}</span>
                   </div>
                   <div class="item flex1 pl30 flx-align-center">
                     <span class="name">执行任务：</span>

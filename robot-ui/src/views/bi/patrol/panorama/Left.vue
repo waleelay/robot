@@ -811,10 +811,14 @@ export default {
       }
     },
     handleClickAlert(item) {
-      // 无参：查看全部；有参：仅展示当前告警，隐藏右侧列表与搜索
+      // 单条：打开 WarnInfo 详情（无小框/边框动画）；更多：仍打开批量列表
+      if (item) {
+        this.$root.$emit('bi-open-warn-info', item)
+        return
+      }
       this.$refs.warningBatchRef?.open({
-        item: item || null,
-        simple: !!item
+        item: null,
+        simple: false
       })
     }
   },

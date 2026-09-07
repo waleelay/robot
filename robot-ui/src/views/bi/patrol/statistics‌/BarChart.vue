@@ -1,7 +1,6 @@
 <template>
-  <div id="groupBarChart" class="chart-container w100 h100"></div>
+  <div class="chart-container w100 h100"></div>
 </template>
-
 <script>
 export default({
   props: {
@@ -105,10 +104,13 @@ export default({
   },
   methods: {
     initChart() {
-      const dom = document.getElementById('groupBarChart');
+      const dom = this.$el;
       if (dom) {
         this.barChart = this.$echarts.init(dom);
         this.renderGroupBarChart();
+        this.$nextTick(() => {
+          if (this.barChart) this.barChart.resize();
+        });
       }
     },
     renderGroupBarChart() {
@@ -118,6 +120,15 @@ export default({
         tooltip: {
           trigger: 'axis',
           axisPointer: { type: 'shadow' },
+          backgroundColor: 'rgba(20, 28, 38, 0.9)',
+          borderColor: '#2c3e4e',
+          borderWidth: 1,
+          padding: [10, 14],
+          textStyle: {
+            color: '#f0f3f8',
+            fontSize: 12,
+            fontFamily: 'Microsoft YaHei'
+          },
           formatter: function(params) {
             // params 是每个系列对应的数据项
             let result = `<strong>${params[0].axisValue}</strong><br/>`;
@@ -257,6 +268,9 @@ export default({
         ],
         // 增加背景网格轻量化
         backgroundColor: 'transparent',
+        animation: true,
+        animationDuration: 800,
+        animationEasing: 'cubicOut',
         toolbox: {
           show: false,
           feature: {
@@ -268,6 +282,9 @@ export default({
         }
       };
       this.barChart.setOption(option, true);
+      this.$nextTick(() => {
+        if (this.barChart) this.barChart.resize();
+      });
     }
   }
 });

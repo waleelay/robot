@@ -28,7 +28,7 @@
             </el-date-picker>
           </div>
         </div>
-        <div class="custom-tab-button flex ml27">
+        <div v-if="deviceTypeOptions.length" class="custom-tab-button flex ml27">
           <div
             v-for="item of deviceTypeOptions"
             :key="item.value"
@@ -95,8 +95,8 @@
         </div>
       </div>
     </div>
-    <div class="mt20 d-flex flex-wrap">
-      <div class="flex1 flex-column yxsc">
+    <div class="mt20 d-flex stats-row">
+      <div class="flex1 flex-column yxsc stats-col">
         <div class="card-title title-920-37">
           <div class="text">
             装备运行时长
@@ -114,28 +114,30 @@
                 <span class="ml10 value">{{ equipmentRuntime.taskCompletionRate || 0 }}%</span>
               </div>
             </div>
-            <BarChart v-if="equipmentRuntime.items?.length" class="mt5" :items="equipmentRuntime.items || []" />
-            <Empty v-else class="mt5" width="194px" />
+            <div class="chart-box mt5 flex1">
+              <BarChart v-if="equipmentRuntime.items?.length" :items="equipmentRuntime.items || []" />
+              <Empty v-else width="194px" />
+            </div>
           </div>
         </div>
       </div>
-      <div class="flex1 flex-column ml20 warning">
+      <div class="flex1 flex-column ml20 warning stats-col">
         <div class="card-title title-920-37">
           <div class="text">
             AI告警分析
           </div>
         </div>
         <div class="hp346 d-flex p20">
-          <div class="flex1 flex-column">
+          <div class="flex1 flex-column stats-col">
             <div class="title">告警类型分布排行</div>
-            <div class="mt30 w100 h100">
+            <div class="chart-box mt30 flex1">
               <PieChart v-if="aiAlarmAnalysis.alarmTypeRanking?.length" :items="aiAlarmAnalysis.alarmTypeRanking || []" />
               <Empty v-else width="194px" />
             </div>
           </div>
-          <div class="flex1 flex-column pl34 with-border">
+          <div class="flex1 flex-column pl34 with-border stats-col">
             <div class="title">处理方式分布排行</div>
-            <div class="mt30 w100 h100">
+            <div class="chart-box mt30 flex1">
               <BarChart1 v-if="aiAlarmAnalysis.handleMethodRanking?.length" :items="aiAlarmAnalysis.handleMethodRanking || []" />
               <Empty v-else width="194px" />
             </div>
@@ -143,8 +145,8 @@
         </div>
       </div>
     </div>
-    <div class="mt20 d-flex flex-wrap">
-      <div class="flex1 flex-column">
+    <div class="mt20 d-flex stats-row">
+      <div class="flex1 flex-column stats-col">
         <div class="card-title title-920-37">
           <div class="text">
             告警高发区域排行榜
@@ -156,7 +158,6 @@
               <div class="d-flex flex1 flx-justify-between w100">
                 <div class="level wp60 hp23">TOP.{{ index + 1 }}</div>
                 <div class="name ml20 flex1" :title="item.name">{{ item.name }}</div>
-                <!-- <div class="number">{{ item.nums ? Util.getCurrencySize1(item.nums) : 0 }}</div> -->
                 <div class="number">{{ item.nums || 0 }}</div>
               </div>
               <div class="progress w100 hp6 mt6" :style="{ '--percent': item.percent + '%' }"></div>
@@ -165,19 +166,21 @@
           <Empty v-else width="194px" />
         </div>
       </div>
-      <div class="flex1 d-flex ml20">
-        <div class="flex1 flex-column">
+      <div class="flex1 d-flex ml20 stats-col">
+        <div class="flex1 flex-column stats-col">
           <div class="card-title title-450-37">
             <div class="text">
               告警异常趋势图
             </div>
           </div>
           <div class="hp279 p20">
-            <LineChart v-if="alarmTrendPoints.length || tabDate !== 'custom'" :tabDate="tabDate" :points="alarmTrendPoints" />
-            <Empty v-else width="194px" />
+            <div class="chart-box h100">
+              <LineChart v-if="alarmTrendPoints.length || tabDate !== 'custom'" :tabDate="tabDate" :points="alarmTrendPoints" />
+              <Empty v-else width="194px" />
+            </div>
           </div>
         </div>
-        <div class="flex1 flex-column ml20 task">
+        <div class="flex1 flex-column ml20 task stats-col">
           <div class="card-title title-450-37">
             <div class="text">
               任务完成率
@@ -259,7 +262,7 @@ export default {
           label: '自定义',
         },
       },
-      deviceTypeOptions: [{ value: 'all', label: '全部' }],
+      deviceTypeOptions: [],
       dateValue: [],
       pickerOptions: {
         disabledDate: (date) => {
@@ -421,6 +424,9 @@ export default {
         if (this.statistics && Array.isArray(this.statistics.deviceTypeOptions)) {
           this.deviceTypeOptions = this.statistics.deviceTypeOptions;
         }
+        // 等图表挂载并完成首帧绘制后再关 loading，避免内容突然蹦出
+        await this.$nextTick()
+        await new Promise(resolve => requestAnimationFrame(() => resolve()))
       } finally {
         loading.close()
       }
@@ -439,6 +445,19 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+/* 禁止图表行换行；min-width:0 避免 ECharts canvas 把 flex 子项撑出换行 */
+.stats-row {
+  flex-wrap: nowrap;
+}
+.stats-col {
+  min-width: 0;
+}
+.chart-box {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
 .overview {
   .item {
     background-color: #101F3C;
@@ -567,6 +586,7 @@ export default {
         height: 100%;
         background: linear-gradient(90deg, rgba(51, 170, 255, 0.40) 0.03%, #1AFFC6 99.95%);
         content: "";
+        transition: width 0.75s cubic-bezier(0.22, 1, 0.36, 1);
       }
     }
     &.light {
@@ -607,6 +627,7 @@ export default {
           height: 100%;
           background: linear-gradient(90deg, rgba(51, 170, 255, 0.40) 0.03%, #1AFFC6 99.95%);
           content: "";
+          transition: width 0.75s cubic-bezier(0.22, 1, 0.36, 1);
         }
       }
     }

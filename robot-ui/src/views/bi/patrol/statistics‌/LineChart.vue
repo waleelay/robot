@@ -1,5 +1,5 @@
 <template>
-  <div id="lineChart" class="chart-container w100 h100"></div>
+  <div class="chart-container w100 h100"></div>
 </template>
 
 <script>
@@ -109,10 +109,13 @@ export default({
   },
   methods: {
     initChart() {
-      const dom = document.getElementById('lineChart');
+      const dom = this.$el;
       if (dom) {
         this.barChart = this.$echarts.init(dom);
         this.renderGroupBarChart();
+        this.$nextTick(() => {
+          if (this.barChart) this.barChart.resize();
+        });
       }
     },
     refreshChart() {
@@ -302,9 +305,15 @@ export default({
               shadowBlur: 10
             }
           }
-        ]
+        ],
+        animation: true,
+        animationDuration: 800,
+        animationEasing: 'cubicOut'
       };
       this.barChart.setOption(option, true);
+      this.$nextTick(() => {
+        if (this.barChart) this.barChart.resize();
+      });
     },
     setData(num) {
       if (this.xTimeData.length === 7) {

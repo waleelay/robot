@@ -25,8 +25,9 @@
       width: 394px;
       height: 491px;
       border-radius: 4px;
-      border: 1px solid #BA0F00;
-      background: #320C0D;
+      /* 低风险 / 默认：蓝色 */
+      border: 1px solid #1665A2;
+      background: #001D46;
       .desc .item {
         color: rgba(255, 255, 255, 0.80);
         font-family: "Microsoft YaHei";
@@ -48,7 +49,7 @@
           line-height: 20.839px; /* 208.385% */
           letter-spacing: 1.488px;
           border-radius: 3.473px;
-          &.error {
+          &.red {
             border: 0.5px solid #FF1519;
             background: #FF0004;
           }
@@ -56,15 +57,15 @@
             border: 0.5px solid #FF7100;
             background: #FF7100;
           }
-          &.green {
-            border: 0.5px solid #00C91E;
-            background: #00C91E;
+          &.primary {
+            border: 0.5px solid #1C9DFF;
+            background: #1C9DFF;
           }
         }
       }
     }
     .with-b-t {
-      border-top: 1px solid rgba(255, 62, 62, 0.30);
+      border-top: 1px solid rgba(39, 156, 233, 0.30);
     }
     .operation {
       width: 358px;
@@ -95,6 +96,63 @@
         line-height: 16px;
       }
     }
+  }
+}
+
+.modal-map {
+  border-radius: 4px;
+  border: 1px solid #1665A2;
+  background: #001D46;
+}
+
+/* 高风险：红色详情区 */
+.warning-batch-container.red {
+  .dialog-content .warning {
+    .detail {
+      border: 1px solid #BA0F00;
+      background: #320C0D;
+    }
+    .with-b-t {
+      border-top: 1px solid rgba(255, 62, 62, 0.30);
+    }
+  }
+  .modal-map {
+    border: 1px solid #9F1205;
+    background: #320C0D;
+  }
+}
+
+/* 中风险：橙色详情区 */
+.warning-batch-container.orange {
+  .dialog-content .warning {
+    .detail {
+      border: 1px solid #FF7100;
+      background: #3A220C;
+    }
+    .with-b-t {
+      border-top: 1px solid rgba(255, 113, 0, 0.30);
+    }
+  }
+  .modal-map {
+    border: 1px solid #FF7100;
+    background: #3A220C;
+  }
+}
+
+/* 其它 / 低风险：蓝色详情区（与默认一致，显式 primary） */
+.warning-batch-container.primary {
+  .dialog-content .warning {
+    .detail {
+      border: 1px solid #1665A2;
+      background: #001D46;
+    }
+    .with-b-t {
+      border-top: 1px solid rgba(39, 156, 233, 0.30);
+    }
+  }
+  .modal-map {
+    border: 1px solid #1665A2;
+    background: #001D46;
   }
 }
 
@@ -213,12 +271,6 @@
       }
     }
   }
-}
-
-.modal-map {
-  border-radius: 4px;
-  border: 1px solid #9F1205;
-  background: #320C0D;
 }
 
 ::v-deep .el-select {

@@ -13,8 +13,8 @@
     title=""
   >
     <template slot="title"></template>
-    <div class="flx-center wp274 hp136 custom-warning">
-      <svg-icon icon-class="warning" style="font-size: 76px; color: #FFDD00"></svg-icon>
+    <div class="flx-center wp274 hp136 custom-warning" :class="riskThemeClass">
+      <svg-icon icon-class="warning" style="font-size: 76px" :style="{ color: flashIconColor }"></svg-icon>
     </div>
     <template slot="footer"></template>
   </el-dialog>
@@ -32,7 +32,10 @@
     title="异常报告"
   >
     <template slot="footer"></template>
-    <div class="custom-modal-container warning-batch-container error" :class="{ 'error-light': show }">
+    <div
+      class="custom-modal-container warning-batch-container"
+      :class="[riskThemeClass, pulseBorderClass]"
+    >
       <div class="decoration wp167 hp5">
         <svg-icon icon-class="decoration" class="w100 h100"></svg-icon>
       </div>
@@ -142,7 +145,7 @@
                   </div> -->
                   <div class="item flx-justify-between mt20">
                     <span class="name">严重等级：</span>
-                    <span class="status" :class="{ error: details?.level?.toLowerCase() === 'high', orange: details?.level?.toLowerCase() === 'medium', green: details?.level?.toLowerCase() === 'low' }">{{ details.levelName || '高风险' }}</span>
+                    <span class="status" :class="riskThemeClass">{{ details.levelName || '高风险' }}</span>
                   </div>
                 </div>
                 <div class="title mt32 with-b-t pt20">
@@ -192,6 +195,7 @@ import WarningExecuteError from './WarningExecuteError.vue';
 import { mapState, mapActions } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
 import { buildSnapshotOptions, loadSnapshotObjectUrls } from '@/utils/alarm-snapshot'
+
 export default {
   name: 'WarningInfo',
   dicts: ['qh_alarm_record_type'],
@@ -211,12 +215,37 @@ export default {
     },
     isWorkflowAlarm() {
       return this.details?.workflowActionable === true
+    },
+    alarmLevelKey() {
+      return String(this.details?.level || '').trim().toLowerCase()
+    },
+    /** 高风险 red / 中风险 orange / 其它 primary */
+    riskThemeClass() {
+      if (this.alarmLevelKey === 'high') return 'red'
+      if (this.alarmLevelKey === 'medium') return 'orange'
+      return 'primary'
+    },
+    flashIconColor() {
+      if (this.alarmLevelKey === 'high') return '#FFDD00'
+      if (this.alarmLevelKey === 'medium') return '#FFB347'
+      return '#4DB3FF'
+    },
+    /** 自动弹出才播详情边框流光；手动打开不加 */
+    showPulseBorder() {
+      return this.show && !this.manualOpen
+    },
+    pulseBorderClass() {
+      if (!this.showPulseBorder) return ''
+      if (this.alarmLevelKey === 'high') return 'red-light'
+      if (this.alarmLevelKey === 'medium') return 'orange-light'
+      return 'primary-light'
     }
   },
   data() {
     return {
       dialogVisible: false,
       warningVisible: false,
+      manualOpen: false,
       details: {
         location: {
           lat: this.gisMapCenterPoint?.[0] || '',
@@ -239,8 +268,23 @@ export default {
       snapshotLoadSeq: 0
     }
   },
+  created() {
+    this.$root.$on('bi-open-warn-info', this.openManual)
+  },
+  beforeDestroy() {
+    this.$root.$off('bi-open-warn-info', this.openManual)
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+  },
   methods: {
     ...mapActions('websocketExtraData', ['removeAlarm']),
+    /** 列表手动打开：直接详情，无小框与边框动画 */
+    openManual(item) {
+      if (!item) return
+      this.open(item, { manual: true })
+    },
     close() {
       if (this.isWorkflowAlarm && this.details.alarmId != null) {
         this.deferredAlarmIds.add(String(this.details.alarmId))
@@ -249,8 +293,28 @@ export default {
       this.resetDialog()
       this.openNextWorkflowAlarm()
     },
-    open(data) {
+    /**
+     * @param {object} data 告警数据
+     * @param {{ manual?: boolean }} options manual=true 时跳过小框与详情边框动画
+     */
+    open(data, options = {}) {
+      const manual = Boolean(options.manual)
+      if (manual) {
+        if (this.timer) {
+          clearTimeout(this.timer)
+          this.timer = null
+        }
+        this.manualOpen = true
+        this.show = false
+        this.warningVisible = false
+        this.loading = false
+        this.details = { ...data }
+        this.applySnapshotOptions(this.details)
+        this.dialogVisible = true
+        return
+      }
       if (this.dialogVisible || this.warningVisible) return
+      this.manualOpen = false
       this.loading = false
       this.details = {
         ...data
@@ -259,7 +323,10 @@ export default {
       this.warningVisible = true
       this.timer = setTimeout(() => {
         this.warningVisible = false
-        this.dialogVisible = true
+        // v-else 重建详情弹窗后再打开，避免闪一下被关掉
+        this.$nextTick(() => {
+          this.dialogVisible = true
+        })
       }, 2000)
     },
     applySnapshotOptions(item) {
@@ -316,6 +383,8 @@ export default {
       }
       this.warningVisible = false
       this.dialogVisible = false
+      this.manualOpen = false
+      this.show = false
       this.details = {}
       this.selectedValue = ''
       this.options = []
@@ -349,6 +418,8 @@ export default {
     robotAlarmObj: {
       handler(newVal) {
         if (!newVal || this.isWorkflowAlarm) return
+        // 手动打开：不跟 store 生命周期绑定
+        if (this.manualOpen) return
         const alarms = Object.values(newVal).filter(Boolean)
         const currentExists = alarms.some(item => String(item.alarmId) === String(this.details.alarmId))
         if (this.details.alarmId && !currentExists) {
@@ -388,15 +459,10 @@ export default {
     dialogVisible: {
       handler(newVal) {
         if (newVal) {
-          this.show = true
-          // this.timer = setInterval(() => {
-            //   this.show = !this.show
-            // }, 300)
-          } else {
-            this.show = false
-          // if (this.timer) {
-          //   clearInterval(this.timer)
-          // }
+          // 自动弹出一律开边框流光；手动打开不加动画
+          this.show = !this.manualOpen
+        } else {
+          this.show = false
         }
       }
     },
@@ -410,12 +476,6 @@ export default {
       },
       immediate: true,
       deep: true
-    }
-  },
-  beforeDestroy() {
-    if (this.timer) {
-      clearTimeout(this.timer)
-      this.timer = null
     }
   }
 }
@@ -444,15 +504,35 @@ export default {
 }
 .custom-warning {
   border-radius: 2px;
-  border: 1px solid #FF0202;
-  background: rgba(72, 9, 9, 0.5);
-  -webkit-box-shadow: 0 0 20px 0 #B30000 inset;
-  box-shadow: 0 0 20px 0 #B30000 inset;
+  /* primary：蓝色 */
+  border: 1px solid #1C9DFF;
+  background: rgba(9, 45, 72, 0.5);
+  -webkit-box-shadow: 0 0 20px 0 #2575AA inset;
+  box-shadow: 0 0 20px 0 #2575AA inset;
   backdrop-filter: blur(5px);
   animation: pulseZoom 2s ease-in-out 1;
-  /* 保持最后状态（默认 forwards，也可以不加，但明确语义） */
   animation-fill-mode: forwards;
-  /* 让动画在播放完毕后保留最后一帧（scale(0.5)） 但示例中是来回两次，最终回到0.5，符合需求 */
+
+  &.red {
+    border: 1px solid #FF0202;
+    background: rgba(72, 9, 9, 0.5);
+    -webkit-box-shadow: 0 0 20px 0 #B30000 inset;
+    box-shadow: 0 0 20px 0 #B30000 inset;
+  }
+
+  &.orange {
+    border: 1px solid #FF7100;
+    background: rgba(108, 60, 17, 0.5);
+    -webkit-box-shadow: 0 0 20px 0 #FF7100 inset;
+    box-shadow: 0 0 20px 0 #FF7100 inset;
+  }
+
+  &.primary {
+    border: 1px solid #1C9DFF;
+    background: rgba(9, 45, 72, 0.5);
+    -webkit-box-shadow: 0 0 20px 0 #2575AA inset;
+    box-shadow: 0 0 20px 0 #2575AA inset;
+  }
 }
 
 /* 关键帧定义：scale 从 0.5 → 1 → 0.5 → 1 → 0.5 */
