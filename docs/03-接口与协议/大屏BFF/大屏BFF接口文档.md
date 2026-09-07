@@ -30,7 +30,7 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 
 `actionable-workflow` 返回的每条告警均带有 `workflowActionable: true`，前端以该标识选择 `handle-and-continue`，不再根据工作流实例或人工任务字段是否存在进行推断。BFF 对该查询设置独立的公平并发闸门和熔断状态，默认只允许 1 个在途请求，代码硬上限为 4；它仍按当前用户实时查询且不跨身份缓存，但其超时不会打开设备、统计等通用查询熔断器。超时不作为空集合发布，首次快照在 5 秒窗口内执行有界失败重试；权威查询成功返回的真实空集合不重试。
 
-普通告警只在未处置且风险等级为 `HIGH` 时进入弹窗；`sourceType=TASK` 的工作流告警不受风险等级限制，
+普通告警只在未处置且风险等级为 `HIGH` 或 `MEDIUM` 时进入弹窗；`sourceType=TASK` 的工作流告警不受风险等级限制，
 只在 BFF 推送的 `panorama.workflow-alarms.changed` 快照中出现后进入工作流弹窗。BFF 收到告警失效通知后
 独立于普通告警刷新立即查询 `actionable-workflow`；快照未变化时每 300 ms 仅重查该接口，最长 5 秒，变化即停。
 首次连接和重连也会推送当前完整快照，前端不调用该查询接口，也不设置告警查询定时器。

@@ -662,7 +662,13 @@ const actions = {
       commit('SET_ROBOT_BASE_INFO', { robotId: item.robotId, robotInfo: { ...item } });
       commit('SET_ROBOT_LOCATION', { robotId: item.robotId, location: item.location });
     })
-    data?.alarms?.high?.items.map((item, index) => {
+    // 先回填中风险，再回填高风险：同 robotId 时高风险覆盖
+    data?.alarms?.medium?.items?.forEach(item => {
+      if (!item?.robotId) return
+      commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
+    })
+    data?.alarms?.high?.items?.forEach(item => {
+      if (!item?.robotId) return
       commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
     })
     // 当前地图点位数据模拟在map对象的points字段中
@@ -788,7 +794,9 @@ const actions = {
       }
       const workflowAlarm = String(alarm.sourceType || '').toUpperCase() === 'TASK';
       if (!workflowAlarm) {
-        if (alarm.level && alarm.level.toLowerCase() === 'high' && alarm.status === 'unhandled') {
+        const level = String(alarm.level || '').toLowerCase()
+        // 未处置高/中风险进入普通弹窗；低风险及其他不自动弹
+        if (['high', 'medium'].includes(level) && alarm.status === 'unhandled') {
           commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm });
         } else if (alarm.robotId) {
           commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm, close: true });

@@ -651,7 +651,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue
 不调用处置接口。
 
 `actionable-workflow` 不使用 BFF 统计缓存，每次请求直接查询管理端。普通告警仅在未处置且风险等级为
-`HIGH` 时进入普通弹窗；`sourceType=TASK` 的告警不进入普通弹窗，也不按风险等级过滤，只在查询接口
+`HIGH` 或 `MEDIUM` 时进入普通弹窗；`sourceType=TASK` 的告警不进入普通弹窗，也不按风险等级过滤，只在查询接口
 返回可处置记录后进入工作流弹窗。BFF 收到告警失效通知后，以独立链路分别查询可处置工作流告警和普通
 告警；工作流快照未变化时每 300 ms 仅重查工作流接口，最长 5 秒，快照变化立即停止，普通告警查询不会
 阻塞该过程。首次连接和重连时，BFF
@@ -715,7 +715,7 @@ WebSocket：
 | `panorama.device.status.changed` | Control 收到设备状态 MQTT 上报后广播 `robot.state` | 仅当 `robot.state` 来源为边缘状态（`stateSource=EDGE_DEVICE_STATUS`）或离线扫描（`stateSource=OFFLINE_SCAN`）时即时派生并推送，不受位置限频影响；媒体客户端来源（`stateSource=MEDIA_CLIENT_STATUS`）不派生该事件，机器人状态以边缘上报为准。在线、离线、故障等状态变化同时触发统计快照刷新。 |
 | `panorama.device.location.changed` | `robot.state` 携带 `location/localization/status.localization` 时派生；不生成模拟坐标 | 按“浏览器会话 + `robotId`”独立限频。首条立即推送；同一设备 1 秒内 GIS 结果优先，更晚的 SLAM 位置保留到下一窗口，每秒最多推送一次；`localized=false` 立即推送。没有新定位时不重复发送旧坐标。 |
 | `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 300ms 去抖，按当前 WebSocket 会话身份重查管理端权威快照，逐项比较后只推送发生变化的任务；任务删除或失权时推送 `data.changeType=REMOVE`。`taskId` 缺失的旧版事件不直接下发。 |
-| `panorama.alarm.changed` | 上游携带完整告警数据的原始事件 | 完整事件立即转换，继续用于高风险普通告警即时弹窗；没有真实上游事件时不生成模拟告警。 |
+| `panorama.alarm.changed` | 上游携带完整告警数据的原始事件 | 完整事件立即转换，继续用于高/中风险普通告警即时弹窗；没有真实上游事件时不生成模拟告警。 |
 | `panorama.alarms.changed` | 管理端告警失效通知 | 按当前会话身份查询普通告警各风险分组第一页和总数；快照变化时整体推送，前端替换列表第一页，不逐项刷新或遍历全量告警。首屏和重连沿用 Overview，不重复查询。 |
 | `panorama.workflow-alarms.changed` | 浏览器首次连接、重连或管理端告警失效通知 | 独立于普通告警刷新，按当前会话身份立即查询 `actionable-workflow`；快照未变化时每 300ms 仅复查该接口，最长 5 秒，变化后推送完整 `items` 快照并停止。前端以快照整体替换工作流弹窗队列。 |
 | `panorama.stats.changed` | 设备业务变更、设备在线/离线/故障状态切换、任务或告警变更 | 短时间内的多次触发合并 500ms 后按事件类型只重算受影响统计块（设备/任务/告警），推送仍为完整合并快照，只在快照与上次不同时推送。各统计块带 3 秒 TTL 缓存（按用户隔离），多会话与多事件在窗口内共享一次管理端查询。普通电量、速度、位置心跳不触发统计刷新。 |

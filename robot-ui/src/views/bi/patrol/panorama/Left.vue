@@ -844,10 +844,16 @@ export default {
     alarmsData: {
       handler(newVal) {
         this.resetAlarmPages(newVal)
-        if (newVal?.high?.items?.length && !this.updated) {
-          this.$set(this.alertCollapseArr, 0, false)
-          this.updated = true
-        }
+        if (this.updated) return
+        // high / medium / low 各自独立折叠，按有数据的等级展开对应项
+        let expanded = false
+        ;['high', 'medium', 'low'].forEach((level, index) => {
+          if (newVal?.[level]?.items?.length) {
+            this.$set(this.alertCollapseArr, index, false)
+            expanded = true
+          }
+        })
+        if (expanded) this.updated = true
       },
       immediate: true,
       deep: true
