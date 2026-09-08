@@ -12,7 +12,8 @@ import {
 import {
   isDeviceAssociatedTaskStatus,
   isPausedTaskStatus,
-  isRunningTaskStatus
+  isRunningTaskStatus,
+  normalizeExecutionStatus
 } from "../../views/bi/patrol/business/execution-status";
 import {
   collectTaskEquipmentIds,
@@ -35,6 +36,8 @@ const taskDetailPromises = new Map()
 const trajectoryRetentionTimers = new Map()
 const MAX_TRAJECTORY_POINTS = 15000
 const TRAJECTORY_RETENTION_MILLIS = 5 * 60 * 1000
+const TRAJECTORY_ACTIVE_STATUSES = new Set(['RUNNING', 'PAUSING', 'PAUSED', 'RESUMING', 'TERMINATING', 'FAILED'])
+const TRAJECTORY_TERMINAL_STATUSES = new Set(['WAITING', 'COMPLETED', 'TERMINATED', 'CANCELED'])
 // 保护 BFF 摘要中的权威状态字段；摘要缺失的地图和路径由详情补充。
 const TASK_SUMMARY_FIELDS = [
   'taskId', 'workflowInstanceId', 'name', 'executionMode', 'expectedDurationSeconds',
@@ -419,35 +422,67 @@ const actions = {
   },
   applyTrajectoryEvent({ state, commit, dispatch }, data) {
     const robotId = data?.robotId
-    if (robotId == null) return
+    const workflowInstanceId = data?.workflowInstanceId
+    const action = String(data?.action || '').toUpperCase()
+    if (robotId == null || workflowInstanceId == null
+      || !['RESET', 'APPEND', 'STOPPED'].includes(action)) return
     const key = String(robotId)
+    const previous = state.trajectoryByRobot[key]
+    if (action !== 'RESET'
+      && (!previous || String(previous.workflowInstanceId) !== String(workflowInstanceId))) return
     const oldTimer = trajectoryRetentionTimers.get(key)
     if (oldTimer) clearTimeout(oldTimer)
     trajectoryRetentionTimers.delete(key)
-    const payload = String(data.action).toUpperCase() === 'STOPPED'
+    const payload = action === 'STOPPED'
       ? { ...data, normalLocationUpdatedAt: state.robotLocation[key]?.updatedAt }
       : data
     commit('APPLY_TRAJECTORY', payload)
-    if (String(data.action).toUpperCase() === 'STOPPED') {
+    if (action === 'STOPPED') {
       dispatch('retainStoppedTrajectory', data)
     }
   },
   finishTrajectory({ state, commit, dispatch }, target) {
+    const record = state.trajectoryByRobot[String(target.robotId)]
+    if (!record || String(record.workflowInstanceId) !== String(target.workflowInstanceId)) return
     commit('MARK_TRAJECTORY_STOPPED', {
       ...target,
       normalLocationUpdatedAt: state.robotLocation[String(target.robotId)]?.updatedAt
     })
     dispatch('retainStoppedTrajectory', target)
   },
-  retainStoppedTrajectory({ commit }, { robotId, workflowInstanceId }) {
+  retainStoppedTrajectory({ state, commit }, { robotId, workflowInstanceId }) {
     if (robotId == null) return
     const key = String(robotId)
     const oldTimer = trajectoryRetentionTimers.get(key)
     if (oldTimer) clearTimeout(oldTimer)
     trajectoryRetentionTimers.set(key, setTimeout(() => {
       trajectoryRetentionTimers.delete(key)
+      const record = state.trajectoryByRobot[key]
+      if (!record || !record.stopped
+        || String(record.workflowInstanceId) !== String(workflowInstanceId)) return
       commit('CLEAR_TRAJECTORY', robotId)
     }, TRAJECTORY_RETENTION_MILLIS))
+  },
+  reconcileTrajectoriesWithTasks({ state, dispatch }) {
+    Object.entries(state.trajectoryByRobot).forEach(([robotId, record]) => {
+      if (!record || record.stopped) return
+      const robotTasks = listTasksForRobot(state.taskData, robotId)
+      const currentTask = robotTasks.find(task =>
+        String(task?.workflowInstanceId) === String(record.workflowInstanceId))
+      if (currentTask) {
+        const status = normalizeExecutionStatus(currentTask.status)
+        if (TRAJECTORY_TERMINAL_STATUSES.has(status)) {
+          dispatch('finishTrajectory', { robotId, workflowInstanceId: record.workflowInstanceId })
+        }
+        return
+      }
+      const hasNewActiveTask = robotTasks.some(task =>
+        task?.workflowInstanceId != null
+        && TRAJECTORY_ACTIVE_STATUSES.has(normalizeExecutionStatus(task.status)))
+      if (hasNewActiveTask) {
+        dispatch('clearTrajectory', robotId)
+      }
+    })
   },
   clearTrajectory({ commit }, robotId) {
     const key = String(robotId)
@@ -587,7 +622,6 @@ const actions = {
     return pending
   },
   setAll({commit, state, dispatch}, data) {
-    const previousMapId = state.globalMapId
     const previousTasks = state.taskData
     // 普通快照回填不能擦除并发到达的轨迹 RESET；失权和退出仍使用默认全量清理。
     commit('RESET_OVERVIEW_RESOURCE_STATE', { preserveTrajectories: true, preserveTaskState: true })
@@ -684,13 +718,7 @@ const actions = {
     commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devices, tasks));
     const mapId = resolveOverviewMapId({ ...data, devices }, state.globalMapId);
     commit('SET_GLOBAL_MAP_ID', mapId);
-    const mapRobotIds = new Set((state.slamOfRobot[String(mapId)]?.robots || [])
-      .map(robot => String(robot.robotId)))
-    Object.keys(state.trajectoryByRobot).forEach(robotId => {
-      if (String(previousMapId) !== String(mapId) || !mapRobotIds.has(robotId)) {
-        dispatch('clearTrajectory', robotId)
-      }
-    })
+    dispatch('reconcileTrajectoriesWithTasks')
     commit('SET_DEFAULT_MAP_IS_SLAM', !defaultGpsDevices.length && slamMapList.length > 0);
     commit('SET_OVERVIEW_READY', true);
     commit('SET_OVERVIEW_LOAD_ERROR', false);
@@ -766,7 +794,14 @@ const actions = {
       commit('INVALIDATE_TASKS', event.data?.taskIds)
     } else if (event.event === 'panorama.task.changed') {
       if (event.data?.changeType === 'REMOVE') {
+        const removedTask = getTaskById(state.taskData, event.data.taskId)
         commit('REMOVE_TASK_INFO', event.data.taskId)
+        collectTaskEquipmentIds(removedTask).forEach(robotId => {
+          const record = state.trajectoryByRobot[String(robotId)]
+          if (record && String(record.workflowInstanceId) === String(removedTask?.workflowInstanceId)) {
+            dispatch('finishTrajectory', { robotId, workflowInstanceId: record.workflowInstanceId })
+          }
+        })
         return
       }
       let task = event.data?.task || (event.data?.taskId != null ? event.data : null)
@@ -774,6 +809,7 @@ const actions = {
         const currentMapId = getTaskById(state.taskData, task.taskId)?.mapId
         if (!hasTaskIdentity(task.mapId) && hasTaskIdentity(currentMapId)) task = { ...task, mapId: currentMapId }
         commit('SET_TASK_STATE', task)
+        dispatch('reconcileTrajectoriesWithTasks')
       }
     } else if (event.event === 'panorama.workflow-alarms.changed') {
       commit('SET_WORKFLOW_ALARMS', event.data?.items)

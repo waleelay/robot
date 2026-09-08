@@ -2,6 +2,11 @@ import { isFixedCamera } from '@/constants/robot.js'
 import { normalizeExecutionStatus } from '../../../patrol/business/execution-status'
 import { listTasksForRobot } from '../../../patrol/business/task-equipment'
 import { buildPathDirectionArrows } from './path-direction-arrows.js'
+import {
+  buildTrajectoryVisuals,
+  compareTrajectoryLayers,
+  STOPPED_TRAJECTORY_COLOR
+} from './trajectory-visual.js'
 
 const WATCHED_STATUSES = new Set(['RUNNING', 'PAUSING', 'PAUSED', 'RESUMING', 'TERMINATING', 'FAILED'])
 
@@ -51,20 +56,41 @@ export default {
       if (this.showSmall || !this.map) return []
       const robotIds = new Set((this.slamOfRobot?.[String(this.map.id)]?.robots || [])
         .map(item => String(item.robotId)))
-      return Object.entries(this.trajectoryRecords).map(([robotId, record]) => {
-        if (!robotIds.has(String(robotId))) return null
+      const visibleRecords = Object.entries(this.trajectoryRecords)
+        .filter(([robotId]) => robotIds.has(String(robotId)))
+      const visuals = buildTrajectoryVisuals(
+        visibleRecords.map(([robotId]) => robotId),
+        this.mapSelectedRobotIds
+      )
+      return visibleRecords.map(([robotId, record]) => {
         const points = (record?.points || []).map(point =>
           this.mapPointToPixel({ coordinateX: point.x, coordinateY: point.y }, this.map)
         ).filter(Boolean)
         const traveledPoints = toPointsAttr(points)
         if (!traveledPoints) return null
+        const visual = visuals[String(robotId)]
+        const stopped = !!record.stopped
         return {
           robotId,
           workflowInstanceId: record.workflowInstanceId,
           traveledPoints,
-          arrows: buildPathDirectionArrows(points, this.zoom)
+          startPoint: points[0],
+          endPoint: points[points.length - 1],
+          ...visual,
+          color: stopped ? STOPPED_TRAJECTORY_COLOR : visual.color,
+          stopped,
+          showArrows: !visual.muted && !stopped,
+          arrows: !visual.muted && !stopped
+            ? buildPathDirectionArrows(points, this.zoom)
+            : []
         }
-      }).filter(Boolean)
+      }).filter(Boolean).sort(compareTrajectoryLayers)
+    },
+    sessionTrajectoryVisuals() {
+      return this.sessionTraveledPathLayers.reduce((result, layer) => {
+        result[String(layer.robotId)] = layer
+        return result
+      }, {})
     }
   },
   watch: {
@@ -78,32 +104,30 @@ export default {
   beforeDestroy() {
     if (!this.trajectoryOwnsWatching) return
     this.$store.dispatch('websocketRobot/syncTrajectoryWatchTargets', [])
-    this.$store.dispatch('websocketExtraData/clearAllTrajectories')
   },
   methods: {
     canWatchTrajectory(robotId) {
       if (!robotId || String(robotId).startsWith('mock-')) return false
       return !isFixedCamera(this.robotBaseInfo?.[robotId] || {})
     },
+    trajectoryVisualForRobot(robotId) {
+      return this.sessionTrajectoryVisuals[String(robotId)] || null
+    },
     syncTrajectoryWatching() {
       if (this.showSmall) return
       this.trajectoryOwnsWatching = true
       const mapId = this.map?.id ?? null
-      if (this.trajectoryPreviousMapId != null && String(this.trajectoryPreviousMapId) !== String(mapId)) {
-        this.$store.dispatch('websocketExtraData/clearAllTrajectories')
-        this.trajectoryPreviousTargets = []
-      }
+      const mapChanged = this.trajectoryPreviousMapId != null
+        && String(this.trajectoryPreviousMapId) !== String(mapId)
       const next = this.trajectoryWatchTargets
       const nextKeys = new Set(next.map(item => `${item.robotId}:${item.workflowInstanceId}`))
-      const currentRobotIds = new Set((this.slamOfRobot?.[String(mapId)]?.robots || [])
-        .map(item => String(item.robotId)))
-      this.trajectoryPreviousTargets.forEach(target => {
+      const previousTargets = mapChanged ? [] : this.trajectoryPreviousTargets
+      previousTargets.forEach(target => {
         if (nextKeys.has(`${target.robotId}:${target.workflowInstanceId}`)) return
-        if (currentRobotIds.has(String(target.robotId))) {
-          this.$store.dispatch('websocketExtraData/finishTrajectory', target)
-        } else {
-          this.$store.dispatch('websocketExtraData/clearTrajectory', target.robotId)
-        }
+        const stillRunning = listTasksForRobot(this.taskData, target.robotId).some(task =>
+          String(task?.workflowInstanceId) === String(target.workflowInstanceId)
+          && WATCHED_STATUSES.has(normalizeExecutionStatus(task?.status)))
+        if (!stillRunning) this.$store.dispatch('websocketExtraData/finishTrajectory', target)
       })
       next.forEach(target => {
         const record = this.trajectoryRecords[String(target.robotId)]

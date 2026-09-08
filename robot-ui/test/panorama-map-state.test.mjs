@@ -47,6 +47,8 @@ function compile(path, api = {}) {
   return exports.default || exports
 }
 helpers['task-plan-state'] = compile('views/bi/patrol/business/task-plan-state.js')
+helpers['path-direction-arrows'] = compile('views/bi/gis/globalMap/slam/path-direction-arrows.js')
+helpers['trajectory-visual'] = compile('views/bi/gis/globalMap/slam/trajectory-visual.js')
 
 function deferred() {
   let resolve, reject
@@ -97,17 +99,73 @@ const trajectoryEvent = (action = 'RESET', timestamp = 1000) => ({
   event: 'robot.trajectory.changed', data: { robotId: 'robot-' + B, workflowInstanceId: 9001,
     action, points: [{ timestamp, x: 1, y: 2 }] }
 })
+
+test('同图轨迹颜色优先避让冲突，选中轨迹置顶且历史轨迹置底', () => {
+  const {
+    buildTrajectoryVisuals,
+    compareTrajectoryLayers,
+    STOPPED_TRAJECTORY_COLOR,
+    TRAJECTORY_COLORS
+  } = helpers['trajectory-visual']
+  const robotIds = Array.from({ length: 7 }, (_, index) => `robot-${index + 1}`)
+  const visuals = buildTrajectoryVisuals(robotIds, ['robot-3'])
+  assert.equal(new Set(Object.values(visuals).map(item => item.color)).size, 7)
+  assert.deepEqual(Object.values(visuals).map(item => item.color).sort(), [...TRAJECTORY_COLORS].sort())
+  assert.equal(STOPPED_TRAJECTORY_COLOR, '#7F948B')
+  assert.deepEqual(buildTrajectoryVisuals([...robotIds].reverse(), ['robot-3']), visuals)
+  assert.equal(visuals['robot-3'].focused, true)
+  assert.equal(visuals['robot-2'].muted, true)
+
+  const layers = [
+    { robotId: 'robot-3', stopped: false, focused: true },
+    { robotId: 'robot-2', stopped: false, focused: false },
+    { robotId: 'robot-1', stopped: true, focused: false }
+  ].sort(compareTrajectoryLayers)
+  assert.deepEqual(layers.map(item => item.robotId), ['robot-1', 'robot-2', 'robot-3'])
+})
 function trajectoryView(ctx, showSmall = false) {
   return new Vue({ store: ctx.store, mixins: [trajectory],
-    data: () => ({ showSmall, hasPreview: true }),
+    data: () => ({ showSmall, hasPreview: true, zoom: 1, mapSelectedRobotIds: [] }),
     computed: {
       map() { return ctx.state.slamMapList.find(item => String(item.id) === String(ctx.state.globalMapId)) },
       slamOfRobot() { return ctx.state.slamOfRobot },
       taskData() { return ctx.state.taskData },
       robotBaseInfo() { return ctx.state.robotBaseInfo }
+    },
+    methods: {
+      mapPointToPixel({ coordinateX, coordinateY }) {
+        return { x: coordinateX, y: coordinateY }
+      }
     }
   })
 }
+
+test('执行中轨迹标记起点，结束后标记最后一个实际轨迹点', async () => {
+  const ctx = setup({ getPatrolPanoramaOverview: async () => trajectoryOverview() })
+  await ctx.refresh()
+  const view = trajectoryView(ctx)
+  await ctx.dispatch('syncRobot', {
+    event: 'robot.trajectory.changed',
+    data: {
+      robotId: 'robot-' + B,
+      workflowInstanceId: 9001,
+      action: 'RESET',
+      points: [
+        { timestamp: 1000, x: 1, y: 2 },
+        { timestamp: 1001, x: 3, y: 4 }
+      ]
+    }
+  })
+  assert.deepEqual(view.sessionTraveledPathLayers[0].startPoint, { x: 1, y: 2 })
+  assert.deepEqual(view.sessionTraveledPathLayers[0].endPoint, { x: 3, y: 4 })
+  assert.equal(view.sessionTraveledPathLayers[0].stopped, false)
+
+  await ctx.dispatch('syncRobot', trajectoryEvent('STOPPED'))
+  assert.equal(view.sessionTraveledPathLayers[0].stopped, true)
+  assert.deepEqual(view.sessionTraveledPathLayers[0].endPoint, { x: 3, y: 4 })
+  await ctx.dispatch('clearAllTrajectories')
+  view.$destroy()
+})
 
 test('重连 RESET 与 Overview 任意先后到达均保留基线并继续 APPEND', async () => {
   for (const resetFirst of [true, false]) {
@@ -134,8 +192,21 @@ test('重连 RESET 与 Overview 任意先后到达均保留基线并继续 APPEN
   }
 })
 
-test('普通刷新保留已结束轨迹，失权、移图、换轮和退出仍清理', async () => {
-  for (const change of ['device', 'map', 'workflow', 'logout', 'authorization']) {
+test('普通刷新、切图和设备暂离当前地图保留轨迹，换轮、失权和退出仍清理', async () => {
+  for (const change of ['device', 'map']) {
+    const ctx = setup({ getPatrolPanoramaOverview: async () => trajectoryOverview() })
+    await ctx.refresh()
+    const view = trajectoryView(ctx)
+    await ctx.dispatch('syncRobot', trajectoryEvent())
+    const data = change === 'device' ? trajectoryOverview({ devices: [] }) : overview([A])
+    ctx.api.getPatrolPanoramaOverview = async () => data
+    await ctx.refresh()
+    await Vue.nextTick()
+    assert.ok(ctx.state.trajectoryByRobot['robot-' + B], change)
+    view.$destroy()
+    assert.ok(ctx.state.trajectoryByRobot['robot-' + B], `${change}-destroy`)
+  }
+  for (const change of ['workflow', 'logout', 'authorization']) {
     const ctx = setup({ getPatrolPanoramaOverview: async () => trajectoryOverview() })
     await ctx.refresh()
     const view = trajectoryView(ctx)
@@ -188,7 +259,7 @@ test('任务摘要降级沿用已有订阅，明确 waiting 才冻结；小地�
   assert.equal(view.trajectoryWatchTargets.length, 0)
   assert.equal(ctx.state.trajectoryByRobot['robot-' + B].stopped, true)
   view.$destroy()
-  assert.equal(Object.keys(ctx.state.trajectoryByRobot).length, 0)
+  assert.equal(Object.keys(ctx.state.trajectoryByRobot).length, 1)
 })
 
 test('工作流告警只消费 BFF 快照，普通告警仍仅高风险弹窗', async () => {
@@ -280,6 +351,30 @@ test('任务轨迹按执行轮次重置、按毫秒去重并独立更新当前�
   } })
   assert.equal(ctx.state.trajectoryByRobot['robot-1'].workflowInstanceId, 9002)
   assert.equal(ctx.state.trajectoryByRobot['robot-1'].points[0].x, 4)
+})
+
+test('离开地图后任务结束仍冻结轨迹，旧轮次迟到事件不影响新轮次', async () => {
+  const ctx = setup({ getPatrolPanoramaOverview: async () => trajectoryOverview() })
+  await ctx.refresh()
+  const view = trajectoryView(ctx)
+  await ctx.dispatch('syncRobot', trajectoryEvent())
+  view.$destroy()
+
+  const waitingTask = { ...ctx.state.taskData['task-' + B], status: 'waiting' }
+  await ctx.dispatch('syncRobot', {
+    event: 'panorama.task.changed',
+    data: { task: waitingTask }
+  })
+  assert.equal(ctx.state.trajectoryByRobot['robot-' + B].stopped, true)
+
+  await ctx.dispatch('syncRobot', {
+    event: 'robot.trajectory.changed',
+    data: { robotId: 'robot-' + B, workflowInstanceId: 9002, action: 'RESET',
+      points: [{ timestamp: 2000, x: 4, y: 5 }] }
+  })
+  await ctx.dispatch('syncRobot', trajectoryEvent('STOPPED'))
+  assert.equal(ctx.state.trajectoryByRobot['robot-' + B].workflowInstanceId, 9002)
+  assert.equal(ctx.state.trajectoryByRobot['robot-' + B].stopped, false)
 })
 
 test('首屏规则一致：GPS 默认 GIS，无 GPS 默认首张 SLAM，无地图回退 GIS', async () => {

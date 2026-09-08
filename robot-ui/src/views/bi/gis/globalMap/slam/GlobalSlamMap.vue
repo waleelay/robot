@@ -178,28 +178,53 @@
                   />
                 </g>
               </g>
-              <!-- 真实环境：本页会话内记录的已走路径（刷新后不恢复）；小窗口实时地图不展示 -->
+              <!-- 真实环境：当前会话缓存或重连恢复的已走路径；小窗口实时地图不展示 -->
               <template v-if="!showSmall">
               <g
                 v-for="layer in sessionTraveledPathLayers"
                 :key="`session-traveled-${layer.robotId}`"
-                class="mock-exec-path-layer"
+                class="session-traveled-path-layer"
+                :class="{
+                  'is-focused': layer.focused,
+                  'is-muted': layer.muted,
+                  'is-stopped': layer.stopped
+                }"
                 pointer-events="none"
               >
-                <polyline :points="layer.traveledPoints" class="mock-exec-path-traveled" />
-                <polyline :points="layer.traveledPoints" class="mock-exec-path-traveled-core" />
-                <g
-                  v-for="(arrow, index) in layer.arrows"
-                  :key="`session-path-arrow-${layer.robotId}-${index}`"
-                  :transform="`translate(${arrow.x}, ${arrow.y}) rotate(${arrow.deg}) scale(${1 / zoom})`"
-                >
-                  <image
-                    :href="pathDirectionArrow"
-                    :x="-pathArrowWidth / 2"
-                    :y="-pathArrowHeight / 2"
-                    :width="pathArrowWidth"
-                    :height="pathArrowHeight"
+                <g class="session-path-content">
+                  <polyline
+                    :points="layer.traveledPoints"
+                    class="session-path-outline"
                   />
+                  <polyline
+                    :points="layer.traveledPoints"
+                    class="session-path-main"
+                    :style="{ stroke: layer.color }"
+                  />
+                  <g
+                    v-if="layer.showArrows"
+                    v-for="(arrow, index) in layer.arrows"
+                    :key="`session-path-arrow-${layer.robotId}-${index}`"
+                    :transform="`translate(${arrow.x}, ${arrow.y}) rotate(${arrow.deg}) scale(${1 / zoom})`"
+                  >
+                    <path d="M 3 -3 L -2 0 L 3 3" class="session-path-arrow" />
+                  </g>
+                </g>
+                <g
+                  v-if="layer.startPoint"
+                  class="session-path-marker"
+                  :transform="`translate(${layer.startPoint.x}, ${layer.startPoint.y}) scale(${1 / zoom})`"
+                >
+                  <circle r="9" :style="{ fill: layer.color }" />
+                  <text>起</text>
+                </g>
+                <g
+                  v-if="layer.stopped && layer.endPoint"
+                  class="session-path-marker"
+                  :transform="`translate(${layer.endPoint.x}, ${layer.endPoint.y}) scale(${1 / zoom})`"
+                >
+                  <circle r="9" :style="{ fill: layer.color }" />
+                  <text>终</text>
                 </g>
               </g>
               </template>
@@ -220,6 +245,18 @@
                 @mouseenter="onRobotPathHover(robot)"
                 @mouseleave="clearRaisedTaskPath"
               >
+                <circle
+                  v-if="trajectoryVisualForRobot(robot.robotId)"
+                  cx="0"
+                  cy="-21"
+                  r="23"
+                  class="trajectory-robot-ring"
+                  :class="{
+                    'is-muted': trajectoryVisualForRobot(robot.robotId).muted,
+                    'is-stopped': trajectoryVisualForRobot(robot.robotId).stopped
+                  }"
+                  :style="{ stroke: trajectoryVisualForRobot(robot.robotId).color }"
+                />
                 <!-- 选中光圈：固定摄像头不展示 -->
                 <image
                   v-if="isRobotHighlighted(robot.robotId) && !robot.isFixedCamera"
@@ -2563,6 +2600,86 @@ export default {
         stroke-linejoin: round;
         vector-effect: non-scaling-stroke;
       }
+      .mock-exec-path-layer,
+      .session-path-content,
+      .session-path-marker {
+        transition: opacity 0.2s ease;
+      }
+      .mock-exec-path-layer {
+        &.is-muted {
+          opacity: 0.48;
+        }
+        &.is-stopped {
+          opacity: 0.3;
+        }
+      }
+      .session-traveled-path-layer {
+        &.is-muted {
+          .session-path-content,
+          .session-path-marker {
+            opacity: 0.48;
+          }
+        }
+        &.is-stopped {
+          .session-path-content {
+            opacity: 0.3;
+          }
+          .session-path-marker {
+            opacity: 0.78;
+          }
+        }
+        &.is-stopped.is-muted {
+          .session-path-content {
+            opacity: 0.24;
+          }
+          .session-path-marker {
+            opacity: 0.4;
+          }
+        }
+        &.is-focused {
+          .session-path-outline {
+            stroke-width: 10;
+          }
+          .session-path-main {
+            stroke-width: 7;
+          }
+        }
+      }
+      .session-path-outline,
+      .session-path-main,
+      .session-path-arrow {
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
+      }
+      .session-path-outline {
+        stroke: rgba(239, 255, 247, 0.92);
+        stroke-width: 8;
+        filter: drop-shadow(0 1px 2px rgba(0, 52, 35, 0.48));
+      }
+      .session-path-main {
+        stroke-width: 5;
+      }
+      .session-path-arrow {
+        stroke: #FFF;
+        stroke-width: 1.5;
+      }
+      .session-path-marker {
+        circle {
+          stroke: #FFF;
+          stroke-width: 2;
+          vector-effect: non-scaling-stroke;
+        }
+        text {
+          fill: #FFF;
+          font-size: 10px;
+          font-weight: 600;
+          text-anchor: middle;
+          dominant-baseline: central;
+          user-select: none;
+        }
+      }
       .map-measure-line {
         fill: none;
         stroke: #21C8FF;
@@ -2622,6 +2739,19 @@ export default {
         &.is-static {
           pointer-events: none;
           cursor: default;
+        }
+        .trajectory-robot-ring {
+          fill: rgba(8, 28, 49, 0.12);
+          stroke-width: 3;
+          vector-effect: non-scaling-stroke;
+          filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.45));
+          pointer-events: none;
+          &.is-muted {
+            opacity: 0.48;
+          }
+          &.is-stopped {
+            opacity: 0.3;
+          }
         }
         .robot-selected-halo,
         .robot-selected-corners {
