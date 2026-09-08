@@ -119,16 +119,11 @@
         <svg-icon :icon-class="collapse ? 'left-s' : 'right-s'" />
       </div>
     </div>
-    <!-- <TaskRobotView ref="taskRobotViewRef" @handleClickTask="handleClickTask" /> -->
-    <!-- <WarningBatch ref="warningBatchRef" /> -->
   </div>
 </template>
 
 <script>
 import { mapState } from 'vuex';
-// import TaskRobotView from '../components/modal/TaskRobotView.vue';
-// import WarningBatch from './WarningBatch.vue'
-import { mapActions } from 'vuex/dist/vuex.common.js';
 import { getDescArr } from '../../../utils';
 import Empty from '../components/Empty.vue';
 import { executionStatusLabel } from '../patrol/business/execution-status.js';
@@ -148,7 +143,7 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
-    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'taskOverview', 'robotBaseInfo']),
+    ...mapState('websocketExtraData', ['taskData', 'deviceTypeStats', 'deviceStats', 'taskOverview', 'robotBaseInfo']),
     /** 选中固定摄像头时不禁用侧边栏 */
     isSelectedFixedCamera() {
       if (!this.selectedRobotId) return false
@@ -170,10 +165,6 @@ export default {
   },
   data() {
     return {
-      collapseArr: [false, false, true],
-      alertCollapseArr: [true, true, true],
-      alertList: [1],
-      activeTaskId: null,
       overviewInfo: {},
       devices: [
         // { name: '机器狗', total: 10, fault: 0, offline: 3 },
@@ -181,17 +172,6 @@ export default {
         // { name: '无人机', total: 0, fault: 0, offline: 0 },
         // { name: '无人车', total: 0, fault: 0, offline: 0 },
       ],
-      // tasks: [
-      //   { name: '任务1', status: '执行中', period: '2-4小时' },
-      //   { name: '任务2', status: '待执行', period: '2-4小时' },
-      //   { name: '任务3', status: '执行中', period: '2-4小时' },
-      //   { name: '任务4', status: '执行中', period: '2-4小时' },
-      // ]
-    }
-  },
-  async mounted() {
-    if (this.alarmsData?.high?.items?.length) {
-      this.collapseArr[2] = false
     }
   },
   methods: {
@@ -199,38 +179,6 @@ export default {
     statValue(value) {
       return value === null || value === undefined || value === '' ? '--' : value
     },
-    getMoreRobotInfo() {
-
-    },
-    toggleCollapse(type, typeIndex) {
-      this.$set(this[type], typeIndex, !this[type][typeIndex])
-    },
-    handleClickTask(taskId) {
-      if (this.activeTaskId === taskId) {
-        this.$refs.taskRobotViewRef.dialogVisible = false
-        // 清空录像
-        this.activeTaskId = null
-        return
-      }
-      this.activeTaskId = taskId
-      this.$refs.taskRobotViewRef.showModal({
-        taskInfo: { ...this.taskData[taskId]},
-        robotIds: this.taskData[taskId].equipmentList.map(robot => robot.robotId)
-      })
-    },
-    handleClickAlert() {
-      this.$refs.warningBatchRef.open(this.alarmsData || {})
-    }
-  },
-  watch: {
-    // robots: {
-    //   handler(newVal, oldVal) {
-    //     if (newVal?.length && !this.taskList[0]?.robots?.length) {
-    //       this.$set(this.taskList[0], 'robots', newVal)
-    //     }
-    //   },
-    //   immediate: true
-    // },
   },
 }
 </script>

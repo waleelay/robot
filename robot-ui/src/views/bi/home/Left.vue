@@ -52,7 +52,7 @@
           </div>
         </div>
       </div>
-      <div class="box bi-corner-box hp520 mt20 task pb18 posr" :class="{ 'no_data hp41': collapseArr[1] }">
+      <div class="box bi-corner-box hp520 mt20 task pb18 posr">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <span class="desc">巡逻概览</span>
         </div>
@@ -139,7 +139,7 @@ export default {
       return this.$store.getters['websocketRobot/getSelectedRobotId']
     },
     ...mapState('websocketRobot', ['robots', 'cameras']),
-    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'robotBaseInfo', 'alarmSummary', 'patrolOverview']),
+    ...mapState('websocketExtraData', ['alarmsData', 'deviceTypeStats', 'deviceStats', 'robotBaseInfo', 'alarmSummary', 'patrolOverview']),
     /** 选中固定摄像头时不禁用侧边栏 */
     isSelectedFixedCamera() {
       if (!this.selectedRobotId) return false
@@ -224,16 +224,6 @@ export default {
   },
   data() {
     return {
-      tabList: [
-        { label: '今日', value: 0 },
-        { label: '本月', value: 1 },
-        { label: '当年', value: 2 }
-      ],
-      tabIndex: 0,
-      collapseArr: [false, false, true],
-      alertCollapseArr: [true, true, true],
-      alertList: [1],
-      activeTaskId: null,
       overviewInfo: {},
       alarms: {
         high: { name: '高风险', class: 'danger' },
@@ -248,9 +238,6 @@ export default {
   },
   async mounted() {
     this.setPrefixId(this.prefixId)
-    if (this.alarmsData?.high?.items?.length) {
-      this.collapseArr[2] = false
-    }
   },
   methods: {
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'setPrefixId']),
@@ -380,21 +367,6 @@ export default {
     toggleCollapse(type, typeIndex) {
       this.$set(this[type], typeIndex, !this[type][typeIndex])
     },
-    handleClickTask(taskId) {
-      if (this.activeTaskId === taskId) {
-        this.$refs.taskRobotViewRef.dialogVisible = false
-        this.activeTaskId = null
-        return
-      }
-      this.activeTaskId = taskId
-      this.$refs.taskRobotViewRef.showModal({
-        taskInfo: { ...this.taskData[taskId]},
-        robotIds: this.taskData[taskId].equipmentList.map(robot => robot.robotId)
-      })
-    },
-    handleClickAlert() {
-      this.$refs.warningBatchRef.open(this.alarmsData || {})
-    }
   },
   watch: {
     collapse(val) {
