@@ -40,7 +40,7 @@ export default {
         const visible = item.permissions
           ? hasAnyBigscreenPermission(this.permissions, item.permissions)
           : hasBigscreenPermission(this.permissions, item.permission)
-        return visible && !this.$route.name.includes(item.value)
+        return visible
       })
     },
     permissions() {

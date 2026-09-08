@@ -871,8 +871,13 @@ export default {
   &.visible {
     opacity: 1;
     visibility: visible;
-    pointer-events: auto;
+    // 壳穿透；仅内容区接收点击，减少盖住侧栏时的死区
+    pointer-events: none;
     backdrop-filter: blur(15px);
+    > .box,
+    > .decoration {
+      pointer-events: auto;
+    }
   }
   .box {
     // 固定双列信息区宽度；min-content 在无按钮时会收成单列（指挥中心被压缩）

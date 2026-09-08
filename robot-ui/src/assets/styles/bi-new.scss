@@ -1646,7 +1646,10 @@ input[type="range"].vertical-slider {
 
 
 .el-dialog__wrapper.custom-dialog__wrapper.robot-dialog {
+  // 空白区域穿透，避免挡住地图与两侧操作
+  pointer-events: none;
   .el-dialog {
+    pointer-events: auto;
     width: fit-content;
     background: transparent;
     &__header, &__footer {
@@ -3058,6 +3061,7 @@ input[type="range"].vertical-slider {
 
   &.robot-control-container {
     position: fixed;
+    z-index: 20;
     left: 0;
     right: 0;
     bottom: 50px;
@@ -3073,8 +3077,13 @@ input[type="range"].vertical-slider {
     &.visible {
       opacity: 1;
       visibility: visible;
-      pointer-events: auto;
+      // 壳保持 none，仅 .box 可点，避免 fixed 空白区误吃侧栏/地图点击
+      pointer-events: none;
       transform: scale(1);
+      > .box,
+      > .decoration {
+        pointer-events: auto;
+      }
     }
     .box {
       // width: 944px;

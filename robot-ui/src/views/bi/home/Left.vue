@@ -3,7 +3,6 @@
     class="left-div pr28 mb20 no-w-scroll mt105"
     :class="{ 'ml20': !collapse, 'ml10': collapse }"
     :style="{
-      'pointer-events': sidebarPointerEvents,
       height: 'calc(100% - 154px)',
       overflowY: selectVisible ? 'visible' : 'auto',
       overflowX: selectVisible ? 'visible' : 'hidden'
@@ -140,21 +139,6 @@ export default {
     },
     ...mapState('websocketRobot', ['robots', 'cameras']),
     ...mapState('websocketExtraData', ['alarmsData', 'deviceTypeStats', 'deviceStats', 'robotBaseInfo', 'alarmSummary', 'patrolOverview']),
-    /** 选中固定摄像头时不禁用侧边栏 */
-    isSelectedFixedCamera() {
-      if (!this.selectedRobotId) return false
-      const robot = this.robotBaseInfo?.[this.selectedRobotId]
-        || this.$store.getters['websocketRobot/getSelectedRobot']
-        || {}
-      return robot.sourceType === 'FIXED_CAMERA'
-        || robot.typeCode === 'FIXED_CAMERA'
-        || robot.equipmentType === 'FIXED_CAMERA'
-        || robot.type === 'FIXED_CAMERA'
-        || robot.type === '固定摄像头'
-    },
-    sidebarPointerEvents() {
-      return (this.selectedRobotId && !this.isSelectedFixedCamera) ? 'none' : 'auto'
-    },
     alarmPieChart() {
       const data = this.alarmsData || {}
       return [

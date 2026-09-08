@@ -10,6 +10,7 @@
     width: 268px;
     height: 1002px;
     z-index: 1;
+    pointer-events: none;
   }
   &::before {
     left: 0;

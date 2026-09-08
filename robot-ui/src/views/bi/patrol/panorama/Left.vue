@@ -1,5 +1,5 @@
 <template>
-  <div class="left-div pr28 h100 mt25 no-w-scroll" :class="{ 'ml20': !collapse, 'ml10': collapse }" :style="{ 'pointer-events': sidebarPointerEvents, maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }">
+  <div class="left-div pr28 h100 mt25 no-w-scroll" :class="{ 'ml20': !collapse, 'ml10': collapse }" :style="{ maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }">
     <div class="container flex-column w100 h100 common-scroll" style="flex-wrap: nowrap;">
       <!--  :class="{'hp264': deviceTypeStats?.length, 'hp155': !deviceTypeStats?.length}" -->
       <div class="box bi-corner-box hp264">
@@ -325,21 +325,6 @@ export default {
       return this.$store.getters['websocketRobot/getRobots'];
     },
     ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'globalMapId', 'robotBaseInfo', 'taskPathPoints']),
-    /** 选中固定摄像头时不禁用侧边栏 */
-    isSelectedFixedCamera() {
-      if (!this.selectedRobotId) return false
-      const robot = this.robotBaseInfo?.[this.selectedRobotId]
-        || this.$store.getters['websocketRobot/getSelectedRobot']
-        || {}
-      return robot.sourceType === 'FIXED_CAMERA'
-        || robot.typeCode === 'FIXED_CAMERA'
-        || robot.equipmentType === 'FIXED_CAMERA'
-        || robot.type === 'FIXED_CAMERA'
-        || robot.type === '固定摄像头'
-    },
-    sidebarPointerEvents() {
-      return (this.selectedRobotId && !this.isSelectedFixedCamera) ? 'none' : 'auto'
-    },
     // GIS 展示全部任务；SLAM 仅展示与当前地图关联的任务（地图 → 任务单向联动）
     isGisMap() {
       const id = this.globalMapId
@@ -582,14 +567,14 @@ export default {
       list.scrollTop = Math.max(0, Math.min(maxScroll, el.offsetTop - padTop))
     },
     /** 地图弹窗点击任务名称：选中对应卡片并滚到列表最前（不切换取消） */
-    focusTaskFromPopup(taskId) {
+    async focusTaskFromPopup(taskId) {
       if (taskId == null || taskId === '') return
       const id = this.resolveTaskListId(taskId)
       this.activeTaskId = id
       this.setShowRobotIds(this.getTaskRobotIds(id))
       this.emitFocusTaskPath(id)
       if (this.$refs.taskRobotViewRef?.dialogVisible) {
-        this.$refs.taskRobotViewRef.dialogVisible = false
+        await this.$refs.taskRobotViewRef.closeAndStop()
       }
       this.$nextTick(() => this.scrollTaskCardToFront(id))
     },
@@ -597,23 +582,52 @@ export default {
       this.$emit('focus-task-path', taskId == null || taskId === '' ? null : taskId)
     },
     /** 点击任务卡片：选中/取消选中卡片，并在地图上高亮相关装备（不打开视频弹窗） */
-    selectTask(taskId) {
+    async selectTask(taskId) {
       if (this.activeTaskId == taskId) {
         this.activeTaskId = null
         this.setShowRobotIds([])
         this.emitFocusTaskPath(null)
         if (this.$refs.taskRobotViewRef) {
-          this.$refs.taskRobotViewRef.dialogVisible = false
+          await this.$refs.taskRobotViewRef.closeAndStop()
         }
         return
       }
       this.activeTaskId = taskId
       this.setShowRobotIds(this.getTaskRobotIds(taskId))
       this.emitFocusTaskPath(taskId)
-      // 切换任务时关闭上一任务的视频弹窗
+      // 切换任务时关闭上一任务的视频弹窗并停流
       if (this.$refs.taskRobotViewRef?.dialogVisible) {
-        this.$refs.taskRobotViewRef.dialogVisible = false
+        await this.$refs.taskRobotViewRef.closeAndStop()
       }
+    },
+    /**
+     * 等待地图侧关闭遥控并停流完成。
+     * 仅以 done 为成功；超时告警并拒绝，避免旧流未停就起新流。
+     * 无监听方视为无需关闭。
+     */
+    closeRemoteControlAndWait(timeoutMs = 8000) {
+      return new Promise((resolve, reject) => {
+        const listeners = this.$root._events && this.$root._events['bi-close-remote-control']
+        const count = Array.isArray(listeners) ? listeners.length : (listeners ? 1 : 0)
+        if (!count) {
+          resolve()
+          return
+        }
+        let settled = false
+        const done = () => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          resolve()
+        }
+        const timer = setTimeout(() => {
+          if (settled) return
+          settled = true
+          console.warn('[bi] 关闭远程控制超时，取消打开任务视频')
+          reject(new Error('关闭远程控制超时'))
+        }, timeoutMs)
+        this.$root.$emit('bi-close-remote-control', done)
+      })
     },
     /** 点击视频图标：打开/关闭任务视频弹窗，并同步选中卡片与地图装备 */
     async openTaskVideo(taskId) {
@@ -621,7 +635,14 @@ export default {
       if (!dialog) return
       // 已打开同一任务弹窗时再次点击：仅关闭弹窗，保留卡片与地图选中
       if (this.activeTaskId == taskId && dialog.dialogVisible) {
-        dialog.dialogVisible = false
+        await dialog.closeAndStop()
+        return
+      }
+      // 先关远程控制（停流），再开任务视频，避免双路抢会话
+      try {
+        await this.closeRemoteControlAndWait()
+      } catch (error) {
+        this.$message.warning('远程控制关闭超时，请稍后重试')
         return
       }
       this.activeTaskId = taskId
@@ -636,40 +657,35 @@ export default {
       const robotIds = this.getTaskRobotIds(taskId)
       this.setShowRobotIds(robotIds)
       this.emitFocusTaskPath(taskId)
-      dialog.showModal({
+      await dialog.showModal({
         taskInfo: { ...taskInfo },
         robotIds
       })
     },
-    /** 兼容旧调用名 */
+    /** 兼容旧调用名 → 与视频图标同一路径 */
     handleClickTask(taskId) {
-      this.openTaskVideo(taskId)
+      return this.openTaskVideo(taskId)
     },
+    /** 兼容旧调用名 → 与 openTaskVideo 对齐（同任务再点仅关视频，保留选中） */
     handleClickTask1(taskId) {
-      if (this.activeTaskId == taskId) {
-        this.$refs.taskRobotViewRef.dialogVisible = false
-        this.activeTaskId = null
-        this.setShowRobotIds([])
-        this.emitFocusTaskPath(null)
-        return
-      }
-      this.activeTaskId = taskId
-      const robotIds = (this.taskData[taskId]?.equipmentList || []).map(robot => robot.robotId)
-      this.setShowRobotIds(robotIds)
-      this.emitFocusTaskPath(taskId)
-      this.$refs.taskRobotViewRef.showModal({
-        taskInfo: { ...this.taskData[taskId] },
-        robotIds
-      })
+      return this.openTaskVideo(taskId)
     },
-    /** 切换地图时关闭任务装备弹窗及相关高亮 */
-    clearTaskRobotView() {
+    /** 仅关闭任务视频并停流，保留任务卡片/路径高亮（供遥控互斥） */
+    async closeTaskRobotVideo(done) {
+      try {
+        if (this.$refs.taskRobotViewRef) {
+          await this.$refs.taskRobotViewRef.closeAndStop()
+        }
+      } finally {
+        if (typeof done === 'function') done()
+      }
+    },
+    /** 切换地图等：关闭任务视频并清除选中/高亮 */
+    async clearTaskRobotView(done) {
       this.activeTaskId = null
       this.setShowRobotIds([])
       this.emitFocusTaskPath(null)
-      if (this.$refs.taskRobotViewRef) {
-        this.$refs.taskRobotViewRef.dialogVisible = false
-      }
+      await this.closeTaskRobotVideo(done)
     },
     handleTaskDetail() {
       // 详情入口预留
@@ -681,13 +697,13 @@ export default {
       }
       return res || {}
     },
-    clearActiveTaskView(item) {
+    async clearActiveTaskView(item) {
       if (!item) return
       if (this.activeTaskId == item.taskId || this.activeTaskId == this.getTaskPlanId(item)) {
         this.activeTaskId = null
         this.setShowRobotIds([])
         this.emitFocusTaskPath(null)
-        if (this.$refs.taskRobotViewRef) this.$refs.taskRobotViewRef.dialogVisible = false
+        if (this.$refs.taskRobotViewRef) await this.$refs.taskRobotViewRef.closeAndStop()
       }
     },
     async requestTaskRecordAction({ item, action, confirmMessage, successMessage, failMessage, api }) {
@@ -824,14 +840,17 @@ export default {
   },
   created() {
     this.$root.$on('bi-panorama-focus-task', this.focusTaskFromPopup)
+    // 遥控互斥：只停任务视频，保留任务选中高亮
+    this.$root.$on('bi-close-task-robot-view', this.closeTaskRobotVideo)
   },
   beforeDestroy() {
     this.$root.$off('bi-panorama-focus-task', this.focusTaskFromPopup)
+    this.$root.$off('bi-close-task-robot-view', this.closeTaskRobotVideo)
   },
   watch: {
-    // 切换 GIS/SLAM 或 SLAM 地图时，关闭任务装备弹窗
-    globalMapId() {
-      this.clearTaskRobotView()
+    // 切换 GIS/SLAM 或 SLAM 地图时，关闭任务装备弹窗并清高亮
+    async globalMapId() {
+      await this.clearTaskRobotView()
     },
     // robots: {
     //   handler(newVal, oldVal) {
@@ -999,6 +1018,10 @@ export default {
         .type {
           border-radius: 6px;
           border: 1px solid;
+          /* 展开态保持可见溢出，保证 type_name sticky 生效 */
+          &:not(.ovyh) {
+            overflow: visible;
+          }
           &.collapse {
             /* overflow: auto; */
             overflow-y: hidden;
@@ -1020,6 +1043,17 @@ export default {
                 font-size: 11.6px;
               }
             }
+          }
+          /* 仅展开档：类型标题在告警列表滚动区内吸顶 */
+          &:not(.ovyh) > .type_name {
+            position: sticky;
+            top: -1px;
+            z-index: 2;
+            margin: -10px -20px 0;
+            padding: 10px 20px;
+            box-sizing: border-box;
+            /* 吸顶后补上边框，避免与区块顶部分离后缺线 */
+            border-top: 1px solid;
           }
           .list {
             .item {
@@ -1080,6 +1114,10 @@ export default {
                 color: #FF0004;
               }
             }
+            &:not(.ovyh) > .type_name {
+              background: #2a0c0c;
+              border-top-color: #AC1515;
+            }
             .list .item {
               & + .item::before {
                 background: #5B0000;
@@ -1104,6 +1142,10 @@ export default {
                 color: FF8200;
               }
             }
+            &:not(.ovyh) > .type_name {
+              background: #2a1600;
+              border-top-color: #8A4600;
+            }
             .list .item {
               & + .item::before {
                 background: #4D2200;
@@ -1127,6 +1169,10 @@ export default {
               .svg-icon {
                 color: #00FF26;
               }
+            }
+            &:not(.ovyh) > .type_name {
+              background: #00240a;
+              border-top-color: #006810;
             }
             .list .item {
               & + .item::before {

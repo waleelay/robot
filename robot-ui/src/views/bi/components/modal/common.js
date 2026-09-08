@@ -17,6 +17,11 @@ export default {
   methods: {
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera']),
     toggleFullscreen,
+    streamViewerIds() {
+      const consumerId = this.streamConsumerId || this.prefixId || 'default'
+      const prefixId = this.prefixId
+      return { consumerId, prefixId }
+    },
     async updateInfo() {
       // console.log('%c更新===================================================================================================', 'color: #00f');
       for (const robotIndex of this.robotList.keys()) {
@@ -50,20 +55,23 @@ export default {
       })
     },
     async startAll() {
-      // console.log(123)
+      const { consumerId, prefixId } = this.streamViewerIds()
       for (const cameraKey in this.ZQL_playingSource) {
         // cameraKey === 'robot-001_0_0'
         const robot = Object.assign({}, this.ZQL_videosInfos[cameraKey].robot)
         const camera = Object.assign({}, this.ZQL_videosInfos[cameraKey])
-        await this.startCamera({ robot, camera })
+        await this.startCamera({ robot, camera, consumerId, prefixId })
       }
     },
     async stopAll() {
+      const { consumerId, prefixId } = this.streamViewerIds()
+      const robots = Array.isArray(this.robotList) ? this.robotList : []
       this.$set(this, 'ZQL_playingSource', null);
       this.$set(this, 'ZQL_videosInfos', null);
-      for (const robot of this.robotList) {
-        for (const camera of robot.cameras) {
-          await this.stopCamera(camera)
+      for (const robot of robots) {
+        for (const camera of robot.cameras || []) {
+          if (!camera?.key) continue
+          await this.stopCamera({ ...camera, consumerId, prefixId })
         }
       }
     },
@@ -84,8 +92,15 @@ export default {
       document.removeEventListener('keydown', e => handleKeydown(e, this.isFullscreen))
     }
   },
-  beforeDestroy() {
-    // 移除键盘事件监听
+  async beforeDestroy() {
     this.removeEventListeners();
+    if (this.started || this.dialogVisible) {
+      try {
+        await this.stopAll()
+      } catch (e) {
+        console.warn('[TaskRobotView] beforeDestroy stopAll failed', e)
+      }
+      this.started = false
+    }
   }
 }

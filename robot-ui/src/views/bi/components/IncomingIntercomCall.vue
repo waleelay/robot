@@ -180,6 +180,8 @@ import { mapActions, mapState } from 'vuex'
 const SCREEN_WIDTH = 1920
 const SCREEN_HEIGHT = 1080
 const WINDOW_MARGIN = 16
+/** 与巡逻巡查 Robot1 弹窗右侧对齐（距右边缘 113px） */
+const WINDOW_MARGIN_RIGHT = 113
 const COMPACT_SIZE = { width: 358, height: 152 }
 const AUDIO_SIZE = { width: 410, height: 152 }// width: 394, height: 152
 const VIDEO_SIZE = { width: 324, height: 382 }
@@ -310,7 +312,7 @@ export default {
     },
     positionWindow() {
       this.position = {
-        x: SCREEN_WIDTH - this.windowSize.width - WINDOW_MARGIN,
+        x: SCREEN_WIDTH - this.windowSize.width - WINDOW_MARGIN_RIGHT,
         y: SCREEN_HEIGHT - this.windowSize.height - WINDOW_MARGIN
       }
     },

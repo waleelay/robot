@@ -12,9 +12,9 @@
             <!-- <svg-icon icon-class="home" style="color: #8BAEDC;"></svg-icon> -->
              <PageChangeDropdown />
           </div>
-          <div class="icon ml20" title="管理后台" @click="openAdminConsole">
+          <!-- <div class="icon ml20" title="管理后台" @click="openAdminConsole">
             <svg-icon icon-class="system1" :style="{ color: '#AED1FF' }"></svg-icon>
-          </div>
+          </div> -->
           <div class="icon ml20" @click="toggleFullscreen">
             <svg-icon :icon-class="isFullscreen ? 'close-fullscreen' : 'fullscreen'" :style="{ color: '#AED1FF', fontSize: isFullscreen ? undefined : '14px' }"></svg-icon>
           </div>

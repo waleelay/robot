@@ -296,6 +296,7 @@ export default {
     // await this.changeMap()
     this.initMap();
     window.addEventListener('resize', this.handleResizePopupPosition);
+    this.$root.$on('bi-close-remote-control', this.closeRemoteControlFromRoot)
     // this.initPoints()
 
     // this.initPoints();
@@ -1652,19 +1653,112 @@ export default {
         })
       }, 500);
     },
-    showControlPart(visible) {
+    async showControlPart(visible) {
       if (visible === false) {
-        this.$refs.robotControlPartRef?.show?.(false)
-        this.$refs.robotCarControlPartRef?.show?.(false)
+        await this.hideAllRemoteControls()
         return
       }
       const robot = {
         ...(this.selectedRobot || {}),
         ...(this.robotBaseInfo?.[this.selectedRobot?.robotId] || {})
       }
-      const controlRef = isRobotDog(robot) ? this.$refs.robotControlPartRef : this.$refs.robotCarControlPartRef
-      const nextVisible = typeof visible === 'boolean' ? visible : !controlRef?.visible
-      controlRef?.show(nextVisible)
+      const dogRef = this.$refs.robotControlPartRef
+      const carRef = this.$refs.robotCarControlPartRef
+      const controlRef = isRobotDog(robot) ? dogRef : carRef
+      const otherRef = isRobotDog(robot) ? carRef : dogRef
+      const robotId = robot?.robotId
+
+      // Robot1「远程控制」：同装备开关；换装备先停旧流再绑新；狗/车面板互斥
+      if (typeof visible !== 'boolean') {
+        if (controlRef?.visible) {
+          const currentId = controlRef.boundRobotId || controlRef.effectiveRobotId
+          if (String(currentId) === String(robotId)) {
+            await controlRef.show(false)
+            return
+          }
+          try {
+            await this.closeTaskRobotViewAndWait()
+          } catch (error) {
+            this.$message.warning('任务视频关闭超时，请稍后重试')
+            return
+          }
+          await controlRef.rebindToRobot(robotId)
+          return
+        }
+        if (otherRef?.visible) {
+          await otherRef.show(false)
+          try {
+            await this.closeTaskRobotViewAndWait()
+          } catch (error) {
+            this.$message.warning('任务视频关闭超时，请稍后重试')
+            return
+          }
+          await controlRef?.show(true)
+          return
+        }
+        try {
+          await this.closeTaskRobotViewAndWait()
+        } catch (error) {
+          this.$message.warning('任务视频关闭超时，请稍后重试')
+          return
+        }
+        await controlRef?.show(true)
+        return
+      }
+
+      if (visible) {
+        if (otherRef?.visible) await otherRef.show(false)
+        try {
+          await this.closeTaskRobotViewAndWait()
+        } catch (error) {
+          this.$message.warning('任务视频关闭超时，请稍后重试')
+          return
+        }
+        await controlRef?.show(true)
+      }
+    },
+    async hideAllRemoteControls() {
+      const dog = this.$refs.robotControlPartRef
+      const car = this.$refs.robotCarControlPartRef
+      const tasks = []
+      if (dog?.visible) tasks.push(dog.show(false))
+      if (car?.visible) tasks.push(car.show(false))
+      if (tasks.length) await Promise.all(tasks)
+    },
+    /**
+     * 等待任务视频停流完成。仅以 done 为成功；超时拒绝，避免未停妥就开遥控。
+     * 无监听方（如 home/monitor）视为无需关闭，立即完成。
+     */
+    closeTaskRobotViewAndWait(timeoutMs = 8000) {
+      return new Promise((resolve, reject) => {
+        const listeners = this.$root._events && this.$root._events['bi-close-task-robot-view']
+        const count = Array.isArray(listeners) ? listeners.length : (listeners ? 1 : 0)
+        if (!count) {
+          resolve()
+          return
+        }
+        let settled = false
+        const done = () => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          resolve()
+        }
+        const timer = setTimeout(() => {
+          if (settled) return
+          settled = true
+          console.warn('[bi] 关闭任务视频超时，取消打开远程控制')
+          reject(new Error('关闭任务视频超时'))
+        }, timeoutMs)
+        this.$root.$emit('bi-close-task-robot-view', done)
+      })
+    },
+    async closeRemoteControlFromRoot(done) {
+      try {
+        await this.hideAllRemoteControls()
+      } finally {
+        if (typeof done === 'function') done()
+      }
     },
     showSlam(visible) {
       this.$refs.slamRef.show(visible)
@@ -1672,11 +1766,16 @@ export default {
     clear(robotId) {
       this.setShowRobotIds(robotId)
       this.clearLayer(null)
-      this.showControlPart(false)
       this.showSlam(false)
     },
   },
-  beforeDestroy() {
+  async beforeDestroy() {
+    this.$root.$off('bi-close-remote-control', this.closeRemoteControlFromRoot)
+    try {
+      await this.hideAllRemoteControls()
+    } catch (e) {
+      console.warn('[GlobalGisMap] hide remote on destroy failed', e)
+    }
     this.stopMovement();
     window.removeEventListener('resize', this.handleResizePopupPosition);
     window.removeEventListener('keydown', this.handleMeasureKeydown);

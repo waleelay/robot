@@ -109,11 +109,13 @@ export default {
         this.cubeHeight = 100;
       }
     },
-    // 获取右上角目标位置（距离边缘110px）
+    // 获取右上角目标位置（巡逻巡查等：距右边缘 113px）
     getTargetPosition() {
       const context = this.getScaleContext()
-      const left = Math.max(0, context.width - this.cubeWidth - 110);
-      const top = Math.min(110, Math.max(0, context.height - this.cubeHeight))
+      const rightMargin = 82
+      const topMargin = 110
+      const left = Math.max(0, context.width - this.cubeWidth - rightMargin);
+      const top = Math.min(topMargin, Math.max(0, context.height - this.cubeHeight))
       return {
         left,
         top

@@ -117,18 +117,37 @@ export default {
       robot: {},
       cameraOrderByRobot: {},
       selectModelValue: this.selectedRobot?.controlMode || 0,
+      /** 遥控打开时绑定的装备；关 Robot1 清选中后仍可继续播控 */
+      boundRobotId: ''
     }
   },
   computed: {
     ...mapState('websocketExtraData', ['robotBaseInfo']),
+    ...mapState('websocketRobot', ['robots']),
     selectedRobotId() {
-      return this.$store.getters['websocketRobot/getSelectedRobotId']
+      return this.$store.getters['websocketRobot/getSelectedRobotId'] || this.boundRobotId || ''
+    },
+    /** 面板打开期间以绑定装备为准，避免地图改选未走 rebind 就换源 */
+    effectiveRobotId() {
+      if (this.visible && this.boundRobotId) return this.boundRobotId
+      return this.selectedRobotId
     },
     baseInfo() {
-      return this.robotBaseInfo?.[this.selectedRobotId] || {}
+      return this.robotBaseInfo?.[this.effectiveRobotId] || {}
     },
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot']
+    },
+    controlRobot() {
+      const id = this.effectiveRobotId
+      if (!id) return {}
+      const live = (this.robots || []).find(item => String(item.robotId) === String(id))
+        || (this.selectedRobot?.robotId && String(this.selectedRobot.robotId) === String(id) ? this.selectedRobot : null)
+      const base = this.robotBaseInfo?.[id] || this.robotBaseInfo?.[String(id)] || {}
+      if (!live && !base.robotId) {
+        return { ...base, robotId: id }
+      }
+      return { ...base, ...live, robotId: live?.robotId || base.robotId || id }
     },
     cameras() {
       return this.$store.getters['websocketRobot/getCameras']
@@ -137,11 +156,11 @@ export default {
       return this.$store.getters['websocketRobot/getCamerasRevision']
     },
     cameraKeys() {
-      if (!this.selectedRobot?.robotId) return []
-      return (this.selectedRobot.cameras || []).map(camera => this.cameraIdentity(this.selectedRobot.robotId, camera))
+      if (!this.controlRobot?.robotId) return []
+      return (this.controlRobot.cameras || []).map(camera => this.cameraIdentity(this.controlRobot.robotId, camera))
     },
     cameraStateSignature() {
-      return [this.camerasRevision]
+      return [this.camerasRevision, this.effectiveRobotId]
         .concat(this.cameraKeys.map(key => `${key}:${this.cameras[key]?._revision || 0}`))
         .join('|')
     },
@@ -151,13 +170,39 @@ export default {
   },
   methods: {
     ...mapActions('websocketRobot', ['setPrefixId', 'setSelectedRobotId', 'setControlCenterReturnTo']),
-    show(visible) {
-      this.visible = visible;
+    async show(visible) {
+      if (!visible) {
+        if (!this.visible) return
+        // 先停流再关面板，避免 visible watcher 丢旧 camera 引用
+        await this.stopAll()
+        this.started = false
+        this.boundRobotId = ''
+        this.visible = false
+        return
+      }
+      const nextId = this.$store.getters['websocketRobot/getSelectedRobotId'] || this.boundRobotId
+      // 已打开时点另一装备遥控：先停旧流再绑新装备
+      if (this.visible && nextId && String(nextId) !== String(this.boundRobotId)) {
+        await this.rebindToRobot(nextId)
+        return
+      }
+      this.boundRobotId = nextId || this.boundRobotId
+      this.visible = true
+    },
+    /** 遥控面板保持打开时切换装备：先停当前流再起新装备流 */
+    async rebindToRobot(nextId) {
+      if (!nextId) return
+      if (String(nextId) === String(this.boundRobotId) && this.visible) return
+      await this.stopAll()
+      this.boundRobotId = nextId
+      this.started = true
+      if (!this.visible) this.visible = true
+      await this.syncRobot()
     },
     async goControl() {
       await this.stopAll()
       this.setControlCenterReturnTo(this.$route.fullPath)
-      this.setSelectedRobotId(this.selectedRobotId)
+      this.setSelectedRobotId(this.effectiveRobotId)
       this.$router.push({ path: '/bi/patrol/monitor' })
     },
     cameraIdentity(robotId, camera) {
@@ -176,9 +221,9 @@ export default {
       return order.map(key => this.cameras[key] || cameras.find(camera => this.cameraIdentity(robot.robotId, camera) === key))
     },
     async syncRobot() {
-      if (!this.selectedRobot?.robotId || !this.visible) return
+      if (!this.controlRobot?.robotId || !this.visible) return
       this.setPrefixId(this.prefixId)
-      this.robot = { ...this.selectedRobot, cameras: this.orderedCameras(this.selectedRobot) }
+      this.robot = { ...this.controlRobot, cameras: this.orderedCameras(this.controlRobot) }
       await this.updateInfo()
     },
     async swapWithMain(cameraIndex) {
@@ -194,6 +239,7 @@ export default {
     }
   },
   watch: {
+    // 关 Robot1 清选中时保留 boundRobotId；换装备起流由 show/rebindToRobot 显式处理
     cameraStateSignature: {
       async handler() {
         await this.syncRobot()
@@ -202,14 +248,21 @@ export default {
       immediate: true
     },
     visible: {
-      async handler(newVal) {
+      async handler(newVal, oldVal) {
         if (!newVal) {
-          // console.log('close');
-          await this.stopAll()
-          this.started = false
+          // show(false) 已停流；点 X 直接改 visible 时若仍在播则兜底
+          if (oldVal && this.started) {
+            await this.stopAll()
+            this.started = false
+          }
+          this.boundRobotId = ''
           return
         }
         this.started = true
+        const storeId = this.$store.getters['websocketRobot/getSelectedRobotId']
+        if (!this.boundRobotId && storeId) {
+          this.boundRobotId = storeId
+        }
         await this.syncRobot()
       },
       immediate: true
