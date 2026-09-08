@@ -34,6 +34,7 @@ public class EquipmentControlService {
 
     private static final Logger log = LoggerFactory.getLogger(EquipmentControlService.class);
     private static final long EDGE_STATUS_AUTHORITY_NANOS = TimeUnit.SECONDS.toNanos(30);
+    private static final List<String> CLEARABLE_EDGE_STATUS_FIELDS = List.of("charging", "taskStatus");
     private static final List<String> EDGE_STATUS_FIELDS = List.of(
             "status",
             "battery",
@@ -43,11 +44,13 @@ public class EquipmentControlService {
             "currentMileage",
             "runningStatus",
             "healthStatus",
+            "charging",
             "chargingStatus",
             "controlMode",
             "controlModeName",
             "stateSeq",
             "missionStatus",
+            "taskStatus",
             "taskProgressPercent",
             "estopActive",
             "softStopActive",
@@ -134,7 +137,17 @@ public class EquipmentControlService {
         requireRobot(robotId);
         pruneExpiredSessions(robotId);
         List<String> deviceIds = stringList(request.get("deviceIds"));
+        List<String> actions = stringList(request.get("actions"));
         String scope = stringValue(request.get("scope"), "DEVICE");
+        boolean leaveChargerRequest = actions.contains("docking.leave");
+        if (leaveChargerRequest) {
+            if (!"ROBOT".equals(scope)
+                    || !deviceIds.equals(List.of("base"))
+                    || !actions.equals(List.of("docking.leave"))) {
+                throw new IllegalArgumentException("退出充电桩只能申请机器人本体 base 的排他控制会话");
+            }
+            validateLeaveCharger(robotId, user);
+        }
         for (Map<String, Object> session : sessions.values()) {
             if (!robotId.equals(session.get("robotId")) || !"ACTIVE".equals(session.get("status"))) {
                 continue;
@@ -142,18 +155,23 @@ public class EquipmentControlService {
             if (!conflicts(deviceIds, stringList(session.get("deviceIds")))) {
                 continue;
             }
-            if (user.clientId().equals(session.get("ownerClientId"))) {
-                session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
-                return copy(session);
-            }
-            if (!user.clientId().equals(session.get("ownerClientId"))) {
+            boolean sameOwner = user.userId().equals(session.get("ownerUserId"))
+                    && user.clientId().equals(session.get("ownerClientId"));
+            if (sameOwner) {
+                if (stringList(session.get("deviceIds")).containsAll(deviceIds)
+                        && stringList(session.get("actions")).containsAll(actions)) {
+                    session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
+                    return copy(session);
+                }
+                continue;
+            } else {
                 return object(
                         "code", "CONTROL_LOCKED",
                         "message", "target is controlled by another terminal",
                         "holder", session);
             }
         }
-        return createSession(robotId, scope, deviceIds, stringList(request.get("actions")), user);
+        return createSession(robotId, scope, deviceIds, actions, user);
     }
 
     /**
@@ -455,7 +473,8 @@ public class EquipmentControlService {
         long nextStateSeq = numberValue(state.get("stateSeq"), 0).longValue() + 1;
         state.put("robotId", serialNumber);
         update.forEach((key, value) -> {
-            if ((value != null || "controlMode".equals(key)) && !"name".equals(key) && !"type".equals(key) && !"typeCode".equals(key)) {
+            if ((value != null || "controlMode".equals(key) || CLEARABLE_EDGE_STATUS_FIELDS.contains(key))
+                    && !"name".equals(key) && !"type".equals(key) && !"typeCode".equals(key)) {
                 state.put(key, value);
             }
         });
@@ -793,6 +812,18 @@ public class EquipmentControlService {
         Map<String, Object> target = mapValue(request.get("target"));
         String deviceId = stringValue(target.get("deviceId"), "");
         String action = stringValue(request.get("action"), "");
+        if ("base".equals(deviceId) && "docking.leave".equals(action)) {
+            if (!"BODY".equals(stringValue(target.get("scope"), ""))) {
+                throw new IllegalArgumentException("退出充电桩命令目标必须是机器人本体 BODY/base");
+            }
+            validateLeaveCharger(robotId, user);
+            Map<String, Object> session = requireOwnedActiveSession(
+                    robotId, requiredString(request, "controlSessionId"), "base", user);
+            if (!stringList(session.get("actions")).contains("docking.leave")) {
+                throw new IllegalArgumentException("控制会话不包含动作：docking.leave");
+            }
+            return;
+        }
         if (!"base".equals(deviceId) || !"drive.velocity".equals(action)) {
             return;
         }
@@ -807,6 +838,28 @@ public class EquipmentControlService {
                     : "机器人当前为" + controlModeName(controlMode) + "，请先切换到手动模式或常规模式");
         }
         requireOwnedActiveSession(robotId, requiredString(request, "controlSessionId"), "base", user);
+    }
+
+    private void validateLeaveCharger(String robotId, CurrentUser user) {
+        if (user == null || !user.hasRole("EQUIPMENT_OPERATOR")) {
+            throw new IllegalArgumentException("当前用户缺少装备操作权限");
+        }
+        Map<String, Object> state = robotStates.get(robotId);
+        if (state == null
+                || !"online".equalsIgnoreCase(stringValue(state.get("status"), ""))
+                || !hasFreshEdgeStatus(robotId)) {
+            throw new IllegalArgumentException("机器人不在线或设备状态已过期，不能退出充电桩");
+        }
+        if (!"IDLE".equals(state.get("taskStatus"))) {
+            throw new IllegalArgumentException("机器人任务状态不是明确的空闲状态，不能退出充电桩");
+        }
+        if (!Boolean.TRUE.equals(state.get("charging"))) {
+            throw new IllegalArgumentException("机器人未明确处于充电状态，不能退出充电桩");
+        }
+        Map<String, Object> base = requireDevice(robotId, "base");
+        if (!stringList(base.get("actions")).contains("docking.leave")) {
+            throw new IllegalArgumentException("管理端未登记退出充电桩能力");
+        }
     }
 
     /**
@@ -1186,6 +1239,9 @@ public class EquipmentControlService {
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList());
+        if (hasManagementAction(component, "DEVICE_CONTROL", "LEAVE_CHARGER")) {
+            mapped.add("docking.leave");
+        }
         List<String> capabilityCodes = managementCapabilityCodes(component);
         if (("WHEELED_BASE".equals(deviceType) || "QUADRUPED_BASE".equals(deviceType))
                 && capabilityCodes.contains("MOTION_CONTROL")
@@ -1207,7 +1263,7 @@ public class EquipmentControlService {
     private List<String> compatibilityActions(String deviceType) {
         return switch (deviceType) {
             case "WHEELED_BASE", "QUADRUPED_BASE" ->
-                    List.of("drive.velocity", "navigation.return_home", "docking.leave");
+                    List.of("drive.velocity", "navigation.return_home");
             case "DUAL_LIGHT_PTZ" -> List.of(
                     "up", "down", "left", "right",
                     "left_up", "right_up", "left_down", "right_down",
@@ -1248,7 +1304,6 @@ public class EquipmentControlService {
             case "SET_SPEAKER_MUTE", "SET_MUTE" -> "set_mute";
             case "MOVE_TO_POSE" -> "navigation.return_home";
             case "NAVIGATION.RETURN_HOME", "NAVIGATION_RETURN_HOME" -> "navigation.return_home";
-            case "DOCKING.LEAVE", "DOCKING_LEAVE" -> "docking.leave";
             case "LIGHT.SET", "LIGHT_SET" -> "light.set";
             case "LIGHT.VEHICLE.SET", "LIGHT_VEHICLE_SET" -> "light.vehicle.set";
             case "SET_LIGHTS" -> "VEHICLE_LIGHT".equals(deviceType) ? "light.vehicle.set" : null;

@@ -1137,7 +1137,6 @@ public class PanoramaService {
             Map<String, Object> registeredRobot,
             Map<String, String> deviceTypeNames) {
         Map<String, Object> basic = map(path(realtimeStatus, "status", "basic"));
-        Map<String, Object> localization = map(path(realtimeStatus, "status", "localization"));
         Map<String, Object> task = map(path(realtimeStatus, "status", "task"));
 
         Object robotId = firstValue(source, "serialNumber", "robotId", "id");
@@ -1165,7 +1164,10 @@ public class PanoramaService {
                 "status", status,
                 "statusChangedAt", statusChangedAt,
                 "battery", number(registeredRobot.get("battery")),
-                "runtimeUpdatedAt", value(firstString(registeredRobot, "runtimeUpdatedAt"), statusVersionNow()),
+                "runtimeUpdatedAt", firstString(registeredRobot, "runtimeUpdatedAt"),
+                "charging", booleanOrNull(registeredRobot.get("charging")),
+                "chargingStatus", firstValue(registeredRobot, "chargingStatus"),
+                "taskStatus", firstValue(registeredRobot, "taskStatus"),
                 "lastHeartbeatAt", formatTime(firstString(realtimeStatus, "lastSeenAt", "receivedAt", "reportedAt")),
                 "cameras", cameras(source, registeredRobot, string(robotId)),
                 "mountedDevices", mountedDevices,
@@ -1176,7 +1178,8 @@ public class PanoramaService {
                 "controlModeName", controlModeName(normalizeControlMode(firstString(registeredRobot, "controlMode"))),
                 "mountedDeviceCount", mountedDeviceCount(source, mountedDevices),
                 "speed", number(registeredRobot.get("speed")),
-                "location", location(localization, realtimeStatus),
+                "edgeLocation", location(map(registeredRobot.get("location"))),
+                "location", location(map(registeredRobot.get("location"))),
                 "mapDisplay", mapDisplay(name, status, alarmLevel),
                 "task", deviceTasks(task));
     }
@@ -1378,19 +1381,20 @@ public class PanoramaService {
                 .orElse(null);
     }
 
-    private Map<String, Object> location(
-            Map<String, Object> localization,
-            Map<String, Object> realtimeStatus) {
+    private Map<String, Object> location(Map<String, Object> localization) {
         return object(
                 "mapId", firstValue(localization, "mapId", "mapID"),
                 "lng", number(firstValue(localization, "lng", "longitude")),
                 "lat", number(firstValue(localization, "lat", "latitude")),
                 "altitude", number(firstValue(localization, "altitude")),
-                "x", number(localization.get("coordinateX")),
-                "y", number(localization.get("coordinateY")),
-                "z", number(localization.get("coordinateZ")),
+                "x", number(firstValue(localization, "x", "coordinateX")),
+                "y", number(firstValue(localization, "y", "coordinateY")),
+                "z", number(firstValue(localization, "z", "coordinateZ")),
+                "yaw", number(firstValue(localization, "yaw", "headingYaw")),
+                "localized", booleanOrNull(localization.get("localized")),
+                "coordinateType", firstValue(localization, "coordinateType"),
                 "address", firstString(localization, "address"),
-                "updatedAt", formatTime(firstString(realtimeStatus, "reportedAt", "receivedAt", "lastSeenAt")));
+                "updatedAt", firstString(localization, "updatedAt"));
     }
 
     private Map<String, Object> emptyLocation() {
@@ -2831,6 +2835,16 @@ public class PanoramaService {
             return bool;
         }
         return value != null && Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private Boolean booleanOrNull(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value instanceof String text && ("true".equalsIgnoreCase(text) || "false".equalsIgnoreCase(text))) {
+            return Boolean.valueOf(text);
+        }
+        return null;
     }
 
     private <T> T value(T value, T fallback) {

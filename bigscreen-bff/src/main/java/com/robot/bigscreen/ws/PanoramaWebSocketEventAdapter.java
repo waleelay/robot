@@ -168,10 +168,16 @@ public class PanoramaWebSocketEventAdapter {
         putNullableNumber(data, "speed", firstExisting(sourceData, "speed", "currentSpeed"));
         putNullableText(data, "runningStatus", sourceData.get("runningStatus"));
         putNullableText(data, "healthStatus", sourceData.get("healthStatus"));
+        putNullableBoolean(data, "charging", sourceData.get("charging"));
         putNullableText(data, "chargingStatus", sourceData.get("chargingStatus"));
+        putNullableText(data, "taskStatus", sourceData.get("taskStatus"));
         putNullableText(data, "missionStatus", sourceData.get("missionStatus"));
         putNullableBoolean(data, "moving", sourceData.get("moving"));
         putNullableBoolean(data, "estopActive", sourceData.get("estopActive"));
+        JsonNode location = firstObject(sourceData, "location", "localization");
+        if (location != null) {
+            data.set("edgeLocation", location);
+        }
 
         ObjectNode event = objectMapper.createObjectNode();
         event.put("event", PANORAMA_DEVICE_STATUS_CHANGED);

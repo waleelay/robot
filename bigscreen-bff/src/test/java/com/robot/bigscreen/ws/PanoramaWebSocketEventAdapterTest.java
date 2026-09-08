@@ -23,6 +23,8 @@ class PanoramaWebSocketEventAdapterTest {
                     "robotId":"test115",
                     "status":"online",
                     "healthStatus":"异常",
+                    "charging":true,
+                    "taskStatus":"IDLE",
                     "controlMode":"导航模式",
                     "runtimeUpdatedAt":"2026-08-05T09:07:43.123456789Z",
                     "speed":0,
@@ -62,6 +64,9 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(statusEvent.path("data").path("controlModeName").asText()).isEqualTo("导航模式");
         assertThat(statusEvent.path("data").path("runtimeUpdatedAt").asText()).isEqualTo("2026-08-05T09:07:43.123456789Z");
         assertThat(statusEvent.path("data").path("speed").asDouble()).isZero();
+        assertThat(statusEvent.path("data").path("charging").asBoolean()).isTrue();
+        assertThat(statusEvent.path("data").path("taskStatus").asText()).isEqualTo("IDLE");
+        assertThat(statusEvent.path("data").path("edgeLocation").path("localized").asBoolean()).isTrue();
         assertThat(events.stream()
                 .map(this::readTree)
                 .noneMatch(node -> "panorama.stats.changed".equals(node.path("event").asText()))).isTrue();

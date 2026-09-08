@@ -12,6 +12,26 @@ export function getPatrolPanoramaMountedDeviceCount(robotId, signal) {
   })
 }
 
+export function getServicePointOptions(serialNumber, intent = 'STANDBY') {
+  return request({
+    url: pre + `/v1/management/external/devices/${encodeURIComponent(serialNumber)}/service-point-options`,
+    method: 'get',
+    params: { intent },
+    timeout: 8000,
+    skipErrorMessage: true
+  })
+}
+
+export function createServicePointNavigation(data) {
+  return request({
+    url: pre + '/v1/management/external/service-point-navigations',
+    method: 'post',
+    data,
+    timeout: 10000,
+    skipErrorMessage: true
+  })
+}
+
 // 巡逻巡查
 // 全景地图
 export function getPatrolPanoramaOverview(signal) {

@@ -61,14 +61,16 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 设备对外 `status` 仅为 `online/fault/offline`。机器人在线状态来自本项目 Control
 `/api/control/robots/registry`：收到合法、非 retained 的边缘状态后立即为 `online` 或 `fault`，
 连续 30 秒未收到边缘状态后由 Control 标记为 `offline`；Management Control 的
-`DeviceRealtimeStatus.onlineStatus` 不参与状态判定；外部实时状态接口只用于定位、告警和任务等未迁移字段。机器人条目同时返回
+`DeviceRealtimeStatus.onlineStatus` 不参与状态判定；外部实时状态接口只用于告警和任务等未迁移字段。机器人条目同时返回
 `statusChangedAt`（服务端状态变更时间），前端只允许较新的状态覆盖当前值；注册表中不存在的设备按
 `offline` 返回。
 
-机器人电量、速度、模式统一由本项目 Control 注册表取得，并返回独立的 `runtimeUpdatedAt`。
+机器人电量、速度、模式、充电事实、任务状态和边缘定位统一由本项目 Control 注册表取得，并返回独立的
+`runtimeUpdatedAt`。`edgeLocation` 保留设备侧地图 ID 和定位事实；既有 `location` 仍用于大屏地图展示，
+其 `mapId` 可按任务关联改写为平台地图 ID，两者不得混用。
 Overview、设备详情与 WebSocket 使用相同运行态源，前端按该时间比较运行态新旧，不能用
 仅在在线状态变化时更新的 `statusChangedAt` 来判断速度和模式的新旧。缺值保留 `null`，
-不补零电量、零速度或默认模式。组件数量与详情调用规则见字段来源文档 3.3 节。
+不补零电量、零速度、默认模式、默认空闲或默认充电状态。组件数量与详情调用规则见字段来源文档 3.3 节。
 
 装备弹窗打开时全部装备展示字段由设备详情初始化；名称、类型、型号、上装数量和固定摄像头位置
 在本次打开期间保持不变，电量、速度、控制模式与在线状态从共享状态按上述版本更新，不用 Overview

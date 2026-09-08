@@ -97,16 +97,6 @@ export function controlVoiceStatus(action, client_ip) {
     }
   })
 }
-// 退出充电桩、一键返航
-export function controlDevice(command, deviceId) {
-  return request({
-    url: '/charger/control',
-    method: 'get',
-    params: {
-      command, deviceId
-    }
-  })
-}
 // 让机器狗发语音 text audioNum: 2
 export function playVoice(params) {
   return request({

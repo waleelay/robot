@@ -125,6 +125,9 @@ public class EdgeDeviceStatusHandler {
         putIfPresent(update, "currentMileage", motion.get("currentMileage"));
         putIfPresent(update, "runningStatus", basic.get("runningStatus"));
         putIfPresent(update, "healthStatus", basic.get("healthStatus"));
+        if (energy.containsKey("charging")) {
+            update.put("charging", booleanOrNull(energy.get("charging")));
+        }
         putIfPresent(update, "chargingStatus", energy.get("chargingStatus"));
         if (control.containsKey("controlMode")) {
             // 明确上报未知模式时清空旧模式；未包含该字段的增量消息则保留上一值。
@@ -133,7 +136,11 @@ public class EdgeDeviceStatusHandler {
         putIfPresent(update, "estopActive", control.get("emergencyStop"));
         putIfPresent(update, "softStopActive", control.get("softStop"));
         putIfPresent(update, "remoteControlEnabled", control.get("remoteControlEnabled"));
-        putIfPresent(update, "missionStatus", normalizeTaskStatus(task.get("taskStatus")));
+        if (task.containsKey("taskStatus")) {
+            String taskStatus = normalizeTaskStatus(task.get("taskStatus"));
+            update.put("taskStatus", taskStatus);
+            putIfPresent(update, "missionStatus", taskStatus);
+        }
         putIfPresent(update, "taskProgressPercent", task.get("progressPercent"));
         if (!localization.isEmpty()) {
             Map<String, Object> location = new LinkedHashMap<>();
@@ -306,6 +313,17 @@ public class EdgeDeviceStatusHandler {
 
     private String string(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private Boolean booleanOrNull(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        String text = string(value).trim();
+        if ("true".equalsIgnoreCase(text) || "false".equalsIgnoreCase(text)) {
+            return Boolean.valueOf(text);
+        }
+        return null;
     }
 
     private BigDecimal decimal(Object value) {

@@ -8,6 +8,9 @@ const require = createRequire(import.meta.url)
 const source = readFileSync(new URL('../src/views/bi/js/utils/prefer-live-robot-fields.js', import.meta.url), 'utf8')
 const helpers = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 const { mergeRobotBaseInfo, overlayLiveRobotRuntimeFields, formatRobotSpeed, normalizeRobotControlMode } = helpers
+const actionSource = readFileSync(new URL('../src/views/bi/js/utils/service-point-actions.js', import.meta.url), 'utf8')
+const actionHelpers = await import(`data:text/javascript;base64,${Buffer.from(actionSource).toString('base64')}`)
+const { navigationUnavailableReason, leaveChargerUnavailableReason } = actionHelpers
 const early = '2026-08-28T07:00:00.123456001Z'
 const late = '2026-08-28T07:00:00.123456002Z'
 
@@ -43,6 +46,28 @@ test('新快照可纠正旧实时值，未知不冒充零值或默认模式', ()
   assert.equal(normalizeRobotControlMode(null), null)
   assert.equal(normalizeRobotControlMode('UNKNOWN'), null)
   assert.equal(normalizeRobotControlMode('常规模式'), '手动模式')
+})
+
+test('充电与停靠按钮严格使用空闲、充电和定位事实', () => {
+  const now = Date.parse('2026-09-07T10:00:20Z')
+  const robot = {
+    status: 'online', runtimeUpdatedAt: '2026-09-07T10:00:00Z', taskStatus: 'IDLE', charging: false,
+    edgeLocation: { localized: true, mapId: 'edge-map-1', x: 0, y: 0 }
+  }
+  assert.equal(navigationUnavailableReason(robot, 'CHARGE', false, now), '')
+  assert.equal(navigationUnavailableReason({ ...robot, charging: true }, 'CHARGE', false, now), '设备正在充电')
+  assert.equal(navigationUnavailableReason({ ...robot, charging: true }, 'STANDBY', false, now), '')
+  assert.equal(navigationUnavailableReason({ ...robot, taskStatus: null }, 'STANDBY', false, now), '任务状态未知')
+  assert.equal(navigationUnavailableReason({ ...robot, edgeLocation: { localized: false } }, 'STANDBY', false, now), '设备未完成有效定位')
+})
+
+test('退出充电桩同时要求角色、显式能力和充电事实', () => {
+  const now = Date.parse('2026-09-07T10:00:20Z')
+  const robot = { status: 'online', runtimeUpdatedAt: '2026-09-07T10:00:00Z', taskStatus: 'IDLE', charging: true }
+  assert.equal(leaveChargerUnavailableReason(robot, true, true, false, now), '')
+  assert.equal(leaveChargerUnavailableReason(robot, false, true, false, now), '设备未登记退出充电桩能力')
+  assert.equal(leaveChargerUnavailableReason(robot, true, false, false, now), '当前用户没有装备操作权限')
+  assert.equal(leaveChargerUnavailableReason({ ...robot, charging: false }, true, true, false, now), '设备当前未充电')
 })
 
 const pending = []
@@ -81,6 +106,16 @@ function context(robotId = 'A', robot = {}) {
   Object.defineProperty(ctx, 'mountedDeviceCountText', { get: () => component.computed.mountedDeviceCountText.call(ctx) })
   return ctx
 }
+
+test('设备操作令牌在切换或关闭弹窗后使旧异步流程失效', () => {
+  const ctx = context()
+  const firstToken = ctx.beginDeviceAction('STANDBY', 'A')
+  assert.equal(ctx.actionPending, 'STANDBY')
+  assert.equal(ctx.actionRobotId, 'A')
+  ctx.resetDeviceAction()
+  assert.notEqual(ctx.actionToken, firstToken)
+  assert.equal(ctx.actionPending, '')
+})
 
 test('弹窗主体立即取 Overview，只异步补充上装设备计数', async () => {
   const ctx = context()

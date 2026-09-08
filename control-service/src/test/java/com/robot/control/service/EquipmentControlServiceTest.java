@@ -70,8 +70,7 @@ class EquipmentControlServiceTest {
                         .containsEntry("scope", "BODY")
                         .containsEntry("actions", List.of(
                                 "drive.velocity",
-                                "navigation.return_home",
-                                "docking.leave")));
+                                "navigation.return_home")));
 
         Map<String, Object> payload = publish("base", "drive.velocity", object(
                 "linearX", 0.3,
@@ -83,6 +82,113 @@ class EquipmentControlServiceTest {
                 entry("linearY", 0.0),
                 entry("angularZ", -0.2));
         assertTarget(payload, "base", "WHEELED_BASE");
+    }
+
+    @Test
+    void publishesLeaveChargerOnlyWithDeclaredCapabilityAndValidRuntimeState() {
+        register(object(
+                "componentType", "BODY",
+                "code", "body",
+                "capabilities", List.of(object(
+                        "code", "DEVICE_CONTROL",
+                        "actions", List.of(action("LEAVE_CHARGER"))))));
+        service.mergeEdgeDeviceStatus("robot-001", object(
+                "status", "online",
+                "taskStatus", "IDLE",
+                "charging", true));
+
+        Map<String, Object> session = service.acquire("robot-001", object(
+                "scope", "ROBOT",
+                "deviceIds", List.of("base"),
+                "actions", List.of("docking.leave")), operator());
+        service.publishCommand("robot-001", object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("scope", "BODY", "deviceId", "base"),
+                "action", "docking.leave",
+                "params", object(),
+                "client", object("seq", 7)), operator());
+
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
+        assertThat(map(captor.getValue()))
+                .containsEntry("action", "docking.leave")
+                .containsEntry("params", object());
+    }
+
+    @Test
+    void rejectsLeaveChargerWhenCapabilityOrRuntimeFactIsMissing() {
+        register(component("BODY", "body"));
+        service.mergeEdgeDeviceStatus("robot-001", object(
+                "status", "online",
+                "taskStatus", "IDLE",
+                "charging", true));
+
+        assertThatThrownBy(() -> service.acquire("robot-001", object(
+                "scope", "ROBOT",
+                "deviceIds", List.of("base"),
+                "actions", List.of("docking.leave")), operator()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未登记退出充电桩能力");
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+    }
+
+    @Test
+    void clearsLeaveChargerRuntimeFactsWhenEdgeExplicitlyReportsNull() {
+        register(object(
+                "componentType", "BODY",
+                "code", "body",
+                "capabilities", List.of(object(
+                        "code", "DEVICE_CONTROL",
+                        "actions", List.of(action("LEAVE_CHARGER"))))));
+        service.mergeEdgeDeviceStatus("robot-001", object(
+                "status", "online",
+                "taskStatus", "IDLE",
+                "charging", true));
+
+        Map<String, Object> cleared = service.mergeEdgeDeviceStatus("robot-001", object(
+                "charging", null,
+                "taskStatus", null));
+
+        assertThat(cleared)
+                .containsEntry("charging", null)
+                .containsEntry("taskStatus", null);
+        assertThatThrownBy(() -> service.acquire("robot-001", object(
+                "scope", "ROBOT",
+                "deviceIds", List.of("base"),
+                "actions", List.of("docking.leave")), operator()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("任务状态不是明确的空闲状态");
+    }
+
+    @Test
+    void usesDedicatedLeaveChargerSessionWithoutReplacingExistingBodySession() {
+        register(object(
+                "componentType", "BODY",
+                "code", "body",
+                "capabilities", List.of(
+                        object("code", "MOTION_CONTROL", "actions", List.of(action("DRIVE_VELOCITY"))),
+                        object("code", "DEVICE_CONTROL", "actions", List.of(action("LEAVE_CHARGER"))))));
+        service.mergeEdgeDeviceStatus("robot-001", object(
+                "status", "online",
+                "taskStatus", "IDLE",
+                "charging", true));
+        Map<String, Object> driveSession = service.acquire("robot-001", object(
+                "scope", "ROBOT",
+                "deviceIds", List.of("base"),
+                "actions", List.of("drive.velocity")), operator());
+
+        Map<String, Object> leaveSession = service.acquire("robot-001", object(
+                "scope", "ROBOT",
+                "deviceIds", List.of("base"),
+                "actions", List.of("docking.leave")), operator());
+
+        assertThat(leaveSession.get("controlSessionId")).isNotEqualTo(driveSession.get("controlSessionId"));
+        assertThat(leaveSession.get("actions")).isEqualTo(List.of("docking.leave"));
+        assertThat(service.acquire("robot-001", object(
+                "scope", "ROBOT",
+                "deviceIds", List.of("base"),
+                "actions", List.of("drive.velocity")), operator()).get("controlSessionId"))
+                .isEqualTo(driveSession.get("controlSessionId"));
     }
 
     @Test

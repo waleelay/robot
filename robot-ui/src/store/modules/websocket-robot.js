@@ -1275,7 +1275,12 @@ const actions = {
         fault: incoming.fault,
         lastHeartbeatAt: incoming.lastHeartbeatAt,
         statusChangedAt: incoming.statusChangedAt,
-        runtimeUpdatedAt: incoming.runtimeUpdatedAt
+        runtimeUpdatedAt: incoming.runtimeUpdatedAt,
+        charging: incoming.charging,
+        chargingStatus: incoming.chargingStatus,
+        taskStatus: incoming.taskStatus,
+        missionStatus: incoming.missionStatus,
+        edgeLocation: incoming.edgeLocation
       },
       fromRealtime: true
     }, { root: true })

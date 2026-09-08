@@ -22,7 +22,10 @@ export function normalizeRobotControlMode(value) {
   return value === '手动模式' || value === '常规模式' ? '手动模式' : null
 }
 
-const runtimeFields = ['battery', 'speed', 'controlMode', 'controlModeName', 'runtimeUpdatedAt']
+const runtimeFields = [
+  'battery', 'speed', 'controlMode', 'controlModeName', 'runtimeUpdatedAt',
+  'charging', 'chargingStatus', 'taskStatus', 'missionStatus', 'edgeLocation'
+]
 
 export function mergeRobotBaseInfo(previous = {}, incoming = {}, fromRealtime = false) {
   const merged = { ...previous, ...incoming }

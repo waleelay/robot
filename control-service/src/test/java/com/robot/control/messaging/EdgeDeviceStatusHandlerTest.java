@@ -46,7 +46,7 @@ class EdgeDeviceStatusHandlerTest {
                       "totalMileage":5578.563,"currentMileage":397.672},
                     "localization":{"localized":true,"coordinateType":"地图坐标","mapId":"2077",
                       "coordinateX":5.28,"coordinateY":1.37,"coordinateZ":0,"yaw":-2.87},
-                    "energy":{"batteryPercent":47,"chargingStatus":"未充电"},
+                    "energy":{"batteryPercent":47,"charging":false,"chargingStatus":"未充电"},
                     "control":{"controlMode":"导航模式","emergencyStop":false,"softStop":true},
                     "task":{"taskStatus":"已完成","progressPercent":100},
                     "rawStatus":{"network_connected":true}
@@ -66,6 +66,8 @@ class EdgeDeviceStatusHandlerTest {
                 .containsEntry("totalMileage", 5578.563)
                 .containsEntry("currentMileage", 397.672)
                 .containsEntry("controlMode", "导航模式")
+                .containsEntry("charging", false)
+                .containsEntry("taskStatus", "COMPLETED")
                 .containsEntry("missionStatus", "COMPLETED")
                 .containsEntry("softStopActive", true)
                 .containsEntry("timestamp", "2026-08-05 17:07:43");
@@ -128,6 +130,21 @@ class EdgeDeviceStatusHandlerTest {
         verify(robotRegistryService, times(2)).update(states.capture());
         assertThat(states.getAllValues().get(0)).containsEntry("controlMode", null);
         assertThat(states.getAllValues().get(1)).doesNotContainKey("controlMode");
+    }
+
+    @Test
+    void preservesExplicitUnknownChargingAndTaskFacts() {
+        when(equipmentControlService.mergeEdgeDeviceStatus(eq("robot-1"), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        handler.handle("eiop/v1/edge/robot-1/status", """
+                {"payload":{"status":{"energy":{"charging":null},"task":{"taskStatus":null}}}}
+                """);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(equipmentControlService).mergeEdgeDeviceStatus(eq("robot-1"), captor.capture());
+        assertThat(captor.getValue()).containsEntry("charging", null).containsEntry("taskStatus", null);
     }
 
     @Test

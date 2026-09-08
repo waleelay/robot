@@ -79,7 +79,10 @@ GET /api/bigscreen/panorama/overview
 | `status` | 在线状态 | 本项目 Control | `/api/control/robots/registry` 的 `status`，仅为 `online/offline/fault`；注册表无该设备时为 `offline`。Management Control 的 `DeviceRealtimeStatus.onlineStatus` 不参与在线判定 |
 | `statusChangedAt` | 在线状态最后变更时间 | 本项目 Control + BFF 兜底 | 注册表状态变更的服务端时间；注册表无该设备时取本次 BFF 快照时间，用于前端拒绝旧实时事件覆盖新快照 |
 | `battery` | 电量百分比 | 本项目 Control | 注册表 `battery`；源于边缘 `status.energy.batteryPercent`，未上报为 `null`，真实零电量为 `0` |
-| `runtimeUpdatedAt` | 运行态快照版本 | 本项目 Control | 注册表最后接受边缘状态的服务端 ISO-8601 时间，保留小数秒；没有边缘快照时 BFF 使用本次快照时间，阻止旧事件恢复已失效的运行态 |
+| `runtimeUpdatedAt` | 运行态快照版本 | 本项目 Control | 注册表最后接受边缘状态的服务端 ISO-8601 时间，保留小数秒；没有边缘快照时为 `null`，不得伪造边缘状态新鲜度 |
+| `charging` | 是否正在充电 | 本项目 Control | 边缘 `status.energy.charging`；只接受 Boolean，未上报或显式未知为 `null` |
+| `chargingStatus` | 充电文本状态 | 本项目 Control | 边缘 `status.energy.chargingStatus`，仅作展示补充，不用于反推 `charging` |
+| `taskStatus` | 当前设备任务状态 | 本项目 Control | 边缘正式 `status.taskStatus`，兼容读取 `status.missionStatus`；未上报为 `null`，不得默认 `IDLE` |
 | `cameras` | 相机展示集合 | 控制端 + BFF 兜底拼装 | 见 3.4；优先与 `robot.state.cameras` 使用同一份控制端实时相机清单 |
 | `stateSeq` | 实时状态序号 | 本项目 Control | 注册表 `stateSeq`；不代替 `runtimeUpdatedAt` 跨重启判断新旧 |
 | `fault` | 是否故障 | 本项目 Control + BFF 计算 | `status=fault` 时为 `true`，`status=online` 时为 `false`，离线时为 `null`；不使用 Management Control 的过期健康状态反向覆盖 |
@@ -88,6 +91,7 @@ GET /api/bigscreen/panorama/overview
 | `mountedDeviceCount` | 非本体组件数量 | BFF 计算 | Overview 不逐设备查详情，通常为 `null`；弹窗仅在未知时调用独立计数接口，取 Management `components` 中非 `BODY` 记录数，未取得清单为 `null`，明确空清单为 `0` |
 | `speed` | 最后上报速度（米/秒） | 本项目 Control | 注册表 `speed`，源于边缘 `status.motion.speed`；未知为 `null`，静止为 `0`；离线后保留最后值，但弹窗显示 `-` |
 | `location` | 设备定位信息 | 控制端 | 见 3.5 |
+| `edgeLocation` | 权威边缘定位信息 | 本项目 Control | 见 3.5；服务点导航按钮使用该字段，不使用展示定位的任务地图 ID |
 | `task` | 当前任务数组 | 控制端 + 管理端 + BFF 组装 | 见 3.7 |
 
 `clientId/vendor/lastHeartbeatAt/mountedDevices/mapDisplay` 不再放入聚合接口的
@@ -135,7 +139,11 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 只有控制端尚未取得相机清单时，BFF 才根据管理端组件信息兜底拼装；该集合描述
 相机选择信息，不直接包含视频流地址。
 
-### 3.5 `devices[].location`
+### 3.5 `devices[].location` 与 `devices[].edgeLocation`
+
+`location` 是既有地图展示模型；其 `mapId` 继续由任务关联写入平台地图 ID，避免改变当前地图加载与任务展示。
+`edgeLocation` 是 Control 边缘状态的原始定位语义，供充电与停靠导航前置校验。除经纬度外，两个对象可包含
+相同坐标事实，但调用方不得把 `location.mapId` 当作设备侧地图 ID。
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
@@ -146,6 +154,16 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 | `y` | 地图/局部坐标 Y | 控制端 | `status.localization.coordinateY` |
 | `z` | 地图/局部坐标 Z | 控制端 | `status.localization.coordinateZ` |
 | `address` | 位置文字 | 控制端 | `status.localization.address` |
+
+`edgeLocation` 还返回：
+
+| BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
+|---|---|---|---|
+| `localized` | 是否已完成有效定位 | 本项目 Control | `status.localization.localized`，必须明确为 `true` 才能发起服务点导航 |
+| `mapId` | 设备侧地图 ID | 本项目 Control | `status.localization.mapId`，由 EIOP 按平台地图 `edgeMapId` 解析 |
+| `x/y/z` | 设备侧地图坐标 | 本项目 Control | `coordinateX/coordinateY/coordinateZ`；导航至少要求有限数值 `x/y` |
+| `yaw` | 航向角 | 本项目 Control | `status.localization.yaw`，可空 |
+| `coordinateType` | 坐标类型 | 本项目 Control | `status.localization.coordinateType`，可空 |
 
 ### 3.6 任务字段
 

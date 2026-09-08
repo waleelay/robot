@@ -120,13 +120,33 @@
         <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="$emit('showControlPart')">远程控制</el-button>
         <!-- <el-button type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button> -->
         <el-button v-if="showAnimate && showControl && currenRobot?.runningTaskId && globalMapId === 'gis'" type="primary" class="mt20" @click="$emit('showSlam', true)">SLAM地图</el-button>
-        <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="onShutdown()">一键返航</el-button>
-        <el-button v-if="showAnimate && showControl" type="primary" class="mt20" @click="onStartup()">退出充电桩</el-button>
+        <template v-if="showAnimate && servicePointActionsVisible">
+          <el-button type="primary" class="mt20" :disabled="!!chargeUnavailableReason" :title="chargeUnavailableReason" @click="oneKeyCharge">一键充电</el-button>
+          <el-button type="primary" class="mt20" :disabled="!!standbyUnavailableReason" :title="standbyUnavailableReason" @click="goToStandbyPoint">前往停靠点</el-button>
+          <el-button v-if="supportsLeaveCharger" type="primary" class="mt20" :disabled="!!leaveChargerUnavailableReason" :title="leaveChargerUnavailableReason" @click="leaveCharger">退出充电桩</el-button>
+        </template>
         <!-- <el-button type="primary" @click="onAddTask()">添加任务</el-button> -->
         <el-button v-if="hasTaskPath || globalMapId === 'gis'" type="primary" class="mt20" @click="togglePath()">显示路径</el-button>
         <!-- <el-button v-if="globalMapId === 'gis'" type="primary" class="mt20" @click="$emit('showArea', true)">显示区域</el-button> -->
       </div>
     </div>
+    <el-dialog
+      title="选择停靠点"
+      width="420px"
+      append-to-body
+      :visible.sync="standbyDialogVisible"
+      :before-close="cancelStandbySelection"
+    >
+      <el-radio-group v-model="selectedStandbyPointCode" class="standby-point-list">
+        <el-radio v-for="point in standbyOptions" :key="point.pointCode" :label="point.pointCode">
+          {{ point.pointName || point.pointCode }}
+        </el-radio>
+      </el-radio-group>
+      <span slot="footer">
+        <el-button @click="cancelStandbySelection">取消</el-button>
+        <el-button type="primary" :disabled="!selectedStandbyPointCode" @click="confirmStandbySelection">确定</el-button>
+      </span>
+    </el-dialog>
     <!-- <div class="guideline wp157 hp29 mt9 ml161">
       <svg-icon icon-class="guideline" class="w100 h100" style="vertical-align: top;"></svg-icon>
     </div> -->
@@ -148,8 +168,11 @@ import gsap from './gsap.js';
 import { getDescArr } from '../../../../../utils/index.js';
 import { executionStatusLabel } from '../../../patrol/business/execution-status';
 import { listTasksForRobot } from '../../../patrol/business/task-equipment';
-import { getPatrolPanoramaMountedDeviceCount } from '@/api/new-bi';
+import { createServicePointNavigation, getPatrolPanoramaMountedDeviceCount, getServicePointOptions } from '@/api/new-bi';
+import { acquireControl, mediaClientId, releaseControl, sendEquipmentCommand } from '@/api/media';
+import { isRequestErrorNotified } from '@/utils/request';
 import { formatRobotSpeed } from '../../../js/utils/prefer-live-robot-fields';
+import { leaveChargerUnavailableReason, navigationUnavailableReason } from '../../../js/utils/service-point-actions';
 export default {
   name: 'Modal',
   mixins: [gsap],
@@ -167,6 +190,12 @@ export default {
       mountedDeviceCountSupplement: null,
       mountedDeviceCountLoading: false,
       mountedDeviceCountRobotId: null,
+      actionPending: '',
+      actionRobotId: '',
+      actionToken: 0,
+      standbyDialogVisible: false,
+      standbyOptions: [],
+      selectedStandbyPointCode: '',
     }
   },
   computed: {
@@ -284,8 +313,38 @@ export default {
     hasActionButtons() {
       if (this.isFixedCamera) return false
       if (this.showAnimate && this.showControl) return true
+      if (this.showAnimate && this.servicePointActionsVisible) return true
       if (this.hasTaskPath || this.globalMapId === 'gis') return true
       return false
+    },
+    controlProfile() {
+      return this.$store.getters['websocketRobot/getControlProfiles']?.[this.selectedRobotId] || {}
+    },
+    baseControlDevice() {
+      return (this.controlProfile.devices || []).find(device => device.deviceId === 'base' && device.scope === 'BODY') || null
+    },
+    servicePointActionsVisible() {
+      return !this.isFixedCamera && !!this.baseControlDevice
+    },
+    supportsLeaveCharger() {
+      return (this.baseControlDevice?.actions || []).includes('docking.leave')
+    },
+    hasEquipmentOperator() {
+      if (this.$store.getters.bigscreenAuthorizationBypassed) return true
+      const roles = (this.$store.getters.roles || [])
+        .map(role => typeof role === 'string' ? role : role?.roleCode)
+        .filter(Boolean)
+        .map(role => role.toUpperCase())
+      return roles.includes('EQUIPMENT_OPERATOR')
+    },
+    chargeUnavailableReason() {
+      return navigationUnavailableReason(this.currenRobot, 'CHARGE', !!this.actionPending)
+    },
+    standbyUnavailableReason() {
+      return navigationUnavailableReason(this.currenRobot, 'STANDBY', !!this.actionPending)
+    },
+    leaveChargerUnavailableReason() {
+      return leaveChargerUnavailableReason(this.currenRobot, this.supportsLeaveCharger, this.hasEquipmentOperator, !!this.actionPending)
     },
   },
   watch: {
@@ -305,6 +364,7 @@ export default {
     }
   },
   beforeDestroy() {
+    this.resetDeviceAction()
     this.cancelMountedDeviceCount()
     this.clearAttachRetry()
     this.stopFixedCameraVideo({ keepLastFrame: false })
@@ -372,13 +432,159 @@ export default {
       if (status === 'paused' || status === 'terminated' || status === 'canceled' || status === 'terminating') return 'gray'
       return ''
     },
-    onShutdown() {
-      // this.$emit('shutdown')
+    managementData(response) {
+      return response && Object.prototype.hasOwnProperty.call(response, 'data') ? response.data : response
     },
-    onStartup() {
-      // this.$emit('startup')
+    resetDeviceAction() {
+      this.actionToken += 1
+      this.actionPending = ''
+      this.actionRobotId = ''
+      this.standbyDialogVisible = false
+      this.standbyOptions = []
+      this.selectedStandbyPointCode = ''
+    },
+    beginDeviceAction(action, robotId) {
+      this.actionToken += 1
+      this.actionPending = action
+      this.actionRobotId = robotId
+      return this.actionToken
+    },
+    actionError(error, fallback) {
+      if (isRequestErrorNotified(error)) return
+      const message = error?.response?.data?.message || error?.message || fallback
+      this.$message?.error?.(message)
+    },
+    async refreshDeviceSnapshot() {
+      try {
+        await this.$store.dispatch('websocketExtraData/refreshOverviewResources', { failClosed: false })
+      } catch (error) {
+        console.warn('刷新设备快照失败', error)
+      }
+    },
+    async submitServicePointNavigation(robotId, intent, pointCode) {
+      const response = await createServicePointNavigation({
+        serialNumber: robotId,
+        intent,
+        pointCode
+      })
+      const result = this.managementData(response)
+      if (!result || result.accepted !== true) throw new Error(result?.message || '服务点导航未被平台接受')
+      return result
+    },
+    async oneKeyCharge() {
+      if (this.chargeUnavailableReason) return
+      const robotId = this.selectedRobotId
+      const actionToken = this.beginDeviceAction('CHARGE', robotId)
+      try {
+        await this.submitServicePointNavigation(robotId, 'CHARGE', null)
+        if (this.actionToken === actionToken) this.$message?.success?.('充电任务已提交')
+      } catch (error) {
+        if (this.actionToken === actionToken) this.actionError(error, '充电任务提交结果未知，请刷新设备状态后确认')
+      } finally {
+        if (this.actionToken === actionToken) {
+          this.resetDeviceAction()
+          await this.refreshDeviceSnapshot()
+        }
+      }
+    },
+    async goToStandbyPoint() {
+      if (this.standbyUnavailableReason) return
+      const robotId = this.selectedRobotId
+      const actionToken = this.beginDeviceAction('STANDBY', robotId)
+      try {
+        const options = this.managementData(await getServicePointOptions(robotId, 'STANDBY'))
+        if (this.actionToken !== actionToken) return
+        if (!Array.isArray(options) || !options.length) {
+          this.$message?.warning?.('当前没有可用停靠点')
+          this.resetDeviceAction()
+          return
+        }
+        if (options.some(point => !String(point?.pointCode || '').trim())) throw new Error('停靠点候选数据缺少 pointCode')
+        const currentReason = navigationUnavailableReason(this.currenRobot, 'STANDBY', false)
+        if (currentReason) throw new Error(currentReason)
+        if (options.length === 1) {
+          await this.submitServicePointNavigation(robotId, 'STANDBY', options[0].pointCode)
+          if (this.actionToken !== actionToken) return
+          this.$message?.success?.('停靠任务已提交')
+          this.resetDeviceAction()
+          await this.refreshDeviceSnapshot()
+          return
+        }
+        this.standbyOptions = options
+        this.selectedStandbyPointCode = ''
+        this.standbyDialogVisible = true
+      } catch (error) {
+        if (this.actionToken === actionToken) {
+          this.resetDeviceAction()
+          this.actionError(error, '停靠点查询失败')
+        }
+      }
+    },
+    cancelStandbySelection(done) {
+      this.resetDeviceAction()
+      if (typeof done === 'function') done()
+    },
+    async confirmStandbySelection() {
+      if (!this.selectedStandbyPointCode) return
+      const robotId = this.actionRobotId
+      const actionToken = this.actionToken
+      const currentReason = navigationUnavailableReason(this.currenRobot, 'STANDBY', false)
+      if (!robotId || robotId !== this.selectedRobotId || currentReason) {
+        this.$message?.warning?.(currentReason || '当前设备已切换，请重新选择停靠点')
+        this.resetDeviceAction()
+        return
+      }
+      try {
+        await this.submitServicePointNavigation(robotId, 'STANDBY', this.selectedStandbyPointCode)
+        if (this.actionToken === actionToken) this.$message?.success?.('停靠任务已提交')
+      } catch (error) {
+        if (this.actionToken === actionToken) this.actionError(error, '停靠任务提交结果未知，请刷新设备状态后确认')
+      } finally {
+        if (this.actionToken === actionToken) {
+          this.resetDeviceAction()
+          await this.refreshDeviceSnapshot()
+        }
+      }
+    },
+    async leaveCharger() {
+      if (this.leaveChargerUnavailableReason) return
+      const robotId = this.selectedRobotId
+      const baseControlDevice = this.baseControlDevice
+      const actionToken = this.beginDeviceAction('LEAVE_CHARGER', robotId)
+      let session = null
+      try {
+        session = await acquireControl(robotId, {
+          scope: 'ROBOT', deviceIds: ['base'], actions: ['docking.leave'],
+          mode: 'EXCLUSIVE', reason: 'leave_charger', ttlSeconds: 30
+        })
+        if (!session?.controlSessionId) throw new Error(session?.message || '未取得本体控制权')
+        const response = await sendEquipmentCommand(robotId, {
+          controlSessionId: session.controlSessionId,
+          target: { scope: 'BODY', deviceId: 'base', deviceType: baseControlDevice.deviceType },
+          action: 'docking.leave',
+          params: {},
+          client: { terminalId: mediaClientId, source: 'map_device_popup_leave_charger', seq: Date.now(), timestamp: new Date().toISOString() }
+        })
+        if (response?.status !== 'PUBLISHED') throw new Error(response?.message || '退出充电桩指令未发布')
+        if (this.actionToken === actionToken) this.$message?.success?.('退出充电桩指令已发送')
+      } catch (error) {
+        if (this.actionToken === actionToken) this.actionError(error, '退出充电桩指令发送结果未知，请刷新设备状态后确认')
+      } finally {
+        if (session?.controlSessionId) {
+          try {
+            await releaseControl(robotId, session.controlSessionId, { reason: 'leave_charger_completed' })
+          } catch (error) {
+            console.warn('释放退出充电桩控制会话失败', error)
+          }
+        }
+        if (this.actionToken === actionToken) {
+          this.resetDeviceAction()
+          await this.refreshDeviceSnapshot()
+        }
+      }
     },
     async onClose() {
+      this.resetDeviceAction()
       this.cancelMountedDeviceCount()
       await this.stopFixedCameraVideo({ keepLastFrame: false })
       this.visible = false
@@ -542,6 +748,7 @@ export default {
       }
     },
     async show(e, robot) {
+      this.resetDeviceAction()
       this.$emit('showControlPart', false)
       if (this.selectedRobotId === robot?.robotId || !e) {
         await this.stopFixedCameraVideo({ keepLastFrame: false })
@@ -566,6 +773,11 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.standby-point-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 .btns {
   .el-button:first-child {
     margin-left: 10px;

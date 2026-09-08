@@ -78,7 +78,10 @@ class PanoramaServiceTest {
         stubEmptyOverviewSources(client);
         when(client.devices()).thenReturn(List.of(Map.of("id", "101", "serialNumber", "robot-1", "model", "M1")));
         when(client.registeredRobots()).thenReturn(List.of(Map.of("robotId", "robot-1", "status", "online",
-                "battery", 0, "speed", 0.0, "controlMode", "导航模式", "runtimeUpdatedAt", "2026-08-28T07:00:00.123456789Z")));
+                "battery", 0, "speed", 0.0, "controlMode", "导航模式", "runtimeUpdatedAt", "2026-08-28T07:00:00.123456789Z",
+                "charging", true, "chargingStatus", "CHARGING", "taskStatus", "IDLE",
+                "location", Map.of("localized", true, "mapId", "edge-map-1", "x", 1.5, "y", 2.5, "yaw", 0.5,
+                        "updatedAt", "2026-08-28T07:00:00.123456789Z"))));
         when(client.realtimeStatuses(List.of("robot-1"))).thenReturn(List.of(Map.of("serialNumber", "robot-1",
                 "status", Map.of("energy", Map.of("batteryPercent", 99), "motion", Map.of("speed", 9),
                         "control", Map.of("controlMode", "手动模式")))));
@@ -87,6 +90,10 @@ class PanoramaServiceTest {
         assertEquals(0.0, device.get("speed"));
         assertEquals("导航模式", device.get("controlMode"));
         assertEquals("2026-08-28T07:00:00.123456789Z", device.get("runtimeUpdatedAt"));
+        assertEquals(true, device.get("charging"));
+        assertEquals("IDLE", device.get("taskStatus"));
+        assertEquals("edge-map-1", map(device.get("edgeLocation")).get("mapId"));
+        assertEquals(true, map(device.get("edgeLocation")).get("localized"));
         assertNull(device.get("mountedDeviceCount"));
         verify(client, never()).device(anyString());
     }

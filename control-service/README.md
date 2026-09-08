@@ -52,7 +52,8 @@ src/main/java/com/robot/control/
 `GET /api/control/robots` 已移除；内存注册表只通过 `/api/control/robots/registry` 供 BFF 聚合。
 注册表中的机器人 `status` 只由非 retained 边缘状态及 30 秒超时扫描维护，媒体客户端状态不续期；
 `statusChangedAt` 是 Control 服务端记录的状态版本时间，供 BFF 和前端拒绝旧状态覆盖。
-电量、速度和控制模式同样只接受边缘状态，注册表和 `robot.state` 同时返回 `runtimeUpdatedAt`。
+电量、速度、控制模式、充电事实、任务状态和定位同样只接受边缘状态，注册表和 `robot.state` 同时返回
+`runtimeUpdatedAt`。充电与任务字段显式上报 `null` 时会清除旧事实；缺值不默认成未充电或空闲。
 它记录最后接受边缘状态的服务端时间，不随媒体心跳或离线扫描推进；未上报的字段为 `null`，
 未知模式不能下发本体移动指令。完整空值和版本规则见[客户端事件协议](../docs/03-接口与协议/客户端事件/客户端事件与载荷协议文档.md)。
 
@@ -86,6 +87,8 @@ src/main/java/com/robot/control/
 - 租约默认 30 秒；同一 `userId + clientId` 重复申请会续期。
 - 冲突按机器人和 `deviceIds` 交集判断；冲突当前返回 HTTP 200 的 `CONTROL_LOCKED` 响应体。
 - `drive.velocity` 要求机器人在线、手动模式、当前终端持有含 `base` 的租约。
+- `docking.leave` 仅在 Management 本体组件明确登记 `DEVICE_CONTROL/LEAVE_CHARGER` 时出现；要求装备操作权限、
+  在线且 30 秒内有边缘状态、明确 `taskStatus=IDLE` 和 `charging=true`，并持有只含 `base` 的机器人排他会话。
 - `takeover`/模式切换只发布请求，最终状态以机器人上报为准。
 - `confirm-token` 当前会生成 30 秒 Token 信息，但普通 `/commands` 尚未校验它。
 

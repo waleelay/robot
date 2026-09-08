@@ -37,10 +37,12 @@ public class RobotRegistryService {
             "location",
             "runningStatus",
             "healthStatus",
+            "charging",
             "chargingStatus",
             "softStopActive",
             "remoteControlEnabled",
             "taskProgressPercent",
+            "taskStatus",
             "edgeStatus",
             "edgeMessageId",
             "edgeSchemaVersion",
@@ -272,7 +274,8 @@ public class RobotRegistryService {
                 if (!edgeStatusReport && ("speed".equals(field) || "location".equals(field))) {
                     return;
                 }
-                if (dynamicState.containsKey(field) && dynamicState.get(field) != null) {
+                if (dynamicState.containsKey(field)
+                        && (dynamicState.get(field) != null || "charging".equals(field) || "taskStatus".equals(field))) {
                     device.dynamicState.put(field, dynamicState.get(field));
                 }
             });

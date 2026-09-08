@@ -1026,8 +1026,6 @@ export default {
         propsData: {
           ...data,
           className: data.deviceInfo.status1 === 0 ? 'normal' : data.deviceInfo.status1 === 1 ? 'active' : data.deviceInfo.status1 === 2 ? 'error' : 'off',
-          onShutdown: () => this.controlDevice('shutdown', this.selectedEndPoint),
-          onStartup: () => this.controlDevice('startup', data.dog.id),
           onClose: () => this.closePopup(data.index),
           onCustomEvent: eventData => {
             // 监听组件事件
@@ -1581,9 +1579,6 @@ export default {
         top: '50%',
         // backgroundImage: require('../../assets/bigScreen/icon/robot_normal.png')
       }
-    },
-    // 一键开关机
-    controlDevice(type, dogId) {
     },
     handleOpen() {
       this.$nextTick(() => {

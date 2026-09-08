@@ -89,18 +89,6 @@ export default {
   data() {
     return {
       robotControlObj,
-      operList: [
-        { key: 'zuoyi', label: '左平移' },
-        { key: 'youyi', label: '右平移' },
-        { key: 'shutdown', label: '一键返航' },
-        { key: 'startup', label: '退出充电' },
-        { key: 'zhanli', label: '站立' },
-        { key: 'paxia', label: '趴下' },
-        { key: 'tztb', label: '停止踏步' },
-        { key: 'jiting', label: '急停' },
-        { key: 'step', label: '切换步态' },
-        { key: 'speed', label: '设定速度' },
-      ],
     }
   }
 }

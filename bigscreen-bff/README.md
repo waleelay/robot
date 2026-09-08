@@ -31,6 +31,7 @@ src/main/java/com/robot/bigscreen/
 - `BigscreenProxyController`：代理 `/api/control/**`、`/api/media/**`、`/api/manage/**` 和 `/api/v1/management/**`；`GET /api/control/robots` 固定返回 `410`。`/internal/**` 仅供服务间内网调用，不注册为 BFF 对外代理。
 - `BusinessTaskProxyController`：只代理任务计划、流程定义、执行记录、设备和地图白名单。
 - `PanoramaService`：组装全景摘要、当前地图资源、按需设备/任务详情和告警。`overview` 只返回首屏所需摘要；地图点、任务路径和任务完整详情由独立接口按需读取，避免首屏预取回放和逐设备详情。
+- 机器人电量、速度、控制模式、`charging/taskStatus/edgeLocation/runtimeUpdatedAt` 统一来自本项目 Control 注册表；既有 `location.mapId` 保留平台地图展示语义，服务点导航只使用 `edgeLocation` 的设备侧定位事实。
 - Overview 查询设备或固定摄像头列表收到 Management `403` 时，表示当前用户已失去对应资源查看权限，仅将该类资源按空集合组装；`401`、超时、5xx 和异常响应仍按失败处理。地图、任务等其他资源的 `403` 保持原鉴权语义。
 - Overview 的地图列表是必需查询：复用现有通用并发许可与必需资源读取链路，HTTP 错误、超时、空响应或并发饱和不转换为 `map=[]`；401/403 保持认证语义，其他读取失败返回 503。只有成功查询无地图时返回空列表，避免前端误判地图已删除。
 - `/api/bigscreen/panorama/devices/{deviceId}/mounted-device-count` 仅对授权机器人补查组件并返回非 `BODY` 组件数量，复用按用户隔离的短缓存与在途合并；不组装设备档案、运行态、地图或任务。弹窗主体使用 Overview 与 `robot.state`，固定摄像头不调用本接口。详见[字段来源映射](../docs/03-接口与协议/大屏BFF/大屏BFF字段来源映射文档.md)。
