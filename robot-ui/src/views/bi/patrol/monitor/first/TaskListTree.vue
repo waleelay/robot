@@ -388,7 +388,7 @@ export default {
           this.selectedTaskRobotIds = this.collectTaskCloseRobotIds(current, taskId)
         }
       } catch (error) {
-        this.$message.warning('固定摄像头列表暂不可用，请稍后重试')
+        console.warning('固定摄像头列表暂不可用，请稍后重试')
       } finally {
         this.$set(this.loadingTaskFixedCameraIds, key, false)
       }
@@ -616,7 +616,7 @@ export default {
         await this.updateVideo(item)
         return
       }
-      this.$message.warning('当前宫格已满，请先关闭已有画面')
+      console.warning('当前宫格已满，请先关闭已有画面')
     },
     isRobotChecked(robotId) {
       if (robotId === undefined || robotId === null || robotId === '') return false

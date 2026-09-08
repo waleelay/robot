@@ -123,7 +123,7 @@ import { mapActions, mapState } from 'vuex';
 import PieChart from './PieChart.vue';
 import VideoBox from '../components/modal/VideoBox.vue';
 import EquipmentScreenSelect from './EquipmentScreenSelect.vue';
-import { pickDefaultCamera, isBodyCamera } from '../js/utils/pick-default-camera';
+import { pickDefaultCamera, isBodyCamera, isFixedCameraRobot } from '../js/utils/pick-default-camera';
 export default {
   name: 'BiIndexLeft',
   components: { PieChart, VideoBox, EquipmentScreenSelect },
@@ -147,25 +147,34 @@ export default {
         { name: '低风险', value: (data.low?.items || []).length, color: '#00D8A4' },
       ]
     },
-    /** 装备画面选择：在线与故障装备均可选，离线不可选 */
-    selectableRobots() {
+    /** 移动装备：在线与故障可选，离线不可选（不含固定摄像头） */
+    selectableMobileRobots() {
       return (this.robots || []).filter(robot => {
+        if (isFixedCameraRobot(robot)) return false
         const status = robot.status || this.robotBaseInfo?.[robot.robotId]?.status
         return status === 'online' || status === 'fault'
       })
     },
-    // 仅 1 个可选装备时，选择框展示该装备下全部摄像头（本体优先）
+    /** 固定摄像头：与装备平级展示，按可播状态决定是否可选 */
+    selectableFixedCameras() {
+      return (this.robots || []).filter(robot => isFixedCameraRobot(robot))
+    },
+    /** 装备画面选择：移动装备 + 固定摄像头 */
+    selectableRobots() {
+      return [...this.selectableMobileRobots, ...this.selectableFixedCameras]
+    },
+    // 仅 1 个移动装备且无固定摄像头时，展开该装备下全部摄像头（本体优先）
     isSingleEquipmentCameraMode() {
-      return this.selectableRobots.length === 1
+      return this.selectableMobileRobots.length === 1 && this.selectableFixedCameras.length === 0
     },
     selectTitle() {
       if (this.isSingleEquipmentCameraMode) {
-        return this.selectableRobots[0]?.name || '装备画面选择'
+        return this.selectableMobileRobots[0]?.name || '装备画面选择'
       }
       return '装备画面选择'
     },
     selectPlaceholder() {
-      return this.isSingleEquipmentCameraMode ? '请输入摄像头名称' : '请输入装备名称'
+      return this.isSingleEquipmentCameraMode ? '请输入摄像头名称' : '请输入装备或摄像头名称'
     },
     currentSelectedId() {
       const slot = this.videoSlots[this.activeSlotIndex]
@@ -175,7 +184,7 @@ export default {
     selectOptions() {
       const otherSlot = this.videoSlots[this.activeSlotIndex === 0 ? 1 : 0]
       if (this.isSingleEquipmentCameraMode) {
-        const robot = this.selectableRobots[0]
+        const robot = this.selectableMobileRobots[0]
         const cameras = [...(robot?.cameras || [])].sort((a, b) => {
           if (isBodyCamera(a) === isBodyCamera(b)) return 0
           return isBodyCamera(a) ? -1 : 1
@@ -192,7 +201,7 @@ export default {
           }
         })
       }
-      return this.selectableRobots.map(robot => {
+      const equipmentOptions = this.selectableMobileRobots.map(robot => {
         const occupied = otherSlot?.robotId === robot.robotId
         const hasCamera = !!pickDefaultCamera(robot, this.cameras)
         return {
@@ -200,10 +209,26 @@ export default {
           label: robot.name,
           title: hasCamera ? robot.name : '暂无视频源',
           robotId: robot.robotId,
+          sourceType: 'EQUIPMENT',
           disabled: occupied,
           occupied
         }
       })
+      const fixedOptions = this.selectableFixedCameras.map(robot => {
+        const occupied = otherSlot?.robotId === robot.robotId
+        const playable = this.isFixedCameraPlayable(robot)
+        const title = this.getFixedCameraOptionTitle(robot, playable)
+        return {
+          id: robot.robotId,
+          label: robot.name,
+          title,
+          robotId: robot.robotId,
+          sourceType: 'FIXED_CAMERA',
+          disabled: occupied || !playable,
+          occupied
+        }
+      })
+      return [...equipmentOptions, ...fixedOptions]
     }
   },
   data() {
@@ -227,6 +252,31 @@ export default {
     ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'setPrefixId']),
     statValue(value) {
       return value === null || value === undefined || value === '' ? '--' : value
+    },
+    resolveRobotInfo(robot) {
+      if (!robot) return null
+      return Object.assign({}, robot, this.robotBaseInfo?.[robot.robotId] || {})
+    },
+    isFixedCameraPlayable(robot) {
+      const info = this.resolveRobotInfo(robot)
+      if (!info) return false
+      if (info.playable === true && pickDefaultCamera(info, this.cameras)) return true
+      if (info.enabled === false) return false
+      if (info.configReady === false) return false
+      if (info.gatewayHealth?.status === 'OFFLINE') return false
+      if (info.status === 'offline') return false
+      return !!pickDefaultCamera(info, this.cameras)
+    },
+    getFixedCameraOptionTitle(robot, playable) {
+      const info = this.resolveRobotInfo(robot)
+      if (!info) return '固定摄像头当前不可播放'
+      if (playable) return info.name
+      if (info.enabled === false) return '固定摄像头已停用'
+      if (info.configReady === false) return '固定摄像头配置不完整'
+      if (info.gatewayHealth?.status === 'OFFLINE') return '固定摄像头网关离线'
+      if (info.status === 'offline') return '固定摄像头当前离线'
+      if (!pickDefaultCamera(info, this.cameras)) return '暂无视频源'
+      return '固定摄像头当前不可播放'
     },
     getMoreRobotInfo() {
 
@@ -298,13 +348,13 @@ export default {
       const robot = this.selectableRobots.find(r => r.robotId === item.robotId)
         || this.robots.find(r => r.robotId === item.robotId)
       if (!robot) return
-      const robotInfo = Object.assign({}, this.robotBaseInfo?.[robot.robotId] || robot)
+      const robotInfo = this.resolveRobotInfo(robot)
       let cameraMeta = null
       if (this.isSingleEquipmentCameraMode) {
         cameraMeta = (robot.cameras || []).find(c => c.key === item.cameraKey || c.key === item.id)
       } else {
-        // 默认播放本体相机；没有本体时取装备第一个数据源
-        cameraMeta = pickDefaultCamera(robot, this.cameras)
+        // 默认播放本体相机；没有本体时取装备第一个数据源（固定摄像头通常仅一路）
+        cameraMeta = pickDefaultCamera(robotInfo, this.cameras)
       }
       if (!cameraMeta) return
       const camera = Object.assign({}, this.cameras?.[cameraMeta.key] || cameraMeta)
@@ -319,7 +369,7 @@ export default {
       // 先挂载视频 DOM，再拉流，保证 LiveKit 能附着到 video 元素
       this.$set(this.videoSlots, index, {
         robotId: robot.robotId,
-        robot: { ...robot, ...robotInfo },
+        robot: robotInfo,
         camera
       })
       this.setPrefixId(this.prefixId)
@@ -338,7 +388,7 @@ export default {
       }
       this.$set(this.videoSlots, index, {
         robotId: robot.robotId,
-        robot: { ...robot, ...robotInfo },
+        robot: robotInfo,
         camera: latest
       })
     },

@@ -43,6 +43,7 @@
             :show-labels="true"
             :enable-add-point="false"
             :enable-robot-click="false"
+            :focus-robot-id="selectedRobotId"
           />
         </div>
       </div>

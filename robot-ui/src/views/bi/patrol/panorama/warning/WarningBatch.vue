@@ -393,7 +393,7 @@ export default {
         this.applyListFilter()
       } catch (error) {
         if (seq !== this.alarmListLoadSeq) return
-        this.$message.error(error?.message || '告警列表加载失败')
+        console.error(error?.message || '告警列表加载失败')
       } finally {
         if (seq === this.alarmListLoadSeq) this.alarmListLoading = false
       }

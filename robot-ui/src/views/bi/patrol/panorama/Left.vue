@@ -411,7 +411,7 @@ export default {
         page.pageNum = Number(response?.pageNum) || page.pageNum + 1
         page.total = Number(response?.total) || 0
       } catch (error) {
-        if (seq === page.seq) this.$message.error(error?.message || '告警列表加载失败')
+        if (seq === page.seq) console.error(error?.message || '告警列表加载失败')
       } finally {
         if (seq === page.seq) page.loading = false
       }
@@ -642,7 +642,7 @@ export default {
       try {
         await this.closeRemoteControlAndWait()
       } catch (error) {
-        this.$message.warning('远程控制关闭超时，请稍后重试')
+        console.warning('远程控制关闭超时，请稍后重试')
         return
       }
       this.activeTaskId = taskId
@@ -652,7 +652,7 @@ export default {
         if (detail) taskInfo = detail
       } catch (error) {
         // 详情是按需增强；失败时仍以首屏摘要打开已有视频入口，避免阻断正在值守的用户。
-        this.$message.warning('任务详情暂不可用，已按当前任务信息打开视频')
+        console.warning('任务详情暂不可用，已按当前任务信息打开视频')
       }
       const robotIds = this.getTaskRobotIds(taskId)
       this.setShowRobotIds(robotIds)

@@ -371,7 +371,7 @@ export default {
     },
     showError(error) {
       if (isRequestErrorNotified(error)) return
-      this.$message.error((error && error.message) || '请求失败')
+      console.error((error && error.message) || '请求失败')
     }
   }
 }

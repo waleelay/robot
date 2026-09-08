@@ -28,8 +28,13 @@ export default {
       return this.$store.state.websocketExtraData?.trajectoryByRobot || {}
     },
     trajectoryWatchTargets() {
-      if (this.showSmall || !this.hasPreview || this.map?.id == null) return []
-      const robots = this.slamOfRobot?.[String(this.map.id)]?.robots || []
+      // 首页大图与实时监控小框均订阅执行轨迹
+      if (!this.hasPreview || this.map?.id == null) return []
+      let robots = this.slamOfRobot?.[String(this.map.id)]?.robots || []
+      // 监控二级 focusRobotId：只订阅当前装备
+      if (this.focusRobotId !== undefined && this.focusRobotId !== null && this.focusRobotId !== '') {
+        robots = robots.filter(item => String(item.robotId) === String(this.focusRobotId))
+      }
       return robots.map(robot => {
         const robotId = robot.robotId
         if (!this.canWatchTrajectory(robotId)) return null
@@ -50,10 +55,10 @@ export default {
         .map(item => `${item.robotId}:${item.workflowInstanceId}`)
         .sort()
         .join('|')
-      return `${this.map?.id ?? ''}#${targets}`
+      return `${this.map?.id ?? ''}#${this.focusRobotId ?? ''}#${targets}`
     },
     sessionTraveledPathLayers() {
-      if (this.showSmall || !this.map) return []
+      if (!this.map) return []
       const robotIds = new Set((this.slamOfRobot?.[String(this.map.id)]?.robots || [])
         .map(item => String(item.robotId)))
       const visibleRecords = Object.entries(this.trajectoryRecords)
@@ -114,7 +119,6 @@ export default {
       return this.sessionTrajectoryVisuals[String(robotId)] || null
     },
     syncTrajectoryWatching() {
-      if (this.showSmall) return
       this.trajectoryOwnsWatching = true
       const mapId = this.map?.id ?? null
       const mapChanged = this.trajectoryPreviousMapId != null
@@ -140,7 +144,6 @@ export default {
       this.$store.dispatch('websocketRobot/syncTrajectoryWatchTargets', next)
     },
     getTrajectoryLocation(robotId, normalLocation) {
-      if (this.showSmall) return normalLocation
       const record = this.trajectoryRecords[String(robotId)]
       const pose = record?.currentPose
       if (!pose || !Number.isFinite(Number(pose.x)) || !Number.isFinite(Number(pose.y))) return normalLocation

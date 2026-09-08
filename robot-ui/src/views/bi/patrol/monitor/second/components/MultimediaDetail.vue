@@ -545,7 +545,7 @@ export default {
         this.bindDetailDuration(player, recording)
       } catch (e) {
         if (seq !== this.detailPlaySeq) return
-        this.$message.error('视频加载失败')
+        console.error('视频加载失败')
       }
     },
     bindDetailDuration(player, recording) {

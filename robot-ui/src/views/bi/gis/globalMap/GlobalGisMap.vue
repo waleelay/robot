@@ -270,7 +270,7 @@ export default {
           if (robot) {
             this.map.setView([this.robotLocation[robot.robotId].lat || this.gisMapCenterPoint[0], this.robotLocation[robot.robotId].lng || this.gisMapCenterPoint[1]])
           } else {
-            this.$message.error('未找到相关装备')
+            console.error('未找到相关装备')
           }
         }
       },
@@ -1679,7 +1679,7 @@ export default {
           try {
             await this.closeTaskRobotViewAndWait()
           } catch (error) {
-            this.$message.warning('任务视频关闭超时，请稍后重试')
+            console.warning('任务视频关闭超时，请稍后重试')
             return
           }
           await controlRef.rebindToRobot(robotId)
@@ -1690,7 +1690,7 @@ export default {
           try {
             await this.closeTaskRobotViewAndWait()
           } catch (error) {
-            this.$message.warning('任务视频关闭超时，请稍后重试')
+            console.warning('任务视频关闭超时，请稍后重试')
             return
           }
           await controlRef?.show(true)
@@ -1699,7 +1699,7 @@ export default {
         try {
           await this.closeTaskRobotViewAndWait()
         } catch (error) {
-          this.$message.warning('任务视频关闭超时，请稍后重试')
+          console.warning('任务视频关闭超时，请稍后重试')
           return
         }
         await controlRef?.show(true)
@@ -1711,7 +1711,7 @@ export default {
         try {
           await this.closeTaskRobotViewAndWait()
         } catch (error) {
-          this.$message.warning('任务视频关闭超时，请稍后重试')
+          console.warning('任务视频关闭超时，请稍后重试')
           return
         }
         await controlRef?.show(true)

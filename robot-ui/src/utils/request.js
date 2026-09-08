@@ -118,21 +118,23 @@ service.interceptors.response.use(res => {
     } else if (code === 500) {
       if (!showAlert) {
         showAlert = true
-        Message({
-          message: msg,
-          type: 'error',
-          onClose: () => { showAlert = false }
-        })
+        // Message({
+        //   message: msg,
+        //   type: 'error',
+        //   onClose: () => { showAlert = false }
+        // })
+        console.error(500, msg)
       }
       return Promise.reject(markRequestErrorNotified(new Error(msg)))
     } else if (code === 601) {
       if (!showAlert) {
         showAlert = true
-        Message({
-          message: msg,
-          type: 'warning',
-          onClose: () => { showAlert = false }
-        })
+        // Message({
+        //   message: msg,
+        //   type: 'warning',
+        //   onClose: () => { showAlert = false }
+        // })
+        console.error(601, msg)
       }
       return Promise.reject(markRequestErrorNotified('error'))
     } else if (code !== 200) {
@@ -167,12 +169,13 @@ service.interceptors.response.use(res => {
     const skipErrorMessage = Boolean(error.config && error.config.skipErrorMessage)
     if (!skipErrorMessage && !showAlert) {
       showAlert = true
-      Message({
-        message,
-        type: 'error',
-        duration: 5 * 1000,
-        onClose: () => { showAlert = false }
-      })
+      // Message({
+      //   message,
+      //   type: 'error',
+      //   duration: 5 * 1000,
+      //   onClose: () => { showAlert = false }
+      // })
+      console.error('error', message)
     }
     if (!skipErrorMessage) markRequestErrorNotified(error)
     return Promise.reject(error)
@@ -196,12 +199,13 @@ export function download(url, params, filename, config) {
       const resText = await data.text();
       const rspObj = JSON.parse(resText);
       const errMsg = errorCode[rspObj.code] || rspObj.msg || errorCode['default']
-      Message.error(errMsg);
+      // Message.error(errMsg);
+      console.error(errMsg);
     }
     downloadLoadingInstance.close();
   }).catch((r) => {
     console.error(r)
-    Message.error('下载文件出现错误，请联系管理员！')
+    // Message.error('下载文件出现错误，请联系管理员！')
     downloadLoadingInstance.close();
   })
 }

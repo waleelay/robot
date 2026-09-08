@@ -284,7 +284,7 @@ export const LIANTONG_SLAM_MAP_ID = '2077775285125144578'
  * 轮式车：point-3，任务路径 3→4→5（执行开关关闭时为已暂停）
  * 待执行任务：机器狗 + 轮式车，路径 2→3→4
  */
-export const ENABLE_LIANTONG_SLAM_MOCK = false
+export const ENABLE_LIANTONG_SLAM_MOCK = true
 
 /**
  * 开启后：创建临时任务成功后，按避障路径模拟装备移动并更新 SLAM 坐标

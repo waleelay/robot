@@ -8,7 +8,7 @@
       <template v-if="hasPreview && !mapLoadFailed">
         <div
           ref="viewportRef"
-          class="map-preview-viewport flx-center w100 h100"
+          class="map-preview-viewport w100 h100"
           :class="{ 'is-map-loading': mapLoading, 'is-measuring': measureActive }"
           @wheel="handleWheel"
           style="background: #112B4D;"
@@ -178,7 +178,7 @@
                   />
                 </g>
               </g>
-              <!-- 真实环境：当前会话缓存或重连恢复的已走路径；小窗口实时地图不展示 -->
+              <!-- 真实环境：当前会话缓存或重连恢复的已走路径；实时监控小框同样展示 -->
               <template v-if="!showSmall">
               <g
                 v-for="layer in sessionTraveledPathLayers"
@@ -631,7 +631,7 @@ const PATH_DIRECTION_ARROW = require('@/assets/images/new-bi/path-direction-arro
 const ROBOT_ICON_SCALE_X = 23.017 / 38
 const ROBOT_ICON_SCALE_Y = 16.525 / 28
 // MapTool「路径」多任务折线配色
-const TASK_PATH_COLORS = ['#2563EB', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4', '#EF4444']
+const TASK_PATH_COLORS = ['#10B981', '#2563EB', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4', '#EF4444']
 
 export default {
   name: 'BiPatrolSlam',
@@ -647,6 +647,8 @@ export default {
     enableAddPoint: { type: Boolean, default: true },
     // 是否允许点击装备弹窗/切换选中（second 监控页关闭，避免回到 first）
     enableRobotClick: { type: Boolean, default: true },
+    // 监控二级：只展示该装备（图标/轨迹）；空则展示当前地图全部装备
+    focusRobotId: { type: [String, Number], default: null },
     // 侧栏是否收缩；与 visibleLayout 配合，将地图限制在未遮挡区域
     collapse: { type: Boolean, default: false },
     // 'home' 指挥中心（顶栏+左右侧）| 'panorama' 全景（顶栏+左侧）| '' 不限制
@@ -749,6 +751,9 @@ export default {
     // biPatrolMonitor：精简图标，不展示状态信息（与 GIS 一致）
     showSmall() {
       return this.currenRouteName === 'biPatrolMonitor'
+    },
+    hasFocusRobot() {
+      return this.focusRobotId !== undefined && this.focusRobotId !== null && this.focusRobotId !== ''
     },
     showAnimate() {
       return this.currenRouteName !== 'biIndex'
@@ -963,7 +968,11 @@ export default {
     drawableRobots() {
       // const robots = this.robotBaseInfo?.['test111'] ? [this.robotBaseInfo?.['test111']] : []
       // biPatrolMonitor：按当前地图关联装备展示；其他场景同样以 slamOfRobot 为准
-      const robots = this.slamOfRobot?.[String(this.map?.id)]?.robots || []
+      let robots = this.slamOfRobot?.[String(this.map?.id)]?.robots || []
+      // 监控二级：仅展示当前控制中的一台装备
+      if (this.hasFocusRobot) {
+        robots = robots.filter(item => String(item.robotId) === String(this.focusRobotId))
+      }
       return robots.map(baseRobot => {
         const robot = { ...baseRobot, ...(this.robotBaseInfo?.[baseRobot.robotId] || {}) }
         const normalLocation = { ...(baseRobot.location || {}), ...(this.robotLocation?.[baseRobot.robotId] || {}) }
@@ -1708,7 +1717,7 @@ export default {
           try {
             await this.closeTaskRobotViewAndWait()
           } catch (error) {
-            this.$message.warning('任务视频关闭超时，请稍后重试')
+            console.warning('任务视频关闭超时，请稍后重试')
             return
           }
           await controlRef.rebindToRobot(robotId)
@@ -1719,7 +1728,7 @@ export default {
           try {
             await this.closeTaskRobotViewAndWait()
           } catch (error) {
-            this.$message.warning('任务视频关闭超时，请稍后重试')
+            console.warning('任务视频关闭超时，请稍后重试')
             return
           }
           await controlRef?.show(true)
@@ -1728,7 +1737,7 @@ export default {
         try {
           await this.closeTaskRobotViewAndWait()
         } catch (error) {
-          this.$message.warning('任务视频关闭超时，请稍后重试')
+          console.warning('任务视频关闭超时，请稍后重试')
           return
         }
         await controlRef?.show(true)
@@ -1740,7 +1749,7 @@ export default {
         try {
           await this.closeTaskRobotViewAndWait()
         } catch (error) {
-          this.$message.warning('任务视频关闭超时，请稍后重试')
+          console.warning('任务视频关闭超时，请稍后重试')
           return
         }
         await controlRef?.show(true)
@@ -2005,8 +2014,9 @@ export default {
       const wasAtDefault = Math.abs(this.zoom - this.defaultZoomValue) < 0.01
       const wasAtMax = Math.abs(this.zoom - this.maxZoomValue) < 0.01
 
-      // 当前视口：默认等比适配（不变形）
-      const defaultZoom = Math.max(0.1, Math.min(curW / mapWidth, curH / mapHeight))
+      // 当前视口：默认等比适配后再放大 10%（略裁边，装备更易看清）
+      const fitZoom = Math.max(0.1, Math.min(curW / mapWidth, curH / mapHeight))
+      const defaultZoom = fitZoom * 1.3
 
       // 视口贴合上限（两侧收缩后可视区）；再放大 2.5 倍，仍用同一 zoom 保证宽高等比不变形
       const collapsedSize = this.getCollapsedViewportSize()
@@ -2018,7 +2028,7 @@ export default {
 
       this.defaultZoomValue = defaultZoom
       this.maxZoomValue = Math.max(defaultZoom, maxZoom)
-      this.minZoomValue = Math.max(0.1, defaultZoom * 0.25)
+      this.minZoomValue = Math.max(0.1, fitZoom * 0.25)
 
       if (reset || wasAtDefault) {
         this.zoom = this.defaultZoomValue
@@ -2365,6 +2375,12 @@ export default {
   height: 100%;
   max-width: 100%;
   min-width: 0;
+  // 不用 flx-center（含 flex-wrap）：舞台大于视口时 wrap 会导致贴边、中心下移
+  // nowrap + 居中：默认放大时从地图中心向四周扩散裁切
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
   // background: rgb(243, 240, 210);
   background: #cdcdcd;
   overflow: hidden;

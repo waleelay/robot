@@ -210,7 +210,7 @@ export default {
       try {
         await this.loadTaskFixedCameras(taskId)
       } catch (error) {
-        this.$message.warning('固定摄像头列表暂不可用，请稍后重试')
+        console.warning('固定摄像头列表暂不可用，请稍后重试')
       }
     },
     openMockTaskRobotView() {

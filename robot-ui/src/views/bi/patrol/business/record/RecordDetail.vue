@@ -1090,7 +1090,7 @@ export default {
             this.videoPlayUrlMap = Object.assign({}, this.videoPlayUrlMap, { [fileId]: playUrl })
           }
         } catch (error) {
-          this.$message.warning(`视频 ${fileId} 播放地址获取失败`)
+          console.warning(`视频 ${fileId} 播放地址获取失败`)
         } finally {
           this.videoPlayLoadingIds = this.videoPlayLoadingIds.filter(id => id !== fileId)
         }
@@ -1674,7 +1674,7 @@ export default {
     },
     showError(error) {
       if (isRequestErrorNotified(error)) return
-      this.$message.error((error && error.message) || '请求失败')
+      console.error((error && error.message) || '请求失败')
     }
   }
 }

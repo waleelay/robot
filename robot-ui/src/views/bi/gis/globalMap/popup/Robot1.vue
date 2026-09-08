@@ -19,49 +19,76 @@
       >
         <!-- 固定摄像头：仅装备类型、装备位置 -->
         <template v-if="isFixedCamera">
-          <div class="item wp156">
+          <div class="item wp196">
             装备类型：<span class="value">{{ currenRobot?.type || '-' }}</span>
           </div>
-          <div class="item wp149 ml26 text-ellipsis" :title="fixedCameraLocation">
-            装备位置：<span class="value">{{ fixedCameraLocation }}</span>
+          <div class="item wp99 ml26 text-ellipsis" :title="fixedCameraLocation">
+            位置：<span class="value">{{ fixedCameraLocation }}</span>
           </div>
         </template>
         <template v-else>
-          <div class="item wp156">
+          <div class="item wp196">
             装备类型：<span class="value">{{ currenRobot?.type || '-' }}</span>
           </div>
-          <div class="item wp149 ml26">
-            当前电量：<span class="value">{{ formatBattery(currenRobot?.battery) }}</span>
+          <div class="item wp99 ml26">
+            电量：<span class="value">{{ formatBattery(currenRobot?.battery) }}</span>
           </div>
-          <div class="item wp156 mt10">
+          <div class="item wp196 mt10">
             装备型号：<span class="value">{{ currenRobot?.model || '-' }}</span>
           </div>
-          <!-- <div class="item wp149 ml26 mt10">
+          <!-- <div class="item wp99 ml26 mt10">
             是否告警：<span class="value">{{ currenRobot?.alarmLevel === 'none' ? '否' : '是' }}</span>
           </div> -->
-          <div class="item wp149 ml26 mt10">
-            当前速度：<span class="value">{{ formatRobotSpeed(currenRobot) }}</span>
+          <div class="item wp99 ml26 mt10">
+            速度：<span class="value">{{ formatRobotSpeed(currenRobot) }}</span>
           </div>
-          <div class="item wp156 mt10">
+          <div class="item wp196 mt10">
             控制模式：<span class="value">{{ currenRobot?.status === 'offline' ? '-' : (currenRobot?.controlMode || '-') }}</span>
           </div>
-          <div class="item wp149 ml26 mt10">
-            上装设备：<span class="value">{{ mountedDeviceCountText }}</span>
+          <div class="item wp99 ml26 mt10">
+            上装：<span class="value">{{ mountedDeviceCountText }}</span>
           </div>
           <div v-if="hasActionButtons" class="mt10 with-divider w100"></div>
-          <div v-for="(task, index) in taskList" :key="task.taskId" class="mt10 task flex">
-            <div class="item wp156 text-ellipsis" :title="task?.name || ''">
-              <span class="wp60 tar">任务{{index + 1}}：</span>
+          <!-- 默认仅一条执行中任务；无则占位文案 -->
+          <div v-if="primaryRunningTask" class="mt10 task flex">
+            <div class="item wp196 text-ellipsis" :title="primaryRunningTask?.name || ''">
+              <span class="wp60 tar">任务：</span>
               <span
                 class="value"
-                :class="{ 'is-link': !!getTaskId(task) }"
-                @click="focusPanoramaTask(task)"
-              >{{ task?.name || '-' }}</span>
+                :class="{ 'is-link': !!getTaskId(primaryRunningTask) }"
+                @click="focusPanoramaTask(primaryRunningTask)"
+              >{{ primaryRunningTask?.name || '-' }}</span>
             </div>
-            <div class="item wp149 ml26">
-              任务状态：<span class="value" :class="taskStatusClass(task)">{{ task?.statusName || executionStatusLabel(task?.status, '-') }}</span>
+            <div class="item wp99 ml26">
+              状态：<span class="value" :class="taskStatusClass(primaryRunningTask)">{{ primaryRunningTask?.statusName || executionStatusLabel(primaryRunningTask?.status, '-') }}</span>
             </div>
           </div>
+          <div v-else class="mt10 task task-empty flex flx-align-center">
+            <div class="item w100">暂无执行中的任务{{ extraTasks.length ? '，' : '' }}</div>
+          </div>
+          <div
+            v-if="hasExtraTasks"
+            class="mt8 task-expand flx-align-center curp"
+            @click="tasksExpanded = !tasksExpanded"
+          >
+            <span>{{ tasksExpanded ? '收起' : `任务列表（${extraTasks.length}）` }}</span>
+            <svg-icon icon-class="right" class="ml4 task-expand__icon" :class="{ 'is-expanded': tasksExpanded }" />
+          </div>
+          <template v-if="tasksExpanded">
+            <div v-for="(task, index) in extraTasks" :key="task.taskId || task.id || index" class="mt10 task flex">
+              <div class="item wp196 text-ellipsis" :title="task?.name || ''">
+                <span class="wp60 tar">任务{{ index + 1 }}：</span>
+                <span
+                  class="value"
+                  :class="{ 'is-link': !!getTaskId(task) }"
+                  @click="focusPanoramaTask(task)"
+                >{{ task?.name || '-' }}</span>
+              </div>
+              <div class="item wp99 ml26">
+                状态：<span class="value" :class="taskStatusClass(task)">{{ task?.statusName || executionStatusLabel(task?.status, '-') }}</span>
+              </div>
+            </div>
+          </template>
         </template>
       </div>
       <!-- 固定摄像头：画面框内 play/pause 切换实时视频，始终占位避免弹窗高度跳动 -->
@@ -166,7 +193,7 @@
 import { mapActions, mapState } from 'vuex';
 import gsap from './gsap.js';
 import { getDescArr } from '../../../../../utils/index.js';
-import { executionStatusLabel } from '../../../patrol/business/execution-status';
+import { executionStatusLabel, isRunningTaskStatus } from '../../../patrol/business/execution-status';
 import { listTasksForRobot } from '../../../patrol/business/task-equipment';
 import { createServicePointNavigation, getPatrolPanoramaMountedDeviceCount, getServicePointOptions } from '@/api/new-bi';
 import { acquireControl, mediaClientId, releaseControl, sendEquipmentCommand } from '@/api/media';
@@ -182,6 +209,8 @@ export default {
       pathVisible: false,
       videoVisible: false,
       videoToggling: false,
+      /** 是否展开显示非执行中的其它任务 */
+      tasksExpanded: false,
       prefixId: 'robot1-fixed-camera-',
       // 当前弹窗内已开流的相机，切换/关闭时按此引用停流，避免 selectedRobotId 已变更关错流
       playingCamera: null,
@@ -296,6 +325,30 @@ export default {
       const list = listTasksForRobot(this.taskData, robotId)
       return getDescArr(list, 'timestamp')
     },
+    /** 默认展示的一条执行中任务（优先 runningTaskId） */
+    primaryRunningTask() {
+      const list = this.taskList || []
+      const runningId = this.currenRobot?.runningTaskId
+      if (runningId !== undefined && runningId !== null && runningId !== '') {
+        const matched = list.find(task =>
+          String(this.getTaskId(task)) === String(runningId) && isRunningTaskStatus(task?.status)
+        )
+        if (matched) return matched
+      }
+      return list.find(task => isRunningTaskStatus(task?.status)) || null
+    },
+    /** 待展开的其它任务（含待执行等） */
+    extraTasks() {
+      const primaryId = this.primaryRunningTask ? String(this.getTaskId(this.primaryRunningTask) || '') : ''
+      return (this.taskList || []).filter(task => {
+        const id = String(this.getTaskId(task) || '')
+        if (primaryId && id && id === primaryId) return false
+        return true
+      })
+    },
+    hasExtraTasks() {
+      return this.extraTasks.length > 0
+    },
     // 装备关联任务路径有点位时才显示「显示路径」按钮
     hasTaskPath() {
       const taskId = this.currenRobot?.runningTaskId
@@ -349,6 +402,12 @@ export default {
   },
   watch: {
     mountedDeviceCountTarget: { immediate: true, handler: 'loadMountedDeviceCount' },
+    selectedRobotId() {
+      this.tasksExpanded = false
+    },
+    visible(val) {
+      if (!val) this.tasksExpanded = false
+    },
     hasTaskPath(val) {
       if (!val && this.pathVisible) {
         this.pathVisible = false
@@ -904,6 +963,26 @@ export default {
           &.is-link {
             cursor: pointer;
             &:hover { color: #0BF9FE; }
+          }
+        }
+      }
+      .task-empty .item {
+        color: rgba(255, 255, 255, 0.55);
+      }
+      .task-expand {
+        color: #4AB8FF;
+        font-family: "Microsoft YaHei";
+        font-size: 12px;
+        line-height: 16px;
+        user-select: none;
+        &:hover {
+          color: #0BF9FE;
+        }
+        &__icon {
+          font-size: 10px;
+          transition: transform 0.2s ease;
+          &.is-expanded {
+            transform: rotate(90deg);
           }
         }
       }
