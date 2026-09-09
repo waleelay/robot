@@ -650,8 +650,9 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue
 继续对应工作流；`handleResult` 显式传 `null`。稍后处置只关闭前端当前弹窗，
 不调用处置接口。
 
-`actionable-workflow` 不使用 BFF 统计缓存，每次请求直接查询管理端。普通告警仅在未处置且风险等级为
-`HIGH` 或 `MEDIUM` 时进入普通弹窗；`sourceType=TASK` 的告警不进入普通弹窗，也不按风险等级过滤，只在查询接口
+`actionable-workflow` 不使用 BFF 统计缓存，每次请求直接查询管理端。普通告警只有在当前会话收到携带完整
+告警数据的实时事件，且状态未处置、风险等级为 `HIGH` 或 `MEDIUM` 时才进入普通弹窗；Overview、分页查询和
+重连快照只更新列表及总数，不补弹存量普通告警。`sourceType=TASK` 的告警不进入普通弹窗，也不按风险等级过滤，只在查询接口
 返回可处置记录后进入工作流弹窗。BFF 收到告警失效通知后，以独立链路分别查询可处置工作流告警和普通
 告警；工作流快照未变化时每 300 ms 仅重查工作流接口，最长 5 秒，快照变化立即停止，普通告警查询不会
 阻塞该过程。首次连接和重连时，BFF

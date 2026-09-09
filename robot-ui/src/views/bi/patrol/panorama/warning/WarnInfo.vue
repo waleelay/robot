@@ -307,6 +307,7 @@ export default {
       deferredAlarmIds: new Set(),
       deferredNormalIds: new Set(),
       knownNormalIds: new Set(),
+      normalAlarmStateReady: false,
       /** all：空闲可自动首条中/高；high-only：关窗后仅高风险可自动续弹 */
       normalPresentMode: 'all',
       show: false,
@@ -694,6 +695,13 @@ export default {
   watch: {
     robotAlarmObj: {
       handler(newVal) {
+        if (!this.normalAlarmStateReady) {
+          this.normalAlarmStateReady = true
+          this.knownNormalIds = new Set(Object.values(newVal || {})
+            .filter(isPopupEligible)
+            .map(item => String(item.alarmId)))
+          return
+        }
         if (this.isWorkflowAlarm) return
         this.syncNormalQueueFromStore(newVal || {})
       },

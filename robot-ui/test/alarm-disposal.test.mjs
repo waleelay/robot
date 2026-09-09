@@ -75,6 +75,14 @@ test('工作流告警弹窗只消费 BFF 推送，不在前端查询或定时重
   assert.match(source, /workflowAlarms:\s*\{[\s\S]*this\.workflowQueue = \(items \|\| \[\]\)/)
 })
 
+test('普通告警弹窗不消费组件挂载前的存量状态', () => {
+  const source = readFileSync(new URL(
+    '../src/views/bi/patrol/panorama/warning/WarnInfo.vue', import.meta.url
+  ), 'utf8')
+  assert.match(source, /normalAlarmStateReady:\s*false/)
+  assert.match(source, /if \(!this\.normalAlarmStateReady\) \{[\s\S]*this\.knownNormalIds = new Set\([\s\S]*return/)
+})
+
 test('处置成功后两个告警弹窗均从全局列表移除当前告警', () => {
   const files = [
     '../src/views/bi/patrol/panorama/warning/WarnInfo.vue',

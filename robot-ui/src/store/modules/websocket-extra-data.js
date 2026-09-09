@@ -82,6 +82,7 @@ const state = {
   robotBaseInfo: {}, // { robotId: { ...robotInfo } }
   // 装备列表
   robotList: [],
+  // 仅保存当前会话收到的普通告警实时事件，供自动弹窗使用；Overview/分页快照不得回填。
   robotAlarmObj: {}, // { robotId: { ...alarmInfo } }
   slamMapData: [],
   taskPathPoints: {}, // { taskId: [pathPoints] } taskId: 任务id，pathId: 路径id，mapId: 地图id，pathPoints: 任务路径点
@@ -696,15 +697,6 @@ const actions = {
       commit('SET_ROBOT_BASE_INFO', { robotId: item.robotId, robotInfo: { ...item } });
       commit('SET_ROBOT_LOCATION', { robotId: item.robotId, location: item.location });
     })
-    // 先回填中风险，再回填高风险：同 robotId 时高风险覆盖
-    data?.alarms?.medium?.items?.forEach(item => {
-      if (!item?.robotId) return
-      commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
-    })
-    data?.alarms?.high?.items?.forEach(item => {
-      if (!item?.robotId) return
-      commit('SET_ROBOT_ALARM_INFO', { robotId: item.robotId, alarmInfo: item });
-    })
     // 当前地图点位数据模拟在map对象的points字段中
     const slamMapList = (data?.map || []).map(item => {
       item.points = item.points || (ENABLE_LIANTONG_SLAM_MOCK ? SLAM_POINTS?.[item.id] || [] : []);
@@ -828,6 +820,7 @@ const actions = {
       if (event.data.summary) {
         commit('SET_ALARM_SUMMARY', event.data.summary);
       }
+      // 普通告警只有携带完整数据的实时事件可以进入自动弹窗；列表快照只更新 alarmsData。
       const workflowAlarm = String(alarm.sourceType || '').toUpperCase() === 'TASK';
       if (!workflowAlarm) {
         const level = String(alarm.level || '').toLowerCase()

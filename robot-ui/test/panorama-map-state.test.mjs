@@ -262,25 +262,48 @@ test('任务摘要降级沿用已有订阅，明确 waiting 才冻结；小地�
   assert.equal(Object.keys(ctx.state.trajectoryByRobot).length, 1)
 })
 
-test('工作流告警只消费 BFF 快照，普通告警仍仅高风险弹窗', async () => {
-  const ctx = setup()
-  await ctx.dispatch('syncRobot', { event: 'panorama.alarm.changed', data: { alarm: {
-    alarmId: 'workflow-warn', sourceType: 'TASK', level: 'medium', status: 'unhandled', robotId: 'robot-1'
-  } } })
-  assert.equal(ctx.state.workflowAlarms.length, 0)
+test('普通告警快照不补弹，实时高/中风险事件才进入弹窗状态', async () => {
+  const snapshotHigh = {
+    alarmId: 'snapshot-high', sourceType: 'COMPONENT', level: 'HIGH', status: 'unhandled', robotId: 'robot-1'
+  }
+  const snapshotMedium = {
+    alarmId: 'snapshot-medium', sourceType: 'COMPONENT', level: 'MEDIUM', status: 'unhandled', robotId: 'robot-2'
+  }
+  const ctx = setup({ getPatrolPanoramaOverview: async () => overview([], {
+    alarms: {
+      high: { total: 1, pageNum: 1, pageSize: 10, items: [snapshotHigh] },
+      medium: { total: 1, pageNum: 1, pageSize: 10, items: [snapshotMedium] },
+      low: { total: 0, pageNum: 1, pageSize: 10, items: [] }
+    }
+  }) })
+  await ctx.refresh()
+  assert.equal(ctx.state.alarmsData.high.items[0].alarmId, 'snapshot-high')
+  assert.equal(ctx.state.alarmsData.medium.items[0].alarmId, 'snapshot-medium')
   assert.equal(Object.keys(ctx.state.robotAlarmObj).length, 0)
 
-  await ctx.dispatch('syncRobot', { event: 'panorama.workflow-alarms.changed', data: { items: [{
+  await ctx.dispatch('syncRobot', { event: 'panorama.alarm.changed', data: { alarm: {
+    alarmId: 'ordinary-medium', sourceType: 'COMPONENT', level: 'medium', status: 'unhandled', robotId: 'robot-2'
+  } } })
+  assert.equal(ctx.state.robotAlarmObj['robot-2'].alarmId, 'ordinary-medium')
+
+  const workflowCtx = setup()
+  await workflowCtx.dispatch('syncRobot', { event: 'panorama.alarm.changed', data: { alarm: {
+    alarmId: 'workflow-warn', sourceType: 'TASK', level: 'medium', status: 'unhandled', robotId: 'robot-1'
+  } } })
+  assert.equal(workflowCtx.state.workflowAlarms.length, 0)
+  assert.equal(Object.keys(workflowCtx.state.robotAlarmObj).length, 0)
+
+  await workflowCtx.dispatch('syncRobot', { event: 'panorama.workflow-alarms.changed', data: { items: [{
     alarmId: 'workflow-warn', workflowActionable: true, level: 'MEDIUM', status: 'unhandled'
   }] } })
-  assert.equal(ctx.state.workflowAlarms[0].alarmId, 'workflow-warn')
-  await ctx.dispatch('syncRobot', { event: 'panorama.workflow-alarms.changed', data: { items: [] } })
-  assert.equal(ctx.state.workflowAlarms.length, 0)
+  assert.equal(workflowCtx.state.workflowAlarms[0].alarmId, 'workflow-warn')
+  await workflowCtx.dispatch('syncRobot', { event: 'panorama.workflow-alarms.changed', data: { items: [] } })
+  assert.equal(workflowCtx.state.workflowAlarms.length, 0)
 
-  await ctx.dispatch('syncRobot', { event: 'panorama.alarm.changed', data: { alarm: {
+  await workflowCtx.dispatch('syncRobot', { event: 'panorama.alarm.changed', data: { alarm: {
     alarmId: 'ordinary-high', sourceType: 'COMPONENT', level: 'high', status: 'unhandled', robotId: 'robot-1'
   } } })
-  assert.equal(ctx.state.robotAlarmObj['robot-1'].alarmId, 'ordinary-high')
+  assert.equal(workflowCtx.state.robotAlarmObj['robot-1'].alarmId, 'ordinary-high')
 })
 
 test('统计降级推送保留首次成功值，真实零值仍正常更新', async () => {
