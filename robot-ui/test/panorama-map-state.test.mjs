@@ -140,7 +140,7 @@ function trajectoryView(ctx, showSmall = false) {
   })
 }
 
-test('执行中轨迹标记起点，结束后标记最后一个实际轨迹点', async () => {
+test('真实轨迹箭头间距为 60px，执行中标记起点且结束后标记终点', async () => {
   const ctx = setup({ getPatrolPanoramaOverview: async () => trajectoryOverview() })
   await ctx.refresh()
   const view = trajectoryView(ctx)
@@ -151,18 +151,19 @@ test('执行中轨迹标记起点，结束后标记最后一个实际轨迹点',
       workflowInstanceId: 9001,
       action: 'RESET',
       points: [
-        { timestamp: 1000, x: 1, y: 2 },
-        { timestamp: 1001, x: 3, y: 4 }
+        { timestamp: 1000, x: 0, y: 2 },
+        { timestamp: 1001, x: 130, y: 2 }
       ]
     }
   })
-  assert.deepEqual(view.sessionTraveledPathLayers[0].startPoint, { x: 1, y: 2 })
-  assert.deepEqual(view.sessionTraveledPathLayers[0].endPoint, { x: 3, y: 4 })
+  assert.deepEqual(view.sessionTraveledPathLayers[0].startPoint, { x: 0, y: 2 })
+  assert.deepEqual(view.sessionTraveledPathLayers[0].endPoint, { x: 130, y: 2 })
+  assert.deepEqual(Array.from(view.sessionTraveledPathLayers[0].arrows, item => item.x), [60, 120])
   assert.equal(view.sessionTraveledPathLayers[0].stopped, false)
 
   await ctx.dispatch('syncRobot', trajectoryEvent('STOPPED'))
   assert.equal(view.sessionTraveledPathLayers[0].stopped, true)
-  assert.deepEqual(view.sessionTraveledPathLayers[0].endPoint, { x: 3, y: 4 })
+  assert.deepEqual(view.sessionTraveledPathLayers[0].endPoint, { x: 130, y: 2 })
   await ctx.dispatch('clearAllTrajectories')
   view.$destroy()
 })

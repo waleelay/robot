@@ -1,7 +1,7 @@
-/** Figma 85783:8749 Group 1321316583: 14x18, interval 104 */
+/** Figma 85783:8749 Group 1321316583: 14x18 */
 export const PATH_ARROW_WIDTH = 14
 export const PATH_ARROW_HEIGHT = 18
-export const PATH_ARROW_INTERVAL = 104
+export const PATH_ARROW_INTERVAL = 60
 
 function polylineLength(points) {
   let total = 0
