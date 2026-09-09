@@ -84,7 +84,8 @@ const state = {
   deviceStateCache: readDeviceStateCache(),
   incomingCalls: [],
   activeIncomingCall: null,
-  callOperationPending: false
+  callOperationPending: false,
+  callOperationCallId: ''
 }
 
 function cameraKey(robotId, camera) {
@@ -125,6 +126,17 @@ function isIntercomAlreadyStoppedError(error) {
   return Boolean(error && error.response && error.response.status === 409 &&
     data && data.code === 'INVALID_STATE' &&
     data.message === '当前用户未持有对讲权限')
+}
+
+function intercomCallOperationError(message) {
+  const detail = String(message || '')
+  if (detail.includes('该机器人正在进行其他对讲')) return '该机器人正在通话，请稍后再试'
+  if (detail.includes('当前操作员正在与其他机器人通话') || detail.includes('当前终端正在与其他机器人通话')) {
+    return '当前终端正在通话，请先结束当前通话'
+  }
+  if (detail.includes('机器人已离线')) return '机器人已离线，无法接听'
+  if (detail.includes('来电已被处理或已超时') || detail.includes('来电不存在')) return '来电已结束或已在其他终端处理'
+  return detail && !detail.includes(' Conflict: ') ? detail : '接听失败，请稍后重试'
 }
 
 function toBasicCamera(camera, robotId, key) {
@@ -304,6 +316,7 @@ const mutations = {
     state.incomingCalls = []
     state.activeIncomingCall = null
     state.callOperationPending = false
+    state.callOperationCallId = ''
   },
   incrementReconnectAttempts(state) {
     state.reconnectAttempts++
@@ -366,8 +379,9 @@ const mutations = {
     if (!state.activeIncomingCall) return
     state.activeIncomingCall = { ...state.activeIncomingCall, ...update }
   },
-  SET_CALL_OPERATION_PENDING(state, pending) {
+  SET_CALL_OPERATION_PENDING(state, { pending, callId = '' }) {
     state.callOperationPending = pending
+    state.callOperationCallId = pending ? callId : ''
   }
 }
 
@@ -939,10 +953,16 @@ const actions = {
       return
     }
     if (event.event === 'video.intercom.call.status' && event.data) {
+      const operationFailed = event.data.status === 'FAILED' && state.callOperationPending &&
+        event.data.callId === state.callOperationCallId
       if (event.data.status === 'RINGING') {
         commit('UPSERT_INCOMING_CALL', event.data)
       } else {
         commit('REMOVE_INCOMING_CALL', event.data.callId)
+      }
+      if (operationFailed) {
+        commit('SET_CALL_OPERATION_PENDING', { pending: false })
+        Message.error(intercomCallOperationError(event.data.message))
       }
       if (state.activeIncomingCall && state.activeIncomingCall.callId === event.data.callId &&
           ['ENDED', 'FAILED'].includes(event.data.status)) {
@@ -951,19 +971,22 @@ const actions = {
       return
     }
     if (event.type === 'video.intercom.call.accepted' && event.payload) {
-      commit('SET_CALL_OPERATION_PENDING', false)
+      commit('SET_CALL_OPERATION_PENDING', { pending: false })
       commit('REMOVE_INCOMING_CALL', event.payload.call.callId)
       dispatch('activateIncomingIntercom', event.payload)
       return
     }
     if (event.type === 'video.intercom.call.rejected') {
-      commit('SET_CALL_OPERATION_PENDING', false)
+      commit('SET_CALL_OPERATION_PENDING', { pending: false })
       commit('REMOVE_INCOMING_CALL', event.payload.callId)
       return
     }
     if (event.type === 'video.intercom.call.operation-failed') {
-      commit('SET_CALL_OPERATION_PENDING', false)
-      Message.error((event.payload && event.payload.message) || '来电操作失败')
+      const shouldNotify = state.callOperationPending
+      commit('SET_CALL_OPERATION_PENDING', { pending: false })
+      if (shouldNotify) {
+        Message.error(intercomCallOperationError(event.payload && event.payload.message))
+      }
     }
   },
   sendIntercomCallOperation({ commit, state }, { action, callId }) {
@@ -971,7 +994,7 @@ const actions = {
       Message.error('控制通道未连接')
       return
     }
-    commit('SET_CALL_OPERATION_PENDING', true)
+    commit('SET_CALL_OPERATION_PENDING', { pending: true, callId })
     state.mediaSocket.send(JSON.stringify({
       type: `video.intercom.call.${action}`,
       requestId: `call-${action}-${Date.now()}`,

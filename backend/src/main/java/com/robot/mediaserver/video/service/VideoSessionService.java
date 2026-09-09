@@ -652,6 +652,12 @@ public class VideoSessionService {
             String message) {
         VideoSession session = requireSession(sessionId);
         String normalized = status == null ? "" : status.trim().toLowerCase();
+        if (("starting".equals(normalized) || "active".equals(normalized))
+                && !holdsRoomForIntercom(session)) {
+            log.info("忽略已释放对讲会话的迟到状态，sessionId={} currentStatus={} reportedStatus={}",
+                    sessionId, session.getIntercomStatus(), normalized);
+            return;
+        }
         // 对讲状态独立于视频状态：视频可能仍在 STREAMING，而对讲已经 IDLE/FAILED。
         // 因此这里只更新 intercom 字段，必要时才把无人观看的会话切到 IDLE_WAIT。
         switch (normalized) {
@@ -989,9 +995,8 @@ public class VideoSessionService {
      * @return 会话编号列表
      */
     public List<String> intercomTimeoutCandidates(OffsetDateTime heartbeatBefore) {
-        return repository.findByIntercomStatusInAndIntercomHeartbeatAtBefore(
-                        Set.of(IntercomStatus.STARTING, IntercomStatus.ACTIVE),
-                        heartbeatBefore).stream()
+        return repository.findIntercomTimeoutCandidates(
+                        Set.of(IntercomStatus.STARTING, IntercomStatus.ACTIVE), heartbeatBefore).stream()
                 .map(VideoSession::getSessionId)
                 .toList();
     }

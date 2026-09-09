@@ -11,6 +11,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * 实时视频会话仓储。
@@ -46,9 +48,14 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
 
         List<VideoSession> findByStatusAndIdleSinceBefore(VideoSessionStatus status, OffsetDateTime idleSince);
 
-        List<VideoSession> findByIntercomStatusInAndIntercomHeartbeatAtBefore(
-            Collection<IntercomStatus> statuses,
-            OffsetDateTime heartbeatAt);
+    @Query("""
+            select session from VideoSession session
+            where session.intercomStatus in :statuses
+              and (session.intercomHeartbeatAt is null or session.intercomHeartbeatAt < :heartbeatBefore)
+            """)
+    List<VideoSession> findIntercomTimeoutCandidates(
+            @Param("statuses") Collection<IntercomStatus> statuses,
+            @Param("heartbeatBefore") OffsetDateTime heartbeatBefore);
 
     List<VideoSession> findByIntercomStatusIn(Collection<IntercomStatus> statuses);
 

@@ -52,6 +52,22 @@ class BigscreenWebSocketAuthorizationServiceTest {
     }
 
     @Test
+    void allowsUserScopedIntercomOperationFailureWithoutResourceIdentity() {
+        String payload = """
+                {
+                  "type": "video.intercom.call.operation-failed",
+                  "requestId": "call-accept-001",
+                  "payload": {
+                    "code": "OPERATION_REJECTED",
+                    "message": "该机器人正在进行其他对讲"
+                  }
+                }
+                """;
+
+        assertTrue(service.canReceive(Set.of(), payload));
+    }
+
+    @Test
     void filtersRobotStateOutsideAuthorizedDevices() {
         String payload = """
                 {

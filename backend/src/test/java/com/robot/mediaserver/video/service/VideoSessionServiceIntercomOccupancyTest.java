@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -92,6 +93,29 @@ class VideoSessionServiceIntercomOccupancyTest {
         assertThatThrownBy(() -> service.startIntercom("vs-target", operator("operator-1", "web-1")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("该机器人正在进行其他对讲");
+    }
+
+    @Test
+    void ignoresLateActiveStatusAfterIntercomWasReleased() {
+        target.setIntercomStatus(IntercomStatus.INTERRUPTED);
+
+        service.handleIntercomStatus(
+                "vs-target", "active", "TR_audio", "audio.robot.mic", null, null);
+
+        assertThat(target.getIntercomStatus()).isEqualTo(IntercomStatus.INTERRUPTED);
+        assertThat(target.getRobotAudioTrackSid()).isNull();
+        verify(repository, never()).save(target);
+    }
+
+    @Test
+    void includesOccupiedSessionWithoutHeartbeatInTimeoutCandidates() {
+        OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(15);
+        VideoSession missingHeartbeat = session(
+                "vs-missing-heartbeat", "robot-001", null, null, IntercomStatus.ACTIVE);
+        when(repository.findIntercomTimeoutCandidates(anyCollection(), eq(threshold)))
+                .thenReturn(List.of(missingHeartbeat));
+
+        assertThat(service.intercomTimeoutCandidates(threshold)).containsExactly("vs-missing-heartbeat");
     }
 
     @Test

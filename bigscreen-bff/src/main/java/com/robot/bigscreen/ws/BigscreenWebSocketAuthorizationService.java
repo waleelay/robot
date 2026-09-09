@@ -118,11 +118,23 @@ public class BigscreenWebSocketAuthorizationService {
         Set<String> payloadRobotIds = robotIdsInPayload(payload);
         Set<String> payloadCameraIds = upstreamFixedCameraIdsInPayload(payload);
         if (payloadRobotIds.isEmpty() && payloadCameraIds.isEmpty()) {
-            return false;
+            return isUserScopedOperationResponse(payload);
         }
         return resources != null
                 && resources.robotIds().containsAll(payloadRobotIds)
                 && resources.cameraIds().containsAll(payloadCameraIds);
+    }
+
+    private boolean isUserScopedOperationResponse(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return false;
+        }
+        try {
+            String type = objectMapper.readTree(payload).path("type").asText("");
+            return "video.intercom.call.operation-failed".equals(type);
+        } catch (Exception exception) {
+            return false;
+        }
     }
 
     /**
