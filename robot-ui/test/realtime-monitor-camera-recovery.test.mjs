@@ -216,3 +216,71 @@ test('固定摄像头等待真实视频轨道，超时后由启动流程清理�
   assert.match(source, /await waitForVideoTrack\(room/)
   assert.match(source, /stopVideoSession\(createdSessionId/)
 })
+
+test('浏览器 Track 或 Room 异常只恢复 viewer，不重启共享 Publisher', () => {
+  const source = read('store/modules/websocket-robot.js')
+  const connectAction = source.slice(
+    source.indexOf('async performConnectLiveKit'),
+    source.indexOf('// 只恢复当前浏览器')
+  )
+
+  assert.match(connectAction, /RoomEvent\.Reconnected/)
+  assert.match(connectAction, /reconnectViewerAfterCurrentConnect\(dispatch, state, current\.key, sessionId\)/)
+  assert.match(connectAction, /DUPLICATE_IDENTITY/)
+  assert.match(connectAction, /viewer reconnected/)
+  assert.doesNotMatch(connectAction, /dispatch\('restartCamera'/)
+})
+
+test('人工刷新只调用 viewer 恢复，不 stop/start 会话', async () => {
+  const methods = componentMethods('views/bi/patrol/monitor/first/LeftVideo.vue')
+  const camera = { key: 'camera-1', session: { sessionId: 'session-1' } }
+  const calls = []
+  const context = {
+    ZQL_videosInfos: { slot_1: { ...camera } },
+    cameras: { 'camera-1': camera },
+    $set(target, field, value) { target[field] = value },
+    async recoverCameraPlayback(value) { calls.push(['recover', value.key]) },
+    rebindCameraTracks(values) { calls.push(['rebind', values[0].key]) },
+    async startCamera() { throw new Error('不应调用 startCamera') },
+    async stopCamera() { throw new Error('不应调用 stopCamera') }
+  }
+
+  await methods.refreshVideo.call(context, 'slot_1')
+
+  assert.deepEqual(calls, [['recover', 'camera-1'], ['rebind', 'camera-1']])
+})
+
+test('play 被浏览器拒绝时只重新 attach 已有 Track', async () => {
+  const methods = componentMethods('views/bi/patrol/monitor/first/LeftVideo.vue')
+  const camera = { key: 'camera-1', remoteVideoTrack: { sid: 'track-1' } }
+  const calls = []
+  const video = {
+    dataset: { userPaused: '1' },
+    play: () => Promise.reject(new Error('NotAllowedError'))
+  }
+  const context = {
+    cameras: { 'camera-1': camera },
+    rebindCameraTracks(values) { calls.push(values[0].remoteVideoTrack.sid) },
+    recoverCameraPlayback() { throw new Error('已有 Track 时不应重连 Room') }
+  }
+
+  methods.resumeVideo.call(context, video, camera)
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.deepEqual(calls, ['track-1', 'track-1'])
+  assert.equal(video.dataset.userPaused, undefined)
+})
+
+test('摄像头操作使用在途表，新 session 不复用旧 Room', () => {
+  const source = read('store/modules/websocket-robot.js')
+
+  assert.match(source, /const startOperations = new Map\(\)/)
+  assert.match(source, /const stopOperations = new Map\(\)/)
+  assert.match(source, /const connectOperations = new Map\(\)/)
+  assert.match(source, /const restartOperations = new Map\(\)/)
+  assert.match(source, /stopping\.then\(\(\) => dispatch\('startCamera', payload\)\)/)
+  assert.match(source, /if \(starting\) await starting\.catch\(\(\) => null\)/)
+  assert.match(source, /stored\.session\.sessionId === session\.sessionId/)
+  assert.match(source, /stored\.session\.roomName === session\.roomName/)
+  assert.doesNotMatch(source, /setTimeout\(\(\) => \{\s*camera\.restarting = false/)
+})

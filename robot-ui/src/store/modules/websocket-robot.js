@@ -30,6 +30,37 @@ import { mediaReconnectDelay, isSustainedAuthorizationFailure, shouldReconnectMe
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 const FIXED_CAMERA_TRACK_WAIT_MS = 15000
 const controlProfileInflight = {}
+const startOperations = new Map()
+const stopOperations = new Map()
+const connectOperations = new Map()
+const restartOperations = new Map()
+
+function runOnce(registry, key, task) {
+  const current = registry.get(key)
+  if (current) return current
+  const operation = Promise.resolve().then(task).finally(() => {
+    if (registry.get(key) === operation) registry.delete(key)
+  })
+  registry.set(key, operation)
+  return operation
+}
+
+function reconnectViewerAfterCurrentConnect(dispatch, state, key, sessionId) {
+  const reconnect = () => {
+    const latest = state.cameras[key]
+    if (!latest || !latest.watching || latest.stopping || latest.stopped ||
+        !latest.session || latest.session.sessionId !== sessionId || latest.room) return
+    dispatch('connectLiveKit', { camera: latest, refreshToken: true }).catch(error => {
+      console.error('ERROR LiveKit viewer reconnect', error.message || '请求失败')
+    })
+  }
+  const pending = connectOperations.get(key)
+  if (pending) {
+    pending.then(reconnect, reconnect)
+  } else {
+    Promise.resolve().then(reconnect)
+  }
+}
 
 function refreshAuthorizedOverview(dispatch, { failClosed = false, notifyOnFailure = false } = {}) {
   return dispatch('websocketExtraData/refreshOverviewResources', { failClosed }, { root: true })
@@ -481,6 +512,7 @@ function cameraState(robotId, deviceId, cameraId, name, groupType) {
     restarting: false,
     connecting: false,
     disconnecting: false,
+    roomGeneration: 0,
     qualityChanging: false,
     room: null,
     session: null,
@@ -675,6 +707,15 @@ function firstVideoPublication(room) {
     }
   }
   return null
+}
+
+function restoreVideoTrack(camera, room, storeState) {
+  const publication = firstVideoPublication(room)
+  if (!publication || !publication.track) return false
+  camera.remoteVideoTrack = publication.track
+  camera.hasVideo = true
+  if (camera.watching) attachTrackToCameraTargets(publication.track, camera, storeState, 'video')
+  return true
 }
 
 function detachRoomFromVideo(room, video) {
@@ -1269,6 +1310,7 @@ const actions = {
           restarting: old.restarting,
           connecting: old.connecting,
           disconnecting: old.disconnecting,
+          roomGeneration: old.roomGeneration || 0,
           remoteAudioTrack: old.remoteAudioTrack || null,
           remoteAudioElement: old.remoteAudioElement || null,
           remoteVideoTrack: old.remoteVideoTrack || null
@@ -1511,8 +1553,30 @@ const actions = {
       state.heartbeatPending = false
     }
   },
+  // 同一摄像头的并发启动复用同一个 Promise，避免重复创建会话。
+  startCamera({ commit, state, dispatch }, payload) {
+    const key = payload && payload.camera && payload.camera.key
+    if (!key) return Promise.resolve(null)
+    const stopping = stopOperations.get(key)
+    if (stopping) return stopping.then(() => dispatch('startCamera', payload))
+    const current = startOperations.get(key)
+    if (current) {
+      const stored = state.cameras[key]
+      if (stored && payload.consumerId) {
+        commit('setCamera', {
+          ...stored,
+          attachTargets: mergeAttachTargets(stored.attachTargets, {
+            [payload.consumerId]: payload.prefixId || state.prefixId
+          })
+        })
+      }
+      return current
+    }
+    return runOnce(startOperations, key, () => dispatch('performStartCamera', payload))
+  },
+
   // 启动摄像头。同一路可被多个画面消费：已有 LiveKit Room 时只挂到新的 video，不重连。
-  async startCamera({ commit, state, dispatch }, { robot, camera, consumerId, prefixId, throwOnError = false }) {
+  async performStartCamera({ commit, state, dispatch }, { robot, camera, consumerId, prefixId, throwOnError = false }) {
     const viewerId = consumerId || 'default'
     const attachPrefix = prefixId || state.prefixId
     const stored = state.cameras[camera.key] || {}
@@ -1540,11 +1604,10 @@ const actions = {
       if (throwOnError) throw new Error('装备当前离线')
       return null
     }
-    const reuseRoom = liveKitRoomReusable(camera1)
-    if (!reuseRoom) camera1.loading = true
+    const hadReusableRoom = liveKitRoomReusable(camera1)
+    if (!hadReusableRoom) camera1.loading = true
     camera1.stopped = false
     camera1.stopping = false
-    camera1.restarting = false
     camera1.watching = true
     let createdSessionId = null
     try {
@@ -1561,6 +1624,9 @@ const actions = {
       camera1.viewerCount = camera1.session.viewerCount
       state.stoppedSessionIds.delete(camera1.session.sessionId)
       // console.log('API createVideoSession', camera1.session)
+      const reuseRoom = hadReusableRoom && stored.session && stored.room &&
+        stored.session.sessionId === session.sessionId &&
+        stored.session.roomName === session.roomName
       if (reuseRoom) {
         attachCameraMedia(camera1, attachPrefix)
       } else if (!camera1.room || !camera1.intercomActive) {
@@ -1623,8 +1689,34 @@ const actions = {
     }
   },
 
+  stopCamera({ commit, state, dispatch }, data) {
+    const key = data && data.key
+    if (!key) return Promise.resolve()
+    const current = stopOperations.get(key)
+    if (current) return current
+    const camera = state.cameras[key]
+    const remainingTargets = camera && data.consumerId
+      ? Object.keys(camera.attachTargets || {}).filter(id => id !== data.consumerId)
+      : []
+    const starting = startOperations.get(key)
+    if (remainingTargets.length > 0 && !starting) return dispatch('performStopCamera', data)
+    if (camera && remainingTargets.length === 0) {
+      commit('setCamera', {
+        ...camera,
+        stopping: true,
+        stopped: true,
+        restarting: false,
+        roomGeneration: (camera.roomGeneration || 0) + 1
+      })
+    }
+    return runOnce(stopOperations, key, async () => {
+      if (starting) await starting.catch(() => null)
+      return dispatch('performStopCamera', data)
+    })
+  },
+
   // 停止摄像头。传入 consumerId 时，若仍有其他画面在用同一路流，只摘掉本画面，不关会话。
-  async stopCamera({ commit, state, dispatch }, data) {
+  async performStopCamera({ commit, state, dispatch }, data) {
     if (!data || !data.key) return
     let camera = state.cameras[data.key]
     // 无相机记录时仍清掉选中，避免无 session 场景下勾选残留
@@ -1844,8 +1936,14 @@ const actions = {
     return stopped
   },
 
+  connectLiveKit({ state, dispatch }, payload) {
+    const key = payload && payload.camera && payload.camera.key
+    if (!key || stopOperations.has(key)) return Promise.resolve()
+    return runOnce(connectOperations, key, () => dispatch('performConnectLiveKit', payload))
+  },
+
   // 连接 LiveKit 会话
-  async connectLiveKit({ commit, dispatch, state }, {
+  async performConnectLiveKit({ commit, dispatch, state }, {
     camera,
     refreshToken,
     connectionToken,
@@ -1854,8 +1952,11 @@ const actions = {
   }) {
     // console.log('connectLiveKit================================', camera.intercomActive)
 
-    if (camera.connecting || !camera.session) return
+    if (!camera.session) return
     camera.connecting = true
+    camera.roomGeneration = (state.cameras[camera.key]?.roomGeneration || camera.roomGeneration || 0) + 1
+    const roomGeneration = camera.roomGeneration
+    commit('setCamera', { ...camera })
     try {
       if (!camera.intercomActive && (refreshToken || !camera.session.viewerToken || !camera.session.livekitUrl)) {
         const token = await getViewerToken(camera.session.sessionId)
@@ -1879,10 +1980,12 @@ const actions = {
       const sessionId = camera.session.sessionId
       const currentCamera = () => {
         const stored = state.cameras[camera.key]
-        if (stored && stored.room === room && stored.session && stored.session.sessionId === sessionId) {
+        if (stored && stored.room === room && stored.roomGeneration === roomGeneration &&
+            stored.session && stored.session.sessionId === sessionId) {
           return { ...stored }
         }
-        if (camera.room === room && camera.session && camera.session.sessionId === sessionId) {
+        if (camera.room === room && camera.roomGeneration === roomGeneration &&
+            camera.session && camera.session.sessionId === sessionId) {
           return { ...camera }
         }
         return null
@@ -1956,12 +2059,19 @@ const actions = {
             commit('UPDATE_ACTIVE_INCOMING_CALL', { videoLoading: true })
           }
         }
-        // console.log('LiveKit TrackUnsubscribed', `${camera.name} ${track.sid || track.name}`)
-        if (track.kind === 'video' && current.watching && !isStoppedSession(current, sessionId)) {
-          dispatch('restartCamera', current)
-        } else {
-          commit('setCamera', current)
-        }
+        // viewer Track 取消订阅不能证明共享 Publisher 失效，等待重订阅或 Media 事实事件。
+        commit('setCamera', current)
+      })
+      room.on(RoomEvent.Reconnecting, () => {
+        console.info('[media] viewer reconnecting', { sessionId, roomName: camera.session.roomName, roomGeneration })
+      })
+      room.on(RoomEvent.Reconnected, () => {
+        const current = currentCamera()
+        if (!current) return
+        restoreVideoTrack(current, room, state)
+        current.loading = false
+        commit('setCamera', current)
+        console.info('[media] viewer reconnected', { sessionId, roomName: camera.session.roomName, roomGeneration })
       })
       room.on(RoomEvent.Disconnected, () => {
         const current = currentCamera()
@@ -1974,16 +2084,19 @@ const actions = {
         current.remoteVideoTrack = null
         current.remoteAudioTrack = null
         current.remoteAudioElement = null
-        // console.log('LiveKit Disconnected', camera.name)
+        current.room = null
+        commit('setCamera', current)
+        console.warn('[media] viewer disconnected', { sessionId, roomName: camera.session.roomName, roomGeneration })
+        // SDK 已放弃原 Room 后只重建当前 viewer 连接，不重启共享 Publisher。
         if (current.watching && !isStoppedSession(current, sessionId)) {
-          dispatch('restartCamera', current)
-        } else {
-          commit('setCamera', current)
+          reconnectViewerAfterCurrentConnect(dispatch, state, current.key, sessionId)
         }
       })
       camera.room = room
       commit('setCamera', camera)
       await room.connect(livekitUrl, token)
+      const current = currentCamera()
+      if (current && restoreVideoTrack(current, room, state)) commit('setCamera', current)
       if (waitForVideo) {
         await waitForVideoTrack(room, () => Boolean(currentCamera()?.hasVideo))
       }
@@ -1995,7 +2108,13 @@ const actions = {
       if (failedRoom) {
         await Promise.resolve(failedRoom.disconnect()).catch(() => {})
       }
-      console.error('ERROR LiveKit connect', error.message || '请求失败')
+      const message = error.message || '请求失败'
+      console.error('ERROR LiveKit connect', {
+        sessionId: camera.session && camera.session.sessionId,
+        roomName: camera.session && camera.session.roomName,
+        code: /duplicate[ _-]*identity/i.test(message) ? 'DUPLICATE_IDENTITY' : 'VIEWER_CONNECT_FAILED',
+        message
+      })
       if (throwOnError) throw error
     } finally {
       camera.disconnecting = false
@@ -2018,8 +2137,41 @@ const actions = {
     }
   },
 
-  // 重启摄像头
-  async restartCamera({ commit, dispatch, state }, camera) {
+  // 只恢复当前浏览器的 Track/Room，不变更共享会话，不下发 Publisher 命令。
+  async recoverCameraPlayback({ commit, state, dispatch }, input) {
+    const stored = input && state.cameras[input.key]
+    if (!stored || !stored.session || stored.stopping || stored.stopped) return false
+    let camera = { ...stored, loading: true }
+    commit('setCamera', camera)
+    try {
+      if (camera.remoteVideoTrack && liveKitRoomReusable(camera)) {
+        uniqueAttachPrefixes(camera, state).forEach(prefixId => attachCameraMedia(camera, prefixId))
+        camera.hasVideo = true
+        return true
+      }
+      await dispatch('connectLiveKit', {
+        camera,
+        refreshToken: true,
+        throwOnError: true
+      })
+      camera = state.cameras[camera.key] || camera
+      return Boolean(camera.remoteVideoTrack)
+    } finally {
+      const latest = state.cameras[input.key]
+      if (latest) commit('setCamera', { ...latest, loading: false })
+    }
+  },
+
+  restartCamera({ state, dispatch }, camera) {
+    const key = camera && camera.key
+    if (!key || stopOperations.has(key)) return Promise.resolve()
+    const starting = startOperations.get(key)
+    if (starting) return starting
+    return runOnce(restartOperations, key, () => dispatch('performRestartCamera', camera))
+  },
+
+  // 仅供明确的人工/运维操作重启 Publisher，viewer 断线不调用此方法。
+  async performRestartCamera({ commit, dispatch, state }, camera) {
     if (camera.recordingActive) {
       await dispatch('stopCameraRecording', camera)
     }
@@ -2029,6 +2181,7 @@ const actions = {
     if (!['STREAMING', 'INTERRUPTED'].includes(camera.session.status)) return
     try {
       camera.restarting = true
+      commit('setCamera', mergeCameraFromStore(state, camera, { restarting: true }))
       const updated = await restartVideoSession(camera.session.sessionId)
       camera.session = mergeSession(camera, updated)
       camera.status = camera.session.status
@@ -2037,10 +2190,8 @@ const actions = {
     } catch (error) {
       console.error('ERROR restartVideoSession', error.message || '请求失败')
     } finally {
-      setTimeout(() => {
-        camera.restarting = false
-        commit('setCamera', camera)
-      }, 5000)
+      camera.restarting = false
+      commit('setCamera', mergeCameraFromStore(state, camera, { restarting: false }))
     }
   },
   // 启动心跳定时器
