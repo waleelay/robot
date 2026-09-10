@@ -207,13 +207,8 @@ public class ControlManagementClient {
         List<Map<String, Object>> loaded = requestDevices();
         Instant expiresAt = now.plus(deviceTtl());
         List<Map<String, Object>> snapshot = copyMaps(loaded);
+        // 列表记录只是授权范围内的摘要，不含 components；详情缓存只能由详情接口填充。
         devicesCache.put(cacheIdentity, new CachedDevices(snapshot, expiresAt));
-        snapshot.forEach(device -> {
-            String serialNumber = firstString(device, "serialNumber", "robotId");
-            if (serialNumber != null && !serialNumber.isBlank()) {
-                deviceCache.put(new DeviceCacheKey(cacheIdentity, serialNumber), new CachedDevice(new LinkedHashMap<>(device), expiresAt));
-            }
-        });
         return copyMaps(loaded);
     }
 

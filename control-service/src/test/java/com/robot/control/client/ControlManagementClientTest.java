@@ -74,6 +74,36 @@ class ControlManagementClientTest {
     }
 
     @Test
+    void loadsDeviceDetailAfterDeviceListSummaryWasCached() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        ControlProperties properties = new ControlProperties();
+        properties.setManagementServiceBaseUrl("http://management.test");
+        RequestAuthorizationHeaders authorizationHeaders = mock(RequestAuthorizationHeaders.class);
+        when(authorizationHeaders.currentCacheKey()).thenReturn(Optional.of("bearer:user-001"));
+        ControlManagementClient client = new ControlManagementClient(
+                builder.build(), properties, authorizationHeaders);
+
+        server.expect(requestTo("http://management.test/api/v1/management/devices?pageNum=1&pageSize=100"))
+                .andRespond(withSuccess("""
+                        {"code":"0","data":{"records":[
+                          {"id":"2092140441292537857","serialNumber":"robot-001","deviceType":"WHEELED_ROBOT"}
+                        ]}}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://management.test/api/v1/management/devices/2092140441292537857"))
+                .andRespond(withSuccess("""
+                        {"code":"0","data":{"device":{"id":"2092140441292537857","serialNumber":"robot-001"},
+                          "components":[{"componentType":"PTZ","code":"ptz-main"}]}}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.devices()).singleElement();
+        Map<String, Object> profile = client.deviceBySerialNumber("robot-001").orElseThrow();
+
+        assertThat((List<?>) profile.get("components")).singleElement();
+        server.verify();
+    }
+
+    @Test
     void readsDevicesAfterTheFirstFiveHundredRecords() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

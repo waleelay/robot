@@ -115,8 +115,8 @@ public class EquipmentControlService {
         String controlMode = reportedControlMode(state.get("controlMode"));
         return object(
                 "robotId", robotId,
-                "type", robot.get("type"),
-                "vendor", robot.get("vendor"),
+                "type", firstValue(robot, "type", "deviceType", "typeCode"),
+                "vendor", firstValue(robot, "vendor", "manufacturer"),
                 "model", robot.get("model"),
                 "onlineStatus", valueOrDefault(state, "status", "offline"),
                 "controlMode", controlMode,

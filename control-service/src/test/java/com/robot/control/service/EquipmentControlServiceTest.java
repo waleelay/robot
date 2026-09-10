@@ -42,6 +42,22 @@ class EquipmentControlServiceTest {
             new EquipmentControlService(commandPublisher, webSocketPublisher, managementClient);
 
     @Test
+    void mapsManagementDeviceTypeAndManufacturerToControlProfile() {
+        Map<String, Object> robot = object(
+                "serialNumber", "robot-001",
+                "deviceType", "WHEELED_ROBOT",
+                "manufacturer", "松灵",
+                "model", "R1-001",
+                "components", List.of());
+        when(managementClient.deviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
+
+        assertThat(service.controlProfile("robot-001"))
+                .containsEntry("type", "WHEELED_ROBOT")
+                .containsEntry("vendor", "松灵")
+                .containsEntry("model", "R1-001");
+    }
+
+    @Test
     void rejectsCommandBeforeMqttWhenCurrentIdentityCannotAccessRobot() {
         when(managementClient.deviceBySerialNumber("robot-001")).thenReturn(Optional.empty());
 
