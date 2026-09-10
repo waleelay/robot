@@ -749,6 +749,8 @@ public class VideoSessionService {
     /**
      * 当前用户手动重启实时视频会话。
      *
+     * <p>重启只处理 Publisher，不改变 viewer 占用；观看关系由 create/heartbeat/stop 维护。</p>
+     *
      * @param sessionId 实时视频会话编号
      * @param user 当前操作用户
      * @return 实时视频会话响应
@@ -756,8 +758,6 @@ public class VideoSessionService {
     @Transactional
     public VideoSessionResponse restartSession(String sessionId, CurrentUser user) {
         VideoSession session = requireSessionForUpdate(sessionId);
-        addViewer(session, user);
-        session.setViewerCount(activeViewerCount(sessionId));
         requestClientStart(session, "video.session.restart", false);
         return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
     }
@@ -775,6 +775,8 @@ public class VideoSessionService {
     /**
      * 当前用户手动重启实时视频会话，并返回待下发的视频启动命令。
      *
+     * <p>重启只处理 Publisher，不改变 viewer 占用；避免与观看心跳形成反向锁序。</p>
+     *
      * @param sessionId 实时视频会话编号
      * @param user 当前操作用户
      * @return 视频启动命令
@@ -782,8 +784,6 @@ public class VideoSessionService {
     @Transactional
     public VideoStartCommand restartSessionCommand(String sessionId, CurrentUser user) {
         VideoSession session = requireSessionForUpdate(sessionId);
-        addViewer(session, user);
-        session.setViewerCount(activeViewerCount(sessionId));
         return requestClientStart(session, "video.session.restart", false);
     }
 
@@ -1075,27 +1075,22 @@ public class VideoSessionService {
 
     /**
      * 清理心跳过期的观看者。
+     *
+     * <p>不使用覆盖全部观看者的大事务。每次仓储写入独立提交，避免一个清理任务同时
+     * 持有多个 viewer/session 行锁，阻塞正在恢复的浏览器心跳。</p>
      */
-    @Transactional
     public void sweepStaleViewers() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getViewerHeartbeatTimeoutSeconds());
         viewerRepository.findByLeftAtIsNullAndLastHeartbeatAtBefore(threshold).forEach(viewer -> {
-            closeViewer(viewer);
+            closeStaleViewer(viewer, threshold);
         });
     }
 
-    /**
-     * 关闭全部仍处于活跃状态的观看者。
-     */
-    @Transactional
-    public void closeAllActiveViewers() {
-        viewerRepository.findByLeftAtIsNull().forEach(this::closeViewer);
-    }
-
-    private void closeViewer(MediaSessionViewer viewer) {
+    private void closeStaleViewer(MediaSessionViewer viewer, OffsetDateTime heartbeatBefore) {
+        if (viewerRepository.closeIfStale(viewer.getId(), heartbeatBefore, now()) == 0) {
+            return;
+        }
         String clientId = viewerClientId(viewer);
-        viewer.setLeftAt(now());
-        viewerRepository.save(viewer);
         stopClientRecordingQuietly(viewer.getSessionId(), viewer.getUserId(), clientId);
         repository.findById(viewer.getSessionId()).ifPresent(session -> {
             session.setViewerCount(activeViewerCount(session.getSessionId()));

@@ -23,11 +23,13 @@ import com.robot.media.common.video.CreateVideoSessionRequest;
 import com.robot.media.common.video.VideoChannel;
 import com.robot.media.common.video.VideoQuality;
 import com.robot.media.common.video.VideoSourceType;
+import com.robot.mediaserver.video.model.MediaSessionViewer;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.mediaserver.video.repository.MediaSessionViewerRepository;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
 import com.robot.mediaserver.ws.MediaWebSocketPublisher;
+import jakarta.transaction.Transactional;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -311,6 +313,48 @@ class VideoSessionServiceIntercomOccupancyTest {
 
         assertThat(second.commandId()).isEqualTo(first.commandId());
         verify(liveKitRoomService, times(1)).createRoom(target.getRoomName());
+    }
+
+    @Test
+    void restartDoesNotChangeViewerOccupancy() {
+        target.setViewerCount(1);
+        target.setStatus(VideoSessionStatus.STREAMING);
+        target.setRoomName("media.robot-002.camera01.visible.sub");
+        target.setSourceType(VideoSourceType.ROBOT_CAMERA);
+        target.setSourceId("robot-002");
+        target.setChannel(VideoChannel.visible);
+        target.setQuality(VideoQuality.sub);
+        when(liveKitTokenService.createPublisherToken(anyString(), anyString(), anyString()))
+                .thenReturn(new LiveKitTokenService.TokenResult(
+                        "publisher-token", OffsetDateTime.now().plusMinutes(10)));
+
+        service.restartSessionCommand("vs-target", operator("operator-1", "web-1"));
+
+        assertThat(target.getViewerCount()).isEqualTo(1);
+        verifyNoInteractions(viewerRepository);
+    }
+
+    @Test
+    void staleViewerSweepDoesNotUseOneCrossViewerTransaction() throws NoSuchMethodException {
+        assertThat(VideoSessionService.class.getMethod("sweepStaleViewers")
+                .isAnnotationPresent(Transactional.class)).isFalse();
+    }
+
+    @Test
+    void staleViewerSweepSkipsViewerRenewedAfterCandidateQuery() {
+        MediaSessionViewer viewer = new MediaSessionViewer();
+        viewer.setId("viewer-1");
+        viewer.setSessionId("vs-target");
+        viewer.setUserId("operator-1");
+        viewer.setClientId("web-1");
+        when(viewerRepository.findByLeftAtIsNullAndLastHeartbeatAtBefore(any()))
+                .thenReturn(List.of(viewer));
+        when(viewerRepository.closeIfStale(eq("viewer-1"), any(), any())).thenReturn(0);
+
+        service.sweepStaleViewers();
+
+        verify(repository, never()).save(any());
+        verifyNoInteractions(fileService);
     }
 
     @Test
