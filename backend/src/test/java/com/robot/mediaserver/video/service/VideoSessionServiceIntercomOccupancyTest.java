@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -60,6 +61,7 @@ class VideoSessionServiceIntercomOccupancyTest {
                 properties);
         target = session("vs-target", "robot-002", null, null, IntercomStatus.IDLE);
         when(repository.findById("vs-target")).thenReturn(Optional.of(target));
+        when(repository.findByIdForUpdate("vs-target")).thenReturn(Optional.of(target));
     }
 
     @Test
@@ -191,6 +193,42 @@ class VideoSessionServiceIntercomOccupancyTest {
     }
 
     @Test
+    void reusesInterruptedRobotSessionButClearsStaleTrack() {
+        target.setSourceType(VideoSourceType.ROBOT_CAMERA);
+        target.setSourceId("robot-002");
+        target.setChannel(VideoChannel.visible);
+        target.setQuality(VideoQuality.sub);
+        target.setStatus(VideoSessionStatus.INTERRUPTED);
+        target.setRoomName("media.robot-002.camera01.visible.sub");
+        target.setTrackSid("TR_stale");
+        target.setTrackName("video.visible.sub");
+        when(repository.findFirstBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
+                any(), anyString(), anyString(), any(), any(), anyCollection())).thenReturn(Optional.of(target));
+        when(liveKitTokenService.createInteractiveViewerToken(anyString(), anyString(), anyString()))
+                .thenReturn(new LiveKitTokenService.TokenResult(
+                        "viewer-token", OffsetDateTime.now().plusMinutes(10)));
+        when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        when(viewerRepository.countBySessionIdAndLeftAtIsNull(target.getSessionId())).thenReturn(1L);
+
+        CreateVideoSessionRequest request = new CreateVideoSessionRequest();
+        request.setReuse(true);
+        request.setRobotId("robot-002");
+        request.setSourceType(VideoSourceType.ROBOT_CAMERA);
+        request.setSourceId("robot-002");
+        request.setDeviceId("camera01");
+        request.setChannel(VideoChannel.visible);
+        request.setQuality(VideoQuality.sub);
+
+        var response = service.create(request, operator("operator-1", "web-1"));
+
+        assertThat(response.sessionId()).isEqualTo("vs-target");
+        assertThat(response.status()).isEqualTo(VideoSessionStatus.INIT);
+        assertThat(target.getTrackSid()).isNull();
+        assertThat(target.getTrackName()).isNull();
+    }
+
+    @Test
     void fixedCameraProcessStatusWaitsForActualLiveKitTrack() {
         target.setSourceType(VideoSourceType.FIXED_CAMERA);
         target.setStatus(VideoSessionStatus.REQUESTING_CLIENT);
@@ -252,7 +290,41 @@ class VideoSessionServiceIntercomOccupancyTest {
                 .thenReturn(List.of(target));
 
         assertThat(service.interruptedRestartCandidates(threshold)).containsExactly("vs-target");
-        verify(repository, never()).findByStatusAndUpdatedAtBefore(VideoSessionStatus.INTERRUPTED, threshold);
+        verify(repository, never()).findByStatusAndCommandRequestedAtBefore(VideoSessionStatus.INTERRUPTED, threshold);
+    }
+
+    @Test
+    void reusesStartCommandWhileWaitingForTrack() {
+        target.setViewerCount(1);
+        target.setStatus(VideoSessionStatus.INIT);
+        target.setRoomName("media.robot-002.camera01.visible.sub");
+        target.setSourceType(VideoSourceType.ROBOT_CAMERA);
+        target.setSourceId("robot-002");
+        target.setChannel(VideoChannel.visible);
+        target.setQuality(VideoQuality.sub);
+        when(liveKitTokenService.createPublisherToken(anyString(), anyString(), anyString()))
+                .thenReturn(new LiveKitTokenService.TokenResult(
+                        "publisher-token", OffsetDateTime.now().plusMinutes(10)));
+
+        var first = service.requestClientStart("vs-target", "video.client.requested");
+        var second = service.requestClientStart("vs-target", "video.session.restart");
+
+        assertThat(second.commandId()).isEqualTo(first.commandId());
+        verify(liveKitRoomService, times(1)).createRoom(target.getRoomName());
+    }
+
+    @Test
+    void publishTimeoutUsesCommandClockAndRejectsOldCommandTask() {
+        target.setStatus(VideoSessionStatus.REQUESTING_CLIENT);
+        target.setCommandId("cmd-current");
+        target.setCommandRequestedAt(OffsetDateTime.now().minusSeconds(30));
+        target.setUpdatedAt(OffsetDateTime.now());
+
+        service.markTimeout("vs-target", "cmd-old", "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时");
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.REQUESTING_CLIENT);
+
+        service.markTimeout("vs-target", "cmd-current", "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时");
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.FAILED);
     }
 
     @Test

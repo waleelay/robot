@@ -59,8 +59,11 @@ public class VideoSessionService {
      * 新观看者只增加 viewerCount 并复用原 Room/Track，避免重复下发 start 指令。</p>
      */
     private static final Set<VideoSessionStatus> REUSABLE_STATUSES = Set.of(
+            VideoSessionStatus.INIT,
+            VideoSessionStatus.REQUESTING_CLIENT,
             VideoSessionStatus.ROOM_READY,
             VideoSessionStatus.STREAMING,
+            VideoSessionStatus.INTERRUPTED,
             VideoSessionStatus.IDLE_WAIT);
 
     /**
@@ -154,7 +157,8 @@ public class VideoSessionService {
                 VideoSession session = existing.get();
                 addViewer(session, user);
                 session.setIdleSince(null);
-                if (!hasPublishedTrack(session)) {
+                if (session.getStatus() == VideoSessionStatus.INTERRUPTED
+                        || (!hasPublishedTrack(session) && !startRequestInFlight(session))) {
                     session.setStatus(VideoSessionStatus.INIT);
                     session.setTrackSid(null);
                     session.setTrackName(null);
@@ -482,7 +486,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoSessionResponse switchChannel(String sessionId, SwitchChannelRequest request) {
-        VideoSession session = requireSession(sessionId);
+        VideoSession session = requireSessionForUpdate(sessionId);
         // 通道切换本质上是让同一个业务会话指向新的 RTSP/track。
         // requestClientStart 会更新 commandId 并把状态切到 REQUESTING_CLIENT。
         session.setChannel(request.getChannel());
@@ -731,7 +735,10 @@ public class VideoSessionService {
                 .map(session -> {
                     String key = session.getRobotId() + ":" + session.getDeviceId() + ":" + session.getChannel() + ":" + session.getQuality();
                     if (restartedKeys.add(key)) {
-                        return requestClientStart(session, "video.client.online_restart", false);
+                        return requestClientStart(
+                                requireSessionForUpdate(session.getSessionId()),
+                                "video.client.online_restart",
+                                false);
                     }
                     return null;
                 })
@@ -748,7 +755,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoSessionResponse restartSession(String sessionId, CurrentUser user) {
-        VideoSession session = requireSession(sessionId);
+        VideoSession session = requireSessionForUpdate(sessionId);
         addViewer(session, user);
         session.setViewerCount(activeViewerCount(sessionId));
         requestClientStart(session, "video.session.restart", false);
@@ -762,7 +769,7 @@ public class VideoSessionService {
      */
     @Transactional
     public void restartSession(String sessionId) {
-        requestClientStart(requireSession(sessionId), "video.session.auto_restart", false);
+        requestClientStart(requireSessionForUpdate(sessionId), "video.session.auto_restart", false);
     }
 
     /**
@@ -774,7 +781,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoStartCommand restartSessionCommand(String sessionId, CurrentUser user) {
-        VideoSession session = requireSession(sessionId);
+        VideoSession session = requireSessionForUpdate(sessionId);
         addViewer(session, user);
         session.setViewerCount(activeViewerCount(sessionId));
         return requestClientStart(session, "video.session.restart", false);
@@ -788,7 +795,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoStartCommand restartSessionCommand(String sessionId) {
-        return requestClientStart(requireSession(sessionId), "video.session.auto_restart", false);
+        return requestClientStart(requireSessionForUpdate(sessionId), "video.session.auto_restart", false);
     }
 
     /**
@@ -800,7 +807,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoStartCommand requestClientStart(String sessionId, String event) {
-        return requestClientStart(requireSession(sessionId), event, true);
+        return requestClientStart(requireSessionForUpdate(sessionId), event, true);
     }
 
     /**
@@ -817,6 +824,11 @@ public class VideoSessionService {
     private VideoStartCommand requestClientStart(VideoSession session, String event, boolean includeTimeout) {
         if (session.getViewerCount() <= 0) {
             return null;
+        }
+        if (startRequestInFlight(session)) {
+            log.info("复用进行中的视频启动命令，sessionId={} commandId={} status={}",
+                    session.getSessionId(), session.getCommandId(), session.getStatus());
+            return createStartCommand(session);
         }
         // 生成机器人推流命令前先确保 LiveKit Room 存在，再签发 publisher token。
         // 命令发送本身不在本服务做，调用方可决定通过 MQTT 或其他控制通道下发。
@@ -882,6 +894,18 @@ public class VideoSessionService {
                 publisherToken.expiresAt());
     }
 
+    private boolean startRequestInFlight(VideoSession session) {
+        if (session.getCommandId() == null || session.getCommandId().isBlank()
+                || session.getCommandRequestedAt() == null) {
+            return false;
+        }
+        boolean waitingForTrack = session.getStatus() == VideoSessionStatus.REQUESTING_CLIENT
+                || session.getStatus() == VideoSessionStatus.ROOM_READY;
+        OffsetDateTime deadline = session.getCommandRequestedAt()
+                .plusSeconds(properties.getSession().getTrackPublishTimeoutSeconds());
+        return waitingForTrack && deadline.isAfter(now());
+    }
+
     private String publisherIdentity(VideoSession session) {
         if (session.getSourceType() == VideoSourceType.FIXED_CAMERA) {
             return "fixed-camera:" + session.getSourceId();
@@ -893,12 +917,24 @@ public class VideoSessionService {
      * 标记实时视频会话推流超时。
      *
      * @param sessionId 实时视频会话编号
+     * @param expectedCommandId 超时任务扫描到的启动命令编号
      * @param errorCode 错误码
      * @param message 错误说明
      */
     @Transactional
-    public void markTimeout(String sessionId, String errorCode, String message) {
-        VideoSession session = requireSession(sessionId);
+    public void markTimeout(String sessionId, String expectedCommandId, String errorCode, String message) {
+        VideoSession session = requireSessionForUpdate(sessionId);
+        OffsetDateTime threshold = now().minusSeconds(properties.getSession().getTrackPublishTimeoutSeconds());
+        boolean waitingForTrack = session.getStatus() == VideoSessionStatus.REQUESTING_CLIENT
+                || session.getStatus() == VideoSessionStatus.ROOM_READY;
+        if (!waitingForTrack
+                || !Objects.equals(session.getCommandId(), expectedCommandId)
+                || session.getCommandRequestedAt() == null
+                || session.getCommandRequestedAt().isAfter(threshold)) {
+            log.info("忽略已过期的视频超时任务，sessionId={} expectedCommandId={} currentCommandId={} status={}",
+                    sessionId, expectedCommandId, session.getCommandId(), session.getStatus());
+            return;
+        }
         session.setEndedAt(now());
         markFailed(session, errorCode, message, "video.session.failed");
         session.setUpdatedAt(now());
@@ -1082,6 +1118,11 @@ public class VideoSessionService {
 
     private VideoSession requireSession(String sessionId) {
         return repository.findById(sessionId)
+                .orElseThrow(() -> new IllegalArgumentException("未找到视频会话：" + sessionId));
+    }
+
+    private VideoSession requireSessionForUpdate(String sessionId) {
+        return repository.findByIdForUpdate(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("未找到视频会话：" + sessionId));
     }
 
