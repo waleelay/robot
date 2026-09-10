@@ -577,16 +577,28 @@
 
 .track-line {
   fill: none;
-  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.track-line.full {
-  opacity: .28;
+/* 对齐大屏 session traveled path：浅绿描边光晕 + 绿色主线 + 白色方向箭头 */
+.track-path-layer.is-full {
+  opacity: 0.32;
 }
 
-.track-line.visited-halo {
-  stroke: rgba(255, 255, 255, .55);
+.track-path-layer .track-line.outline {
+  stroke: rgba(239, 255, 247, 0.92);
   stroke-width: 8;
+  filter: drop-shadow(0 1px 2px rgba(0, 52, 35, 0.48));
+}
+
+.track-path-layer .track-line.main {
+  stroke-width: 5;
+}
+
+.track-path-layer .track-line.arrow {
+  stroke: #fff;
+  stroke-width: 1.5;
 }
 
 .track-current-halo {

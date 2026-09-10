@@ -59,7 +59,7 @@
         </div>
       </div>
       <div class="toolbar flx-align-center h100 new pr30" style="justify-content: end;">
-        <div class="time-display flx-align-center">
+        <div class="wp156 time-display flx-align-center">
           <span>{{ currentDate }}</span>
           <span class="ml10">{{ currentTime }}</span>
         </div>

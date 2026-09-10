@@ -62,8 +62,8 @@
             </div>
             <div class="track-toolbar flx-justify-between mb10">
               <el-checkbox-group v-if="trackGroups.length" v-model="visibleTrackKeys" class="track-legend">
-                <el-checkbox v-for="group in trackGroups" :key="trackGroupKey(group)" :label="trackGroupKey(group)">
-                  <span class="track-legend__swatch" :style="{ background: group.color || defaultTrackColor(group) }" />
+                <el-checkbox v-for="(group, index) in trackGroups" :key="trackGroupKey(group)" :label="trackGroupKey(group)">
+                  <span class="track-legend__swatch" :style="{ background: resolveTrackColor(group, index) }" />
                   <span>{{ group.deviceName || group.serialNumber || '设备轨迹' }}</span>
                 </el-checkbox>
               </el-checkbox-group>
@@ -95,12 +95,20 @@
                   <g v-if="!hasCalibratedMap || !mapImageUrl" class="track-fallback-grid">
                     <rect x="0" y="0" :width="trackMapWidth" :height="trackMapHeight" />
                   </g>
-                  <g v-for="line in fullTrackPolylines" :key="'full-' + line.key">
-                    <polyline :points="line.points" class="track-line full" :style="{ stroke: line.color }" />
+                  <g v-for="line in fullTrackPolylines" :key="'full-' + line.key" class="track-path-layer is-full">
+                    <polyline :points="line.points" class="track-line outline" />
+                    <polyline :points="line.points" class="track-line main" :style="{ stroke: line.color }" />
                   </g>
-                  <g v-for="line in visitedTrackPolylines" :key="'visited-' + line.key">
-                    <polyline :points="line.points" class="track-line visited-halo" />
-                    <polyline :points="line.points" class="track-line visited" :style="{ stroke: line.color }" />
+                  <g v-for="line in visitedTrackPolylines" :key="'visited-' + line.key" class="track-path-layer is-visited">
+                    <polyline :points="line.points" class="track-line outline" />
+                    <polyline :points="line.points" class="track-line main" :style="{ stroke: line.color }" />
+                    <g
+                      v-for="(arrow, index) in line.arrows"
+                      :key="'arrow-' + line.key + '-' + index"
+                      :transform="'translate(' + arrow.x + ' ' + arrow.y + ') rotate(' + arrow.deg + ') scale(' + trackMarkerScale + ')'"
+                    >
+                      <path d="M 3 -3 L -2 0 L 3 3" class="track-line arrow" />
+                    </g>
                   </g>
                   <g
                     v-for="point in currentTrackPoints"
@@ -400,6 +408,8 @@ import {
   executionStatusLabel as resolveExecutionStatusLabel,
   executionStatusType as resolveExecutionStatusType
 } from '../execution-status'
+import { TRAJECTORY_COLORS } from '../../../gis/globalMap/slam/trajectory-visual.js'
+import { buildPathDirectionArrows } from '../../../gis/globalMap/slam/path-direction-arrows.js'
 
 const ImportedHls = HlsModule && (HlsModule.default || HlsModule)
 
@@ -506,13 +516,15 @@ export default {
       return (this.replay && this.replay.replayMap) || null
     },
     timelineSamples() {
-      return this.mergeSamples([], this.trackGroups.reduce((result, group) => {
+      return this.mergeSamples([], this.trackGroups.reduce((result, group, index) => {
         const samples = Array.isArray(group.samples) ? group.samples : []
+        // 忽略接口蓝色散列，按装备顺序使用大屏轨迹色板（首条绿色）
+        const color = this.resolveTrackColor(group, index)
         return result.concat(samples.map(sample => Object.assign({}, sample, {
           deviceTaskInstanceId: sample.deviceTaskInstanceId || group.deviceTaskInstanceId,
           serialNumber: sample.serialNumber || group.serialNumber,
           deviceName: sample.deviceName || group.deviceName,
-          color: sample.color || group.color
+          color
         })))
       }, []))
     },
@@ -582,6 +594,16 @@ export default {
       this.trackGroups.forEach(group => { map[this.trackGroupKey(group)] = group })
       return map
     },
+    /** 装备 → 轨迹色：按 trackGroups 顺序，第一条固定绿色 */
+    equipmentColorMap() {
+      const map = {}
+      ;(this.trackGroups || []).forEach((group, index) => {
+        const key = this.trackGroupKey(group)
+        if (!key) return
+        map[key] = TRAJECTORY_COLORS[index % TRAJECTORY_COLORS.length]
+      })
+      return map
+    },
     groupedTrackSamples() {
       const groups = {}
       this.visibleSamples.forEach(sample => {
@@ -590,14 +612,18 @@ export default {
           const configuredGroup = this.trackGroupMap[key]
           groups[key] = {
             key,
-            color: configuredGroup && configuredGroup.color ? configuredGroup.color : this.defaultTrackColor(sample),
             label: (configuredGroup && configuredGroup.deviceName) || sample.deviceName || sample.serialNumber || '设备轨迹',
             samples: []
           }
         }
         groups[key].samples.push(sample)
       })
-      return Object.keys(groups).map(key => groups[key])
+      const orderedKeys = (this.trackGroups || []).map(group => this.trackGroupKey(group)).filter(Boolean)
+      const restKeys = Object.keys(groups).filter(key => orderedKeys.indexOf(key) === -1)
+      return orderedKeys.concat(restKeys).filter(key => groups[key]).map((key, index) => ({
+        ...groups[key],
+        color: this.resolveTrackColor(groups[key], index)
+      }))
     },
     currentTrackPoints() {
       if (!this.currentDateTime) return []
@@ -922,7 +948,17 @@ export default {
           ? group.samples.filter(sample => this.sampleTime(sample) <= this.currentDateTime.getTime())
           : group.samples
         this.trackSegments(samples).forEach((segment, index) => {
-          result.push({ key: `${group.key}-${index}`, color: group.color, points: segment.map(this.projectPointText).join(' ') })
+          const projected = segment.map(sample => this.projectPoint(sample)).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+          )
+          if (projected.length < 2) return
+          result.push({
+            key: `${group.key}-${index}`,
+            color: group.color,
+            points: projected.map(point => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '),
+            // 已走轨迹叠加方向箭头，样式对齐大屏 session traveled path
+            arrows: visitedOnly ? buildPathDirectionArrows(projected, this.trackZoom || 1) : []
+          })
         })
         return result
       }, [])
@@ -1638,12 +1674,18 @@ export default {
     sampleTrackKey(sample) {
       return String(sample.deviceTaskInstanceId || sample.serialNumber || sample.deviceName || 'track')
     },
+    /** 按装备顺序取色：第一条绿色，多装备区分；不再使用接口下发的蓝色默认色 */
+    resolveTrackColor(seed, indexHint = 0) {
+      if (!seed) return TRAJECTORY_COLORS[0]
+      const key = this.trackGroupKey(seed) || this.sampleTrackKey(seed) || seed.key
+      if (key && this.equipmentColorMap[key]) return this.equipmentColorMap[key]
+      const groups = this.trackGroups || []
+      const found = groups.findIndex(group => this.trackGroupKey(group) === key)
+      const index = found >= 0 ? found : (Number.isFinite(indexHint) ? indexHint : 0)
+      return TRAJECTORY_COLORS[Math.max(0, index) % TRAJECTORY_COLORS.length]
+    },
     defaultTrackColor(seed) {
-      const colors = ['#2563eb', '#f97316', '#14b8a6', '#a855f7', '#ef4444', '#22c55e', '#f59e0b']
-      const value = String(seed.deviceTaskInstanceId || seed.serialNumber || seed.deviceName || 'track')
-      let hash = 0
-      for (const char of value) hash = (hash * 31 + char.charCodeAt(0)) % colors.length
-      return colors[Math.abs(hash) % colors.length]
+      return this.resolveTrackColor(seed, 0)
     },
     interpolateNumber(left, right, ratio) {
       const start = Number(left)
@@ -1913,12 +1955,14 @@ export default {
   position: relative;
   display: inline-flex;
   align-items: stretch;
-  // width: auto;
   max-width: 100%;
   margin-bottom: 12px;
   flex-shrink: 0;
   box-sizing: border-box;
   vertical-align: top;
+  // 恢复原先蓝色设计；用外描边代替 border，避免与内发光叠成「双上边框」
+  border: none;
+  box-shadow: 0 0 0 1px #4AB8FF;
 
   .video-tabs__nav-wrap {
     width: auto;
@@ -1934,6 +1978,30 @@ export default {
     flex-wrap: nowrap;
     white-space: nowrap;
     transition: transform 0.3s;
+  }
+
+  .tab-button-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 6px 10px;
+    font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 12px;
+    letter-spacing: 0.857px;
+    white-space: nowrap;
+    color: #6AC5FF;
+
+    & + .tab-button-item {
+      border-left: 1px solid #4AB8FF;
+    }
+
+    &.is-active {
+      background: #0A3560;
+      // 柔和内发光，避免顶部再形成一条硬边
+      box-shadow: inset 0 0 10px 0 rgba(105, 196, 255, 0.35);
+    }
   }
 
   .video-tabs__nav-prev,
@@ -1990,19 +2058,6 @@ export default {
       flex: 0 0 auto;
       max-width: none;
     }
-  }
-
-  .tab-button-item {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    padding: 6px 10px;
-    font-family: "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
-    font-size: 14px;
-    line-height: 12px;
-    letter-spacing: 0.857px;
-    white-space: nowrap;
   }
 }
 
