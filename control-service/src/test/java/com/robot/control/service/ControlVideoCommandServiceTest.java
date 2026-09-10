@@ -3,6 +3,8 @@ package com.robot.control.service;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.robot.control.auth.CurrentUser;
@@ -15,12 +17,14 @@ import com.robot.media.common.video.VideoQuality;
 import com.robot.media.common.video.VideoSessionResponse;
 import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.media.common.video.VideoSourceType;
+import com.robot.media.common.video.VideoStartCommand;
 import com.robot.control.messaging.RobotMediaCommandService;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
 class ControlVideoCommandServiceTest {
@@ -57,6 +61,30 @@ class ControlVideoCommandServiceTest {
                 .isInstanceOf(IntercomBusyException.class)
                 .extracting("code")
                 .isEqualTo("CLIENT_BUSY");
+    }
+
+    @Test
+    void publishesSameStartCommandOnlyOnce() {
+        VideoStartCommand command = new VideoStartCommand(
+                "cmd-1",
+                "vs-1",
+                "robot-001",
+                VideoSourceType.ROBOT_CAMERA,
+                "robot-001",
+                "camera01",
+                VideoChannel.visible,
+                VideoQuality.sub,
+                "ws://livekit",
+                "media.robot-001.camera01.visible.sub",
+                "publisher-token",
+                "robot:robot-001:camera01",
+                null,
+                OffsetDateTime.now().plusMinutes(10));
+        when(mediaServiceClient.restartCommand("vs-1", null)).thenReturn(command);
+
+        IntStream.range(0, 20).parallel().forEach(ignored -> service.restartSession("vs-1"));
+
+        verify(commandService, times(1)).sendStart(command);
     }
 
     private CurrentUser operator(String userId, String clientId) {

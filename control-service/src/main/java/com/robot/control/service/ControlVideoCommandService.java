@@ -19,12 +19,15 @@ import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.media.common.video.VideoSourceType;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -45,6 +48,12 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class ControlVideoCommandService {
+
+    private static final Logger log = LoggerFactory.getLogger(ControlVideoCommandService.class);
+    private static final int RECENT_START_COMMAND_LIMIT = 2048;
+
+    /** 单实例近期已发布的 start commandId，避免同一命令被并发重复下发。 */
+    private final Set<String> publishedStartCommandIds = new LinkedHashSet<>();
 
     /**
      * 媒体服务客户端，用于创建、查询和更新实时视频会话。
@@ -417,12 +426,37 @@ public class ControlVideoCommandService {
      * @param command 命令内容
      */
     private void sendStart(VideoStartCommand command) {
-        if (command != null) {
-            if (command.sourceType() == VideoSourceType.FIXED_CAMERA) {
-                commandService.sendFixedCameraStart(command);
-            } else {
-                commandService.sendStart(command);
+        if (command != null && claimStartCommand(command.commandId())) {
+            try {
+                if (command.sourceType() == VideoSourceType.FIXED_CAMERA) {
+                    commandService.sendFixedCameraStart(command);
+                } else {
+                    commandService.sendStart(command);
+                }
+            } catch (RuntimeException exception) {
+                releaseStartCommand(command.commandId());
+                throw exception;
             }
+        }
+    }
+
+    private synchronized boolean claimStartCommand(String commandId) {
+        if (commandId == null || commandId.isBlank()) {
+            return true;
+        }
+        if (!publishedStartCommandIds.add(commandId)) {
+            log.info("跳过重复视频启动命令，commandId={}", commandId);
+            return false;
+        }
+        if (publishedStartCommandIds.size() > RECENT_START_COMMAND_LIMIT) {
+            publishedStartCommandIds.remove(publishedStartCommandIds.iterator().next());
+        }
+        return true;
+    }
+
+    private synchronized void releaseStartCommand(String commandId) {
+        if (commandId != null) {
+            publishedStartCommandIds.remove(commandId);
         }
     }
 
