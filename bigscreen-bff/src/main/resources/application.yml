@@ -13,6 +13,8 @@ center:
   media-base-url: ${CENTER_MEDIA_BASE_URL:http://media-service:8088}
   # Control Service WebSocket 地址。
   websocket-control-url: ${CENTER_CONTROL_WS_URL:ws://control-service:8082/ws/control}
+  # 现场 App 视频呼叫 WebSocket 地址。
+  websocket-field-call-url: ${CENTER_FIELD_CALL_WS_URL:ws://control-service:8082/ws/field-call}
 
 statistics:
   report:

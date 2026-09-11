@@ -32,7 +32,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(bridgeHandler, "/ws/control", "/ws/media", "/ws/bigscreen")
+        registry.addHandler(bridgeHandler, "/ws/control", "/ws/media", "/ws/bigscreen", "/ws/field-call")
                 .setAllowedOriginPatterns("*");
     }
 }

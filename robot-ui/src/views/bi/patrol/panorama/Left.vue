@@ -62,7 +62,7 @@
         </div>
       </div>
       <div class="box bi-corner-box mt20 task" :class="{ 'no_data hp41': collapseArr[1], 'hp323': !collapseArr[1] }">
-        <div class="pt9 pr20 pb9 pl20 flx-justify-between title" @click="toggleCollapse('collapseArr', 1)">
+        <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <div class="flx-center">
             <span class="desc">任务列表</span>
             <div v-if="taskData1.length" class="ml4 notice pr10 pl10">{{ taskData1.length ? taskData1.length > 99 ? '99+' : taskData1.length : '-'  }}</div>

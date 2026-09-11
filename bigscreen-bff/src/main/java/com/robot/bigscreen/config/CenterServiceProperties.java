@@ -10,6 +10,7 @@ public class CenterServiceProperties {
     private String v1ControlBaseUrl = "http://localhost:8088";
     private String mediaBaseUrl = "http://localhost:8088";
     private String websocketControlUrl = "ws://localhost:8088/ws/control";
+    private String websocketFieldCallUrl = "ws://localhost:8082/ws/field-call";
 
     public String getManageBaseUrl() {
         return manageBaseUrl;
@@ -49,5 +50,13 @@ public class CenterServiceProperties {
 
     public void setWebsocketControlUrl(String websocketControlUrl) {
         this.websocketControlUrl = websocketControlUrl;
+    }
+
+    public String getWebsocketFieldCallUrl() {
+        return websocketFieldCallUrl;
+    }
+
+    public void setWebsocketFieldCallUrl(String websocketFieldCallUrl) {
+        this.websocketFieldCallUrl = websocketFieldCallUrl;
     }
 }

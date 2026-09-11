@@ -10,7 +10,9 @@ import com.robot.media.common.file.FileListResponse;
 import com.robot.media.common.file.FilePlayUrlResponse;
 import com.robot.media.common.file.FileStatus;
 import com.robot.media.common.file.FileType;
+import com.robot.media.common.video.CreateFieldCallRequest;
 import com.robot.media.common.video.CreateVideoSessionRequest;
+import com.robot.media.common.video.FieldCallResponse;
 import com.robot.media.common.video.MediaTrackResponse;
 import com.robot.media.common.video.IntercomResponse;
 import com.robot.media.common.video.SwitchChannelRequest;
@@ -77,6 +79,13 @@ public class ControlMediaServiceClient {
      */
     public IntercomResponse createIntercom(CreateVideoSessionRequest request, CurrentUser user) {
         return post("/internal/media/video-sessions/intercom", request, user, IntercomResponse.class);
+    }
+
+    /**
+     * 创建现场 App 视频呼叫会话并签发双方 LiveKit Token。
+     */
+    public FieldCallResponse createFieldCall(CreateFieldCallRequest request, CurrentUser user) {
+        return post("/internal/media/field-calls", request, user, FieldCallResponse.class);
     }
 
     /**

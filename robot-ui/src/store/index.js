@@ -15,6 +15,7 @@ import dragVideo from './modules/dragVideo';
 import websocketRobot from './modules/websocket-robot';
 import websocketExtraData from './modules/websocket-extra-data';
 import bigscreenAccess from './modules/bigscreen-access';
+import fieldCall from './modules/fieldCall';
 
 Vue.use(Vuex)
 
@@ -34,6 +35,7 @@ const store = new Vuex.Store({
     websocketRobot,
     websocketExtraData,
     bigscreenAccess,
+    fieldCall,
   },
   getters
 })

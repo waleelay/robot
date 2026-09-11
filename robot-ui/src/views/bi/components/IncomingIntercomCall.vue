@@ -12,7 +12,7 @@
     >
       <header class="call-window-header" @pointerdown="startDrag">
         <div class="header-title">
-          <h2>语音电话</h2>
+          <h2>{{ isFieldCall ? '现场视频' : '语音电话' }}</h2>
           <span v-if="waitingCallCount" class="waiting-call-badge">还有 {{ waitingCallCount }} 通来电</span>
         </div>
         <div class="header-actions">
@@ -20,10 +20,10 @@
             v-if="callMode === 'audio'"
             class="enable-video-button"
             type="button"
-            :disabled="activeIncomingCall.videoLoading"
+            :disabled="!isFieldCall && activeIncomingCall.videoLoading"
             @click.stop="enableVideo"
           >
-            {{ activeIncomingCall.videoLoading ? '开启中...' : '开启画面' }}
+            {{ !isFieldCall && activeIncomingCall.videoLoading ? '开启中...' : '开启画面' }}
           </button>
           <button
             class="header-icon-button"
@@ -100,6 +100,7 @@
             <svg-icon :icon-class="activeIncomingCall.speakerMuted ? 'volume-mute-fill' : 'volume-fill'" />
           </button>
           <button
+            v-if="!isFieldCall"
             class="round-action is-local"
             type="button"
             title="跳转控制中心"
@@ -116,7 +117,7 @@
           <span class="close-video" @click="disableVideo">关闭画面</span>
           <div v-if="!videoReady" class="video-loading">
             <i class="el-icon-loading" />
-            <span>{{ activeIncomingCall.videoLoading ? '正在开启主摄像头...' : '等待视频画面...' }}</span>
+            <span>{{ videoLoadingHint }}</span>
           </div>
         </div>
         <div class="video-call-info">
@@ -162,7 +163,7 @@
             <!-- <span>{{ activeIncomingCall.speakerMuted ? '恢复扬声器' : '扬声器' }}</span> -->
             <span>扬声器</span>
           </div>
-          <div class="labeled-action">
+          <div v-if="!isFieldCall" class="labeled-action">
             <button class="round-action is-local" type="button" title="跳转控制中心" @click="openRemoteControl">
               <svg-icon icon-class="control" />
             </button>
@@ -175,13 +176,13 @@
 </template>
 
 <script>
-import { mapActions, mapState } from 'vuex'
+import { mapActions, mapGetters, mapState } from 'vuex'
 
 const SCREEN_WIDTH = 1920
 const SCREEN_HEIGHT = 1080
 const WINDOW_MARGIN = 16
-/** 与巡逻巡查 Robot1 弹窗右侧对齐（距右边缘 113px） */
-const WINDOW_MARGIN_RIGHT = 113
+/** 与巡逻巡查 Robot1 弹窗右侧对齐（距右边缘 82px） */
+const WINDOW_MARGIN_RIGHT = 82
 const COMPACT_SIZE = { width: 358, height: 152 }
 const AUDIO_SIZE = { width: 410, height: 152 }// width: 394, height: 152
 const VIDEO_SIZE = { width: 324, height: 382 }
@@ -198,12 +199,28 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketRobot', [
-      'incomingCalls',
-      'activeIncomingCall',
-      'callOperationPending',
-      'cameras'
-    ]),
+    ...mapState('websocketRobot', {
+      robotIncomingCalls: 'incomingCalls',
+      robotActiveIncomingCall: 'activeIncomingCall',
+      robotCallOperationPending: 'callOperationPending',
+      cameras: 'cameras'
+    }),
+    ...mapState('fieldCall', {
+      fieldIncomingCalls: 'incomingCalls',
+      fieldActiveIncomingCall: 'activeIncomingCall',
+      fieldCallOperationPending: 'callOperationPending'
+    }),
+    ...mapGetters('fieldCall', ['fieldRemoteVideoTrack']),
+    incomingCalls() {
+      return [...this.fieldIncomingCalls, ...this.robotIncomingCalls]
+    },
+    activeIncomingCall() {
+      return this.fieldActiveIncomingCall || this.robotActiveIncomingCall
+    },
+    isFieldCall() {
+      const call = this.activeIncomingCall || this.currentCall
+      return Boolean(call && call.source === 'mobile-app')
+    },
     currentCall() {
       return this.incomingCalls[0] || null
     },
@@ -225,10 +242,10 @@ export default {
       }
     },
     operationPending() {
-      return this.callOperationPending || this.hangupPending
+      return this.robotCallOperationPending || this.fieldCallOperationPending || this.hangupPending
     },
     robotName() {
-      return this.displayCall.robotName || this.displayCall.robotId || '机器人'
+      return this.displayCall.robotName || this.displayCall.displayName || this.displayCall.robotId || '机器人'
     },
     ringingDescription() {
       if (this.manualIntercomActive) return '当前正在通话，来电等待'
@@ -239,17 +256,29 @@ export default {
     },
     manualIntercomActive() {
       if (this.activeIncomingCall) return false
+      if (this.fieldActiveIncomingCall || this.robotActiveIncomingCall) return true
       return Object.values(this.cameras).some(camera => camera && camera.intercomActive)
     },
     activeCamera() {
-      if (!this.activeIncomingCall) return null
-      return this.cameras[this.activeIncomingCall.cameraKey] || null
+      if (!this.robotActiveIncomingCall) return null
+      return this.cameras[this.robotActiveIncomingCall.cameraKey] || null
     },
     remoteVideoTrack() {
+      if (this.fieldActiveIncomingCall) return this.fieldRemoteVideoTrack
       return this.activeCamera && this.activeCamera.remoteVideoTrack
     },
     videoReady() {
       return Boolean(this.remoteVideoTrack)
+    },
+    videoLoadingHint() {
+      if (this.isFieldCall) {
+        return this.activeIncomingCall && this.activeIncomingCall.videoLoading
+          ? '正在连接现场画面...'
+          : '等待手机画面...'
+      }
+      return this.activeIncomingCall && this.activeIncomingCall.videoLoading
+        ? '正在开启主摄像头...'
+        : '等待视频画面...'
     },
     formattedDuration() {
       const connectedAt = Number(this.activeIncomingCall && this.activeIncomingCall.connectedAtEpochMillis)
@@ -307,6 +336,15 @@ export default {
       'setSelectedRobotId',
       'setControlCenterReturnTo'
     ]),
+    ...mapActions('fieldCall', [
+      'acceptFieldCall',
+      'rejectFieldCall',
+      'hangupFieldCall',
+      'toggleFieldMic',
+      'toggleFieldSpeaker',
+      'enableFieldVideo',
+      'disableFieldVideo'
+    ]),
     pad(value) {
       return String(value).padStart(2, '0')
     },
@@ -344,10 +382,20 @@ export default {
       this.dragState = null
     },
     accept() {
-      if (this.currentCall) this.acceptIncomingCall(this.currentCall.callId)
+      if (!this.currentCall) return
+      if (this.currentCall.source === 'mobile-app') {
+        this.acceptFieldCall(this.currentCall.callId)
+        return
+      }
+      this.acceptIncomingCall(this.currentCall.callId)
     },
     reject() {
-      if (this.currentCall) this.rejectIncomingCall(this.currentCall.callId)
+      if (!this.currentCall) return
+      if (this.currentCall.source === 'mobile-app') {
+        this.rejectFieldCall(this.currentCall.callId)
+        return
+      }
+      this.rejectIncomingCall(this.currentCall.callId)
     },
     closeCall() {
       if (this.callMode === 'ringing') {
@@ -364,18 +412,35 @@ export default {
         this.remoteVideoTrack.detach(video)
       }
       try {
-        await this.hangupIncomingCall()
+        if (this.fieldActiveIncomingCall) {
+          await this.hangupFieldCall()
+        } else {
+          await this.hangupIncomingCall()
+        }
       } finally {
         this.hangupPending = false
       }
     },
     toggleMicrophone() {
+      if (this.fieldActiveIncomingCall) {
+        this.toggleFieldMic()
+        return
+      }
       this.toggleIncomingCallMicrophone()
     },
     toggleSpeaker() {
+      if (this.fieldActiveIncomingCall) {
+        this.toggleFieldSpeaker()
+        return
+      }
       this.toggleIncomingCallSpeaker()
     },
     async enableVideo() {
+      if (this.fieldActiveIncomingCall) {
+        await this.enableFieldVideo()
+        this.$nextTick(() => this.attachVideoTrack())
+        return
+      }
       await this.enableIncomingCallVideo()
       this.attachVideoTrack()
     },
@@ -384,6 +449,10 @@ export default {
       if (this.remoteVideoTrack && video && typeof this.remoteVideoTrack.detach === 'function') {
         this.remoteVideoTrack.detach(video)
       }
+      if (this.fieldActiveIncomingCall) {
+        await this.disableFieldVideo()
+        return
+      }
       await this.disableIncomingCallVideo()
     },
     attachVideoTrack() {
@@ -391,12 +460,23 @@ export default {
       this.$nextTick(() => {
         const video = this.$refs.callVideo
         if (!video) return
-        this.remoteVideoTrack.attach(video)
-        video.play().catch(() => {})
+        const track = this.remoteVideoTrack
+        try {
+          // 重新挂载，避免已 attach 到其它节点导致黑屏
+          if (typeof track.detach === 'function') track.detach()
+          track.attach(video)
+          video.muted = true
+          video.playsInline = true
+          video.autoplay = true
+          const play = video.play()
+          if (play && typeof play.catch === 'function') play.catch(() => {})
+        } catch (err) {
+          console.error('[IncomingIntercomCall] attachVideoTrack', err)
+        }
       })
     },
     async openRemoteControl() {
-      if (!this.activeIncomingCall) return
+      if (!this.activeIncomingCall || this.isFieldCall) return
       if (this.activeIncomingCall.videoEnabled) {
         await this.disableVideo()
       }

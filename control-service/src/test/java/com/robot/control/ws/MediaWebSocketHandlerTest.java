@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.auth.CurrentUserResolver;
 import com.robot.control.auth.RequestAuthorizationHeaders;
+import com.robot.control.call.FieldCallService;
 import com.robot.control.call.IntercomCallService;
 import com.robot.control.client.ControlManagementClient;
 import com.robot.control.service.EquipmentControlService;
@@ -28,6 +29,7 @@ class MediaWebSocketHandlerTest {
                 new ObjectMapper(),
                 mock(EquipmentControlService.class),
                 mock(IntercomCallService.class),
+                mock(FieldCallService.class),
                 mock(CurrentUserResolver.class),
                 authorizationHeaders,
                 managementClient,

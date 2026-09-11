@@ -437,14 +437,22 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     }
 
     URI centerUri(WebSocketSession browserSession) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(properties.getWebsocketControlUrl());
+        String path = browserSession.getUri() == null ? "" : browserSession.getUri().getPath();
+        String baseUrl = path != null && path.endsWith("/ws/field-call")
+                ? properties.getWebsocketFieldCallUrl()
+                : properties.getWebsocketControlUrl();
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(baseUrl);
         String clientId = queryParameter(browserSession, "clientId");
         String accessToken = queryParameter(browserSession, "access_token");
+        String displayName = queryParameter(browserSession, "displayName");
         if (clientId != null) {
             builder.replaceQueryParam("clientId", clientId);
         }
         if (accessToken != null) {
             builder.replaceQueryParam("access_token", accessToken);
+        }
+        if (displayName != null) {
+            builder.replaceQueryParam("displayName", displayName);
         }
         return builder.build(true).toUri();
     }

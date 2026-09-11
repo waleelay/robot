@@ -91,6 +91,30 @@ public class LiveKitTokenService {
     }
 
     /**
+     * 现场 App Token：发布摄像头与麦克风，并订阅中心端音频。
+     */
+    public TokenResult createFieldAppToken(String roomName, String userId) {
+        return createToken(
+                roomName,
+                "field-app:" + userId,
+                true,
+                true,
+                List.of("camera", "microphone"));
+    }
+
+    /**
+     * 现场呼叫中心端 Token：订阅 App 音视频，并发布麦克风。
+     */
+    public TokenResult createFieldCenterToken(String roomName, String userId, String clientId) {
+        return createToken(
+                roomName,
+                "field-center:" + userId + ":" + clientId,
+                true,
+                true,
+                List.of("microphone"));
+    }
+
+    /**
      * 生成 LiveKit 管理接口 Token。
      *
      * @return Token 和过期时间

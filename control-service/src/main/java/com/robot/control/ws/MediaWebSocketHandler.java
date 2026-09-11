@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.auth.CurrentUser;
 import com.robot.control.auth.CurrentUserResolver;
 import com.robot.control.auth.RequestAuthorizationHeaders;
+import com.robot.control.call.FieldCallService;
 import com.robot.control.call.IntercomCallService;
 import com.robot.control.client.ControlManagementClient;
 import com.robot.control.config.DateTimeConfig;
@@ -41,23 +42,18 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final EquipmentControlService equipmentControlService;
     private final IntercomCallService intercomCallService;
+    private final FieldCallService fieldCallService;
     private final CurrentUserResolver currentUserResolver;
     private final RequestAuthorizationHeaders requestAuthorizationHeaders;
     private final ControlManagementClient managementClient;
     private final TrajectoryCoordinator trajectoryCoordinator;
 
-    /**
-     * 创建 MediaWebSocketHandler 实例。
-     *
-     * @param publisher publisher
-     * @param objectMapper JSON 编解码器
-     * @param equipmentControlService 装备控制服务
-     */
     public MediaWebSocketHandler(
             MediaWebSocketPublisher publisher,
             ObjectMapper objectMapper,
             EquipmentControlService equipmentControlService,
             IntercomCallService intercomCallService,
+            FieldCallService fieldCallService,
             CurrentUserResolver currentUserResolver,
             RequestAuthorizationHeaders requestAuthorizationHeaders,
             ControlManagementClient managementClient,
@@ -66,6 +62,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
         this.objectMapper = objectMapper;
         this.equipmentControlService = equipmentControlService;
         this.intercomCallService = intercomCallService;
+        this.fieldCallService = fieldCallService;
         this.currentUserResolver = currentUserResolver;
         this.requestAuthorizationHeaders = requestAuthorizationHeaders;
         this.managementClient = managementClient;
@@ -126,6 +123,23 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
                 }
                 case "video.intercom.call.query" -> send(
                         session, "video.intercom.call.list", requestId, authorizedRingingCalls());
+                case "video.field.call.accept" -> {
+                    String callId = stringValue(payload.get("callId"), "");
+                    send(session, "video.field.call.accepted", requestId,
+                            fieldCallService.accept(callId, currentUser(session)));
+                }
+                case "video.field.call.reject" -> {
+                    String callId = stringValue(payload.get("callId"), "");
+                    send(session, "video.field.call.rejected", requestId,
+                            fieldCallService.reject(callId, currentUser(session)));
+                }
+                case "video.field.call.hangup" -> {
+                    String callId = stringValue(payload.get("callId"), "");
+                    fieldCallService.hangup(callId, currentUser(session), "center-hangup");
+                    send(session, "video.field.call.ended", requestId, Map.of("callId", callId));
+                }
+                case "video.field.call.query" -> send(
+                        session, "video.field.call.list", requestId, fieldCallService.ringingCalls());
                 case "trajectory.watch.sync" -> {
                     try {
                         trajectoryCoordinator.sync(session, payload);
@@ -140,7 +154,10 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
             }
         } catch (Exception ex) {
             String rejectedType = type.startsWith("video.intercom.call.")
-                    ? "video.intercom.call.operation-failed"
+                    || type.startsWith("video.field.call.")
+                    ? (type.startsWith("video.field.call.")
+                        ? "video.field.call.operation-failed"
+                        : "video.intercom.call.operation-failed")
                     : "control.command.rejected";
             send(session, rejectedType, requestId, object(
                     "code", "OPERATION_REJECTED",

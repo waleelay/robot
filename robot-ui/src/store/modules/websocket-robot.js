@@ -851,7 +851,13 @@ const actions = {
         requestId: `call-query-${Date.now()}`,
         payload: {}
       }))
+      socket.send(JSON.stringify({
+        type: 'video.field.call.query',
+        requestId: `field-call-query-${Date.now()}`,
+        payload: {}
+      }))
       dispatch('sendTrajectoryWatchTargets')
+      dispatch('fieldCall/connectFieldCall', null, { root: true })
       // console.log('Media WebSocket connected', url)
     }
     socket.onclose = (event) => {
@@ -894,6 +900,7 @@ const actions = {
       dispatch('syncSessionEvent', event)
       dispatch('syncControlEvent', event)
       dispatch('syncIntercomCallEvent', event)
+      dispatch('fieldCall/syncFieldCallEvent', event, { root: true })
     }
     commit('setMediaSocket', socket)
   },
