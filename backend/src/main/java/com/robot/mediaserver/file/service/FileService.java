@@ -561,6 +561,13 @@ public class FileService {
         return findActiveLiveRecording(sessionId, user).map(this::item).orElse(null);
     }
 
+    /**
+     * 判断指定视频会话是否仍有 LiveKit Egress 录像占用。
+     */
+    public boolean hasActiveLiveRecording(String sessionId) {
+        return findActiveLiveRecording(sessionId, null).isPresent();
+    }
+
     public List<String> expiredLiveRecordingIds() {
         int maxDurationSeconds = properties.getFile().getLiveRecordingMaxDurationSeconds();
         if (maxDurationSeconds <= 0) {

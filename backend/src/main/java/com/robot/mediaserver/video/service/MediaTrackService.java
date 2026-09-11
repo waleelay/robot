@@ -10,6 +10,7 @@ import jakarta.transaction.Transactional;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -23,23 +24,34 @@ public class MediaTrackService {
     }
 
     @Transactional
-    public void publish(VideoSession session, String trackSid, String trackName) {
+    public void publish(
+            VideoSession session,
+            String participantIdentity,
+            String trackSid,
+            String trackName) {
         if (trackSid == null || trackSid.isBlank()) {
             return;
         }
         repository.findFirstBySessionIdAndTrackSidAndUnpublishedAtIsNull(session.getSessionId(), trackSid)
-                .orElseGet(() -> {
+                .ifPresentOrElse(track -> {
+                    if (!Objects.equals(track.getParticipantIdentity(), participantIdentity)
+                            || !Objects.equals(track.getTrackName(), trackName)) {
+                        track.setParticipantIdentity(participantIdentity);
+                        track.setTrackName(trackName);
+                        repository.save(track);
+                    }
+                }, () -> {
                     MediaTrack track = new MediaTrack();
                     track.setTrackId("track_" + compactUuid());
                     track.setSessionId(session.getSessionId());
                     track.setTrackSid(trackSid);
                     track.setTrackName(trackName);
-                    track.setParticipantIdentity("robot:" + session.getRobotId() + ":" + session.getDeviceId());
+                    track.setParticipantIdentity(participantIdentity);
                     track.setKind("video");
                     track.setChannel(session.getChannel());
                     track.setQuality(session.getQuality());
                     track.setPublishedAt(now());
-                    return repository.save(track);
+                    repository.save(track);
                 });
     }
 

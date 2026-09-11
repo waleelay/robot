@@ -5,6 +5,10 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface MediaSessionViewerRepository extends JpaRepository<MediaSessionViewer, String> {
 
@@ -14,5 +18,18 @@ public interface MediaSessionViewerRepository extends JpaRepository<MediaSession
 
     List<MediaSessionViewer> findByLeftAtIsNullAndLastHeartbeatAtBefore(OffsetDateTime lastHeartbeatAt);
 
-    List<MediaSessionViewer> findByLeftAtIsNull();
+    @Modifying
+    @Transactional
+    @Query("""
+            update MediaSessionViewer viewer
+               set viewer.leftAt = :leftAt
+             where viewer.id = :viewerId
+               and viewer.leftAt is null
+               and viewer.lastHeartbeatAt < :heartbeatBefore
+            """)
+    int closeIfStale(
+            @Param("viewerId") String viewerId,
+            @Param("heartbeatBefore") OffsetDateTime heartbeatBefore,
+            @Param("leftAt") OffsetDateTime leftAt);
+
 }
