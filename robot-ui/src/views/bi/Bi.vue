@@ -20,6 +20,7 @@ import ScaleScreen from './../../components/largeScreen/scale-screen.vue'
 import WarningPending from './patrol/panorama/warning/WarnPending.vue';
 import WarnInfo from './patrol/panorama/warning/WarnInfo.vue';
 import IncomingIntercomCall from './components/IncomingIntercomCall.vue';
+import { unlockAlarmSpeech } from '@/utils/alarm-speech'
 export default {
   name: 'Bi',
   components: {
@@ -30,7 +31,7 @@ export default {
   },
   data() {
     return {
-
+      speechUnlockBound: null
     }
   },
   computed: {
@@ -42,6 +43,7 @@ export default {
     },
   },
   async mounted() {
+    this.bindSpeechUnlock()
     await this.clearCameras()
     try {
       await this.refreshOverviewResources({ failClosed: false })
@@ -56,6 +58,21 @@ export default {
     ...mapActions('websocketRobot', ['connectMediaWebSocket', 'stopCamera']),
     ...mapActions('websocketExtraData', ['refreshOverviewResources', 'markOverviewLoadFailed']),
     ...mapActions('fieldCall', ['disconnectFieldCall']),
+    bindSpeechUnlock() {
+      if (this.speechUnlockBound || typeof window === 'undefined') return
+      this.speechUnlockBound = () => {
+        unlockAlarmSpeech()
+        this.unbindSpeechUnlock()
+      }
+      window.addEventListener('click', this.speechUnlockBound, true)
+      window.addEventListener('keydown', this.speechUnlockBound, true)
+    },
+    unbindSpeechUnlock() {
+      if (!this.speechUnlockBound || typeof window === 'undefined') return
+      window.removeEventListener('click', this.speechUnlockBound, true)
+      window.removeEventListener('keydown', this.speechUnlockBound, true)
+      this.speechUnlockBound = null
+    },
     async clearCameras() {
       for (const [index, key] of Object.keys(this.activeCameras).entries()) {
         if (this.activeCameras[key]?.camera) {
@@ -65,6 +82,7 @@ export default {
     },
   },
   beforeDestroy() {
+    this.unbindSpeechUnlock()
     this.disconnectFieldCall()
   },
   // ✅ 组件内守卫，离开当前组件时触发

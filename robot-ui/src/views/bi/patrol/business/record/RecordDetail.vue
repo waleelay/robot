@@ -1789,15 +1789,17 @@ export default {
 .replay-layout {
   min-height: 0;
   gap: 12px;
-  overflow: hidden;
-  --replay-grid-columns: minmax(0, 1fr) 1px minmax(320px, 686px);
+  // 窗口缩小时允许纵向滚动，避免轨迹/视频被 flex 压成 0 高
+  overflow: auto;
+  --replay-grid-columns: minmax(0, 1fr) 1px minmax(280px, 42%);
   --replay-grid-gap: 10px;
 }
 
 .summary-grid {
   display: grid;
+  // 始终五行横排，缩小时等比收窄，避免换成单列换行
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 20px;
+  gap: 12px 16px;
   flex-shrink: 0;
 }
 
@@ -1832,17 +1834,17 @@ export default {
 }
 
 .playback-panel {
-  min-height: 0;
+  min-height: 360px;
   border: none;
   background: #101f3c;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .replay-grid {
   display: grid;
   grid-template-columns: var(--replay-grid-columns);
   column-gap: var(--replay-grid-gap);
-  min-height: 0;
+  min-height: 320px;
   overflow: hidden;
 }
 
@@ -1861,8 +1863,10 @@ export default {
 
 .map-panel,
 .video-panel {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  min-height: 0;
+  min-height: 280px;
   border: none;
   background: transparent;
 }
@@ -1914,7 +1918,8 @@ export default {
 .track-stage {
   position: relative;
   flex: 1;
-  min-height: 0;
+  // 禁止被压成 0：缩窗后仍保留可视轨迹区域
+  min-height: 240px;
   overflow: hidden;
   background: #112b4d;
   cursor: grab;
@@ -2065,7 +2070,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-height: 0;
+  min-height: 240px;
   flex: 1;
 }
 
@@ -2073,7 +2078,7 @@ export default {
   position: relative;
   width: 100%;
   flex: 1;
-  min-height: 0;
+  min-height: 180px;
   overflow: hidden;
   background: #112B4D;
 
@@ -2584,6 +2589,7 @@ button.record-table__row {
 .record-empty--track,
 .record-empty--video {
   background: #112b4d;
+  min-height: 240px;
 }
 
 ::v-deep {
@@ -2671,26 +2677,54 @@ button.record-table__row {
   }
 }
 
+/* 大屏定宽设计：缩窗时保持横排收窄，不要用媒体查询改成单列（否则摘要换行、轨迹/视频被压没） */
 @media (max-width: 1600px) {
-  .summary-grid,
-  .replay-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
+  .summary-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px 12px;
+  }
+
+  .replay-layout {
+    --replay-grid-columns: minmax(0, 1fr) 1px minmax(240px, 40%);
+    --replay-grid-gap: 8px;
+  }
+
+  .replay-grid,
+  .records-row {
+    grid-template-columns: var(--replay-grid-columns);
   }
 
   .replay-grid__divider,
   .records-row > .replay-grid__divider {
-    display: none;
+    display: block;
   }
 
   .records-row {
-    grid-template-columns: 1fr;
-    max-height: 36vh;
-    flex: 0 1 36vh;
+    max-height: 200px;
+    flex: 0 1 200px;
   }
 
-  .video-main {
-    min-height: 180px;
+  .summary-item {
+    height: auto;
+    min-height: 56px;
+    padding: 8px;
+  }
+
+  .summary-item strong {
+    font-size: 16px;
+    line-height: 22px;
+  }
+}
+
+/* 覆盖 common.scss 在 1180px 把 summary/replay 改成 1 列的规则 */
+@media (max-width: 1180px) {
+  .summary-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .replay-grid,
+  .records-row {
+    grid-template-columns: var(--replay-grid-columns);
   }
 }
 </style>

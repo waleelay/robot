@@ -206,6 +206,7 @@ import AlarmMockPanel from './AlarmMockPanel.vue'
 import { mapState, mapActions } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
 import { buildSnapshotOptions, loadSnapshotObjectUrls } from '@/utils/alarm-snapshot'
+import { cancelAlarmSpeech, speakAlarm } from '@/utils/alarm-speech'
 import {
   ENABLE_ALARM_DIALOG_MOCK,
   resolveAlarmMockScenario,
@@ -320,7 +321,8 @@ export default {
       normalPresentMode: 'all',
       show: false,
       snapshotObjectUrls: {},
-      snapshotLoadSeq: 0
+      snapshotLoadSeq: 0,
+      lastSpokenAlarmId: null
     }
   },
   created() {
@@ -334,6 +336,8 @@ export default {
     this.clearFlashTimer()
     this.clearContinueTimer()
     this.clearMockTimers()
+    cancelAlarmSpeech()
+    this.lastSpokenAlarmId = null
   },
   methods: {
     ...mapActions('websocketExtraData', ['removeAlarm']),
@@ -599,6 +603,7 @@ export default {
       this.applySnapshotOptions(this.details)
       this.dialogVisible = false
       this.warningVisible = true
+      this.speakCurrentAlarm()
       this.timer = setTimeout(() => {
         this.timer = null
         this.warningVisible = false
@@ -606,6 +611,10 @@ export default {
           this.dialogVisible = true
         })
       }, FLASH_MS)
+    },
+    speakCurrentAlarm() {
+      const spokenId = speakAlarm(this.details, { lastSpokenId: this.lastSpokenAlarmId })
+      if (spokenId != null) this.lastSpokenAlarmId = spokenId
     },
     applySnapshotOptions(item) {
       this.options = buildSnapshotOptions(item)
@@ -667,6 +676,8 @@ export default {
     resetDialog(options = {}) {
       this.clearFlashTimer()
       if (!options.skipContinue) this.clearContinueTimer()
+      cancelAlarmSpeech()
+      this.lastSpokenAlarmId = null
       this.warningVisible = false
       this.dialogVisible = false
       this.manualOpen = false
