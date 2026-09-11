@@ -93,7 +93,7 @@ Media 不存在媒体源 CRUD、专用 Snapshot Controller，也不直接发布 
 | `media.livekit.*` | LiveKit 地址、Key/Secret、Token、Room、Egress 与 Track 对账周期 |
 | `media.file.live-recording-max-duration-seconds` | 单次手动录像最长持续时间，默认 14400 秒 |
 | `media.minio.*` | 对象存储地址、凭据、bucket 和开关 |
-| `media.file.*` | 文件大小、multipart、播放 Token、HLS、保留期与可信网段 |
+| `media.file.*` | 文件大小、multipart、播放 Token、HLS、保留期与可信网段；弱网上传默认单文件 48 GiB、分片 5 MiB、上传 URL 7 天、会话 30 天 |
 | `media.tts.*` | OpenTTS 地址、voice、format、缓存目录和超时 |
 | `media.session.*` | 发布超时、中断宽限、空闲释放、viewer 超时和视频墙上限 |
 

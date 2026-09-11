@@ -41,7 +41,7 @@ class Runner:
     def __init__(self, cfg: Config) -> None:
         """初始化 HTTP 客户端、manifest 和停止事件。"""
         self.cfg = cfg
-        self.client = Client(cfg.media_service_url, cfg.robot_id)
+        self.client = Client(cfg.media_service_url, cfg.robot_id, cfg.upload_part_timeout)
         self.manifest = Manifest.load(cfg.recording_manifest_path)
         self.stop_event = threading.Event()
 
