@@ -62,6 +62,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class VideoSessionService {
 
     private static final Logger log = LoggerFactory.getLogger(VideoSessionService.class);
+    private static final int LAST_ERROR_CODE_MAX_LENGTH = 64;
+    private static final int LAST_ERROR_MESSAGE_MAX_LENGTH = 512;
 
     /**
      * 可复用状态集合。
@@ -1563,17 +1565,29 @@ public class VideoSessionService {
     }
 
     private void markFailed(VideoSession session, String errorCode, String message, String event) {
+        String persistedErrorCode = truncate(errorCode, LAST_ERROR_CODE_MAX_LENGTH);
+        String persistedMessage = truncate(message, LAST_ERROR_MESSAGE_MAX_LENGTH);
         session.setStatus(VideoSessionStatus.FAILED);
-        session.setLastErrorCode(errorCode);
-        session.setLastErrorMessage(message);
+        session.setLastErrorCode(persistedErrorCode);
+        session.setLastErrorMessage(persistedMessage);
         emit(event, Map.of(
                 "sessionId", session.getSessionId(),
-                "errorCode", errorCode,
-                "message", message));
+                "errorCode", persistedErrorCode,
+                "message", persistedMessage));
     }
 
     private String safeMessage(String message) {
-        return message == null ? "" : message;
+        return truncate(message, LAST_ERROR_MESSAGE_MAX_LENGTH);
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        int codePointCount = value.codePointCount(0, value.length());
+        return codePointCount <= maxLength
+                ? value
+                : value.substring(0, value.offsetByCodePoints(0, maxLength));
     }
 
     private void addViewer(VideoSession session, CurrentUser user) {

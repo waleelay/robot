@@ -389,6 +389,19 @@ class VideoSessionServiceIntercomOccupancyTest {
     }
 
     @Test
+    void truncatesClientFailureDetailsToSessionColumnLimits() {
+        target.setStatus(VideoSessionStatus.ROOM_READY);
+
+        service.handleClientStatus(
+                "vs-target", "failed", null, null, "E".repeat(65), "异常".repeat(300));
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.FAILED);
+        assertThat(target.getLastErrorCode()).hasSize(64);
+        assertThat(target.getLastErrorMessage()).hasSize(512);
+        verify(repository).save(target);
+    }
+
+    @Test
     void stopDoesNotReviveClosedSession() {
         target.setStatus(VideoSessionStatus.CLOSED);
 
