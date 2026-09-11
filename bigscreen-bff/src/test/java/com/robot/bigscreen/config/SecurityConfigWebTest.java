@@ -33,6 +33,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {
         "bigscreen.auth.client-id=bigscreen-web",
+        "bigscreen.auth.field-call-client-id=field-app",
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://iam.example/realms/iam-auth",
         "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://iam.example/realms/iam-auth/certs"
 })
@@ -72,11 +73,33 @@ class SecurityConfigWebTest {
     }
 
     @Test
+    void rejectsFieldAppTokenFromBigscreenApi() throws Exception {
+        mockMvc.perform(get("/api/bigscreen/panorama/overview")
+                        .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void rejectsBigscreenTokenFromFieldCallWebSocket() throws Exception {
+        mockMvc.perform(get("/ws/field-call")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void allowsFieldAppTokenToReachFieldCallWebSocketRoute() throws Exception {
+        mockMvc.perform(get("/ws/field-call")
+                        .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void forwardsCurrentAccessToManagementService() throws Exception {
         when(proxyClient.forwardToManage(any(), eq("/api/v1/management/access-control/me")))
                 .thenReturn(ResponseEntity.ok("{}".getBytes()));
 
-        mockMvc.perform(get("/api/bigscreen/access-control/me").with(jwt()))
+        mockMvc.perform(get("/api/bigscreen/access-control/me")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
                 .andExpect(status().isOk());
 
         verify(proxyClient).forwardToManage(any(), eq("/api/v1/management/access-control/me"));

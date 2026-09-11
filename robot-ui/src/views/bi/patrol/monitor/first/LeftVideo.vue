@@ -296,7 +296,7 @@ export default {
   },
   methods: {
     ...mapActions('dragVideo', ['resetDrag', 'setSplitType']),
-    ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'restartCamera', 'setPrefixId']),
+    ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'restartCamera', 'recoverCameraPlayback', 'setPrefixId']),
     onDragStart,
     onDragEnd,
     showSlotCloseHint(slotKey, text = '任务已结束，视频关闭', durationMs = 3000) {
@@ -517,43 +517,32 @@ export default {
       videoElement.pause()
     },
     resumeVideo(videoElement, camera) {
-      if (videoElement) {
-        delete videoElement.dataset.userPaused
-        videoElement.play().catch(err => {
-          console.error('播放视频失败:', err)
-          if (camera && camera.robot) {
-            this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera, throwOnError: true }).catch(() => {})
-          }
-        })
-      } else if (camera && camera.robot) {
-        this.startCamera({ robot: camera.robot, camera: this.cameras?.[camera.key] || camera, throwOnError: true }).catch(() => {})
+      if (!camera) return
+      const current = this.cameras?.[camera.key] || camera
+      this.rebindCameraTracks([current])
+      if (!videoElement || !current.remoteVideoTrack) {
+        this.recoverCameraPlayback(current).catch(() => {})
+        return
       }
+      delete videoElement.dataset.userPaused
+      videoElement.play().catch(err => {
+        // 播放策略或 DOM 异常只重新绑定当前 Track，不重启共享推流。
+        console.error('播放视频失败:', err)
+        this.rebindCameraTracks([this.cameras?.[camera.key] || current])
+      })
     },
     // 刷新视频
-    refreshVideo(key) {
-      // console.log('刷新视频===============', key, this.ZQL_videosInfos[key]);
-      
-      const videoInfo = this.ZQL_videosInfos[key];
-      if (!videoInfo || !videoInfo.robot) return;
-      
-      // 获取摄像头信息
-      const camera = this.cameras?.[videoInfo.key] || this.ZQL_videosInfos[key];
-      
-      // 标记为重新加载中
-      this.$set(this.ZQL_videosInfos, key, { ...camera, loading: true });
-      
-      // 如果有正在运行的会话，先停止它
-      if (camera.session) {
-        this.stopCamera(camera).then(() => {
-          // 停止成功后重新启动
-          this.startCamera({ robot: videoInfo.robot, camera, throwOnError: true }).catch(() => {});
-        }).catch(() => {
-          // 即使停止失败也尝试重新启动
-          this.startCamera({ robot: videoInfo.robot, camera, throwOnError: true }).catch(() => {});
-        });
-      } else {
-        // 如果没有会话，直接启动
-        this.startCamera({ robot: videoInfo.robot, camera, throwOnError: true }).catch(() => {});
+    async refreshVideo(key) {
+      const videoInfo = this.ZQL_videosInfos[key]
+      if (!videoInfo) return
+      const camera = this.cameras?.[videoInfo.key] || videoInfo
+      this.$set(this.ZQL_videosInfos, key, { ...videoInfo, loading: true })
+      try {
+        await this.recoverCameraPlayback(camera)
+        this.rebindCameraTracks([this.cameras?.[camera.key] || camera])
+      } finally {
+        const latest = this.cameras?.[camera.key] || camera
+        this.$set(this.ZQL_videosInfos, key, { ...videoInfo, ...latest, loading: false })
       }
     },
     // 处理视频删除

@@ -85,10 +85,11 @@ class Client:
     该类是薄封装：方法名基本对应后端上传接口，调用方负责维护状态机和重试策略。
     """
 
-    def __init__(self, base_url: str, robot_id: str) -> None:
+    def __init__(self, base_url: str, robot_id: str, part_timeout: float = 1800) -> None:
         """保存后端地址，并在请求头中带上机器人身份。"""
         self.base_url = base_url.rstrip("/")
         self.robot_id = robot_id
+        self.part_timeout = max(1, part_timeout)
         self.session = requests.Session()
         self.session.headers.update({"X-Robot-Id": robot_id})
 
@@ -151,7 +152,12 @@ class Client:
         如果网络中途断开，下次恢复时该 part 不会出现在 uploadedParts 中，会重新上传。
         """
         # PUT 分片直接访问对象存储签名 URL，不再经过 Media Service JSON 接口。
-        response = self.session.put(url, data=reader, headers={"Content-Length": str(size)}, timeout=120)
+        response = self.session.put(
+            url,
+            data=reader,
+            headers={"Content-Length": str(size)},
+            timeout=self.part_timeout,
+        )
         if response.status_code < 200 or response.status_code >= 300:
             raise RuntimeError(f"part upload returned {response.status_code}: {response.text.strip()}")
 

@@ -38,13 +38,20 @@ public class VideoSessionTimeoutScheduler {
         videoSessionService.sweepStaleViewers();
     }
 
+    @Scheduled(fixedDelayString = "${media.livekit.reconcile-delay-ms:5000}")
+    public void reconcileLiveKitTracks() {
+        videoSessionService.reconcileLiveKitTracks();
+    }
+
     private void handleTrackPublishTimeout() {
         OffsetDateTime currentTime = now();
         OffsetDateTime threshold = currentTime.minusSeconds(properties.getSession().getTrackPublishTimeoutSeconds());
-        List<VideoSession> requesting = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.REQUESTING_CLIENT, threshold);
-        List<VideoSession> roomReady = repository.findByStatusAndUpdatedAtBefore(VideoSessionStatus.ROOM_READY, threshold);
-        List<VideoSession> fixedCameraReady = repository.findByStatusAndSourceTypeAndUpdatedAtBefore(
-                VideoSessionStatus.ROOM_READY, VideoSourceType.FIXED_CAMERA, currentTime);
+        List<VideoSession> requesting = repository.findByStatusAndCommandRequestedAtBefore(
+                VideoSessionStatus.REQUESTING_CLIENT, threshold);
+        List<VideoSession> roomReady = repository.findByStatusAndCommandRequestedAtBefore(
+                VideoSessionStatus.ROOM_READY, threshold);
+        List<VideoSession> fixedCameraReady = repository.findByStatusAndSourceTypeAndCommandRequestedAtBefore(
+                VideoSessionStatus.ROOM_READY, VideoSourceType.FIXED_CAMERA, threshold);
         requesting.stream().filter(this::expectsVideoTrack)
                 .forEach(session -> markTimeout(session, "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时"));
         roomReady.stream().filter(this::expectsVideoTrack)
@@ -52,8 +59,7 @@ public class VideoSessionTimeoutScheduler {
                 .forEach(session -> markTimeout(session, "LK_PUBLISH_TIMEOUT", "Room ready 后 Track 发布超时"));
         fixedCameraReady.stream().filter(this::expectsVideoTrack)
                 .forEach(session -> {
-                    if (!videoSessionService.confirmFixedCameraTrack(session.getSessionId())
-                            && !session.getUpdatedAt().isAfter(threshold)) {
+                    if (!videoSessionService.confirmFixedCameraTrack(session.getSessionId())) {
                         markTimeout(session, "LK_PUBLISH_TIMEOUT", "Room ready 后 Track 发布超时");
                     }
                 });
@@ -65,7 +71,8 @@ public class VideoSessionTimeoutScheduler {
 
     private void markTimeout(VideoSession session, String errorCode, String message) {
         try {
-            videoSessionService.markTimeout(session.getSessionId(), errorCode, message);
+            videoSessionService.markTimeout(
+                    session.getSessionId(), session.getCommandId(), errorCode, message);
         } catch (Exception ex) {
             log.warn("标记视频会话超时失败 session={}", session.getSessionId(), ex);
         }

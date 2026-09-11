@@ -23,17 +23,20 @@ public class AuthenticatedRequestHeaders {
     private static final Set<String> ADMIN_BUSINESS_ROLES = Set.of(
             "MEDIA_VIEWER",
             "MEDIA_OPERATOR",
-            "EQUIPMENT_OPERATOR");
+            "EQUIPMENT_OPERATOR",
+            "FIELD_OPERATOR");
 
     private static final Set<String> TRUSTED_USER_HEADERS = Set.of(
             "X-User-Id",
             "X-Org-Id",
             "X-Roles");
 
-    private final String clientId;
+    private final Set<String> clientIds;
 
-    public AuthenticatedRequestHeaders(@Value("${bigscreen.auth.client-id}") String clientId) {
-        this.clientId = clientId;
+    public AuthenticatedRequestHeaders(
+            @Value("${bigscreen.auth.client-id}") String clientId,
+            @Value("${bigscreen.auth.field-call-client-id}") String fieldCallClientId) {
+        this.clientIds = Set.of(clientId, fieldCallClientId);
     }
 
     public void apply(HttpHeaders headers) {
@@ -71,9 +74,11 @@ public class AuthenticatedRequestHeaders {
 
         Object resourceAccess = jwt.getClaim("resource_access");
         if (resourceAccess instanceof Map<?, ?> resources) {
-            Object resource = resources.get(clientId);
-            if (resource instanceof Map<?, ?> resourceClaims) {
-                addRoles(roles, resourceClaims.get("roles"));
+            for (String clientId : clientIds) {
+                Object resource = resources.get(clientId);
+                if (resource instanceof Map<?, ?> resourceClaims) {
+                    addRoles(roles, resourceClaims.get("roles"));
+                }
             }
         }
         if (roles.stream().anyMatch(ADMIN_ROLES::contains)) {

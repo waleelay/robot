@@ -31,14 +31,16 @@ src/main/java/com/robot/mediaserver/
 ### `video/`
 
 - `VideoSessionController`：提供 `/internal/media/video-sessions/**`，供 Control 调用。
-- `VideoSessionService`：创建/复用 Room、签发 Token、维护 viewer 和对讲占用、生成 start/stop 命令并处理客户端状态。
+- `VideoSessionService`：创建/复用 Room、签发 Token、维护 viewer 和对讲占用、生成 start/stop 命令，并以 LiveKit Room API 对账 Publisher/Track 事实。
 - `MediaTrackService`：维护 `MediaTrack` 发布记录。
-- 固定摄像头只有在 LiveKit Room API 返回真实视频 Track 后才进入 `STREAMING`；Gateway 的进程
-  启动状态先保持为 `ROOM_READY`，发布超时由既有会话扫描收口。
-- `VideoSessionTimeoutScheduler`：处理发布超时；`ViewerStartupCleaner` 在启动时关闭遗留 viewer。
-- 主要实体：`VideoSession`、`MediaSessionViewer`、`MediaTrack`。
+- 机器人和固定摄像头只有在 LiveKit Room API 返回预期 Publisher 的真实视频 Track 后才进入
+  `STREAMING`；设备进程状态先保持为 `ROOM_READY`，发布超时由既有会话扫描收口。
+- `VideoSessionTimeoutScheduler`：处理发布超时、viewer TTL 清理和 LiveKit Track 周期对账；服务重启不主动关闭全部 viewer，由心跳续租或超时自然收敛。
+- 主要实体：`VideoSourceRuntime`、`VideoSession`、`MediaSessionViewer`、`MediaTrack`。
 
-会话复用键为 `sourceType + sourceId + deviceId + channel + quality`，只复用 `ROOM_READY`、`STREAMING`、`IDLE_WAIT`。固定摄像头用 `sourceType=FIXED_CAMERA`、`sourceId=cameraId`；`robotId` 当前仍传 `cameraId` 仅为兼容非空约束。
+`VideoSourceRuntime` 以 `sourceType + sourceId + deviceId + channel + quality` 建立数据库唯一约束；创建或复用会话时先原子创建并锁定该记录，再查询或写入 `VideoSession`，避免多 Media 实例同时“先查后插”产生第二个有效会话。`VideoSession.runtimeId` 在历史数据迁移期间允许为空，历史会话首次被复用时会原位关联 runtime。固定摄像头用 `sourceType=FIXED_CAMERA`、`sourceId=cameraId`；`robotId` 当前仍传 `cameraId` 仅为兼容非空约束。
+
+当前 runtime 承担同源创建串行化、Room 名称所有权、释放互斥，并保存 LiveKit 返回的 Publisher Identity/Participant SID、Track SID/名称和最后事实变化时间。释放任务在 runtime 行锁内聚合同源全部 session（含尚未关联 runtime 的历史会话）的 viewer、对讲、LiveKit Egress 录像、启动在途状态和空闲期限；仅全部无占用且均已到期时删除 Room 并返回一次 stop 载荷。Publisher generation 仍由后续整改项迁移。生产部署前必须备份相关表，并依次执行 [`deploy/database/20260911-add-media-source-runtime.sql`](../deploy/database/20260911-add-media-source-runtime.sql) 和 [`deploy/database/20260911-add-livekit-media-facts.sql`](../deploy/database/20260911-add-livekit-media-facts.sql)；应用回滚时保留新增的表、列和索引，不做破坏性回退。
 
 ### `file/`
 
@@ -62,7 +64,8 @@ src/main/java/com/robot/mediaserver/
 
 ### `livekit/` 与 `ws/`
 
-- `LiveKitRoomService`：创建、查询和删除 Room。
+- `LiveKitRoomService`：创建、查询和删除 Room，并按预期 Publisher Identity 精确解析视频 Track。
+- `LiveKitWebhookController/Service`：验证 LiveKit Webhook 签名和原始正文摘要，再触发 Room API 幂等对账。
 - `LiveKitTokenService`：签发 viewer、operator、publisher 和机器人对讲 Token。
 - `LiveKitEgressService`：开始/停止录像并与通用文件记录关联。
 - `MediaWebSocketHandler`：只管理 `/ws/media` 连接，不处理文本控制请求。
@@ -73,12 +76,13 @@ src/main/java/com/robot/mediaserver/
 | 路径 | 调用方 | 说明 |
 | --- | --- | --- |
 | `/internal/media/video-sessions/**` | Control Service | 视频、对讲、Track、Token、调度候选和录像 |
+| `/internal/media/livekit/webhook` | LiveKit Server | 已签名的 Publisher/Track/Room 事件；仅供内部网络调用 |
 | `/internal/media/files/**` | Control Service | 文件能力内部别名 |
 | `/api/media/files/**` | 机器人或受控调用方 | 文件上传、状态、查询、下载与播放 |
 | `/api/media/tts/**` | 内部调用方/调试端 | TTS 生成与 WebSocket 音频广播 |
 | `/ws/media` | 内部调试/TTS 客户端 | 事件及二进制音频广播 |
 
-Media 不存在媒体源 CRUD、LiveKit Webhook、专用 Snapshot Controller，也不直接发布 MQTT。Control 从 Media 获取命令载荷后决定下发 Topic。
+Media 不存在媒体源 CRUD、专用 Snapshot Controller，也不直接发布 MQTT。Control 从 Media 获取命令载荷后决定下发 Topic。
 
 ## 4. 配置
 
@@ -86,10 +90,10 @@ Media 不存在媒体源 CRUD、LiveKit Webhook、专用 Snapshot Controller，�
 
 | 前缀 | 说明 |
 | --- | --- |
-| `media.livekit.*` | LiveKit 地址、Key/Secret、Token、Room 与 Egress |
+| `media.livekit.*` | LiveKit 地址、Key/Secret、Token、Room、Egress 与 Track 对账周期 |
 | `media.file.live-recording-max-duration-seconds` | 单次手动录像最长持续时间，默认 14400 秒 |
 | `media.minio.*` | 对象存储地址、凭据、bucket 和开关 |
-| `media.file.*` | 文件大小、multipart、播放 Token、HLS、保留期与可信网段 |
+| `media.file.*` | 文件大小、multipart、播放 Token、HLS、保留期与可信网段；弱网上传默认单文件 48 GiB、分片 5 MiB、上传 URL 7 天、会话 30 天 |
 | `media.tts.*` | OpenTTS 地址、voice、format、缓存目录和超时 |
 | `media.session.*` | 发布超时、中断宽限、空闲释放、viewer 超时和视频墙上限 |
 

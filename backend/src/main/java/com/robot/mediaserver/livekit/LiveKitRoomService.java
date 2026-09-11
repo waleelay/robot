@@ -89,27 +89,19 @@ public class LiveKitRoomService {
      * @param trackSid 会话关联的视频轨道 SID（可空）
      * @return 房间有活跃视频轨道时返回 {@code true}；房间 API 未启用或查询异常时返回 {@code true}（不阻塞录像）
      */
-    public boolean hasActiveVideoTrack(String roomName, String trackSid) {
-        return resolveActiveVideoTrackSid(roomName, trackSid).isPresent();
-    }
-
-    /**
-     * 查询房间内真实的视频轨道 SID。
-     *
-     * @param roomName 房间名
-     * @param preferredTrackSid 会话记录的轨道 SID
-     * @return 房间内真实存在的视频轨道 SID
-     */
-    public Optional<String> resolveActiveVideoTrackSid(String roomName, String preferredTrackSid) {
+    public Optional<ActiveVideoTrack> resolveActiveVideoTrack(
+            String roomName,
+            String expectedParticipantIdentity,
+            String preferredTrackSid) {
         if (!properties.getLivekit().isRoomApiEnabled()) {
-            return Optional.ofNullable(preferredTrackSid).filter(value -> !value.isBlank());
+            return Optional.empty();
         }
         try {
             Map<?, ?> body = postForObject(
                     "/twirp/livekit.RoomService/ListParticipants",
                     Map.of("room", roomName),
                     tokenService.createRoomAdminToken(roomName).token());
-            return resolveVideoTrackSid(body, preferredTrackSid);
+            return resolveVideoTrack(body, expectedParticipantIdentity, preferredTrackSid);
         } catch (RestClientResponseException ex) {
             if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
                 log.info("房间不存在，无法校验推流 room={}", roomName);
@@ -119,16 +111,24 @@ public class LiveKitRoomService {
         }
     }
 
-    static Optional<String> resolveVideoTrackSid(Map<?, ?> body, String preferredTrackSid) {
+    static Optional<ActiveVideoTrack> resolveVideoTrack(
+            Map<?, ?> body,
+            String expectedParticipantIdentity,
+            String preferredTrackSid) {
         Object rawParticipants = body == null ? null : body.get("participants");
         if (!(rawParticipants instanceof List<?> participants)) {
             return Optional.empty();
         }
-        String firstVideoTrackSid = null;
+        ActiveVideoTrack firstVideoTrack = null;
         for (Object participant : participants) {
             if (!(participant instanceof Map<?, ?> participantMap)) {
                 continue;
             }
+            String identity = text(participantMap.get("identity"));
+            if (expectedParticipantIdentity == null || !expectedParticipantIdentity.equals(identity)) {
+                continue;
+            }
+            String participantSid = text(participantMap.get("sid"));
             Object rawTracks = participantMap.get("tracks");
             if (!(rawTracks instanceof List<?> tracks)) {
                 continue;
@@ -137,19 +137,29 @@ public class LiveKitRoomService {
                 if (!(track instanceof Map<?, ?> trackMap) || !isVideoTrack(trackMap)) {
                     continue;
                 }
-                String sid = String.valueOf(trackMap.get("sid"));
-                if (sid.isBlank() || "null".equals(sid)) {
+                String sid = text(trackMap.get("sid"));
+                if (sid == null) {
                     continue;
                 }
+                ActiveVideoTrack activeTrack = new ActiveVideoTrack(
+                        identity,
+                        participantSid,
+                        sid,
+                        text(trackMap.get("name")));
                 if (sid.equals(preferredTrackSid)) {
-                    return Optional.of(sid);
+                    return Optional.of(activeTrack);
                 }
-                if (firstVideoTrackSid == null) {
-                    firstVideoTrackSid = sid;
+                if (firstVideoTrack == null) {
+                    firstVideoTrack = activeTrack;
                 }
             }
         }
-        return Optional.ofNullable(firstVideoTrackSid);
+        return Optional.ofNullable(firstVideoTrack);
+    }
+
+    private static String text(Object value) {
+        String text = value == null ? null : String.valueOf(value);
+        return text == null || text.isBlank() || "null".equals(text) ? null : text;
     }
 
     private static boolean isVideoTrack(Map<?, ?> track) {
@@ -195,5 +205,12 @@ public class LiveKitRoomService {
             return "http://" + url.substring("ws://".length());
         }
         return url;
+    }
+
+    public record ActiveVideoTrack(
+            String participantIdentity,
+            String participantSid,
+            String trackSid,
+            String trackName) {
     }
 }

@@ -381,19 +381,19 @@ public class MediaProperties {
     public static class File {
     private boolean enabled = true;
     private long simpleUploadMaxBytes = 20971520L;
-    private long maxFileSizeBytes = 21474836480L;
-    private long partSizeBytes = 16777216L;
+    private long maxFileSizeBytes = 51539607552L;
+    private long partSizeBytes = 5242880L;
     private int maxPartUrlsPerRequest = 16;
     private int initialPartUrlCount = 16;
-    private int uploadUrlTtlSeconds = 900;
-    private int multipartExpireHours = 72;
+    private int uploadUrlTtlSeconds = 604800;
+    private int multipartExpireHours = 720;
     private int playUrlTtlSeconds = 3600;
     private String playTokenSecret = "file-playback-development-secret-change-me";
     private String hlsFfmpegPath = "ffmpeg";
     private String ffprobePath = "ffprobe";
     private int hlsSegmentDurationSeconds = 6;
-    private int maxActiveUploadsPerRobot = 20;
-    private int maxActiveUploadsGlobal = 500;
+    private int maxActiveUploadsPerRobot = 100;
+    private int maxActiveUploadsGlobal = 5000;
     private int hlsWorkerConcurrency = 2;
     private int hlsProcessingLeaseSeconds = 300;
     private int retentionDays = 30;

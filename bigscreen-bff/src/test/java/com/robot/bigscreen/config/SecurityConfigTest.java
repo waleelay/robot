@@ -27,6 +27,14 @@ class SecurityConfigTest {
     }
 
     @Test
+    void acceptsFieldAppAuthorizedParty() {
+        Jwt jwt = jwt("field-app", List.of("account"));
+
+        assertFalse(securityConfig.authorizedClientValidator("bigscreen-web", "field-app")
+                .validate(jwt).hasErrors());
+    }
+
+    @Test
     void rejectsTokenForAnotherClient() {
         Jwt jwt = jwt("admin-web", List.of("account"));
 

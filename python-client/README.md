@@ -139,6 +139,10 @@ python -m robot_media_client
 RECORDING_UPLOAD_ENABLED=true
 RECORDING_DIRECTORY=./recordings
 MEDIA_SERVICE_URL=http://192.168.124.77:8088
+RECORDING_UPLOAD_FILE_CONCURRENCY=1
+RECORDING_UPLOAD_PART_CONCURRENCY=1
+RECORDING_UPLOAD_PART_URL_BATCH_SIZE=4
+RECORDING_UPLOAD_PART_TIMEOUT_SECONDS=1800
 ```
 
 客户端扫描 `RECORDING_DIRECTORY` 下的普通文件，按文件后缀识别 `VIDEO`、`AUDIO`、`IMAGE`、`LOG`、`CONFIG`、`MAP`、`DOCUMENT` 或 `OTHER`，再调用媒体服务通用文件接口：
@@ -413,6 +417,7 @@ main
 | `upload_scan_interval` | `RECORDING_UPLOAD_SCAN_INTERVAL_MS` | 扫描间隔 |
 | `upload_part_concurrency` | `RECORDING_UPLOAD_PART_CONCURRENCY` | 单文件分片上传并发 |
 | `upload_part_url_batch_size` | `RECORDING_UPLOAD_PART_URL_BATCH_SIZE` | 单批获取上传 URL 数量 |
+| `upload_part_timeout` | `RECORDING_UPLOAD_PART_TIMEOUT_SECONDS` | 单分片 PUT 超时时间，单位秒 |
 | `upload_file_concurrency` | `RECORDING_UPLOAD_FILE_CONCURRENCY` | 多文件上传并发 |
 | `local_cache_max_bytes` | `RECORDING_LOCAL_CACHE_MAX_BYTES` | 本地文件缓存上限 |
 | `local_min_free_bytes` | `RECORDING_LOCAL_MIN_FREE_BYTES` | 本地磁盘最小剩余空间 |
@@ -704,6 +709,8 @@ X-Robot-Id: {robotId}
 #### 9.4 并发与断点续传
 
 多文件并发由 `RECORDING_UPLOAD_FILE_CONCURRENCY` 控制；单文件分片 PUT 并发由 `RECORDING_UPLOAD_PART_CONCURRENCY` 控制；单批申请 part URL 数量由 `RECORDING_UPLOAD_PART_URL_BATCH_SIZE` 控制。
+
+单分片 PUT 超时由 `RECORDING_UPLOAD_PART_TIMEOUT_SECONDS` 控制，弱网默认值为 1800 秒。
 
 `RECORDING_UPLOAD_PART_URL_BATCH_SIZE` 可以大于 PUT 并发数，表示一次多申请一些 URL，减少接口往返；实际同时上传数量仍由线程池限制。
 

@@ -83,9 +83,7 @@ public class FieldCallService {
             CurrentUser user,
             String displayName,
             WebSocketSession appSession) {
-        if (user == null || blank(user.userId())) {
-            throw new IllegalArgumentException("缺少用户身份");
-        }
+        requireFieldOperator(user);
         Call active = findActiveByUser(user.userId());
         if (active != null) {
             if (active.status == FieldCallStatus.RINGING) {
@@ -272,6 +270,15 @@ public class FieldCallService {
     private void requireOperator(CurrentUser user) {
         if (user == null || !user.hasRole("MEDIA_OPERATOR")) {
             throw new SecurityException("当前用户没有现场呼叫接听权限");
+        }
+    }
+
+    private void requireFieldOperator(CurrentUser user) {
+        if (user == null || blank(user.userId())) {
+            throw new IllegalArgumentException("缺少用户身份");
+        }
+        if (!user.hasRole("FIELD_OPERATOR")) {
+            throw new SecurityException("当前用户没有现场呼叫发起权限");
         }
     }
 

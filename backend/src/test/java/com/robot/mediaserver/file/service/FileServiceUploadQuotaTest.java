@@ -54,7 +54,7 @@ class FileServiceUploadQuotaTest {
     void returnsRobotSessionCapacityDetailsWhenLimitIsReached() {
         when(uploadRepository.countActiveByRobotId(
                         any(), any(FileUploadStatus.class), any(OffsetDateTime.class)))
-                .thenReturn(20L);
+                .thenReturn(100L);
 
         assertThatThrownBy(() -> service.createOrResumeMultipart("robot-1", request()))
                 .isInstanceOf(FileApiException.class)
@@ -65,8 +65,8 @@ class FileServiceUploadQuotaTest {
                     assertThat(apiException.isRetryable()).isTrue();
                     assertThat(apiException.getDetails()).containsEntry("scope", "ROBOT");
                     assertThat(apiException.getDetails()).containsEntry("robotId", "robot-1");
-                    assertThat(apiException.getDetails()).containsEntry("activeCount", 20L);
-                    assertThat(apiException.getDetails()).containsEntry("limit", 20);
+                    assertThat(apiException.getDetails()).containsEntry("activeCount", 100L);
+                    assertThat(apiException.getDetails()).containsEntry("limit", 100);
                 });
     }
 

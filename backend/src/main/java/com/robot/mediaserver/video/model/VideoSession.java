@@ -30,6 +30,7 @@ import com.robot.media.common.video.VideoSourceType;
         indexes = {
                 @Index(name = "idx_video_session_device_status", columnList = "robotId,deviceId,channel,status"),
                 @Index(name = "idx_video_session_source_status", columnList = "sourceType,sourceId,deviceId,channel,status"),
+                @Index(name = "idx_video_session_runtime_status", columnList = "runtime_id,status"),
                 @Index(name = "idx_video_session_created_by", columnList = "createdBy,createdAt")
         })
 public class VideoSession {
@@ -50,6 +51,9 @@ public class VideoSession {
 
     @Column(length = 64)
     private String sourceId;
+
+    @Column(name = "runtime_id", length = 64)
+    private String runtimeId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)
@@ -159,6 +163,14 @@ public class VideoSession {
 
     public void setSourceId(String sourceId) {
         this.sourceId = sourceId;
+    }
+
+    public String getRuntimeId() {
+        return runtimeId;
+    }
+
+    public void setRuntimeId(String runtimeId) {
+        this.runtimeId = runtimeId;
     }
 
     public VideoChannel getChannel() {

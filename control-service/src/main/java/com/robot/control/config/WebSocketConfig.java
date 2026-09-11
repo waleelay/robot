@@ -1,5 +1,6 @@
 package com.robot.control.config;
 
+import com.robot.control.ws.FieldCallWebSocketHandler;
 import com.robot.control.ws.MediaWebSocketHandler;
 import com.robot.control.ws.MediaWsAuthHandshakeInterceptor;
 import org.springframework.context.annotation.Configuration;

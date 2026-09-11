@@ -48,6 +48,8 @@ bigscreen:
   auth:
     # BFF 校验 JWT audience/authorized party 时使用的客户端 ID。
     client-id: ${BIGSCREEN_AUTH_CLIENT_ID:bigscreen-web}
+    # 现场 App 使用独立 Public Client，只允许连接 /ws/field-call。
+    field-call-client-id: ${FIELD_CALL_AUTH_CLIENT_ID:field-app}
   cors:
     # 大屏接口允许跨域访问的来源模式，多个值用逗号分隔。
     allowed-origin-patterns: ${BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:8080,http://127.0.0.1:8080,http://192.168.*.*:8080,https://192.168.*.*:4443}

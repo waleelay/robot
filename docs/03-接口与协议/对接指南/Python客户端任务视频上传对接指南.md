@@ -30,9 +30,10 @@ RECORDING_UPLOAD_ENABLED=true
 RECORDING_DIRECTORY=./recordings
 RECORDING_MANIFEST_PATH=./recording-upload-manifest.json
 RECORDING_DEVICE_ID=camera01
-RECORDING_UPLOAD_FILE_CONCURRENCY=2
-RECORDING_UPLOAD_PART_CONCURRENCY=4
-RECORDING_UPLOAD_PART_URL_BATCH_SIZE=16
+RECORDING_UPLOAD_FILE_CONCURRENCY=1
+RECORDING_UPLOAD_PART_CONCURRENCY=1
+RECORDING_UPLOAD_PART_URL_BATCH_SIZE=4
+RECORDING_UPLOAD_PART_TIMEOUT_SECONDS=1800
 ```
 
 上传使用 multipart 接口。普通任务视频不要走单接口上传，因为任务视频可能较大，需要断点续传和并发分片。
@@ -215,8 +216,8 @@ X-Robot-Id: test111
   "uploadId": "upl_abc123",
   "uploadMode": "MULTIPART",
   "status": "UPLOADING",
-  "partSize": 16777216,
-  "partCount": 2,
+  "partSize": 5242880,
+  "partCount": 4,
   "uploadedParts": [],
   "partUrls": [
     {
@@ -226,6 +227,14 @@ X-Robot-Id: test111
     {
       "partNumber": 2,
       "uploadUrl": "http://minio-presigned-url-for-part-2"
+    },
+    {
+      "partNumber": 3,
+      "uploadUrl": "http://minio-presigned-url-for-part-3"
+    },
+    {
+      "partNumber": 4,
+      "uploadUrl": "http://minio-presigned-url-for-part-4"
     }
   ],
   "expiresAt": "2026-07-25T15:26:17+08:00"
@@ -279,11 +288,12 @@ data = os.pread(fd, size, offset)
 并发建议：
 
 ```text
-RECORDING_UPLOAD_PART_CONCURRENCY=4
-RECORDING_UPLOAD_PART_URL_BATCH_SIZE=16
+RECORDING_UPLOAD_PART_CONCURRENCY=1
+RECORDING_UPLOAD_PART_URL_BATCH_SIZE=4
+RECORDING_UPLOAD_PART_TIMEOUT_SECONDS=1800
 ```
 
-这表示一次最多申请 16 个 part URL，但实际最多同时 PUT 4 个分片。
+这表示一次最多申请 4 个 part URL，实际同时 PUT 1 个分片；单分片最长允许上传 1800 秒。
 
 ## 9. 需要更多 part URL 时
 
@@ -445,8 +455,8 @@ manifest 作用：
 默认：
 
 ```text
-MEDIA_FILE_MAX_ACTIVE_UPLOADS_PER_ROBOT=20
-MEDIA_FILE_MAX_ACTIVE_UPLOADS_GLOBAL=500
+MEDIA_FILE_MAX_ACTIVE_UPLOADS_PER_ROBOT=100
+MEDIA_FILE_MAX_ACTIVE_UPLOADS_GLOBAL=5000
 MEDIA_FILE_CLEANUP_DELAY_MS=60000
 ```
 

@@ -414,6 +414,12 @@ grep --color=never -nE '^(MYSQL_URL|MYSQL_USERNAME|MYSQL_PASSWORD|REDIS_HOST|RED
 
 `LIVEKIT_INTERNAL_URL` 供媒体服务调用 LiveKit Room/Egress API，bridge 模式应使用 `ws://livekit-server:7880`；`LIVEKIT_URL` 会返回给浏览器和机器人，应使用外部可访问的公网 IP 或域名。两者分离后，服务器不需要通过自身公网 IP 回连 LiveKit。
 
+`LIVEKIT_WEBHOOK_URL` 供 LiveKit 回调 Media。bridge 模式默认使用
+`http://media-service:8088/internal/media/livekit/webhook`；host 网络模式应改为
+`http://127.0.0.1:8088/internal/media/livekit/webhook`。该地址只应在内部网络可达，签名使用与
+Media 相同的 `LIVEKIT_API_KEY/LIVEKIT_API_SECRET`。修改后须重新渲染 LiveKit 配置并重建
+LiveKit 与 Media 容器。
+
 `MINIO_ENDPOINT` 供媒体服务、HLS 和 Egress 等服务端程序连接 MinIO，应配置为服务器内部可访问地址。`MINIO_PUBLIC_ENDPOINT` 只用于生成预签名上传/下载 URL，应配置为浏览器或机器人能够访问的公网 IP 或域名。例如服务器内网 IP 为 `192.168.124.23`、公网 IP 为 `211.137.109.150`，应配置：
 
 ```env
@@ -526,7 +532,7 @@ docker compose -f docker-compose.yml up -d --force-recreate
 
 ### 5.2 改了 LiveKit / Nginx 模板相关配置
 
-例如改了 `LIVEKIT_NODE_IP`、`LIVEKIT_REDIS_ADDRESS`、`NGINX_*_UPSTREAM`、`NGINX_TLS_HOST`：
+例如改了 `LIVEKIT_NODE_IP`、`LIVEKIT_REDIS_ADDRESS`、`LIVEKIT_WEBHOOK_URL`、`NGINX_*_UPSTREAM`、`NGINX_TLS_HOST`：
 
 ```bash
 sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env

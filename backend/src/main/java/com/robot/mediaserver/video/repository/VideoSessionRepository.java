@@ -6,11 +6,13 @@ import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.media.common.video.IntercomStatus;
 import com.robot.media.common.video.VideoSourceType;
+import jakarta.persistence.LockModeType;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -21,6 +23,21 @@ import org.springframework.data.repository.query.Param;
  * @date 2026/05/19
  */
 public interface VideoSessionRepository extends JpaRepository<VideoSession, String> {
+
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("select session from VideoSession session where session.sessionId = :sessionId")
+        Optional<VideoSession> findByIdForUpdate(@Param("sessionId") String sessionId);
+
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        List<VideoSession> findByRuntimeIdOrderBySessionIdAsc(String runtimeId);
+
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        List<VideoSession> findByRuntimeIdIsNullAndSourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityOrderBySessionIdAsc(
+            VideoSourceType sourceType,
+            String sourceId,
+            String deviceId,
+            VideoChannel channel,
+            VideoQuality quality);
 
         Optional<VideoSession> findFirstByRobotIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
             String robotId,
@@ -37,14 +54,23 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
             VideoQuality quality,
             Collection<VideoSessionStatus> statuses);
 
-        List<VideoSession> findByStatusAndUpdatedAtBefore(VideoSessionStatus status, OffsetDateTime updatedAt);
+        Optional<VideoSession> findFirstByRuntimeIdAndStatusInOrderByCreatedAtDesc(
+            String runtimeId,
+            Collection<VideoSessionStatus> statuses);
 
-        List<VideoSession> findByStatusAndSourceTypeAndUpdatedAtBefore(
+        List<VideoSession> findByStatusAndCommandRequestedAtBefore(
+            VideoSessionStatus status,
+            OffsetDateTime commandRequestedAt);
+
+        List<VideoSession> findByStatusAndSourceTypeAndCommandRequestedAtBefore(
             VideoSessionStatus status,
             VideoSourceType sourceType,
-            OffsetDateTime updatedAt);
+            OffsetDateTime commandRequestedAt);
 
         List<VideoSession> findByStatusAndLastStatusAtBefore(VideoSessionStatus status, OffsetDateTime lastStatusAt);
+
+        @Query("select distinct session.runtimeId from VideoSession session where session.runtimeId is not null and session.status in :statuses")
+        List<String> findDistinctRuntimeIdsByStatusIn(@Param("statuses") Collection<VideoSessionStatus> statuses);
 
         List<VideoSession> findByStatusAndIdleSinceBefore(VideoSessionStatus status, OffsetDateTime idleSince);
 

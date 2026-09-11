@@ -103,6 +103,7 @@ class Config:
     upload_scan_interval: float
     upload_part_concurrency: int
     upload_part_url_batch_size: int
+    upload_part_timeout: float
     upload_file_concurrency: int
     local_cache_max_bytes: int
     local_min_free_bytes: int
@@ -149,9 +150,10 @@ def load() -> Config:
         recording_manifest_path=env("RECORDING_MANIFEST_PATH", "./recording-upload-manifest.json"),
         recording_device_id=env("RECORDING_DEVICE_ID", "camera01"),
         upload_scan_interval=env_int("RECORDING_UPLOAD_SCAN_INTERVAL_MS", 30000) / 1000,
-        upload_part_concurrency=env_int("RECORDING_UPLOAD_PART_CONCURRENCY", 4),
-        upload_part_url_batch_size=env_int("RECORDING_UPLOAD_PART_URL_BATCH_SIZE", 16),
-        upload_file_concurrency=env_int("RECORDING_UPLOAD_FILE_CONCURRENCY", 2),
+        upload_part_concurrency=env_int("RECORDING_UPLOAD_PART_CONCURRENCY", 1),
+        upload_part_url_batch_size=env_int("RECORDING_UPLOAD_PART_URL_BATCH_SIZE", 4),
+        upload_part_timeout=env_int("RECORDING_UPLOAD_PART_TIMEOUT_SECONDS", 1800),
+        upload_file_concurrency=env_int("RECORDING_UPLOAD_FILE_CONCURRENCY", 1),
         local_cache_max_bytes=env_int("RECORDING_LOCAL_CACHE_MAX_BYTES", 107374182400),
         local_min_free_bytes=env_int("RECORDING_LOCAL_MIN_FREE_BYTES", 10737418240),
         local_retention_after_ready=env_int("RECORDING_LOCAL_RETENTION_AFTER_READY_HOURS", 24) * 3600,

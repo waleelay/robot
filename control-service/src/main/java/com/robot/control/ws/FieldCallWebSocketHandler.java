@@ -55,7 +55,7 @@ public class FieldCallWebSocketHandler extends TextWebSocketHandler {
                     "userId", user.userId(),
                     "orgId", user.orgId()));
             // 新中心端不走此通道；中心仍用 /ws/control。此处仅确认 App 已连上。
-        } catch (RuntimeException ex) {
+        } catch (Exception ex) {
             log.warn("现场呼叫握手失败 session={}", session.getId(), ex);
             try {
                 session.close(CloseStatus.NOT_ACCEPTABLE.withReason(ex.getMessage()));

@@ -98,6 +98,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private final Map<String, AuthorizationRetryState> authorizationRetryStates = new ConcurrentHashMap<>();
     private final Set<String> authorizationUnavailableIdentities = ConcurrentHashMap.newKeySet();
     private final Set<WebSocketSession> browserSessions = ConcurrentHashMap.newKeySet();
+    private final Set<WebSocketSession> fieldCallSessions = ConcurrentHashMap.newKeySet();
     private final Object sessionQuotaMonitor = new Object();
     private final ExecutorService authorizationRefreshExecutor = boundedExecutor(
             AUTHORIZATION_REFRESH_THREADS,
@@ -182,6 +183,18 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         if (!reserveSession(browserSession, identity)) {
             return;
         }
+        if (isFieldCallSession(browserSession)) {
+            fieldCallSessions.add(browserSession);
+            try {
+                connectCenter(browserSession);
+            } catch (Exception exception) {
+                log.warn("现场 App WebSocket 上游连接失败，会话={} 异常={} 原因={}",
+                        browserSession.getId(), exception.getClass().getSimpleName(),
+                        sanitizedConnectionFailureReason(exception));
+                browserSession.close(CloseStatus.SERVER_ERROR);
+            }
+            return;
+        }
         AuthorizationSnapshot snapshot;
         try {
             snapshot = initialAuthorizationSnapshot(identity, browserSession);
@@ -253,6 +266,10 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession browserSession, TextMessage message) throws Exception {
+        if (isFieldCallSession(browserSession)) {
+            forwardToCenter(browserSession, message);
+            return;
+        }
         AuthorizationSnapshot snapshot = validSnapshot(browserSession);
         if (snapshot == null) {
             return;
@@ -263,6 +280,10 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             sendAuthorizationRejected(browserSession, message.getPayload());
             return;
         }
+        forwardToCenter(browserSession, message);
+    }
+
+    private void forwardToCenter(WebSocketSession browserSession, TextMessage message) throws Exception {
         WebSocketSession centerSession = centerSessions.get(browserSession.getId());
         if (centerSession != null && centerSession.isOpen()) {
             centerSession.sendMessage(message);
@@ -280,6 +301,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     private void cleanupBrowserSession(WebSocketSession browserSession, CloseStatus status) {
         browserSessions.remove(browserSession);
+        fieldCallSessions.remove(browserSession);
         String identity = releaseSessionReservation(browserSession.getId());
         eventAdapter.removeSession(browserSession.getId());
         locationEventThrottler.remove(browserSession.getId());
@@ -327,6 +349,13 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     @Scheduled(fixedDelayString = "${bigscreen.websocket.authorization-check-interval-ms:1000}")
     void refreshSessionAuthorizations() {
         Instant now = Instant.now();
+        for (WebSocketSession fieldCallSession : fieldCallSessions) {
+            if (!fieldCallSession.isOpen()) {
+                cleanupBrowserSession(fieldCallSession, CloseStatus.GOING_AWAY);
+            } else if (tokenExpired(fieldCallSession, now)) {
+                closeForTokenExpiration(fieldCallSession);
+            }
+        }
         Set<String> refreshIdentities = ConcurrentHashMap.newKeySet();
         for (WebSocketSession browserSession : browserSessions) {
             if (!browserSession.isOpen()) {
@@ -457,6 +486,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         return builder.build(true).toUri();
     }
 
+    private boolean isFieldCallSession(WebSocketSession session) {
+        return session.getUri() != null && session.getUri().getPath() != null
+                && session.getUri().getPath().endsWith("/ws/field-call");
+    }
+
     private String queryParameter(WebSocketSession browserSession, String name) {
         URI uri = browserSession.getUri();
         if (uri == null) {
@@ -486,6 +520,12 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
         @Override
         protected void handleTextMessage(WebSocketSession centerSession, TextMessage message) throws Exception {
+            if (fieldCallSessions.contains(browserSession)) {
+                if (browserSession.isOpen()) {
+                    sendText(browserSession, message.getPayload());
+                }
+                return;
+            }
             if (browserSession.isOpen() && validSnapshot(browserSession) != null) {
                 String centerPayload = message.getPayload();
                 Set<StatsPart> statsParts = eventAdapter.statsRefreshParts(browserSession.getId(), centerPayload);

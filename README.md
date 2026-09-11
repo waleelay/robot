@@ -115,7 +115,7 @@ Header 缺失时 Control 和 Media 会启用开发默认身份，该行为不是
 ## 6. 当前核心能力
 
 - 机器人摄像头和固定摄像头视频会话创建、复用、恢复、切换、停止与视频墙。
-- LiveKit viewer/publisher Token、Track 状态、语音对讲，以及支持刷新恢复、离线收口和最长时长保护的 Egress 手动录像。
+- LiveKit viewer/publisher Token、Webhook 与 Room API Track 事实对账、语音对讲，以及支持刷新恢复、离线收口和最长时长保护的 Egress 手动录像。
 - 机器人排他控制租约、设备能力校验、通用设备命令和多合一设备控制。
 - 固定摄像头管理端档案校验、主/子码流选择及 Gateway MQTT 编排；大屏用户授权后由 Control
   下发短租约目录。
@@ -124,7 +124,7 @@ Header 缺失时 Control 和 Media 会启用开发默认身份，该行为不是
 - Media OpenTTS 生成/二进制广播，以及多合一设备文本 TTS 命令。
 - 大屏设备、任务、告警聚合，业务白名单代理和本地 PDF 统计报告。
 
-当前代码没有媒体源 CRUD、独立 RTSP 探测 REST API、LiveKit Webhook Controller 或服务端 Snapshot Worker。抓拍由前端从 LiveKit Track 截帧，再按普通 `IMAGE` 文件上传；LiveKit Track 状态以机器人/Control 状态上报为准。
+当前代码没有媒体源 CRUD、独立 RTSP 探测 REST API 或服务端 Snapshot Worker。抓拍由前端从 LiveKit Track 截帧，再按普通 `IMAGE` 文件上传；Media 以 LiveKit Webhook 触发并由 Room API 精确核对预期 Publisher/Track，设备状态上报不再直接作为 `STREAMING` 事实。
 
 ## 7. 通用文件与前端抓拍
 
