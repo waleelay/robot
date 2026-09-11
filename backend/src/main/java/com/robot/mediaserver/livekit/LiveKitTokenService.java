@@ -61,18 +61,6 @@ public class LiveKitTokenService {
     }
 
     /**
-     * 生成机器人端发布 Token。
-     *
-     * @param roomName LiveKit 房间名
-     * @param robotId 机器人 ID
-     * @param deviceId 设备 ID
-     * @return Token 和过期时间
-     */
-    public TokenResult createPublisherToken(String roomName, String robotId, String deviceId) {
-        return createToken(roomName, "robot:" + robotId + ":" + deviceId, true, false);
-    }
-
-    /**
      * 根据调用方传入的发布端身份生成发布 Token。
      *
      * @param roomName LiveKit 房间名

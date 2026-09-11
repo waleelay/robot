@@ -926,7 +926,7 @@ public class VideoSessionService {
                 "sessionId", session.getSessionId(),
                 "roomName", session.getRoomName()));
         TokenResult publisherToken = liveKitTokenService.createPublisherToken(
-                session.getRoomName(), publisherIdentity(session), session.getDeviceId());
+                session.getRoomName(), publisherIdentity(session));
         String commandId = "cmd_" + compactUuid();
         session.setCommandId(commandId);
         session.setCommandRequestedAt(now());
@@ -962,7 +962,7 @@ public class VideoSessionService {
 
     private VideoStartCommand createStartCommand(VideoSession session) {
         TokenResult publisherToken = liveKitTokenService.createPublisherToken(
-                session.getRoomName(), publisherIdentity(session), session.getDeviceId());
+                session.getRoomName(), publisherIdentity(session));
         return new VideoStartCommand(
                 session.getCommandId(),
                 session.getSessionId(),

@@ -441,7 +441,7 @@ class VideoSessionServiceIntercomOccupancyTest {
         target.setSourceId("robot-002");
         target.setChannel(VideoChannel.visible);
         target.setQuality(VideoQuality.sub);
-        when(liveKitTokenService.createPublisherToken(anyString(), anyString(), anyString()))
+        when(liveKitTokenService.createPublisherToken(anyString(), anyString()))
                 .thenReturn(new LiveKitTokenService.TokenResult(
                         "publisher-token", OffsetDateTime.now().plusMinutes(10)));
 
@@ -449,6 +449,9 @@ class VideoSessionServiceIntercomOccupancyTest {
         var second = service.requestClientStart("vs-target", "video.session.restart");
 
         assertThat(second.commandId()).isEqualTo(first.commandId());
+        assertThat(first.publishIdentity()).isEqualTo("robot:robot-002:camera01");
+        verify(liveKitTokenService, times(2)).createPublisherToken(
+                target.getRoomName(), first.publishIdentity());
         verify(liveKitRoomService, times(1)).createRoom(target.getRoomName());
     }
 
@@ -461,7 +464,7 @@ class VideoSessionServiceIntercomOccupancyTest {
         target.setSourceId("robot-002");
         target.setChannel(VideoChannel.visible);
         target.setQuality(VideoQuality.sub);
-        when(liveKitTokenService.createPublisherToken(anyString(), anyString(), anyString()))
+        when(liveKitTokenService.createPublisherToken(anyString(), anyString()))
                 .thenReturn(new LiveKitTokenService.TokenResult(
                         "publisher-token", OffsetDateTime.now().plusMinutes(10)));
 
