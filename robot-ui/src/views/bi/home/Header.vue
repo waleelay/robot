@@ -3,7 +3,7 @@
     <div class="w100 h100 d-flex" style="justify-content: center;">
       <span class="header-title mt11" >具身智能平台指挥中心</span>
       <div class="toolbar flx-align-center hp40 mt43" style="justify-content: end;">
-        <div class="wp156 time-display flx-align-center">
+        <div class="time-display flx-align-center">
           <span>{{ currentDate }}</span>
           <span class="ml10">{{ currentTime }}</span>
         </div>
@@ -209,6 +209,7 @@ export default {
       }
     }
     .time-display {
+      width: auto;
       color: #82C1FF;
       text-shadow: 0 1px 3px rgba(5, 12, 25, 0.54);
       font-family: "Alibaba PuHuiTi";

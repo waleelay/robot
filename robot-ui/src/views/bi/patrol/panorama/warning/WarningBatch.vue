@@ -50,7 +50,15 @@
               </div>
               <div class="list-box">
                 <div class="mt10" style="width: 576px; height: 324px; border: 0.5px solid #1665A2; background: #001D46;">
-                  <el-carousel v-if="options.length" trigger="click" :autoplay="false" height="100%" ref="carouselRef" @change="handleChangeCarousel">
+                  <el-carousel
+                    v-if="options.length"
+                    trigger="click"
+                    :autoplay="false"
+                    :arrow="options.length > 1 ? 'hover' : 'never'"
+                    height="100%"
+                    ref="carouselRef"
+                    @change="handleChangeCarousel"
+                  >
                     <el-carousel-item v-for="item in options" :key="item.key" :name="item.key">
                       <div class="img-b w100 h100">
                         <img v-if="snapshotImageSrc(item.key)" :src="snapshotImageSrc(item.key)" alt="">

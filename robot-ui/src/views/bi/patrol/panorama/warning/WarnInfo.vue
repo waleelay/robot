@@ -87,7 +87,15 @@
                   <div class="mt10 flx-center" style="width: 640px; height: 355px;">
                     <!-- <img v-if="details?.title?.includes('火灾')" src="../../../../../assets/images/new-bi/test.png" class="w100" style="height: auto; max-height: 100%;" alt="">
                     <img v-else src="../../../../../assets/images/new-bi/warning1.png" class="w100" style="height: auto; max-height: 100%;" alt=""> -->
-                    <el-carousel v-if="options.length" trigger="click" :autoplay="false" height="100%" ref="carouselRef" @change="handleChangeCarousel">
+                    <el-carousel
+                      v-if="options.length"
+                      trigger="click"
+                      :autoplay="false"
+                      :arrow="options.length > 1 ? 'hover' : 'never'"
+                      height="100%"
+                      ref="carouselRef"
+                      @change="handleChangeCarousel"
+                    >
                       <el-carousel-item v-for="item in options" :key="item.key" :name="item.key">
                         <div class="img">
                           <img v-if="snapshotImageSrc(item.key)" :src="snapshotImageSrc(item.key)" alt="">
@@ -119,10 +127,10 @@
                 <div class="text">告警详情</div>
               </div>
               <div class="mt10 detail p20">
-                <div class="desc" style="height: auto; border: none">
-                  <div class="item flx-justify-between">
+                <div class="desc" style="height: auto; border: none; overflow-y: hidden;">
+                  <div class="item flx-justify-between flx-align-center">
                     <span class="name">设备名称：</span>
-                    <span class="value">{{ robotBaseInfo?.[details?.robotId]?.name || details?.deviceName || '-' }}</span>
+                    <span class="value flex1 tar text-ellipsis" :title="robotBaseInfo?.[details?.robotId]?.name || details?.deviceName || '-'">{{ robotBaseInfo?.[details?.robotId]?.name || details?.deviceName || '-' }}</span>
                   </div>
                   <!-- <div class="item flx-justify-between mt16">
                     <span class="name">区域名称：</span>
