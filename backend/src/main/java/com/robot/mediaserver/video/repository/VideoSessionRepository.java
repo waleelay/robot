@@ -43,6 +43,10 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
             VideoQuality quality,
             Collection<VideoSessionStatus> statuses);
 
+        Optional<VideoSession> findFirstByRuntimeIdAndStatusInOrderByCreatedAtDesc(
+            String runtimeId,
+            Collection<VideoSessionStatus> statuses);
+
         List<VideoSession> findByStatusAndCommandRequestedAtBefore(
             VideoSessionStatus status,
             OffsetDateTime commandRequestedAt);

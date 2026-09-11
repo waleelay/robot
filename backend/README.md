@@ -35,10 +35,12 @@ src/main/java/com/robot/mediaserver/
 - `MediaTrackService`：维护 `MediaTrack` 发布记录。
 - 固定摄像头只有在 LiveKit Room API 返回真实视频 Track 后才进入 `STREAMING`；Gateway 的进程
   启动状态先保持为 `ROOM_READY`，发布超时由既有会话扫描收口。
-- `VideoSessionTimeoutScheduler`：处理发布超时；`ViewerStartupCleaner` 在启动时关闭遗留 viewer。
-- 主要实体：`VideoSession`、`MediaSessionViewer`、`MediaTrack`。
+- `VideoSessionTimeoutScheduler`：处理发布超时和 viewer TTL 清理；服务重启不主动关闭全部 viewer，由心跳续租或超时自然收敛。
+- 主要实体：`VideoSourceRuntime`、`VideoSession`、`MediaSessionViewer`、`MediaTrack`。
 
-会话复用键为 `sourceType + sourceId + deviceId + channel + quality`，只复用 `ROOM_READY`、`STREAMING`、`IDLE_WAIT`。固定摄像头用 `sourceType=FIXED_CAMERA`、`sourceId=cameraId`；`robotId` 当前仍传 `cameraId` 仅为兼容非空约束。
+`VideoSourceRuntime` 以 `sourceType + sourceId + deviceId + channel + quality` 建立数据库唯一约束；创建或复用会话时先原子创建并锁定该记录，再查询或写入 `VideoSession`，避免多 Media 实例同时“先查后插”产生第二个有效会话。`VideoSession.runtimeId` 在历史数据迁移期间允许为空，历史会话首次被复用时会原位关联 runtime。固定摄像头用 `sourceType=FIXED_CAMERA`、`sourceId=cameraId`；`robotId` 当前仍传 `cameraId` 仅为兼容非空约束。
+
+当前 runtime 只承担同源创建串行化和 Room 名称所有权。Room 引用计数、安全释放、Publisher generation 与设备状态协议仍按后续整改项迁移，不能据此提前删除共享 Room。生产部署前必须备份 `media_video_session`，并执行 [`deploy/database/20260911-add-media-source-runtime.sql`](../deploy/database/20260911-add-media-source-runtime.sql)；应用回滚时保留新增的 `media_source_runtime` 表和 nullable `runtime_id` 列，不做破坏性回退。
 
 ### `file/`
 

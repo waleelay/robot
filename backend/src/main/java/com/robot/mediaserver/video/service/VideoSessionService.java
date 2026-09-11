@@ -12,19 +12,24 @@ import com.robot.mediaserver.file.service.FileService;
 import com.robot.media.common.video.CreateVideoSessionRequest;
 import com.robot.media.common.video.IntercomResponse;
 import com.robot.media.common.video.SwitchChannelRequest;
+import com.robot.media.common.video.VideoChannel;
+import com.robot.media.common.video.VideoQuality;
 import com.robot.media.common.video.VideoSessionResponse;
 import com.robot.media.common.video.ViewerTokenResponse;
 import com.robot.media.common.video.VideoStartCommand;
 import com.robot.media.common.video.IntercomStartCommand;
 import com.robot.mediaserver.video.model.MediaSessionViewer;
+import com.robot.mediaserver.video.model.VideoSourceRuntime;
 import com.robot.media.common.video.IntercomStatus;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.media.common.video.VideoSourceType;
 import com.robot.mediaserver.video.repository.MediaSessionViewerRepository;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
+import com.robot.mediaserver.video.repository.VideoSourceRuntimeRepository;
 import com.robot.mediaserver.ws.MediaWebSocketPublisher;
 import jakarta.transaction.Transactional;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashSet;
@@ -71,6 +76,8 @@ public class VideoSessionService {
      */
     private final VideoSessionRepository repository;
 
+    private final VideoSourceRuntimeRepository sourceRuntimeRepository;
+
     /**
      * 观看者会话仓储。
      */
@@ -116,6 +123,7 @@ public class VideoSessionService {
      */
     public VideoSessionService(
             VideoSessionRepository repository,
+            VideoSourceRuntimeRepository sourceRuntimeRepository,
             MediaSessionViewerRepository viewerRepository,
             LiveKitRoomService liveKitRoomService,
             LiveKitTokenService liveKitTokenService,
@@ -124,6 +132,7 @@ public class VideoSessionService {
             MediaTrackService mediaTrackService,
             MediaProperties properties) {
         this.repository = repository;
+        this.sourceRuntimeRepository = sourceRuntimeRepository;
         this.viewerRepository = viewerRepository;
         this.liveKitRoomService = liveKitRoomService;
         this.liveKitTokenService = liveKitTokenService;
@@ -145,16 +154,29 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoSessionResponse create(CreateVideoSessionRequest request, CurrentUser user) {
+        VideoSourceRuntime runtime = lockSourceRuntime(
+                request.getSourceType(),
+                request.getSourceId(),
+                request.getDeviceId(),
+                request.getChannel(),
+                request.getQuality(),
+                roomName(request));
         if (request.isReuse()) {
-            var existing = repository.findFirstBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
-                    request.getSourceType(),
-                    request.getSourceId(),
-                    request.getDeviceId(),
-                    request.getChannel(),
-                    request.getQuality(),
-                    REUSABLE_STATUSES);
+            var existing = repository.findFirstByRuntimeIdAndStatusInOrderByCreatedAtDesc(
+                    runtime.getRuntimeId(), REUSABLE_STATUSES);
+            if (existing.isEmpty()) {
+                existing = repository.findFirstBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
+                        request.getSourceType(),
+                        request.getSourceId(),
+                        request.getDeviceId(),
+                        request.getChannel(),
+                        request.getQuality(),
+                        REUSABLE_STATUSES);
+            }
             if (existing.isPresent()) {
                 VideoSession session = existing.get();
+                session.setRuntimeId(runtime.getRuntimeId());
+                session.setRoomName(runtime.getRoomName());
                 addViewer(session, user);
                 session.setIdleSince(null);
                 if (session.getStatus() == VideoSessionStatus.INTERRUPTED
@@ -179,10 +201,11 @@ public class VideoSessionService {
         session.setRobotId(request.getRobotId());
         session.setSourceType(request.getSourceType());
         session.setSourceId(request.getSourceId());
+        session.setRuntimeId(runtime.getRuntimeId());
         session.setDeviceId(request.getDeviceId());
         session.setChannel(request.getChannel());
         session.setQuality(request.getQuality());
-        session.setRoomName(roomName(request));
+        session.setRoomName(runtime.getRoomName());
         session.setStatus(VideoSessionStatus.INIT);
         session.setViewerCount(1);
         session.setIntercomStatus(IntercomStatus.IDLE);
@@ -233,23 +256,41 @@ public class VideoSessionService {
      */
     @Transactional
     public IntercomResponse createForIntercom(CreateVideoSessionRequest request, CurrentUser user) {
-        VideoSession session = repository.findFirstBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
-                        request.getSourceType(),
-                        request.getSourceId(),
-                        request.getDeviceId(),
-                        request.getChannel(),
-                        request.getQuality(),
-                        REUSABLE_STATUSES)
+        VideoSourceRuntime runtime = lockSourceRuntime(
+                request.getSourceType(),
+                request.getSourceId(),
+                request.getDeviceId(),
+                request.getChannel(),
+                request.getQuality(),
+                roomName(request));
+        Optional<VideoSession> existing = repository.findFirstByRuntimeIdAndStatusInOrderByCreatedAtDesc(
+                runtime.getRuntimeId(), REUSABLE_STATUSES);
+        if (existing.isEmpty()) {
+            existing = repository.findFirstBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
+                    request.getSourceType(),
+                    request.getSourceId(),
+                    request.getDeviceId(),
+                    request.getChannel(),
+                    request.getQuality(),
+                    REUSABLE_STATUSES);
+        }
+        VideoSession session = existing
+                .map(value -> {
+                    value.setRuntimeId(runtime.getRuntimeId());
+                    value.setRoomName(runtime.getRoomName());
+                    return value;
+                })
                 .orElseGet(() -> {
                     VideoSession created = new VideoSession();
                     created.setSessionId("vs_" + compactUuid());
                     created.setRobotId(request.getRobotId());
                     created.setSourceType(request.getSourceType());
                     created.setSourceId(request.getSourceId());
+                    created.setRuntimeId(runtime.getRuntimeId());
                     created.setDeviceId(request.getDeviceId());
                     created.setChannel(request.getChannel());
                     created.setQuality(request.getQuality());
-                    created.setRoomName(roomName(request));
+                    created.setRoomName(runtime.getRoomName());
                     created.setStatus(VideoSessionStatus.INIT);
                     created.setViewerCount(0);
                     created.setIntercomStatus(IntercomStatus.IDLE);
@@ -486,14 +527,22 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoSessionResponse switchChannel(String sessionId, SwitchChannelRequest request) {
-        VideoSession session = requireSessionForUpdate(sessionId);
+        VideoSession snapshot = requireSession(sessionId);
         // 通道切换本质上是让同一个业务会话指向新的 RTSP/track。
         // requestClientStart 会更新 commandId 并把状态切到 REQUESTING_CLIENT。
+        var quality = request.getQuality() == null ? snapshot.getQuality() : request.getQuality();
+        VideoSourceRuntime runtime = lockSourceRuntime(
+                snapshot.getSourceType(),
+                snapshot.getSourceId(),
+                snapshot.getDeviceId(),
+                request.getChannel(),
+                quality,
+                roomName(snapshot, request.getChannel(), quality));
+        VideoSession session = requireSessionForUpdate(sessionId);
         session.setChannel(request.getChannel());
-        if (request.getQuality() != null) {
-            session.setQuality(request.getQuality());
-        }
-        session.setRoomName(roomName(session));
+        session.setQuality(quality);
+        session.setRuntimeId(runtime.getRuntimeId());
+        session.setRoomName(runtime.getRoomName());
         requestClientStart(session, "video.track.switching", false);
         session.setUpdatedAt(now());
         repository.save(session);
@@ -1176,10 +1225,41 @@ public class VideoSessionService {
     }
 
     private String roomName(VideoSession session) {
+        return roomName(session, session.getChannel(), session.getQuality());
+    }
+
+    private String roomName(
+            VideoSession session,
+            VideoChannel channel,
+            VideoQuality quality) {
         if (session.getSourceType() == VideoSourceType.FIXED_CAMERA) {
-            return "media.fixed." + session.getSourceId() + "." + session.getChannel() + "." + session.getQuality();
+            return "media.fixed." + session.getSourceId() + "." + channel + "." + quality;
         }
-        return "media." + session.getRobotId() + "." + session.getDeviceId() + "." + session.getChannel() + "." + session.getQuality();
+        return "media." + session.getRobotId() + "." + session.getDeviceId() + "." + channel + "." + quality;
+    }
+
+    private VideoSourceRuntime lockSourceRuntime(
+            VideoSourceType sourceType,
+            String sourceId,
+            String deviceId,
+            VideoChannel channel,
+            VideoQuality quality,
+            String roomName) {
+        String runtimeKey = sourceType + ":" + sourceId + ":" + deviceId + ":" + channel + ":" + quality;
+        String runtimeId = "runtime_" + UUID.nameUUIDFromBytes(runtimeKey.getBytes(StandardCharsets.UTF_8))
+                .toString().replace("-", "");
+        OffsetDateTime timestamp = now();
+        sourceRuntimeRepository.insertIfAbsent(
+                runtimeId,
+                sourceType.name(),
+                sourceId,
+                deviceId,
+                channel.name(),
+                quality.name(),
+                roomName,
+                timestamp);
+        return sourceRuntimeRepository.findBySourceForUpdate(sourceType, sourceId, deviceId, channel, quality)
+                .orElseThrow(() -> new IllegalStateException("媒体源运行态创建失败：" + runtimeKey));
     }
 
     private void emit(String event, Object data) {
