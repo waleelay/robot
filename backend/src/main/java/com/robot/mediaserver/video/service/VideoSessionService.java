@@ -379,7 +379,8 @@ public class VideoSessionService {
         VideoSession session = requireOpenSession(lockSessionRuntime(sessionId));
         addViewer(session, user);
         OffsetDateTime heartbeatAt = now();
-        boolean resumeStreaming = session.getStatus() == VideoSessionStatus.IDLE_WAIT && hasPublishedTrack(session);
+        boolean wasIdle = session.getStatus() == VideoSessionStatus.IDLE_WAIT;
+        boolean resumeStreaming = wasIdle && hasPublishedTrack(session);
         if (holdsRoomForIntercom(session)
                 && Objects.equals(session.getIntercomOperatorId(), user.userId())
                 && Objects.equals(session.getIntercomClientId(), user.clientId())) {
@@ -389,11 +390,19 @@ public class VideoSessionService {
         if (resumeStreaming) {
             session.setStatus(VideoSessionStatus.STREAMING);
             session.setIdleSince(null);
+        } else if (wasIdle) {
+            session.setStatus(VideoSessionStatus.INTERRUPTED);
+            session.setLastStatusAt(heartbeatAt);
+            session.setIdleSince(null);
         }
         session.setUpdatedAt(heartbeatAt);
         repository.save(session);
         if (resumeStreaming) {
             emit("video.session.streaming", session);
+        } else if (wasIdle) {
+            emit("video.session.interrupted", Map.of(
+                    "sessionId", sessionId,
+                    "message", "Viewer resumed while LiveKit Publisher/Track missing"));
         }
         return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
     }

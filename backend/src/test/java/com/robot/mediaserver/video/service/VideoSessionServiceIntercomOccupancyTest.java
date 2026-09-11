@@ -192,6 +192,22 @@ class VideoSessionServiceIntercomOccupancyTest {
     }
 
     @Test
+    void heartbeatQueuesRecoveryWhenIdleTrackIsMissing() {
+        target.setStatus(VideoSessionStatus.IDLE_WAIT);
+        target.setIdleSince(OffsetDateTime.now());
+        when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(
+                "vs-target", "user:operator-1:web-1")).thenReturn(Optional.empty());
+        when(viewerRepository.countBySessionIdAndLeftAtIsNull("vs-target")).thenReturn(1L);
+
+        var response = service.heartbeat("vs-target", operator("operator-1", "web-1"));
+
+        assertThat(response.status()).isEqualTo(VideoSessionStatus.INTERRUPTED);
+        assertThat(target.getLastStatusAt()).isNotNull();
+        assertThat(target.getIdleSince()).isNull();
+        verify(publisher).publish(eq("video.session.interrupted"), any());
+    }
+
+    @Test
     void createsSessionOwnedByLockedSourceRuntime() {
         when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(anyString(), anyString()))
                 .thenReturn(Optional.empty());
