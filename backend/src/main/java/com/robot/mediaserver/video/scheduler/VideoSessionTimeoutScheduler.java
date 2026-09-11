@@ -38,6 +38,11 @@ public class VideoSessionTimeoutScheduler {
         videoSessionService.sweepStaleViewers();
     }
 
+    @Scheduled(fixedDelayString = "${media.livekit.reconcile-delay-ms:5000}")
+    public void reconcileLiveKitTracks() {
+        videoSessionService.reconcileLiveKitTracks();
+    }
+
     private void handleTrackPublishTimeout() {
         OffsetDateTime currentTime = now();
         OffsetDateTime threshold = currentTime.minusSeconds(properties.getSession().getTrackPublishTimeoutSeconds());

@@ -175,6 +175,10 @@ class VideoSessionServiceIntercomOccupancyTest {
         target.setIdleSince(OffsetDateTime.now());
         target.setTrackSid("TR_existing");
         target.setTrackName("video.visible.sub");
+        when(liveKitRoomService.resolveActiveVideoTrack(
+                "room-runtime-test", "robot:robot-002:camera01", target.getTrackSid()))
+                .thenReturn(Optional.of(new LiveKitRoomService.ActiveVideoTrack(
+                        "robot:robot-002:camera01", "PA_robot", "TR_existing", "video.visible.sub")));
         when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(
                 "vs-target", "user:operator-1:web-1")).thenReturn(Optional.empty());
         when(viewerRepository.countBySessionIdAndLeftAtIsNull("vs-target")).thenReturn(1L);
@@ -230,7 +234,8 @@ class VideoSessionServiceIntercomOccupancyTest {
         target.setTrackName("video.visible.main");
         when(repository.findFirstBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
                 any(), anyString(), anyString(), any(), any(), anyCollection())).thenReturn(Optional.of(target));
-        when(liveKitRoomService.resolveActiveVideoTrackSid(target.getRoomName(), target.getTrackSid()))
+        when(liveKitRoomService.resolveActiveVideoTrack(
+                target.getRoomName(), "fixed-camera:camera-001", target.getTrackSid()))
                 .thenReturn(Optional.empty());
         when(liveKitTokenService.createInteractiveViewerToken(anyString(), anyString(), anyString()))
                 .thenReturn(new LiveKitTokenService.TokenResult("viewer-token", OffsetDateTime.now().plusMinutes(10)));
@@ -309,19 +314,50 @@ class VideoSessionServiceIntercomOccupancyTest {
     }
 
     @Test
+    void robotProcessStatusAlsoWaitsForActualLiveKitTrack() {
+        target.setSourceType(VideoSourceType.ROBOT_CAMERA);
+        target.setStatus(VideoSessionStatus.REQUESTING_CLIENT);
+
+        service.handleClientStatus(
+                "vs-target", "streaming", "TR_reported", "video.visible.sub", null, null);
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.ROOM_READY);
+        assertThat(target.getTrackSid()).isNull();
+        verifyNoInteractions(mediaTrackService);
+    }
+
+    @Test
+    void lateDeviceProcessStatusCannotOverrideConfirmedStreamingFact() {
+        target.setStatus(VideoSessionStatus.STREAMING);
+        target.setTrackSid("TR_actual");
+        target.setTrackName("video.visible.sub");
+
+        service.handleClientStatus("vs-target", "room_ready", null, null, null, null);
+        service.handleClientStatus("vs-target", "failed", null, null, "PROCESS_EXITED", "publisher exited");
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.STREAMING);
+        assertThat(target.getTrackSid()).isEqualTo("TR_actual");
+        verify(publisher).publish(eq("video.client.failed"), any());
+        verify(mediaTrackService, never()).unpublish(target);
+    }
+
+    @Test
     void confirmsFixedCameraOnlyAfterActualLiveKitTrackExists() {
         target.setSourceType(VideoSourceType.FIXED_CAMERA);
         target.setStatus(VideoSessionStatus.ROOM_READY);
         target.setRoomName("media.fixed.camera-001.visible.sub");
         target.setChannel(VideoChannel.visible);
         target.setQuality(VideoQuality.sub);
-        when(liveKitRoomService.resolveActiveVideoTrackSid(target.getRoomName(), null))
-                .thenReturn(Optional.of("TR_actual"));
+        when(liveKitRoomService.resolveActiveVideoTrack(
+                target.getRoomName(), "fixed-camera:robot-002", null))
+                .thenReturn(Optional.of(new LiveKitRoomService.ActiveVideoTrack(
+                        "fixed-camera:robot-002", "PA_fixed", "TR_actual", "video.visible.sub")));
 
         assertThat(service.confirmFixedCameraTrack("vs-target")).isTrue();
         assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.STREAMING);
         assertThat(target.getTrackSid()).isEqualTo("TR_actual");
-        verify(mediaTrackService).publish(target, "TR_actual", "video.visible.sub");
+        verify(mediaTrackService).publish(
+                target, "fixed-camera:robot-002", "TR_actual", "video.visible.sub");
     }
 
     @Test
@@ -382,6 +418,18 @@ class VideoSessionServiceIntercomOccupancyTest {
 
         assertThat(service.interruptedRestartCandidates(threshold)).containsExactly("vs-target");
         verify(repository, never()).findByStatusAndCommandRequestedAtBefore(VideoSessionStatus.INTERRUPTED, threshold);
+    }
+
+    @Test
+    void restartsInterruptedSessionHeldOnlyByRecording() {
+        target.setStatus(VideoSessionStatus.INTERRUPTED);
+        target.setViewerCount(0);
+        OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(15);
+        when(repository.findByStatusAndLastStatusAtBefore(VideoSessionStatus.INTERRUPTED, threshold))
+                .thenReturn(List.of(target));
+        when(fileService.hasActiveLiveRecording("vs-target")).thenReturn(true);
+
+        assertThat(service.interruptedRestartCandidates(threshold)).containsExactly("vs-target");
     }
 
     @Test
@@ -471,12 +519,131 @@ class VideoSessionServiceIntercomOccupancyTest {
         runtime.setRoomName(target.getRoomName());
         when(sourceRuntimeRepository.findByIdForUpdate("runtime-test")).thenReturn(Optional.of(runtime));
         CurrentUser user = operator("operator-1", "web-1");
-        when(liveKitRoomService.resolveActiveVideoTrackSid(target.getRoomName(), target.getTrackSid()))
-                .thenReturn(Optional.of("TR_actual"));
+        when(liveKitRoomService.resolveActiveVideoTrack(
+                target.getRoomName(), "robot:robot-002:camera01", target.getTrackSid()))
+                .thenReturn(Optional.of(new LiveKitRoomService.ActiveVideoTrack(
+                        "robot:robot-002:camera01", "PA_robot", "TR_actual", "video.visible.auto")));
 
         service.startRecording("vs-target", user);
 
         verify(fileService).startLiveRecording(target, "TR_actual", user);
+    }
+
+    @Test
+    void reconcilesExpectedPublisherTrackIntoRuntimeAndSession() {
+        target.setRuntimeId("runtime-test");
+        target.setStatus(VideoSessionStatus.ROOM_READY);
+        VideoSourceRuntime runtime = runtime();
+        when(sourceRuntimeRepository.findById("runtime-test")).thenReturn(Optional.of(runtime));
+        when(sourceRuntimeRepository.findByIdForUpdate("runtime-test")).thenReturn(Optional.of(runtime));
+        when(repository.findByRuntimeIdOrderBySessionIdAsc("runtime-test")).thenReturn(List.of(target));
+        when(liveKitRoomService.resolveActiveVideoTrack(
+                target.getRoomName(), "robot:robot-002:camera01", null))
+                .thenReturn(Optional.of(new LiveKitRoomService.ActiveVideoTrack(
+                        "robot:robot-002:camera01", "PA_robot", "TR_actual", "video.visible.sub")));
+
+        service.reconcileLiveKitRuntime("runtime-test");
+
+        assertThat(runtime.getPublisherIdentity()).isEqualTo("robot:robot-002:camera01");
+        assertThat(runtime.getPublisherParticipantSid()).isEqualTo("PA_robot");
+        assertThat(runtime.getTrackSid()).isEqualTo("TR_actual");
+        assertThat(runtime.getLastMediaAt()).isNotNull();
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.STREAMING);
+        assertThat(target.getTrackSid()).isEqualTo("TR_actual");
+        verify(mediaTrackService).publish(
+                target, "robot:robot-002:camera01", "TR_actual", "video.visible.sub");
+    }
+
+    @Test
+    void doesNotRewriteStablePublishedTrackOnPeriodicReconcile() {
+        target.setRuntimeId("runtime-test");
+        target.setStatus(VideoSessionStatus.STREAMING);
+        target.setTrackSid("TR_actual");
+        target.setTrackName("video.visible.sub");
+        VideoSourceRuntime runtime = runtime();
+        runtime.setPublisherIdentity("robot:robot-002:camera01");
+        runtime.setPublisherParticipantSid("PA_robot");
+        runtime.setTrackSid("TR_actual");
+        runtime.setTrackName("video.visible.sub");
+        when(sourceRuntimeRepository.findById("runtime-test")).thenReturn(Optional.of(runtime));
+        when(sourceRuntimeRepository.findByIdForUpdate("runtime-test")).thenReturn(Optional.of(runtime));
+        when(repository.findByRuntimeIdOrderBySessionIdAsc("runtime-test")).thenReturn(List.of(target));
+        when(liveKitRoomService.resolveActiveVideoTrack(
+                target.getRoomName(), "robot:robot-002:camera01", "TR_actual"))
+                .thenReturn(Optional.of(new LiveKitRoomService.ActiveVideoTrack(
+                        "robot:robot-002:camera01", "PA_robot", "TR_actual", "video.visible.sub")));
+
+        service.reconcileLiveKitRuntime("runtime-test");
+
+        verify(sourceRuntimeRepository, never()).save(runtime);
+        verify(repository, never()).save(target);
+        verifyNoInteractions(mediaTrackService, publisher);
+    }
+
+    @Test
+    void marksStreamingSessionInterruptedOnlyAfterRoomFactIsMissing() {
+        target.setRuntimeId("runtime-test");
+        target.setStatus(VideoSessionStatus.STREAMING);
+        target.setTrackSid("TR_old");
+        target.setTrackName("video.visible.sub");
+        VideoSourceRuntime runtime = runtime();
+        runtime.setPublisherIdentity("robot:robot-002:camera01");
+        runtime.setPublisherParticipantSid("PA_old");
+        runtime.setTrackSid("TR_old");
+        when(sourceRuntimeRepository.findById("runtime-test")).thenReturn(Optional.of(runtime));
+        when(sourceRuntimeRepository.findByIdForUpdate("runtime-test")).thenReturn(Optional.of(runtime));
+        when(repository.findByRuntimeIdOrderBySessionIdAsc("runtime-test")).thenReturn(List.of(target));
+        when(viewerRepository.countBySessionIdAndLeftAtIsNull("vs-target")).thenReturn(1L);
+        when(liveKitRoomService.resolveActiveVideoTrack(
+                target.getRoomName(), "robot:robot-002:camera01", "TR_old"))
+                .thenReturn(Optional.empty());
+
+        service.reconcileLiveKitRuntime("runtime-test");
+
+        assertThat(runtime.getPublisherIdentity()).isNull();
+        assertThat(runtime.getTrackSid()).isNull();
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.INTERRUPTED);
+        assertThat(target.getTrackSid()).isNull();
+        assertThat(target.getLastStatusAt()).isNotNull();
+        verify(mediaTrackService).unpublish(target);
+    }
+
+    @Test
+    void clearsMissingTrackWithoutLeavingIdleWait() {
+        target.setRuntimeId("runtime-test");
+        target.setStatus(VideoSessionStatus.IDLE_WAIT);
+        target.setTrackSid("TR_old");
+        target.setTrackName("video.visible.sub");
+        VideoSourceRuntime runtime = runtime();
+        runtime.setPublisherIdentity("robot:robot-002:camera01");
+        runtime.setPublisherParticipantSid("PA_old");
+        runtime.setTrackSid("TR_old");
+        when(sourceRuntimeRepository.findById("runtime-test")).thenReturn(Optional.of(runtime));
+        when(sourceRuntimeRepository.findByIdForUpdate("runtime-test")).thenReturn(Optional.of(runtime));
+        when(repository.findByRuntimeIdOrderBySessionIdAsc("runtime-test")).thenReturn(List.of(target));
+        when(liveKitRoomService.resolveActiveVideoTrack(
+                target.getRoomName(), "robot:robot-002:camera01", "TR_old"))
+                .thenReturn(Optional.empty());
+
+        service.reconcileLiveKitRuntime("runtime-test");
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.IDLE_WAIT);
+        assertThat(target.getTrackSid()).isNull();
+        verify(mediaTrackService).unpublish(target);
+    }
+
+    private VideoSourceRuntime runtime() {
+        VideoSourceRuntime runtime = new VideoSourceRuntime();
+        runtime.setRuntimeId("runtime-test");
+        runtime.setSourceType(VideoSourceType.ROBOT_CAMERA);
+        runtime.setSourceId("robot-002");
+        runtime.setDeviceId("camera01");
+        runtime.setChannel(VideoChannel.visible);
+        runtime.setQuality(VideoQuality.sub);
+        runtime.setRoomName(target.getRoomName());
+        runtime.setCreatedAt(OffsetDateTime.now());
+        runtime.setUpdatedAt(OffsetDateTime.now());
+        return runtime;
     }
 
     private CurrentUser operator(String userId, String clientId) {

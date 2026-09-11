@@ -3,6 +3,7 @@ package com.robot.mediaserver.video.service;
 import com.robot.mediaserver.auth.CurrentUser;
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.livekit.LiveKitRoomService;
+import com.robot.mediaserver.livekit.LiveKitRoomService.ActiveVideoTrack;
 import com.robot.mediaserver.livekit.LiveKitTokenService;
 import com.robot.mediaserver.livekit.LiveKitTokenService.TokenResult;
 import com.robot.mediaserver.video.dto.VideoSessionResponses;
@@ -70,6 +71,13 @@ public class VideoSessionService {
      */
     private static final Set<VideoSessionStatus> REUSABLE_STATUSES = Set.of(
             VideoSessionStatus.INIT,
+            VideoSessionStatus.REQUESTING_CLIENT,
+            VideoSessionStatus.ROOM_READY,
+            VideoSessionStatus.STREAMING,
+            VideoSessionStatus.INTERRUPTED,
+            VideoSessionStatus.IDLE_WAIT);
+
+    private static final Set<VideoSessionStatus> RECONCILE_STATUSES = Set.of(
             VideoSessionStatus.REQUESTING_CLIENT,
             VideoSessionStatus.ROOM_READY,
             VideoSessionStatus.STREAMING,
@@ -244,20 +252,21 @@ public class VideoSessionService {
                 || session.getTrackName().isBlank()) {
             return false;
         }
-        if (session.getSourceType() != VideoSourceType.FIXED_CAMERA) {
-            return true;
-        }
         try {
-            return liveKitRoomService.resolveActiveVideoTrackSid(session.getRoomName(), session.getTrackSid())
-                    .map(trackSid -> {
-                        session.setTrackSid(trackSid);
+            return liveKitRoomService.resolveActiveVideoTrack(
+                            session.getRoomName(), publisherIdentity(session), session.getTrackSid())
+                    .map(track -> {
+                        session.setTrackSid(track.trackSid());
+                        if (track.trackName() != null) {
+                            session.setTrackName(track.trackName());
+                        }
                         return true;
                     })
                     .orElse(false);
         } catch (RuntimeException exception) {
-            // 固定摄像头现场网关可重发启动命令；Room API 异常时宁可重新拉流，不能复用失效轨道。
-            log.warn("校验固定摄像头 LiveKit 视频轨道失败，将重新请求推流，sessionId={}", session.getSessionId(), exception);
-            return false;
+            // Room API 暂时不可用时保留已有会话，避免查询故障反向触发推流重启。
+            log.warn("校验 LiveKit 视频轨道失败，暂时保留会话 sessionId={}", session.getSessionId(), exception);
+            return true;
         }
     }
 
@@ -572,10 +581,10 @@ public class VideoSessionService {
         if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
             throw new IllegalStateException("当前会话未在推流");
         }
-        String liveKitTrackSid = liveKitRoomService
-                .resolveActiveVideoTrackSid(session.getRoomName(), session.getTrackSid())
-                .orElseThrow(() -> new IllegalStateException("房间无活跃推流，无法录制"));
-        return fileService.startLiveRecording(session, liveKitTrackSid, user);
+        ActiveVideoTrack liveKitTrack = liveKitRoomService
+                .resolveActiveVideoTrack(session.getRoomName(), publisherIdentity(session), session.getTrackSid())
+                .orElseThrow(() -> new IllegalStateException("房间无预期 Publisher 的活跃推流，无法录制"));
+        return fileService.startLiveRecording(session, liveKitTrack.trackSid(), user);
     }
 
     public FileListItemResponse stopRecording(String sessionId, String fileId, CurrentUser user) {
@@ -619,26 +628,14 @@ public class VideoSessionService {
         // Go 客户端通过 MQTT 回报的是轻量字符串状态，这里统一映射为后端状态机枚举，
         // 并在关键节点发布 WebSocket 事件，驱动前端刷新。
         switch (normalized) {
-            case "room_ready", "publishing" -> transition(session, VideoSessionStatus.ROOM_READY, "video.room.ready", session);
-            case "streaming", "track_published" -> {
-                if (session.getSourceType() == VideoSourceType.FIXED_CAMERA) {
-                    // Gateway 只能确认本地进程存活，不能把占位 Track SID 当作 LiveKit 真实轨道。
-                    // 由定时任务通过 Room API 确认后再进入 STREAMING。
+            case "room_ready", "publishing", "streaming", "track_published" -> {
+                // 设备状态只能证明本地发布流程已运行，不能覆盖已经确认的 LiveKit 媒体事实。
+                if (session.getStatus() != VideoSessionStatus.STREAMING) {
                     session.setTrackName(trackName == null || trackName.isBlank()
                             ? "video." + session.getChannel() + "." + session.getQuality()
                             : trackName);
                     transition(session, VideoSessionStatus.ROOM_READY, "video.room.ready", session);
-                    break;
                 }
-                if (trackSid != null && !trackSid.isBlank()) {
-                    session.setTrackSid(trackSid);
-                }
-                session.setTrackName(trackName == null || trackName.isBlank()
-                        ? "video." + session.getChannel() + "." + session.getQuality()
-                        : trackName);
-                mediaTrackService.publish(session, session.getTrackSid(), session.getTrackName());
-                session.setStartedAt(session.getStartedAt() == null ? now() : session.getStartedAt());
-                transition(session, VideoSessionStatus.STREAMING, "video.session.streaming", session);
             }
             case "interrupted" -> {
                 if (session.getSourceType() == VideoSourceType.FIXED_CAMERA
@@ -649,16 +646,35 @@ public class VideoSessionService {
                             safeMessage(message),
                             "video.session.failed");
                 } else {
-                    transition(session, VideoSessionStatus.INTERRUPTED, "video.session.interrupted", Map.of(
+                    emit("video.client.interrupted", Map.of(
                             "sessionId", sessionId,
                             "message", safeMessage(message)));
                 }
             }
             case "stopped", "closed" -> {
-                session.setEndedAt(now());
-                transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
+                // 主动释放会先在 Media 内关闭会话；意外退出由 LiveKit Track 对账确认后中断。
+                if (session.getStatus() == VideoSessionStatus.STOPPING
+                        || session.getStatus() == VideoSessionStatus.CLOSED) {
+                    session.setEndedAt(now());
+                    transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
+                } else {
+                    emit("video.client.stopped", Map.of("sessionId", sessionId));
+                }
             }
-            case "failed", "error" -> markFailed(session, errorCode == null ? "CLIENT_STATUS_FAILED" : errorCode, safeMessage(message), "video.session.failed");
+            case "failed", "error" -> {
+                if (session.getStatus() == VideoSessionStatus.STREAMING) {
+                    emit("video.client.failed", Map.of(
+                            "sessionId", sessionId,
+                            "errorCode", errorCode == null ? "CLIENT_STATUS_FAILED" : errorCode,
+                            "message", safeMessage(message)));
+                } else {
+                    markFailed(
+                            session,
+                            errorCode == null ? "CLIENT_STATUS_FAILED" : errorCode,
+                            safeMessage(message),
+                            "video.session.failed");
+                }
+            }
             default -> emit("video.client.status", Map.of(
                     "sessionId", sessionId,
                     "status", safeMessage(status),
@@ -681,21 +697,24 @@ public class VideoSessionService {
                 || session.getStatus() != VideoSessionStatus.ROOM_READY) {
             return session.getStatus() == VideoSessionStatus.STREAMING;
         }
-        Optional<String> trackSid;
+        Optional<ActiveVideoTrack> track;
         try {
-            trackSid = liveKitRoomService.resolveActiveVideoTrackSid(session.getRoomName(), session.getTrackSid());
+            track = liveKitRoomService.resolveActiveVideoTrack(
+                    session.getRoomName(), publisherIdentity(session), session.getTrackSid());
         } catch (RuntimeException exception) {
             log.warn("确认固定摄像头 LiveKit 视频轨道失败，sessionId={}", sessionId, exception);
             return false;
         }
-        if (trackSid.isEmpty()) {
+        if (track.isEmpty()) {
             return false;
         }
-        session.setTrackSid(trackSid.get());
-        if (session.getTrackName() == null || session.getTrackName().isBlank()) {
-            session.setTrackName("video." + session.getChannel() + "." + session.getQuality());
-        }
-        mediaTrackService.publish(session, session.getTrackSid(), session.getTrackName());
+        ActiveVideoTrack activeTrack = track.get();
+        session.setTrackSid(activeTrack.trackSid());
+        session.setTrackName(activeTrack.trackName() == null || activeTrack.trackName().isBlank()
+                ? "video." + session.getChannel() + "." + session.getQuality()
+                : activeTrack.trackName());
+        mediaTrackService.publish(
+                session, activeTrack.participantIdentity(), session.getTrackSid(), session.getTrackName());
         session.setStartedAt(session.getStartedAt() == null ? now() : session.getStartedAt());
         transition(session, VideoSessionStatus.STREAMING, "video.session.streaming", session);
         session.setUpdatedAt(now());
@@ -980,6 +999,13 @@ public class VideoSessionService {
         return "robot:" + session.getRobotId() + ":" + session.getDeviceId();
     }
 
+    private String publisherIdentity(VideoSourceRuntime runtime) {
+        if (runtime.getSourceType() == VideoSourceType.FIXED_CAMERA) {
+            return "fixed-camera:" + runtime.getSourceId();
+        }
+        return "robot:" + runtime.getSourceId() + ":" + runtime.getDeviceId();
+    }
+
     /**
      * 标记实时视频会话推流超时。
      *
@@ -1104,9 +1130,149 @@ public class VideoSessionService {
     public List<String> interruptedRestartCandidates(OffsetDateTime interruptedBefore) {
         // viewer 心跳会刷新 updatedAt，不能用它衡量断流已持续多久；lastStatusAt 只由客户端状态上报刷新。
         return repository.findByStatusAndLastStatusAtBefore(VideoSessionStatus.INTERRUPTED, interruptedBefore).stream()
-                .filter(session -> session.getViewerCount() > 0)
+                .filter(session -> session.getViewerCount() > 0
+                        || holdsRoomForIntercom(session)
+                        || fileService.hasActiveLiveRecording(session.getSessionId()))
                 .map(VideoSession::getSessionId)
                 .toList();
+    }
+
+    /**
+     * 周期核对所有等待发布、推流中和中断中的 SourceRuntime，以补偿 Webhook 漏投。
+     */
+    public void reconcileLiveKitTracks() {
+        repository.findDistinctRuntimeIdsByStatusIn(RECONCILE_STATUSES).forEach(runtimeId -> {
+            try {
+                reconcileLiveKitRuntime(runtimeId);
+            } catch (RuntimeException exception) {
+                log.warn("LiveKit Track 周期对账失败 runtimeId={}", runtimeId, exception);
+            }
+        });
+    }
+
+    /**
+     * Webhook 到达后按 Room 定位唯一 SourceRuntime，并以 Room API 当前事实完成幂等对账。
+     */
+    public void reconcileLiveKitRoom(String roomName) {
+        sourceRuntimeRepository.findByRoomName(roomName)
+                .ifPresent(runtime -> reconcileLiveKitRuntime(runtime.getRuntimeId()));
+    }
+
+    void reconcileLiveKitRuntime(String runtimeId) {
+        VideoSourceRuntime snapshot = sourceRuntimeRepository.findById(runtimeId).orElse(null);
+        if (snapshot == null) {
+            return;
+        }
+        OffsetDateTime observedAt = now();
+        Optional<ActiveVideoTrack> observed = liveKitRoomService.resolveActiveVideoTrack(
+                snapshot.getRoomName(), publisherIdentity(snapshot), snapshot.getTrackSid());
+        transactionTemplate.executeWithoutResult(status -> applyLiveKitObservation(runtimeId, observedAt, observed));
+    }
+
+    private void applyLiveKitObservation(
+            String runtimeId,
+            OffsetDateTime observedAt,
+            Optional<ActiveVideoTrack> observed) {
+        VideoSourceRuntime runtime = sourceRuntimeRepository.findByIdForUpdate(runtimeId).orElse(null);
+        if (runtime == null) {
+            return;
+        }
+        List<VideoSession> sessions = repository.findByRuntimeIdOrderBySessionIdAsc(runtimeId);
+        boolean runtimeChanged;
+        if (observed.isPresent()) {
+            ActiveVideoTrack track = observed.get();
+            runtimeChanged = !Objects.equals(runtime.getPublisherIdentity(), track.participantIdentity())
+                    || !Objects.equals(runtime.getPublisherParticipantSid(), track.participantSid())
+                    || !Objects.equals(runtime.getTrackSid(), track.trackSid())
+                    || !Objects.equals(runtime.getTrackName(), track.trackName());
+            runtime.setPublisherIdentity(track.participantIdentity());
+            runtime.setPublisherParticipantSid(track.participantSid());
+            runtime.setTrackSid(track.trackSid());
+            runtime.setTrackName(track.trackName());
+            if (runtimeChanged) {
+                runtime.setLastMediaAt(observedAt);
+            }
+            sessions.stream()
+                    .filter(session -> RECONCILE_STATUSES.contains(session.getStatus()))
+                    .forEach(session -> applyPublishedTrack(session, track, observedAt));
+        } else {
+            runtimeChanged = runtime.getPublisherIdentity() != null
+                    || runtime.getPublisherParticipantSid() != null
+                    || runtime.getTrackSid() != null
+                    || runtime.getTrackName() != null;
+            runtime.setPublisherIdentity(null);
+            runtime.setPublisherParticipantSid(null);
+            runtime.setTrackSid(null);
+            runtime.setTrackName(null);
+            sessions.stream()
+                    .filter(session -> (session.getStatus() == VideoSessionStatus.STREAMING
+                            || session.getStatus() == VideoSessionStatus.IDLE_WAIT)
+                            && session.getTrackSid() != null)
+                    .forEach(session -> applyMissingTrack(session, observedAt));
+        }
+        if (runtimeChanged) {
+            runtime.setUpdatedAt(observedAt);
+            sourceRuntimeRepository.save(runtime);
+        }
+    }
+
+    private void applyPublishedTrack(
+            VideoSession session,
+            ActiveVideoTrack track,
+            OffsetDateTime observedAt) {
+        String resolvedTrackName = track.trackName() == null || track.trackName().isBlank()
+                ? "video." + session.getChannel() + "." + session.getQuality()
+                : track.trackName();
+        VideoSessionStatus targetStatus = session.getStatus() == VideoSessionStatus.IDLE_WAIT
+                ? VideoSessionStatus.IDLE_WAIT
+                : VideoSessionStatus.STREAMING;
+        boolean changed = session.getStatus() != targetStatus
+                || !Objects.equals(session.getTrackSid(), track.trackSid())
+                || !Objects.equals(session.getTrackName(), resolvedTrackName);
+        if (!changed) {
+            return;
+        }
+        if (session.getTrackSid() != null && !Objects.equals(session.getTrackSid(), track.trackSid())) {
+            mediaTrackService.unpublish(session);
+        }
+        session.setTrackSid(track.trackSid());
+        session.setTrackName(resolvedTrackName);
+        session.setStartedAt(session.getStartedAt() == null ? observedAt : session.getStartedAt());
+        session.setEndedAt(null);
+        session.setLastErrorCode(null);
+        session.setLastErrorMessage(null);
+        mediaTrackService.publish(
+                session, track.participantIdentity(), session.getTrackSid(), session.getTrackName());
+        if (targetStatus == VideoSessionStatus.STREAMING) {
+            transition(session, VideoSessionStatus.STREAMING, "video.session.streaming", session);
+        } else {
+            session.setUpdatedAt(observedAt);
+        }
+        repository.save(session);
+    }
+
+    private void applyMissingTrack(VideoSession session, OffsetDateTime observedAt) {
+        boolean wasStreaming = session.getStatus() == VideoSessionStatus.STREAMING;
+        mediaTrackService.unpublish(session);
+        session.setTrackSid(null);
+        session.setTrackName(null);
+        session.setViewerCount(activeViewerCount(session.getSessionId()));
+        session.setLastStatusAt(observedAt);
+        if (session.getViewerCount() > 0
+                || holdsRoomForIntercom(session)
+                || fileService.hasActiveLiveRecording(session.getSessionId())) {
+            transition(session, VideoSessionStatus.INTERRUPTED, "video.session.interrupted", Map.of(
+                    "sessionId", session.getSessionId(),
+                    "message", "LiveKit Publisher/Track missing"));
+        } else if (wasStreaming) {
+            session.setIdleSince(observedAt);
+            transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
+                    "sessionId", session.getSessionId(),
+                    "idleReleaseDelaySeconds", properties.getSession().getIdleReleaseDelaySeconds()));
+        } else {
+            session.setUpdatedAt(observedAt);
+        }
+        repository.save(session);
     }
 
     /**

@@ -22,6 +22,8 @@ public interface VideoSourceRuntimeRepository extends JpaRepository<VideoSourceR
     @Query("select runtime from VideoSourceRuntime runtime where runtime.runtimeId = :runtimeId")
     Optional<VideoSourceRuntime> findByIdForUpdate(@Param("runtimeId") String runtimeId);
 
+    Optional<VideoSourceRuntime> findByRoomName(String roomName);
+
     @Modifying
     @Query(value = """
             insert into media_source_runtime (

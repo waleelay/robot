@@ -16,8 +16,8 @@ import java.time.OffsetDateTime;
 /**
  * 单个媒体源的唯一运行态记录。
  *
- * <p>用于串行化同源会话创建、固定 Room 所有权，并在释放前聚合同 Room 引用。
- * Publisher generation 和状态事实仍由后续整改项迁移。</p>
+ * <p>用于串行化同源会话创建、固定 Room 所有权，并保存 LiveKit 返回的当前
+ * Publisher/Track 事实。Publisher generation 仍由后续整改项迁移。</p>
  */
 @Entity
 @Table(
@@ -51,6 +51,21 @@ public class VideoSourceRuntime {
 
     @Column(name = "room_name", nullable = false, length = 160)
     private String roomName;
+
+    @Column(name = "publisher_identity", length = 128)
+    private String publisherIdentity;
+
+    @Column(name = "publisher_participant_sid", length = 128)
+    private String publisherParticipantSid;
+
+    @Column(name = "track_sid", length = 128)
+    private String trackSid;
+
+    @Column(name = "track_name", length = 128)
+    private String trackName;
+
+    @Column(name = "last_media_at")
+    private OffsetDateTime lastMediaAt;
 
     @Version
     @Column(nullable = false)
@@ -116,6 +131,46 @@ public class VideoSourceRuntime {
 
     public void setRoomName(String roomName) {
         this.roomName = roomName;
+    }
+
+    public String getPublisherIdentity() {
+        return publisherIdentity;
+    }
+
+    public void setPublisherIdentity(String publisherIdentity) {
+        this.publisherIdentity = publisherIdentity;
+    }
+
+    public String getPublisherParticipantSid() {
+        return publisherParticipantSid;
+    }
+
+    public void setPublisherParticipantSid(String publisherParticipantSid) {
+        this.publisherParticipantSid = publisherParticipantSid;
+    }
+
+    public String getTrackSid() {
+        return trackSid;
+    }
+
+    public void setTrackSid(String trackSid) {
+        this.trackSid = trackSid;
+    }
+
+    public String getTrackName() {
+        return trackName;
+    }
+
+    public void setTrackName(String trackName) {
+        this.trackName = trackName;
+    }
+
+    public OffsetDateTime getLastMediaAt() {
+        return lastMediaAt;
+    }
+
+    public void setLastMediaAt(OffsetDateTime lastMediaAt) {
+        this.lastMediaAt = lastMediaAt;
     }
 
     public long getVersion() {

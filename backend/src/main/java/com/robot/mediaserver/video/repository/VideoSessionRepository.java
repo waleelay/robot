@@ -69,6 +69,9 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
 
         List<VideoSession> findByStatusAndLastStatusAtBefore(VideoSessionStatus status, OffsetDateTime lastStatusAt);
 
+        @Query("select distinct session.runtimeId from VideoSession session where session.runtimeId is not null and session.status in :statuses")
+        List<String> findDistinctRuntimeIdsByStatusIn(@Param("statuses") Collection<VideoSessionStatus> statuses);
+
         List<VideoSession> findByStatusAndIdleSinceBefore(VideoSessionStatus status, OffsetDateTime idleSince);
 
     @Query("""
