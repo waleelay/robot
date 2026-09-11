@@ -541,6 +541,30 @@ class BigscreenWebSocketBridgeHandlerTest {
     }
 
     @Test
+    void forwardsFieldCallMessageWithoutLoadingBigscreenAuthorization() throws Exception {
+        BigscreenWebSocketAuthorizationService authorizationService =
+                mock(BigscreenWebSocketAuthorizationService.class);
+        WebSocketSession appSession = browserSession(
+                new HttpHeaders(), URI.create("wss://bigscreen/ws/field-call"), "field-call-session");
+        WebSocketSession centerSession = mock(WebSocketSession.class);
+        when(appSession.getPrincipal()).thenReturn(authentication("field-user", Instant.now().plusSeconds(300)));
+        when(appSession.isOpen()).thenReturn(true);
+        when(centerSession.isOpen()).thenReturn(true);
+        BigscreenWebSocketBridgeHandler handler = handler(authorizationService);
+
+        handler.afterConnectionEstablished(appSession);
+        assertTrue((Boolean) ReflectionTestUtils.invokeMethod(
+                handler, "registerCenterSession", appSession, centerSession));
+        TextMessage invite = new TextMessage("{\"type\":\"field.call.invite\"}");
+        handler.handleTextMessage(appSession, invite);
+
+        verify(authorizationService, never()).authorizedResources(appSession);
+        verify(authorizationService, never()).canForwardClientMessage(any(), anyString());
+        verify(centerSession).sendMessage(invite);
+        handler.shutdownAuthorizationRefreshExecutor();
+    }
+
+    @Test
     void keepsConnectionFailClosedWhenAsynchronousRefreshFailsAndSnapshotExpires() throws Exception {
         BigscreenWebSocketAuthorizationService authorizationService =
                 mock(BigscreenWebSocketAuthorizationService.class);

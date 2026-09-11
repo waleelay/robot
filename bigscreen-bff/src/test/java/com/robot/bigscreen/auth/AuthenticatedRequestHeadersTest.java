@@ -15,7 +15,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 class AuthenticatedRequestHeadersTest {
 
-    private final AuthenticatedRequestHeaders requestHeaders = new AuthenticatedRequestHeaders("bigscreen-web");
+    private final AuthenticatedRequestHeaders requestHeaders =
+            new AuthenticatedRequestHeaders("bigscreen-web", "field-app");
 
     @AfterEach
     void clearSecurityContext() {
@@ -93,7 +94,25 @@ class AuthenticatedRequestHeadersTest {
         requestHeaders.apply(headers, new JwtAuthenticationToken(jwt));
 
         assertEquals(
-                "EQUIPMENT_OPERATOR,MEDIA_OPERATOR,MEDIA_VIEWER,platform_admin",
+                "EQUIPMENT_OPERATOR,FIELD_OPERATOR,MEDIA_OPERATOR,MEDIA_VIEWER,platform_admin",
                 headers.getFirst("X-Roles"));
+    }
+
+    @Test
+    void readsFieldOperatorFromFieldAppClient() {
+        Jwt jwt = Jwt.withTokenValue("access-token")
+                .header("alg", "none")
+                .subject("field-user")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .claim("azp", "field-app")
+                .claim("resource_access", Map.of(
+                        "field-app", Map.of("roles", List.of("FIELD_OPERATOR"))))
+                .build();
+        HttpHeaders headers = new HttpHeaders();
+
+        requestHeaders.apply(headers, new JwtAuthenticationToken(jwt));
+
+        assertEquals("FIELD_OPERATOR", headers.getFirst("X-Roles"));
     }
 }

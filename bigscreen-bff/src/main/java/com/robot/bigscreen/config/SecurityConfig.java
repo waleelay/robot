@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
@@ -17,9 +19,11 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 
 @Configuration
 public class SecurityConfig {
@@ -27,7 +31,9 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            BearerTokenResolver bearerTokenResolver) throws Exception {
+            BearerTokenResolver bearerTokenResolver,
+            @Value("${bigscreen.auth.client-id}") String bigscreenClientId,
+            @Value("${bigscreen.auth.field-call-client-id}") String fieldCallClientId) throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
@@ -35,7 +41,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/control/files/*/hls/**").permitAll()
-                        .requestMatchers("/api/**", "/ws/**").authenticated()
+                        .requestMatchers("/ws/field-call").access(clientAuthorization(fieldCallClientId))
+                        .requestMatchers("/api/**", "/ws/**").access(clientAuthorization(bigscreenClientId))
                         .anyRequest().permitAll())
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .bearerTokenResolver(bearerTokenResolver)
@@ -55,7 +62,8 @@ public class SecurityConfig {
     public JwtDecoder jwtDecoder(
             @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuerUri,
             @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
-            @Value("${bigscreen.auth.client-id}") String clientId) {
+            @Value("${bigscreen.auth.client-id}") String clientId,
+            @Value("${bigscreen.auth.field-call-client-id}") String fieldCallClientId) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri)
                 .jwsAlgorithms(algorithms -> {
                     algorithms.add(SignatureAlgorithm.ES256);
@@ -64,24 +72,39 @@ public class SecurityConfig {
                 .build();
         OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(
                 JwtValidators.createDefaultWithIssuer(issuerUri),
-                authorizedClientValidator(clientId));
+                authorizedClientValidator(clientId, fieldCallClientId));
         decoder.setJwtValidator(validator);
         return decoder;
     }
 
-    OAuth2TokenValidator<Jwt> authorizedClientValidator(String clientId) {
+    OAuth2TokenValidator<Jwt> authorizedClientValidator(String... clientIds) {
         return jwt -> {
-            boolean authorizedPartyMatches = clientId.equals(jwt.getClaimAsString("azp"));
-            boolean audienceMatches = jwt.getAudience() != null && jwt.getAudience().contains(clientId);
-            if (authorizedPartyMatches || audienceMatches) {
-                return OAuth2TokenValidatorResult.success();
+            for (String clientId : clientIds) {
+                if (tokenIssuedForClient(jwt, clientId)) {
+                    return OAuth2TokenValidatorResult.success();
+                }
             }
             OAuth2Error error = new OAuth2Error(
                     "invalid_token",
-                    "Token is not issued for the configured bigscreen client",
+                    "Token is not issued for a configured client",
                     null);
             return OAuth2TokenValidatorResult.failure(error);
         };
+    }
+
+    private AuthorizationManager<RequestAuthorizationContext> clientAuthorization(String clientId) {
+        return (authentication, context) -> {
+            if (authentication.get() instanceof JwtAuthenticationToken jwtAuthentication
+                    && tokenIssuedForClient(jwtAuthentication.getToken(), clientId)) {
+                return new AuthorizationDecision(true);
+            }
+            return new AuthorizationDecision(false);
+        };
+    }
+
+    private boolean tokenIssuedForClient(Jwt jwt, String clientId) {
+        return clientId.equals(jwt.getClaimAsString("azp"))
+                || (jwt.getAudience() != null && jwt.getAudience().contains(clientId));
     }
 
     private String resolveBearerToken(

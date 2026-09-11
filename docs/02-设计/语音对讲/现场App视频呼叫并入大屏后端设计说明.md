@@ -44,19 +44,31 @@ App / 大屏 <--WebRTC--> LiveKit
 - 大屏：`robot-ui/src/store/modules/fieldCall.js`（不再连独立 Node）
 - App：`lib/services/field_call_signaling.dart`、`auth_session.dart`
 
-## 5. App 打包示例
+## 5. App 认证与打包
+
+App 与大屏共用 Keycloak Realm 和平台账号，但使用独立的 Public Native
+Client `field-app`，通过 Authorization Code + PKCE(S256) 登录。Android 回调
+URI 固定为 `com.eiop.eiopmobile:/oauthredirect`，与手机 IP 无关。App 不保存
+用户密码，也不使用 Direct Access Grants。
 
 ```powershell
 flutter build apk --release `
   --dart-define=FIELD_CALL_WS=wss://211.137.109.150:4443/ws/field-call `
-  --dart-define=FIELD_CALL_ACCESS_TOKEN=<平台JWT> `
-  --dart-define=FIELD_CALL_LIVEKIT=wss://211.137.109.150:4443/livekit
+  --dart-define=FIELD_CALL_LIVEKIT=wss://211.137.109.150:4443/livekit `
+  --dart-define=KEYCLOAK_URL=https://211.137.109.150:18443 `
+  --dart-define=KEYCLOAK_REALM=iam-auth `
+  --dart-define=KEYCLOAK_CLIENT_ID=field-app `
+  --dart-define=KEYCLOAK_REDIRECT_URI=com.eiop.eiopmobile:/oauthredirect
 ```
 
-后续应将 Mock 登录替换为真实 Keycloak / 平台登录，并把 JWT 写入 `AuthSession`。
+Keycloak 需给现场账号授予 `FIELD_OPERATOR` 角色；BFF 只允许
+`field-app` Token 连接 `/ws/field-call`，不允许访问大屏 REST 和
+`/ws/bigscreen`。
 
 ## 6. 运维注意
 
 - 删除 / 停用独立 Node:6090 与 Demo LiveKit:6880。
 - 大屏构建无需 `VUE_APP_FIELD_CALL_WS`。
+- BFF 配置 `FIELD_CALL_AUTH_CLIENT_ID=field-app`。
+- Keycloak 和 BFF/LiveKit 入口的 HTTPS 证书必须被手机系统信任。
 - 防火墙仍需放行现网 LiveKit UDP 端口。

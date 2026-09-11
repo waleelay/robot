@@ -25,6 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {
         "bigscreen.auth.client-id=bigscreen-web",
+        "bigscreen.auth.field-call-client-id=field-app",
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://iam.example/realms/iam-auth",
         "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://iam.example/realms/iam-auth/certs"
 })
@@ -44,7 +45,8 @@ class BusinessTaskProxyControllerTest {
         when(proxyClient.forwardToManage(any(), eq("/api/v1/management/selection-options/scenes/scene-1/resource-grants")))
                 .thenReturn(ResponseEntity.ok("[]".getBytes()));
 
-        mockMvc.perform(get("/api/bigscreen/business/selection-options/scenes/scene-1/resource-grants").with(jwt()))
+        mockMvc.perform(get("/api/bigscreen/business/selection-options/scenes/scene-1/resource-grants")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
                 .andExpect(status().isOk());
 
         verify(proxyClient).forwardToManage(any(), eq("/api/v1/management/selection-options/scenes/scene-1/resource-grants"));
@@ -55,7 +57,8 @@ class BusinessTaskProxyControllerTest {
         when(proxyClient.forwardToManage(any(), eq("/api/v1/management/selection-options/devices")))
                 .thenReturn(ResponseEntity.ok("[]".getBytes()));
 
-        mockMvc.perform(get("/api/bigscreen/business/selection-options/devices").with(jwt()))
+        mockMvc.perform(get("/api/bigscreen/business/selection-options/devices")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
                 .andExpect(status().isOk());
 
         verify(proxyClient).forwardToManage(any(), eq("/api/v1/management/selection-options/devices"));
@@ -66,7 +69,8 @@ class BusinessTaskProxyControllerTest {
         when(proxyClient.forwardToManage(any(), eq("/api/v1/management/selection-options/workflow-definitions/wf-1")))
                 .thenReturn(ResponseEntity.ok("{}".getBytes()));
 
-        mockMvc.perform(get("/api/bigscreen/business/selection-options/workflow-definitions/wf-1").with(jwt()))
+        mockMvc.perform(get("/api/bigscreen/business/selection-options/workflow-definitions/wf-1")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
                 .andExpect(status().isOk());
 
         verify(proxyClient).forwardToManage(any(), eq("/api/v1/management/selection-options/workflow-definitions/wf-1"));
@@ -74,7 +78,8 @@ class BusinessTaskProxyControllerTest {
 
     @Test
     void rejectsUnknownBusinessPath() throws Exception {
-        mockMvc.perform(get("/api/bigscreen/business/unknown").with(jwt()))
+        mockMvc.perform(get("/api/bigscreen/business/unknown")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
                 .andExpect(status().isNotFound());
 
         verify(proxyClient, never()).forwardToManage(any(), any());
