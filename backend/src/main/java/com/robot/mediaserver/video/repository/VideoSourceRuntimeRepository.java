@@ -18,6 +18,10 @@ import org.springframework.data.repository.query.Param;
  */
 public interface VideoSourceRuntimeRepository extends JpaRepository<VideoSourceRuntime, String> {
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select runtime from VideoSourceRuntime runtime where runtime.runtimeId = :runtimeId")
+    Optional<VideoSourceRuntime> findByIdForUpdate(@Param("runtimeId") String runtimeId);
+
     @Modifying
     @Query(value = """
             insert into media_source_runtime (

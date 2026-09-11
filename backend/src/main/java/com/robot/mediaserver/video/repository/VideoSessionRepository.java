@@ -28,6 +28,17 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
         @Query("select session from VideoSession session where session.sessionId = :sessionId")
         Optional<VideoSession> findByIdForUpdate(@Param("sessionId") String sessionId);
 
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        List<VideoSession> findByRuntimeIdOrderBySessionIdAsc(String runtimeId);
+
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        List<VideoSession> findByRuntimeIdIsNullAndSourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityOrderBySessionIdAsc(
+            VideoSourceType sourceType,
+            String sourceId,
+            String deviceId,
+            VideoChannel channel,
+            VideoQuality quality);
+
         Optional<VideoSession> findFirstByRobotIdAndDeviceIdAndChannelAndQualityAndStatusInOrderByCreatedAtDesc(
             String robotId,
             String deviceId,

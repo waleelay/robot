@@ -28,10 +28,13 @@ import com.robot.mediaserver.video.repository.MediaSessionViewerRepository;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
 import com.robot.mediaserver.video.repository.VideoSourceRuntimeRepository;
 import com.robot.mediaserver.ws.MediaWebSocketPublisher;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.transaction.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +45,8 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 实时视频会话编排服务。
@@ -110,6 +115,10 @@ public class VideoSessionService {
      */
     private final MediaProperties properties;
 
+    private final TransactionTemplate transactionTemplate;
+
+    private final EntityManager entityManager;
+
     /**
      * 构造实时视频会话编排服务。
      *
@@ -130,7 +139,9 @@ public class VideoSessionService {
             MediaWebSocketPublisher webSocketPublisher,
             FileService fileService,
             MediaTrackService mediaTrackService,
-            MediaProperties properties) {
+            MediaProperties properties,
+            PlatformTransactionManager transactionManager,
+            EntityManager entityManager) {
         this.repository = repository;
         this.sourceRuntimeRepository = sourceRuntimeRepository;
         this.viewerRepository = viewerRepository;
@@ -140,6 +151,9 @@ public class VideoSessionService {
         this.fileService = fileService;
         this.mediaTrackService = mediaTrackService;
         this.properties = properties;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.transactionTemplate.setIsolationLevelName("ISOLATION_READ_COMMITTED");
+        this.entityManager = entityManager;
     }
 
     /**
@@ -353,7 +367,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoSessionResponse heartbeat(String sessionId, CurrentUser user) {
-        VideoSession session = requireSession(sessionId);
+        VideoSession session = requireOpenSession(lockSessionRuntime(sessionId));
         addViewer(session, user);
         OffsetDateTime heartbeatAt = now();
         boolean resumeStreaming = session.getStatus() == VideoSessionStatus.IDLE_WAIT && hasPublishedTrack(session);
@@ -382,13 +396,16 @@ public class VideoSessionService {
      * @param user 当前操作用户
      * @return 实时视频会话响应
      */
-    @Transactional
     public VideoSessionResponse stop(String sessionId, CurrentUser user) {
-        VideoSession session = requireSession(sessionId);
+        stopClientRecordingQuietly(sessionId, user.userId(), user.clientId());
+        return transactionTemplate.execute(status -> stopViewer(sessionId, user));
+    }
+
+    private VideoSessionResponse stopViewer(String sessionId, CurrentUser user) {
+        VideoSession session = lockSessionRuntime(sessionId);
         if (session.getStatus() == VideoSessionStatus.CLOSED) {
             return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
         }
-        stopClientRecordingQuietly(sessionId, user.userId(), user.clientId());
         removeViewer(sessionId, user);
         session.setViewerCount(activeViewerCount(sessionId));
         if (session.getViewerCount() == 0 && !holdsRoomForIntercom(session)) {
@@ -413,7 +430,7 @@ public class VideoSessionService {
      */
     @Transactional
     public synchronized IntercomResponse startIntercom(String sessionId, CurrentUser user) {
-        VideoSession session = requireSession(sessionId);
+        VideoSession session = requireOpenSession(lockSessionRuntime(sessionId));
         // 对讲同一时间只能由一个浏览器 client 占用。判断 clientId 可以避免同一用户
         // 开多个页面时互相抢占，心跳超时后 expireIntercom 会释放这些字段。
         if (holdsRoomForIntercom(session)
@@ -451,7 +468,7 @@ public class VideoSessionService {
      */
     @Transactional
     public synchronized IntercomResponse heartbeatIntercom(String sessionId, CurrentUser user) {
-        VideoSession session = requireIntercomOperator(sessionId, user);
+        VideoSession session = requireIntercomOperator(requireOpenSession(lockSessionRuntime(sessionId)), user);
         session.setIntercomHeartbeatAt(now());
         session.setUpdatedAt(now());
         repository.save(session);
@@ -468,7 +485,7 @@ public class VideoSessionService {
      */
     @Transactional
     public synchronized VideoSessionResponse stopIntercom(String sessionId, CurrentUser user) {
-        VideoSession session = requireIntercomOperator(sessionId, user);
+        VideoSession session = requireIntercomOperator(requireOpenSession(lockSessionRuntime(sessionId)), user);
         session.setIntercomStatus(IntercomStatus.STOPPING);
         emit("video.intercom.stopping", session);
         // 先发布 stopping 事件，再清空占用信息。这样前端能看到明确的“正在挂断”
@@ -549,8 +566,9 @@ public class VideoSessionService {
         return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
     }
 
+    @Transactional
     public FileListItemResponse startRecording(String sessionId, CurrentUser user) {
-        VideoSession session = requireSession(sessionId);
+        VideoSession session = lockSessionRuntime(sessionId);
         if (session.getStatus() != VideoSessionStatus.STREAMING && session.getStatus() != VideoSessionStatus.ROOM_READY) {
             throw new IllegalStateException("当前会话未在推流");
         }
@@ -996,18 +1014,52 @@ public class VideoSessionService {
      * @param sessionId 实时视频会话编号
      * @return 需要下发给机器人客户端的停止命令载荷；不需要释放时返回空 Map
      */
-    @Transactional
+    @org.springframework.transaction.annotation.Transactional(
+            isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public Map<String, Object> releaseIdleSession(String sessionId) {
-        VideoSession session = requireSession(sessionId);
-        if (session.getStatus() != VideoSessionStatus.IDLE_WAIT
-                || session.getViewerCount() > 0
-                || holdsRoomForIntercom(session)) {
+        VideoSession snapshot = requireSession(sessionId);
+        if (snapshot.getStatus() != VideoSessionStatus.IDLE_WAIT) {
             return Map.of();
         }
-        // 空闲释放是两阶段的：先把会话状态关掉并删除 LiveKit Room，
-        // 再把 stop payload 返回给控制服务，由控制服务通知机器人停止本地推流进程。
-        transition(session, VideoSessionStatus.STOPPING, "video.session.stopping", session);
-        mediaTrackService.unpublish(session);
+
+        VideoSession session = lockSessionRuntime(sessionId);
+        if (session.getStatus() != VideoSessionStatus.IDLE_WAIT) {
+            return Map.of();
+        }
+        List<VideoSession> roomSessions = new ArrayList<>(
+                repository.findByRuntimeIdOrderBySessionIdAsc(session.getRuntimeId()));
+        roomSessions.addAll(repository
+                .findByRuntimeIdIsNullAndSourceTypeAndSourceIdAndDeviceIdAndChannelAndQualityOrderBySessionIdAsc(
+                        session.getSourceType(),
+                        session.getSourceId(),
+                        session.getDeviceId(),
+                        session.getChannel(),
+                        session.getQuality()));
+        int targetViewerCount = activeViewerCount(sessionId);
+        session.setViewerCount(targetViewerCount);
+        if (targetViewerCount > 0
+                || holdsRoomForIntercom(session)
+                || fileService.hasActiveLiveRecording(sessionId)) {
+            repository.save(session);
+            return Map.of();
+        }
+
+        OffsetDateTime idleBefore = now().minusSeconds(properties.getSession().getIdleReleaseDelaySeconds());
+        boolean roomInUse = roomSessions.stream()
+                .filter(candidate -> !candidate.getSessionId().equals(sessionId))
+                .anyMatch(candidate -> activeViewerCount(candidate.getSessionId()) > 0
+                        || holdsRoomForIntercom(candidate)
+                        || fileService.hasActiveLiveRecording(candidate.getSessionId())
+                        || startRequestInFlight(candidate)
+                        || !idleDelayElapsed(candidate, idleBefore));
+        if (roomInUse) {
+            closeSessionRecord(session);
+            return Map.of();
+        }
+
+        roomSessions.stream()
+                .filter(candidate -> candidate.getStatus() != VideoSessionStatus.CLOSED)
+                .forEach(this::closeSessionRecord);
         Map<String, Object> stopPayload = Map.of(
                 "robotId", session.getRobotId(),
                 "sourceType", session.getSourceType().name(),
@@ -1017,9 +1069,6 @@ public class VideoSessionService {
                 "commandId", "cmd_" + compactUuid(),
                 "roomName", session.getRoomName());
         liveKitRoomService.deleteRoom(session.getRoomName());
-        session.setEndedAt(now());
-        transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
-        repository.save(session);
         return stopPayload;
     }
 
@@ -1170,8 +1219,44 @@ public class VideoSessionService {
                 .orElseThrow(() -> new IllegalArgumentException("未找到视频会话：" + sessionId));
     }
 
+    /**
+     * 按 runtime -> session 的固定顺序锁定会话所属 Room。
+     *
+     * <p>旧会话没有 runtimeId 时在原位补齐；如果并发切换已改变 runtime，调用方应重试，
+     * 不能在持有旧 runtime 锁时继续修改新 Room。</p>
+     */
+    private VideoSession lockSessionRuntime(String sessionId) {
+        VideoSession snapshot = requireSession(sessionId);
+        VideoSourceRuntime runtime;
+        if (snapshot.getRuntimeId() == null || snapshot.getRuntimeId().isBlank()) {
+            runtime = lockSourceRuntime(
+                    snapshot.getSourceType(),
+                    snapshot.getSourceId(),
+                    snapshot.getDeviceId(),
+                    snapshot.getChannel(),
+                    snapshot.getQuality(),
+                    roomName(snapshot));
+        } else {
+            runtime = sourceRuntimeRepository.findByIdForUpdate(snapshot.getRuntimeId())
+                    .orElseThrow(() -> new IllegalStateException("未找到媒体源运行态：" + snapshot.getRuntimeId()));
+        }
+        VideoSession session = requireSessionForUpdate(sessionId);
+        entityManager.refresh(session, LockModeType.PESSIMISTIC_WRITE);
+        if (session.getRuntimeId() != null
+                && !session.getRuntimeId().isBlank()
+                && !Objects.equals(session.getRuntimeId(), runtime.getRuntimeId())) {
+            throw new IllegalStateException("视频会话运行态已变化，请重试");
+        }
+        session.setRuntimeId(runtime.getRuntimeId());
+        session.setRoomName(runtime.getRoomName());
+        return session;
+    }
+
     private VideoSession requireIntercomOperator(String sessionId, CurrentUser user) {
-        VideoSession session = requireSession(sessionId);
+        return requireIntercomOperator(requireSession(sessionId), user);
+    }
+
+    private VideoSession requireIntercomOperator(VideoSession session, CurrentUser user) {
         if (!Objects.equals(session.getIntercomOperatorId(), user.userId())
                 || !Objects.equals(session.getIntercomClientId(), user.clientId())) {
             throw new IllegalStateException("当前用户未持有对讲权限");
@@ -1179,9 +1264,39 @@ public class VideoSessionService {
         return session;
     }
 
+    private VideoSession requireOpenSession(VideoSession session) {
+        if (session.getStatus() == VideoSessionStatus.CLOSED
+                || session.getStatus() == VideoSessionStatus.STOPPING) {
+            throw new IllegalStateException("视频会话已关闭");
+        }
+        return session;
+    }
+
     private boolean holdsRoomForIntercom(VideoSession session) {
         return session.getIntercomStatus() == IntercomStatus.STARTING
                 || session.getIntercomStatus() == IntercomStatus.ACTIVE;
+    }
+
+    private boolean idleDelayElapsed(VideoSession session, OffsetDateTime idleBefore) {
+        if (session.getStatus() == VideoSessionStatus.CLOSED) {
+            return true;
+        }
+        OffsetDateTime idleAt = session.getIdleSince() != null
+                ? session.getIdleSince()
+                : session.getUpdatedAt() != null ? session.getUpdatedAt() : session.getCreatedAt();
+        return idleAt != null && !idleAt.isAfter(idleBefore);
+    }
+
+    private void closeSessionRecord(VideoSession session) {
+        if (session.getStatus() == VideoSessionStatus.CLOSED) {
+            return;
+        }
+        transition(session, VideoSessionStatus.STOPPING, "video.session.stopping", session);
+        mediaTrackService.unpublish(session);
+        session.setViewerCount(activeViewerCount(session.getSessionId()));
+        session.setEndedAt(now());
+        transition(session, VideoSessionStatus.CLOSED, "video.session.closed", session);
+        repository.save(session);
     }
 
     private boolean isLateVideoStartStatus(VideoSession session, String status) {

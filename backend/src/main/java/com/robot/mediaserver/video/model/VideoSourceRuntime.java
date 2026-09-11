@@ -16,8 +16,8 @@ import java.time.OffsetDateTime;
 /**
  * 单个媒体源的唯一运行态记录。
  *
- * <p>本阶段只用它串行化同源会话创建并固定 Room 所有权；Publisher 状态、
- * generation 和引用释放将在后续整改项中迁移。</p>
+ * <p>用于串行化同源会话创建、固定 Room 所有权，并在释放前聚合同 Room 引用。
+ * Publisher generation 和状态事实仍由后续整改项迁移。</p>
  */
 @Entity
 @Table(

@@ -40,7 +40,7 @@ src/main/java/com/robot/mediaserver/
 
 `VideoSourceRuntime` 以 `sourceType + sourceId + deviceId + channel + quality` 建立数据库唯一约束；创建或复用会话时先原子创建并锁定该记录，再查询或写入 `VideoSession`，避免多 Media 实例同时“先查后插”产生第二个有效会话。`VideoSession.runtimeId` 在历史数据迁移期间允许为空，历史会话首次被复用时会原位关联 runtime。固定摄像头用 `sourceType=FIXED_CAMERA`、`sourceId=cameraId`；`robotId` 当前仍传 `cameraId` 仅为兼容非空约束。
 
-当前 runtime 只承担同源创建串行化和 Room 名称所有权。Room 引用计数、安全释放、Publisher generation 与设备状态协议仍按后续整改项迁移，不能据此提前删除共享 Room。生产部署前必须备份 `media_video_session`，并执行 [`deploy/database/20260911-add-media-source-runtime.sql`](../deploy/database/20260911-add-media-source-runtime.sql)；应用回滚时保留新增的 `media_source_runtime` 表和 nullable `runtime_id` 列，不做破坏性回退。
+当前 runtime 承担同源创建串行化、Room 名称所有权和释放互斥。释放任务在 runtime 行锁内聚合同源全部 session（含尚未关联 runtime 的历史会话）的 viewer、对讲、LiveKit Egress 录像、启动在途状态和空闲期限；仅全部无占用且均已到期时删除 Room 并返回一次 stop 载荷。Publisher generation、LiveKit Track 事实对账和设备状态协议仍按后续整改项迁移。生产部署前必须备份 `media_video_session`，并执行 [`deploy/database/20260911-add-media-source-runtime.sql`](../deploy/database/20260911-add-media-source-runtime.sql)；应用回滚时保留新增的 `media_source_runtime` 表和 nullable `runtime_id` 列，不做破坏性回退。
 
 ### `file/`
 

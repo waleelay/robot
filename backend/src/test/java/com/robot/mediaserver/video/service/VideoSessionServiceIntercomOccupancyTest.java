@@ -31,6 +31,7 @@ import com.robot.mediaserver.video.repository.MediaSessionViewerRepository;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
 import com.robot.mediaserver.video.repository.VideoSourceRuntimeRepository;
 import com.robot.mediaserver.ws.MediaWebSocketPublisher;
+import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -38,6 +39,8 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.mockito.ArgumentCaptor;
 
 class VideoSessionServiceIntercomOccupancyTest {
@@ -50,6 +53,8 @@ class VideoSessionServiceIntercomOccupancyTest {
     private final MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
     private final FileService fileService = mock(FileService.class);
     private final MediaTrackService mediaTrackService = mock(MediaTrackService.class);
+    private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+    private final EntityManager entityManager = mock(EntityManager.class);
     private final MediaProperties properties = new MediaProperties();
     private VideoSessionService service;
     private VideoSession target;
@@ -65,7 +70,10 @@ class VideoSessionServiceIntercomOccupancyTest {
                 publisher,
                 fileService,
                 mediaTrackService,
-                properties);
+                properties,
+                transactionManager,
+                entityManager);
+        when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         when(sourceRuntimeRepository.insertIfAbsent(
                 anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(1);
@@ -339,6 +347,32 @@ class VideoSessionServiceIntercomOccupancyTest {
     }
 
     @Test
+    void heartbeatDoesNotReviveClosedSession() {
+        target.setStatus(VideoSessionStatus.CLOSED);
+
+        assertThatThrownBy(() -> service.heartbeat("vs-target", operator("operator-1", "web-1")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("视频会话已关闭");
+
+        verifyNoInteractions(viewerRepository);
+    }
+
+    @Test
+    void stopDoesNotReviveSessionClosedWhileWaitingForRuntimeLock() {
+        VideoSession staleSnapshot = session(
+                "vs-target", "robot-001", null, null, IntercomStatus.IDLE);
+        staleSnapshot.setStatus(VideoSessionStatus.STREAMING);
+        target.setStatus(VideoSessionStatus.CLOSED);
+        when(repository.findById("vs-target")).thenReturn(Optional.of(staleSnapshot));
+
+        var response = service.stop("vs-target", operator("operator-1", "web-1"));
+
+        assertThat(response.status()).isEqualTo(VideoSessionStatus.CLOSED);
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.CLOSED);
+        verifyNoInteractions(viewerRepository);
+    }
+
+    @Test
     void restartsInterruptedSessionByLastClientStatusInsteadOfViewerHeartbeat() {
         target.setStatus(VideoSessionStatus.INTERRUPTED);
         target.setViewerCount(1);
@@ -430,7 +464,12 @@ class VideoSessionServiceIntercomOccupancyTest {
     void startsRecordingWithActualLiveKitTrackSid() {
         target.setStatus(VideoSessionStatus.STREAMING);
         target.setRoomName("media.robot-002.camera01.visible.auto");
+        target.setRuntimeId("runtime-test");
         target.setTrackSid("TR_vs_placeholder");
+        VideoSourceRuntime runtime = new VideoSourceRuntime();
+        runtime.setRuntimeId("runtime-test");
+        runtime.setRoomName(target.getRoomName());
+        when(sourceRuntimeRepository.findByIdForUpdate("runtime-test")).thenReturn(Optional.of(runtime));
         CurrentUser user = operator("operator-1", "web-1");
         when(liveKitRoomService.resolveActiveVideoTrackSid(target.getRoomName(), target.getTrackSid()))
                 .thenReturn(Optional.of("TR_actual"));
@@ -453,10 +492,18 @@ class VideoSessionServiceIntercomOccupancyTest {
         VideoSession session = new VideoSession();
         session.setSessionId(sessionId);
         session.setRobotId(robotId);
+        session.setSourceType(VideoSourceType.ROBOT_CAMERA);
+        session.setSourceId(robotId);
         session.setDeviceId("camera01");
+        session.setChannel(VideoChannel.visible);
+        session.setQuality(VideoQuality.sub);
+        session.setRoomName("media." + robotId + ".camera01.visible.sub");
+        session.setStatus(VideoSessionStatus.INIT);
         session.setIntercomStatus(status);
         session.setIntercomOperatorId(operatorId);
         session.setIntercomClientId(clientId);
+        session.setCreatedAt(OffsetDateTime.now());
+        session.setUpdatedAt(OffsetDateTime.now());
         return session;
     }
 }
