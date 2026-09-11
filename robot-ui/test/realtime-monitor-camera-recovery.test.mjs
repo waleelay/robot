@@ -54,6 +54,78 @@ function loadMediaApi(request) {
   return exports
 }
 
+function loadWebsocketRobot(apiOverrides = {}) {
+  const compiled = require('@babel/core').transformSync(read('store/modules/websocket-robot.js'), {
+    babelrc: false,
+    configFile: false,
+    plugins: ['@babel/plugin-transform-modules-commonjs']
+  }).code
+  const exports = {}
+  const api = {
+    createVideoSession: async () => ({}),
+    getActiveLiveRecording: async () => null,
+    stopVideoSession: async () => ({ status: 'CLOSED', viewerCount: 0 }),
+    mediaClientId: 'test-client',
+    ...apiOverrides
+  }
+  vm.runInNewContext(compiled, {
+    exports,
+    console,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    requestAnimationFrame: callback => setTimeout(callback, 0),
+    cancelAnimationFrame: clearTimeout,
+    window: { localStorage: { getItem: () => null, setItem() {} } },
+    document: { getElementById: () => null, createElement: () => ({}) },
+    require: name => {
+      if (name === '@/store') return { dispatch() {}, state: {} }
+      if (name === 'element-ui') return { Message: { warning() {}, error() {}, success() {} } }
+      if (name === 'livekit-client') {
+        return {
+          Room: class {},
+          RoomEvent: {},
+          Track: { Kind: {}, Source: {} },
+          VideoQuality: {}
+        }
+      }
+      if (name === '../../api/media') return api
+      if (name === 'vue') return { set(target, key, value) { target[key] = value } }
+      if (name === '../../utils') return { errorMessage: error => String(error) }
+      if (name === '@/auth') return { bearerToken: () => '' }
+      if (name.includes('prefer-live-robot-fields')) {
+        return {
+          overlayLiveRobotRuntimeFields: value => value,
+          mergeRobotBaseInfo: value => value,
+          normalizeRobotControlMode: value => value
+        }
+      }
+      if (name.includes('livekit-user-pause')) return { attachTrackRespectingUserPause: () => true }
+      if (name.includes('media-websocket-reconnect')) {
+        return {
+          mediaReconnectDelay: () => 0,
+          isSustainedAuthorizationFailure: () => false,
+          shouldReconnectMedia: () => false
+        }
+      }
+      return {}
+    }
+  })
+  return exports.default
+}
+
+function cameraActionContext(actions, state) {
+  const commit = (type, payload) => {
+    if (type === 'setCamera') state.cameras[payload.key] = payload
+    if (type === 'setActiveCamera') state.activeCameras[payload.key] = payload
+    if (type === 'removeActiveCamera') delete state.activeCameras[payload]
+  }
+  const context = { state, commit }
+  context.dispatch = (type, payload) => actions[type](context, payload)
+  return context
+}
+
 test('首次自动播放排除固定摄像头，并在请求前按实际宫格容量截断', async () => {
   const methods = componentMethods('views/bi/patrol/monitor/first/TaskListTree.vue')
   const robots = Array.from({ length: 11 }, (_, index) => ({
@@ -283,4 +355,112 @@ test('摄像头操作使用在途表，新 session 不复用旧 Room', () => {
   assert.match(source, /stored\.session\.sessionId === session\.sessionId/)
   assert.match(source, /stored\.session\.roomName === session\.roomName/)
   assert.doesNotMatch(source, /setTimeout\(\(\) => \{\s*camera\.restarting = false/)
+})
+
+test('start 返回新 session 时必须重连 Room，不能沿用旧 Room', async () => {
+  const oldRoom = { state: 'connected' }
+  const newRoom = { state: 'connected' }
+  const module = loadWebsocketRobot({
+    createVideoSession: async () => ({
+      sessionId: 'session-new',
+      roomName: 'room-new',
+      status: 'STREAMING',
+      viewerCount: 1
+    })
+  })
+  const camera = {
+    key: 'camera-1',
+    deviceId: 'camera-1',
+    quality: 'sub',
+    watching: true,
+    stopped: false,
+    room: oldRoom,
+    session: { sessionId: 'session-old', roomName: 'room-old' },
+    attachTargets: {}
+  }
+  const state = {
+    cameras: { [camera.key]: camera },
+    activeCameras: {},
+    stoppedSessionIds: new Set(),
+    prefixId: ''
+  }
+  const context = cameraActionContext(module.actions, state)
+  let connects = 0
+  context.dispatch = async (type, payload) => {
+    if (type === 'connectLiveKit') {
+      connects += 1
+      payload.camera.room = newRoom
+      context.commit('setCamera', { ...payload.camera })
+      return
+    }
+    return module.actions[type](context, payload)
+  }
+
+  await module.actions.performStartCamera(context, {
+    robot: { robotId: 'robot-1', status: 'online' },
+    camera
+  })
+
+  assert.equal(connects, 1)
+  assert.equal(state.cameras[camera.key].session.sessionId, 'session-new')
+  assert.equal(state.cameras[camera.key].session.roomName, 'room-new')
+  assert.equal(state.cameras[camera.key].room, newRoom)
+})
+
+test('启动响应晚到且期间 stop/start 时，最终只保留第二次启动的新会话', async () => {
+  let releaseFirstStart
+  const firstStart = new Promise(resolve => { releaseFirstStart = resolve })
+  const sessions = [
+    firstStart,
+    Promise.resolve({ sessionId: 'session-2', roomName: 'room-2', status: 'STREAMING', viewerCount: 1 })
+  ]
+  const stoppedSessions = []
+  let createCalls = 0
+  const module = loadWebsocketRobot({
+    createVideoSession: async () => sessions[createCalls++],
+    stopVideoSession: async sessionId => {
+      stoppedSessions.push(sessionId)
+      return { status: 'CLOSED', viewerCount: 0 }
+    }
+  })
+  const camera = {
+    key: 'camera-1',
+    robotId: 'robot-1',
+    deviceId: 'camera-1',
+    quality: 'sub',
+    watching: false,
+    stopped: true,
+    attachTargets: {}
+  }
+  const state = {
+    cameras: { [camera.key]: camera },
+    activeCameras: {},
+    stoppedSessionIds: new Set(),
+    prefixId: ''
+  }
+  const context = cameraActionContext(module.actions, state)
+  const originalDispatch = context.dispatch
+  context.dispatch = async (type, payload) => {
+    if (type === 'connectLiveKit') {
+      payload.camera.room = { state: 'connected', disconnect: async () => {} }
+      context.commit('setCamera', { ...payload.camera })
+      return
+    }
+    return originalDispatch(type, payload)
+  }
+  const payload = { robot: { robotId: 'robot-1', status: 'online' }, camera }
+
+  const starting = module.actions.startCamera(context, payload)
+  await Promise.resolve()
+  const stopping = module.actions.stopCamera(context, { key: camera.key })
+  const startingAgain = module.actions.startCamera(context, payload)
+  releaseFirstStart({ sessionId: 'session-1', roomName: 'room-1', status: 'STREAMING', viewerCount: 1 })
+  await Promise.all([starting, stopping, startingAgain])
+
+  assert.equal(createCalls, 2)
+  assert.deepEqual(stoppedSessions, ['session-1'])
+  assert.equal(state.cameras[camera.key].session.sessionId, 'session-2')
+  assert.equal(state.cameras[camera.key].session.roomName, 'room-2')
+  assert.equal(state.cameras[camera.key].watching, true)
+  assert.equal(state.cameras[camera.key].stopped, false)
 })
