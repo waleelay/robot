@@ -6,6 +6,12 @@ export function isBodyCamera(camera) {
   return type === 'body' || name === '本体'
 }
 
+/** 移动装备的视频媒体可达性：故障仍在线，只有在线或故障状态允许观看。 */
+export function isRobotMediaReachable(robotOrStatus) {
+  const status = typeof robotOrStatus === 'object' ? robotOrStatus?.status : robotOrStatus
+  return status === 'online' || status === 'fault'
+}
+
 /** 装备相机列表：优先 robot.cameras，否则从全局索引按 robotId 取 */
 export function listRobotCameras(robot, camerasIndex) {
   const fromRobot = Array.isArray(robot && robot.cameras) ? robot.cameras.filter(Boolean) : []

@@ -26,6 +26,7 @@ import { bearerToken } from '@/auth'
 import { overlayLiveRobotRuntimeFields, mergeRobotBaseInfo, normalizeRobotControlMode } from '../../views/bi/js/utils/prefer-live-robot-fields'
 import { attachTrackRespectingUserPause } from '../../views/bi/js/utils/livekit-user-pause'
 import { mediaReconnectDelay, isSustainedAuthorizationFailure, shouldReconnectMedia } from './media-websocket-reconnect'
+import { isRobotMediaReachable } from '../../views/bi/js/utils/pick-default-camera'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 const FIXED_CAMERA_TRACK_WAIT_MS = 15000
@@ -426,6 +427,7 @@ function withCallReceipt(call) {
 function toRobotState(robot) {
   const controlMode = normalizeRobotControlMode(robot.controlMode)
   const fixedCamera = isFixedCameraEquipment(robot, robot.cameras || [])
+  const mediaReachable = isRobotMediaReachable(robot)
   return Object.assign({}, robot, {
     name: robot.name || robot.robotId,
     type: robot.type || null,
@@ -442,7 +444,7 @@ function toRobotState(robot) {
         groupType: camera.groupType || 'body',
         groupTypeName: groupTypeText(camera.groupType),
         quality: camera.quality || 'sub',
-        status: fixedCamera ? (camera.status || '') : (robot.status === 'online' ? (camera.status || '') : 'offline')
+        status: fixedCamera ? (camera.status || '') : (mediaReachable ? (camera.status || '') : 'offline')
       }
     ))
   })
@@ -1280,6 +1282,7 @@ const actions = {
     if (index >= 0) {
       const existing = state.robots[index]
       incoming = mergeRobotBaseInfo(existing, incoming, true)
+      const mediaReachable = isRobotMediaReachable(incoming)
       incoming.cameras = (incoming.cameras || []).map(camera => {
         const old = state.cameras[camera.key]
         if (!old) return camera
@@ -1290,14 +1293,14 @@ const actions = {
         }
         return Object.assign(camera, {
           session: old.session,
-          room: incoming.status === 'online' ? old.room : null,
-          hasVideo: incoming.status === 'online' ? old.hasVideo : false,
-          latencyMs: incoming.status === 'online' ? old.latencyMs : null,
-          latencyLevel: incoming.status === 'online' ? old.latencyLevel : 'unknown',
-          statsTimer: incoming.status === 'online' ? old.statsTimer : null,
-          statsTrack: incoming.status === 'online' ? old.statsTrack : null,
-          statsRoom: incoming.status === 'online' ? old.statsRoom : null,
-          status: incoming.status === 'online' ? old.status : 'offline',
+          room: mediaReachable ? old.room : null,
+          hasVideo: mediaReachable ? old.hasVideo : false,
+          latencyMs: mediaReachable ? old.latencyMs : null,
+          latencyLevel: mediaReachable ? old.latencyLevel : 'unknown',
+          statsTimer: mediaReachable ? old.statsTimer : null,
+          statsTrack: mediaReachable ? old.statsTrack : null,
+          statsRoom: mediaReachable ? old.statsRoom : null,
+          status: mediaReachable ? old.status : 'offline',
           viewerCount: old.viewerCount,
           watching: old.watching,
           hasAudio: old.hasAudio,
@@ -1607,8 +1610,10 @@ const actions = {
         return null
       }
       // UNKNOWN 不提前拒绝，由本次启动时的真实 RTSP 探测给出最终结果。
-    } else if (robot.status !== 'online') {
-      if (throwOnError) throw new Error('装备当前离线')
+    } else if (!isRobotMediaReachable(robot)) {
+      const message = '装备当前离线，无法播放'
+      Message.warning(message)
+      if (throwOnError) throw new Error(message)
       return null
     }
     const hadReusableRoom = liveKitRoomReusable(camera1)

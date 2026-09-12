@@ -9,6 +9,9 @@ const read = path => readFileSync(new URL('../src/' + path, import.meta.url), 'u
 const cameraHelpers = await import('data:text/javascript;base64,' + Buffer.from(
   read('views/bi/js/utils/pick-default-camera.js')
 ).toString('base64'))
+const robotStateHelpers = await import('data:text/javascript;base64,' + Buffer.from(
+  read('views/bi/js/utils/prefer-live-robot-fields.js')
+).toString('base64'))
 
 function componentMethods(path) {
   const source = read(path).split('<script>')[1].split('</script>')[0]
@@ -94,13 +97,8 @@ function loadWebsocketRobot(apiOverrides = {}) {
       if (name === 'vue') return { set(target, key, value) { target[key] = value } }
       if (name === '../../utils') return { errorMessage: error => String(error) }
       if (name === '@/auth') return { bearerToken: () => '' }
-      if (name.includes('prefer-live-robot-fields')) {
-        return {
-          overlayLiveRobotRuntimeFields: value => value,
-          mergeRobotBaseInfo: value => value,
-          normalizeRobotControlMode: value => value
-        }
-      }
+      if (name.includes('prefer-live-robot-fields')) return robotStateHelpers
+      if (name.includes('pick-default-camera')) return cameraHelpers
       if (name.includes('livekit-user-pause')) return { attachTrackRespectingUserPause: () => true }
       if (name.includes('media-websocket-reconnect')) {
         return {
@@ -157,6 +155,97 @@ test('首次自动播放排除固定摄像头，并在请求前按实际宫格�
   assert.equal(context.splitType, 9)
   assert.equal(started.length, 9)
   assert.equal(started.includes('fixed-1'), false)
+})
+
+test('移动装备视频可达性明确允许故障状态并拒绝离线或未知状态', () => {
+  assert.equal(cameraHelpers.isRobotMediaReachable('online'), true)
+  assert.equal(cameraHelpers.isRobotMediaReachable({ status: 'fault' }), true)
+  assert.equal(cameraHelpers.isRobotMediaReachable('offline'), false)
+  assert.equal(cameraHelpers.isRobotMediaReachable(''), false)
+})
+
+test('故障装备允许首次启动视频会话', async () => {
+  let createCalls = 0
+  const module = loadWebsocketRobot({
+    createVideoSession: async () => {
+      createCalls += 1
+      return { sessionId: 'session-fault', roomName: 'room-fault', status: 'STREAMING', viewerCount: 1 }
+    }
+  })
+  const camera = {
+    key: 'camera-fault',
+    robotId: 'robot-fault',
+    deviceId: 'camera-fault',
+    quality: 'sub',
+    attachTargets: {}
+  }
+  const state = {
+    cameras: { [camera.key]: camera },
+    activeCameras: {},
+    stoppedSessionIds: new Set(),
+    prefixId: ''
+  }
+  const context = cameraActionContext(module.actions, state)
+  const originalDispatch = context.dispatch
+  context.dispatch = async (type, payload) => {
+    if (type === 'connectLiveKit') {
+      payload.camera.room = { state: 'connected' }
+      context.commit('setCamera', { ...payload.camera })
+      return
+    }
+    return originalDispatch(type, payload)
+  }
+
+  const result = await module.actions.performStartCamera(context, {
+    robot: { robotId: 'robot-fault', status: 'fault' },
+    camera
+  })
+
+  assert.equal(createCalls, 1)
+  assert.equal(result.session.sessionId, 'session-fault')
+  assert.equal(state.activeCameras[camera.key].robot.status, 'fault')
+})
+
+test('装备从在线变为故障时保留正在播放的 Room 和媒体状态', () => {
+  const module = loadWebsocketRobot()
+  const room = { disconnect() { throw new Error('故障状态不应断开 Room') } }
+  const camera = {
+    key: 'robot-1-camera-1-camera-1',
+    robotId: 'robot-1',
+    deviceId: 'camera-1',
+    cameraId: 'camera-1',
+    status: 'STREAMING',
+    room,
+    hasVideo: true,
+    latencyMs: 42,
+    latencyLevel: 'good',
+    watching: true
+  }
+  const state = {
+    robots: [{ robotId: 'robot-1', status: 'online', cameras: [camera] }],
+    cameras: { [camera.key]: camera }
+  }
+  const commit = (type, payload) => {
+    if (type === 'setCameras') state.cameras = payload
+    if (type === 'updateRobot') state.robots = [payload]
+  }
+  const dispatch = () => Promise.resolve()
+
+  module.actions.syncRobotEvent({ state, commit, dispatch }, {
+    event: 'robot.state',
+    data: {
+      robotId: 'robot-1',
+      status: 'fault',
+      statusChangedAt: '2026-09-12T12:00:01Z',
+      cameras: [{ deviceId: 'camera-1', cameraId: 'camera-1', status: 'online' }]
+    }
+  })
+
+  assert.equal(state.robots[0].status, 'fault')
+  assert.equal(state.cameras[camera.key].room, room)
+  assert.equal(state.cameras[camera.key].hasVideo, true)
+  assert.equal(state.cameras[camera.key].status, 'STREAMING')
+  assert.equal(state.cameras[camera.key].latencyMs, 42)
 })
 
 test('原宫格中的固定摄像头恢复在线后只重建一次会话', async () => {

@@ -47,11 +47,11 @@
                 class="item flx-justify-between"
                 :title="pickDefaultCamera(item, cameras) ? undefined : '暂无视频源'"
                 :class="{ 'is-active': isRobotChecked(item.robotId) }"
-                :draggable="!isRobotChecked(item.robotId) && item.status !== 'offline'"
+                :draggable="!isRobotChecked(item.robotId) && isRobotMediaReachable(item)"
                 @dragstart="onDragStart($event, item, 'equipmentListComponent')"
                 @dragend="onDragEnd"
-                @click="item.status !== 'offline' ? handleClickRobot(item) : ''"
-                :style="{ cursor: item.status === 'offline' ? 'not-allowed' : (isRobotChecked(item.robotId) ? 'pointer' : 'grab') }"
+                @click="isRobotMediaReachable(item) ? handleClickRobot(item) : ''"
+                :style="{ cursor: isRobotMediaReachable(item) ? (isRobotChecked(item.robotId) ? 'pointer' : 'grab') : 'not-allowed' }"
               >
                 <!-- @click="handleSelectEquipment(item)" -->
                 <div class="flx-center">
@@ -213,7 +213,7 @@ import { onDragStart, onDragEnd } from '../../../../../store/modules/dragVideo';
 import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
 import { getDescArr } from '../../../../../utils';
 import Empty from '../../../components/Empty.vue';
-import { pickDefaultCamera, isFixedCameraRobot } from '../../../js/utils/pick-default-camera';
+import { pickDefaultCamera, isFixedCameraRobot, isRobotMediaReachable } from '../../../js/utils/pick-default-camera';
 import { isDeviceAssociatedTaskStatus } from '../../business/execution-status'
 export default {
   name: 'TaskListTree',
@@ -311,6 +311,7 @@ export default {
     ...mapActions('dragVideo', ['setSplitType']),
     ...mapActions('websocketExtraData', ['loadTaskFixedCameras']),
     pickDefaultCamera,
+    isRobotMediaReachable,
     /**
      * expectedDurationSeconds（秒）→ 时分秒展示
      * - 不足 60 秒：只显示秒
@@ -492,7 +493,7 @@ export default {
       this.$router.replace({ path: this.$route.path, query }).catch(() => {})
     },
     isRobotOnline(robotId) {
-      return this.resolveRobotStatus(robotId) !== 'offline'
+      return isRobotMediaReachable(this.resolveRobotStatus(robotId))
     },
     isRobotFault(robotOrId) {
       const status = typeof robotOrId === 'object'
@@ -649,7 +650,7 @@ export default {
       const robot = this.getTaskEquipmentRobot(equipment)
       if (!robot?.robotId) return false
       if (this.isRobotChecked(robot.robotId)) return false
-      return this.getTaskEquipmentStatus(equipment) !== 'offline'
+      return isRobotMediaReachable(this.getTaskEquipmentStatus(equipment))
     },
     onTaskEquipmentDragStart(event, equipment) {
       const robot = this.getTaskEquipmentRobot(equipment)
@@ -685,7 +686,7 @@ export default {
           robotId: item.robotId
         }
         // 在线判定以实时推送（robot.state / 全景事件）为准
-        if (status !== 'offline') {
+        if (isRobotMediaReachable(status)) {
           onlineList.push(robot)
         } else {
           offlineList.push(robot)

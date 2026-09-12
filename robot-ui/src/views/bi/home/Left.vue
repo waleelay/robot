@@ -123,7 +123,7 @@ import { mapActions, mapState } from 'vuex';
 import PieChart from './PieChart.vue';
 import VideoBox from '../components/modal/VideoBox.vue';
 import EquipmentScreenSelect from './EquipmentScreenSelect.vue';
-import { pickDefaultCamera, isBodyCamera, isFixedCameraRobot } from '../js/utils/pick-default-camera';
+import { pickDefaultCamera, isBodyCamera, isFixedCameraRobot, isRobotMediaReachable } from '../js/utils/pick-default-camera';
 export default {
   name: 'BiIndexLeft',
   components: { PieChart, VideoBox, EquipmentScreenSelect },
@@ -152,7 +152,7 @@ export default {
       return (this.robots || []).filter(robot => {
         if (isFixedCameraRobot(robot)) return false
         const status = robot.status || this.robotBaseInfo?.[robot.robotId]?.status
-        return status === 'online' || status === 'fault'
+        return isRobotMediaReachable(status)
       })
     },
     /** 固定摄像头：与装备平级展示，按可播状态决定是否可选 */
