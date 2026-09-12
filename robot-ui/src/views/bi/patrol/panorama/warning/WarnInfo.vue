@@ -142,7 +142,7 @@
                   </div>
                   <div class="item flx-justify-between mt16" style="align-items: flex-start">
                     <span class="name" style="width: 75px">告警内容：</span>
-                    <span class="value flex1 tar">{{ details.content || details.title }}</span>
+                    <span class="value flex1 tar">{{ details.content || '-' }}</span>
                   </div>
                   <div class="item flx-justify-between mt16">
                     <span class="name">告警类型：</span>

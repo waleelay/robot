@@ -67,6 +67,18 @@ test('两个告警弹窗的稍后处置均只关闭弹窗', () => {
   })
 })
 
+test('告警弹窗统一展示管理端 content 字段而不回退 title', () => {
+  const files = [
+    '../src/views/bi/patrol/panorama/warning/WarnInfo.vue',
+    '../src/views/bi/patrol/panorama/warning/WarningBatch.vue'
+  ]
+  files.forEach(file => {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8')
+    assert.match(source, /告警内容：[\s\S]{0,180}details\.content \|\| '-'/)
+    assert.doesNotMatch(source, /告警内容：[\s\S]{0,180}details\.title/)
+  })
+})
+
 test('工作流告警弹窗只消费 BFF 推送，不在前端查询或定时重试', () => {
   const source = readFileSync(new URL(
     '../src/views/bi/patrol/panorama/warning/WarnInfo.vue', import.meta.url

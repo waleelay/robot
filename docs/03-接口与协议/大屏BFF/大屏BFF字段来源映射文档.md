@@ -264,6 +264,7 @@ Overview 不返回 `devices[].task[]`。前端按 `tasks[].equipmentList[].robot
 |---|---|---|---|
 | `alarmId` | 告警 ID | 管理端 | `AlarmRecordResponse.id`，兼容 `alarmId/alarmCode` |
 | `title` | 告警标题 | 管理端 | `AlarmRecordResponse.title`，兼容 `alarmName` |
+| `content` | 告警内容 | 管理端 | `AlarmRecordResponse.content`；弹窗不使用 `title` 代替，空值显示 `-` |
 | `categoryName` | 告警类型中文名 | 管理端 + BFF 转换 | `AlarmRecordResponse.alarmType`，兼容 `category` |
 | `level` | 告警等级编码 | 管理端 + BFF 转换 | `AlarmRecordResponse.severity`，兼容 `level` |
 | `levelName` | 告警等级中文名 | BFF 转换 | 由 `level` 转 `高风险/中风险/低风险` |

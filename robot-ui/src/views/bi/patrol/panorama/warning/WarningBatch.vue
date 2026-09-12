@@ -82,7 +82,7 @@
                   </div>
                   <div class="item flex1 pl30">
                     <span class="name" style="width: 70px">告警内容：</span>
-                    <span class="value flex1">{{ details.title }}</span>
+                    <span class="value flex1">{{ details.content || '-' }}</span>
                   </div>
                 </div>
                 <div class="flex mt10">

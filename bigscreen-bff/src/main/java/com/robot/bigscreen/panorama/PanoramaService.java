@@ -1724,6 +1724,7 @@ public class PanoramaService {
         return object(
                 "alarmId", firstValue(source, "id", "alarmId", "alarmCode"),
                 "title", firstString(source, "title", "alarmName"),
+                "content", firstString(source, "content"),
                 "categoryName", categoryName(firstString(source, "sourceType", "alarmType", "category")),
                 "level", levelCode(firstString(source, "severity", "level")),
                 "levelName", levelName(firstString(source, "severity", "level")),

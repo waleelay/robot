@@ -624,12 +624,14 @@ class PanoramaServiceTest {
                 Map.entry("severity", "CRITICAL"),
                 Map.entry("status", "ACKNOWLEDGED"),
                 Map.entry("title", "云台异常"),
+                Map.entry("content", "云台俯仰轴响应超时"),
                 Map.entry("imageFileIds", List.of("file-001", "file-002"))));
 
         Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
 
         Map<String, Object> alarm = maps(map(map(overview.get("alarms")).get("high")).get("items")).get(0);
         assertEquals("组件告警", alarm.get("categoryName"));
+        assertEquals("云台俯仰轴响应超时", alarm.get("content"));
         assertEquals("unhandled", alarm.get("status"));
         assertEquals(
                 "/api/bigscreen/control/files/file-001/content",
