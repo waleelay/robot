@@ -39,6 +39,9 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.mockito.ArgumentCaptor;
@@ -169,6 +172,30 @@ class VideoSessionServiceIntercomOccupancyTest {
         verifyNoInteractions(mediaTrackService);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"failed", "interrupted"})
+    void ignoresLateFailureAfterSessionBecameIdle(String status) {
+        target.setStatus(VideoSessionStatus.IDLE_WAIT);
+        OffsetDateTime idleSince = OffsetDateTime.now().minusMinutes(1);
+        target.setIdleSince(idleSince);
+
+        service.handleClientStatus("vs-target", status, null, null, "PUBLISH_FAILED", "late");
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.IDLE_WAIT);
+        assertThat(target.getIdleSince()).isEqualTo(idleSince);
+        verify(publisher, never()).publish(eq("video.session.failed"), any());
+    }
+
+    @Test
+    void closedSessionCannotBeRevivedByLateVideoStatusWithStaleViewerCount() {
+        target.setStatus(VideoSessionStatus.CLOSED);
+        target.setViewerCount(1);
+
+        service.handleClientStatus("vs-target", "streaming", null, null, null, null);
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.CLOSED);
+    }
+
     @Test
     void heartbeatRestoresIdleSessionWhenPublishedTrackStillExists() {
         target.setStatus(VideoSessionStatus.IDLE_WAIT);
@@ -233,6 +260,9 @@ class VideoSessionServiceIntercomOccupancyTest {
         assertThat(created.getRuntimeId()).isEqualTo("runtime-test");
         assertThat(created.getRoomName()).isEqualTo("room-runtime-test");
         assertThat(response.sessionId()).isEqualTo(created.getSessionId());
+        ArgumentCaptor<MediaSessionViewer> viewerCaptor = ArgumentCaptor.forClass(MediaSessionViewer.class);
+        verify(viewerRepository).save(viewerCaptor.capture());
+        assertThat(viewerCaptor.getValue().getActiveLeaseKey()).isEqualTo("user:operator-1:web-1");
         verify(sourceRuntimeRepository).insertIfAbsent(
                 anyString(), eq("ROBOT_CAMERA"), eq("robot-001"), eq("camera01"),
                 eq("visible"), eq("sub"), eq("media.robot-001.camera01.visible.sub"), any());
@@ -524,6 +554,69 @@ class VideoSessionServiceIntercomOccupancyTest {
 
         verify(repository, never()).save(any());
         verifyNoInteractions(fileService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = VideoSessionStatus.class, names = {
+            "INIT", "REQUESTING_CLIENT", "ROOM_READY", "STREAMING", "INTERRUPTED", "FAILED", "TIMEOUT"})
+    void staleLastViewerInAnyOpenStateEntersIdleWait(VideoSessionStatus initialStatus) {
+        target.setStatus(initialStatus);
+        MediaSessionViewer viewer = new MediaSessionViewer();
+        viewer.setId("viewer-1");
+        viewer.setSessionId("vs-target");
+        viewer.setUserId("operator-1");
+        viewer.setClientId("web-1");
+        when(viewerRepository.findByLeftAtIsNullAndLastHeartbeatAtBefore(any()))
+                .thenReturn(List.of(viewer));
+        when(viewerRepository.closeIfStale(eq("viewer-1"), any(), any())).thenReturn(1);
+
+        service.sweepStaleViewers();
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.IDLE_WAIT);
+        assertThat(target.getIdleSince()).isNotNull();
+        verify(fileService).stopLiveRecordingForClient("vs-target", "operator-1", "web-1");
+    }
+
+    @Test
+    void staleLastViewerKeepsRoomOccupiedByIntercom() {
+        target.setStatus(VideoSessionStatus.STREAMING);
+        target.setIntercomStatus(IntercomStatus.ACTIVE);
+        MediaSessionViewer viewer = new MediaSessionViewer();
+        viewer.setId("viewer-1");
+        viewer.setSessionId("vs-target");
+        viewer.setUserId("operator-1");
+        viewer.setClientId("web-1");
+        when(viewerRepository.findByLeftAtIsNullAndLastHeartbeatAtBefore(any()))
+                .thenReturn(List.of(viewer));
+        when(viewerRepository.closeIfStale(eq("viewer-1"), any(), any())).thenReturn(1);
+
+        service.sweepStaleViewers();
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.STREAMING);
+        assertThat(target.getIntercomStatus()).isEqualTo(IntercomStatus.ACTIVE);
+    }
+
+    @Test
+    void stopClosesEveryDuplicateLeaseAndKeepsOtherViewers() {
+        target.setStatus(VideoSessionStatus.STREAMING);
+        when(viewerRepository.countBySessionIdAndLeftAtIsNull("vs-target")).thenReturn(1L);
+
+        service.stop("vs-target", operator("operator-1", "web-1"));
+
+        verify(viewerRepository).closeActiveLease(eq("vs-target"), eq("user:operator-1:web-1"), any());
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.STREAMING);
+        assertThat(target.getViewerCount()).isEqualTo(1);
+    }
+
+    @Test
+    void repeatedStopDoesNotExtendIdleDeadline() {
+        target.setStatus(VideoSessionStatus.IDLE_WAIT);
+        OffsetDateTime originalIdleSince = OffsetDateTime.now().minusMinutes(3);
+        target.setIdleSince(originalIdleSince);
+
+        service.stop("vs-target", operator("operator-1", "web-1"));
+
+        assertThat(target.getIdleSince()).isEqualTo(originalIdleSince);
     }
 
     @Test

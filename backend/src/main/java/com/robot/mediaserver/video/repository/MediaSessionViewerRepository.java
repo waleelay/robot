@@ -19,10 +19,23 @@ public interface MediaSessionViewerRepository extends JpaRepository<MediaSession
     List<MediaSessionViewer> findByLeftAtIsNullAndLastHeartbeatAtBefore(OffsetDateTime lastHeartbeatAt);
 
     @Modifying
+    @Query("""
+            update MediaSessionViewer viewer
+               set viewer.leftAt = :leftAt, viewer.activeLeaseKey = null
+             where viewer.sessionId = :sessionId
+               and viewer.participantIdentity = :identity
+               and viewer.leftAt is null
+            """)
+    int closeActiveLease(
+            @Param("sessionId") String sessionId,
+            @Param("identity") String identity,
+            @Param("leftAt") OffsetDateTime leftAt);
+
+    @Modifying
     @Transactional
     @Query("""
             update MediaSessionViewer viewer
-               set viewer.leftAt = :leftAt
+               set viewer.leftAt = :leftAt, viewer.activeLeaseKey = null
              where viewer.id = :viewerId
                and viewer.leftAt is null
                and viewer.lastHeartbeatAt < :heartbeatBefore

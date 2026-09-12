@@ -428,12 +428,7 @@ public class VideoSessionService {
         }
         removeViewer(sessionId, user);
         session.setViewerCount(activeViewerCount(sessionId));
-        if (session.getViewerCount() == 0 && !holdsRoomForIntercom(session)) {
-            session.setIdleSince(now());
-            transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
-                    "sessionId", session.getSessionId(),
-                    "idleReleaseDelaySeconds", properties.getSession().getIdleReleaseDelaySeconds()));
-        } else {
+        if (!enterIdleWhenUnoccupied(session)) {
             emit("video.viewer.changed", session);
         }
         session.setUpdatedAt(now());
@@ -627,7 +622,7 @@ public class VideoSessionService {
         VideoSession session = requireSession(sessionId);
         session.setLastStatusAt(now());
         String normalized = status == null ? "" : status.trim().toLowerCase();
-        if (isLateVideoStartStatus(session, normalized)) {
+        if (isLateVideoStatus(session, normalized)) {
             emit("video.client.status.ignored", Map.of(
                     "sessionId", sessionId,
                     "status", normalized,
@@ -1294,7 +1289,6 @@ public class VideoSessionService {
      */
     public List<String> idleReleaseCandidates(OffsetDateTime idleSinceBefore) {
         return repository.findByStatusAndIdleSinceBefore(VideoSessionStatus.IDLE_WAIT, idleSinceBefore).stream()
-                .filter(session -> session.getViewerCount() == 0 && !holdsRoomForIntercom(session))
                 .map(VideoSession::getSessionId)
                 .toList();
     }
@@ -1348,42 +1342,49 @@ public class VideoSessionService {
                 "roomName", session.getRoomName());
     }
 
-    /**
-     * 清理心跳过期的观看者。
-     *
-     * <p>不使用覆盖全部观看者的大事务。每次仓储写入独立提交，避免一个清理任务同时
-     * 持有多个 viewer/session 行锁，阻塞正在恢复的浏览器心跳。</p>
-     */
+    /** 每个过期 viewer 独立事务，按 runtime -> session 锁序与心跳、停看串行化。 */
     public void sweepStaleViewers() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getViewerHeartbeatTimeoutSeconds());
         viewerRepository.findByLeftAtIsNullAndLastHeartbeatAtBefore(threshold).forEach(viewer -> {
-            closeStaleViewer(viewer, threshold);
+            try {
+                boolean closed = Boolean.TRUE.equals(transactionTemplate.execute(
+                        status -> closeStaleViewer(viewer, threshold)));
+                if (closed) {
+                    stopClientRecordingQuietly(viewer.getSessionId(), viewer.getUserId(), viewerClientId(viewer));
+                }
+            } catch (RuntimeException ex) {
+                log.warn("清理过期观看租约失败 sessionId={} viewerId={}",
+                        viewer.getSessionId(), viewer.getId(), ex);
+            }
         });
     }
 
-    private void closeStaleViewer(MediaSessionViewer viewer, OffsetDateTime heartbeatBefore) {
+    private boolean closeStaleViewer(MediaSessionViewer viewer, OffsetDateTime heartbeatBefore) {
+        VideoSession session = lockSessionRuntime(viewer.getSessionId());
         if (viewerRepository.closeIfStale(viewer.getId(), heartbeatBefore, now()) == 0) {
-            return;
+            return false;
         }
-        String clientId = viewerClientId(viewer);
-        stopClientRecordingQuietly(viewer.getSessionId(), viewer.getUserId(), clientId);
-        repository.findById(viewer.getSessionId()).ifPresent(session -> {
-            session.setViewerCount(activeViewerCount(session.getSessionId()));
-            // 最后一个 viewer 离开后不立刻停止机器人推流，而是进入 IDLE_WAIT。
-            // 这样短时间内重新打开页面可以复用 Room/Track，减少推流启动延迟。
-            if (session.getViewerCount() == 0
-                    && session.getStatus() == VideoSessionStatus.STREAMING
-                    && !holdsRoomForIntercom(session)) {
-                session.setIdleSince(now());
-                transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
-                        "sessionId", session.getSessionId(),
-                        "idleReleaseDelaySeconds", properties.getSession().getIdleReleaseDelaySeconds()));
-            } else {
-                emit("video.viewer.changed", session);
-            }
-            session.setUpdatedAt(now());
-            repository.save(session);
-        });
+        session.setViewerCount(activeViewerCount(session.getSessionId()));
+        if (!enterIdleWhenUnoccupied(session)) {
+            emit("video.viewer.changed", session);
+        }
+        session.setUpdatedAt(now());
+        repository.save(session);
+        return true;
+    }
+
+    private boolean enterIdleWhenUnoccupied(VideoSession session) {
+        if (session.getViewerCount() != 0 || holdsRoomForIntercom(session)
+                || session.getStatus() == VideoSessionStatus.IDLE_WAIT
+                || session.getStatus() == VideoSessionStatus.CLOSED
+                || session.getStatus() == VideoSessionStatus.STOPPING) {
+            return false;
+        }
+        session.setIdleSince(now());
+        transition(session, VideoSessionStatus.IDLE_WAIT, "video.session.idle_wait", Map.of(
+                "sessionId", session.getSessionId(),
+                "idleReleaseDelaySeconds", properties.getSession().getIdleReleaseDelaySeconds()));
+        return true;
     }
 
     private VideoSession requireSession(String sessionId) {
@@ -1476,17 +1477,23 @@ public class VideoSessionService {
         repository.save(session);
     }
 
-    private boolean isLateVideoStartStatus(VideoSession session, String status) {
-        boolean startsVideo = "room_ready".equals(status)
+    private boolean isLateVideoStatus(VideoSession session, String status) {
+        boolean changesVideoState = "room_ready".equals(status)
                 || "publishing".equals(status)
                 || "streaming".equals(status)
-                || "track_published".equals(status);
-        boolean alreadyReleased = session.getStatus() == VideoSessionStatus.IDLE_WAIT
-                || session.getStatus() == VideoSessionStatus.STOPPING
-                || session.getStatus() == VideoSessionStatus.CLOSED;
-        return startsVideo
-                && alreadyReleased
-                && session.getViewerCount() == 0
+                || "track_published".equals(status)
+                || "interrupted".equals(status)
+                || "failed".equals(status)
+                || "error".equals(status);
+        if (!changesVideoState) {
+            return false;
+        }
+        if (session.getStatus() == VideoSessionStatus.STOPPING
+                || session.getStatus() == VideoSessionStatus.CLOSED) {
+            return true;
+        }
+        return session.getStatus() == VideoSessionStatus.IDLE_WAIT
+                && activeViewerCount(session.getSessionId()) == 0
                 && !holdsRoomForIntercom(session);
     }
 
@@ -1598,6 +1605,7 @@ public class VideoSessionService {
                 .map(viewer -> {
                     viewer.setClientId(user.clientId());
                     viewer.setLastHeartbeatAt(now());
+                    viewer.setActiveLeaseKey(identity);
                     return viewerRepository.save(viewer);
                 })
                 .orElseGet(() -> {
@@ -1607,6 +1615,7 @@ public class VideoSessionService {
                     viewer.setUserId(user.userId());
                     viewer.setOrgId(user.orgId());
                     viewer.setParticipantIdentity(identity);
+                    viewer.setActiveLeaseKey(identity);
                     viewer.setClientId(user.clientId());
                     viewer.setClientType("web");
                     viewer.setJoinedAt(now());
@@ -1616,11 +1625,7 @@ public class VideoSessionService {
     }
 
     private void removeViewer(String sessionId, CurrentUser user) {
-        viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(sessionId, viewerIdentity(user))
-                .ifPresent(viewer -> {
-                    viewer.setLeftAt(now());
-                    viewerRepository.save(viewer);
-                });
+        viewerRepository.closeActiveLease(sessionId, viewerIdentity(user), now());
     }
 
     private int activeViewerCount(String sessionId) {

@@ -186,6 +186,16 @@ class VideoSessionServiceRoomReleaseTest {
         verify(roomService).deleteRoom(target.getRoomName());
     }
 
+    @Test
+    void staleViewerCountDoesNotHideIdleReleaseCandidate() {
+        target.setViewerCount(1);
+        OffsetDateTime threshold = now.minusMinutes(1);
+        when(repository.findByStatusAndIdleSinceBefore(VideoSessionStatus.IDLE_WAIT, threshold))
+                .thenReturn(List.of(target));
+
+        assertThat(service.idleReleaseCandidates(threshold)).containsExactly("vs-target");
+    }
+
     private VideoSession session(String sessionId, VideoSessionStatus status, OffsetDateTime idleSince) {
         VideoSession session = new VideoSession();
         session.setSessionId(sessionId);

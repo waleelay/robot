@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.OffsetDateTime;
 
 @Entity
@@ -13,7 +14,9 @@ import java.time.OffsetDateTime;
         indexes = {
                 @Index(name = "idx_session_viewer_session", columnList = "sessionId,leftAt"),
                 @Index(name = "idx_session_viewer_user", columnList = "userId,joinedAt")
-        })
+        },
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_session_viewer_active_lease", columnNames = {"sessionId", "activeLeaseKey"}))
 public class MediaSessionViewer {
 
     @Id
@@ -31,6 +34,9 @@ public class MediaSessionViewer {
 
     @Column(length = 128)
     private String participantIdentity;
+
+    @Column(length = 128)
+    private String activeLeaseKey;
 
     @Column(length = 128)
     private String clientId;
@@ -80,6 +86,14 @@ public class MediaSessionViewer {
 
     public void setParticipantIdentity(String participantIdentity) {
         this.participantIdentity = participantIdentity;
+    }
+
+    public String getActiveLeaseKey() {
+        return activeLeaseKey;
+    }
+
+    public void setActiveLeaseKey(String activeLeaseKey) {
+        this.activeLeaseKey = activeLeaseKey;
     }
 
     public String getClientId() {

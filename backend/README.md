@@ -40,6 +40,8 @@ src/main/java/com/robot/mediaserver/
 
 `VideoSourceRuntime` 以 `sourceType + sourceId + deviceId + channel + quality` 建立数据库唯一约束；创建或复用会话时先原子创建并锁定该记录，再查询或写入 `VideoSession`，避免多 Media 实例同时“先查后插”产生第二个有效会话。`VideoSession.runtimeId` 在历史数据迁移期间允许为空，历史会话首次被复用时会原位关联 runtime。固定摄像头用 `sourceType=FIXED_CAMERA`、`sourceId=cameraId`；`robotId` 当前仍传 `cameraId` 仅为兼容非空约束。
 
+观看租约沿用 `userId + clientId` 对应的 participant identity；数据库唯一索引限制同一 session 的同身份活跃记录。停看关闭该身份的全部活跃记录；TTL 清理逐会话加锁并在最后 viewer 离开后进入 `IDLE_WAIT`。服务重启不批量删除活跃租约。上线此变更前先停旧 Media 实例、备份 `media_session_viewer`，并执行 [`deploy/database/20260912-add-active-viewer-lease.sql`](../deploy/database/20260912-add-active-viewer-lease.sql)；检查迁移脚本中的异常数据查询和验收查询均为零后再启动新版本。
+
 当前 runtime 承担同源创建串行化、Room 名称所有权、释放互斥，并保存 LiveKit 返回的 Publisher Identity/Participant SID、Track SID/名称和最后事实变化时间。释放任务在 runtime 行锁内聚合同源全部 session（含尚未关联 runtime 的历史会话）的 viewer、对讲、LiveKit Egress 录像、启动在途状态和空闲期限；仅全部无占用且均已到期时删除 Room 并返回一次 stop 载荷。Publisher generation 仍由后续整改项迁移。生产部署前必须备份相关表，并依次执行 [`deploy/database/20260911-add-media-source-runtime.sql`](../deploy/database/20260911-add-media-source-runtime.sql) 和 [`deploy/database/20260911-add-livekit-media-facts.sql`](../deploy/database/20260911-add-livekit-media-facts.sql)；应用回滚时保留新增的表、列和索引，不做破坏性回退。
 
 ### `file/`
