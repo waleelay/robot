@@ -1631,29 +1631,14 @@ public class VideoSessionService {
 
     private void addViewer(VideoSession session, CurrentUser user) {
         String identity = viewerIdentity(user);
-        // 同一浏览器 client 重复心跳时只刷新 lastHeartbeatAt；新的标签页会得到不同 clientId，
-        // 因而会被计为独立 viewer。
-        viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(session.getSessionId(), identity)
-                .map(viewer -> {
-                    viewer.setClientId(user.clientId());
-                    viewer.setLastHeartbeatAt(now());
-                    viewer.setActiveLeaseKey(identity);
-                    return viewerRepository.save(viewer);
-                })
-                .orElseGet(() -> {
-                    MediaSessionViewer viewer = new MediaSessionViewer();
-                    viewer.setId("viewer_" + compactUuid());
-                    viewer.setSessionId(session.getSessionId());
-                    viewer.setUserId(user.userId());
-                    viewer.setOrgId(user.orgId());
-                    viewer.setParticipantIdentity(identity);
-                    viewer.setActiveLeaseKey(identity);
-                    viewer.setClientId(user.clientId());
-                    viewer.setClientType("web");
-                    viewer.setJoinedAt(now());
-                    viewer.setLastHeartbeatAt(now());
-                    return viewerRepository.save(viewer);
-                });
+        viewerRepository.upsertActiveLease(
+                "viewer_" + compactUuid(),
+                session.getSessionId(),
+                user.userId(),
+                user.orgId(),
+                identity,
+                user.clientId(),
+                now());
     }
 
     private void removeViewer(String sessionId, CurrentUser user) {

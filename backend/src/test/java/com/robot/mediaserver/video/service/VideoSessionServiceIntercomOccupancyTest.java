@@ -207,8 +207,6 @@ class VideoSessionServiceIntercomOccupancyTest {
                 "room-runtime-test", "robot:robot-002:camera01", target.getTrackSid()))
                 .thenReturn(Optional.of(new LiveKitRoomService.ActiveVideoTrack(
                         "robot:robot-002:camera01", "PA_robot", "TR_existing", "video.visible.sub")));
-        when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(
-                "vs-target", "user:operator-1:web-1")).thenReturn(Optional.empty());
         when(viewerRepository.countBySessionIdAndLeftAtIsNull("vs-target")).thenReturn(1L);
 
         var response = service.heartbeat("vs-target", operator("operator-1", "web-1"));
@@ -223,8 +221,6 @@ class VideoSessionServiceIntercomOccupancyTest {
     void heartbeatQueuesRecoveryWhenIdleTrackIsMissing() {
         target.setStatus(VideoSessionStatus.IDLE_WAIT);
         target.setIdleSince(OffsetDateTime.now());
-        when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(
-                "vs-target", "user:operator-1:web-1")).thenReturn(Optional.empty());
         when(viewerRepository.countBySessionIdAndLeftAtIsNull("vs-target")).thenReturn(1L);
 
         var response = service.heartbeat("vs-target", operator("operator-1", "web-1"));
@@ -237,8 +233,6 @@ class VideoSessionServiceIntercomOccupancyTest {
 
     @Test
     void createsSessionOwnedByLockedSourceRuntime() {
-        when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(anyString(), anyString()))
-                .thenReturn(Optional.empty());
         when(viewerRepository.countBySessionIdAndLeftAtIsNull(anyString())).thenReturn(1L);
         when(liveKitTokenService.createInteractiveViewerToken(anyString(), anyString(), anyString()))
                 .thenReturn(new LiveKitTokenService.TokenResult(
@@ -261,9 +255,9 @@ class VideoSessionServiceIntercomOccupancyTest {
         assertThat(created.getRuntimeId()).isEqualTo("runtime-test");
         assertThat(created.getRoomName()).isEqualTo("room-runtime-test");
         assertThat(response.sessionId()).isEqualTo(created.getSessionId());
-        ArgumentCaptor<MediaSessionViewer> viewerCaptor = ArgumentCaptor.forClass(MediaSessionViewer.class);
-        verify(viewerRepository).save(viewerCaptor.capture());
-        assertThat(viewerCaptor.getValue().getActiveLeaseKey()).isEqualTo("user:operator-1:web-1");
+        verify(viewerRepository).upsertActiveLease(
+                anyString(), eq(created.getSessionId()), eq("operator-1"), eq("org001"),
+                eq("user:operator-1:web-1"), eq("web-1"), any());
         verify(sourceRuntimeRepository).insertIfAbsent(
                 anyString(), eq("ROBOT_CAMERA"), eq("robot-001"), eq("camera01"),
                 eq("visible"), eq("sub"), eq("media.robot-001.camera01.visible.sub"), any());
@@ -286,8 +280,6 @@ class VideoSessionServiceIntercomOccupancyTest {
                 .thenReturn(Optional.empty());
         when(liveKitTokenService.createInteractiveViewerToken(anyString(), anyString(), anyString()))
                 .thenReturn(new LiveKitTokenService.TokenResult("viewer-token", OffsetDateTime.now().plusMinutes(10)));
-        when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(anyString(), anyString()))
-                .thenReturn(Optional.empty());
         when(viewerRepository.countBySessionIdAndLeftAtIsNull(target.getSessionId())).thenReturn(1L);
 
         CreateVideoSessionRequest request = new CreateVideoSessionRequest();
@@ -322,8 +314,6 @@ class VideoSessionServiceIntercomOccupancyTest {
         when(liveKitTokenService.createInteractiveViewerToken(anyString(), anyString(), anyString()))
                 .thenReturn(new LiveKitTokenService.TokenResult(
                         "viewer-token", OffsetDateTime.now().plusMinutes(10)));
-        when(viewerRepository.findFirstBySessionIdAndParticipantIdentityAndLeftAtIsNull(anyString(), anyString()))
-                .thenReturn(Optional.empty());
         when(viewerRepository.countBySessionIdAndLeftAtIsNull(target.getSessionId())).thenReturn(1L);
 
         CreateVideoSessionRequest request = new CreateVideoSessionRequest();
