@@ -45,6 +45,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -85,6 +86,15 @@ public class VideoSessionService {
             VideoSessionStatus.STREAMING,
             VideoSessionStatus.INTERRUPTED,
             VideoSessionStatus.IDLE_WAIT);
+
+    private static final Set<VideoSessionStatus> UNOCCUPIED_RECONCILE_STATUSES = Set.of(
+            VideoSessionStatus.INIT,
+            VideoSessionStatus.REQUESTING_CLIENT,
+            VideoSessionStatus.ROOM_READY,
+            VideoSessionStatus.STREAMING,
+            VideoSessionStatus.INTERRUPTED,
+            VideoSessionStatus.FAILED,
+            VideoSessionStatus.TIMEOUT);
 
     /**
      * 实时视频会话仓储。
@@ -1359,6 +1369,27 @@ public class VideoSessionService {
         });
     }
 
+    /** 收口没有活跃 viewer 的历史及异常会话，避免它们因缺少离开事件永久滞留。 */
+    public void sweepUnoccupiedSessions() {
+        repository.findUnoccupiedSessionIds(UNOCCUPIED_RECONCILE_STATUSES, PageRequest.of(0, 100))
+                .forEach(sessionId -> {
+                    try {
+                        transactionTemplate.executeWithoutResult(status -> moveUnoccupiedSessionToIdle(sessionId));
+                    } catch (RuntimeException ex) {
+                        log.warn("收口无观看者视频会话失败 sessionId={}", sessionId, ex);
+                    }
+                });
+    }
+
+    private void moveUnoccupiedSessionToIdle(String sessionId) {
+        VideoSession session = lockSessionRuntime(sessionId);
+        session.setViewerCount(activeViewerCount(sessionId));
+        if (enterIdleWhenUnoccupied(session)) {
+            session.setUpdatedAt(now());
+            repository.save(session);
+        }
+    }
+
     private boolean closeStaleViewer(MediaSessionViewer viewer, OffsetDateTime heartbeatBefore) {
         VideoSession session = lockSessionRuntime(viewer.getSessionId());
         if (viewerRepository.closeIfStale(viewer.getId(), heartbeatBefore, now()) == 0) {
@@ -1375,6 +1406,7 @@ public class VideoSessionService {
 
     private boolean enterIdleWhenUnoccupied(VideoSession session) {
         if (session.getViewerCount() != 0 || holdsRoomForIntercom(session)
+                || fileService.hasActiveLiveRecording(session.getSessionId())
                 || session.getStatus() == VideoSessionStatus.IDLE_WAIT
                 || session.getStatus() == VideoSessionStatus.CLOSED
                 || session.getStatus() == VideoSessionStatus.STOPPING) {

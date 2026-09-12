@@ -11,6 +11,7 @@ import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -73,6 +74,20 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
         List<String> findDistinctRuntimeIdsByStatusIn(@Param("statuses") Collection<VideoSessionStatus> statuses);
 
         List<VideoSession> findByStatusAndIdleSinceBefore(VideoSessionStatus status, OffsetDateTime idleSince);
+
+        @Query("""
+                select session.sessionId from VideoSession session
+                where session.status in :statuses
+                  and not exists (
+                      select viewer.id from MediaSessionViewer viewer
+                      where viewer.sessionId = session.sessionId
+                        and viewer.leftAt is null
+                  )
+                order by session.updatedAt asc
+                """)
+        List<String> findUnoccupiedSessionIds(
+                @Param("statuses") Collection<VideoSessionStatus> statuses,
+                Pageable pageable);
 
     @Query("""
             select session from VideoSession session

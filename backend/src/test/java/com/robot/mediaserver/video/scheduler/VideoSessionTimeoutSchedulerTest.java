@@ -43,5 +43,6 @@ class VideoSessionTimeoutSchedulerTest {
         verify(service).markTimeout(
                 "vs-timeout", "cmd-timeout", "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时");
         verify(service).sweepStaleViewers();
+        verify(service).sweepUnoccupiedSessions();
     }
 }

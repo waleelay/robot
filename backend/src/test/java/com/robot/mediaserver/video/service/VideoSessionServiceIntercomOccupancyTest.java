@@ -44,6 +44,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.data.domain.Pageable;
 import org.mockito.ArgumentCaptor;
 
 class VideoSessionServiceIntercomOccupancyTest {
@@ -594,6 +595,33 @@ class VideoSessionServiceIntercomOccupancyTest {
 
         assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.STREAMING);
         assertThat(target.getIntercomStatus()).isEqualTo(IntercomStatus.ACTIVE);
+    }
+
+    @Test
+    void orphanFailedSessionEntersIdleWithoutViewerEvent() {
+        target.setStatus(VideoSessionStatus.FAILED);
+        target.setViewerCount(3);
+        when(repository.findUnoccupiedSessionIds(anyCollection(), any(Pageable.class)))
+                .thenReturn(List.of("vs-target"));
+
+        service.sweepUnoccupiedSessions();
+
+        assertThat(target.getViewerCount()).isZero();
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.IDLE_WAIT);
+        assertThat(target.getIdleSince()).isNotNull();
+    }
+
+    @Test
+    void orphanSessionWithActiveRecordingKeepsCurrentState() {
+        target.setStatus(VideoSessionStatus.FAILED);
+        when(repository.findUnoccupiedSessionIds(anyCollection(), any(Pageable.class)))
+                .thenReturn(List.of("vs-target"));
+        when(fileService.hasActiveLiveRecording("vs-target")).thenReturn(true);
+
+        service.sweepUnoccupiedSessions();
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.FAILED);
+        verify(repository, never()).save(target);
     }
 
     @Test

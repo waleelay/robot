@@ -36,6 +36,7 @@ public class VideoSessionTimeoutScheduler {
     public void sweep() {
         handleTrackPublishTimeout();
         videoSessionService.sweepStaleViewers();
+        videoSessionService.sweepUnoccupiedSessions();
     }
 
     @Scheduled(fixedDelayString = "${media.livekit.reconcile-delay-ms:5000}")
