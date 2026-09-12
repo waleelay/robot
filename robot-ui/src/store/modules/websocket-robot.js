@@ -27,6 +27,8 @@ import { overlayLiveRobotRuntimeFields, mergeRobotBaseInfo, normalizeRobotContro
 import { attachTrackRespectingUserPause } from '../../views/bi/js/utils/livekit-user-pause'
 import { mediaReconnectDelay, isSustainedAuthorizationFailure, shouldReconnectMedia } from './media-websocket-reconnect'
 import { isRobotMediaReachable } from '../../views/bi/js/utils/pick-default-camera'
+import { resolveLiveKitUrl } from '../../utils/livekitUrl'
+import { isSameLiveKitTrack, viewerReconnectDelay } from '../../views/bi/js/utils/livekit-track-recovery'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 const FIXED_CAMERA_TRACK_WAIT_MS = 15000
@@ -35,6 +37,8 @@ const startOperations = new Map()
 const stopOperations = new Map()
 const connectOperations = new Map()
 const restartOperations = new Map()
+const viewerReconnectTimers = new Map()
+const viewerReconnectAttempts = new Map()
 
 function runOnce(registry, key, task) {
   const current = registry.get(key)
@@ -46,14 +50,53 @@ function runOnce(registry, key, task) {
   return operation
 }
 
-function reconnectViewerAfterCurrentConnect(dispatch, state, key, sessionId) {
-  const reconnect = () => {
+function cancelViewerReconnect(key) {
+  const timer = viewerReconnectTimers.get(key)
+  if (timer) clearTimeout(timer)
+  viewerReconnectTimers.delete(key)
+  viewerReconnectAttempts.delete(key)
+}
+
+function scheduleViewerReconnect(dispatch, state, key, sessionId, delay = 0) {
+  if (viewerReconnectTimers.has(key)) return
+  const current = state.cameras[key]
+  if (!current || !current.watching || current.stopping || current.stopped ||
+      !current.session || current.session.sessionId !== sessionId || current.room) {
+    cancelViewerReconnect(key)
+    return
+  }
+  const timer = setTimeout(async() => {
+    viewerReconnectTimers.delete(key)
     const latest = state.cameras[key]
     if (!latest || !latest.watching || latest.stopping || latest.stopped ||
-        !latest.session || latest.session.sessionId !== sessionId || latest.room) return
-    dispatch('connectLiveKit', { camera: latest, refreshToken: true }).catch(error => {
+        !latest.session || latest.session.sessionId !== sessionId || latest.room) {
+      cancelViewerReconnect(key)
+      return
+    }
+    try {
+      await dispatch('connectLiveKit', {
+        camera: latest,
+        refreshToken: true,
+        throwOnError: true
+      })
+      if (state.cameras[key]?.room) {
+        cancelViewerReconnect(key)
+        return
+      }
+      throw new Error('LiveKit viewer 重连后 Room 不可用')
+    } catch (error) {
       console.error('ERROR LiveKit viewer reconnect', error.message || '请求失败')
-    })
+      const attempt = (viewerReconnectAttempts.get(key) || 0) + 1
+      viewerReconnectAttempts.set(key, attempt)
+      scheduleViewerReconnect(dispatch, state, key, sessionId, viewerReconnectDelay(attempt))
+    }
+  }, delay)
+  viewerReconnectTimers.set(key, timer)
+}
+
+function reconnectViewerAfterCurrentConnect(dispatch, state, key, sessionId) {
+  const reconnect = () => {
+    scheduleViewerReconnect(dispatch, state, key, sessionId)
   }
   const pending = connectOperations.get(key)
   if (pending) {
@@ -702,17 +745,19 @@ function effectiveCameraQuality(camera, value) {
   if (quality === 'main' || quality === 'sub') return quality
   return store.state.dragVideo.splitType === 1 ? 'main' : 'sub'
 }
-function firstVideoPublication(room) {
+function firstVideoPublication(room, excludedTrack = null) {
   for (const participant of room.remoteParticipants.values()) {
     for (const publication of participant.trackPublications.values()) {
-      if (publication.track && publication.track.kind === 'video') return publication
+      if (publication.track &&
+          publication.track.kind === 'video' &&
+          !isSameLiveKitTrack(publication.track, excludedTrack)) return publication
     }
   }
   return null
 }
 
-function restoreVideoTrack(camera, room, storeState) {
-  const publication = firstVideoPublication(room)
+function restoreVideoTrack(camera, room, storeState, excludedTrack = null) {
+  const publication = firstVideoPublication(room, excludedTrack)
   if (!publication || !publication.track) return false
   camera.remoteVideoTrack = publication.track
   camera.hasVideo = true
@@ -813,10 +858,6 @@ function selectedCandidatePairRtt(stats) {
     if (selected && Number.isFinite(report.currentRoundTripTime)) fallback = report.currentRoundTripTime
   })
   return fallback
-}
-
-function getLiveKitUrl(livekitUrl) {
-  return window.location.protocol === 'https:' ? `wss://${window.location.host}/livekit` : livekitUrl
 }
 
 // ============ 导出 actions ============
@@ -961,6 +1002,7 @@ const actions = {
       clearInterval(state.heartbeatTimer)
       state.heartbeatTimer = null
     }
+    viewerReconnectTimers.forEach((_, key) => cancelViewerReconnect(key))
     const rooms = Object.values(state.activeCameras || {})
       .map(active => active?.camera?.room)
       .filter(Boolean)
@@ -1704,6 +1746,7 @@ const actions = {
   stopCamera({ commit, state, dispatch }, data) {
     const key = data && data.key
     if (!key) return Promise.resolve()
+    cancelViewerReconnect(key)
     const current = stopOperations.get(key)
     if (current) return current
     const camera = state.cameras[key]
@@ -1979,7 +2022,7 @@ const actions = {
         })
       }
       const token = connectionToken || (camera.intercomActive ? camera.intercomToken : camera.session.viewerToken)
-      const livekitUrl = getLiveKitUrl(camera.session.livekitUrl)
+      const livekitUrl = resolveLiveKitUrl(camera.session.livekitUrl)
       if (!token || !livekitUrl) throw new Error('LiveKit 连接参数不完整')
       if (camera.room) {
         camera.disconnecting = true
@@ -2006,6 +2049,7 @@ const actions = {
         const current = currentCamera()
         if (!current) return
         if (track.kind === 'video') {
+          cancelViewerReconnect(current.key)
           current.remoteVideoTrack = track
           current.hasVideo = true
           if (current.watching) attachTrackToCameraTargets(track, current, state, 'video')
@@ -2062,7 +2106,13 @@ const actions = {
           current.remoteAudioElement = null
         }
         if (track.kind === 'video') {
+          // 发布者替换时新 Track 可能先订阅、旧 Track 后退出；旧事件不能清空新画面。
+          if (!isSameLiveKitTrack(current.remoteVideoTrack, track)) return
           cancelAttachRetry(current.key, null, 'video')
+          if (restoreVideoTrack(current, room, state, track)) {
+            commit('setCamera', current)
+            return
+          }
           current.hasVideo = false
           current.remoteVideoTrack = null
           if (state.activeIncomingCall &&
@@ -2107,6 +2157,7 @@ const actions = {
       camera.room = room
       commit('setCamera', camera)
       await room.connect(livekitUrl, token)
+      cancelViewerReconnect(camera.key)
       const current = currentCamera()
       if (current && restoreVideoTrack(current, room, state)) commit('setCamera', current)
       if (waitForVideo) {
@@ -2469,7 +2520,7 @@ const actions = {
     return Number.isFinite(seconds) ? Math.round(seconds * 1000) : null
   },
   connectReplacementLiveKit({ commit, state, dispatch }, { camera, session, oldRoom }) {
-    const livekitUrl = getLiveKitUrl(session.livekitUrl)
+    const livekitUrl = resolveLiveKitUrl(session.livekitUrl)
     const token = session.viewerToken
     if (!token || !livekitUrl) {
       return Promise.reject(new Error('缺少新清晰度 LiveKit 连接信息'))

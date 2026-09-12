@@ -1,5 +1,6 @@
 import { Room, RoomEvent, Track } from 'livekit-client';
 import { Message } from 'element-ui';
+import { resolveLiveKitUrl } from '../../utils/livekitUrl';
 
 function cameraKeyForCall(callId) {
   return `field-call:${callId}`;
@@ -255,7 +256,7 @@ const actions = {
       }
     });
 
-    await room.connect(livekitUrl, token);
+    await room.connect(resolveLiveKitUrl(livekitUrl), token);
     await room.localParticipant.setMicrophoneEnabled(true, {
       echoCancellation: true,
       noiseSuppression: true,

@@ -12,6 +12,9 @@ const cameraHelpers = await import('data:text/javascript;base64,' + Buffer.from(
 const robotStateHelpers = await import('data:text/javascript;base64,' + Buffer.from(
   read('views/bi/js/utils/prefer-live-robot-fields.js')
 ).toString('base64'))
+const trackRecovery = await import('data:text/javascript;base64,' + Buffer.from(
+  read('views/bi/js/utils/livekit-track-recovery.js')
+).toString('base64'))
 
 function componentMethods(path) {
   const source = read(path).split('<script>')[1].split('</script>')[0]
@@ -389,7 +392,28 @@ test('浏览器 Track 或 Room 异常只恢复 viewer，不重启共享 Publishe
   assert.match(connectAction, /reconnectViewerAfterCurrentConnect\(dispatch, state, current\.key, sessionId\)/)
   assert.match(connectAction, /DUPLICATE_IDENTITY/)
   assert.match(connectAction, /viewer reconnected/)
+  assert.match(connectAction, /isSameLiveKitTrack\(current\.remoteVideoTrack, track\)/)
+  assert.match(connectAction, /restoreVideoTrack\(current, room, state, track\)/)
+  assert.match(source, /scheduleViewerReconnect\(dispatch, state, key, sessionId/)
+  assert.match(source, /viewerReconnectDelay\(attempt\)/)
+  assert.match(source, /cancelViewerReconnect\(key\)/)
   assert.doesNotMatch(connectAction, /dispatch\('restartCamera'/)
+})
+
+test('旧 Track 迟到退出不会清空已接入的新 Track', () => {
+  const oldTrack = { sid: 'TR_old' }
+  const newTrack = { sid: 'TR_new' }
+
+  assert.equal(trackRecovery.isSameLiveKitTrack(newTrack, oldTrack), false)
+  assert.equal(trackRecovery.isSameLiveKitTrack(newTrack, { sid: 'TR_new' }), true)
+  assert.equal(trackRecovery.isSameLiveKitTrack(newTrack, newTrack), true)
+})
+
+test('Viewer 重连按指数退避并封顶三十秒', () => {
+  assert.equal(trackRecovery.viewerReconnectDelay(0), 1000)
+  assert.equal(trackRecovery.viewerReconnectDelay(1), 2000)
+  assert.equal(trackRecovery.viewerReconnectDelay(4), 16000)
+  assert.equal(trackRecovery.viewerReconnectDelay(20), 30000)
 })
 
 test('人工刷新只调用 viewer 恢复，不 stop/start 会话', async () => {
