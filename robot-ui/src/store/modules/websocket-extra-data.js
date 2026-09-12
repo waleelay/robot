@@ -13,7 +13,7 @@ import {
   isDeviceAssociatedTaskStatus,
   isPausedTaskStatus,
   isRunningTaskStatus,
-  normalizeExecutionStatus
+  taskExecutionStatus
 } from "../../views/bi/patrol/business/execution-status";
 import {
   collectTaskEquipmentIds,
@@ -36,13 +36,11 @@ const taskDetailPromises = new Map()
 const trajectoryRetentionTimers = new Map()
 const MAX_TRAJECTORY_POINTS = 15000
 const TRAJECTORY_RETENTION_MILLIS = 5 * 60 * 1000
-const TRAJECTORY_ACTIVE_STATUSES = new Set(['RUNNING', 'PAUSING', 'PAUSED', 'RESUMING', 'TERMINATING', 'FAILED'])
-const TRAJECTORY_TERMINAL_STATUSES = new Set(['WAITING', 'COMPLETED', 'TERMINATED', 'CANCELED'])
 // 保护 BFF 摘要中的权威状态字段；摘要缺失的地图和路径由详情补充。
 const TASK_SUMMARY_FIELDS = [
   'taskId', 'workflowInstanceId', 'name', 'executionMode', 'expectedDurationSeconds',
   'executionStatus', 'activeWorkflowInstanceId', 'activeWorkflowInstanceStatus',
-  'lastWorkflowInstanceId', 'enabled', 'availableLifecycleActions', 'status', 'statusName',
+  'lastWorkflowInstanceId', 'enabled', 'availableLifecycleActions',
   'startTime', 'endTime', 'timeRange', 'equipmentList'
 ]
 
@@ -75,8 +73,8 @@ const state = {
   // 告警统计
   alarmSummary: {}, // { totalToday: 50, handled: 18, unhandled: 0, handleRate: 100, handleRateText: "100%" }
   workflowAlarms: [],
-   // 实时定位
-  robotLocation: {}, // { robotId: { lat, lng, altitude, address, updatedAt } }
+  // 设备最新定位；移动设备的 SLAM 地图归属只按 location.mapId -> map.edgeMapId 解析
+  robotLocation: {}, // { robotId: { mapId, localized, x, y, yaw, lat, lng, updatedAt } }
   trajectoryByRobot: {}, // { robotId: { workflowInstanceId, points, currentPose, stopped } }
   // 设备基本信息；task 由 taskData 反查；cameras 只存 websocketRobot（overview/robot.state）
   robotBaseInfo: {}, // { robotId: { ...robotInfo } }
@@ -86,6 +84,8 @@ const state = {
   robotAlarmObj: {}, // { robotId: { ...alarmInfo } }
   slamMapData: [],
   taskPathPoints: {}, // { taskId: [pathPoints] } taskId: 任务id，pathId: 路径id，mapId: 地图id，pathPoints: 任务路径点
+  // 已至少成功取得一次完整 task-routes 的地图；普通刷新降级时继续使用上一份完整映射。
+  taskRouteMapsReady: {},
   mapSearchValue: '',
   slamMapList: [],
   slamOfRobot: {},
@@ -109,7 +109,11 @@ const state = {
 }
 
 const mutations = {
-  RESET_OVERVIEW_RESOURCE_STATE(state, { preserveTrajectories = false, preserveTaskState = false } = {}) {
+  RESET_OVERVIEW_RESOURCE_STATE(state, {
+    preserveTrajectories = false,
+    preserveTaskState = false,
+    preserveRealtimeLocations = false
+  } = {}) {
     state.overviewRevision++;
     mapResourcePromises.clear();
     state.slamMapList = [];
@@ -123,10 +127,11 @@ const mutations = {
       taskDetailPromises.clear();
       state.taskScopeRevision++;
       state.taskRefreshRevision++;
+      state.taskRouteMapsReady = {};
     }
     state.taskFixedCameraData = {};
     state.alarmsData = {};
-    state.robotLocation = {};
+    if (!preserveRealtimeLocations) state.robotLocation = {};
     if (!preserveTrajectories) {
       state.trajectoryByRobot = {};
       trajectoryRetentionTimers.forEach(timer => clearTimeout(timer));
@@ -283,10 +288,25 @@ const mutations = {
     state.patrolOverview = value;
   },
   SET_ROBOT_LOCATION(state, data) {
-    // setTimeout(() => {
-    //   console.log('执行==========');
-      state.robotLocation = { ...state.robotLocation, [data.robotId]: data.location };
-    // }, 20000);
+    const robotId = data?.robotId
+    if (robotId === undefined || robotId === null || robotId === '') return
+    const key = String(robotId)
+    const location = data?.location
+    if (!shouldAcceptLocation(state.robotLocation[key], location)) return
+    state.robotLocation = { ...state.robotLocation, [key]: location || null }
+    rebuildSlamOfRobot(state)
+  },
+  SET_ROBOT_LOCATION_SNAPSHOT(state, devices) {
+    const next = { ...state.robotLocation }
+    ;(Array.isArray(devices) ? devices : []).forEach(device => {
+      const robotId = device?.robotId
+      if (robotId === undefined || robotId === null || robotId === '') return
+      const key = String(robotId)
+      if (shouldAcceptLocation(next[key], device.location)) {
+        next[key] = device.location || null
+      }
+    })
+    state.robotLocation = next
   },
   APPLY_TRAJECTORY(state, data) {
     const robotId = data?.robotId
@@ -370,9 +390,24 @@ const mutations = {
       ...state.robotBaseInfo,
       [robotId]: { ...withTask, ...getRobotStatus(withTask, state.taskData) }
     }
+    // 健康事件可能携带管理端最新启停配置；地图列表也需同步，否则已停用点位会残留。
+    const listItem = state.robotList.find(item => String(item?.robotId) === String(robotId))
+    if (listItem && isFixedMapDevice(listItem) && typeof withTask.enabled === 'boolean'
+      && listItem.enabled !== withTask.enabled) {
+      state.robotList = state.robotList.map(item => String(item?.robotId) === String(robotId)
+        ? { ...item, enabled: withTask.enabled }
+        : item)
+      rebuildSlamOfRobot(state)
+    }
   },
   SET_ROBOT_LIST(state, value) {
-    state.robotList = value;
+    state.robotList = Array.isArray(value) ? value : [];
+    const authorizedIds = new Set(state.robotList
+      .map(item => item?.robotId)
+      .filter(id => id !== undefined && id !== null && id !== '')
+      .map(String))
+    state.robotLocation = Object.fromEntries(Object.entries(state.robotLocation || {})
+      .filter(([robotId]) => authorizedIds.has(String(robotId))))
   },
   SET_SLAM_MAP_DATA(state, value) {
     state.slamMapData = value;
@@ -380,14 +415,18 @@ const mutations = {
   SET_TASK_PATH_POINTS(state, { taskId, data }) {
     state.taskPathPoints = { ...state.taskPathPoints, [taskId]: data };
   },
+  SET_TASK_ROUTE_RESULT(state, { mapId, quality, complete }) {
+    state.dataQuality = { ...state.dataQuality, taskRoutes: quality }
+    if (complete && mapId !== undefined && mapId !== null && mapId !== '') {
+      state.taskRouteMapsReady = { ...state.taskRouteMapsReady, [String(mapId)]: true }
+    }
+  },
   SET_MAP_SEARCH_VALUE(state, value) {
     state.mapSearchValue = value ? `${value}_timestamp_${new Date().getTime()}` : '';
   },
   SET_SLAM_MAP_LIST(state, value) {
-    state.slamMapList = value;
-  },
-  SET_SLAM_OF_ROBOT(state, value) {
-    state.slamOfRobot = value;
+    state.slamMapList = Array.isArray(value) ? value : [];
+    rebuildSlamOfRobot(state)
   },
   SET_SHOW_ROBOT_IDS(state, value) {
     state.showRobotIds = Array.isArray(value) ? value : (value != null && value !== '' ? [value] : []);
@@ -471,15 +510,14 @@ const actions = {
       const currentTask = robotTasks.find(task =>
         String(task?.workflowInstanceId) === String(record.workflowInstanceId))
       if (currentTask) {
-        const status = normalizeExecutionStatus(currentTask.status)
-        if (TRAJECTORY_TERMINAL_STATUSES.has(status)) {
+        if (taskExecutionStatus(currentTask) === 'WAITING') {
           dispatch('finishTrajectory', { robotId, workflowInstanceId: record.workflowInstanceId })
         }
         return
       }
       const hasNewActiveTask = robotTasks.some(task =>
         task?.workflowInstanceId != null
-        && TRAJECTORY_ACTIVE_STATUSES.has(normalizeExecutionStatus(task.status)))
+        && isDeviceAssociatedTaskStatus(taskExecutionStatus(task)))
       if (hasNewActiveTask) {
         dispatch('clearTrajectory', robotId)
       }
@@ -526,7 +564,7 @@ const actions = {
     overviewRefreshPromise = pending
     return pending
   },
-  async applyOverview({ state, dispatch }, overview) {
+  async applyOverview({ state, commit, dispatch }, overview) {
     const taskBaseline = overview.taskBaseline ?? state.taskVersion
     const revision = state.overviewRevision
     const mapId = resolveOverviewMapId(overview, state.globalMapId)
@@ -535,7 +573,10 @@ const actions = {
     const mapResources = fulfilledValue(mapResourcesResult)
     const taskRoutes = fulfilledValue(taskRoutesResult)
     // 等待资源期间允许用户切图；提交时以最新选择为准，必要时补齐新图资源。
-    await dispatch('setAll', { ...mergeOverviewMapResources(overview, mapResources, taskRoutes), taskBaseline })
+    const merged = mergeOverviewMapResources(overview, mapResources, taskRoutes, state.taskData)
+    const routeQuality = merged.dataQuality?.taskRoutes
+    commit('SET_TASK_ROUTE_RESULT', { mapId, quality: routeQuality, complete: isCompleteTaskRoutes(routeQuality) })
+    await dispatch('setAll', { ...merged, taskBaseline })
     if (String(state.globalMapId) !== String(mapId)) {
       await dispatch('loadMapResources', state.globalMapId)
     }
@@ -550,16 +591,26 @@ const actions = {
       || !state.slamMapList.some(item => String(item.id) === key)) return
     const mapResources = fulfilledValue(mapResourcesResult)
     const taskRoutes = fulfilledValue(taskRoutesResult)
+    const routeQuality = taskRouteQuality(taskRoutes)
+    const routesComplete = isCompleteTaskRoutes(routeQuality)
     const maps = (state.slamMapList || []).map(item => String(item?.id) === key
       ? mergeMapResources(item, mapResources)
       : item)
     commit('SET_SLAM_MAP_LIST', maps)
-    ;(taskRoutes?.items || []).forEach(item => {
-      const previous = getTaskById(state.taskData, item.taskId) || {}
-      commit('SET_TASK_INFO', { ...previous, mapId: item.mapId, pathPoints: item.pathPoints || [] })
-      commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } })
-    })
-    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(maps, state.robotList || [], Object.values(state.taskData || {})))
+    if (routesComplete) {
+      const routeTaskIds = new Set((taskRoutes?.items || []).map(item => String(item.taskId)))
+      Object.values(state.taskData || {}).forEach(task => {
+        if (String(task?.mapId) !== key || routeTaskIds.has(String(task.taskId))) return
+        commit('SET_TASK_INFO', { ...task, mapId: null, pathPoints: [] })
+        commit('SET_TASK_PATH_POINTS', { taskId: task.taskId, data: { mapId: null, pathPoints: [] } })
+      })
+      ;(taskRoutes?.items || []).forEach(item => {
+        const previous = getTaskById(state.taskData, item.taskId) || {}
+        commit('SET_TASK_INFO', { ...previous, mapId: item.mapId, pathPoints: item.pathPoints || [] })
+        commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } })
+      })
+    }
+    commit('SET_TASK_ROUTE_RESULT', { mapId, quality: routeQuality, complete: routesComplete })
   },
   /**
    * 完整任务数据只在用户打开任务视频时请求，避免首屏和切图预取回放、设备任务等高成本数据。
@@ -625,7 +676,11 @@ const actions = {
   setAll({commit, state, dispatch}, data) {
     const previousTasks = state.taskData
     // 普通快照回填不能擦除并发到达的轨迹 RESET；失权和退出仍使用默认全量清理。
-    commit('RESET_OVERVIEW_RESOURCE_STATE', { preserveTrajectories: true, preserveTaskState: true })
+    commit('RESET_OVERVIEW_RESOURCE_STATE', {
+      preserveTrajectories: true,
+      preserveTaskState: true,
+      preserveRealtimeLocations: true
+    })
     const taskQuality = data?.dataQuality?.tasks || { complete: true, degraded: false, reasonCodes: [] }
     const tasksComplete = taskQuality.complete !== false && !taskQuality.degraded
     commit('SET_DATA_QUALITY', data?.dataQuality || {})
@@ -693,9 +748,9 @@ const actions = {
       commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } });
     })
     commit('SET_ROBOT_LIST', devices);
+    commit('SET_ROBOT_LOCATION_SNAPSHOT', devices)
     devices.map(item => {
       commit('SET_ROBOT_BASE_INFO', { robotId: item.robotId, robotInfo: { ...item } });
-      commit('SET_ROBOT_LOCATION', { robotId: item.robotId, location: item.location });
     })
     // 当前地图点位数据模拟在map对象的points字段中
     const slamMapList = (data?.map || []).map(item => {
@@ -707,7 +762,6 @@ const actions = {
     const defaultGpsDevices = overviewGpsDevices({ ...data, devices });
     commit('SET_DEFAULT_GPS_DEVICES', defaultGpsDevices);
     commit('SET_SLAM_MAP_LIST', slamMapList);
-    commit('SET_SLAM_OF_ROBOT', buildSlamOfRobot(slamMapList, devices, tasks));
     const mapId = resolveOverviewMapId({ ...data, devices }, state.globalMapId);
     commit('SET_GLOBAL_MAP_ID', mapId);
     dispatch('reconcileTrajectoriesWithTasks')
@@ -937,29 +991,57 @@ function requestMapResources(mapId, revision) {
   return pending
 }
 
-function mergeOverviewMapResources(overview, mapResources, taskRoutes) {
-  const mapId = mapResources?.mapId
+function mergeOverviewMapResources(overview, mapResources, taskRoutes, previousTasks = {}) {
+  const mapId = mapResources?.mapId ?? taskRoutes?.mapId
   const maps = (overview?.map || []).map(item => String(item?.id) === String(mapId)
     ? mergeMapResources(item, mapResources)
     : item)
-  const routesByTaskId = new Map((taskRoutes?.items || []).map(item => [String(item.taskId), item]))
+  const routeQuality = taskRouteQuality(taskRoutes)
+  const routesComplete = isCompleteTaskRoutes(routeQuality)
+  const routesByTaskId = new Map((routesComplete ? taskRoutes?.items || [] : []).map(item => [String(item.taskId), item]))
   const tasks = (overview?.tasks || []).map(task => {
     const route = routesByTaskId.get(String(task.taskId))
-    return route ? { ...task, mapId: route.mapId, pathPoints: route.pathPoints || [] } : task
+    if (route) return { ...task, mapId: route.mapId, pathPoints: route.pathPoints || [] }
+    if (routesComplete) return task
+    const previous = getTaskById(previousTasks, task.taskId)
+    if (!previous) return task
+    const preserved = { ...task }
+    if (preserved.mapId === undefined || preserved.mapId === null || preserved.mapId === '') {
+      preserved.mapId = previous.mapId
+    }
+    if (!Array.isArray(preserved.pathPoints) && Array.isArray(previous.pathPoints)) {
+      preserved.pathPoints = previous.pathPoints
+    }
+    return preserved
   })
-  return { ...overview, map: maps, tasks }
+  return {
+    ...overview,
+    map: maps,
+    tasks,
+    dataQuality: { ...(overview?.dataQuality || {}), taskRoutes: routeQuality }
+  }
+}
+
+function taskRouteQuality(taskRoutes) {
+  if (!taskRoutes) {
+    return { complete: false, degraded: true, reasonCodes: ['TASK_ROUTES_UNAVAILABLE'] }
+  }
+  return taskRoutes?.dataQuality?.tasks || { complete: true, degraded: false, reasonCodes: [] }
+}
+
+function isCompleteTaskRoutes(quality) {
+  return quality?.complete !== false && !quality?.degraded
 }
 
 /**
  * 地图渲染资源只补充当前地图的重数据；设备详情由 devices/{deviceId} 按需提供。
- * 每个字段独立合并，保证 task-routes 临时不可用时不影响点位和设备图标，反之亦然。
+ * 每个字段独立合并，保证 task-routes 临时不可用时不影响点位和固定摄像头资源。
  */
 function mergeMapResources(map, mapResources) {
   if (!mapResources) return map
   const result = { ...map }
   if (Array.isArray(mapResources.points)) result.points = mapResources.points
   if (Array.isArray(mapResources.fixedCamares)) result.fixedCamares = mapResources.fixedCamares
-  if (Array.isArray(mapResources.deviceIds)) result.deviceIds = mapResources.deviceIds
   return result
 }
 
@@ -967,56 +1049,84 @@ function fulfilledValue(result) {
   return result?.status === 'fulfilled' ? result.value : null
 }
 
-function buildSlamOfRobot(maps, robots, tasks) {
+function rebuildSlamOfRobot(state) {
+  state.slamOfRobot = buildSlamOfRobot(
+    state.slamMapList || [],
+    state.robotList || [],
+    state.robotLocation || {}
+  )
+}
+
+function buildSlamOfRobot(maps, robots, locations) {
   const result = {}
-  const robotMapIds = {}
-  const resourceMapIds = new Set()
-  const resourceDeviceMapIds = {}
+  const edgeMaps = new Map()
 
   maps.forEach(mapInfo => {
     if (mapInfo?.id === undefined || mapInfo?.id === null) return
     const mapId = String(mapInfo.id)
     result[mapId] = { mapInfo, robots: [] }
-    // deviceIds 是地图渲染资源返回的归属快照。已加载资源的地图以它为准，
-    // 避免同一装备因旧定位或任务残留被绘制到错误地图。
-    if (Array.isArray(mapInfo.deviceIds)) {
-      resourceMapIds.add(mapId)
-      mapInfo.deviceIds.forEach(robotId => {
-        if (robotId !== undefined && robotId !== null && robotId !== '') {
-          resourceDeviceMapIds[String(robotId)] = mapInfo.id
-        }
-      })
-    }
-  })
-
-  tasks.forEach(task => {
-    const mapId = task?.mapId
-    if (mapId === undefined || mapId === null) return
-    const equipmentList = task?.equipmentList || task?.devices || task?.robots || []
-    equipmentList.forEach(robot => {
-      const robotId = robot?.robotId || robot?.id || robot
-      if (robotId === undefined || robotId === null) return
-      robotMapIds[String(robotId)] = mapId
-    })
+    const edgeMapId = normalizedId(mapInfo.edgeMapId)
+    if (edgeMapId == null) return
+    const matches = edgeMaps.get(edgeMapId) || []
+    matches.push(mapInfo)
+    edgeMaps.set(edgeMapId, matches)
   })
 
   robots.forEach(robot => {
-    const directMapId = robot?.mapId ?? robot?.location?.mapId
-    const explicitMapId = resourceDeviceMapIds[String(robot?.robotId)]
-    // 已加载渲染资源的地图不得再用旧定位补图标；未加载资源的地图维持原有兜底，
-    // 避免首次总览尚未按需读取时清空其他地图的既有展示。
-    if (directMapId !== undefined && directMapId !== null
-      && resourceMapIds.has(String(directMapId)) && explicitMapId === undefined) return
-    const mapId = explicitMapId ?? directMapId ?? robotMapIds[String(robot?.robotId)]
-    if (mapId === undefined || mapId === null) return
-    const key = String(mapId)
-    if (!result[key]) result[key] = { mapInfo: null, robots: [] }
-    if (!result[key].robots.some(item => item.robotId === robot.robotId)) {
-      result[key].robots.push(robot)
-    }
+    const robotId = robot?.robotId
+    if (robotId === undefined || robotId === null || robotId === '') return
+    if (isFixedMapDevice(robot) && robot.enabled !== true) return
+    const location = locations[String(robotId)] ?? robot.location
+    if (!hasFiniteMapCoordinates(location)) return
+    const mapInfo = isFixedMapDevice(robot)
+      ? maps.find(item => normalizedId(item?.id) === normalizedId(location?.mapId))
+      : resolveEdgeMap(edgeMaps, location)
+    if (!mapInfo) return
+    result[String(mapInfo.id)].robots.push(robot)
   })
 
   return result
+}
+
+function resolveEdgeMap(edgeMaps, location) {
+  if (location?.localized !== true) return null
+  const edgeMapId = normalizedId(location?.mapId)
+  if (edgeMapId == null) return null
+  const matches = edgeMaps.get(edgeMapId) || []
+  return matches.length === 1 ? matches[0] : null
+}
+
+function normalizedId(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null
+  return String(value).trim()
+}
+
+function hasFiniteMapCoordinates(location) {
+  if (!location) return false
+  const x = location.x ?? location.coordinateX
+  const y = location.y ?? location.coordinateY
+  const valid = value => value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value))
+  return valid(x) && valid(y)
+}
+
+function isFixedMapDevice(robot) {
+  return String(robot?.sourceType || robot?.typeCode || robot?.equipmentType || '').toUpperCase() === 'FIXED_CAMERA'
+}
+
+function shouldAcceptLocation(previous, incoming) {
+  if (!previous) return true
+  const previousVersion = locationVersion(previous.updatedAt)
+  const incomingVersion = locationVersion(incoming?.updatedAt)
+  if (previousVersion != null && incomingVersion == null) return false
+  if (previousVersion == null || incomingVersion == null) return true
+  return incomingVersion >= previousVersion
+}
+
+function locationVersion(value) {
+  if (value === undefined || value === null || value === '') return null
+  const text = String(value).trim()
+  const timestamp = Date.parse(text.includes('T') ? text : text.replace(' ', 'T'))
+  return Number.isFinite(timestamp) ? timestamp : null
 }
 
 function toRobotTaskSummary(task) {
@@ -1024,8 +1134,7 @@ function toRobotTaskSummary(task) {
     taskId: task.taskId,
     workflowInstanceId: task.workflowInstanceId,
     name: task.name,
-    status: task.status,
-    statusName: task.statusName,
+    executionStatus: task.executionStatus,
     timeRange: task.timeRange,
     mapId: task.mapId
   }
@@ -1034,7 +1143,7 @@ function toRobotTaskSummary(task) {
 function toRobotTaskSummaries(taskData, robotId) {
   return listTasksForRobot(taskData, robotId, {
     activeOnly: true,
-    isActive: isDeviceAssociatedTaskStatus
+    isActive: task => isDeviceAssociatedTaskStatus(taskExecutionStatus(task))
   }).map(toRobotTaskSummary)
 }
 
@@ -1078,10 +1187,10 @@ function getRobotStatus(robot, taskData) {
   const { status, robotId } = robot || {}
   const taskList = listTasksForRobot(taskData, robotId, {
     activeOnly: true,
-    isActive: isDeviceAssociatedTaskStatus
+    isActive: task => isDeviceAssociatedTaskStatus(taskExecutionStatus(task))
   }).map(item => getTaskById(taskData, item.taskId) || item)
-  const runningTask = taskList.find(item => isRunningTaskStatus(item?.status))
-    || taskList.find(item => isPausedTaskStatus(item?.status))
+  const runningTask = taskList.find(item => isRunningTaskStatus(taskExecutionStatus(item)))
+    || taskList.find(item => isPausedTaskStatus(taskExecutionStatus(item)))
     || null
   const customStatusName = status === 'online' ? runningTask ? '任务中' : '空闲中' : status === 'offline' ? '离线' : '故障'
   const statusClass = status === 'online' ? runningTask ? 'green' : 'blue' : status === 'offline' ? 'gray' : 'orange'

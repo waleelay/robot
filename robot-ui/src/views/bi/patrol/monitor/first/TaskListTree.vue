@@ -97,13 +97,7 @@
               </div>
               <span
                 class="status p4 wp50 text-ellipsis"
-                :class="{
-                  green: item.status === 'running',
-                  orange: item.status === 'waiting',
-                  blue: item.status === 'completed',
-                  red: item.status?.includes('failed'),
-                  gray: item.status === 'paused'
-                }">{{ item.statusName }}</span>
+                :class="taskStatusColorClass(taskExecutionStatus(item))">{{ executionStatusLabel(taskExecutionStatus(item)) }}</span>
             </div>
             <div class="info mt10">
               <div class="flx-align-center">
@@ -214,7 +208,7 @@ import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
 import { getDescArr } from '../../../../../utils';
 import Empty from '../../../components/Empty.vue';
 import { pickDefaultCamera, isFixedCameraRobot, isRobotMediaReachable } from '../../../js/utils/pick-default-camera';
-import { isDeviceAssociatedTaskStatus } from '../../business/execution-status'
+import { executionStatusLabel, isDeviceAssociatedTaskStatus, taskExecutionStatus, taskStatusColorClass } from '../../business/execution-status'
 export default {
   name: 'TaskListTree',
   components: { Empty },
@@ -289,11 +283,11 @@ export default {
     },
     taskData1() {
       // 只显示执行中和暂停中的任务；路由自动选中且仍为活跃态时才兜底展示，避免结束后残留
-      const list = this.tasks.filter(item => ['running', 'paused'].includes(item.status)) || []
+      const list = this.tasks.filter(item => isDeviceAssociatedTaskStatus(taskExecutionStatus(item))) || []
       const selected = this.resolveTask(this.selectedTaskId)
       if (
         selected?.taskId
-        && ['running', 'paused'].includes(selected.status)
+        && isDeviceAssociatedTaskStatus(taskExecutionStatus(selected))
         && !list.some(item => String(item.taskId) === String(selected.taskId))
       ) {
         return [selected, ...list]
@@ -312,6 +306,9 @@ export default {
     ...mapActions('websocketExtraData', ['loadTaskFixedCameras']),
     pickDefaultCamera,
     isRobotMediaReachable,
+    executionStatusLabel,
+    taskExecutionStatus,
+    taskStatusColorClass,
     /**
      * expectedDurationSeconds（秒）→ 时分秒展示
      * - 不足 60 秒：只显示秒
@@ -467,7 +464,7 @@ export default {
 
       const task = this.resolveTask(selectedId)
       // terminating / pausing / resuming 仍视为进行中，不关视频
-      if (task && isDeviceAssociatedTaskStatus(task.status)) return
+      if (task && isDeviceAssociatedTaskStatus(taskExecutionStatus(task))) return
 
       const robotIds = (task
         ? this.collectTaskCloseRobotIds(task, selectedId)
@@ -568,7 +565,7 @@ export default {
       this.tabIndex = 1
       const task = this.resolveTask(routeTaskId)
       // 路由任务已不存在或已结束（含 waiting）：清 query，不再自动选中
-      if (!task?.taskId || !isDeviceAssociatedTaskStatus(task.status)) {
+      if (!task?.taskId || !isDeviceAssociatedTaskStatus(taskExecutionStatus(task))) {
         this.clearRouteTaskId()
         return false
       }
@@ -752,7 +749,7 @@ export default {
         if (taskId === undefined || taskId === null || taskId === '') return
         const routeTask = this.resolveTask(taskId)
         // 路由任务已结束则清 query，勿再 executePlay 重新选中
-        if (!routeTask?.taskId || !isDeviceAssociatedTaskStatus(routeTask.status)) {
+        if (!routeTask?.taskId || !isDeviceAssociatedTaskStatus(taskExecutionStatus(routeTask))) {
           this.clearRouteTaskId()
           return
         }

@@ -65,7 +65,7 @@
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
           <div class="flx-center">
             <span class="desc">任务列表</span>
-            <div v-if="taskData1.length" class="ml4 notice pr10 pl10">{{ taskData1.length ? taskData1.length > 99 ? '99+' : taskData1.length : '-'  }}</div>
+            <div v-if="taskData1.length || !taskRoutesReady" class="ml4 notice pr10 pl10">{{ taskRoutesReady ? (taskData1.length > 99 ? '99+' : taskData1.length) : '--' }}</div>
           </div>
           <!-- <span class="flx-center more curp">
             <span>更多</span>
@@ -90,9 +90,9 @@
                   <svg-icon icon-class="d-right"></svg-icon>
                   <span class="ml4 text-ellipsis" :title="item.name">{{ item.name }}</span>
                 </div>
-                <span class="status flx-center pt2 pr6 pb2 pl6 ml10" :class="getTaskStatusName((item.executionStatus || '').toLowerCase())">
+                <span class="status flx-center pt2 pr6 pb2 pl6 ml10" :class="taskStatusColorClass(taskExecutionStatus(item))">
                   <svg-icon icon-class="security"></svg-icon>
-                  <span class="ml4">{{ executionStatusLabel(item.executionStatus, '-') }}</span>
+                  <span class="ml4">{{ executionStatusLabel(taskExecutionStatus(item), '-') }}</span>
                 </span>
               </div>
               <div class="desc">
@@ -155,7 +155,7 @@
                 </div>
               </div>
               <!-- 待执行：立即执行 -->
-              <div v-else class="task-actions">
+              <div v-else-if="isPlanStartable(item)" class="task-actions">
                 <button
                   type="button"
                   class="action-btn action-execute"
@@ -246,8 +246,8 @@ import WarningBatch from './warning/WarningBatch.vue'
 import { getDescArr } from '../../../../utils/index.js';
 import Empty from '../../components/Empty.vue';
 import AlarmSnapshotImage from '@/components/AlarmSnapshotImage.vue'
-import { executionStatusLabel } from '../business/execution-status.js';
-import { hasPlanAction } from '../business/task-plan-state.js';
+import { executionStatusLabel, taskExecutionStatus, taskStatusColorClass } from '../business/execution-status.js';
+import { canStartPlan, hasPlanAction } from '../business/task-plan-state.js';
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 export default {
   name: 'BiPatrolPanoramaLeft',
@@ -324,7 +324,7 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
-    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'globalMapId', 'robotBaseInfo', 'taskPathPoints']),
+    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'globalMapId', 'robotBaseInfo', 'taskPathPoints', 'taskRouteMapsReady']),
     // GIS 展示全部任务；SLAM 仅展示与当前地图关联的任务（地图 → 任务单向联动）
     isGisMap() {
       const id = this.globalMapId
@@ -335,6 +335,9 @@ export default {
       if (this.isGisMap) return all
       return all.filter(task => this.isTaskLinkedToMap(task, this.globalMapId))
     },
+    taskRoutesReady() {
+      return this.isGisMap || !!this.taskRouteMapsReady?.[String(this.globalMapId)]
+    },
     hasAlarmData() {
       const data = this.alarmsData || {}
       return ['high', 'medium', 'low'].some(key => (data[key]?.items || []).length > 0)
@@ -343,6 +346,8 @@ export default {
   methods: {
     ...mapActions('websocketExtraData', ['setShowRobotIds', 'loadTaskDetail']),
     executionStatusLabel,
+    taskExecutionStatus,
+    taskStatusColorClass,
     hasManagementPermission(permission) {
       return matchManagementPermission(
         permission,
@@ -351,6 +356,7 @@ export default {
       )
     },
     hasLifecycleAction: hasPlanAction,
+    isPlanStartable: canStartPlan,
     canPauseOrResumeTask(item) {
       return (this.canResumeExecution && this.hasLifecycleAction(item, 'RESUME'))
         || (this.canPauseExecution && this.hasLifecycleAction(item, 'PAUSE'))
@@ -460,18 +466,6 @@ export default {
       }
 
       throw new Error('数据类型必须是数组或对象');
-    },
-    getTaskStatusName(status) {
-      switch (status) {
-        case 'running':
-          return 'green'
-        case 'waiting':
-          return 'orange'
-        case 'paused':
-          return 'gray'
-        default:
-          return 'gray'
-      }
     },
     /** 手动执行且待执行 */
     isManualWaitingTask(item) {
@@ -781,7 +775,7 @@ export default {
       })
     },
     async handleExecuteTask(item) {
-      if (!this.canExecutePlan || item.activeWorkflowInstanceId || item.enabled === false) return
+      if (!this.canExecutePlan || !this.isPlanStartable(item) || item.enabled === false) return
       const planId = this.getTaskPlanId(item)
       if (planId == null) {
         this.$message.error('缺少任务标识，无法执行')

@@ -115,6 +115,15 @@ public class PanoramaWebSocketEventAdapter {
         return root != null && MANAGEMENT_ALARM_INVALIDATED.equals(text(root, "event"));
     }
 
+    public String alarmInvalidationKey(String centerPayload) {
+        JsonNode root = readTree(centerPayload);
+        if (root == null || !MANAGEMENT_ALARM_INVALIDATED.equals(text(root, "event"))) return null;
+        JsonNode data = root.path("data");
+        String source = text(data, "source");
+        String eventId = text(data, "eventId");
+        return source.isBlank() || eventId.isBlank() ? null : source + ":" + eventId;
+    }
+
     private boolean isUnresolvedPanoramaTask(String event, JsonNode data) {
         if (!PANORAMA_TASK_CHANGED.equals(event) || data == null || !data.isObject()) {
             return false;
@@ -223,8 +232,7 @@ public class PanoramaWebSocketEventAdapter {
         ObjectNode task = objectMapper.createObjectNode();
         putNullableText(task, "taskId", textNode(taskId));
         putNullableText(task, "name", firstExisting(sourceTask, "name", "taskName"));
-        putNullableText(task, "status", firstExisting(sourceTask, "status", "taskStatus"));
-        putNullableText(task, "statusName", sourceTask.get("statusName"));
+        putNullableText(task, "executionStatus", sourceTask.get("executionStatus"));
         putNullableText(task, "timeRange", sourceTask.get("timeRange"));
         putNullableText(task, "currentLocation", sourceTask.get("currentLocation"));
 

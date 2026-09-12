@@ -30,7 +30,7 @@ export function listTasksForRobot(taskData, robotId, { activeOnly = false, isAct
   const seen = new Set()
   Object.values(taskData || {}).forEach(task => {
     if (!task || !isTaskAssignedToRobot(task, robotId)) return
-    if (activeOnly && typeof isActive === 'function' && !isActive(task.status)) return
+    if (activeOnly && typeof isActive === 'function' && !isActive(task)) return
     const key = String(task.taskId ?? task.id ?? '')
     if (key && seen.has(key)) return
     if (key) seen.add(key)

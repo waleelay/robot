@@ -24,6 +24,31 @@ import org.springframework.scheduling.TaskScheduler;
 class PanoramaAlarmEventRefresherTest {
 
     @Test
+    void deduplicatesSameEventAcrossSessionsWithoutDiscardingInFlightResult() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        TaskExecutor taskExecutor = mock(TaskExecutor.class);
+        when(panoramaService.actionableWorkflowAlarms()).thenReturn(Map.of(
+                "items", List.of(Map.of("alarmId", "alarm-1"))));
+        when(panoramaService.alarmEventSnapshot()).thenReturn(Map.of("total", 0));
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        org.mockito.Mockito.doNothing().when(taskExecutor).execute(jobs.capture());
+        PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
+                panoramaService, new ObjectMapper(), scheduler, taskExecutor);
+        List<String> events = new ArrayList<>();
+
+        refresher.requestRefresh("identity-a", null, events::add, "management:1001");
+        refresher.requestRefresh("identity-a", null, events::add, "management:1001");
+        verify(taskExecutor, times(2)).execute(any(Runnable.class));
+        jobs.getAllValues().get(0).run();
+        jobs.getAllValues().get(1).run();
+
+        verify(panoramaService).actionableWorkflowAlarms();
+        verify(panoramaService).alarmEventSnapshot();
+        assertThat(events).anyMatch(event -> event.contains("alarm-1"));
+    }
+
+    @Test
     void coalescesInvalidationsAndPublishesOnlyChangedAlarmSnapshots() throws Exception {
         PanoramaService panoramaService = mock(PanoramaService.class);
         TaskScheduler scheduler = mock(TaskScheduler.class);
@@ -146,6 +171,39 @@ class PanoramaAlarmEventRefresherTest {
     }
 
     @Test
+    void workflowReadyInvalidationDuringQueryRunsAgainImmediately() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        TaskExecutor taskExecutor = mock(TaskExecutor.class);
+        Map<String, Object> actionable = Map.of("alarmId", "alarm-1", "workflowActionable", true);
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        org.mockito.Mockito.doNothing().when(taskExecutor).execute(jobs.capture());
+        AtomicReference<PanoramaAlarmEventRefresher> reference = new AtomicReference<>();
+        List<String> events = new ArrayList<>();
+        when(panoramaService.actionableWorkflowAlarms())
+                .thenAnswer(ignored -> {
+                    reference.get().requestRefresh("identity-a", null, events::add);
+                    jobs.getAllValues().get(2).run();
+                    return Map.of("items", List.of());
+                })
+                .thenReturn(Map.of("items", List.of(actionable)));
+        PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
+                panoramaService, new ObjectMapper(), scheduler, taskExecutor);
+        reference.set(refresher);
+
+        refresher.requestRefresh("identity-a", null, events::add);
+        jobs.getAllValues().get(0).run();
+
+        verify(panoramaService, times(2)).actionableWorkflowAlarms();
+        verify(scheduler, times(0)).schedule(any(Runnable.class), any(Instant.class));
+        List<String> workflowEvents = events.stream()
+                .filter(value -> value.contains("workflow-alarms"))
+                .toList();
+        assertThat(workflowEvents).hasSize(1);
+        assertThat(workflowEvents.get(0)).contains("alarm-1");
+    }
+
+    @Test
     void connectionSnapshotRetriesFailureWithoutPublishingFalseEmptySnapshot() {
         PanoramaService panoramaService = mock(PanoramaService.class);
         TaskScheduler scheduler = mock(TaskScheduler.class);
@@ -194,6 +252,56 @@ class PanoramaAlarmEventRefresherTest {
     }
 
     @Test
+    void connectionSnapshotTargetsNewSessionWithoutRebroadcastingToExistingSessions() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        TaskExecutor taskExecutor = mock(TaskExecutor.class);
+        Map<String, Object> actionable = Map.of("alarmId", "alarm-1", "workflowActionable", true);
+        when(panoramaService.actionableWorkflowAlarms()).thenReturn(Map.of("items", List.of(actionable)));
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        org.mockito.Mockito.doNothing().when(taskExecutor).execute(jobs.capture());
+        PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
+                panoramaService, new ObjectMapper(), scheduler, taskExecutor);
+        List<String> realtimeEvents = new ArrayList<>();
+        List<String> newSessionEvents = new ArrayList<>();
+
+        refresher.requestRefresh("identity-a", null, realtimeEvents::add);
+        jobs.getAllValues().get(0).run();
+        refresher.requestSnapshot("identity-a", null, newSessionEvents::add);
+        jobs.getAllValues().get(2).run();
+
+        assertThat(realtimeEvents).hasSize(1);
+        assertThat(newSessionEvents).hasSize(1);
+        verify(panoramaService, times(2)).actionableWorkflowAlarms();
+    }
+
+    @Test
+    void failedBrowserDeliveryDoesNotAdvanceWorkflowSnapshot() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        TaskExecutor taskExecutor = mock(TaskExecutor.class);
+        ScheduledFuture<?> pending = mock(ScheduledFuture.class);
+        Map<String, Object> actionable = Map.of("alarmId", "alarm-1", "workflowActionable", true);
+        when(panoramaService.actionableWorkflowAlarms()).thenReturn(Map.of("items", List.of(actionable)));
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        org.mockito.Mockito.doNothing().when(taskExecutor).execute(jobs.capture());
+        org.mockito.Mockito.doReturn(pending)
+                .when(scheduler).schedule(any(Runnable.class), any(Instant.class));
+        PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
+                panoramaService, new ObjectMapper(), scheduler, taskExecutor);
+        List<String> delivered = new ArrayList<>();
+
+        refresher.requestRefresh("identity-a", null, ignored -> false);
+        jobs.getAllValues().get(0).run();
+        refresher.requestRefresh("identity-a", null, delivered::add);
+        jobs.getAllValues().get(2).run();
+
+        assertThat(delivered).hasSize(1);
+        assertThat(delivered.get(0)).contains("alarm-1");
+        verify(pending).cancel(false);
+    }
+
+    @Test
     void connectionSnapshotAdvancesBackoffWithoutStoppingExistingConvergence() {
         PanoramaService panoramaService = mock(PanoramaService.class);
         TaskScheduler scheduler = mock(TaskScheduler.class);
@@ -208,11 +316,11 @@ class PanoramaAlarmEventRefresherTest {
         PanoramaAlarmEventRefresher refresher = new PanoramaAlarmEventRefresher(
                 panoramaService, new ObjectMapper(), scheduler, taskExecutor);
 
-        refresher.requestRefresh("identity-a", null, ignored -> { });
+        refresher.requestRefresh("identity-a", null, ignored -> true);
         jobs.getAllValues().get(0).run();
         Runnable obsoleteRetry = scheduledJobs.getValue();
 
-        refresher.requestSnapshot("identity-a", null, ignored -> { });
+        refresher.requestSnapshot("identity-a", null, ignored -> true);
         verify(pending).cancel(false);
         jobs.getAllValues().get(2).run();
         verify(scheduler, times(2)).schedule(any(Runnable.class), any(Instant.class));

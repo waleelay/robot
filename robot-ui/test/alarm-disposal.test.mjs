@@ -84,7 +84,16 @@ test('工作流告警弹窗只消费 BFF 推送，不在前端查询或定时重
     '../src/views/bi/patrol/panorama/warning/WarnInfo.vue', import.meta.url
   ), 'utf8')
   assert.doesNotMatch(source, /getActionableWorkflowAlarms|workflowProbe|refreshWorkflowAlarms/)
-  assert.match(source, /workflowAlarms:\s*\{[\s\S]*this\.workflowQueue = \(items \|\| \[\]\)/)
+  assert.match(source, /workflowAlarms:\s*\{[\s\S]*this\.workflowQueue = this\.sortNormalQueue\(/)
+})
+
+test('自动告警直接显示详情且队列关闭后立即续弹', () => {
+  const source = readFileSync(new URL(
+    '../src/views/bi/patrol/panorama/warning/WarnInfo.vue', import.meta.url
+  ), 'utf8')
+  assert.doesNotMatch(source, /warningVisible|FLASH_MS|HIGH_CONTINUE_DELAY_MS/)
+  assert.match(source, /this\.details = \{ \.\.\.data \}[\s\S]*this\.dialogVisible = true[\s\S]*this\.speakCurrentAlarm\(\)/)
+  assert.match(source, /continueAfterClose\(\) \{\s*this\.\$nextTick\(\(\) => this\.tryPresent\(\)\)\s*\}/)
 })
 
 test('普通告警弹窗不消费组件挂载前的存量状态', () => {

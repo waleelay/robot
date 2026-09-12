@@ -3,7 +3,6 @@ package com.robot.bigscreen.panorama;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -94,8 +93,35 @@ class PanoramaServiceTest {
         assertEquals("IDLE", device.get("taskStatus"));
         assertEquals("edge-map-1", map(device.get("edgeLocation")).get("mapId"));
         assertEquals(true, map(device.get("edgeLocation")).get("localized"));
+        assertEquals("edge-map-1", map(device.get("location")).get("mapId"));
+        assertEquals("2026-08-28T07:00:00.123456789Z", map(device.get("location")).get("updatedAt"));
         assertNull(device.get("mountedDeviceCount"));
         verify(client, never()).device(anyString());
+    }
+
+    @Test
+    void overviewMustKeepHeavyResourcesOutOfTheFirstScreenRequest() {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        when(client.devices()).thenReturn(List.of(Map.of(
+                "id", "101",
+                "serialNumber", "robot-1")));
+        when(client.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", "task-1",
+                "workflowDefinitionId", "definition-1",
+                "workflowInstanceId", "instance-1")));
+        when(client.enabledMaps()).thenReturn(List.of(Map.of("id", "map-1")));
+
+        new PanoramaService(client, new ObjectMapper()).overview();
+
+        verify(client, never()).device(anyString());
+        verify(client, never()).mapPoints(anyString());
+        verify(client, never()).pathPoints(anyString());
+        verify(client, never()).taskWorkflowDefinition(anyString());
+        verify(client, never()).taskWorkflowInstance(anyString());
+        verify(client, never()).taskWorkflowReplay(anyString());
+        verify(client, never()).deviceTaskInstances(anyString());
+        verify(client, never()).taskWorkflowPlanFixedCameras(anyString());
     }
 
     @Test
@@ -199,6 +225,7 @@ class PanoramaServiceTest {
         stubEmptyOverviewSources(centerClient);
         Map<String, Object> firstMap = Map.ofEntries(
                 Map.entry("id", 2077775285125144578L),
+                Map.entry("edgeMapId", "5"),
                 Map.entry("mapName", "Map One"),
                 Map.entry("mapCode", "MAP-001"),
                 Map.entry("mapType", "INDOOR"),
@@ -242,6 +269,7 @@ class PanoramaServiceTest {
         List<Map<String, Object>> maps = maps(overview.get("map"));
         assertFalse(maps.get(0).containsKey("points"));
         assertEquals(12L, maps.get(0).get("fileId"));
+        assertEquals("5", maps.get(0).get("edgeMapId"));
         assertFalse(maps.get(0).containsKey("mapCode"));
         assertFalse(maps.get(0).containsKey("mapType"));
         assertFalse(maps.get(0).containsKey("regionId"));
@@ -251,7 +279,7 @@ class PanoramaServiceTest {
         assertFalse(maps.get(0).containsKey("remark"));
         Map<String, Object> resources = service.mapResources("2077775285125144578");
         assertEquals(List.of(Map.of("id", 101L, "pointName", "Start")), resources.get("points"));
-        assertEquals(List.of("robot-001", "201"), resources.get("deviceIds"));
+        assertFalse(resources.containsKey("deviceIds"));
         assertEquals(firstFixedCameras, resources.get("fixedCamares"));
         assertFalse(firstMap.containsKey("points"));
         assertFalse(firstMap.containsKey("fixedCamares"));
@@ -278,6 +306,58 @@ class PanoramaServiceTest {
         Map<String, Object> routes = service.mapTaskRoutes("1001");
         assertEquals(mapPoints, maps(routes.get("items")).get(0).get("pathPoints"));
         verify(centerClient, times(1)).mapPoints("1001");
+    }
+
+    @Test
+    void boundsTaskRouteFanOutBelowTaskClientCapacity() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskMaxConcurrency()).thenReturn(8);
+        List<Map<String, Object>> plans = java.util.stream.IntStream.range(0, 12)
+                .mapToObj(index -> Map.<String, Object>of(
+                        "id", "plan-" + index,
+                        "workflowDefinitionId", "definition-" + index))
+                .toList();
+        when(centerClient.taskWorkflowPlans()).thenReturn(plans);
+        var active = new java.util.concurrent.atomic.AtomicInteger();
+        var peak = new java.util.concurrent.atomic.AtomicInteger();
+        when(centerClient.taskWorkflowDefinition(anyString())).thenAnswer(invocation -> {
+            int current = active.incrementAndGet();
+            peak.accumulateAndGet(current, Math::max);
+            try {
+                java.util.concurrent.locks.LockSupport.parkNanos(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(20));
+                return Optional.of(Map.of("mapId", "map-a"));
+            } finally {
+                active.decrementAndGet();
+            }
+        });
+
+        Map<String, Object> response = new PanoramaService(centerClient, new ObjectMapper()).mapTaskRoutes("map-a");
+
+        assertEquals(12, maps(response.get("items")).size());
+        assertTrue(peak.get() <= 4);
+        assertEquals(true, map(map(response.get("dataQuality")).get("tasks")).get("complete"));
+    }
+
+    @Test
+    void degradedTaskRoutesAreNotCachedAsSuccessfulSnapshots() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", "plan-1", "workflowDefinitionId", "definition-1")));
+        when(centerClient.taskWorkflowDefinition("definition-1"))
+                .thenThrow(new PanoramaCenterClient.TaskSourceException(
+                        "TASK_QUERY_CONCURRENCY_LIMIT", "任务查询并发已达上限"))
+                .thenReturn(Optional.of(Map.of("mapId", "map-a")));
+        PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+
+        Map<String, Object> degraded = service.mapTaskRoutes("map-a");
+        Map<String, Object> recovered = service.mapTaskRoutes("map-a");
+
+        assertEquals(false, map(map(degraded.get("dataQuality")).get("tasks")).get("complete"));
+        assertEquals(1, maps(recovered.get("items")).size());
+        assertEquals(true, map(map(recovered.get("dataQuality")).get("tasks")).get("complete"));
+        verify(centerClient, times(2)).taskWorkflowDefinition("definition-1");
     }
 
     @Test
@@ -333,7 +413,8 @@ class PanoramaServiceTest {
         assertEquals(9001L, tasks.get(0).get("workflowInstanceId"));
         assertEquals("SCHEDULE", tasks.get(0).get("executionMode"));
         assertEquals(3600, tasks.get(0).get("expectedDurationSeconds"));
-        assertEquals("running", tasks.get(0).get("status"));
+        assertEquals("RUNNING", tasks.get(0).get("executionStatus"));
+        assertFalse(tasks.get(0).containsKey("status"));
     }
 
     @Test
@@ -352,8 +433,8 @@ class PanoramaServiceTest {
         Map<String, Object> response = service.taskEventSnapshot();
         Map<String, Object> task = maps(response.get("items")).get(0);
 
-        assertEquals("running", task.get("status"));
-        assertEquals("执行中", task.get("statusName"));
+        assertFalse(task.containsKey("status"));
+        assertFalse(task.containsKey("statusName"));
         assertEquals(List.of("TERMINATE"), task.get("availableLifecycleActions"));
         assertEquals("RUNNING", task.get("executionStatus"));
         assertEquals(9001L, task.get("activeWorkflowInstanceId"));
@@ -364,22 +445,59 @@ class PanoramaServiceTest {
     }
 
     @Test
-    void reusesCompleteTaskEventSnapshotOnlyForSameIdentity() {
+    void taskEventSnapshotReadsFreshPlansAfterInvalidationAndIsolatesIdentities() {
         PanoramaCenterClient client = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(client);
+        when(client.taskWorkflowPlans()).thenReturn(
+                List.of(Map.of("id", 1L, "executionStatus", "WAITING")),
+                List.of(Map.of("id", 1L, "executionStatus", "RUNNING")),
+                List.of(Map.of("id", 2L, "executionStatus", "PAUSED")));
         PanoramaService service = new PanoramaService(client, new ObjectMapper());
 
         authenticate("user-a", "org-a");
-        Map<String, Object> first = service.taskEventSnapshot();
-        assertSame(first, service.taskEventSnapshot());
-        verify(client).taskWorkflowPlans();
-        verify(client).activeTaskWorkflowInstances();
+        assertEquals("WAITING", maps(service.taskEventSnapshot().get("items")).get(0).get("executionStatus"));
+        service.invalidateTaskEventRead();
+        assertEquals("RUNNING", maps(service.taskEventSnapshot().get("items")).get(0).get("executionStatus"));
+        verify(client, times(2)).taskWorkflowPlans();
+        verify(client, times(2)).activeTaskWorkflowInstances();
         verify(client, never()).taskWorkflowInstances();
 
         authenticate("user-b", "org-a");
-        service.taskEventSnapshot();
-        verify(client, times(2)).taskWorkflowPlans();
-        verify(client, times(2)).activeTaskWorkflowInstances();
+        assertEquals("PAUSED", maps(service.taskEventSnapshot().get("items")).get(0).get("executionStatus"));
+        verify(client, times(3)).taskWorkflowPlans();
+        verify(client, times(3)).activeTaskWorkflowInstances();
+    }
+
+    @Test
+    void newTaskEventReadDoesNotJoinAnOlderInFlightPlanQuery() throws Exception {
+        PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(client);
+        var oldReadStarted = new java.util.concurrent.CountDownLatch(1);
+        var releaseOldRead = new java.util.concurrent.CountDownLatch(1);
+        var reads = new java.util.concurrent.atomic.AtomicInteger();
+        when(client.taskWorkflowPlans()).thenAnswer(ignored -> {
+            if (reads.incrementAndGet() == 1) {
+                oldReadStarted.countDown();
+                assertTrue(releaseOldRead.await(3, java.util.concurrent.TimeUnit.SECONDS));
+                return List.of(Map.of("id", 1L, "executionStatus", "WAITING"));
+            }
+            return List.of(Map.of("id", 1L, "executionStatus", "RUNNING"));
+        });
+        PanoramaService service = new PanoramaService(client, new ObjectMapper());
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var oldRead = executor.submit(service::taskEventSnapshot);
+            assertTrue(oldReadStarted.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            service.invalidateTaskEventRead();
+            assertEquals("RUNNING", maps(service.taskEventSnapshot().get("items")).get(0).get("executionStatus"));
+            releaseOldRead.countDown();
+            assertEquals("WAITING", maps(oldRead.get(3, java.util.concurrent.TimeUnit.SECONDS).get("items"))
+                    .get(0).get("executionStatus"));
+            verify(client, times(2)).taskWorkflowPlans();
+        } finally {
+            releaseOldRead.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test
@@ -531,8 +649,8 @@ class PanoramaServiceTest {
         Map<String, Object> overview = service.overview();
 
         Map<String, Object> task = maps(overview.get("tasks")).get(0);
-        assertEquals("waiting", task.get("status"));
-        assertEquals("待执行", task.get("statusName"));
+        assertFalse(task.containsKey("status"));
+        assertFalse(task.containsKey("statusName"));
         assertEquals("WAITING", task.get("executionStatus"));
         assertEquals(null, task.get("activeWorkflowInstanceId"));
         assertEquals(9001L, task.get("lastWorkflowInstanceId"));
@@ -784,7 +902,7 @@ class PanoramaServiceTest {
                 "id", 1L,
                 "planName", "已完成任务",
                 "lastWorkflowInstanceId", 9001L,
-                "executionStatus", "COMPLETED")));
+                "executionStatus", "WAITING")));
         when(centerClient.taskWorkflowInstance("9001")).thenReturn(Optional.of(Map.of("status", "COMPLETED")));
         when(centerClient.taskWorkflowReplay("9001")).thenReturn(Optional.empty());
         when(centerClient.deviceTaskInstances("9001")).thenReturn(List.of(Map.of("serialNumber", "robot-001")));
@@ -849,12 +967,12 @@ class PanoramaServiceTest {
     }
 
     @Test
-    void groupsDevicesIntoMapsByTaskMapId() {
+    void keepsEdgeLocationMapIdAndDoesNotUseTaskPlansForDeviceMapMembership() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         when(centerClient.enabledMaps()).thenReturn(List.of(
-                Map.of("id", 1001L, "mapName", "Map One"),
-                Map.of("mapId", "1002", "mapName", "Map Two"),
+                Map.of("id", 1001L, "edgeMapId", "slam-map-one", "mapName", "Map One"),
+                Map.of("mapId", "1002", "edgeMapId", "slam-map-two", "mapName", "Map Two"),
                 Map.of("mapName", "Map Without Id")));
         when(centerClient.mapPoints("1001")).thenReturn(List.of());
         when(centerClient.mapPoints("1002")).thenReturn(List.of());
@@ -864,10 +982,13 @@ class PanoramaServiceTest {
                 Map.of("serialNumber", "robot-001", "deviceName", "Robot One"),
                 Map.of("serialNumber", "robot-002", "deviceName", "Robot Two"),
                 Map.of("serialNumber", "robot-003", "deviceName", "Robot Without Map")));
-        when(centerClient.realtimeStatuses(List.of("robot-001", "robot-002", "robot-003"))).thenReturn(List.of(
-                realtimeStatus("robot-001", Map.of("mapId", "slam-map-one", "coordinateX", 1.0)),
-                realtimeStatus("robot-002", Map.of("mapId", "slam-map-two", "coordinateX", 2.0)),
-                realtimeStatus("robot-003", Map.of("mapId", "unknown-map", "coordinateX", 3.0))));
+        when(centerClient.registeredRobots()).thenReturn(List.of(
+                Map.of("robotId", "robot-001", "status", "online", "location",
+                        Map.of("localized", true, "mapId", "slam-map-one", "x", 1.0, "y", 2.0)),
+                Map.of("robotId", "robot-002", "status", "online", "location",
+                        Map.of("localized", true, "mapId", "slam-map-two", "x", 2.0, "y", 3.0)),
+                Map.of("robotId", "robot-003", "status", "online", "location",
+                        Map.of("localized", true, "mapId", "unknown-map", "x", 3.0, "y", 4.0))));
         when(centerClient.taskWorkflowPlans()).thenReturn(List.of(
                 Map.of(
                         "id", 1L,
@@ -877,8 +998,6 @@ class PanoramaServiceTest {
                         "id", 2L,
                         "workflowDefinitionId", "definition-002",
                         "roleBindings", List.of(Map.of("deviceIds", List.of("robot-002"))))));
-        when(centerClient.taskWorkflowDefinition("definition-001")).thenReturn(Optional.of(Map.of("mapId", 1001L)));
-        when(centerClient.taskWorkflowDefinition("definition-002")).thenReturn(Optional.of(Map.of("mapId", "1002")));
 
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
         Map<String, Object> overview = service.overview();
@@ -886,9 +1005,10 @@ class PanoramaServiceTest {
         List<Map<String, Object>> devices = maps(overview.get("devices"));
         List<Map<String, Object>> maps = maps(overview.get("map"));
         assertFalse(maps.get(0).containsKey("deviceIds"));
-        assertNull(((Map<?, ?>) devices.get(0).get("location")).get("mapId"));
-        assertNull(((Map<?, ?>) devices.get(1).get("location")).get("mapId"));
-        assertNull(((Map<?, ?>) devices.get(2).get("location")).get("mapId"));
+        assertEquals("slam-map-one", ((Map<?, ?>) devices.get(0).get("location")).get("mapId"));
+        assertEquals("slam-map-two", ((Map<?, ?>) devices.get(1).get("location")).get("mapId"));
+        assertEquals("unknown-map", ((Map<?, ?>) devices.get(2).get("location")).get("mapId"));
+        verify(centerClient, never()).taskWorkflowDefinition(anyString());
     }
 
     @Test

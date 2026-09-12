@@ -68,6 +68,50 @@ class BigscreenWebSocketAuthorizationServiceTest {
     }
 
     @Test
+    void allowsFieldCallEventsWithoutRobotOrCameraIdentity() {
+        assertTrue(service.canReceive(Set.of(), """
+                {
+                  "event": "video.field.call.incoming",
+                  "data": {
+                    "callId": "field-call-001",
+                    "displayName": "现场操作员",
+                    "robotId": "app-user-001",
+                    "cameraId": "phone-camera"
+                  }
+                }
+                """));
+        assertTrue(service.canReceive(Set.of(), """
+                {
+                  "event": "video.field.call.status",
+                  "data": {"callId": "field-call-001", "status": "RINGING"}
+                }
+                """));
+        assertTrue(service.canReceive(Set.of(), """
+                {
+                  "type": "video.field.call.accepted",
+                  "payload": {
+                    "call": {
+                      "callId": "field-call-001",
+                      "robotId": "app-user-001",
+                      "cameraId": "phone-camera"
+                    },
+                    "session": {"token": "livekit-token"}
+                  }
+                }
+                """));
+    }
+
+    @Test
+    void stillRejectsUnknownResourceFreeEvents() {
+        assertFalse(service.canReceive(Set.of(), """
+                {"event": "video.field.call.unknown", "data": {"callId": "field-call-001"}}
+                """));
+        assertFalse(service.canReceive(Set.of(), """
+                {"type": "video.field.call.unknown", "payload": {"callId": "field-call-001"}}
+                """));
+    }
+
+    @Test
     void filtersRobotStateOutsideAuthorizedDevices() {
         String payload = """
                 {

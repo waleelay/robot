@@ -414,6 +414,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                             identity, snapshot.resources().robotIds().size(), snapshot.resources().cameraIds().size());
                     if (recovered) {
                         notifyAuthorizationAvailability(identity, true);
+                        WebSocketSession session = newestTokenSession(identity);
+                        if (session != null) {
+                            requestAlarmRefresh(session);
+                            requestAlarmSnapshot(session);
+                        }
                     }
                     if (previous != null && !previous.resources().equals(snapshot.resources())) {
                         notifyAuthorizationChanged(identity);
@@ -551,7 +556,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                     requestTaskRefresh(browserSession, true);
                 }
                 if (refreshAlarms) {
-                    requestAlarmRefresh(browserSession);
+                    requestAlarmRefresh(browserSession, eventAdapter.alarmInvalidationKey(centerPayload));
                 }
             }
         }
@@ -573,35 +578,47 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     }
 
     private void requestTaskRefresh(WebSocketSession browserSession, boolean followChanges) {
-        Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
         String identity = authorizationIdentityBySession.getOrDefault(
                 browserSession.getId(), authorizationIdentity(browserSession));
-        taskEventRefresher.requestRefresh(identity, authentication,
+        taskEventRefresher.requestRefresh(identity, newestAuthentication(identity, browserSession),
                 payload -> sendUserScopedToIdentity(identity, payload), followChanges);
     }
 
     private void requestAlarmRefresh(WebSocketSession browserSession) {
-        Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
+        requestAlarmRefresh(browserSession, null);
+    }
+
+    private void requestAlarmRefresh(WebSocketSession browserSession, String eventKey) {
         String identity = authorizationIdentityBySession.getOrDefault(
                 browserSession.getId(), authorizationIdentity(browserSession));
         alarmEventRefresher.requestRefresh(
                 identity,
-                authentication,
-                payload -> sendUserScopedToIdentity(identity, payload));
+                newestAuthentication(identity, browserSession),
+                payload -> sendUserScopedToIdentity(identity, payload),
+                eventKey);
     }
 
     private void requestAlarmSnapshot(WebSocketSession browserSession) {
-        Authentication authentication = browserSession.getPrincipal() instanceof Authentication value ? value : null;
         String identity = authorizationIdentityBySession.getOrDefault(
                 browserSession.getId(), authorizationIdentity(browserSession));
         alarmEventRefresher.requestSnapshot(
                 identity,
-                authentication,
-                payload -> sendUserScopedToIdentity(identity, payload));
+                newestAuthentication(identity, browserSession),
+                payload -> sendUserScopedToBrowserSession(browserSession, payload));
     }
 
-    private void sendUserScopedToIdentity(String identity, String payload) {
-        sessionsForIdentity(identity).forEach(session -> sendUserScopedToBrowserSession(session, payload));
+    private Authentication newestAuthentication(String identity, WebSocketSession fallback) {
+        WebSocketSession session = newestTokenSession(identity);
+        Object principal = session == null ? fallback.getPrincipal() : session.getPrincipal();
+        return principal instanceof Authentication authentication ? authentication : null;
+    }
+
+    private boolean sendUserScopedToIdentity(String identity, String payload) {
+        boolean delivered = false;
+        for (WebSocketSession session : sessionsForIdentity(identity)) {
+            delivered |= sendUserScopedToBrowserSession(session, payload);
+        }
+        return delivered;
     }
 
     private void sendToBrowserSession(WebSocketSession browserSession, String payload) {
@@ -623,17 +640,19 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         }
     }
 
-    private void sendUserScopedToBrowserSession(WebSocketSession browserSession, String payload) {
+    private boolean sendUserScopedToBrowserSession(WebSocketSession browserSession, String payload) {
         if (!browserSession.isOpen()) {
-            return;
+            return false;
         }
         if (validSnapshot(browserSession) == null) {
-            return;
+            return false;
         }
         try {
             sendText(browserSession, payload);
+            return true;
         } catch (Exception exception) {
             log.warn("向浏览器发送用户范围事件失败，会话={}", browserSession.getId(), exception);
+            return false;
         }
     }
 

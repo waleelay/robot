@@ -5,8 +5,6 @@
  */
 export const EXECUTION_STATUS_LABEL = {
   WAITING: '待执行',
-  IDLE: '待执行',
-  PENDING: '待执行',
   PREPARING: '准备中',
   RUNNING: '执行中',
   PAUSING: '暂停中',
@@ -22,8 +20,6 @@ export const EXECUTION_STATUS_LABEL = {
 
 export const EXECUTION_STATUS_TYPE = {
   WAITING: 'info',
-  IDLE: 'info',
-  PENDING: 'info',
   PREPARING: 'info',
   RUNNING: 'orange',
   PAUSING: 'orange',
@@ -37,19 +33,18 @@ export const EXECUTION_STATUS_TYPE = {
   CANCELED: 'info'
 }
 
-const STATUS_ALIAS = {
-  PENDING: 'WAITING',
-  IDLE: 'WAITING',
-  WAITING: 'WAITING',
-  EXECUTING: 'RUNNING'
-}
-
 export function normalizeExecutionStatus(value) {
   if (value == null || value === '') return ''
   const raw = String(value).trim()
   if (!raw) return ''
   const upper = raw.replace(/([a-z])([A-Z])/g, '$1_$2').replace(/[-\s]+/g, '_').toUpperCase()
-  return STATUS_ALIAS[upper] || upper
+  return upper
+}
+
+/** 任务计划状态只使用管理端 executionStatus，不与工作流实例 status 混用。 */
+export function taskExecutionStatus(task) {
+  const status = task?.executionStatus
+  return status === 'WAITING' || status === 'RUNNING' || status === 'PAUSED' ? status : undefined
 }
 
 export function executionStatusLabel(value, fallback = '-') {
@@ -65,34 +60,26 @@ export function executionStatusType(value, fallback = 'info') {
 }
 
 export function isRunningTaskStatus(value) {
-  return normalizeExecutionStatus(value) === 'RUNNING'
+  return value === 'RUNNING'
 }
 
 export function isPausedTaskStatus(value) {
-  return normalizeExecutionStatus(value) === 'PAUSED'
+  return value === 'PAUSED'
 }
 
-/** 装备是否有执行中任务：running 或 paused */
+/** 任务计划是否正在占用装备。executionStatus 仅有 WAITING/RUNNING/PAUSED。 */
 export function isActiveTaskStatus(value) {
-  return isRunningTaskStatus(value) || isPausedTaskStatus(value)
+  return isDeviceAssociatedTaskStatus(value)
 }
 
 /** 可挂到装备 task 上的活跃状态，与 BFF devices.task 口径一致 */
 export function isDeviceAssociatedTaskStatus(value) {
-  const key = normalizeExecutionStatus(value)
-  return key === 'RUNNING'
-    || key === 'PAUSING'
-    || key === 'PAUSED'
-    || key === 'RESUMING'
-    || key === 'TERMINATING'
+  return isRunningTaskStatus(value) || isPausedTaskStatus(value)
 }
 
 export function taskStatusColorClass(value) {
-  const key = normalizeExecutionStatus(value)
-  if (key === 'RUNNING') return 'green'
-  if (key === 'WAITING' || key === 'PREPARING' || key === 'PAUSING' || key === 'RESUMING') return 'orange'
-  if (key === 'COMPLETED') return 'blue'
-  if (key === 'FAILED' || key === 'CONTROL_FAILED') return 'red'
-  if (key === 'PAUSED' || key === 'TERMINATED' || key === 'CANCELED' || key === 'TERMINATING') return 'gray'
+  if (value === 'RUNNING') return 'green'
+  if (value === 'WAITING') return 'orange'
+  if (value === 'PAUSED') return 'gray'
   return ''
 }

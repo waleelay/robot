@@ -28,12 +28,15 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 | `POST` | `/api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue` | 处置告警并继续对应工作流 |
 | `GET` | `/api/bigscreen/access-control/me` | 代理当前登录用户的管理端数据权限；下游失败时拒绝访问，不返回默认权限 |
 
-`actionable-workflow` 返回的每条告警均带有 `workflowActionable: true`，前端以该标识选择 `handle-and-continue`，不再根据工作流实例或人工任务字段是否存在进行推断。BFF 对该查询设置独立的公平并发闸门和熔断状态，默认只允许 1 个在途请求，代码硬上限为 4；它仍按当前用户实时查询且不跨身份缓存，但其超时不会打开设备、统计等通用查询熔断器。超时不作为空集合发布，首次快照在 5 秒窗口内执行有界失败重试；权威查询成功返回的真实空集合不重试。
+`actionable-workflow` 返回的每条告警均带有 `workflowActionable: true`，前端以该标识选择 `handle-and-continue`，不再根据工作流实例或人工任务字段是否存在进行推断。BFF 对该查询设置独立的连接/读取超时、公平并发闸门和熔断状态，默认允许 4 个在途请求、代码硬上限为 8；它仍按当前用户实时查询且不跨身份缓存，也不占用设备、统计等通用查询闸门。超时不作为空集合发布，首次快照在 5 秒窗口内执行有界失败重试；权威查询成功返回的真实空集合不重试。
 
 普通告警只在未处置且风险等级为 `HIGH` 或 `MEDIUM` 时进入弹窗；`sourceType=TASK` 的工作流告警不受风险等级限制，
 只在 BFF 推送的 `panorama.workflow-alarms.changed` 快照中出现后进入工作流弹窗。BFF 收到告警失效通知后
-独立于普通告警刷新立即查询 `actionable-workflow`；快照未变化时每 300 ms 仅重查该接口，最长 5 秒，变化即停。
-首次连接和重连也会推送当前完整快照，前端不调用该查询接口，也不设置告警查询定时器。
+独立于普通告警刷新立即查询 `actionable-workflow`；快照未变化时按 0.3/0.6/1.2/2.4 秒有界退避，最长 5 秒，变化即停。
+查询过程中若收到更新的失效通知，最新代次立即启动第二路补查，单身份最多两路在途；旧代次迟到响应不发布。
+首次连接和重连只向新连接推送当前完整快照，实时变化才向同一授权身份的全部有效会话广播，避免一个用户打开新标签页导致已有页面重复消费快照。前端不调用该查询接口，也不设置告警查询定时器；收到实时快照后直接显示告警详情，多条告警按高风险优先、同等级时间优先排队。
+同一身份存在多个浏览器会话时，BFF 使用有效期最晚的登录凭证执行权威补查，避免旧标签页的临期 Token 覆盖新会话凭证。
+浏览器投递失败时 BFF 不推进该身份的已发送快照；授权恢复后主动重新查询普通告警和工作流告警，补齐 fail-closed 窗口内的变化。
 
 响应字段、来源优先级和空值规则以[大屏 BFF 字段来源映射文档](大屏BFF字段来源映射文档.md)为准。固定摄像头作为 `devices[]` 中的同级装备返回，关键识别字段为：
 
@@ -66,8 +69,9 @@ Bigscreen BFF 是大屏前端统一 REST/WebSocket 入口，负责 JWT 验证、
 `offline` 返回。
 
 机器人电量、速度、模式、充电事实、任务状态和边缘定位统一由本项目 Control 注册表取得，并返回独立的
-`runtimeUpdatedAt`。`edgeLocation` 保留设备侧地图 ID 和定位事实；既有 `location` 仍用于大屏地图展示，
-其 `mapId` 可按任务关联改写为平台地图 ID，两者不得混用。
+`runtimeUpdatedAt`。`location` 与兼容字段 `edgeLocation` 都保留设备侧地图 ID 和定位事实，不再按任务关联
+改写。移动设备图标只在 `localized=true`、`x/y` 有效且 `location.mapId` 唯一匹配某张启用地图
+`edgeMapId` 时显示；匹配得到的地图 `id` 才是前端平台地图主键。
 Overview、设备详情与 WebSocket 使用相同运行态源，前端按该时间比较运行态新旧，不能用
 仅在在线状态变化时更新的 `statusChangedAt` 来判断速度和模式的新旧。缺值保留 `null`，
 不补零电量、零速度、默认模式、默认空闲或默认充电状态。组件数量与详情调用规则见字段来源文档 3.3 节。
@@ -126,15 +130,18 @@ Overview 的地图列表查询失败不再降级为 `map=[]`：地图读取超�
 许可耗尽返回 503，401/403 保持原状态；成功且确实无地图才返回空列表。普通刷新失败时前端
 保留当前数据，权限集合明确变化时仍先清空并重新获取，禁止借保留选择恢复已失权数据。
 
-`resources` 响应为 `{serverTime, mapId, points, deviceIds, fixedCamares}`，表示当前地图渲染所需的按需资源，其中
-`points` 为当前地图点位，
-`deviceIds` 为按设备关联任务的管理端地图 ID 与当前地图匹配的 `robotId` 数组。边缘端实时定位的 SLAM 地图 ID
-不作为管理端地图归属依据；未关联任务地图的设备不出现在任一地图渲染资源响应中。完整设备对象仅使用
-`overview.devices[]`，不得在 `resources` 重复下发；
+`resources` 响应为 `{serverTime, mapId, points, fixedCamares}`，表示当前地图渲染所需的按需资源，其中
+`points` 为当前地图点位。移动设备归属由 `overview.devices[].location` 与 `overview.map[].edgeMapId`
+直接解析，不再由资源接口返回任务派生的设备集合；完整设备对象仅使用 `overview.devices[]`，不得在
+`resources` 重复下发；
 `fixedCamares` 保持现有字段拼写，表示当前地图固定摄像头。
 `task-routes` 响应为
 `{serverTime, mapId, items, dataQuality}`；每个 `items[]` 包含 `taskId`、`workflowInstanceId`、`mapId` 和
 `pathPoints`。Overview 的 `tasks[]` 不返回空的 `pathPoints` 占位，前端只把 `task-routes.items[]` 写入路径状态。
+`task-routes.dataQuality.tasks` 表示整个地图任务路径集合是否完整；降级时 `items[]` 只是本轮成功查到的子集，
+不得用于替换任务卡片或任务路径归属的已知完整集合。前端已有完整快照时保留上一份数据；首次加载即降级时，
+数量显示为未知值 `--`，不把局部条数当成真实总数。BFF 不缓存降级路径结果，并分批解析工作流定义，
+避免单次地图请求自身耗尽任务查询并发许可。
 `tasks/{taskId}` 响应为 `{serverTime, task, dataQuality}`；找不到任务时 `task=null`，不以
 伪造任务替代。`tasks/{taskId}/fixed-cameras` 响应为 `{serverTime, taskId, items}`，每个 `items[]` 只包含
 `cameraId`、`name`、`sourceType=FIXED_CAMERA`、`sourceId` 和 `defaultQuality`。其来源是 Management
@@ -280,22 +287,22 @@ BFF 对该类资源返回空集合并继续组装其余有权数据，因此真�
 | `robot.state` | `panorama.device.status.changed`：仅边缘状态（`stateSource=EDGE_DEVICE_STATUS`）与离线扫描（`stateSource=OFFLINE_SCAN`）来源派生，媒体客户端及 GIS 位置补充来源不派生；有定位时再派生 `panorama.device.location.changed` |
 | `panorama.device.location.changed` | 按浏览器会话和 `robotId` 隔离；首条立即推送；1 秒内 GIS 结果优先，更晚的 SLAM 位置保留到下一窗口，每秒最多一次；无新定位不重复推送旧坐标 |
 | task 变更类事件 | 有完整 `taskId` 时立即转换为 `panorama.task.changed`                                                                                                                                                            |
-| `management.task.invalidated` | 300ms 去抖后通过独立有界 I/O 通道重查任务计划和活动实例摘要，整轮查询最长 8 秒；同一身份的完整成功快照在 100ms 内复用；任务变化通知按 1/2/4/8 秒并加入正负 20% 抖动，最多复查 4 次，不以其他任务变化推断收敛；初次连接正常时仅补查一次，失败或 `PREPARING` 时有界重试；新事件提前旧退避任务，同一身份只保留一个运行和一个待刷新状态，不占用全景页面查询线程，也不加载历史实例、回放、路径和设备任务明细                                                                                             |
+| `management.task.invalidated` | 50ms 去抖后由调度线程提交至应用执行器，再通过独立有界 I/O 通道重查任务计划和活动实例摘要，整轮查询最长 8 秒；每轮查询隔离通知前的旧在途读取，不缓存任务事件快照；任务变化通知按 1/2/4/8 秒并加入正负 20% 抖动，最多复查 4 次，不以其他任务变化推断收敛；初次连接正常时仅补查一次，失败、浏览器投递失败或 `PREPARING` 时有界重试；新事件提前旧退避任务，同一身份只保留一个运行和一个待刷新状态，不占用调度线程和全景页面查询线程，也不加载历史实例、回放、路径和设备任务明细                                                                                             |
 | alarm 变更类事件 | 立即转换为 `panorama.alarm.changed`，无真实上游事件时不生成模拟告警                                                                                                                                                         |
-| `management.alarm.invalidated` | BFF 内部失效通知，不透传浏览器。按授权身份以两条独立链路查询可处置工作流告警和普通告警分页快照；普通告警只查各风险第一页和总数并采用 latest-only，变化时推送 `panorama.alarms.changed`；工作流快照按 0.3/0.6/1.2/2.4 秒退避并加入正负 20% 抖动，首次加最多四次复查且总时限不超过 5 秒，新事件可提前旧退避 |
+| `management.alarm.invalidated` | BFF 内部失效通知，不透传浏览器。带 `source:eventId` 的通知按身份去重，避免多会话广播使在途查询失效；然后以两条独立链路查询可处置工作流告警和普通告警分页快照。普通告警只查各风险第一页和总数并采用 latest-only，变化时推送 `panorama.alarms.changed`；工作流快照按 0.3/0.6/1.2/2.4 秒退避并加入正负 20% 抖动，首次加最多四次复查且总时限不超过 5 秒，新事件可提前旧退避 |
 | 设备、任务、告警或机器人在线状态变化 | 500ms 去抖后按事件类型只重算受影响统计块（设备/任务/告警，各块 3 秒 TTL 缓存按用户隔离），仅在快照变化时推送 `panorama.stats.changed`                                                                                                                |
 
-BFF 不生成硬编码位置。边缘端已有合法经纬度时由 Control 直接使用；缺失经纬度且具备 `mapId/x/y` 时，Control 通过 Management 内部接口换算后补充位置。同一限频窗口内 GIS 结果优先于 SLAM 坐标，更晚的 SLAM 位置保留到下一窗口；若没有新 GIS 结果，仍会下发最新 SLAM 坐标。若首次连接上游 WebSocket 失败，BFF 以 1011 关闭浏览器连接，复用前端已有退避重连。连接成功后补查任务快照；Control 重连管理端 STOMP 后广播任务失效通知，补齐断线期间变化。
+BFF 不生成硬编码位置。边缘端已有合法经纬度时由 Control 直接使用；缺失经纬度且具备 `mapId/x/y` 时，Control 通过 Management 内部接口换算后补充位置。同一限频窗口内 GIS 结果优先于 SLAM 坐标，更晚的 SLAM 位置保留到下一窗口；若没有新 GIS 结果，仍会下发最新 SLAM 坐标。若首次连接上游 WebSocket 失败，BFF 以 1011 关闭浏览器连接，复用前端已有退避重连。连接成功后补查任务快照；Control 重连管理端 STOMP 后同时广播任务和告警失效通知，补齐断线期间变化。STOMP 桥接启用时必须配置静态 Token 或完整的客户端凭据，缺少认证时不得反复建立匿名连接。
 
 
 ### 任务计划展示与操作刷新
 
-全景任务卡与任务计划列表均展示管理端 `executionStatus`。共享 `status/statusName` 继续供实例运行态、
-设备关联及统计使用，二者不混用。立即执行使用计划 ID；暂停、恢复、终止使用
+全景任务卡与任务计划列表均展示管理端 `executionStatus`，任务摘要不再提供 `status/statusName`。
+实例运行态仍单独使用 `activeWorkflowInstanceStatus`，设备关联只按计划 `executionStatus` 判断。立即执行使用计划 ID；暂停、恢复、终止使用
 `activeWorkflowInstanceId`，按钮按 `availableLifecycleActions` 与权限判断。
 
 操作接口只确认指令提交，前端不再定时查询计划详情，也不提前修改任务状态。BFF 统一承担事件合并和
-有界复查：原始 `management.task.invalidated` 不直接透传；完整摘要只推送变化任务，计划快照首次就绪或内容变化时才发送一次
+有界复查：原始 `management.task.invalidated` 不直接透传；完整摘要只推送变化任务，计划快照首次就绪或内容变化时才发送一次；当前身份的浏览器会话全部投递成功后才推进已发送快照，投递失败会沿用同一有界复查机制补发
 同名列表刷新通知；实例接口失败不阻断计划通知，不用残缺摘要清空任务卡。相同计划快照不会反复触发列表查询。全景卡片直接消费 `panorama.task.changed`；
 分页列表仅响应补查后的 `management.task.invalidated`，按当前筛选、页码静默查询一次，不显示加载遮罩。
 前端没有任务刷新定时器；首次进入、返回列表和手动查询仍正常加载。重连由 BFF 补查并通知，前端不重复补查列表。

@@ -84,7 +84,13 @@ vm.runInNewContext(compiled, {
       return { getPatrolPanoramaMountedDeviceCount: (id, signal) => new Promise((resolve, reject) => pending.push({ id, signal, resolve, reject })) }
     }
     if (name.includes('prefer-live-robot-fields')) return helpers
-    if (name.includes('execution-status')) return { executionStatusLabel: value => value }
+    if (name.includes('execution-status')) return {
+      executionStatusLabel: value => value,
+      isActiveTaskStatus: value => ['RUNNING', 'PAUSED'].includes(String(value).toUpperCase()),
+      isRunningTaskStatus: value => String(value).toUpperCase() === 'RUNNING',
+      taskExecutionStatus: task => task?.executionStatus,
+      taskStatusColorClass: () => ''
+    }
     return {}
   }
 })

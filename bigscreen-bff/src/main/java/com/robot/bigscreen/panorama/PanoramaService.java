@@ -32,6 +32,8 @@ import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -41,10 +43,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class PanoramaService {
 
+    private static final Logger log = LoggerFactory.getLogger(PanoramaService.class);
     private static final ZoneOffset CHINA_ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final long STATS_CACHE_TTL_MILLIS = 3000;
-    private static final long TASK_EVENT_CACHE_TTL_MILLIS = 100;
     /**
      * 同一登录主体的首屏在 5 秒窗口内复用同一份成功快照。它既避免高频刷新击穿 Management，
      * 也不把失败结果缓存给后续用户请求。
@@ -55,6 +57,11 @@ public class PanoramaService {
     private static final int SNAPSHOT_CACHE_MAX_SIZE = 256;
     private static final int IN_FLIGHT_MAX_SIZE = 128;
     private static final int ALARM_PAGE_SIZE = 10;
+    /**
+     * 单次地图路径查询只并发解析少量工作流定义，给任务列表、实例和其他登录主体预留许可。
+     * 该值必须小于任务下游默认并发上限，避免一次请求自行触发并发降级。
+     */
+    private static final int TASK_ROUTE_BATCH_SIZE = 4;
     /** 顶层编排允许等待子 I/O，但绝不占用子 I/O 执行器。 */
     private static final ThreadPoolExecutor OVERVIEW_EXECUTOR = new ThreadPoolExecutor(
             5,
@@ -114,8 +121,6 @@ public class PanoramaService {
     private final BoundedTtlCache<String, Map<String, Object>> overviewCache =
             new BoundedTtlCache<>(SNAPSHOT_CACHE_MAX_SIZE, OVERVIEW_CACHE_TTL_MILLIS);
     private final Map<String, CompletableFuture<Map<String, Object>>> overviewInFlight = new ConcurrentHashMap<>();
-    private final BoundedTtlCache<String, Map<String, Object>> taskEventCache =
-            new BoundedTtlCache<>(SNAPSHOT_CACHE_MAX_SIZE, TASK_EVENT_CACHE_TTL_MILLIS);
     private final Map<String, CompletableFuture<Map<String, Object>>> taskEventInFlight = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<Map<String, Object>>> alarmEventInFlight = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<?>> sourceReadInFlight = new ConcurrentHashMap<>();
@@ -169,6 +174,13 @@ public class PanoramaService {
             overviewCache.remove(cacheKey);
         }
         statsCache.remove("tasks:" + userKey);
+        statsCache.removeIf(key -> key.startsWith("map-task-routes:") && key.endsWith(":" + userKey));
+        sourceReadInFlight.remove(sourceReadKey("task-plans"));
+    }
+
+    /** 每轮事件查询前隔离旧在途读取，避免复用通知前启动的计划查询。 */
+    public void invalidateTaskEventRead() {
+        taskEventInFlight.remove("task-event:" + statsUserKey());
         sourceReadInFlight.remove(sourceReadKey("task-plans"));
     }
 
@@ -235,48 +247,58 @@ public class PanoramaService {
     }
 
     private Map<String, Object> overviewWithinDeadline() {
+        OverviewTiming timing = new OverviewTiming();
         OverviewRequestCache cache = new OverviewRequestCache();
         Map<String, Object> overview = object("serverTime", now());
-        CompletableFuture<List<Map<String, Object>>> devicesFuture = asyncOverview(() -> devices(cache));
-        CompletableFuture<PanoramaTasks> tasksFuture = asyncOverview(this::taskSummaries);
-        CompletableFuture<List<Map<String, Object>>> mapsFuture = asyncOverview(centerClient::enabledMaps);
-        CompletableFuture<PanoramaAlarms> alarmsFuture = asyncOverview(this::alarmsPayload);
-        CompletableFuture<Map<String, Object>> mileageFuture = asyncOverview(this::todayMileageSummary);
+        CompletableFuture<List<Map<String, Object>>> devicesFuture =
+                timing.track("devices", asyncOverview(() -> devices(cache, timing)));
+        CompletableFuture<PanoramaTasks> tasksFuture =
+                timing.track("tasks", asyncOverview(this::taskSummaries));
+        CompletableFuture<List<Map<String, Object>>> mapsFuture =
+                timing.track("maps", asyncOverview(centerClient::enabledMaps));
+        CompletableFuture<PanoramaAlarms> alarmsFuture =
+                timing.track("alarms", asyncOverview(this::alarmsPayload));
+        CompletableFuture<Map<String, Object>> mileageFuture =
+                timing.track("mileage", asyncOverview(this::todayMileageSummary));
 
-        // 查询失败不等于地图已移除，不能用空列表触发前端切换地图。
-        List<Map<String, Object>> maps = joinRequired(mapsFuture);
-        List<Map<String, Object>> rawDevices = joinRequired(devicesFuture);
-        PanoramaTasks panoramaTasks = join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED"));
-        PanoramaAlarms panoramaAlarms = joinRequired(alarmsFuture);
-        List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), rawDevices);
-        // 管理端地图 ID 与边缘 SLAM 地图 ID 不是同一命名空间；首屏只用任务摘要修正地图归属，
-        // 不再把重复的任务对象挂回 devices[]。
-        List<Map<String, Object>> devices = withTaskLocationMapIds(rawDevices, tasks);
-        cacheStatsValue("devices", devices);
-        if (dataComplete(panoramaTasks.dataQuality())) {
-            cacheStatsValue("tasks", panoramaTasks);
+        try {
+            // 查询失败不等于地图已移除，不能用空列表触发前端切换地图。
+            List<Map<String, Object>> maps = joinRequired(mapsFuture);
+            List<Map<String, Object>> rawDevices = joinRequired(devicesFuture);
+            PanoramaTasks panoramaTasks = join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED"));
+            PanoramaAlarms panoramaAlarms = joinRequired(alarmsFuture);
+            List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(panoramaTasks.items(), rawDevices);
+            // 移动设备的地图归属只由边缘定位决定。location.mapId 保留设备侧地图 ID，
+            // 前端通过 map.edgeMapId 唯一解析平台地图；任务计划不得改写当前位置。
+            List<Map<String, Object>> devices = rawDevices;
+            cacheStatsValue("devices", devices);
+            if (dataComplete(panoramaTasks.dataQuality())) {
+                cacheStatsValue("tasks", panoramaTasks);
+            }
+            if (dataComplete(panoramaAlarms.dataQuality())) {
+                cacheStatsValue("alarms", panoramaAlarms);
+            }
+            overview.put("devices", overviewDevices(devices));
+            overview.put("deviceStats", deviceStats(devices));
+            overview.put("deviceTypeStats", deviceTypeStats(devices));
+
+            overview.put("patrolOverview", patrolOverview(
+                    panoramaTasks.instances(), join(mileageFuture, Map.of())));
+            overview.put("tasks", overviewTasks(tasks));
+            overview.put("taskOverview", overviewTaskOverview(tasks));
+            overview.put("dataQuality", object(
+                    "tasks", panoramaTasks.dataQuality(),
+                    "alarms", panoramaAlarms.dataQuality()));
+
+            overview.put("map", maps.stream().map(this::overviewMap).toList());
+
+            overview.put("alarms", dataComplete(panoramaAlarms.dataQuality())
+                    ? overviewAlarms(panoramaAlarms.payload())
+                    : Map.of());
+            return overview;
+        } finally {
+            timing.logSummary();
         }
-        if (dataComplete(panoramaAlarms.dataQuality())) {
-            cacheStatsValue("alarms", panoramaAlarms);
-        }
-        overview.put("devices", overviewDevices(devices));
-        overview.put("deviceStats", deviceStats(devices));
-        overview.put("deviceTypeStats", deviceTypeStats(devices));
-
-        overview.put("patrolOverview", patrolOverview(
-                panoramaTasks.instances(), join(mileageFuture, Map.of())));
-        overview.put("tasks", overviewTasks(tasks));
-        overview.put("taskOverview", overviewTaskOverview(tasks));
-        overview.put("dataQuality", object(
-                "tasks", panoramaTasks.dataQuality(),
-                "alarms", panoramaAlarms.dataQuality()));
-
-        overview.put("map", maps.stream().map(this::overviewMap).toList());
-
-        overview.put("alarms", dataComplete(panoramaAlarms.dataQuality())
-                ? overviewAlarms(panoramaAlarms.payload())
-                : Map.of());
-        return overview;
     }
 
     public Map<String, Object> statsSnapshot() {
@@ -463,7 +485,6 @@ public class PanoramaService {
         device.remove("task");
         Map<String, Object> location = mutable(map(device.get("location")));
         location.remove("altitude");
-        location.remove("updatedAt");
         device.put("location", location);
         return device;
     }
@@ -540,147 +561,6 @@ public class PanoramaService {
         return alarm;
     }
 
-    private List<String> deviceIdsForMap(String mapId, List<Map<String, Object>> devices) {
-        if (mapId == null || devices == null || devices.isEmpty()) {
-            return List.of();
-        }
-        return devices.stream()
-                .filter(device -> Objects.equals(mapId, firstString(map(device.get("location")), "mapId")))
-                .map(device -> firstString(device, "robotId"))
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-    }
-
-    private List<Map<String, Object>> withTaskLocationMapIds(
-            List<Map<String, Object>> devices,
-            List<Map<String, Object>> tasks) {
-        if (devices == null || devices.isEmpty()) {
-            return List.of();
-        }
-        Map<String, String> taskMapIds = taskMapIdsByRobotId(tasks);
-        return devices.stream()
-                .map(device -> withTaskLocationMapId(device, taskMapIds))
-                .toList();
-    }
-
-    private List<Map<String, Object>> withTaskAssociations(
-            List<Map<String, Object>> devices,
-            List<Map<String, Object>> tasks) {
-        return withDeviceTasks(withTaskLocationMapIds(devices, tasks), tasks);
-    }
-
-    private List<Map<String, Object>> withDeviceTasks(
-            List<Map<String, Object>> devices,
-            List<Map<String, Object>> tasks) {
-        if (devices == null || devices.isEmpty()) {
-            return List.of();
-        }
-        Map<String, List<Map<String, Object>>> tasksByRobotId = activeTasksByRobotId(tasks);
-        return devices.stream()
-                .map(device -> {
-                    List<Map<String, Object>> currentTasks = taskArray(device.get("task"));
-                    List<Map<String, Object>> associatedTasks = tasksByRobotId.getOrDefault(
-                            firstString(device, "robotId"), List.of());
-                    Map<String, Object> result = mutable(device);
-                    result.put("task", enrichDeviceTasks(currentTasks, associatedTasks));
-                    return result;
-                })
-                .toList();
-    }
-
-    private List<Map<String, Object>> enrichDeviceTasks(
-            List<Map<String, Object>> currentTasks,
-            List<Map<String, Object>> associatedTasks) {
-        if (currentTasks.isEmpty()) {
-            return associatedTasks;
-        }
-        return currentTasks.stream()
-                .map(currentTask -> {
-                    Map<String, Object> associatedTask = associatedTasks.stream()
-                            .filter(candidate -> Objects.equals(
-                                    string(candidate.get("workflowInstanceId")),
-                                    string(currentTask.get("workflowInstanceId"))))
-                            .findFirst()
-                            .orElse(associatedTasks.size() == 1 ? associatedTasks.get(0) : Map.of());
-                    Map<String, Object> result = mutable(associatedTask);
-                    currentTask.forEach((key, value) -> {
-                        if (value != null && (!(value instanceof String text) || !text.isBlank())) {
-                            result.put(key, value);
-                        }
-                    });
-                    return result;
-                })
-                .toList();
-    }
-
-    private Map<String, List<Map<String, Object>>> activeTasksByRobotId(List<Map<String, Object>> tasks) {
-        Map<String, List<Map<String, Object>>> result = new LinkedHashMap<>();
-        if (tasks == null || tasks.isEmpty()) {
-            return result;
-        }
-        for (Map<String, Object> task : tasks) {
-            if (!activeDeviceTaskStatus(firstString(task, "status"))) {
-                continue;
-            }
-            Map<String, Object> deviceTask = object(
-                    "taskId", task.get("taskId"),
-                    "workflowInstanceId", task.get("workflowInstanceId"),
-                    "name", firstString(task, "name"),
-                    "status", firstString(task, "status"),
-                    "timeRange", firstString(task, "timeRange"));
-            for (Map<String, Object> equipment : list(task.get("equipmentList"))) {
-                String robotId = firstString(equipment, "robotId");
-                if (robotId != null && !robotId.isBlank()) {
-                    result.computeIfAbsent(robotId, ignored -> new ArrayList<>()).add(deviceTask);
-                }
-            }
-        }
-        return result;
-    }
-
-    private boolean activeDeviceTaskStatus(String status) {
-        return status != null && Set.of(
-                "running", "pausing", "paused", "resuming", "terminating")
-                .contains(status.toLowerCase(Locale.ROOT));
-    }
-
-    private Map<String, String> taskMapIdsByRobotId(List<Map<String, Object>> tasks) {
-        Map<String, String> result = new LinkedHashMap<>();
-        if (tasks == null) {
-            return result;
-        }
-        for (Map<String, Object> task : tasks) {
-            String mapId = firstString(task, "mapId");
-            if (mapId == null || mapId.isBlank()) {
-                continue;
-            }
-            for (Map<String, Object> equipment : list(task.get("equipmentList"))) {
-                String robotId = firstString(equipment, "robotId");
-                if (robotId != null && !robotId.isBlank()) {
-                    result.putIfAbsent(robotId, mapId);
-                }
-            }
-        }
-        return result;
-    }
-
-    private Map<String, Object> withTaskLocationMapId(
-            Map<String, Object> device,
-            Map<String, String> taskMapIds) {
-        if ("FIXED_CAMERA".equals(firstString(device, "sourceType"))) {
-            return device;
-        }
-        Map<String, Object> result = mutable(device);
-        Map<String, Object> location = mutable(map(device.get("location")));
-        // 大屏地图使用管理端任务定义的地图 ID。边缘端上报的是 SLAM 地图 ID，
-        // 两者不保证一致，未关联任务的设备不能据此错误归属到某张管理端地图。
-        String taskMapId = taskMapIds.get(firstString(device, "robotId"));
-        location.put("mapId", taskMapId);
-        result.put("location", location);
-        return result;
-    }
-
     public Map<String, Object> mountedDeviceCount(String deviceId) {
         // 先按当前用户的设备列表授权，再补查唯一目标的组件；固定摄像头和无权设备不查询详情。
         List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
@@ -722,56 +602,11 @@ public class PanoramaService {
     private Map<String, Object> mapResourcesPayload(String mapId) {
         List<Map<String, Object>> points = centerClient.mapPoints(mapId);
         List<Map<String, Object>> fixedCameras = centerClient.fixedCameras(mapId);
-        // 地图渲染资源是地图与顶层 devices[] 的关联入口。只返回 ID，避免重复下发设备详情。
-        // 现场设备常不在实时定位中携带管理端 mapId，必须复用任务定义补齐后的地图归属，
-        // 否则任务已绑定地图的设备会被错误地遗漏。
-        List<Map<String, Object>> devices = mapAssociatedDevices();
         return object(
                 "serverTime", now(),
                 "mapId", mapId,
                 "points", overviewPoints(points),
-                "deviceIds", deviceIdsForMap(mapId, devices),
                 "fixedCamares", fixedCameras);
-    }
-
-    private List<Map<String, Object>> mapAssociatedDevices() {
-        List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
-        // overview 的 tasks 是首屏摘要，不读取工作流定义；场景关联需要管理端地图 ID，
-        // 因此仅在用户请求地图渲染资源时按需补齐，且与首屏摘要缓存隔离。这里刻意不复用
-        // taskPayload：场景关联只需要任务、设备与地图，不能额外读取路径点和任务回放。
-        List<Map<String, Object>> tasks = cachedStats("map-association-tasks", this::mapAssociationTasks);
-        return withTaskLocationMapIds(devices, tasks);
-    }
-
-    private List<Map<String, Object>> mapAssociationTasks() {
-        TaskDataQuality quality = new TaskDataQuality();
-        List<Map<String, Object>> taskPlans = joinTask(
-                sharedAsync("task-plans", centerClient::taskWorkflowPlans),
-                List.of(), quality, "TASK_PLANS_UNAVAILABLE");
-        List<CompletableFuture<Map<String, Object>>> futures = taskPlans.stream()
-                .map(task -> async(() -> mapAssociationTask(task, quality)))
-                .toList();
-        return futures.stream()
-                .map(future -> joinTask(future, null, quality, "TASK_MAP_ASSOCIATION_UNAVAILABLE"))
-                .filter(Objects::nonNull)
-                .toList();
-    }
-
-    private Map<String, Object> mapAssociationTask(Map<String, Object> task, TaskDataQuality quality) {
-        Object mapId = firstValue(task, "mapId", "mapID");
-        String workflowDefinitionId = firstString(task, "workflowDefinitionId", "definitionId");
-        if ((mapId == null || string(mapId).isBlank())
-                && workflowDefinitionId != null && !workflowDefinitionId.isBlank()) {
-            Optional<Map<String, Object>> definition = centerClient.taskWorkflowDefinition(workflowDefinitionId);
-            if (definition.isPresent()) {
-                mapId = firstValue(definition.get(), "mapId", "mapID");
-            } else {
-                quality.invalidReference("WORKFLOW_DEFINITION_NOT_FOUND", workflowDefinitionId);
-            }
-        }
-        return object(
-                "mapId", mapId,
-                "equipmentList", equipmentList(task, Map.of(), Map.of(), List.of()));
     }
 
     /** 当前地图关联任务的路径数据；不加载任务回放或设备任务明细。 */
@@ -779,7 +614,14 @@ public class PanoramaService {
         if (mapId == null || mapId.isBlank()) {
             throw new IllegalArgumentException("mapId is required");
         }
-        return cachedStats("map-task-routes:" + mapId, () -> mapTaskRoutesPayload(mapId));
+        String cachePart = "map-task-routes:" + mapId;
+        Map<String, Object> response = cachedStats(cachePart, () -> mapTaskRoutesPayload(mapId));
+        Map<String, Object> quality = map(map(response.get("dataQuality")).get("tasks"));
+        // 降级结果只是本轮成功查询到的子集，不能作为成功快照缓存给后续请求。
+        if (!dataComplete(quality)) {
+            statsCache.remove(cachePart + ":" + statsUserKey());
+        }
+        return response;
     }
 
     private Map<String, Object> mapTaskRoutesPayload(String mapId) {
@@ -789,19 +631,23 @@ public class PanoramaService {
                 sharedAsync("task-plans", centerClient::taskWorkflowPlans),
                 List.of(), quality, "TASK_PLANS_UNAVAILABLE");
         TaskRouteResolver routeResolver = new TaskRouteResolver(taskPlans, cache, quality);
-        for (int index = 0; index < taskPlans.size(); index++) {
-            routeResolver.prefetch(taskPlans.get(index), index);
-        }
         List<Map<String, Object>> items = new ArrayList<>();
-        for (int index = 0; index < taskPlans.size(); index++) {
-            Map<String, Object> task = taskPlans.get(index);
-            TaskRouteData route = routeResolver.resolve(task, index);
-            if (Objects.equals(mapId, string(route.mapId()))) {
-                items.add(object(
-                        "taskId", firstValue(task, "id", "taskId"),
-                        "workflowInstanceId", planWorkflowInstanceId(task),
-                        "mapId", route.mapId(),
-                        "pathPoints", overviewPoints(route.pathPoints())));
+        int batchSize = taskRouteBatchSize();
+        for (int batchStart = 0; batchStart < taskPlans.size(); batchStart += batchSize) {
+            int batchEnd = Math.min(taskPlans.size(), batchStart + batchSize);
+            for (int index = batchStart; index < batchEnd; index++) {
+                routeResolver.prefetch(taskPlans.get(index), index);
+            }
+            for (int index = batchStart; index < batchEnd; index++) {
+                Map<String, Object> task = taskPlans.get(index);
+                TaskRouteData route = routeResolver.resolve(task, index);
+                if (Objects.equals(mapId, string(route.mapId()))) {
+                    items.add(object(
+                            "taskId", firstValue(task, "id", "taskId"),
+                            "workflowInstanceId", planWorkflowInstanceId(task),
+                            "mapId", route.mapId(),
+                            "pathPoints", overviewPoints(route.pathPoints())));
+                }
             }
         }
         return object(
@@ -809,6 +655,14 @@ public class PanoramaService {
                 "mapId", mapId,
                 "items", items,
                 "dataQuality", object("tasks", quality.snapshot()));
+    }
+
+    private int taskRouteBatchSize() {
+        int taskCapacity = centerClient.taskMaxConcurrency();
+        if (taskCapacity <= 0) {
+            return TASK_ROUTE_BATCH_SIZE;
+        }
+        return Math.max(1, Math.min(TASK_ROUTE_BATCH_SIZE, taskCapacity - 1));
     }
 
     /** 任务详情仅在用户打开任务时加载，避免首屏预取回放和设备任务明细。 */
@@ -876,14 +730,11 @@ public class PanoramaService {
     /** WebSocket 任务事件只读取列表摘要，避免状态变化时加载回放、路径和设备任务明细。 */
     public Map<String, Object> taskEventSnapshot() {
         String cacheKey = "task-event:" + statsUserKey();
-        Optional<Map<String, Object>> cached = taskEventCache.get(cacheKey);
-        if (cached.isPresent()) return cached.get();
         CompletableFuture<Map<String, Object>> created = new CompletableFuture<>();
         CompletableFuture<Map<String, Object>> shared = taskEventInFlight.putIfAbsent(cacheKey, created);
         if (shared != null) return joinShared(shared, OVERVIEW_TIMEOUT_MILLIS);
         try {
             Map<String, Object> snapshot = loadTaskEventSnapshot();
-            if (Boolean.TRUE.equals(snapshot.get("tasksComplete"))) taskEventCache.put(cacheKey, snapshot);
             created.complete(snapshot);
             return snapshot;
         } catch (RuntimeException | Error error) {
@@ -1044,12 +895,20 @@ public class PanoramaService {
     }
 
     private List<Map<String, Object>> devices(OverviewRequestCache cache) {
-        CompletableFuture<List<Map<String, Object>>> managementDevicesFuture = async(
-                () -> cachedStats("management-devices", centerClient::devices));
-        CompletableFuture<List<Map<String, Object>>> registeredRobotsFuture = async(centerClient::registeredRobots);
-        CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = cache.allFixedCamerasFuture();
-        CompletableFuture<Map<String, Object>> fixedCameraHealthFuture = async(centerClient::fixedCameraHealth);
-        CompletableFuture<List<Map<String, Object>>> deviceTypeOptionsFuture = async(centerClient::deviceTypeOptions);
+        return devices(cache, null);
+    }
+
+    private List<Map<String, Object>> devices(OverviewRequestCache cache, OverviewTiming timing) {
+        CompletableFuture<List<Map<String, Object>>> managementDevicesFuture = track(timing, "devices.management",
+                async(() -> cachedStats("management-devices", centerClient::devices)));
+        CompletableFuture<List<Map<String, Object>>> registeredRobotsFuture = track(timing, "devices.registry",
+                async(centerClient::registeredRobots));
+        CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = track(timing, "devices.fixedCameras",
+                cache.allFixedCamerasFuture());
+        CompletableFuture<Map<String, Object>> fixedCameraHealthFuture = track(timing, "devices.cameraHealth",
+                async(centerClient::fixedCameraHealth));
+        CompletableFuture<List<Map<String, Object>>> deviceTypeOptionsFuture = track(timing, "devices.typeOptions",
+                async(centerClient::deviceTypeOptions));
         List<Map<String, Object>> managementDevices = joinRequired(managementDevicesFuture);
         List<Map<String, Object>> registeredRobots = join(registeredRobotsFuture, List.of());
         Map<String, Map<String, Object>> registeredRobotsById = registeredRobots.stream()
@@ -1058,7 +917,8 @@ public class PanoramaService {
                         robot -> firstString(robot, "robotId", "serialNumber"),
                         Function.identity(),
                         (left, right) -> right));
-        CompletableFuture<Map<String, Map<String, Object>>> statusBySerialFuture = async(() -> statusBySerial(managementDevices));
+        CompletableFuture<Map<String, Map<String, Object>>> statusBySerialFuture = track(
+                timing, "devices.legacyRealtime", async(() -> statusBySerial(managementDevices)));
         List<Map<String, Object>> validManagementDevices = managementDevices.stream()
                 .filter(this::hasDeviceId)
                 .toList();
@@ -1141,8 +1001,8 @@ public class PanoramaService {
 
         Object robotId = firstValue(source, "serialNumber", "robotId", "id");
         Object alarmLevel = alarmLevel(basic);
-        // 在线及电量、速度、模式只认本项目 Control 注册表。管理端实时状态仍用于定位等
-        // 业务字段，但其 Redis 过期语义不能作为大屏在线状态源，否则首屏与 WebSocket 会分叉。
+        // 在线、运行态和定位只认本项目 Control 注册表，保证首屏与 WebSocket 使用同一事实源。
+        // 管理端实时状态只保留告警和任务等尚未迁移字段，其 Redis 过期语义不参与在线或地图判定。
         String status = onlineStatus(firstString(registeredRobot, "status"));
         String statusChangedAt = value(firstString(registeredRobot, "statusChangedAt"), statusVersionNow());
         Object fault = switch (status) {
@@ -1487,7 +1347,6 @@ public class PanoramaService {
 
     private Map<String, Object> taskSummary(Map<String, Object> source, Map<String, Object> instance) {
         Map<String, Object> safeInstance = instance == null ? Map.of() : instance;
-        String rawStatus = taskPlanStatus(source, safeInstance);
         String startTime = formatTime(value(
                 firstString(safeInstance, "startedAt"),
                 firstString(source, "startedAt", "lastStartedAt", "startTime")));
@@ -1506,8 +1365,6 @@ public class PanoramaService {
                 "lastWorkflowInstanceId", firstValue(source, "lastWorkflowInstanceId"),
                 "enabled", firstValue(source, "enabled"),
                 "availableLifecycleActions", firstValue(source, "availableLifecycleActions"),
-                "status", taskStatusCode(rawStatus),
-                "statusName", taskStatusName(rawStatus),
                 "startTime", startTime,
                 "endTime", endTime,
                 "timeRange", timeRange(startTime, endTime, null),
@@ -1523,7 +1380,6 @@ public class PanoramaService {
         Map<String, Object> instance = taskInstanceResolver.instance(workflowInstanceId);
         Map<String, Object> replay = taskInstanceResolver.replay(workflowInstanceId);
         List<Map<String, Object>> deviceTaskInstances = taskInstanceResolver.deviceTaskInstances(workflowInstanceId);
-        String rawStatus = taskPlanStatus(source, instance);
         String startTime = formatTime(value(
                 firstString(instance, "startedAt"),
                 firstString(source, "startedAt", "lastStartedAt", "startTime")));
@@ -1542,8 +1398,6 @@ public class PanoramaService {
                 "lastWorkflowInstanceId", firstValue(source, "lastWorkflowInstanceId"),
                 "enabled", firstValue(source, "enabled"),
                 "availableLifecycleActions", firstValue(source, "availableLifecycleActions"),
-                "status", taskStatusCode(rawStatus),
-                "statusName", taskStatusName(rawStatus),
                 "startTime", startTime,
                 "endTime", endTime,
                 "timeRange", timeRange(startTime, endTime, null),
@@ -1555,7 +1409,7 @@ public class PanoramaService {
     }
 
     private Object planWorkflowInstanceId(Map<String, Object> source) {
-        return firstValue(source, "activeWorkflowInstanceId", "lastWorkflowInstanceId", "workflowInstanceId");
+        return firstValue(source, "activeWorkflowInstanceId", "lastWorkflowInstanceId");
     }
 
     private String currentLocation(Map<String, Object> source, Map<String, Object> replay) {
@@ -1850,15 +1704,13 @@ public class PanoramaService {
     }
 
     private Map<String, Object> taskOverview(List<Map<String, Object>> tasks) {
-        long running = tasks.stream().filter(task -> "running".equals(task.get("status"))).count();
-        long pending = tasks.stream().filter(task -> "waiting".equals(task.get("status"))).count();
-        long completed = tasks.stream().filter(task -> "completed".equals(task.get("status")) || "handled".equals(task.get("status"))).count();
+        long running = tasks.stream().filter(task -> "RUNNING".equals(task.get("executionStatus"))).count();
+        long pending = tasks.stream().filter(task -> "WAITING".equals(task.get("executionStatus"))).count();
         int total = tasks.size();
-        Integer completedRate = total == 0 ? null : (int) Math.round(completed * 100.0 / total);
         return object(
                 "totalToday", total,
-                "completedRate", completedRate,
-                "completedRateText", completedRate == null ? null : completedRate + "%",
+                "completedRate", null,
+                "completedRateText", null,
                 "running", running,
                 "pending", pending);
     }
@@ -1976,6 +1828,13 @@ public class PanoramaService {
 
     private <T> CompletableFuture<T> asyncOverview(Supplier<T> supplier) {
         return async(supplier);
+    }
+
+    private <T> CompletableFuture<T> track(
+            OverviewTiming timing,
+            String part,
+            CompletableFuture<T> future) {
+        return timing == null ? future : timing.track(part, future);
     }
 
     /** 只合并当前授权身份下完全同参的在途读取；不缓存结果，避免跨事件返回旧快照。 */
@@ -2484,58 +2343,9 @@ public class PanoramaService {
         };
     }
 
-    private String taskStatusCode(String source) {
-        if (source == null || source.isBlank()) {
-            return null;
-        }
-        return switch (source.toUpperCase(Locale.ROOT)) {
-            case "WAITING", "PENDING" -> "waiting";
-            case "PREPARING", "RUNNING" -> "running";
-            case "PAUSING" -> "pausing";
-            case "PAUSED" -> "paused";
-            case "RESUMING" -> "resuming";
-            case "TERMINATING" -> "terminating";
-            case "CONTROL_FAILED", "FAILED" -> "failed";
-            case "COMPLETED" -> "completed";
-            case "TERMINATED" -> "terminated";
-            default -> null;
-        };
-    }
-
-    private String taskPlanStatus(Map<String, Object> source, Map<String, Object> instance) {
-        String activeStatus = firstString(source, "activeWorkflowInstanceStatus");
-        if (activeStatus != null && Set.of(
-                "PREPARING", "RUNNING", "PAUSING", "PAUSED", "RESUMING", "TERMINATING", "CONTROL_FAILED")
-                .contains(activeStatus.toUpperCase(Locale.ROOT))) {
-            return activeStatus;
-        }
-        return value(
-                firstString(source, "executionStatus"),
-                value(firstString(instance, "status"), firstString(source, "lastResultStatus")));
-    }
-
     private boolean hasPreparingPlan(List<Map<String, Object>> taskPlans) {
         return taskPlans.stream().anyMatch(plan ->
                 "PREPARING".equalsIgnoreCase(firstString(plan, "activeWorkflowInstanceStatus")));
-    }
-
-    private String taskStatusName(String source) {
-        String status = taskStatusCode(source);
-        if (status == null) {
-            return null;
-        }
-        return switch (status) {
-            case "waiting" -> "待执行";
-            case "running" -> "执行中";
-            case "pausing" -> "暂停中";
-            case "paused" -> "已暂停";
-            case "resuming" -> "恢复中";
-            case "terminating" -> "终止中";
-            case "failed" -> "执行失败";
-            case "completed" -> "已完成";
-            case "terminated" -> "已终止";
-            default -> null;
-        };
     }
 
     private String statusName(String source) {
@@ -2728,15 +2538,6 @@ public class PanoramaService {
             return List.of();
         }
         return value == null ? List.of() : List.of(value);
-    }
-
-    private List<Map<String, Object>> taskArray(Object value) {
-        List<Map<String, Object>> tasks = list(value);
-        if (!tasks.isEmpty()) {
-            return tasks;
-        }
-        Map<String, Object> task = map(value);
-        return task.isEmpty() ? List.of() : List.of(task);
     }
 
     private Map<String, Object> mutable(Map<String, Object> source) {
@@ -2945,6 +2746,45 @@ public class PanoramaService {
     private record PanoramaAlarms(
             Map<String, Object> payload,
             Map<String, Object> dataQuality) {
+    }
+
+    /**
+     * 只记录一次未命中缓存的 Overview 关键路径。分支并行执行，汇总日志用于直接识别首屏耗时最长项；
+     * 不记录用户、Token 或响应正文。
+     */
+    private static final class OverviewTiming {
+
+        private final long startedNanos = System.nanoTime();
+        private final Map<String, Long> elapsedByPart = new ConcurrentHashMap<>();
+
+        private <T> CompletableFuture<T> track(String part, CompletableFuture<T> future) {
+            long partStartedNanos = System.nanoTime();
+            future.whenComplete((value, error) -> elapsedByPart.put(
+                    part, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - partStartedNanos)));
+            return future;
+        }
+
+        private void logSummary() {
+            long totalMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+            Map<String, Long> ordered = new LinkedHashMap<>();
+            List.of(
+                    "devices",
+                    "devices.management",
+                    "devices.legacyRealtime",
+                    "devices.registry",
+                    "devices.fixedCameras",
+                    "devices.cameraHealth",
+                    "devices.typeOptions",
+                    "tasks",
+                    "maps",
+                    "alarms",
+                    "mileage")
+                    .forEach(part -> {
+                        Long elapsed = elapsedByPart.get(part);
+                        if (elapsed != null) ordered.put(part, elapsed);
+                    });
+            log.info("大屏 Overview 冷请求聚合耗时，totalMs={}，partsMs={}", totalMillis, ordered);
+        }
     }
 
     private enum AlarmDisposalStatus {

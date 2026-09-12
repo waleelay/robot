@@ -61,8 +61,10 @@ panorama:
     read-timeout-ms: ${PANORAMA_GENERAL_READ_TIMEOUT_MS:1500}
     max-concurrency: ${PANORAMA_GENERAL_MAX_CONCURRENCY:16}
   workflow-alarm:
-    # 工作流告警初始化与事件刷新独立限流，避免批量重连拖垮通用查询。
-    max-concurrency: ${PANORAMA_WORKFLOW_ALARM_MAX_CONCURRENCY:1}
+    # 工作流解析通常慢于普通分页查询，使用独立超时和并发闸门，避免多用户串行及拖累总览。
+    connect-timeout-ms: ${PANORAMA_WORKFLOW_ALARM_CONNECT_TIMEOUT_MS:1000}
+    read-timeout-ms: ${PANORAMA_WORKFLOW_ALARM_READ_TIMEOUT_MS:5000}
+    max-concurrency: ${PANORAMA_WORKFLOW_ALARM_MAX_CONCURRENCY:4}
   task:
     # Management 任务接口使用独立短超时和并发闸门，避免慢请求拖垮全景聚合。
     connect-timeout-ms: ${PANORAMA_TASK_CONNECT_TIMEOUT_MS:1000}

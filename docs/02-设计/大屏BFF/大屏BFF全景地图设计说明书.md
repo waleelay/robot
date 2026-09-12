@@ -220,7 +220,7 @@ GET /api/bigscreen/panorama/overview
   },
   "taskOverview": {
     "totalToday": 50,
-    "completedRateText": "100%",
+    "completedRateText": null,
     "running": 48,
     "pending": 2
   },
@@ -265,8 +265,7 @@ GET /api/bigscreen/panorama/overview
 	      "name": "A区-夜间巡逻",
 	      "executionMode": "SCHEDULE",
 	      "expectedDurationSeconds": 7200,
-	      "status": "running",
-      "statusName": "执行中",
+	      "executionStatus": "RUNNING",
       "startTime": "2026-06-12 20:00:00",
       "endTime": "2026-06-12 22:00:00",
       "timeRange": "20:00-22:00",
@@ -344,7 +343,7 @@ GET /api/bigscreen/panorama/overview
 }
 ```
 
-Overview 的 `map[]` 只返回地图摘要。当前地图的 `points/deviceIds/fixedCamares` 由
+Overview 的 `map[]` 只返回地图摘要，并保留移动设备地图映射所需的 `edgeMapId`。当前地图的 `points/fixedCamares` 由
 `GET /api/bigscreen/panorama/maps/{mapId}/resources` 按需返回，非当前地图不预取。
 
 `patrolOverview` 字段说明：
@@ -361,7 +360,7 @@ Overview 的 `map[]` 只返回地图摘要。当前地图的 `points/deviceIds/f
 | 字段 | 含义 | 页面显示 |
 |---|---|---|
 | `taskOverview.totalToday` | 今日任务总数 | 今日任务 |
-| `taskOverview.completedRateText` | 完成率展示文本 | 完成率 |
+| `taskOverview.completedRateText` | 完成率展示文本；计划三态无法计算完成率时为 `null` | 完成率（未知显示 `--`） |
 | `taskOverview.running` | 执行中的任务数 | 执行中 |
 | `taskOverview.pending` | 待执行的任务数 | 待执行 |
 
@@ -377,7 +376,7 @@ Overview 的 `map[]` 只返回地图摘要。当前地图的 `points/deviceIds/f
 | `tasks[].workflowInstanceId` | 当前任务实例 ID，number/int/null；用于暂停、恢复、终止任务实例 | `/api/v1/management/task-workflow-plans` 的 `activeWorkflowInstanceId/lastWorkflowInstanceId/workflowInstanceId` |
 | `tasks[].mapId` | 任务关联地图 ID，number/int/null | 任务计划的 `mapId/mapID`；定义解析由按需路径/详情接口完成 |
 | `map` | 可用地图数组 | `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
-| 当前地图渲染资源 | 点位、关联设备 ID、固定摄像头 | `/panorama/maps/{mapId}/resources` 按需返回 |
+| 当前地图渲染资源 | 点位、固定摄像头 | `/panorama/maps/{mapId}/resources` 按需返回 |
 
 `location.lng/lat/altitude` 用于地图经纬度定位；`location.x/y/z` 用于室内图、三维场景或局部坐标系定位。
 
@@ -419,8 +418,7 @@ GET /api/bigscreen/panorama/tasks
 	      "name": "A区-夜间巡逻",
       "executionMode": "SCHEDULE",
       "expectedDurationSeconds": 7200,
-      "status": "running",
-      "statusName": "执行中",
+      "executionStatus": "RUNNING",
       "startTime": "2026-06-12 20:00:00",
       "endTime": "2026-06-12 22:00:00",
       "timeRange": "20:00-22:00",
@@ -437,8 +435,7 @@ GET /api/bigscreen/panorama/tasks
     {
       "taskId": 4,
       "name": "北侧消防通道巡检",
-      "status": "running",
-      "statusName": "执行中",
+      "executionStatus": "RUNNING",
       "startTime": "2026-06-12 16:00:00",
       "endTime": "2026-06-12 17:30:00",
       "timeRange": "16:00-17:30",
@@ -462,8 +459,7 @@ GET /api/bigscreen/panorama/tasks
     {
       "taskId": 5,
       "name": "东侧出入口值守巡检",
-      "status": "pending",
-      "statusName": "待执行",
+      "executionStatus": "WAITING",
       "startTime": "2026-06-12 18:00:00",
       "endTime": "2026-06-12 19:00:00",
       "timeRange": "18:00-19:00",
@@ -655,8 +651,10 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue
 重连快照只更新列表及总数，不补弹存量普通告警。`sourceType=TASK` 的告警不进入普通弹窗，也不按风险等级过滤，只在查询接口
 返回可处置记录后进入工作流弹窗。BFF 收到告警失效通知后，以独立链路分别查询可处置工作流告警和普通
 告警；工作流快照未变化时每 300 ms 仅重查工作流接口，最长 5 秒，快照变化立即停止，普通告警查询不会
-阻塞该过程。首次连接和重连时，BFF
-主动推送 `panorama.workflow-alarms.changed` 完整快照；前端只替换队列，不发起查询或设置定时器。
+阻塞该过程。工作流告警使用独立的 5 秒读取超时和默认 4 路公平并发，不占用普通总览请求闸门。
+同一授权身份在查询中再次收到失效通知时，最新代次可立即启动第二路补查，单身份最多两路在途；只提交最新代次结果，避免第一次早查和迟到响应继续拖慢或回退弹窗。
+首次连接和重连时，BFF 只向新连接推送 `panorama.workflow-alarms.changed` 完整快照；实时变化才按授权身份广播，
+前端只替换队列，不发起查询或设置定时器。自动告警收到后直接显示详情，不再串行等待预警动画；多条告警按风险等级和时间排队，关闭当前项后立即显示下一项。
 
 工作流告警返回 `items[]`，保留大屏告警展示字段，并增加
 `workflowInstanceId`、`taskName`、`humanTaskId`、`humanTaskName`。管理端图片未携带通道
@@ -715,10 +713,10 @@ WebSocket：
 |---|---|---|
 | `panorama.device.status.changed` | Control 收到设备状态 MQTT 上报后广播 `robot.state` | 仅当 `robot.state` 来源为边缘状态（`stateSource=EDGE_DEVICE_STATUS`）或离线扫描（`stateSource=OFFLINE_SCAN`）时即时派生并推送，不受位置限频影响；媒体客户端来源（`stateSource=MEDIA_CLIENT_STATUS`）不派生该事件，机器人状态以边缘上报为准。在线、离线、故障等状态变化同时触发统计快照刷新。 |
 | `panorama.device.location.changed` | `robot.state` 携带 `location/localization/status.localization` 时派生；不生成模拟坐标 | 按“浏览器会话 + `robotId`”独立限频。首条立即推送；同一设备 1 秒内 GIS 结果优先，更晚的 SLAM 位置保留到下一窗口，每秒最多推送一次；`localized=false` 立即推送。没有新定位时不重复发送旧坐标。 |
-| `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 300ms 去抖，按当前 WebSocket 会话身份重查管理端权威快照，逐项比较后只推送发生变化的任务；任务删除或失权时推送 `data.changeType=REMOVE`。`taskId` 缺失的旧版事件不直接下发。 |
+| `panorama.task.changed` | 上游任务变更事件，或管理端 STOMP 任务通知转换的 `management.task.invalidated` | 具备完整任务计划 ID 的原始变更立即转换。失效通知以 50ms 去抖，按当前 WebSocket 会话身份重查管理端权威快照，逐项比较后只推送发生变化的任务；任务删除或失权时推送 `data.changeType=REMOVE`。`taskId` 缺失的旧版事件不直接下发。 |
 | `panorama.alarm.changed` | 上游携带完整告警数据的原始事件 | 完整事件立即转换，继续用于高/中风险普通告警即时弹窗；没有真实上游事件时不生成模拟告警。 |
 | `panorama.alarms.changed` | 管理端告警失效通知 | 按当前会话身份查询普通告警各风险分组第一页和总数；快照变化时整体推送，前端替换列表第一页，不逐项刷新或遍历全量告警。首屏和重连沿用 Overview，不重复查询。 |
-| `panorama.workflow-alarms.changed` | 浏览器首次连接、重连或管理端告警失效通知 | 独立于普通告警刷新，按当前会话身份立即查询 `actionable-workflow`；快照未变化时每 300ms 仅复查该接口，最长 5 秒，变化后推送完整 `items` 快照并停止。前端以快照整体替换工作流弹窗队列。 |
+| `panorama.workflow-alarms.changed` | 浏览器首次连接、重连或管理端告警失效通知 | 独立于普通告警刷新，按当前授权身份立即查询 `actionable-workflow`；快照未变化时按 0.3/0.6/1.2/2.4 秒有界退避，最长 5 秒，变化后推送完整 `items` 快照并停止。首次快照只发给新连接，实时变化广播给该身份的全部有效会话；前端整体替换队列并立即显示优先级最高的一项。 |
 | `panorama.stats.changed` | 设备业务变更、设备在线/离线/故障状态切换、任务或告警变更 | 短时间内的多次触发合并 500ms 后按事件类型只重算受影响统计块（设备/任务/告警），推送仍为完整合并快照，只在快照与上次不同时推送。各统计块带 3 秒 TTL 缓存（按用户隔离），多会话与多事件在窗口内共享一次管理端查询。普通电量、速度、位置心跳不触发统计刷新。 |
 
 Control 对 `totalMileage/currentMileage` 计算出的有效里程增量累计达到配置阈值时，
@@ -772,13 +770,12 @@ BFF 仍会原样转发上游消息，上表只描述追加生成的 `panorama.*`
   "event": "panorama.task.changed",
   "timestamp": "2026-06-12 11:31:15",
   "data": {
-    "taskId": 1,
-    "workflowInstanceId": 1001,
-    "robotId": "PATROL-001",
-    "status": "running",
-    "statusName": "执行中",
-    "currentLocation": "x:9.2,y:7.8",
-    "location": {"x": 9.2, "y": 7.8, "z": 0, "yaw": 88}
+    "taskId": "1",
+    "task": {
+      "taskId": "1",
+      "name": "A区-夜间巡逻",
+      "executionStatus": "RUNNING"
+    }
   }
 }
 ```
@@ -787,7 +784,7 @@ BFF 仍会原样转发上游消息，上表只描述追加生成的 `panorama.*`
 `eiop-control-service:/ws/control`，固定订阅 `/topic/platform/realtime-events`。
 收到 `task.changed.v1` 且 `scopes` 包含 `PLAN` 或 `EXECUTION` 时，向本地
 `/ws/control` 推送 `management.task.invalidated`；收到 `alarm.changed.v1` 时推送
-`management.alarm.invalidated`。BFF 收到失效通知后查询管理端权威快照并比较，
+`management.alarm.invalidated`，其中 `source:eventId` 标识同一次变更；Control 重连 STOMP 时也为补查通知生成独立事件 ID。BFF 按身份去重后查询管理端权威快照并比较，
 任务变化项转换为现有 `panorama.task.changed`，普通告警查询结果以 `panorama.alarms.changed` 分页快照推送；工作流告警使用独立收敛链路，
 不等待普通告警查询，快照变化后推送 `panorama.workflow-alarms.changed` 完整快照。告警内部失效通知不透传浏览器。STOMP
 仅负责通知“数据已变化”，任务和告警业务状态始终以管理端 HTTP 查询结果为准。
@@ -895,8 +892,8 @@ BFF 仍会原样转发上游消息，上表只描述追加生成的 `panorama.*`
     },
     "taskOverview": {
       "totalToday": 50,
-      "completedRate": 100,
-      "completedRateText": "100%",
+      "completedRate": null,
+      "completedRateText": null,
       "running": 48,
       "pending": 2
     },

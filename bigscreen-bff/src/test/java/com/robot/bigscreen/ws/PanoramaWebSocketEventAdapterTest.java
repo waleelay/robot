@@ -133,6 +133,24 @@ class PanoramaWebSocketEventAdapterTest {
     }
 
     @Test
+    void preservesExecutionStatusWhenAdaptingManagementTaskEvent() {
+        JsonNode task = adapter.adapt("""
+                {"event":"management.task.updated","data":{"task":{
+                  "taskId":123,"executionStatus":"PAUSED","status":"running"
+                }}}
+                """).stream()
+                .map(this::readTree)
+                .filter(event -> "panorama.task.changed".equals(event.path("event").asText()))
+                .findFirst()
+                .orElseThrow()
+                .path("data")
+                .path("task");
+
+        assertThat(task.path("executionStatus").asText()).isEqualTo("PAUSED");
+        assertThat(task.has("status")).isFalse();
+    }
+
+    @Test
     void requestsStatisticsRefreshForMileageChanges() {
         String payload = """
                 {
@@ -155,6 +173,7 @@ class PanoramaWebSocketEventAdapterTest {
                 """;
 
         assertThat(adapter.isAlarmInvalidation(payload)).isTrue();
+        assertThat(adapter.alarmInvalidationKey(payload)).isEqualTo("management:1001");
         assertThat(adapter.adapt(payload)).isEmpty();
         assertThat(adapter.statsRefreshParts("browser-a", payload)).containsExactly(StatsPart.ALARMS);
     }

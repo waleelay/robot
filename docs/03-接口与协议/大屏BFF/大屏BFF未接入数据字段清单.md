@@ -53,7 +53,7 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handled
 | `serverTime` | BFF 生成 | 当前 BFF 时间，不查询中心端 |
 | `deviceStats` | BFF 计算 | 由 `devices[]` 的总数、状态、故障标识计算 |
 | `gpsDevices` | BFF 筛选 | 从 `devices[]` 中筛选经纬度完整的设备，不新增下游数据源 |
-| `map[].deviceIds` | BFF 匹配 | 按 `devices[].location.mapId` 将 `robotId` 归入对应地图，不重复返回完整设备对象，不新增下游数据源 |
+| `map[].edgeMapId` | Management 地图摘要 | 与设备侧 `location.mapId` 唯一匹配后确定移动设备当前平台地图 |
 | `deviceTypeStats` | BFF 计算 | 由 `devices[]` 按 `typeCode` 分组计算 |
 | `taskOverview` | BFF 计算 | 由 `tasks[]` 的状态统计计算 |
 | `alarms.total` | BFF 计算 | 由告警列表数量计算 |

@@ -105,7 +105,7 @@ Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不�
 | `map[].enabled` | boolean/null | 需要 | 地图是否启用 |
 | `map[].remark` | string/null | 条件需要 | 备注 |
 | `map[].points` | array<object> | 条件需要 | 当前地图的点位集合；BFF 按地图 ID 查询后挂载到对应地图对象 |
-| `map[].deviceIds` | array<string> | 无需直接提供 | BFF 根据顶层 `devices[].location.mapId` 计算的设备 ID 列表 |
+| `map[].edgeMapId` | string/number/null | 移动设备地图展示需要 | 设备侧地图 ID；启用地图范围内必须唯一 |
 
 ### 2.7 `alarms.*.items[]`
 

@@ -1,5 +1,5 @@
 import { isFixedCamera } from '@/constants/robot.js'
-import { normalizeExecutionStatus } from '../../../patrol/business/execution-status'
+import { isDeviceAssociatedTaskStatus, taskExecutionStatus } from '../../../patrol/business/execution-status'
 import { listTasksForRobot } from '../../../patrol/business/task-equipment'
 import { buildPathDirectionArrows } from './path-direction-arrows.js'
 import {
@@ -7,8 +7,6 @@ import {
   compareTrajectoryLayers,
   STOPPED_TRAJECTORY_COLOR
 } from './trajectory-visual.js'
-
-const WATCHED_STATUSES = new Set(['RUNNING', 'PAUSING', 'PAUSED', 'RESUMING', 'TERMINATING', 'FAILED'])
 
 function toPointsAttr(points) {
   return points.length < 2 ? '' : points.map(point => `${point.x},${point.y}`).join(' ')
@@ -28,8 +26,8 @@ export default {
       return this.$store.state.websocketExtraData?.trajectoryByRobot || {}
     },
     trajectoryWatchTargets() {
-      // 首页大图与实时监控小框均订阅执行轨迹
-      if (!this.hasPreview || this.map?.id == null) return []
+      // 小地图不绘制执行轨迹，也不占用大图的共享订阅。
+      if (this.showSmall || !this.hasPreview || this.map?.id == null) return []
       let robots = this.slamOfRobot?.[String(this.map.id)]?.robots || []
       // 监控二级 focusRobotId：只订阅当前装备
       if (this.focusRobotId !== undefined && this.focusRobotId !== null && this.focusRobotId !== '') {
@@ -40,7 +38,7 @@ export default {
         if (!this.canWatchTrajectory(robotId)) return null
         const robotTasks = listTasksForRobot(this.taskData, robotId)
         const task = robotTasks.find(item =>
-          WATCHED_STATUSES.has(normalizeExecutionStatus(item?.status)) && item?.workflowInstanceId != null)
+          isDeviceAssociatedTaskStatus(taskExecutionStatus(item)) && item?.workflowInstanceId != null)
         if (task) return { robotId, workflowInstanceId: task.workflowInstanceId }
         // 任务摘要降级不等于任务结束，只沿用本页已订阅且仍在当前地图的目标。
         if (this.$store.state.websocketExtraData?.dataQuality?.tasks?.degraded
@@ -119,6 +117,7 @@ export default {
       return this.sessionTrajectoryVisuals[String(robotId)] || null
     },
     syncTrajectoryWatching() {
+      if (this.showSmall) return
       this.trajectoryOwnsWatching = true
       const mapId = this.map?.id ?? null
       const mapChanged = this.trajectoryPreviousMapId != null
@@ -130,7 +129,7 @@ export default {
         if (nextKeys.has(`${target.robotId}:${target.workflowInstanceId}`)) return
         const stillRunning = listTasksForRobot(this.taskData, target.robotId).some(task =>
           String(task?.workflowInstanceId) === String(target.workflowInstanceId)
-          && WATCHED_STATUSES.has(normalizeExecutionStatus(task?.status)))
+          && isDeviceAssociatedTaskStatus(taskExecutionStatus(task)))
         if (!stillRunning) this.$store.dispatch('websocketExtraData/finishTrajectory', target)
       })
       next.forEach(target => {

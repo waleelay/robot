@@ -60,7 +60,7 @@
               >{{ primaryRunningTask?.name || '-' }}</span>
             </div>
             <div class="item wp99 ml26">
-              状态：<span class="value" :class="taskStatusClass(primaryRunningTask)">{{ primaryRunningTask?.statusName || executionStatusLabel(primaryRunningTask?.status, '-') }}</span>
+              状态：<span class="value" :class="taskStatusClass(primaryRunningTask)">{{ executionStatusLabel(taskExecutionStatus(primaryRunningTask), '-') }}</span>
             </div>
           </div>
           <div v-else class="mt10 task task-empty flex flx-align-center">
@@ -75,7 +75,7 @@
             <svg-icon icon-class="right" class="ml4 task-expand__icon" :class="{ 'is-expanded': tasksExpanded }" />
           </div>
           <template v-if="tasksExpanded">
-            <div v-for="(task, index) in extraTasks" :key="task.taskId || task.id || index" class="mt10 task flex">
+            <div v-for="(task, index) in extraTasks" :key="task.taskId ?? index" class="mt10 task flex">
               <div class="item wp196 text-ellipsis" :title="task?.name || ''">
                 <span class="wp60 tar">任务{{ index + 1 }}：</span>
                 <span
@@ -85,7 +85,7 @@
                 >{{ task?.name || '-' }}</span>
               </div>
               <div class="item wp99 ml26">
-                状态：<span class="value" :class="taskStatusClass(task)">{{ task?.statusName || executionStatusLabel(task?.status, '-') }}</span>
+                状态：<span class="value" :class="taskStatusClass(task)">{{ executionStatusLabel(taskExecutionStatus(task), '-') }}</span>
               </div>
             </div>
           </template>
@@ -193,7 +193,7 @@
 import { mapActions, mapState } from 'vuex';
 import gsap from './gsap.js';
 import { getDescArr } from '../../../../../utils/index.js';
-import { executionStatusLabel, isRunningTaskStatus } from '../../../patrol/business/execution-status';
+import { executionStatusLabel, isActiveTaskStatus, isRunningTaskStatus, taskExecutionStatus, taskStatusColorClass } from '../../../patrol/business/execution-status';
 import { listTasksForRobot } from '../../../patrol/business/task-equipment';
 import { createServicePointNavigation, getPatrolPanoramaMountedDeviceCount, getServicePointOptions } from '@/api/new-bi';
 import { acquireControl, mediaClientId, releaseControl, sendEquipmentCommand } from '@/api/media';
@@ -331,11 +331,13 @@ export default {
       const runningId = this.currenRobot?.runningTaskId
       if (runningId !== undefined && runningId !== null && runningId !== '') {
         const matched = list.find(task =>
-          String(this.getTaskId(task)) === String(runningId) && isRunningTaskStatus(task?.status)
+          String(this.getTaskId(task)) === String(runningId) && isActiveTaskStatus(taskExecutionStatus(task))
         )
         if (matched) return matched
       }
-      return list.find(task => isRunningTaskStatus(task?.status)) || null
+      return list.find(task => isRunningTaskStatus(taskExecutionStatus(task)))
+        || list.find(task => isActiveTaskStatus(taskExecutionStatus(task)))
+        || null
     },
     /** 待展开的其它任务（含待执行等） */
     extraTasks() {
@@ -474,22 +476,17 @@ export default {
       return `${battery}%`
     },
     getTaskId(task) {
-      return task?.taskId || task?.id || task?.planId || task?.taskPlanId || null
+      return task?.taskId
     },
     executionStatusLabel,
+    taskExecutionStatus,
     focusPanoramaTask(task) {
       const taskId = this.getTaskId(task)
       if (taskId == null || taskId === '') return
       this.$root.$emit('bi-panorama-focus-task', taskId)
     },
     taskStatusClass(task) {
-      const status = String(task?.status || '').toLowerCase()
-      if (status === 'running') return 'green'
-      if (status === 'waiting' || status === 'pending' || status === 'preparing' || status === 'pausing' || status === 'resuming') return 'orange'
-      if (status === 'completed') return 'blue'
-      if (status.includes('fail')) return 'red'
-      if (status === 'paused' || status === 'terminated' || status === 'canceled' || status === 'terminating') return 'gray'
-      return ''
+      return taskStatusColorClass(taskExecutionStatus(task))
     },
     managementData(response) {
       return response && Object.prototype.hasOwnProperty.call(response, 'data') ? response.data : response

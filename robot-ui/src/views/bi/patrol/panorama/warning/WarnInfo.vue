@@ -8,25 +8,6 @@
     @clear="clearAlarmMockState"
   />
   <el-dialog
-    v-if="warningVisible"
-    class="execute-dialog execute-dialog1 flx-align-center"
-    width="276px"
-    :visible.sync="warningVisible"
-    :modal-append-to-body="false"
-    :close-on-click-modal="false"
-    :close-on-press-escape="false"
-    append-to-body
-    :show-close="false"
-    title=""
-  >
-    <template slot="title"></template>
-    <div class="flx-center wp274 hp136 custom-warning" :class="riskThemeClass">
-      <svg-icon icon-class="warning" style="font-size: 76px" :style="{ color: flashIconColor }"></svg-icon>
-    </div>
-    <template slot="footer"></template>
-  </el-dialog>
-  <el-dialog
-    v-else
     class="custom-dialog__wrapper robot-dialog flx-align-center"
     width="1094px"
     :visible.sync="dialogVisible"
@@ -215,8 +196,6 @@ import {
   isMockRobotId
 } from './alarm-dialog-mock'
 
-const FLASH_MS = 2000
-const HIGH_CONTINUE_DELAY_MS = 1500
 const LEVEL_RANK = { high: 2, medium: 1 }
 
 function alarmLevelOf(item) {
@@ -267,11 +246,6 @@ export default {
       if (this.alarmLevelKey === 'medium') return 'orange'
       return 'primary'
     },
-    flashIconColor() {
-      if (this.alarmLevelKey === 'high') return '#FFDD00'
-      if (this.alarmLevelKey === 'medium') return '#FFB347'
-      return '#4DB3FF'
-    },
     /** 自动弹出才播详情边框流光；手动打开不加 */
     showPulseBorder() {
       return this.show && !this.manualOpen
@@ -283,7 +257,7 @@ export default {
       return 'primary-light'
     },
     isAlarmUiBusy() {
-      return Boolean(this.dialogVisible || this.warningVisible || this.details?.alarmId)
+      return Boolean(this.dialogVisible || this.details?.alarmId)
     },
     showAlarmMockPanel() {
       return ENABLE_ALARM_DIALOG_MOCK
@@ -292,7 +266,6 @@ export default {
   data() {
     return {
       dialogVisible: false,
-      warningVisible: false,
       manualOpen: false,
       details: {
         location: {
@@ -306,8 +279,6 @@ export default {
       dialogImageUrl: '',
       dialogIRUrl: '',
       loading: false,
-      timer: null,
-      continueTimer: null,
       mockTimers: [],
       mockPanelRunning: false,
       mockPanelActiveKey: '',
@@ -317,8 +288,6 @@ export default {
       deferredNormalIds: new Set(),
       knownNormalIds: new Set(),
       normalAlarmStateReady: false,
-      /** all：空闲可自动首条中/高；high-only：关窗后仅高风险可自动续弹 */
-      normalPresentMode: 'all',
       show: false,
       snapshotObjectUrls: {},
       snapshotLoadSeq: 0,
@@ -333,26 +302,12 @@ export default {
   },
   beforeDestroy() {
     this.$root.$off('bi-open-warn-info', this.openManual)
-    this.clearFlashTimer()
-    this.clearContinueTimer()
     this.clearMockTimers()
     cancelAlarmSpeech()
     this.lastSpokenAlarmId = null
   },
   methods: {
     ...mapActions('websocketExtraData', ['removeAlarm']),
-    clearFlashTimer() {
-      if (this.timer) {
-        clearTimeout(this.timer)
-        this.timer = null
-      }
-    },
-    clearContinueTimer() {
-      if (this.continueTimer) {
-        clearTimeout(this.continueTimer)
-        this.continueTimer = null
-      }
-    },
     clearMockTimers() {
       this.mockTimers.forEach(id => clearTimeout(id))
       this.mockTimers = []
@@ -399,8 +354,6 @@ export default {
     },
     clearAlarmMockState(options = {}) {
       this.clearMockTimers()
-      this.clearContinueTimer()
-      this.clearFlashTimer()
       const robotAlarmObj = this.robotAlarmObj || {}
       Object.keys(robotAlarmObj).forEach(robotId => {
         const alarm = robotAlarmObj[robotId]
@@ -419,9 +372,8 @@ export default {
         if (isMockAlarmId(id)) this.knownNormalIds.delete(id)
       })
       this.normalAlarmQueue = this.normalAlarmQueue.filter(item => !isMockAlarmId(item?.alarmId))
-      this.normalPresentMode = 'all'
       if (isMockAlarmId(this.details?.alarmId) || isMockRobotId(this.details?.robotId)) {
-        this.resetDialog({ skipContinue: true })
+        this.resetDialog()
       }
       if (!options.keepActiveKey) {
         this.mockPanelActiveKey = ''
@@ -476,15 +428,11 @@ export default {
       ;[...this.deferredNormalIds].forEach(id => {
         if (!this.knownNormalIds.has(id)) this.deferredNormalIds.delete(id)
       })
-      if (!this.normalAlarmQueue.length && !this.deferredNormalIds.size) {
-        this.normalPresentMode = 'all'
-      }
-
       const currentId = this.details?.alarmId != null ? String(this.details.alarmId) : ''
       if (currentId && !this.isWorkflowAlarm) {
         const stillExists = incoming.some(item => String(item.alarmId) === currentId)
         if (!stillExists && !this.manualOpen) {
-          this.resetDialog({ skipContinue: true })
+          this.resetDialog()
           this.continueAfterClose()
           return
         }
@@ -496,7 +444,7 @@ export default {
         return
       }
 
-      if (!this.isAlarmUiBusy && !this.continueTimer) {
+      if (!this.isAlarmUiBusy) {
         this.tryPresent()
       }
     },
@@ -509,11 +457,8 @@ export default {
       return true
     },
     preemptWithHigh(highItem) {
-      this.clearContinueTimer()
-      this.clearFlashTimer()
       this.manualOpen = false
       this.dialogVisible = false
-      this.warningVisible = false
       this.show = false
       this.loading = false
       this.details = {}
@@ -523,35 +468,14 @@ export default {
     },
     tryPresent() {
       if (this.isAlarmUiBusy) return
-      const next = this.normalAlarmQueue.find(item => {
-        if (this.deferredNormalIds.has(String(item.alarmId))) return false
-        if (this.normalPresentMode === 'high-only' && !isHighAlarm(item)) return false
-        return true
-      })
-      if (next) {
-        this.open(next, { manual: false })
-        return
-      }
-      this.openNextWorkflowAlarm()
-    },
-    tryPresentNextHighOnly() {
-      this.clearContinueTimer()
-      this.normalPresentMode = 'high-only'
-      this.continueTimer = setTimeout(() => {
-        this.continueTimer = null
-        if (this.isAlarmUiBusy) return
-        const nextHigh = this.normalAlarmQueue.find(
-          item => isHighAlarm(item) && !this.deferredNormalIds.has(String(item.alarmId))
-        )
-        if (nextHigh) {
-          this.open(nextHigh, { manual: false })
-          return
-        }
-        this.openNextWorkflowAlarm()
-      }, HIGH_CONTINUE_DELAY_MS)
+      const normal = this.normalAlarmQueue.filter(
+        item => !this.deferredNormalIds.has(String(item.alarmId))
+      )
+      const next = this.sortNormalQueue([...normal, ...this.workflowQueue])[0]
+      if (next) this.open(next, { manual: false })
     },
     continueAfterClose() {
-      this.tryPresentNextHighOnly()
+      this.$nextTick(() => this.tryPresent())
     },
     deferCurrentNormalAlarm() {
       if (this.isWorkflowAlarm || this.details?.alarmId == null) return
@@ -559,12 +483,11 @@ export default {
       this.deferredNormalIds.add(id)
       this.normalAlarmQueue = this.normalAlarmQueue.filter(item => String(item.alarmId) !== id)
     },
-    /** 列表手动打开：直接详情，无小框与边框动画 */
+    /** 列表手动打开：直接显示详情。 */
     openManual(item) {
       if (!item) return
       const id = String(item.alarmId)
       this.deferredNormalIds.delete(id)
-      this.clearContinueTimer()
       this.open(item, { manual: true })
     },
     close() {
@@ -574,7 +497,7 @@ export default {
       } else {
         this.deferCurrentNormalAlarm()
       }
-      this.resetDialog({ skipContinue: true })
+      this.resetDialog()
       this.continueAfterClose()
     },
     /**
@@ -585,32 +508,21 @@ export default {
       const manual = Boolean(options.manual)
       const force = Boolean(options.force)
       if (manual) {
-        this.clearFlashTimer()
         this.manualOpen = true
         this.show = false
-        this.warningVisible = false
         this.loading = false
         this.details = { ...data }
         this.applySnapshotOptions(this.details)
         this.dialogVisible = true
         return
       }
-      if (!force && (this.dialogVisible || this.warningVisible)) return
-      this.clearFlashTimer()
+      if (!force && this.dialogVisible) return
       this.manualOpen = false
       this.loading = false
       this.details = { ...data }
       this.applySnapshotOptions(this.details)
-      this.dialogVisible = false
-      this.warningVisible = true
+      this.dialogVisible = true
       this.speakCurrentAlarm()
-      this.timer = setTimeout(() => {
-        this.timer = null
-        this.warningVisible = false
-        this.$nextTick(() => {
-          this.dialogVisible = true
-        })
-      }, FLASH_MS)
     },
     speakCurrentAlarm() {
       const spokenId = speakAlarm(this.details, { lastSpokenId: this.lastSpokenAlarmId })
@@ -648,7 +560,7 @@ export default {
           this.removeAlarm(alarm)
           this.workflowQueue = this.workflowQueue.filter(item => String(item.alarmId) !== String(alarm.alarmId))
           this.deferredNormalIds.delete(String(alarm.alarmId))
-          this.resetDialog({ skipContinue: true })
+          this.resetDialog()
           this.$message.success(type === 0 ? '模拟：已立即处置' : '模拟：已标记为误报')
           this.continueAfterClose()
           return
@@ -660,7 +572,7 @@ export default {
         this.removeAlarm(alarm)
         this.workflowQueue = this.workflowQueue.filter(item => String(item.alarmId) !== String(alarm.alarmId))
         this.deferredNormalIds.delete(String(alarm.alarmId))
-        this.resetDialog({ skipContinue: true })
+        this.resetDialog()
         if (type === 0) {
           this.$refs.warningExecuteRef.open(alarm.alarmId)
         } else {
@@ -673,12 +585,9 @@ export default {
         this.loading = false
       }
     },
-    resetDialog(options = {}) {
-      this.clearFlashTimer()
-      if (!options.skipContinue) this.clearContinueTimer()
+    resetDialog() {
       cancelAlarmSpeech()
       this.lastSpokenAlarmId = null
-      this.warningVisible = false
       this.dialogVisible = false
       this.manualOpen = false
       this.show = false
@@ -686,11 +595,6 @@ export default {
       this.selectedValue = ''
       this.options = []
       this.snapshotObjectUrls = {}
-    },
-    openNextWorkflowAlarm() {
-      if (this.isAlarmUiBusy) return
-      const next = this.workflowQueue[0]
-      if (next) this.open(next)
     },
     handleChangeSelect(name) {
       this.$refs.carouselRef.setActiveItem(name)
@@ -751,13 +655,20 @@ export default {
     },
     workflowAlarms: {
       handler(items) {
-        this.workflowQueue = (items || []).filter(item => !this.deferredAlarmIds.has(String(item.alarmId)))
+        this.workflowQueue = this.sortNormalQueue(
+          (items || []).filter(item => !this.deferredAlarmIds.has(String(item.alarmId)))
+        )
         if (this.isWorkflowAlarm && !this.workflowQueue.some(item => String(item.alarmId) === String(this.details.alarmId))) {
-          this.resetDialog({ skipContinue: true })
+          this.resetDialog()
           this.continueAfterClose()
           return
         }
-        if (!this.isAlarmUiBusy) this.openNextWorkflowAlarm()
+        const high = this.workflowQueue.find(isHighAlarm)
+        if (high && this.shouldPreemptWithHigh(high)) {
+          this.preemptWithHigh(high)
+          return
+        }
+        if (!this.isAlarmUiBusy) this.tryPresent()
       },
       immediate: true,
       deep: true
@@ -771,77 +682,4 @@ export default {
   display: contents;
 }
 @import "./scss/warning-info.scss";
-/* 仅黄闪小框取消绝对定位；详情弹窗保持 Element 默认关闭动画（与 WarningBatch 一致） */
-.execute-dialog1 {
-  ::v-deep .el-dialog {
-    position: unset !important;
-    margin-top: 0 !important;
-    background: transparent;
-    border: none;
-    .el-dialog__header {
-      display: none;
-    }
-    .el-dialog__body {
-      height: 136px;
-      padding: 0 !important;
-    }
-  }
-}
-.custom-warning {
-  border-radius: 2px;
-  /* primary：蓝色 */
-  border: 1px solid #1C9DFF;
-  background: rgba(9, 45, 72, 0.5);
-  -webkit-box-shadow: 0 0 20px 0 #2575AA inset;
-  box-shadow: 0 0 20px 0 #2575AA inset;
-  backdrop-filter: blur(5px);
-  animation: pulseZoom 2s ease-in-out 1;
-  animation-fill-mode: forwards;
-
-  &.red {
-    border: 1px solid #FF0202;
-    background: rgba(72, 9, 9, 0.5);
-    -webkit-box-shadow: 0 0 20px 0 #B30000 inset;
-    box-shadow: 0 0 20px 0 #B30000 inset;
-  }
-
-  &.orange {
-    border: 1px solid #FF7100;
-    background: rgba(108, 60, 17, 0.5);
-    -webkit-box-shadow: 0 0 20px 0 #FF7100 inset;
-    box-shadow: 0 0 20px 0 #FF7100 inset;
-  }
-
-  &.primary {
-    border: 1px solid #1C9DFF;
-    background: rgba(9, 45, 72, 0.5);
-    -webkit-box-shadow: 0 0 20px 0 #2575AA inset;
-    box-shadow: 0 0 20px 0 #2575AA inset;
-  }
-}
-
-/* 关键帧定义：scale 从 0.5 → 1 → 0.5 → 1 → 0.5 */
-@keyframes pulseZoom {
-  0% {
-    opacity: 0;
-    transform: scale(0);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  67% {
-    opacity: 0.6;
-    transform: scale(0.8);
-  }
-  84% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0.6;
-    transform: scale(0.8);  /* 最终回到 1 */
-  }
-}
-
 </style>

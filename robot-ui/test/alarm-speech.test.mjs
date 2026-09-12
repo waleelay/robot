@@ -101,7 +101,7 @@ test('WarnInfo 自动 open 播报，手动打开不播报，关窗取消', () =>
   assert.match(source, /this\.speakCurrentAlarm\(\)/)
   assert.match(source, /openManual\(item\) \{\s*if \(!item\) return[\s\S]*this\.open\(item, \{ manual: true \}\)/)
   assert.doesNotMatch(source, /openManual[\s\S]{0,400}speakCurrentAlarm/)
-  assert.match(source, /resetDialog\(options = \{\}\) \{[\s\S]*cancelAlarmSpeech\(\)/)
+  assert.match(source, /resetDialog\(\) \{[\s\S]*cancelAlarmSpeech\(\)/)
   assert.match(source, /beforeDestroy\(\) \{[\s\S]*cancelAlarmSpeech\(\)/)
 })
 

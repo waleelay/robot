@@ -17,6 +17,7 @@
         extra-class="mt12 vertical-class"
         :is-nav-mode="isNavMode"
         :show-resume="showTaskResumeActions"
+        :task-plan="activeTask"
         @takeover="handleTakeover"
         @resume="handleResumeActiveTask"
         @terminate="handleTerminateActiveTask"

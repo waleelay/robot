@@ -4,6 +4,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 /**
  * 单实例短时缓存。容量和有效期在一个实现中收口，避免各业务缓存分别维护清理锁。
@@ -47,6 +48,10 @@ final class BoundedTtlCache<K, V> {
 
     synchronized void remove(K key) {
         entries.remove(key);
+    }
+
+    synchronized void removeIf(Predicate<K> predicate) {
+        entries.keySet().removeIf(predicate);
     }
 
     private void removeExpired(long now) {

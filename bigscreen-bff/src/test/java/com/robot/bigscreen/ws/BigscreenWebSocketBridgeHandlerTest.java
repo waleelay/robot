@@ -25,7 +25,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -387,21 +387,22 @@ class BigscreenWebSocketBridgeHandlerTest {
     }
 
     @Test
-    void sharesRefreshStateAndBroadcastsSnapshotAcrossSessionsOfSameIdentity() throws Exception {
+    void sharesRefreshStateButTargetsConnectionSnapshotToNewSession() throws Exception {
         BigscreenWebSocketAuthorizationService authorizationService =
                 mock(BigscreenWebSocketAuthorizationService.class);
         FixedCameraCatalogLeaseClient catalogLeaseClient = mock(FixedCameraCatalogLeaseClient.class);
         PanoramaStatsEventRefresher statsEventRefresher = mock(PanoramaStatsEventRefresher.class);
         PanoramaTaskEventRefresher taskEventRefresher = mock(PanoramaTaskEventRefresher.class);
         PanoramaAlarmEventRefresher alarmEventRefresher = mock(PanoramaAlarmEventRefresher.class);
-        JwtAuthenticationToken authentication = authentication("user-001", Instant.now().plusSeconds(300));
+        JwtAuthenticationToken firstAuthentication = authentication("user-001", Instant.now().plusSeconds(120));
+        JwtAuthenticationToken secondAuthentication = authentication("user-001", Instant.now().plusSeconds(300));
         String identity = "https://iam.example/realms/platform|user-001|||";
         WebSocketSession first = browserSession(
                 new HttpHeaders(), URI.create("wss://bigscreen/ws/control"), "session-first");
         WebSocketSession second = browserSession(
                 new HttpHeaders(), URI.create("wss://bigscreen/ws/control"), "session-second");
-        when(first.getPrincipal()).thenReturn(authentication);
-        when(second.getPrincipal()).thenReturn(authentication);
+        when(first.getPrincipal()).thenReturn(firstAuthentication);
+        when(second.getPrincipal()).thenReturn(secondAuthentication);
         when(first.isOpen()).thenReturn(true);
         when(second.isOpen()).thenReturn(true);
         when(authorizationService.authorizedResources(first)).thenReturn(
@@ -417,10 +418,13 @@ class BigscreenWebSocketBridgeHandlerTest {
         handler.afterConnectionEstablished(second);
 
         verify(taskEventRefresher, times(2)).requestRefresh(eq(identity), any(), any(), eq(false));
-        ArgumentCaptor<Consumer<String>> publishers = ArgumentCaptor.forClass(Consumer.class);
+        ArgumentCaptor<Predicate<String>> publishers = ArgumentCaptor.forClass(Predicate.class);
         verify(alarmEventRefresher, times(2)).requestSnapshot(eq(identity), any(), publishers.capture());
-        publishers.getAllValues().get(0).accept("{\"event\":\"panorama.workflow-alarms.changed\"}");
+        verify(alarmEventRefresher).requestSnapshot(eq(identity), eq(secondAuthentication), any());
+        publishers.getAllValues().get(0).test("{\"event\":\"panorama.workflow-alarms.changed\"}");
         verify(first).sendMessage(any(TextMessage.class));
+        verify(second, never()).sendMessage(any(TextMessage.class));
+        publishers.getAllValues().get(1).test("{\"event\":\"panorama.workflow-alarms.changed\"}");
         verify(second).sendMessage(any(TextMessage.class));
 
         handler.afterConnectionClosed(first, CloseStatus.NORMAL);
@@ -432,6 +436,36 @@ class BigscreenWebSocketBridgeHandlerTest {
         verify(statsEventRefresher).remove(identity);
         verify(taskEventRefresher).remove(identity);
         verify(alarmEventRefresher).remove(identity);
+        handler.shutdownAuthorizationRefreshExecutor();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void reconcilesAlarmsAfterAuthorizationRecovers() throws Exception {
+        BigscreenWebSocketAuthorizationService authorizationService =
+                mock(BigscreenWebSocketAuthorizationService.class);
+        PanoramaAlarmEventRefresher alarmEventRefresher = mock(PanoramaAlarmEventRefresher.class);
+        JwtAuthenticationToken authentication = authentication("user-001", Instant.now().plusSeconds(300));
+        String identity = "https://iam.example/realms/platform|user-001|||";
+        WebSocketSession browserSession = browserSession(
+                new HttpHeaders(), URI.create("wss://bigscreen/ws/control"), "session-auth-recovered");
+        when(browserSession.getPrincipal()).thenReturn(authentication);
+        when(browserSession.isOpen()).thenReturn(true);
+        when(authorizationService.authorizedResources(browserSession)).thenReturn(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(Set.of(), Set.of()));
+        BigscreenWebSocketBridgeHandler handler = handler(
+                authorizationService, mock(FixedCameraCatalogLeaseClient.class), alarmEventRefresher);
+        handler.afterConnectionEstablished(browserSession);
+        Set<String> unavailable = (Set<String>) ReflectionTestUtils.getField(
+                handler, "authorizationUnavailableIdentities");
+        unavailable.add(identity);
+
+        ReflectionTestUtils.invokeMethod(handler, "refreshAuthorizationAsync", identity, browserSession);
+
+        verify(alarmEventRefresher, timeout(1000)).requestRefresh(
+                eq(identity), eq(authentication), any(), eq(null));
+        verify(alarmEventRefresher, timeout(1000).times(2)).requestSnapshot(
+                eq(identity), eq(authentication), any());
         handler.shutdownAuthorizationRefreshExecutor();
     }
 

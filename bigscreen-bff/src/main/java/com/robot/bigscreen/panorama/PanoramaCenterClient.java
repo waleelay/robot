@@ -33,11 +33,12 @@ public class PanoramaCenterClient {
 
     private static final Logger log = LoggerFactory.getLogger(PanoramaCenterClient.class);
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE = new ParameterizedTypeReference<>() {};
-    private static final int MAX_WORKFLOW_ALARM_CONCURRENCY = 4;
-    private static final long WORKFLOW_ALARM_ACQUIRE_TIMEOUT_MS = 15000;
+    private static final int MAX_WORKFLOW_ALARM_CONCURRENCY = 8;
+    private static final long WORKFLOW_ALARM_ACQUIRE_TIMEOUT_MS = 100;
 
     private final RestClient restClient;
     private final RestClient taskRestClient;
+    private final RestClient workflowAlarmRestClient;
     private final CenterServiceProperties properties;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final Semaphore taskRequestPermits;
@@ -56,7 +57,9 @@ public class PanoramaCenterClient {
             @Value("${panorama.general.connect-timeout-ms:1000}") int generalConnectTimeoutMs,
             @Value("${panorama.general.read-timeout-ms:1500}") int generalReadTimeoutMs,
             @Value("${panorama.general.max-concurrency:16}") int generalMaxConcurrency,
-            @Value("${panorama.workflow-alarm.max-concurrency:1}") int workflowAlarmMaxConcurrency,
+            @Value("${panorama.workflow-alarm.connect-timeout-ms:1000}") int workflowAlarmConnectTimeoutMs,
+            @Value("${panorama.workflow-alarm.read-timeout-ms:5000}") int workflowAlarmReadTimeoutMs,
+            @Value("${panorama.workflow-alarm.max-concurrency:4}") int workflowAlarmMaxConcurrency,
             @Value("${panorama.task.connect-timeout-ms:1000}") int taskConnectTimeoutMs,
             @Value("${panorama.task.read-timeout-ms:1500}") int taskReadTimeoutMs,
             @Value("${panorama.task.max-concurrency:8}") int taskMaxConcurrency) {
@@ -71,6 +74,12 @@ public class PanoramaCenterClient {
         taskRequestFactory.setConnectTimeout(Math.max(100, Math.min(5000, taskConnectTimeoutMs)));
         taskRequestFactory.setReadTimeout(Math.max(100, Math.min(10000, taskReadTimeoutMs)));
         this.taskRestClient = builder.clone().requestFactory(taskRequestFactory).build();
+        SimpleClientHttpRequestFactory workflowAlarmRequestFactory = new SimpleClientHttpRequestFactory();
+        workflowAlarmRequestFactory.setConnectTimeout(
+                Math.max(100, Math.min(5000, workflowAlarmConnectTimeoutMs)));
+        workflowAlarmRequestFactory.setReadTimeout(
+                Math.max(100, Math.min(10000, workflowAlarmReadTimeoutMs)));
+        this.workflowAlarmRestClient = builder.clone().requestFactory(workflowAlarmRequestFactory).build();
         this.properties = properties;
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
         this.generalMaxConcurrency = Math.max(1, Math.min(32, generalMaxConcurrency));
@@ -79,6 +88,10 @@ public class PanoramaCenterClient {
                 Math.max(1, Math.min(MAX_WORKFLOW_ALARM_CONCURRENCY, workflowAlarmMaxConcurrency)), true);
         this.taskMaxConcurrency = Math.max(1, Math.min(32, taskMaxConcurrency));
         this.taskRequestPermits = new Semaphore(this.taskMaxConcurrency, true);
+    }
+
+    int taskMaxConcurrency() {
+        return taskMaxConcurrency;
     }
 
     public List<Map<String, Object>> devices() {
@@ -387,9 +400,9 @@ public class PanoramaCenterClient {
                     WORKFLOW_ALARM_ACQUIRE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             if (!acquired) {
                 throw new ResponseStatusException(
-                        HttpStatus.SERVICE_UNAVAILABLE, "工作流告警查询排队超时");
+                        HttpStatus.SERVICE_UNAVAILABLE, "工作流告警查询并发已达上限");
             }
-            return records(responseMap(uri, workflowAlarmCircuit).orElseThrow(() ->
+            return records(responseMap(uri, workflowAlarmRestClient, workflowAlarmCircuit, null).orElseThrow(() ->
                     new ResponseStatusException(
                             HttpStatus.SERVICE_UNAVAILABLE, "工作流告警查询失败")));
         } catch (InterruptedException exception) {
@@ -467,7 +480,7 @@ public class PanoramaCenterClient {
     }
 
     private List<Map<String, Object>> records(URI uri, FailureCircuit circuit) {
-        return responseMap(uri, circuit).map(this::records).orElse(List.of());
+        return responseMap(uri, restClient, circuit, generalRequestPermits).map(this::records).orElse(List.of());
     }
 
     @SuppressWarnings("unchecked")
@@ -512,10 +525,14 @@ public class PanoramaCenterClient {
     }
 
     private Optional<Map<String, Object>> responseMap(URI uri) {
-        return responseMap(uri, generalCircuit);
+        return responseMap(uri, restClient, generalCircuit, generalRequestPermits);
     }
 
-    private Optional<Map<String, Object>> responseMap(URI uri, FailureCircuit circuit) {
+    private Optional<Map<String, Object>> responseMap(
+            URI uri,
+            RestClient client,
+            FailureCircuit circuit,
+            Semaphore permits) {
         PanoramaService.requireRequestTimeRemaining();
         if (!circuit.allowRequest()) {
             log.warn("Management 查询熔断中，本次不再请求下游，请求地址={}", uri);
@@ -524,13 +541,13 @@ public class PanoramaCenterClient {
         boolean acquired = false;
         long startNanos = System.nanoTime();
         try {
-            acquired = generalRequestPermits.tryAcquire(100, TimeUnit.MILLISECONDS);
+            acquired = permits == null || permits.tryAcquire(100, TimeUnit.MILLISECONDS);
             if (!acquired) {
                 circuit.recordFailure();
                 log.warn("全景通用查询并发已达上限，请求地址={}", uri);
                 return Optional.empty();
             }
-            Map<String, Object> response = restClient.get()
+            Map<String, Object> response = client.get()
                     .uri(uri)
                     .headers(authenticatedRequestHeaders::apply)
                     .retrieve()
@@ -568,8 +585,8 @@ public class PanoramaCenterClient {
             Thread.currentThread().interrupt();
             return Optional.empty();
         } finally {
-            if (acquired) {
-                generalRequestPermits.release();
+            if (acquired && permits != null) {
+                permits.release();
             }
         }
     }

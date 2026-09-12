@@ -61,9 +61,9 @@ GET /api/bigscreen/panorama/overview
 | `patrolOverview.mileageHasData` | 是否有有效里程样本 | 控制端 | 仅基线或仅异常事件时为 `false` |
 | `tasks` | 任务列表 | 管理端 + BFF 组装 | 见 3.6 |
 | `taskOverview.totalToday` | 今日任务数/当前任务列表总数 | BFF 计算 | `tasks.size()` |
-| `taskOverview.completedRateText` | 完成率文案 | BFF 计算 | `completedRate + "%"` |
-| `taskOverview.running` | 执行中任务数 | BFF 计算 | 统计 `tasks[].status == running` |
-| `taskOverview.pending` | 待执行任务数 | BFF 计算 | 统计 `tasks[].status == pending` |
+| `taskOverview.completedRateText` | 完成率文案 | BFF | 计划三态无法计算执行完成率，返回 `null`，页面展示 `--` |
+| `taskOverview.running` | 执行中任务数 | BFF 计算 | 统计 `tasks[].executionStatus == RUNNING` |
+| `taskOverview.pending` | 待执行任务数 | BFF 计算 | 统计 `tasks[].executionStatus == WAITING` |
 | `map` | 地图列表 | 管理端 + BFF 组装 | 返回 `/api/v1/management/maps` 的 `data.records`，并为每张地图补充点位集合 |
 | `alarms` | 告警聚合对象 | 管理端 + BFF 组装 | 见 3.8 |
 
@@ -112,6 +112,10 @@ GET /api/bigscreen/panorama/overview
 Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 `offline`，不会使用 Management
 `enabled` 补成在线。固定摄像头健康变化复用设备统计重算结果，通过
 `panorama.fixed-camera.statuses.changed` 增量更新当前授权快照中的固定摄像头，不重新获取 Overview。
+大屏地图仅展示 `enabled === true` 的固定摄像头；SLAM 地图还要求摄像头配置的
+`location.mapId` 匹配当前地图且有有效的 `x/y` 坐标。GIS 地图只有存在有效经纬度时才绘制，
+不再将无经纬度的固定摄像头放到地图中心点。停用摄像头仍保留在授权设备集合和统计中；
+`status`、`playable` 与推流状态不作为地图可见性条件。
 
 ### 3.3 上装设备计数
 
@@ -141,26 +145,26 @@ Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 
 
 ### 3.5 `devices[].location` 与 `devices[].edgeLocation`
 
-`location` 是既有地图展示模型；其 `mapId` 继续由任务关联写入平台地图 ID，避免改变当前地图加载与任务展示。
-`edgeLocation` 是 Control 边缘状态的原始定位语义，供充电与停靠导航前置校验。除经纬度外，两个对象可包含
-相同坐标事实，但调用方不得把 `location.mapId` 当作设备侧地图 ID。
+`location` 是地图展示和定位操作共同使用的边缘定位事实，`edgeLocation` 暂作为兼容别名保留。两者都来自
+Control 注册表，`mapId` 都是设备侧地图 ID。移动设备当前平台地图通过
+`devices[].location.mapId = map[].edgeMapId` 唯一匹配得到；任务计划地图不得覆盖或兜底当前位置。
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `lng` | 经度 | 控制端 | `status.localization.lng/longitude` |
 | `lat` | 纬度 | 控制端 | `status.localization.lat/latitude` |
-| `mapId` | 设备所属管理端地图业务主键，字符串；无关联任务时为 `null` | 管理端 + BFF 关联 | 按 `devices[].robotId = tasks[].equipmentList[].robotId` 匹配，取第一条非空 `tasks[].mapId`；不使用控制端 SLAM 图 ID |
+| `mapId` | 设备侧地图 ID，字符串；未上报时为 `null` | 本项目 Control | `status.localization.mapId`；按启用地图唯一的 `edgeMapId` 解析平台地图 |
 | `x` | 地图/局部坐标 X | 控制端 | `status.localization.coordinateX` |
 | `y` | 地图/局部坐标 Y | 控制端 | `status.localization.coordinateY` |
 | `z` | 地图/局部坐标 Z | 控制端 | `status.localization.coordinateZ` |
 | `address` | 位置文字 | 控制端 | `status.localization.address` |
 
-`edgeLocation` 还返回：
+定位对象还返回：
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `localized` | 是否已完成有效定位 | 本项目 Control | `status.localization.localized`，必须明确为 `true` 才能发起服务点导航 |
-| `mapId` | 设备侧地图 ID | 本项目 Control | `status.localization.mapId`，由 EIOP 按平台地图 `edgeMapId` 解析 |
+| `mapId` | 设备侧地图 ID | 本项目 Control | `status.localization.mapId`；前端按平台地图 `edgeMapId` 唯一解析 |
 | `x/y/z` | 设备侧地图坐标 | 本项目 Control | `coordinateX/coordinateY/coordinateZ`；导航至少要求有限数值 `x/y` |
 | `yaw` | 航向角 | 本项目 Control | `status.localization.yaw`，可空 |
 | `coordinateType` | 坐标类型 | 本项目 Control | `status.localization.coordinateType`，可空 |
@@ -173,7 +177,7 @@ Overview 的 `tasks[]` 只返回任务计划/实例列表可直接得到的摘�
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `taskId` | 任务计划 ID | 管理端 | `TaskWorkflowPlanResponse.id`，兼容 `taskId` |
-| `workflowInstanceId` | 活动或最近实例 ID，供监控数据与历史回放关联，不能作为计划生命周期操作的回退 ID | 管理端 | `TaskWorkflowPlanResponse.activeWorkflowInstanceId/lastWorkflowInstanceId/workflowInstanceId` |
+| `workflowInstanceId` | 活动或最近实例 ID，供监控数据与历史回放关联，不能作为计划生命周期操作的回退 ID | 管理端 | `TaskWorkflowPlanResponse.activeWorkflowInstanceId/lastWorkflowInstanceId` |
 | `name` | 任务名称 | 管理端 | `TaskWorkflowPlanResponse.planName/workflowName/name` |
 | `executionMode` | 执行模式 | 管理端 | 任务计划接口 `executionMode`，例如 `MANUAL`、`SCHEDULE`；缺失时为 `null` |
 | `expectedDurationSeconds` | 预计执行时长，单位秒 | 管理端 | 任务计划接口 `expectedDurationSeconds`；缺失时为 `null` |
@@ -183,8 +187,6 @@ Overview 的 `tasks[]` 只返回任务计划/实例列表可直接得到的摘�
 | `lastWorkflowInstanceId` | 最近执行实例 ID | 管理端 | 原样透传，供快速结束的启动操作确认；不用于生命周期指令 |
 | `enabled` | 计划启用状态 | 管理端 | 停用计划不能立即执行 |
 | `availableLifecycleActions` | 当前允许的任务生命周期操作 | 管理端 | 原样透传任务计划 `availableLifecycleActions`，页面操作按钮同时要求活动实例 ID 和用户权限；终止支持 `TERMINATE/RETRY_TERMINATE` |
-| `status` | 任务状态编码 | 管理端任务计划 + BFF 转换 | 优先取 `activeWorkflowInstanceStatus`；`PREPARING` 投影为现有 `running`，不向全景页增加准备中状态，其余状态转换为对应小写编码 |
-| `statusName` | 任务状态中文名 | BFF 转换 | 由 `status` 转中文 |
 | `startTime` | 任务开始时间 | 管理端 + BFF 格式化 | 优先任务实例 `startedAt`，其次计划 `startedAt/lastStartedAt/startTime` |
 | `endTime` | 任务结束时间 | 管理端 + BFF 格式化 | 优先任务实例 `completedAt`，其次计划 `completedAt/lastCompletedAt/endTime` |
 | `timeRange` | 页面展示时间段 | BFF 计算 | 由 `startTime/endTime` 截取 `HH:mm-HH:mm`；时间不完整为 `null` |
@@ -235,11 +237,11 @@ Overview 不返回 `devices[].task[]`。前端按 `tasks[].equipmentList[].robot
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `points` | 当前地图点位列表 | 管理端 | `/api/v1/management/maps/{mapId}/points` 返回值 |
-| `deviceIds` | 当前地图的设备 ID 列表 | BFF 过滤 | 按设备关联任务的管理端地图 ID 与请求 `mapId` 匹配，只返回 `robotId`；边缘端实时定位的 SLAM 地图 ID 不参与管理端地图归属，未关联任务地图的设备不返回，完整对象使用顶层 `overview.devices[]` |
 | `fixedCamares` | 当前地图的固定摄像头列表 | 管理端 | `/api/v1/management/fixed-cameras?pageNum=1&pageSize=100&mapId={mapId}` 的 `data.records` |
 
-`overview.map[]` 仅保留 `id/mapName/fileId/previewWidth/previewHeight/resolution/originX/originY/previewGeneratedAt`
-等地图摘要；`points/deviceIds/fixedCamares` 仅由 `resources` 返回。
+`overview.map[]` 保留 `id/edgeMapId/mapName/fileId/previewWidth/previewHeight/resolution/originX/originY/previewGeneratedAt`
+等地图摘要；`points/fixedCamares` 仅由 `resources` 返回。启用地图的 `edgeMapId` 必须唯一；缺失或重复时，
+相关移动设备不显示，禁止回退任务地图。
 `mapCode/mapType/regionId/fileName/previewImageUrl/enabled/remark` 不再放入聚合接口。
 `points[]` 仅返回 `id/pointCode/pointName/pointType/coordinateX/coordinateY`。
 
@@ -377,13 +379,14 @@ PATCH /api/v1/management/alarms/{alarmId}/handled
 
 ## 8. 地图字段
 
-`overview.map[]` 只保留地图摘要；当前地图的 `points/deviceIds/fixedCamares` 由
+`overview.map[]` 只保留地图摘要；当前地图的 `points/fixedCamares` 由
 `GET /api/bigscreen/panorama/maps/{mapId}/resources` 按需返回。前端将地图渲染资源与对应地图摘要合并，
-完整设备对象始终使用顶层 `overview.devices[]`。
+完整设备对象始终使用顶层 `overview.devices[]`，移动设备地图归属由最新定位实时计算。
 
 | BFF 字段 | 字段说明 |
 |---|---|
 | `id` | 地图 ID |
+| `edgeMapId` | 设备侧地图 ID；启用地图范围内必须唯一 |
 | `mapName` | 地图名称 |
 | `fileId` | 地图文件 ID |
 | `previewWidth` | 预览图宽度 |
@@ -394,7 +397,6 @@ PATCH /api/v1/management/alarms/{alarmId}/handled
 | `originYaw` | 地图原点朝向 |
 | `previewGeneratedAt` | 预览图生成时间 |
 | `points` | resources 地图点位数组，仅含 `id/pointCode/pointName/pointType/coordinateX/coordinateY` |
-| `deviceIds` | resources 当前地图设备 ID 数组；按设备关联任务的管理端地图 ID 匹配，实时定位的 SLAM 地图 ID 不参与归属，完整对象不重复返回 |
 | `fixedCamares` | resources 当前地图固定摄像头原始记录数组 |
 
 ## 9. 统计接口

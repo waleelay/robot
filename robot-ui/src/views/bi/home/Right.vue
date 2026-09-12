@@ -93,16 +93,10 @@
                     <div style="width: 37%;" class="text-ellipsis" :title="item.name">{{ item.name }}</div>
                     <div
                       class="ml10 mr10 status wp52"
-                      :class="{
-                        green: item.status === 'running',
-                        orange: item.status === 'waiting',
-                        blue: item.status === 'completed',
-                        red: item.status?.includes('failed'),
-                        gray: item.status === 'paused'
-                      }"
-                    >{{ executionStatusLabel(item.status) }}</div>
-                    <div class="ml10 wp123 text-ellipsis" :style="{ fontSize: item.executionMode === 'MANUAL' && item.status === 'waiting' ? '' : '10px' }" :title="item.executionMode === 'MANUAL' && item.status === 'waiting' ? '手动执行' : item.startTime">
-                      {{ item.executionMode === 'MANUAL' && item.status === 'waiting' ? '手动执行' : item.startTime.replaceAll('-', '.') }}
+                      :class="taskStatusColorClass(taskExecutionStatus(item))"
+                    >{{ executionStatusLabel(taskExecutionStatus(item)) }}</div>
+                    <div class="ml10 wp123 text-ellipsis" :style="{ fontSize: isManualWaitingTask(item) ? '' : '10px' }" :title="isManualWaitingTask(item) ? '手动执行' : item.startTime">
+                      {{ isManualWaitingTask(item) ? '手动执行' : (item.startTime || '-').replaceAll('-', '.') }}
                     </div>
                   </div>
                 </template>
@@ -126,7 +120,7 @@
 import { mapState } from 'vuex';
 import { getDescArr } from '../../../utils';
 import Empty from '../components/Empty.vue';
-import { executionStatusLabel } from '../patrol/business/execution-status.js';
+import { executionStatusLabel, taskExecutionStatus, taskStatusColorClass } from '../patrol/business/execution-status.js';
 export default {
   name: 'BiIndexLeft',
   components: { Empty },
@@ -161,6 +155,12 @@ export default {
   },
   methods: {
     executionStatusLabel,
+    taskExecutionStatus,
+    taskStatusColorClass,
+    isManualWaitingTask(task) {
+      return task?.executionMode === 'MANUAL'
+        && taskExecutionStatus(task) === 'WAITING'
+    },
     statValue(value) {
       return value === null || value === undefined || value === '' ? '--' : value
     },

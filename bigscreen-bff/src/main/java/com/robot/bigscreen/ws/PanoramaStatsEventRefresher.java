@@ -17,6 +17,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
@@ -33,15 +35,18 @@ public class PanoramaStatsEventRefresher {
     private final PanoramaService panoramaService;
     private final ObjectMapper objectMapper;
     private final TaskScheduler taskScheduler;
+    private final TaskExecutor taskExecutor;
     private final Map<String, RefreshState> states = new ConcurrentHashMap<>();
 
     public PanoramaStatsEventRefresher(
             PanoramaService panoramaService,
             ObjectMapper objectMapper,
-            TaskScheduler taskScheduler) {
+            TaskScheduler taskScheduler,
+            @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor) {
         this.panoramaService = panoramaService;
         this.objectMapper = objectMapper;
         this.taskScheduler = taskScheduler;
+        this.taskExecutor = taskExecutor;
     }
 
     public void requestRefresh(
@@ -84,7 +89,9 @@ public class PanoramaStatsEventRefresher {
 
     private void scheduleIfNeeded(String sessionId, RefreshState state) {
         if (state.scheduled.compareAndSet(false, true)) {
-            taskScheduler.schedule(() -> refresh(sessionId, state), Instant.now().plusMillis(DEBOUNCE_MILLIS));
+            taskScheduler.schedule(
+                    () -> taskExecutor.execute(() -> refresh(sessionId, state)),
+                    Instant.now().plusMillis(DEBOUNCE_MILLIS));
         }
     }
 

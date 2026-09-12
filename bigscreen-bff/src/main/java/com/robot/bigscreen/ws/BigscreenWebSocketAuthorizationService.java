@@ -32,6 +32,16 @@ public class BigscreenWebSocketAuthorizationService {
 
     private static final Logger log = LoggerFactory.getLogger(BigscreenWebSocketAuthorizationService.class);
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE = new ParameterizedTypeReference<>() {};
+    private static final Set<String> USER_SCOPED_FIELD_CALL_EVENTS = Set.of(
+            "video.field.call.incoming",
+            "video.field.call.status");
+    private static final Set<String> USER_SCOPED_CALL_TYPES = Set.of(
+            "video.intercom.call.operation-failed",
+            "video.field.call.list",
+            "video.field.call.accepted",
+            "video.field.call.rejected",
+            "video.field.call.ended",
+            "video.field.call.operation-failed");
 
     private final CenterServiceProperties properties;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
@@ -115,23 +125,31 @@ public class BigscreenWebSocketAuthorizationService {
     }
 
     public boolean canReceive(AuthorizedResources resources, String payload) {
+        // 现场 App 呼叫使用 app-* / phone-camera 作为来电弹窗展示标识，
+        // 它们不是 Management 设备资源，必须先按明确的呼叫消息类型放行。
+        if (isUserScopedCallMessage(payload)) {
+            return true;
+        }
         Set<String> payloadRobotIds = robotIdsInPayload(payload);
         Set<String> payloadCameraIds = upstreamFixedCameraIdsInPayload(payload);
         if (payloadRobotIds.isEmpty() && payloadCameraIds.isEmpty()) {
-            return isUserScopedOperationResponse(payload);
+            return false;
         }
         return resources != null
                 && resources.robotIds().containsAll(payloadRobotIds)
                 && resources.cameraIds().containsAll(payloadCameraIds);
     }
 
-    private boolean isUserScopedOperationResponse(String payload) {
+    private boolean isUserScopedCallMessage(String payload) {
         if (payload == null || payload.isBlank()) {
             return false;
         }
         try {
-            String type = objectMapper.readTree(payload).path("type").asText("");
-            return "video.intercom.call.operation-failed".equals(type);
+            JsonNode root = objectMapper.readTree(payload);
+            String type = root.path("type").asText("");
+            String event = root.path("event").asText("");
+            return USER_SCOPED_CALL_TYPES.contains(type)
+                    || USER_SCOPED_FIELD_CALL_EVENTS.contains(event);
         } catch (Exception exception) {
             return false;
         }

@@ -10,18 +10,6 @@
   <div v-else class="business2-content ml10 flex1 flex-column h100 no-w-scroll">
     <div class="business2-toolbar">
       <div class="business2-filter">
-        <div class="custom-tab-button flex">
-          <div
-            v-for="item in statusTabs"
-            :key="item.value"
-            class="tab-button-item pt5 pb5"
-            style="font-size: 14px; line-height: 19px;"
-            :class="{ 'is-active': filters.executionStatus === item.value }"
-            @click="changeStatus(item.value)"
-          >
-            {{ item.label }}
-          </div>
-        </div>
         <el-select
           v-model="filters.executionMode"
           clearable
@@ -105,8 +93,8 @@
           <el-table-column key="status" width="150" label="执行状态" align="center">
             <template slot-scope="scope">
               <div class="execution-status-cell">
-                <span class="status" :class="executionStatusType(scope.row.executionStatus)">
-                  {{ executionStatusLabel(scope.row.executionStatus) }}
+                <span class="status" :class="executionStatusType(taskExecutionStatus(scope.row))">
+                  {{ executionStatusLabel(taskExecutionStatus(scope.row)) }}
                 </span>
                 <span v-if="scope.row.controlStatus === 'OPERATING'" class="execution-control-note">控制中</span>
                 <span v-else-if="scope.row.controlStatus === 'EXCEPTION'" class="execution-control-note is-error">控制异常</span>
@@ -183,7 +171,7 @@
                 强制结束
               </el-button>
               <el-button
-                v-if="!row.activeWorkflowInstanceId && canExecutePlan"
+                v-if="isPlanStartable(row) && canExecutePlan"
                 type="text"
                 :disabled="!row.enabled"
                 :loading="isStarting(row.id)"
@@ -354,11 +342,12 @@ import {
 import { isRequestErrorNotified } from '@/utils/request'
 import {
   executionStatusLabel as resolveExecutionStatusLabel,
-  executionStatusType as resolveExecutionStatusType
+  executionStatusType as resolveExecutionStatusType,
+  taskExecutionStatus
 } from '../execution-status'
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 import PlanEdit from './PlanEdit.vue'
-import { hasPlanAction } from '../task-plan-state'
+import { canStartPlan, hasPlanAction } from '../task-plan-state'
 
 export default {
   name: 'BiPatrolBusiness2Plan',
@@ -373,14 +362,8 @@ export default {
       filters: {
         keyword: '',
         executionMode: '',
-        enabled: '',
-        executionStatus: 'all'
+        enabled: ''
       },
-      statusTabs: [
-        { value: 'all', label: '全部' },
-        { value: 'IDLE', label: '待执行' },
-        { value: 'RUNNING', label: '执行中' }
-      ],
       previewVisible: false,
       previewResult: null,
       startingPlanIds: [],
@@ -481,8 +464,7 @@ export default {
           keyword: this.filters.keyword || undefined,
           executionMode: this.filters.executionMode || undefined,
           // enabled: this.filters.enabled === '' ? undefined : this.filters.enabled,
-          enabled: true,
-          executeStatus: this.filters.executionStatus === 'all' ? undefined : this.filters.executionStatus
+          enabled: true
         }
         const data = this.unwrap(await getTaskList(params))
         if (request !== this.rowsRequest || this._isDestroyed) return
@@ -497,11 +479,7 @@ export default {
       }
     },
     resetFilters() {
-      this.filters = { keyword: '', executionMode: '', enabled: '', executionStatus: 'all' }
-      this.loadRows(1)
-    },
-    changeStatus(value) {
-      this.filters.executionStatus = value
+      this.filters = { keyword: '', executionMode: '', enabled: '' }
       this.loadRows(1)
     },
     hasManagementPermission(permission) {
@@ -527,7 +505,8 @@ export default {
       this.mode = id ? 'edit' : 'list'
     },
     async startPlan(row) {
-      if (row.activeWorkflowInstanceId) {
+      if (!this.isPlanStartable(row)) {
+        if (!row.activeWorkflowInstanceId) return
         this.$emit('show-record', row.activeWorkflowInstanceId)
         return
       }
@@ -719,6 +698,7 @@ export default {
       }
     },
     hasLifecycleAction: hasPlanAction,
+    isPlanStartable: canStartPlan,
     isStarting(planId) {
       return this.startingPlanIds.indexOf(planId) !== -1
     },
@@ -729,8 +709,9 @@ export default {
       return { HOURLY: '每小时', DAILY: '每天', WORKDAY: '工作日', WEEKLY: '每周', CUSTOM: '自定义' }[value] || value || '-'
     },
     executionStatusLabel(value) {
-      return resolveExecutionStatusLabel(value, '待执行')
+      return resolveExecutionStatusLabel(value)
     },
+    taskExecutionStatus,
     executionStatusType(value) {
       return resolveExecutionStatusType(value)
     },

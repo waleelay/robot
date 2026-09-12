@@ -1,7 +1,6 @@
 package com.robot.bigscreen.panorama;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -17,9 +16,7 @@ import com.robot.bigscreen.config.CenterServiceProperties;
 import java.net.SocketTimeoutException;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
@@ -49,9 +46,11 @@ class PanoramaCenterClientTest {
         CenterServiceProperties properties = new CenterServiceProperties();
         properties.setManageBaseUrl("http://management.test");
         client = new PanoramaCenterClient(RestClient.builder(), properties,
-                mock(AuthenticatedRequestHeaders.class), 1000, 1500, 16, 1, 1000, 1500, 8);
+                mock(AuthenticatedRequestHeaders.class), 1000, 1500, 16,
+                1000, 5000, 4, 1000, 1500, 8);
         ReflectionTestUtils.setField(client, "restClient", builder.build());
         ReflectionTestUtils.setField(client, "taskRestClient", builder.build());
+        ReflectionTestUtils.setField(client, "workflowAlarmRestClient", builder.build());
     }
 
     @Test
@@ -144,28 +143,22 @@ class PanoramaCenterClientTest {
     }
 
     @Test
-    void workflowAlarmQueryWaitsForAndReleasesItsDedicatedPermit() throws Exception {
+    void workflowAlarmQueryFailsFastWhenItsDedicatedPoolIsSaturated() throws Exception {
         server.expect(requestTo(WORKFLOW_ALARMS_URL)).andRespond(withSuccess(
                 "{\"code\":\"0\",\"data\":{\"records\":[]}}", MediaType.APPLICATION_JSON));
         Semaphore permits = (Semaphore) ReflectionTestUtils.getField(client, "workflowAlarmRequestPermits");
-        permits.acquire();
-        boolean releasedForQuery = false;
-        CompletableFuture<List<Map<String, Object>>> query =
-                CompletableFuture.supplyAsync(client::actionableWorkflowAlarms);
+        int permitCount = permits.availablePermits();
+        permits.acquire(permitCount);
         try {
-            for (int index = 0; index < 100 && permits.getQueueLength() == 0; index++) {
-                Thread.sleep(10);
-            }
-            assertTrue(permits.hasQueuedThreads());
-            assertFalse(query.isDone());
-            permits.release();
-            releasedForQuery = true;
-            assertEquals(List.of(), query.get(2, TimeUnit.SECONDS));
+            ResponseStatusException error = assertThrows(
+                    ResponseStatusException.class, client::actionableWorkflowAlarms);
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
+            assertEquals(0, permits.availablePermits());
         } finally {
-            if (!releasedForQuery) permits.release();
-            query.cancel(true);
+            permits.release(permitCount);
         }
-        assertEquals(1, permits.availablePermits());
+        assertEquals(List.of(), client.actionableWorkflowAlarms());
+        assertEquals(permitCount, permits.availablePermits());
         server.verify();
     }
 

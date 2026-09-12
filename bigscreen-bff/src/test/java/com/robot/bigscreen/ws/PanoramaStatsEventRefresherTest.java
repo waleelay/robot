@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 
 class PanoramaStatsEventRefresherTest {
@@ -45,7 +46,7 @@ class PanoramaStatsEventRefresherTest {
         ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
         when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
         PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
-                panoramaService, objectMapper, taskScheduler);
+                panoramaService, objectMapper, taskScheduler, new SyncTaskExecutor());
         List<String> events = new ArrayList<>();
 
         refresher.requestRefresh("browser-a", null, events::add, Set.of(StatsPart.ALARMS));
@@ -73,7 +74,7 @@ class PanoramaStatsEventRefresherTest {
         ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
         when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
         PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
-                panoramaService, objectMapper, taskScheduler);
+                panoramaService, objectMapper, taskScheduler, new SyncTaskExecutor());
         List<String> events = new ArrayList<>();
 
         refresher.requestRefresh("browser-a", null, events::add, Set.of(StatsPart.ALARMS));
@@ -103,7 +104,7 @@ class PanoramaStatsEventRefresherTest {
         ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
         when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
         PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
-                panoramaService, objectMapper, taskScheduler);
+                panoramaService, objectMapper, taskScheduler, new SyncTaskExecutor());
         List<String> events = new ArrayList<>();
 
         refresher.requestRefresh("browser-a", null, events::add, Set.of(StatsPart.DEVICES));
@@ -134,7 +135,7 @@ class PanoramaStatsEventRefresherTest {
         ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
         when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
         PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
-                panoramaService, objectMapper, taskScheduler);
+                panoramaService, objectMapper, taskScheduler, new SyncTaskExecutor());
         List<String> events = new ArrayList<>();
 
         refresher.requestRefresh("browser-a", null, events::add, Set.of(StatsPart.DEVICES));
@@ -165,7 +166,7 @@ class PanoramaStatsEventRefresherTest {
         ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
         when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
         PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
-                panoramaService, objectMapper, taskScheduler);
+                panoramaService, objectMapper, taskScheduler, new SyncTaskExecutor());
         List<String> events = new ArrayList<>();
 
         refresher.requestRefresh("browser-a", null, events::add, Set.of(StatsPart.TASKS));
@@ -191,7 +192,7 @@ class PanoramaStatsEventRefresherTest {
             return Map.of("taskOverview", Map.of("totalToday", 9));
         });
         PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
-                panoramaService, new ObjectMapper(), taskScheduler);
+                panoramaService, new ObjectMapper(), taskScheduler, new SyncTaskExecutor());
         reference.set(refresher);
         List<String> events = new ArrayList<>();
 
@@ -199,5 +200,26 @@ class PanoramaStatsEventRefresherTest {
         tasks.getValue().run();
 
         assertThat(events).isEmpty();
+    }
+
+    @Test
+    void schedulerOnlyDispatchesRefreshWork() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler taskScheduler = mock(TaskScheduler.class);
+        ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
+        when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
+        when(panoramaService.statsSnapshot(any())).thenReturn(Map.of());
+        List<Runnable> executions = new ArrayList<>();
+        PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
+                panoramaService, new ObjectMapper(), taskScheduler, executions::add);
+        refresher.requestRefresh("browser-a", null, ignored -> { }, Set.of(StatsPart.TASKS));
+
+        tasks.getValue().run();
+        verify(panoramaService).invalidateTaskStats();
+        verify(panoramaService, times(0)).statsSnapshot(any());
+        assertThat(executions).hasSize(1);
+
+        executions.get(0).run();
+        verify(panoramaService).statsSnapshot(any());
     }
 }

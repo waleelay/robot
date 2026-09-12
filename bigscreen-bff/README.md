@@ -31,14 +31,16 @@ src/main/java/com/robot/bigscreen/
 - `BigscreenProxyController`：代理 `/api/control/**`、`/api/media/**`、`/api/manage/**` 和 `/api/v1/management/**`；`GET /api/control/robots` 固定返回 `410`。`/internal/**` 仅供服务间内网调用，不注册为 BFF 对外代理。
 - `BusinessTaskProxyController`：只代理任务计划、流程定义、执行记录、设备和地图白名单。
 - `PanoramaService`：组装全景摘要、当前地图资源、按需设备/任务详情和告警。`overview` 只返回首屏所需摘要；地图点、任务路径和任务完整详情由独立接口按需读取，避免首屏预取回放和逐设备详情。
-- 机器人电量、速度、控制模式、`charging/taskStatus/edgeLocation/runtimeUpdatedAt` 统一来自本项目 Control 注册表；既有 `location.mapId` 保留平台地图展示语义，服务点导航只使用 `edgeLocation` 的设备侧定位事实。
+- 机器人电量、速度、控制模式、`charging/taskStatus/location/runtimeUpdatedAt` 统一来自本项目 Control 注册表；
+  `location.mapId` 保留设备侧地图 ID，移动设备图标由前端按启用地图唯一的 `edgeMapId` 解析平台地图。
+  任务地图只用于任务和路径展示，不参与设备当前位置判定；`edgeLocation` 暂与 `location` 同源保留兼容。
 - Overview 查询设备或固定摄像头列表收到 Management `403` 时，表示当前用户已失去对应资源查看权限，仅将该类资源按空集合组装；`401`、超时、5xx 和异常响应仍按失败处理。地图、任务等其他资源的 `403` 保持原鉴权语义。
 - Overview 的地图列表是必需查询：复用现有通用并发许可与必需资源读取链路，HTTP 错误、超时、空响应或并发饱和不转换为 `map=[]`；401/403 保持认证语义，其他读取失败返回 503。只有成功查询无地图时返回空列表，避免前端误判地图已删除。
 - `/api/bigscreen/panorama/devices/{deviceId}/mounted-device-count` 仅对授权机器人补查组件并返回非 `BODY` 组件数量，复用按用户隔离的短缓存与在途合并；不组装设备档案、运行态、地图或任务。弹窗主体使用 Overview 与 `robot.state`，固定摄像头不调用本接口。详见[字段来源映射](../docs/03-接口与协议/大屏BFF/大屏BFF字段来源映射文档.md)。
 - `StatisticsService`：基于授权设备、实时状态、任务、告警和 Control 里程汇总统计，并同步生成/保存 PDF；缺少权威来源的指标保持 `null`。
 - `BigscreenWebSocketBridgeHandler`：为每个浏览器连接建立一条 Control 上游连接；同一授权身份复用最长 5 分钟的授权快照和初始化权限加载，并在第 3 至 4 分钟按身份散列错峰刷新。授权刷新与中心端建连均使用 16 个固定线程和 64 个排队位置。同身份默认最多 8 个会话、同组织和单实例均为 64 个，超额以 `4008` 关闭。在事件下发和控制上行前强制检查快照及 Token 有效期；快照过期时连接内 fail-closed 并发送 `bigscreen.authorization.state`，不再以 `4003` 制造重连风暴。后台按身份单飞、分散刷新并退避重试，恢复后沿原连接校准 Overview；JWT 到期或 Management 明确返回 `401` 时仍以 `4001` 关闭。Management 对设备或固定摄像头查询返回 `403` 表示对应查看权限已撤销，该类授权集合按空集更新并触发 `bigscreen.authorization.changed`。
 - `PanoramaWebSocketEventAdapter`：将 `robot.state` 等事件适配成 `panorama.*`。
-- `PanoramaTaskEventRefresher` / `PanoramaStatsEventRefresher`：按授权身份分别以 300ms/500ms 去抖查询权威快照并向同身份会话广播；执行期间只保留一个 dirty 状态。
+- `PanoramaTaskEventRefresher` / `PanoramaStatsEventRefresher`：按授权身份分别以 50ms/500ms 去抖查询权威快照并向同身份会话广播；执行期间只保留一个 dirty 状态。
 
 ## 3. 鉴权与信任边界
 
@@ -78,6 +80,8 @@ RTSP 可用时 `status=online`；配置停用、配置无效、健康缺失或�
 
 下游缺失字段通常返回 `null` 或空集合。代码仍为 `test111`、`SN005`、`SN006` 保留无定位时的硬编码演示位置事件；该兼容只影响 WebSocket 事件，不能作为生产真实定位。
 
+全景任务摘要和 `panorama.task.changed` 的任务状态统一透传管理端计划 `executionStatus`（`WAITING/RUNNING/PAUSED`），不再提供混合工作流实例状态的 `status/statusName`。任务操作使用计划 `taskId` 或活动实例 `activeWorkflowInstanceId`；完成率在计划三态下不可计算，返回 `null`。详见[全景任务字段映射](../docs/03-接口与协议/大屏BFF/大屏BFF字段来源映射文档.md)。
+
 ## 5. 配置
 
 | 环境变量 | 说明 |
@@ -103,7 +107,9 @@ RTSP 可用时 `status=online`；配置停用、配置无效、健康缺失或�
 | `PANORAMA_GENERAL_CONNECT_TIMEOUT_MS` | Management 通用资源连接超时，默认 1000 ms，代码限制 100 至 5000 ms |
 | `PANORAMA_GENERAL_READ_TIMEOUT_MS` | Management 通用资源读取超时，默认 1500 ms，代码限制 100 至 10000 ms |
 | `PANORAMA_GENERAL_MAX_CONCURRENCY` | 单实例 Management 通用资源请求并发上限，默认 16，代码限制 1 至 32 |
-| `PANORAMA_WORKFLOW_ALARM_MAX_CONCURRENCY` | 可处置工作流告警查询独立并发上限，默认 1、代码硬上限 4，不与通用查询共享熔断状态 |
+| `PANORAMA_WORKFLOW_ALARM_CONNECT_TIMEOUT_MS` | 可处置工作流告警独立连接超时，默认 1000 ms |
+| `PANORAMA_WORKFLOW_ALARM_READ_TIMEOUT_MS` | 可处置工作流告警独立读取超时，默认 5000 ms |
+| `PANORAMA_WORKFLOW_ALARM_MAX_CONCURRENCY` | 可处置工作流告警查询独立并发上限，默认 4、代码硬上限 8，不占用通用查询闸门 |
 | `BIGSCREEN_AUTH_CLIENT_ID` | JWT `azp/aud` 目标客户端 |
 | `BIGSCREEN_AUTH_ISSUER_URI`、`BIGSCREEN_AUTH_JWK_SET_URI` | JWT Issuer 与 JWK |
 | `BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS` | CORS 来源模式 |
@@ -124,8 +130,9 @@ TTL 与 256 项容量上限，在途项完成后立即清理；Overview 与统�
 
 BFF 收到 Management 告警失效通知后，以两条独立链路按授权身份查询工作流和普通告警；
 工作流快照未变化时按 0.3/0.6/1.2/2.4 秒退避并加入抖动，首次加最多四次复查且总时限不超过 5 秒，普通告警查询不会阻塞该收敛过程。
-首次连接和重连均推送
-`panorama.workflow-alarms.changed` 完整快照，浏览器不再自行查询或定时重试。
+同一身份查询进行中收到新的失效通知时，允许最新代次立即并行补查且最多两路在途；旧代次迟到结果直接丢弃，不能覆盖新快照。
+首次连接和重连只向新连接推送 `panorama.workflow-alarms.changed` 完整快照；实时变化按授权身份广播，
+避免同一用户打开多个页面时互相重复触发。浏览器投递失败不推进已发送快照，授权恢复后重新补查；浏览器不再自行查询或定时重试。
 普通告警首屏和重连数据由 Overview 提供；Management 告警变化后按高、中、低风险分别只读取第一页 10 条及总数，并通过
 `panorama.alarms.changed` 整体更新；详情弹窗滚动到底部后再调用 `/panorama/alarms/page` 加载下一页，
 不再由 BFF 每次遍历全部未处置告警。

@@ -24,12 +24,17 @@
 <script>
 import { mapGetters } from 'vuex'
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
+import { hasPlanAction } from '../../../business/task-plan-state'
 
 export default {
   name: 'ControlModeActions',
   props: {
     isNavMode: Boolean,
     showResume: Boolean,
+    taskPlan: {
+      type: Object,
+      default: null
+    },
     /** 状态与按钮两端对齐（地图弹窗宽行） */
     spread: {
       type: Boolean,
@@ -44,9 +49,11 @@ export default {
     ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
     canResumeExecution() {
       return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_RESUME)
+        && hasPlanAction(this.taskPlan, 'RESUME')
     },
     canTerminateExecution() {
       return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_TERMINATE)
+        && (hasPlanAction(this.taskPlan, 'TERMINATE') || hasPlanAction(this.taskPlan, 'RETRY_TERMINATE'))
     },
     // 自主导航始终可接管；非自主导航仅任务中且至少有一个可操作按钮时显示
     showActions() {

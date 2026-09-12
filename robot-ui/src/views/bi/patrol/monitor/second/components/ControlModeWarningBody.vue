@@ -15,6 +15,7 @@
       </div>
       <div class="task-options">
         <div
+          v-if="canPause"
           class="task-option curp"
           :class="{ 'is-active': selectedTaskAction === 'pause' }"
           @click="$emit('update:selectedTaskAction', 'pause')"
@@ -26,6 +27,7 @@
           </div>
         </div>
         <div
+          v-if="canTerminate"
           class="task-option curp"
           :class="{ 'is-active': selectedTaskAction === 'terminate' }"
           @click="$emit('update:selectedTaskAction', 'terminate')"
@@ -37,16 +39,16 @@
           </div>
         </div>
       </div>
+      <div v-if="!canPause && !canTerminate" class="permission-hint mt10">当前任务暂无可用操作</div>
     </div>
 
-    <div v-if="permissionHint" class="permission-hint mt10">{{ permissionHint }}</div>
     <div class="btns mt22">
       <el-button tt="modal" :disabled="confirming" @click="$emit('cancel')">{{ cancelText }}</el-button>
       <el-button
         tt="modal"
         class="ml10"
         :loading="confirming"
-        :disabled="!allowConfirm"
+        :disabled="!canConfirm"
         @click="$emit('confirm')"
       >
         {{ confirmText }}
@@ -56,9 +58,6 @@
 </template>
 
 <script>
-import { mapGetters } from 'vuex'
-import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
-
 const TEXT = {
   messagePrefix: '\u7acb\u5373\u63a5\u7ba1\u524d\uff0c\u8bf7',
   messageHighlight: '\u6682\u505c\u6216\u7ec8\u6b62',
@@ -94,42 +93,18 @@ export default {
     canConfirm: {
       type: Boolean,
       default: true
+    },
+    canPause: {
+      type: Boolean,
+      default: false
+    },
+    canTerminate: {
+      type: Boolean,
+      default: false
     }
   },
   data() {
     return TEXT
-  },
-  computed: {
-    ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
-    canPauseExecution() {
-      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_PAUSE)
-    },
-    canTerminateExecution() {
-      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_TERMINATE)
-    },
-    permissionHint() {
-      if (!this.showTaskSelection) return ''
-      if (!this.canPauseExecution && !this.canTerminateExecution) return '当前用户无任务操作权限'
-      if (!this.canPauseExecution) return '当前用户无暂停操作权限'
-      if (!this.canTerminateExecution) return '当前用户无终止操作权限'
-      return ''
-    },
-    allowConfirm() {
-      if (!this.canConfirm) return false
-      if (!this.showTaskSelection) return true
-      if (this.selectedTaskAction === 'pause') return this.canPauseExecution
-      if (this.selectedTaskAction === 'terminate') return this.canTerminateExecution
-      return this.canPauseExecution || this.canTerminateExecution
-    }
-  },
-  methods: {
-    hasManagementPermission(permission) {
-      return matchManagementPermission(
-        permission,
-        this.bigscreenPermissions,
-        this.bigscreenAuthorizationBypassed
-      )
-    }
   }
 }
 </script>

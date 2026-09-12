@@ -1,7 +1,7 @@
 import { mapActions, mapState } from "vuex";
 import { acquireControl, mediaClientId, sendEquipmentCommand, createConfirmToken } from "../../../../../../api/media";
 import { errorMessage } from "../../../../../../utils";
-import { executionStatusLabel, isActiveTaskStatus, taskStatusColorClass } from "../../../business/execution-status";
+import { executionStatusLabel, isActiveTaskStatus, taskExecutionStatus, taskStatusColorClass } from "../../../business/execution-status";
 import ControlModeActions from "./ControlModeActions.vue";
 import ControlModeWarning from "./ControlModeWarning.vue";
 
@@ -15,7 +15,7 @@ export default {
   components: { ControlModeWarning, ControlModeActions },
   computed: {
     ...mapState('websocketRobot', ['deviceStateCache', 'audioState']),
-    ...mapState('websocketExtraData', ['robotBaseInfo']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData']),
     mediaSocket() {
       return this.$store.getters['websocketRobot/getMediaSocket'];
     },
@@ -40,21 +40,20 @@ export default {
       return (this.statusRobot?.controlMode || this.selectedRobot?.controlMode) === '手动模式'
     },
     activeTask() {
-      return this.statusRobot?.runningTask || null
+      const summary = this.statusRobot?.runningTask
+      return summary?.taskId != null ? this.taskData?.[summary.taskId] || summary : null
     },
     isInActiveTask() {
-      if (isActiveTaskStatus(this.activeTask?.status)) return true
-      if (this.statusRobot?.customStatusName === '任务中') return true
-      return !!this.statusRobot?.runningTaskId
+      return isActiveTaskStatus(taskExecutionStatus(this.activeTask))
     },
     showTaskResumeActions() {
       return this.isManualMode && this.isInActiveTask
     },
     activeTaskStatusLabel() {
-      return this.activeTask?.statusName || executionStatusLabel(this.activeTask?.status, '-')
+      return executionStatusLabel(taskExecutionStatus(this.activeTask), '-')
     },
     activeTaskStatusClass() {
-      return taskStatusColorClass(this.activeTask?.status)
+      return taskStatusColorClass(taskExecutionStatus(this.activeTask))
     },
     controlProfiles() {
       return this.$store.getters['websocketRobot/getControlProfiles']

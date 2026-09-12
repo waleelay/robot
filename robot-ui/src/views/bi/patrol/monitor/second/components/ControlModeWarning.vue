@@ -30,6 +30,8 @@
             :selected-task-action.sync="selectedTaskAction"
             :confirming="confirming"
             :can-confirm="canConfirm"
+            :can-pause="canRunTaskAction('pause')"
+            :can-terminate="canRunTaskAction('terminate')"
             @cancel="close"
             @confirm="handleConfirm"
           />
@@ -43,7 +45,8 @@
 import { mapGetters } from 'vuex'
 import { takeoverControl } from '../../../../../../api/media'
 import { pauseTaskRecord, resumeTaskRecord, terminateTaskRecord } from '../../../../../../api/new-bi'
-import { isActiveTaskStatus, isPausedTaskStatus, isRunningTaskStatus } from '../../../business/execution-status'
+import { isActiveTaskStatus, isPausedTaskStatus, isRunningTaskStatus, taskExecutionStatus } from '../../../business/execution-status'
+import { hasPlanAction } from '../../../business/task-plan-state'
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 import ControlModeWarningBody from './ControlModeWarningBody.vue'
 
@@ -78,19 +81,10 @@ export default {
   computed: {
     ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
     isInTask() {
-      const base = this.getRobotBaseInfo()
-      if (isActiveTaskStatus(base?.runningTask?.status)) return true
-      if (base?.customStatusName === '\u4efb\u52a1\u4e2d') return true
-      const taskData = this.$store.state.websocketExtraData?.taskData || {}
-      const tasks = Array.isArray(base?.task) ? base.task : []
-      return tasks.some(raw => {
-        const id = raw?.taskId
-        const info = (id != null && taskData[id]) ? taskData[id] : raw
-        return info && isActiveTaskStatus(info.status)
-      })
+      return isActiveTaskStatus(this.relatedTaskStatus)
     },
     relatedTaskStatus() {
-      return this.getRelatedTask()?.status
+      return taskExecutionStatus(this.getRelatedTask())
     },
     isRunningTask() {
       return isRunningTaskStatus(this.relatedTaskStatus)
@@ -112,10 +106,10 @@ export default {
       if (this.confirming) return false
       if (this.showTaskSelection) {
         if (!this.selectedTaskAction) return false
-        return this.hasTaskActionPermission(this.selectedTaskAction)
+        return this.canRunTaskAction(this.selectedTaskAction)
       }
       if (this.action === 'resume' || this.action === 'terminate') {
-        return this.hasTaskActionPermission(this.action)
+        return this.canRunTaskAction(this.action)
       }
       return true
     }
@@ -133,6 +127,14 @@ export default {
       if (action === 'resume') return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_RESUME)
       if (action === 'terminate') return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_TERMINATE)
       return true
+    },
+    canRunTaskAction(action) {
+      const task = this.getRelatedTask()
+      if (!this.hasTaskActionPermission(action)) return false
+      if (action === 'terminate') {
+        return hasPlanAction(task, 'TERMINATE') || hasPlanAction(task, 'RETRY_TERMINATE')
+      }
+      return hasPlanAction(task, action.toUpperCase())
     },
     hasOtherDialogOpen() {
       const dialogs = document.querySelectorAll('.el-dialog__wrapper')
@@ -167,8 +169,10 @@ export default {
     },
     getRelatedTask() {
       const base = this.getRobotBaseInfo()
-      if (isActiveTaskStatus(base?.runningTask?.status)) return base.runningTask
       const taskData = this.$store.state.websocketExtraData?.taskData || {}
+      const runningId = base?.runningTask?.taskId
+      const runningTask = runningId != null ? taskData[runningId] || base.runningTask : null
+      if (isActiveTaskStatus(taskExecutionStatus(runningTask))) return runningTask
       const tasks = Array.isArray(base?.task) ? base.task : []
       let paused = null
       for (let i = 0; i < tasks.length; i++) {
@@ -176,19 +180,11 @@ export default {
         const id = raw?.taskId
         const info = (id != null && taskData[id]) ? taskData[id] : raw
         if (!info) continue
-        if (isRunningTaskStatus(info.status)) return info
-        if (!paused && isPausedTaskStatus(info.status)) paused = info
+        const status = taskExecutionStatus(info)
+        if (isRunningTaskStatus(status)) return info
+        if (!paused && isPausedTaskStatus(status)) paused = info
       }
       return paused
-    },
-    getTaskRecordId(task) {
-      if (!task) return null
-      return task.executionRecordId
-        || task.activeWorkflowInstanceId
-        || task.workflowInstanceId
-        || task.recordId
-        || task.taskInstanceId
-        || null
     },
     unwrap(res) {
       if (res && res.code !== undefined) {
@@ -246,9 +242,12 @@ export default {
         throw new Error('\u5f53\u524d\u7528\u6237\u65e0\u4efb\u52a1\u64cd\u4f5c\u6743\u9650')
       }
       const task = this.getRelatedTask()
-      const recordId = this.getTaskRecordId(task)
+      const recordId = task?.activeWorkflowInstanceId
       if (recordId == null || recordId === '') {
         throw new Error('\u7f3a\u5c11\u6267\u884c\u8bb0\u5f55\u6807\u8bc6\uff0c\u65e0\u6cd5\u64cd\u4f5c')
+      }
+      if (!this.canRunTaskAction(action)) {
+        throw new Error('\u5f53\u524d\u4efb\u52a1\u4e0d\u652f\u6301\u8be5\u64cd\u4f5c')
       }
       const apiMap = {
         pause: pauseTaskRecord,

@@ -5,17 +5,20 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.panorama.PanoramaService;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 
 class PanoramaTaskEventRefresherTest {
@@ -25,7 +28,8 @@ class PanoramaTaskEventRefresherTest {
         final ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
         final ArgumentCaptor<Instant> due = ArgumentCaptor.forClass(Instant.class);
         final List<String> events = new ArrayList<>();
-        final PanoramaTaskEventRefresher refresher = new PanoramaTaskEventRefresher(service, new ObjectMapper(), scheduler);
+        final PanoramaTaskEventRefresher refresher = new PanoramaTaskEventRefresher(
+                service, new ObjectMapper(), scheduler, new SyncTaskExecutor());
         Fixture() { when(scheduler.schedule(jobs.capture(), due.capture())).thenReturn(null); }
         void request(boolean follow) { refresher.requestRefresh("browser", null, events::add, follow); }
         void run() { jobs.getValue().run(); }
@@ -53,9 +57,11 @@ class PanoramaTaskEventRefresherTest {
     @Test
     void debouncesChangesAndDoesNotNotifyForIdenticalSnapshots() throws Exception {
         Fixture f = new Fixture();
-        Map<String, Object> task = Map.of("taskId", 1L, "status", "running");
+        Map<String, Object> task = Map.of("taskId", 1L, "executionStatus", "RUNNING");
         when(f.service.taskEventSnapshot()).thenReturn(snapshot(List.of(task)), snapshot(List.of(task)), snapshot(List.of()));
+        Instant requestedAt = Instant.now();
         f.request(true);
+        assertThat(Duration.between(requestedAt, f.due.getValue()).toMillis()).isBetween(0L, 250L);
         f.request(true);
         assertThat(f.jobs.getAllValues()).hasSize(1);
         f.run();
@@ -70,23 +76,23 @@ class PanoramaTaskEventRefresherTest {
     @Test
     void unrelatedTaskChangeDoesNotStopWaitingForDelayedTask() {
         Fixture f = new Fixture();
-        Map<String, Object> waiting = Map.of("taskId", 1L, "status", "waiting");
-        Map<String, Object> other = Map.of("taskId", 2L, "status", "running");
+        Map<String, Object> waiting = Map.of("taskId", 1L, "executionStatus", "WAITING");
+        Map<String, Object> other = Map.of("taskId", 2L, "executionStatus", "RUNNING");
         when(f.service.taskEventSnapshot()).thenReturn(
                 snapshot(List.of(waiting)), snapshot(List.of(waiting, other)),
-                snapshot(List.of(Map.of("taskId", 1L, "status", "running"), other)));
+                snapshot(List.of(Map.of("taskId", 1L, "executionStatus", "RUNNING"), other)));
         f.request(true);
         f.run();
         f.run();
         assertThat(f.jobs.getAllValues()).hasSize(3);
         f.run();
-        assertThat(f.events).anyMatch(value -> value.contains("running") && value.contains("\"taskId\":1"));
+        assertThat(f.events).anyMatch(value -> value.contains("RUNNING") && value.contains("\"taskId\":1"));
     }
 
     @Test
     void unchangedEventStopsAtFiveReadsAndNotifiesListOnlyOnce() {
         Fixture f = new Fixture();
-        when(f.service.taskEventSnapshot()).thenReturn(snapshot(List.of(Map.of("taskId", 1L, "status", "waiting"))));
+        when(f.service.taskEventSnapshot()).thenReturn(snapshot(List.of(Map.of("taskId", 1L, "executionStatus", "WAITING"))));
         f.request(true);
         for (int i = 0; i < 5; i++) f.run();
         verify(f.service, times(5)).taskEventSnapshot();
@@ -101,7 +107,7 @@ class PanoramaTaskEventRefresherTest {
     @Test
     void instanceFailurePreservesCardsAndStillNotifiesChangedPlans() {
         Fixture f = new Fixture();
-        Map<String, Object> task = Map.of("taskId", 1L, "status", "running");
+        Map<String, Object> task = Map.of("taskId", 1L, "executionStatus", "RUNNING");
         when(f.service.taskEventSnapshot()).thenReturn(snapshot(List.of(task)), Map.of(
                 "plans", List.of(Map.of("id", 1L, "planName", "new")), "items", List.of(), "tasksComplete", false));
         f.request(false);
@@ -151,5 +157,60 @@ class PanoramaTaskEventRefresherTest {
         verify(f.service).taskEventSnapshot();
         f.run();
         verify(f.service, times(2)).taskEventSnapshot();
+    }
+
+    @Test
+    void notificationDuringQueryDiscardsOldSnapshotAndReadsAgain() {
+        Fixture f = new Fixture();
+        when(f.service.taskEventSnapshot()).thenAnswer(ignored -> {
+            f.request(true);
+            return snapshot(List.of(Map.of("taskId", 1L, "executionStatus", "WAITING")));
+        }).thenReturn(snapshot(List.of(Map.of("taskId", 1L, "executionStatus", "RUNNING"))));
+
+        f.request(true);
+        f.run();
+        assertThat(f.events).isEmpty();
+        f.run();
+        assertThat(f.events).anyMatch(value -> value.contains("RUNNING"));
+        assertThat(f.events).noneMatch(value -> value.contains("WAITING"));
+        verify(f.service, times(2)).invalidateTaskEventRead();
+    }
+
+    @Test
+    void failedPublicationKeepsSnapshotPendingForRetry() {
+        PanoramaService service = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        when(scheduler.schedule(jobs.capture(), any(Instant.class))).thenReturn(null);
+        when(service.taskEventSnapshot()).thenReturn(snapshot(List.of()));
+        List<String> delivered = new ArrayList<>();
+        PanoramaTaskEventRefresher refresher = new PanoramaTaskEventRefresher(
+                service, new ObjectMapper(), scheduler, new SyncTaskExecutor());
+        refresher.requestRefresh("browser", null, payload -> false, false);
+        jobs.getValue().run();
+        refresher.requestRefresh("browser", null, delivered::add, false);
+        jobs.getValue().run();
+        assertThat(delivered).hasSize(1);
+        assertThat(delivered.get(0)).contains("management.task.invalidated");
+    }
+
+    @Test
+    void schedulerOnlyDispatchesRefreshWork() {
+        PanoramaService service = mock(PanoramaService.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        ArgumentCaptor<Runnable> jobs = ArgumentCaptor.forClass(Runnable.class);
+        when(scheduler.schedule(jobs.capture(), any(Instant.class))).thenReturn(null);
+        when(service.taskEventSnapshot()).thenReturn(snapshot(List.of()));
+        List<Runnable> executions = new ArrayList<>();
+        PanoramaTaskEventRefresher refresher = new PanoramaTaskEventRefresher(
+                service, new ObjectMapper(), scheduler, executions::add);
+        refresher.requestRefresh("browser", null, payload -> true, false);
+
+        jobs.getValue().run();
+        verifyNoInteractions(service);
+        assertThat(executions).hasSize(1);
+
+        executions.get(0).run();
+        verify(service).taskEventSnapshot();
     }
 }

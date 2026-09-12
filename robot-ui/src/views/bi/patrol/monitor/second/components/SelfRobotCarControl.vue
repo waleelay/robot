@@ -13,6 +13,7 @@
       <ControlModeActions
         :is-nav-mode="isNavMode"
         :show-resume="showTaskResumeActions"
+        :task-plan="activeTask"
         @takeover="handleTakeover"
         @resume="handleResumeActiveTask"
         @terminate="handleTerminateActiveTask"
