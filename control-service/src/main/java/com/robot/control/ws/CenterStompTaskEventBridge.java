@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
@@ -47,6 +48,7 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
     private final WebSocketStompClient stompClient;
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicBoolean connecting = new AtomicBoolean();
+    private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
     private final Map<String, Boolean> seenEvents = new LinkedHashMap<>();
     private volatile StompSession session;
 
@@ -71,15 +73,21 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
 
     @Override
     public void start() {
-        if (!properties.getCenterStomp().isEnabled() || !running.compareAndSet(false, true)) {
+        if (!properties.getCenterStomp().isEnabled()) {
             return;
         }
+        if (!authenticationConfigured()) {
+            log.error("中心端 STOMP 事件桥接未启动：启用后必须配置 access-token，或完整配置 token-url/client-id/client-secret");
+            return;
+        }
+        if (!running.compareAndSet(false, true)) return;
         connect();
     }
 
     @Override
     public void stop() {
         running.set(false);
+        reconnectScheduled.set(false);
         StompSession current = session;
         session = null;
         if (current != null && current.isConnected()) {
@@ -143,12 +151,15 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
         }
     }
 
-    /** 初次连接和重连都补查任务，恢复断线期间遗漏的变化。 */
+    /** 初次连接和重连都发布失效通知，由 BFF 按在线用户补齐断线期间的任务和告警变化。 */
     void onConnected(StompSession connected) {
         session = connected;
         connecting.set(false);
+        reconnectScheduled.set(false);
         subscribe(connected);
         publisher.publish("management.task.invalidated", Map.of("scopes", List.of("PLAN", "EXECUTION")));
+        publisher.publish("management.alarm.invalidated", Map.of(
+                "source", "control-stomp-bridge", "eventId", UUID.randomUUID().toString()));
     }
 
     private void subscribe(StompSession connected) {
@@ -232,9 +243,11 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
     }
 
     private void scheduleReconnect() {
-        if (running.get()) {
-            taskScheduler.schedule(this::connect, Instant.now().plusMillis(properties.getCenterStomp().getReconnectDelayMs()));
-        }
+        if (!running.get() || !reconnectScheduled.compareAndSet(false, true)) return;
+        taskScheduler.schedule(() -> {
+            reconnectScheduled.set(false);
+            connect();
+        }, Instant.now().plusMillis(properties.getCenterStomp().getReconnectDelayMs()));
     }
 
     private String websocketUrl(String token) {
@@ -268,6 +281,14 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
             throw new IllegalStateException("center STOMP token response has no access_token");
         }
         return token;
+    }
+
+    boolean authenticationConfigured() {
+        ControlServiceProperties.CenterStomp config = properties.getCenterStomp();
+        return StringUtils.hasText(config.getAccessToken())
+                || (StringUtils.hasText(config.getTokenUrl())
+                && StringUtils.hasText(config.getClientId())
+                && StringUtils.hasText(config.getClientSecret()));
     }
 
     private String encode(String value) {

@@ -19,7 +19,7 @@ mvn -q -DskipTests package
 mvn spring-boot:run -Dspring-boot.run.arguments=--control.mqtt.enabled=false
 ```
 
-运行时需要可访问 Media Service 和 MySQL；控制画像、设备动作和固定摄像头还依赖 Management Service。启用 MQTT 时需要 EMQX；任务失效通知的上游 STOMP 连接默认启用，可通过 `CENTER_STOMP_ENABLED=false` 显式关闭。
+运行时需要可访问 Media Service 和 MySQL；控制画像、设备动作和固定摄像头还依赖 Management Service。启用 MQTT 时需要 EMQX；任务和告警失效通知的上游 STOMP 连接默认启用，可通过 `CENTER_STOMP_ENABLED=false` 显式关闭。启用时必须配置 `CENTER_STOMP_ACCESS_TOKEN`，或完整配置 `CENTER_STOMP_TOKEN_URL`、`CENTER_STOMP_CLIENT_ID`、`CENTER_STOMP_CLIENT_SECRET`；缺少认证时桥接不会启动。
 
 ## 2. 代码结构
 
@@ -53,7 +53,8 @@ src/main/java/com/robot/control/
 注册表中的机器人 `status` 只由非 retained 边缘状态及 30 秒超时扫描维护，媒体客户端状态不续期；
 `statusChangedAt` 是 Control 服务端记录的状态版本时间，供 BFF 和前端拒绝旧状态覆盖。
 电量、速度、控制模式、充电事实、任务状态和定位同样只接受边缘状态，注册表和 `robot.state` 同时返回
-`runtimeUpdatedAt`。充电与任务字段显式上报 `null` 时会清除旧事实；缺值不默认成未充电或空闲。
+`runtimeUpdatedAt`；注册表 REST 与 `robot.state` 同时返回同一份 `location`，保证首屏和实时事件一致。
+充电与任务字段显式上报 `null` 时会清除旧事实；缺值不默认成未充电或空闲。
 它记录最后接受边缘状态的服务端时间，不随媒体心跳或离线扫描推进；未上报的字段为 `null`，
 未知模式不能下发本体移动指令。完整空值和版本规则见[客户端事件协议](../docs/03-接口与协议/客户端事件/客户端事件与载荷协议文档.md)。
 
@@ -145,7 +146,7 @@ gateway/fixed-camera/{gatewayId}/catalog/sync
 | `control.mqtt.*` | `MQTT_*`、`FIXED_CAMERA_GATEWAY_ID` | Broker、凭据、clientId、Gateway ID 和开关 |
 | `control.fixed-camera-health.*` | `FIXED_CAMERA_GATEWAY_TIMEOUT_SECONDS`、`FIXED_CAMERA_HEALTH_MAX_AGE_SECONDS` | Gateway 离线与 RTSP 健康过期阈值 |
 | `control.fixed-camera-catalog.*` | `FIXED_CAMERA_CATALOG_MAX_LEASE_SECONDS`、`FIXED_CAMERA_CATALOG_SWEEP_DELAY_MS`、`FIXED_CAMERA_CATALOG_TRUSTED_CALLER` | 目录租约时限、清理周期和内部调用方标记 |
-| `control.center-stomp.*` | `CENTER_STOMP_*` | 上游任务事件连接 |
+| `control.center-stomp.*` | `CENTER_STOMP_*` | 上游任务/告警事件连接；断线重连采用单一调度，恢复后同时广播任务和告警失效通知 |
 | `control.mileage.*` | `MILEAGE_*` | 异常速度阈值和统计刷新距离阈值 |
 | `spring.datasource.*` | `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` | 里程检查点和分钟增量桶数据库 |
 | `control.robot.*` | `ROBOT_HEARTBEAT_*`、`ROBOT_OFFLINE_RETENTION_SECONDS` | 心跳超时与扫描周期、离线注册表清理 |

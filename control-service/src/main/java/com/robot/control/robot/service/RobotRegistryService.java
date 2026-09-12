@@ -274,6 +274,11 @@ public class RobotRegistryService {
                 if (!edgeStatusReport && ("speed".equals(field) || "location".equals(field))) {
                     return;
                 }
+                if ("location".equals(field)
+                        && dynamicState.containsKey(field)
+                        && !shouldAcceptLocation(device.dynamicState.get(field), dynamicState.get(field))) {
+                    return;
+                }
                 if (dynamicState.containsKey(field)
                         && (dynamicState.get(field) != null || "charging".equals(field) || "taskStatus".equals(field))) {
                     device.dynamicState.put(field, dynamicState.get(field));
@@ -506,7 +511,40 @@ public class RobotRegistryService {
                     string(device.dynamicState.get("healthStatus"), null),
                     DateTimeConfig.format(device.lastHeartbeatAt),
                     device.dynamicState.get("speed") instanceof Number speed ? speed.doubleValue() : null,
-                    runtimeUpdatedAt(device));
+                    runtimeUpdatedAt(device),
+                    locationSnapshot(device.dynamicState.get("location")));
+        }
+    }
+
+    private Map<String, Object> locationSnapshot(Object value) {
+        if (!(value instanceof Map<?, ?> source)) {
+            return null;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        source.forEach((key, fieldValue) -> result.put(String.valueOf(key), fieldValue));
+        return java.util.Collections.unmodifiableMap(result);
+    }
+
+    private boolean shouldAcceptLocation(Object currentValue, Object incomingValue) {
+        if (!(currentValue instanceof Map<?, ?> current)) {
+            return true;
+        }
+        if (!(incomingValue instanceof Map<?, ?> incoming)) {
+            return false;
+        }
+        OffsetDateTime currentTime = locationTime(current.get("updatedAt"));
+        OffsetDateTime incomingTime = locationTime(incoming.get("updatedAt"));
+        if (currentTime != null && incomingTime == null) {
+            return false;
+        }
+        return currentTime == null || incomingTime == null || !incomingTime.isBefore(currentTime);
+    }
+
+    private OffsetDateTime locationTime(Object value) {
+        try {
+            return DateTimeConfig.parseOffsetDateTime(string(value, null));
+        } catch (RuntimeException ignored) {
+            return null;
         }
     }
 

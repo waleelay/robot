@@ -6,6 +6,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.config.ControlServiceProperties;
@@ -19,6 +20,20 @@ class CenterStompTaskEventBridgeTest {
     @Test
     void enablesCenterStompByDefault() {
         assertTrue(new ControlServiceProperties().getCenterStomp().isEnabled());
+    }
+
+    @Test
+    void requiresCompleteAuthenticationConfigurationWhenEnabled() {
+        ControlServiceProperties properties = new ControlServiceProperties();
+        CenterStompTaskEventBridge bridge = new CenterStompTaskEventBridge(
+                properties, new ObjectMapper(), mock(MediaWebSocketPublisher.class),
+                mock(TaskScheduler.class), RestClient.builder());
+        assertFalse(bridge.authenticationConfigured());
+
+        properties.getCenterStomp().setTokenUrl("https://iam.example/token");
+        properties.getCenterStomp().setClientId("control-bridge");
+        properties.getCenterStomp().setClientSecret("secret");
+        assertTrue(bridge.authenticationConfigured());
     }
 
     @Test
@@ -63,6 +78,10 @@ class CenterStompTaskEventBridgeTest {
         bridge.onConnected(session);
         verify(session, times(2)).subscribe(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(org.springframework.messaging.simp.stomp.StompFrameHandler.class));
         verify(publisher, times(2)).publish(eq("management.task.invalidated"), eq(java.util.Map.of("scopes", java.util.List.of("PLAN", "EXECUTION"))));
+        verify(publisher, times(2)).publish(eq("management.alarm.invalidated"), org.mockito.ArgumentMatchers.argThat(
+                data -> data instanceof java.util.Map<?, ?> map
+                        && "control-stomp-bridge".equals(map.get("source"))
+                        && map.get("eventId") instanceof String id && !id.isBlank()));
     }
 
     private byte[] json(String value) {

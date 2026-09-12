@@ -31,6 +31,7 @@ class RobotRegistryServiceTest {
         assertThat(snapshot.speed()).isEqualTo(0.0);
         assertThat(snapshot.battery()).isZero();
         assertThat(snapshot.runtimeUpdatedAt()).isNotBlank();
+        assertThat(snapshot.location()).isNull();
         service.update(object("robotId", "robot-1", "stateSource", "MEDIA_CLIENT_STATUS",
                 "battery", 99, "speed", 4, "controlMode", "手动模式"));
         var after = service.find("robot-1").orElseThrow();
@@ -81,6 +82,10 @@ class RobotRegistryServiceTest {
                 .containsEntry("controlModeName", "导航模式")
                 .containsEntry("devices", List.of(object("deviceId", "ptz-001")));
         assertThat(map(state.get("location"))).containsEntry("yaw", -2.87);
+        assertThat(service.find("test115").orElseThrow().location())
+                .containsEntry("x", 5.28)
+                .containsEntry("y", 1.37)
+                .containsEntry("yaw", -2.87);
     }
 
     @Test
@@ -332,6 +337,26 @@ class RobotRegistryServiceTest {
         assertThat(map(events.getAllValues().get(2).get("location")))
                 .containsEntry("x", 1.0)
                 .containsEntry("longitude", 104.1);
+    }
+
+    @Test
+    void olderEdgeLocationDoesNotOverwriteLatestRegistryPosition() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+        service.update(object(
+                "robotId", "robot-1", "status", "online", "stateSource", "EDGE_DEVICE_STATUS",
+                "location", object("mapId", "5", "x", 3.0, "y", 4.0,
+                        "updatedAt", "2026-09-12 09:00:02")));
+        service.update(object(
+                "robotId", "robot-1", "status", "online", "stateSource", "EDGE_DEVICE_STATUS",
+                "location", object("mapId", "4", "x", 1.0, "y", 2.0,
+                        "updatedAt", "2026-09-12 09:00:01")));
+
+        assertThat(service.find("robot-1").orElseThrow().location())
+                .containsEntry("mapId", "5")
+                .containsEntry("x", 3.0)
+                .containsEntry("updatedAt", "2026-09-12 09:00:02");
     }
 
     @Test

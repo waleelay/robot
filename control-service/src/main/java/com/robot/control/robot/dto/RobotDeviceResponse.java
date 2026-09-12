@@ -32,6 +32,7 @@ import java.util.Map;
  * @param timestamp 状态时间
  * @param speed 最后上报速度（米/秒），未上报为 null
  * @param runtimeUpdatedAt 最后接受边缘状态的服务端时间；不随媒体心跳或离线扫描变化
+ * @param location 最后接受的边缘定位；与 robot.state.location 使用同一份注册表事实
  */
 public record RobotDeviceResponse(
         String robotId,
@@ -55,5 +56,6 @@ public record RobotDeviceResponse(
         String healthStatus,
         String timestamp,
         Double speed,
-        String runtimeUpdatedAt) {
+        String runtimeUpdatedAt,
+        Map<String, Object> location) {
 }
