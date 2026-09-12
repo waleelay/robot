@@ -706,9 +706,10 @@ public class VideoSessionService {
      * @param sessionId 视频会话编号
      * @return 已存在真实视频轨道时返回 {@code true}
      */
-    @Transactional
-    public synchronized boolean confirmFixedCameraTrack(String sessionId) {
-        VideoSession session = requireSession(sessionId);
+    @org.springframework.transaction.annotation.Transactional(
+            isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public boolean confirmFixedCameraTrack(String sessionId) {
+        VideoSession session = lockSessionRuntime(sessionId);
         if (session.getSourceType() != VideoSourceType.FIXED_CAMERA
                 || session.getStatus() != VideoSessionStatus.ROOM_READY) {
             return session.getStatus() == VideoSessionStatus.STREAMING;

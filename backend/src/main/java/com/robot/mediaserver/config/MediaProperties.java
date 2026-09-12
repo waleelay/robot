@@ -251,6 +251,7 @@ public class MediaProperties {
     private long interruptedGraceSeconds = 15;
     private long idleReleaseDelaySeconds = 60;
     private long viewerHeartbeatTimeoutSeconds = 15;
+    private long schedulerLeaseSeconds = 30;
 
     public long getTrackPublishTimeoutSeconds() {
             return trackPublishTimeoutSeconds;
@@ -282,6 +283,14 @@ public class MediaProperties {
 
     public void setViewerHeartbeatTimeoutSeconds(long viewerHeartbeatTimeoutSeconds) {
             this.viewerHeartbeatTimeoutSeconds = viewerHeartbeatTimeoutSeconds;
+        }
+
+    public long getSchedulerLeaseSeconds() {
+            return schedulerLeaseSeconds;
+        }
+
+    public void setSchedulerLeaseSeconds(long schedulerLeaseSeconds) {
+            this.schedulerLeaseSeconds = schedulerLeaseSeconds;
         }
     }
 

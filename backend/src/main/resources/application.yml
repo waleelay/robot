@@ -133,3 +133,5 @@ media:
     idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:600}
     # 观看者心跳超时时间，单位秒。
     viewer-heartbeat-timeout-seconds: ${VIEWER_HEARTBEAT_TIMEOUT_SECONDS:15}
+    # 多 Media 实例间视频周期任务租约时间，执行者异常退出后由其他实例接管。
+    scheduler-lease-seconds: ${VIDEO_SCHEDULER_LEASE_SECONDS:30}

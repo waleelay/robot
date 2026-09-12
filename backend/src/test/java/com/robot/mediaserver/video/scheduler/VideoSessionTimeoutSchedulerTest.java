@@ -1,7 +1,9 @@
 package com.robot.mediaserver.video.scheduler;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -10,6 +12,7 @@ import com.robot.media.common.video.VideoSourceType;
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
+import com.robot.mediaserver.video.service.VideoSchedulerLeaseService;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -21,6 +24,7 @@ class VideoSessionTimeoutSchedulerTest {
     void scansPublishTimeoutByCommandRequestedAt() {
         VideoSessionRepository repository = mock(VideoSessionRepository.class);
         VideoSessionService service = mock(VideoSessionService.class);
+        VideoSchedulerLeaseService leaseService = executingLease();
         MediaProperties properties = new MediaProperties();
         properties.getSession().setTrackPublishTimeoutSeconds(20);
         VideoSession session = new VideoSession();
@@ -38,11 +42,44 @@ class VideoSessionTimeoutSchedulerTest {
                 any(VideoSessionStatus.class), any(VideoSourceType.class), any(OffsetDateTime.class)))
                 .thenReturn(List.of());
 
-        new VideoSessionTimeoutScheduler(repository, service, properties).sweep();
+        new VideoSessionTimeoutScheduler(repository, service, leaseService, properties).sweep();
 
         verify(service).markTimeout(
                 "vs-timeout", "cmd-timeout", "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时");
         verify(service).sweepStaleViewers();
         verify(service).sweepUnoccupiedSessions();
+    }
+
+    @Test
+    void skipsSweepWhenAnotherInstanceOwnsLease() {
+        VideoSessionRepository repository = mock(VideoSessionRepository.class);
+        VideoSessionService service = mock(VideoSessionService.class);
+        VideoSchedulerLeaseService leaseService = mock(VideoSchedulerLeaseService.class);
+
+        new VideoSessionTimeoutScheduler(repository, service, leaseService, new MediaProperties()).sweep();
+
+        verify(leaseService).execute(anyString(), any(Runnable.class));
+        verifyNoInteractions(repository, service);
+    }
+
+    @Test
+    void reconcileUsesSameDistributedLease() {
+        VideoSessionRepository repository = mock(VideoSessionRepository.class);
+        VideoSessionService service = mock(VideoSessionService.class);
+        VideoSchedulerLeaseService leaseService = executingLease();
+
+        new VideoSessionTimeoutScheduler(repository, service, leaseService, new MediaProperties())
+                .reconcileLiveKitTracks();
+
+        verify(service).reconcileLiveKitTracks();
+    }
+
+    private VideoSchedulerLeaseService executingLease() {
+        VideoSchedulerLeaseService leaseService = mock(VideoSchedulerLeaseService.class);
+        when(leaseService.execute(anyString(), any(Runnable.class))).thenAnswer(invocation -> {
+            invocation.<Runnable>getArgument(1).run();
+            return true;
+        });
+        return leaseService;
     }
 }

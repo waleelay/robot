@@ -44,6 +44,8 @@ src/main/java/com/robot/mediaserver/
 
 当前 runtime 承担同源创建串行化、Room 名称所有权、释放互斥，并保存 LiveKit 返回的 Publisher Identity/Participant SID、Track SID/名称和最后事实变化时间。释放任务在 runtime 行锁内聚合同源全部 session（含尚未关联 runtime 的历史会话）的 viewer、对讲、LiveKit Egress 录像、启动在途状态和空闲期限；仅全部无占用且均已到期时删除 Room 并返回一次 stop 载荷。Publisher generation 仍由后续整改项迁移。生产部署前必须备份相关表，并依次执行 [`deploy/database/20260911-add-media-source-runtime.sql`](../deploy/database/20260911-add-media-source-runtime.sql) 和 [`deploy/database/20260911-add-livekit-media-facts.sql`](../deploy/database/20260911-add-livekit-media-facts.sql)；应用回滚时保留新增的表、列和索引，不做破坏性回退。
 
+视频发布超时、viewer TTL、无观看者收口和 LiveKit Track 对账共用数据库短租约，同一时刻只有一个 Media 实例执行周期扫描；任务正常结束主动释放，执行者异常退出后由其他实例在租约到期后接管。上线前执行 [`deploy/database/20260912-add-media-scheduler-lease.sql`](../deploy/database/20260912-add-media-scheduler-lease.sql)；应用回滚时保留租约表。固定摄像头 Track 确认同样遵循 `runtime -> session` 锁序，调度与 Webhook 并发时不会重复推进状态。
+
 ### `file/`
 
 - `FileController` 同时注册 `/api/media/files/**` 和 `/internal/media/files/**`。
@@ -97,7 +99,7 @@ Media 不存在媒体源 CRUD、专用 Snapshot Controller，也不直接发布 
 | `media.minio.*` | 对象存储地址、凭据、bucket 和开关 |
 | `media.file.*` | 文件大小、multipart、播放 Token、HLS、保留期与可信网段；弱网上传默认单文件 48 GiB、分片 5 MiB、上传 URL 7 天、会话 30 天 |
 | `media.tts.*` | OpenTTS 地址、voice、format、缓存目录和超时 |
-| `media.session.*` | 发布超时、中断宽限、空闲释放、viewer 超时和视频墙上限 |
+| `media.session.*` | 发布超时、中断宽限、空闲释放、viewer 超时、视频调度租约和视频墙上限 |
 
 开发 Profile 还配置 `spring.datasource`、Redis 与 Elasticsearch 地址。生产必须替换 LiveKit Secret、MinIO 凭据和文件播放 Token Secret。
 

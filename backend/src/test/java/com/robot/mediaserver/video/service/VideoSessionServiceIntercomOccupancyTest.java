@@ -381,10 +381,15 @@ class VideoSessionServiceIntercomOccupancyTest {
     @Test
     void confirmsFixedCameraOnlyAfterActualLiveKitTrackExists() {
         target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setRuntimeId("runtime-test");
         target.setStatus(VideoSessionStatus.ROOM_READY);
         target.setRoomName("media.fixed.camera-001.visible.sub");
         target.setChannel(VideoChannel.visible);
         target.setQuality(VideoQuality.sub);
+        VideoSourceRuntime runtime = runtime();
+        runtime.setSourceType(VideoSourceType.FIXED_CAMERA);
+        runtime.setRoomName(target.getRoomName());
+        when(sourceRuntimeRepository.findByIdForUpdate("runtime-test")).thenReturn(Optional.of(runtime));
         when(liveKitRoomService.resolveActiveVideoTrack(
                 target.getRoomName(), "fixed-camera:robot-002", null))
                 .thenReturn(Optional.of(new LiveKitRoomService.ActiveVideoTrack(
@@ -395,6 +400,7 @@ class VideoSessionServiceIntercomOccupancyTest {
         assertThat(target.getTrackSid()).isEqualTo("TR_actual");
         verify(mediaTrackService).publish(
                 target, "fixed-camera:robot-002", "TR_actual", "video.visible.sub");
+        verify(sourceRuntimeRepository).findByIdForUpdate("runtime-test");
     }
 
     @Test

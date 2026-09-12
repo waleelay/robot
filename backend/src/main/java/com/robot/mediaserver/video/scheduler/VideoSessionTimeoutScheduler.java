@@ -5,6 +5,7 @@ import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.media.common.video.VideoSourceType;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
+import com.robot.mediaserver.video.service.VideoSchedulerLeaseService;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -18,30 +19,36 @@ import org.springframework.stereotype.Component;
 public class VideoSessionTimeoutScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(VideoSessionTimeoutScheduler.class);
+    private static final String SCHEDULER_LEASE_NAME = "media-video-session-maintenance";
 
     private final VideoSessionRepository repository;
     private final VideoSessionService videoSessionService;
+    private final VideoSchedulerLeaseService schedulerLeaseService;
     private final MediaProperties properties;
 
     public VideoSessionTimeoutScheduler(
             VideoSessionRepository repository,
             VideoSessionService videoSessionService,
+            VideoSchedulerLeaseService schedulerLeaseService,
             MediaProperties properties) {
         this.repository = repository;
         this.videoSessionService = videoSessionService;
+        this.schedulerLeaseService = schedulerLeaseService;
         this.properties = properties;
     }
 
     @Scheduled(fixedDelayString = "${media.session.sweep-delay-ms:5000}")
     public void sweep() {
-        handleTrackPublishTimeout();
-        videoSessionService.sweepStaleViewers();
-        videoSessionService.sweepUnoccupiedSessions();
+        schedulerLeaseService.execute(SCHEDULER_LEASE_NAME, () -> {
+            handleTrackPublishTimeout();
+            videoSessionService.sweepStaleViewers();
+            videoSessionService.sweepUnoccupiedSessions();
+        });
     }
 
     @Scheduled(fixedDelayString = "${media.livekit.reconcile-delay-ms:5000}")
     public void reconcileLiveKitTracks() {
-        videoSessionService.reconcileLiveKitTracks();
+        schedulerLeaseService.execute(SCHEDULER_LEASE_NAME, videoSessionService::reconcileLiveKitTracks);
     }
 
     private void handleTrackPublishTimeout() {
