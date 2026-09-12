@@ -39,7 +39,6 @@
 import L from 'leaflet'
 require('leaflet/dist/leaflet.css')
 import 'leaflet-rotate';
-import { Map, View, Feature } from 'ol'
 import TileLayer from "ol/layer/Tile";
 import XYZ from "ol/source/XYZ";
 import VectorLayer from 'ol/source/Vector';
@@ -54,7 +53,7 @@ import Slam from './popup/Slam.vue'
 import Thumbnail from './thumbnail/Index.vue'
 import SlamMap from './slam1/Index.vue'
 import { mapActions, mapState } from 'vuex';
-import { ROBOT_TYPE_INFO, isRobotDog } from '../../../../constants/robot.js';
+import { ROBOT_TYPE_INFO, isRobotDog, isFixedCamera } from '../../../../constants/robot.js';
 import { POLYGON_POINTS, WAY_POINTS, getGisTileUrl, getGisZoomRange, getGisMapRotate, isChargeMapPoint, getMapPointIconMeta } from '../../js/constants/gisMapPoints.js';
 
 const MAP_CHARGE_MARKER = require('@/assets/images/new-bi/map_battery2.png')
@@ -218,10 +217,20 @@ export default {
     },
     robotLocation: {
       handler(newVal) {
+        const cameraVisibilityChanged = this.robotList.some(item => {
+          const robot = this.robotBaseInfo?.[item.robotId] || item
+          if (!isFixedCamera(robot)) return false
+          const rendered = this.pointMarkers.some(marker => String(marker.meta?.robot?.robotId) === String(item.robotId))
+          return this.isGisRobotVisible(robot) !== rendered
+        })
+        if (cameraVisibilityChanged) {
+          this.initPoints()
+          return
+        }
         if (!Object.keys(newVal || {}).length) return
         this.pointMarkers.forEach(marker => {
           const robotId = marker.meta?.robot?.robotId
-          const next = this.resolveGisLatLng(newVal?.[robotId])
+          const next = this.resolveGisLatLng(newVal?.[robotId] ?? marker.meta?.robot?.location)
           const cur = marker.getLatLng() || {}
           if (cur.lat === next.lat && cur.lng === next.lng) return
           marker.setLatLng(next)
@@ -233,7 +242,10 @@ export default {
     robotBaseInfo: {
       handler(newVal, oldVal) {
         if (Object.keys(newVal || {}).length) {
-          this.updateAllIcon()
+          const cameraVisibilityChanged = Object.keys(newVal).some(id =>
+            oldVal?.[id] && isFixedCamera(newVal[id]) && oldVal[id].enabled !== newVal[id].enabled)
+          if (cameraVisibilityChanged && this.map) this.initPoints()
+          else this.updateAllIcon()
         }
       },
       deep: true,
@@ -268,7 +280,8 @@ export default {
           const keywords = newVal.split('_timestamp_')[0].toLowerCase()
           const robot = this.getSearchRobot()
           if (robot) {
-            this.map.setView([this.robotLocation[robot.robotId].lat || this.gisMapCenterPoint[0], this.robotLocation[robot.robotId].lng || this.gisMapCenterPoint[1]])
+            const { lat, lng } = this.resolveGisLatLng(this.robotLocation?.[robot.robotId] ?? robot.location)
+            this.map.setView([lat, lng])
           } else {
             console.error('未找到相关装备')
           }
@@ -318,11 +331,14 @@ export default {
   },
   methods: {
     ...mapActions('websocketExtraData', ['setRobotLocation', 'setShowRobotIds']),
-    // 无坐标时回退到配置中心点：location.lat || 中心点
+    hasGisCoordinate(value) {
+      return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value))
+    },
+    // 普通装备无坐标时回退配置中心点；有效的 0 坐标应保留。
     resolveGisLatLng(location) {
       return {
-        lat: location?.lat || this.gisMapCenterPoint[0],
-        lng: location?.lng || this.gisMapCenterPoint[1]
+        lat: this.hasGisCoordinate(location?.lat) ? Number(location.lat) : this.gisMapCenterPoint[0],
+        lng: this.hasGisCoordinate(location?.lng) ? Number(location.lng) : this.gisMapCenterPoint[1]
       }
     },
     getSelectedStatus(robotId) {
@@ -698,11 +714,37 @@ export default {
       if (robot) {
         return String(robot?.name || '').toLowerCase().includes(keywords) || String(robot?.type || '').toLowerCase().includes(keywords) || String(robot?.typeCode || '').toLowerCase().includes(keywords)
       } else {
-        return this.robotList.find(item => String(item?.name || '').toLowerCase().includes(keywords) || String(item?.type || '').toLowerCase().includes(keywords) || String(item?.typeCode || '').toLowerCase().includes(keywords))
+        return this.robotList.find(item => {
+          const info = this.robotBaseInfo?.[item.robotId] || item
+          return this.isGisRobotVisible(info) && (
+            String(info?.name || '').toLowerCase().includes(keywords)
+            || String(info?.type || '').toLowerCase().includes(keywords)
+            || String(info?.typeCode || '').toLowerCase().includes(keywords))
+        })
       }
+    },
+    isGisRobotVisible(robot) {
+      if (!isFixedCamera(robot)) return true
+      if (robot.enabled !== true) return false
+      const location = this.robotLocation?.[robot.robotId] ?? robot.location
+      return this.hasGisCoordinate(location?.lat) && this.hasGisCoordinate(location?.lng)
     },
     initPoints() {
       if (!this.map) return
+      const selectedId = this.pointMarkers[this.activeMarkerIndex]?.meta?.robot?.robotId
+      const visibleRobots = this.robotList.filter(item =>
+        this.isGisRobotVisible(this.robotBaseInfo?.[item.robotId] || item))
+      const visibleIds = new Set(visibleRobots.map(item => String(item.robotId)))
+      this.pointMarkers.forEach(marker => {
+        if (visibleIds.has(String(marker.meta?.robot?.robotId))) return
+        marker._vueInstance?.$destroy()
+        if (marker._movementPath) this.map.removeLayer(marker._movementPath)
+        this.markersLayer.removeLayer(marker)
+      })
+      const markerById = new Map(this.pointMarkers
+        .filter(marker => visibleIds.has(String(marker.meta?.robot?.robotId)))
+        .map(marker => [String(marker.meta.robot.robotId), marker]))
+      const nextMarkers = []
       // const obj = 
       // Robot, Uav, UavPort, Battery
       // this.dogList = [
@@ -718,25 +760,15 @@ export default {
         { lat: 30.7469491, lng: 106.0344109, status1: 0 },
         { lat: 30.745330, lng: 106.039428, status1: 3 },
       ]
-      this.robotList.map((r, index) => {
+      visibleRobots.forEach((r, index) => {
         const item = Object.assign({}, this.robotBaseInfo?.[r.robotId] || r)
         // item.points = L.latLng(latLngs[index].lat || 39.54, latLngs[index].lng || 116.23)
-        const { lat, lng } = this.resolveGisLatLng(this.robotLocation?.[item.robotId])
+        const { lat, lng } = this.resolveGisLatLng(this.robotLocation?.[item.robotId] ?? item.location)
         item.points = L.latLng(lat, lng)
-        const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === item.robotId);
-        if (existingIndex >= 0) {
-          // console.log(1);
-          // // TODO:模拟移动
-          // const randomLat = (Math.random() - 0.5) * 0.001;
-          // const randomLng = (Math.random() - 0.5) * 0.001;
-          // const { lat, lng } = this.pointMarkers[existingIndex].getLatLng()
-          // this.pointMarkers[existingIndex].setLatLng(L.latLng(lat + randomLat, lng + randomLng))
-          // this.pointMarkers[existingIndex].meta = { index, robot: { ...item, points: L.latLng(lat + randomLat, lng + randomLng) }};
-          // 存在则更新 icon
-          // this.pointMarkers[existingIndex].setIcon(this.getIcon(item));
-          // 更新 meta 数据
-          // this.pointMarkers[existingIndex].meta = { index, robot: { ...item }};
-
+        let marker = markerById.get(String(item.robotId))
+        if (marker) {
+          marker.setLatLng(item.points)
+          marker.setIcon(this.getIcon(item))
         } else {
           // console.log(2);
           // 创建点标记
@@ -748,35 +780,38 @@ export default {
           //   // popupAnchor: [1, -34]
           // })
           // L.marker(item.points, { icon: defaultIcon }).addTo(this.markersLayer)
-          const marker = L.marker(item.points, { 
+          marker = L.marker(item.points, {
             icon: this.getIcon(item),
             zIndexOffset: 1000,
             // riseOnHover: true
           }).addTo(this.markersLayer)
-          // 存储扩展数据，方便后续使用
-          marker.meta = { index, robot: { ...item }, alarmId: this.robotAlarmObj?.[item.robotId] };
-          // 不存在则添加新标记
-          this.pointMarkers.push(marker);
+          marker._movementPath = L.polyline([item.points], {
+            fillColor: 'linear-gradient(180deg, rgba(1, 144, 244, 0) 0%, rgba(11, 163, 245, 1) 5.51%, rgba(4, 23, 62, 0.16) 51.52%, rgba(50, 237, 250, 1) 82.62%, rgba(17, 176, 246, 1) 82.62%, rgba(7, 156, 245, 0) 100.03%)',
+            weight: 6,
+            className: 'movement-path'
+          }).addTo(this.map)
         }
-        
-        // 初始化移动轨迹
-        item.pathPoints = [item.points]
-        item.movementPath = L.polyline(item.pathPoints, {
-          // color: '#e74c3c',
-          fillColor: 'linear-gradient(180deg, rgba(1, 144, 244, 0) 0%, rgba(11, 163, 245, 1) 5.51%, rgba(4, 23, 62, 0.16) 51.52%, rgba(50, 237, 250, 1) 82.62%, rgba(17, 176, 246, 1) 82.62%, rgba(7, 156, 245, 0) 100.03%)',
-          weight: 6,
-          // opacity: 0.6,
-          className: 'movement-path'
-        }).addTo(this.map);
-        this.updatePopups(index);
-        return item
+        marker.meta = { index, robot: { ...item }, alarmId: this.robotAlarmObj?.[item.robotId] }
+        nextMarkers.push(marker)
       })
+      this.pointMarkers = nextMarkers
+      this.pointMarkers.forEach((marker, index) => this.updatePopups(index))
+      if (selectedId !== undefined && selectedId !== null) {
+        const nextIndex = this.pointMarkers.findIndex(marker => String(marker.meta.robot.robotId) === String(selectedId))
+        if (nextIndex < 0) {
+          this.activeMarkerIndex = null
+          this.closeAll()
+        } else {
+          this.activeMarkerIndex = nextIndex
+        }
+      }
+      if (this.measureActive) this.setRobotMarkersInteractive(false)
     },
     updateIconBaseInfo(info) {
       const robotId = info.robotId
       const existingIndex = this.pointMarkers.findIndex(m => m.meta?.robot?.robotId === robotId);
       if (existingIndex < 0) return
-      const { lat, lng } = this.resolveGisLatLng(this.robotLocation?.[robotId])
+      const { lat, lng } = this.resolveGisLatLng(this.robotLocation?.[robotId] ?? info.location)
       this.pointMarkers[existingIndex].setLatLng(L.latLng(lat, lng))
       this.pointMarkers[existingIndex].meta = { index: existingIndex, robot: { ...info, points: L.latLng(lat, lng) }};
       this.pointMarkers[existingIndex].setIcon(this.getIcon(info));

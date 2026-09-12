@@ -365,6 +365,7 @@ export function getLiantongFixedCameraMock() {
     typeCode: 'FIXED_CAMERA',
     sourceType: 'FIXED_CAMERA',
     model: 'MOCK-FIXED-CAMERA',
+    enabled: true,
     status: 'online',
     battery: null,
     speed: 0,
