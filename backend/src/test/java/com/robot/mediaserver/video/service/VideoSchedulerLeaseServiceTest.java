@@ -32,53 +32,56 @@ class VideoSchedulerLeaseServiceTest {
     @Test
     void executesAndReleasesClaimedTask() {
         AtomicBoolean executed = new AtomicBoolean();
-        when(jdbcTemplate.update(contains("set lease_owner = ?"), any(), any(), any(), any(), any()))
+        when(jdbcTemplate.update(contains("set lease_owner = ?"), any(Object[].class)))
                 .thenReturn(1);
 
         assertThat(service.execute("video-maintenance", () -> executed.set(true))).isTrue();
 
         assertThat(executed).isTrue();
-        verify(jdbcTemplate).update(contains("set lease_owner = null"), any(), any(), any(), any());
+        verify(jdbcTemplate).update(
+                contains("locked_until = TIMESTAMPADD(SECOND, ?, UTC_TIMESTAMP(6))"),
+                any(Object[].class));
+        verify(jdbcTemplate).update(contains("set lease_owner = null"), any(Object[].class));
     }
 
     @Test
     void insertsLeaseWhenTaskHasNeverRun() {
         AtomicBoolean executed = new AtomicBoolean();
-        when(jdbcTemplate.update(contains("set lease_owner = ?"), any(), any(), any(), any(), any()))
+        when(jdbcTemplate.update(contains("set lease_owner = ?"), any(Object[].class)))
                 .thenReturn(0);
-        when(jdbcTemplate.update(contains("insert ignore"), any(), any(), any(), any(), any()))
+        when(jdbcTemplate.update(contains("insert ignore"), any(Object[].class)))
                 .thenReturn(1);
 
         assertThat(service.execute("video-maintenance", () -> executed.set(true))).isTrue();
 
         assertThat(executed).isTrue();
-        verify(jdbcTemplate).update(contains("set lease_owner = null"), any(), any(), any(), any());
+        verify(jdbcTemplate).update(contains("set lease_owner = null"), any(Object[].class));
     }
 
     @Test
     void skipsTaskOwnedByAnotherInstance() {
         AtomicBoolean executed = new AtomicBoolean();
-        when(jdbcTemplate.update(contains("set lease_owner = ?"), any(), any(), any(), any(), any()))
+        when(jdbcTemplate.update(contains("set lease_owner = ?"), any(Object[].class)))
                 .thenReturn(0);
-        when(jdbcTemplate.update(contains("insert ignore"), any(), any(), any(), any(), any()))
+        when(jdbcTemplate.update(contains("insert ignore"), any(Object[].class)))
                 .thenReturn(0);
 
         assertThat(service.execute("video-maintenance", () -> executed.set(true))).isFalse();
 
         assertThat(executed).isFalse();
         verify(jdbcTemplate, never()).update(
-                contains("set lease_owner = null"), any(), any(), any(), any());
+                contains("set lease_owner = null"), any(Object[].class));
     }
 
     @Test
     void releasesLeaseWhenTaskFails() {
-        when(jdbcTemplate.update(contains("set lease_owner = ?"), any(), any(), any(), any(), any()))
+        when(jdbcTemplate.update(contains("set lease_owner = ?"), any(Object[].class)))
                 .thenReturn(1);
 
         assertThatThrownBy(() -> service.execute("video-maintenance", () -> {
             throw new IllegalStateException("boom");
         })).isInstanceOf(IllegalStateException.class);
 
-        verify(jdbcTemplate).update(contains("set lease_owner = null"), any(), any(), any(), any());
+        verify(jdbcTemplate).update(contains("set lease_owner = null"), any(Object[].class));
     }
 }
