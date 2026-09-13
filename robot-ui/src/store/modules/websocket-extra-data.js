@@ -568,15 +568,19 @@ const actions = {
     const taskBaseline = overview.taskBaseline ?? state.taskVersion
     const revision = state.overviewRevision
     const mapId = resolveOverviewMapId(overview, state.globalMapId)
-    const [mapResourcesResult, taskRoutesResult] = await requestMapResources(mapId, revision)
+    const pendingResources = requestMapResources(mapId, revision)
+    const mapResourcesResult = await pendingResources.mapResources
     if (revision !== state.overviewRevision) return
     const mapResources = fulfilledValue(mapResourcesResult)
-    const taskRoutes = fulfilledValue(taskRoutesResult)
-    // 等待资源期间允许用户切图；提交时以最新选择为准，必要时补齐新图资源。
-    const merged = mergeOverviewMapResources(overview, mapResources, taskRoutes, state.taskData)
-    const routeQuality = merged.dataQuality?.taskRoutes
-    commit('SET_TASK_ROUTE_RESULT', { mapId, quality: routeQuality, complete: isCompleteTaskRoutes(routeQuality) })
+    // 点位和固定摄像头是地图首帧资源；任务路径属于增强数据，不能阻塞总览展示。
+    // 路径请求已与地图资源并发启动，待总览可见后再合并其结果。
+    const merged = mergeOverviewMapResources(overview, mapResources, null, state.taskData)
     await dispatch('setAll', { ...merged, taskBaseline })
+    const appliedRevision = state.overviewRevision
+
+    const taskRoutesResult = await pendingResources.taskRoutes
+    if (appliedRevision !== state.overviewRevision) return
+    applyTaskRoutes(state, commit, mapId, fulfilledValue(taskRoutesResult))
     if (String(state.globalMapId) !== String(mapId)) {
       await dispatch('loadMapResources', state.globalMapId)
     }
@@ -586,31 +590,20 @@ const actions = {
     const key = String(mapId)
     if (!state.overviewReady || !state.slamMapList.some(item => String(item.id) === key)) return
     const revision = state.overviewRevision
-    const [mapResourcesResult, taskRoutesResult] = await requestMapResources(mapId, revision)
+    const pendingResources = requestMapResources(mapId, revision)
+    const [mapResourcesResult, taskRoutesResult] = await Promise.all([
+      pendingResources.mapResources,
+      pendingResources.taskRoutes
+    ])
     if (revision !== state.overviewRevision || String(state.globalMapId) !== key
       || !state.slamMapList.some(item => String(item.id) === key)) return
     const mapResources = fulfilledValue(mapResourcesResult)
     const taskRoutes = fulfilledValue(taskRoutesResult)
-    const routeQuality = taskRouteQuality(taskRoutes)
-    const routesComplete = isCompleteTaskRoutes(routeQuality)
     const maps = (state.slamMapList || []).map(item => String(item?.id) === key
       ? mergeMapResources(item, mapResources)
       : item)
     commit('SET_SLAM_MAP_LIST', maps)
-    if (routesComplete) {
-      const routeTaskIds = new Set((taskRoutes?.items || []).map(item => String(item.taskId)))
-      Object.values(state.taskData || {}).forEach(task => {
-        if (String(task?.mapId) !== key || routeTaskIds.has(String(task.taskId))) return
-        commit('SET_TASK_INFO', { ...task, mapId: null, pathPoints: [] })
-        commit('SET_TASK_PATH_POINTS', { taskId: task.taskId, data: { mapId: null, pathPoints: [] } })
-      })
-      ;(taskRoutes?.items || []).forEach(item => {
-        const previous = getTaskById(state.taskData, item.taskId) || {}
-        commit('SET_TASK_INFO', { ...previous, mapId: item.mapId, pathPoints: item.pathPoints || [] })
-        commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } })
-      })
-    }
-    commit('SET_TASK_ROUTE_RESULT', { mapId, quality: routeQuality, complete: routesComplete })
+    applyTaskRoutes(state, commit, mapId, taskRoutes)
   },
   /**
    * 完整任务数据只在用户打开任务视频时请求，避免首屏和切图预取回放、设备任务等高成本数据。
@@ -978,17 +971,49 @@ function overviewGpsDevices(overview) {
 }
 
 function requestMapResources(mapId, revision) {
-  if (mapId === 'gis') return Promise.resolve([])
+  if (mapId === 'gis') {
+    const empty = Promise.resolve({ status: 'fulfilled', value: null })
+    return { mapResources: empty, taskRoutes: empty }
+  }
   const key = `${revision}:${mapId}`
   let pending = mapResourcePromises.get(key)
   if (!pending) {
-    pending = Promise.allSettled([
-      getPatrolPanoramaMapResources(mapId),
-      getPatrolPanoramaMapTaskRoutes(mapId)
-    ]).finally(() => mapResourcePromises.delete(key))
+    pending = {
+      mapResources: settled(getPatrolPanoramaMapResources(mapId)),
+      taskRoutes: settled(getPatrolPanoramaMapTaskRoutes(mapId))
+    }
+    Promise.all([pending.mapResources, pending.taskRoutes])
+      .finally(() => mapResourcePromises.delete(key))
     mapResourcePromises.set(key, pending)
   }
   return pending
+}
+
+function settled(promise) {
+  return Promise.resolve(promise).then(
+    value => ({ status: 'fulfilled', value }),
+    reason => ({ status: 'rejected', reason })
+  )
+}
+
+function applyTaskRoutes(state, commit, mapId, taskRoutes) {
+  const key = String(mapId)
+  const routeQuality = taskRouteQuality(taskRoutes)
+  const routesComplete = isCompleteTaskRoutes(routeQuality)
+  if (routesComplete) {
+    const routeTaskIds = new Set((taskRoutes?.items || []).map(item => String(item.taskId)))
+    Object.values(state.taskData || {}).forEach(task => {
+      if (String(task?.mapId) !== key || routeTaskIds.has(String(task.taskId))) return
+      commit('SET_TASK_INFO', { ...task, mapId: null, pathPoints: [] })
+      commit('SET_TASK_PATH_POINTS', { taskId: task.taskId, data: { mapId: null, pathPoints: [] } })
+    })
+    ;(taskRoutes?.items || []).forEach(item => {
+      const previous = getTaskById(state.taskData, item.taskId) || {}
+      commit('SET_TASK_INFO', { ...previous, mapId: item.mapId, pathPoints: item.pathPoints || [] })
+      commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } })
+    })
+  }
+  commit('SET_TASK_ROUTE_RESULT', { mapId, quality: routeQuality, complete: routesComplete })
 }
 
 function mergeOverviewMapResources(overview, mapResources, taskRoutes, previousTasks = {}) {

@@ -867,6 +867,22 @@ test('Overview 等待资源期间的新任务状态和删除标记优先于旧�
   assert.equal(Object.keys(ctx.state.taskData).length, 0)
 })
 
+test('首屏只等待地图基础资源，任务路线慢响应不阻塞总览展示', async () => {
+  const pendingRoutes = deferred()
+  const ctx = setup({ getPatrolPanoramaMapTaskRoutes: () => pendingRoutes.promise })
+  const loading = ctx.dispatch('applyOverview', overview([A]))
+
+  await tick()
+  assert.equal(ctx.state.overviewReady, true)
+  assert.equal(ctx.state.slamMapList[0].points[0].id, `point-${A}`)
+  assert.equal(ctx.state.taskRouteMapsReady[A], undefined)
+
+  pendingRoutes.resolve(routes(A))
+  await loading
+  assert.equal(ctx.state.taskRouteMapsReady[A], true)
+  assert.equal(ctx.state.taskData[`task-${A}`].pathPoints[0].pointId, `point-${A}`)
+})
+
 test('计划列表并发查询只接收最新请求，旧页结果不能覆盖新筛选', async () => {
   const first = deferred(), second = deferred()
   let calls = 0
