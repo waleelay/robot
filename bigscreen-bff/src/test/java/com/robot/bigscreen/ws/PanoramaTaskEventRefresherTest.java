@@ -94,7 +94,10 @@ class PanoramaTaskEventRefresherTest {
         Fixture f = new Fixture();
         when(f.service.taskEventSnapshot()).thenReturn(snapshot(List.of(Map.of("taskId", 1L, "executionStatus", "WAITING"))));
         f.request(true);
-        for (int i = 0; i < 5; i++) f.run();
+        Instant firstRefreshAt = Instant.now();
+        f.run();
+        assertThat(Duration.between(firstRefreshAt, f.due.getValue()).toMillis()).isBetween(100L, 350L);
+        for (int i = 1; i < 5; i++) f.run();
         verify(f.service, times(5)).taskEventSnapshot();
         assertThat(f.jobs.getAllValues()).hasSize(5);
         assertThat(f.notifications()).isEqualTo(1);
@@ -136,11 +139,25 @@ class PanoramaTaskEventRefresherTest {
         Fixture f = new Fixture();
         when(f.service.taskEventSnapshot()).thenThrow(new IllegalStateException("busy")).thenReturn(snapshot(List.of()));
         f.request(false);
+        Instant firstRefreshAt = Instant.now();
         f.run();
         assertThat(f.events).isEmpty();
+        assertThat(Duration.between(firstRefreshAt, f.due.getValue()).toMillis()).isBetween(700L, 1300L);
         f.run();
         assertThat(f.jobs.getAllValues()).hasSize(2);
         assertThat(f.notifications()).isEqualTo(1);
+    }
+
+    @Test
+    void resumesFastConvergenceChecksAfterQueryRecovery() {
+        Fixture f = new Fixture();
+        when(f.service.taskEventSnapshot()).thenThrow(new IllegalStateException("busy"))
+                .thenReturn(snapshot(List.of(Map.of("taskId", 1L, "executionStatus", "RUNNING"))));
+        f.request(true);
+        f.run();
+        f.run();
+        Instant recoveredAt = Instant.now();
+        assertThat(Duration.between(recoveredAt, f.due.getValue()).toMillis()).isBetween(100L, 350L);
     }
 
     @Test

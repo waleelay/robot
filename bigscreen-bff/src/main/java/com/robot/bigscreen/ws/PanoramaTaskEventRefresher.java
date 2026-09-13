@@ -31,7 +31,8 @@ public class PanoramaTaskEventRefresher {
     private static final Logger log = LoggerFactory.getLogger(PanoramaTaskEventRefresher.class);
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final long DEBOUNCE_MILLIS = 50;
-    private static final long[] RETRY_DELAYS_MILLIS = {1000, 2000, 4000, 8000};
+    private static final long[] CONVERGENCE_DELAYS_MILLIS = {200, 400, 800, 1600};
+    private static final long[] FAILURE_RETRY_DELAYS_MILLIS = {1000, 2000, 4000, 8000};
 
     private final PanoramaService panoramaService;
     private final ObjectMapper objectMapper;
@@ -56,7 +57,10 @@ public class PanoramaTaskEventRefresher {
             state.authentication = authentication;
             state.publisher = publisher;
             state.followChanges |= followChanges;
-            if (followChanges) state.retryCount = 0;
+            if (followChanges) {
+                state.convergenceRetryCount = 0;
+                state.failureRetryCount = 0;
+            }
             state.dirty = true;
             scheduleIfNeeded(sessionId, state, DEBOUNCE_MILLIS);
         }
@@ -90,7 +94,8 @@ public class PanoramaTaskEventRefresher {
             state.running = true;
             state.dirty = false;
         }
-        boolean retry = false;
+        boolean retryForConvergence = false;
+        boolean retryForFailure = false;
         try {
             Map<String, Object> response = withAuthentication(state.authentication, () -> {
                 panoramaService.invalidateTaskEventRead();
@@ -144,21 +149,31 @@ public class PanoramaTaskEventRefresher {
             }
             // 通知不含目标计划版本，不能用其他任务的变化推断收敛；事件按固定上限复查。
             // 初次连接的正常快照只查一次，查询、投递失败和准备中仍有界重试。
-            retry = !delivered || state.followChanges || !complete
-                    || Boolean.TRUE.equals(response.get("convergencePending"));
+            retryForFailure = !delivered || !complete;
+            retryForConvergence = !retryForFailure && (state.followChanges
+                    || Boolean.TRUE.equals(response.get("convergencePending")));
         } catch (Exception exception) {
             log.warn("刷新全景地图任务事件失败，身份={}", sessionId, exception);
-            retry = true;
+            retryForFailure = true;
         } finally {
             synchronized (state) {
                 long delay = DEBOUNCE_MILLIS;
                 // 查询期间的新事件优先，不能被当前请求的退避延后。
-                if (!state.dirty && retry && state.retryCount < RETRY_DELAYS_MILLIS.length) {
-                    state.dirty = true;
-                    delay = jitteredDelay(RETRY_DELAYS_MILLIS[state.retryCount++]);
-                } else if (!state.dirty) {
-                    state.followChanges = false;
-                    state.retryCount = 0;
+                if (!state.dirty) {
+                    if (retryForFailure
+                            && state.failureRetryCount < FAILURE_RETRY_DELAYS_MILLIS.length) {
+                        state.dirty = true;
+                        delay = jitteredDelay(FAILURE_RETRY_DELAYS_MILLIS[state.failureRetryCount++]);
+                    } else if (retryForConvergence
+                            && state.convergenceRetryCount < CONVERGENCE_DELAYS_MILLIS.length) {
+                        state.failureRetryCount = 0;
+                        state.dirty = true;
+                        delay = jitteredDelay(CONVERGENCE_DELAYS_MILLIS[state.convergenceRetryCount++]);
+                    } else {
+                        state.followChanges = false;
+                        state.convergenceRetryCount = 0;
+                        state.failureRetryCount = 0;
+                    }
                 }
                 state.running = false;
                 if (states.get(sessionId) == state && state.dirty) scheduleIfNeeded(sessionId, state, delay);
@@ -232,7 +247,8 @@ public class PanoramaTaskEventRefresher {
         private volatile Authentication authentication;
         private volatile Predicate<String> publisher;
         private volatile Map<String, Map<String, Object>> previousTasks = Map.of();
-        private volatile int retryCount;
+        private volatile int convergenceRetryCount;
+        private volatile int failureRetryCount;
         private volatile boolean followChanges;
         private Object previousPlans;
         private boolean collectionInitialized;

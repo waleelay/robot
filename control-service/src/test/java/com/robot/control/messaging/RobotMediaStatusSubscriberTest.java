@@ -2,6 +2,7 @@ package com.robot.control.messaging;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -57,5 +58,51 @@ class RobotMediaStatusSubscriberTest {
         subscriber.handleEdgeDeviceStatus("eiop/v1/edge/study/status", message);
 
         verifyNoInteractions(edgeHandler);
+    }
+
+    @Test
+    void forwardsTaskInstanceIdFromTaskProgressToTrajectoryCoordinator() {
+        TrajectoryCoordinator trajectoryCoordinator = mock(TrajectoryCoordinator.class);
+        RobotMediaStatusSubscriber subscriber = subscriber(trajectoryCoordinator);
+        MqttMessage message = new MqttMessage("""
+                {
+                  "messageType":"TASK_PROGRESS_REPORT",
+                  "payload":{"status":"RUNNING","taskInstanceId":2099000870253449217}
+                }
+                """.getBytes());
+
+        subscriber.handleEdgeTaskProgress("eiop/v1/edge/sx-songling-001/tasks/progress", message);
+
+        verify(trajectoryCoordinator).observeTaskInstance("sx-songling-001", 2099000870253449217L);
+    }
+
+    @Test
+    void ignoresRetainedOrIncompleteTaskProgress() {
+        TrajectoryCoordinator trajectoryCoordinator = mock(TrajectoryCoordinator.class);
+        RobotMediaStatusSubscriber subscriber = subscriber(trajectoryCoordinator);
+        MqttMessage retained = new MqttMessage("""
+                {"messageType":"TASK_PROGRESS_REPORT","payload":{"taskInstanceId":42}}
+                """.getBytes());
+        retained.setRetained(true);
+
+        subscriber.handleEdgeTaskProgress("eiop/v1/edge/robot-1/tasks/progress", retained);
+        subscriber.handleEdgeTaskProgress("eiop/v1/edge/robot-1/tasks/progress",
+                new MqttMessage("{\"messageType\":\"TASK_PROGRESS_REPORT\",\"payload\":{}}".getBytes()));
+
+        verifyNoInteractions(trajectoryCoordinator);
+    }
+
+    private RobotMediaStatusSubscriber subscriber(TrajectoryCoordinator trajectoryCoordinator) {
+        return new RobotMediaStatusSubscriber(
+                new ControlServiceProperties(),
+                new ObjectMapper(),
+                mock(ControlMediaServiceClient.class),
+                mock(RobotMediaCommandService.class),
+                mock(EquipmentControlService.class),
+                mock(RobotRegistryService.class),
+                mock(IntercomCallService.class),
+                mock(EdgeDeviceStatusHandler.class),
+                mock(FixedCameraHealthService.class),
+                trajectoryCoordinator);
     }
 }

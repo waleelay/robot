@@ -45,15 +45,16 @@ public class RobotMediaStatusSubscriber {
     private static final String INTERCOM_STATUS_TOPIC = "robot/+/media/video/intercom/status";
     private static final String MEDIA_CLIENT_STATUS_TOPIC = "robot/+/media/client/status";
     private static final String EDGE_DEVICE_STATUS_TOPIC = "eiop/v1/edge/+/status";
+    private static final String EDGE_TASK_PROGRESS_TOPIC = "eiop/v1/edge/+/tasks/progress";
     private static final String TRAJECTORY_SNAPSHOT_TOPIC = "eiop/v1/edge/+/trajectory/snapshot";
     private static final String CALL_INVITE_TOPIC = "robot/+/media/video/intercom/call/invite";
     private static final String CALL_CANCEL_TOPIC = "robot/+/media/video/intercom/call/cancel";
     private static final String[] STATUS_TOPICS = {
         STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, FIXED_CAMERA_GATEWAY_STATUS_TOPIC, FIXED_CAMERA_HEALTH_STATUS_TOPIC,
         INTERCOM_STATUS_TOPIC, MEDIA_CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
-        EDGE_DEVICE_STATUS_TOPIC, TRAJECTORY_SNAPSHOT_TOPIC
+        EDGE_DEVICE_STATUS_TOPIC, EDGE_TASK_PROGRESS_TOPIC, TRAJECTORY_SNAPSHOT_TOPIC
     };
-    private static final int[] STATUS_QOS = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    private static final int[] STATUS_QOS = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 
     private final ControlServiceProperties properties;
     private final ObjectMapper objectMapper;
@@ -239,6 +240,33 @@ public class RobotMediaStatusSubscriber {
                 new String(message.getPayload(), StandardCharsets.UTF_8));
     }
 
+    private IMqttMessageListener edgeTaskProgressListener() {
+        return this::handleEdgeTaskProgress;
+    }
+
+    @SuppressWarnings("unchecked")
+    void handleEdgeTaskProgress(String topic, MqttMessage message) {
+        if (message.isRetained()) return;
+        try {
+            String[] parts = topic == null ? new String[0] : topic.split("/");
+            if (parts.length != 6 || !"eiop".equals(parts[0]) || !"v1".equals(parts[1])
+                    || !"edge".equals(parts[2]) || parts[3].isBlank()
+                    || !"tasks".equals(parts[4]) || !"progress".equals(parts[5])) {
+                throw new IllegalArgumentException("无效的设备任务进度 topic：" + topic);
+            }
+            Map<String, Object> report = objectMapper.readValue(message.getPayload(), Map.class);
+            String messageType = String.valueOf(report.getOrDefault("messageType", "")).trim();
+            if (!messageType.isBlank() && !"TASK_PROGRESS_REPORT".equals(messageType)) return;
+            Map<String, Object> payload = report.get("payload") instanceof Map<?, ?> value
+                    ? (Map<String, Object>) value : Map.of();
+            if (payload.containsKey("taskInstanceId")) {
+                trajectoryCoordinator.observeTaskInstance(parts[3], payload.get("taskInstanceId"));
+            }
+        } catch (Exception exception) {
+            log.warn("处理设备任务进度失败，主题={} 载荷字节数={}", topic, message.getPayload().length, exception);
+        }
+    }
+
     private IMqttMessageListener trajectorySnapshotListener() {
         return (topic, message) -> {
             if (message.isRetained()) return;
@@ -308,12 +336,12 @@ public class RobotMediaStatusSubscriber {
                 new IMqttMessageListener[] {
                     statusListener(), statusListener(), gatewayStatusListener(), cameraHealthStatusListener(),
                     intercomStatusListener(), clientStatusListener(), callInviteListener(), callCancelListener(),
-                    edgeDeviceStatusListener(), trajectorySnapshotListener()
+                    edgeDeviceStatusListener(), edgeTaskProgressListener(), trajectorySnapshotListener()
                 });
-        log.info("已订阅媒体 MQTT 主题：{} 、{} 、{} 、{} 、{} 、{} 、{} 、{} 、{} 、{}",
+        log.info("已订阅媒体 MQTT 主题：{} 、{} 、{} 、{} 、{} 、{} 、{} 、{} 、{} 、{} 、{}",
                 STATUS_TOPIC, FIXED_CAMERA_STATUS_TOPIC, FIXED_CAMERA_GATEWAY_STATUS_TOPIC, FIXED_CAMERA_HEALTH_STATUS_TOPIC,
                 INTERCOM_STATUS_TOPIC, MEDIA_CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
-                EDGE_DEVICE_STATUS_TOPIC, TRAJECTORY_SNAPSHOT_TOPIC);
+                EDGE_DEVICE_STATUS_TOPIC, EDGE_TASK_PROGRESS_TOPIC, TRAJECTORY_SNAPSHOT_TOPIC);
     }
 
     private IMqttMessageListener gatewayStatusListener() {

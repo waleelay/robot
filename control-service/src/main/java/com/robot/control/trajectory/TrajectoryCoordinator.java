@@ -78,7 +78,7 @@ public class TrajectoryCoordinator {
         reconcile();
     }
 
-    /** 接收设备状态中最近一次明确上报的 taskInstanceId。 */
+    /** 接收设备最近一次明确上报的 taskInstanceId。 */
     public synchronized void observeTaskInstance(String robotId, Object value) {
         Long taskInstanceId = positiveLong(value);
         if (robotId == null || robotId.isBlank() || taskInstanceId == null
