@@ -191,22 +191,28 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
         JsonNode scopes = event.path("data").path("scopes");
         if (!"alarm.changed.v1".equals(type)
                 && !("task.changed.v1".equals(type) && taskScope(scopes))) {
+            log.debug("管理端 STOMP 事件已忽略 protocol=stomp direction=入站 stage=过滤 outcome=丢弃 reasonCode=不支持的事件 eventType={}",
+                    type);
             return;
         }
         String source = event.path("source").asText();
         String eventId = event.path("id").asText();
         if (!register(source + ":" + eventId)) {
+            log.debug("管理端 STOMP 重复事件已忽略 protocol=stomp direction=入站 stage=去重 outcome=丢弃 reasonCode=重复事件 eventType={} source={} eventId={}",
+                    type, source, eventId);
             return;
         }
         if ("alarm.changed.v1".equals(type)) {
-            log.debug("转发中心端告警事件，来源={} eventId={}", source, eventId);
+            log.info("管理端告警事件已接收 protocol=stomp direction=入站 stage=接收 outcome=已接受 eventType={} entityType=告警 source={} eventId={}",
+                    type, source, eventId);
             publisher.publish("management.alarm.invalidated", Map.of(
                     "source", source,
                     "eventId", eventId));
             return;
         }
         List<String> eventScopes = scopes(scopes);
-        log.debug("转发中心端任务事件，来源={} eventId={} 范围={}", source, eventId, eventScopes);
+        log.info("管理端任务事件已接收 protocol=stomp direction=入站 stage=接收 outcome=已接受 eventType={} entityType=任务 source={} eventId={} scopes={}",
+                type, source, eventId, eventScopes);
         publisher.publish("management.task.invalidated", Map.of(
                 "source", source,
                 "eventId", eventId,

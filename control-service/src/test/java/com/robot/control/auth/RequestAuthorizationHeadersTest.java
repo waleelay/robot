@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -18,6 +19,7 @@ class RequestAuthorizationHeadersTest {
     void clearRequestContext() {
         RequestContextHolder.resetRequestAttributes();
         requestAuthorizationHeaders.clearWebSocketHeaders();
+        MDC.clear();
     }
 
     @Test
@@ -30,6 +32,16 @@ class RequestAuthorizationHeadersTest {
         requestAuthorizationHeaders.apply(headers);
 
         assertThat(headers.getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo("Bearer access-token");
+    }
+
+    @Test
+    void forwardsTraceIdFromMdc() {
+        MDC.put("traceId", "trace-001");
+        HttpHeaders headers = new HttpHeaders();
+
+        requestAuthorizationHeaders.apply(headers);
+
+        assertThat(headers.getFirst("X-Request-Id")).isEqualTo("trace-001");
     }
 
     @Test

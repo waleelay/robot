@@ -110,6 +110,15 @@ public class PanoramaWebSocketEventAdapter {
                 || isUnresolvedPanoramaTask(event, root.path("data"));
     }
 
+    public String taskInvalidationKey(String centerPayload) {
+        JsonNode root = readTree(centerPayload);
+        if (root == null || !MANAGEMENT_TASK_INVALIDATED.equals(text(root, "event"))) return null;
+        JsonNode data = root.path("data");
+        String source = text(data, "source");
+        String eventId = text(data, "eventId");
+        return source.isBlank() || eventId.isBlank() ? null : source + ":" + eventId;
+    }
+
     public boolean isAlarmInvalidation(String centerPayload) {
         JsonNode root = readTree(centerPayload);
         return root != null && MANAGEMENT_ALARM_INVALIDATED.equals(text(root, "event"));

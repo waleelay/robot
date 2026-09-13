@@ -29,6 +29,7 @@ import { mediaReconnectDelay, isSustainedAuthorizationFailure, shouldReconnectMe
 import { isRobotMediaReachable } from '../../views/bi/js/utils/pick-default-camera'
 import { resolveLiveKitUrl } from '../../utils/livekitUrl'
 import { isSameLiveKitTrack, viewerReconnectDelay } from '../../views/bi/js/utils/livekit-track-recovery'
+import { integrationLog, logWebSocketEvent } from '../../utils/integration-log'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 const FIXED_CAMERA_TRACK_WAIT_MS = 15000
@@ -966,7 +967,19 @@ const actions = {
       // console.log('Media WebSocket closed', url)
     }
     socket.onmessage = (message) => {
-      const event = JSON.parse(message.data)
+      let event
+      try {
+        event = JSON.parse(message.data)
+      } catch (error) {
+        integrationLog('解析', {
+          protocol: 'websocket',
+          outcome: '丢弃',
+          reasonCode: '消息不是有效JSON',
+          payloadBytes: String(message.data || '').length
+        }, 'error')
+        return
+      }
+      logWebSocketEvent(event)
       if (event.event === 'bigscreen.authorization.state') {
         const unavailable = event.data?.available === false
         commit('setAuthorizationUnavailable', unavailable)

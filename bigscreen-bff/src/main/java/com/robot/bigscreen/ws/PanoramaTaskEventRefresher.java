@@ -52,10 +52,17 @@ public class PanoramaTaskEventRefresher {
     }
 
     public void requestRefresh(String sessionId, Authentication authentication, Predicate<String> publisher, boolean followChanges) {
+        requestRefresh(sessionId, authentication, publisher, followChanges, null);
+    }
+
+    public void requestRefresh(
+            String sessionId, Authentication authentication, Predicate<String> publisher,
+            boolean followChanges, String eventKey) {
         RefreshState state = states.computeIfAbsent(sessionId, ignored -> new RefreshState());
         synchronized (state) {
             state.authentication = authentication;
             state.publisher = publisher;
+            state.eventKey = eventKey;
             state.followChanges |= followChanges;
             if (followChanges) {
                 state.convergenceRetryCount = 0;
@@ -121,11 +128,11 @@ public class PanoramaTaskEventRefresher {
             if (complete) {
                 current.forEach((taskId, task) -> {
                     if (!Objects.equals(state.previousTasks.get(taskId), task)) {
-                        messages.add(event(task, task.get("taskId")));
+                        messages.add(event(task, task.get("taskId"), state.eventKey));
                     }
                 });
                 state.previousTasks.forEach((taskId, task) -> {
-                    if (!current.containsKey(taskId)) messages.add(removeEvent(task.get("taskId")));
+                    if (!current.containsKey(taskId)) messages.add(removeEvent(task.get("taskId"), state.eventKey));
                 });
             }
             // 计划快照首次就绪或内容变化才通知列表，与实例摘要查询是否成功无关。
@@ -134,12 +141,16 @@ public class PanoramaTaskEventRefresher {
                 data.put("scopes", List.of("PLAN", "EXECUTION"));
                 // 首次完整快照也校准空集合；摘要失败时绝不把空集合当成删除。
                 if (collectionChanged) data.put("taskIds", List.copyOf(current.keySet()));
+                if (state.eventKey != null) data.put("correlationId", state.eventKey);
                 messages.add(objectMapper.writeValueAsString(Map.of(
                         "event", "management.task.invalidated",
                         "timestamp", TIME_FORMATTER.format(LocalDateTime.now()),
                         "data", data)));
             }
             boolean delivered = messages.stream().allMatch(publisher);
+            String outcome = messages.isEmpty() ? "无变化" : (delivered ? "已投递" : "投递失败");
+            log.info("任务状态刷新完成 protocol=websocket stage=刷新 outcome={} entityType=任务 identity={} eventKey={} tasksComplete={} itemCount={} changedMessages={} plansChanged={} collectionChanged={}",
+                    outcome, sessionId, state.eventKey, complete, current.size(), messages.size(), plansChanged, collectionChanged);
             if (delivered) {
                 if (complete) state.previousTasks = current;
                 if (plansChanged || collectionChanged) {
@@ -164,11 +175,15 @@ public class PanoramaTaskEventRefresher {
                             && state.failureRetryCount < FAILURE_RETRY_DELAYS_MILLIS.length) {
                         state.dirty = true;
                         delay = jitteredDelay(FAILURE_RETRY_DELAYS_MILLIS[state.failureRetryCount++]);
+                        log.warn("任务状态刷新已安排重试 stage=重试 outcome=已安排 entityType=任务 identity={} eventKey={} reasonCode=刷新或投递失败 attempt={} delayMs={}",
+                                sessionId, state.eventKey, state.failureRetryCount, delay);
                     } else if (retryForConvergence
                             && state.convergenceRetryCount < CONVERGENCE_DELAYS_MILLIS.length) {
                         state.failureRetryCount = 0;
                         state.dirty = true;
                         delay = jitteredDelay(CONVERGENCE_DELAYS_MILLIS[state.convergenceRetryCount++]);
+                        log.info("任务状态刷新已安排重试 stage=重试 outcome=已安排 entityType=任务 identity={} eventKey={} reasonCode=等待数据收敛 attempt={} delayMs={}",
+                                sessionId, state.eventKey, state.convergenceRetryCount, delay);
                     } else {
                         state.followChanges = false;
                         state.convergenceRetryCount = 0;
@@ -205,23 +220,31 @@ public class PanoramaTaskEventRefresher {
         return result;
     }
 
-    private String event(Map<String, Object> task, Object taskId) {
+    private String event(Map<String, Object> task, Object taskId, String correlationId) {
         try {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("taskId", taskId);
+            data.put("task", task);
+            if (correlationId != null) data.put("correlationId", correlationId);
             return objectMapper.writeValueAsString(Map.of(
                     "event", "panorama.task.changed",
                     "timestamp", TIME_FORMATTER.format(LocalDateTime.now()),
-                    "data", Map.of("taskId", taskId, "task", task)));
+                    "data", data));
         } catch (Exception exception) {
-            throw new IllegalStateException("Failed to serialize panorama task event", exception);
+            throw new IllegalStateException("序列化全景地图任务事件失败", exception);
         }
     }
 
-    private String removeEvent(Object taskId) {
+    private String removeEvent(Object taskId, String correlationId) {
         try {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("taskId", taskId);
+            data.put("changeType", "REMOVE");
+            if (correlationId != null) data.put("correlationId", correlationId);
             return objectMapper.writeValueAsString(Map.of(
                     "event", "panorama.task.changed",
                     "timestamp", TIME_FORMATTER.format(LocalDateTime.now()),
-                    "data", Map.of("taskId", taskId, "changeType", "REMOVE")));
+                    "data", data));
         } catch (Exception exception) {
             throw new IllegalStateException("序列化全景地图任务移除事件失败", exception);
         }
@@ -250,6 +273,7 @@ public class PanoramaTaskEventRefresher {
         private volatile int convergenceRetryCount;
         private volatile int failureRetryCount;
         private volatile boolean followChanges;
+        private volatile String eventKey;
         private Object previousPlans;
         private boolean collectionInitialized;
     }

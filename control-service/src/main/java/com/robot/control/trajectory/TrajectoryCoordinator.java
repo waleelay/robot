@@ -64,6 +64,8 @@ public class TrajectoryCoordinator {
         Set<Target> added = new HashSet<>(targets);
         if (previous != null) added.removeAll(previous.targets);
         watches.put(session.getId(), new Watch(session, targets));
+        log.info("轨迹订阅已接受 protocol=websocket direction=入站 stage=订阅 outcome=已接受 entityType=轨迹 sessionId={} targetCount={} addedCount={}",
+                session.getId(), targets.size(), added.size());
         reconcile();
         added.forEach(target -> restoreForNewWatcher(runners.get(target), session.getId()));
     }
@@ -112,17 +114,23 @@ public class TrajectoryCoordinator {
             String commandId = string(report.get("commandId"));
             Pending pending = pendingByCommand.get(commandId);
             if (pending == null || !pending.target.robotId().equals(robotId)) {
+                log.debug("轨迹响应已忽略 protocol=mqtt direction=入站 stage=匹配 outcome=丢弃 entityType=轨迹 robotId={} commandId={} reasonCode=命令标识不匹配",
+                        robotId, commandId);
                 return;
             }
             Runner runner = runners.get(pending.target);
             if (runner == null || runner.version != pending.version || !commandId.equals(runner.pendingCommandId)
                     || !Objects.equals(positiveLong(report.get("taskInstanceId")), pending.taskInstanceId)
                     || !pending.format.equals(string(report.get("format")))) {
+                log.debug("轨迹响应已忽略 protocol=mqtt direction=入站 stage=匹配 outcome=丢弃 entityType=轨迹 robotId={} commandId={} workflowInstanceId={} reasonCode=响应过期或任务实例不匹配",
+                        robotId, commandId, pending.target.workflowInstanceId());
                 return;
             }
             pendingByCommand.remove(commandId);
             runner.pendingCommandId = null;
             String status = string(report.get("status")).toLowerCase();
+            log.debug("轨迹响应已接受 protocol=mqtt direction=入站 stage=响应 outcome=已接受 entityType=轨迹 robotId={} commandId={} workflowInstanceId={} query={} status={}",
+                    robotId, commandId, pending.target.workflowInstanceId(), pending.query, status);
             if (runner.boundTaskId == null) {
                 handleProbe(runner, pending, status);
                 return;
@@ -322,6 +330,8 @@ public class TrajectoryCoordinator {
         pendingByCommand.put(commandId, pending);
         try {
             commandPublisher.publishTrajectoryQuery(target.robotId(), command);
+            log.debug("轨迹查询已发布 protocol=mqtt direction=出站 stage=请求 outcome=已发布 entityType=轨迹 robotId={} workflowInstanceId={} taskInstanceId={} commandId={} query={} format={}",
+                    target.robotId(), target.workflowInstanceId(), taskInstanceId, commandId, query, format);
         } catch (RuntimeException exception) {
             pendingByCommand.remove(commandId);
             runner.pendingCommandId = null;
@@ -338,6 +348,9 @@ public class TrajectoryCoordinator {
         Runner runner = runners.get(pending.target);
         if (runner == null || runner.version != pending.version || !commandId.equals(runner.pendingCommandId)) return;
         runner.pendingCommandId = null;
+        log.warn("轨迹查询响应超时 protocol=mqtt stage=响应 outcome=超时 entityType=轨迹 robotId={} workflowInstanceId={} taskInstanceId={} commandId={} query={} reasonCode=MQTT响应超时",
+                pending.target.robotId(), pending.target.workflowInstanceId(), pending.taskInstanceId,
+                commandId, pending.query);
         retry(runner, pending.query);
     }
 
@@ -443,6 +456,16 @@ public class TrajectoryCoordinator {
         for (Watch watch : watches.values()) {
             if (!watch.targets.contains(runner.target) || !watch.session.isOpen()) continue;
             send(watch.session, message);
+        }
+        int pointCount = points == null ? 0 : points.size();
+        if ("APPEND".equals(action)) {
+            log.debug("轨迹事件已尝试投递 protocol=websocket direction=出站 stage=投递 outcome=已尝试 entityType=轨迹 robotId={} workflowInstanceId={} action={} pointCount={} targetSessions={}",
+                    runner.target.robotId(), runner.target.workflowInstanceId(), action, pointCount,
+                    watchingSessionIds(runner.target).size());
+        } else {
+            log.info("轨迹事件已尝试投递 protocol=websocket direction=出站 stage=投递 outcome=已尝试 entityType=轨迹 robotId={} workflowInstanceId={} action={} pointCount={} targetSessions={}",
+                    runner.target.robotId(), runner.target.workflowInstanceId(), action, pointCount,
+                    watchingSessionIds(runner.target).size());
         }
     }
 

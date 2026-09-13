@@ -85,12 +85,24 @@ public class ControlManagementClient {
             return List.of();
         }
         URI uri = uri("/internal/v1/management/maps/gis/convert").build(true).toUri();
-        Map<String, Object> response = restClient.post()
-                .uri(uri)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("items", items))
-                .retrieve()
-                .body(MAP_TYPE);
+        long startNanos = System.nanoTime();
+        Map<String, Object> response;
+        log.info("管理端 GIS 转换请求开始 protocol=http direction=出站 stage=请求 outcome=已发起 method=POST uri={} requestItems={}",
+                uri, items.size());
+        try {
+            response = restClient.post()
+                    .uri(uri)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("items", items))
+                    .retrieve()
+                    .body(MAP_TYPE);
+            log.info("管理端 GIS 转换调用成功 protocol=http direction=出站 stage=响应 outcome=成功 method=POST uri={} statusCode=200 requestItems={} durationMs={}",
+                    uri, items.size(), elapsedMillis(startNanos));
+        } catch (RuntimeException exception) {
+            log.warn("管理端 GIS 转换调用失败 protocol=http direction=出站 stage=响应 outcome=失败 method=POST uri={} requestItems={} durationMs={}",
+                    uri, items.size(), elapsedMillis(startNanos), exception);
+            throw exception;
+        }
         Object values = map(response == null ? null : response.get("data")).get("items");
         if (!(values instanceof List<?> list)) {
             return List.of();
@@ -427,6 +439,8 @@ public class ControlManagementClient {
     }
 
     private Optional<Map<String, Object>> responseMap(URI uri) {
+        long startNanos = System.nanoTime();
+        log.info("管理端 HTTP 查询开始 protocol=http direction=出站 stage=请求 outcome=已发起 method=GET uri={}", uri);
         try {
             Map<String, Object> response = restClient.get()
                     .uri(uri)
@@ -434,19 +448,29 @@ public class ControlManagementClient {
                     .retrieve()
                     .body(MAP_TYPE);
             if (response == null) {
+                log.warn("管理端 HTTP 响应无效 protocol=http direction=出站 stage=响应 outcome=无效响应 method=GET uri={} statusCode=200 durationMs={}",
+                        uri, elapsedMillis(startNanos));
                 return Optional.empty();
             }
+            log.info("管理端 HTTP 查询成功 protocol=http direction=出站 stage=响应 outcome=成功 method=GET uri={} statusCode=200 resultItems={} durationMs={}",
+                    uri, records(response).size(), elapsedMillis(startNanos));
             return Optional.of(response);
         } catch (RestClientResponseException exception) {
             log.warn(
-                    "Management service rejected request uri={} status={}",
+                    "管理端 HTTP 查询被拒绝 protocol=http direction=出站 stage=响应 outcome=被拒绝 method=GET uri={} statusCode={} durationMs={}",
                     uri,
-                    exception.getStatusCode());
+                    exception.getStatusCode().value(),
+                    elapsedMillis(startNanos));
             throw exception;
         } catch (RuntimeException exception) {
-            log.warn("请求管理服务失败，请求地址={}", uri, exception);
+            log.warn("管理端 HTTP 查询失败 protocol=http direction=出站 stage=响应 outcome=失败 method=GET uri={} durationMs={}",
+                    uri, elapsedMillis(startNanos), exception);
             return Optional.empty();
         }
+    }
+
+    private long elapsedMillis(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000L;
     }
 
     @SuppressWarnings("unchecked")

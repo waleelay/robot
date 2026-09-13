@@ -18,9 +18,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -37,6 +39,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 public class MediaWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MediaWebSocketHandler.class);
+    private static final Pattern SAFE_TRACE_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
 
     private final MediaWebSocketPublisher publisher;
     private final ObjectMapper objectMapper;
@@ -100,6 +103,8 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
         Map<String, Object> incoming = objectMapper.readValue(message.getPayload(), new TypeReference<>() {});
         String type = stringValue(incoming.get("type"), "");
         String requestId = stringValue(incoming.get("requestId"), "");
+        String traceId = SAFE_TRACE_ID.matcher(requestId).matches() ? requestId : "ws-" + session.getId();
+        MDC.put("traceId", traceId);
         requestAuthorizationHeaders.setWebSocketHeaders(MediaWsAuthHandshakeInterceptor.headers(session));
         try {
             Map<String, Object> payload = mapValue(incoming.get("payload"));
@@ -164,6 +169,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
                     "message", ex.getMessage()));
         } finally {
             requestAuthorizationHeaders.clearWebSocketHeaders();
+            MDC.remove("traceId");
         }
     }
 

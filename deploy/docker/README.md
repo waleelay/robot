@@ -932,7 +932,21 @@ sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env
 docker compose -f docker-compose.yml up -d --force-recreate
 ```
 
-### 8.9 解压提示 `LIBARCHIVE.xattr.com.apple.provenance`
+### 8.9 结构化链路日志
+
+生产 Compose 默认向 Control 和 Bigscreen BFF 注入
+`LOGGING_STRUCTURED_FORMAT_CONSOLE=logstash`。容器日志为单行 JSON；使用 `traceId` 查询一次 HTTP
+调用，使用消息中的 `eventId/eventKey` 查询任务和告警链路，使用 `commandId` 查询轨迹 MQTT 往返。
+日志只包含 URI、状态码、耗时、数量和过滤原因，不包含认证信息或完整请求响应正文。
+
+临时排查示例：
+
+```bash
+docker logs --since 30m robot-mediaserver-control-service 2>&1 | grep -E '管理端|轨迹'
+docker logs --since 30m robot-mediaserver-bigscreen-bff 2>&1 | grep -E '管理端|下游服务|任务状态刷新|告警刷新'
+```
+
+### 8.10 解压提示 `LIBARCHIVE.xattr.com.apple.provenance`
 
 这是 macOS 文件扩展属性被打进 tar 包后，Linux GNU tar 不识别对应扩展头产生的提示，一般不影响安装包内容。
 

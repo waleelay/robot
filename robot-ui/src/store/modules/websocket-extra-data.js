@@ -27,6 +27,7 @@ import {
   getPatrolPanoramaTaskDetail,
   getPatrolPanoramaTaskFixedCameras
 } from '../../api/new-bi'
+import { integrationLog } from '../../utils/integration-log'
 
 let overviewRefreshPromise = null
 let overviewAbortController = null
@@ -465,11 +466,19 @@ const actions = {
     const workflowInstanceId = data?.workflowInstanceId
     const action = String(data?.action || '').toUpperCase()
     if (robotId == null || workflowInstanceId == null
-      || !['RESET', 'APPEND', 'STOPPED'].includes(action)) return
+      || !['RESET', 'APPEND', 'STOPPED'].includes(action)) {
+      integrationLog('应用事件', { protocol: 'websocket', outcome: '丢弃', entityType: '轨迹',
+        reasonCode: '事件字段无效', robotId, workflowInstanceId, action }, 'warn')
+      return
+    }
     const key = String(robotId)
     const previous = state.trajectoryByRobot[key]
     if (action !== 'RESET'
-      && (!previous || String(previous.workflowInstanceId) !== String(workflowInstanceId))) return
+      && (!previous || String(previous.workflowInstanceId) !== String(workflowInstanceId))) {
+      integrationLog('应用事件', { protocol: 'websocket', outcome: '丢弃', entityType: '轨迹',
+        reasonCode: '工作流实例不匹配', robotId, workflowInstanceId, action }, 'warn')
+      return
+    }
     const oldTimer = trajectoryRetentionTimers.get(key)
     if (oldTimer) clearTimeout(oldTimer)
     trajectoryRetentionTimers.delete(key)
@@ -477,6 +486,10 @@ const actions = {
       ? { ...data, normalLocationUpdatedAt: state.robotLocation[key]?.updatedAt }
       : data
     commit('APPLY_TRAJECTORY', payload)
+    if (action !== 'APPEND') {
+      integrationLog('应用事件', { protocol: 'websocket', outcome: '成功', entityType: '轨迹',
+        robotId, workflowInstanceId, action, pointCount: Array.isArray(data.points) ? data.points.length : 0 })
+    }
     if (action === 'STOPPED') {
       dispatch('retainStoppedTrajectory', data)
     }

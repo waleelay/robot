@@ -7,6 +7,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
+import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -39,6 +40,10 @@ public class RequestAuthorizationHeaders {
      * @param headers 下游请求头
      */
     public void apply(HttpHeaders headers) {
+        String traceId = MDC.get("traceId");
+        if (StringUtils.hasText(traceId)) {
+            headers.set("X-Request-Id", traceId);
+        }
         Map<String, String> websocketHeaders = WEBSOCKET_HEADERS.get();
         if (websocketHeaders != null) {
             String authorization = websocketHeaders.get(HttpHeaders.AUTHORIZATION);

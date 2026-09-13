@@ -57,6 +57,7 @@ public class PanoramaAlarmEventRefresher {
     public void requestSnapshot(String sessionId, Authentication authentication, Predicate<String> publisher) {
         RefreshState state = state(sessionId);
         synchronized (state) {
+            state.eventKey = null;
             state.authentication = authentication;
             state.workflowSnapshotPublishers.add(publisher);
             state.workflowRevision++;
@@ -76,12 +77,17 @@ public class PanoramaAlarmEventRefresher {
             String sessionId, Authentication authentication, Predicate<String> publisher, String eventKey) {
         RefreshState state = state(sessionId);
         synchronized (state) {
-            if (eventKey != null && !state.seenEvents.add(eventKey)) return;
+            if (eventKey != null && !state.seenEvents.add(eventKey)) {
+                log.debug("重复告警事件已忽略 protocol=websocket stage=去重 outcome=丢弃 entityType=告警 identity={} eventKey={} reasonCode=重复事件",
+                        sessionId, eventKey);
+                return;
+            }
             if (state.seenEvents.size() > MAX_SEEN_EVENTS_PER_IDENTITY) {
                 state.seenEvents.remove(state.seenEvents.iterator().next());
             }
             state.authentication = authentication;
             state.publisher = publisher;
+            state.eventKey = eventKey;
             state.workflowRevision++;
             state.retryDeadlineMillis = System.currentTimeMillis() + CONVERGENCE_TIMEOUT_MILLIS;
             state.workflowFailureRetryDeadlineMillis = state.retryDeadlineMillis;
@@ -157,7 +163,7 @@ public class PanoramaAlarmEventRefresher {
             }
             String event = null;
             if (!snapshotPublishers.isEmpty() || changed) {
-                event = workflowSnapshotEvent(workflowItems);
+                event = workflowSnapshotEvent(workflowItems, state.eventKey);
             }
             boolean snapshotDelivered = false;
             for (Predicate<String> snapshotPublisher : snapshotPublishers) {
@@ -168,6 +174,9 @@ public class PanoramaAlarmEventRefresher {
             if (publisher != null && changed && !initialSnapshotDelivered) {
                 delivered |= publisher.test(event);
             }
+            log.info("工作流告警刷新完成 protocol=websocket stage=刷新 outcome={} entityType=工作流告警 identity={} eventKey={} itemCount={} changed={} delivered={} revision={}",
+                    changed ? (delivered ? "已投递" : "投递失败") : "无变化",
+                    sessionId, state.eventKey, currentWorkflowAlarms.size(), changed, delivered, revision);
             synchronized (state) {
                 if (states.get(sessionId) != state || revision != state.workflowRevision) return;
                 if (!changed || delivered) {
@@ -193,6 +202,8 @@ public class PanoramaAlarmEventRefresher {
                         && state.workflowRetryCount < RETRY_DELAYS_MILLIS.length) {
                     state.workflowDirty = true;
                     delay = jitteredDelay(RETRY_DELAYS_MILLIS[state.workflowRetryCount++]);
+                    log.info("工作流告警刷新已安排重试 stage=重试 outcome=已安排 entityType=工作流告警 identity={} eventKey={} reasonCode=等待数据收敛 attempt={} delayMs={}",
+                            sessionId, state.eventKey, state.workflowRetryCount, delay);
                 }
                 state.workflowRunning--;
                 if (states.get(sessionId) == state && state.workflowDirty) {
@@ -227,7 +238,11 @@ public class PanoramaAlarmEventRefresher {
             boolean changed = !Objects.equals(state.previousAlarms, alarms);
             Predicate<String> publisher = state.publisher;
             boolean delivered = publisher != null && changed
-                    && publisher.test(alarmSnapshotEvent(alarms));
+                    && publisher.test(alarmSnapshotEvent(alarms, state.eventKey));
+            log.info("普通告警刷新完成 protocol=websocket stage=刷新 outcome={} entityType=告警 identity={} eventKey={} changed={} delivered={} reasonCode={}",
+                    changed ? (delivered ? "已投递" : "投递失败") : "无变化",
+                    sessionId, state.eventKey, changed, delivered,
+                    changed ? "告警列表快照" : "快照无变化");
             if (!changed || delivered) {
                 state.previousAlarms = alarms;
             }
@@ -252,23 +267,27 @@ public class PanoramaAlarmEventRefresher {
         return result;
     }
 
-    private String alarmSnapshotEvent(Map<String, Object> alarms) {
+    private String alarmSnapshotEvent(Map<String, Object> alarms, String correlationId) {
         try {
-            return objectMapper.writeValueAsString(Map.of(
-                    "event", "panorama.alarms.changed",
-                    "timestamp", TIME_FORMATTER.format(LocalDateTime.now()),
-                    "data", alarms));
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("event", "panorama.alarms.changed");
+            event.put("timestamp", TIME_FORMATTER.format(LocalDateTime.now()));
+            event.put("data", alarms);
+            if (correlationId != null) event.put("correlationId", correlationId);
+            return objectMapper.writeValueAsString(event);
         } catch (Exception exception) {
             throw new IllegalStateException("序列化全景地图告警快照失败", exception);
         }
     }
 
-    private String workflowSnapshotEvent(List<Map<String, Object>> items) {
+    private String workflowSnapshotEvent(List<Map<String, Object>> items, String correlationId) {
         try {
-            return objectMapper.writeValueAsString(Map.of(
-                    "event", "panorama.workflow-alarms.changed",
-                    "timestamp", TIME_FORMATTER.format(LocalDateTime.now()),
-                    "data", Map.of("total", items.size(), "items", items)));
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("event", "panorama.workflow-alarms.changed");
+            event.put("timestamp", TIME_FORMATTER.format(LocalDateTime.now()));
+            event.put("data", Map.of("total", items.size(), "items", items));
+            if (correlationId != null) event.put("correlationId", correlationId);
+            return objectMapper.writeValueAsString(event);
         } catch (Exception exception) {
             throw new IllegalStateException("序列化工作流告警快照事件失败", exception);
         }
@@ -315,5 +334,6 @@ public class PanoramaAlarmEventRefresher {
         private volatile long retryDeadlineMillis;
         private volatile long workflowFailureRetryDeadlineMillis;
         private volatile boolean workflowSnapshotPublished;
+        private volatile String eventKey;
     }
 }

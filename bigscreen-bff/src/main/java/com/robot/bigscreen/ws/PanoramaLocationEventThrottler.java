@@ -9,12 +9,16 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Component;
 
 /** 按浏览器会话和机器人合并高频位置事件，每秒只下发最新位置。 */
 @Component
 public class PanoramaLocationEventThrottler {
+
+    private static final Logger log = LoggerFactory.getLogger(PanoramaLocationEventThrottler.class);
 
     private static final String LOCATION_EVENT = "panorama.device.location.changed";
     private static final long INTERVAL_NANOS = 1_000_000_000L;
@@ -59,6 +63,8 @@ public class PanoramaLocationEventThrottler {
             }
             if (!locationEvent.localizationInvalid() && state.pendingHasGis && !locationEvent.hasGis()) {
                 state.deferredSlamPayload = payload;
+                log.debug("位置事件延后投递 protocol=websocket stage=节流 outcome=延后 entityType=位置 sessionId={} robotId={} reasonCode=等待GIS转换结果",
+                        sessionId, locationEvent.robotId());
                 return;
             }
             if (locationEvent.hasGis()) {
@@ -75,6 +81,8 @@ public class PanoramaLocationEventThrottler {
             } else {
                 state.pendingPayload = payload;
                 state.pendingHasGis = locationEvent.hasGis();
+                log.debug("位置事件已合并 protocol=websocket stage=节流 outcome=合并 entityType=位置 sessionId={} robotId={} hasGis={} reasonCode=触发频率限制",
+                        sessionId, locationEvent.robotId(), locationEvent.hasGis());
                 scheduleIfNeeded(key, state, now);
             }
         }

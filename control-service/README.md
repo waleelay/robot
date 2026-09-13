@@ -147,6 +147,7 @@ gateway/fixed-camera/{gatewayId}/catalog/sync
 | `control.fixed-camera-health.*` | `FIXED_CAMERA_GATEWAY_TIMEOUT_SECONDS`、`FIXED_CAMERA_HEALTH_MAX_AGE_SECONDS` | Gateway 离线与 RTSP 健康过期阈值 |
 | `control.fixed-camera-catalog.*` | `FIXED_CAMERA_CATALOG_MAX_LEASE_SECONDS`、`FIXED_CAMERA_CATALOG_SWEEP_DELAY_MS`、`FIXED_CAMERA_CATALOG_TRUSTED_CALLER` | 目录租约时限、清理周期和内部调用方标记 |
 | `control.center-stomp.*` | `CENTER_STOMP_*` | 上游任务/告警事件连接；断线重连采用单一调度，恢复后同时广播任务和告警失效通知 |
+| Spring Boot 结构化日志 | `LOGGING_STRUCTURED_FORMAT_CONSOLE` | 生产默认由 Compose 设置为 `logstash`；HTTP 使用 `X-Request-Id`，STOMP/轨迹分别保留 `eventId`、`commandId` |
 | `control.mileage.*` | `MILEAGE_*` | 异常速度阈值和统计刷新距离阈值 |
 | `spring.datasource.*` | `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` | 里程检查点和分钟增量桶数据库 |
 | `control.robot.*` | `ROBOT_HEARTBEAT_*`、`ROBOT_OFFLINE_RETENTION_SECONDS` | 心跳超时与扫描周期、离线注册表清理 |

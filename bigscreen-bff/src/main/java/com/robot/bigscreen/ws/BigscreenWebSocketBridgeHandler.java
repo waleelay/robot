@@ -553,7 +553,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                             statsParts);
                 }
                 if (refreshTasks) {
-                    requestTaskRefresh(browserSession, true);
+                    requestTaskRefresh(browserSession, true, eventAdapter.taskInvalidationKey(centerPayload));
                 }
                 if (refreshAlarms) {
                     requestAlarmRefresh(browserSession, eventAdapter.alarmInvalidationKey(centerPayload));
@@ -582,6 +582,13 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 browserSession.getId(), authorizationIdentity(browserSession));
         taskEventRefresher.requestRefresh(identity, newestAuthentication(identity, browserSession),
                 payload -> sendUserScopedToIdentity(identity, payload), followChanges);
+    }
+
+    private void requestTaskRefresh(WebSocketSession browserSession, boolean followChanges, String eventKey) {
+        String identity = authorizationIdentityBySession.getOrDefault(
+                browserSession.getId(), authorizationIdentity(browserSession));
+        taskEventRefresher.requestRefresh(identity, newestAuthentication(identity, browserSession),
+                payload -> sendUserScopedToIdentity(identity, payload), followChanges, eventKey);
     }
 
     private void requestAlarmRefresh(WebSocketSession browserSession) {

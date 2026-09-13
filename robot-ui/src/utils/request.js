@@ -6,6 +6,7 @@ import cache from '@/plugins/cache'
 import { saveAs } from 'file-saver'
 import { mediaClientId } from '@/utils/media-client-id'
 import { bearerToken, login } from '@/auth'
+import { integrationLog, newRequestId } from '@/utils/integration-log'
 
 let downloadLoadingInstance;
 let showAlert = false;
@@ -35,9 +36,26 @@ const service = axios.create({
   timeout: 300000
 })
 
+function isManagementRequest(url) {
+  const value = String(url || '')
+  return value.includes('/management/') || value.includes('/api/manage/')
+}
+
 // request拦截器
 service.interceptors.request.use(async config => {
   config.headers = config.headers || {}
+  if (!config.headers['X-Request-Id']) config.headers['X-Request-Id'] = newRequestId()
+  config.integrationStartedAt = Date.now()
+  if (isManagementRequest(config.url)) {
+    integrationLog('请求', {
+      protocol: 'http',
+      direction: '出站',
+      outcome: '已发起',
+      requestId: config.headers['X-Request-Id'],
+      method: String(config.method || '').toUpperCase(),
+      url: config.url
+    })
+  }
   if (!config.headers['X-Client-Id']) {
     config.headers['X-Client-Id'] = mediaClientId
   }
@@ -101,6 +119,19 @@ service.interceptors.request.use(async config => {
 
 // 响应拦截器
 service.interceptors.response.use(res => {
+    if (isManagementRequest(res.config?.url)) {
+      integrationLog('响应', {
+        protocol: 'http',
+        direction: '出站',
+        outcome: '完成',
+        requestId: res.config?.headers?.['X-Request-Id'],
+        method: String(res.config?.method || '').toUpperCase(),
+        url: res.config?.url,
+        statusCode: res.status,
+        businessCode: res.data?.code,
+        durationMs: Date.now() - (res.config?.integrationStartedAt || Date.now())
+      })
+    }
     // 未设置状态码则默认成功状态
     // const code = res.data.code || 200;
     const code = res.data.code === '0' ? 200 : res.data.code || 200;
@@ -152,6 +183,19 @@ service.interceptors.response.use(res => {
     }
   },
   error => {
+    if (isManagementRequest(error.config?.url)) {
+      integrationLog('响应', {
+        protocol: 'http',
+        direction: '出站',
+        outcome: '失败',
+        requestId: error.config?.headers?.['X-Request-Id'],
+        method: String(error.config?.method || '').toUpperCase(),
+        url: error.config?.url,
+        statusCode: error.response?.status,
+        businessCode: error.response?.data?.code,
+        durationMs: Date.now() - (error.config?.integrationStartedAt || Date.now())
+      }, 'error')
+    }
     console.log('err' + error)
     if (error.response && error.response.status === 401) {
       login()

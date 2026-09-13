@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
@@ -46,6 +47,10 @@ public class AuthenticatedRequestHeaders {
 
     public void apply(HttpHeaders headers, Authentication authentication) {
         TRUSTED_USER_HEADERS.forEach(headers::remove);
+        String traceId = MDC.get("traceId");
+        if (traceId != null && !traceId.isBlank()) {
+            headers.set("X-Request-Id", traceId);
+        }
         if (!(authentication instanceof JwtAuthenticationToken jwtAuthentication)) {
             return;
         }

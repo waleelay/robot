@@ -101,6 +101,7 @@ npm run lint:fix
 | `VUE_APP_WS_URL` | 大屏 WebSocket 地址，例如 `wss://host/ws/bigscreen`；不配置时使用当前页面同源地址 |
 | `VUE_APP_VOICEWEBSOCKET_URL` | 语音服务 WebSocket 地址 |
 | `VUE_APP_WEBSOCKET_URL` | 业务 WebSocket 地址 |
+| `VUE_APP_INTEGRATION_LOG_ENABLED` | 管理端 HTTP 与任务、告警、轨迹 WebSocket 链路日志；默认启用，设为 `false` 可关闭 |
 | `VUE_APP_WEBRTC` | WebRTC 服务地址 |
 | `VUE_APP_YUNTAI_CONTROL` | 云台控制接口地址 |
 | `VUE_APP_KEYCLOAK_URL` | Keycloak 对外地址 |

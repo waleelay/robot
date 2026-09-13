@@ -451,6 +451,9 @@ public class PanoramaCenterClient {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("handleAction", handleAction);
         body.put("handleResult", handleResult);
+        long startNanos = System.nanoTime();
+        log.info("管理端告警处置请求开始 protocol=http direction=出站 stage=请求 outcome=已发起 method={} uri={} entityType=告警",
+                workflow ? "POST" : "PATCH", uri);
         try {
             if (workflow) {
                 restClient.post()
@@ -467,9 +470,12 @@ public class PanoramaCenterClient {
                         .retrieve()
                         .body(MAP_TYPE);
             }
+            log.info("管理端告警处置调用成功 protocol=http direction=出站 stage=响应 outcome=成功 method={} uri={} statusCode=200 entityType=告警 durationMs={}",
+                    workflow ? "POST" : "PATCH", uri, elapsedMillis(startNanos));
             return true;
         } catch (RuntimeException exception) {
-            log.warn("更新全景地图告警失败，请求地址={}", uri, exception);
+            log.warn("管理端告警处置调用失败 protocol=http direction=出站 stage=响应 outcome=失败 method={} uri={} entityType=告警 durationMs={}",
+                    workflow ? "POST" : "PATCH", uri, elapsedMillis(startNanos), exception);
             return false;
         }
     }
@@ -547,6 +553,7 @@ public class PanoramaCenterClient {
                 log.warn("全景通用查询并发已达上限，请求地址={}", uri);
                 return Optional.empty();
             }
+            log.info("管理端 HTTP 查询开始 protocol=http direction=出站 stage=请求 outcome=已发起 method=GET uri={}", uri);
             Map<String, Object> response = client.get()
                     .uri(uri)
                     .headers(authenticatedRequestHeaders::apply)
@@ -555,9 +562,13 @@ public class PanoramaCenterClient {
             logSlowRequest(uri, startNanos);
             if (response == null) {
                 circuit.recordFailure();
+                log.warn("管理端 HTTP 响应无效 protocol=http direction=出站 stage=响应 outcome=无效响应 method=GET uri={} statusCode=200 durationMs={}",
+                        uri, elapsedMillis(startNanos));
                 return Optional.empty();
             }
             circuit.recordSuccess();
+            log.info("管理端 HTTP 查询成功 protocol=http direction=出站 stage=响应 outcome=成功 method=GET uri={} statusCode=200 resultItems={} durationMs={}",
+                    uri, records(response).size(), elapsedMillis(startNanos));
             return Optional.of(response);
         } catch (RestClientResponseException exception) {
             if (exception.getStatusCode() == HttpStatus.UNAUTHORIZED
@@ -652,6 +663,7 @@ public class PanoramaCenterClient {
                 taskCircuit.recordFailure();
                 throw new TaskSourceException("TASK_QUERY_CONCURRENCY_LIMIT", "任务查询并发已达上限");
             }
+            log.info("管理端任务查询开始 protocol=http direction=出站 stage=请求 outcome=已发起 method=GET uri={}", uri);
             Map<String, Object> response = taskRestClient.get()
                     .uri(uri)
                     .headers(authenticatedRequestHeaders::apply)
@@ -663,6 +675,8 @@ public class PanoramaCenterClient {
                 throw new TaskSourceException("TASK_INVALID_RESPONSE", "Management 任务查询返回空响应");
             }
             taskCircuit.recordSuccess();
+            log.info("管理端任务查询成功 protocol=http direction=出站 stage=响应 outcome=成功 method=GET uri={} statusCode=200 resultItems={} durationMs={}",
+                    uri, records(response).size(), elapsedMillis(startNanos));
             return Optional.of(response);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();

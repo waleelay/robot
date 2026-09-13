@@ -116,6 +116,7 @@ RTSP 可用时 `status=online`；配置停用、配置无效、健康缺失或�
 | `STATISTICS_REPORT_STORAGE_DIR` | 单实例 PDF 与原子索引的持久化目录 |
 | `STATISTICS_REPORT_MINIMUM_FREE_BYTES` | 生成新报告后必须保留的磁盘余量，默认 1 GiB |
 | `STATISTICS_REPORT_INSTANCE_COUNT` | 必须为 `1`；其他值会拒绝启动，扩容前需另行实施共享存储 |
+| `LOGGING_STRUCTURED_FORMAT_CONSOLE` | 控制台结构化日志格式；生产 Compose 默认 `logstash`，管理端调用只记录 URI、状态、耗时和结果数量，不记录 Token 或完整正文 |
 
 生产必须使用真实 HTTPS Issuer/JWK、受控 CORS 和内部下游地址。若 REST 正常但 Nginx 返回 502，应检查 upstream，并确认代理未重复转发 `Connection`、`Transfer-Encoding`、`Content-Length`、`Upgrade` 等 hop-by-hop Header。
 
@@ -144,3 +145,10 @@ BFF 收到 Management 告警失效通知后，以两条独立链路按授权身�
 生产报告通过 `StatisticsReportStore` 的本地实现保存到专用持久化目录，`index.json` 采用临时文件
 加原子替换。当前边界只允许单实例；写入前检查磁盘余量，部署需监控容量、目录可写和清理异常，
 并对整个报告目录执行备份恢复演练。
+
+## 6. 管理端链路日志
+
+BFF 接收或生成 `X-Request-Id` 并透传给 Control、Media 和 Management。管理端任务、告警 STOMP
+事件继续使用上游 `eventId`，补查阶段以 `eventKey=source:eventId` 记录查询、差异判断、重试和浏览器
+投递结果。日志使用中文描述，并保留 `protocol/direction/stage/outcome/reasonCode` 等固定检索字段；请求及
+响应正文、Bearer Token、Cookie、文件内容和轨迹点全集不得写入日志。

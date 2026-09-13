@@ -34,6 +34,7 @@ function compile(path, api = {}) {
     require: name => {
       if (name === 'vue') return Vue
       if (name === 'vuex') return Vuex
+      if (name.endsWith('utils/integration-log')) return { integrationLog() {} }
       if (name.endsWith('constants/robot.js')) return { isFixedCamera: () => false }
       if (name.replace(/\.js$/, '').endsWith('api/new-bi')) return api
       for (const [key, value] of Object.entries(helpers)) if (name.replace(/\.js$/, '').endsWith(key)) return value

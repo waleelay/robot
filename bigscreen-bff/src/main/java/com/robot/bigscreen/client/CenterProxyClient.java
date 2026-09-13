@@ -14,6 +14,8 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.Set;
 import org.springframework.core.io.InputStreamResource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -28,6 +30,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
 public class CenterProxyClient {
+
+    private static final Logger log = LoggerFactory.getLogger(CenterProxyClient.class);
 
     private static final int MAX_REQUEST_BODY_BYTES = 1024 * 1024;
     private static final int MAX_RESPONSE_BODY_BYTES = 32 * 1024 * 1024;
@@ -79,13 +83,8 @@ public class CenterProxyClient {
                 .build(true)
                 .toUri();
         HttpMethod method = HttpMethod.valueOf(request.getMethod());
-        return restClient.method(method)
-                .uri(uri)
-                .headers(headers -> copyRequestHeaders(request, headers))
-                .body(requestBody(request))
-                .exchange((clientRequest, clientResponse) -> ResponseEntity.status(clientResponse.getStatusCode())
-                        .headers(sanitizeResponseHeaders(clientResponse.getHeaders()))
-                        .body(readBounded(clientResponse.getBody(), MAX_RESPONSE_BODY_BYTES, "下游响应超过允许大小")));
+        byte[] body = requestBody(request);
+        return exchange(request, uri, method, body, true);
     }
 
     private ResponseEntity<byte[]> forwardMultipart(HttpServletRequest request, String targetBaseUrl, String targetPath) {
@@ -95,14 +94,60 @@ public class CenterProxyClient {
                 .query(query)
                 .build(true)
                 .toUri();
-        return restClient.method(HttpMethod.valueOf(request.getMethod()))
-                .uri(uri)
-                .headers(headers -> copyRequestHeaders(request, headers, false))
-                .contentType(MediaType.MULTIPART_FORM_DATA)
-                .body(multipartBody(request))
-                .exchange((clientRequest, clientResponse) -> ResponseEntity.status(clientResponse.getStatusCode())
-                        .headers(sanitizeResponseHeaders(clientResponse.getHeaders()))
-                        .body(readBounded(clientResponse.getBody(), MAX_RESPONSE_BODY_BYTES, "下游响应超过允许大小")));
+        HttpMethod method = HttpMethod.valueOf(request.getMethod());
+        long startNanos = System.nanoTime();
+        log.info("下游服务 HTTP 请求开始 protocol=http direction=出站 stage=请求 outcome=已发起 method={} uri={} requestBytes=未知",
+                method, uri);
+        try {
+            ResponseEntity<byte[]> response = restClient.method(method)
+                    .uri(uri)
+                    .headers(headers -> copyRequestHeaders(request, headers, false))
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(multipartBody(request))
+                    .exchange((clientRequest, clientResponse) -> ResponseEntity.status(clientResponse.getStatusCode())
+                            .headers(sanitizeResponseHeaders(clientResponse.getHeaders()))
+                            .body(readBounded(clientResponse.getBody(), MAX_RESPONSE_BODY_BYTES, "下游响应超过允许大小")));
+            logCompletion(method, uri, -1, response, startNanos);
+            return response;
+        } catch (RuntimeException exception) {
+            log.warn("下游服务 HTTP 调用失败 protocol=http direction=出站 stage=响应 outcome=失败 method={} uri={} durationMs={}",
+                    method, uri, elapsedMillis(startNanos), exception);
+            throw exception;
+        }
+    }
+
+    private ResponseEntity<byte[]> exchange(
+            HttpServletRequest request, URI uri, HttpMethod method, byte[] body, boolean includeContentType) {
+        long startNanos = System.nanoTime();
+        log.info("下游服务 HTTP 请求开始 protocol=http direction=出站 stage=请求 outcome=已发起 method={} uri={} requestBytes={}",
+                method, uri, body.length);
+        try {
+            ResponseEntity<byte[]> response = restClient.method(method)
+                    .uri(uri)
+                    .headers(headers -> copyRequestHeaders(request, headers, includeContentType))
+                    .body(body)
+                    .exchange((clientRequest, clientResponse) -> ResponseEntity.status(clientResponse.getStatusCode())
+                            .headers(sanitizeResponseHeaders(clientResponse.getHeaders()))
+                            .body(readBounded(clientResponse.getBody(), MAX_RESPONSE_BODY_BYTES, "下游响应超过允许大小")));
+            logCompletion(method, uri, body.length, response, startNanos);
+            return response;
+        } catch (RuntimeException exception) {
+            log.warn("下游服务 HTTP 调用失败 protocol=http direction=出站 stage=响应 outcome=失败 method={} uri={} requestBytes={} durationMs={}",
+                    method, uri, body.length, elapsedMillis(startNanos), exception);
+            throw exception;
+        }
+    }
+
+    private void logCompletion(
+            HttpMethod method, URI uri, int requestBytes, ResponseEntity<byte[]> response, long startNanos) {
+        byte[] responseBody = response.getBody();
+        log.info("下游服务 HTTP 调用完成 protocol=http direction=出站 stage=响应 outcome=完成 method={} uri={} statusCode={} requestBytes={} responseBytes={} durationMs={}",
+                method, uri, response.getStatusCode().value(), requestBytes,
+                responseBody == null ? 0 : responseBody.length, elapsedMillis(startNanos));
+    }
+
+    private long elapsedMillis(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000L;
     }
 
     private String targetBaseUrl(HttpServletRequest request) {

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -21,6 +22,7 @@ class AuthenticatedRequestHeadersTest {
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
+        MDC.clear();
     }
 
     @Test
@@ -59,6 +61,16 @@ class AuthenticatedRequestHeadersTest {
 
         assertNull(headers.getFirst("X-User-Id"));
         assertNull(headers.getFirst("X-Roles"));
+    }
+
+    @Test
+    void forwardsTraceIdFromMdc() {
+        MDC.put("traceId", "trace-001");
+        HttpHeaders headers = new HttpHeaders();
+
+        requestHeaders.apply(headers);
+
+        assertEquals("trace-001", headers.getFirst("X-Request-Id"));
     }
 
     @Test
