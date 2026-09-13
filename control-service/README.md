@@ -88,6 +88,7 @@ src/main/java/com/robot/control/
 - 租约默认 30 秒；同一 `userId + clientId` 重复申请会续期。
 - 冲突按机器人和 `deviceIds` 交集判断；冲突当前返回 HTTP 200 的 `CONTROL_LOCKED` 响应体。
 - `drive.velocity` 要求机器人在线、手动模式、当前终端持有含 `base` 的租约。
+- 前端以 `linearX/linearY/angularZ` 提交运动意图；控制服务按控制画像限幅后，转换为 MQTT `linear.{x,y,z}` 与 `angular.{roll,yaw}`，其中一期预留的 `z/roll` 固定为 `0.0`。
 - `docking.leave` 仅在 Management 本体组件明确登记 `DEVICE_CONTROL/LEAVE_CHARGER` 时出现；要求装备操作权限、
   在线且 30 秒内有边缘状态、明确 `taskStatus=IDLE` 和 `charging=true`，并持有只含 `base` 的机器人排他会话。
 - `takeover`/模式切换只发布请求，最终状态以机器人上报为准。

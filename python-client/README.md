@@ -480,8 +480,9 @@ MULTI_FUNCTION_KEEPALIVE_INTERVAL_MS=2000
 ```text
 收到 robot/{robotId}/control/# 指令
   -> 解析 ControlCommand
-  -> 按 action 更新本地 deviceState/controlMode
-  -> 立即发布 media/client/status
+  -> drive.velocity 校验并打印嵌套运动向量，不调用 ROS2
+  -> 其它模拟 action 更新本地 deviceState/controlMode
+  -> 存在可确认状态变化时发布 media/client/status
 ```
 
 当前可回写的状态包括音量、静音、发射器安全开关、控制模式、警示灯、云台自转和车灯。

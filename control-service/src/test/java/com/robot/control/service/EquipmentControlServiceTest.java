@@ -75,7 +75,7 @@ class EquipmentControlServiceTest {
     }
 
     @Test
-    void buildsDriveVelocityWithExistingRobotProtocolFields() {
+    void buildsDriveVelocityAsNestedMotionVectors() {
         register(component("BODY", "body"));
 
         assertThat(maps(service.controlProfile("robot-001").get("devices")))
@@ -94,10 +94,80 @@ class EquipmentControlServiceTest {
                 "angularZ", -0.2));
 
         assertThat(map(payload.get("params"))).containsExactly(
-                entry("linearX", 0.3),
-                entry("linearY", 0.0),
-                entry("angularZ", -0.2));
+                entry("linear", object("x", 0.3, "y", 0.0, "z", 0.0)),
+                entry("angular", object("roll", 0.0, "yaw", -0.2)));
+        assertThat(payload).containsEntry("seq", 7L);
         assertTarget(payload, "base", "WHEELED_BASE");
+    }
+
+    @Test
+    void clipsDriveVelocityUsingRegisteredControlProfile() {
+        Map<String, Object> body = component("BODY", "body");
+        body.put("controlProfile", object(
+                "maxLinearX", 0.5,
+                "maxLinearY", 0.2,
+                "maxAngularZ", 0.4));
+        register(body);
+
+        Map<String, Object> payload = publish("base", "drive.velocity", object(
+                "linearX", 0.8,
+                "linearY", 0.2,
+                "angularZ", -0.7));
+
+        assertThat(map(map(payload.get("params")).get("linear"))).containsExactly(
+                entry("x", 0.5),
+                entry("y", 0.2),
+                entry("z", 0.0));
+        assertThat(map(map(payload.get("params")).get("angular"))).containsExactly(
+                entry("roll", 0.0),
+                entry("yaw", -0.4));
+    }
+
+    @Test
+    void defaultsOptionalLateralVelocityToZero() {
+        register(component("BODY", "body"));
+
+        Map<String, Object> payload = publish("base", "drive.velocity", object(
+                "linearX", 0.2,
+                "angularZ", 0.1));
+
+        assertThat(map(map(payload.get("params")).get("linear")))
+                .containsEntry("y", 0.0);
+    }
+
+    @Test
+    void supportsBipedBaseWithConservativeDefaultLimits() {
+        register("HUMANOID_ROBOT", component("BODY", "body"));
+
+        Map<String, Object> payload = publish("base", "drive.velocity", object(
+                "linearX", 0.6,
+                "linearY", 0.2,
+                "angularZ", -0.5));
+
+        assertTarget(payload, "base", "BIPED_BASE");
+        assertThat(map(map(payload.get("params")).get("linear"))).containsExactly(
+                entry("x", 0.3),
+                entry("y", 0.0),
+                entry("z", 0.0));
+        assertThat(map(map(payload.get("params")).get("angular")))
+                .containsEntry("yaw", -0.3);
+    }
+
+    @Test
+    void rejectsDriveVelocityWithoutRequiredNumericAxes() {
+        register(component("BODY", "body"));
+        online("手动模式");
+        Map<String, Object> session = acquireBase();
+
+        assertThatThrownBy(() -> service.publishCommand("robot-001", object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "base"),
+                "action", "drive.velocity",
+                "params", object("linearX", 0.2)), operator()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("params.angularZ 必须是有限数值");
+
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
     }
 
     @Test
@@ -810,9 +880,13 @@ class EquipmentControlServiceTest {
     }
 
     private void register(Map<String, Object> component) {
+        register("WHEELED_ROBOT", component);
+    }
+
+    private void register(String robotType, Map<String, Object> component) {
         Map<String, Object> robot = object(
                 "serialNumber", "robot-001",
-                "deviceType", "WHEELED_ROBOT",
+                "deviceType", robotType,
                 "components", List.of(component));
         when(managementClient.deviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
         when(managementClient.cachedDeviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));

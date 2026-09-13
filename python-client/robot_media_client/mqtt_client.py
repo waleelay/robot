@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -336,10 +337,11 @@ class RobotMQTTClient:
                 f"action={command.action}",
                 flush=True,
             )
-            try:
-                self.online("online")
-            except Exception as exc:
-                print("equipment control state publish failed", exc, flush=True)
+            if command.action != "drive.velocity":
+                try:
+                    self.online("online")
+                except Exception as exc:
+                    print("equipment control state publish failed", exc, flush=True)
         else:
             print(
                 "equipment control command ignored",
@@ -363,6 +365,8 @@ class RobotMQTTClient:
         """应用普通设备控制；多合一设备会调用真实 TCP/HTTP 适配器。"""
         if command.target.device_type == "MULTI_FUNCTION_BROADCASTER":
             return self.apply_multi_function_command(command)
+        if command.action == "drive.velocity":
+            return self.simulate_drive_velocity(command)
         with self.lock:
             changed = False
             if command.action == "set_volume":
@@ -413,6 +417,49 @@ class RobotMQTTClient:
                 self.set_device_state_locked(command.target.device_id, "rear", rear)
                 changed = True
             return changed
+
+    def simulate_drive_velocity(self, command: ControlCommand) -> bool:
+        """校验并打印地面机器人运动向量，不调用 ROS2 或厂商驱动。"""
+        supported_types = {"WHEELED_BASE", "QUADRUPED_BASE", "BIPED_BASE"}
+        if command.target.device_id != "base" or command.target.device_type not in supported_types:
+            print(
+                "robot body command rejected",
+                f"deviceId={command.target.device_id}",
+                f"deviceType={command.target.device_type}",
+                "reason=invalid-body-target",
+                flush=True,
+            )
+            return False
+
+        linear = command.params.get("linear")
+        angular = command.params.get("angular")
+        if not isinstance(linear, dict) or not isinstance(angular, dict):
+            print("robot body command rejected reason=invalid-motion-vectors", flush=True)
+            return False
+
+        values = {
+            "linear.x": linear.get("x"),
+            "linear.y": linear.get("y"),
+            "linear.z": linear.get("z"),
+            "angular.roll": angular.get("roll"),
+            "angular.yaw": angular.get("yaw"),
+        }
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            for value in values.values()
+        ):
+            print("robot body command rejected reason=invalid-motion-values", flush=True)
+            return False
+
+        print(
+            "robot body command simulated",
+            f"seq={command.seq}",
+            *(f"{name}={float(value)}" for name, value in values.items()),
+            flush=True,
+        )
+        return True
 
     def apply_multi_function_command(self, command: ControlCommand) -> bool:
         """调用多合一真实适配器；失败信息也随设备状态上报。"""

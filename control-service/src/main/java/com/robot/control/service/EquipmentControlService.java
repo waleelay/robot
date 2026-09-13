@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +36,8 @@ public class EquipmentControlService {
     private static final Logger log = LoggerFactory.getLogger(EquipmentControlService.class);
     private static final long EDGE_STATUS_AUTHORITY_NANOS = TimeUnit.SECONDS.toNanos(30);
     private static final List<String> CLEARABLE_EDGE_STATUS_FIELDS = List.of("charging", "taskStatus");
+    private static final Set<String> GROUND_BASE_DEVICE_TYPES = Set.of(
+            "WHEELED_BASE", "QUADRUPED_BASE", "BIPED_BASE");
     private static final List<String> EDGE_STATUS_FIELDS = List.of(
             "status",
             "battery",
@@ -358,7 +361,7 @@ public class EquipmentControlService {
     public Map<String, Object> publishCommand(String robotId, Map<String, Object> request, CurrentUser user) {
         requireRobot(robotId);
         validateCommandAccess(robotId, request, user);
-        Map<String, Object> mqttPayload = buildMqttPayload(robotId, request, user);
+        Map<String, Object> mqttPayload = buildMqttPayload(robotId, request);
         commandPublisher.publishCommand(robotId, mqttPayload);
         String commandId = "cmd_" + compactUuid();
         Map<String, Object> response = object(
@@ -506,10 +509,9 @@ public class EquipmentControlService {
      *
      * @param robotId 机器人 ID
      * @param request 请求参数
-     * @param user    当前用户
      * @return MQTT 载荷
      */
-    private Map<String, Object> buildMqttPayload(String robotId, Map<String, Object> request, CurrentUser user) {
+    private Map<String, Object> buildMqttPayload(String robotId, Map<String, Object> request) {
         Map<String, Object> target = mapValue(request.get("target"));
         Map<String, Object> params = mapValue(request.get("params"));
         Map<String, Object> client = mapValue(request.get("client"));
@@ -548,17 +550,7 @@ public class EquipmentControlService {
             Map<String, Object> device) {
         Map<String, Object> profile = mapValue(device.get("controlProfile"));
         if ("drive.velocity".equals(action)) {
-            double maxLinearX = doubleValue(profile.get("maxLinearX"), 1.0);
-            double maxLinearY = doubleValue(profile.get("maxLinearY"), 0.0);
-            double maxAngularZ = doubleValue(profile.get("maxAngularZ"), 0.8);
-            double linearY = clamp(doubleValue(params.get("linearY"), 0.0), -maxLinearY, maxLinearY);
-            if ("WHEELED_BASE".equals(deviceType)) {
-                linearY = 0.0;
-            }
-            return object(
-                    "linearX", clamp(doubleValue(params.get("linearX"), 0.0), -maxLinearX, maxLinearX),
-                    "linearY", linearY,
-                    "angularZ", clamp(doubleValue(params.get("angularZ"), 0.0), -maxAngularZ, maxAngularZ));
+            return buildDriveVelocityParams(params, profile);
         }
         if ("DUAL_LIGHT_PTZ".equals(deviceType) && isPtzDirectionAction(action)) {
             return object(
@@ -635,6 +627,31 @@ public class EquipmentControlService {
             return object();
         }
         return copy(params);
+    }
+
+    /**
+     * 将前端平台语义速度转换为机器人客户端统一运动向量。
+     *
+     * <p>一期只控制地面机器人，垂直速度和横滚角速度固定为零；字段仍保留在执行协议中，
+     * 后续接入无人机时在此处按已登记能力开放。</p>
+     */
+    private static Map<String, Object> buildDriveVelocityParams(
+            Map<String, Object> params,
+            Map<String, Object> profile) {
+        double maxLinearX = nonNegativeLimit(profile, "maxLinearX", 1.0);
+        double maxLinearY = nonNegativeLimit(profile, "maxLinearY", 0.0);
+        double maxAngularYaw = nonNegativeLimit(profile, "maxAngularZ", 0.8);
+        double linearX = clamp(requiredFiniteDouble(params, "linearX"), -maxLinearX, maxLinearX);
+        double linearY = clamp(optionalFiniteDouble(params, "linearY", 0.0), -maxLinearY, maxLinearY);
+        double angularYaw = clamp(requiredFiniteDouble(params, "angularZ"), -maxAngularYaw, maxAngularYaw);
+        return object(
+                "linear", object(
+                        "x", linearX,
+                        "y", linearY,
+                        "z", 0.0),
+                "angular", object(
+                        "roll", 0.0,
+                        "yaw", angularYaw));
     }
 
     private Map<String, Object> buildMultiFunctionParams(
@@ -1156,9 +1173,7 @@ public class EquipmentControlService {
     }
 
     private String controlDeviceId(Map<String, Object> component, String deviceType) {
-        if ("WHEELED_BASE".equals(deviceType)
-                || "QUADRUPED_BASE".equals(deviceType)
-                || "BIPED_BASE".equals(deviceType)) {
+        if (GROUND_BASE_DEVICE_TYPES.contains(deviceType)) {
             return "base";
         }
         return firstString(component, "code", "deviceId", "id");
@@ -1213,14 +1228,21 @@ public class EquipmentControlService {
 
     private String baseDeviceType(Map<String, Object> robot) {
         String robotType = normalized(firstString(robot, "deviceType", "typeCode", "type"));
-        if ("ROBOT_DOG".equals(robotType) || "QUADRUPED_ROBOT".equals(robotType)) {
+        if ("ROBOT_DOG".equals(robotType)
+                || "QUADRUPED_ROBOT".equals(robotType)
+                || "QUADRUPED_BASE".equals(robotType)) {
             return "QUADRUPED_BASE";
+        }
+        if ("HUMANOID_ROBOT".equals(robotType)
+                || "BIPED_ROBOT".equals(robotType)
+                || "BIPED_BASE".equals(robotType)) {
+            return "BIPED_BASE";
         }
         return "WHEELED_BASE";
     }
 
     private String controlScope(String deviceType) {
-        if ("WHEELED_BASE".equals(deviceType) || "QUADRUPED_BASE".equals(deviceType)) {
+        if (GROUND_BASE_DEVICE_TYPES.contains(deviceType)) {
             return "BODY";
         }
         if ("SPEAKER".equals(deviceType) || "INTERCOM".equals(deviceType)) {
@@ -1243,7 +1265,7 @@ public class EquipmentControlService {
             mapped.add("docking.leave");
         }
         List<String> capabilityCodes = managementCapabilityCodes(component);
-        if (("WHEELED_BASE".equals(deviceType) || "QUADRUPED_BASE".equals(deviceType))
+        if (GROUND_BASE_DEVICE_TYPES.contains(deviceType)
                 && capabilityCodes.contains("MOTION_CONTROL")
                 && !mapped.contains("drive.velocity")) {
             mapped.add(0, "drive.velocity");
@@ -1262,7 +1284,7 @@ public class EquipmentControlService {
      */
     private List<String> compatibilityActions(String deviceType) {
         return switch (deviceType) {
-            case "WHEELED_BASE", "QUADRUPED_BASE" ->
+            case "WHEELED_BASE", "QUADRUPED_BASE", "BIPED_BASE" ->
                     List.of("drive.velocity", "navigation.return_home");
             case "DUAL_LIGHT_PTZ" -> List.of(
                     "up", "down", "left", "right",
@@ -1383,10 +1405,13 @@ public class EquipmentControlService {
             Map<String, Object> component,
             String deviceType) {
         if ("WHEELED_BASE".equals(deviceType)) {
-            return object("maxLinearX", 1.0, "maxLinearY", 0.4, "maxAngularZ", 0.8, "controlFrameRateHz", 10);
+            return object("maxLinearX", 1.0, "maxLinearY", 0.0, "maxAngularZ", 0.8, "controlFrameRateHz", 10);
         }
         if ("QUADRUPED_BASE".equals(deviceType)) {
             return object("maxLinearX", 0.8, "maxLinearY", 0.4, "maxAngularZ", 0.6, "controlFrameRateHz", 10);
+        }
+        if ("BIPED_BASE".equals(deviceType)) {
+            return object("maxLinearX", 0.3, "maxLinearY", 0.0, "maxAngularZ", 0.3, "controlFrameRateHz", 10);
         }
         if ("DUAL_LIGHT_PTZ".equals(deviceType)) {
             return object("maxPanSpeed", 100.0, "maxTiltSpeed", 100.0, "controlFrameRateHz", 10);
@@ -1607,6 +1632,29 @@ public class EquipmentControlService {
      */
     private static double doubleValue(Object value, double defaultValue) {
         return value instanceof Number number ? number.doubleValue() : defaultValue;
+    }
+
+    /** 读取非负控制上限，非法配置回退到默认值。 */
+    private static double nonNegativeLimit(Map<String, Object> profile, String key, double defaultValue) {
+        double value = doubleValue(profile.get(key), defaultValue);
+        return Double.isFinite(value) && value >= 0.0 ? value : defaultValue;
+    }
+
+    /** 读取必填的有限数值控制参数。 */
+    private static double requiredFiniteDouble(Map<String, Object> params, String key) {
+        Object value = params.get(key);
+        if (!(value instanceof Number number) || !Double.isFinite(number.doubleValue())) {
+            throw new IllegalArgumentException("params." + key + " 必须是有限数值");
+        }
+        return number.doubleValue();
+    }
+
+    /** 读取可选的有限数值控制参数。 */
+    private static double optionalFiniteDouble(Map<String, Object> params, String key, double defaultValue) {
+        if (!params.containsKey(key) || params.get(key) == null) {
+            return defaultValue;
+        }
+        return requiredFiniteDouble(params, key);
     }
 
     /**
