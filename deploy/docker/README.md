@@ -33,7 +33,7 @@ Nginx 备用 HTTPS：  24443/tcp
 大屏 BFF：          8090/tcp
 LiveKit API：       7880/tcp
 LiveKit RTC TCP：   7881/tcp
-LiveKit RTC UDP：   50000-50100/udp
+LiveKit RTC UDP：   50000-60000/udp
 TTS：               5050/tcp，默认不启动
 ```
 
@@ -398,7 +398,9 @@ sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/m
 ```text
 将 host.docker.internal 替换成 internal-ip
 设置 LIVEKIT_URL=ws://external-ip:7880
-设置 LIVEKIT_INTERNAL_URL=ws://livekit-server:7880
+设置 LIVEKIT_INTERNAL_URL=ws://internal-ip:7880
+设置 LIVEKIT_WEBHOOK_URL=http://internal-ip:8088/internal/media/livekit/webhook
+设置 LIVEKIT_EGRESS_WS_URL=ws://internal-ip:7880
 设置 LIVEKIT_NODE_IP=external-ip
 设置 MINIO_ENDPOINT=http://internal-ip:9000
 设置 MINIO_PUBLIC_ENDPOINT=http://external-ip:9000
@@ -412,11 +414,15 @@ sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/m
 grep --color=never -nE '^(MYSQL_URL|MYSQL_USERNAME|MYSQL_PASSWORD|REDIS_HOST|REDIS_PORT|LIVEKIT_URL|LIVEKIT_INTERNAL_URL|MINIO_ENDPOINT|MINIO_PUBLIC_ENDPOINT|MQTT_BROKER_URL|ELASTICSEARCH_URIS|CENTER_MANAGE_BASE_URL)=' .env
 ```
 
-`LIVEKIT_INTERNAL_URL` 供媒体服务调用 LiveKit Room/Egress API，bridge 模式应使用 `ws://livekit-server:7880`；`LIVEKIT_URL` 会返回给浏览器和机器人，应使用外部可访问的公网 IP 或域名。两者分离后，服务器不需要通过自身公网 IP 回连 LiveKit。
+LiveKit Server 在两套 Compose 中均使用宿主机网络，避免 `50000-60000/udp`
+在 Docker bridge 中展开为大量端口代理。`LIVEKIT_INTERNAL_URL` 供媒体服务调用
+LiveKit Room/Egress API，bridge 容器应使用宿主机内网地址；`LIVEKIT_URL` 会返回给
+浏览器和机器人，应使用外部可访问的公网 IP 或域名。两者分离后，服务器
+不需要通过自身公网 IP 回连 LiveKit。
 
-`LIVEKIT_WEBHOOK_URL` 供 LiveKit 回调 Media。bridge 模式默认使用
-`http://media-service:8088/internal/media/livekit/webhook`；host 网络模式应改为
-`http://127.0.0.1:8088/internal/media/livekit/webhook`。该地址只应在内部网络可达，签名使用与
+`LIVEKIT_WEBHOOK_URL` 供 LiveKit 回调 Media。bridge 容器应填宿主机内网地址；
+全 host 网络模式可使用 `http://127.0.0.1:8088/internal/media/livekit/webhook`。
+该地址只应在内部网络可达，签名使用与
 Media 相同的 `LIVEKIT_API_KEY/LIVEKIT_API_SECRET`。修改后须重新渲染 LiveKit 配置并重建
 LiveKit 与 Media 容器。
 
@@ -896,8 +902,14 @@ LIVEKIT_NODE_IP=外部IP
 ```text
 7880/tcp
 7881/tcp
-50000-50100/udp
+50000-60000/udp
 ```
+
+已安装环境不会因为更新 `.env.example` 而自动改写现有 `.env` 和
+`$APP_WORKSPACE_ROOT/livekit.yaml`，升级时需同时将两处的
+`LIVEKIT_RTC_PORT_RANGE_END` / `rtc.port_range_end` 调整为 `60000`，然后按当前
+`DEPLOY_NETWORK_MODE` 使用对应 Compose 文件重建 `livekit-server`。仅替换 Compose 模板
+不会改变已挂载的 LiveKit 运行时配置。
 
 ### 8.7 单文件挂载被创建成目录
 
@@ -923,6 +935,21 @@ docker compose -f docker-compose.yml up -d --force-recreate
 ```bash
 docker compose -f docker-compose.yml up -d --force-recreate
 ```
+
+例如调整无人观看时的视频会话保留时间，只需修改 `.env` 中的：
+
+```text
+IDLE_RELEASE_DELAY_SECONDS=30
+```
+
+该变量同时接入 Media 和 Control，两个服务必须使用同一值并一起重建：
+
+```bash
+docker compose -f docker-compose.yml up -d --force-recreate media-service control-service
+```
+
+Host 网络模式将 Compose 文件替换为 `docker-compose.host.yml`。普通
+`docker compose restart` 不会重新读取 `.env`。
 
 LiveKit/Nginx 模板改动还要重新渲染：
 

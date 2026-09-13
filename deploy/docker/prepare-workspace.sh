@@ -70,7 +70,7 @@ template_default() {
     LIVEKIT_HTTP_PORT) printf '%s' 7880 ;;
     LIVEKIT_RTC_TCP_PORT) printf '%s' 7881 ;;
     LIVEKIT_RTC_PORT_RANGE_START) printf '%s' 50000 ;;
-    LIVEKIT_RTC_PORT_RANGE_END) printf '%s' 50100 ;;
+    LIVEKIT_RTC_PORT_RANGE_END) printf '%s' 60000 ;;
     LIVEKIT_USE_EXTERNAL_IP) printf '%s' false ;;
     LIVEKIT_LOG_LEVEL) printf '%s' info ;;
     LIVEKIT_REDIS_ADDRESS) printf '%s' host.docker.internal:6379 ;;
@@ -80,8 +80,8 @@ template_default() {
     LIVEKIT_NODE_IP) printf '%s' "" ;;
     LIVEKIT_API_KEY) printf '%s' devkey ;;
     LIVEKIT_API_SECRET) printf '%s' dev-secret-dev-secret-dev-secret-32 ;;
-    LIVEKIT_WEBHOOK_URL) printf '%s' http://media-service:8088/internal/media/livekit/webhook ;;
-    LIVEKIT_EGRESS_WS_URL) printf '%s' ws://livekit-server:7880 ;;
+    LIVEKIT_WEBHOOK_URL) printf '%s' http://host.docker.internal:8088/internal/media/livekit/webhook ;;
+    LIVEKIT_EGRESS_WS_URL) printf '%s' ws://host.docker.internal:7880 ;;
     LIVEKIT_EGRESS_REDIS_ADDRESS) printf '%s' host.docker.internal:6379 ;;
     LIVEKIT_EGRESS_REDIS_USERNAME) printf '%s' "" ;;
     LIVEKIT_EGRESS_REDIS_PASSWORD) printf '%s' "" ;;
@@ -232,9 +232,9 @@ livekit_api_secret=$(env_value LIVEKIT_API_SECRET dev-secret-dev-secret-dev-secr
 livekit_log_level=$(env_value LIVEKIT_LOG_LEVEL info)
 livekit_redis_address=$(env_value LIVEKIT_REDIS_ADDRESS host.docker.internal:6379)
 livekit_port_start=$(env_value LIVEKIT_RTC_PORT_RANGE_START 50000)
-livekit_port_end=$(env_value LIVEKIT_RTC_PORT_RANGE_END 50100)
+livekit_port_end=$(env_value LIVEKIT_RTC_PORT_RANGE_END 60000)
 livekit_use_external_ip=$(env_value LIVEKIT_USE_EXTERNAL_IP false)
-livekit_egress_ws_url=$(env_value LIVEKIT_EGRESS_WS_URL ws://livekit-server:7880)
+livekit_egress_ws_url=$(env_value LIVEKIT_EGRESS_WS_URL ws://host.docker.internal:7880)
 livekit_egress_redis_address=$(env_value LIVEKIT_EGRESS_REDIS_ADDRESS host.docker.internal:6379)
 minio_endpoint=$(env_value MINIO_ENDPOINT http://host.docker.internal:9000)
 minio_access_key=$(env_value MINIO_ACCESS_KEY eiopminio)

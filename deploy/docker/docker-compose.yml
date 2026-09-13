@@ -52,19 +52,14 @@ services:
     platform: ${TARGET_PLATFORM:-linux/amd64}
     container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-livekit-server
     restart: unless-stopped
+    network_mode: host
     command: --config /livekit.yaml
     environment:
       TZ: ${TZ:-Asia/Shanghai}
-    ports:
-      - "${LIVEKIT_HTTP_PORT:-7880}:7880"
-      - "${LIVEKIT_RTC_TCP_PORT:-7881}:7881"
-      - "${LIVEKIT_RTC_PORT_RANGE_START:-50000}-${LIVEKIT_RTC_PORT_RANGE_END:-50100}:${LIVEKIT_RTC_PORT_RANGE_START:-50000}-${LIVEKIT_RTC_PORT_RANGE_END:-50100}/udp"
     volumes:
       - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/livekit.yaml:/livekit.yaml"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    networks:
-      - robot-mediaserver
 
   livekit-egress:
     image: ${LIVEKIT_EGRESS_IMAGE:-livekit/egress:latest}
@@ -98,11 +93,12 @@ services:
       REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
       REDIS_PORT: ${REDIS_PORT:-6379}
       ELASTICSEARCH_URIS: ${ELASTICSEARCH_URIS:-http://host.docker.internal:9200}
-      LIVEKIT_URL: ${LIVEKIT_URL:-ws://livekit-server:7880}
-      LIVEKIT_INTERNAL_URL: ${LIVEKIT_INTERNAL_URL:-ws://livekit-server:7880}
+      LIVEKIT_URL: ${LIVEKIT_URL:-ws://host.docker.internal:7880}
+      LIVEKIT_INTERNAL_URL: ${LIVEKIT_INTERNAL_URL:-ws://host.docker.internal:7880}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-dev-secret-dev-secret-dev-secret-32}
       LIVEKIT_RECONCILE_DELAY_MS: ${LIVEKIT_RECONCILE_DELAY_MS:-5000}
+      IDLE_RELEASE_DELAY_SECONDS: ${IDLE_RELEASE_DELAY_SECONDS:-30}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://host.docker.internal:9000}
       MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-}
       MINIO_DOWNLOAD_PUBLIC_ENDPOINT: ${MINIO_DOWNLOAD_PUBLIC_ENDPOINT:-}
@@ -148,6 +144,7 @@ services:
       MYSQL_USERNAME: ${MYSQL_USERNAME:-root}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-123456}
       MEDIA_SERVICE_BASE_URL: ${MEDIA_SERVICE_BASE_URL:-http://media-service:8088}
+      IDLE_RELEASE_DELAY_SECONDS: ${IDLE_RELEASE_DELAY_SECONDS:-30}
       CENTER_MANAGE_BASE_URL: ${CENTER_MANAGE_BASE_URL:-http://host.docker.internal:8866}
       MANAGEMENT_DEVICE_CACHE_TTL_SECONDS: ${MANAGEMENT_DEVICE_CACHE_TTL_SECONDS:-120}
       CONTROL_DEVICE_CACHE_EVICT_DELAY_MS: ${CONTROL_DEVICE_CACHE_EVICT_DELAY_MS:-60000}

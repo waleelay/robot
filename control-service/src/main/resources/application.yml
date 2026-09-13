@@ -91,6 +91,6 @@ control:
     # 中断视频会话自动恢复前的宽限时间，单位秒。
     interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}
     # 空闲视频会话自动释放延迟时间，单位秒。
-    idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:600}
+    idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:30}
     # 观看者或对讲心跳超时时间，单位秒。
     viewer-heartbeat-timeout-seconds: ${VIEWER_HEARTBEAT_TIMEOUT_SECONDS:15}

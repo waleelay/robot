@@ -249,7 +249,7 @@ public class MediaProperties {
     public static class Session {
     private long trackPublishTimeoutSeconds = 20;
     private long interruptedGraceSeconds = 15;
-    private long idleReleaseDelaySeconds = 60;
+    private long idleReleaseDelaySeconds = 30;
     private long viewerHeartbeatTimeoutSeconds = 15;
     private long schedulerLeaseSeconds = 30;
 

@@ -96,7 +96,9 @@ case "$DEPLOY_NETWORK_MODE" in
     set_env_value_if_default NGINX_BIGSCREEN_BFF_TEST_UPSTREAM host.docker.internal:28090 127.0.0.1:28090
     set_env_value_if_default NGINX_LIVEKIT_TEST_UPSTREAM host.docker.internal:7880 127.0.0.1:7880
     set_env_value_if_default LIVEKIT_URL ws://host.docker.internal:7880 ws://127.0.0.1:7880
-    set_env_value_if_default LIVEKIT_EGRESS_WS_URL ws://livekit-server:7880 ws://127.0.0.1:7880
+    set_env_value_if_default LIVEKIT_INTERNAL_URL ws://host.docker.internal:7880 ws://127.0.0.1:7880
+    set_env_value_if_default LIVEKIT_WEBHOOK_URL http://host.docker.internal:8088/internal/media/livekit/webhook http://127.0.0.1:8088/internal/media/livekit/webhook
+    set_env_value_if_default LIVEKIT_EGRESS_WS_URL ws://host.docker.internal:7880 ws://127.0.0.1:7880
     set_env_value_if_default MEDIA_SERVICE_BASE_URL http://media-service:8088 http://127.0.0.1:8088
     set_env_value_if_default CENTER_MANAGE_BASE_URL http://host.docker.internal:8866 http://127.0.0.1:8866
     set_env_value_if_default CENTER_CONTROL_BASE_URL http://control-service:8082 http://127.0.0.1:8082

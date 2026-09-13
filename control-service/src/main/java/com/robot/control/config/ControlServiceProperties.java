@@ -340,7 +340,7 @@ public class ControlServiceProperties {
      */
     public static class Session {
         private long interruptedGraceSeconds = 15;
-        private long idleReleaseDelaySeconds = 600;
+        private long idleReleaseDelaySeconds = 30;
         private long viewerHeartbeatTimeoutSeconds = 15;
 
         /**

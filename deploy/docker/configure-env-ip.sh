@@ -108,7 +108,9 @@ add_csv_value() {
 
 replace_all_host
 set_env_value "LIVEKIT_URL" "ws://$EXTERNAL_IP:7880"
-set_env_value "LIVEKIT_INTERNAL_URL" "ws://livekit-server:7880"
+set_env_value "LIVEKIT_INTERNAL_URL" "ws://$INTERNAL_IP:7880"
+set_env_value "LIVEKIT_WEBHOOK_URL" "http://$INTERNAL_IP:8088/internal/media/livekit/webhook"
+set_env_value "LIVEKIT_EGRESS_WS_URL" "ws://$INTERNAL_IP:7880"
 set_env_value "LIVEKIT_NODE_IP" "$EXTERNAL_IP"
 set_env_value "MINIO_ENDPOINT" "http://$INTERNAL_IP:9000"
 set_env_value "MINIO_PUBLIC_ENDPOINT" "http://$EXTERNAL_IP:9000"
@@ -120,7 +122,7 @@ add_csv_value "BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS" "https://$EXTERNAL_IP:444
 echo "updated $ENV_TARGET"
 echo "  internal ip: $INTERNAL_IP"
 echo "  external ip: $EXTERNAL_IP"
-echo "  LiveKit internal URL: ws://livekit-server:7880"
+echo "  LiveKit internal URL: ws://$INTERNAL_IP:7880"
 echo "  LiveKit public URL: ws://$EXTERNAL_IP:7880"
 echo "  MinIO internal endpoint: http://$INTERNAL_IP:9000"
 echo "  MinIO public endpoint: http://$EXTERNAL_IP:9000"
