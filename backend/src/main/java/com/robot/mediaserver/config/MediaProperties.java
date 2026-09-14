@@ -66,6 +66,8 @@ public class MediaProperties {
     private String apiKey;
     private String apiSecret;
     private long tokenTtlSeconds = 600;
+    /** 现场 App 视频呼叫 Token 有效期（默认 2 小时，避免通话中途媒体被踢）。 */
+    private long fieldCallTokenTtlSeconds = 7200;
     private boolean roomApiEnabled;
     private boolean egressEnabled;
     private int egressSegmentDurationSeconds = 6;
@@ -112,6 +114,14 @@ public class MediaProperties {
 
     public void setTokenTtlSeconds(long tokenTtlSeconds) {
             this.tokenTtlSeconds = tokenTtlSeconds;
+        }
+
+    public long getFieldCallTokenTtlSeconds() {
+            return fieldCallTokenTtlSeconds > 0 ? fieldCallTokenTtlSeconds : tokenTtlSeconds;
+        }
+
+    public void setFieldCallTokenTtlSeconds(long fieldCallTokenTtlSeconds) {
+            this.fieldCallTokenTtlSeconds = fieldCallTokenTtlSeconds;
         }
 
     public boolean isRoomApiEnabled() {

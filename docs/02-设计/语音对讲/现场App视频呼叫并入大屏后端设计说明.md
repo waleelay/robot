@@ -1,6 +1,7 @@
 # 现场 App 视频呼叫并入大屏后端设计说明
 
-> 状态：已按本说明落地首版实现（Media Token API / Control 状态机 / BFF+Nginx 桥接 / 大屏复用 `/ws/bigscreen` / App `field.call.*`）。
+> 状态：已按本说明落地首版实现（Media Token API / Control 状态机 / BFF+Nginx 桥接 / 大屏复用 `/ws/bigscreen` / App `field.call.*`）。  
+> 交互时序与分支流程见：[现场App视频通讯与大屏交互流程.md](./现场App视频通讯与大屏交互流程.md)。
 
 ## 1. 目标
 

@@ -22,6 +22,8 @@ media:
     api-secret: ${LIVEKIT_API_SECRET:dev-secret-dev-secret-dev-secret-32}
     # LiveKit 访问 Token 有效期，单位秒。
     token-ttl-seconds: ${LIVEKIT_TOKEN_TTL_SECONDS:600}
+    # 现场 App 视频呼叫 Token 有效期（通话可能较长）。
+    field-call-token-ttl-seconds: ${LIVEKIT_FIELD_CALL_TOKEN_TTL_SECONDS:7200}
     # 是否启用 LiveKit Room 管理 API。
     room-api-enabled: ${LIVEKIT_ROOM_API_ENABLED:true}
     # 是否启用 LiveKit Egress 录制能力。

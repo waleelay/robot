@@ -884,8 +884,8 @@ const actions = {
       const workflowAlarm = String(alarm.sourceType || '').toUpperCase() === 'TASK';
       if (!workflowAlarm) {
         const level = String(alarm.level || '').toLowerCase()
-        // 未处置高/中风险进入普通弹窗；低风险及其他不自动弹
-        if (['high', 'medium'].includes(level) && alarm.status === 'unhandled') {
+        // 未处置高风险进入普通弹窗；中/低风险及其他不自动弹
+        if (level === 'high' && alarm.status === 'unhandled') {
           commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm });
         } else if (alarm.robotId) {
           commit('SET_ROBOT_ALARM_INFO', { robotId: alarm.robotId, alarmInfo: alarm, close: true });

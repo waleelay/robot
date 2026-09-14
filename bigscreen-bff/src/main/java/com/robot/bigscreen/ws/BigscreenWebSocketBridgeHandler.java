@@ -349,11 +349,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     @Scheduled(fixedDelayString = "${bigscreen.websocket.authorization-check-interval-ms:1000}")
     void refreshSessionAuthorizations() {
         Instant now = Instant.now();
+        // 现场 App 信令：JWT 只在握手时校验。通话可能超过 access_token 默认 5 分钟，
+        // 到期不主动踢断，否则 Control 会结束仍在 LiveKit 中的通话。
         for (WebSocketSession fieldCallSession : fieldCallSessions) {
             if (!fieldCallSession.isOpen()) {
                 cleanupBrowserSession(fieldCallSession, CloseStatus.GOING_AWAY);
-            } else if (tokenExpired(fieldCallSession, now)) {
-                closeForTokenExpiration(fieldCallSession);
             }
         }
         Set<String> refreshIdentities = ConcurrentHashMap.newKeySet();

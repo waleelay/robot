@@ -17,13 +17,13 @@ export const ALARM_MOCK_SCENARIO = ''
 export const STORAGE_KEY = 'bi_alarm_mock'
 
 export const ALARM_MOCK_SCENARIO_META = [
-  { key: 'single_medium', label: '单条中风险', desc: '空闲自动弹详情' },
-  { key: 'single_high', label: '单条高风险', desc: '黄闪 -> 详情' },
-  { key: 'multi_medium', label: '多条中风险', desc: '只自动首条，其余入队' },
+  { key: 'single_medium', label: '单条中风险', desc: '普通中风险不自动弹（仅列表）' },
+  { key: 'single_high', label: '单条高风险', desc: '空闲自动弹详情' },
+  { key: 'multi_medium', label: '多条中风险', desc: '普通中风险均不自动弹' },
   { key: 'multi_high', label: '多条高风险', desc: '关一条后短延迟续弹' },
-  { key: 'medium_then_high', label: '中->高抢占', desc: '中风险打开后高风险抢占' },
+  { key: 'medium_then_high', label: '中->高', desc: '中风险不弹，随后高风险自动弹' },
   { key: 'manual_then_high', label: '手动->高抢占', desc: '手动详情中来高风险抢占' },
-  { key: 'manual_then_medium', label: '手动->中入队', desc: '手动详情中来中风险只入队' }
+  { key: 'manual_then_medium', label: '手动->中不入队', desc: '手动详情中来中风险不自动入队' }
 ]
 
 export const ALARM_MOCK_SCENARIOS = ['off', ...ALARM_MOCK_SCENARIO_META.map(item => item.key)]

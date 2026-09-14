@@ -292,7 +292,7 @@ test('任务事件同步更新装备摘要中的 executionStatus', async () => {
   assert.equal(ctx.state.robotBaseInfo[robotId].runningTask, null)
 })
 
-test('普通告警快照不补弹，实时高/中风险事件才进入弹窗状态', async () => {
+test('普通告警快照不补弹，实时仅高风险进入弹窗状态', async () => {
   const snapshotHigh = {
     alarmId: 'snapshot-high', sourceType: 'COMPONENT', level: 'HIGH', status: 'unhandled', robotId: 'robot-1'
   }
@@ -314,7 +314,7 @@ test('普通告警快照不补弹，实时高/中风险事件才进入弹窗状�
   await ctx.dispatch('syncRobot', { event: 'panorama.alarm.changed', data: { alarm: {
     alarmId: 'ordinary-medium', sourceType: 'COMPONENT', level: 'medium', status: 'unhandled', robotId: 'robot-2'
   } } })
-  assert.equal(ctx.state.robotAlarmObj['robot-2'].alarmId, 'ordinary-medium')
+  assert.equal(ctx.state.robotAlarmObj['robot-2'], undefined)
 
   const workflowCtx = setup()
   await workflowCtx.dispatch('syncRobot', { event: 'panorama.alarm.changed', data: { alarm: {

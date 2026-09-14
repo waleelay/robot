@@ -32,6 +32,8 @@ public class FieldCallService {
 
     private static final Logger log = LoggerFactory.getLogger(FieldCallService.class);
     private static final int DEFAULT_TIMEOUT_SECONDS = 30;
+    /** App 信令短暂断线（JWT 续期重连 / 弱网）时，保留通话的宽限秒数。 */
+    private static final int APP_DISCONNECT_GRACE_SECONDS = 45;
 
     private final Map<String, Call> calls = new ConcurrentHashMap<>();
     private final Map<String, WebSocketSession> appSessions = new ConcurrentHashMap<>();
@@ -54,8 +56,12 @@ public class FieldCallService {
         }
         appSessions.put(userId, session);
         for (Call call : calls.values()) {
-            if (call.status == FieldCallStatus.RINGING && userId.equals(call.appUserId)) {
+            if (!userId.equals(call.appUserId)) {
+                continue;
+            }
+            if (call.status == FieldCallStatus.RINGING || call.status == FieldCallStatus.ACCEPTED) {
                 call.appSession = session;
+                call.appDisconnectAt = null;
             }
         }
     }
@@ -67,14 +73,13 @@ public class FieldCallService {
         appSessions.entrySet().removeIf(entry -> entry.getValue() == session);
         for (Call call : List.copyOf(calls.values())) {
             if (call.appSession == session) {
-                if (call.status == FieldCallStatus.RINGING || call.status == FieldCallStatus.ACCEPTED) {
-                    end(call, "mobile-left");
-                    sendToApp(call, Map.of(
-                            "type", "field.call.ended",
-                            "callId", call.callId,
-                            "reason", "mobile-left"));
-                }
                 call.appSession = null;
+                if (call.status == FieldCallStatus.RINGING || call.status == FieldCallStatus.ACCEPTED) {
+                    // 宽限内允许 App 用新 JWT 重连，避免短暂断线直接挂断。
+                    call.appDisconnectAt = now();
+                    log.info("现场 App 信令断开，进入重连宽限 callId={} graceSeconds={}",
+                            call.callId, APP_DISCONNECT_GRACE_SECONDS);
+                }
             }
         }
     }
@@ -237,10 +242,23 @@ public class FieldCallService {
                 call.status = FieldCallStatus.TIMEOUT;
                 call.message = "call timeout";
                 call.updatedAt = current;
+                call.appDisconnectAt = null;
                 sendToApp(call, Map.of(
                         "type", "field.call.timeout",
                         "callId", call.callId));
                 publishStatus(call);
+                continue;
+            }
+            if (call.appDisconnectAt != null
+                    && (call.status == FieldCallStatus.RINGING || call.status == FieldCallStatus.ACCEPTED)
+                    && call.appDisconnectAt.plusSeconds(APP_DISCONNECT_GRACE_SECONDS).isBefore(current)
+                    && (call.appSession == null || !call.appSession.isOpen())) {
+                end(call, "mobile-left");
+                call.appDisconnectAt = null;
+                sendToApp(call, Map.of(
+                        "type", "field.call.ended",
+                        "callId", call.callId,
+                        "reason", "mobile-left"));
             }
         }
         calls.values().removeIf(call -> call.status != FieldCallStatus.RINGING
@@ -286,6 +304,7 @@ public class FieldCallService {
         call.status = FieldCallStatus.FAILED;
         call.message = blank(message) ? "call failed" : message;
         call.updatedAt = now();
+        call.appDisconnectAt = null;
         sendToApp(call, Map.of(
                 "type", "error",
                 "callId", call.callId,
@@ -297,6 +316,7 @@ public class FieldCallService {
         call.status = FieldCallStatus.ENDED;
         call.message = message;
         call.updatedAt = now();
+        call.appDisconnectAt = null;
         publishStatus(call);
     }
 
@@ -370,5 +390,7 @@ public class FieldCallService {
         private String livekitUrl;
         private String message;
         private WebSocketSession appSession;
+        /** 非空表示 App 信令已断，等待宽限内重连。 */
+        private OffsetDateTime appDisconnectAt;
     }
 }

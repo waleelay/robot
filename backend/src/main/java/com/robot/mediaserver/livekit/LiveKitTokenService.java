@@ -87,7 +87,8 @@ public class LiveKitTokenService {
                 "field-app:" + userId,
                 true,
                 true,
-                List.of("camera", "microphone"));
+                List.of("camera", "microphone"),
+                properties.getLivekit().getFieldCallTokenTtlSeconds());
     }
 
     /**
@@ -99,7 +100,8 @@ public class LiveKitTokenService {
                 "field-center:" + userId + ":" + clientId,
                 true,
                 true,
-                List.of("microphone"));
+                List.of("microphone"),
+                properties.getLivekit().getFieldCallTokenTtlSeconds());
     }
 
     /**
@@ -152,7 +154,7 @@ public class LiveKitTokenService {
     }
 
     private TokenResult createToken(String roomName, String identity, boolean canPublish, boolean canSubscribe) {
-        return createToken(roomName, identity, canPublish, canSubscribe, null);
+        return createToken(roomName, identity, canPublish, canSubscribe, null, null);
     }
 
     private TokenResult createToken(
@@ -161,8 +163,20 @@ public class LiveKitTokenService {
             boolean canPublish,
             boolean canSubscribe,
             List<String> publishSources) {
-        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
-                .plusSeconds(properties.getLivekit().getTokenTtlSeconds());
+        return createToken(roomName, identity, canPublish, canSubscribe, publishSources, null);
+    }
+
+    private TokenResult createToken(
+            String roomName,
+            String identity,
+            boolean canPublish,
+            boolean canSubscribe,
+            List<String> publishSources,
+            Long ttlSeconds) {
+        long ttl = ttlSeconds != null && ttlSeconds > 0
+                ? ttlSeconds
+                : properties.getLivekit().getTokenTtlSeconds();
+        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(ttl);
         Map<String, Object> videoGrant = new HashMap<>();
         // LiveKit grant 必须限制到指定 Room，不能签发跨 Room 的泛权限 Token。
         videoGrant.put("room", roomName);

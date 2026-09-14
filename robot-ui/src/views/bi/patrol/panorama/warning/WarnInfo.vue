@@ -211,7 +211,8 @@ function isPopupEligible(item) {
   if (item.workflowActionable === true) return false
   if (String(item.sourceType || '').toUpperCase() === 'TASK') return false
   const level = alarmLevelOf(item)
-  if (!['high', 'medium'].includes(level)) return false
+  // 普通告警仅高风险自动弹窗；中/低风险只进列表
+  if (level !== 'high') return false
   const status = String(item.status || 'unhandled').toLowerCase()
   return status === 'unhandled'
 }
