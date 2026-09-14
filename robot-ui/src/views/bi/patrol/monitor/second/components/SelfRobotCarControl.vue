@@ -15,7 +15,7 @@
         @takeover="handleTakeover"
         extra-class="vertical-class"
       />
-      <div class="ml15 d-flex common-control flx-center" :class="{ 'is-disabled': selectedRobot?.controlMode !== '手动模式', 'ml55': !vehicleLightDevice && !warningLightDevice }">
+      <div class="ml15 d-flex common-control flx-center" :class="{ 'is-disabled': isRunningTask, 'ml55': !vehicleLightDevice && !warningLightDevice }">
         <div class="outer flx-center">
           <div class="inner flx-center">
             <div class="circle flx-center">移动</div>
@@ -69,7 +69,7 @@
         </div>
       </div>
     </div>
-    <ControlModeWarning ref="controlModeWarningRef" />
+    <ControlModeWarning ref="controlModeWarningRef" @control-session="rememberControlSession" />
   </div>
 </template>
 

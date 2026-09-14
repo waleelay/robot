@@ -40,6 +40,23 @@ function component(path) {
 }
 const warning = component('views/bi/patrol/monitor/second/components/ControlModeWarning.vue')
 const buttons = component('views/bi/patrol/monitor/second/components/ControlModeActions.vue')
+function javascriptModule(path) {
+  const exports = {}
+  vm.runInNewContext(require('@babel/core').transformSync(read(path), {
+    babelrc: false, configFile: false,
+    plugins: ['@babel/plugin-transform-modules-commonjs']
+  }).code, {
+    exports,
+    require: name => {
+      if (name === 'vuex') return { mapActions: () => ({}), mapState: () => ({}) }
+      if (name.endsWith('execution-status')) return executionStatus
+      if (name.endsWith('api/media')) return {}
+      return {}
+    }
+  })
+  return exports.default
+}
+const controlMixin = javascriptModule('views/bi/patrol/monitor/second/components/ptz-control-mixin.js')
 function warningContext(plan) {
   const state = { websocketExtraData: {
     robotBaseInfo: { robot1: { runningTask: { taskId: 'plan1', executionStatus: 'RUNNING' } } },
@@ -69,7 +86,7 @@ test('远程控制从完整任务计划读取动作和活动实例，历史实�
   await assert.rejects(ctx.runTaskAction('terminate'), /缺少执行记录标识/)
   assert.deepEqual(calls, [['pause', 'active1']])
 })
-test('远程控制状态只按任务是否执行中展示且始终提供立即接管', () => {
+test('远程控制状态只按任务是否执行中展示，立即接管仅在执行中出现', () => {
   const context = { taskPlan: { executionStatus: 'RUNNING' } }
   assert.equal(buttons.computed.isRunningTask.call(context), true)
   context.taskPlan.executionStatus = 'PAUSED'
@@ -77,9 +94,106 @@ test('远程控制状态只按任务是否执行中展示且始终提供立即�
   context.taskPlan = null
   assert.equal(buttons.computed.isRunningTask.call(context), false)
   const template = read('views/bi/patrol/monitor/second/components/ControlModeActions.vue').split('<script>')[0]
-  assert.doesNotMatch(template, /v-if="isInActiveTask"/)
+  assert.match(template, /v-if="isRunningTask"/)
   assert.match(template, /@click="\$emit\('takeover'\)"/)
   assert.doesNotMatch(template, /\$emit\('(resume|terminate)'\)/)
+})
+
+test('暂停确认后等待 PAUSED 再接管，终止只终止任务', async () => {
+  const order = []
+  const context = {
+    ...warning.methods,
+    action: 'takeover',
+    showTaskSelection: true,
+    selectedTaskAction: 'pause',
+    runTaskAction: async action => {
+      order.push(action)
+      return { task: { taskId: 'plan1' } }
+    },
+    waitForTaskStatus: async (taskId, status) => order.push(`wait:${taskId}:${status}`),
+    executeTakeover: async () => order.push('takeover')
+  }
+  await context.executeAction()
+  assert.deepEqual(order, ['pause', 'wait:plan1:PAUSED', 'takeover'])
+
+  order.length = 0
+  context.selectedTaskAction = 'terminate'
+  await context.executeAction()
+  assert.deepEqual(order, ['terminate'])
+})
+
+test('本体方向控制在任务中要求接管，非任务导航模式自动切手动', () => {
+  const calls = []
+  const context = {
+    ...controlMixin.methods,
+    isRunningTask: true,
+    isManualMode: false,
+    openControlAction: action => calls.push(action),
+    requestManualMode: () => calls.push('manual'),
+    controlTimers: {}
+  }
+  context.startFrameControl('base-forward')
+  assert.deepEqual(calls, ['takeover'])
+
+  calls.length = 0
+  context.isRunningTask = false
+  context.startFrameControl('base-forward')
+  assert.deepEqual(calls, ['manual'])
+})
+
+test('非任务导航模式下方向控件保持可点击', () => {
+  ;[
+    'views/bi/patrol/monitor/second/components/SelfRobotCarControl.vue',
+    'views/bi/patrol/monitor/second/components/SelfRobotDogControl.vue',
+    'views/bi/gis/globalMap/popup/ControlPart.vue'
+  ].forEach(path => {
+    const template = read(path).split('<script>')[0]
+    assert.match(template, /'is-disabled': isRunningTask/)
+  })
+  const car = read('views/bi/gis/globalMap/popup/RobotCarControlPart.vue')
+  assert.match(car, /isBodyControlDisabled\(\)\s*\{\s*return this\.isRunningTask/)
+})
+
+test('控制会话只在租约有效时复用', () => {
+  const active = controlMixin.methods.isControlSessionActive
+  assert.equal(active({ status: 'ACTIVE', leaseExpireAt: new Date(Date.now() + 10000).toISOString() }), true)
+  assert.equal(active({ status: 'ACTIVE', leaseExpireAt: new Date(Date.now() - 1).toISOString() }), false)
+  assert.equal(active({ status: 'ACTIVE' }), false)
+})
+
+test('控制权申请期间松键不会发送迟到的移动帧', async () => {
+  let resolveFrame
+  const sent = []
+  const context = {
+    ...controlMixin.methods,
+    isRunningTask: false,
+    isManualMode: true,
+    controlPressed: {},
+    controlTimers: {},
+    wsConnected: true,
+    mediaSocket: { send: frame => sent.push(frame) },
+    canStartFrameControl: () => true,
+    controlFrame: () => new Promise(resolve => { resolveFrame = resolve }),
+    sendBaseStop: () => {},
+    touchControlSession: () => {},
+    $set: (object, key, value) => { object[key] = value },
+    $delete: (object, key) => { delete object[key] },
+    $message: { error() {} }
+  }
+  const starting = context.startFrameControl('base-forward')
+  context.stopFrameControl('base-forward')
+  resolveFrame({ controlSessionId: 'tc1' })
+  await starting
+  assert.deepEqual(sent, [])
+  assert.equal(context.controlTimers['base-forward'], undefined)
+})
+
+test('任务进入 RUNNING 时释放本体控制权', () => {
+  const reasons = []
+  controlMixin.watch.isRunningTask.call({
+    releaseBaseControlSession: reason => reasons.push(reason)
+  }, true)
+  assert.deepEqual(reasons, ['task_started'])
 })
 
 test('立即接管使用页面权威状态和最新实时序号', () => {

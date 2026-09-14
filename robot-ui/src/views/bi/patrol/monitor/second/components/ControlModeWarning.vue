@@ -53,8 +53,7 @@ import ControlModeWarningBody from './ControlModeWarningBody.vue'
 const ACTION_META = {
   takeover: {
     title: '\u7acb\u5373\u63a5\u7ba1',
-    messageInTask: '\u7acb\u5373\u63a5\u7ba1\u524d\uff0c\u8bf7\u6682\u505c\u6216\u7ec8\u6b62\u5f53\u524d\u4efb\u52a1',
-    messageDefault: '\u786e\u8ba4\u7acb\u5373\u63a5\u7ba1\uff1f'
+    messageInTask: '\u7acb\u5373\u63a5\u7ba1\u524d\uff0c\u8bf7\u6682\u505c\u6216\u7ec8\u6b62\u5f53\u524d\u4efb\u52a1'
   },
   resume: {
     title: '\u6062\u590d',
@@ -80,9 +79,6 @@ export default {
   },
   computed: {
     ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
-    isInTask() {
-      return isActiveTaskStatus(this.relatedTaskStatus)
-    },
     relatedTaskStatus() {
       return taskExecutionStatus(this.getRelatedTask())
     },
@@ -90,20 +86,19 @@ export default {
       return isRunningTaskStatus(this.relatedTaskStatus)
     },
     showTaskSelection() {
-      return this.action === 'takeover' && this.isInTask && this.isRunningTask
+      return this.action === 'takeover' && this.isRunningTask
     },
     dialogTitle() {
       return ACTION_META[this.action]?.title || '\u63d0\u793a'
     },
     dialogMessage() {
       const meta = ACTION_META[this.action] || {}
-      if (this.action === 'takeover') {
-        return this.showTaskSelection ? meta.messageInTask : meta.messageDefault
-      }
+      if (this.action === 'takeover') return meta.messageInTask
       return meta.messageDefault || ''
     },
     canConfirm() {
       if (this.confirming) return false
+      if (this.action === 'takeover' && !this.showTaskSelection) return false
       if (this.showTaskSelection) {
         if (!this.selectedTaskAction) return false
         return this.canRunTaskAction(this.selectedTaskAction)
@@ -112,6 +107,11 @@ export default {
         return this.canRunTaskAction(this.action)
       }
       return true
+    }
+  },
+  watch: {
+    isRunningTask(running) {
+      if (!running && this.visible && this.action === 'takeover' && !this.confirming) this.visible = false
     }
   },
   methods: {
@@ -214,9 +214,15 @@ export default {
       this.action = data.action || 'takeover'
       this.selectedTaskAction = ''
 
+      // 非执行中任务没有“立即接管”入口，方向控制按无任务自动切手动模式处理。
+      if (this.action === 'takeover' && !this.isRunningTask) {
+        this.resetState()
+        return
+      }
+
       const useSecondary = this.shouldUseSecondaryConfirm(data)
       const isResumeOrTerminate = this.action === 'resume' || this.action === 'terminate'
-      const needsTaskSelection = this.action === 'takeover' && this.isInTask && this.isRunningTask
+      const needsTaskSelection = this.action === 'takeover'
 
       // 恢复/终止：基本信息走全局二级确认（默认图标，不用 warning.svg）
       // 地图远程控制：二级且无需任务选择时同样走 $secondaryConfirm
@@ -270,6 +276,33 @@ export default {
         terminate: '\u5df2\u7ec8\u6b62\u4efb\u52a1'
       }
       this.$message.success((data && data.message) || successMap[action])
+      return { task, data }
+    },
+    taskById(taskId) {
+      const taskData = this.$store.state.websocketExtraData?.taskData || {}
+      if (taskData[taskId]) return taskData[taskId]
+      const base = this.getRobotBaseInfo()
+      if (String(base?.runningTask?.taskId) === String(taskId)) return base.runningTask
+      return (Array.isArray(base?.task) ? base.task : [])
+        .find(item => String(item?.taskId) === String(taskId))
+    },
+    waitForTaskStatus(taskId, expectedStatus, timeoutMs = 15000) {
+      if (taskExecutionStatus(this.taskById(taskId)) === expectedStatus) return Promise.resolve()
+      return new Promise((resolve, reject) => {
+        let unsubscribe = () => {}
+        const timer = setTimeout(() => {
+          unsubscribe()
+          reject(new Error('\u4efb\u52a1\u72b6\u6001\u672a\u66f4\u65b0\uff0c\u672a\u6267\u884c\u63a5\u7ba1'))
+        }, timeoutMs)
+        const check = () => {
+          if (taskExecutionStatus(this.taskById(taskId)) !== expectedStatus) return
+          clearTimeout(timer)
+          unsubscribe()
+          resolve()
+        }
+        unsubscribe = this.$store.subscribe(check)
+        check()
+      })
     },
     async executeTakeover() {
       const robot = this.getRobot()
@@ -280,8 +313,13 @@ export default {
         observedStateSeq: robot.stateSeq
       })
       if (response.code) {
-        throw new Error(response.message || response.code)
+        const error = new Error(response.code === 'CONTROL_LOCKED'
+          ? '\u63a7\u5236\u6743\u5df2\u88ab\u5176\u4ed6\u7ec8\u7aef\u5360\u7528'
+          : response.message || response.code)
+        error.code = response.code
+        throw error
       }
+      this.$emit('control-session', response)
       this.$message.success(
         response.status === 'CONFIRMED' || response.modeChangeStatus === 'CONFIRMED'
           ? `\u673a\u5668\u4eba\u5f53\u524d\u5df2\u662f${response.controlModeName || '\u624b\u52a8\u6a21\u5f0f'}`
@@ -290,9 +328,12 @@ export default {
     },
     async executeAction() {
       if (this.action === 'takeover') {
-        if (this.showTaskSelection) {
-          await this.runTaskAction(this.selectedTaskAction)
-        }
+        if (!this.showTaskSelection) return
+        const taskAction = this.selectedTaskAction
+        const { task } = await this.runTaskAction(taskAction)
+        // 终止任务只终止任务，不获取控制权，也不切换手动模式。
+        if (taskAction === 'terminate') return
+        await this.waitForTaskStatus(task.taskId, 'PAUSED')
         await this.executeTakeover()
         return
       }

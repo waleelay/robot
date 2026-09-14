@@ -2,7 +2,7 @@
   <div class="flx-center robot-control3" :class="{ 'is-small flex-column': showSmall }">
     <div
       class="common-control flx-center"
-      :class="{ 'is-disabled': isBodyControlDisabled, 'flex-column': showSmall }"
+      :class="{ 'is-disabled': isRunningTask, 'flex-column': showSmall }"
     >
       <div class="outer">
         <div class="inner w100 h100 flx-center m0">

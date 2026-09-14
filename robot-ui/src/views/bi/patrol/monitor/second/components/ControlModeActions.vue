@@ -7,7 +7,7 @@
         <svg-icon icon-class="control" class="status-icon" />
       </div>
     </div>
-    <div class="status-actions flx-align-center">
+    <div v-if="isRunningTask" class="status-actions flx-align-center">
       <div class="mode-action-btn curp flx-center" @click="$emit('takeover')">立即接管</div>
     </div>
   </div>

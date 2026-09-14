@@ -117,7 +117,7 @@
         </div>
       </div>
     </div>
-    <ControlModeWarning ref="controlModeWarningRef" />
+    <ControlModeWarning ref="controlModeWarningRef" @control-session="rememberControlSession" />
   </div>
 </template>
 
@@ -196,7 +196,7 @@ export default {
       return this.controlRobot?.controlMode === '手动模式'
     },
     isBodyControlDisabled() {
-      return this.controlRobot?.controlMode !== '手动模式'
+      return this.isRunningTask
     }
   },
   methods: {

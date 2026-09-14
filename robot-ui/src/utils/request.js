@@ -143,6 +143,11 @@ service.interceptors.response.use(res => {
       showAlert = false
       return res.data
     }
+    // 控制权接口以普通响应体返回 CONTROL_LOCKED 等业务结果，由调用方展示准确提示。
+    if (res.config && res.config.acceptBusinessResponse) {
+      showAlert = false
+      return res.data
+    }
     if (code === 401) {
       login()
       return Promise.reject(markRequestErrorNotified('无效的会话，或者会话已过期，请重新登录。'))

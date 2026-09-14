@@ -19,7 +19,7 @@
         @takeover="handleTakeover"
       />
     </div>
-    <div class="flx-center ml54 common-control" :class="{ 'is-disabled': selectedRobot?.controlMode !== '手动模式' }">
+    <div class="flx-center ml54 common-control" :class="{ 'is-disabled': isRunningTask }">
       <div class="outer flx-center">
         <div class="inner flx-center">
           <div class="circle flx-center">移动</div>
@@ -89,7 +89,7 @@
         </div>
       </div>
     </div>
-    <ControlModeWarning ref="controlModeWarningRef" />
+    <ControlModeWarning ref="controlModeWarningRef" @control-session="rememberControlSession" />
     <Speed @changeSpeed="changeSpeed" ref="speedRef" />
   </div>
 </template>

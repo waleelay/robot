@@ -1,7 +1,7 @@
 import { mapActions, mapState } from "vuex";
-import { acquireControl, mediaClientId, sendEquipmentCommand, createConfirmToken } from "../../../../../../api/media";
+import { acquireControl, mediaClientId, releaseControl, sendEquipmentCommand, createConfirmToken, takeoverControl } from "../../../../../../api/media";
 import { errorMessage } from "../../../../../../utils";
-import { executionStatusLabel, taskExecutionStatus, taskStatusColorClass } from "../../../business/execution-status";
+import { executionStatusLabel, isRunningTaskStatus, taskExecutionStatus, taskStatusColorClass } from "../../../business/execution-status";
 import ControlModeActions from "./ControlModeActions.vue";
 import ControlModeWarning from "./ControlModeWarning.vue";
 
@@ -45,6 +45,9 @@ export default {
     activeTask() {
       const summary = this.statusRobot?.runningTask
       return summary?.taskId != null ? this.taskData?.[summary.taskId] || summary : null
+    },
+    isRunningTask() {
+      return isRunningTaskStatus(taskExecutionStatus(this.activeTask))
     },
     activeTaskStatusLabel() {
       return executionStatusLabel(taskExecutionStatus(this.activeTask), '-')
@@ -107,8 +110,12 @@ export default {
   data() {
     return {
       controlTimers: {},
+      controlPressed: {},
       controlSeq: 1,
       controlSessions: {},
+      controlSessionRequests: {},
+      manualModeRequest: null,
+      manualModePendingUntil: 0,
       lastWarningLightQueryKey: '',
       ptzAutoRotateState: Object.assign({}, this.deviceStateCache?.ptzAutoRotateState || {}),
       // audioState: Object.assign({}, this.deviceStateCache?.audioState || {}),
@@ -148,7 +155,8 @@ export default {
     async handleModeChange(controlMode) {
       if (this.currentControlMode === controlMode) return
       if (controlMode === '手动模式') {
-        this.openControlAction('takeover')
+        if (this.isRunningTask) this.openControlAction('takeover')
+        else await this.requestManualMode()
       }
     },
     handleTakeover() {
@@ -163,6 +171,53 @@ export default {
     },
     controlModeCommand(controlMode) {
       return controlMode === '手动模式' ? '手动模式' : '导航模式'
+    },
+    liveRobot() {
+      const robots = this.$store.state.websocketRobot?.robots || []
+      const live = robots.find(item => String(item.robotId) === String(this.selectedRobotId)) || {}
+      const base = this.statusRobot || {}
+      return { ...live, ...base, stateSeq: live.stateSeq ?? base.stateSeq }
+    },
+    rememberControlSession(session) {
+      if (!session?.controlSessionId) return
+      const robotId = session.robotId || this.selectedRobotId
+      if ((session.deviceIds || []).includes('base') && (session.actions || []).includes('drive.velocity')) {
+        this.$set(this.controlSessions, `${robotId}:base:drive.velocity`, session)
+      }
+      if (session.modeChangeStatus === 'PUBLISHED') this.manualModePendingUntil = Date.now() + 10000
+    },
+    async requestManualMode() {
+      if (this.manualModeRequest || Date.now() < this.manualModePendingUntil) return
+      const robot = this.liveRobot()
+      if (!robot.robotId || robot.status !== 'online') {
+        this.$message.error('机器人不在线，不能切换手动模式')
+        return
+      }
+      this.manualModePendingUntil = Date.now() + 10000
+      this.manualModeRequest = takeoverControl(this.selectedRobotId, {
+        observedStateSeq: robot.stateSeq
+      })
+      try {
+        const response = await this.manualModeRequest
+        if (response.code) {
+          const error = new Error(response.code === 'CONTROL_LOCKED'
+            ? '控制权已被其他终端占用'
+            : response.message || response.code)
+          error.code = response.code
+          throw error
+        }
+        this.rememberControlSession(response)
+        this.$message.success(
+          response.modeChangeStatus === 'CONFIRMED'
+            ? '机器人当前已是手动模式，请重新操作'
+            : '正在切换手动模式，确认后请重新操作'
+        )
+      } catch (error) {
+        this.manualModePendingUntil = 0
+        this.$message.error(errorMessage(error))
+      } finally {
+        this.manualModeRequest = null
+      }
     },
     async togglePtzAutoRotate() {
       const device = this.ptzDevice
@@ -223,24 +278,22 @@ export default {
       }
     },
     // 云台开始控制
-    startFrameControl(kind) {
-      // 本体需要判断是否是手动模式，否则提示切换到手动模式
-      if (!this.isManualMode && kind.indexOf('base-') > -1) {
-        if (this.$refs.controlModeWarningRef) {
-          this.$refs.controlModeWarningRef.open({
-            robotId: this.selectedRobotId,
-            action: 'takeover',
-            useSecondaryConfirm: this.preferSecondaryConfirm()
-          })
-        } else {
-          this.$emit('handleModeChange', '手动模式')
-        }
+    async startFrameControl(kind) {
+      const isBaseControl = kind.indexOf('base-') === 0
+      if (isBaseControl && this.isRunningTask) {
+        this.openControlAction('takeover')
+        return
+      }
+      if (isBaseControl && !this.isManualMode) {
+        this.requestManualMode()
         return
       }
 
-      if (this.controlTimers[kind]) return
+      if (this.controlPressed[kind]) return
       if (!this.canStartFrameControl(kind)) return
-      this.sendFrameControl(kind)
+      this.$set(this.controlPressed, kind, true)
+      const sent = await this.sendFrameControl(kind)
+      if (!sent || !this.controlPressed[kind]) return
       this.$set(this.controlTimers, kind, setInterval(() => this.sendFrameControl(kind), 100))
     },
     canStartFrameControl(kind) {
@@ -250,24 +303,30 @@ export default {
     },
     // 云台停止控制
     stopFrameControl(kind) {
-      if (!this.isManualMode && kind.indexOf('base-') === 0) return
-      if (!this.controlTimers[kind]) return
-      clearInterval(this.controlTimers[kind])
-      this.$delete(this.controlTimers, kind)
+      const wasPressed = this.controlPressed[kind]
+      this.$delete(this.controlPressed, kind)
+      if (this.controlTimers[kind]) {
+        clearInterval(this.controlTimers[kind])
+        this.$delete(this.controlTimers, kind)
+      }
+      if (wasPressed && kind.indexOf('base-') === 0) this.sendBaseStop()
     },
     async sendFrameControl(kind) {
       try {
         const frame = await this.controlFrame(kind)
-        if (!frame || !this.wsConnected) return
+        if (!frame || !this.wsConnected || !this.controlPressed[kind]) return false
         this.mediaSocket.send(JSON.stringify({
           type: 'control.command',
           requestId: `req_${Date.now()}_${this.controlSeq}`,
           payload: frame
         }))
+        this.touchControlSession(frame.controlSessionId)
+        return true
       } catch (error) {
         console.log('ERROR control frame', errorMessage(error))
         this.$message.error(errorMessage(error))
         this.stopFrameControl(kind)
+        return false
       }
     },
     async controlFrame(kind) {
@@ -316,27 +375,132 @@ export default {
     async ensureControlSession(device, action) {
       if (!device) throw new Error('未找到控制设备')
       const key = `${this.selectedRobotId}:${device.deviceId}:${action}`
-      if (this.controlSessions[key] && this.controlSessions[key].status === 'ACTIVE') {
+      if (this.isControlSessionActive(this.controlSessions[key])) {
         return this.controlSessions[key]
       }
+      if (this.controlSessionRequests[key]) return this.controlSessionRequests[key]
       if (device.deviceId === 'base' && !this.isManualMode) {
         throw new Error('请先将机器人切换到手动模式')
       }
-      const session = await acquireControl(this.selectedRobotId, {
-        scope: device.deviceId === 'base' ? 'ROBOT' : 'DEVICE',
-        deviceIds: [device.deviceId],
-        actions: [action],
-        mode: 'EXCLUSIVE',
-        reason: 'manual_teleop',
-        ttlSeconds: 30
+      const request = acquireControl(this.selectedRobotId, {
+          scope: device.deviceId === 'base' ? 'ROBOT' : 'DEVICE',
+          deviceIds: [device.deviceId],
+          actions: [action],
+          mode: 'EXCLUSIVE',
+          reason: 'manual_teleop',
+          ttlSeconds: 30
+        })
+        .then(session => {
+          if (session.code) {
+            const error = new Error(session.code === 'CONTROL_LOCKED'
+              ? '控制权已被其他终端占用'
+              : session.message || session.code)
+            error.code = session.code
+            throw error
+          }
+          this.$set(this.controlSessions, key, session)
+          return session
+        })
+        .finally(() => this.$delete(this.controlSessionRequests, key))
+      this.$set(this.controlSessionRequests, key, request)
+      return request
+    },
+    isControlSessionActive(session) {
+      if (!session || session.status !== 'ACTIVE') return false
+      const expiresAt = Date.parse(session.leaseExpireAt)
+      return Number.isFinite(expiresAt) && expiresAt > Date.now()
+    },
+    touchControlSession(controlSessionId) {
+      if (!controlSessionId) return
+      Object.values(this.controlSessions).forEach(session => {
+        if (session?.controlSessionId === controlSessionId) {
+          session.leaseExpireAt = new Date(Date.now() + 30000).toISOString()
+        }
       })
-      if (session.code) {
-        const error = new Error(session.message || session.code)
-        error.code = session.code
-        throw error
+    },
+    baseControlSession(robotId = this.selectedRobotId) {
+      const session = this.controlSessions[`${robotId}:base:drive.velocity`]
+      return this.isControlSessionActive(session) ? session : null
+    },
+    sendBaseStop() {
+      const session = this.baseControlSession()
+      if (!session || !this.wsConnected || !this.mediaSocket) return
+      const device = this.baseDevice
+      if (!device) return
+      const payload = this.commandPayload(
+        this.selectedRobotId,
+        session.controlSessionId,
+        '手动模式',
+        device,
+        'drive.velocity',
+        { linearX: 0, linearY: 0, angularZ: 0 },
+        'base-stop'
+      )
+      try {
+        this.mediaSocket.send(JSON.stringify({
+          type: 'control.command',
+          requestId: `req_${Date.now()}_${this.controlSeq}`,
+          payload
+        }))
+        this.touchControlSession(session.controlSessionId)
+      } catch (error) {
+        console.warn('WARN base stop', errorMessage(error))
       }
-      this.$set(this.controlSessions, key, session)
-      return session
+    },
+    async releaseControlSessions(robotId, reason = 'leave_remote_control') {
+      new Set([...Object.keys(this.controlPressed), ...Object.keys(this.controlTimers)])
+        .forEach(kind => this.stopFrameControl(kind))
+      await this.releaseMatchingControlSessions(
+        session => !robotId || String(session.robotId) === String(robotId),
+        reason
+      )
+      this.manualModePendingUntil = 0
+    },
+    async releaseBaseControlSession(reason = 'task_started') {
+      new Set([...Object.keys(this.controlPressed), ...Object.keys(this.controlTimers)])
+        .forEach(kind => {
+          if (kind.indexOf('base-') === 0) this.stopFrameControl(kind)
+        })
+      await this.releaseMatchingControlSessions(
+        session => String(session.robotId) === String(this.selectedRobotId) && (session.deviceIds || []).includes('base'),
+        reason
+      )
+      this.manualModePendingUntil = 0
+    },
+    async releaseMatchingControlSessions(matches, reason) {
+      await Promise.allSettled([
+        ...Object.values(this.controlSessionRequests),
+        ...(this.manualModeRequest ? [this.manualModeRequest] : [])
+      ])
+      const sessions = [...new Map(
+        Object.values(this.controlSessions)
+          .filter(session => session?.controlSessionId && matches(session))
+          .map(session => [session.controlSessionId, session])
+      ).values()]
+      sessions.forEach(session => {
+        Object.keys(this.controlSessions).forEach(key => {
+          if (this.controlSessions[key]?.controlSessionId === session.controlSessionId) this.$delete(this.controlSessions, key)
+        })
+      })
+      await Promise.allSettled(sessions.map(session => this.releaseControlSession(session, reason)))
+    },
+    async releaseControlSession(session, reason) {
+      if ((session.deviceIds || []).includes('base') && (session.actions || []).includes('drive.velocity')) {
+        try {
+          await sendEquipmentCommand(session.robotId, this.commandPayload(
+            session.robotId,
+            session.controlSessionId,
+            '手动模式',
+            { scope: 'BODY', deviceId: 'base', deviceType: 'MOBILE_BASE' },
+            'drive.velocity',
+            { linearX: 0, linearY: 0, angularZ: 0 },
+            'release-control-stop'
+          ), { timeout: 3000, skipErrorMessage: true })
+        } catch (error) {
+          console.warn('WARN release control stop', errorMessage(error))
+        }
+      }
+      return releaseControl(session.robotId, session.controlSessionId, { reason })
     },
     commandPayload(robotId, controlSessionId, controlMode, device, action, params, source) {
       const payload = {
@@ -625,5 +789,24 @@ export default {
         vehicleLightEnabled: this.vehicleLightEnabled
       })
     },
+  },
+  watch: {
+    currentControlMode(mode) {
+      if (mode === '手动模式') this.manualModePendingUntil = 0
+    },
+    selectedRobotId(nextId, previousId) {
+      if (previousId && String(nextId) !== String(previousId)) {
+        this.releaseControlSessions(previousId, 'switch_robot')
+      }
+    },
+    isRunningTask(running) {
+      if (running) this.releaseBaseControlSession('task_started')
+    },
+    visible(next, previous) {
+      if (previous && !next) this.releaseControlSessions(null, 'close_remote_control')
+    }
+  },
+  beforeDestroy() {
+    this.releaseControlSessions(null, 'leave_remote_control')
   }
 }

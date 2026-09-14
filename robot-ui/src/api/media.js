@@ -255,7 +255,9 @@ export function acquireControl(robotId, data) {
   return request({
     url: `/api/bigscreen/control/robots/${robotId}/control-sessions/acquire`,
     method: 'post',
-    data
+    data,
+    acceptBusinessResponse: true,
+    skipErrorMessage: true
   })
 }
 
@@ -263,7 +265,9 @@ export function takeoverControl(robotId, data) {
   return request({
     url: `/api/bigscreen/control/robots/${robotId}/control-sessions/takeover`,
     method: 'post',
-    data
+    data,
+    acceptBusinessResponse: true,
+    skipErrorMessage: true
   })
 }
 
@@ -283,11 +287,12 @@ export function createConfirmToken(robotId, data) {
   })
 }
 
-export function sendEquipmentCommand(robotId, data) {
+export function sendEquipmentCommand(robotId, data, config = {}) {
   return request({
     url: `/api/bigscreen/control/robots/${robotId}/commands`,
     method: 'post',
-    data
+    data,
+    ...config
   })
 }
 

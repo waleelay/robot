@@ -75,7 +75,7 @@
         </div>
       </div>
     </div>
-    <ControlModeWarning ref="controlModeWarningRef" />
+    <ControlModeWarning ref="controlModeWarningRef" @control-session="rememberControlSession" />
   </div>
 </template>
 
