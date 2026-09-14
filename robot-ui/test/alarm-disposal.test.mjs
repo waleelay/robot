@@ -96,6 +96,18 @@ test('自动告警直接显示详情且队列关闭后立即续弹', () => {
   assert.match(source, /continueAfterClose\(\) \{\s*this\.\$nextTick\(\(\) => this\.tryPresent\(\)\)\s*\}/)
 })
 
+test('告警处置成功提示保持在大屏中央', () => {
+  const component = readFileSync(new URL(
+    '../src/views/bi/patrol/panorama/warning/WarningExecute.vue', import.meta.url
+  ), 'utf8')
+  const sharedStyle = readFileSync(new URL(
+    '../src/views/bi/patrol/panorama/warning/scss/warning-info.scss', import.meta.url
+  ), 'utf8')
+
+  assert.match(component, /class="execute-dialog flx-align-center"/)
+  assert.doesNotMatch(sharedStyle, /\.execute-dialog\s*\{[\s\S]*?position:\s*absolute\s*!important/)
+})
+
 test('普通告警弹窗不消费组件挂载前的存量状态', () => {
   const source = readFileSync(new URL(
     '../src/views/bi/patrol/panorama/warning/WarnInfo.vue', import.meta.url
