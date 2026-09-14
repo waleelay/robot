@@ -69,11 +69,39 @@ test('远程控制从完整任务计划读取动作和活动实例，历史实�
   await assert.rejects(ctx.runTaskAction('terminate'), /缺少执行记录标识/)
   assert.deepEqual(calls, [['pause', 'active1']])
 })
-test('远程控制按钮只按管理端允许动作及活动实例显示', () => {
-  const context = { isNavMode: false, showResume: true, hasManagementPermission: () => true,
-    taskPlan: { executionStatus: 'PAUSED', activeWorkflowInstanceId: 'active1', availableLifecycleActions: ['RESUME'] } }
-  assert.equal(buttons.computed.canResumeExecution.call(context), true)
-  assert.equal(buttons.computed.canTerminateExecution.call(context), false)
-  context.taskPlan.activeWorkflowInstanceId = null
-  assert.equal(buttons.computed.canResumeExecution.call(context), false)
+test('远程控制状态只按任务是否执行中展示且始终提供立即接管', () => {
+  const context = { taskPlan: { executionStatus: 'RUNNING' } }
+  assert.equal(buttons.computed.isRunningTask.call(context), true)
+  context.taskPlan.executionStatus = 'PAUSED'
+  assert.equal(buttons.computed.isRunningTask.call(context), false)
+  context.taskPlan = null
+  assert.equal(buttons.computed.isRunningTask.call(context), false)
+  const template = read('views/bi/patrol/monitor/second/components/ControlModeActions.vue').split('<script>')[0]
+  assert.doesNotMatch(template, /v-if="isInActiveTask"/)
+  assert.match(template, /@click="\$emit\('takeover'\)"/)
+  assert.doesNotMatch(template, /\$emit\('(resume|terminate)'\)/)
+})
+
+test('立即接管使用页面权威状态和最新实时序号', () => {
+  const context = {
+    ...warning.methods,
+    robotId: 'robot1',
+    $store: { state: {
+      websocketRobot: { robots: [{ robotId: 'robot1', status: 'offline', stateSeq: 12 }] },
+      websocketExtraData: { robotBaseInfo: {
+        robot1: { robotId: 'robot1', status: 'online', controlMode: '导航模式', stateSeq: 11 }
+      } }
+    } }
+  }
+  const robot = context.getRobot()
+  assert.equal(robot.status, 'online')
+  assert.equal(robot.controlMode, '导航模式')
+  assert.equal(robot.stateSeq, 12)
+})
+
+test('地图远程控制传入当前任务计划', () => {
+  ;[
+    'views/bi/gis/globalMap/popup/RobotControlPart.vue',
+    'views/bi/gis/globalMap/popup/RobotCarControlPart.vue'
+  ].forEach(path => assert.match(read(path), /:task-plan="activeTask"/))
 })

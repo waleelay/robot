@@ -11,12 +11,8 @@
   <div class="flx-align-center h100 pt20 pb20 with-bl">
     <div class="pl22 d-flex">
       <ControlModeActions
-        :is-nav-mode="isNavMode"
-        :show-resume="showTaskResumeActions"
         :task-plan="activeTask"
         @takeover="handleTakeover"
-        @resume="handleResumeActiveTask"
-        @terminate="handleTerminateActiveTask"
         extra-class="vertical-class"
       />
       <div class="ml15 d-flex common-control flx-center" :class="{ 'is-disabled': selectedRobot?.controlMode !== '手动模式', 'ml55': !vehicleLightDevice && !warningLightDevice }">

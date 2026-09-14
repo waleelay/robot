@@ -15,12 +15,8 @@
       </div>
       <ControlModeActions
         extra-class="mt12 vertical-class"
-        :is-nav-mode="isNavMode"
-        :show-resume="showTaskResumeActions"
         :task-plan="activeTask"
         @takeover="handleTakeover"
-        @resume="handleResumeActiveTask"
-        @terminate="handleTerminateActiveTask"
       />
     </div>
     <div class="flx-center ml54 common-control" :class="{ 'is-disabled': selectedRobot?.controlMode !== '手动模式' }">

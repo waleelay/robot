@@ -51,11 +51,8 @@
               <div v-for="item in tabList" :key="item.value" class="tab-button-item pr10 pl10" :class="{ 'is-active': tabIndex === item.value }" @click="tabIndex = item.value" style="font-size: 14px; line-height: 19px">{{ item.label }}</div>
             </div>
             <ControlModeActions
-              :is-nav-mode="isNavMode"
-              :show-resume="showTaskResumeActions"
+              :task-plan="activeTask"
               @takeover="handleTakeover"
-              @resume="handleResumeActiveTask"
-              @terminate="handleTerminateActiveTask"
               class="flex1"
             />
             <div v-if="vehicleLightDevice && showTalk" class="lights ml30 flx-align-center">

@@ -162,7 +162,11 @@ export default {
     },
     getRobot() {
       const list = this.$store.state.websocketRobot?.robots || []
-      return list.find(item => String(item.robotId) === String(this.robotId)) || null
+      const live = list.find(item => String(item.robotId) === String(this.robotId))
+      const base = this.getRobotBaseInfo()
+      if (!live) return base.robotId ? base : null
+      if (!base.robotId) return live
+      return { ...live, ...base, stateSeq: live.stateSeq ?? base.stateSeq }
     },
     getRobotBaseInfo() {
       return this.$store.state.websocketExtraData?.robotBaseInfo?.[this.robotId] || {}

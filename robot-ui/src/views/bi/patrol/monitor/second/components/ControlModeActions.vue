@@ -2,35 +2,23 @@
   <div class="control-mode-status flx-justify-between w100" :class="[extraClass, { 'is-spread': spread }]">
     <div class="status-left flx-align-center">
       <span class="status-label">当前状态:</span>
-      <div class="status-badge flx-center" :class="isNavMode ? 'is-nav' : 'is-manual'">
-        <span>{{ isNavMode ? '自主导航中' : '非自主导航' }}</span>
+      <div class="status-badge flx-center" :class="isRunningTask ? 'is-nav' : 'is-manual'">
+        <span>{{ isRunningTask ? '自主导航中' : '非自主导航' }}</span>
         <svg-icon icon-class="control" class="status-icon" />
       </div>
     </div>
-    <div v-if="showActions" class="status-actions flx-align-center">
-      <div
-        v-if="isNavMode"
-        class="mode-action-btn curp flx-center"
-        @click="$emit('takeover')"
-      >立即接管</div>
-      <template v-else>
-        <div v-if="canResumeExecution" class="mode-action-btn curp flx-center" @click="$emit('resume')">恢复</div>
-        <div v-if="canTerminateExecution" class="mode-action-btn curp flx-center" @click="$emit('terminate')">终止任务</div>
-      </template>
+    <div class="status-actions flx-align-center">
+      <div class="mode-action-btn curp flx-center" @click="$emit('takeover')">立即接管</div>
     </div>
   </div>
 </template>
 
 <script>
-import { mapGetters } from 'vuex'
-import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
-import { hasPlanAction } from '../../../business/task-plan-state'
+import { isRunningTaskStatus, taskExecutionStatus } from '../../../business/execution-status'
 
 export default {
   name: 'ControlModeActions',
   props: {
-    isNavMode: Boolean,
-    showResume: Boolean,
     taskPlan: {
       type: Object,
       default: null
@@ -46,29 +34,8 @@ export default {
     }
   },
   computed: {
-    ...mapGetters(['bigscreenPermissions', 'bigscreenAuthorizationBypassed']),
-    canResumeExecution() {
-      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_RESUME)
-        && hasPlanAction(this.taskPlan, 'RESUME')
-    },
-    canTerminateExecution() {
-      return this.hasManagementPermission(TASK_PERMISSIONS.EXECUTION_TERMINATE)
-        && (hasPlanAction(this.taskPlan, 'TERMINATE') || hasPlanAction(this.taskPlan, 'RETRY_TERMINATE'))
-    },
-    // 自主导航始终可接管；非自主导航仅任务中且至少有一个可操作按钮时显示
-    showActions() {
-      if (this.isNavMode) return true
-      if (!this.showResume) return false
-      return this.canResumeExecution || this.canTerminateExecution
-    }
-  },
-  methods: {
-    hasManagementPermission(permission) {
-      return matchManagementPermission(
-        permission,
-        this.bigscreenPermissions,
-        this.bigscreenAuthorizationBypassed
-      )
+    isRunningTask() {
+      return isRunningTaskStatus(taskExecutionStatus(this.taskPlan))
     }
   }
 }
@@ -93,7 +60,7 @@ export default {
 
 .status-left {
   gap: 6px;
-  
+
 }
 
 .status-label {

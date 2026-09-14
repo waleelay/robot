@@ -48,11 +48,8 @@
         <div class="flex1 flex-column pl28 pr15" style="position: unset;">
           <div class="flx-justify-between flx-align-center">
             <ControlModeActions
-              :is-nav-mode="isNavMode"
-              :show-resume="showTaskResumeActions"
+              :task-plan="activeTask"
               @takeover="handleTakeover"
-              @resume="handleResumeActiveTask"
-              @terminate="handleTerminateActiveTask"
               class="ml10"
             />
           </div>
@@ -116,7 +113,7 @@
               </div>
             </div>
           </div>
-          
+
         </div>
       </div>
     </div>

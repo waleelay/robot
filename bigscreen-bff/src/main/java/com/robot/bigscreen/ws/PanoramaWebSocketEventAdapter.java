@@ -179,6 +179,7 @@ public class PanoramaWebSocketEventAdapter {
         String statusChangedAt = text(sourceData, "statusChangedAt");
         data.put("statusChangedAt", statusChangedAt.isBlank() ? timestamp(sourceRoot) : statusChangedAt);
         putNullableText(data, "runtimeUpdatedAt", sourceData.get("runtimeUpdatedAt"));
+        putNullableLong(data, "stateSeq", sourceData.get("stateSeq"));
         putNullableInt(data, "battery", sourceData.get("battery"));
         String controlMode = normalizeControlMode(text(sourceData, "controlMode"));
         data.put("controlMode", controlMode);
@@ -431,6 +432,14 @@ public class PanoramaWebSocketEventAdapter {
             return;
         }
         target.put(fieldName, value.asInt());
+    }
+
+    private void putNullableLong(ObjectNode target, String fieldName, JsonNode value) {
+        if (value == null || value.isNull() || !value.isIntegralNumber()) {
+            target.putNull(fieldName);
+            return;
+        }
+        target.put(fieldName, value.asLong());
     }
 
     private void putNullableText(ObjectNode target, String fieldName, JsonNode value) {

@@ -26,6 +26,7 @@ class PanoramaWebSocketEventAdapterTest {
                     "charging":true,
                     "taskStatus":"IDLE",
                     "controlMode":"导航模式",
+                    "stateSeq":9007199254740993,
                     "runtimeUpdatedAt":"2026-08-05T09:07:43.123456789Z",
                     "speed":0,
                     "location":{
@@ -62,6 +63,7 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(statusEvent.path("data").path("healthStatus").asText()).isEqualTo("异常");
         assertThat(statusEvent.path("data").path("controlMode").asText()).isEqualTo("导航模式");
         assertThat(statusEvent.path("data").path("controlModeName").asText()).isEqualTo("导航模式");
+        assertThat(statusEvent.path("data").path("stateSeq").asLong()).isEqualTo(9007199254740993L);
         assertThat(statusEvent.path("data").path("runtimeUpdatedAt").asText()).isEqualTo("2026-08-05T09:07:43.123456789Z");
         assertThat(statusEvent.path("data").path("speed").asDouble()).isZero();
         assertThat(statusEvent.path("data").path("charging").asBoolean()).isTrue();
