@@ -36,14 +36,21 @@
           </div>
         </div>
         <div class="flex1 mt10 h100 slam-map-wrap">
-          <GlobalGisMap v-if="globalMapId === 'gis'" />
           <GlobalSlamMap
-            v-if="globalMapId && globalMapId !== 'gis'"
+            v-if="slamMapPayload"
             :map="slamMapPayload"
             :show-labels="true"
             :enable-add-point="false"
             :enable-robot-click="false"
             :focus-robot-id="selectedRobotId"
+          />
+          <GlobalGisMap v-else-if="globalMapId === 'gis'" />
+          <Empty
+            v-else
+            width="126px"
+            :opacity="0.7"
+            textColor="#BEE1FF"
+            :text="targetRobotId ? '当前设备暂无地图归属' : '暂无可用地图'"
           />
         </div>
       </div>
@@ -185,6 +192,7 @@ import MultimediaRecord from './components/MultimediaRecord.vue'
 import MultimediaDetail from './components/MultimediaDetail.vue'
 import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue'
 import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue'
+import { resolveMonitorRobotSlamMapId, resolveSlamMapReference } from '../monitor-map.js'
 import Empty from '../../../components/Empty.vue'
 import yuntai from './components/ptz-control-mixin'
 import { mapActions, mapState } from 'vuex'
@@ -225,6 +233,7 @@ export default {
       'globalMapId',
       'slamMapList',
       'slamOfRobot',
+      'robotLocation',
       'taskPathPoints',
       'taskData'
     ]),
@@ -259,8 +268,11 @@ export default {
       return this.selectedRobotId || null
     },
     currentSlamMapId() {
-      if (!this.targetRobotId) return null
-      return this.resolveRobotSlamMapId(this.targetRobotId)
+      const robotMapId = this.resolveRobotSlamMapId(this.targetRobotId)
+      if (robotMapId) return robotMapId
+      return this.globalMapId === 'gis'
+        ? null
+        : resolveSlamMapReference(this.slamMapList, this.globalMapId, false)
     },
     currentSlamMap() {
       const id = this.currentSlamMapId
@@ -356,26 +368,17 @@ export default {
     handleMultimediaDeleted() {
       this.$refs.multimediaRecordRef?.refreshList?.()
     },
-    // 解析装备关联的 SLAM 地图：直接 mapId > 任务 mapId > slamOfRobot 归属
+    // 任务路线只是设备地图归属的兜底，定位可用时不依赖任务路线。
     resolveRobotSlamMapId(robotId) {
-      if (robotId === undefined || robotId === null || robotId === '') return null
-      const robot = this.robotBaseInfo?.[robotId] || {}
-      const directMapId = robot.mapId ?? robot.location?.mapId
-      if (directMapId !== undefined && directMapId !== null && directMapId !== '') return directMapId
-
-      const taskId = robot.runningTaskId
-      if (taskId !== undefined && taskId !== null && taskId !== '') {
-        const taskMapId = this.taskPathPoints?.[taskId]?.mapId ?? this.taskData?.[taskId]?.mapId
-        if (taskMapId !== undefined && taskMapId !== null && taskMapId !== '') return taskMapId
-      }
-
-      const targetId = String(robotId)
-      for (const [mapId, group] of Object.entries(this.slamOfRobot || {})) {
-        if (group?.robots?.some(item => String(item.robotId) === targetId)) {
-          return mapId
-        }
-      }
-      return null
+      return resolveMonitorRobotSlamMapId({
+        robotId,
+        robotBaseInfo: this.robotBaseInfo,
+        robotLocation: this.robotLocation,
+        slamMapList: this.slamMapList,
+        slamOfRobot: this.slamOfRobot,
+        taskPathPoints: this.taskPathPoints,
+        taskData: this.taskData
+      })
     },
     async updateVideo(data) {
       await this.$nextTick()

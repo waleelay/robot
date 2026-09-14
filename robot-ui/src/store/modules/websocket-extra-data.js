@@ -32,11 +32,13 @@ import { integrationLog } from '../../utils/integration-log'
 let overviewRefreshPromise = null
 let overviewAbortController = null
 const mapResourcePromises = new Map()
+const taskRouteRetryPromises = new Map()
 const taskFixedCameraPromises = new Map()
 const taskDetailPromises = new Map()
 const trajectoryRetentionTimers = new Map()
 const MAX_TRAJECTORY_POINTS = 15000
 const TRAJECTORY_RETENTION_MILLIS = 5 * 60 * 1000
+const TASK_ROUTE_RETRY_BASE_MILLIS = 500
 // 保护 BFF 摘要中的权威状态字段；摘要缺失的地图和路径由详情补充。
 const TASK_SUMMARY_FIELDS = [
   'taskId', 'workflowInstanceId', 'name', 'executionMode', 'expectedDurationSeconds',
@@ -117,6 +119,7 @@ const mutations = {
   } = {}) {
     state.overviewRevision++;
     mapResourcePromises.clear();
+    taskRouteRetryPromises.clear();
     state.slamMapList = [];
     state.slamOfRobot = {};
     state.deviceObj = {};
@@ -593,7 +596,11 @@ const actions = {
 
     const taskRoutesResult = await pendingResources.taskRoutes
     if (appliedRevision !== state.overviewRevision) return
-    applyTaskRoutes(state, commit, mapId, fulfilledValue(taskRoutesResult))
+    const taskRoutes = fulfilledValue(taskRoutesResult)
+    applyTaskRoutes(state, commit, mapId, taskRoutes)
+    await retryIncompleteTaskRoutes(state, commit, mapId, taskRoutes, appliedRevision, () =>
+      String(state.globalMapId) === String(mapId)
+      && state.slamMapList.some(item => String(item.id) === String(mapId)))
     if (String(state.globalMapId) !== String(mapId)) {
       await dispatch('loadMapResources', state.globalMapId)
     }
@@ -617,6 +624,8 @@ const actions = {
       : item)
     commit('SET_SLAM_MAP_LIST', maps)
     applyTaskRoutes(state, commit, mapId, taskRoutes)
+    await retryIncompleteTaskRoutes(state, commit, mapId, taskRoutes, revision, () =>
+      String(state.globalMapId) === key && state.slamMapList.some(item => String(item.id) === key))
   },
   /**
    * 完整任务数据只在用户打开任务视频时请求，避免首屏和切图预取回放、设备任务等高成本数据。
@@ -1020,13 +1029,47 @@ function applyTaskRoutes(state, commit, mapId, taskRoutes) {
       commit('SET_TASK_INFO', { ...task, mapId: null, pathPoints: [] })
       commit('SET_TASK_PATH_POINTS', { taskId: task.taskId, data: { mapId: null, pathPoints: [] } })
     })
-    ;(taskRoutes?.items || []).forEach(item => {
-      const previous = getTaskById(state.taskData, item.taskId) || {}
-      commit('SET_TASK_INFO', { ...previous, mapId: item.mapId, pathPoints: item.pathPoints || [] })
-      commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } })
-    })
   }
+  // 降级响应中的 items 都是已成功解析的任务，只做增量更新；仅完整快照允许清理缺失项。
+  ;(taskRoutes?.items || []).forEach(item => {
+    const previous = getTaskById(state.taskData, item.taskId)
+    // 残缺路线不能创建 Overview 未授权或未确认存在的任务，避免任务卡数量随降级子集跳变。
+    if (!routesComplete && !previous) return
+    commit('SET_TASK_INFO', { ...previous, mapId: item.mapId, pathPoints: item.pathPoints || [] })
+    commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } })
+  })
   commit('SET_TASK_ROUTE_RESULT', { mapId, quality: routeQuality, complete: routesComplete })
+}
+
+/**
+ * 路线查询失败或降级时只退避重试一次；同一资源版本和地图复用同一个重试请求。
+ * 地图底图已经在重试前提交，因此这里不会重新阻塞首屏展示。
+ */
+async function retryIncompleteTaskRoutes(state, commit, mapId, taskRoutes, revision, extraGuard = () => true) {
+  if (mapId === undefined || mapId === null || mapId === '' || mapId === 'gis') return
+  if (isCompleteTaskRoutes(taskRouteQuality(taskRoutes))) return
+  const isCurrent = () => revision === state.overviewRevision && extraGuard()
+  if (!isCurrent()) return
+  const retryResult = await requestTaskRouteRetry(mapId, revision, isCurrent)
+  if (!isCurrent()) return
+  applyTaskRoutes(state, commit, mapId, fulfilledValue(retryResult))
+}
+
+function requestTaskRouteRetry(mapId, revision, isCurrent) {
+  const key = `${revision}:${mapId}`
+  let pending = taskRouteRetryPromises.get(key)
+  if (!pending) {
+    const delayMillis = TASK_ROUTE_RETRY_BASE_MILLIS + Math.floor(Math.random() * 300)
+    pending = new Promise(resolve => window.setTimeout(resolve, delayMillis))
+      .then(() => isCurrent()
+        ? settled(getPatrolPanoramaMapTaskRoutes(mapId))
+        : { status: 'cancelled' })
+      .finally(() => {
+        if (taskRouteRetryPromises.get(key) === pending) taskRouteRetryPromises.delete(key)
+      })
+    taskRouteRetryPromises.set(key, pending)
+  }
+  return pending
 }
 
 function mergeOverviewMapResources(overview, mapResources, taskRoutes, previousTasks = {}) {

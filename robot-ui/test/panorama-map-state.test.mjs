@@ -15,7 +15,8 @@ const helpers = {}
 for (const path of [
   'views/bi/js/utils/prefer-live-robot-fields',
   'views/bi/patrol/business/task-equipment',
-  'views/bi/patrol/business/execution-status'
+  'views/bi/patrol/business/execution-status',
+  'views/bi/patrol/monitor/monitor-map'
 ]) {
   helpers[path.split('/').at(-1)] = await import('data:text/javascript;base64,' + Buffer.from(read(path + '.js')).toString('base64'))
 }
@@ -445,6 +446,24 @@ test('首屏规则一致：GPS 默认 GIS，无 GPS 默认首张 SLAM，无地�
   }
 })
 
+test('GIS 首屏不发起无意义的任务路线重试', async () => {
+  let routeCalls = 0
+  const ctx = setup({
+    getPatrolPanoramaOverview: async () => overview([A], {
+      gpsDevices: [{ robotId: 'gps-1' }]
+    }),
+    getPatrolPanoramaMapTaskRoutes: async () => {
+      routeCalls++
+      return routes(A)
+    }
+  })
+
+  await ctx.refresh()
+
+  assert.equal(ctx.state.globalMapId, 'gis')
+  assert.equal(routeCalls, 0)
+})
+
 test('移动设备只按最新定位的 edgeMapId 归属地图，任务地图不参与判定', async () => {
   const robotId = 'robot-current-map'
   const ctx = setup({
@@ -530,6 +549,42 @@ test('无法唯一映射 edgeMapId 时不猜测地图，固定摄像头仍按配
   await ctx.refresh()
   assert.deepEqual(ctx.state.slamOfRobot[A].robots.map(item => item.robotId), ['camera'])
   assert.equal(ctx.state.slamOfRobot[B].robots.length, 0)
+})
+
+test('实时监控将设备 edgeMapId 转换为中心地图 id，且定位优先于任务路线', () => {
+  const { resolveMonitorRobotSlamMapId } = helpers['monitor-map']
+  const maps = [
+    { id: A, edgeMapId: 'edge-' + A },
+    { id: B, edgeMapId: 'edge-' + B }
+  ]
+  const resolved = resolveMonitorRobotSlamMapId({
+    robotId: 'robot-1',
+    robotBaseInfo: { 'robot-1': { robotId: 'robot-1', runningTaskId: 'task-1' } },
+    robotLocation: { 'robot-1': { mapId: 'edge-' + B, localized: true, x: 1, y: 2 } },
+    slamMapList: maps,
+    slamOfRobot: {},
+    taskPathPoints: { 'task-1': { mapId: A } },
+    taskData: {}
+  })
+  assert.equal(resolved, B)
+})
+
+test('实时监控无法使用定位时回退任务地图，重复 edgeMapId 不猜测', () => {
+  const { resolveMonitorRobotSlamMapId } = helpers['monitor-map']
+  const maps = [
+    { id: A, edgeMapId: 'edge-duplicate' },
+    { id: B, edgeMapId: 'edge-duplicate' }
+  ]
+  const resolved = resolveMonitorRobotSlamMapId({
+    robotId: 'robot-1',
+    robotBaseInfo: { 'robot-1': { robotId: 'robot-1', runningTaskId: 'task-1' } },
+    robotLocation: { 'robot-1': { mapId: 'edge-duplicate', localized: true, x: 1, y: 2 } },
+    slamMapList: maps,
+    slamOfRobot: {},
+    taskPathPoints: {},
+    taskData: { 'task-1': { mapId: B } }
+  })
+  assert.equal(resolved, B)
 })
 
 test('停用摄像头不进入 SLAM 地图，启停更新同步地图列表', async () => {
@@ -693,7 +748,7 @@ test('资源局部失败不切图，普通 Overview 失败保留既有地图和�
   assert.equal(ctx.state.slamMapList, previous)
 })
 
-test('地图任务路径降级时忽略残缺子集并保留上一份完整映射', async () => {
+test('地图任务路径降级时增量更新成功项并保留未返回的完整映射', async () => {
   let degraded = false
   const taskOverview = () => overview([A], { tasks: [
     { taskId: 'p1', equipmentList: [] },
@@ -721,13 +776,13 @@ test('地图任务路径降级时忽略残缺子集并保留上一份完整映�
   await ctx.refresh()
 
   assert.deepEqual(Object.values(ctx.state.taskData).map(task => task.mapId), [A, A])
-  assert.equal(ctx.state.taskData.p1.pathPoints[0].pointId, 'p1')
+  assert.equal(ctx.state.taskData.p1.pathPoints[0].pointId, 'partial')
   assert.equal(ctx.state.taskData.p2.pathPoints[0].pointId, 'p2')
   assert.equal(ctx.state.dataQuality.taskRoutes.degraded, true)
   assert.equal(ctx.state.taskRouteMapsReady[A], true)
 })
 
-test('首次地图路径即降级时不展示局部任务数', async () => {
+test('首次地图路径即降级时应用成功项但仍保持未就绪状态', async () => {
   const ctx = setup({
     getPatrolPanoramaOverview: async () => overview([A], {
       tasks: [{ taskId: 'p1', equipmentList: [] }, { taskId: 'p2', equipmentList: [] }]
@@ -741,13 +796,87 @@ test('首次地图路径即降级时不展示局部任务数', async () => {
 
   await ctx.refresh()
 
-  assert.equal(ctx.state.taskData.p1.mapId, undefined)
+  assert.equal(ctx.state.taskData.p1.mapId, A)
   assert.equal(ctx.state.taskData.p2.mapId, undefined)
   assert.equal(ctx.state.taskRouteMapsReady[A], undefined)
   const component = compile('views/bi/patrol/panorama/Left.vue')
   assert.equal(component.computed.taskRoutesReady.call({
     isGisMap: false, globalMapId: A, taskRouteMapsReady: ctx.state.taskRouteMapsReady
   }), false)
+})
+
+test('降级地图路线不能创建 Overview 中不存在的任务卡', async () => {
+  const ctx = setup({
+    getPatrolPanoramaOverview: async () => overview([A], { tasks: [] }),
+    getPatrolPanoramaMapTaskRoutes: async () => ({
+      mapId: A,
+      items: [{ taskId: 'partial-only', mapId: A, pathPoints: [] }],
+      dataQuality: { tasks: { complete: false, degraded: true, reasonCodes: ['TASK_QUERY_CONCURRENCY_LIMIT'] } }
+    })
+  })
+
+  await ctx.refresh()
+
+  assert.equal(ctx.state.taskData['partial-only'], undefined)
+  assert.equal(ctx.state.taskPathPoints['partial-only'], undefined)
+})
+
+test('地图任务路径首次降级时只退避重试一次并恢复完整快照', async () => {
+  let calls = 0
+  const ctx = setup({
+    getPatrolPanoramaOverview: async () => overview([A], {
+      tasks: [{ taskId: 'p1', equipmentList: [] }, { taskId: 'p2', equipmentList: [] }]
+    }),
+    getPatrolPanoramaMapTaskRoutes: async () => {
+      calls++
+      if (calls === 1) {
+        return {
+          mapId: A,
+          items: [{ taskId: 'p1', mapId: A, pathPoints: [{ pointId: 'partial' }] }],
+          dataQuality: { tasks: { complete: false, degraded: true, reasonCodes: ['TASK_QUERY_CONCURRENCY_LIMIT'] } }
+        }
+      }
+      return {
+        mapId: A,
+        items: ['p1', 'p2'].map(taskId => ({ taskId, mapId: A, pathPoints: [{ pointId: taskId }] })),
+        dataQuality: { tasks: { complete: true, degraded: false, reasonCodes: [] } }
+      }
+    }
+  })
+
+  await ctx.refresh()
+
+  assert.equal(calls, 2)
+  assert.equal(ctx.state.taskRouteMapsReady[A], true)
+  assert.equal(ctx.state.taskData.p1.pathPoints[0].pointId, 'p1')
+  assert.equal(ctx.state.taskData.p2.pathPoints[0].pointId, 'p2')
+  assert.equal(ctx.state.dataQuality.taskRoutes.degraded, false)
+})
+
+test('任务路线退避期间切图后不再查询旧地图', async () => {
+  const firstRoutes = deferred()
+  const routeCalls = []
+  const ctx = setup({
+    getPatrolPanoramaOverview: async () => overview([A, B]),
+    getPatrolPanoramaMapTaskRoutes: async mapId => {
+      routeCalls.push(mapId)
+      if (mapId === A) return firstRoutes.promise
+      return routes(mapId)
+    }
+  })
+
+  const loading = ctx.refresh()
+  await tick()
+  await ctx.dispatch('setGlobalMapId', B)
+  firstRoutes.resolve({
+    mapId: A,
+    items: [],
+    dataQuality: { tasks: { complete: false, degraded: true, reasonCodes: ['TASK_QUERY_CONCURRENCY_LIMIT'] } }
+  })
+  await loading
+
+  assert.equal(ctx.state.globalMapId, B)
+  assert.equal(routeCalls.filter(mapId => mapId === A).length, 1)
 })
 
 test('完整地图路径快照会移除已不属于当前地图的旧归属', async () => {

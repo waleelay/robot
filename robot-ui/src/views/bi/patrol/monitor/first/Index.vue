@@ -24,12 +24,19 @@
           </div>
         </div>
         <div class="flex1 mt10 h100 slam-map-wrap">
-          <GlobalGisMap v-if="globalMapId === 'gis'" />
           <GlobalSlamMap
-            v-if="globalMapId && globalMapId !== 'gis'"
+            v-if="slamMapPayload"
             :map="slamMapPayload"
             :show-labels="true"
             :enable-add-point="false"
+          />
+          <GlobalGisMap v-else-if="globalMapId === 'gis'" />
+          <Empty
+            v-else
+            width="126px"
+            :opacity="0.7"
+            textColor="#BEE1FF"
+            :text="targetRobotId ? '当前设备暂无地图归属' : '暂无可用地图'"
           />
         </div>
       </div>
@@ -72,9 +79,11 @@ import MultimediaDetail from '../second/components/MultimediaDetail.vue'
 import { mapActions, mapState } from 'vuex'
 import GlobalGisMap from '../../../gis/globalMap/GlobalGisMap.vue';
 import GlobalSlamMap from '../../../gis/globalMap/slam/GlobalSlamMap.vue';
+import Empty from '../../../components/Empty.vue'
+import { resolveMonitorRobotSlamMapId, resolveSlamMapReference } from '../monitor-map.js'
 export default {
   name: 'BiPatrolMonitor',
-  components: { TaskListTree, LeftVideo, Snapshot, MultimediaDetail, GlobalGisMap, GlobalSlamMap },
+  components: { TaskListTree, LeftVideo, Snapshot, MultimediaDetail, GlobalGisMap, GlobalSlamMap, Empty },
   props: {
     prefixId: {
       type: String,
@@ -98,7 +107,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['globalMapId', 'slamMapList', 'slamOfRobot', 'robotBaseInfo', 'taskPathPoints', 'taskData']),
+    ...mapState('websocketExtraData', ['globalMapId', 'slamMapList', 'slamOfRobot', 'robotBaseInfo', 'robotLocation', 'taskPathPoints', 'taskData']),
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
     },
@@ -126,19 +135,17 @@ export default {
     targetRobotId() {
       return this.firstSelectedRobotId || this.firstOnlineRobotId
     },
-    // 小窗口当前是否为 SLAM（GIS 时选中任务不切图）
-    isSlamWindow() {
-      return !!(this.globalMapId && this.globalMapId !== 'gis')
-    },
     selectedTaskMapId() {
-      if (!this.isSlamWindow) return null
       return this.resolveTaskSlamMapId(this.selectedTaskId)
     },
     // 目标装备对应的 SLAM 地图 id；选中任务时优先任务关联地图
     currentSlamMapId() {
       if (this.selectedTaskMapId) return this.selectedTaskMapId
-      if (!this.targetRobotId) return null
-      return this.resolveRobotSlamMapId(this.targetRobotId)
+      const robotMapId = this.resolveRobotSlamMapId(this.targetRobotId)
+      if (robotMapId) return robotMapId
+      return this.globalMapId === 'gis'
+        ? null
+        : resolveSlamMapReference(this.slamMapList, this.globalMapId, false)
     },
     currentSlamMap() {
       const id = this.currentSlamMapId
@@ -174,33 +181,26 @@ export default {
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
     ...mapActions('websocketRobot', ['stopCamera', 'setSelectedRobotId']),
-    // 解析装备关联的 SLAM 地图：直接 mapId > 任务 mapId > slamOfRobot 归属
+    // 任务路线只是设备地图归属的兜底，定位可用时不依赖任务路线。
     resolveRobotSlamMapId(robotId) {
-      if (robotId === undefined || robotId === null || robotId === '') return null
-      const robot = this.robotBaseInfo?.[robotId] || {}
-      const directMapId = robot.mapId ?? robot.location?.mapId
-      if (directMapId !== undefined && directMapId !== null && directMapId !== '') return directMapId
-
-      const taskId = robot.runningTaskId
-      if (taskId !== undefined && taskId !== null && taskId !== '') {
-        const taskMapId = this.taskPathPoints?.[taskId]?.mapId ?? this.taskData?.[taskId]?.mapId
-        if (taskMapId !== undefined && taskMapId !== null && taskMapId !== '') return taskMapId
-      }
-
-      const targetId = String(robotId)
-      for (const [mapId, group] of Object.entries(this.slamOfRobot || {})) {
-        if (group?.robots?.some(item => String(item.robotId) === targetId)) {
-          return mapId
-        }
-      }
-      return null
+      return resolveMonitorRobotSlamMapId({
+        robotId,
+        robotBaseInfo: this.robotBaseInfo,
+        robotLocation: this.robotLocation,
+        slamMapList: this.slamMapList,
+        slamOfRobot: this.slamOfRobot,
+        taskPathPoints: this.taskPathPoints,
+        taskData: this.taskData
+      })
     },
     resolveTaskSlamMapId(taskId) {
       if (taskId === undefined || taskId === null || taskId === '') return null
       const task = this.taskData?.[taskId] || this.taskData?.[String(taskId)] || {}
-      if (task.mapId !== undefined && task.mapId !== null && task.mapId !== '') return task.mapId
+      const taskMapId = resolveSlamMapReference(this.slamMapList, task.mapId)
+      if (taskMapId) return taskMapId
       const path = this.taskPathPoints?.[taskId] || this.taskPathPoints?.[String(taskId)]
-      if (path?.mapId !== undefined && path.mapId !== null && path.mapId !== '') return path.mapId
+      const pathMapId = resolveSlamMapReference(this.slamMapList, path?.mapId)
+      if (pathMapId) return pathMapId
       const robotId = (task.equipmentList || [])[0]?.robotId || (task.equipmentList || [])[0]?.id
       return this.resolveRobotSlamMapId(robotId)
     },
