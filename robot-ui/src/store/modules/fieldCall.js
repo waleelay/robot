@@ -173,7 +173,7 @@ const actions = {
     commit('SET_OPERATION_PENDING', false);
   },
 
-  async activateFieldCall({ commit, dispatch }, payload) {
+  async activateFieldCall({ commit, dispatch, state }, payload) {
     const callRaw = payload.call || {};
     const sessionInfo = payload.session || {};
     const callId = callRaw.callId || payload.callId;
@@ -181,8 +181,9 @@ const actions = {
       ...normalizeIncoming(callRaw),
       callId,
       sessionId: sessionInfo.roomName || callRaw.roomName,
-      videoEnabled: false,
-      videoLoading: false,
+      // 现场视频呼叫接听后直接进视频态，不展示装备类型图标的音频条。
+      videoEnabled: true,
+      videoLoading: true,
       micMuted: false,
       speakerMuted: false,
       connectedAtEpochMillis: Date.now()
@@ -194,7 +195,9 @@ const actions = {
         livekitUrl: sessionInfo.livekitUrl,
         token: sessionInfo.token
       });
-      commit('UPDATE_ACTIVE', { videoLoading: false });
+      const session = state.sessions && state.sessions[callId];
+      const hasTrack = Boolean(session && session.remoteVideoTrack);
+      commit('UPDATE_ACTIVE', { videoLoading: !hasTrack });
     } catch (err) {
       console.error('[fieldCall] livekit', err);
       Message.error(err.message || '现场通话连接失败');
@@ -346,7 +349,7 @@ function normalizeIncoming(call) {
     ...call,
     source: 'mobile-app',
     cameraKey: cameraKeyForCall(call.callId),
-    reason: call.reason || '现场 App 邀请你进行视频通话'
+    reason: call.reason || '邀请你进行视频通话'
   };
 }
 

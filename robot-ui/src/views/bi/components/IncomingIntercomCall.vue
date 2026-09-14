@@ -37,11 +37,22 @@
         </div>
       </header>
 
-      <div v-if="callMode === 'ringing'" class="compact-call-content">
-        <img class="robot-illustration" src="@/assets/images/new-bi/car.png" width="78" height="78" alt="">
+      <div
+        v-if="callMode === 'ringing'"
+        class="compact-call-content"
+        :class="{ 'is-field-call': isFieldCall }"
+      >
+        <img
+          v-if="!isFieldCall"
+          class="robot-illustration"
+          src="@/assets/images/new-bi/car.png"
+          width="78"
+          height="78"
+          alt=""
+        >
         <div class="compact-call-info ml5">
           <span class="name text-ellipsis" :title="robotName">{{ robotName }}</span>
-          <span class="desc mt10">{{ ringingDescription }}</span>
+          <span class="desc mt10 text-ellipsis" :title="ringingDescription">{{ ringingDescription }}</span>
         </div>
         <div class="compact-call-actions incoming-actions ml13">
           <button
@@ -65,11 +76,22 @@
         </div>
       </div>
 
-      <div v-else-if="callMode === 'audio'" class="compact-call-content">
-        <img class="robot-illustration" src="@/assets/images/new-bi/car.png" width="78" height="78" alt="">
+      <div
+        v-else-if="callMode === 'audio'"
+        class="compact-call-content"
+        :class="{ 'is-field-call': isFieldCall }"
+      >
+        <img
+          v-if="!isFieldCall"
+          class="robot-illustration"
+          src="@/assets/images/new-bi/car.png"
+          width="78"
+          height="78"
+          alt=""
+        >
         <div class="compact-call-info ml5">
           <span class="name text-ellipsis" :title="robotName">{{ robotName }}</span>
-          <span class="desc mt10">{{ formattedDuration }}</span>
+          <span class="desc mt10 text-ellipsis" :title="formattedDuration">{{ formattedDuration }}</span>
         </div>
         <div class="compact-call-actions audio-actions ml13">
           <button
@@ -887,6 +909,11 @@ button:disabled {
   min-height: 102px;
   padding: 12px 10px 12px 14px;
   box-sizing: border-box;
+
+  // 现场 App 无装备图标：勿再占 78px 首列，否则文案被挤窄换行
+  &.is-field-call {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
 }
 
 .robot-illustration {
@@ -911,6 +938,9 @@ button:disabled {
     color: #d7edff;
     font-size: 14px;
     line-height: 17.517px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 }
 
