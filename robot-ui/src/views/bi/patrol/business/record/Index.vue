@@ -157,7 +157,7 @@
           <div class="box">
             <div class="top m10 flx-justify-between">
               <div class="title ml10">执行视频结果</div>
-              <div class="close mr10" @click="videosVisible = false">
+              <div class="close mr10 wp20 hp20 tac" @click="videosVisible = false">
                 <svg-icon icon-class="close" />
               </div>
             </div>

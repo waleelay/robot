@@ -32,7 +32,7 @@
         <div class="line-left"></div> -->
         <div class="top m4 flx-justify-between" style="position: relative; z-index: 2">
           <div class="title ml10">告警信息</div>
-          <div class="close mr10" @click="close">
+          <div class="close mr10 wp20 hp20 tac" @click="close">
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>

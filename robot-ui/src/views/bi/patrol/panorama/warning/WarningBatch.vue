@@ -18,7 +18,7 @@
       <div class="box" :class="{ 'is-simple': simpleMode }">
         <div class="top m4 flx-justify-between">
           <div class="title ml10">告警快速处理列表</div>
-          <div class="close mr10" @click="close">
+          <div class="close mr10 wp20 hp20 tac" @click="close">
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>

@@ -17,7 +17,7 @@
       <div class="box">
         <div class="top m4 flx-justify-between">
           <div class="title ml10">{{ currentTitle }}</div>
-          <div class="close mr10" @click="handleCancel">
+          <div class="close mr10 wp20 hp20 tac" @click="handleCancel">
             <svg-icon icon-class="close" />
           </div>
         </div>

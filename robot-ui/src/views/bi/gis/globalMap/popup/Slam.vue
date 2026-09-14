@@ -7,7 +7,7 @@
     <div class="box wp446 hp365">
       <div class="top m4 flx-justify-between">
         <div class="title ml10">SLAM地图</div>
-        <div class="close mr10" @click="visible = false">
+        <div class="close mr10 wp20 hp20 tac" @click="visible = false">
           <svg-icon icon-class="close"></svg-icon>
         </div>
       </div>

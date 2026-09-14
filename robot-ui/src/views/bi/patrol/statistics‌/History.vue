@@ -16,7 +16,7 @@
         <div class="box">
           <div class="top m10 flx-justify-between">
             <div class="title ml10">历史报告列表</div>
-            <div class="close mr10" @click="dialogVisible = false">
+            <div class="close mr10 wp20 hp20 tac" @click="dialogVisible = false">
               <svg-icon icon-class="close"></svg-icon>
             </div>
           </div>

@@ -16,7 +16,7 @@
       <div class="box">
         <div class="top m4 flx-justify-between">
           <div class="title ml10">多媒体详情</div>
-          <div class="close mr10" @click="close">
+          <div class="close mr10 wp20 hp20 tac" @click="close">
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>

@@ -1078,6 +1078,7 @@ export default {
               }
               .img {
                 position: relative;
+                cursor: pointer;
                 .img-placeholder {
                   width: 100%;
                   height: 100%;

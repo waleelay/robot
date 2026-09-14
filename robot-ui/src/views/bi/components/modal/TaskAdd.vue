@@ -17,7 +17,7 @@
         <div class="box">
           <div class="top m4 flx-justify-between">
             <div class="title ml10">添加新任务</div>
-            <div class="close mr10" @click="dialogVisible = false">
+            <div class="close mr10 wp20 hp20 tac" @click="dialogVisible = false">
               <svg-icon icon-class="close"></svg-icon>
             </div>
           </div>

@@ -9,7 +9,7 @@
           <div class="title ml10">{{ currenRobot?.name || '-' }}</div>
           <div v-if="!isFixedCamera" class="status ml10" :class="currenRobot?.statusClass || ''">{{ currenRobot?.customStatusName || currenRobot?.status || '-' }}</div>
         </div>
-        <div class="close mr10" @click="onClose()">
+        <div class="close mr10 wp20 hp20 tac" @click="onClose()">
           <svg-icon icon-class="close"></svg-icon>
         </div>
       </div>

@@ -19,7 +19,7 @@
       <div class="box">
         <div class="top m4 flx-justify-between">
           <div class="title ml10">{{ dialogTitle }}</div>
-          <div class="close mr10" @click="close">
+          <div class="close mr10 wp20 hp20 tac" @click="close">
             <svg-icon icon-class="close" />
           </div>
         </div>

@@ -219,7 +219,8 @@ export default {
       dragState: null,
       resizeState: null,
       resizeEdges: RESIZE_EDGES,
-      hangupPending: false
+      hangupPending: false,
+      _ringtone: null
     }
   },
   computed: {
@@ -335,6 +336,10 @@ export default {
       const seconds = totalSeconds % 60
       const mmss = `${this.pad(minutes)}:${this.pad(seconds)}`
       return hours > 0 ? `${this.pad(hours)}:${mmss}` : mmss
+    },
+    /** 振铃中（有来电窗且尚未接听） */
+    isRinging() {
+      return Boolean(this.displayCall) && this.callMode === 'ringing'
     }
   },
   watch: {
@@ -347,6 +352,18 @@ export default {
     callMode() {
       this.positionWindow()
       this.attachVideoTrack()
+      this.syncRingtone()
+    },
+    isRinging: {
+      immediate: true,
+      handler() {
+        this.syncRingtone()
+      }
+    },
+    displayCall(next, prev) {
+      if (prev && !next) {
+        this.playHangupTone()
+      }
     },
     remoteVideoTrack(next, previous) {
       const video = this.$refs.callVideo
@@ -359,12 +376,14 @@ export default {
     window.addEventListener('pointermove', this.onPointerMove)
     window.addEventListener('pointerup', this.onPointerUp)
     window.addEventListener('pointercancel', this.onPointerUp)
+    this.syncRingtone()
   },
   beforeDestroy() {
     window.clearInterval(this.timer)
     window.removeEventListener('pointermove', this.onPointerMove)
     window.removeEventListener('pointerup', this.onPointerUp)
     window.removeEventListener('pointercancel', this.onPointerUp)
+    this.stopRingtone()
     const video = this.$refs.callVideo
     if (this.remoteVideoTrack && video && typeof this.remoteVideoTrack.detach === 'function') {
       this.remoteVideoTrack.detach(video)
@@ -391,6 +410,59 @@ export default {
       'enableFieldVideo',
       'disableFieldVideo'
     ]),
+    syncRingtone() {
+      if (this.isRinging) {
+        this.startRingtone()
+      } else {
+        this.stopRingtone()
+      }
+    },
+    startRingtone() {
+      if (this._ringtone && !this._ringtone.paused) return
+      try {
+        if (!this._ringtone) {
+          // eslint-disable-next-line global-require
+          const src = require('@/assets/sounds/ring_incoming.wav')
+          this._ringtone = new Audio(src)
+          this._ringtone.loop = true
+          this._ringtone.volume = 0.85
+        }
+        const play = this._ringtone.play()
+        if (play && typeof play.catch === 'function') {
+          play.catch(err => {
+            console.warn('[incoming-call] ringtone play blocked', err)
+          })
+        }
+      } catch (err) {
+        console.warn('[incoming-call] ringtone start failed', err)
+      }
+    },
+    stopRingtone() {
+      if (!this._ringtone) return
+      try {
+        this._ringtone.pause()
+        this._ringtone.currentTime = 0
+      } catch (err) {
+        // ignore
+      }
+    },
+    playHangupTone() {
+      this.stopRingtone()
+      try {
+        // eslint-disable-next-line global-require
+        const src = require('@/assets/sounds/call_hangup.wav')
+        const audio = new Audio(src)
+        audio.volume = 0.9
+        const play = audio.play()
+        if (play && typeof play.catch === 'function') {
+          play.catch(err => {
+            console.warn('[incoming-call] hangup tone blocked', err)
+          })
+        }
+      } catch (err) {
+        console.warn('[incoming-call] hangup tone failed', err)
+      }
+    },
     pad(value) {
       return String(value).padStart(2, '0')
     },
@@ -507,6 +579,7 @@ export default {
     },
     accept() {
       if (!this.currentCall) return
+      this.stopRingtone()
       if (this.currentCall.source === 'mobile-app') {
         this.acceptFieldCall(this.currentCall.callId)
         return
@@ -515,6 +588,7 @@ export default {
     },
     reject() {
       if (!this.currentCall) return
+      this.stopRingtone()
       if (this.currentCall.source === 'mobile-app') {
         this.rejectFieldCall(this.currentCall.callId)
         return
@@ -531,6 +605,7 @@ export default {
     async hangup() {
       if (this.hangupPending) return
       this.hangupPending = true
+      this.playHangupTone()
       const video = this.$refs.callVideo
       if (this.remoteVideoTrack && video && typeof this.remoteVideoTrack.detach === 'function') {
         this.remoteVideoTrack.detach(video)
