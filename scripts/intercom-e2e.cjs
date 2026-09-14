@@ -5,7 +5,7 @@ const https = require('node:https')
 const mqtt = require('../robot-ui/node_modules/mqtt')
 const WebSocket = require('../robot-ui/node_modules/ws')
 
-const centerHost = process.env.CENTER_HOST || '192.168.124.234'
+const centerHost = process.env.CENTER_HOST || '192.168.124.23'
 const centerPort = Number(process.env.CENTER_HTTPS_PORT || 4443)
 const mqttUrl = process.env.MQTT_URL || 'mqtt://192.168.124.235:1884'
 const primaryRobotId = process.env.ROBOT_ID || 'test111'

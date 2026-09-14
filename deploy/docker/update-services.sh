@@ -14,7 +14,7 @@
 #   sh deploy/docker/update-services.sh
 #
 # 可覆盖配置（环境变量）：
-#   UPDATE_SERVER        服务器地址，默认 192.168.124.234
+#   UPDATE_SERVER        服务器地址，默认 192.168.124.23
 #   UPDATE_SSH_USER      SSH 用户，默认 root
 #   UPDATE_SSH_PORT      SSH 端口，默认 22
 #   UPDATE_INSTALL_DIR   compose 安装目录，默认 /data/robot-mediaserver-installer-amd64-20260719220656
@@ -31,7 +31,7 @@
 set -euo pipefail
 
 # ---------- 配置 ----------
-UPDATE_SERVER="${UPDATE_SERVER:-192.168.124.234}"
+UPDATE_SERVER="${UPDATE_SERVER:-192.168.124.23}"
 UPDATE_SSH_USER="${UPDATE_SSH_USER:-root}"
 UPDATE_SSH_PORT="${UPDATE_SSH_PORT:-22}"
 UPDATE_INSTALL_DIR="${UPDATE_INSTALL_DIR:-/data/robot-mediaserver-installer-amd64-20260719220656}"

@@ -1,6 +1,6 @@
 <template>
   <div class="map-preview-box w100 h100">
-    <!-- <img class="map-preview-image" :src="`http://192.168.124.234:8867/api/v1/management/maps/1/preview-image`" alt="地图预览" style="width: 100%; height: 100%;" /> -->
+    <!-- <img class="map-preview-image" :src="`http://192.168.124.23:8867/api/v1/management/maps/1/preview-image`" alt="地图预览" style="width: 100%; height: 100%;" /> -->
     <template v-if="hasPreview">
       <div class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #CDCDCD;">
         <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
