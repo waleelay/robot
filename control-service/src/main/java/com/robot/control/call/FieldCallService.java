@@ -7,6 +7,7 @@ import com.robot.control.config.DateTimeConfig;
 import com.robot.control.ws.MediaWebSocketPublisher;
 import com.robot.media.common.video.CreateFieldCallRequest;
 import com.robot.media.common.video.FieldCallResponse;
+
 import java.io.IOException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -32,7 +34,9 @@ public class FieldCallService {
 
     private static final Logger log = LoggerFactory.getLogger(FieldCallService.class);
     private static final int DEFAULT_TIMEOUT_SECONDS = 30;
-    /** App 信令短暂断线（JWT 续期重连 / 弱网）时，保留通话的宽限秒数。 */
+    /**
+     * App 信令短暂断线（JWT 续期重连 / 弱网）时，保留通话的宽限秒数。
+     */
     private static final int APP_DISCONNECT_GRACE_SECONDS = 45;
 
     private final Map<String, Call> calls = new ConcurrentHashMap<>();
@@ -329,12 +333,12 @@ public class FieldCallService {
         data.put("callId", call.callId);
         data.put("source", "mobile-app");
         data.put("displayName", call.displayName);
-        data.put("robotName", "现场 App · " + call.displayName);
+        data.put("robotName", call.displayName);
         data.put("robotId", "app-" + call.appUserId);
         data.put("deviceId", "phone-camera");
         data.put("cameraId", "phone-camera");
         data.put("cameraName", "手机摄像头");
-        data.put("reason", "现场 App 邀请你进行视频通话");
+        data.put("reason", call.displayName + "邀请你进行视频通话");
         data.put("status", call.status.name());
         data.put("expiresAt", DateTimeConfig.format(call.expiresAt));
         data.put("expiresAtEpochMillis", call.expiresAt.toInstant().toEpochMilli());
@@ -390,7 +394,9 @@ public class FieldCallService {
         private String livekitUrl;
         private String message;
         private WebSocketSession appSession;
-        /** 非空表示 App 信令已断，等待宽限内重连。 */
+        /**
+         * 非空表示 App 信令已断，等待宽限内重连。
+         */
         private OffsetDateTime appDisconnectAt;
     }
 }
