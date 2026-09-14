@@ -3,7 +3,7 @@
     <div class="message flx-align-center">
       <svg-icon icon-class="warning" class="warning-icon" />
       <span v-if="showTaskSelection" class="message-text ml10">
-        {{ messagePrefix }}<span class="message-nowrap">{{ messageHighlight }}</span>{{ messageSuffix }}
+        {{ message }}
       </span>
       <span v-else class="message-text ml10">{{ message }}</span>
     </div>
@@ -27,6 +27,18 @@
           </div>
         </div>
         <div
+          v-if="canResume"
+          class="task-option curp"
+          :class="{ 'is-active': selectedTaskAction === 'resume' }"
+          @click="$emit('update:selectedTaskAction', 'resume')"
+        >
+          <img src="@/assets/images/new-bi/play-b.svg" alt="" width="46" height="46">
+          <div class="task-option-text">
+            <div class="task-option-name">{{ resumeTaskName }}</div>
+            <div class="task-option-desc">{{ resumeTaskDesc }}</div>
+          </div>
+        </div>
+        <div
           v-if="canTerminate"
           class="task-option curp"
           :class="{ 'is-active': selectedTaskAction === 'terminate' }"
@@ -39,7 +51,7 @@
           </div>
         </div>
       </div>
-      <div v-if="!canPause && !canTerminate" class="permission-hint mt10">当前任务暂无可用操作</div>
+      <div v-if="!canPause && !canResume && !canTerminate" class="permission-hint mt10">当前任务暂无可用操作</div>
     </div>
 
     <div class="btns mt22">
@@ -59,12 +71,11 @@
 
 <script>
 const TEXT = {
-  messagePrefix: '\u7acb\u5373\u63a5\u7ba1\u524d\uff0c\u8bf7',
-  messageHighlight: '\u6682\u505c\u6216\u7ec8\u6b62',
-  messageSuffix: '\u5f53\u524d\u4efb\u52a1',
   taskSectionTitle: '\u9009\u62e9\u8981\u5904\u7406\u7684\u4efb\u52a1',
   pauseTaskName: '\u6682\u505c\u4efb\u52a1',
   pauseTaskDesc: '\u6682\u505c\u5f53\u524d\u6267\u884c\u4efb\u52a1',
+  resumeTaskName: '\u6062\u590d\u4efb\u52a1',
+  resumeTaskDesc: '\u6062\u590d\u5f53\u524d\u6682\u505c\u4efb\u52a1',
   terminateTaskName: '\u7ec8\u6b62\u4efb\u52a1',
   terminateTaskDesc: '\u7ec8\u6b62\u5f53\u524d\u6267\u884c\u4efb\u52a1',
   cancelText: '\u53d6\u6d88',
@@ -98,6 +109,10 @@ export default {
       type: Boolean,
       default: false
     },
+    canResume: {
+      type: Boolean,
+      default: false
+    },
     canTerminate: {
       type: Boolean,
       default: false
@@ -127,10 +142,6 @@ export default {
     color: #FFF;
     font-family: "Microsoft YaHei";
     font-size: 16px;
-  }
-
-  .message-nowrap {
-    white-space: nowrap;
   }
 
   .task-section {

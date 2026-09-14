@@ -7,14 +7,14 @@
         <svg-icon icon-class="control" class="status-icon" />
       </div>
     </div>
-    <div v-if="isRunningTask" class="status-actions flx-align-center">
+    <div v-if="hasActiveTask" class="status-actions flx-align-center">
       <div class="mode-action-btn curp flx-center" @click="$emit('takeover')">立即接管</div>
     </div>
   </div>
 </template>
 
 <script>
-import { isRunningTaskStatus, taskExecutionStatus } from '../../../business/execution-status'
+import { isActiveTaskStatus, isRunningTaskStatus, taskExecutionStatus } from '../../../business/execution-status'
 
 export default {
   name: 'ControlModeActions',
@@ -34,6 +34,9 @@ export default {
     }
   },
   computed: {
+    hasActiveTask() {
+      return isActiveTaskStatus(taskExecutionStatus(this.taskPlan))
+    },
     isRunningTask() {
       return isRunningTaskStatus(taskExecutionStatus(this.taskPlan))
     }

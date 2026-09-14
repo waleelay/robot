@@ -10,6 +10,9 @@ const helper = async path => import('data:text/javascript;base64,' + Buffer.from
 const executionStatus = await helper('views/bi/patrol/business/execution-status.js')
 const planState = await helper('views/bi/patrol/business/task-plan-state.js')
 const calls = []
+const modeCalls = []
+const modeResponses = []
+const releaseCalls = []
 const taskApi = {
   pauseTaskRecord: async id => { calls.push(['pause', id]); return { accepted: true } },
   resumeTaskRecord: async id => { calls.push(['resume', id]); return { accepted: true } },
@@ -50,7 +53,13 @@ function javascriptModule(path) {
     require: name => {
       if (name === 'vuex') return { mapActions: () => ({}), mapState: () => ({}) }
       if (name.endsWith('execution-status')) return executionStatus
-      if (name.endsWith('api/media')) return {}
+      if (name.endsWith('api/media')) return {
+        releaseControl: async (...args) => { releaseCalls.push(args) },
+        setControlMode: async data => {
+          modeCalls.push(data)
+          return modeResponses.shift() || { status: 'PUBLISHED' }
+        }
+      }
       return {}
     }
   })
@@ -86,17 +95,32 @@ test('远程控制从完整任务计划读取动作和活动实例，历史实�
   await assert.rejects(ctx.runTaskAction('terminate'), /缺少执行记录标识/)
   assert.deepEqual(calls, [['pause', 'active1']])
 })
-test('远程控制状态只按任务是否执行中展示，立即接管仅在执行中出现', () => {
+test('远程控制状态只按 executionStatus 展示，活动任务保留立即接管入口', () => {
   const context = { taskPlan: { executionStatus: 'RUNNING' } }
   assert.equal(buttons.computed.isRunningTask.call(context), true)
+  assert.equal(buttons.computed.hasActiveTask.call(context), true)
   context.taskPlan.executionStatus = 'PAUSED'
   assert.equal(buttons.computed.isRunningTask.call(context), false)
+  assert.equal(buttons.computed.hasActiveTask.call(context), true)
   context.taskPlan = null
   assert.equal(buttons.computed.isRunningTask.call(context), false)
+  assert.equal(buttons.computed.hasActiveTask.call(context), false)
   const template = read('views/bi/patrol/monitor/second/components/ControlModeActions.vue').split('<script>')[0]
-  assert.match(template, /v-if="isRunningTask"/)
+  assert.match(template, /v-if="hasActiveTask"/)
   assert.match(template, /@click="\$emit\('takeover'\)"/)
   assert.doesNotMatch(template, /\$emit\('(resume|terminate)'\)/)
+})
+
+test('立即接管按活动任务状态显示暂停或恢复，并始终保留终止', () => {
+  assert.equal(warning.computed.isActiveTask.call({ relatedTaskStatus: 'RUNNING' }), true)
+  assert.equal(warning.computed.isActiveTask.call({ relatedTaskStatus: 'PAUSED' }), true)
+  assert.equal(warning.computed.isActiveTask.call({ relatedTaskStatus: 'WAITING' }), false)
+  const template = read('views/bi/patrol/monitor/second/components/ControlModeWarning.vue').split('<script>')[0]
+  assert.match(template, /:can-pause="isRunningTask && canRunTaskAction\('pause'\)"/)
+  assert.match(template, /:can-resume="isPausedTask && canRunTaskAction\('resume'\)"/)
+  assert.match(template, /:can-terminate="isActiveTask && canRunTaskAction\('terminate'\)"/)
+  const body = read('views/bi/patrol/monitor/second/components/ControlModeWarningBody.vue').split('<script>')[0]
+  assert.match(body, /selectedTaskAction', 'resume'/)
 })
 
 test('暂停确认后等待 PAUSED 再接管，终止只终止任务', async () => {
@@ -120,6 +144,88 @@ test('暂停确认后等待 PAUSED 再接管，终止只终止任务', async () 
   context.selectedTaskAction = 'terminate'
   await context.executeAction()
   assert.deepEqual(order, ['terminate'])
+
+  order.length = 0
+  context.beforeResume = async () => order.push('switch:navigation')
+  context.selectedTaskAction = 'resume'
+  await context.executeAction()
+  assert.deepEqual(order, ['switch:navigation', 'resume'])
+
+  order.length = 0
+  context.beforeResume = async () => { throw new Error('导航模式未确认') }
+  await assert.rejects(context.executeAction(), /导航模式未确认/)
+  assert.deepEqual(order, [])
+
+  context.beforeResume = null
+  await assert.rejects(context.executeAction(), /缺少导航模式切换能力/)
+  assert.deepEqual(order, [])
+})
+
+test('恢复任务前停车、切换导航、等待确认并释放控制权', async () => {
+  modeCalls.length = 0
+  modeResponses.length = 0
+  releaseCalls.length = 0
+  const order = []
+  const session = { robotId: 'robot1', controlSessionId: 'session1' }
+  const context = {
+    ...controlMixin.methods,
+    selectedRobotId: 'robot1',
+    currentControlMode: '手动模式',
+    baseDevice: { deviceId: 'base', deviceType: 'MOBILE_BASE' },
+    manualModePendingUntil: 1,
+    liveRobot: () => ({ robotId: 'robot1', status: 'online', stateSeq: 8 }),
+    baseControlSession: () => session,
+    sendBaseStopRequest: async () => order.push('stop'),
+    waitForControlMode: async mode => order.push(`wait:${mode}`),
+    forgetControlSession: id => order.push(`forget:${id}`)
+  }
+  await context.prepareTaskResume()
+  assert.deepEqual(order, ['stop', 'wait:导航模式', 'forget:session1'])
+  assert.deepEqual(JSON.parse(JSON.stringify(modeCalls)), [{
+    robotId: 'robot1',
+    controlMode: '导航模式',
+    controlSessionId: 'session1',
+    observedStateSeq: 8
+  }])
+  assert.deepEqual(JSON.parse(JSON.stringify(releaseCalls)), [['robot1', 'session1', { reason: 'resume_task' }]])
+  assert.equal(context.manualModePendingUntil, 0)
+})
+
+test('切换导航遇到状态序号变化时使用服务端最新序号重试一次', async () => {
+  modeCalls.length = 0
+  modeResponses.push(
+    { code: 'ROBOT_STATE_CHANGED', latestStateSeq: 9 },
+    { status: 'CONFIRMED' }
+  )
+  const session = { robotId: 'robot1', controlSessionId: 'session1' }
+  const context = {
+    ...controlMixin.methods,
+    selectedRobotId: 'robot1',
+    currentControlMode: '手动模式',
+    baseDevice: { deviceId: 'base', deviceType: 'MOBILE_BASE' },
+    controlSessions: {},
+    manualModePendingUntil: 0,
+    liveRobot: () => ({ robotId: 'robot1', status: 'online', stateSeq: 8 }),
+    baseControlSession: () => session,
+    sendBaseStopRequest: async () => {},
+    forgetControlSession: () => {}
+  }
+  await context.prepareTaskResume()
+  assert.deepEqual(modeCalls.map(item => item.observedStateSeq), [8, 9])
+})
+
+test('恢复任务前无法取得本体控制权时不切模式也不恢复', async () => {
+  modeCalls.length = 0
+  const context = {
+    ...controlMixin.methods,
+    selectedRobotId: 'robot1',
+    currentControlMode: '导航模式',
+    liveRobot: () => ({ robotId: 'robot1', status: 'online', stateSeq: 8 }),
+    baseControlSession: () => null,
+    acquireBaseControlSession: async () => { throw new Error('控制权已被其他终端占用') }
+  }
+  await assert.rejects(context.prepareTaskResume(), /控制权已被其他终端占用/)
+  assert.deepEqual(modeCalls, [])
 })
 
 test('本体方向控制在任务中要求接管，非任务导航模式自动切手动', () => {

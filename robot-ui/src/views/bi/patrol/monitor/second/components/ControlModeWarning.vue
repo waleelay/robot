@@ -30,8 +30,9 @@
             :selected-task-action.sync="selectedTaskAction"
             :confirming="confirming"
             :can-confirm="canConfirm"
-            :can-pause="canRunTaskAction('pause')"
-            :can-terminate="canRunTaskAction('terminate')"
+            :can-pause="isRunningTask && canRunTaskAction('pause')"
+            :can-resume="isPausedTask && canRunTaskAction('resume')"
+            :can-terminate="isActiveTask && canRunTaskAction('terminate')"
             @cancel="close"
             @confirm="handleConfirm"
           />
@@ -53,7 +54,8 @@ import ControlModeWarningBody from './ControlModeWarningBody.vue'
 const ACTION_META = {
   takeover: {
     title: '\u7acb\u5373\u63a5\u7ba1',
-    messageInTask: '\u7acb\u5373\u63a5\u7ba1\u524d\uff0c\u8bf7\u6682\u505c\u6216\u7ec8\u6b62\u5f53\u524d\u4efb\u52a1'
+    messageRunning: '\u7acb\u5373\u63a5\u7ba1\u524d\uff0c\u8bf7\u6682\u505c\u6216\u7ec8\u6b62\u5f53\u524d\u4efb\u52a1',
+    messagePaused: '\u8bf7\u6062\u590d\u6216\u7ec8\u6b62\u5f53\u524d\u4efb\u52a1'
   },
   resume: {
     title: '\u6062\u590d',
@@ -74,7 +76,8 @@ export default {
       confirming: false,
       robotId: '',
       action: 'takeover',
-      selectedTaskAction: ''
+      selectedTaskAction: '',
+      beforeResume: null
     }
   },
   computed: {
@@ -82,18 +85,24 @@ export default {
     relatedTaskStatus() {
       return taskExecutionStatus(this.getRelatedTask())
     },
+    isActiveTask() {
+      return isActiveTaskStatus(this.relatedTaskStatus)
+    },
     isRunningTask() {
       return isRunningTaskStatus(this.relatedTaskStatus)
     },
+    isPausedTask() {
+      return isPausedTaskStatus(this.relatedTaskStatus)
+    },
     showTaskSelection() {
-      return this.action === 'takeover' && this.isRunningTask
+      return this.action === 'takeover' && this.isActiveTask
     },
     dialogTitle() {
       return ACTION_META[this.action]?.title || '\u63d0\u793a'
     },
     dialogMessage() {
       const meta = ACTION_META[this.action] || {}
-      if (this.action === 'takeover') return meta.messageInTask
+      if (this.action === 'takeover') return this.isPausedTask ? meta.messagePaused : meta.messageRunning
       return meta.messageDefault || ''
     },
     canConfirm() {
@@ -110,8 +119,8 @@ export default {
     }
   },
   watch: {
-    isRunningTask(running) {
-      if (!running && this.visible && this.action === 'takeover' && !this.confirming) this.visible = false
+    isActiveTask(active) {
+      if (!active && this.visible && this.action === 'takeover' && !this.confirming) this.visible = false
     }
   },
   methods: {
@@ -202,6 +211,7 @@ export default {
       this.selectedTaskAction = ''
       this.action = 'takeover'
       this.robotId = ''
+      this.beforeResume = null
     },
     close() {
       if (this.confirming) return
@@ -213,9 +223,10 @@ export default {
       this.robotId = data.robotId
       this.action = data.action || 'takeover'
       this.selectedTaskAction = ''
+      this.beforeResume = typeof data.beforeResume === 'function' ? data.beforeResume : null
 
-      // 非执行中任务没有“立即接管”入口，方向控制按无任务自动切手动模式处理。
-      if (this.action === 'takeover' && !this.isRunningTask) {
+      // 无活动任务时不展示“立即接管”，方向控制自动切换手动模式。
+      if (this.action === 'takeover' && !this.isActiveTask) {
         this.resetState()
         return
       }
@@ -330,9 +341,13 @@ export default {
       if (this.action === 'takeover') {
         if (!this.showTaskSelection) return
         const taskAction = this.selectedTaskAction
+        if (taskAction === 'resume') {
+          if (!this.beforeResume) throw new Error('缺少导航模式切换能力，任务保持暂停')
+          await this.beforeResume()
+        }
         const { task } = await this.runTaskAction(taskAction)
-        // 终止任务只终止任务，不获取控制权，也不切换手动模式。
-        if (taskAction === 'terminate') return
+        // 恢复和终止只操作任务；暂停后才获取控制权并切换手动模式。
+        if (taskAction !== 'pause') return
         await this.waitForTaskStatus(task.taskId, 'PAUSED')
         await this.executeTakeover()
         return

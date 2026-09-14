@@ -1,5 +1,5 @@
 import { mapActions, mapState } from "vuex";
-import { acquireControl, mediaClientId, releaseControl, sendEquipmentCommand, createConfirmToken, takeoverControl } from "../../../../../../api/media";
+import { acquireControl, mediaClientId, releaseControl, sendEquipmentCommand, createConfirmToken, setControlMode, takeoverControl } from "../../../../../../api/media";
 import { errorMessage } from "../../../../../../utils";
 import { executionStatusLabel, isRunningTaskStatus, taskExecutionStatus, taskStatusColorClass } from "../../../business/execution-status";
 import ControlModeActions from "./ControlModeActions.vue";
@@ -166,6 +166,7 @@ export default {
       this.$refs.controlModeWarningRef?.open({
         robotId: this.selectedRobotId,
         action,
+        beforeResume: this.prepareTaskResume,
         useSecondaryConfirm: this.preferSecondaryConfirm()
       })
     },
@@ -446,6 +447,84 @@ export default {
       } catch (error) {
         console.warn('WARN base stop', errorMessage(error))
       }
+    },
+    async sendBaseStopRequest(session) {
+      await sendEquipmentCommand(session.robotId, this.commandPayload(
+        session.robotId,
+        session.controlSessionId,
+        '手动模式',
+        { scope: 'BODY', deviceId: 'base', deviceType: this.baseDevice?.deviceType || 'MOBILE_BASE' },
+        'drive.velocity',
+        { linearX: 0, linearY: 0, angularZ: 0 },
+        'resume-task-stop'
+      ), { timeout: 3000, skipErrorMessage: true })
+    },
+    async acquireBaseControlSession() {
+      const session = await acquireControl(this.selectedRobotId, {
+        scope: 'ROBOT',
+        deviceIds: ['base'],
+        actions: ['control.mode.set', 'drive.velocity'],
+        mode: 'EXCLUSIVE',
+        reason: 'resume_task',
+        ttlSeconds: 30
+      })
+      if (session.code) {
+        throw new Error(session.code === 'CONTROL_LOCKED'
+          ? '控制权已被其他终端占用'
+          : session.message || session.code)
+      }
+      this.rememberControlSession(session)
+      return session
+    },
+    waitForControlMode(expectedMode, timeoutMs = 15000) {
+      if (this.currentControlMode === expectedMode) return Promise.resolve()
+      return new Promise((resolve, reject) => {
+        let unsubscribe = () => {}
+        const timer = setTimeout(() => {
+          unsubscribe()
+          reject(new Error(`机器人未确认切换${expectedMode}，任务保持暂停`))
+        }, timeoutMs)
+        const check = () => {
+          if (this.currentControlMode !== expectedMode) return
+          clearTimeout(timer)
+          unsubscribe()
+          resolve()
+        }
+        unsubscribe = this.$store.subscribe(check)
+        check()
+      })
+    },
+    forgetControlSession(controlSessionId) {
+      Object.keys(this.controlSessions).forEach(key => {
+        if (this.controlSessions[key]?.controlSessionId === controlSessionId) this.$delete(this.controlSessions, key)
+      })
+    },
+    async prepareTaskResume() {
+      const robot = this.liveRobot()
+      if (!robot.robotId || robot.status !== 'online') throw new Error('机器人不在线，不能恢复任务')
+
+      const session = this.baseControlSession() || await this.acquireBaseControlSession()
+      if (this.currentControlMode !== '导航模式') {
+        await this.sendBaseStopRequest(session)
+        const request = {
+          robotId: this.selectedRobotId,
+          controlMode: '导航模式',
+          controlSessionId: session.controlSessionId,
+          observedStateSeq: this.liveRobot().stateSeq
+        }
+        let response = await setControlMode(request)
+        if (response.code === 'ROBOT_STATE_CHANGED' && response.latestStateSeq != null) {
+          response = await setControlMode({ ...request, observedStateSeq: response.latestStateSeq })
+        }
+        if (response.code) throw new Error(response.message || response.code)
+        if (response.status !== 'CONFIRMED') await this.waitForControlMode('导航模式')
+      }
+
+      if (session) {
+        await releaseControl(session.robotId, session.controlSessionId, { reason: 'resume_task' })
+        this.forgetControlSession(session.controlSessionId)
+      }
+      this.manualModePendingUntil = 0
     },
     async releaseControlSessions(robotId, reason = 'leave_remote_control') {
       new Set([...Object.keys(this.controlPressed), ...Object.keys(this.controlTimers)])

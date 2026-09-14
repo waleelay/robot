@@ -330,7 +330,9 @@ export function setControlMode(data) {
       controlMode: data.controlMode,
       controlSessionId: data.controlSessionId,
       observedStateSeq: data.observedStateSeq
-    }
+    },
+    acceptBusinessResponse: true,
+    skipErrorMessage: true
   })
 }
 // 告警处置 立即处置：IMMEDIATE_DISPOSAL 误报：FALSE_ALARM
