@@ -174,7 +174,10 @@
       </div>
       <div class="box bi-corner-box mt20 alert" :class="{ 'no_data hp41': collapseArr[2], 'hp323': !collapseArr[2] }" style="max-height: 446px;">
         <div class="pt9 pr20 pb9 pl20 flx-justify-between title">
-          <span class="desc">告警中心</span>
+          <div class="flx-center">
+            <span class="desc">告警中心</span>
+            <div v-if="alarmTotalCount > 0" class="ml4 notice pr10 pl10">{{ alarmTotalCount }}</div>
+          </div>
           <span v-if="hasAlarmData" class="flx-center more curp" @click.stop="handleClickAlert()">
             <span>更多</span>
             <!-- <svg-icon :icon-class="collapseArr[2] ? 'right' : 'down'" class="ml4" /> -->
@@ -341,6 +344,18 @@ export default {
     hasAlarmData() {
       const data = this.alarmsData || {}
       return ['high', 'medium', 'low'].some(key => (data[key]?.items || []).length > 0)
+    },
+    /** 告警总数：优先用快照 total，否则累加高/中/低分组总数；不做 99+ 折叠 */
+    alarmTotalCount() {
+      const data = this.alarmsData || {}
+      if (data.total !== undefined && data.total !== null && data.total !== '') {
+        const total = Number(data.total)
+        return Number.isFinite(total) ? total : 0
+      }
+      return ['high', 'medium', 'low'].reduce((sum, key) => {
+        const n = Number(data[key]?.total)
+        return sum + (Number.isFinite(n) ? n : 0)
+      }, 0)
     }
   },
   methods: {

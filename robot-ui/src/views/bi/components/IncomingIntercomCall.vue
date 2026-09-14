@@ -4,7 +4,7 @@
       v-if="displayCall"
       ref="callWindow"
       class="intercom-call-window"
-      :class="`is-${callMode}`"
+      :class="[`is-${callMode}`, { 'is-resizing': !!resizeState }]"
       :style="windowStyle"
       role="dialog"
       aria-modal="false"
@@ -120,7 +120,7 @@
             <span>{{ videoLoadingHint }}</span>
           </div>
         </div>
-        <div class="video-call-info">
+        <div class="video-call-info w100">
           <span class="name text-ellipsis" :title="robotName">{{ robotName }}</span>
           <span class="desc">{{ formattedDuration }}</span>
         </div>
@@ -171,6 +171,15 @@
           </div>
         </div>
       </div>
+
+      <!-- 资源管理器式边缘/角落拉伸热区 -->
+      <div
+        v-for="edge in resizeEdges"
+        :key="edge"
+        class="resize-handle"
+        :class="`resize-handle--${edge}`"
+        @pointerdown.stop.prevent="startResize($event, edge)"
+      />
     </section>
   </div>
 </template>
@@ -186,6 +195,17 @@ const WINDOW_MARGIN_RIGHT = 82
 const COMPACT_SIZE = { width: 358, height: 152 }
 const AUDIO_SIZE = { width: 410, height: 152 }// width: 394, height: 152
 const VIDEO_SIZE = { width: 324, height: 382 }
+const RESIZE_EDGES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
+const RESIZE_CURSOR = {
+  n: 'ns-resize',
+  s: 'ns-resize',
+  e: 'ew-resize',
+  w: 'ew-resize',
+  ne: 'nesw-resize',
+  sw: 'nesw-resize',
+  nw: 'nwse-resize',
+  se: 'nwse-resize'
+}
 
 export default {
   name: 'IncomingIntercomCall',
@@ -194,7 +214,11 @@ export default {
       now: Date.now(),
       timer: null,
       position: { x: 0, y: 0 },
+      /** 用户拉伸后的尺寸；切模式时清空，回到各模式默认大小 */
+      customSize: null,
       dragState: null,
+      resizeState: null,
+      resizeEdges: RESIZE_EDGES,
       hangupPending: false
     }
   },
@@ -231,15 +255,37 @@ export default {
       if (!this.activeIncomingCall) return 'ringing'
       return this.activeIncomingCall.videoEnabled ? 'video' : 'audio'
     },
+    defaultWindowSize() {
+      if (this.callMode === 'video') return { ...VIDEO_SIZE }
+      if (this.callMode === 'audio') return { ...AUDIO_SIZE }
+      return { ...COMPACT_SIZE }
+    },
+    minWindowSize() {
+      const base = this.defaultWindowSize
+      return {
+        width: Math.max(280, Math.floor(base.width * 0.85)),
+        height: Math.max(140, Math.floor(base.height * 0.85))
+      }
+    },
     windowSize() {
-      return this.callMode === 'video' ? VIDEO_SIZE : this.callMode === 'audio' ? AUDIO_SIZE : COMPACT_SIZE
+      if (this.customSize && this.customSize.width && this.customSize.height) {
+        return {
+          width: this.customSize.width,
+          height: this.customSize.height
+        }
+      }
+      return this.defaultWindowSize
     },
     windowStyle() {
-      return {
+      const style = {
         width: `${this.windowSize.width}px`,
         height: `${this.windowSize.height}px`,
         transform: `translate3d(${this.position.x}px, ${this.position.y}px, 0)`
       }
+      if (this.resizeState) {
+        style.cursor = RESIZE_CURSOR[this.resizeState.edge] || 'default'
+      }
+      return style
     },
     operationPending() {
       return this.robotCallOperationPending || this.fieldCallOperationPending || this.hangupPending
@@ -310,15 +356,15 @@ export default {
   },
   mounted() {
     this.timer = window.setInterval(() => { this.now = Date.now() }, 500)
-    window.addEventListener('pointermove', this.drag)
-    window.addEventListener('pointerup', this.stopDrag)
-    window.addEventListener('pointercancel', this.stopDrag)
+    window.addEventListener('pointermove', this.onPointerMove)
+    window.addEventListener('pointerup', this.onPointerUp)
+    window.addEventListener('pointercancel', this.onPointerUp)
   },
   beforeDestroy() {
     window.clearInterval(this.timer)
-    window.removeEventListener('pointermove', this.drag)
-    window.removeEventListener('pointerup', this.stopDrag)
-    window.removeEventListener('pointercancel', this.stopDrag)
+    window.removeEventListener('pointermove', this.onPointerMove)
+    window.removeEventListener('pointerup', this.onPointerUp)
+    window.removeEventListener('pointercancel', this.onPointerUp)
     const video = this.$refs.callVideo
     if (this.remoteVideoTrack && video && typeof this.remoteVideoTrack.detach === 'function') {
       this.remoteVideoTrack.detach(video)
@@ -349,27 +395,59 @@ export default {
       return String(value).padStart(2, '0')
     },
     positionWindow() {
+      this.customSize = null
       this.position = {
         x: SCREEN_WIDTH - this.windowSize.width - WINDOW_MARGIN_RIGHT,
         y: SCREEN_HEIGHT - this.windowSize.height - WINDOW_MARGIN
       }
     },
+    getHostScale() {
+      const host = this.$el
+      const rect = host && host.getBoundingClientRect ? host.getBoundingClientRect() : null
+      return {
+        scaleX: rect && rect.width ? rect.width / SCREEN_WIDTH : 1,
+        scaleY: rect && rect.height ? rect.height / SCREEN_HEIGHT : 1
+      }
+    },
     startDrag(event) {
       if (event.button !== undefined && event.button !== 0) return
       if (event.target.closest('button')) return
-      const host = this.$el
-      const rect = host.getBoundingClientRect()
+      if (this.resizeState) return
+      const { scaleX, scaleY } = this.getHostScale()
       this.dragState = {
         startX: event.clientX,
         startY: event.clientY,
         originX: this.position.x,
         originY: this.position.y,
-        scaleX: rect.width ? rect.width / SCREEN_WIDTH : 1,
-        scaleY: rect.height ? rect.height / SCREEN_HEIGHT : 1
+        scaleX,
+        scaleY
       }
       event.preventDefault()
     },
-    drag(event) {
+    startResize(event, edge) {
+      if (event.button !== undefined && event.button !== 0) return
+      const { scaleX, scaleY } = this.getHostScale()
+      this.dragState = null
+      this.resizeState = {
+        edge,
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: this.position.x,
+        originY: this.position.y,
+        originW: this.windowSize.width,
+        originH: this.windowSize.height,
+        scaleX,
+        scaleY
+      }
+      if (event.currentTarget && event.currentTarget.setPointerCapture) {
+        try { event.currentTarget.setPointerCapture(event.pointerId) } catch (e) { /* ignore */ }
+      }
+    },
+    onPointerMove(event) {
+      if (this.resizeState) {
+        this.applyResize(event)
+        return
+      }
       if (!this.dragState) return
       const x = this.dragState.originX + (event.clientX - this.dragState.startX) / this.dragState.scaleX
       const y = this.dragState.originY + (event.clientY - this.dragState.startY) / this.dragState.scaleY
@@ -378,8 +456,54 @@ export default {
         y: Math.round(Math.max(0, Math.min(SCREEN_HEIGHT - this.windowSize.height, y)))
       }
     },
-    stopDrag() {
+    applyResize(event) {
+      const state = this.resizeState
+      if (!state) return
+      const dx = (event.clientX - state.startX) / state.scaleX
+      const dy = (event.clientY - state.startY) / state.scaleY
+      const minW = this.minWindowSize.width
+      const minH = this.minWindowSize.height
+      const maxW = SCREEN_WIDTH - WINDOW_MARGIN
+      const maxH = SCREEN_HEIGHT - WINDOW_MARGIN
+      let width = state.originW
+      let height = state.originH
+      let x = state.originX
+      let y = state.originY
+      const edge = state.edge
+
+      if (edge.includes('e')) width = state.originW + dx
+      if (edge.includes('s')) height = state.originH + dy
+      if (edge.includes('w')) {
+        width = state.originW - dx
+        x = state.originX + dx
+      }
+      if (edge.includes('n')) {
+        height = state.originH - dy
+        y = state.originY + dy
+      }
+
+      width = Math.max(minW, Math.min(maxW, width))
+      height = Math.max(minH, Math.min(maxH, height))
+
+      // 从左/上边拉伸时，按最终尺寸回推原点，避免贴边夹紧后位置漂移
+      if (edge.includes('w')) x = state.originX + state.originW - width
+      if (edge.includes('n')) y = state.originY + state.originH - height
+
+      x = Math.max(0, Math.min(SCREEN_WIDTH - width, x))
+      y = Math.max(0, Math.min(SCREEN_HEIGHT - height, y))
+
+      this.customSize = {
+        width: Math.round(width),
+        height: Math.round(height)
+      }
+      this.position = {
+        x: Math.round(x),
+        y: Math.round(y)
+      }
+    },
+    onPointerUp() {
       this.dragState = null
+      this.resizeState = null
     },
     accept() {
       if (!this.currentCall) return
@@ -508,6 +632,8 @@ export default {
   position: absolute;
   top: 0;
   left: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
   color: #fff;
@@ -524,6 +650,72 @@ export default {
   backdrop-filter: blur(15px);
   pointer-events: auto;
   user-select: none;
+
+  &.is-resizing {
+    // 拉伸时禁止选中/误触内部按钮
+    * {
+      pointer-events: none;
+    }
+    .resize-handle {
+      pointer-events: auto;
+    }
+  }
+}
+
+/* 四边 + 四角拉伸热区（类似资源管理器） */
+.resize-handle {
+  position: absolute;
+  z-index: 20;
+  background: transparent;
+  touch-action: none;
+
+  &--n,
+  &--s {
+    left: 8px;
+    right: 8px;
+    height: 6px;
+    cursor: ns-resize;
+  }
+  &--n { top: 0; }
+  &--s { bottom: 0; }
+
+  &--e,
+  &--w {
+    top: 8px;
+    bottom: 8px;
+    width: 6px;
+    cursor: ew-resize;
+  }
+  &--e { right: 0; }
+  &--w { left: 0; }
+
+  &--ne,
+  &--nw,
+  &--se,
+  &--sw {
+    width: 12px;
+    height: 12px;
+  }
+  &--ne {
+    top: 0;
+    right: 0;
+    cursor: nesw-resize;
+  }
+  &--nw {
+    top: 0;
+    left: 0;
+    cursor: nwse-resize;
+  }
+  &--se {
+    bottom: 0;
+    right: 0;
+    cursor: nwse-resize;
+  }
+  &--sw {
+    bottom: 0;
+    left: 0;
+    cursor: nesw-resize;
+  }
 }
 
 .call-window-header {
@@ -616,7 +808,8 @@ button:disabled {
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr) auto;
   align-items: center;
-  height: 102px;
+  flex: 1;
+  min-height: 102px;
   padding: 12px 10px 12px 14px;
   box-sizing: border-box;
 }
@@ -697,14 +890,20 @@ button:disabled {
 
 .video-call-content {
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
+  min-height: 0;
+  width: 100%;
+  padding-bottom: 12px;
+  box-sizing: border-box;
 }
 
 .call-video-shell {
   position: relative;
-  width: 304px;
-  height: 171px;
+  flex: 1 1 auto;
+  width: calc(100% - 20px);
+  min-height: 120px;
   margin-top: 10px;
   overflow: hidden;
   background: #020b16;
@@ -751,12 +950,13 @@ button:disabled {
 
 .video-call-info {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   align-items: center;
-  margin-top: 20px;
+  margin-top: 12px;
   font-family: "Microsoft YaHei", sans-serif;
   .name {
-    max-width: 280px;
+    max-width: calc(100% - 24px);
     font-size: 14px;
     font-weight: 600;
     line-height: 17.517px;
@@ -771,11 +971,12 @@ button:disabled {
 
 .video-call-actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   justify-content: center;
   gap: 23px;
   width: 100%;
-  margin-top: 20px;
+  margin-top: 12px;
 }
 
 .labeled-action {
