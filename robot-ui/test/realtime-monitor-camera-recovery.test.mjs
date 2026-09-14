@@ -15,6 +15,9 @@ const robotStateHelpers = await import('data:text/javascript;base64,' + Buffer.f
 const trackRecovery = await import('data:text/javascript;base64,' + Buffer.from(
   read('views/bi/js/utils/livekit-track-recovery.js')
 ).toString('base64'))
+const videoDisplayState = await import('data:text/javascript;base64,' + Buffer.from(
+  read('views/bi/js/utils/video-display-state.js')
+).toString('base64'))
 
 function componentMethods(path) {
   const source = read(path).split('<script>')[1].split('</script>')[0]
@@ -362,6 +365,55 @@ test('视频续期请求使用短超时且关闭全局错误提示', async () =>
   })
 })
 
+test('视频展示状态明确区分视频源和播放端方向', () => {
+  const resolve = videoDisplayState.resolveVideoDisplayState
+
+  assert.equal(resolve({ hasVideo: true, status: 'FAILED' }).key, 'playing')
+  assert.equal(resolve({ session: { status: 'REQUESTING_CLIENT' } }).text, '正在启动视频源')
+  assert.equal(resolve({ session: { status: 'INTERRUPTED' } }).text, '视频源中断')
+  assert.equal(resolve({ session: { status: 'FAILED' } }).text, '视频源启动失败')
+  assert.equal(resolve({ session: { status: 'STREAMING' }, connecting: true }).text, '正在连接播放服务')
+  assert.equal(resolve({ session: { status: 'STREAMING' }, viewerReconnecting: true }).text, '播放连接恢复中')
+  assert.equal(resolve({ session: { status: 'STREAMING' } }).text, '播放端异常')
+  assert.equal(resolve({ status: 'offline' }).text, '设备离线')
+  assert.equal(resolve({ status: 'offline', session: { status: 'STREAMING' } }).text, '设备离线')
+  assert.equal(resolve({ session: { status: 'CLOSED' } }).text, '未播放')
+})
+
+test('视频心跳补齐漏收的失败状态且不操作媒体连接', async () => {
+  const module = loadWebsocketRobot({
+    heartbeatVideoSession: async () => ({
+      sessionId: 'session-1',
+      status: 'FAILED',
+      viewerCount: 1,
+      lastErrorCode: 'VIDEO_START_FAILED',
+      lastErrorMessage: '视频源启动失败'
+    })
+  })
+  const camera = {
+    key: 'camera-1',
+    watching: true,
+    stopped: false,
+    stopping: false,
+    recordingSyncedAt: Date.now(),
+    viewerCount: 1,
+    status: 'REQUESTING_CLIENT',
+    session: { sessionId: 'session-1', status: 'REQUESTING_CLIENT' }
+  }
+  module.state.cameras = { [camera.key]: camera }
+  module.state.activeIncomingCall = null
+  module.state.heartbeatPending = false
+  const commit = (type, payload) => {
+    if (type === 'setCamera') module.state.cameras[payload.key] = payload
+  }
+
+  await module.actions.heartbeatViewers({ state: module.state, commit })
+
+  assert.equal(module.state.cameras[camera.key].status, 'FAILED')
+  assert.equal(module.state.cameras[camera.key].session.lastErrorCode, 'VIDEO_START_FAILED')
+  assert.equal(module.state.heartbeatPending, false)
+})
+
 test('多画面心跳按唯一会话并发执行', () => {
   const source = read('store/modules/websocket-robot.js')
   const heartbeat = source.slice(source.indexOf('async heartbeatViewers'), source.indexOf('// 启动摄像头'))
@@ -369,6 +421,8 @@ test('多画面心跳按唯一会话并发执行', () => {
   assert.match(heartbeat, /new Map\(\)/)
   assert.match(heartbeat, /Promise\.allSettled\(requests\)/)
   assert.match(heartbeat, /Promise\.allSettled\(jobs\)/)
+  assert.match(heartbeat, /camera\.session = nextSession/)
+  assert.match(heartbeat, /camera\.status = nextSession\.status/)
   assert.doesNotMatch(heartbeat, /for \(const camera of allCameras\(\)\)/)
 })
 

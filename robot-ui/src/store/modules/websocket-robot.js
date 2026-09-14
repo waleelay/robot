@@ -557,6 +557,7 @@ function cameraState(robotId, deviceId, cameraId, name, groupType) {
     stopped: false,
     restarting: false,
     connecting: false,
+    viewerReconnecting: false,
     disconnecting: false,
     roomGeneration: 0,
     qualityChanging: false,
@@ -1374,6 +1375,7 @@ const actions = {
           stopping: old.stopping,
           restarting: old.restarting,
           connecting: old.connecting,
+          viewerReconnecting: old.viewerReconnecting,
           disconnecting: old.disconnecting,
           roomGeneration: old.roomGeneration || 0,
           remoteAudioTrack: old.remoteAudioTrack || null,
@@ -1588,7 +1590,14 @@ const actions = {
         if (camera.watching) {
           requests.push(heartbeatVideoSession(sessionId).then(session => {
             if (camera.session && camera.session.sessionId === session.sessionId) {
-              changed = camera.viewerCount !== session.viewerCount || changed
+              const nextSession = mergeSession(camera, session)
+              changed = camera.viewerCount !== session.viewerCount
+                || camera.status !== nextSession.status
+                || camera.session.lastErrorCode !== nextSession.lastErrorCode
+                || camera.session.lastErrorMessage !== nextSession.lastErrorMessage
+                || changed
+              camera.session = nextSession
+              camera.status = nextSession.status
               camera.viewerCount = session.viewerCount
             }
           }))
@@ -1774,6 +1783,7 @@ const actions = {
         stopping: true,
         stopped: true,
         restarting: false,
+        viewerReconnecting: false,
         roomGeneration: (camera.roomGeneration || 0) + 1
       })
     }
@@ -1818,6 +1828,7 @@ const actions = {
       camera.stopped = true
       camera.stopping = false
       camera.loading = false
+      camera.viewerReconnecting = false
       const prefixes = uniqueAttachPrefixes({ ...camera, attachTargets: camera.attachTargets }, state)
       if (!prefixes.includes(attachPrefix) && attachPrefix) prefixes.push(attachPrefix)
       prefixes.forEach(prefixId => detachCameraMedia(camera, prefixId))
@@ -1831,6 +1842,7 @@ const actions = {
     camera.stopping = true
     camera.stopped = true
     camera.restarting = false
+    camera.viewerReconnecting = false
     camera.disconnecting = true
     cancelAttachRetry(camera.key)
     try {
@@ -2022,6 +2034,7 @@ const actions = {
 
     if (!camera.session) return
     camera.connecting = true
+    if (refreshToken && camera.watching) camera.viewerReconnecting = true
     camera.roomGeneration = (state.cameras[camera.key]?.roomGeneration || camera.roomGeneration || 0) + 1
     const roomGeneration = camera.roomGeneration
     commit('setCamera', { ...camera })
@@ -2063,6 +2076,7 @@ const actions = {
         if (!current) return
         if (track.kind === 'video') {
           cancelViewerReconnect(current.key)
+          current.viewerReconnecting = false
           current.remoteVideoTrack = track
           current.hasVideo = true
           if (current.watching) attachTrackToCameraTargets(track, current, state, 'video')
@@ -2138,12 +2152,18 @@ const actions = {
         commit('setCamera', current)
       })
       room.on(RoomEvent.Reconnecting, () => {
+        const current = currentCamera()
+        if (current) {
+          current.viewerReconnecting = true
+          commit('setCamera', current)
+        }
         console.info('[media] viewer reconnecting', { sessionId, roomName: camera.session.roomName, roomGeneration })
       })
       room.on(RoomEvent.Reconnected, () => {
         const current = currentCamera()
         if (!current) return
-        restoreVideoTrack(current, room, state)
+        const restored = restoreVideoTrack(current, room, state)
+        current.viewerReconnecting = !restored
         current.loading = false
         commit('setCamera', current)
         console.info('[media] viewer reconnected', { sessionId, roomName: camera.session.roomName, roomGeneration })
@@ -2160,6 +2180,7 @@ const actions = {
         current.remoteAudioTrack = null
         current.remoteAudioElement = null
         current.room = null
+        current.viewerReconnecting = true
         commit('setCamera', current)
         console.warn('[media] viewer disconnected', { sessionId, roomName: camera.session.roomName, roomGeneration })
         // SDK 已放弃原 Room 后只重建当前 viewer 连接，不重启共享 Publisher。
@@ -2172,7 +2193,10 @@ const actions = {
       await room.connect(livekitUrl, token)
       cancelViewerReconnect(camera.key)
       const current = currentCamera()
-      if (current && restoreVideoTrack(current, room, state)) commit('setCamera', current)
+      if (current && restoreVideoTrack(current, room, state)) {
+        current.viewerReconnecting = false
+        commit('setCamera', current)
+      }
       if (waitForVideo) {
         await waitForVideoTrack(room, () => Boolean(currentCamera()?.hasVideo))
       }

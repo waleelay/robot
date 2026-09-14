@@ -20,7 +20,7 @@
     <!-- poster="./../../assets/images/new-bi/video-bg1.png" -->
     <!-- :id="`${prefixId}videoslot_${index}`" -->
     <!-- 装备列表时默认显示第0个摄像头视频 -->
-    
+
     <video
       ref="videoEl"
       autoplay
@@ -83,12 +83,12 @@
         </div>
       </div>
       <div
-        v-if="showStatusOverlay(ZQL_videosInfos[`slot_${index}`])"
-        class="w100 h100 flx-center flex-column"
-        style="position: absolute; top: 0; left: 0; color: #1A5683">
-        <svg-icon :icon-class="isConnectingStatus(ZQL_videosInfos[`slot_${index}`]) ? 'loading' : 'unlink1' " style="font-size: 22px;" />
+        v-if="videoDisplayState.visible"
+        class="video-status-overlay w100 h100 flx-center flex-column"
+        :class="`video-status--${videoDisplayState.tone}`">
+        <svg-icon :icon-class="videoDisplayState.icon" style="font-size: 22px;" />
         <span class="mt10" style="font-family: YouSheBiaoTiHei; font-size: 16.978px; line-height: 22px; letter-spacing: 0.34px;">
-          {{ isConnectingStatus(ZQL_videosInfos[`slot_${index}`]) ? '正在连接' : '未连接' }}
+          {{ videoDisplayState.text }}
         </span>
       </div>
     </template>
@@ -117,6 +117,7 @@ import mixin from './drag-mixin';
 import livekitMedia from '@/views/bi/js/mixins/livekit-media';
 import { formatTiming } from '@/utils/index.js';
 import { ROBOT_TYPE_INFO } from '@/constants/robot';
+import { resolveVideoDisplayState } from '@/views/bi/js/utils/video-display-state';
 export default {
   name: 'VideoBox',
   components: { VideoTool, VideoInfo },
@@ -186,6 +187,12 @@ export default {
     },
     cameraInfo() {
       return this.cameras?.[this.ZQL_videosInfos[`slot_${this.index}`]?.key] || {}
+    },
+    slotVideoInfo() {
+      return this.ZQL_videosInfos[`slot_${this.index}`] || {}
+    },
+    videoDisplayState() {
+      return resolveVideoDisplayState(this.cameraInfo, this.slotVideoInfo)
     },
     cameraMediaKey() {
       return this.ZQL_videosInfos[`slot_${this.index}`]?.key || ''
@@ -270,7 +277,7 @@ export default {
     },
     handleFullScreenChange(e) {
       const idName = `${this.prefixId}slot_${this.index}`
-      this.isFullscreen = document.fullscreenElement === document.getElementById(idName) || 
+      this.isFullscreen = document.fullscreenElement === document.getElementById(idName) ||
         document.webkitFullscreenElement === document.getElementById(idName)
     },
     // 处理全屏切换 append-to-body的影响
@@ -281,7 +288,7 @@ export default {
         if (container1 && menu && menu.popperElm) {
           // if (this.isFullscreen || isInit) {
           //   console.log(1);
-            
+
             menu.popperElm.classList.add('top_unset', 'left_unset')
             menu.popperElm.style.bottom = '35px'
             container1.appendChild(menu.popperElm)
@@ -298,20 +305,6 @@ export default {
       })
     },
     // 状态
-    statusType(status) {
-      if (status === 'STREAMING') return 'success'
-      if (status === 'FAILED' || status === 'TIMEOUT' || status === 'offline') return 'danger'
-      if (status === 'REQUESTING_CLIENT' || status === 'ROOM_READY') return 'warning'
-      return 'info'
-    },
-    showStatusOverlay(videoInfo) {
-      return !(this.cameraInfo.hasVideo || videoInfo?.hasVideo)
-    },
-    isConnectingStatus(videoInfo) {
-      if (this.cameraInfo.connecting || this.cameraInfo.restarting || videoInfo?.loading) return true
-      return ['INIT', 'REQUESTING_CLIENT', 'ROOM_READY', 'STREAMING', 'INTERRUPTED', 'IDLE_WAIT']
-        .includes(videoInfo?.status)
-    },
     // 有实时画面即可播放/暂停；不依赖 session 的 STREAMING 文案
     videoStatus(slotKey) {
       const videoInfo = this.ZQL_videosInfos[slotKey]
@@ -321,7 +314,6 @@ export default {
         || camera.remoteVideoTrack
         || videoInfo.hasVideo
         || videoInfo.remoteVideoTrack
-        || videoInfo.status === 'STREAMING'
       if (!live) return 'stopped'
       return videoInfo.isPaused ? 'paused' : 'playing'
     },
@@ -378,6 +370,25 @@ export default {
     opacity: 1 !important;
     pointer-events: auto !important;
   }
+}
+
+.video-status-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: #1A5683;
+}
+
+.video-status--warning {
+  color: #E6A23C;
+}
+
+.video-status--danger {
+  color: #F56C6C;
+}
+
+.video-status--idle {
+  color: #6E8799;
 }
 
 /* 页面全屏：名称常显，底部工具条默认隐藏、悬停该格时显示 */
