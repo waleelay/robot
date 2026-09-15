@@ -216,6 +216,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         try {
             connectCenter(browserSession);
             requestTaskRefresh(browserSession, false);
+            requestInitialTaskStats(browserSession);
         } catch (Exception exception) {
             log.warn("中心端 WebSocket 连接失败，关闭浏览器会话以触发现有重连，会话={} 异常={} 原因={}",
                     browserSession.getId(), exception.getClass().getSimpleName(),
@@ -589,6 +590,17 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 browserSession.getId(), authorizationIdentity(browserSession));
         taskEventRefresher.requestRefresh(identity, newestAuthentication(identity, browserSession),
                 payload -> sendUserScopedToIdentity(identity, payload), followChanges, eventKey);
+    }
+
+    /** 首屏渲染完成并建立实时连接后，再异步补齐依赖历史实例的今日任务统计。 */
+    private void requestInitialTaskStats(WebSocketSession browserSession) {
+        String identity = authorizationIdentityBySession.getOrDefault(
+                browserSession.getId(), authorizationIdentity(browserSession));
+        statsEventRefresher.requestInitialRefresh(
+                identity,
+                newestAuthentication(identity, browserSession),
+                payload -> sendUserScopedToIdentity(identity, payload),
+                Set.of(StatsPart.TASKS));
     }
 
     private void requestAlarmRefresh(WebSocketSession browserSession) {

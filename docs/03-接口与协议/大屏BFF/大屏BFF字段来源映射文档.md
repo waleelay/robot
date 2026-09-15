@@ -24,7 +24,7 @@
 | 设备列表 | `GET /api/v1/management/devices?pageNum=1&pageSize=100` |
 | 设备详情/组件 | `GET /api/v1/management/devices/{id}` |
 | 任务计划 | `GET /api/v1/management/task-workflow-plans?pageNum={pageNum}&pageSize=100&enabled=true`，读取完整分页 |
-| 任务实例列表 | `GET /api/v1/management/task-workflow-instances?pageNum={pageNum}&pageSize=100&scope=ALL`，读取完整分页 |
+| 任务实例列表 | `GET /api/v1/management/task-workflow-instances?pageNum={pageNum}&pageSize=100&scope=ALL`，读取完整分页；Overview 首屏仅读取 `scope=ACTIVE`，完整历史实例由 WebSocket 建连后的统计快照异步回填 |
 | 任务实例详情 | `GET /api/v1/management/task-workflow-instances/{id}` |
 | 任务执行回放 | `GET /api/v1/management/task-workflow-instances/{id}/replay` |
 | 设备子任务 | `GET /api/v1/management/device-task-instances?workflowInstanceId={id}` |

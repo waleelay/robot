@@ -31,6 +31,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Component
 public class PanoramaCenterClient {
 
+    private static final int TASK_INSTANCE_PAGE_SIZE = 100;
+
     private static final Logger log = LoggerFactory.getLogger(PanoramaCenterClient.class);
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE = new ParameterizedTypeReference<>() {};
     private static final int MAX_WORKFLOW_ALARM_CONCURRENCY = 8;
@@ -221,7 +223,7 @@ public class PanoramaCenterClient {
     }
 
     private List<Map<String, Object>> taskWorkflowInstances(String scope) {
-        int pageSize = 100;
+        int pageSize = TASK_INSTANCE_PAGE_SIZE;
         return taskPagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-instances")
                 .queryParam("pageNum", pageNum)
                 .queryParam("pageSize", pageSize)

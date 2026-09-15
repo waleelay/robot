@@ -25,6 +25,21 @@ import org.springframework.scheduling.TaskScheduler;
 class PanoramaStatsEventRefresherTest {
 
     @Test
+    void initialRefreshRunsOnlyOnceForTheSameIdentity() {
+        PanoramaService panoramaService = mock(PanoramaService.class);
+        TaskScheduler taskScheduler = mock(TaskScheduler.class);
+        when(taskScheduler.schedule(any(Runnable.class), any(Instant.class))).thenReturn(null);
+        PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
+                panoramaService, new ObjectMapper(), taskScheduler, new SyncTaskExecutor());
+
+        refresher.requestInitialRefresh("user-a", null, ignored -> { }, Set.of(StatsPart.TASKS));
+        refresher.requestInitialRefresh("user-a", null, ignored -> { }, Set.of(StatsPart.TASKS));
+
+        verify(taskScheduler, times(1)).schedule(any(Runnable.class), any(Instant.class));
+        verify(panoramaService, times(1)).invalidateTaskStats();
+    }
+
+    @Test
     void debouncesAndDoesNotPublishAnUnchangedSnapshot() throws Exception {
         PanoramaService panoramaService = mock(PanoramaService.class);
         TaskScheduler taskScheduler = mock(TaskScheduler.class);

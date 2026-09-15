@@ -83,6 +83,23 @@ public class PanoramaStatsEventRefresher {
         scheduleIfNeeded(sessionId, state);
     }
 
+    /**
+     * 同一授权身份的多个浏览器会话只触发一次初始统计。发布器按身份广播，后续接入的会话会与
+     * 首个会话共享结果；常规业务事件仍通过 requestRefresh 重新计算。
+     */
+    public void requestInitialRefresh(
+            String sessionId,
+            Authentication authentication,
+            Consumer<String> publisher,
+            Set<StatsPart> parts) {
+        RefreshState state = states.computeIfAbsent(sessionId, ignored -> new RefreshState());
+        state.authentication = authentication;
+        state.publisher = publisher;
+        if (state.initialRefreshRequested.compareAndSet(false, true)) {
+            requestRefresh(sessionId, authentication, publisher, parts);
+        }
+    }
+
     public void remove(String sessionId) {
         states.remove(sessionId);
     }
@@ -186,6 +203,7 @@ public class PanoramaStatsEventRefresher {
     private static final class RefreshState {
         private final AtomicBoolean scheduled = new AtomicBoolean();
         private final AtomicBoolean dirty = new AtomicBoolean();
+        private final AtomicBoolean initialRefreshRequested = new AtomicBoolean();
         private final Set<StatsPart> pendingParts = EnumSet.noneOf(StatsPart.class);
         private volatile Authentication authentication;
         private volatile Consumer<String> publisher;

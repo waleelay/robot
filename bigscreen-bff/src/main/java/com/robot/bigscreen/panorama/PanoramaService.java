@@ -253,7 +253,7 @@ public class PanoramaService {
         CompletableFuture<List<Map<String, Object>>> devicesFuture =
                 timing.track("devices", asyncOverview(() -> devices(cache, timing)));
         CompletableFuture<PanoramaTasks> tasksFuture =
-                timing.track("tasks", asyncOverview(this::taskSummaries));
+                timing.track("tasks", asyncOverview(() -> overviewTaskSummaries(timing)));
         CompletableFuture<List<Map<String, Object>>> mapsFuture =
                 timing.track("maps", asyncOverview(centerClient::enabledMaps));
         CompletableFuture<PanoramaAlarms> alarmsFuture =
@@ -1320,10 +1320,33 @@ public class PanoramaService {
      * 设备任务、路径点等按需数据。
      */
     private PanoramaTasks taskSummaries() {
+        return taskSummaries(null);
+    }
+
+    /**
+     * 首屏只用计划和活动实例生成任务卡。历史实例仅用于今日巡逻时长，改由 WebSocket 建连后的
+     * 统计快照异步回填，避免历史数据持续增长后阻塞页面和地图。
+     */
+    private PanoramaTasks overviewTaskSummaries(OverviewTiming timing) {
         TaskDataQuality quality = new TaskDataQuality();
         CompletableFuture<List<Map<String, Object>>> taskPlansFuture =
-                sharedAsync("task-plans", centerClient::taskWorkflowPlans);
-        CompletableFuture<List<Map<String, Object>>> taskInstancesFuture = async(centerClient::taskWorkflowInstances);
+                track(timing, "tasks.plans", sharedAsync("task-plans", centerClient::taskWorkflowPlans));
+        CompletableFuture<List<Map<String, Object>>> activeInstancesFuture =
+                track(timing, "tasks.activeInstances", async(centerClient::activeTaskWorkflowInstances));
+        List<Map<String, Object>> taskPlans = joinTask(
+                taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
+        List<Map<String, Object>> activeInstances = joinTask(
+                activeInstancesFuture, List.of(), quality, "ACTIVE_TASK_INSTANCES_UNAVAILABLE");
+        return new PanoramaTasks(summarizeTasks(taskPlans, activeInstances), List.of(),
+                quality.snapshot(), hasPreparingPlan(taskPlans));
+    }
+
+    private PanoramaTasks taskSummaries(OverviewTiming timing) {
+        TaskDataQuality quality = new TaskDataQuality();
+        CompletableFuture<List<Map<String, Object>>> taskPlansFuture =
+                track(timing, "tasks.plans", sharedAsync("task-plans", centerClient::taskWorkflowPlans));
+        CompletableFuture<List<Map<String, Object>>> taskInstancesFuture =
+                track(timing, "tasks.instances", async(centerClient::taskWorkflowInstances));
         List<Map<String, Object>> taskPlans = joinTask(
                 taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
         List<Map<String, Object>> taskInstances = joinTask(
@@ -2776,6 +2799,9 @@ public class PanoramaService {
                     "devices.cameraHealth",
                     "devices.typeOptions",
                     "tasks",
+                    "tasks.plans",
+                    "tasks.activeInstances",
+                    "tasks.instances",
                     "maps",
                     "alarms",
                     "mileage")
