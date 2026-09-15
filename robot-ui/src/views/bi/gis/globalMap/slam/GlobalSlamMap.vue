@@ -1877,7 +1877,7 @@ export default {
       const pixel = { x: this.endPoint?.[0] || 0, y: this.endPoint?.[1] || 0 }
       const { coordinateX, coordinateY, coordinateZ } = this.pixelToMapPoint(pixel, this.map)
       const data = {
-        robotId: this.robotId,
+        serialNumber: this.robotId,
         x: coordinateX,
         y: coordinateY,
         yaw: coordinateZ,
