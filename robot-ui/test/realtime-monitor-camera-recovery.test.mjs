@@ -533,6 +533,45 @@ test('视频心跳补齐漏收的失败状态且不操作媒体连接', async ()
   assert.equal(module.state.heartbeatPending, false)
 })
 
+test('视频心跳从已连接 Room 补回漏收的视频轨道', async () => {
+  const module = loadWebsocketRobot({
+    heartbeatVideoSession: async () => ({
+      sessionId: 'session-1',
+      status: 'STREAMING',
+      viewerCount: 1
+    })
+  })
+  const track = { kind: 'video', sid: 'TR_video', attach() {} }
+  const publication = { track }
+  const room = {
+    state: 'connected',
+    remoteParticipants: new Map([['publisher', {
+      trackPublications: new Map([['TR_video', publication]])
+    }]])
+  }
+  const camera = {
+    key: 'camera-1',
+    watching: true,
+    stopped: false,
+    stopping: false,
+    status: 'STREAMING',
+    hasVideo: false,
+    remoteVideoTrack: null,
+    room,
+    session: { sessionId: 'session-1', status: 'STREAMING' }
+  }
+  module.state.cameras = { [camera.key]: camera }
+  module.state.activeIncomingCall = null
+  module.state.heartbeatPending = false
+  const context = cameraActionContext(module.actions, module.state)
+
+  await module.actions.heartbeatViewers(context)
+
+  assert.equal(module.state.cameras[camera.key].hasVideo, true)
+  assert.equal(module.state.cameras[camera.key].remoteVideoTrack, track)
+  assert.equal(module.state.cameras[camera.key].viewerReconnecting, false)
+})
+
 test('多画面心跳按唯一会话并发执行', () => {
   const source = read('store/modules/websocket-robot.js')
   const heartbeat = source.slice(source.indexOf('async heartbeatViewers'), source.indexOf('// 启动摄像头'))
@@ -567,6 +606,7 @@ test('浏览器 Track 或 Room 异常只恢复 viewer，不重启共享 Publishe
   assert.match(connectAction, /viewer reconnected/)
   assert.match(connectAction, /isSameLiveKitTrack\(current\.remoteVideoTrack, track\)/)
   assert.match(connectAction, /restoreVideoTrack\(current, room, state, track\)/)
+  assert.match(connectAction, /RoomEvent\.TrackUnsubscribed[\s\S]*beginViewerRecovery\(commit, dispatch, state, current, sessionId\)/)
   assert.match(source, /scheduleViewerReconnect\(dispatch, state, key, sessionId/)
   assert.match(source, /viewerReconnectDelay\(attempt\)/)
   assert.match(source, /cancelViewerReconnect\(key\)/)
@@ -608,7 +648,7 @@ test('viewer 换证连续失败后持续退避重试直至恢复', async () => {
         watching: true,
         stopped: false,
         stopping: false,
-        session: { sessionId },
+        session: { sessionId, status: 'STREAMING' },
         room: null
       }
     }
@@ -621,6 +661,7 @@ test('viewer 换证连续失败后持续退避重试直至恢复', async () => {
     attempts += 1
     if (attempts <= 3) throw new Error('viewer token endpoint unavailable')
     state.cameras[key].room = { state: 'connected' }
+    state.cameras[key].hasVideo = true
   }
 
   module.__testHooks.scheduleViewerReconnect(dispatch, state, key, sessionId)
@@ -632,6 +673,51 @@ test('viewer 换证连续失败后持续退避重试直至恢复', async () => {
 
   assert.equal(attempts, 4)
   assert.deepEqual(timers.map(timer => timer.delay), [0, 2000, 4000, 8000])
+})
+
+test('Room 已连接但缺少视频轨道时自动重建 viewer', async () => {
+  const timers = []
+  const module = loadWebsocketRobot({}, {
+    setTimeout(callback, delay) {
+      timers.push({ callback, delay })
+      return timers.length
+    },
+    clearTimeout() {},
+    console: { ...console, error() {} }
+  })
+  const key = 'camera-missing-track'
+  const sessionId = 'session-missing-track'
+  const state = {
+    cameras: {
+      [key]: {
+        key,
+        watching: true,
+        stopped: false,
+        stopping: false,
+        hasVideo: false,
+        session: { sessionId, status: 'ROOM_READY' },
+        room: { state: 'connected' }
+      }
+    }
+  }
+  const calls = []
+  const dispatch = async (type, payload) => {
+    calls.push({ type, payload })
+    assert.equal(type, 'connectLiveKit')
+    assert.equal(payload.camera.key, key)
+    assert.equal(payload.refreshToken, true)
+    assert.equal(payload.throwOnError, true)
+    assert.equal(payload.managedReconnect, true)
+    state.cameras[key].hasVideo = true
+  }
+
+  module.__testHooks.scheduleViewerReconnect(dispatch, state, key, sessionId, 2000)
+  assert.equal(timers[0].delay, 2000)
+  state.cameras[key].session.status = 'STREAMING'
+  await timers[0].callback()
+
+  assert.equal(calls.length, 1)
+  assert.equal(timers.length, 1)
 })
 
 test('人工刷新只调用 viewer 恢复，不 stop/start 会话', async () => {

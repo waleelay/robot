@@ -40,6 +40,7 @@ const connectOperations = new Map()
 const restartOperations = new Map()
 const viewerReconnectTimers = new Map()
 const viewerReconnectAttempts = new Map()
+const VIEWER_RECOVERY_WAIT_STATUSES = ['INIT', 'REQUESTING_CLIENT', 'ROOM_READY', 'STREAMING']
 
 function runOnce(registry, key, task) {
   const current = registry.get(key)
@@ -58,33 +59,42 @@ function cancelViewerReconnect(key) {
   viewerReconnectAttempts.delete(key)
 }
 
+function shouldRecoverViewer(camera, sessionId) {
+  return Boolean(camera && camera.watching && !camera.stopping && !camera.stopped &&
+    camera.session && camera.session.sessionId === sessionId &&
+    VIEWER_RECOVERY_WAIT_STATUSES.includes(camera.session.status || camera.status) && !camera.hasVideo)
+}
+
 function scheduleViewerReconnect(dispatch, state, key, sessionId, delay = 0) {
   if (viewerReconnectTimers.has(key)) return
   const current = state.cameras[key]
-  if (!current || !current.watching || current.stopping || current.stopped ||
-      !current.session || current.session.sessionId !== sessionId || current.room) {
+  if (!shouldRecoverViewer(current, sessionId)) {
     cancelViewerReconnect(key)
     return
   }
   const timer = setTimeout(async() => {
     viewerReconnectTimers.delete(key)
     const latest = state.cameras[key]
-    if (!latest || !latest.watching || latest.stopping || latest.stopped ||
-        !latest.session || latest.session.sessionId !== sessionId || latest.room) {
+    if (!shouldRecoverViewer(latest, sessionId)) {
       cancelViewerReconnect(key)
+      return
+    }
+    if ((latest.session.status || latest.status) !== 'STREAMING') {
+      scheduleViewerReconnect(dispatch, state, key, sessionId, viewerReconnectDelay(1))
       return
     }
     try {
       await dispatch('connectLiveKit', {
         camera: latest,
         refreshToken: true,
-        throwOnError: true
+        throwOnError: true,
+        managedReconnect: true
       })
-      if (state.cameras[key]?.room) {
+      if (state.cameras[key]?.hasVideo) {
         cancelViewerReconnect(key)
         return
       }
-      throw new Error('LiveKit viewer 重连后 Room 不可用')
+      throw new Error('LiveKit viewer 重连后视频轨道不可用')
     } catch (error) {
       console.error('ERROR LiveKit viewer reconnect', error.message || '请求失败')
       const attempt = (viewerReconnectAttempts.get(key) || 0) + 1
@@ -95,9 +105,9 @@ function scheduleViewerReconnect(dispatch, state, key, sessionId, delay = 0) {
   viewerReconnectTimers.set(key, timer)
 }
 
-function reconnectViewerAfterCurrentConnect(dispatch, state, key, sessionId) {
+function reconnectViewerAfterCurrentConnect(dispatch, state, key, sessionId, delay = 0) {
   const reconnect = () => {
-    scheduleViewerReconnect(dispatch, state, key, sessionId)
+    scheduleViewerReconnect(dispatch, state, key, sessionId, delay)
   }
   const pending = connectOperations.get(key)
   if (pending) {
@@ -105,6 +115,19 @@ function reconnectViewerAfterCurrentConnect(dispatch, state, key, sessionId) {
   } else {
     Promise.resolve().then(reconnect)
   }
+}
+
+function beginViewerRecovery(commit, dispatch, state, camera, sessionId) {
+  if (!shouldRecoverViewer(camera, sessionId)) return
+  camera.viewerReconnecting = true
+  commit('setCamera', camera)
+  reconnectViewerAfterCurrentConnect(
+    dispatch,
+    state,
+    camera.key,
+    sessionId,
+    viewerReconnectDelay(1)
+  )
 }
 
 function refreshAuthorizedOverview(dispatch, { failClosed = false, notifyOnFailure = false } = {}) {
@@ -1569,7 +1592,7 @@ const actions = {
     return session
   },
   // 视频会话心跳
-  async heartbeatViewers({ state, commit }) {
+  async heartbeatViewers({ state, commit, dispatch }) {
     if (state.heartbeatPending) return
     state.heartbeatPending = true
     const activeIntercomSessionId = state.activeIncomingCall && state.activeIncomingCall.sessionId
@@ -1615,6 +1638,14 @@ const actions = {
           }))
         }
         await Promise.allSettled(requests)
+        if (shouldRecoverViewer(camera, sessionId)) {
+          if (camera.room && restoreVideoTrack(camera, camera.room, state)) {
+            camera.viewerReconnecting = false
+            changed = true
+          } else {
+            beginViewerRecovery(commit, dispatch, state, camera, sessionId)
+          }
+        }
         if (changed) {
           commit('setCamera', camera)
         }
@@ -2028,7 +2059,8 @@ const actions = {
     refreshToken,
     connectionToken,
     throwOnError = false,
-    waitForVideo = false
+    waitForVideo = false,
+    managedReconnect = false
   }) {
     // console.log('connectLiveKit================================', camera.intercomActive)
 
@@ -2150,6 +2182,9 @@ const actions = {
         }
         // viewer Track 取消订阅不能证明共享 Publisher 失效，等待重订阅或 Media 事实事件。
         commit('setCamera', current)
+        if (track.kind === 'video') {
+          beginViewerRecovery(commit, dispatch, state, current, sessionId)
+        }
       })
       room.on(RoomEvent.Reconnecting, () => {
         const current = currentCamera()
@@ -2196,6 +2231,9 @@ const actions = {
       if (current && restoreVideoTrack(current, room, state)) {
         current.viewerReconnecting = false
         commit('setCamera', current)
+      }
+      if (current && !managedReconnect) {
+        beginViewerRecovery(commit, dispatch, state, current, sessionId)
       }
       if (waitForVideo) {
         await waitForVideoTrack(room, () => Boolean(currentCamera()?.hasVideo))
