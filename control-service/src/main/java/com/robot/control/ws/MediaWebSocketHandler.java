@@ -40,6 +40,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 public class MediaWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MediaWebSocketHandler.class);
+    private static final int TERMINAL_LIFECYCLE_LOCK_COUNT = 64;
     private static final Pattern SAFE_TRACE_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
 
     private final MediaWebSocketPublisher publisher;
@@ -52,6 +53,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     private final ControlManagementClient managementClient;
     private final TrajectoryCoordinator trajectoryCoordinator;
     private final Map<String, CurrentUser> usersBySession = new ConcurrentHashMap<>();
+    private final Object[] terminalLifecycleLocks = createTerminalLifecycleLocks();
 
     public MediaWebSocketHandler(
             MediaWebSocketPublisher publisher,
@@ -82,8 +84,10 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         CurrentUser user = currentUser(session);
-        publisher.addSession(session);
-        usersBySession.put(session.getId(), user);
+        synchronized (terminalLifecycleLock(user)) {
+            usersBySession.put(session.getId(), user);
+            publisher.addSession(session);
+        }
         requestAuthorizationHeaders.setWebSocketHeaders(MediaWsAuthHandshakeInterceptor.headers(session));
         try {
             managementClient.warmCurrentUserDeviceCache();
@@ -189,21 +193,27 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
      */
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        CurrentUser user = usersBySession.remove(session.getId());
+        CurrentUser user = usersBySession.get(session.getId());
         try {
-            if (user != null && usersBySession.values().stream().noneMatch(candidate -> sameTerminal(candidate, user))) {
-                requestAuthorizationHeaders.setWebSocketHeaders(MediaWsAuthHandshakeInterceptor.headers(session));
-                try {
-                    int released = equipmentControlService.releaseOwnedSessions(user, "websocket_disconnected");
-                    if (released > 0) {
-                        log.info("WebSocket 断开已释放控制会话，会话={} 用户={} 终端={} 数量={}",
-                                session.getId(), user.userId(), user.clientId(), released);
+            if (user != null) {
+                synchronized (terminalLifecycleLock(user)) {
+                    usersBySession.remove(session.getId());
+                    if (usersBySession.values().stream().noneMatch(candidate -> sameTerminal(candidate, user))) {
+                        requestAuthorizationHeaders.setWebSocketHeaders(
+                                MediaWsAuthHandshakeInterceptor.headers(session));
+                        try {
+                            int released = equipmentControlService.releaseOwnedSessions(user, "websocket_disconnected");
+                            if (released > 0) {
+                                log.info("WebSocket 断开已释放控制会话，会话={} 用户={} 终端={} 数量={}",
+                                        session.getId(), user.userId(), user.clientId(), released);
+                            }
+                        } catch (RuntimeException exception) {
+                            log.warn("WebSocket 断开释放控制会话失败，会话={} 用户={} 终端={}",
+                                    session.getId(), user.userId(), user.clientId(), exception);
+                        } finally {
+                            requestAuthorizationHeaders.clearWebSocketHeaders();
+                        }
                     }
-                } catch (RuntimeException exception) {
-                    log.warn("WebSocket 断开释放控制会话失败，会话={} 用户={} 终端={}",
-                            session.getId(), user.userId(), user.clientId(), exception);
-                } finally {
-                    requestAuthorizationHeaders.clearWebSocketHeaders();
                 }
             }
         } finally {
@@ -215,6 +225,19 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     private boolean sameTerminal(CurrentUser left, CurrentUser right) {
         return Objects.equals(left.userId(), right.userId())
                 && Objects.equals(left.clientId(), right.clientId());
+    }
+
+    private Object terminalLifecycleLock(CurrentUser user) {
+        int index = Math.floorMod(Objects.hash(user.userId(), user.clientId()), terminalLifecycleLocks.length);
+        return terminalLifecycleLocks[index];
+    }
+
+    private static Object[] createTerminalLifecycleLocks() {
+        Object[] locks = new Object[TERMINAL_LIFECYCLE_LOCK_COUNT];
+        for (int index = 0; index < locks.length; index++) {
+            locks[index] = new Object();
+        }
+        return locks;
     }
 
     /**

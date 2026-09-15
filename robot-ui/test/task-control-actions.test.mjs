@@ -13,6 +13,7 @@ const calls = []
 const modeCalls = []
 const modeResponses = []
 const releaseCalls = []
+let acquireControlImpl = async () => ({})
 const taskApi = {
   pauseTaskRecord: async id => { calls.push(['pause', id]); return { accepted: true } },
   resumeTaskRecord: async id => { calls.push(['resume', id]); return { accepted: true } },
@@ -54,6 +55,7 @@ function javascriptModule(path) {
       if (name === 'vuex') return { mapActions: () => ({}), mapState: () => ({}) }
       if (name.endsWith('execution-status')) return executionStatus
       if (name.endsWith('api/media')) return {
+        acquireControl: (...args) => acquireControlImpl(...args),
         releaseControl: async (...args) => { releaseCalls.push(args) },
         setControlMode: async data => {
           modeCalls.push(data)
@@ -273,6 +275,7 @@ test('控制 WebSocket 断开时停止连续发送并清空本地租约', () => 
     controlPressed: { 'base-forward': true },
     controlTimers: { 'base-forward': 1 },
     controlSessions: { 'robot1:base:drive.velocity': { controlSessionId: 'session1' } },
+    controlConnectionEpoch: 0,
     stopFrameControl: kind => stopped.push(kind),
     $delete: (object, key) => { delete object[key] }
   }
@@ -281,6 +284,47 @@ test('控制 WebSocket 断开时停止连续发送并清空本地租约', () => 
 
   assert.deepEqual(stopped, ['base-forward'])
   assert.deepEqual(context.controlSessions, {})
+  assert.equal(context.controlConnectionEpoch, 1)
+})
+
+test('控制权申请跨越 WebSocket 断线时释放迟到租约', async () => {
+  releaseCalls.length = 0
+  let resolveAcquire
+  acquireControlImpl = () => new Promise(resolve => { resolveAcquire = resolve })
+  const context = {
+    ...controlMixin.methods,
+    selectedRobotId: 'robot1',
+    isManualMode: true,
+    wsConnected: true,
+    controlConnectionEpoch: 0,
+    controlPressed: {},
+    controlTimers: {},
+    controlSessions: {},
+    controlSessionRequests: {},
+    stopFrameControl() {},
+    $set: (object, key, value) => { object[key] = value },
+    $delete: (object, key) => { delete object[key] }
+  }
+
+  const pending = context.ensureControlSession({ deviceId: 'ptz1' }, 'left')
+  context.wsConnected = false
+  controlMixin.watch.wsConnected.call(context, false, true)
+  resolveAcquire({
+    robotId: 'robot1',
+    controlSessionId: 'session-late',
+    status: 'ACTIVE',
+    leaseExpireAt: new Date(Date.now() + 30000).toISOString()
+  })
+
+  await assert.rejects(pending, /控制连接已断开，请重新操作/)
+  assert.deepEqual(context.controlSessions, {})
+  assert.deepEqual(JSON.parse(JSON.stringify(releaseCalls)), [[
+    'robot1',
+    'session-late',
+    { reason: 'websocket_disconnected' },
+    { skipErrorMessage: true }
+  ]])
+  acquireControlImpl = async () => ({})
 })
 
 test('控制权申请期间松键不会发送迟到的移动帧', async () => {

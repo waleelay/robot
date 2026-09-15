@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
@@ -20,6 +21,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -377,6 +384,47 @@ class EquipmentControlServiceTest {
                 "actions", List.of("drive.velocity")), otherTerminal))
                 .containsEntry("status", "ACTIVE")
                 .doesNotContainKey("code");
+    }
+
+    @Test
+    void cleanupPublishesOldSessionStopBeforeAnotherTerminalCanAcquire() throws Exception {
+        register(component("BODY", "body"));
+        Map<String, Object> session = acquireBase();
+        publishBaseVelocity(session, 0.2);
+        session.put("leaseExpireAt", OffsetDateTime.now().minusSeconds(1));
+        reset(commandPublisher);
+
+        CountDownLatch stopStarted = new CountDownLatch(1);
+        CountDownLatch allowStop = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            stopStarted.countDown();
+            assertThat(allowStop.await(2, TimeUnit.SECONDS)).isTrue();
+            return null;
+        }).when(commandPublisher).publishCommand(eq("robot-001"), any());
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> cleanup = executor.submit(service::cleanupExpiredSessions);
+            assertThat(stopStarted.await(1, TimeUnit.SECONDS)).isTrue();
+
+            CurrentUser otherTerminal = new CurrentUser(
+                    "operator-2", "org-1", Set.of("EQUIPMENT_OPERATOR"), "terminal-2");
+            Future<Map<String, Object>> acquire = executor.submit(() -> service.acquire("robot-001", object(
+                    "scope", "ROBOT",
+                    "deviceIds", List.of("base"),
+                    "actions", List.of("drive.velocity")), otherTerminal));
+
+            assertThatThrownBy(() -> acquire.get(100, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(TimeoutException.class);
+            allowStop.countDown();
+            cleanup.get(1, TimeUnit.SECONDS);
+            assertThat(acquire.get(1, TimeUnit.SECONDS))
+                    .containsEntry("status", "ACTIVE")
+                    .doesNotContainKey("code");
+        } finally {
+            allowStop.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test

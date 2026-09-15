@@ -276,11 +276,12 @@ export function takeoverControl(robotId, data) {
   })
 }
 
-export function releaseControl(robotId, controlSessionId, data) {
+export function releaseControl(robotId, controlSessionId, data, options = {}) {
   return request({
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${robotId}/control-sessions/${controlSessionId}/release`,
     method: 'post',
-    data: data || {}
+    data: data || {},
+    skipErrorMessage: options.skipErrorMessage === true
   })
 }
 

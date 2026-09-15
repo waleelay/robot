@@ -164,8 +164,10 @@ public class EquipmentControlService {
             if (sameOwner) {
                 if (stringList(session.get("deviceIds")).containsAll(deviceIds)
                         && stringList(session.get("actions")).containsAll(actions)) {
-                    session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
-                    return copy(session);
+                    synchronized (session) {
+                        session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
+                        return copy(session);
+                    }
                 }
                 continue;
             } else {
@@ -906,26 +908,28 @@ public class EquipmentControlService {
         return session;
     }
 
-    private Map<String, Object> requireOwnedActiveSession(
+    private synchronized Map<String, Object> requireOwnedActiveSession(
             String robotId,
             String controlSessionId,
             String deviceId,
             CurrentUser user) {
         pruneExpiredSessions(robotId);
         Map<String, Object> session = requireSession(robotId, controlSessionId);
-        if (!"ACTIVE".equals(session.get("status")) || isExpired(session, OffsetDateTime.now())) {
-            throw new IllegalArgumentException("控制会话已失效，请重新申请");
+        synchronized (session) {
+            if (!"ACTIVE".equals(session.get("status")) || isExpired(session, OffsetDateTime.now())) {
+                throw new IllegalArgumentException("控制会话已失效，请重新申请");
+            }
+            if (!user.userId().equals(session.get("ownerUserId"))
+                    || !user.clientId().equals(session.get("ownerClientId"))) {
+                throw new IllegalArgumentException("控制会话不属于当前用户或终端");
+            }
+            List<String> deviceIds = stringList(session.get("deviceIds"));
+            if (!deviceIds.isEmpty() && !deviceIds.contains(deviceId)) {
+                throw new IllegalArgumentException("控制会话不包含设备：" + deviceId);
+            }
+            session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
+            return session;
         }
-        if (!user.userId().equals(session.get("ownerUserId"))
-                || !user.clientId().equals(session.get("ownerClientId"))) {
-            throw new IllegalArgumentException("控制会话不属于当前用户或终端");
-        }
-        List<String> deviceIds = stringList(session.get("deviceIds"));
-        if (!deviceIds.isEmpty() && !deviceIds.contains(deviceId)) {
-            throw new IllegalArgumentException("控制会话不包含设备：" + deviceId);
-        }
-        session.put("leaseExpireAt", OffsetDateTime.now().plusSeconds(30));
-        return session;
     }
 
     private void validateCommandAccess(String robotId, Map<String, Object> request, CurrentUser user) {
@@ -1005,7 +1009,7 @@ public class EquipmentControlService {
 
     /** 定期停止并删除已过期的控制会话，避免无人继续操作时会话长期驻留内存。 */
     @Scheduled(fixedDelayString = "${control.control-session-cleanup-delay-ms:1000}")
-    void cleanupExpiredSessions() {
+    synchronized void cleanupExpiredSessions() {
         pruneExpiredSessions(null);
     }
 

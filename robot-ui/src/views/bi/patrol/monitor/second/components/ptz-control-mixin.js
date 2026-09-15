@@ -114,6 +114,7 @@ export default {
       controlSeq: 1,
       controlSessions: {},
       controlSessionRequests: {},
+      controlConnectionEpoch: 0,
       manualModeRequest: null,
       manualModePendingUntil: 0,
       lastWarningLightQueryKey: '',
@@ -187,6 +188,22 @@ export default {
       }
       if (session.modeChangeStatus === 'PUBLISHED') this.manualModePendingUntil = Date.now() + 10000
     },
+    async rejectStaleControlSession(session, connectionEpoch) {
+      if (connectionEpoch === this.controlConnectionEpoch && this.wsConnected) return session
+      if (session?.controlSessionId) {
+        try {
+          await releaseControl(
+            session.robotId || this.selectedRobotId,
+            session.controlSessionId,
+            { reason: 'websocket_disconnected' },
+            { skipErrorMessage: true }
+          )
+        } catch (error) {
+          console.warn('WARN release stale control session', errorMessage(error))
+        }
+      }
+      throw new Error('控制连接已断开，请重新操作')
+    },
     async requestManualMode() {
       if (this.manualModeRequest || Date.now() < this.manualModePendingUntil) return
       const robot = this.liveRobot()
@@ -195,6 +212,7 @@ export default {
         return
       }
       this.manualModePendingUntil = Date.now() + 10000
+      const connectionEpoch = this.controlConnectionEpoch
       this.manualModeRequest = takeoverControl(this.selectedRobotId, {
         observedStateSeq: robot.stateSeq
       })
@@ -207,6 +225,7 @@ export default {
           error.code = response.code
           throw error
         }
+        await this.rejectStaleControlSession(response, connectionEpoch)
         this.rememberControlSession(response)
         this.$message.success(
           response.modeChangeStatus === 'CONFIRMED'
@@ -383,6 +402,7 @@ export default {
       if (device.deviceId === 'base' && !this.isManualMode) {
         throw new Error('请先将机器人切换到手动模式')
       }
+      const connectionEpoch = this.controlConnectionEpoch
       const request = acquireControl(this.selectedRobotId, {
           scope: device.deviceId === 'base' ? 'ROBOT' : 'DEVICE',
           deviceIds: [device.deviceId],
@@ -391,7 +411,7 @@ export default {
           reason: 'manual_teleop',
           ttlSeconds: 30
         })
-        .then(session => {
+        .then(async session => {
           if (session.code) {
             const error = new Error(session.code === 'CONTROL_LOCKED'
               ? '控制权已被其他终端占用'
@@ -399,6 +419,7 @@ export default {
             error.code = session.code
             throw error
           }
+          await this.rejectStaleControlSession(session, connectionEpoch)
           this.$set(this.controlSessions, key, session)
           return session
         })
@@ -460,6 +481,7 @@ export default {
       ), { timeout: 3000, skipErrorMessage: true })
     },
     async acquireBaseControlSession() {
+      const connectionEpoch = this.controlConnectionEpoch
       const session = await acquireControl(this.selectedRobotId, {
         scope: 'ROBOT',
         deviceIds: ['base'],
@@ -473,6 +495,7 @@ export default {
           ? '控制权已被其他终端占用'
           : session.message || session.code)
       }
+      await this.rejectStaleControlSession(session, connectionEpoch)
       this.rememberControlSession(session)
       return session
     },
@@ -872,6 +895,7 @@ export default {
   watch: {
     wsConnected(connected, previous) {
       if (!previous || connected) return
+      this.controlConnectionEpoch++
       new Set([...Object.keys(this.controlPressed), ...Object.keys(this.controlTimers)])
         .forEach(kind => this.stopFrameControl(kind))
       Object.keys(this.controlSessions).forEach(key => this.$delete(this.controlSessions, key))
