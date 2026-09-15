@@ -296,7 +296,8 @@ nginx_logs_dir="$nginx_dir/logs"
 mkdir -p "$nginx_conf_dir" "$nginx_ssl_dir" "$nginx_html_dir" "$nginx_logs_dir"
 
 if ! install_config_file "$CONFIG_DIR/nginx/nginx.conf" "$nginx_conf_dir/nginx.conf" "nginx"; then
-  install_config_file "$CONFIG_DIR/nginx/robot-mediaserver.conf" "$nginx_conf_dir/nginx.conf" "nginx" || true
+  echo "missing nginx config template: $CONFIG_DIR/nginx/nginx.conf" >&2
+  exit 1
 fi
 
 if [ ! -f "$nginx_conf_dir/nginx.conf" ]; then

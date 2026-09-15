@@ -325,11 +325,11 @@ if [ -d "$SCRIPT_DIR/config/livekit" ]; then
   find "$SCRIPT_DIR/config/livekit" -maxdepth 1 -type f \( -name 'livekit.yaml' -o -name 'livekit-egress.yaml' -o -name 'egress.yaml' \) -exec cp {} "$STAGING_DIR/config/livekit/" \;
 fi
 
-if [ -f "$SCRIPT_DIR/config/nginx/nginx.conf" ]; then
-  cp "$SCRIPT_DIR/config/nginx/nginx.conf" "$STAGING_DIR/config/nginx/nginx.conf"
-elif [ -f "$PROJECT_DIR/deploy/nginx/robot-mediaserver.conf" ]; then
-  cp "$PROJECT_DIR/deploy/nginx/robot-mediaserver.conf" "$STAGING_DIR/config/nginx/nginx.conf"
+if [ ! -f "$SCRIPT_DIR/config/nginx/nginx.conf" ]; then
+  echo "missing nginx config template: $SCRIPT_DIR/config/nginx/nginx.conf" >&2
+  exit 1
 fi
+cp "$SCRIPT_DIR/config/nginx/nginx.conf" "$STAGING_DIR/config/nginx/nginx.conf"
 
 if [ "$PACKAGE_TTS" = "true" ] && [ -f "$SCRIPT_DIR/config/tts/app.py" ]; then
   cp "$SCRIPT_DIR/config/tts/app.py" "$STAGING_DIR/config/tts/app.py"

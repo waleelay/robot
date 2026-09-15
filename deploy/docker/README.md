@@ -84,17 +84,13 @@ deploy/docker/config/livekit/livekit-egress.yaml
 
 ### 2.3 准备 Nginx 配置和前端
 
-Nginx 配置优先读取：
+Nginx 使用唯一配置模板：
 
 ```text
 deploy/docker/config/nginx/nginx.conf
 ```
 
-如果不存在，打包时会使用：
-
-```text
-deploy/nginx/robot-mediaserver.conf
-```
+打包时缺少该文件会直接失败，避免回退到已漂移的历史配置。
 
 前端不需要手动构建。`package.sh` 默认每次都会执行：
 

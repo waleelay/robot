@@ -30,7 +30,7 @@ tts/app.py
 
 - `livekit/livekit.yaml` 会在服务器安装成 `/home/jszn/mounts/media/livekit.yaml`。
 - `livekit/livekit-egress.yaml` 会在服务器安装成 `/home/jszn/mounts/media/livekit-egress.yaml`。
-- 如果 `nginx/nginx.conf` 不存在，打包时会使用 `deploy/nginx/robot-mediaserver.conf` 作为默认 Nginx 配置。
+- `nginx/nginx.conf` 是唯一 Nginx 配置模板；缺失时打包或安装会直接失败。
 - `nginx/html/dist` 由 `package.sh` 从 `robot-ui/dist` 复制生成，通常不需要手工维护。
 - 推荐把 tdt 地图文件打成 `nginx/html/tdt.zip`，安装时会解压到 `/home/jszn/mounts/media/nginx/html/tdt`。
 - 也兼容直接使用 `nginx/html/tdt` 目录。
