@@ -2272,13 +2272,14 @@ const actions = {
 
   // 仅供明确的人工/运维操作重启 Publisher，viewer 断线不调用此方法。
   async performRestartCamera({ commit, dispatch, state }, camera) {
-    if (camera.recordingActive) {
-      await dispatch('stopCameraRecording', camera)
-    }
+    camera = { ...(state.cameras[camera.key] || camera) }
     if (camera.stopping || camera.stopped || camera.restarting) return
     if (!camera.session || camera.session.status === 'CLOSED') return
     if (state.stoppedSessionIds.has(camera.session.sessionId)) return
-    if (!['STREAMING', 'INTERRUPTED'].includes(camera.session.status)) return
+    if (!['STREAMING', 'INTERRUPTED', 'FAILED', 'TIMEOUT'].includes(camera.session.status)) return
+    if (camera.recordingActive) {
+      await dispatch('stopCameraRecording', camera)
+    }
     try {
       camera.restarting = true
       commit('setCamera', mergeCameraFromStore(state, camera, { restarting: true }))
@@ -2286,6 +2287,15 @@ const actions = {
       camera.session = mergeSession(camera, updated)
       camera.status = camera.session.status
       camera.viewerCount = camera.session.viewerCount
+      const latestStatus = state.cameras[camera.key]?.session?.status
+      if (!['REQUESTING_CLIENT', 'ROOM_READY', 'STREAMING'].includes(latestStatus)) {
+        commit('setCamera', mergeCameraFromStore(state, camera, {
+          session: camera.session,
+          status: camera.status,
+          viewerCount: camera.viewerCount,
+          restarting: true
+        }))
+      }
       // console.log('API restartVideoSession', updated)
     } catch (error) {
       console.error('ERROR restartVideoSession', error.message || '请求失败')

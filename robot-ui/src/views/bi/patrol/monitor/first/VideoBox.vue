@@ -70,12 +70,14 @@
             :idName="`${prefixId}slot_${index}`"
             :slotKey="`slot_${index}`"
             :videoStatus="videoStatus(`slot_${index}`)"
+            :recoveryAction="videoDisplayState.action || 'none'"
             :cameraKey="ZQL_videosInfos[`slot_${index}`]?.key"
             @updateDropdownStyle="updateDropdownStyle"
             @playPauseVideo="toggleUserPaused"
             @toggleFullscreen="$emit('toggleFullscreen', `slot_${index}`)"
             @removeVideo="$emit('removeVideo', $event)"
             @refreshVideo="$emit('refreshVideo', $event)"
+            @restartVideoSource="handleRestartVideoSource"
             @control-visible-change="controlOpen = $event"
             :ref="`videoToolRefslot_${index}`"
             :className="overlaySizeClass"
@@ -251,7 +253,11 @@ export default {
   },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
-    ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSelectedRobotId', 'setControlCenterReturnTo', 'stopCamera']),
+    ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSelectedRobotId', 'setControlCenterReturnTo', 'stopCamera', 'restartCamera']),
+    handleRestartVideoSource() {
+      if (!this.cameraInfo?.session) return
+      return this.restartCamera(this.cameraInfo)
+    },
     startRecordTimer() {
       if (this.recordTimer) clearInterval(this.recordTimer)
       const recording = this.cameraInfo.activeRecording || {}

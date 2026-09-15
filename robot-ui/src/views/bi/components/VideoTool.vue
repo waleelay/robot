@@ -62,7 +62,7 @@
           <svg-icon icon-class="control" />
         </div>
       </template>
-      <div v-if="!videoStatus || videoStatus === 'stopped'" title="刷新" @click="refreshVideo()">
+      <div v-if="showRecoveryAction" :title="recoveryActionTitle" @click="handleRecoveryAction">
         <svg-icon icon-class="refresh" />
       </div>
       <div v-if="canSnapshot && ['paused', 'playing'].includes(videoStatus)" :title="videoStatus === 'paused' ? '播放' : '暂停'" @click="playPauseVideo()">
@@ -118,6 +118,11 @@ export default {
     videoStatus: {
       type: [String, Boolean],
       default: false
+    },
+    // null 表示旧调用方沿用 videoStatus 控制刷新按钮；none 表示当前状态不提供恢复操作。
+    recoveryAction: {
+      type: String,
+      default: null
     },
     cameraKey: {
       type: String,
@@ -177,6 +182,14 @@ export default {
       if (!this.cameraInfo.recordingActive) return '录制'
       return this.cameraInfo.recordingOwned ? '停止录制' : '其他浏览器正在录制'
     },
+    showRecoveryAction() {
+      if (this.recoveryAction === null) return !this.videoStatus || this.videoStatus === 'stopped'
+      return ['refresh-playback', 'restart-source'].includes(this.recoveryAction)
+    },
+    recoveryActionTitle() {
+      if (this.recoveryAction === 'restart-source') return '重新启动视频源'
+      return this.recoveryAction === null ? '刷新' : '刷新播放'
+    },
     intercomInProgress() {
       return this.cameraInfo.intercomActive || (this.cameraInfo.intercomStatus && !['IDLE', 'FAILED'].includes(this.cameraInfo.intercomStatus))
     }
@@ -203,9 +216,10 @@ export default {
       // 发送事件：1 表示暂停，0 表示播放
       this.$emit('playPauseVideo');
     },
-    // 刷新视频
-    refreshVideo() {
-      this.$emit('refreshVideo', this.slotKey);
+    // 同一操作位按故障方向恢复，避免播放端异常误重启共享视频源。
+    handleRecoveryAction() {
+      const event = this.recoveryAction === 'restart-source' ? 'restartVideoSource' : 'refreshVideo'
+      this.$emit(event, this.slotKey)
     },
     // =========================================抓拍=======================================
     // 抓拍弹框

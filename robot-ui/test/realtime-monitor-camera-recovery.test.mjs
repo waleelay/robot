@@ -19,7 +19,7 @@ const videoDisplayState = await import('data:text/javascript;base64,' + Buffer.f
   read('views/bi/js/utils/video-display-state.js')
 ).toString('base64'))
 
-function componentMethods(path) {
+function componentDefinition(path) {
   const source = read(path).split('<script>')[1].split('</script>')[0]
   const exports = {}
   vm.runInNewContext(require('@babel/core').transformSync(source, {
@@ -40,7 +40,11 @@ function componentMethods(path) {
       return {}
     }
   })
-  return exports.default.methods
+  return exports.default
+}
+
+function componentMethods(path) {
+  return componentDefinition(path).methods
 }
 
 function loadMediaApi(request) {
@@ -370,14 +374,122 @@ test('视频展示状态明确区分视频源和播放端方向', () => {
 
   assert.equal(resolve({ hasVideo: true, status: 'FAILED' }).key, 'playing')
   assert.equal(resolve({ session: { status: 'REQUESTING_CLIENT' } }).text, '正在启动视频源')
-  assert.equal(resolve({ session: { status: 'INTERRUPTED' } }).text, '视频源中断')
-  assert.equal(resolve({ session: { status: 'FAILED' } }).text, '视频源启动失败')
+  assert.equal(resolve({ session: { status: 'INTERRUPTED' } }).action, 'restart-source')
+  assert.equal(resolve({ session: { status: 'FAILED' } }).action, 'restart-source')
+  assert.equal(resolve({ session: { status: 'TIMEOUT' } }).action, 'restart-source')
+  assert.equal(resolve({ session: { status: 'FAILED' }, restarting: true }).key, 'source-restarting')
   assert.equal(resolve({ session: { status: 'STREAMING' }, connecting: true }).text, '正在连接播放服务')
   assert.equal(resolve({ session: { status: 'STREAMING' }, viewerReconnecting: true }).text, '播放连接恢复中')
-  assert.equal(resolve({ session: { status: 'STREAMING' } }).text, '播放端异常')
+  assert.equal(resolve({ session: { status: 'STREAMING' } }).action, 'refresh-playback')
+  assert.equal(resolve({ session: { status: 'STREAMING' } }, { loading: true }).key, 'viewer-failed')
   assert.equal(resolve({ status: 'offline' }).text, '设备离线')
   assert.equal(resolve({ status: 'offline', session: { status: 'STREAMING' } }).text, '设备离线')
-  assert.equal(resolve({ session: { status: 'CLOSED' } }).text, '未播放')
+  assert.equal(resolve({ session: { status: 'CLOSED' } }).action, 'refresh-playback')
+})
+
+test('视频工具栏按故障方向复用同一恢复操作位', () => {
+  const component = componentDefinition('views/bi/components/VideoTool.vue')
+  const methods = component.methods
+  const calls = []
+  const context = {
+    slotKey: 'slot_1',
+    recoveryAction: 'restart-source',
+    $emit(event, value) { calls.push([event, value]) }
+  }
+
+  methods.handleRecoveryAction.call(context)
+  context.recoveryAction = 'refresh-playback'
+  methods.handleRecoveryAction.call(context)
+
+  assert.deepEqual(calls, [
+    ['restartVideoSource', 'slot_1'],
+    ['refreshVideo', 'slot_1']
+  ])
+  assert.equal(component.computed.showRecoveryAction.call({ recoveryAction: 'none', videoStatus: 'stopped' }), false)
+  assert.equal(component.computed.showRecoveryAction.call({ recoveryAction: null, videoStatus: 'stopped' }), true)
+  assert.equal(component.computed.recoveryActionTitle.call({ recoveryAction: 'restart-source' }), '重新启动视频源')
+})
+
+test('视频源恢复只调用现有 Publisher 重启动作', async () => {
+  const methods = componentMethods('views/bi/patrol/monitor/first/VideoBox.vue')
+  const camera = { key: 'camera-1', session: { sessionId: 'session-1', status: 'FAILED' } }
+  const calls = []
+  const context = {
+    cameraInfo: camera,
+    async restartCamera(value) { calls.push(value) }
+  }
+
+  await methods.handleRestartVideoSource.call(context)
+
+  assert.deepEqual(calls, [camera])
+})
+
+test('失败或超时会话可复用原 session 重新启动视频源', async () => {
+  const restarted = []
+  const module = loadWebsocketRobot({
+    restartVideoSession: async sessionId => {
+      restarted.push(sessionId)
+      return { sessionId, status: 'REQUESTING_CLIENT', viewerCount: 1 }
+    }
+  })
+  const state = {
+    cameras: {},
+    activeCameras: {},
+    stoppedSessionIds: new Set()
+  }
+  const context = cameraActionContext(module.actions, state)
+
+  for (const status of ['FAILED', 'TIMEOUT']) {
+    const camera = {
+      key: `camera-${status}`,
+      watching: true,
+      stopped: false,
+      stopping: false,
+      restarting: false,
+      session: { sessionId: `session-${status}`, status }
+    }
+    state.cameras[camera.key] = camera
+    await module.actions.performRestartCamera(context, camera)
+    assert.equal(state.cameras[camera.key].session.status, 'REQUESTING_CLIENT')
+    assert.equal(state.cameras[camera.key].restarting, false)
+  }
+
+  assert.deepEqual(restarted, ['session-FAILED', 'session-TIMEOUT'])
+})
+
+test('启动中会话不接受源重启且不会误停录像', async () => {
+  let recordingStops = 0
+  let restarts = 0
+  const module = loadWebsocketRobot({
+    restartVideoSession: async () => { restarts += 1 }
+  })
+  const camera = {
+    key: 'camera-1',
+    recordingActive: true,
+    stopped: false,
+    stopping: false,
+    restarting: false,
+    session: { sessionId: 'session-1', status: 'REQUESTING_CLIENT' }
+  }
+  const state = {
+    cameras: { [camera.key]: camera },
+    activeCameras: {},
+    stoppedSessionIds: new Set()
+  }
+  const context = cameraActionContext(module.actions, state)
+  const dispatch = context.dispatch
+  context.dispatch = (type, payload) => {
+    if (type === 'stopCameraRecording') {
+      recordingStops += 1
+      return Promise.resolve()
+    }
+    return dispatch(type, payload)
+  }
+
+  await module.actions.performRestartCamera(context, camera)
+
+  assert.equal(recordingStops, 0)
+  assert.equal(restarts, 0)
 })
 
 test('视频心跳补齐漏收的失败状态且不操作媒体连接', async () => {
