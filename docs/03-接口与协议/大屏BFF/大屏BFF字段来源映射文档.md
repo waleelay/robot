@@ -177,7 +177,7 @@ Overview 的 `tasks[]` 只返回任务计划/实例列表可直接得到的摘�
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
 | `taskId` | 任务计划 ID | 管理端 | `TaskWorkflowPlanResponse.id`，兼容 `taskId` |
-| `workflowInstanceId` | 活动或最近实例 ID，供监控数据与历史回放关联，不能作为计划生命周期操作的回退 ID | 管理端 | `TaskWorkflowPlanResponse.activeWorkflowInstanceId/lastWorkflowInstanceId` |
+| `workflowInstanceId` | 活动或最近实例 ID，供监控数据与历史回放关联，不能作为计划生命周期操作的回退 ID | 管理端 | 优先匹配计划的 `activeWorkflowInstanceId/lastWorkflowInstanceId`；活动列表与计划字段短暂未收敛时，按 `TaskWorkflowInstanceResponse.workflowPlanId` 匹配当前实例 |
 | `name` | 任务名称 | 管理端 | `TaskWorkflowPlanResponse.planName/workflowName/name` |
 | `executionMode` | 执行模式 | 管理端 | 任务计划接口 `executionMode`，例如 `MANUAL`、`SCHEDULE`；缺失时为 `null` |
 | `expectedDurationSeconds` | 预计执行时长，单位秒 | 管理端 | 任务计划接口 `expectedDurationSeconds`；缺失时为 `null` |
@@ -213,8 +213,8 @@ Overview 的 `tasks[]` 只返回任务计划/实例列表可直接得到的摘�
 
 | BFF 字段 | 字段说明 | 来源类型 | 对接字段/处理逻辑 |
 |---|---|---|---|
-| `robotId` | 执行装备/机器人 ID | 管理端 | 优先 `DeviceTaskInstanceResponse.serialNumber/deviceId/id`，其次 `deviceSummaries[].serialNumber/deviceId/id`，最后 `roleBindings[].deviceIds[]` |
-| `name` | 装备名称 | 管理端 | `DeviceTaskInstanceResponse.deviceName`，其次 `deviceSummaries[].deviceName/name`；`roleBindings` 兜底时为 `null` |
+| `robotId` | 执行装备/机器人序列号 | 管理端 + BFF 关联 | 优先 `DeviceTaskInstanceResponse.serialNumber`，其次 `deviceSummaries[].serialNumber`；仅有 `roleBindings[].deviceIds[]` 时，按设备档案 `id` 转换为 `serialNumber`，保证与 `devices[].robotId` 使用同一身份 |
+| `name` | 装备名称 | 管理端 | `DeviceTaskInstanceResponse.deviceName`，其次 `deviceSummaries[].deviceName/name`；计划角色绑定兜底时由已加载的设备档案补齐 |
 | `type` | 装备类型中文名 | 管理端 + BFF 转换 | `deviceType/type` 转中文；字段缺失时为 `null` |
 | `status` | 装备在线状态 | 管理端 + BFF 关联 | 按 `robotId` 关联 `devices[].status`，仅返回 `online`、`offline`、`fault`；设备未匹配或状态未知时为 `null` |
 

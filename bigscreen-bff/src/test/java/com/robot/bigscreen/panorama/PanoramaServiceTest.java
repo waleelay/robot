@@ -418,6 +418,71 @@ class PanoramaServiceTest {
     }
 
     @Test
+    void overviewResolvesPlanDeviceIdToRobotSerialNumberWithoutLoadingHistory() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.devices()).thenReturn(List.of(Map.of(
+                "id", 101L,
+                "serialNumber", "robot-001",
+                "deviceName", "一号机器人")));
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "planName", "A区巡逻",
+                "executionStatus", "WAITING",
+                "roleBindings", List.of(Map.of("deviceIds", List.of(101L))))));
+
+        Map<String, Object> overview = new PanoramaService(centerClient, new ObjectMapper()).overview();
+
+        Map<String, Object> device = maps(overview.get("devices")).get(0);
+        Map<String, Object> equipment = maps(maps(overview.get("tasks")).get(0).get("equipmentList")).get(0);
+        assertFalse(device.containsKey("managementDeviceId"));
+        assertEquals("robot-001", equipment.get("robotId"));
+        assertEquals("一号机器人", equipment.get("name"));
+        verify(centerClient, never()).taskWorkflowInstances();
+        verify(centerClient, never()).taskWorkflowInstance(anyString());
+    }
+
+    @Test
+    void overviewMatchesActiveInstanceByPlanIdWhenPlanInstanceReferenceLags() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "planName", "A区巡逻",
+                "executionStatus", "RUNNING",
+                "activeWorkflowInstanceId", 8999L)));
+        when(centerClient.activeTaskWorkflowInstances()).thenReturn(List.of(Map.of(
+                "id", 9001L,
+                "workflowPlanId", 1L,
+                "status", "RUNNING",
+                "deviceSummaries", List.of(Map.of(
+                        "deviceId", 101L,
+                        "serialNumber", "robot-001",
+                        "deviceName", "一号机器人")))));
+
+        Map<String, Object> task = maps(new PanoramaService(centerClient, new ObjectMapper())
+                .overview().get("tasks")).get(0);
+
+        assertEquals(9001L, task.get("workflowInstanceId"));
+        assertEquals("robot-001", maps(task.get("equipmentList")).get(0).get("robotId"));
+    }
+
+    @Test
+    void taskEventDoesNotOverwriteResolvedEquipmentWithPlanDeviceIds() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
+                "id", 1L,
+                "executionStatus", "WAITING",
+                "roleBindings", List.of(Map.of("deviceIds", List.of(101L))))));
+
+        Map<String, Object> task = maps(new PanoramaService(centerClient, new ObjectMapper())
+                .taskEventSnapshot().get("items")).get(0);
+
+        assertFalse(task.containsKey("equipmentList"));
+    }
+
+    @Test
     void projectsPreparingAsRunningAndKeepsManagementLifecycleActions() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);

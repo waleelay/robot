@@ -477,6 +477,7 @@ public class PanoramaService {
 
     private Map<String, Object> overviewDevice(Map<String, Object> source) {
         Map<String, Object> device = mutable(source);
+        device.remove("managementDeviceId");
         device.remove("clientId");
         device.remove("vendor");
         device.remove("lastHeartbeatAt");
@@ -769,7 +770,9 @@ public class PanoramaService {
             // 实例查询失败不阻断计划列表刷新，也不能用残缺摘要覆盖运行态或删除任务。
             return object(
                     "plans", plans,
-                    "items", complete ? summarizeTasks(plans, instances) : List.of(),
+                    // 任务事件若只有计划中的数值 deviceId，就不下发 equipmentList 覆盖首屏已解析的
+                    // 设备序列号；活动实例的 deviceSummaries 仍会随事件实时更新设备关联。
+                    "items", complete ? summarizeTasks(plans, instances, true, false) : List.of(),
                     "tasksComplete", complete,
                     "convergencePending", hasPreparingPlan(plans));
         } finally {
@@ -1014,6 +1017,7 @@ public class PanoramaService {
         String name = firstString(source, "deviceName", "name");
 
         return object(
+                "managementDeviceId", firstValue(source, "id", "deviceId"),
                 "robotId", robotId,
                 "clientId", firstValue(source, "authMqttClientId", "clientId"),
                 "name", name,
@@ -1337,7 +1341,7 @@ public class PanoramaService {
                 taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
         List<Map<String, Object>> activeInstances = joinTask(
                 activeInstancesFuture, List.of(), quality, "ACTIVE_TASK_INSTANCES_UNAVAILABLE");
-        return new PanoramaTasks(summarizeTasks(taskPlans, activeInstances), List.of(),
+        return new PanoramaTasks(summarizeTasks(taskPlans, activeInstances, true, true), List.of(),
                 quality.snapshot(), hasPreparingPlan(taskPlans));
     }
 
@@ -1351,34 +1355,57 @@ public class PanoramaService {
                 taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
         List<Map<String, Object>> taskInstances = joinTask(
                 taskInstancesFuture, List.of(), quality, "TASK_INSTANCES_UNAVAILABLE");
-        return new PanoramaTasks(summarizeTasks(taskPlans, taskInstances), taskInstances,
+        return new PanoramaTasks(summarizeTasks(taskPlans, taskInstances, false, true), taskInstances,
                 quality.snapshot(), hasPreparingPlan(taskPlans));
     }
 
     private List<Map<String, Object>> summarizeTasks(
-            List<Map<String, Object>> plans, List<Map<String, Object>> instances) {
+            List<Map<String, Object>> plans,
+            List<Map<String, Object>> instances,
+            boolean activeInstancesOnly,
+            boolean includePlanRoleBindings) {
         Map<String, Map<String, Object>> instancesById = instances.stream()
                 .filter(item -> firstString(item, "id", "workflowInstanceId") != null)
                 .collect(Collectors.toMap(
                         item -> firstString(item, "id", "workflowInstanceId"),
                         Function.identity(),
                         (left, right) -> right));
+        Map<String, Map<String, Object>> activeInstancesByPlanId = activeInstancesOnly
+                ? instances.stream()
+                        .filter(item -> firstString(item, "workflowPlanId") != null)
+                        .collect(Collectors.toMap(
+                                item -> firstString(item, "workflowPlanId"),
+                                Function.identity(),
+                                (left, right) -> right))
+                : Map.of();
         return plans.stream()
-                .map(plan -> taskSummary(plan, instancesById.get(string(planWorkflowInstanceId(plan)))))
+                .map(plan -> {
+                    Map<String, Object> instance = instancesById.get(string(planWorkflowInstanceId(plan)));
+                    if (instance == null && activeInstancesOnly) {
+                        instance = activeInstancesByPlanId.get(firstString(plan, "id", "taskId"));
+                    }
+                    return taskSummary(plan, instance, includePlanRoleBindings);
+                })
                 .toList();
     }
 
-    private Map<String, Object> taskSummary(Map<String, Object> source, Map<String, Object> instance) {
+    private Map<String, Object> taskSummary(
+            Map<String, Object> source,
+            Map<String, Object> instance,
+            boolean includePlanRoleBindings) {
         Map<String, Object> safeInstance = instance == null ? Map.of() : instance;
+        Object workflowInstanceId = value(
+                firstValue(safeInstance, "id", "workflowInstanceId"),
+                planWorkflowInstanceId(source));
         String startTime = formatTime(value(
                 firstString(safeInstance, "startedAt"),
                 firstString(source, "startedAt", "lastStartedAt", "startTime")));
         String endTime = formatTime(value(
                 firstString(safeInstance, "completedAt"),
                 firstString(source, "completedAt", "lastCompletedAt", "endTime")));
-        return object(
+        Map<String, Object> result = object(
                 "taskId", firstValue(source, "id", "taskId"),
-                "workflowInstanceId", planWorkflowInstanceId(source),
+                "workflowInstanceId", workflowInstanceId,
                 "name", firstString(source, "planName", "workflowName", "name"),
                 "executionMode", firstValue(source, "executionMode"),
                 "expectedDurationSeconds", firstValue(source, "expectedDurationSeconds"),
@@ -1391,8 +1418,13 @@ public class PanoramaService {
                 "startTime", startTime,
                 "endTime", endTime,
                 "timeRange", timeRange(startTime, endTime, null),
-                "equipmentList", equipmentList(source, safeInstance, Map.of(), List.of()),
                 "mapId", firstValue(source, "mapId", "mapID"));
+        List<Map<String, Object>> equipment = equipmentList(
+                source, safeInstance, Map.of(), List.of(), includePlanRoleBindings);
+        if (!equipment.isEmpty() || includePlanRoleBindings) {
+            result.put("equipmentList", equipment);
+        }
+        return result;
     }
 
     private Map<String, Object> taskItem(
@@ -1425,7 +1457,7 @@ public class PanoramaService {
                 "endTime", endTime,
                 "timeRange", timeRange(startTime, endTime, null),
                 "currentLocation", currentLocation(source, replay),
-                "equipmentList", equipmentList(source, instance, replay, deviceTaskInstances),
+                "equipmentList", equipmentList(source, instance, replay, deviceTaskInstances, true),
                 "mapId", routeData.mapId(),
                 "mapPoints", routeData.mapPoints(),
                 "pathPoints", routeData.pathPoints());
@@ -1457,7 +1489,8 @@ public class PanoramaService {
             Map<String, Object> source,
             Map<String, Object> instance,
             Map<String, Object> replay,
-            List<Map<String, Object>> deviceTaskInstances) {
+            List<Map<String, Object>> deviceTaskInstances,
+            boolean includePlanRoleBindings) {
         if (!deviceTaskInstances.isEmpty()) {
             return deviceTaskInstances.stream()
                     .map(task -> object(
@@ -1480,6 +1513,9 @@ public class PanoramaService {
                             "status", null))
                     .toList();
         }
+        if (!includePlanRoleBindings) {
+            return List.of();
+        }
         List<Map<String, Object>> roleBindings = list(source.get("roleBindings"));
         if (roleBindings.isEmpty()) {
             return List.of();
@@ -1501,11 +1537,16 @@ public class PanoramaService {
             List<Map<String, Object>> tasks,
             List<Map<String, Object>> devices) {
         Map<String, String> statusByRobotId = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> devicesByManagementId = new LinkedHashMap<>();
         for (Map<String, Object> device : devices) {
             String robotId = firstString(device, "robotId");
             String status = equipmentOnlineStatus(device.get("status"));
             if (robotId != null && status != null) {
                 statusByRobotId.put(robotId, status);
+            }
+            String managementDeviceId = firstString(device, "managementDeviceId");
+            if (managementDeviceId != null && robotId != null) {
+                devicesByManagementId.put(managementDeviceId, device);
             }
         }
         return tasks.stream()
@@ -1514,7 +1555,19 @@ public class PanoramaService {
                     List<Map<String, Object>> equipment = list(task.get("equipmentList")).stream()
                             .map(item -> {
                                 Map<String, Object> equipmentItem = mutable(item);
-                                equipmentItem.put("status", statusByRobotId.get(firstString(item, "robotId")));
+                                String sourceId = firstString(item, "robotId");
+                                Map<String, Object> resolved = devicesByManagementId.get(sourceId);
+                                String robotId = resolved == null ? sourceId : firstString(resolved, "robotId");
+                                if (resolved != null) {
+                                    equipmentItem.put("robotId", robotId);
+                                    if (firstString(equipmentItem, "name") == null) {
+                                        equipmentItem.put("name", firstString(resolved, "name"));
+                                    }
+                                    if (firstString(equipmentItem, "type") == null) {
+                                        equipmentItem.put("type", firstString(resolved, "type"));
+                                    }
+                                }
+                                equipmentItem.put("status", statusByRobotId.get(robotId));
                                 return equipmentItem;
                             })
                             .toList();
