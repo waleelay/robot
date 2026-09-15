@@ -267,6 +267,22 @@ test('控制会话只在租约有效时复用', () => {
   assert.equal(active({ status: 'ACTIVE' }), false)
 })
 
+test('控制 WebSocket 断开时停止连续发送并清空本地租约', () => {
+  const stopped = []
+  const context = {
+    controlPressed: { 'base-forward': true },
+    controlTimers: { 'base-forward': 1 },
+    controlSessions: { 'robot1:base:drive.velocity': { controlSessionId: 'session1' } },
+    stopFrameControl: kind => stopped.push(kind),
+    $delete: (object, key) => { delete object[key] }
+  }
+
+  controlMixin.watch.wsConnected.call(context, false, true)
+
+  assert.deepEqual(stopped, ['base-forward'])
+  assert.deepEqual(context.controlSessions, {})
+})
+
 test('控制权申请期间松键不会发送迟到的移动帧', async () => {
   let resolveFrame
   const sent = []

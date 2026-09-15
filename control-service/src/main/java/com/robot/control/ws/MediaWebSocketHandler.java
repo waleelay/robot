@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -50,6 +51,7 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     private final RequestAuthorizationHeaders requestAuthorizationHeaders;
     private final ControlManagementClient managementClient;
     private final TrajectoryCoordinator trajectoryCoordinator;
+    private final Map<String, CurrentUser> usersBySession = new ConcurrentHashMap<>();
 
     public MediaWebSocketHandler(
             MediaWebSocketPublisher publisher,
@@ -79,7 +81,9 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
      */
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
+        CurrentUser user = currentUser(session);
         publisher.addSession(session);
+        usersBySession.put(session.getId(), user);
         requestAuthorizationHeaders.setWebSocketHeaders(MediaWsAuthHandshakeInterceptor.headers(session));
         try {
             managementClient.warmCurrentUserDeviceCache();
@@ -181,8 +185,32 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
      */
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        trajectoryCoordinator.removeSession(session);
-        publisher.removeSession(session);
+        CurrentUser user = usersBySession.remove(session.getId());
+        try {
+            if (user != null && usersBySession.values().stream().noneMatch(candidate -> sameTerminal(candidate, user))) {
+                requestAuthorizationHeaders.setWebSocketHeaders(MediaWsAuthHandshakeInterceptor.headers(session));
+                try {
+                    int released = equipmentControlService.releaseOwnedSessions(user, "websocket_disconnected");
+                    if (released > 0) {
+                        log.info("WebSocket 断开已释放控制会话，会话={} 用户={} 终端={} 数量={}",
+                                session.getId(), user.userId(), user.clientId(), released);
+                    }
+                } catch (RuntimeException exception) {
+                    log.warn("WebSocket 断开释放控制会话失败，会话={} 用户={} 终端={}",
+                            session.getId(), user.userId(), user.clientId(), exception);
+                } finally {
+                    requestAuthorizationHeaders.clearWebSocketHeaders();
+                }
+            }
+        } finally {
+            trajectoryCoordinator.removeSession(session);
+            publisher.removeSession(session);
+        }
+    }
+
+    private boolean sameTerminal(CurrentUser left, CurrentUser right) {
+        return Objects.equals(left.userId(), right.userId())
+                && Objects.equals(left.clientId(), right.clientId());
     }
 
     /**

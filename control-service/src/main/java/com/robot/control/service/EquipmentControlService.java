@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
@@ -308,24 +309,110 @@ public class EquipmentControlService {
      * @param user 当前用户
      * @return 释放结果
      */
-    public Map<String, Object> release(
+    public synchronized Map<String, Object> release(
             String robotId,
             String controlSessionId,
             Map<String, Object> request,
             CurrentUser user) {
-        requireRobot(robotId);
         Map<String, Object> session = requireSession(robotId, controlSessionId);
         if (!user.userId().equals(session.get("ownerUserId"))
                 || !user.clientId().equals(session.get("ownerClientId"))) {
             throw new IllegalArgumentException("当前用户或终端无权释放该控制会话");
         }
-        session.put("status", "RELEASED");
-        session.put("releasedAt", OffsetDateTime.now());
-        session.put("reason", request == null ? "user_release" : stringValue(request.get("reason"), "user_release"));
+        String reason = request == null ? "user_release" : stringValue(request.get("reason"), "user_release");
+        boolean stopActiveMotion = request == null || booleanValue(request.get("stopActiveMotion"), true);
+        releaseSession(session, reason, stopActiveMotion);
+        sessions.remove(controlSessionId, session);
         return object(
                 "controlSessionId", controlSessionId,
                 "status", "RELEASED",
                 "releasedAt", session.get("releasedAt"));
+    }
+
+    /**
+     * 释放指定用户终端持有的全部有效控制会话。
+     *
+     * @param user 当前用户终端
+     * @param reason 释放原因
+     * @return 实际释放的会话数
+     */
+    public synchronized int releaseOwnedSessions(CurrentUser user, String reason) {
+        if (user == null) {
+            return 0;
+        }
+        int released = 0;
+        for (Map<String, Object> session : sessions.values()) {
+            if (!"ACTIVE".equals(session.get("status"))
+                    || !user.userId().equals(session.get("ownerUserId"))
+                    || !user.clientId().equals(session.get("ownerClientId"))) {
+                continue;
+            }
+            releaseSession(session, reason, true);
+            sessions.remove(String.valueOf(session.get("controlSessionId")), session);
+            released++;
+        }
+        return released;
+    }
+
+    private void releaseSession(Map<String, Object> session, String reason, boolean stopActiveMotion) {
+        Map<String, Object> stopPayload = null;
+        synchronized (session) {
+            boolean active = "ACTIVE".equals(session.get("status"));
+            session.put("status", "RELEASED");
+            session.put("releasedAt", OffsetDateTime.now());
+            session.put("reason", reason);
+            if (stopActiveMotion && active && Boolean.TRUE.equals(session.get("baseMotionActive"))) {
+                session.put("baseMotionActive", false);
+                stopPayload = baseStopPayload(session);
+            }
+        }
+        publishBaseStop(session, stopPayload);
+    }
+
+    private void rememberBaseMotion(Map<String, Object> session, Map<String, Object> payload) {
+        Map<String, Object> params = mapValue(payload.get("params"));
+        Map<String, Object> linear = mapValue(params.get("linear"));
+        Map<String, Object> angular = mapValue(params.get("angular"));
+        boolean active = doubleValue(linear.get("x"), 0.0) != 0.0
+                || doubleValue(linear.get("y"), 0.0) != 0.0
+                || doubleValue(angular.get("yaw"), 0.0) != 0.0;
+        synchronized (session) {
+            if (!"ACTIVE".equals(session.get("status"))) {
+                return;
+            }
+            session.put("baseMotionActive", active);
+            session.put("lastBaseMotionTarget", mapValue(payload.get("target")));
+            session.put("lastBaseMotionSeq", numberValue(payload.get("seq"), 0).longValue());
+        }
+    }
+
+    private Map<String, Object> baseStopPayload(Map<String, Object> session) {
+        Map<String, Object> target = mapValue(session.get("lastBaseMotionTarget"));
+        if (target.isEmpty()) {
+            return null;
+        }
+        return object(
+                "robotId", session.get("robotId"),
+                "seq", numberValue(session.get("lastBaseMotionSeq"), 0).longValue() + 1,
+                "target", target,
+                "action", "drive.velocity",
+                "params", object(
+                        "linear", object("x", 0.0, "y", 0.0, "z", 0.0),
+                        "angular", object("roll", 0.0, "yaw", 0.0)),
+                "issuedAt", OffsetDateTime.now());
+    }
+
+    private void publishBaseStop(Map<String, Object> session, Map<String, Object> payload) {
+        if (payload == null) {
+            return;
+        }
+        String robotId = stringValue(session.get("robotId"), "");
+        try {
+            commandPublisher.publishCommand(robotId, payload);
+        } catch (RuntimeException exception) {
+            log.warn("释放控制会话时下发本体停止失败，机器人={} 会话={}",
+                    robotId, session.get("controlSessionId"), exception);
+        }
     }
 
     /**
@@ -362,7 +449,7 @@ public class EquipmentControlService {
         requireRobot(robotId);
         validateCommandAccess(robotId, request, user);
         Map<String, Object> mqttPayload = buildMqttPayload(robotId, request);
-        commandPublisher.publishCommand(robotId, mqttPayload);
+        publishCommandAndRememberMotion(robotId, request, mqttPayload);
         String commandId = "cmd_" + compactUuid();
         Map<String, Object> response = object(
                 "commandId", commandId,
@@ -373,6 +460,25 @@ public class EquipmentControlService {
                 "issuedAt", mqttPayload.get("issuedAt"));
         webSocketPublisher.publish("control.command.published", response);
         return response;
+    }
+
+    private void publishCommandAndRememberMotion(
+            String robotId, Map<String, Object> request, Map<String, Object> payload) {
+        if (!"drive.velocity".equals(payload.get("action"))) {
+            commandPublisher.publishCommand(robotId, payload);
+            return;
+        }
+        Map<String, Object> session = sessions.get(stringValue(request.get("controlSessionId"), ""));
+        if (session == null) {
+            throw new IllegalArgumentException("控制会话已失效，请重新申请");
+        }
+        synchronized (session) {
+            if (!"ACTIVE".equals(session.get("status")) || isExpired(session, OffsetDateTime.now())) {
+                throw new IllegalArgumentException("控制会话已失效，请重新申请");
+            }
+            commandPublisher.publishCommand(robotId, payload);
+            rememberBaseMotion(session, payload);
+        }
     }
 
     /**
@@ -886,12 +992,21 @@ public class EquipmentControlService {
      */
     private void pruneExpiredSessions(String robotId) {
         OffsetDateTime now = OffsetDateTime.now();
-        sessions.entrySet().removeIf(entry -> {
+        for (Map.Entry<String, Map<String, Object>> entry : sessions.entrySet()) {
             Map<String, Object> session = entry.getValue();
-            return robotId.equals(session.get("robotId"))
+            if ((robotId == null || robotId.equals(session.get("robotId")))
                     && "ACTIVE".equals(session.get("status"))
-                    && isExpired(session, now);
-        });
+                    && isExpired(session, now)) {
+                releaseSession(session, "lease_expired", true);
+                sessions.remove(entry.getKey(), session);
+            }
+        }
+    }
+
+    /** 定期停止并删除已过期的控制会话，避免无人继续操作时会话长期驻留内存。 */
+    @Scheduled(fixedDelayString = "${control.control-session-cleanup-delay-ms:1000}")
+    void cleanupExpiredSessions() {
+        pruneExpiredSessions(null);
     }
 
     /**

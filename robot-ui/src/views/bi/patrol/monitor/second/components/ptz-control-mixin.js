@@ -870,6 +870,12 @@ export default {
     },
   },
   watch: {
+    wsConnected(connected, previous) {
+      if (!previous || connected) return
+      new Set([...Object.keys(this.controlPressed), ...Object.keys(this.controlTimers)])
+        .forEach(kind => this.stopFrameControl(kind))
+      Object.keys(this.controlSessions).forEach(key => this.$delete(this.controlSessions, key))
+    },
     currentControlMode(mode) {
       if (mode === '手动模式') this.manualModePendingUntil = 0
     },

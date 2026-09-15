@@ -14,6 +14,7 @@ import com.robot.control.auth.CurrentUser;
 import com.robot.control.client.ControlManagementClient;
 import com.robot.control.messaging.EquipmentControlCommandPublisher;
 import com.robot.control.ws.MediaWebSocketPublisher;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -275,6 +276,107 @@ class EquipmentControlServiceTest {
                 "deviceIds", List.of("base"),
                 "actions", List.of("drive.velocity")), operator()).get("controlSessionId"))
                 .isEqualTo(driveSession.get("controlSessionId"));
+    }
+
+    @Test
+    void releaseStopsActiveBaseMotionByDefault() {
+        register(component("BODY", "body"));
+        Map<String, Object> session = acquireBase();
+        publishBaseVelocity(session, 0.2);
+        reset(commandPublisher);
+
+        Map<String, Object> result = service.release(
+                "robot-001", String.valueOf(session.get("controlSessionId")), Map.of(), operator());
+
+        assertThat(result).containsEntry("status", "RELEASED");
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
+        Map<String, Object> payload = map(captor.getValue());
+        assertThat(payload).containsEntry("action", "drive.velocity");
+        assertThat(map(map(payload.get("params")).get("linear")))
+                .containsEntry("x", 0.0)
+                .containsEntry("y", 0.0);
+        assertThat(map(map(payload.get("params")).get("angular"))).containsEntry("yaw", 0.0);
+    }
+
+    @Test
+    void releaseCanKeepExistingMotionStopBehaviorDisabledExplicitly() {
+        register(component("BODY", "body"));
+        Map<String, Object> session = acquireBase();
+        publishBaseVelocity(session, 0.2);
+        reset(commandPublisher);
+
+        service.release(
+                "robot-001",
+                String.valueOf(session.get("controlSessionId")),
+                object("stopActiveMotion", false),
+                operator());
+
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+    }
+
+    @Test
+    void websocketDisconnectReleasesOnlyMatchingTerminalSessions() {
+        register(component("BODY", "body"));
+        Map<String, Object> session = acquireBase();
+        publishBaseVelocity(session, 0.2);
+        reset(commandPublisher);
+
+        assertThat(service.releaseOwnedSessions(operator(), "websocket_disconnected")).isEqualTo(1);
+
+        CurrentUser otherTerminal = new CurrentUser(
+                "operator-2", "org-1", Set.of("EQUIPMENT_OPERATOR"), "terminal-2");
+        assertThat(service.acquire("robot-001", object(
+                "scope", "ROBOT",
+                "deviceIds", List.of("base"),
+                "actions", List.of("drive.velocity")), otherTerminal))
+                .containsEntry("status", "ACTIVE")
+                .doesNotContainKey("code");
+        verify(commandPublisher).publishCommand(eq("robot-001"), any());
+    }
+
+    @Test
+    void releaseDoesNotPublishDuplicateStopAfterZeroVelocity() {
+        register(component("BODY", "body"));
+        Map<String, Object> session = acquireBase();
+        publishBaseVelocity(session, 0.2);
+        publishBaseVelocity(session, 0.0);
+        reset(commandPublisher);
+
+        service.release(
+                "robot-001", String.valueOf(session.get("controlSessionId")), Map.of(), operator());
+
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+        assertThatThrownBy(() -> service.release(
+                "robot-001", String.valueOf(session.get("controlSessionId")), Map.of(), operator()))
+                .hasMessageContaining("未找到控制会话");
+    }
+
+    @Test
+    void cleanupExpiredSessionStopsMotionOnceAndRemovesLease() {
+        register(component("BODY", "body"));
+        Map<String, Object> session = acquireBase();
+        publishBaseVelocity(session, 0.2);
+        session.put("leaseExpireAt", OffsetDateTime.now().minusSeconds(1));
+        reset(commandPublisher);
+
+        service.cleanupExpiredSessions();
+        service.cleanupExpiredSessions();
+
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
+        assertThat(map(captor.getValue())).containsEntry("action", "drive.velocity");
+        assertThat(map(map(map(captor.getValue()).get("params")).get("linear")))
+                .containsEntry("x", 0.0)
+                .containsEntry("y", 0.0);
+        CurrentUser otherTerminal = new CurrentUser(
+                "operator-2", "org-1", Set.of("EQUIPMENT_OPERATOR"), "terminal-2");
+        assertThat(service.acquire("robot-001", object(
+                "scope", "ROBOT",
+                "deviceIds", List.of("base"),
+                "actions", List.of("drive.velocity")), otherTerminal))
+                .containsEntry("status", "ACTIVE")
+                .doesNotContainKey("code");
     }
 
     @Test
@@ -864,6 +966,16 @@ class EquipmentControlServiceTest {
         Map<String, Object> payload = map(captor.getValue());
         reset(commandPublisher);
         return payload;
+    }
+
+    private void publishBaseVelocity(Map<String, Object> session, double linearX) {
+        online("手动模式");
+        service.publishCommand("robot-001", object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "base"),
+                "action", "drive.velocity",
+                "params", object("linearX", linearX, "linearY", 0.0, "angularZ", 0.0),
+                "client", object("seq", 7)), operator());
     }
 
     private void online(String controlMode) {
