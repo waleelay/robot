@@ -157,24 +157,28 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
                                 session.getId(), exception.getMessage());
                     }
                 }
-                default -> {
-                    // Ignore unknown message types for forward compatibility.
-                }
+                default -> send(session, rejectedType(type), requestId, object(
+                        "code", "UNSUPPORTED_MESSAGE_TYPE",
+                        "message", "不支持的 WebSocket 消息类型：" + type));
             }
         } catch (Exception ex) {
-            String rejectedType = type.startsWith("video.intercom.call.")
-                    || type.startsWith("video.field.call.")
-                    ? (type.startsWith("video.field.call.")
-                        ? "video.field.call.operation-failed"
-                        : "video.intercom.call.operation-failed")
-                    : "control.command.rejected";
-            send(session, rejectedType, requestId, object(
+            send(session, rejectedType(type), requestId, object(
                     "code", "OPERATION_REJECTED",
                     "message", ex.getMessage()));
         } finally {
             requestAuthorizationHeaders.clearWebSocketHeaders();
             MDC.remove("traceId");
         }
+    }
+
+    private String rejectedType(String type) {
+        if (type.startsWith("video.field.call.")) {
+            return "video.field.call.operation-failed";
+        }
+        if (type.startsWith("video.intercom.call.")) {
+            return "video.intercom.call.operation-failed";
+        }
+        return "control.command.rejected";
     }
 
     /**

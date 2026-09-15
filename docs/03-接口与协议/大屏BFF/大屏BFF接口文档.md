@@ -219,7 +219,11 @@ BFF 在三个兼容路径注册同一桥接处理器：
 /ws/bigscreen
 ```
 
-每个浏览器连接对应一条到 `center.websocket-control-url` 的上游连接。BFF 在转发浏览器消息前检查 Token 和当前授权快照；显式携带无权 `robotId` 或 `cameraId` 的消息不会转发到 Control。通过预校验的消息原样转发；上游原始消息按授权资源过滤后回传，同时可能派生 `panorama.*` 事件。
+每个浏览器连接对应一条到 `center.websocket-control-url` 的上游连接，上游建连总时限为 10 秒。
+BFF 在转发浏览器消息前检查 Token 和当前授权快照；显式携带无权 `robotId` 或 `cameraId` 的消息
+不会转发到 Control。通过预校验的消息原样转发；上游原始消息按授权资源过滤后回传，同时可能派生
+`panorama.*` 事件。上游不存在、已关闭或发送失败时，BFF 返回保留原 `requestId` 的失败事件，
+`payload.code` 为 `UPSTREAM_UNAVAILABLE`，随后以 `1011` 关闭浏览器连接，复用前端既有退避重连。
 
 `robot.state` 只按顶层 `data.robotId` 校验机器人数据权限；`data.cameras[]`
 及上装状态内的 `cameraId` 表示机器人本体相机，继承该机器人权限，不与

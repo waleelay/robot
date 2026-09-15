@@ -287,10 +287,21 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private void forwardToCenter(WebSocketSession browserSession, TextMessage message) throws Exception {
         WebSocketSession centerSession = centerSessions.get(browserSession.getId());
         if (centerSession != null && centerSession.isOpen()) {
-            centerSession.sendMessage(message);
-        } else {
-            log.debug("中心端 WebSocket 不可用，已丢弃浏览器消息，会话={}",
-                    browserSession.getId());
+            try {
+                centerSession.sendMessage(message);
+                return;
+            } catch (Exception exception) {
+                log.warn("向中心端转发 WebSocket 消息失败，会话={}", browserSession.getId(), exception);
+            }
+        }
+        log.warn("中心端 WebSocket 不可用，已拒绝浏览器消息，会话={}", browserSession.getId());
+        sendRequestRejected(
+                browserSession,
+                message.getPayload(),
+                "UPSTREAM_UNAVAILABLE",
+                "控制服务暂不可用，请等待连接恢复后重试");
+        if (browserSession.isOpen()) {
+            browserSession.close(CloseStatus.SERVER_ERROR);
         }
     }
 
@@ -962,23 +973,40 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     }
 
     private void sendAuthorizationRejected(WebSocketSession browserSession, String payload) {
+        sendRequestRejected(
+                browserSession,
+                payload,
+                "RESOURCE_FORBIDDEN",
+                "当前用户无权操作目标资源");
+    }
+
+    private void sendRequestRejected(
+            WebSocketSession browserSession,
+            String payload,
+            String code,
+            String message) {
         try {
             JsonNode incoming = objectMapper.readTree(payload);
             String type = incoming.path("type").asText("");
-            String responseType = type.startsWith("video.intercom.call.")
-                    ? "video.intercom.call.operation-failed"
-                    : "control.command.rejected";
             Map<String, Object> response = new LinkedHashMap<>();
-            response.put("type", responseType);
+            response.put("type", rejectedResponseType(type));
             response.put("requestId", incoming.path("requestId").asText(""));
             response.put("timestamp", Instant.now().toString());
-            response.put("payload", Map.of(
-                    "code", "RESOURCE_FORBIDDEN",
-                    "message", "当前用户无权操作目标资源"));
+            response.put("payload", Map.of("code", code, "message", message));
             sendText(browserSession, objectMapper.writeValueAsString(response));
         } catch (Exception exception) {
-            log.warn("发送 WebSocket 越权拒绝回执失败，会话={}", browserSession.getId(), exception);
+            log.warn("发送 WebSocket 拒绝回执失败，会话={} 代码={}", browserSession.getId(), code, exception);
         }
+    }
+
+    private String rejectedResponseType(String type) {
+        if (type.startsWith("video.field.call.")) {
+            return "video.field.call.operation-failed";
+        }
+        if (type.startsWith("video.intercom.call.")) {
+            return "video.intercom.call.operation-failed";
+        }
+        return "control.command.rejected";
     }
 
     private void notifyAuthorizationChanged(String identity) {

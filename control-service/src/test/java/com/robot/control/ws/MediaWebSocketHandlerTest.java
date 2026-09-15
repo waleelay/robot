@@ -1,6 +1,7 @@
 package com.robot.control.ws;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -17,9 +18,11 @@ import com.robot.control.service.EquipmentControlService;
 import com.robot.control.trajectory.TrajectoryCoordinator;
 import java.util.Map;
 import java.util.Set;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 class MediaWebSocketHandlerTest {
@@ -122,5 +125,37 @@ class MediaWebSocketHandlerTest {
 
         handler.afterConnectionClosed(second, CloseStatus.NORMAL);
         verify(equipmentControlService).releaseOwnedSessions(user, "websocket_disconnected");
+    }
+
+    @Test
+    void rejectsUnsupportedMessageTypeWithOriginalRequestId() throws Exception {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        CurrentUserResolver currentUserResolver = mock(CurrentUserResolver.class);
+        CurrentUser user = new CurrentUser("user-1", "org-1", Set.of("EQUIPMENT_OPERATOR"), "client-1");
+        MediaWebSocketHandler handler = new MediaWebSocketHandler(
+                publisher,
+                new ObjectMapper(),
+                mock(EquipmentControlService.class),
+                mock(IntercomCallService.class),
+                mock(FieldCallService.class),
+                currentUserResolver,
+                mock(RequestAuthorizationHeaders.class),
+                mock(ControlManagementClient.class),
+                mock(TrajectoryCoordinator.class));
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("ws-unsupported");
+        when(session.getAttributes()).thenReturn(Map.of());
+        when(currentUserResolver.resolve(session)).thenReturn(user);
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"unknown.command","requestId":"request-unsupported-001","payload":{}}
+                """));
+
+        ArgumentCaptor<TextMessage> response = ArgumentCaptor.forClass(TextMessage.class);
+        verify(publisher).send(eq(session), response.capture());
+        org.assertj.core.api.Assertions.assertThat(response.getValue().getPayload())
+                .contains("request-unsupported-001")
+                .contains("UNSUPPORTED_MESSAGE_TYPE");
     }
 }

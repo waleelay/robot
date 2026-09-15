@@ -136,7 +136,9 @@ gateway/fixed-camera/{gatewayId}/catalog/sync
 - 请求消息：`{type,requestId,payload}`。
 - 请求响应：`{type,requestId,timestamp,payload}`。
 
-支持 `control.command` 与主动对讲的 accept/reject/query；未知 `type` 静默忽略。WebSocket 只维护进程内连接，服务重启后客户端需要重连。
+支持 `control.command` 与主动对讲的 accept/reject/query；未知 `type` 返回保留原 `requestId` 的
+`control.command.rejected`，错误码为 `UNSUPPORTED_MESSAGE_TYPE`。WebSocket 只维护进程内连接，
+服务重启后客户端需要重连。
 
 ## 5. 配置
 

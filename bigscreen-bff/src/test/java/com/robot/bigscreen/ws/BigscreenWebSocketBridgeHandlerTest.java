@@ -575,6 +575,66 @@ class BigscreenWebSocketBridgeHandlerTest {
     }
 
     @Test
+    void rejectsClientMessageWithRequestIdWhenCenterIsUnavailable() throws Exception {
+        BigscreenWebSocketAuthorizationService authorizationService =
+                mock(BigscreenWebSocketAuthorizationService.class);
+        WebSocketSession browserSession = browserSession(
+                new HttpHeaders(), URI.create("wss://bigscreen/ws/control"), "session-upstream-unavailable");
+        when(browserSession.getPrincipal()).thenReturn(authentication("user-001", Instant.now().plusSeconds(300)));
+        when(browserSession.isOpen()).thenReturn(true);
+        when(authorizationService.authorizedResources(browserSession)).thenReturn(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(Set.of("robot-001"), Set.of()));
+        when(authorizationService.canForwardClientMessage(any(), anyString())).thenReturn(true);
+        BigscreenWebSocketBridgeHandler handler = handler(authorizationService);
+        handler.afterConnectionEstablished(browserSession);
+
+        handler.handleTextMessage(browserSession, new TextMessage("""
+                {"type":"control.command","requestId":"request-upstream-001","payload":{"robotId":"robot-001"}}
+                """));
+
+        ArgumentCaptor<TextMessage> response = ArgumentCaptor.forClass(TextMessage.class);
+        verify(browserSession).sendMessage(response.capture());
+        assertTrue(response.getValue().getPayload().contains("request-upstream-001"));
+        assertTrue(response.getValue().getPayload().contains("UPSTREAM_UNAVAILABLE"));
+        verify(browserSession).close(CloseStatus.SERVER_ERROR);
+        handler.shutdownAuthorizationRefreshExecutor();
+    }
+
+    @Test
+    void rejectsClientMessageWhenCenterSendFails() throws Exception {
+        BigscreenWebSocketAuthorizationService authorizationService =
+                mock(BigscreenWebSocketAuthorizationService.class);
+        WebSocketSession browserSession = browserSession(
+                new HttpHeaders(), URI.create("wss://bigscreen/ws/control"), "session-center-send-failed");
+        WebSocketSession centerSession = mock(WebSocketSession.class);
+        when(browserSession.getPrincipal()).thenReturn(authentication("user-001", Instant.now().plusSeconds(300)));
+        when(browserSession.isOpen()).thenReturn(true);
+        when(centerSession.isOpen()).thenReturn(true);
+        when(authorizationService.authorizedResources(browserSession)).thenReturn(
+                new BigscreenWebSocketAuthorizationService.AuthorizedResources(Set.of("robot-001"), Set.of()));
+        when(authorizationService.canForwardClientMessage(any(), anyString())).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IllegalStateException("center closed"))
+                .when(centerSession).sendMessage(any(TextMessage.class));
+        BigscreenWebSocketBridgeHandler handler = handler(authorizationService);
+        handler.afterConnectionEstablished(browserSession);
+        assertTrue((Boolean) ReflectionTestUtils.invokeMethod(
+                handler, "registerCenterSession", browserSession, centerSession));
+
+        handler.handleTextMessage(browserSession, new TextMessage("""
+                {"type":"control.command","requestId":"request-send-failed-001","payload":{"robotId":"robot-001"}}
+                """));
+
+        ArgumentCaptor<TextMessage> response = ArgumentCaptor.forClass(TextMessage.class);
+        verify(browserSession).sendMessage(response.capture());
+        assertTrue(response.getValue().getPayload().contains("request-send-failed-001"));
+        assertTrue(response.getValue().getPayload().contains("UPSTREAM_UNAVAILABLE"));
+        verify(browserSession).close(CloseStatus.SERVER_ERROR);
+        handler.afterConnectionClosed(browserSession, CloseStatus.SERVER_ERROR);
+        verify(centerSession).close(CloseStatus.SERVER_ERROR);
+        handler.shutdownAuthorizationRefreshExecutor();
+    }
+
+    @Test
     void forwardsFieldCallMessageWithoutLoadingBigscreenAuthorization() throws Exception {
         BigscreenWebSocketAuthorizationService authorizationService =
                 mock(BigscreenWebSocketAuthorizationService.class);
