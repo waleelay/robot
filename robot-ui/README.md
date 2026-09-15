@@ -104,7 +104,6 @@ npm run lint:fix
 | `VUE_APP_INTEGRATION_LOG_ENABLED` | 管理端 HTTP 与任务、告警、轨迹 WebSocket 链路日志；默认启用，设为 `false` 可关闭 |
 | `VUE_APP_WEBRTC` | WebRTC 服务地址 |
 | `VUE_APP_YUNTAI_CONTROL` | 云台控制接口地址 |
-| `VUE_APP_KEYCLOAK_URL` | Keycloak 对外地址 |
 | `VUE_APP_KEYCLOAK_REALM` | Keycloak Realm，默认 `iam-auth` |
 | `VUE_APP_KEYCLOAK_CLIENT_ID` | 大屏 Public SPA Client ID，默认 `bigscreen-web` |
 
@@ -115,14 +114,16 @@ VUE_APP_TITLE=具身智能平台指挥中心
 VUE_APP_BASE_API=/dev-api
 VUE_APP_BASE_ORIGIN=https://backend.example.com
 VUE_APP_WS_URL=wss://backend.example.com/ws/bigscreen
-VUE_APP_KEYCLOAK_URL=https://auth.example.com
 VUE_APP_KEYCLOAK_REALM=iam-auth
 VUE_APP_KEYCLOAK_CLIENT_ID=bigscreen-web
 ```
 
 开发模式下，`/dev-api` 会通过 `vue.config.js` 代理到 `VUE_APP_BASE_ORIGIN`，并移除 `/dev-api` 前缀。
 
-生产部署也可通过 `public/js/auth-config.js` 提供 Keycloak 运行时配置，无需将具体环境地址写进业务代码。
+大屏与 IAM 同机部署时无需配置 Keycloak 地址，前端默认使用
+`https://<大屏地址栏主机>:18443`。大屏与 IAM 分离部署时，可通过
+`public/js/auth-config.js` 的 `keycloakUrl` 提供运行时地址。`keycloakUrl` 为空、
+空白或未配置时，均使用地址栏主机自动推导。
 管理端需要为大屏注册 Public SPA 客户端并启用 Authorization Code + PKCE(S256)。
 完整配置见[大屏统一登录认证对接指南](../docs/03-接口与协议/大屏BFF/大屏统一登录认证对接指南.md)。
 

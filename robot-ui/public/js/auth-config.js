@@ -1,10 +1,6 @@
 window.__BIGSCREEN_AUTH_CONFIG__ = window.__BIGSCREEN_AUTH_CONFIG__ || {
-  // 公司内网
-  // keycloakUrl: 'https://192.168.124.235:18443',
-  // 公司外网
-  keycloakUrl: 'https://211.137.109.150:18443',
-  // 联通云
-  // keycloakUrl: 'https://175.155.35.79:18443',
+  // 留空时使用 https://<地址栏主机>:18443；大屏与 IAM 分离部署时填写完整 IAM 地址。
+  keycloakUrl: '',
   keycloakRealm: 'iam-auth',
   keycloakClientId: 'bigscreen-web',
   keycloakLocale: 'zh-CN',

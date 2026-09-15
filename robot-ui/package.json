@@ -11,7 +11,8 @@
     "preview": "node build/index.js --preview",
     "lint": "eslint --ext .js,.vue src",
     "lint:fix": "eslint --ext .js,.vue src --fix",
-    "test:admin-console": "node --test test/admin-console-url.test.mjs"
+    "test:admin-console": "node --test test/admin-console-url.test.mjs",
+    "test:auth-config": "node --test test/keycloak-url.test.mjs"
   },
   "husky": {
     "hooks": {

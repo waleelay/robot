@@ -1,5 +1,6 @@
 import Keycloak from 'keycloak-js/lib/keycloak.js'
 import { clearFileObjectUrlCache } from '@/utils/file-object-url-cache'
+import { resolveKeycloakUrl } from '@/utils/keycloakUrl'
 
 let keycloak = null
 let initPromise = null
@@ -24,12 +25,9 @@ function authDisabled() {
 }
 
 function keycloakConfig() {
-  const url = runtimeValue('keycloakUrl', process.env.VUE_APP_KEYCLOAK_URL || '')
-  if (!url) {
-    throw new Error('缺少大屏 Keycloak 地址配置')
-  }
+  const url = resolveKeycloakUrl({ runtimeUrl: runtimeConfig().keycloakUrl })
   return {
-    url: url.replace(/\/$/, ''),
+    url,
     realm: runtimeValue('keycloakRealm', process.env.VUE_APP_KEYCLOAK_REALM || 'iam-auth'),
     clientId: runtimeValue('keycloakClientId', process.env.VUE_APP_KEYCLOAK_CLIENT_ID || 'bigscreen-web')
   }
