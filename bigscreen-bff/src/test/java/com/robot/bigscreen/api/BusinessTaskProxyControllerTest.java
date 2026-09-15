@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.robot.bigscreen.client.CenterProxyClient;
@@ -74,6 +75,53 @@ class BusinessTaskProxyControllerTest {
                 .andExpect(status().isOk());
 
         verify(proxyClient).forwardToManage(any(), eq("/api/v1/management/selection-options/workflow-definitions/wf-1"));
+    }
+
+    @Test
+    void forwardsTemporaryNavigation() throws Exception {
+        when(proxyClient.forwardToManage(any(), eq("/api/v1/management/external/temporary-navigations")))
+                .thenReturn(ResponseEntity.ok("{}".getBytes()));
+
+        mockMvc.perform(post("/api/bigscreen/business/external/temporary-navigations")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
+                .andExpect(status().isOk());
+
+        verify(proxyClient).forwardToManage(any(), eq("/api/v1/management/external/temporary-navigations"));
+    }
+
+    @Test
+    void forwardsServicePointNavigation() throws Exception {
+        when(proxyClient.forwardToManage(any(), eq("/api/v1/management/external/service-point-navigations")))
+                .thenReturn(ResponseEntity.ok("{}".getBytes()));
+
+        mockMvc.perform(post("/api/bigscreen/business/external/service-point-navigations")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
+                .andExpect(status().isOk());
+
+        verify(proxyClient).forwardToManage(any(), eq("/api/v1/management/external/service-point-navigations"));
+    }
+
+    @Test
+    void forwardsServicePointOptionsForOneDevice() throws Exception {
+        when(proxyClient.forwardToManage(any(),
+                eq("/api/v1/management/external/devices/sx-songling-001/service-point-options")))
+                .thenReturn(ResponseEntity.ok("[]".getBytes()));
+
+        mockMvc.perform(get("/api/bigscreen/business/external/devices/sx-songling-001/service-point-options")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
+                .andExpect(status().isOk());
+
+        verify(proxyClient).forwardToManage(any(),
+                eq("/api/v1/management/external/devices/sx-songling-001/service-point-options"));
+    }
+
+    @Test
+    void rejectsOtherExternalPaths() throws Exception {
+        mockMvc.perform(get("/api/bigscreen/business/external/devices")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
+                .andExpect(status().isNotFound());
+
+        verify(proxyClient, never()).forwardToManage(any(), any());
     }
 
     @Test

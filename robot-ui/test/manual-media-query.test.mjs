@@ -20,7 +20,13 @@ function loadMediaApi(request) {
     require: name => {
       if (name === '@/utils/request') return request
       if (name === '@/utils/media-client-id') return { mediaClientId: 'test-client' }
-      if (name === '@/utils/api-url') return { withApiPrefix: value => value, withBigscreenApiPrefix: value => value }
+      if (name === '@/utils/api-url') return {
+        BIGSCREEN_API_PREFIX: '/api/bigscreen',
+        BIGSCREEN_CONTROL_API_PREFIX: '/api/bigscreen/control',
+        BIGSCREEN_PANORAMA_API_PREFIX: '/api/bigscreen/panorama',
+        withApiPrefix: value => value,
+        withBigscreenApiPrefix: value => value
+      }
       return {}
     }
   })

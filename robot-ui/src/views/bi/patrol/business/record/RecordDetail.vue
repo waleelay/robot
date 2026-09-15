@@ -402,7 +402,7 @@ import HlsModule from 'hls.js'
 import { getTaskRecordReplay, previewImageBlob } from '@/api/new-bi'
 import { createFileObjectUrl, fileDownloadUrl, getFilePlayUrl, revokeFileObjectUrl } from '@/api/media'
 import Empty from '../../../components/Empty.vue'
-import { withApiPrefix } from '@/utils/api-url'
+import { BIGSCREEN_CONTROL_API_PREFIX, withApiPrefix } from '@/utils/api-url'
 import { isRequestErrorNotified } from '@/utils/request'
 import {
   executionStatusLabel as resolveExecutionStatusLabel,
@@ -1440,8 +1440,8 @@ export default {
     },
     normalizeMediaFilePath(path) {
       return String(path || '')
-        .replace(/^\/api\/media\/files\//, '/api/bigscreen/control/files/')
-        .replace(/^\/api\/control(?=\/|$)/, '/api/bigscreen/control')
+        .replace(/^\/api\/media\/files\//, BIGSCREEN_CONTROL_API_PREFIX + '/files/')
+        .replace(/^\/api\/control(?=\/|$)/, BIGSCREEN_CONTROL_API_PREFIX)
     },
     normalizeResourceUrl(value) {
       if (!value) return ''

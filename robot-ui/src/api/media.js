@@ -1,6 +1,11 @@
 import request from '@/utils/request'
 import { mediaClientId } from '@/utils/media-client-id'
-import { withApiPrefix, withBigscreenApiPrefix } from '@/utils/api-url'
+import {
+  BIGSCREEN_CONTROL_API_PREFIX,
+  BIGSCREEN_PANORAMA_API_PREFIX,
+  withApiPrefix,
+  withBigscreenApiPrefix
+} from '@/utils/api-url'
 
 // 每个浏览器标签页拥有独立 clientId，但同一标签页刷新后保持不变。
 // 这对控制权续用很重要：刷新页面不能被后端误判成另一个终端。
@@ -23,13 +28,13 @@ export function createVideoSession(data) {
   }
   if (data.sourceType === 'FIXED_CAMERA') {
     return request({
-      url: `/api/bigscreen/control/fixed-cameras/${data.robotId}/video/start`,
+      url: `${BIGSCREEN_CONTROL_API_PREFIX}/fixed-cameras/${data.robotId}/video/start`,
       method: 'post',
       data: payload
     })
   }
   return request({
-    url: `/api/bigscreen/control/robots/${data.robotId}/cameras/${data.deviceId}/video/start`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${data.robotId}/cameras/${data.deviceId}/video/start`,
     method: 'post',
     data: payload
   })
@@ -38,7 +43,7 @@ export function createVideoSession(data) {
 // 获取活跃视频会话
 export function getActiveVideoSessions() {
   return request({
-    url: '/api/bigscreen/control/video-sessions/active',
+    url: BIGSCREEN_CONTROL_API_PREFIX + '/video-sessions/active',
     method: 'get'
   })
 }
@@ -46,7 +51,7 @@ export function getActiveVideoSessions() {
 // 获取观看令牌
 export function getViewerToken(sessionId) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/token`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/token`,
     method: 'post'
   })
 }
@@ -54,7 +59,7 @@ export function getViewerToken(sessionId) {
 // 停止视频会话
 export function stopVideoSession(sessionId, options = {}) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/stop`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/stop`,
     method: 'post',
     ...options
   })
@@ -63,7 +68,7 @@ export function stopVideoSession(sessionId, options = {}) {
 // 视频会话心跳
 export function heartbeatVideoSession(sessionId) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/heartbeat`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/heartbeat`,
     method: 'post',
     timeout: 4000,
     skipErrorMessage: true
@@ -73,7 +78,7 @@ export function heartbeatVideoSession(sessionId) {
 // 重启视频会话
 export function restartVideoSession(sessionId) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/restart`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/restart`,
     method: 'post'
   })
 }
@@ -81,7 +86,7 @@ export function restartVideoSession(sessionId) {
 // 切换频道
 export function switchChannel(sessionId, data) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/switch-channel`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/switch-channel`,
     method: 'post',
     data
   })
@@ -90,7 +95,7 @@ export function switchChannel(sessionId, data) {
 // 创建快照
 export function uploadFile(data, timeout = 30000) {
   return request({
-    url: '/api/bigscreen/control/files',
+    url: BIGSCREEN_CONTROL_API_PREFIX + '/files',
     method: 'post',
     data,
     timeout
@@ -99,7 +104,7 @@ export function uploadFile(data, timeout = 30000) {
 
 export function transferMultiFunctionAudio(robotId, deviceId, fileId) {
   return request({
-    url: `/api/bigscreen/control/robots/${encodeURIComponent(robotId)}/devices/${encodeURIComponent(deviceId)}/audio-file-transfers`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${encodeURIComponent(robotId)}/devices/${encodeURIComponent(deviceId)}/audio-file-transfers`,
     method: 'post',
     data: { fileId }
   })
@@ -107,7 +112,7 @@ export function transferMultiFunctionAudio(robotId, deviceId, fileId) {
 
 export function getFiles(params = {}) {
   return request({
-    url: '/api/bigscreen/control/files',
+    url: BIGSCREEN_CONTROL_API_PREFIX + '/files',
     method: 'get',
     params
   })
@@ -124,7 +129,7 @@ export function getManualMediaFiles(fileType, params = {}) {
 
 export function fileDownloadUrl(fileId, inline = false) {
   return request({
-    url: `/api/bigscreen/control/files/${encodeURIComponent(fileId)}/download-url`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/files/${encodeURIComponent(fileId)}/download-url`,
     method: 'post',
     params: inline ? { inline: true } : undefined
   }).then(response => {
@@ -141,7 +146,7 @@ export function fileDownloadUrl(fileId, inline = false) {
 
 export function getFileContent(fileId) {
   return request({
-    url: `/api/bigscreen/control/files/${encodeURIComponent(fileId)}/content`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/files/${encodeURIComponent(fileId)}/content`,
     method: 'get',
     responseType: 'blob',
     skipErrorMessage: true
@@ -168,26 +173,26 @@ export function revokeFileObjectUrl(url) {
 
 export function deleteFile(fileId) {
   return request({
-    url: `/api/bigscreen/control/files/${fileId}`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/files/${fileId}`,
     method: 'delete'
   })
 }
 
 export function deleteFiles(fileIds) {
   return request({
-    url: '/api/bigscreen/control/files/batch',
+    url: BIGSCREEN_CONTROL_API_PREFIX + '/files/batch',
     method: 'delete',
     data: { fileIds }
   })
 }
 export function snapshotImageUrl(fileId) {
   const base = (process.env.VUE_APP_BASE_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '')
-  return `${base}${withApiPrefix(`/api/bigscreen/control/files/${encodeURIComponent(fileId)}/content`)}`
+  return `${base}${withApiPrefix(`${BIGSCREEN_CONTROL_API_PREFIX}/files/${encodeURIComponent(fileId)}/content`)}`
 }
 
 export function stopIntercom(sessionId) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/intercom/stop`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/intercom/stop`,
     method: 'post',
     headers: sessionHeaders,
     skipErrorMessage: true
@@ -195,7 +200,7 @@ export function stopIntercom(sessionId) {
 }
 export function startCameraIntercom(data) {
   return request({
-    url: `/api/bigscreen/control/robots/${data.robotId}/cameras/${data.deviceId}/video/intercom/start`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${data.robotId}/cameras/${data.deviceId}/video/intercom/start`,
     method: 'post',
     data: {
       quality: data.quality,
@@ -208,7 +213,7 @@ export function startCameraIntercom(data) {
 
 export function startSessionIntercom(sessionId) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/intercom/start`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/intercom/start`,
     method: 'post',
     headers: sessionHeaders,
     skipErrorMessage: true
@@ -216,7 +221,7 @@ export function startSessionIntercom(sessionId) {
 }
 export function heartbeatIntercom(sessionId) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/intercom/heartbeat`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/intercom/heartbeat`,
     method: 'post',
     headers: sessionHeaders,
     timeout: 4000,
@@ -226,7 +231,7 @@ export function heartbeatIntercom(sessionId) {
 
 export function getFilePlayUrl(fileId) {
   return request({
-    url: `/api/bigscreen/control/files/${fileId}/play-url`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/files/${fileId}/play-url`,
     method: 'post',
     headers
   }).then(response => {
@@ -246,14 +251,14 @@ export function getFilePlayUrl(fileId) {
 // 双光云台
 export function getControlProfile(robotId) {
   return request({
-    url: `/api/bigscreen/control/robots/${robotId}/control-profile`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${robotId}/control-profile`,
     method: 'get'
   })
 }
 
 export function acquireControl(robotId, data) {
   return request({
-    url: `/api/bigscreen/control/robots/${robotId}/control-sessions/acquire`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${robotId}/control-sessions/acquire`,
     method: 'post',
     data,
     acceptBusinessResponse: true,
@@ -263,7 +268,7 @@ export function acquireControl(robotId, data) {
 
 export function takeoverControl(robotId, data) {
   return request({
-    url: `/api/bigscreen/control/robots/${robotId}/control-sessions/takeover`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${robotId}/control-sessions/takeover`,
     method: 'post',
     data,
     acceptBusinessResponse: true,
@@ -273,7 +278,7 @@ export function takeoverControl(robotId, data) {
 
 export function releaseControl(robotId, controlSessionId, data) {
   return request({
-    url: `/api/bigscreen/control/robots/${robotId}/control-sessions/${controlSessionId}/release`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${robotId}/control-sessions/${controlSessionId}/release`,
     method: 'post',
     data: data || {}
   })
@@ -281,7 +286,7 @@ export function releaseControl(robotId, controlSessionId, data) {
 
 export function createConfirmToken(robotId, data) {
   return request({
-    url: `/api/bigscreen/control/robots/${robotId}/commands/confirm-token`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${robotId}/commands/confirm-token`,
     method: 'post',
     data
   })
@@ -289,7 +294,7 @@ export function createConfirmToken(robotId, data) {
 
 export function sendEquipmentCommand(robotId, data, config = {}) {
   return request({
-    url: `/api/bigscreen/control/robots/${robotId}/commands`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${robotId}/commands`,
     method: 'post',
     data,
     ...config
@@ -298,7 +303,7 @@ export function sendEquipmentCommand(robotId, data, config = {}) {
 
 export function startLiveRecording(sessionId) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/recordings/start`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/recordings/start`,
     method: 'post',
     headers
   })
@@ -306,14 +311,14 @@ export function startLiveRecording(sessionId) {
 
 export function stopLiveRecording(sessionId, fileId) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/recordings/${fileId}/stop`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/recordings/${fileId}/stop`,
     method: 'post',
     headers
   })
 }
 export function getActiveLiveRecording(sessionId) {
   return request({
-    url: `/api/bigscreen/control/video-sessions/${sessionId}/recordings/active`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/recordings/active`,
     method: 'get',
     headers,
     timeout: 4000,
@@ -324,7 +329,7 @@ export function getActiveLiveRecording(sessionId) {
 // 控制模式请求与状态统一使用“导航模式”“手动模式”
 export function setControlMode(data) {
   return request({
-    url: `/api/bigscreen/control/robots/${data.robotId}/control-mode`,
+    url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${data.robotId}/control-mode`,
     method: 'post',
     data: {
       controlMode: data.controlMode,
@@ -339,8 +344,8 @@ export function setControlMode(data) {
 export function executeAlarm(data) {
   return request({
     url: data.workflowActionable === true
-      ? `/api/bigscreen/panorama/alarms/${data.alarmId}/handle-and-continue`
-      : `/api/bigscreen/panorama/alarms/${data.alarmId}/handled`,
+      ? `${BIGSCREEN_PANORAMA_API_PREFIX}/alarms/${data.alarmId}/handle-and-continue`
+      : `${BIGSCREEN_PANORAMA_API_PREFIX}/alarms/${data.alarmId}/handled`,
     method: 'post',
     data: {
       disposalStatus: data.disposalStatus,

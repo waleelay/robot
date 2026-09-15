@@ -60,7 +60,7 @@ BFF 是 OAuth2 Resource Server：
 | --- | --- |
 | `/api/bigscreen/panorama/**` | 全景总览、设备详情、任务、告警及处置 |
 | `/api/bigscreen/statistics/**` | 统计结构、同步 PDF 导出和按用户隔离的报告历史 |
-| `/api/bigscreen/business/**` | 有限白名单的 Management 业务代理 |
+| `/api/bigscreen/business/**` | 有限白名单的 Management 业务代理（含任务、设备、地图及大屏导航） |
 | `/api/control/**`、`/api/media/**` 等 | 下游透明代理 |
 | `/ws/control`、`/ws/media`、`/ws/bigscreen` | 同一 WebSocket 桥接处理器的兼容路径 |
 

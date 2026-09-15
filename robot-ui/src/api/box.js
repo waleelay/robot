@@ -1,5 +1,4 @@
 import request from '@/utils/request'
-const pre = ''
 
 // 获取摄像头列表
 export function getDeviceList(url) {

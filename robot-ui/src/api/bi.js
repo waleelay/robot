@@ -1,17 +1,17 @@
 import request from '@/utils/request'
-const pre = '/dashboard2'
+const DASHBOARD_API_PREFIX = '/dashboard2'
 
 // 首页设备概览
 export function getDeviceOverview() {
   return request({
-    url: pre + '/Entity/searchDeviceOverview',
+    url: DASHBOARD_API_PREFIX + '/Entity/searchDeviceOverview',
     method: 'post'
   })
 }
 // 场景注册
 export function getSceneRegister(data) {
   return request({
-    url: pre + '/Entity/searchSceneRegister',
+    url: DASHBOARD_API_PREFIX + '/Entity/searchSceneRegister',
     method: 'post',
     data
   })
@@ -19,7 +19,7 @@ export function getSceneRegister(data) {
 // 首页告警
 export function getWarningInfo(data) {
   return request({
-    url: pre + '/Error/searchErrorStatistic',
+    url: DASHBOARD_API_PREFIX + '/Error/searchErrorStatistic',
     method: 'post',
     data
   })
@@ -27,7 +27,7 @@ export function getWarningInfo(data) {
 // 调度任务执行情况
 export function getDdrwzxqkInfo(data) {
   return request({
-    url: pre + '/monitor/job/selectTaskStatistic',
+    url: DASHBOARD_API_PREFIX + '/monitor/job/selectTaskStatistic',
     method: 'post',
     data
   })
@@ -35,7 +35,7 @@ export function getDdrwzxqkInfo(data) {
 // 巡逻巡查 调度任务执行情况
 export function getXlxcDdrwzxqkInfo(data) {
   return request({
-    url: pre + '/Send/getRecordByTaskType',
+    url: DASHBOARD_API_PREFIX + '/Send/getRecordByTaskType',
     method: 'post',
     data
   })
@@ -43,7 +43,7 @@ export function getXlxcDdrwzxqkInfo(data) {
 // 巡逻巡查 告警
 export function getXlxcWarningInfo(data) {
   return request({
-    url: pre + '/Error/selectErrorInfoByPatrol',
+    url: DASHBOARD_API_PREFIX + '/Error/selectErrorInfoByPatrol',
     method: 'post',
     data
   })
@@ -60,7 +60,7 @@ export function executeDdrw(data) {
 // 巡逻巡查概况
 export function getXlxcOverview(data) {
   return request({
-    url: pre + '/Entity/getPatrolOverview',
+    url: DASHBOARD_API_PREFIX + '/Entity/getPatrolOverview',
     method: 'post',
     data
   })

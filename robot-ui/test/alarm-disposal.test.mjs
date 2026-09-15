@@ -20,7 +20,13 @@ function loadAlarmApi(request) {
       if (name === '@/utils/request') return request
       if (name === '@/utils/media-client-id') return { mediaClientId: 'test-client' }
       if (name === '@/utils/api-url') {
-        return { withApiPrefix: value => value, withBigscreenApiPrefix: value => value }
+        return {
+          BIGSCREEN_API_PREFIX: '/api/bigscreen',
+          BIGSCREEN_CONTROL_API_PREFIX: '/api/bigscreen/control',
+          BIGSCREEN_PANORAMA_API_PREFIX: '/api/bigscreen/panorama',
+          withApiPrefix: value => value,
+          withBigscreenApiPrefix: value => value
+        }
       }
       return {}
     }
@@ -140,7 +146,7 @@ test('普通告警列表使用服务端分页并仅在滚动到底部时加载�
   ), 'utf8')
   const store = readFileSync(new URL('../src/store/modules/websocket-extra-data.js', import.meta.url), 'utf8')
 
-  assert.match(api, /\/bigscreen\/panorama\/alarms\/page/)
+  assert.match(api, /url:\s*BIGSCREEN_PANORAMA_API_PREFIX \+ '\/alarms\/page'/)
   assert.match(dialog, /@scroll="handleListScroll"/)
   assert.match(dialog, /this\.loadAlarmPage\(this\.alarmPageNum \+ 1\)/)
   assert.match(left, /alarmsData\?\.\[key\]\?\.total/)

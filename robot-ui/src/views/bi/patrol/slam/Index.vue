@@ -1,6 +1,5 @@
 <template>
   <div class="map-preview-box w100 h100">
-    <!-- <img class="map-preview-image" :src="`http://192.168.124.23:8867/api/v1/management/maps/1/preview-image`" alt="地图预览" style="width: 100%; height: 100%;" /> -->
     <template v-if="hasPreview">
       <div class="map-preview-viewport flx-center w100 h100" @wheel="handleWheel" style="background: #CDCDCD;">
         <div class="map-preview-stage" :style="stageStyle" @mousedown="handleMouseDown">
@@ -180,10 +179,27 @@ export default {
   watch: {
     mapId: {
       async handler(newVal) {
+        const loadSeq = ++this.imageLoadSeq;
+        this.revokeImageUrl();
         if (!newVal) return;
-        const preUrl = process.env.VUE_APP_BASE_ORIGIN || window.location.origin
-        this.imageObjectUrl = `${preUrl}/api/v1/management/maps/${this.mapId}/preview-image`;
-        this.imageUrl = `${preUrl}/api/v1/management/maps/${this.mapId}/preview-image`;
+        this.previewImageStatus = '地图预览加载中';
+        try {
+          const res = await previewImageBlob(newVal, this.map?.previewGeneratedAt || this.map?.previewFileId);
+          if (loadSeq !== this.imageLoadSeq) return;
+          const blob = res && res.data instanceof Blob ? res.data : res;
+          if (!(blob instanceof Blob)) throw new Error('地图预览响应无效');
+          const nextUrl = URL.createObjectURL(blob);
+          if (loadSeq !== this.imageLoadSeq) {
+            URL.revokeObjectURL(nextUrl);
+            return;
+          }
+          this.imageObjectUrl = nextUrl;
+          this.imageUrl = nextUrl;
+        } catch (error) {
+          if (loadSeq !== this.imageLoadSeq) return;
+          this.previewImageStatus = '地图预览加载失败';
+          console.error('加载地图预览失败', error);
+        }
       },
       immediate: true,
     },

@@ -47,6 +47,21 @@ public class BusinessTaskProxyController {
         if (path.equals("/selection-options") || path.startsWith("/selection-options/")) {
             return "/api/v1/management/selection-options" + path.substring("/selection-options".length());
         }
+        if (path.equals("/external/temporary-navigations")) {
+            return "/api/v1/management/external/temporary-navigations";
+        }
+        if (path.equals("/external/service-point-navigations")) {
+            return "/api/v1/management/external/service-point-navigations";
+        }
+        String servicePointPrefix = "/external/devices/";
+        String servicePointSuffix = "/service-point-options";
+        if (path.startsWith(servicePointPrefix) && path.endsWith(servicePointSuffix)) {
+            String serialNumber = path.substring(
+                    servicePointPrefix.length(), path.length() - servicePointSuffix.length());
+            if (!serialNumber.isBlank() && !serialNumber.contains("/")) {
+                return "/api/v1/management" + path;
+            }
+        }
         throw new ResponseStatusException(NOT_FOUND, "Unsupported bigscreen business API: " + requestPath);
     }
 }

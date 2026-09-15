@@ -182,8 +182,11 @@ Overview 的地图列表查询失败不再降级为 `map=[]`：地图读取超�
 | `/api/bigscreen/business/tasks/execution-records/**` | `/api/v1/management/task-workflow-instances/**` |
 | `/api/bigscreen/business/devices/**` | `/api/v1/management/devices/**` |
 | `/api/bigscreen/business/maps/**` | `/api/v1/management/maps/**` |
+| `/api/bigscreen/business/external/devices/{serialNumber}/service-point-options` | `/api/v1/management/external/devices/{serialNumber}/service-point-options` |
+| `/api/bigscreen/business/external/service-point-navigations` | `/api/v1/management/external/service-point-navigations` |
+| `/api/bigscreen/business/external/temporary-navigations` | `/api/v1/management/external/temporary-navigations` |
 
-不在白名单内的路径返回 `404`。当前 BFF 没有 `/quick-tasks` 或 `/task-executions` 专用接口；此前的快捷任务契约已移入归档，不能用于当前联调。任务计划、流程定义和执行记录只能通过上述业务白名单代理访问。
+不在白名单内的路径返回 `404`；`external` 下仅放行上表 3 个导航契约，不透传其他管理端外部接口。当前 BFF 没有 `/quick-tasks` 或 `/task-executions` 专用接口；此前的快捷任务契约已移入归档，不能用于当前联调。任务计划、流程定义和执行记录只能通过上述业务白名单代理访问。
 
 ## 5. 通用透明代理
 

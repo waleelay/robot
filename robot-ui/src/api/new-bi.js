@@ -1,10 +1,14 @@
 import request from '@/utils/request'
-const pre = '/api'
+import {
+  BIGSCREEN_BUSINESS_API_PREFIX,
+  BIGSCREEN_PANORAMA_API_PREFIX,
+  BIGSCREEN_STATISTICS_API_PREFIX
+} from '@/utils/api-url'
 
 // Overview 未取得组件数量时，只对当前选中机器人补查一次；固定摄像头不调用。
 export function getPatrolPanoramaMountedDeviceCount(robotId, signal) {
   return request({
-    url: pre + `/bigscreen/panorama/devices/${encodeURIComponent(robotId)}/mounted-device-count`,
+    url: BIGSCREEN_PANORAMA_API_PREFIX + `/devices/${encodeURIComponent(robotId)}/mounted-device-count`,
     method: 'get',
     timeout: 8000,
     skipErrorMessage: true,
@@ -14,7 +18,7 @@ export function getPatrolPanoramaMountedDeviceCount(robotId, signal) {
 
 export function getServicePointOptions(serialNumber, intent = 'STANDBY') {
   return request({
-    url: pre + `/v1/management/external/devices/${encodeURIComponent(serialNumber)}/service-point-options`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/external/devices/${encodeURIComponent(serialNumber)}/service-point-options`,
     method: 'get',
     params: { intent },
     timeout: 8000,
@@ -24,7 +28,7 @@ export function getServicePointOptions(serialNumber, intent = 'STANDBY') {
 
 export function createServicePointNavigation(data) {
   return request({
-    url: pre + '/v1/management/external/service-point-navigations',
+    url: BIGSCREEN_BUSINESS_API_PREFIX + '/external/service-point-navigations',
     method: 'post',
     data,
     timeout: 10000,
@@ -36,7 +40,7 @@ export function createServicePointNavigation(data) {
 // 全景地图
 export function getPatrolPanoramaOverview(signal) {
   return request({
-    url: pre + '/bigscreen/panorama/overview',
+    url: BIGSCREEN_PANORAMA_API_PREFIX + '/overview',
     method: 'get',
     // 首屏总览必须快速失败并交由页面提示重试，不能沿用全局 5 分钟超时一直遮住地图。
     timeout: 15000,
@@ -46,7 +50,7 @@ export function getPatrolPanoramaOverview(signal) {
 
 export function getPatrolPanoramaAlarmPage(params) {
   return request({
-    url: pre + '/bigscreen/panorama/alarms/page',
+    url: BIGSCREEN_PANORAMA_API_PREFIX + '/alarms/page',
     method: 'get',
     params,
     timeout: 8000
@@ -55,7 +59,7 @@ export function getPatrolPanoramaAlarmPage(params) {
 
 export function getPatrolPanoramaMapResources(mapId) {
   return request({
-    url: pre + `/bigscreen/panorama/maps/${encodeURIComponent(mapId)}/resources`,
+    url: BIGSCREEN_PANORAMA_API_PREFIX + `/maps/${encodeURIComponent(mapId)}/resources`,
     method: 'get',
     timeout: 8000
   })
@@ -63,7 +67,7 @@ export function getPatrolPanoramaMapResources(mapId) {
 
 export function getPatrolPanoramaMapTaskRoutes(mapId) {
   return request({
-    url: pre + `/bigscreen/panorama/maps/${encodeURIComponent(mapId)}/task-routes`,
+    url: BIGSCREEN_PANORAMA_API_PREFIX + `/maps/${encodeURIComponent(mapId)}/task-routes`,
     method: 'get',
     timeout: 8000
   })
@@ -71,7 +75,7 @@ export function getPatrolPanoramaMapTaskRoutes(mapId) {
 
 export function getPatrolPanoramaTaskDetail(taskId) {
   return request({
-    url: pre + `/bigscreen/panorama/tasks/${encodeURIComponent(taskId)}`,
+    url: BIGSCREEN_PANORAMA_API_PREFIX + `/tasks/${encodeURIComponent(taskId)}`,
     method: 'get',
     timeout: 8000
   })
@@ -80,7 +84,7 @@ export function getPatrolPanoramaTaskDetail(taskId) {
 // 实时监控任务卡展开时按需读取关联固定摄像头，不创建视频会话。
 export function getPatrolPanoramaTaskFixedCameras(taskId) {
   return request({
-    url: pre + `/bigscreen/panorama/tasks/${encodeURIComponent(taskId)}/fixed-cameras`,
+    url: BIGSCREEN_PANORAMA_API_PREFIX + `/tasks/${encodeURIComponent(taskId)}/fixed-cameras`,
     method: 'get',
     timeout: 8000
   })
@@ -89,7 +93,7 @@ export function getPatrolPanoramaTaskFixedCameras(taskId) {
 // 数据统计
 export function getPatrolStatisticsOverview(params) {
   return request({
-    url: pre + '/bigscreen/statistics/overview',
+    url: BIGSCREEN_STATISTICS_API_PREFIX + '/overview',
     method: 'get',
     params
   })
@@ -97,7 +101,7 @@ export function getPatrolStatisticsOverview(params) {
 
 export function exportPatrolStatisticsReport(data) {
   return request({
-    url: pre + '/bigscreen/statistics/reports/export',
+    url: BIGSCREEN_STATISTICS_API_PREFIX + '/reports/export',
     method: 'post',
     data,
     responseType: 'blob',
@@ -107,14 +111,14 @@ export function exportPatrolStatisticsReport(data) {
 
 export function getHistoryList(params) {
   return request({
-    url: pre + '/bigscreen/statistics/reports',
+    url: BIGSCREEN_STATISTICS_API_PREFIX + '/reports',
     method: 'get',
     params
   })
 }
 export function downloadReport(id) {
   return request({
-    url: pre + `/bigscreen/statistics/reports/${id}/download`,
+    url: BIGSCREEN_STATISTICS_API_PREFIX + `/reports/${id}/download`,
     method: 'get',
     responseType: 'blob',
     timeout: 300000
@@ -122,64 +126,63 @@ export function downloadReport(id) {
 }
 export function deleteReport(id) {
   return request({
-    url: pre + `/bigscreen/statistics/reports/${id}`,
+    url: BIGSCREEN_STATISTICS_API_PREFIX + `/reports/${id}`,
     method: 'delete'
   })
 }
 
 // 任务相关
-const taskPre = '/api/bigscreen/business'
 // 获取任务列表 { pageNum, pageSize, status }
 export function getTaskList(params) {
   return request({
-    url: taskPre + '/tasks/plans',
+    url: BIGSCREEN_BUSINESS_API_PREFIX + '/tasks/plans',
     method: 'get',
     params
   })
 }
 export function getTaskDetail(id) {
   return request({
-    url: taskPre + `/tasks/plans/${id}`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/plans/${id}`,
     method: 'get'
   })
 }
 export function createTask(data) {
   return request({
-    url: taskPre + '/tasks/plans',
+    url: BIGSCREEN_BUSINESS_API_PREFIX + '/tasks/plans',
     method: 'post',
     data
   })
 }
 export function updateTask(id, data) {
   return request({
-    url: taskPre + `/tasks/plans/${id}`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/plans/${id}`,
     method: 'put',
     data
   })
 }
 export function updateTaskEnabled(id, enabled) {
   return request({
-    url: taskPre + `/tasks/plans/${id}/${enabled ? 'enable' : 'disable'}`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/plans/${id}/${enabled ? 'enable' : 'disable'}`,
     method: 'patch'
   })
 }
 export function previewTaskConfiguration(data) {
   return request({
-    url: taskPre + '/tasks/plans/configuration-previews',
+    url: BIGSCREEN_BUSINESS_API_PREFIX + '/tasks/plans/configuration-previews',
     method: 'post',
     data
   })
 }
 export function startTaskPreview(id, data) {
   return request({
-    url: taskPre + `/tasks/plans/${id}/start-previews`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/plans/${id}/start-previews`,
     method: 'post',
     data
   })
 }
 export function startTask(id, data) {
   return request({
-    url: taskPre + `/tasks/plans/${id}/starts`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/plans/${id}/starts`,
     method: 'post',
     data
   })
@@ -187,14 +190,14 @@ export function startTask(id, data) {
 
 export function deleteTask(id) {
   return request({
-    url: taskPre + `/tasks/plans/${id}`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/plans/${id}`,
     method: 'delete'
   })
 }
 
 export function getTaskWorkflowDefinitions(params) {
   return request({
-    url: taskPre + '/tasks/workflow-definitions',
+    url: BIGSCREEN_BUSINESS_API_PREFIX + '/tasks/workflow-definitions',
     method: 'get',
     params
   })
@@ -202,35 +205,35 @@ export function getTaskWorkflowDefinitions(params) {
 
 export function getTaskWorkflowVersionDetail(id, versionId) {
   return request({
-    url: taskPre + `/tasks/workflow-definitions/${id}/versions/${versionId}`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/workflow-definitions/${id}/versions/${versionId}`,
     method: 'get'
   })
 }
 
 export function getSelectionOptionDevices() {
   return request({
-    url: taskPre + '/selection-options/devices',
+    url: BIGSCREEN_BUSINESS_API_PREFIX + '/selection-options/devices',
     method: 'get'
   })
 }
 
 export function getSelectionWorkflowDefinition(id) {
   return request({
-    url: taskPre + `/selection-options/workflow-definitions/${encodeURIComponent(id)}`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/selection-options/workflow-definitions/${encodeURIComponent(id)}`,
     method: 'get'
   })
 }
 
 export function getSceneResourceGrants(sceneId) {
   return request({
-    url: taskPre + `/selection-options/scenes/${encodeURIComponent(sceneId)}/resource-grants`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/selection-options/scenes/${encodeURIComponent(sceneId)}/resource-grants`,
     method: 'get'
   })
 }
 
 export function getManagementDevices(params) {
   return request({
-    url: taskPre + '/devices',
+    url: BIGSCREEN_BUSINESS_API_PREFIX + '/devices',
     method: 'get',
     params
   })
@@ -242,47 +245,47 @@ export function getManagementDevices(params) {
 // trackSamples: (id, params) => getData(`/tasks/execution-records/${id}/track-samples`, params)
 export function getTaskRecordList(params) {
   return request({
-    url: taskPre + '/tasks/execution-records',
+    url: BIGSCREEN_BUSINESS_API_PREFIX + '/tasks/execution-records',
     method: 'get',
     params
   })
 }
 export function getTaskRecordDetail(id) {
   return request({
-    url: taskPre + `/tasks/execution-records/${id}`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/execution-records/${id}`,
     method: 'get'
   })
 }
 export function getTaskRecordReplay(id) {
   return request({
-    url: taskPre + `/tasks/execution-records/${id}/replay`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/execution-records/${id}/replay`,
     method: 'get'
   })
 }
 export function pauseTaskRecord(id, data) {
   return request({
-    url: taskPre + `/tasks/execution-records/${id}/pause`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/execution-records/${id}/pause`,
     method: 'post',
     data: data || {}
   })
 }
 export function resumeTaskRecord(id, data) {
   return request({
-    url: taskPre + `/tasks/execution-records/${id}/resume`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/execution-records/${id}/resume`,
     method: 'post',
     data: data || {}
   })
 }
 export function terminateTaskRecord(id, data) {
   return request({
-    url: taskPre + `/tasks/execution-records/${id}/terminate`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/execution-records/${id}/terminate`,
     method: 'post',
     data: data || {}
   })
 }
 export function forceTerminateTaskRecord(id, reason) {
   return request({
-    url: taskPre + `/tasks/execution-records/${id}/force-terminate`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/tasks/execution-records/${id}/force-terminate`,
     method: 'post',
     data: { reason }
   })
@@ -290,7 +293,7 @@ export function forceTerminateTaskRecord(id, reason) {
 
 export function previewImageBlob(id, cacheKey) {
   return request({
-    url: taskPre + `/maps/${id}/preview-image`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + `/maps/${id}/preview-image`,
     method: 'get',
     params: cacheKey ? { t: cacheKey } : undefined,
     responseType: 'blob'
@@ -300,7 +303,7 @@ export function previewImageBlob(id, cacheKey) {
 // 添加指定点的临时任务
 export function addTaskByPoint(data) {
   return request({
-    url: `/api/v1/management/external/temporary-navigations`,
+    url: BIGSCREEN_BUSINESS_API_PREFIX + '/external/temporary-navigations',
     method: 'post',
     data
   })
