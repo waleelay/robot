@@ -198,9 +198,24 @@
         z-index: 10000;
       }
       .custom-point-img {
+        position: relative;
         width: 100%;
         height: 100%;
         transform: translate(-50%);
+        .robot-gis-halo {
+          position: absolute;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          border-radius: 50%;
+          border: 1px solid #159AFF;
+          background: radial-gradient(50% 50% at 50% 50%, rgba(21, 154, 255, 0.50) 0%, rgba(6, 78, 133, 0.25) 100%);
+          pointer-events: none;
+          z-index: 0;
+        }
+        > img {
+          position: relative;
+          z-index: 1;
+        }
         // transform: translateX(-50%, var(--translateY));
         // background: url(~@/assets/images/new-bi/robot-active.png) no-repeat center center;
         .custom-point-name {

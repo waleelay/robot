@@ -37,7 +37,7 @@ var gisConfig = {
   qihang: {
     key: 'qihang',
     center: [30.5555839,104.0606658],
-    zoom: [12, 16],
+    zoom: [12, 18],
     // 18级不旋转
     rotate: 0,
     polygonPoints:[

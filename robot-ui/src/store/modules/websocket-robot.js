@@ -194,11 +194,15 @@ function currentCameraState(camera) {
   return allCameras().find(item => item.key === camera.key) || camera
 }
 
-function waitForVideoTrack(room, hasVideo) {
+function waitForVideoTrack(room, hasVideo, isAborted) {
   if (hasVideo()) return Promise.resolve()
+  if (typeof isAborted === 'function' && isAborted()) {
+    return Promise.reject(new Error('固定摄像头视频等待已取消'))
+  }
   return new Promise((resolve, reject) => {
     const cleanup = () => {
       clearTimeout(timer)
+      clearInterval(poll)
       room.off(RoomEvent.TrackSubscribed, onTrack)
       room.off(RoomEvent.Disconnected, onDisconnected)
     }
@@ -214,6 +218,11 @@ function waitForVideoTrack(room, hasVideo) {
       () => finish(() => reject(new Error('固定摄像头视频轨道等待超时'))),
       FIXED_CAMERA_TRACK_WAIT_MS
     )
+    const poll = setInterval(() => {
+      if (typeof isAborted === 'function' && isAborted()) {
+        finish(() => reject(new Error('固定摄像头视频等待已取消')))
+      }
+    }, 80)
     room.on(RoomEvent.TrackSubscribed, onTrack)
     room.on(RoomEvent.Disconnected, onDisconnected)
     if (hasVideo()) finish(resolve)
@@ -1716,6 +1725,14 @@ const actions = {
     camera1.stopped = false
     camera1.stopping = false
     camera1.watching = true
+    // 尽早写入 attachTargets，便于起流过程中其它画面 join/leave 以 store 为准
+    commit('setCamera', mergeCameraFromStore(state, camera1, {
+      loading: camera1.loading,
+      stopped: false,
+      stopping: false,
+      watching: true,
+      attachTargets: camera1.attachTargets
+    }))
     let createdSessionId = null
     try {
       const session = await createVideoSession({
@@ -1726,6 +1743,9 @@ const actions = {
         reuse: true
       })
       createdSessionId = session.sessionId
+      // 中途若只剩其它画面摘掉了本 consumer，仍继续完成本次会话，但最终 attach 以 store 为准
+      const latestBeforeConnect = state.cameras[camera1.key] || camera1
+      camera1.attachTargets = latestBeforeConnect.attachTargets || camera1.attachTargets
       camera1.session = mergeSession(camera1, session)
       camera1.status = camera1.session.status
       camera1.viewerCount = camera1.session.viewerCount
@@ -1749,22 +1769,42 @@ const actions = {
         const recording = await getActiveLiveRecording(camera1.session.sessionId)
         applyActiveRecording(camera1, recording)
       } catch (_) {}
+      // store.attachTargets 在起流期间可能被其它 consumer join/leave 修改，以其为权威
+      const latestTargets = state.cameras[camera1.key]?.attachTargets || camera1.attachTargets
       const next = mergeCameraFromStore(state, camera1, {
         loading: false,
-        attachTargets: mergeAttachTargets(
-          state.cameras[camera1.key]?.attachTargets,
-          camera1.attachTargets
-        )
+        attachTargets: { ...latestTargets }
       })
       commit('setCamera', next)
       commit('setActiveCamera', { key: next.key, robot, camera: next })
+      // 本窗口若已在起流中途关闭，只确保摘掉本 prefix，不回写 consumer
+      if (!(viewerId in (next.attachTargets || {}))) {
+        detachCameraMedia(next, attachPrefix)
+      } else {
+        uniqueAttachPrefixes(next, state).forEach(prefix => attachCameraMedia(next, prefix))
+      }
       return next
     } catch (error) {
       console.error('ERROR createVideoSession', error.message || '请求失败')
+      const latestAfterError = state.cameras[camera1.key]
+      const leftoverTargets = { ...(latestAfterError?.attachTargets || camera1.attachTargets || {}) }
+      delete leftoverTargets[viewerId]
+      detachCameraMedia(camera1, attachPrefix)
+      // 仍有其它画面时：保留会话/Room，只去掉本 consumer
+      if (Object.keys(leftoverTargets).length > 0 && latestAfterError?.room && !latestAfterError.stopped) {
+        commit('setCamera', {
+          ...latestAfterError,
+          loading: false,
+          connecting: false,
+          disconnecting: false,
+          attachTargets: leftoverTargets
+        })
+        if (throwOnError) throw error
+        return null
+      }
       if (camera1.room && camera1.room !== stored.room) {
         await Promise.resolve(camera1.room.disconnect()).catch(() => {})
       }
-      detachCameraMedia(camera1, attachPrefix)
       if (createdSessionId && (!stored.session || stored.session.sessionId !== createdSessionId)) {
         await stopVideoSession(createdSessionId, { timeout: 4000, skipErrorMessage: true }).catch(() => {})
         state.stoppedSessionIds.add(createdSessionId)
@@ -1807,7 +1847,8 @@ const actions = {
       ? Object.keys(camera.attachTargets || {}).filter(id => id !== data.consumerId)
       : []
     const starting = startOperations.get(key)
-    if (remainingTargets.length > 0 && !starting) return dispatch('performStopCamera', data)
+    // 仍有其它画面消费同一路时：只摘本窗口，不进 stopOperations，避免取消共享起流/waitForVideo
+    if (remainingTargets.length > 0) return dispatch('performStopCamera', data)
     if (camera && remainingTargets.length === 0) {
       commit('setCamera', {
         ...camera,
@@ -2232,11 +2273,21 @@ const actions = {
         current.viewerReconnecting = false
         commit('setCamera', current)
       }
-      if (current && !managedReconnect) {
-        beginViewerRecovery(commit, dispatch, state, current, sessionId)
-      }
       if (waitForVideo) {
-        await waitForVideoTrack(room, () => Boolean(currentCamera()?.hasVideo))
+        await waitForVideoTrack(
+          room,
+          () => Boolean(currentCamera()?.hasVideo),
+          () => {
+            const latest = state.cameras[camera.key]
+            // 仍有画面在消费时，不因其它窗口的局部 stop 取消等待
+            if (latest && !latest.stopped && !latest.stopping) {
+              const targets = Object.keys(latest.attachTargets || {})
+              if (targets.length > 0) return false
+            }
+            if (stopOperations.has(camera.key)) return true
+            return !latest || latest.stopped || latest.stopping || latest.roomGeneration !== roomGeneration
+          }
+        )
       }
       // console.log('LiveKit connected', `${camera.name} ${camera.session.roomName}`)
     } catch (error) {

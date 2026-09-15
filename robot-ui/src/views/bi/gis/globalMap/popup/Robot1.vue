@@ -9,7 +9,7 @@
           <div class="title ml10">{{ currenRobot?.name || '-' }}</div>
           <div v-if="!isFixedCamera" class="status ml10" :class="currenRobot?.statusClass || ''">{{ currenRobot?.customStatusName || currenRobot?.status || '-' }}</div>
         </div>
-        <div class="close mr10 wp20 hp20 tac" @click="onClose()">
+        <div class="close mr10 wp20 hp20 tac" @click.stop="onClose()">
           <svg-icon icon-class="close"></svg-icon>
         </div>
       </div>
@@ -19,39 +19,39 @@
       >
         <!-- 固定摄像头：仅装备类型、装备位置 -->
         <template v-if="isFixedCamera">
-          <div class="item wp196">
+          <div class="item wp190">
             装备类型：<span class="value">{{ currenRobot?.type || '-' }}</span>
           </div>
-          <div class="item wp99 ml26 text-ellipsis" :title="fixedCameraLocation">
+          <div class="item wp105 ml26 text-ellipsis" :title="fixedCameraLocation">
             位置：<span class="value">{{ fixedCameraLocation }}</span>
           </div>
         </template>
         <template v-else>
-          <div class="item wp196">
+          <div class="item wp190">
             装备类型：<span class="value">{{ currenRobot?.type || '-' }}</span>
           </div>
-          <div class="item wp99 ml26">
+          <div class="item wp105 ml26">
             电量：<span class="value">{{ formatBattery(currenRobot?.battery) }}</span>
           </div>
-          <div class="item wp196 mt10">
+          <div class="item wp190 mt10">
             装备型号：<span class="value">{{ currenRobot?.model || '-' }}</span>
           </div>
-          <!-- <div class="item wp99 ml26 mt10">
+          <!-- <div class="item wp105 ml26 mt10">
             是否告警：<span class="value">{{ currenRobot?.alarmLevel === 'none' ? '否' : '是' }}</span>
           </div> -->
-          <div class="item wp99 ml26 mt10">
-            速度：<span class="value">{{ formatRobotSpeed(currenRobot) }}</span>
+          <div class="item wp105 ml26 mt10">
+            速度：<span class="value">-5.55m/s</span>
           </div>
-          <div class="item wp196 mt10">
+          <div class="item wp190 mt10">
             控制模式：<span class="value">{{ currenRobot?.status === 'offline' ? '-' : (currenRobot?.controlMode || '-') }}</span>
           </div>
-          <div class="item wp99 ml26 mt10">
+          <div class="item wp105 ml26 mt10">
             上装：<span class="value">{{ mountedDeviceCountText }}</span>
           </div>
           <div v-if="hasActionButtons" class="mt10 with-divider w100"></div>
           <!-- 默认仅一条执行中任务；无则占位文案 -->
           <div v-if="primaryRunningTask" class="mt10 task flex">
-            <div class="item wp196 text-ellipsis" :title="primaryRunningTask?.name || ''">
+            <div class="item wp190 text-ellipsis" :title="primaryRunningTask?.name || ''">
               <span class="wp60 tar">任务：</span>
               <span
                 class="value"
@@ -59,7 +59,7 @@
                 @click="focusPanoramaTask(primaryRunningTask)"
               >{{ primaryRunningTask?.name || '-' }}</span>
             </div>
-            <div class="item wp99 ml26">
+            <div class="item wp105 ml26">
               状态：<span class="value" :class="taskStatusClass(primaryRunningTask)">{{ executionStatusLabel(taskExecutionStatus(primaryRunningTask), '-') }}</span>
             </div>
           </div>
@@ -74,9 +74,9 @@
             <span>{{ tasksExpanded ? '收起' : `任务列表（${extraTasks.length}）` }}</span>
             <svg-icon icon-class="right" class="ml4 task-expand__icon" :class="{ 'is-expanded': tasksExpanded }" />
           </div>
-          <template v-if="tasksExpanded">
+          <div v-if="tasksExpanded" class="w100 hp120 common-scroll ovya">
             <div v-for="(task, index) in extraTasks" :key="task.taskId ?? index" class="mt10 task flex">
-              <div class="item wp196 text-ellipsis" :title="task?.name || ''">
+              <div class="item wp190 text-ellipsis" :title="task?.name || ''">
                 <span class="wp60 tar">任务{{ index + 1 }}：</span>
                 <span
                   class="value"
@@ -84,11 +84,11 @@
                   @click="focusPanoramaTask(task)"
                 >{{ task?.name || '-' }}</span>
               </div>
-              <div class="item wp99 ml26">
+              <div class="item wp105 ml26">
                 状态：<span class="value" :class="taskStatusClass(task)">{{ executionStatusLabel(taskExecutionStatus(task), '-') }}</span>
               </div>
             </div>
-          </template>
+          </div>
         </template>
       </div>
       <!-- 固定摄像头：画面框内 play/pause 切换实时视频，始终占位避免弹窗高度跳动 -->
@@ -469,7 +469,7 @@ export default {
         }
       }
     },
-    ...mapActions('websocketRobot', ['setSelectedRobotId', 'startCamera', 'stopCamera', 'setPrefixId']),
+    ...mapActions('websocketRobot', ['setSelectedRobotId', 'startCamera', 'stopCamera']),
     /** 电量展示：有值带 %，无值只显示 -（避免 -%） */
     formatBattery(battery) {
       if (battery === undefined || battery === null || battery === '') return '-'
@@ -639,16 +639,20 @@ export default {
         }
       }
     },
-    async onClose() {
-      this.resetDeviceAction()
-      this.cancelMountedDeviceCount()
-      await this.stopFixedCameraVideo({ keepLastFrame: false })
+    hidePopupUi() {
       this.visible = false
       this.pathVisible = false
       this.$emit('showPath', false)
       this.handleGlobalClick(null, false)
       this.setSelectedRobotId('')
-      this.$emit('clear')
+      this.$emit('clear', [])
+    },
+    async onClose() {
+      this.resetDeviceAction()
+      this.cancelMountedDeviceCount()
+      // 先关窗，停流放到后台；否则会卡在固定摄像头 waitForVideo（最多 15s）
+      this.hidePopupUi()
+      await this.stopFixedCameraVideo({ keepLastFrame: false })
     },
     togglePath() {
       this.pathVisible = !this.pathVisible
@@ -727,11 +731,10 @@ export default {
         return
       }
       this.videoToggling = true
-      const prevPrefixId = this.$store.state.websocketRobot?.prefixId
       try {
         this.videoVisible = true
         this.playingCamera = camera
-        this.setPrefixId(this.prefixId)
+        // 不改全局 prefixId，避免与指挥中心巡逻画面争用；挂载靠显式 prefixId + attachTargets
         await this.$nextTick()
         const robot = {
           ...(this.selectedRobot || {}),
@@ -744,7 +747,8 @@ export default {
           consumerId: 'robot1-fixed-camera',
           prefixId: this.prefixId
         })
-        // 不等 TrackSubscribed 时的全局 prefixId（可能已被指挥中心 Left 覆盖），主动挂载
+        if (!this.visible) return
+        // 主动挂到本弹窗 video，不依赖全局 prefixId
         this.attachFixedCameraTrack()
         await this.$nextTick()
         this.attachFixedCameraTrack()
@@ -753,11 +757,15 @@ export default {
         this.videoVisible = false
         this.playingCamera = null
         this.clearAttachRetry()
-        this.$message?.error?.(error?.message || '开启画面失败')
+        const cancelled = String(error?.message || '').includes('已取消')
+        if (!cancelled && this.visible) {
+          this.$message?.error?.(error?.message || '开启画面失败')
+        }
       } finally {
-        // 播放中仍保留本弹窗 prefix，便于断线重连；若此前有其它页面 prefix 则在关闭时恢复
-        this._prevPrefixId = prevPrefixId
         this.videoToggling = false
+        if (!this.visible) {
+          this.stopFixedCameraVideo({ keepLastFrame: false })
+        }
       }
     },
     /**
@@ -797,32 +805,26 @@ export default {
       } finally {
         this.playingCamera = null
         this.videoToggling = false
-        if (this._prevPrefixId != null && this._prevPrefixId !== this.prefixId) {
-          this.setPrefixId(this._prevPrefixId)
-        }
-        this._prevPrefixId = null
       }
     },
     async show(e, robot) {
       this.resetDeviceAction()
       this.$emit('showControlPart', false)
-      if (this.selectedRobotId === robot?.robotId || !e) {
+      // show(null) / 无 robot：关闭；同装备再点：关闭
+      if (!robot || this.selectedRobotId === robot.robotId) {
+        this.hidePopupUi()
         await this.stopFixedCameraVideo({ keepLastFrame: false })
-        this.pathVisible = false
-        this.$emit('showPath', false)
-        this.setSelectedRobotId('')
-        this.handleGlobalClick(e, false)
-        this.$emit('clear', [])
-      } else {
-        // 切换装备时关闭路径线 / 固定摄像头画面，不影响 MapTool 点位
-        await this.stopFixedCameraVideo({ keepLastFrame: false })
-        this.pathVisible = false
-        this.$emit('showPath', false)
-        this.visible = true
-        this.setSelectedRobotId(robot?.robotId)
-        this.handleGlobalClick(e, true)
-        this.$emit('clear', [robot?.robotId])
+        return
       }
+      // 先展示弹窗再异步停旧流，避免 await 阻塞或事件失效导致看不见
+      this.pathVisible = false
+      this.$emit('showPath', false)
+      this.visible = true
+      this.setSelectedRobotId(robot.robotId)
+      const clickEvent = e && e.clientX !== undefined ? e : (e && e.originalEvent) || e
+      this.handleGlobalClick(clickEvent, true)
+      this.$emit('clear', [robot.robotId])
+      this.stopFixedCameraVideo({ keepLastFrame: false })
     }
   },
 }

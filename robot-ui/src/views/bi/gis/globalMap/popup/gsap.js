@@ -140,6 +140,8 @@ export default {
     flyFromPoint(clientX, clientY, location) {
       // 边界保护
       if (clientX === undefined || clientY === undefined) return;
+      if (!this.currentEl) this.currentEl = this.$refs.containerRef
+      if (!this.currentEl) return
       
       // 1. 更新方块尺寸（确保响应式变化）
       this.updateCubeSize();
@@ -207,6 +209,8 @@ export default {
           if (!isNaN(currentTop)) this.position.top = currentTop;
         },
         onComplete: () => {
+          // 关闭过程中动画结束不得把弹窗重新显示出来
+          if (!this.visible) return
           // 动画完成，精确归位到右上角（防止浮点误差）
           const finalPos = this.showAnimate ? this.getTargetPosition() : {
               left: location.translateX,
@@ -221,8 +225,6 @@ export default {
           });
           this.position.left = finalPos.left;
           this.position.top = finalPos.top;
-          // 确保可见
-          if (!this.visible) this.visible = true;
         }
       });
     },
@@ -231,13 +233,32 @@ export default {
     handleGlobalClick(event, visible) {
       if (!visible) {
         this.setSelectedRobotId('')
+        if (this.currentEl) gsap.killTweensOf(this.currentEl)
         this.setHiddenPositionToTarget();
         return
       }
       if (!this.showAnimate) return
+      if (!this.currentEl) this.currentEl = this.$refs.containerRef
+      // Leaflet 点击经 await 后 originalEvent.target 可能已脱离 .custom-point；无坐标时直接落到目标位
+      if (!event || event.clientX === undefined || event.clientY === undefined) {
+        this.updateCubeSize()
+        const target = this.getTargetPosition()
+        if (this.currentEl) {
+          gsap.killTweensOf(this.currentEl)
+          gsap.set(this.currentEl, {
+            left: target.left,
+            top: target.top,
+            scale: 1,
+            opacity: 1,
+            'backdrop-filter': 'blur(15px)'
+          })
+        }
+        this.position.left = target.left
+        this.position.top = target.top
+        return
+      }
       const rawClientX = event.clientX;
       const rawClientY = event.clientY;
-      if (rawClientX === undefined || rawClientY === undefined) return;
       const context = this.getScaleContext()
       const scalePoint = this.viewportPointToScalePoint(rawClientX, rawClientY)
       let clientX = scalePoint.x;
@@ -245,18 +266,25 @@ export default {
       // 边界限幅
       clientX = Math.min(Math.max(0, clientX), context.width);
       clientY = Math.min(Math.max(0, clientY), context.height);
-      const eleParent = event.target.closest('.custom-point');
-      if (!eleParent) return
-      let location = {}
-      const rect = this.viewportRectToScaleRect(eleParent.getBoundingClientRect())
-      const width = rect.width || eleParent.offsetWidth
-      const height = rect.height || eleParent.offsetHeight
-
-      location = {
+      const eleParent = event.target && typeof event.target.closest === 'function'
+        ? event.target.closest('.custom-point')
+        : null
+      let location = {
         x: clientX,
-        y: clientY + height / 2 - this.cubeHeight,
-        translateX: rect.left + width / 2,
-        translateY: rect.top - height / 2 - this.cubeHeight + 37,
+        y: clientY,
+        translateX: clientX,
+        translateY: clientY,
+      }
+      if (eleParent) {
+        const rect = this.viewportRectToScaleRect(eleParent.getBoundingClientRect())
+        const width = rect.width || eleParent.offsetWidth
+        const height = rect.height || eleParent.offsetHeight
+        location = {
+          x: clientX,
+          y: clientY + height / 2 - this.cubeHeight,
+          translateX: rect.left + width / 2,
+          translateY: rect.top - height / 2 - this.cubeHeight + 37,
+        }
       }
       this.flyFromPoint(clientX, clientY, location);
     },

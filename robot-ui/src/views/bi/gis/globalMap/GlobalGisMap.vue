@@ -679,8 +679,11 @@ export default {
       const nameHtml = this.showSmall
         ? ''
         : `<div class="custom-point-name mt2" style="">${name}</div>`
-      const showIconClass = (!isFixedCamera && isSelected)
-        ? `show-icon show-icon-${width}-${height}`
+      // 光圈圆心对齐图标中心；尺寸随装备图标变化，避免写死 show-icon-宽-高
+      const haloSize = Math.max(60, Math.ceil(Math.max(Number(width) || 0, Number(height) || 0) + 4))
+      const haloOy = (Number(height) || 0) / 2
+      const haloHtml = (!isFixedCamera && isSelected)
+        ? `<i class="robot-gis-halo" style="width:${haloSize}px;height:${haloSize}px;top:${haloOy}px;"></i>`
         : ''
       const anchorY = isFixedCamera ? Math.max(0, height - 4) : height
       
@@ -696,12 +699,13 @@ export default {
           //     <span class="ml5">告警事件：${this.robotAlarmObj[robotId].categoryName}：${this.robotAlarmObj[robotId].title}</span>
           //   </div>` : ''}
           html: `<div class="custom-point-img flx-center flex-column" style="flex-wrap: nowrap;">
-            <img class="wp${width} hp${height}" src="${require(`@/assets/images/new-bi/${iconFile}.png`)}" />
+            ${haloHtml}
+            <img style="width:${width}px;height:${height}px;" src="${require(`@/assets/images/new-bi/${iconFile}.png`)}" />
             ${footHtml}
             ${nameHtml}
             ${statusHtml}
           </div>`,
-          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${showIconClass} ${isFixedCamera ? 'is-fixed-camera' : ''} ${isDimmed ? 'is-dimmed' : ''} ${type} ${statusClass}` ,
+          className: `custom-point ${this.getSearchRobot(item) ? 'max-zoom' : ''} ${isFixedCamera ? 'is-fixed-camera' : ''} ${isDimmed ? 'is-dimmed' : ''} ${type} ${statusClass}` ,
           // className: `custom-point ${type} ${statusClass}` ,
           iconSize: null,
           // 偏移量
@@ -927,17 +931,19 @@ export default {
       if (!marker?.meta?.robot) return
       this.bringGisMarkerToFront(marker)
       const isSame = this.activeMarkerIndex === marker.meta.index
+      // Leaflet 的 DOM 事件在 originalEvent；缺失时回退 leaflet 事件本身
+      const clickEvent = e?.originalEvent || e
       if (this.currenRouteName === 'biIndex') {
         if (isSame) {
           this.activeMarkerIndex = ''
           this.closePopup()
-          this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
+          this.$refs.robot1Ref.show(clickEvent, marker.meta.robot)
           return
         }
         this.activeMarkerIndex = marker.meta.index
         this.popupVisible = true
         // 先切换选中内容再定位，避免沿用上一台装备高度
-        this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
+        this.$refs.robot1Ref.show(clickEvent, marker.meta.robot)
         this.schedulePopupPositionUpdate()
         this.clearLayer(null)
         return
@@ -947,7 +953,7 @@ export default {
       } else {
         this.activeMarkerIndex = marker.meta.index
       }
-      this.$refs.robot1Ref.show(e.originalEvent, marker.meta.robot)
+      this.$refs.robot1Ref.show(clickEvent, marker.meta.robot)
       // this.updateAllIcon()
       // this.showDashedArea(marker.meta.index);
       this.clearLayer(null)
@@ -1005,9 +1011,12 @@ export default {
         || robot.type === '固定摄像头'
         || robot.type === 'FIXED_CAMERA'
       // 普通装备按选中光圈右缘对齐；固定摄像头无光圈/四角，按图标半宽对齐
+      const iconW = Number(typeInfo.width) || 24
+      const iconH = Number(typeInfo.height) || 39
+      const haloSize = Math.max(60, Math.ceil(Math.max(iconW, iconH) + 4))
       const alignRadius = isFixedCamera
-        ? Math.max(22, (typeInfo.width || 44) / 2)
-        : 30
+        ? Math.max(22, iconW / 2)
+        : haloSize / 2
       const gap = 1
       // guideline.png（高 47、bottom:-47px）最底边作为模态底部对齐点
       const guidelineNaturalH = 47

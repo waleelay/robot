@@ -1,6 +1,7 @@
 window.__BIGSCREEN_AUTH_CONFIG__ = window.__BIGSCREEN_AUTH_CONFIG__ || {
   // 留空时使用 https://<地址栏主机>:18443；大屏与 IAM 分离部署时填写完整 IAM 地址。
-  keycloakUrl: '',
+  // 开发环境不留空
+  keycloakUrl: 'https://211.137.109.150:18443',
   keycloakRealm: 'iam-auth',
   keycloakClientId: 'bigscreen-web',
   keycloakLocale: 'zh-CN',

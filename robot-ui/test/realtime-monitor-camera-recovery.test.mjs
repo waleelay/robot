@@ -595,8 +595,31 @@ test('固定摄像头等待真实视频轨道，超时后由启动流程清理�
 
   assert.match(source, /FIXED_CAMERA_TRACK_WAIT_MS = 15000/)
   assert.match(source, /waitForVideo: fixedCamera/)
-  assert.match(source, /await waitForVideoTrack\(room/)
+  assert.match(source, /await waitForVideoTrack\(/)
+  assert.match(source, /固定摄像头视频等待已取消/)
+  assert.match(source, /stopOperations\.has\(camera\.key\)/)
+  assert.match(source, /targets\.length > 0\) return false/)
   assert.match(source, /stopVideoSession\(createdSessionId/)
+})
+
+test('同路多画面时局部 stop 不进 stopOperations，起流 attachTargets 以 store 为准', () => {
+  const source = read('store/modules/websocket-robot.js')
+  const stopCamera = source.slice(source.indexOf('stopCamera({ commit, state, dispatch }, data)'), source.indexOf('// 停止摄像头。传入 consumerId'))
+  const startCamera = source.slice(source.indexOf('async performStartCamera'), source.indexOf('stopCamera({ commit, state, dispatch }, data)'))
+
+  assert.match(stopCamera, /if \(remainingTargets\.length > 0\) return dispatch\('performStopCamera', data\)/)
+  assert.doesNotMatch(stopCamera, /remainingTargets\.length > 0 && !starting/)
+  assert.match(startCamera, /latestTargets/)
+  assert.match(startCamera, /尽早写入 attachTargets/)
+  assert.match(startCamera, /仍有其它画面时：保留会话/)
+})
+
+test('地图弹框固定摄像头不抢占全局 prefixId', () => {
+  const source = read('views/bi/gis/globalMap/popup/Robot1.vue')
+  const startFn = source.slice(source.indexOf('async startFixedCameraVideo'), source.indexOf('async stopFixedCameraVideo'))
+  assert.match(startFn, /prefixId: this\.prefixId/)
+  assert.match(startFn, /不改全局 prefixId/)
+  assert.doesNotMatch(startFn, /setPrefixId\(this\.prefixId\)/)
 })
 
 test('浏览器 Track 或 Room 异常只恢复 viewer，不重启共享 Publisher', () => {

@@ -295,6 +295,11 @@ export default {
       if (!slot) return ''
       const equipmentName = slot.robot?.name || ''
       const cameraName = slot.camera?.name || slot.camera?.groupTypeName || ''
+      // 固定摄像头：前半段固定为「固定摄像头-」
+      if (isFixedCameraRobot(slot.robot)) {
+        const name = equipmentName || cameraName
+        return name ? `固定摄像头-${name}` : '固定摄像头'
+      }
       return cameraName ? `${equipmentName}-${cameraName}` : equipmentName
     },
     openEquipmentSelect(index) {

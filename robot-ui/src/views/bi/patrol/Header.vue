@@ -49,7 +49,7 @@
         </div>
   
         <!-- 时间显示 -->
-        <div class="time-display ml20 pl20 flx-center flex-column h100" style="align-items: unset">
+        <div class="time-display ml20 pl20 flx-center flex-column h100 wp160" style="align-items: unset">
           <span class="time">{{ currentTime }}</span>
           <span class="date">{{ currentDate }}</span>
         </div>
