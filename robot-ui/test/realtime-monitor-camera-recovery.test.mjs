@@ -67,8 +67,12 @@ function loadMediaApi(request) {
   return exports
 }
 
-function loadWebsocketRobot(apiOverrides = {}) {
-  const compiled = require('@babel/core').transformSync(read('store/modules/websocket-robot.js'), {
+function loadWebsocketRobot(apiOverrides = {}, runtimeOverrides = {}) {
+  const source = read('store/modules/websocket-robot.js').replace(
+    '// 导出 WebSocket 模块',
+    'export const __testHooks = { scheduleViewerReconnect }\n\n// 导出 WebSocket 模块'
+  )
+  const compiled = require('@babel/core').transformSync(source, {
     babelrc: false,
     configFile: false,
     plugins: ['@babel/plugin-transform-modules-commonjs']
@@ -109,6 +113,7 @@ function loadWebsocketRobot(apiOverrides = {}) {
       if (name === '@/auth') return { bearerToken: () => '' }
       if (name.includes('prefer-live-robot-fields')) return robotStateHelpers
       if (name.includes('pick-default-camera')) return cameraHelpers
+      if (name.includes('livekit-track-recovery')) return trackRecovery
       if (name.includes('livekit-user-pause')) return { attachTrackRespectingUserPause: () => true }
       if (name.includes('media-websocket-reconnect')) {
         return {
@@ -118,8 +123,10 @@ function loadWebsocketRobot(apiOverrides = {}) {
         }
       }
       return {}
-    }
+    },
+    ...runtimeOverrides
   })
+  exports.default.__testHooks = exports.__testHooks
   return exports.default
 }
 
@@ -580,6 +587,51 @@ test('Viewer 重连按指数退避并封顶三十秒', () => {
   assert.equal(trackRecovery.viewerReconnectDelay(1), 2000)
   assert.equal(trackRecovery.viewerReconnectDelay(4), 16000)
   assert.equal(trackRecovery.viewerReconnectDelay(20), 30000)
+})
+
+test('viewer 换证连续失败后持续退避重试直至恢复', async () => {
+  const timers = []
+  const module = loadWebsocketRobot({}, {
+    setTimeout(callback, delay) {
+      timers.push({ callback, delay })
+      return timers.length
+    },
+    clearTimeout() {},
+    console: { ...console, error() {} }
+  })
+  const key = 'camera-retry'
+  const sessionId = 'session-retry'
+  const state = {
+    cameras: {
+      [key]: {
+        key,
+        watching: true,
+        stopped: false,
+        stopping: false,
+        session: { sessionId },
+        room: null
+      }
+    }
+  }
+  let attempts = 0
+  const dispatch = async (type, payload) => {
+    assert.equal(type, 'connectLiveKit')
+    assert.equal(payload.refreshToken, true)
+    assert.equal(payload.throwOnError, true)
+    attempts += 1
+    if (attempts <= 3) throw new Error('viewer token endpoint unavailable')
+    state.cameras[key].room = { state: 'connected' }
+  }
+
+  module.__testHooks.scheduleViewerReconnect(dispatch, state, key, sessionId)
+  for (let index = 0; index < 4; index++) {
+    const timer = timers[index]
+    assert.ok(timer)
+    await timer.callback()
+  }
+
+  assert.equal(attempts, 4)
+  assert.deepEqual(timers.map(timer => timer.delay), [0, 2000, 4000, 8000])
 })
 
 test('人工刷新只调用 viewer 恢复，不 stop/start 会话', async () => {
