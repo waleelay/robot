@@ -40,7 +40,7 @@
             是否告警：<span class="value">{{ currenRobot?.alarmLevel === 'none' ? '否' : '是' }}</span>
           </div> -->
           <div class="item wp105 ml26 mt10">
-            速度：<span class="value">-5.55m/s</span>
+            速度：<span class="value">{{ formatRobotSpeed(currenRobot) }}</span>
           </div>
           <div class="item wp190 mt10">
             控制模式：<span class="value">{{ currenRobot?.status === 'offline' ? '-' : (currenRobot?.controlMode || '-') }}</span>
