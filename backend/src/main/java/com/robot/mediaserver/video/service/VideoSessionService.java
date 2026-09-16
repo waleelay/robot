@@ -36,6 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -927,7 +928,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoSessionResponse restartSession(String sessionId, CurrentUser user) {
-        VideoSession session = requireSessionForUpdate(sessionId);
+        VideoSession session = lockSessionRuntime(sessionId);
         requestClientStart(session, "video.session.restart", false);
         return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
     }
@@ -939,7 +940,7 @@ public class VideoSessionService {
      */
     @Transactional
     public void restartSession(String sessionId) {
-        requestClientStart(requireSessionForUpdate(sessionId), "video.session.auto_restart", false);
+        requestClientStart(lockSessionRuntime(sessionId), "video.session.auto_restart", false);
     }
 
     /**
@@ -953,7 +954,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoStartCommand restartSessionCommand(String sessionId, CurrentUser user) {
-        VideoSession session = requireSessionForUpdate(sessionId);
+        VideoSession session = lockSessionRuntime(sessionId);
         return requestClientStart(session, "video.session.restart", false);
     }
 
@@ -965,7 +966,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoStartCommand restartSessionCommand(String sessionId) {
-        return requestClientStart(requireSessionForUpdate(sessionId), "video.session.auto_restart", false);
+        return requestClientStart(lockSessionRuntime(sessionId), "video.session.auto_restart", false);
     }
 
     /**
@@ -1215,12 +1216,25 @@ public class VideoSessionService {
      */
     public List<String> interruptedRestartCandidates(OffsetDateTime interruptedBefore) {
         // viewer 心跳会刷新 updatedAt，不能用它衡量断流已持续多久；lastStatusAt 只由客户端状态上报刷新。
+        Set<String> runtimeKeys = new HashSet<>();
         return repository.findByStatusAndLastStatusAtBefore(VideoSessionStatus.INTERRUPTED, interruptedBefore).stream()
                 .filter(session -> session.getViewerCount() > 0
                         || holdsRoomForIntercom(session)
                         || fileService.hasActiveLiveRecording(session.getSessionId()))
+                .sorted(Comparator.comparing(
+                        VideoSession::getUpdatedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .filter(session -> runtimeKeys.add(runtimeKey(session)))
                 .map(VideoSession::getSessionId)
                 .toList();
+    }
+
+    private String runtimeKey(VideoSession session) {
+        if (session.getRuntimeId() != null && !session.getRuntimeId().isBlank()) {
+            return session.getRuntimeId();
+        }
+        return session.getSourceType() + ":" + session.getSourceId() + ":" + session.getDeviceId()
+                + ":" + session.getChannel() + ":" + session.getQuality();
     }
 
     /**

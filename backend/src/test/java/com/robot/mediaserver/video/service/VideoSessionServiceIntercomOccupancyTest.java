@@ -489,6 +489,48 @@ class VideoSessionServiceIntercomOccupancyTest {
     }
 
     @Test
+    void returnsOnlyLatestOccupiedInterruptedSessionPerRuntime() {
+        OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(15);
+        target.setRuntimeId("runtime-shared");
+        target.setStatus(VideoSessionStatus.INTERRUPTED);
+        target.setViewerCount(1);
+        target.setUpdatedAt(OffsetDateTime.now().minusMinutes(1));
+        VideoSession latest = session("vs-latest", "robot-002", null, null, IntercomStatus.IDLE);
+        latest.setRuntimeId("runtime-shared");
+        latest.setStatus(VideoSessionStatus.INTERRUPTED);
+        latest.setViewerCount(1);
+        latest.setUpdatedAt(OffsetDateTime.now());
+        VideoSession anotherRuntime = session("vs-other", "robot-003", null, null, IntercomStatus.IDLE);
+        anotherRuntime.setRuntimeId("runtime-other");
+        anotherRuntime.setStatus(VideoSessionStatus.INTERRUPTED);
+        anotherRuntime.setViewerCount(1);
+        anotherRuntime.setUpdatedAt(OffsetDateTime.now().minusSeconds(30));
+        when(repository.findByStatusAndLastStatusAtBefore(VideoSessionStatus.INTERRUPTED, threshold))
+                .thenReturn(List.of(target, anotherRuntime, latest));
+
+        assertThat(service.interruptedRestartCandidates(threshold))
+                .containsExactly("vs-latest", "vs-other");
+    }
+
+    @Test
+    void restartLocksSourceRuntimeBeforeUpdatingSession() {
+        target.setRuntimeId("runtime-test");
+        target.setViewerCount(1);
+        target.setStatus(VideoSessionStatus.INTERRUPTED);
+        target.setRoomName("media.robot-002.camera01.visible.sub");
+        when(sourceRuntimeRepository.findByIdForUpdate("runtime-test"))
+                .thenReturn(Optional.of(runtime()));
+        when(liveKitTokenService.createPublisherToken(anyString(), anyString()))
+                .thenReturn(new LiveKitTokenService.TokenResult(
+                        "publisher-token", OffsetDateTime.now().plusMinutes(10)));
+
+        service.restartSessionCommand("vs-target", operator("operator-1", "web-1"));
+
+        verify(sourceRuntimeRepository).findByIdForUpdate("runtime-test");
+        verify(repository).findByIdForUpdate("vs-target");
+    }
+
+    @Test
     void reusesStartCommandWhileWaitingForTrack() {
         target.setViewerCount(1);
         target.setStatus(VideoSessionStatus.INIT);
