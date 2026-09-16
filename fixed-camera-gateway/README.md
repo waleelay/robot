@@ -61,3 +61,8 @@ env \
 | Gateway 到控制端 | `gateway/fixed-camera/{gatewayId}/video/status` |
 
 HTTP 仅提供内部 `/health` 和 `/metrics`，业务命令不通过 HTTP 下发。
+
+`video/start` 幂等复用仍在运行的同源 Publisher；`video/restart` 用于人工操作、服务端确认的
+Source 中断恢复和码流切换，会强制替换旧 Publisher。浏览器播放端重连不会发布 restart。
+`video/stop` 到达后该 `sessionId` 进入终止态，后到的同会话 start/restart 会被丢弃；新播放使用新会话 ID。
+MQTT 断线停止全部 Publisher 后，未终止会话允许重放原 `commandId`，已终止会话的终止水位仍保留。

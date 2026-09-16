@@ -313,7 +313,7 @@ public class ControlVideoCommandService {
     public VideoSessionResponse restartVideo(String sessionId, CurrentUser user) {
         requireAuthorizedSession(sessionId, user);
         VideoStartCommand command = mediaServiceClient.restartCommand(sessionId, user);
-        sendStart(command);
+        sendRestart(command);
         return mediaServiceClient.get(sessionId, user);
     }
 
@@ -329,7 +329,7 @@ public class ControlVideoCommandService {
         VideoSessionResponse response = mediaServiceClient.switchChannel(sessionId, request);
         VideoStartCommand command = mediaServiceClient.currentStartCommand(sessionId);
         if (command.sourceType() == VideoSourceType.FIXED_CAMERA) {
-            commandService.sendFixedCameraRestart(command);
+            sendRestart(command);
         } else {
             commandService.sendSwitchChannel(command.robotId(), command);
         }
@@ -386,7 +386,7 @@ public class ControlVideoCommandService {
      * @param sessionId 实时视频会话编号
      */
     public void restartSession(String sessionId) {
-        sendStart(mediaServiceClient.restartCommand(sessionId, null));
+        sendRestart(mediaServiceClient.restartCommand(sessionId, null));
     }
 
     /**
@@ -421,6 +421,19 @@ public class ControlVideoCommandService {
     }
 
     /**
+     * 固定摄像头 Gateway 或 RTSP 恢复后，只重新发布仍有观看者的固定视频源。
+     * 机器人客户端上线恢复继续由 {@link #handleClientOnline(String, String)} 独立处理。
+     */
+    public void recoverFixedCameraSources(String sourceId, boolean gatewayReconnect) {
+        mediaServiceClient.fixedCameraRecoveryCommands(sourceId, gatewayReconnect).forEach(command -> {
+            if (command.sourceType() == VideoSourceType.FIXED_CAMERA) {
+                // 恢复允许重发原 commandId，补偿 MQTT 断线丢失；Gateway 负责最终去重。
+                commandService.sendFixedCameraRestart(command);
+            }
+        });
+    }
+
+    /**
      * 下发视频启动命令。
      *
      * @param command 命令内容
@@ -437,6 +450,23 @@ public class ControlVideoCommandService {
                 releaseStartCommand(command.commandId());
                 throw exception;
             }
+        }
+    }
+
+    /** 固定摄像头恢复必须进入强制重启 Topic；机器人继续沿用既有 start 恢复协议。 */
+    private void sendRestart(VideoStartCommand command) {
+        if (command == null || command.sourceType() != VideoSourceType.FIXED_CAMERA) {
+            sendStart(command);
+            return;
+        }
+        if (!claimStartCommand(command.commandId())) {
+            return;
+        }
+        try {
+            commandService.sendFixedCameraRestart(command);
+        } catch (RuntimeException exception) {
+            releaseStartCommand(command.commandId());
+            throw exception;
         }
     }
 

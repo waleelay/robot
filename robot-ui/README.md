@@ -201,7 +201,7 @@ robot-ui/
 1. WebSocket 方法通常是异步流程，停止旧会话后再启动新会话时需要完整等待 Promise。
 2. Vue 2 的 `$emit` 不会返回父组件监听函数的 Promise；需要等待父组件异步操作时，应传入回调或由父组件显式返回并转发 Promise。
 3. 实时位置、设备状态等共享数据应通过 Vuex 更新，避免组件保存过期对象副本。
-4. 固定摄像头健康变化通过 `panorama.fixed-camera.statuses.changed` 只更新当前授权快照中已有摄像头的在线与播放准入状态，不刷新 Overview；只有收到 `bigscreen.authorization.changed` 确认权限集合变化时才按 fail-closed 方式清理无权资源并重取 Overview。`4001` 表示登录凭证自然到期并静默重连，`4003` 才表示授权快照已经失效。
+4. 固定摄像头健康变化通过 `panorama.fixed-camera.statuses.changed` 只更新当前授权快照中已有摄像头的在线、播放准入与脱敏健康原因，不刷新 Overview；页面统一将原因码映射为安全文案，不能显示原始错误。只有收到 `bigscreen.authorization.changed` 确认权限集合变化时才按 fail-closed 方式清理无权资源并重取 Overview。`4001` 表示登录凭证自然到期并静默重连，`4003` 才表示授权快照已经失效。
 5. 首页与实时监控的底图、工具栏及任务筛选统一读取 `websocketExtraData.globalMapId`。续期/重连刷新保留仍在新地图列表中的选择（含用户手动选择的 GIS）；仅首屏或所选地图已移除时按 GPS→首张 SLAM→GIS 选择默认地图。退出登录清空选择，不跨账号保存。
 6. 地图资源和路径只加载当前选择，刷新期间用户切图以最新选择为准。同一快照同一地图的在途请求合并；快照替换、失权或退出后丢弃旧响应，切到其他图后旧图响应也不写回。普通 Overview 失败保留当前页面，明确权限变化仍先清空。
 

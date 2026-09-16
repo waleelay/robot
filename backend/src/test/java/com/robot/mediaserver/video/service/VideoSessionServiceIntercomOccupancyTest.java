@@ -531,6 +531,81 @@ class VideoSessionServiceIntercomOccupancyTest {
     }
 
     @Test
+    void gatewayRecoveryReusesFixedCameraInFlightCommand() {
+        target.setRobotId("camera-001");
+        target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setSourceId("camera-001");
+        target.setDeviceId("camera-001");
+        target.setRuntimeId("runtime-fixed-001");
+        target.setViewerCount(1);
+        target.setStatus(VideoSessionStatus.REQUESTING_CLIENT);
+        target.setCommandId("cmd-before-gateway-reconnect");
+        target.setCommandRequestedAt(OffsetDateTime.now());
+        when(repository.findBySourceTypeAndStatusInOrderByUpdatedAtDesc(
+                eq(VideoSourceType.FIXED_CAMERA), anyCollection()))
+                .thenReturn(List.of(target));
+        when(liveKitTokenService.createPublisherToken(anyString(), anyString()))
+                .thenReturn(new LiveKitTokenService.TokenResult(
+                        "publisher-token", OffsetDateTime.now().plusMinutes(10)));
+
+        var commands = service.fixedCameraRecoveryCommands(null, true);
+
+        assertThat(commands).hasSize(1);
+        assertThat(commands.get(0).sourceType()).isEqualTo(VideoSourceType.FIXED_CAMERA);
+        assertThat(commands.get(0).commandId()).isEqualTo("cmd-before-gateway-reconnect");
+        assertThat(commands.get(0).publishIdentity()).isEqualTo("fixed-camera:camera-001");
+        assertThat(target.getViewerCount()).isEqualTo(1);
+    }
+
+    @Test
+    void gatewayRecoveryKeepsHealthyFixedCameraPublisher() {
+        target.setRobotId("camera-001");
+        target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setSourceId("camera-001");
+        target.setDeviceId("camera-001");
+        target.setRuntimeId("runtime-fixed-001");
+        target.setViewerCount(1);
+        target.setStatus(VideoSessionStatus.STREAMING);
+        target.setTrackSid("TR_fixed");
+        target.setTrackName("video.visible.sub");
+        when(repository.findBySourceTypeAndStatusInOrderByUpdatedAtDesc(
+                eq(VideoSourceType.FIXED_CAMERA), anyCollection()))
+                .thenReturn(List.of(target));
+        when(liveKitRoomService.resolveActiveVideoTrack(
+                target.getRoomName(), "fixed-camera:camera-001", "TR_fixed"))
+                .thenReturn(Optional.of(new LiveKitRoomService.ActiveVideoTrack(
+                        "fixed-camera:camera-001", "PA_fixed", "TR_fixed", "video.visible.sub")));
+
+        var commands = service.fixedCameraRecoveryCommands(null, true);
+
+        assertThat(commands).isEmpty();
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.STREAMING);
+        verifyNoInteractions(liveKitTokenService);
+    }
+
+    @Test
+    void fixedCameraRecoveryIncludesRecordingAndSkipsUnoccupiedSession() {
+        target.setRobotId("camera-001");
+        target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setSourceId("camera-001");
+        target.setDeviceId("camera-001");
+        target.setRuntimeId("runtime-fixed-001");
+        target.setViewerCount(0);
+        target.setStatus(VideoSessionStatus.FAILED);
+        when(repository.findBySourceTypeAndStatusInOrderByUpdatedAtDesc(
+                eq(VideoSourceType.FIXED_CAMERA), anyCollection()))
+                .thenReturn(List.of(target));
+        when(liveKitTokenService.createPublisherToken(anyString(), anyString()))
+                .thenReturn(new LiveKitTokenService.TokenResult(
+                        "publisher-token", OffsetDateTime.now().plusMinutes(10)));
+
+        assertThat(service.fixedCameraRecoveryCommands(null, false)).isEmpty();
+
+        when(fileService.hasActiveLiveRecording("vs-target")).thenReturn(true);
+        assertThat(service.fixedCameraRecoveryCommands(null, false)).hasSize(1);
+    }
+
+    @Test
     void staleViewerSweepDoesNotUseOneCrossViewerTransaction() throws NoSuchMethodException {
         assertThat(VideoSessionService.class.getMethod("sweepStaleViewers")
                 .isAnnotationPresent(Transactional.class)).isFalse();
@@ -701,6 +776,42 @@ class VideoSessionServiceIntercomOccupancyTest {
         assertThat(target.getTrackSid()).isEqualTo("TR_actual");
         verify(mediaTrackService).publish(
                 target, "robot:robot-002:camera01", "TR_actual", "video.visible.sub");
+    }
+
+    @Test
+    void reconcilesRecoveredFixedTrackIntoAllOccupiedFailedSessions() {
+        target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setSourceId("camera-001");
+        target.setDeviceId("camera-001");
+        target.setRuntimeId("runtime-test");
+        target.setStatus(VideoSessionStatus.FAILED);
+        target.setViewerCount(1);
+        VideoSession second = session("vs-second", "camera-001", null, null, IntercomStatus.IDLE);
+        second.setSourceType(VideoSourceType.FIXED_CAMERA);
+        second.setSourceId("camera-001");
+        second.setDeviceId("camera-001");
+        second.setRuntimeId("runtime-test");
+        second.setRoomName(target.getRoomName());
+        second.setStatus(VideoSessionStatus.TIMEOUT);
+        second.setViewerCount(1);
+        VideoSourceRuntime runtime = runtime();
+        runtime.setSourceType(VideoSourceType.FIXED_CAMERA);
+        runtime.setSourceId("camera-001");
+        runtime.setDeviceId("camera-001");
+        when(sourceRuntimeRepository.findById("runtime-test")).thenReturn(Optional.of(runtime));
+        when(sourceRuntimeRepository.findByIdForUpdate("runtime-test")).thenReturn(Optional.of(runtime));
+        when(repository.findByRuntimeIdOrderBySessionIdAsc("runtime-test")).thenReturn(List.of(target, second));
+        when(liveKitRoomService.resolveActiveVideoTrack(
+                target.getRoomName(), "fixed-camera:camera-001", null))
+                .thenReturn(Optional.of(new LiveKitRoomService.ActiveVideoTrack(
+                        "fixed-camera:camera-001", "PA_fixed", "TR_fixed", "video.visible.sub")));
+
+        service.reconcileLiveKitRuntime("runtime-test");
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.STREAMING);
+        assertThat(second.getStatus()).isEqualTo(VideoSessionStatus.STREAMING);
+        assertThat(target.getTrackSid()).isEqualTo("TR_fixed");
+        assertThat(second.getTrackSid()).isEqualTo("TR_fixed");
     }
 
     @Test

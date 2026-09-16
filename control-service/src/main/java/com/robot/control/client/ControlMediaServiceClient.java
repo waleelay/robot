@@ -545,6 +545,26 @@ public class ControlMediaServiceClient {
                 status);
     }
 
+    /** 查询固定摄像头 Gateway 或 RTSP 恢复后需要重新发布的命令。 */
+    public List<VideoStartCommand> fixedCameraRecoveryCommands(String sourceId, boolean gatewayReconnect) {
+        if (sourceId == null || sourceId.isBlank()) {
+            return post(
+                    "/internal/media/video-sessions/fixed-camera-recovery-commands?gatewayReconnect={gatewayReconnect}",
+                    null,
+                    null,
+                    new ParameterizedTypeReference<>() {},
+                    gatewayReconnect);
+        }
+        return post(
+                "/internal/media/video-sessions/fixed-camera-recovery-commands"
+                        + "?sourceId={sourceId}&gatewayReconnect={gatewayReconnect}",
+                null,
+                null,
+                new ParameterizedTypeReference<>() {},
+                sourceId,
+                gatewayReconnect);
+    }
+
     /**
      * 写回机器人视频状态。
      *

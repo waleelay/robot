@@ -2,6 +2,7 @@ package com.robot.control.fixedcamera;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.robot.control.service.ControlVideoCommandService;
 import com.robot.control.ws.MediaWebSocketPublisher;
 import java.time.Duration;
 import java.time.Instant;
@@ -10,7 +11,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,8 +29,12 @@ public class FixedCameraHealthService {
 
     private final ObjectMapper objectMapper;
     private final MediaWebSocketPublisher webSocketPublisher;
+    private final ControlVideoCommandService videoCommandService;
     private final Map<String, GatewayState> gateways = new ConcurrentHashMap<>();
     private final Map<String, CameraState> cameras = new ConcurrentHashMap<>();
+    private final AtomicBoolean pendingGatewayRecovery = new AtomicBoolean();
+    private final Set<String> pendingCameraRecoveries = ConcurrentHashMap.newKeySet();
+    private volatile long recoveryRetryAfterMillis;
 
     @Value("${control.fixed-camera-health.gateway-timeout-seconds:30}")
     private long gatewayTimeoutSeconds = 30;
@@ -35,9 +42,13 @@ public class FixedCameraHealthService {
     @Value("${control.fixed-camera-health.camera-max-age-seconds:120}")
     private long cameraMaxAgeSeconds = 120;
 
-    public FixedCameraHealthService(ObjectMapper objectMapper, MediaWebSocketPublisher webSocketPublisher) {
+    public FixedCameraHealthService(
+            ObjectMapper objectMapper,
+            MediaWebSocketPublisher webSocketPublisher,
+            ControlVideoCommandService videoCommandService) {
         this.objectMapper = objectMapper;
         this.webSocketPublisher = webSocketPublisher;
+        this.videoCommandService = videoCommandService;
     }
 
     public void handleGatewayStatus(String topic, byte[] payload) {
@@ -65,6 +76,7 @@ public class FixedCameraHealthService {
             GatewayState incoming = new GatewayState(
                     topicGatewayId, status, longValue(root, "sequence"), instant(root, "reportedAt"),
                     now, text(root, "reasonCode"));
+            AtomicBoolean becameOnline = new AtomicBoolean();
             gateways.compute(topicGatewayId, (ignored, previous) -> {
                 if (previous != null && stale(incoming.sequence(), incoming.reportedAt(), previous.sequence(), previous.reportedAt())
                         && !"OFFLINE".equals(status)) {
@@ -73,8 +85,14 @@ public class FixedCameraHealthService {
                 if (previous == null || !previous.status().equals(incoming.status())) {
                     publishGatewayChange(incoming);
                 }
+                if (previous != null && !"ONLINE".equals(previous.status()) && "ONLINE".equals(incoming.status())) {
+                    becameOnline.set(true);
+                }
                 return incoming;
             });
+            if (becameOnline.get()) {
+                pendingGatewayRecovery.set(true);
+            }
         } catch (Exception exception) {
             log.warn("解析固定摄像头网关状态失败，主题={} 载荷字节数={}", topic,
                     payload == null ? 0 : payload.length, exception);
@@ -105,6 +123,7 @@ public class FixedCameraHealthService {
             CameraState incoming = new CameraState(
                     topicGatewayId, topicCameraId, health, longValue(root, "sequence"),
                     instant(root, "checkedAt"), now, text(root, "reasonCode"));
+            AtomicBoolean becameAvailable = new AtomicBoolean();
             cameras.compute(topicCameraId, (ignored, previous) -> {
                 if (previous != null && stale(incoming.sequence(), incoming.checkedAt(), previous.sequence(), previous.checkedAt())) {
                     return previous;
@@ -113,8 +132,15 @@ public class FixedCameraHealthService {
                         || !previous.reasonCode().equals(incoming.reasonCode())) {
                     publishCameraChange(incoming);
                 }
+                if (previous != null && !"AVAILABLE".equals(previous.health())
+                        && "AVAILABLE".equals(incoming.health())) {
+                    becameAvailable.set(true);
+                }
                 return incoming;
             });
+            if (becameAvailable.get()) {
+                pendingCameraRecoveries.add(topicCameraId);
+            }
         } catch (Exception exception) {
             log.warn("解析固定摄像头健康状态失败，主题={} 载荷字节数={}", topic,
                     payload == null ? 0 : payload.length, exception);
@@ -140,6 +166,34 @@ public class FixedCameraHealthService {
     @Scheduled(fixedDelayString = "${control.fixed-camera-health.sweep-delay-ms:1000}")
     void expireStaleStates() {
         expireStaleStates(Instant.now());
+        recoverPendingSources();
+    }
+
+    void recoverPendingSources() {
+        if (System.currentTimeMillis() < recoveryRetryAfterMillis) {
+            return;
+        }
+        List<String> camerasCoveredByGatewayRecovery = List.copyOf(pendingCameraRecoveries);
+        if (pendingGatewayRecovery.compareAndSet(true, false)) {
+            try {
+                videoCommandService.recoverFixedCameraSources(null, true);
+                camerasCoveredByGatewayRecovery.forEach(pendingCameraRecoveries::remove);
+            } catch (RuntimeException exception) {
+                pendingGatewayRecovery.set(true);
+                recoveryRetryAfterMillis = System.currentTimeMillis() + 5000;
+                log.warn("固定摄像头 Gateway 恢复后的推流收敛失败，稍后重试", exception);
+                return;
+            }
+        }
+        for (String cameraId : List.copyOf(pendingCameraRecoveries)) {
+            try {
+                videoCommandService.recoverFixedCameraSources(cameraId, false);
+                pendingCameraRecoveries.remove(cameraId);
+            } catch (RuntimeException exception) {
+                recoveryRetryAfterMillis = System.currentTimeMillis() + 5000;
+                log.warn("固定摄像头 RTSP 恢复后的推流收敛失败，摄像头={}", cameraId, exception);
+            }
+        }
     }
 
     void expireStaleStates(Instant now) {

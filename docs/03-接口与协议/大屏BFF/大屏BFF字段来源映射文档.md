@@ -112,6 +112,8 @@ GET /api/bigscreen/panorama/overview
 Control 健康查询失败时 BFF 使用空健康快照，因此设备状态为 `offline`，不会使用 Management
 `enabled` 补成在线。固定摄像头健康变化复用设备统计重算结果，通过
 `panorama.fixed-camera.statuses.changed` 增量更新当前授权快照中的固定摄像头，不重新获取 Overview。
+增量项同步携带脱敏后的 `gatewayHealth/streamHealth`，仅用于刷新状态文案；不携带 `gatewayId`、RTSP
+地址或原始错误信息，也不能据此新增授权资源。
 大屏地图仅展示 `enabled === true` 的固定摄像头；SLAM 地图还要求摄像头配置的
 `location.mapId` 匹配当前地图且有有效的 `x/y` 坐标。GIS 地图只有存在有效经纬度时才绘制，
 不再将无经纬度的固定摄像头放到地图中心点。停用摄像头仍保留在授权设备集合和统计中；

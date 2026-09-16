@@ -96,6 +96,19 @@ public class VideoSessionService {
             VideoSessionStatus.FAILED,
             VideoSessionStatus.TIMEOUT);
 
+    private static final Set<VideoSessionStatus> FIXED_CAMERA_GATEWAY_RECOVERY_STATUSES = Set.of(
+            VideoSessionStatus.REQUESTING_CLIENT,
+            VideoSessionStatus.ROOM_READY,
+            VideoSessionStatus.STREAMING,
+            VideoSessionStatus.INTERRUPTED,
+            VideoSessionStatus.FAILED,
+            VideoSessionStatus.TIMEOUT);
+
+    private static final Set<VideoSessionStatus> FIXED_CAMERA_STREAM_RECOVERY_STATUSES = Set.of(
+            VideoSessionStatus.INTERRUPTED,
+            VideoSessionStatus.FAILED,
+            VideoSessionStatus.TIMEOUT);
+
     /**
      * 实时视频会话仓储。
      */
@@ -850,6 +863,60 @@ public class VideoSessionService {
     }
 
     /**
+     * 固定摄像头 Gateway 或 RTSP 恢复后，生成仍有观看者的 Source 恢复命令。
+     *
+     * <p>该入口不参与机器人媒体客户端恢复。Gateway 重连时会核对表面 STREAMING 会话的
+     * LiveKit Track，并复用仍在途的启动命令；单路 RTSP 恢复只处理已经失败或中断的会话。</p>
+     *
+     * @param sourceId 摄像头 ID；为空表示当前单 Gateway 下全部固定摄像头
+     * @param gatewayReconnect 是否由 Gateway 离线转在线触发
+     * @return 每个视频源最新一个待恢复命令
+     */
+    @Transactional
+    public List<VideoStartCommand> fixedCameraRecoveryCommands(String sourceId, boolean gatewayReconnect) {
+        Set<VideoSessionStatus> statuses = gatewayReconnect
+                ? FIXED_CAMERA_GATEWAY_RECOVERY_STATUSES
+                : FIXED_CAMERA_STREAM_RECOVERY_STATUSES;
+        Set<String> restartedKeys = new HashSet<>();
+        return repository.findBySourceTypeAndStatusInOrderByUpdatedAtDesc(
+                        VideoSourceType.FIXED_CAMERA, statuses)
+                .stream()
+                .filter(session -> sourceId == null || sourceId.isBlank()
+                        || Objects.equals(sourceId, session.getSourceId()))
+                .map(session -> {
+                    VideoSession locked = requireSessionForUpdate(session.getSessionId());
+                    if (locked.getSourceType() != VideoSourceType.FIXED_CAMERA
+                            || (sourceId != null && !sourceId.isBlank()
+                                    && !Objects.equals(sourceId, locked.getSourceId()))
+                            || !hasFixedCameraRecoveryOwner(locked)
+                            || !statuses.contains(locked.getStatus())) {
+                        return null;
+                    }
+                    if (gatewayReconnect
+                            && (locked.getStatus() == VideoSessionStatus.STREAMING
+                                    || locked.getStatus() == VideoSessionStatus.ROOM_READY)
+                            && hasPublishedTrack(locked)) {
+                        return null;
+                    }
+                    String key = locked.getRuntimeId() == null
+                            ? locked.getSourceType() + ":" + locked.getSourceId() + ":"
+                                    + locked.getDeviceId() + ":" + locked.getChannel() + ":" + locked.getQuality()
+                            : locked.getRuntimeId();
+                    if (!restartedKeys.add(key)) {
+                        return null;
+                    }
+                    return requestClientStart(
+                            locked,
+                            gatewayReconnect
+                                    ? "video.fixed_camera.gateway_recovered"
+                                    : "video.fixed_camera.stream_recovered",
+                            false);
+                })
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    /**
      * 当前用户手动重启实时视频会话。
      *
      * <p>重启只处理 Publisher，不改变 viewer 占用；观看关系由 create/heartbeat/stop 维护。</p>
@@ -925,7 +992,9 @@ public class VideoSessionService {
     }
 
     private VideoStartCommand requestClientStart(VideoSession session, String event, boolean includeTimeout) {
-        if (session.getViewerCount() <= 0) {
+        if (session.getViewerCount() <= 0
+                && !(session.getSourceType() == VideoSourceType.FIXED_CAMERA
+                        && fileService.hasActiveLiveRecording(session.getSessionId()))) {
             return null;
         }
         if (startRequestInFlight(session)) {
@@ -1210,7 +1279,7 @@ public class VideoSessionService {
                 runtime.setLastMediaAt(observedAt);
             }
             sessions.stream()
-                    .filter(session -> RECONCILE_STATUSES.contains(session.getStatus()))
+                    .filter(this::acceptPublishedTrack)
                     .forEach(session -> applyPublishedTrack(session, track, observedAt));
         } else {
             runtimeChanged = runtime.getPublisherIdentity() != null
@@ -1266,6 +1335,20 @@ public class VideoSessionService {
             session.setUpdatedAt(observedAt);
         }
         repository.save(session);
+    }
+
+    private boolean acceptPublishedTrack(VideoSession session) {
+        if (RECONCILE_STATUSES.contains(session.getStatus())) {
+            return true;
+        }
+        return session.getSourceType() == VideoSourceType.FIXED_CAMERA
+                && (session.getStatus() == VideoSessionStatus.FAILED
+                        || session.getStatus() == VideoSessionStatus.TIMEOUT)
+                && hasFixedCameraRecoveryOwner(session);
+    }
+
+    private boolean hasFixedCameraRecoveryOwner(VideoSession session) {
+        return session.getViewerCount() > 0 || fileService.hasActiveLiveRecording(session.getSessionId());
     }
 
     private void applyMissingTrack(VideoSession session, OffsetDateTime observedAt) {

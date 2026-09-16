@@ -14,9 +14,17 @@ import (
 type fakePublisher struct {
 	stoppedSessionID string
 	stopAllCalls     int
+	startCalls       int
+	restartCalls     int
 }
 
 func (p *fakePublisher) Start(context.Context, model.StartCommand, string) (string, string, error) {
+	p.startCalls++
+	return "", "", nil
+}
+
+func (p *fakePublisher) Restart(context.Context, model.StartCommand, string) (string, string, error) {
+	p.restartCalls++
 	return "", "", nil
 }
 
@@ -140,6 +148,41 @@ func TestStopOnlyUnbindsExactViewingSession(t *testing.T) {
 	}
 }
 
+func TestExplicitRestartUsesPublisherRestart(t *testing.T) {
+	pub := &fakePublisher{}
+	gateway := NewGateway(config.Config{GatewayID: "gateway-001"}, fakeProber{}, pub)
+	gateway.subscriptionsReady.Store(true)
+	gateway.beginStarting("session-001")
+
+	gateway.startPublisher(context.Background(), model.StartCommand{
+		SessionID: "session-001", SourceType: "FIXED_CAMERA", SourceID: "camera-001",
+		RoomName: "room-001", RTSPURL: "rtsp://camera/live",
+	}, true)
+
+	if pub.restartCalls != 1 {
+		t.Fatalf("明确重启命令必须调用 Publisher.Restart，实际=%d", pub.restartCalls)
+	}
+}
+
+func TestStoppedSessionRejectsLateStartAndRestart(t *testing.T) {
+	pub := &fakePublisher{}
+	gateway := NewGateway(config.Config{GatewayID: "gateway-001"}, fakeProber{}, pub)
+	gateway.markSessionStopped("session-001")
+	command := model.StartCommand{
+		SessionID: "session-001", SourceType: "FIXED_CAMERA", SourceID: "camera-001",
+		RoomName: "room-001", RTSPURL: "rtsp://camera/live",
+	}
+
+	gateway.beginStarting(command.SessionID)
+	gateway.startPublisher(context.Background(), command, false)
+	gateway.beginStarting(command.SessionID)
+	gateway.startPublisher(context.Background(), command, true)
+
+	if pub.startCalls != 0 || pub.restartCalls != 0 {
+		t.Fatalf("已终止会话不得被迟到命令复活，start=%d restart=%d", pub.startCalls, pub.restartCalls)
+	}
+}
+
 func TestActiveSessionsAreRemovedAfterStopOrPublisherExit(t *testing.T) {
 	gateway := NewGateway(config.Config{GatewayID: "gateway-001"}, fakeProber{}, &fakePublisher{})
 	gateway.rememberSession("session-001")
@@ -176,6 +219,8 @@ func TestMQTTConnectionLostStopsPublishersAndKeepsStatusesForReconnect(t *testin
 	gateway.rememberSession("session-active")
 	gateway.beginStarting("session-starting")
 	gateway.beginStopping("session-stopping")
+	gateway.commandStates["session-active"] = sessionCommandState{lastCommandID: "cmd-active"}
+	gateway.commandStates["session-stopped"] = sessionCommandState{lastCommandID: "cmd-stop", stopped: true}
 
 	gateway.handleConnectionLost()
 
@@ -193,6 +238,12 @@ func TestMQTTConnectionLostStopsPublishersAndKeepsStatusesForReconnect(t *testin
 	}
 	if status := gateway.pendingStatuses["session-stopping"]; status.status != "stopped" {
 		t.Fatalf("停止中会话应在重连后补报停止，实际=%+v", status)
+	}
+	if commandID := gateway.commandStates["session-active"].lastCommandID; commandID != "" {
+		t.Fatalf("未终止会话应允许重放原命令，实际命令ID=%q", commandID)
+	}
+	if state := gateway.commandStates["session-stopped"]; !state.stopped || state.lastCommandID != "cmd-stop" {
+		t.Fatalf("已终止会话必须保留终止水位，实际=%+v", state)
 	}
 }
 

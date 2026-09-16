@@ -307,7 +307,7 @@ public class PanoramaService {
 
     /**
      * 当前用户已授权固定摄像头的最小播放状态。复用设备统计的短缓存和单飞查询，
-     * 健康事件不再触发完整 Overview，也不向浏览器暴露 Gateway 健康明细。
+     * 健康事件不再触发完整 Overview；只携带已授权摄像头的脱敏健康状态和原因码。
      */
     public List<Map<String, Object>> fixedCameraStatuses() {
         return cachedStats("devices", () -> devices(new OverviewRequestCache())).stream()
@@ -317,7 +317,9 @@ public class PanoramaService {
                         "status", device.get("status"),
                         "playable", device.get("playable"),
                         "enabled", device.get("enabled"),
-                        "configReady", device.get("configReady")))
+                        "configReady", device.get("configReady"),
+                        "gatewayHealth", device.get("gatewayHealth"),
+                        "streamHealth", device.get("streamHealth")))
                 .toList();
     }
 

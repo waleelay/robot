@@ -194,7 +194,7 @@ export default {
       return this.ZQL_videosInfos[`slot_${this.index}`] || {}
     },
     videoDisplayState() {
-      return resolveVideoDisplayState(this.cameraInfo, this.slotVideoInfo)
+      return resolveVideoDisplayState(this.cameraInfo, this.slotVideoInfo, this.currentRobot)
     },
     cameraMediaKey() {
       return this.ZQL_videosInfos[`slot_${this.index}`]?.key || ''
@@ -255,7 +255,10 @@ export default {
     ...mapActions('dragVideo', ['setSplitType']),
     ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSelectedRobotId', 'setControlCenterReturnTo', 'stopCamera', 'restartCamera']),
     handleRestartVideoSource() {
-      if (!this.cameraInfo?.session) return
+      if (!this.cameraInfo?.session) {
+        if (this.isFixedCamera) this.$emit('refreshVideo', `slot_${this.index}`)
+        return
+      }
       return this.restartCamera(this.cameraInfo)
     },
     startRecordTimer() {

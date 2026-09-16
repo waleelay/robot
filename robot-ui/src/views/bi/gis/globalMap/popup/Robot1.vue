@@ -200,6 +200,7 @@ import { acquireControl, mediaClientId, releaseControl, sendEquipmentCommand } f
 import { isRequestErrorNotified } from '@/utils/request';
 import { formatRobotSpeed } from '../../../js/utils/prefer-live-robot-fields';
 import { leaveChargerUnavailableReason, navigationUnavailableReason } from '../../../js/utils/service-point-actions';
+import { resolveVideoDisplayState } from '../../../js/utils/video-display-state';
 export default {
   name: 'Modal',
   mixins: [gsap],
@@ -309,16 +310,17 @@ export default {
       return this.isFixedCameraPlaying ? 'pause' : 'play'
     },
     videoStatusIcon() {
-      const status = this.fixedCameraInfo?.status
-      if (status === 'FAILED' || status === 'TIMEOUT' || status === 'offline') return 'unlink1'
-      return 'loading'
+      return this.fixedCameraVideoDisplayState.icon
     },
     videoStatusText() {
-      const info = this.fixedCameraInfo || {}
-      if (info.hasVideo) return ''
-      if (info.session) return '连接中'
-      if (info.status === 'FAILED' || info.status === 'TIMEOUT' || info.status === 'offline') return '连接失败'
-      return '连接中'
+      return this.fixedCameraVideoDisplayState.text
+    },
+    fixedCameraVideoDisplayState() {
+      return resolveVideoDisplayState(
+        this.fixedCameraInfo || {},
+        this.fixedCameraInfo || {},
+        { ...(this.selectedRobot || {}), ...(this.currenRobot || {}) }
+      )
     },
     taskList() {
       const robotId = this.selectedRobotId || this.currenRobot?.robotId

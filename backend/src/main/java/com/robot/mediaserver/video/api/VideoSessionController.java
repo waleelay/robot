@@ -193,6 +193,13 @@ public class VideoSessionController {
         return service.handleClientOnline(robotId, status);
     }
 
+    @PostMapping("/fixed-camera-recovery-commands")
+    public List<VideoStartCommand> fixedCameraRecoveryCommands(
+            @RequestParam(required = false) String sourceId,
+            @RequestParam(defaultValue = "false") boolean gatewayReconnect) {
+        return service.fixedCameraRecoveryCommands(sourceId, gatewayReconnect);
+    }
+
     @PostMapping("/{sessionId}/release-idle")
     public java.util.Map<String, Object> releaseIdle(@PathVariable String sessionId) {
         return service.releaseIdleSession(sessionId);

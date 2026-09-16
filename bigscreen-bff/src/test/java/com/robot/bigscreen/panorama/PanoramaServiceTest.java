@@ -1225,12 +1225,17 @@ class PanoramaServiceTest {
         assertEquals("AVAILABLE", ((Map<?, ?>) camera.get("streamHealth")).get("status"));
         assertEquals(1L, ((Map<?, ?>) overview.get("deviceStats")).get("online"));
         Map<String, Object> status = service.fixedCameraStatuses().get(0);
-        assertEquals(Map.of(
-                "sourceId", "camera-001",
-                "status", "online",
-                "playable", true,
-                "enabled", true,
-                "configReady", true), status);
+        assertEquals("camera-001", status.get("sourceId"));
+        assertEquals("online", status.get("status"));
+        assertEquals(true, status.get("playable"));
+        assertEquals(true, status.get("enabled"));
+        assertEquals(true, status.get("configReady"));
+        Map<?, ?> statusGatewayHealth = (Map<?, ?>) status.get("gatewayHealth");
+        Map<?, ?> statusStreamHealth = (Map<?, ?>) status.get("streamHealth");
+        assertEquals("ONLINE", statusGatewayHealth.get("status"));
+        assertEquals("AVAILABLE", statusStreamHealth.get("status"));
+        assertNull(statusGatewayHealth.get("reasonCode"));
+        assertNull(statusStreamHealth.get("reasonCode"));
     }
 
     @Test

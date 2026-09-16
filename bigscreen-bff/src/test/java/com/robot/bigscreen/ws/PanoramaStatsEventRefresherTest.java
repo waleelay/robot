@@ -57,7 +57,9 @@ class PanoramaStatsEventRefresherTest {
                 "status", "online",
                 "playable", true,
                 "enabled", true,
-                "configReady", true)));
+                "configReady", true,
+                "gatewayHealth", Map.of("status", "ONLINE", "reasonCode", ""),
+                "streamHealth", Map.of("status", "AVAILABLE", "reasonCode", ""))));
         ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
         when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
         PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
@@ -115,7 +117,9 @@ class PanoramaStatsEventRefresherTest {
                 "status", "online",
                 "playable", true,
                 "enabled", true,
-                "configReady", true)));
+                "configReady", true,
+                "gatewayHealth", Map.of("status", "ONLINE", "reasonCode", ""),
+                "streamHealth", Map.of("status", "AVAILABLE", "reasonCode", ""))));
         ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
         when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
         PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
@@ -130,7 +134,9 @@ class PanoramaStatsEventRefresherTest {
         assertThat(statusEvent.path("event").asText()).isEqualTo("panorama.fixed-camera.statuses.changed");
         assertThat(statusEvent.path("data").path("items").get(0).path("sourceId").asText())
                 .isEqualTo("camera-001");
-        assertThat(statusEvent.toString()).doesNotContain("gatewayId", "streamHealth");
+        assertThat(statusEvent.path("data").path("items").get(0).path("streamHealth").path("status").asText())
+                .isEqualTo("AVAILABLE");
+        assertThat(statusEvent.toString()).doesNotContain("gatewayId");
     }
 
     @Test

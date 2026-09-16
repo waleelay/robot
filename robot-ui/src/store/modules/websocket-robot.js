@@ -1471,7 +1471,9 @@ const actions = {
         status: item.status || 'offline',
         playable: item.playable === true,
         enabled: item.enabled === true,
-        configReady: item.configReady === true
+        configReady: item.configReady === true,
+        ...(item.gatewayHealth ? { gatewayHealth: item.gatewayHealth } : {}),
+        ...(item.streamHealth ? { streamHealth: item.streamHealth } : {})
       }
       commit('updateRobot', { ...existing, ...patch })
       dispatch('websocketExtraData/setRobotBaseInfo', {
@@ -1776,7 +1778,11 @@ const actions = {
         attachTargets: { ...latestTargets }
       })
       commit('setCamera', next)
-      commit('setActiveCamera', { key: next.key, robot, camera: next })
+      if (Object.keys(next.attachTargets || {}).length > 0 || next.intercomActive) {
+        commit('setActiveCamera', { key: next.key, robot, camera: next })
+      } else {
+        commit('removeActiveCamera', next.key)
+      }
       // 本窗口若已在起流中途关闭，只确保摘掉本 prefix，不回写 consumer
       if (!(viewerId in (next.attachTargets || {}))) {
         detachCameraMedia(next, attachPrefix)
@@ -1787,6 +1793,29 @@ const actions = {
     } catch (error) {
       console.error('ERROR createVideoSession', error.message || '请求失败')
       const latestAfterError = state.cameras[camera1.key]
+      // 固定摄像头由 Gateway/RTSP 健康恢复和人工 Source restart 收敛。保留会话及
+      // 消费者意图，页面无需刷新即可等待后端状态恢复；机器人原有失败清理逻辑不变。
+      if (fixedCamera && latestAfterError && !latestAfterError.stopped &&
+          viewerId in (latestAfterError.attachTargets || {})) {
+        const failedRoom = latestAfterError.room || camera1.room
+        if (failedRoom) {
+          await Promise.resolve(failedRoom.disconnect()).catch(() => {})
+        }
+        const pending = mergeCameraFromStore(state, latestAfterError, {
+          loading: false,
+          connecting: false,
+          disconnecting: false,
+          viewerReconnecting: false,
+          watching: true,
+          room: null,
+          hasVideo: false,
+          remoteVideoTrack: null
+        })
+        commit('setCamera', pending)
+        commit('setActiveCamera', { key: pending.key, robot, camera: pending })
+        if (throwOnError) throw error
+        return null
+      }
       const leftoverTargets = { ...(latestAfterError?.attachTargets || camera1.attachTargets || {}) }
       delete leftoverTargets[viewerId]
       detachCameraMedia(camera1, attachPrefix)
@@ -1850,8 +1879,11 @@ const actions = {
     // 仍有其它画面消费同一路时：只摘本窗口，不进 stopOperations，避免取消共享起流/waitForVideo
     if (remainingTargets.length > 0) return dispatch('performStopCamera', data)
     if (camera && remainingTargets.length === 0) {
+      const attachTargets = { ...(camera.attachTargets || {}) }
+      if (data.consumerId && starting) delete attachTargets[data.consumerId]
       commit('setCamera', {
         ...camera,
+        attachTargets,
         stopping: true,
         stopped: true,
         restarting: false,

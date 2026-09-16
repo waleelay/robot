@@ -23,7 +23,7 @@ type Gateway struct {
 	publisher          publisher.Publisher
 	mqtt               paho.Client
 	mu                 sync.Mutex
-	lastCmds           map[string]string
+	commandStates      map[string]sessionCommandState
 	activeSessions     map[string]struct{}
 	startingSessions   map[string]int
 	stoppingSessions   map[string]int
@@ -43,6 +43,11 @@ type pendingSessionStatus struct {
 	status    string
 	errorCode string
 	message   string
+}
+
+type sessionCommandState struct {
+	lastCommandID string
+	stopped       bool
 }
 
 type streamProber interface {
@@ -72,7 +77,7 @@ func NewGateway(cfg config.Config, probe streamProber, pub publisher.Publisher) 
 		cfg:              cfg,
 		probe:            probe,
 		publisher:        pub,
-		lastCmds:         make(map[string]string),
+		commandStates:    make(map[string]sessionCommandState),
 		activeSessions:   make(map[string]struct{}),
 		startingSessions: make(map[string]int),
 		stoppingSessions: make(map[string]int),
@@ -204,7 +209,7 @@ func (g *Gateway) restoreSubscriptions(
 			err = g.subscribe(stopTopic, g.handleStop(ctx))
 		}
 		if err == nil {
-			err = g.subscribe(restartTopic, g.handleStart(ctx, priorityCommand))
+			err = g.subscribe(restartTopic, g.handleRestart(ctx))
 		}
 		if err == nil {
 			err = g.subscribe(catalogTopic, g.handleCatalog(ctx))
@@ -250,6 +255,14 @@ func (g *Gateway) handleConnectionLost() {
 			status: "stopped", errorCode: "", message: "推流已停止",
 		}
 	}
+	// 断线后 Publisher 已全部停止，允许 Control 用原 commandId 补发未终止会话。
+	// 显式 stop 的会话继续保留终止标记，迟到的 start/restart 仍会被拒绝。
+	for sessionID, state := range g.commandStates {
+		if !state.stopped {
+			state.lastCommandID = ""
+			g.commandStates[sessionID] = state
+		}
+	}
 	g.activeSessions = make(map[string]struct{})
 	g.startingSessions = make(map[string]int)
 	g.stoppingSessions = make(map[string]int)
@@ -283,6 +296,14 @@ func (g *Gateway) flushPendingStatuses() {
 }
 
 func (g *Gateway) handleStart(ctx context.Context, priority commandPriority) paho.MessageHandler {
+	return g.handlePublishCommand(ctx, priority, false)
+}
+
+func (g *Gateway) handleRestart(ctx context.Context) paho.MessageHandler {
+	return g.handlePublishCommand(ctx, priorityCommand, true)
+}
+
+func (g *Gateway) handlePublishCommand(ctx context.Context, priority commandPriority, forceRestart bool) paho.MessageHandler {
 	return func(_ paho.Client, msg paho.Message) {
 		var command model.StartCommand
 		if err := json.Unmarshal(msg.Payload(), &command); err != nil {
@@ -298,7 +319,7 @@ func (g *Gateway) handleStart(ctx context.Context, priority commandPriority) pah
 			ctx:       ctx,
 			sessionID: command.SessionID,
 			run: func(jobCtx context.Context) {
-				g.start(jobCtx, command)
+				g.startPublisher(jobCtx, command, forceRestart)
 			},
 		})
 		if err != nil {
@@ -311,12 +332,20 @@ func (g *Gateway) handleStart(ctx context.Context, priority commandPriority) pah
 }
 
 func (g *Gateway) start(ctx context.Context, command model.StartCommand) {
+	g.startPublisher(ctx, command, false)
+}
+
+func (g *Gateway) startPublisher(ctx context.Context, command model.StartCommand, forceRestart bool) {
 	defer g.endStarting(command.SessionID)
+	if g.sessionStopped(command.SessionID) {
+		log.Printf("忽略已终止会话的迟到启动命令，会话ID=%s", command.SessionID)
+		return
+	}
 	cameraID := firstNonBlank(command.SourceID, command.DeviceID)
 	log.Printf("开始固定摄像头推流，摄像头ID=%s 会话ID=%s 清晰度=%s", cameraID, command.SessionID, command.Quality)
 	rtspURL := strings.TrimSpace(command.RTSPURL)
+	var err error
 	if rtspURL == "" {
-		var err error
 		rtspURL, err = g.rtspURL(ctx, cameraID, command.Quality)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -327,8 +356,17 @@ func (g *Gateway) start(ctx context.Context, command model.StartCommand) {
 	}
 	// Publisher 启动本身已会读取 RTSP，启动前再执行 ffprobe 只会重复建连。
 	// 摄像头健康由后台探测统一负责，会话启动只回报实际 Publisher 结果。
-	g.status(command.SessionID, "publishing", "", "", "", "开始启动推流进程")
-	_, trackName, err := g.publisher.Start(ctx, command, rtspURL)
+	message := "开始启动推流进程"
+	if forceRestart {
+		message = "开始重新启动推流进程"
+	}
+	g.status(command.SessionID, "publishing", "", "", "", message)
+	var trackName string
+	if forceRestart {
+		_, trackName, err = g.publisher.Restart(ctx, command, rtspURL)
+	} else {
+		_, trackName, err = g.publisher.Start(ctx, command, rtspURL)
+	}
 	if err != nil {
 		if ctx.Err() == nil {
 			g.status(command.SessionID, "failed", "", "", "PUBLISH_FAILED", err.Error())
@@ -359,6 +397,7 @@ func (g *Gateway) handleStop(ctx context.Context) paho.MessageHandler {
 			log.Printf("拒绝缺少会话ID的固定摄像头停止命令")
 			return
 		}
+		g.markSessionStopped(payload.SessionID)
 		g.beginStopping(payload.SessionID)
 		err := g.submitCommand(payload.SessionID, payload.CommandID, priorityCommand, commandJob{
 			ctx:       ctx,
@@ -482,7 +521,8 @@ func (g *Gateway) submitCommand(
 ) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if commandID != "" && commandID == g.lastCmds[sessionID] {
+	state := g.commandStates[sessionID]
+	if commandID != "" && commandID == state.lastCommandID {
 		return errDuplicateCommand
 	}
 	if g.dispatcher == nil {
@@ -492,9 +532,24 @@ func (g *Gateway) submitCommand(
 		return err
 	}
 	if commandID != "" {
-		g.lastCmds[sessionID] = commandID
+		state.lastCommandID = commandID
+		g.commandStates[sessionID] = state
 	}
 	return nil
+}
+
+func (g *Gateway) markSessionStopped(sessionID string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	state := g.commandStates[sessionID]
+	state.stopped = true
+	g.commandStates[sessionID] = state
+}
+
+func (g *Gateway) sessionStopped(sessionID string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.commandStates[sessionID].stopped
 }
 
 func (g *Gateway) forgetSession(sessionID string) {

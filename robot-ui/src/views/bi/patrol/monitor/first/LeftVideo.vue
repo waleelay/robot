@@ -229,7 +229,7 @@ export default {
       statusArr: {}, // 改为对象形式，键名为'slot_1'...
       sourceceList: [],
       manualChange: false,
-      recoveringFixedCameras: {},
+      fixedCameraPlayableStates: {},
       /** 任务结束后空槽提示：slot_1 → 文案 */
       slotCloseHints: {},
       _slotCloseHintTimers: {}
@@ -238,9 +238,6 @@ export default {
   computed: {
     ...mapState('dragVideo', ['dropResult', 'splitType']),
     ...mapState('websocketRobot', ['robots', 'cameras']),
-    activeCameras() {
-      return this.$store.getters['websocketRobot/getActiveCameras']
-    },
     isSecondScreen() {
       return this.prefixId === 'test-video-div-second'
     },
@@ -293,6 +290,7 @@ export default {
       clearTimeout(this._slotCloseHintTimers[key])
     })
     this._slotCloseHintTimers = {}
+    this.releaseFixedCameraConsumers()
   },
   methods: {
     ...mapActions('dragVideo', ['resetDrag', 'setSplitType']),
@@ -317,6 +315,7 @@ export default {
       const targetSet = new Set((robotIds || []).map(id => String(id)).filter(Boolean))
       if (!targetSet.size) return
 
+      const takenCameras = []
       for (let i = 1; i <= this.splitType; i++) {
         const slotKey = `slot_${i}`
         const info = this.ZQL_videosInfos[slotKey]
@@ -325,18 +324,14 @@ export default {
         const robotId = String(info?.robotId || info?.robot?.robotId || '')
         if (!robotId || !targetSet.has(robotId)) continue
 
-        const camera = this.cameras?.[playingKey] || info
-        try {
-          if (camera) await this.stopCamera(camera)
-        } catch (e) {}
-        if (playingKey) {
-          this.checkedIds = this.checkedIds.filter(key => key !== playingKey)
-        }
-        this.$set(this.ZQL_videosInfos, slotKey, null)
-        this.$set(this.ZQL_playingSource, slotKey, null)
+        takenCameras.push(this.takeSlotCamera(slotKey))
         this.showSlotCloseHint(slotKey)
       }
-      this.lastCheckedIds = this.checkedIds.slice()
+      for (const taken of takenCameras) {
+        try {
+          await this.stopTakenCamera(taken)
+        } catch (e) {}
+      }
     },
     // 六分屏窗口拖拽：未播放不可拖
     onSlotDragStart(event, slotKey) {
@@ -353,25 +348,142 @@ export default {
     getRef(refName) {
       return this.$refs?.[refName]?.[0] || {}
     },
-    async start(robot, data) {
-      // console.log('start-----------------------------------');
-      
-      const emptyIndex = data.index
-      if (!robot) return;
-      const camera = data.data
-      this.$set(this.ZQL_playingSource, emptyIndex, camera.key);
-      this.$set(this.ZQL_videosInfos, emptyIndex, { robot, ...camera, robotId: robot.robotId });
-      // console.log('ZQL_playingSource', this.ZQL_playingSource);
+    fixedCameraConsumerId() {
+      return `patrol-monitor-fixed-camera:${this.prefixId}`
+    },
+    resolvePlaybackRobot(videoInfo, fallback) {
+      if (fallback) return fallback
+      if (videoInfo?.robot) return videoInfo.robot
+      const robotId = videoInfo?.robotId
+      return (this.robots || []).find(item => String(item.robotId) === String(robotId))
+    },
+    startCameraPayload(robot, camera) {
+      const payload = { robot, camera, throwOnError: true }
+      if (this.isFixedCameraRobot(robot)) {
+        payload.consumerId = this.fixedCameraConsumerId()
+        payload.prefixId = this.prefixId
+      }
+      return payload
+    },
+    stopCameraPayload(camera, videoInfo) {
+      const robot = this.resolvePlaybackRobot(videoInfo)
+      if (!this.isFixedCameraRobot(robot)) return camera
+      return {
+        ...camera,
+        consumerId: this.fixedCameraConsumerId(),
+        prefixId: this.prefixId
+      }
+    },
+    syncSlotSelections() {
+      this.checkedIds = [...new Set(Object.values(this.ZQL_playingSource).filter(Boolean))]
+      this.lastCheckedIds = this.checkedIds.slice()
+    },
+    assignSlotCamera(slotKey, robot, camera) {
+      this.$set(this.ZQL_playingSource, slotKey, camera.key)
+      this.$set(this.ZQL_videosInfos, slotKey, { robot, ...camera, robotId: robot.robotId })
+      this.syncSlotSelections()
+    },
+    takeSlotCamera(slotKey) {
+      const videoInfo = this.ZQL_videosInfos[slotKey]
+      const cameraKey = this.ZQL_playingSource[slotKey] || videoInfo?.key
+      const camera = this.cameras?.[cameraKey] || videoInfo
+      this.$set(this.ZQL_videosInfos, slotKey, null)
+      this.$set(this.ZQL_playingSource, slotKey, null)
+      this.syncSlotSelections()
+      return cameraKey ? { camera, videoInfo, cameraKey } : null
+    },
+    isSlotCameraIntended(slotKey, cameraKey) {
+      return this.ZQL_playingSource[slotKey] === cameraKey
+    },
+    isCameraIntended(cameraKey) {
+      return Object.values(this.ZQL_playingSource).includes(cameraKey)
+    },
+    async stopTakenCamera(taken) {
+      if (!taken?.camera?.key) return
+      await this.stopCamera(this.stopCameraPayload(taken.camera, taken.videoInfo))
+    },
+    async closeSlotCamera(slotKey) {
+      const taken = this.takeSlotCamera(slotKey)
+      await this.stopTakenCamera(taken)
+      return taken
+    },
+    async startAssignedCamera(slotKey, robot, camera) {
       try {
-        await this.startCamera({ robot, camera, throwOnError: true })
-        return true
+        await this.startCamera(this.startCameraPayload(robot, camera))
+        if (this.isFixedCameraRobot(robot) && this.isSlotCameraIntended(slotKey, camera.key)) {
+          this.$set(this.ZQL_videosInfos, slotKey, {
+            ...this.ZQL_videosInfos[slotKey],
+            sourceStartFailed: false
+          })
+        }
+        return this.isSlotCameraIntended(slotKey, camera.key)
       } catch (_) {
-        this.clearSlot(emptyIndex)
+        // 固定摄像头保留用户播放意图，等待 Gateway/RTSP 恢复或人工重启；
+        // 机器人继续沿用原有的启动失败清理行为。
+        if (this.isFixedCameraRobot(robot) && this.isSlotCameraIntended(slotKey, camera.key)) {
+          this.$set(this.ZQL_videosInfos, slotKey, {
+            ...this.ZQL_videosInfos[slotKey],
+            loading: false,
+            sourceStartFailed: true
+          })
+        } else if (this.isSlotCameraIntended(slotKey, camera.key)) {
+          this.takeSlotCamera(slotKey)
+        }
         return false
       }
     },
+    async replaceSlotCamera(slotKey, robot, camera) {
+      const previousKey = this.ZQL_playingSource[slotKey]
+      if (previousKey === camera.key) {
+        await this.closeSlotCamera(slotKey)
+        return false
+      }
+      const previous = this.takeSlotCamera(slotKey)
+      this.assignSlotCamera(slotKey, robot, camera)
+      try {
+        await this.stopTakenCamera(previous)
+      } catch (_) {
+        // 旧画面释放失败不能覆盖最新播放意图，服务端会话由后续状态同步继续回收。
+      }
+      if (!this.isSlotCameraIntended(slotKey, camera.key)) return false
+      return this.startAssignedCamera(slotKey, robot, camera)
+    },
+    releaseFixedCameraConsumers() {
+      const takenCameras = []
+      Object.keys(this.ZQL_videosInfos || {}).forEach(slotKey => {
+        const videoInfo = this.ZQL_videosInfos[slotKey]
+        const robot = this.resolvePlaybackRobot(videoInfo)
+        if (this.isFixedCameraRobot(robot)) {
+          takenCameras.push(this.takeSlotCamera(slotKey))
+        }
+      })
+      takenCameras.forEach(taken => {
+        this.stopTakenCamera(taken).catch(() => {})
+      })
+    },
+    async start(robot, data) {
+      const emptyIndex = data.index
+      if (!robot) return false
+      const camera = data.data
+      this.assignSlotCamera(emptyIndex, robot, camera)
+      return this.startAssignedCamera(emptyIndex, robot, camera)
+    },
     isFixedCameraRobot,
     async syncVideoSlots() {
+      const recoveredCameraKeys = new Set()
+      const previousPlayableStates = this.fixedCameraPlayableStates
+      const nextPlayableStates = {}
+      this.robots.forEach(robot => {
+        if (!this.isFixedCameraRobot(robot)) return
+        const playable = robot.status === 'online' && robot.enabled && robot.configReady && robot.playable !== false
+        const cameras = robot.cameras || []
+        cameras.forEach(camera => {
+          const previous = previousPlayableStates[camera.key]
+          nextPlayableStates[camera.key] = playable
+          if (previous === false && playable) recoveredCameraKeys.add(camera.key)
+        })
+      })
+      this.fixedCameraPlayableStates = nextPlayableStates
       for (const slotKey of Object.keys(this.ZQL_videosInfos)) {
         const videoInfo = this.ZQL_videosInfos[slotKey]
         if (!videoInfo?.robotId || !this.ZQL_playingSource[slotKey]) continue
@@ -385,19 +497,13 @@ export default {
           ...camera,
           isPaused: videoInfo.isPaused
         })
-        if (!this.isFixedCameraRobot(robot) || robot.status !== 'online'
-          || !robot.enabled || !robot.configReady || robot.playable === false) continue
+        if (!recoveredCameraKeys.has(camera.key)) continue
         const current = this.cameras?.[camera.key] || camera
         const sessionActive = current.session && current.session.status !== 'CLOSED'
-        if (sessionActive || current.room || current.loading || current.connecting
-          || this.recoveringFixedCameras[camera.key]) continue
-        this.$set(this.recoveringFixedCameras, camera.key, true)
-        try {
-          await this.startCamera({ robot, camera: current, throwOnError: true })
-        } catch (_) {
-          // 保留原宫格恢复意图，等待下一次真实状态变化再重试。
-        } finally {
-          this.$delete(this.recoveringFixedCameras, camera.key)
+        if (sessionActive || current.room || current.loading || current.connecting) continue
+        await this.startAssignedCamera(slotKey, robot, current)
+        if (!this.isCameraIntended(camera.key)) {
+          await this.stopCamera(this.stopCameraPayload(current, videoInfo))
         }
       }
     },
@@ -460,40 +566,24 @@ export default {
       if (!cameraObj) return
       const camera = this.cameras?.[cameraObj.key] || cameraObj
       if (this.splitType === 1) {
-        if (this.ZQL_playingSource['slot_1']) {
-          // console.log('--------------------------------------------------------已存在', camera);
-          this.checkedIds.splice(this.checkedIds.indexOf(this.ZQL_playingSource['slot_1']), 1)
-          // 清空视频数据
-          await this.stopCamera(this.ZQL_videosInfos['slot_1'])
-          if (this.ZQL_playingSource['slot_1'] !== camera.key) {
-            await this.start(robot, { index: 'slot_1', data: camera })
-          } else {
-            this.clearSlot('slot_1')
-          }
-        } else {
+        if (!this.ZQL_playingSource['slot_1']) {
           await this.start(robot, { index: 'slot_1', data: camera })
+        } else {
+          await this.replaceSlotCamera('slot_1', robot, camera)
         }
       } else {
-        let hasPlayed = false;
-        for (const key of Object.keys(this.ZQL_playingSource)) {
-          // 优先在正在播放此摄像头的槽位重新播放
-          if (this.ZQL_playingSource[key] === camera.key) {
-            // console.log(1);
-            
-            await this.stopCamera(camera)
-            this.$set(this.ZQL_videosInfos, key, null)
-            this.$set(this.ZQL_playingSource, key, null)
-            hasPlayed = true;
-          }
-        };
-        
-        // 如果没有找到正在播放的槽位，在第一个空位播放
-        if (!hasPlayed) {
-          // console.log(2);
-          emptyKey = emptyKey || this.findEmptySlotKey()
-          
-          if (emptyKey) {
-            await this.start(robot, { index: emptyKey, data: camera });
+        const playingSlot = Object.keys(this.ZQL_playingSource)
+          .find(key => this.ZQL_playingSource[key] === camera.key)
+        if (playingSlot) {
+          await this.closeSlotCamera(playingSlot)
+          return
+        }
+        emptyKey = emptyKey || this.findEmptySlotKey()
+        if (emptyKey) {
+          if (this.ZQL_playingSource[emptyKey]) {
+            await this.replaceSlotCamera(emptyKey, robot, camera)
+          } else {
+            await this.start(robot, { index: emptyKey, data: camera })
           }
         }
       }
@@ -536,6 +626,13 @@ export default {
       const videoInfo = this.ZQL_videosInfos[key]
       if (!videoInfo) return
       const camera = this.cameras?.[videoInfo.key] || videoInfo
+      if (!camera.session) {
+        const robot = this.resolvePlaybackRobot(videoInfo)
+        if (this.isFixedCameraRobot(robot)) {
+          await this.startAssignedCamera(key, robot, camera)
+          return
+        }
+      }
       this.$set(this.ZQL_videosInfos, key, { ...videoInfo, loading: true })
       try {
         await this.recoverCameraPlayback(camera)
@@ -547,18 +644,7 @@ export default {
     },
     // 处理视频删除
     async handleRemoveVideo(key) {
-      console.log(key, this.ZQL_playingSource, this.ZQL_videosInfos);
-      
-      const camera = this.cameras?.[this.ZQL_playingSource[key]] || {};
-      if (camera) {
-        // 从选中设备中移除
-        this.checkedIds.splice(this.checkedIds.indexOf(camera.key), 1);
-      }
-      await this.stopCamera(camera)
-      // 调用mixin中的删除方法
-      // this.removeVideo(key);
-      this.$set(this.ZQL_videosInfos, key, null)
-      this.$set(this.ZQL_playingSource, key, null)
+      await this.closeSlotCamera(key)
     },
     // 处理刷新视频
     handleRefreshVideo(key) {
@@ -681,7 +767,8 @@ export default {
       const targetIds = [...new Set((robotIds || []).map(id => String(id)).filter(Boolean))]
       const targetSet = new Set(targetIds)
 
-      // 1) 关闭不在目标列表中的装备视频
+      // 1) 先一次性撤销不在目标列表中的槽位意图，再异步停流，避免状态更新误触发固定摄像头恢复
+      const takenCameras = []
       for (let i = 1; i <= this.splitType; i++) {
         const slotKey = `slot_${i}`
         const info = this.ZQL_videosInfos[slotKey]
@@ -689,13 +776,12 @@ export default {
         if (!info || !playingKey) continue
         const robotId = String(info.robotId || info.robot?.robotId || '')
         if (robotId && targetSet.has(robotId)) continue
-        const camera = this.cameras?.[playingKey] || info
+        takenCameras.push(this.takeSlotCamera(slotKey))
+      }
+      for (const taken of takenCameras) {
         try {
-          await this.stopCamera(camera)
+          await this.stopTakenCamera(taken)
         } catch (e) {}
-        this.checkedIds = this.checkedIds.filter(key => key !== playingKey)
-        this.$set(this.ZQL_videosInfos, slotKey, null)
-        this.$set(this.ZQL_playingSource, slotKey, null)
       }
 
       // 2) 打开尚未展示的目标装备（已展示的直接复用）
@@ -764,7 +850,7 @@ export default {
       for (const item of removedItems) {
         const camera = this.cameras?.[item.key] || item
         if (camera && camera.key && !retainedKeys.has(camera.key)) {
-          await this.stopCamera(camera)
+          await this.stopCamera(this.stopCameraPayload(camera, item))
         }
       }
 
@@ -798,9 +884,9 @@ export default {
       document.body.style.overflow = '';
     },
     clearSlot(key) {
-      // 将对应键的值设为null
       this.$set(this.ZQL_videosInfos, key, null);
       this.$set(this.ZQL_playingSource, key, null);
+      this.syncSlotSelections()
     },
     // 按分屏顺序查找第一个空槽，避免 Object.keys 未初始化或乱序导致全部落到 slot_1
     findEmptySlotKey() {
@@ -828,19 +914,9 @@ export default {
           return
         }
 
-        // 外部 setSplitType（如进入控制中心按摄像头数量改分屏）时初始化空槽
-        this.checkedIds = [];
-        this.lastCheckedIds = [];
-        this.initSlots(newVal);
-        const playingKeys = Object.values(this.ZQL_playingSource).filter(Boolean)
-        for (const key of Object.keys(this.activeCameras)) {
-          if (!playingKeys.includes(key)) {
-            if (this.activeCameras[key]?.camera) {
-              console.log('============================================playingKeys========================================================', key);
-              await this.stopCamera(this.activeCameras[key].camera);
-            }
-          }
-        }
+        // 外部切换也复用同一槽位收缩流程，只释放本视频区移除的画面，不扫描全局 activeCameras。
+        const playingBeforeChange = this.orderedPlayingVideoInfos()
+        await this.applySplitVideoChannels(playingBeforeChange, newVal)
       },
       // immediate: true
     },
@@ -851,14 +927,6 @@ export default {
       deep: true,
       immediate: true
     },
-    // activeCameras: {
-    //   handler(newCameras) {
-    //     console.log('==========================newCameras=========================', newCameras);
-    //     // 更新视频显示
-    //     // this.updateVideoDisplay(newCameras);
-    //   },
-    //   deep: true
-    //     }
   }
 }
 </script>

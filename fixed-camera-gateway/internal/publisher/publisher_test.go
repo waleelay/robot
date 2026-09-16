@@ -206,6 +206,41 @@ func TestRunningPublisherReuseDoesNotDependOnOriginalTokenExpiry(t *testing.T) {
 	}
 }
 
+func TestRestartReplacesRunningPublisherAndPreservesSharedSessions(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/sleep 5"})
+	command := model.StartCommand{
+		SessionID: "session-1", SourceType: "FIXED_CAMERA", SourceID: "camera-1", RoomName: "room-1",
+		Channel: "visible", Quality: "sub", PublisherToken: "token-1", ExpiresAt: time.Now().Add(time.Minute),
+	}
+	if _, _, err := pub.Start(context.Background(), command, "rtsp://camera/live"); err != nil {
+		t.Fatalf("首次启动推流失败：%v", err)
+	}
+	key := streamKey(command)
+	pub.mu.Lock()
+	first := pub.cmds[key]
+	pub.bindSessionLocked("session-2", key)
+	pub.mu.Unlock()
+
+	command.PublisherToken = "token-2"
+	if _, _, err := pub.Restart(context.Background(), command, "rtsp://camera/live"); err != nil {
+		t.Fatalf("重启推流失败：%v", err)
+	}
+
+	pub.mu.Lock()
+	second := pub.cmds[key]
+	sharedSessions := len(pub.streamSessions[key])
+	pub.mu.Unlock()
+	if second == nil || second == first {
+		t.Fatal("Restart 必须替换仍在运行的旧 Publisher")
+	}
+	if sharedSessions != 2 {
+		t.Fatalf("重启后应保留同源会话绑定，实际=%d", sharedSessions)
+	}
+	if err := pub.StopAll(); err != nil {
+		t.Fatalf("清理测试推流进程失败：%v", err)
+	}
+}
+
 func TestUnexpectedProcessExitCleansPublisherMappings(t *testing.T) {
 	pub := NewProcessPublisher(config.Config{})
 	key := "FIXED_CAMERA|camera-1|room-1"

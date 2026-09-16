@@ -20,6 +20,7 @@ import (
 
 type Publisher interface {
 	Start(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error)
+	Restart(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error)
 	Stop(sessionID string) error
 	StopAll() error
 }
@@ -108,6 +109,16 @@ func NewProcessPublisher(cfg config.Config) *ProcessPublisher {
 }
 
 func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error) {
+	return p.start(ctx, command, rtspURL, false)
+}
+
+// Restart 强制替换同一视频源的 Publisher。Start 保持幂等复用语义，只有明确的
+// Source 恢复或人工重启才进入这里，避免观看端异常扰动共享推流。
+func (p *ProcessPublisher) Restart(ctx context.Context, command model.StartCommand, rtspURL string) (string, string, error) {
+	return p.start(ctx, command, rtspURL, true)
+}
+
+func (p *ProcessPublisher) start(ctx context.Context, command model.StartCommand, rtspURL string, force bool) (string, string, error) {
 	if !tokenUsable(command.ExpiresAt) {
 		return "", "", errors.New("发布 Token 缺失、已过期或剩余有效期不足 30 秒")
 	}
@@ -117,20 +128,38 @@ func (p *ProcessPublisher) Start(ctx context.Context, command model.StartCommand
 	defer startLock.Unlock()
 
 	p.mu.Lock()
+	boundSessions := []string(nil)
+	if force {
+		boundSessions = p.sessionIDsLocked(key)
+	}
 	previousKey := p.unbindSessionLocked(command.SessionID)
 	if previousKey != "" && previousKey != key && len(p.streamSessions[previousKey]) == 0 {
 		_ = p.stopStreamLocked(previousKey)
 	}
 	if entry := p.cmds[key]; entry != nil {
-		if entryRunning(entry) {
+		if !force && entryRunning(entry) {
 			p.bindSessionLocked(command.SessionID, key)
 			p.mu.Unlock()
 			return "TR_" + command.SessionID, trackName(command), nil
 		}
 		_ = p.stopStreamLocked(key)
+	} else if force {
+		p.unbindStreamLocked(key)
 	}
 	p.mu.Unlock()
 
+	trackSID, publishedTrackName, err := p.startNew(ctx, command, rtspURL, key)
+	if err == nil && force && len(boundSessions) > 0 {
+		p.mu.Lock()
+		for _, sessionID := range boundSessions {
+			p.bindSessionLocked(sessionID, key)
+		}
+		p.mu.Unlock()
+	}
+	return trackSID, publishedTrackName, err
+}
+
+func (p *ProcessPublisher) startNew(ctx context.Context, command model.StartCommand, rtspURL string, key string) (string, string, error) {
 	trackName := "video." + command.Channel + "." + command.Quality
 	if p.cfg.PublisherCmd != "" {
 		return p.startCommand(ctx, command, rtspURL, trackName, key, p.cfg.PublisherCmd, "custom")
@@ -362,8 +391,18 @@ func (p *ProcessPublisher) fallbackIfGStreamerExits(command model.StartCommand, 
 
 func (p *ProcessPublisher) Stop(sessionID string) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	key := p.sessions[sessionID]
+	p.mu.Unlock()
+	if key == "" {
+		return nil
+	}
+	startLock := &p.startLocks[streamLockIndex(key)]
+	startLock.Lock()
+	defer startLock.Unlock()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	key = p.sessions[sessionID]
 	p.unbindSessionLocked(sessionID)
 	if key == "" || len(p.streamSessions[key]) > 0 {
 		return nil

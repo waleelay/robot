@@ -107,5 +107,9 @@ public interface VideoSessionRepository extends JpaRepository<VideoSession, Stri
             int viewerCount,
             Collection<VideoSessionStatus> statuses);
 
+    List<VideoSession> findBySourceTypeAndStatusInOrderByUpdatedAtDesc(
+            VideoSourceType sourceType,
+            Collection<VideoSessionStatus> statuses);
+
         List<VideoSession> findTop20ByCreatedByOrderByCreatedAtDesc(String createdBy);
 }

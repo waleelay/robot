@@ -87,6 +87,54 @@ class ControlVideoCommandServiceTest {
         verify(commandService, times(1)).sendStart(command);
     }
 
+    @Test
+    void routesFixedCameraRecoveryToRestartWithoutChangingRobotStartRoute() {
+        VideoStartCommand command = new VideoStartCommand(
+                "cmd-fixed-1",
+                "vs-fixed-1",
+                "camera-001",
+                VideoSourceType.FIXED_CAMERA,
+                "camera-001",
+                "camera-001",
+                VideoChannel.visible,
+                VideoQuality.sub,
+                "ws://livekit",
+                "media.camera-001.visible.sub",
+                "publisher-token",
+                "fixed-camera:camera-001",
+                null,
+                OffsetDateTime.now().plusMinutes(10));
+        when(mediaServiceClient.restartCommand("vs-fixed-1", null)).thenReturn(command);
+
+        service.restartSession("vs-fixed-1");
+
+        verify(commandService).sendFixedCameraRestart(command);
+        verify(commandService, times(0)).sendFixedCameraStart(command);
+        verify(commandService, times(0)).sendStart(command);
+    }
+
+    @Test
+    void healthRecoveryAcceptsOnlyFixedCameraCommands() {
+        VideoStartCommand fixed = new VideoStartCommand(
+                "cmd-fixed-health", "vs-fixed-health", "camera-001", VideoSourceType.FIXED_CAMERA,
+                "camera-001", "camera-001", VideoChannel.visible, VideoQuality.sub,
+                "ws://livekit", "room-fixed", "token", "fixed-camera:camera-001", null,
+                OffsetDateTime.now().plusMinutes(10));
+        VideoStartCommand robot = new VideoStartCommand(
+                "cmd-robot-health", "vs-robot-health", "robot-001", VideoSourceType.ROBOT_CAMERA,
+                "robot-001", "camera01", VideoChannel.visible, VideoQuality.sub,
+                "ws://livekit", "room-robot", "token", "robot:robot-001:camera01", null,
+                OffsetDateTime.now().plusMinutes(10));
+        when(mediaServiceClient.fixedCameraRecoveryCommands("camera-001", false))
+                .thenReturn(List.of(fixed, robot));
+
+        service.recoverFixedCameraSources("camera-001", false);
+        service.recoverFixedCameraSources("camera-001", false);
+
+        verify(commandService, times(2)).sendFixedCameraRestart(fixed);
+        verify(commandService, times(0)).sendStart(robot);
+    }
+
     private CurrentUser operator(String userId, String clientId) {
         return new CurrentUser(userId, "org001", Set.of("MEDIA_OPERATOR"), clientId);
     }
