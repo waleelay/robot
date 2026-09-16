@@ -150,6 +150,10 @@ class FileServiceLiveRecordingTest {
         file.setSourceFileId("livekit-egress:vs-1:1");
         when(fileRepository.findById(file.getFileId())).thenReturn(Optional.of(file));
         when(videoRepository.findById(file.getFileId())).thenReturn(Optional.of(video(file)));
+        doThrow(new IllegalStateException(
+                        "404 Not Found: {\"code\":\"not_found\",\"msg\":\"twirp error unknown: egress does not exist\"}"))
+                .when(egressService)
+                .stop("EG_missing");
         when(storage.statSize(file.getObjectKey())).thenReturn(2048L);
 
         service.expireLiveRecording(file.getFileId());

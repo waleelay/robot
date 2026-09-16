@@ -735,6 +735,7 @@ public class FileService {
         String message = String.valueOf(ex.getMessage()).toLowerCase(java.util.Locale.ROOT);
         return message.contains("egress_aborted")
                 || message.contains("egress not found")
+                || message.contains("egress does not exist")
                 || message.contains("egress_not_found")
                 || message.contains("cannot be stopped")
                 || message.contains("failed_precondition");
