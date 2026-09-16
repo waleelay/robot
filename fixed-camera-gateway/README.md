@@ -30,6 +30,9 @@ env \
 
 默认使用 `gstreamer-publisher` 推流；同一路 RTSP 的 GStreamer 推流异常后，在冷却周期内自动使用 FFmpeg 回退。生产镜像已包含两者。宿主机运行时可执行 `sh scripts/install-gstreamer-publisher.sh` 安装前者。
 
+Gateway 只部署在可访问现场 RTSP 的边缘节点，通用 Compose 中默认不启动。边缘节点使用
+`COMPOSE_PROFILES=fixed-camera-gateway` 显式启用；中心服务器保持 `COMPOSE_PROFILES=`。
+
 视频会话启动不再额外执行 RTSP 预探测，不同视频流可并行启动；后台健康检查对相同 RTSP 每轮只
 建立一次探测连接。Gateway 上报 `streaming` 仅表示 Publisher 进程已启动，真实 LiveKit 视频 Track
 由 Media Service 统一确认。Publisher Token 的到期时间只校验新连接，已建立的推流持续到最后一个
@@ -45,6 +48,7 @@ env \
 | `MQTT_USERNAME` / `MQTT_PASSWORD` | 空 | MQTT 认证信息 |
 | `FIXED_CAMERA_HTTP_ADDR` | `:9091` | 内部健康与指标监听地址 |
 | `PUBLISHER_MODE` | `auto` | `auto`、`gstreamer` 或 `ffmpeg`；默认 GStreamer 管道会重建 H264 时间戳，启动失败时回退 FFmpeg |
+| `PUBLISHER_FALLBACK_WATCH_SECONDS` | `8` | `auto` 模式启动 GStreamer 后的稳定观察时间；观察期内退出则回退 FFmpeg |
 
 完整协议见 [固定监控摄像头实时视频设计说明书](../docs/02-设计/实时视频/固定监控摄像头实时视频设计说明书.md)。
 

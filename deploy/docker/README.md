@@ -165,6 +165,15 @@ TTS 默认不启动。需要启动时，在部署服务器 `.env` 中设置：
 COMPOSE_PROFILES=tts
 ```
 
+固定摄像头 Gateway 同样默认不在中心服务器启动。仅在可访问现场 RTSP 摄像头的边缘节点设置：
+
+```text
+COMPOSE_PROFILES=fixed-camera-gateway
+```
+
+需要同时启用多个可选服务时使用逗号分隔，例如
+`COMPOSE_PROFILES=tts,fixed-camera-gateway`。中心服务器保持空值，避免错误镜像或无现场网络时反复重启。
+
 如果 TTS 镜像要求挂载 `app.py`，打包前准备：
 
 ```text
@@ -205,7 +214,7 @@ TTS 默认不打包。即使 `tool-images/<arch>/tts.tar.gz` 已存在，`PACKAG
 PACKAGE_TTS=true TARGET_ARCH=amd64 ./package.sh
 ```
 
-安装服务器上还需设置 `COMPOSE_PROFILES=tts`，TTS 容器才会启动。暂时不使用 TTS 时保持 `PACKAGE_TTS=false` 和 `COMPOSE_PROFILES=` 即可。
+安装服务器上还需设置 `COMPOSE_PROFILES=tts`，TTS 容器才会启动。暂时不使用 TTS 且不是固定摄像头边缘节点时，保持 `PACKAGE_TTS=false` 和 `COMPOSE_PROFILES=` 即可。
 
 `COMPOSE_PROFILES` 未包含 `tts` 时，`prepare-workspace.sh` 会跳过 TTS 的 `app.py` 校验，缺少该文件不会阻止其他服务安装启动；只有启用 TTS 时才必须准备 `config/tts/app.py` 或工作区中的 `tts/app.py`。
 
