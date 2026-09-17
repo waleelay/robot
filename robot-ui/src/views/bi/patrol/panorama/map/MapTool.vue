@@ -137,6 +137,11 @@ export default {
     currentGisZoom: {
       type: Number,
       default: null
+    },
+    // SLAM 当前缩放状态（由 GlobalSlamMap zoom-change 同步）
+    currentSlamZoom: {
+      type: Object,
+      default: null
     }
   },
   data() {
@@ -304,12 +309,24 @@ export default {
     },
     // 已到最大层级：禁用放大
     zoomInDisabled() {
-      if (this.isSlam || this.currentGisZoom == null) return false
+      if (this.isSlam) {
+        const zoom = Number(this.currentSlamZoom?.zoom);
+        const maxZoom = Number(this.currentSlamZoom?.maxZoom);
+        if (!Number.isFinite(zoom) || !Number.isFinite(maxZoom)) return false;
+        return zoom >= maxZoom - 1e-6;
+      }
+      if (this.currentGisZoom == null) return false
       return this.currentGisZoom >= this.gisZoomRange.maxZoom - 1e-6
     },
     // 已到最小层级：禁用缩小
     zoomOutDisabled() {
-      if (this.isSlam || this.currentGisZoom == null) return false
+      if (this.isSlam) {
+        const zoom = Number(this.currentSlamZoom?.zoom);
+        const minZoom = Number(this.currentSlamZoom?.minZoom);
+        if (!Number.isFinite(zoom) || !Number.isFinite(minZoom)) return false;
+        return zoom <= minZoom + 1e-6;
+      }
+      if (this.currentGisZoom == null) return false
       return this.currentGisZoom <= this.gisZoomRange.minZoom + 1e-6
     }
   },

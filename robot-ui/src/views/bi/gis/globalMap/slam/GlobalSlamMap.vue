@@ -18,7 +18,7 @@
             <template v-if="imageUrl">
               <canvas
                 ref="canvas"
-                :title="enableAddPoint ? '右键点击可设置临时点位' : undefined"
+                :title="canAddPoint ? '右键点击可设置临时点位' : undefined"
                 @contextmenu.prevent="onCanvasContextMenu"
                 @click="handleCanvasBlankClick"
                 @dblclick.prevent="handleMeasureDblClick"
@@ -549,6 +549,13 @@
                 </span>
               </div>
             </div>
+            <div v-else class="div2 ml10 bi-corner-box">
+              <div class="item flx-justify-between p6">
+                <span class="name pl14">
+                  暂无装备可使用
+                </span>
+              </div>
+            </div>
           </div>
         </div>
         <div v-if="operList.length" class="map-operation">
@@ -792,7 +799,7 @@ export default {
       } : {};
     },
     normalRobots() {
-      return Object.values(this.robotBaseInfo || {}).filter(item => {
+      return this.drawableRobots.filter(item => {
         if (item.status !== 'online') return false
         if (isFixedCamera(item) || item.isFixedCamera) return false
         return true
@@ -1180,9 +1187,13 @@ export default {
       }
       return { left: 0, right: 0, top: 0, bottom: 0 }
     },
+    canAddPoint() {
+      return this.enableAddPoint && this.normalRobots?.length
+    }
   },
   watch: {
     zoom() {
+      this.emitZoomChange();
       this.schedulePopupPositionUpdate()
     },
     offsetX() {
@@ -1417,7 +1428,7 @@ export default {
       return this.mapSelectedRobotIds.some(id => String(id) === String(robotId))
     },
     onCanvasContextMenu(event) {
-      if (!this.enableAddPoint) return
+      if (!this.canAddPoint) return
       this.onCanvasClick(event)
     },
     // first 监控页：固定摄像头不可点；未播放视频的装备不可点
@@ -1996,6 +2007,13 @@ export default {
         this[method]()
       }
     },
+    emitZoomChange() {
+      this.$emit('zoom-change', {
+        zoom: this.zoom,
+        minZoom: this.minZoomValue,
+        maxZoom: this.maxZoomValue
+      });
+    },
     handleClickTool(item) {
       this[item.action]();
     },
@@ -2024,7 +2042,7 @@ export default {
         0.1,
         Math.min(collapsedSize.width / mapWidth, collapsedSize.height / mapHeight)
       )
-      const maxZoom = fitMaxZoom * 2.5
+      const maxZoom = Math.max(fitMaxZoom * 2.5, 1)
 
       this.defaultZoomValue = defaultZoom
       this.maxZoomValue = Math.max(defaultZoom, maxZoom)
@@ -2040,6 +2058,7 @@ export default {
       this.zoom = Number(this.zoom.toFixed(3))
       this.offsetX = 0
       this.offsetY = 0
+      this.emitZoomChange();
       this.$nextTick(() => this.syncCanvasResolution())
     },
     // 两侧收缩时的可视区域尺寸（最大缩放基准）

@@ -24,42 +24,8 @@
       </div>
   
       <!-- 右侧工具栏 -->
-      <div class="toolbar flx-align-center h100 old" style="display: none; justify-content: end;">
-        <!-- 通知 -->
-        <!-- <el-badge :value="notificationCount" class="notification-badge">
-          <el-button
-            type="text"
-            icon="el-icon-bell"
-            class="toolbar-btn"
-            @click="handleNotification"
-          />
-        </el-badge> -->
-  
-        <div class="flx-center flex-column zhzx h100">
-          <div class="icon">
-            <svg-icon icon-class="change" style="color: #8BAEDC;"></svg-icon>
-          </div>
-          <div class="text mt4">指挥中心</div>
-        </div>
-        <div class="flx-center flex-column full ml20 h100" @click="toggleFullscreen">
-          <div class="icon">
-            <svg-icon :icon-class="isFullscreen ? 'fullscreen1' : 'fullscreen'" :style="{ color: '#AED1FF', fontSize: isFullscreen ? undefined : '14px' }"></svg-icon>
-          </div>
-          <div class="text mt4">全屏</div>
-        </div>
-  
-        <!-- 时间显示 -->
-        <div class="time-display ml20 pl20 flx-center flex-column h100 wp160" style="align-items: unset">
-          <span class="time">{{ currentTime }}</span>
-          <span class="date">{{ currentDate }}</span>
-        </div>
-        <div class="org ml20 pl20 flx-align-center h100">
-          <svg-icon icon-class="gov" style="font-size: 26px;"></svg-icon>
-          <span class="text ml4">成都启航信息</span>
-        </div>
-      </div>
       <div class="toolbar flx-align-center h100 new pr30" style="justify-content: end;">
-        <div class="time-display flx-align-center">
+        <div class="time-display flx-align-center wp200" style="justify-content: flex-end;">
           <span>{{ currentDate }}</span>
           <span class="ml10">{{ currentTime }}</span>
         </div>

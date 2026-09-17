@@ -32,6 +32,7 @@
           :show-labels="true"
           @changeMapType="changeMapType"
           @preview-unavailable="onSlamPreviewUnavailable"
+          @zoom-change="onSlamZoomChange"
         />
       </div>
       <template v-if="globalMapId === 'gis'">
@@ -50,6 +51,7 @@
         :showAngle="!isSlam"
         :currentSlam="currentSlamMapId"
         :currentGisZoom="currentGisZoom"
+        :currentSlamZoom="currentSlamZoom"
         @changeMapAngle="changeMapAngle"
         :angle="angle"
         @changeMapZoom="changeMapZoom"
@@ -107,7 +109,8 @@ export default {
       },
       angle: '2D',
       patrolSelectVisible: false,
-      currentGisZoom: null
+      currentGisZoom: null,
+      currentSlamZoom: null
     }
   },
   computed: {
@@ -158,6 +161,9 @@ export default {
     onGisZoomChange(zoom) {
       this.currentGisZoom = zoom
     },
+    onSlamZoomChange(zoomState) {
+      this.currentSlamZoom = zoomState;
+    },
     changeMapType(type) {
       const slam = type ? type === 'slam' : !this.isSlam
       const id = slam ? (this.currentSlamMapId ?? this.slamMapList[0]?.id) : 'gis'
@@ -206,6 +212,7 @@ export default {
   watch: {
     globalMapId(id, previous) {
       if (String(id) === String(previous)) return
+      this.currentSlamZoom = null;
       this.clearMapSelectionUI()
       this.$refs.mapToolRef?.resetPathActive?.()
     }

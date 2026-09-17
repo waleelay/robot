@@ -844,18 +844,23 @@ export default {
       const curW = viewport.clientWidth
       const curH = viewport.clientHeight
       if (!curW || !curH) return
-      const defaultZoom = Math.max(0.1, Math.min(curW / mapWidth, curH / mapHeight))
+      // 与全景 SLAM 地图保持一致：适配视口后放大 1.3 倍，初始居中展示。
+      const fitZoom = Math.max(0.1, Math.min(curW / mapWidth, curH / mapHeight))
+      const defaultZoom = fitZoom // 如参考全景地图，需放大1.3倍
       this.trackDefaultZoom = defaultZoom
-      this.trackMaxZoom = Math.max(defaultZoom, defaultZoom * 2.5)
-      this.trackMinZoom = Math.max(0.1, defaultZoom * 0.25)
+      this.trackMaxZoom = Math.max(defaultZoom, Math.max(defaultZoom * 2.5, 1))
+      this.trackMinZoom = Math.max(0.1, fitZoom * 0.25)
       if (reset) {
         this.trackZoom = Number(defaultZoom.toFixed(3))
-        this.trackOffsetX = (curW - mapWidth * this.trackZoom) / 2
-        this.trackOffsetY = (curH - mapHeight * this.trackZoom) / 2
+        this.centerTrackStage(curW, curH, mapWidth, mapHeight)
       } else {
         this.trackZoom = Math.max(this.trackMinZoom, Math.min(this.trackMaxZoom, this.trackZoom))
         this.trackZoom = Number(this.trackZoom.toFixed(3))
       }
+    },
+    centerTrackStage(viewportWidth, viewportHeight, mapWidth, mapHeight) {
+      this.trackOffsetX = (viewportWidth - mapWidth * this.trackZoom) / 2
+      this.trackOffsetY = (viewportHeight - mapHeight * this.trackZoom) / 2
     },
     observeTrackViewport() {
       if (typeof ResizeObserver === 'undefined' || !this.$refs.trackViewport) return

@@ -444,9 +444,29 @@ export default {
     },
     changeMapZoom({ method, value = 1 } = {}) {
       // 实际层级以 zoomend → emitZoomChange 为准（含动画过程）
-      if (this.map && typeof this.map[method] === 'function') {
-        this.map[method](value)
+      if (!this.map || typeof this.map[method] !== 'function') return
+      const step = Number(value) || 1
+      const currentZoom = this.map.getZoom()
+      const { minZoom, maxZoom } = this.gisZoomRange
+      if (method === 'zoomIn') {
+        const nextZoom = Math.min(maxZoom, currentZoom + step)
+        if (nextZoom <= currentZoom) {
+          this.emitZoomChange()
+          return
+        }
+        this.map.setZoom(nextZoom)
+        return
       }
+      if (method === 'zoomOut') {
+        const nextZoom = Math.max(minZoom, currentZoom - step)
+        if (nextZoom >= currentZoom) {
+          this.emitZoomChange()
+          return
+        }
+        this.map.setZoom(nextZoom)
+        return
+      }
+      this.map[method](value)
     },
     emitZoomChange() {
       if (!this.map) return
