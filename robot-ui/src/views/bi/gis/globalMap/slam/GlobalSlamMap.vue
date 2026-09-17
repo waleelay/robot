@@ -54,10 +54,12 @@
                 />
                 <title>{{ path.taskName }}</title>
                 <g
-                  v-for="point in path.points"
-                  :key="`task-path-${path.taskId}-${point.id}`"
+                  v-for="point in getVisibleTaskPathPoints(path)"
+                  :key="`task-path-${path.taskId}-${point.id}-${point.pathIndex}`"
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
                   class="map-preview-point is-path-point"
+                  :class="{ 'is-overlap-cluster': point.isOverlappedPathPoint }"
+                  @click.stop="toggleTaskPointGroup(path, point)"
                 >
                   <template v-if="shouldShowPathPointMarker(point)">
                     <rect
@@ -76,7 +78,7 @@
                       class="map-point-marker"
                     />
                     <foreignObject
-                      v-if="!activeRaisedTaskPathId"
+                      v-if="!activeRaisedTaskPathId && !point.isOverlappedPathPoint"
                       class="map-point-name-fo"
                       :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
                       :y="point.icon.nameY"
@@ -92,14 +94,25 @@
                       </div>
                     </foreignObject>
                   </template>
+                  <g v-if="shouldShowPathSeq(path.taskId) && !point.isOverlappedPathPoint" pointer-events="none">
+                    <g
+                      v-for="badge in pathSequenceBadges(point)"
+                      :key="`${point.id}-${badge.index}`"
+                      class="path-seq-badge"
+                      :transform="badge.transform"
+                    >
+                      <image :href="pathPointBadge" x="0" y="0" width="20" height="20" />
+                      <text x="10" y="14.5" text-anchor="middle" class="path-seq-text">{{ badge.index }}</text>
+                    </g>
+                  </g>
                   <g
-                    v-if="shouldShowPathSeq(path.taskId)"
-                    class="path-seq-badge"
-                    transform="translate(6, -40)"
+                    v-if="point.isOverlappedPathPoint"
+                    class="path-overlap-count"
+                    transform="translate(-12, -42)"
                     pointer-events="none"
                   >
-                    <image :href="pathPointBadge" x="0" y="0" width="20" height="20" />
-                    <text x="10" y="14.5" text-anchor="middle" class="path-seq-text">{{ point.pathIndex }}</text>
+                    <rect width="44" height="20" rx="10" />
+                    <text x="22" y="14" text-anchor="middle">重合 {{ point.overlapPoints.length }}</text>
                   </g>
                 </g>
               </g>
@@ -178,8 +191,8 @@
                   />
                 </g>
               </g>
-              <!-- 真实环境：当前会话缓存或重连恢复的已走路径；实时监控小框同样展示 -->
-              <template v-if="!showSmall">
+              <!-- 真实环境：当前会话缓存或重连恢复的已走路径。 -->
+              <template v-if="!showSmall || showSessionTrajectory">
               <g
                 v-for="layer in sessionTraveledPathLayers"
                 :key="`session-traveled-${layer.robotId}`"
@@ -426,10 +439,12 @@
                 />
                 <title>{{ raisedDisplayTaskPath.taskName }}</title>
                 <g
-                  v-for="point in raisedDisplayTaskPath.points"
-                  :key="`task-path-raised-${raisedDisplayTaskPath.taskId}-${point.id}`"
+                  v-for="point in getVisibleTaskPathPoints(raisedDisplayTaskPath)"
+                  :key="`task-path-raised-${raisedDisplayTaskPath.taskId}-${point.id}-${point.pathIndex}`"
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
                   class="map-preview-point is-path-point"
+                  :class="{ 'is-overlap-cluster': point.isOverlappedPathPoint }"
+                  @click.stop="toggleTaskPointGroup(raisedDisplayTaskPath, point)"
                 >
                   <template v-if="shouldShowPathPointMarker(point)">
                     <rect
@@ -448,6 +463,7 @@
                       class="map-point-marker"
                     />
                     <foreignObject
+                      v-if="!point.isOverlappedPathPoint"
                       class="map-point-name-fo"
                       :x="-(point.nameWidth || mapPointNameMaxWidth) / 2"
                       :y="point.icon.nameY"
@@ -472,13 +488,26 @@
                 pointer-events="none"
               >
                 <g
-                  v-for="point in raisedDisplayTaskPath.points"
-                  :key="`task-path-seq-raised-${raisedDisplayTaskPath.taskId}-${point.id}`"
+                  v-for="point in getVisibleTaskPathPoints(raisedDisplayTaskPath)"
+                  :key="`task-path-seq-raised-${raisedDisplayTaskPath.taskId}-${point.id}-${point.pathIndex}`"
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
                 >
-                  <g class="path-seq-badge" transform="translate(6, -40)">
+                  <g
+                    v-for="badge in point.isOverlappedPathPoint ? [] : pathSequenceBadges(point)"
+                    :key="`${point.id}-${badge.index}`"
+                    class="path-seq-badge"
+                    :transform="badge.transform"
+                  >
                     <image :href="pathPointBadge" x="0" y="0" width="20" height="20" />
-                    <text x="10" y="14.5" text-anchor="middle" class="path-seq-text">{{ point.pathIndex }}</text>
+                    <text x="10" y="14.5" text-anchor="middle" class="path-seq-text">{{ badge.index }}</text>
+                  </g>
+                  <g
+                    v-if="point.isOverlappedPathPoint"
+                    class="path-overlap-count"
+                    transform="translate(-12, -42)"
+                  >
+                    <rect width="44" height="20" rx="10" />
+                    <text x="22" y="14" text-anchor="middle">重合 {{ point.overlapPoints.length }}</text>
                   </g>
                 </g>
               </g>
@@ -654,6 +683,8 @@ export default {
     enableAddPoint: { type: Boolean, default: true },
     // 是否允许点击装备弹窗/切换选中（second 监控页关闭，避免回到 first）
     enableRobotClick: { type: Boolean, default: true },
+    // 精简地图默认不订阅轨迹；监控一级页可显式开启。
+    showSessionTrajectory: { type: Boolean, default: false },
     // 监控二级：只展示该装备（图标/轨迹）；空则展示当前地图全部装备
     focusRobotId: { type: [String, Number], default: null },
     // 侧栏是否收缩；与 visibleLayout 配合，将地图限制在未遮挡区域
@@ -734,6 +765,8 @@ export default {
       raisedTaskPathId: null,
       // Robot1「显示路径」在全量路径已开时钉住的任务路径（等同悬停效果，不受 mouseleave 清除）
       pinnedTaskPathId: null,
+      // 重合路径点点击展开后的任务和坐标分组。
+      expandedTaskPointGroupKey: '',
       showArea: false,
       showContextMenu: false,
       locationLabel: '临时点',
@@ -890,6 +923,7 @@ export default {
           taskId,
           taskName: taskInfo.name || taskInfo.taskName || `任务 ${taskId}`,
           points,
+          renderPoints: this.getTaskPathRenderPoints(points),
           polylinePoints
         })
       })
@@ -918,8 +952,9 @@ export default {
       return {
         taskId,
         taskName: taskInfo.name || taskInfo.taskName || existing?.taskName || `任务 ${taskId}`,
-        color: existing?.color || '#2563EB',
+        color: existing?.color || '#EB7B25',
         points,
+        renderPoints: this.getTaskPathRenderPoints(points),
         polylinePoints
       }
     },
@@ -1405,10 +1440,80 @@ export default {
      * - 地图「点位」已开启时，已展示的特殊点位不再重复渲染
      */
     shouldShowPathPointMarker(point) {
+      if (point?.isOverlappedPathPoint || point?.forceShowPathPointMarker) return true
       if (!this.showPath) return true
       const id = point?.id ?? point?.mapPointId
       if (id === undefined || id === null || id === '') return true
       return !this.drawablePoints.some(item => String(item.id) === String(id))
+    },
+    // 同一条任务路径内坐标相同的点位合并为聚合标记，点击后再展开原始点位。
+    getTaskPathRenderPoints(points) {
+      if (!Array.isArray(points) || !points.length) return []
+      const groupedPoints = []
+      points.forEach((point) => {
+        const group = groupedPoints.find((item) =>
+          Math.abs(item.pixel.x - point.pixel.x) <= 0.01 &&
+          Math.abs(item.pixel.y - point.pixel.y) <= 0.01
+        )
+        if (group) {
+          group.pathSequenceIndexes.push(point.pathIndex)
+          group.overlapPoints.push(point)
+          return
+        }
+        groupedPoints.push({
+          ...point,
+          pathSequenceIndexes: [point.pathIndex],
+          overlapPoints: [point],
+          overlapGroupKey: `${Math.round(point.pixel.x * 100)}-${Math.round(point.pixel.y * 100)}`
+        })
+      })
+      return groupedPoints.map(point => ({
+        ...point,
+        isOverlappedPathPoint: point.overlapPoints.length > 1
+      }))
+    },
+    getTaskPointGroupKey(path, point) {
+      return `${path.taskId}:${point.overlapGroupKey}`
+    },
+    getVisibleTaskPathPoints(path) {
+      const points = path?.renderPoints || []
+      return points.reduce((result, point) => {
+        if (!point.isOverlappedPathPoint || this.expandedTaskPointGroupKey !== this.getTaskPointGroupKey(path, point)) {
+          result.push(point)
+          return result
+        }
+        const total = point.overlapPoints.length
+        const radius = 30 / Math.max(this.zoom, 0.1)
+        point.overlapPoints.forEach((detail, index) => {
+          const radian = (-90 + index * 360 / total) * Math.PI / 180
+          result.push({
+            ...detail,
+            pixel: {
+              x: point.pixel.x + Math.cos(radian) * radius,
+              y: point.pixel.y + Math.sin(radian) * radius
+            },
+            pathSequenceIndexes: [detail.pathIndex],
+            forceShowPathPointMarker: true
+          })
+        })
+        return result
+      }, [])
+    },
+    toggleTaskPointGroup(path, point) {
+      if (!point?.isOverlappedPathPoint) return
+      const key = this.getTaskPointGroupKey(path, point)
+      this.expandedTaskPointGroupKey = this.expandedTaskPointGroupKey === key ? '' : key
+    },
+    pathSequenceBadges(point) {
+      const indexes = Array.isArray(point?.pathSequenceIndexes) && point.pathSequenceIndexes.length
+        ? point.pathSequenceIndexes
+        : [point?.pathIndex]
+      return indexes
+        .filter(index => index !== undefined && index !== null)
+        .map((index, position) => ({
+          index,
+          transform: `translate(${6 + (position - (indexes.length - 1)) * 22}, -40)`
+        }))
     },
     isPointInPath(point) {
       if (!point) return false
@@ -1503,6 +1608,7 @@ export default {
       this.pointsRaised = false
       this.raisedTaskPathId = null
       this.pinnedTaskPathId = null
+      this.expandedTaskPointGroupKey = ''
       this.showContextMenu = false
       const keepPath = keepTempTaskPath === undefined
         ? this.shouldKeepTempTaskOverlay()
@@ -1549,6 +1655,7 @@ export default {
       if (!this.showAllTaskPaths) {
         this.raisedTaskPathId = null
         this.pinnedTaskPathId = null
+        this.expandedTaskPointGroupKey = ''
       }
     },
     raiseTaskPath(taskId) {
@@ -2598,6 +2705,19 @@ export default {
           font-weight: 400;
           line-height: 17.517px;
           paint-order: normal;
+        }
+      }
+      .path-overlap-count {
+        rect {
+          fill: #456393;
+          stroke: #8EBAFF;
+          stroke-width: 1;
+        }
+        text {
+          fill: #FFF;
+          font-family: "Microsoft YaHei", sans-serif;
+          font-size: 12px;
+          font-weight: 500;
         }
       }
       .map-preview-path {

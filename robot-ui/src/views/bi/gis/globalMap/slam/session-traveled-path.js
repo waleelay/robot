@@ -26,8 +26,8 @@ export default {
       return this.$store.state.websocketExtraData?.trajectoryByRobot || {}
     },
     trajectoryWatchTargets() {
-      // 小地图不绘制执行轨迹，也不占用大图的共享订阅。
-      if (this.showSmall || !this.hasPreview || this.map?.id == null) return []
+      // 精简地图默认不绘制执行轨迹，也不占用大图的共享订阅。
+      if ((this.showSmall && !this.showSessionTrajectory) || !this.hasPreview || this.map?.id == null) return []
       let robots = this.slamOfRobot?.[String(this.map.id)]?.robots || []
       // 监控二级 focusRobotId：只订阅当前装备
       if (this.focusRobotId !== undefined && this.focusRobotId !== null && this.focusRobotId !== '') {
@@ -117,7 +117,7 @@ export default {
       return this.sessionTrajectoryVisuals[String(robotId)] || null
     },
     syncTrajectoryWatching() {
-      if (this.showSmall) return
+      if (this.showSmall && !this.showSessionTrajectory) return
       this.trajectoryOwnsWatching = true
       const mapId = this.map?.id ?? null
       const mapChanged = this.trajectoryPreviousMapId != null

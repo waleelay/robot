@@ -41,6 +41,7 @@
             :map="slamMapPayload"
             :show-labels="true"
             :enable-add-point="false"
+            :show-session-trajectory="true"
             :enable-robot-click="false"
             :focus-robot-id="selectedRobotId"
           />

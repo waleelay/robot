@@ -29,6 +29,7 @@
             :map="slamMapPayload"
             :show-labels="true"
             :enable-add-point="false"
+            :show-session-trajectory="true"
           />
           <GlobalGisMap v-else-if="globalMapId === 'gis'" />
           <Empty
