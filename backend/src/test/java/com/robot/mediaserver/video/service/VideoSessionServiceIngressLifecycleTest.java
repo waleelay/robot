@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import com.robot.media.common.video.CreateVideoSessionRequest;
@@ -50,11 +51,11 @@ class VideoSessionServiceIngressLifecycleTest {
     private final MediaTrackService trackService = mock(MediaTrackService.class);
     private final VideoSourceRuntime runtime = ingressRuntime();
     private final MediaProperties properties = new MediaProperties();
+    private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private VideoSessionService service;
 
     @BeforeEach
     void setUp() {
-        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(mock(TransactionStatus.class));
         service = new VideoSessionService(
@@ -204,6 +205,7 @@ class VideoSessionServiceIngressLifecycleTest {
         assertThat(runtime.getPublisherMode()).isEqualTo(VideoPublisherMode.LIVEKIT_INGRESS);
         assertThat(session.getStatus()).isEqualTo(VideoSessionStatus.CLOSED);
         verify(roomService).deleteRoom(runtime.getRoomName());
+        verify(transactionManager, times(3)).getTransaction(any(TransactionDefinition.class));
     }
 
     @Test

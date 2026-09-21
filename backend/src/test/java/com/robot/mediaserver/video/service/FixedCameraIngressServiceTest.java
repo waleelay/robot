@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -136,6 +137,34 @@ class FixedCameraIngressServiceTest {
         assertThat(runtime.getIngressId()).isEqualTo("IN_recovered");
         verify(liveKit, never()).create(any(), any());
         verify(liveKit, never()).delete(anyString(), any());
+    }
+
+    @Test
+    void reconcileIgnoresLegacySubRuntimeAfterRtspToRtmpSwitch() {
+        runtime.setIngressOperationRevision(7L);
+        runtime.setAcceptedIngressOperation(FixedCameraIngressOperation.CREATE);
+        runtime.setIngressId("IN_recovered");
+        VideoSourceRuntime legacySub = runtime();
+        legacySub.setRuntimeId("runtime-fixed-sub");
+        legacySub.setQuality(VideoQuality.sub);
+        legacySub.setIngressId(null);
+        legacySub.setAcceptedIngressOperation(null);
+        String metadata = """
+                {"managedBy":"robot-mediaserver","cameraId":"camera-001",\
+                "operationRevision":7,"operationType":"CREATE","createdAtEpochSeconds":4102444800}
+                """;
+        IngressInfo resource = new IngressInfo(
+                "IN_recovered", "fixed-camera-camera-001", null, null,
+                runtime.getRoomName(), "fixed-camera:camera-001", metadata, "ENDPOINT_BUFFERING", null);
+        when(liveKit.list(any(Duration.class))).thenReturn(List.of(resource));
+        when(runtimeRepository.findByPublisherMode(VideoPublisherMode.LIVEKIT_INGRESS))
+                .thenReturn(List.of(runtime, legacySub));
+
+        service.reconcileManagedResources();
+
+        verify(lockRepository, never()).lock(eq("runtime-fixed-sub"), any(Duration.class));
+        verify(liveKit, never()).delete(anyString(), any());
+        assertThat(runtime.getIngressId()).isEqualTo("IN_recovered");
     }
 
     private VideoSourceRuntime runtime() {

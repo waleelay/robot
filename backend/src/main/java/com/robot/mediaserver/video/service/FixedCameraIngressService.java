@@ -23,6 +23,7 @@ import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -127,7 +128,10 @@ public class FixedCameraIngressService {
         try {
             Duration callTimeout = Duration.ofMillis(properties.getLivekit().getIngressLivekitCallTimeoutMs());
             List<IngressInfo> resources = liveKit.list(callTimeout);
-            List<VideoSourceRuntime> runtimes = runtimeRepository.findByPublisherMode(VideoPublisherMode.LIVEKIT_INGRESS);
+            List<VideoSourceRuntime> runtimes = runtimeRepository
+                    .findByPublisherMode(VideoPublisherMode.LIVEKIT_INGRESS).stream()
+                    .filter(this::isCanonicalIngressRuntime)
+                    .toList();
             for (VideoSourceRuntime runtime : runtimes) {
                 try {
                     reconcileRuntimeResources(runtime.getRuntimeId(), resources);
@@ -232,6 +236,13 @@ public class FixedCameraIngressService {
         return ("fixed-camera-" + cameraId).equals(resource.name())
                 || ("fixed-camera:" + cameraId).equals(resource.participantIdentity())
                 || cameraId.equals(metadataValue(resource, "cameraId"));
+    }
+
+    private boolean isCanonicalIngressRuntime(VideoSourceRuntime runtime) {
+        return runtime.getSourceType() == VideoSourceType.FIXED_CAMERA
+                && Objects.equals(runtime.getSourceId(), runtime.getDeviceId())
+                && runtime.getChannel() == VideoChannel.visible
+                && runtime.getQuality() == VideoQuality.main;
     }
 
     private boolean isManagedResource(IngressInfo resource) {

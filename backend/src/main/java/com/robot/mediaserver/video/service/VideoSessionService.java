@@ -1448,11 +1448,7 @@ public class VideoSessionService {
         ensureFixedCameraRuntime(cameraId, targetMode, publisherRevision);
         List<VideoSourceRuntime> snapshots = fixedCameraRuntimes(cameraId);
         boolean modeChangeRequested = snapshots.stream().anyMatch(runtime -> runtime.getPublisherMode() != targetMode);
-        List<String> sessionIds = snapshots.stream()
-                .flatMap(runtime -> repository.findByRuntimeIdOrderBySessionIdAsc(runtime.getRuntimeId()).stream())
-                .map(VideoSession::getSessionId)
-                .distinct()
-                .toList();
+        List<String> sessionIds = fixedCameraSessionIds(snapshots);
         if (modeChangeRequested) {
             sessionIds.forEach(fileService::stopActiveLiveRecordingForSession);
         }
@@ -1509,11 +1505,7 @@ public class VideoSessionService {
             return new FixedCameraPublisherModeResponse(
                     cameraId, VideoPublisherMode.FIXED_CAMERA_GATEWAY, publisherRevision, List.of());
         }
-        snapshots.stream()
-                .flatMap(runtime -> repository.findByRuntimeIdOrderBySessionIdAsc(runtime.getRuntimeId()).stream())
-                .map(VideoSession::getSessionId)
-                .distinct()
-                .forEach(fileService::stopActiveLiveRecordingForSession);
+        fixedCameraSessionIds(snapshots).forEach(fileService::stopActiveLiveRecordingForSession);
         FixedCameraPublisherModeResponse response = transactionTemplate.execute(status -> {
             List<VideoSourceRuntime> runtimes = fixedCameraRuntimes(cameraId).stream()
                     .map(runtime -> sourceRuntimeRepository.findByIdForUpdate(runtime.getRuntimeId())
@@ -1544,6 +1536,18 @@ public class VideoSessionService {
         });
         snapshots.stream().map(VideoSourceRuntime::getRoomName).distinct().forEach(liveKitRoomService::deleteRoom);
         return response;
+    }
+
+    private List<String> fixedCameraSessionIds(List<VideoSourceRuntime> runtimes) {
+        List<String> sessionIds = transactionTemplate.execute(status -> runtimes.stream()
+                .flatMap(runtime -> repository.findByRuntimeIdOrderBySessionIdAsc(runtime.getRuntimeId()).stream())
+                .map(VideoSession::getSessionId)
+                .distinct()
+                .toList());
+        if (sessionIds == null) {
+            throw new IllegalStateException("固定摄像头会话查询事务未完成");
+        }
+        return sessionIds;
     }
 
     /** 通过 LiveKit Room API 二次确认固定发布身份是否仍在任一房间。 */
