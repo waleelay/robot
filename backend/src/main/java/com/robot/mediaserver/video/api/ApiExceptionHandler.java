@@ -3,6 +3,7 @@ package com.robot.mediaserver.video.api;
 import com.robot.mediaserver.config.DateTimeConfig;
 import com.robot.mediaserver.file.api.FileApiException;
 import com.robot.mediaserver.file.service.FileStorageException;
+import com.robot.mediaserver.video.service.FixedCameraIngressException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
@@ -28,6 +29,13 @@ import org.springframework.web.client.RestClientResponseException;
 public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    @ExceptionHandler(FixedCameraIngressException.class)
+    public ResponseEntity<Map<String, Object>> handleFixedCameraIngress(
+            FixedCameraIngressException ex,
+            HttpServletRequest request) {
+        return error(ex.getStatus(), ex.getCode(), ex.getMessage(), ex.isRetryable(), Map.of(), request, null);
+    }
 
     @ExceptionHandler(FileApiException.class)
     public ResponseEntity<Map<String, Object>> handleFileApi(

@@ -11,6 +11,7 @@ media-service      媒体服务，来源 backend
 control-service    控制服务，来源 control-service
 bigscreen-bff      大屏 BFF，来源 bigscreen-bff
 livekit-server     LiveKit Server
+livekit-ingress    LiveKit Ingress，接收固定摄像头 RTMP 推流
 livekit-egress     LiveKit Egress
 nginx              前端静态资源和反向代理
 tts                可选 TTS 服务，默认不启动
@@ -34,6 +35,7 @@ Nginx 备用 HTTPS：  24443/tcp
 LiveKit API：       7880/tcp
 LiveKit RTC TCP：   7881/tcp
 LiveKit RTC UDP：   50000-60000/udp
+LiveKit RTMP：      1935/tcp
 TTS：               5050/tcp，默认不启动
 ```
 
@@ -43,6 +45,7 @@ TTS：               5050/tcp，默认不启动
 前端页面：      https://服务器IP:4443/
 地图瓦片：      https://服务器IP:4443/tdt/...
 LiveKit：       ws://服务器IP:7880
+摄像头 RTMP：   rtmp://服务器IP:1935/live/{streamKey}
 ```
 
 ## 2. 打包前准备
@@ -70,6 +73,7 @@ mkdir -p dist
 
 ```text
 deploy/docker/config/livekit/livekit.yaml
+deploy/docker/config/livekit/livekit-ingress.yaml
 deploy/docker/config/livekit/livekit-egress.yaml
 ```
 
@@ -79,6 +83,7 @@ deploy/docker/config/livekit/livekit-egress.yaml
 
 ```text
 /home/jszn/mounts/media/livekit.yaml        -> /livekit.yaml
+/home/jszn/mounts/media/livekit-ingress.yaml -> /livekit-ingress.yaml
 /home/jszn/mounts/media/livekit-egress.yaml -> /livekit-egress.yaml
 ```
 
@@ -203,6 +208,7 @@ alpine-3.20.tar.gz
 golang-1.26-alpine.tar.gz
 fixed-camera-gateway-image.tar.gz
 livekit-server.tar.gz
+livekit-ingress.tar.gz
 livekit-egress.tar.gz
 nginx.tar.gz
 tts.tar.gz
@@ -226,8 +232,9 @@ cd /Users/leelay/Documents/robot-mediaserver
 docker buildx build --platform linux/amd64 --load -t robot/java17-ffmpeg-runtime:amd64 deploy/docker/java-runtime
 docker pull --platform linux/amd64 alpine:3.20
 docker pull --platform linux/amd64 golang:1.26-alpine
-docker pull --platform linux/amd64 livekit/livekit-server:latest
-docker pull --platform linux/amd64 livekit/egress:latest
+docker pull --platform linux/amd64 livekit/livekit-server:v1.13.3
+docker pull --platform linux/amd64 livekit/ingress:v1.5.0
+docker pull --platform linux/amd64 livekit/egress:v1.13.0
 docker pull --platform linux/amd64 nginx:alpine
 
 mkdir -p deploy/docker/tool-images/amd64
@@ -236,8 +243,9 @@ docker image save --platform linux/amd64 robot/java17-ffmpeg-runtime:amd64 | gzi
 docker image save --platform linux/amd64 alpine:3.20 | gzip -9 > deploy/docker/tool-images/amd64/alpine-3.20.tar.gz
 docker image save --platform linux/amd64 golang:1.26-alpine | gzip -9 > deploy/docker/tool-images/amd64/golang-1.26-alpine.tar.gz
 docker image save --platform linux/amd64 robot/fixed-camera-gateway:latest | gzip -9 > deploy/docker/tool-images/amd64/fixed-camera-gateway-image.tar.gz
-docker image save --platform linux/amd64 livekit/livekit-server:latest | gzip -9 > deploy/docker/tool-images/amd64/livekit-server.tar.gz
-docker image save --platform linux/amd64 livekit/egress:latest | gzip -9 > deploy/docker/tool-images/amd64/livekit-egress.tar.gz
+docker image save --platform linux/amd64 livekit/livekit-server:v1.13.3 | gzip -9 > deploy/docker/tool-images/amd64/livekit-server.tar.gz
+docker image save --platform linux/amd64 livekit/ingress:v1.5.0 | gzip -9 > deploy/docker/tool-images/amd64/livekit-ingress.tar.gz
+docker image save --platform linux/amd64 livekit/egress:v1.13.0 | gzip -9 > deploy/docker/tool-images/amd64/livekit-egress.tar.gz
 docker image save --platform linux/amd64 nginx:alpine | gzip -9 > deploy/docker/tool-images/amd64/nginx.tar.gz
 ```
 
@@ -249,8 +257,9 @@ cd /Users/leelay/Documents/robot-mediaserver
 docker buildx build --platform linux/arm64 --load -t robot/java17-ffmpeg-runtime:arm64 deploy/docker/java-runtime
 docker pull --platform linux/arm64 alpine:3.20
 docker pull --platform linux/arm64 golang:1.26-alpine
-docker pull --platform linux/arm64 livekit/livekit-server:latest
-docker pull --platform linux/arm64 livekit/egress:latest
+docker pull --platform linux/arm64 livekit/livekit-server:v1.13.3
+docker pull --platform linux/arm64 livekit/ingress:v1.5.0
+docker pull --platform linux/arm64 livekit/egress:v1.13.0
 docker pull --platform linux/arm64 nginx:alpine
 
 mkdir -p deploy/docker/tool-images/arm64
@@ -259,8 +268,9 @@ docker image save --platform linux/arm64 robot/java17-ffmpeg-runtime:arm64 | gzi
 docker image save --platform linux/arm64 alpine:3.20 | gzip -9 > deploy/docker/tool-images/arm64/alpine-3.20.tar.gz
 docker image save --platform linux/arm64 golang:1.26-alpine | gzip -9 > deploy/docker/tool-images/arm64/golang-1.26-alpine.tar.gz
 docker image save --platform linux/arm64 robot/fixed-camera-gateway:arm64 | gzip -9 > deploy/docker/tool-images/arm64/fixed-camera-gateway-image.tar.gz
-docker image save --platform linux/arm64 livekit/livekit-server:latest | gzip -9 > deploy/docker/tool-images/arm64/livekit-server.tar.gz
-docker image save --platform linux/arm64 livekit/egress:latest | gzip -9 > deploy/docker/tool-images/arm64/livekit-egress.tar.gz
+docker image save --platform linux/arm64 livekit/livekit-server:v1.13.3 | gzip -9 > deploy/docker/tool-images/arm64/livekit-server.tar.gz
+docker image save --platform linux/arm64 livekit/ingress:v1.5.0 | gzip -9 > deploy/docker/tool-images/arm64/livekit-ingress.tar.gz
+docker image save --platform linux/arm64 livekit/egress:v1.13.0 | gzip -9 > deploy/docker/tool-images/arm64/livekit-egress.tar.gz
 docker image save --platform linux/arm64 nginx:alpine | gzip -9 > deploy/docker/tool-images/arm64/nginx.tar.gz
 ```
 
@@ -296,7 +306,7 @@ docker run --rm --platform linux/arm64 robot/java17-ffmpeg-runtime:arm64 sh -c '
 `livekit/egress` 镜像较大，gzip 变小不明显时可以用 `xz` 或 `zstd`：
 
 ```bash
-docker image save --platform linux/amd64 livekit/egress:latest | xz -T0 -9e > deploy/docker/tool-images/amd64/livekit-egress.tar.xz
+docker image save --platform linux/amd64 livekit/egress:v1.13.0 | xz -T0 -9e > deploy/docker/tool-images/amd64/livekit-egress.tar.xz
 ```
 
 ## 3. 构建安装包
@@ -326,7 +336,7 @@ TARGET_ARCH=arm64 JAVA_RUNTIME_IMAGE=robot/java17-ffmpeg-runtime:arm64 ./package
 4. 优先复用 tool-images/<arch>/fixed-camera-gateway-image.tar.gz；不存在时才构建固定摄像头 Gateway 镜像
 5. 保存应用服务镜像到 images/
 6. 复制 tool-images/<arch> 下的第三方镜像
-7. 复制 LiveKit / Nginx / 前端 / tdt 配置和资源；仅当 `PACKAGE_TTS=true` 时复制 TTS 镜像和配置
+7. 复制 LiveKit Server/Ingress/Egress、Nginx、前端和 tdt 配置与资源；仅当 `PACKAGE_TTS=true` 时复制 TTS 镜像和配置
 8. 生成最终 tar.gz 安装包
 ```
 
@@ -502,6 +512,7 @@ docker logs robot-mediaserver-media-service --tail 80
 docker logs robot-mediaserver-control-service --tail 80
 docker logs robot-mediaserver-bigscreen-bff --tail 80
 docker logs robot-mediaserver-livekit-server --tail 80
+docker logs robot-mediaserver-livekit-ingress --tail 80
 ```
 
 浏览器跨域预检验证：
@@ -773,7 +784,7 @@ docker network rm robot-mediaserver 2>/dev/null || true
 
 ```bash
 docker images --format "{{.Repository}}:{{.Tag}}" \
-  | grep -E '^(robot/|livekit/livekit-server:|livekit/egress:|nginx:alpine|local/sherpa-tts-http:)' \
+  | grep -E '^(robot/|livekit/livekit-server:|livekit/ingress:|livekit/egress:|nginx:alpine|local/sherpa-tts-http:)' \
   | xargs -r docker rmi -f
 ```
 
@@ -893,6 +904,7 @@ Linux 服务器建议直接替换为服务器内网 IP：
 ```bash
 grep --color=never -nE '^(LIVEKIT_URL|LIVEKIT_NODE_IP|LIVEKIT_EGRESS_WS_URL)=' .env
 docker logs robot-mediaserver-livekit-server --tail 80
+docker logs robot-mediaserver-livekit-ingress --tail 80
 ```
 
 外部客户端访问时通常应配置：

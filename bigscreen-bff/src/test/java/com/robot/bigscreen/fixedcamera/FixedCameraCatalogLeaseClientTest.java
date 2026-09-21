@@ -38,4 +38,22 @@ class FixedCameraCatalogLeaseClientTest {
             assertThat(camera.mainStreamUrl()).isEqualTo("rtsp://camera/main");
         });
     }
+
+    @Test
+    void includesOnlyEnabledRtspCamerasInGatewayLease() {
+        FixedCameraCatalogLeaseClient client = new FixedCameraCatalogLeaseClient(
+                new CenterServiceProperties(), RestClient.builder());
+
+        FixedCameraCatalogLeaseClient.LeaseRequest lease = client.leaseRequest(
+                new UsernamePasswordAuthenticationToken("user-001", ""),
+                new HttpHeaders(),
+                List.of(
+                        Map.of("id", "rtsp-enabled", "enabled", true, "protocolType", "RTSP"),
+                        Map.of("id", "rtsp-disabled", "enabled", false, "protocolType", "RTSP"),
+                        Map.of("id", "rtmp-enabled", "enabled", true, "protocolType", "RTMP")),
+                Instant.parse("2026-08-24T00:00:00Z"));
+
+        assertThat(lease.cameras()).extracting(FixedCameraCatalogLeaseClient.CameraRecord::cameraId)
+                .containsExactly("rtsp-enabled");
+    }
 }

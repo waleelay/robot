@@ -2,6 +2,7 @@ package com.robot.mediaserver.video.model;
 
 import com.robot.media.common.video.VideoChannel;
 import com.robot.media.common.video.VideoQuality;
+import com.robot.media.common.video.VideoPublisherMode;
 import com.robot.media.common.video.VideoSourceType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -16,15 +17,18 @@ import java.time.OffsetDateTime;
 /**
  * 单个媒体源的唯一运行态记录。
  *
- * <p>用于串行化同源会话创建、固定 Room 所有权，并保存 LiveKit 返回的当前
- * Publisher/Track 事实。Publisher generation 仍由后续整改项迁移。</p>
+ * <p>用于串行化同源会话创建、固定 Room 所有权，并保存发布模式、操作 generation
+ * 以及 LiveKit 返回的当前 Publisher/Track 事实。</p>
  */
 @Entity
 @Table(
         name = "media_source_runtime",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_source_runtime_source",
-                columnNames = {"source_type", "source_id", "device_id", "channel", "quality"}))
+        uniqueConstraints = {
+            @UniqueConstraint(
+                    name = "uk_source_runtime_source",
+                    columnNames = {"source_type", "source_id", "device_id", "channel", "quality"}),
+            @UniqueConstraint(name = "uk_source_runtime_ingress_id", columnNames = "ingress_id")
+        })
 public class VideoSourceRuntime {
 
     @Id
@@ -51,6 +55,33 @@ public class VideoSourceRuntime {
 
     @Column(name = "room_name", nullable = false, length = 160)
     private String roomName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "publisher_mode", nullable = false, length = 32)
+    private VideoPublisherMode publisherMode;
+
+    @Column(name = "publisher_revision", nullable = false)
+    private long publisherRevision;
+
+    @Column(name = "ingress_operation_revision", nullable = false)
+    private long ingressOperationRevision;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "accepted_ingress_operation", length = 16)
+    private FixedCameraIngressOperation acceptedIngressOperation;
+
+    @Column(name = "ingress_id", length = 128)
+    private String ingressId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "last_stream_status", length = 16)
+    private FixedCameraStreamStatus lastStreamStatus;
+
+    @Column(name = "last_reason_code", length = 64)
+    private String lastReasonCode;
+
+    @Column(name = "last_verified_at")
+    private OffsetDateTime lastVerifiedAt;
 
     @Column(name = "publisher_identity", length = 128)
     private String publisherIdentity;
@@ -131,6 +162,70 @@ public class VideoSourceRuntime {
 
     public void setRoomName(String roomName) {
         this.roomName = roomName;
+    }
+
+    public VideoPublisherMode getPublisherMode() {
+        return publisherMode;
+    }
+
+    public void setPublisherMode(VideoPublisherMode publisherMode) {
+        this.publisherMode = publisherMode;
+    }
+
+    public long getPublisherRevision() {
+        return publisherRevision;
+    }
+
+    public void setPublisherRevision(long publisherRevision) {
+        this.publisherRevision = publisherRevision;
+    }
+
+    public long getIngressOperationRevision() {
+        return ingressOperationRevision;
+    }
+
+    public void setIngressOperationRevision(long ingressOperationRevision) {
+        this.ingressOperationRevision = ingressOperationRevision;
+    }
+
+    public FixedCameraIngressOperation getAcceptedIngressOperation() {
+        return acceptedIngressOperation;
+    }
+
+    public void setAcceptedIngressOperation(FixedCameraIngressOperation acceptedIngressOperation) {
+        this.acceptedIngressOperation = acceptedIngressOperation;
+    }
+
+    public String getIngressId() {
+        return ingressId;
+    }
+
+    public void setIngressId(String ingressId) {
+        this.ingressId = ingressId;
+    }
+
+    public FixedCameraStreamStatus getLastStreamStatus() {
+        return lastStreamStatus;
+    }
+
+    public void setLastStreamStatus(FixedCameraStreamStatus lastStreamStatus) {
+        this.lastStreamStatus = lastStreamStatus;
+    }
+
+    public String getLastReasonCode() {
+        return lastReasonCode;
+    }
+
+    public void setLastReasonCode(String lastReasonCode) {
+        this.lastReasonCode = lastReasonCode;
+    }
+
+    public OffsetDateTime getLastVerifiedAt() {
+        return lastVerifiedAt;
+    }
+
+    public void setLastVerifiedAt(OffsetDateTime lastVerifiedAt) {
+        this.lastVerifiedAt = lastVerifiedAt;
     }
 
     public String getPublisherIdentity() {

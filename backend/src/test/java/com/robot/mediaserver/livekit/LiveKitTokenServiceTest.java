@@ -44,6 +44,24 @@ class LiveKitTokenServiceTest {
         assertThat(video.get("room")).isEqualTo("media.robot-001.camera01.visible");
     }
 
+    @Test
+    void createsDedicatedIngressAdminToken() {
+        MediaProperties properties = properties();
+        LiveKitTokenService service = new LiveKitTokenService(properties);
+
+        String token = service.createIngressAdminToken().token();
+        var claims = Jwts.parser()
+                .verifyWith(signingKey(properties))
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        Map<?, ?> video = claims.get("video", Map.class);
+
+        assertThat(claims.getSubject()).isEqualTo("media-service-ingress");
+        assertThat(video).hasSize(1);
+        assertThat(video.get("ingressAdmin")).isEqualTo(true);
+    }
+
     private MediaProperties properties() {
         MediaProperties properties = new MediaProperties();
         properties.getLivekit().setApiKey("devkey");

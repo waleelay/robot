@@ -556,6 +556,19 @@ public class FileService {
         return true;
     }
 
+    /**
+     * 媒体源撤销或删除时停止指定会话的活动录像，不依赖发起录像的浏览器身份。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public boolean stopActiveLiveRecordingForSession(String sessionId) {
+        MediaFile active = findActiveLiveRecording(sessionId, null).orElse(null);
+        if (active == null) {
+            return false;
+        }
+        finishLiveRecording(active);
+        return true;
+    }
+
     public FileListItemResponse activeLiveRecording(String sessionId, CurrentUser user) {
         requireRole(user, MEDIA_VIEWER, "无手动媒体查看权限");
         return findActiveLiveRecording(sessionId, user).map(this::item).orElse(null);

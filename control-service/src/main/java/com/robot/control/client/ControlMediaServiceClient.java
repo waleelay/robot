@@ -19,6 +19,12 @@ import com.robot.media.common.video.SwitchChannelRequest;
 import com.robot.media.common.video.VideoSessionResponse;
 import com.robot.media.common.video.ViewerTokenResponse;
 import com.robot.media.common.video.VideoStartCommand;
+import com.robot.media.common.video.FixedCameraIngressResponse;
+import com.robot.media.common.video.FixedCameraIngressStatusRequest;
+import com.robot.media.common.video.FixedCameraPublisherModeRequest;
+import com.robot.media.common.video.FixedCameraPublisherModeResponse;
+import com.robot.media.common.video.FixedCameraPublisherPresenceResponse;
+import com.robot.media.common.video.VideoPublisherMode;
 import com.robot.media.common.video.VideoStatusMessage;
 import com.robot.media.common.video.IntercomStartCommand;
 import com.robot.media.common.video.IntercomStatusMessage;
@@ -591,6 +597,50 @@ public class ControlMediaServiceClient {
      */
     public Map<String, Object> releaseIdle(String sessionId) {
         return post("/internal/media/video-sessions/{sessionId}/release-idle", null, null, new ParameterizedTypeReference<>() {}, sessionId);
+    }
+
+    /** 批量查询 RTMP 固定摄像头 Ingress 与 Track 状态。 */
+    public List<FixedCameraIngressResponse> fixedCameraIngressStatuses(List<String> cameraIds) {
+        return post(
+                "/internal/media/fixed-camera-ingresses/status-query",
+                new FixedCameraIngressStatusRequest(cameraIds),
+                null,
+                new ParameterizedTypeReference<>() {});
+    }
+
+    /** 原子切换固定摄像头发布模式。 */
+    public FixedCameraPublisherModeResponse switchFixedCameraPublisherMode(
+            String cameraId,
+            VideoPublisherMode targetMode,
+            long publisherRevision) {
+        return restClient.post()
+                .uri("/internal/media/fixed-camera-sources/{cameraId}/publisher-mode", cameraId)
+                .header("X-Internal-Caller", "control-service")
+                .header("X-Publisher-Revision", Long.toString(publisherRevision))
+                .body(new FixedCameraPublisherModeRequest(targetMode))
+                .retrieve()
+                .body(FixedCameraPublisherModeResponse.class);
+    }
+
+    /** 删除 RTSP 档案前收口 Gateway 发布端。 */
+    public FixedCameraPublisherModeResponse quiesceFixedCameraPublisher(
+            String cameraId,
+            long publisherRevision) {
+        return restClient.post()
+                .uri("/internal/media/fixed-camera-sources/{cameraId}/quiesce", cameraId)
+                .header("X-Internal-Caller", "control-service")
+                .header("X-Publisher-Revision", Long.toString(publisherRevision))
+                .retrieve()
+                .body(FixedCameraPublisherModeResponse.class);
+    }
+
+    /** 查询固定摄像头发布身份是否仍存在。 */
+    public FixedCameraPublisherPresenceResponse fixedCameraPublisherPresence(String cameraId) {
+        return restClient.get()
+                .uri("/internal/media/fixed-camera-sources/{cameraId}/publisher-presence", cameraId)
+                .header("X-Internal-Caller", "control-service")
+                .retrieve()
+                .body(FixedCameraPublisherPresenceResponse.class);
     }
 
     /**

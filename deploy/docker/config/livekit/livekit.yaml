@@ -17,3 +17,5 @@ webhook:
   api_key: {{LIVEKIT_API_KEY}}
   urls:
     - {{LIVEKIT_WEBHOOK_URL}}
+ingress:
+  rtmp_base_url: {{LIVEKIT_INGRESS_RTMP_BASE_URL}}

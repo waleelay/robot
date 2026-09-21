@@ -29,6 +29,10 @@ function sourceFailureText(camera, slot, fallback) {
   return FIXED_CAMERA_ERROR_TEXT[session.lastErrorCode || session.errorCode] || fallback
 }
 
+function usesFixedCameraGateway(equipment = {}) {
+  return String(equipment.protocolType || 'RTSP').toUpperCase() !== 'RTMP'
+}
+
 function fixedCameraBlockingState(equipment) {
   if (equipment.enabled === false) {
     return { key: 'fixed-camera-disabled', text: '固定摄像头已停用' }
@@ -37,7 +41,7 @@ function fixedCameraBlockingState(equipment) {
     return { key: 'fixed-camera-config-invalid', text: '固定摄像头配置不完整' }
   }
   const gatewayHealth = equipment.gatewayHealth || {}
-  if (gatewayHealth.status === 'OFFLINE') {
+  if (usesFixedCameraGateway(equipment) && gatewayHealth.status === 'OFFLINE') {
     return { key: 'fixed-camera-gateway-offline', text: '固定摄像头网关离线' }
   }
   return null
@@ -105,7 +109,7 @@ export function resolveVideoDisplayState(camera = {}, slot = {}, equipment = {})
     if (streamState) {
       return { visible: true, ...streamState, icon: 'unlink1', tone: 'danger' }
     }
-    const gatewayUnknown = equipment.gatewayHealth?.status === 'UNKNOWN'
+    const gatewayUnknown = usesFixedCameraGateway(equipment) && equipment.gatewayHealth?.status === 'UNKNOWN'
     const streamUnknown = equipment.streamHealth?.status === 'UNKNOWN'
     if (gatewayUnknown || streamUnknown) {
       return { visible: true, key: 'fixed-camera-health-unknown', text: '摄像头健康状态待确认', icon: 'loading', tone: 'warning', action: 'refresh-playback' }

@@ -68,15 +68,16 @@ BFF 是 OAuth2 Resource Server：
 multipart 文件 Part 以输入流转发。文件预览和下载复用下游既有预签名地址，不在 BFF 增设第二套
 文件代理或对象存储元数据。
 
-固定摄像头会作为全景 `devices[]` 中的同级装备返回。BFF 合并 Control 健康快照，分别输出
-`enabled/configReady`、`gatewayHealth` 和 `streamHealth`；只有配置启用且完整、Gateway 在线、
-RTSP 可用时 `status=online`；配置停用、配置无效、健康缺失或过期均归为 `offline`。明确故障上报为
-`fault`。`playable` 仅为配置门槛兼容字段，
-不表示在线。BFF 不向浏览器返回 RTSP URL。WebSocket 授权快照完整加载后，BFF 会把当前身份
-可见的固定摄像头配置以 180 秒短租约发送给 Control；快照每 30 秒刷新一次，同一身份最后一个
-大屏 WebSocket 会话关闭时主动撤销租约。查询、同步或撤销失败时不续租，旧目录到期后 Gateway
-停止周期探测。这是有用户会话期间的按需健康链路，不承诺
-7×24 小时全量监测。
+固定摄像头会作为全景 `devices[]` 中的同级装备返回。BFF 按协议合并状态：RTSP 使用 Control 的
+Gateway/RTSP 健康，RTMP 使用 Management 返回的 Media Ingress 流状态；只有配置启用、配置完整且
+对应发布链路在线时 `status=online`。配置停用、配置无效、健康缺失或过期归为 `offline`，明确故障
+上报为 `fault`。`playable` 仅为配置门槛兼容字段，不表示在线。BFF 不向浏览器返回 RTSP URL 或 RTMP
+推流凭证。
+
+WebSocket 授权快照完整加载后，BFF 只把当前身份可见的 RTSP 摄像头以 180 秒短租约发送给 Control；
+RTMP 摄像头不会进入 Gateway 目录。快照每 30 秒刷新一次，同一身份最后一个大屏 WebSocket 会话关闭
+时主动撤销租约。查询、同步或撤销失败时不续租，旧目录到期后 Gateway 停止周期探测。这是有用户
+会话期间的按需 RTSP 健康链路，不承诺 7×24 小时全量监测。
 
 下游缺失字段通常返回 `null` 或空集合。代码仍为 `test111`、`SN005`、`SN006` 保留无定位时的硬编码演示位置事件；该兼容只影响 WebSocket 事件，不能作为生产真实定位。
 

@@ -686,6 +686,12 @@ test('固定摄像头展示配置、网关、RTSP 和推流具体根因且不泄
     gatewayHealth: { status: 'UNKNOWN', reasonCode: 'STATUS_MISSING' },
     streamHealth: { status: 'UNKNOWN', reasonCode: 'STATUS_MISSING' }
   }).text, '摄像头健康状态待确认')
+  assert.equal(resolve({}, {}, {
+    ...fixed,
+    protocolType: 'RTMP',
+    gatewayHealth: { status: 'UNKNOWN', reasonCode: 'NOT_APPLICABLE' },
+    streamHealth: { status: 'AVAILABLE' }
+  }).key, 'not-playing')
   assert.equal(resolve({}, { sourceStartFailed: true }, {
     ...fixed,
     gatewayHealth: { status: 'ONLINE' },
@@ -970,7 +976,7 @@ test('浏览器 Track 或 Room 异常只恢复 viewer，不重启共享 Publishe
   assert.match(connectAction, /viewer reconnected/)
   assert.match(connectAction, /isSameLiveKitTrack\(current\.remoteVideoTrack, track\)/)
   assert.match(connectAction, /restoreVideoTrack\(current, room, state, track\)/)
-  assert.match(connectAction, /RoomEvent\.TrackUnsubscribed[\s\S]*beginViewerRecovery\(commit, dispatch, state, current, sessionId\)/)
+  assert.match(connectAction, /RoomEvent\.TrackUnsubscribed[\s\S]*!liveKitRoomReusable\(current\)[\s\S]*beginViewerRecovery\(commit, dispatch, state, current, sessionId\)/)
   assert.match(source, /scheduleViewerReconnect\(dispatch, state, key, sessionId/)
   assert.match(source, /viewerReconnectDelay\(attempt\)/)
   assert.match(source, /cancelViewerReconnect\(key\)/)
@@ -1039,7 +1045,7 @@ test('viewer 换证连续失败后持续退避重试直至恢复', async () => {
   assert.deepEqual(timers.map(timer => timer.delay), [0, 2000, 4000, 8000])
 })
 
-test('Room 已连接但缺少视频轨道时自动重建 viewer', async () => {
+test('Room 已连接但发布 Track 暂时缺失时保留 viewer 等待自动重订阅', () => {
   const timers = []
   const module = loadWebsocketRobot({}, {
     setTimeout(callback, delay) {
@@ -1065,23 +1071,11 @@ test('Room 已连接但缺少视频轨道时自动重建 viewer', async () => {
     }
   }
   const calls = []
-  const dispatch = async (type, payload) => {
-    calls.push({ type, payload })
-    assert.equal(type, 'connectLiveKit')
-    assert.equal(payload.camera.key, key)
-    assert.equal(payload.refreshToken, true)
-    assert.equal(payload.throwOnError, true)
-    assert.equal(payload.managedReconnect, true)
-    state.cameras[key].hasVideo = true
-  }
+  const dispatch = (type, payload) => calls.push({ type, payload })
 
   module.__testHooks.scheduleViewerReconnect(dispatch, state, key, sessionId, 2000)
-  assert.equal(timers[0].delay, 2000)
-  state.cameras[key].session.status = 'STREAMING'
-  await timers[0].callback()
-
-  assert.equal(calls.length, 1)
-  assert.equal(timers.length, 1)
+  assert.equal(calls.length, 0)
+  assert.equal(timers.length, 0)
 })
 
 test('人工刷新只调用 viewer 恢复，不 stop/start 会话', async () => {

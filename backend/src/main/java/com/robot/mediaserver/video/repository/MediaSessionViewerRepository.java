@@ -52,6 +52,17 @@ public interface MediaSessionViewerRepository extends JpaRepository<MediaSession
             @Param("leftAt") OffsetDateTime leftAt);
 
     @Modifying
+    @Query("""
+            update MediaSessionViewer viewer
+               set viewer.leftAt = :leftAt, viewer.activeLeaseKey = null
+             where viewer.sessionId = :sessionId
+               and viewer.leftAt is null
+            """)
+    int closeActiveLeasesBySessionId(
+            @Param("sessionId") String sessionId,
+            @Param("leftAt") OffsetDateTime leftAt);
+
+    @Modifying
     @Transactional
     @Query("""
             update MediaSessionViewer viewer

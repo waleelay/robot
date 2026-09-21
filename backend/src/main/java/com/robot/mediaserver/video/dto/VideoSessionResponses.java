@@ -5,6 +5,7 @@ import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.media.common.video.IntercomResponse;
 import com.robot.media.common.video.MediaTrackResponse;
 import com.robot.media.common.video.VideoSessionResponse;
+import com.robot.media.common.video.VideoPublisherMode;
 import java.time.OffsetDateTime;
 
 /**
@@ -28,11 +29,22 @@ public final class VideoSessionResponses {
      * @return 会话响应
      */
     public static VideoSessionResponse from(VideoSession session, String livekitUrl, String viewerToken) {
+        return from(session, livekitUrl, viewerToken, null, 0);
+    }
+
+    public static VideoSessionResponse from(
+            VideoSession session,
+            String livekitUrl,
+            String viewerToken,
+            VideoPublisherMode publisherMode,
+            long publisherRevision) {
         return new VideoSessionResponse(
                 session.getSessionId(),
                 session.getRobotId(),
                 session.getSourceType(),
                 session.getSourceId(),
+                publisherMode,
+                publisherRevision,
                 session.getDeviceId(),
                 session.getChannel(),
                 session.getQuality(),

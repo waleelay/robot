@@ -263,7 +263,7 @@ export default {
       if (info.playable === true && pickDefaultCamera(info, this.cameras)) return true
       if (info.enabled === false) return false
       if (info.configReady === false) return false
-      if (info.gatewayHealth?.status === 'OFFLINE') return false
+      if (String(info.protocolType || 'RTSP').toUpperCase() !== 'RTMP' && info.gatewayHealth?.status === 'OFFLINE') return false
       if (info.status === 'offline') return false
       return !!pickDefaultCamera(info, this.cameras)
     },
@@ -273,7 +273,7 @@ export default {
       if (playable) return info.name
       if (info.enabled === false) return '固定摄像头已停用'
       if (info.configReady === false) return '固定摄像头配置不完整'
-      if (info.gatewayHealth?.status === 'OFFLINE') return '固定摄像头网关离线'
+      if (String(info.protocolType || 'RTSP').toUpperCase() !== 'RTMP' && info.gatewayHealth?.status === 'OFFLINE') return '固定摄像头网关离线'
       if (info.status === 'offline') return '固定摄像头当前离线'
       if (!pickDefaultCamera(info, this.cameras)) return '暂无视频源'
       return '固定摄像头当前不可播放'

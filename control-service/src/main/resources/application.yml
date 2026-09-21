@@ -58,6 +58,13 @@ control:
     sweep-delay-ms: ${FIXED_CAMERA_CATALOG_SWEEP_DELAY_MS:1000}
     # 仅是内网边界内的调用方标识，不替代后续服务身份认证。
     trusted-caller: ${FIXED_CAMERA_CATALOG_TRUSTED_CALLER:bigscreen-bff}
+  fixed-camera-publisher:
+    # Management 调用发布端编排接口时使用的可信调用方标识。
+    trusted-caller: ${FIXED_CAMERA_PUBLISHER_TRUSTED_CALLER:management-service}
+    # 协议切换或删除时等待旧 Participant/Track 退出的总时限。
+    presence-timeout-seconds: ${FIXED_CAMERA_PUBLISHER_PRESENCE_TIMEOUT_SECONDS:5}
+    # 旧发布端存在性轮询间隔。
+    presence-poll-millis: ${FIXED_CAMERA_PUBLISHER_PRESENCE_POLL_MILLIS:200}
   center-stomp:
     # 是否连接管理中心 STOMP 端点；任务事实仍以 Management HTTP 查询结果为准。
     enabled: ${CENTER_STOMP_ENABLED:true}

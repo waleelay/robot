@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -22,6 +23,7 @@ import com.robot.media.common.video.IntercomStatus;
 import com.robot.media.common.video.CreateVideoSessionRequest;
 import com.robot.media.common.video.VideoChannel;
 import com.robot.media.common.video.VideoQuality;
+import com.robot.media.common.video.VideoPublisherMode;
 import com.robot.media.common.video.VideoSourceType;
 import com.robot.mediaserver.video.model.MediaSessionViewer;
 import com.robot.mediaserver.video.model.VideoSession;
@@ -79,7 +81,7 @@ class VideoSessionServiceIntercomOccupancyTest {
                 entityManager);
         when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         when(sourceRuntimeRepository.insertIfAbsent(
-                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyLong(), any()))
                 .thenReturn(1);
         when(sourceRuntimeRepository.findBySourceForUpdate(any(), anyString(), anyString(), any(), any()))
                 .thenAnswer(invocation -> {
@@ -91,11 +93,32 @@ class VideoSessionServiceIntercomOccupancyTest {
                     runtime.setChannel(invocation.getArgument(3));
                     runtime.setQuality(invocation.getArgument(4));
                     runtime.setRoomName("room-runtime-test");
+                    runtime.setPublisherMode(invocation.getArgument(0) == VideoSourceType.FIXED_CAMERA
+                            ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                            : VideoPublisherMode.DEVICE_CLIENT);
                     return Optional.of(runtime);
                 });
         target = session("vs-target", "robot-002", null, null, IntercomStatus.IDLE);
         when(repository.findById("vs-target")).thenReturn(Optional.of(target));
         when(repository.findByIdForUpdate("vs-target")).thenReturn(Optional.of(target));
+        when(sourceRuntimeRepository.findById(anyString())).thenAnswer(invocation -> {
+            VideoSourceRuntime runtime = new VideoSourceRuntime();
+            runtime.setRuntimeId(invocation.getArgument(0));
+            runtime.setRoomName(target.getRoomName());
+            runtime.setPublisherMode(target.getSourceType() == VideoSourceType.FIXED_CAMERA
+                    ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                    : VideoPublisherMode.DEVICE_CLIENT);
+            return Optional.of(runtime);
+        });
+        when(sourceRuntimeRepository.findByIdForUpdate(anyString())).thenAnswer(invocation -> {
+            VideoSourceRuntime runtime = new VideoSourceRuntime();
+            runtime.setRuntimeId(invocation.getArgument(0));
+            runtime.setRoomName(target.getRoomName());
+            runtime.setPublisherMode(target.getSourceType() == VideoSourceType.FIXED_CAMERA
+                    ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                    : VideoPublisherMode.DEVICE_CLIENT);
+            return Optional.of(runtime);
+        });
     }
 
     @Test
@@ -260,7 +283,7 @@ class VideoSessionServiceIntercomOccupancyTest {
                 eq("user:operator-1:web-1"), eq("web-1"), any());
         verify(sourceRuntimeRepository).insertIfAbsent(
                 anyString(), eq("ROBOT_CAMERA"), eq("robot-001"), eq("camera01"),
-                eq("visible"), eq("sub"), eq("media.robot-001.camera01.visible.sub"), any());
+                eq("visible"), eq("sub"), eq("media.robot-001.camera01.visible.sub"), eq("DEVICE_CLIENT"), eq(0L), any());
     }
 
     @Test
@@ -286,6 +309,8 @@ class VideoSessionServiceIntercomOccupancyTest {
         request.setReuse(true);
         request.setSourceType(VideoSourceType.FIXED_CAMERA);
         request.setSourceId("camera-001");
+        request.setExpectedPublisherMode(VideoPublisherMode.FIXED_CAMERA_GATEWAY);
+        request.setExpectedPublisherRevision(0L);
         request.setDeviceId("camera01");
         request.setChannel(VideoChannel.visible);
         request.setQuality(VideoQuality.main);
@@ -297,6 +322,10 @@ class VideoSessionServiceIntercomOccupancyTest {
         assertThat(target.getRoomName()).isEqualTo("room-runtime-test");
         assertThat(target.getTrackSid()).isNull();
         assertThat(target.getTrackName()).isNull();
+        verify(sourceRuntimeRepository).insertIfAbsent(
+                anyString(), eq("FIXED_CAMERA"), eq("camera-001"), eq("camera01"),
+                eq("visible"), eq("main"), eq("media.fixed.camera-001.visible.main"),
+                eq("FIXED_CAMERA_GATEWAY"), eq(0L), any());
     }
 
     @Test
@@ -333,6 +362,59 @@ class VideoSessionServiceIntercomOccupancyTest {
         assertThat(target.getRoomName()).isEqualTo("room-runtime-test");
         assertThat(target.getTrackSid()).isNull();
         assertThat(target.getTrackName()).isNull();
+    }
+
+    @Test
+    void reusesIngressRuntimeWithoutCreatingPublisherRuntime() {
+        VideoSourceRuntime runtime = new VideoSourceRuntime();
+        runtime.setRuntimeId("runtime-ingress");
+        runtime.setRoomName("media.fixed.camera-rtmp.visible.main");
+        runtime.setPublisherMode(VideoPublisherMode.LIVEKIT_INGRESS);
+        runtime.setPublisherRevision(4L);
+        when(sourceRuntimeRepository.findBySourceForUpdate(
+                VideoSourceType.FIXED_CAMERA, "camera-rtmp", "camera", VideoChannel.visible, VideoQuality.main))
+                .thenReturn(Optional.of(runtime));
+        when(liveKitTokenService.createInteractiveViewerToken(anyString(), anyString(), anyString()))
+                .thenReturn(new LiveKitTokenService.TokenResult(
+                        "viewer-token", OffsetDateTime.now().plusMinutes(10)));
+
+        CreateVideoSessionRequest request = new CreateVideoSessionRequest();
+        request.setRobotId("camera-rtmp");
+        request.setSourceType(VideoSourceType.FIXED_CAMERA);
+        request.setSourceId("camera-rtmp");
+        request.setDeviceId("camera");
+        request.setChannel(VideoChannel.visible);
+        request.setQuality(VideoQuality.main);
+        request.setExpectedPublisherMode(VideoPublisherMode.LIVEKIT_INGRESS);
+        request.setExpectedPublisherRevision(4L);
+
+        var response = service.create(request, operator("operator-1", "web-1"));
+
+        assertThat(response.publisherMode()).isEqualTo(VideoPublisherMode.LIVEKIT_INGRESS);
+        assertThat(response.publisherRevision()).isEqualTo(4L);
+        verify(sourceRuntimeRepository, never()).insertIfAbsent(
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyString(), anyLong(), any());
+    }
+
+    @Test
+    void rejectsPublisherTokenForIngressRuntime() {
+        target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setSourceId("camera-rtmp");
+        target.setRuntimeId("runtime-ingress");
+        target.setViewerCount(1);
+        VideoSourceRuntime runtime = new VideoSourceRuntime();
+        runtime.setRuntimeId("runtime-ingress");
+        runtime.setRoomName(target.getRoomName());
+        runtime.setPublisherMode(VideoPublisherMode.LIVEKIT_INGRESS);
+        when(sourceRuntimeRepository.findByIdForUpdate("runtime-ingress")).thenReturn(Optional.of(runtime));
+        when(sourceRuntimeRepository.findById("runtime-ingress")).thenReturn(Optional.of(runtime));
+
+        assertThatThrownBy(() -> service.requestClientStart("vs-target", "video.fixed_camera.requested"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("不允许签发客户端 Publisher Token");
+        verify(liveKitTokenService, never()).createPublisherToken(anyString(), anyString());
+        verify(liveKitRoomService, never()).createRoom(anyString());
     }
 
     @Test

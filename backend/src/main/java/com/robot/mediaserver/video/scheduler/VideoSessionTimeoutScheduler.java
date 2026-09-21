@@ -6,6 +6,7 @@ import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.media.common.video.VideoSourceType;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
 import com.robot.mediaserver.video.service.VideoSchedulerLeaseService;
+import com.robot.mediaserver.video.service.FixedCameraIngressService;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -23,16 +24,19 @@ public class VideoSessionTimeoutScheduler {
 
     private final VideoSessionRepository repository;
     private final VideoSessionService videoSessionService;
+    private final FixedCameraIngressService fixedCameraIngressService;
     private final VideoSchedulerLeaseService schedulerLeaseService;
     private final MediaProperties properties;
 
     public VideoSessionTimeoutScheduler(
             VideoSessionRepository repository,
             VideoSessionService videoSessionService,
+            FixedCameraIngressService fixedCameraIngressService,
             VideoSchedulerLeaseService schedulerLeaseService,
             MediaProperties properties) {
         this.repository = repository;
         this.videoSessionService = videoSessionService;
+        this.fixedCameraIngressService = fixedCameraIngressService;
         this.schedulerLeaseService = schedulerLeaseService;
         this.properties = properties;
     }
@@ -48,7 +52,10 @@ public class VideoSessionTimeoutScheduler {
 
     @Scheduled(fixedDelayString = "${media.livekit.reconcile-delay-ms:5000}")
     public void reconcileLiveKitTracks() {
-        schedulerLeaseService.execute(SCHEDULER_LEASE_NAME, videoSessionService::reconcileLiveKitTracks);
+        schedulerLeaseService.execute(SCHEDULER_LEASE_NAME, () -> {
+            fixedCameraIngressService.reconcileManagedResources();
+            videoSessionService.reconcileLiveKitTracks();
+        });
     }
 
     private void handleTrackPublishTimeout() {

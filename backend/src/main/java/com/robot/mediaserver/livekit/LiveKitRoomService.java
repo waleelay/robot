@@ -111,6 +111,46 @@ public class LiveKitRoomService {
         }
     }
 
+    /** 查询指定发布身份在房间中的 Participant 与视频 Track 是否仍存在。 */
+    public PublisherPresence resolvePublisherPresence(String roomName, String expectedParticipantIdentity) {
+        if (!properties.getLivekit().isRoomApiEnabled()) {
+            return new PublisherPresence(false, false);
+        }
+        try {
+            Map<?, ?> body = postForObject(
+                    "/twirp/livekit.RoomService/ListParticipants",
+                    Map.of("room", roomName),
+                    tokenService.createRoomAdminToken(roomName).token());
+            return publisherPresence(body, expectedParticipantIdentity);
+        } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
+                return new PublisherPresence(false, false);
+            }
+            throw ex;
+        }
+    }
+
+    static PublisherPresence publisherPresence(Map<?, ?> body, String expectedParticipantIdentity) {
+        Object rawParticipants = body == null ? null : body.get("participants");
+        if (!(rawParticipants instanceof List<?> participants)) {
+            return new PublisherPresence(false, false);
+        }
+        for (Object participant : participants) {
+            if (!(participant instanceof Map<?, ?> participantMap)
+                    || !expectedParticipantIdentity.equals(text(participantMap.get("identity")))) {
+                continue;
+            }
+            Object rawTracks = participantMap.get("tracks");
+            boolean videoTrackPresent = rawTracks instanceof List<?> tracks
+                    && tracks.stream().anyMatch(track -> track instanceof Map<?, ?> trackMap && isVideoTrack(trackMap));
+            return new PublisherPresence(true, videoTrackPresent);
+        }
+        return new PublisherPresence(false, false);
+    }
+
+    public record PublisherPresence(boolean participantPresent, boolean trackPresent) {
+    }
+
     static Optional<ActiveVideoTrack> resolveVideoTrack(
             Map<?, ?> body,
             String expectedParticipantIdentity,

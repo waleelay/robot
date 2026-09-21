@@ -322,7 +322,7 @@ else
 fi
 
 if [ -d "$SCRIPT_DIR/config/livekit" ]; then
-  find "$SCRIPT_DIR/config/livekit" -maxdepth 1 -type f \( -name 'livekit.yaml' -o -name 'livekit-egress.yaml' -o -name 'egress.yaml' \) -exec cp {} "$STAGING_DIR/config/livekit/" \;
+  find "$SCRIPT_DIR/config/livekit" -maxdepth 1 -type f \( -name 'livekit.yaml' -o -name 'livekit-ingress.yaml' -o -name 'livekit-egress.yaml' -o -name 'egress.yaml' \) -exec cp {} "$STAGING_DIR/config/livekit/" \;
 fi
 
 if [ ! -f "$SCRIPT_DIR/config/nginx/nginx.conf" ]; then

@@ -3,6 +3,7 @@ package com.robot.mediaserver.video.repository;
 import com.robot.media.common.video.VideoChannel;
 import com.robot.media.common.video.VideoQuality;
 import com.robot.media.common.video.VideoSourceType;
+import com.robot.media.common.video.VideoPublisherMode;
 import com.robot.mediaserver.video.model.VideoSourceRuntime;
 import jakarta.persistence.LockModeType;
 import java.time.OffsetDateTime;
@@ -24,14 +25,28 @@ public interface VideoSourceRuntimeRepository extends JpaRepository<VideoSourceR
 
     Optional<VideoSourceRuntime> findByRoomName(String roomName);
 
+    Optional<VideoSourceRuntime> findBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQuality(
+            VideoSourceType sourceType,
+            String sourceId,
+            String deviceId,
+            VideoChannel channel,
+            VideoQuality quality);
+
+    java.util.List<VideoSourceRuntime> findByPublisherMode(VideoPublisherMode publisherMode);
+
+    java.util.List<VideoSourceRuntime> findBySourceTypeAndSourceIdOrderByRuntimeIdAsc(
+            VideoSourceType sourceType,
+            String sourceId);
+
     @Modifying
     @Query(value = """
             insert into media_source_runtime (
                 runtime_id, source_type, source_id, device_id, channel, quality,
-                room_name, version, created_at, updated_at
+                room_name, publisher_mode, publisher_revision, ingress_operation_revision,
+                version, created_at, updated_at
             ) values (
                 :runtimeId, :sourceType, :sourceId, :deviceId, :channel, :quality,
-                :roomName, 0, :now, :now
+                :roomName, :publisherMode, :publisherRevision, 0, 0, :now, :now
             ) on duplicate key update runtime_id = runtime_id
             """, nativeQuery = true)
     int insertIfAbsent(
@@ -42,6 +57,8 @@ public interface VideoSourceRuntimeRepository extends JpaRepository<VideoSourceR
             @Param("channel") String channel,
             @Param("quality") String quality,
             @Param("roomName") String roomName,
+            @Param("publisherMode") String publisherMode,
+            @Param("publisherRevision") long publisherRevision,
             @Param("now") OffsetDateTime now);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

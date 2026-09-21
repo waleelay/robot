@@ -48,7 +48,7 @@ services:
       - robot-mediaserver
 
   livekit-server:
-    image: ${LIVEKIT_SERVER_IMAGE:-livekit/livekit-server:latest}
+    image: ${LIVEKIT_SERVER_IMAGE:-livekit/livekit-server:v1.13.3}
     platform: ${TARGET_PLATFORM:-linux/amd64}
     container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-livekit-server
     restart: unless-stopped
@@ -61,8 +61,22 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  livekit-ingress:
+    image: ${LIVEKIT_INGRESS_IMAGE:-livekit/ingress:v1.5.0}
+    platform: ${TARGET_PLATFORM:-linux/amd64}
+    container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-livekit-ingress
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      INGRESS_CONFIG_FILE: /livekit-ingress.yaml
+    volumes:
+      - "${APP_WORKSPACE_ROOT:-/home/jszn/mounts/media}/livekit-ingress.yaml:/livekit-ingress.yaml:ro"
+    depends_on:
+      - livekit-server
+
   livekit-egress:
-    image: ${LIVEKIT_EGRESS_IMAGE:-livekit/egress:latest}
+    image: ${LIVEKIT_EGRESS_IMAGE:-livekit/egress:v1.13.0}
     platform: ${TARGET_PLATFORM:-linux/amd64}
     container_name: ${COMPOSE_PROJECT_NAME:-robot-mediaserver}-livekit-egress
     restart: unless-stopped
@@ -103,6 +117,12 @@ services:
       LIVEKIT_FIELD_CALL_TOKEN_TTL_SECONDS: ${LIVEKIT_FIELD_CALL_TOKEN_TTL_SECONDS:-7200}
       LIVEKIT_ROOM_API_ENABLED: ${LIVEKIT_ROOM_API_ENABLED:-true}
       LIVEKIT_EGRESS_ENABLED: ${LIVEKIT_EGRESS_ENABLED:-true}
+      LIVEKIT_INGRESS_ENABLED: ${LIVEKIT_INGRESS_ENABLED:-false}
+      LIVEKIT_INGRESS_STATUS_STALE_SECONDS: ${LIVEKIT_INGRESS_STATUS_STALE_SECONDS:-15}
+      LIVEKIT_INGRESS_CALL_TIMEOUT_MS: ${LIVEKIT_INGRESS_CALL_TIMEOUT_MS:-3000}
+      LIVEKIT_INGRESS_OPERATION_TIMEOUT_MS: ${LIVEKIT_INGRESS_OPERATION_TIMEOUT_MS:-5000}
+      LIVEKIT_INGRESS_PERMIT_WAIT_MS: ${LIVEKIT_INGRESS_PERMIT_WAIT_MS:-200}
+      LIVEKIT_INGRESS_MAX_CONCURRENCY: ${LIVEKIT_INGRESS_MAX_CONCURRENCY:-2}
       LIVEKIT_EGRESS_SEGMENT_DURATION_SECONDS: ${LIVEKIT_EGRESS_SEGMENT_DURATION_SECONDS:-6}
       LIVEKIT_EGRESS_S3_REGION: ${LIVEKIT_EGRESS_S3_REGION:-us-east-1}
       LIVEKIT_EGRESS_S3_FORCE_PATH_STYLE: ${LIVEKIT_EGRESS_S3_FORCE_PATH_STYLE:-true}

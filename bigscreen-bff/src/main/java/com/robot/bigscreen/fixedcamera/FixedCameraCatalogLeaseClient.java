@@ -140,14 +140,18 @@ public class FixedCameraCatalogLeaseClient {
             if (source == null) {
                 continue;
             }
+            String protocolType = firstString(source, "protocolType", "protocol").orElse("RTSP");
+            if (!booleanValue(source.get("enabled")) || !"RTSP".equalsIgnoreCase(protocolType)) {
+                continue;
+            }
             Optional<String> cameraId = firstString(source, "cameraId", "id");
             if (cameraId.isEmpty()) {
                 continue;
             }
             result.put(cameraId.get(), new CameraRecord(
                     cameraId.get(),
-                    booleanValue(source.get("enabled")),
-                    firstString(source, "protocolType", "protocol").orElse("RTSP"),
+                    true,
+                    "RTSP",
                     firstString(source, "mainStreamUrl", "mainRtspUrl").orElse(null),
                     firstString(source, "subStreamUrl", "subRtspUrl").orElse(null)));
         }

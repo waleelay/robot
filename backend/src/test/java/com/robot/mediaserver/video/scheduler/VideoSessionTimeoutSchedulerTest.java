@@ -13,6 +13,7 @@ import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.video.model.VideoSession;
 import com.robot.mediaserver.video.repository.VideoSessionRepository;
 import com.robot.mediaserver.video.service.VideoSchedulerLeaseService;
+import com.robot.mediaserver.video.service.FixedCameraIngressService;
 import com.robot.mediaserver.video.service.VideoSessionService;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -25,6 +26,7 @@ class VideoSessionTimeoutSchedulerTest {
         VideoSessionRepository repository = mock(VideoSessionRepository.class);
         VideoSessionService service = mock(VideoSessionService.class);
         VideoSchedulerLeaseService leaseService = executingLease();
+        FixedCameraIngressService ingressService = mock(FixedCameraIngressService.class);
         MediaProperties properties = new MediaProperties();
         properties.getSession().setTrackPublishTimeoutSeconds(20);
         VideoSession session = new VideoSession();
@@ -42,7 +44,7 @@ class VideoSessionTimeoutSchedulerTest {
                 any(VideoSessionStatus.class), any(VideoSourceType.class), any(OffsetDateTime.class)))
                 .thenReturn(List.of());
 
-        new VideoSessionTimeoutScheduler(repository, service, leaseService, properties).sweep();
+        new VideoSessionTimeoutScheduler(repository, service, ingressService, leaseService, properties).sweep();
 
         verify(service).markTimeout(
                 "vs-timeout", "cmd-timeout", "CLIENT_PUBLISH_TIMEOUT", "客户端发布超时");
@@ -55,8 +57,9 @@ class VideoSessionTimeoutSchedulerTest {
         VideoSessionRepository repository = mock(VideoSessionRepository.class);
         VideoSessionService service = mock(VideoSessionService.class);
         VideoSchedulerLeaseService leaseService = mock(VideoSchedulerLeaseService.class);
+        FixedCameraIngressService ingressService = mock(FixedCameraIngressService.class);
 
-        new VideoSessionTimeoutScheduler(repository, service, leaseService, new MediaProperties()).sweep();
+        new VideoSessionTimeoutScheduler(repository, service, ingressService, leaseService, new MediaProperties()).sweep();
 
         verify(leaseService).execute(anyString(), any(Runnable.class));
         verifyNoInteractions(repository, service);
@@ -67,10 +70,12 @@ class VideoSessionTimeoutSchedulerTest {
         VideoSessionRepository repository = mock(VideoSessionRepository.class);
         VideoSessionService service = mock(VideoSessionService.class);
         VideoSchedulerLeaseService leaseService = executingLease();
+        FixedCameraIngressService ingressService = mock(FixedCameraIngressService.class);
 
-        new VideoSessionTimeoutScheduler(repository, service, leaseService, new MediaProperties())
+        new VideoSessionTimeoutScheduler(repository, service, ingressService, leaseService, new MediaProperties())
                 .reconcileLiveKitTracks();
 
+        verify(ingressService).reconcileManagedResources();
         verify(service).reconcileLiveKitTracks();
     }
 

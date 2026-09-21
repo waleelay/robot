@@ -70,6 +70,12 @@ public class MediaProperties {
     private long fieldCallTokenTtlSeconds = 7200;
     private boolean roomApiEnabled;
     private boolean egressEnabled;
+    private boolean ingressEnabled;
+    private int ingressStatusStaleSeconds = 15;
+    private int ingressLivekitCallTimeoutMs = 3000;
+    private int ingressAdminOperationTimeoutMs = 5000;
+    private int ingressAdminPermitWaitMs = 200;
+    private int ingressAdminMaxConcurrency = 2;
     private int egressSegmentDurationSeconds = 6;
     private String egressS3Region = "us-east-1";
     private boolean egressS3ForcePathStyle = true;
@@ -138,6 +144,54 @@ public class MediaProperties {
 
     public void setEgressEnabled(boolean egressEnabled) {
             this.egressEnabled = egressEnabled;
+        }
+
+    public boolean isIngressEnabled() {
+            return ingressEnabled;
+        }
+
+    public void setIngressEnabled(boolean ingressEnabled) {
+            this.ingressEnabled = ingressEnabled;
+        }
+
+    public int getIngressStatusStaleSeconds() {
+            return ingressStatusStaleSeconds;
+        }
+
+    public void setIngressStatusStaleSeconds(int ingressStatusStaleSeconds) {
+            this.ingressStatusStaleSeconds = ingressStatusStaleSeconds;
+        }
+
+    public int getIngressLivekitCallTimeoutMs() {
+            return ingressLivekitCallTimeoutMs;
+        }
+
+    public void setIngressLivekitCallTimeoutMs(int ingressLivekitCallTimeoutMs) {
+            this.ingressLivekitCallTimeoutMs = ingressLivekitCallTimeoutMs;
+        }
+
+    public int getIngressAdminOperationTimeoutMs() {
+            return ingressAdminOperationTimeoutMs;
+        }
+
+    public void setIngressAdminOperationTimeoutMs(int ingressAdminOperationTimeoutMs) {
+            this.ingressAdminOperationTimeoutMs = ingressAdminOperationTimeoutMs;
+        }
+
+    public int getIngressAdminPermitWaitMs() {
+            return ingressAdminPermitWaitMs;
+        }
+
+    public void setIngressAdminPermitWaitMs(int ingressAdminPermitWaitMs) {
+            this.ingressAdminPermitWaitMs = ingressAdminPermitWaitMs;
+        }
+
+    public int getIngressAdminMaxConcurrency() {
+            return ingressAdminMaxConcurrency;
+        }
+
+    public void setIngressAdminMaxConcurrency(int ingressAdminMaxConcurrency) {
+            this.ingressAdminMaxConcurrency = ingressAdminMaxConcurrency;
         }
 
     public int getEgressSegmentDurationSeconds() {

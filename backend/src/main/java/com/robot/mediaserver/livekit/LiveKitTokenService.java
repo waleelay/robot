@@ -130,6 +130,28 @@ public class LiveKitTokenService {
     }
 
     /**
+     * 生成只允许管理 LiveKit Ingress 的令牌。
+     *
+     * @return Token 和过期时间
+     */
+    public TokenResult createIngressAdminToken() {
+        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
+                .plusSeconds(properties.getLivekit().getTokenTtlSeconds());
+        Map<String, Object> videoGrant = new HashMap<>();
+        videoGrant.put("ingressAdmin", true);
+
+        SecretKey key = Keys.hmacShaKeyFor(normalizedSecret().getBytes(StandardCharsets.UTF_8));
+        String token = Jwts.builder()
+                .issuer(properties.getLivekit().getApiKey())
+                .subject("media-service-ingress")
+                .expiration(Date.from(expiresAt.toInstant()))
+                .claim("video", videoGrant)
+                .signWith(key)
+                .compact();
+        return new TokenResult(token, expiresAt);
+    }
+
+    /**
      * 生成指定房间的管理令牌。
      *
      * @param roomName 房间名称

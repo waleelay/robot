@@ -668,7 +668,9 @@ export default {
       }
       // 视频准入仍采用共享媒体状态，与上装设备计数补查相互独立。
       const robot = this.selectedRobot || {}
-      if (!robot.enabled || !robot.configReady || robot.gatewayHealth?.status === 'OFFLINE') {
+      const gatewayOffline = String(robot.protocolType || 'RTSP').toUpperCase() !== 'RTMP' &&
+        robot.gatewayHealth?.status === 'OFFLINE'
+      if (!robot.enabled || !robot.configReady || gatewayOffline) {
         this.$message.warning(!robot.enabled
           ? '固定摄像头已停用，无法播放'
           : (!robot.configReady ? '固定摄像头配置不完整，无法播放' : '固定摄像头网关离线，无法播放'))

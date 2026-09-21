@@ -62,7 +62,8 @@ function cancelViewerReconnect(key) {
 function shouldRecoverViewer(camera, sessionId) {
   return Boolean(camera && camera.watching && !camera.stopping && !camera.stopped &&
     camera.session && camera.session.sessionId === sessionId &&
-    VIEWER_RECOVERY_WAIT_STATUSES.includes(camera.session.status || camera.status) && !camera.hasVideo)
+    VIEWER_RECOVERY_WAIT_STATUSES.includes(camera.session.status || camera.status) &&
+    !camera.hasVideo && !liveKitRoomReusable(camera))
 }
 
 function scheduleViewerReconnect(dispatch, state, key, sessionId, delay = 0) {
@@ -544,6 +545,10 @@ function isFixedCameraEquipment(robot = {}, cameras = []) {
   return (cameras || []).some(camera =>
     camera.groupType === 'fixed_camera' || camera.sourceType === 'FIXED_CAMERA'
   )
+}
+
+function usesFixedCameraGateway(robot = {}) {
+  return String(robot.protocolType || 'RTSP').toUpperCase() !== 'RTMP'
 }
 
 function resolveEquipmentRecord(state, rootState, robotId) {
@@ -1649,13 +1654,13 @@ const actions = {
           }))
         }
         await Promise.allSettled(requests)
-        if (shouldRecoverViewer(camera, sessionId)) {
-          if (camera.room && restoreVideoTrack(camera, camera.room, state)) {
-            camera.viewerReconnecting = false
-            changed = true
-          } else {
-            beginViewerRecovery(commit, dispatch, state, camera, sessionId)
-          }
+        if (camera.watching && !camera.stopping && !camera.stopped && !camera.hasVideo &&
+            camera.session && camera.session.sessionId === sessionId && camera.room &&
+            restoreVideoTrack(camera, camera.room, state)) {
+          camera.viewerReconnecting = false
+          changed = true
+        } else if (shouldRecoverViewer(camera, sessionId)) {
+          beginViewerRecovery(commit, dispatch, state, camera, sessionId)
         }
         if (changed) {
           commit('setCamera', camera)
@@ -1710,12 +1715,12 @@ const actions = {
         if (throwOnError) throw new Error(robot.enabled ? '固定摄像头配置不完整' : '固定摄像头已停用')
         return null
       }
-      if (robot.gatewayHealth?.status === 'OFFLINE') {
+      if (usesFixedCameraGateway(robot) && robot.gatewayHealth?.status === 'OFFLINE') {
         Message.warning('固定摄像头网关离线，无法播放')
         if (throwOnError) throw new Error('固定摄像头网关离线')
         return null
       }
-      // UNKNOWN 不提前拒绝，由本次启动时的真实 RTSP 探测给出最终结果。
+      // RTSP 的 UNKNOWN 不提前拒绝，由本次启动时的真实探测给出最终结果；RTMP 不依赖 Gateway。
     } else if (!isRobotMediaReachable(robot)) {
       const message = '装备当前离线，无法播放'
       Message.warning(message)
@@ -1793,7 +1798,7 @@ const actions = {
     } catch (error) {
       console.error('ERROR createVideoSession', error.message || '请求失败')
       const latestAfterError = state.cameras[camera1.key]
-      // 固定摄像头由 Gateway/RTSP 健康恢复和人工 Source restart 收敛。保留会话及
+      // 固定摄像头由发布端健康恢复和人工 Source restart 收敛。保留会话及
       // 消费者意图，页面无需刷新即可等待后端状态恢复；机器人原有失败清理逻辑不变。
       if (fixedCamera && latestAfterError && !latestAfterError.stopped &&
           viewerId in (latestAfterError.attachTargets || {})) {
@@ -2255,7 +2260,9 @@ const actions = {
         }
         // viewer Track 取消订阅不能证明共享 Publisher 失效，等待重订阅或 Media 事实事件。
         commit('setCamera', current)
-        if (track.kind === 'video') {
+        // 摄像头重启只会替换发布 Track；Viewer Room 仍连接时由 LiveKit 自动订阅新 Track，
+        // 不刷新 Token、不重建 Room，避免发布恢复期间形成 Viewer 连接风暴。
+        if (track.kind === 'video' && !liveKitRoomReusable(current)) {
           beginViewerRecovery(commit, dispatch, state, current, sessionId)
         }
       })

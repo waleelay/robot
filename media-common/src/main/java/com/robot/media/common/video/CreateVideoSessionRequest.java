@@ -19,6 +19,8 @@ public class CreateVideoSessionRequest {
 
     private VideoSourceType sourceType = VideoSourceType.ROBOT_CAMERA;
     private String sourceId;
+    private VideoPublisherMode expectedPublisherMode;
+    private Long expectedPublisherRevision;
 
     @NotNull
     private VideoChannel channel;
@@ -79,6 +81,22 @@ public class CreateVideoSessionRequest {
 
     public void setSourceId(String sourceId) {
         this.sourceId = sourceId;
+    }
+
+    public VideoPublisherMode getExpectedPublisherMode() {
+        return expectedPublisherMode;
+    }
+
+    public void setExpectedPublisherMode(VideoPublisherMode expectedPublisherMode) {
+        this.expectedPublisherMode = expectedPublisherMode;
+    }
+
+    public Long getExpectedPublisherRevision() {
+        return expectedPublisherRevision;
+    }
+
+    public void setExpectedPublisherRevision(Long expectedPublisherRevision) {
+        this.expectedPublisherRevision = expectedPublisherRevision;
     }
 
     /**

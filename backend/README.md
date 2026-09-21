@@ -42,7 +42,9 @@ src/main/java/com/robot/mediaserver/
 
 观看租约沿用 `userId + clientId` 对应的 participant identity；数据库唯一索引限制同一 session 的同身份活跃记录。停看关闭该身份的全部活跃记录；TTL 清理逐会话加锁并在最后 viewer 离开后进入 `IDLE_WAIT`。服务重启不批量删除活跃租约。上线此变更前先停旧 Media 实例、备份 `media_session_viewer`，并执行 [`deploy/database/20260912-add-active-viewer-lease.sql`](../deploy/database/20260912-add-active-viewer-lease.sql)；检查迁移脚本中的异常数据查询和验收查询均为零后再启动新版本。
 
-当前 runtime 承担同源创建串行化、Room 名称所有权、释放互斥，并保存 LiveKit 返回的 Publisher Identity/Participant SID、Track SID/名称和最后事实变化时间。释放任务在 runtime 行锁内聚合同源全部 session（含尚未关联 runtime 的历史会话）的 viewer、对讲、LiveKit Egress 录像、启动在途状态和空闲期限；仅全部无占用且均已到期时删除 Room 并返回一次 stop 载荷。Publisher generation 仍由后续整改项迁移。生产部署前必须备份相关表，并依次执行 [`deploy/database/20260911-add-media-source-runtime.sql`](../deploy/database/20260911-add-media-source-runtime.sql) 和 [`deploy/database/20260911-add-livekit-media-facts.sql`](../deploy/database/20260911-add-livekit-media-facts.sql)；应用回滚时保留新增的表、列和索引，不做破坏性回退。
+当前 runtime 承担同源创建串行化、Room 名称所有权、释放互斥，并保存 LiveKit 返回的 Publisher Identity/Participant SID、Track SID/名称和最后事实变化时间。`publisherMode + publisherRevision` 原子隔离机器人客户端、RTSP Gateway 和 RTMP Ingress 三类发布端；`ingressOperationRevision + acceptedIngressOperation` 负责 Ingress 创建、轮换和撤销的 fencing。释放任务在 runtime 行锁内聚合同源全部 session（含尚未关联 runtime 的历史会话）的 viewer、对讲、LiveKit Egress 录像、启动在途状态和空闲期限；仅全部无占用且均已到期时删除 Room，并按发布模式决定是否返回 Gateway stop。生产部署前必须备份相关表，并依次执行 [`deploy/database/20260911-add-media-source-runtime.sql`](../deploy/database/20260911-add-media-source-runtime.sql)、[`deploy/database/20260911-add-livekit-media-facts.sql`](../deploy/database/20260911-add-livekit-media-facts.sql) 和 [`deploy/database/20260917-add-fixed-camera-ingress.sql`](../deploy/database/20260917-add-fixed-camera-ingress.sql)；应用回滚边界见 RTMP 实施说明书，不得让旧 Media 与新 Control 混跑。
+
+固定摄像头 RTMP 直推只复用既有 `VideoSession + LiveKit + 大屏播放器`。Media 通过 LiveKit Ingress API 管理一次性推流凭证，摄像头直接推到 Ingress Worker；RTMP 摄像头不生成 Publisher Token、不发送 Gateway MQTT。Ingress 管理使用独立 Runtime 锁路径、5 秒总预算和全局并发许可，不改变机器人与 RTSP 的通用锁等待行为。完整契约见[固定监控摄像头 RTMP 直推开发实施说明书](../docs/02-设计/实时视频/固定监控摄像头RTMP直推开发实施说明书.md)。
 
 视频发布超时、viewer TTL、无观看者收口和 LiveKit Track 对账共用数据库短租约，同一时刻只有一个 Media 实例执行周期扫描；任务正常结束主动释放，执行者异常退出后由其他实例在租约到期后接管。上线前执行 [`deploy/database/20260912-add-media-scheduler-lease.sql`](../deploy/database/20260912-add-media-scheduler-lease.sql)；应用回滚时保留租约表。固定摄像头 Track 确认同样遵循 `runtime -> session` 锁序，调度与 Webhook 并发时不会重复推进状态。
 
@@ -80,6 +82,8 @@ src/main/java/com/robot/mediaserver/
 | 路径 | 调用方 | 说明 |
 | --- | --- | --- |
 | `/internal/media/video-sessions/**` | Control Service | 视频、对讲、Track、Token、调度候选和录像 |
+| `/internal/media/fixed-camera-ingresses/**` | Management Service | RTMP Ingress 创建、查询、轮换、撤销和批量状态 |
+| `/internal/media/fixed-camera-sources/**` | Control Service | 固定摄像头发布模式切换、RTSP 运行态收口和 Publisher 在场核验 |
 | `/internal/media/livekit/webhook` | LiveKit Server | 已签名的 Publisher/Track/Room 事件；仅供内部网络调用 |
 | `/internal/media/files/**` | Control Service | 文件能力内部别名 |
 | `/api/media/files/**` | 机器人或受控调用方 | 文件上传、状态、查询、下载与播放 |
@@ -94,7 +98,7 @@ Media 不存在媒体源 CRUD、专用 Snapshot Controller，也不直接发布 
 
 | 前缀 | 说明 |
 | --- | --- |
-| `media.livekit.*` | LiveKit 地址、Key/Secret、Token、Room、Egress 与 Track 对账周期 |
+| `media.livekit.*` | LiveKit 地址、Key/Secret、Token、Room、Ingress/Egress、Track 对账周期及 Ingress 管理预算 |
 | `media.file.live-recording-max-duration-seconds` | 单次手动录像最长持续时间，默认 14400 秒 |
 | `media.minio.*` | 对象存储地址、凭据、bucket 和开关 |
 | `media.file.*` | 文件大小、multipart、播放 Token、HLS、保留期与可信网段；弱网上传默认单文件 48 GiB、分片 5 MiB、上传 URL 7 天、会话 30 天 |

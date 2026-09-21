@@ -13,7 +13,8 @@
 Control Service -> Management Service（设备档案、能力、固定摄像头）
 Control Service <-> EMQX <-> 机器人客户端 / 固定摄像头 Gateway
 Bigscreen BFF -> Control Service -> EMQX -> 固定摄像头 Gateway（用户授权短租约目录）
-Media Service -> LiveKit / MinIO / MySQL
+RTMP 固定摄像头 -> LiveKit Ingress -> LiveKit（不经过 Gateway）
+Media Service -> LiveKit Server / Ingress / Egress / MinIO / MySQL
 浏览器 <-> LiveKit（WebRTC 媒体流不经过 BFF 或 Control）
 ```
 
@@ -23,7 +24,7 @@ Media Service -> LiveKit / MinIO / MySQL
 | --- | --- |
 | `bigscreen-bff/` | 大屏统一认证入口、下游代理、全景聚合、统计报告、WebSocket 事件适配 |
 | `control-service/` | `/api/control/**`、控制租约、设备命令、机器人状态、固定摄像头、MQTT、视频编排 |
-| `backend/` | 视频会话与对讲、LiveKit Room/Token/Egress、通用文件、HLS、TTS |
+| `backend/` | 视频会话与对讲、LiveKit Room/Token/Ingress/Egress、通用文件、HLS、TTS |
 | `media-common/` | Media 与 Control 共享的纯 DTO 与枚举契约模块，不承载业务逻辑 |
 | `fixed-camera-gateway/` | Go 固定摄像头 Gateway；RTSP、LiveKit、MQTT、健康探测与推流进程管理 |
 | `python-client/` | Python 机器人客户端与演示模拟 |
@@ -61,7 +62,7 @@ Python 3
 Docker
 MySQL 8
 EMQX 5
-LiveKit Server / Egress
+LiveKit Server / Ingress / Egress
 MinIO
 FFmpeg / ffprobe
 ```

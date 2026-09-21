@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.robot.media.common.video.IntercomStatus;
 import com.robot.media.common.video.VideoChannel;
 import com.robot.media.common.video.VideoQuality;
+import com.robot.media.common.video.VideoPublisherMode;
 import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.media.common.video.VideoSourceType;
 import com.robot.mediaserver.config.MediaProperties;
@@ -184,6 +185,20 @@ class VideoSessionServiceRoomReleaseTest {
         verify(trackService).unpublish(target);
         verify(trackService).unpublish(shared);
         verify(roomService).deleteRoom(target.getRoomName());
+    }
+
+    @Test
+    void closesIngressViewerSessionsWithoutDeletingPersistentRoomOrReturningStopCommand() {
+        VideoSourceRuntime runtime = new VideoSourceRuntime();
+        runtime.setRuntimeId("runtime-1");
+        runtime.setPublisherMode(VideoPublisherMode.LIVEKIT_INGRESS);
+        when(runtimeRepository.findById("runtime-1")).thenReturn(Optional.of(runtime));
+
+        assertThat(service.releaseIdleSession("vs-target")).isEmpty();
+
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.CLOSED);
+        assertThat(shared.getStatus()).isEqualTo(VideoSessionStatus.CLOSED);
+        verify(roomService, never()).deleteRoom(any());
     }
 
     @Test

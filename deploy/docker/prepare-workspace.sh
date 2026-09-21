@@ -81,6 +81,8 @@ template_default() {
     LIVEKIT_API_KEY) printf '%s' devkey ;;
     LIVEKIT_API_SECRET) printf '%s' dev-secret-dev-secret-dev-secret-32 ;;
     LIVEKIT_WEBHOOK_URL) printf '%s' http://host.docker.internal:8088/internal/media/livekit/webhook ;;
+    LIVEKIT_INGRESS_RTMP_BASE_URL) printf '%s' rtmp://127.0.0.1:1935/live ;;
+    LIVEKIT_INGRESS_WS_URL) printf '%s' ws://127.0.0.1:7880 ;;
     LIVEKIT_EGRESS_WS_URL) printf '%s' ws://host.docker.internal:7880 ;;
     LIVEKIT_EGRESS_REDIS_ADDRESS) printf '%s' host.docker.internal:6379 ;;
     LIVEKIT_EGRESS_REDIS_USERNAME) printf '%s' "" ;;
@@ -96,7 +98,7 @@ template_default() {
 
 render_template_file() {
   target_file=$1
-  keys="APP_WORKSPACE_ROOT NGINX_MEDIA_SERVICE_UPSTREAM NGINX_BIGSCREEN_BFF_UPSTREAM NGINX_LIVEKIT_UPSTREAM NGINX_API_GATEWAY_UPSTREAM NGINX_MEDIA_SERVICE_TEST_UPSTREAM NGINX_BIGSCREEN_BFF_TEST_UPSTREAM NGINX_LIVEKIT_TEST_UPSTREAM NGINX_HTTPS_PORT NGINX_ALT_HTTPS_PORT LIVEKIT_HTTP_PORT LIVEKIT_RTC_TCP_PORT LIVEKIT_RTC_PORT_RANGE_START LIVEKIT_RTC_PORT_RANGE_END LIVEKIT_USE_EXTERNAL_IP LIVEKIT_LOG_LEVEL LIVEKIT_REDIS_ADDRESS LIVEKIT_REDIS_USERNAME LIVEKIT_REDIS_PASSWORD LIVEKIT_REDIS_DB LIVEKIT_NODE_IP LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_WEBHOOK_URL LIVEKIT_EGRESS_WS_URL LIVEKIT_EGRESS_REDIS_ADDRESS LIVEKIT_EGRESS_REDIS_USERNAME LIVEKIT_EGRESS_REDIS_PASSWORD LIVEKIT_EGRESS_REDIS_DB MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_BUCKET"
+  keys="APP_WORKSPACE_ROOT NGINX_MEDIA_SERVICE_UPSTREAM NGINX_BIGSCREEN_BFF_UPSTREAM NGINX_LIVEKIT_UPSTREAM NGINX_API_GATEWAY_UPSTREAM NGINX_MEDIA_SERVICE_TEST_UPSTREAM NGINX_BIGSCREEN_BFF_TEST_UPSTREAM NGINX_LIVEKIT_TEST_UPSTREAM NGINX_HTTPS_PORT NGINX_ALT_HTTPS_PORT LIVEKIT_HTTP_PORT LIVEKIT_RTC_TCP_PORT LIVEKIT_RTC_PORT_RANGE_START LIVEKIT_RTC_PORT_RANGE_END LIVEKIT_USE_EXTERNAL_IP LIVEKIT_LOG_LEVEL LIVEKIT_REDIS_ADDRESS LIVEKIT_REDIS_USERNAME LIVEKIT_REDIS_PASSWORD LIVEKIT_REDIS_DB LIVEKIT_NODE_IP LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_WEBHOOK_URL LIVEKIT_INGRESS_RTMP_BASE_URL LIVEKIT_INGRESS_WS_URL LIVEKIT_EGRESS_WS_URL LIVEKIT_EGRESS_REDIS_ADDRESS LIVEKIT_EGRESS_REDIS_USERNAME LIVEKIT_EGRESS_REDIS_PASSWORD LIVEKIT_EGRESS_REDIS_DB MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_BUCKET"
 
   for key in $keys; do
     default_value=$(template_default "$key")
@@ -169,6 +171,7 @@ extract_service "$PACKAGE_DIR/bigscreen-bff-dist.tar.gz" "bigscreen-bff"
 livekit_dir="$APP_WORKSPACE_ROOT/livekit-server"
 egress_dir="$APP_WORKSPACE_ROOT/livekit-egress"
 livekit_file="$APP_WORKSPACE_ROOT/livekit.yaml"
+ingress_file="$APP_WORKSPACE_ROOT/livekit-ingress.yaml"
 egress_file="$APP_WORKSPACE_ROOT/livekit-egress.yaml"
 mkdir -p "$livekit_dir" "$egress_dir"
 
@@ -231,6 +234,8 @@ livekit_api_key=$(env_value LIVEKIT_API_KEY devkey)
 livekit_api_secret=$(env_value LIVEKIT_API_SECRET dev-secret-dev-secret-dev-secret-32)
 livekit_log_level=$(env_value LIVEKIT_LOG_LEVEL info)
 livekit_redis_address=$(env_value LIVEKIT_REDIS_ADDRESS host.docker.internal:6379)
+livekit_ingress_rtmp_base_url=$(env_value LIVEKIT_INGRESS_RTMP_BASE_URL rtmp://127.0.0.1:1935/live)
+livekit_ingress_ws_url=$(env_value LIVEKIT_INGRESS_WS_URL ws://127.0.0.1:7880)
 livekit_port_start=$(env_value LIVEKIT_RTC_PORT_RANGE_START 50000)
 livekit_port_end=$(env_value LIVEKIT_RTC_PORT_RANGE_END 60000)
 livekit_use_external_ip=$(env_value LIVEKIT_USE_EXTERNAL_IP false)
@@ -256,10 +261,37 @@ redis:
   address: $livekit_redis_address
 keys:
   $livekit_api_key: $livekit_api_secret
+ingress:
+  rtmp_base_url: $livekit_ingress_rtmp_base_url
 EOF
   echo "prepared $livekit_file"
 else
   echo "skip existing $livekit_file"
+fi
+
+if install_config_file "$CONFIG_DIR/livekit/livekit-ingress.yaml" "$ingress_file" "livekit ingress"; then
+  :
+elif [ "$INSTALL_MODE" = "overwrite" ] || [ ! -f "$ingress_file" ]; then
+  cat > "$ingress_file" <<EOF
+log_level: $livekit_log_level
+api_key: $livekit_api_key
+api_secret: $livekit_api_secret
+ws_url: $livekit_ingress_ws_url
+health_port: 7888
+prometheus_port: 7889
+rtmp_port: 1935
+whip_port: 18081
+redis:
+  address: $livekit_redis_address
+cpu_cost:
+  rtmp_cpu_cost: 2.0
+  whip_cpu_cost: 2.0
+  whip_bypass_transcoding_cpu_cost: 0.1
+  url_cpu_cost: 2.0
+EOF
+  echo "prepared $ingress_file"
+else
+  echo "skip existing $ingress_file"
 fi
 
 if install_config_file "$CONFIG_DIR/livekit/livekit-egress.yaml" "$egress_file" "livekit egress"; then

@@ -17,6 +17,7 @@
 
 ```text
 livekit/livekit.yaml
+livekit/livekit-ingress.yaml
 livekit/livekit-egress.yaml
 livekit/egress.yaml
 nginx/nginx.conf
@@ -29,6 +30,8 @@ tts/app.py
 说明：
 
 - `livekit/livekit.yaml` 会在服务器安装成 `/home/jszn/mounts/media/livekit.yaml`。
+- `livekit/livekit-ingress.yaml` 会在服务器安装成 `/home/jszn/mounts/media/livekit-ingress.yaml`。
+- Ingress 的 WHIP 监听固定使用宿主机内部端口 `18081`，避免与现有服务的 `8080` 冲突；首期 RTMP 接入不需要对公网开放该端口。
 - `livekit/livekit-egress.yaml` 会在服务器安装成 `/home/jszn/mounts/media/livekit-egress.yaml`。
 - `nginx/nginx.conf` 是唯一 Nginx 配置模板；缺失时打包或安装会直接失败。
 - `nginx/html/dist` 由 `package.sh` 从 `robot-ui/dist` 复制生成，通常不需要手工维护。

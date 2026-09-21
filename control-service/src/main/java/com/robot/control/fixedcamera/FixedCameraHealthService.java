@@ -3,7 +3,9 @@ package com.robot.control.fixedcamera;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.service.ControlVideoCommandService;
+import com.robot.control.client.ControlMediaServiceClient;
 import com.robot.control.ws.MediaWebSocketPublisher;
+import com.robot.media.common.video.FixedCameraIngressResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -17,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +38,7 @@ public class FixedCameraHealthService {
     private final AtomicBoolean pendingGatewayRecovery = new AtomicBoolean();
     private final Set<String> pendingCameraRecoveries = ConcurrentHashMap.newKeySet();
     private volatile long recoveryRetryAfterMillis;
+    private ControlMediaServiceClient mediaServiceClient;
 
     @Value("${control.fixed-camera-health.gateway-timeout-seconds:30}")
     private long gatewayTimeoutSeconds = 30;
@@ -49,6 +53,11 @@ public class FixedCameraHealthService {
         this.objectMapper = objectMapper;
         this.webSocketPublisher = webSocketPublisher;
         this.videoCommandService = videoCommandService;
+    }
+
+    @Autowired
+    void setMediaServiceClient(ControlMediaServiceClient mediaServiceClient) {
+        this.mediaServiceClient = mediaServiceClient;
     }
 
     public void handleGatewayStatus(String topic, byte[] payload) {
@@ -148,10 +157,16 @@ public class FixedCameraHealthService {
     }
 
     public Map<String, Object> authorizedSnapshot(List<Map<String, Object>> authorizedCameras, String defaultGatewayId) {
+        List<Map<String, Object>> source = authorizedCameras == null ? List.of() : authorizedCameras;
+        Map<String, FixedCameraIngressResponse> ingressStatuses = loadIngressStatuses(source);
         List<Map<String, Object>> records = new ArrayList<>();
-        for (Map<String, Object> camera : authorizedCameras == null ? List.<Map<String, Object>>of() : authorizedCameras) {
+        for (Map<String, Object> camera : source) {
             String cameraId = firstString(camera, "cameraId", "id");
             if (cameraId == null) {
+                continue;
+            }
+            if ("RTMP".equalsIgnoreCase(firstString(camera, "protocolType"))) {
+                records.add(rtmpCameraView(cameraId, ingressStatuses.get(cameraId)));
                 continue;
             }
             String gatewayId = firstString(camera, "gatewayId");
@@ -161,6 +176,52 @@ public class FixedCameraHealthService {
             records.add(cameraView(cameraId, gatewayId));
         }
         return Map.of("version", VERSION, "records", records, "serverTime", Instant.now().toString());
+    }
+
+    private Map<String, FixedCameraIngressResponse> loadIngressStatuses(List<Map<String, Object>> cameras) {
+        List<String> cameraIds = cameras.stream()
+                .filter(camera -> "RTMP".equalsIgnoreCase(firstString(camera, "protocolType")))
+                .map(camera -> firstString(camera, "cameraId", "id"))
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (cameraIds.isEmpty() || mediaServiceClient == null) {
+            return Map.of();
+        }
+        Map<String, FixedCameraIngressResponse> result = new LinkedHashMap<>();
+        for (int offset = 0; offset < cameraIds.size(); offset += 500) {
+            List<String> batch = cameraIds.subList(offset, Math.min(offset + 500, cameraIds.size()));
+            try {
+                List<FixedCameraIngressResponse> statuses = mediaServiceClient.fixedCameraIngressStatuses(batch);
+                if (statuses != null) {
+                    statuses.forEach(status -> result.put(status.cameraId(), status));
+                }
+            } catch (RuntimeException exception) {
+                log.warn("查询 RTMP 固定摄像头状态失败，本批次降级为 UNKNOWN，数量={}", batch.size(), exception);
+            }
+        }
+        return result;
+    }
+
+    private Map<String, Object> rtmpCameraView(String cameraId, FixedCameraIngressResponse status) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("cameraId", cameraId);
+        result.put("protocolType", "RTMP");
+        result.put("gatewayId", null);
+        result.put("gatewayHealth", health("UNKNOWN", null, "NOT_APPLICABLE"));
+        result.put("configReady", status != null && status.configured());
+        if (status == null) {
+            result.put("streamHealth", health("UNKNOWN", null, "LIVEKIT_STATUS_STALE"));
+            return result;
+        }
+        String streamStatus = switch (String.valueOf(status.streamStatus()).toUpperCase(Locale.ROOT)) {
+            case "ONLINE" -> "AVAILABLE";
+            case "OFFLINE" -> "UNAVAILABLE";
+            default -> "UNKNOWN";
+        };
+        result.put("streamHealth", health(streamStatus,
+                status.observedAt() == null ? null : status.observedAt().toInstant(), status.reasonCode()));
+        return result;
     }
 
     @Scheduled(fixedDelayString = "${control.fixed-camera-health.sweep-delay-ms:1000}")
@@ -224,6 +285,7 @@ public class FixedCameraHealthService {
         CameraState camera = cameras.get(cameraId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("cameraId", cameraId);
+        result.put("protocolType", "RTSP");
         result.put("gatewayId", gatewayId);
         result.put("gatewayHealth", gateway == null ? health("UNKNOWN", null, "STATUS_MISSING")
                 : health(gateway.status(), gateway.receivedAt(), gateway.reasonCode()));

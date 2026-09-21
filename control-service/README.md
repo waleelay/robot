@@ -102,7 +102,9 @@ src/main/java/com/robot/control/
 
 ### 实时视频与固定摄像头
 
-机器人视频 Topic 使用 `robot/{robotId}/media/video/**`。固定摄像头使用：
+机器人视频 Topic 使用 `robot/{robotId}/media/video/**`。固定摄像头只支持 `visible`，按 Management
+档案中的 `protocolType` 分流：RTSP 继续走 Gateway，RTMP 直接复用 LiveKit Ingress Track，不能发送
+Gateway MQTT。以下 Topic 仅属于 RTSP 固定摄像头：
 
 ```text
 gateway/fixed-camera/{gatewayId}/video/start
@@ -114,7 +116,17 @@ gateway/fixed-camera/{gatewayId}/camera/{cameraId}/status
 gateway/fixed-camera/{gatewayId}/catalog/sync
 ```
 
-固定摄像头仅支持 `visible`。Control 查询 Management 档案，校验 `enabled` 和码流，并在主/子码流缺失时回退到另一条可用码流。首次 start 命令含内部 `rtspUrl`；目录租约模式下，Gateway 在后续命令缺少该字段时从当前有效目录解析。旧的 Gateway 直连 Management 查询能力仍保留，仅在显式配置 `FIXED_CAMERA_CATALOG_MODE=management` 时启用。`rtspUrl` 和 LiveKit Token 都是敏感数据；MQTT 日志只允许输出命令白名单摘要，不得输出完整载荷。
+Control 查询 Management 档案并校验 `enabled`。RTSP 在主/子码流缺失时回退到另一条可用码流，首次
+start 命令含内部 `rtspUrl`；目录租约模式下，Gateway 在后续命令缺少该字段时从当前有效目录解析。
+旧的 Gateway 直连 Management 查询能力仍保留，仅在显式配置
+`FIXED_CAMERA_CATALOG_MODE=management` 时启用。`rtspUrl` 和 LiveKit Token 都是敏感数据；MQTT
+日志只允许输出命令白名单摘要，不得输出完整载荷。
+
+RTMP 播放请求向 Media 传入 `expectedPublisherMode=LIVEKIT_INGRESS` 和 Management 的
+`publisherRevision`，Media 在 Runtime 行锁内复用固定 Room/Participant/Track 创建 VideoSession。
+RTMP 不生成 Publisher Token，不执行 `requestClientStart`，Viewer 离开也不停止摄像头常驻 Ingress。
+Management 协议切换和删除通过 `/internal/control/fixed-cameras/{cameraId}/publisher/**` 收口旧 RTSP
+Publisher；这些端点只接受配置的内部调用方标记，不由 Nginx/API Gateway 对外暴露。
 
 后两个 Topic 分别表示 Gateway 心跳和摄像头 RTSP 健康。Control 校验 Topic 与载荷身份，
 30 秒无心跳转为 `OFFLINE`，120 秒无新 RTSP 状态转为 `UNKNOWN`，并通过
@@ -149,6 +161,7 @@ gateway/fixed-camera/{gatewayId}/catalog/sync
 | `control.mqtt.*` | `MQTT_*`、`FIXED_CAMERA_GATEWAY_ID` | Broker、凭据、clientId、Gateway ID 和开关 |
 | `control.fixed-camera-health.*` | `FIXED_CAMERA_GATEWAY_TIMEOUT_SECONDS`、`FIXED_CAMERA_HEALTH_MAX_AGE_SECONDS` | Gateway 离线与 RTSP 健康过期阈值 |
 | `control.fixed-camera-catalog.*` | `FIXED_CAMERA_CATALOG_MAX_LEASE_SECONDS`、`FIXED_CAMERA_CATALOG_SWEEP_DELAY_MS`、`FIXED_CAMERA_CATALOG_TRUSTED_CALLER` | 目录租约时限、清理周期和内部调用方标记 |
+| `control.fixed-camera-publisher.*` | `FIXED_CAMERA_PUBLISHER_TRUSTED_CALLER`、`FIXED_CAMERA_PUBLISHER_PRESENCE_TIMEOUT_SECONDS`、`FIXED_CAMERA_PUBLISHER_PRESENCE_POLL_MILLIS` | Management 发布模式切换调用方标记及旧 Publisher 退出核验预算 |
 | `control.center-stomp.*` | `CENTER_STOMP_*` | 上游任务/告警事件连接；断线重连采用单一调度，恢复后同时广播任务和告警失效通知 |
 | Spring Boot 结构化日志 | `LOGGING_STRUCTURED_FORMAT_CONSOLE` | 生产默认由 Compose 设置为 `logstash`；HTTP 使用 `X-Request-Id`，STOMP/轨迹分别保留 `eventId`、`commandId` |
 | `control.mileage.*` | `MILEAGE_*` | 异常速度阈值和统计刷新距离阈值 |

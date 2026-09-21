@@ -1065,19 +1065,22 @@ public class PanoramaService {
     private Map<String, Object> fixedCameraDevice(Map<String, Object> source, Map<String, Object> health) {
         String cameraId = firstString(source, "cameraId", "id");
         boolean enabled = booleanValue(source.get("enabled"));
-        String defaultQuality = firstString(source, "subStreamUrl") == null ? "main" : "sub";
-        boolean protocolReady = firstString(source, "protocolType") == null
-                || "RTSP".equalsIgnoreCase(firstString(source, "protocolType"));
-        boolean configReady = protocolReady
-                && (firstString(source, "mainStreamUrl") != null || firstString(source, "subStreamUrl") != null);
+        String protocolType = value(firstString(source, "protocolType"), "RTSP").toUpperCase(Locale.ROOT);
+        boolean rtmp = "RTMP".equals(protocolType);
+        String defaultQuality = rtmp || firstString(source, "subStreamUrl") == null ? "main" : "sub";
+        boolean configReady = rtmp
+                ? booleanValue(health.get("configReady"))
+                : "RTSP".equals(protocolType)
+                        && (firstString(source, "mainStreamUrl") != null
+                                || firstString(source, "subStreamUrl") != null);
         Map<String, Object> gatewayHealth = map(health.get("gatewayHealth"));
         Map<String, Object> streamHealth = map(health.get("streamHealth"));
-        String status = fixedCameraStatus(enabled, configReady, gatewayHealth, streamHealth);
+        String status = fixedCameraStatus(enabled, configReady, gatewayHealth, streamHealth, rtmp);
         return object(
                 "robotId", cameraId,
                 "equipmentId", cameraId,
                 "cameraId", cameraId,
-                "clientId", "fixed-camera-gateway",
+                "clientId", rtmp ? "livekit-ingress" : "fixed-camera-gateway",
                 "name", firstString(source, "cameraName", "name"),
                 "type", "固定摄像头",
                 "typeCode", "FIXED_CAMERA",
@@ -1087,7 +1090,7 @@ public class PanoramaService {
                 "enabled", enabled,
                 "configStatus", configReady ? "READY" : "INVALID",
                 "configReady", configReady,
-                "gatewayId", firstValue(health, "gatewayId"),
+                "gatewayId", rtmp ? null : firstValue(health, "gatewayId"),
                 "gatewayHealth", normalizedHealth(gatewayHealth, "ONLINE", "OFFLINE", "UNKNOWN"),
                 "streamHealth", normalizedHealth(streamHealth, "AVAILABLE", "UNAVAILABLE", "UNKNOWN"),
                 "battery", null,
@@ -1109,7 +1112,7 @@ public class PanoramaService {
                 "coordinateX", number(source.get("coordinateX")),
                 "coordinateY", number(source.get("coordinateY")),
                 "headingYaw", number(source.get("headingYaw")),
-                "protocolType", firstString(source, "protocolType"),
+                "protocolType", protocolType,
                 "defaultQuality", defaultQuality,
                 "playable", enabled && configReady,
                 "showControlCenter", false,
@@ -1120,19 +1123,19 @@ public class PanoramaService {
             boolean enabled,
             boolean configReady,
             Map<String, Object> gatewayHealth,
-            Map<String, Object> streamHealth) {
+            Map<String, Object> streamHealth,
+            boolean gatewayNotApplicable) {
         if (!enabled) {
             return "offline";
         }
         if (!configReady) {
             return "offline";
         }
-        String gateway = firstString(gatewayHealth, "status");
-        if ("OFFLINE".equalsIgnoreCase(gateway)) {
-            return "offline";
-        }
-        if (!"ONLINE".equalsIgnoreCase(gateway)) {
-            return "offline";
+        if (!gatewayNotApplicable) {
+            String gateway = firstString(gatewayHealth, "status");
+            if (!"ONLINE".equalsIgnoreCase(gateway)) {
+                return "offline";
+            }
         }
         String stream = firstString(streamHealth, "status");
         if ("AVAILABLE".equalsIgnoreCase(stream)) {

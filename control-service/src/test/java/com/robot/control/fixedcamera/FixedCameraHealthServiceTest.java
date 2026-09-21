@@ -4,16 +4,43 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.control.service.ControlVideoCommandService;
+import com.robot.control.client.ControlMediaServiceClient;
 import com.robot.control.ws.MediaWebSocketPublisher;
+import com.robot.media.common.video.FixedCameraIngressResponse;
+import com.robot.media.common.video.VideoPublisherMode;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class FixedCameraHealthServiceTest {
+
+    @Test
+    void usesMediaStatusForRtmpWithoutGatewayHealth() {
+        ControlMediaServiceClient mediaClient = mock(ControlMediaServiceClient.class);
+        FixedCameraHealthService service = new FixedCameraHealthService(
+                new ObjectMapper(), mock(MediaWebSocketPublisher.class), mock(ControlVideoCommandService.class));
+        service.setMediaServiceClient(mediaClient);
+        when(mediaClient.fixedCameraIngressStatuses(List.of("camera-rtmp"))).thenReturn(List.of(
+                new FixedCameraIngressResponse(
+                        "camera-rtmp", "ingress-1", VideoPublisherMode.LIVEKIT_INGRESS,
+                        3, 5, true, "media.fixed.camera-rtmp.visible.main", "fixed-camera:camera-rtmp",
+                        "ONLINE", null, OffsetDateTime.now(), false, null, null)));
+
+        Map<String, Object> snapshot = service.authorizedSnapshot(
+                List.of(Map.of("cameraId", "camera-rtmp", "protocolType", "RTMP")), "gateway-001");
+
+        Map<?, ?> record = (Map<?, ?>) ((List<?>) snapshot.get("records")).get(0);
+        assertThat(record.get("gatewayId")).isNull();
+        assertThat(record.get("configReady")).isEqualTo(true);
+        assertThat(((Map<?, ?>) record.get("gatewayHealth")).get("reasonCode")).isEqualTo("NOT_APPLICABLE");
+        assertThat(((Map<?, ?>) record.get("streamHealth")).get("status")).isEqualTo("AVAILABLE");
+    }
 
     @Test
     void combinesAuthorizedCameraWithGatewayAndStreamHealth() {

@@ -45,4 +45,16 @@ class LiveKitRoomServiceTest {
         assertThat(LiveKitRoomService.resolveVideoTrack(
                 response, "robot:robot-001:camera01", null)).isEmpty();
     }
+
+    @Test
+    void distinguishesPublisherWithoutVideoTrackFromMissingParticipant() {
+        Map<String, Object> response = Map.of("participants", List.of(
+                Map.of("identity", "fixed-camera:camera-001", "tracks", List.of(
+                        Map.of("sid", "TR_audio", "type", "AUDIO")))));
+
+        assertThat(LiveKitRoomService.publisherPresence(response, "fixed-camera:camera-001"))
+                .isEqualTo(new LiveKitRoomService.PublisherPresence(true, false));
+        assertThat(LiveKitRoomService.publisherPresence(response, "fixed-camera:other"))
+                .isEqualTo(new LiveKitRoomService.PublisherPresence(false, false));
+    }
 }

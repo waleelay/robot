@@ -11,15 +11,20 @@ import com.robot.mediaserver.video.dto.VideoSessionResponses;
 import com.robot.media.common.file.FileListItemResponse;
 import com.robot.mediaserver.file.service.FileService;
 import com.robot.media.common.video.CreateVideoSessionRequest;
+import com.robot.media.common.video.FixedCameraPublisherModeResponse;
+import com.robot.media.common.video.FixedCameraPublisherPresenceResponse;
+import com.robot.media.common.video.FixedCameraPublisherStopCommand;
 import com.robot.media.common.video.IntercomResponse;
 import com.robot.media.common.video.SwitchChannelRequest;
 import com.robot.media.common.video.VideoChannel;
 import com.robot.media.common.video.VideoQuality;
+import com.robot.media.common.video.VideoPublisherMode;
 import com.robot.media.common.video.VideoSessionResponse;
 import com.robot.media.common.video.ViewerTokenResponse;
 import com.robot.media.common.video.VideoStartCommand;
 import com.robot.media.common.video.IntercomStartCommand;
 import com.robot.mediaserver.video.model.MediaSessionViewer;
+import com.robot.mediaserver.video.model.FixedCameraStreamStatus;
 import com.robot.mediaserver.video.model.VideoSourceRuntime;
 import com.robot.media.common.video.IntercomStatus;
 import com.robot.mediaserver.video.model.VideoSession;
@@ -202,13 +207,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoSessionResponse create(CreateVideoSessionRequest request, CurrentUser user) {
-        VideoSourceRuntime runtime = lockSourceRuntime(
-                request.getSourceType(),
-                request.getSourceId(),
-                request.getDeviceId(),
-                request.getChannel(),
-                request.getQuality(),
-                roomName(request));
+        VideoSourceRuntime runtime = lockSourceRuntime(request, request.getChannel(), request.getQuality(), roomName(request));
         if (request.isReuse()) {
             var existing = repository.findFirstByRuntimeIdAndStatusInOrderByCreatedAtDesc(
                     runtime.getRuntimeId(), REUSABLE_STATUSES);
@@ -227,12 +226,13 @@ public class VideoSessionService {
                 session.setRoomName(runtime.getRoomName());
                 addViewer(session, user);
                 session.setIdleSince(null);
-                if (session.getStatus() == VideoSessionStatus.INTERRUPTED
-                        || (!hasPublishedTrack(session) && !startRequestInFlight(session))) {
+                boolean ingressTrackAttached = attachIngressRuntimeTrack(session, runtime);
+                if (!ingressTrackAttached && (session.getStatus() == VideoSessionStatus.INTERRUPTED
+                        || (!hasPublishedTrack(session) && !startRequestInFlight(session)))) {
                     session.setStatus(VideoSessionStatus.INIT);
                     session.setTrackSid(null);
                     session.setTrackName(null);
-                } else if (session.getStatus() == VideoSessionStatus.IDLE_WAIT) {
+                } else if (!ingressTrackAttached && session.getStatus() == VideoSessionStatus.IDLE_WAIT) {
                     session.setStatus(VideoSessionStatus.STREAMING);
                 }
                 session.setViewerCount(activeViewerCount(session.getSessionId()));
@@ -240,7 +240,12 @@ public class VideoSessionService {
                 repository.save(session);
                 TokenResult viewerToken = createBrowserToken(session, user);
                 emit("video.session.reused", session);
-                return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), viewerToken.token());
+                return VideoSessionResponses.from(
+                        session,
+                        properties.getLivekit().getUrl(),
+                        viewerToken.token(),
+                        runtime.getPublisherMode(),
+                        runtime.getPublisherRevision());
             }
         }
 
@@ -266,9 +271,15 @@ public class VideoSessionService {
         session.setViewerCount(activeViewerCount(session.getSessionId()));
         repository.save(session);
         emit("video.session.created", session);
+        attachIngressRuntimeTrack(session, runtime);
 
         TokenResult viewerToken = createBrowserToken(session, user);
-        return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), viewerToken.token());
+        return VideoSessionResponses.from(
+                session,
+                properties.getLivekit().getUrl(),
+                viewerToken.token(),
+                runtime.getPublisherMode(),
+                runtime.getPublisherRevision());
     }
 
     private boolean hasPublishedTrack(VideoSession session) {
@@ -305,13 +316,7 @@ public class VideoSessionService {
      */
     @Transactional
     public IntercomResponse createForIntercom(CreateVideoSessionRequest request, CurrentUser user) {
-        VideoSourceRuntime runtime = lockSourceRuntime(
-                request.getSourceType(),
-                request.getSourceId(),
-                request.getDeviceId(),
-                request.getChannel(),
-                request.getQuality(),
-                roomName(request));
+        VideoSourceRuntime runtime = lockSourceRuntime(request, request.getChannel(), request.getQuality(), roomName(request));
         Optional<VideoSession> existing = repository.findFirstByRuntimeIdAndStatusInOrderByCreatedAtDesc(
                 runtime.getRuntimeId(), REUSABLE_STATUSES);
         if (existing.isEmpty()) {
@@ -853,7 +858,7 @@ public class VideoSessionService {
                     String key = session.getRobotId() + ":" + session.getDeviceId() + ":" + session.getChannel() + ":" + session.getQuality();
                     if (restartedKeys.add(key)) {
                         return requestClientStart(
-                                requireSessionForUpdate(session.getSessionId()),
+                                lockSessionRuntime(session.getSessionId()),
                                 "video.client.online_restart",
                                 false);
                     }
@@ -885,8 +890,9 @@ public class VideoSessionService {
                 .filter(session -> sourceId == null || sourceId.isBlank()
                         || Objects.equals(sourceId, session.getSourceId()))
                 .map(session -> {
-                    VideoSession locked = requireSessionForUpdate(session.getSessionId());
+                    VideoSession locked = lockSessionRuntime(session.getSessionId());
                     if (locked.getSourceType() != VideoSourceType.FIXED_CAMERA
+                            || publisherMode(locked) == VideoPublisherMode.LIVEKIT_INGRESS
                             || (sourceId != null && !sourceId.isBlank()
                                     && !Objects.equals(sourceId, locked.getSourceId()))
                             || !hasFixedCameraRecoveryOwner(locked)
@@ -978,7 +984,7 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoStartCommand requestClientStart(String sessionId, String event) {
-        return requestClientStart(requireSessionForUpdate(sessionId), event, true);
+        return requestClientStart(lockSessionRuntime(sessionId), event, true);
     }
 
     /**
@@ -989,10 +995,13 @@ public class VideoSessionService {
      */
     @Transactional
     public VideoStartCommand createStartCommand(String sessionId) {
-        return createStartCommand(requireSession(sessionId));
+        VideoSession session = lockSessionRuntime(sessionId);
+        requireClientPublisherMode(session);
+        return createStartCommand(session);
     }
 
     private VideoStartCommand requestClientStart(VideoSession session, String event, boolean includeTimeout) {
+        requireClientPublisherMode(session);
         if (session.getViewerCount() <= 0
                 && !(session.getSourceType() == VideoSourceType.FIXED_CAMERA
                         && fileService.hasActiveLiveRecording(session.getSessionId()))) {
@@ -1173,6 +1182,9 @@ public class VideoSessionService {
         roomSessions.stream()
                 .filter(candidate -> candidate.getStatus() != VideoSessionStatus.CLOSED)
                 .forEach(this::closeSessionRecord);
+        if (publisherMode(session) == VideoPublisherMode.LIVEKIT_INGRESS) {
+            return Map.of();
+        }
         Map<String, Object> stopPayload = Map.of(
                 "robotId", session.getRobotId(),
                 "sourceType", session.getSourceType().name(),
@@ -1218,6 +1230,7 @@ public class VideoSessionService {
         // viewer 心跳会刷新 updatedAt，不能用它衡量断流已持续多久；lastStatusAt 只由客户端状态上报刷新。
         Set<String> runtimeKeys = new HashSet<>();
         return repository.findByStatusAndLastStatusAtBefore(VideoSessionStatus.INTERRUPTED, interruptedBefore).stream()
+                .filter(session -> publisherMode(session) != VideoPublisherMode.LIVEKIT_INGRESS)
                 .filter(session -> session.getViewerCount() > 0
                         || holdsRoomForIntercom(session)
                         || fileService.hasActiveLiveRecording(session.getSessionId()))
@@ -1237,14 +1250,36 @@ public class VideoSessionService {
                 + ":" + session.getChannel() + ":" + session.getQuality();
     }
 
+    private VideoPublisherMode publisherMode(VideoSession session) {
+        if (session.getRuntimeId() == null || session.getRuntimeId().isBlank()) {
+            return session.getSourceType() == VideoSourceType.FIXED_CAMERA
+                    ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                    : VideoPublisherMode.DEVICE_CLIENT;
+        }
+        return sourceRuntimeRepository.findById(session.getRuntimeId())
+                .map(VideoSourceRuntime::getPublisherMode)
+                .orElse(session.getSourceType() == VideoSourceType.FIXED_CAMERA
+                        ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                        : VideoPublisherMode.DEVICE_CLIENT);
+    }
+
     /**
      * 周期核对所有等待发布、推流中和中断中的 SourceRuntime，以补偿 Webhook 漏投。
      */
     public void reconcileLiveKitTracks() {
-        repository.findDistinctRuntimeIdsByStatusIn(RECONCILE_STATUSES).forEach(runtimeId -> {
+        Set<String> runtimeIds = new HashSet<>(repository.findDistinctRuntimeIdsByStatusIn(RECONCILE_STATUSES));
+        sourceRuntimeRepository.findByPublisherMode(VideoPublisherMode.LIVEKIT_INGRESS).stream()
+                .map(VideoSourceRuntime::getRuntimeId)
+                .forEach(runtimeIds::add);
+        runtimeIds.forEach(runtimeId -> {
             try {
                 reconcileLiveKitRuntime(runtimeId);
             } catch (RuntimeException exception) {
+                try {
+                    markIngressStatusStale(runtimeId);
+                } catch (RuntimeException staleUpdateFailure) {
+                    exception.addSuppressed(staleUpdateFailure);
+                }
                 log.warn("LiveKit Track 周期对账失败 runtimeId={}", runtimeId, exception);
             }
         });
@@ -1292,6 +1327,12 @@ public class VideoSessionService {
             if (runtimeChanged) {
                 runtime.setLastMediaAt(observedAt);
             }
+            if (runtime.getPublisherMode() == VideoPublisherMode.LIVEKIT_INGRESS) {
+                runtime.setLastStreamStatus(FixedCameraStreamStatus.ONLINE);
+                runtime.setLastReasonCode(null);
+                runtime.setLastVerifiedAt(observedAt);
+                runtimeChanged = true;
+            }
             sessions.stream()
                     .filter(this::acceptPublishedTrack)
                     .forEach(session -> applyPublishedTrack(session, track, observedAt));
@@ -1304,6 +1345,16 @@ public class VideoSessionService {
             runtime.setPublisherParticipantSid(null);
             runtime.setTrackSid(null);
             runtime.setTrackName(null);
+            if (runtime.getPublisherMode() == VideoPublisherMode.LIVEKIT_INGRESS) {
+                runtime.setLastStreamStatus(runtime.getIngressId() == null
+                        ? FixedCameraStreamStatus.UNKNOWN
+                        : FixedCameraStreamStatus.OFFLINE);
+                runtime.setLastReasonCode(runtime.getIngressId() == null
+                        ? "INGRESS_NOT_CONFIGURED"
+                        : ingressMissingTrackReason(runtime.getLastReasonCode()));
+                runtime.setLastVerifiedAt(observedAt);
+                runtimeChanged = true;
+            }
             sessions.stream()
                     .filter(session -> (session.getStatus() == VideoSessionStatus.STREAMING
                             || session.getStatus() == VideoSessionStatus.IDLE_WAIT)
@@ -1314,6 +1365,262 @@ public class VideoSessionService {
             runtime.setUpdatedAt(observedAt);
             sourceRuntimeRepository.save(runtime);
         }
+    }
+
+    private String ingressMissingTrackReason(String currentReason) {
+        return "RTMP_BUFFERING".equals(currentReason) || "RTMP_INGRESS_ERROR".equals(currentReason)
+                ? currentReason
+                : "RTMP_TRACK_MISSING";
+    }
+
+    private void markIngressStatusStale(String runtimeId) {
+        transactionTemplate.executeWithoutResult(status -> {
+            VideoSourceRuntime runtime = sourceRuntimeRepository.findByIdForUpdate(runtimeId).orElse(null);
+            if (runtime == null || runtime.getPublisherMode() != VideoPublisherMode.LIVEKIT_INGRESS) {
+                return;
+            }
+            OffsetDateTime staleBefore = now().minusSeconds(properties.getLivekit().getIngressStatusStaleSeconds());
+            if (runtime.getLastVerifiedAt() == null || runtime.getLastVerifiedAt().isBefore(staleBefore)) {
+                runtime.setLastStreamStatus(FixedCameraStreamStatus.UNKNOWN);
+                runtime.setLastReasonCode("LIVEKIT_STATUS_STALE");
+                runtime.setUpdatedAt(now());
+                sourceRuntimeRepository.save(runtime);
+            }
+        });
+    }
+
+    /**
+     * Ingress 已撤销后停止该固定摄像头的活动录像并关闭所有业务会话。
+     */
+    public void quiesceLiveKitIngress(String cameraId) {
+        VideoSourceRuntime snapshot = sourceRuntimeRepository
+                .findBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQuality(
+                        VideoSourceType.FIXED_CAMERA,
+                        cameraId,
+                        cameraId,
+                        VideoChannel.visible,
+                        VideoQuality.main)
+                .orElseThrow(() -> new IllegalStateException("未找到固定摄像头 Ingress Runtime：" + cameraId));
+        if (snapshot.getPublisherMode() != VideoPublisherMode.LIVEKIT_INGRESS) {
+            throw new IllegalStateException("当前发布模式不允许收口 Ingress 会话：" + snapshot.getPublisherMode());
+        }
+        List<String> sessionIds = transactionTemplate.execute(status -> repository
+                .findByRuntimeIdOrderBySessionIdAsc(snapshot.getRuntimeId()).stream()
+                .filter(session -> session.getStatus() != VideoSessionStatus.CLOSED
+                        || fileService.hasActiveLiveRecording(session.getSessionId()))
+                .map(VideoSession::getSessionId)
+                .toList());
+        if (sessionIds.isEmpty()) {
+            return;
+        }
+        sessionIds.forEach(fileService::stopActiveLiveRecordingForSession);
+
+        transactionTemplate.executeWithoutResult(status -> {
+            VideoSourceRuntime runtime = sourceRuntimeRepository.findByIdForUpdate(snapshot.getRuntimeId())
+                    .orElseThrow(() -> new IllegalStateException("固定摄像头 Ingress Runtime 已消失：" + cameraId));
+            if (runtime.getPublisherMode() != VideoPublisherMode.LIVEKIT_INGRESS) {
+                throw new IllegalStateException("收口期间固定摄像头发布模式已变化：" + runtime.getPublisherMode());
+            }
+            repository.findByRuntimeIdOrderBySessionIdAsc(runtime.getRuntimeId()).forEach(session -> {
+                viewerRepository.closeActiveLeasesBySessionId(session.getSessionId(), now());
+                closeSessionRecord(session);
+            });
+        });
+        liveKitRoomService.deleteRoom(snapshot.getRoomName());
+    }
+
+    /** 原子推进固定摄像头发布 generation，并收口旧模式的活动会话。 */
+    public FixedCameraPublisherModeResponse switchFixedCameraPublisherMode(
+            String cameraId,
+            VideoPublisherMode targetMode,
+            long publisherRevision) {
+        validateFixedCameraLifecycleRequest(cameraId, targetMode, publisherRevision);
+        List<VideoSourceRuntime> existingRuntimes = fixedCameraRuntimes(cameraId);
+        for (VideoSourceRuntime runtime : existingRuntimes) {
+            if (publisherRevision < runtime.getPublisherRevision()) {
+                throw new IllegalStateException("固定摄像头发布版本已过期");
+            }
+            if (runtime.getPublisherMode() != targetMode
+                    && runtime.getPublisherMode() != oppositeFixedCameraMode(targetMode)) {
+                throw new IllegalStateException("固定摄像头发布模式冲突：" + runtime.getPublisherMode());
+            }
+        }
+        ensureFixedCameraRuntime(cameraId, targetMode, publisherRevision);
+        List<VideoSourceRuntime> snapshots = fixedCameraRuntimes(cameraId);
+        boolean modeChangeRequested = snapshots.stream().anyMatch(runtime -> runtime.getPublisherMode() != targetMode);
+        List<String> sessionIds = snapshots.stream()
+                .flatMap(runtime -> repository.findByRuntimeIdOrderBySessionIdAsc(runtime.getRuntimeId()).stream())
+                .map(VideoSession::getSessionId)
+                .distinct()
+                .toList();
+        if (modeChangeRequested) {
+            sessionIds.forEach(fileService::stopActiveLiveRecordingForSession);
+        }
+
+        FixedCameraPublisherModeResponse response = transactionTemplate.execute(status -> {
+            List<VideoSourceRuntime> runtimes = fixedCameraRuntimes(cameraId).stream()
+                    .map(runtime -> sourceRuntimeRepository.findByIdForUpdate(runtime.getRuntimeId())
+                            .orElseThrow(() -> new IllegalStateException("固定摄像头 Runtime 已消失：" + cameraId)))
+                    .toList();
+            for (VideoSourceRuntime runtime : runtimes) {
+                if (publisherRevision < runtime.getPublisherRevision()) {
+                    throw new IllegalStateException("固定摄像头发布版本已过期");
+                }
+                if (runtime.getPublisherMode() != targetMode
+                        && runtime.getPublisherMode() != oppositeFixedCameraMode(targetMode)) {
+                    throw new IllegalStateException("固定摄像头发布模式冲突：" + runtime.getPublisherMode());
+                }
+            }
+            boolean modeChanged = runtimes.stream().anyMatch(runtime -> runtime.getPublisherMode() != targetMode);
+            runtimes.forEach(runtime -> {
+                runtime.setPublisherMode(targetMode);
+                runtime.setPublisherRevision(publisherRevision);
+                runtime.setUpdatedAt(now());
+                sourceRuntimeRepository.save(runtime);
+                if (modeChanged) {
+                    repository.findByRuntimeIdOrderBySessionIdAsc(runtime.getRuntimeId()).forEach(session -> {
+                        viewerRepository.closeActiveLeasesBySessionId(session.getSessionId(), now());
+                        if (session.getStatus() != VideoSessionStatus.CLOSED) {
+                            closeSessionRecord(session);
+                        }
+                    });
+                }
+            });
+            List<FixedCameraPublisherStopCommand> stops = targetMode == VideoPublisherMode.LIVEKIT_INGRESS
+                    ? latestGatewayStopCommands(cameraId, runtimes)
+                    : List.of();
+            return new FixedCameraPublisherModeResponse(cameraId, targetMode, publisherRevision, stops);
+        });
+        if (response == null) {
+            throw new IllegalStateException("固定摄像头发布模式切换事务未完成");
+        }
+        if (modeChangeRequested && response.publisherMode() == VideoPublisherMode.LIVEKIT_INGRESS) {
+            snapshots.stream().map(VideoSourceRuntime::getRoomName).distinct().forEach(liveKitRoomService::deleteRoom);
+        }
+        return response;
+    }
+
+    /** 删除 RTSP 摄像头前关闭会话，但保持 Gateway 发布模式不变。 */
+    public FixedCameraPublisherModeResponse quiesceFixedCameraPublisher(String cameraId, long publisherRevision) {
+        validateFixedCameraLifecycleRequest(
+                cameraId, VideoPublisherMode.FIXED_CAMERA_GATEWAY, publisherRevision);
+        List<VideoSourceRuntime> snapshots = fixedCameraRuntimes(cameraId);
+        if (snapshots.isEmpty()) {
+            return new FixedCameraPublisherModeResponse(
+                    cameraId, VideoPublisherMode.FIXED_CAMERA_GATEWAY, publisherRevision, List.of());
+        }
+        snapshots.stream()
+                .flatMap(runtime -> repository.findByRuntimeIdOrderBySessionIdAsc(runtime.getRuntimeId()).stream())
+                .map(VideoSession::getSessionId)
+                .distinct()
+                .forEach(fileService::stopActiveLiveRecordingForSession);
+        FixedCameraPublisherModeResponse response = transactionTemplate.execute(status -> {
+            List<VideoSourceRuntime> runtimes = fixedCameraRuntimes(cameraId).stream()
+                    .map(runtime -> sourceRuntimeRepository.findByIdForUpdate(runtime.getRuntimeId())
+                            .orElseThrow(() -> new IllegalStateException("固定摄像头 Runtime 已消失：" + cameraId)))
+                    .toList();
+            for (VideoSourceRuntime runtime : runtimes) {
+                if (runtime.getPublisherMode() != VideoPublisherMode.FIXED_CAMERA_GATEWAY) {
+                    throw new IllegalStateException("当前发布模式不允许收口 Gateway：" + runtime.getPublisherMode());
+                }
+                if (publisherRevision < runtime.getPublisherRevision()) {
+                    throw new IllegalStateException("固定摄像头发布版本已过期");
+                }
+                runtime.setPublisherRevision(publisherRevision);
+                runtime.setUpdatedAt(now());
+                sourceRuntimeRepository.save(runtime);
+                repository.findByRuntimeIdOrderBySessionIdAsc(runtime.getRuntimeId()).forEach(session -> {
+                    viewerRepository.closeActiveLeasesBySessionId(session.getSessionId(), now());
+                    if (session.getStatus() != VideoSessionStatus.CLOSED) {
+                        closeSessionRecord(session);
+                    }
+                });
+            }
+            return new FixedCameraPublisherModeResponse(
+                    cameraId,
+                    VideoPublisherMode.FIXED_CAMERA_GATEWAY,
+                    publisherRevision,
+                    latestGatewayStopCommands(cameraId, runtimes));
+        });
+        snapshots.stream().map(VideoSourceRuntime::getRoomName).distinct().forEach(liveKitRoomService::deleteRoom);
+        return response;
+    }
+
+    /** 通过 LiveKit Room API 二次确认固定发布身份是否仍在任一房间。 */
+    public FixedCameraPublisherPresenceResponse fixedCameraPublisherPresence(String cameraId) {
+        boolean participantPresent = false;
+        boolean trackPresent = false;
+        for (VideoSourceRuntime runtime : fixedCameraRuntimes(cameraId)) {
+            LiveKitRoomService.PublisherPresence presence = liveKitRoomService.resolvePublisherPresence(
+                    runtime.getRoomName(), "fixed-camera:" + cameraId);
+            participantPresent |= presence.participantPresent();
+            trackPresent |= presence.trackPresent();
+        }
+        return new FixedCameraPublisherPresenceResponse(cameraId, participantPresent, trackPresent, now());
+    }
+
+    private void ensureFixedCameraRuntime(
+            String cameraId,
+            VideoPublisherMode targetMode,
+            long publisherRevision) {
+        String runtimeKey = VideoSourceType.FIXED_CAMERA + ":" + cameraId + ":" + cameraId
+                + ":" + VideoChannel.visible + ":" + VideoQuality.main;
+        String runtimeId = "runtime_" + UUID.nameUUIDFromBytes(runtimeKey.getBytes(StandardCharsets.UTF_8))
+                .toString().replace("-", "");
+        transactionTemplate.executeWithoutResult(status -> sourceRuntimeRepository.insertIfAbsent(
+                runtimeId,
+                VideoSourceType.FIXED_CAMERA.name(),
+                cameraId,
+                cameraId,
+                VideoChannel.visible.name(),
+                VideoQuality.main.name(),
+                "media.fixed." + cameraId + ".visible.main",
+                targetMode.name(),
+                publisherRevision,
+                now()));
+    }
+
+    private List<VideoSourceRuntime> fixedCameraRuntimes(String cameraId) {
+        return sourceRuntimeRepository.findBySourceTypeAndSourceIdOrderByRuntimeIdAsc(
+                VideoSourceType.FIXED_CAMERA, cameraId);
+    }
+
+    private List<FixedCameraPublisherStopCommand> latestGatewayStopCommands(
+            String cameraId,
+            List<VideoSourceRuntime> runtimes) {
+        List<FixedCameraPublisherStopCommand> result = new ArrayList<>();
+        for (VideoSourceRuntime runtime : runtimes) {
+            List<VideoSession> sessions = repository.findByRuntimeIdOrderBySessionIdAsc(runtime.getRuntimeId());
+            if (sessions.isEmpty()) {
+                continue;
+            }
+            VideoSession latest = sessions.get(sessions.size() - 1);
+            result.add(new FixedCameraPublisherStopCommand(
+                    "cmd_" + compactUuid(), latest.getSessionId(), cameraId, runtime.getRoomName()));
+        }
+        return List.copyOf(result);
+    }
+
+    private void validateFixedCameraLifecycleRequest(
+            String cameraId,
+            VideoPublisherMode targetMode,
+            long publisherRevision) {
+        if (cameraId == null || cameraId.isBlank()) {
+            throw new IllegalArgumentException("固定摄像头 ID 不能为空");
+        }
+        if (targetMode != VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                && targetMode != VideoPublisherMode.LIVEKIT_INGRESS) {
+            throw new IllegalArgumentException("固定摄像头目标发布模式不合法");
+        }
+        if (publisherRevision < 0) {
+            throw new IllegalArgumentException("固定摄像头发布版本不能小于 0");
+        }
+    }
+
+    private VideoPublisherMode oppositeFixedCameraMode(VideoPublisherMode mode) {
+        return mode == VideoPublisherMode.LIVEKIT_INGRESS
+                ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                : VideoPublisherMode.LIVEKIT_INGRESS;
     }
 
     private void applyPublishedTrack(
@@ -1349,6 +1656,28 @@ public class VideoSessionService {
             session.setUpdatedAt(observedAt);
         }
         repository.save(session);
+    }
+
+    private boolean attachIngressRuntimeTrack(VideoSession session, VideoSourceRuntime runtime) {
+        if (runtime.getPublisherMode() != VideoPublisherMode.LIVEKIT_INGRESS
+                || runtime.getLastStreamStatus() != FixedCameraStreamStatus.ONLINE
+                || runtime.getTrackSid() == null
+                || runtime.getTrackSid().isBlank()) {
+            return false;
+        }
+        String publisherIdentity = runtime.getPublisherIdentity();
+        if (publisherIdentity == null || publisherIdentity.isBlank()) {
+            publisherIdentity = "fixed-camera:" + runtime.getSourceId();
+        }
+        applyPublishedTrack(
+                session,
+                new ActiveVideoTrack(
+                        publisherIdentity,
+                        runtime.getPublisherParticipantSid(),
+                        runtime.getTrackSid(),
+                        runtime.getTrackName()),
+                now());
+        return true;
     }
 
     private boolean acceptPublishedTrack(VideoSession session) {
@@ -1674,21 +2003,99 @@ public class VideoSessionService {
             VideoChannel channel,
             VideoQuality quality,
             String roomName) {
+        VideoPublisherMode publisherMode = sourceType == VideoSourceType.FIXED_CAMERA
+                ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                : VideoPublisherMode.DEVICE_CLIENT;
+        return lockSourceRuntime(
+                sourceType, sourceId, deviceId, channel, quality, roomName, publisherMode, 0, true);
+    }
+
+    private VideoSourceRuntime lockSourceRuntime(
+            CreateVideoSessionRequest request,
+            VideoChannel channel,
+            VideoQuality quality,
+            String roomName) {
+        if (request.getSourceType() != VideoSourceType.FIXED_CAMERA) {
+            return lockSourceRuntime(
+                    request.getSourceType(),
+                    request.getSourceId(),
+                    request.getDeviceId(),
+                    channel,
+                    quality,
+                    roomName,
+                    VideoPublisherMode.DEVICE_CLIENT,
+                    0,
+                    true);
+        }
+        if (request.getExpectedPublisherMode() == null || request.getExpectedPublisherRevision() == null) {
+            throw new IllegalStateException("固定摄像头缺少预期发布模式或发布版本");
+        }
+        if (request.getExpectedPublisherRevision() < 0) {
+            throw new IllegalStateException("固定摄像头发布版本不能小于 0");
+        }
+        return lockSourceRuntime(
+                request.getSourceType(),
+                request.getSourceId(),
+                request.getDeviceId(),
+                channel,
+                quality,
+                roomName,
+                request.getExpectedPublisherMode(),
+                request.getExpectedPublisherRevision(),
+                request.getExpectedPublisherMode() == VideoPublisherMode.FIXED_CAMERA_GATEWAY);
+    }
+
+    private VideoSourceRuntime lockSourceRuntime(
+            VideoSourceType sourceType,
+            String sourceId,
+            String deviceId,
+            VideoChannel channel,
+            VideoQuality quality,
+            String roomName,
+            VideoPublisherMode publisherMode,
+            long publisherRevision,
+            boolean createIfAbsent) {
+        if (sourceType == VideoSourceType.FIXED_CAMERA
+                && publisherMode != VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                && publisherMode != VideoPublisherMode.LIVEKIT_INGRESS) {
+            throw new IllegalStateException("固定摄像头发布模式不合法：" + publisherMode);
+        }
         String runtimeKey = sourceType + ":" + sourceId + ":" + deviceId + ":" + channel + ":" + quality;
         String runtimeId = "runtime_" + UUID.nameUUIDFromBytes(runtimeKey.getBytes(StandardCharsets.UTF_8))
                 .toString().replace("-", "");
-        OffsetDateTime timestamp = now();
-        sourceRuntimeRepository.insertIfAbsent(
-                runtimeId,
-                sourceType.name(),
-                sourceId,
-                deviceId,
-                channel.name(),
-                quality.name(),
-                roomName,
-                timestamp);
-        return sourceRuntimeRepository.findBySourceForUpdate(sourceType, sourceId, deviceId, channel, quality)
+        if (createIfAbsent) {
+            sourceRuntimeRepository.insertIfAbsent(
+                    runtimeId,
+                    sourceType.name(),
+                    sourceId,
+                    deviceId,
+                    channel.name(),
+                    quality.name(),
+                    roomName,
+                    publisherMode.name(),
+                    publisherRevision,
+                    now());
+        }
+        VideoSourceRuntime runtime = sourceRuntimeRepository.findBySourceForUpdate(
+                        sourceType, sourceId, deviceId, channel, quality)
                 .orElseThrow(() -> new IllegalStateException("媒体源运行态创建失败：" + runtimeKey));
+        if (runtime.getPublisherMode() != publisherMode
+                || runtime.getPublisherRevision() != publisherRevision) {
+            throw new IllegalStateException("固定摄像头发布模式或发布版本已变化，请刷新后重试");
+        }
+        return runtime;
+    }
+
+    private VideoSourceRuntime requireClientPublisherMode(VideoSession session) {
+        VideoSourceRuntime runtime = sourceRuntimeRepository.findById(session.getRuntimeId())
+                .orElseThrow(() -> new IllegalStateException("未找到媒体源运行态：" + session.getRuntimeId()));
+        VideoPublisherMode expected = session.getSourceType() == VideoSourceType.FIXED_CAMERA
+                ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                : VideoPublisherMode.DEVICE_CLIENT;
+        if (runtime.getPublisherMode() != expected) {
+            throw new IllegalStateException("当前发布模式不允许签发客户端 Publisher Token：" + runtime.getPublisherMode());
+        }
+        return runtime;
     }
 
     private void emit(String event, Object data) {

@@ -36,6 +36,8 @@ public record VideoSessionResponse(
         String robotId,
         VideoSourceType sourceType,
         String sourceId,
+        VideoPublisherMode publisherMode,
+        long publisherRevision,
         String deviceId,
         VideoChannel channel,
         VideoQuality quality,

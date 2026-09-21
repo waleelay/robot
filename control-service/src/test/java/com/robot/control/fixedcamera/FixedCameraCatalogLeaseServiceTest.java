@@ -94,4 +94,25 @@ class FixedCameraCatalogLeaseServiceTest {
         verify(commandService, times(2)).sendFixedCameraCatalog(captor.capture());
         assertThat(captor.getAllValues().get(1).cameras()).isEmpty();
     }
+
+    @Test
+    void defensivelyExcludesDisabledAndRtmpCamerasFromGatewayCatalog() {
+        ControlServiceProperties properties = new ControlServiceProperties();
+        RobotMediaCommandService commandService = mock(RobotMediaCommandService.class);
+        FixedCameraCatalogLeaseService service = new FixedCameraCatalogLeaseService(properties, commandService);
+        Instant now = Instant.now();
+
+        FixedCameraCatalogSnapshot snapshot = service.upsert(new FixedCameraCatalogLeaseRequest(
+                "lease-001", 1L, now.minusSeconds(1), now.plusSeconds(120),
+                List.of(
+                        new FixedCameraCatalogLeaseRequest.CameraRecord(
+                                "rtsp-enabled", true, "RTSP", "rtsp://camera/main", null),
+                        new FixedCameraCatalogLeaseRequest.CameraRecord(
+                                "rtsp-disabled", false, "RTSP", "rtsp://camera/main", null),
+                        new FixedCameraCatalogLeaseRequest.CameraRecord(
+                                "rtmp-enabled", true, "RTMP", null, null))));
+
+        assertThat(snapshot.cameras()).extracting(FixedCameraCatalogSnapshot.CameraRecord::cameraId)
+                .containsExactly("rtsp-enabled");
+    }
 }

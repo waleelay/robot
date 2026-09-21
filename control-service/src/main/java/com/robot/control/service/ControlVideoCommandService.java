@@ -14,6 +14,7 @@ import com.robot.media.common.video.VideoStartCommand;
 import com.robot.media.common.video.IntercomStartCommand;
 import com.robot.media.common.video.IntercomStatus;
 import com.robot.media.common.video.VideoChannel;
+import com.robot.media.common.video.VideoPublisherMode;
 import com.robot.media.common.video.VideoQuality;
 import com.robot.media.common.video.VideoSessionStatus;
 import com.robot.media.common.video.VideoSourceType;
@@ -146,10 +147,14 @@ public class ControlVideoCommandService {
         mediaRequest.setDeviceId(cameraId);
         mediaRequest.setChannel(VideoChannel.visible);
         mediaRequest.setQuality(fixedCameraQuality(startRequest, camera));
+        VideoPublisherMode publisherMode = fixedCameraPublisherMode(camera);
+        mediaRequest.setExpectedPublisherMode(publisherMode);
+        mediaRequest.setExpectedPublisherRevision(fixedCameraPublisherRevision(camera));
         mediaRequest.setReuse(startRequest.isReuse());
         mediaRequest.setClientRequestId(startRequest.getClientRequestId());
         VideoSessionResponse response = mediaServiceClient.createVideoSession(mediaRequest, user);
-        if (response.status() == VideoSessionStatus.INIT) {
+        if (publisherMode == VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                && response.status() == VideoSessionStatus.INIT) {
             VideoStartCommand command = mediaServiceClient.requestClientStart(response.sessionId(), "video.fixed_camera.requested");
             command = withFixedCameraRtsp(command, camera, mediaRequest.getQuality());
             sendStart(command);
@@ -496,9 +501,13 @@ public class ControlVideoCommandService {
         if (!Boolean.TRUE.equals(camera.get("enabled"))) {
             throw new IllegalStateException("固定摄像头未启用：" + cameraId);
         }
-        Object main = camera.get("mainStreamUrl");
-        Object sub = camera.get("subStreamUrl");
-        if ((main == null || String.valueOf(main).isBlank()) && (sub == null || String.valueOf(sub).isBlank())) {
+        String transitionState = firstString(camera, "mediaTransitionState");
+        if (transitionState != null && !"STABLE".equalsIgnoreCase(transitionState)) {
+            throw new IllegalStateException("固定摄像头媒体配置正在切换：" + cameraId);
+        }
+        if (fixedCameraPublisherMode(camera) == VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                && !hasText(camera.get("mainStreamUrl"))
+                && !hasText(camera.get("subStreamUrl"))) {
             throw new IllegalStateException("固定摄像头未配置码流：" + cameraId);
         }
         return new LinkedHashMap<>(camera);
@@ -521,6 +530,9 @@ public class ControlVideoCommandService {
     }
 
     private VideoQuality fixedCameraQuality(ControlStartVideoRequest request, Map<String, Object> camera) {
+        if (fixedCameraPublisherMode(camera) == VideoPublisherMode.LIVEKIT_INGRESS) {
+            return VideoQuality.main;
+        }
         VideoQuality requested = request == null ? null : request.getQuality();
         boolean hasMain = hasText(camera.get("mainStreamUrl"));
         boolean hasSub = hasText(camera.get("subStreamUrl"));
@@ -531,6 +543,32 @@ public class ControlVideoCommandService {
             return VideoQuality.sub;
         }
         return requested == null ? (hasSub ? VideoQuality.sub : VideoQuality.main) : requested;
+    }
+
+    private VideoPublisherMode fixedCameraPublisherMode(Map<String, Object> camera) {
+        String protocolType = firstString(camera, "protocolType");
+        if (protocolType == null || "RTSP".equalsIgnoreCase(protocolType)) {
+            return VideoPublisherMode.FIXED_CAMERA_GATEWAY;
+        }
+        if ("RTMP".equalsIgnoreCase(protocolType)) {
+            return VideoPublisherMode.LIVEKIT_INGRESS;
+        }
+        throw new IllegalStateException("不支持的固定摄像头协议：" + protocolType);
+    }
+
+    private long fixedCameraPublisherRevision(Map<String, Object> camera) {
+        Object value = camera.get("publisherRevision");
+        if (value == null || String.valueOf(value).isBlank()) {
+            return 0L;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException exception) {
+            throw new IllegalStateException("固定摄像头发布版本无效：" + value, exception);
+        }
     }
 
     private VideoStartCommand withFixedCameraRtsp(

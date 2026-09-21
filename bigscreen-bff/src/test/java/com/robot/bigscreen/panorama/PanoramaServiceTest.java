@@ -1239,6 +1239,34 @@ class PanoramaServiceTest {
     }
 
     @Test
+    void mapsRtmpFixedCameraFromIngressHealthWithoutGatewayDependency() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.fixedCameras()).thenReturn(List.of(Map.of(
+                "cameraId", "camera-rtmp", "cameraName", "RTMP 摄像头", "protocolType", "RTMP",
+                "enabled", true)));
+        when(centerClient.fixedCameraHealth()).thenReturn(Map.of("records", List.of(Map.of(
+                "cameraId", "camera-rtmp",
+                "protocolType", "RTMP",
+                "configReady", true,
+                "gatewayHealth", Map.of("status", "UNKNOWN", "reasonCode", "NOT_APPLICABLE"),
+                "streamHealth", Map.of("status", "AVAILABLE", "observedAt", "2026-08-23T00:00:00Z")))));
+
+        Map<String, Object> camera = maps(
+                new PanoramaService(centerClient, new ObjectMapper()).overview().get("devices")).get(0);
+
+        assertEquals("online", camera.get("status"));
+        assertEquals("RTMP", camera.get("protocolType"));
+        assertFalse(camera.containsKey("clientId"));
+        assertEquals("main", camera.get("defaultQuality"));
+        assertEquals(true, camera.get("configReady"));
+        assertEquals(true, camera.get("playable"));
+        assertNull(camera.get("gatewayId"));
+        assertEquals("UNKNOWN", ((Map<?, ?>) camera.get("gatewayHealth")).get("status"));
+        assertEquals("AVAILABLE", ((Map<?, ?>) camera.get("streamHealth")).get("status"));
+    }
+
+    @Test
     void resolvesRobotTypeNameFromManagementDictionaryAndKeepsFixedCameraDefault() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);

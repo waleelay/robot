@@ -28,6 +28,18 @@ media:
     room-api-enabled: ${LIVEKIT_ROOM_API_ENABLED:true}
     # 是否启用 LiveKit Egress 录制能力。
     egress-enabled: ${LIVEKIT_EGRESS_ENABLED:true}
+    # 是否启用固定摄像头 LiveKit Ingress 管理能力。
+    ingress-enabled: ${LIVEKIT_INGRESS_ENABLED:false}
+    # Ingress 状态超过该时间未核验时视为 UNKNOWN，单位秒。
+    ingress-status-stale-seconds: ${LIVEKIT_INGRESS_STATUS_STALE_SECONDS:15}
+    # 单次 LiveKit Ingress HTTP 调用超时，单位毫秒。
+    ingress-livekit-call-timeout-ms: ${LIVEKIT_INGRESS_CALL_TIMEOUT_MS:3000}
+    # 单次 Ingress 管理操作总预算，单位毫秒。
+    ingress-admin-operation-timeout-ms: ${LIVEKIT_INGRESS_OPERATION_TIMEOUT_MS:5000}
+    # 获取 Ingress 管理并发许可的最长等待时间，单位毫秒。
+    ingress-admin-permit-wait-ms: ${LIVEKIT_INGRESS_PERMIT_WAIT_MS:200}
+    # 单个 Media 实例允许并发执行的 Ingress 管理操作数。
+    ingress-admin-max-concurrency: ${LIVEKIT_INGRESS_MAX_CONCURRENCY:2}
     # Egress HLS 分片时长，单位秒。
     egress-segment-duration-seconds: ${LIVEKIT_EGRESS_SEGMENT_DURATION_SECONDS:6}
     # Egress 写入 S3/MinIO 时使用的区域。
