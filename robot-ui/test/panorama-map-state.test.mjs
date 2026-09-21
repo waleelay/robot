@@ -51,6 +51,8 @@ function compile(path, api = {}) {
 helpers['task-plan-state'] = compile('views/bi/patrol/business/task-plan-state.js')
 helpers['path-direction-arrows'] = compile('views/bi/gis/globalMap/slam/path-direction-arrows.js')
 helpers['trajectory-visual'] = compile('views/bi/gis/globalMap/slam/trajectory-visual.js')
+helpers['temporary-navigation'] = compile('views/bi/gis/globalMap/slam/temporary-navigation.js')
+const globalSlamMap = compile('views/bi/gis/globalMap/slam/GlobalSlamMap.vue')
 
 function deferred() {
   let resolve, reject
@@ -170,6 +172,80 @@ test('真实轨迹箭头间距为 60px，执行中标记起点且结束后标记
   assert.deepEqual(view.sessionTraveledPathLayers[0].endPoint, { x: 130, y: 2 })
   await ctx.dispatch('clearAllTrajectories')
   view.$destroy()
+})
+
+test('临时任务结束后虚线和目标点与轨迹一起保留五分钟', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const data = trajectoryOverview()
+  data.tasks[0] = {
+    ...data.tasks[0],
+    planType: 'TEMPORARY',
+    runtimeOnly: true,
+    targetPoint: { x: 8, y: 9, yaw: 0.2 }
+  }
+  const ctx = setup({ getPatrolPanoramaOverview: async () => data })
+  await ctx.refresh()
+  const view = trajectoryView(ctx)
+  await ctx.dispatch('syncRobot', {
+    event: 'robot.trajectory.changed',
+    data: {
+      robotId: 'robot-' + B,
+      workflowInstanceId: 9001,
+      action: 'RESET',
+      points: [{ timestamp: 1000, x: 0, y: 1 }, { timestamp: 1001, x: 1, y: 2 }],
+      currentPose: { x: 1, y: 2, yaw: 0 }
+    }
+  })
+  await Vue.nextTick()
+
+  const record = ctx.state.trajectoryByRobot['robot-' + B]
+  assert.deepEqual(record.targetPoint, { x: 8, y: 9, yaw: 0.2 })
+  assert.equal(record.temporary, true)
+  assert.deepEqual(view.sessionTraveledPathLayers[0].temporaryTarget, { x: 8, y: 9 })
+  assert.equal(view.sessionTraveledPathLayers[0].remainingPoints, '1,2 8,9')
+
+  await ctx.dispatch('syncRobot', {
+    event: 'robot.trajectory.changed',
+    data: {
+      robotId: 'robot-' + B,
+      workflowInstanceId: 9001,
+      action: 'STOPPED'
+    }
+  })
+  assert.equal(view.sessionTraveledPathLayers[0].stopped, true)
+  assert.equal(view.sessionTraveledPathLayers[0].remainingPoints, '1,2 8,9')
+
+  t.mock.timers.tick(5 * 60 * 1000 - 1)
+  assert.equal(view.sessionTraveledPathLayers.length, 1)
+  t.mock.timers.tick(1)
+  assert.equal(view.sessionTraveledPathLayers.length, 0)
+  view.$destroy()
+})
+
+test('其他页面下发临时任务后清理旧草稿并在提交入口二次拦截', async () => {
+  const activeTask = { workflowInstanceId: 9002, planType: 'TEMPORARY', executionStatus: 'RUNNING' }
+  let cleared = 0
+  const watcherContext = {
+    temporaryNavigationWorkflowInstanceId: null,
+    clearTempTaskOverlay() { cleared++ }
+  }
+  globalSlamMap.watch.activeTemporaryNavigationTask.call(watcherContext, activeTask, null)
+  assert.equal(cleared, 1)
+
+  watcherContext.temporaryNavigationWorkflowInstanceId = 9002
+  globalSlamMap.watch.activeTemporaryNavigationTask.call(watcherContext, activeTask, null)
+  assert.equal(cleared, 1)
+
+  const warnings = []
+  const submitContext = {
+    temporaryNavigationSubmitting: false,
+    activeTemporaryNavigationTask: activeTask,
+    clearTempTaskOverlay() { cleared++ },
+    $message: { warning: message => warnings.push(message) }
+  }
+  await globalSlamMap.methods.addTask.call(submitContext, [1, 2])
+  assert.equal(cleared, 2)
+  assert.deepEqual(warnings, ['已有临时导航任务执行中，暂不能新建临时点'])
 })
 
 test('重连 RESET 与 Overview 任意先后到达均保留基线并继续 APPEND', async () => {

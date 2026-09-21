@@ -121,6 +121,7 @@ import { mapState } from 'vuex';
 import { getDescArr } from '../../../utils';
 import Empty from '../components/Empty.vue';
 import { executionStatusLabel, taskExecutionStatus, taskStatusColorClass } from '../patrol/business/execution-status.js';
+import { isTaskListVisible } from '../patrol/business/task-equipment.js';
 export default {
   name: 'BiIndexLeft',
   components: { Empty },
@@ -139,7 +140,7 @@ export default {
     },
     ...mapState('websocketExtraData', ['taskData', 'deviceTypeStats', 'deviceStats', 'taskOverview', 'robotBaseInfo']),
     tasks() {
-      return getDescArr(this.taskData || {}, 'timestamp')
+      return getDescArr(this.taskData || {}, 'timestamp').filter(isTaskListVisible)
     }
   },
   data() {

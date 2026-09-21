@@ -23,6 +23,11 @@ export function isTaskAssignedToRobot(task, robotId) {
   return collectTaskEquipmentIds(task).includes(String(robotId))
 }
 
+/** Management 尚未开放到计划列表的临时运行态任务，不进入任务卡列表。 */
+export function isTaskListVisible(task) {
+  return task?.runtimeOnly !== true
+}
+
 /** 全局 taskData 中属于该装备的任务（完整对象，随 taskData 更新） */
 export function listTasksForRobot(taskData, robotId, { activeOnly = false, isActive } = {}) {
   if (robotId === undefined || robotId === null || robotId === '') return []

@@ -73,12 +73,23 @@ export default {
         if (!traveledPoints) return null
         const visual = visuals[String(robotId)]
         const stopped = !!record.stopped
+        const targetX = Number(record?.targetPoint?.x ?? record?.targetPoint?.coordinateX)
+        const targetY = Number(record?.targetPoint?.y ?? record?.targetPoint?.coordinateY)
+        const temporaryTarget = record?.temporary && Number.isFinite(targetX) && Number.isFinite(targetY)
+          ? this.mapPointToPixel({ coordinateX: targetX, coordinateY: targetY }, this.map)
+          : null
+        const currentPoint = points[points.length - 1]
         return {
           robotId,
           workflowInstanceId: record.workflowInstanceId,
           traveledPoints,
           startPoint: points[0],
           endPoint: points[points.length - 1],
+          temporaryTarget,
+          // 结束后仍与轨迹共用五分钟保留期；轨迹记录清理时，虚线和目标点自然一起消失。
+          remainingPoints: temporaryTarget && currentPoint
+            ? `${currentPoint.x},${currentPoint.y} ${temporaryTarget.x},${temporaryTarget.y}`
+            : '',
           ...visual,
           color: stopped ? STOPPED_TRAJECTORY_COLOR : visual.color,
           stopped,

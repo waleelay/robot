@@ -197,6 +197,21 @@ class PanoramaCenterClientTest {
     }
 
     @Test
+    void taskPlanDetailReadsTemporaryPlanOutsideThePlanList() {
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/task-workflow-plans/88"))
+                .andRespond(withSuccess(
+                        "{\"code\":\"0\",\"data\":{\"id\":88,\"planType\":\"TEMPORARY\"}}",
+                        MediaType.APPLICATION_JSON));
+
+        Map<String, Object> plan = client.taskWorkflowPlan("88").orElseThrow();
+
+        assertEquals(88, plan.get("id"));
+        assertEquals("TEMPORARY", plan.get("planType"));
+        server.verify();
+    }
+
+    @Test
     void alarmPageReadsOnlyRequestedPageAndKeepsReportedTotal() {
         server.expect(requestTo(
                         "http://management.test/api/v1/management/alarms?pageNum=2&pageSize=20&status=NEW&severity=WARN"))

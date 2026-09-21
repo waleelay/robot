@@ -209,6 +209,7 @@ import { getDescArr } from '../../../../../utils';
 import Empty from '../../../components/Empty.vue';
 import { pickDefaultCamera, isFixedCameraRobot, isRobotMediaReachable } from '../../../js/utils/pick-default-camera';
 import { executionStatusLabel, isDeviceAssociatedTaskStatus, taskExecutionStatus, taskStatusColorClass } from '../../business/execution-status'
+import { isTaskListVisible } from '../../business/task-equipment'
 export default {
   name: 'TaskListTree',
   components: { Empty },
@@ -279,7 +280,7 @@ export default {
       return [...new Set(Object.values(this.activeCameras).map(item => item.robot.robotId))];
     },
     tasks() {
-      return getDescArr(this.taskData || {}, 'timestamp')
+      return getDescArr(this.taskData || {}, 'timestamp').filter(isTaskListVisible)
     },
     taskData1() {
       // 只显示执行中和暂停中的任务；路由自动选中且仍为活跃态时才兜底展示，避免结束后残留

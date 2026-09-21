@@ -251,6 +251,7 @@ import Empty from '../../components/Empty.vue';
 import AlarmSnapshotImage from '@/components/AlarmSnapshotImage.vue'
 import { executionStatusLabel, taskExecutionStatus, taskStatusColorClass } from '../business/execution-status.js';
 import { canStartPlan, hasPlanAction } from '../business/task-plan-state.js';
+import { isTaskListVisible } from '../business/task-equipment.js';
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 export default {
   name: 'BiPatrolPanoramaLeft',
@@ -334,7 +335,7 @@ export default {
       return !id || id === 'gis'
     },
     taskData1() {
-      const all = getDescArr(this.taskData || {}, 'timestamp') || []
+      const all = (getDescArr(this.taskData || {}, 'timestamp') || []).filter(isTaskListVisible)
       if (this.isGisMap) return all
       return all.filter(task => this.isTaskLinkedToMap(task, this.globalMapId))
     },

@@ -214,6 +214,12 @@
                     class="session-path-main"
                     :style="{ stroke: layer.color }"
                   />
+                  <polyline
+                    v-if="layer.remainingPoints"
+                    :points="layer.remainingPoints"
+                    class="session-path-remaining"
+                    :style="{ stroke: layer.color }"
+                  />
                   <g
                     v-if="layer.showArrows"
                     v-for="(arrow, index) in layer.arrows"
@@ -239,8 +245,25 @@
                   <circle r="9" :style="{ fill: layer.color }" />
                   <text>终</text>
                 </g>
+                <g
+                  v-if="layer.temporaryTarget"
+                  class="session-temp-target"
+                  :transform="`translate(${layer.temporaryTarget.x}, ${layer.temporaryTarget.y}) scale(${1 / zoom})`"
+                >
+                  <circle r="8" />
+                  <circle r="3" />
+                </g>
               </g>
               </template>
+              <g
+                v-if="activeTemporaryTargetPixel"
+                class="session-temp-target"
+                pointer-events="none"
+                :transform="`translate(${activeTemporaryTargetPixel.x}, ${activeTemporaryTargetPixel.y}) scale(${1 / zoom})`"
+              >
+                <circle r="8" />
+                <circle r="3" />
+              </g>
               <!-- 装备 -->
               <!-- 图标随地图缩放而变化 -->
               <!-- :transform="`translate(${robot.pixel.x}, ${robot.pixel.y})${showSmall ? '' : ` scale(${1 / zoom})`}`" -->
@@ -553,7 +576,7 @@
             class="location flx-center flex-column"
             ref="pointLocationRef"
           >
-            <img src="./../../../../../assets/images/new-bi/address1.png" alt="位置" class="wp40 hp46" />
+            <img src="./../../../../../assets/images/new-bi/address1.png" alt="位置" class="temp-location-icon" />
             <input
               ref="locationLabelInput"
               v-model="locationLabel"
@@ -652,6 +675,7 @@ import { ROBOT_TYPE_INFO, isRobotDog, isFixedCamera } from '@/constants/robot.js
 import { addTaskByPoint, previewImageBlob } from '@/api/new-bi.js'
 import { ENABLE_LIANTONG_SLAM_MOCK, ENABLE_LIANTONG_TASK_EXECUTION_MOCK, getMapPointIconMeta, isMapToolSpecialPoint, isPointToolRequireCharge } from '../../../js/constants/gisMapPoints.js'
 import { PATH_ARROW_WIDTH, PATH_ARROW_HEIGHT } from './path-direction-arrows.js'
+import { buildTemporaryNavigationTask, isActiveTemporaryNavigationTask } from './temporary-navigation.js'
 
 const ROBOT_BG = require('@/assets/images/new-bi/robot-bg.svg')
 const ROBOT_SELECTED_HALO = require('@/assets/images/new-bi/robot-selected-halo.svg')
@@ -777,10 +801,12 @@ export default {
       measureFinished: false,
       measurePoints: [],
       measureClickTimer: null,
+      temporaryNavigationSubmitting: false,
+      temporaryNavigationWorkflowInstanceId: null,
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds', 'taskPathPoints', 'taskData' /* , 'robotAlarmObj' */]),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds', 'taskPathPoints', 'taskData', 'trajectoryByRobot' /* , 'robotAlarmObj' */]),
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
@@ -837,8 +863,38 @@ export default {
       return this.drawableRobots.filter(item => {
         if (item.status !== 'online') return false
         if (isFixedCamera(item) || item.isFixedCamera) return false
+        if (item.runningTaskId != null || item.customStatusName === '任务中') return false
         return true
       })
+    },
+    activeTemporaryNavigationTask() {
+      return Object.values(this.taskData || {}).find(isActiveTemporaryNavigationTask) || null
+    },
+    activeTemporaryTargetPixel() {
+      const task = this.activeTemporaryNavigationTask
+      const target = task?.targetPoint
+      if (!target || !this.map) return null
+      const targetX = Number(target.x ?? target.coordinateX)
+      const targetY = Number(target.y ?? target.coordinateY)
+      if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) return null
+      const robotId = task?.equipmentList?.[0]?.robotId
+      const robotOnCurrentMap = (this.slamOfRobot?.[String(this.map.id)]?.robots || [])
+        .some(item => String(item.robotId) === String(robotId))
+      if (!robotOnCurrentMap) return null
+      const record = this.trajectoryByRobot?.[String(robotId)]
+      if (record && String(record.workflowInstanceId) === String(task.workflowInstanceId)
+        && record.temporary && record.targetPoint) return null
+      return this.mapPointToPixel({
+        coordinateX: targetX,
+        coordinateY: targetY
+      }, this.map)
+    },
+    temporaryNavigationTrajectory() {
+      if (!this.temporaryNavigationWorkflowInstanceId || !this.robotId) return null
+      const record = this.trajectoryByRobot?.[String(this.robotId)]
+      return record && String(record.workflowInstanceId) === String(this.temporaryNavigationWorkflowInstanceId)
+        ? record
+        : null
     },
     hasPreview() {
       return !!this.map?.previewWidth &&
@@ -1225,7 +1281,10 @@ export default {
       return { left: 0, right: 0, top: 0, bottom: 0 }
     },
     canAddPoint() {
-      return this.enableAddPoint && this.normalRobots?.length
+      return this.enableAddPoint
+        && this.normalRobots?.length
+        && !this.temporaryNavigationSubmitting
+        && !this.activeTemporaryNavigationTask
     }
   },
   watch: {
@@ -1245,6 +1304,43 @@ export default {
       handler() {
         this.schedulePopupPositionUpdate()
       }
+    },
+    temporaryNavigationTrajectory: {
+      deep: true,
+      handler(record, previous) {
+        if (!record) {
+          if (previous && this.temporaryNavigationWorkflowInstanceId) {
+            this.clearTempTaskOverlay()
+            this.temporaryNavigationWorkflowInstanceId = null
+          }
+          return
+        }
+        const pose = record.currentPose
+        if (pose) {
+          const pixel = this.mapPointToPixel({ coordinateX: pose.x, coordinateY: pose.y }, this.map)
+          if (pixel) {
+            this.currentPoint = [parseInt(pixel.x), parseInt(pixel.y)]
+            if (this.startPoint && this.endPoint) this.renderLoaded()
+          }
+        }
+        // 轨迹层已经接管实际轨迹、剩余虚线和目标点，清掉本地画布避免重复绘制和遮挡机器人。
+        if (record.points?.length && (this.locationPoint || this.startPoint || this.endPoint)) {
+          this.clearTempTaskOverlay()
+        }
+      }
+    },
+    activeTemporaryNavigationTask(task, previous) {
+      if (task) {
+        const isCurrentSubmission = this.temporaryNavigationWorkflowInstanceId != null
+          && String(task.workflowInstanceId) === String(this.temporaryNavigationWorkflowInstanceId)
+        // 其他页面下发任务后，本页可能还留着下发前打开的临时点菜单；立即清掉，避免旧入口继续派遣。
+        if (!isCurrentSubmission) this.clearTempTaskOverlay()
+        return
+      }
+      if (!previous || this.temporaryNavigationTrajectory) return
+      if (String(previous.workflowInstanceId) !== String(this.temporaryNavigationWorkflowInstanceId)) return
+      this.clearTempTaskOverlay()
+      this.temporaryNavigationWorkflowInstanceId = null
     },
     collapse() {
       // 侧栏动画结束后按新可见区域重算缩放
@@ -1539,6 +1635,11 @@ export default {
     },
     onCanvasContextMenu(event) {
       if (!this.canAddPoint) return
+      // 已结束任务的轨迹仍由 SVG 层保留五分钟，新草稿使用独立的本地画布状态。
+      if (this.temporaryNavigationTrajectory?.stopped) {
+        this.clearTempTaskOverlay()
+        this.temporaryNavigationWorkflowInstanceId = null
+      }
       this.onCanvasClick(event)
     },
     // first 监控页：固定摄像头不可点；未播放视频的装备不可点
@@ -1587,7 +1688,8 @@ export default {
     shouldKeepTempTaskOverlay() {
       if (this.mockExecBindTaskId && !this.mockExecDone) return true
       if (this.mockExecutionPathLayer?.traveledPoints) return true
-      if (this.sessionTraveledPathLayers && this.sessionTraveledPathLayers.length) return true
+      if (this.temporaryNavigationSubmitting || this.activeTemporaryNavigationTask) return true
+      if (this.temporaryNavigationTrajectory) return true
       return !!(this.lastDrawnPaths && this.startPoint && this.endPoint)
     },
     hideTempTaskDestination() {
@@ -1976,13 +2078,10 @@ export default {
         const path = this.getPaths(startPoint, this.endPoint)
         if (!path) return
       }
-      const isIdle = robot.customStatusName === '空闲中'
       try {
         await this.$primaryConfirm({
           title: '提示',
-          message: isIdle
-            ? '是否【立即派遣】该装备前往该点？'
-            : '当前选择装备正在【任务中】，是否终止任务？进行新任务',
+          message: '是否【立即派遣】该装备前往该点？',
           confirmText: '确定',
           cancelText: '取消',
           onConfirm: async () => {
@@ -1997,6 +2096,12 @@ export default {
       this.showContextMenu = false
     },
     async addTask(startPoint) {
+      if (this.temporaryNavigationSubmitting) return
+      if (this.activeTemporaryNavigationTask) {
+        this.clearTempTaskOverlay()
+        this.$message.warning('已有临时导航任务执行中，暂不能新建临时点')
+        return
+      }
       const pixel = { x: this.endPoint?.[0] || 0, y: this.endPoint?.[1] || 0 }
       const { coordinateX, coordinateY, coordinateZ } = this.pixelToMapPoint(pixel, this.map)
       const data = {
@@ -2014,22 +2119,38 @@ export default {
           throw new Error('MOCK_TEMP_TASK_NO_PATH')
         }
       }
-      let taskId = null
-      if (useMock) {
-        taskId = this.applyMockTemporaryTask(data)
-      } else {
-        const res = await addTaskByPoint(data)
-        console.log('派遣任务结果', res)
-      }
-      this.setStartPoint(startPoint)
-      this.closeContextMenu()
-      this.$message.success('任务派遣成功')
-      if (walkPixels) {
-        this.startMockTaskExecution({
-          robotId: this.robotId,
-          taskId,
-          walkPixels
-        })
+      this.temporaryNavigationSubmitting = true
+      try {
+        let taskId = null
+        if (useMock) {
+          taskId = this.applyMockTemporaryTask(data)
+        } else {
+          const response = await addTaskByPoint(data)
+          const task = buildTemporaryNavigationTask(response, {
+            robotId: this.robotId,
+            mapId: this.map?.id,
+            targetPoint: { x: data.x, y: data.y, yaw: data.yaw }
+          })
+          this.temporaryNavigationWorkflowInstanceId = task.workflowInstanceId
+          this.$store.commit('websocketExtraData/SET_TASK_STATE', task)
+        }
+        this.setStartPoint(startPoint)
+        if (!useMock) this.hideTempTaskDestination()
+        this.closeContextMenu()
+        this.$message.success('任务派遣成功')
+        if (walkPixels) {
+          this.startMockTaskExecution({
+            robotId: this.robotId,
+            taskId,
+            walkPixels
+          })
+        }
+      } catch (error) {
+        const message = error?.response?.data?.message || error?.message || '任务派遣失败，请稍后重试'
+        this.$message.error(message)
+        throw error
+      } finally {
+        this.temporaryNavigationSubmitting = false
       }
     },
     applyMockTemporaryTask({ robotId, x, y, yaw }) {
@@ -2333,13 +2454,8 @@ export default {
     // 有临时点但尚未生成临时路径时，点击空白处隐藏临时点与右键菜单
     clearTempPointIfNoPath() {
       if (!this.locationPoint) return
-      const hasTempPath = !!this.startPoint ||
-        (this.unloadedPath && this.unloadedPath.length > 0) ||
-        (this.loadedPath && this.loadedPath.length > 0)
-      if (hasTempPath) return
-      this.locationPoint = null
-      this.showContextMenu = false
-      this.endPoint = null
+      if (this.temporaryNavigationSubmitting || this.activeTemporaryNavigationTask || this.temporaryNavigationTrajectory) return
+      this.clearTempTaskOverlay()
     },
     handleCanvasBlankClick(event) {
       // 拖拽平移地图后不触发清除
@@ -2807,6 +2923,7 @@ export default {
       }
       .session-path-outline,
       .session-path-main,
+      .session-path-remaining,
       .session-path-arrow {
         fill: none;
         stroke-linecap: round;
@@ -2820,6 +2937,11 @@ export default {
       }
       .session-path-main {
         stroke-width: 5;
+      }
+      .session-path-remaining {
+        stroke-width: 3;
+        stroke-dasharray: 6 5;
+        opacity: 0.85;
       }
       .session-path-arrow {
         stroke: #FFF;
@@ -2838,6 +2960,17 @@ export default {
           text-anchor: middle;
           dominant-baseline: central;
           user-select: none;
+        }
+      }
+      .session-temp-target {
+        circle:first-child {
+          fill: rgba(37, 99, 235, 0.28);
+          stroke: #8EBAFF;
+          stroke-width: 2;
+          vector-effect: non-scaling-stroke;
+        }
+        circle:last-child {
+          fill: #FFF;
         }
       }
       .map-measure-line {
@@ -3105,6 +3238,12 @@ export default {
   position: absolute;
   z-index: 1;
   pointer-events: auto;
+
+  .temp-location-icon {
+    width: 22px;
+    height: 26px;
+    object-fit: contain;
+  }
 
   .location-label-input {
     box-sizing: border-box;

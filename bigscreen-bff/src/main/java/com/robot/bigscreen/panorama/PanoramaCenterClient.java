@@ -190,6 +190,20 @@ public class PanoramaCenterClient {
     }
 
     /**
+     * 按标识读取任务计划详情。临时计划不进入计划分页，运行态补齐时只能通过详情读取其类型、
+     * 目标与角色绑定；调用方必须继续按当前登录身份执行权限校验。
+     */
+    public Optional<Map<String, Object>> taskWorkflowPlan(String taskId) {
+        if (taskId == null || taskId.isBlank()) {
+            return Optional.empty();
+        }
+        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-plans/" + taskId)
+                .build(true)
+                .toUri();
+        return taskDataMap(uri, "TASK_PLAN_UNAVAILABLE", true);
+    }
+
+    /**
      * 查询一个任务工作流计划关联的可用固定摄像头。该接口由 Management 按工作流依赖的路径汇总，
      * 不能用某一个 workflowDefinition 的 pathId 替代，否则会遗漏依赖工作流中的摄像头。
      */

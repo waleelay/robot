@@ -305,6 +305,7 @@ export function addTaskByPoint(data) {
   return request({
     url: BIGSCREEN_BUSINESS_API_PREFIX + '/external/temporary-navigations',
     method: 'post',
-    data
+    data,
+    skipErrorMessage: true
   })
 }

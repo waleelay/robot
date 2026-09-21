@@ -510,6 +510,55 @@ class PanoramaServiceTest {
     }
 
     @Test
+    void taskEventProjectsActiveTemporaryInstanceThroughTheOrdinaryTaskShape() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.activeTaskWorkflowInstances()).thenReturn(List.of(Map.of(
+                "id", 9001L,
+                "workflowPlanId", 88L,
+                "workflowName", "临时导航",
+                "status", "PREPARING",
+                "deviceSummaries", List.of(Map.of(
+                        "serialNumber", "robot-001",
+                        "deviceName", "一号机器人")))));
+        when(centerClient.taskWorkflowPlan("88")).thenReturn(Optional.of(Map.of(
+                "id", 88L,
+                "planType", "TEMPORARY",
+                "planName", "临时导航",
+                "executionStatus", "RUNNING",
+                "activeWorkflowInstanceId", 9001L,
+                "activeWorkflowInstanceStatus", "PREPARING",
+                "targetBindings", List.of(Map.of("x", 1.25, "y", 2.5, "yaw", 0.3)))));
+
+        Map<String, Object> response = new PanoramaService(centerClient, new ObjectMapper()).taskEventSnapshot();
+        Map<String, Object> task = maps(response.get("items")).get(0);
+
+        assertEquals(true, response.get("tasksComplete"));
+        assertEquals(88L, task.get("taskId"));
+        assertEquals(9001L, task.get("workflowInstanceId"));
+        assertEquals("TEMPORARY", task.get("planType"));
+        assertEquals(true, task.get("runtimeOnly"));
+        assertEquals("robot-001", maps(task.get("equipmentList")).get(0).get("robotId"));
+        assertEquals(1.25, map(task.get("targetPoint")).get("x"));
+    }
+
+    @Test
+    void taskEventDoesNotRemoveKnownTasksWhenTemporaryPlanDetailFails() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        stubEmptyOverviewSources(centerClient);
+        when(centerClient.activeTaskWorkflowInstances()).thenReturn(List.of(Map.of(
+                "id", 9001L,
+                "workflowPlanId", 88L,
+                "status", "RUNNING")));
+        when(centerClient.taskWorkflowPlan("88")).thenThrow(new IllegalStateException("unavailable"));
+
+        Map<String, Object> response = new PanoramaService(centerClient, new ObjectMapper()).taskEventSnapshot();
+
+        assertEquals(false, response.get("tasksComplete"));
+        assertEquals(List.of(), response.get("items"));
+    }
+
+    @Test
     void taskEventSnapshotReadsFreshPlansAfterInvalidationAndIsolatesIdentities() {
         PanoramaCenterClient client = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(client);

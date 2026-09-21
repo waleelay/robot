@@ -44,7 +44,8 @@ const TASK_SUMMARY_FIELDS = [
   'taskId', 'workflowInstanceId', 'name', 'executionMode', 'expectedDurationSeconds',
   'executionStatus', 'activeWorkflowInstanceId', 'activeWorkflowInstanceStatus',
   'lastWorkflowInstanceId', 'enabled', 'availableLifecycleActions',
-  'startTime', 'endTime', 'timeRange', 'equipmentList'
+  'startTime', 'endTime', 'timeRange', 'equipmentList',
+  'planType', 'runtimeOnly', 'targetPoint'
 ]
 
 const state = {
@@ -347,6 +348,8 @@ const mutations = {
         workflowInstanceId,
         points,
         currentPose: data.currentPose || incoming[incoming.length - 1] || previous?.currentPose || null,
+        targetPoint: data.targetPoint || previous?.targetPoint || null,
+        temporary: data.temporary === true || previous?.temporary === true,
         stopped: false
       }
     }
@@ -485,9 +488,16 @@ const actions = {
     const oldTimer = trajectoryRetentionTimers.get(key)
     if (oldTimer) clearTimeout(oldTimer)
     trajectoryRetentionTimers.delete(key)
-    const payload = action === 'STOPPED'
-      ? { ...data, normalLocationUpdatedAt: state.robotLocation[key]?.updatedAt }
-      : data
+    const task = listTasksForRobot(state.taskData, robotId).find(item =>
+      String(item?.workflowInstanceId) === String(workflowInstanceId))
+    const payload = {
+      ...data,
+      targetPoint: task?.planType === 'TEMPORARY' ? task.targetPoint : undefined,
+      temporary: task?.planType === 'TEMPORARY',
+      ...(action === 'STOPPED'
+        ? { normalLocationUpdatedAt: state.robotLocation[key]?.updatedAt }
+        : {})
+    }
     commit('APPLY_TRAJECTORY', payload)
     if (action !== 'APPEND') {
       integrationLog('应用事件', { protocol: 'websocket', outcome: '成功', entityType: '轨迹',

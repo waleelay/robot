@@ -768,13 +768,14 @@ public class PanoramaService {
                 quality.unavailable(exception, "TASK_INSTANCES_FORBIDDEN");
                 instances = List.of();
             }
+            List<Map<String, Object>> items = summarizeTasks(plans, instances, true, false, quality);
             boolean complete = !Boolean.TRUE.equals(quality.snapshot().get("degraded"));
             // 实例查询失败不阻断计划列表刷新，也不能用残缺摘要覆盖运行态或删除任务。
             return object(
                     "plans", plans,
                     // 任务事件若只有计划中的数值 deviceId，就不下发 equipmentList 覆盖首屏已解析的
                     // 设备序列号；活动实例的 deviceSummaries 仍会随事件实时更新设备关联。
-                    "items", complete ? summarizeTasks(plans, instances, true, false) : List.of(),
+                    "items", complete ? items : List.of(),
                     "tasksComplete", complete,
                     "convergencePending", hasPreparingPlan(plans));
         } finally {
@@ -1346,7 +1347,7 @@ public class PanoramaService {
                 taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
         List<Map<String, Object>> activeInstances = joinTask(
                 activeInstancesFuture, List.of(), quality, "ACTIVE_TASK_INSTANCES_UNAVAILABLE");
-        return new PanoramaTasks(summarizeTasks(taskPlans, activeInstances, true, true), List.of(),
+        return new PanoramaTasks(summarizeTasks(taskPlans, activeInstances, true, true, quality), List.of(),
                 quality.snapshot(), hasPreparingPlan(taskPlans));
     }
 
@@ -1360,7 +1361,7 @@ public class PanoramaService {
                 taskPlansFuture, List.of(), quality, "TASK_PLANS_UNAVAILABLE");
         List<Map<String, Object>> taskInstances = joinTask(
                 taskInstancesFuture, List.of(), quality, "TASK_INSTANCES_UNAVAILABLE");
-        return new PanoramaTasks(summarizeTasks(taskPlans, taskInstances, false, true), taskInstances,
+        return new PanoramaTasks(summarizeTasks(taskPlans, taskInstances, false, true, quality), taskInstances,
                 quality.snapshot(), hasPreparingPlan(taskPlans));
     }
 
@@ -1368,7 +1369,9 @@ public class PanoramaService {
             List<Map<String, Object>> plans,
             List<Map<String, Object>> instances,
             boolean activeInstancesOnly,
-            boolean includePlanRoleBindings) {
+            boolean includePlanRoleBindings,
+            TaskDataQuality quality) {
+        List<Map<String, Object>> sources = runtimeTaskPlans(plans, instances, quality);
         Map<String, Map<String, Object>> instancesById = instances.stream()
                 .filter(item -> firstString(item, "id", "workflowInstanceId") != null)
                 .collect(Collectors.toMap(
@@ -1383,7 +1386,7 @@ public class PanoramaService {
                                 Function.identity(),
                                 (left, right) -> right))
                 : Map.of();
-        return plans.stream()
+        return sources.stream()
                 .map(plan -> {
                     Map<String, Object> instance = instancesById.get(string(planWorkflowInstanceId(plan)));
                     if (instance == null && activeInstancesOnly) {
@@ -1392,6 +1395,50 @@ public class PanoramaService {
                     return taskSummary(plan, instance, includePlanRoleBindings);
                 })
                 .toList();
+    }
+
+    /**
+     * Management 暂不在计划分页中返回 TEMPORARY 计划。大屏只为活跃且分页未命中的实例补查计划详情，
+     * 并继续输出普通任务摘要；终态实例退出 ACTIVE 集合后会自然触发现有 REMOVE 事件。
+     */
+    private List<Map<String, Object>> runtimeTaskPlans(
+            List<Map<String, Object>> plans,
+            List<Map<String, Object>> instances,
+            TaskDataQuality quality) {
+        List<Map<String, Object>> result = new ArrayList<>(plans);
+        Set<String> listedPlanIds = plans.stream()
+                .map(plan -> firstString(plan, "id", "taskId"))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<String, Map<String, Object>> activeOrphans = new LinkedHashMap<>();
+        for (Map<String, Object> instance : instances) {
+            String planId = firstString(instance, "workflowPlanId");
+            if (planId == null || listedPlanIds.contains(planId) || !activeWorkflowInstance(instance)) continue;
+            activeOrphans.putIfAbsent(planId, instance);
+        }
+        if (activeOrphans.isEmpty()) return result;
+
+        Map<String, CompletableFuture<Map<String, Object>>> detailFutures = new LinkedHashMap<>();
+        activeOrphans.keySet().forEach(planId -> detailFutures.put(planId,
+                async(() -> centerClient.taskWorkflowPlan(planId).orElse(Map.of()))));
+        detailFutures.forEach((planId, future) -> {
+            Map<String, Object> plan = joinTask(future, Map.of(), quality, "TEMPORARY_TASK_PLAN_UNAVAILABLE");
+            if (plan.isEmpty()) {
+                quality.invalidReference("TEMPORARY_TASK_PLAN_UNAVAILABLE", planId);
+                return;
+            }
+            if (!"TEMPORARY".equalsIgnoreCase(firstString(plan, "planType"))) return;
+            Map<String, Object> runtimePlan = new LinkedHashMap<>(plan);
+            runtimePlan.put("runtimeOnly", true);
+            result.add(runtimePlan);
+        });
+        return result;
+    }
+
+    private boolean activeWorkflowInstance(Map<String, Object> instance) {
+        String status = firstString(instance, "status", "executionStatus");
+        if (status == null) return false;
+        return !Set.of("COMPLETED", "FAILED", "TERMINATED").contains(status.toUpperCase(Locale.ROOT));
     }
 
     private Map<String, Object> taskSummary(
@@ -1411,6 +1458,8 @@ public class PanoramaService {
         Map<String, Object> result = object(
                 "taskId", firstValue(source, "id", "taskId"),
                 "workflowInstanceId", workflowInstanceId,
+                "planType", firstValue(source, "planType"),
+                "runtimeOnly", Boolean.TRUE.equals(source.get("runtimeOnly")),
                 "name", firstString(source, "planName", "workflowName", "name"),
                 "executionMode", firstValue(source, "executionMode"),
                 "expectedDurationSeconds", firstValue(source, "expectedDurationSeconds"),
@@ -1423,13 +1472,27 @@ public class PanoramaService {
                 "startTime", startTime,
                 "endTime", endTime,
                 "timeRange", timeRange(startTime, endTime, null),
-                "mapId", firstValue(source, "mapId", "mapID"));
+                "mapId", firstValue(source, "mapId", "mapID"),
+                "targetPoint", taskTargetPoint(source));
         List<Map<String, Object>> equipment = equipmentList(
                 source, safeInstance, Map.of(), List.of(), includePlanRoleBindings);
         if (!equipment.isEmpty() || includePlanRoleBindings) {
             result.put("equipmentList", equipment);
         }
         return result;
+    }
+
+    private Map<String, Object> taskTargetPoint(Map<String, Object> source) {
+        for (Map<String, Object> binding : list(source.get("targetBindings"))) {
+            Object x = firstValue(binding, "x", "coordinateX");
+            Object y = firstValue(binding, "y", "coordinateY");
+            if (x == null || y == null) continue;
+            return object(
+                    "x", number(x),
+                    "y", number(y),
+                    "yaw", number(firstValue(binding, "yaw", "headingYaw")));
+        }
+        return Map.of();
     }
 
     private Map<String, Object> taskItem(

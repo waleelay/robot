@@ -138,6 +138,7 @@ service.interceptors.response.use(res => {
     // 获取错误信息
 
     const msg = errorCode[code] || res.data.msg || res.data.message || errorCode['default']
+    const skipErrorMessage = Boolean(res.config && res.config.skipErrorMessage)
     // 二进制数据则直接返回
     if (res.request.responseType ===  'blob' || res.request.responseType ===  'arraybuffer') {
       showAlert = false
@@ -152,7 +153,8 @@ service.interceptors.response.use(res => {
       login()
       return Promise.reject(markRequestErrorNotified('无效的会话，或者会话已过期，请重新登录。'))
     } else if (code === 500) {
-      if (!showAlert) {
+      const error = new Error(msg)
+      if (!skipErrorMessage && !showAlert) {
         showAlert = true
         // Message({
         //   message: msg,
@@ -161,9 +163,10 @@ service.interceptors.response.use(res => {
         // })
         console.error(500, msg)
       }
-      return Promise.reject(markRequestErrorNotified(new Error(msg)))
+      return Promise.reject(skipErrorMessage ? error : markRequestErrorNotified(error))
     } else if (code === 601) {
-      if (!showAlert) {
+      const error = new Error(msg)
+      if (!skipErrorMessage && !showAlert) {
         showAlert = true
         // Message({
         //   message: msg,
@@ -172,16 +175,17 @@ service.interceptors.response.use(res => {
         // })
         console.error(601, msg)
       }
-      return Promise.reject(markRequestErrorNotified('error'))
+      return Promise.reject(skipErrorMessage ? error : markRequestErrorNotified(error))
     } else if (code !== 200) {
-      if (!showAlert) {
+      const error = new Error(msg)
+      if (!skipErrorMessage && !showAlert) {
         showAlert = true
         Notification.error({
           title: msg,
           onClose: () => { showAlert = false }
         })
       }
-      return Promise.reject(markRequestErrorNotified('error'))
+      return Promise.reject(skipErrorMessage ? error : markRequestErrorNotified(error))
     } else {
       showAlert = false
       return res.data
