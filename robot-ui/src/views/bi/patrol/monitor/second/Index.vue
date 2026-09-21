@@ -44,6 +44,7 @@
             :show-session-trajectory="true"
             :enable-robot-click="false"
             :focus-robot-id="selectedRobotId"
+            :show-robot-selected-corners="false"
           />
           <GlobalGisMap v-else-if="globalMapId === 'gis'" />
           <Empty

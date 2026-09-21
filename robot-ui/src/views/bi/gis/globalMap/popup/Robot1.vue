@@ -74,7 +74,7 @@
             <span>{{ tasksExpanded ? '收起' : `任务列表（${extraTasks.length}）` }}</span>
             <svg-icon icon-class="right" class="ml4 task-expand__icon" :class="{ 'is-expanded': tasksExpanded }" />
           </div>
-          <div v-if="tasksExpanded" class="w100 hp120 common-scroll ovya">
+          <div v-if="tasksExpanded" class="w100 common-scroll ovya" style="max-height: 120px">
             <div v-for="(task, index) in extraTasks" :key="task.taskId ?? index" class="mt10 task flex">
               <div class="item wp190 text-ellipsis" :title="task?.name || ''">
                 <span class="wp60 tar">任务{{ index + 1 }}：</span>

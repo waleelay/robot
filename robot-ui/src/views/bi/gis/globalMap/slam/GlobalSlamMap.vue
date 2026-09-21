@@ -302,7 +302,7 @@
                 />
                 <!-- 选中四角：固定摄像头不展示 -->
                 <g
-                  v-if="isRobotHighlighted(robot.robotId) && !robot.isFixedCamera"
+                  v-if="shouldShowRobotSelectedCorners(robot)"
                   pointer-events="none"
                 >
                   <image
@@ -327,7 +327,7 @@
                 <foreignObject
                   class="robot-name-fo"
                   :x="-robot.nameWidth / 2"
-                  :y="isRobotHighlighted(robot.robotId) ? robot.nameYSelected : robot.nameY"
+                  :y="shouldShowRobotSelectedCorners(robot) ? robot.nameYSelected : robot.nameY"
                   :width="robot.nameWidth"
                   height="20"
                 >
@@ -340,7 +340,7 @@
                   v-if="!showSmall && !robot.isFixedCamera"
                   class="robot-status-fo"
                   :x="robot.statusBgX"
-                  :y="isRobotHighlighted(robot.robotId) ? robot.statusYSelected : robot.statusY"
+                  :y="shouldShowRobotSelectedCorners(robot) ? robot.statusYSelected : robot.statusY"
                   :width="robot.statusBgWidth"
                   height="20"
                 >
@@ -687,6 +687,8 @@ export default {
     showSessionTrajectory: { type: Boolean, default: false },
     // 监控二级：只展示该装备（图标/轨迹）；空则展示当前地图全部装备
     focusRobotId: { type: [String, Number], default: null },
+    // 是否展示装备选中四角
+    showRobotSelectedCorners: { type: Boolean, default: true },
     // 侧栏是否收缩；与 visibleLayout 配合，将地图限制在未遮挡区域
     collapse: { type: Boolean, default: false },
     // 'home' 指挥中心（顶栏+左右侧）| 'panorama' 全景（顶栏+左侧）| '' 不限制
@@ -1528,6 +1530,9 @@ export default {
       // 监控等非指挥中心页：开视频后同步选中地图装备（与 GlobalGisMap.getSelectedStatus 一致）
       if (this.currenRouteName !== 'biIndex' && this.hasActiveVideo(robotId)) return true
       return false
+    },
+    shouldShowRobotSelectedCorners(robot) {
+      return this.showRobotSelectedCorners && this.isRobotHighlighted(robot?.robotId) && !robot?.isFixedCamera
     },
     isMapRobotSelected(robotId) {
       return this.mapSelectedRobotIds.some(id => String(id) === String(robotId))
