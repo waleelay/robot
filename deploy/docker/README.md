@@ -419,6 +419,7 @@ sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/m
 设置 LIVEKIT_NODE_IP=external-ip
 设置 MINIO_ENDPOINT=http://internal-ip:9000
 设置 MINIO_PUBLIC_ENDPOINT=http://external-ip:9000
+设置 MINIO_DOWNLOAD_PUBLIC_ENDPOINT=https://external-ip:4443
 设置 NGINX_TLS_HOST=external-ip
 追加 https://external-ip:4443 到 BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS
 ```

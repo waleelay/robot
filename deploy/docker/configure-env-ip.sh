@@ -64,6 +64,9 @@ if [ ! -f "$ENV_TARGET" ]; then
   echo "created $ENV_TARGET from $ENV_EXAMPLE"
 fi
 
+DEPLOY_HTTPS_PORT=$(sed -n 's/^NGINX_HTTPS_PORT=//p' "$ENV_TARGET" | tail -n 1)
+DEPLOY_HTTPS_PORT="${DEPLOY_HTTPS_PORT:-4443}"
+
 replace_all_host() {
   tmp_file="$ENV_TARGET.tmp.$$"
   sed "s/host\.docker\.internal/$INTERNAL_IP/g" "$ENV_TARGET" > "$tmp_file"
@@ -116,10 +119,11 @@ set_env_value "LIVEKIT_EGRESS_WS_URL" "ws://$INTERNAL_IP:7880"
 set_env_value "LIVEKIT_NODE_IP" "$EXTERNAL_IP"
 set_env_value "MINIO_ENDPOINT" "http://$INTERNAL_IP:9000"
 set_env_value "MINIO_PUBLIC_ENDPOINT" "http://$EXTERNAL_IP:9000"
+set_env_value "MINIO_DOWNLOAD_PUBLIC_ENDPOINT" "https://$EXTERNAL_IP:$DEPLOY_HTTPS_PORT"
 set_env_value "NGINX_TLS_HOST" "$EXTERNAL_IP"
 set_env_value "BIGSCREEN_AUTH_ISSUER_URI" "https://$EXTERNAL_IP:18443/realms/iam-auth"
 set_env_value "BIGSCREEN_AUTH_JWK_SET_URI" "http://$INTERNAL_IP:18080/realms/iam-auth/protocol/openid-connect/certs"
-add_csv_value "BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS" "https://$EXTERNAL_IP:4443"
+add_csv_value "BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS" "https://$EXTERNAL_IP:$DEPLOY_HTTPS_PORT"
 
 echo "updated $ENV_TARGET"
 echo "  internal ip: $INTERNAL_IP"
@@ -129,4 +133,5 @@ echo "  LiveKit public URL: ws://$EXTERNAL_IP:7880"
 echo "  LiveKit RTMP ingress URL: rtmp://$EXTERNAL_IP:1935/live"
 echo "  MinIO internal endpoint: http://$INTERNAL_IP:9000"
 echo "  MinIO public endpoint: http://$EXTERNAL_IP:9000"
+echo "  MinIO download endpoint: https://$EXTERNAL_IP:$DEPLOY_HTTPS_PORT"
 echo "remember to run INSTALL_MODE=overwrite ./install.sh when LiveKit/Nginx rendered configs already exist."
