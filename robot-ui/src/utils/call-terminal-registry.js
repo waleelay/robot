@@ -24,6 +24,14 @@ export class CallTerminalRegistry {
     return true
   }
 
+  markAll(callIds, reason = 'terminal') {
+    let marked = 0
+    for (const callId of callIds || []) {
+      if (this.mark(callId, reason)) marked += 1
+    }
+    return marked
+  }
+
   has(callId) {
     return Boolean(callId && this.entries.has(callId))
   }

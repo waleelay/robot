@@ -138,6 +138,20 @@ const actions = {
   },
 
   async disconnectFieldCall({ state, commit, dispatch }) {
+    const activeCallId = state.activeIncomingCall && state.activeIncomingCall.callId;
+    const pendingCallIds = new Set([
+      ...fieldCallLeases.keys(),
+      ...Object.keys(state.sessions)
+    ]);
+    if (activeCallId) pendingCallIds.add(activeCallId);
+    // 退出态先落地，保证后续清理期间到达的 accepted 只会触发远端收口。
+    commit('SET_CONNECTED', false);
+    fieldCallTerminals.markAll(pendingCallIds, 'page-leave');
+    pendingCallIds.forEach(callId => {
+      if (callId !== activeCallId) {
+        dispatch('sendFieldViaMedia', { type: 'video.field.call.hangup', callId, silent: true });
+      }
+    });
     if (state.activeIncomingCall) {
       await dispatch('hangupFieldCall');
     }
@@ -146,10 +160,8 @@ const actions = {
     // 活动通话之外仍可能存在连接失败或迟到事件留下的 session，全部幂等清理。
     await Promise.all(Object.keys(state.sessions).map(callId => dispatch('cleanupFieldSession', callId)));
     [...fieldCallLeases.keys()].forEach(releaseFieldCallLease);
-    fieldCallTerminals.clear();
     commit('SET_ACTIVE', null);
     commit('SET_OPERATION_PENDING', false);
-    commit('SET_CONNECTED', false);
     commit('SET_INCOMING', []);
   },
 
@@ -188,8 +200,9 @@ const actions = {
       const callId = event.payload.call && event.payload.call.callId;
       if (!callId) return;
       commit('REMOVE_INCOMING', callId);
-      if (fieldCallTerminals.has(callId)) {
-        dispatch('sendFieldViaMedia', { type: 'video.field.call.hangup', callId });
+      if (!state.connected || fieldCallTerminals.has(callId)) {
+        fieldCallTerminals.mark(callId, state.connected ? 'late-accepted' : 'page-inactive');
+        dispatch('sendFieldViaMedia', { type: 'video.field.call.hangup', callId, silent: true });
         releaseFieldCallLease(callId);
         return;
       }
@@ -235,10 +248,10 @@ const actions = {
     }
   },
 
-  sendFieldViaMedia({ rootState }, { type, callId }) {
+  sendFieldViaMedia({ rootState }, { type, callId, silent = false }) {
     const socket = rootState.websocketRobot && rootState.websocketRobot.mediaSocket;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      Message.error('控制通道未连接');
+      if (!silent) Message.error('控制通道未连接');
       return false;
     }
     socket.send(JSON.stringify({

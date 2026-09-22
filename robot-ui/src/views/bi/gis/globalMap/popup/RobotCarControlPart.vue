@@ -14,7 +14,7 @@
             <svg-icon icon-class="setting"></svg-icon>
             <span class="ml4">控制中心</span>
           </div>
-          <div class="close mr10 ml10" @click="visible = false">
+          <div class="close mr10 ml10" @click="show(false)">
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>
@@ -54,7 +54,7 @@
             />
           </div>
           <div class="d-flex mt16" style="justify-content: center;">
-            <Talk v-if="showTalk" :isMapInner="showTalk" class="mr30" />
+            <Talk ref="talkRef" v-if="showTalk" :isMapInner="showTalk" class="mr30" />
             <div class="flx-justify-between" :class="{ 'flex-column': showTalk }">
               <div class="d-flex">
                 <div class="flex common-control" :class="{ 'is-small': showTalk, 'is-disabled': isBodyControlDisabled }">

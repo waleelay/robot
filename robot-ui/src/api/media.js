@@ -57,10 +57,11 @@ export function getViewerToken(sessionId) {
 }
 
 // 停止视频会话
-export function stopVideoSession(sessionId) {
+export function stopVideoSession(sessionId, { timeout } = {}) {
   return request({
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/stop`,
-    method: 'post'
+    method: 'post',
+    ...(timeout ? { timeout } : {})
   })
 }
 
@@ -187,12 +188,12 @@ export function snapshotImageUrl(fileId) {
   return `${base}${withApiPrefix(`${BIGSCREEN_CONTROL_API_PREFIX}/files/${encodeURIComponent(fileId)}/content`)}`
 }
 
-export function stopIntercom(sessionId) {
+export function stopIntercom(sessionId, { timeout } = {}) {
   return request({
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/intercom/stop`,
     method: 'post',
     headers: sessionHeaders,
-    timeout: 15000
+    timeout: timeout || 15000
   })
 }
 export function startCameraIntercom(data, { signal } = {}) {
@@ -305,11 +306,12 @@ export function startLiveRecording(sessionId) {
   })
 }
 
-export function stopLiveRecording(sessionId, fileId) {
+export function stopLiveRecording(sessionId, fileId, { timeout } = {}) {
   return request({
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/recordings/${fileId}/stop`,
     method: 'post',
-    headers
+    headers,
+    ...(timeout ? { timeout } : {})
   })
 }
 export function getActiveLiveRecording(sessionId) {

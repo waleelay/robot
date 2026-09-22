@@ -14,7 +14,7 @@
             <svg-icon icon-class="setting"></svg-icon>
             <span class="ml4">控制中心</span>
           </div>
-          <div class="close mr10 ml10" @click="visible = false">
+          <div class="close mr10 ml10" @click="show(false)">
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>
@@ -69,7 +69,7 @@
             </div>
           </div>
           <div class="mt24 d-flex">
-            <Talk v-if="showTalk" :isMapInner="showTalk" />
+            <Talk ref="talkRef" v-if="showTalk" :isMapInner="showTalk" />
             <ControlPart :tabIndex="tabIndex" :showSmall="showTalk" :class="{'ml68': showTalk }" @handleModeChange="handleModeChange" />
           </div>
         </div>

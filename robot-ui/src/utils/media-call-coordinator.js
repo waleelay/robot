@@ -11,12 +11,13 @@ export class MediaCallCoordinator {
     this.sequence = 0
   }
 
-  acquire(key, type) {
+  acquire(key, type, ownerId = '') {
     if (!key || this.current) return null
     const lease = {
       id: ++this.sequence,
       key,
       type,
+      ownerId,
       phase: 'STARTING'
     }
     this.current = lease
@@ -31,6 +32,10 @@ export class MediaCallCoordinator {
 
   owns(lease) {
     return Boolean(lease && this.current && this.current.id === lease.id)
+  }
+
+  ownedBy(lease, ownerId) {
+    return this.owns(lease) && Boolean(ownerId) && lease.ownerId === ownerId
   }
 
   release(lease) {

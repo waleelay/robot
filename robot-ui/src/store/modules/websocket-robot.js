@@ -52,11 +52,13 @@ const stopOperations = new Map()
 const connectOperations = new Map()
 const restartOperations = new Map()
 const intercomStartOperations = new IntercomOperationRegistry()
+const intercomStopOperations = new Map()
 const pendingIncomingIntercomKeys = new Map()
 const pendingIncomingCallLeases = new Map()
 const pendingIncomingCallTimers = new Map()
 const CALL_ACCEPT_TIMEOUT_MS = 15000
 const CALL_TERMINAL_RETENTION_MS = CALL_ACCEPT_TIMEOUT_MS * 4
+const MEDIA_CLEANUP_STOP_TIMEOUT_MS = 5000
 const CALL_TERMINAL_STATUSES = ['ENDED', 'FAILED', 'REJECTED', 'TIMEOUT', 'CANCELED']
 const incomingCallTerminals = new CallTerminalRegistry(CALL_TERMINAL_RETENTION_MS)
 const regularIntercomLeases = new Map()
@@ -70,8 +72,8 @@ function regularIntercomLeaseKey(cameraKey) {
   return `robot:${cameraKey}`
 }
 
-function acquireRegularIntercomLease(cameraKey) {
-  const lease = mediaCallCoordinator.acquire(regularIntercomLeaseKey(cameraKey), 'robot-intercom')
+function acquireRegularIntercomLease(cameraKey, ownerId = '') {
+  const lease = mediaCallCoordinator.acquire(regularIntercomLeaseKey(cameraKey), 'robot-intercom', ownerId)
   if (lease) regularIntercomLeases.set(cameraKey, lease)
   return lease
 }
@@ -1250,12 +1252,12 @@ const actions = {
       }
     }
   },
-  sendIntercomCallOperation({ commit, state }, { action, callId }) {
+  sendIntercomCallOperation({ commit, state }, { action, callId, silent = false }) {
     if (!state.mediaSocket || state.mediaSocket.readyState !== WebSocket.OPEN) {
-      Message.error('控制通道未连接')
+      if (!silent) Message.error('控制通道未连接')
       return false
     }
-    commit('SET_CALL_OPERATION_PENDING', { pending: true, callId })
+    if (!silent) commit('SET_CALL_OPERATION_PENDING', { pending: true, callId })
     state.mediaSocket.send(JSON.stringify({
       type: `video.intercom.call.${action}`,
       requestId: `call-${action}-${Date.now()}`,
@@ -1394,32 +1396,42 @@ const actions = {
     if (active?.cameraKey) releaseRegularIntercomLease(active.cameraKey)
     commit('SET_ACTIVE_INCOMING_CALL', null)
   },
-  async hangupIncomingCall({ state, dispatch, commit }) {
+  async hangupIncomingCall({ state, dispatch, commit }, {
+    requestTimeoutMs,
+    silent = false
+  } = {}) {
     const active = state.activeIncomingCall
     if (!active) return
     incomingCallTerminals.mark(active.callId, 'local-hangup')
     const camera = state.cameras[active.cameraKey]
     if (camera) {
-      const stopped = await dispatch('hangupIntercom', {
+      const targetCamera = {
         ...camera,
         session: {
           ...(camera.session || {}),
           sessionId: active.sessionId
         }
+      }
+      const stopped = await dispatch('hangupIntercom', {
+        camera: targetCamera,
+        requestTimeoutMs,
+        silent
       })
       if (!stopped) return
       const current = state.cameras[active.cameraKey]
       const keepWatching = Boolean(state.activeCameras[active.cameraKey])
       if (current && current.watching && !keepWatching) {
-        await dispatch('stopCamera', current)
+        await dispatch('stopCamera', requestTimeoutMs
+          ? { ...current, stopTimeoutMs: requestTimeoutMs }
+          : current)
       }
     } else {
       try {
-        await stopIntercom(active.sessionId)
+        await stopIntercom(active.sessionId, { timeout: requestTimeoutMs })
       } catch (error) {
         if (!isIntercomAlreadyStoppedError(error)) {
           console.error('ERROR stopIntercom', errorMessage(error))
-          Message.error('挂断失败，请稍后重试')
+          if (!silent) Message.error('挂断失败，请稍后重试')
           return
         }
       }
@@ -2126,7 +2138,9 @@ const actions = {
       camera.attachTargets = {}
     }
     if (camera.recordingActive) {
-      await dispatch('stopCameraRecording', camera)
+      await dispatch('stopCameraRecording', data.stopTimeoutMs
+        ? { camera, requestTimeoutMs: data.stopTimeoutMs, silent: true }
+        : camera)
     }
     // 未建会话（如无实时推送导致 createVideoSession 失败）也要释放选中态
     if (!camera.session) {
@@ -2156,7 +2170,9 @@ const actions = {
       const sessionId = camera.session.sessionId
       if (!camera.intercomActive) state.stoppedSessionIds.add(sessionId)
       console.log('%cstopCamera+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 'color: #f0f')
-      const stopped = await stopVideoSession(sessionId)
+      const stopped = await stopVideoSession(sessionId, {
+        timeout: data.stopTimeoutMs
+      })
       // console.log('API stopVideoSession', stopped)
       camera.watching = false
       camera.hasVideo = false
@@ -2196,25 +2212,39 @@ const actions = {
     const key = typeof cameraOrKey === 'string' ? cameraOrKey : cameraOrKey?.key
     return key ? intercomStartOperations.cancel(key) : false
   },
-  async stopIntercomLifecycle({ state, dispatch }, cameraOrKey) {
+  async stopIntercomLifecycle({ state, dispatch }, payload) {
+    const options = payload && Object.prototype.hasOwnProperty.call(payload, 'cameraOrKey')
+      ? payload
+      : { cameraOrKey: payload }
+    const { cameraOrKey, requestTimeoutMs, silent = false } = options
     const key = typeof cameraOrKey === 'string' ? cameraOrKey : cameraOrKey?.key
     if (!key) return true
     await dispatch('cancelPendingIntercomStart', key)
     const current = state.cameras[key] || (typeof cameraOrKey === 'object' ? cameraOrKey : null)
     if (!current || !current.session || !intercomInProgress(current)) return true
-    return dispatch('hangupIntercom', current)
+    return dispatch('hangupIntercom', { camera: current, requestTimeoutMs, silent })
   },
-  async toggleIntercom({ state, dispatch }, { robotId, camera }) {
+  async stopOwnedIntercom({ state, dispatch }, { cameraKey, ownerId }) {
+    const lease = regularIntercomLeases.get(cameraKey)
+    if (!mediaCallCoordinator.ownedBy(lease, ownerId)) return false
+    await dispatch('stopIntercomLifecycle', {
+      cameraOrKey: state.cameras[cameraKey] || cameraKey,
+      requestTimeoutMs: MEDIA_CLEANUP_STOP_TIMEOUT_MS,
+      silent: true
+    })
+    return true
+  },
+  async toggleIntercom({ state, dispatch }, { robotId, camera, ownerId = '' }) {
     const current = state.cameras[camera.key] || camera
     // 开始/结束请求进行中时忽略重复点击，避免一次失败回滚误停另一次成功通话。
     if (current.intercomBusy) return
     if (current.intercomActive) {
       await dispatch('hangupIntercom', current)
     } else {
-      await dispatch('startIntercom', { robotId, camera: current })
+      await dispatch('startIntercom', { robotId, camera: current, ownerId })
     }
   },
-  async startIntercom({ commit, state, dispatch }, { robotId, camera }) {
+  async startIntercom({ commit, state, dispatch }, { robotId, camera, ownerId = '' }) {
     if (intercomStartOperations.has(camera.key)) return
     if (state.activeIncomingCall) {
       Message.warning('当前正在通话，请先结束当前通话')
@@ -2238,7 +2268,7 @@ const actions = {
       remoteAudioTrack: camera.remoteAudioTrack,
       remoteAudioElement: camera.remoteAudioElement
     }
-    const lease = acquireRegularIntercomLease(camera.key)
+    const lease = acquireRegularIntercomLease(camera.key, ownerId)
     const operation = lease && intercomStartOperations.begin(camera.key)
     if (!operation) {
       if (lease) releaseRegularIntercomLease(camera.key)
@@ -2371,7 +2401,19 @@ const actions = {
     commit('setCamera', camera)
     releaseRegularIntercomLease(key)
   },
-  async hangupIntercom({ commit, state, dispatch }, camera) {
+  hangupIntercom({ dispatch }, payload) {
+    const options = payload && payload.camera
+      ? payload
+      : { camera: payload }
+    const key = options.camera?.key
+    if (!key) return Promise.resolve(true)
+    return runOnce(intercomStopOperations, key, () => dispatch('performHangupIntercom', options))
+  },
+  async performHangupIntercom({ commit, state }, {
+    camera,
+    requestTimeoutMs,
+    silent = false
+  }) {
     if (!camera.session) {
       releaseRegularIntercomLease(camera.key)
       return true
@@ -2388,12 +2430,12 @@ const actions = {
     try {
       // 用户点击结束后立即停止本地采集；服务端停止失败也不能继续占用麦克风。
       await releaseLocalMicrophone(camera.room)
-      response = await stopIntercom(camera.session.sessionId)
+      response = await stopIntercom(camera.session.sessionId, { timeout: requestTimeoutMs })
       // console.log('API stopIntercom', response)
     } catch (error) {
       if (!isIntercomAlreadyStoppedError(error)) {
         console.error('ERROR stopIntercom', errorMessage(error))
-        Message.error('服务端挂断确认失败，本地通话已结束')
+        if (!silent) Message.error('服务端挂断确认失败，本地通话已结束')
       }
     } finally {
       await releaseIntercomClientMedia(camera, { disconnectRoom: !camera.watching })
@@ -2751,6 +2793,11 @@ const actions = {
     }, 5000)
   },
   async stopAllCameraSessions({ state, dispatch }) {
+    await dispatch('terminateIncomingCalls', {
+      reason: '注销',
+      requestTimeoutMs: MEDIA_CLEANUP_STOP_TIMEOUT_MS,
+      silent: true
+    })
     const keys = new Set([
       ...intercomStartOperations.keys(),
       ...Object.values(state.cameras || {})
@@ -2758,18 +2805,59 @@ const actions = {
           (camera.watching || camera.recordingActive || intercomInProgress(camera)))
         .map(camera => camera.key)
     ])
-    for (const key of keys) {
+    await Promise.allSettled([...keys].map(async key => {
       let current = state.cameras[key]
-      await dispatch('stopIntercomLifecycle', current || key)
+      await dispatch('stopIntercomLifecycle', {
+        cameraOrKey: current || key,
+        requestTimeoutMs: MEDIA_CLEANUP_STOP_TIMEOUT_MS,
+        silent: true
+      })
       current = state.cameras[key] || current
-      if (!current) continue
+      if (!current) return
       if (current.session || current.watching || current.recordingActive) {
-        await dispatch('stopCamera', current)
+        await dispatch('stopCamera', {
+          ...current,
+          stopTimeoutMs: MEDIA_CLEANUP_STOP_TIMEOUT_MS
+        })
+      }
+    }))
+  },
+  async terminateIncomingCalls({ commit, state, dispatch }, payload = '页面退出') {
+    const options = typeof payload === 'string' ? { reason: payload } : payload
+    const {
+      reason = '页面退出',
+      requestTimeoutMs,
+      silent = true
+    } = options
+    const callIds = new Set([
+      ...pendingIncomingCallLeases.keys(),
+      ...pendingIncomingIntercomKeys.keys()
+    ])
+    // 先登记终态，再执行任何异步清理，避免退出窗口内的迟到 accepted 重新打开麦克风。
+    incomingCallTerminals.markAll(callIds, reason)
+    callIds.forEach(callId => {
+      dispatch('sendIntercomCallOperation', { action: 'reject', callId, silent: true })
+      releasePendingIncomingCallLease(callId)
+      commit('REMOVE_INCOMING_CALL', callId)
+    })
+    commit('SET_CALL_OPERATION_PENDING', { pending: false })
+    const active = state.activeIncomingCall
+    if (active?.callId) {
+      incomingCallTerminals.mark(active.callId, reason)
+      await dispatch('hangupIncomingCall', { requestTimeoutMs, silent })
+      // 即使服务端已不可达，页面退出也不保留已失去操作入口的本地通话态。
+      if (state.activeIncomingCall?.callId === active.callId) {
+        if (active.cameraKey) releaseRegularIntercomLease(active.cameraKey)
+        commit('SET_ACTIVE_INCOMING_CALL', null)
       }
     }
   },
   async stopPageMediaSessions({ state, dispatch }) {
-    ;[...pendingIncomingCallLeases.keys()].forEach(releasePendingIncomingCallLease)
+    await dispatch('terminateIncomingCalls', {
+      reason: '页面退出',
+      requestTimeoutMs: MEDIA_CLEANUP_STOP_TIMEOUT_MS,
+      silent: true
+    })
     const keys = new Set([
       ...Object.keys(state.activeCameras || {}),
       ...intercomStartOperations.keys(),
@@ -2777,16 +2865,23 @@ const actions = {
         .filter(camera => camera && intercomInProgress(camera))
         .map(camera => camera.key)
     ])
-    for (const key of keys) {
+    await Promise.allSettled([...keys].map(async key => {
       let current = state.cameras[key] || state.activeCameras[key]?.camera
-      if (!current) continue
-      await dispatch('stopIntercomLifecycle', current)
+      if (!current) return
+      await dispatch('stopIntercomLifecycle', {
+        cameraOrKey: current,
+        requestTimeoutMs: MEDIA_CLEANUP_STOP_TIMEOUT_MS,
+        silent: true
+      })
       current = state.cameras[key] || current
       // 页面退出只停止实际观看画面；后台独立录像由注销全量清理负责。
       if (state.activeCameras[key] && current.watching) {
-        await dispatch('stopCamera', current)
+        await dispatch('stopCamera', {
+          ...current,
+          stopTimeoutMs: MEDIA_CLEANUP_STOP_TIMEOUT_MS
+        })
       }
-    }
+    }))
   },
   // 切换激活摄像头
   async toggleCamera({ commit, state, dispatch }, { robot, camera }) {
@@ -3135,24 +3230,30 @@ const actions = {
       commit('setCamera', camera)
     }
   },
-  async stopCameraRecording({ commit, state, dispatch }, camera) {
+  async stopCameraRecording({ commit, state, dispatch }, payload) {
+    const options = payload && payload.camera
+      ? payload
+      : { camera: payload }
+    const { camera, requestTimeoutMs, silent = false } = options
     if (!camera.session || !camera.activeRecording || camera.recordingBusy) return
     if (!camera.recordingOwned) {
-      Message.warning('当前录像由其他浏览器发起')
+      if (!silent) Message.warning('当前录像由其他浏览器发起')
       return
     }
     camera.recordingBusy = true
     try {
-      await stopLiveRecording(camera.session.sessionId, camera.activeRecording.fileId)
+      await stopLiveRecording(camera.session.sessionId, camera.activeRecording.fileId, {
+        timeout: requestTimeoutMs
+      })
       applyActiveRecording(camera, null)
       // console.log('API stopLiveRecording', recording)
-      Message.success('录像已停止')
+      if (!silent) Message.success('录像已停止')
       dispatch('setRecordTime', new Date().toISOString())
       // TODO 获取新数据
       // if (this.recordingMode) await dispatch('loadRecordings')
     } catch (error) {
       console.error('停止录像失败', error)
-      Message.error(errorMessage(error))
+      if (!silent) Message.error(errorMessage(error))
     } finally {
       camera.recordingBusy = false
       commit('setCamera', camera)

@@ -63,6 +63,8 @@ import { mapActions, mapState } from 'vuex';
 import VolumeWave from './VolumeWave.vue';
 import { audioStatusVersion } from '../../../../../../utils/audio-device-state';
 
+let talkOwnerSequence = 0
+
 export default {
   name: 'Talk',
   mixins: [yuntai],
@@ -111,7 +113,10 @@ export default {
       localVolume: null,
       volumeInteracting: false,
       lastUnmutedVolume: null,
-      requestedMuted: null
+      requestedMuted: null,
+      intercomOwnerId: `talk:${++talkOwnerSequence}`,
+      ownedIntercomCameraKey: '',
+      talkDisposed: false
     }
   },
   watch: {
@@ -122,6 +127,7 @@ export default {
       }
     },
     selectedRobotId() {
+      this.releaseOwnedIntercom()
       this.localVolume = null
       this.volumeInteracting = false
       this.lastUnmutedVolume = null
@@ -129,7 +135,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketRobot', ['toggleIntercom']),
+    ...mapActions('websocketRobot', ['toggleIntercom', 'stopOwnedIntercom']),
     normalizeAudioVolume(volume) {
       const number = Number(volume)
       return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : 50
@@ -197,7 +203,27 @@ export default {
       if (!this.selectCamera.intercomActive && this.audioDevice && this.audioMuted(this.audioDevice)) {
         await this.toggleAudioMute(this.audioDevice)
       }
-      await this.toggleIntercom({ robotId: this.selectedRobotId, camera: this.selectCamera })
+      if (this.talkDisposed) return
+      const cameraKey = this.selectCamera.key
+      const wasActive = this.selectCamera.intercomActive
+      if (!wasActive) this.ownedIntercomCameraKey = cameraKey
+      await this.toggleIntercom({
+        robotId: this.selectedRobotId,
+        camera: this.selectCamera,
+        ownerId: this.intercomOwnerId
+      })
+      if (wasActive) this.ownedIntercomCameraKey = ''
+    },
+    async releaseOwnedIntercom() {
+      const cameraKey = this.ownedIntercomCameraKey
+      this.ownedIntercomCameraKey = ''
+      if (!cameraKey) return false
+      try {
+        return await this.stopOwnedIntercom({ cameraKey, ownerId: this.intercomOwnerId })
+      } catch (error) {
+        console.warn('[Talk] release owned intercom failed', error)
+        return false
+      }
     },
     audioStatus(device) {
       const status = (device && (device.status || device.runtimeStatus)) || {}
@@ -224,6 +250,10 @@ export default {
       return this.audioStatus(device).muted
     },
 
+  },
+  beforeDestroy() {
+    this.talkDisposed = true
+    this.releaseOwnedIntercom()
   }
 }
 </script>
