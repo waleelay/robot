@@ -186,3 +186,17 @@ test('列表和详情加载失败使用页面内状态，不触发操作弹窗',
   assert.match(recordDetail, /this\.loadError = requestErrorMessage\(error\)/)
   assert.doesNotMatch(recordList, /notifyActionError/)
 })
+
+test('首屏自动加载静默记录，用户触发的视频和地图操作保留明确提示', () => {
+  const bigscreen = readFileSync(new URL('../src/views/bi/Bi.vue', import.meta.url), 'utf8')
+  const taskRobot = readFileSync(new URL('../src/views/bi/components/modal/TaskRobotView.vue', import.meta.url), 'utf8')
+  const globalMap = readFileSync(new URL('../src/views/bi/gis/globalMap/GlobalGisMap.vue', import.meta.url), 'utf8')
+  const taskList = readFileSync(new URL('../src/views/bi/patrol/monitor/first/TaskListTree.vue', import.meta.url), 'utf8')
+
+  assert.match(bigscreen, /console\.error\('大屏首屏数据加载失败', error\)/)
+  assert.doesNotMatch(bigscreen, /Message\.error\('大屏数据暂不可用/)
+  assert.match(taskRobot, /this\.\$message\.warning\('固定摄像头列表暂不可用，请稍后重试'\)/)
+  assert.match(globalMap, /this\.\$message\.warning\('未找到相关装备'\)/)
+  assert.match(globalMap, /this\.\$message\.warning\('任务视频关闭超时，请稍后重试'\)/)
+  assert.match(taskList, /this\.\$message\.warning\('当前宫格已满，请先关闭已有画面'\)/)
+})

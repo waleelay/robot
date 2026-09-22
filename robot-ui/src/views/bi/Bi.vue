@@ -15,7 +15,6 @@
 <script>
 import mqttClient from '@/plugins/mqtt-client'
 import { mapActions } from 'vuex';
-import { Message } from 'element-ui'
 import ScaleScreen from './../../components/largeScreen/scale-screen.vue'
 import WarningPending from './patrol/panorama/warning/WarnPending.vue';
 import WarnInfo from './patrol/panorama/warning/WarnInfo.vue';
@@ -49,7 +48,7 @@ export default {
       await this.refreshOverviewResources({ failClosed: false })
     } catch (error) {
       this.markOverviewLoadFailed()
-      Message.error('大屏数据暂不可用，请稍后刷新页面重试')
+      console.error('大屏首屏数据加载失败', error)
     } finally {
       this.connectMediaWebSocket()
     }
