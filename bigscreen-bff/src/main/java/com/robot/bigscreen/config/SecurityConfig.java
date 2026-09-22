@@ -42,6 +42,12 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/control/files/*/hls/**").permitAll()
                         .requestMatchers("/ws/field-call").access(clientAuthorization(fieldCallClientId))
+                        // field-app 复用大屏 BFF 的告警 REST 和实时通道；其他大屏接口仍只允许 bigscreen-web。
+                        .requestMatchers(
+                                "/api/bigscreen/panorama/alarms",
+                                "/api/bigscreen/panorama/alarms/**",
+                                "/ws/bigscreen")
+                        .access(clientAuthorization(fieldCallClientId))
                         .requestMatchers("/api/**", "/ws/**").access(clientAuthorization(bigscreenClientId))
                         .anyRequest().permitAll())
                 .oauth2ResourceServer(resourceServer -> resourceServer
