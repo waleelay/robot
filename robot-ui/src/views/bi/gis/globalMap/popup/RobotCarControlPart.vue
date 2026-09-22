@@ -54,7 +54,14 @@
             />
           </div>
           <div class="d-flex mt16" style="justify-content: center;">
-            <Talk ref="talkRef" v-if="showTalk" :isMapInner="showTalk" class="mr30" />
+            <Talk
+              ref="talkRef"
+              v-if="showTalk"
+              :isMapInner="showTalk"
+              :target-robot-id="effectiveRobotId"
+              :target-robot="controlRobot"
+              class="mr30"
+            />
             <div class="flx-justify-between" :class="{ 'flex-column': showTalk }">
               <div class="d-flex">
                 <div class="flex common-control" :class="{ 'is-small': showTalk, 'is-disabled': isBodyControlDisabled }">

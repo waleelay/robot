@@ -69,7 +69,13 @@
             </div>
           </div>
           <div class="mt24 d-flex">
-            <Talk ref="talkRef" v-if="showTalk" :isMapInner="showTalk" />
+            <Talk
+              ref="talkRef"
+              v-if="showTalk"
+              :isMapInner="showTalk"
+              :target-robot-id="effectiveRobotId"
+              :target-robot="controlRobot"
+            />
             <ControlPart :tabIndex="tabIndex" :showSmall="showTalk" :class="{'ml68': showTalk }" @handleModeChange="handleModeChange" />
           </div>
         </div>

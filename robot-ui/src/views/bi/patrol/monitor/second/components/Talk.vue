@@ -8,7 +8,7 @@
  * @Version:
 -->
 <template>
-  <div class="flx-justify-between flex-column" :class="{ 'is-inner': isMapInner }" :style="{ pointerEvents: selectedRobot.status !== 'online' ? 'none' : 'auto' }">
+  <div class="flx-justify-between flex-column" :class="{ 'is-inner': isMapInner }" :style="{ pointerEvents: talkAvailable ? 'auto' : 'none' }">
     <div class="circle flx-center flex-column" :class="{ 'talking': selectCamera.intercomActive }" @click="handleTalk">
       <span v-if="!selectCamera.intercomActive || !selectCamera?.room?.localParticipant">
         <svg-icon :icon-class="selectCamera.intercomActive ? 'mic-fill' : 'mic-off-fill'" />
@@ -70,15 +70,23 @@ export default {
   mixins: [yuntai],
   components: { VolumeWave },
   computed: {
-    ...mapState('websocketRobot', ['cameras']),
+    ...mapState('websocketRobot', ['cameras', 'robots']),
     selectedRobotId() {
-      return this.$store.getters['websocketRobot/getSelectedRobotId']
+      return this.targetRobotId || this.$store.getters['websocketRobot/getSelectedRobotId'] || ''
     },
     selectedRobot() {
-      return this.$store.getters['websocketRobot/getSelectedRobot']
+      if (this.targetRobotId) {
+        if (String(this.targetRobot?.robotId || '') === String(this.targetRobotId)) return this.targetRobot
+        return (this.robots || []).find(item => String(item.robotId) === String(this.targetRobotId)) ||
+          this.robotBaseInfo?.[this.targetRobotId] || {}
+      }
+      return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
     selectCamera() {
       return this.cameras?.[this.selectedRobot?.cameras?.[0]?.key] || {}
+    },
+    talkAvailable() {
+      return Boolean(this.selectedRobotId && this.selectCamera.key && this.selectedRobot.status === 'online')
     },
     displayVolume() {
       return this.localVolume === null ? this.normalizeAudioVolume(this.audioVolume(this.audioDevice)) : this.localVolume
@@ -107,6 +115,14 @@ export default {
       type: Boolean,
       default: false
     },
+    targetRobotId: {
+      type: [String, Number],
+      default: ''
+    },
+    targetRobot: {
+      type: Object,
+      default: () => ({})
+    }
   },
   data() {
     return {
@@ -200,6 +216,7 @@ export default {
       }
     },
     async handleTalk() {
+      if (!this.talkAvailable) return
       if (!this.selectCamera.intercomActive && this.audioDevice && this.audioMuted(this.audioDevice)) {
         await this.toggleAudioMute(this.audioDevice)
       }
