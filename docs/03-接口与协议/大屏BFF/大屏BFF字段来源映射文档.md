@@ -28,10 +28,9 @@
 | 任务实例详情 | `GET /api/v1/management/task-workflow-instances/{id}` |
 | 任务执行回放 | `GET /api/v1/management/task-workflow-instances/{id}/replay` |
 | 设备子任务 | `GET /api/v1/management/device-task-instances?workflowInstanceId={id}` |
-| 任务定义 | `GET /api/v1/management/task-workflow-definitions/{workflowDefinitionId}` |
+| 任务计划路线点 | `GET /api/v1/management/task-workflow-plans/{id}/route-points` |
 | 地图列表 | `GET /api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` |
 | 地图点位 | `GET /api/v1/management/maps/{mapId}/points` |
-| 路径点位 | `GET /api/v1/management/paths/{pathId}/points` |
 | 告警列表 | `GET /api/v1/management/alarms?pageNum={pageNum}&pageSize=100`，读取完整分页 |
 | 告警处置 | `PATCH /api/v1/management/alarms/{alarmId}/handled` |
 
@@ -194,8 +193,11 @@ Overview 的 `tasks[]` 只返回任务计划/实例列表可直接得到的摘�
 | `timeRange` | 页面展示时间段 | BFF 计算 | 由 `startTime/endTime` 截取 `HH:mm-HH:mm`；时间不完整为 `null` |
 | `currentLocation` | 当前任务位置 | 管理端 + BFF 组装 | 仅任务详情：优先计划 `currentLocation`；没有时取回放 `trackGroups[].samples` 最后一个 `pointName` |
 | `equipmentList` | 执行装备列表 | 管理端 + BFF 组装 | 见 3.6.1 |
-| `mapId` | 地图 ID | 管理端 | Overview 优先取计划的 `mapId`；路径与详情按需读取 `TaskWorkflowDefinitionResponse.mapId` |
-| `pathPoints` | 路径点位集合 | 管理端 + BFF 过滤 | 不在 Overview 返回；按需接口用定义的 `pathId` 查路径点引用，再与地图点位匹配 |
+| `segments[]` | 当前地图任务路线段 | 管理端 + BFF 分组 | 仅由 `maps/{mapId}/task-routes` 返回；调用计划 `route-points` 后按 `mapId` 过滤、按设备或角色分段 |
+| `segments[].points[]` | 路线点位集合 | 管理端 | 直接使用计划冻结版本及依赖解析结果并保持 `sequence` 顺序；不再查询定义 `pathId` 或路径点引用 |
+
+路线点是计划编排顺序，不等同于运行时轨迹。分支、并行节点的实际执行选择需以任务实例回放/轨迹为准，
+当前 Management 契约未返回分支归属，BFF 不猜测运行路径。
 
 ### 3.6.1 任务固定摄像头按需接口 `tasks/{taskId}/fixed-cameras`
 

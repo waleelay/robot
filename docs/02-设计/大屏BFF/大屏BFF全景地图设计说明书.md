@@ -366,15 +366,14 @@ Overview 的 `map[]` 只返回地图摘要，并保留移动设备地图映射�
 
 `tasks[]` 来源于 `/api/v1/management/task-workflow-plans?pageNum={pageNum}&pageSize=100` 的完整分页任务计划列表。
 
-`tasks[]` 不再使用 mock 数据兜底；`timeRange`、`mapId` 等未查询到的标量字段返回 `null`，
-`equipmentList` 无数据时返回空数组。Overview 不返回 `currentLocation/mapPoints/pathPoints`。
+`tasks[]` 不再使用 mock 数据兜底；未查询到的标量字段返回 `null`，`equipmentList` 无数据时返回空数组。
+Overview 不返回 `currentLocation` 或任何路线字段。
 
 | 字段 | 含义 | 数据来源 |
 |---|---|---|
 | `tasks[]` | 任务列表 | `/api/v1/management/task-workflow-plans?pageNum={pageNum}&pageSize=100`，读取完整分页 |
 | `tasks[].taskId` | 任务计划 ID，number/int | `/api/v1/management/task-workflow-plans` 的 `id` |
 | `tasks[].workflowInstanceId` | 当前任务实例 ID，number/int/null；用于暂停、恢复、终止任务实例 | `/api/v1/management/task-workflow-plans` 的 `activeWorkflowInstanceId/lastWorkflowInstanceId/workflowInstanceId` |
-| `tasks[].mapId` | 任务关联地图 ID，number/int/null | 任务计划的 `mapId/mapID`；定义解析由按需路径/详情接口完成 |
 | `map` | 可用地图数组 | `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
 | 当前地图渲染资源 | 点位、固定摄像头 | `/panorama/maps/{mapId}/resources` 按需返回 |
 
@@ -423,66 +422,57 @@ GET /api/bigscreen/panorama/tasks
       "endTime": "2026-06-12 22:00:00",
       "timeRange": "20:00-22:00",
       "currentLocation": "A区主干道",
-      "equipmentList": [],
-      "mapId": 1,
-      "mapPoints": [
-        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
-      ],
-      "pathPoints": [
-        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
-      ]
-    },
-    {
-      "taskId": 4,
-      "name": "北侧消防通道巡检",
-      "executionStatus": "RUNNING",
-      "startTime": "2026-06-12 16:00:00",
-      "endTime": "2026-06-12 17:30:00",
-      "timeRange": "16:00-17:30",
-      "currentLocation": "A区北侧消防通道",
-      "equipmentList": [
-        {
-          "robotId": "SN006",
-          "name": "G1四足机器狗",
-          "type": "ROBOT_DOG",
-          "status": "offline"
-        }
-      ],
-      "mapId": 1,
-      "mapPoints": [
-        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
-      ],
-      "pathPoints": [
-        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
-      ]
-    },
-    {
-      "taskId": 5,
-      "name": "东侧出入口值守巡检",
-      "executionStatus": "WAITING",
-      "startTime": "2026-06-12 18:00:00",
-      "endTime": "2026-06-12 19:00:00",
-      "timeRange": "18:00-19:00",
-      "currentLocation": "A区东侧出入口",
-      "equipmentList": [
-        {
-          "robotId": "test111",
-          "name": "R1轮式机器人",
-          "type": "WHEELED_ROBOT",
-          "status": "online"
-        }
-      ],
-      "mapId": 1,
-      "mapPoints": [
-        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
-      ],
-      "pathPoints": [
-        {"id": 101, "pointId": "point-101", "name": "A区主干道", "lng": 106.03655278081857, "lat": 30.7478613352993, "x": 118.4, "y": 42.8, "z": 0.0, "sequence": 1}
-      ]
+      "equipmentList": []
     }
   ]
 }
 ```
+
+#### 5.4.1 当前地图任务计划路线
+
+```http
+GET /api/bigscreen/panorama/maps/{mapId}/task-routes
+```
+
+```json
+{
+  "serverTime": "2026-06-12 11:31:02",
+  "mapId": "1",
+  "items": [
+    {
+      "taskId": 1,
+      "workflowInstanceId": 9001,
+      "mapId": "1",
+      "segments": [
+        {
+          "segmentKey": "device:501",
+          "deviceId": 501,
+          "roleKey": "patrolRobot",
+          "points": [
+            {
+              "id": 101,
+              "pointId": 101,
+              "sequence": 1,
+              "nodeId": "node-1",
+              "pointName": "A区主干道",
+              "pointType": "NORMAL",
+              "coordinateX": 118.4,
+              "coordinateY": 42.8,
+              "targetType": "POINT"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "dataQuality": {
+    "tasks": {"complete": true, "degraded": false, "reasonCodes": []}
+  }
+}
+```
+
+路线调用 Management 计划级 `route-points` 接口，按地图和设备分段；不再依赖工作流定义
+`pathId`。完整响应替换当前地图路线，降级响应只增量覆盖成功项。
 
 ### 5.5 告警列表接口
 

@@ -139,10 +139,13 @@ Overview 的地图列表查询失败不再降级为 `map=[]`：地图读取超�
 `fixedCamares` 保持现有字段拼写，表示当前地图固定摄像头。
 `task-routes` 响应为
 `{serverTime, mapId, items, dataQuality}`；每个 `items[]` 包含 `taskId`、`workflowInstanceId`、`mapId` 和
-`pathPoints`。Overview 的 `tasks[]` 不返回空的 `pathPoints` 占位，前端只把 `task-routes.items[]` 写入路径状态。
+`segments`。每个 `segments[]` 包含稳定的 `segmentKey`、`deviceId`、`roleKey` 和 `points`；BFF 按
+`mapId + deviceId` 分段，未绑定设备时按 `roleKey` 分段，禁止把不同设备的点连成一条折线。`points[]`
+保留计划冻结版本路线点的 `sequence/nodeId/pointId/pointCode/pointName/pointType/coordinateX/coordinateY/targetType`。
+Overview 和任务详情均不返回路线占位字段，前端只把 `task-routes.items[]` 写入按地图隔离的路线状态。
 `task-routes.dataQuality.tasks` 表示整个地图任务路径集合是否完整；降级时 `items[]` 只是本轮成功查到的子集，
-不得用于替换任务卡片或任务路径归属的已知完整集合。前端已有完整快照时保留上一份数据；首次加载即降级时，
-数量显示为未知值 `--`，不把局部条数当成真实总数。BFF 不缓存降级路径结果，并分批解析工作流定义，
+不得用于替换任务卡片或当前地图已知的完整路线集合。前端已有完整快照时保留上一份数据；首次加载即降级时，
+数量显示为未知值 `--`，不把局部条数当成真实总数。BFF 不缓存降级路径结果，并分批查询任务计划路线，
 避免单次地图请求自身耗尽任务查询并发许可。
 `tasks/{taskId}` 响应为 `{serverTime, task, dataQuality}`；找不到任务时 `task=null`，不以
 伪造任务替代。`tasks/{taskId}/fixed-cameras` 响应为 `{serverTime, taskId, items}`，每个 `items[]` 只包含

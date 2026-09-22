@@ -240,7 +240,7 @@ export default {
       'slamMapList',
       'slamOfRobot',
       'deviceStats',
-      'taskPathPoints',
+      'taskRoutesByMap',
       'robotLocation',
       'defaultGpsDevices',
       'globalMapId',
@@ -282,11 +282,9 @@ export default {
       if (!this.isSlam) return true
       const slamId = this.currentSlam
       if (slamId === undefined || slamId === null || slamId === '') return false
-      const paths = this.taskPathPoints || {}
-      return Object.keys(paths).some(taskId => {
-        const data = paths[taskId]
-        return data && String(data.mapId) === String(slamId) && Array.isArray(data.pathPoints) && data.pathPoints.length > 0
-      })
+      const routes = this.taskRoutesByMap?.[String(slamId)] || {}
+      return Object.values(routes).some(route => (route?.segments || [])
+        .some(segment => Array.isArray(segment?.points) && segment.points.length > 0))
     },
     // 具备 GPS 经纬度的装备数量（overview.gpsDevices 或实时 location）
     gpsEquipmentCount() {

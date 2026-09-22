@@ -108,7 +108,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['globalMapId', 'slamMapList', 'slamOfRobot', 'robotBaseInfo', 'robotLocation', 'taskPathPoints', 'taskData']),
+    ...mapState('websocketExtraData', ['globalMapId', 'slamMapList', 'slamOfRobot', 'robotBaseInfo', 'robotLocation', 'taskRoutesByMap', 'taskData']),
     activeCameras() {
       return this.$store.getters['websocketRobot/getActiveCameras']
     },
@@ -190,18 +190,15 @@ export default {
         robotLocation: this.robotLocation,
         slamMapList: this.slamMapList,
         slamOfRobot: this.slamOfRobot,
-        taskPathPoints: this.taskPathPoints,
-        taskData: this.taskData
+        taskRoutesByMap: this.taskRoutesByMap
       })
     },
     resolveTaskSlamMapId(taskId) {
       if (taskId === undefined || taskId === null || taskId === '') return null
       const task = this.taskData?.[taskId] || this.taskData?.[String(taskId)] || {}
-      const taskMapId = resolveSlamMapReference(this.slamMapList, task.mapId)
-      if (taskMapId) return taskMapId
-      const path = this.taskPathPoints?.[taskId] || this.taskPathPoints?.[String(taskId)]
-      const pathMapId = resolveSlamMapReference(this.slamMapList, path?.mapId)
-      if (pathMapId) return pathMapId
+      const routeMaps = (this.slamMapList || []).filter(map =>
+        this.taskRoutesByMap?.[String(map?.id)]?.[String(taskId)])
+      if (routeMaps.length === 1 && routeMaps[0]?.id != null) return routeMaps[0].id
       const robotId = (task.equipmentList || [])[0]?.robotId || (task.equipmentList || [])[0]?.id
       return this.resolveRobotSlamMapId(robotId)
     },

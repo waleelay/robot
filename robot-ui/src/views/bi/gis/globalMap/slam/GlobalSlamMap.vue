@@ -36,9 +36,9 @@
               <!-- 底层：未置顶的任务路径 -->
               <g
                 v-for="path in baseDisplayTaskPaths"
-                :key="`task-path-${path.taskId}`"
+                :key="`task-path-${path.routeKey}`"
                 class="map-task-path-layer"
-                @mouseenter="raiseTaskPath(path.taskId)"
+                @mouseenter="raiseTaskPath(path.routeKey)"
                 @mouseleave="clearRaisedTaskPath"
               >
                 <polyline
@@ -55,7 +55,7 @@
                 <title>{{ path.taskName }}</title>
                 <g
                   v-for="point in getVisibleTaskPathPoints(path)"
-                  :key="`task-path-${path.taskId}-${point.id}-${point.pathIndex}`"
+                  :key="`task-path-${path.routeKey}-${point.id}-${point.pathIndex}`"
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
                   class="map-preview-point is-path-point"
                   :class="{ 'is-overlap-cluster': point.isOverlappedPathPoint }"
@@ -94,7 +94,7 @@
                       </div>
                     </foreignObject>
                   </template>
-                  <g v-if="shouldShowPathSeq(path.taskId) && !point.isOverlappedPathPoint" pointer-events="none">
+                  <g v-if="shouldShowPathSeq(path.routeKey) && !point.isOverlappedPathPoint" pointer-events="none">
                     <g
                       v-for="badge in pathSequenceBadges(point)"
                       :key="`${point.id}-${badge.index}`"
@@ -444,9 +444,9 @@
               <!-- 置顶：任务路径（线条 + 点位） -->
               <g
                 v-if="raisedDisplayTaskPath"
-                :key="`task-path-raised-${raisedDisplayTaskPath.taskId}`"
+                :key="`task-path-raised-${raisedDisplayTaskPath.routeKey}`"
                 class="map-task-path-layer is-raised"
-                @mouseenter="raiseTaskPath(raisedDisplayTaskPath.taskId)"
+                @mouseenter="raiseTaskPath(raisedDisplayTaskPath.routeKey)"
                 @mouseleave="clearRaisedTaskPath"
               >
                 <polyline
@@ -463,7 +463,7 @@
                 <title>{{ raisedDisplayTaskPath.taskName }}</title>
                 <g
                   v-for="point in getVisibleTaskPathPoints(raisedDisplayTaskPath)"
-                  :key="`task-path-raised-${raisedDisplayTaskPath.taskId}-${point.id}-${point.pathIndex}`"
+                  :key="`task-path-raised-${raisedDisplayTaskPath.routeKey}-${point.id}-${point.pathIndex}`"
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
                   class="map-preview-point is-path-point"
                   :class="{ 'is-overlap-cluster': point.isOverlappedPathPoint }"
@@ -506,13 +506,13 @@
               </g>
               <!-- 置顶：路径点编号（独立图层，压过其它路径名） -->
               <g
-                v-if="raisedDisplayTaskPath && shouldShowPathSeq(raisedDisplayTaskPath.taskId)"
+                v-if="raisedDisplayTaskPath && shouldShowPathSeq(raisedDisplayTaskPath.routeKey)"
                 class="path-seq-raised-layer"
                 pointer-events="none"
               >
                 <g
                   v-for="point in getVisibleTaskPathPoints(raisedDisplayTaskPath)"
-                  :key="`task-path-seq-raised-${raisedDisplayTaskPath.taskId}-${point.id}-${point.pathIndex}`"
+                  :key="`task-path-seq-raised-${raisedDisplayTaskPath.routeKey}-${point.id}-${point.pathIndex}`"
                   :transform="`translate(${point.pixel.x}, ${point.pixel.y}) scale(${1 / zoom})`"
                 >
                   <g
@@ -807,7 +807,7 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds', 'taskPathPoints', 'taskData', 'trajectoryByRobot' /* , 'robotAlarmObj' */]),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'robotLocation', 'slamOfRobot', 'showRobotIds', 'taskRoutesByMap', 'taskData', 'trajectoryByRobot' /* , 'robotAlarmObj' */]),
     selectedRobot() {
       return this.$store.getters['websocketRobot/getSelectedRobot'] || {}
     },
@@ -925,10 +925,16 @@ export default {
       const robot = this.robotBaseInfo?.[this.selectedShowRobotId] || {}
       const taskId = robot.runningTaskId
       if (taskId === undefined || taskId === null || taskId === '') return null
-      const pathData = this.taskPathPoints?.[taskId]
-      if (!pathData || !Array.isArray(pathData.pathPoints) || !pathData.pathPoints.length) return null
-      if (String(pathData.mapId) !== String(this.map?.id)) return null
-      return pathData
+      const route = this.taskRoutesByMap?.[String(this.map?.id)]?.[String(taskId)]
+      if (!route) return null
+      const segment = this.singleRouteSegment(route)
+      if (!segment || !Array.isArray(segment.points) || !segment.points.length) return null
+      return {
+        ...route,
+        ...segment,
+        routeKey: `${taskId}::${segment.segmentKey || 'unbound'}`,
+        pathPoints: segment.points
+      }
     },
     // MapTool「点位」是否可切换：由 map-config.disablePointWithoutCharge 控制
     canTogglePath() {
@@ -965,25 +971,30 @@ export default {
     mapTaskPaths() {
       const mapId = this.map?.id
       if (mapId === undefined || mapId === null) return []
-      const entries = Object.entries(this.taskPathPoints || {})
+      const entries = Object.entries(this.taskRoutesByMap?.[String(mapId)] || {})
       const list = []
-      entries.forEach(([taskId, data]) => {
+      entries.forEach(([taskId, route]) => {
         if (this.mockExecutionTaskId && String(taskId) === String(this.mockExecutionTaskId)) return
-        if (!data || String(data.mapId) !== String(mapId)) return
-        if (!Array.isArray(data.pathPoints) || !data.pathPoints.length) return
-        const points = this.toDrawablePoints(data.pathPoints)
-          .map((point, pathIndex) => ({ ...point, pathIndex: pathIndex + 1 }))
-        if (points.length < 1) return
-        const polylinePoints = points.length >= 2
-          ? points.map(point => `${point.pixel.x},${point.pixel.y}`).join(' ')
-          : ''
-        const taskInfo = this.taskData?.[taskId] || {}
-        list.push({
-          taskId,
-          taskName: taskInfo.name || taskInfo.taskName || `任务 ${taskId}`,
-          points,
-          renderPoints: this.getTaskPathRenderPoints(points),
-          polylinePoints
+        ;(route?.segments || []).forEach(segment => {
+          if (!Array.isArray(segment?.points) || !segment.points.length) return
+          const points = this.toDrawablePoints(segment.points)
+            .map((point, pathIndex) => ({ ...point, pathIndex: pathIndex + 1 }))
+          if (points.length < 1) return
+          const polylinePoints = points.length >= 2
+            ? points.map(point => `${point.pixel.x},${point.pixel.y}`).join(' ')
+            : ''
+          const taskInfo = this.taskData?.[taskId] || {}
+          const routeKey = `${taskId}::${segment.segmentKey || 'unbound'}`
+          list.push({
+            taskId,
+            routeKey,
+            deviceId: segment.deviceId,
+            roleKey: segment.roleKey,
+            taskName: taskInfo.name || taskInfo.taskName || `任务 ${taskId}`,
+            points,
+            renderPoints: this.getTaskPathRenderPoints(points),
+            polylinePoints
+          })
         })
       })
       const unifiedColor = TASK_PATH_COLORS[0]
@@ -1007,9 +1018,10 @@ export default {
         ? points.map(point => `${point.pixel.x},${point.pixel.y}`).join(' ')
         : ''
       const taskInfo = this.taskData?.[taskId] || this.activeTaskPathData || {}
-      const existing = this.mapTaskPaths.find(item => String(item.taskId) === String(taskId))
+      const existing = this.mapTaskPaths.find(item => String(item.routeKey) === String(this.activeTaskPathData.routeKey))
       return {
         taskId,
+        routeKey: this.activeTaskPathData.routeKey,
         taskName: taskInfo.name || taskInfo.taskName || existing?.taskName || `任务 ${taskId}`,
         color: existing?.color || '#EB7B25',
         points,
@@ -1027,15 +1039,14 @@ export default {
       const hasListFilter = filterId !== undefined && filterId !== null && filterId !== ''
       if (this.showAllTaskPaths) {
         if (hasListFilter) {
-          const hit = this.mapTaskPaths.find(item => String(item.taskId) === String(filterId))
-          if (hit) list.push(hit)
+          list.push(...this.mapTaskPaths.filter(item => String(item.taskId) === String(filterId)))
         } else {
           list.push(...this.mapTaskPaths)
         }
       }
       const robot1Path = this.robot1TaskPathLayer
       if (robot1Path && (!hasListFilter || String(robot1Path.taskId) === String(filterId))
-        && !list.some(item => String(item.taskId) === String(robot1Path.taskId))) {
+        && !list.some(item => String(item.routeKey) === String(robot1Path.routeKey))) {
         list.push(robot1Path)
       }
       const unifiedColor = TASK_PATH_COLORS[0]
@@ -1049,12 +1060,12 @@ export default {
     baseDisplayTaskPaths() {
       const raisedId = this.activeRaisedTaskPathId
       if (raisedId === undefined || raisedId === null || raisedId === '') return this.allDisplayTaskPaths
-      return this.allDisplayTaskPaths.filter(item => String(item.taskId) !== String(raisedId))
+      return this.allDisplayTaskPaths.filter(item => String(item.routeKey) !== String(raisedId))
     },
     raisedDisplayTaskPath() {
       const raisedId = this.activeRaisedTaskPathId
       if (raisedId === undefined || raisedId === null || raisedId === '') return null
-      return this.allDisplayTaskPaths.find(item => String(item.taskId) === String(raisedId)) || null
+      return this.allDisplayTaskPaths.find(item => String(item.routeKey) === String(raisedId)) || null
     },
     // 悬停优先于钉住
     activeRaisedTaskPathId() {
@@ -1462,6 +1473,11 @@ export default {
     })
   },
   methods: {
+    singleRouteSegment(route) {
+      const segments = Array.isArray(route?.segments) ? route.segments : []
+      // Management deviceId 不等同于 robotId；多设备任务缺少权威关联时不猜测机器人所属分段。
+      return segments.length === 1 ? segments[0] : null
+    },
     ...mapActions('websocketExtraData', ['setShowRobotIds']),
     ...mapActions('websocketRobot', ['setSelectedRobotId']),
     /** 预览不可用：通知父级在 MapTool 地图选择处提示 */
@@ -1572,7 +1588,7 @@ export default {
       }))
     },
     getTaskPointGroupKey(path, point) {
-      return `${path.taskId}:${point.overlapGroupKey}`
+      return `${path.routeKey}:${point.overlapGroupKey}`
     },
     getVisibleTaskPathPoints(path) {
       const points = path?.renderPoints || []
@@ -1766,18 +1782,18 @@ export default {
         this.expandedTaskPointGroupKey = ''
       }
     },
-    raiseTaskPath(taskId) {
+    raiseTaskPath(routeKey) {
       if (!this.showAllTaskPaths && !this.showPolyline) return
-      this.raisedTaskPathId = taskId
+      this.raisedTaskPathId = routeKey
     },
     clearRaisedTaskPath() {
       // 仅清除悬停置顶，保留 Robot1 钉住的路径
       this.raisedTaskPathId = null
     },
     // 多路径时默认隐藏序号，仅悬停/钉住对应路径时显示；单路径始终显示
-    shouldShowPathSeq(taskId) {
+    shouldShowPathSeq(routeKey) {
       if (this.allDisplayTaskPaths.length <= 1) return true
-      return String(this.activeRaisedTaskPathId) === String(taskId)
+      return String(this.activeRaisedTaskPathId) === String(routeKey)
     },
     onMapPointEnter(point) {
       this.hoveredPointId = point?.id ?? null
@@ -1791,8 +1807,8 @@ export default {
       if (!this.showAllTaskPaths && !this.showPolyline) return
       const taskId = robot?.runningTaskId
       if (taskId === undefined || taskId === null || taskId === '') return
-      const visible = this.allDisplayTaskPaths.some(item => String(item.taskId) === String(taskId))
-      if (visible) this.raisedTaskPathId = taskId
+      const visible = this.allDisplayTaskPaths.find(item => String(item.taskId) === String(taskId))
+      if (visible) this.raisedTaskPathId = visible.routeKey
     },
     closePopup() {
       this.popupVisible = false
@@ -2031,9 +2047,10 @@ export default {
         const robot = this.robotBaseInfo?.[this.selectedShowRobotId] || {}
         const taskId = robot.runningTaskId
         if (next && taskId !== undefined && taskId !== null && taskId !== '') {
-          const onMap = this.mapTaskPaths.some(item => String(item.taskId) === String(taskId))
-          if (onMap) {
-            this.pinnedTaskPathId = taskId
+          const activePath = this.robot1TaskPathLayer
+            || this.mapTaskPaths.find(item => String(item.taskId) === String(taskId))
+          if (activePath) {
+            this.pinnedTaskPathId = activePath.routeKey
             this.raisedTaskPathId = null
             this.showPolyline = false
             return
@@ -2164,11 +2181,7 @@ export default {
           status: 'terminated',
           statusName: '已终止'
         })
-        const oldPath = this.taskPathPoints?.[oldTaskId]
-        this.$store.commit('websocketExtraData/SET_TASK_PATH_POINTS', {
-          taskId: oldTaskId,
-          data: { mapId: oldPath?.mapId || mapId, pathPoints: [] }
-        })
+        this.$store.commit('websocketExtraData/REMOVE_TASK_ROUTE', { mapId, taskId: oldTaskId })
       }
       const taskId = `mock-temp-nav-${robotId}-${Date.now()}`
       const startX = location.x ?? location.coordinateX
@@ -2195,12 +2208,10 @@ export default {
       ]
       this.$store.commit('websocketExtraData/SET_TASK_INFO', {
         taskId,
-        mapId,
         name: this.locationLabel || '临时任务',
         status: 'running',
         statusName: '执行中',
         timeRange: '临时',
-        pathPoints,
         equipmentList: [{
           robotId,
           name: robot.name,
@@ -2209,9 +2220,14 @@ export default {
           status: 'online'
         }]
       })
-      this.$store.commit('websocketExtraData/SET_TASK_PATH_POINTS', {
-        taskId,
-        data: { mapId, pathPoints }
+      this.$store.commit('websocketExtraData/SET_TASK_ROUTES_FOR_MAP', {
+        mapId,
+        complete: false,
+        items: [{
+          taskId,
+          mapId,
+          segments: [{ segmentKey: `device:${robotId}`, deviceId: robotId, points: pathPoints }]
+        }]
       })
       this.$store.commit('websocketExtraData/SET_ROBOT_BASE_INFO', {
         robotId,

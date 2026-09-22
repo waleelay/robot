@@ -116,8 +116,7 @@ class PanoramaServiceTest {
 
         verify(client, never()).device(anyString());
         verify(client, never()).mapPoints(anyString());
-        verify(client, never()).pathPoints(anyString());
-        verify(client, never()).taskWorkflowDefinition(anyString());
+        verify(client, never()).taskWorkflowPlanRoutePoints(anyString());
         verify(client, never()).taskWorkflowInstance(anyString());
         verify(client, never()).taskWorkflowReplay(anyString());
         verify(client, never()).deviceTaskInstances(anyString());
@@ -260,9 +259,6 @@ class PanoramaServiceTest {
                 "id", 1L,
                 "workflowDefinitionId", "definition-001",
                 "roleBindings", List.of(Map.of("deviceIds", List.of("robot-001"))))));
-        when(centerClient.taskWorkflowDefinition("definition-001")).thenReturn(Optional.of(Map.of(
-                "mapId", 2077775285125144578L)));
-
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
         Map<String, Object> overview = service.overview();
 
@@ -290,22 +286,48 @@ class PanoramaServiceTest {
     void loadsTaskRoutesOnDemandInsteadOfPuttingThemInOverview() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
-        List<Map<String, Object>> mapPoints = List.of(Map.of("id", 101L, "pointName", "Start"));
         when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
                 "id", 1L,
-                "planName", "A区巡逻",
-                "workflowDefinitionId", "definition-001")));
-        when(centerClient.taskWorkflowDefinition("definition-001")).thenReturn(java.util.Optional.of(Map.of(
-                "mapId", 1001L,
-                "pathId", 2001L)));
-        when(centerClient.mapPoints("1001")).thenReturn(mapPoints);
-        when(centerClient.pathPoints("2001")).thenReturn(List.of(Map.of("mapPointId", 101L)));
+                "planName", "A区巡逻")));
+        when(centerClient.taskWorkflowPlanRoutePoints("1")).thenReturn(List.of(
+                Map.of(
+                        "sequence", 1,
+                        "nodeId", "node-1",
+                        "pointId", 101L,
+                        "pointName", "Start",
+                        "mapId", 1001L,
+                        "deviceId", 501L,
+                        "coordinateX", 1.0,
+                        "coordinateY", 2.0),
+                Map.of(
+                        "sequence", 2,
+                        "nodeId", "node-2",
+                        "pointId", 102L,
+                        "pointName", "Robot Two",
+                        "mapId", 1001L,
+                        "deviceId", 502L,
+                        "coordinateX", 3.0,
+                        "coordinateY", 4.0),
+                Map.of(
+                        "sequence", 3,
+                        "nodeId", "node-3",
+                        "pointId", 103L,
+                        "pointName", "Other Map",
+                        "mapId", 1002L,
+                        "deviceId", 501L,
+                        "coordinateX", 5.0,
+                        "coordinateY", 6.0)));
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
         Map<String, Object> overview = service.overview();
         assertFalse(maps(overview.get("tasks")).get(0).containsKey("pathPoints"));
         Map<String, Object> routes = service.mapTaskRoutes("1001");
-        assertEquals(mapPoints, maps(routes.get("items")).get(0).get("pathPoints"));
-        verify(centerClient, times(1)).mapPoints("1001");
+        Map<String, Object> item = maps(routes.get("items")).get(0);
+        List<Map<String, Object>> segments = maps(item.get("segments"));
+        assertEquals(2, segments.size());
+        assertEquals("device:501", segments.get(0).get("segmentKey"));
+        assertEquals(101L, maps(segments.get(0).get("points")).get(0).get("pointId"));
+        assertEquals("device:502", segments.get(1).get("segmentKey"));
+        verify(centerClient, times(1)).taskWorkflowPlanRoutePoints("1");
     }
 
     @Test
@@ -315,18 +337,22 @@ class PanoramaServiceTest {
         when(centerClient.taskMaxConcurrency()).thenReturn(8);
         List<Map<String, Object>> plans = java.util.stream.IntStream.range(0, 12)
                 .mapToObj(index -> Map.<String, Object>of(
-                        "id", "plan-" + index,
-                        "workflowDefinitionId", "definition-" + index))
+                        "id", "plan-" + index))
                 .toList();
         when(centerClient.taskWorkflowPlans()).thenReturn(plans);
         var active = new java.util.concurrent.atomic.AtomicInteger();
         var peak = new java.util.concurrent.atomic.AtomicInteger();
-        when(centerClient.taskWorkflowDefinition(anyString())).thenAnswer(invocation -> {
+        when(centerClient.taskWorkflowPlanRoutePoints(anyString())).thenAnswer(invocation -> {
             int current = active.incrementAndGet();
             peak.accumulateAndGet(current, Math::max);
             try {
                 java.util.concurrent.locks.LockSupport.parkNanos(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(20));
-                return Optional.of(Map.of("mapId", "map-a"));
+                return List.of(Map.of(
+                        "mapId", "map-a",
+                        "nodeId", "node-1",
+                        "sequence", 1,
+                        "coordinateX", 1,
+                        "coordinateY", 2));
             } finally {
                 active.decrementAndGet();
             }
@@ -344,11 +370,16 @@ class PanoramaServiceTest {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         when(centerClient.taskWorkflowPlans()).thenReturn(List.of(Map.of(
-                "id", "plan-1", "workflowDefinitionId", "definition-1")));
-        when(centerClient.taskWorkflowDefinition("definition-1"))
+                "id", "plan-1")));
+        when(centerClient.taskWorkflowPlanRoutePoints("plan-1"))
                 .thenThrow(new PanoramaCenterClient.TaskSourceException(
                         "TASK_QUERY_CONCURRENCY_LIMIT", "任务查询并发已达上限"))
-                .thenReturn(Optional.of(Map.of("mapId", "map-a")));
+                .thenReturn(List.of(Map.of(
+                        "mapId", "map-a",
+                        "nodeId", "node-1",
+                        "sequence", 1,
+                        "coordinateX", 1,
+                        "coordinateY", 2)));
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
 
         Map<String, Object> degraded = service.mapTaskRoutes("map-a");
@@ -357,7 +388,7 @@ class PanoramaServiceTest {
         assertEquals(false, map(map(degraded.get("dataQuality")).get("tasks")).get("complete"));
         assertEquals(1, maps(recovered.get("items")).size());
         assertEquals(true, map(map(recovered.get("dataQuality")).get("tasks")).get("complete"));
-        verify(centerClient, times(2)).taskWorkflowDefinition("definition-1");
+        verify(centerClient, times(2)).taskWorkflowPlanRoutePoints("plan-1");
     }
 
     @Test
@@ -1122,7 +1153,7 @@ class PanoramaServiceTest {
         assertEquals("slam-map-one", ((Map<?, ?>) devices.get(0).get("location")).get("mapId"));
         assertEquals("slam-map-two", ((Map<?, ?>) devices.get(1).get("location")).get("mapId"));
         assertEquals("unknown-map", ((Map<?, ?>) devices.get(2).get("location")).get("mapId"));
-        verify(centerClient, never()).taskWorkflowDefinition(anyString());
+        verify(centerClient, never()).taskWorkflowPlanRoutePoints(anyString());
     }
 
     @Test
@@ -1139,7 +1170,7 @@ class PanoramaServiceTest {
         assertEquals(0, service.mountedDeviceCount("robot-001").get("mountedDeviceCount"));
         verify(centerClient, never()).taskWorkflowPlans();
         verify(centerClient, never()).taskWorkflowInstances();
-        verify(centerClient, never()).taskWorkflowDefinition(anyString());
+        verify(centerClient, never()).taskWorkflowPlanRoutePoints(anyString());
     }
 
     @Test
@@ -1469,7 +1500,7 @@ class PanoramaServiceTest {
         assertEquals(1L, map(snapshot.get("taskOverview")).get("pending"));
         verify(centerClient, never()).taskWorkflowReplay(anyString());
         verify(centerClient, never()).deviceTaskInstances(anyString());
-        verify(centerClient, never()).taskWorkflowDefinition(anyString());
+        verify(centerClient, never()).taskWorkflowPlanRoutePoints(anyString());
         verify(centerClient, never()).devices();
     }
 

@@ -53,6 +53,7 @@ helpers['path-direction-arrows'] = compile('views/bi/gis/globalMap/slam/path-dir
 helpers['trajectory-visual'] = compile('views/bi/gis/globalMap/slam/trajectory-visual.js')
 helpers['temporary-navigation'] = compile('views/bi/gis/globalMap/slam/temporary-navigation.js')
 const globalSlamMap = compile('views/bi/gis/globalMap/slam/GlobalSlamMap.vue')
+const panoramaLeft = compile('views/bi/patrol/panorama/Left.vue')
 
 function deferred() {
   let resolve, reject
@@ -66,7 +67,12 @@ const overview = (ids = [B, A], extra = {}) => ({
   alarms: { high: { items: [] } }, ...extra
 })
 const resources = mapId => ({ mapId, points: [{ id: 'point-' + mapId }] })
-const routes = mapId => ({ mapId, items: [{ taskId: 'task-' + mapId, mapId, pathPoints: [{ pointId: 'point-' + mapId }] }] })
+const routeItem = (taskId, mapId, pointId = 'point-' + mapId) => ({
+  taskId,
+  mapId,
+  segments: [{ segmentKey: 'unbound', points: [{ pointId }] }]
+})
+const routes = mapId => ({ mapId, items: [routeItem('task-' + mapId, mapId)] })
 function setup(overrides = {}) {
   const requests = []
   const watches = []
@@ -639,7 +645,7 @@ test('实时监控将设备 edgeMapId 转换为中心地图 id，且定位优先
     robotLocation: { 'robot-1': { mapId: 'edge-' + B, localized: true, x: 1, y: 2 } },
     slamMapList: maps,
     slamOfRobot: {},
-    taskPathPoints: { 'task-1': { mapId: A } },
+    taskRoutesByMap: { [A]: { 'task-1': routeItem('task-1', A) } },
     taskData: {}
   })
   assert.equal(resolved, B)
@@ -657,10 +663,39 @@ test('实时监控无法使用定位时回退任务地图，重复 edgeMapId 不
     robotLocation: { 'robot-1': { mapId: 'edge-duplicate', localized: true, x: 1, y: 2 } },
     slamMapList: maps,
     slamOfRobot: {},
-    taskPathPoints: {},
-    taskData: { 'task-1': { mapId: B } }
+    taskRoutesByMap: { [B]: { 'task-1': routeItem('task-1', B) } },
+    taskData: {}
   })
   assert.equal(resolved, B)
+})
+
+test('实时监控不使用 Management deviceId 猜测跨地图任务的机器人归属', () => {
+  const { resolveMonitorRobotSlamMapId } = helpers['monitor-map']
+  const resolved = resolveMonitorRobotSlamMapId({
+    robotId: 'robot-1',
+    robotBaseInfo: { 'robot-1': {
+      robotId: 'robot-1',
+      managementDeviceId: 'management-device-a',
+      runningTaskId: 'task-1'
+    } },
+    robotLocation: {},
+    slamMapList: [{ id: A }, { id: B }],
+    slamOfRobot: {},
+    taskRoutesByMap: {
+      [A]: { 'task-1': { segments: [{ deviceId: 'management-device-a', points: [{ pointId: 'a' }] }] } },
+      [B]: { 'task-1': { segments: [{ deviceId: 'management-device-b', points: [{ pointId: 'b' }] }] } }
+    }
+  })
+  assert.equal(resolved, null)
+})
+
+test('机器人路径入口仅在任务只有一个路线分段时安全回退', () => {
+  assert.equal(globalSlamMap.methods.singleRouteSegment({
+    segments: [{ deviceId: 'management-device-a' }, { deviceId: 'management-device-b' }]
+  }), null)
+  assert.equal(globalSlamMap.methods.singleRouteSegment({
+    segments: [{ deviceId: 'management-device-a' }]
+  }).deviceId, 'management-device-a')
 })
 
 test('停用摄像头不进入 SLAM 地图，启停更新同步地图列表', async () => {
@@ -719,6 +754,89 @@ test('续期刷新保留非首张地图：底图、工具栏、任务地图一�
     assert.equal(component.slamMapPayload.id, B)
     component.$destroy()
   })
+})
+
+test('左侧任务点击按 taskId 展示该任务的全部分段路线', async () => {
+  const emitted = []
+  await panoramaLeft.methods.selectTask.call({
+    activeTaskId: null,
+    $refs: {},
+    setShowRobotIds() {},
+    getTaskRobotIds: () => [],
+    emitFocusTaskPath: panoramaLeft.methods.emitFocusTaskPath,
+    $emit: (event, taskId) => emitted.push([event, taskId])
+  }, 'task-selected')
+  assert.deepEqual(emitted, [['focus-task-path', 'task-selected']])
+
+  const mapPage = {
+    isSlam: true,
+    pathOpenedByTaskCard: false,
+    $refs: { mapToolRef: { pathActive: false } },
+    applyTaskPaths(visible) { this.forwarded = visible },
+    setSlamPathActive: panorama.methods.setSlamPathActive,
+    ensureTaskPathHighlighted: panorama.methods.ensureTaskPathHighlighted,
+    onTaskCardDeselected: panorama.methods.onTaskCardDeselected
+  }
+  panorama.watch.listFilterTaskId.handler.call(mapPage, emitted[0][1])
+  assert.equal(mapPage.$refs.mapToolRef.pathActive, true)
+  assert.equal(mapPage.forwarded, true)
+
+  const routeContext = {
+    map: { id: A },
+    mockExecutionTaskId: null,
+    taskData: { 'task-selected': { name: '选中任务' }, 'task-other': { name: '其他任务' } },
+    taskRoutesByMap: { [A]: {
+      'task-selected': { segments: [
+        { segmentKey: 'device-a', deviceId: 'management-device-a', points: [{ pointId: 'p1' }, { pointId: 'p2' }] },
+        { segmentKey: 'device-b', deviceId: 'management-device-b', points: [{ pointId: 'p3' }] }
+      ] },
+      'task-other': { segments: [{ segmentKey: 'device-c', points: [{ pointId: 'p4' }] }] }
+    } },
+    toDrawablePoints: points => points.map((point, index) => ({ ...point, pixel: { x: index, y: index } })),
+    getTaskPathRenderPoints: points => points
+  }
+  routeContext.mapTaskPaths = globalSlamMap.computed.mapTaskPaths.call(routeContext)
+  const displayed = globalSlamMap.computed.allDisplayTaskPaths.call({
+    showSmall: false,
+    showAllTaskPaths: true,
+    listFilterTaskId: 'task-selected',
+    mapTaskPaths: routeContext.mapTaskPaths,
+    robot1TaskPathLayer: null
+  })
+  assert.deepEqual(Array.from(displayed, item => item.routeKey), [
+    'task-selected::device-a',
+    'task-selected::device-b'
+  ])
+})
+
+test('SLAM 工具栏路径按钮展示当前地图全部任务路线', () => {
+  const toolContext = {
+    isSlam: true,
+    currentSlam: A,
+    taskRoutesByMap: { [A]: {
+      'task-1': routeItem('task-1', A),
+      'task-2': routeItem('task-2', A)
+    } }
+  }
+  assert.equal(mapTool.computed.taskPathOperable.call(toolContext), true)
+
+  const emitted = []
+  mapTool.methods.showPath.call({
+    isSlam: true,
+    pathActive: false,
+    $emit: (event, visible) => emitted.push([event, visible])
+  })
+  assert.deepEqual(emitted, [['toggleTaskPaths', true]])
+
+  const slam = {
+    canToggleTaskPaths: true,
+    showAllTaskPaths: false,
+    raisedTaskPathId: null,
+    pinnedTaskPathId: null,
+    expandedTaskPointGroupKey: ''
+  }
+  globalSlamMap.methods.toggleTaskPaths.call(slam, emitted[0][1])
+  assert.equal(slam.showAllTaskPaths, true)
 })
 
 test('地图排序和 GPS 设备变化不覆盖选择，手动 GIS 也保持', async () => {
@@ -797,7 +915,7 @@ test('快速切图的旧响应不写任务；同一快照同一地图的在途�
   let calls = 0
   ctx.api.getPatrolPanoramaMapResources = id => { calls++; return delayed.promise }
   ctx.api.getPatrolPanoramaMapTaskRoutes = async id => ({
-    mapId: id, items: [{ taskId: '不应插入', mapId: id, pathPoints: [] }]
+    mapId: id, items: [routeItem('不应插入', id)]
   })
   const first = ctx.dispatch('setGlobalMapId', A)
   const second = ctx.dispatch('loadMapResources', A)
@@ -816,7 +934,7 @@ test('资源局部失败不切图，普通 Overview 失败保留既有地图和�
   ctx.api.getPatrolPanoramaMapResources = async () => { throw new Error('资源暂不可用') }
   await ctx.refresh()
   assert.equal(ctx.state.globalMapId, A)
-  assert.equal(ctx.state.taskPathPoints['task-' + A].pathPoints.length, 1)
+  assert.equal(ctx.state.taskRoutesByMap[A]['task-' + A].segments[0].points.length, 1)
   const previous = ctx.state.slamMapList
   ctx.api.getPatrolPanoramaOverview = async () => { throw new Error('总览暂不可用') }
   await assert.rejects(ctx.refresh(), /总览暂不可用/)
@@ -835,25 +953,24 @@ test('地图任务路径降级时增量更新成功项并保留未返回的完�
     getPatrolPanoramaMapTaskRoutes: async () => degraded
       ? {
           mapId: A,
-          items: [{ taskId: 'p1', mapId: A, pathPoints: [{ pointId: 'partial' }] }],
+          items: [routeItem('p1', A, 'partial')],
           dataQuality: { tasks: { complete: false, degraded: true, reasonCodes: ['TASK_QUERY_CONCURRENCY_LIMIT'] } }
         }
       : {
           mapId: A,
-          items: ['p1', 'p2'].map(taskId => ({ taskId, mapId: A, pathPoints: [{ pointId: taskId }] })),
+          items: ['p1', 'p2'].map(taskId => routeItem(taskId, A, taskId)),
           dataQuality: { tasks: { complete: true, degraded: false, reasonCodes: [] } }
         }
   })
 
   await ctx.refresh()
   assert.equal(ctx.state.taskRouteMapsReady[A], true)
-  assert.deepEqual(Object.values(ctx.state.taskData).map(task => task.mapId), [A, A])
+  assert.deepEqual(Object.keys(ctx.state.taskRoutesByMap[A]).sort(), ['p1', 'p2'])
   degraded = true
   await ctx.refresh()
 
-  assert.deepEqual(Object.values(ctx.state.taskData).map(task => task.mapId), [A, A])
-  assert.equal(ctx.state.taskData.p1.pathPoints[0].pointId, 'partial')
-  assert.equal(ctx.state.taskData.p2.pathPoints[0].pointId, 'p2')
+  assert.equal(ctx.state.taskRoutesByMap[A].p1.segments[0].points[0].pointId, 'partial')
+  assert.equal(ctx.state.taskRoutesByMap[A].p2.segments[0].points[0].pointId, 'p2')
   assert.equal(ctx.state.dataQuality.taskRoutes.degraded, true)
   assert.equal(ctx.state.taskRouteMapsReady[A], true)
 })
@@ -865,15 +982,15 @@ test('首次地图路径即降级时应用成功项但仍保持未就绪状态',
     }),
     getPatrolPanoramaMapTaskRoutes: async () => ({
       mapId: A,
-      items: [{ taskId: 'p1', mapId: A, pathPoints: [] }],
+      items: [routeItem('p1', A)],
       dataQuality: { tasks: { complete: false, degraded: true, reasonCodes: ['TASK_QUERY_CONCURRENCY_LIMIT'] } }
     })
   })
 
   await ctx.refresh()
 
-  assert.equal(ctx.state.taskData.p1.mapId, A)
-  assert.equal(ctx.state.taskData.p2.mapId, undefined)
+  assert.ok(ctx.state.taskRoutesByMap[A].p1)
+  assert.equal(ctx.state.taskRoutesByMap[A].p2, undefined)
   assert.equal(ctx.state.taskRouteMapsReady[A], undefined)
   const component = compile('views/bi/patrol/panorama/Left.vue')
   assert.equal(component.computed.taskRoutesReady.call({
@@ -886,7 +1003,7 @@ test('降级地图路线不能创建 Overview 中不存在的任务卡', async (
     getPatrolPanoramaOverview: async () => overview([A], { tasks: [] }),
     getPatrolPanoramaMapTaskRoutes: async () => ({
       mapId: A,
-      items: [{ taskId: 'partial-only', mapId: A, pathPoints: [] }],
+      items: [routeItem('partial-only', A)],
       dataQuality: { tasks: { complete: false, degraded: true, reasonCodes: ['TASK_QUERY_CONCURRENCY_LIMIT'] } }
     })
   })
@@ -894,7 +1011,7 @@ test('降级地图路线不能创建 Overview 中不存在的任务卡', async (
   await ctx.refresh()
 
   assert.equal(ctx.state.taskData['partial-only'], undefined)
-  assert.equal(ctx.state.taskPathPoints['partial-only'], undefined)
+  assert.equal(ctx.state.taskRoutesByMap[A]?.['partial-only'], undefined)
 })
 
 test('地图任务路径首次降级时只退避重试一次并恢复完整快照', async () => {
@@ -908,13 +1025,13 @@ test('地图任务路径首次降级时只退避重试一次并恢复完整快�
       if (calls === 1) {
         return {
           mapId: A,
-          items: [{ taskId: 'p1', mapId: A, pathPoints: [{ pointId: 'partial' }] }],
+          items: [routeItem('p1', A, 'partial')],
           dataQuality: { tasks: { complete: false, degraded: true, reasonCodes: ['TASK_QUERY_CONCURRENCY_LIMIT'] } }
         }
       }
       return {
         mapId: A,
-        items: ['p1', 'p2'].map(taskId => ({ taskId, mapId: A, pathPoints: [{ pointId: taskId }] })),
+        items: ['p1', 'p2'].map(taskId => routeItem(taskId, A, taskId)),
         dataQuality: { tasks: { complete: true, degraded: false, reasonCodes: [] } }
       }
     }
@@ -924,8 +1041,8 @@ test('地图任务路径首次降级时只退避重试一次并恢复完整快�
 
   assert.equal(calls, 2)
   assert.equal(ctx.state.taskRouteMapsReady[A], true)
-  assert.equal(ctx.state.taskData.p1.pathPoints[0].pointId, 'p1')
-  assert.equal(ctx.state.taskData.p2.pathPoints[0].pointId, 'p2')
+  assert.equal(ctx.state.taskRoutesByMap[A].p1.segments[0].points[0].pointId, 'p1')
+  assert.equal(ctx.state.taskRoutesByMap[A].p2.segments[0].points[0].pointId, 'p2')
   assert.equal(ctx.state.dataQuality.taskRoutes.degraded, false)
 })
 
@@ -963,18 +1080,18 @@ test('完整地图路径快照会移除已不属于当前地图的旧归属', as
     ] }),
     getPatrolPanoramaMapTaskRoutes: async () => ({
       mapId: A,
-      items: items.map(taskId => ({ taskId, mapId: A, pathPoints: [] })),
+      items: items.map(taskId => routeItem(taskId, A)),
       dataQuality: { tasks: { complete: true, degraded: false, reasonCodes: [] } }
     })
   })
   await ctx.refresh()
-  assert.equal(ctx.state.taskData.p2.mapId, A)
+  assert.ok(ctx.state.taskRoutesByMap[A].p2)
 
   items = ['p1']
   await ctx.dispatch('loadMapResources', A)
 
-  assert.equal(ctx.state.taskData.p1.mapId, A)
-  assert.equal(ctx.state.taskData.p2.mapId, null)
+  assert.ok(ctx.state.taskRoutesByMap[A].p1)
+  assert.equal(ctx.state.taskRoutesByMap[A].p2, undefined)
 })
 
 test('退出清空选择，迟到 Overview/地图响应不能复活旧页面，新登录重新默认选择', async () => {
@@ -1040,11 +1157,11 @@ test('任务详情旧响应不能覆盖事件运行态，退出后的响应不�
   await ctx.dispatch('syncRobot', { event: 'panorama.task.changed', data: {
     task: { taskId: 'plan-1', executionStatus: 'RUNNING', activeWorkflowInstanceId: 'new' }
   } })
-  pending.resolve({ task: { taskId: 'plan-1', executionStatus: 'WAITING', pathPoints: [{ x: 1 }] } })
+  pending.resolve({ task: { taskId: 'plan-1', executionStatus: 'WAITING', currentLocation: '巡检点' } })
   await loading
   assert.equal(ctx.state.taskData['plan-1'].executionStatus, 'RUNNING')
   assert.equal(ctx.state.taskData['plan-1'].activeWorkflowInstanceId, 'new')
-  assert.equal(ctx.state.taskData['plan-1'].pathPoints.length, 1)
+  assert.equal(ctx.state.taskData['plan-1'].currentLocation, '巡检点')
   const late = deferred()
   ctx.api.getPatrolPanoramaTaskDetail = () => late.promise
   const afterLogout = ctx.dispatch('loadTaskDetail', 'plan-1')
@@ -1086,7 +1203,7 @@ test('首屏只等待地图基础资源，任务路线慢响应不阻塞总览�
   pendingRoutes.resolve(routes(A))
   await loading
   assert.equal(ctx.state.taskRouteMapsReady[A], true)
-  assert.equal(ctx.state.taskData[`task-${A}`].pathPoints[0].pointId, `point-${A}`)
+  assert.equal(ctx.state.taskRoutesByMap[A][`task-${A}`].segments[0].points[0].pointId, `point-${A}`)
 })
 
 test('计划列表并发查询只接收最新请求，旧页结果不能覆盖新筛选', async () => {
@@ -1312,43 +1429,35 @@ test('降级快照保留已有任务和版本，正常详情仍可完成回填',
   }
 })
 
-test('状态变化保留新摘要，同时接受详情解析出的地图、路径和位置', async () => {
+test('状态变化保留新摘要，同时接受详情解析出的设备与位置', async () => {
   const pending = deferred()
   const ctx = setup({ getPatrolPanoramaTaskDetail: () => pending.promise })
-  ctx.store.commit('websocketExtraData/SET_TASK_INFO', { taskId: 'p1', executionStatus: 'RUNNING', mapId: null, pathPoints: [], mapPoints: [] })
+  ctx.store.commit('websocketExtraData/SET_TASK_INFO', { taskId: 'p1', executionStatus: 'RUNNING' })
   const detail = ctx.dispatch('loadTaskDetail', 'p1')
   await ctx.dispatch('syncRobot', { event: 'panorama.task.changed', data: { task: {
-    taskId: 'p1', executionStatus: 'PAUSED', mapId: null, equipmentList: [{ robotId: 'new' }]
+    taskId: 'p1', executionStatus: 'PAUSED', equipmentList: [{ robotId: 'new' }]
   } } })
   pending.resolve({ task: { taskId: 'p1', executionStatus: 'RUNNING',
-    mapId: 'map-1', equipmentList: [{ robotId: 'old' }], pathPoints: [{ x: 1 }],
-    mapPoints: [{ id: 'point' }], currentLocation: '巡检点' } })
+    equipmentList: [{ robotId: 'old' }], currentLocation: '巡检点' } })
   await detail
   assert.equal(ctx.state.taskData.p1.executionStatus, 'PAUSED')
   assert.equal(ctx.state.taskData.p1.equipmentList[0].robotId, 'new')
-  assert.equal(ctx.state.taskData.p1.mapId, 'map-1')
-  assert.equal(ctx.state.taskData.p1.pathPoints.length, 1)
-  assert.equal(ctx.state.taskData.p1.mapPoints.length, 1)
   assert.equal(ctx.state.taskData.p1.currentLocation, '巡检点')
   await ctx.dispatch('syncRobot', { event: 'panorama.task.changed', data: { task: {
-    taskId: 'p1', executionStatus: 'RUNNING', mapId: null
+    taskId: 'p1', executionStatus: 'RUNNING'
   } } })
-  assert.equal(ctx.state.taskData.p1.mapId, 'map-1')
-  ctx.api.getPatrolPanoramaTaskDetail = async () => ({ task: { taskId: 'p1', mapId: null, pathPoints: [] } })
-  await ctx.dispatch('loadTaskDetail', 'p1')
-  assert.equal(ctx.state.taskData.p1.mapId, null)
 })
 
-test('实例或地图变化后，旧详情路径不能混入新任务', async () => {
-  for (const field of ['workflowInstanceId', 'mapId']) {
-    const pending = deferred()
-    const ctx = setup({ getPatrolPanoramaTaskDetail: () => pending.promise })
-    ctx.store.commit('websocketExtraData/SET_TASK_STATE', { taskId: 'p1', [field]: 'old', pathPoints: [] })
-    const detail = ctx.dispatch('loadTaskDetail', 'p1')
-    ctx.store.commit('websocketExtraData/SET_TASK_STATE', { taskId: 'p1', [field]: 'new', executionStatus: 'RUNNING' })
-    pending.resolve({ task: { taskId: 'p1', [field]: 'old', pathPoints: [{ x: 1 }] } })
-    await detail
-    assert.equal(ctx.state.taskData.p1[field], 'new')
-    assert.equal(ctx.state.taskData.p1.pathPoints.length, 0)
-  }
+test('实例变化后，旧详情不能混入新任务', async () => {
+  const pending = deferred()
+  const ctx = setup({ getPatrolPanoramaTaskDetail: () => pending.promise })
+  ctx.store.commit('websocketExtraData/SET_TASK_STATE', { taskId: 'p1', workflowInstanceId: 'old' })
+  const detail = ctx.dispatch('loadTaskDetail', 'p1')
+  ctx.store.commit('websocketExtraData/SET_TASK_STATE', {
+    taskId: 'p1', workflowInstanceId: 'new', executionStatus: 'RUNNING'
+  })
+  pending.resolve({ task: { taskId: 'p1', workflowInstanceId: 'old', currentLocation: '旧位置' } })
+  await detail
+  assert.equal(ctx.state.taskData.p1.workflowInstanceId, 'new')
+  assert.equal(ctx.state.taskData.p1.currentLocation, undefined)
 })

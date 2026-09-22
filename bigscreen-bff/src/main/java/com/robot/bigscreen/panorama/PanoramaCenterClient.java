@@ -218,14 +218,19 @@ public class PanoramaCenterClient {
         return records(taskResponseMap(uri, "TASK_FIXED_CAMERAS_UNAVAILABLE", true).orElse(Map.of()));
     }
 
-    public Optional<Map<String, Object>> taskWorkflowDefinition(String workflowDefinitionId) {
-        if (workflowDefinitionId == null || workflowDefinitionId.isBlank()) {
-            return Optional.empty();
+    /**
+     * 查询任务计划冻结版本解析出的路线点。路线归属由 Management 根据计划版本及其依赖统一解析，
+     * BFF 不再读取工作流定义上的历史 pathId 字段拼装路线。
+     */
+    public List<Map<String, Object>> taskWorkflowPlanRoutePoints(String taskId) {
+        if (taskId == null || taskId.isBlank()) {
+            return List.of();
         }
-        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-definitions/" + workflowDefinitionId)
+        URI uri = uri(properties.getManageBaseUrl(),
+                "/api/v1/management/task-workflow-plans/" + taskId + "/route-points")
                 .build(true)
                 .toUri();
-        return taskDataMap(uri, "WORKFLOW_DEFINITION_UNAVAILABLE", true);
+        return records(taskResponseMap(uri, "TASK_ROUTE_POINTS_UNAVAILABLE", false).orElse(Map.of()));
     }
 
     public List<Map<String, Object>> taskWorkflowInstances() {
@@ -365,16 +370,6 @@ public class PanoramaCenterClient {
                 .build(true)
                 .toUri();
         return responseMap(uri).orElse(Map.of("records", List.of()));
-    }
-
-    public List<Map<String, Object>> pathPoints(String pathId) {
-        if (pathId == null || pathId.isBlank()) {
-            return List.of();
-        }
-        URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/paths/" + pathId + "/points")
-                .build(true)
-                .toUri();
-        return records(uri);
     }
 
     public AlarmPage alarmPage(

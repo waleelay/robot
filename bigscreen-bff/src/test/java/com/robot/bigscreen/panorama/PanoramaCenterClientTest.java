@@ -212,6 +212,21 @@ class PanoramaCenterClientTest {
     }
 
     @Test
+    void taskPlanRoutePointsReadTheManagementPlanEndpoint() {
+        server.expect(requestTo(
+                        "http://management.test/api/v1/management/task-workflow-plans/88/route-points"))
+                .andRespond(withSuccess(
+                        "{\"code\":\"0\",\"data\":[{\"sequence\":1,\"mapId\":1001,\"deviceId\":501,\"pointId\":101}]}",
+                        MediaType.APPLICATION_JSON));
+
+        List<Map<String, Object>> points = client.taskWorkflowPlanRoutePoints("88");
+
+        assertEquals(1, points.size());
+        assertEquals(101, points.get(0).get("pointId"));
+        server.verify();
+    }
+
+    @Test
     void alarmPageReadsOnlyRequestedPageAndKeepsReportedTotal() {
         server.expect(requestTo(
                         "http://management.test/api/v1/management/alarms?pageNum=2&pageSize=20&status=NEW&severity=WARN"))

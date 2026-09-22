@@ -58,7 +58,7 @@ public class PanoramaService {
     private static final int IN_FLIGHT_MAX_SIZE = 128;
     private static final int ALARM_PAGE_SIZE = 10;
     /**
-     * 单次地图路径查询只并发解析少量工作流定义，给任务列表、实例和其他登录主体预留许可。
+     * 单次地图路线查询只并发解析少量任务计划，给任务列表、实例和其他登录主体预留许可。
      * 该值必须小于任务下游默认并发上限，避免一次请求自行触发并发降级。
      */
     private static final int TASK_ROUTE_BATCH_SIZE = 4;
@@ -628,28 +628,27 @@ public class PanoramaService {
     }
 
     private Map<String, Object> mapTaskRoutesPayload(String mapId) {
-        OverviewRequestCache cache = new OverviewRequestCache();
         TaskDataQuality quality = new TaskDataQuality();
         List<Map<String, Object>> taskPlans = joinTask(
                 sharedAsync("task-plans", centerClient::taskWorkflowPlans),
                 List.of(), quality, "TASK_PLANS_UNAVAILABLE");
-        TaskRouteResolver routeResolver = new TaskRouteResolver(taskPlans, cache, quality);
+        TaskRouteResolver routeResolver = new TaskRouteResolver(quality);
         List<Map<String, Object>> items = new ArrayList<>();
         int batchSize = taskRouteBatchSize();
         for (int batchStart = 0; batchStart < taskPlans.size(); batchStart += batchSize) {
             int batchEnd = Math.min(taskPlans.size(), batchStart + batchSize);
             for (int index = batchStart; index < batchEnd; index++) {
-                routeResolver.prefetch(taskPlans.get(index), index);
+                routeResolver.prefetch(taskPlans.get(index));
             }
             for (int index = batchStart; index < batchEnd; index++) {
                 Map<String, Object> task = taskPlans.get(index);
-                TaskRouteData route = routeResolver.resolve(task, index);
-                if (Objects.equals(mapId, string(route.mapId()))) {
+                List<Map<String, Object>> segments = routeSegments(routeResolver.resolve(task), mapId);
+                if (!segments.isEmpty()) {
                     items.add(object(
                             "taskId", firstValue(task, "id", "taskId"),
                             "workflowInstanceId", planWorkflowInstanceId(task),
-                            "mapId", route.mapId(),
-                            "pathPoints", overviewPoints(route.pathPoints())));
+                            "mapId", mapId,
+                            "segments", segments));
                 }
             }
         }
@@ -673,8 +672,7 @@ public class PanoramaService {
         if (taskId == null || taskId.isBlank()) {
             throw new IllegalArgumentException("taskId is required");
         }
-        OverviewRequestCache cache = new OverviewRequestCache();
-        PanoramaTasks panoramaTasks = taskPayload(cache);
+        PanoramaTasks panoramaTasks = taskPayload();
         return panoramaTasks.items().stream()
                 .filter(task -> Objects.equals(taskId, string(task.get("taskId"))))
                 .findFirst()
@@ -717,7 +715,7 @@ public class PanoramaService {
 
     public Map<String, Object> tasks() {
         OverviewRequestCache cache = new OverviewRequestCache();
-        CompletableFuture<PanoramaTasks> tasksFuture = async(() -> taskPayload(cache));
+        CompletableFuture<PanoramaTasks> tasksFuture = async(this::taskPayload);
         CompletableFuture<List<Map<String, Object>>> devicesFuture = async(() -> devices(cache));
         PanoramaTasks panoramaTasks = join(tasksFuture, unavailableTasks("TASK_AGGREGATION_FAILED"));
         List<Map<String, Object>> tasks = withEquipmentOnlineStatuses(
@@ -1293,7 +1291,7 @@ public class PanoramaService {
                 "timeRange", null));
     }
 
-    private PanoramaTasks taskPayload(OverviewRequestCache cache) {
+    private PanoramaTasks taskPayload() {
         TaskDataQuality quality = new TaskDataQuality();
         CompletableFuture<List<Map<String, Object>>> taskPlansFuture =
                 sharedAsync("task-plans", centerClient::taskWorkflowPlans);
@@ -1306,17 +1304,14 @@ public class PanoramaService {
             return new PanoramaTasks(List.of(), taskInstances, quality.snapshot(), false);
         }
         TaskInstanceResolver taskInstanceResolver = new TaskInstanceResolver(taskInstances, quality);
-        TaskRouteResolver routeResolver = new TaskRouteResolver(taskPlans, cache, quality);
         for (int index = 0; index < taskPlans.size(); index++) {
             Map<String, Object> plan = taskPlans.get(index);
             taskInstanceResolver.prefetch(planWorkflowInstanceId(plan));
-            routeResolver.prefetch(plan, index);
         }
         List<CompletableFuture<Map<String, Object>>> futures = new ArrayList<>();
         for (int index = 0; index < taskPlans.size(); index++) {
             Map<String, Object> sourceTask = taskPlans.get(index);
-            int taskIndex = index;
-            futures.add(async(() -> taskItem(sourceTask, routeResolver.resolve(sourceTask, taskIndex), taskInstanceResolver)));
+            futures.add(async(() -> taskItem(sourceTask, taskInstanceResolver)));
         }
         List<Map<String, Object>> result = futures.stream()
                 .map(future -> joinTask(future, null, quality, "TASK_ITEM_UNAVAILABLE"))
@@ -1497,7 +1492,6 @@ public class PanoramaService {
 
     private Map<String, Object> taskItem(
             Map<String, Object> source,
-            TaskRouteData routeData,
             TaskInstanceResolver taskInstanceResolver) {
         Object workflowInstanceId = planWorkflowInstanceId(source);
         Map<String, Object> instance = taskInstanceResolver.instance(workflowInstanceId);
@@ -1525,10 +1519,7 @@ public class PanoramaService {
                 "endTime", endTime,
                 "timeRange", timeRange(startTime, endTime, null),
                 "currentLocation", currentLocation(source, replay),
-                "equipmentList", equipmentList(source, instance, replay, deviceTaskInstances, true),
-                "mapId", routeData.mapId(),
-                "mapPoints", routeData.mapPoints(),
-                "pathPoints", routeData.pathPoints());
+                "equipmentList", equipmentList(source, instance, replay, deviceTaskInstances, true));
     }
 
     private Object planWorkflowInstanceId(Map<String, Object> source) {
@@ -2226,7 +2217,6 @@ public class PanoramaService {
     private final class OverviewRequestCache {
 
         private final Map<String, CompletableFuture<List<Map<String, Object>>>> mapPointsByMapId = new ConcurrentHashMap<>();
-        private final Map<String, CompletableFuture<List<Map<String, Object>>>> pathPointsByPathId = new ConcurrentHashMap<>();
         private volatile CompletableFuture<List<Map<String, Object>>> allFixedCamerasFuture;
 
         private List<Map<String, Object>> mapPoints(String mapId) {
@@ -2235,10 +2225,6 @@ public class PanoramaService {
 
         private CompletableFuture<List<Map<String, Object>>> mapPointsFuture(String mapId) {
             return cachedList(mapPointsByMapId, mapId, centerClient::mapPoints);
-        }
-
-        private List<Map<String, Object>> pathPoints(String pathId) {
-            return join(cachedList(pathPointsByPathId, pathId, centerClient::pathPoints), List.of());
         }
 
         private CompletableFuture<List<Map<String, Object>>> allFixedCamerasFuture() {
@@ -2356,103 +2342,30 @@ public class PanoramaService {
 
     private final class TaskRouteResolver {
 
-        private final List<Map<String, Object>> plans;
-        private final Map<String, Map<String, Object>> plansById;
-        private final Map<String, Map<String, Object>> plansByName;
-        private final Map<String, CompletableFuture<TaskRouteData>> routesByDefinitionId = new ConcurrentHashMap<>();
-        private final OverviewRequestCache cache;
+        private final Map<String, CompletableFuture<List<Map<String, Object>>>> routesByPlanId = new ConcurrentHashMap<>();
         private final TaskDataQuality quality;
 
-        private TaskRouteResolver(
-                List<Map<String, Object>> plans,
-                OverviewRequestCache cache,
-                TaskDataQuality quality) {
-            this.plans = plans == null ? List.of() : plans;
-            this.cache = cache;
+        private TaskRouteResolver(TaskDataQuality quality) {
             this.quality = quality;
-            this.plansById = indexPlans("id", "planId", "workflowPlanId", "taskWorkflowPlanId", "code");
-            this.plansByName = indexPlans("planName", "workflowName", "name");
         }
 
-        private TaskRouteData resolve(Map<String, Object> source, int index) {
-            String workflowDefinitionId = workflowDefinitionId(source, index);
-            if (workflowDefinitionId == null || workflowDefinitionId.isBlank()) {
-                return TaskRouteData.empty();
+        private List<Map<String, Object>> resolve(Map<String, Object> source) {
+            String planId = firstString(source, "id", "taskId", "planId", "workflowPlanId", "taskWorkflowPlanId");
+            if (planId == null || planId.isBlank()) {
+                quality.invalidReference("TASK_PLAN_ID_MISSING", null);
+                return List.of();
             }
-            return joinTask(routesByDefinitionId.computeIfAbsent(workflowDefinitionId,
-                    value -> async(() -> routeData(value))),
-                    TaskRouteData.empty(), quality, "TASK_ROUTE_UNAVAILABLE");
+            return joinTask(routesByPlanId.computeIfAbsent(planId,
+                    value -> async(() -> centerClient.taskWorkflowPlanRoutePoints(value))),
+                    List.of(), quality, "TASK_ROUTE_UNAVAILABLE");
         }
 
-        private void prefetch(Map<String, Object> source, int index) {
-            String workflowDefinitionId = workflowDefinitionId(source, index);
-            if (workflowDefinitionId != null && !workflowDefinitionId.isBlank()) {
-                routesByDefinitionId.computeIfAbsent(workflowDefinitionId,
-                        value -> async(() -> routeData(value)));
+        private void prefetch(Map<String, Object> source) {
+            String planId = firstString(source, "id", "taskId", "planId", "workflowPlanId", "taskWorkflowPlanId");
+            if (planId != null && !planId.isBlank()) {
+                routesByPlanId.computeIfAbsent(planId,
+                        value -> async(() -> centerClient.taskWorkflowPlanRoutePoints(value)));
             }
-        }
-
-        private String workflowDefinitionId(Map<String, Object> source, int index) {
-            String workflowDefinitionId = value(
-                    firstString(source, "workflowDefinitionId", "definitionId"),
-                    firstString(map(source.get("workflowDefinition")), "id", "workflowDefinitionId"));
-            if (workflowDefinitionId == null) {
-                workflowDefinitionId = firstString(plan(source, index), "workflowDefinitionId", "definitionId");
-            }
-            return workflowDefinitionId;
-        }
-
-        private Map<String, Object> plan(Map<String, Object> source, int index) {
-            String planId = firstString(source, "workflowPlanId", "planId", "taskPlanId", "taskWorkflowPlanId");
-            Map<String, Object> plan = plansById.get(key(planId));
-            if (plan != null) {
-                return plan;
-            }
-            String planName = firstString(source, "planName", "workflowName", "name");
-            plan = plansByName.get(key(planName));
-            if (plan != null) {
-                return plan;
-            }
-            if (plans.size() == 1) {
-                return plans.get(0);
-            }
-            if (index >= 0 && index < plans.size()) {
-                return plans.get(index);
-            }
-            return Map.of();
-        }
-
-        private TaskRouteData routeData(String workflowDefinitionId) {
-            Optional<Map<String, Object>> definitionResult = centerClient.taskWorkflowDefinition(workflowDefinitionId);
-            if (definitionResult.isEmpty()) {
-                quality.invalidReference("WORKFLOW_DEFINITION_NOT_FOUND", workflowDefinitionId);
-                return TaskRouteData.empty();
-            }
-            Map<String, Object> definition = definitionResult.get();
-            Object mapId = firstValue(definition, "mapId", "mapID");
-            Object pathId = firstValue(definition, "pathId", "routeId");
-            List<Map<String, Object>> mapPoints = mapId == null
-                    ? List.of()
-                    : cache.mapPoints(string(mapId));
-            List<Map<String, Object>> pathPointRefs = pathId == null
-                    ? List.of()
-                    : cache.pathPoints(string(pathId));
-            return new TaskRouteData(mapId, mapPoints, resolvePathPoints(mapPoints, pathPointRefs));
-        }
-
-        private Map<String, Map<String, Object>> indexPlans(String... keys) {
-            Map<String, Map<String, Object>> indexed = new LinkedHashMap<>();
-            for (Map<String, Object> plan : plans) {
-                String value = firstString(plan, keys);
-                if (value != null && !value.isBlank()) {
-                    indexed.putIfAbsent(key(value), plan);
-                }
-            }
-            return indexed;
-        }
-
-        private String key(String value) {
-            return value == null ? "" : value.trim();
         }
     }
 
@@ -2719,27 +2632,43 @@ public class PanoramaService {
         return null;
     }
 
-    private List<Map<String, Object>> resolvePathPoints(
-            List<Map<String, Object>> mapPoints,
-            List<Map<String, Object>> pathPointRefs) {
-        if (mapPoints.isEmpty() || pathPointRefs.isEmpty()) {
-            return List.of();
-        }
-        Map<String, Map<String, Object>> mapPointsById = mapPoints.stream()
-                .filter(point -> firstValue(point, "id") != null)
-                .collect(Collectors.toMap(
-                        point -> string(firstValue(point, "id")),
-                        Function.identity(),
-                        (left, right) -> left,
-                        LinkedHashMap::new));
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Map<String, Object> pathPointRef : pathPointRefs) {
-            Map<String, Object> mapPoint = mapPointsById.get(string(firstValue(pathPointRef, "mapPointId")));
-            if (mapPoint != null) {
-                result.add(mapPoint);
+    private List<Map<String, Object>> routeSegments(List<Map<String, Object>> routePoints, String mapId) {
+        Map<String, Map<String, Object>> segments = new LinkedHashMap<>();
+        for (Map<String, Object> source : routePoints) {
+            if (!Objects.equals(mapId, string(firstValue(source, "mapId")))) {
+                continue;
             }
+            Object deviceId = firstValue(source, "deviceId");
+            String roleKey = firstString(source, "roleKey");
+            String segmentKey = deviceId != null
+                    ? "device:" + deviceId
+                    : roleKey != null && !roleKey.isBlank() ? "role:" + roleKey : "unbound";
+            Map<String, Object> segment = segments.computeIfAbsent(segmentKey, ignored -> object(
+                    "segmentKey", segmentKey,
+                    "deviceId", deviceId,
+                    "roleKey", roleKey,
+                    "points", new ArrayList<Map<String, Object>>()));
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> points = (List<Map<String, Object>>) segment.get("points");
+            Object pointId = firstValue(source, "pointId", "id");
+            Object nodeId = firstValue(source, "nodeId");
+            Object sequence = firstValue(source, "sequence");
+            points.add(object(
+                    "id", pointId != null ? pointId : string(nodeId) + "-" + string(sequence),
+                    "pointId", pointId,
+                    "sequence", sequence,
+                    "nodeId", nodeId,
+                    "nodeName", firstValue(source, "nodeName"),
+                    "roleKey", roleKey,
+                    "deviceId", deviceId,
+                    "pointCode", firstValue(source, "pointCode"),
+                    "pointName", firstValue(source, "pointName"),
+                    "pointType", firstValue(source, "pointType"),
+                    "coordinateX", number(firstValue(source, "coordinateX", "x")),
+                    "coordinateY", number(firstValue(source, "coordinateY", "y")),
+                    "targetType", firstValue(source, "targetType")));
         }
-        return result;
+        return new ArrayList<>(segments.values());
     }
 
     private String string(Object value) {
@@ -2798,16 +2727,6 @@ public class PanoramaService {
             return fallback;
         }
         return value == null ? fallback : value;
-    }
-
-    private record TaskRouteData(
-            Object mapId,
-            List<Map<String, Object>> mapPoints,
-            List<Map<String, Object>> pathPoints) {
-
-        private static TaskRouteData empty() {
-            return new TaskRouteData(null, List.of(), List.of());
-        }
     }
 
     private PanoramaTasks unavailableTasks(String reasonCode) {

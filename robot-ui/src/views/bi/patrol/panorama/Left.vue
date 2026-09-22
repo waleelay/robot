@@ -329,7 +329,7 @@ export default {
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
-    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'globalMapId', 'robotBaseInfo', 'taskPathPoints', 'taskRouteMapsReady']),
+    ...mapState('websocketExtraData', ['taskData', 'alarmsData', 'deviceTypeStats', 'deviceStats', 'globalMapId', 'robotBaseInfo', 'taskRoutesByMap', 'taskRouteMapsReady']),
     // GIS 展示全部任务；SLAM 仅展示与当前地图关联的任务（地图 → 任务单向联动）
     isGisMap() {
       const id = this.globalMapId
@@ -536,20 +536,10 @@ export default {
     getTaskRobotIds(taskId) {
       return (this.taskData[taskId]?.equipmentList || []).map(robot => robot.robotId)
     },
-    resolveTaskMapId(task) {
-      if (!task) return null
-      if (task.mapId !== undefined && task.mapId !== null && task.mapId !== '') return task.mapId
-      const key = task.taskId
-      const path = this.taskPathPoints?.[key] || this.taskPathPoints?.[String(key)]
-      const mapId = path && path.mapId
-      if (mapId !== undefined && mapId !== null && mapId !== '') return mapId
-      return null
-    },
     isTaskLinkedToMap(task, mapId) {
       if (mapId === undefined || mapId === null || mapId === '' || mapId === 'gis') return true
-      const taskMapId = this.resolveTaskMapId(task)
-      if (taskMapId === undefined || taskMapId === null || taskMapId === '') return false
-      return String(taskMapId) === String(mapId)
+      const routes = this.taskRoutesByMap?.[String(mapId)] || {}
+      return Object.keys(routes).some(taskId => String(taskId) === String(task?.taskId))
     },
     resolveTaskListId(taskId) {
       const list = this.taskData1 || []

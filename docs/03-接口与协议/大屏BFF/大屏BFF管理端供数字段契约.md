@@ -65,11 +65,14 @@
 | `tasks[].startTime` | string/null | 条件需要 | 任务开始时间 |
 | `tasks[].endTime` | string/null | 条件需要 | 任务结束时间 |
 | `tasks[].equipmentList` | array<object> | 条件需要 | 执行装备列表 |
-| `tasks[].mapId` | string/number/null | 条件需要 | 任务绑定地图 ID |
 
 Overview 的设备任务关系统一由 `tasks[].equipmentList[]` 表达，不再在 `devices[]` 复制 `task`。
 路径只由 `maps/{mapId}/task-routes` 返回；回放位置、地图点和完整设备任务明细只由
 `tasks/{taskId}` 按需返回，不属于 Overview 管理端供数边界。
+
+`maps/{mapId}/task-routes` 调用 `GET /api/v1/management/task-workflow-plans/{id}/route-points`。
+Management 需返回 `sequence/nodeId/nodeName/roleKey/deviceId/pointId/pointCode/pointName/pointType/mapId/coordinateX/coordinateY/targetType`；
+BFF 不再依赖工作流定义 `pathId`。
 
 ### 2.5 `tasks[].equipmentList[]`
 

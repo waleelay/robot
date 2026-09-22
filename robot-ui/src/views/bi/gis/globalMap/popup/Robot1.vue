@@ -254,7 +254,7 @@ export default {
     cameras() {
       return this.$store.getters['websocketRobot/getCameras'] || {}
     },
-    ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData', 'taskPathPoints', 'globalMapId']),
+    ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData', 'taskRoutesByMap', 'globalMapId']),
     currenRobot() {
       return this.robotBaseInfo?.[this.selectedRobotId] || {}
     },
@@ -357,14 +357,12 @@ export default {
     hasTaskPath() {
       const taskId = this.currenRobot?.runningTaskId
       if (taskId === undefined || taskId === null || taskId === '') return false
-      const pathData = this.taskPathPoints?.[taskId]
-      if (!pathData || !Array.isArray(pathData.pathPoints) || !pathData.pathPoints.length) return false
       const mapId = this.globalMapId
-      if (mapId && mapId !== 'gis' && pathData.mapId != null && pathData.mapId !== '' &&
-        String(pathData.mapId) !== String(mapId)) {
-        return false
-      }
-      return true
+      if (!mapId || mapId === 'gis') return false
+      const route = this.taskRoutesByMap?.[String(mapId)]?.[String(taskId)]
+      const segments = Array.isArray(route?.segments) ? route.segments : []
+      // Management deviceId 与 Control robotId 没有权威映射；仅单一路线段时才能安全用于机器人入口。
+      return segments.length === 1 && Array.isArray(segments[0]?.points) && segments[0].points.length > 0
     },
     // 是否有任意底部操作按钮（无按钮时不展示分隔线与按钮区）
     hasActionButtons() {

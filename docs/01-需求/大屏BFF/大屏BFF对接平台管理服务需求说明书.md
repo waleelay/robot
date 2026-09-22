@@ -162,9 +162,6 @@
 | `currentLocation` | 当前任务位置 |
 | `workflowPlanId/planId/id` | 任务计划 ID |
 | `planName/workflowName/name` | 任务计划名称 |
-| `workflowDefinitionId` | 工作流定义 ID，由任务计划提供 |
-| `definition.mapId` | 工作流定义关联地图 ID，number/int |
-| `definition.pathId` | 工作流定义关联路径 ID |
 | `equipmentList.robotId` | 执行装备机器人 ID |
 | `equipmentList.name` | 执行装备名称 |
 | `equipmentList.type` | 执行装备类型 |
@@ -174,10 +171,9 @@
 
 | 接口 | 需要字段 |
 |---|---|
-| `GET /api/v1/management/task-workflow-plans?pageNum={pageNum}&pageSize=100&enabled=true` | `id/name/workflowDefinitionId`；BFF 按页读取至末页或管理端声明的总数，不能只取首批任务计划 |
-| `GET /api/v1/management/task-workflow-definitions/{workflowDefinitionId}` | `mapId/pathId` |
+| `GET /api/v1/management/task-workflow-plans?pageNum={pageNum}&pageSize=100&enabled=true` | `id/name`；BFF 按页读取至末页或管理端声明的总数，不能只取首批任务计划 |
+| `GET /api/v1/management/task-workflow-plans/{id}/route-points` | 计划冻结版本及其依赖中的路线点；需要 `sequence/nodeId/roleKey/deviceId/pointId/pointCode/pointName/pointType/mapId/coordinateX/coordinateY/targetType` |
 | `GET /api/v1/management/maps/{mapId}/points` | 当前地图点位列表，由大屏地图渲染资源接口按需返回 |
-| `GET /api/v1/management/paths/{pathId}/points` | 路径点引用列表，需包含 `mapPointId`，由当前地图任务路径接口按需返回 |
 
 ## 3. 告警数据
 
@@ -252,9 +248,8 @@
 | `taskOverview.totalToday/running/pending` | `tasks.status`、`tasks.startTime`、`tasks.endTime` |
 | `taskOverview.completedRate/completedRateText` | `tasks.status` 统计出的任务总数、已完成任务数 |
 | `tasks.total` | `tasks` 列表长度 |
-| `tasks.mapId` | `task-workflow-definitions.mapId`，number/int |
-| `tasks.mapPoints` | `/api/v1/management/maps/{mapId}/points` 返回值 |
-| `tasks.pathPoints` | 根据 `/api/v1/management/paths/{pathId}/points` 中的 `mapPointId` 到 `tasks.mapPoints[].id` 过滤得到 |
+| `maps/{mapId}/task-routes.items[].segments[]` | 按路线点 `mapId` 过滤，再按 `deviceId`（缺失时按 `roleKey`）分段，禁止跨设备连线 |
+| `maps/{mapId}/task-routes.items[].segments[].points[]` | 直接来源于任务计划 `route-points`，保持 Management 返回的 `sequence` 顺序 |
 | `map` | `/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true` 的 `data.records` |
 | `alarms.total` | `alarms` 列表数量 |
 | `alarms.summary.*` | `alarms.status`、`alarms.eventTime` |

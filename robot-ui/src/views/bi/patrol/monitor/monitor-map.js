@@ -41,8 +41,7 @@ export function resolveMonitorRobotSlamMapId({
   robotLocation,
   slamMapList,
   slamOfRobot,
-  taskPathPoints,
-  taskData
+  taskRoutesByMap
 }) {
   const targetId = normalizedId(robotId)
   if (targetId == null) return null
@@ -62,12 +61,10 @@ export function resolveMonitorRobotSlamMapId({
 
   const taskId = robot.runningTaskId
   if (taskId !== undefined && taskId !== null && taskId !== '') {
-    const taskMapId = taskPathPoints?.[taskId]?.mapId
-      ?? taskPathPoints?.[String(taskId)]?.mapId
-      ?? taskData?.[taskId]?.mapId
-      ?? taskData?.[String(taskId)]?.mapId
-    const resolvedTaskMapId = resolveSlamMapReference(maps, taskMapId)
-    if (resolvedTaskMapId != null) return resolvedTaskMapId
+    // 路线只能证明任务与地图的关系；Management deviceId 与 robotId 无权威映射。
+    // 仅当任务唯一归属一张地图时回退，跨地图任务继续交给地图装备归属判定。
+    const routeMaps = maps.filter(map => taskRoutesByMap?.[String(map?.id)]?.[String(taskId)])
+    if (routeMaps.length === 1 && routeMaps[0]?.id != null) return routeMaps[0].id
   }
 
   for (const [mapId, group] of Object.entries(slamOfRobot || {})) {

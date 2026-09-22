@@ -12,7 +12,12 @@
             :viewBox="`0 0 ${map.previewWidth} ${map.previewHeight}`"
             @click="handleMapClick"
           >
-            <polyline v-if="polylinePoints" :points="polylinePoints" class="map-preview-path" />
+            <polyline
+              v-for="segment in drawableSegments"
+              :key="segment.segmentKey"
+              :points="segment.polylinePoints"
+              class="map-preview-path"
+            />
             <g
               v-for="point in drawablePoints"
               :key="point.id"
@@ -119,22 +124,23 @@ export default {
     }
   },
   computed: {
-    ...mapState('websocketExtraData', ['slamMapList', 'taskPathPoints']),
+    ...mapState('websocketExtraData', ['slamMapList', 'taskRoutesByMap']),
     mapId() {
-      return this.taskPathPoints?.[this.taskId]?.mapId || ''
+      return (this.slamMapList || []).find(map =>
+        this.taskRoutesByMap?.[String(map?.id)]?.[String(this.taskId)])?.id || ''
     },
     map() {
       return this.slamMapList.find(item => item.id === this.mapId) || {}
     },
+    routeSegments() {
+      return this.taskRoutesByMap?.[String(this.mapId)]?.[String(this.taskId)]?.segments || []
+    },
     pathPoints() {
-      return this.taskPathPoints?.[this.taskId]?.pathPoints || []
+      return this.routeSegments.flatMap(segment => segment?.points || [])
     },
     pathPointIds() {
-      return this.taskPathPoints?.[this.taskId]?.pathPoints?.map(item => item.id) || []
+      return this.pathPoints.map(item => item.id)
     },
-    // pathPointIdsInfo() {
-    //   return this.taskPathPoints?.[this.taskId]?.pathPointIdsInfo || []
-    // },
     hasPreview() {
       return !!this.map?.previewFileId &&
         !!this.map?.previewWidth &&
@@ -156,8 +162,16 @@ export default {
         .map((point) => ({ ...point, pixel: this.mapPointToPixel(point, this.map) }))
         .filter((point) => point.pixel)
     },
-    polylinePoints() {
-      return this.drawablePoints.map((item) => `${item.pixel.x},${item.pixel.y}`).join(" ")
+    drawableSegments() {
+      return this.routeSegments.map(segment => {
+        const points = (segment?.points || [])
+          .map(point => ({ ...point, pixel: this.mapPointToPixel(point, this.map) }))
+          .filter(point => point.pixel)
+        return {
+          segmentKey: segment.segmentKey,
+          polylinePoints: points.map(point => `${point.pixel.x},${point.pixel.y}`).join(' ')
+        }
+      })
     },
     // 返回需要监听的对象，依赖 map 和 hasPreview
     previewSource() {

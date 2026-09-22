@@ -236,7 +236,7 @@ export default {
       'slamMapList',
       'slamOfRobot',
       'robotLocation',
-      'taskPathPoints',
+      'taskRoutesByMap',
       'taskData'
     ]),
     currenRobot() {
@@ -378,8 +378,7 @@ export default {
         robotLocation: this.robotLocation,
         slamMapList: this.slamMapList,
         slamOfRobot: this.slamOfRobot,
-        taskPathPoints: this.taskPathPoints,
-        taskData: this.taskData
+        taskRoutesByMap: this.taskRoutesByMap
       })
     },
     async updateVideo(data) {

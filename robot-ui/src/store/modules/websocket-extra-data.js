@@ -87,7 +87,8 @@ const state = {
   // 仅保存当前会话收到的普通告警实时事件，供自动弹窗使用；Overview/分页快照不得回填。
   robotAlarmObj: {}, // { robotId: { ...alarmInfo } }
   slamMapData: [],
-  taskPathPoints: {}, // { taskId: [pathPoints] } taskId: 任务id，pathId: 路径id，mapId: 地图id，pathPoints: 任务路径点
+  // 任务计划路线按地图独立保存；一个任务可跨地图，每张地图内可包含多个设备路线段。
+  taskRoutesByMap: {}, // { mapId: { taskId: { taskId, mapId, segments } } }
   // 已至少成功取得一次完整 task-routes 的地图；普通刷新降级时继续使用上一份完整映射。
   taskRouteMapsReady: {},
   mapSearchValue: '',
@@ -133,6 +134,7 @@ const mutations = {
       state.taskScopeRevision++;
       state.taskRefreshRevision++;
       state.taskRouteMapsReady = {};
+      state.taskRoutesByMap = {};
     }
     state.taskFixedCameraData = {};
     state.alarmsData = {};
@@ -146,7 +148,6 @@ const mutations = {
     state.robotList = [];
     state.robotAlarmObj = {};
     state.workflowAlarms = [];
-    state.taskPathPoints = {};
     state.dataQuality = {};
     state.defaultGpsDevices = [];
     state.overviewReady = false;
@@ -201,17 +202,21 @@ const mutations = {
     if (taskId === undefined || taskId === null) return
     state.taskVersions[taskId] = ++state.taskVersion
     const prev = getTaskById(state.taskData, taskId)
-    if (!prev) return
     const nextTasks = { ...state.taskData }
     Object.keys(nextTasks).forEach(key => {
       if (String(key) === String(taskId)) delete nextTasks[key]
     })
     state.taskData = nextTasks
-    const nextPaths = { ...state.taskPathPoints }
-    Object.keys(nextPaths).forEach(key => {
-      if (String(key) === String(taskId)) delete nextPaths[key]
+    const nextRoutes = {}
+    Object.entries(state.taskRoutesByMap || {}).forEach(([mapId, routes]) => {
+      const routesForMap = { ...(routes || {}) }
+      Object.keys(routesForMap).forEach(key => {
+        if (String(key) === String(taskId)) delete routesForMap[key]
+      })
+      nextRoutes[mapId] = routesForMap
     })
-    state.taskPathPoints = nextPaths
+    state.taskRoutesByMap = nextRoutes
+    if (!prev) return
     applyDerivedRobotTasks(state, [
       ...collectTaskEquipmentIds(prev),
       ...robotsHoldingTask(state.robotBaseInfo, taskId),
@@ -419,8 +424,29 @@ const mutations = {
   SET_SLAM_MAP_DATA(state, value) {
     state.slamMapData = value;
   },
-  SET_TASK_PATH_POINTS(state, { taskId, data }) {
-    state.taskPathPoints = { ...state.taskPathPoints, [taskId]: data };
+  SET_TASK_ROUTES_FOR_MAP(state, { mapId, items, complete }) {
+    if (mapId === undefined || mapId === null || mapId === '') return
+    const key = String(mapId)
+    const routes = complete ? {} : { ...(state.taskRoutesByMap?.[key] || {}) }
+    ;(Array.isArray(items) ? items : []).forEach(item => {
+      if (item?.taskId === undefined || item?.taskId === null) return
+      routes[String(item.taskId)] = {
+        taskId: item.taskId,
+        workflowInstanceId: item.workflowInstanceId,
+        mapId: item.mapId ?? mapId,
+        segments: Array.isArray(item.segments) ? item.segments : []
+      }
+    })
+    state.taskRoutesByMap = { ...state.taskRoutesByMap, [key]: routes }
+  },
+  REMOVE_TASK_ROUTE(state, { mapId, taskId }) {
+    if (mapId === undefined || mapId === null || taskId === undefined || taskId === null) return
+    const key = String(mapId)
+    const routes = { ...(state.taskRoutesByMap?.[key] || {}) }
+    Object.keys(routes).forEach(routeTaskId => {
+      if (String(routeTaskId) === String(taskId)) delete routes[routeTaskId]
+    })
+    state.taskRoutesByMap = { ...state.taskRoutesByMap, [key]: routes }
   },
   SET_TASK_ROUTE_RESULT(state, { mapId, quality, complete }) {
     state.dataQuality = { ...state.dataQuality, taskRoutes: quality }
@@ -600,7 +626,7 @@ const actions = {
     const mapResources = fulfilledValue(mapResourcesResult)
     // 点位和固定摄像头是地图首帧资源；任务路径属于增强数据，不能阻塞总览展示。
     // 路径请求已与地图资源并发启动，待总览可见后再合并其结果。
-    const merged = mergeOverviewMapResources(overview, mapResources, null, state.taskData)
+    const merged = mergeOverviewMapResources(overview, mapResources)
     await dispatch('setAll', { ...merged, taskBaseline })
     const appliedRevision = state.overviewRevision
 
@@ -656,8 +682,8 @@ const actions = {
       const task = payload?.task
       if (!task) return null
       const previous = getTaskById(state.taskData, taskId) || {}
-      // 实例或地图已经变化时，旧详情的路径和位置也不能混入新任务。
-      if (changed && ['workflowInstanceId', 'mapId'].some(field =>
+      // 实例已经变化时，旧详情不能混入新任务。
+      if (changed && ['workflowInstanceId'].some(field =>
         hasTaskIdentity(previous[field]) && hasTaskIdentity(task[field])
         && String(previous[field]) !== String(task[field]))) return previous
       const merged = { ...previous, ...task }
@@ -665,12 +691,6 @@ const actions = {
         if (Object.prototype.hasOwnProperty.call(previous, field)) merged[field] = previous[field]
       })
       commit('SET_TASK_STATE', merged)
-      if (merged.mapId !== undefined && merged.mapId !== null) {
-        commit('SET_TASK_PATH_POINTS', {
-          taskId: merged.taskId ?? taskId,
-          data: { mapId: merged.mapId, pathPoints: merged.pathPoints || [] }
-        })
-      }
       return merged
     })().finally(() => {
       if (taskDetailPromises.get(key) === pending) taskDetailPromises.delete(key)
@@ -770,7 +790,6 @@ const actions = {
     commit('SET_ALARM_SUMMARY', data?.alarms?.summary || { totalToday: '-', handled: '-', unhandled: '-', handleRate: '-', handleRateText: '-%' });
     tasks.map((item, index) => {
       commit('SET_TASK_INFO', { ...item, timestamp: new Date().getTime() + tasks.length - index });
-      commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } });
     })
     commit('SET_ROBOT_LIST', devices);
     commit('SET_ROBOT_LOCATION_SNAPSHOT', devices)
@@ -799,9 +818,6 @@ const actions = {
   },
   setSlamMapData({ commit }, value) {
     commit('SET_SLAM_MAP_DATA', value);
-  },
-  setTaskPathPoints({ commit }, { taskId, data }) {
-    commit('SET_TASK_PATH_POINTS', { taskId, data });
   },
   // 设置设备对象
   setDeviceObj({ commit }, value) {
@@ -1029,25 +1045,12 @@ function settled(promise) {
 }
 
 function applyTaskRoutes(state, commit, mapId, taskRoutes) {
-  const key = String(mapId)
   const routeQuality = taskRouteQuality(taskRoutes)
   const routesComplete = isCompleteTaskRoutes(routeQuality)
-  if (routesComplete) {
-    const routeTaskIds = new Set((taskRoutes?.items || []).map(item => String(item.taskId)))
-    Object.values(state.taskData || {}).forEach(task => {
-      if (String(task?.mapId) !== key || routeTaskIds.has(String(task.taskId))) return
-      commit('SET_TASK_INFO', { ...task, mapId: null, pathPoints: [] })
-      commit('SET_TASK_PATH_POINTS', { taskId: task.taskId, data: { mapId: null, pathPoints: [] } })
-    })
-  }
-  // 降级响应中的 items 都是已成功解析的任务，只做增量更新；仅完整快照允许清理缺失项。
-  ;(taskRoutes?.items || []).forEach(item => {
-    const previous = getTaskById(state.taskData, item.taskId)
-    // 残缺路线不能创建 Overview 未授权或未确认存在的任务，避免任务卡数量随降级子集跳变。
-    if (!routesComplete && !previous) return
-    commit('SET_TASK_INFO', { ...previous, mapId: item.mapId, pathPoints: item.pathPoints || [] })
-    commit('SET_TASK_PATH_POINTS', { taskId: item.taskId, data: { mapId: item.mapId, pathPoints: item.pathPoints || [] } })
-  })
+  // 无论完整或降级响应，都不允许路线端点创建 Overview 未授权或已经删除的任务。
+  const items = (taskRoutes?.items || []).filter(item => getTaskById(state.taskData, item.taskId))
+  // 降级响应只增量覆盖成功项；完整快照替换当前地图，清理已经不存在的路线。
+  commit('SET_TASK_ROUTES_FOR_MAP', { mapId, items, complete: routesComplete })
   commit('SET_TASK_ROUTE_RESULT', { mapId, quality: routeQuality, complete: routesComplete })
 }
 
@@ -1082,34 +1085,15 @@ function requestTaskRouteRetry(mapId, revision, isCurrent) {
   return pending
 }
 
-function mergeOverviewMapResources(overview, mapResources, taskRoutes, previousTasks = {}) {
-  const mapId = mapResources?.mapId ?? taskRoutes?.mapId
+function mergeOverviewMapResources(overview, mapResources) {
+  const mapId = mapResources?.mapId
   const maps = (overview?.map || []).map(item => String(item?.id) === String(mapId)
     ? mergeMapResources(item, mapResources)
     : item)
-  const routeQuality = taskRouteQuality(taskRoutes)
-  const routesComplete = isCompleteTaskRoutes(routeQuality)
-  const routesByTaskId = new Map((routesComplete ? taskRoutes?.items || [] : []).map(item => [String(item.taskId), item]))
-  const tasks = (overview?.tasks || []).map(task => {
-    const route = routesByTaskId.get(String(task.taskId))
-    if (route) return { ...task, mapId: route.mapId, pathPoints: route.pathPoints || [] }
-    if (routesComplete) return task
-    const previous = getTaskById(previousTasks, task.taskId)
-    if (!previous) return task
-    const preserved = { ...task }
-    if (preserved.mapId === undefined || preserved.mapId === null || preserved.mapId === '') {
-      preserved.mapId = previous.mapId
-    }
-    if (!Array.isArray(preserved.pathPoints) && Array.isArray(previous.pathPoints)) {
-      preserved.pathPoints = previous.pathPoints
-    }
-    return preserved
-  })
   return {
     ...overview,
     map: maps,
-    tasks,
-    dataQuality: { ...(overview?.dataQuality || {}), taskRoutes: routeQuality }
+    tasks: overview?.tasks || []
   }
 }
 

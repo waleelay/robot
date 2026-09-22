@@ -38,10 +38,9 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handled
 | 任务实例 | `/api/v1/management/task-workflow-instances`、`/api/v1/management/task-workflow-instances/{id}` |
 | 设备子任务 | `/api/v1/management/device-task-instances?workflowInstanceId=...` |
 | 任务执行回放 | `/api/v1/management/task-workflow-instances/{id}/replay` |
-| 任务路线定义 | `/api/v1/management/task-workflow-definitions/{workflowDefinitionId}` |
+| 任务计划路线点 | `/api/v1/management/task-workflow-plans/{id}/route-points` |
 | 地图列表 | `/api/v1/management/maps` |
 | 地图点位 | `/api/v1/management/maps/{mapId}/points` |
-| 路径点位引用 | `/api/v1/management/paths/{pathId}/points` |
 | 告警列表 | `/api/v1/management/alarms` |
 | 告警处置 | `/api/v1/management/alarms/{alarmId}/handled` |
 | 固定摄像头 | `/api/v1/management/fixed-cameras` |
@@ -115,9 +114,8 @@ POST /api/bigscreen/panorama/alarms/{alarmId}/handled
 | `equipmentList[].name` | 间接查询 | 优先来自设备子任务或 `deviceSummaries`；`roleBindings` 兜底时为 `null` |
 | `equipmentList[].type` | 可能缺少来源 | 只有设备子任务或 `deviceSummaries` 返回设备类型时才有值 |
 | `equipmentList[].status` | BFF 关联 | 按 `robotId` 关联 `devices[].status`，表示设备在线状态；未匹配时为 `null` |
-| `mapId` | 间接查询 | 由工作流定义接口返回，不是任务计划直接返回 |
-| `mapPoints` | 间接查询 | 由 `mapId` 查询地图点位 |
-| `pathPoints` | BFF 过滤 | 先查路径点位引用，再按 `mapPointId` 从 `mapPoints` 中过滤 |
+| `segments[]` | BFF 分组 | 计划 `route-points` 按地图过滤，并按设备或角色拆分 |
+| `segments[].points[]` | 间接查询 | 直接使用 Management 解析的计划冻结版本及依赖路线点 |
 
 ### 2.6 告警数据
 
