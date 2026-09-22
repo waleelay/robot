@@ -676,6 +676,7 @@ import { addTaskByPoint, previewImageBlob } from '@/api/new-bi.js'
 import { ENABLE_LIANTONG_SLAM_MOCK, ENABLE_LIANTONG_TASK_EXECUTION_MOCK, getMapPointIconMeta, isMapToolSpecialPoint, isPointToolRequireCharge } from '../../../js/constants/gisMapPoints.js'
 import { PATH_ARROW_WIDTH, PATH_ARROW_HEIGHT } from './path-direction-arrows.js'
 import { buildTemporaryNavigationTask, isActiveTemporaryNavigationTask } from './temporary-navigation.js'
+import { notifyActionError } from '@/utils/error-feedback'
 
 const ROBOT_BG = require('@/assets/images/new-bi/robot-bg.svg')
 const ROBOT_SELECTED_HALO = require('@/assets/images/new-bi/robot-selected-halo.svg')
@@ -1942,7 +1943,7 @@ export default {
           try {
             await this.closeTaskRobotViewAndWait()
           } catch (error) {
-            console.warning('任务视频关闭超时，请稍后重试')
+            this.$message.warning('任务视频关闭超时，请稍后重试')
             return
           }
           await controlRef.rebindToRobot(robotId)
@@ -1953,7 +1954,7 @@ export default {
           try {
             await this.closeTaskRobotViewAndWait()
           } catch (error) {
-            console.warning('任务视频关闭超时，请稍后重试')
+            this.$message.warning('任务视频关闭超时，请稍后重试')
             return
           }
           await controlRef?.show(true)
@@ -1962,7 +1963,7 @@ export default {
         try {
           await this.closeTaskRobotViewAndWait()
         } catch (error) {
-          console.warning('任务视频关闭超时，请稍后重试')
+          this.$message.warning('任务视频关闭超时，请稍后重试')
           return
         }
         await controlRef?.show(true)
@@ -1974,7 +1975,7 @@ export default {
         try {
           await this.closeTaskRobotViewAndWait()
         } catch (error) {
-          console.warning('任务视频关闭超时，请稍后重试')
+          this.$message.warning('任务视频关闭超时，请稍后重试')
           return
         }
         await controlRef?.show(true)
@@ -2146,8 +2147,7 @@ export default {
           })
         }
       } catch (error) {
-        const message = error?.response?.data?.message || error?.message || '任务派遣失败，请稍后重试'
-        this.$message.error(message)
+        notifyActionError(error, '任务派遣失败，请稍后重试')
         throw error
       } finally {
         this.temporaryNavigationSubmitting = false

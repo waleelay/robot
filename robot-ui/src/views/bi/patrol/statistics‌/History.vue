@@ -65,6 +65,7 @@
 
 <script>
 import { deleteReport, downloadReport, getHistoryList } from '../../../../api/new-bi';
+import { notifyActionError } from '@/utils/error-feedback';
 export default {
   name: 'HistoryReportList',
   data() {
@@ -117,7 +118,7 @@ export default {
         document.body.removeChild(link);
         window.URL.revokeObjectURL(blobUrl);
       } catch (error) {
-        this.$message.error('下载失败')
+        notifyActionError(error, '下载失败')
       }
     },
     async deleteFile(row) {
@@ -126,7 +127,7 @@ export default {
         this.$message.success('删除成功')     
         this.getHistoryData()  
       } catch (error) {
-        this.$message.error('删除失败')
+        notifyActionError(error, '删除失败')
       }
     },
     getMimeType(extension) {

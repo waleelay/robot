@@ -218,6 +218,7 @@ import LineChart from './LineChart.vue';
 import PieChart from './PieChart.vue';
 import HistoryReportList from './History.vue';
 import { getPatrolStatisticsOverview, exportPatrolStatisticsReport } from '@/api/new-bi';
+import { notifyActionError } from '@/utils/error-feedback';
 import { saveAs } from 'file-saver';
 import Empty from '../../components/Empty.vue';
 const cityOptions = ['装备运行时长', 'AI告警分析', '告警高发区域', '告警趋势图'];
@@ -409,6 +410,7 @@ export default {
         saveAs(new Blob([blob], { type: 'application/pdf' }), `数据统计报告-${Date.now()}.pdf`);
       } catch (err) {
         console.error('报告下载失败', err);
+        notifyActionError(err, '报告下载失败');
       }
     },
     async loadStatistics(e) {

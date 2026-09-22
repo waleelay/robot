@@ -321,8 +321,7 @@ test('控制权申请跨越 WebSocket 断线时释放迟到租约', async () => 
   assert.deepEqual(JSON.parse(JSON.stringify(releaseCalls)), [[
     'robot1',
     'session-late',
-    { reason: 'websocket_disconnected' },
-    { skipErrorMessage: true }
+    { reason: 'websocket_disconnected' }
   ]])
   acquireControlImpl = async () => ({})
 })

@@ -195,8 +195,7 @@ export default {
           await releaseControl(
             session.robotId || this.selectedRobotId,
             session.controlSessionId,
-            { reason: 'websocket_disconnected' },
-            { skipErrorMessage: true }
+            { reason: 'websocket_disconnected' }
           )
         } catch (error) {
           console.warn('WARN release stale control session', errorMessage(error))
@@ -478,7 +477,7 @@ export default {
         'drive.velocity',
         { linearX: 0, linearY: 0, angularZ: 0 },
         'resume-task-stop'
-      ), { timeout: 3000, skipErrorMessage: true })
+      ), { timeout: 3000 })
     },
     async acquireBaseControlSession() {
       const connectionEpoch = this.controlConnectionEpoch
@@ -597,7 +596,7 @@ export default {
             'drive.velocity',
             { linearX: 0, linearY: 0, angularZ: 0 },
             'release-control-stop'
-          ), { timeout: 3000, skipErrorMessage: true })
+          ), { timeout: 3000 })
         } catch (error) {
           console.warn('WARN release control stop', errorMessage(error))
         }

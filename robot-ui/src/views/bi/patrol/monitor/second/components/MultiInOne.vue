@@ -375,6 +375,7 @@ import {
   uploadFile
 } from '@/api/media';
 import { errorMessage } from '@/utils';
+import { notifyActionError } from '@/utils/error-feedback';
 import yuntai from './ptz-control-mixin';
 
 export default {
@@ -968,7 +969,7 @@ export default {
           ? `音频传输任务已下发：${transferId}`
           : '音频传输任务已下发');
       } catch (error) {
-        this.$message.error(errorMessage(error));
+        notifyActionError(error, '音频上传或传输失败');
       } finally {
         this.audioUploading = false;
         if (input) input.value = '';

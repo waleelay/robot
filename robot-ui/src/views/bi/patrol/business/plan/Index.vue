@@ -64,7 +64,7 @@
           :key="permissionRenderKey"
           :data="rows"
           style="width: 100%"
-          :empty-text="canViewPlan ? '暂无数据' : '无权限'"
+          :empty-text="loadError || (canViewPlan ? '暂无数据' : '无权限')"
           :class="{'no-data': !rows.length}"
         >
           <el-table-column type="index" width="60" label="序号" align="center">
@@ -339,7 +339,8 @@ import {
   terminateTaskRecord,
   updateTaskEnabled
 } from '@/api/new-bi'
-import { isRequestErrorNotified } from '@/utils/request'
+import { notifyActionError } from '@/utils/error-feedback'
+import { requestErrorMessage } from '@/utils/request-error'
 import {
   executionStatusLabel as resolveExecutionStatusLabel,
   executionStatusType as resolveExecutionStatusType,
@@ -357,6 +358,7 @@ export default {
       mode: 'list',
       currentId: '',
       loading: false,
+      loadError: '',
       rows: [],
       page: { pageNum: 1, pageSize: 10, total: 0 },
       filters: {
@@ -452,7 +454,6 @@ export default {
         this.rows = []
         this.page.total = 0
         this.loading = false
-        this.$message.warning('无权限')
         return
       }
       if (pageNum) this.page.pageNum = pageNum
@@ -469,11 +470,15 @@ export default {
         const data = this.unwrap(await getTaskList(params))
         if (request !== this.rowsRequest || this._isDestroyed) return
         this.rows = (data.records || []).map(item => Object.assign({ loading: false }, item))
+        this.loadError = ''
         this.page.pageNum = data.pageNum || this.page.pageNum
         this.page.pageSize = data.pageSize || this.page.pageSize
         this.page.total = data.total || 0
       } catch (error) {
-        if (request === this.rowsRequest && !this._isDestroyed) this.showError(error)
+        if (request === this.rowsRequest && !this._isDestroyed) {
+          console.error('任务计划列表加载失败', error)
+          if (!silent) this.loadError = requestErrorMessage(error)
+        }
       } finally {
         if (request === this.rowsRequest) this.loading = false
       }
@@ -537,7 +542,7 @@ export default {
         this.$message.success((data && data.message) || '启动指令已提交，状态以实时更新为准')
         if (data && data.workflowInstanceId) this.$emit('show-record', data.workflowInstanceId)
       } catch (error) {
-        if (error !== 'cancel') this.showError(error)
+        if (error !== 'cancel') this.showActionError(error)
       } finally {
         this.startingPlanIds = this.startingPlanIds.filter(id => id !== row.id)
       }
@@ -607,7 +612,7 @@ export default {
         this.$message.success((data && data.message) || '启动指令已提交，状态以实时更新为准')
         if (data && data.workflowInstanceId) this.$emit('show-record', data.workflowInstanceId)
       } catch (error) {
-        this.showError(error)
+        this.showActionError(error)
       } finally {
         this.executionParameterDialog.submitting = false
       }
@@ -617,7 +622,7 @@ export default {
         this.previewResult = this.unwrap(await startTaskPreview(row.id, {}))
         this.previewVisible = true
       } catch (error) {
-        this.showError(error)
+        this.showActionError(error)
       }
     },
     handleMore(command, row) {
@@ -633,7 +638,7 @@ export default {
         this.$message.success(row.enabled ? '已停用' : '已启用')
         this.loadRows()
       } catch (error) {
-        this.showError(error)
+        this.showActionError(error)
       }
     },
     async deletePlan(row) {
@@ -644,7 +649,7 @@ export default {
         this.$message.success('已删除')
         this.loadRows(1)
       } catch (error) {
-        if (error !== 'cancel') this.showError(error)
+        if (error !== 'cancel') this.showActionError(error)
       }
     },
     async controlPlanInstance(row, action) {
@@ -665,7 +670,7 @@ export default {
         const data = this.unwrap(await api(row.activeWorkflowInstanceId, {}))
         this.$message.success((data && data.message) || `${label}命令已发送`)
       } catch (error) {
-        if (error !== 'cancel') this.showError(error)
+        if (error !== 'cancel') this.showActionError(error)
       } finally {
         this.actingPlanIds = this.actingPlanIds.filter(id => id !== row.id)
       }
@@ -692,7 +697,7 @@ export default {
         const data = this.unwrap(await forceTerminateTaskRecord(row.activeWorkflowInstanceId, String(value).trim()))
         this.$message.success((data && data.message) || '任务已强制结束，未确认设备已进入安全隔离')
       } catch (error) {
-        if (error !== 'cancel') this.showError(error)
+        if (error !== 'cancel') this.showActionError(error)
       } finally {
         this.actingPlanIds = this.actingPlanIds.filter(id => id !== row.id)
       }
@@ -798,9 +803,8 @@ export default {
       }
       return res || {}
     },
-    showError(error) {
-      if (isRequestErrorNotified(error)) return
-      console.error((error && error.message) || '请求失败')
+    showActionError(error) {
+      notifyActionError(error, '任务操作失败')
     }
   }
 }

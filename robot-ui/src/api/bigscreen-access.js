@@ -5,7 +5,6 @@ import { BIGSCREEN_API_PREFIX } from '@/utils/api-url'
 export function getCurrentBigscreenAccess() {
   return request({
     url: BIGSCREEN_API_PREFIX + '/access-control/me',
-    method: 'get',
-    skipErrorMessage: true
+    method: 'get'
   })
 }

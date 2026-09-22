@@ -197,7 +197,7 @@ import { executionStatusLabel, isActiveTaskStatus, isRunningTaskStatus, taskExec
 import { listTasksForRobot } from '../../../patrol/business/task-equipment';
 import { createServicePointNavigation, getPatrolPanoramaMountedDeviceCount, getServicePointOptions } from '@/api/new-bi';
 import { acquireControl, mediaClientId, releaseControl, sendEquipmentCommand } from '@/api/media';
-import { isRequestErrorNotified } from '@/utils/request';
+import { notifyActionError } from '@/utils/error-feedback';
 import { formatRobotSpeed } from '../../../js/utils/prefer-live-robot-fields';
 import { leaveChargerUnavailableReason, navigationUnavailableReason } from '../../../js/utils/service-point-actions';
 import { resolveVideoDisplayState } from '../../../js/utils/video-display-state';
@@ -508,9 +508,7 @@ export default {
       return this.actionToken
     },
     actionError(error, fallback) {
-      if (isRequestErrorNotified(error)) return
-      const message = error?.response?.data?.message || error?.message || fallback
-      this.$message?.error?.(message)
+      notifyActionError(error, fallback)
     },
     async refreshDeviceSnapshot() {
       try {
@@ -749,7 +747,8 @@ export default {
           robot,
           camera,
           consumerId: 'robot1-fixed-camera',
-          prefixId: this.prefixId
+          prefixId: this.prefixId,
+          userInitiated: true
         })
         if (!this.visible) return
         // 主动挂到本弹窗 video，不依赖全局 prefixId

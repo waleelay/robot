@@ -216,6 +216,7 @@ import AlarmSnapshotImage from '@/components/AlarmSnapshotImage.vue'
 import { mapActions, mapState } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
 import { getPatrolPanoramaAlarmPage } from '@/api/new-bi'
+import { notifyActionError } from '@/utils/error-feedback'
 import {
   buildSnapshotOptions,
   downloadAlarmSnapshotFile,
@@ -489,7 +490,7 @@ export default {
           this.$message.success('已标记为误报')
         }
       } catch (error) {
-        this.$message.error(error?.message || '告警处置失败')
+        notifyActionError(error, '告警处置失败')
       } finally {
         this.loading = false
       }

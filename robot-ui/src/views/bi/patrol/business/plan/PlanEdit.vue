@@ -43,6 +43,10 @@
     </div>
 
     <section v-loading="editorLoading" class="panel flex1">
+      <div v-if="editorError" class="editor-error mb10" role="alert">
+        <span>{{ editorError }}</span>
+        <el-button type="text" @click="loadPage">重试</el-button>
+      </div>
       <el-form :model="form" label-position="top" class="business2-form" :disabled="isViewMode">
         <div class="section-heading section-heading--first">
           <div>
@@ -350,7 +354,8 @@ import {
   updateTask
 } from '@/api/new-bi'
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
-import { isRequestErrorNotified } from '@/utils/request'
+import { notifyActionError } from '@/utils/error-feedback'
+import { requestErrorMessage } from '@/utils/request-error'
 import Empty from '../../../components/Empty.vue'
 
 export default {
@@ -370,6 +375,7 @@ export default {
     return {
       selectPopperClass: 'custom-select business2-select-popper p10',
       editorLoading: false,
+      editorError: '',
       saving: false,
       form: this.defaultForm(),
       definitionOptions: [],
@@ -455,6 +461,7 @@ export default {
       )
     },
     async loadPage() {
+      this.editorError = ''
       await this.loadEditorOptions()
       await this.loadEditor()
     },
@@ -475,7 +482,7 @@ export default {
           }
         })
       } catch (error) {
-        this.showError(error)
+        this.reportEditorError(error)
       }
     },
     async loadEditor() {
@@ -524,7 +531,7 @@ export default {
         this.roleBindings = await this.buildRoleBindings(this.selectedVersion, detail.roleBindings || [])
         await this.loadActionParameterRequirements(this.selectedVersion)
       } catch (error) {
-        this.showError(error)
+        this.reportEditorError(error)
       } finally {
         this.editorLoading = false
       }
@@ -556,7 +563,7 @@ export default {
         await this.handleVersionChange(option.latestPublishedVersionId)
         this.$message.success('已切换到最新版本，请重新配置计划')
       } catch (error) {
-        if (error !== 'cancel') this.showError(error)
+        if (error !== 'cancel') this.showActionError(error)
       }
     },
     async loadActionParameterRequirements(version) {
@@ -573,7 +580,7 @@ export default {
         try {
           documents.push(this.unwrap(await getTaskWorkflowVersionDetail(dependency.workflowDefinitionId, dependency.workflowVersionId)))
         } catch (error) {
-          this.showError(error)
+          this.reportEditorError(error)
         }
       }
       const requirements = documents.reduce((result, workflowVersion) => {
@@ -603,7 +610,7 @@ export default {
           this.unwrap(await getSelectionWorkflowDefinition(version.workflowDefinitionId))
         ])
       } catch (error) {
-        this.showError(error)
+        this.reportEditorError(error)
         pairs.push([version, {}])
       }
       const dependencies = version.dependencies || []
@@ -616,7 +623,7 @@ export default {
           const definition = this.unwrap(await getSelectionWorkflowDefinition(dependency.workflowDefinitionId))
           pairs.push([workflowVersion, definition])
         } catch (error) {
-          this.showError(error)
+          this.reportEditorError(error)
         }
       }
       const rolesByKey = {}
@@ -681,7 +688,7 @@ export default {
               .map(item => String(item.resourceId))
           }
         } catch (error) {
-          this.showError(error)
+          this.reportEditorError(error)
           next[String(sceneId)] = { deviceIds: [], deviceGroupIds: [] }
         }
       }))
@@ -717,7 +724,7 @@ export default {
         this.$message.success('已保存')
         this.$emit('saved', id)
       } catch (error) {
-        this.showError(error)
+        this.showActionError(error)
       } finally {
         this.saving = false
       }
@@ -734,7 +741,7 @@ export default {
         this.componentResolutionChecked = true
         if (!this.componentRequirements.length) this.$message.success('动作执行组件均可自动确定')
       } catch (error) {
-        this.showError(error)
+        this.showActionError(error)
       }
     },
     switchEdit() {
@@ -1085,9 +1092,12 @@ export default {
       })
       return next
     },
-    showError(error) {
-      if (isRequestErrorNotified(error)) return
-      console.error((error && error.message) || '请求失败')
+    reportEditorError(error) {
+      console.error('任务计划编辑数据加载失败', error)
+      this.editorError = requestErrorMessage(error)
+    },
+    showActionError(error) {
+      notifyActionError(error, '任务计划操作失败')
     }
   }
 }
@@ -1098,5 +1108,15 @@ export default {
 
 .plan-empty {
   min-height: 160px;
+}
+
+.editor-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  color: #ffb3b3;
+  background: rgba(190, 42, 42, 0.18);
+  border: 1px solid rgba(255, 92, 92, 0.45);
 }
 </style>

@@ -17,8 +17,13 @@
       </button>
     </div>
 
+    <div v-if="loadError" class="record-status-banner is-error flx-align-center mb10 p10" role="alert">
+      <p class="record-status-banner__desc flex1">{{ loadError }}</p>
+      <el-button type="text" @click="loadReplay">重试</el-button>
+    </div>
+
     <div
-      v-if="instance.terminationMode === 'FORCED'"
+      v-else-if="instance.terminationMode === 'FORCED'"
       class="record-status-banner is-warning flx-align-start mb10 p10"
       role="alert"
     >
@@ -403,7 +408,8 @@ import { getTaskRecordReplay, previewImageBlob } from '@/api/new-bi'
 import { createFileObjectUrl, fileDownloadUrl, getFilePlayUrl, revokeFileObjectUrl } from '@/api/media'
 import Empty from '../../../components/Empty.vue'
 import { BIGSCREEN_CONTROL_API_PREFIX, withApiPrefix } from '@/utils/api-url'
-import { isRequestErrorNotified } from '@/utils/request'
+import { notifyActionError } from '@/utils/error-feedback'
+import { requestErrorMessage } from '@/utils/request-error'
 import {
   executionStatusLabel as resolveExecutionStatusLabel,
   executionStatusType as resolveExecutionStatusType
@@ -425,6 +431,7 @@ export default {
   data() {
     return {
       loading: false,
+      loadError: '',
       samplesLoading: false,
       replay: null,
       visibleTrackKeys: [],
@@ -738,6 +745,7 @@ export default {
       if (!this.id) return
       this.stopPlayback()
       this.loading = true
+      this.loadError = ''
       try {
         this.replay = this.unwrap(await getTaskRecordReplay(this.id))
         this.unavailableVideoKeys = []
@@ -753,7 +761,8 @@ export default {
         this.attachVideoSources()
         this.syncVideos()
       } catch (error) {
-        this.showError(error)
+        console.error('执行记录详情加载失败', error)
+        this.loadError = requestErrorMessage(error)
       } finally {
         this.loading = false
       }
@@ -1131,7 +1140,8 @@ export default {
             this.videoPlayUrlMap = Object.assign({}, this.videoPlayUrlMap, { [fileId]: playUrl })
           }
         } catch (error) {
-          console.warning(`视频 ${fileId} 播放地址获取失败`)
+          // 单个历史视频失败不打断其它视频加载，避免批量弹窗。
+          console.warn(`视频 ${fileId} 播放地址获取失败`)
         } finally {
           this.videoPlayLoadingIds = this.videoPlayLoadingIds.filter(id => id !== fileId)
         }
@@ -1411,7 +1421,7 @@ export default {
         }
         throw new Error('无法生成视频下载地址')
       } catch (error) {
-        this.showError(error)
+        this.showActionError(error)
       }
     },
     videoDownloadName(video, fileId) {
@@ -1719,9 +1729,8 @@ export default {
       }
       return res || {}
     },
-    showError(error) {
-      if (isRequestErrorNotified(error)) return
-      console.error((error && error.message) || '请求失败')
+    showActionError(error) {
+      notifyActionError(error, '执行记录操作失败')
     }
   }
 }

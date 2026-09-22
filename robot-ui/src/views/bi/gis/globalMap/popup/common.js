@@ -56,7 +56,7 @@ export default {
       for (const cameraKey in this.ZQL_playingSource) {
         const robot = Object.assign({}, this.ZQL_videosInfos[cameraKey].robot)
         const camera = Object.assign({}, this.ZQL_videosInfos[cameraKey])
-        await this.startCamera({ robot, camera, consumerId, prefixId })
+        await this.startCamera({ robot, camera, consumerId, prefixId, userInitiated: true })
       }
     },
     async stopAll() {

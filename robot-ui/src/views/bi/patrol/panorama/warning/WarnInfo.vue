@@ -186,6 +186,7 @@ import WarningExecuteError from './WarningExecuteError.vue';
 import AlarmMockPanel from './AlarmMockPanel.vue'
 import { mapState, mapActions } from 'vuex';
 import { executeAlarm } from '../../../../../api/media.js';
+import { notifyActionError } from '@/utils/error-feedback'
 import { buildSnapshotOptions, loadSnapshotObjectUrls } from '@/utils/alarm-snapshot'
 import { cancelAlarmSpeech, speakAlarm } from '@/utils/alarm-speech'
 import {
@@ -581,7 +582,7 @@ export default {
         }
         this.continueAfterClose()
       } catch (error) {
-        this.$message.error(error?.message || '告警处置失败')
+        notifyActionError(error, '告警处置失败')
       } finally {
         this.loading = false
       }

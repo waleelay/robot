@@ -30,6 +30,7 @@ import { isRobotMediaReachable } from '../../views/bi/js/utils/pick-default-came
 import { resolveLiveKitUrl } from '../../utils/livekitUrl'
 import { isSameLiveKitTrack, viewerReconnectDelay } from '../../views/bi/js/utils/livekit-track-recovery'
 import { integrationLog, logWebSocketEvent } from '../../utils/integration-log'
+import { notifyActionError } from '../../utils/error-feedback'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 const FIXED_CAMERA_TRACK_WAIT_MS = 15000
@@ -131,13 +132,10 @@ function beginViewerRecovery(commit, dispatch, state, camera, sessionId) {
   )
 }
 
-function refreshAuthorizedOverview(dispatch, { failClosed = false, notifyOnFailure = false } = {}) {
+function refreshAuthorizedOverview(dispatch, { failClosed = false } = {}) {
   return dispatch('websocketExtraData/refreshOverviewResources', { failClosed }, { root: true })
     .catch(error => {
       console.error('授权资源变更后刷新大屏总览失败', error)
-      if (notifyOnFailure) {
-        Message.warning('大屏授权数据刷新失败，请稍后重试')
-      }
     })
 }
 
@@ -967,7 +965,7 @@ const actions = {
       dispatch('startHeartbeat')
       // 断线期间权限可能变化；重连成功后重新取得权威 Overview，不能沿用旧页面集合。
       if (isReconnect) {
-        refreshAuthorizedOverview(dispatch, { failClosed: false, notifyOnFailure: false })
+        refreshAuthorizedOverview(dispatch, { failClosed: false })
       }
       socket.send(JSON.stringify({
         type: 'video.intercom.call.query',
@@ -1022,12 +1020,12 @@ const actions = {
         const unavailable = event.data?.available === false
         commit('setAuthorizationUnavailable', unavailable)
         if (!unavailable) {
-          refreshAuthorizedOverview(dispatch, { failClosed: true, notifyOnFailure: true })
+          refreshAuthorizedOverview(dispatch, { failClosed: true })
         }
         return
       }
       if (event.event === 'bigscreen.authorization.changed') {
-        refreshAuthorizedOverview(dispatch, { failClosed: true, notifyOnFailure: true })
+        refreshAuthorizedOverview(dispatch, { failClosed: true })
         return
       }
       dispatch('syncRobotEvent', event)
@@ -1697,7 +1695,14 @@ const actions = {
   },
 
   // 启动摄像头。同一路可被多个画面消费：已有 LiveKit Room 时只挂到新的 video，不重连。
-  async performStartCamera({ commit, state, dispatch }, { robot, camera, consumerId, prefixId, throwOnError = false }) {
+  async performStartCamera({ commit, state, dispatch }, {
+    robot,
+    camera,
+    consumerId,
+    prefixId,
+    throwOnError = false,
+    userInitiated = false
+  }) {
     const viewerId = consumerId || 'default'
     const attachPrefix = prefixId || state.prefixId
     const stored = state.cameras[camera.key] || {}
@@ -1711,19 +1716,23 @@ const actions = {
     const fixedCamera = isFixedCameraEquipment(robot, [camera1])
     if (fixedCamera) {
       if (!robot.enabled || !robot.configReady) {
-        Message.warning(robot.enabled ? '固定摄像头配置不完整，无法播放' : '固定摄像头已停用，无法播放')
+        const message = robot.enabled ? '固定摄像头配置不完整，无法播放' : '固定摄像头已停用，无法播放'
+        if (userInitiated) Message.warning(message)
+        else console.warn(message)
         if (throwOnError) throw new Error(robot.enabled ? '固定摄像头配置不完整' : '固定摄像头已停用')
         return null
       }
       if (usesFixedCameraGateway(robot) && robot.gatewayHealth?.status === 'OFFLINE') {
-        Message.warning('固定摄像头网关离线，无法播放')
+        if (userInitiated) Message.warning('固定摄像头网关离线，无法播放')
+        else console.warn('固定摄像头网关离线，无法播放')
         if (throwOnError) throw new Error('固定摄像头网关离线')
         return null
       }
       // RTSP 的 UNKNOWN 不提前拒绝，由本次启动时的真实探测给出最终结果；RTMP 不依赖 Gateway。
     } else if (!isRobotMediaReachable(robot)) {
       const message = '装备当前离线，无法播放'
-      Message.warning(message)
+      if (userInitiated) Message.warning(message)
+      else console.warn(message)
       if (throwOnError) throw new Error(message)
       return null
     }
@@ -1797,6 +1806,7 @@ const actions = {
       return next
     } catch (error) {
       console.error('ERROR createVideoSession', error.message || '请求失败')
+      if (userInitiated) notifyActionError(error, '视频启动失败')
       const latestAfterError = state.cameras[camera1.key]
       // 固定摄像头由发布端健康恢复和人工 Source restart 收敛。保留会话及
       // 消费者意图，页面无需刷新即可等待后端状态恢复；机器人原有失败清理逻辑不变。
@@ -1840,7 +1850,7 @@ const actions = {
         await Promise.resolve(camera1.room.disconnect()).catch(() => {})
       }
       if (createdSessionId && (!stored.session || stored.session.sessionId !== createdSessionId)) {
-        await stopVideoSession(createdSessionId, { timeout: 4000, skipErrorMessage: true }).catch(() => {})
+        await stopVideoSession(createdSessionId).catch(() => {})
         state.stoppedSessionIds.add(createdSessionId)
       }
       const restored = Object.keys(stored).length > 0
@@ -2427,6 +2437,7 @@ const actions = {
       // console.log('API restartVideoSession', updated)
     } catch (error) {
       console.error('ERROR restartVideoSession', error.message || '请求失败')
+      notifyActionError(error, '视频源重启失败')
     } finally {
       camera.restarting = false
       commit('setCamera', mergeCameraFromStore(state, camera, { restarting: false }))
@@ -2576,15 +2587,13 @@ const actions = {
       if (oldRoom) {
         camera.disconnecting = true
         Promise.resolve(oldRoom.disconnect()).catch(error => {
-          console.error('ERROR disconnect old quality room')
-          Message.error(errorMessage(error))
+          console.error('ERROR disconnect old quality room', errorMessage(error))
         })
         camera.disconnecting = false
       }
       state.stoppedSessionIds.add(oldSession.sessionId)
       stopVideoSession(oldSession.sessionId).catch(error => {
-        console.error('ERROR stop old quality session')
-        Message.error(errorMessage(error))
+        console.error('ERROR stop old quality session', errorMessage(error))
       })
       // console.log('API switchCameraQuality', {
       //   from: oldSession.quality,
@@ -2599,7 +2608,7 @@ const actions = {
       if (nextSession && nextSession.sessionId) {
         stopVideoSession(nextSession.sessionId).catch(() => {})
       }
-      Message.error(`清晰度切换失败：`, errorMessage(error))
+      Message.error(`清晰度切换失败：${errorMessage(error)}`)
       console.error('ERROR switchCameraQuality', errorMessage(error))
     } finally {
       dispatch('resetQualityChanging', camera)
@@ -2781,7 +2790,7 @@ const actions = {
         Message.info('当前视频正在录制中')
       } else {
         console.error('开始录像失败', error)
-        Message.error(error)
+        Message.error(errorMessage(error))
       }
     } finally {
       camera.recordingBusy = false
@@ -2814,7 +2823,7 @@ const actions = {
       // if (this.recordingMode) await dispatch('loadRecordings')
     } catch (error) {
       console.error('停止录像失败', error)
-      Message.error(error)
+      Message.error(errorMessage(error))
     } finally {
       camera.recordingBusy = false
       commit('setCamera', camera)

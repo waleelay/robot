@@ -121,6 +121,7 @@ function loadWebsocketRobot(apiOverrides = {}, runtimeOverrides = {}) {
       if (name === '../../api/media') return api
       if (name === 'vue') return { set(target, key, value) { target[key] = value } }
       if (name === '../../utils') return { errorMessage: error => String(error) }
+      if (name === '../../utils/error-feedback') return { notifyActionError() {} }
       if (name === '@/auth') return { bearerToken: () => '' }
       if (name.includes('prefer-live-robot-fields')) return robotStateHelpers
       if (name.includes('pick-default-camera')) return cameraHelpers
@@ -611,7 +612,7 @@ test('页面销毁只释放固定摄像头消费者且保留机器人视频', as
   assert.equal(stops[0].consumerId, 'patrol-monitor-fixed-camera:test-video-div')
 })
 
-test('视频续期请求使用短超时且关闭全局错误提示', async () => {
+test('视频续期请求使用短超时且不携带界面反馈策略', async () => {
   const requests = []
   const api = loadMediaApi(options => {
     requests.push(options)
@@ -624,7 +625,8 @@ test('视频续期请求使用短超时且关闭全局错误提示', async () =>
 
   requests.forEach(options => {
     assert.equal(options.timeout, 4000)
-    assert.equal(options.skipErrorMessage, true)
+    assert.equal(Object.prototype.hasOwnProperty.call(options, 'skipErrorMessage'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(options, 'errorMode'), false)
   })
 })
 

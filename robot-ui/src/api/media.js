@@ -57,11 +57,10 @@ export function getViewerToken(sessionId) {
 }
 
 // 停止视频会话
-export function stopVideoSession(sessionId, options = {}) {
+export function stopVideoSession(sessionId) {
   return request({
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/stop`,
-    method: 'post',
-    ...options
+    method: 'post'
   })
 }
 
@@ -70,8 +69,7 @@ export function heartbeatVideoSession(sessionId) {
   return request({
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/heartbeat`,
     method: 'post',
-    timeout: 4000,
-    skipErrorMessage: true
+    timeout: 4000
   })
 }
 
@@ -148,8 +146,7 @@ export function getFileContent(fileId) {
   return request({
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/files/${encodeURIComponent(fileId)}/content`,
     method: 'get',
-    responseType: 'blob',
-    skipErrorMessage: true
+    responseType: 'blob'
   })
 }
 
@@ -224,8 +221,7 @@ export function heartbeatIntercom(sessionId) {
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/intercom/heartbeat`,
     method: 'post',
     headers: sessionHeaders,
-    timeout: 4000,
-    skipErrorMessage: true
+    timeout: 4000
   })
 }
 
@@ -261,8 +257,7 @@ export function acquireControl(robotId, data) {
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${robotId}/control-sessions/acquire`,
     method: 'post',
     data,
-    acceptBusinessResponse: true,
-    skipErrorMessage: true
+    acceptBusinessResponse: true
   })
 }
 
@@ -271,17 +266,15 @@ export function takeoverControl(robotId, data) {
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${robotId}/control-sessions/takeover`,
     method: 'post',
     data,
-    acceptBusinessResponse: true,
-    skipErrorMessage: true
+    acceptBusinessResponse: true
   })
 }
 
-export function releaseControl(robotId, controlSessionId, data, options = {}) {
+export function releaseControl(robotId, controlSessionId, data) {
   return request({
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${robotId}/control-sessions/${controlSessionId}/release`,
     method: 'post',
-    data: data || {},
-    skipErrorMessage: options.skipErrorMessage === true
+    data: data || {}
   })
 }
 
@@ -322,8 +315,7 @@ export function getActiveLiveRecording(sessionId) {
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/recordings/active`,
     method: 'get',
     headers,
-    timeout: 4000,
-    skipErrorMessage: true
+    timeout: 4000
   })
 }
 
@@ -337,8 +329,7 @@ export function setControlMode(data) {
       controlSessionId: data.controlSessionId,
       observedStateSeq: data.observedStateSeq
     },
-    acceptBusinessResponse: true,
-    skipErrorMessage: true
+    acceptBusinessResponse: true
   })
 }
 // 告警处置 立即处置：IMMEDIATE_DISPOSAL 误报：FALSE_ALARM

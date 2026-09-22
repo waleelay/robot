@@ -383,7 +383,8 @@ export default {
         robot: robotInfo,
         camera,
         consumerId: this.patrolConsumerId(index),
-        prefixId: this.prefixId
+        prefixId: this.prefixId,
+        userInitiated: true
       })
       const latest = this.cameras?.[camera.key] || camera
       const video = document.getElementById(this.prefixId + latest.key)

@@ -11,7 +11,6 @@ export function getPatrolPanoramaMountedDeviceCount(robotId, signal) {
     url: BIGSCREEN_PANORAMA_API_PREFIX + `/devices/${encodeURIComponent(robotId)}/mounted-device-count`,
     method: 'get',
     timeout: 8000,
-    skipErrorMessage: true,
     signal
   })
 }
@@ -21,8 +20,7 @@ export function getServicePointOptions(serialNumber, intent = 'STANDBY') {
     url: BIGSCREEN_BUSINESS_API_PREFIX + `/external/devices/${encodeURIComponent(serialNumber)}/service-point-options`,
     method: 'get',
     params: { intent },
-    timeout: 8000,
-    skipErrorMessage: true
+    timeout: 8000
   })
 }
 
@@ -31,8 +29,7 @@ export function createServicePointNavigation(data) {
     url: BIGSCREEN_BUSINESS_API_PREFIX + '/external/service-point-navigations',
     method: 'post',
     data,
-    timeout: 10000,
-    skipErrorMessage: true
+    timeout: 10000
   })
 }
 
@@ -305,7 +302,6 @@ export function addTaskByPoint(data) {
   return request({
     url: BIGSCREEN_BUSINESS_API_PREFIX + '/external/temporary-navigations',
     method: 'post',
-    data,
-    skipErrorMessage: true
+    data
   })
 }

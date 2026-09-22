@@ -4,6 +4,7 @@
 
 <script>
 import { executeAlarm } from '../../../../../api/media'
+import { notifyActionError } from '@/utils/error-feedback'
 
 export default {
   name: 'WarningExecuteError',
@@ -40,6 +41,7 @@ export default {
         this.$message.success('\u6210\u529f\u5207\u6362\u544a\u8b66\u72b6\u6001')
         this.$emit('close')
       } catch (error) {
+        notifyActionError(error, '告警处置失败')
         throw error
       } finally {
         this.loading = false

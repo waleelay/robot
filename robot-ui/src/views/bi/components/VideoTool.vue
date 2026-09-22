@@ -93,6 +93,7 @@ import videoUtils from './../../../utils/videoUtils.js'
 import ControlInner from './ControlInner.vue';
 import MultimediaDetail from '../patrol/monitor/second/components/MultimediaDetail.vue';
 import { uploadFile } from '../../../api/media.js';
+import { notifyActionError } from '@/utils/error-feedback';
 import { mapActions, mapState } from 'vuex';
 import { none } from 'ol/centerconstraint';
 export default {
@@ -250,10 +251,14 @@ export default {
         remark: `${camera.name} 手动抓拍`
       }))
       form.append('file', blob, `${camera.robotId}-${camera.deviceId}-${Date.now()}.jpg`)
-      const response = await uploadFile(form)
-      console.log('API snapshot', response)
-      this.showSnapshotSuccess(camera, response)
-      this.setSnapshotTime(capturedAt)
+      try {
+        const response = await uploadFile(form)
+        console.log('API snapshot', response)
+        this.showSnapshotSuccess(camera, response)
+        this.setSnapshotTime(capturedAt)
+      } catch (error) {
+        notifyActionError(error, '抓拍保存失败')
+      }
     },
     captureFrameBlob() {
       const video = document.getElementById(this.idName).querySelector('video')

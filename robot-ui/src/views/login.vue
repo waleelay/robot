@@ -63,6 +63,7 @@
 
 <script>
 import { getCodeImg } from "@/api/login";
+import { notifyActionError } from '@/utils/error-feedback';
 import Cookies from "js-cookie";
 import { encrypt, decrypt } from '@/utils/jsencrypt'
 
@@ -146,7 +147,8 @@ export default {
 
             this.$router.push({ path: this.redirect || "/" }).catch(()=>{});
             // this.$router.push({ path:"/bigScreen" }).catch(()=>{});
-          }).catch(() => {
+          }).catch((error) => {
+            notifyActionError(error, '登录失败')
             this.loading = false;
             if (this.captchaEnabled) {
               this.getCode();

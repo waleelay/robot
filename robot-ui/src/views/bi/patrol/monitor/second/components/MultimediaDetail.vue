@@ -197,6 +197,7 @@ import {
   getCachedFilePlayUrl,
   invalidateCachedFile
 } from '@/utils/file-object-url-cache'
+import { notifyActionError } from '@/utils/error-feedback'
 import { durationFromVideoElement, durationText, resolveCameraName } from '../../../../../../utils/index.js'
 
 export default {
@@ -712,7 +713,7 @@ export default {
         })
         await this.afterDelete(item)
       } catch (error) {
-        // 用户取消或删除失败
+        notifyActionError(error, '记录删除失败')
       }
     },
     async afterDelete(item) {

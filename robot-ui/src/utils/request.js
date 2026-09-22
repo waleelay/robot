@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { Notification, Message, Loading } from 'element-ui'
+import { Loading } from 'element-ui'
 import errorCode from '@/utils/errorCode'
 import { tansParams, blobValidate } from "@/utils/ruoyi";
 import cache from '@/plugins/cache'
@@ -7,25 +7,14 @@ import { saveAs } from 'file-saver'
 import { mediaClientId } from '@/utils/media-client-id'
 import { bearerToken, login } from '@/auth'
 import { integrationLog, newRequestId } from '@/utils/integration-log'
+import { notifyActionError } from '@/utils/error-feedback'
+import { errorPayloadMessage } from '@/utils/request-error'
 
 let downloadLoadingInstance;
-let showAlert = false;
 // 是否显示重新登录
 export let isRelogin = { show: false };
 
-const NOTIFIED_FLAG = '__notified'
-
-function markRequestErrorNotified(error) {
-  if (error && typeof error === 'object') {
-    error[NOTIFIED_FLAG] = true
-  }
-  return error
-}
-
-export function isRequestErrorNotified(error) {
-  if (error == null || error === 'cancel' || error === 'error') return true
-  return Boolean(error && error[NOTIFIED_FLAG])
-}
+export { requestErrorMessage } from '@/utils/request-error'
 
 // axios.defaults.headers['Content-Type'] = 'application/json;charset=utf-8'
 // 创建axios实例
@@ -114,7 +103,7 @@ service.interceptors.request.use(async config => {
   return config
 }, error => {
     console.log(error)
-    Promise.reject(error)
+    return Promise.reject(error)
 })
 
 // 响应拦截器
@@ -134,60 +123,29 @@ service.interceptors.response.use(res => {
     }
     // 未设置状态码则默认成功状态
     // const code = res.data.code || 200;
-    const code = res.data.code === '0' ? 200 : res.data.code || 200;
+    const code = res.data.code === '0' || res.data.code === 0 ? 200 : res.data.code || 200;
     // 获取错误信息
 
-    const msg = errorCode[code] || res.data.msg || res.data.message || errorCode['default']
-    const skipErrorMessage = Boolean(res.config && res.config.skipErrorMessage)
+    const msg = errorPayloadMessage(res.data) || errorCode[code] || errorCode['default']
     // 二进制数据则直接返回
     if (res.request.responseType ===  'blob' || res.request.responseType ===  'arraybuffer') {
-      showAlert = false
       return res.data
     }
     // 控制权接口以普通响应体返回 CONTROL_LOCKED 等业务结果，由调用方展示准确提示。
     if (res.config && res.config.acceptBusinessResponse) {
-      showAlert = false
       return res.data
     }
     if (code === 401) {
       login()
-      return Promise.reject(markRequestErrorNotified('无效的会话，或者会话已过期，请重新登录。'))
-    } else if (code === 500) {
-      const error = new Error(msg)
-      if (!skipErrorMessage && !showAlert) {
-        showAlert = true
-        // Message({
-        //   message: msg,
-        //   type: 'error',
-        //   onClose: () => { showAlert = false }
-        // })
-        console.error(500, msg)
-      }
-      return Promise.reject(skipErrorMessage ? error : markRequestErrorNotified(error))
-    } else if (code === 601) {
-      const error = new Error(msg)
-      if (!skipErrorMessage && !showAlert) {
-        showAlert = true
-        // Message({
-        //   message: msg,
-        //   type: 'warning',
-        //   onClose: () => { showAlert = false }
-        // })
-        console.error(601, msg)
-      }
-      return Promise.reject(skipErrorMessage ? error : markRequestErrorNotified(error))
+      return Promise.reject(new Error('无效的会话，或者会话已过期，请重新登录。'))
     } else if (code !== 200) {
       const error = new Error(msg)
-      if (!skipErrorMessage && !showAlert) {
-        showAlert = true
-        Notification.error({
-          title: msg,
-          onClose: () => { showAlert = false }
-        })
-      }
-      return Promise.reject(skipErrorMessage ? error : markRequestErrorNotified(error))
+      error.businessCode = code
+      error.isBusinessError = true
+      error.config = res.config
+      error.response = { status: res.status, data: res.data }
+      return Promise.reject(error)
     } else {
-      showAlert = false
       return res.data
     }
   },
@@ -205,32 +163,11 @@ service.interceptors.response.use(res => {
         durationMs: Date.now() - (error.config?.integrationStartedAt || Date.now())
       }, 'error')
     }
-    console.log('err' + error)
+    console.error('HTTP 请求失败', error)
     if (error.response && error.response.status === 401) {
       login()
       return Promise.reject(error)
     }
-    let { message } = error;
-    const msg = error.response?.data?.msg || error.response?.data?.message || ''
-    if (message == "Network Error") {
-      message = msg || "后端接口连接异常";
-    } else if (message.includes("timeout")) {
-      message = msg || "系统接口请求超时";
-    } else if (message.includes("Request failed with status code")) {
-      message = msg || "系统接口" + message.substr(message.length - 3) + "异常";
-    }
-    const skipErrorMessage = Boolean(error.config && error.config.skipErrorMessage)
-    if (!skipErrorMessage && !showAlert) {
-      showAlert = true
-      // Message({
-      //   message,
-      //   type: 'error',
-      //   duration: 5 * 1000,
-      //   onClose: () => { showAlert = false }
-      // })
-      console.error('error', message)
-    }
-    if (!skipErrorMessage) markRequestErrorNotified(error)
     return Promise.reject(error)
   }
 )
@@ -251,14 +188,15 @@ export function download(url, params, filename, config) {
     } else {
       const resText = await data.text();
       const rspObj = JSON.parse(resText);
-      const errMsg = errorCode[rspObj.code] || rspObj.msg || errorCode['default']
-      // Message.error(errMsg);
-      console.error(errMsg);
+      const error = new Error(errorPayloadMessage(rspObj) || errorCode[rspObj.code] || errorCode['default'])
+      error.businessCode = rspObj.code
+      error.isBusinessError = true
+      notifyActionError(error, '下载文件失败，请稍后重试')
     }
     downloadLoadingInstance.close();
   }).catch((r) => {
     console.error(r)
-    // Message.error('下载文件出现错误，请联系管理员！')
+    notifyActionError(r, '下载文件失败，请稍后重试')
     downloadLoadingInstance.close();
   })
 }

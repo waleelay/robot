@@ -22,6 +22,7 @@
 
 <script>
 import { executeAlarm } from '../../../../../api/media';
+import { notifyActionError } from '@/utils/error-feedback';
 
 export default {
   name: 'WarningExecuteNo',
@@ -52,6 +53,7 @@ export default {
         this.loading = false
         this.$emit('close')
       } catch (error) {
+        notifyActionError(error, '告警处置失败')
         this.loading = false
       }
     },

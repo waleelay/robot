@@ -58,7 +58,7 @@
           v-loading="loading"
           :data="rows"
           style="width: 100%"
-          :empty-text="canViewRecord ? '暂无数据' : '无权限'"
+          :empty-text="loadError || (canViewRecord ? '暂无数据' : '无权限')"
           :class="{'no-data': !rows.length}"
         >
           <el-table-column type="index" width="60" label="序号" align="center">
@@ -193,7 +193,7 @@
 <script>
 import { mapGetters } from 'vuex'
 import { getTaskRecordList } from '@/api/new-bi'
-import { isRequestErrorNotified } from '@/utils/request'
+import { requestErrorMessage } from '@/utils/request-error'
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 import {
   executionStatusLabel as resolveExecutionStatusLabel,
@@ -213,6 +213,7 @@ export default {
   data() {
     return {
       loading: false,
+      loadError: '',
       rows: [],
       page: { pageNum: 1, pageSize: 10, total: 0 },
       filters: {
@@ -262,7 +263,6 @@ export default {
         this.rows = []
         this.page.total = 0
         this.loading = false
-        this.$message.warning('无权限')
         return
       }
       if (pageNum) this.page.pageNum = pageNum
@@ -277,11 +277,13 @@ export default {
           scope: 'TERMINAL'
         }))
         this.rows = data.records || []
+        this.loadError = ''
         this.page.pageNum = data.pageNum || this.page.pageNum
         this.page.pageSize = data.pageSize || this.page.pageSize
         this.page.total = data.total || 0
       } catch (error) {
-        this.showError(error)
+        console.error('执行记录列表加载失败', error)
+        this.loadError = requestErrorMessage(error)
       } finally {
         this.loading = false
       }
@@ -368,10 +370,6 @@ export default {
         throw new Error(res.message || '请求失败')
       }
       return res || {}
-    },
-    showError(error) {
-      if (isRequestErrorNotified(error)) return
-      console.error((error && error.message) || '请求失败')
     }
   }
 }

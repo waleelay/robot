@@ -253,6 +253,7 @@ import { executionStatusLabel, taskExecutionStatus, taskStatusColorClass } from 
 import { canStartPlan, hasPlanAction } from '../business/task-plan-state.js';
 import { isTaskListVisible } from '../business/task-equipment.js';
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
+import { notifyActionError } from '@/utils/error-feedback'
 export default {
   name: 'BiPatrolPanoramaLeft',
   components: { TaskRobotView, WarningBatch, Empty, AlarmSnapshotImage },
@@ -652,7 +653,7 @@ export default {
       try {
         await this.closeRemoteControlAndWait()
       } catch (error) {
-        console.warning('远程控制关闭超时，请稍后重试')
+        this.$message.warning('远程控制关闭超时，请稍后重试')
         return
       }
       this.activeTaskId = taskId
@@ -662,7 +663,7 @@ export default {
         if (detail) taskInfo = detail
       } catch (error) {
         // 详情是按需增强；失败时仍以首屏摘要打开已有视频入口，避免阻断正在值守的用户。
-        console.warning('任务详情暂不可用，已按当前任务信息打开视频')
+        this.$message.warning('任务详情暂不可用，已按当前任务信息打开视频')
       }
       const robotIds = this.getTaskRobotIds(taskId)
       this.setShowRobotIds(robotIds)
@@ -745,7 +746,7 @@ export default {
               }
             } catch (error) {
               if (!(error && error.handled)) {
-                // this.$message.error((error && error.message) || failMessage)
+                notifyActionError(error, failMessage)
               }
               throw error
             } finally {
@@ -824,7 +825,7 @@ export default {
               this.$message.success((data && data.message) || '启动指令已提交')
             } catch (error) {
               if (!(error && error.handled)) {
-                this.$message.error((error && error.message) || '执行失败')
+                notifyActionError(error, '执行失败')
               }
               throw error
             } finally {
