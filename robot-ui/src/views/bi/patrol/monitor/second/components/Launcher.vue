@@ -4,7 +4,7 @@
       <img src="@/assets/images/new-bi/launcher.png" alt="" class="w100 h100" />
     </div>
     <div class="mt20 flx-center desc">
-      <div>连接状态：<span :style="{ color: launcherConnected ? '#00FF60' : '#FFF' }">{{ launcherConnected ? '已连接' : '未连接' }}</span></div>
+      <div>连接状态：<span :style="{ color: isLauncherConnected(launcherDevice) ? '#00FF60' : '#FFF' }">{{ isLauncherConnected(launcherDevice) ? '已连接' : '未连接' }}</span></div>
       <div class="ml35">
         安全开关：<el-switch
           v-if="hasLauncherSafetyStatus(launcherDevice)"
@@ -31,7 +31,7 @@
         <div class="text">{{ index + 1 }}号位</div>
         <div class="status pl11 mt4">{{ launcherTubeLoaded(tube) ? '有' : '无' }}发射物</div>
         <div class="btns mt4">
-          <el-button type="primary" class="wp58 hp30" :disabled="!isLauncherSafetyOn(launcherDevice)" @click="handleChangeConfirm(true, tube)">发射</el-button>
+          <el-button type="primary" class="wp58 hp30" :disabled="!canFireLauncherTube(launcherDevice, tube)" @click="handleChangeConfirm(true, tube)">发射</el-button>
         </div>
       </div>
       <div class="confirm-div w100 h100 flx-center flex-column wp266 hp206 mt10 ml23" v-if="showConfirm">
@@ -62,9 +62,11 @@ export default {
       this.tube = tube
     },
     async execute() {
-      await this.firePayload(this.launcherDevice, this.tube.tube, `launcher_${this.tube.tube}`)
-      this.showConfirm = false
-      this.$message.success('发射成功')
+      const success = await this.firePayload(this.launcherDevice, this.tube.tube, `launcher_${this.tube.tube}`)
+      if (success) {
+        this.showConfirm = false
+        this.$message.success('发射指令已发布')
+      }
     }
   }
 }

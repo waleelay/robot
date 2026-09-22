@@ -16,7 +16,7 @@ export default {
     this.checkFullscreenStatus()
   },
   methods: {
-    ...mapActions('websocketRobot', ['startCamera', 'stopCamera']),
+    ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'stopIntercomLifecycle']),
     toggleFullscreen,
     streamViewerIds() {
       const consumerId = this.streamConsumerId || this.prefixId || 'default'
@@ -88,6 +88,10 @@ export default {
   },
   async beforeDestroy() {
     this.removeEventListeners();
+    // Talk 固定绑定当前机器人的首路摄像头，只结束本弹窗实际持有的通话。
+    const talkCamera = this.robot?.cameras?.[0]
+    const current = this.$store.state.websocketRobot.cameras[talkCamera?.key] || talkCamera
+    if (current?.key) await this.stopIntercomLifecycle(current)
     if (this.started || this.visible) {
       try {
         await this.stopAll()

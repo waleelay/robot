@@ -384,3 +384,32 @@ test('地图远程控制传入当前任务计划', () => {
     'views/bi/gis/globalMap/popup/RobotCarControlPart.vue'
   ].forEach(path => assert.match(read(path), /:task-plan="activeTask"/))
 })
+
+test('38mm 只在明确连接且非离线时显示已连接', () => {
+  const connected = controlMixin.methods.isLauncherConnected
+  assert.equal(connected(), false)
+  assert.equal(connected({ status: {} }), false)
+  assert.equal(connected({ status: { connected: false }, onlineStatus: 'online' }), false)
+  assert.equal(connected({ status: { connected: true }, onlineStatus: 'offline' }), false)
+  assert.equal(connected({ status: { connected: true }, onlineStatus: 'online' }), true)
+})
+
+test('38mm 页面的显示、按钮和执行共用完整安全判定', () => {
+  const template = read('views/bi/patrol/monitor/second/components/Launcher.vue').split('<script>')[0]
+  const source = read('views/bi/patrol/monitor/second/components/ptz-control-mixin.js')
+
+  assert.match(template, /isLauncherConnected\(launcherDevice\)/)
+  assert.match(template, /:disabled="!canFireLauncherTube\(launcherDevice, tube\)"/)
+  assert.doesNotMatch(template, /launcherConnected\s*\?/)
+  assert.match(source, /if \(!this\.canFireLauncherTube\(device, tube\)\)/)
+
+  const context = {
+    ...controlMixin.methods,
+    isLauncherConnected: () => true,
+    isLauncherSafetyOn: () => true
+  }
+  assert.equal(context.canFireLauncherTube({}, { loaded: true }), true)
+  assert.equal(context.canFireLauncherTube({}, { loaded: false }), false)
+  context.isLauncherConnected = () => false
+  assert.equal(context.canFireLauncherTube({}, { loaded: true }), false)
+})

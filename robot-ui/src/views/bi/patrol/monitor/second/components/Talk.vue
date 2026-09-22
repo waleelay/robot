@@ -18,48 +18,39 @@
       <span v-if="selectCamera.intercomActive && selectCamera?.room?.localParticipant" class="mt2" style="color: rgba(255, 255, 255, 0.80); font-family: 'Alibaba PuHuiTi'; font-size: 10px; font-style: normal; letter-spacing: 0.2px;">点击结束</span>
     </div>
     <div v-if="!isMapInner" class="wp269 hp16 mt22 progress flx-align-center">
-      <!-- 底层未划过轨道 背景色 #093974 -->
-      <!-- <div class="track-bg"></div> -->
-      <!-- 动态划过层：展示颜色 #0C132A 以及 box-shadow: inset 0 0 6px 2px #09F -->
-      <!-- <div class="filled-glow" :style="{'--value-percent': Math.ceil(audioVolume(audioDevice)) + '%'}"></div> -->
-      <!-- <span class="value">{{ audioVolume(audioDevice) }}</span> -->
-      <!-- <input
-        type="range"
-        min="0"
-        max="255"
-        :value="audioVolume(audioDevice)"
-        class="custom-slider"
-        @input="updateVolume"
-        id="volumeSlider"
-        :style="{'--value-percent': Math.ceil(audioVolume(audioDevice) / 255 * 100)}"
-        :disabled="audioMuted(audioDevice)"
-      /> -->
       <span style="color: #FFF; font-size:16px;" @click="toggleAudioMute(audioDevice)">
         <svg-icon :icon-class="volumeIconClass" />
       </span>
-      <el-slider
-        class="w100 ml10"
-        tooltip-class="volume-slider-tooltip"
-        :value="audioVolume(audioDevice)"
-        :min="0"
-        :max="100"
-        :format-tooltip="val => `${ audioMuted(audioDevice) ? '已静音' : `音量：${val}` }`"
-        :disabled="audioMuted(audioDevice)"
-        @input="updateAudioVolume"
-        @change="setAudioVolume"
-      />
+      <div class="volume-range ml10">
+        <div class="track-bg" />
+        <div class="filled-glow" :style="{ '--value-percent': `${displayVolume}%` }" />
+        <input
+          :value="displayVolume"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          class="custom-slider"
+          aria-label="扬声器音量"
+          :aria-valuetext="displayMuted ? `已静音，音量 ${displayVolume}` : `音量 ${displayVolume}`"
+          :disabled="displayMuted"
+          @input="updateAudioVolume($event.target.value)"
+          @change="setAudioVolume($event.target.value)"
+        >
+      </div>
+      <span class="volume-value">{{ displayVolume }}</span>
     </div>
     <div class="btns" :class="{'mt20': !isMapInner, 'mt30': isMapInner}">
-      <el-button v-if="!isMapInner" type="primary" class="wp124 hp30" @click="toggleAudioMute(audioDevice)">{{ audioMuted(audioDevice) ? '取消静音' : '静音' }}</el-button>
-      <el-button type="primary" :disabled="audioMuted(audioDevice)" class="wp124 hp30" :class="{ 'ml20': !isMapInner }" style="cursor: default;">
-        <span class="btn-volume" @click="adjustAudioVolume(audioDevice, -5)">
+      <el-button v-if="!isMapInner" type="primary" class="wp124 hp30" @click="toggleAudioMute(audioDevice)">{{ displayMuted ? '取消静音' : '静音' }}</el-button>
+      <div class="volume-stepper wp124 hp30" :class="{ 'ml20': !isMapInner, 'is-disabled': displayMuted }">
+        <button type="button" class="btn-volume" aria-label="音量减" :disabled="displayMuted" @click="adjustAudioVolume(audioDevice, -5)">
           <svg-icon icon-class="minus" />
-        </span>
+        </button>
         <span class="ml10 mr10">音量</span>
-        <span class="btn-volume" @click="adjustAudioVolume(audioDevice, 5)">
+        <button type="button" class="btn-volume" aria-label="音量加" :disabled="displayMuted" @click="adjustAudioVolume(audioDevice, 5)">
           <svg-icon icon-class="plus" />
-        </span>
-      </el-button>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -70,6 +61,7 @@ import { errorMessage } from '../../../../../../utils';
 import yuntai from './ptz-control-mixin';
 import { mapActions, mapState } from 'vuex';
 import VolumeWave from './VolumeWave.vue';
+import { audioStatusVersion } from '../../../../../../utils/audio-device-state';
 
 export default {
   name: 'Talk',
@@ -84,15 +76,22 @@ export default {
       return this.$store.getters['websocketRobot/getSelectedRobot']
     },
     selectCamera() {
-      return this.cameras?.[this.selectedRobot?.cameras?.[0].key] || {}
+      return this.cameras?.[this.selectedRobot?.cameras?.[0]?.key] || {}
     },
-    currentVolume() {
-      return this.audioVolume(this.audioDevice)
+    displayVolume() {
+      return this.localVolume === null ? this.normalizeAudioVolume(this.audioVolume(this.audioDevice)) : this.localVolume
+    },
+    displayMuted() {
+      return this.requestedMuted === null ? this.audioMuted(this.audioDevice) : this.requestedMuted
+    },
+    audioStatusVersion() {
+      const status = this.audioStatus(this.audioDevice)
+      return audioStatusVersion(this.selectedRobotId, this.audioDevice?.deviceId, status)
     },
     // 音量图标类，根据音量值动态计算
     volumeIconClass() {
-      const cur  = Number(this.audioVolume(this.audioDevice))
-      if (cur === 0 || this.audioMuted(this.audioDevice)) {
+      const cur = Number(this.displayVolume)
+      if (cur === 0 || this.displayMuted) {
         return 'volume-mute';
       } else if (cur < 50) {
         return 'volume-l';
@@ -108,49 +107,78 @@ export default {
     },
   },
   data() {
-    return { }
+    return {
+      localVolume: null,
+      volumeInteracting: false,
+      lastUnmutedVolume: null,
+      requestedMuted: null
+    }
+  },
+  watch: {
+    audioStatusVersion: {
+      immediate: true,
+      handler() {
+        this.reconcileAudioStatus()
+      }
+    },
+    selectedRobotId() {
+      this.localVolume = null
+      this.volumeInteracting = false
+      this.lastUnmutedVolume = null
+      this.requestedMuted = null
+    }
   },
   methods: {
-    ...mapActions('websocketRobot', ['toggleIntercom', 'persistDeviceStateCache', 'setAudioState']),
+    ...mapActions('websocketRobot', ['toggleIntercom']),
+    normalizeAudioVolume(volume) {
+      const number = Number(volume)
+      return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : 50
+    },
+    reconcileAudioStatus() {
+      const device = this.audioDevice
+      if (!device) return
+      const volume = this.normalizeAudioVolume(this.audioVolume(device))
+      const muted = this.audioMuted(device)
+      if (!muted) this.lastUnmutedVolume = volume
+      if (!this.volumeInteracting) {
+        this.localVolume = muted && volume === 0 && this.lastUnmutedVolume !== null
+          ? this.lastUnmutedVolume
+          : volume
+      }
+      this.requestedMuted = null
+    },
     async toggleAudioMute(device) {
-      const previous = this.audioStatus(device)
-      const muted = !previous.muted
-      this.updateAudioState(device, { muted })
+      const currentMuted = this.displayMuted
+      const muted = !currentMuted
+      if (muted) this.lastUnmutedVolume = this.displayVolume
+      this.requestedMuted = muted
       const ok = await this.sendDeviceCommand(device, 'set_mute', {
         mute: muted
       }, muted ? 'volume_mute' : 'volume_unmute')
-      if (!ok) {
-        this.updateAudioState(device, previous)
-      }
+      if (!ok) this.requestedMuted = null
     },
     updateAudioVolume(volume) {
-      this.updateAudioState(this.audioDevice, {
-        volume: Math.max(0, Math.min(100, Number(volume) || 0))
-      })
+      this.volumeInteracting = true
+      this.localVolume = this.normalizeAudioVolume(volume)
     },
     async setAudioVolume(volume) {
-      const device = this.audioDevice
-      const previous = this.audioStatus(device)
-      const nextVolume = Math.max(0, Math.min(100, Number(volume) || 0))
-      this.updateAudioState(device, { volume: nextVolume, muted: false })
-      const ok = await this.sendDeviceCommand(device, 'set_volume', {
-        volumePercent: nextVolume
-      }, 'volume_slider')
-      if (!ok) {
-        console.log('setAudioVolume failed', previous)
-        this.updateAudioState(device, previous)
-      }
+      this.volumeInteracting = false
+      await this.requestAudioVolume(this.audioDevice, volume, 'volume_slider')
     },
     async adjustAudioVolume(device, delta) {
-      const previous = this.audioStatus(device)
-      const nextVolume = Math.max(0, Math.min(100, previous.volume + delta))
-      this.updateAudioState(device, { volume: nextVolume, muted: false })
+      const nextVolume = this.normalizeAudioVolume(this.displayVolume + delta)
+      await this.requestAudioVolume(device, nextVolume, delta > 0 ? 'volume_up' : 'volume_down')
+    },
+    async requestAudioVolume(device, volume, source) {
+      const nextVolume = this.normalizeAudioVolume(volume)
+      this.localVolume = nextVolume
       const ok = await this.sendDeviceCommand(device, 'set_volume', {
         volumePercent: nextVolume
-      }, delta > 0 ? 'volume_up' : 'volume_down')
+      }, source)
       if (!ok) {
-        this.updateAudioState(device, previous)
+        this.localVolume = this.normalizeAudioVolume(this.audioVolume(device))
       }
+      return ok
     },
     async sendDeviceCommand(device, action, params, source) {
       try {
@@ -165,35 +193,27 @@ export default {
         return false
       }
     },
-    updateAudioState(device, patch) {
-      if (!device) return
-      const key = this.audioKey(device)
-      this.setAudioState({ key, ...Object.assign({}, this.audioStatus(device), patch) })
-      this.persistDeviceStateCache({ ...this.deviceStateCache, audioState: this.audioState})
-    },
     async handleTalk() {
       if (!this.selectCamera.intercomActive && this.audioDevice && this.audioMuted(this.audioDevice)) {
         await this.toggleAudioMute(this.audioDevice)
       }
       await this.toggleIntercom({ robotId: this.selectedRobotId, camera: this.selectCamera })
     },
-    audioKey(device) {
-      return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
-    },
     audioStatus(device) {
-      const key = this.audioKey(device)
-      if (this.audioState[key]) return this.audioState[key]
       const status = (device && (device.status || device.runtimeStatus)) || {}
+      const key = device && this.selectedRobotId ? `${this.selectedRobotId}:${device.deviceId}` : ''
+      const reported = key ? (this.audioState?.[key] || {}) : {}
+      const reportedVolume = reported.volume === undefined ? reported.volumePercent : reported.volume
       return {
-        volume: status.volume === undefined ? (status.volumePercent === undefined ? 50 : status.volumePercent) : status.volume,
-        muted: status.muted === undefined ? false : status.muted
+        ...status,
+        ...reported,
+        volume: reportedVolume === undefined
+          ? (status.volumePercent === undefined ? (status.volume === undefined ? 50 : status.volume) : status.volumePercent)
+          : reportedVolume,
+        muted: reported.muted === undefined ? (status.muted === undefined ? false : status.muted) : reported.muted
       }
     },
     hasAudioStatus(device) {
-      const key = this.audioKey(device)
-      if (this.audioState[key]) {
-        return this.audioState[key].volume !== undefined && this.audioState[key].muted !== undefined
-      }
       const status = (device && (device.status || device.runtimeStatus)) || {}
       return (status.volume !== undefined || status.volumePercent !== undefined) && status.muted !== undefined
     },
@@ -267,40 +287,62 @@ export default {
     //   }
     // }
   }
+  .volume-stepper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #FFF;
+    font-size: 12px;
+    letter-spacing: 0.24px;
+    vertical-align: middle;
+    background: #021328;
+    border-radius: 4px;
+    box-shadow: 0 0 14px 2px #09F inset;
+    &.is-disabled {
+      background: #080808;
+      box-shadow: 0 0 14px 2px #515151 inset;
+    }
+    .btn-volume {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      color: inherit;
+      font: inherit;
+      background: transparent;
+      border: 0;
+      cursor: pointer;
+      .svg-icon {
+        font-size: 16px;
+      }
+      &:active {
+        color: #0BF9FE;
+      }
+      &:disabled {
+        cursor: not-allowed;
+      }
+    }
+  }
 }
 
 // 音量
 .progress {
   position: relative;
-  /* 基础轨道背景容器（作为底层）显示未划过底色 #093974 */
-
-  ::v-deep {
-    .el-slider {
-      width: 100%;
-      &__runway {
-        height: 8px;
-        margin: 0;
-        border-radius: 2px;
-        background: #093974;
-      }
-      &__bar {
-        height: 8px;
-        border-radius: 2px;
-        background: #0C132A;
-        box-shadow: 0 0 6px 2px #09F inset;
-      }
-      .el-slider__button-wrapper {
-        top: -5px;
-        height: auto;
-        .el-slider__button {
-          width: 16px;
-          height: 16px;
-          border-width: 0;
-          background: #021328;
-          box-shadow: 0 0 10px 2px #09F inset;
-        }
-      }
-    }
+  .volume-range {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    height: 16px;
+  }
+  .volume-value {
+    width: 28px;
+    margin-left: 8px;
+    color: #FFF;
+    font-size: 12px;
+    line-height: 16px;
+    text-align: right;
   }
   .track-bg {
     position: absolute;
@@ -339,6 +381,7 @@ export default {
     outline: none;
     cursor: pointer;
     margin: 0;
+    padding: 0;
     /* 滑块轨道完全透明，因为我们使用下层自定义轨道 */
     &::-webkit-slider-runnable-track {
       background: transparent;
@@ -393,6 +436,10 @@ export default {
     /* 兼容 Edge 以及确保滑块高度正常 */
     &:focus {
       outline: none;
+    }
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
     }
   }
 }

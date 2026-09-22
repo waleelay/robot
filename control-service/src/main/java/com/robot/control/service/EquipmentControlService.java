@@ -538,6 +538,7 @@ public class EquipmentControlService {
         if (robotId.isBlank()) {
             return payload;
         }
+        OffsetDateTime receivedAt = OffsetDateTime.now();
         Optional<Map<String, Object>> managementRobot = managementClient.cachedDeviceBySerialNumber(robotId);
         Map<String, Object> previous = robotStates.getOrDefault(robotId, Map.of());
         Map<String, Object> state = copy(previous);
@@ -550,6 +551,12 @@ public class EquipmentControlService {
         if (payload.containsKey("devices")) {
             state.put("devices", mediaClientDevices(payload.get("devices")));
         }
+        if (payload.containsKey("audioDevices")) {
+            state.put("devices", mergeSpeakerAudioStates(
+                    state.get("devices"),
+                    payload.get("audioDevices"),
+                    receivedAt));
+        }
         if (hasFreshEdgeStatus(robotId)) {
             EDGE_STATUS_FIELDS.forEach(field -> {
                 if (previous.containsKey(field)) {
@@ -561,7 +568,7 @@ public class EquipmentControlService {
         String controlMode = reportedControlMode(state.get("controlMode"));
         state.put("controlMode", controlMode);
         state.put("controlModeName", controlModeName(controlMode));
-        state.put("timestamp", DateTimeConfig.normalize(OffsetDateTime.now()));
+        state.put("timestamp", DateTimeConfig.normalize(receivedAt));
         state.put("stateSource", "MEDIA_CLIENT_STATUS");
         Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
         managementRobot.ifPresent(robot -> {
@@ -629,6 +636,9 @@ public class EquipmentControlService {
             throw new IllegalArgumentException("设备不支持该动作：" + action);
         }
         String deviceType = stringValue(device.get("deviceType"), stringValue(target.get("deviceType"), ""));
+        if ("LAUNCHER".equals(deviceType) && "fire".equals(action)) {
+            validateLauncherFireState(device, params);
+        }
         Map<String, Object> builtParams = buildParams(action, deviceType, params, device);
         OffsetDateTime now = OffsetDateTime.now();
         return object(
@@ -727,7 +737,7 @@ public class EquipmentControlService {
         }
         if ("LAUNCHER".equals(deviceType) && "fire".equals(action)) {
             return object(
-                    "tube", clampedInt(valueOrDefault(params, "tube", params.get("channel")), 1, 1, 6),
+                    "tube", requiredLauncherTube(params),
                     "waitStatusAfterFire", booleanValue(params.get("waitStatusAfterFire"), true),
                     "keepSafetyOn", booleanValue(params.get("keepSafetyOn"), false));
         }
@@ -735,6 +745,55 @@ public class EquipmentControlService {
             return object();
         }
         return copy(params);
+    }
+
+    /**
+     * 在发布 38mm 发射命令前校验最新运行态。
+     *
+     * <p>发射器属于高风险设备，连接、安全开关或弹筒状态缺失时一律禁止发射，
+     * 不得使用推测值或控制画像默认值放行。</p>
+     */
+    private void validateLauncherFireState(Map<String, Object> device, Map<String, Object> params) {
+        Map<String, Object> status = mapValue(device.get("status"));
+        if (!Boolean.TRUE.equals(status.get("connected"))
+                || "OFFLINE".equals(normalized(firstString(device, "onlineStatus")))) {
+            throw new IllegalArgumentException("发射器未明确连接，禁止发射");
+        }
+        if (!Boolean.TRUE.equals(status.get("safetySwitchEnabled"))) {
+            throw new IllegalArgumentException("发射器安全开关未开启，禁止发射");
+        }
+
+        int requestedTube = requiredLauncherTube(params);
+        Map<String, Object> tubeStatus = mapList(status.get("tubes")).stream()
+                .filter(tube -> numberValue(tube.get("tube"), -1).intValue() == requestedTube)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("未收到目标弹筒的实时状态，禁止发射"));
+        if (!launcherTubeLoaded(tubeStatus)) {
+            throw new IllegalArgumentException("目标弹筒未明确装填，禁止发射");
+        }
+    }
+
+    private static int requiredLauncherTube(Map<String, Object> params) {
+        Object value = valueOrDefault(params, "tube", params.get("channel"));
+        if (!(value instanceof Number number)) {
+            throw new IllegalArgumentException("发射弹筒编号必须是 1 到 6 的整数");
+        }
+        double raw = number.doubleValue();
+        if (!Double.isFinite(raw) || raw != Math.rint(raw) || raw < 1 || raw > 6) {
+            throw new IllegalArgumentException("发射弹筒编号必须是 1 到 6 的整数");
+        }
+        return (int) raw;
+    }
+
+    private boolean launcherTubeLoaded(Map<String, Object> tube) {
+        if (tube.get("loaded") instanceof Boolean loaded) {
+            return loaded;
+        }
+        if (tube.get("state") instanceof Number state) {
+            return state.intValue() == 1;
+        }
+        return Set.of("LOADED", "在仓", "已装填")
+                .contains(normalized(firstString(tube, "stateName")));
     }
 
     /**
@@ -1229,6 +1288,90 @@ public class EquipmentControlService {
             result.add(runtime);
         }
         return result;
+    }
+
+    /**
+     * 将客户端物理扬声器状态归并到平台普通扬声器逻辑设备。
+     *
+     * <p>{@code audioDevices[]} 是边缘端实际音频设备状态，{@code devices[]} 是平台控制设备。
+     * 两者优先通过 {@code devices[].status.driverDeviceId} 关联。多合一设备拥有独立的真实状态
+     * 协议，不得参与本次归并。</p>
+     */
+    private List<Map<String, Object>> mergeSpeakerAudioStates(
+            Object devicesValue,
+            Object audioDevicesValue,
+            OffsetDateTime receivedAt) {
+        List<Map<String, Object>> devices = mapList(devicesValue);
+        Map<String, Map<String, Object>> speakersById = new LinkedHashMap<>();
+        for (Map<String, Object> audioDevice : mapList(audioDevicesValue)) {
+            String deviceId = firstString(audioDevice, "deviceId");
+            String type = normalized(firstString(audioDevice, "type"));
+            if (deviceId != null && "SPEAKER".equals(type)) {
+                speakersById.put(deviceId, audioDevice);
+            }
+        }
+        if (speakersById.isEmpty()) {
+            return devices;
+        }
+
+        Map<String, Object> onlySpeaker = speakersById.size() == 1
+                ? speakersById.values().iterator().next()
+                : null;
+        long eligibleDeviceCount = devices.stream()
+                .filter(this::isOrdinarySpeakerDevice)
+                .count();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> device : devices) {
+            Map<String, Object> mergedDevice = copy(device);
+            if (!isOrdinarySpeakerDevice(device)) {
+                result.add(mergedDevice);
+                continue;
+            }
+            Map<String, Object> status = mapValue(device.get("status"));
+            String driverDeviceId = firstString(status, "driverDeviceId");
+            Map<String, Object> speaker = driverDeviceId == null ? null : speakersById.get(driverDeviceId);
+            if (speaker == null && eligibleDeviceCount == 1) {
+                speaker = onlySpeaker;
+            }
+            if (speaker == null) {
+                result.add(mergedDevice);
+                continue;
+            }
+
+            Object volume = speaker.get("volumePercent");
+            if (validVolumePercent(volume)) {
+                status.put("volumePercent", volume);
+                // 兼容仍读取 volume 的现有页面，两个字段必须来自同一份物理状态。
+                status.put("volume", volume);
+            }
+            if (speaker.get("muted") instanceof Boolean muted) {
+                status.put("muted", muted);
+            }
+            String connectionStatus = firstString(speaker, "status");
+            if (connectionStatus != null) {
+                status.put("connected", "ONLINE".equals(normalized(connectionStatus)));
+            }
+            copyIfPresent(speaker, status, "sinkType");
+            copyIfPresent(speaker, status, "sinkDevice");
+            copyIfPresent(speaker, status, "message");
+            status.put("audioStatusUpdatedAt", DateTimeConfig.normalize(receivedAt));
+            mergedDevice.put("status", status);
+            result.add(mergedDevice);
+        }
+        return result;
+    }
+
+    private boolean isOrdinarySpeakerDevice(Map<String, Object> device) {
+        return Set.of("SPEAKER", "CLIENT_AUDIO", "VOLUME_CONTROL")
+                .contains(normalized(firstString(device, "deviceType")));
+    }
+
+    private static boolean validVolumePercent(Object value) {
+        if (!(value instanceof Number number)) {
+            return false;
+        }
+        double percent = number.doubleValue();
+        return Double.isFinite(percent) && percent >= 0.0 && percent <= 100.0;
     }
 
     /**

@@ -192,10 +192,10 @@ export function stopIntercom(sessionId) {
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/intercom/stop`,
     method: 'post',
     headers: sessionHeaders,
-    skipErrorMessage: true
+    timeout: 15000
   })
 }
-export function startCameraIntercom(data) {
+export function startCameraIntercom(data, { signal } = {}) {
   return request({
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/robots/${data.robotId}/cameras/${data.deviceId}/video/intercom/start`,
     method: 'post',
@@ -204,16 +204,18 @@ export function startCameraIntercom(data) {
       reuse: true
     },
     headers: sessionHeaders,
-    skipErrorMessage: true
+    signal,
+    timeout: 15000
   })
 }
 
-export function startSessionIntercom(sessionId) {
+export function startSessionIntercom(sessionId, { signal } = {}) {
   return request({
     url: `${BIGSCREEN_CONTROL_API_PREFIX}/video-sessions/${sessionId}/intercom/start`,
     method: 'post',
     headers: sessionHeaders,
-    skipErrorMessage: true
+    signal,
+    timeout: 15000
   })
 }
 export function heartbeatIntercom(sessionId) {

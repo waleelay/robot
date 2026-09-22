@@ -495,6 +495,7 @@ class EquipmentControlServiceTest {
         register(component("PAYLOAD", "launcher_38mm"));
 
         Map<String, Object> safety = publish("launcher_38mm", "set_safety", object("enabled", true));
+        reportLauncherState(true, true, true);
         Map<String, Object> fire = publish("launcher_38mm", "fire", object("tube", 3));
 
         assertThat(map(safety.get("params"))).containsExactly(
@@ -504,6 +505,48 @@ class EquipmentControlServiceTest {
                 entry("tube", 3),
                 entry("waitStatusAfterFire", true),
                 entry("keepSafetyOn", false));
+    }
+
+    @Test
+    void rejectsLauncherFireUnlessLatestStateExplicitlyAllowsIt() {
+        register(component("PAYLOAD", "launcher_38mm"));
+        Map<String, Object> request = object(
+                "target", object("deviceId", "launcher_38mm"),
+                "action", "fire",
+                "params", object("tube", 3),
+                "client", object("seq", 7));
+
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未明确连接");
+
+        reportLauncherState(true, false, true);
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("安全开关未开启");
+
+        reportLauncherState(true, true, false);
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未明确装填");
+
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+    }
+
+    @Test
+    void rejectsInvalidLauncherTubeInsteadOfSilentlyClampingIt() {
+        register(component("PAYLOAD", "launcher_38mm"));
+        reportLauncherState(true, true, true);
+
+        assertThatThrownBy(() -> service.publishCommand("robot-001", object(
+                "target", object("deviceId", "launcher_38mm"),
+                "action", "fire",
+                "params", object("tube", 7),
+                "client", object("seq", 7)), operator()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("1 到 6 的整数");
+
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
     }
 
     @Test
@@ -711,6 +754,98 @@ class EquipmentControlServiceTest {
                     .containsEntry("pan", 0.15)
                     .containsEntry("moving", true);
                 });
+    }
+
+    @Test
+    void mergesPhysicalSpeakerStateIntoLogicalSpeakerWithoutChangingMultiFunctionState() {
+        Map<String, Object> robot = object(
+                "serialNumber", "robot-001",
+                "deviceType", "WHEELED_ROBOT",
+                "components", List.of(
+                        component("SPEAKER", "audio-control-001"),
+                        component("MULTI_FUNCTION_BROADCASTER", "broadcaster-001")));
+        when(managementClient.deviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
+        when(managementClient.cachedDeviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
+
+        Map<String, Object> state = service.handleClientState(object(
+                "robotId", "robot-001",
+                "status", "online",
+                "devices", List.of(
+                        object(
+                                "deviceId", "audio-control-001",
+                                "deviceType", "SPEAKER",
+                                "status", object(
+                                        "driverDeviceId", "speaker_main",
+                                        "volume", 40,
+                                        "volumePercent", 40,
+                                        "muted", true)),
+                        object(
+                                "deviceId", "broadcaster-001",
+                                "deviceType", "MULTI_FUNCTION_BROADCASTER",
+                                "status", object(
+                                        "volumePercent", 30,
+                                        "volumeLimitPercent", 70))),
+                "audioDevices", List.of(object(
+                        "deviceId", "speaker_main",
+                        "type", "speaker",
+                        "status", "online",
+                        "volumePercent", 85,
+                        "muted", false,
+                        "sinkType", "pulse",
+                        "sinkDevice", "alsa_output.usb-speaker"))));
+
+        List<Map<String, Object>> devices = maps(state.get("devices"));
+        Map<String, Object> speakerStatus = devices.stream()
+                .filter(device -> "audio-control-001".equals(device.get("deviceId")))
+                .map(device -> map(device.get("status")))
+                .findFirst()
+                .orElseThrow();
+        assertThat(speakerStatus)
+                .containsEntry("driverDeviceId", "speaker_main")
+                .containsEntry("volume", 85)
+                .containsEntry("volumePercent", 85)
+                .containsEntry("muted", false)
+                .containsEntry("connected", true)
+                .containsEntry("sinkType", "pulse")
+                .containsEntry("sinkDevice", "alsa_output.usb-speaker")
+                .containsKey("audioStatusUpdatedAt");
+
+        Map<String, Object> multiFunctionStatus = devices.stream()
+                .filter(device -> "broadcaster-001".equals(device.get("deviceId")))
+                .map(device -> map(device.get("status")))
+                .findFirst()
+                .orElseThrow();
+        assertThat(multiFunctionStatus)
+                .containsEntry("volumePercent", 30)
+                .containsEntry("volumeLimitPercent", 70)
+                .doesNotContainKey("audioStatusUpdatedAt");
+    }
+
+    @Test
+    void keepsReportedSpeakerStateWhenPhysicalVolumeIsInvalid() {
+        register(component("SPEAKER", "audio-control-001"));
+
+        Map<String, Object> state = service.handleClientState(object(
+                "robotId", "robot-001",
+                "status", "online",
+                "devices", List.of(object(
+                        "deviceId", "audio-control-001",
+                        "deviceType", "SPEAKER",
+                        "status", object(
+                                "driverDeviceId", "speaker_main",
+                                "volume", 40,
+                                "volumePercent", 40,
+                                "muted", false))),
+                "audioDevices", List.of(object(
+                        "deviceId", "speaker_main",
+                        "type", "speaker",
+                        "volumePercent", 120))));
+
+        Map<String, Object> status = map(maps(state.get("devices")).get(0).get("status"));
+        assertThat(status)
+                .containsEntry("volume", 40)
+                .containsEntry("volumePercent", 40)
+                .containsEntry("muted", false);
     }
 
     @Test
@@ -1030,6 +1165,23 @@ class EquipmentControlServiceTest {
         service.mergeEdgeDeviceStatus("robot-001", object(
                 "status", "online",
                 "controlMode", controlMode));
+    }
+
+    private void reportLauncherState(boolean connected, boolean safetyEnabled, boolean tubeLoaded) {
+        service.handleClientState(object(
+                "robotId", "robot-001",
+                "status", "online",
+                "devices", List.of(object(
+                        "deviceId", "launcher_38mm",
+                        "deviceType", "LAUNCHER",
+                        "onlineStatus", connected ? "online" : "offline",
+                        "status", object(
+                                "connected", connected,
+                                "safetySwitchEnabled", safetyEnabled,
+                                "tubes", List.of(object(
+                                        "tube", 3,
+                                        "loaded", tubeLoaded,
+                                        "state", tubeLoaded ? 1 : 0)))))));
     }
 
     private Map<String, Object> acquireBase() {

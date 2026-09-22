@@ -1,6 +1,60 @@
 import { Room, RoomEvent, Track } from 'livekit-client';
 import { Message } from 'element-ui';
 import { resolveLiveKitUrl } from '../../utils/livekitUrl';
+import {
+  connectRoomWithCancellation,
+  disconnectRoomSafely,
+  enableLocalMicrophone,
+  releaseLocalMicrophone
+} from '../../utils/livekit-local-media';
+import { IntercomOperationRegistry } from '../../utils/intercom-operation-registry';
+import { mediaCallCoordinator } from '../../utils/media-call-coordinator';
+import { CallTerminalRegistry } from '../../utils/call-terminal-registry';
+
+const fieldCallStartOperations = new IntercomOperationRegistry();
+const fieldCallLeases = new Map();
+const fieldCallAcceptTimers = new Map();
+const CALL_ACCEPT_TIMEOUT_MS = 15000;
+const CALL_TERMINAL_RETENTION_MS = CALL_ACCEPT_TIMEOUT_MS * 4;
+const FIELD_CALL_TERMINAL_STATUSES = ['ENDED', 'FAILED', 'REJECTED', 'TIMEOUT', 'CANCELED'];
+const fieldCallTerminals = new CallTerminalRegistry(CALL_TERMINAL_RETENTION_MS);
+
+function fieldOperationKey(callId) {
+  return `field:${callId}`;
+}
+
+function isCurrentSession(state, callId, session) {
+  return Boolean(session && state.sessions[callId] === session);
+}
+
+async function disposeFieldSession(session) {
+  if (!session || session.disposed) return;
+  session.disposed = true;
+  await releaseLocalMicrophone(session.room);
+  if (session.remoteVideoTrack && typeof session.remoteVideoTrack.detach === 'function') {
+    try { session.remoteVideoTrack.detach(); } catch (err) { console.warn('[fieldCall] detach video', err); }
+  }
+  if (session.remoteAudioTrack && typeof session.remoteAudioTrack.detach === 'function') {
+    try { session.remoteAudioTrack.detach(); } catch (err) { console.warn('[fieldCall] detach audio', err); }
+  }
+  if (session.remoteAudioElement && session.remoteAudioElement.parentNode) {
+    try { session.remoteAudioElement.parentNode.removeChild(session.remoteAudioElement); } catch (err) {
+      console.warn('[fieldCall] remove audio element', err);
+    }
+  }
+  if (session.room) {
+    await disconnectRoomSafely(session.room, { context: '现场呼叫 LiveKit Room' });
+  }
+}
+
+function releaseFieldCallLease(callId) {
+  const timer = fieldCallAcceptTimers.get(callId);
+  if (timer) clearTimeout(timer);
+  fieldCallAcceptTimers.delete(callId);
+  const lease = fieldCallLeases.get(callId);
+  if (lease) mediaCallCoordinator.release(lease);
+  fieldCallLeases.delete(callId);
+}
 
 function cameraKeyForCall(callId) {
   return `field-call:${callId}`;
@@ -63,8 +117,10 @@ const mutations = {
     s.sessions = { ...s.sessions, [callId]: session };
   },
   PATCH_SESSION(s, { callId, patch }) {
-    const prev = s.sessions[callId] || {};
-    s.sessions = { ...s.sessions, [callId]: { ...prev, ...patch }};
+    const prev = s.sessions[callId];
+    if (!prev) return;
+    Object.assign(prev, patch);
+    s.sessions = { ...s.sessions, [callId]: prev };
   },
   CLEAR_SESSION(s, callId) {
     if (!s.sessions[callId]) return;
@@ -81,10 +137,18 @@ const actions = {
     commit('SET_CONNECTED', Boolean(socket && socket.readyState === WebSocket.OPEN));
   },
 
-  disconnectFieldCall({ state, commit, dispatch }) {
+  async disconnectFieldCall({ state, commit, dispatch }) {
     if (state.activeIncomingCall) {
-      dispatch('hangupFieldCall');
+      await dispatch('hangupFieldCall');
     }
+    await Promise.all([...fieldCallStartOperations.keys()]
+      .map(key => fieldCallStartOperations.cancel(key, 'disconnect')));
+    // 活动通话之外仍可能存在连接失败或迟到事件留下的 session，全部幂等清理。
+    await Promise.all(Object.keys(state.sessions).map(callId => dispatch('cleanupFieldSession', callId)));
+    [...fieldCallLeases.keys()].forEach(releaseFieldCallLease);
+    fieldCallTerminals.clear();
+    commit('SET_ACTIVE', null);
+    commit('SET_OPERATION_PENDING', false);
     commit('SET_CONNECTED', false);
     commit('SET_INCOMING', []);
   },
@@ -92,44 +156,63 @@ const actions = {
   syncFieldCallEvent({ commit, dispatch, state }, event) {
     if (!event) return;
     if (event.type === 'video.field.call.list') {
-      const list = (Array.isArray(event.payload) ? event.payload : []).map(normalizeIncoming);
+      const list = (Array.isArray(event.payload) ? event.payload : [])
+        .filter(call => !fieldCallTerminals.has(call.callId))
+        .map(normalizeIncoming);
       commit('SET_INCOMING', list);
       return;
     }
     if (event.event === 'video.field.call.incoming' && event.data) {
+      if (fieldCallTerminals.has(event.data.callId)) return;
       commit('UPSERT_INCOMING', normalizeIncoming(event.data));
       return;
     }
     if (event.event === 'video.field.call.status' && event.data) {
-      if (event.data.status === 'RINGING') {
+      const terminal = FIELD_CALL_TERMINAL_STATUSES.includes(event.data.status);
+      if (terminal) fieldCallTerminals.mark(event.data.callId, event.data.status);
+      if (event.data.status === 'RINGING' && !fieldCallTerminals.has(event.data.callId)) {
         commit('UPSERT_INCOMING', normalizeIncoming(event.data));
       } else {
         commit('REMOVE_INCOMING', event.data.callId);
       }
-      if (state.activeIncomingCall &&
-          state.activeIncomingCall.callId === event.data.callId &&
-          ['ENDED', 'FAILED', 'REJECTED', 'TIMEOUT', 'CANCELED'].includes(event.data.status)) {
+      if (terminal) {
         dispatch('cleanupFieldSession', event.data.callId);
-        commit('SET_ACTIVE', null);
+        if (state.activeIncomingCall && state.activeIncomingCall.callId === event.data.callId) {
+          commit('SET_ACTIVE', null);
+        }
       }
       return;
     }
     if (event.type === 'video.field.call.accepted' && event.payload) {
       commit('SET_OPERATION_PENDING', false);
-      commit('REMOVE_INCOMING', event.payload.call && event.payload.call.callId);
+      const callId = event.payload.call && event.payload.call.callId;
+      if (!callId) return;
+      commit('REMOVE_INCOMING', callId);
+      if (fieldCallTerminals.has(callId)) {
+        dispatch('sendFieldViaMedia', { type: 'video.field.call.hangup', callId });
+        releaseFieldCallLease(callId);
+        return;
+      }
+      if ((state.activeIncomingCall && state.activeIncomingCall.callId === callId) ||
+          fieldCallStartOperations.has(fieldOperationKey(callId))) return;
       dispatch('activateFieldCall', event.payload);
       return;
     }
     if (event.type === 'video.field.call.rejected') {
       commit('SET_OPERATION_PENDING', false);
       const callId = event.payload && (event.payload.callId || (event.payload.call && event.payload.call.callId));
-      if (callId) commit('REMOVE_INCOMING', callId);
+      if (callId) {
+        fieldCallTerminals.mark(callId, 'rejected');
+        commit('REMOVE_INCOMING', callId);
+        releaseFieldCallLease(callId);
+      }
       return;
     }
     if (event.type === 'video.field.call.ended') {
       commit('SET_OPERATION_PENDING', false);
       const callId = event.payload && event.payload.callId;
       if (callId) {
+        fieldCallTerminals.mark(callId, 'ended');
         dispatch('cleanupFieldSession', callId);
         if (state.activeIncomingCall && state.activeIncomingCall.callId === callId) {
           commit('SET_ACTIVE', null);
@@ -143,6 +226,11 @@ const actions = {
       commit('SET_OPERATION_PENDING', false);
       if (shouldNotify) {
         Message.error((event.payload && event.payload.message) || '现场呼叫操作失败');
+      }
+      const callId = event.payload && event.payload.callId;
+      if (callId) {
+        fieldCallTerminals.mark(callId, 'operation-failed');
+        releaseFieldCallLease(callId);
       }
     }
   },
@@ -161,12 +249,31 @@ const actions = {
     return true;
   },
 
-  acceptFieldCall({ commit, dispatch }, callId) {
+  async acceptFieldCall({ commit, dispatch }, callId) {
+    const lease = mediaCallCoordinator.acquire(fieldOperationKey(callId), 'field-call');
+    if (!lease) {
+      Message.warning('当前正在通话，请先结束当前通话');
+      return;
+    }
+    fieldCallLeases.set(callId, lease);
+    fieldCallAcceptTimers.set(callId, setTimeout(() => {
+      if (fieldCallLeases.get(callId) !== lease || fieldCallStartOperations.has(fieldOperationKey(callId))) return;
+      fieldCallTerminals.mark(callId, 'accept-timeout');
+      releaseFieldCallLease(callId);
+      commit('SET_OPERATION_PENDING', false);
+      Message.error('现场呼叫接听超时，请重试');
+    }, CALL_ACCEPT_TIMEOUT_MS));
     commit('SET_OPERATION_PENDING', true);
-    dispatch('sendFieldViaMedia', { type: 'video.field.call.accept', callId });
+    const sent = await dispatch('sendFieldViaMedia', { type: 'video.field.call.accept', callId });
+    if (sent === false) {
+      commit('SET_OPERATION_PENDING', false);
+      releaseFieldCallLease(callId);
+    }
   },
 
   rejectFieldCall({ commit, dispatch }, callId) {
+    fieldCallTerminals.mark(callId, 'local-reject');
+    releaseFieldCallLease(callId);
     commit('SET_OPERATION_PENDING', true);
     dispatch('sendFieldViaMedia', { type: 'video.field.call.reject', callId });
     commit('REMOVE_INCOMING', callId);
@@ -177,6 +284,20 @@ const actions = {
     const callRaw = payload.call || {};
     const sessionInfo = payload.session || {};
     const callId = callRaw.callId || payload.callId;
+    const operationKey = fieldOperationKey(callId);
+    if (fieldCallStartOperations.has(operationKey)) return;
+    const lease = fieldCallLeases.get(callId) || mediaCallCoordinator.acquire(operationKey, 'field-call');
+    const acceptTimer = fieldCallAcceptTimers.get(callId);
+    if (acceptTimer) clearTimeout(acceptTimer);
+    fieldCallAcceptTimers.delete(callId);
+    const operation = lease && fieldCallStartOperations.begin(operationKey);
+    if (!operation) {
+      if (lease) mediaCallCoordinator.release(lease);
+      dispatch('sendFieldViaMedia', { type: 'video.field.call.hangup', callId });
+      Message.warning('当前正在通话，请先结束当前通话');
+      return;
+    }
+    fieldCallLeases.set(callId, lease);
     const call = {
       ...normalizeIncoming(callRaw),
       callId,
@@ -193,20 +314,30 @@ const actions = {
       await dispatch('connectFieldLiveKit', {
         callId,
         livekitUrl: sessionInfo.livekitUrl,
-        token: sessionInfo.token
+        token: sessionInfo.token,
+        operation
       });
+      if (operation.cancelled) throw new Error('对讲启动已取消');
+      mediaCallCoordinator.activate(lease);
       const session = state.sessions && state.sessions[callId];
       const hasTrack = Boolean(session && session.remoteVideoTrack);
       commit('UPDATE_ACTIVE', { videoLoading: !hasTrack });
     } catch (err) {
+      fieldCallTerminals.mark(callId, 'activation-failed');
       console.error('[fieldCall] livekit', err);
-      Message.error(err.message || '现场通话连接失败');
-      commit('UPDATE_ACTIVE', { videoLoading: false });
-      dispatch('hangupFieldCall');
+      dispatch('sendFieldViaMedia', { type: 'video.field.call.hangup', callId });
+      if (state.activeIncomingCall && state.activeIncomingCall.callId === callId) {
+        commit('SET_ACTIVE', null);
+      }
+      commit('REMOVE_INCOMING', callId);
+      releaseFieldCallLease(callId);
+      if (!operation.cancelled) Message.error(err.message || '现场通话连接失败');
+    } finally {
+      fieldCallStartOperations.finish(operationKey, operation);
     }
   },
 
-  async connectFieldLiveKit({ commit, state }, { callId, livekitUrl, token }) {
+  async connectFieldLiveKit({ commit, dispatch, state }, { callId, livekitUrl, token, operation }) {
     if (!livekitUrl || !token) {
       throw new Error('缺少 LiveKit 地址或 Token');
     }
@@ -220,6 +351,7 @@ const actions = {
     commit('SET_SESSION', { callId, session });
 
     const attachRemoteVideo = (track) => {
+      if (!isCurrentSession(state, callId, session) || session.disposed) return;
       if (!track || (track.kind !== Track.Kind.Video && track.kind !== 'video')) return;
       commit('PATCH_SESSION', {
         callId,
@@ -232,6 +364,7 @@ const actions = {
     };
 
     const attachRemoteAudio = (track) => {
+      if (!isCurrentSession(state, callId, session) || session.disposed) return;
       if (!track || (track.kind !== Track.Kind.Audio && track.kind !== 'audio')) return;
       const existing = state.sessions[callId];
       if (existing && existing.remoteAudioElement && existing.remoteAudioTrack === track) return;
@@ -253,59 +386,61 @@ const actions = {
       attachRemoteAudio(track);
     });
     room.on(RoomEvent.TrackUnsubscribed, (track) => {
+      if (!isCurrentSession(state, callId, session) || session.disposed) return;
       if (typeof track.detach === 'function') track.detach();
       if (track.kind === Track.Kind.Video || track.kind === 'video') {
         commit('PATCH_SESSION', { callId, patch: { remoteVideoTrack: null }});
       }
     });
-
-    await room.connect(resolveLiveKitUrl(livekitUrl), token);
-    await room.localParticipant.setMicrophoneEnabled(true, {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true
+    room.on(RoomEvent.Disconnected, () => {
+      if (!isCurrentSession(state, callId, session) || session.disposed) return;
+      dispatch('cleanupFieldSession', callId);
+      if (state.activeIncomingCall && state.activeIncomingCall.callId === callId) {
+        commit('SET_ACTIVE', null);
+      }
     });
 
-    room.remoteParticipants.forEach((participant) => {
-      participant.trackPublications.forEach((publication) => {
-        if (publication.track) {
-          attachRemoteVideo(publication.track);
-          attachRemoteAudio(publication.track);
-        }
+    try {
+      await connectRoomWithCancellation(room, resolveLiveKitUrl(livekitUrl), token, operation);
+      await enableLocalMicrophone(room, operation);
+      if (!isCurrentSession(state, callId, session)) throw new Error('对讲启动已取消');
+
+      room.remoteParticipants.forEach((participant) => {
+        participant.trackPublications.forEach((publication) => {
+          if (publication.track) {
+            attachRemoteVideo(publication.track);
+            attachRemoteAudio(publication.track);
+          }
+        });
       });
-    });
+    } catch (error) {
+      await disposeFieldSession(session);
+      if (isCurrentSession(state, callId, session)) commit('CLEAR_SESSION', callId);
+      throw error;
+    }
   },
 
   async hangupFieldCall({ state, commit, dispatch }) {
     const active = state.activeIncomingCall;
     if (!active) return;
+    fieldCallTerminals.mark(active.callId, 'local-hangup');
     dispatch('sendFieldViaMedia', { type: 'video.field.call.hangup', callId: active.callId });
     await dispatch('cleanupFieldSession', active.callId);
-    commit('SET_ACTIVE', null);
+    if (state.activeIncomingCall && state.activeIncomingCall.callId === active.callId) {
+      commit('SET_ACTIVE', null);
+    }
     commit('REMOVE_INCOMING', active.callId);
   },
 
   async cleanupFieldSession({ state, commit }, callId) {
+    fieldCallTerminals.mark(callId, 'cleanup');
+    await fieldCallStartOperations.cancel(fieldOperationKey(callId), 'lifecycle');
     const session = state.sessions[callId];
-    if (!session) return;
-    try {
-      if (session.room && session.room.localParticipant) {
-        await session.room.localParticipant.setMicrophoneEnabled(false).catch(() => {});
-      }
-      if (session.remoteVideoTrack && typeof session.remoteVideoTrack.detach === 'function') {
-        session.remoteVideoTrack.detach();
-      }
-      if (session.remoteAudioTrack && typeof session.remoteAudioTrack.detach === 'function') {
-        session.remoteAudioTrack.detach();
-      }
-      if (session.remoteAudioElement && session.remoteAudioElement.parentNode) {
-        session.remoteAudioElement.parentNode.removeChild(session.remoteAudioElement);
-      }
-      if (session.room) await session.room.disconnect();
-    } catch (err) {
-      console.error('[fieldCall] cleanup', err);
+    if (session) {
+      await disposeFieldSession(session);
+      if (isCurrentSession(state, callId, session)) commit('CLEAR_SESSION', callId);
     }
-    commit('CLEAR_SESSION', callId);
+    releaseFieldCallLease(callId);
   },
 
   async toggleFieldMic({ state, commit }) {
@@ -313,8 +448,21 @@ const actions = {
     const session = active && state.sessions[active.callId];
     if (!active || !session || !session.room) return;
     const muted = !active.micMuted;
-    await session.room.localParticipant.setMicrophoneEnabled(!muted);
-    commit('UPDATE_ACTIVE', { micMuted: muted });
+    try {
+      if (muted) {
+        await session.room.localParticipant.setMicrophoneEnabled(false);
+      } else {
+        await enableLocalMicrophone(session.room);
+      }
+      const current = state.activeIncomingCall;
+      if (!current || current.callId !== active.callId || !isCurrentSession(state, active.callId, session)) {
+        if (!muted) await releaseLocalMicrophone(session.room);
+        return;
+      }
+      commit('UPDATE_ACTIVE', { micMuted: muted });
+    } catch (error) {
+      Message.error(muted ? '麦克风静音失败' : '麦克风恢复失败');
+    }
   },
 
   async toggleFieldSpeaker({ state, commit }) {

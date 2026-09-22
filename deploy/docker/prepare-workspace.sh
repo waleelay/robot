@@ -337,7 +337,10 @@ if [ ! -f "$nginx_conf_dir/nginx.conf" ]; then
   exit 1
 fi
 
-install_config_dir "$CONFIG_DIR/nginx/html/dist" "$nginx_html_dir/dist" "robot-ui dist" || true
+if [ -d "$CONFIG_DIR/nginx/html/dist" ]; then
+  sh "$SCRIPT_DIR/install-robot-ui-dist.sh" \
+    "$CONFIG_DIR/nginx/html/dist" "$nginx_html_dir/dist" "$INSTALL_MODE"
+fi
 install_tdt_archive() {
   archive_file=$1
   archive_type=$2

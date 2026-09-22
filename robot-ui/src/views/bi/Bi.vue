@@ -55,7 +55,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions('websocketRobot', ['connectMediaWebSocket', 'stopCamera']),
+    ...mapActions('websocketRobot', ['connectMediaWebSocket', 'stopPageMediaSessions']),
     ...mapActions('websocketExtraData', ['refreshOverviewResources', 'markOverviewLoadFailed']),
     ...mapActions('fieldCall', ['disconnectFieldCall']),
     bindSpeechUnlock() {
@@ -74,16 +74,12 @@ export default {
       this.speechUnlockBound = null
     },
     async clearCameras() {
-      for (const [index, key] of Object.keys(this.activeCameras).entries()) {
-        if (this.activeCameras[key]?.camera) {
-          await this.stopCamera(this.activeCameras[key].camera);
-        }
-      }
+      await this.stopPageMediaSessions()
     },
   },
-  beforeDestroy() {
+  async beforeDestroy() {
     this.unbindSpeechUnlock()
-    this.disconnectFieldCall()
+    await this.disconnectFieldCall()
   },
   // ✅ 组件内守卫，离开当前组件时触发
   async beforeRouteLeave(to, from, next) {

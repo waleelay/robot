@@ -168,6 +168,9 @@ const user = {
       try {
         await dispatch('websocketRobot/stopAllCameraSessions', undefined, { root: true })
       } catch (_) {}
+      try {
+        await dispatch('fieldCall/disconnectFieldCall', undefined, { root: true })
+      } catch (_) {}
       await Promise.allSettled([
         dispatch('websocketRobot/disconnectMediaWebSocket', undefined, { root: true }),
         dispatch('websocketExtraData/resetOverviewResourceState', undefined, { root: true })
@@ -180,19 +183,20 @@ const user = {
     },
 
     // 前端 登出
-    FedLogOut({ commit, dispatch }) {
-      return new Promise(resolve => {
-        Promise.all([
-          dispatch('websocketRobot/disconnectMediaWebSocket', undefined, { root: true }),
-          dispatch('websocketExtraData/resetOverviewResourceState', undefined, { root: true })
-        ]).finally(() => {
-          commit('SET_TOKEN', '')
-          commit('SET_ROLES', [])
-          commit('SET_PERMISSIONS', [])
-          removeToken()
-          resolve()
-        })
-      })
+    async FedLogOut({ commit, dispatch }) {
+      // 先通过仍然可用的控制通道结束通话，再关闭 WebSocket，避免退出时留下服务端会话。
+      await Promise.allSettled([
+        dispatch('websocketRobot/stopAllCameraSessions', undefined, { root: true }),
+        dispatch('fieldCall/disconnectFieldCall', undefined, { root: true })
+      ])
+      await Promise.allSettled([
+        dispatch('websocketRobot/disconnectMediaWebSocket', undefined, { root: true }),
+        dispatch('websocketExtraData/resetOverviewResourceState', undefined, { root: true })
+      ])
+      commit('SET_TOKEN', '')
+      commit('SET_ROLES', [])
+      commit('SET_PERMISSIONS', [])
+      removeToken()
     }
   }
 }

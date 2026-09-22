@@ -82,7 +82,9 @@ export default {
     },
     // 语音对讲
     audioDevice() {
-      return this.controlDevices().find(device => ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
+      const devices = this.controlDevices()
+      return devices.find(device => device.deviceType === 'SPEAKER' && this.hasDeviceAction(device, 'set_volume')) ||
+        devices.find(device => ['CLIENT_AUDIO', 'VOLUME_CONTROL'].includes(device.deviceType) && this.hasDeviceAction(device, 'set_volume'))
     },
     // 警示灯
     warningLightDevice() {
@@ -267,6 +269,12 @@ export default {
     },
     async firePayload(device, channel, source) {
       try {
+        if (device?.deviceType === 'LAUNCHER') {
+          const tube = this.launcherTubes(device).find(item => item.tube === Number(channel))
+          if (!this.canFireLauncherTube(device, tube)) {
+            throw new Error('发射器未明确连接、安全开关未开启或弹筒未装填')
+          }
+        }
         const session = await this.ensureControlSession(device, 'fire')
         const token = await createConfirmToken(this.selectedRobotId, {
           controlSessionId: session.controlSessionId,
@@ -291,9 +299,11 @@ export default {
         const response = await sendEquipmentCommand(this.selectedRobotId,
           this.commandPayload(this.selectedRobotId, session.controlSessionId, this.controlModeCommand(this.currentControlMode), device, 'fire', fireParams, source || `fire_${channel}`))
         console.log('API firePayload', response)
+        return true
       } catch (error) {
         this.$message.error(errorMessage(error))
         console.log('ERROR firePayload', errorMessage(error))
+        return false
       }
     },
     // 云台开始控制
@@ -668,14 +678,7 @@ export default {
     isLauncherConnected(device) {
       if (!device) return false
       const status = device.status || device.runtimeStatus || {}
-      return status.connected !== false
-    },
-    launcherStatus() {
-      const device = this.launcherDevice || {}
-      return device.status || device.runtimeStatus || {}
-    },
-    launcherConnected() {
-      return this.launcherStatus.connected !== false
+      return status.connected === true && device.onlineStatus !== 'offline'
     },
     launcherTubes(device) {
       if (!device) return []

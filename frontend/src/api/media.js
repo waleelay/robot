@@ -79,16 +79,16 @@ export function getViewerToken(sessionId) {
 }
 
 // 从摄像头入口发起对讲。若尚无视频会话，后端会创建一个仅承载对讲的房间。
-export function startCameraIntercom(data) {
+export function startCameraIntercom(data, { signal } = {}) {
   return client.post(`/api/control/robots/${data.robotId}/cameras/${data.deviceId}/video/intercom/start`, {
     quality: data.quality,
     reuse: true
-  }).then(res => res.data)
+  }, { signal }).then(res => res.data)
 }
 
 // 在已有视频会话上打开对讲，复用同一个 LiveKit Room，避免视频和音频拆到不同房间。
-export function startSessionIntercom(sessionId) {
-  return client.post(`/api/control/video-sessions/${sessionId}/intercom/start`).then(res => res.data)
+export function startSessionIntercom(sessionId, { signal } = {}) {
+  return client.post(`/api/control/video-sessions/${sessionId}/intercom/start`, undefined, { signal }).then(res => res.data)
 }
 
 // 对讲心跳用于维持“当前操作员占用”状态，超时后后端会释放并通知机器人停止音频桥。
@@ -97,7 +97,9 @@ export function heartbeatIntercom(sessionId) {
 }
 
 export function stopIntercom(sessionId) {
-  return client.post(`/api/control/video-sessions/${sessionId}/intercom/stop`).then(res => res.data)
+  return client.post(`/api/control/video-sessions/${sessionId}/intercom/stop`, undefined, {
+    timeout: 15000
+  }).then(res => res.data)
 }
 
 export function stopVideoSession(sessionId) {

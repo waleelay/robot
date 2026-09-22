@@ -216,6 +216,8 @@ npm run build:prod
 部署时将 `dist/` 发布到 Nginx 或其他静态文件服务，并配置：
 
 - 单页应用路由回退到 `index.html`
+- `index.html` 使用 `no-cache, no-store, must-revalidate`，带哈希的 `/static/` 资源长期缓存
+- 发布时先合并静态资源、最后原子替换 `index.html`；旧哈希 JS/CSS 至少保留一个发布宽限期，不能整目录删除
 - 业务 API 反向代理
 - `/api-gw/` 的 API Gateway 反向代理及 WebSocket Upgrade/Connection 请求头
 - `/livekit` 的 WebSocket 和 HTTP 代理
@@ -224,10 +226,24 @@ npm run build:prod
 Nginx 路由回退示例：
 
 ```nginx
+location = /index.html {
+    expires -1;
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+}
+
+location ^~ /static/ {
+    try_files $uri =404;
+    expires 7d;
+    add_header Cache-Control "public, max-age=604800, immutable" always;
+}
+
 location / {
     try_files $uri $uri/ /index.html;
 }
 ```
+
+离线安装器在 `INSTALL_MODE=overwrite` 时按上述顺序发布，并通过
+`ROBOT_UI_ASSET_RETENTION_DAYS` 控制旧哈希资源保留天数，默认 7 天。
 
 生产环境通过 HTTPS 访问时，WebSocket 必须使用 `wss://`。如果浏览器提示 `ERR_CERT_AUTHORITY_INVALID`，说明服务端证书不受当前系统或浏览器信任，需要更换受信任的证书，或在内网环境正确安装并信任内部根证书。
 

@@ -18,6 +18,15 @@ const trackRecovery = await import('data:text/javascript;base64,' + Buffer.from(
 const videoDisplayState = await import('data:text/javascript;base64,' + Buffer.from(
   read('views/bi/js/utils/video-display-state.js')
 ).toString('base64'))
+const intercomOperationRegistry = await import('data:text/javascript;base64,' + Buffer.from(
+  read('utils/intercom-operation-registry.js')
+).toString('base64'))
+const livekitLocalMedia = await import('data:text/javascript;base64,' + Buffer.from(
+  read('utils/livekit-local-media.js')
+).toString('base64'))
+const mediaCallCoordinator = await import('data:text/javascript;base64,' + Buffer.from(
+  read('utils/media-call-coordinator.js')
+).toString('base64'))
 
 function componentDefinition(path) {
   const source = read(path).split('<script>')[1].split('</script>')[0]
@@ -127,6 +136,16 @@ function loadWebsocketRobot(apiOverrides = {}, runtimeOverrides = {}) {
       if (name.includes('pick-default-camera')) return cameraHelpers
       if (name.includes('livekit-track-recovery')) return trackRecovery
       if (name.includes('livekit-user-pause')) return { attachTrackRespectingUserPause: () => true }
+      if (name.includes('intercom-operation-registry')) return intercomOperationRegistry
+      if (name.includes('livekit-local-media')) return livekitLocalMedia
+      if (name.includes('media-call-coordinator')) return mediaCallCoordinator
+      if (name.includes('call-terminal-registry')) return {
+        CallTerminalRegistry: class {
+          remember() {}
+          has() { return false }
+          clear() {}
+        }
+      }
       if (name.includes('media-websocket-reconnect')) {
         return {
           mediaReconnectDelay: () => 0,

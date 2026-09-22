@@ -403,8 +403,16 @@ import {
   uploadFile,
   stopVideoSession
 } from './api/media'
+import {
+  connectRoomWithCancellation,
+  disconnectRoomSafely,
+  enableLocalMicrophone,
+  releaseLocalMicrophone
+} from './livekit-local-media'
+import { IntercomOperationRegistry } from './intercom-operation-registry'
 
 const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
+const intercomStartOperations = new IntercomOperationRegistry()
 
 function defaultVehicleLightState() {
   return {
@@ -625,16 +633,21 @@ export default {
     this.connectWebSocket()
     this.heartbeatTimer = setInterval(this.heartbeatViewers, 5000)
   },
-  beforeDestroy() {
+  async beforeDestroy() {
     // Vue 组件销毁时主动关闭所有长连接，避免 LiveKit/MQTT 状态仍以为浏览器在线。
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
     Object.values(this.controlTimers).forEach(timer => clearInterval(timer))
-    if (this.socket) this.socket.close()
     this.destroyRecordedHls()
-    this.allCameras().forEach(camera => {
+    await Promise.all(this.allCameras().map(async camera => {
       this.stopLatencyStats(camera)
-      if (camera.room) camera.room.disconnect()
-    })
+      await this.stopIntercomLifecycle(camera)
+      await releaseLocalMicrophone(camera.room)
+      if (camera.room) {
+        camera.disconnecting = true
+        await disconnectRoomSafely(camera.room, { context: '退出调试页面时的 LiveKit Room' })
+      }
+    }))
+    if (this.socket) this.socket.close()
   },
   methods: {
     // 在“实时观看”和“录像回放”两套工作区之间切换。
@@ -896,7 +909,11 @@ export default {
       return camera.recordingActive || (camera.activeRecording && camera.activeRecording.status === 'UPLOADING')
     },
     intercomInProgress(camera) {
-      return camera.intercomActive || (camera.intercomStatus && !['IDLE', 'FAILED'].includes(camera.intercomStatus))
+      return Boolean(camera && (
+        camera.intercomBusy ||
+        camera.intercomActive ||
+        (camera.intercomStatus && !['IDLE', 'FAILED'].includes(camera.intercomStatus))
+      ))
     },
     qualitySelectDisabled(camera) {
       return camera.qualityChanging
@@ -1003,22 +1020,56 @@ export default {
       }
     },
     async toggleIntercom(robot, camera) {
+      if (camera.intercomBusy) return
       if (camera.intercomActive) {
         await this.hangupIntercom(camera)
       } else {
         await this.startIntercom(robot, camera)
       }
     },
+    async cancelPendingIntercomStart(camera) {
+      return camera?.key ? intercomStartOperations.cancel(camera.key) : false
+    },
+    async stopIntercomLifecycle(camera) {
+      if (!camera?.key) return true
+      await this.cancelPendingIntercomStart(camera)
+      if (!camera.session || !this.intercomInProgress(camera)) return true
+      await this.hangupIntercom(camera)
+      return !camera.intercomActive
+    },
     async startIntercom(robot, camera) {
+      if (intercomStartOperations.has(camera.key)) return
+      const otherIntercom = this.allCameras()
+        .find(item => item.key !== camera.key && this.intercomInProgress(item))
+      if (otherIntercom) {
+        this.$message.warning('当前正在与其他机器人通话，请先结束当前通话')
+        return
+      }
       camera.intercomBusy = true
+      const previous = {
+        session: camera.session,
+        room: camera.room,
+        watching: camera.watching,
+        status: camera.status,
+        hasAudio: camera.hasAudio
+      }
+      const operation = intercomStartOperations.begin(camera.key)
+      if (!operation) {
+        camera.intercomBusy = false
+        return
+      }
+      let response = null
+      let mediaActivationAttempted = false
       try {
-        const response = camera.session
-            ? await startSessionIntercom(camera.session.sessionId)
+        response = camera.session
+            ? await startSessionIntercom(camera.session.sessionId, { signal: operation.controller.signal })
             : await startCameraIntercom({
               robotId: robot.robotId,
               deviceId: camera.deviceId,
               quality: this.effectiveCameraQuality(camera)
-            })
+            }, { signal: operation.controller.signal })
+        if (operation.cancelled) throw new Error('对讲启动已取消')
+        mediaActivationAttempted = true
         camera.session = this.mergeSession(camera, {
           sessionId: response.sessionId,
           robotId: response.robotId,
@@ -1034,24 +1085,42 @@ export default {
         camera.intercomStatus = response.intercomStatus
         camera.stopped = false
         if (!camera.room) {
-          await this.connectLiveKit(camera, false, response.operatorToken)
+          await this.connectLiveKit(camera, false, response.operatorToken, false, operation)
         }
-        if (camera.room) {
-          await camera.room.localParticipant.setMicrophoneEnabled(true, {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }, {
-            name: 'audio.operator.mic'
-          })
-        }
+        await enableLocalMicrophone(camera.room, operation)
+        if (operation.cancelled) throw new Error('对讲启动已取消')
         this.log('API startIntercom', response)
       } catch (error) {
+        if (mediaActivationAttempted) await releaseLocalMicrophone(camera.room)
+        const rollbackSessionId = response?.sessionId ||
+          (operation.cancelled ? previous.session?.sessionId : null)
+        if (rollbackSessionId) {
+          await stopIntercom(rollbackSessionId).catch(() => {})
+        }
+        if (camera.room && camera.room !== previous.room) {
+          camera.disconnecting = true
+          await disconnectRoomSafely(camera.room, { context: '对讲启动回滚时的 LiveKit Room' })
+          camera.disconnecting = false
+        }
         camera.intercomActive = false
-        this.$message.error(this.errorMessage(error))
-        this.log('ERROR startIntercom', this.errorMessage(error))
+        camera.intercomStatus = 'IDLE'
+        camera.intercomToken = null
+        camera.hasAudio = false
+        // 离线事件已经将摄像头置为不可用，取消中的启动不得再恢复旧 Room/会话。
+        if (operation.cancelReason !== 'media-unavailable') {
+          camera.room = previous.room || null
+          camera.session = previous.session || null
+          camera.watching = previous.watching
+          camera.status = previous.status || ''
+          camera.hasAudio = previous.hasAudio
+        }
+        if (!operation.cancelled) {
+          this.$message.error(this.errorMessage(error))
+          this.log('ERROR startIntercom', this.errorMessage(error))
+        }
       } finally {
         camera.intercomBusy = false
+        intercomStartOperations.finish(camera.key, operation)
       }
     },
     // 结束对讲时要分两种场景：
@@ -1060,34 +1129,30 @@ export default {
     async hangupIntercom(camera) {
       if (!camera.session) return
       camera.intercomBusy = true
+      let response = null
       try {
-        if (camera.room) {
-          await camera.room.localParticipant.setMicrophoneEnabled(false)
-        }
-        const response = await stopIntercom(camera.session.sessionId)
+        await releaseLocalMicrophone(camera.room)
+        response = await stopIntercom(camera.session.sessionId)
+        this.log('API stopIntercom', response)
+      } catch (error) {
+        this.$message.error('服务端挂断确认失败，本地通话已结束')
+      } finally {
         camera.intercomActive = false
         camera.intercomStatus = 'IDLE'
         camera.intercomToken = null
         camera.hasAudio = false
         if (camera.watching) {
-          camera.session = this.mergeSession(camera, response)
+          if (response) camera.session = this.mergeSession(camera, response)
         } else {
           if (camera.room) {
             camera.disconnecting = true
-            try {
-              await camera.room.disconnect()
-            } finally {
-              camera.disconnecting = false
-            }
+            await disconnectRoomSafely(camera.room, { context: '对讲挂断时的 LiveKit Room' })
+            camera.disconnecting = false
           }
           camera.room = null
           camera.session = null
           camera.status = ''
         }
-        this.log('API stopIntercom', response)
-      } catch (error) {
-        this.$message.error(this.errorMessage(error))
-      } finally {
         camera.intercomBusy = false
       }
     },
@@ -1121,7 +1186,7 @@ export default {
     // 连接 LiveKit 的核心逻辑。
     // 普通观看使用 viewerToken；对讲使用 operatorToken，并在同一个 Room 中发布浏览器麦克风。
     // 事件回调里会把远端 audio/video track 挂到对应 DOM 元素上。
-    async connectLiveKit(camera, refreshToken, connectionToken, forceReconnect) {
+    async connectLiveKit(camera, refreshToken, connectionToken, forceReconnect, operation = null) {
       if (camera.connecting && !forceReconnect) return
       if (!camera.session) return
       if (forceReconnect) camera.connecting = false
@@ -1175,21 +1240,32 @@ export default {
             this.restartCamera(camera)
           }
         })
-        room.on(RoomEvent.Disconnected, () => {
+        room.on(RoomEvent.Disconnected, async() => {
+          await releaseLocalMicrophone(room)
           if (camera.room !== room || camera.disconnecting) return
           camera.hasVideo = false
+          camera.hasAudio = false
+          camera.room = null
           this.stopLatencyStats(camera)
+          if (this.intercomInProgress(camera)) {
+            stopIntercom(sessionId).catch(() => {})
+            camera.intercomActive = false
+            camera.intercomBusy = false
+            camera.intercomStatus = 'IDLE'
+            camera.intercomToken = null
+          }
           this.log('LiveKit Disconnected', camera.name)
           if (camera.watching && !this.isStoppedSession(camera, sessionId)) this.restartCamera(camera)
         })
         camera.room = room
-        await room.connect(livekitUrl, token)
+        await connectRoomWithCancellation(room, livekitUrl, token, operation)
         this.attachExistingVideoTracks(camera, room, sessionId)
         this.log('LiveKit connected', `${camera.name} ${camera.session.roomName}`)
       } catch (error) {
         camera.room = null
         camera.hasVideo = false
         this.log('ERROR LiveKit connect', this.errorMessage(error))
+        if (operation) throw error
       } finally {
         camera.disconnecting = false
         camera.connecting = false
@@ -1814,9 +1890,16 @@ export default {
         incoming.cameras = incoming.cameras.map(camera => {
           const old = previous.get(camera.deviceId)
           if (!old) return camera
+          if (incoming.status === 'offline' && intercomStartOperations.has(old.key)) {
+            intercomStartOperations.cancel(old.key, 'media-unavailable')
+          }
           if (incoming.status === 'offline' && old.room) {
             old.disconnecting = true
             this.stopLatencyStats(old)
+            releaseLocalMicrophone(old.room)
+            if (old.session?.sessionId && this.intercomInProgress(old)) {
+              stopIntercom(old.session.sessionId).catch(() => {})
+            }
             old.room.disconnect()
           }
           return Object.assign(old, camera, {
@@ -1831,17 +1914,17 @@ export default {
             status: incoming.status === 'online' ? old.status : 'offline',
             viewerCount: old.viewerCount,
             watching: old.watching,
-            hasAudio: old.hasAudio,
+            hasAudio: incoming.status === 'online' ? old.hasAudio : false,
             quality: old.quality,
             qualityChanging: old.qualityChanging,
             activeRecording: old.activeRecording,
             recordingActive: old.recordingActive,
             recordingOwned: old.recordingOwned,
             recordingBusy: old.recordingBusy,
-            intercomActive: old.intercomActive,
-            intercomBusy: old.intercomBusy,
-            intercomStatus: old.intercomStatus,
-            intercomToken: old.intercomToken,
+            intercomActive: incoming.status === 'online' ? old.intercomActive : false,
+            intercomBusy: incoming.status === 'online' ? old.intercomBusy : false,
+            intercomStatus: incoming.status === 'online' ? old.intercomStatus : 'IDLE',
+            intercomToken: incoming.status === 'online' ? old.intercomToken : null,
             stopped: old.stopped,
             stopping: old.stopping,
             restarting: old.restarting,

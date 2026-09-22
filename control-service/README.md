@@ -100,6 +100,11 @@ src/main/java/com/robot/control/
 
 多合一动作包括音量、广播/收音、TTS、音频文件、报警、灯光及扬声器/灯光俯仰。音频文件必须先上传 Media；Control 只下发文件标识和元数据。
 
+普通扬声器的实时音量使用 `media/client/status.audioDevices[]` 中
+`type=speaker` 的物理状态。Control 按逻辑设备 `status.driverDeviceId` 关联
+物理 `deviceId`，将 `volumePercent`、`muted` 归并到 `devices[].status`后复用
+`robot.state` 推送给前端。多合一设备不参与该归并，继续使用自身状态协议。
+
 ### 实时视频与固定摄像头
 
 机器人视频 Topic 使用 `robot/{robotId}/media/video/**`。固定摄像头只支持 `visible`，按 Management
