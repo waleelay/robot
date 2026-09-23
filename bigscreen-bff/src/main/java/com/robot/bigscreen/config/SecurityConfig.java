@@ -44,6 +44,7 @@ public class SecurityConfig {
                         .requestMatchers("/ws/field-call").access(clientAuthorization(fieldCallClientId))
                         // field-app 复用大屏 BFF 的告警 REST 和实时通道；其他大屏接口仍只允许 bigscreen-web。
                         .requestMatchers(
+                                "/api/bigscreen/panorama/overview",
                                 "/api/bigscreen/panorama/alarms",
                                 "/api/bigscreen/panorama/alarms/**",
                                 "/api/bigscreen/control/files/*/download-url",
