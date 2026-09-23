@@ -46,6 +46,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/bigscreen/panorama/alarms",
                                 "/api/bigscreen/panorama/alarms/**",
+                                "/api/bigscreen/control/files/*/download-url",
                                 "/ws/bigscreen")
                         .access(clientAuthorization(fieldCallClientId))
                         .requestMatchers("/api/**", "/ws/**").access(clientAuthorization(bigscreenClientId))
