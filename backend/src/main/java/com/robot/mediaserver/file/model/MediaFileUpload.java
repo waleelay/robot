@@ -14,7 +14,8 @@ import java.time.OffsetDateTime;
         name = "media_file_upload",
         indexes = {
                 @Index(name = "idx_file_upload_file", columnList = "fileId"),
-                @Index(name = "idx_file_upload_status_expire", columnList = "status,expiresAt")
+                @Index(name = "idx_file_upload_status_expire", columnList = "status,expiresAt"),
+                @Index(name = "uk_file_upload_storage", columnList = "storageUploadId", unique = true)
         })
 public class MediaFileUpload {
 
@@ -44,6 +45,11 @@ public class MediaFileUpload {
     private OffsetDateTime createdAt;
     private OffsetDateTime completedAt;
 
+    @Column(length = 64)
+    private String completionOwner;
+
+    private OffsetDateTime completionLeaseExpiresAt;
+
     public String getUploadId() { return uploadId; }
     public void setUploadId(String uploadId) { this.uploadId = uploadId; }
     public String getFileId() { return fileId; }
@@ -66,4 +72,8 @@ public class MediaFileUpload {
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
     public OffsetDateTime getCompletedAt() { return completedAt; }
     public void setCompletedAt(OffsetDateTime completedAt) { this.completedAt = completedAt; }
+    public String getCompletionOwner() { return completionOwner; }
+    public void setCompletionOwner(String completionOwner) { this.completionOwner = completionOwner; }
+    public OffsetDateTime getCompletionLeaseExpiresAt() { return completionLeaseExpiresAt; }
+    public void setCompletionLeaseExpiresAt(OffsetDateTime completionLeaseExpiresAt) { this.completionLeaseExpiresAt = completionLeaseExpiresAt; }
 }

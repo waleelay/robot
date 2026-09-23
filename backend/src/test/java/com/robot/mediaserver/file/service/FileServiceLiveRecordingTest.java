@@ -47,7 +47,8 @@ class FileServiceLiveRecordingTest {
                 videoRepository,
                 storage,
                 egressService,
-                new ObjectMapper());
+                new ObjectMapper(),
+                mock(FileSourceLockService.class));
         when(videoRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 

@@ -11,6 +11,8 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "created $ENV_FILE from .env.example"
 fi
 
+sh "$SCRIPT_DIR/ensure-env-secrets.sh" "$ENV_FILE"
+
 env_value() {
   key=$1
   default_value=$2

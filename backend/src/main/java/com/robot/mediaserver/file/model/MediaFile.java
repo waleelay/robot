@@ -20,7 +20,7 @@ import com.robot.media.common.file.FileType;
                 @Index(name = "idx_file_org_creator_time", columnList = "orgId,createdBy,createdAt"),
                 @Index(name = "idx_file_org_extension", columnList = "orgId,extensionId"),
                 @Index(name = "idx_file_type_status", columnList = "fileType,status"),
-                @Index(name = "idx_file_robot_source", columnList = "robotId,sourceFileId")
+                @Index(name = "uk_file_robot_source", columnList = "robotId,sourceFileId", unique = true)
         })
 public class MediaFile {
 

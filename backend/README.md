@@ -55,12 +55,15 @@ src/main/java/com/robot/mediaserver/
 - 文件列表可用 `source` 对 `metadata.source` 做数据库分页前的精确筛选；实时监控据此区分手动抓拍、手动录像与任务/告警文件。
 - 手动抓拍和手动录像写入 `createdBy`，只允许创建人查询、读取和操作；未设置 `createdBy` 的任务、告警和机器人上传文件继续按组织共享。
 - `FileObjectStorageService` 封装 MinIO/S3 操作。
+- `file/progress` 接收 MinIO 分片对象事件，以 Redis Lua 幂等累计完整分片，并向 Management 提供文件级批量进度快照；Redis 缓存缺失时限并发回源 MinIO。
 - `FileHlsProcessingService` 使用 ffprobe/ffmpeg 生成 fMP4 HLS；并行排空有界输出，ffprobe 限时
   60 秒，ffmpeg 按处理租约和视频时长设置总时限，超时回收进程树并清理临时目录。
 - 文件正文和 HLS 兼容代理在读取对象前执行 32 MiB 上限；页面预览、下载和视频播放分别优先使用
   既有 `download-url` 与 `play-url`，避免大对象跨服务重复缓冲。
 - 三个 Scheduler 分别处理上传过期、HLS 任务和文件保留期。
 - 主要实体：`MediaFile`、`MediaFileUpload`、`MediaVideoFile`。
+
+上传进度版本上线前需执行 [`deploy/database/20260923-add-file-upload-progress-integrity.sql`](../deploy/database/20260923-add-file-upload-progress-integrity.sql)。脚本会创建来源文件幂等锁表、检查历史重复来源文件，并增加唯一约束、存储上传 ID 约束和 multipart 合并租约字段；发现重复数据时应先人工确认，不能自动删除业务文件。
 
 `/api/media/files` 主要用于机器人直传，`/internal/media/files` 供 Control 代理。可信网段过滤器按配置启用，只检查 TCP 对端地址，不信任 `X-Forwarded-For`。
 
@@ -86,6 +89,8 @@ src/main/java/com/robot/mediaserver/
 | `/internal/media/fixed-camera-sources/**` | Control Service | 固定摄像头发布模式切换、RTSP 运行态收口和 Publisher 在场核验 |
 | `/internal/media/livekit/webhook` | LiveKit Server | 已签名的 Publisher/Track/Room 事件；仅供内部网络调用 |
 | `/internal/media/files/**` | Control Service | 文件能力内部别名 |
+| `/internal/media/files/upload-progress-queries` | Management Service | 按 fileId 批量查询上传与处理进度，仅允许受控内网访问 |
+| `/internal/media/file-upload-events/minio` | MinIO | 分片对象创建 Webhook，要求独立 Bearer Token |
 | `/api/media/files/**` | 机器人或受控调用方 | 文件上传、状态、查询、下载与播放 |
 | `/api/media/tts/**` | 内部调用方/调试端 | TTS 生成与 WebSocket 音频广播 |
 | `/ws/media` | 内部调试/TTS 客户端 | 事件及二进制音频广播 |
@@ -101,11 +106,11 @@ Media 不存在媒体源 CRUD、专用 Snapshot Controller，也不直接发布 
 | `media.livekit.*` | LiveKit 地址、Key/Secret、Token、Room、Ingress/Egress、Track 对账周期及 Ingress 管理预算 |
 | `media.file.live-recording-max-duration-seconds` | 单次手动录像最长持续时间，默认 14400 秒 |
 | `media.minio.*` | 对象存储地址、凭据、bucket 和开关 |
-| `media.file.*` | 文件大小、multipart、播放 Token、HLS、保留期与可信网段；弱网上传默认单文件 48 GiB、分片 5 MiB、上传 URL 7 天、会话 30 天 |
+| `media.file.*` | 文件大小、multipart、上传进度、播放 Token、HLS、保留期与可信网段；弱网上传默认单文件 48 GiB、分片 5 MiB、上传 URL 7 天、会话 30 天 |
 | `media.tts.*` | OpenTTS 地址、voice、format、缓存目录和超时 |
 | `media.session.*` | 发布超时、中断宽限、空闲释放、viewer 超时、视频调度租约和视频墙上限 |
 
-开发 Profile 还配置 `spring.datasource`、Redis 与 Elasticsearch 地址。生产必须替换 LiveKit Secret、MinIO 凭据和文件播放 Token Secret。
+开发 Profile 还配置 `spring.datasource`、Redis 与 Elasticsearch 地址。生产必须替换 LiveKit Secret、MinIO 凭据和文件播放 Token Secret，并显式配置 `MEDIA_FILE_PROGRESS_WEBHOOK_TOKEN`。
 
 Media/Control JSON 时间统一显示为上海时区 `yyyy-MM-dd HH:mm:ss`。Media 通过 `X-User-Id`、`X-Org-Id`、`X-Roles`、`X-Client-Id` 解析调用者；生产应只允许 BFF/Control 等受控上游访问。
 

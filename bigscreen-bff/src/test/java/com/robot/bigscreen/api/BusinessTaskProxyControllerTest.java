@@ -42,6 +42,22 @@ class BusinessTaskProxyControllerTest {
     private JwtDecoder jwtDecoder;
 
     @Test
+    void forwardsArtifactUploadProgressQueriesWithoutBusinessAggregation() throws Exception {
+        when(proxyClient.forwardToManage(any(),
+                eq("/api/v1/management/task-workflow-instances/artifact-upload-progress-queries")))
+                .thenReturn(ResponseEntity.ok("{}".getBytes()));
+
+        mockMvc.perform(post("/api/bigscreen/business/tasks/execution-records/artifact-upload-progress-queries")
+                        .contentType("application/json")
+                        .content("{\"workflowInstanceIds\":[\"10\"]}")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
+                .andExpect(status().isOk());
+
+        verify(proxyClient).forwardToManage(any(),
+                eq("/api/v1/management/task-workflow-instances/artifact-upload-progress-queries"));
+    }
+
+    @Test
     void forwardsSceneResourceGrants() throws Exception {
         when(proxyClient.forwardToManage(any(), eq("/api/v1/management/selection-options/scenes/scene-1/resource-grants")))
                 .thenReturn(ResponseEntity.ok("[]".getBytes()));

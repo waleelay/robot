@@ -54,6 +54,13 @@
         <div class="summary-item"><span>告警</span><strong>{{ alarmEvents.length }}</strong></div>
         <div class="summary-item"><span>视频</span><strong>{{ playbackItems.length }}</strong></div>
         <div class="summary-item">
+          <span>产物上传</span>
+          <strong>{{ artifactProgressLabel(instanceArtifactProgress && instanceArtifactProgress.summary.status) }}</strong>
+          <small v-if="showArtifactPercent(instanceArtifactProgress && instanceArtifactProgress.summary)">
+            {{ artifactProgressPercent(instanceArtifactProgress.summary).toFixed(2) }}%
+          </small>
+        </div>
+        <div class="summary-item">
           <span>轨迹状态</span>
           <strong :class="{ 'is-ok': replayTrackStatus === 'AVAILABLE' }">{{ trackStatusShortLabel(replayTrackStatus) }}</strong>
         </div>
@@ -202,7 +209,7 @@
                   @pause="handleVideoNativePause"
                 />
                 <div v-else class="video-placeholder">
-                  <strong>{{ activePrimaryVideo && activePrimaryVideo.playbackStatus === 'PENDING' ? '视频待补传' : '视频暂不可用' }}</strong>
+                  <strong>{{ videoPlaceholderLabel(activePrimaryVideo) }}</strong>
                 </div>
                 <div
                   v-if="activePrimaryVideo && (videoUnavailable(activePrimaryVideo, activePrimaryVideo.flatIndex) || activePrimaryVideo.playbackStatus === 'PENDING')"
@@ -245,7 +252,7 @@
                     @error="handleVideoError($event, video)"
                   />
                   <div v-else class="video-placeholder is-thumb">
-                    <span>{{ video.playbackStatus === 'PENDING' ? '待补传' : '不可用' }}</span>
+                    <span>{{ videoPlaceholderLabel(video, true) }}</span>
                   </div>
                   <span v-if="videoSourceLabel(video)" class="video-thumb__name">{{ videoSourceLabel(video) }}</span>
                   <button
@@ -404,7 +411,7 @@
 
 <script>
 import HlsModule from 'hls.js'
-import { getTaskRecordReplay, previewImageBlob } from '@/api/new-bi'
+import { getTaskRecordArtifactUploadProgress, getTaskRecordReplay, previewImageBlob } from '@/api/new-bi'
 import { createFileObjectUrl, fileDownloadUrl, getFilePlayUrl, revokeFileObjectUrl } from '@/api/media'
 import Empty from '../../../components/Empty.vue'
 import { BIGSCREEN_CONTROL_API_PREFIX, withApiPrefix } from '@/utils/api-url'
@@ -416,6 +423,11 @@ import {
 } from '../execution-status'
 import { TRAJECTORY_COLORS } from '../../../gis/globalMap/slam/trajectory-visual.js'
 import { buildPathDirectionArrows } from '../../../gis/globalMap/slam/path-direction-arrows.js'
+import {
+  artifactProgressFor,
+  artifactProgressLabel,
+  artifactProgressPercent
+} from './artifact-upload-progress'
 
 const ImportedHls = HlsModule && (HlsModule.default || HlsModule)
 
@@ -434,6 +446,8 @@ export default {
       loadError: '',
       samplesLoading: false,
       replay: null,
+      artifactProgress: null,
+      replayLoadSequence: 0,
       visibleTrackKeys: [],
       currentOffset: 0,
       playing: false,
@@ -471,6 +485,9 @@ export default {
   computed: {
     instance() {
       return (this.replay && this.replay.detail && this.replay.detail.instance) || {}
+    },
+    instanceArtifactProgress() {
+      return (this.artifactProgress && this.artifactProgress.instances && this.artifactProgress.instances[0]) || null
     },
     trackGroups() {
       return (this.replay && this.replay.trackGroups) || []
@@ -743,11 +760,18 @@ export default {
   methods: {
     async loadReplay() {
       if (!this.id) return
+      const sequence = ++this.replayLoadSequence
       this.stopPlayback()
       this.loading = true
       this.loadError = ''
       try {
-        this.replay = this.unwrap(await getTaskRecordReplay(this.id))
+        const results = await Promise.all([
+          getTaskRecordReplay(this.id),
+          getTaskRecordArtifactUploadProgress([this.id]).catch(() => null)
+        ])
+        if (sequence !== this.replayLoadSequence) return
+        this.artifactProgress = results[1] ? this.unwrap(results[1]) : null
+        this.replay = this.unwrap(results[0])
         this.unavailableVideoKeys = []
         this.visibleTrackKeys = this.trackGroups.map(this.trackGroupKey)
         this.currentOffset = 0
@@ -761,10 +785,11 @@ export default {
         this.attachVideoSources()
         this.syncVideos()
       } catch (error) {
+        if (sequence !== this.replayLoadSequence) return
         console.error('执行记录详情加载失败', error)
         this.loadError = requestErrorMessage(error)
       } finally {
-        this.loading = false
+        if (sequence === this.replayLoadSequence) this.loading = false
       }
     },
     async loadReplayMapImage(options) {
@@ -1125,7 +1150,13 @@ export default {
     },
     async loadVideoPlayUrls(items) {
       const videos = Array.isArray(items) ? items : this.playbackItems
-      const fileIds = Array.from(new Set(videos.map(video => this.videoFileId(video)).filter(Boolean)))
+      const fileIds = Array.from(new Set(videos
+        .filter(video => {
+          const progress = this.videoArtifactProgress(video)
+          return !progress || progress.ready
+        })
+        .map(video => this.videoFileId(video))
+        .filter(Boolean)))
       const pendingIds = fileIds.filter(fileId => !this.videoPlayUrlMap[fileId] && this.videoPlayLoadingIds.indexOf(fileId) === -1)
       if (!pendingIds.length) {
         this.$nextTick(this.attachVideoSources)
@@ -1484,7 +1515,22 @@ export default {
       return this.videoFileId(video) || `${(video && video.actionRef) || 'video'}-${index}`
     },
     videoUnavailable(video, index) {
-      return this.unavailableVideoKeys.indexOf(this.videoKey(video, index)) !== -1
+      const progress = this.videoArtifactProgress(video)
+      return Boolean(progress && !progress.ready) || this.unavailableVideoKeys.indexOf(this.videoKey(video, index)) !== -1
+    },
+    videoArtifactProgress(video) {
+      return artifactProgressFor(this.instanceArtifactProgress, video)
+    },
+    videoPlaceholderLabel(video, short) {
+      const progress = this.videoArtifactProgress(video)
+      if (progress && progress.phase) return artifactProgressLabel(progress.phase)
+      if (video && video.playbackStatus === 'PENDING') return short ? '待补传' : '视频待补传'
+      return short ? '不可用' : '视频暂不可用'
+    },
+    artifactProgressLabel,
+    artifactProgressPercent,
+    showArtifactPercent(summary) {
+      return ['PENDING_BIND', 'UPLOADING', 'FINALIZING', 'PROCESSING'].indexOf(summary && summary.status) !== -1
     },
     markVideoUnavailable(video) {
       const key = this.videoKey(video, video && video.flatIndex)
@@ -1506,7 +1552,9 @@ export default {
     videoPlaybackState(video) {
       const current = this.currentDateTime
       if (!current) return { state: 'UNKNOWN', label: '等待时间轴' }
-      if (this.videoUnavailable(video, video && video.flatIndex)) return { state: 'UNAVAILABLE', label: '视频不可用' }
+      if (this.videoUnavailable(video, video && video.flatIndex)) {
+        return { state: 'UNAVAILABLE', label: this.videoPlaceholderLabel(video) }
+      }
       const timing = this.videoTiming(video)
       if (timing.start && current.getTime() < timing.start.getTime()) return { state: 'BEFORE_START', label: '未开始' }
       if (timing.end && current.getTime() > timing.end.getTime()) return { state: 'ENDED', label: '已结束' }

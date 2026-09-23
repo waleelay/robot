@@ -305,3 +305,10 @@ export function addTaskByPoint(data) {
     data
   })
 }
+export function getTaskRecordArtifactUploadProgress(workflowInstanceIds) {
+  return request({
+    url: BIGSCREEN_BUSINESS_API_PREFIX + '/tasks/execution-records/artifact-upload-progress-queries',
+    method: 'post',
+    data: { workflowInstanceIds }
+  })
+}

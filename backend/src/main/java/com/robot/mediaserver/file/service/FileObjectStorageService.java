@@ -15,6 +15,7 @@ import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import io.minio.UploadObjectArgs;
+import io.minio.errors.ErrorResponseException;
 import io.minio.http.Method;
 import io.minio.messages.Item;
 import java.io.ByteArrayOutputStream;
@@ -128,6 +129,25 @@ public class FileObjectStorageService {
                     .object(objectKey)
                     .build());
             return response.size();
+        } catch (Exception ex) {
+            throw new FileStorageException("获取文件对象信息失败：" + objectKey, ex);
+        }
+    }
+
+    /** 返回对象大小；对象不存在时返回 null，其他存储异常仍向上抛出。 */
+    public Long statSizeIfExists(String objectKey) {
+        requireEnabled();
+        try {
+            return client().statObject(StatObjectArgs.builder()
+                    .bucket(bucket())
+                    .object(objectKey)
+                    .build()).size();
+        } catch (ErrorResponseException ex) {
+            String code = ex.errorResponse() == null ? null : ex.errorResponse().code();
+            if ("NoSuchKey".equals(code) || "NoSuchObject".equals(code) || "NotFound".equals(code)) {
+                return null;
+            }
+            throw new FileStorageException("获取文件对象信息失败：" + objectKey, ex);
         } catch (Exception ex) {
             throw new FileStorageException("获取文件对象信息失败：" + objectKey, ex);
         }

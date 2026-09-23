@@ -451,6 +451,38 @@ MINIO_PUBLIC_ENDPOINT=http://211.137.109.150:9000
 
 这样服务器不需要通过自身公网 IP 访问 MinIO，而外部客户端收到的预签名 URL 仍使用公网 IP。还需确认公网端口映射、防火墙、安全组和 MinIO 监听地址允许访问 `9000`。
 
+文件上传进度依赖 MinIO 对临时分片对象的创建通知。首次安装执行 `prepare-workspace.sh`，或使用 `update-services.sh` 增量更新时，如果服务器 `.env` 中该 Token 缺失或为空，部署脚本会自动生成 32 字节随机值并持久化。已有非空值会原样保留，避免重复部署导致 MinIO 与 Media 凭证失配：
+
+```env
+MEDIA_FILE_PROGRESS_ENABLED=true
+MEDIA_FILE_PROGRESS_REBUILD_CONCURRENCY=8
+MEDIA_FILE_COMPLETION_LEASE_SECONDS=300
+MEDIA_FILE_PROGRESS_WEBHOOK_TOKEN=<minio-webhook-random-token>
+```
+
+自动生成后脚本只输出变量名，不打印 Token 值，并将 `.env` 权限收紧为 `600`。升级时还会自动移除已废弃的 `MEDIA_FILE_PROGRESS_MANAGEMENT_TOKEN`。如需单独补齐，可执行：
+
+```bash
+sh ./ensure-env-secrets.sh ./.env
+```
+
+以 MinIO 管理别名 `local` 为例，先设置 Media 内网地址，再配置带持久队列的 Webhook，并只订阅 `files/` 前缀。`auth_token` 必须包含 `Bearer ` 前缀，而 Media 环境变量中只保存原始 Token：
+
+```bash
+MEDIA_INTERNAL_ENDPOINT=http://<media内网地址>:8088
+mc admin config set local notify_webhook:media \
+  enable=on \
+  endpoint=${MEDIA_INTERNAL_ENDPOINT}/internal/media/file-upload-events/minio \
+  auth_token="Bearer ${MEDIA_FILE_PROGRESS_WEBHOOK_TOKEN}" \
+  queue_dir=/data/.minio-events/media \
+  queue_limit=100000
+mc admin service restart local
+mc event add local/robot-media arn:minio:sqs::media:webhook --event put --prefix files/
+mc event list local/robot-media
+```
+
+`queue_dir` 必须位于 MinIO 持久化挂载目录中。Media 暂时不可用时，MinIO 将事件写入该目录并在恢复后重投；Media 按分片号、大小和 ETag 幂等更新 Redis，不把 Webhook 成功作为文件上传成功的判定依据。Management 通过受控内网调用 `/internal/media/files/upload-progress-queries`，该路径不得由公网网关或 Nginx 对外暴露。
+
 修改后需要重建媒体服务容器使环境变量生效：
 
 ```bash

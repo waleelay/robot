@@ -45,7 +45,8 @@ class FileServiceDeleteTest {
                 videoRepository,
                 storage,
                 egressService,
-                new ObjectMapper());
+                new ObjectMapper(),
+                mock(FileSourceLockService.class));
     }
 
     @Test

@@ -46,7 +46,8 @@ class FileServiceManualOwnershipTest {
                 videoRepository,
                 storage,
                 egressService,
-                new ObjectMapper());
+                new ObjectMapper(),
+                mock(FileSourceLockService.class));
         when(storage.buildObjectKey(any(), any(), any(), any(), any())).thenReturn("files/manual.jpg");
     }
 

@@ -95,6 +95,21 @@
               </el-button>
             </template>
           </el-table-column>
+          <el-table-column label="产物上传" width="140" align="center">
+            <template slot-scope="{ row }">
+              <div class="artifact-progress-cell">
+                <span class="status" :class="artifactProgressClass(rowArtifactProgress(row) && rowArtifactProgress(row).summary.status)">
+                  {{ artifactProgressLabel(rowArtifactProgress(row) && rowArtifactProgress(row).summary.status) }}
+                </span>
+                <el-progress
+                  v-if="showArtifactPercent(rowArtifactProgress(row) && rowArtifactProgress(row).summary)"
+                  :percentage="artifactProgressPercent(rowArtifactProgress(row).summary)"
+                  :stroke-width="4"
+                  :show-text="false"
+                />
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="告警" width="90" align="center">
             <template slot-scope="{ row }">
               <span class="status" :class="row.alarmCount ? 'red' : 'info'">{{ row.alarmCount || 0 }} 条</span>
@@ -181,6 +196,13 @@
                 <el-table-column label="结束时间" width="160">
                   <template slot-scope="{ row }">{{ formatDateTime(row.endedAt) }}</template>
                 </el-table-column>
+                <el-table-column label="上传状态" width="110">
+                  <template slot-scope="{ row }">
+                    <span class="status" :class="artifactProgressClass(currentVideoProgress(row) && currentVideoProgress(row).phase)">
+                      {{ artifactProgressLabel(currentVideoProgress(row) && currentVideoProgress(row).phase) }}
+                    </span>
+                  </template>
+                </el-table-column>
               </el-table>
             </div>
           </div>
@@ -192,7 +214,7 @@
 
 <script>
 import { mapGetters } from 'vuex'
-import { getTaskRecordList } from '@/api/new-bi'
+import { getTaskRecordArtifactUploadProgress, getTaskRecordList } from '@/api/new-bi'
 import { requestErrorMessage } from '@/utils/request-error'
 import { hasManagementPermission as matchManagementPermission, TASK_PERMISSIONS } from '@/utils/bigscreen-access'
 import {
@@ -200,6 +222,13 @@ import {
   executionStatusType as resolveExecutionStatusType
 } from '../execution-status'
 import RecordDetail from './RecordDetail.vue'
+import {
+  artifactProgressClass,
+  artifactProgressFor,
+  artifactProgressLabel,
+  artifactProgressPercent,
+  indexArtifactProgress
+} from './artifact-upload-progress'
 
 export default {
   name: 'BiPatrolBusiness2Record',
@@ -229,6 +258,9 @@ export default {
       ],
       videosVisible: false,
       currentVideos: [],
+      currentInstanceProgress: null,
+      artifactProgressByInstanceId: {},
+      loadSequence: 0,
       showDetail: false,
       currentId: ''
     }
@@ -266,6 +298,7 @@ export default {
         return
       }
       if (pageNum) this.page.pageNum = pageNum
+      const sequence = ++this.loadSequence
       this.loading = true
       try {
         const data = this.unwrap(await getTaskRecordList({
@@ -276,16 +309,19 @@ export default {
           triggerType: this.filters.triggerType || undefined,
           scope: 'TERMINAL'
         }))
+        if (sequence !== this.loadSequence) return
         this.rows = data.records || []
         this.loadError = ''
         this.page.pageNum = data.pageNum || this.page.pageNum
         this.page.pageSize = data.pageSize || this.page.pageSize
         this.page.total = data.total || 0
+        await this.loadArtifactProgress(this.rows, sequence)
       } catch (error) {
+        if (sequence !== this.loadSequence) return
         console.error('执行记录列表加载失败', error)
         this.loadError = requestErrorMessage(error)
       } finally {
-        this.loading = false
+        if (sequence === this.loadSequence) this.loading = false
       }
     },
     changeStatus(value) {
@@ -313,7 +349,33 @@ export default {
     },
     showVideos(row) {
       this.currentVideos = Array.isArray(row.videoResults) ? row.videoResults : []
+      this.currentInstanceProgress = this.rowArtifactProgress(row)
       this.videosVisible = true
+    },
+    async loadArtifactProgress(rows, sequence) {
+      const ids = rows.map(row => row.id).filter(Boolean)
+      if (!ids.length) {
+        this.artifactProgressByInstanceId = {}
+        return
+      }
+      try {
+        const data = this.unwrap(await getTaskRecordArtifactUploadProgress(ids))
+        if (sequence === this.loadSequence) this.artifactProgressByInstanceId = indexArtifactProgress(data)
+      } catch (error) {
+        if (sequence === this.loadSequence) this.artifactProgressByInstanceId = {}
+      }
+    },
+    rowArtifactProgress(row) {
+      return this.artifactProgressByInstanceId[String(row && row.id)] || null
+    },
+    currentVideoProgress(video) {
+      return artifactProgressFor(this.currentInstanceProgress, video)
+    },
+    artifactProgressLabel,
+    artifactProgressClass,
+    artifactProgressPercent,
+    showArtifactPercent(summary) {
+      return ['PENDING_BIND', 'UPLOADING', 'FINALIZING', 'PROCESSING'].indexOf(summary && summary.status) !== -1
     },
     triggerTypeLabel(value) {
       return { MANUAL: '手动执行', SCHEDULE: '计划执行' }[value] || value || '-'
@@ -378,6 +440,11 @@ export default {
 <style scoped lang="scss">
 @import '../common.scss';
 @import '../table.scss';
+
+.artifact-progress-cell {
+  display: grid;
+  gap: 6px;
+}
 
 .custom-modal-container {
   background: linear-gradient(180deg, rgba(4, 60, 149, 0.40) 0.01%, rgba(4, 33, 68, 0.30) 6.03%, rgba(4, 23, 62, 0.32) 56.39%, rgba(7, 45, 94, 0.31) 101.39%, rgba(4, 62, 151, 0.40) 109.49%);

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,6 +19,7 @@ import com.robot.mediaserver.file.repository.MediaVideoFileRepository;
 import com.robot.mediaserver.livekit.LiveKitEgressService;
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -41,7 +43,8 @@ class FileServiceUploadQuotaTest {
                 videoRepository,
                 storage,
                 egressService,
-                new ObjectMapper());
+                new ObjectMapper(),
+                mock(FileSourceLockService.class));
         when(fileRepository.findByRobotIdAndSourceFileId("robot-1", "source-1"))
                 .thenReturn(Optional.empty());
         when(storage.buildObjectKey(any(), any(), any(), any(), any())).thenReturn("files/test.bin");
@@ -93,6 +96,24 @@ class FileServiceUploadQuotaTest {
                     assertThat(apiException.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
                     assertThat(apiException.getCode()).isEqualTo("ROBOT_ID_MISMATCH");
                 });
+    }
+
+    @Test
+    void increasesPartSizeWhenConfiguredPartCountWouldExceedLimit() {
+        properties.getFile().setMaxPartCount(100);
+        CreateMultipartFileUploadRequest request = request();
+        request.setFileSize(1024L * 1024L * 1024L);
+        when(uploadRepository.countActiveByRobotId(any(), any(), any())).thenReturn(0L);
+        when(storage.initiateMultipart()).thenReturn("storage-1");
+        when(storage.listParts(any(), any())).thenReturn(java.util.List.of());
+
+        service.createOrResumeMultipart("robot-1", request);
+
+        ArgumentCaptor<com.robot.mediaserver.file.model.MediaFileUpload> uploadCaptor =
+                ArgumentCaptor.forClass(com.robot.mediaserver.file.model.MediaFileUpload.class);
+        verify(uploadRepository).save(uploadCaptor.capture());
+        assertThat(uploadCaptor.getValue().getPartSize()).isEqualTo(11L * 1024L * 1024L);
+        assertThat(uploadCaptor.getValue().getPartCount()).isLessThanOrEqualTo(100);
     }
 
     private CreateMultipartFileUploadRequest request() {

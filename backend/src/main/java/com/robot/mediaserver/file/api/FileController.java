@@ -16,6 +16,7 @@ import com.robot.mediaserver.file.dto.FileUploadResponse;
 import com.robot.media.common.file.FileStatus;
 import com.robot.media.common.file.FileType;
 import com.robot.mediaserver.file.service.FileService;
+import com.robot.mediaserver.file.service.FileMultipartCompletionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
@@ -39,10 +40,15 @@ import org.springframework.web.multipart.MultipartFile;
 public class FileController {
 
     private final FileService service;
+    private final FileMultipartCompletionService multipartCompletionService;
     private final CurrentUserResolver currentUserResolver;
 
-    public FileController(FileService service, CurrentUserResolver currentUserResolver) {
+    public FileController(
+            FileService service,
+            FileMultipartCompletionService multipartCompletionService,
+            CurrentUserResolver currentUserResolver) {
         this.service = service;
+        this.multipartCompletionService = multipartCompletionService;
         this.currentUserResolver = currentUserResolver;
     }
 
@@ -86,7 +92,7 @@ public class FileController {
     public FileStatusResponse complete(
             @RequestHeader("X-Robot-Id") String robotId,
             @PathVariable String uploadId) {
-        return service.completeMultipart(robotId, uploadId);
+        return multipartCompletionService.complete(robotId, uploadId);
     }
 
     @GetMapping("/{fileId}/status")

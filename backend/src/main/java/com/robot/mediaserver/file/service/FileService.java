@@ -78,6 +78,7 @@ public class FileService {
     private final FileObjectStorageService storage;
     private final LiveKitEgressService egressService;
     private final ObjectMapper objectMapper;
+    private final FileSourceLockService sourceLockService;
 
     public FileService(
             MediaProperties properties,
@@ -86,7 +87,8 @@ public class FileService {
             MediaVideoFileRepository videoRepository,
             FileObjectStorageService storage,
             LiveKitEgressService egressService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            FileSourceLockService sourceLockService) {
         this.properties = properties;
         this.fileRepository = fileRepository;
         this.uploadRepository = uploadRepository;
@@ -94,6 +96,7 @@ public class FileService {
         this.storage = storage;
         this.egressService = egressService;
         this.objectMapper = objectMapper;
+        this.sourceLockService = sourceLockService;
     }
 
     @Transactional
@@ -157,6 +160,7 @@ public class FileService {
         }
         MediaFile file = null;
         if (robotId != null && request.getSourceFileId() != null && !request.getSourceFileId().isBlank()) {
+            sourceLockService.lock(robotId, request.getSourceFileId());
             file = fileRepository.findByRobotIdAndSourceFileId(robotId, request.getSourceFileId()).orElse(null);
         }
         if (file != null) {
@@ -216,28 +220,6 @@ public class FileService {
                         storage.presignUploadPart(file.getObjectKey(), upload.getStorageUploadId(), number)))
                 .toList();
         return new FilePartUrlsResponse(now().plusSeconds(properties.getFile().getUploadUrlTtlSeconds()), urls);
-    }
-
-    @Transactional
-    public FileStatusResponse completeMultipart(String robotId, String uploadId) {
-        MediaFileUpload upload = requireUpload(requiredRobotId(robotId), uploadId);
-        MediaFile file = requireFile(upload.getFileId());
-        if (upload.getStatus() == FileUploadStatus.COMPLETED) {
-            return status(file);
-        }
-        List<FileObjectStorageService.StoredPart> parts = storage.listParts(file.getObjectKey(), upload.getStorageUploadId());
-        validateUploadedParts(file, upload, parts);
-        storage.completeMultipart(file.getObjectKey(), upload.getStorageUploadId(), parts);
-        long storedSize = storage.statSize(file.getObjectKey());
-        if (storedSize != file.getFileSize()) {
-            throw error(HttpStatus.CONFLICT, "UPLOAD_SIZE_MISMATCH", "合成后的对象大小与登记文件不一致");
-        }
-        upload.setStatus(FileUploadStatus.COMPLETED);
-        upload.setCompletedAt(now());
-        upload.setLastActiveAt(now());
-        uploadRepository.save(upload);
-        markUploaded(file);
-        return status(file);
     }
 
     public FileStatusResponse fileStatus(String robotId, String fileId) {
@@ -766,6 +748,12 @@ public class FileService {
         }
     }
 
+    /** multipart 合并成功后，在数据库收口事务中推进文件处理状态。 */
+    @Transactional
+    public void markMultipartUploaded(String fileId) {
+        markUploaded(requireFile(fileId));
+    }
+
     private MediaFile newFile(
             String orgId,
             String robotId,
@@ -806,8 +794,9 @@ public class FileService {
         upload.setFileId(file.getFileId());
         upload.setUploadMode(FileUploadMode.MULTIPART);
         upload.setStorageUploadId(storage.initiateMultipart());
-        upload.setPartSize(properties.getFile().getPartSizeBytes());
-        upload.setPartCount((int) Math.ceil((double) file.getFileSize() / upload.getPartSize()));
+        long partSize = calculatePartSize(file.getFileSize());
+        upload.setPartSize(partSize);
+        upload.setPartCount(Math.toIntExact(ceilDiv(file.getFileSize(), partSize)));
         upload.setStatus(FileUploadStatus.ACTIVE);
         upload.setCreatedAt(timestamp);
         upload.setLastActiveAt(timestamp);
@@ -862,23 +851,6 @@ public class FileService {
             if (part == null || part < 1 || part > upload.getPartCount()) {
                 throw error(HttpStatus.BAD_REQUEST, "INVALID_PART_NUMBER", "无效的分片编号");
             }
-        }
-    }
-
-    private void validateUploadedParts(MediaFile file, MediaFileUpload upload, List<FileObjectStorageService.StoredPart> parts) {
-        if (parts.size() != upload.getPartCount()) {
-            throw error(HttpStatus.CONFLICT, "UPLOAD_INCOMPLETE", "仍有分片尚未上传");
-        }
-        long total = 0;
-        for (int index = 0; index < parts.size(); index++) {
-            FileObjectStorageService.StoredPart part = parts.get(index);
-            if (part.partNumber() != index + 1) {
-                throw error(HttpStatus.CONFLICT, "UPLOAD_INCOMPLETE", "已上传分片不连续");
-            }
-            total += part.size();
-        }
-        if (total != file.getFileSize()) {
-            throw error(HttpStatus.CONFLICT, "UPLOAD_SIZE_MISMATCH", "已上传分片大小与登记文件不一致");
         }
     }
 
@@ -947,6 +919,28 @@ public class FileService {
             throw error(HttpStatus.NOT_FOUND, "UPLOAD_NOT_FOUND", "未找到上传任务");
         }
         return upload;
+    }
+
+    private long calculatePartSize(long fileSize) {
+        long mebibyte = 1024L * 1024L;
+        long minimumPartSize = 5L * mebibyte;
+        long maximumPartSize = 5L * 1024L * 1024L * 1024L;
+        int maximumPartCount = Math.max(1, properties.getFile().getMaxPartCount());
+        long required = ceilDiv(fileSize, maximumPartCount);
+        long configured = Math.max(properties.getFile().getPartSizeBytes(), minimumPartSize);
+        long selected = Math.max(configured, required);
+        long rounded = ceilDiv(selected, mebibyte) * mebibyte;
+        if (rounded > maximumPartSize || ceilDiv(fileSize, rounded) > maximumPartCount) {
+            throw error(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "文件超过分片上传能力上限");
+        }
+        return rounded;
+    }
+
+    private long ceilDiv(long dividend, long divisor) {
+        if (dividend <= 0) {
+            return 0;
+        }
+        return 1L + (dividend - 1L) / divisor;
     }
 
     private MediaFile requireFile(String fileId) {

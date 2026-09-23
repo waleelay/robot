@@ -360,6 +360,10 @@ X-Robot-Id: test111
 
 视频通常返回 `PROCESSING`。这表示原始 MP4 已上传完成，服务端正在做 HLS 处理。
 
+如果返回 HTTP 409 且错误码为 `UPLOAD_COMPLETION_IN_PROGRESS`，说明另一个请求正在合并同一上传会话。
+客户端必须按错误详情中的 `retryAfterSeconds` 退避，并使用相同 `uploadId` 重试 complete；不要把该 409
+当作成功，也不要重新上传已完成分片。
+
 如果服务端返回：
 
 ```text

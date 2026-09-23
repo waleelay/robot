@@ -81,9 +81,10 @@ Management 从已授权执行记录的 `videoResults`、`trackFileResults` 中�
 
 ```http
 POST /internal/media/files/upload-progress-queries
-Authorization: Bearer <management-media-service-token>
 Content-Type: application/json
 ```
+
+该路径仅用于 Management 到 Media 的受控内网调用，不要通过公网网关或 Nginx 对外暴露。
 
 ```json
 {
@@ -314,22 +315,17 @@ BFF 不需要连接 Media，也不需要实现上传进度 WebSocket。
 Management 增加：
 
 ```text
-MEDIA_SERVICE_BASE_URL
-MEDIA_SERVICE_TOKEN
-MEDIA_PROGRESS_CONNECT_TIMEOUT_MS=500
-MEDIA_PROGRESS_READ_TIMEOUT_MS=2000
-MEDIA_PROGRESS_MAX_WORKFLOW_INSTANCES=100
-MEDIA_PROGRESS_MAX_FILE_IDS=500
+EIOP_MEDIA_SERVICE_ENABLED=true
+EIOP_MEDIA_SERVICE_HOST=<Media 内网地址>
+EIOP_MEDIA_SERVICE_PORT=8088
+EIOP_MEDIA_SERVICE_PROGRESS_PATH=/internal/media/files/upload-progress-queries
+EIOP_MEDIA_SERVICE_PROGRESS_CONNECT_TIMEOUT=500ms
+EIOP_MEDIA_SERVICE_PROGRESS_READ_TIMEOUT=2s
 ```
 
-Control 增加或复用：
-
-```text
-Media 服务身份凭证
-Media 实时事件来源白名单
-```
-
-凭证必须通过部署配置注入，不能写入源码默认值。
+Management 到 Media 的进度查询仅走受控内网，不使用额外 Token。`/internal/media/**`
+不得映射到公网网关。单次最多查询 100 条执行记录、关联 500 个文件的限制由
+Management 服务端固定校验，无需部署参数。Control 不参与进度查询链路，不增加配置。
 
 ## 8. 联调顺序
 

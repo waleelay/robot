@@ -456,6 +456,7 @@ public class MediaProperties {
     private long simpleUploadMaxBytes = 20971520L;
     private long maxFileSizeBytes = 51539607552L;
     private long partSizeBytes = 5242880L;
+    private int maxPartCount = 10000;
     private int maxPartUrlsPerRequest = 16;
     private int initialPartUrlCount = 16;
     private int uploadUrlTtlSeconds = 604800;
@@ -474,6 +475,10 @@ public class MediaProperties {
     private boolean trustedRobotNetworkEnabled;
     private String trustedRobotCidrs = "127.0.0.1/32,::1/128";
     private String defaultOrgId = "org001";
+    private boolean progressEnabled = true;
+    private int progressRebuildConcurrency = 8;
+    private int completionLeaseSeconds = 300;
+    private String progressWebhookToken;
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -483,6 +488,8 @@ public class MediaProperties {
     public void setMaxFileSizeBytes(long maxFileSizeBytes) { this.maxFileSizeBytes = maxFileSizeBytes; }
     public long getPartSizeBytes() { return partSizeBytes; }
     public void setPartSizeBytes(long partSizeBytes) { this.partSizeBytes = partSizeBytes; }
+    public int getMaxPartCount() { return maxPartCount; }
+    public void setMaxPartCount(int maxPartCount) { this.maxPartCount = maxPartCount; }
     public int getMaxPartUrlsPerRequest() { return maxPartUrlsPerRequest; }
     public void setMaxPartUrlsPerRequest(int maxPartUrlsPerRequest) { this.maxPartUrlsPerRequest = maxPartUrlsPerRequest; }
     public int getInitialPartUrlCount() { return initialPartUrlCount; }
@@ -519,5 +526,13 @@ public class MediaProperties {
     public void setTrustedRobotCidrs(String trustedRobotCidrs) { this.trustedRobotCidrs = trustedRobotCidrs; }
     public String getDefaultOrgId() { return defaultOrgId; }
     public void setDefaultOrgId(String defaultOrgId) { this.defaultOrgId = defaultOrgId; }
+    public boolean isProgressEnabled() { return progressEnabled; }
+    public void setProgressEnabled(boolean progressEnabled) { this.progressEnabled = progressEnabled; }
+    public int getProgressRebuildConcurrency() { return progressRebuildConcurrency; }
+    public void setProgressRebuildConcurrency(int progressRebuildConcurrency) { this.progressRebuildConcurrency = progressRebuildConcurrency; }
+    public int getCompletionLeaseSeconds() { return completionLeaseSeconds; }
+    public void setCompletionLeaseSeconds(int completionLeaseSeconds) { this.completionLeaseSeconds = completionLeaseSeconds; }
+    public String getProgressWebhookToken() { return progressWebhookToken; }
+    public void setProgressWebhookToken(String progressWebhookToken) { this.progressWebhookToken = progressWebhookToken; }
     }
 }

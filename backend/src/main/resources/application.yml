@@ -79,6 +79,8 @@ media:
     max-file-size-bytes: ${MEDIA_FILE_MAX_FILE_SIZE_BYTES:51539607552}
     # 分片上传的单片大小，单位字节。
     part-size-bytes: ${MEDIA_FILE_PART_SIZE_BYTES:5242880}
+    # 单文件最大分片数，兼容 S3/MinIO 上限。
+    max-part-count: ${MEDIA_FILE_MAX_PART_COUNT:10000}
     # 单次最多返回的分片上传 URL 数量。
     max-part-urls-per-request: ${MEDIA_FILE_MAX_PART_URLS_PER_REQUEST:16}
     # 初始化分片上传时默认预签发的分片 URL 数量。
@@ -117,6 +119,14 @@ media:
     trusted-robot-cidrs: ${MEDIA_FILE_TRUSTED_ROBOT_CIDRS:127.0.0.1/32,::1/128}
     # 文件归属的默认组织 ID。
     default-org-id: ${MEDIA_FILE_DEFAULT_ORG_ID:org001}
+    # 是否启用上传进度投影和内部查询。
+    progress-enabled: ${MEDIA_FILE_PROGRESS_ENABLED:true}
+    # Redis 缺失时从 MinIO 重建进度的最大并发数。
+    progress-rebuild-concurrency: ${MEDIA_FILE_PROGRESS_REBUILD_CONCURRENCY:8}
+    # multipart 合并执行权租约，执行期间会周期续租，单位秒。
+    completion-lease-seconds: ${MEDIA_FILE_COMPLETION_LEASE_SECONDS:300}
+    # MinIO 调用分片事件 Webhook 使用的 Bearer Token，必须由部署环境显式配置。
+    progress-webhook-token: ${MEDIA_FILE_PROGRESS_WEBHOOK_TOKEN:}
   tts:
     # 是否启用文本转语音能力。
     enabled: ${TTS_ENABLED:true}
