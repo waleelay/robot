@@ -87,9 +87,23 @@ class SecurityConfigWebTest {
     }
 
     @Test
+    void allowsBigscreenTokenToReachAlarmApiRoute() throws Exception {
+        mockMvc.perform(get("/api/bigscreen/panorama/alarms")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void allowsFieldAppTokenToReachBigscreenWebSocketRoute() throws Exception {
         mockMvc.perform(get("/ws/bigscreen")
                         .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void allowsBigscreenTokenToReachBigscreenWebSocketRoute() throws Exception {
+        mockMvc.perform(get("/ws/bigscreen")
+                        .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
                 .andExpect(status().isNotFound());
     }
 

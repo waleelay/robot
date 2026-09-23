@@ -901,6 +901,48 @@ test('视频心跳补齐漏收的失败状态且不操作媒体连接', async ()
   assert.equal(module.state.heartbeatPending, false)
 })
 
+test('视频心跳确认旧会话已关闭时按原观看意图新建会话', async () => {
+  const closed = new Error('Request failed with status code 409')
+  closed.response = { status: 409, data: { message: '视频会话已关闭' } }
+  const module = loadWebsocketRobot({
+    heartbeatVideoSession: async () => { throw closed }
+  })
+  const camera = {
+    key: 'camera-1',
+    robotId: 'robot-1',
+    watching: true,
+    stopped: false,
+    stopping: false,
+    intercomActive: false,
+    recordingSyncedAt: Date.now(),
+    attachTargets: { slot_1: 'monitor-' },
+    session: { sessionId: 'closed-session', status: 'STREAMING' }
+  }
+  const robot = { robotId: 'robot-1' }
+  module.state.cameras = { [camera.key]: camera }
+  module.state.activeCameras = { [camera.key]: { robot, camera } }
+  module.state.activeIncomingCall = null
+  module.state.heartbeatPending = false
+  const calls = []
+  const commit = (type, payload) => {
+    if (type === 'setCamera') module.state.cameras[payload.key] = payload
+  }
+  const dispatch = async (type, payload) => {
+    calls.push([type, payload])
+  }
+
+  await module.actions.heartbeatViewers({ state: module.state, commit, dispatch })
+
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0][0], 'startCamera')
+  assert.equal(calls[0][1].robot, robot)
+  assert.equal(calls[0][1].camera.session.sessionId, 'closed-session')
+  assert.equal(calls[0][1].consumerId, 'slot_1')
+  assert.equal(calls[0][1].prefixId, 'monitor-')
+  assert.equal(module.state.cameras[camera.key].viewerReconnecting, true)
+  assert.equal(module.state.heartbeatPending, false)
+})
+
 test('视频心跳从已连接 Room 补回漏收的视频轨道', async () => {
   const module = loadWebsocketRobot({
     heartbeatVideoSession: async () => ({

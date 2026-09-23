@@ -137,6 +137,13 @@ function shouldRecoverViewer(camera, sessionId) {
     !camera.hasVideo && !liveKitRoomReusable(camera))
 }
 
+function isClosedVideoSessionError(error) {
+  return error?.response?.status === 409 &&
+    [error?.message, error?.response?.data?.message, error?.response?.data?.detail]
+      .filter(Boolean)
+      .some(message => String(message).includes('视频会话已关闭'))
+}
+
 function scheduleViewerReconnect(dispatch, state, key, sessionId, delay = 0) {
   if (viewerReconnectTimers.has(key)) return
   const current = state.cameras[key]
@@ -1817,6 +1824,7 @@ const actions = {
       })
       const jobs = [...camerasBySession.values()].map(async camera => {
         let changed = false
+        let viewerSessionClosed = false
         const sessionId = camera.session.sessionId
         const requests = []
         if (camera.watching) {
@@ -1832,6 +1840,12 @@ const actions = {
               camera.status = nextSession.status
               camera.viewerCount = session.viewerCount
             }
+          }).catch(error => {
+            if (isClosedVideoSessionError(error)) {
+              viewerSessionClosed = true
+              return
+            }
+            throw error
           }))
         }
         if (camera.watching && Date.now() - (camera.recordingSyncedAt || 0) >= 15000) {
@@ -1852,6 +1866,24 @@ const actions = {
           }))
         }
         await Promise.allSettled(requests)
+        // WebSocket 长时断线时，媒体服务可能已回收旧会话，且关闭事件无法补发。
+        // 心跳确认会话已关闭后按原观看意图新建会话，避免页面永久停留在“播放连接恢复中”。
+        if (viewerSessionClosed && camera.watching && !camera.stopping && !camera.stopped &&
+            camera.session?.sessionId === sessionId && !camera.intercomActive) {
+          const active = state.activeCameras[camera.key]
+          if (active?.robot) {
+            cancelViewerReconnect(camera.key)
+            camera.viewerReconnecting = true
+            commit('setCamera', camera)
+            const [consumerId, prefixId] = Object.entries(camera.attachTargets || {})[0] || []
+            await dispatch('startCamera', {
+              robot: active.robot,
+              camera: { ...active.camera, ...camera },
+              ...(consumerId ? { consumerId, prefixId } : {})
+            })
+            return
+          }
+        }
         if (camera.watching && !camera.stopping && !camera.stopped && !camera.hasVideo &&
             camera.session && camera.session.sessionId === sessionId && camera.room &&
             restoreVideoTrack(camera, camera.room, state)) {

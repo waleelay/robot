@@ -47,7 +47,7 @@ public class SecurityConfig {
                                 "/api/bigscreen/panorama/alarms",
                                 "/api/bigscreen/panorama/alarms/**",
                                 "/ws/bigscreen")
-                        .access(clientAuthorization(fieldCallClientId))
+                        .access(clientAuthorization(bigscreenClientId, fieldCallClientId))
                         .requestMatchers("/api/**", "/ws/**").access(clientAuthorization(bigscreenClientId))
                         .anyRequest().permitAll())
                 .oauth2ResourceServer(resourceServer -> resourceServer
@@ -98,11 +98,14 @@ public class SecurityConfig {
         };
     }
 
-    private AuthorizationManager<RequestAuthorizationContext> clientAuthorization(String clientId) {
+    private AuthorizationManager<RequestAuthorizationContext> clientAuthorization(String... clientIds) {
         return (authentication, context) -> {
-            if (authentication.get() instanceof JwtAuthenticationToken jwtAuthentication
-                    && tokenIssuedForClient(jwtAuthentication.getToken(), clientId)) {
-                return new AuthorizationDecision(true);
+            if (authentication.get() instanceof JwtAuthenticationToken jwtAuthentication) {
+                for (String clientId : clientIds) {
+                    if (tokenIssuedForClient(jwtAuthentication.getToken(), clientId)) {
+                        return new AuthorizationDecision(true);
+                    }
+                }
             }
             return new AuthorizationDecision(false);
         };
