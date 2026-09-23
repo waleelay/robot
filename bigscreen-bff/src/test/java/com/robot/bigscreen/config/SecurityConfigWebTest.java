@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -91,6 +92,21 @@ class SecurityConfigWebTest {
         mockMvc.perform(get("/api/bigscreen/panorama/alarms")
                         .with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void allowsFieldAppTokenToRequestInlineAlarmSnapshotUrl() throws Exception {
+        mockMvc.perform(post("/api/bigscreen/control/files/file-001/download-url")
+                        .queryParam("inline", "true")
+                        .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void keepsRawFileContentProtectedForFieldApp() throws Exception {
+        mockMvc.perform(get("/api/bigscreen/control/files/file-001/content")
+                        .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
+                .andExpect(status().isForbidden());
     }
 
     @Test
