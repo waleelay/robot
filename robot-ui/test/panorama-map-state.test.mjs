@@ -927,6 +927,27 @@ test('快速切图的旧响应不写任务；同一快照同一地图的在途�
   assert.equal(ctx.state.globalMapId, 'gis')
 })
 
+test('切图先应用地图首帧资源，任务路径迟到不阻塞点位更新', async () => {
+  const ctx = setup()
+  await ctx.refresh()
+  const delayedRoutes = deferred()
+  ctx.api.getPatrolPanoramaMapResources = async id => resources(id)
+  ctx.api.getPatrolPanoramaMapTaskRoutes = () => delayedRoutes.promise
+
+  const loading = ctx.dispatch('setGlobalMapId', A)
+  await tick()
+
+  assert.equal(ctx.state.slamMapList.find(item => item.id === A).points[0].id, 'point-' + A)
+  assert.equal(ctx.state.taskRoutesByMap[A], undefined)
+
+  delayedRoutes.resolve({
+    ...routes(A),
+    dataQuality: { tasks: { complete: true, degraded: false, reasonCodes: [] } }
+  })
+  await loading
+  assert.equal(ctx.state.taskRoutesByMap[A]['task-' + A].segments[0].points.length, 1)
+})
+
 test('资源局部失败不切图，普通 Overview 失败保留既有地图和数据', async () => {
   const ctx = setup()
   await ctx.refresh()

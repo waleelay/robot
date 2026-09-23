@@ -647,18 +647,21 @@ const actions = {
     if (!state.overviewReady || !state.slamMapList.some(item => String(item.id) === key)) return
     const revision = state.overviewRevision
     const pendingResources = requestMapResources(mapId, revision)
-    const [mapResourcesResult, taskRoutesResult] = await Promise.all([
-      pendingResources.mapResources,
-      pendingResources.taskRoutes
-    ])
+    // 点位和固定摄像头属于地图首帧资源；任务路径是增强数据，不能反向阻塞底图切换。
+    // 两类请求仍并发发起，但先应用地图资源，再等待并合并任务路径。
+    const mapResourcesResult = await pendingResources.mapResources
     if (revision !== state.overviewRevision || String(state.globalMapId) !== key
       || !state.slamMapList.some(item => String(item.id) === key)) return
     const mapResources = fulfilledValue(mapResourcesResult)
-    const taskRoutes = fulfilledValue(taskRoutesResult)
     const maps = (state.slamMapList || []).map(item => String(item?.id) === key
       ? mergeMapResources(item, mapResources)
       : item)
     commit('SET_SLAM_MAP_LIST', maps)
+
+    const taskRoutesResult = await pendingResources.taskRoutes
+    if (revision !== state.overviewRevision || String(state.globalMapId) !== key
+      || !state.slamMapList.some(item => String(item.id) === key)) return
+    const taskRoutes = fulfilledValue(taskRoutesResult)
     applyTaskRoutes(state, commit, mapId, taskRoutes)
     await retryIncompleteTaskRoutes(state, commit, mapId, taskRoutes, revision, () =>
       String(state.globalMapId) === key && state.slamMapList.some(item => String(item.id) === key))

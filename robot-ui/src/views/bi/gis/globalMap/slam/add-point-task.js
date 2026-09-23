@@ -29,6 +29,8 @@ export default {
       baseLineWidth: 3,
       locationStyle: { top:0, left: 0 },
       coloredCanvas: null, // updateColor 后的地图底图缓存
+      mapPreviewBlob: null,
+      mapColorWorker: null,
     };
   },
   computed: {
@@ -69,12 +71,18 @@ export default {
         showClose: false,
       });
     },
+    // Canvas 位图尺寸和所有重绘分支必须使用同一缩放系数，否则缩小时会裁掉地图。
+    getCanvasRenderScale() {
+      const dpr = window.devicePixelRatio || 1;
+      const zoom = Number(this.zoom) || 1;
+      return Math.max(zoom * dpr, 0.1);
+    },
     // 按当前 zoom / DPR 同步 canvas 位图分辨率，避免父级放大导致线条模糊
     syncCanvasResolution() {
       if (!this.canvas || !this.ctx || !this.W || !this.H) return;
-      const dpr = window.devicePixelRatio || 1;
-      const zoom = Number(this.zoom) || 1;
-      const scale = Math.max(zoom * dpr, dpr);
+      // Canvas 的 CSS 尺寸已经随 zoom 缩放，位图只需匹配当前显示尺寸和 DPR。
+      // 地图缩小展示时继续按原图 × DPR 分配位图，会让大地图产生数倍无效像素。
+      const scale = this.getCanvasRenderScale();
       const nextWidth = Math.max(1, Math.round(this.W * scale));
       const nextHeight = Math.max(1, Math.round(this.H * scale));
       if (this.canvas.width !== nextWidth || this.canvas.height !== nextHeight) {
@@ -146,8 +154,83 @@ export default {
       }
     },
 
+    terminateMapColorWorker() {
+      if (this.mapColorWorker) {
+        this.mapColorWorker.terminate();
+        this.mapColorWorker = null;
+      }
+    },
+
+    createColoredMapInWorker(blob, loadSeq) {
+      if (!blob || typeof Worker !== 'function') {
+        return Promise.reject(new Error('当前浏览器不支持地图调色 Worker'));
+      }
+      this.terminateMapColorWorker();
+      return new Promise((resolve, reject) => {
+        const worker = new Worker('/js/slam-map-color-worker.js');
+        this.mapColorWorker = worker;
+        const timeoutId = window.setTimeout(() => {
+          if (this.mapColorWorker === worker) this.mapColorWorker = null;
+          worker.terminate();
+          reject(new Error('地图离屏调色超时'));
+        }, 10000);
+        const finish = () => {
+          window.clearTimeout(timeoutId);
+          if (this.mapColorWorker === worker) this.mapColorWorker = null;
+          worker.terminate();
+        };
+        worker.onerror = (event) => {
+          finish();
+          reject(new Error(event?.message || '地图离屏调色失败'));
+        };
+        worker.onmessage = (event) => {
+          const result = event.data || {};
+          if (result.requestId !== loadSeq) return;
+          finish();
+          if (result.error) {
+            reject(new Error(result.error));
+            return;
+          }
+          try {
+            const offscreen = document.createElement('canvas');
+            offscreen.width = result.width;
+            offscreen.height = result.height;
+            const pixels = new Uint8ClampedArray(result.buffer);
+            offscreen.getContext('2d').putImageData(
+              new ImageData(pixels, result.width, result.height),
+              0,
+              0
+            );
+            resolve(offscreen);
+          } catch (error) {
+            reject(error);
+          }
+        };
+        try {
+          worker.postMessage({ requestId: loadSeq, blob: blob });
+        } catch (error) {
+          finish();
+          reject(error);
+        }
+      });
+    },
+
+    async prepareColoredMap(loadSeq, targetUrl) {
+      try {
+        const coloredMap = await this.createColoredMapInWorker(this.mapPreviewBlob, loadSeq);
+        if (loadSeq !== this.imageLoadSeq || this.imageUrl !== targetUrl) return false;
+        this.coloredCanvas = coloredMap;
+      } catch (error) {
+        if (loadSeq !== this.imageLoadSeq || this.imageUrl !== targetUrl) return false;
+        // 不支持 OffscreenCanvas/Worker 时保持加载态并同步生成成品，避免展示白色中间帧。
+        this.ensureColoredMap();
+      }
+      return true;
+    },
+
     // ---------- 加载地图 ----------
     loadMap() {
+      this.terminateMapColorWorker();
       const img = new Image();
       const loadSeq = (this.imageLoadSeq = (this.imageLoadSeq || 0) + 1);
       const targetUrl = this.imageUrl;
@@ -170,12 +253,27 @@ export default {
           return;
         }
         this.ctx = this.canvas.getContext('2d');
-        this.buildGrid(img);
-        this.syncCanvasResolution();
-        this.isLoaded = true;
-        this.mapLoading = false;
-        this.mapLoadFailed = false;
-        this.previewImageStatus = '地图预览加载中';
+        // 当前正式链路默认使用两点直连；只有开启安全区域校验时才需要整图障碍网格。
+        // 避免每次切图都为全分辨率图片创建两份二维数组并扫描邻域。
+        if (this.enableSafetyAreaCheck) {
+          this.buildGrid(img);
+        } else {
+          this.grid = null;
+        }
+        this.prepareColoredMap(loadSeq, targetUrl).then((ready) => {
+          if (!ready || loadSeq !== this.imageLoadSeq || this.imageUrl !== targetUrl) return;
+          this.syncCanvasResolution();
+          this.isLoaded = true;
+          this.mapLoading = false;
+          this.mapLoadFailed = false;
+          this.previewImageStatus = '地图预览加载中';
+        }).catch((error) => {
+          if (loadSeq !== this.imageLoadSeq || this.imageUrl !== targetUrl) return;
+          this.mapLoading = false;
+          this.mapLoadFailed = true;
+          this.previewImageStatus = '地图加载失败';
+          console.error('生成 SLAM 地图底图失败', error);
+        });
       };
       img.onerror = () => {
         if (loadSeq !== this.imageLoadSeq || this.imageUrl !== targetUrl) return;
@@ -254,9 +352,7 @@ export default {
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       ctx.restore();
       // 重新应用分辨率缩放后绘制
-      const dpr = window.devicePixelRatio || 1;
-      const zoom = Number(this.zoom) || 1;
-      const scale = Math.max(zoom * dpr, dpr);
+      const scale = this.getCanvasRenderScale();
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       this.ensureColoredMap();
       ctx.drawImage(this.getMapBaseImage(), 0, 0, this.W, this.H);
@@ -299,9 +395,7 @@ export default {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       ctx.restore();
-      const dpr = window.devicePixelRatio || 1;
-      const zoom = Number(this.zoom) || 1;
-      const scale = Math.max(zoom * dpr, dpr);
+      const scale = this.getCanvasRenderScale();
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       this.ensureColoredMap();
       ctx.drawImage(this.getMapBaseImage(), 0, 0, this.W, this.H);
@@ -560,9 +654,7 @@ export default {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       ctx.restore();
-      const dpr = window.devicePixelRatio || 1;
-      const zoom = Number(this.zoom) || 1;
-      const scale = Math.max(zoom * dpr, dpr);
+      const scale = this.getCanvasRenderScale();
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       this.ensureColoredMap();
       ctx.drawImage(this.getMapBaseImage(), 0, 0, this.W, this.H);

@@ -1408,6 +1408,7 @@ export default {
           if (!(blob instanceof Blob)) {
             throw new Error('地图预览响应无效')
           }
+          this.mapPreviewBlob = blob
           const nextUrl = URL.createObjectURL(blob)
           if (loadSeq !== this.imageLoadSeq) {
             URL.revokeObjectURL(nextUrl)
@@ -1743,10 +1744,12 @@ export default {
     // 切换地图时丢弃旧位图，避免 stage 尺寸变化时旧图被拉伸/压缩
     invalidateMapBitmap() {
       this.imageLoadSeq += 1
+      this.terminateMapColorWorker()
       this.img = null
       this.W = 0
       this.H = 0
       this.coloredCanvas = null
+      this.mapPreviewBlob = null
       this.isLoaded = false
       this.grid = null
       this.clearMeasure()
@@ -2400,12 +2403,14 @@ export default {
       this.schedulePopupPositionUpdate()
     },
     revokeImageUrl() {
+      this.terminateMapColorWorker();
       if (this.imageObjectUrl) {
         URL.revokeObjectURL(this.imageObjectUrl);
         this.imageObjectUrl = null;
       }
       this.imageUrl = "";
       this.coloredCanvas = null;
+      this.mapPreviewBlob = null;
     },
     mapPointToPixel(point, map) {
       if (!this.hasPreview || !map) return null;
