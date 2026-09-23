@@ -43,3 +43,20 @@ test('Nginx 对入口和哈希静态资源使用不同缓存策略', () => {
   assert.match(nginxConfig, /location = \/index\.html \{[\s\S]*no-cache, no-store, must-revalidate/)
   assert.match(nginxConfig, /location \^~ \/static\/ \{[\s\S]*max-age=604800, immutable/)
 })
+
+test('Nginx 普通 BFF 请求复用上游连接且 WebSocket 保留升级头', () => {
+  assert.match(nginxConfig, /upstream robot_bigscreen_bff \{[\s\S]*?keepalive 64;/)
+  assert.match(nginxConfig, /upstream robot_bigscreen_bff_test \{[\s\S]*?keepalive 64;/)
+
+  const productionHttp = nginxConfig.match(/location \/api-gw\/api\/bigscreen\/ \{([\s\S]*?)\n\s*\}/)?.[1] || ''
+  const testServer = nginxConfig.split('# ====== 测试项目 ======')[1] || ''
+  const testHttp = testServer.match(/location \/api-gw\/api\/bigscreen\/ \{([\s\S]*?)\n\s*\}/)?.[1] || ''
+  assert.match(productionHttp, /proxy_http_version 1\.1;/)
+  assert.match(productionHttp, /proxy_set_header Connection "";/)
+  assert.match(testHttp, /proxy_http_version 1\.1;/)
+  assert.match(testHttp, /proxy_set_header Connection "";/)
+
+  const websocket = nginxConfig.match(/location \/ws\/bigscreen \{([\s\S]*?)\n\s*\}/)?.[1] || ''
+  assert.match(websocket, /proxy_set_header Upgrade \$http_upgrade;/)
+  assert.match(websocket, /proxy_set_header Connection \$connection_upgrade;/)
+})
