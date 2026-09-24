@@ -151,7 +151,15 @@ image_tag=$(sed -n 's/^IMAGE_TAG=//p' "$ENV_FILE" | tail -n 1)
 image_prefix=${image_prefix:-robot}
 image_tag=${image_tag:-latest}
 java_runtime_image=$(sed -n 's/^JAVA_RUNTIME_IMAGE=//p' "$ENV_FILE" | tail -n 1)
-java_runtime_image=${JAVA_RUNTIME_IMAGE:-${java_runtime_image:-robot/java17-ffmpeg-runtime:latest}}
+if [ -n "${JAVA_RUNTIME_IMAGE:-}" ]; then
+  java_runtime_image=$JAVA_RUNTIME_IMAGE
+else
+  case "$java_runtime_image" in
+    ""|robot/java17-ffmpeg-runtime:latest)
+      java_runtime_image="robot/java17-ffmpeg-runtime:$TARGET_ARCH"
+      ;;
+  esac
+fi
 
 load_image_archive() {
   archive_file=$1
@@ -213,24 +221,31 @@ find_tool_image_archive() {
 }
 
 ensure_java_runtime_image() {
-  if $DOCKER image inspect "$java_runtime_image" >/dev/null 2>&1; then
-    return
+  if ! $DOCKER image inspect "$java_runtime_image" >/dev/null 2>&1; then
+    for archive in \
+      "$TOOL_IMAGE_DIR/java-runtime.tar" \
+      "$TOOL_IMAGE_DIR/java-runtime.tar.gz" \
+      "$TOOL_IMAGE_DIR/java-runtime.tgz" \
+      "$TOOL_IMAGE_DIR/java-runtime.tar.xz" \
+      "$TOOL_IMAGE_DIR/java-runtime.txz" \
+      "$TOOL_IMAGE_DIR/java-runtime.tar.zst" \
+      "$TOOL_IMAGE_DIR/java-runtime.tzst"
+    do
+      if [ -f "$archive" ]; then
+        load_image_archive "$archive"
+        break
+      fi
+    done
   fi
 
-  for archive in \
-    "$TOOL_IMAGE_DIR/java-runtime.tar" \
-    "$TOOL_IMAGE_DIR/java-runtime.tar.gz" \
-    "$TOOL_IMAGE_DIR/java-runtime.tgz" \
-    "$TOOL_IMAGE_DIR/java-runtime.tar.xz" \
-    "$TOOL_IMAGE_DIR/java-runtime.txz" \
-    "$TOOL_IMAGE_DIR/java-runtime.tar.zst" \
-    "$TOOL_IMAGE_DIR/java-runtime.tzst"
-  do
-    if [ -f "$archive" ]; then
-      load_image_archive "$archive"
-      break
+  if ! $DOCKER image inspect "$java_runtime_image" >/dev/null 2>&1 \
+    && $DOCKER image inspect robot/java17-ffmpeg-runtime:latest >/dev/null 2>&1; then
+    fallback_arch=$($DOCKER image inspect robot/java17-ffmpeg-runtime:latest --format '{{.Architecture}}')
+    if [ "$fallback_arch" = "$TARGET_ARCH" ]; then
+      echo "tagging robot/java17-ffmpeg-runtime:latest as $java_runtime_image"
+      $DOCKER tag robot/java17-ffmpeg-runtime:latest "$java_runtime_image"
     fi
-  done
+  fi
 
   if ! $DOCKER image inspect "$java_runtime_image" >/dev/null 2>&1; then
     echo "missing Java runtime image: $java_runtime_image" >&2
@@ -238,6 +253,13 @@ ensure_java_runtime_image() {
     echo "  docker buildx build --platform $TARGET_PLATFORM --load -t $java_runtime_image $SCRIPT_DIR/java-runtime" >&2
     echo "  docker image save --platform $TARGET_PLATFORM $java_runtime_image | gzip -9 > $TOOL_IMAGE_DIR/java-runtime.tar.gz" >&2
     echo "Or set JAVA_RUNTIME_IMAGE in .env to an existing local Java 17 runtime image." >&2
+    exit 1
+  fi
+
+  runtime_arch=$($DOCKER image inspect "$java_runtime_image" --format '{{.Architecture}}')
+  if [ "$runtime_arch" != "$TARGET_ARCH" ]; then
+    echo "Java runtime image architecture mismatch: $java_runtime_image is $runtime_arch, expected $TARGET_ARCH" >&2
+    echo "Use robot/java17-ffmpeg-runtime:$TARGET_ARCH or set JAVA_RUNTIME_IMAGE to a matching image." >&2
     exit 1
   fi
 

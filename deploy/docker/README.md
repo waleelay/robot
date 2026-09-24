@@ -347,7 +347,7 @@ cd /Users/leelay/Documents/robot-mediaserver/deploy/docker
 TARGET_ARCH=arm64 JAVA_RUNTIME_IMAGE=robot/java17-ffmpeg-runtime:arm64 ./package.sh
 ```
 
-`JAVA_RUNTIME_IMAGE` 不是必须每次都传。`package.sh` 会优先读取命令行环境变量，其次读取 `.env` / `.env.example` 中的 `JAVA_RUNTIME_IMAGE`，最后默认使用 `robot/java17-ffmpeg-runtime:latest`。但在同一台 MacBook 上交替构建 amd64 和 arm64 时，建议像上面一样显式传入架构专用镜像，避免 `.env` 或 `latest` 指向上一次构建的架构。
+`JAVA_RUNTIME_IMAGE` 不是必须每次都传。留空时，`package.sh` 会根据 `TARGET_ARCH` 自动使用 `robot/java17-ffmpeg-runtime:amd64` 或 `robot/java17-ffmpeg-runtime:arm64`，并校验镜像实际架构及 Java、FFmpeg、FFprobe 命令。只有使用自定义运行时镜像时才需要显式传入 `JAVA_RUNTIME_IMAGE`。
 
 `package.sh` 会做这些事：
 
