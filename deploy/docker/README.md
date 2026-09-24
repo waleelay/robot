@@ -52,7 +52,7 @@ Nginx 备用 HTTPS：  24443/tcp
 大屏 BFF：          8090/tcp
 LiveKit API：       7880/tcp
 LiveKit RTC TCP：   7881/tcp
-LiveKit RTC UDP：   50000-60000/udp
+LiveKit RTC UDP：   50000-53000/udp
 LiveKit RTMP：      1935/tcp
 TTS：               5050/tcp，默认不启动
 ```
@@ -536,7 +536,7 @@ grep -q '^CENTER_STOMP_CLIENT_SECRET=..' .env && echo 'CENTER_STOMP_CLIENT_SECRE
 sed -i 's#^CENTER_STOMP_ENABLED=.*#CENTER_STOMP_ENABLED=false#' .env
 ```
 
-LiveKit Server 在两套 Compose 中均使用宿主机网络，避免 `50000-60000/udp`
+LiveKit Server 在两套 Compose 中均使用宿主机网络，避免 `50000-53000/udp`
 在 Docker bridge 中展开为大量端口代理。`LIVEKIT_INTERNAL_URL` 供媒体服务调用
 LiveKit Room/Egress API，bridge 容器应使用宿主机内网地址；`LIVEKIT_URL` 会返回给
 浏览器和机器人，应使用外部可访问的公网 IP 或域名。两者分离后，服务器
@@ -1013,12 +1013,12 @@ LIVEKIT_NODE_IP=外部IP
 ```text
 7880/tcp
 7881/tcp
-50000-60000/udp
+50000-53000/udp
 ```
 
 已安装环境不会因为更新 `.env.example` 而自动改写现有 `.env` 和
 `$APP_WORKSPACE_ROOT/livekit.yaml`，升级时需同时将两处的
-`LIVEKIT_RTC_PORT_RANGE_END` / `rtc.port_range_end` 调整为 `60000`，然后按当前
+`LIVEKIT_RTC_PORT_RANGE_END` / `rtc.port_range_end` 调整为 `53000`，然后按当前
 `DEPLOY_NETWORK_MODE` 使用对应 Compose 文件重建 `livekit-server`。仅替换 Compose 模板
 不会改变已挂载的 LiveKit 运行时配置。
 

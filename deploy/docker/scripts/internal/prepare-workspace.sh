@@ -75,7 +75,7 @@ template_default() {
     LIVEKIT_HTTP_PORT) printf '%s' 7880 ;;
     LIVEKIT_RTC_TCP_PORT) printf '%s' 7881 ;;
     LIVEKIT_RTC_PORT_RANGE_START) printf '%s' 50000 ;;
-    LIVEKIT_RTC_PORT_RANGE_END) printf '%s' 60000 ;;
+    LIVEKIT_RTC_PORT_RANGE_END) printf '%s' 53000 ;;
     LIVEKIT_USE_EXTERNAL_IP) printf '%s' false ;;
     LIVEKIT_LOG_LEVEL) printf '%s' info ;;
     LIVEKIT_REDIS_ADDRESS) printf '%s' host.docker.internal:6379 ;;
@@ -250,7 +250,7 @@ livekit_redis_address=$(env_value LIVEKIT_REDIS_ADDRESS host.docker.internal:637
 livekit_ingress_rtmp_base_url=$(env_value LIVEKIT_INGRESS_RTMP_BASE_URL rtmp://127.0.0.1:1935/live)
 livekit_ingress_ws_url=$(env_value LIVEKIT_INGRESS_WS_URL ws://127.0.0.1:7880)
 livekit_port_start=$(env_value LIVEKIT_RTC_PORT_RANGE_START 50000)
-livekit_port_end=$(env_value LIVEKIT_RTC_PORT_RANGE_END 60000)
+livekit_port_end=$(env_value LIVEKIT_RTC_PORT_RANGE_END 53000)
 livekit_use_external_ip=$(env_value LIVEKIT_USE_EXTERNAL_IP false)
 livekit_egress_ws_url=$(env_value LIVEKIT_EGRESS_WS_URL ws://host.docker.internal:7880)
 livekit_egress_redis_address=$(env_value LIVEKIT_EGRESS_REDIS_ADDRESS host.docker.internal:6379)
