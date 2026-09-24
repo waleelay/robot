@@ -329,6 +329,8 @@ docker run --rm --platform linux/arm64 robot/java17-ffmpeg-runtime:arm64 sh -c '
 docker image save --platform linux/amd64 livekit/egress:v1.13.0 | xz -T0 -9e > deploy/docker/tool-images/amd64/livekit-egress.tar.xz
 ```
 
+离线归档应使用 Compose 中配置的精确版本标签保存，不要只保存 `latest`。安装脚本兼容历史归档：镜像元数据版本与目标版本一致时会自动补齐标签；版本不一致时会在启动容器前终止，避免 Docker Compose 静默访问公网拉取镜像。
+
 ## 3. 构建安装包
 
 构建 amd64：
@@ -1061,3 +1063,28 @@ docker logs --since 30m robot-mediaserver-bigscreen-bff 2>&1 | grep -E '管理�
 tar: 忽略未知的扩展头关键字‘LIBARCHIVE.xattr.com.apple.provenance’
 tar: 忽略未知的扩展头关键字‘LIBARCHIVE.xattr.com.apple.quarantine’
 ```
+
+### 8.11 离线安装仍然访问 Docker Hub
+
+如果日志出现 `registry-1.docker.io`，通常是离线归档中的镜像标签和 `.env` 要求的标签不一致。例如归档只有 `livekit/livekit-server:latest`，但 Compose 要求 `livekit/livekit-server:v1.13.3`。
+
+新版安装脚本会在导入后核对所有必需镜像。对于 LiveKit 历史 `latest` 归档，只有镜像自身的 `org.opencontainers.image.version` 与目标版本一致时才自动补标签；镜像缺失或版本不匹配会直接报错，不再进入 Compose 联网拉取阶段。
+
+检查已经导入的镜像版本：
+
+```bash
+docker image inspect livekit/livekit-server:latest \
+  --format '{{ index .Config.Labels "org.opencontainers.image.version" }}'
+docker image inspect livekit/egress:latest \
+  --format '{{ index .Config.Labels "org.opencontainers.image.version" }}'
+```
+
+确认分别输出 `v1.13.3` 和 `v1.13.0` 后，可以手工恢复旧安装包：
+
+```bash
+docker tag livekit/livekit-server:latest livekit/livekit-server:v1.13.3
+docker tag livekit/egress:latest livekit/egress:v1.13.0
+docker compose -f docker-compose.yml up -d
+```
+
+host 模式将最后一条命令中的文件改为 `docker-compose.host.yml`。如果实际版本不一致，不能强行补标签，需要重新准备对应架构和版本的离线镜像并重新构建安装包。
