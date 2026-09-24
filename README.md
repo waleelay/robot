@@ -169,11 +169,7 @@ wss://<host>:4443/ws/bigscreen 大屏兼容 WebSocket
 wss://<host>:4443/livekit     LiveKit 信令
 ```
 
-Nginx 只代理 LiveKit 信令，不替代 LiveKit UDP/TCP 媒体端口。Control 的 `MEDIA_SERVICE_BASE_URL`、BFF 的 `CENTER_*_BASE_URL` 应指向内部服务地址，不要绕回浏览器 HTTPS 入口。局域网证书生成脚本为：
-
-```bash
-sh deploy/nginx/generate-lan-cert.sh <实际局域网IP>
-```
+Nginx 只代理 LiveKit 信令，不替代 LiveKit UDP/TCP 媒体端口。Control 的 `MEDIA_SERVICE_BASE_URL`、BFF 的 `CENTER_*_BASE_URL` 应指向内部服务地址，不要绕回浏览器 HTTPS 入口。Docker 部署时在 `.env` 中设置 `NGINX_TLS_HOST`，`install.sh` 会自动生成对应的自签名证书；生产环境仍建议替换为受信任证书。
 
 ## 9. 验证
 

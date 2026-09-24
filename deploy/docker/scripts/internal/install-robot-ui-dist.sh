@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# 内部脚本：安装并清理 Robot UI 静态资源。
 set -eu
 
 source_dir=$1

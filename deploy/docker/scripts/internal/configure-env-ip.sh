@@ -2,8 +2,9 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-ENV_TARGET="${ENV_TARGET:-$SCRIPT_DIR/.env}"
-ENV_EXAMPLE="${ENV_EXAMPLE:-$SCRIPT_DIR/.env.example}"
+DEPLOY_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+ENV_TARGET="${ENV_TARGET:-$DEPLOY_DIR/.env}"
+ENV_EXAMPLE="${ENV_EXAMPLE:-$DEPLOY_DIR/.env.example}"
 
 INTERNAL_IP="${DEPLOY_INTERNAL_IP:-}"
 EXTERNAL_IP="${DEPLOY_EXTERNAL_IP:-}"
@@ -134,4 +135,4 @@ echo "  LiveKit RTMP ingress URL: rtmp://$EXTERNAL_IP:1935/live"
 echo "  MinIO internal endpoint: http://$INTERNAL_IP:9000"
 echo "  MinIO public endpoint: http://$EXTERNAL_IP:9000"
 echo "  MinIO download endpoint: https://$EXTERNAL_IP:$DEPLOY_HTTPS_PORT"
-echo "remember to run INSTALL_MODE=overwrite ./install.sh when LiveKit/Nginx rendered configs already exist."
+echo "如果 LiveKit/Nginx 运行配置已经存在，请执行 ./install.sh --overwrite。"

@@ -2,7 +2,23 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+INTERNAL_SCRIPT_DIR="$SCRIPT_DIR/scripts/internal"
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+
+case "${1:-}" in
+  -h|--help)
+    cat <<'EOF'
+用法：TARGET_ARCH=<amd64|arm64> ./package.sh
+
+常用可选变量：
+  PACKAGE_TTS=true|false       是否打包 TTS，默认 false
+  ROBOT_UI_BUILD=true|false   是否重新编译 Robot UI，默认 true
+  DIST_DIR=<目录>              安装包输出目录，默认项目 dist/
+EOF
+    exit 0
+    ;;
+esac
+
 DIST_DIR="${DIST_DIR:-$PROJECT_DIR/dist}"
 ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/.env}"
 ROBOT_UI_DIR="${ROBOT_UI_DIR:-$PROJECT_DIR/robot-ui}"
@@ -59,7 +75,8 @@ if [ ! -d "$TOOL_IMAGE_DIR" ] && [ -d "$TOOL_IMAGE_ROOT" ]; then
 fi
 
 PACKAGE_NAME="${PACKAGE_NAME:-robot-mediaserver-installer-$TARGET_ARCH-$(date +%Y%m%d%H%M%S)}"
-STAGING_DIR="$DIST_DIR/$PACKAGE_NAME"
+INSTALL_DIR_NAME=robot-mediaserver-installer
+STAGING_DIR="$DIST_DIR/$INSTALL_DIR_NAME"
 
 if command -v docker >/dev/null 2>&1; then
   DOCKER="docker"
@@ -81,7 +98,9 @@ if ! $DOCKER info >/dev/null 2>&1; then
 fi
 
 rm -rf "$STAGING_DIR"
-mkdir -p "$STAGING_DIR/packages" "$STAGING_DIR/images" "$STAGING_DIR/tools" "$STAGING_DIR/config/livekit" "$STAGING_DIR/config/nginx/html" "$STAGING_DIR/config/tts"
+mkdir -p "$STAGING_DIR/packages" "$STAGING_DIR/images" "$STAGING_DIR/tools" \
+  "$STAGING_DIR/config/livekit" "$STAGING_DIR/config/nginx/html" "$STAGING_DIR/config/tts" \
+  "$STAGING_DIR/scripts/internal"
 
 build_service() {
   service_dir=$1
@@ -361,45 +380,56 @@ awk -v target_arch="$TARGET_ARCH" -v target_platform="$TARGET_PLATFORM" '
 ' "$SCRIPT_DIR/.env.example" > "$STAGING_DIR/.env.example"
 cp "$SCRIPT_DIR/install.sh" "$STAGING_DIR/install.sh"
 cp "$SCRIPT_DIR/uninstall.sh" "$STAGING_DIR/uninstall.sh"
-cp "$SCRIPT_DIR/load-images.sh" "$STAGING_DIR/load-images.sh"
-cp "$SCRIPT_DIR/prepare-workspace.sh" "$STAGING_DIR/prepare-workspace.sh"
-cp "$SCRIPT_DIR/ensure-env-secrets.sh" "$STAGING_DIR/ensure-env-secrets.sh"
-cp "$SCRIPT_DIR/install-robot-ui-dist.sh" "$STAGING_DIR/install-robot-ui-dist.sh"
-cp "$SCRIPT_DIR/preflight-network.sh" "$STAGING_DIR/preflight-network.sh"
-cp "$SCRIPT_DIR/configure-env-ip.sh" "$STAGING_DIR/configure-env-ip.sh"
+for helper in configure-env-ip.sh ensure-env-secrets.sh install-robot-ui-dist.sh load-images.sh preflight-network.sh prepare-workspace.sh; do
+  cp "$INTERNAL_SCRIPT_DIR/$helper" "$STAGING_DIR/scripts/internal/$helper"
+done
 
 cat > "$STAGING_DIR/README.md" <<'EOF'
-# robot-mediaserver installer
+# Robot Media Server 安装说明
 
-1. Edit `.env.example` if needed, or copy it to `.env`.
-2. Run `./configure-env-ip.sh <server-ip>` when internal and external IP are the same.
-   Run `./configure-env-ip.sh --internal-ip <internal-ip> --external-ip <external-ip>` when clients need a public IP.
-3. Run `./install.sh`.
-4. Run `./uninstall.sh` to stop services.
+实施人员只需要使用两个脚本：
 
-Java service packages are stored under `packages/`.
-Docker image archives are stored under `images/`.
-Runtime config templates are stored under `config/`.
-Robot UI dist is stored under `config/nginx/html/dist`.
-TDT map files are stored under `config/nginx/html/tdt.tar.gz`, `config/nginx/html/tdt.zip`, or `config/nginx/html/tdt` when provided.
-Java runtime image defaults to `robot/java17-ffmpeg-runtime:latest`; it must contain Java 17, ffmpeg, and ffprobe for HLS.
-Application files are extracted to `/home/jszn/mounts/media` by default.
-Runtime IPs, ports, accounts, and secrets should be configured in `.env`.
-For OpenStack/Linux servers that are sensitive to Docker bridge routes, set `DEPLOY_NETWORK_MODE=host` in `.env` before running `./install.sh`.
-Repeated installs use `INSTALL_MODE=skip_existing` by default, so existing runtime directories and LiveKit config files are left untouched. Set `INSTALL_MODE=overwrite` in `.env` to overwrite them during install.
+```bash
+# 将安装包放到 /home 后直接解压
+cd /home
+tar -xzf robot-mediaserver-installer-*.tar.gz
+cd /home/robot-mediaserver-installer
+
+# 推荐：进入交互式安装向导
+./install.sh
+
+# 内外网使用同一个 IP
+./install.sh --server-ip <服务器IP>
+
+# 容器访问使用内网 IP，浏览器和机器人使用外网 IP
+./install.sh --internal-ip <内网IP> --external-ip <外网IP>
+
+# 覆盖升级
+./install.sh --overwrite
+
+# 卸载容器并保留运行数据
+./uninstall.sh
+```
+
+首次直接执行 `./install.sh` 会自动从 `.env.example` 创建 `.env`；只有需要在安装前调整端口、中间件地址或账号时，才提前复制并修改 `.env`。
+服务器安装目录统一为 `/home/robot-mediaserver-installer`，运行挂载目录统一为 `/home/mounts/media`。
+直接执行 `./install.sh` 或 `./uninstall.sh` 会进入交互式向导；显式传入参数时按非交互模式执行。
+安装脚本会自动执行网络预检、离线镜像导入、密钥补齐、程序安装和配置渲染。
+默认运行目录为 `/home/mounts/media`，可通过 `.env` 中的 `APP_WORKSPACE_ROOT` 修改。
+默认卸载保留运行目录；确需删除时执行 `./uninstall.sh --purge-workspace`。
 EOF
 
 {
   echo
-  echo "Target architecture: $TARGET_ARCH"
-  echo "Target platform: $TARGET_PLATFORM"
+  echo "目标架构：$TARGET_ARCH"
+  echo "目标平台：$TARGET_PLATFORM"
 } >> "$STAGING_DIR/README.md"
 
-chmod +x "$STAGING_DIR"/*.sh
+chmod +x "$STAGING_DIR"/*.sh "$STAGING_DIR/scripts/internal"/*.sh
 
 if command -v xattr >/dev/null 2>&1; then
   xattr -cr "$STAGING_DIR" 2>/dev/null || true
 fi
 
-(cd "$DIST_DIR" && COPYFILE_DISABLE=1 tar -czf "$PACKAGE_NAME.tar.gz" "$PACKAGE_NAME")
+(cd "$DIST_DIR" && COPYFILE_DISABLE=1 tar -czf "$PACKAGE_NAME.tar.gz" "$INSTALL_DIR_NAME")
 echo "created $DIST_DIR/$PACKAGE_NAME.tar.gz"

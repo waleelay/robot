@@ -2,6 +2,24 @@
 
 本文档按实际操作顺序说明：项目组成、打包前准备、构建安装包、上传部署、配置生效、更新、卸载和常见问题。
 
+脚本入口按使用角色收敛如下：
+
+```text
+实施人员：install.sh、uninstall.sh
+开发人员：package.sh、install.sh、uninstall.sh、update-services.sh
+内部实现：scripts/internal/，不要直接执行
+```
+
+三个运行入口都支持交互式向导：
+
+```bash
+./install.sh                              # 交互式安装
+./uninstall.sh                            # 交互式卸载
+./deploy/docker/update-services.sh        # 交互式增量更新
+```
+
+在终端无参数执行时进入向导；显式传入参数或在非终端环境执行时保持非交互行为，便于自动化。
+
 ## 1. 项目模块
 
 安装包包含以下服务：
@@ -82,9 +100,9 @@ deploy/docker/config/livekit/livekit-egress.yaml
 注意：安装后 LiveKit 使用单文件挂载，目标路径必须是文件，不能是目录：
 
 ```text
-/home/jszn/mounts/media/livekit.yaml        -> /livekit.yaml
-/home/jszn/mounts/media/livekit-ingress.yaml -> /livekit-ingress.yaml
-/home/jszn/mounts/media/livekit-egress.yaml -> /livekit-egress.yaml
+/home/mounts/media/livekit.yaml        -> /livekit.yaml
+/home/mounts/media/livekit-ingress.yaml -> /livekit-ingress.yaml
+/home/mounts/media/livekit-egress.yaml -> /livekit-egress.yaml
 ```
 
 ### 2.3 准备 Nginx 配置和前端
@@ -110,6 +128,8 @@ npm run build:prod
 robot-ui/dist -> config/nginx/html/dist
 ```
 
+覆盖安装前端时，安装脚本默认保留最近 7 天的旧哈希 JS/CSS 资源，避免已经打开的页面在短期内请求旧资源失败。可在 `.env` 中通过 `ROBOT_UI_ASSET_RETENTION_DAYS` 调整保留天数，该配置在 `INSTALL_MODE=overwrite` 时生效。
+
 如果只是调试打包流程，确认已有 `robot-ui/dist` 且想跳过前端编译，可以在构建时设置：
 
 ```bash
@@ -127,7 +147,7 @@ deploy/docker/config/nginx/html/tdt.tar.gz
 安装时会解压到：
 
 ```text
-/home/jszn/mounts/media/nginx/html/tdt
+/home/mounts/media/nginx/html/tdt
 ```
 
 也支持直接放目录：
@@ -159,7 +179,7 @@ TDT_ZIP=/path/to/tdt.zip TARGET_ARCH=amd64 ./package.sh
 如果服务器没有 `unzip`，优先改用 `tdt.tar.gz`。也可以先跳过地图，部署后再把解压好的 `tdt` 目录放到：
 
 ```text
-/home/jszn/mounts/media/nginx/html/tdt
+/home/mounts/media/nginx/html/tdt
 ```
 
 ### 2.5 准备 TTS
@@ -188,7 +208,7 @@ deploy/docker/config/tts/app.py
 安装后会复制到：
 
 ```text
-/home/jszn/mounts/media/tts/app.py
+/home/mounts/media/tts/app.py
 ```
 
 ### 2.6 准备第三方镜像
@@ -222,7 +242,7 @@ PACKAGE_TTS=true TARGET_ARCH=amd64 ./package.sh
 
 安装服务器上还需设置 `COMPOSE_PROFILES=tts`，TTS 容器才会启动。暂时不使用 TTS 且不是固定摄像头边缘节点时，保持 `PACKAGE_TTS=false` 和 `COMPOSE_PROFILES=` 即可。
 
-`COMPOSE_PROFILES` 未包含 `tts` 时，`prepare-workspace.sh` 会跳过 TTS 的 `app.py` 校验，缺少该文件不会阻止其他服务安装启动；只有启用 TTS 时才必须准备 `config/tts/app.py` 或工作区中的 `tts/app.py`。
+`COMPOSE_PROFILES` 未包含 `tts` 时，安装脚本会跳过 TTS 的 `app.py` 校验，缺少该文件不会阻止其他服务安装启动；只有启用 TTS 时才必须准备 `config/tts/app.py` 或工作区中的 `tts/app.py`。
 
 示例，准备 amd64：
 
@@ -358,15 +378,60 @@ dist/robot-mediaserver-installer-<arch>-<timestamp>.tar.gz
 
 ## 4. 上传部署
 
-以下示例假设服务器用户是 `jszn`，安装包上传到 `/home/jszn`。
+服务器统一使用以下两个目录：
+
+```text
+/home/robot-mediaserver-installer  安装目录：Compose、.env、安装脚本和离线安装资源
+/home/mounts/media            运行目录：Java 程序、Nginx、地图、配置和日志
+```
+
+安装包统一上传到 `/home` 后直接解压。压缩包内部顶层目录固定为 `robot-mediaserver-installer`，因此安装目录始终是 `/home/robot-mediaserver-installer`，不再包含架构和时间戳。`.env` 中保持 `APP_WORKSPACE_ROOT=/home/mounts/media`。
 
 ### 4.1 解压安装包
 
 ```bash
-cd /home/jszn
-tar -xzf robot-mediaserver-installer-amd64-*.tar.gz
-cd robot-mediaserver-installer-amd64-*
-cp .env.example .env
+cd /home
+tar -xzf robot-mediaserver-installer-amd64-20260924120000.tar.gz
+cd /home/robot-mediaserver-installer
+```
+
+直接执行 `./install.sh` 时会在 `.env` 不存在的情况下自动从 `.env.example` 创建；只有需要在安装前预先修改数据库、Redis、MinIO、MQTT 等高级配置时，才手动复制并编辑 `.env`。
+
+已有服务器从旧目录迁移时，使用新安装包重新解压，只迁移原 `.env`，不要把旧目录中的历史辅助脚本整体复制回来：
+
+```bash
+OLD_INSTALL_DIR=/home/jszn/robot-mediaserver-installer-amd64-旧时间戳
+PACKAGE=/home/robot-mediaserver-installer-amd64-新时间戳.tar.gz
+
+mkdir -p /home/robot-mediaserver-installer
+cp "$OLD_INSTALL_DIR/.env" /home/robot-mediaserver-installer/.env
+cd /home
+tar -xzf "$PACKAGE"
+cd /home/robot-mediaserver-installer
+```
+
+另一台旧目录位于 `/home` 时，只需把 `OLD_INSTALL_DIR` 改成它的实际安装包目录。
+
+如果旧环境使用 `/home/jszn/mounts/media`，需在容器停止后迁移一次运行目录并修改新安装目录中的 `.env`：
+
+```bash
+cd "$OLD_INSTALL_DIR"
+./uninstall.sh
+
+sudo mkdir -p /home/mounts
+sudo mv /home/jszn/mounts/media /home/mounts/media
+sudo chown -R "$(id -un):$(id -gn)" /home/mounts
+
+cd /home/robot-mediaserver-installer
+sed -i 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/home/mounts/media#' .env
+./install.sh --overwrite
+```
+
+新服务器首次安装时，如果当前用户不能直接写 `/home`，先执行：
+
+```bash
+sudo mkdir -p /home/mounts/media
+sudo chown -R "$(id -un):$(id -gn)" /home/mounts
 ```
 
 ### 4.2 基础配置
@@ -378,7 +443,7 @@ sed -i 's#^TARGET_ARCH=.*#TARGET_ARCH=amd64#' .env
 sed -i 's#^TARGET_PLATFORM=.*#TARGET_PLATFORM=linux/amd64#' .env
 sed -i 's#^DEPLOY_NETWORK_MODE=.*#DEPLOY_NETWORK_MODE=bridge#' .env
 sed -i 's#^DOCKER_NETWORK_SUBNET=.*#DOCKER_NETWORK_SUBNET=10.253.10.0/24#' .env
-sed -i 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/home/jszn/mounts/media#' .env
+sed -i 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/home/mounts/media#' .env
 sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env
 ```
 
@@ -394,21 +459,41 @@ sed -i 's#^CENTER_MANAGE_BASE_URL=.*#CENTER_MANAGE_BASE_URL=http://管理中心I
 sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/media#' .env
 ```
 
-### 4.3 一键配置 IP
+### 4.3 一键安装并配置 IP
+
+实施人员推荐直接运行向导：
+
+```bash
+./install.sh
+```
+
+向导会询问网络模式、运行目录、内部 IP、外部 IP 和是否覆盖安装，确认后才开始执行。也可以使用下面的非交互命令。
+
+方括号内是当前默认值，直接回车即采用该值。OpenStack bridge 部署示例：
+
+```text
+部署网络模式（示例：bridge；可选 bridge/host） [bridge]: <直接回车>
+宿主机运行目录（示例：/home/mounts/media） [/home/mounts/media]: <直接回车>
+是否配置服务器访问 IP（首次安装示例：y） [Y/n]: y
+内部访问 IP（示例：10.222.123.5）: 10.222.123.5
+外部下发 IP（示例：175.155.35.79；无公网时填内网 IP） [10.222.123.5]: 175.155.35.79
+是否覆盖已有程序和渲染配置（首次安装示例：n；全量更新示例：y） [y/N]: n
+确认开始安装（核对以上参数无误后输入 y） [y/N]: y
+```
 
 如果内外访问都是同一个 IP：
 
 ```bash
-./configure-env-ip.sh 192.168.124.77
+./install.sh --server-ip 192.168.124.77
 ```
 
 如果容器访问中间件用内网 IP，下发给浏览器/机器人用公网 IP：
 
 ```bash
-./configure-env-ip.sh --internal-ip 10.222.123.5 --external-ip 175.155.35.79
+./install.sh --internal-ip 10.222.123.5 --external-ip 175.155.35.79
 ```
 
-脚本会自动：
+安装脚本会自动执行网络预检、离线镜像导入、工作区准备、配置渲染并启动容器，同时完成：
 
 ```text
 将 host.docker.internal 替换成 internal-ip
@@ -451,7 +536,7 @@ MINIO_PUBLIC_ENDPOINT=http://211.137.109.150:9000
 
 这样服务器不需要通过自身公网 IP 访问 MinIO，而外部客户端收到的预签名 URL 仍使用公网 IP。还需确认公网端口映射、防火墙、安全组和 MinIO 监听地址允许访问 `9000`。
 
-文件上传进度依赖 MinIO 对临时分片对象的创建通知。首次安装执行 `prepare-workspace.sh`，或使用 `update-services.sh` 增量更新时，如果服务器 `.env` 中该 Token 缺失或为空，部署脚本会自动生成 32 字节随机值并持久化。已有非空值会原样保留，避免重复部署导致 MinIO 与 Media 凭证失配：
+文件上传进度依赖 MinIO 对临时分片对象的创建通知。首次执行 `install.sh`，或使用 `update-services.sh` 增量更新时，如果服务器 `.env` 中该 Token 缺失或为空，部署脚本会自动生成 32 字节随机值并持久化。已有非空值会原样保留，避免重复部署导致 MinIO 与 Media 凭证失配：
 
 ```env
 MEDIA_FILE_PROGRESS_ENABLED=true
@@ -460,11 +545,7 @@ MEDIA_FILE_COMPLETION_LEASE_SECONDS=300
 MEDIA_FILE_PROGRESS_WEBHOOK_TOKEN=<minio-webhook-random-token>
 ```
 
-自动生成后脚本只输出变量名，不打印 Token 值，并将 `.env` 权限收紧为 `600`。升级时还会自动移除已废弃的 `MEDIA_FILE_PROGRESS_MANAGEMENT_TOKEN`。如需单独补齐，可执行：
-
-```bash
-sh ./ensure-env-secrets.sh ./.env
-```
+自动生成后脚本只输出变量名，不打印 Token 值，并将 `.env` 权限收紧为 `600`。升级时还会自动移除已废弃的 `MEDIA_FILE_PROGRESS_MANAGEMENT_TOKEN`；无需单独执行内部密钥脚本。
 
 以 MinIO 管理别名 `local` 为例，先设置 Media 内网地址，再配置带持久队列的 Webhook，并只订阅 `files/` 前缀。`auth_token` 必须包含 `Bearer ` 前缀，而 Media 环境变量中只保存原始 Token：
 
@@ -506,17 +587,13 @@ ip route
 ip addr
 ```
 
-确认 `DOCKER_NETWORK_SUBNET` 不和业务网段、VPN 网段、已有 Docker 网络冲突，再执行：
-
-```bash
-./preflight-network.sh
-```
-
-预检通过才安装：
+确认 `DOCKER_NETWORK_SUBNET` 不和业务网段、VPN 网段、已有 Docker 网络冲突，再安装：
 
 ```bash
 ./install.sh
 ```
+
+`install.sh` 会在导入镜像和创建工作区前自动完成 bridge 子网预检；发现冲突会立即退出，不会启动项目容器。
 
 如果服务器一启动 Docker daemon 就断网，说明问题发生在 Compose 之前，需要先处理 Docker daemon 的 `bip/default-address-pools`，并保留控制台/VNC 等带外入口。
 
@@ -563,7 +640,7 @@ curl -k -i -X OPTIONS \
 修改安装包目录中的 `.env` 后，最稳的一键生效方式是：
 
 ```bash
-./preflight-network.sh && sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env && ./prepare-workspace.sh && docker compose -f docker-compose.yml up -d --force-recreate
+./install.sh --overwrite
 ```
 
 这条命令会完成：
@@ -572,7 +649,7 @@ curl -k -i -X OPTIONS \
 2. 根据 `.env` 重新渲染 LiveKit / Nginx 等配置文件。
 3. 重建容器，让新的环境变量进入容器。
 
-`prepare-workspace.sh` 默认不会重复解压已有 `nginx/html/tdt` 地图目录。也就是说，改 LiveKit、Nginx 或 Java 服务配置时，即使 `INSTALL_MODE=overwrite`，只要 `TDT_INSTALL_MODE=skip_existing`，已有地图会直接跳过，避免反复解压大地图包。
+安装脚本默认不会重复解压已有 `nginx/html/tdt` 地图目录。也就是说，改 LiveKit、Nginx 或 Java 服务配置时，即使使用 `--overwrite`，只要 `TDT_INSTALL_MODE=skip_existing`，已有地图会直接跳过，避免反复解压大地图包。
 
 注意：只执行 `docker compose restart` 不会重新读取 `.env` 中的容器环境变量。
 
@@ -582,7 +659,7 @@ curl -k -i -X OPTIONS \
 `PANORAMA_TASK_*` 或 `PANORAMA_GENERAL_*`：
 
 ```bash
-docker compose -f docker-compose.yml up -d --force-recreate
+./install.sh
 ```
 
 ### 5.2 改了 LiveKit / Nginx 模板相关配置
@@ -590,17 +667,15 @@ docker compose -f docker-compose.yml up -d --force-recreate
 例如改了 `LIVEKIT_NODE_IP`、`LIVEKIT_REDIS_ADDRESS`、`LIVEKIT_WEBHOOK_URL`、`NGINX_*_UPSTREAM`、`NGINX_TLS_HOST`：
 
 ```bash
-sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env
 grep -q '^TDT_INSTALL_MODE=' .env && sed -i 's#^TDT_INSTALL_MODE=.*#TDT_INSTALL_MODE=skip_existing#' .env || printf '\nTDT_INSTALL_MODE=skip_existing\n' >> .env
-./prepare-workspace.sh
-docker compose -f docker-compose.yml up -d --force-recreate
+./install.sh --overwrite
 ```
 
 如果确实需要重新安装地图文件，再单独执行：
 
 ```bash
 grep -q '^TDT_INSTALL_MODE=' .env && sed -i 's#^TDT_INSTALL_MODE=.*#TDT_INSTALL_MODE=overwrite#' .env || printf '\nTDT_INSTALL_MODE=overwrite\n' >> .env
-./prepare-workspace.sh
+./install.sh --overwrite
 sed -i 's#^TDT_INSTALL_MODE=.*#TDT_INSTALL_MODE=skip_existing#' .env
 ```
 
@@ -609,15 +684,15 @@ sed -i 's#^TDT_INSTALL_MODE=.*#TDT_INSTALL_MODE=skip_existing#' .env
 如果直接改的是：
 
 ```text
-/home/jszn/mounts/media/media-service/config
-/home/jszn/mounts/media/control-service/config
-/home/jszn/mounts/media/bigscreen-bff/config
+/home/mounts/media/media-service/config
+/home/mounts/media/control-service/config
+/home/mounts/media/bigscreen-bff/config
 ```
 
-重启对应容器：
+通过安装入口重建对应容器：
 
 ```bash
-docker compose -f docker-compose.yml restart media-service control-service bigscreen-bff
+./install.sh media-service control-service bigscreen-bff
 ```
 
 ## 6. 更新
@@ -627,115 +702,65 @@ docker compose -f docker-compose.yml restart media-service control-service bigsc
 上传新的安装包后：
 
 ```bash
-cd /home/jszn
-tar -xzf robot-mediaserver-installer-amd64-*.tar.gz
-cd robot-mediaserver-installer-amd64-*
-cp .env.example .env
+cd /home
+tar -xzf robot-mediaserver-installer-amd64-新时间戳.tar.gz
+cd /home/robot-mediaserver-installer
 ```
 
-按第 4 节重新配置 `.env`，然后覆盖安装：
+已有 `.env` 不会被安装包覆盖。检查配置后执行覆盖安装：
 
 ```bash
-sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env
-./preflight-network.sh
-./install.sh
+./install.sh --overwrite
 ```
 
-### 6.2 增量更新 Java 服务
+### 6.2 一键增量更新
 
-本地重新打包：
-
-```bash
-cd /Users/leelay/Documents/robot-mediaserver/backend
-mvn -DskipTests clean package
-
-cd /Users/leelay/Documents/robot-mediaserver/control-service
-mvn -DskipTests clean package
-```
-
-上传到服务器：
-
-```bash
-scp -P 32272 /Users/leelay/Documents/robot-mediaserver/backend/target/robot-mediaserver-dist.tar.gz jszn@175.155.35.79:/tmp/
-scp -P 32272 /Users/leelay/Documents/robot-mediaserver/control-service/target/robot-control-service-dist.tar.gz jszn@175.155.35.79:/tmp/
-```
-
-服务器解压确认：
-
-```bash
-rm -rf /tmp/update-media /tmp/update-control
-mkdir -p /tmp/update-media /tmp/update-control
-
-tar -xzf /tmp/robot-mediaserver-dist.tar.gz -C /tmp/update-media --strip-components=1
-tar -xzf /tmp/robot-control-service-dist.tar.gz -C /tmp/update-control --strip-components=1
-
-ls -l /tmp/update-media/boot
-ls -l /tmp/update-control/boot
-```
-
-替换运行目录：
-
-```bash
-WORKSPACE=/home/jszn/mounts/media
-
-rm -rf "$WORKSPACE/media-service/bin" "$WORKSPACE/media-service/boot" "$WORKSPACE/media-service/lib"
-cp -a /tmp/update-media/bin /tmp/update-media/boot /tmp/update-media/lib "$WORKSPACE/media-service/"
-
-rm -rf "$WORKSPACE/control-service/bin" "$WORKSPACE/control-service/boot" "$WORKSPACE/control-service/lib"
-cp -a /tmp/update-control/bin /tmp/update-control/boot /tmp/update-control/lib "$WORKSPACE/control-service/"
-
-ls -l "$WORKSPACE/media-service/boot"
-ls -l "$WORKSPACE/control-service/boot"
-```
-
-重启：
-
-```bash
-docker compose -f docker-compose.yml restart media-service control-service bigscreen-bff
-sleep 8
-docker ps -a | grep robot-mediaserver
-docker logs robot-mediaserver-media-service --tail 60
-docker logs robot-mediaserver-control-service --tail 60
-```
-
-### 6.3 增量更新前端
-
-本地重新构建并上传 `dist`：
-
-```bash
-cd /Users/leelay/Documents/robot-mediaserver/robot-ui
-npm run build:prod
-scp -P 32272 -r dist/* jszn@175.155.35.79:/home/jszn/mounts/media/nginx/html/dist/
-```
-
-Nginx 静态资源替换后一般不需要重启。
-
-### 6.4 增量更新脚本（一条命令）
-
-`update-services.sh` 把 6.2 的 Java 服务增量更新流程和新增环境变量同步合并为一条命令：
+开发人员统一使用 `update-services.sh` 更新 Java 服务、Robot UI 和新增环境变量：
 
 ```bash
 # 1. 编辑 update-services.env，声明本次发布需要保证的服务器环境变量
 #    （格式：SERVICE VAR=VALUE，已有则改值、缺失则追加，幂等）
 # 2. 执行
-sh deploy/docker/update-services.sh
+./deploy/docker/update-services.sh
+```
+
+在终端直接执行时会询问服务器、SSH、安装目录、需要更新的 Java 服务以及是否更新前端，最终确认后才连接服务器。通过环境变量调用时，可设置 `UPDATE_NON_INTERACTIVE=true` 跳过向导。
+
+例如更新远程服务器上的 Media 和 Control，不更新前端：
+
+```text
+服务器地址（示例：192.168.124.23 或 175.155.35.79） [192.168.124.23]: 175.155.35.79
+SSH 用户（示例：root 或 jszn） [root]: jszn
+SSH 端口（示例：22 或 32272） [22]: 32272
+服务器安装包目录（示例：/home/robot-mediaserver-installer） [/home/robot-mediaserver-installer]: <直接回车>
+服务器运行目录（示例：/home/mounts/media） [/home/mounts/media]: <直接回车>
+请选择编号（示例：全部更新选 1；自定义组合选 5） [1]: 5
+服务列表（空格分隔，示例：media-service control-service） [media-service control-service bigscreen-bff]: media-service control-service
+是否重新编译 Java 服务（代码有修改时示例：y） [Y/n]: y
+是否重新编译并更新 Robot UI（前端有修改时示例：y；仅后端更新示例：n） [Y/n]: n
+确认开始更新（核对以上参数无误后输入 y） [y/N]: y
 ```
 
 脚本会自动完成：
 
 ```text
-上传 dist 包 -> 在临时副本同步 .env 并接线 Compose -> 渲染校验 -> 备份并写入安装目录
--> 备份并替换工作区 bin/boot/lib -> docker compose up -d --force-recreate --no-deps -> 核验容器/环境变量/启动日志
+重新编译所选 Java 服务和 Robot UI -> 上传产物 -> 同步 .env 与 Compose -> 渲染校验
+-> 备份并替换 bin/boot/lib -> 原子更新前端入口 -> 重建服务容器 -> 核验状态和日志
 ```
 
-服务器端环境变量同步使用随仓库提供的 `sync-server-env.sh`，不需要安装 `python3`。
+内部环境变量同步使用标准 Shell，不要求服务器安装 `python3`。
 Compose 模板和 `.env` 会先在服务器临时副本上完成同步及渲染校验，校验通过后才备份并替换
 安装目录文件，避免配置解析失败时留下半更新状态。服务目录按服务滚动替换，不是跨服务事务；
 发布多个 Java 服务时若中途失败，应根据脚本输出的同一批次 `.bak-时间戳` 核对并恢复已替换服务。
 
 可配置项（环境变量）：`UPDATE_SERVER`、`UPDATE_SSH_USER`、`UPDATE_SSH_PORT`、
 `UPDATE_INSTALL_DIR`（compose 安装目录）、`UPDATE_WORKSPACE`（服务运行目录）、
-`UPDATE_ENV_FILE`、`UPDATE_SERVICES`、`DIST_MEDIA/DIST_CONTROL/DIST_BIGSCREEN`。
+`UPDATE_ENV_FILE`、`UPDATE_SERVICES`、`UPDATE_BUILD`、`UPDATE_FRONTEND`、
+`DIST_MEDIA/DIST_CONTROL/DIST_BIGSCREEN`。默认重新编译并更新三个 Java 服务和 Robot UI；只更新部分 Java 服务时可设置，例如：
+
+```bash
+UPDATE_SERVICES="media-service control-service" UPDATE_FRONTEND=false ./deploy/docker/update-services.sh
+```
 
 注意：脚本只覆盖 `bin/boot/lib`，不覆盖服务目录下的 `config/`；新增环境变量通过
 容器环境变量注入，优先于 `config/application.yml`，无需改动 config 目录。脚本使用 `--no-deps`
@@ -763,13 +788,21 @@ Compose 模板和 `.env` 会先在服务器临时副本上完成同步及渲染�
 
 ## 7. 卸载
 
-默认卸载：
+交互式卸载：
 
 ```bash
 ./uninstall.sh
 ```
 
-会停止并删除 compose 容器、删除 compose 网络、删除 orphan 容器。
+向导会显示当前网络模式和运行目录，并询问是否删除数据卷、是否删除运行目录。默认均保留，只停止并删除 Compose 容器、项目网络和 orphan 容器。
+
+常规卸载并保留运行数据的输入示例：
+
+```text
+是否同时删除 Compose 数据卷（常规卸载示例：n） [y/N]: n
+是否同时删除运行目录（不可恢复；常规卸载示例：n） [y/N]: n
+确认停止并删除项目容器（确认卸载示例：y） [y/N]: y
+```
 
 默认不会删除：
 
@@ -824,7 +857,7 @@ docker images --format "{{.Repository}}:{{.Tag}}" \
 如需删除宿主机挂载目录，删除 `.env` 中 `APP_WORKSPACE_ROOT` 对应的真实目录。默认是：
 
 ```bash
-rm -rf "/home/jszn/mounts/media"
+rm -rf "/home/mounts/media"
 ```
 
 清理后检查：
@@ -852,14 +885,14 @@ ip addr
 
 ```bash
 sed -i 's#^DOCKER_NETWORK_SUBNET=.*#DOCKER_NETWORK_SUBNET=10.253.10.0/24#' .env
-./preflight-network.sh
+./install.sh
 ```
 
 如果预检失败，换一个网段：
 
 ```bash
 sed -i 's#^DOCKER_NETWORK_SUBNET=.*#DOCKER_NETWORK_SUBNET=10.254.10.0/24#' .env
-./preflight-network.sh
+./install.sh
 ```
 
 ### 8.2 `tdt` 目录不存在
@@ -867,15 +900,15 @@ sed -i 's#^DOCKER_NETWORK_SUBNET=.*#DOCKER_NETWORK_SUBNET=10.254.10.0/24#' .env
 如果安装时跳过了 `tdt.tar.gz`，手动解压：
 
 ```bash
-mkdir -p /home/jszn/mounts/media/nginx/html
-tar -xzf config/nginx/html/tdt.tar.gz -C /home/jszn/mounts/media/nginx/html
+mkdir -p /home/mounts/media/nginx/html
+tar -xzf config/nginx/html/tdt.tar.gz -C /home/mounts/media/nginx/html
 ```
 
 如果压缩包内部已经包含顶层 `tdt/` 目录，解压到 `html` 即可；如果压缩包内部直接是 `latest/`，则解压到 `html/tdt`：
 
 ```bash
-mkdir -p /home/jszn/mounts/media/nginx/html/tdt
-tar -xzf config/nginx/html/tdt.tar.gz -C /home/jszn/mounts/media/nginx/html/tdt
+mkdir -p /home/mounts/media/nginx/html/tdt
+tar -xzf config/nginx/html/tdt.tar.gz -C /home/mounts/media/nginx/html/tdt
 ```
 
 验证：
@@ -890,14 +923,13 @@ curl -kI --max-time 5 https://127.0.0.1:4443/tdt/latest/18/208281/107518.png
 
 ```bash
 sed -i 's#^BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS=.*#BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS=http://localhost:8080,http://127.0.0.1:8080,http://192.168.*.*:8080,https://192.168.*.*:4443,https://175.155.35.79:4443#' .env
-docker compose -f docker-compose.yml up -d --force-recreate bigscreen-bff
+./install.sh bigscreen-bff
 ```
 
 更推荐使用：
 
 ```bash
-./configure-env-ip.sh --internal-ip 10.222.123.5 --external-ip 175.155.35.79
-docker compose -f docker-compose.yml up -d --force-recreate bigscreen-bff
+./install.sh --internal-ip 10.222.123.5 --external-ip 175.155.35.79 bigscreen-bff
 ```
 
 ### 8.4 `Unknown database 'robot_media'`
@@ -927,7 +959,7 @@ CREATE DATABASE IF NOT EXISTS robot_media
 Linux 服务器建议直接替换为服务器内网 IP：
 
 ```bash
-./configure-env-ip.sh --internal-ip 10.222.123.5 --external-ip 175.155.35.79
+./install.sh --internal-ip 10.222.123.5 --external-ip 175.155.35.79
 ```
 
 ### 8.6 LiveKit 推流成功但前端无画面
@@ -973,9 +1005,7 @@ mount ... nginx.conf ... not a directory
 说明在源文件不存在时启动过 compose，Docker 创建了同名目录。处理：
 
 ```bash
-sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env
-./prepare-workspace.sh
-docker compose -f docker-compose.yml up -d --force-recreate
+./install.sh --overwrite
 ```
 
 ### 8.8 `.env` 改了但没生效
@@ -983,7 +1013,7 @@ docker compose -f docker-compose.yml up -d --force-recreate
 环境变量改动需要重建容器：
 
 ```bash
-docker compose -f docker-compose.yml up -d --force-recreate
+./install.sh
 ```
 
 例如调整无人观看时的视频会话保留时间，只需修改 `.env` 中的：
@@ -995,7 +1025,7 @@ IDLE_RELEASE_DELAY_SECONDS=30
 该变量同时接入 Media 和 Control，两个服务必须使用同一值并一起重建：
 
 ```bash
-docker compose -f docker-compose.yml up -d --force-recreate media-service control-service
+./install.sh media-service control-service
 ```
 
 Host 网络模式将 Compose 文件替换为 `docker-compose.host.yml`。普通
@@ -1004,9 +1034,7 @@ Host 网络模式将 Compose 文件替换为 `docker-compose.host.yml`。普通
 LiveKit/Nginx 模板改动还要重新渲染：
 
 ```bash
-sed -i 's#^INSTALL_MODE=.*#INSTALL_MODE=overwrite#' .env
-./prepare-workspace.sh
-docker compose -f docker-compose.yml up -d --force-recreate
+./install.sh --overwrite
 ```
 
 ### 8.9 结构化链路日志

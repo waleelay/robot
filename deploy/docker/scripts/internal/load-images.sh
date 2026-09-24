@@ -2,7 +2,8 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-IMAGE_DIR="${IMAGE_DIR:-$SCRIPT_DIR/images}"
+DEPLOY_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+IMAGE_DIR="${IMAGE_DIR:-$DEPLOY_DIR/images}"
 
 if [ ! -d "$IMAGE_DIR" ]; then
   echo "image directory not found, skip docker load: $IMAGE_DIR"

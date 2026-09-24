@@ -2,13 +2,14 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-ENV_FILE="$SCRIPT_DIR/.env"
-PACKAGE_DIR="${PACKAGE_DIR:-$SCRIPT_DIR/packages}"
-CONFIG_DIR="${CONFIG_DIR:-$SCRIPT_DIR/config}"
+DEPLOY_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+ENV_FILE="$DEPLOY_DIR/.env"
+PACKAGE_DIR="${PACKAGE_DIR:-$DEPLOY_DIR/packages}"
+CONFIG_DIR="${CONFIG_DIR:-$DEPLOY_DIR/config}"
 
 if [ ! -f "$ENV_FILE" ]; then
-  cp "$SCRIPT_DIR/.env.example" "$ENV_FILE"
-  echo "created $ENV_FILE from .env.example"
+  cp "$DEPLOY_DIR/.env.example" "$ENV_FILE"
+  echo "created $ENV_FILE from $DEPLOY_DIR/.env.example"
 fi
 
 sh "$SCRIPT_DIR/ensure-env-secrets.sh" "$ENV_FILE"
@@ -59,7 +60,7 @@ set_env_value() {
 template_default() {
   key=$1
   case "$key" in
-    APP_WORKSPACE_ROOT) printf '%s' /home/jszn/mounts/media ;;
+    APP_WORKSPACE_ROOT) printf '%s' /home/mounts/media ;;
     NGINX_MEDIA_SERVICE_UPSTREAM) printf '%s' host.docker.internal:8088 ;;
     NGINX_BIGSCREEN_BFF_UPSTREAM) printf '%s' host.docker.internal:8090 ;;
     NGINX_LIVEKIT_UPSTREAM) printf '%s' host.docker.internal:7880 ;;
@@ -115,26 +116,34 @@ render_template_file() {
   done
 }
 
-raw_workspace_root=$(env_value APP_WORKSPACE_ROOT /home/jszn/mounts/media)
+raw_workspace_root=$(env_value APP_WORKSPACE_ROOT /home/mounts/media)
 APP_WORKSPACE_ROOT=$(expand_user_path "$raw_workspace_root")
 if [ "$APP_WORKSPACE_ROOT" != "$raw_workspace_root" ]; then
   set_env_value APP_WORKSPACE_ROOT "$APP_WORKSPACE_ROOT"
 fi
-INSTALL_MODE=$(env_value INSTALL_MODE skip_existing)
+INSTALL_MODE=${INSTALL_MODE:-$(env_value INSTALL_MODE skip_existing)}
 TDT_INSTALL_MODE=$(env_value TDT_INSTALL_MODE skip_existing)
+ROBOT_UI_ASSET_RETENTION_DAYS=$(env_value ROBOT_UI_ASSET_RETENTION_DAYS 7)
+
+case "$ROBOT_UI_ASSET_RETENTION_DAYS" in
+  ''|*[!0-9]*)
+    echo "ROBOT_UI_ASSET_RETENTION_DAYS must be a non-negative integer: $ROBOT_UI_ASSET_RETENTION_DAYS" >&2
+    exit 1
+    ;;
+esac
 
 ensure_workspace_writable() {
   check_file="$APP_WORKSPACE_ROOT/.write-check.$$"
 
   if ! mkdir -p "$APP_WORKSPACE_ROOT" 2>/dev/null; then
     echo "cannot create APP_WORKSPACE_ROOT: $APP_WORKSPACE_ROOT" >&2
-    echo "Choose a user-writable APP_WORKSPACE_ROOT, for example: /home/jszn/mounts/media" >&2
+    echo "Choose a user-writable APP_WORKSPACE_ROOT, for example: /home/mounts/media" >&2
     exit 1
   fi
 
   if ! : > "$check_file" 2>/dev/null; then
     echo "APP_WORKSPACE_ROOT is not writable: $APP_WORKSPACE_ROOT" >&2
-    echo "Choose a user-writable APP_WORKSPACE_ROOT, for example: /home/jszn/mounts/media" >&2
+    echo "Choose a user-writable APP_WORKSPACE_ROOT, for example: /home/mounts/media" >&2
     exit 1
   fi
 
@@ -341,7 +350,8 @@ fi
 
 if [ -d "$CONFIG_DIR/nginx/html/dist" ]; then
   sh "$SCRIPT_DIR/install-robot-ui-dist.sh" \
-    "$CONFIG_DIR/nginx/html/dist" "$nginx_html_dir/dist" "$INSTALL_MODE"
+    "$CONFIG_DIR/nginx/html/dist" "$nginx_html_dir/dist" "$INSTALL_MODE" \
+    "$ROBOT_UI_ASSET_RETENTION_DAYS"
 fi
 install_tdt_archive() {
   archive_file=$1

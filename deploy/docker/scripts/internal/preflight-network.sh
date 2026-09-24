@@ -2,7 +2,8 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-ENV_FILE="$SCRIPT_DIR/.env"
+DEPLOY_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+ENV_FILE="$DEPLOY_DIR/.env"
 
 env_value() {
   key=$1

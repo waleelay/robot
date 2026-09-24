@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 
 const repositoryRoot = new URL('../../', import.meta.url)
-const installScript = new URL('../../deploy/docker/install-robot-ui-dist.sh', import.meta.url)
+const installScript = new URL('../../deploy/docker/scripts/internal/install-robot-ui-dist.sh', import.meta.url)
 const nginxConfig = readFileSync(new URL('../../deploy/docker/config/nginx/nginx.conf', import.meta.url), 'utf8')
 
 test('Robot UI 发布保留上一版懒加载资源并最后切换入口', () => {
