@@ -7,7 +7,7 @@ public class CenterServiceProperties {
 
     private String manageBaseUrl = "http://localhost:8088";
     private String controlBaseUrl = "http://localhost:8088";
-    private String v1ControlBaseUrl = "http://localhost:8088";
+    private String eiopControlBaseUrl = "http://localhost:8088";
     private String mediaBaseUrl = "http://localhost:8088";
     private String websocketControlUrl = "ws://localhost:8088/ws/control";
     private String websocketFieldCallUrl = "ws://localhost:8082/ws/field-call";
@@ -28,12 +28,12 @@ public class CenterServiceProperties {
         this.controlBaseUrl = controlBaseUrl;
     }
 
-    public String getV1ControlBaseUrl() {
-        return v1ControlBaseUrl;
+    public String getEiopControlBaseUrl() {
+        return eiopControlBaseUrl;
     }
 
-    public void setV1ControlBaseUrl(String v1ControlBaseUrl) {
-        this.v1ControlBaseUrl = v1ControlBaseUrl;
+    public void setEiopControlBaseUrl(String eiopControlBaseUrl) {
+        this.eiopControlBaseUrl = eiopControlBaseUrl;
     }
 
     public String getMediaBaseUrl() {

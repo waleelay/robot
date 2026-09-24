@@ -7,8 +7,8 @@ center:
   manage-base-url: ${CENTER_MANAGE_BASE_URL:http://host.docker.internal:8866}
   # Control Service 基础地址。
   control-base-url: ${CENTER_CONTROL_BASE_URL:http://control-service:8082}
-  # 旧版控制服务基础地址。
-  v1-control-base-url: ${CENTER_V1_CONTROL_BASE_URL:http://host.docker.internal:8867}
+  # EIOP 平台控制端基础地址，与本项目 Control Service 区分。
+  eiop-control-base-url: ${CENTER_EIOP_CONTROL_BASE_URL:http://host.docker.internal:8867}
   # Media Service 基础地址。
   media-base-url: ${CENTER_MEDIA_BASE_URL:http://media-service:8088}
   # Control Service WebSocket 地址。
@@ -57,10 +57,20 @@ bigscreen:
 
 panorama:
   general:
-    # 单个 Overview 会并行读取多个非任务资源；16 足以覆盖一次正常扇出，仍受全局闸门保护。
+    # Management 通用资源独立故障域；不与本项目 Control/EIOP Control 共用熔断和并发许可。
     connect-timeout-ms: ${PANORAMA_GENERAL_CONNECT_TIMEOUT_MS:1000}
     read-timeout-ms: ${PANORAMA_GENERAL_READ_TIMEOUT_MS:1500}
     max-concurrency: ${PANORAMA_GENERAL_MAX_CONCURRENCY:16}
+  control:
+    # 当前 Control Service 查询独立故障域，避免设备状态故障熔断 Management 资源。
+    connect-timeout-ms: ${PANORAMA_CONTROL_CONNECT_TIMEOUT_MS:1000}
+    read-timeout-ms: ${PANORAMA_CONTROL_READ_TIMEOUT_MS:1500}
+    max-concurrency: ${PANORAMA_CONTROL_MAX_CONCURRENCY:8}
+  eiop-control:
+    # EIOP Control 使用单独地址和故障域，不与本项目 Control 或 Management 互相影响。
+    connect-timeout-ms: ${PANORAMA_EIOP_CONTROL_CONNECT_TIMEOUT_MS:1000}
+    read-timeout-ms: ${PANORAMA_EIOP_CONTROL_READ_TIMEOUT_MS:1500}
+    max-concurrency: ${PANORAMA_EIOP_CONTROL_MAX_CONCURRENCY:4}
   workflow-alarm:
     # 工作流解析通常慢于普通分页查询，使用独立超时和并发闸门，避免多用户串行及拖累总览。
     connect-timeout-ms: ${PANORAMA_WORKFLOW_ALARM_CONNECT_TIMEOUT_MS:1000}

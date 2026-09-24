@@ -37,6 +37,10 @@ class PanoramaCenterClientTest {
             "http://management.test/api/v1/management/fixed-cameras?pageNum=1&pageSize=100";
     private static final String WORKFLOW_ALARMS_URL =
             "http://management.test/api/v1/management/alarms/actionable-workflow";
+    private static final String CONTROL_REGISTRY_URL =
+            "http://control.test/api/control/robots/registry";
+    private static final String EIOP_CONTROL_STATUS_URL =
+            "http://eiop-control.test/api/v1/control/device-realtime-statuses?serialNumbers=SN001";
 
     private final RestClient.Builder builder = RestClient.builder();
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -45,10 +49,15 @@ class PanoramaCenterClientTest {
     PanoramaCenterClientTest() {
         CenterServiceProperties properties = new CenterServiceProperties();
         properties.setManageBaseUrl("http://management.test");
+        properties.setControlBaseUrl("http://control.test");
+        properties.setEiopControlBaseUrl("http://eiop-control.test");
         client = new PanoramaCenterClient(RestClient.builder(), properties,
                 mock(AuthenticatedRequestHeaders.class), 1000, 1500, 16,
+                1000, 1500, 8, 1000, 1500, 4,
                 1000, 5000, 4, 1000, 1500, 8);
         ReflectionTestUtils.setField(client, "restClient", builder.build());
+        ReflectionTestUtils.setField(client, "controlRestClient", builder.build());
+        ReflectionTestUtils.setField(client, "eiopControlRestClient", builder.build());
         ReflectionTestUtils.setField(client, "taskRestClient", builder.build());
         ReflectionTestUtils.setField(client, "workflowAlarmRestClient", builder.build());
     }
@@ -139,6 +148,58 @@ class PanoramaCenterClientTest {
         assertThrows(ResponseStatusException.class, client::actionableWorkflowAlarms);
 
         assertEquals(List.of(), client.enabledMaps());
+        server.verify();
+    }
+
+    @Test
+    void controlFailuresDoNotOpenTheManagementCircuit() {
+        for (int index = 0; index < 3; index++) {
+            server.expect(requestTo(CONTROL_REGISTRY_URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        }
+        server.expect(requestTo(MAPS_URL)).andRespond(withSuccess(
+                "{\"code\":\"0\",\"data\":{\"records\":[]}}", MediaType.APPLICATION_JSON));
+        for (int index = 0; index < 3; index++) {
+            assertEquals(List.of(), client.registeredRobots());
+        }
+        // Control 自身已熔断，不再访问下游。
+        assertEquals(List.of(), client.registeredRobots());
+
+        assertEquals(List.of(), client.enabledMaps());
+        server.verify();
+    }
+
+    @Test
+    void saturatedControlPoolDoesNotConsumeManagementPermits() throws Exception {
+        Semaphore controlPermits = (Semaphore) ReflectionTestUtils.getField(client, "controlRequestPermits");
+        int permitCount = controlPermits.availablePermits();
+        controlPermits.acquire(permitCount);
+        try {
+            assertEquals(List.of(), client.registeredRobots());
+            assertEquals(16, client.generalRequestPoolSnapshot().get("availablePermits"));
+        } finally {
+            controlPermits.release(permitCount);
+        }
+
+        server.expect(requestTo(MAPS_URL)).andRespond(withSuccess(
+                "{\"code\":\"0\",\"data\":{\"records\":[]}}", MediaType.APPLICATION_JSON));
+        assertEquals(List.of(), client.enabledMaps());
+        server.verify();
+    }
+
+    @Test
+    void eiopControlFailuresDoNotOpenTheProjectControlCircuit() {
+        for (int index = 0; index < 3; index++) {
+            server.expect(requestTo(EIOP_CONTROL_STATUS_URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        }
+        server.expect(requestTo(CONTROL_REGISTRY_URL)).andRespond(withSuccess(
+                "{\"records\":[]}", MediaType.APPLICATION_JSON));
+
+        for (int index = 0; index < 3; index++) {
+            assertEquals(List.of(), client.realtimeStatuses(List.of("SN001")));
+        }
+        // EIOP Control 自身已熔断，不再访问下游；本项目 Control 仍必须正常放行。
+        assertEquals(List.of(), client.realtimeStatuses(List.of("SN001")));
+        assertEquals(List.of(), client.registeredRobots());
         server.verify();
     }
 

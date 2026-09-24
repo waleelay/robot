@@ -90,7 +90,7 @@ RTMP 摄像头不会进入 Gateway 目录。快照每 30 秒刷新一次，同�
 | `BIGSCREEN_BFF_PORT` | HTTP 端口 |
 | `CENTER_MANAGE_BASE_URL` | Management 地址 |
 | `CENTER_CONTROL_BASE_URL` | Control 地址 |
-| `CENTER_V1_CONTROL_BASE_URL` | 旧版控制服务地址，供全景聚合内部查询设备实时状态；BFF 未对外注册 `/api/v1/control/**` 透明代理 |
+| `CENTER_EIOP_CONTROL_BASE_URL` | EIOP 控制端地址，供全景聚合内部查询设备实时状态；BFF 未对外注册 `/api/v1/control/**` 透明代理 |
 | `CENTER_MEDIA_BASE_URL` | Media 地址 |
 | `CENTER_CONTROL_WS_URL` | Control WebSocket 地址 |
 | `BIGSCREEN_WS_AUTHORIZATION_MAX_STALENESS_MS` | WebSocket 授权快照最大陈旧时间，默认及代码硬上限 300000；缩短前必须按最大并发身份数重新核算授权查询容量 |
@@ -108,6 +108,12 @@ RTMP 摄像头不会进入 Gateway 目录。快照每 30 秒刷新一次，同�
 | `PANORAMA_GENERAL_CONNECT_TIMEOUT_MS` | Management 通用资源连接超时，默认 1000 ms，代码限制 100 至 5000 ms |
 | `PANORAMA_GENERAL_READ_TIMEOUT_MS` | Management 通用资源读取超时，默认 1500 ms，代码限制 100 至 10000 ms |
 | `PANORAMA_GENERAL_MAX_CONCURRENCY` | 单实例 Management 通用资源请求并发上限，默认 16，代码限制 1 至 32 |
+| `PANORAMA_CONTROL_CONNECT_TIMEOUT_MS` | 当前 Control 查询连接超时，默认 1000 ms，代码限制 100 至 5000 ms |
+| `PANORAMA_CONTROL_READ_TIMEOUT_MS` | 当前 Control 查询读取超时，默认 1500 ms，代码限制 100 至 10000 ms |
+| `PANORAMA_CONTROL_MAX_CONCURRENCY` | 当前 Control 查询独立并发上限，默认 8，代码限制 1 至 32 |
+| `PANORAMA_EIOP_CONTROL_CONNECT_TIMEOUT_MS` | EIOP Control 查询连接超时，默认 1000 ms，代码限制 100 至 5000 ms |
+| `PANORAMA_EIOP_CONTROL_READ_TIMEOUT_MS` | EIOP Control 查询读取超时，默认 1500 ms，代码限制 100 至 10000 ms |
+| `PANORAMA_EIOP_CONTROL_MAX_CONCURRENCY` | EIOP Control 查询独立并发上限，默认 4，代码限制 1 至 32 |
 | `PANORAMA_WORKFLOW_ALARM_CONNECT_TIMEOUT_MS` | 可处置工作流告警独立连接超时，默认 1000 ms |
 | `PANORAMA_WORKFLOW_ALARM_READ_TIMEOUT_MS` | 可处置工作流告警独立读取超时，默认 5000 ms |
 | `PANORAMA_WORKFLOW_ALARM_MAX_CONCURRENCY` | 可处置工作流告警查询独立并发上限，默认 4、代码硬上限 8，不占用通用查询闸门 |
@@ -127,8 +133,10 @@ RTMP 摄像头不会进入 Gateway 目录。快照每 30 秒刷新一次，同�
 5 秒；失败结果不缓存。地图资源、地图任务路径和统计分块短缓存 3 秒，同键并发只执行一次读取；
 可处置工作流告警不缓存，每次请求直接查询 Management，避免人工任务刚就绪时复用旧空结果。缓存采用
 TTL 与 256 项容量上限，在途项完成后立即清理；Overview 与统计分别使用有界
-编排、I/O 执行器和 8 秒/5 秒总截止时间。Management 连续出现连接、读取、5xx 或容量故障时短时熔断，
-401/403 保持原鉴权语义。该机制只用于单实例削峰和故障收口，不替代每次请求的权限校验。
+编排、I/O 执行器和 8 秒/5 秒总截止时间。Management、本项目 Control 和 EIOP Control 分别使用
+独立 HTTP 超时、并发闸门和短时熔断状态；任一服务连续出现连接、读取、5xx 或容量故障，不会打开
+其他服务的熔断器。401/403 保持原鉴权语义。Media 的文件、上传和媒体代理不复用短查询熔断策略，
+避免长请求被全景聚合策略误伤。该机制只用于单实例削峰和故障收口，不替代每次请求的权限校验。
 
 BFF 收到 Management 告警失效通知后，以两条独立链路按授权身份查询工作流和普通告警；
 工作流快照未变化时按 0.3/0.6/1.2/2.4 秒退避并加入抖动，首次加最多四次复查且总时限不超过 5 秒，普通告警查询不会阻塞该收敛过程。

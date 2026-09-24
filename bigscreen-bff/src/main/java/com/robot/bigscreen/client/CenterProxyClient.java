@@ -156,7 +156,7 @@ public class CenterProxyClient {
             return properties.getManageBaseUrl();
         }
         if (path.startsWith("/api/v1/control")) {
-            return properties.getV1ControlBaseUrl();
+            return properties.getEiopControlBaseUrl();
         }
         if (path.startsWith("/api/media")) {
             return properties.getMediaBaseUrl();

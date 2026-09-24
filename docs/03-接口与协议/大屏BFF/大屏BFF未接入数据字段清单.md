@@ -191,7 +191,7 @@ DELETE /api/bigscreen/statistics/reports/{id}
 
 `/internal/**` 已从 BFF 对外代理范围移除，只允许内部服务通过内网地址直接调用。
 
-`/api/v1/control/**` 不是 BFF 对外透明代理。BFF 仅在全景聚合内部通过 `CENTER_V1_CONTROL_BASE_URL` 调用旧版控制服务的 `/api/v1/control/device-realtime-statuses`。
+`/api/v1/control/**` 不是 BFF 对外透明代理。BFF 仅在全景聚合内部通过 `CENTER_EIOP_CONTROL_BASE_URL` 调用 EIOP 控制端的 `/api/v1/control/device-realtime-statuses`。
 
 特殊说明：
 
