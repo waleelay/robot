@@ -136,12 +136,31 @@ prompt_yes_no() {
   esac
 }
 
+prompt_secret() {
+  label=$1
+  printf '%s（输入内容不回显）: ' "$label" >&2
+  previous_stty=$(stty -g 2>/dev/null || true)
+  if [ -n "$previous_stty" ]; then
+    stty -echo
+  fi
+  IFS= read -r answer || answer=
+  if [ -n "$previous_stty" ]; then
+    stty "$previous_stty"
+    printf '\n' >&2
+  fi
+  printf '%s' "$answer"
+}
+
 server_ip=
 internal_ip=
 external_ip=
 overwrite=false
 interactive=false
 install_mode_override=
+selected_stomp_enabled=
+selected_stomp_token_url=
+selected_stomp_client_id=
+selected_stomp_client_secret=
 if [ "$#" -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then
   interactive=true
   echo "=== Robot Media Server 安装向导 ==="
@@ -167,6 +186,37 @@ if [ "$#" -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then
     external_ip=$(prompt_value "外部下发 IP（示例：175.155.35.79；无公网时填内网 IP）" "${current_external_ip:-$internal_ip}")
   fi
 
+  current_stomp_enabled=$(env_value CENTER_STOMP_ENABLED true)
+  if [ "$current_stomp_enabled" = "true" ]; then
+    stomp_default=yes
+  else
+    stomp_default=no
+  fi
+  if prompt_yes_no "是否启用中心端 STOMP 任务/告警事件桥接（生产环境示例：y）" "$stomp_default"; then
+    selected_stomp_enabled=true
+    if [ -n "$(env_value CENTER_STOMP_ACCESS_TOKEN '')" ]; then
+      echo "检测到已有 CENTER_STOMP_ACCESS_TOKEN，将保留直接 Token 认证。"
+    else
+      selected_stomp_token_url=$(prompt_value \
+        "OAuth2 Token 地址（示例：http://host.docker.internal:18080/realms/iam-auth/protocol/openid-connect/token）" \
+        "$(env_value CENTER_STOMP_TOKEN_URL http://host.docker.internal:18080/realms/iam-auth/protocol/openid-connect/token)")
+      selected_stomp_client_id=$(prompt_value \
+        "OAuth2 Client ID（示例：robot-mediaserver-stomp-bridge）" \
+        "$(env_value CENTER_STOMP_CLIENT_ID robot-mediaserver-stomp-bridge)")
+      if [ -n "$(env_value CENTER_STOMP_CLIENT_SECRET '')" ]; then
+        echo "检测到已有 CENTER_STOMP_CLIENT_SECRET，将保留现有密钥。"
+      else
+        selected_stomp_client_secret=$(prompt_secret "OAuth2 Client Secret")
+        [ -n "$selected_stomp_client_secret" ] || {
+          echo "启用中心端 STOMP 时 Client Secret 不能为空" >&2
+          exit 2
+        }
+      fi
+    fi
+  else
+    selected_stomp_enabled=false
+  fi
+
   if prompt_yes_no "是否覆盖已有程序和渲染配置（首次安装示例：n；全量更新示例：y）" no; then
     overwrite=true
   else
@@ -180,11 +230,18 @@ if [ "$#" -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then
   echo "  运行目录：$selected_workspace"
   [ -z "$internal_ip" ] || echo "  内部 IP： $internal_ip"
   [ -z "$external_ip" ] || echo "  外部 IP： $external_ip"
+  echo "  中心端 STOMP：$selected_stomp_enabled"
   echo "  覆盖安装：$overwrite"
   prompt_yes_no "确认开始安装（核对以上参数无误后输入 y）" no || { echo "已取消安装"; exit 0; }
 
   set_env_value DEPLOY_NETWORK_MODE "$selected_network_mode"
   set_env_value APP_WORKSPACE_ROOT "$selected_workspace"
+  set_env_value CENTER_STOMP_ENABLED "$selected_stomp_enabled"
+  if [ "$selected_stomp_enabled" = "true" ]; then
+    [ -z "$selected_stomp_token_url" ] || set_env_value CENTER_STOMP_TOKEN_URL "$selected_stomp_token_url"
+    [ -z "$selected_stomp_client_id" ] || set_env_value CENTER_STOMP_CLIENT_ID "$selected_stomp_client_id"
+    [ -z "$selected_stomp_client_secret" ] || set_env_value CENTER_STOMP_CLIENT_SECRET "$selected_stomp_client_secret"
+  fi
 fi
 
 while [ "$#" -gt 0 ]; do
@@ -247,6 +304,9 @@ if [ -n "$install_mode_override" ]; then
   export INSTALL_MODE="$install_mode_override"
 fi
 
+# 先迁移旧变量并补齐部署密钥，确保后续 host 地址改写和配置校验读取的是新键。
+sh "$INTERNAL_DIR/ensure-env-secrets.sh" "$SCRIPT_DIR/.env"
+
 raw_workspace_root=$(env_value APP_WORKSPACE_ROOT /home/mounts/media)
 APP_WORKSPACE_ROOT=$(expand_user_path "$raw_workspace_root")
 if [ "$APP_WORKSPACE_ROOT" != "$raw_workspace_root" ]; then
@@ -277,6 +337,7 @@ case "$DEPLOY_NETWORK_MODE" in
     set_env_value_if_default LIVEKIT_EGRESS_WS_URL ws://host.docker.internal:7880 ws://127.0.0.1:7880
     set_env_value_if_default MEDIA_SERVICE_BASE_URL http://media-service:8088 http://127.0.0.1:8088
     set_env_value_if_default CENTER_MANAGE_BASE_URL http://host.docker.internal:8866 http://127.0.0.1:8866
+    set_env_value_if_default CENTER_EIOP_CONTROL_BASE_URL http://host.docker.internal:8867 http://127.0.0.1:8867
     set_env_value_if_default CENTER_CONTROL_BASE_URL http://control-service:8082 http://127.0.0.1:8082
     set_env_value_if_default CENTER_MEDIA_BASE_URL http://media-service:8088 http://127.0.0.1:8088
     set_env_value_if_default CENTER_CONTROL_WS_URL ws://control-service:8082/ws/control ws://127.0.0.1:8082/ws/control
@@ -290,9 +351,10 @@ case "$DEPLOY_NETWORK_MODE" in
 esac
 export DEPLOY_NETWORK_MODE
 
+sh "$INTERNAL_DIR/validate-env.sh" "$SCRIPT_DIR/.env"
 sh "$INTERNAL_DIR/preflight-network.sh"
 sh "$INTERNAL_DIR/load-images.sh"
-sh "$INTERNAL_DIR/prepare-workspace.sh"
+ENV_ALREADY_PREPARED=true sh "$INTERNAL_DIR/prepare-workspace.sh"
 
 cd "$SCRIPT_DIR"
 $COMPOSE -f "$COMPOSE_FILE" up -d "$@"

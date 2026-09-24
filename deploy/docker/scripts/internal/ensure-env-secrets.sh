@@ -73,6 +73,19 @@ remove_obsolete_key() {
   echo "已移除废弃部署变量: $key"
 }
 
+migrate_obsolete_key() {
+  old_key=$1
+  new_key=$2
+  old_value=$(env_value "$old_key")
+  if [ -z "$old_value" ]; then
+    remove_obsolete_key "$old_key"
+    return
+  fi
+  set_env_value "$new_key" "$old_value"
+  remove_obsolete_key "$old_key"
+  echo "已迁移部署变量: $old_key -> $new_key"
+}
+
 ensure_secret() {
   key=$1
   if [ -n "$(env_value "$key")" ]; then
@@ -84,4 +97,8 @@ ensure_secret() {
 }
 
 remove_obsolete_key MEDIA_FILE_PROGRESS_MANAGEMENT_TOKEN
+migrate_obsolete_key CENTER_V1_CONTROL_BASE_URL CENTER_EIOP_CONTROL_BASE_URL
+migrate_obsolete_key PANORAMA_V1_CONTROL_CONNECT_TIMEOUT_MS PANORAMA_EIOP_CONTROL_CONNECT_TIMEOUT_MS
+migrate_obsolete_key PANORAMA_V1_CONTROL_READ_TIMEOUT_MS PANORAMA_EIOP_CONTROL_READ_TIMEOUT_MS
+migrate_obsolete_key PANORAMA_V1_CONTROL_MAX_CONCURRENCY PANORAMA_EIOP_CONTROL_MAX_CONCURRENCY
 ensure_secret MEDIA_FILE_PROGRESS_WEBHOOK_TOKEN

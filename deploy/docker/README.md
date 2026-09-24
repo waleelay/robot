@@ -471,6 +471,11 @@ sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/m
 
 向导会询问网络模式、运行目录、内部 IP、外部 IP 和是否覆盖安装，确认后才开始执行。也可以使用下面的非交互命令。
 
+中心端 STOMP 任务/告警桥接默认启用。首次安装时，向导还会确认是否启用该能力，并采集
+OAuth2 Token 地址、Client ID 和 Client Secret；Secret 输入不会回显。已有 `.env` 中的非空
+Token 或 Client Secret 会直接保留，不会在终端输出。非交互安装会在启动容器前执行配置预检：
+启用 STOMP 时必须配置直接 Access Token，或完整配置 OAuth2 三项，缺少任意一项都会立即停止安装。
+
 方括号内是当前默认值，直接回车即采用该值。OpenStack bridge 部署示例：
 
 ```text
@@ -515,6 +520,20 @@ sed -i '' 's#^APP_WORKSPACE_ROOT=.*#APP_WORKSPACE_ROOT=/Users/用户名/mounts/m
 
 ```bash
 grep --color=never -nE '^(MYSQL_URL|MYSQL_USERNAME|MYSQL_PASSWORD|REDIS_HOST|REDIS_PORT|LIVEKIT_URL|LIVEKIT_INTERNAL_URL|MINIO_ENDPOINT|MINIO_PUBLIC_ENDPOINT|MQTT_BROKER_URL|ELASTICSEARCH_URIS|CENTER_MANAGE_BASE_URL)=' .env
+```
+
+非交互安装前还应确认中心端 STOMP 认证。生产推荐使用 OAuth2 client_credentials，密钥必须由
+管理中心/IAM 分配，安装脚本不会自行生成外部系统凭据：
+
+```bash
+grep --color=never -nE '^(CENTER_STOMP_ENABLED|CENTER_STOMP_WS_URL|CENTER_STOMP_TOKEN_URL|CENTER_STOMP_CLIENT_ID)=' .env
+grep -q '^CENTER_STOMP_CLIENT_SECRET=..' .env && echo 'CENTER_STOMP_CLIENT_SECRET=已配置' || echo 'CENTER_STOMP_CLIENT_SECRET=未配置'
+```
+
+当前环境明确不需要中心端任务和告警实时事件时，必须显式关闭，而不是让启用状态带着空凭据运行：
+
+```bash
+sed -i 's#^CENTER_STOMP_ENABLED=.*#CENTER_STOMP_ENABLED=false#' .env
 ```
 
 LiveKit Server 在两套 Compose 中均使用宿主机网络，避免 `50000-60000/udp`
@@ -644,6 +663,10 @@ curl -k -i -X OPTIONS \
 ```bash
 ./install.sh --overwrite
 ```
+
+覆盖安装会复用名称由 `DOCKER_NETWORK` 指定、且子网与 `DOCKER_NETWORK_SUBNET`
+完全一致的已有项目网络；该网络产生的 `br-*` 路由不会被误判为外部冲突。若同名网络的
+子网与当前 `.env` 不一致，预检仍会停止安装，避免运行中直接替换网络。
 
 这条命令会完成：
 
@@ -775,6 +798,10 @@ UPDATE_SERVICES="media-service control-service" UPDATE_FRONTEND=false ./deploy/d
 `1000`、`1500`、`8`。`PANORAMA_WORKFLOW_ALARM_MAX_CONCURRENCY` 单独限制可处置工作流告警查询，
 默认为 `1`、代码硬上限为 `4`，该接口使用独立熔断状态，不能因超时打开通用查询熔断器。修改这些变量后必须执行 `docker compose up -d --force-recreate bigscreen-bff`，
 不能只执行 `restart`。
+
+本项目 Control 和 EIOP Control 还分别使用 `PANORAMA_CONTROL_*`、`PANORAMA_EIOP_CONTROL_*` 配置，
+默认并发上限为 `8` 和 `4`。Management、本项目 Control、EIOP Control 的 HTTP 超时、并发闸门和熔断状态
+彼此独立，单个下游故障不会阻断其他正常下游。Media 文件与媒体代理不使用这套短查询熔断策略。
 
 大屏 WebSocket 初始化与配额由 `BIGSCREEN_WS_INITIALIZATION_WAIT_MS`、
 `BIGSCREEN_WS_MAX_SESSIONS_PER_IDENTITY`、`BIGSCREEN_WS_MAX_SESSIONS_PER_ORGANIZATION` 和

@@ -22,6 +22,7 @@ env_value() {
 
 DEPLOY_NETWORK_MODE=$(env_value DEPLOY_NETWORK_MODE bridge)
 DOCKER_NETWORK_SUBNET=$(env_value DOCKER_NETWORK_SUBNET 10.253.10.0/24)
+DOCKER_NETWORK=$(env_value DOCKER_NETWORK robot-mediaserver)
 
 if [ "$DEPLOY_NETWORK_MODE" = "host" ]; then
   echo "network preflight: host mode, skip Docker bridge subnet checks"
@@ -42,10 +43,39 @@ routes_file=$(mktemp "${TMPDIR:-/tmp}/robot-routes.XXXXXX")
 docker_networks_file=$(mktemp "${TMPDIR:-/tmp}/robot-docker-networks.XXXXXX")
 trap 'rm -f "$routes_file" "$docker_networks_file"' EXIT
 
-ip route show > "$routes_file"
-
+project_bridge=
 if command -v docker >/dev/null 2>&1; then
-  docker network inspect $(docker network ls -q) --format '{{range .IPAM.Config}}{{.Subnet}}{{"\n"}}{{end}}' > "$docker_networks_file" 2>/dev/null || true
+  project_network_id=$(docker network ls --format '{{.ID}} {{.Name}}' 2>/dev/null \
+    | awk -v name="$DOCKER_NETWORK" '$2 == name { print $1; exit }')
+  if [ -n "$project_network_id" ]; then
+    project_subnets=$(docker network inspect "$project_network_id" \
+      --format '{{range .IPAM.Config}}{{.Subnet}}{{"\n"}}{{end}}' 2>/dev/null || true)
+    if ! printf '%s\n' "$project_subnets" | grep -Fqx "$DOCKER_NETWORK_SUBNET"; then
+      echo "network preflight failed: existing project network $DOCKER_NETWORK does not use DOCKER_NETWORK_SUBNET $DOCKER_NETWORK_SUBNET" >&2
+      echo "existing subnets:" >&2
+      printf '%s\n' "$project_subnets" | sed '/^$/d; s/^/  - /' >&2
+      echo "Run docker compose down before changing the project subnet, or restore the subnet used by the existing network." >&2
+      exit 1
+    fi
+    project_bridge=$(docker network inspect "$project_network_id" \
+      --format '{{index .Options "com.docker.network.bridge.name"}}' 2>/dev/null || true)
+    if [ -z "$project_bridge" ]; then
+      project_bridge="br-$(printf '%s' "$project_network_id" | cut -c1-12)"
+    fi
+  fi
+
+  for network_id in $(docker network ls -q 2>/dev/null); do
+    [ "$network_id" = "$project_network_id" ] && continue
+    docker network inspect "$network_id" \
+      --format '{{range .IPAM.Config}}{{.Subnet}}{{"\n"}}{{end}}' \
+      >> "$docker_networks_file" 2>/dev/null || true
+  done
+fi
+
+if [ -n "$project_bridge" ]; then
+  ip route show | awk -v bridge="$project_bridge" '$0 !~ (" dev " bridge "([[:space:]]|$)")' > "$routes_file"
+else
+  ip route show > "$routes_file"
 fi
 
 awk -v target="$DOCKER_NETWORK_SUBNET" '

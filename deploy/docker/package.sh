@@ -402,7 +402,7 @@ awk -v target_arch="$TARGET_ARCH" -v target_platform="$TARGET_PLATFORM" '
 ' "$SCRIPT_DIR/.env.example" > "$STAGING_DIR/.env.example"
 cp "$SCRIPT_DIR/install.sh" "$STAGING_DIR/install.sh"
 cp "$SCRIPT_DIR/uninstall.sh" "$STAGING_DIR/uninstall.sh"
-for helper in configure-env-ip.sh ensure-env-secrets.sh install-robot-ui-dist.sh load-images.sh preflight-network.sh prepare-workspace.sh; do
+for helper in configure-env-ip.sh ensure-env-secrets.sh install-robot-ui-dist.sh load-images.sh preflight-network.sh prepare-workspace.sh validate-env.sh; do
   cp "$INTERNAL_SCRIPT_DIR/$helper" "$STAGING_DIR/scripts/internal/$helper"
 done
 
@@ -436,7 +436,8 @@ cd /home/robot-mediaserver-installer
 首次直接执行 `./install.sh` 会自动从 `.env.example` 创建 `.env`；只有需要在安装前调整端口、中间件地址或账号时，才提前复制并修改 `.env`。
 服务器安装目录统一为 `/home/robot-mediaserver-installer`，运行挂载目录统一为 `/home/mounts/media`。
 直接执行 `./install.sh` 或 `./uninstall.sh` 会进入交互式向导；显式传入参数时按非交互模式执行。
-安装脚本会自动执行网络预检、离线镜像导入、密钥补齐、程序安装和配置渲染。
+安装脚本会先校验已启用能力的条件配置，再执行网络预检、离线镜像导入、部署密钥补齐、程序安装和配置渲染。
+中心端 STOMP 默认启用；交互式向导会采集 OAuth2 Client Secret，非交互安装缺少认证配置时会在启动容器前停止并列出缺项。
 默认运行目录为 `/home/mounts/media`，可通过 `.env` 中的 `APP_WORKSPACE_ROOT` 修改。
 默认卸载保留运行目录；确需删除时执行 `./uninstall.sh --purge-workspace`。
 EOF

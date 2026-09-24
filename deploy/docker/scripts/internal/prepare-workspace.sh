@@ -12,7 +12,9 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "created $ENV_FILE from $DEPLOY_DIR/.env.example"
 fi
 
-sh "$SCRIPT_DIR/ensure-env-secrets.sh" "$ENV_FILE"
+if [ "${ENV_ALREADY_PREPARED:-false}" != "true" ]; then
+  sh "$SCRIPT_DIR/ensure-env-secrets.sh" "$ENV_FILE"
+fi
 
 env_value() {
   key=$1
