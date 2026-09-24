@@ -25,12 +25,12 @@
               v-for="(item, key, index) of type.cameras"
               :key="key"
               class="item flx-justify-between"
-              :class="{ 'is-active': checkedIds.includes(item.key) }"
-              :draggable="!checkedIds.includes(item.key)"
+              :class="{ 'is-active': isCameraChecked(item.key) }"
+              :draggable="!isCameraChecked(item.key)"
               @dragstart="onDragStart($event, item, 'equipmentListComponent')"
               @dragend="onDragEnd"
               @click="handleClickCamera(item)"
-              :style="{ cursor: !checkedIds.includes(item.key) ? 'grab' : 'default' }"
+              :style="{ cursor: !isCameraChecked(item.key) ? 'grab' : 'default' }"
             >
               <!-- @click="handleSelectEquipment(item)" -->
               <div class="flx-center">
@@ -52,11 +52,14 @@ import { onDragStart, onDragEnd } from '@/store/modules/dragVideo.js';
 import { ROBOT_TYPE_INFO } from '../../../../../constants/robot';
 export default {
   name: 'EquipmentListTree',
+  props: {
+    checkedCameraIds: {
+      type: Array,
+      default: () => []
+    }
+  },
   computed: {
     ...mapState('dragVideo', ['splitType']),
-    activeCameras() {
-      return this.$store.getters['websocketRobot/getActiveCameras']
-    },
     // robots() {
       // return this.$store.getters['websocketRobot/getRobots']?.filter(item => item.robotId === this.$store.getters['websocketRobot/getSelectedRobotId']);
     // }
@@ -116,7 +119,6 @@ export default {
         // },
       ],
       collapse: [],
-      checkedIds: [],
       loaded: false,
       timer: null
     }
@@ -163,10 +165,14 @@ export default {
     toggleCollapse(index) {
       this.$set(this.collapse, index, !this.collapse[index])      
     },
+    isCameraChecked(cameraKey) {
+      const targetKey = String(cameraKey)
+      return this.checkedCameraIds.some(key => String(key) === targetKey)
+    },
     async handleClickCamera(item) {
       // 已选中的可再次点击取消；未选中的仅在一分屏或仍有空槽时加入
-      const alreadyChecked = this.checkedIds.includes(item.key)
-      if (alreadyChecked || this.splitType === 1 || this.splitType !== this.checkedIds.length) {
+      const alreadyChecked = this.isCameraChecked(item.key)
+      if (alreadyChecked || this.splitType === 1 || this.splitType !== this.checkedCameraIds.length) {
         this.$emit('updateVideo', item)
       }
     },
@@ -177,14 +183,6 @@ export default {
       this.loaded = true
       this.$emit('updateVideo', list)
     }
-  },
-  watch: {
-    activeCameras: {
-      handler(newVal) {
-        this.checkedIds = Object.keys(newVal).map(key => key)
-      },
-      deep: true
-    },
   },
   beforeDestroy() {
     if (this.timer) {

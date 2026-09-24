@@ -225,6 +225,10 @@ export default {
     closeEndedTaskVideos: {
       type: Function,
       default: null
+    },
+    checkedRobotIds: {
+      type: Array,
+      default: () => []
     }
   },
   data() {
@@ -266,18 +270,12 @@ export default {
   computed: {
     ...mapState('dragVideo', ['dropResult', 'splitType']),
     ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData', 'taskFixedCameraData']),
-    activeCameras() {
-      return this.$store.getters['websocketRobot/getActiveCameras']
-    },
     // 获取基础信息
     robots() {
       return this.$store.getters['websocketRobot/getRobots'];
     },
     cameras() {
       return this.$store.getters['websocketRobot/getCameras'] || {}
-    },
-    checkedRobotIds() {
-      return [...new Set(Object.values(this.activeCameras).map(item => item.robot.robotId))];
     },
     tasks() {
       return getDescArr(this.taskData || {}, 'timestamp').filter(isTaskListVisible)
@@ -756,11 +754,6 @@ export default {
         }
         if (String(this.appliedRouteTaskId) === String(routeTask.taskId || '')) return
         this.executePlay()
-      },
-      deep: true
-    },
-    activeCameras: {
-      handler(newVal) {
       },
       deep: true
     },

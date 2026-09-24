@@ -2115,7 +2115,6 @@ const actions = {
   stopCamera({ commit, state, dispatch }, data) {
     const key = data && data.key
     if (!key) return Promise.resolve()
-    cancelViewerReconnect(key)
     const current = stopOperations.get(key)
     if (current) return current
     const camera = state.cameras[key]
@@ -2125,6 +2124,7 @@ const actions = {
     const starting = startOperations.get(key)
     // 仍有其它画面消费同一路时：只摘本窗口，不进 stopOperations，避免取消共享起流/waitForVideo
     if (remainingTargets.length > 0) return dispatch('performStopCamera', data)
+    cancelViewerReconnect(key)
     if (camera && remainingTargets.length === 0) {
       const attachTargets = { ...(camera.attachTargets || {}) }
       if (data.consumerId && starting) delete attachTargets[data.consumerId]
@@ -2161,7 +2161,10 @@ const actions = {
     if (consumerId && camera.attachTargets) {
       const nextTargets = { ...camera.attachTargets }
       delete nextTargets[consumerId]
-      detachCameraMedia(camera, attachPrefix)
+      // 同一业务墙快速销毁、重建时，新旧实例可能复用相同 DOM prefix。
+      // 只要该挂载目标仍由其他消费者持有，旧实例的迟到 release 就不能摘除新画面。
+      const prefixStillOwned = Object.values(nextTargets).includes(attachPrefix)
+      if (!prefixStillOwned) detachCameraMedia(camera, attachPrefix)
       if (Object.keys(nextTargets).length > 0) {
         camera.attachTargets = nextTargets
         commit('setCamera', camera)

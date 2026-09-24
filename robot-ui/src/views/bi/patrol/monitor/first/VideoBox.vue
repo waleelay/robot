@@ -158,9 +158,6 @@ export default {
   computed: {
     ...mapState('websocketRobot', ['cameras', 'selectedRobotId', 'robots']),
     ...mapState('websocketExtraData', ['robotBaseInfo']),
-    activeCameras() {
-      return this.$store.getters['websocketRobot/getActiveCameras']
-    },
     index() {
       return this.videoIndex
     },
@@ -253,7 +250,7 @@ export default {
   },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
-    ...mapActions('websocketRobot', ['toggleLiveRecording', 'setSelectedRobotId', 'setControlCenterReturnTo', 'stopCamera', 'restartCamera']),
+    ...mapActions('websocketRobot', ['toggleLiveRecording', 'restartCamera']),
     handleRestartVideoSource() {
       if (!this.cameraInfo?.session) {
         if (this.isFixedCamera) this.$emit('refreshVideo', `slot_${this.index}`)
@@ -276,13 +273,7 @@ export default {
       this.recordTimer = setInterval(update, 1000)
     },
     async goControlCenter(robotId) {
-      for (const [index, key] of Object.keys(this.activeCameras).entries()) {
-        if (this.activeCameras[key]?.camera) {
-          await this.stopCamera(this.activeCameras[key].camera);
-        }
-      }
-      this.setControlCenterReturnTo(null)
-      this.setSelectedRobotId(robotId)
+      this.$emit('openControlCenter', robotId)
     },
     handleFullScreenChange(e) {
       const idName = `${this.prefixId}slot_${this.index}`

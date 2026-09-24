@@ -325,7 +325,7 @@ test('原宫格中的固定摄像头只在真实恢复可播放时重建一次�
     },
     async stopCamera() {}
   }, methods, [
-    'fixedCameraConsumerId', 'startCameraPayload', 'stopCameraPayload',
+    'wallConsumerId', 'startCameraPayload', 'stopCameraPayload',
     'resolvePlaybackRobot', 'isCameraIntended', 'isSlotCameraIntended', 'startAssignedCamera'
   ])
 
@@ -354,7 +354,7 @@ test('视频启动失败后清理预占宫格', async () => {
     $set(target, field, value) { target[field] = value },
     async startCamera() { throw new Error('创建失败') }
   }, methods, [
-    'fixedCameraConsumerId', 'startCameraPayload', 'syncSlotSelections',
+    'wallConsumerId', 'startCameraPayload', 'syncSlotSelections',
     'assignSlotCamera', 'takeSlotCamera', 'isSlotCameraIntended', 'startAssignedCamera'
   ])
 
@@ -381,7 +381,7 @@ test('固定摄像头启动失败后保留播放意图等待源恢复', async ()
     $set(target, field, value) { target[field] = value },
     async startCamera() { throw new Error('固定摄像头启动失败') }
   }, methods, [
-    'fixedCameraConsumerId', 'startCameraPayload', 'syncSlotSelections',
+    'wallConsumerId', 'startCameraPayload', 'syncSlotSelections',
     'assignSlotCamera', 'takeSlotCamera', 'isSlotCameraIntended', 'startAssignedCamera'
   ])
 
@@ -419,7 +419,7 @@ test('缩小宫格先收缩播放意图且连续切换不会恢复已移除视�
     async $nextTick() {},
     rebindCameraTracks() {}
   }, methods, [
-    'fixedCameraConsumerId', 'resolvePlaybackRobot', 'stopCameraPayload'
+    'wallConsumerId', 'resolvePlaybackRobot', 'stopCameraPayload', 'syncSlotSelections'
   ])
 
   const toSix = methods.applySplitVideoChannels.call(context, items, 6)
@@ -455,6 +455,7 @@ test('固定摄像头人工关闭先撤销槽位意图且状态刷新不得重�
   let starts = 0
   let stopPayload
   const context = attachMethods({
+    _uid: 101,
     prefixId: 'test-video-div',
     splitType: 1,
     robots: [robot],
@@ -473,7 +474,7 @@ test('固定摄像头人工关闭先撤销槽位意图且状态刷新不得重�
       await stopGate
     }
   }, methods, [
-    'fixedCameraConsumerId', 'resolvePlaybackRobot', 'startCameraPayload',
+    'wallConsumerId', 'resolvePlaybackRobot', 'startCameraPayload',
     'stopCameraPayload', 'syncSlotSelections', 'takeSlotCamera',
     'isCameraIntended', 'stopTakenCamera', 'closeSlotCamera'
   ])
@@ -485,7 +486,7 @@ test('固定摄像头人工关闭先撤销槽位意图且状态刷新不得重�
 
   await methods.syncVideoSlots.call(context)
   assert.equal(starts, 0)
-  assert.equal(stopPayload.consumerId, 'patrol-monitor-fixed-camera:test-video-div')
+  assert.equal(stopPayload.consumerId, 'patrol-monitor-wall:test-video-div:101')
   assert.equal(stopPayload.prefixId, 'test-video-div')
 
   releaseStop()
@@ -504,6 +505,7 @@ test('快速切换槽位时迟到的旧停止不得覆盖最后一次播放意�
   const stopA = new Promise(resolve => { releaseA = resolve })
   const starts = []
   const context = attachMethods({
+    _uid: 102,
     prefixId: 'test-video-div',
     robots: [robot],
     cameras,
@@ -518,7 +520,7 @@ test('快速切换槽位时迟到的旧停止不得覆盖最后一次播放意�
     },
     async startCamera({ camera }) { starts.push(camera.key) }
   }, methods, [
-    'fixedCameraConsumerId', 'resolvePlaybackRobot', 'startCameraPayload',
+    'wallConsumerId', 'resolvePlaybackRobot', 'startCameraPayload',
     'stopCameraPayload', 'syncSlotSelections', 'assignSlotCamera',
     'takeSlotCamera', 'isSlotCameraIntended', 'stopTakenCamera',
     'closeSlotCamera', 'startAssignedCamera', 'replaceSlotCamera'
@@ -553,7 +555,7 @@ test('替换槽位时旧视频停止失败不得阻断最新视频启动', async
     async stopCamera() { throw new Error('停止旧视频失败') },
     async startCamera({ camera }) { starts.push(camera.key) }
   }, methods, [
-    'fixedCameraConsumerId', 'resolvePlaybackRobot', 'startCameraPayload',
+    'wallConsumerId', 'resolvePlaybackRobot', 'startCameraPayload',
     'stopCameraPayload', 'syncSlotSelections', 'assignSlotCamera',
     'takeSlotCamera', 'isSlotCameraIntended', 'stopTakenCamera',
     'startAssignedCamera', 'replaceSlotCamera'
@@ -566,13 +568,14 @@ test('替换槽位时旧视频停止失败不得阻断最新视频启动', async
   assert.deepEqual(starts, ['next'])
 })
 
-test('固定摄像头使用独立消费者身份且机器人启动停止载荷保持不变', () => {
+test('机器人与固定摄像头统一使用当前视频墙消费者身份', () => {
   const methods = componentMethods('views/bi/patrol/monitor/first/LeftVideo.vue')
   const context = attachMethods({
+    _uid: 102,
     prefixId: 'test-video-div',
     robots: [],
     isFixedCameraRobot: methods.isFixedCameraRobot
-  }, methods, ['fixedCameraConsumerId', 'resolvePlaybackRobot'])
+  }, methods, ['wallConsumerId', 'resolvePlaybackRobot'])
   const robot = { robotId: 'robot-1', status: 'online' }
   const robotCamera = { key: 'robot-camera' }
   const fixed = { robotId: 'fixed-1', sourceType: 'FIXED_CAMERA' }
@@ -582,18 +585,76 @@ test('固定摄像头使用独立消费者身份且机器人启动停止载荷�
   assert.equal(robotStartPayload.robot, robot)
   assert.equal(robotStartPayload.camera, robotCamera)
   assert.equal(robotStartPayload.throwOnError, true)
-  assert.equal(robotStartPayload.consumerId, undefined)
-  assert.equal(robotStartPayload.prefixId, undefined)
-  assert.equal(methods.stopCameraPayload.call(context, robotCamera, { robot }), robotCamera)
+  assert.equal(robotStartPayload.consumerId, 'patrol-monitor-wall:test-video-div:102')
+  assert.equal(robotStartPayload.prefixId, 'test-video-div')
+  const robotStopPayload = methods.stopCameraPayload.call(context, robotCamera, { robot })
+  assert.equal(robotStopPayload.key, 'robot-camera')
+  assert.equal(robotStopPayload.consumerId, 'patrol-monitor-wall:test-video-div:102')
+  assert.equal(robotStopPayload.prefixId, 'test-video-div')
   const fixedStartPayload = methods.startCameraPayload.call(context, fixed, fixedCamera)
   assert.equal(fixedStartPayload.robot, fixed)
   assert.equal(fixedStartPayload.camera, fixedCamera)
   assert.equal(fixedStartPayload.throwOnError, true)
-  assert.equal(fixedStartPayload.consumerId, 'patrol-monitor-fixed-camera:test-video-div')
+  assert.equal(fixedStartPayload.consumerId, 'patrol-monitor-wall:test-video-div:102')
   assert.equal(fixedStartPayload.prefixId, 'test-video-div')
 })
 
-test('页面销毁只释放固定摄像头消费者且保留机器人视频', async () => {
+test('视频墙槽位同步同时发布摄像头和装备选中状态', () => {
+  const methods = componentMethods('views/bi/patrol/monitor/first/LeftVideo.vue')
+  const selections = []
+  const context = attachMethods({
+    ZQL_playingSource: {
+      slot_1: 'camera-visible',
+      slot_2: 'camera-thermal',
+      slot_3: null
+    },
+    ZQL_videosInfos: {
+      slot_1: { key: 'camera-visible', robotId: 1001 },
+      slot_2: { key: 'camera-thermal', robot: { robotId: '1001' } },
+      slot_3: null
+    },
+    checkedIds: [],
+    lastCheckedIds: [],
+    $emit(event, payload) { selections.push({ event, payload }) }
+  }, methods, ['orderedPlayingVideoInfos', 'getPlayingRobotIds'])
+
+  methods.syncSlotSelections.call(context)
+
+  assert.deepEqual(Array.from(context.checkedIds), ['camera-visible', 'camera-thermal'])
+  assert.deepEqual(JSON.parse(JSON.stringify(selections)), [{
+    event: 'selection-change',
+    payload: {
+      cameraKeys: ['camera-visible', 'camera-thermal'],
+      robotIds: ['1001']
+    }
+  }])
+})
+
+test('同一业务视频墙的不同组件实例使用不同消费者身份', () => {
+  const methods = componentMethods('views/bi/patrol/monitor/first/LeftVideo.vue')
+  const first = { prefixId: 'test-video-div', _uid: 201 }
+  const second = { prefixId: 'test-video-div', _uid: 202 }
+
+  assert.equal(methods.wallConsumerId.call(first), 'patrol-monitor-wall:test-video-div:201')
+  assert.equal(methods.wallConsumerId.call(second), 'patrol-monitor-wall:test-video-div:202')
+  assert.notEqual(methods.wallConsumerId.call(first), methods.wallConsumerId.call(second))
+})
+
+test('一级和控制中心列表选中状态只接收当前视频墙槽位结果', () => {
+  const firstIndex = read('views/bi/patrol/monitor/first/Index.vue')
+  const firstTree = read('views/bi/patrol/monitor/first/TaskListTree.vue')
+  const secondIndex = read('views/bi/patrol/monitor/second/Index.vue')
+  const secondTree = read('views/bi/patrol/monitor/second/EquipmentListTree.vue')
+
+  assert.match(firstIndex, /:checked-robot-ids="playingRobotIds"/)
+  assert.match(firstIndex, /@selection-change="handleVideoSelectionChange"/)
+  assert.doesNotMatch(firstTree, /getActiveCameras/)
+  assert.match(secondIndex, /:checked-camera-ids="playingCameraIds"/)
+  assert.match(secondIndex, /@selection-change="handleVideoSelectionChange"/)
+  assert.doesNotMatch(secondTree, /getActiveCameras/)
+})
+
+test('页面销毁释放当前视频墙全部消费者', async () => {
   const methods = componentMethods('views/bi/patrol/monitor/first/LeftVideo.vue')
   const fixedRobot = { robotId: 'fixed-1', sourceType: 'FIXED_CAMERA' }
   const mobileRobot = { robotId: 'robot-1', status: 'online' }
@@ -601,6 +662,7 @@ test('页面销毁只释放固定摄像头消费者且保留机器人视频', as
   const robotCamera = { key: 'robot-camera', robotId: 'robot-1' }
   const stops = []
   const context = attachMethods({
+    _uid: 103,
     prefixId: 'test-video-div',
     robots: [fixedRobot, mobileRobot],
     cameras: { 'fixed-camera': fixedCamera, 'robot-camera': robotCamera },
@@ -615,20 +677,20 @@ test('页面销毁只释放固定摄像头消费者且保留机器人视频', as
     $set(target, field, value) { target[field] = value },
     async stopCamera(payload) { stops.push(payload) }
   }, methods, [
-    'fixedCameraConsumerId', 'resolvePlaybackRobot', 'stopCameraPayload',
+    'wallConsumerId', 'resolvePlaybackRobot', 'stopCameraPayload',
     'syncSlotSelections', 'takeSlotCamera', 'stopTakenCamera'
   ])
 
-  methods.releaseFixedCameraConsumers.call(context)
-  await Promise.resolve()
+  await methods.releaseAllSlots.call(context)
 
   assert.equal(context.ZQL_playingSource.slot_1, null)
-  assert.equal(context.ZQL_playingSource.slot_2, 'robot-camera')
-  assert.equal(context.checkedIds.length, 1)
-  assert.equal(context.checkedIds[0], 'robot-camera')
-  assert.equal(stops.length, 1)
+  assert.equal(context.ZQL_playingSource.slot_2, null)
+  assert.equal(context.checkedIds.length, 0)
+  assert.equal(stops.length, 2)
   assert.equal(stops[0].key, 'fixed-camera')
-  assert.equal(stops[0].consumerId, 'patrol-monitor-fixed-camera:test-video-div')
+  assert.equal(stops[0].consumerId, 'patrol-monitor-wall:test-video-div:103')
+  assert.equal(stops[1].key, 'robot-camera')
+  assert.equal(stops[1].consumerId, 'patrol-monitor-wall:test-video-div:103')
 })
 
 test('视频续期请求使用短超时且不携带界面反馈策略', async () => {
@@ -1013,6 +1075,9 @@ test('同路多画面时局部 stop 不进 stopOperations，起流 attachTargets
 
   assert.match(stopCamera, /if \(remainingTargets\.length > 0\) return dispatch\('performStopCamera', data\)/)
   assert.doesNotMatch(stopCamera, /remainingTargets\.length > 0 && !starting/)
+  assert.match(stopCamera, /remainingTargets\.length > 0\)[\s\S]*cancelViewerReconnect\(key\)/)
+  assert.match(source, /const prefixStillOwned = Object\.values\(nextTargets\)\.includes\(attachPrefix\)/)
+  assert.match(source, /if \(!prefixStillOwned\) detachCameraMedia\(camera, attachPrefix\)/)
   assert.match(startCamera, /latestTargets/)
   assert.match(startCamera, /尽早写入 attachTargets/)
   assert.match(startCamera, /仍有其它画面时：保留会话/)
@@ -1338,7 +1403,7 @@ test('固定摄像头启动中关闭会立即撤销消费者且迟到启动不�
     }
     return originalDispatch(type, payload)
   }
-  const consumerId = 'patrol-monitor-fixed-camera:test-video-div'
+  const consumerId = 'patrol-monitor-wall:test-video-div'
   const start = module.actions.startCamera(context, {
     robot,
     camera,

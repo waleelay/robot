@@ -1,7 +1,7 @@
 <template>
   <div class="d-flex h100 pr20 pl10 pb10 pt20">
     <div class="left flex-column h100 wp284" style="min-width: 0; overflow: hidden;">
-      <EquipmentListTree @updateVideo="updateVideo" class="flex1" style="min-height: 0;" />
+      <EquipmentListTree :checked-camera-ids="playingCameraIds" @updateVideo="updateVideo" class="flex1" style="min-height: 0;" />
       <div class="mt20">
         <div class="card-title title-284-37 flx-justify-between flx-align-center pr4">
           <div class="text">多媒体记录</div>
@@ -63,7 +63,7 @@
         <svg-icon icon-class="right" class="ml10" style="color: #fff; font-size: 14px;"></svg-icon>
         <span class="page-tab__item is-current ml10">控制中心</span>
       </div>
-      <LeftVideo :prefixId="prefixId" ref="leftVideoRef" style="width: 1134px;" card-title-class="title-1127-37" />
+      <LeftVideo :prefixId="prefixId" ref="leftVideoRef" style="width: 1134px;" card-title-class="title-1127-37" @selection-change="handleVideoSelectionChange" />
       <div class="mt21">
         <div class="card-title hp30 title-1132-30 pr30">
           <div class="text" style="line-height: 30px;">
@@ -245,9 +245,6 @@ export default {
     controlCenterReturnTo() {
       return this.$store.getters['websocketRobot/getControlCenterReturnTo']
     },
-    activeCameras() {
-      return this.$store.getters['websocketRobot/getActiveCameras'] || {}
-    },
     backLabel() {
       const path = String(this.controlCenterReturnTo || '').split('?')[0]
       if (path === '/bi/index' || path === '/bi/home') return '首页'
@@ -315,7 +312,8 @@ export default {
         { label: '图片', value: 0 },
         { label: '视频', value: 1 }
       ],
-      mediaTabIndex: 0
+      mediaTabIndex: 0,
+      playingCameraIds: []
     }
   },
   watch: {
@@ -334,20 +332,13 @@ export default {
   },
   mixins: [yuntai],
   methods: {
-    ...mapActions('websocketRobot', ['setSelectedRobotId', 'stopCamera']),
-    async stopPlayingCameras() {
-      const keys = Object.keys(this.activeCameras || {})
-      for (const key of keys) {
-        const camera = this.activeCameras[key]?.camera
-        if (!camera) continue
-        try {
-          await this.stopCamera(camera)
-        } catch (e) {}
-      }
+    ...mapActions('websocketRobot', ['setSelectedRobotId']),
+    handleVideoSelectionChange(selection = {}) {
+      this.playingCameraIds = (selection.cameraKeys || []).map(key => String(key))
     },
     // 从其它页面进入控制中心时回到原界面，否则回到一级实时监控
     async backToMonitor() {
-      await this.stopPlayingCameras()
+      await this.$refs.leftVideoRef?.releaseAllSlots?.()
       const returnTo = this.controlCenterReturnTo
       const returnPath = String(returnTo || '').split('?')[0]
       if (returnTo && returnPath && returnPath !== '/bi/patrol/monitor') {

@@ -61,7 +61,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_1'] ? 'grab' : 'default' }"
           >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_1')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="1" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="six-1" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_1')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" @openControlCenter="openControlCenter" :videoIndex="1" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="six-1" />
           </div>
           <!-- <VideoBox :videoIndex="0" :prefixId="prefixId" :splitType="splitType" :slotDevices="slotDevices" @updateSlot="updateSlot" className="six-1" /> -->
           <div class="ml26">
@@ -78,6 +78,7 @@
                 @test="test"
                 @removeVideo="handleRemoveVideo"
                 @refreshVideo="handleRefreshVideo"
+                @openControlCenter="openControlCenter"
                 :videoIndex="2"
                 :prefixId="prefixId"
                 :splitType="splitType"
@@ -93,7 +94,7 @@
               @dragend="onDragEnd"
               :style="{ cursor: ZQL_videosInfos['slot_3'] ? 'grab' : 'default' }"
             >
-              <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="mt16 six-3" />
+              <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_3')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" @openControlCenter="openControlCenter" :videoIndex="3" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="mt16 six-3" />
             </div>
           </div>
         </div>
@@ -104,7 +105,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_4'] ? 'grab' : 'default' }"
           >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="six-4" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_4')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" @openControlCenter="openControlCenter" :videoIndex="4" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="six-4" />
           </div>
           <div
             :draggable="!!ZQL_videosInfos['slot_5']"
@@ -112,7 +113,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_5'] ? 'grab' : 'default' }"
           >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="ml28 six-5" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_5')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" @openControlCenter="openControlCenter" :videoIndex="5" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="ml28 six-5" />
           </div>
           <div
             :draggable="!!ZQL_videosInfos['slot_6']"
@@ -120,7 +121,7 @@
             @dragend="onDragEnd"
             :style="{ cursor: ZQL_videosInfos['slot_6'] ? 'grab' : 'default' }"
             >
-            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="ml26 six-6" />
+            <VideoBox @toggleFullscreen="toggleFullscreen" @onAlgoChange="onAlgoChange" @playPauseVideo="playPauseVideo('slot_6')" @test="test" @removeVideo="handleRemoveVideo" @refreshVideo="handleRefreshVideo" @openControlCenter="openControlCenter" :videoIndex="6" :prefixId="prefixId" :splitType="splitType" :ZQL_videosInfos="ZQL_videosInfos" :slotCloseHints="slotCloseHints" :isPageFullscreen="isPageFullscreen" className="ml26 six-6" />
           </div>
         </div>
       </div>
@@ -140,6 +141,7 @@
             @test="test"
             @removeVideo="handleRemoveVideo"
             @refreshVideo="handleRefreshVideo"
+            @openControlCenter="openControlCenter"
             :videoIndex="index"
             :prefixId="prefixId"
             :splitType="splitType"
@@ -157,6 +159,7 @@
           @test="test"
           @removeVideo="handleRemoveVideo"
           @refreshVideo="handleRefreshVideo"
+          @openControlCenter="openControlCenter"
           v-for="index in splitType"
           :key="index"
           :videoIndex="index"
@@ -290,11 +293,11 @@ export default {
       clearTimeout(this._slotCloseHintTimers[key])
     })
     this._slotCloseHintTimers = {}
-    this.releaseFixedCameraConsumers()
+    this.releaseWallConsumers()
   },
   methods: {
     ...mapActions('dragVideo', ['resetDrag', 'setSplitType']),
-    ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'restartCamera', 'recoverCameraPlayback', 'setPrefixId']),
+    ...mapActions('websocketRobot', ['startCamera', 'stopCamera', 'restartCamera', 'recoverCameraPlayback', 'setPrefixId', 'setSelectedRobotId', 'setControlCenterReturnTo']),
     onDragStart,
     onDragEnd,
     showSlotCloseHint(slotKey, text = '任务已结束，视频关闭', durationMs = 3000) {
@@ -348,8 +351,10 @@ export default {
     getRef(refName) {
       return this.$refs?.[refName]?.[0] || {}
     },
-    fixedCameraConsumerId() {
-      return `patrol-monitor-fixed-camera:${this.prefixId}`
+    wallConsumerId() {
+      // Vue 实例 uid 用于隔离同一业务墙快速销毁/重建时的迟到 stop，
+      // 避免旧实例释放新实例刚建立的消费者。
+      return `patrol-monitor-wall:${this.prefixId}:${this._uid}`
     },
     resolvePlaybackRobot(videoInfo, fallback) {
       if (fallback) return fallback
@@ -358,25 +363,33 @@ export default {
       return (this.robots || []).find(item => String(item.robotId) === String(robotId))
     },
     startCameraPayload(robot, camera) {
-      const payload = { robot, camera, throwOnError: true }
-      if (this.isFixedCameraRobot(robot)) {
-        payload.consumerId = this.fixedCameraConsumerId()
-        payload.prefixId = this.prefixId
+      return {
+        robot,
+        camera,
+        throwOnError: true,
+        consumerId: this.wallConsumerId(),
+        prefixId: this.prefixId
       }
-      return payload
     },
-    stopCameraPayload(camera, videoInfo) {
-      const robot = this.resolvePlaybackRobot(videoInfo)
-      if (!this.isFixedCameraRobot(robot)) return camera
+    stopCameraPayload(camera) {
       return {
         ...camera,
-        consumerId: this.fixedCameraConsumerId(),
+        consumerId: this.wallConsumerId(),
         prefixId: this.prefixId
       }
     },
     syncSlotSelections() {
       this.checkedIds = [...new Set(Object.values(this.ZQL_playingSource).filter(Boolean))]
       this.lastCheckedIds = this.checkedIds.slice()
+      if (typeof this.$emit === 'function') {
+        const robotIds = typeof this.getPlayingRobotIds === 'function'
+          ? this.getPlayingRobotIds()
+          : []
+        this.$emit('selection-change', {
+          cameraKeys: this.checkedIds.slice(),
+          robotIds
+        })
+      }
     },
     assignSlotCamera(slotKey, robot, camera) {
       this.$set(this.ZQL_playingSource, slotKey, camera.key)
@@ -448,18 +461,25 @@ export default {
       if (!this.isSlotCameraIntended(slotKey, camera.key)) return false
       return this.startAssignedCamera(slotKey, robot, camera)
     },
-    releaseFixedCameraConsumers() {
+    async releaseAllSlots() {
       const takenCameras = []
-      Object.keys(this.ZQL_videosInfos || {}).forEach(slotKey => {
+      const slotKeys = new Set([
+        ...Object.keys(this.ZQL_videosInfos || {}),
+        ...Object.keys(this.ZQL_playingSource || {})
+      ])
+      slotKeys.forEach(slotKey => {
         const videoInfo = this.ZQL_videosInfos[slotKey]
-        const robot = this.resolvePlaybackRobot(videoInfo)
-        if (this.isFixedCameraRobot(robot)) {
-          takenCameras.push(this.takeSlotCamera(slotKey))
-        }
+        if (videoInfo || this.ZQL_playingSource[slotKey]) takenCameras.push(this.takeSlotCamera(slotKey))
       })
-      takenCameras.forEach(taken => {
-        this.stopTakenCamera(taken).catch(() => {})
-      })
+      await Promise.all(takenCameras.filter(Boolean).map(taken => this.stopTakenCamera(taken).catch(() => {})))
+    },
+    releaseWallConsumers() {
+      this.releaseAllSlots().catch(() => {})
+    },
+    async openControlCenter(robotId) {
+      await this.releaseAllSlots()
+      this.setControlCenterReturnTo(null)
+      this.setSelectedRobotId(robotId)
     },
     async start(robot, data) {
       const emptyIndex = data.index
@@ -553,6 +573,7 @@ export default {
         this.$set(this.ZQL_playingSource, emptyKey, sourceObj.key)
         const key1 = this.ZQL_playingSource[emptyKey]
         const key2 = this.ZQL_playingSource[data.slotKey]
+        this.syncSlotSelections()
         this.rebindCameraTracks([this.cameras?.[key1], this.cameras?.[key2]])
         return
       }
@@ -800,8 +821,7 @@ export default {
         }
       }
 
-      this.checkedIds = Object.values(this.ZQL_playingSource).filter(Boolean)
-      this.lastCheckedIds = this.checkedIds.slice()
+      this.syncSlotSelections()
     },
     currentVisibleCameras() {
       return Object.values(this.ZQL_videosInfos)
@@ -841,8 +861,7 @@ export default {
       // 不会把用户主动移除的固定摄像头误判为断流并重新拉起。
       this.ZQL_videosInfos = nextVideosInfos
       this.ZQL_playingSource = nextPlayingSource
-      this.checkedIds = Object.values(nextPlayingSource).filter(Boolean)
-      this.lastCheckedIds = this.checkedIds.slice()
+      this.syncSlotSelections()
       this.slotDevices = new Array(splitType).fill(null)
 
       // 只停多余路，保留的视频流不 stop、不重启

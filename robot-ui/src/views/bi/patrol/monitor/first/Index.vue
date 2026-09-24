@@ -12,6 +12,7 @@
     <div class="right flex1 flex-column h100" style="min-width: 0; max-width: 100%; overflow: hidden;">
       <TaskListTree
         ref="taskListRef"
+        :checked-robot-ids="playingRobotIds"
         @select-task="selectTask"
         :update-video-handler="(robot) => updateVideo(robot)"
         :sync-task-videos="(robotIds) => syncTaskVideos(robotIds)"
@@ -44,7 +45,7 @@
     </div>
     <div class="left h100 no-w-scroll ml30">
       <!-- 1364px -->
-      <LeftVideo :prefixId="prefixId" ref="leftVideoRef" style="width: 1432px;" />
+      <LeftVideo :prefixId="prefixId" ref="leftVideoRef" style="width: 1432px;" @selection-change="handleVideoSelectionChange" />
       <!-- <el-radio-group @change="onSingleDeviceChange" v-if="splitType === 1" v-model="singleId" class="custom-radio-group flex with-border vertical ml20">
         <el-radio v-for="dev in deviceList" :key="dev.id" :label="dev.id" class="flx-align-center">{{ dev.desc }}</el-radio>
       </el-radio-group>
@@ -104,24 +105,18 @@ export default {
         }
       ],
       tabIndex: 0,
-      selectedTaskId: null
+      selectedTaskId: null,
+      playingRobotIds: []
     }
   },
   computed: {
     ...mapState('websocketExtraData', ['globalMapId', 'slamMapList', 'slamOfRobot', 'robotBaseInfo', 'robotLocation', 'taskRoutesByMap', 'taskData']),
-    activeCameras() {
-      return this.$store.getters['websocketRobot/getActiveCameras']
-    },
     robots() {
       return this.$store.getters['websocketRobot/getRobots'] || []
     },
-    // 当前界面播放中的装备 id（按激活摄像头顺序去重）
-    checkedRobotIds() {
-      return [...new Set(Object.values(this.activeCameras || {}).map(item => item.robot?.robotId).filter(Boolean))]
-    },
     // 播放中的第一个装备
     firstSelectedRobotId() {
-      return this.checkedRobotIds[0] || null
+      return this.playingRobotIds[0] || null
     },
     // 第一个在线装备
     firstOnlineRobotId() {
@@ -173,15 +168,13 @@ export default {
   },
   async mounted() {
     this.setSelectedRobotId('')
-    // for (const [index, key] of Object.keys(this.activeCameras).entries()) {
-    //   // console.log('++++++++++++++++++++++++++++++');
-    //   const res = await this.stopCamera(this.activeCameras[key].camera);
-    //   // console.log('++++++++++++++++++++++++');
-    // }
   },
   methods: {
     ...mapActions('dragVideo', ['setSplitType']),
-    ...mapActions('websocketRobot', ['stopCamera', 'setSelectedRobotId']),
+    ...mapActions('websocketRobot', ['setSelectedRobotId']),
+    handleVideoSelectionChange(selection = {}) {
+      this.playingRobotIds = (selection.robotIds || []).map(id => String(id))
+    },
     // 任务路线只是设备地图归属的兜底，定位可用时不依赖任务路线。
     resolveRobotSlamMapId(robotId) {
       return resolveMonitorRobotSlamMapId({
