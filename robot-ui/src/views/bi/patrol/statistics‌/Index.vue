@@ -129,9 +129,15 @@
         </div>
         <div class="hp346 d-flex p20">
           <div class="flex1 flex-column stats-col">
-            <div class="title">告警类型分布排行</div>
+            <div class="title flx-justify-between flx-align-center">
+              <span>告警类型分布排行</span>
+              <span v-if="alarmTypeRanking.length" class="flx-center more curp" @click="openAlarmTypeRanking">
+                <span>更多</span>
+                <svg-icon icon-class="right" class="ml4" />
+              </span>
+            </div>
             <div class="chart-box mt30 flex1">
-              <PieChart v-if="aiAlarmAnalysis.alarmTypeRanking?.length" :items="aiAlarmAnalysis.alarmTypeRanking || []" />
+              <PieChart v-if="alarmTypeRanking.length" :items="alarmTypeRankingDisplay" />
               <Empty v-else width="194px" />
             </div>
           </div>
@@ -208,6 +214,47 @@
       </div>
     </div>
     <HistoryReportList ref="historyReport" />
+    <el-dialog
+      class="custom-dialog__wrapper robot-dialog flx-align-center alarm-type-dialog"
+      :visible.sync="alarmTypeDialogVisible"
+      :modal-append-to-body="false"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :modal="false"
+      append-to-body
+      center
+      title=""
+    >
+      <template slot="footer"></template>
+      <div class="flex mb20 ml72">
+        <div class="custom-modal-container robot-control-container">
+          <div class="box wp707">
+            <div class="top m10 flx-justify-between">
+              <div class="title ml10">告警类型分布排行</div>
+              <div class="close mr10 wp20 hp20 tac" @click="alarmTypeDialogVisible = false">
+                <svg-icon icon-class="close"></svg-icon>
+              </div>
+            </div>
+            <div class="info-content p10">
+              <el-table :data="alarmTypeRanking" ref="alarmTypeTableRef" :height="460" style="width: 100%">
+                <el-table-column type="index" key="index" width="50" label="序号" align="center" />
+                <el-table-column prop="name" key="name" label="告警类型" show-overflow-tooltip />
+                <el-table-column label="告警数量" width="150" align="center">
+                  <template slot-scope="scope">
+                    {{ getAlarmTypeCount(scope.row) }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="占比" width="150" align="center">
+                  <template slot-scope="scope">
+                    {{ getAlarmTypePercent(scope.row) }}
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -236,6 +283,7 @@ export default {
     return {
       loading: false,
       statistics: null,
+      alarmTypeDialogVisible: false,
       checkAll: false,
       checkedCities: ['装备运行时长', 'AI告警分析'],
       cities: cityOptions,
@@ -309,6 +357,30 @@ export default {
     aiAlarmAnalysis() {
       return (this.statistics && this.statistics.aiAlarmAnalysis) || {};
     },
+    alarmTypeRanking() {
+      return Array.isArray(this.aiAlarmAnalysis.alarmTypeRanking)
+        ? this.aiAlarmAnalysis.alarmTypeRanking
+        : [];
+    },
+    alarmTypeRankingDisplay() {
+      if (this.alarmTypeRanking.length <= 6) return this.alarmTypeRanking;
+
+      const displayed = this.alarmTypeRanking.slice(0, 4);
+      const rest = this.alarmTypeRanking.slice(6);
+      const other = { ...rest[0], name: '其他' };
+      const hasCount = rest.some(item => item.count !== undefined && item.count !== null);
+      const hasValue = rest.some(item => item.value !== undefined && item.value !== null);
+      const hasPercent = rest.some(item => item.percent !== undefined && item.percent !== null);
+
+      if (hasCount) other.count = rest.reduce((total, item) => total + this.getAlarmTypeCount(item), 0);
+      if (hasValue) other.value = rest.reduce((total, item) => total + Number(item.value || 0), 0);
+      if (hasPercent) other.percent = rest.reduce((total, item) => total + Number(item.percent || 0), 0);
+
+      return [...displayed, other];
+    },
+    alarmTypeTotal() {
+      return this.alarmTypeRanking.reduce((total, item) => total + this.getAlarmTypeCount(item), 0);
+    },
     alarmTrendPoints() {
       return (this.statistics && this.statistics.alarmTrend && this.statistics.alarmTrend.points) || [];
     },
@@ -381,6 +453,21 @@ export default {
     viewHistoryReport() {
       this.$refs.historyReport.showModal()
     },
+    openAlarmTypeRanking() {
+      this.alarmTypeDialogVisible = true;
+    },
+    getAlarmTypeCount(item) {
+      const value = item && item.count !== undefined && item.count !== null
+        ? item.count
+        : item && item.value !== undefined && item.value !== null
+          ? item.value
+          : 0;
+      return Number(value) || 0;
+    },
+    getAlarmTypePercent(item) {
+      if (!this.alarmTypeTotal) return '0.00%';
+      return `${(this.getAlarmTypeCount(item) / this.alarmTypeTotal * 100).toFixed(2)}%`;
+    },
     // 生成报告
     async generateReport() {
       if (!this.checkedCities.length) {
@@ -447,6 +534,8 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+@import './../business/common.scss';
+
 /* 禁止图表行换行；min-width:0 避免 ECharts canvas 把 flex 子项撑出换行 */
 .stats-row {
   flex-wrap: nowrap;
@@ -651,6 +740,12 @@ export default {
     font-size: 16px;
     font-weight: 400;
     line-height: 28px; /* 175% */
+    .more {
+      color: #3BA5E7;
+      font-size: 14px;
+      line-height: 18px;
+      font-weight: 400;
+    }
   }
   .with-border {
     position: relative;
@@ -662,6 +757,53 @@ export default {
       height: 207px;
       background-color: rgba(33, 85, 157, 0.50);
       content: ''
+    }
+  }
+}
+.alarm-type-dialog {
+  .custom-modal-container {
+    background: linear-gradient(180deg, rgba(4, 60, 149, 0.40) 0.01%, rgba(4, 33, 68, 0.30) 6.03%, rgba(4, 23, 62, 0.32) 56.39%, rgba(7, 45, 94, 0.31) 101.39%, rgba(4, 62, 151, 0.40) 109.49%);
+    backdrop-filter: blur(15px);
+    border: 1px solid #2A86F3;
+  }
+  .info-content {
+    min-height: 300px;
+  }
+}
+.alarm-type-dialog.custom-dialog__wrapper {
+  background: rgba(2, 19, 40, 0.80);
+}
+::v-deep {
+  .alarm-type-dialog .el-table {
+    width: 100%;
+    background: transparent;
+
+    &::before {
+      display: none;
+    }
+
+    tr {
+      background: transparent;
+    }
+
+    thead th {
+      background: #1B2D4D;
+      border-bottom: none !important;
+    }
+
+    th.el-table__cell > .cell {
+      color: #9AC9F8 !important;
+      line-height: 40px;
+      font-weight: 400;
+    }
+
+    td.el-table__cell {
+      border-bottom: 1px solid #1B2D4D;
+    }
+
+    td .cell {
+      color: #D0DAE7;
+      line-height: 34px;
     }
   }
 }
