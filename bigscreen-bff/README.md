@@ -49,7 +49,7 @@ BFF 是 OAuth2 Resource Server：
 - `/api/**`、`/ws/**` 默认需要 JWT；`OPTIONS`、`/error` 和带播放 Token 的 HLS GET 例外。
 - 只接受 `ES256`/`RS256`，并校验 issuer 及 `azp` 或 audience 中的 BFF client ID。
 - REST 从 Bearer Header 读取 Token；WebSocket 还允许 `access_token` 查询参数。
-- 移动端继续使用 `field-app`（可由现场呼叫客户端配置覆盖），复用现有大屏视频接口：仅授权 POST `/api/bigscreen/control/robots/*/cameras/*/video/start`、`/api/bigscreen/control/fixed-cameras/*/video/start` 和 `/api/bigscreen/control/video-sessions/*/{token,heartbeat,stop}`；花括号表示三个独立操作，不是实际 URL。
+- 移动端继续使用 `field-app`（可由现场呼叫客户端配置覆盖），复用现有大屏统计和视频接口：允许 GET `/api/bigscreen/statistics/overview`，以及视频观看所需的 POST `/api/bigscreen/control/robots/*/cameras/*/video/start`、`/api/bigscreen/control/fixed-cameras/*/video/start` 和 `/api/bigscreen/control/video-sessions/*/{token,heartbeat,stop}`；花括号表示三个独立操作，不是实际 URL。
 - 上述客户端入口授权不替代下游用户角色、装备授权和会话归属校验；重启、切换通道、对讲和录像等其他接口仍沿用原客户端限制。部署更新后的 BFF 才会使移动端视频白名单生效，无需将 App OAuth 客户端改为 `bigscreen-web`。
 - 浏览器传入的 `X-User-Id`、`X-Org-Id`、`X-Roles` 会先被删除，再从已验签 JWT 重建。
 - 管理员角色会补充 `MEDIA_VIEWER`、`MEDIA_OPERATOR`、`EQUIPMENT_OPERATOR`。

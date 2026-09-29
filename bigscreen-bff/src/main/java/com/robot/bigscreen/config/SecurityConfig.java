@@ -47,6 +47,9 @@ public class SecurityConfig {
                                 "/api/bigscreen/panorama/overview",
                                 "/api/bigscreen/panorama/alarms",
                                 "/api/bigscreen/panorama/alarms/**",
+                                "/api/bigscreen/statistics/overview",
+                                "/api/bigscreen/business/tasks/plans",
+                                "/api/bigscreen/business/tasks/execution-records",
                                 "/api/bigscreen/control/files/*/download-url",
                                 "/ws/bigscreen")
                         .access(clientAuthorization(bigscreenClientId, fieldCallClientId))

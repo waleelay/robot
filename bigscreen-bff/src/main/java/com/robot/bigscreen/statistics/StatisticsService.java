@@ -164,6 +164,7 @@ public class StatisticsService {
                         devices, tasks, normalizedDeviceType, deviceTypesBySerial, resolvedDeviceTypeOptions,
                         rangeStart, rangeEnd),
                 "aiAlarmAnalysis", aiAlarmAnalysis(alarms),
+                "alarmLevelDistribution", alarmLevelDistribution(alarms),
                 "alarmAreaRanking", alarmAreaRanking(alarms),
                 "alarmTrend", alarmTrend(alarms, rangeStart, rangeEnd),
                 "taskCompletion", taskCompletion);
@@ -444,6 +445,29 @@ public class StatisticsService {
                 "handleMethodRanking", rankedDistribution(
                         alarms.stream().filter(alarm -> firstString(alarm, "handleResult") != null).toList(),
                         alarm -> handleMethodName(firstString(alarm, "handleResult"))));
+    }
+
+    private Map<String, Object> alarmLevelDistribution(List<Map<String, Object>> alarms) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        counts.put("high", 0L);
+        counts.put("medium", 0L);
+        counts.put("low", 0L);
+        for (Map<String, Object> alarm : alarms) {
+            String level = firstString(alarm, "severity", "level", "alarmLevel");
+            if (level == null) {
+                continue;
+            }
+            switch (level.trim().toUpperCase(Locale.ROOT)) {
+                case "CRITICAL", "SEVERE", "HIGH" -> counts.computeIfPresent("high", (key, value) -> value + 1);
+                case "MIDDLE", "WARN", "WARNING", "MEDIUM" -> counts.computeIfPresent("medium", (key, value) -> value + 1);
+                case "INFO", "LOW", "NORMAL" -> counts.computeIfPresent("low", (key, value) -> value + 1);
+                default -> { }
+            }
+        }
+        return object(
+                "high", counts.get("high"),
+                "medium", counts.get("medium"),
+                "low", counts.get("low"));
     }
 
     private List<Map<String, Object>> alarmAreaRanking(List<Map<String, Object>> alarms) {

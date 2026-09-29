@@ -215,6 +215,9 @@ BFF 不再依赖工作流定义 `pathId`。
 | `aiAlarmAnalysis.handleMethodRanking` | array<object> | 条件需要 | 告警处理方式排行 |
 | `aiAlarmAnalysis.handleMethodRanking[].name` | string/null | 条件需要 | 处理方式名称 |
 | `aiAlarmAnalysis.handleMethodRanking[].count` | number/null | 条件需要 | 数量 |
+| `alarmLevelDistribution.high` | number | 条件需要 | 高风险告警数量，按当前时间和装备类型筛选 |
+| `alarmLevelDistribution.medium` | number | 条件需要 | 中风险告警数量，按当前时间和装备类型筛选 |
+| `alarmLevelDistribution.low` | number | 条件需要 | 低风险告警数量，按当前时间和装备类型筛选 |
 | `alarmAreaRanking` | array<object> | 条件需要 | 告警高发区域排行 |
 | `alarmAreaRanking[].areaId` | string/number/null | 条件需要 | 区域 ID |
 | `alarmAreaRanking[].areaName` | string/null | 条件需要 | 区域名称 |

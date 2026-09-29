@@ -109,10 +109,10 @@ class SecurityConfigWebTest {
     }
 
     @Test
-    void rejectsFieldAppTokenFromUnapprovedBigscreenApi() throws Exception {
+    void allowsFieldAppTokenToReachStatisticsOverview() throws Exception {
         mockMvc.perform(get("/api/bigscreen/statistics/overview")
                         .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -120,6 +120,21 @@ class SecurityConfigWebTest {
         mockMvc.perform(get("/api/bigscreen/panorama/overview")
                         .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void allowsFieldAppTokenToQueryTaskLists() throws Exception {
+        for (String path : new String[] {
+                "/api/bigscreen/business/tasks/plans",
+                "/api/bigscreen/business/tasks/execution-records",
+        }) {
+            mockMvc.perform(get(path)
+                            .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get(path)
+                            .with(jwt().jwt(token -> token.claim("azp", "other-client"))))
+                    .andExpect(status().isForbidden());
+        }
     }
 
     @Test
