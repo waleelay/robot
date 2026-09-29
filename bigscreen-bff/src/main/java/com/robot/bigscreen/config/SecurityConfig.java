@@ -42,13 +42,21 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/control/files/*/hls/**").permitAll()
                         .requestMatchers("/ws/field-call").access(clientAuthorization(fieldCallClientId))
-                        // field-app 复用大屏 BFF 的告警 REST 和实时通道；其他大屏接口仍只允许 bigscreen-web。
+                        // field-app 复用概览、告警、抓拍及实时通道；视频观看按下方 POST 白名单授权。
                         .requestMatchers(
                                 "/api/bigscreen/panorama/overview",
                                 "/api/bigscreen/panorama/alarms",
                                 "/api/bigscreen/panorama/alarms/**",
                                 "/api/bigscreen/control/files/*/download-url",
                                 "/ws/bigscreen")
+                        .access(clientAuthorization(bigscreenClientId, fieldCallClientId))
+                        // 移动端视频观看入口；下游仍校验装备授权和会话归属。
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/bigscreen/control/robots/*/cameras/*/video/start",
+                                "/api/bigscreen/control/fixed-cameras/*/video/start",
+                                "/api/bigscreen/control/video-sessions/*/token",
+                                "/api/bigscreen/control/video-sessions/*/heartbeat",
+                                "/api/bigscreen/control/video-sessions/*/stop")
                         .access(clientAuthorization(bigscreenClientId, fieldCallClientId))
                         .requestMatchers("/api/**", "/ws/**").access(clientAuthorization(bigscreenClientId))
                         .anyRequest().permitAll())

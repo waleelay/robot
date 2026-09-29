@@ -40,6 +40,41 @@ import org.springframework.web.server.ResponseStatusException;
 })
 class SecurityConfigWebTest {
 
+    @Test
+    void authorizesVideoViewerRoutesForConfiguredClientsOnly() throws Exception {
+        for (String path : new String[] {
+                "/api/bigscreen/control/robots/robot-1/cameras/camera-1/video/start",
+                "/api/bigscreen/control/fixed-cameras/camera-1/video/start",
+                "/api/bigscreen/control/video-sessions/session-1/token",
+                "/api/bigscreen/control/video-sessions/session-1/heartbeat",
+                "/api/bigscreen/control/video-sessions/session-1/stop",
+        }) {
+            for (String client : new String[] {"field-app", "bigscreen-web"}) {
+                mockMvc.perform(post(path)
+                                .with(jwt().jwt(token -> token.claim("azp", client))))
+                        .andExpect(status().isOk());
+            }
+            mockMvc.perform(post(path)).andExpect(status().isUnauthorized());
+            mockMvc.perform(post(path)
+                            .with(jwt().jwt(token -> token.claim("azp", "other-client"))))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(get(path)
+                            .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
+    void keepsOtherVideoOperationsRestrictedForFieldApp() throws Exception {
+        for (String operation : new String[] {
+                "restart", "switch-channel", "intercom/start", "recordings/start"
+        }) {
+            mockMvc.perform(post("/api/bigscreen/control/video-sessions/session-1/" + operation)
+                            .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
     @Autowired
     private MockMvc mockMvc;
 
