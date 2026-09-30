@@ -25,7 +25,7 @@ export default({
   },
   computed: {
     chartProjects() {
-      const colors = ['#26FFCB', '#24CBFF', '#968DFF', '#5375FF', '#83D3FF'];
+      const colors = ['#26FFCB', '#24CBFF', '#968DFF', '#5375FF', '#4ABEFF', '#83D3FF', '#83FFF0'];
       const source = this.items && this.items.length ? this.items : [];
       return source.map((item, index) => ({
         name: item.name,

@@ -187,6 +187,7 @@ class StatisticsServiceTest {
         assertEquals(List.of(
                         Map.of("name", "火灾告警", "count", 2L, "percent", 100.0)),
                 list(map(overview.get("aiAlarmAnalysis")).get("alarmTypeRanking")));
+        assertEquals(Map.of("high", 1L, "medium", 1L, "low", 0L), overview.get("alarmLevelDistribution"));
         assertEquals("A区", map(list(overview.get("alarmAreaRanking")).get(0)).get("areaName"));
         List<?> taskItems = list(map(overview.get("taskCompletion")).get("items"));
         assertEquals(1L, map(taskItems.get(0)).get("count"));
@@ -314,6 +315,9 @@ class StatisticsServiceTest {
         alarm.put("handleResult", handleResult);
         alarm.put("occurredAt", occurredAt);
         alarm.put("rawPayload", Map.of("location", Map.of("address", areaName)));
+        alarm.put("severity", "IMMEDIATE_DISPOSAL".equals(handleResult)
+                ? "HIGH"
+                : "FALSE_ALARM".equals(handleResult) ? "MEDIUM" : "LOW");
         return alarm;
     }
 
