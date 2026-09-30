@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 
+/** 验证固定摄像头短期目录租约的版本和到期选择。 */
 class FixedCameraCatalogLeaseServiceTest {
 
     @Test

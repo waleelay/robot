@@ -1,6 +1,6 @@
 package com.robot.bigscreen.fixedcamera;
 
-import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.config.DownstreamServiceProperties;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -36,23 +36,47 @@ public class FixedCameraCatalogLeaseClient {
 
     private static final Logger log = LoggerFactory.getLogger(FixedCameraCatalogLeaseClient.class);
 
-    private final CenterServiceProperties properties;
+    private final DownstreamServiceProperties properties;
     private final RestClient restClient;
+    /**
+     * 本实例签发目录租约的递增版本序列。
+     */
     private final AtomicLong versionSequence = new AtomicLong();
+    /**
+     * 按授权身份派生的租约 ID 保存上次成功同步内容及续租时间。
+     */
     private final ConcurrentMap<String, LeaseRefreshState> refreshStates = new ConcurrentHashMap<>();
 
+    /**
+     * 是否向 Control 同步固定摄像头授权目录租约。
+     */
     @Value("${bigscreen.fixed-camera-catalog-lease.enabled:true}")
     private boolean enabled = true;
 
+    /**
+     * 一次目录租约的有效秒数。
+     */
     @Value("${bigscreen.fixed-camera-catalog-lease.duration-seconds:180}")
     private long durationSeconds = 180L;
 
-    public FixedCameraCatalogLeaseClient(CenterServiceProperties properties, RestClient.Builder builder) {
+    /**
+     * 初始化 FixedCameraCatalogLeaseClient，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param builder RestClient 构建器
+     */
+    public FixedCameraCatalogLeaseClient(DownstreamServiceProperties properties, RestClient.Builder builder) {
         this.properties = properties;
         this.restClient = builder.build();
     }
 
-    /** 同步当前身份可见的摄像头目录。 */
+    /**
+     * 同步当前身份可见的摄像头目录。
+     *
+     * @param principal WebSocket 握手携带的已认证用户
+     * @param authorizationHeaders 向受信下游传递的认证请求头
+     * @param cameras 本租约或快照中的摄像头集合
+     */
     public void synchronize(
             Principal principal,
             HttpHeaders authorizationHeaders,
@@ -82,6 +106,9 @@ public class FixedCameraCatalogLeaseClient {
 
     /**
      * 主动释放当前身份的目录租约。失败时不影响 WebSocket 关闭，旧租约仍会按时过期。
+     *
+     * @param principal WebSocket 握手携带的已认证用户
+     * @param authorizationHeaders 向受信下游传递的认证请求头
      */
     public void release(Principal principal, HttpHeaders authorizationHeaders) {
         if (!enabled) {
@@ -208,6 +235,15 @@ public class FixedCameraCatalogLeaseClient {
         return value instanceof Boolean bool ? bool : Boolean.parseBoolean(String.valueOf(value));
     }
 
+    /**
+     * 提交固定摄像头短期目录租约，包含版本、有效期及可见摄像头。
+     *
+     * @param leaseId 目录租约 ID
+     * @param version 当前快照或请求版本，用于识别更新先后
+     * @param issuedAt 签发时间
+     * @param expiresAt 有效期截止时间
+     * @param cameras 本租约或快照中的摄像头集合
+     */
     public record LeaseRequest(
             String leaseId,
             long version,
@@ -216,6 +252,15 @@ public class FixedCameraCatalogLeaseClient {
             List<CameraRecord> cameras) {
     }
 
+    /**
+     * 目录租约中的摄像头连接信息，只用于可信下游，不向浏览器公开流凭据。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @param enabled 摄像头是否启用
+     * @param protocolType 摄像头协议类型
+     * @param mainStreamUrl 主码流地址，仅可信下游使用，可能包含凭据
+     * @param subStreamUrl 子码流地址，仅可信下游使用，可能包含凭据
+     */
     public record CameraRecord(
             String cameraId,
             boolean enabled,
@@ -224,6 +269,12 @@ public class FixedCameraCatalogLeaseClient {
             String subStreamUrl) {
     }
 
+    /**
+     * 缓存已同步摄像头列表及续租时机，避免重复目录请求。
+     *
+     * @param cameras 本租约或快照中的摄像头集合
+     * @param renewAfter 下一次需要续租的时间
+     */
     private record LeaseRefreshState(List<CameraRecord> cameras, Instant renewAfter) {
     }
 }

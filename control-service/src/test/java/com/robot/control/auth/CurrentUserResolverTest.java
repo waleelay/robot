@@ -13,6 +13,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.socket.WebSocketSession;
 
+/** 验证可信身份解析的默认拒绝和显式开发回退。 */
 class CurrentUserResolverTest {
 
     @Test

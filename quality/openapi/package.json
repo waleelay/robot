@@ -1,0 +1,12 @@
+{
+  "name": "robot-openapi-checks",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Java 服务接口契约的本地检查",
+  "scripts": {
+    "check": "spectral lint --ruleset .spectral.yaml --fail-severity warn control-mileage.json media-files.json control-files.json media-service.json control-service.json bff.json && node --test check.test.cjs"
+  },
+  "devDependencies": {
+    "@stoplight/spectral-cli": "6.15.0"
+  }
+}

@@ -24,8 +24,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.WebSocketMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+/**
+ * 验证同一连接写入串行化及无效连接不阻断其他连接广播。
+ */
 class MediaWebSocketPublisherTest {
 
+    /** 用并发计数验证同一 WebSocket 连接的写入串行化，避免消息交错。 */
     @Test
     void serializesConcurrentWritesForSameSession() throws Exception {
         WebSocketSession session = mock(WebSocketSession.class);

@@ -8,6 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+/** 验证安全配置中的客户端授权及请求匹配规则。 */
 class SecurityConfigTest {
 
     private final SecurityConfig securityConfig = new SecurityConfig();

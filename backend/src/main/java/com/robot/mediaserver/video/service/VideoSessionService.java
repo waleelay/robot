@@ -160,7 +160,6 @@ public class VideoSessionService {
 
     /**
      * 构造实时视频会话编排服务。
-     *
      * @param repository 实时视频会话仓储
      * @param viewerRepository 观看者会话仓储
      * @param liveKitRoomService LiveKit 房间服务
@@ -168,6 +167,11 @@ public class VideoSessionService {
      * @param webSocketPublisher 媒体状态 WebSocket 发布器
      * @param mediaTrackService 媒体轨道服务
      * @param properties 媒体服务配置属性
+     *
+     * @param sourceRuntimeRepository 媒体源运行态仓储。
+     * @param fileService 管理文件元数据、上传会话、所有权与播放授权，协调存储及视频处理状态。
+     * @param transactionManager 数据库事务管理器
+     * @param entityManager 当前 JPA 持久化上下文
      */
     public VideoSessionService(
             VideoSessionRepository repository,
@@ -302,7 +306,7 @@ public class VideoSessionService {
                     .orElse(false);
         } catch (RuntimeException exception) {
             // Room API 暂时不可用时保留已有会话，避免查询故障反向触发推流重启。
-            log.warn("校验 LiveKit 视频轨道失败，暂时保留会话 sessionId={}", session.getSessionId(), exception);
+            log.warn("校验 LiveKit 视频轨道失败，暂时保留会话 会话标识={}", session.getSessionId(), exception);
             return true;
         }
     }
@@ -373,7 +377,7 @@ public class VideoSessionService {
     }
 
     /**
-     * 为浏览器观看端创建 LiveKit viewer token。
+     * 为浏览器观看端创建 LiveKit 观看令牌。
      *
      * @param sessionId 实时视频会话编号
      * @param user 当前操作用户
@@ -475,7 +479,7 @@ public class VideoSessionService {
     @Transactional
     public synchronized IntercomResponse startIntercom(String sessionId, CurrentUser user) {
         VideoSession session = requireOpenSession(lockSessionRuntime(sessionId));
-        // 对讲同一时间只能由一个浏览器 client 占用。判断 clientId 可以避免同一用户
+        // 对讲同一时间只能由一个浏览器客户端占用。判断 clientId 可以避免同一用户
         // 开多个页面时互相抢占，心跳超时后 expireIntercom 会释放这些字段。
         if (holdsRoomForIntercom(session)
                 && (!Objects.equals(session.getIntercomOperatorId(), user.userId())
@@ -610,6 +614,13 @@ public class VideoSessionService {
         return VideoSessionResponses.from(session, properties.getLivekit().getUrl(), null);
     }
 
+    /**
+     * 校验视频会话权限与当前发布事实后启动手动录像。
+     *
+     * @param sessionId 会话 ID
+     * @param user 当前用户
+     * @return 活动录像文件信息
+     */
     @Transactional
     public FileListItemResponse startRecording(String sessionId, CurrentUser user) {
         VideoSession session = lockSessionRuntime(sessionId);
@@ -622,10 +633,25 @@ public class VideoSessionService {
         return fileService.startLiveRecording(session, liveKitTrack.trackSid(), user);
     }
 
+    /**
+     * 校验会话及录像归属后请求停止手动录像。
+     *
+     * @param sessionId 会话 ID
+     * @param fileId 文件 ID
+     * @param user 当前用户
+     * @return 停止请求后的录像文件信息
+     */
     public FileListItemResponse stopRecording(String sessionId, String fileId, CurrentUser user) {
         return fileService.stopLiveRecording(sessionId, fileId, user);
     }
 
+    /**
+     * 查询当前用户在指定会话中的活动录像。
+     *
+     * @param sessionId 会话 ID
+     * @param user 当前用户
+     * @return 活动录像；没有时返回 null
+     */
     public FileListItemResponse activeRecording(String sessionId, CurrentUser user) {
         return fileService.activeLiveRecording(sessionId, user);
     }
@@ -635,7 +661,7 @@ public class VideoSessionService {
      *
      * @param sessionId 实时视频会话编号
      * @param status 机器人客户端状态
-     * @param trackSid LiveKit track sid
+     * @param trackSid LiveKit 轨道标识
      * @param trackName LiveKit track 名称
      * @param errorCode 错误码
      * @param message 状态说明
@@ -738,7 +764,7 @@ public class VideoSessionService {
             track = liveKitRoomService.resolveActiveVideoTrack(
                     session.getRoomName(), publisherIdentity(session), session.getTrackSid());
         } catch (RuntimeException exception) {
-            log.warn("确认固定摄像头 LiveKit 视频轨道失败，sessionId={}", sessionId, exception);
+            log.warn("确认固定摄像头 LiveKit 视频轨道失败，会话标识={}", sessionId, exception);
             return false;
         }
         if (track.isEmpty()) {
@@ -780,7 +806,7 @@ public class VideoSessionService {
         String normalized = status == null ? "" : status.trim().toLowerCase();
         if (("starting".equals(normalized) || "active".equals(normalized))
                 && !holdsRoomForIntercom(session)) {
-            log.info("忽略已释放对讲会话的迟到状态，sessionId={} currentStatus={} reportedStatus={}",
+            log.info("忽略已释放对讲会话的迟到状态，会话标识={} 当前状态={} 上报状态={}",
                     sessionId, session.getIntercomStatus(), normalized);
             return;
         }
@@ -926,7 +952,7 @@ public class VideoSessionService {
     /**
      * 当前用户手动重启实时视频会话。
      *
-     * <p>重启只处理 Publisher，不改变 viewer 占用；观看关系由 create/heartbeat/stop 维护。</p>
+     * <p>重启只处理发布端，不改变 观看端占用；观看关系由 create/heartbeat/stop 维护。</p>
      *
      * @param sessionId 实时视频会话编号
      * @param user 当前操作用户
@@ -952,7 +978,7 @@ public class VideoSessionService {
     /**
      * 当前用户手动重启实时视频会话，并返回待下发的视频启动命令。
      *
-     * <p>重启只处理 Publisher，不改变 viewer 占用；避免与观看心跳形成反向锁序。</p>
+     * <p>重启只处理发布端，不改变 观看端占用；避免与观看心跳形成反向锁序。</p>
      *
      * @param sessionId 实时视频会话编号
      * @param user 当前操作用户
@@ -1000,6 +1026,9 @@ public class VideoSessionService {
         return createStartCommand(session);
     }
 
+    /**
+     * 按当前来源和租约状态请求发布；已准备好的房间可复用，真正轨道就绪仍由 LiveKit 事实确认。
+     */
     private VideoStartCommand requestClientStart(VideoSession session, String event, boolean includeTimeout) {
         requireClientPublisherMode(session);
         if (session.getViewerCount() <= 0
@@ -1008,11 +1037,11 @@ public class VideoSessionService {
             return null;
         }
         if (startRequestInFlight(session)) {
-            log.info("复用进行中的视频启动命令，sessionId={} commandId={} status={}",
+            log.info("复用进行中的视频启动命令，会话标识={} 命令标识={} 状态={}",
                     session.getSessionId(), session.getCommandId(), session.getStatus());
             return createStartCommand(session);
         }
-        // 生成机器人推流命令前先确保 LiveKit Room 存在，再签发 publisher token。
+        // 生成机器人推流命令前先确保 LiveKit 房间存在，再签发 发布令牌。
         // 命令发送本身不在本服务做，调用方可决定通过 MQTT 或其他控制通道下发。
         liveKitRoomService.createRoom(session.getRoomName());
         if (holdsRoomForIntercom(session)) {
@@ -1120,7 +1149,7 @@ public class VideoSessionService {
                 || !Objects.equals(session.getCommandId(), expectedCommandId)
                 || session.getCommandRequestedAt() == null
                 || session.getCommandRequestedAt().isAfter(threshold)) {
-            log.info("忽略已过期的视频超时任务，sessionId={} expectedCommandId={} currentCommandId={} status={}",
+            log.info("忽略已过期的视频超时任务，会话标识={} 预期命令标识={} 当前命令标识={} 状态={}",
                     sessionId, expectedCommandId, session.getCommandId(), session.getStatus());
             return;
         }
@@ -1222,12 +1251,12 @@ public class VideoSessionService {
 
     /**
      * 查询需要自动重启的中断会话。
-     *
-     * @param updatedBefore 更新时间阈值
      * @return 会话编号列表
+     *
+     * @param interruptedBefore 中断时间的筛选上界
      */
     public List<String> interruptedRestartCandidates(OffsetDateTime interruptedBefore) {
-        // viewer 心跳会刷新 updatedAt，不能用它衡量断流已持续多久；lastStatusAt 只由客户端状态上报刷新。
+        // 观看端心跳会刷新 updatedAt，不能用它衡量断流已持续多久；lastStatusAt 只由客户端状态上报刷新。
         Set<String> runtimeKeys = new HashSet<>();
         return repository.findByStatusAndLastStatusAtBefore(VideoSessionStatus.INTERRUPTED, interruptedBefore).stream()
                 .filter(session -> publisherMode(session) != VideoPublisherMode.LIVEKIT_INGRESS)
@@ -1280,13 +1309,15 @@ public class VideoSessionService {
                 } catch (RuntimeException staleUpdateFailure) {
                     exception.addSuppressed(staleUpdateFailure);
                 }
-                log.warn("LiveKit Track 周期对账失败 runtimeId={}", runtimeId, exception);
+                log.warn("LiveKit 轨道周期对账失败 运行实例标识={}", runtimeId, exception);
             }
         });
     }
 
     /**
      * Webhook 到达后按 Room 定位唯一 SourceRuntime，并以 Room API 当前事实完成幂等对账。
+     *
+     * @param roomName LiveKit 房间名
      */
     public void reconcileLiveKitRoom(String roomName) {
         sourceRuntimeRepository.findByRoomName(roomName)
@@ -1304,6 +1335,9 @@ public class VideoSessionService {
         transactionTemplate.executeWithoutResult(status -> applyLiveKitObservation(runtimeId, observedAt, observed));
     }
 
+    /**
+     * 将指定发布者及轨道的核验结果合并到运行实例和观看会话，避免过期或无关 Track 推进业务状态。
+     */
     private void applyLiveKitObservation(
             String runtimeId,
             OffsetDateTime observedAt,
@@ -1391,6 +1425,8 @@ public class VideoSessionService {
 
     /**
      * Ingress 已撤销后停止该固定摄像头的活动录像并关闭所有业务会话。
+     *
+     * @param cameraId 固定摄像头 ID
      */
     public void quiesceLiveKitIngress(String cameraId) {
         VideoSourceRuntime snapshot = sourceRuntimeRepository
@@ -1429,7 +1465,14 @@ public class VideoSessionService {
         liveKitRoomService.deleteRoom(snapshot.getRoomName());
     }
 
-    /** 原子推进固定摄像头发布 generation，并收口旧模式的活动会话。 */
+    /**
+     * 原子推进固定摄像头发布版本号，并收口旧模式的活动会话。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @param targetMode 目标发布模式
+     * @param publisherRevision 发布模式版本，用于拒绝陈旧发布者操作
+     * @return 切换后的发布模式、版本及待下发停止指令
+     */
     public FixedCameraPublisherModeResponse switchFixedCameraPublisherMode(
             String cameraId,
             VideoPublisherMode targetMode,
@@ -1496,7 +1539,13 @@ public class VideoSessionService {
         return response;
     }
 
-    /** 删除 RTSP 摄像头前关闭会话，但保持 Gateway 发布模式不变。 */
+    /**
+     * 删除 RTSP 摄像头前关闭会话，但保持 Gateway 发布模式不变。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @param publisherRevision 发布模式版本，用于拒绝陈旧发布者操作
+     * @return 收口后的发布状态与需停止的旧发布者命令
+     */
     public FixedCameraPublisherModeResponse quiesceFixedCameraPublisher(String cameraId, long publisherRevision) {
         validateFixedCameraLifecycleRequest(
                 cameraId, VideoPublisherMode.FIXED_CAMERA_GATEWAY, publisherRevision);
@@ -1550,7 +1599,12 @@ public class VideoSessionService {
         return sessionIds;
     }
 
-    /** 通过 LiveKit Room API 二次确认固定发布身份是否仍在任一房间。 */
+    /**
+     * 通过 LiveKit Room API 二次确认固定发布身份是否仍在任一房间。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @return 指定摄像头发布者与轨道是否存在的 LiveKit 事实
+     */
     public FixedCameraPublisherPresenceResponse fixedCameraPublisherPresence(String cameraId) {
         boolean participantPresent = false;
         boolean trackPresent = false;
@@ -1783,7 +1837,7 @@ public class VideoSessionService {
                 "roomName", session.getRoomName());
     }
 
-    /** 每个过期 viewer 独立事务，按 runtime -> session 锁序与心跳、停看串行化。 */
+    /** 每个过期观看端租约独立事务，按 运行实例 → 会话 锁序与心跳、停看串行化。 */
     public void sweepStaleViewers() {
         OffsetDateTime threshold = now().minusSeconds(properties.getSession().getViewerHeartbeatTimeoutSeconds());
         viewerRepository.findByLeftAtIsNullAndLastHeartbeatAtBefore(threshold).forEach(viewer -> {
@@ -1794,20 +1848,20 @@ public class VideoSessionService {
                     stopClientRecordingQuietly(viewer.getSessionId(), viewer.getUserId(), viewerClientId(viewer));
                 }
             } catch (RuntimeException ex) {
-                log.warn("清理过期观看租约失败 sessionId={} viewerId={}",
+                log.warn("清理过期观看租约失败 会话标识={} 观看者标识={}",
                         viewer.getSessionId(), viewer.getId(), ex);
             }
         });
     }
 
-    /** 收口没有活跃 viewer 的历史及异常会话，避免它们因缺少离开事件永久滞留。 */
+    /** 收口没有活跃观看端 的历史及异常会话，避免它们因缺少离开事件永久滞留。 */
     public void sweepUnoccupiedSessions() {
         repository.findUnoccupiedSessionIds(UNOCCUPIED_RECONCILE_STATUSES, PageRequest.of(0, 100))
                 .forEach(sessionId -> {
                     try {
                         transactionTemplate.executeWithoutResult(status -> moveUnoccupiedSessionToIdle(sessionId));
                     } catch (RuntimeException ex) {
-                        log.warn("收口无观看者视频会话失败 sessionId={}", sessionId, ex);
+                        log.warn("收口无观看者视频会话失败 会话标识={}", sessionId, ex);
                     }
                 });
     }
@@ -1835,6 +1889,9 @@ public class VideoSessionService {
         return true;
     }
 
+    /**
+     * 只有观看者、对讲和活动录像均不再占用且会话尚未收口时才进入空闲等待。
+     */
     private boolean enterIdleWhenUnoccupied(VideoSession session) {
         if (session.getViewerCount() != 0 || holdsRoomForIntercom(session)
                 || fileService.hasActiveLiveRecording(session.getSessionId())
@@ -1861,10 +1918,10 @@ public class VideoSessionService {
     }
 
     /**
-     * 按 runtime -> session 的固定顺序锁定会话所属 Room。
+     * 按 运行实例 → 会话 的固定顺序锁定会话所属房间。
      *
-     * <p>旧会话没有 runtimeId 时在原位补齐；如果并发切换已改变 runtime，调用方应重试，
-     * 不能在持有旧 runtime 锁时继续修改新 Room。</p>
+     * <p>旧会话没有 runtimeId 时在原位补齐；如果并发切换已改变运行实例，调用方应重试，
+     * 不能在持有旧运行实例锁时继续修改新房间。</p>
      */
     private VideoSession lockSessionRuntime(String sessionId) {
         VideoSession snapshot = requireSession(sessionId);
@@ -1940,6 +1997,9 @@ public class VideoSessionService {
         repository.save(session);
     }
 
+    /**
+     * 拒绝会复活已停止会话的迟到状态，并按会话用途保留允许处理的事件。
+     */
     private boolean isLateVideoStatus(VideoSession session, String status) {
         boolean changesVideoState = "room_ready".equals(status)
                 || "publishing".equals(status)
@@ -2178,12 +2238,12 @@ public class VideoSessionService {
         try {
             fileService.stopLiveRecordingForClient(sessionId, userId, clientId);
         } catch (Exception ex) {
-            log.warn("停止观看端录像失败 sessionId={}, userId={}, clientId={}", sessionId, userId, clientId, ex);
+            log.warn("停止观看端录像失败 会话标识={}, 用户标识={}, 客户端标识={}", sessionId, userId, clientId, ex);
         }
     }
 
     private TokenResult createBrowserToken(VideoSession session, CurrentUser user) {
-        // 操作员 token 允许发布麦克风，用于对讲；普通 viewer token 只允许订阅媒体。
+        // 操作员 token 允许发布麦克风，用于对讲；普通观看令牌 只允许订阅媒体。
         if (user.hasRole("MEDIA_OPERATOR")) {
             return liveKitTokenService.createInteractiveViewerToken(
                     session.getRoomName(), user.userId(), user.clientId());

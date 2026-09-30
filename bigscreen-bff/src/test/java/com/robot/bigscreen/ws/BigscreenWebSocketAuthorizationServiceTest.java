@@ -7,7 +7,7 @@ import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
-import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.config.DownstreamServiceProperties;
 import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -18,10 +18,11 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
+/** 验证 WebSocket 可见资源查询与授权过滤。 */
 class BigscreenWebSocketAuthorizationServiceTest {
 
     private final BigscreenWebSocketAuthorizationService service = new BigscreenWebSocketAuthorizationService(
-            new CenterServiceProperties(),
+            new DownstreamServiceProperties(),
             mock(AuthenticatedRequestHeaders.class),
             RestClient.builder(),
             new ObjectMapper(),

@@ -32,6 +32,15 @@ public final class VideoSessionResponses {
         return from(session, livekitUrl, viewerToken, null, 0);
     }
 
+    /**
+     * 将媒体会话持久化状态转换为共享响应，保留缺测值及当前调用方的观看令牌。
+     * @param session 业务视频会话实体
+     * @param livekitUrl LiveKit 地址
+     * @param viewerToken 观看 Token
+     * @param publisherMode 当前发布模式
+     * @param publisherRevision 发布模式版本，用于拒绝陈旧发布者操作
+     * @return 可交给 Control 或浏览器消费的会话响应
+     */
     public static VideoSessionResponse from(
             VideoSession session,
             String livekitUrl,

@@ -1,5 +1,9 @@
 package com.robot.control.api;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.media.Content;
+
 import com.robot.control.auth.CurrentUserResolver;
 import com.robot.control.call.IntercomCallService;
 import com.robot.control.dto.ControlStartVideoRequest;
@@ -38,10 +42,13 @@ public class ControlRobotController {
 
     /**
      * 创建 ControlRobotController 实例。
-     *
      * @param controlVideoCommandService 视频控制编排服务
      * @param equipmentControlService 装备控制服务
      * @param currentUserResolver 当前用户解析器
+     *
+     * @param intercomCallService 在媒体对讲启动前协调机器人主动呼叫的邀请、接听与状态流转。
+     * @param multiFunctionAudioTransferService 多合一设备音频文件下发服务。
+     * @param robotRegistryService 维护机器人运行状态与在线事实的注册服务
      */
     public ControlRobotController(
             ControlVideoCommandService controlVideoCommandService,
@@ -59,10 +66,20 @@ public class ControlRobotController {
     }
 
     /**
-     * 查询 Control Service 当前内存中的机器人注册状态。
+     * 查询 控制服务 当前内存中的机器人注册状态。
      *
      * @return 机器人注册表快照
      */
+    @Operation(
+            operationId = "controlRobotController_registry",
+            summary = "查询当前内存机器人注册状态",
+            description = "查询当前内存机器人注册状态。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @GetMapping("/registry")
     public Map<String, Object> registry() {
         List<?> records = robotRegistryService.list();
@@ -77,6 +94,16 @@ public class ControlRobotController {
      * @param robotId 机器人 ID
      * @return 机器人控制画像
      */
+    @Operation(
+            operationId = "controlRobotController_controlProfile",
+            summary = "查询机器人设备能力与控制画像",
+            description = "查询机器人设备能力与控制画像。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @GetMapping("/{robotId}/control-profile")
     public Map<String, Object> controlProfile(@PathVariable String robotId) {
         return equipmentControlService.controlProfile(robotId);
@@ -90,6 +117,16 @@ public class ControlRobotController {
      * @param servletRequest HTTP 请求
      * @return 控制会话信息
      */
+    @Operation(
+            operationId = "controlRobotController_acquireControl",
+            summary = "获取指定范围的机器人控制权",
+            description = "获取指定范围的机器人控制权。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/{robotId}/control-sessions/acquire")
     public Map<String, Object> acquireControl(
             @PathVariable String robotId,
@@ -106,6 +143,16 @@ public class ControlRobotController {
      * @param servletRequest HTTP 请求
      * @return 本体控制会话和模式切换发布结果
      */
+    @Operation(
+            operationId = "controlRobotController_takeoverControl",
+            summary = "从导航模式发起人工接管",
+            description = "从导航模式发起人工接管。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/{robotId}/control-sessions/takeover")
     public Map<String, Object> takeoverControl(
             @PathVariable String robotId,
@@ -122,6 +169,16 @@ public class ControlRobotController {
      * @param servletRequest HTTP 请求
      * @return 控制模式设置结果
      */
+    @Operation(
+            operationId = "controlRobotController_setControlMode",
+            summary = "请求切换机器人控制模式",
+            description = "请求切换机器人控制模式。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/{robotId}/control-mode")
     public Map<String, Object> setControlMode(
             @PathVariable String robotId,
@@ -132,12 +189,23 @@ public class ControlRobotController {
 
     /**
      * 释放指定控制会话。
-     *
      * @param robotId 机器人 ID
      * @param controlSessionId 控制会话 ID
      * @param request 请求参数
      * @return 控制会话释放结果
+     *
+     * @param servletRequest HTTP 请求
      */
+    @Operation(
+            operationId = "controlRobotController_releaseControl",
+            summary = "释放当前用户拥有的指定控制会话",
+            description = "释放当前用户拥有的指定控制会话。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/{robotId}/control-sessions/{controlSessionId}/release")
     public Map<String, Object> releaseControl(
             @PathVariable String robotId,
@@ -159,6 +227,16 @@ public class ControlRobotController {
      * @param servletRequest HTTP 请求
      * @return 确认 Token 信息
      */
+    @Operation(
+            operationId = "controlRobotController_confirmToken",
+            summary = "为高风险动作签发短期确认令牌",
+            description = "为高风险动作签发短期确认令牌。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/{robotId}/commands/confirm-token")
     public Map<String, Object> confirmToken(
             @PathVariable String robotId,
@@ -175,6 +253,16 @@ public class ControlRobotController {
      * @param servletRequest HTTP 请求
      * @return 命令发布结果
      */
+    @Operation(
+            operationId = "controlRobotController_command",
+            summary = "校验控制权和动作参数后发布设备控制命令",
+            description = "校验控制权和动作参数后发布设备控制命令。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/{robotId}/commands")
     public Map<String, Object> command(
             @PathVariable String robotId,
@@ -184,7 +272,7 @@ public class ControlRobotController {
     }
 
     /**
-     * 将 Media Service 中已就绪的音频文件下发给目标机器人客户端。
+     * 将 媒体服务 中已就绪的音频文件下发给目标机器人客户端。
      *
      * @param robotId 机器人 ID
      * @param deviceId 多合一设备 ID
@@ -192,6 +280,16 @@ public class ControlRobotController {
      * @param servletRequest HTTP 请求
      * @return 文件中转任务发布结果
      */
+    @Operation(
+            operationId = "controlRobotController_transferMultiFunctionAudioFile",
+            summary = "将已就绪音频文件下发给目标设备客户端",
+            description = "将已就绪音频文件下发给目标设备客户端。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/{robotId}/devices/{deviceId}/audio-file-transfers")
     public Map<String, Object> transferMultiFunctionAudioFile(
             @PathVariable String robotId,
@@ -214,6 +312,16 @@ public class ControlRobotController {
      * @param servletRequest HTTP 请求
      * @return 视频会话响应
      */
+    @Operation(
+            operationId = "controlRobotController_startVideo",
+            summary = "编排启动机器人摄像头视频",
+            description = "编排启动机器人摄像头视频。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/{robotId}/cameras/{deviceId}/video/start")
     public VideoSessionResponse startVideo(
             @PathVariable String robotId,
@@ -232,6 +340,16 @@ public class ControlRobotController {
      * @param servletRequest HTTP 请求
      * @return 对讲会话响应
      */
+    @Operation(
+            operationId = "controlRobotController_startIntercom",
+            summary = "编排启动机器人摄像头对讲",
+            description = "编排启动机器人摄像头对讲。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlRobotController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/{robotId}/cameras/{deviceId}/video/intercom/start")
     public IntercomResponse startIntercom(
             @PathVariable String robotId,

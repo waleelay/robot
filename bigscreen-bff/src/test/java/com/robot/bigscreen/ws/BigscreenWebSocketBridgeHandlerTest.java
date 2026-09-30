@@ -14,7 +14,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
-import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.config.DownstreamServiceProperties;
 import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
@@ -39,6 +39,7 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.TextMessage;
 import org.mockito.ArgumentCaptor;
 
+/** 验证实时桥接的有界执行器、重连、授权失效及连接释放。 */
 class BigscreenWebSocketBridgeHandlerTest {
 
     @Test
@@ -153,7 +154,7 @@ class BigscreenWebSocketBridgeHandlerTest {
 
     @Test
     void forwardsWebsocketAccessTokenToCenter() {
-        CenterServiceProperties properties = new CenterServiceProperties();
+        DownstreamServiceProperties properties = new DownstreamServiceProperties();
         properties.setWebsocketControlUrl("ws://control-service:8082/ws/control");
         BigscreenWebSocketBridgeHandler handler = new BigscreenWebSocketBridgeHandler(
                 properties,
@@ -386,6 +387,7 @@ class BigscreenWebSocketBridgeHandlerTest {
         handler.shutdownAuthorizationRefreshExecutor();
     }
 
+    /** 验证同身份共享刷新状态，而初始快照只发给新连接；最后连接关闭才清理共享缓存。 */
     @Test
     void sharesRefreshStateButTargetsConnectionSnapshotToNewSession() throws Exception {
         BigscreenWebSocketAuthorizationService authorizationService =
@@ -418,7 +420,7 @@ class BigscreenWebSocketBridgeHandlerTest {
         handler.afterConnectionEstablished(second);
 
         verify(taskEventRefresher, times(2)).requestRefresh(eq(identity), any(), any(), eq(false));
-        ArgumentCaptor<Predicate<String>> publishers = ArgumentCaptor.forClass(Predicate.class);
+        ArgumentCaptor<Predicate<String>> publishers = ArgumentCaptor.captor();
         verify(alarmEventRefresher, times(2)).requestSnapshot(eq(identity), any(), publishers.capture());
         verify(alarmEventRefresher).requestSnapshot(eq(identity), eq(secondAuthentication), any());
         publishers.getAllValues().get(0).test("{\"event\":\"panorama.workflow-alarms.changed\"}");
@@ -477,23 +479,37 @@ class BigscreenWebSocketBridgeHandlerTest {
                 new HttpHeaders(), URI.create("wss://bigscreen/ws/control"), "session-expired-snapshot");
         when(browserSession.getPrincipal()).thenReturn(authentication("user-001", Instant.now().plusSeconds(300)));
         when(browserSession.isOpen()).thenReturn(true);
+        CountDownLatch refreshStarted = new CountDownLatch(1);
+        CountDownLatch releaseRefresh = new CountDownLatch(1);
+        var resources = new BigscreenWebSocketAuthorizationService.AuthorizedResources(Set.of("robot-001"), Set.of());
         when(authorizationService.authorizedResources(browserSession)).thenReturn(
-                new BigscreenWebSocketAuthorizationService.AuthorizedResources(Set.of("robot-001"), Set.of()));
+                resources).thenAnswer(ignored -> {
+                    refreshStarted.countDown();
+                    if (!releaseRefresh.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("测试未释放授权刷新");
+                    }
+                    return resources;
+                });
         BigscreenWebSocketBridgeHandler handler = handler(authorizationService);
         ReflectionTestUtils.setField(handler, "authorizationMaxStalenessMs", 1L);
-        handler.afterConnectionEstablished(browserSession);
-        Thread.sleep(5L);
+        try {
+            handler.afterConnectionEstablished(browserSession);
+            Thread.sleep(5L);
+            handler.broadcastToBrowserSessions("{\"event\":\"robot.state\",\"data\":{\"robotId\":\"robot-001\"}}");
+            assertTrue(refreshStarted.await(1, TimeUnit.SECONDS));
 
-        handler.broadcastToBrowserSessions("{\"event\":\"robot.state\",\"data\":{\"robotId\":\"robot-001\"}}");
-
-        verify(browserSession, never()).close(
-                org.mockito.ArgumentMatchers.argThat(status -> status.getCode() == 4003));
-        ArgumentCaptor<TextMessage> messages = ArgumentCaptor.forClass(TextMessage.class);
-        verify(browserSession).sendMessage(messages.capture());
-        assertTrue(messages.getValue().getPayload().contains("bigscreen.authorization.state"));
-        assertTrue(messages.getValue().getPayload().contains("\"available\":false"));
-        assertFalse(messages.getValue().getPayload().contains("robot.state"));
-        handler.shutdownAuthorizationRefreshExecutor();
+            // 明确停留在授权尚未恢复的阶段，避免合法的恢复通知与断言竞争。
+            verify(browserSession, never()).close(
+                    org.mockito.ArgumentMatchers.argThat(status -> status.getCode() == 4003));
+            ArgumentCaptor<TextMessage> messages = ArgumentCaptor.forClass(TextMessage.class);
+            verify(browserSession).sendMessage(messages.capture());
+            assertTrue(messages.getValue().getPayload().contains("bigscreen.authorization.state"));
+            assertTrue(messages.getValue().getPayload().contains("\"available\":false"));
+            assertFalse(messages.getValue().getPayload().contains("robot.state"));
+        } finally {
+            releaseRefresh.countDown();
+            handler.shutdownAuthorizationRefreshExecutor();
+        }
     }
 
     @Test
@@ -831,7 +847,7 @@ class BigscreenWebSocketBridgeHandlerTest {
             PanoramaTaskEventRefresher taskEventRefresher,
             PanoramaAlarmEventRefresher alarmEventRefresher) {
         return new BigscreenWebSocketBridgeHandler(
-                mock(CenterServiceProperties.class),
+                mock(DownstreamServiceProperties.class),
                 mock(PanoramaWebSocketEventAdapter.class),
                 mock(PanoramaLocationEventThrottler.class),
                 statsEventRefresher,
@@ -867,7 +883,9 @@ class BigscreenWebSocketBridgeHandlerTest {
                 .subject(subject)
                 .issuedAt(Instant.now().minusSeconds(60))
                 .expiresAt(expiresAt);
-        if (orgId != null) builder.claim("org_id", orgId);
+        if (orgId != null) {
+            builder.claim("org_id", orgId);
+        }
         Jwt jwt = builder.build();
         return new JwtAuthenticationToken(jwt);
     }

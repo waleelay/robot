@@ -29,6 +29,7 @@ import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+/** 验证手动录像创建、完成和异常停止时的文件及视频状态。 */
 class FileServiceLiveRecordingTest {
 
     private final MediaFileRepository fileRepository = mock(MediaFileRepository.class);

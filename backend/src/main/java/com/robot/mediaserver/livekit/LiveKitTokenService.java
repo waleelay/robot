@@ -27,6 +27,11 @@ public class LiveKitTokenService {
 
     private final MediaProperties properties;
 
+    /**
+     * 初始化 LiveKitTokenService，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     */
     public LiveKitTokenService(MediaProperties properties) {
         this.properties = properties;
     }
@@ -42,12 +47,25 @@ public class LiveKitTokenService {
         return createToken(roomName, "user:" + userId + ":web", false, true);
     }
 
+    /**
+     * 为指定观看身份签发限定房间权限的 LiveKit 令牌。
+     *
+     * @param roomName LiveKit 房间名
+     * @param userId 用户 ID
+     * @param clientId 客户端 ID
+     * @return 令牌及到期时间；令牌不得写入日志
+     */
     public TokenResult createViewerToken(String roomName, String userId, String clientId) {
         return createToken(roomName, "user:" + userId + ":" + clientId, false, true);
     }
 
     /**
      * 生成支持对讲的前端观看 Token，以便观看过程中在现有 Room 直接开启麦克风。
+     *
+     * @param roomName LiveKit 房间名
+     * @param userId 用户 ID
+     * @param clientId 客户端 ID
+     * @return 可参与交互的观看令牌及到期时间
      */
     public TokenResult createInteractiveViewerToken(String roomName, String userId, String clientId) {
         return createToken(roomName, "user:" + userId + ":" + clientId, true, true, List.of("microphone"));
@@ -55,6 +73,11 @@ public class LiveKitTokenService {
 
     /**
      * 生成获得讲话权的操作员 Token，可在指定视频 Room 内发布麦克风音频。
+     *
+     * @param roomName LiveKit 房间名
+     * @param userId 用户 ID
+     * @param clientId 客户端 ID
+     * @return 限定对讲操作权限的令牌及到期时间
      */
     public TokenResult createOperatorToken(String roomName, String userId, String clientId) {
         return createToken(roomName, "operator:" + userId + ":" + clientId, true, true, List.of("microphone"));
@@ -73,13 +96,22 @@ public class LiveKitTokenService {
 
     /**
      * 生成机器人对讲 Token：发布现场拾音并订阅操作员语音。
+     *
+     * @param roomName LiveKit 房间名
+     * @param robotId 机器人 ID
+     * @param deviceId 设备 ID
+     * @return 供机器人发布对讲音频的令牌及到期时间
      */
     public TokenResult createRobotIntercomToken(String roomName, String robotId, String deviceId) {
         return createToken(roomName, "robot:" + robotId + ":" + deviceId + ":intercom", true, true, List.of("microphone"));
     }
 
     /**
-     * 现场 App Token：发布摄像头与麦克风，并订阅中心端音频。
+     * 现场应用 Token：发布摄像头与麦克风，并订阅中心端音频。
+     *
+     * @param roomName LiveKit 房间名
+     * @param userId 用户 ID
+     * @return 现场应用 的房间接入令牌及到期时间
      */
     public TokenResult createFieldAppToken(String roomName, String userId) {
         return createToken(
@@ -93,6 +125,11 @@ public class LiveKitTokenService {
 
     /**
      * 现场呼叫中心端 Token：订阅 App 音视频，并发布麦克风。
+     *
+     * @param roomName LiveKit 房间名
+     * @param userId 用户 ID
+     * @param clientId 客户端 ID
+     * @return 指挥中心用户的房间接入令牌及到期时间
      */
     public TokenResult createFieldCenterToken(String roomName, String userId, String clientId) {
         return createToken(
@@ -228,6 +265,12 @@ public class LiveKitTokenService {
         return secret;
     }
 
+    /**
+     * 媒体访问令牌及有效期，调用方必须按凭据处理令牌内容。
+     *
+     * @param token 访问令牌
+     * @param expiresAt 有效期截止时间
+     */
     public record TokenResult(String token, OffsetDateTime expiresAt) {
     }
 }

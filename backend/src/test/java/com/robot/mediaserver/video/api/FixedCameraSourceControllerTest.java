@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+/** 验证固定摄像头来源管理入口的参数传递和错误处理。 */
 class FixedCameraSourceControllerTest {
 
     private final VideoSessionService service = mock(VideoSessionService.class);

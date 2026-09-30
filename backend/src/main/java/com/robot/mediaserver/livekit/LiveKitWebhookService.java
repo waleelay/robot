@@ -24,6 +24,9 @@ public class LiveKitWebhookService {
 
     private static final Logger log = LoggerFactory.getLogger(LiveKitWebhookService.class);
     private static final int MAX_BODY_BYTES = 1024 * 1024;
+    /**
+     * 允许触发 Room API 事实核验的事件集合，不直接按回调载荷修改媒体状态。
+     */
     private static final Set<String> RECONCILE_EVENTS = Set.of(
             "participant_joined",
             "participant_left",
@@ -36,6 +39,13 @@ public class LiveKitWebhookService {
     private final ObjectMapper objectMapper;
     private final VideoSessionService videoSessionService;
 
+    /**
+     * 初始化 LiveKitWebhookService，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param objectMapper JSON 编解码器
+     * @param videoSessionService 实时视频会话编排服务。
+     */
     public LiveKitWebhookService(
             MediaProperties properties,
             ObjectMapper objectMapper,
@@ -45,6 +55,11 @@ public class LiveKitWebhookService {
         this.videoSessionService = videoSessionService;
     }
 
+    /**
+     * 验证 LiveKit 回调签名与正文摘要后，仅对支持的房间或轨道事件触发事实核验；其他事件忽略。
+     * @param body 请求体
+     * @param authorization 调用方提供的 Authorization 头；凭据不得写入日志
+     */
     public void receive(byte[] body, String authorization) {
         validate(body, authorization);
         JsonNode payload;
@@ -59,11 +74,11 @@ public class LiveKitWebhookService {
         }
         String roomName = text(payload.path("room"), "name");
         if (roomName == null) {
-            log.warn("LiveKit Webhook 缺少 Room，交由周期对账补偿 event={} eventId={}",
+            log.warn("LiveKit 回调缺少房间信息，交由周期对账补偿 事件={} 事件标识={}",
                     event, text(payload, "id"));
             return;
         }
-        log.info("收到 LiveKit 媒体事实事件 event={} eventId={} room={} participant={} trackSid={}",
+        log.info("收到 LiveKit 媒体事实事件 事件={} 事件标识={} 房间={} 参与者={} 轨道标识={}",
                 event,
                 text(payload, "id"),
                 roomName,
@@ -72,6 +87,9 @@ public class LiveKitWebhookService {
         videoSessionService.reconcileLiveKitRoom(roomName);
     }
 
+    /**
+     * 限制正文大小并核对 JWT 签名、签发方和正文摘要；任一校验失败均拒绝进入业务核验。
+     */
     private void validate(byte[] body, String authorization) {
         if (body == null || body.length == 0 || body.length > MAX_BODY_BYTES) {
             throw new InvalidWebhookPayloadException("LiveKit Webhook 正文为空或超过限制");
@@ -127,21 +145,47 @@ public class LiveKitWebhookService {
         return text.isBlank() ? null : text;
     }
 
+    /** LiveKit 回调签名或身份校验失败，阻止未认证事件进入业务处理。 */
     public static class InvalidWebhookAuthenticationException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        /**
+         * 初始化 InvalidWebhookAuthenticationException，保存所需依赖及初始运行状态。
+         *
+         * @param message 消息内容
+         */
         public InvalidWebhookAuthenticationException(String message) {
             super(message);
         }
 
+        /**
+         * 初始化 InvalidWebhookAuthenticationException，保存所需依赖及初始运行状态。
+         *
+         * @param message 消息内容
+         * @param cause 触发当前异常的原始原因
+         */
         public InvalidWebhookAuthenticationException(String message, Throwable cause) {
             super(message, cause);
         }
     }
 
+    /** LiveKit 回调正文格式或内容不符合事件解析要求。 */
     public static class InvalidWebhookPayloadException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        /**
+         * 初始化 InvalidWebhookPayloadException，保存所需依赖及初始运行状态。
+         *
+         * @param message 消息内容
+         */
         public InvalidWebhookPayloadException(String message) {
             super(message);
         }
 
+        /**
+         * 初始化 InvalidWebhookPayloadException，保存所需依赖及初始运行状态。
+         *
+         * @param message 消息内容
+         * @param cause 触发当前异常的原始原因
+         */
         public InvalidWebhookPayloadException(String message, Throwable cause) {
             super(message, cause);
         }

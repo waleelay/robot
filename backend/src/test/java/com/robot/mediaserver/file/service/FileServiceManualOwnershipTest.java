@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
 
+/** 验证手动媒体的租户、所有者及角色访问边界。 */
 class FileServiceManualOwnershipTest {
 
     private final MediaFileRepository fileRepository = mock(MediaFileRepository.class);

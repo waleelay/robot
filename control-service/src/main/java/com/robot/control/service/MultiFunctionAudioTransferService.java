@@ -23,6 +23,12 @@ public class MultiFunctionAudioTransferService {
     private final ControlMediaServiceClient mediaServiceClient;
     private final EquipmentControlService equipmentControlService;
 
+    /**
+     * 初始化 MultiFunctionAudioTransferService，保存所需依赖及初始运行状态。
+     *
+     * @param mediaServiceClient 媒体服务 客户端
+     * @param equipmentControlService 装备控制服务
+     */
     public MultiFunctionAudioTransferService(
             ControlMediaServiceClient mediaServiceClient,
             EquipmentControlService equipmentControlService) {
@@ -31,7 +37,7 @@ public class MultiFunctionAudioTransferService {
     }
 
     /**
-     * 校验通用文件并通知机器人客户端从 Media Service 下载。
+     * 校验通用文件并通知机器人客户端从 媒体服务 下载。
      *
      * @param robotId 机器人 ID
      * @param deviceId 多合一设备 ID

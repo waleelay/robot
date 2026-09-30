@@ -17,12 +17,24 @@ public class FixedCameraPublisherLifecycleService {
     private final ControlMediaServiceClient mediaServiceClient;
     private final RobotMediaCommandService commandService;
 
+    /**
+     * 等待旧发布者退出 LiveKit 房间的最长秒数。
+     */
     @Value("${control.fixed-camera-publisher.presence-timeout-seconds:5}")
     private long presenceTimeoutSeconds = 5L;
 
+    /**
+     * 查询旧发布者是否退出房间的轮询间隔，单位毫秒。
+     */
     @Value("${control.fixed-camera-publisher.presence-poll-millis:200}")
     private long presencePollMillis = 200L;
 
+    /**
+     * 初始化 FixedCameraPublisherLifecycleService，保存所需依赖及初始运行状态。
+     *
+     * @param mediaServiceClient 媒体服务 客户端
+     * @param commandService 视频命令服务
+     */
     public FixedCameraPublisherLifecycleService(
             ControlMediaServiceClient mediaServiceClient,
             RobotMediaCommandService commandService) {
@@ -30,6 +42,14 @@ public class FixedCameraPublisherLifecycleService {
         this.commandService = commandService;
     }
 
+    /**
+     * 按调用方观察的发布版本切换摄像头发布模式，并下发旧发布者的停止指令。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @param targetMode 目标发布模式
+     * @param publisherRevision 发布模式版本，用于拒绝陈旧发布者操作
+     * @return 当前发布模式、版本和停止命令
+     */
     public FixedCameraPublisherModeResponse switchMode(
             String cameraId,
             VideoPublisherMode targetMode,
@@ -46,6 +66,13 @@ public class FixedCameraPublisherLifecycleService {
         return response;
     }
 
+    /**
+     * 删除摄像头前按发布版本停止活动发布与观看，避免档案删除后残留媒体资源。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @param publisherRevision 发布模式版本，用于拒绝陈旧发布者操作
+     * @return 收口后的发布模式及处理结果
+     */
     public FixedCameraPublisherModeResponse quiesceForDelete(String cameraId, long publisherRevision) {
         FixedCameraPublisherModeResponse response = mediaServiceClient.quiesceFixedCameraPublisher(
                 cameraId, publisherRevision);

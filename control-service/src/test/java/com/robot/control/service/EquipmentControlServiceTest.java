@@ -18,6 +18,7 @@ import com.robot.control.ws.MediaWebSocketPublisher;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -30,6 +31,7 @@ import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+/** 验证统一设备控制的目标选择、参数校验和命令下发。 */
 class EquipmentControlServiceTest {
 
     @Test
@@ -591,6 +593,7 @@ class EquipmentControlServiceTest {
         assertTarget(state, "warning_light", "WARNING_LIGHT");
     }
 
+    /** 验证车灯平台动作被转换为既有机器人协议字段，不引入第二套载荷。 */
     @Test
     void buildsVehicleLightCommandWithExistingRobotProtocolFields() {
         register(object(
@@ -634,6 +637,7 @@ class EquipmentControlServiceTest {
         assertTarget(enabled, "vehicle-light", "VEHICLE_LIGHT");
     }
 
+    /** 验证多合一动作参数按平台语义转换，并为不合法组合保留失败分支。 */
     @Test
     void buildsMultiFunctionCommandsWithPlatformSemanticFields() {
         register(component(
@@ -756,6 +760,7 @@ class EquipmentControlServiceTest {
                 });
     }
 
+    /** 验证物理扬声器反馈仅更新逻辑扬声器状态，不覆盖多合一设备自身状态。 */
     @Test
     void mergesPhysicalSpeakerStateIntoLogicalSpeakerWithoutChangingMultiFunctionState() {
         Map<String, Object> robot = object(
@@ -1204,8 +1209,13 @@ class EquipmentControlServiceTest {
         when(managementClient.cachedDeviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
     }
 
-    private Map<String, Object> component(String type, String code, Map<String, Object>... actions) {
-        List<Map<String, Object>> actionList = List.of(actions);
+    // 逐项读取，不修改或向外暴露泛型参数数组。
+    @SafeVarargs
+    private final Map<String, Object> component(String type, String code, Map<String, Object>... actions) {
+        List<Map<String, Object>> actionList = new ArrayList<>();
+        for (Map<String, Object> action : actions) {
+            actionList.add(action);
+        }
         return object(
                 "componentType", type,
                 "code", code,

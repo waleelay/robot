@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.TaskScheduler;
 
+/** 验证位置通知首条即时发送、后续节流和最新值保留。 */
 class PanoramaLocationEventThrottlerTest {
 
     @Test

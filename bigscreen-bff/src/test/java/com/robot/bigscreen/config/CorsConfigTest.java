@@ -10,6 +10,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+/** 验证配置来源在 HTTP 和 WebSocket 路径上的跨域行为。 */
 class CorsConfigTest {
 
     @Test

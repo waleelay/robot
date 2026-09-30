@@ -8,16 +8,26 @@ import java.time.ZoneOffset;
 import java.util.HexFormat;
 import org.springframework.stereotype.Service;
 
+/** 通过持久化互斥行防止同一机器人来源文件并发创建重复上传任务。 */
 @Service
 public class FileSourceLockService {
 
     private final MediaFileSourceLockRepository repository;
 
+    /**
+     * 初始化 FileSourceLockService，保存所需依赖及初始运行状态。
+     * @param repository 机器人来源文件互斥行仓储
+     */
     public FileSourceLockService(MediaFileSourceLockRepository repository) {
         this.repository = repository;
     }
 
-    /** 必须在调用方事务内执行，锁持有到文件记录创建或恢复完成。 */
+    /**
+     * 必须在调用方事务内执行，锁持有到文件记录创建或恢复完成。
+     *
+     * @param robotId 机器人 ID
+     * @param sourceFileId 源文件 ID
+     */
     public void lock(String robotId, String sourceFileId) {
         String lockId = digest(robotId + "\0" + sourceFileId);
         repository.insertIgnore(lockId, robotId, sourceFileId, OffsetDateTime.now(ZoneOffset.UTC));

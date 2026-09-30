@@ -13,6 +13,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 
+/** 根据已认证的用户与客户端身份生成可信下游请求头。 */
 @Component
 public class AuthenticatedRequestHeaders {
 
@@ -34,17 +35,32 @@ public class AuthenticatedRequestHeaders {
 
     private final Set<String> clientIds;
 
+    /**
+     * 初始化 AuthenticatedRequestHeaders，保存所需依赖及初始运行状态。
+     *
+     * @param clientId 客户端 ID
+     * @param fieldCallClientId 允许现场呼叫的 JWT 客户端标识
+     */
     public AuthenticatedRequestHeaders(
             @Value("${bigscreen.auth.client-id}") String clientId,
             @Value("${bigscreen.auth.field-call-client-id}") String fieldCallClientId) {
         this.clientIds = Set.of(clientId, fieldCallClientId);
     }
 
+    /**
+     * 从已认证上下文构造受信身份头，覆盖浏览器伪造值，并保留当前合法令牌供下游鉴权。
+     * @param headers 即将发往受信下游的可写请求头
+     */
     public void apply(HttpHeaders headers) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         apply(headers, authentication);
     }
 
+    /**
+     * 从已认证上下文构造受信身份头，覆盖浏览器伪造值，并保留当前合法令牌供下游鉴权。
+     * @param headers 即将发往受信下游的可写请求头
+     * @param authentication 经过认证的当前用户上下文
+     */
     public void apply(HttpHeaders headers, Authentication authentication) {
         TRUSTED_USER_HEADERS.forEach(headers::remove);
         String traceId = MDC.get("traceId");

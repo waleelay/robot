@@ -1,0 +1,27 @@
+{
+  "items" : [ {
+    "contentType" : "image/png",
+    "createdAt" : "2026-09-29 12:00:00",
+    "deviceId" : null,
+    "durationSeconds" : null,
+    "elapsedSeconds" : null,
+    "endedAt" : null,
+    "errorCode" : null,
+    "extensionId" : null,
+    "fileId" : "file-1",
+    "fileName" : "sample.png",
+    "fileSize" : 3,
+    "fileType" : "IMAGE",
+    "height" : null,
+    "metadata" : null,
+    "robotId" : "robot-1",
+    "startedAt" : null,
+    "status" : "READY",
+    "uploadedAt" : "2026-09-29 12:00:00",
+    "videoStatus" : null,
+    "width" : null
+  } ],
+  "page" : 0,
+  "size" : 20,
+  "total" : 1
+}

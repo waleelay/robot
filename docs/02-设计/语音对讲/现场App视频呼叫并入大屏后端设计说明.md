@@ -40,7 +40,7 @@ App / 大屏 <--WebRTC--> LiveKit
 
 - Media：`backend/.../fieldcall/FieldCallMediaService.java`、`FieldCallController`
 - Control：`control-service/.../call/FieldCallService.java`、`ws/FieldCallWebSocketHandler.java`
-- BFF：`CenterServiceProperties.websocketFieldCallUrl`、`/ws/field-call` 注册
+- BFF：`DownstreamServiceProperties.websocketFieldCallUrl`、`/ws/field-call` 注册
 - Nginx：`location /ws/field-call`
 - 大屏：`robot-ui/src/store/modules/fieldCall.js`（不再连独立 Node）
 - App：`lib/services/field_call_signaling.dart`、`auth_session.dart`

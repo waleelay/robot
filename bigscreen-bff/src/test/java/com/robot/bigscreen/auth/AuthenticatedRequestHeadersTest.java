@@ -14,6 +14,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+/** 验证认证身份生成的可信 Header 及客户端边界。 */
 class AuthenticatedRequestHeadersTest {
 
     private final AuthenticatedRequestHeaders requestHeaders =

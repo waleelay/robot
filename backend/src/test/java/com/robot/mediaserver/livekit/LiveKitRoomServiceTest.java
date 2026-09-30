@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/** 验证从房间参与者中解析真实视频轨道和发布者存在性。 */
 class LiveKitRoomServiceTest {
 
     @Test

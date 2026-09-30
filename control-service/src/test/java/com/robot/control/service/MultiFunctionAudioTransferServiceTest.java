@@ -16,6 +16,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+/** 验证多合一设备音频传输的 URL、格式及调用行为。 */
 class MultiFunctionAudioTransferServiceTest {
 
     private final ControlMediaServiceClient mediaServiceClient =

@@ -28,7 +28,7 @@ public class ControlVideoSessionScheduler {
     /**
      * 创建 ControlVideoSessionScheduler 实例。
      *
-     * @param mediaServiceClient Media Service 客户端
+     * @param mediaServiceClient 媒体服务 客户端
      * @param commandService 视频命令服务
      * @param properties 服务配置
      */
@@ -42,9 +42,9 @@ public class ControlVideoSessionScheduler {
     }
 
     /**
-     * 执行周期扫描任务。
+     * 执行周期扫描任务；新配置归属 control.session，旧 media.session 扫描周期仅作兼容回退。
      */
-    @Scheduled(fixedDelayString = "${media.session.sweep-delay-ms:5000}")
+    @Scheduled(fixedDelayString = "${control.session.sweep-delay-ms:${media.session.sweep-delay-ms:5000}}")
     public void sweep() {
         restartInterruptedSessions();
         expireStaleIntercoms();

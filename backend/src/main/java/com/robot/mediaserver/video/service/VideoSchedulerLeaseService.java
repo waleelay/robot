@@ -11,7 +11,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 基于数据库短租约保证视频周期任务在多 Media 实例中只有一个执行者。
+ * 通过数据库短租约协调多实例视频周期任务；当前不续租，任务超过租期时仍可能被其他实例接管。
  */
 @Service
 public class VideoSchedulerLeaseService {
@@ -43,6 +43,13 @@ public class VideoSchedulerLeaseService {
     private final MediaProperties properties;
     private final TransactionTemplate transactionTemplate;
 
+    /**
+     * 初始化 VideoSchedulerLeaseService，保存所需依赖及初始运行状态。
+     *
+     * @param jdbcTemplate 执行参数化 SQL 的 JDBC 访问器
+     * @param properties 服务配置
+     * @param transactionManager 数据库事务管理器
+     */
     public VideoSchedulerLeaseService(
             JdbcTemplate jdbcTemplate,
             MediaProperties properties,
@@ -56,14 +63,15 @@ public class VideoSchedulerLeaseService {
 
     /**
      * 领取任务后执行；租约被其他实例持有时直接跳过本轮。
-     *
      * @return 当前实例是否领取并执行了任务
+     * @param leaseName 跨实例调度任务的租约名称
+     * @param task 取得租约后在当前线程执行的任务，应在配置租期内完成
      */
     public boolean execute(String leaseName, Runnable task) {
         String owner = UUID.randomUUID().toString();
         long leaseSeconds = Math.max(10, properties.getSession().getSchedulerLeaseSeconds());
         if (!tryAcquire(leaseName, owner, leaseSeconds)) {
-            log.debug("视频周期任务租约已被其他实例持有 leaseName={}", leaseName);
+            log.debug("视频周期任务租约已被其他实例持有 租约名称={}", leaseName);
             return false;
         }
         try {
@@ -95,7 +103,7 @@ public class VideoSchedulerLeaseService {
                     new Object[] {leaseName, owner}));
         } catch (RuntimeException exception) {
             // 释放失败时不覆盖业务结果；租约到期后其他实例仍可自动接管。
-            log.warn("释放视频周期任务租约失败 leaseName={}", leaseName, exception);
+            log.warn("释放视频周期任务租约失败 租约名称={}", leaseName, exception);
         }
     }
 

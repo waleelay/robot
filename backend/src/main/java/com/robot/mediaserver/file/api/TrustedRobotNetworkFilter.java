@@ -13,15 +13,24 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+/** 按连接来源地址限制公开机器人分片上传和状态查询；内部文件前缀由部署网络隔离。 */
 @Component
 public class TrustedRobotNetworkFilter extends OncePerRequestFilter {
 
     private final MediaProperties properties;
 
+    /**
+     * 初始化 TrustedRobotNetworkFilter，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     */
     public TrustedRobotNetworkFilter(MediaProperties properties) {
         this.properties = properties;
     }
 
+    /**
+     * 仅对已启用来源限制的公开机器人分片及状态路径执行过滤；内部路径依赖部署网络隔离。
+     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
@@ -30,6 +39,9 @@ public class TrustedRobotNetworkFilter extends OncePerRequestFilter {
         return !robotUploadPath || !properties.getFile().isTrustedRobotNetworkEnabled();
     }
 
+    /**
+     * 使用实际连接来源地址匹配受信 CIDR，拒绝不受信来源后结束请求，不读取可伪造的转发头。
+     */
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,
@@ -52,6 +64,9 @@ public class TrustedRobotNetworkFilter extends OncePerRequestFilter {
                 .anyMatch(cidr -> contains(cidr, address));
     }
 
+    /**
+     * 按地址族和前缀位数比较 CIDR；配置或地址解析失败时拒绝匹配。
+     */
     private boolean contains(String cidr, String address) {
         try {
             String[] values = cidr.split("/", 2);

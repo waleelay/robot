@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
 
 /**
- * Control Service 本地机器人在线状态注册表。
+ * 控制服务 本地机器人在线状态注册表。
  *
  * @author leelay
  * @date 2026-07-05
@@ -51,13 +51,16 @@ public class RobotRegistryService {
     private final ControlServiceProperties properties;
     private final MediaWebSocketPublisher webSocketPublisher;
     private final ObjectMapper objectMapper;
+    /**
+     * 按机器人 ID 保存实例内运行状态；复合字段更新在对应 RobotDevice 监视锁内执行。
+     */
     private final Map<String, RobotDevice> devices = new ConcurrentHashMap<>();
 
     /**
      * 创建 RobotRegistryService 实例。
      *
      * @param properties 服务配置
-     * @param webSocketPublisher webSocketPublisher
+     * @param webSocketPublisher 向已连接客户端投递业务事件的组件
      * @param objectMapper JSON 编解码器
      */
     public RobotRegistryService(
@@ -121,16 +124,16 @@ public class RobotRegistryService {
      * @param clientId 客户端 ID
      * @param status 状态消息
      * @param name 名称
-     * @param type type
-     * @param battery battery
+     * @param type 当前业务使用的类型编码
+     * @param battery 设备电量百分数，未提供时为空
      * @param controlMode 控制模式
-     * @param stateSeq stateSeq
-     * @param missionStatus missionStatus
-     * @param navigationStatus navigationStatus
-     * @param controlOwner controlOwner
-     * @param estopActive estopActive
-     * @param cameras cameras
-     * @param mountedDevices mountedDevices
+     * @param stateSeq 设备状态序列号，用于拒绝基于陈旧状态的操作
+     * @param missionStatus 设备当前任务状态
+     * @param navigationStatus 设备当前导航状态
+     * @param controlOwner 设备当前控制权持有者信息
+     * @param estopActive 急停是否生效，未知时为空
+     * @param cameras 机器人可用摄像头列表
+     * @param mountedDevices 机器人挂载组件及其能力列表
      * @return 是否从离线变为在线
      */
     public boolean update(
@@ -166,6 +169,25 @@ public class RobotRegistryService {
                 mountedDevices);
     }
 
+    /**
+     * 合并本次允许覆盖的机器人状态，保留本体与媒体心跳的职责边界并仅发布有效变化。
+     * @param robotId 机器人 ID
+     * @param clientId 客户端 ID
+     * @param status 当前业务状态，取值遵循所属模型的状态协议
+     * @param name 当前对象的名称
+     * @param type 当前业务使用的类型编码
+     * @param typeCode 机器人类型编码
+     * @param battery 电量
+     * @param controlMode 控制模式
+     * @param stateSeq 状态序号
+     * @param missionStatus 任务状态
+     * @param navigationStatus 导航状态
+     * @param controlOwner 控制占用者
+     * @param estopActive 急停状态
+     * @param cameras 机器人媒体客户端上报的摄像头列表
+     * @param mountedDevices 机器人挂载组件及其能力列表
+     * @return 是否从离线状态转为在线状态
+     */
     public boolean update(
             String robotId,
             String clientId,
@@ -201,6 +223,9 @@ public class RobotRegistryService {
                 Map.of());
     }
 
+    /**
+     * 合并本次允许覆盖的机器人状态，保留本体与媒体心跳的职责边界并仅发布有效变化。
+     */
     private boolean update(
             String robotId,
             String clientId,
@@ -335,13 +360,23 @@ public class RobotRegistryService {
         publishIfCurrent(removed, publishVersion, state);
     }
 
-    /** Returns the latest in-memory state for one robot. */
+    /**
+     * 返回指定机器人在内存中保存的最新状态。
+     *
+     * @param robotId 机器人 ID
+     * @return 对应机器人状态；尚未注册时为空
+     */
     public Optional<RobotDeviceResponse> find(String robotId) {
         RobotDevice device = devices.get(robotId);
         return device == null ? Optional.empty() : Optional.of(toResponse(device));
     }
 
-    /** 判断设备当前是否仍处于可接收实时位置的在线状态。 */
+    /**
+     * 判断设备当前是否仍处于可接收实时位置的在线状态。
+     *
+     * @param robotId 机器人 ID
+     * @return 机器人是否满足当前边缘连接有效性条件
+     */
     public boolean isConnected(String robotId) {
         RobotDevice device = devices.get(robotId);
         if (device == null) {
@@ -352,7 +387,17 @@ public class RobotRegistryService {
         }
     }
 
-    /** 原子校验在线状态和当前位置后补充 GIS 坐标，并广播位置状态。 */
+    /**
+     * 原子校验在线状态和当前位置后补充 GIS 坐标，并广播位置状态。
+     *
+     * @param robotId 机器人 ID
+     * @param mapId 所属地图 ID
+     * @param x 地图局部坐标 X，单位遵循对应地图协议
+     * @param y 地图局部坐标 Y，单位遵循对应地图协议
+     * @param longitude GIS 经度，未转换成功时可为空
+     * @param latitude GIS 纬度，未转换成功时可为空
+     * @return 位置是否仍匹配当前连接并被接受
+     */
     public boolean enrichLocationIfConnected(
             String robotId,
             String mapId,
@@ -442,7 +487,7 @@ public class RobotRegistryService {
     /**
      * 转换为 WebSocket 推送状态。
      *
-     * @param device device
+     * @param device 本次处理的设备档案或运行状态
      * @return WebSocket 状态载荷
      */
     private Map<String, Object> toState(RobotDevice device, OffsetDateTime eventAt) {
@@ -484,7 +529,7 @@ public class RobotRegistryService {
     /**
      * 转换为机器人状态响应。
      *
-     * @param device device
+     * @param device 本次处理的设备档案或运行状态
      * @return 机器人状态响应
      */
     private RobotDeviceResponse toResponse(RobotDevice device) {
@@ -573,7 +618,9 @@ public class RobotRegistryService {
 
     private String normalizedControlMode(String controlMode) {
         String mode = controlMode == null ? "" : controlMode.trim();
-        if ("导航模式".equals(mode)) return mode;
+        if ("导航模式".equals(mode)) {
+            return mode;
+        }
         return "手动模式".equals(mode) || "常规模式".equals(mode) ? "手动模式" : null;
     }
 
@@ -615,6 +662,13 @@ public class RobotRegistryService {
         return OffsetDateTime.now(ZoneOffset.UTC);
     }
 
+    /**
+     * 带版本的机器人状态发布快照，供锁外事件发送。
+     *
+     * @param device 本次状态发布所对应的机器人运行对象
+     * @param version 当前快照或请求版本，用于识别更新先后
+     * @param state 机器人状态
+     */
     private record StatePublication(RobotDevice device, long version, Map<String, Object> state) {
     }
 
@@ -625,27 +679,93 @@ public class RobotRegistryService {
      * @date 2026-07-05
      */
     private static class RobotDevice {
+        /**
+         * 机器人唯一标识，也是注册表键。
+         */
         private final String robotId;
+        /**
+         * 串行发送该机器人状态事件的锁，与运行状态监视锁分离。
+         */
         private final Object publishLock = new Object();
+        /**
+         * 最近生成的状态快照版本，用于跳过锁外迟到发布。
+         */
         private long publishVersion;
+        /**
+         * 已经发出的最新状态版本，受 publishLock 保护。
+         */
         private long lastPublishedVersion;
+        /**
+         * 最近关联的机器人媒体客户端 ID。
+         */
         private String clientId;
+        /**
+         * 机器人展示名称。
+         */
         private String name;
+        /**
+         * 机器人类型名称。
+         */
         private String type;
+        /**
+         * 管理端机器人类型编码。
+         */
         private String typeCode;
+        /**
+         * 最近接受的设备电量百分数，未上报时为空。
+         */
         private Integer battery;
+        /**
+         * 融合后的在线状态，初始化为 offline。
+         */
         private String status = "offline";
+        /**
+         * 在线状态最近变化的服务端时间。
+         */
         private OffsetDateTime statusChangedAt = OffsetDateTime.now(ZoneOffset.UTC);
+        /**
+         * 设备上报的控制模式，未取得事实时为空。
+         */
         private String controlMode;
+        /**
+         * 最近接受的设备状态序号。
+         */
         private Long stateSeq = 1L;
+        /**
+         * 设备最近任务状态，初始为 IDLE。
+         */
         private String missionStatus = "IDLE";
+        /**
+         * 设备最近导航状态，初始为 IDLE。
+         */
         private String navigationStatus = "IDLE";
+        /**
+         * 设备上报的控制占用者信息，未知时为空。
+         */
         private Object controlOwner;
+        /**
+         * 设备急停标志；沿用当前初始化值 false。
+         */
         private Boolean estopActive = false;
+        /**
+         * 最近接受有效心跳的服务端时间，用于离线扫描。
+         */
         private OffsetDateTime lastHeartbeatAt;
+        /**
+         * 最近接受边缘本体状态的服务端时间，不随媒体心跳续期。
+         */
         private OffsetDateTime lastEdgeStatusAt;
+        /**
+         * 媒体客户端提供的摄像头清单。
+         */
         private List<RobotCameraResponse> cameras = List.of();
+        /**
+         * 挂载设备及其运行能力清单。
+         */
         private List<Map<String, Object>> mountedDevices = List.of();
+        /**
+         * 设备动态状态字段；缺省与显式空值按字段更新规则处理。
+         */
         private Map<String, Object> dynamicState = new LinkedHashMap<>();
 
         /**

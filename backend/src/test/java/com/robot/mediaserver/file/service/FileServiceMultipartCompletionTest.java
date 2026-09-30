@@ -26,6 +26,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.scheduling.TaskScheduler;
 
+/** 验证分片合并的租约、存储结果校验及失败后的重试边界。 */
 class FileServiceMultipartCompletionTest {
 
     @Test

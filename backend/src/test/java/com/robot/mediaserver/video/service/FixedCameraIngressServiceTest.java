@@ -32,6 +32,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 
+/** 验证固定摄像头 Ingress 生命周期及锁、事务和失败恢复。 */
 class FixedCameraIngressServiceTest {
 
     private final LiveKitIngressService liveKit = mock(LiveKitIngressService.class);

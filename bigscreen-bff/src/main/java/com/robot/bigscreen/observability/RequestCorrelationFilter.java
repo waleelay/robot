@@ -18,7 +18,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class RequestCorrelationFilter extends OncePerRequestFilter {
 
+    /**
+     * 跨服务请求关联标识使用的 HTTP 请求和响应头名称。
+     */
     public static final String HEADER_NAME = "X-Request-Id";
+    /**
+     * 日志上下文中保存请求关联标识的键，处理结束后清理。
+     */
     public static final String MDC_KEY = "traceId";
     private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
 

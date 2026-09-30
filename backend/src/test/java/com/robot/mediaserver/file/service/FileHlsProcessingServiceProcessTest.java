@@ -13,6 +13,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** 验证子进程输出排空、长度限制和超时后的进程停止。 */
 class FileHlsProcessingServiceProcessTest {
 
     @TempDir

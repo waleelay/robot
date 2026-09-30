@@ -4,6 +4,8 @@
 
 接口权威定义见 [媒体服务接口文档](../docs/03-接口与协议/媒体服务/媒体服务接口文档.md)；实时视频状态机和命令载荷见 [实时视频接口与协议文档](../docs/03-接口与协议/实时视频/实时视频接口与协议文档.md)。
 
+文件入口已生成 [OpenAPI 3.1.0 契约](../quality/openapi/media-files.json)，包括公开/内部双前缀和进度回调，共 30 条映射。`MEDIA_OPENAPI_ENABLED` 默认 `false`，仅在受控开发环境显式开启后提供 `/v3/api-docs`；未引入 Swagger UI。其余 43 条视频、对讲、固定摄像头、LiveKit 回调及 TTS 映射使用 `/v3/api-docs/service` 分组和[服务契约](../quality/openapi/media-service.json)。仓库根目录执行 `sh scripts/quality-check.sh openapi` 验证契约及调用方，覆盖限制见[自动检查说明](../quality/README.md)。
+
 ## 1. 启动、构建与测试
 
 ```bash
@@ -99,7 +101,7 @@ Media 不存在媒体源 CRUD、专用 Snapshot Controller，也不直接发布 
 
 ## 4. 配置
 
-配置入口为 `src/main/resources/application.yml` 和 `config/MediaProperties.java`：
+配置入口为 `src/main/resources/application.yml` 和 `config/MediaProperties.java`；由 `RobotMediaServerApplication` 直接注册属性绑定：
 
 | 前缀 | 说明 |
 | --- | --- |
@@ -108,7 +110,17 @@ Media 不存在媒体源 CRUD、专用 Snapshot Controller，也不直接发布 
 | `media.minio.*` | 对象存储地址、凭据、bucket 和开关 |
 | `media.file.*` | 文件大小、multipart、上传进度、播放 Token、HLS、保留期与可信网段；弱网上传默认单文件 48 GiB、分片 5 MiB、上传 URL 7 天、会话 30 天 |
 | `media.tts.*` | OpenTTS 地址、voice、format、缓存目录和超时 |
-| `media.session.*` | 发布超时、中断宽限、空闲释放、viewer 超时、视频调度租约和视频墙上限 |
+| `media.session.*` | 发布超时、空闲释放、viewer 超时、视频调度租约和视频墙上限 |
+
+HLS 转码超时的正式配置键为 `media.file.hls-processing-timeout-seconds`，环境变量为
+`MEDIA_FILE_HLS_PROCESSING_TIMEOUT_SECONDS`，默认 300 秒，实际等待至少为视频时长的两倍。
+旧 `media.file.hls-processing-lease-seconds` 和 `MEDIA_FILE_HLS_PROCESSING_LEASE_SECONDS`
+仅作兼容回退；新旧名称同时存在时优先使用非空的新名称，空值按未配置处理，二者均无值时
+使用默认 300 秒，旧配置并不提供任务租约。外部配置文件
+即使未加载仓库的 `application.yml`，旧属性名仍可绑定到同一个超时值。
+
+未被 Media 使用的 `media.session.interrupted-grace-seconds` 已移除，中断恢复等待只由
+Control 的 `control.session.interrupted-grace-seconds` 控制，环境变量仍为 `INTERRUPTED_GRACE_SECONDS`。
 
 开发 Profile 还配置 `spring.datasource`、Redis 与 Elasticsearch 地址。生产必须替换 LiveKit Secret、MinIO 凭据和文件播放 Token Secret，并显式配置 `MEDIA_FILE_PROGRESS_WEBHOOK_TOKEN`。
 

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.robot.bigscreen.panorama.PanoramaCenterClient;
 import java.nio.file.Path;
 import java.util.List;
@@ -85,6 +86,31 @@ class StatisticsServiceTest {
         }
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.overview("month", null, null, "all", null))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class).hasMessageContaining("503");
+    }
+
+    @Test
+    void preservesNoDataVersusMeasuredZeroFromControlFixtures() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        for (String fixture : List.of("mileage-no-data.json", "mileage-zero.json")) {
+            Map<String, Object> mileage = mapper.readValue(
+                    Path.of("../quality/openapi/fixtures", fixture).toFile(), new TypeReference<>() { });
+            PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+            when(client.deviceTypeOptions()).thenReturn(List.of());
+            when(client.devices()).thenReturn(List.of(Map.of("serialNumber", "robot-001", "deviceType", "WHEELED_ROBOT")));
+            when(client.taskWorkflowInstancesForStatistics()).thenReturn(List.of());
+            when(client.alarmsForStatistics(any(), any())).thenReturn(List.of());
+            when(client.mileageSummary(any(), any(), any())).thenReturn(mileage);
+            DeviceStatusSampler sampler = mock(DeviceStatusSampler.class);
+            when(sampler.countsInRange(any(), any(), any())).thenReturn(new long[]{0, 0, 0, 0});
+            StatisticsService service = new StatisticsService(
+                    mapper, client, sampler, tempDir.toString());
+
+            Map<String, Object> overview = service.overview(
+                    "custom", "2026-08-14 00:00:00", "2026-08-14 23:59:59", "all", null);
+
+            Object value = map(map(overview.get("kpis")).get("patrolMileage")).get("value");
+            assertEquals(Boolean.TRUE.equals(mileage.get("hasData")) ? Double.valueOf(0.0) : null, value);
+        }
     }
 
     @Test

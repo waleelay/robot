@@ -15,10 +15,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +32,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+/** 验证全景聚合、权限、缓存以及消费者字段语义。 */
 class PanoramaServiceTest {
 
     @AfterEach
@@ -176,11 +182,32 @@ class PanoramaServiceTest {
                     .mapToObj(index -> executor.submit(() -> service.mountedDeviceCount("robot-1"))).toList();
             assertTrue(entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
             release.countDown();
-            for (var call : calls) assertEquals(0, call.get(3, java.util.concurrent.TimeUnit.SECONDS).get("mountedDeviceCount"));
+            for (var call : calls) {
+                assertEquals(0, call.get(3, java.util.concurrent.TimeUnit.SECONDS).get("mountedDeviceCount"));
+            }
             verify(client, times(1)).device("101");
         } finally {
             release.countDown();
             executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void preservesNoDataVersusMeasuredZeroFromControlFixtures() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        for (String fixture : List.of("mileage-no-data.json", "mileage-zero.json")) {
+            Map<String, Object> mileage = mapper.readValue(
+                    Path.of("../quality/openapi/fixtures", fixture).toFile(), new TypeReference<>() { });
+            PanoramaCenterClient client = mock(PanoramaCenterClient.class);
+            stubEmptyOverviewSources(client);
+            when(client.mileageSummary(anyString(), anyString(), org.mockito.ArgumentMatchers.eq(List.of())))
+                    .thenReturn(mileage);
+            Map<String, Object> overview = new PanoramaService(client, mapper).overview();
+            Map<String, Object> patrol = map(overview.get("patrolOverview"));
+
+            assertEquals(mileage.get("hasData"), patrol.get("mileageHasData"));
+            assertEquals(Boolean.TRUE.equals(mileage.get("hasData")) ? Double.valueOf(0.0) : null,
+                    patrol.get("mileageToday"));
         }
     }
 
@@ -218,6 +245,7 @@ class PanoramaServiceTest {
         assertEquals(0, ((Map<?, ?>) overview.get("deviceStats")).get("total"));
     }
 
+    /** 验证首屏仅带地图摘要；选中地图后才读取点位和摄像头资源。 */
     @Test
     void keepsMapSummaryInOverviewAndLoadsMapResourcesOnDemand() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
@@ -282,6 +310,7 @@ class PanoramaServiceTest {
         verify(centerClient, times(1)).mapPoints("2077775285125144578");
     }
 
+    /** 验证任务路线按地图单独加载，首屏聚合不预取路径点。 */
     @Test
     void loadsTaskRoutesOnDemandInsteadOfPuttingThemInOverview() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
@@ -593,10 +622,7 @@ class PanoramaServiceTest {
     void taskEventSnapshotReadsFreshPlansAfterInvalidationAndIsolatesIdentities() {
         PanoramaCenterClient client = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(client);
-        when(client.taskWorkflowPlans()).thenReturn(
-                List.of(Map.of("id", 1L, "executionStatus", "WAITING")),
-                List.of(Map.of("id", 1L, "executionStatus", "RUNNING")),
-                List.of(Map.of("id", 2L, "executionStatus", "PAUSED")));
+        when(client.taskWorkflowPlans()).thenReturn(List.of(Map.of("id", 1L, "executionStatus", "WAITING"))).thenReturn(List.of(Map.of("id", 1L, "executionStatus", "RUNNING"))).thenReturn(List.of(Map.of("id", 2L, "executionStatus", "PAUSED")));
         PanoramaService service = new PanoramaService(client, new ObjectMapper());
 
         authenticate("user-a", "org-a");
@@ -1111,6 +1137,7 @@ class PanoramaServiceTest {
         assertFalse(overview.containsKey("gpsDevices"));
     }
 
+    /** 验证设备地图归属使用边缘定位事实，不以任务计划关联替代实际位置。 */
     @Test
     void keepsEdgeLocationMapIdAndDoesNotUseTaskPlansForDeviceMapMembership() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
@@ -1239,6 +1266,7 @@ class PanoramaServiceTest {
                 "quality", "main")), devices.get(0).get("cameras"));
     }
 
+    /** 验证启用档案不能替代新鲜健康事实；缺少有效健康数据时保持未知。 */
     @Test
     void keepsEnabledFixedCameraUnknownWithoutFreshHealth() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
@@ -1566,6 +1594,7 @@ class PanoramaServiceTest {
     void concurrentOrdinaryAlarmSnapshotsForSameIdentityShareThreeQueries() throws Exception {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         var entered = new java.util.concurrent.CountDownLatch(1);
+        var arrivals = new java.util.concurrent.CountDownLatch(4);
         var release = new java.util.concurrent.CountDownLatch(1);
         var first = new java.util.concurrent.atomic.AtomicBoolean(true);
         when(centerClient.alarmPage(any(), any(), any(), any(), anyInt(), anyInt())).thenAnswer(invocation -> {
@@ -1576,12 +1605,16 @@ class PanoramaServiceTest {
             return new PanoramaCenterClient.AlarmPage(List.of(), 0, 1, 10);
         });
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        // 保留真实原子插入，只观测四个调用已取得共享 Future，防止首轮结束后迟到请求开启第二轮。
+        Map<String, CompletableFuture<Map<String, Object>>> inFlight = observeSharedReadArrivals(arrivals);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "alarmEventInFlight", inFlight);
         var executor = java.util.concurrent.Executors.newFixedThreadPool(4);
         try {
             var calls = java.util.stream.IntStream.range(0, 4)
                     .mapToObj(index -> executor.submit(service::alarmEventSnapshot))
                     .toList();
             assertTrue(entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(arrivals.await(3, java.util.concurrent.TimeUnit.SECONDS));
             release.countDown();
             for (var call : calls) {
                 assertEquals(0L, call.get(3, java.util.concurrent.TimeUnit.SECONDS).get("total"));
@@ -1593,12 +1626,18 @@ class PanoramaServiceTest {
         }
     }
 
+    /**
+     * 统计与事件入口同时读取时共享三档风险页；额外三次统计摘要查询保留，总查询次数应为六次。
+     *
+     * @throws Exception 等待两个入口进入共享阶段或取得查询结果失败时抛出
+     */
     @Test
     void concurrentAlarmStatsAndAlarmEventShareTheThreeRiskPages() throws Exception {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         stubEmptyOverviewSources(centerClient);
         var riskPagesEntered = new java.util.concurrent.CountDownLatch(3);
         var statsSummaryEntered = new java.util.concurrent.CountDownLatch(1);
+        var riskPageArrivals = new CountDownLatch(6);
         var releaseRiskPages = new java.util.concurrent.CountDownLatch(1);
         var blockedSeverities = java.util.concurrent.ConcurrentHashMap.<String>newKeySet();
         when(centerClient.alarmPage(any(), any(), any(), any(), anyInt(), anyInt())).thenAnswer(invocation -> {
@@ -1614,12 +1653,16 @@ class PanoramaServiceTest {
             return new PanoramaCenterClient.AlarmPage(List.of(), 0, 1, 10);
         });
         PanoramaService service = new PanoramaService(centerClient, new ObjectMapper());
+        // 两个入口各自取得三档风险页的共享 Future 后才放行，不能仅用统计摘要代替事件入口就绪。
+        Map<String, CompletableFuture<?>> sourceReads = observeSharedReadArrivals(riskPageArrivals);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "sourceReadInFlight", sourceReads);
         var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
         try {
             var stats = executor.submit(() -> service.statsSnapshot(Set.of(StatsPart.ALARMS)));
             var event = executor.submit(service::alarmEventSnapshot);
             assertTrue(riskPagesEntered.await(3, java.util.concurrent.TimeUnit.SECONDS));
             assertTrue(statsSummaryEntered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(riskPageArrivals.await(3, java.util.concurrent.TimeUnit.SECONDS));
             @SuppressWarnings("unchecked")
             Map<String, ?> alarmRefreshes = (Map<String, ?>) org.springframework.test.util.ReflectionTestUtils
                     .getField(service, "alarmEventInFlight");
@@ -1632,6 +1675,24 @@ class PanoramaServiceTest {
             releaseRiskPages.countDown();
             executor.shutdownNow();
         }
+    }
+
+    /**
+     * 观测实际共享入口的到达次数，不替换并发 Map 的原子插入、读取或移除行为。
+     *
+     * @param arrivals 所有调用取得共享项后归零的计数器
+     * @param <T> 共享项的类型
+     * @return 附加到达通知的真实并发 Map
+     */
+    private static <T> Map<String, T> observeSharedReadArrivals(CountDownLatch arrivals) {
+        return new ConcurrentHashMap<>() {
+            @Override
+            public T putIfAbsent(String key, T value) {
+                T existing = super.putIfAbsent(key, value);
+                arrivals.countDown();
+                return existing;
+            }
+        };
     }
 
     @Test

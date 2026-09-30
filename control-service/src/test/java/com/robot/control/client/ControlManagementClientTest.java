@@ -9,7 +9,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.robot.control.auth.RequestAuthorizationHeaders;
-import com.robot.control.config.ControlProperties;
+import com.robot.control.config.ControlServiceProperties;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -21,11 +21,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+/** 验证 Management 客户端请求、响应解析及缓存边界。 */
 class ControlManagementClientTest {
 
     @Test
     void capsDeviceAuthorizationCacheAtThirtySeconds() {
-        ControlProperties properties = new ControlProperties();
+        ControlServiceProperties properties = new ControlServiceProperties();
         properties.setDeviceCacheTtlSeconds(300);
         ControlManagementClient client = new ControlManagementClient(
                 mock(RestClient.class), properties, mock(RequestAuthorizationHeaders.class));
@@ -37,7 +38,7 @@ class ControlManagementClientTest {
     void keepsWarmedDeviceDetailsIsolatedToCurrentUser() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ControlProperties properties = new ControlProperties();
+        ControlServiceProperties properties = new ControlServiceProperties();
         properties.setManagementServiceBaseUrl("http://management.test");
         RequestAuthorizationHeaders authorizationHeaders = mock(RequestAuthorizationHeaders.class);
         when(authorizationHeaders.currentCacheKey()).thenReturn(Optional.of("bearer:user-001"));
@@ -77,7 +78,7 @@ class ControlManagementClientTest {
     void loadsDeviceDetailAfterDeviceListSummaryWasCached() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ControlProperties properties = new ControlProperties();
+        ControlServiceProperties properties = new ControlServiceProperties();
         properties.setManagementServiceBaseUrl("http://management.test");
         RequestAuthorizationHeaders authorizationHeaders = mock(RequestAuthorizationHeaders.class);
         when(authorizationHeaders.currentCacheKey()).thenReturn(Optional.of("bearer:user-001"));
@@ -107,7 +108,7 @@ class ControlManagementClientTest {
     void readsDevicesAfterTheFirstFiveHundredRecords() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ControlProperties properties = new ControlProperties();
+        ControlServiceProperties properties = new ControlServiceProperties();
         properties.setManagementServiceBaseUrl("http://management.test");
         RequestAuthorizationHeaders headers = mock(RequestAuthorizationHeaders.class);
         when(headers.currentCacheKey()).thenReturn(Optional.of("user-001"));
@@ -131,7 +132,7 @@ class ControlManagementClientTest {
     void stopsWhenManagementRepeatsAFullPage() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ControlProperties properties = new ControlProperties();
+        ControlServiceProperties properties = new ControlServiceProperties();
         properties.setManagementServiceBaseUrl("http://management.test");
         RequestAuthorizationHeaders headers = mock(RequestAuthorizationHeaders.class);
         when(headers.currentCacheKey()).thenReturn(Optional.of("user-001"));
@@ -152,7 +153,7 @@ class ControlManagementClientTest {
     void convertsGisThroughInternalManagementEndpointWithoutUserContext() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ControlProperties properties = new ControlProperties();
+        ControlServiceProperties properties = new ControlServiceProperties();
         properties.setManagementServiceBaseUrl("http://management.test");
         ControlManagementClient client = new ControlManagementClient(
                 builder.build(), properties, mock(RequestAuthorizationHeaders.class));

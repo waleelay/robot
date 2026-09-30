@@ -21,6 +21,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 
+/** 验证告警事件合并刷新及多会话中的重复通知处理。 */
 class PanoramaAlarmEventRefresherTest {
 
     @Test
@@ -48,6 +49,7 @@ class PanoramaAlarmEventRefresherTest {
         assertThat(events).anyMatch(event -> event.contains("alarm-1"));
     }
 
+    /** 验证重复告警失效通知合并，仅在完整快照变化后广播。 */
     @Test
     void coalescesInvalidationsAndPublishesOnlyChangedAlarmSnapshots() throws Exception {
         PanoramaService panoramaService = mock(PanoramaService.class);
@@ -93,6 +95,7 @@ class PanoramaAlarmEventRefresherTest {
         assertThat(removed.path("data").path("high").path("items")).isEmpty();
     }
 
+    /** 验证工作流告警使用独立重试窗口等待数据收敛，不受普通告警快照是否变化影响。 */
     @Test
     void retriesWorkflowIndependentlyUntilSnapshotChanges() throws Exception {
         PanoramaService panoramaService = mock(PanoramaService.class);

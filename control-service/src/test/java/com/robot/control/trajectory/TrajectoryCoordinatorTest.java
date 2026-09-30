@@ -23,6 +23,7 @@ import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+/** 验证轨迹订阅、版本收敛、缺口恢复和超时清理。 */
 class TrajectoryCoordinatorTest {
 
     @Test
@@ -114,6 +115,7 @@ class TrajectoryCoordinatorTest {
         assertThat(harness.tasks).hasSize(scheduledBefore);
     }
 
+    /** 提供轨迹协调器的可控时钟、调度和下游消息测试环境。 */
     private static final class Harness {
         private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
         private final ObjectMapper objectMapper = new ObjectMapper();
@@ -138,7 +140,9 @@ class TrajectoryCoordinatorTest {
             }).when(commandPublisher).publishTrajectoryQuery(any(), any());
             doAnswer(invocation -> {
                 WebSocketSession session = invocation.getArgument(0);
-                if (session.getId().equals(failedSessionId)) throw new IllegalStateException("TEXT_PARTIAL_WRITING");
+                if (session.getId().equals(failedSessionId)) {
+                    throw new IllegalStateException("TEXT_PARTIAL_WRITING");
+                }
                 messages.computeIfAbsent(session.getId(), ignored -> new ArrayList<>())
                         .add((TextMessage) invocation.getArgument(1));
                 return null;
@@ -159,7 +163,9 @@ class TrajectoryCoordinatorTest {
         }
 
         private Map<String, Object> nextCommand() {
-            for (int i = 0; commands.isEmpty() && i < 20 && !tasks.isEmpty(); i++) tasks.remove().run();
+            for (int i = 0; commands.isEmpty() && i < 20 && !tasks.isEmpty(); i++) {
+                tasks.remove().run();
+            }
             assertThat(commands).as("应产生下一条轨迹查询命令").isNotEmpty();
             return commands.remove();
         }

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 /**
- * 现场 App 视频呼叫：创建隔离 Room 并为双方签发 LiveKit Token。
+ * 现场应用 视频呼叫：创建隔离 Room 并为双方签发 LiveKit Token。
  */
 @Service
 public class FieldCallMediaService {
@@ -20,6 +20,13 @@ public class FieldCallMediaService {
     private final LiveKitRoomService roomService;
     private final MediaProperties properties;
 
+    /**
+     * 初始化 FieldCallMediaService，保存所需依赖及初始运行状态。
+     *
+     * @param tokenService LiveKit Token 签发服务。
+     * @param roomService LiveKit 房间管理服务。
+     * @param properties 服务配置
+     */
     public FieldCallMediaService(
             LiveKitTokenService tokenService,
             LiveKitRoomService roomService,
@@ -29,6 +36,12 @@ public class FieldCallMediaService {
         this.properties = properties;
     }
 
+    /**
+     * 创建隔离的现场呼叫房间，并分别签发 App 与中台用户令牌。
+     *
+     * @param request 请求参数
+     * @return 双方接入信息和较早的令牌到期时间
+     */
     public FieldCallResponse create(CreateFieldCallRequest request) {
         requireText(request.callId(), "callId");
         requireText(request.appUserId(), "appUserId");

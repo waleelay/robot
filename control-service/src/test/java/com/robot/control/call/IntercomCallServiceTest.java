@@ -28,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+/** 验证机器人对讲的呼叫状态、权限和资源释放。 */
 class IntercomCallServiceTest {
 
     private final ControlVideoCommandService videoCommandService = mock(ControlVideoCommandService.class);

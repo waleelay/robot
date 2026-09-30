@@ -25,12 +25,27 @@ public class FixedCameraCatalogLeaseService {
 
     private final ControlServiceProperties properties;
     private final RobotMediaCommandService commandService;
+    /**
+     * 按 BFF 租约 ID 保存版本及授权摄像头集合，只合并尚未过期的租约。
+     */
     private final Map<String, LeaseState> leases = new ConcurrentHashMap<>();
+    /**
+     * 本实例每次发布全量目录时递增的版本序号。
+     */
     private final AtomicLong catalogVersion = new AtomicLong();
 
+    /**
+     * 接收目录租约允许的最长有效秒数，校验时还受硬上限约束。
+     */
     @Value("${control.fixed-camera-catalog.max-lease-seconds:300}")
     private long maxLeaseSeconds = 300L;
 
+    /**
+     * 初始化 FixedCameraCatalogLeaseService，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param commandService 视频命令服务
+     */
     public FixedCameraCatalogLeaseService(
             ControlServiceProperties properties,
             RobotMediaCommandService commandService) {
@@ -38,7 +53,12 @@ public class FixedCameraCatalogLeaseService {
         this.commandService = commandService;
     }
 
-    /** 接收并发布一份新租约；乱序版本不覆盖新数据。 */
+    /**
+     * 接收并发布一份新租约；乱序版本不覆盖新数据。
+     *
+     * @param request 请求参数
+     * @return 按当前有效租约合并的 Gateway 摄像头目录快照
+     */
     public synchronized FixedCameraCatalogSnapshot upsert(FixedCameraCatalogLeaseRequest request) {
         Instant now = Instant.now();
         validate(request, now);
@@ -53,8 +73,9 @@ public class FixedCameraCatalogLeaseService {
 
     /**
      * 最后一个大屏会话关闭时主动撤销其目录租约，避免仍按旧租约继续探测。
-     *
      * @return 是否实际移除了租约
+     *
+     * @param leaseId 目录租约 ID
      */
     public synchronized boolean release(String leaseId) {
         if (leaseId == null || leaseId.isBlank() || leases.remove(leaseId) == null) {
@@ -169,12 +190,25 @@ public class FixedCameraCatalogLeaseService {
         return blank(value) ? null : value.trim();
     }
 
+    /**
+     * 一份有效目录租约的版本、期限与摄像头集合。
+     *
+     * @param version 当前快照或请求版本，用于识别更新先后
+     * @param expiresAt 有效期截止时间
+     * @param cameras 本租约或快照中的摄像头集合
+     */
     private record LeaseState(
             long version,
             Instant expiresAt,
             Map<String, FixedCameraCatalogLeaseRequest.CameraRecord> cameras) {
     }
 
+    /**
+     * 从当前有效租约选出的摄像头及其失效时间。
+     *
+     * @param camera 固定摄像头配置及其视频源信息
+     * @param expiresAt 有效期截止时间
+     */
     private record SelectedCamera(FixedCameraCatalogLeaseRequest.CameraRecord camera, Instant expiresAt) {
     }
 }

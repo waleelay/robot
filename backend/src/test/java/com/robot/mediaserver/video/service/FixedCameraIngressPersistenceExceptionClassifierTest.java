@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.sql.SQLException;
 import org.junit.jupiter.api.Test;
 
+/** 验证数据库锁竞争、连接故障及内部异常的分类优先级。 */
 class FixedCameraIngressPersistenceExceptionClassifierTest {
 
     private final FixedCameraIngressPersistenceExceptionClassifier classifier =

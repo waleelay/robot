@@ -35,6 +35,9 @@ import org.springframework.stereotype.Service;
 public class EquipmentControlService {
 
     private static final Logger log = LoggerFactory.getLogger(EquipmentControlService.class);
+    /**
+     * 边缘本体状态相对媒体心跳具有优先权的有效时长，单位纳秒。
+     */
     private static final long EDGE_STATUS_AUTHORITY_NANOS = TimeUnit.SECONDS.toNanos(30);
     private static final List<String> CLEARABLE_EDGE_STATUS_FIELDS = List.of("charging", "taskStatus");
     private static final Set<String> GROUND_BASE_DEVICE_TYPES = Set.of(
@@ -87,16 +90,25 @@ public class EquipmentControlService {
     private final EquipmentControlCommandPublisher commandPublisher;
     private final MediaWebSocketPublisher webSocketPublisher;
     private final ControlManagementClient managementClient;
+    /**
+     * 按控制会话 ID 保存租约、持有者和最近运动指令，释放或过期时收口。
+     */
     private final Map<String, Map<String, Object>> sessions = new ConcurrentHashMap<>();
+    /**
+     * 按机器人 ID 保存融合后的控制运行状态，与管理端设备档案分别维护。
+     */
     private final Map<String, Map<String, Object>> robotStates = new ConcurrentHashMap<>();
+    /**
+     * 每台机器人最近接受边缘本体状态的单调时间，防止媒体心跳覆盖新鲜本体事实。
+     */
     private final Map<String, Long> edgeStatusUpdatedNanos = new ConcurrentHashMap<>();
 
     /**
      * 创建 EquipmentControlService 实例。
      *
-     * @param commandPublisher   commandPublisher
-     * @param webSocketPublisher webSocketPublisher
-     * @param managementClient   managementClient
+     * @param commandPublisher   向设备发布统一控制 MQTT 指令的组件
+     * @param webSocketPublisher 向已连接客户端投递业务事件的组件
+     * @param managementClient   访问 Management 档案与权限接口的客户端
      */
     public EquipmentControlService(
             EquipmentControlCommandPublisher commandPublisher,
@@ -356,6 +368,9 @@ public class EquipmentControlService {
         return released;
     }
 
+    /**
+     * 在会话锁内标记释放并取得必要停止载荷，锁外发布停止命令以结束持续运动。
+     */
     private void releaseSession(Map<String, Object> session, String reason, boolean stopActiveMotion) {
         Map<String, Object> stopPayload = null;
         synchronized (session) {
@@ -656,9 +671,9 @@ public class EquipmentControlService {
      * 构建设备动作参数。
      *
      * @param action     动作名称
-     * @param deviceType deviceType
-     * @param params     params
-     * @param device     device
+     * @param deviceType 平台设备类型编码
+     * @param params     待校验并下发的动作参数
+     * @param device     本次处理的设备档案或运行状态
      * @return 设备动作参数
      */
     private Map<String, Object> buildParams(
@@ -821,6 +836,9 @@ public class EquipmentControlService {
                         "yaw", angularYaw));
     }
 
+    /**
+     * 按具体多合一动作验证并归一化参数，保留设备协议要求的单位、范围与嵌套结构。
+     */
     private Map<String, Object> buildMultiFunctionParams(
             String action,
             Map<String, Object> params,
@@ -924,9 +942,9 @@ public class EquipmentControlService {
      * 创建控制会话快照。
      *
      * @param robotId   机器人 ID
-     * @param scope     scope
-     * @param deviceIds deviceIds
-     * @param actions   actions
+     * @param scope     控制动作或租约适用的范围
+     * @param deviceIds 控制会话覆盖的设备组件 ID 集合
+     * @param actions   申请或允许执行的控制动作编码集合
      * @param user      当前用户
      * @return 控制会话快照
      */
@@ -1074,9 +1092,8 @@ public class EquipmentControlService {
 
     /**
      * 判断控制会话是否过期。
-     *
-     * @param session WebSocket 会话
-     * @param now     now
+     * @param session 包含 leaseExpireAt 的装备控制会话
+     * @param now 本次处理使用的统一服务端时间
      * @return 是否过期
      */
     private boolean isExpired(Map<String, Object> session, OffsetDateTime now) {
@@ -1088,10 +1105,9 @@ public class EquipmentControlService {
     }
 
     /**
-     * 获取并校验机器人状态。
-     *
+     * 查询当前身份有权访问的管理端机器人档案。
      * @param robotId 机器人 ID
-     * @return 机器人状态
+     * @return 管理端机器人档案
      */
     private Map<String, Object> requireRobot(String robotId) {
         return managementClient.deviceBySerialNumber(robotId)
@@ -1441,6 +1457,9 @@ public class EquipmentControlService {
         return firstString(component, "code", "deviceId", "id");
     }
 
+    /**
+     * 将管理端组件信息归一为平台控制设备类型，按现有兼容来源匹配能力。
+     */
     private String controlDeviceType(Map<String, Object> robot, Map<String, Object> component) {
         String explicitDeviceType = normalized(firstString(component, "deviceType"));
         String componentType = normalized(firstString(component, "componentType", "type"));
@@ -1562,6 +1581,9 @@ public class EquipmentControlService {
         };
     }
 
+    /**
+     * 把管理端动作定义映射为平台支持的控制动作，保留已明确的兼容别名，不为未知动作生成默认命令。
+     */
     private String controlAction(String managementActionCode, String deviceType) {
         String code = normalized(managementActionCode);
         return switch (code) {
@@ -1782,7 +1804,9 @@ public class EquipmentControlService {
 
     private static String reportedControlMode(Object value) {
         String mode = stringValue(value, "").trim();
-        if ("导航模式".equals(mode)) return mode;
+        if ("导航模式".equals(mode)) {
+            return mode;
+        }
         return "手动模式".equals(mode) || "常规模式".equals(mode) ? "手动模式" : null;
     }
 
@@ -1833,7 +1857,7 @@ public class EquipmentControlService {
      *
      * @param params 请求参数
      * @param device 设备能力
-     * @return lightId
+     * @return 照明设备标识
      */
     private static String warningLightId(Map<String, Object> params, Map<String, Object> device) {
         Map<String, Object> profile = mapValue(device.get("controlProfile"));
@@ -1990,7 +2014,7 @@ public class EquipmentControlService {
     /**
      * 读取 Map 值并应用默认值。
      *
-     * @param map          map
+     * @param map          按当前协议字段组织的数据对象
      * @param key          字段名
      * @param defaultValue 默认值
      * @return 字段值或默认值

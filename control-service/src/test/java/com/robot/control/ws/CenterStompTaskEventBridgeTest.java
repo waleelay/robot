@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestClient;
 
+/** 验证管理端 STOMP 任务事件的订阅、转换和连接生命周期。 */
 class CenterStompTaskEventBridgeTest {
 
     @Test

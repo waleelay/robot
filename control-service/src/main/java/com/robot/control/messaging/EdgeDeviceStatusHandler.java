@@ -42,6 +42,16 @@ public class EdgeDeviceStatusHandler {
     private final TrajectoryCoordinator trajectoryCoordinator;
     private final GisLocationEnrichmentService gisLocationEnrichmentService;
 
+    /**
+     * 初始化 EdgeDeviceStatusHandler，保存所需依赖及初始运行状态。
+     *
+     * @param objectMapper JSON 编解码器
+     * @param equipmentControlService 装备控制服务
+     * @param robotRegistryService 维护机器人运行状态与在线事实的注册服务
+     * @param mileageService 计算设备里程增量，并按分钟保存可用于统计的结果。
+     * @param trajectoryCoordinator 按大屏实际观看目标查询并定向推送设备任务轨迹。
+     * @param gisLocationEnrichmentService 将边缘端缺失经纬度的位置按设备去重后批量交给 Management 换算。
+     */
     public EdgeDeviceStatusHandler(
             ObjectMapper objectMapper,
             EquipmentControlService equipmentControlService,
@@ -60,8 +70,8 @@ public class EdgeDeviceStatusHandler {
     /**
      * 处理一条 {@code eiop/v1/edge/{serialNumber}/status} 消息。
      *
-     * @param topic MQTT topic
-     * @param json  MQTT payload
+     * @param topic MQTT 主题
+     * @param json  MQTT 消息载荷
      */
     public void handle(String topic, String json) {
         try {
@@ -100,6 +110,9 @@ public class EdgeDeviceStatusHandler {
         }
     }
 
+    /**
+     * 从边缘消息提取平台认可的状态字段，区分未提供、明确置空和有效值，避免旧值错误覆盖新的设备事实。
+     */
     private Map<String, Object> normalize(
             String serialNumber,
             Map<String, Object> envelope,
@@ -208,8 +221,7 @@ public class EdgeDeviceStatusHandler {
 
     /**
      * 解析边缘设备事件时间。协议首选 ISO-8601；为兼容已投产设备，也接受数值 Unix 秒或毫秒。
-     * 数值经 JSON 反序列化为 Double 后可能表现为科学计数法，BigDecimal 可无损处理该形式。
-     *
+     *  数值经 JSON 反序列化为 Double 后可能表现为科学计数法，BigDecimal 可解析该表示，但不能恢复此前浮点转换已丢失的精度。
      * @param value MQTT 载荷中的 timestamp
      * @return UTC 偏移的事件时间；无法解析时返回 null，由里程分支隔离该条记录
      */

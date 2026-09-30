@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
+/** 验证视频房间关闭和会话资源释放的正常及失败路径。 */
 class VideoSessionServiceRoomReleaseTest {
 
     private final VideoSessionRepository repository = mock(VideoSessionRepository.class);

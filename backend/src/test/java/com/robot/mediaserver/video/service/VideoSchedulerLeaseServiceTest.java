@@ -17,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
+/** 验证媒体维护任务的数据库租约获取与释放。 */
 class VideoSchedulerLeaseServiceTest {
 
     private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);

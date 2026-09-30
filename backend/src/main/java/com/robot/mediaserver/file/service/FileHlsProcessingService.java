@@ -26,11 +26,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+/** 领取视频处理任务，管理 FFmpeg/ffprobe 子进程及临时文件，并收口 HLS 成功或失败状态。 */
 @Service
 public class FileHlsProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(FileHlsProcessingService.class);
+    /**
+     * 子进程诊断输出最多保留的字节数；超过部分仍读取并丢弃，避免输出管道阻塞。
+     */
     private static final int PROCESS_OUTPUT_LIMIT_BYTES = 64 * 1024;
+    /**
+     * 停止子进程及等待输出读取线程结束的最长秒数。
+     */
     private static final long PROCESS_STOP_WAIT_SECONDS = 2;
 
     private final MediaProperties properties;
@@ -39,6 +46,15 @@ public class FileHlsProcessingService {
     private final FileService fileService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 初始化 FileHlsProcessingService，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param fileRepository 查询文件主记录，支持租户过滤、来源复用和保留期清理。
+     * @param storage 封装 MinIO 对象和分片读写、签名地址及桶初始化；调用方负责传入流的生命周期。
+     * @param fileService 管理文件元数据、上传会话、所有权与播放授权，协调存储及视频处理状态。
+     * @param objectMapper JSON 编解码器
+     */
     public FileHlsProcessingService(
             MediaProperties properties,
             MediaFileRepository fileRepository,
@@ -52,6 +68,10 @@ public class FileHlsProcessingService {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 选择更新时间最早的 PROCESSING 视频并刷新时间；本方法不提供跨实例排他租约，单实例去重由调度器维护。
+     * @return 已领取的文件；当前无可领取任务时为空
+     */
     @Transactional
     public Optional<String> claimNext() {
         List<MediaFile> candidates = fileRepository.findTop10ByFileTypeAndStatusOrderByUpdatedAtAsc(FileType.VIDEO, FileStatus.PROCESSING);
@@ -64,6 +84,11 @@ public class FileHlsProcessingService {
         return Optional.of(file.getFileId());
     }
 
+    /**
+     * 下载源文件、探测并生成 HLS，成功后发布就绪元数据；失败时记录原因并清理本地临时资源。
+     *
+     * @param fileId 文件 ID
+     */
     public void process(String fileId) {
         MediaFile file = fileRepository.findById(fileId)
                 .orElseThrow(() -> new IllegalArgumentException("未找到文件：" + fileId));
@@ -174,6 +199,9 @@ public class FileHlsProcessingService {
         return new ProbeResult(videoCodec, audioCodec, pixelFormat, width, height, level, duration);
     }
 
+    /**
+     * 仅在编码、像素格式、分辨率及编码等级满足当前浏览器播放约束时允许直接封装。
+     */
     private boolean canCopyToHls(ProbeResult probe) {
         return "h264".equals(probe.videoCodec())
                 && (probe.audioCodec() == null || "aac".equals(probe.audioCodec()))
@@ -185,6 +213,9 @@ public class FileHlsProcessingService {
                 && (probe.level() == null || probe.level() <= 42);
     }
 
+    /**
+     * 根据编码兼容性选择直接封装或转码；统一限制输出尺寸与像素格式，并按片长设置关键帧。
+     */
     private void packageHls(
             Path source,
             Path outputDirectory,
@@ -246,7 +277,7 @@ public class FileHlsProcessingService {
         command.add(outputDirectory.resolve("segment_%06d.m4s").toString());
         command.add(outputDirectory.resolve("index.m3u8").toString());
         long timeoutSeconds = Math.max(
-                Math.max(1, properties.getFile().getHlsProcessingLeaseSeconds()),
+                Math.max(1, properties.getFile().getHlsProcessingTimeoutSeconds()),
                 (long) Math.ceil(durationSeconds * 2));
         ProcessResult result = runProcess(command, timeoutSeconds, "FFMPEG");
         if (!Files.exists(outputDirectory.resolve("index.m3u8"))) {
@@ -256,6 +287,9 @@ public class FileHlsProcessingService {
         }
     }
 
+    /**
+     * 启动子进程并持续排空合并输出；超时或等待中断时终止进程树，等待中断时恢复线程标志；读取失败在进程退出后报告。
+     */
     ProcessResult runProcess(List<String> command, long timeoutSeconds, String codePrefix) throws Exception {
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -374,6 +408,16 @@ public class FileHlsProcessingService {
         return OffsetDateTime.now(ZoneOffset.UTC);
     }
 
+    /**
+     * 视频探测结果，包含编解码信息、画面尺寸、编码等级与秒数时长。
+     * @param videoCodec 视频编码名称
+     * @param audioCodec 音频编码名称，未探测到音轨时可为空
+     * @param pixelFormat 视频像素格式，用于判断是否需要转码
+     * @param width 宽度
+     * @param height 高度
+     * @param level ffprobe 返回的编码等级，H.264 的 42 对应 Level 4.2；未提供时为空
+     * @param durationSeconds 时长秒数
+     */
     private record ProbeResult(
             String videoCodec,
             String audioCodec,
@@ -384,10 +428,18 @@ public class FileHlsProcessingService {
             double durationSeconds) {
     }
 
+    /**
+     * 受长度限制的子进程标准输出，用于解析探测结果或诊断执行失败。
+     *
+     * @param output 子进程合并后的输出文本，用于诊断执行结果
+     */
     record ProcessResult(String output) {
     }
 
+    /** 携带稳定错误码的子进程执行异常，区分启动、超时、输出读取和非零退出。 */
     static final class ProcessExecutionException extends Exception {
+        private static final long serialVersionUID = 1L;
+
         private final String code;
 
         ProcessExecutionException(String code, String message) {

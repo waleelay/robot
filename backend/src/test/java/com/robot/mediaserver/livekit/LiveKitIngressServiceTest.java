@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/** 验证 LiveKit Ingress 响应字段和嵌套运行状态的解析。 */
 class LiveKitIngressServiceTest {
 
     @Test

@@ -1,0 +1,2330 @@
+{
+  "components" : {
+    "schemas" : {
+      "AlarmDisposal" : {
+        "description" : "告警处置结果",
+        "properties" : {
+          "alarmId" : {
+            "description" : "告警 ID",
+            "type" : "string"
+          },
+          "disposalStatus" : {
+            "description" : "处置状态编码",
+            "type" : "string"
+          },
+          "disposalStatusName" : {
+            "description" : "处置状态名称",
+            "type" : "string"
+          },
+          "message" : {
+            "description" : "处置结果说明",
+            "type" : "string"
+          },
+          "serverTime" : {
+            "description" : "上海时区服务时间",
+            "type" : "string"
+          },
+          "status" : {
+            "description" : "成功后的告警状态；失败为 null",
+            "type" : [ "null", "string" ]
+          },
+          "success" : {
+            "description" : "下游处置是否成功",
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "alarmId", "disposalStatus", "disposalStatusName", "message", "serverTime", "status", "success" ],
+        "type" : "object"
+      },
+      "BadRequest" : {
+        "description" : "全景参数业务错误",
+        "properties" : {
+          "code" : {
+            "description" : "固定为 BAD_REQUEST",
+            "type" : "string"
+          },
+          "message" : {
+            "description" : "错误说明",
+            "type" : "string"
+          },
+          "success" : {
+            "description" : "固定为 false",
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "code", "message", "success" ],
+        "type" : "object"
+      },
+      "CurrentAccess" : {
+        "description" : "Management 统一响应封装，BFF 原样透传",
+        "properties" : {
+          "code" : {
+            "description" : "成功为 0",
+            "type" : "string"
+          },
+          "data" : {
+            "description" : "当前访问上下文",
+            "properties" : {
+              "authorizationBypassed" : {
+                "description" : "是否关闭业务授权限制，仍需有效登录",
+                "type" : "boolean"
+              },
+              "emergencyAdministrator" : {
+                "description" : "兼容字段，当前固定 false",
+                "type" : "boolean"
+              },
+              "initializationStatus" : {
+                "description" : "PENDING 或 COMPLETED",
+                "type" : "string"
+              },
+              "initializer" : {
+                "description" : "是否为初始化人员",
+                "type" : "boolean"
+              },
+              "initializerDisabled" : {
+                "description" : "初始化账号是否停用",
+                "type" : "boolean"
+              },
+              "managementOrganizationIds" : {
+                "description" : "可管理组织 ID 集合",
+                "items" : {
+                  "description" : "组织 ID 字符串",
+                  "type" : "string"
+                },
+                "type" : "array"
+              },
+              "organizationCode" : {
+                "description" : "主组织编码",
+                "type" : [ "null", "string" ]
+              },
+              "organizationId" : {
+                "description" : "主组织 ID，Management 将 Long ID 序列化为字符串",
+                "type" : [ "null", "string" ]
+              },
+              "organizationName" : {
+                "description" : "主组织名称",
+                "type" : [ "null", "string" ]
+              },
+              "permissions" : {
+                "description" : "有效权限编码",
+                "items" : {
+                  "description" : "权限编码",
+                  "type" : "string"
+                },
+                "type" : "array"
+              },
+              "roles" : {
+                "description" : "业务角色",
+                "items" : {
+                  "description" : "业务角色；Management 将 ID 序列化为字符串",
+                  "properties" : {
+                    "roleCode" : {
+                      "description" : "角色编码",
+                      "type" : [ "null", "string" ]
+                    },
+                    "roleId" : {
+                      "description" : "角色 ID",
+                      "type" : [ "null", "string" ]
+                    },
+                    "roleName" : {
+                      "description" : "角色名称",
+                      "type" : [ "null", "string" ]
+                    },
+                    "roleType" : {
+                      "description" : "角色类型",
+                      "type" : [ "null", "string" ]
+                    }
+                  },
+                  "required" : [ "roleCode", "roleId", "roleName", "roleType" ],
+                  "type" : "object"
+                },
+                "type" : "array"
+              },
+              "userId" : {
+                "description" : "用户 ID",
+                "type" : "string"
+              },
+              "username" : {
+                "description" : "用户名",
+                "type" : [ "null", "string" ]
+              }
+            },
+            "required" : [ "authorizationBypassed", "emergencyAdministrator", "initializationStatus", "initializer", "initializerDisabled", "managementOrganizationIds", "organizationCode", "organizationId", "organizationName", "permissions", "roles", "userId", "username" ],
+            "type" : "object"
+          },
+          "message" : {
+            "description" : "响应说明",
+            "type" : "string"
+          },
+          "traceId" : {
+            "description" : "追踪 ID，可为空字符串",
+            "type" : "string"
+          }
+        },
+        "required" : [ "code", "data", "message", "traceId" ],
+        "type" : "object"
+      },
+      "FrameworkError" : {
+        "description" : "请求解析、参数绑定失败或服务暂不可用时的框架错误；可随服务配置附加诊断字段",
+        "properties" : {
+          "error" : {
+            "description" : "HTTP 错误说明",
+            "type" : "string"
+          },
+          "path" : {
+            "description" : "发生错误的请求路径",
+            "type" : "string"
+          },
+          "status" : {
+            "description" : "HTTP 状态码",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "timestamp" : {
+            "description" : "错误发生时间",
+            "type" : "string"
+          }
+        },
+        "required" : [ "error", "path", "status", "timestamp" ],
+        "type" : "object"
+      },
+      "RemovedApi" : {
+        "description" : "已移除入口的迁移提示",
+        "properties" : {
+          "code" : {
+            "description" : "固定为 API_REMOVED",
+            "type" : "string"
+          },
+          "message" : {
+            "description" : "替代入口说明",
+            "type" : "string"
+          }
+        },
+        "required" : [ "code", "message" ],
+        "type" : "object"
+      },
+      "ReportPage" : {
+        "description" : "当前用户可见报告分页",
+        "properties" : {
+          "data" : {
+            "description" : "报告记录，按创建时间倒序",
+            "items" : {
+              "description" : "报告记录",
+              "properties" : {
+                "downloadTime" : {
+                  "description" : "创建时间",
+                  "type" : "string"
+                },
+                "filename" : {
+                  "description" : "下载文件名",
+                  "type" : "string"
+                },
+                "format" : {
+                  "description" : "文件格式",
+                  "type" : "string"
+                },
+                "id" : {
+                  "description" : "报告 ID",
+                  "type" : "string"
+                },
+                "reportName" : {
+                  "description" : "报告名称",
+                  "type" : "string"
+                },
+                "status" : {
+                  "description" : "报告状态",
+                  "type" : "string"
+                },
+                "statusName" : {
+                  "description" : "报告状态名称",
+                  "type" : "string"
+                }
+              },
+              "required" : [ "downloadTime", "filename", "format", "id", "reportName", "status", "statusName" ],
+              "type" : "object"
+            },
+            "type" : "array"
+          },
+          "page" : {
+            "description" : "页码，从 1 开始",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "description" : "每页数量，归一化至 1 至 100",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "total" : {
+            "description" : "总记录数",
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "data", "page", "size", "total" ],
+        "type" : "object"
+      }
+    },
+    "securitySchemes" : {
+      "BrowserJwt" : {
+        "bearerFormat" : "JWT",
+        "description" : "由 IAM 签发，BFF 验签并检查 azp；用户标识不接受浏览器伪造的受信头",
+        "scheme" : "bearer",
+        "type" : "http"
+      }
+    }
+  },
+  "info" : {
+    "description" : "JWT 在 BFF 验证；azp 受客户端白名单约束。全景与告警允许配置的现场客户端，其余自有 API 仅允许大屏客户端。聚合失败和缺测可能产生 null，不能当成零。通配代理契约来源见 x-proxy-contracts。",
+    "title" : "大屏 BFF 自有接口",
+    "version" : "1.0.0"
+  },
+  "openapi" : "3.1.0",
+  "paths" : {
+    "/api/bigscreen/access-control/me" : {
+      "get" : {
+        "description" : "透传 Management 的当前用户访问上下文。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "bigscreenProxyController_currentAccess",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CurrentAccess"
+                }
+              }
+            },
+            "description" : "原样透传 Management 当前访问上下文；模型来自已核对的源码，未代表在线联调验收"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "透传 Management 的当前用户访问上下文",
+        "tags" : [ "BigscreenProxyController" ],
+        "x-upstream-source" : "eiop@38f67fbe985fa5f0417ed4d18199216b154329e9: AccessUserController.current, CurrentAccessResponse, ApiResponse, JacksonConfig"
+      }
+    },
+    "/api/bigscreen/panorama/alarms" : {
+      "get" : {
+        "description" : "查询当前告警聚合结果。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_alarms",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "告警聚合",
+                  "properties" : {
+                    "alarms" : {
+                      "additionalProperties" : true,
+                      "description" : "按等级分组的告警",
+                      "type" : "object"
+                    },
+                    "dataQuality" : {
+                      "description" : "各数据源的质量状态",
+                      "properties" : {
+                        "alarms" : {
+                          "description" : "数据完整性；降级不等于真实空集合",
+                          "properties" : {
+                            "complete" : {
+                              "description" : "数据是否完整",
+                              "type" : "boolean"
+                            },
+                            "degraded" : {
+                              "description" : "是否降级",
+                              "type" : "boolean"
+                            },
+                            "reasonCodes" : {
+                              "description" : "失败原因编码",
+                              "items" : {
+                                "description" : "原因编码",
+                                "type" : "string"
+                              },
+                              "type" : "array"
+                            }
+                          },
+                          "required" : [ "complete", "degraded", "reasonCodes" ],
+                          "type" : "object"
+                        }
+                      },
+                      "required" : [ "alarms" ],
+                      "type" : "object"
+                    },
+                    "serverTime" : {
+                      "description" : "服务时间",
+                      "type" : "string"
+                    }
+                  },
+                  "required" : [ "alarms", "dataQuality", "serverTime" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "查询当前告警聚合结果",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/alarms/actionable-workflow" : {
+      "get" : {
+        "description" : "查询当前可处置的工作流告警。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_actionableWorkflowAlarms",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "可处置的工作流告警",
+                  "properties" : {
+                    "items" : {
+                      "description" : "可处置告警",
+                      "items" : {
+                        "additionalProperties" : true,
+                        "description" : "可处置告警条目，字段由上游协议定义",
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "serverTime" : {
+                      "description" : "服务时间",
+                      "type" : "string"
+                    },
+                    "total" : {
+                      "description" : "总数",
+                      "format" : "int32",
+                      "type" : "integer"
+                    }
+                  },
+                  "required" : [ "items", "serverTime", "total" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "查询当前可处置的工作流告警",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/alarms/page" : {
+      "get" : {
+        "description" : "按等级和时间分页查询告警。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_alarmPage",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "level",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pageNum",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pageSize",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "occurredFrom",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "occurredTo",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "告警分页",
+                  "properties" : {
+                    "items" : {
+                      "description" : "告警详情",
+                      "items" : {
+                        "additionalProperties" : true,
+                        "description" : "告警详情条目，字段由上游协议定义",
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "pageNum" : {
+                      "description" : "页码，从 1 开始",
+                      "format" : "int32",
+                      "type" : "integer"
+                    },
+                    "pageSize" : {
+                      "description" : "每页数量",
+                      "format" : "int32",
+                      "type" : "integer"
+                    },
+                    "serverTime" : {
+                      "description" : "服务时间",
+                      "type" : "string"
+                    },
+                    "total" : {
+                      "description" : "总数",
+                      "format" : "int32",
+                      "type" : "integer"
+                    }
+                  },
+                  "required" : [ "items", "pageNum", "pageSize", "serverTime", "total" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "按等级和时间分页查询告警",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/alarms/{alarmId}/handle-and-continue" : {
+      "post" : {
+        "description" : "处置工作流告警并请求继续任务。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_handleWorkflowAlarm",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "alarmId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "description" : "普通与工作流告警使用相同处置参数",
+                "properties" : {
+                  "disposalStatus" : {
+                    "description" : "必填；IMMEDIATE_DISPOSAL 或 FALSE_ALARM，大小写不敏感、去除首尾空格",
+                    "type" : "string"
+                  },
+                  "handleResult" : {
+                    "description" : "处置说明，可省略",
+                    "type" : [ "null", "string" ]
+                  }
+                },
+                "type" : "object"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AlarmDisposal"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "处置工作流告警并请求继续任务",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/alarms/{alarmId}/handled" : {
+      "post" : {
+        "description" : "提交普通告警处置动作。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_handleAlarm",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "alarmId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "description" : "普通与工作流告警使用相同处置参数",
+                "properties" : {
+                  "disposalStatus" : {
+                    "description" : "必填；IMMEDIATE_DISPOSAL 或 FALSE_ALARM，大小写不敏感、去除首尾空格",
+                    "type" : "string"
+                  },
+                  "handleResult" : {
+                    "description" : "处置说明，可省略",
+                    "type" : [ "null", "string" ]
+                  }
+                },
+                "type" : "object"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AlarmDisposal"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "提交普通告警处置动作",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/devices/{deviceId}/mounted-device-count" : {
+      "get" : {
+        "description" : "查询设备挂载组件数量。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_mountedDeviceCount",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "deviceId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "设备挂载组件数量；未找到时可能为空",
+                  "properties" : {
+                    "mountedDeviceCount" : {
+                      "description" : "组件数量，缺测为 null",
+                      "format" : "int32",
+                      "type" : [ "integer", "null" ]
+                    },
+                    "robotId" : {
+                      "description" : "设备 ID",
+                      "type" : [ "null", "string" ]
+                    }
+                  },
+                  "required" : [ "mountedDeviceCount", "robotId" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "查询设备挂载组件数量",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/maps/{mapId}/resources" : {
+      "get" : {
+        "description" : "查询地图关联的设备和资源。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_mapResources",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "mapId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "地图资源；fixedCamares 为既有协议拼写",
+                  "properties" : {
+                    "fixedCamares" : {
+                      "description" : "地图固定摄像头",
+                      "items" : {
+                        "additionalProperties" : true,
+                        "description" : "地图固定摄像头条目，字段由上游协议定义",
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "mapId" : {
+                      "description" : "地图 ID",
+                      "type" : "string"
+                    },
+                    "points" : {
+                      "description" : "地图点位",
+                      "items" : {
+                        "additionalProperties" : true,
+                        "description" : "地图点位条目，字段由上游协议定义",
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "serverTime" : {
+                      "description" : "服务时间",
+                      "type" : "string"
+                    }
+                  },
+                  "required" : [ "fixedCamares", "mapId", "points", "serverTime" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "查询地图关联的设备和资源",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/maps/{mapId}/task-routes" : {
+      "get" : {
+        "description" : "查询地图内任务计划路线。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_mapTaskRoutes",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "mapId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "地图任务路线",
+                  "properties" : {
+                    "dataQuality" : {
+                      "description" : "各数据源的质量状态",
+                      "properties" : {
+                        "tasks" : {
+                          "description" : "数据完整性；降级不等于真实空集合",
+                          "properties" : {
+                            "complete" : {
+                              "description" : "数据是否完整",
+                              "type" : "boolean"
+                            },
+                            "degraded" : {
+                              "description" : "是否降级",
+                              "type" : "boolean"
+                            },
+                            "invalidReferenceCount" : {
+                              "description" : "失效工作流引用数量",
+                              "format" : "int32",
+                              "type" : "integer"
+                            },
+                            "invalidWorkflowReferences" : {
+                              "description" : "失效工作流引用",
+                              "items" : {
+                                "description" : "引用标识",
+                                "type" : "string"
+                              },
+                              "type" : "array"
+                            },
+                            "reasonCodes" : {
+                              "description" : "失败原因编码",
+                              "items" : {
+                                "description" : "原因编码",
+                                "type" : "string"
+                              },
+                              "type" : "array"
+                            }
+                          },
+                          "required" : [ "complete", "degraded", "invalidReferenceCount", "invalidWorkflowReferences", "reasonCodes" ],
+                          "type" : "object"
+                        }
+                      },
+                      "required" : [ "tasks" ],
+                      "type" : "object"
+                    },
+                    "items" : {
+                      "description" : "任务 ID、实例 ID 及路线 segments",
+                      "items" : {
+                        "additionalProperties" : true,
+                        "description" : "任务 ID、实例 ID 及路线 segments条目，字段由上游协议定义",
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "mapId" : {
+                      "description" : "地图 ID",
+                      "type" : "string"
+                    },
+                    "serverTime" : {
+                      "description" : "服务时间",
+                      "type" : "string"
+                    }
+                  },
+                  "required" : [ "dataQuality", "items", "mapId", "serverTime" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "查询地图内任务计划路线",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/overview" : {
+      "get" : {
+        "description" : "聚合设备、任务、地图、告警和里程概览。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_overview",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "全景聚合；动态子模型继续遵循全景协议和 Management 字段",
+                  "properties" : {
+                    "alarms" : {
+                      "additionalProperties" : true,
+                      "description" : "按等级分组的告警，降级时可为空对象",
+                      "type" : "object"
+                    },
+                    "dataQuality" : {
+                      "description" : "各数据源的质量状态",
+                      "properties" : {
+                        "alarms" : {
+                          "description" : "数据完整性；降级不等于真实空集合",
+                          "properties" : {
+                            "complete" : {
+                              "description" : "数据是否完整",
+                              "type" : "boolean"
+                            },
+                            "degraded" : {
+                              "description" : "是否降级",
+                              "type" : "boolean"
+                            },
+                            "reasonCodes" : {
+                              "description" : "失败原因编码",
+                              "items" : {
+                                "description" : "原因编码",
+                                "type" : "string"
+                              },
+                              "type" : "array"
+                            }
+                          },
+                          "required" : [ "complete", "degraded", "reasonCodes" ],
+                          "type" : "object"
+                        },
+                        "tasks" : {
+                          "description" : "数据完整性；降级不等于真实空集合",
+                          "properties" : {
+                            "complete" : {
+                              "description" : "数据是否完整",
+                              "type" : "boolean"
+                            },
+                            "degraded" : {
+                              "description" : "是否降级",
+                              "type" : "boolean"
+                            },
+                            "invalidReferenceCount" : {
+                              "description" : "失效工作流引用数量",
+                              "format" : "int32",
+                              "type" : "integer"
+                            },
+                            "invalidWorkflowReferences" : {
+                              "description" : "失效工作流引用",
+                              "items" : {
+                                "description" : "引用标识",
+                                "type" : "string"
+                              },
+                              "type" : "array"
+                            },
+                            "reasonCodes" : {
+                              "description" : "失败原因编码",
+                              "items" : {
+                                "description" : "原因编码",
+                                "type" : "string"
+                              },
+                              "type" : "array"
+                            }
+                          },
+                          "required" : [ "complete", "degraded", "invalidReferenceCount", "invalidWorkflowReferences", "reasonCodes" ],
+                          "type" : "object"
+                        }
+                      },
+                      "required" : [ "alarms", "tasks" ],
+                      "type" : "object"
+                    },
+                    "deviceStats" : {
+                      "description" : "设备统计",
+                      "properties" : {
+                        "fault" : {
+                          "description" : "故障数量",
+                          "format" : "int32",
+                          "type" : "integer"
+                        },
+                        "offline" : {
+                          "description" : "离线数量",
+                          "format" : "int32",
+                          "type" : "integer"
+                        },
+                        "online" : {
+                          "description" : "在线数量",
+                          "format" : "int32",
+                          "type" : "integer"
+                        },
+                        "total" : {
+                          "description" : "设备总数",
+                          "format" : "int32",
+                          "type" : "integer"
+                        }
+                      },
+                      "required" : [ "fault", "offline", "online", "total" ],
+                      "type" : "object"
+                    },
+                    "deviceTypeStats" : {
+                      "description" : "设备分类统计",
+                      "items" : {
+                        "description" : "分类统计",
+                        "properties" : {
+                          "count" : {
+                            "description" : "设备数量",
+                            "format" : "int32",
+                            "type" : "integer"
+                          },
+                          "fault" : {
+                            "description" : "故障数量",
+                            "format" : "int32",
+                            "type" : "integer"
+                          },
+                          "name" : {
+                            "description" : "类型名称",
+                            "type" : "string"
+                          },
+                          "offline" : {
+                            "description" : "离线数量",
+                            "format" : "int32",
+                            "type" : "integer"
+                          },
+                          "type" : {
+                            "description" : "类型编码",
+                            "type" : "string"
+                          }
+                        },
+                        "required" : [ "count", "fault", "name", "offline", "type" ],
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "devices" : {
+                      "description" : "设备摘要",
+                      "items" : {
+                        "additionalProperties" : true,
+                        "description" : "设备摘要条目，字段由上游协议定义",
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "map" : {
+                      "description" : "地图摘要",
+                      "items" : {
+                        "additionalProperties" : true,
+                        "description" : "地图摘要条目，字段由上游协议定义",
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "patrolOverview" : {
+                      "description" : "巡检与里程指标",
+                      "properties" : {
+                        "durationToday" : {
+                          "description" : "今日累计时长，小时；无有效时长为 null",
+                          "type" : [ "null", "number" ]
+                        },
+                        "durationUnit" : {
+                          "description" : "有有效时长时为 小时",
+                          "type" : [ "null", "string" ]
+                        },
+                        "mileageHasData" : {
+                          "description" : "是否有有效里程样本",
+                          "type" : "boolean"
+                        },
+                        "mileageToday" : {
+                          "description" : "今日里程，千米；缺测为 null，真实零值为 0",
+                          "type" : [ "null", "number" ]
+                        },
+                        "mileageUnit" : {
+                          "description" : "有里程数据时为 KM",
+                          "type" : [ "null", "string" ]
+                        }
+                      },
+                      "required" : [ "durationToday", "durationUnit", "mileageHasData", "mileageToday", "mileageUnit" ],
+                      "type" : "object"
+                    },
+                    "serverTime" : {
+                      "description" : "上海时区服务时间",
+                      "type" : "string"
+                    },
+                    "taskOverview" : {
+                      "description" : "任务统计",
+                      "properties" : {
+                        "completedRateText" : {
+                          "description" : "当前尚无有效完成率",
+                          "type" : [ "null", "string" ]
+                        },
+                        "pending" : {
+                          "description" : "等待中数量",
+                          "format" : "int32",
+                          "type" : "integer"
+                        },
+                        "running" : {
+                          "description" : "执行中数量",
+                          "format" : "int32",
+                          "type" : "integer"
+                        },
+                        "totalToday" : {
+                          "description" : "今日任务数",
+                          "format" : "int32",
+                          "type" : "integer"
+                        }
+                      },
+                      "required" : [ "completedRateText", "pending", "running", "totalToday" ],
+                      "type" : "object"
+                    },
+                    "tasks" : {
+                      "description" : "任务摘要",
+                      "items" : {
+                        "additionalProperties" : true,
+                        "description" : "任务摘要条目，字段由上游协议定义",
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    }
+                  },
+                  "required" : [ "alarms", "dataQuality", "deviceStats", "deviceTypeStats", "devices", "map", "patrolOverview", "serverTime", "taskOverview", "tasks" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "聚合设备、任务、地图、告警和里程概览",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/tasks" : {
+      "get" : {
+        "description" : "查询任务计划与执行实例聚合结果。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_tasks",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "任务列表",
+                  "properties" : {
+                    "dataQuality" : {
+                      "description" : "各数据源的质量状态",
+                      "properties" : {
+                        "tasks" : {
+                          "description" : "数据完整性；降级不等于真实空集合",
+                          "properties" : {
+                            "complete" : {
+                              "description" : "数据是否完整",
+                              "type" : "boolean"
+                            },
+                            "degraded" : {
+                              "description" : "是否降级",
+                              "type" : "boolean"
+                            },
+                            "invalidReferenceCount" : {
+                              "description" : "失效工作流引用数量",
+                              "format" : "int32",
+                              "type" : "integer"
+                            },
+                            "invalidWorkflowReferences" : {
+                              "description" : "失效工作流引用",
+                              "items" : {
+                                "description" : "引用标识",
+                                "type" : "string"
+                              },
+                              "type" : "array"
+                            },
+                            "reasonCodes" : {
+                              "description" : "失败原因编码",
+                              "items" : {
+                                "description" : "原因编码",
+                                "type" : "string"
+                              },
+                              "type" : "array"
+                            }
+                          },
+                          "required" : [ "complete", "degraded", "invalidReferenceCount", "invalidWorkflowReferences", "reasonCodes" ],
+                          "type" : "object"
+                        }
+                      },
+                      "required" : [ "tasks" ],
+                      "type" : "object"
+                    },
+                    "items" : {
+                      "description" : "任务摘要",
+                      "items" : {
+                        "additionalProperties" : true,
+                        "description" : "任务摘要条目，字段由上游协议定义",
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "serverTime" : {
+                      "description" : "服务时间",
+                      "type" : "string"
+                    },
+                    "total" : {
+                      "description" : "本次返回条数",
+                      "format" : "int32",
+                      "type" : "integer"
+                    }
+                  },
+                  "required" : [ "dataQuality", "items", "serverTime", "total" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "查询任务计划与执行实例聚合结果",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/tasks/{taskId}" : {
+      "get" : {
+        "description" : "查询任务计划及实例详情。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_taskDetail",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "taskId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "任务详情；找不到时 task 为 null",
+                  "properties" : {
+                    "dataQuality" : {
+                      "description" : "各数据源的质量状态",
+                      "properties" : {
+                        "tasks" : {
+                          "description" : "数据完整性；降级不等于真实空集合",
+                          "properties" : {
+                            "complete" : {
+                              "description" : "数据是否完整",
+                              "type" : "boolean"
+                            },
+                            "degraded" : {
+                              "description" : "是否降级",
+                              "type" : "boolean"
+                            },
+                            "invalidReferenceCount" : {
+                              "description" : "失效工作流引用数量",
+                              "format" : "int32",
+                              "type" : "integer"
+                            },
+                            "invalidWorkflowReferences" : {
+                              "description" : "失效工作流引用",
+                              "items" : {
+                                "description" : "引用标识",
+                                "type" : "string"
+                              },
+                              "type" : "array"
+                            },
+                            "reasonCodes" : {
+                              "description" : "失败原因编码",
+                              "items" : {
+                                "description" : "原因编码",
+                                "type" : "string"
+                              },
+                              "type" : "array"
+                            }
+                          },
+                          "required" : [ "complete", "degraded", "invalidReferenceCount", "invalidWorkflowReferences", "reasonCodes" ],
+                          "type" : "object"
+                        }
+                      },
+                      "required" : [ "tasks" ],
+                      "type" : "object"
+                    },
+                    "serverTime" : {
+                      "description" : "服务时间",
+                      "type" : "string"
+                    },
+                    "task" : {
+                      "description" : "任务计划及运行实例",
+                      "type" : [ "null", "object" ]
+                    }
+                  },
+                  "required" : [ "dataQuality", "serverTime", "task" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "查询任务计划及实例详情",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/panorama/tasks/{taskId}/fixed-cameras" : {
+      "get" : {
+        "description" : "查询任务关联的固定摄像头。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "panoramaController_taskFixedCameras",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "taskId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "任务固定摄像头；不含推流地址或凭据",
+                  "properties" : {
+                    "items" : {
+                      "description" : "安全的视频源摘要",
+                      "items" : {
+                        "description" : "固定摄像头摘要",
+                        "properties" : {
+                          "cameraId" : {
+                            "description" : "摄像头 ID",
+                            "type" : "string"
+                          },
+                          "defaultQuality" : {
+                            "description" : "存在子码流为 sub，否则 main",
+                            "type" : "string"
+                          },
+                          "name" : {
+                            "description" : "摄像头名称",
+                            "type" : [ "null", "string" ]
+                          },
+                          "sourceId" : {
+                            "description" : "与 cameraId 相同",
+                            "type" : "string"
+                          },
+                          "sourceType" : {
+                            "description" : "固定为 FIXED_CAMERA",
+                            "type" : "string"
+                          }
+                        },
+                        "required" : [ "cameraId", "defaultQuality", "name", "sourceId", "sourceType" ],
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "serverTime" : {
+                      "description" : "服务时间",
+                      "type" : "string"
+                    },
+                    "taskId" : {
+                      "description" : "任务 ID",
+                      "type" : "string"
+                    }
+                  },
+                  "required" : [ "items", "serverTime", "taskId" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/BadRequest"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "参数业务校验、请求解析或参数绑定失败"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "查询任务关联的固定摄像头",
+        "tags" : [ "PanoramaController" ]
+      }
+    },
+    "/api/bigscreen/statistics/overview" : {
+      "get" : {
+        "description" : "查询指定时间范围和设备类别的统计指标。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "statisticsController_overview",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "range",
+          "required" : false,
+          "schema" : {
+            "default" : "month",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "startTime",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endTime",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "deviceType",
+          "required" : false,
+          "schema" : {
+            "default" : "all",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "areaId",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "统计聚合",
+                  "properties" : {
+                    "aiAlarmAnalysis" : {
+                      "description" : "AI 告警分析",
+                      "properties" : {
+                        "alarmTypeRanking" : {
+                          "description" : "数量降序分布",
+                          "items" : {
+                            "description" : "分布项",
+                            "properties" : {
+                              "count" : {
+                                "description" : "数量",
+                                "format" : "int32",
+                                "type" : "integer"
+                              },
+                              "name" : {
+                                "description" : "分类名称",
+                                "type" : "string"
+                              },
+                              "percent" : {
+                                "description" : "占比百分数",
+                                "type" : "number"
+                              }
+                            },
+                            "required" : [ "count", "name", "percent" ],
+                            "type" : "object"
+                          },
+                          "type" : "array"
+                        },
+                        "handleMethodRanking" : {
+                          "description" : "数量降序分布",
+                          "items" : {
+                            "description" : "分布项",
+                            "properties" : {
+                              "count" : {
+                                "description" : "数量",
+                                "format" : "int32",
+                                "type" : "integer"
+                              },
+                              "name" : {
+                                "description" : "分类名称",
+                                "type" : "string"
+                              },
+                              "percent" : {
+                                "description" : "占比百分数",
+                                "type" : "number"
+                              }
+                            },
+                            "required" : [ "count", "name", "percent" ],
+                            "type" : "object"
+                          },
+                          "type" : "array"
+                        }
+                      },
+                      "required" : [ "alarmTypeRanking", "handleMethodRanking" ],
+                      "type" : "object"
+                    },
+                    "alarmAreaRanking" : {
+                      "description" : "前十个告警区域",
+                      "items" : {
+                        "description" : "区域统计",
+                        "properties" : {
+                          "areaId" : {
+                            "description" : "当前未提供区域 ID",
+                            "type" : [ "null", "string" ]
+                          },
+                          "areaName" : {
+                            "description" : "区域名称",
+                            "type" : "string"
+                          },
+                          "count" : {
+                            "description" : "告警数量",
+                            "format" : "int32",
+                            "type" : "integer"
+                          },
+                          "percent" : {
+                            "description" : "占比百分数",
+                            "type" : "number"
+                          }
+                        },
+                        "required" : [ "areaId", "areaName", "count", "percent" ],
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "alarmTrend" : {
+                      "description" : "告警时间趋势",
+                      "properties" : {
+                        "points" : {
+                          "description" : "按时间升序的采样点",
+                          "items" : {
+                            "description" : "趋势点",
+                            "properties" : {
+                              "count" : {
+                                "description" : "告警数量",
+                                "format" : "int32",
+                                "type" : "integer"
+                              },
+                              "label" : {
+                                "description" : "按区间使用 HH:mm、MM.dd 或 yyyy-MM",
+                                "type" : "string"
+                              }
+                            },
+                            "required" : [ "count", "label" ],
+                            "type" : "object"
+                          },
+                          "type" : "array"
+                        },
+                        "unit" : {
+                          "description" : "有效时间区间为 次",
+                          "type" : [ "null", "string" ]
+                        }
+                      },
+                      "required" : [ "points", "unit" ],
+                      "type" : "object"
+                    },
+                    "deviceTypeOptions" : {
+                      "description" : "设备类型选项",
+                      "items" : {
+                        "description" : "类型选项",
+                        "properties" : {
+                          "label" : {
+                            "description" : "显示名称",
+                            "type" : "string"
+                          },
+                          "value" : {
+                            "description" : "类型编码，all 表示全部",
+                            "type" : "string"
+                          }
+                        },
+                        "required" : [ "label", "value" ],
+                        "type" : "object"
+                      },
+                      "type" : "array"
+                    },
+                    "equipmentRuntime" : {
+                      "description" : "设备运行统计",
+                      "properties" : {
+                        "items" : {
+                          "description" : "各类型的采样折算时长",
+                          "items" : {
+                            "description" : "类型时长",
+                            "properties" : {
+                              "deviceType" : {
+                                "description" : "类型编码",
+                                "type" : "string"
+                              },
+                              "deviceTypeName" : {
+                                "description" : "类型名称",
+                                "type" : "string"
+                              },
+                              "faultHours" : {
+                                "description" : "故障小时数",
+                                "type" : "number"
+                              },
+                              "offlineHours" : {
+                                "description" : "离线小时数",
+                                "type" : "number"
+                              },
+                              "runningHours" : {
+                                "description" : "运行小时数",
+                                "type" : "number"
+                              }
+                            },
+                            "required" : [ "deviceType", "deviceTypeName", "faultHours", "offlineHours", "runningHours" ],
+                            "type" : "object"
+                          },
+                          "type" : "array"
+                        },
+                        "onlineRate" : {
+                          "description" : "当前在线率，百分数；无设备为 null",
+                          "type" : [ "null", "number" ]
+                        },
+                        "taskCompletionRate" : {
+                          "description" : "任务完成率，百分数；无任务为 null",
+                          "type" : [ "null", "number" ]
+                        },
+                        "unit" : {
+                          "description" : "有运行时长分类时为 小时",
+                          "type" : [ "null", "string" ]
+                        }
+                      },
+                      "required" : [ "items", "onlineRate", "taskCompletionRate", "unit" ],
+                      "type" : "object"
+                    },
+                    "filters" : {
+                      "description" : "生效筛选条件",
+                      "properties" : {
+                        "areaId" : {
+                          "description" : "请求中的区域 ID；当前统计实现未按该值过滤",
+                          "type" : [ "null", "string" ]
+                        },
+                        "deviceType" : {
+                          "description" : "设备类型编码",
+                          "type" : "string"
+                        }
+                      },
+                      "required" : [ "areaId", "deviceType" ],
+                      "type" : "object"
+                    },
+                    "kpis" : {
+                      "description" : "统计指标",
+                      "properties" : {
+                        "aiAlarmTotal" : {
+                          "description" : "指标与环比；未知值为 null",
+                          "properties" : {
+                            "compareRate" : {
+                              "description" : "环比百分比；无可比样本或上期为零且本期非零时为 null",
+                              "type" : [ "null", "number" ]
+                            },
+                            "value" : {
+                              "description" : "指标值，里程单位千米，其余数量或百分比",
+                              "type" : [ "null", "number" ]
+                            }
+                          },
+                          "required" : [ "compareRate", "value" ],
+                          "type" : "object"
+                        },
+                        "autoHandleSuccessRate" : {
+                          "description" : "指标与环比；未知值为 null",
+                          "properties" : {
+                            "compareRate" : {
+                              "description" : "环比百分比；无可比样本或上期为零且本期非零时为 null",
+                              "type" : [ "null", "number" ]
+                            },
+                            "value" : {
+                              "description" : "指标值，里程单位千米，其余数量或百分比",
+                              "type" : [ "null", "number" ]
+                            }
+                          },
+                          "required" : [ "compareRate", "value" ],
+                          "type" : "object"
+                        },
+                        "patrolMileage" : {
+                          "description" : "指标与环比；未知值为 null",
+                          "properties" : {
+                            "compareRate" : {
+                              "description" : "环比百分比；无可比样本或上期为零且本期非零时为 null",
+                              "type" : [ "null", "number" ]
+                            },
+                            "value" : {
+                              "description" : "指标值，里程单位千米，其余数量或百分比",
+                              "type" : [ "null", "number" ]
+                            }
+                          },
+                          "required" : [ "compareRate", "value" ],
+                          "type" : "object"
+                        },
+                        "taskTotal" : {
+                          "description" : "指标与环比；未知值为 null",
+                          "properties" : {
+                            "compareRate" : {
+                              "description" : "环比百分比；无可比样本或上期为零且本期非零时为 null",
+                              "type" : [ "null", "number" ]
+                            },
+                            "value" : {
+                              "description" : "指标值，里程单位千米，其余数量或百分比",
+                              "type" : [ "null", "number" ]
+                            }
+                          },
+                          "required" : [ "compareRate", "value" ],
+                          "type" : "object"
+                        }
+                      },
+                      "required" : [ "aiAlarmTotal", "autoHandleSuccessRate", "patrolMileage", "taskTotal" ],
+                      "type" : "object"
+                    },
+                    "range" : {
+                      "description" : "实际统计起止时间，上海时区",
+                      "properties" : {
+                        "endTime" : {
+                          "description" : "包含的结束时间",
+                          "type" : "string"
+                        },
+                        "startTime" : {
+                          "description" : "包含的开始时间",
+                          "type" : "string"
+                        },
+                        "type" : {
+                          "description" : "today/week/month/all/custom",
+                          "type" : "string"
+                        }
+                      },
+                      "required" : [ "endTime", "startTime", "type" ],
+                      "type" : "object"
+                    },
+                    "serverTime" : {
+                      "description" : "上海时区服务时间",
+                      "type" : "string"
+                    },
+                    "taskCompletion" : {
+                      "description" : "任务完成统计",
+                      "properties" : {
+                        "insight" : {
+                          "description" : "统计说明，无任务为 null",
+                          "type" : [ "null", "string" ]
+                        },
+                        "items" : {
+                          "description" : "任务状态分布",
+                          "items" : {
+                            "description" : "状态统计",
+                            "properties" : {
+                              "count" : {
+                                "description" : "数量",
+                                "format" : "int32",
+                                "type" : "integer"
+                              },
+                              "name" : {
+                                "description" : "状态名称",
+                                "type" : "string"
+                              },
+                              "percent" : {
+                                "description" : "占比百分数",
+                                "type" : "number"
+                              },
+                              "status" : {
+                                "description" : "COMPLETED/RUNNING/PENDING/INTERRUPTED",
+                                "type" : "string"
+                              }
+                            },
+                            "required" : [ "count", "name", "percent", "status" ],
+                            "type" : "object"
+                          },
+                          "type" : "array"
+                        }
+                      },
+                      "required" : [ "insight", "items" ],
+                      "type" : "object"
+                    }
+                  },
+                  "required" : [ "aiAlarmAnalysis", "alarmAreaRanking", "alarmTrend", "deviceTypeOptions", "equipmentRuntime", "filters", "kpis", "range", "serverTime", "taskCompletion" ],
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "统计查询执行器已满或正在停止；调用方稍后重试"
+          }
+        },
+        "summary" : "查询指定时间范围和设备类别的统计指标",
+        "tags" : [ "StatisticsController" ]
+      }
+    },
+    "/api/bigscreen/statistics/reports" : {
+      "get" : {
+        "description" : "分页查询当前用户所属的报告历史。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "statisticsController_reportHistoryList",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 10,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ReportPage"
+                }
+              }
+            },
+            "description" : "处理完成；聚合数据质量与可空字段须由调用方判断"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          }
+        },
+        "summary" : "分页查询当前用户所属的报告历史",
+        "tags" : [ "StatisticsController" ]
+      }
+    },
+    "/api/bigscreen/statistics/reports/export" : {
+      "post" : {
+        "description" : "生成当前用户所属的 PDF 统计报告并下载。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "statisticsController_exportReport",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "description" : "报告筛选，缺省生成月度全部设备的默认模块",
+                "properties" : {
+                  "deviceType" : {
+                    "description" : "设备类型编码，默认 all",
+                    "type" : "string"
+                  },
+                  "modules" : {
+                    "description" : "报告模块；省略或空集合采用默认五个模块",
+                    "items" : {
+                      "description" : "equipmentRuntime/aiAlarmAnalysis/alarmAreaRanking/alarmTrend/taskCompletion",
+                      "type" : "string"
+                    },
+                    "type" : "array"
+                  },
+                  "range" : {
+                    "description" : "timeRange.type 未提供时使用，默认 month",
+                    "type" : "string"
+                  },
+                  "timeRange" : {
+                    "description" : "时间选择",
+                    "properties" : {
+                      "endTime" : {
+                        "description" : "custom 结束时间，上海时区",
+                        "type" : "string"
+                      },
+                      "startTime" : {
+                        "description" : "custom 起始时间，上海时区",
+                        "type" : "string"
+                      },
+                      "type" : {
+                        "description" : "today/week/month/all/custom；其他值按 month 归一化",
+                        "type" : "string"
+                      }
+                    },
+                    "type" : "object"
+                  }
+                },
+                "type" : "object"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/pdf" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "响应正文；下载接口保留 Content-Type 与 Content-Disposition"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "统计查询执行器已满或正在停止；调用方稍后重试"
+          }
+        },
+        "summary" : "生成当前用户所属的 PDF 统计报告并下载",
+        "tags" : [ "StatisticsController" ]
+      }
+    },
+    "/api/bigscreen/statistics/reports/{id}" : {
+      "delete" : {
+        "description" : "删除当前用户所属的统计报告。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "statisticsController_deleteReport",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "处理完成，无响应正文"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "404" : {
+            "description" : "当前用户范围内不存在该报告，无正文"
+          }
+        },
+        "summary" : "删除当前用户所属的统计报告",
+        "tags" : [ "StatisticsController" ]
+      }
+    },
+    "/api/bigscreen/statistics/reports/{id}/download" : {
+      "get" : {
+        "description" : "下载当前用户所属的 PDF 报告。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "statisticsController_downloadReport",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/pdf" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "响应正文；下载接口保留 Content-Type 与 Content-Disposition"
+          },
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "404" : {
+            "description" : "当前用户范围内不存在该报告，无正文"
+          }
+        },
+        "summary" : "下载当前用户所属的 PDF 报告",
+        "tags" : [ "StatisticsController" ]
+      }
+    },
+    "/api/control/robots" : {
+      "delete" : {
+        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "removedRobotsDELETE",
+        "responses" : {
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "410" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RemovedApi"
+                }
+              }
+            },
+            "description" : "旧入口已移除"
+          }
+        },
+        "summary" : "返回已移除机器人列表接口的迁移提示",
+        "tags" : [ "BigscreenProxyController" ]
+      },
+      "get" : {
+        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "removedRobotsGET",
+        "responses" : {
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "410" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RemovedApi"
+                }
+              }
+            },
+            "description" : "旧入口已移除"
+          }
+        },
+        "summary" : "返回已移除机器人列表接口的迁移提示",
+        "tags" : [ "BigscreenProxyController" ]
+      },
+      "head" : {
+        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "removedRobotsHEAD",
+        "responses" : {
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "410" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RemovedApi"
+                }
+              }
+            },
+            "description" : "旧入口已移除"
+          }
+        },
+        "summary" : "返回已移除机器人列表接口的迁移提示",
+        "tags" : [ "BigscreenProxyController" ]
+      },
+      "options" : {
+        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "removedRobotsOPTIONS",
+        "responses" : {
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "410" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RemovedApi"
+                }
+              }
+            },
+            "description" : "旧入口已移除"
+          }
+        },
+        "summary" : "返回已移除机器人列表接口的迁移提示",
+        "tags" : [ "BigscreenProxyController" ]
+      },
+      "patch" : {
+        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "removedRobotsPATCH",
+        "responses" : {
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "410" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RemovedApi"
+                }
+              }
+            },
+            "description" : "旧入口已移除"
+          }
+        },
+        "summary" : "返回已移除机器人列表接口的迁移提示",
+        "tags" : [ "BigscreenProxyController" ]
+      },
+      "post" : {
+        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "removedRobotsPOST",
+        "responses" : {
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "410" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RemovedApi"
+                }
+              }
+            },
+            "description" : "旧入口已移除"
+          }
+        },
+        "summary" : "返回已移除机器人列表接口的迁移提示",
+        "tags" : [ "BigscreenProxyController" ]
+      },
+      "put" : {
+        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "operationId" : "removedRobotsPUT",
+        "responses" : {
+          "401" : {
+            "description" : "JWT 缺失或校验失败，安全过滤链可返回空正文"
+          },
+          "403" : {
+            "description" : "JWT 的客户端标识不在该路由白名单，安全过滤链可返回空正文"
+          },
+          "410" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RemovedApi"
+                }
+              }
+            },
+            "description" : "旧入口已移除"
+          }
+        },
+        "summary" : "返回已移除机器人列表接口的迁移提示",
+        "tags" : [ "BigscreenProxyController" ]
+      }
+    }
+  },
+  "security" : [ {
+    "BrowserJwt" : [ ]
+  } ],
+  "servers" : [ {
+    "url" : "/"
+  } ],
+  "tags" : [ {
+    "description" : "BFF BigscreenProxyController 接口",
+    "name" : "BigscreenProxyController"
+  }, {
+    "description" : "BFF PanoramaController 接口",
+    "name" : "PanoramaController"
+  }, {
+    "description" : "BFF StatisticsController 接口",
+    "name" : "StatisticsController"
+  } ],
+  "x-proxy-contracts" : [ {
+    "contracts" : [ "control-mileage.json", "control-files.json", "control-service.json" ],
+    "source" : "/api/control/**",
+    "target" : "/api/control/**"
+  }, {
+    "contracts" : [ "media-files.json", "media-service.json" ],
+    "source" : "/api/media/**",
+    "target" : "/api/media/**"
+  }, {
+    "contracts" : [ "control-files.json", "control-service.json" ],
+    "source" : "/api/bigscreen/**",
+    "target" : "见 CenterProxyClient.targetPath；自有 Controller 优先"
+  }, {
+    "coverage" : "外部 Management，尚无经验证的 OpenAPI 导出物",
+    "source" : "/api/manage/**",
+    "target" : "/api/manage/**"
+  }, {
+    "coverage" : "外部 Management，尚无经验证的 OpenAPI 导出物",
+    "source" : "/api/v1/management/**",
+    "target" : "/api/v1/management/**"
+  }, {
+    "coverage" : "外部 Management，映射和身份回归已纳入测试",
+    "source" : "/api/bigscreen/business/**",
+    "target" : "BusinessTaskProxyController.targetPath 显式分支"
+  } ]
+}

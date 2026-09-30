@@ -2,7 +2,7 @@ package com.robot.bigscreen.fixedcamera;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.config.DownstreamServiceProperties;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -11,12 +11,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.client.RestClient;
 
+/** 验证固定摄像头目录租约的期限、身份摘要和同步策略。 */
 class FixedCameraCatalogLeaseClientTest {
 
     @Test
     void createsShortSanitizedLeaseWithoutRawIdentity() {
         FixedCameraCatalogLeaseClient client = new FixedCameraCatalogLeaseClient(
-                new CenterServiceProperties(), RestClient.builder());
+                new DownstreamServiceProperties(), RestClient.builder());
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth("sensitive-token");
         Instant now = Instant.parse("2026-08-24T00:00:00Z");
@@ -42,7 +43,7 @@ class FixedCameraCatalogLeaseClientTest {
     @Test
     void includesOnlyEnabledRtspCamerasInGatewayLease() {
         FixedCameraCatalogLeaseClient client = new FixedCameraCatalogLeaseClient(
-                new CenterServiceProperties(), RestClient.builder());
+                new DownstreamServiceProperties(), RestClient.builder());
 
         FixedCameraCatalogLeaseClient.LeaseRequest lease = client.leaseRequest(
                 new UsernamePasswordAuthenticationToken("user-001", ""),

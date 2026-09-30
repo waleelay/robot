@@ -100,3 +100,10 @@ spring:
       max-file-size: ${BIGSCREEN_MULTIPART_MAX_FILE_SIZE:20MB}
       # BFF 代理上传时允许的 multipart 请求总大小。
       max-request-size: ${BIGSCREEN_MULTIPART_MAX_REQUEST_SIZE:21MB}
+
+# 默认关闭，仅在受控开发与契约验证环境启用。
+springdoc:
+  api-docs:
+    enabled: ${BFF_OPENAPI_ENABLED:false}
+    version: OPENAPI_3_1
+  paths-to-match: /api/**

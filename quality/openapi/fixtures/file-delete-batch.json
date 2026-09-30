@@ -1,0 +1,11 @@
+{
+  "failed" : 0,
+  "results" : [ {
+    "code" : "DELETED",
+    "fileId" : "file-1",
+    "message" : "删除成功",
+    "success" : true
+  } ],
+  "succeeded" : 1,
+  "total" : 1
+}

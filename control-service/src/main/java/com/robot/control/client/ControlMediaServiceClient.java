@@ -1,7 +1,7 @@
 package com.robot.control.client;
 
 import com.robot.control.auth.CurrentUser;
-import com.robot.control.config.ControlProperties;
+import com.robot.control.config.ControlServiceProperties;
 import com.robot.media.common.file.FileBatchDeleteRequest;
 import com.robot.media.common.file.FileBatchDeleteResponse;
 import com.robot.media.common.file.FileDownloadUrlResponse;
@@ -45,7 +45,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /**
- * Control Service 调用 Media Service 内部接口的 HTTP 客户端。
+ * 控制服务 调用 媒体服务 内部接口的 HTTP 客户端。
  *
  * @author leelay
  * @date 2026-07-05
@@ -61,12 +61,12 @@ public class ControlMediaServiceClient {
      * @param properties 服务配置
      * @param builder RestClient 构建器
      */
-    public ControlMediaServiceClient(ControlProperties properties, RestClient.Builder builder) {
+    public ControlMediaServiceClient(ControlServiceProperties properties, RestClient.Builder builder) {
         this.restClient = builder.baseUrl(properties.getMediaServiceBaseUrl()).build();
     }
 
     /**
-     * 请求 Media Service 创建或复用视频会话。
+     * 请求 媒体服务 创建或复用视频会话。
      *
      * @param request 请求参数
      * @param user 当前用户
@@ -77,7 +77,7 @@ public class ControlMediaServiceClient {
     }
 
     /**
-     * 请求 Media Service 创建或复用对讲会话。
+     * 请求 媒体服务 创建或复用对讲会话。
      *
      * @param request 请求参数
      * @param user 当前用户
@@ -88,7 +88,11 @@ public class ControlMediaServiceClient {
     }
 
     /**
-     * 创建现场 App 视频呼叫会话并签发双方 LiveKit Token。
+     * 创建现场应用 视频呼叫会话并签发双方 LiveKit Token。
+     *
+     * @param request 请求参数
+     * @param user 当前用户
+     * @return 现场呼叫房间及双方接入信息
      */
     public FieldCallResponse createFieldCall(CreateFieldCallRequest request, CurrentUser user) {
         return post("/internal/media/field-calls", request, user, FieldCallResponse.class);
@@ -282,7 +286,7 @@ public class ControlMediaServiceClient {
     }
 
     /**
-     * 向 Media Service 转发简单文件上传。
+     * 向 媒体服务 转发简单文件上传。
      *
      * @param file 上传文件
      * @param fileType 文件类型
@@ -379,15 +383,14 @@ public class ControlMediaServiceClient {
 
     /**
      * 分页查询媒体文件列表。
-     *
      * @param robotId 机器人 ID
      * @param deviceId 设备 ID
      * @param extensionId 通用扩展 ID
      * @param fileType 文件类型
-     * @param status 状态消息
+     * @param status 文件处理状态筛选条件
      * @param source 文件来源，对应 metadata.source
-     * @param page page
-     * @param size size
+     * @param page 页码，起点按当前接口契约约定
+     * @param size 每页请求的记录数量
      * @param user 当前用户
      * @return 分页文件列表
      */
@@ -454,10 +457,11 @@ public class ControlMediaServiceClient {
 
     /**
      * 生成文件下载地址。
-     *
      * @param fileId 文件 ID
      * @param user 当前用户
      * @return 下载地址响应
+     *
+     * @param inline 是否使用内联展示的响应方式
      */
     public FileDownloadUrlResponse fileDownloadUrl(String fileId, CurrentUser user, boolean inline) {
         return post("/internal/media/files/{fileId}/download-url?inline={inline}", null, user, FileDownloadUrlResponse.class, fileId, inline);
@@ -503,7 +507,7 @@ public class ControlMediaServiceClient {
     }
 
     /**
-     * 请求 Media Service 准备客户端推流命令。
+     * 请求 媒体服务 准备客户端推流命令。
      *
      * @param sessionId 会话 ID
      * @param event 事件名称
@@ -536,9 +540,8 @@ public class ControlMediaServiceClient {
 
     /**
      * 查询机器人上线后需要恢复的推流命令。
-     *
      * @param robotId 机器人 ID
-     * @param status 状态消息
+     * @param status 机器人媒体客户端在线状态
      * @return 视频启动命令列表
      */
     public List<VideoStartCommand> onlineRestartCommands(String robotId, String status) {
@@ -551,7 +554,12 @@ public class ControlMediaServiceClient {
                 status);
     }
 
-    /** 查询固定摄像头 Gateway 或 RTSP 恢复后需要重新发布的命令。 */
+    /**
+     * 查询固定摄像头 Gateway 或 RTSP 恢复后需要重新发布的命令。
+     * @param sourceId 待恢复的固定摄像头 ID；为空时检查全部符合条件的固定摄像头来源
+     * @param gatewayReconnect 是否由 Gateway 离线转在线触发
+     * @return 需要恢复的固定摄像头发布命令
+     */
     public List<VideoStartCommand> fixedCameraRecoveryCommands(String sourceId, boolean gatewayReconnect) {
         if (sourceId == null || sourceId.isBlank()) {
             return post(
@@ -599,7 +607,12 @@ public class ControlMediaServiceClient {
         return post("/internal/media/video-sessions/{sessionId}/release-idle", null, null, new ParameterizedTypeReference<>() {}, sessionId);
     }
 
-    /** 批量查询 RTMP 固定摄像头 Ingress 与 Track 状态。 */
+    /**
+     * 批量查询 RTMP 固定摄像头 Ingress 与 Track 状态。
+     *
+     * @param cameraIds 固定摄像头 ID 列表
+     * @return 固定摄像头 Ingress 状态列表
+     */
     public List<FixedCameraIngressResponse> fixedCameraIngressStatuses(List<String> cameraIds) {
         return post(
                 "/internal/media/fixed-camera-ingresses/status-query",
@@ -608,7 +621,14 @@ public class ControlMediaServiceClient {
                 new ParameterizedTypeReference<>() {});
     }
 
-    /** 原子切换固定摄像头发布模式。 */
+    /**
+     * 原子切换固定摄像头发布模式。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @param targetMode 目标发布模式
+     * @param publisherRevision 发布模式版本，用于拒绝陈旧发布者操作
+     * @return 切换后的发布模式、版本与停止命令
+     */
     public FixedCameraPublisherModeResponse switchFixedCameraPublisherMode(
             String cameraId,
             VideoPublisherMode targetMode,
@@ -622,7 +642,13 @@ public class ControlMediaServiceClient {
                 .body(FixedCameraPublisherModeResponse.class);
     }
 
-    /** 删除 RTSP 档案前收口 Gateway 发布端。 */
+    /**
+     * 删除 RTSP 档案前收口 Gateway 发布端。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @param publisherRevision 发布模式版本，用于拒绝陈旧发布者操作
+     * @return 摄像头发布者收口结果
+     */
     public FixedCameraPublisherModeResponse quiesceFixedCameraPublisher(
             String cameraId,
             long publisherRevision) {
@@ -634,7 +660,12 @@ public class ControlMediaServiceClient {
                 .body(FixedCameraPublisherModeResponse.class);
     }
 
-    /** 查询固定摄像头发布身份是否仍存在。 */
+    /**
+     * 查询固定摄像头发布身份是否仍存在。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @return Media 核验的参与者及轨道存在状态
+     */
     public FixedCameraPublisherPresenceResponse fixedCameraPublisherPresence(String cameraId) {
         return restClient.get()
                 .uri("/internal/media/fixed-camera-sources/{cameraId}/publisher-presence", cameraId)
@@ -686,7 +717,7 @@ public class ControlMediaServiceClient {
     }
 
     /**
-     * 向 Media Service 发送 POST 请求。
+     * 向 媒体服务 发送 POST 请求。
      *
      * @param uri 请求 URI
      * @param body 请求体
@@ -701,7 +732,7 @@ public class ControlMediaServiceClient {
     }
 
     /**
-     * 向 Media Service 发送 POST 请求。
+     * 向 媒体服务 发送 POST 请求。
      *
      * @param uri 请求 URI
      * @param body 请求体
@@ -722,37 +753,21 @@ public class ControlMediaServiceClient {
      * @param user 当前用户
      * @return 带请求头的请求构造对象
      */
-    private RestClient.RequestBodySpec withHeaders(RestClient.RequestBodySpec spec, CurrentUser user) {
+    private <S extends RestClient.RequestHeadersSpec<?>> S withHeaders(S spec, CurrentUser user) {
         if (user == null) {
             return spec;
         }
-        return spec
+        spec
                 .header("X-User-Id", user.userId())
                 .header("X-Org-Id", user.orgId())
                 .header("X-Roles", String.join(",", user.roles()))
                 .header("X-Client-Id", user.clientId());
+        return spec;
     }
 
-    /**
-     * 为服务间请求补充用户上下文请求头。
-     *
-     * @param spec 请求构造对象
-     * @param user 当前用户
-     * @return 带请求头的请求构造对象
-     */
-    private RestClient.RequestHeadersSpec<?> withHeaders(RestClient.RequestHeadersSpec<?> spec, CurrentUser user) {
-        if (user == null) {
-            return spec;
-        }
-        return spec
-                .header("X-User-Id", user.userId())
-                .header("X-Org-Id", user.orgId())
-                .header("X-Roles", String.join(",", user.roles()))
-                .header("X-Client-Id", user.clientId());
-    }
 
     /**
-     * 向 multipart 请求体添加非空字段。
+     * 向多部分表单请求体添加非空字段。
      *
      * @param body 请求体
      * @param key 字段名

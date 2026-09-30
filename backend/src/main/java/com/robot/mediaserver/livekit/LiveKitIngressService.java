@@ -22,6 +22,13 @@ public class LiveKitIngressService {
     private final LiveKitTokenService tokenService;
     private final RestClient.Builder restClientBuilder;
 
+    /**
+     * 初始化 LiveKitIngressService，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param tokenService LiveKit Token 签发服务。
+     * @param restClientBuilder 下游 HTTP 客户端构建器
+     */
     public LiveKitIngressService(
             MediaProperties properties,
             LiveKitTokenService tokenService,
@@ -31,6 +38,13 @@ public class LiveKitIngressService {
         this.restClientBuilder = restClientBuilder;
     }
 
+    /**
+     * 在剩余时间预算内创建 LiveKit Ingress；结果可能包含推流凭据，不得直接记录。
+     *
+     * @param request 请求参数
+     * @param timeout 当前操作允许的最长等待时间
+     * @return 新建 Ingress 的标识、地址与发布身份
+     */
     public IngressInfo create(CreateIngressRequest request, Duration timeout) {
         requireEnabled();
         Map<String, Object> video = new LinkedHashMap<>();
@@ -49,6 +63,12 @@ public class LiveKitIngressService {
         return IngressInfo.from(post("/twirp/livekit.Ingress/CreateIngress", payload, timeout));
     }
 
+    /**
+     * 在给定时间预算内列出 LiveKit Ingress，供运行态对账。
+     *
+     * @param timeout 当前操作允许的最长等待时间
+     * @return 当前可见的 Ingress 资源快照
+     */
     public List<IngressInfo> list(Duration timeout) {
         Map<?, ?> response = post("/twirp/livekit.Ingress/ListIngress", Map.of(), timeout);
         Object items = response.get("items");
@@ -64,6 +84,13 @@ public class LiveKitIngressService {
         return List.copyOf(result);
     }
 
+    /**
+     * 在给定时间预算内删除指定 Ingress 资源。
+     *
+     * @param ingressId LiveKit 接入资源标识
+     * @param timeout 当前操作允许的最长等待时间
+     * @return LiveKit 删除接口返回的 Ingress 信息
+     */
     public IngressInfo delete(String ingressId, Duration timeout) {
         if (ingressId == null || ingressId.isBlank()) {
             throw new IllegalArgumentException("Ingress ID 不能为空");
@@ -129,6 +156,14 @@ public class LiveKitIngressService {
         return null;
     }
 
+    /**
+     * 创建 Ingress 时指定的房间、发布者身份和元数据。
+     *
+     * @param name 当前对象的名称
+     * @param roomName LiveKit 房间名
+     * @param participantIdentity LiveKit 参与者身份
+     * @param participantMetadata LiveKit 参与者元数据 JSON
+     */
     public record CreateIngressRequest(
             String name,
             String roomName,
@@ -136,6 +171,18 @@ public class LiveKitIngressService {
             String participantMetadata) {
     }
 
+    /**
+     * LiveKit Ingress 的标识、推流地址、身份和运行状态快照；凭据不得直接写入日志。
+     * @param ingressId LiveKit 接入资源标识
+     * @param name 当前对象的名称
+     * @param url Ingress 推流地址，仅可信管理调用可见
+     * @param streamKey LiveKit 管理 API 返回的推流密钥；对外是否返回由上层决定，不得写入日志
+     * @param roomName LiveKit 房间名
+     * @param participantIdentity LiveKit 参与者身份
+     * @param participantMetadata LiveKit 参与者元数据 JSON
+     * @param status 当前业务状态，取值遵循所属模型的状态协议
+     * @param error LiveKit 上报的 Ingress 错误信息；未提供时为空
+     */
     public record IngressInfo(
             String ingressId,
             String name,

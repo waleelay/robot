@@ -30,13 +30,35 @@ public class LocalStatisticsReportStore implements StatisticsReportStore {
     private static final int MAX_REPORTS_PER_USER = 100;
     private static final int RETENTION_DAYS = 30;
 
+    /**
+     * 根据已加载索引恢复的本实例报告 ID 序列。
+     */
     private final AtomicLong sequence = new AtomicLong();
+    /**
+     * 按报告 ID 排序的本地报告索引；访问时仍须核对用户和组织归属。
+     */
     private final Map<String, ReportRecord> records = new ConcurrentSkipListMap<>();
     private final ObjectMapper objectMapper;
+    /**
+     * 本地报告 PDF 和索引所在的持久化目录。
+     */
     private final Path storageDir;
+    /**
+     * 报告元数据索引文件路径，保存时以临时文件替换。
+     */
     private final Path indexPath;
+    /**
+     * 写入报告后必须保留的最小磁盘剩余字节数。
+     */
     private final long minimumFreeBytes;
 
+    /**
+     * 初始化 LocalStatisticsReportStore，保存所需依赖及初始运行状态。
+     * @param objectMapper JSON 编解码器
+     * @param storageDir 报告文件本地存储目录
+     * @param minimumFreeBytes 操作要求的最小剩余磁盘字节数
+     * @param instanceCount BFF 部署实例数；本地报告存储只允许单实例运行
+     */
     @Autowired
     public LocalStatisticsReportStore(
             ObjectMapper objectMapper,

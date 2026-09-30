@@ -1,7 +1,7 @@
 package com.robot.bigscreen.panorama;
 
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
-import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.config.DownstreamServiceProperties;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -28,6 +28,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
+/** 调用下游设备、任务、地图、告警和里程接口，供全景聚合使用。 */
 @Component
 public class PanoramaCenterClient {
 
@@ -43,7 +44,7 @@ public class PanoramaCenterClient {
     private final RestClient eiopControlRestClient;
     private final RestClient taskRestClient;
     private final RestClient workflowAlarmRestClient;
-    private final CenterServiceProperties properties;
+    private final DownstreamServiceProperties properties;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
     private final Semaphore taskRequestPermits;
     private final Semaphore generalRequestPermits;
@@ -58,9 +59,31 @@ public class PanoramaCenterClient {
     private final FailureCircuit taskCircuit = new FailureCircuit();
     private final FailureCircuit workflowAlarmCircuit = new FailureCircuit();
 
+    /**
+     * 初始化 PanoramaCenterClient，保存所需依赖及初始运行状态。
+     *
+     * @param builder RestClient 构建器
+     * @param properties 服务配置
+     * @param authenticatedRequestHeaders 根据已认证的用户与客户端身份生成可信下游请求头。
+     * @param generalConnectTimeoutMs 通用查询建立连接的超时，单位毫秒
+     * @param generalReadTimeoutMs 通用查询读取响应的超时，单位毫秒
+     * @param generalMaxConcurrency 通用查询并发调用上限
+     * @param controlConnectTimeoutMs Control 查询建立连接的超时，单位毫秒
+     * @param controlReadTimeoutMs Control 查询读取响应的超时，单位毫秒
+     * @param controlMaxConcurrency Control 查询并发调用上限
+     * @param eiopControlConnectTimeoutMs 管理端控制查询建立连接的超时，单位毫秒
+     * @param eiopControlReadTimeoutMs 管理端控制查询读取响应的超时，单位毫秒
+     * @param eiopControlMaxConcurrency 管理端控制查询并发调用上限
+     * @param workflowAlarmConnectTimeoutMs 工作流告警查询建立连接的超时，单位毫秒
+     * @param workflowAlarmReadTimeoutMs 工作流告警查询读取响应的超时，单位毫秒
+     * @param workflowAlarmMaxConcurrency 工作流告警查询并发调用上限
+     * @param taskConnectTimeoutMs 任务查询建立连接的超时，单位毫秒
+     * @param taskReadTimeoutMs 任务查询读取响应的超时，单位毫秒
+     * @param taskMaxConcurrency 任务查询并发调用上限
+     */
     public PanoramaCenterClient(
             RestClient.Builder builder,
-            CenterServiceProperties properties,
+            DownstreamServiceProperties properties,
             AuthenticatedRequestHeaders authenticatedRequestHeaders,
             @Value("${panorama.general.connect-timeout-ms:1000}") int generalConnectTimeoutMs,
             @Value("${panorama.general.read-timeout-ms:1500}") int generalReadTimeoutMs,
@@ -123,6 +146,11 @@ public class PanoramaCenterClient {
         return requestFactory;
     }
 
+    /**
+     * 查询当前用户可见的管理端设备档案，供全景及统计聚合。
+     *
+     * @return 授权范围内的设备列表
+     */
     public List<Map<String, Object>> devices() {
         int pageSize = 100;
         return emptyListWhenForbidden(
@@ -135,6 +163,11 @@ public class PanoramaCenterClient {
                 "设备");
     }
 
+    /**
+     * 查询管理端设备类型字典。
+     *
+     * @return 可用设备类型选项
+     */
     public List<Map<String, Object>> deviceTypeOptions() {
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/selection-options/dictionaries/device_type")
                 .build(true)
@@ -142,6 +175,12 @@ public class PanoramaCenterClient {
         return records(uri);
     }
 
+    /**
+     * 查询当前用户可见的单个设备档案。
+     *
+     * @param id 当前业务记录的唯一标识
+     * @return 设备详情字段
+     */
     public Optional<Map<String, Object>> device(String id) {
         if (id == null || id.isBlank()) {
             return Optional.empty();
@@ -152,6 +191,12 @@ public class PanoramaCenterClient {
         return dataMap(uri);
     }
 
+    /**
+     * 按装备序列号批量读取管理端运行态。
+     *
+     * @param serialNumbers 装备序列号集合
+     * @return 匹配设备的运行状态列表
+     */
     public List<Map<String, Object>> realtimeStatuses(List<String> serialNumbers) {
         if (serialNumbers == null || serialNumbers.isEmpty()) {
             return List.of();
@@ -171,6 +216,11 @@ public class PanoramaCenterClient {
                 "EIOP Control");
     }
 
+    /**
+     * 读取 Control 内存注册表，用边缘事实补齐设备运行态。
+     *
+     * @return Control 当前注册的机器人状态
+     */
     public List<Map<String, Object>> registeredRobots() {
         URI uri = uri(properties.getControlBaseUrl(), "/api/control/robots/registry")
                 .build(true)
@@ -179,8 +229,10 @@ public class PanoramaCenterClient {
     }
 
     /**
-     * 读取 Control Service 设备注册表快照（在线/离线状态由 MQTT 状态上报维护）。
-     * registry 响应为 {@code {records:[...], total}}，需直接取顶层 records。
+     * 读取 控制服务 设备注册表快照（在线/离线状态由 MQTT 状态上报维护）。
+     *  registry 响应为 {@code {records:[...], total}}，需直接取顶层 records。
+     *
+     * @return Control 注册表中的机器人运行态记录
      */
     public List<Map<String, Object>> deviceRegistry() {
         URI uri = uri(properties.getControlBaseUrl(), "/api/control/robots/registry")
@@ -197,6 +249,14 @@ public class PanoramaCenterClient {
                 .orElse(List.of());
     }
 
+    /**
+     * 查询 Control 的时间窗口里程，保留无数据与真实零值差异。
+     *
+     * @param startTime 上海时区区间起点，包含该时刻
+     * @param endTime 上海时区区间终点，包含该时刻
+     * @param robotIds 机器人标识集合
+     * @return 里程汇总及采样质量字段
+     */
     public Map<String, Object> mileageSummary(
             String startTime,
             String endTime,
@@ -218,6 +278,11 @@ public class PanoramaCenterClient {
                 .orElse(Map.of());
     }
 
+    /**
+     * 查询当前用户可见的工作流计划，失败由任务降级机制解释。
+     *
+     * @return 工作流计划列表
+     */
     public List<Map<String, Object>> taskWorkflowPlans() {
         int pageSize = 100;
         return taskPagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/task-workflow-plans")
@@ -230,7 +295,10 @@ public class PanoramaCenterClient {
 
     /**
      * 按标识读取任务计划详情。临时计划不进入计划分页，运行态补齐时只能通过详情读取其类型、
-     * 目标与角色绑定；调用方必须继续按当前登录身份执行权限校验。
+     *  目标与角色绑定；调用方必须继续按当前登录身份执行权限校验。
+     *
+     * @param taskId 任务计划 ID
+     * @return 当前用户可见的计划详情；不存在时为空
      */
     public Optional<Map<String, Object>> taskWorkflowPlan(String taskId) {
         if (taskId == null || taskId.isBlank()) {
@@ -244,7 +312,10 @@ public class PanoramaCenterClient {
 
     /**
      * 查询一个任务工作流计划关联的可用固定摄像头。该接口由 Management 按工作流依赖的路径汇总，
-     * 不能用某一个 workflowDefinition 的 pathId 替代，否则会遗漏依赖工作流中的摄像头。
+     *  不能用某一个 workflowDefinition 的 pathId 替代，否则会遗漏依赖工作流中的摄像头。
+     *
+     * @param taskId 任务计划 ID
+     * @return 任务计划关联的固定摄像头列表
      */
     public List<Map<String, Object>> taskWorkflowPlanFixedCameras(String taskId) {
         if (taskId == null || taskId.isBlank()) {
@@ -259,7 +330,10 @@ public class PanoramaCenterClient {
 
     /**
      * 查询任务计划冻结版本解析出的路线点。路线归属由 Management 根据计划版本及其依赖统一解析，
-     * BFF 不再读取工作流定义上的历史 pathId 字段拼装路线。
+     *  BFF 不再读取工作流定义上的历史 pathId 字段拼装路线。
+     *
+     * @param taskId 任务计划 ID
+     * @return 任务计划对应的路线点列表
      */
     public List<Map<String, Object>> taskWorkflowPlanRoutePoints(String taskId) {
         if (taskId == null || taskId.isBlank()) {
@@ -272,10 +346,20 @@ public class PanoramaCenterClient {
         return records(taskResponseMap(uri, "TASK_ROUTE_POINTS_UNAVAILABLE", false).orElse(Map.of()));
     }
 
+    /**
+     * 查询任务运行实例，供当前任务与统计汇总使用。
+     *
+     * @return 工作流运行实例列表
+     */
     public List<Map<String, Object>> taskWorkflowInstances() {
         return taskWorkflowInstances("ALL");
     }
 
+    /**
+     * 查询仍在运行的工作流实例，供临时任务及运行态收敛使用。
+     *
+     * @return 活动工作流实例列表
+     */
     public List<Map<String, Object>> activeTaskWorkflowInstances() {
         return taskWorkflowInstances("ACTIVE");
     }
@@ -290,10 +374,21 @@ public class PanoramaCenterClient {
                 .toUri(), pageSize, "TASK_INSTANCES_UNAVAILABLE");
     }
 
+    /**
+     * 查询统计范围所需的工作流实例，沿用独立任务请求预算。
+     *
+     * @return 用于统计聚合的实例列表
+     */
     public List<Map<String, Object>> taskWorkflowInstancesForStatistics() {
         return taskWorkflowInstances();
     }
 
+    /**
+     * 查询指定工作流运行实例。
+     *
+     * @param workflowInstanceId 工作流运行实例 ID
+     * @return 实例详情
+     */
     public Optional<Map<String, Object>> taskWorkflowInstance(String workflowInstanceId) {
         if (workflowInstanceId == null || workflowInstanceId.isBlank()) {
             return Optional.empty();
@@ -304,6 +399,12 @@ public class PanoramaCenterClient {
         return taskDataMap(uri, "WORKFLOW_INSTANCE_UNAVAILABLE", true);
     }
 
+    /**
+     * 查询工作流实例回放数据，供展开任务详情使用。
+     *
+     * @param workflowInstanceId 工作流运行实例 ID
+     * @return 回放数据
+     */
     public Optional<Map<String, Object>> taskWorkflowReplay(String workflowInstanceId) {
         if (workflowInstanceId == null || workflowInstanceId.isBlank()) {
             return Optional.empty();
@@ -314,6 +415,12 @@ public class PanoramaCenterClient {
         return taskDataMap(uri, "TASK_REPLAY_UNAVAILABLE", true);
     }
 
+    /**
+     * 查询工作流关联的设备任务实例。
+     *
+     * @param workflowInstanceId 工作流运行实例 ID
+     * @return 设备任务实例列表
+     */
     public List<Map<String, Object>> deviceTaskInstances(String workflowInstanceId) {
         if (workflowInstanceId == null || workflowInstanceId.isBlank()) {
             return List.of();
@@ -327,6 +434,11 @@ public class PanoramaCenterClient {
         return taskRecords(uri, "DEVICE_TASKS_UNAVAILABLE");
     }
 
+    /**
+     * 读取任务查询并发闸门的当前占用状态。
+     *
+     * @return 任务请求池诊断快照
+     */
     public Map<String, Object> taskRequestPoolSnapshot() {
         return Map.of(
                 "maxConcurrency", taskMaxConcurrency,
@@ -334,6 +446,11 @@ public class PanoramaCenterClient {
                 "availablePermits", taskRequestPermits.availablePermits());
     }
 
+    /**
+     * 读取通用查询并发闸门的当前占用状态。
+     *
+     * @return 通用请求池诊断快照
+     */
     public Map<String, Object> generalRequestPoolSnapshot() {
         return Map.of(
                 "maxConcurrency", generalMaxConcurrency,
@@ -341,6 +458,11 @@ public class PanoramaCenterClient {
                 "availablePermits", generalRequestPermits.availablePermits());
     }
 
+    /**
+     * 查询当前用户可见的启用地图，不加载每张地图的点位。
+     *
+     * @return 启用地图摘要列表
+     */
     public List<Map<String, Object>> enabledMaps() {
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/maps")
                 .queryParam("pageNum", 1)
@@ -351,6 +473,12 @@ public class PanoramaCenterClient {
         return records(requiredResponseMap(uri));
     }
 
+    /**
+     * 按指定地图读取点位资源。
+     *
+     * @param mapId 所属地图 ID
+     * @return 地图点位列表
+     */
     public List<Map<String, Object>> mapPoints(String mapId) {
         if (mapId == null || mapId.isBlank()) {
             return List.of();
@@ -361,6 +489,12 @@ public class PanoramaCenterClient {
         return records(uri);
     }
 
+    /**
+     * 读取当前用户可见的固定摄像头；传入地图时按地图关系筛选。
+     *
+     * @param mapId 所属地图 ID
+     * @return 固定摄像头档案列表
+     */
     public List<Map<String, Object>> fixedCameras(String mapId) {
         if (mapId == null || mapId.isBlank()) {
             return List.of();
@@ -377,6 +511,11 @@ public class PanoramaCenterClient {
                 "固定摄像头");
     }
 
+    /**
+     * 读取当前用户可见的固定摄像头；传入地图时按地图关系筛选。
+     *
+     * @return 固定摄像头档案列表
+     */
     public List<Map<String, Object>> fixedCameras() {
         int pageSize = 100;
         return emptyListWhenForbidden(
@@ -403,7 +542,11 @@ public class PanoramaCenterClient {
         }
     }
 
-    /** 查询 Control 汇总的当前用户固定摄像头健康状态。 */
+    /**
+     * 查询 Control 汇总的当前用户固定摄像头健康状态。
+     *
+     * @return Control 返回的授权摄像头健康快照
+     */
     public Map<String, Object> fixedCameraHealth() {
         URI uri = uri(properties.getControlBaseUrl(), "/api/control/fixed-cameras/health")
                 .build(true)
@@ -412,6 +555,17 @@ public class PanoramaCenterClient {
                 .orElse(Map.of("records", List.of()));
     }
 
+    /**
+     * 按风险及时间筛选分页查询告警。
+     *
+     * @param status 当前业务状态，取值遵循所属模型的状态协议
+     * @param severity 告警风险等级
+     * @param occurredFrom 告警发生时间下界
+     * @param occurredTo 告警发生时间上界
+     * @param pageNum 页码，从 1 开始
+     * @param pageSize 每页请求的记录数量
+     * @return 告警记录、总数和分页信息
+     */
     public AlarmPage alarmPage(
             String status,
             String severity,
@@ -441,6 +595,11 @@ public class PanoramaCenterClient {
         return new AlarmPage(records, reportedTotal(response, records.size()), safePageNum, safePageSize);
     }
 
+    /**
+     * 使用独立超时、并发闸门及熔断查询当前用户可处置的工作流告警。
+     *
+     * @return 权威查询返回的可处置告警列表；失败不伪装为空集合
+     */
     public List<Map<String, Object>> actionableWorkflowAlarms() {
         URI uri = uri(properties.getManageBaseUrl(), "/api/v1/management/alarms/actionable-workflow")
                 .build(true)
@@ -467,6 +626,13 @@ public class PanoramaCenterClient {
         }
     }
 
+    /**
+     * 查询指定时间区间的告警，用于报告统计。
+     *
+     * @param occurredFrom 告警发生时间下界
+     * @param occurredTo 告警发生时间上界
+     * @return 统计用告警列表
+     */
     public List<Map<String, Object>> alarmsForStatistics(String occurredFrom, String occurredTo) {
         int pageSize = 100;
         return pagedRecords(pageNum -> uri(properties.getManageBaseUrl(), "/api/v1/management/alarms")
@@ -478,6 +644,14 @@ public class PanoramaCenterClient {
                 .toUri(), pageSize);
     }
 
+    /**
+     * 将普通告警处置结果提交到 Management。
+     *
+     * @param alarmId 待查询或处置的告警 ID
+     * @param handleAction 告警处置动作标识
+     * @param handleResult 人工填写的告警处置说明
+     * @return 下游返回的处置结果
+     */
     public boolean handleAlarm(String alarmId, String handleAction, String handleResult) {
         if (alarmId == null || alarmId.isBlank() || handleAction == null || handleAction.isBlank()) {
             return false;
@@ -488,6 +662,14 @@ public class PanoramaCenterClient {
         return updateAlarm(uri, false, handleAction, handleResult);
     }
 
+    /**
+     * 提交告警处置并请求继续对应工作流。
+     *
+     * @param alarmId 待查询或处置的告警 ID
+     * @param handleAction 告警处置动作标识
+     * @param handleResult 人工填写的告警处置说明
+     * @return 下游返回的处置及继续执行结果
+     */
     public boolean handleWorkflowAlarm(String alarmId, String handleAction, String handleResult) {
         if (alarmId == null || alarmId.isBlank() || handleAction == null || handleAction.isBlank()) {
             return false;
@@ -503,7 +685,7 @@ public class PanoramaCenterClient {
         body.put("handleAction", handleAction);
         body.put("handleResult", handleResult);
         long startNanos = System.nanoTime();
-        log.info("管理端告警处置请求开始 protocol=http direction=出站 stage=请求 outcome=已发起 method={} uri={} entityType=告警",
+        log.info("管理端告警处置请求开始 协议=http 方向=出站 阶段=请求 结果=已发起 请求方法={} 请求地址={} 业务类型=告警",
                 workflow ? "POST" : "PATCH", uri);
         try {
             if (workflow) {
@@ -521,11 +703,11 @@ public class PanoramaCenterClient {
                         .retrieve()
                         .body(MAP_TYPE);
             }
-            log.info("管理端告警处置调用成功 protocol=http direction=出站 stage=响应 outcome=成功 method={} uri={} statusCode=200 entityType=告警 durationMs={}",
+            log.info("管理端告警处置调用成功 协议=http 方向=出站 阶段=响应 结果=成功 请求方法={} 请求地址={} 状态码=200 业务类型=告警 耗时毫秒={}",
                     workflow ? "POST" : "PATCH", uri, elapsedMillis(startNanos));
             return true;
         } catch (RuntimeException exception) {
-            log.warn("管理端告警处置调用失败 protocol=http direction=出站 stage=响应 outcome=失败 method={} uri={} entityType=告警 durationMs={}",
+            log.warn("管理端告警处置调用失败 协议=http 方向=出站 阶段=响应 结果=失败 请求方法={} 请求地址={} 业务类型=告警 耗时毫秒={}",
                     workflow ? "POST" : "PATCH", uri, elapsedMillis(startNanos), exception);
             return false;
         }
@@ -610,6 +792,9 @@ public class PanoramaCenterClient {
         return responseMap(uri, client, circuit, permits, "Management");
     }
 
+    /**
+     * 在通用并发预算内调用下游并解析统一响应；释放许可后再向调用方返回或传播失败。
+     */
     private Optional<Map<String, Object>> responseMap(
             URI uri,
             RestClient client,
@@ -630,7 +815,7 @@ public class PanoramaCenterClient {
                 log.warn("{} 查询并发已达上限，请求地址={}", downstream, uri);
                 return Optional.empty();
             }
-            log.info("下游 HTTP 查询开始 protocol=http direction=出站 stage=请求 outcome=已发起 downstream={} method=GET uri={}", downstream, uri);
+            log.info("下游 HTTP 查询开始 协议=http 方向=出站 阶段=请求 结果=已发起 下游服务={} 请求方法=GET 请求地址={}", downstream, uri);
             Map<String, Object> response = client.get()
                     .uri(uri)
                     .headers(authenticatedRequestHeaders::apply)
@@ -639,12 +824,12 @@ public class PanoramaCenterClient {
             logSlowRequest(uri, startNanos);
             if (response == null) {
                 circuit.recordFailure();
-                log.warn("下游 HTTP 响应无效 protocol=http direction=出站 stage=响应 outcome=无效响应 downstream={} method=GET uri={} statusCode=200 durationMs={}",
+                log.warn("下游 HTTP 响应无效 协议=http 方向=出站 阶段=响应 结果=无效响应 下游服务={} 请求方法=GET 请求地址={} 状态码=200 耗时毫秒={}",
                         downstream, uri, elapsedMillis(startNanos));
                 return Optional.empty();
             }
             circuit.recordSuccess();
-            log.info("下游 HTTP 查询成功 protocol=http direction=出站 stage=响应 outcome=成功 downstream={} method=GET uri={} statusCode=200 resultItems={} durationMs={}",
+            log.info("下游 HTTP 查询成功 协议=http 方向=出站 阶段=响应 结果=成功 下游服务={} 请求方法=GET 请求地址={} 状态码=200 返回条目数={} 耗时毫秒={}",
                     downstream, uri, records(response).size(), elapsedMillis(startNanos));
             return Optional.of(response);
         } catch (RestClientResponseException exception) {
@@ -724,6 +909,9 @@ public class PanoramaCenterClient {
                 });
     }
 
+    /**
+     * 使用任务专属并发与超时预算查询下游，把拒绝、超时及业务失败转换为可追踪降级原因。
+     */
     private Optional<Map<String, Object>> taskResponseMap(
             URI uri,
             String unavailableReasonCode,
@@ -740,7 +928,7 @@ public class PanoramaCenterClient {
                 taskCircuit.recordFailure();
                 throw new TaskSourceException("TASK_QUERY_CONCURRENCY_LIMIT", "任务查询并发已达上限");
             }
-            log.info("管理端任务查询开始 protocol=http direction=出站 stage=请求 outcome=已发起 method=GET uri={}", uri);
+            log.info("管理端任务查询开始 协议=http 方向=出站 阶段=请求 结果=已发起 请求方法=GET 请求地址={}", uri);
             Map<String, Object> response = taskRestClient.get()
                     .uri(uri)
                     .headers(authenticatedRequestHeaders::apply)
@@ -752,7 +940,7 @@ public class PanoramaCenterClient {
                 throw new TaskSourceException("TASK_INVALID_RESPONSE", "Management 任务查询返回空响应");
             }
             taskCircuit.recordSuccess();
-            log.info("管理端任务查询成功 protocol=http direction=出站 stage=响应 outcome=成功 method=GET uri={} statusCode=200 resultItems={} durationMs={}",
+            log.info("管理端任务查询成功 协议=http 方向=出站 阶段=响应 结果=成功 请求方法=GET 请求地址={} 状态码=200 返回条目数={} 耗时毫秒={}",
                     uri, records(response).size(), elapsedMillis(startNanos));
             return Optional.of(response);
         } catch (InterruptedException exception) {
@@ -761,7 +949,7 @@ public class PanoramaCenterClient {
         } catch (RestClientResponseException exception) {
             if (notFoundAllowed && exception.getStatusCode() == HttpStatus.NOT_FOUND) {
                 taskCircuit.recordSuccess();
-                log.info("Management 任务引用已不存在，请求地址={}", uri);
+                log.info("管理端任务引用已不存在，请求地址={}", uri);
                 return Optional.empty();
             }
             if (exception.getStatusCode() == HttpStatus.UNAUTHORIZED
@@ -774,12 +962,12 @@ public class PanoramaCenterClient {
             } else {
                 taskCircuit.recordSuccess();
             }
-            log.warn("Management 任务接口响应异常，请求地址={} 状态码={} 耗时毫秒={}",
+            log.warn("管理端任务接口响应异常，请求地址={} 状态码={} 耗时毫秒={}",
                     uri, exception.getStatusCode().value(), elapsedMillis(startNanos));
             throw new TaskSourceException(unavailableReasonCode, "Management 任务接口响应异常", exception);
         } catch (ResourceAccessException exception) {
             taskCircuit.recordFailure();
-            log.warn("Management 任务接口连接或读取超时，请求地址={} 耗时毫秒={}",
+            log.warn("管理端任务接口连接或读取超时，请求地址={} 耗时毫秒={}",
                     uri, elapsedMillis(startNanos));
             throw new TaskSourceException("TASK_QUERY_TIMEOUT", "Management 任务接口连接或读取超时", exception);
         } finally {
@@ -872,6 +1060,9 @@ public class PanoramaCenterClient {
         return fallback;
     }
 
+    /**
+     * 对不能用空数据替代的权威查询执行独立预算与熔断；失败必须传播，防止覆盖有效快照。
+     */
     private Map<String, Object> requiredResponseMap(URI uri) {
         PanoramaService.requireRequestTimeRemaining();
         if (!managementCircuit.allowRequest()) {
@@ -956,23 +1147,51 @@ public class PanoramaCenterClient {
         return UriComponentsBuilder.fromUriString(normalizedBaseUrl + separator + path);
     }
 
+    /**
+     * 下游告警分页结果，保留总数及原分页参数。
+     *
+     * @param records 当前查询返回的记录集合
+     * @param total 总数
+     * @param pageNum 页码，从 1 开始
+     * @param pageSize 每页请求的记录数量
+     */
     public record AlarmPage(List<Map<String, Object>> records, long total, int pageNum, int pageSize) {
     }
 
+    /** 标识任务数据源不可用或返回异常，供聚合层报告数据质量。 */
     public static final class TaskSourceException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
 
         private final String reasonCode;
 
+        /**
+         * 初始化 TaskSourceException，保存所需依赖及初始运行状态。
+         *
+         * @param reasonCode 当前状态或失败原因码
+         * @param message 消息内容
+         */
         public TaskSourceException(String reasonCode, String message) {
             super(message);
             this.reasonCode = reasonCode;
         }
 
+        /**
+         * 初始化 TaskSourceException，保存所需依赖及初始运行状态。
+         *
+         * @param reasonCode 当前状态或失败原因码
+         * @param message 消息内容
+         * @param cause 触发当前异常的原始原因
+         */
         public TaskSourceException(String reasonCode, String message, Throwable cause) {
             super(message, cause);
             this.reasonCode = reasonCode;
         }
 
+        /**
+         * 取得当前下游查询失败的稳定原因编码。
+         *
+         * @return 供降级状态和日志使用的原因编码
+         */
         public String reasonCode() {
             return reasonCode;
         }
@@ -983,8 +1202,17 @@ public class PanoramaCenterClient {
 
         private static final int FAILURE_THRESHOLD = 3;
         private static final long OPEN_MILLIS = 5000;
+        /**
+         * 连续可恢复失败次数；成功后清零。
+         */
         private int failures;
+        /**
+         * 熔断开始的系统时间戳，单位毫秒；零表示未打开。
+         */
         private long openedAt;
+        /**
+         * 熔断冷却结束后是否已有一个探测请求在执行。
+         */
         private boolean probeInProgress;
 
         private synchronized boolean allowRequest() {

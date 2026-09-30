@@ -22,6 +22,13 @@ public class ApiExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /**
+     * 将下游连接或读取失败映射为代理错误响应。
+     *
+     * @param exception 需要分类或映射的原始异常
+     * @param request 请求参数
+     * @return 下游不可达或超时响应
+     */
     @ExceptionHandler(ResourceAccessException.class)
     public ResponseEntity<Map<String, Object>> handleResourceAccess(
             ResourceAccessException exception,
@@ -36,6 +43,13 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
     }
 
+    /**
+     * 将下游调用异常映射为 BFF 代理错误响应。
+     *
+     * @param exception 需要分类或映射的原始异常
+     * @param request 请求参数
+     * @return 下游调用失败响应
+     */
     @ExceptionHandler(RestClientException.class)
     public ResponseEntity<Map<String, Object>> handleRestClient(
             RestClientException exception,

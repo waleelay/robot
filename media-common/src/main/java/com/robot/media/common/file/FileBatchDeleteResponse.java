@@ -1,5 +1,6 @@
 package com.robot.media.common.file;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
 /**
@@ -11,8 +12,12 @@ import java.util.List;
  * @param results 逐条删除结果
  */
 public record FileBatchDeleteResponse(
+        @Schema(description = "请求删除的文件数量", requiredMode = Schema.RequiredMode.REQUIRED)
         int total,
+        @Schema(description = "成功删除数量", requiredMode = Schema.RequiredMode.REQUIRED)
         int succeeded,
+        @Schema(description = "失败删除数量", requiredMode = Schema.RequiredMode.REQUIRED)
         int failed,
+        @Schema(description = "与输入次序对应的逐项结果，允许部分失败", requiredMode = Schema.RequiredMode.REQUIRED)
         List<FileDeleteResultResponse> results) {
 }

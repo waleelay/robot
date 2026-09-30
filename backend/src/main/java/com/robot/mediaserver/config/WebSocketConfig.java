@@ -18,6 +18,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final MediaWebSocketHandler mediaWebSocketHandler;
 
+    /**
+     * 初始化 WebSocketConfig，保存所需依赖及初始运行状态。
+     * @param mediaWebSocketHandler 媒体服务状态 WebSocket 连接处理器。
+     */
     public WebSocketConfig(MediaWebSocketHandler mediaWebSocketHandler) {
         this.mediaWebSocketHandler = mediaWebSocketHandler;
     }

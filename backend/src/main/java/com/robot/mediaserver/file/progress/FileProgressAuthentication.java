@@ -7,6 +7,7 @@ import java.security.MessageDigest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
+/** 校验 MinIO 文件进度回调的内部 Bearer 凭证；未配置凭证时拒绝服务。 */
 @Component
 public class FileProgressAuthentication {
 
@@ -14,10 +15,20 @@ public class FileProgressAuthentication {
 
     private final MediaProperties properties;
 
+    /**
+     * 初始化 FileProgressAuthentication，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     */
     public FileProgressAuthentication(MediaProperties properties) {
         this.properties = properties;
     }
 
+    /**
+     * 验证 MinIO 回调凭证，拒绝缺失或不匹配的内部令牌。
+     *
+     * @param authorization 调用方提供的 Authorization 头；凭据不得写入日志
+     */
     public void requireWebhookToken(String authorization) {
         requireToken(authorization, properties.getFile().getProgressWebhookToken());
     }

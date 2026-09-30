@@ -25,9 +25,21 @@ public class PanoramaLocationEventThrottler {
 
     private final ObjectMapper objectMapper;
     private final TaskScheduler taskScheduler;
+    /**
+     * 位置节流使用的单调时间源，便于精确测试间隔。
+     */
     private final LongSupplier nanoTime;
+    /**
+     * 按浏览器连接和机器人隔离位置节流状态，移除后旧任务不得投递。
+     */
     private final Map<EventKey, LocationState> states = new ConcurrentHashMap<>();
 
+    /**
+     * 初始化 PanoramaLocationEventThrottler，保存所需依赖及初始运行状态。
+     *
+     * @param objectMapper JSON 编解码器
+     * @param taskScheduler 后台任务调度器
+     */
     @Autowired
     public PanoramaLocationEventThrottler(ObjectMapper objectMapper, TaskScheduler taskScheduler) {
         this(objectMapper, taskScheduler, System::nanoTime);
@@ -42,6 +54,13 @@ public class PanoramaLocationEventThrottler {
         this.nanoTime = nanoTime;
     }
 
+    /**
+     * 按连接与机器人合并高频位置更新；定位失效等必要事件按既有规则及时投递。
+     *
+     * @param sessionId 会话 ID
+     * @param payload 消息载荷
+     * @param publisher 向目标浏览器或身份分组投递消息的回调
+     */
     public void publish(String sessionId, String payload, Consumer<String> publisher) {
         LocationEvent locationEvent = locationEvent(payload);
         if (locationEvent == null) {
@@ -63,7 +82,7 @@ public class PanoramaLocationEventThrottler {
             }
             if (!locationEvent.localizationInvalid() && state.pendingHasGis && !locationEvent.hasGis()) {
                 state.deferredSlamPayload = payload;
-                log.debug("位置事件延后投递 protocol=websocket stage=节流 outcome=延后 entityType=位置 sessionId={} robotId={} reasonCode=等待GIS转换结果",
+                log.debug("位置事件延后投递 协议=websocket 阶段=节流 结果=延后 业务类型=位置 会话标识={} 机器人标识={} 原因码=等待GIS转换结果",
                         sessionId, locationEvent.robotId());
                 return;
             }
@@ -81,7 +100,7 @@ public class PanoramaLocationEventThrottler {
             } else {
                 state.pendingPayload = payload;
                 state.pendingHasGis = locationEvent.hasGis();
-                log.debug("位置事件已合并 protocol=websocket stage=节流 outcome=合并 entityType=位置 sessionId={} robotId={} hasGis={} reasonCode=触发频率限制",
+                log.debug("位置事件已合并 协议=websocket 阶段=节流 结果=合并 业务类型=位置 会话标识={} 机器人标识={} 是否含地理坐标={} 原因码=触发频率限制",
                         sessionId, locationEvent.robotId(), locationEvent.hasGis());
                 scheduleIfNeeded(key, state, now);
             }
@@ -91,6 +110,10 @@ public class PanoramaLocationEventThrottler {
         }
     }
 
+    /**
+     * 移除指定连接的位置节流状态；已调度任务执行时因状态不再匹配而跳过投递。
+     * @param sessionId 会话 ID
+     */
     public void remove(String sessionId) {
         states.keySet().removeIf(key -> key.sessionId().equals(sessionId));
     }
@@ -169,9 +192,23 @@ public class PanoramaLocationEventThrottler {
                 && latitude.doubleValue() >= -90 && latitude.doubleValue() <= 90;
     }
 
+    /**
+     * 按浏览器会话和机器人隔离位置节流状态。
+     *
+     * @param sessionId 会话 ID
+     * @param robotId 机器人 ID
+     */
     private record EventKey(String sessionId, String robotId) {
     }
 
+    /**
+     * 位置事件的设备、定位有效性、GIS 可用性及地图信息。
+     *
+     * @param robotId 机器人 ID
+     * @param localizationInvalid 定位是否失效；失效事件需要及时清除旧位置
+     * @param hasGis 位置事件是否带有有效 GIS 经纬度
+     * @param mapId 所属地图 ID
+     */
     private record LocationEvent(
             String robotId,
             boolean localizationInvalid,
@@ -179,13 +216,35 @@ public class PanoramaLocationEventThrottler {
             String mapId) {
     }
 
+    /** 保留最新位置载荷及节流任务，协调 GIS 和 SLAM 更新的发送时机。 */
     private static final class LocationState {
+        /**
+         * 上次发布的单调时间，单位纳秒；最小值表示尚未发布。
+         */
         private long lastPublishedNanos = Long.MIN_VALUE;
+        /**
+         * 是否已安排一个待发送任务，防止重复调度。
+         */
         private boolean scheduled;
+        /**
+         * 当前窗口中等待发布的最新位置消息正文。
+         */
         private String pendingPayload;
+        /**
+         * 待发送消息是否包含有效 GIS 坐标。
+         */
         private boolean pendingHasGis;
+        /**
+         * 等待 GIS 优先消息完成后再发送的 SLAM 位置。
+         */
         private String deferredSlamPayload;
+        /**
+         * 当前浏览器连接的位置消息投递回调。
+         */
         private Consumer<String> publisher;
+        /**
+         * 最近位置所属地图，切图时重置节流判断。
+         */
         private String mapId = "";
     }
 }

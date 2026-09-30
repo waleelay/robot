@@ -34,6 +34,7 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+/** 验证视频指令编排、会话状态与 MQTT 发布行为。 */
 class ControlVideoCommandServiceTest {
 
     private final ControlMediaServiceClient mediaServiceClient = mock(ControlMediaServiceClient.class);

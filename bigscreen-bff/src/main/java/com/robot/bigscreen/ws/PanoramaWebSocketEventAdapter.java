@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Component;
 
+/** 将下游实时消息转换为大屏事件，保持失效通知及资源标识语义。 */
 @Component
 public class PanoramaWebSocketEventAdapter {
 
@@ -54,12 +55,25 @@ public class PanoramaWebSocketEventAdapter {
             "management.device.updated",
             "management.device.deleted");
     private final ObjectMapper objectMapper;
+    /**
+     * 按浏览器连接和机器人保存最近在线状态，避免重复触发设备统计刷新。
+     */
     private final Map<String, Map<String, String>> robotStatusesBySession = new ConcurrentHashMap<>();
 
+    /**
+     * 初始化 PanoramaWebSocketEventAdapter，保存所需依赖及初始运行状态。
+     *
+     * @param objectMapper JSON 编解码器
+     */
     public PanoramaWebSocketEventAdapter(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 把上游事件转换为大屏协议并执行当前连接所需的状态合并。
+     * @param centerPayload 上游实时事件 JSON 正文
+     * @return 原始消息及转换后的大屏消息；是否投递由上层权限和事件规则决定
+     */
     public List<String> adapt(String centerPayload) {
         List<String> messages = new ArrayList<>();
         messages.add(centerPayload);
@@ -100,6 +114,12 @@ public class PanoramaWebSocketEventAdapter {
         return messages;
     }
 
+    /**
+     * 判断上游消息是否要求重新查询任务事实。
+     *
+     * @param centerPayload 上游实时事件 JSON 正文
+     * @return 是否属于任务失效通知
+     */
     public boolean isTaskInvalidation(String centerPayload) {
         JsonNode root = readTree(centerPayload);
         if (root == null) {
@@ -110,23 +130,45 @@ public class PanoramaWebSocketEventAdapter {
                 || isUnresolvedPanoramaTask(event, root.path("data"));
     }
 
+    /**
+     * 从任务事件中提取合并与去重标识。
+     *
+     * @param centerPayload 上游实时事件 JSON 正文
+     * @return 任务失效事件键；无法提取时为空
+     */
     public String taskInvalidationKey(String centerPayload) {
         JsonNode root = readTree(centerPayload);
-        if (root == null || !MANAGEMENT_TASK_INVALIDATED.equals(text(root, "event"))) return null;
+        if (root == null || !MANAGEMENT_TASK_INVALIDATED.equals(text(root, "event"))) {
+            return null;
+        }
         JsonNode data = root.path("data");
         String source = text(data, "source");
         String eventId = text(data, "eventId");
         return source.isBlank() || eventId.isBlank() ? null : source + ":" + eventId;
     }
 
+    /**
+     * 判断上游消息是否要求重新查询告警事实。
+     *
+     * @param centerPayload 上游实时事件 JSON 正文
+     * @return 是否属于告警失效通知
+     */
     public boolean isAlarmInvalidation(String centerPayload) {
         JsonNode root = readTree(centerPayload);
         return root != null && MANAGEMENT_ALARM_INVALIDATED.equals(text(root, "event"));
     }
 
+    /**
+     * 从告警事件中提取合并与去重标识。
+     *
+     * @param centerPayload 上游实时事件 JSON 正文
+     * @return 告警失效事件键；无法提取时为空
+     */
     public String alarmInvalidationKey(String centerPayload) {
         JsonNode root = readTree(centerPayload);
-        if (root == null || !MANAGEMENT_ALARM_INVALIDATED.equals(text(root, "event"))) return null;
+        if (root == null || !MANAGEMENT_ALARM_INVALIDATED.equals(text(root, "event"))) {
+            return null;
+        }
         JsonNode data = root.path("data");
         String source = text(data, "source");
         String eventId = text(data, "eventId");
@@ -278,6 +320,13 @@ public class PanoramaWebSocketEventAdapter {
         return writeValue(event);
     }
 
+    /**
+     * 按事件影响范围确定需要刷新的统计块。
+     *
+     * @param sessionId 会话 ID
+     * @param centerPayload 上游实时事件 JSON 正文
+     * @return 本次需要重新聚合的统计分块
+     */
     public Set<StatsPart> statsRefreshParts(String sessionId, String centerPayload) {
         JsonNode root = readTree(centerPayload);
         if (root == null || !root.path("data").isObject()) {
@@ -316,6 +365,10 @@ public class PanoramaWebSocketEventAdapter {
         return parts;
     }
 
+    /**
+     * 移除指定浏览器会话的机器人在线状态适配缓存。
+     * @param sessionId 会话 ID
+     */
     public void removeSession(String sessionId) {
         robotStatusesBySession.remove(sessionId);
     }
@@ -403,7 +456,9 @@ public class PanoramaWebSocketEventAdapter {
 
     private String normalizeControlMode(String controlMode) {
         String mode = controlMode == null ? "" : controlMode.trim();
-        if ("导航模式".equals(mode)) return mode;
+        if ("导航模式".equals(mode)) {
+            return mode;
+        }
         return "手动模式".equals(mode) || "常规模式".equals(mode) ? "手动模式" : null;
     }
 

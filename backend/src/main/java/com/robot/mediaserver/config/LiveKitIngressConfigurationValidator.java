@@ -14,11 +14,20 @@ public class LiveKitIngressConfigurationValidator {
     private final MediaProperties properties;
     private final DataSource dataSource;
 
+    /**
+     * 初始化 LiveKitIngressConfigurationValidator，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param dataSource 数据库连接池
+     */
     public LiveKitIngressConfigurationValidator(MediaProperties properties, DataSource dataSource) {
         this.properties = properties;
         this.dataSource = dataSource;
     }
 
+    /**
+     * 在启用 Ingress 时校验调用预算和数据库连接池容量，避免管理操作占满业务连接。
+     */
     @PostConstruct
     void validate() {
         MediaProperties.Livekit livekit = properties.getLivekit();
@@ -34,6 +43,9 @@ public class LiveKitIngressConfigurationValidator {
         validate(livekit, hikari.getMaximumPoolSize());
     }
 
+    /**
+     * 在启用 Ingress 时校验调用预算和数据库连接池容量，避免管理操作占满业务连接。
+     */
     static void validate(MediaProperties.Livekit livekit, int maximumPoolSize) {
         int concurrency = livekit.getIngressAdminMaxConcurrency();
         if (concurrency <= 0) {

@@ -15,6 +15,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+/** 验证过期上传和录像清理时单项失败不会中断后续任务。 */
 class FileUploadCleanupSchedulerTest {
 
     @Test

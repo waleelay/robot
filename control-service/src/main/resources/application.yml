@@ -15,6 +15,14 @@ spring:
       # Control 文件代理接口允许的 multipart 请求总大小。
       max-request-size: ${CONTROL_FILE_UPLOAD_MAX_REQUEST_SIZE:21MB}
 
+springdoc:
+  api-docs:
+    # HTTP 契约仅在受控开发环境显式启用；默认关闭。
+    enabled: ${CONTROL_OPENAPI_ENABLED:false}
+    version: OPENAPI_3_1
+  paths-to-match: /api/control/**,/internal/control/**
+  override-with-generic-response: false
+
 server:
   # Control Service HTTP 服务端口，优先使用 CONTROL_SERVER_PORT。
   port: ${CONTROL_SERVER_PORT:${SERVER_PORT:8082}}
@@ -95,6 +103,8 @@ control:
     # 每台设备累计新增达到该距离后广播一次里程变化事件。
     publish-distance-threshold-meters: ${MILEAGE_PUBLISH_DISTANCE_THRESHOLD_METERS:10}
   session:
+    # 控制侧恢复、对讲超时及空闲释放的扫描周期；旧 media.session 配置只作兼容回退。
+    sweep-delay-ms: ${CONTROL_SESSION_SWEEP_DELAY_MS:${media.session.sweep-delay-ms:5000}}
     # 中断视频会话自动恢复前的宽限时间，单位秒。
     interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}
     # 空闲视频会话自动释放延迟时间，单位秒。

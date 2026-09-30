@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.robot.media.common.file.FileStatus;
 import com.robot.mediaserver.config.MediaProperties;
 import com.robot.mediaserver.file.api.FileApiException;
-import com.robot.mediaserver.file.model.FileUploadMode;
 import com.robot.mediaserver.file.model.FileUploadStatus;
 import com.robot.mediaserver.file.model.MediaFile;
 import com.robot.mediaserver.file.model.MediaFileUpload;
@@ -36,6 +35,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+/** 合并 MinIO 分片通知与 Redis 进度快照，缓存缺失时通过有界回源重建状态。 */
 @Service
 public class FileUploadProgressService {
 
@@ -43,9 +43,16 @@ public class FileUploadProgressService {
     private static final Pattern PART_KEY = Pattern.compile("^.+\\.upload-parts/([^/]+)/part-(\\d+)$");
     private static final String SUMMARY_PREFIX = "media:file-upload:";
     private static final String STORAGE_PREFIX = "media:file-upload:storage:";
+    /**
+     * 数据库回退进度使用的版本值，不代表 Redis 分片事件版本连续性。
+     */
     private static final long TERMINAL_VERSION = 0L;
 
-    private static final DefaultRedisScript<List> RECORD_PART_SCRIPT = new DefaultRedisScript<>("""
+    // 此处只需要脚本副作用，不消费 Lua 返回的列表；使用通配符保留运行时 List.class 而不泄漏原始类型。
+    /**
+     * 原子更新分片摘要；同分片同大小和 ETag 的重复事件只续期，不增加计数和版本。
+     */
+    private static final DefaultRedisScript<?> RECORD_PART_SCRIPT = new DefaultRedisScript<>("""
             local old = redis.call('HGET', KEYS[2], ARGV[1])
             local value = ARGV[2] .. ':' .. ARGV[3]
             redis.call('HSETNX', KEYS[1], 'fileId', ARGV[6])
@@ -80,6 +87,9 @@ public class FileUploadProgressService {
                     tonumber(redis.call('HGET', KEYS[1], 'uploadedPartCount')),
                     tonumber(redis.call('HGET', KEYS[1], 'version'))}
             """, List.class);
+    /**
+     * 仅在 Redis 锁值仍属于本次持有者时删除，防止释放其他回源任务的锁。
+     */
     private static final DefaultRedisScript<Long> RELEASE_LOCK_SCRIPT = new DefaultRedisScript<>("""
             if redis.call('GET', KEYS[1]) == ARGV[1] then
                 return redis.call('DEL', KEYS[1])
@@ -94,6 +104,16 @@ public class FileUploadProgressService {
     private final StringRedisTemplate redis;
     private final Executor rebuildExecutor;
 
+    /**
+     * 初始化 FileUploadProgressService，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param fileRepository 查询文件主记录，支持租户过滤、来源复用和保留期清理。
+     * @param uploadRepository 访问上传会话及配额计数，以悲观锁和带所有者条件的更新维护合并租约。
+     * @param storage 封装 MinIO 对象和分片读写、签名地址及桶初始化；调用方负责传入流的生命周期。
+     * @param redis Redis 字符串访问器
+     * @param rebuildExecutor 后台工作执行器
+     */
     public FileUploadProgressService(
             MediaProperties properties,
             MediaFileRepository fileRepository,
@@ -109,6 +129,11 @@ public class FileUploadProgressService {
         this.rebuildExecutor = rebuildExecutor;
     }
 
+    /**
+     * 按文件 ID 合并数据库与 Redis 进度，缓存缺失时触发回源；本层不校验用户权限，入口依赖内网隔离。
+     * @param requestedFileIds 请求查询的文件 ID 集合
+     * @return 进度条目、缺失文件 ID 和快照生成时间
+     */
     public FileUploadProgressQueryResponse query(List<String> requestedFileIds) {
         LinkedHashSet<String> fileIds = normalizeFileIds(requestedFileIds);
         if (fileIds.isEmpty()) {
@@ -138,6 +163,11 @@ public class FileUploadProgressService {
         return new FileUploadProgressQueryResponse(items, missing, now());
     }
 
+    /**
+     * 合并 MinIO 分片事件到进度缓存；对重复分片以最新可用事实重算。
+     *
+     * @param payload 消息载荷
+     */
     public void acceptMinioEvent(JsonNode payload) {
         if (!properties.getFile().isProgressEnabled()) {
             return;
@@ -185,6 +215,9 @@ public class FileUploadProgressService {
         }
     }
 
+    /**
+     * 结合上传上下文与缓存分片事实组装活动进度；重建并发受限，未知字节数不当成已完成。
+     */
     private FileUploadProgressItem activeItem(MediaFile file, MediaFileUpload upload) {
         UploadContext context = context(file, upload);
         boolean redisAvailable = true;
@@ -195,7 +228,7 @@ public class FileUploadProgressService {
             }
         } catch (DataAccessException exception) {
             redisAvailable = false;
-            log.warn("读取上传进度缓存失败，回源 MinIO: fileId={}, uploadId={}", file.getFileId(), upload.getUploadId());
+            log.warn("读取上传进度缓存失败，回源 MinIO: 文件标识={}, 上传标识={}", file.getFileId(), upload.getUploadId());
         }
 
         String lockToken = null;
@@ -239,7 +272,7 @@ public class FileUploadProgressService {
                     : FileProgressPhase.UPLOADING;
             return item(file, upload, phase, uploadedBytes, parts.size(), 0L, now(), null, null);
         } catch (RuntimeException exception) {
-            log.warn("从 MinIO 重建上传进度失败: fileId={}, uploadId={}", file.getFileId(), upload.getUploadId(), exception);
+            log.warn("从 MinIO 重建上传进度失败: 文件标识={}, 上传标识={}", file.getFileId(), upload.getUploadId(), exception);
             return item(
                     file,
                     upload,
@@ -258,7 +291,7 @@ public class FileUploadProgressService {
                             List.of(rebuildLockKey(upload.getUploadId())),
                             lockToken);
                 } catch (DataAccessException exception) {
-                    log.debug("释放上传进度重建锁失败: uploadId={}", upload.getUploadId());
+                    log.debug("释放上传进度重建锁失败: 上传标识={}", upload.getUploadId());
                 }
             }
         }
@@ -279,6 +312,9 @@ public class FileUploadProgressService {
         return item(file, upload, phase, uploadedBytes, uploadedPartCount, version, updatedAt, null, null);
     }
 
+    /**
+     * 以数据库终态为准生成进度；已上传但后处理失败仍保留完整上传字节数，未完成上传不伪装为满进度。
+     */
     private FileUploadProgressItem databaseItem(MediaFile file, MediaFileUpload upload) {
         FileProgressPhase phase = phase(file, upload);
         boolean fullyUploaded = file.getStatus() == FileStatus.READY
@@ -355,6 +391,9 @@ public class FileUploadProgressService {
         return FileProgressPhase.UPLOADING;
     }
 
+    /**
+     * 通过 Redis 脚本原子登记分片及汇总字节数，重复通知按分片键更新而不重复累加。
+     */
     private void recordPart(UploadContext context, int partNumber, long size, String etag) {
         long ttl = Math.max(
                 60L,
@@ -499,6 +538,17 @@ public class FileUploadProgressService {
         return OffsetDateTime.now(ZoneOffset.UTC);
     }
 
+    /**
+     * 一次进度处理所需的上传会话快照，用于定位 Redis 键及校验分片范围。
+     * @param fileId 文件 ID
+     * @param uploadId 平台上传会话 ID
+     * @param storageUploadId 平台生成的暂存分片会话标识，用于组织分片对象键
+     * @param fileName 原始文件名
+     * @param fileType 文件类型
+     * @param totalBytes 预期文件总字节数
+     * @param partCount 上传会话登记的分片总数
+     * @param expiresAt 有效期截止时间
+     */
     private record UploadContext(
             String fileId,
             String uploadId,

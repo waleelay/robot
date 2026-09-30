@@ -25,9 +25,20 @@ import org.springframework.security.oauth2.server.resource.web.DefaultBearerToke
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 
+/** 按 JWT 客户端及路由配置大屏和现场应用的访问边界。 */
 @Configuration
 public class SecurityConfig {
 
+    /**
+     * 配置 JWT 验签、客户端路由白名单及文档默认隔离规则。
+     *
+     * @param http Spring Security HTTP 安全配置构建器
+     * @param bearerTokenResolver 当前请求的 Bearer 令牌解析器
+     * @param bigscreenClientId 允许使用大屏接口的 JWT 客户端标识
+     * @param fieldCallClientId 允许现场呼叫的 JWT 客户端标识
+     * @return 当前服务使用的安全过滤链
+     * @throws Exception 安全过滤链构建失败时抛出，应用启动应失败而非绕过鉴权
+     */
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -58,6 +69,10 @@ public class SecurityConfig {
                 .build();
     }
 
+    /**
+     * 解析浏览器 Bearer 凭证；仅对允许的 WebSocket 和媒体正文路径接受查询参数令牌。
+     * @return 当前路由约束下的令牌解析器
+     */
     @Bean
     public BearerTokenResolver bearerTokenResolver() {
         DefaultBearerTokenResolver headerResolver = new DefaultBearerTokenResolver();
@@ -66,6 +81,15 @@ public class SecurityConfig {
         return request -> resolveBearerToken(request, headerResolver, websocketResolver);
     }
 
+    /**
+     * 创建与配置签发者及公钥集合绑定的 JWT 解码器。
+     *
+     * @param issuerUri JWT 签发者地址
+     * @param jwkSetUri 用于验证 JWT 的公钥集合地址
+     * @param clientId 客户端 ID
+     * @param fieldCallClientId 允许现场呼叫的 JWT 客户端标识
+     * @return 用于验证浏览器 JWT 的解码器
+     */
     @Bean
     public JwtDecoder jwtDecoder(
             @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuerUri,

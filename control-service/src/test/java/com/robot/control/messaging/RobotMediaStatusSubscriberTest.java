@@ -16,6 +16,9 @@ import com.robot.control.trajectory.TrajectoryCoordinator;
 import org.junit.jupiter.api.Test;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
+/**
+ * 验证媒体客户端在线转换、保留消息拒绝以及任务进度到轨迹协调器的转发。
+ */
 class RobotMediaStatusSubscriberTest {
 
     @Test

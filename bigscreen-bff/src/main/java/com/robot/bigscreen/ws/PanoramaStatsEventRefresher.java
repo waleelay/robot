@@ -25,6 +25,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
+/** 对统计相关实时通知做合并刷新，并向浏览器推送最新结果。 */
 @Component
 public class PanoramaStatsEventRefresher {
 
@@ -36,8 +37,19 @@ public class PanoramaStatsEventRefresher {
     private final ObjectMapper objectMapper;
     private final TaskScheduler taskScheduler;
     private final TaskExecutor taskExecutor;
+    /**
+     * 按授权身份键保存统计刷新状态，使同身份多个连接共享计算。
+     */
     private final Map<String, RefreshState> states = new ConcurrentHashMap<>();
 
+    /**
+     * 初始化 PanoramaStatsEventRefresher，保存所需依赖及初始运行状态。
+     *
+     * @param panoramaService 聚合下游设备、任务、地图和告警，维护请求缓存与数据质量标识。
+     * @param objectMapper JSON 编解码器
+     * @param taskScheduler 后台任务调度器
+     * @param taskExecutor 后台任务执行器
+     */
     public PanoramaStatsEventRefresher(
             PanoramaService panoramaService,
             ObjectMapper objectMapper,
@@ -49,6 +61,13 @@ public class PanoramaStatsEventRefresher {
         this.taskExecutor = taskExecutor;
     }
 
+    /**
+     * 合并同身份所需统计块，避免多个事件并发触发重复聚合。
+     * @param sessionId 会话 ID
+     * @param authentication 经过认证的当前用户上下文
+     * @param publisher 向目标浏览器或身份分组投递消息的回调
+     * @param parts 本次需要刷新的统计模块集合
+     */
     public void requestRefresh(
             String sessionId,
             Authentication authentication,
@@ -85,7 +104,11 @@ public class PanoramaStatsEventRefresher {
 
     /**
      * 同一授权身份的多个浏览器会话只触发一次初始统计。发布器按身份广播，后续接入的会话会与
-     * 首个会话共享结果；常规业务事件仍通过 requestRefresh 重新计算。
+     *   首个会话共享结果；常规业务事件仍通过 requestRefresh 重新计算。
+     * @param sessionId 会话 ID
+     * @param authentication 经过认证的当前用户上下文
+     * @param publisher 向目标浏览器或身份分组投递消息的回调
+     * @param parts 本次需要刷新的统计模块集合
      */
     public void requestInitialRefresh(
             String sessionId,
@@ -100,6 +123,11 @@ public class PanoramaStatsEventRefresher {
         }
     }
 
+    /**
+     * 移除该身份的待刷新统计与已发送快照。
+     *
+     * @param sessionId 会话 ID
+     */
     public void remove(String sessionId) {
         states.remove(sessionId);
     }
@@ -122,7 +150,9 @@ public class PanoramaStatsEventRefresher {
             RefreshSnapshot refreshed = withAuthentication(state.authentication, () -> new RefreshSnapshot(
                     panoramaService.statsSnapshot(parts),
                     parts.contains(StatsPart.DEVICES) ? panoramaService.fixedCameraStatuses() : null));
-            if (states.get(sessionId) != state) return;
+            if (states.get(sessionId) != state) {
+                return;
+            }
             Map<String, Object> snapshot = refreshed.stats();
             Map<String, Object> merged = mergeSnapshot(state.previousSnapshot, snapshot);
             Consumer<String> publisher = state.publisher;
@@ -200,14 +230,39 @@ public class PanoramaStatsEventRefresher {
         }
     }
 
+    /** 跟踪统计刷新是否已调度、待刷新模块及首次加载状态。 */
     private static final class RefreshState {
+        /**
+         * 是否已安排或正在执行一次统计刷新。
+         */
         private final AtomicBoolean scheduled = new AtomicBoolean();
+        /**
+         * 本轮调度或执行期间是否又收到刷新需求。
+         */
         private final AtomicBoolean dirty = new AtomicBoolean();
+        /**
+         * 该身份是否已经发起首次统计刷新。
+         */
         private final AtomicBoolean initialRefreshRequested = new AtomicBoolean();
+        /**
+         * 待刷新的统计分块，合并读取时使用同步保护。
+         */
         private final Set<StatsPart> pendingParts = EnumSet.noneOf(StatsPart.class);
+        /**
+         * 此身份最近提交的认证上下文，供异步下游调用使用。
+         */
         private volatile Authentication authentication;
+        /**
+         * 向同身份连接广播统计变化的回调。
+         */
         private volatile Consumer<String> publisher;
+        /**
+         * 上次已发送的统计快照，用于避免重复消息。
+         */
         private volatile Map<String, Object> previousSnapshot = Map.of();
+        /**
+         * 上次已发送的固定摄像头状态列表。
+         */
         private volatile List<Map<String, Object>> previousFixedCameraStatuses = List.of();
 
         private void mergeParts(Set<StatsPart> parts) {
@@ -225,6 +280,12 @@ public class PanoramaStatsEventRefresher {
         }
     }
 
+    /**
+     * 同一轮刷新取得的统计结果与固定摄像头状态。
+     *
+     * @param stats 按统计分块组织的聚合快照
+     * @param fixedCameraStatuses 固定摄像头最新健康状态快照
+     */
     private record RefreshSnapshot(
             Map<String, Object> stats,
             List<Map<String, Object>> fixedCameraStatuses) {

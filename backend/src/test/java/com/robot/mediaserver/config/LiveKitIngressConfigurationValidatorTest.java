@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 
+/** 验证 Ingress 并发与数据库连接预算的配置约束。 */
 class LiveKitIngressConfigurationValidatorTest {
 
     @Test

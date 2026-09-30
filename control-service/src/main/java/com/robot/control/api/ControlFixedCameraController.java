@@ -1,5 +1,9 @@
 package com.robot.control.api;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.media.Content;
+
 import com.robot.control.auth.CurrentUserResolver;
 import com.robot.control.dto.ControlStartVideoRequest;
 import com.robot.control.dto.FixedCameraBatchStartRequest;
@@ -33,6 +37,15 @@ public class ControlFixedCameraController {
     private final FixedCameraHealthService healthService;
     private final ControlServiceProperties properties;
 
+    /**
+     * 初始化 ControlFixedCameraController，保存所需依赖及初始运行状态。
+     *
+     * @param controlVideoCommandService 视频控制编排服务
+     * @param currentUserResolver 当前用户解析器
+     * @param managementClient 访问 Management 档案与权限接口的客户端
+     * @param healthService 保存固定摄像头 Gateway 与 RTSP 最近健康状态。
+     * @param properties 服务配置
+     */
     public ControlFixedCameraController(
             ControlVideoCommandService controlVideoCommandService,
             CurrentUserResolver currentUserResolver,
@@ -46,7 +59,21 @@ public class ControlFixedCameraController {
         this.properties = properties;
     }
 
-    /** 返回当前用户有权固定摄像头的最新健康状态。 */
+    /**
+     * 返回当前用户有权固定摄像头的最新健康状态。
+     *
+     * @return 当前用户授权范围内的摄像头健康快照
+     */
+    @Operation(
+            operationId = "controlFixedCameraController_health",
+            summary = "查询当前授权固定摄像头的健康状态",
+            description = "查询当前授权固定摄像头的健康状态。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlFixedCameraController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @GetMapping("/health")
     public Map<String, Object> health() {
         return healthService.authorizedSnapshot(
@@ -61,6 +88,16 @@ public class ControlFixedCameraController {
      * @param servletRequest HTTP 请求
      * @return 视频会话响应
      */
+    @Operation(
+            operationId = "controlFixedCameraController_startVideo",
+            summary = "编排启动单路固定摄像头视频",
+            description = "编排启动单路固定摄像头视频。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlFixedCameraController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/{cameraId}/video/start")
     public VideoSessionResponse startVideo(
             @PathVariable String cameraId,
@@ -79,6 +116,16 @@ public class ControlFixedCameraController {
      * @param servletRequest HTTP 请求
      * @return 批量启动结果
      */
+    @Operation(
+            operationId = "controlFixedCameraController_startVideos",
+            summary = "分别编排多路固定摄像头视频并汇总逐项结果",
+            description = "分别编排多路固定摄像头视频并汇总逐项结果。受控服务入口；使用用户上下文的方法依赖可信上游 Header，编排成功不等于设备已完成动作。",
+            tags = {"ControlFixedCameraController"})
+    @ApiResponse(
+            responseCode = "200",
+            description = "处理成功，状态及可空字段以响应为准",
+            useReturnTypeSchema = true,
+            content = @Content(mediaType = "application/json"))
     @PostMapping("/video/start")
     public Map<String, Object> startVideos(
             @RequestBody FixedCameraBatchStartRequest request,

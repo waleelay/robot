@@ -1,6 +1,5 @@
 package com.robot.control;
 
-import com.robot.control.config.ControlProperties;
 import com.robot.control.config.ControlServiceProperties;
 import com.robot.control.mileage.MileageProperties;
 import org.springframework.boot.SpringApplication;
@@ -9,14 +8,14 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * Control Service 独立进程启动入口。
+ * 控制服务 独立进程启动入口。
  *
  * @author leelay
  * @date 2026-07-05
  */
 @SpringBootApplication
 @EnableScheduling
-@EnableConfigurationProperties({ControlProperties.class, ControlServiceProperties.class, MileageProperties.class})
+@EnableConfigurationProperties({ControlServiceProperties.class, MileageProperties.class})
 public class RobotControlServiceApplication {
 
     /**

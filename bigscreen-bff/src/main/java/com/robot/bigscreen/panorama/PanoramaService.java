@@ -40,6 +40,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 
+/** 聚合下游设备、任务、地图和告警，维护请求缓存与数据质量标识。 */
 @Service
 public class PanoramaService {
 
@@ -101,6 +102,9 @@ public class PanoramaService {
             new ArrayBlockingQueue<>(16),
             namedDaemonThreadFactory("panorama-stats"),
             new ThreadPoolExecutor.AbortPolicy());
+    /**
+     * 统计快照专用下游 I/O 执行器，与首屏和任务事件容量隔离。
+     */
     private static final ThreadPoolExecutor STATS_IO_EXECUTOR = new ThreadPoolExecutor(
             4,
             8,
@@ -109,33 +113,76 @@ public class PanoramaService {
             new SynchronousQueue<>(),
             namedDaemonThreadFactory("panorama-stats-io"),
             new ThreadPoolExecutor.AbortPolicy());
+    /**
+     * 当前聚合请求的单调时钟截止点；异步子任务继承并在 finally 恢复线程原值。
+     */
     private static final ThreadLocal<Long> OVERVIEW_DEADLINE_NANOS = new ThreadLocal<>();
+    /**
+     * 当前请求选择的下游 I/O 执行器，异步传播后必须恢复，避免不同查询串用容量。
+     */
     private static final ThreadLocal<ThreadPoolExecutor> REQUEST_IO_EXECUTOR = new ThreadLocal<>();
 
     private final PanoramaCenterClient centerClient;
     private final ObjectMapper objectMapper;
+    /**
+     * 按统计分块及认证身份隔离的短期成功结果缓存。
+     */
     private final BoundedTtlCache<String, Object> statsCache =
             new BoundedTtlCache<>(SNAPSHOT_CACHE_MAX_SIZE, STATS_CACHE_TTL_MILLIS);
+    /**
+     * 同一身份、同一统计分块正在执行的共享查询，完成后移除。
+     */
     private final Map<String, CompletableFuture<Object>> statsPartInFlight = new ConcurrentHashMap<>();
+    /**
+     * 按身份和统计模块组合合并的在途统计快照查询。
+     */
     private final Map<String, CompletableFuture<Map<String, Object>>> statsSnapshotInFlight = new ConcurrentHashMap<>();
+    /**
+     * 按认证身份隔离的短期成功首屏快照缓存。
+     */
     private final BoundedTtlCache<String, Map<String, Object>> overviewCache =
             new BoundedTtlCache<>(SNAPSHOT_CACHE_MAX_SIZE, OVERVIEW_CACHE_TTL_MILLIS);
+    /**
+     * 同一身份的在途首屏查询，防止并发页面重复拉取全部数据源。
+     */
     private final Map<String, CompletableFuture<Map<String, Object>>> overviewInFlight = new ConcurrentHashMap<>();
+    /**
+     * 同一身份的在途任务事件快照，失效通知到来时隔离旧读取。
+     */
     private final Map<String, CompletableFuture<Map<String, Object>>> taskEventInFlight = new ConcurrentHashMap<>();
+    /**
+     * 按身份和告警类型隔离的在途事件查询，完成或失败后移除。
+     */
     private final Map<String, CompletableFuture<Map<String, Object>>> alarmEventInFlight = new ConcurrentHashMap<>();
+    /**
+     * 按身份及数据源参数合并的在途基础读取，不跨身份复用结果。
+     */
     private final Map<String, CompletableFuture<?>> sourceReadInFlight = new ConcurrentHashMap<>();
 
+    /**
+     * 初始化 PanoramaService，保存所需依赖及初始运行状态。
+     *
+     * @param centerClient 调用下游设备、任务、地图、告警和里程接口，供全景聚合使用。
+     * @param objectMapper JSON 编解码器
+     */
     public PanoramaService(PanoramaCenterClient centerClient, ObjectMapper objectMapper) {
         this.centerClient = centerClient;
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 聚合设备、任务、地图、里程及告警摘要；同身份合并在途请求，并携带缺测与降级信息。
+     *
+     * @return 全景首屏摘要，不预加载任务路径和回放
+     */
     public Map<String, Object> overview() {
         String cacheKey = "overview:" + statsUserKey();
         CompletableFuture<Map<String, Object>> shared;
         synchronized (overviewCache) {
             Optional<Map<String, Object>> cached = overviewCache.get(cacheKey);
-            if (cached.isPresent()) return cached.get();
+            if (cached.isPresent()) {
+                return cached.get();
+            }
             if (!overviewInFlight.containsKey(cacheKey) && overviewInFlight.size() >= IN_FLIGHT_MAX_SIZE) {
                 throw new IllegalStateException("大屏总览并发身份已达上限，请稍后重试");
             }
@@ -184,10 +231,16 @@ public class PanoramaService {
         sourceReadInFlight.remove(sourceReadKey("task-plans"));
     }
 
+    /**
+     * 使当前授权范围内的任务统计缓存失效，后续读取从权威源重建。
+     */
     public void invalidateTaskStats() {
         statsCache.remove("tasks:" + statsUserKey());
     }
 
+    /**
+     * 使当前授权范围内的告警统计缓存失效。
+     */
     public void invalidateAlarmStats() {
         statsCache.remove("alarms:" + statsUserKey());
     }
@@ -208,10 +261,6 @@ public class PanoramaService {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> castMap(Object value) {
-        return (Map<String, Object>) value;
-    }
 
     private Map<String, Object> joinShared(
             CompletableFuture<Map<String, Object>> future,
@@ -246,6 +295,9 @@ public class PanoramaService {
         }
     }
 
+    /**
+     * 在同一首屏时间预算内并发查询独立数据源；仅使用成功事实填充统计，失败块带降级原因而非伪造零值。
+     */
     private Map<String, Object> overviewWithinDeadline() {
         OverviewTiming timing = new OverviewTiming();
         OverviewRequestCache cache = new OverviewRequestCache();
@@ -301,16 +353,23 @@ public class PanoramaService {
         }
     }
 
+    /**
+     * 按请求分块生成统计快照，保留各数据源独立的完整性状态。
+     *
+     * @return 选中统计块及对应数据质量
+     */
     public Map<String, Object> statsSnapshot() {
         return statsSnapshot(EnumSet.allOf(StatsPart.class));
     }
 
     /**
      * 当前用户已授权固定摄像头的最小播放状态。复用设备统计的短缓存和单飞查询，
-     * 健康事件不再触发完整 Overview；只携带已授权摄像头的脱敏健康状态和原因码。
+     *  健康事件不再触发完整 Overview；只携带已授权摄像头的脱敏健康状态和原因码。
+     *
+     * @return 供目录续租及实时推送使用的摄像头健康列表
      */
     public List<Map<String, Object>> fixedCameraStatuses() {
-        return cachedStats("devices", () -> devices(new OverviewRequestCache())).stream()
+        return cachedStats("devices", this::list, () -> devices(new OverviewRequestCache())).stream()
                 .filter(device -> "FIXED_CAMERA".equals(firstString(device, "sourceType")))
                 .map(device -> object(
                         "sourceId", device.get("robotId"),
@@ -323,13 +382,18 @@ public class PanoramaService {
                 .toList();
     }
 
+    /**
+     * 使设备相关统计缓存失效，避免继续显示旧在线或摄像头健康状态。
+     */
     public void invalidateDeviceStats() {
         statsCache.remove("devices:" + statsUserKey());
     }
 
     /**
      * 按事件类型只重算受影响部分，未包含的部分保持上一轮快照值。各部分结果带
-     * 3 秒短 TTL 缓存（按用户隔离），多会话与多事件在窗口内共享一次管理端查询。
+     *   3 秒短 TTL 缓存（按用户隔离），多会话与多事件在窗口内共享一次管理端查询。
+     * @param parts 本次需要重新聚合的统计模块集合；空值或空集合表示全部模块
+     * @return 选中统计块及对应数据质量
      */
     public Map<String, Object> statsSnapshot(Set<StatsPart> parts) {
         Set<StatsPart> requestedParts = parts == null || parts.isEmpty()
@@ -376,23 +440,23 @@ public class PanoramaService {
     private Map<String, Object> calculateStatsSnapshot(Set<StatsPart> parts) {
         Map<String, Object> stats = new LinkedHashMap<>();
         if (parts.contains(StatsPart.DEVICES)) {
-            List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
+            List<Map<String, Object>> devices = cachedStats("devices", this::list, () -> devices(new OverviewRequestCache()));
             stats.put("deviceStats", deviceStats(devices));
             stats.put("deviceTypeStats", deviceTypeStats(devices));
         }
         if (parts.contains(StatsPart.TASKS)) {
-            PanoramaTasks panoramaTasks = cachedStats("tasks", this::taskSummaries);
+            PanoramaTasks panoramaTasks = cachedStats("tasks", PanoramaTasks.class::cast, this::taskSummaries);
             putDataQuality(stats, "tasks", panoramaTasks.dataQuality());
             if (dataComplete(panoramaTasks.dataQuality())) {
                 stats.put("patrolOverview", patrolOverview(
-                        panoramaTasks.instances(), cachedStats("mileage", this::todayMileageSummary)));
+                        panoramaTasks.instances(), cachedStats("mileage", this::map, this::todayMileageSummary)));
                 stats.put("taskOverview", taskOverview(panoramaTasks.items()));
             } else {
                 invalidateTaskStats();
             }
         }
         if (parts.contains(StatsPart.ALARMS)) {
-            PanoramaAlarms panoramaAlarms = cachedStats("alarms", this::alarmsPayload);
+            PanoramaAlarms panoramaAlarms = cachedStats("alarms", PanoramaAlarms.class::cast, this::alarmsPayload);
             putDataQuality(stats, "alarms", panoramaAlarms.dataQuality());
             if (dataComplete(panoramaAlarms.dataQuality())) {
                 stats.put("alarmStats", alarmStats(panoramaAlarms.payload()));
@@ -415,11 +479,11 @@ public class PanoramaService {
                 && !Boolean.TRUE.equals(quality.get("degraded"));
     }
 
-    private <T> T cachedStats(String part, Supplier<T> supplier) {
+    private <T> T cachedStats(String part, Function<Object, T> reader, Supplier<T> supplier) {
         String key = part + ":" + statsUserKey();
         Optional<Object> cached = statsCache.get(key);
         if (cached.isPresent()) {
-            return (T) cached.get();
+            return reader.apply(cached.get());
         }
         if (!statsPartInFlight.containsKey(key) && statsPartInFlight.size() >= IN_FLIGHT_MAX_SIZE) {
             throw new IllegalStateException("大屏统计缓存并发身份已达上限，请稍后重试");
@@ -437,7 +501,7 @@ public class PanoramaService {
         try {
             Object value = shared.join();
             statsCache.put(key, value);
-            return (T) value;
+            return reader.apply(value);
         } finally {
             statsPartInFlight.remove(key, shared);
         }
@@ -564,9 +628,15 @@ public class PanoramaService {
         return alarm;
     }
 
+    /**
+     * 先核对设备可见性再补查组件数量；固定摄像头和无权设备不触发详情查询。
+     *
+     * @param deviceId 设备 ID
+     * @return 机器人 ID 及组件数量；未知时保留 null
+     */
     public Map<String, Object> mountedDeviceCount(String deviceId) {
         // 先按当前用户的设备列表授权，再补查唯一目标的组件；固定摄像头和无权设备不查询详情。
-        List<Map<String, Object>> devices = cachedStats("devices", () -> devices(new OverviewRequestCache()));
+        List<Map<String, Object>> devices = cachedStats("devices", this::list, () -> devices(new OverviewRequestCache()));
         Map<String, Object> selected = devices.stream()
                 .filter(device -> Objects.equals(deviceId, string(device.get("robotId"))))
                 .findFirst()
@@ -575,11 +645,11 @@ public class PanoramaService {
             return emptyMountedDeviceCount();
         }
         // 不为任意传入的无权 ID 建缓存/锁，避免攻击者用随机路径扩大内存占用。
-        return cachedStats("mounted-device-count:" + deviceId, () -> mountedDeviceCountPayload(deviceId));
+        return cachedStats("mounted-device-count:" + deviceId, this::map, () -> mountedDeviceCountPayload(deviceId));
     }
 
     private Map<String, Object> mountedDeviceCountPayload(String deviceId) {
-        Object count = cachedStats("management-devices", centerClient::devices).stream()
+        Object count = cachedStats("management-devices", this::list, centerClient::devices).stream()
                 .filter(source -> Objects.equals(deviceId, firstString(source, "serialNumber")))
                 .findFirst()
                 .map(source -> {
@@ -594,12 +664,17 @@ public class PanoramaService {
         return object("robotId", null, "mountedDeviceCount", null);
     }
 
-    /** 当前地图渲染所需资源；不加载其他地图的点位。 */
+    /**
+     * 当前地图渲染所需资源；不加载其他地图的点位。
+     *
+     * @param mapId 所属地图 ID
+     * @return 地图点位及关联固定摄像头，保留协议字段 fixedCamares
+     */
     public Map<String, Object> mapResources(String mapId) {
         if (mapId == null || mapId.isBlank()) {
             throw new IllegalArgumentException("mapId is required");
         }
-        return cachedStats("map-resources:" + mapId, () -> mapResourcesPayload(mapId));
+        return cachedStats("map-resources:" + mapId, this::map, () -> mapResourcesPayload(mapId));
     }
 
     private Map<String, Object> mapResourcesPayload(String mapId) {
@@ -612,13 +687,18 @@ public class PanoramaService {
                 "fixedCamares", fixedCameras);
     }
 
-    /** 当前地图关联任务的路径数据；不加载任务回放或设备任务明细。 */
+    /**
+     * 当前地图关联任务的路径数据；不加载任务回放或设备任务明细。
+     *
+     * @param mapId 所属地图 ID
+     * @return 地图关联任务的路线分段及任务数据质量
+     */
     public Map<String, Object> mapTaskRoutes(String mapId) {
         if (mapId == null || mapId.isBlank()) {
             throw new IllegalArgumentException("mapId is required");
         }
         String cachePart = "map-task-routes:" + mapId;
-        Map<String, Object> response = cachedStats(cachePart, () -> mapTaskRoutesPayload(mapId));
+        Map<String, Object> response = cachedStats(cachePart, this::map, () -> mapTaskRoutesPayload(mapId));
         Map<String, Object> quality = map(map(response.get("dataQuality")).get("tasks"));
         // 降级结果只是本轮成功查询到的子集，不能作为成功快照缓存给后续请求。
         if (!dataComplete(quality)) {
@@ -667,7 +747,12 @@ public class PanoramaService {
         return Math.max(1, Math.min(TASK_ROUTE_BATCH_SIZE, taskCapacity - 1));
     }
 
-    /** 任务详情仅在用户打开任务时加载，避免首屏预取回放和设备任务明细。 */
+    /**
+     * 任务详情仅在用户打开任务时加载，避免首屏预取回放和设备任务明细。
+     *
+     * @param taskId 任务计划 ID
+     * @return 任务详情及数据质量；找不到时 task 为 null
+     */
     public Map<String, Object> taskDetail(String taskId) {
         if (taskId == null || taskId.isBlank()) {
             throw new IllegalArgumentException("taskId is required");
@@ -688,7 +773,10 @@ public class PanoramaService {
 
     /**
      * 实时监控任务卡展开时按需读取的固定摄像头视频源。这里不创建视频会话，
-     * 不返回 RTSP 地址或凭据；浏览器选择后仍走 Control 的固定摄像头会话接口。
+     *  不返回 RTSP 地址或凭据；浏览器选择后仍走 Control 的固定摄像头会话接口。
+     *
+     * @param taskId 任务计划 ID
+     * @return 任务摄像头的安全视频源标识，不含推流地址和凭据
      */
     public Map<String, Object> taskFixedCameras(String taskId) {
         if (taskId == null || taskId.isBlank()) {
@@ -713,6 +801,11 @@ public class PanoramaService {
                 "items", List.copyOf(itemsBySourceId.values()));
     }
 
+    /**
+     * 聚合当前任务与设备在线状态，保留任务数据不完整的原因。
+     *
+     * @return 任务列表、数量及数据质量
+     */
     public Map<String, Object> tasks() {
         OverviewRequestCache cache = new OverviewRequestCache();
         CompletableFuture<PanoramaTasks> tasksFuture = async(this::taskPayload);
@@ -728,12 +821,18 @@ public class PanoramaService {
                 "dataQuality", object("tasks", panoramaTasks.dataQuality()));
     }
 
-    /** WebSocket 任务事件只读取列表摘要，避免状态变化时加载回放、路径和设备任务明细。 */
+    /**
+     * WebSocket 任务事件只读取列表摘要，避免状态变化时加载回放、路径和设备任务明细。
+     *
+     * @return 适合实时推送的任务摘要及数据质量，不预取完整回放
+     */
     public Map<String, Object> taskEventSnapshot() {
         String cacheKey = "task-event:" + statsUserKey();
         CompletableFuture<Map<String, Object>> created = new CompletableFuture<>();
         CompletableFuture<Map<String, Object>> shared = taskEventInFlight.putIfAbsent(cacheKey, created);
-        if (shared != null) return joinShared(shared, OVERVIEW_TIMEOUT_MILLIS);
+        if (shared != null) {
+            return joinShared(shared, OVERVIEW_TIMEOUT_MILLIS);
+        }
         try {
             Map<String, Object> snapshot = loadTaskEventSnapshot();
             created.complete(snapshot);
@@ -762,7 +861,9 @@ public class PanoramaService {
                 instances = joinTask(instancesFuture, List.of(), quality, "TASK_INSTANCES_UNAVAILABLE");
             } catch (org.springframework.web.server.ResponseStatusException exception) {
                 // 计划和实例权限独立；仅实例 403 可降级，401 仍按登录失效处理。
-                if (exception.getStatusCode().value() != 403) throw exception;
+                if (exception.getStatusCode().value() != 403) {
+                    throw exception;
+                }
                 quality.unavailable(exception, "TASK_INSTANCES_FORBIDDEN");
                 instances = List.of();
             }
@@ -782,6 +883,11 @@ public class PanoramaService {
         }
     }
 
+    /**
+     * 聚合当前告警分组，失败时显式标记数据降级。
+     *
+     * @return 分组告警及数据质量
+     */
     public Map<String, Object> alarms() {
         PanoramaAlarms panoramaAlarms = alarmsPayload();
         return object(
@@ -790,6 +896,11 @@ public class PanoramaService {
                 "dataQuality", object("alarms", panoramaAlarms.dataQuality()));
     }
 
+    /**
+     * 构造实时事件使用的告警快照，与 HTTP 聚合沿用同一事实来源。
+     *
+     * @return 用于 WebSocket 发布的告警快照
+     */
     public Map<String, Object> alarmEventSnapshot() {
         return sharedAlarmEventSnapshot("ordinary", this::loadAlarmEventSnapshot);
     }
@@ -804,6 +915,16 @@ public class PanoramaService {
                 joinRequired(lowFuture));
     }
 
+    /**
+     * 分页查询未处置普通告警并补齐前端所需显示字段。
+     *
+     * @param level 当前模型定义的等级或级别
+     * @param pageNum 页码，从 1 开始
+     * @param pageSize 每页请求的记录数量
+     * @param occurredFrom 告警发生时间下界
+     * @param occurredTo 告警发生时间上界
+     * @return 告警分页数据
+     */
     public Map<String, Object> alarmPage(
             String level,
             int pageNum,
@@ -825,6 +946,11 @@ public class PanoramaService {
                 "items", page.records().stream().map(alarm -> alarmItem(alarm, null)).toList());
     }
 
+    /**
+     * 实时获取当前用户可处置的工作流告警，明确标记工作流处置能力且不跨身份缓存。
+     *
+     * @return 带 workflowActionable 标识的告警列表
+     */
     public Map<String, Object> actionableWorkflowAlarms() {
         return sharedAlarmEventSnapshot("workflow", this::loadActionableWorkflowAlarms);
     }
@@ -864,6 +990,13 @@ public class PanoramaService {
         }
     }
 
+    /**
+     * 校验处置参数后提交普通告警处置，并使相关统计失效。
+     *
+     * @param alarmId 待查询或处置的告警 ID
+     * @param request 请求参数
+     * @return 处置状态、告警 ID 及处理结果
+     */
     public Map<String, Object> handleAlarm(String alarmId, Map<String, Object> request) {
         if (alarmId == null || alarmId.isBlank()) {
             throw new IllegalArgumentException("alarmId is required");
@@ -874,6 +1007,13 @@ public class PanoramaService {
         return disposalResponse(alarmId, disposalStatus, success);
     }
 
+    /**
+     * 提交工作流告警处置并继续实例，成功后使关联任务和告警数据失效。
+     *
+     * @param alarmId 待查询或处置的告警 ID
+     * @param request 请求参数
+     * @return 处置及继续工作流的结果
+     */
     public Map<String, Object> handleWorkflowAlarm(String alarmId, Map<String, Object> request) {
         if (alarmId == null || alarmId.isBlank()) {
             throw new IllegalArgumentException("alarmId is required");
@@ -902,9 +1042,12 @@ public class PanoramaService {
         return devices(cache, null);
     }
 
+    /**
+     * 合并管理端可见档案、Control 边缘状态与摄像头健康；请求内复用查询，避免逐设备重复拉取基础数据。
+     */
     private List<Map<String, Object>> devices(OverviewRequestCache cache, OverviewTiming timing) {
         CompletableFuture<List<Map<String, Object>>> managementDevicesFuture = track(timing, "devices.management",
-                async(() -> cachedStats("management-devices", centerClient::devices)));
+                async(() -> cachedStats("management-devices", this::list, centerClient::devices)));
         CompletableFuture<List<Map<String, Object>>> registeredRobotsFuture = track(timing, "devices.registry",
                 async(centerClient::registeredRobots));
         CompletableFuture<List<Map<String, Object>>> fixedCamerasFuture = track(timing, "devices.fixedCameras",
@@ -961,7 +1104,9 @@ public class PanoramaService {
         return centerClient.device(id)
                 .map(detail -> {
                     Map<String, Object> source = mergeDevice(listDevice, map(detail.get("device")));
-                    if (detail.get("components") instanceof List<?>) source.put("components", detail.get("components"));
+                    if (detail.get("components") instanceof List<?>) {
+                        source.put("components", detail.get("components"));
+                    }
                     return source;
                 })
                 .orElse(listDevice);
@@ -995,6 +1140,9 @@ public class PanoramaService {
                         (left, right) -> right));
     }
 
+    /**
+     * 按权威来源优先级组装机器人摘要，未知运行状态保留为空，防止媒体心跳覆盖本体事实。
+     */
     private Map<String, Object> device(
             Map<String, Object> source,
             Map<String, Object> realtimeStatus,
@@ -1061,6 +1209,9 @@ public class PanoramaService {
                 .toList();
     }
 
+    /**
+     * 将固定摄像头映射为同级装备摘要，结合配置、网关及码流健康判断可播放性，并移除推流凭据。
+     */
     private Map<String, Object> fixedCameraDevice(Map<String, Object> source, Map<String, Object> health) {
         String cameraId = firstString(source, "cameraId", "id");
         boolean enabled = booleanValue(source.get("enabled"));
@@ -1265,18 +1416,6 @@ public class PanoramaService {
                 "updatedAt", firstString(localization, "updatedAt"));
     }
 
-    private Map<String, Object> emptyLocation() {
-        return object(
-                "mapId", null,
-                "lng", null,
-                "lat", null,
-                "altitude", null,
-                "x", null,
-                "y", null,
-                "z", null,
-                "address", null,
-                "updatedAt", null);
-    }
 
     private List<Map<String, Object>> deviceTasks(Map<String, Object> realtimeTask) {
         Object taskId = realtimeTask.get("taskInstanceId");
@@ -1408,10 +1547,14 @@ public class PanoramaService {
         Map<String, Map<String, Object>> activeOrphans = new LinkedHashMap<>();
         for (Map<String, Object> instance : instances) {
             String planId = firstString(instance, "workflowPlanId");
-            if (planId == null || listedPlanIds.contains(planId) || !activeWorkflowInstance(instance)) continue;
+            if (planId == null || listedPlanIds.contains(planId) || !activeWorkflowInstance(instance)) {
+                continue;
+            }
             activeOrphans.putIfAbsent(planId, instance);
         }
-        if (activeOrphans.isEmpty()) return result;
+        if (activeOrphans.isEmpty()) {
+            return result;
+        }
 
         Map<String, CompletableFuture<Map<String, Object>>> detailFutures = new LinkedHashMap<>();
         activeOrphans.keySet().forEach(planId -> detailFutures.put(planId,
@@ -1422,7 +1565,9 @@ public class PanoramaService {
                 quality.invalidReference("TEMPORARY_TASK_PLAN_UNAVAILABLE", planId);
                 return;
             }
-            if (!"TEMPORARY".equalsIgnoreCase(firstString(plan, "planType"))) return;
+            if (!"TEMPORARY".equalsIgnoreCase(firstString(plan, "planType"))) {
+                return;
+            }
             Map<String, Object> runtimePlan = new LinkedHashMap<>(plan);
             runtimePlan.put("runtimeOnly", true);
             result.add(runtimePlan);
@@ -1432,7 +1577,9 @@ public class PanoramaService {
 
     private boolean activeWorkflowInstance(Map<String, Object> instance) {
         String status = firstString(instance, "status", "executionStatus");
-        if (status == null) return false;
+        if (status == null) {
+            return false;
+        }
         return !Set.of("COMPLETED", "FAILED", "TERMINATED").contains(status.toUpperCase(Locale.ROOT));
     }
 
@@ -1481,7 +1628,9 @@ public class PanoramaService {
         for (Map<String, Object> binding : list(source.get("targetBindings"))) {
             Object x = firstValue(binding, "x", "coordinateX");
             Object y = firstValue(binding, "y", "coordinateY");
-            if (x == null || y == null) continue;
+            if (x == null || y == null) {
+                continue;
+            }
             return object(
                     "x", number(x),
                     "y", number(y),
@@ -1544,6 +1693,9 @@ public class PanoramaService {
         return latest;
     }
 
+    /**
+     * 从任务定义和运行实例解析关联装备，保留原协议标识与来源，避免把缺失关系当作已完成绑定。
+     */
     private List<Map<String, Object>> equipmentList(
             Map<String, Object> source,
             Map<String, Object> instance,
@@ -1592,6 +1744,9 @@ public class PanoramaService {
         return result;
     }
 
+    /**
+     * 按可见设备清单补齐任务装备的实时在线状态；兼容管理端 ID 与装备序列号，不回写上游对象。
+     */
     private List<Map<String, Object>> withEquipmentOnlineStatuses(
             List<Map<String, Object>> tasks,
             List<Map<String, Object>> devices) {
@@ -1933,25 +2088,7 @@ public class PanoramaService {
         return Math.round(value * 10.0) / 10.0;
     }
 
-    private Map<String, Object> actions(boolean enabled) {
-        return object(
-                "remoteControl", enabled,
-                "slamMap", enabled,
-                "returnHome", enabled,
-                "returnChargingPile", enabled,
-                "showPath", true,
-                "showArea", true);
-    }
 
-    private Map<String, Object> emptyActions() {
-        return object(
-                "remoteControl", null,
-                "slamMap", null,
-                "returnHome", null,
-                "returnChargingPile", null,
-                "showPath", null,
-                "showArea", null);
-    }
 
     private static java.util.concurrent.ThreadFactory namedDaemonThreadFactory(String prefix) {
         return runnable -> {
@@ -2001,11 +2138,17 @@ public class PanoramaService {
         return sourceKey + ":" + statsUserKey();
     }
 
+    /**
+     * 异步执行下游读取，并传播认证身份、统一截止时间和 I/O 执行器；完成后恢复工作线程上下文。
+     */
     private <T> CompletableFuture<T> async(Supplier<T> supplier) {
         ThreadPoolExecutor executor = REQUEST_IO_EXECUTOR.get();
         return async(supplier, executor == null ? IO_EXECUTOR : executor);
     }
 
+    /**
+     * 异步执行下游读取，并传播认证身份、统一截止时间和 I/O 执行器；完成后恢复工作线程上下文。
+     */
     private <T> CompletableFuture<T> async(Supplier<T> supplier, ThreadPoolExecutor executor) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         Long deadlineNanos = OVERVIEW_DEADLINE_NANOS.get();
@@ -2129,6 +2272,9 @@ public class PanoramaService {
         }
     }
 
+    /**
+     * 使用当前聚合请求的剩余总预算等待结果，避免每个子查询重新获得完整超时。
+     */
     private <T> T waitFor(CompletableFuture<T> future) throws TimeoutException {
         Long deadlineNanos = OVERVIEW_DEADLINE_NANOS.get();
         if (deadlineNanos == null) {
@@ -2214,9 +2360,16 @@ public class PanoramaService {
         };
     }
 
+    /** 一次概览请求内共享地图点位及固定摄像头查询，避免重复下游请求。 */
     private final class OverviewRequestCache {
 
+        /**
+         * 本次请求按地图 ID 共享的点位查询 Future。
+         */
         private final Map<String, CompletableFuture<List<Map<String, Object>>>> mapPointsByMapId = new ConcurrentHashMap<>();
+        /**
+         * 本次请求共享的完整固定摄像头目录查询。
+         */
         private volatile CompletableFuture<List<Map<String, Object>>> allFixedCamerasFuture;
 
         private List<Map<String, Object>> mapPoints(String mapId) {
@@ -2251,12 +2404,28 @@ public class PanoramaService {
         }
     }
 
+    /** 在一次任务查询中复用工作流实例与回放解析结果。 */
     private final class TaskInstanceResolver {
 
+        /**
+         * 本次任务查询已经解析的实例，按工作流实例 ID 复用。
+         */
         private final Map<String, Map<String, Object>> instancesById = new ConcurrentHashMap<>();
+        /**
+         * 按工作流实例 ID 合并的在途实例详情查询。
+         */
         private final Map<String, CompletableFuture<Map<String, Object>>> instanceFuturesById = new ConcurrentHashMap<>();
+        /**
+         * 按工作流实例 ID 共享的回放查询。
+         */
         private final Map<String, CompletableFuture<Map<String, Object>>> replaysById = new ConcurrentHashMap<>();
+        /**
+         * 按工作流实例 ID 共享的设备任务查询。
+         */
         private final Map<String, CompletableFuture<List<Map<String, Object>>>> deviceTasksByWorkflowInstanceId = new ConcurrentHashMap<>();
+        /**
+         * 本次任务查询共用的数据质量收集器。
+         */
         private final TaskDataQuality quality;
 
         private TaskInstanceResolver(List<Map<String, Object>> taskInstances, TaskDataQuality quality) {
@@ -2340,9 +2509,16 @@ public class PanoramaService {
         }
     }
 
+    /** 按计划复用任务路线查询，并记录无效引用的数据质量。 */
     private final class TaskRouteResolver {
 
+        /**
+         * 按任务计划 ID 共享的路线点查询 Future。
+         */
         private final Map<String, CompletableFuture<List<Map<String, Object>>>> routesByPlanId = new ConcurrentHashMap<>();
+        /**
+         * 路线解析共用的数据质量收集器。
+         */
         private final TaskDataQuality quality;
 
         private TaskRouteResolver(TaskDataQuality quality) {
@@ -2488,9 +2664,6 @@ public class PanoramaService {
         return deviceTypeNames.getOrDefault(typeCode.toUpperCase(Locale.ROOT), typeCode);
     }
 
-    private boolean handled(String status) {
-        return "handled".equals(status) || "false_alarm".equals(status);
-    }
 
     private String timeRange(String startTime, String endTime, String fallback) {
         if (startTime == null || endTime == null || startTime.length() < 16 || endTime.length() < 16) {
@@ -2522,12 +2695,12 @@ public class PanoramaService {
         try {
             return OffsetDateTime.parse(raw).withOffsetSameInstant(CHINA_ZONE).toLocalDateTime();
         } catch (DateTimeParseException ignored) {
-            // Try local datetime below.
+            // 带时区格式解析失败，继续尝试本地日期时间格式。
         }
         try {
             return LocalDateTime.parse(raw);
         } catch (DateTimeParseException ignored) {
-            // Try date-only below.
+            // 本地日期时间解析失败，继续尝试仅日期格式。
         }
         try {
             return LocalDate.parse(raw).atStartOfDay();
@@ -2683,7 +2856,9 @@ public class PanoramaService {
         if (controlMode == null || controlMode.isBlank()) {
             return null;
         }
-        if ("导航模式".equals(controlMode)) return controlMode;
+        if ("导航模式".equals(controlMode)) {
+            return controlMode;
+        }
         return "手动模式".equals(controlMode) || "常规模式".equals(controlMode) ? "手动模式" : null;
     }
 
@@ -2735,10 +2910,17 @@ public class PanoramaService {
         return new PanoramaTasks(List.of(), List.of(), quality.snapshot(), false);
     }
 
+    /** 收集任务来源失败和无效引用，限制对外报告的明细数量。 */
     private final class TaskDataQuality {
 
         private static final int MAX_REPORTED_INVALID_REFERENCES = 20;
+        /**
+         * 本轮任务查询失败原因码，排序去重以保持响应稳定。
+         */
         private final Set<String> reasonCodes = new ConcurrentSkipListSet<>();
+        /**
+         * 本轮发现的无效工作流引用，输出时按报告上限截断。
+         */
         private final Set<String> invalidWorkflowReferences = new ConcurrentSkipListSet<>();
 
         private void unavailable(Throwable exception, String defaultReasonCode) {
@@ -2772,8 +2954,12 @@ public class PanoramaService {
         }
     }
 
+    /** 收集告警来源失败原因，供聚合响应标识数据可用性。 */
     private final class AlarmDataQuality {
 
+        /**
+         * 本轮告警查询失败原因码，排序去重以保持响应稳定。
+         */
         private final Set<String> reasonCodes = new ConcurrentSkipListSet<>();
 
         private void unavailable(Throwable exception, String defaultReasonCode) {
@@ -2799,6 +2985,14 @@ public class PanoramaService {
         }
     }
 
+    /**
+     * 任务聚合结果，包含计划项、实例、数据质量及尚未收敛状态。
+     *
+     * @param items 当前查询或快照的条目集合
+     * @param instances 相关工作流运行实例
+     * @param dataQuality 各数据块的完整性、降级状态和失败原因
+     * @param convergencePending 工作流计划与实例是否仍在等待数据收敛
+     */
     private record PanoramaTasks(
             List<Map<String, Object>> items,
             List<Map<String, Object>> instances,
@@ -2806,18 +3000,30 @@ public class PanoramaService {
             boolean convergencePending) {
     }
 
+    /**
+     * 告警聚合载荷及对应的数据质量说明。
+     *
+     * @param payload 消息载荷
+     * @param dataQuality 各数据块的完整性、降级状态和失败原因
+     */
     private record PanoramaAlarms(
             Map<String, Object> payload,
             Map<String, Object> dataQuality) {
     }
 
     /**
-     * 只记录一次未命中缓存的 Overview 关键路径。分支并行执行，汇总日志用于直接识别首屏耗时最长项；
-     * 不记录用户、Token 或响应正文。
+     * 只记录一次未命中缓存的总览查询关键路径。分支并行执行，汇总日志用于直接识别首屏耗时最长项；
+     * 不记录用户、令牌或响应正文。
      */
     private static final class OverviewTiming {
 
+        /**
+         * 本次首屏查询开始的单调时间，单位纳秒。
+         */
         private final long startedNanos = System.nanoTime();
+        /**
+         * 各查询分支的完成耗时，单位毫秒。
+         */
         private final Map<String, Long> elapsedByPart = new ConcurrentHashMap<>();
 
         private <T> CompletableFuture<T> track(String part, CompletableFuture<T> future) {
@@ -2830,31 +3036,41 @@ public class PanoramaService {
         private void logSummary() {
             long totalMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
             Map<String, Long> ordered = new LinkedHashMap<>();
+            // 计时键保持稳定，仅在汇总日志中映射为中文标签。
             List.of(
-                    "devices",
-                    "devices.management",
-                    "devices.legacyRealtime",
-                    "devices.registry",
-                    "devices.fixedCameras",
-                    "devices.cameraHealth",
-                    "devices.typeOptions",
-                    "tasks",
-                    "tasks.plans",
-                    "tasks.activeInstances",
-                    "tasks.instances",
-                    "maps",
-                    "alarms",
-                    "mileage")
+                    Map.entry("devices", "设备汇总"),
+                    Map.entry("devices.management", "管理端设备档案"),
+                    Map.entry("devices.legacyRealtime", "既有实时状态"),
+                    Map.entry("devices.registry", "设备注册状态"),
+                    Map.entry("devices.fixedCameras", "固定摄像头档案"),
+                    Map.entry("devices.cameraHealth", "摄像头健康状态"),
+                    Map.entry("devices.typeOptions", "设备类型选项"),
+                    Map.entry("tasks", "任务汇总"),
+                    Map.entry("tasks.plans", "任务计划"),
+                    Map.entry("tasks.activeInstances", "活动任务实例"),
+                    Map.entry("tasks.instances", "任务实例"),
+                    Map.entry("maps", "地图"),
+                    Map.entry("alarms", "告警"),
+                    Map.entry("mileage", "里程"))
                     .forEach(part -> {
-                        Long elapsed = elapsedByPart.get(part);
-                        if (elapsed != null) ordered.put(part, elapsed);
+                        Long elapsed = elapsedByPart.get(part.getKey());
+                        if (elapsed != null) {
+                            ordered.put(part.getValue(), elapsed);
+                        }
                     });
-            log.info("大屏 Overview 冷请求聚合耗时，totalMs={}，partsMs={}", totalMillis, ordered);
+            log.info("大屏总览首次查询聚合耗时，总耗时毫秒={}，分项耗时毫秒={}", totalMillis, ordered);
         }
     }
 
+    /** 将大屏告警处置选项映射为下游状态和动作编码。 */
     private enum AlarmDisposalStatus {
+        /**
+         * 确认告警需立即处置。
+         */
         IMMEDIATE_DISPOSAL("IMMEDIATE_DISPOSAL", "立即处置", "handled", "HANDLE_NOW"),
+        /**
+         * 将本次告警标记为误报。
+         */
         FALSE_ALARM("FALSE_ALARM", "误报", "false_alarm", "FALSE_ALARM");
 
         private final String code;

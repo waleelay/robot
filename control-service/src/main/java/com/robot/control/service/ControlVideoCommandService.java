@@ -73,9 +73,10 @@ public class ControlVideoCommandService {
 
     /**
      * 构造控制端实时视频命令编排服务。
-     *
      * @param mediaServiceClient 媒体服务客户端
      * @param commandService 机器人媒体命令服务
+     *
+     * @param managementClient 管理端客户端，用于校验固定摄像头档案。
      */
     public ControlVideoCommandService(
             ControlMediaServiceClient mediaServiceClient,
@@ -113,13 +114,13 @@ public class ControlVideoCommandService {
         mediaRequest.setClientRequestId(startRequest.getClientRequestId());
         VideoSessionResponse response = mediaServiceClient.createVideoSession(mediaRequest, user);
         // INIT 表示新会话刚落库，还没有机器人端推流。此时必须请求媒体服务生成
-        // publisher token/roomName，再通过 MQTT 下发给机器人客户端。
+        // 发布令牌/roomName，再通过 MQTT 下发给机器人客户端。
         if (response.status() == VideoSessionStatus.INIT) {
             VideoStartCommand command = mediaServiceClient.requestClientStart(response.sessionId(), "video.client.requested");
             sendStart(command);
             return mediaServiceClient.get(response.sessionId(), user);
         }
-        // 对讲先创建的 audio-only 会话没有 video track。用户随后点“观看”时，需要补发
+        // 对讲先创建的 纯音频会话没有视频轨道。用户随后点“观看”时，需要补发
         // 视频 start 指令，把同一个 Room 从对讲升级成音视频会话。
         if (response.intercomAudioOnly() && response.trackSid() == null) {
             VideoStartCommand command = mediaServiceClient.requestClientStart(response.sessionId(), "video.client.requested");
@@ -297,7 +298,7 @@ public class ControlVideoCommandService {
     /**
      * 后台调度器发现对讲心跳超时后调用。
      *
-     * <p>只有媒体服务确认仍需停止机器人端音频桥时，才会返回包含 robotId 的 payload。</p>
+     * <p>只有媒体服务确认仍需停止机器人端音频桥时，才会返回包含 robotId 的消息载荷。</p>
      *
      * @param sessionId 实时视频会话编号
      */
@@ -324,10 +325,11 @@ public class ControlVideoCommandService {
 
     /**
      * 切换通道/码流会更新媒体会话，再通知机器人以新参数重新推流。
-     *
      * @param sessionId 实时视频会话编号
      * @param request 通道切换请求
      * @return 切换后的实时视频会话响应
+     *
+     * @param user 当前用户
      */
     public VideoSessionResponse switchChannel(String sessionId, SwitchChannelRequest request, CurrentUser user) {
         requireAuthorizedSession(sessionId, user);
@@ -427,7 +429,9 @@ public class ControlVideoCommandService {
 
     /**
      * 固定摄像头 Gateway 或 RTSP 恢复后，只重新发布仍有观看者的固定视频源。
-     * 机器人客户端上线恢复继续由 {@link #handleClientOnline(String, String)} 独立处理。
+     *   机器人客户端上线恢复继续由 {@link #handleClientOnline(String, String)} 独立处理。
+     * @param sourceId 待恢复的固定摄像头 ID；为空时检查全部符合条件的固定摄像头来源
+     * @param gatewayReconnect 是否由 Gateway 离线转在线触发
      */
     public void recoverFixedCameraSources(String sourceId, boolean gatewayReconnect) {
         mediaServiceClient.fixedCameraRecoveryCommands(sourceId, gatewayReconnect).forEach(command -> {
@@ -480,7 +484,7 @@ public class ControlVideoCommandService {
             return true;
         }
         if (!publishedStartCommandIds.add(commandId)) {
-            log.info("跳过重复视频启动命令，commandId={}", commandId);
+            log.info("跳过重复视频启动命令，命令标识={}", commandId);
             return false;
         }
         if (publishedStartCommandIds.size() > RECENT_START_COMMAND_LIMIT) {

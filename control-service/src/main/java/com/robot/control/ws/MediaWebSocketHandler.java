@@ -31,7 +31,7 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 /**
- * Control Service 前端 WebSocket 连接处理器。
+ * 控制服务 前端 WebSocket 连接处理器。
  *
  * @author leelay
  * @date 2026-07-05
@@ -52,9 +52,28 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
     private final RequestAuthorizationHeaders requestAuthorizationHeaders;
     private final ControlManagementClient managementClient;
     private final TrajectoryCoordinator trajectoryCoordinator;
+    /**
+     * WebSocket 连接 ID 到可信用户终端的映射，用于最后连接退出时释放控制占用。
+     */
     private final Map<String, CurrentUser> usersBySession = new ConcurrentHashMap<>();
+    /**
+     * 按终端身份散列的固定锁集合，串行化同终端建连、断连及占用释放。
+     */
     private final Object[] terminalLifecycleLocks = createTerminalLifecycleLocks();
 
+    /**
+     * 初始化 MediaWebSocketHandler，保存所需依赖及初始运行状态。
+     *
+     * @param publisher 向目标浏览器或身份分组投递消息的回调
+     * @param objectMapper JSON 编解码器
+     * @param equipmentControlService 装备控制服务
+     * @param intercomCallService 在媒体对讲启动前协调机器人主动呼叫的邀请、接听与状态流转。
+     * @param fieldCallService 现场应用 到指挥中心的视频呼叫状态机，负责内存呼叫状态和通知
+     * @param currentUserResolver 当前用户解析器
+     * @param requestAuthorizationHeaders 当前请求认证头透传器
+     * @param managementClient 访问 Management 档案与权限接口的客户端
+     * @param trajectoryCoordinator 按大屏实际观看目标查询并定向推送设备任务轨迹。
+     */
     public MediaWebSocketHandler(
             MediaWebSocketPublisher publisher,
             ObjectMapper objectMapper,
@@ -187,9 +206,8 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
 
     /**
      * 处理前端 WebSocket 断连。
-     *
      * @param session WebSocket 会话
-     * @param status 状态消息
+     * @param status WebSocket 关闭状态
      */
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
@@ -282,8 +300,8 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
      * 向单个 WebSocket 会话发送消息。
      *
      * @param session WebSocket 会话
-     * @param type type
-     * @param requestId requestId
+     * @param type 当前业务使用的类型编码
+     * @param requestId 本次请求的关联标识
      * @param payload 消息载荷
      * @throws IOException IOException 处理失败时抛出
      */

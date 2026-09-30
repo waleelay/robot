@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 
+/** 验证有界缓存的过期、容量及单项失效行为。 */
 class BoundedTtlCacheTest {
 
     @Test

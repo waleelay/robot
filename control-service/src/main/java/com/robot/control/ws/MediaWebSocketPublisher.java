@@ -28,6 +28,9 @@ public class MediaWebSocketPublisher {
     private static final Logger log = LoggerFactory.getLogger(MediaWebSocketPublisher.class);
 
     private final ObjectMapper objectMapper;
+    /**
+     * 本实例当前参与广播的前端连接集合，断开或发送失败时移除。
+     */
     private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
 
     /**
@@ -74,8 +77,7 @@ public class MediaWebSocketPublisher {
     }
 
     /**
-     * 发布 MQTT 消息。
-     *
+     * 向当前已连接的前端广播 WebSocket 业务事件。
      * @param event 事件名称
      * @param data 业务数据
      */
@@ -107,7 +109,7 @@ public class MediaWebSocketPublisher {
     /**
      * 向前端广播二进制消息。
      *
-     * @param bytes bytes
+     * @param bytes 待发送的原始二进制内容
      */
     public void publishBinary(byte[] bytes) {
         BinaryMessage message = new BinaryMessage(bytes);

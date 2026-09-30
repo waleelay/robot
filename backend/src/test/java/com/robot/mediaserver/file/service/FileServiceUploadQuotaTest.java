@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
+/** 验证上传会话全局与单机器人配额的拒绝行为及重试信息。 */
 class FileServiceUploadQuotaTest {
 
     private final MediaFileRepository fileRepository = mock(MediaFileRepository.class);

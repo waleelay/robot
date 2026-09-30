@@ -19,6 +19,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+/** 验证视频调度按发布时间及 观看端租约处理超时和回收。 */
 class VideoSessionTimeoutSchedulerTest {
 
     @Test

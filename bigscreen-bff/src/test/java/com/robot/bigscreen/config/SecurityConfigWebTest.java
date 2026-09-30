@@ -30,6 +30,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.server.ResponseStatusException;
 
+/** 验证 BFF 外部入口的认证、调用方限制和代理错误行为。 */
 @WebMvcTest(BigscreenProxyController.class)
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {
@@ -52,6 +53,14 @@ class SecurityConfigWebTest {
     @BeforeEach
     void setUp() {
         when(proxyClient.forward(any())).thenReturn(ResponseEntity.ok(new byte[0]));
+    }
+
+    @Test
+    void protectsMileageQueryAtBrowserEntry() throws Exception {
+        String path = "/api/control/statistics/mileage?startTime=2026-08-14T00:00:00&endTime=2026-08-14T23:59:59";
+        mockMvc.perform(get(path)).andExpect(status().isUnauthorized());
+        mockMvc.perform(get(path).with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
+                .andExpect(status().isOk());
     }
 
     @Test

@@ -46,12 +46,36 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
     private final TaskScheduler taskScheduler;
     private final RestClient restClient;
     private final WebSocketStompClient stompClient;
+    /**
+     * 桥接生命周期标记，关闭后禁止再次安排连接。
+     */
     private final AtomicBoolean running = new AtomicBoolean();
+    /**
+     * 连接尝试互斥标记，防止同时创建多个上游连接。
+     */
     private final AtomicBoolean connecting = new AtomicBoolean();
+    /**
+     * 是否已安排重连任务，避免断线回调重复调度。
+     */
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
+    /**
+     * 按事件 ID 去重的有界近期事件记录，避免重复失效通知。
+     */
     private final Map<String, Boolean> seenEvents = new LinkedHashMap<>();
+    /**
+     * 当前管理端 STOMP 连接，重连成功后替换。
+     */
     private volatile StompSession session;
 
+    /**
+     * 初始化 CenterStompTaskEventBridge，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param objectMapper JSON 编解码器
+     * @param publisher 向目标浏览器或身份分组投递消息的回调
+     * @param taskScheduler 后台任务调度器
+     * @param restClientBuilder 下游 HTTP 客户端构建器
+     */
     public CenterStompTaskEventBridge(
             ControlServiceProperties properties,
             ObjectMapper objectMapper,
@@ -80,7 +104,9 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
             log.error("中心端 STOMP 事件桥接未启动：启用后必须配置 access-token，或完整配置 token-url/client-id/client-secret");
             return;
         }
-        if (!running.compareAndSet(false, true)) return;
+        if (!running.compareAndSet(false, true)) {
+            return;
+        }
         connect();
     }
 
@@ -106,6 +132,9 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
         return Integer.MAX_VALUE;
     }
 
+    /**
+     * 连接管理端 STOMP 事件源并注册任务订阅；断开或失败按现有重连计划恢复，避免同时保留重复连接。
+     */
     private void connect() {
         if (!running.get() || !connecting.compareAndSet(false, true)) {
             return;
@@ -191,19 +220,19 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
         JsonNode scopes = event.path("data").path("scopes");
         if (!"alarm.changed.v1".equals(type)
                 && !("task.changed.v1".equals(type) && taskScope(scopes))) {
-            log.debug("管理端 STOMP 事件已忽略 protocol=stomp direction=入站 stage=过滤 outcome=丢弃 reasonCode=不支持的事件 eventType={}",
+            log.debug("管理端 STOMP 事件已忽略 协议=stomp 方向=入站 阶段=过滤 结果=丢弃 原因码=不支持的事件 事件类型={}",
                     type);
             return;
         }
         String source = event.path("source").asText();
         String eventId = event.path("id").asText();
         if (!register(source + ":" + eventId)) {
-            log.debug("管理端 STOMP 重复事件已忽略 protocol=stomp direction=入站 stage=去重 outcome=丢弃 reasonCode=重复事件 eventType={} source={} eventId={}",
+            log.debug("管理端 STOMP 重复事件已忽略 协议=stomp 方向=入站 阶段=去重 结果=丢弃 原因码=重复事件 事件类型={} 来源={} 事件标识={}",
                     type, source, eventId);
             return;
         }
         if ("alarm.changed.v1".equals(type)) {
-            log.info("管理端告警事件已接收 protocol=stomp direction=入站 stage=接收 outcome=已接受 eventType={} entityType=告警 source={} eventId={}",
+            log.info("管理端告警事件已接收 协议=stomp 方向=入站 阶段=接收 结果=已接受 事件类型={} 业务类型=告警 来源={} 事件标识={}",
                     type, source, eventId);
             publisher.publish("management.alarm.invalidated", Map.of(
                     "source", source,
@@ -211,7 +240,7 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
             return;
         }
         List<String> eventScopes = scopes(scopes);
-        log.info("管理端任务事件已接收 protocol=stomp direction=入站 stage=接收 outcome=已接受 eventType={} entityType=任务 source={} eventId={} scopes={}",
+        log.info("管理端任务事件已接收 协议=stomp 方向=入站 阶段=接收 结果=已接受 事件类型={} 业务类型=任务 来源={} 事件标识={} 影响范围={}",
                 type, source, eventId, eventScopes);
         publisher.publish("management.task.invalidated", Map.of(
                 "source", source,
@@ -249,7 +278,9 @@ public class CenterStompTaskEventBridge implements SmartLifecycle {
     }
 
     private void scheduleReconnect() {
-        if (!running.get() || !reconnectScheduled.compareAndSet(false, true)) return;
+        if (!running.get() || !reconnectScheduled.compareAndSet(false, true)) {
+            return;
+        }
         taskScheduler.schedule(() -> {
             reconnectScheduled.set(false);
             connect();

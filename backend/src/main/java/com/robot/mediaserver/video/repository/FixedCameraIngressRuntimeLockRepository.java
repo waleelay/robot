@@ -29,10 +29,22 @@ public class FixedCameraIngressRuntimeLockRepository {
 
     private final DataSource dataSource;
 
+    /**
+     * 初始化 FixedCameraIngressRuntimeLockRepository，保存所需依赖及初始运行状态。
+     *
+     * @param dataSource 数据库连接池
+     */
     public FixedCameraIngressRuntimeLockRepository(DataSource dataSource) {
         this.dataSource = dataSource;
     }
 
+    /**
+     * 在剩余操作预算内锁定 Ingress 运行实例，并在结束后恢复 JDBC 锁等待配置。
+     *
+     * @param runtimeId 视频源运行实例 ID，供多个观看会话共享发布状态
+     * @param timeout 当前操作允许的最长等待时间
+     * @return 已锁定运行实例；不存在时为空
+     */
     public Optional<VideoSourceRuntime> lock(String runtimeId, Duration timeout) {
         int timeoutMs = Math.max(1, Math.toIntExact(timeout.toMillis()));
         int requestedLockWaitSeconds = Math.max(1, timeoutMs / 1000);
@@ -80,6 +92,9 @@ public class FixedCameraIngressRuntimeLockRepository {
         return new SessionLockWait(connection, originalSeconds, effectiveSeconds != originalSeconds);
     }
 
+    /**
+     * 恢复本次借用连接原有的锁等待设置；连接变化或恢复失败时淘汰连接，避免污染连接池。
+     */
     private void restoreLockWaitTimeout(Connection connection, SessionLockWait lockWait) throws SQLException {
         if (!lockWait.changed()) {
             return;
@@ -118,5 +133,12 @@ public class FixedCameraIngressRuntimeLockRepository {
         }
     }
 
+    /**
+     * 暂存连接原有锁等待时长，供 Ingress 临界区结束后恢复连接设置。
+     *
+     * @param connection 当前事务使用的 JDBC 连接
+     * @param originalSeconds 当前 JDBC 会话原有的锁等待秒数，操作完成后恢复
+     * @param changed 是否修改了本次操作所维护的原有状态
+     */
     private record SessionLockWait(Connection connection, int originalSeconds, boolean changed) {}
 }

@@ -1,0 +1,22 @@
+extends: spectral:oas
+rules:
+  # 联系人不是本项目强制字段；不生成虚构联系人以满足工具默认建议。
+  info-contact: off
+  operation-operationId: error
+  operation-operationId-unique: error
+  operation-description: error
+  operation-tags: error
+  api-field-description:
+    description: 模型字段必须说明业务含义
+    severity: error
+    given: $.components.schemas[*].properties[*]
+    then:
+      field: description
+      function: truthy
+# 兼容性墓碑入口按现有行为始终返回 410，不能虚构 2xx 以通过通用建议。
+# 只校正这一条明确路径的建议，其他 BFF 路径仍要求成功响应。
+overrides:
+  - files:
+      - 'bff.json#/paths/~1api~1control~1robots'
+    rules:
+      operation-success-response: off

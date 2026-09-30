@@ -1,0 +1,4464 @@
+{
+  "components" : {
+    "schemas" : {
+      "CreateMultipartFileUploadRequest" : {
+        "properties" : {
+          "contentType" : {
+            "description" : "文件媒体类型",
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "deviceId" : {
+            "description" : "设备 ID；未关联时为空",
+            "type" : "string"
+          },
+          "extensionId" : {
+            "description" : "通用扩展 ID；未关联时为空",
+            "type" : "string"
+          },
+          "fileName" : {
+            "description" : "原始文件名",
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "fileSize" : {
+            "description" : "文件字节数",
+            "format" : "int64",
+            "minimum" : 1,
+            "type" : "integer"
+          },
+          "fileType" : {
+            "description" : "文件业务类型",
+            "enum" : [ "VIDEO", "AUDIO", "IMAGE", "LOG", "CONFIG", "MAP", "DOCUMENT", "OTHER" ],
+            "type" : "string"
+          },
+          "metadata" : {
+            "description" : "扩展元数据的原始 JSON 字符串；未设置时为空",
+            "type" : "string"
+          },
+          "robotId" : {
+            "description" : "请求体机器人 ID，可省略；非空时必须与必填的 X-Robot-Id 请求头一致",
+            "type" : "string"
+          },
+          "sourceFileId" : {
+            "description" : "机器人来源文件标识，用于幂等复用",
+            "type" : "string"
+          }
+        },
+        "required" : [ "contentType", "fileName", "fileSize", "fileType" ],
+        "type" : "object"
+      },
+      "ExtensionBinding" : {
+        "properties" : {
+          "extensionId" : {
+            "description" : "要绑定的通用扩展 ID，不能为空",
+            "type" : "string"
+          },
+          "fileIds" : {
+            "description" : "通用文件 ID，与另两类 ID 合并去重后至少有一项",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "pointFileId" : {
+            "description" : "单个补充文件 ID",
+            "type" : "string"
+          },
+          "videoFileIds" : {
+            "description" : "必须为 VIDEO 类型的文件 ID",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          }
+        },
+        "required" : [ "extensionId" ],
+        "type" : "object"
+      },
+      "FileBatchDeleteRequest" : {
+        "properties" : {
+          "fileIds" : {
+            "description" : "文件 ID 数组",
+            "items" : {
+              "minLength" : 1,
+              "type" : "string"
+            },
+            "maxItems" : 100,
+            "minItems" : 0,
+            "type" : "array"
+          }
+        },
+        "required" : [ "fileIds" ],
+        "type" : "object"
+      },
+      "FileBatchDeleteResponse" : {
+        "properties" : {
+          "failed" : {
+            "description" : "失败删除数量",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "results" : {
+            "description" : "与输入次序对应的逐项结果，允许部分失败",
+            "items" : {
+              "$ref" : "#/components/schemas/FileDeleteResultResponse"
+            },
+            "type" : "array"
+          },
+          "succeeded" : {
+            "description" : "成功删除数量",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "total" : {
+            "description" : "请求删除的文件数量",
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "failed", "results", "succeeded", "total" ],
+        "type" : "object"
+      },
+      "FileBusinessError" : {
+        "properties" : {
+          "code" : {
+            "description" : "业务错误码",
+            "type" : "string"
+          },
+          "details" : {
+            "additionalProperties" : { },
+            "description" : "可选错误上下文；内容由错误码决定",
+            "type" : "object"
+          },
+          "message" : {
+            "description" : "错误说明",
+            "type" : "string"
+          },
+          "path" : {
+            "description" : "请求路径",
+            "type" : "string"
+          },
+          "requestId" : {
+            "description" : "请求追踪 ID",
+            "type" : "string"
+          },
+          "retryable" : {
+            "description" : "是否允许重试",
+            "type" : "boolean"
+          },
+          "status" : {
+            "description" : "HTTP 状态码",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "timestamp" : {
+            "description" : "上海时区错误时间",
+            "type" : "string"
+          }
+        },
+        "required" : [ "code", "message", "path", "requestId", "retryable", "status", "timestamp" ],
+        "type" : "object"
+      },
+      "FileDeleteResultResponse" : {
+        "properties" : {
+          "code" : {
+            "description" : "业务结果码",
+            "type" : "string"
+          },
+          "fileId" : {
+            "description" : "文件 ID",
+            "type" : "string"
+          },
+          "message" : {
+            "description" : "业务结果说明",
+            "type" : "string"
+          },
+          "success" : {
+            "description" : "该项是否删除成功",
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "code", "fileId", "message", "success" ],
+        "type" : "object"
+      },
+      "FileDownloadUrlResponse" : {
+        "properties" : {
+          "downloadUrl" : {
+            "description" : "限时下载地址；inline 请求决定展示方式，不记录完整签名地址",
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "description" : "本次返回的有效期，上海时区",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : "string"
+          },
+          "fileId" : {
+            "description" : "文件 ID",
+            "type" : "string"
+          }
+        },
+        "required" : [ "downloadUrl", "expiresAt", "fileId" ],
+        "type" : "object"
+      },
+      "FileListItemResponse" : {
+        "properties" : {
+          "contentType" : {
+            "description" : "文件媒体类型",
+            "type" : "string"
+          },
+          "createdAt" : {
+            "description" : "文件创建时间",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : "string"
+          },
+          "deviceId" : {
+            "description" : "设备 ID；未关联时为空",
+            "type" : [ "string", "null" ]
+          },
+          "durationSeconds" : {
+            "description" : "视频时长，单位秒；未探测时为空",
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "elapsedSeconds" : {
+            "description" : "正在处理的视频从开始时间累计的秒数；不适用时为空",
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "endedAt" : {
+            "description" : "视频结束时间",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : [ "string", "null" ]
+          },
+          "errorCode" : {
+            "description" : "错误码；无错误时为空",
+            "type" : [ "string", "null" ]
+          },
+          "extensionId" : {
+            "description" : "通用扩展 ID；未关联时为空",
+            "type" : [ "string", "null" ]
+          },
+          "fileId" : {
+            "description" : "文件 ID",
+            "type" : "string"
+          },
+          "fileName" : {
+            "description" : "原始文件名",
+            "type" : "string"
+          },
+          "fileSize" : {
+            "description" : "文件字节数",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "fileType" : {
+            "description" : "文件业务类型",
+            "type" : "string"
+          },
+          "height" : {
+            "description" : "画面高度，单位像素；未探测时为空",
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "metadata" : {
+            "description" : "扩展元数据的原始 JSON 字符串；未设置时为空",
+            "type" : [ "string", "null" ]
+          },
+          "robotId" : {
+            "description" : "机器人 ID；未关联时为空",
+            "type" : [ "string", "null" ]
+          },
+          "startedAt" : {
+            "description" : "视频开始时间",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : [ "string", "null" ]
+          },
+          "status" : {
+            "description" : "文件处理状态",
+            "type" : "string"
+          },
+          "uploadedAt" : {
+            "description" : "上传完成时间；未完成时为空",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : [ "string", "null" ]
+          },
+          "videoStatus" : {
+            "description" : "视频处理状态；非视频或未建立处理记录时为空",
+            "type" : [ "string", "null" ]
+          },
+          "width" : {
+            "description" : "画面宽度，单位像素；未探测时为空",
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          }
+        },
+        "required" : [ "contentType", "createdAt", "deviceId", "durationSeconds", "elapsedSeconds", "endedAt", "errorCode", "extensionId", "fileId", "fileName", "fileSize", "fileType", "height", "metadata", "robotId", "startedAt", "status", "uploadedAt", "videoStatus", "width" ],
+        "type" : "object"
+      },
+      "FileListResponse" : {
+        "properties" : {
+          "items" : {
+            "description" : "本次返回的文件记录",
+            "items" : {
+              "$ref" : "#/components/schemas/FileListItemResponse"
+            },
+            "type" : "array"
+          },
+          "page" : {
+            "description" : "从 0 开始的实际页码",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "description" : "实际每页数量，范围 1 至 100",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "total" : {
+            "description" : "匹配记录总数",
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "items", "page", "size", "total" ],
+        "type" : "object"
+      },
+      "FilePartInfoResponse" : {
+        "properties" : {
+          "etag" : {
+            "description" : "对象存储分片 ETag",
+            "type" : "string"
+          },
+          "partNumber" : {
+            "description" : "从 1 开始的分片编号",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "description" : "该分片实际字节数",
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "etag", "partNumber", "size" ],
+        "type" : "object"
+      },
+      "FilePartUploadUrlResponse" : {
+        "properties" : {
+          "partNumber" : {
+            "description" : "从 1 开始的分片编号",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "uploadUrl" : {
+            "description" : "限时 PUT 地址，上传正文直接发送到对象存储",
+            "type" : "string"
+          }
+        },
+        "required" : [ "partNumber", "uploadUrl" ],
+        "type" : "object"
+      },
+      "FilePartUrlsRequest" : {
+        "properties" : {
+          "partNumbers" : {
+            "description" : "要签名的分片编号；必须非空，服务校验范围、数量并去重",
+            "items" : {
+              "format" : "int32",
+              "type" : "integer"
+            },
+            "minItems" : 1,
+            "type" : "array"
+          }
+        },
+        "required" : [ "partNumbers" ],
+        "type" : "object"
+      },
+      "FilePartUrlsResponse" : {
+        "properties" : {
+          "expiresAt" : {
+            "description" : "本次返回的有效期，上海时区",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : "string"
+          },
+          "parts" : {
+            "description" : "本次签发的分片地址",
+            "items" : {
+              "$ref" : "#/components/schemas/FilePartUploadUrlResponse"
+            },
+            "type" : "array"
+          }
+        },
+        "required" : [ "expiresAt", "parts" ],
+        "type" : "object"
+      },
+      "FilePlayUrlResponse" : {
+        "properties" : {
+          "contentType" : {
+            "description" : "文件媒体类型",
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "description" : "本次返回的有效期，上海时区",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : "string"
+          },
+          "fileId" : {
+            "description" : "文件 ID",
+            "type" : "string"
+          },
+          "format" : {
+            "description" : "播放格式，当前为 hls",
+            "type" : "string"
+          },
+          "playUrl" : {
+            "description" : "带播放 token 的 HLS 地址；Control 会改写为控制侧路径",
+            "type" : "string"
+          }
+        },
+        "required" : [ "contentType", "expiresAt", "fileId", "format", "playUrl" ],
+        "type" : "object"
+      },
+      "FileStatusResponse" : {
+        "properties" : {
+          "errorCode" : {
+            "description" : "错误码；无错误时为空",
+            "type" : [ "string", "null" ]
+          },
+          "errorMessage" : {
+            "description" : "失败原因；无错误时为空",
+            "type" : [ "string", "null" ]
+          },
+          "fileId" : {
+            "description" : "文件 ID",
+            "type" : "string"
+          },
+          "fileSize" : {
+            "description" : "文件字节数",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "ready" : {
+            "description" : "文件及必要后处理是否已就绪",
+            "type" : "boolean"
+          },
+          "status" : {
+            "description" : "文件处理状态",
+            "type" : "string"
+          },
+          "uploadedAt" : {
+            "description" : "上传完成时间；未完成时为空",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "errorCode", "errorMessage", "fileId", "fileSize", "ready", "status", "uploadedAt" ],
+        "type" : "object"
+      },
+      "FileUploadProgressItem" : {
+        "properties" : {
+          "errorCode" : {
+            "description" : "错误码；无错误时为空",
+            "type" : [ "string", "null" ]
+          },
+          "errorMessage" : {
+            "description" : "失败原因；无错误时为空",
+            "type" : [ "string", "null" ]
+          },
+          "fileId" : {
+            "description" : "文件 ID",
+            "type" : "string"
+          },
+          "fileName" : {
+            "description" : "原始文件名",
+            "type" : "string"
+          },
+          "fileType" : {
+            "description" : "文件业务类型",
+            "type" : "string"
+          },
+          "partCount" : {
+            "description" : "分片总数；没有上传会话时为空",
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "phase" : {
+            "description" : "上传及后处理的统一展示阶段",
+            "enum" : [ "UPLOADING", "FINALIZING", "PROCESSING", "READY", "FAILED", "EXPIRED", "ABORTED", "DELETED", "UNKNOWN" ],
+            "type" : "string"
+          },
+          "ready" : {
+            "description" : "文件及必要后处理是否已就绪",
+            "type" : "boolean"
+          },
+          "totalBytes" : {
+            "description" : "预期文件总字节数",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "updatedAt" : {
+            "description" : "进度更新时间",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : [ "string", "null" ]
+          },
+          "uploadId" : {
+            "description" : "平台上传会话 ID；来源文件已完成时为空",
+            "type" : [ "string", "null" ]
+          },
+          "uploadPercent" : {
+            "description" : "上传百分比，100 不等于后处理已完成",
+            "format" : "double",
+            "type" : "number"
+          },
+          "uploadedBytes" : {
+            "description" : "已确认上传的字节数",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "uploadedPartCount" : {
+            "description" : "已确认上传分片数",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "version" : {
+            "description" : "进度版本；用于识别进度更新，终态快照可为 0",
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "errorCode", "errorMessage", "fileId", "fileName", "fileType", "partCount", "phase", "ready", "totalBytes", "updatedAt", "uploadId", "uploadPercent", "uploadedBytes", "uploadedPartCount", "version" ],
+        "type" : "object"
+      },
+      "FileUploadProgressQueryRequest" : {
+        "properties" : {
+          "fileIds" : {
+            "description" : "查询文件 ID，最多 500 个；未传、null 或空数组返回空结果",
+            "items" : {
+              "type" : "string"
+            },
+            "maxItems" : 500,
+            "minItems" : 0,
+            "type" : [ "array", "null" ]
+          }
+        },
+        "type" : "object"
+      },
+      "FileUploadProgressQueryResponse" : {
+        "properties" : {
+          "generatedAt" : {
+            "description" : "本次进度查询生成时间",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : "string"
+          },
+          "items" : {
+            "description" : "本次返回的文件记录",
+            "items" : {
+              "$ref" : "#/components/schemas/FileUploadProgressItem"
+            },
+            "type" : "array"
+          },
+          "missingFileIds" : {
+            "description" : "无法识别的文件 ID；与 items 分别返回",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          }
+        },
+        "required" : [ "generatedAt", "items", "missingFileIds" ],
+        "type" : "object"
+      },
+      "FileUploadResponse" : {
+        "properties" : {
+          "expiresAt" : {
+            "description" : "本次返回的有效期；已完成且无需上传时可为空",
+            "example" : "2026-09-29 12:00:00",
+            "pattern" : "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "type" : [ "string", "null" ]
+          },
+          "fileId" : {
+            "description" : "文件 ID",
+            "type" : "string"
+          },
+          "partCount" : {
+            "description" : "分片总数；来源文件已完成且无需上传时为 0",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "partSize" : {
+            "description" : "每片规划字节数；已完成时为 0",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "partUrls" : {
+            "description" : "本次签发的上传地址列表",
+            "items" : {
+              "$ref" : "#/components/schemas/FilePartUploadUrlResponse"
+            },
+            "type" : "array"
+          },
+          "status" : {
+            "description" : "文件处理状态",
+            "type" : "string"
+          },
+          "uploadId" : {
+            "description" : "平台上传会话 ID；来源文件已完成时为空",
+            "type" : [ "string", "null" ]
+          },
+          "uploadMode" : {
+            "description" : "上传方式",
+            "type" : "string"
+          },
+          "uploadedParts" : {
+            "description" : "已完成分片列表",
+            "items" : {
+              "$ref" : "#/components/schemas/FilePartInfoResponse"
+            },
+            "type" : "array"
+          }
+        },
+        "required" : [ "expiresAt", "fileId", "partCount", "partSize", "partUrls", "status", "uploadId", "uploadMode", "uploadedParts" ],
+        "type" : "object"
+      },
+      "FrameworkError" : {
+        "properties" : {
+          "error" : {
+            "description" : "HTTP 错误名称",
+            "type" : "string"
+          },
+          "path" : {
+            "description" : "请求路径",
+            "type" : "string"
+          },
+          "status" : {
+            "description" : "HTTP 状态码",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "timestamp" : {
+            "description" : "错误时间",
+            "type" : "string"
+          }
+        },
+        "required" : [ "error", "path", "status", "timestamp" ],
+        "type" : "object"
+      },
+      "MinioPartEvent" : {
+        "properties" : {
+          "Records" : {
+            "description" : "对象事件数组；启用进度处理时必须提供",
+            "items" : {
+              "$ref" : "#/components/schemas/PartRecord"
+            },
+            "type" : "array"
+          }
+        },
+        "required" : [ "Records" ],
+        "type" : "object"
+      },
+      "PartObject" : {
+        "description" : "本次事件涉及的对象键、字节数与 ETag",
+        "properties" : {
+          "eTag" : {
+            "description" : "对象 ETag；缺失时按空字符串处理",
+            "type" : "string"
+          },
+          "key" : {
+            "description" : "URL 编码对象键；分片键包含 .upload-parts/{storageUploadId}/part-{number}",
+            "type" : "string"
+          },
+          "size" : {
+            "description" : "分片字节数；匹配的分片事件必须为非负值",
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PartRecord" : {
+        "properties" : {
+          "eventName" : {
+            "description" : "仅处理 s3:ObjectCreated: 前缀的事件",
+            "type" : "string"
+          },
+          "s3" : {
+            "$ref" : "#/components/schemas/StorageEvent",
+            "description" : "对象信息"
+          }
+        },
+        "type" : "object"
+      },
+      "RobotNetworkError" : {
+        "properties" : {
+          "code" : {
+            "description" : "网络拒绝错误码",
+            "enum" : [ "UNTRUSTED_ROBOT_NETWORK" ],
+            "type" : "string"
+          },
+          "message" : {
+            "description" : "拒绝原因",
+            "type" : "string"
+          }
+        },
+        "required" : [ "code", "message" ],
+        "type" : "object"
+      },
+      "StorageEvent" : {
+        "description" : "对象存储通知中的对象信息",
+        "properties" : {
+          "object" : {
+            "$ref" : "#/components/schemas/PartObject",
+            "description" : "本次事件涉及的对象"
+          }
+        },
+        "type" : "object"
+      },
+      "UploadForm" : {
+        "properties" : {
+          "deviceId" : {
+            "description" : "关联设备 ID",
+            "type" : "string"
+          },
+          "extensionId" : {
+            "description" : "通用扩展 ID",
+            "type" : "string"
+          },
+          "file" : {
+            "description" : "文件正文",
+            "format" : "binary",
+            "type" : "string"
+          },
+          "fileType" : {
+            "description" : "文件类型",
+            "enum" : [ "VIDEO", "AUDIO", "IMAGE", "LOG", "CONFIG", "MAP", "DOCUMENT", "OTHER" ],
+            "type" : "string"
+          },
+          "metadata" : {
+            "description" : "扩展元数据 JSON 字符串；source 区分手动媒体所有权规则",
+            "type" : "string"
+          },
+          "robotId" : {
+            "description" : "关联机器人 ID",
+            "type" : "string"
+          },
+          "sourceFileId" : {
+            "description" : "来源文件标识",
+            "type" : "string"
+          }
+        },
+        "required" : [ "file", "fileType" ],
+        "type" : "object"
+      }
+    },
+    "securitySchemes" : {
+      "MinioWebhookToken" : {
+        "description" : "配置的内部回调凭证，使用常量时间比较；不是用户 JWT",
+        "scheme" : "bearer",
+        "type" : "http"
+      },
+      "PlaybackToken" : {
+        "description" : "文件播放签名，绑定文件及有效期；不是用户 JWT",
+        "in" : "query",
+        "name" : "token",
+        "type" : "apiKey"
+      },
+      "RobotId" : {
+        "description" : "受控机器人标识，非独立签名凭据；公开路径还受来源网络配置限制",
+        "in" : "header",
+        "name" : "X-Robot-Id",
+        "type" : "apiKey"
+      }
+    }
+  },
+  "info" : {
+    "description" : "Media 仅供受控网络调用。用户接口信任上游身份 Header，解析器仍保留开发默认值；机器人分片接口依赖 X-Robot-Id 及公开路径的来源网络过滤；HLS 使用播放 token；MinIO 回调使用内部 Bearer 凭证。不同入口不能套用统一用户 JWT 鉴权。",
+    "title" : "Media 文件接口",
+    "version" : "1.0.0"
+  },
+  "openapi" : "3.1.0",
+  "paths" : {
+    "/api/media/files" : {
+      "get" : {
+        "description" : "按租户及手动媒体所有者过滤；page 从 0 开始，负数归一为 0；size 限制在 1 至 100。source 过滤 metadata.source。",
+        "operationId" : "mediaListFilesPublic",
+        "parameters" : [ {
+          "description" : "机器人 ID；分片请求头用于归属校验，列表/上传表单为可选关联",
+          "in" : "query",
+          "name" : "robotId",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "设备 ID",
+          "in" : "query",
+          "name" : "deviceId",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "通用扩展 ID",
+          "in" : "query",
+          "name" : "extensionId",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "文件类型",
+          "in" : "query",
+          "name" : "fileType",
+          "required" : false,
+          "schema" : {
+            "enum" : [ "VIDEO", "AUDIO", "IMAGE", "LOG", "CONFIG", "MAP", "DOCUMENT", "OTHER" ],
+            "type" : "string"
+          }
+        }, {
+          "description" : "文件处理状态",
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "enum" : [ "UPLOADING", "PROCESSING", "READY", "FAILED", "DELETED" ],
+            "type" : "string"
+          }
+        }, {
+          "description" : "按 metadata.source 过滤",
+          "in" : "query",
+          "name" : "source",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "从 0 开始，负数归一为 0",
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "description" : "每页条数，归一到 1 至 100",
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileListResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileBusinessError"
+                }
+              }
+            },
+            "description" : "当前异常处理器将数字或枚举转换的 IllegalArgumentException 映射为 NOT_FOUND"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "分页查询文件",
+        "tags" : [ "files" ]
+      },
+      "post" : {
+        "description" : "使用 multipart/form-data。大小限制由配置决定；视频上传后进入 PROCESSING。用户手动媒体按角色和所有者校验。",
+        "operationId" : "mediaUploadFilePublic",
+        "parameters" : [ {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UploadForm"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileListItemResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "409" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "当前文件或上传状态不允许操作"
+          },
+          "413" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件或代理正文超过限制"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "summary" : "上传简单文件",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/batch" : {
+      "delete" : {
+        "description" : "一次最多 100 个非空 ID；HTTP 200 中逐条给出成功或失败，允许部分成功。",
+        "operationId" : "mediaDeleteFilesPublic",
+        "parameters" : [ {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FileBatchDeleteRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileBatchDeleteResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "批量删除文件",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/extension-binding" : {
+      "post" : {
+        "description" : "合并 fileIds、videoFileIds、pointFileId 后去重；先校验全部文件权限与类型，再绑定 extensionId。规范请求使用字符串 ID；保留既有 Map 容错。",
+        "operationId" : "mediaBindFileExtensionPublic",
+        "parameters" : [ {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ExtensionBinding"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "204" : {
+            "description" : "处理完成，无正文"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "绑定通用扩展 ID",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/multipart-uploads" : {
+      "post" : {
+        "description" : "X-Robot-Id 为受控网络中的机器人标识；与请求体 robotId 不一致时拒绝。同一 robotId/sourceFileId 复用会话，来源已完成时不创建新会话。分片正文由返回地址直传 MinIO。",
+        "operationId" : "mediaCreateFileMultipartUploadPublic",
+        "parameters" : [ {
+          "description" : "机器人 ID；分片请求头用于归属校验，列表/上传表单为可选关联",
+          "in" : "header",
+          "name" : "X-Robot-Id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateMultipartFileUploadRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileUploadResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  }, {
+                    "$ref" : "#/components/schemas/RobotNetworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "409" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "当前文件或上传状态不允许操作"
+          },
+          "413" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件或代理正文超过限制"
+          },
+          "429" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "上传会话配额达到上限"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "security" : [ {
+          "RobotId" : [ ]
+        } ],
+        "summary" : "申请或恢复分片上传",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/multipart-uploads/{uploadId}/complete" : {
+      "post" : {
+        "description" : "校验分片连续性及总字节数后合并；重复完成可返回已有状态，合并中的调用返回 409 UPLOAD_COMPLETION_IN_PROGRESS。成功合并不等于视频后处理已完成。",
+        "operationId" : "mediaCompleteFileUploadPublic",
+        "parameters" : [ {
+          "description" : "机器人 ID；分片请求头用于归属校验，列表/上传表单为可选关联",
+          "in" : "header",
+          "name" : "X-Robot-Id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "平台上传会话 ID",
+          "in" : "path",
+          "name" : "uploadId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileStatusResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  }, {
+                    "$ref" : "#/components/schemas/RobotNetworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "409" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "当前文件或上传状态不允许操作"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "security" : [ {
+          "RobotId" : [ ]
+        } ],
+        "summary" : "完成分片上传",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/multipart-uploads/{uploadId}/part-urls" : {
+      "post" : {
+        "description" : "校验上传会话归属和有效期；分片编号从 1 开始，必须在会话范围内，数量上限由配置决定；重复编号去重。",
+        "operationId" : "mediaSignFilePartUrlsPublic",
+        "parameters" : [ {
+          "description" : "机器人 ID；分片请求头用于归属校验，列表/上传表单为可选关联",
+          "in" : "header",
+          "name" : "X-Robot-Id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "平台上传会话 ID",
+          "in" : "path",
+          "name" : "uploadId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FilePartUrlsRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FilePartUrlsResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  }, {
+                    "$ref" : "#/components/schemas/RobotNetworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "409" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "当前文件或上传状态不允许操作"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "security" : [ {
+          "RobotId" : [ ]
+        } ],
+        "summary" : "签发分片上传地址",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/{fileId}" : {
+      "delete" : {
+        "description" : "验证权限后中止有效上传并删除关联对象；已删除文件重复调用保持空响应。",
+        "operationId" : "mediaDeleteFilePublic",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "处理完成，无正文"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "summary" : "删除文件",
+        "tags" : [ "files" ]
+      },
+      "get" : {
+        "description" : "校验当前用户对文件的访问权限；未授权访问的文件可能按未找到返回。",
+        "operationId" : "mediaGetFilePublic",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileListItemResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "查询文件详情",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/{fileId}/content" : {
+      "get" : {
+        "description" : "兼容的正文代理，最多读取 32 MiB；媒体类型取自文件记录，大文件使用下载地址。",
+        "operationId" : "mediaGetFileContentPublic",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "文件正文或 HLS 资源"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "413" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件或代理正文超过限制"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "summary" : "读取文件正文",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/{fileId}/download-url" : {
+      "post" : {
+        "description" : "文件必须已就绪；inline 决定 Content-Disposition 展示方式。返回限时签名地址，客户端不应记录完整凭据。",
+        "operationId" : "mediaGetFileDownloadUrlPublic",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "是否在下载时使用内联展示",
+          "in" : "query",
+          "name" : "inline",
+          "required" : false,
+          "schema" : {
+            "default" : false,
+            "type" : "boolean"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileDownloadUrlResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "summary" : "生成下载地址",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/{fileId}/hls/{objectName}" : {
+      "get" : {
+        "description" : "通过查询参数 token 验证文件和有效期，不调用用户身份解析器。清单内相对地址携带播放 token；每个对象最多 32 MiB。",
+        "operationId" : "mediaGetFileHlsAssetPublic",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "HLS 清单或分片对象名",
+          "in" : "path",
+          "name" : "objectName",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "限时文件播放 token",
+          "in" : "query",
+          "name" : "token",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/octet-stream" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              },
+              "application/vnd.apple.mpegurl" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              },
+              "video/mp2t" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              },
+              "video/mp4" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "文件正文或 HLS 资源"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "413" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件或代理正文超过限制"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "security" : [ {
+          "PlaybackToken" : [ ]
+        } ],
+        "summary" : "读取 HLS 清单或分片",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/{fileId}/play-url" : {
+      "post" : {
+        "description" : "只支持已就绪的视频；返回带播放 token 的 HLS 清单地址。Control 将 Media 地址前缀改写为 /api/control/files。",
+        "operationId" : "mediaGetFilePlayUrlPublic",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FilePlayUrlResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "生成 HLS 播放地址",
+        "tags" : [ "files" ]
+      }
+    },
+    "/api/media/files/{fileId}/status" : {
+      "get" : {
+        "description" : "校验 X-Robot-Id 与文件归属；ready 表示后处理也已完成。",
+        "operationId" : "mediaGetRobotFileStatusPublic",
+        "parameters" : [ {
+          "description" : "机器人 ID；分片请求头用于归属校验，列表/上传表单为可选关联",
+          "in" : "header",
+          "name" : "X-Robot-Id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileStatusResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  }, {
+                    "$ref" : "#/components/schemas/RobotNetworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "security" : [ {
+          "RobotId" : [ ]
+        } ],
+        "summary" : "查询机器人文件状态",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/file-upload-events/minio" : {
+      "post" : {
+        "description" : "校验配置的内部 Bearer 凭证；识别 s3:ObjectCreated: 事件与分片对象键，忽略无关对象和未知会话；重复分片由进度服务去重。",
+        "operationId" : "mediaReceiveFilePartEventInternal",
+        "parameters" : [ {
+          "description" : "MinIO 回调内部 Bearer 凭证；不是用户 JWT",
+          "in" : "header",
+          "name" : "Authorization",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/MinioPartEvent"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "204" : {
+            "description" : "处理完成，无正文"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "security" : [ {
+          "MinioWebhookToken" : [ ]
+        } ],
+        "summary" : "接收 MinIO 分片事件",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files" : {
+      "get" : {
+        "description" : "按租户及手动媒体所有者过滤；page 从 0 开始，负数归一为 0；size 限制在 1 至 100。source 过滤 metadata.source。",
+        "operationId" : "mediaListFilesInternal",
+        "parameters" : [ {
+          "description" : "机器人 ID；分片请求头用于归属校验，列表/上传表单为可选关联",
+          "in" : "query",
+          "name" : "robotId",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "设备 ID",
+          "in" : "query",
+          "name" : "deviceId",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "通用扩展 ID",
+          "in" : "query",
+          "name" : "extensionId",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "文件类型",
+          "in" : "query",
+          "name" : "fileType",
+          "required" : false,
+          "schema" : {
+            "enum" : [ "VIDEO", "AUDIO", "IMAGE", "LOG", "CONFIG", "MAP", "DOCUMENT", "OTHER" ],
+            "type" : "string"
+          }
+        }, {
+          "description" : "文件处理状态",
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "enum" : [ "UPLOADING", "PROCESSING", "READY", "FAILED", "DELETED" ],
+            "type" : "string"
+          }
+        }, {
+          "description" : "按 metadata.source 过滤",
+          "in" : "query",
+          "name" : "source",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "从 0 开始，负数归一为 0",
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "description" : "每页条数，归一到 1 至 100",
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileListResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileBusinessError"
+                }
+              }
+            },
+            "description" : "当前异常处理器将数字或枚举转换的 IllegalArgumentException 映射为 NOT_FOUND"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "分页查询文件",
+        "tags" : [ "files" ]
+      },
+      "post" : {
+        "description" : "使用 multipart/form-data。大小限制由配置决定；视频上传后进入 PROCESSING。用户手动媒体按角色和所有者校验。",
+        "operationId" : "mediaUploadFileInternal",
+        "parameters" : [ {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UploadForm"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileListItemResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "409" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "当前文件或上传状态不允许操作"
+          },
+          "413" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件或代理正文超过限制"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "summary" : "上传简单文件",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/batch" : {
+      "delete" : {
+        "description" : "一次最多 100 个非空 ID；HTTP 200 中逐条给出成功或失败，允许部分成功。",
+        "operationId" : "mediaDeleteFilesInternal",
+        "parameters" : [ {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FileBatchDeleteRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileBatchDeleteResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "批量删除文件",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/extension-binding" : {
+      "post" : {
+        "description" : "合并 fileIds、videoFileIds、pointFileId 后去重；先校验全部文件权限与类型，再绑定 extensionId。规范请求使用字符串 ID；保留既有 Map 容错。",
+        "operationId" : "mediaBindFileExtensionInternal",
+        "parameters" : [ {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ExtensionBinding"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "204" : {
+            "description" : "处理完成，无正文"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "绑定通用扩展 ID",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/multipart-uploads" : {
+      "post" : {
+        "description" : "X-Robot-Id 为受控网络中的机器人标识；与请求体 robotId 不一致时拒绝。同一 robotId/sourceFileId 复用会话，来源已完成时不创建新会话。分片正文由返回地址直传 MinIO。",
+        "operationId" : "mediaCreateFileMultipartUploadInternal",
+        "parameters" : [ {
+          "description" : "机器人 ID；分片请求头用于归属校验，列表/上传表单为可选关联",
+          "in" : "header",
+          "name" : "X-Robot-Id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateMultipartFileUploadRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileUploadResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  }, {
+                    "$ref" : "#/components/schemas/RobotNetworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "409" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "当前文件或上传状态不允许操作"
+          },
+          "413" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件或代理正文超过限制"
+          },
+          "429" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "上传会话配额达到上限"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "security" : [ {
+          "RobotId" : [ ]
+        } ],
+        "summary" : "申请或恢复分片上传",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/multipart-uploads/{uploadId}/complete" : {
+      "post" : {
+        "description" : "校验分片连续性及总字节数后合并；重复完成可返回已有状态，合并中的调用返回 409 UPLOAD_COMPLETION_IN_PROGRESS。成功合并不等于视频后处理已完成。",
+        "operationId" : "mediaCompleteFileUploadInternal",
+        "parameters" : [ {
+          "description" : "机器人 ID；分片请求头用于归属校验，列表/上传表单为可选关联",
+          "in" : "header",
+          "name" : "X-Robot-Id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "平台上传会话 ID",
+          "in" : "path",
+          "name" : "uploadId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileStatusResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  }, {
+                    "$ref" : "#/components/schemas/RobotNetworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "409" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "当前文件或上传状态不允许操作"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "security" : [ {
+          "RobotId" : [ ]
+        } ],
+        "summary" : "完成分片上传",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/multipart-uploads/{uploadId}/part-urls" : {
+      "post" : {
+        "description" : "校验上传会话归属和有效期；分片编号从 1 开始，必须在会话范围内，数量上限由配置决定；重复编号去重。",
+        "operationId" : "mediaSignFilePartUrlsInternal",
+        "parameters" : [ {
+          "description" : "机器人 ID；分片请求头用于归属校验，列表/上传表单为可选关联",
+          "in" : "header",
+          "name" : "X-Robot-Id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "平台上传会话 ID",
+          "in" : "path",
+          "name" : "uploadId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FilePartUrlsRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FilePartUrlsResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  }, {
+                    "$ref" : "#/components/schemas/RobotNetworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "409" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "当前文件或上传状态不允许操作"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "security" : [ {
+          "RobotId" : [ ]
+        } ],
+        "summary" : "签发分片上传地址",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/upload-progress-queries" : {
+      "post" : {
+        "description" : "仅受控内网调用，本入口没有 Bearer 凭证校验。最多 500 个 ID；去空白和重复后查询，缺失 ID 单独返回。百分比为 100 不代表后处理就绪。",
+        "operationId" : "mediaQueryFileUploadProgressInternal",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FileUploadProgressQueryRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileUploadProgressQueryResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "批量查询上传进度",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/{fileId}" : {
+      "delete" : {
+        "description" : "验证权限后中止有效上传并删除关联对象；已删除文件重复调用保持空响应。",
+        "operationId" : "mediaDeleteFileInternal",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "处理完成，无正文"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "summary" : "删除文件",
+        "tags" : [ "files" ]
+      },
+      "get" : {
+        "description" : "校验当前用户对文件的访问权限；未授权访问的文件可能按未找到返回。",
+        "operationId" : "mediaGetFileInternal",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileListItemResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "查询文件详情",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/{fileId}/content" : {
+      "get" : {
+        "description" : "兼容的正文代理，最多读取 32 MiB；媒体类型取自文件记录，大文件使用下载地址。",
+        "operationId" : "mediaGetFileContentInternal",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "文件正文或 HLS 资源"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "413" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件或代理正文超过限制"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "summary" : "读取文件正文",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/{fileId}/download-url" : {
+      "post" : {
+        "description" : "文件必须已就绪；inline 决定 Content-Disposition 展示方式。返回限时签名地址，客户端不应记录完整凭据。",
+        "operationId" : "mediaGetFileDownloadUrlInternal",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "是否在下载时使用内联展示",
+          "in" : "query",
+          "name" : "inline",
+          "required" : false,
+          "schema" : {
+            "default" : false,
+            "type" : "boolean"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileDownloadUrlResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "summary" : "生成下载地址",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/{fileId}/hls/{objectName}" : {
+      "get" : {
+        "description" : "通过查询参数 token 验证文件和有效期，不调用用户身份解析器。清单内相对地址携带播放 token；每个对象最多 32 MiB。",
+        "operationId" : "mediaGetFileHlsAssetInternal",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "HLS 清单或分片对象名",
+          "in" : "path",
+          "name" : "objectName",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "限时文件播放 token",
+          "in" : "query",
+          "name" : "token",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/octet-stream" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              },
+              "application/vnd.apple.mpegurl" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              },
+              "video/mp2t" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              },
+              "video/mp4" : {
+                "schema" : {
+                  "format" : "binary",
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "文件正文或 HLS 资源"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "413" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件或代理正文超过限制"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          },
+          "503" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "存储或内部凭证配置不可用"
+          }
+        },
+        "security" : [ {
+          "PlaybackToken" : [ ]
+        } ],
+        "summary" : "读取 HLS 清单或分片",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/{fileId}/play-url" : {
+      "post" : {
+        "description" : "只支持已就绪的视频；返回带播放 token 的 HLS 清单地址。Control 将 Media 地址前缀改写为 /api/control/files。",
+        "operationId" : "mediaGetFilePlayUrlInternal",
+        "parameters" : [ {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游用户 ID；当前解析器缺省为开发身份，必须依赖网络隔离",
+          "in" : "header",
+          "name" : "X-User-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游角色，逗号分隔；当前解析器保留开发默认角色",
+          "in" : "header",
+          "name" : "X-Roles",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "受控上游组织 ID；缺省使用 media.file.default-org-id",
+          "in" : "header",
+          "name" : "X-Org-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "终端标识，缺省为 web",
+          "in" : "header",
+          "name" : "X-Client-Id",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FilePlayUrlResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "summary" : "生成 HLS 播放地址",
+        "tags" : [ "files" ]
+      }
+    },
+    "/internal/media/files/{fileId}/status" : {
+      "get" : {
+        "description" : "校验 X-Robot-Id 与文件归属；ready 表示后处理也已完成。",
+        "operationId" : "mediaGetRobotFileStatusInternal",
+        "parameters" : [ {
+          "description" : "机器人 ID；分片请求头用于归属校验，列表/上传表单为可选关联",
+          "in" : "header",
+          "name" : "X-Robot-Id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "文件 ID",
+          "in" : "path",
+          "name" : "fileId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FileStatusResponse"
+                }
+              }
+            },
+            "description" : "处理成功；状态、空值和部分失败以响应字段为准"
+          },
+          "400" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "请求校验或绑定失败"
+          },
+          "401" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "机器人标识或播放/内部凭证无效"
+          },
+          "403" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  }, {
+                    "$ref" : "#/components/schemas/RobotNetworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "权限或受控来源网络拒绝"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/FileBusinessError"
+                  }, {
+                    "$ref" : "#/components/schemas/FrameworkError"
+                  } ]
+                }
+              }
+            },
+            "description" : "文件、上传会话不存在或不可访问"
+          },
+          "500" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FrameworkError"
+                }
+              }
+            },
+            "description" : "未处理的服务错误"
+          }
+        },
+        "security" : [ {
+          "RobotId" : [ ]
+        } ],
+        "summary" : "查询机器人文件状态",
+        "tags" : [ "files" ]
+      }
+    }
+  },
+  "security" : [ ],
+  "servers" : [ {
+    "url" : "/"
+  } ],
+  "tags" : [ {
+    "description" : "文件上传、访问与处理进度",
+    "name" : "files"
+  } ]
+}

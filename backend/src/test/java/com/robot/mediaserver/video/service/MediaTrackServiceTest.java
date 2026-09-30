@@ -11,6 +11,7 @@ import com.robot.mediaserver.video.repository.MediaTrackRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
+/** 验证 Track 记录使用实际发布者身份及轨道变更行为。 */
 class MediaTrackServiceTest {
 
     @Test

@@ -7,6 +7,7 @@ import com.robot.control.config.ControlServiceProperties;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/** 验证统一设备控制指令的 MQTT 主题和载荷生成。 */
 class EquipmentControlCommandPublisherTest {
 
     @Test

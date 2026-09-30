@@ -18,8 +18,14 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 @Component
 public class MediaWsAuthHandshakeInterceptor implements HandshakeInterceptor {
 
+    /**
+     * 握手认证头快照在 WebSocket 属性中的存储键。
+     */
     public static final String HTTP_HEADERS_ATTR = "mediaWsHttpHeaders";
 
+    /**
+     * 只保存握手请求头，不独立验证令牌；身份可信性依赖受控上游认证与内部入口隔离。
+     */
     @Override
     public boolean beforeHandshake(
             ServerHttpRequest request,
@@ -38,7 +44,7 @@ public class MediaWsAuthHandshakeInterceptor implements HandshakeInterceptor {
             ServerHttpResponse response,
             WebSocketHandler wsHandler,
             Exception exception) {
-        // no-op
+        // 身份头已在握手前保存，握手完成后无需额外处理。
     }
 
     private static Map<String, String> headers(HttpServletRequest request) {
@@ -58,6 +64,12 @@ public class MediaWsAuthHandshakeInterceptor implements HandshakeInterceptor {
         }
     }
 
+    /**
+     * 从 WebSocket 握手属性读取已经保存的可信请求头。
+     *
+     * @param session WebSocket 会话
+     * @return 本连接握手时的请求头
+     */
     @SuppressWarnings("unchecked")
     public static Map<String, String> headers(org.springframework.web.socket.WebSocketSession session) {
         Object value = session.getAttributes().get(HTTP_HEADERS_ATTR);

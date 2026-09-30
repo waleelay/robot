@@ -1,6 +1,7 @@
 package com.robot.control.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.robot.control.config.ControlServiceProperties;
 import com.robot.control.call.IntercomCallCancel;
 import com.robot.control.call.IntercomCallInvite;
@@ -54,6 +55,9 @@ public class RobotMediaStatusSubscriber {
         INTERCOM_STATUS_TOPIC, MEDIA_CLIENT_STATUS_TOPIC, CALL_INVITE_TOPIC, CALL_CANCEL_TOPIC,
         EDGE_DEVICE_STATUS_TOPIC, EDGE_TASK_PROGRESS_TOPIC, TRAJECTORY_SNAPSHOT_TOPIC
     };
+    /**
+     * 与 STATUS_TOPICS 一一对应的订阅 QoS，新增主题时必须保持索引一致。
+     */
     private static final int[] STATUS_QOS = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 
     private final ControlServiceProperties properties;
@@ -66,18 +70,25 @@ public class RobotMediaStatusSubscriber {
     private final EdgeDeviceStatusHandler edgeDeviceStatusHandler;
     private final FixedCameraHealthService fixedCameraHealthService;
     private final TrajectoryCoordinator trajectoryCoordinator;
+    /**
+     * 机器人媒体客户端最近在线标志，用于识别离线到在线的恢复触发。
+     */
     private final Map<String, Boolean> mediaClientOnlineByRobot = new ConcurrentHashMap<>();
     private MqttClient client;
 
     /**
      * 创建 RobotMediaStatusSubscriber 实例。
-     *
      * @param properties 服务配置
      * @param objectMapper JSON 编解码器
-     * @param mediaServiceClient Media Service 客户端
+     * @param mediaServiceClient 媒体服务 客户端
      * @param commandService 视频命令服务
      * @param equipmentControlService 装备控制服务
-     * @param robotRegistryService robotRegistryService
+     * @param robotRegistryService 维护机器人运行状态与在线事实的注册服务
+     *
+     * @param intercomCallService 在媒体对讲启动前协调机器人主动呼叫的邀请、接听与状态流转。
+     * @param edgeDeviceStatusHandler 处理平台边缘设备状态上报，并转换为控制服务统一机器人状态。
+     * @param fixedCameraHealthService 保存固定摄像头 Gateway 与 RTSP 最近健康状态。
+     * @param trajectoryCoordinator 按大屏实际观看目标查询并定向推送设备任务轨迹。
      */
     public RobotMediaStatusSubscriber(
             ControlServiceProperties properties,
@@ -103,7 +114,7 @@ public class RobotMediaStatusSubscriber {
     }
 
     /**
-     * 应用启动完成后订阅 MQTT 状态 topic。
+     * 应用启动完成后订阅 MQTT 状态主题。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void subscribeOnReady() {
@@ -129,7 +140,7 @@ public class RobotMediaStatusSubscriber {
             try {
                 IntercomStatusMessage status = objectMapper.readValue(payload, IntercomStatusMessage.class);
                 if (status.getSessionId() == null || status.getSessionId().isBlank()) {
-                    log.debug("对讲状态缺少会话 ID，已忽略，主题={} 状态={}", topic, status.getStatus());
+                    log.debug("对讲状态缺少会话标识，已忽略，主题={} 状态={}", topic, status.getStatus());
                     return;
                 }
                 intercomCallService.handleIntercomStatus(status.getSessionId(), status.getStatus(), status.getMessage());
@@ -195,12 +206,12 @@ public class RobotMediaStatusSubscriber {
         return (topic, message) -> {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
             try {
-                Map<String, Object> data = objectMapper.readValue(payload, Map.class);
+                Map<String, Object> data = objectMapper.readValue(payload, new TypeReference<Map<String, Object>>() {});
                 String topicRobotId = robotIdFromTopic(topic);
                 Object reportedRobotIdValue = data.get("robotId");
                 String reportedRobotId = reportedRobotIdValue == null ? "" : String.valueOf(reportedRobotIdValue).trim();
                 if (!reportedRobotId.isBlank() && !topicRobotId.equals(reportedRobotId)) {
-                    log.warn("媒体客户端状态机器人 ID 与 topic 不一致，已忽略，topicRobotId={} reportedRobotId={}", topicRobotId, reportedRobotId);
+                    log.warn("媒体客户端状态机器人标识 与主题不一致，已忽略，主题机器人标识={} 上报机器人标识={}", topicRobotId, reportedRobotId);
                     return;
                 }
                 data.put("robotId", topicRobotId);
@@ -232,7 +243,7 @@ public class RobotMediaStatusSubscriber {
 
     void handleEdgeDeviceStatus(String topic, MqttMessage message) {
         if (message.isRetained()) {
-            log.info("已忽略 retained 边缘设备状态，不刷新在线时间，主题={}", topic);
+            log.info("已忽略 保留的边缘设备状态，不刷新在线时间，主题={}", topic);
             return;
         }
         edgeDeviceStatusHandler.handle(
@@ -246,7 +257,9 @@ public class RobotMediaStatusSubscriber {
 
     @SuppressWarnings("unchecked")
     void handleEdgeTaskProgress(String topic, MqttMessage message) {
-        if (message.isRetained()) return;
+        if (message.isRetained()) {
+            return;
+        }
         try {
             String[] parts = topic == null ? new String[0] : topic.split("/");
             if (parts.length != 6 || !"eiop".equals(parts[0]) || !"v1".equals(parts[1])
@@ -256,7 +269,9 @@ public class RobotMediaStatusSubscriber {
             }
             Map<String, Object> report = objectMapper.readValue(message.getPayload(), Map.class);
             String messageType = String.valueOf(report.getOrDefault("messageType", "")).trim();
-            if (!messageType.isBlank() && !"TASK_PROGRESS_REPORT".equals(messageType)) return;
+            if (!messageType.isBlank() && !"TASK_PROGRESS_REPORT".equals(messageType)) {
+                return;
+            }
             Map<String, Object> payload = report.get("payload") instanceof Map<?, ?> value
                     ? (Map<String, Object>) value : Map.of();
             if (payload.containsKey("taskInstanceId")) {
@@ -269,7 +284,9 @@ public class RobotMediaStatusSubscriber {
 
     private IMqttMessageListener trajectorySnapshotListener() {
         return (topic, message) -> {
-            if (message.isRetained()) return;
+            if (message.isRetained()) {
+                return;
+            }
             trajectoryCoordinator.handleSnapshot(topic, new String(message.getPayload(), StandardCharsets.UTF_8));
         };
     }
@@ -304,12 +321,12 @@ public class RobotMediaStatusSubscriber {
 
             @Override
             public void messageArrived(String topic, MqttMessage message) {
-                // Per-topic listeners handle subscribed messages.
+                // 订阅消息由各主题独立注册的监听器处理，此处不重复分派。
             }
 
             @Override
             public void deliveryComplete(IMqttDeliveryToken token) {
-                // This client only subscribes.
+                // 当前客户端仅负责订阅，不需要处理发布完成通知。
             }
         });
         MqttConnectOptions options = new MqttConnectOptions();
@@ -324,7 +341,7 @@ public class RobotMediaStatusSubscriber {
     }
 
     /**
-     * 订阅机器人媒体状态 topic。
+     * 订阅机器人媒体状态主题。
      *
      * @param mqttClient MQTT 客户端
      * @throws MqttException 订阅失败时抛出

@@ -16,6 +16,12 @@
     </properties>
 
     <dependencies>
+        <!-- 仅描述共享 DTO 的接口契约，不引入 Spring 或业务实现。 -->
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
+            <version>2.2.47</version>
+        </dependency>
         <dependency>
             <groupId>jakarta.validation</groupId>
             <artifactId>jakarta.validation-api</artifactId>

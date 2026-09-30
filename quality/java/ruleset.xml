@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="Alibaba Java 首批检查映射"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.github.io/schema/ruleset_2_0_0.xsd">
+    <description>覆盖范围和原规范映射见 quality/README.md；不是 Alibaba 全量规则实现。</description>
+    <rule ref="category/java/codestyle.xml/ClassNamingConventions">
+        <properties>
+            <!-- 保留仓库集成测试的 IT 后缀，避免为满足工具默认值改变测试发现范围。 -->
+            <property name="testClassPattern" value="^(Test[A-Za-z0-9]*|[A-Z][A-Za-z0-9]*(Test(s|Case)?|IT))$"/>
+        </properties>
+    </rule>
+    <rule ref="category/java/codestyle.xml/MethodNamingConventions"/>
+    <rule ref="category/java/codestyle.xml/ControlStatementBraces"/>
+    <rule name="LongSuffixUppercase" language="java" message="long 字面量使用大写 L 后缀"
+          class="net.sourceforge.pmd.lang.rule.xpath.XPathRule">
+        <description>Alibaba 常量规约：long 字面量后缀使用大写 L，避免与数字 1 混淆。</description>
+        <priority>3</priority>
+        <properties>
+            <property name="xpath"><value>//NumericLiteral[ends-with(@Image, 'l')]</value></property>
+        </properties>
+    </rule>
+    <rule ref="category/java/errorprone.xml/OverrideBothEqualsAndHashcode"/>
+    <rule ref="category/java/errorprone.xml/ReturnFromFinallyBlock"/>
+    <rule ref="category/java/errorprone.xml/AvoidDecimalLiteralsInBigDecimalConstructor"/>
+    <rule ref="category/java/documentation.xml/CommentRequired">
+        <properties>
+            <property name="classCommentRequirement" value="Required"/>
+            <!-- 字段按可见性和业务注解交由 MemberDocumentationRequired 检查。 -->
+            <property name="fieldCommentRequirement" value="Ignored"/>
+            <!-- 方法及构造器交由 MemberDocumentationRequired 检查完整调用契约。 -->
+            <property name="publicMethodCommentRequirement" value="Ignored"/>
+            <property name="protectedMethodCommentRequirement" value="Ignored"/>
+            <property name="enumCommentRequirement" value="Required"/>
+        </properties>
+    </rule>
+    <rule name="RecordCommentRequired" language="java" message="record 声明需要 Javadoc"
+          class="com.robot.quality.RecordCommentRequiredRule">
+        <description>将类型注释要求扩展到 Java 17 record，检查用途及全部组成字段的有效 @param，拒绝过期字段标签；不检查或编造作者。</description>
+        <priority>3</priority>
+    </rule>
+    <rule name="MemberDocumentationRequired" language="java" message="成员需要用途及调用契约说明"
+          class="com.robot.quality.MemberDocumentationRequiredRule">
+        <description>公开/受保护字段、实体和配置实例字段、Schema/Column/Value 实例字段需 Javadoc；枚举值、公开/受保护方法和构造器需 Javadoc。公开契约说明参数、返回值及声明异常，拒绝空标签、名称占位及过期参数。继承契约的 Override 允许复用父类型说明，40 行以上方法仍要求职责说明；其他业务字段及语义人工复核。</description>
+        <priority>3</priority>
+    </rule>
+</ruleset>

@@ -25,7 +25,7 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 /**
- * 现场 App → 指挥中心视频呼叫状态机（内存单实例，对标 {@link IntercomCallService}）。
+ * 现场应用 → 指挥中心视频呼叫状态机（内存单实例，对标 {@link IntercomCallService}）。
  */
 @Service
 public class FieldCallService {
@@ -35,12 +35,25 @@ public class FieldCallService {
     /** App 信令短暂断线（JWT 续期重连 / 弱网）时，保留通话的宽限秒数。 */
     private static final int APP_DISCONNECT_GRACE_SECONDS = 45;
 
+    /**
+     * 按呼叫 ID 保存本实例现场呼叫状态；终态记录由超时扫描回收。
+     */
     private final Map<String, Call> calls = new ConcurrentHashMap<>();
+    /**
+     * 现场用户 ID 到当前 App 信令连接的映射，重连后替换旧连接。
+     */
     private final Map<String, WebSocketSession> appSessions = new ConcurrentHashMap<>();
     private final ControlMediaServiceClient mediaServiceClient;
     private final MediaWebSocketPublisher webSocketPublisher;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 初始化 FieldCallService，保存所需依赖及初始运行状态。
+     *
+     * @param mediaServiceClient 媒体服务 客户端
+     * @param webSocketPublisher 向已连接客户端投递业务事件的组件
+     * @param objectMapper JSON 编解码器
+     */
     public FieldCallService(
             ControlMediaServiceClient mediaServiceClient,
             MediaWebSocketPublisher webSocketPublisher,
@@ -50,6 +63,12 @@ public class FieldCallService {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 将现场用户与当前 App 连接绑定，供呼叫通知定向投递。
+     *
+     * @param userId 用户 ID
+     * @param session WebSocket 会话
+     */
     public synchronized void bindAppSession(String userId, WebSocketSession session) {
         if (userId == null || session == null) {
             return;
@@ -66,6 +85,11 @@ public class FieldCallService {
         }
     }
 
+    /**
+     * 移除现场应用 连接绑定，避免通知继续发送到失效会话。
+     *
+     * @param session WebSocket 会话
+     */
     public synchronized void unbindAppSession(WebSocketSession session) {
         if (session == null) {
             return;
@@ -77,13 +101,21 @@ public class FieldCallService {
                 if (call.status == FieldCallStatus.RINGING || call.status == FieldCallStatus.ACCEPTED) {
                     // 宽限内允许 App 用新 JWT 重连，避免短暂断线直接挂断。
                     call.appDisconnectAt = now();
-                    log.info("现场 App 信令断开，进入重连宽限 callId={} graceSeconds={}",
+                    log.info("现场应用 信令断开，进入重连宽限 呼叫标识={} 宽限秒数={}",
                             call.callId, APP_DISCONNECT_GRACE_SECONDS);
                 }
             }
         }
     }
 
+    /**
+     * 校验目标与占用后创建现场呼叫邀请，设置应答期限并通知被叫端。
+     *
+     * @param user 当前用户
+     * @param displayName 参与者对外显示名称
+     * @param appSession 现场应用 当前 WebSocket 连接
+     * @return 呼叫 ID、当前状态及邀请信息
+     */
     public synchronized Map<String, Object> invite(
             CurrentUser user,
             String displayName,
@@ -127,6 +159,12 @@ public class FieldCallService {
         return ok;
     }
 
+    /**
+     * 校验媒体操作员角色及振铃状态后接听邀请，创建媒体房间并登记接听用户和客户端。
+     * @param callId 呼叫 ID
+     * @param operator 发起当前操作的可信用户及角色上下文
+     * @return 接听后的通话与媒体接入信息
+     */
     public synchronized Map<String, Object> accept(String callId, CurrentUser operator) {
         requireOperator(operator);
         Call call = requireRinging(callId);
@@ -143,7 +181,6 @@ public class FieldCallService {
             call.acceptedBy = operator.userId();
             call.acceptedClientId = operator.clientId();
             call.roomName = media.roomName();
-            call.livekitUrl = media.livekitUrl();
             call.updatedAt = now();
             call.message = "operator accepted";
 
@@ -173,6 +210,13 @@ public class FieldCallService {
         }
     }
 
+    /**
+     * 拒绝仍在等待应答的现场呼叫并通知发起方。
+     *
+     * @param callId 呼叫 ID
+     * @param operator 发起当前操作的可信用户及角色上下文
+     * @return 拒绝后的呼叫状态
+     */
     public synchronized Map<String, Object> reject(String callId, CurrentUser operator) {
         requireOperator(operator);
         Call call = requireRinging(callId);
@@ -186,6 +230,12 @@ public class FieldCallService {
         return centerPayload(call);
     }
 
+    /**
+     * 由发起方撤销尚未接听的现场呼叫。
+     *
+     * @param callId 呼叫 ID
+     * @param user 当前用户
+     */
     public synchronized void cancel(String callId, CurrentUser user) {
         Call call = calls.get(callId);
         if (call == null || call.status != FieldCallStatus.RINGING) {
@@ -200,6 +250,13 @@ public class FieldCallService {
         publishStatus(call);
     }
 
+    /**
+     * 结束当前振铃中或已接通的现场呼叫并释放双方占用。
+     *
+     * @param callId 呼叫 ID
+     * @param user 当前用户
+     * @param reason 结束通话的原因说明，空值使用既有消息值 hangup；中心端挂断时随结束事件通知现场端
+     */
     public synchronized void hangup(String callId, CurrentUser user, String reason) {
         Call call = calls.get(callId);
         if (call == null) {
@@ -224,6 +281,10 @@ public class FieldCallService {
         }
     }
 
+    /**
+     * 查询本实例全部未过期的振铃邀请；本方法不按当前用户过滤。
+     * @return 本实例当前有效的待接听呼叫列表
+     */
     public synchronized List<Map<String, Object>> ringingCalls() {
         OffsetDateTime current = now();
         List<Map<String, Object>> result = new ArrayList<>();
@@ -234,6 +295,9 @@ public class FieldCallService {
         return result;
     }
 
+    /**
+     * 定期收口超过应答期限的邀请并通知参与方。
+     */
     @Scheduled(fixedDelayString = "${control.field-call.sweep-delay-ms:1000}")
     public synchronized void sweepTimeouts() {
         OffsetDateTime current = now();
@@ -364,7 +428,7 @@ public class FieldCallService {
                 session.sendMessage(new TextMessage(json));
             }
         } catch (IOException | IllegalStateException ex) {
-            log.warn("向现场 App 发送信令失败 callId={}", call.callId, ex);
+            log.warn("向现场应用 发送信令失败 呼叫标识={}", call.callId, ex);
         }
     }
 
@@ -376,20 +440,59 @@ public class FieldCallService {
         return value == null || value.isBlank();
     }
 
+    /** 保存现场主动呼叫的参与者、媒体会话及呼叫生命周期状态。 */
     private static final class Call {
+        /**
+         * 现场呼叫唯一标识。
+         */
         private String callId;
+        /**
+         * 发起现场呼叫的用户 ID。
+         */
         private String appUserId;
+        /**
+         * 发起用户所属组织 ID。
+         */
         private String orgId;
+        /**
+         * 向指挥中心展示的现场用户名称。
+         */
         private String displayName;
+        /**
+         * 当前现场呼叫生命周期状态。
+         */
         private FieldCallStatus status;
+        /**
+         * 服务端创建呼叫的时间。
+         */
         private OffsetDateTime createdAt;
+        /**
+         * 服务端最近更新呼叫状态的时间。
+         */
         private OffsetDateTime updatedAt;
+        /**
+         * 振铃邀请的应答截止时间。
+         */
         private OffsetDateTime expiresAt;
+        /**
+         * 接听或拒绝本次呼叫的中心用户 ID。
+         */
         private String acceptedBy;
+        /**
+         * 处理本次呼叫的中心客户端 ID。
+         */
         private String acceptedClientId;
+        /**
+         * 接听后创建的 LiveKit 房间名。
+         */
         private String roomName;
-        private String livekitUrl;
+        /**
+         * 当前状态原因，随呼叫事件传递。
+         */
         private String message;
+        /**
+         * 通知现场端使用的当前信令连接，断线后可由重连替换。
+         */
         private WebSocketSession appSession;
         /** 非空表示 App 信令已断，等待宽限内重连。 */
         private OffsetDateTime appDisconnectAt;

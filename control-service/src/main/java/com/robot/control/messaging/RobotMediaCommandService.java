@@ -99,7 +99,11 @@ public class RobotMediaCommandService {
         publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/video/restart", payload);
     }
 
-    /** 下发当前有效用户租约合并后的固定摄像头全量目录。 */
+    /**
+     * 下发当前有效用户租约合并后的固定摄像头全量目录。
+     *
+     * @param snapshot 当前要下发或处理的完整目录快照
+     */
     public void sendFixedCameraCatalog(FixedCameraCatalogSnapshot snapshot) {
         publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/catalog/sync", snapshot);
     }
@@ -123,7 +127,12 @@ public class RobotMediaCommandService {
         publish("robot/" + robotId + "/media/video/intercom/stop", payload);
     }
 
-    /** Sends the current robot initiated call state back to the robot. */
+    /**
+     * 将机器人主动呼叫的当前状态回传给机器人。
+     *
+     * @param robotId 机器人 ID
+     * @param payload 消息载荷
+     */
     public void sendIntercomCallState(String robotId, Object payload) {
         publish("robot/" + robotId + "/media/video/intercom/call/state", payload);
     }
@@ -131,7 +140,7 @@ public class RobotMediaCommandService {
     /**
      * 发布 MQTT 消息。
      *
-     * @param topic MQTT topic
+     * @param topic MQTT 主题
      * @param payload 消息载荷
      */
     private void publish(String topic, Object payload) {

@@ -2,7 +2,6 @@ package com.robot.bigscreen.panorama;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -12,8 +11,11 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
-import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.config.DownstreamServiceProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.SocketTimeoutException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
@@ -28,6 +30,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 
+/** 验证下游查询、失败传播和 Control 里程契约消费。 */
 class PanoramaCenterClientTest {
     private static final String MAPS_URL =
             "http://management.test/api/v1/management/maps?pageNum=1&pageSize=500&enabled=true";
@@ -47,7 +50,7 @@ class PanoramaCenterClientTest {
     private final PanoramaCenterClient client;
 
     PanoramaCenterClientTest() {
-        CenterServiceProperties properties = new CenterServiceProperties();
+        DownstreamServiceProperties properties = new DownstreamServiceProperties();
         properties.setManageBaseUrl("http://management.test");
         properties.setControlBaseUrl("http://control.test");
         properties.setEiopControlBaseUrl("http://eiop-control.test");
@@ -60,6 +63,26 @@ class PanoramaCenterClientTest {
         ReflectionTestUtils.setField(client, "eiopControlRestClient", builder.build());
         ReflectionTestUtils.setField(client, "taskRestClient", builder.build());
         ReflectionTestUtils.setField(client, "workflowAlarmRestClient", builder.build());
+    }
+
+    @Test
+    void consumesMileageResponsesCapturedByControlContractTests() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        for (String fixture : List.of("mileage-success.json", "mileage-no-data.json", "mileage-zero.json")) {
+            String body = Files.readString(Path.of("../quality/openapi/fixtures", fixture));
+            server.expect(requestTo("http://control.test/api/control/statistics/mileage"
+                            + "?startTime=2026-08-14T00:00:00&endTime=2026-08-14T23:59:59"
+                            + "&robotIds=robot-001&robotIds=robot-empty"))
+                    .andExpect(method(HttpMethod.GET))
+                    .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+
+            Map<String, Object> response = client.mileageSummary(
+                    "2026-08-14 00:00:00", "2026-08-14 23:59:59", List.of("robot-001", "robot-empty"));
+
+            assertEquals(mapper.readTree(body), mapper.valueToTree(response));
+            server.verify();
+            server.reset();
+        }
     }
 
     @Test
@@ -330,7 +353,7 @@ class PanoramaCenterClientTest {
                         "http://management.test/api/v1/management/alarms/1001/handle-and-continue"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().json(
-                        "{\"handleAction\":\"HANDLE_NOW\",\"handleResult\":null}", true))
+                        "{\"handleAction\":\"HANDLE_NOW\",\"handleResult\":null}", org.springframework.test.json.JsonCompareMode.STRICT))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
         assertEquals(true, client.handleWorkflowAlarm("1001", "HANDLE_NOW", null));
@@ -343,7 +366,7 @@ class PanoramaCenterClientTest {
                         "http://management.test/api/v1/management/alarms/1001/handled"))
                 .andExpect(method(HttpMethod.PATCH))
                 .andExpect(content().json(
-                        "{\"handleAction\":\"FALSE_ALARM\",\"handleResult\":null}", true))
+                        "{\"handleAction\":\"FALSE_ALARM\",\"handleResult\":null}", org.springframework.test.json.JsonCompareMode.STRICT))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
         assertEquals(true, client.handleAlarm("1001", "FALSE_ALARM", null));

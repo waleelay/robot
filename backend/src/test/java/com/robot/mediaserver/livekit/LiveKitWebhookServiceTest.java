@@ -19,6 +19,7 @@ import java.util.Date;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+/** 验证 LiveKit 回调认证、载荷解析及业务事件分发。 */
 class LiveKitWebhookServiceTest {
 
     private static final String API_KEY = "devkey";

@@ -27,6 +27,7 @@ import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+/** 验证文件删除与分片中止、批量结果及权限失败的收口行为。 */
 class FileServiceDeleteTest {
 
     private final MediaFileRepository fileRepository = mock(MediaFileRepository.class);

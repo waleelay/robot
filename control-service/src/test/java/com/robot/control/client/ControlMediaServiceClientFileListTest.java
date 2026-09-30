@@ -7,7 +7,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.robot.control.auth.CurrentUser;
-import com.robot.control.config.ControlProperties;
+import com.robot.control.config.ControlServiceProperties;
 import com.robot.media.common.file.FileStatus;
 import com.robot.media.common.file.FileType;
 import java.util.Set;
@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+/** 验证文件列表客户端的分页、过滤及共享 DTO 反序列化。 */
 class ControlMediaServiceClientFileListTest {
 
     private final CurrentUser user = new CurrentUser("user-1", "org001", Set.of("MEDIA_VIEWER"), "bigscreen");
@@ -28,7 +29,7 @@ class ControlMediaServiceClientFileListTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        ControlProperties properties = new ControlProperties();
+        ControlServiceProperties properties = new ControlServiceProperties();
         properties.setMediaServiceBaseUrl("http://media-service");
         client = new ControlMediaServiceClient(properties, builder);
     }

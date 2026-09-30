@@ -30,6 +30,13 @@ public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
+    /**
+     * 将 Ingress 业务错误映射为其已定义的 HTTP 状态与重试信息。
+     *
+     * @param ex 需要映射到响应的原始异常
+     * @param request 请求参数
+     * @return 对应当前业务异常的错误响应
+     */
     @ExceptionHandler(FixedCameraIngressException.class)
     public ResponseEntity<Map<String, Object>> handleFixedCameraIngress(
             FixedCameraIngressException ex,
@@ -37,6 +44,13 @@ public class ApiExceptionHandler {
         return error(ex.getStatus(), ex.getCode(), ex.getMessage(), ex.isRetryable(), Map.of(), request, null);
     }
 
+    /**
+     * 将文件业务错误映射为稳定错误码、请求标识及必要响应头。
+     *
+     * @param ex 需要映射到响应的原始异常
+     * @param request 请求参数
+     * @return 文件业务错误响应
+     */
     @ExceptionHandler(FileApiException.class)
     public ResponseEntity<Map<String, Object>> handleFileApi(
             FileApiException ex,
@@ -51,12 +65,19 @@ public class ApiExceptionHandler {
                 ex.getStatus() == HttpStatus.TOO_MANY_REQUESTS ? 60 : null);
     }
 
+    /**
+     * 将对象存储故障映射为客户端可识别的失败状态，保留重试语义。
+     *
+     * @param ex 需要映射到响应的原始异常
+     * @param request 请求参数
+     * @return 存储故障响应
+     */
     @ExceptionHandler(FileStorageException.class)
     public ResponseEntity<Map<String, Object>> handleFileStorage(
             FileStorageException ex,
             HttpServletRequest request) {
         String requestId = requestId(request);
-        log.error("文件对象存储访问失败: requestId={}, path={}, reason={}",
+        log.error("文件对象存储访问失败: 请求标识={}, 路径={}, 原因={}",
                 requestId, request.getRequestURI(), ex.getMessage(), ex);
         return error(
                 HttpStatus.SERVICE_UNAVAILABLE,
@@ -69,6 +90,13 @@ public class ApiExceptionHandler {
                 requestId);
     }
 
+    /**
+     * 将参数或业务前置条件失败映射为本服务现有错误格式。
+     *
+     * @param ex 需要映射到响应的原始异常
+     * @param request 请求参数
+     * @return 参数校验失败响应
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(
             IllegalArgumentException ex,
@@ -76,6 +104,13 @@ public class ApiExceptionHandler {
         return error(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), false, Map.of(), request, null);
     }
 
+    /**
+     * 将当前状态不允许的操作映射为既有错误格式。
+     *
+     * @param ex 需要映射到响应的原始异常
+     * @param request 请求参数
+     * @return 状态冲突或处理失败响应
+     */
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalState(
             IllegalStateException ex,
@@ -83,6 +118,13 @@ public class ApiExceptionHandler {
         return error(HttpStatus.CONFLICT, "INVALID_STATE", ex.getMessage(), false, Map.of(), request, null);
     }
 
+    /**
+     * 提取参数绑定与校验错误并按既有接口格式返回。
+     *
+     * @param ex 需要映射到响应的原始异常
+     * @param request 请求参数
+     * @return 字段校验失败响应
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(
             MethodArgumentNotValidException ex,
@@ -91,7 +133,10 @@ public class ApiExceptionHandler {
     }
 
     /**
-     * Control API 调用 Media Internal API 时，保留下游业务错误状态和响应体。
+     * Media 调用下游 HTTP 服务失败时，保留其错误状态和响应正文。
+     *
+     * @param ex 需要映射到响应的原始异常
+     * @return 上游错误的代理响应
      */
     @ExceptionHandler(RestClientResponseException.class)
     public ResponseEntity<String> handleUpstreamResponse(RestClientResponseException ex) {

@@ -10,7 +10,16 @@ import java.io.ByteArrayInputStream;
 import org.springframework.web.server.ResponseStatusException;
 import org.junit.jupiter.api.Test;
 
+/** 验证大屏代理路径改写、查询参数及响应转发。 */
 class CenterProxyClientTest {
+
+    @Test
+    void excludesCredentialsQueriesAndFragmentsFromLogTarget() {
+        var uri = java.net.URI.create("https://user:password@media.example:8443/api/control/files/f/hls/index.m3u8?token=secret&access_token=jwt#private");
+        assertThat(CenterProxyClient.logTarget(uri))
+                .isEqualTo("https://media.example:8443/api/control/files/f/hls/index.m3u8");
+        assertThat(uri.getRawQuery()).isEqualTo("token=secret&access_token=jwt");
+    }
 
     @Test
     void mapsBigscreenControlPathToInternalControlPath() {

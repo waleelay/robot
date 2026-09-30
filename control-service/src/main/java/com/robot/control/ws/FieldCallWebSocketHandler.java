@@ -18,7 +18,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /**
- * 现场 App WebSocket 信令（/ws/field-call）。
+ * 现场应用 WebSocket 信令（/ws/field-call）。
  */
 @Component
 public class FieldCallWebSocketHandler extends TextWebSocketHandler {
@@ -31,6 +31,15 @@ public class FieldCallWebSocketHandler extends TextWebSocketHandler {
     private final RequestAuthorizationHeaders requestAuthorizationHeaders;
     private final MediaWebSocketPublisher publisher;
 
+    /**
+     * 初始化 FieldCallWebSocketHandler，保存所需依赖及初始运行状态。
+     *
+     * @param fieldCallService 现场应用 到指挥中心的视频呼叫状态机，负责内存呼叫状态和通知
+     * @param objectMapper JSON 编解码器
+     * @param currentUserResolver 当前用户解析器
+     * @param requestAuthorizationHeaders 当前请求认证头透传器
+     * @param publisher 向目标浏览器或身份分组投递消息的回调
+     */
     public FieldCallWebSocketHandler(
             FieldCallService fieldCallService,
             ObjectMapper objectMapper,
@@ -56,17 +65,20 @@ public class FieldCallWebSocketHandler extends TextWebSocketHandler {
                     "orgId", user.orgId()));
             // 新中心端不走此通道；中心仍用 /ws/control。此处仅确认 App 已连上。
         } catch (Exception ex) {
-            log.warn("现场呼叫握手失败 session={}", session.getId(), ex);
+            log.warn("现场呼叫握手失败 会话标识={}", session.getId(), ex);
             try {
                 session.close(CloseStatus.NOT_ACCEPTABLE.withReason(ex.getMessage()));
             } catch (Exception ignored) {
-                // ignore
+                // 握手失败已记录，连接关闭时的次生异常不覆盖原始失败。
             }
         } finally {
             requestAuthorizationHeaders.clearWebSocketHeaders();
         }
     }
 
+    /**
+     * 解析现场呼叫信令并按当前 App 身份分派邀请、撤销与挂断；失败返回当前连接可识别的错误消息。
+     */
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         Map<String, Object> incoming = objectMapper.readValue(message.getPayload(), new TypeReference<>() {});
@@ -101,7 +113,7 @@ public class FieldCallWebSocketHandler extends TextWebSocketHandler {
                         "message", "unknown type " + type));
             }
         } catch (Exception ex) {
-            log.warn("现场呼叫信令处理失败 type={}", type, ex);
+            log.warn("现场呼叫信令处理失败 类型={}", type, ex);
             sendRaw(session, Map.of(
                     "type", "error",
                     "message", ex.getMessage() == null ? "error" : ex.getMessage()));

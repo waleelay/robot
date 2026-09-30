@@ -30,6 +30,13 @@ public class LiveKitRoomService {
     private final LiveKitTokenService tokenService;
     private final RestClient restClient;
 
+    /**
+     * 初始化 LiveKitRoomService，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param tokenService LiveKit Token 签发服务。
+     * @param restClientBuilder 下游 HTTP 客户端构建器
+     */
     public LiveKitRoomService(
             MediaProperties properties,
             LiveKitTokenService tokenService,
@@ -46,7 +53,7 @@ public class LiveKitRoomService {
      */
     public void createRoom(String roomName) {
         if (!properties.getLivekit().isRoomApiEnabled()) {
-            log.info("LiveKit 房间 API 未启用，跳过创建房间 room={}", roomName);
+            log.info("LiveKit 房间 API 未启用，跳过创建房间 房间={}", roomName);
             return;
         }
         Map<String, Object> payload = Map.of(
@@ -54,7 +61,7 @@ public class LiveKitRoomService {
                 "emptyTimeout", properties.getLivekit().getRoomEmptyTimeoutSeconds(),
                 "departureTimeout", properties.getLivekit().getRoomDepartureTimeoutSeconds());
         post("/twirp/livekit.RoomService/CreateRoom", payload, tokenService.createAdminToken().token());
-        log.info("已请求创建 LiveKit 房间 room={}", roomName);
+        log.info("已请求创建 LiveKit 房间 房间={}", roomName);
     }
 
     /**
@@ -64,7 +71,7 @@ public class LiveKitRoomService {
      */
     public void deleteRoom(String roomName) {
         if (!properties.getLivekit().isRoomApiEnabled()) {
-            log.info("LiveKit 房间 API 未启用，跳过删除房间 room={}", roomName);
+            log.info("LiveKit 房间 API 未启用，跳过删除房间 房间={}", roomName);
             return;
         }
         try {
@@ -74,20 +81,20 @@ public class LiveKitRoomService {
                     tokenService.createAdminToken().token());
         } catch (RestClientResponseException ex) {
             if (ex.getStatusCode() == HttpStatus.NOT_FOUND || roomAlreadyAbsent(ex)) {
-                log.info("LiveKit 房间已不存在 room={}", roomName);
+                log.info("LiveKit 房间已不存在 房间={}", roomName);
                 return;
             }
             throw ex;
         }
-        log.info("已请求删除 LiveKit 房间 room={}", roomName);
+        log.info("已请求删除 LiveKit 房间 房间={}", roomName);
     }
 
     /**
      * 校验房间内是否有活跃的视频推流轨道，用于录像启动前避免在即将关闭的房间上启动录制。
-     *
      * @param roomName 房间名
-     * @param trackSid 会话关联的视频轨道 SID（可空）
-     * @return 房间有活跃视频轨道时返回 {@code true}；房间 API 未启用或查询异常时返回 {@code true}（不阻塞录像）
+     * @return 匹配发布者的视频轨道；API 未启用、房间不存在或无匹配轨道时为空，其他查询异常向上抛出
+     * @param expectedParticipantIdentity 本次核验允许的发布者 identity
+     * @param preferredTrackSid 优先核验的 媒体轨道标识；为空时按发布者身份查找
      */
     public Optional<ActiveVideoTrack> resolveActiveVideoTrack(
             String roomName,
@@ -104,14 +111,20 @@ public class LiveKitRoomService {
             return resolveVideoTrack(body, expectedParticipantIdentity, preferredTrackSid);
         } catch (RestClientResponseException ex) {
             if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
-                log.info("房间不存在，无法校验推流 room={}", roomName);
+                log.info("房间不存在，无法校验推流 房间={}", roomName);
                 return Optional.empty();
             }
             throw ex;
         }
     }
 
-    /** 查询指定发布身份在房间中的 Participant 与视频 Track 是否仍存在。 */
+    /**
+     * 查询指定发布身份在房间中的 Participant 与视频 Track 是否仍存在。
+     *
+     * @param roomName LiveKit 房间名
+     * @param expectedParticipantIdentity 本次核验允许的发布者 identity
+     * @return 预期参与者与视频轨道的独立存在标志
+     */
     public PublisherPresence resolvePublisherPresence(String roomName, String expectedParticipantIdentity) {
         if (!properties.getLivekit().isRoomApiEnabled()) {
             return new PublisherPresence(false, false);
@@ -148,9 +161,18 @@ public class LiveKitRoomService {
         return new PublisherPresence(false, false);
     }
 
+    /**
+     * 从 LiveKit 房间查询确认的参与者与视频轨道存在性。
+     *
+     * @param participantPresent 房间内是否存在预期参与者
+     * @param trackPresent 是否存在预期视频轨道
+     */
     public record PublisherPresence(boolean participantPresent, boolean trackPresent) {
     }
 
+    /**
+     * 从 LiveKit 房间参与者事实中选择指定发布者的视频轨道；优先匹配预期 媒体轨道标识，拒绝使用其他发布者的轨道。
+     */
     static Optional<ActiveVideoTrack> resolveVideoTrack(
             Map<?, ?> body,
             String expectedParticipantIdentity,
@@ -247,6 +269,14 @@ public class LiveKitRoomService {
         return url;
     }
 
+    /**
+     * 房间内实际视频轨道的发布者和 Track 标识，用于替换临时占位信息。
+     *
+     * @param participantIdentity LiveKit 参与者身份
+     * @param participantSid LiveKit 分配的参与者 SID
+     * @param trackSid LiveKit 轨道标识
+     * @param trackName 媒体轨道名称
+     */
     public record ActiveVideoTrack(
             String participantIdentity,
             String participantSid,

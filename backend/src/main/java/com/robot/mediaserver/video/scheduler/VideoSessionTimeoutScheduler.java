@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+/** 在调度租约保护下检查发布超时、观看端失联及会话释放。 */
 @Component
 public class VideoSessionTimeoutScheduler {
 
@@ -28,6 +29,15 @@ public class VideoSessionTimeoutScheduler {
     private final VideoSchedulerLeaseService schedulerLeaseService;
     private final MediaProperties properties;
 
+    /**
+     * 初始化 VideoSessionTimeoutScheduler，保存所需依赖及初始运行状态。
+     *
+     * @param repository 实时视频会话仓储。
+     * @param videoSessionService 实时视频会话编排服务。
+     * @param fixedCameraIngressService 固定摄像头 RTMP Ingress 配置生命周期。
+     * @param schedulerLeaseService 基于数据库短租约保证视频周期任务在多 Media 实例中只有一个执行者。
+     * @param properties 服务配置
+     */
     public VideoSessionTimeoutScheduler(
             VideoSessionRepository repository,
             VideoSessionService videoSessionService,
@@ -41,6 +51,9 @@ public class VideoSessionTimeoutScheduler {
         this.properties = properties;
     }
 
+    /**
+     * 取得跨实例调度租约后检查视频发布超时、过期观看者及无占用会话。
+     */
     @Scheduled(fixedDelayString = "${media.session.sweep-delay-ms:5000}")
     public void sweep() {
         schedulerLeaseService.execute(SCHEDULER_LEASE_NAME, () -> {
@@ -50,6 +63,9 @@ public class VideoSessionTimeoutScheduler {
         });
     }
 
+    /**
+     * 定期核验 LiveKit 发布者和轨道事实，纠正漏回调或断连后的会话状态。
+     */
     @Scheduled(fixedDelayString = "${media.livekit.reconcile-delay-ms:5000}")
     public void reconcileLiveKitTracks() {
         schedulerLeaseService.execute(SCHEDULER_LEASE_NAME, () -> {
@@ -89,7 +105,7 @@ public class VideoSessionTimeoutScheduler {
             videoSessionService.markTimeout(
                     session.getSessionId(), session.getCommandId(), errorCode, message);
         } catch (Exception ex) {
-            log.warn("标记视频会话超时失败 session={}", session.getSessionId(), ex);
+            log.warn("标记视频会话超时失败 会话标识={}", session.getSessionId(), ex);
         }
     }
 

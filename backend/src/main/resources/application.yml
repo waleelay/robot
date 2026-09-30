@@ -6,6 +6,14 @@ spring:
     # 当前启用的 Spring Profile，默认使用开发环境。
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
+springdoc:
+  api-docs:
+    # HTTP 契约仅在测试或受控开发环境显式开启。
+    enabled: ${MEDIA_OPENAPI_ENABLED:false}
+    version: OPENAPI_3_1
+  paths-to-match: /api/media/**,/internal/media/**
+  override-with-generic-response: false
+
 server:
   # Media Service HTTP 服务端口。
   port: ${SERVER_PORT:8088}
@@ -107,8 +115,10 @@ media:
     cleanup-delay-ms: ${MEDIA_FILE_CLEANUP_DELAY_MS:60000}
     # HLS 转码工作线程并发数。
     hls-worker-concurrency: ${MEDIA_FILE_HLS_WORKER_CONCURRENCY:2}
-    # HLS 转码任务租约时间，单位秒。
-    hls-processing-lease-seconds: ${MEDIA_FILE_HLS_PROCESSING_LEASE_SECONDS:300}
+    # HLS 转码超时基础秒数，实际至少为视频时长的两倍；空值交给配置类回退到旧值或默认 300 秒。
+    hls-processing-timeout-seconds: ${MEDIA_FILE_HLS_PROCESSING_TIMEOUT_SECONDS:}
+    # 旧环境变量的兼容绑定；与新名称共用同一个超时值，新名称非空时优先。
+    hls-processing-lease-seconds: ${MEDIA_FILE_HLS_PROCESSING_LEASE_SECONDS:}
     # 媒体文件默认保留天数。
     retention-days: ${MEDIA_FILE_RETENTION_DAYS:30}
     # 单次手动录像最长持续时间，单位秒；小于等于 0 时不限制。
@@ -151,8 +161,6 @@ media:
   session:
     # 等待机器人发布视频 Track 的超时时间，单位秒。
     track-publish-timeout-seconds: ${TRACK_PUBLISH_TIMEOUT_SECONDS:20}
-    # 中断会话自动恢复前的宽限时间，单位秒。
-    interrupted-grace-seconds: ${INTERRUPTED_GRACE_SECONDS:15}
     # 会话进入空闲等待后自动释放的延迟时间，单位秒。
     idle-release-delay-seconds: ${IDLE_RELEASE_DELAY_SECONDS:30}
     # 观看者心跳超时时间，单位秒。

@@ -1,0 +1,14 @@
+{
+  "expiresAt" : "2026-09-29 12:00:00",
+  "fileId" : "file-1",
+  "partCount" : 1,
+  "partSize" : 5242880,
+  "partUrls" : [ {
+    "partNumber" : 1,
+    "uploadUrl" : "https://storage.example/part"
+  } ],
+  "status" : "UPLOADING",
+  "uploadId" : "upl-1",
+  "uploadMode" : "MULTIPART",
+  "uploadedParts" : [ ]
+}

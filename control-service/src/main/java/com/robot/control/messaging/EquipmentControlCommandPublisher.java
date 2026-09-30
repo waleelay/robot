@@ -58,17 +58,22 @@ public class EquipmentControlCommandPublisher {
         publish("robot/" + robotId + "/control/safety/estop", payload);
     }
 
-    /** 发布设备轨迹查询命令。 */
+    /**
+     * 发布设备轨迹查询命令。
+     *
+     * @param robotId 机器人 ID
+     * @param payload 消息载荷
+     */
     public void publishTrajectoryQuery(String robotId, Object payload) {
         publish("eiop/v1/platform/" + robotId + "/trajectory/query", payload);
     }
 
     /**
-     * 根据控制目标推导 MQTT 命令 topic。
+     * 根据控制目标推导 MQTT 命令主题。
      *
      * @param robotId 机器人 ID
      * @param payload 消息载荷
-     * @return MQTT 命令 topic
+     * @return MQTT 命令主题
      */
     String commandTopic(String robotId, Object payload) {
         Map<?, ?> command = objectMapper.convertValue(payload, Map.class);
@@ -108,7 +113,7 @@ public class EquipmentControlCommandPublisher {
     /**
      * 发布 MQTT 消息。
      *
-     * @param topic MQTT topic
+     * @param topic MQTT 主题
      * @param payload 消息载荷
      */
     private void publish(String topic, Object payload) {

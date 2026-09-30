@@ -1,0 +1,21 @@
+{
+  "generatedAt" : "2026-09-29 12:00:00",
+  "items" : [ {
+    "errorCode" : null,
+    "errorMessage" : null,
+    "fileId" : "file-1",
+    "fileName" : "sample.png",
+    "fileType" : "IMAGE",
+    "partCount" : null,
+    "phase" : "READY",
+    "ready" : true,
+    "totalBytes" : 3,
+    "updatedAt" : "2026-09-29 12:00:00",
+    "uploadId" : null,
+    "uploadPercent" : 100.0,
+    "uploadedBytes" : 3,
+    "uploadedPartCount" : 0,
+    "version" : 0
+  } ],
+  "missingFileIds" : [ ]
+}

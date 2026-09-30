@@ -1,7 +1,7 @@
 package com.robot.bigscreen.client;
 
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
-import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.config.DownstreamServiceProperties;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.Part;
@@ -28,6 +28,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
+/** 将浏览器路径映射到 Management 或 Control，并转发请求和响应。 */
 @Component
 public class CenterProxyClient {
 
@@ -49,12 +50,19 @@ public class CenterProxyClient {
             "content-length");
 
     private final RestClient restClient;
-    private final CenterServiceProperties properties;
+    private final DownstreamServiceProperties properties;
     private final AuthenticatedRequestHeaders authenticatedRequestHeaders;
 
+    /**
+     * 初始化 CenterProxyClient，保存所需依赖及初始运行状态。
+     *
+     * @param builder RestClient 构建器
+     * @param properties 服务配置
+     * @param authenticatedRequestHeaders 根据已认证的用户与客户端身份生成可信下游请求头。
+     */
     public CenterProxyClient(
             RestClient.Builder builder,
-            CenterServiceProperties properties,
+            DownstreamServiceProperties properties,
             AuthenticatedRequestHeaders authenticatedRequestHeaders) {
         HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
@@ -64,10 +72,23 @@ public class CenterProxyClient {
         this.authenticatedRequestHeaders = authenticatedRequestHeaders;
     }
 
+    /**
+     * 按现有路由规则转发请求与可信身份，保留响应状态及正文；日志不包含查询凭据。
+     *
+     * @param request 请求参数
+     * @return 下游 HTTP 响应
+     */
     public ResponseEntity<byte[]> forward(HttpServletRequest request) {
         return forward(request, targetBaseUrl(request), targetPath(request));
     }
 
+    /**
+     * 将白名单业务请求转发到 Management，继续使用当前用户的授权上下文。
+     *
+     * @param request 请求参数
+     * @param targetPath 映射后的下游 HTTP 路径
+     * @return Management 的原始 HTTP 响应
+     */
     public ResponseEntity<byte[]> forwardToManage(HttpServletRequest request, String targetPath) {
         return forward(request, properties.getManageBaseUrl(), targetPath);
     }
@@ -96,8 +117,8 @@ public class CenterProxyClient {
                 .toUri();
         HttpMethod method = HttpMethod.valueOf(request.getMethod());
         long startNanos = System.nanoTime();
-        log.info("下游服务 HTTP 请求开始 protocol=http direction=出站 stage=请求 outcome=已发起 method={} uri={} requestBytes=未知",
-                method, uri);
+        log.info("下游服务 HTTP 请求开始 协议=http 方向=出站 阶段=请求 结果=已发起 请求方法={} 请求地址={} 请求字节数=未知",
+                method, logTarget(uri));
         try {
             ResponseEntity<byte[]> response = restClient.method(method)
                     .uri(uri)
@@ -110,8 +131,8 @@ public class CenterProxyClient {
             logCompletion(method, uri, -1, response, startNanos);
             return response;
         } catch (RuntimeException exception) {
-            log.warn("下游服务 HTTP 调用失败 protocol=http direction=出站 stage=响应 outcome=失败 method={} uri={} durationMs={}",
-                    method, uri, elapsedMillis(startNanos), exception);
+            log.warn("下游服务 HTTP 调用失败 协议=http 方向=出站 阶段=响应 结果=失败 请求方法={} 请求地址={} 耗时毫秒={} 异常类型={}",
+                    method, logTarget(uri), elapsedMillis(startNanos), exception.getClass().getSimpleName());
             throw exception;
         }
     }
@@ -119,8 +140,8 @@ public class CenterProxyClient {
     private ResponseEntity<byte[]> exchange(
             HttpServletRequest request, URI uri, HttpMethod method, byte[] body, boolean includeContentType) {
         long startNanos = System.nanoTime();
-        log.info("下游服务 HTTP 请求开始 protocol=http direction=出站 stage=请求 outcome=已发起 method={} uri={} requestBytes={}",
-                method, uri, body.length);
+        log.info("下游服务 HTTP 请求开始 协议=http 方向=出站 阶段=请求 结果=已发起 请求方法={} 请求地址={} 请求字节数={}",
+                method, logTarget(uri), body.length);
         try {
             ResponseEntity<byte[]> response = restClient.method(method)
                     .uri(uri)
@@ -132,8 +153,8 @@ public class CenterProxyClient {
             logCompletion(method, uri, body.length, response, startNanos);
             return response;
         } catch (RuntimeException exception) {
-            log.warn("下游服务 HTTP 调用失败 protocol=http direction=出站 stage=响应 outcome=失败 method={} uri={} requestBytes={} durationMs={}",
-                    method, uri, body.length, elapsedMillis(startNanos), exception);
+            log.warn("下游服务 HTTP 调用失败 协议=http 方向=出站 阶段=响应 结果=失败 请求方法={} 请求地址={} 请求字节数={} 耗时毫秒={} 异常类型={}",
+                    method, logTarget(uri), body.length, elapsedMillis(startNanos), exception.getClass().getSimpleName());
             throw exception;
         }
     }
@@ -141,8 +162,8 @@ public class CenterProxyClient {
     private void logCompletion(
             HttpMethod method, URI uri, int requestBytes, ResponseEntity<byte[]> response, long startNanos) {
         byte[] responseBody = response.getBody();
-        log.info("下游服务 HTTP 调用完成 protocol=http direction=出站 stage=响应 outcome=完成 method={} uri={} statusCode={} requestBytes={} responseBytes={} durationMs={}",
-                method, uri, response.getStatusCode().value(), requestBytes,
+        log.info("下游服务 HTTP 调用完成 协议=http 方向=出站 阶段=响应 结果=完成 请求方法={} 请求地址={} 状态码={} 请求字节数={} 响应字节数={} 耗时毫秒={}",
+                method, logTarget(uri), response.getStatusCode().value(), requestBytes,
                 responseBody == null ? 0 : responseBody.length, elapsedMillis(startNanos));
     }
 
@@ -168,6 +189,11 @@ public class CenterProxyClient {
         return targetPath(request.getRequestURI());
     }
 
+    /** 日志只保留路由，不记录用户信息、播放签名、查询参数或 URL 片段。 */
+    static String logTarget(URI uri) {
+        return uri.getScheme() + "://" + uri.getHost() + (uri.getPort() < 0 ? "" : ":" + uri.getPort()) + uri.getRawPath();
+    }
+
     static String targetPath(String path) {
         if (path.startsWith("/api/bigscreen/control")) {
             return "/api/control" + path.substring("/api/bigscreen/control".length());
@@ -178,9 +204,6 @@ public class CenterProxyClient {
         return path;
     }
 
-    private void copyRequestHeaders(HttpServletRequest request, HttpHeaders headers) {
-        copyRequestHeaders(request, headers, true);
-    }
 
     private void copyRequestHeaders(HttpServletRequest request, HttpHeaders headers, boolean includeContentType) {
         Enumeration<String> names = request.getHeaderNames();

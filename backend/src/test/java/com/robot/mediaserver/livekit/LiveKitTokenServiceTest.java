@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/** 验证 LiveKit 令牌中的身份、权限和有效期。 */
 class LiveKitTokenServiceTest {
 
     @Test

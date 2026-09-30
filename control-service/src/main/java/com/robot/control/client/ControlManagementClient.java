@@ -1,7 +1,7 @@
 package com.robot.control.client;
 
 import com.robot.control.auth.RequestAuthorizationHeaders;
-import com.robot.control.config.ControlProperties;
+import com.robot.control.config.ControlServiceProperties;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -26,7 +26,7 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /**
- * Control Service 调用 Management Service 查询设备档案的 HTTP 客户端。
+ * 控制服务 调用 Management Service 查询设备档案的 HTTP 客户端。
  *
  * @author leelay
  * @date 2026-07-24
@@ -39,13 +39,25 @@ public class ControlManagementClient {
     private static final Duration DEFAULT_DEVICE_CACHE_TTL = Duration.ofSeconds(30);
     private static final int MANAGEMENT_PAGE_SIZE = 100;
     private static final int MANAGEMENT_MAX_PAGES = 100;
+    /**
+     * 一次完整分页扫描的单调时钟预算，单位纳秒。
+     */
     private static final long MANAGEMENT_PAGING_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(8);
 
     private final RestClient restClient;
-    private final ControlProperties properties;
+    private final ControlServiceProperties properties;
     private final RequestAuthorizationHeaders requestAuthorizationHeaders;
+    /**
+     * 按认证缓存身份和设备序列号隔离的单设备档案缓存，过期条目由定时任务移除。
+     */
     private final Map<DeviceCacheKey, CachedDevice> deviceCache = new ConcurrentHashMap<>();
+    /**
+     * 按认证缓存身份隔离的完整设备列表缓存。
+     */
     private final Map<String, CachedDevices> devicesCache = new ConcurrentHashMap<>();
+    /**
+     * 按认证缓存身份隔离的设备类型字典缓存。
+     */
     private final Map<String, CachedDictionary> dictionaryCache = new ConcurrentHashMap<>();
 
     /**
@@ -58,14 +70,14 @@ public class ControlManagementClient {
     @Autowired
     public ControlManagementClient(
             RestClient.Builder builder,
-            ControlProperties properties,
+            ControlServiceProperties properties,
             RequestAuthorizationHeaders requestAuthorizationHeaders) {
         this(restClient(builder), properties, requestAuthorizationHeaders);
     }
 
     ControlManagementClient(
             RestClient restClient,
-            ControlProperties properties,
+            ControlServiceProperties properties,
             RequestAuthorizationHeaders requestAuthorizationHeaders) {
         this.restClient = restClient;
         this.properties = properties;
@@ -79,7 +91,12 @@ public class ControlManagementClient {
         return builder.requestFactory(requestFactory).build();
     }
 
-    /** 批量将设备 SLAM 坐标换算为 GIS 经纬度。内部接口不透传用户身份。 */
+    /**
+     * 批量将设备 SLAM 坐标换算为 GIS 经纬度。内部接口不透传用户身份。
+     *
+     * @param items 当前查询或快照的条目集合
+     * @return 各输入坐标的转换结果及未转换原因
+     */
     public List<GisConversion> convertGis(List<GisCoordinate> items) {
         if (items == null || items.isEmpty()) {
             return List.of();
@@ -87,7 +104,7 @@ public class ControlManagementClient {
         URI uri = uri("/internal/v1/management/maps/gis/convert").build(true).toUri();
         long startNanos = System.nanoTime();
         Map<String, Object> response;
-        log.info("管理端 GIS 转换请求开始 protocol=http direction=出站 stage=请求 outcome=已发起 method=POST uri={} requestItems={}",
+        log.info("管理端 GIS 转换请求开始 协议=http 方向=出站 阶段=请求 结果=已发起 请求方法=POST 请求地址={} 请求条目数={}",
                 uri, items.size());
         try {
             response = restClient.post()
@@ -96,10 +113,10 @@ public class ControlManagementClient {
                     .body(Map.of("items", items))
                     .retrieve()
                     .body(MAP_TYPE);
-            log.info("管理端 GIS 转换调用成功 protocol=http direction=出站 stage=响应 outcome=成功 method=POST uri={} statusCode=200 requestItems={} durationMs={}",
+            log.info("管理端 GIS 转换调用成功 协议=http 方向=出站 阶段=响应 结果=成功 请求方法=POST 请求地址={} 状态码=200 请求条目数={} 耗时毫秒={}",
                     uri, items.size(), elapsedMillis(startNanos));
         } catch (RuntimeException exception) {
-            log.warn("管理端 GIS 转换调用失败 protocol=http direction=出站 stage=响应 outcome=失败 method=POST uri={} requestItems={} durationMs={}",
+            log.warn("管理端 GIS 转换调用失败 协议=http 方向=出站 阶段=响应 结果=失败 请求方法=POST 请求地址={} 请求条目数={} 耗时毫秒={}",
                     uri, items.size(), elapsedMillis(startNanos), exception);
             throw exception;
         }
@@ -199,7 +216,7 @@ public class ControlManagementClient {
                         new DeviceCacheKey(cacheIdentity, serialNumber),
                         new CachedDevice(new LinkedHashMap<>(profile), expiresAt));
             } catch (RuntimeException exception) {
-                log.warn("预热管理端设备详情失败，设备标识={} 管理端设备ID={}", serialNumber, deviceId, exception);
+                log.warn("预热管理端设备详情失败，设备标识={} 管理端设备标识={}", serialNumber, deviceId, exception);
             }
         }
         deviceTypeDictionary();
@@ -440,7 +457,7 @@ public class ControlManagementClient {
 
     private Optional<Map<String, Object>> responseMap(URI uri) {
         long startNanos = System.nanoTime();
-        log.info("管理端 HTTP 查询开始 protocol=http direction=出站 stage=请求 outcome=已发起 method=GET uri={}", uri);
+        log.info("管理端 HTTP 查询开始 协议=http 方向=出站 阶段=请求 结果=已发起 请求方法=GET 请求地址={}", uri);
         try {
             Map<String, Object> response = restClient.get()
                     .uri(uri)
@@ -448,22 +465,22 @@ public class ControlManagementClient {
                     .retrieve()
                     .body(MAP_TYPE);
             if (response == null) {
-                log.warn("管理端 HTTP 响应无效 protocol=http direction=出站 stage=响应 outcome=无效响应 method=GET uri={} statusCode=200 durationMs={}",
+                log.warn("管理端 HTTP 响应无效 协议=http 方向=出站 阶段=响应 结果=无效响应 请求方法=GET 请求地址={} 状态码=200 耗时毫秒={}",
                         uri, elapsedMillis(startNanos));
                 return Optional.empty();
             }
-            log.info("管理端 HTTP 查询成功 protocol=http direction=出站 stage=响应 outcome=成功 method=GET uri={} statusCode=200 resultItems={} durationMs={}",
+            log.info("管理端 HTTP 查询成功 协议=http 方向=出站 阶段=响应 结果=成功 请求方法=GET 请求地址={} 状态码=200 返回条目数={} 耗时毫秒={}",
                     uri, records(response).size(), elapsedMillis(startNanos));
             return Optional.of(response);
         } catch (RestClientResponseException exception) {
             log.warn(
-                    "管理端 HTTP 查询被拒绝 protocol=http direction=出站 stage=响应 outcome=被拒绝 method=GET uri={} statusCode={} durationMs={}",
+                    "管理端 HTTP 查询被拒绝 协议=http 方向=出站 阶段=响应 结果=被拒绝 请求方法=GET 请求地址={} 状态码={} 耗时毫秒={}",
                     uri,
                     exception.getStatusCode().value(),
                     elapsedMillis(startNanos));
             throw exception;
         } catch (RuntimeException exception) {
-            log.warn("管理端 HTTP 查询失败 protocol=http direction=出站 stage=响应 outcome=失败 method=GET uri={} durationMs={}",
+            log.warn("管理端 HTTP 查询失败 协议=http 方向=出站 阶段=响应 结果=失败 请求方法=GET 请求地址={} 耗时毫秒={}",
                     uri, elapsedMillis(startNanos), exception);
             return Optional.empty();
         }
@@ -549,9 +566,29 @@ public class ControlManagementClient {
         }
     }
 
+    /**
+     * 待转换坐标的设备、地图和局部坐标。
+     *
+     * @param serialNumber 机器人序列号
+     * @param mapId 所属地图 ID
+     * @param x 地图局部坐标 X，单位遵循对应地图协议
+     * @param y 地图局部坐标 Y，单位遵循对应地图协议
+     */
     public record GisCoordinate(String serialNumber, String mapId, Double x, Double y) {
     }
 
+    /**
+     * 管理端返回的坐标转换结果，关联原设备与地图。
+     *
+     * @param serialNumber 机器人序列号
+     * @param mapId 所属地图 ID
+     * @param x 地图局部坐标 X，单位遵循对应地图协议
+     * @param y 地图局部坐标 Y，单位遵循对应地图协议
+     * @param longitude GIS 经度，未转换成功时可为空
+     * @param latitude GIS 纬度，未转换成功时可为空
+     * @param converted 坐标是否已成功转换为 GIS 经纬度
+     * @param reason 管理端返回的坐标转换原因说明，供转换未成功时诊断，可为空
+     */
     public record GisConversion(
             String serialNumber,
             String mapId,
@@ -563,15 +600,39 @@ public class ControlManagementClient {
             String reason) {
     }
 
+    /**
+     * 按调用身份和设备序列号隔离管理端设备缓存。
+     *
+     * @param cacheIdentity 由当前认证上下文构造的缓存隔离标识
+     * @param serialNumber 机器人序列号
+     */
     private record DeviceCacheKey(String cacheIdentity, String serialNumber) {
     }
 
+    /**
+     * 单设备档案及缓存失效时间。
+     *
+     * @param device 当前授权身份下缓存的管理端设备档案
+     * @param expiresAt 有效期截止时间
+     */
     private record CachedDevice(Map<String, Object> device, Instant expiresAt) {
     }
 
+    /**
+     * 设备列表及缓存失效时间。
+     *
+     * @param devices 当前授权身份下缓存的管理端设备档案列表
+     * @param expiresAt 有效期截止时间
+     */
     private record CachedDevices(List<Map<String, Object>> devices, Instant expiresAt) {
     }
 
+    /**
+     * 字典记录及缓存失效时间。
+     *
+     * @param records 当前查询返回的记录集合
+     * @param expiresAt 有效期截止时间
+     */
     private record CachedDictionary(List<Map<String, Object>> records, Instant expiresAt) {
     }
 }

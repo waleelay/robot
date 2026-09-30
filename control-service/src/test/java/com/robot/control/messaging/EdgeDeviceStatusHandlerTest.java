@@ -18,6 +18,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+/** 验证边缘设备状态解析、设备合并及状态发布。 */
 class EdgeDeviceStatusHandlerTest {
 
     private final EquipmentControlService equipmentControlService = mock(EquipmentControlService.class);
@@ -29,6 +30,7 @@ class EdgeDeviceStatusHandlerTest {
             new ObjectMapper(), equipmentControlService, robotRegistryService, mileageService, trajectoryCoordinator,
             gisLocationEnrichmentService);
 
+    /** 验证边缘真实字段到统一运行态的映射，并保留缺测、定位和任务状态语义。 */
     @Test
     void mapsRealEdgeStatusPayloadToUnifiedRobotState() {
         when(equipmentControlService.mergeEdgeDeviceStatus(eq("test115"), any()))

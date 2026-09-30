@@ -34,8 +34,19 @@ public class MileageService {
     private final TransactionTemplate transactionTemplate;
     private final MileageProperties properties;
     private final MediaWebSocketPublisher webSocketPublisher;
+    /**
+     * 按机器人累计尚未触发里程事件的有效米数，达到发布阈值后清零。
+     */
     private final Map<String, BigDecimal> unpublishedMeters = new ConcurrentHashMap<>();
 
+    /**
+     * 初始化 MileageService，保存所需依赖及初始运行状态。
+     *
+     * @param jdbcTemplate 执行参数化 SQL 的 JDBC 访问器
+     * @param transactionManager 数据库事务管理器
+     * @param properties 服务配置
+     * @param webSocketPublisher 向已连接客户端投递业务事件的组件
+     */
     public MileageService(
             JdbcTemplate jdbcTemplate,
             PlatformTransactionManager transactionManager,
@@ -73,7 +84,12 @@ public class MileageService {
                 """);
     }
 
-    /** 首次读数只建立基线；重复、乱序、回退和异常跳变不会污染有效里程。 */
+    /**
+     * 首次读数只建立基线；重复、乱序、回退和异常跳变不会污染有效里程。
+     *
+     * @param reading 设备上报并已提取的里程读数
+     * @return 读数是否被接受、质量分类及非负里程增量
+     */
     public MileageResult record(MileageReading reading) {
         if (!valid(reading)) {
             return MileageResult.ignored("INVALID");
@@ -83,15 +99,22 @@ public class MileageService {
             return MileageResult.ignored("TRANSACTION_EMPTY");
         }
         if (List.of("RESET", "ESTIMATED", "SUSPECT").contains(result.quality())) {
-            log.warn("检测到里程质量异常，机器人ID={} 质量={} 事件时间={} 增量米数={}",
+            log.warn("检测到里程质量异常，机器人标识={} 质量={} 事件时间={} 增量米数={}",
                     reading.robotId(), result.quality(), DateTimeConfig.format(reading.eventTime()), result.deltaMeters());
         }
         publishIfNeeded(reading, result);
         return result;
     }
 
-    /** 查询分钟桶中的有效里程。 */
-    public Map<String, Object> summary(
+    /**
+     * 查询分钟桶中的有效里程。
+     *
+     * @param startTime 上海时区区间起点，包含该时刻
+     * @param endTime 上海时区区间终点，包含该时刻
+     * @param robotIds 机器人标识集合
+     * @return 统计窗口内的有效里程、样本数及按设备分组结果
+     */
+    public MileageSummaryResponse summary(
             LocalDateTime startTime,
             LocalDateTime endTime,
             List<String> robotIds) {
@@ -123,36 +146,29 @@ public class MileageService {
         List<String> resultRobotIds = normalizedRobotIds.isEmpty()
                 ? rows.stream().map(RobotMileage::robotId).toList()
                 : normalizedRobotIds;
-        List<Map<String, Object>> byRobot = new ArrayList<>();
+        List<MileageSummaryResponse.RobotMileageSummary> byRobot = new ArrayList<>();
         BigDecimal total = ZERO;
         long sampleCount = 0;
         for (String robotId : resultRobotIds) {
             RobotMileage row = indexed.get(robotId);
             boolean hasData = row != null && row.sampleCount() > 0;
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("robotId", robotId);
-            item.put("hasData", hasData);
-            item.put("mileageMeters", hasData ? scale(row.mileageMeters()) : null);
-            item.put("sampleCount", hasData ? row.sampleCount() : 0L);
-            byRobot.add(item);
+            byRobot.add(new MileageSummaryResponse.RobotMileageSummary(
+                    robotId, hasData, hasData ? scale(row.mileageMeters()) : null,
+                    hasData ? row.sampleCount() : 0L));
             if (hasData) {
                 total = total.add(row.mileageMeters());
                 sampleCount += row.sampleCount();
             }
         }
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("startTime", DateTimeConfig.format(startTime));
-        response.put("endTime", DateTimeConfig.format(endTime));
-        response.put("timezone", CHINA_ZONE.getId());
-        response.put("hasData", sampleCount > 0);
-        response.put("totalMeters", sampleCount > 0 ? scale(total) : null);
-        response.put("sampleCount", sampleCount);
-        response.put("unit", "m");
-        response.put("byRobot", byRobot);
-        return response;
+        return new MileageSummaryResponse(
+                DateTimeConfig.format(startTime), DateTimeConfig.format(endTime), CHINA_ZONE.getId(),
+                sampleCount > 0, sampleCount > 0 ? scale(total) : null, sampleCount, "m", byRobot);
     }
 
+    /**
+     * 在设备检查点行锁内判定重复与乱序读数，更新基线，并仅将有效增量写入分钟桶。
+     */
     private MileageResult recordInTransaction(MileageReading reading) {
         Checkpoint checkpoint = checkpoint(reading.robotId());
         LocalDateTime eventTime = reading.eventTime().atZoneSameInstant(CHINA_ZONE).toLocalDateTime();
@@ -190,6 +206,9 @@ public class MileageService {
         return result;
     }
 
+    /**
+     * 优先使用总累计里程计算增量；回退标记 RESET，超过时间和速度上限的跳变标记异常而不计入有效里程。
+     */
     private MileageResult calculate(
             Checkpoint checkpoint,
             BigDecimal total,
@@ -305,6 +324,14 @@ public class MileageService {
         return value.setScale(3, RoundingMode.HALF_UP);
     }
 
+    /**
+     * 已持久化的设备读数，用于识别重复、乱序和累计里程回退；事件时间为上海本地时间。
+     *
+     * @param lastTotalMeters 上次接受的总累计里程，单位米
+     * @param lastCurrentMeters 上次接受的本轮累计里程，单位米
+     * @param lastEventTime 上次接受的里程读数时间
+     * @param lastMessageId 上次接受的消息 ID，用于去重
+     */
     private record Checkpoint(
             BigDecimal lastTotalMeters,
             BigDecimal lastCurrentMeters,
@@ -312,12 +339,26 @@ public class MileageService {
             String lastMessageId) {
     }
 
+    /**
+     * 按设备汇总的分钟桶查询结果；是否有数据由有效样本数判断，不能仅看米数是否为零。
+     *
+     * @param robotId 机器人 ID
+     * @param mileageMeters 里程米数，无数据时为 null
+     * @param sampleCount 有效样本总数
+     */
     private record RobotMileage(
             String robotId,
             BigDecimal mileageMeters,
             long sampleCount) {
     }
 
+    /**
+     * 单次读数处理结果，增量单位为米。
+     *
+     * @param deltaMeters 本次计算的非负增量；是否写入统计桶仍由质量状态判断
+     * @param quality 读数质量或忽略原因，不是里程查询响应字段
+     * @param accepted 是否处理了更新的有效读数；为 true 不代表一定计入统计或发布事件
+     */
     public record MileageResult(BigDecimal deltaMeters, String quality, boolean accepted) {
         static MileageResult ignored(String quality) {
             return new MileageResult(ZERO, quality, false);

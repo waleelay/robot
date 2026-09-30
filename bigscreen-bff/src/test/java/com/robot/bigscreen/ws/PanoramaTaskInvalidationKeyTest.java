@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+/** 验证任务失效通知标识，避免误合并不同业务变化。 */
 class PanoramaTaskInvalidationKeyTest {
 
     private final PanoramaWebSocketEventAdapter adapter = new PanoramaWebSocketEventAdapter(new ObjectMapper());

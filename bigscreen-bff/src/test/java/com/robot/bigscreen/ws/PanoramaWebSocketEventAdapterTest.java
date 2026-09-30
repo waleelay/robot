@@ -8,11 +8,13 @@ import com.robot.bigscreen.panorama.StatsPart;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+/** 验证下游事件到大屏事件的字段、状态和失效通知映射。 */
 class PanoramaWebSocketEventAdapterTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PanoramaWebSocketEventAdapter adapter = new PanoramaWebSocketEventAdapter(objectMapper);
 
+    /** 验证位置事件保留 SLAM 地图、定位有效性及必要坐标元数据。 */
     @Test
     void preservesSlamMetadataInPanoramaLocationEvent() throws Exception {
         List<String> events = adapter.adapt("""

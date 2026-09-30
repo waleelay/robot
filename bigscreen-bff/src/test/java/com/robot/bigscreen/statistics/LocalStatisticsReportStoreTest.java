@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** 验证本地统计报告保存、索引恢复和所属用户访问限制。 */
 class LocalStatisticsReportStoreTest {
 
     @TempDir

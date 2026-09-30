@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-/** Coordinates robot initiated calls before the existing media intercom starts. */
+/** 在媒体对讲启动前协调机器人主动呼叫的邀请、接听与状态流转。 */
 @Service
 public class IntercomCallService {
 
@@ -33,6 +33,9 @@ public class IntercomCallService {
     private static final int MIN_TIMEOUT_SECONDS = 5;
     private static final int MAX_TIMEOUT_SECONDS = 120;
 
+    /**
+     * 按呼叫 ID 保存机器人主动对讲状态；用于重复邀请识别、占用检查及超时回收。
+     */
     private final Map<String, Call> calls = new ConcurrentHashMap<>();
     private final ControlVideoCommandService videoCommandService;
     private final ControlMediaServiceClient mediaServiceClient;
@@ -40,6 +43,15 @@ public class IntercomCallService {
     private final MediaWebSocketPublisher webSocketPublisher;
     private final RobotRegistryService robotRegistryService;
 
+    /**
+     * 初始化 IntercomCallService，保存所需依赖及初始运行状态。
+     *
+     * @param videoCommandService 控制侧视频操作编排服务。
+     * @param mediaServiceClient 媒体服务 客户端
+     * @param commandService 视频命令服务
+     * @param webSocketPublisher 向已连接客户端投递业务事件的组件
+     * @param robotRegistryService 维护机器人运行状态与在线事实的注册服务
+     */
     public IntercomCallService(
             ControlVideoCommandService videoCommandService,
             ControlMediaServiceClient mediaServiceClient,
@@ -53,6 +65,12 @@ public class IntercomCallService {
         this.robotRegistryService = robotRegistryService;
     }
 
+    /**
+     * 处理设备主动对讲邀请，在占用检查后登记呼叫并广播待接听状态。
+     *
+     * @param invite 设备发起的对讲邀请载荷
+     * @param topicRobotId 从 MQTT 主题解析出的机器人 ID
+     */
     public synchronized void invite(IntercomCallInvite invite, String topicRobotId) {
         validateInvite(invite, topicRobotId);
         Call existing = calls.get(invite.callId());
@@ -92,6 +110,12 @@ public class IntercomCallService {
         webSocketPublisher.publish("video.intercom.call.incoming", payload(call));
     }
 
+    /**
+     * 处理设备撤销邀请，收口呼叫并广播撤销状态。
+     *
+     * @param cancel 设备上报的对讲邀请撤销消息
+     * @param topicRobotId 从 MQTT 主题解析出的机器人 ID
+     */
     public synchronized void cancel(IntercomCallCancel cancel, String topicRobotId) {
         if (cancel == null || blank(cancel.callId()) || blank(topicRobotId)) {
             return;
@@ -107,6 +131,13 @@ public class IntercomCallService {
         publishStatus(call);
     }
 
+    /**
+     * 校验操作端权限及当前呼叫状态后接受对讲，绑定媒体会话与操作员。
+     *
+     * @param callId 呼叫 ID
+     * @param user 当前用户
+     * @return 接听后的对讲会话信息
+     */
     public synchronized Map<String, Object> accept(String callId, CurrentUser user) {
         requireOperator(user);
         Call call = requireRinging(callId);
@@ -142,6 +173,13 @@ public class IntercomCallService {
         }
     }
 
+    /**
+     * 拒绝指定设备对讲邀请并释放呼叫占用。
+     *
+     * @param callId 呼叫 ID
+     * @param user 当前用户
+     * @return 拒绝后的呼叫状态
+     */
     public synchronized Map<String, Object> reject(String callId, CurrentUser user) {
         requireOperator(user);
         Call call = requireRinging(callId);
@@ -155,6 +193,11 @@ public class IntercomCallService {
         return payload(call);
     }
 
+    /**
+     * 查询当前尚待应答的设备对讲邀请。
+     *
+     * @return 有效的待接听邀请列表
+     */
     public synchronized List<Map<String, Object>> ringingCalls() {
         OffsetDateTime current = now();
         List<Map<String, Object>> result = new ArrayList<>();
@@ -165,6 +208,11 @@ public class IntercomCallService {
         return result;
     }
 
+    /**
+     * 校验手动对讲是否与已有邀请或通话冲突；冲突时抛出可识别业务异常。
+     *
+     * @param robotId 机器人 ID
+     */
     public synchronized void requireManualIntercomAllowed(String robotId) {
         OffsetDateTime current = now();
         boolean ringing = calls.values().stream().anyMatch(call ->
@@ -178,6 +226,13 @@ public class IntercomCallService {
         }
     }
 
+    /**
+     * 根据媒体对讲状态推进主动呼叫生命周期，终态释放关联占用。
+     *
+     * @param sessionId 会话 ID
+     * @param status 当前业务状态，取值遵循所属模型的状态协议
+     * @param message 消息内容
+     */
     public synchronized void handleIntercomStatus(String sessionId, String status, String message) {
         if (blank(sessionId) || blank(status)) {
             return;
@@ -196,10 +251,18 @@ public class IntercomCallService {
         }
     }
 
+    /**
+     * 按媒体会话收口关联呼叫，避免会话结束后仍显示通话中。
+     *
+     * @param sessionId 会话 ID
+     */
     public synchronized void endBySession(String sessionId) {
         handleIntercomStatus(sessionId, "stopped", "operator ended");
     }
 
+    /**
+     * 清理超过应答期限的设备对讲邀请并发布超时状态。
+     */
     @Scheduled(fixedDelayString = "${control.intercom-call.sweep-delay-ms:1000}")
     public synchronized void sweepTimeouts() {
         OffsetDateTime current = now();
@@ -346,22 +409,71 @@ public class IntercomCallService {
         return value == null || value.isBlank();
     }
 
+    /** 保存机器人对讲呼叫的目标、状态和占用上下文。 */
     private static final class Call {
+        /**
+         * 机器人提供的呼叫唯一标识，用于识别重复邀请。
+         */
         private String callId;
+        /**
+         * 发起呼叫的机器人 ID，与 MQTT 主题一致。
+         */
         private String robotId;
+        /**
+         * 向指挥中心展示的机器人名称。
+         */
         private String robotName;
+        /**
+         * 发起对讲所关联的摄像头设备 ID。
+         */
         private String deviceId;
+        /**
+         * 向指挥中心展示的摄像头名称。
+         */
         private String cameraName;
+        /**
+         * 邀请指定的视频通道，接听时解析并应用回退规则。
+         */
         private String channel;
+        /**
+         * 邀请指定的码流清晰度，接听时解析并应用回退规则。
+         */
         private String quality;
+        /**
+         * 邀请发起原因，与后续状态消息分别保存。
+         */
         private String reason;
+        /**
+         * 当前机器人主动对讲呼叫状态。
+         */
         private IntercomCallStatus status;
+        /**
+         * 服务端接收并登记邀请的时间。
+         */
         private OffsetDateTime createdAt;
+        /**
+         * 服务端最近更新呼叫状态的时间。
+         */
         private OffsetDateTime updatedAt;
+        /**
+         * 按受限振铃时长计算的应答截止时间。
+         */
         private OffsetDateTime expiresAt;
+        /**
+         * 接听后关联的 Media 业务会话 ID。
+         */
         private String sessionId;
+        /**
+         * 接听或拒绝呼叫的中心用户 ID。
+         */
         private String acceptedBy;
+        /**
+         * 处理呼叫的中心客户端 ID。
+         */
         private String acceptedClientId;
+        /**
+         * 当前呼叫状态的补充说明，随事件回传。
+         */
         private String message;
 
         private static Call from(IntercomCallInvite invite, String robotName, String cameraName, OffsetDateTime current) {

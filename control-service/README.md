@@ -4,6 +4,10 @@
 
 接口权威定义见 [控制服务接口文档](../docs/03-接口与协议/统一控制/控制服务接口文档.md)。
 
+里程、文件及控制视频接口已接入 OpenAPI 3.1.0：[里程契约](../quality/openapi/control-mileage.json)、[文件契约](../quality/openapi/control-files.json)、[控制视频契约](../quality/openapi/control-service.json)。
+执行 `sh scripts/quality-check.sh openapi`（仓库根目录）验证生成结果、实际 HTTP 响应及 BFF 消费。
+`CONTROL_OPENAPI_ENABLED` 默认 `false`，受控开发环境显式开启后，`/v3/api-docs` 提供里程查询，`/v3/api-docs/files` 提供 9 条文件代理映射，`/v3/api-docs/service` 提供其余 34 条映射，未引入 Swagger UI。
+
 ## 1. 启动、构建与测试
 
 ```bash
@@ -159,10 +163,15 @@ Publisher；这些端点只接受配置的内部调用方标记，不由 Nginx/A
 
 ## 5. 配置
 
+服务地址、设备缓存、认证、MQTT、机器人、会话及 STOMP 参数统一由
+`ControlServiceProperties` 绑定，保留原有 `control.*` 配置键；里程参数继续由
+`MileageProperties` 绑定 `control.mileage.*`。
+
 | 配置 | 环境变量 | 说明 |
 | --- | --- | --- |
 | `control.media-service-base-url` | `MEDIA_SERVICE_BASE_URL` | Media 内部地址 |
 | `control.management-service-base-url` | `CENTER_MANAGE_BASE_URL` | Management 地址 |
+| `control.device-cache-ttl-seconds` | `MANAGEMENT_DEVICE_CACHE_TTL_SECONDS` | 设备档案及授权列表缓存有效期；非正值回退 30 秒，正值最多取 30 秒 |
 | `control.mqtt.*` | `MQTT_*`、`FIXED_CAMERA_GATEWAY_ID` | Broker、凭据、clientId、Gateway ID 和开关 |
 | `control.fixed-camera-health.*` | `FIXED_CAMERA_GATEWAY_TIMEOUT_SECONDS`、`FIXED_CAMERA_HEALTH_MAX_AGE_SECONDS` | Gateway 离线与 RTSP 健康过期阈值 |
 | `control.fixed-camera-catalog.*` | `FIXED_CAMERA_CATALOG_MAX_LEASE_SECONDS`、`FIXED_CAMERA_CATALOG_SWEEP_DELAY_MS`、`FIXED_CAMERA_CATALOG_TRUSTED_CALLER` | 目录租约时限、清理周期和内部调用方标记 |
@@ -173,7 +182,13 @@ Publisher；这些端点只接受配置的内部调用方标记，不由 Nginx/A
 | `spring.datasource.*` | `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` | 里程检查点和分钟增量桶数据库 |
 | `control.robot.*` | `ROBOT_HEARTBEAT_*`、`ROBOT_OFFLINE_RETENTION_SECONDS` | 心跳超时与扫描周期、离线注册表清理 |
 | `control.session.*` | `INTERRUPTED_*`、`IDLE_*`、`VIEWER_*` | 视频恢复和释放参数 |
+| `control.session.sweep-delay-ms` | `CONTROL_SESSION_SWEEP_DELAY_MS` | 恢复、对讲超时与空闲释放的扫描周期，默认 5000 毫秒 |
 
-Control 信任 BFF 注入的用户 Header，缺失时使用开发身份；生产不应无防护直连。Java 时间统一输出 `yyyy-MM-dd HH:mm:ss`（`Asia/Shanghai`）。
+Control 扫描周期优先使用 `control.session.sweep-delay-ms`；旧 `media.session.sweep-delay-ms`
+及 `MEDIA_SESSION_SWEEP_DELAY_MS` 仅作兼容回退。新旧同时设置时以 Control 新名称为准。
+该迁移不改变 Media 自身的 `media.session.sweep-delay-ms`。Compose 对扫描周期变量采用可选
+透传，未设置时由应用解析旧配置或使用默认值，不以容器默认变量覆盖已有外部配置。
+
+Control 信任 BFF 注入的用户 Header。调用身份解析器的接口默认要求 `X-User-Id` 和 `X-Roles`；仅设置 `CONTROL_AUTH_ALLOW_DEFAULT_USER=true` 时启用开发身份。部分内网接口不调用身份解析器，生产不应无防护直连。Java 时间统一输出 `yyyy-MM-dd HH:mm:ss`（`Asia/Shanghai`）。
 
 修改跨服务协议时应同步检查 Media DTO、MQTT 生产者/消费者、WebSocket 事件和对应协议文档。

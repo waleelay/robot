@@ -22,6 +22,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 
+/** 验证统计首次加载、模块合并及重复事件刷新行为。 */
 class PanoramaStatsEventRefresherTest {
 
     @Test
@@ -152,7 +153,7 @@ class PanoramaStatsEventRefresherTest {
                 "deviceStats", Map.of("total", 0, "online", 0, "fault", 0, "offline", 0),
                 "deviceTypeStats", List.of(),
                 "taskOverview", Map.of("totalToday", 1));
-        when(panoramaService.statsSnapshot(any())).thenReturn(first, transientEmpty);
+        when(panoramaService.statsSnapshot(any())).thenReturn(first).thenReturn(transientEmpty);
         ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
         when(taskScheduler.schedule(tasks.capture(), any(Instant.class))).thenReturn(null);
         PanoramaStatsEventRefresher refresher = new PanoramaStatsEventRefresher(
@@ -176,11 +177,9 @@ class PanoramaStatsEventRefresherTest {
         PanoramaService panoramaService = mock(PanoramaService.class);
         TaskScheduler taskScheduler = mock(TaskScheduler.class);
         ObjectMapper objectMapper = new ObjectMapper();
-        when(panoramaService.statsSnapshot(any())).thenReturn(
-                Map.of(
+        when(panoramaService.statsSnapshot(any())).thenReturn(Map.of(
                         "taskOverview", Map.of("totalToday", 12),
-                        "dataQuality", Map.of("tasks", Map.of("complete", true, "degraded", false))),
-                Map.of("dataQuality", Map.of("alarms", Map.of(
+                        "dataQuality", Map.of("tasks", Map.of("complete", true, "degraded", false)))).thenReturn(Map.of("dataQuality", Map.of("alarms", Map.of(
                         "complete", false,
                         "degraded", true,
                         "reasonCodes", List.of("ALARM_QUERY_TIMEOUT")))));

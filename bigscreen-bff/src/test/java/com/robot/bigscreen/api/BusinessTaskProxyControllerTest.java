@@ -22,6 +22,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+/**
+ * 验证业务任务专用代理的路径映射及未知路径拒绝，不覆盖 JWT 鉴权。
+ */
 @WebMvcTest(BusinessTaskProxyController.class)
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {

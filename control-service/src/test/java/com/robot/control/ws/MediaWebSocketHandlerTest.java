@@ -34,6 +34,7 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+/** 验证媒体 WebSocket 订阅及客户端消息处理。 */
 class MediaWebSocketHandlerTest {
 
     @Test
@@ -136,6 +137,7 @@ class MediaWebSocketHandlerTest {
         verify(equipmentControlService).releaseOwnedSessions(user, "websocket_disconnected");
     }
 
+    /** 用并发屏障验证同身份替换连接注册期间，旧连接关闭不会提前释放控制租约。 */
     @Test
     void doesNotReleaseControlWhileReplacementWebSocketIsBeingRegistered() throws Exception {
         MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);

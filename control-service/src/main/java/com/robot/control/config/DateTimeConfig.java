@@ -60,7 +60,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
     /**
      * 将时间值格式化为前端展示字符串。
      *
-     * @param value 待处理值
+     * @param value 待格式化或归一化的时间值；不额外推断业务时间
      * @return 格式化后的时间字符串
      */
     public static String format(OffsetDateTime value) {
@@ -70,7 +70,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
     /**
      * 将时间值格式化为前端展示字符串。
      *
-     * @param value 待处理值
+     * @param value 待格式化或归一化的时间值；不额外推断业务时间
      * @return 格式化后的时间字符串
      */
     public static String format(LocalDateTime value) {
@@ -80,7 +80,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
     /**
      * 将时间值格式化为前端展示字符串。
      *
-     * @param value 待处理值
+     * @param value 待格式化或归一化的时间值；不额外推断业务时间
      * @return 格式化后的时间字符串
      */
     public static String format(Instant value) {
@@ -90,7 +90,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
     /**
      * 将时间值格式化为前端展示字符串。
      *
-     * @param value 待处理值
+     * @param value 待格式化或归一化的时间值；不额外推断业务时间
      * @return 格式化后的时间字符串
      */
     public static String format(Date value) {
@@ -100,7 +100,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
     /**
      * 将事件载荷中的时间值规范化为字符串。
      *
-     * @param value 待处理值
+     * @param value 待格式化或归一化的时间值；不额外推断业务时间
      * @return 规范化后的值
      */
     public static Object normalize(Object value) {
@@ -126,7 +126,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
     /**
      * 解析 OffsetDateTime 字符串，兼容本地展示格式。
      *
-     * @param value 待处理值
+     * @param value 待解析的时间字符串；空白按方法约定返回 null
      * @return 解析后的 OffsetDateTime
      */
     public static OffsetDateTime parseOffsetDateTime(String value) {
@@ -145,7 +145,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
     /**
      * 解析 LocalDateTime 字符串，兼容本地展示格式。
      *
-     * @param value 待处理值
+     * @param value 待解析的时间字符串；空白按方法约定返回 null
      * @return 解析后的 LocalDateTime
      */
     public static LocalDateTime parseLocalDateTime(String value) {
@@ -162,7 +162,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
     /**
      * 解析 Instant 字符串，兼容带时区和本地展示格式。
      *
-     * @param value 待处理值
+     * @param value 待解析的时间字符串；空白按方法约定返回 null
      * @return 解析后的 Instant
      */
     public static Instant parseInstant(String value) {
@@ -179,7 +179,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
     /**
      * 解析 Date 字符串。
      *
-     * @param value 待处理值
+     * @param value 待解析的时间字符串；空白按方法约定返回 null
      * @return 解析后的 Date
      */
     public static Date parseDate(String value) {
@@ -194,6 +194,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
      * @date 2026-07-05
      */
     private static final class OffsetDateTimeSerializer extends StdSerializer<OffsetDateTime> {
+        private static final long serialVersionUID = 1L;
         /**
          * 创建 OffsetDateTimeSerializer 实例。
          */
@@ -204,9 +205,9 @@ public class DateTimeConfig implements WebMvcConfigurer {
         /**
          * 将时间值序列化为前端展示字符串。
          *
-         * @param value 待处理值
-         * @param gen gen
-         * @param provider provider
+         * @param value 待格式化或归一化的时间值；不额外推断业务时间
+         * @param gen Jackson JSON 输出生成器
+         * @param provider Jackson 当前序列化配置与上下文
          * @throws IOException IOException 处理失败时抛出
          */
         @Override
@@ -222,6 +223,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
      * @date 2026-07-05
      */
     private static final class OffsetDateTimeDeserializer extends StdDeserializer<OffsetDateTime> {
+        private static final long serialVersionUID = 1L;
         /**
          * 创建 OffsetDateTimeDeserializer 实例。
          */
@@ -232,8 +234,8 @@ public class DateTimeConfig implements WebMvcConfigurer {
         /**
          * 将字符串反序列化为时间值。
          *
-         * @param parser parser
-         * @param context context
+         * @param parser Jackson JSON 输入解析器
+         * @param context Jackson 当前反序列化上下文
          * @return 反序列化后的时间值
          * @throws IOException IOException 处理失败时抛出
          */
@@ -250,6 +252,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
      * @date 2026-07-05
      */
     private static final class LocalDateTimeSerializer extends StdSerializer<LocalDateTime> {
+        private static final long serialVersionUID = 1L;
         /**
          * 创建 LocalDateTimeSerializer 实例。
          */
@@ -260,9 +263,9 @@ public class DateTimeConfig implements WebMvcConfigurer {
         /**
          * 将时间值序列化为前端展示字符串。
          *
-         * @param value 待处理值
-         * @param gen gen
-         * @param provider provider
+         * @param value 待格式化或归一化的时间值；不额外推断业务时间
+         * @param gen Jackson JSON 输出生成器
+         * @param provider Jackson 当前序列化配置与上下文
          * @throws IOException IOException 处理失败时抛出
          */
         @Override
@@ -278,6 +281,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
      * @date 2026-07-05
      */
     private static final class LocalDateTimeDeserializer extends StdDeserializer<LocalDateTime> {
+        private static final long serialVersionUID = 1L;
         /**
          * 创建 LocalDateTimeDeserializer 实例。
          */
@@ -288,8 +292,8 @@ public class DateTimeConfig implements WebMvcConfigurer {
         /**
          * 将字符串反序列化为时间值。
          *
-         * @param parser parser
-         * @param context context
+         * @param parser Jackson JSON 输入解析器
+         * @param context Jackson 当前反序列化上下文
          * @return 反序列化后的时间值
          * @throws IOException IOException 处理失败时抛出
          */
@@ -306,6 +310,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
      * @date 2026-07-05
      */
     private static final class InstantSerializer extends StdSerializer<Instant> {
+        private static final long serialVersionUID = 1L;
         /**
          * 创建 InstantSerializer 实例。
          */
@@ -316,9 +321,9 @@ public class DateTimeConfig implements WebMvcConfigurer {
         /**
          * 将时间值序列化为前端展示字符串。
          *
-         * @param value 待处理值
-         * @param gen gen
-         * @param provider provider
+         * @param value 待格式化或归一化的时间值；不额外推断业务时间
+         * @param gen Jackson JSON 输出生成器
+         * @param provider Jackson 当前序列化配置与上下文
          * @throws IOException IOException 处理失败时抛出
          */
         @Override
@@ -334,6 +339,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
      * @date 2026-07-05
      */
     private static final class InstantDeserializer extends StdDeserializer<Instant> {
+        private static final long serialVersionUID = 1L;
         /**
          * 创建 InstantDeserializer 实例。
          */
@@ -344,8 +350,8 @@ public class DateTimeConfig implements WebMvcConfigurer {
         /**
          * 将字符串反序列化为时间值。
          *
-         * @param parser parser
-         * @param context context
+         * @param parser Jackson JSON 输入解析器
+         * @param context Jackson 当前反序列化上下文
          * @return 反序列化后的时间值
          * @throws IOException IOException 处理失败时抛出
          */
@@ -362,6 +368,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
      * @date 2026-07-05
      */
     private static final class DateSerializer extends StdSerializer<Date> {
+        private static final long serialVersionUID = 1L;
         /**
          * 创建 DateSerializer 实例。
          */
@@ -372,9 +379,9 @@ public class DateTimeConfig implements WebMvcConfigurer {
         /**
          * 将时间值序列化为前端展示字符串。
          *
-         * @param value 待处理值
-         * @param gen gen
-         * @param provider provider
+         * @param value 待格式化或归一化的时间值；不额外推断业务时间
+         * @param gen Jackson JSON 输出生成器
+         * @param provider Jackson 当前序列化配置与上下文
          * @throws IOException IOException 处理失败时抛出
          */
         @Override
@@ -390,6 +397,7 @@ public class DateTimeConfig implements WebMvcConfigurer {
      * @date 2026-07-05
      */
     private static final class DateDeserializer extends StdDeserializer<Date> {
+        private static final long serialVersionUID = 1L;
         /**
          * 创建 DateDeserializer 实例。
          */
@@ -400,8 +408,8 @@ public class DateTimeConfig implements WebMvcConfigurer {
         /**
          * 将字符串反序列化为时间值。
          *
-         * @param parser parser
-         * @param context context
+         * @param parser Jackson JSON 输入解析器
+         * @param context Jackson 当前反序列化上下文
          * @return 反序列化后的时间值
          * @throws IOException IOException 处理失败时抛出
          */

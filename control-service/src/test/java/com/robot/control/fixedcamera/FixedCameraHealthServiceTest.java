@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/** 验证摄像头和 Gateway 健康消息的序号、时效及状态聚合。 */
 class FixedCameraHealthServiceTest {
 
     @Test

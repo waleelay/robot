@@ -8,6 +8,7 @@ import org.slf4j.MDC;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+/** 验证请求追踪标识的传递、生成及线程日志上下文清理。 */
 class RequestCorrelationFilterTest {
 
     private final RequestCorrelationFilter filter = new RequestCorrelationFilter();

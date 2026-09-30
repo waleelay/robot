@@ -16,6 +16,9 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.WebSocketSession;
 
+/**
+ * 验证现场呼叫发起入口对 FIELD_OPERATOR 角色的允许和拒绝行为。
+ */
 class FieldCallServiceTest {
 
     private final ControlMediaServiceClient mediaServiceClient = mock(ControlMediaServiceClient.class);

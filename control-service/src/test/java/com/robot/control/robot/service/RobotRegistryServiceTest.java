@@ -16,6 +16,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+/** 验证机器人注册、状态合并、在线判断和版本化发布。 */
 class RobotRegistryServiceTest {
 
     @Test

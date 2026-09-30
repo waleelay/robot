@@ -51,6 +51,10 @@ docs/             需求、设计、接口与协议、测试与验收
 
 各模块的代码结构、配置和启动方式放在模块自己的 README；文档统一入口为 [docs/README.md](docs/README.md)，Java 服务接口入口为 [Java 服务接口总览](docs/03-接口与协议/Java服务接口总览.md)。
 
+新增开发和存量整改遵循 [Alibaba 与 OpenAPI 开发规范](docs/02-设计/工程规范/Alibaba与OpenAPI开发规范.md)；已启用 Java 规则和三个服务的 HTTP 契约检查，命令及覆盖限制见[自动检查说明](quality/README.md)，最新验证见[规范整改执行记录](docs/04-测试与验收/执行记录/规范整改执行记录-20260929.md)。
+
+存量问题、HTTP 入口清单及批次验收见[规范整改台账](docs/02-设计/工程规范/存量规范整改台账-20260929.md)。本轮使用本地检查和审查，CI 平台接入保留为后续选项。
+
 ## 3. 环境要求
 
 ```text
@@ -98,6 +102,8 @@ Java 服务：
 
 完整配置分别见 [Media Service README](backend/README.md)、[Control Service README](control-service/README.md) 和 [Bigscreen BFF README](bigscreen-bff/README.md)。生产环境必须覆盖示例密钥、对象存储凭据、JWT Issuer、服务地址和允许跨域来源，不能直接使用仓库中的开发默认值。
 
+配置整理后的 HLS 超时名称与 Control 扫描周期名称优先使用新入口，旧名称保留兼容回退；HLS 超时空值按未配置处理。迁移方式见上述模块 README 的配置章节。BFF 下游配置类统一为 `DownstreamServiceProperties`，外部 `center.*` 配置键保持不变。
+
 ## 5. 生产鉴权与访问边界
 
 生产 REST/WebSocket 请求应先进入 Bigscreen BFF。BFF 验证 JWT 后覆盖 `X-User-Id`、`X-Org-Id`、`X-Roles` 并传给下游；Control 和 Media 当前信任这些受控 Header，自身不独立验签 JWT，不能直接暴露到不可信网络。
@@ -111,7 +117,7 @@ X-Roles: MEDIA_VIEWER,MEDIA_OPERATOR,EQUIPMENT_OPERATOR
 X-Client-Id: web-1
 ```
 
-Header 缺失时 Control 和 Media 会启用开发默认身份，该行为不是生产匿名授权。完整规则见 [Java 服务接口通用约定](docs/03-接口与协议/公共约定/Java服务接口通用约定.md)。
+调用身份解析器的 Control 接口默认要求 `X-User-Id` 和 `X-Roles`；仅显式设置 `CONTROL_AUTH_ALLOW_DEFAULT_USER=true` 时允许开发默认身份。Media 的身份解析器目前仍有开发默认值；部分内网接口不调用身份解析器，不能由此推定所有接口均已校验身份。完整规则见 [Java 服务接口通用约定](docs/03-接口与协议/公共约定/Java服务接口通用约定.md)。
 
 ## 6. 当前核心能力
 
@@ -179,6 +185,9 @@ Nginx 只代理 LiveKit 信令，不替代 LiveKit UDP/TCP 媒体端口。Contro
 任务状态、地图及轨迹竞态回归入口为 `robot-ui/test/panorama-map-state.test.mjs`。
 
 按改动范围执行最小充分验证；仓库级快速检查：
+
+Java 规则及 HTTP 契约检查使用 `sh scripts/quality-check.sh all --base HEAD`；这里的 `HEAD` 仅用于当前未提交修改，分支审查应指定实际比较目标。省略 `--base` 时 Java 存量问题也会导致失败。
+以下脚本是构建检查，包含四个 Java 模块、调试前端和固定摄像头 Gateway；需要已安装 Go，不替代规则、接口或业务测试。
 
 ```bash
 sh scripts/dev-check.sh

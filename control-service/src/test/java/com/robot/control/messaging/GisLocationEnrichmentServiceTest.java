@@ -18,6 +18,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+/** 验证设备位置的异步 GIS 补全、缓存及过期处理。 */
 class GisLocationEnrichmentServiceTest {
 
     @Test

@@ -26,7 +26,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 使用短数据库事务协调 multipart 合并，避免 Compose 大文件期间长期占用数据库连接和行锁。
+ * 使用短数据库事务协调分片合并，避免 拼接大文件期间长期占用数据库连接和行锁。
  */
 @Service
 public class FileMultipartCompletionService {
@@ -39,8 +39,22 @@ public class FileMultipartCompletionService {
     private final FileService fileService;
     private final TransactionTemplate transactionTemplate;
     private final TaskScheduler leaseScheduler;
+    /**
+     * 分片合并处理权的有效秒数，最小为 30 秒；合并期间由调度器续租。
+     */
     private final int leaseSeconds;
 
+    /**
+     * 初始化 FileMultipartCompletionService，保存所需依赖及初始运行状态。
+     *
+     * @param fileRepository 查询文件主记录，支持租户过滤、来源复用和保留期清理。
+     * @param uploadRepository 访问上传会话及配额计数，以悲观锁和带所有者条件的更新维护合并租约。
+     * @param storage 封装 MinIO 对象和分片读写、签名地址及桶初始化；调用方负责传入流的生命周期。
+     * @param fileService 管理文件元数据、上传会话、所有权与播放授权，协调存储及视频处理状态。
+     * @param transactionManager 数据库事务管理器
+     * @param leaseScheduler 后台任务调度器
+     * @param properties 服务配置
+     */
     public FileMultipartCompletionService(
             MediaFileRepository fileRepository,
             MediaFileUploadRepository uploadRepository,
@@ -58,9 +72,17 @@ public class FileMultipartCompletionService {
         this.leaseSeconds = Math.max(30, properties.getFile().getCompletionLeaseSeconds());
     }
 
+    /**
+     * 以有期限的处理权合并分片；重复完成返回现有结果，其他持有者处理中则报告可重试冲突。
+     *
+     * @param robotIdHeader 可信机器人标识请求头
+     * @param uploadId 平台上传会话 ID
+     * @return 合并后的上传响应，视频后处理可能仍未完成
+     */
     public FileStatusResponse complete(String robotIdHeader, String uploadId) {
         String robotId = requiredRobotId(robotIdHeader);
         String owner = UUID.randomUUID().toString().replace("-", "");
+        // 行锁只用于领取处理权；大文件 Compose 必须在事务外执行，避免长期占用连接和锁。
         CompletionContext context = transactionTemplate.execute(status -> claim(robotId, uploadId, owner));
         if (context == null) {
             throw error(HttpStatus.CONFLICT, "UPLOAD_COMPLETE_FAILED", "无法获取上传完成上下文");
@@ -82,6 +104,7 @@ public class FileMultipartCompletionService {
             heartbeat = leaseScheduler.scheduleAtFixedRate(
                     () -> renewLease(context),
                     Duration.ofSeconds(Math.max(10, leaseSeconds / 3)));
+            // 上次 Compose 成功但元数据提交失败时复用源对象，随后仍校验大小并核对租约持有者。
             Long existingSize = storage.statSizeIfExists(context.objectKey());
             if (existingSize == null) {
                 List<FileObjectStorageService.StoredPart> parts =
@@ -105,6 +128,9 @@ public class FileMultipartCompletionService {
         }
     }
 
+    /**
+     * 在上传行锁内校验机器人归属并领取合并租约；已完成或其他未过期持有者的任务不重复领取。
+     */
     private CompletionContext claim(String robotId, String uploadId, String owner) {
         MediaFileUpload upload = uploadRepository.findByIdForUpdate(uploadId)
                 .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "UPLOAD_NOT_FOUND", "未找到上传任务"));
@@ -133,6 +159,9 @@ public class FileMultipartCompletionService {
         return context(file, upload, owner, false, false);
     }
 
+    /**
+     * 在短事务内再次核验租约持有者后提交完成状态，防止旧工作者覆盖接管者。
+     */
     private void finish(CompletionContext context) {
         MediaFileUpload upload = uploadRepository.findByIdForUpdate(context.uploadId())
                 .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "UPLOAD_NOT_FOUND", "未找到上传任务"));
@@ -142,6 +171,7 @@ public class FileMultipartCompletionService {
         if (upload.getStatus() != FileUploadStatus.COMPLETING) {
             throw error(HttpStatus.CONFLICT, "UPLOAD_NOT_ACTIVE", "上传会话完成状态发生变化");
         }
+        // 旧工作者即使完成存储操作，也不能覆盖已接管任务的新持有者。
         if (!Objects.equals(upload.getCompletionOwner(), context.owner())) {
             throw error(HttpStatus.CONFLICT, "UPLOAD_COMPLETION_LEASE_LOST", "上传合并执行权已转移");
         }
@@ -154,6 +184,9 @@ public class FileMultipartCompletionService {
         fileService.markMultipartUploaded(context.fileId());
     }
 
+    /**
+     * 失败后只释放仍属于本次持有者的合并租约，恢复 ACTIVE 以允许重试。
+     */
     private void releaseForRetry(CompletionContext context) {
         try {
             transactionTemplate.executeWithoutResult(status -> {
@@ -169,7 +202,7 @@ public class FileMultipartCompletionService {
                 });
             });
         } catch (RuntimeException releaseError) {
-            log.error("释放 multipart 完成状态失败: uploadId={}", context.uploadId(), releaseError);
+            log.error("释放分片上传完成状态失败，上传标识={}", context.uploadId(), releaseError);
         }
     }
 
@@ -183,10 +216,10 @@ public class FileMultipartCompletionService {
                     timestamp,
                     timestamp.plusSeconds(leaseSeconds));
             if (updated == 0) {
-                log.warn("multipart 合并续租失败，执行权可能已转移: uploadId={}", context.uploadId());
+                log.warn("分片合并续租失败，执行权可能已转移，上传标识={}", context.uploadId());
             }
         } catch (RuntimeException exception) {
-            log.warn("multipart 合并续租异常: uploadId={}", context.uploadId(), exception);
+            log.warn("分片合并续租异常，上传标识={}", context.uploadId(), exception);
         }
     }
 
@@ -242,6 +275,18 @@ public class FileMultipartCompletionService {
         return OffsetDateTime.now(ZoneOffset.UTC);
     }
 
+    /**
+     * 在数据库短事务中取得的合并上下文，供事务外存储合并及后续租约校验使用。
+     * @param fileId 文件 ID
+     * @param uploadId 平台上传会话 ID
+     * @param objectKey 对象在存储桶内的键，不包含访问凭据
+     * @param storageUploadId 平台生成的暂存分片会话标识，用于组织分片对象键
+     * @param fileSize 文件字节数
+     * @param partCount 上传会话登记的分片总数
+     * @param owner 当前资源或处理租约的持有者
+     * @param completed 当前上传是否已完成合并
+     * @param inProgress 是否已有其他持有者正在合并分片
+     */
     private record CompletionContext(
             String fileId,
             String uploadId,

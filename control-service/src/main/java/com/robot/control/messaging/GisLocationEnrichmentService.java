@@ -25,10 +25,25 @@ public class GisLocationEnrichmentService {
 
     private final ControlManagementClient managementClient;
     private final RobotRegistryService robotRegistryService;
+    /**
+     * 以设备序列号去重的待转换位置；同时作为 pending、results 和 failedMaps 的共享监视锁。
+     */
     private final Map<String, PendingLocation> pending = new LinkedHashMap<>();
+    /**
+     * 位置转换结果缓存，按访问顺序保留；在 pending 锁内访问。
+     */
     private final Map<String, CachedResult> results = new LinkedHashMap<>(16, 0.75f, true);
+    /**
+     * 近期转换失败的地图及重试截止时刻，单位纳秒；在 pending 锁内访问。
+     */
     private final Map<String, Long> failedMaps = new LinkedHashMap<>(16, 0.75f, true);
 
+    /**
+     * 初始化 GisLocationEnrichmentService，保存所需依赖及初始运行状态。
+     *
+     * @param managementClient 访问 Management 档案与权限接口的客户端
+     * @param robotRegistryService 维护机器人运行状态与在线事实的注册服务
+     */
     public GisLocationEnrichmentService(
             ControlManagementClient managementClient,
             RobotRegistryService robotRegistryService) {
@@ -36,7 +51,12 @@ public class GisLocationEnrichmentService {
         this.robotRegistryService = robotRegistryService;
     }
 
-    /** 观察最新定位；边缘端已有合法经纬度时仅使旧换算请求失效。 */
+    /**
+     * 观察最新定位；边缘端已有合法经纬度时仅使旧换算请求失效。
+     *
+     * @param serialNumber 机器人序列号
+     * @param location 最后接受的边缘定位；与 robot.state.location 使用同一份注册表事实
+     */
     public void observe(String serialNumber, Map<String, Object> location) {
         PendingLocation item;
         CachedResult cached;
@@ -82,6 +102,9 @@ public class GisLocationEnrichmentService {
         }
     }
 
+    /**
+     * 取出去重位置批次并查询管理端；写回前再次核对设备在线状态和当前位置，拒绝迟到转换覆盖新位置。
+     */
     @Scheduled(fixedDelay = 1000, scheduler = "gisTaskScheduler")
     void flush() {
         List<PendingLocation> batch = drainBatch().stream()
@@ -209,9 +232,26 @@ public class GisLocationEnrichmentService {
         return value == null || String.valueOf(value).isBlank() ? null : String.valueOf(value);
     }
 
+    /**
+     * 等待管理端转换的设备位置，保留地图及局部坐标。
+     *
+     * @param serialNumber 机器人序列号
+     * @param mapId 所属地图 ID
+     * @param x 地图局部坐标 X，单位遵循对应地图协议
+     * @param y 地图局部坐标 Y，单位遵循对应地图协议
+     */
     private record PendingLocation(String serialNumber, String mapId, Double x, Double y) {
     }
 
+    /**
+     * 缓存位置转换结果与有效期，避免重复管理端调用。
+     *
+     * @param location 最后接受的边缘定位；与 robot.state.location 使用同一份注册表事实
+     * @param longitude GIS 经度，未转换成功时可为空
+     * @param latitude GIS 纬度，未转换成功时可为空
+     * @param converted 坐标是否已成功转换为 GIS 经纬度
+     * @param expiresAtNanos 基于单调时钟的缓存过期时刻，单位纳秒
+     */
     private record CachedResult(
             PendingLocation location,
             Double longitude,

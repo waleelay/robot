@@ -41,11 +41,31 @@ public class TrajectoryCoordinator {
     private final EquipmentControlCommandPublisher commandPublisher;
     private final MediaWebSocketPublisher webSocketPublisher;
     private final TaskScheduler scheduler;
+    /**
+     * 以浏览器连接 ID 保存订阅目标；在协调器监视锁内更新。
+     */
     private final Map<String, Watch> watches = new HashMap<>();
+    /**
+     * 按机器人和工作流目标保存轨迹同步状态；在协调器监视锁内访问。
+     */
     private final Map<Target, Runner> runners = new HashMap<>();
+    /**
+     * 机器人最近明确上报的设备任务实例 ID，用于发现轨迹任务切换。
+     */
     private final Map<String, Long> taskIdsByRobot = new HashMap<>();
+    /**
+     * 以命令 ID 关联在途轨迹查询及其版本，拒绝迟到或不匹配响应。
+     */
     private final Map<String, Pending> pendingByCommand = new HashMap<>();
 
+    /**
+     * 初始化 TrajectoryCoordinator，保存所需依赖及初始运行状态。
+     *
+     * @param objectMapper JSON 编解码器
+     * @param commandPublisher 向设备发布统一控制 MQTT 指令的组件
+     * @param webSocketPublisher 向已连接客户端投递业务事件的组件
+     * @param scheduler 后台任务调度器
+     */
     public TrajectoryCoordinator(
             ObjectMapper objectMapper,
             EquipmentControlCommandPublisher commandPublisher,
@@ -57,20 +77,31 @@ public class TrajectoryCoordinator {
         this.scheduler = scheduler;
     }
 
-    /** 原子替换一个 WebSocket 会话当前观看的完整目标集合。 */
+    /**
+     * 原子替换一个 WebSocket 会话当前观看的完整目标集合。
+     *
+     * @param session WebSocket 会话
+     * @param value 浏览器提交的完整轨迹订阅目标集合
+     */
     public synchronized void sync(WebSocketSession session, Object value) {
         Set<Target> targets = parseTargets(value);
         Watch previous = watches.get(session.getId());
         Set<Target> added = new HashSet<>(targets);
-        if (previous != null) added.removeAll(previous.targets);
+        if (previous != null) {
+            added.removeAll(previous.targets);
+        }
         watches.put(session.getId(), new Watch(session, targets));
-        log.info("轨迹订阅已接受 protocol=websocket direction=入站 stage=订阅 outcome=已接受 entityType=轨迹 sessionId={} targetCount={} addedCount={}",
+        log.info("轨迹订阅已接受 协议=websocket 方向=入站 阶段=订阅 结果=已接受 业务类型=轨迹 会话标识={} 目标数量={} 新增数量={}",
                 session.getId(), targets.size(), added.size());
         reconcile();
         added.forEach(target -> restoreForNewWatcher(runners.get(target), session.getId()));
     }
 
-    /** WebSocket 断开后立即释放该会话的观看目标。 */
+    /**
+     * WebSocket 断开后立即释放该会话的观看目标。
+     *
+     * @param session WebSocket 会话
+     */
     public synchronized void removeSession(WebSocketSession session) {
         watches.remove(session.getId());
         runners.values().forEach(runner -> {
@@ -80,7 +111,12 @@ public class TrajectoryCoordinator {
         reconcile();
     }
 
-    /** 接收设备最近一次明确上报的 taskInstanceId。 */
+    /**
+     * 接收设备最近一次明确上报的 taskInstanceId。
+     *
+     * @param robotId 机器人 ID
+     * @param value 边缘状态中的当前设备任务实例标识
+     */
     public synchronized void observeTaskInstance(String robotId, Object value) {
         Long taskInstanceId = positiveLong(value);
         if (robotId == null || robotId.isBlank() || taskInstanceId == null
@@ -96,7 +132,9 @@ public class TrajectoryCoordinator {
                         runner.candidateTaskId = null;
                         return;
                     }
-                    if (runner.stopped) return;
+                    if (runner.stopped) {
+                        return;
+                    }
                     invalidate(runner);
                     runner.candidateTaskId = taskInstanceId;
                     runner.rejectedTaskId = null;
@@ -106,7 +144,12 @@ public class TrajectoryCoordinator {
                 });
     }
 
-    /** 接收 trajectory/snapshot 响应。 */
+    /**
+     * 接收 trajectory/snapshot 响应。
+     *
+     * @param topic MQTT 主题
+     * @param json MQTT 消息载荷
+     */
     public synchronized void handleSnapshot(String topic, String json) {
         try {
             String robotId = robotIdFromSnapshotTopic(topic);
@@ -114,7 +157,7 @@ public class TrajectoryCoordinator {
             String commandId = string(report.get("commandId"));
             Pending pending = pendingByCommand.get(commandId);
             if (pending == null || !pending.target.robotId().equals(robotId)) {
-                log.debug("轨迹响应已忽略 protocol=mqtt direction=入站 stage=匹配 outcome=丢弃 entityType=轨迹 robotId={} commandId={} reasonCode=命令标识不匹配",
+                log.debug("轨迹响应已忽略 协议=mqtt 方向=入站 阶段=匹配 结果=丢弃 业务类型=轨迹 机器人标识={} 命令标识={} 原因码=命令标识不匹配",
                         robotId, commandId);
                 return;
             }
@@ -122,14 +165,14 @@ public class TrajectoryCoordinator {
             if (runner == null || runner.version != pending.version || !commandId.equals(runner.pendingCommandId)
                     || !Objects.equals(positiveLong(report.get("taskInstanceId")), pending.taskInstanceId)
                     || !pending.format.equals(string(report.get("format")))) {
-                log.debug("轨迹响应已忽略 protocol=mqtt direction=入站 stage=匹配 outcome=丢弃 entityType=轨迹 robotId={} commandId={} workflowInstanceId={} reasonCode=响应过期或任务实例不匹配",
+                log.debug("轨迹响应已忽略 协议=mqtt 方向=入站 阶段=匹配 结果=丢弃 业务类型=轨迹 机器人标识={} 命令标识={} 工作流实例标识={} 原因码=响应过期或任务实例不匹配",
                         robotId, commandId, pending.target.workflowInstanceId());
                 return;
             }
             pendingByCommand.remove(commandId);
             runner.pendingCommandId = null;
             String status = string(report.get("status")).toLowerCase();
-            log.debug("轨迹响应已接受 protocol=mqtt direction=入站 stage=响应 outcome=已接受 entityType=轨迹 robotId={} commandId={} workflowInstanceId={} query={} status={}",
+            log.debug("轨迹响应已接受 协议=mqtt 方向=入站 阶段=响应 结果=已接受 业务类型=轨迹 机器人标识={} 命令标识={} 工作流实例标识={} 查询类型={} 状态={}",
                     robotId, commandId, pending.target.workflowInstanceId(), pending.query, status);
             if (runner.boundTaskId == null) {
                 handleProbe(runner, pending, status);
@@ -175,6 +218,9 @@ public class TrajectoryCoordinator {
         }
     }
 
+    /**
+     * 接收轨迹历史分段并恢复指定观看者；依据分页标志继续补拉，完成后切换摘要轮询。
+     */
     private void handleFull(Runner runner, Map<String, Object> report, Query query, boolean stopped) {
         Map<String, Object> summary = map(report.get("summary"));
         Double startTime = finiteDouble(summary.get("startTime"));
@@ -246,9 +292,15 @@ public class TrajectoryCoordinator {
     private void updateSummaryState(Runner runner, Map<String, Object> summary, Map<String, Object> currentPose) {
         Long total = nonNegativeLong(summary.get("totalPoints"));
         Double start = finiteDouble(summary.get("startTime"));
-        if (total != null) runner.totalPoints = total;
-        if (start != null) runner.startTime = start;
-        if (currentPose != null) runner.currentPose = currentPose;
+        if (total != null) {
+            runner.totalPoints = total;
+        }
+        if (start != null) {
+            runner.startTime = start;
+        }
+        if (currentPose != null) {
+            runner.currentPose = currentPose;
+        }
     }
 
     private void restartRestore(Runner runner) {
@@ -257,17 +309,23 @@ public class TrajectoryCoordinator {
     }
 
     private void retryFull(Runner runner, Query query) {
-        if (query == Query.RESTORE) resetRestore(runner);
+        if (query == Query.RESTORE) {
+            resetRestore(runner);
+        }
         schedule(runner, query, RETRY_MILLIS);
     }
 
     private void retry(Runner runner, Query query) {
-        if (query == Query.RESTORE) resetRestore(runner);
+        if (query == Query.RESTORE) {
+            resetRestore(runner);
+        }
         schedule(runner, query, RETRY_MILLIS);
     }
 
     private void stop(Runner runner) {
-        if (runner.stopped) return;
+        if (runner.stopped) {
+            return;
+        }
         runner.stopped = true;
         invalidate(runner);
         emit(runner, "STOPPED", null, null);
@@ -282,7 +340,7 @@ public class TrajectoryCoordinator {
             if (targets.size() == 1) {
                 desired.add(targets.iterator().next());
             } else {
-                log.warn("TRAJECTORY_WATCH_CONFLICT：同一机器人存在不同执行轮次，robotId={} targets={}", robotId, targets);
+                log.warn("轨迹订阅冲突（TRAJECTORY_WATCH_CONFLICT）：同一机器人存在不同执行轮次，机器人标识={} 目标集合={}", robotId, targets);
             }
         });
         new ArrayList<>(runners.entrySet()).forEach(entry -> {
@@ -292,27 +350,42 @@ public class TrajectoryCoordinator {
             }
         });
         desired.forEach(target -> {
-            if (runners.containsKey(target)) return;
+            if (runners.containsKey(target)) {
+                return;
+            }
             Runner runner = new Runner(target);
             runner.candidateTaskId = taskIdsByRobot.get(target.robotId());
             runners.put(target, runner);
-            if (runner.candidateTaskId != null) schedule(runner, Query.PROBE, 0);
+            if (runner.candidateTaskId != null) {
+                schedule(runner, Query.PROBE, 0);
+            }
         });
     }
 
     private void schedule(Runner runner, Query query, long delayMillis) {
-        if (runner.stopped || runners.get(runner.target) != runner) return;
-        if (runner.scheduled != null) runner.scheduled.cancel(false);
+        if (runner.stopped || runners.get(runner.target) != runner) {
+            return;
+        }
+        if (runner.scheduled != null) {
+            runner.scheduled.cancel(false);
+        }
         long version = runner.version;
         runner.scheduled = scheduler.schedule(() -> execute(runner.target, version, query),
                 Instant.now().plusMillis(delayMillis));
     }
 
+    /**
+     * 核对目标代次及在途命令后发起查询，登记响应关联和超时回调，防止同目标并发查询。
+     */
     private synchronized void execute(Target target, long version, Query query) {
         Runner runner = runners.get(target);
-        if (runner == null || runner.version != version || runner.stopped || runner.pendingCommandId != null) return;
+        if (runner == null || runner.version != version || runner.stopped || runner.pendingCommandId != null) {
+            return;
+        }
         Long taskInstanceId = query == Query.PROBE ? runner.candidateTaskId : runner.boundTaskId;
-        if (taskInstanceId == null || Objects.equals(taskInstanceId, runner.rejectedTaskId)) return;
+        if (taskInstanceId == null || Objects.equals(taskInstanceId, runner.rejectedTaskId)) {
+            return;
+        }
         String commandId = "trajectory-" + UUID.randomUUID();
         String format = query == Query.PROBE || query == Query.SUMMARY ? "summary" : "full";
         Map<String, Object> command = new LinkedHashMap<>();
@@ -330,12 +403,12 @@ public class TrajectoryCoordinator {
         pendingByCommand.put(commandId, pending);
         try {
             commandPublisher.publishTrajectoryQuery(target.robotId(), command);
-            log.debug("轨迹查询已发布 protocol=mqtt direction=出站 stage=请求 outcome=已发布 entityType=轨迹 robotId={} workflowInstanceId={} taskInstanceId={} commandId={} query={} format={}",
+            log.debug("轨迹查询已发布 协议=mqtt 方向=出站 阶段=请求 结果=已发布 业务类型=轨迹 机器人标识={} 工作流实例标识={} 任务实例标识={} 命令标识={} 查询类型={} 格式={}",
                     target.robotId(), target.workflowInstanceId(), taskInstanceId, commandId, query, format);
         } catch (RuntimeException exception) {
             pendingByCommand.remove(commandId);
             runner.pendingCommandId = null;
-            log.warn("发布轨迹查询失败，robotId={} workflowInstanceId={}", target.robotId(), target.workflowInstanceId(), exception);
+            log.warn("发布轨迹查询失败，机器人标识={} 工作流实例标识={}", target.robotId(), target.workflowInstanceId(), exception);
             retry(runner, query);
             return;
         }
@@ -344,11 +417,15 @@ public class TrajectoryCoordinator {
 
     private synchronized void timeout(String commandId) {
         Pending pending = pendingByCommand.remove(commandId);
-        if (pending == null) return;
+        if (pending == null) {
+            return;
+        }
         Runner runner = runners.get(pending.target);
-        if (runner == null || runner.version != pending.version || !commandId.equals(runner.pendingCommandId)) return;
+        if (runner == null || runner.version != pending.version || !commandId.equals(runner.pendingCommandId)) {
+            return;
+        }
         runner.pendingCommandId = null;
-        log.warn("轨迹查询响应超时 protocol=mqtt stage=响应 outcome=超时 entityType=轨迹 robotId={} workflowInstanceId={} taskInstanceId={} commandId={} query={} reasonCode=MQTT响应超时",
+        log.warn("轨迹查询响应超时 协议=mqtt 阶段=响应 结果=超时 业务类型=轨迹 机器人标识={} 工作流实例标识={} 任务实例标识={} 命令标识={} 查询类型={} 原因码=MQTT响应超时",
                 pending.target.robotId(), pending.target.workflowInstanceId(), pending.taskInstanceId,
                 commandId, pending.query);
         retry(runner, pending.query);
@@ -356,8 +433,12 @@ public class TrajectoryCoordinator {
 
     private void invalidate(Runner runner) {
         runner.version++;
-        if (runner.scheduled != null) runner.scheduled.cancel(false);
-        if (runner.pendingCommandId != null) pendingByCommand.remove(runner.pendingCommandId);
+        if (runner.scheduled != null) {
+            runner.scheduled.cancel(false);
+        }
+        if (runner.pendingCommandId != null) {
+            pendingByCommand.remove(runner.pendingCommandId);
+        }
         runner.pendingCommandId = null;
     }
 
@@ -370,7 +451,9 @@ public class TrajectoryCoordinator {
     }
 
     private void restoreForNewWatcher(Runner runner, String sessionId) {
-        if (runner == null || runner.boundTaskId == null || runner.stopped) return;
+        if (runner == null || runner.boundTaskId == null || runner.stopped) {
+            return;
+        }
         if (!runner.restoreSessions.isEmpty()) {
             runner.restoreSessions.add(sessionId);
             if (!runner.resetSent) {
@@ -404,11 +487,16 @@ public class TrajectoryCoordinator {
     private Set<String> watchingSessionIds(Target target) {
         Set<String> sessionIds = new HashSet<>();
         watches.forEach((sessionId, watch) -> {
-            if (watch.targets.contains(target) && watch.session.isOpen()) sessionIds.add(sessionId);
+            if (watch.targets.contains(target) && watch.session.isOpen()) {
+                sessionIds.add(sessionId);
+            }
         });
         return sessionIds;
     }
 
+    /**
+     * 按订阅版本恢复轨迹；核对待处理查询和当前目标，分段下发已有数据，防止迟到响应覆盖更新订阅。
+     */
     private void emitRestore(Runner runner, List<Map<String, Object>> points,
             Map<String, Object> currentPose, boolean hasMore) {
         TextMessage resetMessage = null;
@@ -417,16 +505,24 @@ public class TrajectoryCoordinator {
         List<Map<String, Object>> added = null;
         for (Watch watch : watches.values()) {
             String sessionId = watch.session.getId();
-            if (!watch.targets.contains(runner.target) || !watch.session.isOpen()) continue;
+            if (!watch.targets.contains(runner.target) || !watch.session.isOpen()) {
+                continue;
+            }
             if (runner.restoreSessions.contains(sessionId)) {
                 if (runner.resetPendingSessions.remove(sessionId)) {
-                    if (resetMessage == null) resetMessage = message(runner, "RESET", points, currentPose);
-                    if (resetMessage != null) send(watch.session, resetMessage);
+                    if (resetMessage == null) {
+                        resetMessage = message(runner, "RESET", points, currentPose);
+                    }
+                    if (resetMessage != null) {
+                        send(watch.session, resetMessage);
+                    }
                 } else {
                     if (restoreAppendMessage == null) {
                         restoreAppendMessage = message(runner, "APPEND", points, currentPose);
                     }
-                    if (restoreAppendMessage != null) send(watch.session, restoreAppendMessage);
+                    if (restoreAppendMessage != null) {
+                        send(watch.session, restoreAppendMessage);
+                    }
                 }
                 continue;
             }
@@ -440,7 +536,9 @@ public class TrajectoryCoordinator {
                 if (deltaAppendMessage == null) {
                     deltaAppendMessage = message(runner, "APPEND", added, currentPose);
                 }
-                if (deltaAppendMessage != null) send(watch.session, deltaAppendMessage);
+                if (deltaAppendMessage != null) {
+                    send(watch.session, deltaAppendMessage);
+                }
             }
         }
         if (!hasMore) {
@@ -452,18 +550,22 @@ public class TrajectoryCoordinator {
 
     private void emit(Runner runner, String action, Collection<Map<String, Object>> points, Map<String, Object> currentPose) {
         TextMessage message = message(runner, action, points, currentPose);
-        if (message == null) return;
+        if (message == null) {
+            return;
+        }
         for (Watch watch : watches.values()) {
-            if (!watch.targets.contains(runner.target) || !watch.session.isOpen()) continue;
+            if (!watch.targets.contains(runner.target) || !watch.session.isOpen()) {
+                continue;
+            }
             send(watch.session, message);
         }
         int pointCount = points == null ? 0 : points.size();
         if ("APPEND".equals(action)) {
-            log.debug("轨迹事件已尝试投递 protocol=websocket direction=出站 stage=投递 outcome=已尝试 entityType=轨迹 robotId={} workflowInstanceId={} action={} pointCount={} targetSessions={}",
+            log.debug("轨迹事件已尝试投递 协议=websocket 方向=出站 阶段=投递 结果=已尝试 业务类型=轨迹 机器人标识={} 工作流实例标识={} 动作={} 点位数={} 目标会话数={}",
                     runner.target.robotId(), runner.target.workflowInstanceId(), action, pointCount,
                     watchingSessionIds(runner.target).size());
         } else {
-            log.info("轨迹事件已尝试投递 protocol=websocket direction=出站 stage=投递 outcome=已尝试 entityType=轨迹 robotId={} workflowInstanceId={} action={} pointCount={} targetSessions={}",
+            log.info("轨迹事件已尝试投递 协议=websocket 方向=出站 阶段=投递 结果=已尝试 业务类型=轨迹 机器人标识={} 工作流实例标识={} 动作={} 点位数={} 目标会话数={}",
                     runner.target.robotId(), runner.target.workflowInstanceId(), action, pointCount,
                     watchingSessionIds(runner.target).size());
         }
@@ -475,8 +577,12 @@ public class TrajectoryCoordinator {
         data.put("robotId", runner.target.robotId());
         data.put("workflowInstanceId", runner.target.workflowInstanceId());
         data.put("action", action);
-        if (points != null) data.put("points", points);
-        if (currentPose != null) data.put("currentPose", currentPose);
+        if (points != null) {
+            data.put("points", points);
+        }
+        if (currentPose != null) {
+            data.put("currentPose", currentPose);
+        }
         Map<String, Object> event = Map.of(
                 "event", "robot.trajectory.changed",
                 "timestamp", DateTimeConfig.format(OffsetDateTime.now()),
@@ -484,7 +590,7 @@ public class TrajectoryCoordinator {
         try {
             return new TextMessage(objectMapper.writeValueAsString(event));
         } catch (Exception exception) {
-            log.warn("序列化轨迹事件失败，robotId={}", runner.target.robotId(), exception);
+            log.warn("序列化轨迹事件失败，机器人标识={}", runner.target.robotId(), exception);
             return null;
         }
     }
@@ -518,13 +624,17 @@ public class TrajectoryCoordinator {
     }
 
     private List<Map<String, Object>> absolutePoints(Object value, Double startTime) {
-        if (!(value instanceof Collection<?> collection) || startTime == null) return List.of();
+        if (!(value instanceof Collection<?> collection) || startTime == null) {
+            return List.of();
+        }
         List<Map<String, Object>> result = new ArrayList<>();
         for (Object item : collection) {
             Map<String, Object> point = map(item);
             Double t = finiteDouble(point.get("t"));
             Map<String, Object> timed = timedPose(point, t == null ? null : startTime + t);
-            if (timed != null) result.add(timed);
+            if (timed != null) {
+                result.add(timed);
+            }
         }
         return result;
     }
@@ -533,13 +643,17 @@ public class TrajectoryCoordinator {
         Map<String, Object> pose = map(value);
         Double x = finiteDouble(pose.get("x"));
         Double y = finiteDouble(pose.get("y"));
-        if (timestamp == null || x == null || y == null) return null;
+        if (timestamp == null || x == null || y == null) {
+            return null;
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("timestamp", timestamp);
         result.put("x", x);
         result.put("y", y);
         Double yaw = finiteDouble(pose.get("yaw"));
-        if (yaw != null) result.put("yaw", yaw);
+        if (yaw != null) {
+            result.put("yaw", yaw);
+        }
         return result;
     }
 
@@ -596,28 +710,99 @@ public class TrajectoryCoordinator {
         }
     }
 
-    private enum Query { PROBE, RESTORE, SUMMARY, GAP }
+    /** 轨迹同步查询阶段：探测、恢复、摘要以及缺口补拉。 */
+    private enum Query { /** 探测当前轨迹版本，决定是否需要同步。 */ PROBE, /** 恢复订阅时拉取已有轨迹。 */ RESTORE, /** 查询轨迹摘要，确定可用段范围。 */ SUMMARY, /** 补拉已识别的轨迹缺段。 */ GAP }
 
+    /**
+     * 以机器人和工作流实例共同标识一条轨迹同步目标。
+     *
+     * @param robotId 机器人 ID
+     * @param workflowInstanceId 工作流运行实例 ID
+     */
     private record Target(String robotId, String workflowInstanceId) {}
+    /**
+     * 浏览器会话及其当前订阅的轨迹目标集合。
+     *
+     * @param session WebSocket 会话
+     * @param targets 本连接订阅的轨迹目标集合
+     */
     private record Watch(WebSocketSession session, Set<Target> targets) {}
+    /**
+     * 等待响应的轨迹查询上下文，保留目标、版本、格式及查询阶段。
+     *
+     * @param target 当前需要跟踪的机器人及工作流实例
+     * @param version 当前快照或请求版本，用于识别更新先后
+     * @param taskInstanceId 设备任务实例 ID
+     * @param format 内容或导出文件格式
+     * @param query 轨迹查询类型，区分探测、恢复、摘要及缺段补拉
+     */
     private record Pending(Target target, long version, Long taskInstanceId, String format, Query query) {}
 
+    /** 单条轨迹目标的同步运行状态，管理版本、恢复、超时和计划任务。 */
     private static final class Runner {
+        /**
+         * 本同步器负责的机器人及工作流目标。
+         */
         private final Target target;
+        /**
+         * 同步代次，任务切换时递增，旧响应和旧调度任务不得继续更新。
+         */
         private long version;
+        /**
+         * 正在探测、尚未确认绑定的设备任务实例 ID。
+         */
         private Long candidateTaskId;
+        /**
+         * 已探测且不适合绑定的设备任务实例 ID，避免重复探测。
+         */
         private Long rejectedTaskId;
+        /**
+         * 当前已确认绑定的设备任务实例 ID。
+         */
         private Long boundTaskId;
+        /**
+         * 轨迹起始 Unix 时间，单位秒，用于还原相对点时间。
+         */
         private Double startTime;
+        /**
+         * 最近摘要报告的轨迹总点数。
+         */
         private Long totalPoints;
+        /**
+         * 已处理轨迹点的最新绝对时间，单位秒。
+         */
         private Double lastTimestamp;
+        /**
+         * 最近摘要中的当前位置，已补充绝对时间。
+         */
         private Map<String, Object> currentPose;
+        /**
+         * 本轮恢复的时间边界，单位秒，用于区分历史恢复与实时追加。
+         */
         private Double restoreCutoff;
+        /**
+         * 当前仍等待历史轨迹恢复的浏览器连接 ID。
+         */
         private final Set<String> restoreSessions = new HashSet<>();
+        /**
+         * 恢复追加前仍需发送重置事件的连接 ID。
+         */
         private final Set<String> resetPendingSessions = new HashSet<>();
+        /**
+         * 本轮恢复是否已经发送重置事件。
+         */
         private boolean resetSent;
+        /**
+         * 当前目标是否已停止同步，停止后不再发起查询。
+         */
         private boolean stopped;
+        /**
+         * 当前等待响应的查询命令 ID，无在途请求时为空。
+         */
         private String pendingCommandId;
+        /**
+         * 下一次同步任务句柄，目标失效或重新调度时取消。
+         */
         private ScheduledFuture<?> scheduled;
 
         private Runner(Target target) {

@@ -11,6 +11,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import java.util.Map;
 
+/** 验证下游认证 Header 的保留、过滤及用户上下文传递。 */
 class RequestAuthorizationHeadersTest {
 
     private final RequestAuthorizationHeaders requestAuthorizationHeaders = new RequestAuthorizationHeaders();

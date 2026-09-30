@@ -16,6 +16,11 @@ public class MediaWebSocketHandler extends TextWebSocketHandler {
 
     private final MediaWebSocketPublisher publisher;
 
+    /**
+     * 初始化 MediaWebSocketHandler，保存所需依赖及初始运行状态。
+     *
+     * @param publisher 向目标浏览器或身份分组投递消息的回调
+     */
     public MediaWebSocketHandler(MediaWebSocketPublisher publisher) {
         this.publisher = publisher;
     }

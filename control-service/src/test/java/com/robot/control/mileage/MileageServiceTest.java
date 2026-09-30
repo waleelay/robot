@@ -9,13 +9,13 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
+/** 验证里程去重、持久化、异常增量和汇总行为。 */
 class MileageServiceTest {
 
     private MileageService service;
@@ -34,14 +34,14 @@ class MileageServiceTest {
     @Test
     void establishesBaselineAndAccumulatesDelta() {
         assertThat(record("robot-1", "m1", 0, "5578.563", "397.672").quality()).isEqualTo("BASELINE");
-        assertThat(summary("robot-1").get("totalMeters")).isNull();
+        assertThat(summary("robot-1").totalMeters()).isNull();
 
         assertThat(record("robot-1", "m2", 10, "5583.563", "402.672").deltaMeters())
                 .isEqualByComparingTo("5.000");
 
-        Map<String, Object> summary = summary("robot-1");
-        assertThat((BigDecimal) summary.get("totalMeters")).isEqualByComparingTo("5.000");
-        assertThat(summary.get("sampleCount")).isEqualTo(1L);
+        MileageSummaryResponse summary = summary("robot-1");
+        assertThat(summary.totalMeters()).isEqualByComparingTo("5.000");
+        assertThat(summary.sampleCount()).isEqualTo(1L);
     }
 
     @Test
@@ -51,7 +51,7 @@ class MileageServiceTest {
 
         assertThat(record("robot-1", "m2", 10, "105", "25").accepted()).isFalse();
         assertThat(record("robot-1", "old", 5, "103", "23").accepted()).isFalse();
-        assertThat((BigDecimal) summary("robot-1").get("totalMeters")).isEqualByComparingTo("5.000");
+        assertThat(summary("robot-1").totalMeters()).isEqualByComparingTo("5.000");
     }
 
     @Test
@@ -60,13 +60,13 @@ class MileageServiceTest {
         service = newService();
         service.initializeSchema();
         record("robot-total", "m2", 10, "103", "1");
-        assertThat((BigDecimal) summary("robot-total").get("totalMeters")).isEqualByComparingTo("3.000");
+        assertThat(summary("robot-total").totalMeters()).isEqualByComparingTo("3.000");
 
         record("robot-current", "c1", 0, null, "30");
         record("robot-current", "c2", 10, null, "35");
         assertThat(record("robot-current", "c3", 20, null, "2").quality()).isEqualTo("ESTIMATED");
-        Map<String, Object> current = summary("robot-current");
-        assertThat((BigDecimal) current.get("totalMeters")).isEqualByComparingTo("7.000");
+        MileageSummaryResponse current = summary("robot-current");
+        assertThat(current.totalMeters()).isEqualByComparingTo("7.000");
     }
 
     @Test
@@ -75,17 +75,17 @@ class MileageServiceTest {
 
         assertThat(record("robot-1", "m2", 10, "90", "1").quality()).isEqualTo("RESET");
         assertThat(record("robot-1", "m3", 11, "190", "101").quality()).isEqualTo("SUSPECT");
-        assertThat(summary("robot-1").get("totalMeters")).isNull();
+        assertThat(summary("robot-1").totalMeters()).isNull();
     }
 
     @Test
     void keepsLegacyBucketTotal() {
         insertLegacyBucket("legacy-1", LocalDateTime.of(2026, 8, 14, 10, 0), "5.000", 2);
 
-        Map<String, Object> summary = summary("legacy-1");
+        MileageSummaryResponse summary = summary("legacy-1");
 
-        assertThat((BigDecimal) summary.get("totalMeters")).isEqualByComparingTo("5.000");
-        assertThat(summary.get("sampleCount")).isEqualTo(2L);
+        assertThat(summary.totalMeters()).isEqualByComparingTo("5.000");
+        assertThat(summary.sampleCount()).isEqualTo(2L);
     }
 
     @Test
@@ -94,10 +94,10 @@ class MileageServiceTest {
         insertLegacyBucket("mixed-1", LocalDateTime.of(2026, 8, 14, 10, 0), "5.000", 1);
         recordAt("mixed-1", "m2", LocalDateTime.of(2026, 8, 14, 10, 0, 10), "103", "23");
 
-        Map<String, Object> summary = summary("mixed-1");
+        MileageSummaryResponse summary = summary("mixed-1");
 
-        assertThat((BigDecimal) summary.get("totalMeters")).isEqualByComparingTo("8.000");
-        assertThat(summary.get("sampleCount")).isEqualTo(2L);
+        assertThat(summary.totalMeters()).isEqualByComparingTo("8.000");
+        assertThat(summary.sampleCount()).isEqualTo(2L);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
                         + "WHERE TABLE_NAME LIKE 'CONTROL_DEVICE_MILEAGE%'",
@@ -152,7 +152,7 @@ class MileageServiceTest {
                 robotId, bucketTime, new BigDecimal(mileage), samples, bucketTime);
     }
 
-    private Map<String, Object> summary(String robotId) {
+    private MileageSummaryResponse summary(String robotId) {
         return service.summary(
                 LocalDateTime.of(2026, 8, 14, 0, 0),
                 LocalDateTime.of(2026, 8, 14, 23, 59, 59),

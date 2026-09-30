@@ -49,6 +49,7 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.data.domain.Pageable;
 import org.mockito.ArgumentCaptor;
 
+/** 验证会话内对讲占用的获取、冲突处理与释放。 */
 class VideoSessionServiceIntercomOccupancyTest {
 
     private final VideoSessionRepository repository = mock(VideoSessionRepository.class);
@@ -65,6 +66,7 @@ class VideoSessionServiceIntercomOccupancyTest {
     private VideoSessionService service;
     private VideoSession target;
 
+    /** 构造对讲租约与轨道依赖，所有外部调用使用可控替身以验证同会话并发占用。 */
     @BeforeEach
     void setUp() {
         service = new VideoSessionService(

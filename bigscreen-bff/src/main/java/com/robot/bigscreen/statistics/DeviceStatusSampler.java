@@ -16,9 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +25,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 后台定时采样 Control Service 设备注册表（在线/离线状态由 {@code eiop/v1/edge/+/status}
+ * 后台定时采样 控制服务 设备注册表（在线/离线状态由 {@code eiop/v1/edge/+/status}
  * MQTT 上报维护，心跳超时置离线）。注册表接口免认证，采样不依赖用户 token，
  * 提供真正的无人值守后台采样。按天累计各设备运行/离线/故障计数与首末采样时间戳。
  */
@@ -42,9 +40,22 @@ public class DeviceStatusSampler {
     private final ConcurrentHashMap<String, ConcurrentHashMap<String, DaySample>> samples = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
     private final PanoramaCenterClient centerClient;
+    /**
+     * 设备状态按日采样文件的持久化目录。
+     */
     private final Path storageDir;
+    /**
+     * 历史采样文件和内存聚合保留天数。
+     */
     private final int retentionDays;
 
+    /**
+     * 初始化 DeviceStatusSampler，保存所需依赖及初始运行状态。
+     * @param objectMapper JSON 编解码器
+     * @param centerClient 调用下游设备、任务、地图、告警和里程接口，供全景聚合使用。
+     * @param storageDir 设备状态按日采样文件的本地存储目录
+     * @param retentionDays 设备按日采样记录的保留天数
+     */
     public DeviceStatusSampler(
             ObjectMapper objectMapper,
             PanoramaCenterClient centerClient,
@@ -57,6 +68,9 @@ public class DeviceStatusSampler {
         load();
     }
 
+    /**
+     * 采集 Control 当前在线、离线和故障状态，按时间窗口归档供运行时长估算。
+     */
     @Scheduled(fixedDelayString = "${statistics.device-status.sample-interval-ms:300000}")
     public void sample() {
         try {
@@ -82,7 +96,12 @@ public class DeviceStatusSampler {
 
     /**
      * 返回设备在统计周期内各状态累计采样次数与采样跨度（秒）。
-     * 返回 {@code long[4]} = {online, offline, fault, spanSeconds}。
+     *  返回 {@code long[4]} = {online, offline, fault, spanSeconds}。
+     *
+     * @param serial 装备序列号
+     * @param rangeStart 统计窗口开始时间
+     * @param rangeEnd 统计窗口结束时间
+     * @return 依次为在线、离线、故障采样数及采样跨度秒数的数组
      */
     public long[] countsInRange(String serial, LocalDateTime rangeStart, LocalDateTime rangeEnd) {
         long on = 0;
@@ -113,7 +132,7 @@ public class DeviceStatusSampler {
     }
 
     /**
-     * 按设备注册表快照判定状态：offline -> 离线；online 且健康状态异常 -> 故障；否则 -> 运行。
+     * 按当前兼容规则分类：明确 offline 为离线，其余记录健康状态异常为故障，否则计为运行；不要求状态值必须为 online。
      */
     private String classify(Map<String, Object> record) {
         String status = firstString(record, "status");
@@ -161,10 +180,13 @@ public class DeviceStatusSampler {
             objectMapper.writeValue(temp.toFile(), dump);
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException ex) {
-            log.warn("设备状态采样持久化失败 day={}", day, ex);
+            log.warn("设备状态采样持久化失败 日期={}", day, ex);
         }
     }
 
+    /**
+     * 读取本地采样历史并校验记录格式，跳过不可用条目且按保留窗口收敛，避免坏记录阻断启动。
+     */
     private void load() {
         try {
             if (!Files.isDirectory(storageDir)) {
@@ -228,12 +250,31 @@ public class DeviceStatusSampler {
         return value == null ? null : String.valueOf(value);
     }
 
+    /** 一天内设备在线和故障采样的累计状态，用于统计时长估算。 */
     private static final class DaySample {
+        /**
+         * 本日首次采样的系统时间戳，单位毫秒；未采样时为 Long.MAX_VALUE。
+         */
         private volatile long firstTs = Long.MAX_VALUE;
+        /**
+         * 本日末次采样的系统时间戳，单位毫秒；未采样时为 Long.MIN_VALUE。
+         */
         private volatile long lastTs = Long.MIN_VALUE;
+        /**
+         * 首次取得的设备类型，用于后续按类型统计。
+         */
         private volatile String type;
+        /**
+         * 本日归为运行状态的采样次数，不是直接累计的运行秒数。
+         */
         private volatile int online;
+        /**
+         * 本日归为离线状态的采样次数。
+         */
         private volatile int offline;
+        /**
+         * 本日归为故障状态的采样次数。
+         */
         private volatile int fault;
 
         private synchronized void record(long sampledAt, String status, String type) {

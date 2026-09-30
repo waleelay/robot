@@ -21,7 +21,9 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 
+/** 验证任务失效通知的合并、重新调度和运行中脏标记处理。 */
 class PanoramaTaskEventRefresherTest {
+    /** 提供可手动触发的调度任务及服务替身，验证任务刷新时序。 */
     private static class Fixture {
         final PanoramaService service = mock(PanoramaService.class);
         final TaskScheduler scheduler = mock(TaskScheduler.class);
@@ -58,7 +60,7 @@ class PanoramaTaskEventRefresherTest {
     void debouncesChangesAndDoesNotNotifyForIdenticalSnapshots() throws Exception {
         Fixture f = new Fixture();
         Map<String, Object> task = Map.of("taskId", 1L, "executionStatus", "RUNNING");
-        when(f.service.taskEventSnapshot()).thenReturn(snapshot(List.of(task)), snapshot(List.of(task)), snapshot(List.of()));
+        when(f.service.taskEventSnapshot()).thenReturn(snapshot(List.of(task))).thenReturn(snapshot(List.of(task))).thenReturn(snapshot(List.of()));
         Instant requestedAt = Instant.now();
         f.request(true);
         assertThat(Duration.between(requestedAt, f.due.getValue()).toMillis()).isBetween(0L, 250L);
@@ -78,9 +80,7 @@ class PanoramaTaskEventRefresherTest {
         Fixture f = new Fixture();
         Map<String, Object> waiting = Map.of("taskId", 1L, "executionStatus", "WAITING");
         Map<String, Object> other = Map.of("taskId", 2L, "executionStatus", "RUNNING");
-        when(f.service.taskEventSnapshot()).thenReturn(
-                snapshot(List.of(waiting)), snapshot(List.of(waiting, other)),
-                snapshot(List.of(Map.of("taskId", 1L, "executionStatus", "RUNNING"), other)));
+        when(f.service.taskEventSnapshot()).thenReturn(snapshot(List.of(waiting))).thenReturn(snapshot(List.of(waiting, other))).thenReturn(snapshot(List.of(Map.of("taskId", 1L, "executionStatus", "RUNNING"), other)));
         f.request(true);
         f.run();
         f.run();
@@ -97,7 +97,9 @@ class PanoramaTaskEventRefresherTest {
         Instant firstRefreshAt = Instant.now();
         f.run();
         assertThat(Duration.between(firstRefreshAt, f.due.getValue()).toMillis()).isBetween(100L, 350L);
-        for (int i = 1; i < 5; i++) f.run();
+        for (int i = 1; i < 5; i++) {
+            f.run();
+        }
         verify(f.service, times(5)).taskEventSnapshot();
         assertThat(f.jobs.getAllValues()).hasSize(5);
         assertThat(f.notifications()).isEqualTo(1);
@@ -111,7 +113,7 @@ class PanoramaTaskEventRefresherTest {
     void instanceFailurePreservesCardsAndStillNotifiesChangedPlans() {
         Fixture f = new Fixture();
         Map<String, Object> task = Map.of("taskId", 1L, "executionStatus", "RUNNING");
-        when(f.service.taskEventSnapshot()).thenReturn(snapshot(List.of(task)), Map.of(
+        when(f.service.taskEventSnapshot()).thenReturn(snapshot(List.of(task))).thenReturn(Map.of(
                 "plans", List.of(Map.of("id", 1L, "planName", "new")), "items", List.of(), "tasksComplete", false));
         f.request(false);
         f.run();
@@ -125,8 +127,7 @@ class PanoramaTaskEventRefresherTest {
     @Test
     void firstCompleteSnapshotAfterFailureStillSendsCollection() throws Exception {
         Fixture f = new Fixture();
-        when(f.service.taskEventSnapshot()).thenReturn(
-                Map.of("plans", List.of(), "items", List.of(), "tasksComplete", false), snapshot(List.of()));
+        when(f.service.taskEventSnapshot()).thenReturn(Map.of("plans", List.of(), "items", List.of(), "tasksComplete", false)).thenReturn(snapshot(List.of()));
         f.request(false);
         f.run();
         assertThat(new ObjectMapper().readTree(f.events.get(0)).path("data").has("taskIds")).isFalse();

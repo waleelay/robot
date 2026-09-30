@@ -13,6 +13,12 @@ public class FixedCameraIngressPersistenceExceptionClassifier {
 
     private static final int MAX_NODES = 64;
 
+    /**
+     * 沿异常原因链识别锁竞争、依赖不可用和内部失败，避免把不可重试错误误报为繁忙。
+     *
+     * @param failure 本次操作的失败原因
+     * @return 持久化异常所属处理类别
+     */
     public Classification classify(Throwable failure) {
         boolean connectionFailure = false;
         boolean integrityOrSyntaxFailure = false;
@@ -51,9 +57,19 @@ public class FixedCameraIngressPersistenceExceptionClassifier {
         return Classification.INTERNAL;
     }
 
+    /** 将持久化异常区分为锁竞争、存储不可用和内部错误。 */
     public enum Classification {
+        /**
+         * 锁竞争或并发占用造成的可重试冲突。
+         */
         BUSY,
+        /**
+         * 数据库连接或暂时性基础设施故障。
+         */
         UNAVAILABLE,
+        /**
+         * 无法归为可重试占用或依赖不可用的内部错误。
+         */
         INTERNAL
     }
 }

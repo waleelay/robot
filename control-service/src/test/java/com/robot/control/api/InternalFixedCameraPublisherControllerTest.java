@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+/** 验证固定摄像头发布模式切换及静默请求的内部入口。 */
 class InternalFixedCameraPublisherControllerTest {
 
     private final FixedCameraPublisherLifecycleService service = mock(FixedCameraPublisherLifecycleService.class);

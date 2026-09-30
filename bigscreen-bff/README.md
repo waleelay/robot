@@ -4,6 +4,10 @@
 
 接口权威定义见 [大屏 BFF 接口文档](../docs/03-接口与协议/大屏BFF/大屏BFF接口文档.md)。
 
+自有接口契约见 [OpenAPI](../quality/openapi/bff.json)。`BFF_OPENAPI_ENABLED` 默认 `false`，受控开发环境开启后通过 `/v3/api-docs` 导出；没有 Swagger UI。通配代理在契约扩展中引用实际下游，Management 完整导出物的缺口见[整改台账](../docs/02-设计/工程规范/存量规范整改台账-20260929.md)。
+
+统计查询使用 4 个线程、64 个排队槽位，饱和或停机时返回 503，调用方稍后重试。代理日志仅记录目标路由，省略查询串及 URL 用户信息。
+
 ## 1. 启动、构建与测试
 
 ```bash
@@ -85,6 +89,9 @@ RTMP 摄像头不会进入 Gateway 目录。快照每 30 秒刷新一次，同�
 
 ## 5. 配置
 
+下游 HTTP/WebSocket 地址由 `DownstreamServiceProperties` 统一绑定；类名调整后仍使用
+原有 `center.*` 配置键和 `CENTER_*` 环境变量。
+
 | 环境变量 | 说明 |
 | --- | --- |
 | `BIGSCREEN_BFF_PORT` | HTTP 端口 |
@@ -93,6 +100,7 @@ RTMP 摄像头不会进入 Gateway 目录。快照每 30 秒刷新一次，同�
 | `CENTER_EIOP_CONTROL_BASE_URL` | EIOP 控制端地址，供全景聚合内部查询设备实时状态；BFF 未对外注册 `/api/v1/control/**` 透明代理 |
 | `CENTER_MEDIA_BASE_URL` | Media 地址 |
 | `CENTER_CONTROL_WS_URL` | Control WebSocket 地址 |
+| `CENTER_FIELD_CALL_WS_URL` | 现场呼叫 WebSocket 地址 |
 | `BIGSCREEN_WS_AUTHORIZATION_MAX_STALENESS_MS` | WebSocket 授权快照最大陈旧时间，默认及代码硬上限 300000；缩短前必须按最大并发身份数重新核算授权查询容量 |
 | `BIGSCREEN_WS_AUTHORIZATION_CHECK_INTERVAL_MS` | Token 和授权快照检查周期，默认 1000 |
 | `BIGSCREEN_WS_AUTHORIZATION_LOAD_TIMEOUT_MS` | 单次完整授权加载总时限，默认 8000 |

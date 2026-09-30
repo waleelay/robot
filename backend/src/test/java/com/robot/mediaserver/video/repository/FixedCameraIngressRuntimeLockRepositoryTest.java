@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+/** 验证 Ingress 数据库锁获取、超时设置和连接状态恢复。 */
 class FixedCameraIngressRuntimeLockRepositoryTest {
 
     private final DataSource dataSource = mock(DataSource.class);

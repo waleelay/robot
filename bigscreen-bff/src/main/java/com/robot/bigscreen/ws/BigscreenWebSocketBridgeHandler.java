@@ -3,7 +3,7 @@ package com.robot.bigscreen.ws;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.auth.AuthenticatedRequestHeaders;
-import com.robot.bigscreen.config.CenterServiceProperties;
+import com.robot.bigscreen.config.DownstreamServiceProperties;
 import com.robot.bigscreen.config.WebSocketConfig;
 import com.robot.bigscreen.fixedcamera.FixedCameraCatalogLeaseClient;
 import com.robot.bigscreen.panorama.StatsPart;
@@ -49,6 +49,7 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import org.springframework.web.util.UriComponentsBuilder;
 
+/** 维护浏览器与下游实时连接，并处理授权刷新、重连和会话释放。 */
 @Component
 public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
@@ -76,7 +77,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private static final AtomicInteger AUTHORIZATION_THREAD_SEQUENCE = new AtomicInteger();
     private static final AtomicInteger CENTER_CONNECTION_THREAD_SEQUENCE = new AtomicInteger();
 
-    private final CenterServiceProperties properties;
+    private final DownstreamServiceProperties properties;
     private final PanoramaWebSocketEventAdapter eventAdapter;
     private final PanoramaLocationEventThrottler locationEventThrottler;
     private final PanoramaStatsEventRefresher statsEventRefresher;
@@ -88,41 +89,106 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final StandardWebSocketClient webSocketClient;
     private final ExecutorService centerConnectionExecutor;
+    /**
+     * 浏览器连接 ID 到 Control 上游连接的映射，浏览器退出时同步关闭上游。
+     */
     private final Map<String, WebSocketSession> centerSessions = new ConcurrentHashMap<>();
+    /**
+     * 连接 ID 到认证身份分组键的映射，同时记录已预留的连接配额。
+     */
     private final Map<String, String> authorizationIdentityBySession = new ConcurrentHashMap<>();
+    /**
+     * 连接 ID 到组织配额分组键的映射。
+     */
     private final Map<String, String> authorizationOrganizationBySession = new ConcurrentHashMap<>();
+    /**
+     * 按认证身份共享的已加载授权快照，超过硬期限后停止业务投递。
+     */
     private final Map<String, AuthorizationSnapshot> authorizationSnapshotsByIdentity = new ConcurrentHashMap<>();
+    /**
+     * 同身份首次授权查询的共享 Future，避免多个连接重复请求 Management。
+     */
     private final Map<String, CompletableFuture<AuthorizationSnapshot>> authorizationInitialLoadsByIdentity =
             new ConcurrentHashMap<>();
+    /**
+     * 同身份正在进行的授权刷新标记，结束后移除。
+     */
     private final Map<String, CompletableFuture<Void>> authorizationRefreshesByIdentity = new ConcurrentHashMap<>();
+    /**
+     * 各身份授权刷新失败次数及下一次重试时间。
+     */
     private final Map<String, AuthorizationRetryState> authorizationRetryStates = new ConcurrentHashMap<>();
+    /**
+     * 已通知授权暂不可用的身份集合，用于避免重复状态通知。
+     */
     private final Set<String> authorizationUnavailableIdentities = ConcurrentHashMap.newKeySet();
+    /**
+     * 当前大屏浏览器连接集合，业务事件需逐连接核验有效授权。
+     */
     private final Set<WebSocketSession> browserSessions = ConcurrentHashMap.newKeySet();
+    /**
+     * 现场呼叫专用连接集合，按独立信令生命周期处理。
+     */
     private final Set<WebSocketSession> fieldCallSessions = ConcurrentHashMap.newKeySet();
+    /**
+     * 保护身份、组织和实例连接配额检查与预留的监视锁。
+     */
     private final Object sessionQuotaMonitor = new Object();
+    /**
+     * 有界授权刷新线程池，隔离 Management 阻塞调用；停止时关闭。
+     */
     private final ExecutorService authorizationRefreshExecutor = boundedExecutor(
             AUTHORIZATION_REFRESH_THREADS,
             AUTHORIZATION_REFRESH_QUEUE_CAPACITY,
             "大屏权限刷新-",
             AUTHORIZATION_THREAD_SEQUENCE);
 
+    /**
+     * 授权快照可接受的最大陈旧时间，单位毫秒。
+     */
     @Value("${bigscreen.websocket.authorization-max-staleness-ms:300000}")
     private long authorizationMaxStalenessMs = 300000L;
 
+    /**
+     * 初始授权加载允许等待的最长毫秒数。
+     */
     @Value("${bigscreen.websocket.initialization-wait-ms:15000}")
     private long initializationWaitMs = 15000L;
 
+    /**
+     * 同一认证身份允许同时预留的连接数。
+     */
     @Value("${bigscreen.websocket.max-sessions-per-identity:8}")
     private int maxSessionsPerIdentity = 8;
 
+    /**
+     * 同一组织允许同时预留的连接数。
+     */
     @Value("${bigscreen.websocket.max-sessions-per-organization:64}")
     private int maxSessionsPerOrganization = 64;
 
+    /**
+     * 本 BFF 实例允许同时预留的连接总数。
+     */
     @Value("${bigscreen.websocket.max-sessions-per-instance:64}")
     private int maxSessionsPerInstance = 64;
 
+    /**
+     * 初始化 BigscreenWebSocketBridgeHandler，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param eventAdapter 将下游实时消息转换为大屏事件，保持失效通知及资源标识语义。
+     * @param locationEventThrottler 按浏览器会话和机器人合并高频位置事件，每秒只下发最新位置。
+     * @param statsEventRefresher 对统计相关实时通知做合并刷新，并向浏览器推送最新结果。
+     * @param taskEventRefresher 收到管理端任务失效通知后，重新查询权威任务快照并推送变化项。
+     * @param alarmEventRefresher 查询普通告警变化及可处置工作流告警快照，并在人工任务未就绪时短时收敛。
+     * @param authenticatedRequestHeaders 根据已认证的用户与客户端身份生成可信下游请求头。
+     * @param authorizationService 查询和缓存用户可见设备范围，过滤实时通道中的资源事件。
+     * @param catalogLeaseClient 将当前用户已获授权的固定摄像头配置以短租约同步给 Control。
+     * @param objectMapper JSON 编解码器
+     */
     public BigscreenWebSocketBridgeHandler(
-            CenterServiceProperties properties,
+            DownstreamServiceProperties properties,
             PanoramaWebSocketEventAdapter eventAdapter,
             PanoramaLocationEventThrottler locationEventThrottler,
             PanoramaStatsEventRefresher statsEventRefresher,
@@ -173,6 +239,9 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 new ThreadPoolExecutor.AbortPolicy());
     }
 
+    /**
+     * 连接建立时先预留身份并加载有效授权，再接入上游和请求初始快照；授权或连接失败时收口预留状态。
+     */
     @Override
     public void afterConnectionEstablished(WebSocketSession browserSession) throws Exception {
         if (tokenExpired(browserSession, Instant.now())) {
@@ -188,7 +257,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             try {
                 connectCenter(browserSession);
             } catch (Exception exception) {
-                log.warn("现场 App WebSocket 上游连接失败，会话={} 异常={} 原因={}",
+                log.warn("现场应用 WebSocket 上游连接失败，会话={} 异常={} 原因={}",
                         browserSession.getId(), exception.getClass().getSimpleName(),
                         sanitizedConnectionFailureReason(exception));
                 browserSession.close(CloseStatus.SERVER_ERROR);
@@ -311,6 +380,9 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         cleanupBrowserSession(browserSession, status);
     }
 
+    /**
+     * 清除浏览器、授权和事件状态并关闭对应上游，最后一个同身份连接退出时释放目录租约。
+     */
     private void cleanupBrowserSession(WebSocketSession browserSession, CloseStatus status) {
         browserSessions.remove(browserSession);
         fieldCallSessions.remove(browserSession);
@@ -338,6 +410,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * 按每个浏览器连接的有效授权快照过滤事件，过期或不可用授权不投递业务消息。
+     *
+     * @param payload 消息载荷
+     */
     public void broadcastToBrowserSessions(String payload) {
         for (WebSocketSession browserSession : browserSessions) {
             if (!browserSession.isOpen()) {
@@ -361,7 +438,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     @Scheduled(fixedDelayString = "${bigscreen.websocket.authorization-check-interval-ms:1000}")
     void refreshSessionAuthorizations() {
         Instant now = Instant.now();
-        // 现场 App 信令：JWT 只在握手时校验。通话可能超过 access_token 默认 5 分钟，
+        // 现场应用 信令：JWT 只在握手时校验。通话可能超过 access_token 默认 5 分钟，
         // 到期不主动踢断，否则 Control 会结束仍在 LiveKit 中的通话。
         for (WebSocketSession fieldCallSession : fieldCallSessions) {
             if (!fieldCallSession.isOpen()) {
@@ -403,6 +480,9 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * 同身份合并授权刷新，成功后更新快照并补发恢复通知；失败保留关闭投递的状态并安排有界退避。
+     */
     private void refreshAuthorizationAsync(String identity, WebSocketSession browserSession) {
         if (identity == null || browserSession == null) {
             return;
@@ -415,6 +495,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
             authorizationRefreshExecutor.execute(() -> {
                 try {
                     AuthorizationSnapshot snapshot = loadAuthorizationSnapshot(browserSession);
+                    // 远程查询期间最后一个连接可能已关闭，迟到结果不得重新激活该身份。
                     if (sessionsForIdentity(identity).isEmpty()) {
                         authorizationSnapshotsByIdentity.remove(identity);
                         return;
@@ -437,11 +518,11 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                     }
                 } catch (RuntimeException exception) {
                     if (tokenExpired(browserSession, Instant.now()) || credentialRejected(exception)) {
-                        log.info("大屏 WebSocket Token 已失效，按登录凭证失效关闭会话，身份={}", identity);
+                        log.info("大屏 WebSocket 令牌已失效，按登录凭证失效关闭会话，身份={}", identity);
                         sessionsForIdentity(identity).forEach(this::closeForTokenExpiration);
                     } else {
                         recordAuthorizationRefreshFailure(identity);
-                        log.warn("刷新大屏 WebSocket 权限失败，保留连接并按 fail-closed 退避重试，身份={}",
+                        log.warn("刷新大屏 WebSocket 权限失败，保留连接、暂停业务收发并退避重试，身份={}",
                                 identity, exception);
                     }
                 } finally {
@@ -520,6 +601,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         return value == null || value.isBlank() ? null : value;
     }
 
+    /** 接收下游实时消息，经浏览器会话的授权和事件适配后转发。 */
     private class CenterToBrowserHandler extends TextWebSocketHandler {
 
         private final WebSocketSession browserSession;
@@ -722,6 +804,9 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 loadedAt.plusMillis(authorizationTtlMs()));
     }
 
+    /**
+     * 合并同身份首次授权查询；仅在连接预留仍有效时发布结果，避免连接已关闭后的迟到快照重新激活身份。
+     */
     private AuthorizationSnapshot initialAuthorizationSnapshot(
             String identity,
             WebSocketSession browserSession) {
@@ -773,17 +858,24 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     private boolean storeInitialSnapshotIfReserved(String identity, AuthorizationSnapshot snapshot) {
         synchronized (sessionQuotaMonitor) {
-            if (!authorizationIdentityBySession.containsValue(identity)) return false;
+            if (!authorizationIdentityBySession.containsValue(identity)) {
+                return false;
+            }
             authorizationSnapshotsByIdentity.put(identity, snapshot);
             return true;
         }
     }
 
+    /**
+     * 在同一监视锁内检查身份、组织及实例配额并预留连接，防止并发建连突破限制。
+     */
     private boolean reserveSession(WebSocketSession browserSession, String identity) {
         String organization = authorizationOrganization(browserSession, identity);
         synchronized (sessionQuotaMonitor) {
             String existing = authorizationIdentityBySession.get(browserSession.getId());
-            if (existing != null) return existing.equals(identity);
+            if (existing != null) {
+                return existing.equals(identity);
+            }
             long identitySessions = authorizationIdentityBySession.values().stream()
                     .filter(identity::equals)
                     .count();
@@ -862,7 +954,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         if (identity == null || !authorizationUnavailableIdentities.add(identity)) {
             return;
         }
-        log.warn("大屏 WebSocket 授权快照不可用，连接进入 fail-closed，身份={} 快照年龄毫秒={}",
+        log.warn("大屏 WebSocket 授权快照不可用，连接暂停业务收发，身份={} 快照年龄毫秒={}",
                 identity, snapshot == null ? -1 : snapshot.ageMillis(now));
         notifyAuthorizationAvailability(identity, false);
     }
@@ -948,7 +1040,9 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
     }
 
     private void removeUnusedRefreshState(String identity) {
-        if (identity == null || !sessionsForIdentity(identity).isEmpty()) return;
+        if (identity == null || !sessionsForIdentity(identity).isEmpty()) {
+            return;
+        }
         statsEventRefresher.remove(identity);
         taskEventRefresher.remove(identity);
         alarmEventRefresher.remove(identity);
@@ -956,11 +1050,15 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
 
     private void removeUnusedIdentity(String identity, WebSocketSession browserSession) {
         synchronized (sessionQuotaMonitor) {
-            if (identity == null || authorizationIdentityBySession.containsValue(identity)) return;
+            if (identity == null || authorizationIdentityBySession.containsValue(identity)) {
+                return;
+            }
             authorizationUnavailableIdentities.remove(identity);
             authorizationRetryStates.remove(identity);
             // remove 返回值同时作为并发关闭时的单次释放闸门。
-            if (authorizationSnapshotsByIdentity.remove(identity) == null) return;
+            if (authorizationSnapshotsByIdentity.remove(identity) == null) {
+                return;
+            }
         }
         releaseCatalogLease(browserSession);
     }
@@ -1028,7 +1126,9 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                     "timestamp", Instant.now().toString(),
                     "data", Map.of("available", available)));
             sessionsForIdentity(identity).forEach(session -> {
-                if (!session.isOpen()) return;
+                if (!session.isOpen()) {
+                    return;
+                }
                 try {
                     sendText(session, payload);
                 } catch (Exception exception) {
@@ -1044,7 +1144,7 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         try {
             browserSession.close(new CloseStatus(4001, "Token 已过期"));
         } catch (Exception closeException) {
-            log.debug("关闭 Token 已过期的大屏 WebSocket 会话失败，会话={}",
+            log.debug("关闭 令牌已过期的大屏 WebSocket 会话失败，会话={}",
                     browserSession.getId(), closeException);
         }
     }
@@ -1077,6 +1177,13 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
                 || status.getCode() == CloseStatus.GOING_AWAY.getCode();
     }
 
+    /**
+     * 带加载和过期时间的授权快照，供刷新及失效判断。
+     *
+     * @param resources 当前身份获准访问的机器人及摄像头集合
+     * @param loadedAt 授权资源远程查询完成的时间
+     * @param expiresAt 有效期截止时间
+     */
     private record AuthorizationSnapshot(
             BigscreenWebSocketAuthorizationService.AuthorizedResources resources,
             Instant loadedAt,
@@ -1095,6 +1202,12 @@ public class BigscreenWebSocketBridgeHandler extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * 授权查询的失败次数与下次重试时间。
+     *
+     * @param failures 连续失败次数，用于计算重试退避
+     * @param nextAttempt 允许下一次重试的最早时间
+     */
     private record AuthorizationRetryState(int failures, Instant nextAttempt) {
     }
 }

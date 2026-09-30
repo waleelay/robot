@@ -18,6 +18,9 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 @Component
 public class RequestAuthorizationHeaders {
 
+    /**
+     * 当前命令线程的握手认证头；处理完成后必须在 finally 清理，禁止跨用户复用。
+     */
     private static final ThreadLocal<Map<String, String>> WEBSOCKET_HEADERS = new ThreadLocal<>();
 
     /**
@@ -64,9 +67,9 @@ public class RequestAuthorizationHeaders {
     }
 
     /**
-     * 返回当前请求对应的缓存身份 key。
+     * 返回当前请求对应的缓存身份键。
      *
-     * @return 缓存身份 key
+     * @return 缓存身份键
      */
     public Optional<String> currentCacheKey() {
         Map<String, String> websocketHeaders = WEBSOCKET_HEADERS.get();

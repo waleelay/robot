@@ -15,6 +15,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+/** 验证固定摄像头发布模式变更中的停止和版本衔接。 */
 class FixedCameraPublisherLifecycleServiceTest {
 
     @Test

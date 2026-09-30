@@ -1,0 +1,20 @@
+{
+  "byRobot" : [ {
+    "hasData" : true,
+    "mileageMeters" : 12.5,
+    "robotId" : "robot-001",
+    "sampleCount" : 2
+  }, {
+    "hasData" : false,
+    "mileageMeters" : null,
+    "robotId" : "robot-empty",
+    "sampleCount" : 0
+  } ],
+  "endTime" : "2026-08-14 23:59:59",
+  "hasData" : true,
+  "sampleCount" : 2,
+  "startTime" : "2026-08-14 00:00:00",
+  "timezone" : "Asia/Shanghai",
+  "totalMeters" : 12.5,
+  "unit" : "m"
+}

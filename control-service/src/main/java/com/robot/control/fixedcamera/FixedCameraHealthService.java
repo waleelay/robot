@@ -33,19 +33,47 @@ public class FixedCameraHealthService {
     private final ObjectMapper objectMapper;
     private final MediaWebSocketPublisher webSocketPublisher;
     private final ControlVideoCommandService videoCommandService;
+    /**
+     * 按 Gateway ID 保存最近接受的状态、序列号及本地接收时间。
+     */
     private final Map<String, GatewayState> gateways = new ConcurrentHashMap<>();
+    /**
+     * 按摄像头 ID 保存最近接受的 RTSP 探测事实。
+     */
     private final Map<String, CameraState> cameras = new ConcurrentHashMap<>();
+    /**
+     * 网关恢复后是否仍需执行一次批量视频恢复，失败后保留重试意图。
+     */
     private final AtomicBoolean pendingGatewayRecovery = new AtomicBoolean();
+    /**
+     * 待重试恢复的摄像头 ID 集合，按视频源去重。
+     */
     private final Set<String> pendingCameraRecoveries = ConcurrentHashMap.newKeySet();
+    /**
+     * 下一次允许恢复重试的服务端时间戳，单位毫秒。
+     */
     private volatile long recoveryRetryAfterMillis;
     private ControlMediaServiceClient mediaServiceClient;
 
+    /**
+     * 网关健康状态转为离线的接收间隔阈值，单位秒。
+     */
     @Value("${control.fixed-camera-health.gateway-timeout-seconds:30}")
     private long gatewayTimeoutSeconds = 30;
 
+    /**
+     * 摄像头健康事实允许的最大陈旧时长，单位秒。
+     */
     @Value("${control.fixed-camera-health.camera-max-age-seconds:120}")
     private long cameraMaxAgeSeconds = 120;
 
+    /**
+     * 初始化 FixedCameraHealthService，保存所需依赖及初始运行状态。
+     *
+     * @param objectMapper JSON 编解码器
+     * @param webSocketPublisher 向已连接客户端投递业务事件的组件
+     * @param videoCommandService 控制侧视频操作编排服务。
+     */
     public FixedCameraHealthService(
             ObjectMapper objectMapper,
             MediaWebSocketPublisher webSocketPublisher,
@@ -60,6 +88,12 @@ public class FixedCameraHealthService {
         this.mediaServiceClient = mediaServiceClient;
     }
 
+    /**
+     * 合并 Gateway 健康上报，按序列号和接收时间维护有效事实。
+     *
+     * @param topic MQTT 主题
+     * @param payload 消息载荷
+     */
     public void handleGatewayStatus(String topic, byte[] payload) {
         String[] parts = topic == null ? new String[0] : topic.split("/");
         if (parts.length != 4 || !"gateway".equals(parts[0]) || !"fixed-camera".equals(parts[1])
@@ -72,7 +106,7 @@ public class FixedCameraHealthService {
             String topicGatewayId = parts[2];
             String payloadGatewayId = text(root, "gatewayId");
             if (!topicGatewayId.equals(payloadGatewayId)) {
-                log.warn("已拒绝网关 ID 与主题不一致的固定摄像头状态，主题网关={} 载荷网关={}",
+                log.warn("已拒绝网关标识 与主题不一致的固定摄像头状态，主题网关={} 载荷网关={}",
                         topicGatewayId, payloadGatewayId);
                 return;
             }
@@ -108,6 +142,12 @@ public class FixedCameraHealthService {
         }
     }
 
+    /**
+     * 合并摄像头码流健康上报，拒绝不属于当前 Gateway 或陈旧的状态。
+     *
+     * @param topic MQTT 主题
+     * @param payload 消息载荷
+     */
     public void handleCameraStatus(String topic, byte[] payload) {
         String[] parts = topic == null ? new String[0] : topic.split("/");
         if (parts.length != 6 || !"gateway".equals(parts[0]) || !"fixed-camera".equals(parts[1])
@@ -120,7 +160,7 @@ public class FixedCameraHealthService {
             String topicGatewayId = parts[2];
             String topicCameraId = parts[4];
             if (!topicGatewayId.equals(text(root, "gatewayId")) || !topicCameraId.equals(text(root, "cameraId"))) {
-                log.warn("已拒绝摄像头或网关 ID 与主题不一致的健康消息，主题={}", topic);
+                log.warn("已拒绝摄像头或网关标识 与主题不一致的健康消息，主题={}", topic);
                 return;
             }
             String health = enumValue(root, "health", "AVAILABLE", "UNAVAILABLE", "UNKNOWN");
@@ -156,6 +196,13 @@ public class FixedCameraHealthService {
         }
     }
 
+    /**
+     * 仅为当前授权摄像头组装健康快照，区分离线、未知与未配置。
+     *
+     * @param authorizedCameras 当前用户有权访问的固定摄像头档案
+     * @param defaultGatewayId 摄像头未声明 Gateway 时使用的默认标识
+     * @return 带版本和观测时间的授权摄像头健康快照
+     */
     public Map<String, Object> authorizedSnapshot(List<Map<String, Object>> authorizedCameras, String defaultGatewayId) {
         List<Map<String, Object>> source = authorizedCameras == null ? List.of() : authorizedCameras;
         Map<String, FixedCameraIngressResponse> ingressStatuses = loadIngressStatuses(source);
@@ -230,6 +277,9 @@ public class FixedCameraHealthService {
         recoverPendingSources();
     }
 
+    /**
+     * 合并网关和摄像头恢复意图，失败后保留待恢复项并延迟重试。
+     */
     void recoverPendingSources() {
         if (System.currentTimeMillis() < recoveryRetryAfterMillis) {
             return;
@@ -242,7 +292,7 @@ public class FixedCameraHealthService {
             } catch (RuntimeException exception) {
                 pendingGatewayRecovery.set(true);
                 recoveryRetryAfterMillis = System.currentTimeMillis() + 5000;
-                log.warn("固定摄像头 Gateway 恢复后的推流收敛失败，稍后重试", exception);
+                log.warn("固定摄像头 网关恢复后的推流收敛失败，稍后重试", exception);
                 return;
             }
         }
@@ -358,9 +408,30 @@ public class FixedCameraHealthService {
         return null;
     }
 
+    /**
+     * Gateway 状态及消息序号、报告时间和本地接收时间。
+     *
+     * @param gatewayId 目标固定摄像头 Gateway ID
+     * @param status 当前业务状态，取值遵循所属模型的状态协议
+     * @param sequence 上游状态序列号，用于拒绝重复或乱序更新
+     * @param reportedAt 设备声明的状态上报时间
+     * @param receivedAt 服务端实际接收该状态的时间
+     * @param reasonCode 当前状态或失败原因码
+     */
     private record GatewayState(String gatewayId, String status, long sequence, Instant reportedAt,
                                 Instant receivedAt, String reasonCode) {}
 
+    /**
+     * 摄像头健康状态及序号、探测时间和本地接收时间。
+     *
+     * @param gatewayId 目标固定摄像头 Gateway ID
+     * @param cameraId 固定摄像头 ID
+     * @param health 摄像头健康状态编码
+     * @param sequence 上游状态序列号，用于拒绝重复或乱序更新
+     * @param checkedAt Gateway 最近一次完成摄像头检查的时间
+     * @param receivedAt 服务端实际接收该状态的时间
+     * @param reasonCode 当前状态或失败原因码
+     */
     private record CameraState(String gatewayId, String cameraId, String health, long sequence, Instant checkedAt,
                                Instant receivedAt, String reasonCode) {}
 }

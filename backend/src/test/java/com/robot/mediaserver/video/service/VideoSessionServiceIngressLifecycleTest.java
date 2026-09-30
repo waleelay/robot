@@ -40,6 +40,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 
+/** 验证视频会话与 Ingress 启停、状态对账和生命周期衔接。 */
 class VideoSessionServiceIngressLifecycleTest {
 
     private final VideoSessionRepository sessionRepository = mock(VideoSessionRepository.class);

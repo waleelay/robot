@@ -42,6 +42,9 @@ import org.springframework.web.client.ResourceAccessException;
 public class FixedCameraIngressService {
 
     private static final Logger log = LoggerFactory.getLogger(FixedCameraIngressService.class);
+    /**
+     * 清理未映射 Ingress 前的保护秒数，为尚未落库的并发创建留出时间。
+     */
     private static final long ORPHAN_PROTECTION_SECONDS = 60;
 
     private final MediaProperties properties;
@@ -52,8 +55,23 @@ public class FixedCameraIngressService {
     private final FixedCameraIngressPersistenceExceptionClassifier exceptionClassifier;
     private final VideoSessionService videoSessionService;
     private final PlatformTransactionManager transactionManager;
+    /**
+     * 限制本实例同时执行的 Ingress 管理操作数量；必须在 finally 中归还许可。
+     */
     private final Semaphore permits;
 
+    /**
+     * 初始化 FixedCameraIngressService，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param liveKit LiveKit Ingress Twirp 管理接口。
+     * @param runtimeRepository 媒体源运行态仓储。
+     * @param lockRepository 仅供 Ingress 管理使用的限时 Runtime 行锁。
+     * @param objectMapper JSON 编解码器
+     * @param exceptionClassifier 按完整 SQLException 图识别 Ingress 专用数据库竞争与连接故障。
+     * @param videoSessionService 实时视频会话编排服务。
+     * @param transactionManager 数据库事务管理器
+     */
     public FixedCameraIngressService(
             MediaProperties properties,
             LiveKitIngressService liveKit,
@@ -74,14 +92,34 @@ public class FixedCameraIngressService {
         this.permits = new Semaphore(properties.getLivekit().getIngressAdminMaxConcurrency(), true);
     }
 
+    /**
+     * 按操作版本创建或复用固定摄像头 Ingress，拒绝陈旧或同版本冲突操作。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @param revision 调用方观察到的状态版本，用于防止陈旧操作
+     * @return 当前 Ingress 状态；仅实际签发新凭据时包含凭据
+     */
     public FixedCameraIngressResponse create(String cameraId, long revision) {
         return mutate(cameraId, revision, FixedCameraIngressOperation.CREATE);
     }
 
+    /**
+     * 按操作版本轮换固定摄像头推流凭据，保持同版本重试幂等。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @param revision 调用方观察到的状态版本，用于防止陈旧操作
+     * @return 轮换后的 Ingress 状态和本次新凭据
+     */
     public FixedCameraIngressResponse rotate(String cameraId, long revision) {
         return mutate(cameraId, revision, FixedCameraIngressOperation.ROTATE);
     }
 
+    /**
+     * 撤销固定摄像头 Ingress 并收口相关观看状态，旧操作不得覆盖新版本。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @param revision 调用方观察到的状态版本，用于防止陈旧操作
+     */
     public void revoke(String cameraId, long revision) {
         FixedCameraIngressResponse response = mutate(cameraId, revision, FixedCameraIngressOperation.REVOKE);
         if (response.publisherMode() == VideoPublisherMode.LIVEKIT_INGRESS) {
@@ -89,6 +127,12 @@ public class FixedCameraIngressService {
         }
     }
 
+    /**
+     * 读取指定摄像头的 Ingress 配置与最近确认状态。
+     *
+     * @param cameraId 固定摄像头 ID
+     * @return Ingress 状态快照；不重复返回已签发的敏感凭据
+     */
     public FixedCameraIngressResponse get(String cameraId) {
         VideoSourceRuntime runtime = runtimeRepository
                 .findBySourceTypeAndSourceIdAndDeviceIdAndChannelAndQuality(
@@ -98,6 +142,12 @@ public class FixedCameraIngressService {
         return response(runtime, false, null, null);
     }
 
+    /**
+     * 批量读取摄像头流状态，保留未知和陈旧数据语义。
+     *
+     * @param cameraIds 固定摄像头 ID 列表
+     * @return 摄像头状态列表
+     */
     public List<FixedCameraIngressResponse> statuses(List<String> cameraIds) {
         if (cameraIds == null || cameraIds.isEmpty()) {
             return List.of();
@@ -136,7 +186,7 @@ public class FixedCameraIngressService {
                 try {
                     reconcileRuntimeResources(runtime.getRuntimeId(), resources);
                 } catch (RuntimeException exception) {
-                    log.warn("固定摄像头 Ingress 资源对账失败 cameraId={} runtimeId={}",
+                    log.warn("固定摄像头 Ingress 资源对账失败 摄像头标识={} 运行实例标识={}",
                             runtime.getSourceId(), runtime.getRuntimeId(), exception);
                 }
             }
@@ -151,6 +201,9 @@ public class FixedCameraIngressService {
         }
     }
 
+    /**
+     * 在运行实例锁内挑选与已接受版本匹配的权威 Ingress，删除残留资源；撤销后的会话收口在事务外执行。
+     */
     private void reconcileRuntimeResources(String runtimeId, List<IngressInfo> resources) {
         long deadline = System.nanoTime()
                 + TimeUnit.MILLISECONDS.toNanos(properties.getLivekit().getIngressAdminOperationTimeoutMs());
@@ -227,7 +280,7 @@ public class FixedCameraIngressService {
                     try {
                         liveKit.delete(resource.ingressId(), timeout);
                     } catch (RuntimeException exception) {
-                        log.warn("删除孤儿 Ingress 失败 ingressId={}", resource.ingressId(), exception);
+                        log.warn("删除孤儿 Ingress 失败 接入资源标识={}", resource.ingressId(), exception);
                     }
                 });
     }
@@ -257,6 +310,9 @@ public class FixedCameraIngressService {
         }
     }
 
+    /**
+     * 先获取有界管理许可，再以统一截止时间执行版本登记和资源修改；失败补偿本次新建资源，finally 归还许可。
+     */
     private FixedCameraIngressResponse mutate(
             String cameraId, long revision, FixedCameraIngressOperation operation) {
         validate(cameraId, revision, operation);
@@ -274,6 +330,7 @@ public class FixedCameraIngressService {
                 + TimeUnit.MILLISECONDS.toNanos(properties.getLivekit().getIngressAdminOperationTimeoutMs());
         AtomicReference<String> createdIngressId = new AtomicReference<>();
         try {
+            // 先持久化已接受版本，再执行外部资源修改；重试可据版本和资源元数据恢复同一操作。
             String runtimeId = accept(cameraId, revision, operation, deadline);
             FixedCameraIngressResponse response = execute(
                     runtimeId, cameraId, revision, operation, deadline, createdIngressId);
@@ -330,6 +387,9 @@ public class FixedCameraIngressService {
         });
     }
 
+    /**
+     * 重新锁定运行实例并核对已接受版本；优先复用同版本资源，否则清理旧资源后创建，避免重复请求产生多个发布者。
+     */
     private FixedCameraIngressResponse execute(
             String runtimeId,
             String cameraId,
@@ -356,6 +416,7 @@ public class FixedCameraIngressService {
                 runtime.setIngressId(null);
             }
 
+            // 外部创建成功而本地提交失败时，精确元数据匹配比重新创建更安全。
             IngressInfo exact = resources.stream().filter(item -> metadataMatches(item, revision, operation)).findFirst().orElse(null);
             if (exact != null) {
                 runtime.setIngressId(exact.ingressId());
