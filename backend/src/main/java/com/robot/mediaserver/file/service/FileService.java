@@ -60,14 +60,21 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+/** 管理文件元数据、上传会话、所有权与播放授权，协调存储及视频处理状态。 */
 @Service
 public class FileService {
 
+    /**
+     * 单个文件或播放分片允许通过服务内存代理读取的最大字节数。
+     */
     private static final long MAX_PROXIED_FILE_BYTES = 32L * 1024 * 1024;
 
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
     private static final String MEDIA_VIEWER = "MEDIA_VIEWER";
     private static final String MEDIA_OPERATOR = "MEDIA_OPERATOR";
+    /**
+     * 按创建用户限制可见性的文件来源标识；普通设备文件仍按组织范围管理。
+     */
     private static final Set<String> USER_OWNED_SOURCES = Set.of(
             "WEB_SNAPSHOT", "LIVEKIT_EGRESS");
 
@@ -80,6 +87,18 @@ public class FileService {
     private final ObjectMapper objectMapper;
     private final FileSourceLockService sourceLockService;
 
+    /**
+     * 初始化 FileService，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param fileRepository 查询文件主记录，支持租户过滤、来源复用和保留期清理。
+     * @param uploadRepository 访问上传会话及配额计数，以悲观锁和带所有者条件的更新维护合并租约。
+     * @param videoRepository 按文件 ID 存取视频探测、HLS 处理状态及播放资源位置。
+     * @param storage 封装 MinIO 对象和分片读写、签名地址及桶初始化；调用方负责传入流的生命周期。
+     * @param egressService 调用 LiveKit Egress 启停录制，并返回外部任务标识和状态。
+     * @param objectMapper JSON 编解码器
+     * @param sourceLockService 通过持久化互斥行防止同一机器人来源文件并发创建重复上传任务。
+     */
     public FileService(
             MediaProperties properties,
             MediaFileRepository fileRepository,
@@ -99,6 +118,19 @@ public class FileService {
         this.sourceLockService = sourceLockService;
     }
 
+    /**
+     * 校验上传配额与来源后保存文件；上传流在成功和失败路径均关闭。
+     *
+     * @param user 当前用户
+     * @param file 上传文件
+     * @param fileType 文件类型
+     * @param robotId 机器人 ID
+     * @param deviceId 设备 ID
+     * @param extensionId 通用扩展 ID
+     * @param sourceFileId 源文件 ID
+     * @param metadata 扩展元数据
+     * @return 文件 ID、上传状态及后续处理信息
+     */
     @Transactional
     public FileListItemResponse uploadSimple(
             CurrentUser user,
@@ -134,8 +166,8 @@ public class FileService {
             entity.setCreatedBy(user.userId());
         }
         fileRepository.save(entity);
-        try {
-            storage.upload(entity.getObjectKey(), file.getInputStream(), file.getSize(), entity.getContentType());
+        try (InputStream input = file.getInputStream()) {
+            storage.upload(entity.getObjectKey(), input, file.getSize(), entity.getContentType());
         } catch (FileStorageException ex) {
             markSimpleUploadFailed(entity, "STORAGE_UNAVAILABLE", ex.getMessage());
             throw ex;
@@ -147,6 +179,13 @@ public class FileService {
         return item(entity);
     }
 
+    /**
+     * 按来源文件标识创建或恢复分片会话，避免同源重复上传。
+     *
+     * @param robotIdHeader 可信机器人标识请求头
+     * @param request 请求参数
+     * @return 会话标识、分片参数及首批预签名地址
+     */
     @Transactional
     public FileUploadResponse createOrResumeMultipart(String robotIdHeader, CreateMultipartFileUploadRequest request) {
         String robotId = requiredRobotId(robotIdHeader);
@@ -203,6 +242,14 @@ public class FileService {
         return uploadResponse(file, upload, initialPartNumbers(upload));
     }
 
+    /**
+     * 核对上传会话和分片范围后补签上传地址。
+     *
+     * @param robotId 机器人 ID
+     * @param uploadId 平台上传会话 ID
+     * @param partNumbers 要签名的分片编号；必须非空，服务校验范围、数量并去重
+     * @return 本次签发的分片地址及有效期
+     */
     @Transactional
     public FilePartUrlsResponse partUrls(String robotId, String uploadId, List<Integer> partNumbers) {
         MediaFileUpload upload = requireActiveUpload(requiredRobotId(robotId), uploadId);
@@ -222,6 +269,13 @@ public class FileService {
         return new FilePartUrlsResponse(now().plusSeconds(properties.getFile().getUploadUrlTtlSeconds()), urls);
     }
 
+    /**
+     * 读取文件当前状态和大小，区分上传完成与后处理就绪。
+     *
+     * @param robotId 机器人 ID
+     * @param fileId 文件 ID
+     * @return 文件状态、就绪标志及失败原因
+     */
     public FileStatusResponse fileStatus(String robotId, String fileId) {
         robotId = requiredRobotId(robotId);
         MediaFile file = requireFile(fileId);
@@ -238,6 +292,20 @@ public class FileService {
         return robotId.trim();
     }
 
+    /**
+     * 在当前用户可见范围内按筛选条件分页查询文件。
+     *
+     * @param user 当前用户
+     * @param robotId 机器人 ID
+     * @param deviceId 设备 ID
+     * @param extensionId 通用扩展 ID
+     * @param fileType 文件类型
+     * @param status 当前业务状态，取值遵循所属模型的状态协议
+     * @param source 文件来源，对应 metadata.source
+     * @param page 页码
+     * @param size 分页大小
+     * @return 文件列表和分页信息
+     */
     public FileListResponse list(
             CurrentUser user,
             String robotId,
@@ -282,6 +350,12 @@ public class FileService {
         return new FileListResponse(result.stream().map(this::item).toList(), result.getNumber(), result.getSize(), result.getTotalElements());
     }
 
+    /**
+     * 为当前用户可操作的文件绑定业务扩展标识。
+     *
+     * @param user 当前用户
+     * @param request 请求参数
+     */
     @Transactional
     public void bindExtension(CurrentUser user, Map<String, Object> request) {
         String extensionId = stringValue(request.get("extensionId"));
@@ -344,12 +418,25 @@ public class FileService {
         fileRepository.saveAll(files);
     }
 
+    /**
+     * 校验文件访问权限后返回明细。
+     *
+     * @param user 当前用户
+     * @param fileId 文件 ID
+     * @return 文件明细；不存在或无权访问时抛出业务异常
+     */
     public FileListItemResponse detail(CurrentUser user, String fileId) {
         MediaFile file = requireFile(fileId);
         requireFileAccess(user, file, MEDIA_VIEWER, "FILE_NOT_FOUND", "未找到文件");
         return item(file);
     }
 
+    /**
+     * 校验删除权限并清理指定文件及关联存储资产。
+     *
+     * @param user 当前用户
+     * @param fileId 文件 ID
+     */
     @Transactional
     public void delete(CurrentUser user, String fileId) {
         MediaFile file = requireFile(fileId);
@@ -369,6 +456,12 @@ public class FileService {
         deleteFileAssets(file);
     }
 
+    /**
+     * 逐项执行文件删除并保留单项失败，避免一个失败掩盖其他结果。
+     * @param user 当前用户
+     * @param fileIds 待逐项删除的通用文件 ID 列表
+     * @return 成功与失败的逐文件删除结果
+     */
     public FileBatchDeleteResponse deleteBatch(CurrentUser user, List<String> fileIds) {
         List<FileDeleteResultResponse> results = new ArrayList<>(fileIds.size());
         int succeeded = 0;
@@ -380,13 +473,21 @@ public class FileService {
             } catch (FileApiException ex) {
                 results.add(new FileDeleteResultResponse(fileId, false, ex.getCode(), ex.getMessage()));
             } catch (RuntimeException ex) {
-                log.warn("批量删除文件失败: fileId={}", fileId, ex);
+                log.warn("批量删除文件失败: 文件标识={}", fileId, ex);
                 results.add(new FileDeleteResultResponse(fileId, false, "DELETE_FAILED", "删除失败"));
             }
         }
         return new FileBatchDeleteResponse(fileIds.size(), succeeded, fileIds.size() - succeeded, results);
     }
 
+    /**
+     * 校验访问权限并签发临时下载地址。
+     *
+     * @param user 当前用户
+     * @param fileId 文件 ID
+     * @param inline 是否使用内联展示的响应方式
+     * @return 下载 URL、文件信息和到期时间
+     */
     public FileDownloadUrlResponse downloadUrl(CurrentUser user, String fileId, boolean inline) {
         MediaFile file = requirePlayableFile(user, fileId);
         OffsetDateTime expiresAt = now().plusSeconds(properties.getFile().getPlayUrlTtlSeconds());
@@ -401,12 +502,26 @@ public class FileService {
                 expiresAt);
     }
 
+    /**
+     * 按既有权限及大小上限读取文件正文，供兼容代理入口使用。
+     *
+     * @param user 当前用户
+     * @param fileId 文件 ID
+     * @return 文件正文的二进制字节
+     */
     public PlaybackAsset content(CurrentUser user, String fileId) {
         MediaFile file = requirePlayableFile(user, fileId);
         requireProxySize(file.getObjectKey());
         return new PlaybackAsset(storage.readObject(file.getObjectKey()), file.getContentType());
     }
 
+    /**
+     * 根据文件类型与就绪状态生成可播放地址。
+     *
+     * @param user 当前用户
+     * @param fileId 文件 ID
+     * @return 播放类型、地址、有效期及可用状态
+     */
     public FilePlayUrlResponse playUrl(CurrentUser user, String fileId) {
         MediaFile file = requirePlayableFile(user, fileId);
         if (file.getFileType() != FileType.VIDEO) {
@@ -424,6 +539,14 @@ public class FileService {
         return new FilePlayUrlResponse(fileId, "hls", "application/vnd.apple.mpegurl", path, expiresAt);
     }
 
+    /**
+     * 验证播放令牌与相对资产路径后读取 HLS 文件。
+     *
+     * @param fileId 文件 ID
+     * @param objectName 对象名称
+     * @param token 访问令牌
+     * @return 播放资产字节及其媒体类型
+     */
     public PlaybackAsset playbackAsset(String fileId, String objectName, String token) {
         verifyPlayback(fileId, token);
         if (!objectName.matches("[A-Za-z0-9_.-]+")) {
@@ -447,6 +570,13 @@ public class FileService {
         return new PlaybackAsset(bytes, hlsContentType(objectName));
     }
 
+    /**
+     * 创建手动录像记录并启动 LiveKit 导出；同一会话已有活动录像时返回冲突。
+     * @param session 待录制的业务视频会话
+     * @param liveKitTrackSid 要核验或操作的 LiveKit 轨道标识
+     * @param user 当前用户
+     * @return 活动录像的文件信息
+     */
     @Transactional
     public synchronized FileListItemResponse startLiveRecording(
             VideoSession session, String liveKitTrackSid, CurrentUser user) {
@@ -500,6 +630,14 @@ public class FileService {
         }
     }
 
+    /**
+     * 校验录像归属后停止 LiveKit 导出，保留后处理状态而不提前宣告就绪。
+     *
+     * @param sessionId 会话 ID
+     * @param fileId 文件 ID
+     * @param user 当前用户
+     * @return 停止请求后的录像文件信息
+     */
     @Transactional
     public FileListItemResponse stopLiveRecording(String sessionId, String fileId, CurrentUser user) {
         MediaFile file = requireFile(fileId);
@@ -520,7 +658,12 @@ public class FileService {
 
     /**
      * 使用独立事务停止指定观看者的直播录像：停止失败时文件状态仍可落库为 FAILED，
-     * 且不会把调用方（如启动清理）的事务标记为 rollback-only 导致进程退出。
+     *  且不会把调用方（如启动清理）的事务标记为只能回滚 导致进程退出。
+     *
+     * @param sessionId 会话 ID
+     * @param userId 用户 ID
+     * @param clientId 客户端 ID
+     * @return 是否找到归属该用户和终端的活动录像并执行收口
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public boolean stopLiveRecordingForClient(String sessionId, String userId, String clientId) {
@@ -540,6 +683,9 @@ public class FileService {
 
     /**
      * 媒体源撤销或删除时停止指定会话的活动录像，不依赖发起录像的浏览器身份。
+     *
+     * @param sessionId 会话 ID
+     * @return 是否找到活动录像并执行收口
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public boolean stopActiveLiveRecordingForSession(String sessionId) {
@@ -551,6 +697,13 @@ public class FileService {
         return true;
     }
 
+    /**
+     * 查询当前用户在指定视频会话中的活动录像。
+     *
+     * @param sessionId 会话 ID
+     * @param user 当前用户
+     * @return 活动录像信息；不存在时返回 null
+     */
     public FileListItemResponse activeLiveRecording(String sessionId, CurrentUser user) {
         requireRole(user, MEDIA_VIEWER, "无手动媒体查看权限");
         return findActiveLiveRecording(sessionId, user).map(this::item).orElse(null);
@@ -558,11 +711,19 @@ public class FileService {
 
     /**
      * 判断指定视频会话是否仍有 LiveKit Egress 录像占用。
+     *
+     * @param sessionId 会话 ID
+     * @return 会话是否仍有活动录像记录
      */
     public boolean hasActiveLiveRecording(String sessionId) {
         return findActiveLiveRecording(sessionId, null).isPresent();
     }
 
+    /**
+     * 查找超过允许时长的活动录像，供调度器有界收口。
+     *
+     * @return 本轮待过期处理的录像 ID
+     */
     public List<String> expiredLiveRecordingIds() {
         int maxDurationSeconds = properties.getFile().getLiveRecordingMaxDurationSeconds();
         if (maxDurationSeconds <= 0) {
@@ -580,6 +741,11 @@ public class FileService {
                 .toList();
     }
 
+    /**
+     * 按最长时长规则收口指定活动录像。
+     *
+     * @param fileId 文件 ID
+     */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void expireLiveRecording(String fileId) {
         MediaFile file = requireFile(fileId);
@@ -591,6 +757,11 @@ public class FileService {
         finishLiveRecording(file);
     }
 
+    /**
+     * 终止已过期的分片上传并同步文件失败或过期状态。
+     *
+     * @param upload 当前分片上传会话及其处理状态
+     */
     @Transactional
     public void expireUpload(MediaFileUpload upload) {
         if (upload.getStatus() != FileUploadStatus.ACTIVE) {
@@ -607,6 +778,10 @@ public class FileService {
         fileRepository.save(file);
     }
 
+    /**
+     * 删除文件目录下的源对象及播放产物，并将文件记录标记为 DELETED；不删除上传会话记录。
+     * @param file 待清理的持久化文件记录
+     */
     @Transactional
     public void deleteFileAssets(MediaFile file) {
         if (file.getStatus() == FileStatus.DELETED) {
@@ -618,6 +793,16 @@ public class FileService {
         fileRepository.save(file);
     }
 
+    /**
+     * 在 HLS 产物已经发布后保存编码、尺寸及播放元数据，并标记就绪。
+     *
+     * @param fileId 文件 ID
+     * @param probe 媒体文件探测得到的编码、尺寸与时长
+     * @param playlistKey HLS 播放列表的对象存储键
+     * @param segmentCount 本次生成的 HLS 分片数量
+     * @param totalSize 产物总大小，单位字节
+     * @param sourceSize 源文件大小，单位字节
+     */
     @Transactional
     public void markVideoReady(String fileId, VideoProbeResult probe, String playlistKey, int segmentCount, long totalSize, long sourceSize) {
         MediaFile file = requireFile(fileId);
@@ -645,6 +830,13 @@ public class FileService {
         videoRepository.save(video);
     }
 
+    /**
+     * 记录视频后处理失败原因并结束本轮处理状态。
+     *
+     * @param fileId 文件 ID
+     * @param errorCode 错误码
+     * @param message 消息内容
+     */
     @Transactional
     public void markVideoFailed(String fileId, String errorCode, String message) {
         MediaFile file = requireFile(fileId);
@@ -748,7 +940,11 @@ public class FileService {
         }
     }
 
-    /** multipart 合并成功后，在数据库收口事务中推进文件处理状态。 */
+    /**
+     * 分片合并成功后，在数据库收口事务中推进文件处理状态。
+     *
+     * @param fileId 文件 ID
+     */
     @Transactional
     public void markMultipartUploaded(String fileId) {
         markUploaded(requireFile(fileId));
@@ -1219,10 +1415,6 @@ public class FileService {
         return fileType == FileType.VIDEO ? "source.mp4" : fileName;
     }
 
-    private String firstNonBlank(String first, String second) {
-        return first != null && !first.isBlank() ? first : blankToNull(second);
-    }
-
     private String stringValue(Object value) {
         if (value == null) {
             return null;
@@ -1290,9 +1482,24 @@ public class FileService {
         }
     }
 
+    /**
+     * 已读取的有限大小正文及实际媒体类型，供文件和 HLS 代理返回。
+     *
+     * @param bytes 内容的原始二进制字节
+     * @param contentType 文件媒体类型
+     */
     public record PlaybackAsset(byte[] bytes, String contentType) {
     }
 
+    /**
+     * 手动录像或视频处理回写的尺寸、时间、时长及编码等媒体元数据。
+     *
+     * @param videoCodec 视频编码名称
+     * @param audioCodec 音频编码名称，未探测到音轨时可为空
+     * @param width 宽度
+     * @param height 高度
+     * @param durationSeconds 时长秒数
+     */
     public record VideoProbeResult(
             String videoCodec,
             String audioCodec,

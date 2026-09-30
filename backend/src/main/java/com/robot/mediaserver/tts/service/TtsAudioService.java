@@ -32,16 +32,32 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+/** 调用语音引擎、复用缓存文件，并向媒体通道发布生成音频。 */
 @Service
 public class TtsAudioService {
 
+    /**
+     * 串行访问语音引擎的实例内锁，避免并发合成挤占引擎资源。
+     */
     private final Object openTtsLock = new Object();
     private final MediaProperties properties;
     private final MediaWebSocketPublisher webSocketPublisher;
     private final RestTemplate ttsHttp;
+    /**
+     * 语音缓存文件的规范化绝对根目录，所有生成路径必须位于其下。
+     */
     private final Path outputRoot;
+    /**
+     * 按规范化绝对路径保存文件读写锁，协调生成和读取；当前随服务实例保留。
+     */
     private final Map<Path, ReentrantReadWriteLock> fileLocks = new ConcurrentHashMap<>();
 
+    /**
+     * 初始化 TtsAudioService，保存所需依赖及初始运行状态。
+     *
+     * @param properties 服务配置
+     * @param webSocketPublisher 向已连接客户端投递业务事件的组件
+     */
     public TtsAudioService(MediaProperties properties, MediaWebSocketPublisher webSocketPublisher) {
         this.properties = properties;
         this.webSocketPublisher = webSocketPublisher;
@@ -52,6 +68,13 @@ public class TtsAudioService {
         this.outputRoot = Path.of(properties.getTts().getOutputRoot()).toAbsolutePath().normalize();
     }
 
+    /**
+     * 生成或复用语音文件并返回二进制内容，复用同内容生成锁避免并发重复合成。
+     *
+     * @param robotId 机器人 ID
+     * @param text 待合成的语音文本
+     * @return 合成文件内容、格式和缓存命中标志
+     */
     public ResponseEntity<FileSystemResource> generateAndReturnFile(String robotId, String text) {
         GeneratedTts generated = generate(robotId, text);
         ReentrantReadWriteLock.ReadLock readLock = lockFor(generated.file()).readLock();
@@ -70,9 +93,14 @@ public class TtsAudioService {
         }
     }
 
+    /**
+     * 生成或复用音频后读取并广播 PCM，失败也关闭音频流并释放读取锁。
+     *
+     * @param robotId 机器人 ID
+     * @param text 待合成的语音文本
+     */
     public void generateAndPublishToFrontend(String robotId, String text) {
         GeneratedTts generated = generate(robotId, text);
-        AudioInputStream audioInputStream = null;
         ReentrantReadWriteLock.ReadLock readLock = lockFor(generated.file()).readLock();
         boolean locked = false;
         try {
@@ -84,39 +112,40 @@ public class TtsAudioService {
             if (!file.exists()) {
                 throw new IllegalStateException("TTS 文件不存在");
             }
-            audioInputStream = AudioSystem.getAudioInputStream(file);
-            AudioFormat audioFormat = audioInputStream.getFormat();
-            Map<String, Object> meta = new LinkedHashMap<>();
-            meta.put("robotId", robotId);
-            meta.put("filename", generated.file().getFileName().toString());
-            meta.put("format", generated.format());
-            meta.put("sampleRate", audioFormat.getSampleRate());
-            meta.put("channels", audioFormat.getChannels());
-            meta.put("bitsPerSample", audioFormat.getSampleSizeInBits());
-            meta.put("encoding", audioFormat.getEncoding().toString());
-            meta.put("cacheHit", generated.cacheHit());
-            webSocketPublisher.publish("tts.audio.meta", meta);
+            try (AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(file)) {
+                AudioFormat audioFormat = audioInputStream.getFormat();
+                Map<String, Object> meta = new LinkedHashMap<>();
+                meta.put("robotId", robotId);
+                meta.put("filename", generated.file().getFileName().toString());
+                meta.put("format", generated.format());
+                meta.put("sampleRate", audioFormat.getSampleRate());
+                meta.put("channels", audioFormat.getChannels());
+                meta.put("bitsPerSample", audioFormat.getSampleSizeInBits());
+                meta.put("encoding", audioFormat.getEncoding().toString());
+                meta.put("cacheHit", generated.cacheHit());
+                webSocketPublisher.publish("tts.audio.meta", meta);
 
-            byte[] raw = Files.readAllBytes(generated.file());
-            if (raw.length > properties.getTts().getWavHeaderOffset() && isWav(raw)) {
-                raw = java.util.Arrays.copyOfRange(raw, properties.getTts().getWavHeaderOffset(), raw.length);
+                byte[] raw = Files.readAllBytes(generated.file());
+                if (raw.length > properties.getTts().getWavHeaderOffset() && isWav(raw)) {
+                    raw = java.util.Arrays.copyOfRange(raw, properties.getTts().getWavHeaderOffset(), raw.length);
+                }
+                webSocketPublisher.publishBinary(raw);
             }
-            webSocketPublisher.publishBinary(raw);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("发布 TTS 音频等待被中断", ex);
         } catch (Exception ex) {
             throw new IllegalStateException("发布 TTS 音频到前端失败", ex);
         } finally {
-            if (audioInputStream != null) {
-                try {
-                    audioInputStream.close();
-                } catch (IOException ignored) {
-                }
-            }
             if (locked) {
                 readLock.unlock();
             }
         }
     }
 
+    /**
+     * 以文本及合成配置定位缓存；先串行同键生成，再以完整临时文件替换目标文件，避免消费者读取半成品。
+     */
     private GeneratedTts generate(String robotId, String inputText) {
         if (!properties.getTts().isEnabled()) {
             throw new IllegalStateException("TTS 未启用");
@@ -146,6 +175,7 @@ public class TtsAudioService {
             if (!cacheHit) {
                 Path tmp = file.resolveSibling("." + file.getFileName() + ".tmp");
                 try {
+                    // 同键写锁保护缓存文件；引擎锁另行串行化 OpenTTS，两个锁承担不同职责。
                     synchronized (openTtsLock) {
                         requestOpenTts(text, voice, format, tmp);
                     }
@@ -247,6 +277,12 @@ public class TtsAudioService {
         return bytes.length >= 4 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F';
     }
 
+    /**
+     * 语音生成文件的位置、格式及缓存命中信息。
+     * @param file 已生成的本地音频文件路径
+     * @param format 内容或导出文件格式
+     * @param cacheHit 是否复用了已经生成的缓存文件
+     */
     private record GeneratedTts(Path file, String format, boolean cacheHit) {
     }
 }
