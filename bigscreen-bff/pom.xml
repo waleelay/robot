@@ -21,6 +21,8 @@
         <java.version>17</java.version>
         <package.out>${project.artifactId}-${project.version}</package.out>
         <main.class>com.robot.bigscreen.BigscreenBffApplication</main.class>
+        <!-- 修复 CVE-2025-48924，覆盖父 BOM 的 3.17.0，并与 Swagger 的传递依赖版本对齐。 -->
+        <commons-lang3.version>3.20.0</commons-lang3.version>
     </properties>
 
     <dependencies>
