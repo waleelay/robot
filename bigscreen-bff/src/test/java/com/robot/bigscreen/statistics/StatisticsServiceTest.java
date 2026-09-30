@@ -20,10 +20,72 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+/** 验证统计聚合与对外展示语义，包括无里程数据和真实零值。 */
 class StatisticsServiceTest {
 
     @TempDir
     Path tempDir;
+
+    @Test
+    void shutdownUnblocksQueriesWaitingInTheQueue() throws Exception {
+        StatisticsService service = new StatisticsService(new ObjectMapper(), mock(PanoramaCenterClient.class),
+                mock(DeviceStatusSampler.class), tempDir.toString());
+        var executor = (java.util.concurrent.ThreadPoolExecutor) org.springframework.test.util.ReflectionTestUtils.getField(service, "ioExecutor");
+        var release = new java.util.concurrent.CountDownLatch(1);
+        try {
+            for (int i = 0; i < 4; i++) {
+                executor.execute(() -> {
+                    try {
+                        release.await();
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
+            var result = java.util.concurrent.CompletableFuture.supplyAsync(() -> service.overview("month", null, null, "all", null));
+            org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(5))
+                    .until(() -> executor.getQueue().size() == 4);
+            service.shutdown();
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> result.get(5, java.util.concurrent.TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        } finally {
+            release.countDown();
+            service.shutdown();
+        }
+    }
+
+    @Test
+    void rejectsOverloadedQueriesAndStopsAcceptingWorkAfterShutdown() throws Exception {
+        StatisticsService service = new StatisticsService(new ObjectMapper(), mock(PanoramaCenterClient.class),
+                mock(DeviceStatusSampler.class), tempDir.toString());
+        var executor = (java.util.concurrent.ThreadPoolExecutor) org.springframework.test.util.ReflectionTestUtils.getField(service, "ioExecutor");
+        var started = new java.util.concurrent.CountDownLatch(4);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        try {
+            for (int i = 0; i < 4; i++) {
+                executor.execute(() -> {
+                    started.countDown();
+                    try {
+                        release.await();
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
+            assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            for (int i = 0; i < 64; i++) {
+                executor.execute(() -> { });
+            }
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.overview("month", null, null, "all", null))
+                    .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                    .hasMessageContaining("503");
+        } finally {
+            release.countDown();
+            service.shutdown();
+        }
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.overview("month", null, null, "all", null))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class).hasMessageContaining("503");
+    }
 
     @Test
     void returnsManagementDeviceTypesAndAppendsFixedCamera() {
@@ -47,6 +109,7 @@ class StatisticsServiceTest {
                 Map.of("value", "FIXED_CAMERA", "label", "固定摄像头")), overview.get("deviceTypeOptions"));
     }
 
+    /** 验证任务、告警、里程与设备采样按同一筛选窗口汇总，保留未知指标。 */
     @Test
     void aggregatesRealTaskAlarmAndOnlineStatistics() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
@@ -169,7 +232,7 @@ class StatisticsServiceTest {
     }
 
     @Test
-    void keepsReportHistoryPrivateToCreator() {
+    void keepsReportHistoryPrivateAndBoundsLargePages() {
         PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
         when(centerClient.deviceTypeOptions()).thenReturn(List.of());
         when(centerClient.devices()).thenReturn(List.of());
@@ -186,6 +249,10 @@ class StatisticsServiceTest {
                 authentication("user-1", "org-1"));
 
         assertEquals(1, service.reportHistoryList(1, 10, authentication("user-1", "org-1")).get("total"));
+        Map<String, Object> lastPage = service.reportHistoryList(Integer.MAX_VALUE, 100,
+                authentication("user-1", "org-1"));
+        assertEquals(1, lastPage.get("total"));
+        assertEquals(List.of(), lastPage.get("data"));
         assertEquals(0, service.reportHistoryList(1, 10, authentication("user-2", "org-1")).get("total"));
         assertEquals(null, service.reportFile(report.id(), authentication("user-2", "org-1")));
         assertFalse(service.deleteReport(report.id(), authentication("user-2", "org-1")));

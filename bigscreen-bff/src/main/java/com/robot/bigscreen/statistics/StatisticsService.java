@@ -31,8 +31,12 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
+import jakarta.annotation.PreDestroy;
 import java.util.function.Supplier;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -50,6 +54,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
+/** 聚合大屏统计指标并生成和读取用户所属的统计报告。 */
 @Service
 public class StatisticsService {
 
@@ -57,17 +62,47 @@ public class StatisticsService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter LENIENT_DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-M-d HH:mm:ss");
     private static final DateTimeFormatter FILE_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-    private static final ExecutorService IO_EXECUTOR = Executors.newFixedThreadPool(4, runnable -> {
-        Thread thread = new Thread(runnable, "statistics-io");
-        thread.setDaemon(true);
-        return thread;
-    });
+    /**
+     * 统计查询共用的有界下游执行器，随本服务销毁时关闭。
+     */
+    private final ThreadPoolExecutor ioExecutor = createIoExecutor();
+    /**
+     * 尚未完成的查询 Future；停机时显式失败以唤醒等待线程。
+     */
+    private final Set<CompletableFuture<?>> pendingQueries = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private static ThreadPoolExecutor createIoExecutor() {
+        AtomicInteger sequence = new AtomicInteger();
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(4, 4, 30L, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(64), runnable -> {
+                    Thread thread = new Thread(runnable, "statistics-io-" + sequence.incrementAndGet());
+                    thread.setDaemon(true);
+                    return thread;
+                }, new ThreadPoolExecutor.AbortPolicy());
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
+
+    /** 停止接受查询；中断仍在执行的下游读取，避免服务重建后遗留执行器。 */
+    @PreDestroy
+    public void shutdown() {
+        ioExecutor.shutdownNow();
+        // shutdownNow 只移出排队 Runnable，不会自动结束其 CompletableFuture；显式失败才能唤醒请求线程。
+        pendingQueries.forEach(future -> future.completeExceptionally(new RejectedExecutionException("统计服务正在停止")));
+    }
 
     private final ObjectMapper objectMapper;
     private final PanoramaCenterClient centerClient;
     private final DeviceStatusSampler deviceStatusSampler;
     private final StatisticsReportStore reportStore;
 
+    /**
+     * 初始化 StatisticsService，保存所需依赖及初始运行状态。
+     * @param objectMapper JSON 编解码器
+     * @param centerClient 调用下游设备、任务、地图、告警和里程接口，供全景聚合使用。
+     * @param deviceStatusSampler 从 Control 注册表采集设备状态并保存按日采样历史的组件
+     * @param reportStore 统计报告元数据与 PDF 内容的统一存储边界。
+     */
     @Autowired
     public StatisticsService(
             ObjectMapper objectMapper,
@@ -89,10 +124,23 @@ public class StatisticsService {
                 new LocalStatisticsReportStore(objectMapper, reportStorageDir));
     }
 
+    /**
+     * 在有界执行器中聚合设备、任务、里程及告警统计；拥塞或停机返回 503，缺测指标保持 null。
+     *
+     * @param range 统计时间范围编码
+     * @param startTime 上海时区区间起点，包含该时刻
+     * @param endTime 上海时区区间终点，包含该时刻
+     * @param deviceType 平台设备类型编码
+     * @param areaId 区域筛选标识；统计接口目前仅保留该请求值
+     * @return 筛选条件、统计指标及各图表数据
+     */
     public Map<String, Object> overview(String range, String startTime, String endTime, String deviceType, String areaId) {
         return overview(range, startTime, endTime, deviceType, areaId, null);
     }
 
+    /**
+     * 在有界执行器中聚合设备、任务、里程及告警统计；拥塞或停机返回 503，缺测指标保持 null。
+     */
     private Map<String, Object> overview(
             String range,
             String startTime,
@@ -169,10 +217,24 @@ public class StatisticsService {
                 "taskCompletion", taskCompletion);
     }
 
+    /**
+     * 按当前用户与筛选条件生成报告并返回 PDF 内容。
+     *
+     * @param request 请求参数
+     * @param authentication 经过认证的当前用户上下文
+     * @return 可下载的 PDF 字节
+     */
     public byte[] exportPdf(Map<String, Object> request, Authentication authentication) {
         return createReport(request, authentication).bytes();
     }
 
+    /**
+     * 生成当前用户的统计报告并保存归属和文件内容。
+     *
+     * @param request 请求参数
+     * @param authentication 经过认证的当前用户上下文
+     * @return 已保存报告的 ID、文件名及 PDF 内容
+     */
     public ReportFile createReport(Map<String, Object> request, Authentication authentication) {
         ReportOwner owner = reportOwner(authentication);
         ReportSelection selection = reportSelection(request);
@@ -193,14 +255,22 @@ public class StatisticsService {
         return new ReportFile(record.id(), record.filename(), bytes);
     }
 
+    /**
+     * 仅分页读取当前用户可见报告；极大页码返回空页而不发生整数溢出。
+     *
+     * @param page 页码
+     * @param size 分页大小
+     * @param authentication 经过认证的当前用户上下文
+     * @return 报告列表、总数及归一化分页参数
+     */
     public Map<String, Object> reportHistoryList(int page, int size, Authentication authentication) {
         ReportOwner owner = reportOwner(authentication);
         int normalizedPage = Math.max(page, 1);
         int normalizedSize = Math.min(Math.max(size, 1), 100);
         List<ReportRecord> reports = reportStore.list(owner);
 
-        int fromIndex = Math.min((normalizedPage - 1) * normalizedSize, reports.size());
-        int toIndex = Math.min(fromIndex + normalizedSize, reports.size());
+        int fromIndex = (int) Math.min((long) (normalizedPage - 1) * normalizedSize, reports.size());
+        int toIndex = (int) Math.min((long) fromIndex + normalizedSize, reports.size());
         List<Map<String, Object>> rows = new ArrayList<>();
         for (ReportRecord report : reports.subList(fromIndex, toIndex)) {
             rows.add(reportResponse(report));
@@ -212,6 +282,13 @@ public class StatisticsService {
                 "size", normalizedSize);
     }
 
+    /**
+     * 在当前用户范围内查找报告文件，防止跨用户读取。
+     *
+     * @param id 当前业务记录的唯一标识
+     * @param authentication 经过认证的当前用户上下文
+     * @return 可见报告的文件内容；不存在时返回空值
+     */
     public ReportFile reportFile(String id, Authentication authentication) {
         ReportOwner owner = reportOwner(authentication);
         StoredReport stored = reportStore.find(id, owner);
@@ -221,6 +298,13 @@ public class StatisticsService {
         return new ReportFile(stored.record().id(), stored.record().filename(), stored.bytes());
     }
 
+    /**
+     * 校验报告归属后删除元数据及文件。
+     *
+     * @param id 当前业务记录的唯一标识
+     * @param authentication 经过认证的当前用户上下文
+     * @return 是否成功删除当前用户可见的报告
+     */
     public boolean deleteReport(String id, Authentication authentication) {
         ReportOwner owner = reportOwner(authentication);
         return reportStore.delete(id, owner);
@@ -677,18 +761,6 @@ public class StatisticsService {
         return parseTime(firstString(alarm, "occurredAt", "createdAt"));
     }
 
-    private Long durationSeconds(Map<String, Object> task) {
-        Number durationSeconds = numberValue(task.get("durationSeconds"));
-        if (durationSeconds != null) {
-            return Math.max(0L, Math.round(durationSeconds.doubleValue()));
-        }
-        LocalDateTime startedAt = parseTime(firstString(task, "startedAt"));
-        LocalDateTime completedAt = parseTime(firstString(task, "completedAt"));
-        if (startedAt == null || completedAt == null || completedAt.isBefore(startedAt)) {
-            return null;
-        }
-        return Duration.between(startedAt, completedAt).toSeconds();
-    }
 
     private Number numberValue(Object value) {
         if (value instanceof Number number) {
@@ -748,17 +820,28 @@ public class StatisticsService {
 
     private <T> CompletableFuture<T> async(Supplier<T> supplier) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return CompletableFuture.supplyAsync(() -> {
-            SecurityContext previousContext = SecurityContextHolder.getContext();
-            SecurityContext context = SecurityContextHolder.createEmptyContext();
-            context.setAuthentication(authentication);
-            try {
-                SecurityContextHolder.setContext(context);
-                return supplier.get();
-            } finally {
-                SecurityContextHolder.setContext(previousContext);
+        try {
+            CompletableFuture<T> future = CompletableFuture.supplyAsync(() -> {
+                SecurityContext previousContext = SecurityContextHolder.getContext();
+                SecurityContext context = SecurityContextHolder.createEmptyContext();
+                context.setAuthentication(authentication);
+                try {
+                    SecurityContextHolder.setContext(context);
+                    return supplier.get();
+                } finally {
+                    SecurityContextHolder.setContext(previousContext);
+                }
+            }, ioExecutor);
+            pendingQueries.add(future);
+            future.whenComplete((value, failure) -> pendingQueries.remove(future));
+            // 补上停机扫描与 future 登记之间的竞态，确保晚登记的请求同样可以退出等待。
+            if (ioExecutor.isShutdown()) {
+                future.completeExceptionally(new RejectedExecutionException("统计服务正在停止"));
             }
-        }, IO_EXECUTOR);
+            return future;
+        } catch (RejectedExecutionException exception) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "统计查询繁忙，请稍后重试", exception);
+        }
     }
 
     private <T> T join(CompletableFuture<T> future, T fallback) {
@@ -766,6 +849,9 @@ public class StatisticsService {
             T value = future.join();
             return value == null ? fallback : value;
         } catch (CompletionException exception) {
+            if (exception.getCause() instanceof RejectedExecutionException) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "统计服务正在停止，请稍后重试", exception);
+            }
             return fallback;
         }
     }
@@ -779,19 +865,7 @@ public class StatisticsService {
         return kpis;
     }
 
-    private Map<String, Object> emptyEquipmentRuntime() {
-        return object(
-                "onlineRate", null,
-                "taskCompletionRate", null,
-                "unit", null,
-                "items", List.of());
-    }
 
-    private Map<String, Object> emptyAiAlarmAnalysis() {
-        return object(
-                "alarmTypeRanking", List.of(),
-                "handleMethodRanking", List.of());
-    }
 
     private Map<String, Object> emptyAlarmTrend() {
         return object(
@@ -799,11 +873,6 @@ public class StatisticsService {
                 "points", List.of());
     }
 
-    private Map<String, Object> emptyTaskCompletion() {
-        return object(
-                "items", List.of(),
-                "insight", null);
-    }
 
     private ReportSelection reportSelection(Map<String, Object> request) {
         Map<String, Object> timeRange = mapValue(request.get("timeRange"));
@@ -818,6 +887,9 @@ public class StatisticsService {
         return new ReportSelection(rangeType, startTime, endTime, deviceType, new LinkedHashSet<>(modules));
     }
 
+    /**
+     * 按所选模块排版统计报告，明确区分无数据与真实零值，并使用当前快照生成同一份报告。
+     */
     private byte[] reportPdf(
             Map<String, Object> data,
             ReportSelection selection,
@@ -1100,13 +1172,37 @@ public class StatisticsService {
         return map;
     }
 
+    /**
+     * 报告所选时间范围、设备类型和模块集合。
+     *
+     * @param rangeType 统计时间范围编码，支持预设范围与自定义
+     * @param startTime 上海时区区间起点，包含该时刻
+     * @param endTime 上海时区区间终点，包含该时刻
+     * @param deviceType 报告筛选的设备类型编码，all 表示全部
+     * @param modules 报告中选中的统计模块编码集合
+     */
     private record ReportSelection(String rangeType, String startTime, String endTime, String deviceType,
             Set<String> modules) {
     }
 
+    /**
+     * 可下载报告的标识、文件名及正文。
+     *
+     * @param id 当前业务记录的唯一标识
+     * @param filename 报告或下载文件的名称
+     * @param bytes 内容的原始二进制字节
+     */
     public record ReportFile(String id, String filename, byte[] bytes) {
     }
 
+    /**
+     * 当前与前一统计周期的里程查询时间边界。
+     *
+     * @param start 当前统计窗口开始时间
+     * @param end 当前统计窗口结束时间
+     * @param previousStart 用于环比的上一统计窗口开始时间
+     * @param previousEnd 用于环比的上一统计窗口结束时间
+     */
     private record MileageWindow(
             LocalDateTime start,
             LocalDateTime end,
@@ -1114,10 +1210,10 @@ public class StatisticsService {
             LocalDateTime previousEnd) {
     }
 
+    /** 组织 PDF 页面、文本和表格布局，生成统计报告内容。 */
     private static class PdfReportBuilder {
 
         private static final float PAGE_WIDTH = PDRectangle.A4.getWidth();
-        private static final float PAGE_HEIGHT = PDRectangle.A4.getHeight();
         private static final float MARGIN_X = 54;
         private static final float MARGIN_BOTTOM = 58;
         private static final float START_Y = 784;
@@ -1132,10 +1228,25 @@ public class StatisticsService {
         private static final Color BORDER_COLOR = new Color(205, 216, 226);
         private static final Color HEADER_BACKGROUND = new Color(237, 245, 250);
 
+        /**
+         * 正在构建的 PDF 文档，生成完成或失败后关闭。
+         */
         private final PDDocument document = new PDDocument();
+        /**
+         * 按输出顺序保存的页面，供生成页脚时遍历。
+         */
         private final List<PDPage> pages = new ArrayList<>();
+        /**
+         * 用于中文报告的字体对象。
+         */
         private final PDFont font;
+        /**
+         * 当前页面内容流，换页和构建结束时关闭。
+         */
         private PDPageContentStream content;
+        /**
+         * 当前排版基线的纵坐标，单位 PDF 点。
+         */
         private float y;
 
         PdfReportBuilder() {
