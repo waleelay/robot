@@ -8,7 +8,7 @@
     <artifactId>media-common</artifactId>
     <version>0.9.0</version>
     <name>media-common</name>
-    <description>Media service shared DTO and enum contracts between backend and control-service</description>
+    <description>Media service shared DTO and enum contracts between media-service and control-service</description>
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>

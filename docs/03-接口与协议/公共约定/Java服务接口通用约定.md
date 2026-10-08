@@ -5,7 +5,7 @@
 | 文档状态 | 当前代码基线 |
 | 基线日期 | 2026-08-23 |
 | 身份边界复核 | 2026-09-29；其余主题按后续批次复核 |
-| 适用模块 | `bigscreen-bff`、`control-service`、`backend` |
+| 适用模块 | `bigscreen-bff`、`control-service`、`media-service` |
 
 ## 1. 生产入口与信任边界
 

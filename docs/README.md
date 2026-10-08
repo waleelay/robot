@@ -163,7 +163,7 @@
 
 | 模块 | README |
 | --- | --- |
-| Media Service | [backend/README.md](../backend/README.md) |
+| Media Service | [media-service/README.md](../media-service/README.md) |
 | Control Service | [control-service/README.md](../control-service/README.md) |
 | Bigscreen BFF | [bigscreen-bff/README.md](../bigscreen-bff/README.md) |
 | 固定摄像头 Gateway | [fixed-camera-gateway/README.md](../fixed-camera-gateway/README.md) |

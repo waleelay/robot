@@ -16,7 +16,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULES = ("media-common", "backend", "control-service", "bigscreen-bff")
+MODULES = ("media-common", "media-service", "control-service", "bigscreen-bff")
 OUT = ROOT / "target/quality"
 RULESET = ROOT / "quality/java/ruleset.xml"
 DEPENDENCY_GOAL = "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:build-classpath"
@@ -42,6 +42,17 @@ def tools_classpath(offline):
 def source_files(root):
     return sorted(path for module in MODULES for source in ("main", "test")
                   for path in (root / module / f"src/{source}/java").rglob("*.java"))
+
+
+def base_module_names(roots):
+    """将旧提交中的 backend 源码归到当前 media-service 路径，以便按同一模块比较。"""
+    names = {}
+    for module in MODULES:
+        legacy = "backend" if module == "media-service" and module not in roots else module
+        if legacy not in roots:
+            raise RuntimeError(f"比较基线缺少模块：{module}")
+        names[module] = legacy
+    return names
 
 
 def auxiliary_classpath(offline):
@@ -125,7 +136,10 @@ def java_check(args):
             raise RuntimeError("无效的 Git 比较基线")
         revision = run(["git", "rev-parse", "--verify", args.base + "^{commit}"],
                        capture_output=True, text=True).stdout.strip()
-        archive = run(["git", "archive", revision, "--", *[f"{m}/src" for m in MODULES]],
+        roots = set(run(["git", "ls-tree", "-d", "--name-only", revision],
+                        capture_output=True, text=True).stdout.splitlines())
+        base_modules = base_module_names(roots)
+        archive = run(["git", "archive", revision, "--", *[f"{base_modules[m]}/src" for m in MODULES]],
                       capture_output=True).stdout
         with tempfile.TemporaryDirectory(prefix="base-", dir=directory) as temporary:
             base = Path(temporary)
@@ -134,9 +148,11 @@ def java_check(args):
                     name = member.name
                     if not member.isfile() or not name.endswith(".java"):
                         continue
-                    if not any(name.startswith(f"{m}/src/{s}/java/") for m in MODULES for s in ("main", "test")):
+                    module = next((m for m in MODULES for s in ("main", "test")
+                                   if name.startswith(f"{base_modules[m]}/src/{s}/java/")), None)
+                    if module is None:
                         continue
-                    destination = base / name
+                    destination = base / module / name.split("/", 1)[1]
                     if not destination.resolve().is_relative_to(base):
                         raise RuntimeError("Git 归档包含非法路径")
                     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -154,7 +170,7 @@ def java_check(args):
 
 def openapi_check(args):
     run(maven(args.offline, ROOT / "media-common/pom.xml", "install", "-DskipTests"))
-    run(maven(args.offline, ROOT / "backend/pom.xml", "test", "-Dtest=File*Test,ServiceOpenApiContractTest,TtsAudioServiceTest"))
+    run(maven(args.offline, ROOT / "media-service/pom.xml", "test", "-Dtest=File*Test,ServiceOpenApiContractTest,TtsAudioServiceTest"))
     run(maven(args.offline, ROOT / "control-service/pom.xml", "test",
               "-Dtest=MileageServiceTest,MileageOpenApiContractTest,MileageOpenApiDisabledTest,"
               "FileOpenApiContractTest,FileOpenApiDisabledTest,ServiceOpenApiContractTest,"

@@ -24,7 +24,7 @@ Media Service -> LiveKit Server / Ingress / Egress / MinIO / MySQL
 | --- | --- |
 | `bigscreen-bff/` | 大屏统一认证入口、下游代理、全景聚合、统计报告、WebSocket 事件适配 |
 | `control-service/` | `/api/control/**`、控制租约、设备命令、机器人状态、固定摄像头、MQTT、视频编排 |
-| `backend/` | 视频会话与对讲、LiveKit Room/Token/Ingress/Egress、通用文件、HLS、TTS |
+| `media-service/` | 视频会话与对讲、LiveKit Room/Token/Ingress/Egress、通用文件、HLS、TTS |
 | `media-common/` | Media 与 Control 共享的纯 DTO 与枚举契约模块，不承载业务逻辑 |
 | `fixed-camera-gateway/` | Go 固定摄像头 Gateway；RTSP、LiveKit、MQTT、健康探测与推流进程管理 |
 | `python-client/` | Python 机器人客户端与演示模拟 |
@@ -36,7 +36,7 @@ Media Service 不发布 MQTT；Control Service 不保存媒体文件或承载媒
 ## 2. 工程结构
 
 ```text
-backend/          Java 17 + Spring Boot 3 Media Service
+media-service/    Java 17 + Spring Boot 3 Media Service
 media-common/     Media/Control 共享 DTO 与枚举契约（纯 Java 17）
 control-service/  Java 17 + Spring Boot 3 Control Service
 bigscreen-bff/    Java 17 + Spring Boot 3 Bigscreen BFF
@@ -80,7 +80,7 @@ Redis 和 Elasticsearch 已配置依赖，但当前 Java 业务主链路不以�
 建议顺序：
 
 1. 启动 MySQL、EMQX、LiveKit、MinIO 等依赖。
-2. 启动 `backend`，默认端口 `8088`。
+2. 启动 `media-service`，默认端口 `8088`。
 3. 启动 `control-service`，默认端口 `8082`。
 4. 启动 `bigscreen-bff`，默认端口 `8090`。
 5. 启动机器人客户端或固定摄像头 Gateway。
@@ -90,7 +90,7 @@ Java 服务：
 
 ```bash
 (cd media-common && mvn install)   # 共享契约模块需先安装到本地仓库
-(cd backend && mvn spring-boot:run)
+(cd media-service && mvn spring-boot:run)
 (cd control-service && mvn spring-boot:run)
 (cd bigscreen-bff && mvn spring-boot:run)
 ```
@@ -102,7 +102,7 @@ Java 服务：
 (cd fixed-camera-gateway && go build -o fixed-camera-gateway ./cmd/fixed-camera-gateway)
 ```
 
-完整配置分别见 [Media Service README](backend/README.md)、[Control Service README](control-service/README.md) 和 [Bigscreen BFF README](bigscreen-bff/README.md)。生产环境必须覆盖示例密钥、对象存储凭据、JWT Issuer、服务地址和允许跨域来源，不能直接使用仓库中的开发默认值。
+完整配置分别见 [Media Service README](media-service/README.md)、[Control Service README](control-service/README.md) 和 [Bigscreen BFF README](bigscreen-bff/README.md)。生产环境必须覆盖示例密钥、对象存储凭据、JWT Issuer、服务地址和允许跨域来源，不能直接使用仓库中的开发默认值。
 
 配置整理后的 HLS 超时名称与 Control 扫描周期名称优先使用新入口，旧名称保留兼容回退；HLS 超时空值按未配置处理。迁移方式见上述模块 README 的配置章节。BFF 下游配置类统一为 `DownstreamServiceProperties`，外部 `center.*` 配置键保持不变。
 
@@ -198,7 +198,7 @@ sh scripts/dev-check.sh
 常用模块命令：
 
 ```bash
-(cd backend && mvn test)
+(cd media-service && mvn test)
 (cd control-service && mvn test)
 (cd bigscreen-bff && mvn test)
 (cd python-client && python -m unittest discover -s tests)

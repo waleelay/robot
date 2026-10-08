@@ -43,7 +43,7 @@ Nginx /livekit/*        -> LiveKit:7880
 
 bigscreen-bff:8090
   -> control-service:8082
-  -> backend/media-service:8088
+  -> media-service:8088
 ```
 
 前端到 BFF 建议继续走 Nginx，因为浏览器需要 HTTPS/WSS 安全上下文，尤其是麦克风、对讲和 WebRTC 场景。

@@ -1493,14 +1493,14 @@ RTSP 固定摄像头回归：
     事务不继承临时值；淘汰成功和失败均有日志与指标。
 
 真实 MySQL 锁竞争测试落点为
-`backend/src/test/java/com/robot/mediaserver/video/repository/FixedCameraIngressRuntimeLockMySqlIT.java`。
+`media-service/src/test/java/com/robot/mediaserver/video/repository/FixedCameraIngressRuntimeLockMySqlIT.java`。
 该测试仅在显式提供专用测试库时运行，日常单元测试不访问外部数据库：
 
 ```bash
 MEDIA_MYSQL_IT_URL='jdbc:mysql://127.0.0.1:3306/media_lock_it?useSSL=false&serverTimezone=UTC' \
 MEDIA_MYSQL_IT_USERNAME='root' \
 MEDIA_MYSQL_IT_PASSWORD='仅测试库密码' \
-mvn -f backend/pom.xml -Dtest=FixedCameraIngressRuntimeLockMySqlIT test
+mvn -f media-service/pom.xml -Dtest=FixedCameraIngressRuntimeLockMySqlIT test
 ```
 
 2026-09-17 已使用 MySQL `8.4.11`、MySQL Connector/J `9.7.0`、Hibernate `6.6.53.Final`

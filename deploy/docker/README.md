@@ -25,7 +25,7 @@
 安装包包含以下服务：
 
 ```text
-media-service      媒体服务，来源 backend
+media-service      媒体服务，源码目录 media-service
 control-service    控制服务，来源 control-service
 bigscreen-bff      大屏 BFF，来源 bigscreen-bff
 livekit-server     LiveKit Server
@@ -352,7 +352,7 @@ TARGET_ARCH=arm64 JAVA_RUNTIME_IMAGE=robot/java17-ffmpeg-runtime:arm64 ./package
 `package.sh` 会做这些事：
 
 ```text
-1. Maven clean package 重新编译 backend / control-service / bigscreen-bff
+1. Maven clean package 重新编译 media-service / control-service / bigscreen-bff
 2. npm run build:prod 重新编译 robot-ui
 3. 构建指定架构的 Java 服务镜像
 4. 优先复用 tool-images/<arch>/fixed-camera-gateway-image.tar.gz；不存在时才构建固定摄像头 Gateway 镜像

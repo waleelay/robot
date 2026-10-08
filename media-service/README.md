@@ -1,6 +1,6 @@
 # Media Service
 
-`backend/` 是 Java 17 + Spring Boot 3 媒体服务，默认端口 `8088`。它负责视频会话、LiveKit、通用文件和 OpenTTS 接入，不负责机器人 MQTT、设备档案或控制会话。
+`media-service/` 是 Java 17 + Spring Boot 3 媒体服务，默认端口 `8088`。它负责视频会话、LiveKit、通用文件和 OpenTTS 接入，不负责机器人 MQTT、设备档案或控制会话。
 
 接口权威定义见 [媒体服务接口文档](../docs/03-接口与协议/媒体服务/媒体服务接口文档.md)；实时视频状态机和命令载荷见 [实时视频接口与协议文档](../docs/03-接口与协议/实时视频/实时视频接口与协议文档.md)。
 
@@ -9,7 +9,7 @@
 ## 1. 启动、构建与测试
 
 ```bash
-cd backend
+cd media-service
 mvn spring-boot:run
 mvn test
 mvn -q -DskipTests package

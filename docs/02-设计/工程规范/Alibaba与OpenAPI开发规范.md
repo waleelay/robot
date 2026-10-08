@@ -12,7 +12,7 @@
 1. Java 开发以 Alibaba《Java 开发手册》黄山版（2022-02-03）为基线，保留原文的强制、推荐、参考等级。[官方来源](https://github.com/alibaba/p3c)。
 2. HTTP 契约以 [OpenAPI Specification 3.1.0](https://spec.openapis.org/oas/v3.1.0.html) 为项目基线。选定 3.1 系列是为了与现有 Spring Boot 3 的生成、校验工具配套；升级规范必须同步验证整套工具并更新本文件，不能使用浮动的 `latest` 作为工程版本。
 3. 下文 `ALI-*` 是项目检查分类编号，`OAS-*` 是标准符合性检查编号，`API-*`、`ENG-*` 是项目补充要求。项目要求不得冒充 OpenAPI 标准或 Alibaba 原文。
-4. Java 规范覆盖 `backend`、`control-service`、`bigscreen-bff`、`media-common` 的生产代码和测试代码。Go、Vue、Python 沿用各自语言规范，共同遵循接口契约和项目架构要求。
+4. Java 规范覆盖 `media-service`、`control-service`、`bigscreen-bff`、`media-common` 的生产代码和测试代码。Go、Vue、Python 沿用各自语言规范，共同遵循接口契约和项目架构要求。
 5. HTTP 接口包括浏览器入口、服务间接口和 HTTP 回调。WebSocket/MQTT 的消息、主题、ACK、重连和顺序语义继续由专项协议定义；仅生成 OpenAPI 不代表消息协议符合性已经验证。
 6. 本轮限定为现有 Java 代码和 HTTP 接口的盘点、分批整改、测试验收，以及后续开发的本地检查和审查约束。CI 平台接入、远端合并限制和部署不纳入本轮；CI 仅保留为后续可选自动化。Demo 不纳入正式生产接口整改。
 

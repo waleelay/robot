@@ -24,7 +24,7 @@ Go、Python 和 Vue 项目。开始修改前先阅读根目录 `README.md`；涉
 
 ## 模块与架构边界
 
-- `backend/`：媒体服务，负责视频会话、LiveKit Token/Room、媒体文件及
+- `media-service/`：媒体服务，负责视频会话、LiveKit Token/Room、媒体文件及
   媒体状态。
 - `control-service/`：控制服务，负责 `/api/control/**`、`/ws/control`、
   机器人在线状态以及 MQTT 指令和状态桥接。
@@ -87,7 +87,7 @@ sh scripts/dev-check.sh
 
 ```bash
 # Java 服务
-(cd backend && mvn test)
+(cd media-service && mvn test)
 (cd control-service && mvn test)
 (cd bigscreen-bff && mvn test)
 
