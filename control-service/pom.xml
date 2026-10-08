@@ -13,7 +13,7 @@
 
     <groupId>com.robot</groupId>
     <artifactId>robot-control-service</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.9.0</version>
     <name>robot-control-service</name>
     <description>Standalone robot control service</description>
 
@@ -42,7 +42,7 @@
         <dependency>
             <groupId>com.robot</groupId>
             <artifactId>media-common</artifactId>
-            <version>0.1.0-SNAPSHOT</version>
+            <version>0.9.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
