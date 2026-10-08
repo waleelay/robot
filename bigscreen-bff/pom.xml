@@ -13,7 +13,7 @@
 
     <groupId>com.robot</groupId>
     <artifactId>bigscreen-bff</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.9.0</version>
     <name>bigscreen-bff</name>
     <description>Bigscreen BFF for robot media and control center services</description>
 
