@@ -36,7 +36,7 @@ sh scripts/quality-check.sh all --base HEAD --offline
 ## 2. Java 检查范围与覆盖限制
 
 固定 PMD CLI/Java `7.17.0`，构建插件版本见 [java/pom.xml](java/pom.xml)。
-扫描 `media-common`、`backend`、`control-service`、`bigscreen-bff` 的 `src/main/java` 与 `src/test/java`。
+扫描 `media-common`、`media-service`、`control-service`、`bigscreen-bff` 的 `src/main/java` 与 `src/test/java`。比较目录更名前的提交时，检查脚本将旧 `backend` 路径映射到 `media-service`；`audit/20260929/` 中的路径保留当时的审计记录。
 先安装共享 DTO，编译模块的主代码和测试代码，生成实际辅助 classpath，再运行检查；该编译步骤本身不执行全部业务测试。
 
 | Alibaba 检查分类 | 实际 PMD 规则 | 首批覆盖 |
@@ -92,9 +92,9 @@ Control 此方法不执行用户身份解析，契约如实写明受控内网边
 mvn -f media-common/pom.xml install -DskipTests
 mvn -f control-service/pom.xml -Dtest=MileageOpenApiContractTest -Dopenapi.update=true test
 # 文件样例先由 Media 生成，再由 Control 验证消费并生成代理契约。
-mvn -f backend/pom.xml -Dtest=FileOpenApiContractTest -Dopenapi.update=true test
+mvn -f media-service/pom.xml -Dtest=FileOpenApiContractTest -Dopenapi.update=true test
 mvn -f control-service/pom.xml -Dtest=FileOpenApiContractTest -Dopenapi.update=true test
-mvn -f backend/pom.xml -Dtest=ServiceOpenApiContractTest -Dopenapi.update=true test
+mvn -f media-service/pom.xml -Dtest=ServiceOpenApiContractTest -Dopenapi.update=true test
 mvn -f control-service/pom.xml -Dtest=ServiceOpenApiContractTest -Dopenapi.update=true test
 mvn -f bigscreen-bff/pom.xml -Dtest=OpenApiContractTest -Dopenapi.update=true test
 git diff -- quality/openapi

@@ -68,7 +68,7 @@ UPDATE_FRONTEND="${UPDATE_FRONTEND:-true}"
 UPDATE_NON_INTERACTIVE="${UPDATE_NON_INTERACTIVE:-false}"
 ROBOT_UI_DIR="${ROBOT_UI_DIR:-$REPO_ROOT/robot-ui}"
 
-DIST_MEDIA="${DIST_MEDIA:-$REPO_ROOT/backend/target/robot-mediaserver-dist.tar.gz}"
+DIST_MEDIA="${DIST_MEDIA:-$REPO_ROOT/media-service/target/robot-mediaserver-dist.tar.gz}"
 DIST_CONTROL="${DIST_CONTROL:-$REPO_ROOT/control-service/target/robot-control-service-dist.tar.gz}"
 DIST_BIGSCREEN="${DIST_BIGSCREEN:-$REPO_ROOT/bigscreen-bff/target/bigscreen-bff-dist.tar.gz}"
 
@@ -177,7 +177,7 @@ dist_for_service() {
 
 module_for_service() {
   case "$1" in
-    media-service) echo backend ;;
+    media-service) echo media-service ;;
     control-service) echo control-service ;;
     bigscreen-bff) echo bigscreen-bff ;;
     *) echo "" ;;

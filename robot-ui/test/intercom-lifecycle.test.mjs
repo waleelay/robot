@@ -14,8 +14,6 @@ const mapPopupSource = readFileSync(new URL('../src/views/bi/gis/globalMap/popup
 const robotControlPopupSource = readFileSync(new URL('../src/views/bi/gis/globalMap/popup/RobotControlPart.vue', import.meta.url), 'utf8')
 const robotCarControlPopupSource = readFileSync(new URL('../src/views/bi/gis/globalMap/popup/RobotCarControlPart.vue', import.meta.url), 'utf8')
 const talkSource = readFileSync(new URL('../src/views/bi/patrol/monitor/second/components/Talk.vue', import.meta.url), 'utf8')
-const debugAppSource = readFileSync(new URL('../../frontend/src/App.vue', import.meta.url), 'utf8')
-const debugHelperSource = readFileSync(new URL('../../frontend/src/livekit-local-media.js', import.meta.url), 'utf8')
 const mediaApiSource = readFileSync(new URL('../src/api/media.js', import.meta.url), 'utf8')
 
 const helperModule = await import(`data:text/javascript;base64,${Buffer.from(helperSource).toString('base64')}`)
@@ -189,15 +187,6 @@ test('Room disconnect 永久挂起时在截止时间后继续本地收口', asyn
   } finally {
     console.warn = originalWarn
   }
-})
-
-test('调试前端的 Room 断开同样有超时边界且页面生命周期统一复用', () => {
-  assert.match(debugHelperSource, /export const ROOM_DISCONNECT_TIMEOUT_MS = 3000/)
-  assert.match(debugHelperSource, /export async function disconnectRoomSafely/)
-  assert.match(debugHelperSource, /Promise\.race/)
-  assert.match(debugAppSource, /disconnectRoomSafely\(camera\.room, \{ context: '退出调试页面时的 LiveKit Room' \}\)/)
-  assert.match(debugAppSource, /disconnectRoomSafely\(camera\.room, \{ context: '对讲启动回滚时的 LiveKit Room' \}\)/)
-  assert.match(debugAppSource, /disconnectRoomSafely\(camera\.room, \{ context: '对讲挂断时的 LiveKit Room' \}\)/)
 })
 
 test('来电终态登记有界保留并阻止迟到 accepted 重新激活', () => {
@@ -613,17 +602,4 @@ test('现场呼叫连接中结束会取消等待，且迟到连接不会再打�
   } finally {
     console.error = originalError
   }
-})
-
-test('调试前端也使用停止采集语义', () => {
-  assert.match(debugAppSource, /await releaseLocalMicrophone\(camera\.room\)/)
-  assert.doesNotMatch(debugAppSource, /hangupIntercom\(camera\)[\s\S]*?setMicrophoneEnabled\(false\)/)
-})
-
-test('调试前端具备启动取消、跨设备互斥和离线回滚保护', () => {
-  assert.match(debugAppSource, /intercomStartOperations\.has\(camera\.key\)/)
-  assert.match(debugAppSource, /item\.key !== camera\.key && this\.intercomInProgress\(item\)/)
-  assert.match(debugAppSource, /signal: operation\.controller\.signal/)
-  assert.match(debugAppSource, /operation\.cancelReason !== 'media-unavailable'/)
-  assert.match(debugAppSource, /intercomStartOperations\.cancel\(old\.key, 'media-unavailable'\)/)
 })

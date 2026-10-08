@@ -2,8 +2,6 @@
 
 固定摄像头 Gateway 部署在可访问现场 RTSP 摄像头的网络中。它只负责固定摄像头目录、RTSP 健康探测，以及把 RTSP 流发布到 LiveKit；不包含机器人状态、控制、对讲、录像上传或机器人模拟逻辑。
 
-机器人演示与模拟统一由 [python-client](../python-client/) 承担。
-
 ## 目录
 
 ```text

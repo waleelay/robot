@@ -110,7 +110,7 @@ build_service() {
   cp "$PROJECT_DIR/$service_dir/target/$package_name" "$STAGING_DIR/packages/"
 }
 
-build_service "backend" "robot-mediaserver-dist.tar.gz"
+build_service "media-service" "robot-mediaserver-dist.tar.gz"
 build_service "control-service" "robot-control-service-dist.tar.gz"
 build_service "bigscreen-bff" "bigscreen-bff-dist.tar.gz"
 
@@ -299,7 +299,7 @@ build_image() {
   $DOCKER buildx build --platform "$TARGET_PLATFORM" --build-arg "JAVA_RUNTIME_IMAGE=$java_runtime_image" --load -t "$image" "$PROJECT_DIR/$service_dir"
 }
 
-build_image "backend" "$image_prefix/media-service:$image_tag"
+build_image "media-service" "$image_prefix/media-service:$image_tag"
 build_image "control-service" "$image_prefix/control-service:$image_tag"
 build_image "bigscreen-bff" "$image_prefix/bigscreen-bff:$image_tag"
 

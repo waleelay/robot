@@ -8,7 +8,7 @@
 ## 项目定位
 
 本仓库是具身智能装备集成管理平台的媒体与控制相关单仓库，包含 Java、
-Go、Python 和 Vue 项目。开始修改前先阅读根目录 `README.md`；涉及具体
+Go 和 Vue 项目。开始修改前先阅读根目录 `README.md`；涉及具体
 业务流程时，再阅读 `docs/` 中与任务直接相关的设计或接口文档，避免把
 归档方案当成当前实现。
 
@@ -24,7 +24,7 @@ Go、Python 和 Vue 项目。开始修改前先阅读根目录 `README.md`；涉
 
 ## 模块与架构边界
 
-- `backend/`：媒体服务，负责视频会话、LiveKit Token/Room、媒体文件及
+- `media-service/`：媒体服务，负责视频会话、LiveKit Token/Room、媒体文件及
   媒体状态。
 - `control-service/`：控制服务，负责 `/api/control/**`、`/ws/control`、
   机器人在线状态以及 MQTT 指令和状态桥接。
@@ -32,8 +32,6 @@ Go、Python 和 Vue 项目。开始修改前先阅读根目录 `README.md`；涉
   媒体流，也不应复制 Control 或 Media 的核心业务。
 - `fixed-camera-gateway/`：现场固定摄像头 Gateway，负责 RTSP、LiveKit、MQTT
   与健康探测。
-- `python-client/`：机器人侧 Python 客户端与演示模拟。
-- `frontend/`：实时视频调试前端。
 - `robot-ui/`：指挥中心前端。
 
 修改跨服务协议时，应同时检查生产者、消费者、DTO/模型、WebSocket 或
@@ -51,7 +49,8 @@ MQTT 事件载荷及相关文档。不要在没有明确理由的情况下跨模
 - 项目自有日志的说明文字、展示标签、代码注释和项目文档使用简体中文。
   标识符、协议字段/值、事件与错误编码、外部 API 名称保持原有拼写；保留原始
   异常类型和堆栈，不伪造第三方诊断。日志翻译须保留级别、占位符、参数与脱敏边界。
-- 分支默认使用 `codex/` 前缀，提交信息使用简体中文，一个提交对应一个可
+- 后续开发以 `local` 分支为基线；`main` 只保留正式服务和必要工程资源，并按需接收已验证的正式改动。需要新建任务分支时使用 `codex/` 前缀。
+- 提交信息使用简体中文，一个提交对应一个可
   验证的闭环能力。Git 提交格式、Body 长描述模板、类型和 scope 约定详见根目录
   [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 - 生成物、依赖目录和大型二进制文件不得因普通代码修改被意外加入版本控制。
@@ -87,19 +86,13 @@ sh scripts/dev-check.sh
 
 ```bash
 # Java 服务
-(cd backend && mvn test)
+(cd media-service && mvn test)
 (cd control-service && mvn test)
 (cd bigscreen-bff && mvn test)
 
 # 固定摄像头 Gateway
 (cd fixed-camera-gateway && go test ./...)
 (cd fixed-camera-gateway && go build -o fixed-camera-gateway ./cmd/fixed-camera-gateway)
-
-# Python 客户端
-(cd python-client && python -m unittest discover -s tests)
-
-# 调试前端
-(cd frontend && npm run build)
 
 # 指挥中心前端
 (cd robot-ui && npm run lint)

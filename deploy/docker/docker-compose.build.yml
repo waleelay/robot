@@ -2,7 +2,7 @@ services:
   media-service:
     platform: ${TARGET_PLATFORM:-linux/amd64}
     build:
-      context: ../../backend
+      context: ../../media-service
     image: ${IMAGE_PREFIX:-robot}/media-service:${IMAGE_TAG:-latest}
 
   control-service:

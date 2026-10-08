@@ -41,7 +41,6 @@ bff
 robot-ui
 frontend
 gateway
-python-client
 deploy
 protocol
 repo

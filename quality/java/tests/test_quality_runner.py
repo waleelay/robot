@@ -10,6 +10,16 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import quality_check as quality
 
 
+class ModulePathTest(unittest.TestCase):
+    def test_legacy_backend_baseline_maps_to_media_service(self):
+        roots = {"media-common", "backend", "control-service", "bigscreen-bff"}
+        self.assertEqual("backend", quality.base_module_names(roots)["media-service"])
+
+    def test_current_baseline_uses_media_service(self):
+        roots = {"media-common", "media-service", "control-service", "bigscreen-bff"}
+        self.assertEqual("media-service", quality.base_module_names(roots)["media-service"])
+
+
 class JavaRulesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

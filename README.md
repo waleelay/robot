@@ -1,11 +1,11 @@
 # robot-mediaserver
 
-具身智能装备集成管理平台的媒体与控制相关单仓库。仓库包含大屏接入层、控制编排、媒体服务、机器人侧客户端和两个前端；浏览器通过 LiveKit 直接收发媒体流，BFF 和 Control 只处理鉴权、业务编排、状态与信令。
+具身智能装备集成管理平台的媒体与控制相关单仓库。仓库包含大屏接入层、控制编排、媒体服务、固定摄像头 Gateway 和指挥中心前端；浏览器通过 LiveKit 直接收发媒体流，BFF 和 Control 只处理鉴权、业务编排、状态与信令。
 
 ## 1. 当前架构
 
 ```text
-浏览器 / robot-ui / frontend
+浏览器 / robot-ui
   -> Bigscreen BFF :8090（JWT 验证、REST 代理与聚合、WebSocket 桥接）
   -> Control Service :8082（控制会话、设备状态、MQTT 与媒体编排）
   -> Media Service :8088（视频会话、LiveKit、文件、TTS）
@@ -24,25 +24,21 @@ Media Service -> LiveKit Server / Ingress / Egress / MinIO / MySQL
 | --- | --- |
 | `bigscreen-bff/` | 大屏统一认证入口、下游代理、全景聚合、统计报告、WebSocket 事件适配 |
 | `control-service/` | `/api/control/**`、控制租约、设备命令、机器人状态、固定摄像头、MQTT、视频编排 |
-| `backend/` | 视频会话与对讲、LiveKit Room/Token/Ingress/Egress、通用文件、HLS、TTS |
+| `media-service/` | 视频会话与对讲、LiveKit Room/Token/Ingress/Egress、通用文件、HLS、TTS |
 | `media-common/` | Media 与 Control 共享的纯 DTO 与枚举契约模块，不承载业务逻辑 |
 | `fixed-camera-gateway/` | Go 固定摄像头 Gateway；RTSP、LiveKit、MQTT、健康探测与推流进程管理 |
-| `python-client/` | Python 机器人客户端与演示模拟 |
 | `robot-ui/` | 指挥中心前端 |
-| `frontend/` | 实时视频和文件能力调试前端 |
 
 Media Service 不发布 MQTT；Control Service 不保存媒体文件或承载媒体流；BFF 不复制 Control/Media 的核心业务。
 
 ## 2. 工程结构
 
 ```text
-backend/          Java 17 + Spring Boot 3 Media Service
+media-service/    Java 17 + Spring Boot 3 Media Service
 media-common/     Media/Control 共享 DTO 与枚举契约（纯 Java 17）
 control-service/  Java 17 + Spring Boot 3 Control Service
 bigscreen-bff/    Java 17 + Spring Boot 3 Bigscreen BFF
 fixed-camera-gateway/ Go 固定摄像头 Gateway
-python-client/    Python 机器人客户端及演示模拟
-frontend/         Vue 2 实时视频调试前端
 robot-ui/         Vue 指挥中心前端
 deploy/           Docker、Nginx 与离线部署资源
 scripts/          仓库级开发检查脚本
@@ -50,6 +46,8 @@ docs/             需求、设计、接口与协议、测试与验收
 ```
 
 各模块的代码结构、配置和启动方式放在模块自己的 README；文档统一入口为 [docs/README.md](docs/README.md)，Java 服务接口入口为 [Java 服务接口总览](docs/03-接口与协议/Java服务接口总览.md)。
+
+`main` 保留正式服务、指挥中心前端、部署与质量检查资源及工程文档；原 Python Demo、实时视频调试前端和本地生成的报告样例保留在 `local` 分支供后续开发参考。新开发在 `local` 分支进行，验证后的正式改动再按需同步到 `main`。
 
 新增开发和存量整改遵循 [Alibaba 与 OpenAPI 开发规范](docs/02-设计/工程规范/Alibaba与OpenAPI开发规范.md)；已启用 Java 规则和三个服务的 HTTP 契约检查，命令及覆盖限制见[自动检查说明](quality/README.md)，最新验证见[规范整改执行记录](docs/04-测试与验收/执行记录/规范整改执行记录-20260929.md)。
 
@@ -80,17 +78,17 @@ Redis 和 Elasticsearch 已配置依赖，但当前 Java 业务主链路不以�
 建议顺序：
 
 1. 启动 MySQL、EMQX、LiveKit、MinIO 等依赖。
-2. 启动 `backend`，默认端口 `8088`。
+2. 启动 `media-service`，默认端口 `8088`。
 3. 启动 `control-service`，默认端口 `8082`。
 4. 启动 `bigscreen-bff`，默认端口 `8090`。
-5. 启动机器人客户端或固定摄像头 Gateway。
-6. 启动 `robot-ui`、`frontend`，或通过 Nginx 访问构建产物。
+5. 启动独立交付的机器人客户端或固定摄像头 Gateway。
+6. 启动 `robot-ui`，或通过 Nginx 访问构建产物。
 
 Java 服务：
 
 ```bash
 (cd media-common && mvn install)   # 共享契约模块需先安装到本地仓库
-(cd backend && mvn spring-boot:run)
+(cd media-service && mvn spring-boot:run)
 (cd control-service && mvn spring-boot:run)
 (cd bigscreen-bff && mvn spring-boot:run)
 ```
@@ -102,7 +100,7 @@ Java 服务：
 (cd fixed-camera-gateway && go build -o fixed-camera-gateway ./cmd/fixed-camera-gateway)
 ```
 
-完整配置分别见 [Media Service README](backend/README.md)、[Control Service README](control-service/README.md) 和 [Bigscreen BFF README](bigscreen-bff/README.md)。生产环境必须覆盖示例密钥、对象存储凭据、JWT Issuer、服务地址和允许跨域来源，不能直接使用仓库中的开发默认值。
+完整配置分别见 [Media Service README](media-service/README.md)、[Control Service README](control-service/README.md) 和 [Bigscreen BFF README](bigscreen-bff/README.md)。生产环境必须覆盖示例密钥、对象存储凭据、JWT Issuer、服务地址和允许跨域来源，不能直接使用仓库中的开发默认值。
 
 配置整理后的 HLS 超时名称与 Control 扫描周期名称优先使用新入口，旧名称保留兼容回退；HLS 超时空值按未配置处理。迁移方式见上述模块 README 的配置章节。BFF 下游配置类统一为 `DownstreamServiceProperties`，外部 `center.*` 配置键保持不变。
 
@@ -189,7 +187,7 @@ Nginx 只代理 LiveKit 信令，不替代 LiveKit UDP/TCP 媒体端口。Contro
 按改动范围执行最小充分验证；仓库级快速检查：
 
 Java 规则及 HTTP 契约检查使用 `sh scripts/quality-check.sh all --base HEAD`；这里的 `HEAD` 仅用于当前未提交修改，分支审查应指定实际比较目标。省略 `--base` 时 Java 存量问题也会导致失败。
-以下脚本是构建检查，包含四个 Java 模块、调试前端和固定摄像头 Gateway；需要已安装 Go，不替代规则、接口或业务测试。
+以下脚本是构建检查，包含四个 Java 模块和固定摄像头 Gateway；需要已安装 Go，不替代规则、接口或业务测试。
 
 ```bash
 sh scripts/dev-check.sh
@@ -198,11 +196,9 @@ sh scripts/dev-check.sh
 常用模块命令：
 
 ```bash
-(cd backend && mvn test)
+(cd media-service && mvn test)
 (cd control-service && mvn test)
 (cd bigscreen-bff && mvn test)
-(cd python-client && python -m unittest discover -s tests)
-(cd frontend && npm run build)
 (cd robot-ui && npm run lint && npm run build:prod)
 ```
 

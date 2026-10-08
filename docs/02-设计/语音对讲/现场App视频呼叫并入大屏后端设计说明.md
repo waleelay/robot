@@ -38,7 +38,7 @@ App / 大屏 <--WebRTC--> LiveKit
 
 ## 4. 关键代码位置
 
-- Media：`backend/.../fieldcall/FieldCallMediaService.java`、`FieldCallController`
+- Media：`media-service/.../fieldcall/FieldCallMediaService.java`、`FieldCallController`
 - Control：`control-service/.../call/FieldCallService.java`、`ws/FieldCallWebSocketHandler.java`
 - BFF：`DownstreamServiceProperties.websocketFieldCallUrl`、`/ws/field-call` 注册
 - Nginx：`location /ws/field-call`

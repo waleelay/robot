@@ -125,7 +125,6 @@
 - [机器人端控制模式切换对接指南](03-接口与协议/对接指南/机器人端控制模式切换对接指南.md)
 - [大屏充电与停靠导航对接指南](03-接口与协议/对接指南/大屏充电与停靠导航对接指南.md)
 - [任务视频上传接口对接指南](03-接口与协议/对接指南/任务视频上传接口对接指南.md)
-- [Python 客户端任务视频上传对接指南](03-接口与协议/对接指南/Python客户端任务视频上传对接指南.md)
 - [EIOP 任务产物上传进度对接指南](03-接口与协议/对接指南/EIOP任务产物上传进度对接指南.md)
 
 接口文档维护字段、类型、约束和错误码等权威定义；对接指南面向调用方，提供配置、完整调用顺序、可运行示例、重试策略和排障说明。对接指南应引用接口文档，不重复维护协议事实。
@@ -163,12 +162,10 @@
 
 | 模块 | README |
 | --- | --- |
-| Media Service | [backend/README.md](../backend/README.md) |
+| Media Service | [media-service/README.md](../media-service/README.md) |
 | Control Service | [control-service/README.md](../control-service/README.md) |
 | Bigscreen BFF | [bigscreen-bff/README.md](../bigscreen-bff/README.md) |
 | 固定摄像头 Gateway | [fixed-camera-gateway/README.md](../fixed-camera-gateway/README.md) |
-| Python 机器人客户端 | [python-client/README.md](../python-client/README.md) |
-| 实时视频调试前端 | [frontend/README.md](../frontend/README.md) |
 | 指挥中心前端 | [robot-ui/README.md](../robot-ui/README.md) |
 
 ## 8. 归档

@@ -231,7 +231,7 @@ Room 名形如 `field.{orgId}.{callIdShort}`，与机器人 `media.{robotId}...`
 | Control 状态机 | `control-service/.../call/FieldCallService.java` |
 | Control App WS | `control-service/.../ws/FieldCallWebSocketHandler.java` |
 | Control 大屏入口 | `control-service/.../ws/MediaWebSocketHandler.java` |
-| Media | `backend/.../fieldcall/` |
+| Media | `media-service/.../fieldcall/` |
 
 ## 11. 联调检查清单
 

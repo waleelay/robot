@@ -1,2 +1,0 @@
-"""Python robot media client."""
-

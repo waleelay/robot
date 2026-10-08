@@ -28,7 +28,7 @@ robot-control-service-*-tcp*/
 /tmp/
 /tools/
 /outputs/
+/output/
+/data/
+/.workbuddy/
 /bigscreen-bff/data/
-/.workbuddy/memory/2026-08-19.md
-/.workbuddy/memory/2026-08-20.md
-/.workbuddy/memory/2026-08-21.md
