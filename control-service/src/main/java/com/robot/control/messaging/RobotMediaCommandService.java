@@ -6,6 +6,7 @@ import com.robot.control.config.ControlServiceProperties;
 import com.robot.control.fixedcamera.FixedCameraCatalogSnapshot;
 import com.robot.media.common.video.IntercomStartCommand;
 import com.robot.media.common.video.VideoStartCommand;
+import com.robot.media.common.video.FixedCameraPublisherStopCommand;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -58,7 +59,7 @@ public class RobotMediaCommandService {
      * @param command 命令内容
      */
     public void sendFixedCameraStart(VideoStartCommand command) {
-        publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/video/start", command);
+        publish("gateway/media/" + mediaGatewayId() + "/video/start", command);
     }
 
     /**
@@ -77,7 +78,7 @@ public class RobotMediaCommandService {
      * @param payload 消息载荷
      */
     public void sendFixedCameraStop(Object payload) {
-        publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/video/stop", payload);
+        publish("gateway/media/" + mediaGatewayId() + "/video/stop", payload);
     }
 
     /**
@@ -96,7 +97,7 @@ public class RobotMediaCommandService {
      * @param payload 消息载荷
      */
     public void sendFixedCameraRestart(Object payload) {
-        publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/video/restart", payload);
+        publish("gateway/media/" + mediaGatewayId() + "/video/restart", payload);
     }
 
     /**
@@ -105,7 +106,7 @@ public class RobotMediaCommandService {
      * @param snapshot 当前要下发或处理的完整目录快照
      */
     public void sendFixedCameraCatalog(FixedCameraCatalogSnapshot snapshot) {
-        publish("gateway/fixed-camera/" + fixedCameraGatewayId() + "/catalog/sync", snapshot);
+        publish("gateway/media/" + mediaGatewayId() + "/catalog/sync", MediaSourceCatalogSnapshot.fromFixedCameras(snapshot));
     }
 
     /**
@@ -161,7 +162,23 @@ public class RobotMediaCommandService {
         }
     }
 
+    /**
+     * 将共享 HTTP 命令转换为 MQTT 边界载荷，固定源地址仅从租约目录传输，时间使用 UTC ISO-8601。
+     *
+     * @param payload 共享命令或已经完成字段转换的目录载荷
+     * @return 用于 MQTT JSON 序列化的协议对象
+     */
     private Object mqttPayload(Object payload) {
+        if (payload instanceof FixedCameraPublisherStopCommand command) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("commandId", command.commandId());
+            result.put("sessionId", command.sessionId());
+            result.put("sourceType", "FIXED_CAMERA");
+            result.put("sourceId", command.cameraId());
+            result.put("deviceId", command.cameraId());
+            result.put("roomName", command.roomName());
+            return result;
+        }
         if (payload instanceof VideoStartCommand command) {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("commandId", command.commandId());
@@ -176,7 +193,12 @@ public class RobotMediaCommandService {
             result.put("roomName", command.roomName());
             result.put("publisherToken", command.publisherToken());
             result.put("publishIdentity", command.publishIdentity());
-            result.put("rtspUrl", command.rtspUrl());
+            if (command.sourceType() == com.robot.media.common.video.VideoSourceType.FIXED_CAMERA) {
+                // 固定源地址只经授权目录租约传输，start/restart 不得绕过源租约覆盖地址。
+                result.put("sourceProtocol", "RTSP");
+            } else {
+                result.put("rtspUrl", command.rtspUrl());
+            }
             result.put("expiresAt", isoTime(command.expiresAt()));
             return result;
         }
@@ -224,8 +246,8 @@ public class RobotMediaCommandService {
         return client;
     }
 
-    private String fixedCameraGatewayId() {
-        String gatewayId = properties.getMqtt().getFixedCameraGatewayId();
+    private String mediaGatewayId() {
+        String gatewayId = properties.getMqtt().getMediaGatewayId();
         return gatewayId == null || gatewayId.isBlank() ? "default" : gatewayId;
     }
 }

@@ -54,6 +54,7 @@
 ### 实时视频
 
 - [机器人实时视频设计说明书](02-设计/实时视频/机器人实时视频设计说明书.md)
+- [无人机视频与位置接入设计说明书](02-设计/实时视频/无人机视频与位置接入设计说明书.md)
 - [实时视频线上问题整改设计说明书](02-设计/实时视频/实时视频线上问题整改设计说明书.md)
 - [固定监控摄像头实时视频设计说明书](02-设计/实时视频/固定监控摄像头实时视频设计说明书.md)
 - [固定监控摄像头 RTMP 直推实时视频设计说明书](02-设计/实时视频/固定监控摄像头RTMP直推实时视频设计说明书.md)
@@ -151,6 +152,9 @@
 
 ### 执行记录
 
+- [统一媒体 Gateway 目录与协议分层收敛执行记录（2026-10-10）](04-测试与验收/执行记录/统一媒体Gateway目录与协议分层收敛执行记录-20261010.md)
+- [统一媒体 Gateway 固定摄像头迁移执行记录（2026-10-10）](04-测试与验收/执行记录/统一媒体Gateway固定摄像头迁移执行记录-20261010.md)
+- [统一媒体 Gateway 首批执行记录（2026-10-10）](04-测试与验收/执行记录/统一媒体Gateway首批执行记录-20261010.md)
 - [规范整改执行记录](04-测试与验收/执行记录/规范整改执行记录-20260929.md)
 
 
@@ -166,7 +170,7 @@
 | Media Service | [media-service/README.md](../media-service/README.md) |
 | Control Service | [control-service/README.md](../control-service/README.md) |
 | Bigscreen BFF | [bigscreen-bff/README.md](../bigscreen-bff/README.md) |
-| 固定摄像头 Gateway | [fixed-camera-gateway/README.md](../fixed-camera-gateway/README.md) |
+| 统一媒体 Gateway | [media-gateway/README.md](../media-gateway/README.md) |
 | Python 机器人客户端 | [python-client/README.md](../python-client/README.md) |
 | 实时视频调试前端 | [frontend/README.md](../frontend/README.md) |
 | 指挥中心前端 | [robot-ui/README.md](../robot-ui/README.md) |

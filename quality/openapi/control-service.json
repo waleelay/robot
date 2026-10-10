@@ -346,7 +346,7 @@
           },
           "publisherMode" : {
             "description" : "当前发布模式",
-            "enum" : [ "DEVICE_CLIENT", "FIXED_CAMERA_GATEWAY", "LIVEKIT_INGRESS", null ],
+            "enum" : [ "DEVICE_CLIENT", "EDGE_MEDIA_GATEWAY", "LIVEKIT_INGRESS", null ],
             "type" : [ "string", "null" ]
           },
           "publisherRevision" : {
@@ -521,7 +521,7 @@
           },
           "targetMode" : {
             "description" : "目标发布模式",
-            "enum" : [ "DEVICE_CLIENT", "FIXED_CAMERA_GATEWAY", "LIVEKIT_INGRESS" ],
+            "enum" : [ "DEVICE_CLIENT", "EDGE_MEDIA_GATEWAY", "LIVEKIT_INGRESS" ],
             "type" : "string"
           }
         },
@@ -609,7 +609,7 @@
           },
           "publisherMode" : {
             "description" : "当前发布模式",
-            "enum" : [ "DEVICE_CLIENT", "FIXED_CAMERA_GATEWAY", "LIVEKIT_INGRESS", null ],
+            "enum" : [ "DEVICE_CLIENT", "EDGE_MEDIA_GATEWAY", "LIVEKIT_INGRESS", null ],
             "type" : [ "string", "null" ]
           },
           "publisherRevision" : {

@@ -562,7 +562,7 @@ public class FixedCameraIngressService {
             VideoSourceRuntime runtime,
             FixedCameraIngressOperation operation) {
         return operation == FixedCameraIngressOperation.REVOKE
-                && runtime.getPublisherMode() == VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                && runtime.getPublisherMode() == VideoPublisherMode.EDGE_MEDIA_GATEWAY
                 && runtime.getIngressId() == null;
     }
 

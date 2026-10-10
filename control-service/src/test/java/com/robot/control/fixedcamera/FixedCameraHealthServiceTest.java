@@ -48,11 +48,11 @@ class FixedCameraHealthServiceTest {
         MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
         FixedCameraHealthService service = new FixedCameraHealthService(
                 new ObjectMapper(), publisher, mock(ControlVideoCommandService.class));
-        service.handleGatewayStatus("gateway/fixed-camera/gateway-001/status", json("""
+        service.handleGatewayStatus("gateway/media/gateway-001/status", json("""
                 {"gatewayId":"gateway-001","status":"ONLINE","sequence":1,"reportedAt":"%s"}
                 """.formatted(Instant.now())));
-        service.handleCameraStatus("gateway/fixed-camera/gateway-001/camera/camera-001/status", json("""
-                {"gatewayId":"gateway-001","cameraId":"camera-001","health":"AVAILABLE",
+        service.handleCameraStatus("gateway/media/gateway-001/source/FIXED_CAMERA/camera-001/camera-001/status", json("""
+                {"gatewayId":"gateway-001","sourceType":"FIXED_CAMERA","sourceId":"camera-001","deviceId":"camera-001","sourceProtocol":"RTSP","health":"AVAILABLE",
                  "sequence":2,"checkedAt":"%s"}
                 """.formatted(Instant.now())));
 
@@ -72,8 +72,8 @@ class FixedCameraHealthServiceTest {
         FixedCameraHealthService service = new FixedCameraHealthService(
                 new ObjectMapper(), publisher, mock(ControlVideoCommandService.class));
 
-        service.handleCameraStatus("gateway/fixed-camera/gateway-001/camera/camera-001/status", json("""
-                {"gatewayId":"gateway-002","cameraId":"camera-001","health":"AVAILABLE"}
+        service.handleCameraStatus("gateway/media/gateway-001/source/FIXED_CAMERA/camera-001/camera-001/status", json("""
+                {"gatewayId":"gateway-002","sourceType":"FIXED_CAMERA","sourceId":"camera-001","deviceId":"camera-001","sourceProtocol":"RTSP","health":"AVAILABLE"}
                 """));
 
         Map<String, Object> snapshot = service.authorizedSnapshot(
@@ -87,11 +87,11 @@ class FixedCameraHealthServiceTest {
         FixedCameraHealthService service = new FixedCameraHealthService(
                 new ObjectMapper(), mock(MediaWebSocketPublisher.class), mock(ControlVideoCommandService.class));
         Instant observedAt = Instant.now();
-        service.handleGatewayStatus("gateway/fixed-camera/gateway-001/status", json("""
+        service.handleGatewayStatus("gateway/media/gateway-001/status", json("""
                 {"gatewayId":"gateway-001","status":"ONLINE","sequence":1,"reportedAt":"%s"}
                 """.formatted(observedAt)));
-        service.handleCameraStatus("gateway/fixed-camera/gateway-001/camera/camera-001/status", json("""
-                {"gatewayId":"gateway-001","cameraId":"camera-001","health":"AVAILABLE",
+        service.handleCameraStatus("gateway/media/gateway-001/source/FIXED_CAMERA/camera-001/camera-001/status", json("""
+                {"gatewayId":"gateway-001","sourceType":"FIXED_CAMERA","sourceId":"camera-001","deviceId":"camera-001","sourceProtocol":"RTSP","health":"AVAILABLE",
                  "sequence":2,"checkedAt":"%s"}
                 """.formatted(observedAt)));
 
@@ -111,18 +111,18 @@ class FixedCameraHealthServiceTest {
                 new ObjectMapper(), mock(MediaWebSocketPublisher.class), commandService);
         Instant observedAt = Instant.now();
 
-        service.handleGatewayStatus("gateway/fixed-camera/gateway-001/status", json("""
+        service.handleGatewayStatus("gateway/media/gateway-001/status", json("""
                 {"gatewayId":"gateway-001","status":"OFFLINE","sequence":1,"reportedAt":"%s"}
                 """.formatted(observedAt)));
-        service.handleGatewayStatus("gateway/fixed-camera/gateway-001/status", json("""
+        service.handleGatewayStatus("gateway/media/gateway-001/status", json("""
                 {"gatewayId":"gateway-001","status":"ONLINE","sequence":2,"reportedAt":"%s"}
                 """.formatted(observedAt.plusSeconds(1))));
-        service.handleCameraStatus("gateway/fixed-camera/gateway-001/camera/camera-001/status", json("""
-                {"gatewayId":"gateway-001","cameraId":"camera-001","health":"UNAVAILABLE",
+        service.handleCameraStatus("gateway/media/gateway-001/source/FIXED_CAMERA/camera-001/camera-001/status", json("""
+                {"gatewayId":"gateway-001","sourceType":"FIXED_CAMERA","sourceId":"camera-001","deviceId":"camera-001","sourceProtocol":"RTSP","health":"UNAVAILABLE",
                  "sequence":3,"checkedAt":"%s"}
                 """.formatted(observedAt)));
-        service.handleCameraStatus("gateway/fixed-camera/gateway-001/camera/camera-001/status", json("""
-                {"gatewayId":"gateway-001","cameraId":"camera-001","health":"AVAILABLE",
+        service.handleCameraStatus("gateway/media/gateway-001/source/FIXED_CAMERA/camera-001/camera-001/status", json("""
+                {"gatewayId":"gateway-001","sourceType":"FIXED_CAMERA","sourceId":"camera-001","deviceId":"camera-001","sourceProtocol":"RTSP","health":"AVAILABLE",
                  "sequence":4,"checkedAt":"%s"}
                 """.formatted(observedAt.plusSeconds(1))));
 
@@ -141,11 +141,11 @@ class FixedCameraHealthServiceTest {
                 new ObjectMapper(), mock(MediaWebSocketPublisher.class), commandService);
         Instant observedAt = Instant.now();
 
-        service.handleGatewayStatus("gateway/fixed-camera/gateway-001/status", json("""
+        service.handleGatewayStatus("gateway/media/gateway-001/status", json("""
                 {"gatewayId":"gateway-001","status":"ONLINE","sequence":1,"reportedAt":"%s"}
                 """.formatted(observedAt)));
-        service.handleCameraStatus("gateway/fixed-camera/gateway-001/camera/camera-001/status", json("""
-                {"gatewayId":"gateway-001","cameraId":"camera-001","health":"AVAILABLE",
+        service.handleCameraStatus("gateway/media/gateway-001/source/FIXED_CAMERA/camera-001/camera-001/status", json("""
+                {"gatewayId":"gateway-001","sourceType":"FIXED_CAMERA","sourceId":"camera-001","deviceId":"camera-001","sourceProtocol":"RTSP","health":"AVAILABLE",
                  "sequence":2,"checkedAt":"%s"}
                 """.formatted(observedAt)));
 
@@ -160,12 +160,12 @@ class FixedCameraHealthServiceTest {
         FixedCameraHealthService service = new FixedCameraHealthService(
                 new ObjectMapper(), mock(MediaWebSocketPublisher.class), commandService);
         Instant observedAt = Instant.now();
-        service.handleCameraStatus("gateway/fixed-camera/gateway-001/camera/camera-001/status", json("""
-                {"gatewayId":"gateway-001","cameraId":"camera-001","health":"UNAVAILABLE",
+        service.handleCameraStatus("gateway/media/gateway-001/source/FIXED_CAMERA/camera-001/camera-001/status", json("""
+                {"gatewayId":"gateway-001","sourceType":"FIXED_CAMERA","sourceId":"camera-001","deviceId":"camera-001","sourceProtocol":"RTSP","health":"UNAVAILABLE",
                  "sequence":1,"checkedAt":"%s"}
                 """.formatted(observedAt)));
-        service.handleCameraStatus("gateway/fixed-camera/gateway-001/camera/camera-001/status", json("""
-                {"gatewayId":"gateway-001","cameraId":"camera-001","health":"AVAILABLE",
+        service.handleCameraStatus("gateway/media/gateway-001/source/FIXED_CAMERA/camera-001/camera-001/status", json("""
+                {"gatewayId":"gateway-001","sourceType":"FIXED_CAMERA","sourceId":"camera-001","deviceId":"camera-001","sourceProtocol":"RTSP","health":"AVAILABLE",
                  "sequence":2,"checkedAt":"%s"}
                 """.formatted(observedAt.plusSeconds(1))));
 

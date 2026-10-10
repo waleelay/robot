@@ -114,8 +114,13 @@ public class FixedCameraCatalogLeaseService {
         leases.values().stream()
                 .filter(lease -> lease.expiresAt().isAfter(now))
                 .sorted(Comparator.comparingLong(LeaseState::version))
-                .forEach(lease -> lease.cameras().forEach((cameraId, camera) ->
-                        selected.put(cameraId, new SelectedCamera(camera, lease.expiresAt()))));
+                .forEach(lease -> lease.cameras().forEach((cameraId, camera) -> {
+                    // 多身份授权按并集保留；较新的短租约不能提前终止其他身份仍有效的长租约。
+                    SelectedCamera previous = selected.get(cameraId);
+                    Instant expiresAt = previous != null && previous.expiresAt().isAfter(lease.expiresAt())
+                            ? previous.expiresAt() : lease.expiresAt();
+                    selected.put(cameraId, new SelectedCamera(camera, expiresAt));
+                }));
         List<FixedCameraCatalogSnapshot.CameraRecord> cameras = selected.values().stream()
                 .map(item -> new FixedCameraCatalogSnapshot.CameraRecord(
                         item.camera().cameraId(),
@@ -151,12 +156,18 @@ public class FixedCameraCatalogLeaseService {
             if (!camera.enabled() || !"RTSP".equalsIgnoreCase(protocolType)) {
                 continue;
             }
+            String mainStreamUrl = trimToNull(camera.mainStreamUrl());
+            String subStreamUrl = trimToNull(camera.subStreamUrl());
+            if (mainStreamUrl == null && subStreamUrl == null) {
+                // 配置不完整的摄像头不进入 Gateway 输入目录，不能使其他有效源的续租整体失败。
+                continue;
+            }
             result.put(camera.cameraId().trim(), new FixedCameraCatalogLeaseRequest.CameraRecord(
                     camera.cameraId().trim(),
                     true,
                     "RTSP",
-                    trimToNull(camera.mainStreamUrl()),
-                    trimToNull(camera.subStreamUrl())));
+                    mainStreamUrl,
+                    subStreamUrl));
         }
         return Map.copyOf(result);
     }
@@ -178,7 +189,7 @@ public class FixedCameraCatalogLeaseService {
     }
 
     private String gatewayId() {
-        String configured = properties.getMqtt().getFixedCameraGatewayId();
+        String configured = properties.getMqtt().getMediaGatewayId();
         return blank(configured) ? "default" : configured.trim();
     }
 

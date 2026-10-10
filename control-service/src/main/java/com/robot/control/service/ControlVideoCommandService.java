@@ -154,10 +154,9 @@ public class ControlVideoCommandService {
         mediaRequest.setReuse(startRequest.isReuse());
         mediaRequest.setClientRequestId(startRequest.getClientRequestId());
         VideoSessionResponse response = mediaServiceClient.createVideoSession(mediaRequest, user);
-        if (publisherMode == VideoPublisherMode.FIXED_CAMERA_GATEWAY
+        if (publisherMode == VideoPublisherMode.EDGE_MEDIA_GATEWAY
                 && response.status() == VideoSessionStatus.INIT) {
             VideoStartCommand command = mediaServiceClient.requestClientStart(response.sessionId(), "video.fixed_camera.requested");
-            command = withFixedCameraRtsp(command, camera, mediaRequest.getQuality());
             sendStart(command);
             return mediaServiceClient.get(response.sessionId(), user);
         }
@@ -509,7 +508,7 @@ public class ControlVideoCommandService {
         if (transitionState != null && !"STABLE".equalsIgnoreCase(transitionState)) {
             throw new IllegalStateException("固定摄像头媒体配置正在切换：" + cameraId);
         }
-        if (fixedCameraPublisherMode(camera) == VideoPublisherMode.FIXED_CAMERA_GATEWAY
+        if (fixedCameraPublisherMode(camera) == VideoPublisherMode.EDGE_MEDIA_GATEWAY
                 && !hasText(camera.get("mainStreamUrl"))
                 && !hasText(camera.get("subStreamUrl"))) {
             throw new IllegalStateException("固定摄像头未配置码流：" + cameraId);
@@ -552,7 +551,7 @@ public class ControlVideoCommandService {
     private VideoPublisherMode fixedCameraPublisherMode(Map<String, Object> camera) {
         String protocolType = firstString(camera, "protocolType");
         if (protocolType == null || "RTSP".equalsIgnoreCase(protocolType)) {
-            return VideoPublisherMode.FIXED_CAMERA_GATEWAY;
+            return VideoPublisherMode.EDGE_MEDIA_GATEWAY;
         }
         if ("RTMP".equalsIgnoreCase(protocolType)) {
             return VideoPublisherMode.LIVEKIT_INGRESS;
@@ -575,41 +574,6 @@ public class ControlVideoCommandService {
         }
     }
 
-    private VideoStartCommand withFixedCameraRtsp(
-            VideoStartCommand command,
-            Map<String, Object> camera,
-            VideoQuality quality) {
-        if (command == null) {
-            return null;
-        }
-        return new VideoStartCommand(
-                command.commandId(),
-                command.sessionId(),
-                command.robotId(),
-                command.sourceType(),
-                command.sourceId(),
-                command.deviceId(),
-                command.channel(),
-                command.quality(),
-                command.livekitUrl(),
-                command.roomName(),
-                command.publisherToken(),
-                command.publishIdentity(),
-                fixedCameraRtspUrl(camera, quality),
-                command.expiresAt());
-    }
-
-    private String fixedCameraRtspUrl(Map<String, Object> camera, VideoQuality quality) {
-        String main = string(camera.get("mainStreamUrl"));
-        String sub = string(camera.get("subStreamUrl"));
-        if (quality == VideoQuality.main && hasText(main)) {
-            return main;
-        }
-        if ((quality == VideoQuality.sub || quality == null) && hasText(sub)) {
-            return sub;
-        }
-        return hasText(main) ? main : sub;
-    }
 
     private boolean hasText(Object value) {
         return value != null && !String.valueOf(value).isBlank();

@@ -106,7 +106,7 @@ class FixedCameraIngressServiceTest {
 
     @Test
     void repeatedRevokeIsSafeAfterRuntimeAlreadySwitchedToGateway() {
-        runtime.setPublisherMode(VideoPublisherMode.FIXED_CAMERA_GATEWAY);
+        runtime.setPublisherMode(VideoPublisherMode.EDGE_MEDIA_GATEWAY);
         runtime.setIngressId(null);
 
         service.revoke("camera-001", 4L);

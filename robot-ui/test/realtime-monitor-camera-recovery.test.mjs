@@ -791,6 +791,19 @@ test('机器人视频文案不受固定摄像头原因码映射影响', () => {
   assert.equal(state.action, 'restart-source')
 })
 
+test('固定摄像头展示统一网关的租约失效和输入变化原因', () => {
+  for (const [code, text] of [
+    ['SOURCE_LEASE_MISSING', '视频源授权已过期'],
+    ['SOURCE_INPUT_CHANGED', '视频源已变化，请重新观看']
+  ]) {
+    const state = videoDisplayState.resolveVideoDisplayState({
+      session: { status: 'FAILED', lastErrorCode: code }
+    }, {}, { sourceType: 'FIXED_CAMERA' })
+    assert.equal(state.text, text)
+    assert.equal(state.action, 'restart-source')
+  }
+})
+
 test('固定摄像头增量状态保留网关和码流健康原因', () => {
   const module = loadWebsocketRobot()
   const state = {

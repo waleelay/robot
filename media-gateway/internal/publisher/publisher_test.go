@@ -1,0 +1,405 @@
+package publisher
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"log"
+	"os/exec"
+	"strings"
+	"testing"
+	"time"
+
+	"media-gateway/internal/config"
+	"media-gateway/internal/media"
+	"media-gateway/internal/model"
+)
+
+func testInput(address string) media.Input {
+	return media.Input{Protocol: "RTSP", Address: address, Info: media.StreamInfo{CodecName: "h264"}}
+}
+
+func TestUnsupportedInputDoesNotMutateExistingPublisher(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/sleep 30", PublisherStopTimeout: time.Second})
+	t.Cleanup(func() { _ = pub.StopAll() })
+	command := model.StartCommand{SessionID: "existing-session", SourceType: "FIXED_CAMERA", SourceID: "camera01", DeviceID: "camera01",
+		SourceProtocol: "RTSP", RoomName: "room", Channel: "visible", Quality: "main", PublisherToken: "token", ExpiresAt: time.Now().Add(time.Minute)}
+	if _, _, err := pub.Start(context.Background(), command, testInput("rtsp://camera/live")); err != nil {
+		t.Fatal(err)
+	}
+	key := streamKey(command)
+	entry := pub.cmds[key]
+	for _, restart := range []bool{false, true} {
+		var err error
+		input := media.Input{Protocol: "TEST", Address: "test:stream", Info: media.StreamInfo{CodecName: "h264"}}
+		if restart {
+			_, _, err = pub.Restart(context.Background(), command, input)
+		} else {
+			_, _, err = pub.Start(context.Background(), command, input)
+		}
+		if media.Reason(err) != "SOURCE_PROTOCOL_UNSUPPORTED" {
+			t.Fatalf("未实现发布后端须明确拒绝：%v", err)
+		}
+		if pub.cmds[key] != entry || !entryRunning(entry) || pub.sessions[command.SessionID] != key {
+			t.Fatal("拒绝未实现协议不得解绑或重启既有发布进程")
+		}
+	}
+	command.SourceProtocol = "TEST"
+	if _, _, err := pub.Restart(context.Background(), command, testInput("rtsp://camera/live")); media.Reason(err) != "SOURCE_PROTOCOL_MISMATCH" {
+		t.Fatalf("应拒绝命令与输入协议不匹配：%v", err)
+	}
+	if pub.cmds[key] != entry || !entryRunning(entry) {
+		t.Fatal("协议不匹配不能扰动已有进程")
+	}
+}
+
+func TestPublisherLogDoesNotContainTokenOrRTSPURL(t *testing.T) {
+	var output bytes.Buffer
+	previousWriter := log.Writer()
+	previousFlags := log.Flags()
+	log.SetOutput(&output)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(previousWriter)
+		log.SetFlags(previousFlags)
+	})
+
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/echo {token} {input}"})
+	command := model.StartCommand{
+		SessionID:      "session-log",
+		Channel:        "visible",
+		Quality:        "sub",
+		PublisherToken: "publisher-token-secret",
+		RTSPURL:        "rtsp://user:password@camera.example/live",
+		ExpiresAt:      time.Now().Add(time.Minute),
+	}
+	_, _, _ = pub.Start(context.Background(), command, testInput(command.RTSPURL))
+
+	logs := output.String()
+	if !strings.Contains(logs, "推流进程已启动") {
+		t.Fatalf("应输出中文推流启动日志，实际日志=%q", logs)
+	}
+	for _, secret := range []string{"publisher-token-secret", "rtsp://", "password", "camera.example"} {
+		if strings.Contains(logs, secret) {
+			t.Fatalf("日志不得包含敏感信息 %q，实际日志=%q", secret, logs)
+		}
+	}
+}
+
+func TestProcessDiagnosticsRedactsSensitiveValues(t *testing.T) {
+	entry := &processEntry{
+		stderr: &tailBuffer{},
+		redactValues: []string{
+			"publisher-token-secret",
+			"rtsp://user:password@camera.example/live",
+			"wss://livekit.example/rtc",
+		},
+	}
+	_, _ = entry.stderr.Write([]byte("connect rtsp://user:password@camera.example/live token=publisher-token-secret livekit=wss://livekit.example/rtc failed"))
+
+	diagnostics := entry.diagnostics()
+	for _, secret := range []string{"publisher-token-secret", "rtsp://", "password", "camera.example", "livekit.example"} {
+		if strings.Contains(diagnostics, secret) {
+			t.Fatalf("诊断日志不得包含敏感信息 %q，实际=%q", secret, diagnostics)
+		}
+	}
+	if !strings.Contains(diagnostics, "connect") || !strings.Contains(diagnostics, "failed") {
+		t.Fatalf("应保留可诊断的错误上下文，实际=%q", diagnostics)
+	}
+}
+
+func TestProcessDiagnosticsCollectsStdoutAndStderr(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", "echo stdout-message; echo stderr-message >&2; exit 1")
+	entry := newProcessEntry(cmd, "test", model.StartCommand{}, "")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	entry.startWaiting()
+	result := <-entry.done
+	if result.err == nil {
+		t.Fatal("测试进程应异常退出")
+	}
+	for _, expected := range []string{"stdout-message", "stderr-message"} {
+		if !strings.Contains(result.diagnostics, expected) {
+			t.Fatalf("应保留 %q，实际=%q", expected, result.diagnostics)
+		}
+	}
+}
+
+func TestWithoutProxyEnvKeepsNonProxyConfiguration(t *testing.T) {
+	environment := withoutProxyEnv([]string{
+		"HTTP_PROXY=http://127.0.0.1:7892",
+		"https_proxy=http://127.0.0.1:7892",
+		"ALL_PROXY=socks5://127.0.0.1:7892",
+		"NO_PROXY=localhost",
+		"GIO_USE_PROXY_RESOLVER=dummy",
+		"GSTREAMER_PUBLISHER_PATH=/tmp/gstreamer-publisher",
+	})
+	actual := strings.Join(environment, "\n")
+	for _, name := range []string{"HTTP_PROXY", "https_proxy", "ALL_PROXY", "NO_PROXY"} {
+		if strings.Contains(actual, name+"=") {
+			t.Fatalf("推流子进程不得继承受控环境变量 %s，实际=%q", name, actual)
+		}
+	}
+	for _, expected := range []string{"GIO_USE_PROXY_RESOLVER=dummy", "GSTREAMER_PUBLISHER_PATH=/tmp/gstreamer-publisher"} {
+		if !strings.Contains(actual, expected) {
+			t.Fatalf("非代理环境变量应保留 %q，实际=%q", expected, actual)
+		}
+	}
+}
+
+func TestShouldStartWithFFmpegDuringGStreamerRetryCooldown(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{
+		PublisherMode:          "auto",
+		FFmpegPublisherCmd:     "ffmpeg-publisher",
+		PublisherRetryInterval: time.Minute,
+	})
+	inputAddress := "rtsp://camera/live"
+	pub.gstreamerFailedInputs[inputAddress] = time.Now()
+
+	if !pub.shouldStartWithFFmpeg(model.StartCommand{SessionID: "session-1"}, inputAddress) {
+		t.Fatal("GStreamer 失败冷却期内应优先使用 FFmpeg")
+	}
+}
+
+func TestShouldRetryGStreamerAfterCooldown(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{
+		PublisherMode:          "auto",
+		FFmpegPublisherCmd:     "ffmpeg-publisher",
+		PublisherRetryInterval: time.Minute,
+	})
+	inputAddress := "rtsp://camera/live"
+	pub.gstreamerFailedInputs[inputAddress] = time.Now().Add(-2 * time.Minute)
+
+	if pub.shouldStartWithFFmpeg(model.StartCommand{SessionID: "session-1"}, inputAddress) {
+		t.Fatal("冷却期结束后应重新尝试 GStreamer")
+	}
+	if _, exists := pub.gstreamerFailedInputs[inputAddress]; exists {
+		t.Fatal("过期的 GStreamer 失败记录应被清理")
+	}
+}
+
+func TestStreamKeyUsesCameraAndRoomInsteadOfSession(t *testing.T) {
+	first := model.StartCommand{
+		SessionID:  "session-1",
+		SourceType: "FIXED_CAMERA",
+		SourceID:   "camera-1",
+		RoomName:   "room-camera-1",
+	}
+	second := first
+	second.SessionID = "session-2"
+
+	if streamKey(first) != streamKey(second) {
+		t.Fatal("同一路摄像头的不同观看会话应复用同一个推流资源")
+	}
+}
+
+func TestStopOnlyStopsAfterLastSessionLeaves(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{})
+	key := "FIXED_CAMERA|camera-1|room-camera-1"
+	pub.streamSessions[key] = map[string]struct{}{"session-1": {}, "session-2": {}}
+	pub.sessions["session-1"] = key
+	pub.sessions["session-2"] = key
+
+	if err := pub.Stop("session-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(pub.streamSessions[key]) != 1 {
+		t.Fatalf("第一个观看者停止后仍应保留推流资源，实际会话数=%d", len(pub.streamSessions[key]))
+	}
+	if err := pub.Stop("session-2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := pub.streamSessions[key]; exists {
+		t.Fatal("最后一个观看者停止后应清理资源会话映射")
+	}
+}
+
+func TestRejectsMissingPublisherTokenExpiry(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/true"})
+	_, _, err := pub.Start(context.Background(), model.StartCommand{
+		SessionID: "session-no-expiry", PublisherToken: "token",
+	}, testInput("rtsp://camera/live"))
+	if err == nil || !strings.Contains(err.Error(), "Token") {
+		t.Fatalf("缺少 Token 到期时间时应拒绝启动，实际错误=%v", err)
+	}
+}
+
+func TestH265DirectlySelectsTranscodeProcess(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{
+		PublisherMode: "auto", GStreamerPublisherPath: "/not-used/gstreamer-publisher",
+		FFmpegPublisherCmd: "/bin/sleep 30", PublisherStopTimeout: time.Second,
+	})
+	t.Cleanup(func() { _ = pub.StopAll() })
+	command := model.StartCommand{SessionID: "h265-session", SourceType: "DRONE_CAMERA", SourceID: "drone1",
+		SourceProtocol: "RTSP", DeviceID: "camera01", RoomName: "media.drone.drone1.camera01.visible.main",
+		Channel: "visible", Quality: "main", PublisherToken: "token", ExpiresAt: time.Now().Add(time.Minute)}
+	input := testInput("rtsp://ground/live")
+	input.Info.CodecName = "hevc"
+	if _, _, err := pub.Start(context.Background(), command, input); err != nil {
+		t.Fatal(err)
+	}
+	pub.mu.Lock()
+	mode := pub.cmds[streamKey(command)].mode
+	pub.mu.Unlock()
+	if mode != "ffmpeg-h265" {
+		t.Fatalf("H.265 不得先使用 H.264 GStreamer 管线：%s", mode)
+	}
+	if err := pub.Stop(command.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	if stats := pub.Snapshot(); stats.ActivePublishers != 0 || stats.ActiveSessions != 0 {
+		t.Fatalf("转码进程未清理：%+v", stats)
+	}
+}
+
+func TestUnifiedStreamKeyIncludesCameraAndQuality(t *testing.T) {
+	first := model.StartCommand{SourceType: "DRONE_CAMERA", SourceID: "drone1", SourceProtocol: "RTSP", DeviceID: "camera01", RoomName: "same-room", Channel: "visible", Quality: "main"}
+	second := first
+	second.DeviceID = "camera02"
+	if streamKey(first) == streamKey(second) {
+		t.Fatal("不同摄像头不得共享 Publisher")
+	}
+	second = first
+	second.Quality = "sub"
+	if streamKey(first) == streamKey(second) {
+		t.Fatal("不同清晰度不得共享 Publisher")
+	}
+}
+
+func TestRunningPublisherReuseDoesNotDependOnOriginalTokenExpiry(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{})
+	command := model.StartCommand{
+		SessionID: "session-2", SourceType: "FIXED_CAMERA", SourceID: "camera-1", RoomName: "room-1",
+		Channel: "visible", Quality: "sub", PublisherToken: "new-token", ExpiresAt: time.Now().Add(time.Minute),
+	}
+	key := streamKey(command)
+	entry := &processEntry{done: make(chan processResult, 1), mode: "test"}
+	entry.running.Store(true)
+	pub.cmds[key] = entry
+	pub.bindSessionLocked("session-1", key)
+
+	if _, _, err := pub.Start(context.Background(), command, testInput("rtsp://camera/live")); err != nil {
+		t.Fatalf("已连接的推流不应因原始 Token 生命周期被重启：%v", err)
+	}
+	if pub.cmds[key] != entry || len(pub.streamSessions[key]) != 2 {
+		t.Fatalf("应复用原推流并绑定新会话，实际推流=%p 会话数=%d", pub.cmds[key], len(pub.streamSessions[key]))
+	}
+}
+
+func TestRestartReplacesRunningPublisherAndPreservesSharedSessions(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/sleep 5"})
+	command := model.StartCommand{
+		SessionID: "session-1", SourceType: "FIXED_CAMERA", SourceID: "camera-1", RoomName: "room-1",
+		Channel: "visible", Quality: "sub", PublisherToken: "token-1", ExpiresAt: time.Now().Add(time.Minute),
+	}
+	if _, _, err := pub.Start(context.Background(), command, testInput("rtsp://camera/live")); err != nil {
+		t.Fatalf("首次启动推流失败：%v", err)
+	}
+	key := streamKey(command)
+	pub.mu.Lock()
+	first := pub.cmds[key]
+	pub.bindSessionLocked("session-2", key)
+	pub.mu.Unlock()
+
+	command.PublisherToken = "token-2"
+	if _, _, err := pub.Restart(context.Background(), command, testInput("rtsp://camera/live")); err != nil {
+		t.Fatalf("重启推流失败：%v", err)
+	}
+
+	pub.mu.Lock()
+	second := pub.cmds[key]
+	sharedSessions := len(pub.streamSessions[key])
+	pub.mu.Unlock()
+	if second == nil || second == first {
+		t.Fatal("Restart 必须替换仍在运行的旧 Publisher")
+	}
+	if sharedSessions != 2 {
+		t.Fatalf("重启后应保留同源会话绑定，实际=%d", sharedSessions)
+	}
+	if err := pub.StopAll(); err != nil {
+		t.Fatalf("清理测试推流进程失败：%v", err)
+	}
+}
+
+func TestUnexpectedProcessExitCleansPublisherMappings(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{})
+	key := "FIXED_CAMERA|camera-1|room-1"
+	entry := &processEntry{done: make(chan processResult, 1), mode: "test"}
+	pub.cmds[key] = entry
+	pub.bindSessionLocked("session-1", key)
+	pub.watchProcessExit(key, entry, "session-1")
+	entry.done <- processResult{err: errors.New("模拟异常退出"), exitedAt: time.Now()}
+
+	time.Sleep(20 * time.Millisecond)
+	stats := pub.Snapshot()
+	if stats.ActivePublishers != 0 || stats.ActiveSessions != 0 || stats.UnexpectedExits != 1 {
+		t.Fatalf("进程异常退出后应完整清理，实际=%+v", stats)
+	}
+	select {
+	case event := <-pub.Events():
+		if event.ReasonCode != "PUBLISH_PROCESS_EXITED" || len(event.SessionIDs) != 1 {
+			t.Fatalf("进程退出事件不完整，实际=%+v", event)
+		}
+	default:
+		t.Fatal("进程异常退出后应通知上层回写会话状态")
+	}
+}
+
+func TestDifferentStreamsStartInParallel(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/sleep 2"})
+	first := model.StartCommand{
+		SessionID: "session-parallel-1", SourceID: "camera-1", RoomName: "room-1",
+		Channel: "visible", Quality: "sub", PublisherToken: "token-1", ExpiresAt: time.Now().Add(time.Minute),
+	}
+	second := model.StartCommand{
+		SessionID: "session-parallel-2", SourceID: "camera-2", RoomName: "room-2",
+		Channel: "visible", Quality: "sub", PublisherToken: "token-2", ExpiresAt: time.Now().Add(time.Minute),
+	}
+	for streamLockIndex(streamKey(first)) == streamLockIndex(streamKey(second)) {
+		second.SourceID += "x"
+		second.RoomName += "x"
+	}
+	startedAt := time.Now()
+	errors := make(chan error, 2)
+	for _, command := range []model.StartCommand{first, second} {
+		command := command
+		go func() {
+			_, _, err := pub.Start(context.Background(), command, testInput("rtsp://camera/live"))
+			errors <- err
+		}()
+	}
+	for range 2 {
+		if err := <-errors; err != nil {
+			t.Fatalf("不同视频流应并行启动：%v", err)
+		}
+	}
+	if elapsed := time.Since(startedAt); elapsed >= 800*time.Millisecond {
+		t.Fatalf("不同视频流被串行启动，耗时=%s", elapsed)
+	}
+	if err := pub.StopAll(); err != nil {
+		t.Fatalf("清理测试推流进程失败：%v", err)
+	}
+}
+
+func TestPublisherSurvivesStartContextCancellation(t *testing.T) {
+	pub := NewProcessPublisher(config.Config{PublisherCmd: "/bin/sleep 5"})
+	ctx, cancel := context.WithCancel(context.Background())
+	command := model.StartCommand{
+		SessionID: "session-context", SourceID: "camera-context", RoomName: "room-context",
+		Channel: "visible", Quality: "sub", PublisherToken: "token", ExpiresAt: time.Now().Add(time.Minute),
+	}
+
+	if _, _, err := pub.Start(ctx, command, testInput("rtsp://camera/live")); err != nil {
+		t.Fatalf("启动推流进程失败：%v", err)
+	}
+	cancel()
+	time.Sleep(100 * time.Millisecond)
+
+	if stats := pub.Snapshot(); stats.ActivePublishers != 1 || stats.ActiveSessions != 1 {
+		t.Fatalf("启动命令结束后推流进程应继续运行，实际=%+v", stats)
+	}
+	if err := pub.StopAll(); err != nil {
+		t.Fatalf("清理测试推流进程失败：%v", err)
+	}
+}

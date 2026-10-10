@@ -22,6 +22,40 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 class RobotMediaStatusSubscriberTest {
 
     @Test
+    void consumesFixedSourceMetadataWithoutChangingMediaHttpStatusModel() {
+        ControlMediaServiceClient media = mock(ControlMediaServiceClient.class);
+        RobotMediaStatusSubscriber subscriber = new RobotMediaStatusSubscriber(new ControlServiceProperties(),
+                new ObjectMapper().findAndRegisterModules(), media, mock(RobotMediaCommandService.class),
+                mock(EquipmentControlService.class), mock(RobotRegistryService.class), mock(IntercomCallService.class),
+                mock(EdgeDeviceStatusHandler.class), mock(FixedCameraHealthService.class), mock(TrajectoryCoordinator.class));
+        subscriber.handleVideoStatus("gateway/media/default/video/status", new MqttMessage("""
+                {"sourceType":"FIXED_CAMERA","sourceId":"camera-001","deviceId":"camera-001",
+                 "sessionId":"vs-001","status":"streaming","timestamp":"2026-10-10T10:00:00Z"}
+                """.getBytes()));
+        org.mockito.ArgumentCaptor<com.robot.media.common.video.VideoStatusMessage> captor =
+                org.mockito.ArgumentCaptor.forClass(com.robot.media.common.video.VideoStatusMessage.class);
+        verify(media).updateVideoStatus(captor.capture());
+        assertThat(captor.getValue().getSessionId()).isEqualTo("vs-001");
+        assertThat(captor.getValue().getStatus()).isEqualTo("streaming");
+    }
+
+    @Test
+    void rejectsForeignGatewayAndRetainedVideoStatus() {
+        ControlMediaServiceClient media = mock(ControlMediaServiceClient.class);
+        RobotMediaStatusSubscriber subscriber = new RobotMediaStatusSubscriber(new ControlServiceProperties(),
+                new ObjectMapper().findAndRegisterModules(), media, mock(RobotMediaCommandService.class),
+                mock(EquipmentControlService.class), mock(RobotRegistryService.class), mock(IntercomCallService.class),
+                mock(EdgeDeviceStatusHandler.class), mock(FixedCameraHealthService.class), mock(TrajectoryCoordinator.class));
+        MqttMessage message = new MqttMessage("""
+                {"sourceType":"FIXED_CAMERA","sourceId":"camera-001","deviceId":"camera-001","sessionId":"vs-001","status":"streaming"}
+                """.getBytes());
+        subscriber.handleVideoStatus("gateway/media/another-gateway/video/status", message);
+        message.setRetained(true);
+        subscriber.handleVideoStatus("gateway/media/default/video/status", message);
+        verifyNoInteractions(media);
+    }
+
+    @Test
     void tracksMediaClientOnlineTransitionIndependentlyFromRobotOnlineStatus() {
         RobotMediaStatusSubscriber subscriber = new RobotMediaStatusSubscriber(
                 new ControlServiceProperties(),

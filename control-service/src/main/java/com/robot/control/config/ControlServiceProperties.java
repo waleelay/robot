@@ -266,9 +266,9 @@ public class ControlServiceProperties {
          */
         private String clientId = "robot-control-service";
         /**
-         * 固定摄像头所属 Gateway 标识。
+         * 统一媒体 Gateway 标识，须与边缘实例的 MEDIA_GATEWAY_ID 一致。
          */
-        private String fixedCameraGatewayId = "default";
+        private String mediaGatewayId = "default";
         /**
          * 是否启用。
          */
@@ -347,21 +347,21 @@ public class ControlServiceProperties {
         }
 
         /**
-         * 读取{@link #fixedCameraGatewayId}。
+         * 读取{@link #mediaGatewayId}。
          *
-         * @return 当前值，含义与约束见{@link #fixedCameraGatewayId}
+         * @return 当前值，含义与约束见{@link #mediaGatewayId}
          */
-        public String getFixedCameraGatewayId() {
-            return fixedCameraGatewayId;
+        public String getMediaGatewayId() {
+            return mediaGatewayId;
         }
 
         /**
-         * 更新{@link #fixedCameraGatewayId}。
+         * 更新{@link #mediaGatewayId}。
          *
-         * @param fixedCameraGatewayId 新值，含义与约束见{@link #fixedCameraGatewayId}
+         * @param mediaGatewayId 新值，含义与约束见{@link #mediaGatewayId}
          */
-        public void setFixedCameraGatewayId(String fixedCameraGatewayId) {
-            this.fixedCameraGatewayId = fixedCameraGatewayId;
+        public void setMediaGatewayId(String mediaGatewayId) {
+            this.mediaGatewayId = mediaGatewayId;
         }
 
         /**

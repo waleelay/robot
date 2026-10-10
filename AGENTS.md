@@ -30,8 +30,8 @@ Go、Python 和 Vue 项目。开始修改前先阅读根目录 `README.md`；涉
   机器人在线状态以及 MQTT 指令和状态桥接。
 - `bigscreen-bff/`：面向大屏前端的 REST/WebSocket 代理与聚合层，不承载
   媒体流，也不应复制 Control 或 Media 的核心业务。
-- `fixed-camera-gateway/`：现场固定摄像头 Gateway，负责 RTSP、LiveKit、MQTT
-  与健康探测。
+- `media-gateway/`：统一边缘媒体 Gateway，负责固定摄像头和无人机视频的源目录、
+  协议适配、LiveKit、MQTT、健康探测与发布进程；飞控遥测不进入媒体核心。
 - `python-client/`：机器人侧 Python 客户端与演示模拟。
 - `frontend/`：实时视频调试前端。
 - `robot-ui/`：指挥中心前端。
@@ -91,9 +91,9 @@ sh scripts/dev-check.sh
 (cd control-service && mvn test)
 (cd bigscreen-bff && mvn test)
 
-# 固定摄像头 Gateway
-(cd fixed-camera-gateway && go test ./...)
-(cd fixed-camera-gateway && go build -o fixed-camera-gateway ./cmd/fixed-camera-gateway)
+# 统一媒体 Gateway
+(cd media-gateway && go test ./...)
+(cd media-gateway && go build -o /tmp/media-gateway ./cmd/media-gateway)
 
 # Python 客户端
 (cd python-client && python -m unittest discover -s tests)

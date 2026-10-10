@@ -7,4 +7,4 @@ cd "$(dirname "$0")/.."
 (cd bigscreen-bff && mvn -q -DskipTests package)
 (cd frontend && npm run build)
 mkdir -p target/dev-check
-(cd fixed-camera-gateway && go build -o ../target/dev-check/fixed-camera-gateway ./cmd/fixed-camera-gateway)
+(cd media-gateway && go build -o ../target/dev-check/media-gateway ./cmd/media-gateway)

@@ -11,8 +11,8 @@
   -> Media Service :8088（视频会话、LiveKit、文件、TTS）
 
 Control Service -> Management Service（设备档案、能力、固定摄像头）
-Control Service <-> EMQX <-> 机器人客户端 / 固定摄像头 Gateway
-Bigscreen BFF -> Control Service -> EMQX -> 固定摄像头 Gateway（用户授权短租约目录）
+Control Service <-> EMQX <-> 机器人客户端 / 统一边缘媒体 Gateway
+Bigscreen BFF -> Control Service -> EMQX -> 媒体 Gateway（用户授权源目录短租约）
 RTMP 固定摄像头 -> LiveKit Ingress -> LiveKit（不经过 Gateway）
 Media Service -> LiveKit Server / Ingress / Egress / MinIO / MySQL
 浏览器 <-> LiveKit（WebRTC 媒体流不经过 BFF 或 Control）
@@ -26,12 +26,18 @@ Media Service -> LiveKit Server / Ingress / Egress / MinIO / MySQL
 | `control-service/` | `/api/control/**`、控制租约、设备命令、机器人状态、固定摄像头、MQTT、视频编排 |
 | `media-service/` | 视频会话与对讲、LiveKit Room/Token/Ingress/Egress、通用文件、HLS、TTS |
 | `media-common/` | Media 与 Control 共享的纯 DTO 与枚举契约模块，不承载业务逻辑 |
-| `fixed-camera-gateway/` | Go 固定摄像头 Gateway；RTSP、LiveKit、MQTT、健康探测与推流进程管理 |
+| `media-gateway/` | Go 统一媒体 Gateway；`media-gateway` 接入 RTSP、LiveKit、MQTT，管理授权源目录、健康探测与发布进程 |
 | `python-client/` | Python 机器人客户端与演示模拟 |
 | `robot-ui/` | 指挥中心前端 |
 | `frontend/` | 实时视频和文件能力调试前端 |
 
 Media Service 不发布 MQTT；Control Service 不保存媒体文件或承载媒体流；BFF 不复制 Control/Media 的核心业务。
+
+统一边缘媒体 Gateway 位于 `media-gateway/` Go 模块中，固定摄像头的 Control/Media 编排已使用统一媒体 Topic、
+`EDGE_MEDIA_GATEWAY` 发布模式和授权源目录租约。Go 保留无人机 RTSP 能力，平台无人机权限与播放入口尚未实现。
+上线前需执行发布模式数据库迁移并协同更新管理端调用方；本地测试结果不代表真实设备已验收或已部署。
+配置与迁移边界见 [Gateway README](media-gateway/README.md#统一媒体入口)，目标设计与剩余实施范围见
+[无人机视频与位置接入设计说明书](docs/02-设计/实时视频/无人机视频与位置接入设计说明书.md)。
 
 ## 2. 工程结构
 
@@ -40,7 +46,7 @@ media-service/    Java 17 + Spring Boot 3 Media Service
 media-common/     Media/Control 共享 DTO 与枚举契约（纯 Java 17）
 control-service/  Java 17 + Spring Boot 3 Control Service
 bigscreen-bff/    Java 17 + Spring Boot 3 Bigscreen BFF
-fixed-camera-gateway/ Go 固定摄像头 Gateway
+media-gateway/    Go 统一边缘媒体 Gateway
 python-client/    Python 机器人客户端及演示模拟
 frontend/         Vue 2 实时视频调试前端
 robot-ui/         Vue 指挥中心前端
@@ -95,11 +101,11 @@ Java 服务：
 (cd bigscreen-bff && mvn spring-boot:run)
 ```
 
-固定摄像头 Gateway 的本地验证：
+统一媒体 Gateway 的本地验证：
 
 ```bash
-(cd fixed-camera-gateway && go test ./...)
-(cd fixed-camera-gateway && go build -o fixed-camera-gateway ./cmd/fixed-camera-gateway)
+(cd media-gateway && go test ./...)
+(cd media-gateway && go build -o /tmp/media-gateway ./cmd/media-gateway)
 ```
 
 完整配置分别见 [Media Service README](media-service/README.md)、[Control Service README](control-service/README.md) 和 [Bigscreen BFF README](bigscreen-bff/README.md)。生产环境必须覆盖示例密钥、对象存储凭据、JWT Issuer、服务地址和允许跨域来源，不能直接使用仓库中的开发默认值。

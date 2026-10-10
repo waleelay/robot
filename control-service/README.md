@@ -116,13 +116,13 @@ src/main/java/com/robot/control/
 Gateway MQTT。以下 Topic 仅属于 RTSP 固定摄像头：
 
 ```text
-gateway/fixed-camera/{gatewayId}/video/start
-gateway/fixed-camera/{gatewayId}/video/stop
-gateway/fixed-camera/{gatewayId}/video/restart
-gateway/fixed-camera/{gatewayId}/video/status
-gateway/fixed-camera/{gatewayId}/status
-gateway/fixed-camera/{gatewayId}/camera/{cameraId}/status
-gateway/fixed-camera/{gatewayId}/catalog/sync
+gateway/media/{gatewayId}/video/start
+gateway/media/{gatewayId}/video/stop
+gateway/media/{gatewayId}/video/restart
+gateway/media/{gatewayId}/video/status
+gateway/media/{gatewayId}/status
+gateway/media/{gatewayId}/source/FIXED_CAMERA/{cameraId}/{cameraId}/status
+gateway/media/{gatewayId}/catalog/sync
 ```
 
 Control 查询 Management 档案并校验 `enabled`。RTSP 在主/子码流缺失时回退到另一条可用码流，首次
@@ -172,7 +172,7 @@ Publisher；这些端点只接受配置的内部调用方标记，不由 Nginx/A
 | `control.media-service-base-url` | `MEDIA_SERVICE_BASE_URL` | Media 内部地址 |
 | `control.management-service-base-url` | `CENTER_MANAGE_BASE_URL` | Management 地址 |
 | `control.device-cache-ttl-seconds` | `MANAGEMENT_DEVICE_CACHE_TTL_SECONDS` | 设备档案及授权列表缓存有效期；非正值回退 30 秒，正值最多取 30 秒 |
-| `control.mqtt.*` | `MQTT_*`、`FIXED_CAMERA_GATEWAY_ID` | Broker、凭据、clientId、Gateway ID 和开关 |
+| `control.mqtt.*` | `MQTT_*`、`MEDIA_GATEWAY_ID` | Broker、凭据、clientId、Gateway ID 和开关 |
 | `control.fixed-camera-health.*` | `FIXED_CAMERA_GATEWAY_TIMEOUT_SECONDS`、`FIXED_CAMERA_HEALTH_MAX_AGE_SECONDS` | Gateway 离线与 RTSP 健康过期阈值 |
 | `control.fixed-camera-catalog.*` | `FIXED_CAMERA_CATALOG_MAX_LEASE_SECONDS`、`FIXED_CAMERA_CATALOG_SWEEP_DELAY_MS`、`FIXED_CAMERA_CATALOG_TRUSTED_CALLER` | 目录租约时限、清理周期和内部调用方标记 |
 | `control.fixed-camera-publisher.*` | `FIXED_CAMERA_PUBLISHER_TRUSTED_CALLER`、`FIXED_CAMERA_PUBLISHER_PRESENCE_TIMEOUT_SECONDS`、`FIXED_CAMERA_PUBLISHER_PRESENCE_POLL_MILLIS` | Management 发布模式切换调用方标记及旧 Publisher 退出核验预算 |

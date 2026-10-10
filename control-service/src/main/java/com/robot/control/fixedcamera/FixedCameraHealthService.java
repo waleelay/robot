@@ -96,7 +96,7 @@ public class FixedCameraHealthService {
      */
     public void handleGatewayStatus(String topic, byte[] payload) {
         String[] parts = topic == null ? new String[0] : topic.split("/");
-        if (parts.length != 4 || !"gateway".equals(parts[0]) || !"fixed-camera".equals(parts[1])
+        if (parts.length != 4 || !"gateway".equals(parts[0]) || !"media".equals(parts[1])
                 || !"status".equals(parts[3])) {
             log.warn("已拒绝格式错误的固定摄像头网关状态主题，主题={}", topic);
             return;
@@ -150,16 +150,21 @@ public class FixedCameraHealthService {
      */
     public void handleCameraStatus(String topic, byte[] payload) {
         String[] parts = topic == null ? new String[0] : topic.split("/");
-        if (parts.length != 6 || !"gateway".equals(parts[0]) || !"fixed-camera".equals(parts[1])
-                || !"camera".equals(parts[3]) || !"status".equals(parts[5])) {
+        if (parts.length != 8 || !"gateway".equals(parts[0]) || !"media".equals(parts[1])
+                || !"source".equals(parts[3]) || !"FIXED_CAMERA".equals(parts[4]) || !"status".equals(parts[7])) {
             log.warn("已拒绝格式错误的固定摄像头健康主题，主题={}", topic);
             return;
         }
         try {
             JsonNode root = objectMapper.readTree(payload);
             String topicGatewayId = parts[2];
-            String topicCameraId = parts[4];
-            if (!topicGatewayId.equals(text(root, "gatewayId")) || !topicCameraId.equals(text(root, "cameraId"))) {
+            String topicCameraId = parts[5];
+            if (!topicGatewayId.equals(text(root, "gatewayId"))
+                    || !"FIXED_CAMERA".equals(text(root, "sourceType"))
+                    || !topicCameraId.equals(text(root, "sourceId"))
+                    || !topicCameraId.equals(text(root, "deviceId"))
+                    || !topicCameraId.equals(parts[6])
+                    || !"RTSP".equals(text(root, "sourceProtocol"))) {
                 log.warn("已拒绝摄像头或网关标识 与主题不一致的健康消息，主题={}", topic);
                 return;
             }

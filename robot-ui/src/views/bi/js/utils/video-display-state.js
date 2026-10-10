@@ -4,6 +4,13 @@ const FIXED_CAMERA_MARKERS = ['FIXED_CAMERA', '固定摄像头']
 const FIXED_CAMERA_ERROR_TEXT = {
   FIXED_CAMERA_CONFIG_FAILED: '固定摄像头配置异常',
   RTSP_PROBE_FAILED: '摄像头码流不可达',
+  SOURCE_PROBE_FAILED: '摄像头码流不可达',
+  SOURCE_LEASE_MISSING: '视频源授权已过期',
+  SOURCE_NOT_CONFIGURED: '视频源未配置',
+  SOURCE_PROTOCOL_MISMATCH: '视频源协议不一致',
+  SOURCE_INPUT_CHANGED: '视频源已变化，请重新观看',
+  SOURCE_VIDEO_EMPTY: '视频源未发现视频轨道',
+  SOURCE_CODEC_UNSUPPORTED: '视频编码不支持',
   PUBLISH_FAILED: '视频推流启动失败',
   PUBLISH_PROCESS_EXITED: '视频推流进程异常退出',
   GATEWAY_COMMAND_QUEUE_FULL: '视频网关繁忙，请稍后重试',

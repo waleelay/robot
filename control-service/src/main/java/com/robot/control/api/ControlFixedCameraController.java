@@ -77,7 +77,7 @@ public class ControlFixedCameraController {
     @GetMapping("/health")
     public Map<String, Object> health() {
         return healthService.authorizedSnapshot(
-                managementClient.fixedCameras(), properties.getMqtt().getFixedCameraGatewayId());
+                managementClient.fixedCameras(), properties.getMqtt().getMediaGatewayId());
     }
 
     /**

@@ -150,13 +150,13 @@ class ControlVideoCommandServiceTest {
                 "enabled", true,
                 "mainStreamUrl", "rtsp://camera/main")));
         when(mediaServiceClient.createVideoSession(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
-                .thenReturn(fixedCameraSession(VideoSessionStatus.STREAMING, VideoPublisherMode.FIXED_CAMERA_GATEWAY, 0L));
+                .thenReturn(fixedCameraSession(VideoSessionStatus.STREAMING, VideoPublisherMode.EDGE_MEDIA_GATEWAY, 0L));
 
         service.startFixedCameraVideo("camera-001", null, operator("operator-1", "web-1"));
 
         ArgumentCaptor<CreateVideoSessionRequest> request = ArgumentCaptor.forClass(CreateVideoSessionRequest.class);
         verify(mediaServiceClient).createVideoSession(request.capture(), org.mockito.ArgumentMatchers.any());
-        assertThat(request.getValue().getExpectedPublisherMode()).isEqualTo(VideoPublisherMode.FIXED_CAMERA_GATEWAY);
+        assertThat(request.getValue().getExpectedPublisherMode()).isEqualTo(VideoPublisherMode.EDGE_MEDIA_GATEWAY);
         assertThat(request.getValue().getExpectedPublisherRevision()).isZero();
         verify(mediaServiceClient, never()).requestClientStart(anyString(), anyString());
     }

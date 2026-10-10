@@ -96,7 +96,7 @@ class VideoSessionServiceIntercomOccupancyTest {
                     runtime.setQuality(invocation.getArgument(4));
                     runtime.setRoomName("room-runtime-test");
                     runtime.setPublisherMode(invocation.getArgument(0) == VideoSourceType.FIXED_CAMERA
-                            ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                            ? VideoPublisherMode.EDGE_MEDIA_GATEWAY
                             : VideoPublisherMode.DEVICE_CLIENT);
                     return Optional.of(runtime);
                 });
@@ -108,7 +108,7 @@ class VideoSessionServiceIntercomOccupancyTest {
             runtime.setRuntimeId(invocation.getArgument(0));
             runtime.setRoomName(target.getRoomName());
             runtime.setPublisherMode(target.getSourceType() == VideoSourceType.FIXED_CAMERA
-                    ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                    ? VideoPublisherMode.EDGE_MEDIA_GATEWAY
                     : VideoPublisherMode.DEVICE_CLIENT);
             return Optional.of(runtime);
         });
@@ -117,7 +117,7 @@ class VideoSessionServiceIntercomOccupancyTest {
             runtime.setRuntimeId(invocation.getArgument(0));
             runtime.setRoomName(target.getRoomName());
             runtime.setPublisherMode(target.getSourceType() == VideoSourceType.FIXED_CAMERA
-                    ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                    ? VideoPublisherMode.EDGE_MEDIA_GATEWAY
                     : VideoPublisherMode.DEVICE_CLIENT);
             return Optional.of(runtime);
         });
@@ -133,6 +133,20 @@ class VideoSessionServiceIntercomOccupancyTest {
                 .hasMessage("当前操作员正在与其他机器人通话，请先结束当前通话");
 
         verifyNoInteractions(liveKitRoomService);
+    }
+
+    @Test
+    void closesRevokedFixedSourceSessionAndIgnoresLateStreaming() {
+        target.setSourceType(VideoSourceType.FIXED_CAMERA);
+        target.setStatus(VideoSessionStatus.STREAMING);
+        service.handleClientStatus("vs-target", "stopped", null, null, "SOURCE_LEASE_MISSING", "lease expired");
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.CLOSED);
+        assertThat(target.getLastErrorCode()).isEqualTo("SOURCE_LEASE_MISSING");
+        verify(fileService).stopActiveLiveRecordingForSession("vs-target");
+        verify(viewerRepository).closeActiveLeasesBySessionId(eq("vs-target"), any());
+        verify(mediaTrackService).unpublish(target);
+        service.handleClientStatus("vs-target", "streaming", null, null, null, null);
+        assertThat(target.getStatus()).isEqualTo(VideoSessionStatus.CLOSED);
     }
 
     @Test
@@ -311,7 +325,7 @@ class VideoSessionServiceIntercomOccupancyTest {
         request.setReuse(true);
         request.setSourceType(VideoSourceType.FIXED_CAMERA);
         request.setSourceId("camera-001");
-        request.setExpectedPublisherMode(VideoPublisherMode.FIXED_CAMERA_GATEWAY);
+        request.setExpectedPublisherMode(VideoPublisherMode.EDGE_MEDIA_GATEWAY);
         request.setExpectedPublisherRevision(0L);
         request.setDeviceId("camera01");
         request.setChannel(VideoChannel.visible);
@@ -327,7 +341,7 @@ class VideoSessionServiceIntercomOccupancyTest {
         verify(sourceRuntimeRepository).insertIfAbsent(
                 anyString(), eq("FIXED_CAMERA"), eq("camera-001"), eq("camera01"),
                 eq("visible"), eq("main"), eq("media.fixed.camera-001.visible.main"),
-                eq("FIXED_CAMERA_GATEWAY"), eq(0L), any());
+                eq("EDGE_MEDIA_GATEWAY"), eq(0L), any());
     }
 
     @Test

@@ -13,7 +13,7 @@
 - 通过 TCP `8519/12345` 和 HTTP `8222` 控制机器人局域网内的多合一真实设备。
 - 上报机器人在线、离线、实时视频、对讲和设备状态。
 
-固定摄像头推流由仓库根目录的 `fixed-camera-gateway/` 独立承担；Python 客户端只处理机器人协议与模拟。
+固定摄像头推流由仓库根目录的 `media-gateway/` 独立承担；Python 客户端只处理机器人协议与模拟。
 
 ## 目录结构
 
@@ -77,7 +77,7 @@ Jetson/Ubuntu 环境可参考：
 ```bash
 chmod +x scripts/ffmpeg-livekit-publisher.sh
 sudo apt-get install -y ffmpeg
-GOPROXY=https://goproxy.cn,direct sh ../fixed-camera-gateway/scripts/install-gstreamer-publisher.sh
+GOPROXY=https://goproxy.cn,direct sh ../media-gateway/scripts/install-gstreamer-publisher.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

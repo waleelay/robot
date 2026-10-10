@@ -303,31 +303,39 @@ build_image "media-service" "$image_prefix/media-service:$image_tag"
 build_image "control-service" "$image_prefix/control-service:$image_tag"
 build_image "bigscreen-bff" "$image_prefix/bigscreen-bff:$image_tag"
 
-fixed_camera_gateway_image="$image_prefix/fixed-camera-gateway:$image_tag"
-fixed_camera_gateway_archive=$(find_tool_image_archive "fixed-camera-gateway-image" || true)
-if [ -n "$fixed_camera_gateway_archive" ]; then
-  echo "using prebuilt fixed-camera-gateway image archive: $fixed_camera_gateway_archive"
-  load_image_archive "$fixed_camera_gateway_archive"
-  if ! $DOCKER image inspect "$fixed_camera_gateway_image" >/dev/null 2>&1; then
+media_gateway_image="$image_prefix/media-gateway:$image_tag"
+media_gateway_archive=$(find_tool_image_archive "media-gateway-image" || true)
+if [ -n "$media_gateway_archive" ]; then
+  echo "using prebuilt media-gateway image archive: $media_gateway_archive"
+  load_image_archive "$media_gateway_archive"
+  if ! $DOCKER image inspect "$media_gateway_image" >/dev/null 2>&1; then
     loaded_gateway_image=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | awk '
-      $0 == "robot/fixed-camera-gateway:latest" { print; exit }
-      $0 == "robot/fixed-camera-gateway:amd64" { print; exit }
-      $0 == "robot/fixed-camera-gateway:arm64" { print; exit }
-      $0 ~ /\/fixed-camera-gateway:/ { print; exit }
-      $0 ~ /^fixed-camera-gateway:/ { print; exit }
+      $0 == "robot/media-gateway:latest" { print; exit }
+      $0 == "robot/media-gateway:amd64" { print; exit }
+      $0 == "robot/media-gateway:arm64" { print; exit }
+      $0 ~ /\/media-gateway:/ { print; exit }
+      $0 ~ /^media-gateway:/ { print; exit }
     ')
     if [ -n "$loaded_gateway_image" ]; then
-      echo "tagging $loaded_gateway_image as $fixed_camera_gateway_image"
-      $DOCKER tag "$loaded_gateway_image" "$fixed_camera_gateway_image"
+      echo "tagging $loaded_gateway_image as $media_gateway_image"
+      $DOCKER tag "$loaded_gateway_image" "$media_gateway_image"
     fi
   fi
-  if ! $DOCKER image inspect "$fixed_camera_gateway_image" >/dev/null 2>&1; then
-    echo "prebuilt fixed-camera-gateway archive did not provide a tag that can be retagged to $fixed_camera_gateway_image" >&2
-    echo "Rebuild and save it as $TOOL_IMAGE_DIR/fixed-camera-gateway-image.tar.gz, or remove the archive to build from source." >&2
+  if ! $DOCKER image inspect "$media_gateway_image" >/dev/null 2>&1; then
+    echo "prebuilt media-gateway archive did not provide a tag that can be retagged to $media_gateway_image" >&2
+    echo "Rebuild and save it as $TOOL_IMAGE_DIR/media-gateway-image.tar.gz, or remove the archive to build from source." >&2
     exit 1
   fi
 else
-  build_image "fixed-camera-gateway" "$fixed_camera_gateway_image"
+  build_image "media-gateway" "$media_gateway_image"
+fi
+
+# 发布物统一使用 media-gateway，必须拒绝旧协议镜像，防止新 Control 与旧 Gateway 静默失配。
+gateway_protocol=$(docker image inspect "$media_gateway_image" --format '{{ index .Config.Labels "robot.media-gateway.protocol" }}')
+if [ "$gateway_protocol" != "edge-media-v1" ]; then
+  echo "Gateway 镜像不支持 edge-media-v1：$media_gateway_image" >&2
+  echo "请先使用当前源码重建 Gateway 镜像，再执行打包。" >&2
+  exit 1
 fi
 
 save_image() {
@@ -348,14 +356,14 @@ save_image() {
 save_image "$image_prefix/media-service:$image_tag" "media-service-image.tar.gz"
 save_image "$image_prefix/control-service:$image_tag" "control-service-image.tar.gz"
 save_image "$image_prefix/bigscreen-bff:$image_tag" "bigscreen-bff-image.tar.gz"
-save_image "$fixed_camera_gateway_image" "fixed-camera-gateway-image.tar.gz"
+save_image "$media_gateway_image" "media-gateway-image.tar.gz"
 
 if [ -d "$TOOL_IMAGE_DIR" ]; then
   echo "copying tool images from $TOOL_IMAGE_DIR"
   if [ "$PACKAGE_TTS" = "true" ]; then
-    find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) ! -name 'fixed-camera-gateway-image.*' -exec cp {} "$STAGING_DIR/images/" \;
+    find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) ! -name 'media-gateway-image.*' ! -name 'fixed-camera-gateway-image.*' -exec cp {} "$STAGING_DIR/images/" \;
   else
-    find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) ! -name 'fixed-camera-gateway-image.*' ! -name 'tts.*' -exec cp {} "$STAGING_DIR/images/" \;
+    find "$TOOL_IMAGE_DIR" -maxdepth 1 -type f \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.txz' -o -name '*.tar.zst' -o -name '*.tzst' \) ! -name 'media-gateway-image.*' ! -name 'fixed-camera-gateway-image.*' ! -name 'tts.*' -exec cp {} "$STAGING_DIR/images/" \;
     echo "skipping TTS image and config because PACKAGE_TTS=false"
   fi
 else
