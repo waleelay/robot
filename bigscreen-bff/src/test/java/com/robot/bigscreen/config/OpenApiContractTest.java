@@ -201,7 +201,8 @@ class OpenApiContractTest {
     @Test
     void protectsBrowserRoutesAndDescribesBadRequests() throws Exception {
         mvc.perform(get("/api/bigscreen/panorama/overview")).andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/bigscreen/statistics/overview").with(jwt().jwt(token -> token.claim("azp", "field-app"))))
+        // 统计概览已允许现场端访问；报表导出仍仅允许大屏端，用它验证客户端权限边界。
+        mvc.perform(post("/api/bigscreen/statistics/reports/export").with(jwt().jwt(token -> token.claim("azp", "field-app"))))
                 .andExpect(status().isForbidden());
         String template = "/api/bigscreen/panorama/alarms/{alarmId}/handled";
         String response = mvc.perform(post(template.replace("{alarmId}", "alarm-1"))
