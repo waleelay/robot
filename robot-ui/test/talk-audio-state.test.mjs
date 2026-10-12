@@ -38,8 +38,9 @@ test('拖动期间显示本地交互值，交互结束后以设备上报状态�
   assert.match(talkSource, /this\.volumeInteracting = true/)
   assert.match(talkSource, /if \(!this\.volumeInteracting\)/)
   assert.match(talkSource, /this\.localVolume = muted && volume === 0/)
-  assert.match(talkSource, /const reported = key \? \(this\.audioState\?\.\[key\] \|\| \{\}\) : \{\}/)
-  assert.match(talkSource, /volume: reportedVolume === undefined/)
+  assert.match(talkSource, /audioReportRevision: device\?\.runtimeRevision \|\| 0/)
+  assert.match(talkSource, /volume: status\.volumePercent === undefined/)
+  assert.doesNotMatch(talkSource, /this\.audioState\?\.\[key\]/)
   assert.doesNotMatch(talkSource, /setAudioState/)
   assert.doesNotMatch(talkSource, /persistDeviceStateCache/)
 })
@@ -50,24 +51,14 @@ test('设备新状态到达后统一校准音量和静音状态', () => {
   assert.match(talkSource, /this\.requestedMuted = null/)
 })
 
-test('边缘端无时间戳且重复上报相同值时仍生成新的最终状态版本', () => {
-  const first = audioStateModule.mergeReportedAudioState({}, { volume: 60, muted: false })
-  const firstVersion = audioStateModule.audioStatusVersion('robot-1', 'speaker_main', first)
-  const second = audioStateModule.mergeReportedAudioState(first, { volume: 60, muted: false })
-  const secondVersion = audioStateModule.audioStatusVersion('robot-1', 'speaker_main', second)
-
-  assert.equal(first.audioStatusUpdatedAt, undefined)
-  assert.equal(first.audioReportRevision, 1)
-  assert.equal(second.audioReportRevision, 2)
-  assert.notEqual(firstVersion, secondVersion)
-})
-
-test('初始化快照保留已有实时值但仍确认收到一次新状态包', () => {
-  const current = { volume: 77, muted: false, audioReportRevision: 4 }
-  const next = audioStateModule.mergeReportedAudioState(current, { volume: 60, muted: true }, {
-    preserveExisting: true
+test('相同音量的重复上报仍使用 Control 快照版本触发校准', () => {
+  const firstVersion = audioStateModule.audioStatusVersion('robot-1', 'speaker_main', {
+    volume: 60, muted: false, audioReportRevision: 1
   })
-  assert.deepEqual(next, { volume: 77, muted: false, audioReportRevision: 5 })
+  const secondVersion = audioStateModule.audioStatusVersion('robot-1', 'speaker_main', {
+    volume: 60, muted: false, audioReportRevision: 2
+  })
+  assert.notEqual(firstVersion, secondVersion)
 })
 
 test('加减键和滑块复用同一音量命令流程并立即联动显示', () => {
@@ -81,7 +72,7 @@ test('加减键和滑块复用同一音量命令流程并立即联动显示', ()
 test('静音时保留最后一次非静音音量，取消静音后不再显示零音量', () => {
   assert.match(talkSource, /if \(!muted\) this\.lastUnmutedVolume = volume/)
   assert.match(talkSource, /if \(muted\) this\.lastUnmutedVolume = this\.displayVolume/)
-  assert.match(talkSource, /:disabled="displayMuted"/)
+  assert.match(talkSource, /:disabled="!talkAvailable \|\| displayMuted"/)
 })
 
 test('语音对讲音量选择普通扬声器且不把 INTERCOM 当作音量设备', () => {
@@ -95,16 +86,26 @@ test('语音对讲音量选择普通扬声器且不把 INTERCOM 当作音量设�
   assert.doesNotMatch(audioDeviceBlock, /INTERCOM/)
 })
 
-test('逻辑扬声器状态按 driverDeviceId 合并到物理控制画像且保留物理 deviceId', () => {
-  assert.match(websocketStoreSource, /function incomingProfileDevice/)
-  assert.match(websocketStoreSource, /audioDriverDeviceId\(device\) === profileDevice\.deviceId/)
-  assert.match(websocketStoreSource, /deviceId: device\.deviceId/)
-  assert.match(websocketStoreSource, /status: Object\.assign/)
+test('音频状态只按平台 ID 合并且不再复制音量缓存', () => {
+  assert.doesNotMatch(websocketStoreSource, /function incomingProfileDevice|function audioDriverDeviceId/)
+  assert.doesNotMatch(websocketStoreSource, /mergeReportedAudioState/)
+  assert.match(websocketStoreSource, /status: reported\.status/)
 })
 
-test('普通扬声器同步物理音量缓存别名但 INTERCOM 不参与映射', () => {
-  assert.match(websocketStoreSource, /const ORDINARY_AUDIO_DEVICE_TYPES = \['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL'\]/)
-  assert.match(websocketStoreSource, /const deviceIds = \[\.\.\.new Set\(\[device\.deviceId, physicalDeviceId\]/)
-  assert.match(websocketStoreSource, /mergeReportedAudioState\(state\.audioState\[key\], status, options\)/)
-  assert.doesNotMatch(websocketStoreSource, /ORDINARY_AUDIO_DEVICE_TYPES = \[[^\]]*INTERCOM/)
+test('普通扬声器缺失状态显示未同步，离线时键盘与方法入口均不能发布', async () => {
+  const vm = await import('node:vm')
+  const methodsSource = talkSource.slice(talkSource.indexOf('    normalizeAudioVolume(volume) {'), talkSource.indexOf('    async sendDeviceCommand(device, action, params, source) {'))
+  const methods = vm.runInNewContext('({' + methodsSource + '})')
+  const sent = []
+  const context = { ...methods, talkAvailable: false, displayMuted: false, displayVolume: 60,
+    sendDeviceCommand: async (...args) => { sent.push(args); return true } }
+  assert.equal(await context.toggleAudioMute({}), false)
+  assert.equal(await context.requestAudioVolume({}, 35, 'test'), false)
+  assert.equal(sent.length, 0)
+  // 在线但没有查询反馈的设备仍允许用户设置目标值，不增加状态查询前置条件。
+  context.talkAvailable = true
+  assert.equal(await context.requestAudioVolume({}, 35, 'test'), true)
+  assert.equal(sent.length, 1)
+  assert.match(talkSource, /hasAudioStatus\(audioDevice\) \? displayVolume : '未同步'/)
+  assert.match(talkSource, /:disabled="!talkAvailable \|\| displayMuted"/)
 })

@@ -18,6 +18,17 @@ Media Service -> LiveKit Server / Ingress / Egress / MinIO / MySQL
 浏览器 <-> LiveKit（WebRTC 媒体流不经过 BFF 或 Control）
 ```
 
+远程控制设备的身份、类型和能力以 Management 组件生成的控制画像为准；MQTT
+`media/client/status` 补充设备运行态，`robot.state` 可能保留客户端自报的设备类型作为兼容字段，
+但页面不能据此覆盖控制画像。字段边界见
+[客户端事件与载荷协议](docs/03-接口与协议/客户端事件/客户端事件与载荷协议文档.md#42-robotstate)。
+Control 在画像接口提供静态 `deviceDefinitions[]` 和带版本的 `deviceRuntime`，并在
+`robot.state` 推送同一运行态快照；旧 `devices[]` 合并字段保留供迁移期消费者读取。
+媒体客户端离线或心跳超时只清除客户端来源的设备运行态，不删除管理端设备定义。
+客户端运行态必须使用控制画像的平台设备 ID；HTTP 与推送不再按管理端缓存投影身份，
+也不按驱动 ID 或设备类型猜测关联。连接失效后前端保留版本但撤销可用状态和捕网器本地确认。
+多合一组件无状态反馈时的既有连接判断本次保持不变。
+
 服务职责边界：
 
 | 模块 | 当前职责 |

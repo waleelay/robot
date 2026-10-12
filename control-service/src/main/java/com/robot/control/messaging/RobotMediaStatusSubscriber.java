@@ -15,6 +15,7 @@ import com.robot.control.trajectory.TrajectoryCoordinator;
 import com.robot.media.common.video.VideoStatusMessage;
 import com.robot.media.common.video.IntercomStatusMessage;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
@@ -28,6 +29,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
@@ -71,10 +74,13 @@ public class RobotMediaStatusSubscriber {
     private final EdgeDeviceStatusHandler edgeDeviceStatusHandler;
     private final FixedCameraHealthService fixedCameraHealthService;
     private final TrajectoryCoordinator trajectoryCoordinator;
-    /**
-     * 机器人媒体客户端最近在线标志，用于识别离线到在线的恢复触发。
-     */
+    /** 心跳与超时转换共用此锁，锁内不调用 Media HTTP 接口。 */
+    private final Object mediaClientStateLock = new Object();
+    /** 机器人媒体客户端最近在线标志，用于识别离线到在线的恢复触发。 */
     private final Map<String, Boolean> mediaClientOnlineByRobot = new ConcurrentHashMap<>();
+    /** 媒体客户端设备运行态的独立心跳超时阈值，单位秒。 */
+    @Value("${control.robot.media-client-timeout-seconds:30}")
+    private long mediaClientTimeoutSeconds = 30;
     private MqttClient client;
 
     /**
@@ -226,32 +232,64 @@ public class RobotMediaStatusSubscriber {
      * @return MQTT 消息监听器
      */
     private IMqttMessageListener clientStatusListener() {
-        return (topic, message) -> {
-            String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
-            try {
-                Map<String, Object> data = objectMapper.readValue(payload, new TypeReference<Map<String, Object>>() {});
-                String topicRobotId = robotIdFromTopic(topic);
-                Object reportedRobotIdValue = data.get("robotId");
-                String reportedRobotId = reportedRobotIdValue == null ? "" : String.valueOf(reportedRobotIdValue).trim();
-                if (!reportedRobotId.isBlank() && !topicRobotId.equals(reportedRobotId)) {
-                    log.warn("媒体客户端状态机器人标识 与主题不一致，已忽略，主题机器人标识={} 上报机器人标识={}", topicRobotId, reportedRobotId);
-                    return;
-                }
-                data.put("robotId", topicRobotId);
+        return this::handleClientStatus;
+    }
+
+    /**
+     * 校验并串行提交客户端在线转换，避免超时扫描回写旧的在线标志。
+     *
+     * @param topic 媒体客户端状态主题
+     * @param message 客户端完整状态或心跳
+     */
+    void handleClientStatus(String topic, MqttMessage message) {
+        if (message.isRetained()) {
+            return;
+        }
+        String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+        try {
+            Map<String, Object> data = objectMapper.readValue(payload, new TypeReference<Map<String, Object>>() {});
+            String topicRobotId = robotIdFromTopic(topic);
+            Object reportedRobotIdValue = data.get("robotId");
+            String reportedRobotId = reportedRobotIdValue == null ? "" : String.valueOf(reportedRobotIdValue).trim();
+            if (!reportedRobotId.isBlank() && !topicRobotId.equals(reportedRobotId)) {
+                log.warn("媒体客户端状态机器人标识 与主题不一致，已忽略，主题机器人标识={} 上报机器人标识={}", topicRobotId, reportedRobotId);
+                return;
+            }
+            String clientStatus = String.valueOf(data.get("status"));
+            if (!"online".equalsIgnoreCase(clientStatus) && !"offline".equalsIgnoreCase(clientStatus)) {
+                log.warn("媒体客户端状态缺少有效在线值，已忽略，主题机器人标识={}", topicRobotId);
+                return;
+            }
+            data.put("robotId", topicRobotId);
+            boolean becameOnline;
+            synchronized (mediaClientStateLock) {
                 Map<String, Object> state = equipmentControlService.handleClientState(data);
                 if (state.isEmpty()) {
                     mediaClientOnlineByRobot.remove(topicRobotId);
                     return;
                 }
                 robotRegistryService.update(state);
-                String status = String.valueOf(data.get("status"));
-                if (mediaClientBecameOnline(topicRobotId, status)) {
-                    mediaServiceClient.onlineRestartCommands(topicRobotId, status).forEach(commandService::sendStart);
-                }
-            } catch (Exception ex) {
-                log.warn("处理媒体客户端状态失败，主题={} 载荷字节数={}", topic, message.getPayload().length, ex);
+                becameOnline = mediaClientBecameOnline(topicRobotId, clientStatus);
             }
-        };
+            if (becameOnline) {
+                mediaServiceClient.onlineRestartCommands(topicRobotId, clientStatus).forEach(commandService::sendStart);
+            }
+        } catch (Exception ex) {
+            log.warn("处理媒体客户端状态失败，主题={} 载荷字节数={}", topic, message.getPayload().length, ex);
+        }
+    }
+
+    /** 超过媒体客户端心跳期限后失效其设备运行态并发布清空快照。 */
+    @Scheduled(fixedDelayString = "${control.robot.media-client-sweep-delay-ms:1000}")
+    public void expireStaleMediaClients() {
+        Duration timeout = Duration.ofSeconds(Math.max(1, mediaClientTimeoutSeconds));
+        synchronized (mediaClientStateLock) {
+            equipmentControlService.expireStaleClientStates(timeout).forEach(state -> {
+                String robotId = String.valueOf(state.get("robotId"));
+                mediaClientOnlineByRobot.put(robotId, false);
+                robotRegistryService.update(state);
+            });
+        }
     }
 
     boolean mediaClientBecameOnline(String robotId, String status) {

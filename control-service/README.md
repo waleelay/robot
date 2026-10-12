@@ -98,6 +98,16 @@ src/main/java/com/robot/control/
 - `takeover`/模式切换只发布请求，最终状态以机器人上报为准。
 - `confirm-token` 当前会生成 30 秒 Token 信息，但普通 `/commands` 尚未校验它。
 
+### 控制画像与设备运行态
+
+`control-profile.deviceDefinitions` 保存管理端设备定义，`deviceRuntime` 保存媒体客户端运行态；
+HTTP 与 `robot.state` 使用相同快照，设备身份不受请求身份和档案缓存影响。
+客户端 `devices[].deviceId` 必须与画像一致，服务端和前端均不按类型或驱动 ID 猜测平台设备。
+媒体心跳与超时转换串行提交；前端推送断线后失效缓存新鲜度，恢复时继续按实例及版本防止回退。
+完整的失效、确认撤销和保留兼容边界见
+[控制服务接口文档](../docs/03-接口与协议/统一控制/控制服务接口文档.md)。
+本轮依用户要求保留多合一组件在缺少状态查询反馈时的既有交互。
+
 ### 设备命令
 
 服务端优先把 Management `components[].capabilities[].actions` 映射为对外 action；如果一个组件没有任何可识别的映射结果，当前代码会按已知 `deviceType` 使用生产兼容动作表。命令必须属于控制画像最终返回的 `devices[].actions`，再按设备类型路由至 body、ptz、audio、launcher、net-gun、warning-light、vehicle-light 或 multi-function Topic。Control 返回 MQTT 发布结果，不持久化命令，也不等待 ACK。
@@ -180,7 +190,8 @@ Publisher；这些端点只接受配置的内部调用方标记，不由 Nginx/A
 | Spring Boot 结构化日志 | `LOGGING_STRUCTURED_FORMAT_CONSOLE` | 生产默认由 Compose 设置为 `logstash`；HTTP 使用 `X-Request-Id`，STOMP/轨迹分别保留 `eventId`、`commandId` |
 | `control.mileage.*` | `MILEAGE_*` | 异常速度阈值和统计刷新距离阈值 |
 | `spring.datasource.*` | `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` | 里程检查点和分钟增量桶数据库 |
-| `control.robot.*` | `ROBOT_HEARTBEAT_*`、`ROBOT_OFFLINE_RETENTION_SECONDS` | 心跳超时与扫描周期、离线注册表清理 |
+| `control.robot.*` | `ROBOT_HEARTBEAT_*`、`ROBOT_OFFLINE_RETENTION_SECONDS` | 本体心跳超时与扫描周期、离线注册表清理 |
+| `control.robot.media-client-timeout-seconds`、`control.robot.media-client-sweep-delay-ms` | `CONTROL_ROBOT_MEDIA_CLIENT_TIMEOUT_SECONDS`、`CONTROL_ROBOT_MEDIA_CLIENT_SWEEP_DELAY_MS` | 媒体客户端设备状态失效阈值，默认 30 秒；扫描间隔默认 1000 毫秒。与本体心跳分别计算。 |
 | `control.session.*` | `INTERRUPTED_*`、`IDLE_*`、`VIEWER_*` | 视频恢复和释放参数 |
 | `control.session.sweep-delay-ms` | `CONTROL_SESSION_SWEEP_DELAY_MS` | 恢复、对讲超时与空闲释放的扫描周期，默认 5000 毫秒 |
 

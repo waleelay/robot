@@ -12,6 +12,7 @@
           inactive-text="关闭"
           active-color="#3DB56A"
           inactive-color="#5E5E5E"
+          :disabled="!isNetGunConnected(netGunDevice)"
           @change="setFakeNetGunSafety(netGunDevice, $event)">
         </el-switch>
       </div>
@@ -42,12 +43,17 @@ export default {
   },
   methods: {
     handleChangeConfirm(val) {
+      if (val && (!this.isNetGunConnected(this.netGunDevice) || !this.isNetGunSafetyOn(this.netGunDevice))) return
       this.showConfirm = val
     },
     async execute() {
-      await this.firePayload(this.netGunDevice, 1, 'net_gun_fire')
+      if (!this.isNetGunConnected(this.netGunDevice) || !this.isNetGunSafetyOn(this.netGunDevice)) {
+        this.clearPayloadConfirmation()
+        return
+      }
+      const published = await this.firePayload(this.netGunDevice, 1, 'net_gun_fire')
       this.showConfirm = false
-      this.$message.success('发射成功')
+      if (published) this.$message.success('发射指令已发布')
     }
   }
 }

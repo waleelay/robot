@@ -46,6 +46,7 @@ public class RobotRegistryService {
             "edgeStatus",
             "edgeMessageId",
             "edgeSchemaVersion",
+            "deviceRuntime",
             "stateSource");
 
     private final ControlServiceProperties properties;
@@ -289,13 +290,19 @@ public class RobotRegistryService {
             device.controlOwner = controlOwner;
             device.estopActive = estopActive == null ? false : estopActive;
             device.lastHeartbeatAt = receivedAt;
+            boolean olderDeviceRuntime = isOlderDeviceRuntime(
+                    dynamicState.get("deviceRuntime"), device.dynamicState.get("deviceRuntime"));
             if (cameras != null && !cameras.isEmpty()) {
                 device.cameras = new ArrayList<>(cameras);
             }
-            if (mountedDevices != null && !mountedDevices.isEmpty()) {
+            if (!olderDeviceRuntime && mountedDevices != null
+                    && (!mountedDevices.isEmpty() || dynamicState.containsKey("devices"))) {
                 device.mountedDevices = new ArrayList<>(mountedDevices);
             }
             DYNAMIC_STATE_FIELDS.forEach(field -> {
+                if (olderDeviceRuntime && "deviceRuntime".equals(field)) {
+                    return;
+                }
                 if (!edgeStatusReport && ("speed".equals(field) || "location".equals(field))) {
                     return;
                 }
@@ -482,6 +489,26 @@ public class RobotRegistryService {
                     && device.lastHeartbeatAt != null
                     && device.lastHeartbeatAt.isBefore(retentionThreshold);
         });
+    }
+
+    /**
+     * 判断异步发布的客户端快照是否已落后于注册表中的版本。
+     *
+     * @param incoming 新接收的快照
+     * @param current 注册表快照
+     * @return 同一 Control 实例内版本更旧时为 true
+     */
+    private boolean isOlderDeviceRuntime(Object incoming, Object current) {
+        if (!(incoming instanceof Map<?, ?> next) || !(current instanceof Map<?, ?> previous)) {
+            return false;
+        }
+        Object nextRevision = next.get("revision");
+        Object previousRevision = previous.get("revision");
+        return next.get("epoch") != null
+                && next.get("epoch").equals(previous.get("epoch"))
+                && nextRevision instanceof Number nextNumber
+                && previousRevision instanceof Number previousNumber
+                && nextNumber.longValue() < previousNumber.longValue();
     }
 
     /**

@@ -20,6 +20,49 @@ import org.mockito.ArgumentCaptor;
 class RobotRegistryServiceTest {
 
     @Test
+    void forwardsDeviceRuntimeSnapshotAcrossEdgeUpdates() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+        service.update(object("robotId", "robot-1", "stateSource", "EDGE_DEVICE_STATUS", "status", "online"));
+        Map<String, Object> runtime = object("epoch", "control-1", "revision", 2L,
+                "clientOnline", false, "devices", List.of());
+        service.update(object("robotId", "robot-1", "stateSource", "MEDIA_CLIENT_STATUS",
+                "devices", List.of(object("deviceId", "ptz_main")), "deviceRuntime", runtime));
+        service.update(object("robotId", "robot-1", "stateSource", "EDGE_DEVICE_STATUS", "status", "online"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> events = ArgumentCaptor.forClass(Map.class);
+        verify(publisher, org.mockito.Mockito.times(3)).publish(eq("robot.state"), events.capture());
+        assertThat(map(events.getAllValues().get(1).get("deviceRuntime"))).isEqualTo(runtime);
+        assertThat(map(events.getAllValues().get(2).get("deviceRuntime"))).isEqualTo(runtime);
+    }
+
+    @Test
+    void delayedExpiryCannotReplaceNewerClientRuntime() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+        service.update(object("robotId", "robot-1", "stateSource", "EDGE_DEVICE_STATUS", "status", "online"));
+        service.update(object("robotId", "robot-1", "stateSource", "MEDIA_CLIENT_STATUS",
+                "devices", List.of(object("deviceId", "ptz_main", "status", object("pan", 20))),
+                "deviceRuntime", object("epoch", "control-1", "revision", 3L,
+                        "clientOnline", true, "devices", List.of(object("deviceId", "ptz_main")))));
+        service.update(object("robotId", "robot-1", "stateSource", "MEDIA_CLIENT_STATUS",
+                "devices", List.of(), "deviceRuntime", object("epoch", "control-1",
+                        "revision", 2L, "clientOnline", false, "devices", List.of())));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> events = ArgumentCaptor.forClass(Map.class);
+        verify(publisher, org.mockito.Mockito.times(3)).publish(eq("robot.state"), events.capture());
+        Map<String, Object> last = events.getAllValues().get(2);
+        assertThat(map(last.get("deviceRuntime"))).containsEntry("revision", 3L)
+                .containsEntry("clientOnline", true);
+        assertThat(maps(last.get("devices"))).singleElement()
+                .satisfies(device -> assertThat(device).containsEntry("deviceId", "ptz_main"));
+    }
+
+    @Test
     void runtimeSnapshotAndEventsShareVersionAndIgnoreMediaTelemetry() {
         MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
         RobotRegistryService service = new RobotRegistryService(new ControlServiceProperties(), publisher, new ObjectMapper());
@@ -87,6 +130,24 @@ class RobotRegistryServiceTest {
                 .containsEntry("x", 5.28)
                 .containsEntry("y", 1.37)
                 .containsEntry("yaw", -2.87);
+    }
+
+    @Test
+    void emptyMediaDeviceListClearsPreviouslyPublishedDevices() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+        service.update(object("robotId", "robot-1", "stateSource", "EDGE_DEVICE_STATUS", "status", "online"));
+        service.update(object("robotId", "robot-1", "stateSource", "MEDIA_CLIENT_STATUS",
+                "devices", List.of(object("deviceId", "ptz-old"))));
+        service.update(object("robotId", "robot-1", "stateSource", "MEDIA_CLIENT_STATUS",
+                "devices", List.of()));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> events = ArgumentCaptor.forClass(Map.class);
+        verify(publisher, org.mockito.Mockito.times(3)).publish(eq("robot.state"), events.capture());
+        assertThat(events.getAllValues().get(1)).containsEntry("devices", List.of(object("deviceId", "ptz-old")));
+        assertThat(events.getAllValues().get(2)).containsEntry("devices", List.of());
     }
 
     @Test
@@ -387,6 +448,11 @@ class RobotRegistryServiceTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> map(Object value) {
         return (Map<String, Object>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> maps(Object value) {
+        return (List<Map<String, Object>>) value;
     }
 
     private Map<String, Object> object(Object... values) {
