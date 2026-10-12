@@ -1368,7 +1368,7 @@ export default {
             controlMode: profile.controlMode,
             stateSeq: profile.stateSeq
           }))
-          this.syncDeviceStatesFromDevices(this.selectedRobotId, profile.devices, { preserveExisting: true })
+          this.syncDeviceStatesFromDevices(robotId, profile.devices, { preserveExisting: true })
         }
       } catch (error) {
         this.log('ERROR getControlProfile', this.errorMessage(error))
@@ -1422,9 +1422,8 @@ export default {
       }
     },
     controlDevices() {
-      return (this.selectedControlProfile.devices && this.selectedControlProfile.devices.length)
-        ? this.selectedControlProfile.devices
-        : ((this.selectedRobot && this.selectedRobot.devices) || [])
+      const profile = this.controlProfiles[this.selectedRobotId]
+      return Array.isArray(profile?.devices) ? profile.devices : []
     },
     controlDevice(deviceId) {
       return this.controlDevices().find(device => device.deviceId === deviceId)
@@ -1982,7 +1981,7 @@ export default {
     syncAudioStatesFromDevices(robotId, devices, options = {}) {
       if (!robotId || !Array.isArray(devices)) return
       devices
-          .filter(device => ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
+          .filter(device => ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(this.profileDeviceType(robotId, device)))
           .forEach(device => {
             const status = device.status || device.runtimeStatus || {}
             if (status.volume === undefined && status.volumePercent === undefined && status.muted === undefined) return
@@ -2006,11 +2005,21 @@ export default {
       const merged = profile.devices.map(device => {
         const next = incoming.get(device.deviceId)
         if (!next) return device
-        return Object.assign({}, device, next, {
-          controlProfile: Object.assign({}, device.controlProfile || {}, next.controlProfile || {})
-        })
+        // 推送只补运行字段，不能改写管理端设备类型、动作或控制参数。
+        const mergedDevice = { ...device }
+        const status = next.status || next.runtimeStatus
+        if (status) {
+          mergedDevice.status = { ...status }
+          delete mergedDevice.runtimeStatus
+        }
+        if (next.onlineStatus !== undefined) mergedDevice.onlineStatus = next.onlineStatus
+        return mergedDevice
       })
       this.$set(this.controlProfiles, robotId, Object.assign({}, profile, { devices: merged }))
+    },
+    profileDeviceType(robotId, device) {
+      const devices = this.controlProfiles[robotId]?.devices || []
+      return devices.find(item => item.deviceId === device.deviceId)?.deviceType || null
     },
     syncDeviceStatesFromDevices(robotId, devices, options = {}) {
       if (!robotId || !Array.isArray(devices)) return
@@ -2018,20 +2027,21 @@ export default {
       if (robotId !== this.selectedRobotId) return
       devices.forEach(device => {
         const status = device.status || device.runtimeStatus || {}
-        if (device.deviceType === 'LAUNCHER' && status.safetySwitchEnabled !== undefined &&
+        const deviceType = this.profileDeviceType(robotId, device)
+        if (deviceType === 'LAUNCHER' && status.safetySwitchEnabled !== undefined &&
             !(options.preserveExisting && this.launcherSafety[device.deviceId] !== undefined)) {
           this.$set(this.launcherSafety, device.deviceId, !!status.safetySwitchEnabled)
         }
-        if (device.deviceType === 'WARNING_LIGHT' && (status.powerOn !== undefined || status.enabled !== undefined) &&
+        if (deviceType === 'WARNING_LIGHT' && (status.powerOn !== undefined || status.enabled !== undefined) &&
             !(options.preserveExisting && this.warningLightState[device.deviceId] !== undefined)) {
           this.$set(this.warningLightState, device.deviceId, !!(status.powerOn === undefined ? status.enabled : status.powerOn))
         }
         const ptzKey = `${robotId}:${device.deviceId}`
-        if (device.deviceType === 'DUAL_LIGHT_PTZ' && status.autoRotateEnabled !== undefined &&
+        if (deviceType === 'DUAL_LIGHT_PTZ' && status.autoRotateEnabled !== undefined &&
             !(options.preserveExisting && this.ptzAutoRotateState[ptzKey] !== undefined)) {
           this.$set(this.ptzAutoRotateState, ptzKey, !!status.autoRotateEnabled)
         }
-        if (device.deviceType === 'VEHICLE_LIGHT' && !(options.preserveExisting && this.vehicleLightStateReady)) {
+        if (deviceType === 'VEHICLE_LIGHT' && !(options.preserveExisting && this.vehicleLightStateReady)) {
           const next = this.cloneVehicleLightState()
           const front = this.vehicleLightStatusPart(status.front)
           const rear = this.vehicleLightStatusPart(status.rear)
