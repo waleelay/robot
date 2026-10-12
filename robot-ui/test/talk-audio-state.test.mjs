@@ -109,3 +109,15 @@ test('普通扬声器缺失状态显示未同步，离线时键盘与方法入�
   assert.match(talkSource, /hasAudioStatus\(audioDevice\) \? displayVolume : '未同步'/)
   assert.match(talkSource, /:disabled="!talkAvailable \|\| displayMuted"/)
 })
+
+
+test('扬声器状态只读取规范音量字段，零音量保持有效且旧 volume 不伪装已同步', async () => {
+  const vm = await import('node:vm')
+  const start = talkSource.indexOf('    audioStatus(device) {')
+  const block = talkSource.slice(start, talkSource.indexOf('    audioVolume(device)', start))
+  // 直接执行组件方法，验证规范字段的真实读取行为。
+  const methods = vm.runInNewContext('({' + block + '})')
+  assert.equal(methods.audioStatus({ status: { volumePercent: 0, muted: true } }).volume, 0)
+  assert.equal(methods.hasAudioStatus({ status: { volumePercent: 0, muted: true } }), true)
+  assert.equal(methods.hasAudioStatus({ status: { volume: 70, muted: false } }), false)
+})

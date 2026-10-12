@@ -95,25 +95,13 @@ function releasePendingIncomingCallLease(callId) {
 }
 
 function staticControlProfile(profile) {
-  const definitions = profile.deviceDefinitions || profile.devices || []
+  const definitions = profile.deviceDefinitions || []
   const details = { ...profile }
   delete details.deviceRuntime
   delete details.deviceDefinitions
   return {
     ...details,
     devices: definitions.map(({ status, runtimeStatus, onlineStatus, ...device }) => device)
-  }
-}
-
-function runtimeFromLegacyDevices(devices, revision = 0) {
-  return {
-    epoch: 'legacy', revision, clientOnline: true,
-    devices: (devices || []).filter(device => device.status || device.runtimeStatus || device.onlineStatus)
-      .map(device => ({
-        deviceId: device.deviceId,
-        ...(device.onlineStatus === undefined ? {} : { onlineStatus: device.onlineStatus }),
-        ...(device.status || device.runtimeStatus ? { status: device.status || device.runtimeStatus } : {})
-      }))
   }
 }
 
@@ -465,7 +453,6 @@ const mutations = {
     const previous = state.deviceRuntimeByRobot?.[robotId]
     if (previous?.epoch === runtime.epoch && Number(runtime.revision) < Number(previous.revision)) return
     if (previous && previous.epoch !== runtime.epoch) {
-      if (runtime.epoch === 'legacy' && previous.epoch !== 'legacy') return
       const before = Date.parse(previous.epochStartedAt)
       const after = Date.parse(runtime.epochStartedAt)
       if (Number.isFinite(before) && Number.isFinite(after) && after <= before) return
@@ -618,7 +605,6 @@ function toRobotState(robot) {
     name: robot.name || robot.robotId,
     type: robot.type || null,
     controlMode,
-    controlModeName: robot.controlModeName || controlMode,
     stateSeq: robot.stateSeq || 0,
     status: robot.status || 'offline',
     cameras: (robot.cameras || []).map(camera => Object.assign(
@@ -1586,7 +1572,7 @@ const actions = {
     let incoming = toRobotState(data)
     commit('APPLY_DEVICE_RUNTIME', {
       robotId: incoming.robotId,
-      runtime: incoming.deviceRuntime || runtimeFromLegacyDevices(incoming.devices, Date.parse(event.timestamp || incoming.timestamp) || Date.now())
+      runtime: incoming.deviceRuntime
     })
     const index = state.robots.findIndex(robot => robot.robotId === incoming.robotId)
     if (index >= 0) {
@@ -1668,16 +1654,13 @@ const actions = {
         status: incoming.status,
         battery: incoming.battery,
         controlMode: incoming.controlMode,
-        controlModeName: incoming.controlModeName,
         speed: incoming.speed,
         fault: incoming.fault,
         lastHeartbeatAt: incoming.lastHeartbeatAt,
         statusChangedAt: incoming.statusChangedAt,
         runtimeUpdatedAt: incoming.runtimeUpdatedAt,
         charging: incoming.charging,
-        chargingStatus: incoming.chargingStatus,
         taskStatus: incoming.taskStatus,
-        missionStatus: incoming.missionStatus,
         edgeLocation: incoming.edgeLocation
       },
       fromRealtime: true
@@ -2931,10 +2914,10 @@ const actions = {
         const profile = await getControlProfile(robotId)
         commit('setControlProfiles', { robotId, profile })
         // HTTP 首屏快照可能晚于推送到达，按版本合并即可保留最新设备状态。
-        if (profile.deviceRuntime || !state.deviceRuntimeByRobot?.[robotId]) {
+        if (profile.deviceRuntime) {
           commit('APPLY_DEVICE_RUNTIME', {
             robotId, generation,
-            runtime: profile.deviceRuntime || runtimeFromLegacyDevices(profile.devices)
+            runtime: profile.deviceRuntime
           })
         }
         return profile

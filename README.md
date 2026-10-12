@@ -19,11 +19,12 @@ Media Service -> LiveKit Server / Ingress / Egress / MinIO / MySQL
 ```
 
 远程控制设备的身份、类型和能力以 Management 组件生成的控制画像为准；MQTT
-`media/client/status` 补充设备运行态，`robot.state` 可能保留客户端自报的设备类型作为兼容字段，
-但页面不能据此覆盖控制画像。字段边界见
+`media/client/status` 补充设备运行态，`robot.state` 只输出浏览器使用的状态字段，
+不携带上装自报的 `deviceType` 或重复设备列表。字段边界见
 [客户端事件与载荷协议](docs/03-接口与协议/客户端事件/客户端事件与载荷协议文档.md#42-robotstate)。
 Control 在画像接口提供静态 `deviceDefinitions[]` 和带版本的 `deviceRuntime`，并在
-`robot.state` 推送同一运行态快照；旧 `devices[]` 合并字段保留供迁移期消费者读取。
+`robot.state` 推送同一运行态投影；HTTP 既有合并列表的状态也复用该投影。
+`robot-ui` 只消费独立定义与版本快照；调试前端 `frontend/` 不再纳入管理与开发，也不提供协议兼容。
 媒体客户端离线或心跳超时只清除客户端来源的设备运行态，不删除管理端设备定义。
 客户端运行态必须使用控制画像的平台设备 ID；HTTP 与推送不再按管理端缓存投影身份，
 也不按驱动 ID 或设备类型猜测关联。连接失效后前端保留版本但撤销可用状态和捕网器本地确认。
@@ -40,7 +41,7 @@ Control 在画像接口提供静态 `deviceDefinitions[]` 和带版本的 `devic
 | `media-gateway/` | Go 统一媒体 Gateway；`media-gateway` 接入 RTSP、LiveKit、MQTT，管理授权源目录、健康探测与发布进程 |
 | `python-client/` | Python 机器人客户端与演示模拟 |
 | `robot-ui/` | 指挥中心前端 |
-| `frontend/` | 实时视频和文件能力调试前端 |
+| `frontend/` | 历史调试前端，已退出管理与开发范围，不保证新协议兼容 |
 
 Media Service 不发布 MQTT；Control Service 不保存媒体文件或承载媒体流；BFF 不复制 Control/Media 的核心业务。
 

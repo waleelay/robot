@@ -536,3 +536,11 @@ test('捕网器正常确认可发布，令牌返回前设备消失则不发布',
     confirmTokenImpl = async () => ({ confirmToken: 'test-confirm' })
   }
 })
+
+
+test('警示灯只读取规范 powerOn，旧 enabled 不参与浏览器状态判定', () => {
+  const context = { ...controlMixin.methods }
+  assert.equal(context.isWarningLightOn({ status: { powerOn: true } }), true)
+  assert.equal(context.isWarningLightOn({ status: { powerOn: false, enabled: true } }), false)
+  assert.equal(context.isWarningLightOn({ status: { enabled: true } }), false)
+})

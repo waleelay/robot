@@ -250,13 +250,13 @@ export default {
       return {
         ...status,
         audioReportRevision: device?.runtimeRevision || 0,
-        volume: status.volumePercent === undefined ? (status.volume === undefined ? 50 : status.volume) : status.volumePercent,
+        volume: status.volumePercent === undefined ? 50 : status.volumePercent,
         muted: status.muted === true
       }
     },
     hasAudioStatus(device) {
       const status = (device && (device.status || device.runtimeStatus)) || {}
-      return (status.volume !== undefined || status.volumePercent !== undefined) && status.muted !== undefined
+      return (status.volumePercent !== undefined) && status.muted !== undefined
     },
     audioVolume(device) {
       return this.audioStatus(device).volume

@@ -101,7 +101,10 @@ src/main/java/com/robot/control/
 ### 控制画像与设备运行态
 
 `control-profile.deviceDefinitions` 保存管理端设备定义，`deviceRuntime` 保存媒体客户端运行态；
-HTTP 与 `robot.state` 使用相同快照，设备身份不受请求身份和档案缓存影响。
+HTTP 与 `robot.state` 使用同一字段白名单投影，设备身份不受请求身份和档案缓存影响。
+事件移除重复 `devices`、客户端标识和原始诊断；HTTP 既有合并列表的状态也使用同一投影。
+robot-ui 只读取独立定义和快照，调试前端不再兼容；规范字段见
+[robot.state 协议](../docs/03-接口与协议/客户端事件/客户端事件与载荷协议文档.md#42-robotstate)。
 客户端 `devices[].deviceId` 必须与画像一致，服务端和前端均不按类型或驱动 ID 猜测平台设备。
 媒体心跳与超时转换串行提交；前端推送断线后失效缓存新鲜度，恢复时继续按实例及版本防止回退。
 完整的失效、确认撤销和保留兼容边界见
@@ -116,8 +119,8 @@ HTTP 与 `robot.state` 使用相同快照，设备身份不受请求身份和档
 
 普通扬声器的实时音量使用 `media/client/status.audioDevices[]` 中
 `type=speaker` 的物理状态。Control 按逻辑设备 `status.driverDeviceId` 关联
-物理 `deviceId`，将 `volumePercent`、`muted` 归并到 `devices[].status`后复用
-`robot.state` 推送给前端。多合一设备不参与该归并，继续使用自身状态协议。
+物理 `deviceId`，将 `volumePercent`、`muted` 归并到内部设备状态后，投影为
+`robot.state.deviceRuntime.devices[].status` 推送给前端。多合一设备不参与该归并，继续使用自身状态协议。
 
 ### 实时视频与固定摄像头
 

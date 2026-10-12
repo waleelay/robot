@@ -20,6 +20,23 @@ import org.mockito.ArgumentCaptor;
 class RobotRegistryServiceTest {
 
     @Test
+    void publishesOnlyBrowserContractFieldsAndKeepsUnknownChargingUnknown() {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        RobotRegistryService service = new RobotRegistryService(
+                new ControlServiceProperties(), publisher, new ObjectMapper());
+        service.update(object("robotId", "robot-1", "stateSource", "EDGE_DEVICE_STATUS",
+                "status", "online", "chargingStatus", "未充电", "edgeStatus", object("raw", "diagnostic"),
+                "moving", true, "totalMileage", 10, "controlOwner", "operator", "estopActive", true));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> events = ArgumentCaptor.forClass(Map.class);
+        verify(publisher).publish(eq("robot.state"), events.capture());
+        assertThat(events.getValue()).containsOnlyKeys("robotId", "name", "type", "typeCode", "battery", "speed",
+                "runtimeUpdatedAt", "status", "statusChangedAt", "controlMode", "stateSeq", "cameras",
+                "charging", "taskStatus", "location", "healthStatus", "stateSource", "deviceRuntime")
+                .containsEntry("charging", null);
+    }
+
+    @Test
     void forwardsDeviceRuntimeSnapshotAcrossEdgeUpdates() {
         MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
         RobotRegistryService service = new RobotRegistryService(
@@ -58,8 +75,7 @@ class RobotRegistryServiceTest {
         Map<String, Object> last = events.getAllValues().get(2);
         assertThat(map(last.get("deviceRuntime"))).containsEntry("revision", 3L)
                 .containsEntry("clientOnline", true);
-        assertThat(maps(last.get("devices"))).singleElement()
-                .satisfies(device -> assertThat(device).containsEntry("deviceId", "ptz_main"));
+        assertThat(last).doesNotContainKey("devices");
     }
 
     @Test
@@ -123,8 +139,7 @@ class RobotRegistryServiceTest {
                 .containsEntry("speed", 0.6)
                 .containsEntry("healthStatus", "异常")
                 .containsEntry("controlMode", "导航模式")
-                .containsEntry("controlModeName", "导航模式")
-                .containsEntry("devices", List.of(object("deviceId", "ptz-001")));
+                .doesNotContainKeys("controlModeName", "devices", "edgeStatus");
         assertThat(map(state.get("location"))).containsEntry("yaw", -2.87);
         assertThat(service.find("test115").orElseThrow().location())
                 .containsEntry("x", 5.28)
@@ -133,7 +148,7 @@ class RobotRegistryServiceTest {
     }
 
     @Test
-    void emptyMediaDeviceListClearsPreviouslyPublishedDevices() {
+    void emptyMediaDeviceListClearsRegistryWithoutPublishingLegacyDevices() {
         MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
         RobotRegistryService service = new RobotRegistryService(
                 new ControlServiceProperties(), publisher, new ObjectMapper());
@@ -146,8 +161,9 @@ class RobotRegistryServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> events = ArgumentCaptor.forClass(Map.class);
         verify(publisher, org.mockito.Mockito.times(3)).publish(eq("robot.state"), events.capture());
-        assertThat(events.getAllValues().get(1)).containsEntry("devices", List.of(object("deviceId", "ptz-old")));
-        assertThat(events.getAllValues().get(2)).containsEntry("devices", List.of());
+        assertThat(events.getAllValues().get(1)).doesNotContainKey("devices");
+        assertThat(events.getAllValues().get(2)).doesNotContainKey("devices");
+        assertThat(service.find("robot-1").orElseThrow().devices()).isEmpty();
     }
 
     @Test

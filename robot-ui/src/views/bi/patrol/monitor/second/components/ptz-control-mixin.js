@@ -754,7 +754,7 @@ export default {
     isWarningLightOn(device) {
       if (!device) return false
       const status = device.status || device.runtimeStatus || {}
-      const powerOn = status.powerOn === undefined ? status.enabled : status.powerOn
+      const powerOn = status.powerOn
       if (powerOn !== undefined) return this.warningLightPowerOn(powerOn)
       return false
     },

@@ -137,6 +137,7 @@ public class EquipmentControlService {
         DeviceRuntimeSnapshot runtime = clientDeviceRuntime.getOrDefault(robotId, DeviceRuntimeSnapshot.empty());
         String controlMode = reportedControlMode(state.get("controlMode"));
         List<Map<String, Object>> definitions = devices(robot, Map.of());
+        Map<String, Object> runtimePayload = deviceRuntimePayload(runtime);
         return object(
                 "robotId", robotId,
                 "type", firstValue(robot, "type", "deviceType", "typeCode"),
@@ -146,9 +147,9 @@ public class EquipmentControlService {
                 "controlMode", controlMode,
                 "controlModeName", controlModeName(controlMode),
                 "stateSeq", valueOrDefault(state, "stateSeq", 1),
-                "devices", devices(robot, statusByDeviceId(runtime.devices())),
+                "devices", devices(robot, statusByDeviceId(mapList(runtimePayload.get("devices")))),
                 "deviceDefinitions", definitions,
-                "deviceRuntime", deviceRuntimePayload(runtime));
+                "deviceRuntime", runtimePayload);
     }
 
     /**
@@ -1234,7 +1235,9 @@ public class EquipmentControlService {
             Map<String, Object> runtime = new LinkedHashMap<>();
             runtime.put("deviceId", device.get("deviceId"));
             copyIfPresent(device, runtime, "onlineStatus");
-            copyIfPresent(device, runtime, "status");
+            if (device.get("status") instanceof Map<?, ?> status) {
+                runtime.put("status", projectRuntimeStatus(status));
+            }
             return runtime;
         }).toList();
         return object(
@@ -1244,6 +1247,65 @@ public class EquipmentControlService {
                 "clientOnline", snapshot.clientOnline(),
                 "updatedAt", snapshot.updatedAt() == null ? null : DateTimeConfig.normalize(snapshot.updatedAt()),
                 "devices", runtimeDevices);
+    }
+
+    /**
+     * 投影浏览器需要的已上报状态；原始快照仍用于服务端指令校验和音频设备关联。
+     * 按字段而非管理端类型选择，保证相同版本在 HTTP、推送和不同请求身份下内容一致。
+     * 缺失值不推断，显式 null、false 和零值保留。
+     *
+     * @param source 客户端原始设备状态
+     * @return 不包含驱动诊断、物理标识及重复媒体路由的展示状态
+     */
+    private Map<String, Object> projectRuntimeStatus(Map<?, ?> source) {
+        Map<String, Object> status = selectRuntimeFields(source, List.of(
+                "connected", "online", "volumePercent", "muted", "audioStatusUpdatedAt",
+                "autoRotateEnabled", "safetySwitchEnabled", "powerOn", "temperatureC", "volumeLimitPercent"));
+        // 只在规范字段缺省时归一旧设备输入；浏览器协议不再输出别名。
+        if (!source.containsKey("volumePercent") && source.containsKey("volume")) {
+            status.put("volumePercent", source.get("volume"));
+        }
+        if (!source.containsKey("powerOn") && source.containsKey("enabled")) {
+            status.put("powerOn", source.get("enabled"));
+        }
+        projectNestedRuntime(source, status, "front", List.of("mode"));
+        projectNestedRuntime(source, status, "rear", List.of("mode"));
+        projectNestedRuntime(source, status, "audioTransfer", List.of("status", "fileName", "error"));
+        projectNestedRuntime(source, status, "audioSession",
+                List.of("mediaSessionId", "broadcastActive", "monitorActive", "monitorSuppressed"));
+        projectNestedRuntime(source, status, "audioPlayback", List.of("playing", "loop", "fileName"));
+        if (source.get("tubes") instanceof List<?> tubes) {
+            status.put("tubes", tubes.stream().filter(Map.class::isInstance)
+                    .map(tube -> selectRuntimeFields((Map<?, ?>) tube,
+                            List.of("tube", "state", "loaded", "stateName"))).toList());
+        } else if (source.containsKey("tubes") && source.get("tubes") == null) {
+            status.put("tubes", null);
+        }
+        if (source.get("audioFiles") instanceof List<?> files) {
+            status.put("audioFiles", files.stream().filter(String.class::isInstance).toList());
+        } else if (source.containsKey("audioFiles") && source.get("audioFiles") == null) {
+            status.put("audioFiles", null);
+        }
+        return status;
+    }
+
+    private Map<String, Object> selectRuntimeFields(Map<?, ?> source, List<String> fields) {
+        Map<String, Object> selected = new LinkedHashMap<>();
+        for (String field : fields) {
+            if (source.containsKey(field)) {
+                selected.put(field, source.get(field));
+            }
+        }
+        return selected;
+    }
+
+    private void projectNestedRuntime(Map<?, ?> source, Map<String, Object> target,
+            String field, List<String> fields) {
+        if (source.get(field) instanceof Map<?, ?> nested) {
+            target.put(field, selectRuntimeFields(nested, fields));
+        } else if (source.containsKey(field) && source.get(field) == null) {
+            target.put(field, null);
+        }
     }
 
     /**

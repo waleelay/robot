@@ -225,16 +225,10 @@ public class PanoramaWebSocketEventAdapter {
         putNullableInt(data, "battery", sourceData.get("battery"));
         String controlMode = normalizeControlMode(text(sourceData, "controlMode"));
         data.put("controlMode", controlMode);
-        data.put("controlModeName", controlModeName(controlMode));
         putNullableNumber(data, "speed", firstExisting(sourceData, "speed", "currentSpeed"));
-        putNullableText(data, "runningStatus", sourceData.get("runningStatus"));
         putNullableText(data, "healthStatus", sourceData.get("healthStatus"));
         putNullableBoolean(data, "charging", sourceData.get("charging"));
-        putNullableText(data, "chargingStatus", sourceData.get("chargingStatus"));
         putNullableText(data, "taskStatus", sourceData.get("taskStatus"));
-        putNullableText(data, "missionStatus", sourceData.get("missionStatus"));
-        putNullableBoolean(data, "moving", sourceData.get("moving"));
-        putNullableBoolean(data, "estopActive", sourceData.get("estopActive"));
         JsonNode location = firstObject(sourceData, "location", "localization");
         if (location != null) {
             data.set("edgeLocation", location);
@@ -475,10 +469,6 @@ public class PanoramaWebSocketEventAdapter {
             return "fault";
         }
         return status.isBlank() ? "online" : status;
-    }
-
-    private String controlModeName(String controlMode) {
-        return controlMode;
     }
 
     private void putNullableInt(ObjectNode target, String fieldName, JsonNode value) {
