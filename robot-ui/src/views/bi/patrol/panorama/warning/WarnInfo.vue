@@ -16,6 +16,7 @@
     :close-on-press-escape="false"
     append-to-body
     title="异常报告"
+    @closed="handleDialogClosed"
   >
     <template slot="footer"></template>
     <div
@@ -36,9 +37,9 @@
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>
-        <div class="info-content p20 flex" style="position: relative; z-index: 2">
+        <div class="info-content p20 flex" style="position: relative; z-index: 2; align-items: stretch;">
           <div class="flex1">
-            <div class="tuxiang">
+            <div class="tuxiang flex-column h100">
               <div class="image-box">
                 <div class="title flx-justify-between">
                   <div class="text">告警画面</div>
@@ -88,15 +89,15 @@
                   </div>
                 </div>
               </div>
-              <div class="mt20 address">
+              <div class="mt20 address flex1 flex-column">
                 <div class="title">
                   <div class="text">当前位置</div>
                 </div>
-                <div class="modal-map mt10" style="width: 640px; height: 89px;">
+                <div class="modal-map mt10 flex1" style="width: 640px; height: 89px;">
                   <Gis :centerPoint="[details?.location?.lat, details?.location?.lng]" style="height: 60px !important; border-radius: 4px 4px 0 0;" />
                   <div class="flx-align-center ml17 mt6">
                     <svg-icon icon-class="address" style="font-size: 14px; color: #fff" />
-                    <span class="ml10" style="color: #FFF;font-family: Inter;font-size: 12px;line-height: 15px;">{{ details?.location?.address || '暂无位置信息' }}</span>
+                    <span class="ml10" style="color: #FFF;font-family: Inter;font-size: 12px;line-height: 15px;">{{ details?.location?.address || '办公楼1楼' }}</span>
                   </div>
                 </div>
               </div>
@@ -133,9 +134,9 @@
                     <span class="name">严重等级：</span>
                     <span class="status" :class="riskThemeClass">{{ details.levelName || '高风险' }}</span>
                   </div>
-                  <div class="item flx-justify-between mt16 flx-align-center">
+                  <div class="item flx-justify-between mt16" style="align-items: flex-start">
                     <span class="name">执行任务：</span>
-                    <span class="value flex1 tar text-ellipsis" :title="details.taskName || '-'">{{ details.taskName || '-' }}</span>
+                    <span class="value flex1 tar" :title="details.taskName || '-'">{{ details.taskName || '-' }}</span>
                   </div>
                 </div>
                 <div class="title mt24 with-b-t pt14">
@@ -244,6 +245,7 @@ export default {
     },
     /** 高风险 red / 中风险 orange / 其它 primary */
     riskThemeClass() {
+      if (!this.dialogVisible && this.closingRiskThemeClass) return this.closingRiskThemeClass
       if (this.alarmLevelKey === 'high') return 'red'
       if (this.alarmLevelKey === 'medium') return 'orange'
       return 'primary'
@@ -269,6 +271,7 @@ export default {
     return {
       dialogVisible: false,
       manualOpen: false,
+      closingRiskThemeClass: '',
       details: {
         location: {
           lat: this.gisMapCenterPoint?.[0] || '',
@@ -459,6 +462,7 @@ export default {
       return true
     },
     preemptWithHigh(highItem) {
+      this.preserveClosingRiskTheme()
       this.manualOpen = false
       this.dialogVisible = false
       this.show = false
@@ -509,6 +513,7 @@ export default {
     open(data, options = {}) {
       const manual = Boolean(options.manual)
       const force = Boolean(options.force)
+      this.closingRiskThemeClass = ''
       if (manual) {
         this.manualOpen = true
         this.show = false
@@ -588,6 +593,7 @@ export default {
       }
     },
     resetDialog() {
+      this.preserveClosingRiskTheme()
       cancelAlarmSpeech()
       this.lastSpokenAlarmId = null
       this.dialogVisible = false
@@ -597,6 +603,12 @@ export default {
       this.selectedValue = ''
       this.options = []
       this.snapshotObjectUrls = {}
+    },
+    preserveClosingRiskTheme() {
+      if (this.dialogVisible) this.closingRiskThemeClass = this.riskThemeClass
+    },
+    handleDialogClosed() {
+      this.closingRiskThemeClass = ''
     },
     handleChangeSelect(name) {
       this.$refs.carouselRef.setActiveItem(name)
