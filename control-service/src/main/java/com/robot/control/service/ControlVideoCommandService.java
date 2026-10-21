@@ -502,7 +502,7 @@ public class ControlVideoCommandService {
         Map<String, Object> camera = managementClient.fixedCamera(cameraId)
                 .orElseThrow(() -> new IllegalArgumentException("未找到固定摄像头：" + cameraId));
         if (!Boolean.TRUE.equals(camera.get("enabled"))) {
-            throw new IllegalStateException("固定摄像头未启用：" + cameraId);
+            throw new IllegalArgumentException("固定摄像头未启用：" + cameraId);
         }
         String transitionState = firstString(camera, "mediaTransitionState");
         if (transitionState != null && !"STABLE".equalsIgnoreCase(transitionState)) {

@@ -186,6 +186,21 @@ class ControlVideoCommandServiceTest {
     }
 
     @Test
+    void rejectsDisabledFixedCameraAsInvalidRequest() {
+        when(managementClient.fixedCamera("camera-001")).thenReturn(Optional.of(Map.of(
+                "cameraId", "camera-001",
+                "enabled", false,
+                "protocolType", "RTSP")));
+
+        assertThatThrownBy(() -> service.startFixedCameraVideo(
+                        "camera-001", null, operator("operator-1", "web-1")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("固定摄像头未启用");
+
+        verifyNoInteractions(mediaServiceClient, commandService);
+    }
+
+    @Test
     void rejectsFixedCameraWhileMediaConfigurationIsTransitioning() {
         when(managementClient.fixedCamera("camera-001")).thenReturn(Optional.of(Map.of(
                 "cameraId", "camera-001",
