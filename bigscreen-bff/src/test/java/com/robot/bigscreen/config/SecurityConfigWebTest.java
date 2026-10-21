@@ -26,6 +26,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.server.ResponseStatusException;
@@ -201,6 +202,21 @@ class SecurityConfigWebTest {
         mockMvc.perform(get("/ws/field-call")
                         .with(jwt().jwt(token -> token.claim("azp", "field-app"))))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void returnsMigrationHintForRemovedRobotsRouteWithoutForwarding() throws Exception {
+        for (MockHttpServletRequestBuilder request : new MockHttpServletRequestBuilder[] {
+                get("/api/control/robots"), post("/api/control/robots")
+        }) {
+            mockMvc.perform(request.with(jwt().jwt(token -> token.claim("azp", "bigscreen-web"))))
+                    .andExpect(status().isGone())
+                    .andExpect(jsonPath("$.code").value("API_REMOVED"))
+                    .andExpect(jsonPath("$.message").value(
+                            "Use /api/bigscreen/panorama/overview instead of /api/control/robots."));
+        }
+
+        verify(proxyClient, never()).forward(any());
     }
 
     @Test

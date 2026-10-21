@@ -283,7 +283,7 @@
   "paths" : {
     "/api/bigscreen/access-control/me" : {
       "get" : {
-        "description" : "透传 Management 的当前用户访问上下文。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "description" : "将当前用户访问上下文请求转发到 Management；浏览器身份由 BFF JWT 安全配置检查，下游失败时不返回默认权限。",
         "operationId" : "bigscreenProxyController_currentAccess",
         "responses" : {
           "200" : {
@@ -2117,7 +2117,7 @@
     },
     "/api/control/robots" : {
       "delete" : {
-        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "description" : "请求命中旧入口时返回 410 和替代入口说明，不访问下游 Control；浏览器身份由 BFF JWT 安全配置检查。",
         "operationId" : "removedRobotsDELETE",
         "responses" : {
           "401" : {
@@ -2141,7 +2141,7 @@
         "tags" : [ "BigscreenProxyController" ]
       },
       "get" : {
-        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "description" : "请求命中旧入口时返回 410 和替代入口说明，不访问下游 Control；浏览器身份由 BFF JWT 安全配置检查。",
         "operationId" : "removedRobotsGET",
         "responses" : {
           "401" : {
@@ -2165,7 +2165,7 @@
         "tags" : [ "BigscreenProxyController" ]
       },
       "head" : {
-        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "description" : "请求命中旧入口时返回 410 和替代入口说明，不访问下游 Control；浏览器身份由 BFF JWT 安全配置检查。",
         "operationId" : "removedRobotsHEAD",
         "responses" : {
           "401" : {
@@ -2189,7 +2189,7 @@
         "tags" : [ "BigscreenProxyController" ]
       },
       "options" : {
-        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "description" : "请求命中旧入口时返回 410 和替代入口说明，不访问下游 Control；浏览器身份由 BFF JWT 安全配置检查。",
         "operationId" : "removedRobotsOPTIONS",
         "responses" : {
           "401" : {
@@ -2213,7 +2213,7 @@
         "tags" : [ "BigscreenProxyController" ]
       },
       "patch" : {
-        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "description" : "请求命中旧入口时返回 410 和替代入口说明，不访问下游 Control；浏览器身份由 BFF JWT 安全配置检查。",
         "operationId" : "removedRobotsPATCH",
         "responses" : {
           "401" : {
@@ -2237,7 +2237,7 @@
         "tags" : [ "BigscreenProxyController" ]
       },
       "post" : {
-        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "description" : "请求命中旧入口时返回 410 和替代入口说明，不访问下游 Control；浏览器身份由 BFF JWT 安全配置检查。",
         "operationId" : "removedRobotsPOST",
         "responses" : {
           "401" : {
@@ -2261,7 +2261,7 @@
         "tags" : [ "BigscreenProxyController" ]
       },
       "put" : {
-        "description" : "返回已移除机器人列表接口的迁移提示。浏览器身份由 BFF JWT 安全配置检查，聚合结果可带数据质量标识。",
+        "description" : "请求命中旧入口时返回 410 和替代入口说明，不访问下游 Control；浏览器身份由 BFF JWT 安全配置检查。",
         "operationId" : "removedRobotsPUT",
         "responses" : {
           "401" : {

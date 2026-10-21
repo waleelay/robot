@@ -35,6 +35,16 @@ class CenterProxyClientTest {
     }
 
     @Test
+    void mapsManagementShortPathToStandardManagementPath() {
+        assertThat(CenterProxyClient.targetPath("/api/manage/devices"))
+                .isEqualTo("/api/v1/management/devices");
+        assertThat(CenterProxyClient.targetPath("/api/manage"))
+                .isEqualTo("/api/v1/management");
+        assertThat(CenterProxyClient.targetPath("/api/v1/management/devices"))
+                .isEqualTo("/api/v1/management/devices");
+    }
+
+    @Test
     void stripsAccessTokenFromForwardedQuery() {
         assertThat(CenterProxyClient.stripAccessToken(null)).isNull();
         assertThat(CenterProxyClient.stripAccessToken("inline=true")).isEqualTo("inline=true");

@@ -205,11 +205,12 @@ Overview 和任务详情均不返回路线占位字段，前端只把 `task-rout
 | `/api/bigscreen/control/**` | Control Service | 改写为 `/api/control/**` |
 | 其他未被本地 Controller 消费的 `/api/bigscreen/**` | Control Service | 改写为 `/api/control/**` |
 | `/api/media/**` | Media Service | 原路径 |
-| `/api/manage/**`、`/api/v1/management/**` | Management Service | 原路径 |
+| `/api/manage/**` | Management Service | 改写为 `/api/v1/management/**` |
+| `/api/v1/management/**` | Management Service | 原路径 |
 
 代理支持普通正文和 `multipart/form-data`。请求会过滤 hop-by-hop Header，并用 JWT 身份覆盖可信用户 Header。`/internal/**` 不属于 BFF 对外代理范围，生产 Nginx 对 `/internal`、`/internal/**`、`/api-gw/internal` 和 `/api-gw/internal/**` 明确返回 `404`；Control 仍通过内网地址直接调用 Media 内部接口。
 
-`GET /api/control/robots` 已显式移除，固定返回 `410 Gone`：
+`/api/control/robots` 是已移除的精确路径。BFF 对命中该映射的 HTTP 方法返回 `410 Gone` 迁移提示，不转发到 Control：
 
 ```json
 {
