@@ -702,6 +702,24 @@ curl -k -i -X OPTIONS \
 ./install.sh
 ```
 
+大屏正式 REST 经 IAM API Gateway 时，还要检查 IAM 的来源配置。IAM 离线安装脚本
+会重新生成 `runtime/infra/.env.runtime`；安装包若未保留已有 Gateway 来源，重装后会丢失大屏来源。重装 IAM 后应在 IAM 宿主机执行以下检查，
+缺少来源时再执行带 `--apply` 的命令。脚本保留管理端现有来源；需要修改环境文件时
+先备份并校验 Compose 配置，然后只重建 `api-gateway`。`Origin` 使用大屏实际访问的 HTTPS
+协议、主机和端口，不含路径。
+
+```bash
+IAM_INFRA_DIR='/opt/qihang/<IAM安装目录>/runtime/infra'
+BIGSCREEN_PUBLIC_ORIGIN='https://<大屏域名或IP>:4443'
+./scripts/ensure-iam-gateway-origin.sh "$IAM_INFRA_DIR" "$BIGSCREEN_PUBLIC_ORIGIN"
+# 检查提示缺少来源时执行：
+./scripts/ensure-iam-gateway-origin.sh "$IAM_INFRA_DIR" "$BIGSCREEN_PUBLIC_ORIGIN" --apply
+```
+
+运行脚本的机器需要能执行 IAM 的 `docker compose`。重建后，还应从正式浏览器来源
+验证未登录请求返回 401、POST 预检返回 200，并用正式账号验证业务请求。仅更新
+本仓库的 `BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS` 不会更新 IAM 网关的来源列表。
+
 ### 5.2 改了 LiveKit / Nginx 模板相关配置
 
 例如改了 `LIVEKIT_NODE_IP`、`LIVEKIT_REDIS_ADDRESS`、`LIVEKIT_WEBHOOK_URL`、`NGINX_*_UPSTREAM`、`NGINX_TLS_HOST`：

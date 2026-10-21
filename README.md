@@ -5,8 +5,10 @@
 ## 1. 当前架构
 
 ```text
-浏览器 / robot-ui / frontend
-  -> Bigscreen BFF :8090（JWT 验证、REST 代理与聚合、WebSocket 桥接）
+大屏浏览器普通 REST -> Nginx /api-gw -> IAM API Gateway -> Bigscreen BFF :8090
+大屏浏览器 WebSocket / 签名 HLS -> Nginx -> Bigscreen BFF :8090
+管理端 REST -> Nginx /api-gw -> IAM API Gateway -> 管理端服务
+Bigscreen BFF（JWT 验证、REST 代理与聚合、WebSocket 桥接）
   -> Control Service :8082（控制会话、设备状态、MQTT 与媒体编排）
   -> Media Service :8088（视频会话、LiveKit、文件、TTS）
 
@@ -34,7 +36,7 @@ Control 在画像接口提供静态 `deviceDefinitions[]` 和带版本的 `devic
 
 | 模块 | 当前职责 |
 | --- | --- |
-| `bigscreen-bff/` | 大屏统一认证入口、下游代理、全景聚合、统计报告、WebSocket 事件适配 |
+| `bigscreen-bff/` | 大屏 JWT 验证、下游代理、全景聚合、统计报告、WebSocket 事件适配 |
 | `control-service/` | `/api/control/**`、控制租约、设备命令、机器人状态、固定摄像头、MQTT、视频编排 |
 | `media-service/` | 视频会话与对讲、LiveKit Room/Token/Ingress/Egress、通用文件、HLS、TTS |
 | `media-common/` | Media 与 Control 共享的纯 DTO 与枚举契约模块，不承载业务逻辑 |
@@ -126,7 +128,7 @@ Java 服务：
 
 ## 5. 生产鉴权与访问边界
 
-生产 REST/WebSocket 请求应先进入 Bigscreen BFF。BFF 验证 JWT 后覆盖 `X-User-Id`、`X-Org-Id`、`X-Roles` 并传给下游；Control 和 Media 当前信任这些受控 Header，自身不独立验签 JWT，不能直接暴露到不可信网络。
+生产 4443 的大屏普通 REST `/api-gw/api/bigscreen/**` 经 Nginx 进入 IAM API Gateway，再到 Bigscreen BFF；`/ws/bigscreen` 和短期签名 HLS 由 Nginx 直达 BFF。网关的 `GATEWAY_CORS_ALLOWED_ORIGIN_PATTERNS` 须包含大屏实际访问来源（含协议与端口），IAM 重装后按[部署说明](deploy/docker/README.md#51-只改-env-容器环境变量)复核。BFF 验证用户 JWT 后覆盖 `X-User-Id`、`X-Org-Id`、`X-Roles` 并传给下游；Control 和 Media 当前信任这些受控 Header，自身不独立验签 JWT，不能直接暴露到不可信网络。直连 `/api/**` 切换前曾有 Flutter App 与本地联调流量，入口收口方案见[大屏统一入口认证与路径设计说明书](docs/02-设计/大屏BFF/大屏统一入口认证与路径设计说明书.md)。
 
 开发环境可使用以下 Header 直连下游：
 
