@@ -22,7 +22,7 @@
             <svg-icon icon-class="close"></svg-icon>
           </div>
         </div>
-        <div class="info-content p10 flex">
+        <div class="info-content p10 flex" style="align-items: stretch;">
           <div class="task" :class="{ flex1: !simpleMode }">
             <div class="waning-imgs">
               <div class="title flx-justify-between">
@@ -107,9 +107,9 @@
                       }"
                     >{{ details.levelName || '-'}}</span>
                   </div>
-                  <div class="item flex1 pl30 flx-align-center">
+                  <div class="item flex1 pl30">
                     <span class="name">执行任务：</span>
-                    <span class="value wp245 text-ellipsis" :title="details.taskName || '-'">{{ details.taskName || '-' }}</span>
+                    <span class="value flex1" :title="details.taskName || '-'">{{ details.taskName || '-' }}</span>
                   </div>
                 </div>
               </div>
@@ -120,9 +120,9 @@
               </div>
             </div>
           </div>
-          <div v-if="!simpleMode" class="flex1 task list-panel">
+          <div v-if="!simpleMode" class="flex1 task list-panel flex-column">
             <div class="second-title">告警列表</div>
-            <div class="mt10">
+            <div class="mt10 list-panel-content flex-column">
               <div class="filter-panel">
                 <div class="combined-filter flx-align-center">
                   <div class="type-part">
@@ -168,7 +168,7 @@
                   <div v-for="item in tabList" :key="item.value" class="tab-button-item" :class="{ 'is-active': tabIndex === item.value }" @click="handleChangeTab(item.value)">{{ item.label }}</div>
                 </div>
               </div>
-              <div class="list-box mt10 pr8 hp423" @scroll="handleListScroll">
+              <div class="list-box list-box--flex flex1 mt10 pr8" @scroll="handleListScroll">
                 <div v-for="(item, index) in warningInfo.listData" :key="item.alarmId" class="item wp280 pt9 pr10 pb9 pl10 flx-justify-between" :class="{ selected: warningInfo.selectedRobotRows.includes(item) }" @click="handleClickWarningRow(item, index)">
                   <div class="flx-align-center w100">
                     <div class="img flx-center">
@@ -533,6 +533,21 @@ export default {
 
 <style lang="scss" scoped>
 @import "./scss/warning-batch.scss";
+.list-panel {
+  position: relative;
+  min-height: 0;
+}
+.list-panel-content {
+  position: absolute;
+  top: 35px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  min-height: 0;
+}
+.list-box--flex {
+  min-height: 0;
+}
 .box.is-simple {
   width: auto !important;
 }
