@@ -356,7 +356,7 @@ test('对讲入口只收口自己启动的通话，地图弹窗关闭会等待�
   assert.match(talkSource, /intercomOwnerId: `talk:\$\{\+\+talkOwnerSequence\}`/)
   assert.match(talkSource, /return this\.targetRobotId \|\| this\.\$store\.getters\['websocketRobot\/getSelectedRobotId'\] \|\| ''/)
   assert.match(talkSource, /String\(this\.targetRobot\?\.robotId \|\| ''\) === String\(this\.targetRobotId\)/)
-  assert.match(talkSource, /talkAvailable\(\) \{[\s\S]*this\.selectedRobotId && this\.selectCamera\.key && this\.selectedRobot\.status === 'online'/)
+  assert.match(talkSource, /talkAvailable\(\) \{[\s\S]*this\.selectedRobotId && this\.selectCamera\.key &&\s*this\.selectedRobot\.status === 'online' && this\.selectedDeviceRuntime\?\.clientOnline/)
   assert.match(talkSource, /async handleTalk\(\) \{[\s\S]*if \(!this\.talkAvailable\) return/)
   assert.match(talkSource, /ownerId: this\.intercomOwnerId/)
   assert.match(talkSource, /return await this\.stopOwnedIntercom\(\{ cameraKey, ownerId: this\.intercomOwnerId \}\)/)

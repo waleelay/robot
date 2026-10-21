@@ -13,6 +13,9 @@ const calls = []
 const modeCalls = []
 const modeResponses = []
 const releaseCalls = []
+const payloadCommands = []
+const confirmRequests = []
+let confirmTokenImpl = async () => ({ confirmToken: 'test-confirm' })
 let acquireControlImpl = async () => ({})
 const taskApi = {
   pauseTaskRecord: async id => { calls.push(['pause', id]); return { accepted: true } },
@@ -32,6 +35,7 @@ function component(path) {
       if (name.endsWith('execution-status')) return executionStatus
       if (name.endsWith('task-plan-state')) return planState
       if (name.endsWith('api/new-bi')) return taskApi
+      if (name.endsWith('utils')) return { errorMessage: error => error.message }
       if (name.endsWith('api/media')) return { takeoverControl: async () => ({}) }
       if (name === '@/utils/bigscreen-access') return {
         hasManagementPermission: () => true,
@@ -54,7 +58,10 @@ function javascriptModule(path) {
     require: name => {
       if (name === 'vuex') return { mapActions: () => ({}), mapState: () => ({}) }
       if (name.endsWith('execution-status')) return executionStatus
+      if (name.endsWith('/utils')) return { errorMessage: error => error.message }
       if (name.endsWith('api/media')) return {
+        createConfirmToken: (...args) => { confirmRequests.push(args); return confirmTokenImpl(...args) },
+        sendEquipmentCommand: async (...args) => { payloadCommands.push(args); return { status: 'PUBLISHED' } },
         acquireControl: (...args) => acquireControlImpl(...args),
         releaseControl: async (...args) => { releaseCalls.push(args) },
         setControlMode: async data => {
@@ -68,6 +75,52 @@ function javascriptModule(path) {
   return exports.default
 }
 const controlMixin = javascriptModule('views/bi/patrol/monitor/second/components/ptz-control-mixin.js')
+
+test('云台只按真实状态显示，命令发布不冒充已执行状态', async () => {
+  const device = { deviceId: 'ptz_main', status: { autoRotateEnabled: false } }
+  const commandParams = []
+  const context = {
+    ...controlMixin.methods,
+    selectedRobotId: 'robot-1',
+    ptzDevice: device,
+    hasDeviceAction: () => true,
+    sendDeviceCommand: async (_device, _action, params) => {
+      commandParams.push(params)
+      return true
+    }
+  }
+
+  assert.equal(context.isPtzAutoRotateOn(device), false)
+  await context.togglePtzAutoRotate()
+  assert.equal(commandParams[0].enabled, true)
+  assert.equal(device.status.autoRotateEnabled, false)
+  device.status.autoRotateEnabled = true
+  assert.equal(context.isPtzAutoRotateOn(device), true)
+  delete device.status.autoRotateEnabled
+  assert.equal(context.isPtzAutoRotateOn(device), false)
+  assert.equal(context.hasPtzAutoRotateStatus(device), false)
+  await context.togglePtzAutoRotate()
+  assert.equal(commandParams.length, 1)
+})
+
+test('捕网器连接状态未知时禁止发射，离线时清除页面安全开关', () => {
+  const device = { deviceId: 'netgun_1', status: {} }
+  const context = { ...controlMixin.methods, netGunSafety: { netgun_1: true }, wsConnected: true, selectedDeviceRuntime: { clientOnline: true } }
+  assert.equal(context.isNetGunConnected(device), false)
+  assert.equal(context.isNetGunSafetyOn(device), false)
+  device.status.connected = true
+  assert.equal(context.isNetGunSafetyOn(device), true)
+  controlMixin.watch.selectedDeviceRuntime.call(context, { clientOnline: false })
+  assert.equal(context.isNetGunSafetyOn(device), false)
+})
+
+test('车灯显示值只依据设备上报状态', () => {
+  const enabled = controlMixin.computed.vehicleLightEnabled
+  assert.equal(enabled.call({ vehicleLightDevice: { status: {} } }), false)
+  assert.equal(enabled.call({ vehicleLightDevice: { status: {
+    front: { mode: 'ON' }, rear: { mode: 'ON' }
+  } } }), true)
+})
 function warningContext(plan) {
   const state = { websocketExtraData: {
     robotBaseInfo: { robot1: { runningTask: { taskId: 'plan1', executionStatus: 'RUNNING' } } },
@@ -272,6 +325,7 @@ test('控制会话只在租约有效时复用', () => {
 test('控制 WebSocket 断开时停止连续发送并清空本地租约', () => {
   const stopped = []
   const context = {
+    ...controlMixin.methods,
     controlPressed: { 'base-forward': true },
     controlTimers: { 'base-forward': 1 },
     controlSessions: { 'robot1:base:drive.velocity': { controlSessionId: 'session1' } },
@@ -386,7 +440,7 @@ test('地图远程控制传入当前任务计划', () => {
 })
 
 test('38mm 只在明确连接且非离线时显示已连接', () => {
-  const connected = controlMixin.methods.isLauncherConnected
+  const connected = controlMixin.methods.isLauncherConnected.bind({ wsConnected: true, selectedDeviceRuntime: { clientOnline: true } })
   assert.equal(connected(), false)
   assert.equal(connected({ status: {} }), false)
   assert.equal(connected({ status: { connected: false }, onlineStatus: 'online' }), false)
@@ -412,4 +466,81 @@ test('38mm 页面的显示、按钮和执行共用完整安全判定', () => {
   assert.equal(context.canFireLauncherTube({}, { loaded: false }), false)
   context.isLauncherConnected = () => false
   assert.equal(context.canFireLauncherTube({}, { loaded: true }), false)
+})
+
+
+test('捕网器局部掉线、完整快照移除、实例切换和关闭页面均撤销确认', () => {
+  for (const runtime of [
+    { epoch: 'one', clientOnline: true, devices: [{ deviceId: 'catcher_net', status: { connected: false } }] },
+    { epoch: 'one', clientOnline: true, devices: [] },
+    { epoch: 'two', clientOnline: true, devices: [{ deviceId: 'catcher_net', status: { connected: true } }] }
+  ]) {
+    const context = { ...controlMixin.methods, netGunSafety: { catcher_net: true }, showConfirm: true }
+    controlMixin.watch.selectedDeviceRuntime.call(context, runtime, { epoch: 'one' })
+    assert.equal(Object.keys(context.netGunSafety).length, 0)
+    assert.equal(context.showConfirm, false)
+  }
+  const context = { ...controlMixin.methods, netGunSafety: { catcher_net: true }, showConfirm: true,
+    releaseControlSessions: () => {} }
+  controlMixin.watch.visible.call(context, false, true)
+  assert.equal(Object.keys(context.netGunSafety).length, 0)
+  assert.equal(context.showConfirm, false)
+})
+
+test('捕网器申请控制权期间掉线并恢复时仍拒绝旧确认', async () => {
+  confirmRequests.length = 0
+  payloadCommands.length = 0
+  const device = { deviceId: 'catcher_net', deviceType: 'NET_GUN', status: { connected: true } }
+  let finishAcquire
+  const errors = []
+  const context = { ...controlMixin.methods, selectedRobotId: 'study', payloadConfirmationEpoch: 0,
+    netGunSafety: { catcher_net: true }, wsConnected: true, selectedDeviceRuntime: { clientOnline: true },
+    controlDevice: () => device, $message: { error: message => errors.push(message) },
+    ensureControlSession: () => new Promise(resolve => { finishAcquire = resolve }) }
+  const result = context.firePayload(device, 1, 'test')
+  context.clearPayloadConfirmation()
+  // 模拟同 ID 重连且重新开启；旧异步请求也不能借用新确认。
+  context.netGunSafety.catcher_net = true
+  finishAcquire({ controlSessionId: 'session-1' })
+  assert.equal(await result, false)
+  assert.equal(errors.length, 1)
+  assert.equal(confirmRequests.length, 0)
+  assert.equal(payloadCommands.length, 0)
+})
+
+
+test('捕网器正常确认可发布，令牌返回前设备消失则不发布', async () => {
+  payloadCommands.length = 0
+  const device = { deviceId: 'catcher_net', deviceType: 'NET_GUN', status: { connected: true } }
+  let current = device
+  const context = { ...controlMixin.methods, selectedRobotId: 'study', payloadConfirmationEpoch: 0,
+    netGunSafety: { catcher_net: true }, wsConnected: true, selectedDeviceRuntime: { clientOnline: true },
+    controlDevice: () => current, $message: { error: () => {} },
+    ensureControlSession: async () => ({ controlSessionId: 'test-session' }),
+    commandPayload: (...args) => args }
+  assert.equal(await context.firePayload(device, 1, 'test'), true)
+  assert.equal(payloadCommands.length, 1)
+  let finishToken
+  let tokenRequested
+  const tokenStarted = new Promise(resolve => { tokenRequested = resolve })
+  confirmTokenImpl = () => new Promise(resolve => { finishToken = resolve; tokenRequested() })
+  try {
+    const result = context.firePayload(device, 1, 'test')
+    await tokenStarted
+    assert.equal(typeof finishToken, 'function')
+    current = null
+    finishToken({ confirmToken: 'late-confirm' })
+    assert.equal(await result, false)
+    assert.equal(payloadCommands.length, 1)
+  } finally {
+    confirmTokenImpl = async () => ({ confirmToken: 'test-confirm' })
+  }
+})
+
+
+test('警示灯只读取规范 powerOn，旧 enabled 不参与浏览器状态判定', () => {
+  const context = { ...controlMixin.methods }
+  assert.equal(context.isWarningLightOn({ status: { powerOn: true } }), true)
+  assert.equal(context.isWarningLightOn({ status: { powerOn: false, enabled: true } }), false)
+  assert.equal(context.isWarningLightOn({ status: { enabled: true } }), false)
 })

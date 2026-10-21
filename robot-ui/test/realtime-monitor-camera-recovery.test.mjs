@@ -27,6 +27,9 @@ const livekitLocalMedia = await import('data:text/javascript;base64,' + Buffer.f
 const mediaCallCoordinator = await import('data:text/javascript;base64,' + Buffer.from(
   read('utils/media-call-coordinator.js')
 ).toString('base64'))
+const audioDeviceState = await import('data:text/javascript;base64,' + Buffer.from(
+  read('utils/audio-device-state.js')
+).toString('base64'))
 
 function componentDefinition(path) {
   const source = read(path).split('<script>')[1].split('</script>')[0]
@@ -139,6 +142,7 @@ function loadWebsocketRobot(apiOverrides = {}, runtimeOverrides = {}) {
       if (name.includes('intercom-operation-registry')) return intercomOperationRegistry
       if (name.includes('livekit-local-media')) return livekitLocalMedia
       if (name.includes('media-call-coordinator')) return mediaCallCoordinator
+      if (name.includes('audio-device-state')) return audioDeviceState
       if (name.includes('call-terminal-registry')) return {
         CallTerminalRegistry: class {
           remember() {}
@@ -791,6 +795,19 @@ test('机器人视频文案不受固定摄像头原因码映射影响', () => {
   assert.equal(state.action, 'restart-source')
 })
 
+test('固定摄像头展示统一网关的租约失效和输入变化原因', () => {
+  for (const [code, text] of [
+    ['SOURCE_LEASE_MISSING', '视频源授权已过期'],
+    ['SOURCE_INPUT_CHANGED', '视频源已变化，请重新观看']
+  ]) {
+    const state = videoDisplayState.resolveVideoDisplayState({
+      session: { status: 'FAILED', lastErrorCode: code }
+    }, {}, { sourceType: 'FIXED_CAMERA' })
+    assert.equal(state.text, text)
+    assert.equal(state.action, 'restart-source')
+  }
+})
+
 test('固定摄像头增量状态保留网关和码流健康原因', () => {
   const module = loadWebsocketRobot()
   const state = {
@@ -1430,4 +1447,281 @@ test('固定摄像头启动中关闭会立即撤销消费者且迟到启动不�
   assert.equal(state.activeCameras[camera.key], undefined)
   assert.equal(state.cameras[camera.key].watching, false)
   assert.equal(state.cameras[camera.key].session, null)
+})
+
+test('设备运行态与画像分离，清空快照后保留控制能力且拒绝旧版本', () => {
+  const module = loadWebsocketRobot()
+  const state = {
+    selectedRobotId: 'robot-1',
+    controlProfiles: {},
+    deviceRuntimeByRobot: {}
+  }
+  module.mutations.setControlProfiles(state, { robotId: 'robot-1', profile: { deviceDefinitions: [
+      { deviceId: 'base', deviceType: 'QUADRUPED_BASE', actions: ['drive.velocity'], controlProfile: { maxLinearX: 0.8 } },
+      { deviceId: 'ptz_main', deviceType: 'DUAL_LIGHT_PTZ', actions: ['up'], controlProfile: { maxPanSpeed: 100 } }
+    ] } })
+  const devices = [
+    { deviceId: 'base', deviceType: 'WHEELED_BASE', actions: ['unknown'], controlProfile: { maxLinearX: 9 }, status: { battery: 80 } },
+    { deviceId: 'ptz_main', deviceType: 'PTZ', status: { autoRotateEnabled: true } }
+  ]
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'robot-1', runtime: {
+    epoch: 'control-1', revision: 1, clientOnline: true, devices
+  } })
+  const [base, ptz] = module.getters.getControlProfiles(state)['robot-1'].devices
+  assert.equal(base.deviceType, 'QUADRUPED_BASE')
+  assert.equal(base.actions[0], 'drive.velocity')
+  assert.equal(base.controlProfile.maxLinearX, 0.8)
+  assert.equal(base.status.battery, 80)
+  assert.equal(ptz.deviceType, 'DUAL_LIGHT_PTZ')
+  assert.equal(ptz.status.autoRotateEnabled, true)
+  assert.equal(state.controlProfiles['robot-1'].devices[1].status, undefined)
+
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'robot-1', runtime: {
+    epoch: 'control-1', revision: 2, clientOnline: false, devices: []
+  } })
+  const cleared = module.getters.getControlProfiles(state)['robot-1'].devices
+  assert.equal(cleared[0].deviceType, 'QUADRUPED_BASE')
+  assert.equal(cleared[1].status, undefined)
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'robot-1', runtime: {
+    epoch: 'control-1', revision: 1, clientOnline: true, devices
+  } })
+  assert.equal(module.getters.getControlProfiles(state)['robot-1'].devices[1].status, undefined)
+})
+
+test('音频驱动标识不能冒充平台 ID 或写入过期音量缓存', () => {
+  const module = loadWebsocketRobot()
+  const state = {
+    selectedRobotId: 'robot-1',
+    controlProfiles: { 'robot-1': { devices: [
+      { deviceId: 'speaker_main', deviceType: 'SPEAKER', actions: ['set_volume'] }
+    ] } },
+    deviceRuntimeByRobot: {}
+  }
+  const devices = [{ deviceId: 'speaker-logical', status: {
+    driverDeviceId: 'speaker_main', volumePercent: 35, muted: false
+  } }]
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'robot-1', runtime: {
+    epoch: 'control-1', revision: 1, clientOnline: true, devices
+  } })
+  const speaker = module.getters.getControlProfiles(state)['robot-1'].devices[0]
+  assert.equal(speaker.deviceId, 'speaker_main')
+  assert.equal(speaker.deviceType, 'SPEAKER')
+  assert.equal(speaker.status, undefined)
+  assert.equal(module.state.audioState, undefined)
+})
+
+test('控制画像晚于实时推送返回时保留较新的云台运行态', async () => {
+  const module = loadWebsocketRobot({
+    getControlProfile: async () => ({
+      deviceDefinitions: [{ deviceId: 'ptz_main', deviceType: 'DUAL_LIGHT_PTZ', actions: ['up'] }],
+      devices: [{ deviceId: 'ptz_main', status: { autoRotateEnabled: false } }],
+      deviceRuntime: { epoch: 'control-1', revision: 1, clientOnline: true,
+        devices: [{ deviceId: 'ptz_main', status: { autoRotateEnabled: false } }] }
+    })
+  })
+  const state = {
+    robots: [{ robotId: 'robot-1', cameras: [] }],
+    cameras: {},
+    selectedRobotId: 'robot-1',
+    controlProfiles: {},
+    deviceRuntimeByRobot: { 'robot-1': { epoch: 'control-1', revision: 2, clientOnline: true,
+      devices: [{ deviceId: 'ptz_main', status: { autoRotateEnabled: true } }] } },
+    controlProfileLoading: {}
+  }
+  const commit = (type, payload) => module.mutations[type](state, payload)
+  const context = { state, commit, rootState: {} }
+  context.dispatch = (type, payload) => module.actions[type](context, payload)
+
+  await context.dispatch('loadControlProfile', 'robot-1')
+
+  assert.equal(state.controlProfiles['robot-1'].devices[0].status, undefined)
+  assert.equal(module.getters.getControlProfiles(state)['robot-1'].devices[0].status.autoRotateEnabled, true)
+})
+
+test('同类型多设备的运行态在一次快照中分别保留', () => {
+  const module = loadWebsocketRobot()
+  const state = {
+    controlProfiles: { 'robot-1': { devices: [
+      { deviceId: 'ptz_a', deviceType: 'DUAL_LIGHT_PTZ' },
+      { deviceId: 'ptz_b', deviceType: 'DUAL_LIGHT_PTZ' }
+    ] } },
+    deviceRuntimeByRobot: {}
+  }
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'robot-1', runtime: {
+    epoch: 'control-1', revision: 1, clientOnline: true,
+    devices: [
+      { deviceId: 'ptz_a', status: { pan: 10 } },
+      { deviceId: 'ptz_b', status: { pan: 20 } }
+    ]
+  } })
+  const devices = module.getters.getControlProfiles(state)['robot-1'].devices
+  assert.equal(devices[0].status.pan, 10)
+  assert.equal(devices[1].status.pan, 20)
+})
+
+test('Control 重启后拒绝旧实例迟到的 HTTP 设备快照', () => {
+  const module = loadWebsocketRobot()
+  const state = { deviceRuntimeByRobot: {} }
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'robot-1', runtime: {
+    epoch: 'new-control', epochStartedAt: '2026-10-12T10:00:00+08:00',
+    revision: 1, clientOnline: true, devices: [{ deviceId: 'ptz_main', status: { pan: 20 } }]
+  } })
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'robot-1', runtime: {
+    epoch: 'old-control', epochStartedAt: '2026-10-12T09:00:00+08:00',
+    revision: 100, clientOnline: true, devices: [{ deviceId: 'ptz_main', status: { pan: 10 } }]
+  } })
+  assert.equal(state.deviceRuntimeByRobot['robot-1'].devices[0].status.pan, 20)
+})
+
+test('控制画像不保留 HTTP 运行态副本，本体在线值跟随实时机器人状态', () => {
+  const module = loadWebsocketRobot()
+  const state = {
+    robots: [{ robotId: 'robot-1', status: 'offline' }],
+    controlProfiles: {}, deviceRuntimeByRobot: {}
+  }
+  module.mutations.setControlProfiles(state, { robotId: 'robot-1', profile: {
+    onlineStatus: 'online',
+    deviceDefinitions: [{ deviceId: 'ptz_main', deviceType: 'DUAL_LIGHT_PTZ' }],
+    deviceRuntime: { epoch: 'control-1', revision: 1, clientOnline: true, devices: [] }
+  } })
+  assert.equal(state.controlProfiles['robot-1'].deviceRuntime, undefined)
+  assert.equal(module.getters.getControlProfiles(state)['robot-1'].onlineStatus, 'offline')
+})
+
+test('本体控件仅由控制画像中的 base 类型决定', () => {
+  const computed = componentDefinition('views/bi/patrol/monitor/second/Index.vue').computed
+  const context = { baseDevice: { deviceType: 'QUADRUPED_BASE' }, selectedRobot: { typeCode: 'WHEELED_ROBOT' } }
+  context.bodyControlKind = computed.bodyControlKind.call(context)
+  assert.equal(computed.showDogControl.call(context), true)
+  assert.equal(computed.showCarControl.call(context), false)
+
+  context.baseDevice = { deviceType: 'WHEELED_BASE' }
+  context.bodyControlKind = computed.bodyControlKind.call(context)
+  assert.equal(computed.showDogControl.call(context), false)
+  assert.equal(computed.showCarControl.call(context), true)
+})
+
+
+test('断线立即失效显示状态，旧 HTTP 不得恢复，当前连接同版本快照可恢复', () => {
+  const module = loadWebsocketRobot()
+  const state = { controlProfiles: {}, deviceRuntimeByRobot: {}, runtimeConnectionGeneration: 0 }
+  module.mutations.setControlProfiles(state, { robotId: 'study', profile: {
+    deviceDefinitions: [{ deviceId: 'ptz_main', deviceType: 'DUAL_LIGHT_PTZ' }]
+  } })
+  const runtime = { epoch: 'control-1', revision: 8, clientOnline: true,
+    devices: [{ deviceId: 'ptz_main', status: { autoRotateEnabled: true } }] }
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'study', runtime, generation: 0 })
+  module.mutations.setWsConnected(state, false)
+  assert.equal(state.deviceRuntimeByRobot.study.revision, 8)
+  assert.equal(module.getters.getControlProfiles(state).study.devices[0].status, undefined)
+  module.mutations.setWsConnected(state, true)
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'study', runtime, generation: 0 })
+  assert.equal(state.deviceRuntimeFreshByRobot.study, false)
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'study', runtime: { ...runtime, revision: 7 } })
+  assert.equal(state.deviceRuntimeFreshByRobot.study, false)
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'study', runtime })
+  assert.equal(module.getters.getControlProfiles(state).study.devices[0].status.autoRotateEnabled, true)
+  module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId: 'study', runtime: { ...runtime, devices: [] } })
+  assert.equal(state.deviceRuntimeByRobot.study.devices.length, 1)
+})
+
+test('双设备真实身份样本在 HTTP 首屏和后续推送中保持一致且互不串状态', () => {
+  const module = loadWebsocketRobot()
+  const state = { controlProfiles: {}, deviceRuntimeByRobot: {} }
+  const profiles = {
+    study: [['base', 'QUADRUPED_BASE'], ['ptz_main', 'DUAL_LIGHT_PTZ'], ['microphone_main', 'MICROPHONE']],
+    'sx-songling-001': [['base', 'WHEELED_BASE'], ['ptz_main', 'DUAL_LIGHT_PTZ'], ['catcher_net', 'NET_GUN'],
+      ['launcher_38mm', 'LAUNCHER'], ['microphone_main', 'INTERCOM'], ['speaker_main', 'SPEAKER'], ['warning_light', 'WARNING_LIGHT']]
+  }
+  for (const [robotId, devices] of Object.entries(profiles)) {
+    module.mutations.setControlProfiles(state, { robotId, profile: { deviceDefinitions:
+      devices.map(([deviceId, deviceType]) => ({ deviceId, deviceType })) } })
+    for (const revision of [1, 2]) {
+      module.mutations.APPLY_DEVICE_RUNTIME(state, { robotId, runtime: {
+        epoch: 'control-1', revision, clientOnline: true, devices: devices.map(([deviceId]) => ({
+          deviceId, status: { connected: true, sample: `${robotId}:${revision}` }
+        }))
+      } })
+    }
+  }
+  for (const [robotId, profile] of Object.entries(module.getters.getControlProfiles(state))) {
+    assert.ok(profile.devices.every(device => device.status.sample === `${robotId}:2`))
+  }
+  const profilesNow = module.getters.getControlProfiles(state)
+  assert.equal(profilesNow.study.devices[0].deviceType, 'QUADRUPED_BASE')
+  assert.equal(profilesNow['sx-songling-001'].devices[0].deviceType, 'WHEELED_BASE')
+})
+
+
+test('精简事件仍更新本体和摄像头，旧 devices 不能恢复或覆盖设备运行态', () => {
+  const module = loadWebsocketRobot()
+  const state = { robots: [], cameras: {}, controlProfiles: {}, deviceRuntimeByRobot: {} }
+  const dispatched = []
+  const commit = (type, payload) => module.mutations[type](state, payload)
+  const context = { state, commit, dispatch: (...args) => dispatched.push(args) }
+  module.mutations.setControlProfiles(state, { robotId: 'robot-1', profile: {
+    deviceDefinitions: [{ deviceId: 'ptz_main', deviceType: 'DUAL_LIGHT_PTZ', actions: ['up'] }]
+  } })
+  const runtime = { epoch: 'control-1', revision: 1, clientOnline: true,
+    devices: [{ deviceId: 'ptz_main', status: { autoRotateEnabled: true } }] }
+  const data = { robotId: 'robot-1', name: '机器人', type: '轮式机器人', status: 'online',
+    statusChangedAt: '2026-10-12T02:00:00Z', runtimeUpdatedAt: '2026-10-12T02:00:00Z',
+    battery: 0, speed: 0, controlMode: '手动模式', stateSeq: 8, charging: false, taskStatus: 'IDLE',
+    cameras: [{ cameraId: 'camera-1', deviceId: 'camera-1', groupType: 'body', name: '前视', quality: 'main' }],
+    deviceRuntime: runtime }
+  module.actions.syncRobotEvent(context, { event: 'robot.state', timestamp: '2026-10-12 10:00:00', data })
+  assert.equal(state.robots[0].battery, 0)
+  assert.equal(state.robots[0].controlMode, '手动模式')
+  assert.equal(Object.values(state.cameras)[0].deviceId, 'camera-1')
+  assert.equal(module.getters.getControlProfiles(state)['robot-1'].devices[0].status.autoRotateEnabled, true)
+  assert.equal(dispatched[0][1].robotInfo.charging, false)
+  const { deviceRuntime, ...withoutRuntime } = data
+  module.actions.syncRobotEvent(context, { event: 'robot.state', data: { ...withoutRuntime,
+    devices: [{ deviceId: 'ptz_main', deviceType: 'PTZ', status: { autoRotateEnabled: false } }] } })
+  assert.equal(state.deviceRuntimeByRobot['robot-1'].revision, 1)
+  assert.equal(module.getters.getControlProfiles(state)['robot-1'].devices[0].deviceType, 'DUAL_LIGHT_PTZ')
+  assert.equal(module.getters.getControlProfiles(state)['robot-1'].devices[0].status.autoRotateEnabled, true)
+})
+
+test('HTTP 缺少独立运行态时不能回退到旧合并设备状态', async () => {
+  const module = loadWebsocketRobot({ getControlProfile: async () => ({
+    deviceDefinitions: [{ deviceId: 'speaker_main', deviceType: 'SPEAKER' }],
+    devices: [{ deviceId: 'speaker_main', status: { volume: 90, muted: false } }]
+  }) })
+  const state = { robots: [], cameras: {}, controlProfiles: {}, deviceRuntimeByRobot: {}, controlProfileLoading: {} }
+  await module.actions.loadControlProfile({ state, rootState: {},
+    commit: (type, payload) => module.mutations[type](state, payload) }, 'robot-1')
+  assert.equal(state.deviceRuntimeByRobot['robot-1'], undefined)
+  assert.equal(module.getters.getControlProfiles(state)['robot-1'].devices[0].status, undefined)
+  module.mutations.setControlProfiles(state, { robotId: 'legacy', profile: {
+    devices: [{ deviceId: 'base', deviceType: 'WHEELED_BASE' }]
+  } })
+  assert.equal(state.controlProfiles.legacy.devices.length, 0)
+})
+
+test('多合一组件消费精简运行态仍同步音量、媒体会话、播放和文件状态', () => {
+  const component = componentDefinition('views/bi/patrol/monitor/second/components/MultiInOne.vue')
+  const status = { connected: true, online: true, volumePercent: 35, volumeLimitPercent: 70, temperatureC: 42,
+    audioFiles: ['notice.wav'], audioTransfer: { status: 'FAILED', fileName: 'notice.wav', error: '传输失败' },
+    audioSession: { mediaSessionId: 'session-2', broadcastActive: true, monitorActive: false, monitorSuppressed: true },
+    audioPlayback: { playing: true, loop: true, fileName: 'notice.wav' } }
+  const device = { deviceId: 'multi-1', status }
+  const context = { ...component.methods, status, device, syncedDeviceId: 'multi-1',
+    volumeMin: 0, volumeMax: 70, pendingVolumeUntil: 0, mediaSessionOwned: true,
+    checkedAudioFiles: ['old.wav', 'notice.wav'], selectedAudio: 'old.wav', connected: true, actions: [] }
+  component.methods.syncDeviceStatus.call(context, device)
+  assert.equal(context.volume, 35)
+  assert.equal(context.mediaSessionId, 'session-2')
+  assert.equal(context.broadcastActive, true)
+  assert.equal(context.monitorActive, false)
+  assert.equal(context.monitorSuppressed, true)
+  assert.equal(context.audioPlaying, true)
+  assert.equal(context.audioLooping, true)
+  assert.equal(context.audioPlayingFile, 'notice.wav')
+  assert.equal(context.selectedAudio, 'notice.wav')
+  assert.deepEqual([...context.checkedAudioFiles], ['notice.wav'])
+  assert.equal(component.computed.temperatureValue.call(context), 42)
+  assert.equal(component.computed.audioTransfer.call(context).error, '传输失败')
+  assert.equal(component.computed.connected.call({ device: { deviceId: 'multi-1' }, status: {},
+    selectedControlProfile: { onlineStatus: 'online' }, selectedRobot: {} }), true)
 })

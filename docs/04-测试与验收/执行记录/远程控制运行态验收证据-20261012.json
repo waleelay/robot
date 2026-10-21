@@ -1,0 +1,1271 @@
+{
+  "environment": "192.168.124.23",
+  "date": "2026-10-12",
+  "scope": "仅设备定义与必要运行状态，不含凭据或媒体地址",
+  "sameRevisionComparisons": [
+    {
+      "robotId": "sx-songling-001",
+      "revision": 5,
+      "identical": true
+    },
+    {
+      "robotId": "study",
+      "revision": 5,
+      "identical": true
+    },
+    {
+      "robotId": "sx-songling-001",
+      "revision": 6,
+      "identical": true
+    },
+    {
+      "robotId": "study",
+      "revision": 6,
+      "identical": true
+    },
+    {
+      "robotId": "sx-songling-001",
+      "revision": 16,
+      "identical": true
+    }
+  ],
+  "profiles": [
+    {
+      "robotId": "sx-songling-001",
+      "deviceDefinitions": [
+        {
+          "deviceId": "algobox_main",
+          "scope": "PAYLOAD",
+          "deviceType": "ALGORITHM_BOX",
+          "actions": [
+            "GET_LAST_DETECTION",
+            "SUBSCRIBE_VIDEO_DETECTION",
+            "SUBSCRIBE_ALARM_EVENT",
+            "SET_SOURCE_STATUS"
+          ]
+        },
+        {
+          "deviceId": "microphone_main",
+          "scope": "AUDIO",
+          "deviceType": "INTERCOM",
+          "actions": [
+            "set_volume",
+            "set_mute"
+          ]
+        },
+        {
+          "deviceId": "catcher_net",
+          "scope": "PAYLOAD",
+          "deviceType": "NET_GUN",
+          "actions": [
+            "fire"
+          ]
+        },
+        {
+          "deviceId": "launcher_38mm",
+          "scope": "PAYLOAD",
+          "deviceType": "LAUNCHER",
+          "actions": [
+            "fire",
+            "get_status",
+            "set_safety"
+          ]
+        },
+        {
+          "deviceId": "warning_light",
+          "scope": "PAYLOAD",
+          "deviceType": "WARNING_LIGHT",
+          "actions": [
+            "get_state",
+            "set_mode",
+            "set_state"
+          ]
+        },
+        {
+          "deviceId": "ptz_main",
+          "scope": "PAYLOAD",
+          "deviceType": "DUAL_LIGHT_PTZ",
+          "actions": [
+            "down",
+            "zoom_in",
+            "zoom_out",
+            "auto_rotate",
+            "left",
+            "left_down",
+            "left_up",
+            "right",
+            "right_down",
+            "right_up",
+            "up"
+          ]
+        },
+        {
+          "deviceId": "speaker_main",
+          "scope": "AUDIO",
+          "deviceType": "SPEAKER",
+          "actions": [
+            "set_mute",
+            "set_volume",
+            "stop_tts"
+          ]
+        },
+        {
+          "deviceId": "base",
+          "scope": "BODY",
+          "deviceType": "WHEELED_BASE",
+          "actions": [
+            "drive.velocity",
+            "navigation.return_home"
+          ]
+        },
+        {
+          "deviceId": "vehicle-light",
+          "scope": "PAYLOAD",
+          "deviceType": "VEHICLE_LIGHT",
+          "actions": [
+            "light.vehicle.set"
+          ]
+        },
+        {
+          "deviceId": "video_uploader",
+          "scope": "PAYLOAD",
+          "deviceType": "OTHER",
+          "actions": []
+        }
+      ],
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 5,
+        "clientOnline": true,
+        "updatedAt": "2026-10-12 11:34:48",
+        "devices": [
+          {
+            "deviceId": "algobox_main",
+            "onlineStatus": "online",
+            "status": {
+              "connected": true,
+              "driverDeviceId": "algobox_main"
+            }
+          },
+          {
+            "deviceId": "microphone_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 60,
+              "muted": false,
+              "volumePercent": 60,
+              "connected": true,
+              "driverDeviceId": "microphone_main"
+            }
+          },
+          {
+            "deviceId": "catcher_net",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "catcher_net",
+              "connected": false
+            }
+          },
+          {
+            "deviceId": "launcher_38mm",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "launcher_38mm",
+              "connected": false,
+              "safetySwitchEnabled": false
+            }
+          },
+          {
+            "deviceId": "warning_light",
+            "onlineStatus": "online",
+            "status": {
+              "powerOn": false,
+              "enabled": false,
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "ptz_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "ptz_main"
+            }
+          },
+          {
+            "deviceId": "speaker_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 60,
+              "volumePercent": 60,
+              "muted": false,
+              "driverDeviceId": "speaker_main",
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "base",
+            "onlineStatus": "online",
+            "status": {
+              "online": true
+            }
+          },
+          {
+            "deviceId": "vehicle-light",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "powerOn": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "robotId": "study",
+      "deviceDefinitions": [
+        {
+          "deviceId": "base",
+          "scope": "BODY",
+          "deviceType": "QUADRUPED_BASE",
+          "actions": [
+            "drive.velocity",
+            "navigation.return_home"
+          ]
+        },
+        {
+          "deviceId": "vehicle-light",
+          "scope": "PAYLOAD",
+          "deviceType": "VEHICLE_LIGHT",
+          "actions": [
+            "light.vehicle.set"
+          ]
+        },
+        {
+          "deviceId": "body_camera_front",
+          "scope": "PAYLOAD",
+          "deviceType": "CAMERA",
+          "actions": []
+        },
+        {
+          "deviceId": "body_camera_rear",
+          "scope": "PAYLOAD",
+          "deviceType": "CAMERA",
+          "actions": []
+        },
+        {
+          "deviceId": "ptz_main",
+          "scope": "PAYLOAD",
+          "deviceType": "DUAL_LIGHT_PTZ",
+          "actions": [
+            "up",
+            "down",
+            "left",
+            "right",
+            "zoom_in",
+            "zoom_out",
+            "auto_rotate",
+            "left_up",
+            "right_up",
+            "left_down",
+            "right_down"
+          ]
+        },
+        {
+          "deviceId": "camera01",
+          "scope": "PAYLOAD",
+          "deviceType": "CAMERA",
+          "actions": []
+        },
+        {
+          "deviceId": "microphone_main",
+          "scope": "PAYLOAD",
+          "deviceType": "MICROPHONE",
+          "actions": []
+        },
+        {
+          "deviceId": "broadcaster-001",
+          "scope": "PAYLOAD",
+          "deviceType": "MULTI_FUNCTION_BROADCASTER",
+          "actions": [
+            "start_broadcast",
+            "stop_broadcast",
+            "start_monitor",
+            "stop_monitor",
+            "set_monitor_suppressed",
+            "set_volume",
+            "play_tts",
+            "stop_tts",
+            "list_audio_files",
+            "play_audio_file",
+            "stop_audio_file",
+            "delete_audio_file",
+            "play_alarm",
+            "stop_alarm",
+            "upload_audio_file",
+            "light.set"
+          ]
+        }
+      ],
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 5,
+        "clientOnline": true,
+        "updatedAt": "2026-10-12 11:34:48",
+        "devices": [
+          {
+            "deviceId": "base",
+            "onlineStatus": "online",
+            "status": {
+              "online": true
+            }
+          },
+          {
+            "deviceId": "vehicle-light",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "powerOn": false
+            }
+          },
+          {
+            "deviceId": "ptz_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "ptz_main",
+              "autoRotateEnabled": false,
+              "enabled": false
+            }
+          },
+          {
+            "deviceId": "microphone_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "microphone_main"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "robotId": "sx-songling-001",
+      "deviceDefinitions": [
+        {
+          "deviceId": "algobox_main",
+          "scope": "PAYLOAD",
+          "deviceType": "ALGORITHM_BOX",
+          "actions": [
+            "GET_LAST_DETECTION",
+            "SUBSCRIBE_VIDEO_DETECTION",
+            "SUBSCRIBE_ALARM_EVENT",
+            "SET_SOURCE_STATUS"
+          ]
+        },
+        {
+          "deviceId": "microphone_main",
+          "scope": "AUDIO",
+          "deviceType": "INTERCOM",
+          "actions": [
+            "set_volume",
+            "set_mute"
+          ]
+        },
+        {
+          "deviceId": "catcher_net",
+          "scope": "PAYLOAD",
+          "deviceType": "NET_GUN",
+          "actions": [
+            "fire"
+          ]
+        },
+        {
+          "deviceId": "launcher_38mm",
+          "scope": "PAYLOAD",
+          "deviceType": "LAUNCHER",
+          "actions": [
+            "fire",
+            "get_status",
+            "set_safety"
+          ]
+        },
+        {
+          "deviceId": "warning_light",
+          "scope": "PAYLOAD",
+          "deviceType": "WARNING_LIGHT",
+          "actions": [
+            "get_state",
+            "set_mode",
+            "set_state"
+          ]
+        },
+        {
+          "deviceId": "ptz_main",
+          "scope": "PAYLOAD",
+          "deviceType": "DUAL_LIGHT_PTZ",
+          "actions": [
+            "down",
+            "zoom_in",
+            "zoom_out",
+            "auto_rotate",
+            "left",
+            "left_down",
+            "left_up",
+            "right",
+            "right_down",
+            "right_up",
+            "up"
+          ]
+        },
+        {
+          "deviceId": "speaker_main",
+          "scope": "AUDIO",
+          "deviceType": "SPEAKER",
+          "actions": [
+            "set_mute",
+            "set_volume",
+            "stop_tts"
+          ]
+        },
+        {
+          "deviceId": "base",
+          "scope": "BODY",
+          "deviceType": "WHEELED_BASE",
+          "actions": [
+            "drive.velocity",
+            "navigation.return_home"
+          ]
+        },
+        {
+          "deviceId": "vehicle-light",
+          "scope": "PAYLOAD",
+          "deviceType": "VEHICLE_LIGHT",
+          "actions": [
+            "light.vehicle.set"
+          ]
+        },
+        {
+          "deviceId": "video_uploader",
+          "scope": "PAYLOAD",
+          "deviceType": "OTHER",
+          "actions": []
+        }
+      ],
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 6,
+        "clientOnline": false,
+        "updatedAt": "2026-10-12 11:35:18",
+        "devices": []
+      }
+    },
+    {
+      "robotId": "study",
+      "deviceDefinitions": [
+        {
+          "deviceId": "base",
+          "scope": "BODY",
+          "deviceType": "QUADRUPED_BASE",
+          "actions": [
+            "drive.velocity",
+            "navigation.return_home"
+          ]
+        },
+        {
+          "deviceId": "vehicle-light",
+          "scope": "PAYLOAD",
+          "deviceType": "VEHICLE_LIGHT",
+          "actions": [
+            "light.vehicle.set"
+          ]
+        },
+        {
+          "deviceId": "body_camera_front",
+          "scope": "PAYLOAD",
+          "deviceType": "CAMERA",
+          "actions": []
+        },
+        {
+          "deviceId": "body_camera_rear",
+          "scope": "PAYLOAD",
+          "deviceType": "CAMERA",
+          "actions": []
+        },
+        {
+          "deviceId": "ptz_main",
+          "scope": "PAYLOAD",
+          "deviceType": "DUAL_LIGHT_PTZ",
+          "actions": [
+            "up",
+            "down",
+            "left",
+            "right",
+            "zoom_in",
+            "zoom_out",
+            "auto_rotate",
+            "left_up",
+            "right_up",
+            "left_down",
+            "right_down"
+          ]
+        },
+        {
+          "deviceId": "camera01",
+          "scope": "PAYLOAD",
+          "deviceType": "CAMERA",
+          "actions": []
+        },
+        {
+          "deviceId": "microphone_main",
+          "scope": "PAYLOAD",
+          "deviceType": "MICROPHONE",
+          "actions": []
+        },
+        {
+          "deviceId": "broadcaster-001",
+          "scope": "PAYLOAD",
+          "deviceType": "MULTI_FUNCTION_BROADCASTER",
+          "actions": [
+            "start_broadcast",
+            "stop_broadcast",
+            "start_monitor",
+            "stop_monitor",
+            "set_monitor_suppressed",
+            "set_volume",
+            "play_tts",
+            "stop_tts",
+            "list_audio_files",
+            "play_audio_file",
+            "stop_audio_file",
+            "delete_audio_file",
+            "play_alarm",
+            "stop_alarm",
+            "upload_audio_file",
+            "light.set"
+          ]
+        }
+      ],
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 6,
+        "clientOnline": false,
+        "updatedAt": "2026-10-12 11:35:18",
+        "devices": []
+      }
+    },
+    {
+      "robotId": "sx-songling-001",
+      "deviceDefinitions": [
+        {
+          "deviceId": "algobox_main",
+          "scope": "PAYLOAD",
+          "deviceType": "ALGORITHM_BOX",
+          "actions": [
+            "GET_LAST_DETECTION",
+            "SUBSCRIBE_VIDEO_DETECTION",
+            "SUBSCRIBE_ALARM_EVENT",
+            "SET_SOURCE_STATUS"
+          ]
+        },
+        {
+          "deviceId": "microphone_main",
+          "scope": "AUDIO",
+          "deviceType": "INTERCOM",
+          "actions": [
+            "set_volume",
+            "set_mute"
+          ]
+        },
+        {
+          "deviceId": "catcher_net",
+          "scope": "PAYLOAD",
+          "deviceType": "NET_GUN",
+          "actions": [
+            "fire"
+          ]
+        },
+        {
+          "deviceId": "launcher_38mm",
+          "scope": "PAYLOAD",
+          "deviceType": "LAUNCHER",
+          "actions": [
+            "fire",
+            "get_status",
+            "set_safety"
+          ]
+        },
+        {
+          "deviceId": "warning_light",
+          "scope": "PAYLOAD",
+          "deviceType": "WARNING_LIGHT",
+          "actions": [
+            "get_state",
+            "set_mode",
+            "set_state"
+          ]
+        },
+        {
+          "deviceId": "ptz_main",
+          "scope": "PAYLOAD",
+          "deviceType": "DUAL_LIGHT_PTZ",
+          "actions": [
+            "down",
+            "zoom_in",
+            "zoom_out",
+            "auto_rotate",
+            "left",
+            "left_down",
+            "left_up",
+            "right",
+            "right_down",
+            "right_up",
+            "up"
+          ]
+        },
+        {
+          "deviceId": "speaker_main",
+          "scope": "AUDIO",
+          "deviceType": "SPEAKER",
+          "actions": [
+            "set_mute",
+            "set_volume",
+            "stop_tts"
+          ]
+        },
+        {
+          "deviceId": "base",
+          "scope": "BODY",
+          "deviceType": "WHEELED_BASE",
+          "actions": [
+            "drive.velocity",
+            "navigation.return_home"
+          ]
+        },
+        {
+          "deviceId": "vehicle-light",
+          "scope": "PAYLOAD",
+          "deviceType": "VEHICLE_LIGHT",
+          "actions": [
+            "light.vehicle.set"
+          ]
+        },
+        {
+          "deviceId": "video_uploader",
+          "scope": "PAYLOAD",
+          "deviceType": "OTHER",
+          "actions": []
+        }
+      ],
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 16,
+        "clientOnline": true,
+        "updatedAt": "2026-10-12 11:38:15",
+        "devices": [
+          {
+            "deviceId": "algobox_main",
+            "onlineStatus": "online",
+            "status": {
+              "connected": true,
+              "driverDeviceId": "algobox_main"
+            }
+          },
+          {
+            "deviceId": "microphone_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 60,
+              "muted": false,
+              "volumePercent": 60,
+              "connected": true,
+              "driverDeviceId": "microphone_main"
+            }
+          },
+          {
+            "deviceId": "catcher_net",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "catcher_net",
+              "connected": false
+            }
+          },
+          {
+            "deviceId": "launcher_38mm",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "launcher_38mm",
+              "connected": false,
+              "safetySwitchEnabled": false
+            }
+          },
+          {
+            "deviceId": "warning_light",
+            "onlineStatus": "online",
+            "status": {
+              "powerOn": false,
+              "enabled": false,
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "ptz_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "ptz_main"
+            }
+          },
+          {
+            "deviceId": "speaker_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 60,
+              "volumePercent": 60,
+              "muted": false,
+              "driverDeviceId": "speaker_main",
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "base",
+            "onlineStatus": "online",
+            "status": {
+              "online": true
+            }
+          },
+          {
+            "deviceId": "vehicle-light",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "powerOn": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "representativeEvents": [
+    {
+      "robotId": "study",
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 5,
+        "clientOnline": true,
+        "updatedAt": "2026-10-12 11:34:48",
+        "devices": [
+          {
+            "deviceId": "base",
+            "onlineStatus": "online",
+            "status": {
+              "online": true
+            }
+          },
+          {
+            "deviceId": "vehicle-light",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "powerOn": false
+            }
+          },
+          {
+            "deviceId": "ptz_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "ptz_main",
+              "autoRotateEnabled": false,
+              "enabled": false
+            }
+          },
+          {
+            "deviceId": "microphone_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "microphone_main"
+            }
+          }
+        ]
+      },
+      "at": 1791776097.017388
+    },
+    {
+      "robotId": "study",
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 6,
+        "clientOnline": false,
+        "updatedAt": "2026-10-12 11:35:18",
+        "devices": []
+      },
+      "at": 1791776104.039397
+    },
+    {
+      "robotId": "study",
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 38,
+        "clientOnline": true,
+        "updatedAt": "2026-10-12 11:39:22",
+        "devices": [
+          {
+            "deviceId": "base",
+            "onlineStatus": "online",
+            "status": {
+              "online": true
+            }
+          },
+          {
+            "deviceId": "vehicle-light",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "powerOn": false
+            }
+          },
+          {
+            "deviceId": "ptz_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "ptz_main",
+              "autoRotateEnabled": true,
+              "enabled": false
+            }
+          },
+          {
+            "deviceId": "microphone_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "microphone_main"
+            }
+          }
+        ]
+      },
+      "at": 1791776347.655152
+    },
+    {
+      "robotId": "study",
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 198,
+        "clientOnline": false,
+        "updatedAt": "2026-10-12 11:48:37",
+        "devices": []
+      },
+      "at": 1791776931.764559
+    },
+    {
+      "robotId": "sx-songling-001",
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 5,
+        "clientOnline": true,
+        "updatedAt": "2026-10-12 11:34:48",
+        "devices": [
+          {
+            "deviceId": "algobox_main",
+            "onlineStatus": "online",
+            "status": {
+              "connected": true,
+              "driverDeviceId": "algobox_main"
+            }
+          },
+          {
+            "deviceId": "microphone_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 60,
+              "muted": false,
+              "volumePercent": 60,
+              "connected": true,
+              "driverDeviceId": "microphone_main"
+            }
+          },
+          {
+            "deviceId": "catcher_net",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "catcher_net",
+              "connected": false
+            }
+          },
+          {
+            "deviceId": "launcher_38mm",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "launcher_38mm",
+              "connected": false,
+              "safetySwitchEnabled": false
+            }
+          },
+          {
+            "deviceId": "warning_light",
+            "onlineStatus": "online",
+            "status": {
+              "powerOn": false,
+              "enabled": false,
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "ptz_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "ptz_main"
+            }
+          },
+          {
+            "deviceId": "speaker_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 60,
+              "volumePercent": 60,
+              "muted": false,
+              "driverDeviceId": "speaker_main",
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "base",
+            "onlineStatus": "online",
+            "status": {
+              "online": true
+            }
+          },
+          {
+            "deviceId": "vehicle-light",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "powerOn": false
+            }
+          }
+        ]
+      },
+      "at": 1791776098.937302
+    },
+    {
+      "robotId": "sx-songling-001",
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 6,
+        "clientOnline": false,
+        "updatedAt": "2026-10-12 11:35:18",
+        "devices": []
+      },
+      "at": 1791776104.055793
+    },
+    {
+      "robotId": "sx-songling-001",
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 38,
+        "clientOnline": true,
+        "updatedAt": "2026-10-12 11:39:22",
+        "devices": [
+          {
+            "deviceId": "algobox_main",
+            "onlineStatus": "online",
+            "status": {
+              "connected": true,
+              "driverDeviceId": "algobox_main"
+            }
+          },
+          {
+            "deviceId": "microphone_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 60,
+              "muted": false,
+              "volumePercent": 60,
+              "connected": true,
+              "driverDeviceId": "microphone_main"
+            }
+          },
+          {
+            "deviceId": "catcher_net",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "catcher_net",
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "launcher_38mm",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "launcher_38mm",
+              "connected": false,
+              "safetySwitchEnabled": false
+            }
+          },
+          {
+            "deviceId": "warning_light",
+            "onlineStatus": "online",
+            "status": {
+              "powerOn": true,
+              "enabled": true,
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "ptz_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "ptz_main",
+              "autoRotateEnabled": true
+            }
+          },
+          {
+            "deviceId": "speaker_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 37,
+              "volumePercent": 37,
+              "muted": false,
+              "driverDeviceId": "speaker_main",
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "base",
+            "onlineStatus": "online",
+            "status": {
+              "online": true
+            }
+          },
+          {
+            "deviceId": "vehicle-light",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "powerOn": false
+            }
+          }
+        ]
+      },
+      "at": 1791776347.7330961
+    },
+    {
+      "robotId": "sx-songling-001",
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 70,
+        "clientOnline": true,
+        "updatedAt": "2026-10-12 11:41:43",
+        "devices": [
+          {
+            "deviceId": "algobox_main",
+            "onlineStatus": "online",
+            "status": {
+              "connected": true,
+              "driverDeviceId": "algobox_main"
+            }
+          },
+          {
+            "deviceId": "microphone_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 60,
+              "muted": false,
+              "volumePercent": 60,
+              "connected": true,
+              "driverDeviceId": "microphone_main"
+            }
+          },
+          {
+            "deviceId": "catcher_net",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "catcher_net",
+              "connected": false
+            }
+          },
+          {
+            "deviceId": "launcher_38mm",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "launcher_38mm",
+              "connected": false,
+              "safetySwitchEnabled": false
+            }
+          },
+          {
+            "deviceId": "warning_light",
+            "onlineStatus": "online",
+            "status": {
+              "powerOn": true,
+              "enabled": true,
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "ptz_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "ptz_main",
+              "autoRotateEnabled": true
+            }
+          },
+          {
+            "deviceId": "speaker_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 37,
+              "volumePercent": 37,
+              "muted": false,
+              "driverDeviceId": "speaker_main",
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "base",
+            "onlineStatus": "online",
+            "status": {
+              "online": true
+            }
+          },
+          {
+            "deviceId": "vehicle-light",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "powerOn": false
+            }
+          }
+        ]
+      },
+      "at": 1791776489.270641
+    },
+    {
+      "robotId": "sx-songling-001",
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 185,
+        "clientOnline": true,
+        "updatedAt": "2026-10-12 11:47:30",
+        "devices": [
+          {
+            "deviceId": "algobox_main",
+            "onlineStatus": "online",
+            "status": {
+              "connected": true,
+              "driverDeviceId": "algobox_main"
+            }
+          },
+          {
+            "deviceId": "microphone_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 60,
+              "muted": false,
+              "volumePercent": 60,
+              "connected": true,
+              "driverDeviceId": "microphone_main"
+            }
+          },
+          {
+            "deviceId": "launcher_38mm",
+            "onlineStatus": "offline",
+            "status": {
+              "driverDeviceId": "launcher_38mm",
+              "connected": false,
+              "safetySwitchEnabled": false
+            }
+          },
+          {
+            "deviceId": "warning_light",
+            "onlineStatus": "online",
+            "status": {
+              "powerOn": true,
+              "enabled": true,
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "ptz_main",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "connected": true,
+              "driverDeviceId": "ptz_main",
+              "autoRotateEnabled": true
+            }
+          },
+          {
+            "deviceId": "speaker_main",
+            "onlineStatus": "online",
+            "status": {
+              "volume": 37,
+              "volumePercent": 37,
+              "muted": false,
+              "driverDeviceId": "speaker_main",
+              "connected": true
+            }
+          },
+          {
+            "deviceId": "base",
+            "onlineStatus": "online",
+            "status": {
+              "online": true
+            }
+          },
+          {
+            "deviceId": "vehicle-light",
+            "onlineStatus": "online",
+            "status": {
+              "online": true,
+              "powerOn": false
+            }
+          }
+        ]
+      },
+      "at": 1791776835.5645509
+    },
+    {
+      "robotId": "sx-songling-001",
+      "deviceRuntime": {
+        "epoch": "1c7c4ad9-71e0-48ad-be5c-849039b58542",
+        "epochStartedAt": "2026-10-12 11:34:24",
+        "revision": 198,
+        "clientOnline": false,
+        "updatedAt": "2026-10-12 11:48:37",
+        "devices": []
+      },
+      "at": 1791776931.773196
+    }
+  ]
+}

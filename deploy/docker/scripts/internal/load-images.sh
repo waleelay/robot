@@ -101,7 +101,7 @@ case ",$compose_profiles," in
 esac
 
 case ",$compose_profiles," in
-  *,fixed-camera-gateway,*)
-    ensure_image "$image_prefix/fixed-camera-gateway:$image_tag"
+  *,media-gateway,*)
+    ensure_image "$image_prefix/media-gateway:$image_tag"
     ;;
 esac

@@ -12,9 +12,9 @@ public enum VideoPublisherMode {
      */
     DEVICE_CLIENT,
     /**
-     * 由固定摄像头 Gateway 拉取 RTSP 并发布媒体。
+     * 由统一边缘媒体 Gateway 接入视频源并发布媒体，与业务设备类型解耦。
      */
-    FIXED_CAMERA_GATEWAY,
+    EDGE_MEDIA_GATEWAY,
     /**
      * 由 LiveKit Ingress 接收固定摄像头 RTMP 推流。
      */

@@ -32,22 +32,22 @@
           step="1"
           class="custom-slider"
           aria-label="扬声器音量"
-          :aria-valuetext="displayMuted ? `已静音，音量 ${displayVolume}` : `音量 ${displayVolume}`"
-          :disabled="displayMuted"
+          :aria-valuetext="!hasAudioStatus(audioDevice) ? '音量未同步' : (displayMuted ? `已静音，音量 ${displayVolume}` : `音量 ${displayVolume}`)"
+          :disabled="!talkAvailable || displayMuted"
           @input="updateAudioVolume($event.target.value)"
           @change="setAudioVolume($event.target.value)"
         >
       </div>
-      <span class="volume-value">{{ displayVolume }}</span>
+      <span class="volume-value">{{ hasAudioStatus(audioDevice) ? displayVolume : '未同步' }}</span>
     </div>
     <div class="btns" :class="{'mt20': !isMapInner, 'mt30': isMapInner}">
-      <el-button v-if="!isMapInner" type="primary" class="wp124 hp30" @click="toggleAudioMute(audioDevice)">{{ displayMuted ? '取消静音' : '静音' }}</el-button>
+      <el-button v-if="!isMapInner" type="primary" class="wp124 hp30" :disabled="!talkAvailable" @click="toggleAudioMute(audioDevice)">{{ displayMuted ? '取消静音' : '静音' }}</el-button>
       <div class="volume-stepper wp124 hp30" :class="{ 'ml20': !isMapInner, 'is-disabled': displayMuted }">
-        <button type="button" class="btn-volume" aria-label="音量减" :disabled="displayMuted" @click="adjustAudioVolume(audioDevice, -5)">
+        <button type="button" class="btn-volume" aria-label="音量减" :disabled="!talkAvailable || displayMuted" @click="adjustAudioVolume(audioDevice, -5)">
           <svg-icon icon-class="minus" />
         </button>
         <span class="ml10 mr10">音量</span>
-        <button type="button" class="btn-volume" aria-label="音量加" :disabled="displayMuted" @click="adjustAudioVolume(audioDevice, 5)">
+        <button type="button" class="btn-volume" aria-label="音量加" :disabled="!talkAvailable || displayMuted" @click="adjustAudioVolume(audioDevice, 5)">
           <svg-icon icon-class="plus" />
         </button>
       </div>
@@ -86,7 +86,8 @@ export default {
       return this.cameras?.[this.selectedRobot?.cameras?.[0]?.key] || {}
     },
     talkAvailable() {
-      return Boolean(this.selectedRobotId && this.selectCamera.key && this.selectedRobot.status === 'online')
+      return Boolean(this.selectedRobotId && this.selectCamera.key &&
+        this.selectedRobot.status === 'online' && this.selectedDeviceRuntime?.clientOnline)
     },
     displayVolume() {
       return this.localVolume === null ? this.normalizeAudioVolume(this.audioVolume(this.audioDevice)) : this.localVolume
@@ -170,6 +171,7 @@ export default {
       this.requestedMuted = null
     },
     async toggleAudioMute(device) {
+      if (!this.talkAvailable) return false
       const currentMuted = this.displayMuted
       const muted = !currentMuted
       if (muted) this.lastUnmutedVolume = this.displayVolume
@@ -192,6 +194,7 @@ export default {
       await this.requestAudioVolume(device, nextVolume, delta > 0 ? 'volume_up' : 'volume_down')
     },
     async requestAudioVolume(device, volume, source) {
+      if (!this.talkAvailable) return false
       const nextVolume = this.normalizeAudioVolume(volume)
       this.localVolume = nextVolume
       const ok = await this.sendDeviceCommand(device, 'set_volume', {
@@ -244,21 +247,16 @@ export default {
     },
     audioStatus(device) {
       const status = (device && (device.status || device.runtimeStatus)) || {}
-      const key = device && this.selectedRobotId ? `${this.selectedRobotId}:${device.deviceId}` : ''
-      const reported = key ? (this.audioState?.[key] || {}) : {}
-      const reportedVolume = reported.volume === undefined ? reported.volumePercent : reported.volume
       return {
         ...status,
-        ...reported,
-        volume: reportedVolume === undefined
-          ? (status.volumePercent === undefined ? (status.volume === undefined ? 50 : status.volume) : status.volumePercent)
-          : reportedVolume,
-        muted: reported.muted === undefined ? (status.muted === undefined ? false : status.muted) : reported.muted
+        audioReportRevision: device?.runtimeRevision || 0,
+        volume: status.volumePercent === undefined ? 50 : status.volumePercent,
+        muted: status.muted === true
       }
     },
     hasAudioStatus(device) {
       const status = (device && (device.status || device.runtimeStatus)) || {}
-      return (status.volume !== undefined || status.volumePercent !== undefined) && status.muted !== undefined
+      return (status.volumePercent !== undefined) && status.muted !== undefined
     },
     audioVolume(device) {
       return this.audioStatus(device).volume
@@ -384,7 +382,9 @@ export default {
     height: 16px;
   }
   .volume-value {
-    width: 28px;
+    width: 42px;
+    flex-shrink: 0;
+    white-space: nowrap;
     margin-left: 8px;
     color: #FFF;
     font-size: 12px;

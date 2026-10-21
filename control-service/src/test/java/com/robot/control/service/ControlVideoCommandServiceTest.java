@@ -150,13 +150,13 @@ class ControlVideoCommandServiceTest {
                 "enabled", true,
                 "mainStreamUrl", "rtsp://camera/main")));
         when(mediaServiceClient.createVideoSession(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
-                .thenReturn(fixedCameraSession(VideoSessionStatus.STREAMING, VideoPublisherMode.FIXED_CAMERA_GATEWAY, 0L));
+                .thenReturn(fixedCameraSession(VideoSessionStatus.STREAMING, VideoPublisherMode.EDGE_MEDIA_GATEWAY, 0L));
 
         service.startFixedCameraVideo("camera-001", null, operator("operator-1", "web-1"));
 
         ArgumentCaptor<CreateVideoSessionRequest> request = ArgumentCaptor.forClass(CreateVideoSessionRequest.class);
         verify(mediaServiceClient).createVideoSession(request.capture(), org.mockito.ArgumentMatchers.any());
-        assertThat(request.getValue().getExpectedPublisherMode()).isEqualTo(VideoPublisherMode.FIXED_CAMERA_GATEWAY);
+        assertThat(request.getValue().getExpectedPublisherMode()).isEqualTo(VideoPublisherMode.EDGE_MEDIA_GATEWAY);
         assertThat(request.getValue().getExpectedPublisherRevision()).isZero();
         verify(mediaServiceClient, never()).requestClientStart(anyString(), anyString());
     }
@@ -183,6 +183,21 @@ class ControlVideoCommandServiceTest {
         assertThat(request.getValue().getQuality()).isEqualTo(VideoQuality.main);
         verify(mediaServiceClient, never()).requestClientStart(anyString(), anyString());
         verifyNoInteractions(commandService);
+    }
+
+    @Test
+    void rejectsDisabledFixedCameraAsInvalidRequest() {
+        when(managementClient.fixedCamera("camera-001")).thenReturn(Optional.of(Map.of(
+                "cameraId", "camera-001",
+                "enabled", false,
+                "protocolType", "RTSP")));
+
+        assertThatThrownBy(() -> service.startFixedCameraVideo(
+                        "camera-001", null, operator("operator-1", "web-1")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("固定摄像头未启用");
+
+        verifyNoInteractions(mediaServiceClient, commandService);
     }
 
     @Test

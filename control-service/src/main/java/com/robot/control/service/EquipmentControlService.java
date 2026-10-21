@@ -7,8 +7,10 @@ import com.robot.control.messaging.EquipmentControlCommandPublisher;
 import com.robot.control.ws.MediaWebSocketPublisher;
 
 import java.time.OffsetDateTime;
+import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.List;
@@ -98,6 +100,10 @@ public class EquipmentControlService {
      * 按机器人 ID 保存融合后的控制运行状态，与管理端设备档案分别维护。
      */
     private final Map<String, Map<String, Object>> robotStates = new ConcurrentHashMap<>();
+    /** 媒体客户端原始运行态快照，与管理端控制画像分开保存。 */
+    private final Map<String, DeviceRuntimeSnapshot> clientDeviceRuntime = new ConcurrentHashMap<>();
+    private final String deviceRuntimeEpoch = UUID.randomUUID().toString();
+    private final OffsetDateTime deviceRuntimeEpochStartedAt = OffsetDateTime.now();
     /**
      * 每台机器人最近接受边缘本体状态的单调时间，防止媒体心跳覆盖新鲜本体事实。
      */
@@ -128,17 +134,22 @@ public class EquipmentControlService {
     public Map<String, Object> controlProfile(String robotId) {
         Map<String, Object> robot = requireRobot(robotId);
         Map<String, Object> state = robotStates.getOrDefault(robotId, defaultRobotState(robot));
+        DeviceRuntimeSnapshot runtime = clientDeviceRuntime.getOrDefault(robotId, DeviceRuntimeSnapshot.empty());
         String controlMode = reportedControlMode(state.get("controlMode"));
+        List<Map<String, Object>> definitions = devices(robot, Map.of());
+        Map<String, Object> runtimePayload = deviceRuntimePayload(runtime);
         return object(
                 "robotId", robotId,
                 "type", firstValue(robot, "type", "deviceType", "typeCode"),
                 "vendor", firstValue(robot, "vendor", "manufacturer"),
                 "model", robot.get("model"),
-                "onlineStatus", valueOrDefault(state, "status", "offline"),
+                "onlineStatus", hasFreshEdgeStatus(robotId) ? valueOrDefault(state, "status", "offline") : "offline",
                 "controlMode", controlMode,
                 "controlModeName", controlModeName(controlMode),
                 "stateSeq", valueOrDefault(state, "stateSeq", 1),
-                "devices", devices(robotId));
+                "devices", devices(robot, statusByDeviceId(mapList(runtimePayload.get("devices")))),
+                "deviceDefinitions", definitions,
+                "deviceRuntime", runtimePayload);
     }
 
     /**
@@ -548,7 +559,7 @@ public class EquipmentControlService {
      * @param payload 消息载荷
      * @return 客户端状态处理结果
      */
-    public Map<String, Object> handleClientState(Map<String, Object> payload) {
+    public synchronized Map<String, Object> handleClientState(Map<String, Object> payload) {
         String robotId = stringValue(payload.get("robotId"), "");
         if (robotId.isBlank()) {
             return payload;
@@ -559,19 +570,27 @@ public class EquipmentControlService {
         Map<String, Object> state = copy(previous);
         state.put("robotId", robotId);
         state.put("clientId", "");
-        state.put("status", stringValue(payload.get("status"), "offline"));
+        // 顶层在线状态属于边缘本体；媒体客户端在线性只进入独立设备运行态。
+        state.put("status", hasFreshEdgeStatus(robotId)
+                ? stringValue(previous.get("status"), "offline") : "offline");
+        DeviceRuntimeSnapshot runtime = clientDeviceRuntime.compute(robotId, (id, last) -> {
+            boolean online = "online".equalsIgnoreCase(stringValue(payload.get("status"), "offline"));
+            List<Map<String, Object>> reported = last == null ? List.of() : last.devices();
+            if (!online) {
+                reported = List.of();
+            } else if (payload.containsKey("devices")) {
+                reported = mediaClientDevices(payload.get("devices"));
+            }
+            if (online && payload.containsKey("audioDevices")) {
+                reported = mergeSpeakerAudioStates(reported, payload.get("audioDevices"), receivedAt);
+            }
+            return new DeviceRuntimeSnapshot(last == null ? 1 : last.revision() + 1,
+                    online, receivedAt, reported);
+        });
         if (payload.containsKey("cameras")) {
             state.put("cameras", mediaClientCameras(payload.get("cameras")));
         }
-        if (payload.containsKey("devices")) {
-            state.put("devices", mediaClientDevices(payload.get("devices")));
-        }
-        if (payload.containsKey("audioDevices")) {
-            state.put("devices", mergeSpeakerAudioStates(
-                    state.get("devices"),
-                    payload.get("audioDevices"),
-                    receivedAt));
-        }
+        state.put("devices", runtime.devices());
         if (hasFreshEdgeStatus(robotId)) {
             EDGE_STATUS_FIELDS.forEach(field -> {
                 if (previous.containsKey(field)) {
@@ -585,11 +604,12 @@ public class EquipmentControlService {
         state.put("controlModeName", controlModeName(controlMode));
         state.put("timestamp", DateTimeConfig.normalize(receivedAt));
         state.put("stateSource", "MEDIA_CLIENT_STATUS");
-        Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
+        Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(runtime.devices());
         managementRobot.ifPresent(robot -> {
             enrichRobotState(state, robot);
             state.put("devices", devices(robot, runtimeDevices));
         });
+        state.put("deviceRuntime", deviceRuntimePayload(runtime));
         robotStates.put(robotId, state);
         return state;
     }
@@ -601,7 +621,7 @@ public class EquipmentControlService {
      * @param update       边缘状态转换结果
      * @return 合并后的完整状态
      */
-    public Map<String, Object> mergeEdgeDeviceStatus(String serialNumber, Map<String, Object> update) {
+    public synchronized Map<String, Object> mergeEdgeDeviceStatus(String serialNumber, Map<String, Object> update) {
         Map<String, Object> state = copy(robotStates.getOrDefault(serialNumber, Map.of()));
         long nextStateSeq = numberValue(state.get("stateSeq"), 0).longValue() + 1;
         state.put("robotId", serialNumber);
@@ -618,12 +638,15 @@ public class EquipmentControlService {
         state.put("controlModeName", controlModeName(controlMode));
         state.putIfAbsent("missionStatus", "IDLE");
         state.putIfAbsent("navigationStatus", "IDLE");
-        Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(state);
-        managementClient.cachedDeviceBySerialNumber(serialNumber)
-                .ifPresent(robot -> {
-                    enrichRobotState(state, robot);
-                    state.put("devices", devices(robot, runtimeDevices));
-                });
+        DeviceRuntimeSnapshot runtime = clientDeviceRuntime.getOrDefault(
+                serialNumber, DeviceRuntimeSnapshot.empty());
+        Map<String, Map<String, Object>> runtimeDevices = statusByDeviceId(runtime.devices());
+        Optional<Map<String, Object>> managementRobot = managementClient.cachedDeviceBySerialNumber(serialNumber);
+        managementRobot.ifPresent(robot -> {
+            enrichRobotState(state, robot);
+            state.put("devices", devices(robot, runtimeDevices));
+        });
+        state.put("deviceRuntime", deviceRuntimePayload(runtime));
         robotStates.put(serialNumber, state);
         edgeStatusUpdatedNanos.put(serialNumber, System.nanoTime());
         return state;
@@ -1158,7 +1181,7 @@ public class EquipmentControlService {
                 "navigationStatus", "IDLE",
                 "controlOwner", null,
                 "estopActive", false,
-                "devices", devices(String.valueOf(firstValue(robot, "serialNumber", "robotId"))),
+                "devices", devices(robot, Map.of()),
                 "status", "offline",
                 "timestamp", OffsetDateTime.now());
     }
@@ -1197,7 +1220,117 @@ public class EquipmentControlService {
      */
     private List<Map<String, Object>> devices(String robotId) {
         Map<String, Object> robot = requireRobot(robotId);
-        return devices(robot, statusByDeviceId(robotStates.getOrDefault(robotId, Map.of())));
+        return devices(robot, statusByDeviceId(
+                clientDeviceRuntime.getOrDefault(robotId, DeviceRuntimeSnapshot.empty()).devices()));
+    }
+
+    /**
+     * 从同一客户端快照生成 HTTP 与推送共用的运行态，不依赖请求身份或管理端缓存。
+     *
+     * @param snapshot 本次状态更新使用的客户端快照
+     * @return 含服务实例、递增版本、客户端在线状态和设备状态的快照
+     */
+    private Map<String, Object> deviceRuntimePayload(DeviceRuntimeSnapshot snapshot) {
+        List<Map<String, Object>> runtimeDevices = snapshot.devices().stream().map(device -> {
+            Map<String, Object> runtime = new LinkedHashMap<>();
+            runtime.put("deviceId", device.get("deviceId"));
+            copyIfPresent(device, runtime, "onlineStatus");
+            if (device.get("status") instanceof Map<?, ?> status) {
+                runtime.put("status", projectRuntimeStatus(status));
+            }
+            return runtime;
+        }).toList();
+        return object(
+                "epoch", deviceRuntimeEpoch,
+                "epochStartedAt", DateTimeConfig.normalize(deviceRuntimeEpochStartedAt),
+                "revision", snapshot.revision(),
+                "clientOnline", snapshot.clientOnline(),
+                "updatedAt", snapshot.updatedAt() == null ? null : DateTimeConfig.normalize(snapshot.updatedAt()),
+                "devices", runtimeDevices);
+    }
+
+    /**
+     * 投影浏览器需要的已上报状态；原始快照仍用于服务端指令校验和音频设备关联。
+     * 按字段而非管理端类型选择，保证相同版本在 HTTP、推送和不同请求身份下内容一致。
+     * 缺失值不推断，显式 null、false 和零值保留。
+     *
+     * @param source 客户端原始设备状态
+     * @return 不包含驱动诊断、物理标识及重复媒体路由的展示状态
+     */
+    private Map<String, Object> projectRuntimeStatus(Map<?, ?> source) {
+        Map<String, Object> status = selectRuntimeFields(source, List.of(
+                "connected", "online", "volumePercent", "muted", "audioStatusUpdatedAt",
+                "autoRotateEnabled", "safetySwitchEnabled", "powerOn", "temperatureC", "volumeLimitPercent"));
+        // 只在规范字段缺省时归一旧设备输入；浏览器协议不再输出别名。
+        if (!source.containsKey("volumePercent") && source.containsKey("volume")) {
+            status.put("volumePercent", source.get("volume"));
+        }
+        if (!source.containsKey("powerOn") && source.containsKey("enabled")) {
+            status.put("powerOn", source.get("enabled"));
+        }
+        projectNestedRuntime(source, status, "front", List.of("mode"));
+        projectNestedRuntime(source, status, "rear", List.of("mode"));
+        projectNestedRuntime(source, status, "audioTransfer", List.of("status", "fileName", "error"));
+        projectNestedRuntime(source, status, "audioSession",
+                List.of("mediaSessionId", "broadcastActive", "monitorActive", "monitorSuppressed"));
+        projectNestedRuntime(source, status, "audioPlayback", List.of("playing", "loop", "fileName"));
+        if (source.get("tubes") instanceof List<?> tubes) {
+            status.put("tubes", tubes.stream().filter(Map.class::isInstance)
+                    .map(tube -> selectRuntimeFields((Map<?, ?>) tube,
+                            List.of("tube", "state", "loaded", "stateName"))).toList());
+        } else if (source.containsKey("tubes") && source.get("tubes") == null) {
+            status.put("tubes", null);
+        }
+        if (source.get("audioFiles") instanceof List<?> files) {
+            status.put("audioFiles", files.stream().filter(String.class::isInstance).toList());
+        } else if (source.containsKey("audioFiles") && source.get("audioFiles") == null) {
+            status.put("audioFiles", null);
+        }
+        return status;
+    }
+
+    private Map<String, Object> selectRuntimeFields(Map<?, ?> source, List<String> fields) {
+        Map<String, Object> selected = new LinkedHashMap<>();
+        for (String field : fields) {
+            if (source.containsKey(field)) {
+                selected.put(field, source.get(field));
+            }
+        }
+        return selected;
+    }
+
+    private void projectNestedRuntime(Map<?, ?> source, Map<String, Object> target,
+            String field, List<String> fields) {
+        if (source.get(field) instanceof Map<?, ?> nested) {
+            target.put(field, selectRuntimeFields(nested, fields));
+        } else if (source.containsKey(field) && source.get(field) == null) {
+            target.put(field, null);
+        }
+    }
+
+    /**
+     * 使超过心跳期限的媒体客户端设备状态失效。
+     *
+     * @param timeout 媒体客户端心跳超时阈值
+     * @return 需要重新发布的机器人状态
+     */
+    public synchronized List<Map<String, Object>> expireStaleClientStates(Duration timeout) {
+        OffsetDateTime now = OffsetDateTime.now();
+        List<Map<String, Object>> expired = new ArrayList<>();
+        clientDeviceRuntime.forEach((robotId, snapshot) -> {
+            if (!snapshot.clientOnline() || snapshot.updatedAt() == null
+                    || !snapshot.updatedAt().plus(timeout).isBefore(now)) {
+                return;
+            }
+            Map<String, Object> previous = robotStates.getOrDefault(robotId, Map.of());
+            Map<String, Object> payload = object("robotId", robotId, "status", "offline");
+            Map<String, Object> state = handleClientState(payload);
+            if (previous.containsKey("cameras")) {
+                state.put("cameras", previous.get("cameras"));
+            }
+            expired.add(state);
+        });
+        return expired;
     }
 
     private List<Map<String, Object>> devices(
@@ -1251,12 +1384,8 @@ public class EquipmentControlService {
             String deviceType,
             String displayName,
             Map<String, Map<String, Object>> statusByDeviceId) {
-        String componentCode = firstString(component, "code", "deviceId", "id");
-        Map<String, Object> runtime = statusByDeviceId.getOrDefault(
-                deviceId,
-                statusByDeviceId.getOrDefault(
-                        componentCode,
-                        statusByDeviceId.getOrDefault("type:" + deviceType, Map.of())));
+        // 物理驱动标识和设备类型都不能代替平台身份，否则同类上装会串用状态。
+        Map<String, Object> runtime = statusByDeviceId.getOrDefault(deviceId, Map.of());
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("deviceId", deviceId);
         result.put("scope", controlScope(deviceType));
@@ -1281,11 +1410,23 @@ public class EquipmentControlService {
      * 只保留媒体客户端实际可确认的上装运行态，设备档案和能力统一由管理端提供。
      */
     private List<Map<String, Object>> mediaClientDevices(Object value) {
+        if (!(value instanceof List<?>)) {
+            throw new IllegalArgumentException("客户端 devices 必须是数组");
+        }
         List<Map<String, Object>> result = new ArrayList<>();
-        for (Map<String, Object> device : mapList(value)) {
-            String deviceId = firstString(device, "deviceId");
-            if (deviceId == null) {
-                continue;
+        Set<String> deviceIds = new HashSet<>();
+        for (Object entry : (List<?>) value) {
+            if (!(entry instanceof Map<?, ?> rawDevice)
+                    || !(rawDevice.get("deviceId") instanceof String id) || id.isBlank()) {
+                throw new IllegalArgumentException("客户端 devices 每项必须提供非空字符串 deviceId");
+            }
+            Map<String, Object> device = mapValue(entry);
+            String deviceId = id.trim();
+            if (device.containsKey("status") && !(device.get("status") instanceof Map<?, ?>)) {
+                throw new IllegalArgumentException("客户端设备 status 必须是对象");
+            }
+            if (!deviceIds.add(deviceId)) {
+                throw new IllegalArgumentException("客户端 devices 存在重复 deviceId");
             }
             Map<String, Object> runtime = new LinkedHashMap<>();
             runtime.put("deviceId", deviceId);
@@ -1423,28 +1564,12 @@ public class EquipmentControlService {
         }
     }
 
-    private Map<String, Map<String, Object>> statusByDeviceId(Map<String, Object> state) {
+    private Map<String, Map<String, Object>> statusByDeviceId(List<Map<String, Object>> devices) {
         Map<String, Map<String, Object>> result = new LinkedHashMap<>();
-        Map<String, Integer> typeCounts = new LinkedHashMap<>();
-        for (Map<String, Object> device : mapList(state.get("devices"))) {
+        for (Map<String, Object> device : devices) {
             String deviceId = firstString(device, "deviceId");
             if (deviceId != null) {
                 result.put(deviceId, device);
-            }
-            String deviceType = firstString(device, "deviceType");
-            if (deviceType != null) {
-                String typeKey = "type:" + deviceType;
-                int count = typeCounts.merge(typeKey, 1, Integer::sum);
-                if (count == 1) {
-                    result.put(typeKey, device);
-                } else {
-                    result.remove(typeKey);
-                }
-            }
-            Map<String, Object> status = mapValue(device.get("status"));
-            String driverDeviceId = firstString(status, "driverDeviceId");
-            if (driverDeviceId != null) {
-                result.put(driverDeviceId, device);
             }
         }
         return result;
@@ -2058,5 +2183,20 @@ public class EquipmentControlService {
             map.put(String.valueOf(values[i]), values[i + 1]);
         }
         return map;
+    }
+
+    /**
+     * 客户端来源的完整设备运行态快照。
+     *
+     * @param revision 服务实例内按机器人递增的版本
+     * @param clientOnline 客户端是否仍在线
+     * @param updatedAt 最近接收状态的服务端时间
+     * @param devices 客户端上报的设备运行态
+     */
+    private record DeviceRuntimeSnapshot(
+            long revision, boolean clientOnline, OffsetDateTime updatedAt, List<Map<String, Object>> devices) {
+        private static DeviceRuntimeSnapshot empty() {
+            return new DeviceRuntimeSnapshot(0, false, null, List.of());
+        }
     }
 }

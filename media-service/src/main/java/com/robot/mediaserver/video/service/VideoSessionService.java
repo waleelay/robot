@@ -102,7 +102,7 @@ public class VideoSessionService {
             VideoSessionStatus.FAILED,
             VideoSessionStatus.TIMEOUT);
 
-    private static final Set<VideoSessionStatus> FIXED_CAMERA_GATEWAY_RECOVERY_STATUSES = Set.of(
+    private static final Set<VideoSessionStatus> EDGE_MEDIA_GATEWAY_RECOVERY_STATUSES = Set.of(
             VideoSessionStatus.REQUESTING_CLIENT,
             VideoSessionStatus.ROOM_READY,
             VideoSessionStatus.STREAMING,
@@ -713,6 +713,17 @@ public class VideoSessionService {
                 }
             }
             case "stopped", "closed" -> {
+                if (session.getSourceType() == VideoSourceType.FIXED_CAMERA
+                        && "SOURCE_LEASE_MISSING".equals(errorCode)
+                        && session.getStatus() != VideoSessionStatus.CLOSED) {
+                    // Gateway 撤权终止水位不可复活旧 session；同步收口 viewer/录像，续租后必须创建新会话。
+                    fileService.stopActiveLiveRecordingForSession(sessionId);
+                    viewerRepository.closeActiveLeasesBySessionId(sessionId, now());
+                    session.setLastErrorCode(errorCode);
+                    session.setLastErrorMessage("媒体源授权租约已撤销或过期");
+                    closeSessionRecord(session);
+                    break;
+                }
                 // 主动释放会先在 Media 内关闭会话；意外退出由 LiveKit Track 对账确认后中断。
                 if (session.getStatus() == VideoSessionStatus.STOPPING
                         || session.getStatus() == VideoSessionStatus.CLOSED) {
@@ -907,7 +918,7 @@ public class VideoSessionService {
     @Transactional
     public List<VideoStartCommand> fixedCameraRecoveryCommands(String sourceId, boolean gatewayReconnect) {
         Set<VideoSessionStatus> statuses = gatewayReconnect
-                ? FIXED_CAMERA_GATEWAY_RECOVERY_STATUSES
+                ? EDGE_MEDIA_GATEWAY_RECOVERY_STATUSES
                 : FIXED_CAMERA_STREAM_RECOVERY_STATUSES;
         Set<String> restartedKeys = new HashSet<>();
         return repository.findBySourceTypeAndStatusInOrderByUpdatedAtDesc(
@@ -1282,13 +1293,13 @@ public class VideoSessionService {
     private VideoPublisherMode publisherMode(VideoSession session) {
         if (session.getRuntimeId() == null || session.getRuntimeId().isBlank()) {
             return session.getSourceType() == VideoSourceType.FIXED_CAMERA
-                    ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                    ? VideoPublisherMode.EDGE_MEDIA_GATEWAY
                     : VideoPublisherMode.DEVICE_CLIENT;
         }
         return sourceRuntimeRepository.findById(session.getRuntimeId())
                 .map(VideoSourceRuntime::getPublisherMode)
                 .orElse(session.getSourceType() == VideoSourceType.FIXED_CAMERA
-                        ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                        ? VideoPublisherMode.EDGE_MEDIA_GATEWAY
                         : VideoPublisherMode.DEVICE_CLIENT);
     }
 
@@ -1548,11 +1559,11 @@ public class VideoSessionService {
      */
     public FixedCameraPublisherModeResponse quiesceFixedCameraPublisher(String cameraId, long publisherRevision) {
         validateFixedCameraLifecycleRequest(
-                cameraId, VideoPublisherMode.FIXED_CAMERA_GATEWAY, publisherRevision);
+                cameraId, VideoPublisherMode.EDGE_MEDIA_GATEWAY, publisherRevision);
         List<VideoSourceRuntime> snapshots = fixedCameraRuntimes(cameraId);
         if (snapshots.isEmpty()) {
             return new FixedCameraPublisherModeResponse(
-                    cameraId, VideoPublisherMode.FIXED_CAMERA_GATEWAY, publisherRevision, List.of());
+                    cameraId, VideoPublisherMode.EDGE_MEDIA_GATEWAY, publisherRevision, List.of());
         }
         fixedCameraSessionIds(snapshots).forEach(fileService::stopActiveLiveRecordingForSession);
         FixedCameraPublisherModeResponse response = transactionTemplate.execute(status -> {
@@ -1561,7 +1572,7 @@ public class VideoSessionService {
                             .orElseThrow(() -> new IllegalStateException("固定摄像头 Runtime 已消失：" + cameraId)))
                     .toList();
             for (VideoSourceRuntime runtime : runtimes) {
-                if (runtime.getPublisherMode() != VideoPublisherMode.FIXED_CAMERA_GATEWAY) {
+                if (runtime.getPublisherMode() != VideoPublisherMode.EDGE_MEDIA_GATEWAY) {
                     throw new IllegalStateException("当前发布模式不允许收口 Gateway：" + runtime.getPublisherMode());
                 }
                 if (publisherRevision < runtime.getPublisherRevision()) {
@@ -1579,7 +1590,7 @@ public class VideoSessionService {
             }
             return new FixedCameraPublisherModeResponse(
                     cameraId,
-                    VideoPublisherMode.FIXED_CAMERA_GATEWAY,
+                    VideoPublisherMode.EDGE_MEDIA_GATEWAY,
                     publisherRevision,
                     latestGatewayStopCommands(cameraId, runtimes));
         });
@@ -1666,7 +1677,7 @@ public class VideoSessionService {
         if (cameraId == null || cameraId.isBlank()) {
             throw new IllegalArgumentException("固定摄像头 ID 不能为空");
         }
-        if (targetMode != VideoPublisherMode.FIXED_CAMERA_GATEWAY
+        if (targetMode != VideoPublisherMode.EDGE_MEDIA_GATEWAY
                 && targetMode != VideoPublisherMode.LIVEKIT_INGRESS) {
             throw new IllegalArgumentException("固定摄像头目标发布模式不合法");
         }
@@ -1677,7 +1688,7 @@ public class VideoSessionService {
 
     private VideoPublisherMode oppositeFixedCameraMode(VideoPublisherMode mode) {
         return mode == VideoPublisherMode.LIVEKIT_INGRESS
-                ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                ? VideoPublisherMode.EDGE_MEDIA_GATEWAY
                 : VideoPublisherMode.LIVEKIT_INGRESS;
     }
 
@@ -2068,7 +2079,7 @@ public class VideoSessionService {
             VideoQuality quality,
             String roomName) {
         VideoPublisherMode publisherMode = sourceType == VideoSourceType.FIXED_CAMERA
-                ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                ? VideoPublisherMode.EDGE_MEDIA_GATEWAY
                 : VideoPublisherMode.DEVICE_CLIENT;
         return lockSourceRuntime(
                 sourceType, sourceId, deviceId, channel, quality, roomName, publisherMode, 0, true);
@@ -2106,7 +2117,7 @@ public class VideoSessionService {
                 roomName,
                 request.getExpectedPublisherMode(),
                 request.getExpectedPublisherRevision(),
-                request.getExpectedPublisherMode() == VideoPublisherMode.FIXED_CAMERA_GATEWAY);
+                request.getExpectedPublisherMode() == VideoPublisherMode.EDGE_MEDIA_GATEWAY);
     }
 
     private VideoSourceRuntime lockSourceRuntime(
@@ -2120,7 +2131,7 @@ public class VideoSessionService {
             long publisherRevision,
             boolean createIfAbsent) {
         if (sourceType == VideoSourceType.FIXED_CAMERA
-                && publisherMode != VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                && publisherMode != VideoPublisherMode.EDGE_MEDIA_GATEWAY
                 && publisherMode != VideoPublisherMode.LIVEKIT_INGRESS) {
             throw new IllegalStateException("固定摄像头发布模式不合法：" + publisherMode);
         }
@@ -2154,7 +2165,7 @@ public class VideoSessionService {
         VideoSourceRuntime runtime = sourceRuntimeRepository.findById(session.getRuntimeId())
                 .orElseThrow(() -> new IllegalStateException("未找到媒体源运行态：" + session.getRuntimeId()));
         VideoPublisherMode expected = session.getSourceType() == VideoSourceType.FIXED_CAMERA
-                ? VideoPublisherMode.FIXED_CAMERA_GATEWAY
+                ? VideoPublisherMode.EDGE_MEDIA_GATEWAY
                 : VideoPublisherMode.DEVICE_CLIENT;
         if (runtime.getPublisherMode() != expected) {
             throw new IllegalStateException("当前发布模式不允许签发客户端 Publisher Token：" + runtime.getPublisherMode());

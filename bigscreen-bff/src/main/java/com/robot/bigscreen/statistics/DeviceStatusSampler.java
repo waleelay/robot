@@ -109,6 +109,9 @@ public class DeviceStatusSampler {
         long fault = 0;
         long firstTs = Long.MAX_VALUE;
         long lastTs = Long.MIN_VALUE;
+        if (rangeStart == null || rangeEnd == null || rangeEnd.isBefore(rangeStart)) {
+            return new long[]{0, 0, 0, 0};
+        }
         ConcurrentHashMap<String, DaySample> byDay = samples.get(serial);
         if (byDay == null) {
             return new long[]{0, 0, 0, 0};

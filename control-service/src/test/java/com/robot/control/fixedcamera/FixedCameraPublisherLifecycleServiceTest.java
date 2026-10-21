@@ -46,14 +46,14 @@ class FixedCameraPublisherLifecycleServiceTest {
         RobotMediaCommandService commands = mock(RobotMediaCommandService.class);
         FixedCameraPublisherLifecycleService service = new FixedCameraPublisherLifecycleService(media, commands);
         FixedCameraPublisherModeResponse response = new FixedCameraPublisherModeResponse(
-                "camera-001", VideoPublisherMode.FIXED_CAMERA_GATEWAY, 5L, List.of());
+                "camera-001", VideoPublisherMode.EDGE_MEDIA_GATEWAY, 5L, List.of());
         when(media.switchFixedCameraPublisherMode(
-                "camera-001", VideoPublisherMode.FIXED_CAMERA_GATEWAY, 5L)).thenReturn(response);
+                "camera-001", VideoPublisherMode.EDGE_MEDIA_GATEWAY, 5L)).thenReturn(response);
         when(media.fixedCameraPublisherPresence("camera-001")).thenReturn(
                 new FixedCameraPublisherPresenceResponse(
                         "camera-001", false, false, OffsetDateTime.now()));
 
-        service.switchMode("camera-001", VideoPublisherMode.FIXED_CAMERA_GATEWAY, 5L);
+        service.switchMode("camera-001", VideoPublisherMode.EDGE_MEDIA_GATEWAY, 5L);
 
         verify(media).fixedCameraPublisherPresence("camera-001");
         org.mockito.Mockito.verifyNoInteractions(commands);

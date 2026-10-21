@@ -46,6 +46,7 @@ public class RobotRegistryService {
             "edgeStatus",
             "edgeMessageId",
             "edgeSchemaVersion",
+            "deviceRuntime",
             "stateSource");
 
     private final ControlServiceProperties properties;
@@ -289,13 +290,19 @@ public class RobotRegistryService {
             device.controlOwner = controlOwner;
             device.estopActive = estopActive == null ? false : estopActive;
             device.lastHeartbeatAt = receivedAt;
+            boolean olderDeviceRuntime = isOlderDeviceRuntime(
+                    dynamicState.get("deviceRuntime"), device.dynamicState.get("deviceRuntime"));
             if (cameras != null && !cameras.isEmpty()) {
                 device.cameras = new ArrayList<>(cameras);
             }
-            if (mountedDevices != null && !mountedDevices.isEmpty()) {
+            if (!olderDeviceRuntime && mountedDevices != null
+                    && (!mountedDevices.isEmpty() || dynamicState.containsKey("devices"))) {
                 device.mountedDevices = new ArrayList<>(mountedDevices);
             }
             DYNAMIC_STATE_FIELDS.forEach(field -> {
+                if (olderDeviceRuntime && "deviceRuntime".equals(field)) {
+                    return;
+                }
                 if (!edgeStatusReport && ("speed".equals(field) || "location".equals(field))) {
                     return;
                 }
@@ -313,7 +320,7 @@ public class RobotRegistryService {
             // 媒体客户端只补充摄像头等附属信息，首个边缘状态到达前没有在线状态真值。
             // 此时保留注册表快照为离线，但不把默认值作为实时状态广播给页面。
             publishState = !MEDIA_CLIENT_STATUS_SOURCE.equals(stateSource) || device.lastEdgeStatusAt != null;
-            state = toState(device, receivedAt);
+            state = toState(device);
             publishVersion = ++device.publishVersion;
         }
         if (publishState) {
@@ -354,7 +361,7 @@ public class RobotRegistryService {
             removed.status = "offline";
             removed.statusChangedAt = changedAt;
             removed.dynamicState.put("stateSource", "UNREGISTERED_DEVICE");
-            state = toState(removed, changedAt);
+            state = toState(removed);
             publishVersion = ++removed.publishVersion;
         }
         publishIfCurrent(removed, publishVersion, state);
@@ -427,7 +434,7 @@ public class RobotRegistryService {
             location.put("latitude", latitude);
             device.dynamicState.put("location", location);
             device.dynamicState.put("stateSource", "GIS_LOCATION_ENRICHMENT");
-            state = toState(device, now());
+            state = toState(device);
             publishVersion = ++device.publishVersion;
         }
         publishIfCurrent(device, publishVersion, state);
@@ -462,7 +469,7 @@ public class RobotRegistryService {
                     device.statusChangedAt = sweepAt;
                     device.dynamicState.put("stateSource", "OFFLINE_SCAN");
                     offlineEvents.add(new StatePublication(
-                            device, ++device.publishVersion, toState(device, sweepAt)));
+                            device, ++device.publishVersion, toState(device)));
                 }
             }
         });
@@ -485,15 +492,34 @@ public class RobotRegistryService {
     }
 
     /**
+     * 判断异步发布的客户端快照是否已落后于注册表中的版本。
+     *
+     * @param incoming 新接收的快照
+     * @param current 注册表快照
+     * @return 同一 Control 实例内版本更旧时为 true
+     */
+    private boolean isOlderDeviceRuntime(Object incoming, Object current) {
+        if (!(incoming instanceof Map<?, ?> next) || !(current instanceof Map<?, ?> previous)) {
+            return false;
+        }
+        Object nextRevision = next.get("revision");
+        Object previousRevision = previous.get("revision");
+        return next.get("epoch") != null
+                && next.get("epoch").equals(previous.get("epoch"))
+                && nextRevision instanceof Number nextNumber
+                && previousRevision instanceof Number previousNumber
+                && nextNumber.longValue() < previousNumber.longValue();
+    }
+
+    /**
      * 转换为 WebSocket 推送状态。
      *
      * @param device 本次处理的设备档案或运行状态
      * @return WebSocket 状态载荷
      */
-    private Map<String, Object> toState(RobotDevice device, OffsetDateTime eventAt) {
+    private Map<String, Object> toState(RobotDevice device) {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("robotId", device.robotId);
-        state.put("clientId", device.clientId == null ? "" : device.clientId);
         state.put("name", device.name);
         state.put("type", device.type);
         state.put("typeCode", device.typeCode);
@@ -503,16 +529,12 @@ public class RobotRegistryService {
         state.put("status", device.status);
         state.put("statusChangedAt", device.statusChangedAt.toString());
         state.put("controlMode", device.controlMode);
-        state.put("controlModeName", controlModeName(device.controlMode));
         state.put("stateSeq", device.stateSeq);
-        state.put("missionStatus", device.missionStatus);
-        state.put("navigationStatus", device.navigationStatus);
-        state.put("controlOwner", device.controlOwner);
-        state.put("estopActive", device.estopActive);
         state.put("cameras", device.cameras);
-        state.put("devices", device.mountedDevices);
-        state.putAll(device.dynamicState);
-        state.put("timestamp", DateTimeConfig.format(eventAt));
+        // 推送采用显式字段集合，内部诊断和控制校验状态不进入浏览器协议。
+        for (String field : List.of("charging", "taskStatus", "location", "healthStatus", "stateSource", "deviceRuntime")) {
+            state.put(field, device.dynamicState.get(field));
+        }
         return state;
     }
 

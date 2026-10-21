@@ -11,11 +11,21 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.robot.control.config.ControlServiceProperties;
+import com.robot.control.robot.service.RobotRegistryService;
 import com.robot.control.auth.CurrentUser;
+import com.robot.control.auth.CurrentUserResolver;
+import com.robot.control.api.ControlRobotController;
+import com.robot.control.call.IntercomCallService;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
 import com.robot.control.client.ControlManagementClient;
 import com.robot.control.messaging.EquipmentControlCommandPublisher;
 import com.robot.control.ws.MediaWebSocketPublisher;
 import java.time.OffsetDateTime;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ArrayList;
@@ -733,7 +743,7 @@ class EquipmentControlServiceTest {
     }
 
     @Test
-    void replacesClientDeviceIdButPreservesRuntimeStatus() {
+    void doesNotAttachLegacyClientIdentityToAnotherManagementDevice() {
         register(component("PTZ", "ptz-new-001"));
         Map<String, Object> state = service.handleClientState(object(
                 "robotId", "robot-001",
@@ -754,9 +764,7 @@ class EquipmentControlServiceTest {
                     .doesNotContainKey("bindingId")
                     .doesNotContainKey("vendor")
                     .containsEntry("deviceType", "DUAL_LIGHT_PTZ");
-            assertThat(map(device.get("status")))
-                    .containsEntry("pan", 0.15)
-                    .containsEntry("moving", true);
+            assertThat(device).doesNotContainKeys("status", "onlineStatus");
                 });
     }
 
@@ -904,14 +912,315 @@ class EquipmentControlServiceTest {
                 "name", "客户端硬编码名称",
                 "type", "轮式机器人",
                 "status", "online",
-                "devices", List.of(object("deviceId", "ptz-001", "deviceType", "DUAL_LIGHT_PTZ"))));
+                "devices", List.of(object(
+                        "deviceId", "ptz-001",
+                        "deviceType", "PTZ",
+                        "actions", List.of("up"),
+                        "status", object("pan", 0.15)))));
 
         assertThat(state)
                 .containsEntry("robotId", "robot-001")
                 .containsEntry("stateSource", "MEDIA_CLIENT_STATUS")
                 .doesNotContainKeys("name", "type", "typeCode");
         assertThat(maps(state.get("devices"))).singleElement()
-                .satisfies(device -> assertThat(device).containsEntry("deviceId", "ptz-001"));
+                .satisfies(device -> assertThat(device)
+                        .containsEntry("deviceId", "ptz-001")
+                        .containsEntry("deviceType", "PTZ")
+                        .doesNotContainKey("actions")
+                        .extracting(item -> map(item.get("status")))
+                        .satisfies(status -> assertThat(status).containsEntry("pan", 0.15)));
+    }
+
+    @Test
+    void legacyReportedTypeCannotAssociateADeviceWithDifferentIdentity() {
+        Map<String, Object> state = service.handleClientState(object(
+                "robotId", "robot-001",
+                "status", "online",
+                "devices", List.of(object(
+                        "deviceId", "legacy-ptz",
+                        "deviceType", "DUAL_LIGHT_PTZ",
+                        "status", object("pan", 0.15)))));
+
+        assertThat(maps(state.get("devices"))).singleElement()
+                .satisfies(device -> assertThat(device).containsEntry("deviceType", "DUAL_LIGHT_PTZ"));
+        register(component("PTZ", "ptz_main"));
+        assertThat(maps(service.controlProfile("robot-001").get("devices"))).singleElement()
+                .satisfies(device -> {
+                    assertThat(device).containsEntry("deviceId", "ptz_main")
+                            .containsEntry("deviceType", "DUAL_LIGHT_PTZ");
+                    assertThat(device).doesNotContainKey("status");
+                });
+    }
+
+    /** 验证所有现有控件字段与嵌套白名单，同时避免原始诊断经 HTTP 或推送泄漏。 */
+    @Test
+    void projectsRuntimeForAllControlsWithoutMutatingRawDeviceState() {
+        register(component("PTZ", "ptz_main"));
+        Map<String, Object> source = object(
+                "connected", true, "online", false, "volume", 50, "volumePercent", 0, "muted", true,
+                "audioStatusUpdatedAt", "2026-10-12T10:00:00Z", "powerOn", false, "enabled", true,
+                "autoRotateEnabled", false, "safetySwitchEnabled", true, "temperatureC", 30, "volumeLimitPercent", 80,
+                "front", object("mode", "ON", "brightness", 90), "rear", object("mode", "OFF", "modeCode", 0),
+                "tubes", List.of(object("tube", 1, "state", 1, "loaded", true, "stateName", "已装填", "rawHex", "ff")),
+                "audioFiles", List.of("notice.wav"),
+                "audioTransfer", object("status", "FAILED", "fileName", "notice.wav", "error", "传输失败", "raw", "diagnostic"),
+                "audioSession", object("mediaSessionId", "session-1", "broadcastActive", true,
+                        "monitorActive", false, "monitorSuppressed", true, "publishAudio", true),
+                "audioPlayback", object("playing", true, "loop", false, "fileName", "notice.wav", "raw", "diagnostic"),
+                "driverDeviceId", "physical-device", "rosState", object("raw", true), "pan", 12,
+                "cameraIds", List.of("camera-1"), "statusTrusted", false);
+        Map<String, Object> state = service.handleClientState(object("robotId", "robot-001", "status", "online",
+                "devices", List.of(object("deviceId", "ptz_main", "onlineStatus", "ONLINE", "status", source))));
+        Map<String, Object> runtime = map(state.get("deviceRuntime"));
+        Map<String, Object> device = maps(runtime.get("devices")).get(0);
+        assertThat(device).containsOnlyKeys("deviceId", "onlineStatus", "status");
+        Map<String, Object> projected = map(device.get("status"));
+        assertThat(projected).containsOnlyKeys("connected", "online", "volumePercent", "muted", "audioStatusUpdatedAt",
+                "powerOn", "autoRotateEnabled", "safetySwitchEnabled", "temperatureC", "volumeLimitPercent", "front", "rear",
+                "tubes", "audioFiles", "audioTransfer", "audioSession", "audioPlayback")
+                .containsEntry("volumePercent", 0).containsEntry("powerOn", false).containsEntry("online", false);
+        assertThat(map(projected.get("front"))).containsOnlyKeys("mode");
+        assertThat(map(projected.get("rear"))).containsOnlyKeys("mode");
+        assertThat(maps(projected.get("tubes"))).singleElement().satisfies(tube ->
+                assertThat(tube).containsOnlyKeys("tube", "state", "loaded", "stateName"));
+        assertThat(map(projected.get("audioTransfer"))).containsOnlyKeys("status", "fileName", "error");
+        assertThat(map(projected.get("audioSession")))
+                .containsOnlyKeys("mediaSessionId", "broadcastActive", "monitorActive", "monitorSuppressed");
+        assertThat(map(projected.get("audioPlayback"))).containsOnlyKeys("playing", "loop", "fileName");
+        assertThat(projected.get("audioFiles")).isEqualTo(List.of("notice.wav"));
+        assertThat(service.controlProfile("robot-001").get("deviceRuntime")).isEqualTo(runtime);
+        assertThat(map(maps(state.get("devices")).get(0).get("status"))).containsEntry("driverDeviceId", "physical-device");
+        assertThat(map(maps(service.controlProfile("robot-001").get("devices")).get(0).get("status")))
+                .isEqualTo(projected);
+        assertThat(source).containsEntry("volume", 50).containsEntry("enabled", true).containsEntry("pan", 12);
+    }
+
+    @Test
+    void normalizesInputAliasesWithoutInventingMissingOrNullStatus() {
+        register(component("PTZ", "ptz_main"));
+        Map<String, Object> state = service.handleClientState(object("robotId", "robot-001", "status", "online",
+                "devices", List.of(
+                        object("deviceId", "alias", "status", object("volume", 0, "enabled", false)),
+                        object("deviceId", "unknown", "status", object("pan", 10, "moving", true)),
+                        object("deviceId", "null", "status", object("volumePercent", null, "volume", 80,
+                                "powerOn", null, "enabled", true)),
+                        object("deviceId", "no-status", "onlineStatus", "OFFLINE"))));
+        List<Map<String, Object>> devices = maps(map(state.get("deviceRuntime")).get("devices"));
+        assertThat(map(devices.get(0).get("status")))
+                .containsOnlyKeys("volumePercent", "powerOn").containsEntry("volumePercent", 0).containsEntry("powerOn", false);
+        assertThat(map(devices.get(1).get("status"))).isEmpty();
+        assertThat(map(devices.get(2).get("status"))).containsEntry("volumePercent", null).containsEntry("powerOn", null);
+        assertThat(devices.get(3)).containsOnlyKeys("deviceId", "onlineStatus");
+    }
+
+    /** 比较真实 HTTP 序列化与注册表 WebSocket 发布，验证缓存切换不影响同版本快照。 */
+    @Test
+    void httpAndPushExposeIdenticalRuntimeWithoutRequestIdentity() throws Exception {
+        Map<String, Object> robot = object("serialNumber", "robot-001", "deviceType", "WHEELED_ROBOT",
+                "components", List.of(component("PTZ", "ptz_main"), component("PTZ", "ptz_other")));
+        when(managementClient.deviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
+        when(managementClient.cachedDeviceBySerialNumber("robot-001")).thenReturn(Optional.empty());
+        Map<String, Object> state = service.handleClientState(object("robotId", "robot-001", "status", "online",
+                "devices", List.of(object("deviceId", "ptz_main", "deviceType", "PTZ",
+                        "status", object("driverDeviceId", "physical-ptz", "pan", 10, "autoRotateEnabled", true)))));
+
+        Map<String, Object> runtime = map(state.get("deviceRuntime"));
+        assertThat(service.controlProfile("robot-001").get("deviceRuntime")).isEqualTo(runtime);
+        ObjectMapper mapper = new ObjectMapper();
+        MediaWebSocketPublisher publisher = new MediaWebSocketPublisher(mapper);
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        RobotRegistryService registry = new RobotRegistryService(new ControlServiceProperties(), publisher, mapper);
+        registry.update(object("robotId", "robot-001", "stateSource", "EDGE_DEVICE_STATUS", "status", "online"));
+        publisher.addSession(session);
+        registry.update(state);
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session).sendMessage(message.capture());
+        var event = mapper.readTree(message.getValue().getPayload());
+        assertThat(event.path("timestamp").asText()).isNotBlank();
+        assertThat(event.path("data").has("timestamp")).isFalse();
+        assertThat(event.path("data").has("devices")).isFalse();
+        ControlRobotController controller = new ControlRobotController(mock(ControlVideoCommandService.class), service,
+                mock(CurrentUserResolver.class), mock(IntercomCallService.class),
+                mock(MultiFunctionAudioTransferService.class), registry);
+        var response = MockMvcBuilders.standaloneSetup(controller).build().perform(
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                        "/api/control/robots/robot-001/control-profile")).andReturn().getResponse();
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(mapper.readTree(response.getContentAsString()).get("deviceRuntime"))
+                .isEqualTo(event.path("data").get("deviceRuntime"));
+        when(managementClient.cachedDeviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
+        Map<String, Object> edge = service.mergeEdgeDeviceStatus("robot-001", object("status", "online"));
+        assertThat(edge.get("deviceRuntime")).isEqualTo(runtime);
+        assertThat(maps(runtime.get("devices"))).singleElement()
+                .satisfies(device -> assertThat(device).containsEntry("deviceId", "ptz_main")
+                        .doesNotContainKeys("deviceType", "actions", "controlProfile"));
+        assertThat(maps(service.controlProfile("robot-001").get("devices")))
+                .filteredOn(device -> "ptz_other".equals(device.get("deviceId"))).singleElement()
+                .satisfies(device -> assertThat(device).doesNotContainKey("status"));
+    }
+
+    @Test
+    void singleLegacySourceNeverPopulatesTwoSameTypeTargets() {
+        Map<String, Object> robot = object("serialNumber", "robot-001", "deviceType", "WHEELED_ROBOT",
+                "components", List.of(component("PTZ", "ptz_a"), component("PTZ", "ptz_b")));
+        when(managementClient.deviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
+        service.handleClientState(object("robotId", "robot-001", "status", "online", "devices", List.of(
+                object("deviceId", "legacy-ptz", "deviceType", "DUAL_LIGHT_PTZ",
+                        "status", object("driverDeviceId", "ptz_a", "pan", 10)))));
+        assertThat(maps(service.controlProfile("robot-001").get("devices"))).hasSize(2)
+                .allSatisfy(device -> assertThat(device).doesNotContainKey("status"));
+    }
+
+    @Test
+    void separatesDeviceDefinitionsFromCompleteClientRuntimeSnapshots() {
+        register(component("PTZ", "ptz_main"));
+        Map<String, Object> first = service.handleClientState(object(
+                "robotId", "robot-001", "status", "online",
+                "devices", List.of(object("deviceId", "ptz_main", "deviceType", "PTZ",
+                        "status", object("autoRotateEnabled", true)))));
+        Map<String, Object> firstRuntime = map(first.get("deviceRuntime"));
+        assertThat(firstRuntime).containsEntry("revision", 1L).containsEntry("clientOnline", true)
+                .containsKeys("epoch", "epochStartedAt", "updatedAt");
+        assertThat(maps(firstRuntime.get("devices"))).singleElement()
+                .satisfies(device -> assertThat(device)
+                        .containsEntry("deviceId", "ptz_main")
+                        .doesNotContainKey("deviceType"));
+
+        Map<String, Object> profile = service.controlProfile("robot-001");
+        assertThat(maps(profile.get("deviceDefinitions"))).singleElement()
+                .satisfies(device -> assertThat(device)
+                        .containsEntry("deviceType", "DUAL_LIGHT_PTZ")
+                        .doesNotContainKeys("status", "onlineStatus"));
+        assertThat(map(maps(profile.get("devices")).get(0).get("status")))
+                .containsEntry("autoRotateEnabled", true);
+
+        Map<String, Object> omitted = service.handleClientState(object(
+                "robotId", "robot-001", "status", "online"));
+        assertThat(map(omitted.get("deviceRuntime"))).containsEntry("revision", 2L);
+        assertThat(map(maps(omitted.get("devices")).get(0).get("status")))
+                .containsEntry("autoRotateEnabled", true);
+
+        Map<String, Object> cleared = service.handleClientState(object(
+                "robotId", "robot-001", "status", "online", "devices", List.of()));
+        assertThat(maps(map(cleared.get("deviceRuntime")).get("devices"))).isEmpty();
+        assertThat(maps(cleared.get("devices"))).singleElement()
+                .satisfies(device -> assertThat(device).doesNotContainKey("status"));
+        assertThat(maps(service.controlProfile("robot-001").get("devices"))).singleElement()
+                .satisfies(device -> assertThat(device).doesNotContainKey("status"));
+    }
+
+    @Test
+    void mediaClientLivenessNeverSetsBodyOnlineStatus() {
+        register(component("PTZ", "ptz_main"));
+        service.handleClientState(object("robotId", "robot-001", "status", "online",
+                "devices", List.of(object("deviceId", "ptz_main", "status", object("pan", 10)))));
+        Map<String, Object> beforeEdge = service.controlProfile("robot-001");
+        assertThat(beforeEdge).containsEntry("onlineStatus", "offline");
+        assertThat(map(beforeEdge.get("deviceRuntime"))).containsEntry("clientOnline", true);
+
+        service.mergeEdgeDeviceStatus("robot-001", object("status", "online"));
+        service.handleClientState(object("robotId", "robot-001", "status", "offline"));
+        Map<String, Object> afterMediaOffline = service.controlProfile("robot-001");
+        assertThat(afterMediaOffline).containsEntry("onlineStatus", "online");
+        assertThat(map(afterMediaOffline.get("deviceRuntime"))).containsEntry("clientOnline", false);
+    }
+
+    @Test
+    void offlineAndHeartbeatTimeoutInvalidateClientRuntimeWithoutRemovingDefinitions() {
+        register(component("PTZ", "ptz_main"));
+        service.handleClientState(object("robotId", "robot-001", "status", "online",
+                "devices", List.of(object("deviceId", "ptz_main", "status", object("pan", 10)))));
+
+        List<Map<String, Object>> expired = service.expireStaleClientStates(Duration.ZERO);
+
+        assertThat(expired).singleElement().satisfies(state -> {
+            assertThat(map(state.get("deviceRuntime"))).containsEntry("clientOnline", false)
+                    .containsEntry("revision", 2L);
+            assertThat(maps(map(state.get("deviceRuntime")).get("devices"))).isEmpty();
+            assertThat(maps(state.get("devices"))).singleElement()
+                    .satisfies(device -> assertThat(device).containsEntry("deviceId", "ptz_main")
+                            .doesNotContainKey("status"));
+        });
+        assertThat(service.expireStaleClientStates(Duration.ZERO)).isEmpty();
+
+        Map<String, Object> recovered = service.handleClientState(object("robotId", "robot-001", "status", "online",
+                "devices", List.of(object("deviceId", "ptz_main", "status", object("pan", 20)))));
+        assertThat(map(recovered.get("deviceRuntime"))).containsEntry("clientOnline", true)
+                .containsEntry("revision", 3L);
+        Map<String, Object> offline = service.handleClientState(object("robotId", "robot-001", "status", "offline"));
+        assertThat(map(offline.get("deviceRuntime"))).containsEntry("clientOnline", false)
+                .containsEntry("revision", 4L);
+        assertThat(maps(map(offline.get("deviceRuntime")).get("devices"))).isEmpty();
+    }
+
+    @Test
+    void keepsTwoSameTypeDeviceStatesInOneSnapshot() {
+        Map<String, Object> robot = object("serialNumber", "robot-001", "deviceType", "WHEELED_ROBOT",
+                "components", List.of(component("PTZ", "ptz_a"), component("PTZ", "ptz_b")));
+        when(managementClient.cachedDeviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
+
+        Map<String, Object> state = service.handleClientState(object("robotId", "robot-001", "status", "online",
+                "devices", List.of(
+                        object("deviceId", "ptz_a", "status", object("autoRotateEnabled", true)),
+                        object("deviceId", "ptz_b", "status", object("autoRotateEnabled", false)))));
+
+        List<Map<String, Object>> runtime = maps(map(state.get("deviceRuntime")).get("devices"));
+        assertThat(runtime).hasSize(2);
+        assertThat(map(runtime.get(0).get("status"))).containsEntry("autoRotateEnabled", true);
+        assertThat(map(runtime.get(1).get("status"))).containsEntry("autoRotateEnabled", false);
+    }
+
+    @Test
+    void rejectsAmbiguousOrMalformedCompleteDeviceSnapshots() {
+        register(component("PTZ", "ptz_main"));
+        assertThatThrownBy(() -> service.handleClientState(object(
+                "robotId", "robot-001", "status", "online", "devices", "invalid")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("devices 必须是数组");
+        assertThatThrownBy(() -> service.handleClientState(object(
+                "robotId", "robot-001", "status", "online", "devices", List.of(
+                        object("deviceId", "ptz_main", "status", object("pan", 10)),
+                        object("deviceId", "ptz_main", "status", object("pan", 20))))))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("重复 deviceId");
+        for (Object invalid : List.of(List.of("invalid"), List.of(object("status", object())),
+                List.of(object("deviceId", " ")), List.of(object("deviceId", "ptz_main", "status", "invalid")))) {
+            assertThatThrownBy(() -> service.handleClientState(object(
+                    "robotId", "robot-001", "status", "online", "devices", invalid)))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThat(map(service.controlProfile("robot-001").get("deviceRuntime")))
+                .containsEntry("revision", 0L);
+    }
+
+    @Test
+    void exactDeviceIdTakesPriorityOverLaterDriverAlias() {
+        register(component("PTZ", "ptz_main"));
+        Map<String, Object> state = service.handleClientState(object(
+                "robotId", "robot-001",
+                "status", "online",
+                "devices", List.of(
+                        object("deviceId", "ptz_main", "status", object("pan", 0.15)),
+                        object("deviceId", "legacy-ptz", "status", object(
+                                "driverDeviceId", "ptz_main", "pan", 0.85)))));
+
+        assertThat(maps(state.get("devices"))).singleElement()
+                .satisfies(device -> assertThat(map(device.get("status"))).containsEntry("pan", 0.15));
+    }
+
+    @Test
+    void ambiguousDriverAliasesDoNotPickAnArbitraryDevice() {
+        register(component("PTZ", "ptz_main"));
+        Map<String, Object> state = service.handleClientState(object(
+                "robotId", "robot-001",
+                "status", "online",
+                "devices", List.of(
+                        object("deviceId", "legacy-ptz-1", "status", object(
+                                "driverDeviceId", "ptz_main", "pan", 0.15)),
+                        object("deviceId", "legacy-ptz-2", "status", object(
+                                "driverDeviceId", "ptz_main", "pan", 0.85)))));
+
+        assertThat(maps(state.get("devices"))).singleElement()
+                .satisfies(device -> assertThat(device).doesNotContainKey("status"));
     }
 
     @Test

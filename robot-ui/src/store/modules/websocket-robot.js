@@ -42,9 +42,7 @@ import {
 import { IntercomOperationRegistry } from '../../utils/intercom-operation-registry'
 import { mediaCallCoordinator } from '../../utils/media-call-coordinator'
 import { CallTerminalRegistry } from '../../utils/call-terminal-registry'
-import { mergeReportedAudioState } from '../../utils/audio-device-state'
 
-const DEVICE_STATE_CACHE_KEY = 'robot-media-device-state-cache-v2'
 const FIXED_CAMERA_TRACK_WAIT_MS = 15000
 const controlProfileInflight = {}
 const startOperations = new Map()
@@ -65,8 +63,6 @@ const regularIntercomLeases = new Map()
 const viewerReconnectTimers = new Map()
 const viewerReconnectAttempts = new Map()
 const VIEWER_RECOVERY_WAIT_STATUSES = ['INIT', 'REQUESTING_CLIENT', 'ROOM_READY', 'STREAMING']
-const AUDIO_DEVICE_TYPES = ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM']
-const ORDINARY_AUDIO_DEVICE_TYPES = ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL']
 
 function regularIntercomLeaseKey(cameraKey) {
   return `robot:${cameraKey}`
@@ -98,19 +94,33 @@ function releasePendingIncomingCallLease(callId) {
   pendingIncomingCallLeases.delete(callId)
 }
 
-function audioDriverDeviceId(device) {
-  const status = (device && (device.status || device.runtimeStatus)) || {}
-  return device?.driverDeviceId || status.driverDeviceId || ''
+function staticControlProfile(profile) {
+  const definitions = profile.deviceDefinitions || []
+  const details = { ...profile }
+  delete details.deviceRuntime
+  delete details.deviceDefinitions
+  return {
+    ...details,
+    devices: definitions.map(({ status, runtimeStatus, onlineStatus, ...device }) => device)
+  }
 }
 
-function incomingProfileDevice(profileDevice, incomingById, incomingDevices) {
-  const exact = incomingById.get(profileDevice.deviceId)
-  if (exact) return exact
-  if (!ORDINARY_AUDIO_DEVICE_TYPES.includes(profileDevice.deviceType)) return null
-  return incomingDevices.find(device =>
-    ORDINARY_AUDIO_DEVICE_TYPES.includes(device.deviceType) &&
-    audioDriverDeviceId(device) === profileDevice.deviceId
-  ) || null
+function profileWithRuntime(profile, runtime) {
+  if (!profile) return profile
+  const devices = runtime?.clientOnline === false ? [] : (runtime?.devices || [])
+  const incoming = new Map(devices.map(device => [device.deviceId, device]))
+  return {
+    ...profile,
+    devices: (profile.devices || []).map(device => {
+      const reported = incoming.get(device.deviceId)
+      return reported ? {
+        ...device,
+        runtimeRevision: runtime.revision,
+        ...(reported.onlineStatus === undefined ? {} : { onlineStatus: reported.onlineStatus }),
+        ...(reported.status === undefined ? {} : { status: reported.status })
+      } : device
+    })
+  }
 }
 
 function runOnce(registry, key, task) {
@@ -243,8 +253,10 @@ const state = {
   controlCenterReturnTo: null, // 进入控制中心前的页面，返回时回到该界面
   activeCameras: {}, // 存储当前激活的摄像头 { [key]: { robot, camera } }
 
-  audioState: {},
   controlProfiles: {},
+  deviceRuntimeByRobot: {},
+  deviceRuntimeFreshByRobot: {},
+  runtimeConnectionGeneration: 0,
   controlProfileLoading: {},
   recordingMode: false,
   recordingsLoading: false,
@@ -256,7 +268,6 @@ const state = {
   controlSessions: {},
   snapshotTime: 0,
   recordTime: 0,
-  deviceStateCache: readDeviceStateCache(),
   incomingCalls: [],
   activeIncomingCall: null,
   callOperationPending: false,
@@ -382,15 +393,6 @@ function replaceRobotCamerasInIndex(existing, robotId, cameras) {
   return next
 }
 
-function readDeviceStateCache() {
-  try {
-    const raw = window.localStorage.getItem(DEVICE_STATE_CACHE_KEY)
-    return raw ? JSON.parse(raw) : {}
-  } catch (error) {
-    return {}
-  }
-}
-
 // 定义用于修改状态的 mutations，通过这个地方判断是什么类型的信息，然后页面调用不同的信息
 const mutations = {
   // 设置 WebSocket 实例
@@ -443,7 +445,25 @@ const mutations = {
   },
   // 设置控制配置文件
   setControlProfiles(state, { robotId, profile }) {
-    state.controlProfiles = { ...state.controlProfiles, [robotId]: profile }
+    state.controlProfiles = { ...state.controlProfiles, [robotId]: staticControlProfile(profile) }
+  },
+  APPLY_DEVICE_RUNTIME(state, { robotId, runtime, generation = state.runtimeConnectionGeneration || 0 }) {
+    if (generation !== (state.runtimeConnectionGeneration || 0)) return
+    if (!robotId || !runtime || !Array.isArray(runtime.devices)) return
+    const previous = state.deviceRuntimeByRobot?.[robotId]
+    if (previous?.epoch === runtime.epoch && Number(runtime.revision) < Number(previous.revision)) return
+    if (previous && previous.epoch !== runtime.epoch) {
+      const before = Date.parse(previous.epochStartedAt)
+      const after = Date.parse(runtime.epochStartedAt)
+      if (Number.isFinite(before) && Number.isFinite(after) && after <= before) return
+    }
+    // 相同版本可确认本次连接的新鲜度，但不能用重复消息改写已经接受的快照。
+    state.deviceRuntimeFreshByRobot = { ...state.deviceRuntimeFreshByRobot, [robotId]: true }
+    if (previous?.epoch === runtime.epoch && Number(runtime.revision) === Number(previous.revision)) return
+    state.deviceRuntimeByRobot = {
+      ...state.deviceRuntimeByRobot,
+      [robotId]: { ...runtime, devices: runtime.devices.map(device => ({ ...device })) }
+    }
   },
   SET_PROFILE_LOADING(state, { robotId, loading }) {
     state.controlProfileLoading = { ...state.controlProfileLoading, [robotId]: loading }
@@ -454,6 +474,12 @@ const mutations = {
   // 设置媒体服务 WebSocket 连接状态
   setWsConnected(state, status) {
     state.wsConnected = status
+    if (!status) {
+      state.runtimeConnectionGeneration = (state.runtimeConnectionGeneration || 0) + 1
+      state.deviceRuntimeFreshByRobot = Object.fromEntries(
+        Object.keys(state.deviceRuntimeByRobot || {}).map(robotId => [robotId, false])
+      )
+    }
   },
   // 设置媒体服务 WebSocket 实例
   setMediaSocket(state, socket) {
@@ -492,11 +518,12 @@ const mutations = {
     state.camerasRevision += 1
     state.selectedRobotId = ''
     state.activeCameras = {}
-    state.audioState = {}
     state.controlProfiles = {}
+    state.deviceRuntimeByRobot = {}
+    state.deviceRuntimeFreshByRobot = {}
+    state.runtimeConnectionGeneration = (state.runtimeConnectionGeneration || 0) + 1
     state.controlProfileLoading = {}
     state.controlSessions = {}
-    state.deviceStateCache = {}
     state.incomingCalls = []
     state.activeIncomingCall = null
     state.callOperationPending = false
@@ -520,12 +547,6 @@ const mutations = {
   removeActiveCamera(state, key) {
     Vue.delete(state.activeCameras, key)
   },
-  SET_AUDIO_STATE(state, { key, ...audioStatus }) {
-    state.audioState = {
-      ...state.audioState,
-      [key]: { ...(state.audioState[key] || {}), ...audioStatus }
-    }
-  },
   // 清空回放视频
   destroyRecordedHls() {
     if (state.recordedHls) {
@@ -544,9 +565,6 @@ const mutations = {
   },
   SET_RECORD_TIME(state, time) {
     state.recordTime = time
-  },
-  SET_DEVICE_STATE_CACHE(state, cache) {
-    state.deviceStateCache = cache
   },
   SET_INCOMING_CALLS(state, calls) {
     state.incomingCalls = calls.map(withCallReceipt)
@@ -587,7 +605,6 @@ function toRobotState(robot) {
     name: robot.name || robot.robotId,
     type: robot.type || null,
     controlMode,
-    controlModeName: robot.controlModeName || controlMode,
     stateSeq: robot.stateSeq || 0,
     status: robot.status || 'offline',
     cameras: (robot.cameras || []).map(camera => Object.assign(
@@ -1037,6 +1054,7 @@ const actions = {
     }
     const socket = new WebSocket(socketUrl.toString())
     socket.onopen = () => {
+      if (state.mediaSocket !== socket) return
       const isReconnect = state.mediaReconnectAttempts > 0
       if (state.mediaReconnectTimer) {
         clearTimeout(state.mediaReconnectTimer)
@@ -1074,6 +1092,7 @@ const actions = {
       // console.log('Media WebSocket connected', url)
     }
     socket.onclose = (event) => {
+      if (state.mediaSocket !== socket) return
       commit('setWsConnected', false)
       if (state.mediaReconnectStableTimer) {
         clearTimeout(state.mediaReconnectStableTimer)
@@ -1095,6 +1114,7 @@ const actions = {
       // console.log('Media WebSocket closed', url)
     }
     socket.onmessage = (message) => {
+      if (state.mediaSocket !== socket) return
       let event
       try {
         event = JSON.parse(message.data)
@@ -1550,8 +1570,10 @@ const actions = {
     if (!data || !data.robotId) return
     if (event.event !== 'robot.state' && event.type !== 'robot.state') return
     let incoming = toRobotState(data)
-    dispatch('mergeControlProfileDevices', { robotId: incoming.robotId, devices: incoming.devices })
-    dispatch('syncDeviceStatesFromDevices', { robotId: incoming.robotId, devices: incoming.devices })
+    commit('APPLY_DEVICE_RUNTIME', {
+      robotId: incoming.robotId,
+      runtime: incoming.deviceRuntime
+    })
     const index = state.robots.findIndex(robot => robot.robotId === incoming.robotId)
     if (index >= 0) {
       const existing = state.robots[index]
@@ -1632,16 +1654,13 @@ const actions = {
         status: incoming.status,
         battery: incoming.battery,
         controlMode: incoming.controlMode,
-        controlModeName: incoming.controlModeName,
         speed: incoming.speed,
         fault: incoming.fault,
         lastHeartbeatAt: incoming.lastHeartbeatAt,
         statusChangedAt: incoming.statusChangedAt,
         runtimeUpdatedAt: incoming.runtimeUpdatedAt,
         charging: incoming.charging,
-        chargingStatus: incoming.chargingStatus,
         taskStatus: incoming.taskStatus,
-        missionStatus: incoming.missionStatus,
         edgeLocation: incoming.edgeLocation
       },
       fromRealtime: true
@@ -1714,73 +1733,6 @@ const actions = {
       Message.error((event.payload && event.payload.message) || '控制命令被拒绝')
     }
     return
-  },
-  syncAudioStatesFromDevices({ commit, state }, { robotId, devices, options = {}}) {
-    if (!robotId || !Array.isArray(devices)) return
-    devices
-      .filter(device => AUDIO_DEVICE_TYPES.includes(device.deviceType))
-      .forEach(device => {
-        const status = device.status || device.runtimeStatus || {}
-        if (status.volume === undefined && status.volumePercent === undefined && status.muted === undefined) return
-        const physicalDeviceId = ORDINARY_AUDIO_DEVICE_TYPES.includes(device.deviceType)
-          ? audioDriverDeviceId(device)
-          : ''
-        const deviceIds = [...new Set([device.deviceId, physicalDeviceId].filter(Boolean))]
-        deviceIds.forEach(deviceId => {
-          const key = `${robotId}:${deviceId}`
-          const next = mergeReportedAudioState(state.audioState[key], status, options)
-          commit('SET_AUDIO_STATE', { key, ...next })
-        })
-      })
-  },
-  mergeControlProfileDevices({ commit, state, dispatch }, {robotId, devices}) {
-    if (!robotId || !Array.isArray(devices)) return
-    const profile = state.controlProfiles[robotId]
-    if (!profile || !Array.isArray(profile.devices)) return
-    const incoming = new Map(devices.map(device => [device.deviceId, device]))
-    const merged = profile.devices.map(device => {
-      const next = incomingProfileDevice(device, incoming, devices)
-      if (!next) return device
-      return Object.assign({}, device, next, {
-        // 控制画像使用物理 deviceId 下发命令，实时状态可能来自逻辑音频设备。
-        // 合并状态时必须保留画像 deviceId，避免命令被发往逻辑设备标识。
-        deviceId: device.deviceId,
-        status: Object.assign({}, device.status || device.runtimeStatus || {}, next.status || next.runtimeStatus || {}),
-        controlProfile: Object.assign({}, device.controlProfile || {}, next.controlProfile || {})
-      })
-    })
-    commit('setControlProfiles', { robotId, profile: Object.assign({}, profile, { devices: merged }) })
-  },
-  syncDeviceStatesFromDevices({ commit, state, dispatch }, {robotId, devices, options = {}}) {
-    if (!robotId || !Array.isArray(devices)) return
-    dispatch('syncAudioStatesFromDevices', {robotId, devices, options})
-    if (robotId !== state.selectedRobotId) return
-    const obj = {}
-    devices.forEach(device => {
-      const status = device.status || device.runtimeStatus || {}
-      if (device.deviceType === 'LAUNCHER' && status.safetySwitchEnabled !== undefined &&
-          !(options.preserveExisting && state.deviceStateCache?.launcherSafety[device.deviceId] !== undefined)) {
-        obj['launcherSafety'] = { ...state.deviceStateCache?.launcherSafety || {}, [device.deviceId]: !!status.safetySwitchEnabled }
-      }
-      if (device.deviceType === 'WARNING_LIGHT' && (status.powerOn !== undefined || status.enabled !== undefined) &&
-          !(options.preserveExisting && state.deviceStateCache?.warningLightState[device.deviceId] !== undefined)) {
-        const powerOn = status.powerOn === undefined ? status.enabled : status.powerOn
-        obj['warningLightState'] = {
-          ...state.deviceStateCache?.warningLightState || {},
-          [device.deviceId]: Array.isArray(powerOn) ? powerOn.length > 0 && powerOn.every(Boolean) : !!powerOn
-        }
-      }
-      const ptzKey = `${robotId}:${device.deviceId}`
-      if (device.deviceType === 'DUAL_LIGHT_PTZ' && status.autoRotateEnabled !== undefined &&
-          !(options.preserveExisting && state.deviceStateCache?.ptzAutoRotateState[ptzKey] !== undefined)) {
-        obj['ptzAutoRotateState'] = { ...state.deviceStateCache?.ptzAutoRotateState || {}, [ptzKey]: !!status.autoRotateEnabled }
-      }
-    })
-    dispatch('persistDeviceStateCache', {
-      ...state.deviceStateCache,
-      audioState: state.audioState,
-      ...obj
-    })
   },
   async ensureControlSession({ commit, state }, { device, action }) {
     if (!device) throw new Error('未找到控制设备')
@@ -2949,7 +2901,7 @@ const actions = {
   setControlCenterReturnTo({ commit }, payload) {
     commit('setControlCenterReturnTo', payload)
   },
-  async loadControlProfile({ commit, state, dispatch, rootState }, robotId) {
+  async loadControlProfile({ commit, state, rootState }, robotId) {
     if (!robotId) return
     if (controlProfileInflight[robotId]) return controlProfileInflight[robotId]
     const { fromStore, fromBase, cameras } = resolveEquipmentRecord(state, rootState, robotId)
@@ -2958,12 +2910,15 @@ const actions = {
     const task = (async () => {
       commit('SET_PROFILE_LOADING', { robotId, loading: true })
       try {
+        const generation = state.runtimeConnectionGeneration || 0
         const profile = await getControlProfile(robotId)
         commit('setControlProfiles', { robotId, profile })
-        const index = state.robots.findIndex(robot => robot.robotId === robotId)
-        if (index >= 0) {
-          // 画像用于能力展示；运行模式只接受带运行态版本的 Overview / WebSocket，避免慢画像回退模式。
-          dispatch('syncDeviceStatesFromDevices', { robotId, devices: profile.devices, options: {preserveExisting: true} })
+        // HTTP 首屏快照可能晚于推送到达，按版本合并即可保留最新设备状态。
+        if (profile.deviceRuntime) {
+          commit('APPLY_DEVICE_RUNTIME', {
+            robotId, generation,
+            runtime: profile.deviceRuntime
+          })
         }
         return profile
       } catch (error) {
@@ -3300,25 +3255,6 @@ const actions = {
   setRecordTime({ commit }, time) {
     commit('SET_RECORD_TIME', time)
   },
-  setAudioState({ commit }, { key, volume, muted }) {
-    commit('SET_AUDIO_STATE', { key, volume, muted })
-  },
-  persistDeviceStateCache({ commit, state }, payload) {
-    const cache = {
-      audioState: payload.audioState,
-      launcherSafety: payload.launcherSafety,
-      netGunSafety: payload.netGunSafety,
-      warningLightState: payload.warningLightState,
-      vehicleLightEnabled: payload.vehicleLightEnabled,
-      ptzAutoRotateState: payload.ptzAutoRotateState
-    }
-    commit('SET_DEVICE_STATE_CACHE', cache)
-    try {
-      window.localStorage.setItem(DEVICE_STATE_CACHE_KEY, JSON.stringify(cache))
-    } catch (error) {
-      console.error('WARN persistDeviceStateCache', errorMessage(error))
-    }
-  }
 }
 
 // 定义 getters 以便于从状态中获取数据
@@ -3342,7 +3278,13 @@ const getters = {
   getWsConnected: (state) => state.wsConnected,
   getAuthorizationUnavailable: (state) => state.authorizationUnavailable,
   getActiveCameras: state => state.activeCameras,
-  getControlProfiles: state => state.controlProfiles
+  getControlProfiles: state => Object.fromEntries(Object.entries(state.controlProfiles).map(([robotId, profile]) => {
+    const runtime = state.deviceRuntimeFreshByRobot?.[robotId] === false
+      ? { clientOnline: false, devices: [] } : state.deviceRuntimeByRobot?.[robotId]
+    const combined = profileWithRuntime(profile, runtime)
+    const robot = state.robots?.find(item => item.robotId === robotId)
+    return [robotId, { ...combined, onlineStatus: robot?.status || combined.onlineStatus }]
+  }))
 }
 
 // 导出 WebSocket 模块

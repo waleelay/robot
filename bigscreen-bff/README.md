@@ -32,7 +32,7 @@ src/main/java/com/robot/bigscreen/
 └── ws/          上游桥接、事件转换、任务/统计去抖刷新
 ```
 
-- `BigscreenProxyController`：代理 `/api/control/**`、`/api/media/**`、`/api/manage/**` 和 `/api/v1/management/**`；`GET /api/control/robots` 固定返回 `410`。`/internal/**` 仅供服务间内网调用，不注册为 BFF 对外代理。
+- `BigscreenProxyController`：代理 `/api/control/**`、`/api/bigscreen/**`、`/api/media/**`、`/api/manage/**` 和 `/api/v1/management/**`；兼容入口 `/api/manage/**` 会改写为 Management 标准路径 `/api/v1/management/**`。对精确路径 `/api/control/robots` 保留不限 HTTP 方法的 `410` 迁移提示，`GET /api/bigscreen/access-control/me` 定向转发 Management。`/internal/**` 仅供服务间内网调用，不注册为 BFF 对外代理。
 - `BusinessTaskProxyController`：只代理任务计划、流程定义、执行记录、设备和地图白名单。
 - `PanoramaService`：组装全景摘要、当前地图资源、按需设备/任务详情和告警。`overview` 只返回首屏所需摘要；地图点、任务路径和任务完整详情由独立接口按需读取，避免首屏预取回放和逐设备详情。
 - 机器人电量、速度、控制模式、`charging/taskStatus/location/runtimeUpdatedAt` 统一来自本项目 Control 注册表；

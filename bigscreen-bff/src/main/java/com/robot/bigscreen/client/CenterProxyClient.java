@@ -195,6 +195,9 @@ public class CenterProxyClient {
     }
 
     static String targetPath(String path) {
+        if (path.equals("/api/manage") || path.startsWith("/api/manage/")) {
+            return "/api/v1/management" + path.substring("/api/manage".length());
+        }
         if (path.startsWith("/api/bigscreen/control")) {
             return "/api/control" + path.substring("/api/bigscreen/control".length());
         }

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.robot.bigscreen.panorama.StatsPart;
 import java.util.List;
+import java.util.ArrayList;
 import org.junit.jupiter.api.Test;
 
 /** 验证下游事件到大屏事件的字段、状态和失效通知映射。 */
@@ -64,7 +65,10 @@ class PanoramaWebSocketEventAdapterTest {
         assertThat(statusEvent.path("data").path("status").asText()).isEqualTo("fault");
         assertThat(statusEvent.path("data").path("healthStatus").asText()).isEqualTo("异常");
         assertThat(statusEvent.path("data").path("controlMode").asText()).isEqualTo("导航模式");
-        assertThat(statusEvent.path("data").path("controlModeName").asText()).isEqualTo("导航模式");
+        List<String> statusFields = new ArrayList<>();
+        statusEvent.path("data").fieldNames().forEachRemaining(statusFields::add);
+        assertThat(statusFields).containsExactlyInAnyOrder("robotId", "status", "statusChangedAt", "runtimeUpdatedAt",
+                "stateSeq", "battery", "controlMode", "speed", "healthStatus", "charging", "taskStatus", "edgeLocation");
         assertThat(statusEvent.path("data").path("stateSeq").asLong()).isEqualTo(9007199254740993L);
         assertThat(statusEvent.path("data").path("runtimeUpdatedAt").asText()).isEqualTo("2026-08-05T09:07:43.123456789Z");
         assertThat(statusEvent.path("data").path("speed").asDouble()).isZero();

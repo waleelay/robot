@@ -138,6 +138,15 @@ ROBOT_UI_BUILD=false TARGET_ARCH=amd64 ./package.sh
 
 ### 2.4 准备 tdt 地图
 
+地图压缩包和解压目录作为部署资源单独保存，不纳入 Git 版本控制。新克隆的仓库
+不包含地图数据，打包前需要准备本地文件或通过下方 `TDT_TAR` / `TDT_ZIP` 指定
+外部资源；未提供地图时，打包脚本会提示并跳过地图，安装包仍可生成。
+建议在制品库或共享资源目录保存地图版本和 SHA-256，便于重复打包与校验。
+
+从曾经跟踪 `tdt.tar.gz` 的旧版本更新时，先将需要保留的地图包备份到仓库外，
+更新后再放回本地忽略路径或通过 `TDT_TAR` 使用备份。取消跟踪不改变打包读取路径
+和安装解压流程，也不清理既有 Git 历史。
+
 tdt 文件很多时，推荐准备 `tar.gz`，Linux 离线服务器通常自带 `tar`，不依赖 `unzip`：
 
 ```text
@@ -190,14 +199,20 @@ TTS 默认不启动。需要启动时，在部署服务器 `.env` 中设置：
 COMPOSE_PROFILES=tts
 ```
 
-固定摄像头 Gateway 同样默认不在中心服务器启动。仅在可访问现场 RTSP 摄像头的边缘节点设置：
+统一媒体 Gateway 同样默认不在中心服务器启动。仅在可访问现场 RTSP 视频源的边缘节点设置：
 
 ```text
-COMPOSE_PROFILES=fixed-camera-gateway
+COMPOSE_PROFILES=media-gateway
 ```
 
 需要同时启用多个可选服务时使用逗号分隔，例如
-`COMPOSE_PROFILES=tts,fixed-camera-gateway`。中心服务器保持空值，避免错误镜像或无现场网络时反复重启。
+`COMPOSE_PROFILES=tts,media-gateway`。中心服务器保持空值，避免错误镜像或无现场网络时反复重启。
+
+Gateway 的服务键、profile、容器和镜像已统一为 `media-gateway`，离线包使用
+`media-gateway-image.tar.gz`；打包不复用或附带旧 `fixed-camera-gateway-image.*`。升级时必须先在目标节点确认并停止旧 `fixed-camera-gateway`
+实例；新的 Compose 服务不会自动替换旧实例，不得让两者共用 MQTT 身份同时运行。
+自定义发布模板须把 `{rtsp}` 替换为 `{input}`，旧模板会在启动时被拒绝。详细边界见
+[Gateway 升级说明](../../media-gateway/README.md#升级边界)。本次仅调整配置，未执行生产切换。
 
 如果 TTS 镜像要求挂载 `app.py`，打包前准备：
 
@@ -226,7 +241,7 @@ deploy/docker/tool-images/arm64/
 java-runtime.tar.gz
 alpine-3.20.tar.gz
 golang-1.26-alpine.tar.gz
-fixed-camera-gateway-image.tar.gz
+media-gateway-image.tar.gz
 livekit-server.tar.gz
 livekit-ingress.tar.gz
 livekit-egress.tar.gz
@@ -262,7 +277,7 @@ mkdir -p deploy/docker/tool-images/amd64
 docker image save --platform linux/amd64 robot/java17-ffmpeg-runtime:amd64 | gzip -9 > deploy/docker/tool-images/amd64/java-runtime.tar.gz
 docker image save --platform linux/amd64 alpine:3.20 | gzip -9 > deploy/docker/tool-images/amd64/alpine-3.20.tar.gz
 docker image save --platform linux/amd64 golang:1.26-alpine | gzip -9 > deploy/docker/tool-images/amd64/golang-1.26-alpine.tar.gz
-docker image save --platform linux/amd64 robot/fixed-camera-gateway:latest | gzip -9 > deploy/docker/tool-images/amd64/fixed-camera-gateway-image.tar.gz
+docker image save --platform linux/amd64 robot/media-gateway:latest | gzip -9 > deploy/docker/tool-images/amd64/media-gateway-image.tar.gz
 docker image save --platform linux/amd64 livekit/livekit-server:v1.13.3 | gzip -9 > deploy/docker/tool-images/amd64/livekit-server.tar.gz
 docker image save --platform linux/amd64 livekit/ingress:v1.5.0 | gzip -9 > deploy/docker/tool-images/amd64/livekit-ingress.tar.gz
 docker image save --platform linux/amd64 livekit/egress:v1.13.0 | gzip -9 > deploy/docker/tool-images/amd64/livekit-egress.tar.gz
@@ -287,16 +302,16 @@ mkdir -p deploy/docker/tool-images/arm64
 docker image save --platform linux/arm64 robot/java17-ffmpeg-runtime:arm64 | gzip -9 > deploy/docker/tool-images/arm64/java-runtime.tar.gz
 docker image save --platform linux/arm64 alpine:3.20 | gzip -9 > deploy/docker/tool-images/arm64/alpine-3.20.tar.gz
 docker image save --platform linux/arm64 golang:1.26-alpine | gzip -9 > deploy/docker/tool-images/arm64/golang-1.26-alpine.tar.gz
-docker image save --platform linux/arm64 robot/fixed-camera-gateway:arm64 | gzip -9 > deploy/docker/tool-images/arm64/fixed-camera-gateway-image.tar.gz
+docker image save --platform linux/arm64 robot/media-gateway:arm64 | gzip -9 > deploy/docker/tool-images/arm64/media-gateway-image.tar.gz
 docker image save --platform linux/arm64 livekit/livekit-server:v1.13.3 | gzip -9 > deploy/docker/tool-images/arm64/livekit-server.tar.gz
 docker image save --platform linux/arm64 livekit/ingress:v1.5.0 | gzip -9 > deploy/docker/tool-images/arm64/livekit-ingress.tar.gz
 docker image save --platform linux/arm64 livekit/egress:v1.13.0 | gzip -9 > deploy/docker/tool-images/arm64/livekit-egress.tar.gz
 docker image save --platform linux/arm64 nginx:alpine | gzip -9 > deploy/docker/tool-images/arm64/nginx.tar.gz
 ```
 
-`alpine:3.20` 和 `golang:1.26-alpine` 是 `fixed-camera-gateway/Dockerfile` 构建 Gateway 镜像需要的基础镜像。`package.sh` 会在构建前尝试从 `tool-images/<arch>` 自动加载这两个离线包，避免离线构建时访问 Docker Hub。
+`alpine:3.20` 和 `golang:1.26-alpine` 是 `media-gateway/Dockerfile` 构建 Gateway 镜像需要的基础镜像。`package.sh` 会在构建前尝试从 `tool-images/<arch>` 自动加载这两个离线包，避免离线构建时访问 Docker Hub。
 
-如果需要完全避免 Gateway 构建联网，推荐提前把 `fixed-camera-gateway-image.tar.gz` 放到 `tool-images/<arch>`。`package.sh` 检测到该离线镜像后会直接加载并复用，不再执行 `fixed-camera-gateway/Dockerfile`，因此不会触发 `go mod download`、`apk add` 或 `gstreamer-publisher` 的 GitHub clone。
+如果需要完全避免 Gateway 构建联网，推荐提前把 `media-gateway-image.tar.gz` 放到 `tool-images/<arch>`。`package.sh` 检测到该离线镜像后会直接加载并复用，不再执行 `media-gateway/Dockerfile`，因此不会触发 `go mod download`、`apk add` 或 `gstreamer-publisher` 的 GitHub clone。
 
 如果 apt 源较慢，可以指定 Ubuntu 镜像源，例如：
 
@@ -355,7 +370,7 @@ TARGET_ARCH=arm64 JAVA_RUNTIME_IMAGE=robot/java17-ffmpeg-runtime:arm64 ./package
 1. Maven clean package 重新编译 media-service / control-service / bigscreen-bff
 2. npm run build:prod 重新编译 robot-ui
 3. 构建指定架构的 Java 服务镜像
-4. 优先复用 tool-images/<arch>/fixed-camera-gateway-image.tar.gz；不存在时才构建固定摄像头 Gateway 镜像
+4. 优先复用 tool-images/<arch>/media-gateway-image.tar.gz；不存在时才构建统一媒体 Gateway 镜像
 5. 保存应用服务镜像到 images/
 6. 复制 tool-images/<arch> 下的第三方镜像
 7. 复制 LiveKit Server/Ingress/Egress、Nginx、前端和 tdt 配置与资源；仅当 `PACKAGE_TTS=true` 时复制 TTS 镜像和配置
@@ -686,6 +701,24 @@ curl -k -i -X OPTIONS \
 ```bash
 ./install.sh
 ```
+
+大屏正式 REST 经 IAM API Gateway 时，还要检查 IAM 的来源配置。IAM 离线安装脚本
+会重新生成 `runtime/infra/.env.runtime`；安装包若未保留已有 Gateway 来源，重装后会丢失大屏来源。重装 IAM 后应在 IAM 宿主机执行以下检查，
+缺少来源时再执行带 `--apply` 的命令。脚本保留管理端现有来源；需要修改环境文件时
+先备份并校验 Compose 配置，然后只重建 `api-gateway`。`Origin` 使用大屏实际访问的 HTTPS
+协议、主机和端口，不含路径。
+
+```bash
+IAM_INFRA_DIR='/opt/qihang/<IAM安装目录>/runtime/infra'
+BIGSCREEN_PUBLIC_ORIGIN='https://<大屏域名或IP>:4443'
+./scripts/ensure-iam-gateway-origin.sh "$IAM_INFRA_DIR" "$BIGSCREEN_PUBLIC_ORIGIN"
+# 检查提示缺少来源时执行：
+./scripts/ensure-iam-gateway-origin.sh "$IAM_INFRA_DIR" "$BIGSCREEN_PUBLIC_ORIGIN" --apply
+```
+
+运行脚本的机器需要能执行 IAM 的 `docker compose`。重建后，还应从正式浏览器来源
+验证未登录请求返回 401、POST 预检返回 200，并用正式账号验证业务请求。仅更新
+本仓库的 `BIGSCREEN_CORS_ALLOWED_ORIGIN_PATTERNS` 不会更新 IAM 网关的来源列表。
 
 ### 5.2 改了 LiveKit / Nginx 模板相关配置
 

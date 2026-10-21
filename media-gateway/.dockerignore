@@ -1,0 +1,4 @@
+.git
+*.log
+media-gateway
+!cmd/media-gateway/

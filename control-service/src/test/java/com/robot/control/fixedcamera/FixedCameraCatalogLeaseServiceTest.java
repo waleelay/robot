@@ -20,9 +20,27 @@ import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 class FixedCameraCatalogLeaseServiceTest {
 
     @Test
+    void newerShortLeaseDoesNotShortenAnotherViewersAuthorization() {
+        FixedCameraCatalogLeaseService service = new FixedCameraCatalogLeaseService(
+                new ControlServiceProperties(), mock(RobotMediaCommandService.class));
+        Instant now = Instant.now();
+        List<FixedCameraCatalogLeaseRequest.CameraRecord> cameras = List.of(
+                new FixedCameraCatalogLeaseRequest.CameraRecord("camera-001", true, "RTSP", "rtsp://camera/main", null));
+        service.upsert(new FixedCameraCatalogLeaseRequest("long-viewer", 1L, now, now.plusSeconds(180L), cameras));
+        FixedCameraCatalogSnapshot snapshot = service.upsert(
+                new FixedCameraCatalogLeaseRequest("short-viewer", 2L, now, now.plusSeconds(30L), cameras));
+        assertThat(snapshot.cameras()).singleElement().satisfies(camera ->
+                assertThat(camera.expiresAt()).isEqualTo(now.plusSeconds(180L)));
+        service.release("short-viewer");
+        assertThat(service.currentSnapshot(now).cameras()).hasSize(1);
+        service.release("long-viewer");
+        assertThat(service.currentSnapshot(now).cameras()).isEmpty();
+    }
+
+    @Test
     void mergesLeaseAndPublishesSanitizedCatalog() {
         ControlServiceProperties properties = new ControlServiceProperties();
-        properties.getMqtt().setFixedCameraGatewayId("gateway-001");
+        properties.getMqtt().setMediaGatewayId("gateway-001");
         RobotMediaCommandService commandService = mock(RobotMediaCommandService.class);
         FixedCameraCatalogLeaseService service = new FixedCameraCatalogLeaseService(properties, commandService);
         Instant now = Instant.now();
@@ -80,7 +98,7 @@ class FixedCameraCatalogLeaseServiceTest {
     @Test
     void releasesLastLeaseAndPublishesEmptyCatalogImmediately() {
         ControlServiceProperties properties = new ControlServiceProperties();
-        properties.getMqtt().setFixedCameraGatewayId("gateway-001");
+        properties.getMqtt().setMediaGatewayId("gateway-001");
         RobotMediaCommandService commandService = mock(RobotMediaCommandService.class);
         FixedCameraCatalogLeaseService service = new FixedCameraCatalogLeaseService(properties, commandService);
         Instant now = Instant.now();
@@ -110,6 +128,8 @@ class FixedCameraCatalogLeaseServiceTest {
                                 "rtsp-enabled", true, "RTSP", "rtsp://camera/main", null),
                         new FixedCameraCatalogLeaseRequest.CameraRecord(
                                 "rtsp-disabled", false, "RTSP", "rtsp://camera/main", null),
+                        new FixedCameraCatalogLeaseRequest.CameraRecord(
+                                "rtsp-incomplete", true, "RTSP", null, null),
                         new FixedCameraCatalogLeaseRequest.CameraRecord(
                                 "rtmp-enabled", true, "RTMP", null, null))));
 

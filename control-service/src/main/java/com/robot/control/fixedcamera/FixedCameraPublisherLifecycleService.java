@@ -110,7 +110,7 @@ public class FixedCameraPublisherLifecycleService {
     }
 
     private void validateTargetMode(VideoPublisherMode targetMode) {
-        if (targetMode != VideoPublisherMode.FIXED_CAMERA_GATEWAY
+        if (targetMode != VideoPublisherMode.EDGE_MEDIA_GATEWAY
                 && targetMode != VideoPublisherMode.LIVEKIT_INGRESS) {
             throw new IllegalArgumentException("固定摄像头目标发布模式不合法");
         }

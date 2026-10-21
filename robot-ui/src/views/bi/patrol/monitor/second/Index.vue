@@ -198,7 +198,6 @@ import { resolveMonitorRobotSlamMapId, resolveSlamMapReference } from '../monito
 import Empty from '../../../components/Empty.vue'
 import yuntai from './components/ptz-control-mixin'
 import { mapActions, mapState } from 'vuex'
-import { isRobotDog } from '@/constants/robot.js'
 export default {
   name: 'BiPatrolMonitorSecondScreen',
   components: {
@@ -253,14 +252,17 @@ export default {
       if (path === '/bi/patrol/statistics') return '数据统计'
       return '实时监控'
     },
+    bodyControlKind() {
+      const deviceType = this.baseDevice?.deviceType
+      if (deviceType === 'QUADRUPED_BASE') return 'dog'
+      if (deviceType === 'WHEELED_BASE') return 'car'
+      return null
+    },
     showDogControl() {
-      if (this.baseDevice?.deviceType === 'QUADRUPED_BASE') return true
-      return isRobotDog(this.selectedRobot) || isRobotDog(this.currenRobot)
+      return this.bodyControlKind === 'dog'
     },
     showCarControl() {
-      if (this.baseDevice?.deviceType === 'WHEELED_BASE') return true
-      const type = this.selectedRobot.typeCode || this.selectedRobot.type
-      return ['WHEELED_ROBOT', '轮式机器人'].includes(type)
+      return this.bodyControlKind === 'car'
     },
     // second 界面以当前选中装备确定 SLAM 地图
     targetRobotId() {

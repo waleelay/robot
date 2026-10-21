@@ -9,7 +9,7 @@
 
 ## 1. 背景与目标
 
-现有固定摄像头采用现场 `fixed-camera-gateway` 拉取 RTSP 并发布到 LiveKit。部分摄像头或 NVR
+现有固定摄像头采用现场 `media-gateway` 拉取 RTSP 并发布到 LiveKit。部分摄像头或 NVR
 具备主动 RTMP 推流能力，需要支持设备直接向中心侧 LiveKit Ingress 推流，在用户现场不部署
 Gateway 的情况下仍可复用现有大屏实时视频能力。
 
@@ -249,7 +249,7 @@ Management 负责校验摄像头存在且 `protocolType=RTMP`；Media 对内部�
 
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
-| `publisher_mode` | `varchar(32)` | 非空 | `DEVICE_CLIENT` / `FIXED_CAMERA_GATEWAY` / `LIVEKIT_INGRESS` |
+| `publisher_mode` | `varchar(32)` | 非空 | `DEVICE_CLIENT` / `EDGE_MEDIA_GATEWAY` / `LIVEKIT_INGRESS` |
 | `publisher_revision` | `bigint` | 非空 | Media 已接受的最新发布模式 generation，只参与播放与模式切换门禁 |
 | `ingress_operation_revision` | `bigint` | 非空 | Media 已接纳的最高 Ingress CRUD fencing token，不参与播放门禁 |
 | `accepted_ingress_operation` | `varchar(16)` | 可空 | 最高 token 对应的 `CREATE/ROTATE/REVOKE`，用于同 revision 恢复与对账 |
@@ -283,8 +283,8 @@ LiveKit 调用返回后、执行事务提交前必须再次校验 token/type。H
 立即补偿删除，结果不确定或补偿失败时由统一对账任务继续清理。
 
 Media 管理端点还必须校验当前模式：Ingress 创建、轮换只允许 `LIVEKIT_INGRESS`；撤销在
-`LIVEKIT_INGRESS` 下执行，在已经切到 `FIXED_CAMERA_GATEWAY` 且无 Ingress 时安全 no-op；`quiesce` 只允许
-`FIXED_CAMERA_GATEWAY`。`publisher-mode` 同 revision 且已为目标模式时无副作用成功；大于当前
+`LIVEKIT_INGRESS` 下执行，在已经切到 `EDGE_MEDIA_GATEWAY` 且无 Ingress 时安全 no-op；`quiesce` 只允许
+`EDGE_MEDIA_GATEWAY`。`publisher-mode` 同 revision 且已为目标模式时无副作用成功；大于当前
 revision 且已为目标模式时，只持久化新的 `publisher_revision`。两种情况都不得清空目标
 Track、关闭新会话或重复执行旧发布端清理。
 
@@ -341,12 +341,12 @@ POST /api/control/fixed-cameras/{cameraId}/video/start
 
 Control 在会话请求中传入 Management 读取到的 `expectedPublisherMode` 和 `expectedPublisherRevision`，
 Media 在 Runtime 悲观锁内完成原子校验和会话创建。只有
-`RTSP + FIXED_CAMERA_GATEWAY` 或 `RTMP + LIVEKIT_INGRESS` 这两种组合可以继续；两者不一致表示
+`RTSP + EDGE_MEDIA_GATEWAY` 或 `RTMP + LIVEKIT_INGRESS` 这两种组合可以继续；两者不一致表示
 协议正在切换或上一步失败，应返回可重试的切换中状态，不发 MQTT，也不生成 Publisher Token。
 
 Control 在收到会话响应后仍可记录 `publisherMode/publisherRevision` 用于观测，但不能依赖该响应
 作为唯一门禁。后续 `requestClientStart` 必须再次按 `runtime -> session` 顺序加锁并核对模式：
-`DEVICE_CLIENT` 只允许机器人，`FIXED_CAMERA_GATEWAY` 只允许 RTSP 固定摄像头，
+`DEVICE_CLIENT` 只允许机器人，`EDGE_MEDIA_GATEWAY` 只允许 RTSP 固定摄像头，
 `LIVEKIT_INGRESS` 禁止签发 Publisher Token 或生成客户端启动命令。
 
 ### 9.1 RTSP
@@ -441,7 +441,7 @@ Gateway 恢复或空闲停止分支。现有 VideoSession 和 Viewer 保留，�
 1. Management 在 keyed lock 内进入 `SWITCHING_TO_RTSP`，同时递增两类 revision。
 2. Management 携带 ingress operation revision 撤销 Ingress，Media 关闭相关会话和录像。
 3. Management 保存已校验的 RTSP 地址和 `protocolType=RTSP`。
-4. Management 携带 publisher revision 调用 Control 把 Runtime 切换为 `FIXED_CAMERA_GATEWAY`，成功后按
+4. Management 携带 publisher revision 调用 Control 把 Runtime 切换为 `EDGE_MEDIA_GATEWAY`，成功后按
    state/publisher revision 更新回 `STABLE`。
 5. 失败时保留 state 和两类 revision，用户重提相同请求时从第 2 步完整幂等重试；完成前播放请求因非
    `STABLE` 或 publisher revision 不匹配而被拒绝。

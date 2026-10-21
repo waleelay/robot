@@ -135,6 +135,34 @@ class StatisticsServiceTest {
                 Map.of("value", "FIXED_CAMERA", "label", "固定摄像头")), overview.get("deviceTypeOptions"));
     }
 
+    @Test
+    void customRangeWithoutTimesKeepsEmptyRangeAndReturnsZeroRuntime() {
+        PanoramaCenterClient centerClient = mock(PanoramaCenterClient.class);
+        when(centerClient.deviceTypeOptions()).thenReturn(List.of(
+                Map.of("value", "WHEELED_ROBOT", "label", "轮式巡检车")));
+        when(centerClient.devices()).thenReturn(List.of(
+                Map.of("serialNumber", "robot-001", "deviceType", "WHEELED_ROBOT")));
+        when(centerClient.realtimeStatuses(List.of("robot-001"))).thenReturn(List.of());
+        when(centerClient.taskWorkflowInstancesForStatistics()).thenReturn(List.of());
+        when(centerClient.alarmsForStatistics(null, null)).thenReturn(List.of());
+        StatisticsService service = new StatisticsService(
+                new ObjectMapper(),
+                centerClient,
+                new DeviceStatusSampler(
+                        new ObjectMapper(), centerClient, tempDir.resolve("sampler-empty-range").toString(), 7),
+                tempDir.toString());
+
+        Map<String, Object> overview = service.overview("custom", null, null, "all", null);
+
+        Map<String, Object> range = map(overview.get("range"));
+        assertEquals(null, range.get("startTime"));
+        assertEquals(null, range.get("endTime"));
+        Map<String, Object> runtimeItem = map(list(map(overview.get("equipmentRuntime")).get("items")).get(0));
+        assertEquals(0.0, runtimeItem.get("runningHours"));
+        assertEquals(0.0, runtimeItem.get("faultHours"));
+        assertEquals(0.0, runtimeItem.get("offlineHours"));
+    }
+
     /** 验证任务、告警、里程与设备采样按同一筛选窗口汇总，保留未知指标。 */
     @Test
     void aggregatesRealTaskAlarmAndOnlineStatistics() {

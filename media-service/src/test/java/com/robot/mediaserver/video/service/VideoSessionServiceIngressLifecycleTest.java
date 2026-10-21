@@ -185,7 +185,7 @@ class VideoSessionServiceIngressLifecycleTest {
 
     @Test
     void switchesGatewayRuntimeToIngressAndReturnsExactStopCommand() {
-        runtime.setPublisherMode(VideoPublisherMode.FIXED_CAMERA_GATEWAY);
+        runtime.setPublisherMode(VideoPublisherMode.EDGE_MEDIA_GATEWAY);
         runtime.setPublisherRevision(3L);
         VideoSession session = session();
         when(runtimeRepository.findBySourceTypeAndSourceIdOrderByRuntimeIdAsc(

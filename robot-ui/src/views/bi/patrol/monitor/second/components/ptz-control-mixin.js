@@ -5,16 +5,10 @@ import { executionStatusLabel, isRunningTaskStatus, taskExecutionStatus, taskSta
 import ControlModeActions from "./ControlModeActions.vue";
 import ControlModeWarning from "./ControlModeWarning.vue";
 
-function cachedVehicleLightEnabled(cache) {
-  if (cache?.vehicleLightEnabled !== undefined) return !!cache.vehicleLightEnabled
-  return cache?.vehicleLightState?.front?.mode === 'ON' &&
-    cache?.vehicleLightState?.rear?.mode === 'ON'
-}
-
 export default {
   components: { ControlModeWarning, ControlModeActions },
   computed: {
-    ...mapState('websocketRobot', ['deviceStateCache', 'audioState']),
+    ...mapState('websocketRobot', ['deviceRuntimeByRobot']),
     ...mapState('websocketExtraData', ['robotBaseInfo', 'taskData']),
     mediaSocket() {
       return this.$store.getters['websocketRobot/getMediaSocket'];
@@ -61,6 +55,11 @@ export default {
     selectedControlProfile() {
       return this.controlProfiles[this.selectedRobotId || this.cameraInfo?.robotId || ''] || { devices: [] }
     },
+    selectedDeviceRuntime() {
+      const robotId = this.selectedRobotId || this.cameraInfo?.robotId || ''
+      if (this.$store.state.websocketRobot.deviceRuntimeFreshByRobot?.[robotId] === false) return null
+      return this.deviceRuntimeByRobot?.[robotId] || null
+    },
     selectedControlLoading() {
       return !!this.controlProfileLoading[this.selectedRobotId || this.cameraInfo?.robotId || '']
     },
@@ -102,6 +101,10 @@ export default {
     vehicleLightDevice() {
       return this.controlDevices().find(device => device.deviceType === 'VEHICLE_LIGHT')
     },
+    vehicleLightEnabled() {
+      const status = this.vehicleLightDevice?.status || {}
+      return status.front?.mode === 'ON' && status.rear?.mode === 'ON'
+    },
     searchlightDevice() {
       return this.controlDevices().find(device => device.deviceType === 'SEARCHLIGHT')
     },
@@ -120,16 +123,12 @@ export default {
       manualModeRequest: null,
       manualModePendingUntil: 0,
       lastWarningLightQueryKey: '',
-      ptzAutoRotateState: Object.assign({}, this.deviceStateCache?.ptzAutoRotateState || {}),
-      // audioState: Object.assign({}, this.deviceStateCache?.audioState || {}),
-      launcherSafety: Object.assign({}, this.deviceStateCache?.launcherSafety || {}),
-      netGunSafety: Object.assign({}, this.deviceStateCache?.netGunSafety || {}),
-      warningLightState: Object.assign({}, this.deviceStateCache?.warningLightState || {}),
-      vehicleLightEnabled: cachedVehicleLightEnabled(this.deviceStateCache),
+      netGunSafety: {},
+      payloadConfirmationEpoch: 0,
     }
   },
   methods: {
-    ...mapActions('websocketRobot', ['persistDeviceStateCache', 'loadControlProfile']),
+    ...mapActions('websocketRobot', ['loadControlProfile']),
     controlDevices() {
       return this.selectedControlProfile.devices || []
     },
@@ -138,18 +137,13 @@ export default {
     },
     isPtzAutoRotateOn(device) {
       if (!device) return false
-      const key = this.ptzAutoRotateKey(device)
-      if (this.ptzAutoRotateState[key] !== undefined) return !!this.ptzAutoRotateState[key]
       const status = device.status || device.runtimeStatus || {}
-      if (status.autoRotateEnabled !== undefined) return !!status.autoRotateEnabled
-      if (this.ptzAutoRotateState[key] !== undefined) return !!this.ptzAutoRotateState[key]
-      return !!status.autoRotateEnabled
+      return status.autoRotateEnabled === true
     },
     hasPtzAutoRotateStatus(device) {
-      return this.hasDeviceAction(device, 'auto_rotate')
-    },
-    ptzAutoRotateKey(device) {
-      return device ? `${this.selectedRobotId}:${device.deviceId}` : ''
+      return this.hasDeviceAction(device, 'auto_rotate') &&
+        device.onlineStatus !== 'offline' &&
+        (device.status || device.runtimeStatus || {}).autoRotateEnabled !== undefined
     },
     preferSecondaryConfirm() {
       const name = this.$options && this.$options.name
@@ -242,17 +236,13 @@ export default {
     },
     async togglePtzAutoRotate() {
       const device = this.ptzDevice
-      if (!this.hasDeviceAction(device, 'auto_rotate')) return
-      const key = this.ptzAutoRotateKey(device)
+      if (!this.hasPtzAutoRotateStatus(device)) return
       const enabled = !this.isPtzAutoRotateOn(device)
       const ok = await this.sendDeviceCommand(device, 'auto_rotate', {
         enabled,
         speed: 20
       }, `ptz_auto_rotate_${enabled ? 'on' : 'off'}`)
-      if (ok) {
-        this.$set(this.ptzAutoRotateState, key, enabled)
-        this.persistDeviceStateCache({ ...this.deviceStateCache, ptzAutoRotateState: this.ptzAutoRotateState })
-      }
+      return ok
     },
     async sendDeviceCommand(device, action, params, source) {
       try {
@@ -268,43 +258,55 @@ export default {
       }
     },
     async firePayload(device, channel, source) {
-      try {
-        if (device?.deviceType === 'LAUNCHER') {
-          const tube = this.launcherTubes(device).find(item => item.tube === Number(channel))
-          if (!this.canFireLauncherTube(device, tube)) {
-            throw new Error('发射器未明确连接、安全开关未开启或弹筒未装填')
-          }
+      const robotId = this.selectedRobotId
+      const confirmationEpoch = this.payloadConfirmationEpoch
+      const validate = () => {
+        if (robotId !== this.selectedRobotId || confirmationEpoch !== this.payloadConfirmationEpoch || !this.wsConnected) {
+          throw new Error('设备连接或操作确认已失效，请重新确认')
         }
+        device = this.controlDevice(device.deviceId)
+        if (!device) throw new Error('设备已从控制画像移除')
+        this.validatePayloadFire(device, channel)
+      }
+      try {
+        validate()
         const session = await this.ensureControlSession(device, 'fire')
-        const token = await createConfirmToken(this.selectedRobotId, {
+        validate()
+        const token = await createConfirmToken(robotId, {
           controlSessionId: session.controlSessionId,
-          target: {
-            scope: device.scope,
-            deviceId: device.deviceId,
-            deviceType: device.deviceType
-          },
-          action: 'fire',
-          reason: 'manual_confirm'
+          target: { scope: device.scope, deviceId: device.deviceId, deviceType: device.deviceType },
+          action: 'fire', reason: 'manual_confirm'
         })
-         const fireParams = device.deviceType === 'LAUNCHER'
-            ? {
-              tube: channel,
-              waitStatusAfterFire: true,
-              keepSafetyOn: false,
-              confirmToken: token.confirmToken
-            }
-            : {
-              confirmToken: token.confirmToken
-            }
-        const response = await sendEquipmentCommand(this.selectedRobotId,
-          this.commandPayload(this.selectedRobotId, session.controlSessionId, this.controlModeCommand(this.currentControlMode), device, 'fire', fireParams, source || `fire_${channel}`))
-        console.log('API firePayload', response)
+        // 确认令牌请求期间也可能掉线，发送前必须重新读取当前设备状态与本地确认。
+        validate()
+        const fireParams = device.deviceType === 'LAUNCHER'
+          ? { tube: channel, waitStatusAfterFire: true, keepSafetyOn: false, confirmToken: token.confirmToken }
+          : { confirmToken: token.confirmToken }
+        await sendEquipmentCommand(robotId,
+          this.commandPayload(robotId, session.controlSessionId, this.controlModeCommand(this.currentControlMode), device, 'fire', fireParams, source || `fire_${channel}`))
         return true
       } catch (error) {
         this.$message.error(errorMessage(error))
-        console.log('ERROR firePayload', errorMessage(error))
         return false
       }
+    },
+    validatePayloadFire(device, channel) {
+      if (device?.deviceType === 'LAUNCHER') {
+        const tube = this.launcherTubes(device).find(item => item.tube === Number(channel))
+        if (!this.canFireLauncherTube(device, tube)) {
+          throw new Error('发射器未明确连接、安全开关未开启或弹筒未装填')
+        }
+      }
+      if (device?.deviceType === 'NET_GUN' || device?.deviceType === 'NET_LAUNCHER') {
+        if (!this.isNetGunConnected(device) || !this.isNetGunSafetyOn(device)) {
+          throw new Error('捕网器未明确连接或页面安全开关未开启')
+        }
+      }
+    },
+    clearPayloadConfirmation() {
+      this.netGunSafety = {}
+      this.payloadConfirmationEpoch = (this.payloadConfirmationEpoch || 0) + 1
+      if ('showConfirm' in this) this.showConfirm = false
     },
     // 云台开始控制
     async startFrameControl(kind) {
@@ -403,6 +405,7 @@ export default {
     },
     async ensureControlSession(device, action) {
       if (!device) throw new Error('未找到控制设备')
+      if (!this.wsConnected) throw new Error('状态连接已断开，请等待重连')
       const key = `${this.selectedRobotId}:${device.deviceId}:${action}`
       if (this.isControlSessionActive(this.controlSessions[key])) {
         return this.controlSessions[key]
@@ -650,33 +653,31 @@ export default {
       console.log('API sendEquipmentCommand', response)
     },
     isNetGunSafetyOn(device) {
-      return !!(device && this.netGunSafety[device.deviceId])
+      return !!(this.isNetGunConnected(device) && this.netGunSafety[device.deviceId])
     },
     isNetGunConnected(device) {
-      if (!device) return true
+      if (!device || !this.wsConnected || !this.selectedDeviceRuntime?.clientOnline) return false
       const status = this.deviceStatus(device)
-      return status.connected !== false && status.online !== false
+      return status.connected === true && status.online !== false && device.onlineStatus !== 'offline'
     },
     // 捕网器
     setFakeNetGunSafety(device, enabled) {
+      if (!device || !this.isNetGunConnected(device)) return
       this.$set(this.netGunSafety, device.deviceId, enabled)
     },
     isLauncherSafetyOn(device) {
       if (!device) return false
       const status = device.status || device.runtimeStatus || {}
-      if (status.safetySwitchEnabled !== undefined) return !!status.safetySwitchEnabled
-      if (this.launcherSafety[device.deviceId] !== undefined) return !!this.launcherSafety[device.deviceId]
-      return !!status.safetySwitchEnabled
+      return status.safetySwitchEnabled === true
     },
     hasLauncherSafetyStatus(device) {
       if (!device) return false
-      if (this.launcherSafety[device.deviceId] !== undefined) return true
       const status = device.status || device.runtimeStatus || {}
       // 能力已登记但客户端尚未上报真实状态时也要显示开关；未知状态按关闭处理，禁止发射。
       return status.safetySwitchEnabled !== undefined || this.hasDeviceAction(device, 'set_safety')
     },
     isLauncherConnected(device) {
-      if (!device) return false
+      if (!device || !this.wsConnected || !this.selectedDeviceRuntime?.clientOnline) return false
       const status = device.status || device.runtimeStatus || {}
       return status.connected === true && device.onlineStatus !== 'offline'
     },
@@ -745,23 +746,16 @@ export default {
       return !!(this.isLauncherConnected(device) && this.isLauncherSafetyOn(device) && this.launcherTubeLoaded(tube))
     },
     async setLauncherSafety(device, enabled) {
-      this.$set(this.launcherSafety, device.deviceId, enabled)
-      this.persistDeviceStateCache({ ...this.deviceStateCache, launcherSafety: this.launcherSafety })
-      const ok = await this.sendDeviceCommand(device, 'set_safety', {
+      return this.sendDeviceCommand(device, 'set_safety', {
         safety_on: enabled,
         wait_status: true
       }, `launcher_safety_${enabled ? 'on' : 'off'}`)
-      if (!ok) {
-        this.$set(this.launcherSafety, device.deviceId, !enabled)
-        this.persistDeviceStateCache({ ...this.deviceStateCache, launcherSafety: this.launcherSafety })
-      }
     },
     isWarningLightOn(device) {
       if (!device) return false
       const status = device.status || device.runtimeStatus || {}
-      const powerOn = status.powerOn === undefined ? status.enabled : status.powerOn
+      const powerOn = status.powerOn
       if (powerOn !== undefined) return this.warningLightPowerOn(powerOn)
-      if (this.warningLightState[device.deviceId] !== undefined) return !!this.warningLightState[device.deviceId]
       return false
     },
     warningLightPowerOn(value) {
@@ -790,17 +784,11 @@ export default {
       }
     },
     async setWarningLight(device, enabled) {
-      this.$set(this.warningLightState, device.deviceId, enabled)
-      this.persistDeviceStateCache({ ...this.deviceStateCache, warningLightState: this.warningLightState })
       const profile = device.controlProfile || {}
-      const ok = await this.sendDeviceCommand(device, 'set_state', {
+      return this.sendDeviceCommand(device, 'set_state', {
         lightId: profile.lightId || 'all',
         powerOn: enabled
       }, `${device.deviceId}_${enabled ? 'on' : 'off'}`)
-      if (!ok) {
-        this.$set(this.warningLightState, device.deviceId, !enabled)
-        this.persistDeviceStateCache({ ...this.deviceStateCache, warningLightState: this.warningLightState })
-      }
     },
     async switchWarningLightMode(device) {
       if (!device) return
@@ -820,84 +808,18 @@ export default {
     async setVehicleLights(enabled) {
       const device = this.vehicleLightDevice
       if (!device) return
-      const previous = this.vehicleLightEnabled
-      this.vehicleLightEnabled = !!enabled
-      this.persistDeviceStateCache({
-        ...this.deviceStateCache,
-        vehicleLightEnabled: this.vehicleLightEnabled
-      })
-      const mode = this.vehicleLightEnabled ? 'ON' : 'OFF'
-      const ok = await this.sendDeviceCommand(device, 'light.vehicle.set', {
+      const mode = enabled ? 'ON' : 'OFF'
+      return this.sendDeviceCommand(device, 'light.vehicle.set', {
         front: { mode, brightness: 0 },
         rear: { mode, brightness: 0 }
-      }, `vehicle_light_${this.vehicleLightEnabled ? 'on' : 'off'}`)
-      if (!ok) {
-        this.vehicleLightEnabled = previous
-        this.persistDeviceStateCache({
-          ...this.deviceStateCache,
-          vehicleLightEnabled: this.vehicleLightEnabled
-        })
-      }
-    },
-    syncAudioStatesFromDevices(robotId, devices, options = {}) {
-      if (!robotId || !Array.isArray(devices)) return
-      devices
-          .filter(device => ['SPEAKER', 'CLIENT_AUDIO', 'VOLUME_CONTROL', 'INTERCOM'].includes(device.deviceType))
-          .forEach(device => {
-            const status = device.status || device.runtimeStatus || {}
-            if (status.volume === undefined && status.volumePercent === undefined && status.muted === undefined) return
-            const key = `${robotId}:${device.deviceId}`
-            const next = Object.assign({}, this.audioState[key] || {})
-            const volume = status.volume === undefined ? status.volumePercent : status.volume
-            if (volume !== undefined && !(options.preserveExisting && next.volume !== undefined)) {
-              next.volume = volume
-            }
-            if (status.muted !== undefined && !(options.preserveExisting && next.muted !== undefined)) {
-              next.muted = status.muted
-            }
-            this.$set(this.audioState, key, next)
-          })
-    },
-    syncDeviceStatesFromDevices(robotId, devices, options = {}) {
-      if (!robotId || !Array.isArray(devices)) return
-      this.syncAudioStatesFromDevices(robotId, devices, options)
-      if (robotId !== this.selectedRobotId) return
-      devices.forEach(device => {
-        const status = device.status || device.runtimeStatus || {}
-        if (device.deviceType === 'LAUNCHER' && status.safetySwitchEnabled !== undefined &&
-            !(options.preserveExisting && this.launcherSafety[device.deviceId] !== undefined)) {
-          this.$set(this.launcherSafety, device.deviceId, !!status.safetySwitchEnabled)
-        }
-        if (device.deviceType === 'WARNING_LIGHT' && (status.powerOn !== undefined || status.enabled !== undefined) &&
-            !(options.preserveExisting && this.warningLightState[device.deviceId] !== undefined)) {
-          const powerOn = status.powerOn === undefined ? status.enabled : status.powerOn
-          this.$set(
-            this.warningLightState,
-            device.deviceId,
-            this.warningLightPowerOn(powerOn)
-          )
-        }
-        const ptzKey = `${robotId}:${device.deviceId}`
-        if (device.deviceType === 'DUAL_LIGHT_PTZ' && status.autoRotateEnabled !== undefined &&
-            !(options.preserveExisting && this.ptzAutoRotateState[ptzKey] !== undefined)) {
-          this.$set(this.ptzAutoRotateState, ptzKey, !!status.autoRotateEnabled)
-        }
-      })
-      this.persistDeviceStateCache({
-        ...this.deviceStateCache,
-        audioState: this.audioState,
-        launcherSafety: this.launcherSafety,
-        netGunSafety: this.netGunSafety,
-        warningLightState: this.warningLightState,
-        ptzAutoRotateState: this.ptzAutoRotateState,
-        vehicleLightEnabled: this.vehicleLightEnabled
-      })
+      }, `vehicle_light_${enabled ? 'on' : 'off'}`)
     },
   },
   watch: {
     wsConnected(connected, previous) {
       if (!previous || connected) return
       this.controlConnectionEpoch++
+      this.clearPayloadConfirmation()
       new Set([...Object.keys(this.controlPressed), ...Object.keys(this.controlTimers)])
         .forEach(kind => this.stopFrameControl(kind))
       Object.keys(this.controlSessions).forEach(key => this.$delete(this.controlSessions, key))
@@ -908,16 +830,30 @@ export default {
     selectedRobotId(nextId, previousId) {
       if (previousId && String(nextId) !== String(previousId)) {
         this.releaseControlSessions(previousId, 'switch_robot')
+        this.clearPayloadConfirmation()
+      }
+    },
+    selectedDeviceRuntime(runtime, previous) {
+      const disconnected = Object.keys(this.netGunSafety).some(deviceId => {
+        const device = runtime?.devices?.find(item => item.deviceId === deviceId)
+        return !device || device.status?.connected !== true || device.status?.online === false || device.onlineStatus === 'offline'
+      })
+      if (!runtime?.clientOnline || disconnected || (previous && previous.epoch !== runtime.epoch)) {
+        this.clearPayloadConfirmation()
       }
     },
     isRunningTask(running) {
       if (running) this.releaseBaseControlSession('task_started')
     },
     visible(next, previous) {
-      if (previous && !next) this.releaseControlSessions(null, 'close_remote_control')
+      if (previous && !next) {
+        this.clearPayloadConfirmation()
+        this.releaseControlSessions(null, 'close_remote_control')
+      }
     }
   },
   beforeDestroy() {
+    this.clearPayloadConfirmation()
     this.releaseControlSessions(null, 'leave_remote_control')
   }
 }

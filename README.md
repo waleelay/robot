@@ -1,35 +1,55 @@
 # robot-mediaserver
 
-具身智能装备集成管理平台的媒体与控制相关单仓库。仓库包含大屏接入层、控制编排、媒体服务、固定摄像头 Gateway 和指挥中心前端；浏览器通过 LiveKit 直接收发媒体流，BFF 和 Control 只处理鉴权、业务编排、状态与信令。
+具身智能装备集成管理平台的媒体与控制相关单仓库。仓库包含大屏接入层、控制编排、媒体服务、统一媒体 Gateway 和指挥中心前端；浏览器通过 LiveKit 直接收发媒体流，BFF 和 Control 只处理鉴权、业务编排、状态与信令。
 
 ## 1. 当前架构
 
 ```text
-浏览器 / robot-ui
-  -> Bigscreen BFF :8090（JWT 验证、REST 代理与聚合、WebSocket 桥接）
+大屏浏览器普通 REST -> Nginx /api-gw -> IAM API Gateway -> Bigscreen BFF :8090
+大屏浏览器 WebSocket / 签名 HLS -> Nginx -> Bigscreen BFF :8090
+管理端 REST -> Nginx /api-gw -> IAM API Gateway -> 管理端服务
+Bigscreen BFF（JWT 验证、REST 代理与聚合、WebSocket 桥接）
   -> Control Service :8082（控制会话、设备状态、MQTT 与媒体编排）
   -> Media Service :8088（视频会话、LiveKit、文件、TTS）
 
 Control Service -> Management Service（设备档案、能力、固定摄像头）
-Control Service <-> EMQX <-> 机器人客户端 / 固定摄像头 Gateway
-Bigscreen BFF -> Control Service -> EMQX -> 固定摄像头 Gateway（用户授权短租约目录）
+Control Service <-> EMQX <-> 机器人客户端 / 统一边缘媒体 Gateway
+Bigscreen BFF -> Control Service -> EMQX -> 媒体 Gateway（用户授权源目录短租约）
 RTMP 固定摄像头 -> LiveKit Ingress -> LiveKit（不经过 Gateway）
 Media Service -> LiveKit Server / Ingress / Egress / MinIO / MySQL
 浏览器 <-> LiveKit（WebRTC 媒体流不经过 BFF 或 Control）
 ```
 
+远程控制设备的身份、类型和能力以 Management 组件生成的控制画像为准；MQTT
+`media/client/status` 补充设备运行态，`robot.state` 只输出浏览器使用的状态字段，
+不携带上装自报的 `deviceType` 或重复设备列表。字段边界见
+[客户端事件与载荷协议](docs/03-接口与协议/客户端事件/客户端事件与载荷协议文档.md#42-robotstate)。
+Control 在画像接口提供静态 `deviceDefinitions[]` 和带版本的 `deviceRuntime`，并在
+`robot.state` 推送同一运行态投影；HTTP 既有合并列表的状态也复用该投影。
+`robot-ui` 只消费独立定义与版本快照；历史调试前端不纳入正式交付，也不提供协议兼容。
+媒体客户端离线或心跳超时只清除客户端来源的设备运行态，不删除管理端设备定义。
+客户端运行态必须使用控制画像的平台设备 ID；HTTP 与推送不再按管理端缓存投影身份，
+也不按驱动 ID 或设备类型猜测关联。连接失效后前端保留版本但撤销可用状态和捕网器本地确认。
+多合一组件无状态反馈时的既有连接判断本次保持不变。
+
 服务职责边界：
 
 | 模块 | 当前职责 |
 | --- | --- |
-| `bigscreen-bff/` | 大屏统一认证入口、下游代理、全景聚合、统计报告、WebSocket 事件适配 |
+| `bigscreen-bff/` | 大屏 JWT 验证、下游代理、全景聚合、统计报告、WebSocket 事件适配 |
 | `control-service/` | `/api/control/**`、控制租约、设备命令、机器人状态、固定摄像头、MQTT、视频编排 |
 | `media-service/` | 视频会话与对讲、LiveKit Room/Token/Ingress/Egress、通用文件、HLS、TTS |
 | `media-common/` | Media 与 Control 共享的纯 DTO 与枚举契约模块，不承载业务逻辑 |
-| `fixed-camera-gateway/` | Go 固定摄像头 Gateway；RTSP、LiveKit、MQTT、健康探测与推流进程管理 |
+| `media-gateway/` | Go 统一媒体 Gateway；`media-gateway` 接入 RTSP、LiveKit、MQTT，管理授权源目录、健康探测与发布进程 |
 | `robot-ui/` | 指挥中心前端 |
 
 Media Service 不发布 MQTT；Control Service 不保存媒体文件或承载媒体流；BFF 不复制 Control/Media 的核心业务。
+
+统一边缘媒体 Gateway 位于 `media-gateway/` Go 模块中，固定摄像头的 Control/Media 编排已使用统一媒体 Topic、
+`EDGE_MEDIA_GATEWAY` 发布模式和授权源目录租约。Go 保留无人机 RTSP 能力，平台无人机权限与播放入口尚未实现。
+未迁移的环境升级前需执行发布模式数据库迁移并协同更新管理端调用方；本地测试结果不代表真实设备已验收或已部署。
+配置与迁移边界见 [Gateway README](media-gateway/README.md#统一媒体入口)，目标设计与剩余实施范围见
+[无人机视频与位置接入设计说明书](docs/02-设计/实时视频/无人机视频与位置接入设计说明书.md)。
 
 ## 2. 工程结构
 
@@ -38,7 +58,7 @@ media-service/    Java 17 + Spring Boot 3 Media Service
 media-common/     Media/Control 共享 DTO 与枚举契约（纯 Java 17）
 control-service/  Java 17 + Spring Boot 3 Control Service
 bigscreen-bff/    Java 17 + Spring Boot 3 Bigscreen BFF
-fixed-camera-gateway/ Go 固定摄像头 Gateway
+media-gateway/    Go 统一边缘媒体 Gateway
 robot-ui/         Vue 指挥中心前端
 deploy/           Docker、Nginx 与离线部署资源
 scripts/          仓库级开发检查脚本
@@ -62,7 +82,6 @@ JDK 17
 Maven 3.9+
 Node.js 18+ / npm 9+
 Go 1.24+
-Python 3
 Docker
 MySQL 8
 EMQX 5
@@ -81,7 +100,7 @@ Redis 和 Elasticsearch 已配置依赖，但当前 Java 业务主链路不以�
 2. 启动 `media-service`，默认端口 `8088`。
 3. 启动 `control-service`，默认端口 `8082`。
 4. 启动 `bigscreen-bff`，默认端口 `8090`。
-5. 启动独立交付的机器人客户端或固定摄像头 Gateway。
+5. 启动独立交付的机器人客户端或统一媒体 Gateway。
 6. 启动 `robot-ui`，或通过 Nginx 访问构建产物。
 
 Java 服务：
@@ -93,11 +112,11 @@ Java 服务：
 (cd bigscreen-bff && mvn spring-boot:run)
 ```
 
-固定摄像头 Gateway 的本地验证：
+统一媒体 Gateway 的本地验证：
 
 ```bash
-(cd fixed-camera-gateway && go test ./...)
-(cd fixed-camera-gateway && go build -o fixed-camera-gateway ./cmd/fixed-camera-gateway)
+(cd media-gateway && go test ./...)
+(cd media-gateway && go build -o /tmp/media-gateway ./cmd/media-gateway)
 ```
 
 完整配置分别见 [Media Service README](media-service/README.md)、[Control Service README](control-service/README.md) 和 [Bigscreen BFF README](bigscreen-bff/README.md)。生产环境必须覆盖示例密钥、对象存储凭据、JWT Issuer、服务地址和允许跨域来源，不能直接使用仓库中的开发默认值。
@@ -106,7 +125,7 @@ Java 服务：
 
 ## 5. 生产鉴权与访问边界
 
-生产 REST/WebSocket 请求应先进入 Bigscreen BFF。BFF 验证 JWT 后覆盖 `X-User-Id`、`X-Org-Id`、`X-Roles` 并传给下游；Control 和 Media 当前信任这些受控 Header，自身不独立验签 JWT，不能直接暴露到不可信网络。
+生产 4443 的大屏普通 REST `/api-gw/api/bigscreen/**` 经 Nginx 进入 IAM API Gateway，再到 Bigscreen BFF；`/ws/bigscreen` 和短期签名 HLS 由 Nginx 直达 BFF。网关的 `GATEWAY_CORS_ALLOWED_ORIGIN_PATTERNS` 须包含大屏实际访问来源（含协议与端口），IAM 重装后按[部署说明](deploy/docker/README.md#51-只改-env-容器环境变量)复核。BFF 验证用户 JWT 后覆盖 `X-User-Id`、`X-Org-Id`、`X-Roles` 并传给下游；Control 和 Media 当前信任这些受控 Header，自身不独立验签 JWT，不能直接暴露到不可信网络。直连 `/api/**` 切换前曾有 Flutter App 与本地联调流量，入口收口方案见[大屏统一入口认证与路径设计说明书](docs/02-设计/大屏BFF/大屏统一入口认证与路径设计说明书.md)。
 
 开发环境可使用以下 Header 直连下游：
 
@@ -187,7 +206,7 @@ Nginx 只代理 LiveKit 信令，不替代 LiveKit UDP/TCP 媒体端口。Contro
 按改动范围执行最小充分验证；仓库级快速检查：
 
 Java 规则及 HTTP 契约检查使用 `sh scripts/quality-check.sh all --base HEAD`；这里的 `HEAD` 仅用于当前未提交修改，分支审查应指定实际比较目标。省略 `--base` 时 Java 存量问题也会导致失败。
-以下脚本是构建检查，包含四个 Java 模块和固定摄像头 Gateway；需要已安装 Go，不替代规则、接口或业务测试。
+以下脚本是构建检查，包含四个 Java 模块和统一媒体 Gateway；需要已安装 Go，不替代规则、接口或业务测试。
 
 ```bash
 sh scripts/dev-check.sh

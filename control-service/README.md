@@ -98,6 +98,19 @@ src/main/java/com/robot/control/
 - `takeover`/模式切换只发布请求，最终状态以机器人上报为准。
 - `confirm-token` 当前会生成 30 秒 Token 信息，但普通 `/commands` 尚未校验它。
 
+### 控制画像与设备运行态
+
+`control-profile.deviceDefinitions` 保存管理端设备定义，`deviceRuntime` 保存媒体客户端运行态；
+HTTP 与 `robot.state` 使用同一字段白名单投影，设备身份不受请求身份和档案缓存影响。
+事件移除重复 `devices`、客户端标识和原始诊断；HTTP 既有合并列表的状态也使用同一投影。
+robot-ui 只读取独立定义和快照，调试前端不再兼容；规范字段见
+[robot.state 协议](../docs/03-接口与协议/客户端事件/客户端事件与载荷协议文档.md#42-robotstate)。
+客户端 `devices[].deviceId` 必须与画像一致，服务端和前端均不按类型或驱动 ID 猜测平台设备。
+媒体心跳与超时转换串行提交；前端推送断线后失效缓存新鲜度，恢复时继续按实例及版本防止回退。
+完整的失效、确认撤销和保留兼容边界见
+[控制服务接口文档](../docs/03-接口与协议/统一控制/控制服务接口文档.md)。
+本轮依用户要求保留多合一组件在缺少状态查询反馈时的既有交互。
+
 ### 设备命令
 
 服务端优先把 Management `components[].capabilities[].actions` 映射为对外 action；如果一个组件没有任何可识别的映射结果，当前代码会按已知 `deviceType` 使用生产兼容动作表。命令必须属于控制画像最终返回的 `devices[].actions`，再按设备类型路由至 body、ptz、audio、launcher、net-gun、warning-light、vehicle-light 或 multi-function Topic。Control 返回 MQTT 发布结果，不持久化命令，也不等待 ACK。
@@ -106,8 +119,8 @@ src/main/java/com/robot/control/
 
 普通扬声器的实时音量使用 `media/client/status.audioDevices[]` 中
 `type=speaker` 的物理状态。Control 按逻辑设备 `status.driverDeviceId` 关联
-物理 `deviceId`，将 `volumePercent`、`muted` 归并到 `devices[].status`后复用
-`robot.state` 推送给前端。多合一设备不参与该归并，继续使用自身状态协议。
+物理 `deviceId`，将 `volumePercent`、`muted` 归并到内部设备状态后，投影为
+`robot.state.deviceRuntime.devices[].status` 推送给前端。多合一设备不参与该归并，继续使用自身状态协议。
 
 ### 实时视频与固定摄像头
 
@@ -116,13 +129,13 @@ src/main/java/com/robot/control/
 Gateway MQTT。以下 Topic 仅属于 RTSP 固定摄像头：
 
 ```text
-gateway/fixed-camera/{gatewayId}/video/start
-gateway/fixed-camera/{gatewayId}/video/stop
-gateway/fixed-camera/{gatewayId}/video/restart
-gateway/fixed-camera/{gatewayId}/video/status
-gateway/fixed-camera/{gatewayId}/status
-gateway/fixed-camera/{gatewayId}/camera/{cameraId}/status
-gateway/fixed-camera/{gatewayId}/catalog/sync
+gateway/media/{gatewayId}/video/start
+gateway/media/{gatewayId}/video/stop
+gateway/media/{gatewayId}/video/restart
+gateway/media/{gatewayId}/video/status
+gateway/media/{gatewayId}/status
+gateway/media/{gatewayId}/source/FIXED_CAMERA/{cameraId}/{cameraId}/status
+gateway/media/{gatewayId}/catalog/sync
 ```
 
 Control 查询 Management 档案并校验 `enabled`。RTSP 在主/子码流缺失时回退到另一条可用码流，首次
@@ -172,7 +185,7 @@ Publisher；这些端点只接受配置的内部调用方标记，不由 Nginx/A
 | `control.media-service-base-url` | `MEDIA_SERVICE_BASE_URL` | Media 内部地址 |
 | `control.management-service-base-url` | `CENTER_MANAGE_BASE_URL` | Management 地址 |
 | `control.device-cache-ttl-seconds` | `MANAGEMENT_DEVICE_CACHE_TTL_SECONDS` | 设备档案及授权列表缓存有效期；非正值回退 30 秒，正值最多取 30 秒 |
-| `control.mqtt.*` | `MQTT_*`、`FIXED_CAMERA_GATEWAY_ID` | Broker、凭据、clientId、Gateway ID 和开关 |
+| `control.mqtt.*` | `MQTT_*`、`MEDIA_GATEWAY_ID` | Broker、凭据、clientId、Gateway ID 和开关 |
 | `control.fixed-camera-health.*` | `FIXED_CAMERA_GATEWAY_TIMEOUT_SECONDS`、`FIXED_CAMERA_HEALTH_MAX_AGE_SECONDS` | Gateway 离线与 RTSP 健康过期阈值 |
 | `control.fixed-camera-catalog.*` | `FIXED_CAMERA_CATALOG_MAX_LEASE_SECONDS`、`FIXED_CAMERA_CATALOG_SWEEP_DELAY_MS`、`FIXED_CAMERA_CATALOG_TRUSTED_CALLER` | 目录租约时限、清理周期和内部调用方标记 |
 | `control.fixed-camera-publisher.*` | `FIXED_CAMERA_PUBLISHER_TRUSTED_CALLER`、`FIXED_CAMERA_PUBLISHER_PRESENCE_TIMEOUT_SECONDS`、`FIXED_CAMERA_PUBLISHER_PRESENCE_POLL_MILLIS` | Management 发布模式切换调用方标记及旧 Publisher 退出核验预算 |
@@ -180,7 +193,8 @@ Publisher；这些端点只接受配置的内部调用方标记，不由 Nginx/A
 | Spring Boot 结构化日志 | `LOGGING_STRUCTURED_FORMAT_CONSOLE` | 生产默认由 Compose 设置为 `logstash`；HTTP 使用 `X-Request-Id`，STOMP/轨迹分别保留 `eventId`、`commandId` |
 | `control.mileage.*` | `MILEAGE_*` | 异常速度阈值和统计刷新距离阈值 |
 | `spring.datasource.*` | `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` | 里程检查点和分钟增量桶数据库 |
-| `control.robot.*` | `ROBOT_HEARTBEAT_*`、`ROBOT_OFFLINE_RETENTION_SECONDS` | 心跳超时与扫描周期、离线注册表清理 |
+| `control.robot.*` | `ROBOT_HEARTBEAT_*`、`ROBOT_OFFLINE_RETENTION_SECONDS` | 本体心跳超时与扫描周期、离线注册表清理 |
+| `control.robot.media-client-timeout-seconds`、`control.robot.media-client-sweep-delay-ms` | `CONTROL_ROBOT_MEDIA_CLIENT_TIMEOUT_SECONDS`、`CONTROL_ROBOT_MEDIA_CLIENT_SWEEP_DELAY_MS` | 媒体客户端设备状态失效阈值，默认 30 秒；扫描间隔默认 1000 毫秒。与本体心跳分别计算。 |
 | `control.session.*` | `INTERRUPTED_*`、`IDLE_*`、`VIEWER_*` | 视频恢复和释放参数 |
 | `control.session.sweep-delay-ms` | `CONTROL_SESSION_SWEEP_DELAY_MS` | 恢复、对讲超时与空闲释放的扫描周期，默认 5000 毫秒 |
 

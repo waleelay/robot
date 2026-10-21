@@ -105,7 +105,7 @@ ALTER TABLE media_source_runtime
 
 UPDATE media_source_runtime
    SET publisher_mode = CASE
-       WHEN source_type = 'FIXED_CAMERA' THEN 'FIXED_CAMERA_GATEWAY'
+       WHEN source_type = 'FIXED_CAMERA' THEN 'EDGE_MEDIA_GATEWAY'
        ELSE 'DEVICE_CLIENT'
    END
  WHERE publisher_mode IS NULL;
@@ -118,9 +118,9 @@ ALTER TABLE media_source_runtime
 
 约束：
 
-- `publisher_mode` 是生命周期分流依据，枚举固定为 `DEVICE_CLIENT`、`FIXED_CAMERA_GATEWAY`、
+- `publisher_mode` 是生命周期分流依据，枚举固定为 `DEVICE_CLIENT`、`EDGE_MEDIA_GATEWAY`、
   `LIVEKIT_INGRESS`。机器人历史 Runtime 回填 `DEVICE_CLIENT`，固定摄像头历史 Runtime 回填
-  `FIXED_CAMERA_GATEWAY`。
+  `EDGE_MEDIA_GATEWAY`。
 - `ingress_id` 为 `NULL` 只表示当前没有 Ingress 资源；MySQL 唯一索引允许多行 `NULL`。
 - 禁止用 `ingress_id IS NULL/NOT NULL` 推断摄像头应走 Gateway 还是 Ingress 分支。
 - `publisher_revision` 是发布模式 generation，只由协议切换和删除收口推进；机器人恒为 `0`。播放门禁
@@ -311,7 +311,7 @@ Management 使用 `url + "/" + streamKey` 生成完整 `pushUrl`。拼接时只�
 下发的 Gateway stop 载荷列表。它不创建 Ingress，也不修改 Management 摄像头档案。
 
 `quiesce` 同样只允许 Control 服务身份调用，用于删除 RTSP 摄像头：它保持
-`publisherMode=FIXED_CAMERA_GATEWAY` 不变，关闭活动 VideoSession/录像，返回精确的 Gateway stop 载荷，
+`publisherMode=EDGE_MEDIA_GATEWAY` 不变，关闭活动 VideoSession/录像，返回精确的 Gateway stop 载荷，
 并禁止旧 revision 再次签发 Publisher Token。Control 发送 stop 后使用 `publisher-presence` 核验旧
 Participant/Track 已退出；它不是普通播放停止接口。
 
@@ -370,8 +370,8 @@ POST/PUT/DELETE 和进入 Runtime 执行事务的补偿/对账变更，必须在
 | 端点 | 允许模式 | 模式不符合时 |
 | --- | --- | --- |
 | Ingress POST/PUT | `LIVEKIT_INGRESS` | 返回发布模式冲突 |
-| Ingress DELETE | `LIVEKIT_INGRESS` | 已为 `FIXED_CAMERA_GATEWAY` 且无 Ingress 时安全 no-op；其他情况冲突 |
-| `quiesce` | `FIXED_CAMERA_GATEWAY` | 返回发布模式冲突 |
+| Ingress DELETE | `LIVEKIT_INGRESS` | 已为 `EDGE_MEDIA_GATEWAY` 且无 Ingress 时安全 no-op；其他情况冲突 |
+| `quiesce` | `EDGE_MEDIA_GATEWAY` | 返回发布模式冲突 |
 | `publisher-mode` | 预期源模式或目标模式 | 已为目标模式时不执行清理副作用；更大 revision 只推进 generation |
 
 `publisher-mode` 请求小于当前 `publisher_revision` 时拒绝；大于当前值时领取新的 generation 后执行；
@@ -480,7 +480,7 @@ Management 调用 Media 时保留下游业务码，不统一改写成笼统的 `
 | 位置 | 改动 |
 | --- | --- |
 | `video/model/VideoSourceRuntime.java` | 增加 `publisherMode`、`publisherRevision`、`ingressOperationRevision`、`acceptedIngressOperation`、`ingressId` 和最后流状态字段 |
-| `media-common/.../VideoPublisherMode.java` | 新增共享枚举 `DEVICE_CLIENT/FIXED_CAMERA_GATEWAY/LIVEKIT_INGRESS` |
+| `media-common/.../VideoPublisherMode.java` | 新增共享枚举 `DEVICE_CLIENT/EDGE_MEDIA_GATEWAY/LIVEKIT_INGRESS` |
 | `media-common/.../CreateVideoSessionRequest.java` | 增加固定摄像头必填的 `expectedPublisherMode`、`expectedPublisherRevision` |
 | `media-common/.../VideoSessionResponse.java` | 增加只用于观测的 `publisherMode`、`publisherRevision` |
 | `video/repository/VideoSourceRuntimeRepository.java` | 增加按 `sourceType/sourceId`、`publisherMode`、`ingressId` 和对账集合查询；保留现有通用锁方法语义 |
@@ -560,10 +560,10 @@ roomName  = media.fixed.{cameraId}.visible.main
 这样 Ingress 在 API 返回后立即推流、Webhook 很快到达时，Media 已能通过 Room 找到 Runtime。
 
 创建前必须把 `publisher_mode` 持久化为 `LIVEKIT_INGRESS`。它与 Ingress 资源的创建、删除、
-轮换成功与否解耦，只能在明确的协议切换编排中改为 `FIXED_CAMERA_GATEWAY`。
+轮换成功与否解耦，只能在明确的协议切换编排中改为 `EDGE_MEDIA_GATEWAY`。
 
 所有 Runtime 创建入口必须显式赋值：机器人为 `DEVICE_CLIENT`；首次播放且尚无 Runtime 的 RTSP
-固定摄像头为 `FIXED_CAMERA_GATEWAY`；RTMP 只能由推流配置或协议切换流程创建为 `LIVEKIT_INGRESS`。
+固定摄像头为 `EDGE_MEDIA_GATEWAY`；RTMP 只能由推流配置或协议切换流程创建为 `LIVEKIT_INGRESS`。
 不给数据库列设置会隐藏代码遗漏的默认值。
 
 ### 6.4 幂等创建
@@ -623,7 +623,7 @@ provisioning 状态字段或 Outbox。
 
 1. 不受 `LIVEKIT_INGRESS_ENABLED=false` 限制；关闭新能力后仍必须允许清理。
 2. 用独立短事务校验模式并接纳 token 和 `accepted_ingress_operation=REVOKE`。模式已为
-   `FIXED_CAMERA_GATEWAY` 且没有平台 Ingress 时安全成功，禁止清理 Gateway Track 或会话；其他模式错误返回冲突。
+   `EDGE_MEDIA_GATEWAY` 且没有平台 Ingress 时安全成功，禁止清理 Gateway Track 或会话；其他模式错误返回冲突。
 3. ListIngress 对账当前 cameraId 的所有平台 Ingress。仍有任一资源时继续幂等删除；已无资源时
    直接进入运行态收口。
 4. LiveKit 删除成功或返回 404 后，再次锁定 Runtime 校验 token/type。仍为当前操作时，
@@ -697,7 +697,7 @@ Media 在 `create()` 已持有 Runtime 悲观锁的同一事务内完成：
 - Runtime `publisher_mode=LIVEKIT_INGRESS` 表示 RTMP 常驻源，只关闭 VideoSession/Viewer；
   即使 `ingress_id` 为空也不改走 Gateway 逻辑。
 - 不删除 Room，不返回 Gateway stop payload，不停止摄像头推流。
-- 只有 Runtime `publisher_mode=FIXED_CAMERA_GATEWAY` 才可沿用当前删除 Room 和 Gateway stop 行为。
+- 只有 Runtime `publisher_mode=EDGE_MEDIA_GATEWAY` 才可沿用当前删除 Room 和 Gateway stop 行为。
 
 恢复与重启时：
 
@@ -711,7 +711,7 @@ Media 在 `create()` 已持有 Runtime 悲观锁的同一事务内完成：
 - 所有公开、自动恢复、手动重启和切码流入口必须收敛到同一个按 `runtime -> session` 加锁的实现；
   不得仅调用 `requireSessionForUpdate()` 后签发 Token。
 - `sourceType=ROBOT_CAMERA` 只允许 `publisher_mode=DEVICE_CLIENT`。
-- `sourceType=FIXED_CAMERA` 只允许 `publisher_mode=FIXED_CAMERA_GATEWAY`。
+- `sourceType=FIXED_CAMERA` 只允许 `publisher_mode=EDGE_MEDIA_GATEWAY`。
 - `publisher_mode=LIVEKIT_INGRESS` 始终拒绝签发 Publisher Token、创建 `VideoStartCommand` 和进入启动中状态。
 - Runtime 锁内读到的 mode/revision 必须与会话创建时的预期值一致；不一致时返回冲突，由 Control
   重读 Management 后重试整个播放流程。
@@ -864,7 +864,7 @@ RTMP 改 RTSP：
 1. 领取 `SWITCHING_TO_RTSP` 和两类 revision。
 2. 携带 ingress operation revision 幂等删除 Ingress、关闭会话并确认 Track 退出。
 3. 保存已校验的 RTSP 档案。
-4. 携带 publisher revision 调用 Control 切换为 `FIXED_CAMERA_GATEWAY`，成功后按 state/publisher revision
+4. 携带 publisher revision 调用 Control 切换为 `EDGE_MEDIA_GATEWAY`，成功后按 state/publisher revision
    更新回 `STABLE`；下一次正常播放
    才允许 Gateway start。
 
@@ -961,7 +961,7 @@ POST /internal/control/fixed-cameras/{cameraId}/publisher-mode-switch
 }
 ```
 
-`targetMode` 只允许 `LIVEKIT_INGRESS` 或 `FIXED_CAMERA_GATEWAY`。Control 不修改 Management 档案，
+`targetMode` 只允许 `LIVEKIT_INGRESS` 或 `EDGE_MEDIA_GATEWAY`。Control 不修改 Management 档案，
 职责是：
 
 1. 携带 `X-Publisher-Revision` 调用 Media `publisher-mode` 接口，以目标模式和 publisher revision 为准幂等
@@ -969,7 +969,7 @@ POST /internal/control/fixed-cameras/{cameraId}/publisher-mode-switch
 2. 切到 `LIVEKIT_INGRESS` 时，对 Media 返回的所有活动 RTSP 会话发送 Gateway stop。
 3. 调用 Media `publisher-presence` 轮询 Room API，确认原 `fixed-camera:{cameraId}` Participant/Track 退出；
    超时返回可重试失败，不创建 Ingress。
-4. 切到 `FIXED_CAMERA_GATEWAY` 时不主动启动推流，等待下一次正常播放请求触发 Gateway start。
+4. 切到 `EDGE_MEDIA_GATEWAY` 时不主动启动推流，等待下一次正常播放请求触发 Gateway start。
 
 该接口必须是幂等的。同一 `cameraId + targetMode + publisherRevision` 重复请求不重复停止已结束会话，
 也不生成新的 Publisher Token；更旧 revision 必须被 Media 拒绝。
@@ -989,7 +989,7 @@ Runtime 的目标发布模式。
 `ControlVideoCommandService.startFixedCameraVideo` 先读取 Management 摄像头。只有
 `mediaTransitionState=STABLE` 才继续，并将协议对应的 `expectedPublisherMode` 和
 `publisherRevision` 传给 Media。RTSP 摄像头首次播放且 Runtime 不存在时，Media 以该 revision 创建
-`FIXED_CAMERA_GATEWAY` Runtime；RTMP 不得在播放请求中隐式创建 Ingress Runtime。
+`EDGE_MEDIA_GATEWAY` Runtime；RTMP 不得在播放请求中隐式创建 Ingress Runtime。
 
 Media 在 Runtime 锁内对 mode/revision 完成原子校验并创建会话。RTSP 随后的 `requestClientStart` 必须再次
 在 Runtime 锁内校验相同 mode/revision，成功后才返回 Publisher Token 和 MQTT command；Control 只能发送
@@ -1000,7 +1000,7 @@ Media 在 Runtime 锁内对 mode/revision 完成原子校验并创建会话。RT
 
 ```text
 enabled=false -> 拒绝
-state=STABLE && protocolType=RTSP && publisherMode=FIXED_CAMERA_GATEWAY && publisherRevision 相等 -> 保持现有 RTSP URL + Gateway MQTT 流程
+state=STABLE && protocolType=RTSP && publisherMode=EDGE_MEDIA_GATEWAY && publisherRevision 相等 -> 保持现有 RTSP URL + Gateway MQTT 流程
 state=STABLE && protocolType=RTMP && publisherMode=LIVEKIT_INGRESS && publisherRevision 相等 -> 固定 quality=main，查询 Media 状态后创建/复用会话
 协议与 publisherMode 不一致 -> FIXED_CAMERA_PUBLISHER_MODE_TRANSITION，不发 MQTT，不生成 Publisher Token
 state 非 STABLE 或 publisherRevision 不一致 -> FIXED_CAMERA_MEDIA_TRANSITION_IN_PROGRESS，不发 MQTT，不生成 Publisher Token
@@ -1386,7 +1386,7 @@ media_fixed_camera_ingress_connection_evictions_total{result}
 - RTMP 新增保存后自动生成配置失败时档案保留。
 - RTMP 改 RTSP 时先撤销，撤销失败不更新协议。
 - RTSP 改 RTMP 时必须先经 Control 停止旧 Gateway Publisher 并确认旧 Track 退出。
-- RTMP 改 RTSP 时只有档案保存后才切换为 `FIXED_CAMERA_GATEWAY`。
+- RTMP 改 RTSP 时只有档案保存后才切换为 `EDGE_MEDIA_GATEWAY`。
 - 删除关联校验先于运行态清理；RTMP Ingress 或 RTSP Publisher/Track 清理失败均不删档案。
 - Direct Client 保留下游错误码并正确发送服务身份 Header。
 - Media 返回白名单内 Ingress 业务码时，Management 保留业务码与 HTTP 状态并使用本地安全文案；未知错误体、
@@ -1402,7 +1402,7 @@ media_fixed_camera_ingress_connection_evictions_total{result}
 - `publisher-mode-switch` 和 `publisher-quiesce` 对同一 revision 幂等，对旧 revision 拒绝。
 - `publisher-mode` 已为目标模式时无副作用成功；RTMP 删除先推进 publisher generation，再撤销 Ingress。
 - Runtime 为 `LIVEKIT_INGRESS` 但 `ingress_id` 为空时仍不发送 MQTT。
-- RTSP 首次播放创建 `FIXED_CAMERA_GATEWAY` Runtime；机器人所有 Runtime 创建入口都写入 `DEVICE_CLIENT`。
+- RTSP 首次播放创建 `EDGE_MEDIA_GATEWAY` Runtime；机器人所有 Runtime 创建入口都写入 `DEVICE_CLIENT`。
 - RTMP 离线、未知、未配置分别返回约定错误。
 - RTMP 不进入 Gateway 目录租约。
 - RTMP 健康状态不依赖 Gateway。
@@ -1429,7 +1429,7 @@ RTSP 固定摄像头回归：
   `Control -> Media -> MQTT -> Gateway -> LiveKit`。
 - 主/子码流切换仍向 Gateway 发送精确指令，不进入 Ingress 管理。
 - Viewer 退出、普通停止和空闲释放继续使用原 Gateway stop 与 Room 清理语义；活动录像仍阻止提前释放。
-- RTSP Runtime 始终为 `FIXED_CAMERA_GATEWAY`，正常播放、恢复和释放不创建、轮换或撤销 Ingress。
+- RTSP Runtime 始终为 `EDGE_MEDIA_GATEWAY`，正常播放、恢复和释放不创建、轮换或撤销 Ingress。
 
 ### 16.5 robot-ui 测试
 

@@ -23,8 +23,8 @@ export function normalizeRobotControlMode(value) {
 }
 
 const runtimeFields = [
-  'battery', 'speed', 'controlMode', 'controlModeName', 'runtimeUpdatedAt',
-  'charging', 'chargingStatus', 'taskStatus', 'missionStatus', 'edgeLocation'
+  'battery', 'speed', 'controlMode', 'runtimeUpdatedAt',
+  'charging', 'taskStatus', 'edgeLocation'
 ]
 
 export function mergeRobotBaseInfo(previous = {}, incoming = {}, fromRealtime = false) {
@@ -72,7 +72,6 @@ export function overlayLiveRobotRuntimeFields(snapshot, live) {
   const result = { ...snapshot }
   ;[...runtimeFields, 'status', 'statusChangedAt', 'stateSeq', 'fault'].forEach(key => { result[key] = merged[key] })
   return Object.assign(result, {
-    cameras: (live.cameras && live.cameras.length) ? live.cameras : snapshot.cameras,
-    devices: live.devices || snapshot.devices
+    cameras: (live.cameras && live.cameras.length) ? live.cameras : snapshot.cameras
   })
 }
