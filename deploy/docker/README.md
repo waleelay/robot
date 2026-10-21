@@ -48,7 +48,7 @@ Nginx HTTPS：       4443/tcp
 Nginx 备用 HTTP：   280/tcp
 Nginx 备用 HTTPS：  24443/tcp
 媒体服务：          8088/tcp
-控制服务：          8082/tcp，仅绑定 CONTROL_SERVICE_BIND_ADDRESS
+控制服务：          8082/tcp
 大屏 BFF：          8090/tcp
 LiveKit API：       7880/tcp
 LiveKit RTC TCP：   7881/tcp
@@ -65,16 +65,6 @@ TTS：               5050/tcp，默认不启动
 LiveKit：       ws://服务器IP:7880
 摄像头 RTMP：   rtmp://服务器IP:1935/live/{streamKey}
 ```
-
-Bridge 模式下必须在 `.env` 显式设置 `CONTROL_SERVICE_BIND_ADDRESS`。Management
-运行在另一 Docker 网络，并通过 `host.docker.internal:8082` 调用 Control 的固定摄像头
-发布编排接口时，先在 Management 容器内确认 `host.docker.internal` 解析到的宿主机网关地址，
-再将该地址填入配置。不能填 `127.0.0.1`：那只允许宿主机自身访问，会中断 Management
-容器的调用。BFF 继续通过
-`control-service:8082` 使用本 Compose 的内部网络。不要将绑定地址设为 `0.0.0.0`
-或业务网卡地址；部署后须从 Management 容器、BFF 容器及不可信局域网分别验证可达性。
-`docker-compose.host.yml` 使用宿主机网络，不适用本端口发布设置；使用该模式时须另行
-限制 Control 的监听地址或宿主机入站规则。
 
 ## 2. 打包前准备
 
