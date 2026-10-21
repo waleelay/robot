@@ -1742,7 +1742,7 @@
                       "type" : "string"
                     },
                     "confirmToken" : {
-                      "description" : "短期确认标识；当前发布器未验证该字段，不应视为额外认证",
+                      "description" : "高风险 fire 的一次性确认令牌；30 秒内有效，须放在命令 params.confirmToken 中",
                       "type" : "string"
                     },
                     "controlSessionId" : {
@@ -1927,11 +1927,16 @@
                     "description" : "设备控制动作",
                     "type" : "string"
                   },
+                  "controlSessionId" : {
+                    "description" : "当前用户终端拥有的有效控制租约",
+                    "type" : "string"
+                  },
                   "target" : {
                     "description" : "目标 scope/deviceId；具体设备必须在当前授权及租约范围内",
                     "type" : "object"
                   }
                 },
+                "required" : [ "action", "controlSessionId", "target" ],
                 "type" : "object"
               }
             }
@@ -1955,7 +1960,7 @@
                       "type" : "string"
                     },
                     "confirmToken" : {
-                      "description" : "短期确认标识；当前发布器未验证该字段，不应视为额外认证",
+                      "description" : "高风险 fire 的一次性确认令牌；30 秒内有效，须放在命令 params.confirmToken 中",
                       "type" : "string"
                     },
                     "controlSessionId" : {
@@ -2173,7 +2178,7 @@
                       "type" : "string"
                     },
                     "confirmToken" : {
-                      "description" : "短期确认标识；当前发布器未验证该字段，不应视为额外认证",
+                      "description" : "高风险 fire 的一次性确认令牌；30 秒内有效，须放在命令 params.confirmToken 中",
                       "type" : "string"
                     },
                     "controlSessionId" : {
@@ -2349,7 +2354,7 @@
                       "type" : "string"
                     },
                     "confirmToken" : {
-                      "description" : "短期确认标识；当前发布器未验证该字段，不应视为额外认证",
+                      "description" : "高风险 fire 的一次性确认令牌；30 秒内有效，须放在命令 params.confirmToken 中",
                       "type" : "string"
                     },
                     "controlSessionId" : {
@@ -2569,7 +2574,7 @@
                       "type" : "string"
                     },
                     "confirmToken" : {
-                      "description" : "短期确认标识；当前发布器未验证该字段，不应视为额外认证",
+                      "description" : "高风险 fire 的一次性确认令牌；30 秒内有效，须放在命令 params.confirmToken 中",
                       "type" : "string"
                     },
                     "controlSessionId" : {
@@ -2779,7 +2784,7 @@
                       "type" : "string"
                     },
                     "confirmToken" : {
-                      "description" : "短期确认标识；当前发布器未验证该字段，不应视为额外认证",
+                      "description" : "高风险 fire 的一次性确认令牌；30 秒内有效，须放在命令 params.confirmToken 中",
                       "type" : "string"
                     },
                     "controlSessionId" : {
@@ -2998,7 +3003,7 @@
                       "type" : "string"
                     },
                     "confirmToken" : {
-                      "description" : "短期确认标识；当前发布器未验证该字段，不应视为额外认证",
+                      "description" : "高风险 fire 的一次性确认令牌；30 秒内有效，须放在命令 params.confirmToken 中",
                       "type" : "string"
                     },
                     "controlSessionId" : {
@@ -3215,7 +3220,7 @@
                       "type" : "string"
                     },
                     "confirmToken" : {
-                      "description" : "短期确认标识；当前发布器未验证该字段，不应视为额外认证",
+                      "description" : "高风险 fire 的一次性确认令牌；30 秒内有效，须放在命令 params.confirmToken 中",
                       "type" : "string"
                     },
                     "controlSessionId" : {

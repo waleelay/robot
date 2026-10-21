@@ -179,7 +179,7 @@ public class FileOpenApiConfig {
                         .addProperty("holder", new io.swagger.v3.oas.models.media.ObjectSchema().description("当前控制权持有者"))
                         .addProperty("leaseExpireAt", new StringSchema().description("租约到期时间，上海时区 yyyy-MM-dd HH:mm:ss"))
                         .addProperty("issuedAt", new StringSchema().description("签发时间：普通命令为上海格式 yyyy-MM-dd HH:mm:ss；模式切换分支为 RFC3339"))
-                        .addProperty("confirmToken", new StringSchema().description("短期确认标识；当前发布器未验证该字段，不应视为额外认证"))
+                        .addProperty("confirmToken", new StringSchema().description("高风险 fire 的一次性确认令牌；30 秒内有效，须放在命令 params.confirmToken 中"))
                         .addProperty("expiresAt", new StringSchema().description("确认标识到期时间，上海时区 yyyy-MM-dd HH:mm:ss"))
                         .additionalProperties(true);
                 if (operation.getRequestBody() != null) {
@@ -202,12 +202,14 @@ public class FileOpenApiConfig {
                         case "controlRobotController_takeoverControl" -> List.of("observedStateSeq");
                         case "controlRobotController_setControlMode" -> List.of("controlMode", "controlSessionId", "observedStateSeq");
                         case "controlRobotController_releaseControl" -> List.of("reason", "stopActiveMotion");
-                        case "controlRobotController_confirmToken" -> List.of("target", "action");
+                        case "controlRobotController_confirmToken" -> List.of("controlSessionId", "target", "action");
                         case "controlRobotController_transferMultiFunctionAudioFile" -> List.of("fileId");
                         default -> List.of("controlSessionId", "target", "action", "params", "client");
                     };
                     request.getProperties().keySet().removeIf(field -> !fields.contains(field));
-                    if (id.equals("controlRobotController_takeoverControl")) {
+                    if (id.equals("controlRobotController_confirmToken")) {
+                        request.setRequired(List.of("controlSessionId", "target", "action"));
+                    } else if (id.equals("controlRobotController_takeoverControl")) {
                         request.setRequired(List.of("observedStateSeq"));
                     } else if (id.equals("controlRobotController_setControlMode")) {
                         request.setRequired(List.of("controlMode", "controlSessionId", "observedStateSeq"));

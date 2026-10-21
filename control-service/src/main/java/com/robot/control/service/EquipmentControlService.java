@@ -9,6 +9,10 @@ import com.robot.control.ws.MediaWebSocketPublisher;
 import java.time.OffsetDateTime;
 import java.time.Duration;
 import java.time.format.DateTimeParseException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -41,6 +45,9 @@ public class EquipmentControlService {
      * 边缘本体状态相对媒体心跳具有优先权的有效时长，单位纳秒。
      */
     private static final long EDGE_STATUS_AUTHORITY_NANOS = TimeUnit.SECONDS.toNanos(30);
+    private static final Duration CONFIRM_TOKEN_TTL = Duration.ofSeconds(30);
+    private static final Duration HIGH_RISK_FIRE_COOLDOWN = Duration.ofSeconds(3);
+    private static final int MAX_PENDING_CONFIRM_TOKENS = 4096;
     private static final List<String> CLEARABLE_EDGE_STATUS_FIELDS = List.of("charging", "taskStatus");
     private static final Set<String> GROUND_BASE_DEVICE_TYPES = Set.of(
             "WHEELED_BASE", "QUADRUPED_BASE", "BIPED_BASE");
@@ -96,6 +103,9 @@ public class EquipmentControlService {
      * 按控制会话 ID 保存租约、持有者和最近运动指令，释放或过期时收口。
      */
     private final Map<String, Map<String, Object>> sessions = new ConcurrentHashMap<>();
+    /** 只保存令牌摘要；与控制租约使用同一实例锁，保证核销和发布串行。 */
+    private final Map<String, Confirmation> confirmations = new LinkedHashMap<>();
+    private final Map<String, OffsetDateTime> lastHighRiskFire = new LinkedHashMap<>();
     /**
      * 按机器人 ID 保存融合后的控制运行状态，与管理端设备档案分别维护。
      */
@@ -161,10 +171,17 @@ public class EquipmentControlService {
      * @return 控制会话信息
      */
     public synchronized Map<String, Object> acquire(String robotId, Map<String, Object> request, CurrentUser user) {
+        requireOperator(user);
         requireRobot(robotId);
+        if (request == null) {
+            throw new IllegalArgumentException("请求体不能为空");
+        }
         pruneExpiredSessions(robotId);
         List<String> deviceIds = stringList(request.get("deviceIds"));
         List<String> actions = stringList(request.get("actions"));
+        if (deviceIds.isEmpty() || actions.isEmpty()) {
+            throw new IllegalArgumentException("控制会话必须指定设备和动作");
+        }
         String scope = stringValue(request.get("scope"), "DEVICE");
         boolean leaveChargerRequest = actions.contains("docking.leave");
         if (leaveChargerRequest) {
@@ -174,6 +191,15 @@ public class EquipmentControlService {
                 throw new IllegalArgumentException("退出充电桩只能申请机器人本体 base 的排他控制会话");
             }
             validateLeaveCharger(robotId, user);
+        }
+        for (String deviceId : deviceIds) {
+            Map<String, Object> device = requireDevice(robotId, deviceId);
+            for (String action : actions) {
+                if (!("base".equals(deviceId) && "control.mode.set".equals(action))
+                        && !stringList(device.get("actions")).contains(action)) {
+                    throw new IllegalArgumentException("设备不支持该动作：" + action);
+                }
+            }
         }
         for (Map<String, Object> session : sessions.values()) {
             if (!robotId.equals(session.get("robotId")) || !"ACTIVE".equals(session.get("status"))) {
@@ -265,6 +291,7 @@ public class EquipmentControlService {
      * @return 控制模式设置结果
      */
     public Map<String, Object> setControlMode(String robotId, Map<String, Object> request, CurrentUser user) {
+        requireOperator(user);
         requireRobot(robotId);
         if (request == null) {
             throw new IllegalArgumentException("请求体不能为空");
@@ -288,7 +315,8 @@ public class EquipmentControlService {
                     "latestControlMode", reportedControlMode(state.get("controlMode")),
                     "latestControlModeName", controlModeName(reportedControlMode(state.get("controlMode"))));
         }
-        requireOwnedActiveSession(robotId, controlSessionId, "base", user);
+        Map<String, Object> session = requireOwnedActiveSession(robotId, controlSessionId, "base", user);
+        requireSessionAction(session, "control.mode.set");
         String currentMode = reportedControlMode(state.get("controlMode"));
         if (controlModeName(controlMode).equals(currentMode)) {
             return object(
@@ -451,17 +479,39 @@ public class EquipmentControlService {
      * @param user    当前用户
      * @return 确认 Token 信息
      */
-    public Map<String, Object> confirmToken(String robotId, Map<String, Object> request, CurrentUser user) {
+    public synchronized Map<String, Object> confirmToken(String robotId, Map<String, Object> request, CurrentUser user) {
+        requireOperator(user);
         requireRobot(robotId);
+        if (request == null) {
+            throw new IllegalArgumentException("请求体不能为空");
+        }
         Map<String, Object> target = mapValue(request.get("target"));
-        String action = stringValue(request.get("action"), "");
+        String deviceId = requiredString(target, "deviceId");
+        String action = requiredString(request, "action");
+        String controlSessionId = requiredString(request, "controlSessionId");
+        Map<String, Object> device = requireDevice(robotId, deviceId);
+        if (!isHighRiskAction(device, action) || !stringList(device.get("actions")).contains(action)) {
+            throw new IllegalArgumentException("该设备动作不支持二次确认");
+        }
+        validateRobotOnline(robotId);
+        Map<String, Object> session = requireOwnedActiveSession(robotId, controlSessionId, deviceId, user);
+        requireSessionAction(session, action);
+        validateHighRiskState(robotId, device, mapValue(request.get("params")));
+        pruneConfirmations();
+        if (confirmations.size() >= MAX_PENDING_CONFIRM_TOKENS) {
+            throw new IllegalArgumentException("待确认操作过多，请稍后重试");
+        }
+        String token = "confirm_" + compactUuid();
+        OffsetDateTime expiresAt = OffsetDateTime.now().plus(CONFIRM_TOKEN_TTL);
+        confirmations.put(tokenHash(token), new Confirmation(
+                user.userId(), user.clientId(), robotId, deviceId, action, controlSessionId, expiresAt));
         return object(
-                "confirmToken", "confirm_" + compactUuid(),
-                "expiresAt", OffsetDateTime.now().plusSeconds(30),
+                "confirmToken", token,
+                "expiresAt", expiresAt,
                 "robotId", robotId,
                 "target", object(
                         "scope", target.get("scope"),
-                        "deviceId", target.get("deviceId")),
+                        "deviceId", deviceId),
                 "action", action);
     }
 
@@ -473,11 +523,19 @@ public class EquipmentControlService {
      * @param user    当前用户
      * @return 命令发布结果
      */
-    public Map<String, Object> publishCommand(String robotId, Map<String, Object> request, CurrentUser user) {
-        requireRobot(robotId);
-        validateCommandAccess(robotId, request, user);
+    public synchronized Map<String, Object> publishCommand(String robotId, Map<String, Object> request, CurrentUser user) {
+        Map<String, Object> session = validateCommandAccess(robotId, request, user);
         Map<String, Object> mqttPayload = buildMqttPayload(robotId, request);
-        publishCommandAndRememberMotion(robotId, request, mqttPayload);
+        Map<String, Object> target = mapValue(request.get("target"));
+        Map<String, Object> device = requireDevice(robotId, requiredString(target, "deviceId"));
+        if (isHighRiskAction(device, String.valueOf(mqttPayload.get("action")))) {
+            consumeConfirmation(robotId, request, user, device);
+            validateHighRiskState(robotId, device, mapValue(request.get("params")));
+        }
+        publishCommandAndRememberMotion(robotId, session, mqttPayload);
+        if (isHighRiskAction(device, String.valueOf(mqttPayload.get("action")))) {
+            lastHighRiskFire.put(robotId + ":" + device.get("deviceId"), OffsetDateTime.now());
+        }
         String commandId = "cmd_" + compactUuid();
         Map<String, Object> response = object(
                 "commandId", commandId,
@@ -491,21 +549,19 @@ public class EquipmentControlService {
     }
 
     private void publishCommandAndRememberMotion(
-            String robotId, Map<String, Object> request, Map<String, Object> payload) {
-        if (!"drive.velocity".equals(payload.get("action"))) {
+            String robotId, Map<String, Object> session, Map<String, Object> payload) {
+        if (session == null) {
             commandPublisher.publishCommand(robotId, payload);
             return;
-        }
-        Map<String, Object> session = sessions.get(stringValue(request.get("controlSessionId"), ""));
-        if (session == null) {
-            throw new IllegalArgumentException("控制会话已失效，请重新申请");
         }
         synchronized (session) {
             if (!"ACTIVE".equals(session.get("status")) || isExpired(session, OffsetDateTime.now())) {
                 throw new IllegalArgumentException("控制会话已失效，请重新申请");
             }
             commandPublisher.publishCommand(robotId, payload);
-            rememberBaseMotion(session, payload);
+            if ("drive.velocity".equals(payload.get("action"))) {
+                rememberBaseMotion(session, payload);
+            }
         }
     }
 
@@ -1032,39 +1088,162 @@ public class EquipmentControlService {
         }
     }
 
-    private void validateCommandAccess(String robotId, Map<String, Object> request, CurrentUser user) {
+    /**
+     * 为 REST 与 WebSocket 命令共用的授权入口；只读查询无需租约，其余动作返回已校验租约。
+     *
+     * @param robotId 机器人 ID
+     * @param request 命令请求
+     * @param user 当前请求身份
+     * @return 需要租约的动作返回有效会话，只读查询返回 null
+     */
+    private Map<String, Object> validateCommandAccess(String robotId, Map<String, Object> request, CurrentUser user) {
         if (request == null) {
             throw new IllegalArgumentException("请求体不能为空");
         }
+        requireOperator(user);
         Map<String, Object> target = mapValue(request.get("target"));
-        String deviceId = stringValue(target.get("deviceId"), "");
-        String action = stringValue(request.get("action"), "");
+        String deviceId = requiredString(target, "deviceId");
+        String action = requiredString(request, "action");
+        Map<String, Object> device = requireDevice(robotId, deviceId);
+        if (!stringList(device.get("actions")).contains(action)) {
+            throw new IllegalArgumentException("设备不支持该动作：" + action);
+        }
+        if ("offline".equalsIgnoreCase(stringValue(device.get("onlineStatus"), ""))) {
+            throw new IllegalArgumentException("目标设备离线，不能下发控制指令");
+        }
+        if ("control.mode.set".equals(action)) {
+            throw new IllegalArgumentException("控制模式须通过专用接口切换");
+        }
+        String declaredScope = stringValue(target.get("scope"), "");
+        if (!declaredScope.isBlank() && !declaredScope.equals(device.get("scope"))) {
+            throw new IllegalArgumentException("命令目标范围与设备档案不一致");
+        }
+        validateRobotOnline(robotId);
         if ("base".equals(deviceId) && "docking.leave".equals(action)) {
-            if (!"BODY".equals(stringValue(target.get("scope"), ""))) {
+            if (!"BODY".equals(declaredScope)) {
                 throw new IllegalArgumentException("退出充电桩命令目标必须是机器人本体 BODY/base");
             }
             validateLeaveCharger(robotId, user);
-            Map<String, Object> session = requireOwnedActiveSession(
-                    robotId, requiredString(request, "controlSessionId"), "base", user);
-            if (!stringList(session.get("actions")).contains("docking.leave")) {
-                throw new IllegalArgumentException("控制会话不包含动作：docking.leave");
+        }
+        if ("base".equals(deviceId) && "drive.velocity".equals(action)) {
+            Map<String, Object> state = robotStates.get(robotId);
+            String controlMode = reportedControlMode(state.get("controlMode"));
+            if (!"手动模式".equals(controlMode) && !"常规模式".equals(controlMode)) {
+                throw new IllegalArgumentException(controlMode == null
+                        ? "机器人控制模式未知，请等待设备状态上报后再操作"
+                        : "机器人当前为" + controlModeName(controlMode) + "，请先切换到手动模式或常规模式");
             }
-            return;
         }
-        if (!"base".equals(deviceId) || !"drive.velocity".equals(action)) {
-            return;
+        if ("get_state".equals(action)) {
+            return null;
         }
+        Map<String, Object> session = requireOwnedActiveSession(
+                robotId, requiredString(request, "controlSessionId"), deviceId, user);
+        requireSessionAction(session, action);
+        return session;
+    }
+
+    private static void requireOperator(CurrentUser user) {
+        if (user == null || !user.hasRole("EQUIPMENT_OPERATOR")) {
+            throw new IllegalArgumentException("当前用户缺少装备操作权限");
+        }
+    }
+
+    private static void requireSessionAction(Map<String, Object> session, String action) {
+        if (!stringList(session.get("actions")).contains(action)) {
+            throw new IllegalArgumentException("控制会话不包含动作：" + action);
+        }
+    }
+
+    private void validateRobotOnline(String robotId) {
         Map<String, Object> state = robotStates.get(robotId);
-        if (state == null || !"online".equalsIgnoreCase(stringValue(state.get("status"), ""))) {
-            throw new IllegalArgumentException("机器人不在线，不能下发本体移动指令");
+        if (state == null || !"online".equalsIgnoreCase(stringValue(state.get("status"), ""))
+                || !hasFreshEdgeStatus(robotId)) {
+            throw new IllegalArgumentException("机器人不在线或设备状态已过期，不能下发控制指令");
         }
-        String controlMode = reportedControlMode(state.get("controlMode"));
-        if (!"手动模式".equals(controlMode) && !"常规模式".equals(controlMode)) {
-            throw new IllegalArgumentException(controlMode == null
-                    ? "机器人控制模式未知，请等待设备状态上报后再操作"
-                    : "机器人当前为" + controlModeName(controlMode) + "，请先切换到手动模式或常规模式");
+    }
+
+    private static boolean isHighRiskAction(Map<String, Object> device, String action) {
+        String type = stringValue(device.get("deviceType"), "");
+        return "fire".equals(action) && ("LAUNCHER".equals(type) || "NET_GUN".equals(type));
+    }
+
+    private void validateHighRiskState(String robotId, Map<String, Object> device, Map<String, Object> params) {
+        DeviceRuntimeSnapshot runtime = clientDeviceRuntime.getOrDefault(robotId, DeviceRuntimeSnapshot.empty());
+        if (!runtime.clientOnline() || runtime.updatedAt() == null
+                || !runtime.updatedAt().plusSeconds(30).isAfter(OffsetDateTime.now())) {
+            throw new IllegalArgumentException("高风险设备运行状态已失效，禁止发射");
         }
-        requireOwnedActiveSession(robotId, requiredString(request, "controlSessionId"), "base", user);
+        String type = stringValue(device.get("deviceType"), "");
+        Map<String, Object> status = mapValue(device.get("status"));
+        if (!Boolean.TRUE.equals(status.get("connected"))
+                || "OFFLINE".equals(normalized(firstString(device, "onlineStatus")))) {
+            throw new IllegalArgumentException("高风险设备未明确连接，禁止发射");
+        }
+        if ("LAUNCHER".equals(type)) {
+            if (!Boolean.TRUE.equals(status.get("safetySwitchEnabled"))) {
+                throw new IllegalArgumentException("发射器安全开关未开启，禁止发射");
+            }
+            if (params.containsKey("tube") || params.containsKey("channel")) {
+                validateLauncherFireState(device, params);
+            }
+        }
+        String key = robotId + ":" + device.get("deviceId");
+        OffsetDateTime lastFire = lastHighRiskFire.get(key);
+        if (lastFire != null && OffsetDateTime.now().isBefore(lastFire.plus(HIGH_RISK_FIRE_COOLDOWN))) {
+            throw new IllegalArgumentException("设备冷却中，禁止连续发射");
+        }
+    }
+
+    private void consumeConfirmation(
+            String robotId, Map<String, Object> request, CurrentUser user, Map<String, Object> device) {
+        String token = requiredString(mapValue(request.get("params")), "confirmToken");
+        if (token.length() > 64) {
+            throw new IllegalArgumentException("确认令牌无效或已过期");
+        }
+        String hash = tokenHash(token);
+        Confirmation confirmation = confirmations.get(hash);
+        String action = requiredString(request, "action");
+        if (confirmation == null || !confirmation.expiresAt().isAfter(OffsetDateTime.now())
+                || !confirmation.userId().equals(user.userId())
+                || !confirmation.clientId().equals(user.clientId())
+                || !confirmation.robotId().equals(robotId)
+                || !confirmation.deviceId().equals(device.get("deviceId"))
+                || !confirmation.action().equals(action)
+                || !confirmation.controlSessionId().equals(request.get("controlSessionId"))) {
+            throw new IllegalArgumentException("确认令牌无效或已过期");
+        }
+        confirmations.remove(hash);
+    }
+
+    private void pruneConfirmations() {
+        OffsetDateTime now = OffsetDateTime.now();
+        confirmations.values().removeIf(confirmation -> !confirmation.expiresAt().isAfter(now));
+        lastHighRiskFire.values().removeIf(lastFire -> !lastFire.plus(HIGH_RISK_FIRE_COOLDOWN).isAfter(now));
+    }
+
+    private static String tokenHash(String token) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("缺少 SHA-256 摘要算法", exception);
+        }
+    }
+
+    /**
+     * 待核销的高风险动作确认，仅令牌摘要作为索引。
+     *
+     * @param userId 签发时的用户 ID
+     * @param clientId 签发时的终端 ID
+     * @param robotId 目标机器人 ID
+     * @param deviceId 目标设备 ID
+     * @param action 已确认的动作
+     * @param controlSessionId 签发时的控制租约 ID
+     * @param expiresAt 确认令牌失效时间
+     */
+    private record Confirmation(String userId, String clientId, String robotId, String deviceId,
+                                String action, String controlSessionId, OffsetDateTime expiresAt) {
     }
 
     private void validateLeaveCharger(String robotId, CurrentUser user) {

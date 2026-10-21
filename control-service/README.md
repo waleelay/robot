@@ -91,12 +91,14 @@ src/main/java/com/robot/control/
 
 - 租约默认 30 秒；同一 `userId + clientId` 重复申请会续期。
 - 冲突按机器人和 `deviceIds` 交集判断；冲突当前返回 HTTP 200 的 `CONTROL_LOCKED` 响应体。
-- `drive.velocity` 要求机器人在线、手动模式、当前终端持有含 `base` 的租约。
+- 通用命令要求 `EQUIPMENT_OPERATOR`、Management 设备可见、机器人边缘状态在线且新鲜、设备动作已登记。除 `get_state` 查询外，命令须持有覆盖目标设备和动作的当前用户终端租约。
+- `drive.velocity` 还要求手动模式或常规模式；`docking.leave` 保留专用状态条件。
 - 前端以 `linearX/linearY/angularZ` 提交运动意图；控制服务按控制画像限幅后，转换为 MQTT `linear.{x,y,z}` 与 `angular.{roll,yaw}`，其中一期预留的 `z/roll` 固定为 `0.0`。
 - `docking.leave` 仅在 Management 本体组件明确登记 `DEVICE_CONTROL/LEAVE_CHARGER` 时出现；要求装备操作权限、
   在线且 30 秒内有边缘状态、明确 `taskStatus=IDLE` 和 `charging=true`，并持有只含 `base` 的机器人排他会话。
 - `takeover`/模式切换只发布请求，最终状态以机器人上报为准。
-- `confirm-token` 当前会生成 30 秒 Token 信息，但普通 `/commands` 尚未校验它。
+- 发射器与捕网枪 `fire` 必须先申请对应动作租约，再领取 30 秒一次性确认令牌；服务端只保存摘要，发布 MQTT 前按用户、终端、机器人、设备、动作和租约核销。两类设备均要求新鲜的明确连接状态，并在成功发布后冷却 3 秒；发射器还校验真实安全开关和弹筒状态，捕网枪页面本地安全开关仅用于交互解锁。
+- 租约、待核销令牌和发射冷却状态目前由同一 Control 实例维护；现有 Compose 按单实例部署。扩展为多副本前，须将三者迁至共享的原子状态存储并验证跨实例互斥与重放拒绝。
 
 ### 控制画像与设备运行态
 
